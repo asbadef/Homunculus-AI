@@ -53,25 +53,40 @@ source_url: https://...
 authors: Evans L, Rhodes A, et al.
 publication: Critical Care Medicine
 year: 2021
+doi: 10.1007/s00134-021-06506-y
 retrieved: 2026-07-14
 type: guideline        # guideline | paper | review | protocol | dataset | manual | article
+capture: extract       # full-text | extract  — see below
 status: current        # current | superseded
 superseded_by:         # filename, if status is superseded
 ---
 ```
 
-Filenames are kebab-case and descriptive: `surviving-sepsis-campaign-2021.md`,
-`sepsis-3-jama-2016.md`.
+**`capture:` is not bookkeeping — it is an honesty field.** `full-text` means the document is
+here in full. `extract` means only part of it was retrieved (a fetched summary, an abstract, a
+society's rendering of a paywalled guideline). An `extract` file MUST open with a capture note
+saying what was retrieved, what was not, and that absence of a statement in the extract is not
+evidence of its absence in the source. Reasoning built on an extract is reasoning built on
+partial evidence, and the vault has to say so out loud rather than let a confident-looking
+markdown table imply otherwise.
+
+Filenames are kebab-case, descriptive, and **end in `-raw`**:
+`surviving-sepsis-campaign-2021-raw.md`, `sepsis-3-jama-2016-raw.md`.
+
+The `-raw` suffix is not decoration. Obsidian resolves `[[wikilinks]]` by **basename**, so a raw
+document and its source note sharing a name would make every citation in the vault ambiguous. The
+suffix keeps `[[sepsis-3-jama-2016]]` pointing unambiguously at the *source note* — which is what
+articles should cite — while `[[sepsis-3-jama-2016-raw]]` reaches the evidence behind it.
 
 ### 2. `wiki/sources/` — one note per raw document
 
-For each file in `raw/`, there is exactly one note in `wiki/sources/` with the same
-basename. It answers: *what is this document, how authoritative is it, and what claims does
-it support?*
+For each file in `raw/`, there is exactly one note in `wiki/sources/` carrying the same name
+**minus the `-raw` suffix**. It answers: *what is this document, how authoritative is it, and what
+claims does it support?* Articles cite the **source note**, never the raw file.
 
 ```markdown
 ---
-raw: ../../raw/sepsis-3-jama-2016.md
+raw: "../../raw/sepsis-3-jama-2016-raw.md"
 type: source-note
 authority: high        # high | moderate | low  — see Authority below
 ---
