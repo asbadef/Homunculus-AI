@@ -53,3 +53,22 @@ def test_sum_since_adds_values_within_window():
     assert st.sum_since(SignalCode.CRYSTALLOID_BOLUS_ML, now - timedelta(hours=3)) == 2500
     # last 60 min: only the 90-min one is within [60min, 120min] -> 1000
     assert st.sum_since(SignalCode.CRYSTALLOID_BOLUS_ML, now - timedelta(minutes=60)) == 1000
+
+
+# append to tests/test_state_timeline.py
+from homunculus.state.repository import InMemoryPatientRepository
+
+
+def test_repository_creates_state_on_first_access():
+    repo = InMemoryPatientRepository()
+    st = repo.get_or_create("bed-9")
+    assert st.patient_id == "bed-9"
+    # same object on second access
+    assert repo.get_or_create("bed-9") is st
+
+
+def test_repository_lists_known_patients():
+    repo = InMemoryPatientRepository()
+    repo.get_or_create("bed-1")
+    repo.get_or_create("bed-2")
+    assert set(repo.patient_ids()) == {"bed-1", "bed-2"}
