@@ -119,8 +119,9 @@ twenty minutes of an unread alert spends a third of it
 ### `web/` — Dashboard API + Web UI
 Live patient list with risk indicator; per-patient timeline (vitals, ventilator, labs, meds);
 active alerts with their **full reasoning chain and citations**; acknowledge / escalate actions.
-Doctor view and nurse view. First slice: server + WebSocket + plain HTML/JS (no build toolchain);
-may graduate to a small React app.
+**Two roles: doctor view and nurse view** (the escalation path runs between them). Frontend is a
+**React app** (Vite build), talking to the FastAPI backend over REST + a WebSocket for the live
+alert/observation stream.
 
 ### `audit/` — Audit Log
 Every alert, every recommendation, every acknowledgement and escalation, written immutably with
