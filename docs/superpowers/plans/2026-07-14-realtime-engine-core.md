@@ -766,7 +766,7 @@ T0 = datetime(2026, 7, 14, 10, 0, tzinfo=timezone.utc)
 def _state(**signals):
     st = PatientState("bed-3")
     for code, value in signals.items():
-        st.ingest(Observation("bed-3", code, value, "u", T0, "dev"))
+        st.ingest(Observation("bed-3", SignalCode[code], value, "u", T0, "dev"))
     return st
 
 
@@ -984,7 +984,7 @@ def _state(now_min=0, **series):
     for code, spec in series.items():
         points = spec if isinstance(spec, list) else [(0, spec)]
         for minute, value in points:
-            st.ingest(Observation("bed-3", code, value, "u", T0 + timedelta(minutes=minute), "dev"))
+            st.ingest(Observation("bed-3", SignalCode[code], value, "u", T0 + timedelta(minutes=minute), "dev"))
     return st
 
 
@@ -1195,7 +1195,7 @@ def _state(**series):
     st = PatientState("bed-3")
     for code, points in series.items():
         for minute, value in points:
-            st.ingest(Observation("bed-3", code, value, "u", T0 + timedelta(minutes=minute), "dev"))
+            st.ingest(Observation("bed-3", SignalCode[code], value, "u", T0 + timedelta(minutes=minute), "dev"))
     return st
 
 
