@@ -1,0 +1,55 @@
+# tests/test_state_timeline.py
+from datetime import datetime, timezone, timedelta
+from homunculus.canonical import Observation, SignalCode
+from homunculus.state.timeline import PatientState
+
+T0 = datetime(2026, 7, 14, 10, 0, tzinfo=timezone.utc)
+
+
+def _obs(code, value, minutes=0):
+    return Observation("bed-3", code, value, "u", T0 + timedelta(minutes=minutes), "dev")
+
+
+def test_latest_returns_most_recent_value():
+    st = PatientState("bed-3")
+    st.ingest(_obs(SignalCode.MAP, 70, minutes=0))
+    st.ingest(_obs(SignalCode.MAP, 62, minutes=5))
+    assert st.latest(SignalCode.MAP).value == 62
+
+
+def test_latest_is_none_when_never_seen():
+    st = PatientState("bed-3")
+    assert st.latest(SignalCode.LACTATE) is None
+
+
+def test_age_reports_staleness_against_a_reference_time():
+    st = PatientState("bed-3")
+    st.ingest(_obs(SignalCode.LACTATE, 3.1, minutes=0))
+    now = T0 + timedelta(hours=4)
+    assert st.age(SignalCode.LACTATE, now) == timedelta(hours=4)
+
+
+def test_age_is_none_when_never_seen():
+    st = PatientState("bed-3")
+    assert st.age(SignalCode.LACTATE, T0) is None
+
+
+def test_history_preserves_order():
+    st = PatientState("bed-3")
+    st.ingest(_obs(SignalCode.NOREPINEPHRINE_RATE, 0.05, minutes=0))
+    st.ingest(_obs(SignalCode.NOREPINEPHRINE_RATE, 0.10, minutes=30))
+    st.ingest(_obs(SignalCode.NOREPINEPHRINE_RATE, 0.20, minutes=60))
+    values = [o.value for o in st.history(SignalCode.NOREPINEPHRINE_RATE)]
+    assert values == [0.05, 0.10, 0.20]
+
+
+def test_sum_since_adds_values_within_window():
+    st = PatientState("bed-3")
+    st.ingest(_obs(SignalCode.CRYSTALLOID_BOLUS_ML, 500, minutes=0))
+    st.ingest(_obs(SignalCode.CRYSTALLOID_BOLUS_ML, 1000, minutes=30))
+    st.ingest(_obs(SignalCode.CRYSTALLOID_BOLUS_ML, 1000, minutes=90))
+    now = T0 + timedelta(minutes=120)
+    # last 3 hours: all three -> 2500
+    assert st.sum_since(SignalCode.CRYSTALLOID_BOLUS_ML, now - timedelta(hours=3)) == 2500
+    # last 60 min: only the 90-min one is within [60min, 120min] -> 1000
+    assert st.sum_since(SignalCode.CRYSTALLOID_BOLUS_ML, now - timedelta(minutes=60)) == 1000
