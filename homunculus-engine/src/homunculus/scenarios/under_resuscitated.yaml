@@ -1,0 +1,10 @@
+# Synthetic. Hypoperfusion BEFORE adequate fluid. Must NOT be called shock.
+patient_id: bed-7
+start: "2026-07-14T10:00:00+00:00"
+events:
+  - {at_min: 0,  code: weight_kg,           value: 90,  unit: kg}
+  - {at_min: 0,  code: suspected_infection, value: 1.0, unit: bool}
+  - {at_min: 0,  code: map,                 value: 60,  unit: mmHg}
+  - {at_min: 0,  code: lactate,             value: 3.5, unit: mmol/L}
+  - {at_min: 10, code: crystalloid_bolus_ml, value: 500, unit: mL}   # 500 << 2700 needed
+  - {at_min: 20, code: map,                 value: 61,  unit: mmHg}

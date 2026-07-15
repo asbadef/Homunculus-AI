@@ -1,0 +1,19 @@
+# Synthetic. No patient data. 100 kg adult, suspected infection, slides into septic shock.
+patient_id: bed-3
+start: "2026-07-14T10:00:00+00:00"
+events:
+  - {at_min: 0,  code: weight_kg,            value: 100, unit: kg}
+  - {at_min: 0,  code: suspected_infection,  value: 1.0, unit: bool}
+  - {at_min: 0,  code: map,                  value: 72,  unit: mmHg}
+  - {at_min: 0,  code: platelets,            value: 140, unit: 10^3/uL}
+  - {at_min: 0,  code: lactate,              value: 1.8, unit: mmol/L}
+  - {at_min: 10, code: map,                  value: 66,  unit: mmHg}
+  - {at_min: 10, code: crystalloid_bolus_ml, value: 1500, unit: mL}
+  - {at_min: 30, code: crystalloid_bolus_ml, value: 1500, unit: mL}   # total 3000 = 30 mL/kg
+  - {at_min: 30, code: map,                  value: 62,  unit: mmHg}
+  - {at_min: 35, code: lactate,              value: 2.6, unit: mmol/L}
+  - {at_min: 40, code: norepinephrine_rate,  value: 0.08, unit: ug/kg/min}
+  - {at_min: 40, code: map,                  value: 63,  unit: mmHg}
+  - {at_min: 55, code: norepinephrine_rate,  value: 0.12, unit: ug/kg/min}
+  - {at_min: 60, code: lactate,              value: 3.4, unit: mmol/L}   # shock now true
+  - {at_min: 60, code: platelets,            value: 95,  unit: 10^3/uL}

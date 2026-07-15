@@ -1,0 +1,11 @@
+# Synthetic. Suspected infection, but the patient stays well. Control case.
+patient_id: bed-5
+start: "2026-07-14T10:00:00+00:00"
+events:
+  - {at_min: 0,  code: weight_kg,           value: 80,  unit: kg}
+  - {at_min: 0,  code: suspected_infection, value: 1.0, unit: bool}
+  - {at_min: 0,  code: map,                 value: 82,  unit: mmHg}
+  - {at_min: 0,  code: lactate,             value: 1.2, unit: mmol/L}
+  - {at_min: 0,  code: platelets,           value: 210, unit: 10^3/uL}
+  - {at_min: 30, code: map,                 value: 80,  unit: mmHg}
+  - {at_min: 60, code: lactate,             value: 1.1, unit: mmol/L}
