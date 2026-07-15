@@ -1,0 +1,44 @@
+# src/homunculus/pipeline.py
+"""Wire observation -> state -> rules -> reco -> alerts.
+Holds per-patient recognition time to anchor the antibiotic clock."""
+from __future__ import annotations
+
+from datetime import datetime
+
+from homunculus.canonical import Observation
+from homunculus.reco.engine import Alert, to_alert
+from homunculus.rules import antibiotic_clock, septic_shock
+from homunculus.state.repository import InMemoryPatientRepository, PatientRepository
+
+_RECOGNITION_KINDS = {"sepsis", "septic_shock"}
+
+
+class Engine:
+    def __init__(self, repository: PatientRepository | None = None):
+        self._repo = repository or InMemoryPatientRepository()
+        self._recognized_at: dict[str, datetime] = {}
+        self._alerts: dict[str, dict[str, Alert]] = {}   # patient -> kind -> alert
+
+    def ingest(self, obs: Observation, now: datetime) -> list[Alert]:
+        state = self._repo.get_or_create(obs.patient_id)
+        state.ingest(obs)
+
+        findings = list(septic_shock.evaluate(state, now))
+
+        # Anchor the antibiotic clock the first time sepsis/shock is recognized.
+        if obs.patient_id not in self._recognized_at:
+            if any(f.kind in _RECOGNITION_KINDS for f in findings):
+                self._recognized_at[obs.patient_id] = now
+
+        findings += antibiotic_clock.evaluate(
+            state, self._recognized_at.get(obs.patient_id), now
+        )
+
+        alerts = [to_alert(f, obs.patient_id) for f in findings]
+        bucket = self._alerts.setdefault(obs.patient_id, {})
+        for a in alerts:
+            bucket[a.kind] = a   # latest alert per kind
+        return alerts
+
+    def active_alerts(self, patient_id: str) -> list[Alert]:
+        return list(self._alerts.get(patient_id, {}).values())
