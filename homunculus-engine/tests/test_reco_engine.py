@@ -1,7 +1,10 @@
 # tests/test_reco_engine.py
 import pytest
 from homunculus.rules.finding import Finding, Citation, Severity, Urgency
-from homunculus.reco.engine import to_alert, Alert
+from homunculus.reco.engine import to_alert, Alert, _ACTIONS
+
+# The no-orders register: every recommended action must begin with one of these verbs.
+_APPROVED_VERBS = ("consider", "review", "assess", "evaluate", "monitor")
 
 
 def _finding(kind="septic_shock"):
@@ -23,13 +26,17 @@ def test_alert_has_vision_schema_fields():
     assert a.recommended_actions  # non-empty
 
 
-def test_recommended_actions_are_recommendations_not_orders():
-    a = to_alert(_finding(), patient_id="bed-3")
+@pytest.mark.parametrize("kind", list(_ACTIONS.keys()) + ["unknown_fallback_kind"])
+def test_recommended_actions_are_recommendations_not_orders(kind):
+    # Charter rule #1 (no orders) must hold for EVERY alert kind, not just septic_shock —
+    # including the generic fallback used for unknown kinds.
+    a = to_alert(_finding(kind=kind), patient_id="bed-3")
+    assert a.recommended_actions  # non-empty
     for action in a.recommended_actions:
         low = action.lower()
-        assert low.startswith(("consider", "review", "assess", "evaluate", "monitor"))
+        assert low.startswith(_APPROVED_VERBS), f"{kind}: {action!r} is not phrased as a recommendation"
         # never an imperative order
-        assert not low.startswith(("give ", "administer ", "start ", "order "))
+        assert not low.startswith(("give ", "administer ", "start ", "order ", "prescribe "))
 
 
 def test_confidence_conveys_grade_not_a_number():

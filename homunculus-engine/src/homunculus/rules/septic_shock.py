@@ -83,7 +83,7 @@ def evaluate(state: PatientState, now: datetime) -> list[Finding]:
                 f"not shock — the distinction changes the next action (volume vs pressors)."
             ),
             citations=[
-                Citation("septic-shock", "'despite adequate fluid resuscitation' precondition"),
+                Citation("sepsis-3-jama-2016", "'despite adequate fluid resuscitation' precondition"),
                 Citation("surviving-sepsis-campaign-2026", "at least 30 mL/kg crystalloid within 3 h"),
             ],
         ))

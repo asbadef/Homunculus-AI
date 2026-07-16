@@ -14,9 +14,9 @@
 
 ## Scope
 
-**In Plan A:** canonical model, FHIR gateway, patient state + staleness, SOFA rule, septic-shock rule, under-resuscitation rule, antibiotic-timing clock, finding + citation model, reco engine (alert schema + no-orders register), pipeline, three scenarios, e2e replay tests.
+**In Plan A:** canonical model, FHIR gateway, patient state with per-signal staleness/age tracking, SOFA rule, septic-shock rule, under-resuscitation rule, antibiotic-timing clock, finding + citation model, reco engine (alert schema + no-orders register), pipeline, three scenarios, e2e replay tests.
 
-**Deferred to Plan B:** FastAPI app, WebSocket, notification/escalation delivery, React dashboard (doctor + nurse), Postgres persistence in the running system, audit log surface, and NEWS2 (which first needs its specification captured into the vault — see [open-questions](../../../Homunculus/wiki/concepts/open-questions.md)).
+**Deferred to Plan B:** FastAPI app, WebSocket, notification/escalation delivery, React dashboard (doctor + nurse), Postgres persistence in the running system, audit log surface, NEWS2 (which first needs its specification captured into the vault — see [open-questions](../../../Homunculus/wiki/concepts/open-questions.md)), and **staleness-aware SOFA** — the rules consuming each signal's `age()` to flag which sub-scores rest on stale inputs, plus the dynamic "the last lactate is N h old, consider repeat" recommendation. Plan A tracks staleness in `PatientState` but does not yet act on it; the shock register carries a standing repeat-lactate recommendation instead.
 
 **Repository location:** all code goes in a new top-level directory `homunculus-engine/` in the repo root, so it sits beside `Homunculus/` (the vault) and `docs/`.
 
@@ -1139,7 +1139,7 @@ def evaluate(state: PatientState, now: datetime) -> list[Finding]:
                 f"not shock — the distinction changes the next action (volume vs pressors)."
             ),
             citations=[
-                Citation("septic-shock", "'despite adequate fluid resuscitation' precondition"),
+                Citation("sepsis-3-jama-2016", "'despite adequate fluid resuscitation' precondition"),
                 Citation("surviving-sepsis-campaign-2026", "at least 30 mL/kg crystalloid within 3 h"),
             ],
         ))

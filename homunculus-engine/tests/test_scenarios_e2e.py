@@ -45,8 +45,12 @@ def test_under_resuscitated_scenario_recommends_fluid_not_shock():
     assert "septic_shock" not in kinds
 
 
-def test_golden_qanda_reasoning_present_in_shock_alert():
-    # The vault Q&A: escalating pressor + lactate should surface a repeat-lactate recommendation.
+def test_shock_alert_surfaces_a_repeat_lactate_recommendation():
+    # The vault Q&A behaviour: a septic-shock alert should recommend rechecking lactate.
+    # NOTE: this asserts the recommendation is PRESENT, not that it was *triggered by a
+    # stale lactate value*. Staleness-aware SOFA and a dynamic "the last lactate is N h old,
+    # consider repeat" recommendation are deferred to Plan B (see the engine spec's deferred
+    # list). Today the repeat-lactate line is a standing recommendation for the shock register.
     eng, patient = _run("septic_shock.yaml")
     shock = next(a for a in eng.active_alerts(patient) if a.kind == "septic_shock")
     assert any("lactate" in a.lower() for a in shock.recommended_actions)
