@@ -1,10 +1,13 @@
 # tests/test_scenarios_e2e.py
 from pathlib import Path
+import homunculus.scenarios
 from homunculus.gateway.fhir import parse_fhir_observation
 from homunculus.pipeline import Engine
 from homunculus.scenarios.loader import load_scenario
 
-SCEN = Path("src/homunculus/scenarios")
+# Anchor to the installed package so the scenario files resolve regardless of the
+# working directory pytest is invoked from (repo root vs. homunculus-engine/).
+SCEN = Path(homunculus.scenarios.__file__).parent
 
 
 def _run(scenario_file):
