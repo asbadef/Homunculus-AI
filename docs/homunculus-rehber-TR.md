@@ -1,7 +1,6 @@
 # Homunculus — Anlaşılır Rehber ve Sözlük (TR)
 
-> **Bu dosya senin için.** Projedeki her tıbbi ve teknik terimi, 15 yaşındaki birine
-> anlatır gibi sade dille açıklar. Amaç: kod veya kılavuz okumadan, projenin *ne* yaptığını,
+> **Bu dosya senin için.** Projedeki her tıbbi ve teknik terimi sade dille açıklar. Amaç: kod veya kılavuz okumadan, projenin *ne* yaptığını,
 > *neyin hazır* olduğunu ve *neyin eksik* olduğunu anlaman.
 >
 > **Canlı dosyadır.** Proje ilerledikçe içine yeni terimler, anlamları ve "bunu neden
