@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from homunculus.canonical import Observation, SignalCode
-from homunculus.gateway.fhir import GatewayError  # shared drop-on-malformed contract
+from homunculus.gateway.fhir import GatewayError, to_utc  # shared gateway contract
 
 # Default identifier table: OBX-3 code == our SignalCode slug. A per-hospital mapping table
 # (vendor OBX code -> SignalCode) is passed in for real sites and replaces this default.
@@ -36,7 +36,7 @@ def _parse_hl7_ts(ts: str) -> datetime | None:
     for width, fmt in ((14, "%Y%m%d%H%M%S"), (12, "%Y%m%d%H%M"), (8, "%Y%m%d")):
         if len(digits) >= width:
             try:
-                return datetime.strptime(digits[:width], fmt)
+                return to_utc(datetime.strptime(digits[:width], fmt))
             except ValueError:
                 return None
     return None

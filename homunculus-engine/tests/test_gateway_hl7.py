@@ -1,5 +1,5 @@
 # tests/test_gateway_hl7.py
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -28,7 +28,7 @@ def test_parses_a_single_obx_into_one_observation():
     assert o.code == SignalCode.HEART_RATE
     assert o.value == 118.0
     assert o.unit == "bpm"
-    assert o.timestamp == datetime(2026, 7, 16, 14, 30, 0)
+    assert o.timestamp == datetime(2026, 7, 16, 14, 30, 0, tzinfo=timezone.utc)
 
 
 def test_one_message_yields_multiple_observations():
@@ -72,7 +72,15 @@ def test_obx_timestamp_falls_back_to_message_time_when_absent():
     # OBX-14 empty -> use MSH-7 message datetime.
     msg = _msg(_MSH, _PID, _OBR, "OBX|1|NM|heart_rate||118|bpm|||||F")
     obs = parse_hl7_oru(msg)
-    assert obs[0].timestamp == datetime(2026, 7, 16, 14, 30, 0)
+    assert obs[0].timestamp == datetime(2026, 7, 16, 14, 30, 0, tzinfo=timezone.utc)
+
+
+def test_timestamps_are_timezone_aware_utc():
+    # Both gateways must emit tz-aware UTC so HL7 and FHIR feeds can coexist in one engine.
+    msg = _msg(_MSH, _PID, _OBR, "OBX|1|NM|heart_rate||118|bpm|||||F|||20260716143000")
+    o = parse_hl7_oru(msg)[0]
+    assert o.timestamp.tzinfo is not None
+    assert o.timestamp.utcoffset() == timedelta(0)
 
 
 def test_missing_patient_id_raises_gateway_error():

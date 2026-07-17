@@ -30,6 +30,13 @@ def test_parses_a_valid_fhir_observation():
     assert obs.source_device == "abg-1"
 
 
+def test_naive_effectivedatetime_is_normalized_to_utc():
+    # A feed that omits the timezone offset is assumed UTC, so timestamps from different
+    # gateways (FHIR, HL7) never mix naive and aware datetimes inside one engine.
+    obs = parse_fhir_observation(_fhir("lactate", 3.1, when="2026-07-14T10:00:00"))
+    assert obs.timestamp == datetime(2026, 7, 14, 10, 0, tzinfo=timezone.utc)
+
+
 def test_unknown_code_raises_gateway_error():
     with pytest.raises(GatewayError, match="unknown signal code"):
         parse_fhir_observation(_fhir("unobtanium", 1.0))

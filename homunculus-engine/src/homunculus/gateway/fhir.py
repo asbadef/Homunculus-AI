@@ -2,7 +2,7 @@
 """FHIR R4 Observation -> canonical Observation. The seam where real hospital feeds plug in."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from homunculus.canonical import Observation, SignalCode
 
@@ -11,6 +11,15 @@ _SLUG_TO_CODE = {c.value: c for c in SignalCode}
 
 class GatewayError(ValueError):
     """Raised when an incoming message cannot be normalized. Caller logs and drops it."""
+
+
+def to_utc(dt: datetime) -> datetime:
+    """Normalize to timezone-aware UTC. A feed that carries no offset is assumed UTC, so
+    timestamps from different gateways (FHIR, HL7) never mix naive and aware datetimes inside
+    one engine — which would raise TypeError on comparison."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def parse_fhir_observation(resource: dict) -> Observation:
@@ -35,7 +44,7 @@ def parse_fhir_observation(resource: dict) -> Observation:
     if not when:
         raise GatewayError("missing effectiveDateTime")
     try:
-        timestamp = datetime.fromisoformat(when)
+        timestamp = to_utc(datetime.fromisoformat(when))
     except ValueError as exc:
         raise GatewayError(f"unparseable effectiveDateTime: {when!r}") from exc
 
