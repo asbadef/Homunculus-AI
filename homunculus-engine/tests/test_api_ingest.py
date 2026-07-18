@@ -71,3 +71,21 @@ def test_tenant_isolation_hosp2_cannot_see_hosp1_patient():
     r = c.get(f"/alerts/{patient}", headers=_hdr("tok-hosp2"))
     assert r.status_code == 200
     assert r.json()["alerts"] == []
+
+
+def test_patients_snapshot_lists_patients_with_risk_and_latest():
+    c = _client()
+    events = load_scenario(SCEN / "septic_shock.yaml")
+    for _ts, fhir in events:
+        c.post("/ingest", json=fhir, headers=_hdr("tok-hosp1"))
+    r = c.get("/patients", headers=_hdr("tok-hosp1"))
+    assert r.status_code == 200
+    boards = {b["patient_id"]: b for b in r.json()["patients"]}
+    assert "bed-3" in boards
+    assert boards["bed-3"]["risk"] in ("high", "critical")
+    assert boards["bed-3"]["latest"]["sofa"] >= 2
+
+
+def test_patients_requires_a_tenant_token():
+    c = _client()
+    assert c.get("/patients").status_code == 401

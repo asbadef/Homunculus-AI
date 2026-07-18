@@ -9,6 +9,7 @@ from homunculus.canonical import Observation
 from homunculus.reco.engine import Alert, to_alert
 from homunculus.rules import antibiotic_clock, septic_shock
 from homunculus.state.repository import InMemoryPatientRepository, PatientRepository
+from homunculus.state.timeline import PatientState
 
 _RECOGNITION_KINDS = {"sepsis", "septic_shock"}
 
@@ -42,3 +43,9 @@ class Engine:
 
     def active_alerts(self, patient_id: str) -> list[Alert]:
         return list(self._alerts.get(patient_id, {}).values())
+
+    def patient_ids(self) -> list[str]:
+        return self._repo.patient_ids()
+
+    def state(self, patient_id: str) -> PatientState:
+        return self._repo.get_or_create(patient_id)
