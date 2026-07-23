@@ -38,6 +38,11 @@ _ACTIONS: dict[str, list[str]] = {
     "antibiotic_overdue": [
         "Review antibiotic administration urgently — the 1-hour window has closed.",
     ],
+    "news2": [
+        "Review the patient against the NEWS2 escalation response for this band.",
+        "Assess for a reversible cause of the abnormal parameter(s).",
+        "Consider the patient's own baseline — a chronic-abnormal vital may not reflect acute change.",
+    ],
 }
 
 # GRADE certainty phrasing per kind (from the vault). Not a probability.
@@ -47,6 +52,7 @@ _CONFIDENCE: dict[str, str] = {
     "sepsis": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
     "antibiotic_due": "Strong recommendation, very low certainty (SSC 2026).",
     "antibiotic_overdue": "Strong recommendation, very low certainty (SSC 2026).",
+    "news2": "Validated screening aggregate (RCP 2017), not a diagnosis; a population threshold that does not adjust for the patient's baseline.",
 }
 
 

@@ -52,3 +52,22 @@ def test_engine_exposes_patient_ids_and_state():
     eng.ingest(Observation("bed-3", SignalCode.HEART_RATE, 118.0, "bpm", ts, "mon"), now=ts)
     assert eng.patient_ids() == ["bed-3"]
     assert eng.state("bed-3").latest(SignalCode.HEART_RATE).value == 118.0
+
+
+def test_engine_emits_news2_alert_independent_of_infection():
+    # NEWS2 is a general deterioration screen — fires with no suspected infection.
+    eng = Engine()
+    for o in [
+        _obs(SignalCode.RESP_RATE, 26),      # 3
+        _obs(SignalCode.SPO2, 91),           # 3
+        _obs(SignalCode.SBP, 88),            # 3
+        _obs(SignalCode.HEART_RATE, 120),    # 2
+        _obs(SignalCode.TEMPERATURE, 39.5),  # 2  -> total 13, high band
+    ]:
+        eng.ingest(o, now=o.timestamp)
+    alerts = {a.kind: a for a in eng.active_alerts("bed-3")}
+    assert "news2" in alerts
+    a = alerts["news2"]
+    assert a.urgency == "immediate"
+    assert a.supporting_evidence == ["news2-rcp-2017"]
+    assert a.recommended_actions            # non-empty, review-register actions

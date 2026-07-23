@@ -7,7 +7,7 @@ from datetime import datetime
 
 from homunculus.canonical import Observation
 from homunculus.reco.engine import Alert, to_alert
-from homunculus.rules import antibiotic_clock, septic_shock
+from homunculus.rules import antibiotic_clock, news2, septic_shock
 from homunculus.state.repository import InMemoryPatientRepository, PatientRepository
 from homunculus.state.timeline import PatientState
 
@@ -25,6 +25,7 @@ class Engine:
         state.ingest(obs)
 
         findings = list(septic_shock.evaluate(state, now))
+        findings += news2.evaluate(state)
 
         # Anchor the antibiotic clock the first time sepsis/shock is recognized.
         if obs.patient_id not in self._recognized_at:

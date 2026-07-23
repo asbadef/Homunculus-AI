@@ -20,6 +20,8 @@ class SignalCode(Enum):
     SBP = "sbp"
     MAP = "map"
     GCS = "gcs"
+    ACVPU = "acvpu"          # consciousness ordinal: 0=Alert, 1=Confusion, 2=Voice, 3=Pain, 4=Unresponsive (NEWS2)
+    SUPPLEMENTAL_OXYGEN = "supplemental_oxygen"   # 1.0 = receiving oxygen, 0.0 = on air (NEWS2 air-or-oxygen)
     # Labs / gases (intermittent)
     LACTATE = "lactate"
     PLATELETS = "platelets"
