@@ -45,7 +45,7 @@ Projenin bir anda bitmesi mümkün değil; **basamak basamak** ilerliyor. Şu an
 |---|---|---|
 | **1. Bilgi vault'u** | Klinik bilgiyi kaynaklarıyla toplayan "ikinci beyin" (Obsidian) | ✅ Kuruldu (sepsis konusu) |
 | **2. Görünmez motor** | Cihaz verisini alıp, kuralları işletip, gerekçeli uyarı üreten çekirdek. Ekranı yok; sentetik (uydurma) hasta senaryolarıyla test edilir | ✅ Bitti — 54 test geçiyor |
-| **3. Canlı panel** | Doktorun/hemşirenin gerçek zamanlı gördüğü ekran + bildirim + eskalasyon | ⏳ Sıradaki (Plan B) |
+| **3. Canlı panel** | Doktorun/hemşirenin gerçek zamanlı gördüğü ekran + onay + eskalasyon | 🟡 Büyük kısmı bitti — canlı pano (B1) + onay/eskalasyon (B2) çalışıyor; bildirim kanalları (B3) kaldı |
 | **4. Gerçek cihaz + ML** | Gerçek hastane cihazlarına bağlanmak ve öğrenen bir ML modeli eklemek | 🔜 Sonra |
 
 **Şu anki dürüst tablo:** Beyin (vault) ve kalp (motor) çalışıyor. Motor, uydurma bir
@@ -57,7 +57,7 @@ ekranda canlı görüp bildirim aldığı hâl — 3. basamak.
 
 | Gereken parça | Ne işe yarar | Neden henüz yok |
 |---|---|---|
-| **NEWS2** (bkz. Sözlük) | Laboratuvar beklemeden, sadece hayati bulgularla "bu hasta kötüleşiyor mu?" taraması | Önce spesifikasyonunun vault'a alınması gerekiyor — uydurmadan yazılamaz |
+| **NEWS2** (bkz. Sözlük) | Laboratuvar beklemeden, sadece hayati bulgularla "bu hasta kötüleşiyor mu?" taraması | ✅ Vault'ta. Sırada: motora kural olarak eklemek + üstüne hastaya-göreli katman |
 | **Canlı panel (React)** | Doktor/hemşire görünümü, hasta listesi, canlı grafikler, uyarı geçmişi | Plan B; motor önce bitmesi gerekiyordu |
 | **Bildirim + eskalasyon** | Uyarıyı doktora iletmek; 20 dk cevap yoksa başka birine yükseltmek | Plan B |
 | **Denetim kaydı (audit)** | Her uyarı/öneri/onayın değişmez kaydı — güven ve hukuk için | Plan B |
@@ -163,11 +163,17 @@ için), anlamı Türkçe anlatılır.
   uyarı skoru.
 - *Tıbbi:* Güncel kılavuz (SSC 2026) hastane sepsis **taraması** için NEWS2/NEWS/MEWS/SIRS'i
   **qSOFA yerine** öneriyor (güçlü öneri).
-- *Homunculus'ta:* **Henüz yok, ama en öncelikli eksik.** Neden bu kadar değerli? Çünkü tamamen
-  sürekli-gelen sinyallerden hesaplanır — laboratuvar gerektirmez, yani motorun zaten aldığı
-  veriyle *hemen* çalışır. Sıfır ML, sıfır veri seti ile kılavuza uygun bir çıktı verir.
-- *Neden henüz yok:* Kesin parametre tablosunu **uydurmadan** yazamayız; önce resmi kaynağının
-  (Royal College of Physicians) vault'a alınması gerekiyor.
+- *Homunculus'ta:* **Artık vault'ta** (tam tablo + risk bantları alındı). Neden bu kadar değerli?
+  Çünkü tamamen sürekli-gelen sinyallerden hesaplanır — laboratuvar gerektirmez, yani motorun zaten
+  aldığı veriyle *hemen* çalışır. Sıfır ML, sıfır veri seti ile kılavuza uygun bir çıktı verir.
+  Sıradaki iş: motora bir kural olarak eklemek.
+- **Neden KULLANMIYORUZ (tek başına):** NEWS2 **popülasyon-eşiği** temellidir — herkese aynı bantı
+  uygular, hastanın *kendi normalini* ve yandaş tanılarını dikkate almaz. Kronik atriyal
+  fibrilasyonlu, nabzı normalde 100-110 olan bir hasta her ölçümde puan alır; tansiyonu normalde
+  yüksek olan bir hasta, kendisi için tehlikeli bir düşüşte "iyi" görünür. Kronik-normal değerlere
+  alarm çalmak, tam da klinisyenin görmezden gelmeyi öğrendiği gürültüdür. Bu yüzden NEWS2'nin
+  üstüne bir **hastaya-göreli / komorbidite-farkındalıklı katman** gerekir (aşağıdaki köşeye bakın).
+  — bu, sizin ilettiğiniz doktor görüşünün ta kendisi.
 
 **qSOFA (quick SOFA)**
 - *Basit:* Üç maddelik hızlı kontrol: solunum ≥22, tansiyon (üst) ≤100, bilinç bulanık. İkisi
@@ -283,6 +289,15 @@ Projenin en öğretici kararları. Bir şeyi *yapmamak* da bir tasarım kararıd
 - **Neden qSOFA ile tarama yapmıyoruz?** Duyarlılığı %24; hastaların dörtte üçünü kaçırır.
   Tarama aracı kaçırmamalıdır. (Detay yukarıda.)
 
+- **Neden sabit eşikler (ör. NEWS2) tek başına yetmez — "normal" hastaya özeldir.** (Sizin
+  ilettiğiniz doktor görüşü.) Aynı sayı bir hastada normal, ötekinde tehlike: **kronik AF'li**
+  hastada nabız 100-110 normalse alarm çalmamalı, ama **anamnezinde AF yokken akut AF'ye giren**
+  hastada çalmalı (ikinci inmeyi tetikleyebilir); **kronik hipertansiflerde** tansiyonun 90-100'e
+  *düşmesi* önemliyken, bazali zaten 90-100 olan için normaldir. Bu yüzden alarmı **hastanın kendi
+  bazaline + yandaş tanılarına** göre değerlendiren bir katman gerekir; kronik-normali bastır, akut
+  değişimi öne çıkar. Bu, motora **yatış tanıları (komorbiditeler)** ve **bazal vital profili** gibi
+  yeni girdiler ister. (Vault'ta `patient-relative-alerting` açık tasarım sorusu olarak kayıtlı.)
+
 - **Neden hazır bir ML modeline körü körüne güvenmiyoruz?** Çünkü şiddet skorları kısmen
   *doktorun tepkisini* ölçer (örn. vazopresör dozu, doktor hastanın kötüleştiğini fark edince
   artar). Bu özelliklerle eğitilen model "geçmişi tahmin etmeyi" öğrenir: test setinde harika
@@ -303,11 +318,14 @@ Projenin en öğretici kararları. Bir şeyi *yapmamak* da bir tasarım kararıd
 
 Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
 
-- **NEWS2 detayı** — parametre bantları ve puanlama (kaynağı vault'a alınınca).
+- **Hastaya-göreli / komorbidite katmanı** — bazal vital profili, yandaş tanı, akut-vs-kronik ayrımı
+  (yukarıdaki köşede özetlendi; sıradaki tasarım turlarından biri).
 - **Ventilatör / solunum terimleri** — PEEP, tidal hacim, plato basıncı, ARDSnet,
   weaning/ekstübasyon, kan gazı (ABG) yorumlama.
-- **Panel/ürün terimleri** — WebSocket, eskalasyon eşiği, doktor/hemşire görünümü.
 - **ML terimleri** — etiket (label), time-zero, AUROC, kalibrasyon, lead-time, ablasyon,
   MIMIC-IV/eICU.
+
+*(Not: Canlı panel — hasta listesi, canlı alarmlar, onay ve eskalasyon — B1+B2 dilimleriyle
+kuruldu ve çalışıyor; "Panel/ürün terimleri" artık gerçek. NEWS2 tablosu vault'a alındı.)*
 
 > Bir terimi merak edip burada bulamazsan, söyle — hem cevaplarım hem de bu dosyaya eklerim.
