@@ -16,7 +16,7 @@ is sourced in the article that carries it.)*
 
 | # | What is missing | Why it matters | Where it bites |
 |---|---|---|---|
-| 1 | **NEWS2 specification** (Royal College of Physicians) | The **currently recommended** screening tool, computable entirely from telemetry with no labs. The most directly implementable thing in the vault — and its parameter bands are **not captured**. Do not reconstruct from memory | [[sepsis-screening-tools]], [[qsofa]] |
+| 1 | **NEWS2 — PRIMARY RCP chart** (2017) | NEWS2 is now **captured** ([[news2]], [[news2-rcp-2017]]) but from **secondary** renderings (MDCalc, a blog, a validation paper) because the RCP PDF would not text-extract. One cell is **unresolved** — SpO₂ Scale 2, ≥97% on oxygen, is 2 vs 3 across sources. Obtain the primary RCP chart to confirm that cell and lift the capture from secondary to primary | [[news2]] |
 | 2 | **HeRO / heart-rate-characteristics primary literature** (Griffin & Moorman; the HeRO RCT) | [[heart-rate-variability-neonatal-sepsis]] is the vault's strongest support for the entire product thesis, and it currently rests on **one narrative review's summary** of the primary work. That is thin footing for a load-bearing claim | [[heart-rate-variability-neonatal-sepsis]], [[why-early-detection-is-possible]] |
 | 3 | **nSOFA derivation paper** (Wynn & Polin, 2020) | The **scoring thresholds are not in the vault** — the systematic review omits the table | [[nsofa]] |
 | 4 | **SSC 2026 full text** (Crit Care Med 54(4):725–812) | Only ~19 of **129 statements** are captured, from SCCM's summary page. Critically: **does the guideline say anything about automated screening, ML, or clinical decision support?** Unknown. This bears directly on what Homunculus is allowed to claim | [[surviving-sepsis-campaign-2026]] |
@@ -30,6 +30,12 @@ be written without capturing a source first.**
   captured**. The literature exists (ICU alarm burden, false-alarm rates, the Joint Commission
   National Patient Safety Goal on alarm management). **Highest-value missing article** — the whole
   "why not just thresholds" argument leans on it.
+- **[[patient-relative-alerting]]** — a **clinician design requirement** (relayed 2026-07): evaluate
+  deviations against the patient's **own baseline + comorbidities**, not fixed population thresholds.
+  Chronic AF at HR 100–110, or a chronic-hypertensive dropping to a systolic that is "normal" for a
+  normotensive, must NOT alarm; **new-onset** AF or a drop from a high baseline must. Directly modifies
+  [[news2]] (which is population-threshold) and shapes B2. Needs [[alarm-fatigue]] + baseline/comorbidity
+  literature captured before it becomes a sourced article; the design requirement itself is recorded now.
 - **[[grade-methodology]]** — needed to explain "strong recommendation, very low certainty," which
   appears throughout [[antimicrobial-timing-sepsis]] and matters for how Homunculus reports
   confidence.

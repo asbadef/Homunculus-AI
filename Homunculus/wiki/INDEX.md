@@ -46,6 +46,10 @@ The map of the vault. **Read this first for any question**, then follow the link
 
 - **[[sepsis-screening-tools]]** — **use NEWS2/NEWS/MEWS/SIRS, not qSOFA** (strong, 2026). NEWS2 needs
   **no labs** — it is computable live from telemetry. The most implementable thing in the vault.
+- **[[news2]]** — the full NEWS2 scoring table + risk bands + escalation. The recommended adult screen,
+  computable live with no labs. **But it is population-threshold** → needs a **patient-relative /
+  comorbidity-aware layer** (a clinician's requirement) or it fires on chronic-normal values = alarm
+  fatigue. See [[patient-relative-alerting]].
 - **[[antimicrobial-timing-sepsis]]** — **the 1-hour window**, and the 2026 change that narrowed
   non-shock sepsis from 3 hours to 1. This is the latency budget for the entire adult pathway.
 
@@ -92,8 +96,9 @@ The map of the vault. **Read this first for any question**, then follow the link
 | [[phoenix-criteria-jama-2024]] — Schlapbach et al., *JAMA* 2024 | guideline | **high** | current |
 | [[neonatal-sepsis-review-2024]] — Kariniotaki et al., *Antibiotics* 2024 | review | moderate | current |
 | [[nsofa-systematic-review-2026]] — Cerbu et al., *Diagnostics* 2026 | review | moderate | current |
+| [[news2-rcp-2017]] — Royal College of Physicians, 2017 | guideline | **high** | current *(secondary-sourced extract; one cell unresolved)* |
 
-**All six are `capture: extract`, not full text.** Absence of a statement in an extract is **not**
+**All seven are `capture: extract`, not full text.** Absence of a statement in an extract is **not**
 evidence of its absence in the source. See `CLAUDE.md`.
 
 ## Answered questions
