@@ -35,6 +35,10 @@ class Finding:
     summary: str
     reasoning: str
     citations: list[Citation] = field(default_factory=list)
+    # Patient-relative layer: a finding explained by the patient's charted baseline is
+    # downgraded (does not alarm/escalate) but stays visible with a chronic_context note.
+    downgraded: bool = False
+    chronic_context: str = ""
 
     def __post_init__(self) -> None:
         if not self.citations:

@@ -43,6 +43,10 @@ _ACTIONS: dict[str, list[str]] = {
         "Assess for a reversible cause of the abnormal parameter(s).",
         "Consider the patient's own baseline — a chronic-abnormal vital may not reflect acute change.",
     ],
+    "acute_change": [
+        "Assess for an acute cause of the deviation from this patient's charted baseline.",
+        "Review whether the charted baseline range is still current for this patient.",
+    ],
 }
 
 # GRADE certainty phrasing per kind (from the vault). Not a probability.
@@ -53,6 +57,7 @@ _CONFIDENCE: dict[str, str] = {
     "antibiotic_due": "Strong recommendation, very low certainty (SSC 2026).",
     "antibiotic_overdue": "Strong recommendation, very low certainty (SSC 2026).",
     "news2": "Validated screening aggregate (RCP 2017), not a diagnosis; a population threshold that does not adjust for the patient's baseline.",
+    "acute_change": "Deviation from the patient's clinician-charted baseline (not a minted threshold); the patient-specific-normal principle NEWS2 itself uses in Scale 2.",
 }
 
 
@@ -68,6 +73,8 @@ class Alert:
     recommended_actions: list[str]
     confidence: str
     source: str = "rule"             # 'rule' or (later) 'model'
+    downgraded: bool = False         # patient-relative: chronic-expected, does not alarm/escalate
+    chronic_context: str = ""        # why it was downgraded, or the acute contributor when it wasn't
 
 
 def to_alert(finding: Finding, patient_id: str) -> Alert:
@@ -83,4 +90,6 @@ def to_alert(finding: Finding, patient_id: str) -> Alert:
             finding.kind, ["Review the patient and the supporting evidence."]
         ),
         confidence=_CONFIDENCE.get(finding.kind, "See supporting evidence."),
+        downgraded=finding.downgraded,
+        chronic_context=finding.chronic_context,
     )

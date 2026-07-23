@@ -7,7 +7,8 @@ from datetime import datetime
 
 from homunculus.canonical import Observation
 from homunculus.reco.engine import Alert, to_alert
-from homunculus.rules import antibiotic_clock, news2, septic_shock
+from homunculus.rules import antibiotic_clock, news2, patient_relative, septic_shock
+from homunculus.state.profile import PatientProfile
 from homunculus.state.repository import InMemoryPatientRepository, PatientRepository
 from homunculus.state.timeline import PatientState
 
@@ -19,6 +20,11 @@ class Engine:
         self._repo = repository or InMemoryPatientRepository()
         self._recognized_at: dict[str, datetime] = {}
         self._alerts: dict[str, dict[str, Alert]] = {}   # patient -> kind -> alert
+        self._profiles: dict[str, PatientProfile] = {}
+
+    def set_profile(self, profile: PatientProfile) -> None:
+        """Register a clinician-entered baseline/comorbidity profile for a patient."""
+        self._profiles[profile.patient_id] = profile
 
     def ingest(self, obs: Observation, now: datetime) -> list[Alert]:
         state = self._repo.get_or_create(obs.patient_id)
@@ -26,6 +32,8 @@ class Engine:
 
         findings = list(septic_shock.evaluate(state, now))
         findings += news2.evaluate(state)
+        # Patient-relative layer: downgrade chronic-normal, surface acute deviation.
+        findings = patient_relative.apply(findings, state, self._profiles.get(obs.patient_id))
 
         # Anchor the antibiotic clock the first time sepsis/shock is recognized.
         if obs.patient_id not in self._recognized_at:

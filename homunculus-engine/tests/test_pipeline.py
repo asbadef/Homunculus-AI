@@ -71,3 +71,40 @@ def test_engine_emits_news2_alert_independent_of_infection():
     assert a.urgency == "immediate"
     assert a.supporting_evidence == ["news2-rcp-2017"]
     assert a.recommended_actions            # non-empty, review-register actions
+
+
+def test_engine_downgrades_chronic_baseline_news2():
+    from homunculus.state.profile import BaselineRange, PatientProfile
+    from homunculus.canonical import SignalCode as SC
+    eng = Engine()
+    eng.set_profile(PatientProfile(
+        "bed-3",
+        comorbidities=frozenset({"copd", "chronic_af"}),
+        baselines={SC.RESP_RATE: BaselineRange(21, 24),
+                   SC.HEART_RATE: BaselineRange(120, 130),
+                   SC.SBP: BaselineRange(100, 110)},
+    ))
+    for o in [_obs(SC.RESP_RATE, 22), _obs(SC.HEART_RATE, 125), _obs(SC.SBP, 105)]:
+        eng.ingest(o, now=o.timestamp)
+    alerts = {a.kind: a for a in eng.active_alerts("bed-3")}
+    assert "news2" in alerts
+    a = alerts["news2"]
+    assert a.downgraded is True
+    assert a.urgency == "routine"           # will not escalate
+    assert "baseline" in a.chronic_context.lower()
+
+
+def test_engine_surfaces_acute_change_from_baseline():
+    from homunculus.state.profile import BaselineRange, PatientProfile
+    from homunculus.canonical import SignalCode as SC
+    eng = Engine()
+    eng.set_profile(PatientProfile(
+        "bed-3", comorbidities=frozenset({"chronic_hypertension"}),
+        baselines={SC.SBP: BaselineRange(150, 170)},
+    ))
+    o = _obs(SC.SBP, 95)
+    eng.ingest(o, now=o.timestamp)
+    alerts = {a.kind: a for a in eng.active_alerts("bed-3")}
+    assert "acute_change" in alerts
+    assert alerts["acute_change"].supporting_evidence == ["news2-rcp-2017"]
+    assert alerts["acute_change"].recommended_actions
