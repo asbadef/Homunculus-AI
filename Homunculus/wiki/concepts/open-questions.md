@@ -26,16 +26,13 @@ is sourced in the article that carries it.)*
 These wikilinks appear in articles and resolve to nothing. Each is a candidate article; **none may
 be written without capturing a source first.**
 
-- **[[alarm-fatigue]]** — referenced 5× across the vault as a central design risk, with **no source
+- **[[alarm-fatigue]]** — referenced across the vault as a central design risk, with **no source
   captured**. The literature exists (ICU alarm burden, false-alarm rates, the Joint Commission
   National Patient Safety Goal on alarm management). **Highest-value missing article** — the whole
-  "why not just thresholds" argument leans on it.
-- **[[patient-relative-alerting]]** — a **clinician design requirement** (relayed 2026-07): evaluate
-  deviations against the patient's **own baseline + comorbidities**, not fixed population thresholds.
-  Chronic AF at HR 100–110, or a chronic-hypertensive dropping to a systolic that is "normal" for a
-  normotensive, must NOT alarm; **new-onset** AF or a drop from a high baseline must. Directly modifies
-  [[news2]] (which is population-threshold) and shapes B2. Needs [[alarm-fatigue]] + baseline/comorbidity
-  literature captured before it becomes a sourced article; the design requirement itself is recorded now.
+  "why not just thresholds" argument leans on it, and it is now the one **still-missing dependency of
+  [[patient-relative-alerting]]**, which has been *written and implemented* (clinician-charted
+  baseline, downgrade chronic-normal, surface acute deviation) but grounds its clinical *why* only on
+  NEWS2 Scale 2 until this is captured.
 - **[[grade-methodology]]** — needed to explain "strong recommendation, very low certainty," which
   appears throughout [[antimicrobial-timing-sepsis]] and matters for how Homunculus reports
   confidence.

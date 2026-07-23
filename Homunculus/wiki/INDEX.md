@@ -50,6 +50,10 @@ The map of the vault. **Read this first for any question**, then follow the link
   computable live with no labs. **But it is population-threshold** → needs a **patient-relative /
   comorbidity-aware layer** (a clinician's requirement) or it fires on chronic-normal values = alarm
   fatigue. See [[patient-relative-alerting]].
+- **[[patient-relative-alerting]]** — judge a patient against **their own clinician-charted baseline**,
+  not the population threshold. Downgrade chronic-normal (chronic AF/COPD living at NEWS2 4–6), surface
+  acute deviation (a chronic-hypertensive dropping to a "normal-looking" systolic). **Implemented** in
+  the engine; the general form of NEWS2's own Scale 2. Sourcing dependency: [[alarm-fatigue]].
 - **[[antimicrobial-timing-sepsis]]** — **the 1-hour window**, and the 2026 change that narrowed
   non-shock sepsis from 3 hours to 1. This is the latency budget for the entire adult pathway.
 
