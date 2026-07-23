@@ -57,7 +57,8 @@ ekranda canlı görüp bildirim aldığı hâl — 3. basamak.
 
 | Gereken parça | Ne işe yarar | Neden henüz yok |
 |---|---|---|
-| **NEWS2** (bkz. Sözlük) | Laboratuvar beklemeden, sadece hayati bulgularla "bu hasta kötüleşiyor mu?" taraması | ✅ Vault'ta. Sırada: motora kural olarak eklemek + üstüne hastaya-göreli katman |
+| **NEWS2** (bkz. Sözlük) | Laboratuvar beklemeden, sadece hayati bulgularla "bu hasta kötüleşiyor mu?" taraması | ✅ Vault'ta **ve** motorda (kural, Ölçek 1) |
+| **Hastaya-göreli / komorbidite katmanı** | Alarmı hastanın *kendi* bazaline göre değerlendir: kronik-normali bastır, akut değişimi öne çıkar | ✅ Kuruldu (klinisyen profili + indirge/akut-değişim) |
 | **Canlı panel (React)** | Doktor/hemşire görünümü, hasta listesi, canlı grafikler, uyarı geçmişi | Plan B; motor önce bitmesi gerekiyordu |
 | **Bildirim + eskalasyon** | Uyarıyı doktora iletmek; 20 dk cevap yoksa başka birine yükseltmek | Plan B |
 | **Denetim kaydı (audit)** | Her uyarı/öneri/onayın değişmez kaydı — güven ve hukuk için | Plan B |
@@ -163,10 +164,13 @@ için), anlamı Türkçe anlatılır.
   uyarı skoru.
 - *Tıbbi:* Güncel kılavuz (SSC 2026) hastane sepsis **taraması** için NEWS2/NEWS/MEWS/SIRS'i
   **qSOFA yerine** öneriyor (güçlü öneri).
-- *Homunculus'ta:* **Artık vault'ta** (tam tablo + risk bantları alındı). Neden bu kadar değerli?
-  Çünkü tamamen sürekli-gelen sinyallerden hesaplanır — laboratuvar gerektirmez, yani motorun zaten
-  aldığı veriyle *hemen* çalışır. Sıfır ML, sıfır veri seti ile kılavuza uygun bir çıktı verir.
-  Sıradaki iş: motora bir kural olarak eklemek.
+- *Homunculus'ta:* **Vault'ta *ve* artık motorda çalışıyor** (bir `rules/` kuralı olarak, Ölçek 1).
+  Neden bu kadar değerli? Çünkü tamamen sürekli-gelen sinyallerden hesaplanır — laboratuvar
+  gerektirmez, motorun zaten aldığı veriyle *hemen* çalışır. Sıfır ML, sıfır veri seti ile kılavuza
+  uygun bir çıktı. Motor tek bir "news2" uyarısı üretir, banda göre aciliyet (≥7 anında, 5-6 yakında)
+  ve tek-parametre-3 kuralı dahil; eksik vital olduğunda skoru "kısmi" diye dürüstçe işaretler.
+  *(Ölçek 2 — hiperkapnik — kaynaklarda çözülmemiş bir hücre içerdiği için bilinçli olarak dışarıda:
+  uydurma eşik koymayız.)*
 - **Neden KULLANMIYORUZ (tek başına):** NEWS2 **popülasyon-eşiği** temellidir — herkese aynı bantı
   uygular, hastanın *kendi normalini* ve yandaş tanılarını dikkate almaz. Kronik atriyal
   fibrilasyonlu, nabzı normalde 100-110 olan bir hasta her ölçümde puan alır; tansiyonu normalde
@@ -296,7 +300,11 @@ Projenin en öğretici kararları. Bir şeyi *yapmamak* da bir tasarım kararıd
   *düşmesi* önemliyken, bazali zaten 90-100 olan için normaldir. Bu yüzden alarmı **hastanın kendi
   bazaline + yandaş tanılarına** göre değerlendiren bir katman gerekir; kronik-normali bastır, akut
   değişimi öne çıkar. Bu, motora **yatış tanıları (komorbiditeler)** ve **bazal vital profili** gibi
-  yeni girdiler ister. (Vault'ta `patient-relative-alerting` açık tasarım sorusu olarak kayıtlı.)
+  yeni girdiler ister. **Artık kuruldu:** klinisyenin girdiği hasta profili (komorbidite + bazal
+  aralıklar) motorda `patient-relative` katmanını besliyor — her puanlayan vital hastanın charted
+  bazı içindeyse uyarı "Beklenen (kronik)" diye **indirgenir** (görünür kalır ama alarm/eskalasyon
+  yapmaz), bir vital bazın *dışına* çıkarsa **akut değişim** uyarısı doğar. Eşiği biz icat etmeyiz —
+  **hep klinisyenin girdiği aralıktır**. (Vault: `patient-relative-alerting`.)
 
 - **Neden hazır bir ML modeline körü körüne güvenmiyoruz?** Çünkü şiddet skorları kısmen
   *doktorun tepkisini* ölçer (örn. vazopresör dozu, doktor hastanın kötüleştiğini fark edince
@@ -318,14 +326,13 @@ Projenin en öğretici kararları. Bir şeyi *yapmamak* da bir tasarım kararıd
 
 Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
 
-- **Hastaya-göreli / komorbidite katmanı** — bazal vital profili, yandaş tanı, akut-vs-kronik ayrımı
-  (yukarıdaki köşede özetlendi; sıradaki tasarım turlarından biri).
 - **Ventilatör / solunum terimleri** — PEEP, tidal hacim, plato basıncı, ARDSnet,
   weaning/ekstübasyon, kan gazı (ABG) yorumlama.
 - **ML terimleri** — etiket (label), time-zero, AUROC, kalibrasyon, lead-time, ablasyon,
   MIMIC-IV/eICU.
 
 *(Not: Canlı panel — hasta listesi, canlı alarmlar, onay ve eskalasyon — B1+B2 dilimleriyle
-kuruldu ve çalışıyor; "Panel/ürün terimleri" artık gerçek. NEWS2 tablosu vault'a alındı.)*
+kuruldu ve çalışıyor; "Panel/ürün terimleri" artık gerçek. NEWS2 hem vault'ta hem motorda; hastaya-
+göreli / komorbidite katmanı da kuruldu — sıradaki büyük iş küçük ML modeli.)*
 
 > Bir terimi merak edip burada bulamazsan, söyle — hem cevaplarım hem de bu dosyaya eklerim.
