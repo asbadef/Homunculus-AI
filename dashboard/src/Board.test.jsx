@@ -41,3 +41,17 @@ describe("Board", () => {
     expect(screen.getByText("sepsis-3-jama-2016")).toBeInTheDocument();
   });
 });
+
+it("lists escalated alerts in the Eskale section", async () => {
+  const escalatedPatient = {
+    patient_id: "bed-3", risk: "critical", latest: { sofa: 8 },
+    alerts: [{ kind: "septic_shock", severity: "critical", urgency: "immediate", summary: "Septik şok",
+      clinical_reasoning: "r", supporting_evidence: ["sepsis-3-jama-2016"], recommended_actions: ["x"],
+      confidence: "c", acknowledged: false, escalated: true, first_seen_at: "2026-07-19T10:00:00+00:00" }],
+  };
+  const fetchBoard = vi.fn().mockResolvedValue([escalatedPatient]);
+  const openStream = vi.fn().mockReturnValue(() => {});
+  render(<Board token="t" fetchBoard={fetchBoard} openStream={openStream} />);
+  await waitFor(() => expect(screen.getByText(/Eskale/)).toBeInTheDocument());
+  expect(screen.getAllByText("bed-3").length).toBeGreaterThan(0);
+});

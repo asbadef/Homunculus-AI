@@ -16,3 +16,14 @@ export function openStream(token, onUpdate, onStatus = () => {}) {
   source.onmessage = (e) => onUpdate(JSON.parse(e.data));
   return () => source.close();
 }
+
+// Acknowledge an alert. Returns the updated patient board.
+export async function ackAlert(token, patientId, kind, role) {
+  const res = await fetch("/ack", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ patient_id: patientId, kind, role }),
+  });
+  if (!res.ok) throw new Error(`POST /ack failed: ${res.status}`);
+  return res.json();
+}

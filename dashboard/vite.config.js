@@ -8,6 +8,7 @@ export default defineConfig({
       "/patients": "http://localhost:8000",
       "/stream": "http://localhost:8000",
       "/ingest": "http://localhost:8000",
+      "/ack": "http://localhost:8000",
     },
   },
   test: {
