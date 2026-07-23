@@ -78,3 +78,29 @@ describe("PatientDetail acknowledge/escalation", () => {
     expect(screen.queryByRole("button", { name: /Onayla/ })).toBeNull();
   });
 });
+
+
+describe("PatientDetail patient-relative", () => {
+  const chronic = {
+    patient_id: "bed-3", risk: "low", latest: { sofa: 0 },
+    alerts: [{
+      kind: "news2", severity: "low", urgency: "routine",
+      summary: "NEWS2 5 — medium risk", clinical_reasoning: "r",
+      supporting_evidence: ["news2-rcp-2017"], recommended_actions: ["Review the patient."],
+      confidence: "c", acknowledged: false, escalated: false,
+      downgraded: true,
+      chronic_context: "Expected for this patient — pulse 125 within charted baseline 120-130.",
+    }],
+  };
+
+  it("marks a downgraded finding as expected/chronic and shows the context", () => {
+    render(<PatientDetail patient={chronic} />);
+    expect(screen.getByText(/Beklenen \(kronik\)/)).toBeInTheDocument();
+    expect(screen.getByText(/within charted baseline 120-130/)).toBeInTheDocument();
+  });
+
+  it("does not show an Onayla button for a downgraded finding", () => {
+    render(<PatientDetail patient={chronic} />);
+    expect(screen.queryByText("Onayla")).not.toBeInTheDocument();
+  });
+});

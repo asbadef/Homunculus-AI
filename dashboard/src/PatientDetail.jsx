@@ -12,14 +12,26 @@ function LatestStrip({ latest }) {
 
 function AlertCard({ alert, onAck }) {
   const at = alert.acknowledged_at ? new Date(alert.acknowledged_at).toLocaleTimeString() : "";
+  const border = alert.downgraded ? "#bbb" : riskColor(alert.severity);
+  const titleColor = alert.downgraded ? "#666" : riskColor(alert.severity);
   return (
-    <div style={{ border: `1px solid ${riskColor(alert.severity)}`, borderRadius: 6, padding: 12, marginBottom: 12 }}>
-      {alert.escalated && (
+    <div style={{ border: `1px solid ${border}`, borderRadius: 6, padding: 12, marginBottom: 12,
+                  background: alert.downgraded ? "#f7f7f7" : "#fff" }}>
+      {alert.escalated && !alert.downgraded && (
         <div style={{ background: "#c0392b", color: "#fff", fontWeight: 700, padding: "4px 8px", borderRadius: 4, marginBottom: 8 }}>
           ESKALE EDİLDİ
         </div>
       )}
-      <div style={{ color: riskColor(alert.severity), fontWeight: 700 }}>⚠ {alert.summary}</div>
+      {alert.downgraded && (
+        <div style={{ display: "inline-block", background: "#e0e0e0", color: "#555", fontSize: 12,
+                      fontWeight: 600, padding: "2px 8px", borderRadius: 10, marginBottom: 8 }}>
+          Beklenen (kronik)
+        </div>
+      )}
+      <div style={{ color: titleColor, fontWeight: 700 }}>{alert.downgraded ? "› " : "⚠ "}{alert.summary}</div>
+      {alert.chronic_context && (
+        <p style={{ margin: "6px 0", fontSize: 13, color: "#666", fontStyle: "italic" }}>{alert.chronic_context}</p>
+      )}
       <p style={{ margin: "8px 0" }}><strong>Gerekçe:</strong> {alert.clinical_reasoning}</p>
       <div style={{ margin: "8px 0" }}>
         <strong>Önerilen:</strong>
@@ -27,11 +39,13 @@ function AlertCard({ alert, onAck }) {
       </div>
       <div style={{ fontSize: 13, color: "#555" }}><strong>Kaynak:</strong> {alert.supporting_evidence.join(", ")}</div>
       <div style={{ fontSize: 13, color: "#555" }}><strong>Güven:</strong> {alert.confidence}</div>
-      <div style={{ marginTop: 10 }}>
-        {alert.acknowledged
-          ? <span style={{ color: "#2e7d32", fontWeight: 600 }}>✓ Onaylandı: {alert.acknowledged_by} · {at}</span>
-          : <button onClick={() => onAck(alert.kind)}>Onayla</button>}
-      </div>
+      {!alert.downgraded && (
+        <div style={{ marginTop: 10 }}>
+          {alert.acknowledged
+            ? <span style={{ color: "#2e7d32", fontWeight: 600 }}>✓ Onaylandı: {alert.acknowledged_by} · {at}</span>
+            : <button onClick={() => onAck(alert.kind)}>Onayla</button>}
+        </div>
+      )}
     </div>
   );
 }
