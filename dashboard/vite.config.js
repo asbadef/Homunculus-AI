@@ -9,6 +9,7 @@ export default defineConfig({
       "/stream": "http://localhost:8000",
       "/ingest": "http://localhost:8000",
       "/ack": "http://localhost:8000",
+      "/notifications": "http://localhost:8000",
     },
   },
   test: {
