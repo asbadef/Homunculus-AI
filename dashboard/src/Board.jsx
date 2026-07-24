@@ -1,13 +1,21 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { PatientList } from "./PatientList.jsx";
 import { PatientDetail } from "./PatientDetail.jsx";
-import { fetchBoard as realFetchBoard, openStream as realOpenStream, ackAlert as realAckAlert } from "./api.js";
+import { Toasts } from "./Toasts.jsx";
+import {
+  fetchBoard as realFetchBoard, openStream as realOpenStream, ackAlert as realAckAlert,
+  openNotifications as realOpenNotifications,
+} from "./api.js";
+import { ensurePermission, showDesktop, beep } from "./notifications.js";
 
-export function Board({ token, fetchBoard = realFetchBoard, openStream = realOpenStream, ackAlert = realAckAlert }) {
+export function Board({ token, fetchBoard = realFetchBoard, openStream = realOpenStream,
+                        ackAlert = realAckAlert, openNotifications = realOpenNotifications }) {
   const [patients, setPatients] = useState([]);
   const [selected, setSelected] = useState(null);
   const [status, setStatus] = useState("connecting");
   const [role, setRole] = useState("nurse");
+  const [toasts, setToasts] = useState([]);
+  const toastId = useRef(0);
 
   const mergeBoard = (board) => setPatients((prev) => {
     const rest = prev.filter((p) => p.patient_id !== board.patient_id);
@@ -21,6 +29,20 @@ export function Board({ token, fetchBoard = realFetchBoard, openStream = realOpe
     return () => { closed = true; close(); };
   }, [token, fetchBoard, openStream]);
 
+  const dismissToast = (id) => setToasts((t) => t.filter((x) => x.id !== id));
+
+  useEffect(() => {
+    ensurePermission();
+    const close = openNotifications(token, role, (note) => {
+      const id = ++toastId.current;
+      setToasts((t) => [...t, { id, note }]);
+      showDesktop(note.title || "Uyarı", note.body);
+      beep();
+      setTimeout(() => dismissToast(id), 8000);
+    });
+    return close;
+  }, [token, role, openNotifications]);
+
   const onAck = (patientId, kind) => { ackAlert(token, patientId, kind, role).then(mergeBoard).catch(() => {}); };
 
   const current = patients.find((p) => p.patient_id === selected) ?? null;
@@ -28,6 +50,7 @@ export function Board({ token, fetchBoard = realFetchBoard, openStream = realOpe
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", height: "100vh", fontFamily: "system-ui" }}>
+      <Toasts toasts={toasts} onDismiss={dismissToast} onSelect={setSelected} />
       <aside style={{ borderRight: "1px solid #ddd", overflowY: "auto" }}>
         <div style={{ padding: 12, borderBottom: "1px solid #eee", fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
           <span>Homunculus</span>

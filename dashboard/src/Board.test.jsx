@@ -55,3 +55,14 @@ it("lists escalated alerts in the Eskale section", async () => {
   await waitFor(() => expect(screen.getByText(/Eskale/)).toBeInTheDocument());
   expect(screen.getAllByText("bed-3").length).toBeGreaterThan(0);
 });
+
+it("shows a toast when a notification arrives", async () => {
+  const fetchBoard = vi.fn().mockResolvedValue([{ patient_id: "bed-3", risk: "none", alerts: [], latest: { sofa: 0 } }]);
+  const openStream = vi.fn().mockReturnValue(() => {});
+  let push;
+  const openNotifications = vi.fn().mockImplementation((_t, _r, onNotify) => { push = onNotify; return () => {}; });
+  render(<Board token="t" fetchBoard={fetchBoard} openStream={openStream} openNotifications={openNotifications} />);
+  await waitFor(() => expect(screen.getByText("bed-3")).toBeInTheDocument());
+  act(() => push({ patient_id: "bed-3", body: "bed-3: Septik şok", trigger: "escalation", title: "Eskalasyon", ts: "t" }));
+  await waitFor(() => expect(screen.getByText(/Septik şok/)).toBeInTheDocument());
+});

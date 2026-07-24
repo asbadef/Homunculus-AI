@@ -17,6 +17,16 @@ export function openStream(token, onUpdate, onStatus = () => {}) {
   return () => source.close();
 }
 
+// Opens the role-filtered notification stream. Calls onNotify(notification) per event.
+// Returns a close() function.
+export function openNotifications(token, role, onNotify) {
+  if (typeof EventSource === "undefined") return () => {};   // no SSE (e.g. jsdom) -> no-op
+  const es = new EventSource(
+    `/notifications?token=${encodeURIComponent(token)}&role=${encodeURIComponent(role)}`);
+  es.onmessage = (e) => { try { onNotify(JSON.parse(e.data)); } catch { /* keep-alive */ } };
+  return () => es.close();
+}
+
 // Acknowledge an alert. Returns the updated patient board.
 export async function ackAlert(token, patientId, kind, role) {
   const res = await fetch("/ack", {
