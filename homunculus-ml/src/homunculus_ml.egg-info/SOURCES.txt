@@ -1,0 +1,7 @@
+pyproject.toml
+src/homunculus_ml/__init__.py
+src/homunculus_ml.egg-info/PKG-INFO
+src/homunculus_ml.egg-info/SOURCES.txt
+src/homunculus_ml.egg-info/dependency_links.txt
+src/homunculus_ml.egg-info/requires.txt
+src/homunculus_ml.egg-info/top_level.txt
