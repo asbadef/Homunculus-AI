@@ -22,6 +22,7 @@ from homunculus.api.ackstore import AckStore
 from homunculus.api.board import board_snapshot, patient_board
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.escalation import escalate
+from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.gateway.fhir import GatewayError, parse_fhir_observation
 from homunculus.pipeline import Engine
 
@@ -39,6 +40,17 @@ async def sse_board_frames(queue: asyncio.Queue, keepalive: float = 15.0):
         yield f"data: {json.dumps(board)}\n\n"
 
 
+async def sse_notification_frames(queue: asyncio.Queue, keepalive: float = 15.0):
+    """Same shape as sse_board_frames, for the /notifications stream. Tested directly."""
+    while True:
+        try:
+            note = await asyncio.wait_for(queue.get(), timeout=keepalive)
+        except asyncio.TimeoutError:
+            yield ": keep-alive\n\n"
+            continue
+        yield f"data: {json.dumps(note)}\n\n"
+
+
 def create_app(
     tenants: dict[str, str],
     *,
@@ -51,6 +63,8 @@ def create_app(
     engines: dict[str, Engine] = {}
     stores: dict[str, AckStore] = {}
     broadcaster = Broadcaster()
+    notifier = Notifier()
+    hub = NotificationHub()
 
     def _engine(hospital: str) -> Engine:
         return engines.setdefault(hospital, Engine())
@@ -67,10 +81,15 @@ def create_app(
             alerts = [(pid, a) for pid in engine.patient_ids() for a in engine.active_alerts(pid)]
             newly = escalate(alerts, store.acks, store.first_seen, now, escalate_after)
             if newly != store.escalated:
+                added = newly - store.escalated
                 changed = {pid for (pid, _k) in (newly ^ store.escalated)}
                 store.escalated = newly
                 for pid in changed:
                     await broadcaster.publish(hospital, patient_board(engine, pid, store))
+                if added:
+                    alert_by_key = {(pid, a.kind): a for (pid, a) in alerts}
+                    for note in notifier.for_escalation(hospital, added, alert_by_key):
+                        await hub.publish(hospital, note)
 
     async def _escalation_loop() -> None:
         while True:
@@ -93,6 +112,8 @@ def create_app(
     app.state.broadcaster = broadcaster
     app.state.ack_stores = stores
     app.state.escalation_cycle = _escalation_cycle
+    app.state.notifier = notifier
+    app.state.notification_hub = hub
 
     def _tenant_from_token(token: str | None) -> str:
         hospital = tenants.get(token or "")
@@ -121,6 +142,10 @@ def create_app(
             store.stamp_first_seen(obs.patient_id, a.kind, wall_now)
         store.prune(_live_keys(engine))
         await broadcaster.publish(hospital, patient_board(engine, obs.patient_id, store))
+        # Push a notification for any newly-appeared immediate alert (nurse audience).
+        for note in notifier.for_new(hospital, engine.active_alerts(obs.patient_id)):
+            await hub.publish(hospital, note)
+        notifier.prune(hospital, _live_keys(engine))
         return {"patient_id": obs.patient_id, "alerts": [asdict(a) for a in alerts]}
 
     @app.post("/ack")
@@ -160,6 +185,20 @@ def create_app(
                     yield frame
             finally:
                 broadcaster.unsubscribe(hospital, queue)
+
+        return StreamingResponse(events(), media_type="text/event-stream")
+
+    @app.get("/notifications")
+    async def notifications(token: str | None = None, role: str = "nurse"):
+        hospital = _tenant_from_token(token)
+        queue = hub.subscribe(hospital, role)
+
+        async def events():
+            try:
+                async for frame in sse_notification_frames(queue):
+                    yield frame
+            finally:
+                hub.unsubscribe(hospital, role, queue)
 
         return StreamingResponse(events(), media_type="text/event-stream")
 
