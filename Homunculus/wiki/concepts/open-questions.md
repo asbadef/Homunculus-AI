@@ -53,13 +53,16 @@ be written without capturing a source first.**
 These are not research gaps. They are choices that will be made by default — badly — if nobody makes
 them deliberately.
 
-1. **What is the ML label?** In the adult ICU, Sepsis-3 gives a defensible (if imperfect) target. **In
-   the NICU there is none** ([[nicu-sepsis-gap]]). Culture-positive? Clinician-treated? nSOFA ≥4?
-   Each is biased in a knowable direction, and the choice determines what the model actually learns.
-   **Decide and publish the reasoning; do not let the dataset's convenient column decide.**
+1. **What is the ML label?** **Decided for the adult model** ([[early-sepsis-ml-model]]): the
+   [[physionet-cinc-2019]] Sepsis-3 utilization proxy, shifted to 6 h before onset — a defensible (if
+   imperfect) early-prediction target. **Still open for the NICU**, where there is none
+   ([[nicu-sepsis-gap]]): culture-positive? clinician-treated? nSOFA ≥4? Each biased in a knowable
+   direction. **Decide and publish the reasoning; do not let the dataset's convenient column decide.**
 
-2. **What is time-zero?** "Within 1 hour" of *what* ([[antimicrobial-timing-sepsis]])? Retrospective
-   sepsis studies live or die on this definition, and so will any performance claim Homunculus makes.
+2. **What is time-zero?** **Decided for the model** ([[early-sepsis-ml-model]]): the PhysioNet
+   utilization-based onset, label positive from `t_sepsis − 6 h`. **Still open for the antibiotic
+   clock** — "within 1 hour" of *what* ([[antimicrobial-timing-sepsis]])? Retrospective sepsis
+   studies live or die on this definition, and so will any performance claim Homunculus makes.
 
 3. **Screen, prognostic score, or diagnosis?** The vision's alert list spans all three
    ([[prognosis-vs-diagnosis]]). They cannot be one model with one threshold.

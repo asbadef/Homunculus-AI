@@ -83,6 +83,10 @@ The map of the vault. **Read this first for any question**, then follow the link
 - **[[why-early-detection-is-possible]]** — what the vault actually supports (trend, texture,
   conjunction) and, just as importantly, **what it does not** (no adult early-prediction evidence
   captured; no lead-time number is licensed by anything here).
+- **[[early-sepsis-ml-model]]** — the first ML model: an **additive** `sepsis_watch` signal that
+  flags rising sepsis risk **before the rule fires** (adult ICU, PhysioNet 2019, gradient-boosted
+  trees). Built rule-first — the model only *adds* lead time, never overrides. **Implemented.**
+  Honest-evaluation stance: patient-level split, calibration, intervention ablation, setting caveat.
 
 ## Meta
 
@@ -101,6 +105,7 @@ The map of the vault. **Read this first for any question**, then follow the link
 | [[neonatal-sepsis-review-2024]] — Kariniotaki et al., *Antibiotics* 2024 | review | moderate | current |
 | [[nsofa-systematic-review-2026]] — Cerbu et al., *Diagnostics* 2026 | review | moderate | current |
 | [[news2-rcp-2017]] — Royal College of Physicians, 2017 | guideline | **high** | current *(secondary-sourced extract; one cell unresolved)* |
+| [[physionet-cinc-2019]] — Reyna et al., *Crit Care Med* 2020 | dataset | moderate | current *(description only; data never in repo)* |
 
 **All seven are `capture: extract`, not full text.** Absence of a statement in an extract is **not**
 evidence of its absence in the source. See `CLAUDE.md`.

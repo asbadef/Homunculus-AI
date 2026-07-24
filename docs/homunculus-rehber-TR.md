@@ -46,7 +46,7 @@ Projenin bir anda bitmesi mümkün değil; **basamak basamak** ilerliyor. Şu an
 | **1. Bilgi vault'u** | Klinik bilgiyi kaynaklarıyla toplayan "ikinci beyin" (Obsidian) | ✅ Kuruldu (sepsis konusu) |
 | **2. Görünmez motor** | Cihaz verisini alıp, kuralları işletip, gerekçeli uyarı üreten çekirdek. Ekranı yok; sentetik (uydurma) hasta senaryolarıyla test edilir | ✅ Bitti — 54 test geçiyor |
 | **3. Canlı panel** | Doktorun/hemşirenin gerçek zamanlı gördüğü ekran + onay + eskalasyon | 🟡 Büyük kısmı bitti — canlı pano (B1) + onay/eskalasyon (B2) çalışıyor; bildirim kanalları (B3) kaldı |
-| **4. Gerçek cihaz + ML** | Gerçek hastane cihazlarına bağlanmak ve öğrenen bir ML modeli eklemek | 🔜 Sonra |
+| **4. Gerçek cihaz + ML** | Gerçek hastane cihazlarına bağlanmak ve öğrenen bir ML modeli eklemek | ML ilk dilimi ✅ kuruldu; gerçek-veri eğitimi + gerçek cihaz bağlantısı 🔜 |
 
 **Şu anki dürüst tablo:** Beyin (vault) ve kalp (motor) çalışıyor. Motor, uydurma bir
 hastayı saat saat kötüleştirip doğru uyarıyı doğru anda ürettiğini kanıtlıyor. Ama henüz
@@ -63,7 +63,7 @@ ekranda canlı görüp bildirim aldığı hâl — 3. basamak.
 | **Bildirim + eskalasyon** | Uyarıyı doktora iletmek; 20 dk cevap yoksa başka birine yükseltmek | Plan B |
 | **Denetim kaydı (audit)** | Her uyarı/öneri/onayın değişmez kaydı — güven ve hukuk için | Plan B |
 | **Gerçek cihaz entegrasyonu** | Ventilatör, monitör, pompa verisini gerçek hastaneden almak | Cihaz erişimi + etik/hukuk onayı gerektirir |
-| **ML modeli** | Veriden öğrenerek daha erken/isabetli uyarı | Ayrı alt-proje; halka açık de-identifiye veri (MIMIC-IV) ister |
+| **ML modeli (erken sepsis)** | Veriden öğrenerek kural ateşlenmeden *önce* erken uyarı | ✅ İlk dilim kuruldu (PhysioNet 2019, gradient-boosted ağaçlar); motora `sepsis_watch` ek-sinyali |
 
 ---
 
@@ -328,11 +328,25 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
 
 - **Ventilatör / solunum terimleri** — PEEP, tidal hacim, plato basıncı, ARDSnet,
   weaning/ekstübasyon, kan gazı (ABG) yorumlama.
-- **ML terimleri** — etiket (label), time-zero, AUROC, kalibrasyon, lead-time, ablasyon,
-  MIMIC-IV/eICU.
+- **ML terimleri (ilk model kuruldu — [[early-sepsis-ml-model]]):**
+  - **Etiket (label):** modele "doğru cevap" olarak verdiğimiz şey. Bizde: hasta 6 saat *sonra*
+    sepsis olacak mı? (PhysioNet verisi bunu hazır işaretlemiş.)
+  - **Time-zero (sıfır anı):** "erken" derken neye göre erken? Sepsisin başladığı an; model onu 6
+    saat öncesinden yakalamaya çalışır.
+  - **Sızıntı (leakage):** aynı hastanın bir saatini eğitime, başka saatini teste koyarsan model
+    "kopya çeker" ve testte sahte-iyi görünür. Bu yüzden ayrımı **hasta bazında** yaparız.
+  - **AUROC:** modelin sıralama başarısı (0.5 = yazı-tura, 1.0 = kusursuz).
+  - **Kalibrasyon:** model "%20 risk" dediğinde gerçekten 100 hastadan ~20'si mi oluyor? Sayı
+    dürüst mü? (Brier skoruyla ölçeriz.)
+  - **Ablasyon:** tedaviyle ilgili özellikleri çıkarıp yeniden ölçmek — model hastanın fizyolojisine
+    mi yoksa "doktorun tepkisine" mi dayanıyor anlamak için (Epic Sepsis Modeli dersi).
+  - Model kurallardan sonra, onların **yanına** `sepsis_watch` diye eklenir; asla yerine geçmez,
+    tanı koymaz — sadece "erken bak" der.
 
 *(Not: Canlı panel — hasta listesi, canlı alarmlar, onay ve eskalasyon — B1+B2 dilimleriyle
 kuruldu ve çalışıyor; "Panel/ürün terimleri" artık gerçek. NEWS2 hem vault'ta hem motorda; hastaya-
-göreli / komorbidite katmanı da kuruldu — sıradaki büyük iş küçük ML modeli.)*
+göreli / komorbidite katmanı kuruldu; **küçük ML modeli (erken sepsis) ilk dilimi de kuruldu** —
+eğitim+değerlendirme boru hattı + motora `sepsis_watch` ek-sinyali. Sıradaki iş: modeli gerçek
+PhysioNet verisiyle eğitip performansı ölçmek.)*
 
 > Bir terimi merak edip burada bulamazsan, söyle — hem cevaplarım hem de bu dosyaya eklerim.
