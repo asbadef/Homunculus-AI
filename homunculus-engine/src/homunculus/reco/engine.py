@@ -47,6 +47,11 @@ _ACTIONS: dict[str, list[str]] = {
         "Assess for an acute cause of the deviation from this patient's charted baseline.",
         "Review whether the charted baseline range is still current for this patient.",
     ],
+    "sepsis_watch": [
+        "Assess the patient early — a statistical model flags rising sepsis risk before the rule fires.",
+        "Review the contributing signals and the trend.",
+        "Consider this a prompt to look earlier, not a diagnosis.",
+    ],
 }
 
 # GRADE certainty phrasing per kind (from the vault). Not a probability.
@@ -58,6 +63,7 @@ _CONFIDENCE: dict[str, str] = {
     "antibiotic_overdue": "Strong recommendation, very low certainty (SSC 2026).",
     "news2": "Validated screening aggregate (RCP 2017), not a diagnosis; a population threshold that does not adjust for the patient's baseline.",
     "acute_change": "Deviation from the patient's clinician-charted baseline (not a minted threshold); the patient-specific-normal principle NEWS2 itself uses in Scale 2.",
+    "sepsis_watch": "Statistical early-warning model (setting-specific, not a diagnosis); revalidate before use outside the training setting.",
 }
 
 
