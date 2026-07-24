@@ -1,55 +1,26 @@
 # src/homunculus_ml/features.py
-"""Per-hour feature engineering. The shape both training and the live engine share.
+"""Training-side feature matrix. The per-hour vector is shared with the engine via featurespec.
 
-build_feature_vector(rows, static) is PURE (numpy + stdlib): rows is a chronological list of
-per-hour dicts up to and INCLUDING the scoring hour, so no feature can ever see the future. The
-engine builds the same `rows` from a resampled PatientState, guaranteeing train/score parity."""
+build_feature_vector (and the signal-name constants) live in featurespec.py, which is numpy-only so
+the engine can reuse it without pandas/sklearn. build_matrix here slides the window over a patient
+frame and is pandas-bound (training only)."""
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
-WINDOW_HOURS = 8
-VITALS = ["HR", "O2Sat", "Temp", "SBP", "MAP", "Resp"]
-LABS = ["Lactate", "WBC", "Creatinine", "Platelets", "Bilirubin_total"]
-SIGNALS = VITALS + LABS
-STATICS = ["Age", "Gender"]
+from homunculus_ml.featurespec import (  # re-exported for training callers/tests
+    build_feature_vector, WINDOW_HOURS, VITALS, LABS, SIGNALS, STATICS,
+)
 
-
-def _series(rows: list[dict], signal: str) -> np.ndarray:
-    return np.array([r.get(signal, np.nan) for r in rows], dtype=float)
-
-
-def _ffill_last(vals: np.ndarray) -> float:
-    non_nan = vals[~np.isnan(vals)]
-    return float(non_nan[-1]) if non_nan.size else float("nan")
-
-
-def build_feature_vector(rows: list[dict], static: dict) -> dict[str, float]:
-    fv: dict[str, float] = {}
-    for sig in SIGNALS:
-        vals = _series(rows, sig)
-        observed = vals[~np.isnan(vals)]
-        fv[f"{sig}_last"] = _ffill_last(vals)
-        fv[f"{sig}_min"] = float(observed.min()) if observed.size else float("nan")
-        fv[f"{sig}_max"] = float(observed.max()) if observed.size else float("nan")
-        if observed.size >= 2:
-            idx = np.flatnonzero(~np.isnan(vals))
-            fv[f"{sig}_delta"] = float(observed[-1] - observed[0])
-            # per-hour slope across the observed span (endpoint-based: robust, warning-free)
-            span = float(idx[-1] - idx[0]) or 1.0
-            fv[f"{sig}_slope"] = float((observed[-1] - observed[0]) / span)
-        else:
-            fv[f"{sig}_delta"] = 0.0
-            fv[f"{sig}_slope"] = 0.0
-    for s in STATICS:
-        fv[s] = float(static.get(s, np.nan))
-    return fv
+__all__ = ["build_feature_vector", "build_matrix", "WINDOW_HOURS", "VITALS", "LABS",
+           "SIGNALS", "STATICS"]
 
 
 def build_matrix(patient_df: pd.DataFrame):
     """Slide an expanding window (capped at WINDOW_HOURS) over each patient; one feature row per hour.
     Returns (X: DataFrame, y: ndarray, meta: DataFrame[patient_id, ICULOS])."""
+    import numpy as np
+
     feature_rows, labels, meta = [], [], []
     for pid, g in patient_df.groupby("patient_id", sort=False):
         g = g.sort_values("ICULOS").reset_index(drop=True)
