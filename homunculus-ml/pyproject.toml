@@ -10,6 +10,10 @@ dev = ["pytest>=8.0"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+filterwarnings = [
+    # joblib<->numpy 2.5 internal deprecation on model pickling; not from our code, unfixable here.
+    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

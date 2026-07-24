@@ -34,9 +34,11 @@ def build_feature_vector(rows: list[dict], static: dict) -> dict[str, float]:
         fv[f"{sig}_min"] = float(observed.min()) if observed.size else float("nan")
         fv[f"{sig}_max"] = float(observed.max()) if observed.size else float("nan")
         if observed.size >= 2:
-            fv[f"{sig}_delta"] = float(observed[-1] - observed[0])
             idx = np.flatnonzero(~np.isnan(vals))
-            fv[f"{sig}_slope"] = float(np.polyfit(idx, observed, 1)[0])
+            fv[f"{sig}_delta"] = float(observed[-1] - observed[0])
+            # per-hour slope across the observed span (endpoint-based: robust, warning-free)
+            span = float(idx[-1] - idx[0]) or 1.0
+            fv[f"{sig}_slope"] = float((observed[-1] - observed[0]) / span)
         else:
             fv[f"{sig}_delta"] = 0.0
             fv[f"{sig}_slope"] = 0.0
