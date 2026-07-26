@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Activity, AlertTriangle, History } from "lucide-react";
 import { PatientList } from "./PatientList.jsx";
 import { PatientDetail } from "./PatientDetail.jsx";
 import { Toasts } from "./Toasts.jsx";
@@ -9,6 +10,7 @@ import {
   fetchAudit as realFetchAudit,
 } from "./api.js";
 import { ensurePermission, showDesktop, beep } from "./notifications.js";
+import { sev } from "./theme.js";
 
 export function Board({ token, fetchBoard = realFetchBoard, openStream = realOpenStream,
                         ackAlert = realAckAlert, openNotifications = realOpenNotifications,
@@ -57,22 +59,39 @@ export function Board({ token, fetchBoard = realFetchBoard, openStream = realOpe
   const current = patients.find((p) => p.patient_id === selected) ?? null;
   const escalated = patients.flatMap((p) => p.alerts.filter((a) => a.escalated).map((a) => ({ p, a })));
 
+  const critical = sev("critical");
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", height: "100vh", fontFamily: "system-ui" }}>
+    <div className="grid grid-cols-[320px_1fr] h-screen bg-slate-950 text-slate-100 font-sans">
       <Toasts toasts={toasts} onDismiss={dismissToast} onSelect={selectPatient} />
-      <aside style={{ borderRight: "1px solid #ddd", overflowY: "auto" }}>
-        <div style={{ padding: 12, borderBottom: "1px solid #eee", fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
-          <span>Homunculus</span>
-          <span style={{ fontSize: 12, color: "#888" }}>{status}</span>
+      <aside className="border-r border-slate-800 overflow-y-auto flex flex-col">
+        <div className="flex items-center justify-between px-3 py-3 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <Activity className="text-brand" size={18} />
+            <span className="font-semibold">Homunculus</span>
+          </div>
+          <span className="flex items-center gap-1.5 rounded-full bg-slate-800/60 px-2 py-0.5 text-xs text-slate-400">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${status === "live" ? "bg-emerald-400" : "bg-slate-500"}`}
+            />
+            {status}
+          </span>
         </div>
-        <div style={{ padding: "8px 12px", borderBottom: "1px solid #eee", fontSize: 13 }}>
-          Rol:{" "}
-          <select value={role} onChange={(e) => setRole(e.target.value)}>
+        <div className="flex items-center gap-2 border-b border-slate-800 px-3 py-2 text-sm">
+          <span className="text-slate-400">Rol:</span>
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            className="cursor-pointer rounded border border-slate-700 bg-slate-800 px-2 py-1 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+          >
             <option value="nurse">hemşire</option>
             <option value="doctor">doktor</option>
           </select>
-          {"  "}
-          <button onClick={() => setShowHistory((s) => !s)} style={{ fontSize: 12 }}>
+          <button
+            onClick={() => setShowHistory((s) => !s)}
+            className="ml-auto flex items-center gap-1 rounded px-2 py-1 text-xs text-slate-400 cursor-pointer transition-colors hover:bg-slate-800 hover:text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+          >
+            <History size={14} />
             Bildirim geçmişi
           </button>
         </div>
@@ -80,22 +99,33 @@ export function Board({ token, fetchBoard = realFetchBoard, openStream = realOpe
           <NotificationHistory token={token} fetchAudit={fetchAudit} onSelect={selectPatient} />
         )}
         {escalated.length > 0 && (
-          <div style={{ padding: "8px 12px", borderBottom: "1px solid #eee", background: "#fdecea" }}>
-            <div style={{ color: "#c0392b", fontWeight: 700, fontSize: 13 }}>Eskale ({escalated.length})</div>
-            {escalated.map(({ p, a }) => (
-              <div key={p.patient_id + a.kind} style={{ cursor: "pointer", fontSize: 13, padding: "2px 0" }}
-                   onClick={() => selectPatient(p.patient_id)}>
-                🔴 {p.patient_id} — {a.summary}
-              </div>
-            ))}
+          <div className={`m-3 rounded border ${critical.ring} bg-sev-critical/10 border-sev-critical/40`}>
+            <div className={`flex items-center gap-2 px-3 py-2 text-sm font-semibold ${critical.text}`}>
+              <AlertTriangle className={critical.text} size={14} />
+              Eskale ({escalated.length})
+            </div>
+            <div className="pb-1">
+              {escalated.map(({ p, a }) => (
+                <div
+                  key={p.patient_id + a.kind}
+                  onClick={() => selectPatient(p.patient_id)}
+                  tabIndex={0}
+                  role="button"
+                  className="flex items-center gap-2 px-3 py-1 text-sm cursor-pointer transition-colors hover:bg-sev-critical/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                >
+                  <AlertTriangle className={`${critical.text} shrink-0`} size={14} />
+                  <span>{p.patient_id} — {a.summary}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         <PatientList patients={patients} selected={selected} onSelect={selectPatient} />
       </aside>
-      <main style={{ overflowY: "auto" }}>
+      <main className="overflow-y-auto">
         {current
           ? <PatientDetail patient={current} onAck={(kind) => onAck(current.patient_id, kind)} />
-          : <p style={{ padding: 16, color: "#888" }}>Bir hasta seçin.</p>}
+          : <p className="p-4 text-slate-500">Bir hasta seçin.</p>}
       </main>
     </div>
   );
