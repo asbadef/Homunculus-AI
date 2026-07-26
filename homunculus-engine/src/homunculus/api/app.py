@@ -169,7 +169,9 @@ def create_app(
         # First-seen uses WALL-CLOCK time (escalation measures real elapsed time, not observation time).
         wall_now = datetime.now(timezone.utc)
         for a in engine.active_alerts(obs.patient_id):
-            store.stamp_first_seen(obs.patient_id, a.kind, wall_now)
+            if store.stamp_first_seen(obs.patient_id, a.kind, wall_now):
+                audit.append(AuditEvent(hospital, "first_seen", obs.patient_id, a.kind,
+                                        {"at": wall_now.isoformat()}))
         store.prune(_live_keys(engine))
         await broadcaster.publish(hospital, patient_board(engine, obs.patient_id, store))
         # Push a notification for any newly-appeared immediate alert (nurse audience).

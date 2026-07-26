@@ -21,6 +21,9 @@ def rehydrate(engine: Engine, store: AckStore, records: list[AuditRecord]) -> No
             _replay_ingest(engine, rec)
         elif rec.event_type == "ack":
             _replay_ack(store, rec)
+        elif rec.event_type == "first_seen":
+            store.first_seen.setdefault((rec.patient_id, rec.subject),
+                                        datetime.fromisoformat(rec.payload["at"]))
         # alert / escalation / notification are derived or transient — nothing to replay.
 
 

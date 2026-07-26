@@ -13,8 +13,14 @@ class AckStore:
     first_seen: dict[tuple[str, str], datetime] = field(default_factory=dict)
     escalated: set[tuple[str, str]] = field(default_factory=set)
 
-    def stamp_first_seen(self, patient_id: str, kind: str, now: datetime) -> None:
-        self.first_seen.setdefault((patient_id, kind), now)
+    def stamp_first_seen(self, patient_id: str, kind: str, now: datetime) -> bool:
+        """Record when an alert was first seen. Returns True only if this is a NEW stamp
+        (so the caller can audit it exactly once for restart persistence)."""
+        key = (patient_id, kind)
+        if key in self.first_seen:
+            return False
+        self.first_seen[key] = now
+        return True
 
     def acknowledge(self, patient_id: str, kind: str, role: str, now: datetime) -> None:
         self.acks[(patient_id, kind)] = {"by": role, "at": now}
