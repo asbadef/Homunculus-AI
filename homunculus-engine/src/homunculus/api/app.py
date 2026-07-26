@@ -19,6 +19,7 @@ from fastapi import Body, FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
 
 from homunculus.api.ackstore import AckStore
+from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog
 from homunculus.api.board import board_snapshot, patient_board
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.escalation import escalate
@@ -57,6 +58,7 @@ def create_app(
     escalate_after: timedelta = timedelta(minutes=5),
     escalate_interval: float = 20.0,
     run_escalation_loop: bool = True,
+    audit: AuditLog | None = None,
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
     run_escalation_loop=False disables the background task so tests are deterministic."""
@@ -65,6 +67,7 @@ def create_app(
     broadcaster = Broadcaster()
     notifier = Notifier()
     hub = NotificationHub()
+    audit = audit or InMemoryAuditLog()
 
     def _engine(hospital: str) -> Engine:
         return engines.setdefault(hospital, Engine())
@@ -88,8 +91,13 @@ def create_app(
                     await broadcaster.publish(hospital, patient_board(engine, pid, store))
                 if added:
                     alert_by_key = {(pid, a.kind): a for (pid, a) in alerts}
+                    for key in added:
+                        audit.append(AuditEvent(hospital, "escalation", key[0], key[1],
+                                                {"at": now.isoformat()}))
                     for note in notifier.for_escalation(hospital, added, alert_by_key):
                         await hub.publish(hospital, note)
+                        audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
+                                                {"audience": note.audience, "trigger": note.trigger}))
 
     async def _escalation_loop() -> None:
         while True:
@@ -114,6 +122,7 @@ def create_app(
     app.state.escalation_cycle = _escalation_cycle
     app.state.notifier = notifier
     app.state.notification_hub = hub
+    app.state.audit = audit
 
     def _tenant_from_token(token: str | None) -> str:
         hospital = tenants.get(token or "")
@@ -136,6 +145,13 @@ def create_app(
         engine = _engine(hospital)
         store = _store(hospital)
         alerts = engine.ingest(obs, now=obs.timestamp)
+        audit.append(AuditEvent(hospital, "ingest", obs.patient_id, obs.code.value,
+                                {"value": obs.value, "unit": obs.unit,
+                                 "obs_ts": obs.timestamp.isoformat(), "device": obs.source_device}))
+        for a in alerts:
+            audit.append(AuditEvent(hospital, "alert", a.patient_id, a.kind,
+                                    {"severity": a.severity, "urgency": a.urgency, "summary": a.summary,
+                                     "source": a.source, "evidence": a.supporting_evidence}))
         # First-seen uses WALL-CLOCK time (escalation measures real elapsed time, not observation time).
         wall_now = datetime.now(timezone.utc)
         for a in engine.active_alerts(obs.patient_id):
@@ -145,6 +161,8 @@ def create_app(
         # Push a notification for any newly-appeared immediate alert (nurse audience).
         for note in notifier.for_new(hospital, engine.active_alerts(obs.patient_id)):
             await hub.publish(hospital, note)
+            audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
+                                    {"audience": note.audience, "trigger": note.trigger}))
         notifier.prune(hospital, _live_keys(engine))
         return {"patient_id": obs.patient_id, "alerts": [asdict(a) for a in alerts]}
 
@@ -159,6 +177,8 @@ def create_app(
             raise HTTPException(status_code=404, detail="no such active alert")
         store.acknowledge(patient_id, kind, role, datetime.now(timezone.utc))
         store.escalated.discard((patient_id, kind))  # ack immediately stops escalation
+        audit.append(AuditEvent(hospital, "ack", patient_id, kind,
+                                {"role": role, "at": datetime.now(timezone.utc).isoformat()}))
         board = patient_board(engine, patient_id, store)
         await broadcaster.publish(hospital, board)
         return board
@@ -201,5 +221,13 @@ def create_app(
                 hub.unsubscribe(hospital, role, queue)
 
         return StreamingResponse(events(), media_type="text/event-stream")
+
+    @app.get("/audit")
+    def get_audit(patient_id: str | None = None, event_type: str | None = None,
+                  limit: int = 200, authorization: str | None = Header(default=None)):
+        hospital = _tenant(authorization)
+        recs = audit.records(tenant=hospital, patient_id=patient_id,
+                             event_type=event_type, limit=limit)
+        return {"records": [asdict(r) for r in recs]}
 
     return app
