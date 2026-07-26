@@ -199,6 +199,15 @@ def create_app(
         await broadcaster.publish(hospital, board)
         return board
 
+    @app.post("/view")
+    def view(authorization: str | None = Header(default=None), body: dict = Body(...)):
+        """Record that a clinician opened a patient. Attribution is role-level (no per-user login yet)."""
+        hospital = _tenant(authorization)
+        patient_id = body.get("patient_id", "")
+        audit.append(AuditEvent(hospital, "view", patient_id, "",
+                                {"role": body.get("role", "unknown")}))
+        return {"ok": True}
+
     @app.get("/patients")
     def patients(authorization: str | None = Header(default=None)):
         hospital = _tenant(authorization)

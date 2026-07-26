@@ -66,3 +66,14 @@ it("shows a toast when a notification arrives", async () => {
   act(() => push({ patient_id: "bed-3", body: "bed-3: Septik şok", trigger: "escalation", title: "Eskalasyon", ts: "t" }));
   await waitFor(() => expect(screen.getByText(/Septik şok/)).toBeInTheDocument());
 });
+
+it("records a view when a patient is selected", async () => {
+  const withPatient = { patient_id: "bed-7", risk: "high", latest: { sofa: 3 }, alerts: [] };
+  const fetchBoard = vi.fn().mockResolvedValue([withPatient]);
+  const openStream = vi.fn().mockReturnValue(() => {});
+  const recordView = vi.fn();
+  render(<Board token="t" fetchBoard={fetchBoard} openStream={openStream} recordView={recordView} />);
+  await waitFor(() => expect(screen.getByText("bed-7")).toBeInTheDocument());
+  fireEvent.click(screen.getByText("bed-7"));
+  expect(recordView).toHaveBeenCalledWith("t", "bed-7", "nurse");
+});

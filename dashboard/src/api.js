@@ -27,6 +27,17 @@ export function openNotifications(token, role, onNotify) {
   return () => es.close();
 }
 
+// Record that a clinician opened a patient (role-level attribution). Best-effort, fire-and-forget.
+export async function recordView(token, patientId, role) {
+  try {
+    await fetch("/view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ patient_id: patientId, role }),
+    });
+  } catch { /* best-effort audit; never block the UI */ }
+}
+
 // Acknowledge an alert. Returns the updated patient board.
 export async function ackAlert(token, patientId, kind, role) {
   const res = await fetch("/ack", {

@@ -76,3 +76,14 @@ def test_audit_endpoint_is_tenant_scoped_and_filterable():
     r1 = client.get("/audit?event_type=ingest", headers={"Authorization": "Bearer tok1"})
     body = r1.json()["records"]
     assert len(body) == len(_SHOCK) and all(rec["event_type"] == "ingest" for rec in body)
+
+
+def test_view_writes_view_audit_record():
+    audit = InMemoryAuditLog()
+    app = create_app(TENANTS, run_escalation_loop=False, audit=audit)
+    client = TestClient(app)
+    client.post("/view", json={"patient_id": "bed-3", "role": "doctor"},
+                headers={"Authorization": "Bearer tok"})
+    views = audit.records(tenant="HOSP1", event_type="view")
+    assert len(views) == 1
+    assert views[0].patient_id == "bed-3" and views[0].payload["role"] == "doctor"
