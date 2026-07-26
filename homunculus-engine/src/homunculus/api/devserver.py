@@ -3,5 +3,7 @@
 Run: homunculus-engine/.venv/Scripts/python.exe -m uvicorn homunculus.api.devserver:app --port 8000
 """
 from homunculus.api.app import create_app
+from homunculus.api.audit import SqliteAuditLog
 
-app = create_app({"dev-token": "HOSP1"})
+# Audit persists to a local SQLite file (synthetic data only; the .db is gitignored, never committed).
+app = create_app({"dev-token": "HOSP1"}, audit=SqliteAuditLog("homunculus-audit.db"))

@@ -3,3 +3,8 @@
 .DS_Store
 Thumbs.db
 .claude/settings.local.json
+
+# runtime audit databases (synthetic data only, never committed)
+*.db
+*.db-journal
+*.db-wal
