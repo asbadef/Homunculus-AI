@@ -355,6 +355,8 @@ eğitim+değerlendirme boru hattı + motora `sepsis_watch` ek-sinyali; **B3 bild
 `/notifications` akışıyla, PHI sistemden çıkmadan. Sıradaki iş: modeli gerçek PhysioNet verisiyle
 eğitmek. **B4 audit dilimi de kuruldu** — her olay (gözlem/uyarı/onay/eskalasyon/bildirim) SQLite'a
 ekle-sadece, DB-trigger'ıyla **değişmez** yazılır; kiracı-kapsamlı `/audit` ile okunur. Sıradaki B4
-parçaları: gerçek Postgres, durum kalıcılığı, çok-süreçli pub-sub.)*
+parçaları: gerçek Postgres, çok-süreçli pub-sub. Ek olarak: durum kalıcılığı (audit-replay ile
+restart'tan sağ çıkma), first_seen kalıcılığı, KOAH-oksijen için komorbidite-farkındalıklı NEWS2,
+`view` denetimi, panoda bayat-veri rozeti ve bildirim geçmişi paneli de kuruldu.)*
 
 > Bir terimi merak edip burada bulamazsan, söyle — hem cevaplarım hem de bu dosyaya eklerim.
