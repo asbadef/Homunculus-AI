@@ -6,6 +6,8 @@ documented). Catecholamine doses are ug/kg/min.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from homunculus.canonical import SignalCode
 from homunculus.state.timeline import PatientState
 
@@ -13,6 +15,59 @@ from homunculus.state.timeline import PatientState
 def _val(state: PatientState, code: SignalCode) -> float | None:
     obs = state.latest(code)
     return None if obs is None else obs.value
+
+
+# --- Data recency (B6) -------------------------------------------------------------------------
+# Operational freshness windows per SOFA input — how old a value may be before the score is leaning
+# on stale data. These are configurable operational defaults (like a monitor's refresh expectation),
+# NOT sourced clinical claims: SOFA's thresholds (sepsis-3) are unchanged; staleness only flags
+# recency so the reasoning can say the score rests on old data. Stale values are surfaced, never
+# silently dropped (dropping would under-score).
+_HOUR = timedelta(hours=1)
+DEFAULT_FRESHNESS: dict[SignalCode, timedelta] = {
+    SignalCode.MAP: _HOUR,
+    SignalCode.NOREPINEPHRINE_RATE: _HOUR,
+    SignalCode.EPINEPHRINE_RATE: _HOUR,
+    SignalCode.DOPAMINE_RATE: _HOUR,
+    SignalCode.DOBUTAMINE_RATE: _HOUR,
+    SignalCode.PAO2_FIO2: 8 * _HOUR,
+    SignalCode.GCS: 8 * _HOUR,
+    SignalCode.CREATININE: 26 * _HOUR,
+    SignalCode.BILIRUBIN: 26 * _HOUR,
+    SignalCode.PLATELETS: 26 * _HOUR,
+}
+_INPUT_LABEL: dict[SignalCode, str] = {
+    SignalCode.MAP: "MAP", SignalCode.NOREPINEPHRINE_RATE: "norepinephrine",
+    SignalCode.EPINEPHRINE_RATE: "epinephrine", SignalCode.DOPAMINE_RATE: "dopamine",
+    SignalCode.DOBUTAMINE_RATE: "dobutamine", SignalCode.PAO2_FIO2: "PaO2/FiO2",
+    SignalCode.GCS: "GCS", SignalCode.CREATININE: "creatinine",
+    SignalCode.BILIRUBIN: "bilirubin", SignalCode.PLATELETS: "platelets",
+}
+
+
+def stale_inputs(state: PatientState, now: datetime,
+                 freshness: dict[SignalCode, timedelta] = DEFAULT_FRESHNESS) -> list[SignalCode]:
+    """SOFA inputs that are PRESENT but older than their freshness window, oldest first.
+    Missing inputs are already scored 0 and are not 'stale'."""
+    aged: list[tuple[SignalCode, timedelta]] = []
+    for code, window in freshness.items():
+        age = state.age(code, now)
+        if age is not None and age > window:
+            aged.append((code, age))
+    aged.sort(key=lambda kv: kv[1], reverse=True)
+    return [code for code, _age in aged]
+
+
+def stale_note(state: PatientState, now: datetime,
+               freshness: dict[SignalCode, timedelta] = DEFAULT_FRESHNESS) -> str:
+    """A one-line data-recency note for the finding reasoning, or '' when all inputs are fresh."""
+    stale = stale_inputs(state, now, freshness)
+    if not stale:
+        return ""
+    oldest = stale[0]
+    hours = (state.age(oldest, now) or timedelta()).total_seconds() / 3600
+    return (f" Data recency: {len(stale)} SOFA input(s) stale — oldest {_INPUT_LABEL[oldest]} "
+            f"~{hours:.0f} h old; interpret the score with that in mind.")
 
 
 def cardiovascular_points(state: PatientState) -> int:
