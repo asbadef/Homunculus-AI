@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 from homunculus.canonical import SignalCode
 from homunculus.rules.finding import Citation, Finding, Severity, Urgency
-from homunculus.rules.sofa import stale_note, total_sofa
+from homunculus.rules.sofa import stale_input_labels, stale_note, total_sofa
 from homunculus.state.timeline import PatientState
 
 LACTATE_SHOCK_THRESHOLD = 2.0     # mmol/L  (sepsis-3)
@@ -101,6 +101,7 @@ def evaluate(state: PatientState, now: datetime) -> list[Finding]:
                 f"{stale_note(state, now)}"
             ),
             citations=[Citation("sepsis-3-jama-2016", "sepsis = suspected infection + SOFA rise >= 2")],
+            stale_inputs=stale_input_labels(state, now),
         ))
 
     return findings

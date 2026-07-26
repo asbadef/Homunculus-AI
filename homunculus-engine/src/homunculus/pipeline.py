@@ -42,7 +42,7 @@ class Engine:
         state.ingest(obs)
 
         findings = list(septic_shock.evaluate(state, now))
-        findings += news2.evaluate(state)
+        findings += news2.evaluate(state, now)
         # Patient-relative layer: downgrade chronic-normal, surface acute deviation.
         findings = patient_relative.apply(findings, state, self._profiles.get(obs.patient_id))
 

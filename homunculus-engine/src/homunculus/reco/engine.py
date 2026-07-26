@@ -3,7 +3,7 @@
 Confidence conveys GRADE certainty, not a fabricated probability."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from homunculus.rules.finding import Finding, Severity, Urgency
 
@@ -81,6 +81,7 @@ class Alert:
     source: str = "rule"             # 'rule' or (later) 'model'
     downgraded: bool = False         # patient-relative: chronic-expected, does not alarm/escalate
     chronic_context: str = ""        # why it was downgraded, or the acute contributor when it wasn't
+    stale_inputs: list[str] = field(default_factory=list)  # inputs older than their freshness window
 
 
 def to_alert(finding: Finding, patient_id: str) -> Alert:
@@ -98,4 +99,5 @@ def to_alert(finding: Finding, patient_id: str) -> Alert:
         confidence=_CONFIDENCE.get(finding.kind, "See supporting evidence."),
         downgraded=finding.downgraded,
         chronic_context=finding.chronic_context,
+        stale_inputs=list(finding.stale_inputs),
     )

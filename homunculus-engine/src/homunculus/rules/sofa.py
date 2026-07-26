@@ -58,6 +58,12 @@ def stale_inputs(state: PatientState, now: datetime,
     return [code for code, _age in aged]
 
 
+def stale_input_labels(state: PatientState, now: datetime,
+                       freshness: dict[SignalCode, timedelta] = DEFAULT_FRESHNESS) -> list[str]:
+    """Human labels of the stale SOFA inputs, oldest first — for a finding's structured stale_inputs."""
+    return [_INPUT_LABEL[code] for code in stale_inputs(state, now, freshness)]
+
+
 def stale_note(state: PatientState, now: datetime,
                freshness: dict[SignalCode, timedelta] = DEFAULT_FRESHNESS) -> str:
     """A one-line data-recency note for the finding reasoning, or '' when all inputs are fresh."""

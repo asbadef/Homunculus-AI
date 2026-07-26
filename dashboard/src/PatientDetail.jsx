@@ -37,6 +37,12 @@ function AlertCard({ alert, onAck }) {
         <strong>Önerilen:</strong>
         <ul>{alert.recommended_actions.map((a, i) => <li key={i}>{a}</li>)}</ul>
       </div>
+      {alert.stale_inputs && alert.stale_inputs.length > 0 && (
+        <div style={{ display: "inline-block", background: "#fff3cd", color: "#8a6d3b", fontSize: 12,
+                      fontWeight: 600, padding: "2px 8px", borderRadius: 4, margin: "4px 0" }}>
+          ⏱ Bayat veri: {alert.stale_inputs.join(", ")}
+        </div>
+      )}
       <div style={{ fontSize: 13, color: "#555" }}><strong>Kaynak:</strong> {alert.supporting_evidence.join(", ")}</div>
       <div style={{ fontSize: 13, color: "#555" }}><strong>Güven:</strong> {alert.confidence}</div>
       {!alert.downgraded && (

@@ -104,3 +104,28 @@ describe("PatientDetail patient-relative", () => {
     expect(screen.queryByText("Onayla")).not.toBeInTheDocument();
   });
 });
+
+
+describe("PatientDetail staleness badge", () => {
+  const stale = {
+    patient_id: "bed-3", risk: "high", latest: { sofa: 4 },
+    alerts: [{
+      kind: "sepsis", severity: "high", urgency: "soon", summary: "Sepsis kriterleri karşılanıyor",
+      clinical_reasoning: "SOFA 4.", supporting_evidence: ["sepsis-3-jama-2016"],
+      recommended_actions: ["Monitor."], confidence: "c",
+      stale_inputs: ["creatinine", "bilirubin"],
+    }],
+  };
+
+  it("shows a stale-data badge listing the stale inputs", () => {
+    render(<PatientDetail patient={stale} />);
+    expect(screen.getByText(/Bayat veri/i)).toBeInTheDocument();
+    expect(screen.getByText(/creatinine/)).toBeInTheDocument();
+  });
+
+  it("shows no stale badge when there are no stale inputs", () => {
+    const fresh = { ...stale, alerts: [{ ...stale.alerts[0], stale_inputs: [] }] };
+    render(<PatientDetail patient={fresh} />);
+    expect(screen.queryByText(/Bayat veri/i)).not.toBeInTheDocument();
+  });
+});

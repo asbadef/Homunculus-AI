@@ -157,7 +157,32 @@ def _band(result: News2Result) -> tuple[Severity, Urgency, str] | None:
     return None
 
 
-def evaluate(state: PatientState) -> list[Finding]:
+# NEWS2 inputs are all continuous vitals — they go stale in minutes, not hours. Operational
+# data-recency defaults (configurable), not clinical claims (mirrors the SOFA staleness approach).
+from datetime import datetime, timedelta  # noqa: E402
+
+_NEWS2_FRESHNESS: dict[SignalCode, timedelta] = {
+    SignalCode.RESP_RATE: timedelta(hours=1), SignalCode.SPO2: timedelta(hours=1),
+    SignalCode.SBP: timedelta(hours=1), SignalCode.HEART_RATE: timedelta(hours=1),
+    SignalCode.TEMPERATURE: timedelta(hours=2),
+}
+_VITAL_LABEL: dict[SignalCode, str] = {
+    SignalCode.RESP_RATE: "resp rate", SignalCode.SPO2: "SpO2", SignalCode.SBP: "systolic BP",
+    SignalCode.HEART_RATE: "pulse", SignalCode.TEMPERATURE: "temperature",
+}
+
+
+def _stale_vital_labels(state: PatientState, now: datetime) -> list[str]:
+    aged: list[tuple[str, timedelta]] = []
+    for code, window in _NEWS2_FRESHNESS.items():
+        age = state.age(code, now)
+        if age is not None and age > window:
+            aged.append((_VITAL_LABEL[code], age))
+    aged.sort(key=lambda kv: kv[1], reverse=True)
+    return [label for label, _age in aged]
+
+
+def evaluate(state: PatientState, now: datetime | None = None) -> list[Finding]:
     result = score(state)
     band = _band(result)
     if band is None:
@@ -173,10 +198,15 @@ def evaluate(state: PatientState) -> list[Finding]:
             f" This is a partial NEWS2: {', '.join(result.missing)} not recently recorded, "
             f"so the true aggregate can only be higher."
         )
+    stale = _stale_vital_labels(state, now) if now is not None else []
+    stale_note = ""
+    if stale:
+        stale_note = (f" Data recency: {', '.join(stale)} older than the expected refresh window; "
+                      f"interpret the score with that in mind.")
     reasoning = (
         f"NEWS2 {result.total} ({response}). Contributing: {contributing}. "
         f"Screen for deterioration, not a diagnosis; the response is review, not an order."
-        f"{partial_note}"
+        f"{partial_note}{stale_note}"
     )
     return [Finding(
         kind="news2",
@@ -185,4 +215,5 @@ def evaluate(state: PatientState) -> list[Finding]:
         summary=f"NEWS2 {result.total} — {response.split(' — ')[0]}",
         reasoning=reasoning,
         citations=[Citation("news2-rcp-2017", "aggregate NEWS2 score, risk band and escalation response")],
+        stale_inputs=stale,
     )]

@@ -39,6 +39,9 @@ class Finding:
     # downgraded (does not alarm/escalate) but stays visible with a chronic_context note.
     downgraded: bool = False
     chronic_context: str = ""
+    # Data recency (B6): human labels of inputs the score leans on that are older than their
+    # freshness window. Structured so the UI can badge them; also summarised in `reasoning`.
+    stale_inputs: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.citations:
