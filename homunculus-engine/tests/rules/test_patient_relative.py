@@ -88,3 +88,33 @@ def test_value_within_baseline_raises_no_acute_change():
     profile = PatientProfile("bed-3", baselines={SignalCode.HEART_RATE: BaselineRange(100, 110)})
     out = patient_relative.apply(news2.evaluate(st), st, profile)
     assert [f for f in out if f.kind == "acute_change"] == []
+
+
+def test_copd_comorbidity_explains_chronic_supplemental_oxygen():
+    # COPD patient at baseline: RR 22 (base 21-24 ->2), HR 105 (base 100-110 ->1), on O2 (+2) = 5.
+    # The oxygen +2 is chronic for a home-oxygen COPD patient -> whole finding downgrades.
+    st = _state(RESP_RATE=22, HEART_RATE=105, SUPPLEMENTAL_OXYGEN=1.0)
+    profile = PatientProfile(
+        "bed-3",
+        comorbidities=frozenset({"copd"}),
+        baselines={SignalCode.RESP_RATE: BaselineRange(21, 24),
+                   SignalCode.HEART_RATE: BaselineRange(100, 110)},
+    )
+    out = patient_relative.apply(news2.evaluate(st), st, profile)
+    news2_out = next(f for f in out if f.kind == "news2")
+    assert news2_out.downgraded is True
+    assert "oxygen" in news2_out.chronic_context.lower()
+
+
+def test_supplemental_oxygen_without_copd_stays_an_acute_contributor():
+    # Same vitals + oxygen, but no COPD charted -> the +2 is NOT explained -> keeps alarming.
+    st = _state(RESP_RATE=22, HEART_RATE=105, SUPPLEMENTAL_OXYGEN=1.0)
+    profile = PatientProfile(
+        "bed-3",
+        baselines={SignalCode.RESP_RATE: BaselineRange(21, 24),
+                   SignalCode.HEART_RATE: BaselineRange(100, 110)},
+    )
+    out = patient_relative.apply(news2.evaluate(st), st, profile)
+    news2_out = next(f for f in out if f.kind == "news2")
+    assert news2_out.downgraded is False
+    assert "air_or_oxygen" in news2_out.chronic_context.lower()

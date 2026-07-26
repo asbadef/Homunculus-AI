@@ -38,6 +38,24 @@ _SIGNAL_LABEL: dict[SignalCode, str] = {
     SignalCode.HEART_RATE: "pulse", SignalCode.TEMPERATURE: "temperature",
 }
 
+# NEWS2 params that are NOT numeric-baseline vitals but can be chronic for a charted comorbidity.
+# The clinician's own example: a stable COPD patient perpetually on oxygen carries the +2 forever.
+_COMORBIDITY_EXPLAINS: dict[str, set[str]] = {
+    "copd": {"air_or_oxygen"},
+    "chronic_respiratory_failure": {"air_or_oxygen"},
+    "chronic_oxygen": {"air_or_oxygen"},
+    "dementia": {"consciousness"},
+    "chronic_confusion": {"consciousness"},
+}
+_PARAM_LABEL: dict[str, str] = {"air_or_oxygen": "supplemental oxygen", "consciousness": "consciousness"}
+
+
+def _explaining_comorbidity(param: str, comorbidities: frozenset[str]) -> str | None:
+    for c in comorbidities:
+        if param in _COMORBIDITY_EXPLAINS.get(c, set()):
+            return c
+    return None
+
 
 def _val(state: PatientState, code: SignalCode) -> float | None:
     obs = state.latest(code)
@@ -67,13 +85,21 @@ def _adjust_news2(finding: Finding, state: PatientState, profile: PatientProfile
         if pts <= 0:
             continue
         sig = _PARAM_SIGNAL.get(name)
-        br = profile.baselines.get(sig) if sig else None
-        val = _val(state, sig) if sig else None
-        if br is not None and val is not None and br.contains(val):
-            explained.append(f"{_SIGNAL_LABEL[sig]} {val:g} within charted baseline "
-                             f"{br.low:g}-{br.high:g}")
+        if sig is not None:
+            br = profile.baselines.get(sig)
+            val = _val(state, sig)
+            if br is not None and val is not None and br.contains(val):
+                explained.append(f"{_SIGNAL_LABEL[sig]} {val:g} within charted baseline "
+                                 f"{br.low:g}-{br.high:g}")
+            else:
+                unexplained.append(name)
         else:
-            unexplained.append(name)
+            # non-vital NEWS2 param (air_or_oxygen / consciousness): chronic for a charted comorbidity?
+            comorbidity = _explaining_comorbidity(name, profile.comorbidities)
+            if comorbidity is not None:
+                explained.append(f"{_PARAM_LABEL.get(name, name)} chronic — charted {comorbidity}")
+            else:
+                unexplained.append(name)
 
     if explained and not unexplained:
         return replace(
