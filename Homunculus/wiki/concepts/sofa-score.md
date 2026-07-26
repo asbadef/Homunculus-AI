@@ -59,6 +59,12 @@ See [[treatment-confounding-in-severity-scores]].
 - Compute SOFA **continuously, with explicit staleness**: each organ sub-score should carry the
   timestamp of the value it rests on. A respiratory sub-score derived from a six-hour-old ABG is
   not the same evidence as one from a fresh gas, and the UI must not present them identically.
+  **Implemented (B6):** the engine flags **stale SOFA inputs** — inputs present but older than an
+  operational freshness window (haemodynamics ~1 h; lactate ~6 h; GCS / PaO₂:FiO₂ ~8 h; creatinine,
+  bilirubin, platelets ~26 h) — and the sepsis finding's reasoning names the oldest and tempers
+  confidence. The **thresholds are unchanged** (still sepsis-3); the windows are *operational
+  data-recency defaults*, not a clinical claim, and stale values are **surfaced, never dropped**
+  (dropping would silently under-score).
 - **Track the delta from a per-patient baseline**, not the absolute value.
 - The **"consider a repeat arterial blood gas"** recommendation from the MVP vision falls
   naturally out of this: when the continuous signals suggest respiratory deterioration but the
