@@ -2,20 +2,23 @@ import React, { useEffect, useRef, useState } from "react";
 import { PatientList } from "./PatientList.jsx";
 import { PatientDetail } from "./PatientDetail.jsx";
 import { Toasts } from "./Toasts.jsx";
+import { NotificationHistory } from "./NotificationHistory.jsx";
 import {
   fetchBoard as realFetchBoard, openStream as realOpenStream, ackAlert as realAckAlert,
   openNotifications as realOpenNotifications, recordView as realRecordView,
+  fetchAudit as realFetchAudit,
 } from "./api.js";
 import { ensurePermission, showDesktop, beep } from "./notifications.js";
 
 export function Board({ token, fetchBoard = realFetchBoard, openStream = realOpenStream,
                         ackAlert = realAckAlert, openNotifications = realOpenNotifications,
-                        recordView = realRecordView }) {
+                        recordView = realRecordView, fetchAudit = realFetchAudit }) {
   const [patients, setPatients] = useState([]);
   const [selected, setSelected] = useState(null);
   const [status, setStatus] = useState("connecting");
   const [role, setRole] = useState("nurse");
   const [toasts, setToasts] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
   const toastId = useRef(0);
 
   const mergeBoard = (board) => setPatients((prev) => {
@@ -68,7 +71,14 @@ export function Board({ token, fetchBoard = realFetchBoard, openStream = realOpe
             <option value="nurse">hemşire</option>
             <option value="doctor">doktor</option>
           </select>
+          {"  "}
+          <button onClick={() => setShowHistory((s) => !s)} style={{ fontSize: 12 }}>
+            Bildirim geçmişi
+          </button>
         </div>
+        {showHistory && (
+          <NotificationHistory token={token} fetchAudit={fetchAudit} onSelect={selectPatient} />
+        )}
         {escalated.length > 0 && (
           <div style={{ padding: "8px 12px", borderBottom: "1px solid #eee", background: "#fdecea" }}>
             <div style={{ color: "#c0392b", fontWeight: 700, fontSize: 13 }}>Eskale ({escalated.length})</div>

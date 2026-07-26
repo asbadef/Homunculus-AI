@@ -10,6 +10,8 @@ export default defineConfig({
       "/ingest": "http://localhost:8000",
       "/ack": "http://localhost:8000",
       "/notifications": "http://localhost:8000",
+      "/audit": "http://localhost:8000",
+      "/view": "http://localhost:8000",
     },
   },
   test: {

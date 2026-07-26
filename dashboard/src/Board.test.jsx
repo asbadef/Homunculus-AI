@@ -77,3 +77,16 @@ it("records a view when a patient is selected", async () => {
   fireEvent.click(screen.getByText("bed-7"));
   expect(recordView).toHaveBeenCalledWith("t", "bed-7", "nurse");
 });
+
+it("toggles the notification history panel", async () => {
+  const fetchBoard = vi.fn().mockResolvedValue([{ patient_id: "bed-3", risk: "none", latest: { sofa: 0 }, alerts: [] }]);
+  const openStream = vi.fn().mockReturnValue(() => {});
+  const fetchAudit = vi.fn().mockResolvedValue([
+    { id: 1, ts: "2026-07-25T10:00:00+00:00", patient_id: "bed-3", subject: "septic_shock",
+      payload: { trigger: "escalation", audience: "doctor" } },
+  ]);
+  render(<Board token="t" fetchBoard={fetchBoard} openStream={openStream} fetchAudit={fetchAudit} />);
+  await waitFor(() => expect(screen.getByText("bed-3")).toBeInTheDocument());
+  fireEvent.click(screen.getByText(/Bildirim geçmişi/i));
+  await waitFor(() => expect(screen.getByText(/septic_shock/)).toBeInTheDocument());
+});

@@ -27,6 +27,17 @@ export function openNotifications(token, role, onNotify) {
   return () => es.close();
 }
 
+// Read tenant-scoped audit records (e.g. the notification history). Returns the records array.
+export async function fetchAudit(token, { eventType, patientId, limit } = {}) {
+  const qs = new URLSearchParams();
+  if (eventType) qs.set("event_type", eventType);
+  if (patientId) qs.set("patient_id", patientId);
+  if (limit) qs.set("limit", String(limit));
+  const res = await fetch(`/audit?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`GET /audit failed: ${res.status}`);
+  return (await res.json()).records;
+}
+
 // Record that a clinician opened a patient (role-level attribution). Best-effort, fire-and-forget.
 export async function recordView(token, patientId, role) {
   try {
