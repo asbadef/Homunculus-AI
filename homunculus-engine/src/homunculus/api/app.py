@@ -24,6 +24,7 @@ from homunculus.api.board import board_snapshot, patient_board
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.escalation import escalate
 from homunculus.api.notify import NotificationHub, Notifier
+from homunculus.api.rehydrate import rehydrate
 from homunculus.gateway.fhir import GatewayError, parse_fhir_observation
 from homunculus.pipeline import Engine
 
@@ -69,10 +70,23 @@ def create_app(
     hub = NotificationHub()
     audit = audit or InMemoryAuditLog()
 
+    rehydrated: set[str] = set()
+
+    def _ensure(hospital: str) -> None:
+        """Build a tenant's engine + store, rehydrating once from the audit log (event sourcing)."""
+        if hospital in rehydrated:
+            return
+        rehydrated.add(hospital)
+        engine = engines.setdefault(hospital, Engine())
+        store = stores.setdefault(hospital, AckStore())
+        rehydrate(engine, store, audit.records(tenant=hospital, limit=1_000_000))
+
     def _engine(hospital: str) -> Engine:
+        _ensure(hospital)
         return engines.setdefault(hospital, Engine())
 
     def _store(hospital: str) -> AckStore:
+        _ensure(hospital)
         return stores.setdefault(hospital, AckStore())
 
     def _live_keys(engine: Engine) -> set[tuple[str, str]]:
