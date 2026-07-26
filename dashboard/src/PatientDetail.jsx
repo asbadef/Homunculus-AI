@@ -1,55 +1,91 @@
 import React from "react";
-import { riskColor } from "./risk.js";
+import { AlertTriangle, Circle, Clock, Check, ChevronRight } from "lucide-react";
+import { sev } from "./theme.js";
 
 function LatestStrip({ latest }) {
   const items = [["HR", latest.heart_rate], ["MAP", latest.map], ["Laktat", latest.lactate], ["SOFA", latest.sofa]];
   return (
-    <div style={{ display: "flex", gap: 16, margin: "8px 0 16px", color: "#333" }}>
-      {items.map(([k, v]) => (<span key={k}><strong>{k}</strong> {v ?? "—"}</span>))}
+    <div className="grid grid-cols-4 gap-3">
+      {items.map(([k, v]) => (
+        <div key={k} className="rounded-lg bg-slate-900 p-3 ring-1 ring-slate-800">
+          <span className="text-xs text-slate-400">{k}</span> <span className="text-lg text-slate-100">{v ?? "—"}</span>
+        </div>
+      ))}
     </div>
   );
 }
 
 function AlertCard({ alert, onAck }) {
+  const s = sev(alert.severity);
   const at = alert.acknowledged_at ? new Date(alert.acknowledged_at).toLocaleTimeString() : "";
-  const border = alert.downgraded ? "#bbb" : riskColor(alert.severity);
-  const titleColor = alert.downgraded ? "#666" : riskColor(alert.severity);
+  const hasStale = alert.stale_inputs && alert.stale_inputs.length > 0;
+
   return (
-    <div style={{ border: `1px solid ${border}`, borderRadius: 6, padding: 12, marginBottom: 12,
-                  background: alert.downgraded ? "#f7f7f7" : "#fff" }}>
+    <div className={`rounded-xl bg-slate-900 p-4 ring-1 ${alert.downgraded ? "ring-slate-700" : s.ring}`}>
+      <div className="flex items-center gap-2 font-semibold text-slate-100">
+        {alert.downgraded
+          ? <Circle size={16} className="flex-shrink-0 text-slate-500" />
+          : <AlertTriangle size={16} className={`flex-shrink-0 ${s.text}`} />}
+        {alert.summary}
+      </div>
+
       {alert.escalated && !alert.downgraded && (
-        <div style={{ background: "#c0392b", color: "#fff", fontWeight: 700, padding: "4px 8px", borderRadius: 4, marginBottom: 8 }}>
-          ESKALE EDİLDİ
-        </div>
+        <span className="mr-2 mt-2 inline-flex items-center gap-1 rounded-full bg-sev-critical px-2 py-0.5 text-xs font-semibold text-white">
+          <AlertTriangle size={14} /> ESKALE EDİLDİ
+        </span>
       )}
       {alert.downgraded && (
-        <div style={{ display: "inline-block", background: "#e0e0e0", color: "#555", fontSize: 12,
-                      fontWeight: 600, padding: "2px 8px", borderRadius: 10, marginBottom: 8 }}>
+        <span className="mr-2 mt-2 inline-flex items-center gap-1 rounded-full bg-slate-700 px-2 py-0.5 text-xs font-semibold text-slate-300">
           Beklenen (kronik)
-        </div>
+        </span>
       )}
-      <div style={{ color: titleColor, fontWeight: 700 }}>{alert.downgraded ? "› " : "⚠ "}{alert.summary}</div>
+      {hasStale && (
+        <span className="mr-2 mt-2 inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-2 py-0.5 text-xs font-semibold text-amber-300">
+          <Clock size={14} /> Bayat veri: {alert.stale_inputs.join(", ")}
+        </span>
+      )}
+
       {alert.chronic_context && (
-        <p style={{ margin: "6px 0", fontSize: 13, color: "#666", fontStyle: "italic" }}>{alert.chronic_context}</p>
+        <p className="mt-2 text-sm italic text-slate-400">{alert.chronic_context}</p>
       )}
-      <p style={{ margin: "8px 0" }}><strong>Gerekçe:</strong> {alert.clinical_reasoning}</p>
-      <div style={{ margin: "8px 0" }}>
-        <strong>Önerilen:</strong>
-        <ul>{alert.recommended_actions.map((a, i) => <li key={i}>{a}</li>)}</ul>
+
+      <p className="mt-2 text-sm text-slate-300"><strong className="text-slate-100">Gerekçe:</strong> {alert.clinical_reasoning}</p>
+
+      <div className="mt-2">
+        <strong className="text-sm text-slate-100">Önerilen:</strong>
+        <ul className="mt-1 space-y-1">
+          {alert.recommended_actions.map((a, i) => (
+            <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
+              <ChevronRight size={14} className="mt-0.5 flex-shrink-0 text-slate-500" />
+              {a}
+            </li>
+          ))}
+        </ul>
       </div>
-      {alert.stale_inputs && alert.stale_inputs.length > 0 && (
-        <div style={{ display: "inline-block", background: "#fff3cd", color: "#8a6d3b", fontSize: 12,
-                      fontWeight: 600, padding: "2px 8px", borderRadius: 4, margin: "4px 0" }}>
-          ⏱ Bayat veri: {alert.stale_inputs.join(", ")}
-        </div>
-      )}
-      <div style={{ fontSize: 13, color: "#555" }}><strong>Kaynak:</strong> {alert.supporting_evidence.join(", ")}</div>
-      <div style={{ fontSize: 13, color: "#555" }}><strong>Güven:</strong> {alert.confidence}</div>
+
+      <div className="mt-2 text-sm text-slate-400">
+        <strong className="text-slate-100">Kaynak:</strong>{" "}
+        <span className="font-mono text-xs text-slate-400">{alert.supporting_evidence.join(", ")}</span>
+      </div>
+
+      <div className="mt-1 text-sm text-slate-400"><strong className="text-slate-100">Güven:</strong> {alert.confidence}</div>
+
       {!alert.downgraded && (
-        <div style={{ marginTop: 10 }}>
+        <div className="mt-3">
           {alert.acknowledged
-            ? <span style={{ color: "#2e7d32", fontWeight: 600 }}>✓ Onaylandı: {alert.acknowledged_by} · {at}</span>
-            : <button onClick={() => onAck(alert.kind)}>Onayla</button>}
+            ? (
+              <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-400">
+                <Check size={14} /> Onaylandı: {alert.acknowledged_by} · {at}
+              </span>
+            )
+            : (
+              <button
+                onClick={() => onAck(alert.kind)}
+                className="cursor-pointer rounded bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+              >
+                Onayla
+              </button>
+            )}
         </div>
       )}
     </div>
@@ -58,12 +94,12 @@ function AlertCard({ alert, onAck }) {
 
 export function PatientDetail({ patient, onAck = () => {} }) {
   return (
-    <div style={{ padding: 16 }}>
-      <h2 style={{ margin: 0 }}>{patient.patient_id}</h2>
+    <div className="space-y-4 p-4">
+      <h2 className="text-lg font-semibold text-slate-100">{patient.patient_id}</h2>
       <LatestStrip latest={patient.latest} />
       {patient.alerts.length === 0
-        ? <p style={{ color: "#2e7d32" }}>Aktif uyarı yok.</p>
-        : patient.alerts.map((a) => <AlertCard key={a.kind} alert={a} onAck={onAck} />)}
+        ? <p className="text-sm text-emerald-400">Aktif uyarı yok.</p>
+        : <div className="space-y-3">{patient.alerts.map((a) => <AlertCard key={a.kind} alert={a} onAck={onAck} />)}</div>}
     </div>
   );
 }
