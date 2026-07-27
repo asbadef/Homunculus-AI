@@ -3,5 +3,8 @@
   "buildCommand": "cd dashboard && npm install && npm run build",
   "outputDirectory": "dashboard/dist",
   "framework": "vite",
+  "redirects": [
+    { "source": "/", "missing": [{ "type": "query", "key": "demo" }], "destination": "/?demo=1" }
+  ],
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
