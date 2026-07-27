@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
+import { strings } from "./i18n.js";
 
 // Recent notification history, read from the tenant-scoped audit (GET /audit?event_type=notification).
-export function NotificationHistory({ token, fetchAudit, onSelect }) {
+export function NotificationHistory({ token, fetchAudit, onSelect, lang = "tr" }) {
   const [records, setRecords] = useState([]);
 
   useEffect(() => {
@@ -12,11 +13,12 @@ export function NotificationHistory({ token, fetchAudit, onSelect }) {
     return () => { closed = true; };
   }, [token, fetchAudit]);
 
+  const L = strings(lang);
   return (
     <div className="border-b border-slate-800 px-3 py-2 text-sm">
-      <div className="mb-1 font-semibold text-slate-100">Bildirim geçmişi ({records.length})</div>
+      <div className="mb-1 font-semibold text-slate-100">{L.notifHistory} ({records.length})</div>
       {records.length === 0
-        ? <div className="text-slate-500">Henüz bildirim yok.</div>
+        ? <div className="text-slate-500">{L.noNotifs}</div>
         : (
           <div className="divide-y divide-slate-800">
             {records.map((r) => {

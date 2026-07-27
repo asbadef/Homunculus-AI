@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Activity, AlertTriangle, History } from "lucide-react";
+import { Activity, AlertTriangle, History, Languages } from "lucide-react";
 import { PatientList } from "./PatientList.jsx";
 import { PatientDetail } from "./PatientDetail.jsx";
 import { Toasts } from "./Toasts.jsx";
@@ -11,6 +11,7 @@ import {
 } from "./api.js";
 import { ensurePermission, showDesktop, beep } from "./notifications.js";
 import { sev } from "./theme.js";
+import { strings, LANGS, storedLang, persistLang } from "./i18n.js";
 
 export function Board({ token, fetchBoard = realFetchBoard, openStream = realOpenStream,
                         ackAlert = realAckAlert, openNotifications = realOpenNotifications,
@@ -21,7 +22,11 @@ export function Board({ token, fetchBoard = realFetchBoard, openStream = realOpe
   const [role, setRole] = useState("nurse");
   const [toasts, setToasts] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [lang, setLang] = useState(storedLang);
   const toastId = useRef(0);
+  const L = strings(lang);
+
+  useEffect(() => { persistLang(lang); }, [lang]);
 
   const mergeBoard = (board) => setPatients((prev) => {
     const rest = prev.filter((p) => p.patient_id !== board.patient_id);
@@ -63,46 +68,59 @@ export function Board({ token, fetchBoard = realFetchBoard, openStream = realOpe
 
   return (
     <div className="grid grid-cols-[320px_1fr] h-screen bg-slate-950 text-slate-100 font-sans">
-      <Toasts toasts={toasts} onDismiss={dismissToast} onSelect={selectPatient} />
+      <Toasts toasts={toasts} onDismiss={dismissToast} onSelect={selectPatient} lang={lang} />
       <aside className="border-r border-slate-800 overflow-y-auto flex flex-col">
         <div className="flex items-center justify-between px-3 py-3 border-b border-slate-800">
           <div className="flex items-center gap-2">
             <Activity className="text-brand" size={18} />
             <span className="font-semibold">Homunculus</span>
           </div>
-          <span className="flex items-center gap-1.5 rounded-full bg-slate-800/60 px-2 py-0.5 text-xs text-slate-400">
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${status === "live" ? "bg-emerald-400" : "bg-slate-500"}`}
-            />
-            {status}
-          </span>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1 text-slate-400" title={L.langLabel}>
+              <Languages size={14} />
+              <select
+                value={lang}
+                onChange={(e) => setLang(e.target.value)}
+                aria-label={L.langLabel}
+                className="cursor-pointer rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+              >
+                {LANGS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+              </select>
+            </label>
+            <span className="flex items-center gap-1.5 rounded-full bg-slate-800/60 px-2 py-0.5 text-xs text-slate-400">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${status === "live" ? "bg-emerald-400" : "bg-slate-500"}`}
+              />
+              {status}
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-2 border-b border-slate-800 px-3 py-2 text-sm">
-          <span className="text-slate-400">Rol:</span>
+          <span className="text-slate-400">{L.role}</span>
           <select
             value={role}
             onChange={(e) => setRole(e.target.value)}
             className="cursor-pointer rounded border border-slate-700 bg-slate-800 px-2 py-1 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
           >
-            <option value="nurse">hemşire</option>
-            <option value="doctor">doktor</option>
+            <option value="nurse">{L.nurse}</option>
+            <option value="doctor">{L.doctor}</option>
           </select>
           <button
             onClick={() => setShowHistory((s) => !s)}
             className="ml-auto flex items-center gap-1 rounded px-2 py-1 text-xs text-slate-400 cursor-pointer transition-colors hover:bg-slate-800 hover:text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
           >
             <History size={14} />
-            Bildirim geçmişi
+            {L.notifHistory}
           </button>
         </div>
         {showHistory && (
-          <NotificationHistory token={token} fetchAudit={fetchAudit} onSelect={selectPatient} />
+          <NotificationHistory token={token} fetchAudit={fetchAudit} onSelect={selectPatient} lang={lang} />
         )}
         {escalated.length > 0 && (
           <div className={`m-3 rounded border ${critical.ring} bg-sev-critical/10 border-sev-critical/40`}>
             <div className={`flex items-center gap-2 px-3 py-2 text-sm font-semibold ${critical.text}`}>
               <AlertTriangle className={critical.text} size={14} />
-              Eskale ({escalated.length})
+              {L.escalated} ({escalated.length})
             </div>
             <div className="pb-1">
               {escalated.map(({ p, a }) => (
@@ -120,12 +138,12 @@ export function Board({ token, fetchBoard = realFetchBoard, openStream = realOpe
             </div>
           </div>
         )}
-        <PatientList patients={patients} selected={selected} onSelect={selectPatient} />
+        <PatientList patients={patients} selected={selected} onSelect={selectPatient} lang={lang} />
       </aside>
       <main className="overflow-y-auto">
         {current
-          ? <PatientDetail patient={current} onAck={(kind) => onAck(current.patient_id, kind)} />
-          : <p className="p-4 text-slate-500">Bir hasta seçin.</p>}
+          ? <PatientDetail patient={current} onAck={(kind) => onAck(current.patient_id, kind)} lang={lang} />
+          : <p className="p-4 text-slate-500">{L.selectPatient}</p>}
       </main>
     </div>
   );

@@ -1,7 +1,9 @@
 import React from "react";
 import { AlertTriangle, Bell, X } from "lucide-react";
+import { strings } from "./i18n.js";
 
-export function Toasts({ toasts, onDismiss, onSelect }) {
+export function Toasts({ toasts, onDismiss, onSelect, lang = "tr" }) {
+  const L = strings(lang);
   return (
     <div className="fixed top-3 right-3 z-[1000] flex max-w-sm flex-col gap-2">
       {toasts.map(({ id, note }) => {
@@ -19,10 +21,10 @@ export function Toasts({ toasts, onDismiss, onSelect }) {
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-1.5 text-sm font-semibold">
                 {esc ? <AlertTriangle size={16} /> : <Bell size={16} />}
-                {esc ? "Eskalasyon" : "Yeni uyarı"}
+                {esc ? L.toastEsc : L.toastNew}
               </span>
               <button
-                aria-label="kapat"
+                aria-label={L.close}
                 onClick={(e) => { e.stopPropagation(); onDismiss(id); }}
                 className="cursor-pointer rounded p-0.5 text-white/80 transition-colors hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
               >

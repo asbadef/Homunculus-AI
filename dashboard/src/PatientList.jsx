@@ -1,12 +1,14 @@
 import React from "react";
-import { sev, riskLabel } from "./theme.js";
+import { sev } from "./theme.js";
+import { strings } from "./i18n.js";
 
 // Patient risk levels (none|low|high|critical) map onto the shared severity scale for the dot.
 const RISK_TO_SEV = { none: "info", low: "low", high: "high", critical: "critical" };
 
-export function PatientList({ patients, selected, onSelect }) {
+export function PatientList({ patients, selected, onSelect, lang = "tr" }) {
+  const L = strings(lang);
   if (!patients || patients.length === 0) {
-    return <p className="px-3 py-4 text-sm text-slate-400">Hasta yok.</p>;
+    return <p className="px-3 py-4 text-sm text-slate-400">{L.noPatients}</p>;
   }
 
   return (
@@ -29,7 +31,7 @@ export function PatientList({ patients, selected, onSelect }) {
           >
             <span className={`h-2.5 w-2.5 rounded-full ${s.dot}`} />
             <span className="flex-1 font-medium text-slate-100">{p.patient_id}</span>
-            <span className={`text-xs ${s.text}`}>{riskLabel[p.risk] ?? p.risk}</span>
+            <span className={`text-xs ${s.text}`}>{L.risk[p.risk] ?? p.risk}</span>
           </li>
         );
       })}
