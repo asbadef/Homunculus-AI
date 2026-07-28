@@ -137,8 +137,16 @@ def create_app(
     # is preserved unchanged for backward compatibility with the ingest/board API.
     from homunculus.auth.router import router as auth_router
     from homunculus.tenant.router import router as tenant_router
+    from homunculus.admission.router import (
+        router as admission_router,
+        sched_router as shift_schedule_router,
+        handover_router,
+    )
     app.include_router(auth_router)
     app.include_router(tenant_router)
+    app.include_router(admission_router)
+    app.include_router(shift_schedule_router)
+    app.include_router(handover_router)
 
     app.state.broadcaster = broadcaster
     app.state.ack_stores = stores

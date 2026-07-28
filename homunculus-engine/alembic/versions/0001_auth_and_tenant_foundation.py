@@ -26,17 +26,22 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-user_role_enum = sa.Enum(
+# create_type=False: the types are created once, explicitly, via .create(checkfirst=True)
+# in upgrade(). Without this flag, referencing the same Enum object inside
+# op.create_table() would emit a second CREATE TYPE and fail on PostgreSQL.
+user_role_enum = postgresql.ENUM(
     "ATTENDING", "ASSOCIATE_PHYSICIAN", "ONCALL_PHYSICIAN", "UNIT_PHYSICIAN",
     "CHARGE_NURSE", "NURSE", "RAPID_RESPONSE", "HOSPITAL_ADMIN", "AUDITOR",
-    "PLATFORM_SUPPORT", name="userrole",
+    "PLATFORM_SUPPORT", name="userrole", create_type=False,
 )
-unit_type_enum = sa.Enum(
+unit_type_enum = postgresql.ENUM(
     "ADULT_ICU", "NICU", "PICU", "CVICU", "BMT_ICU", name="unittype",
+    create_type=False,
 )
-bed_state_enum = sa.Enum(
+bed_state_enum = postgresql.ENUM(
     "AVAILABLE", "OCCUPIED", "PENDING_DISCHARGE", "PENDING_TRANSFER_OUT",
     "HOUSEKEEPING", "MAINTENANCE", "BLOCKED", name="bedstate",
+    create_type=False,
 )
 
 
