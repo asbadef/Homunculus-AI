@@ -131,6 +131,15 @@ def create_app(
                 task.cancel()
 
     app = FastAPI(title="Homunculus", lifespan=lifespan)
+
+    # New auth + tenant subsystems (JWT/TOTP identity, physical hierarchy).
+    # These live alongside the existing bearer-token → hospital_id tenancy, which
+    # is preserved unchanged for backward compatibility with the ingest/board API.
+    from homunculus.auth.router import router as auth_router
+    from homunculus.tenant.router import router as tenant_router
+    app.include_router(auth_router)
+    app.include_router(tenant_router)
+
     app.state.broadcaster = broadcaster
     app.state.ack_stores = stores
     app.state.escalation_cycle = _escalation_cycle
