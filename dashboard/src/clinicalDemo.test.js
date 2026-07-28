@@ -358,3 +358,120 @@ describe("mute, masking and audit", () => {
     expect(s.getState().auditLog.some((e) => e.action === "MASK_NAMES")).toBe(true);
   });
 });
+
+
+// ================================================================ PR#7 additions
+// Fast PIN switch, staff→bed matrix, MDI device simulator, handover CRITICAL block,
+// break-glass review and offline sync engine.
+describe("PR#7 · fast PIN switch", () => {
+  it("switches the active user by 4-digit PIN and audits it", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const u = s.switchUserByPin("2222"); // ayse.demir · charge nurse
+    expect(u.role).toBe(ROLE.CHARGE_NURSE);
+    expect(s.getState().user.role).toBe(ROLE.CHARGE_NURSE);
+    expect(s.getState().auditLog.some((e) => e.action === "PIN_SWITCH")).toBe(true);
+  });
+  it("rejects an unknown PIN", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    expect(() => s.switchUserByPin("0000")).toThrow();
+  });
+  it("logs in with a PIN as credential", () => {
+    const s = createDemoStore(buildRealisticState());
+    const u = s.login("admin@homunculus.health", "9999");
+    expect(u.role).toBe(ROLE.HOSPITAL_ADMIN);
+  });
+});
+
+describe("PR#7 · staff → bed matrix", () => {
+  it("assigns beds to a staff member and toggles a single bed", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    s.assignStaffToBeds({ userId: "u-02", bedIds: ["bed-a101"] });
+    expect(s.getState().staffAssignments["u-02"].bedIds).toContain("bed-a101");
+    s.toggleStaffBed({ userId: "u-02", bedId: "bed-a102" });
+    expect(s.getState().staffAssignments["u-02"].bedIds).toContain("bed-a102");
+    s.toggleStaffBed({ userId: "u-02", bedId: "bed-a102" });
+    expect(s.getState().staffAssignments["u-02"].bedIds).not.toContain("bed-a102");
+    expect(s.getState().auditLog.some((e) => e.action === "STAFF_ASSIGN")).toBe(true);
+  });
+});
+
+describe("PR#7 · MDI device simulator", () => {
+  it("adds a device with IP validation and assigns it to a bed", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    expect(() => s.addDevice({ model: "N17", ip: "not-an-ip" })).toThrow();
+    const dev = s.addDevice({ vendor: "Mindray", model: "BeneVision N22", ip: "192.168.9.99" });
+    expect(dev.connected).toBe(false); // no bed yet
+    s.assignDeviceToBed({ deviceId: dev.id, bedId: "bed-a102" });
+    expect(s.getState().devices.find((d) => d.id === dev.id).connected).toBe(true);
+    expect(s.getState().auditLog.some((e) => e.action === "DEVICE_ADD")).toBe(true);
+    expect(s.getState().auditLog.some((e) => e.action === "DEVICE_ASSIGN")).toBe(true);
+  });
+  it("rejects a duplicate IP", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    s.addDevice({ model: "A", ip: "10.0.0.1" });
+    expect(() => s.addDevice({ model: "B", ip: "10.0.0.1" })).toThrow();
+  });
+  it("jitters vitals for beds with a connected device while online", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.ATTENDING);
+    const before = s.getState().devices.find((d) => d.connected);
+    s.reconcile(s.getState().clockSec + 1);
+    const after = s.getState().devices.find((d) => d.id === before.id);
+    expect(after.packets).toBeGreaterThan(before.packets);
+  });
+});
+
+describe("PR#7 · handover CRITICAL block (S5)", () => {
+  it("blocks a handover while an unanswered CRITICAL alarm is open", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.ATTENDING);
+    s.fireAlert({ patientId: "P-101", tier: TIER.CRITICAL });
+    let thrown = null;
+    try { s.createHandover({ patientId: "P-101", toName: "B", note: "Yeterince uzun devir notu buraya yazıldı." }); }
+    catch (e) { thrown = e; }
+    expect(thrown).not.toBeNull();
+    expect(thrown.code).toBe("HANDOVER_BLOCKED_CRITICAL");
+    expect(s.getState().auditLog.some((e) => e.action === "HANDOVER_BLOCKED")).toBe(true);
+  });
+  it("allows the handover once the CRITICAL alarm is acknowledged", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.ATTENDING);
+    const a = s.fireAlert({ patientId: "P-102", tier: TIER.CRITICAL });
+    s.acknowledgeAlert(a.id, { reason: "Görüldü", note: "Hasta değerlendirildi ve stabil." });
+    const h = s.createHandover({ patientId: "P-102", toName: "B", note: "Devir notu yeterince uzun biçimde yazıldı." });
+    expect(h.signedAtMs).toBeGreaterThan(0);
+  });
+});
+
+describe("PR#7 · break-glass review", () => {
+  it("approves a pending break-glass session with a note", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.ATTENDING);
+    s.activateBreakGlass("Acil erişim gerekli: hasta devri sırasında kayıt görüntülenecek.");
+    expect(s.getState().breakGlass.reviewStatus).toBe("pending");
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    s.reviewBreakGlass({ approve: true, note: "Gerekçe uygun." });
+    expect(s.getState().breakGlass.reviewStatus).toBe("approved");
+    expect(s.getState().auditLog.some((e) => e.action === "BREAK_GLASS_REVIEW")).toBe(true);
+  });
+});
+
+describe("PR#7 · offline sync engine (B5)", () => {
+  it("queues changes offline and flushes them on reconnect", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.CHARGE_NURSE);
+    s.setOnline(false);
+    expect(s.getState().online).toBe(false);
+    s.queueOffline("ALERT_ACK", { alertId: "A-1" });
+    expect(s.getState().syncQueue).toHaveLength(1);
+    s.setOnline(true);
+    expect(s.getState().online).toBe(true);
+    expect(s.getState().syncQueue).toHaveLength(0); // flushed
+    expect(s.getState().auditLog.some((e) => e.action === "SYNC_FLUSH")).toBe(true);
+  });
+});
