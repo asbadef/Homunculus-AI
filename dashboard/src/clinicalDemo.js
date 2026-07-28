@@ -76,6 +76,87 @@ export function snoozeCapMinutes(tier) { return SNOOZE_MAX_MINUTES[tier] ?? null
 // --------------------------------------------------------------------------- break-glass (S-23)
 export const BREAK_GLASS_MINUTES = 30;
 
+// --------------------------------------------------------------------------- ICD-10 catalog
+// A small curated set of common ICU diagnoses. ICD-10 codes are an international standard and are
+// NEVER translated — only the human-readable description is localised at render time if needed.
+export const ICD10_CATALOG = [
+  { code: "J96.0", tr: "Akut solunum yetmezliği", en: "Acute respiratory failure" },
+  { code: "J18.9", tr: "Pnömoni, tanımlanmamış", en: "Pneumonia, unspecified" },
+  { code: "A41.9", tr: "Sepsis, tanımlanmamış", en: "Sepsis, unspecified" },
+  { code: "R65.21", tr: "Septik şok", en: "Septic shock" },
+  { code: "N17.9", tr: "Akut böbrek yetmezliği", en: "Acute kidney failure" },
+  { code: "I21.4", tr: "Akut subendokardiyal miyokart enfarktüsü", en: "Acute NSTEMI" },
+  { code: "I50.9", tr: "Kalp yetmezliği, tanımlanmamış", en: "Heart failure, unspecified" },
+  { code: "J44.1", tr: "KOAH akut alevlenme", en: "COPD with acute exacerbation" },
+  { code: "K92.2", tr: "Gastrointestinal kanama", en: "Gastrointestinal hemorrhage" },
+  { code: "I63.9", tr: "Serebral enfarktüs (inme)", en: "Cerebral infarction (stroke)" },
+  { code: "S06.9", tr: "Kafa içi yaralanma", en: "Intracranial injury" },
+  { code: "E87.6", tr: "Hipokalemi", en: "Hypokalemia" },
+  { code: "P22.0", tr: "Yenidoğan respiratuar distres sendromu", en: "Neonatal RDS" },
+  { code: "P59.9", tr: "Yenidoğan sarılığı", en: "Neonatal jaundice" },
+  { code: "P07.3", tr: "Prematürite", en: "Preterm newborn" },
+  { code: "T81.4", tr: "Cerrahi alan enfeksiyonu", en: "Post-procedural infection" },
+];
+export function searchIcd10(q) {
+  const s = (q || "").trim().toLowerCase();
+  if (!s) return ICD10_CATALOG.slice(0, 8);
+  return ICD10_CATALOG.filter((x) =>
+    x.code.toLowerCase().includes(s) || x.tr.toLowerCase().includes(s) || x.en.toLowerCase().includes(s)
+  ).slice(0, 8);
+}
+
+// --------------------------------------------------------------------------- medication catalog
+// Common ICU infusions/drugs. Active-ingredient names follow international INN and are not translated.
+export const MED_CATALOG = [
+  { name: "Noradrenalin", unit: "mcg/kg/dk", kind: "infusion" },
+  { name: "Adrenalin", unit: "mcg/kg/dk", kind: "infusion" },
+  { name: "Dopamin", unit: "mcg/kg/dk", kind: "infusion" },
+  { name: "Dobutamin", unit: "mcg/kg/dk", kind: "infusion" },
+  { name: "Propofol", unit: "mg/kg/sa", kind: "infusion" },
+  { name: "Midazolam", unit: "mg/sa", kind: "infusion" },
+  { name: "Fentanil", unit: "mcg/sa", kind: "infusion" },
+  { name: "Insülin", unit: "IU/sa", kind: "infusion" },
+  { name: "Meropenem", unit: "mg", kind: "bolus" },
+  { name: "Piperasilin-Tazobaktam", unit: "mg", kind: "bolus" },
+  { name: "Furosemid", unit: "mg", kind: "bolus" },
+  { name: "Pantoprazol", unit: "mg", kind: "bolus" },
+];
+
+// --------------------------------------------------------------------------- ICU procedures
+export const PROCEDURE_CATALOG = [
+  "Endotrakeal entübasyon", "Mekanik ventilasyon", "Santral venöz kateter",
+  "Arteriyel kateter", "Hemodiyaliz / CRRT", "Bronkoskopi", "Torasentez",
+  "Nazogastrik sonda", "İdrar sondası", "Trakeostomi",
+];
+
+// --------------------------------------------------------------------------- NEWS2 (synthetic)
+// A simplified NEWS2-style aggregate score for demo auto-alarm triggering. Uses RR, SpO2, Temp, HR
+// and MAP (as a proxy for systolic BP). This is illustrative, not a validated clinical calculator.
+export function computeNews2(v) {
+  if (!v) return 0;
+  let s = 0;
+  const rr = v.rr, spo2 = v.spo2, t = v.temp, hr = v.hr, map = v.map;
+  if (rr != null) { if (rr <= 8) s += 3; else if (rr <= 11) s += 1; else if (rr <= 20) s += 0; else if (rr <= 24) s += 2; else s += 3; }
+  if (spo2 != null) { if (spo2 <= 91) s += 3; else if (spo2 <= 93) s += 2; else if (spo2 <= 95) s += 1; }
+  if (t != null) { if (t <= 35) s += 3; else if (t <= 36) s += 1; else if (t <= 38) s += 0; else if (t <= 39) s += 1; else s += 2; }
+  if (hr != null) { if (hr <= 40) s += 3; else if (hr <= 50) s += 1; else if (hr <= 90) s += 0; else if (hr <= 110) s += 1; else if (hr <= 130) s += 2; else s += 3; }
+  if (map != null) { if (map <= 55) s += 3; else if (map <= 65) s += 2; else if (map <= 75) s += 1; }
+  return s;
+}
+export const NEWS2_ALARM_THRESHOLD = 7;
+
+// Default per-patient alarm thresholds (physician-adjustable in the settings modal).
+export const DEFAULT_THRESHOLDS = { spo2Min: 90, hrMin: 45, hrMax: 130, mapMin: 60, mapMax: 110 };
+// Returns the list of breached limits for a set of vitals given thresholds (empty = within limits).
+export function evaluateThresholds(v, th) {
+  const t = { ...DEFAULT_THRESHOLDS, ...(th || {}) };
+  const breaches = [];
+  if (v?.spo2 != null && v.spo2 < t.spo2Min) breaches.push("SpO2");
+  if (v?.hr != null && (v.hr < t.hrMin || v.hr > t.hrMax)) breaches.push("HR");
+  if (v?.map != null && (v.map < t.mapMin || v.map > t.mapMax)) breaches.push("MAP");
+  return breaches;
+}
+
 // --------------------------------------------------------------------------- helpers
 // A synthetic, masked national-ID string. Real national IDs never enter the system; only the first
 // two and last two digits are ever shown (KVKK data-minimisation).
@@ -114,8 +195,24 @@ function seedState() {
     patients: [],         // admitted patients (each on a bed)
     alerts: [],           // active/closed alerts
     breakGlass: null,     // { by, reason, activatedAt, expiresAt }
+    clinical: {},         // patientId → { diagnoses, medications, procedures, fluids, thresholds, vitalHistory }
+    auditLog: [],         // { id, atMs, actor, action, target, detail }
+    maskNames: false,     // KVKK name-masking toggle (global)
+    autoAlarm: true,      // automatic alarm engine on/off
     seq: 1,
   };
+}
+
+// Blank clinical record scaffold for a patient (diagnoses / meds / procedures / fluids / thresholds).
+function emptyClinical() {
+  return { diagnoses: [], medications: [], procedures: [], fluids: [],
+           thresholds: { ...DEFAULT_THRESHOLDS }, vitalHistory: [] };
+}
+
+// Mask a display name → first letter + asterisks per word ("Ahmet Yılmaz" → "A*** Y***").
+export function maskName(name) {
+  if (!name) return name;
+  return String(name).split(/\s+/).map((w) => (w ? w[0] + "***" : w)).join(" ");
 }
 
 // --------------------------------------------------------------------------- realistic seed
@@ -196,6 +293,60 @@ export function buildRealisticState() {
     "P-105": { attendingId: "u-04", nurseId: "u-05" },
   };
 
+  // Build a plausible recent vital-trend history (last N samples) around each patient's current vitals.
+  const trend = (base, n = 12) => {
+    const out = [];
+    for (let i = n - 1; i >= 0; i--) {
+      const j = (Math.random() - 0.5);
+      out.push({
+        tMs: now - i * 30 * 60 * 1000,
+        hr: Math.round(base.hr + j * 8),
+        map: Math.round(base.map + j * 6),
+        spo2: Math.min(100, Math.round(base.spo2 + j * 3)),
+        temp: Math.round((base.temp + j * 0.4) * 10) / 10,
+        rr: Math.round(base.rr + j * 3),
+      });
+    }
+    return out;
+  };
+
+  const clinical = {
+    "P-101": { ...emptyClinical(),
+      diagnoses: [{ id: "d1", code: "J18.9", text: "Pnömoni, tanımlanmamış", atMs: hrs(52), by: "Dr. Elif Yılmaz" },
+                  { id: "d2", code: "J96.0", text: "Akut solunum yetmezliği", atMs: hrs(50), by: "Dr. Elif Yılmaz" }],
+      medications: [{ id: "m1", name: "Noradrenalin", dose: "0.08", unit: "mcg/kg/dk", startMs: hrs(48), endMs: null, by: "Dr. Elif Yılmaz" },
+                    { id: "m2", name: "Meropenem", dose: "1000", unit: "mg", startMs: hrs(46), endMs: null, by: "Dr. Elif Yılmaz" }],
+      procedures: [{ id: "pr1", name: "Endotrakeal entübasyon", atMs: hrs(48), by: "Dr. Elif Yılmaz" },
+                   { id: "pr2", name: "Mekanik ventilasyon", atMs: hrs(48), by: "Dr. Elif Yılmaz" },
+                   { id: "pr3", name: "Santral venöz kateter", atMs: hrs(47), by: "Dr. Can Öztürk" }],
+      fluids: [{ id: "f1", kind: "in", label: "IV sıvı", ml: 1200, atMs: hrs(12) },
+               { id: "f2", kind: "in", label: "Enteral beslenme", ml: 600, atMs: hrs(10) },
+               { id: "f3", kind: "out", label: "İdrar", ml: 900, atMs: hrs(11) },
+               { id: "f4", kind: "out", label: "Drenaj", ml: 150, atMs: hrs(8) }],
+      thresholds: { spo2Min: 92, hrMin: 50, hrMax: 120, mapMin: 65, mapMax: 105 },
+      vitalHistory: trend(patients[0].vitals) },
+    "P-104": { ...emptyClinical(),
+      diagnoses: [{ id: "d1", code: "A41.9", text: "Sepsis, tanımlanmamış", atMs: hrs(6), by: "Dr. Elif Yılmaz" },
+                  { id: "d2", code: "R65.21", text: "Septik şok", atMs: hrs(5), by: "Dr. Elif Yılmaz" }],
+      medications: [{ id: "m1", name: "Noradrenalin", dose: "0.35", unit: "mcg/kg/dk", startMs: hrs(5), endMs: null, by: "Dr. Elif Yılmaz" },
+                    { id: "m2", name: "Piperasilin-Tazobaktam", dose: "4500", unit: "mg", startMs: hrs(5), endMs: null, by: "Dr. Elif Yılmaz" }],
+      procedures: [{ id: "pr1", name: "Arteriyel kateter", atMs: hrs(5), by: "Dr. Elif Yılmaz" }],
+      fluids: [{ id: "f1", kind: "in", label: "Resüsitasyon sıvısı", ml: 2000, atMs: hrs(5) },
+               { id: "f2", kind: "out", label: "İdrar", ml: 300, atMs: hrs(4) }],
+      thresholds: { ...DEFAULT_THRESHOLDS },
+      vitalHistory: trend(patients[3].vitals) },
+    "P-105": { ...emptyClinical(),
+      diagnoses: [{ id: "d1", code: "P07.3", text: "Prematürite", atMs: hrs(70), by: "Dr. Can Öztürk" },
+                  { id: "d2", code: "P22.0", text: "Yenidoğan RDS", atMs: hrs(70), by: "Dr. Can Öztürk" }],
+      medications: [{ id: "m1", name: "Fentanil", dose: "1.5", unit: "mcg/sa", startMs: hrs(68), endMs: null, by: "Dr. Can Öztürk" }],
+      procedures: [{ id: "pr1", name: "Mekanik ventilasyon", atMs: hrs(70), by: "Dr. Can Öztürk" }],
+      fluids: [{ id: "f1", kind: "in", label: "TPN", ml: 180, atMs: hrs(6) },
+               { id: "f2", kind: "out", label: "İdrar", ml: 120, atMs: hrs(6) }],
+      thresholds: { spo2Min: 88, hrMin: 100, hrMax: 180, mapMin: 35, mapMax: 60 },
+      vitalHistory: trend(patients[4].vitals) },
+  };
+  for (const p of patients) if (!clinical[p.patient_id]) clinical[p.patient_id] = { ...emptyClinical(), vitalHistory: trend(p.vitals) };
+
   return {
     user: null,
     clockSec: 0,
@@ -209,6 +360,10 @@ export function buildRealisticState() {
     patients,
     alerts: [],
     breakGlass: null,
+    clinical,
+    auditLog: [{ id: "AL-1", atMs: hrs(52), actor: "Dr. Elif Yılmaz", action: "PATIENT_ADMIT", target: "P-101", detail: "Erişkin YBÜ · Yatak 101" }],
+    maskNames: false,
+    autoAlarm: true,
     seq: 200,             // above the pre-seeded P-1xx range so generated IDs never collide
   };
 }
@@ -224,10 +379,30 @@ export function createDemoStore(initial) {
   const getState = () => state;
   const subscribe = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 
+  // Immutable append-only audit trail (S-15). Every security/clinical action lands here with actor,
+  // timestamp and target. Never mutated or deleted in the UI.
+  function audit(action, target, detail) {
+    const entry = { id: `AL-${state.seq}`, atMs: Date.now(), atSec: state.clockSec,
+      actor: state.user?.full_name || "—", role: state.user?.role || null,
+      action, target: target || null, detail: detail || null };
+    state = { ...state, auditLog: [...state.auditLog, entry], seq: state.seq + 1 };
+    return entry;
+  }
+  // Ensure a clinical record exists for a patient (lazy-init for beds admitted via the minimal path).
+  function ensureClinical(pid) {
+    if (!state.clinical[pid]) state = { ...state, clinical: { ...state.clinical, [pid]: emptyClinical() } };
+    return state.clinical[pid];
+  }
+  const patchClinical = (pid, patch) => {
+    const cur = state.clinical[pid] || emptyClinical();
+    set({ clinical: { ...state.clinical, [pid]: { ...cur, ...patch } } });
+  };
+
   function login(email, password) {
     const acct = DEMO_ACCOUNTS.find((a) => a.email === email && a.password === password);
     if (!acct) throw new Error("Geçersiz e-posta veya parola.");
     set({ user: { email: acct.email, full_name: acct.full_name, role: acct.role } });
+    audit("LOGIN", acct.email, acct.role);
     return acct;
   }
   function loginAs(role) {
@@ -268,7 +443,9 @@ export function createDemoStore(initial) {
       vitals: vitals || { hr: null, map: null, spo2: null, temp: null, rr: null },
     };
     const beds = state.beds.map((b) => (b.id === bedId ? { ...b, state: "OCCUPIED", patientId: pid } : b));
-    set({ beds, patients: [...state.patients, patient], seq: state.seq + 1 });
+    set({ beds, patients: [...state.patients, patient], seq: state.seq + 1,
+      clinical: { ...state.clinical, [pid]: emptyClinical() } });
+    audit("PATIENT_ADMIT", pid, `${bed.unitName || ""} · Yatak ${bed.label}`);
     return patient;
   }
 
@@ -355,6 +532,87 @@ export function createDemoStore(initial) {
     return bed;
   }
 
+  // --------------------------------------------------------------- clinical data entry (physician)
+  // ICD-10 diagnosis. Codes are the international standard and stored verbatim.
+  function addDiagnosis({ patientId, code, text }) {
+    if (!state.patients.some((p) => p.patient_id === patientId)) throw new Error("Hasta bulunamadı.");
+    if (!code) throw new Error("ICD-10 kodu zorunludur.");
+    ensureClinical(patientId);
+    const rec = state.clinical[patientId] || emptyClinical();
+    const entry = { id: `d-${state.seq}`, code, text: text || code, atMs: Date.now(),
+      by: state.user?.full_name || "—" };
+    patchClinical(patientId, { diagnoses: [...rec.diagnoses, entry] });
+    set({ seq: state.seq + 1 });
+    audit("DIAGNOSIS_ADD", patientId, `${code} · ${text || ""}`.trim());
+    return entry;
+  }
+  // Drug / infusion. Active-ingredient name + dose + unit + start/end timestamps.
+  function addMedication({ patientId, name, dose, unit, startMs, endMs }) {
+    if (!state.patients.some((p) => p.patient_id === patientId)) throw new Error("Hasta bulunamadı.");
+    if (!name) throw new Error("Etken madde zorunludur.");
+    if (dose == null || dose === "") throw new Error("Dozaj zorunludur.");
+    ensureClinical(patientId);
+    const rec = state.clinical[patientId] || emptyClinical();
+    const entry = { id: `m-${state.seq}`, name, dose: String(dose), unit: unit || "",
+      startMs: startMs || Date.now(), endMs: endMs || null, by: state.user?.full_name || "—" };
+    patchClinical(patientId, { medications: [...rec.medications, entry] });
+    set({ seq: state.seq + 1 });
+    audit("MEDICATION_ADD", patientId, `${name} ${dose}${unit ? " " + unit : ""}`);
+    return entry;
+  }
+  function stopMedication({ patientId, medId }) {
+    const rec = state.clinical[patientId]; if (!rec) throw new Error("Kayıt bulunamadı.");
+    const medications = rec.medications.map((m) => (m.id === medId ? { ...m, endMs: Date.now() } : m));
+    patchClinical(patientId, { medications });
+    audit("MEDICATION_STOP", patientId, medId);
+  }
+  // Timestamped ICU procedure.
+  function addProcedure({ patientId, name }) {
+    if (!state.patients.some((p) => p.patient_id === patientId)) throw new Error("Hasta bulunamadı.");
+    if (!name) throw new Error("Prosedür zorunludur.");
+    ensureClinical(patientId);
+    const rec = state.clinical[patientId] || emptyClinical();
+    const entry = { id: `pr-${state.seq}`, name, atMs: Date.now(), by: state.user?.full_name || "—" };
+    patchClinical(patientId, { procedures: [...rec.procedures, entry] });
+    set({ seq: state.seq + 1 });
+    audit("PROCEDURE_ADD", patientId, name);
+    return entry;
+  }
+  // Intake/Output fluid entry (kind: "in" | "out").
+  function addFluid({ patientId, kind, label, ml }) {
+    if (!state.patients.some((p) => p.patient_id === patientId)) throw new Error("Hasta bulunamadı.");
+    if (kind !== "in" && kind !== "out") throw new Error("Sıvı tipi 'in' veya 'out' olmalı.");
+    const n = Number(ml);
+    if (!Number.isFinite(n) || n <= 0) throw new Error("Miktar (mL) pozitif olmalı.");
+    ensureClinical(patientId);
+    const rec = state.clinical[patientId] || emptyClinical();
+    const entry = { id: `f-${state.seq}`, kind, label: label || (kind === "in" ? "Giren" : "Çıkan"),
+      ml: n, atMs: Date.now() };
+    patchClinical(patientId, { fluids: [...rec.fluids, entry] });
+    set({ seq: state.seq + 1 });
+    audit("FLUID_ADD", patientId, `${kind === "in" ? "Giren" : "Çıkan"} ${n} mL`);
+    return entry;
+  }
+  // Physician per-patient alarm thresholds (S-05 personalisation).
+  function setThresholds({ patientId, thresholds }) {
+    if (!state.patients.some((p) => p.patient_id === patientId)) throw new Error("Hasta bulunamadı.");
+    ensureClinical(patientId);
+    const rec = state.clinical[patientId] || emptyClinical();
+    const merged = { ...DEFAULT_THRESHOLDS, ...rec.thresholds, ...thresholds };
+    patchClinical(patientId, { thresholds: merged });
+    audit("THRESHOLDS_SET", patientId,
+      `SpO2≥${merged.spo2Min} HR ${merged.hrMin}-${merged.hrMax} MAP ${merged.mapMin}-${merged.mapMax}`);
+    return merged;
+  }
+  // KVKK name-masking toggle (global). When on, the UI renders "A*** Y***" everywhere.
+  function toggleMaskNames(on) {
+    const v = on == null ? !state.maskNames : !!on;
+    set({ maskNames: v });
+    audit("MASK_NAMES", null, v ? "on" : "off");
+    return v;
+  }
+  function setAutoAlarm(on) { set({ autoAlarm: !!on }); audit("AUTO_ALARM", null, on ? "on" : "off"); }
+
   // PR#3 alert: fire an alarm for a patient. Starts the escalation clock at the current sim time.
   function fireAlert({ patientId, tier, kind, summary }) {
     const patient = state.patients.find((p) => p.patient_id === patientId);
@@ -381,7 +639,41 @@ export function createDemoStore(initial) {
   // event per newly-crossed step. Also auto-expires due snoozes (re-fires the alarm, clock restarts).
   function reconcile(nowSec) {
     let changed = false;
-    const alerts = state.alerts.map((a) => {
+    let working = state.alerts;
+    let seq = state.seq;
+    const newAudit = [];
+
+    // -------- Automatic alarm engine (S-05): device-driven vitals → auto-generated alarms.
+    // For every occupied patient with no open alarm, evaluate NEWS2 and the physician's thresholds.
+    // A breach auto-fires a CRITICAL/HIGH alarm (machine text never diagnoses).
+    if (state.autoAlarm) {
+      for (const p of state.patients) {
+        const hasOpen = working.some((a) => a.patientId === p.patient_id && a.status !== "CLOSED");
+        if (hasOpen) continue;
+        const th = state.clinical[p.patient_id]?.thresholds;
+        const news2 = computeNews2(p.vitals);
+        const breaches = evaluateThresholds(p.vitals, th);
+        if (news2 >= NEWS2_ALARM_THRESHOLD || breaches.length > 0) {
+          const critical = news2 >= 9 || (p.vitals?.spo2 != null && p.vitals.spo2 <= 90)
+            || (p.vitals?.map != null && p.vitals.map <= 58);
+          const tier = critical ? TIER.CRITICAL : TIER.HIGH;
+          const metric = breaches.length ? breaches.join(", ") : `NEWS2 ${news2}`;
+          working = [...working, {
+            id: `A-${seq}`, patientId: p.patient_id, bedLabel: p.bedLabel, tier,
+            kind: "auto_deterioration", auto: true, trigger: metric,
+            summary: "Klinik kötüleşme kriterleri değerlendirilecek",
+            status: "FIRED", firedAtSec: nowSec, currentStep: ESCALATION_STEP.NONE,
+            events: [], ack: null, snooze: null,
+          }];
+          newAudit.push({ id: `AL-${seq}`, atMs: Date.now(), atSec: nowSec, actor: "Otomatik Alarm Motoru",
+            role: null, action: "ALERT_AUTO_FIRE", target: `A-${seq}`, detail: `${p.bedLabel} · ${tier} · ${metric}` });
+          seq += 1;
+          changed = true;
+        }
+      }
+    }
+
+    const alerts = working.map((a) => {
       let alert = a;
       // Snooze auto-expiry → re-fire at original tier, restart the escalation clock.
       if (alert.status === "SNOOZED" && alert.snooze && nowSec >= alert.snooze.until) {
@@ -406,7 +698,8 @@ export function createDemoStore(initial) {
       }
       return alert;
     });
-    if (changed) set({ alerts, clockSec: nowSec });
+    if (changed) set({ alerts, clockSec: nowSec, seq,
+      auditLog: newAudit.length ? [...state.auditLog, ...newAudit] : state.auditLog });
     else if (nowSec !== state.clockSec) set({ clockSec: nowSec });
   }
 
@@ -426,6 +719,19 @@ export function createDemoStore(initial) {
                  atSec: state.clockSec } }
       : x));
     set({ alerts });
+    audit("ALERT_ACK", alertId, `${a.tier} · ${a.bedLabel}${reason ? " · " + reason : ""}`);
+  }
+
+  // Mute (silence) an alarm for a fixed window without resetting the escalation clock (S-05). Audible
+  // signalling is suppressed but the alarm stays visible and keeps escalating.
+  function muteAlert(alertId, minutes = 2) {
+    const a = state.alerts.find((x) => x.id === alertId);
+    if (!a) throw new Error("Alarm bulunamadı.");
+    const untilSec = state.clockSec + minutes * 60;
+    const alerts = state.alerts.map((x) => (x.id === alertId
+      ? { ...x, mutedUntil: untilSec } : x));
+    set({ alerts });
+    audit("ALERT_MUTE", alertId, `${minutes} dk · ${a.bedLabel}`);
   }
 
   // Snooze (S-22). CRITICAL is rejected. HIGH ≤ 30, MEDIUM ≤ 120. Reason mandatory.
@@ -446,6 +752,7 @@ export function createDemoStore(initial) {
           snooze: { until: untilSec, minutes, reason, note: note || null, atSec: state.clockSec } }
       : x));
     set({ alerts });
+    audit("ALERT_SNOOZE", alertId, `${minutes} dk · ${reason}`);
   }
 
   // Manual escalation straight to RRT (S-06).
@@ -457,6 +764,7 @@ export function createDemoStore(initial) {
     const alerts = state.alerts.map((x) => (x.id === alertId
       ? { ...x, status: "FIRED", currentStep: ESCALATION_STEP.TIER_3_RRT, events } : x));
     set({ alerts });
+    audit("ALERT_ESCALATE_RRT", alertId, a.bedLabel);
   }
 
   // S-06: RRT may only access a patient with an active escalation event.
@@ -474,6 +782,7 @@ export function createDemoStore(initial) {
     const breakGlass = { by: state.user?.full_name || "—", reason, activatedAtSec: state.clockSec,
                          expiresAtSec: state.clockSec + BREAK_GLASS_MINUTES * 60 };
     set({ breakGlass });
+    audit("BREAK_GLASS_ACTIVATE", null, reason);
     return breakGlass;
   }
   function extendBreakGlass() {
@@ -494,8 +803,10 @@ export function createDemoStore(initial) {
     login, loginAs, logout,
     admitPatient, transferPatient, assignCareTeam, createHandover,
     createUser, addUnit, addRoom, addBed,
+    addDiagnosis, addMedication, stopMedication, addProcedure, addFluid, setThresholds,
+    toggleMaskNames, setAutoAlarm,
     fireAlert, reconcile,
-    acknowledgeAlert, snoozeAlert, escalateToRRT, rrtHasAccess,
+    acknowledgeAlert, muteAlert, snoozeAlert, escalateToRRT, rrtHasAccess,
     activateBreakGlass, extendBreakGlass, breakGlassActive,
     setSpeed, setRunning, reset,
   };

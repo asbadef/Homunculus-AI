@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   createDemoStore, buildRealisticState, computeEscalationStep, secondsToNextStep, canSnooze,
   snoozeCapMinutes, TIER, ROLE, ESCALATION_STEP,
+  computeNews2, evaluateThresholds, searchIcd10, maskName, DEFAULT_THRESHOLDS, NEWS2_ALARM_THRESHOLD,
 } from "./clinicalDemo.js";
 
 // ---------------------------------------------------------------- pure escalation logic (S-05)
@@ -233,5 +234,127 @@ describe("break-glass", () => {
     expect(s.breakGlassActive()).toBe(false);
     s.extendBreakGlass();
     expect(s.breakGlassActive()).toBe(true);
+  });
+});
+
+// ================================================================ PR#6 additions
+// ---------------------------------------------------------------- NEWS2 + thresholds (auto-alarm)
+describe("computeNews2", () => {
+  it("scores a stable patient low", () => {
+    expect(computeNews2({ hr: 80, map: 88, spo2: 98, temp: 36.8, rr: 16 })).toBeLessThan(NEWS2_ALARM_THRESHOLD);
+  });
+  it("scores a deteriorating patient at or above the alarm threshold", () => {
+    expect(computeNews2({ hr: 128, map: 58, spo2: 89, temp: 39.2, rr: 32 })).toBeGreaterThanOrEqual(NEWS2_ALARM_THRESHOLD);
+  });
+});
+
+describe("evaluateThresholds", () => {
+  it("reports no breaches within limits", () => {
+    expect(evaluateThresholds({ hr: 80, map: 80, spo2: 97 }, DEFAULT_THRESHOLDS)).toEqual([]);
+  });
+  it("flags SpO2, HR and MAP breaches", () => {
+    const b = evaluateThresholds({ hr: 140, map: 55, spo2: 85 }, DEFAULT_THRESHOLDS);
+    expect(b).toContain("SpO2"); expect(b).toContain("HR"); expect(b).toContain("MAP");
+  });
+});
+
+describe("searchIcd10 / maskName", () => {
+  it("finds diagnoses by code or text and never translates the code", () => {
+    const r = searchIcd10("sepsis");
+    expect(r.some((x) => x.code === "A41.9")).toBe(true);
+    expect(searchIcd10("J96")[0].code).toBe("J96.0");
+  });
+  it("masks names to first initials", () => {
+    expect(maskName("Ahmet Yılmaz")).toBe("A*** Y***");
+  });
+});
+
+// ---------------------------------------------------------------- automatic alarm engine (S-05)
+describe("automatic alarm engine", () => {
+  it("auto-fires an alarm for a patient breaching thresholds on reconcile", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.ATTENDING);
+    s.reconcile(1);
+    const alerts = s.getState().alerts;
+    expect(alerts.length).toBeGreaterThan(0);
+    expect(alerts.every((a) => a.summary.includes("değerlendirilecek"))).toBe(true);
+    // A critical desaturating patient (P-104, SpO2 91/MAP 58) escalates to CRITICAL.
+    expect(alerts.some((a) => a.patientId === "P-104" && a.tier === TIER.CRITICAL)).toBe(true);
+  });
+  it("does not duplicate an alarm while one is already open", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.reconcile(1);
+    const first = s.getState().alerts.length;
+    s.reconcile(2);
+    expect(s.getState().alerts.length).toBe(first);
+  });
+  it("respects the autoAlarm off switch", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.setAutoAlarm(false);
+    s.reconcile(1);
+    expect(s.getState().alerts.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------- clinical data entry (physician)
+describe("clinical data entry", () => {
+  it("records ICD-10 diagnosis, medication, procedure and fluids with audit", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.ATTENDING);
+    s.addDiagnosis({ patientId: "P-102", code: "J44.1", text: "KOAH akut alevlenme" });
+    s.addMedication({ patientId: "P-102", name: "Furosemid", dose: "40", unit: "mg" });
+    s.addProcedure({ patientId: "P-102", name: "Arteriyel kateter" });
+    s.addFluid({ patientId: "P-102", kind: "in", label: "IV sıvı", ml: 500 });
+    s.addFluid({ patientId: "P-102", kind: "out", label: "İdrar", ml: 300 });
+    const rec = s.getState().clinical["P-102"];
+    expect(rec.diagnoses.at(-1).code).toBe("J44.1");
+    expect(rec.medications.at(-1).name).toBe("Furosemid");
+    expect(rec.procedures.at(-1).name).toBe("Arteriyel kateter");
+    expect(rec.fluids.filter((f) => f.kind === "in").length).toBe(1);
+    const log = s.getState().auditLog.map((e) => e.action);
+    expect(log).toContain("DIAGNOSIS_ADD");
+    expect(log).toContain("MEDICATION_ADD");
+    expect(log).toContain("FLUID_ADD");
+  });
+  it("rejects a diagnosis without an ICD-10 code and a fluid with non-positive volume", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.ATTENDING);
+    expect(() => s.addDiagnosis({ patientId: "P-102", text: "no code" })).toThrow(/ICD-10/);
+    expect(() => s.addFluid({ patientId: "P-102", kind: "in", ml: 0 })).toThrow(/pozitif/);
+  });
+});
+
+// ---------------------------------------------------------------- physician thresholds
+describe("physician thresholds", () => {
+  it("stores per-patient limits and they influence the auto-alarm tier", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.ATTENDING);
+    const merged = s.setThresholds({ patientId: "P-102", thresholds: { spo2Min: 99 } });
+    expect(merged.spo2Min).toBe(99);
+    s.reconcile(1);
+    // P-102 (SpO2 97) now breaches the tightened 99 limit → an alarm exists for it.
+    expect(s.getState().alerts.some((a) => a.patientId === "P-102")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------- mute + KVKK masking + audit
+describe("mute, masking and audit", () => {
+  it("mutes an alarm without acknowledging it and writes an audit entry", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.CHARGE_NURSE);
+    const a = s.fireAlert({ patientId: "P-101", tier: TIER.HIGH });
+    s.muteAlert(a.id, 2);
+    const alert = s.getState().alerts.find((x) => x.id === a.id);
+    expect(alert.mutedUntil).toBeGreaterThan(0);
+    expect(alert.status).toBe("FIRED"); // muting never acknowledges
+    expect(s.getState().auditLog.some((e) => e.action === "ALERT_MUTE")).toBe(true);
+  });
+  it("toggles KVKK name masking globally", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    expect(s.getState().maskNames).toBe(false);
+    s.toggleMaskNames();
+    expect(s.getState().maskNames).toBe(true);
+    expect(s.getState().auditLog.some((e) => e.action === "MASK_NAMES")).toBe(true);
   });
 });
