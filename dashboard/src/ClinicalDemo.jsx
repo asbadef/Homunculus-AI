@@ -10,11 +10,14 @@ import {
   HeartPulse, Building2, ShieldAlert, Sun, Moon, Monitor, Globe, ChevronDown, LogOut, Check,
   BellOff, ArrowUpCircle, Play, Pause, Clock, AlertTriangle, Plus, PenLine, Thermometer, Wind,
   Droplets, Gauge, Heart, UserCog, ClipboardList, Siren, PanelLeftClose, PanelLeft, CheckCircle2,
-  Circle, X,
+  Circle, X, FileText, Pill, Droplet, Sliders, Eye, EyeOff, ScrollText, Volume2, VolumeX,
+  TrendingUp, StopCircle, Syringe,
 } from "lucide-react";
 import {
   createDemoStore, buildRealisticState, ROLE, TIER, ESCALATION_STEP, STEP_TARGET_ROLE,
   secondsToNextStep, canSnooze, snoozeCapMinutes, ACK_REASON_MIN_CHARS,
+  searchIcd10, MED_CATALOG, PROCEDURE_CATALOG, computeNews2, maskName, evaluateThresholds,
+  NEWS2_ALARM_THRESHOLD, DEFAULT_THRESHOLDS,
 } from "./clinicalDemo.js";
 import {
   getTheme, storedTheme, persistTheme, THEME_KEYS,
@@ -192,6 +195,22 @@ function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMe
             </div>
           )}
         </Menu>
+
+        {/* Auto-alarm toggle */}
+        <button
+          onClick={() => store.setAutoAlarm(!state.autoAlarm)}
+          title={state.autoAlarm ? S.pr6.autoAlarmOn : S.pr6.autoAlarmOff}
+          className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost} ${state.autoAlarm ? "text-red-500" : T.faint}`}>
+          {state.autoAlarm ? <Siren size={17} /> : <BellOff size={17} />}
+        </button>
+
+        {/* KVKK name-mask toggle */}
+        <button
+          onClick={() => store.toggleMaskNames()}
+          title={S.pr6.maskNames}
+          className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost} ${state.maskNames ? "text-brand" : T.faint}`}>
+          {state.maskNames ? <EyeOff size={17} /> : <Eye size={17} />}
+        </button>
 
         {/* Theme selector */}
         <Menu T={T} triggerClass={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost}`}
@@ -383,7 +402,7 @@ function BedBoard({ T, S, state, onOpenPatient }) {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className={`rounded-md ${T.subtle} px-2 py-0.5 text-xs font-bold ${T.muted}`}>{bed.label}</span>
-                    <span className={`truncate font-bold ${T.heading} ${T.sizes.name}`}>{p.display_name}</span>
+                    <span className={`truncate font-bold ${T.heading} ${T.sizes.name}`}>{maskedName(state, p.display_name)}</span>
                   </div>
                   <div className={`mt-0.5 text-xs ${T.faint}`}>
                     {ageText(p, S)}{!p.isNeonate ? "y" : ""} · {p.sex === "male" ? S.male : S.female} · {S.protocolNo} {p.protocolNo}
@@ -397,6 +416,7 @@ function BedBoard({ T, S, state, onOpenPatient }) {
                 <span className={`font-medium ${T.faint}`}>{S.admissionDx}: </span>{p.diagnosis}
               </div>
               <VitalsGrid T={T} vitals={p.vitals} />
+              <div className="mt-2"><News2Pill S={S} vitals={p.vitals} /></div>
               <div className={`mt-3 flex items-center justify-between text-xs ${T.faint}`}>
                 <span>{S.mrn} {p.mrn}</span>
                 <span>{S.lengthOfStay}: {losText(p.admittedAtMs, S)}</span>
@@ -410,7 +430,7 @@ function BedBoard({ T, S, state, onOpenPatient }) {
 }
 
 // ================================================================ PATIENT DRAWER
-function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer }) {
+function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, lang }) {
   const p = state.patients.find((x) => x.patient_id === patientId);
   const [ho, setHo] = useState(false);
   if (!p) return null;
@@ -424,7 +444,7 @@ function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer }) {
         <div className="flex items-start justify-between">
           <div>
             <div className={`text-xs ${T.faint}`}>{S.patientDetail}</div>
-            <h2 className={`text-xl font-bold ${T.heading}`}>{p.display_name}</h2>
+            <h2 className={`text-xl font-bold ${T.heading}`}>{maskedName(state, p.display_name)}</h2>
           </div>
           <button onClick={onClose} className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost}`}><X size={18} /></button>
         </div>
@@ -456,6 +476,11 @@ function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer }) {
             <div className="flex justify-between"><span className={T.muted}>{S.attending}</span><span className={`font-semibold ${T.text}`}>{userName(team.attendingId)}</span></div>
             <div className="flex justify-between"><span className={T.muted}>{S.nurse}</span><span className={`font-semibold ${T.text}`}>{userName(team.nurseId)}</span></div>
           </div>
+        </div>
+
+        {/* PR#6 — clinical data entry & treatment module */}
+        <div className="mt-5">
+          <ClinicalModule T={T} S={S} store={store} state={state} patientId={p.patient_id} lang={lang} />
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2">
@@ -660,7 +685,7 @@ function CareTeamPage({ T, S, store, state }) {
               return (
                 <div key={p.patient_id} className={`rounded-xl border ${T.border} ${T.subtle} p-4`}>
                   <div className="flex items-center justify-between">
-                    <div className="font-semibold">{p.bedLabel} · {p.display_name}</div>
+                    <div className="font-semibold">{p.bedLabel} · {maskedName(state, p.display_name)}</div>
                     <span className={`text-xs ${T.faint}`}>{p.diagnosis}</span>
                   </div>
                   <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -726,7 +751,7 @@ function AlarmPage({ T, S, store, state, lang }) {
           <div className="space-y-3">
             <Field T={T} label={S.viewDetail}>
               <select className={inputCls(T)} value={fp} onChange={(e) => setFp(e.target.value)}>
-                {state.patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.bedLabel} · {p.display_name}</option>)}
+                {state.patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.bedLabel} · {maskedName(state, p.display_name)}</option>)}
               </select>
             </Field>
             <Field T={T} label={S.alertTier}>
@@ -753,7 +778,7 @@ function AlarmPage({ T, S, store, state, lang }) {
             ? <div className={`py-10 text-center text-sm ${T.faint}`}>{S.noAlerts}</div>
             : <div className="space-y-3">{alerts.map((a) => (
                 <AlertCard key={a.id} T={T} S={S} state={state} alert={a} onAck={() => setAckFor(a)} onSnooze={() => setSnzFor(a)}
-                  onEscalate={() => store.escalateToRRT(a.id)} />
+                  onEscalate={() => store.escalateToRRT(a.id)} onMute={() => store.muteAlert(a.id)} />
               ))}</div>}
         </div>
       </div>
@@ -764,9 +789,10 @@ function AlarmPage({ T, S, store, state, lang }) {
   );
 }
 
-function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate }) {
+function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate, onMute }) {
   const ui = tierUi(alert.tier);
   const patient = state.patients.find((p) => p.patient_id === alert.patientId);
+  const isMuted = alert.mutedUntil != null && alert.mutedUntil > state.clockSec;
   const elapsed = alert.status === "FIRED" ? state.clockSec - alert.firedAtSec : 0;
   const toNext = alert.status === "FIRED" ? secondsToNextStep(elapsed, alert.tier) : null;
   const statusTxt = { FIRED: S.statusFired, ACKNOWLEDGED: S.statusAck, SNOOZED: S.statusSnoozed, CLOSED: S.statusClosed }[alert.status];
@@ -784,11 +810,20 @@ function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate }) {
             <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-bold ${ui.chip}`}>
               <span className={`h-2 w-2 rounded-full ${ui.dot}`} /> {alert.tier}
             </span>
-            <span className={`text-sm font-semibold ${T.text}`}>{patient?.bedLabel} · {patient?.display_name}</span>
+            {alert.auto && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-brand/15 px-2 py-0.5 text-[11px] font-bold text-brand">
+                <Siren size={11} /> {S.pr6.autoBadge}
+              </span>
+            )}
+            <span className={`text-sm font-semibold ${T.text}`}>{patient?.bedLabel} · {maskedName(state, patient?.display_name)}</span>
           </div>
           <div className={`mt-1 text-sm ${T.muted}`}>{alert.summary}</div>
+          {alert.trigger && <div className={`mt-0.5 text-xs ${ui.text}`}>{alert.trigger}</div>}
         </div>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${T.chip}`}>{statusTxt}</span>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className={`rounded-full px-2 py-0.5 text-xs ${T.chip}`}>{statusTxt}</span>
+          {isMuted && <span className="inline-flex items-center gap-1 rounded-full bg-slate-400/15 px-2 py-0.5 text-[11px] text-slate-400"><VolumeX size={11} /> {S.pr6.muted}</span>}
+        </div>
       </div>
 
       {alert.status === "FIRED" && (
@@ -816,6 +851,9 @@ function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate }) {
         })}
       </div>
 
+      {/* PR#6 — visual escalation timeline (0-3 / 3-5 / 5-10 min) */}
+      {alert.status === "FIRED" && <EscalationTimeline T={T} S={S} alert={alert} state={state} />}
+
       {alert.ack && (
         <div className={`mt-3 rounded-lg ${T.card} border ${T.border} p-2 text-xs ${T.muted}`}>
           <span className="font-semibold text-emerald-500">{S.statusAck}</span> · {alert.ack.by} · {S.reasonOptions[alert.ack.reason] || alert.ack.reason}
@@ -829,6 +867,9 @@ function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate }) {
           {canSnooze(alert.tier)
             ? <button onClick={onSnooze} className={`${btnCls(T, "ghost")} px-3 py-2`}><BellOff size={15} /> {S.snooze}</button>
             : <span className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs ${ui.chip}`}><AlertTriangle size={14} /> {S.critNoSnooze}</span>}
+          <button onClick={onMute} disabled={isMuted} className={`${btnCls(T, "ghost")} px-3 py-2 ${isMuted ? "opacity-50" : ""}`}>
+            {isMuted ? <Volume2 size={15} /> : <VolumeX size={15} />} {isMuted ? S.pr6.muted : S.pr6.mute}
+          </button>
           <button onClick={onEscalate} className={`${btnCls(T, "warn")} px-3 py-2`}><ArrowUpCircle size={15} /> {S.escalateRRT}</button>
         </div>
       )}
@@ -954,9 +995,13 @@ function BreakGlass({ T, S, store, state }) {
 // ================================================================ ADMIN
 function AdminPage({ T, S, store, state }) {
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <UserAdmin T={T} S={S} store={store} state={state} />
-      <StructureAdmin T={T} S={S} store={store} state={state} />
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <UserAdmin T={T} S={S} store={store} state={state} />
+        <StructureAdmin T={T} S={S} store={store} state={state} />
+      </div>
+      {/* PR#6 — KVKK/SB audit trail (immutable event log) */}
+      <AuditLog T={T} S={S} state={state} />
     </div>
   );
 }
@@ -1069,6 +1114,360 @@ function StructureAdmin({ T, S, store, state }) {
   );
 }
 
+// ================================================================ PR#6 · shared clinical UI
+// KVKK name masking helper — applied at the render layer so the store keeps the real synthetic name.
+function maskedName(state, name) {
+  return state && state.maskNames && name ? maskName(name) : name;
+}
+function news2Level(score) {
+  if (score >= 7) return { text: "text-red-500", ring: "ring-red-500/50" };
+  if (score >= 5) return { text: "text-amber-500", ring: "ring-amber-500/50" };
+  return { text: "text-emerald-500", ring: "ring-emerald-500/40" };
+}
+function News2Pill({ S, vitals }) {
+  if (!vitals) return null;
+  const score = computeNews2(vitals);
+  const lv = news2Level(score);
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${lv.ring} ${lv.text}`}>
+      <TrendingUp size={13} /> {S.pr6.news2}: {score}
+    </span>
+  );
+}
+// Lightweight inline SVG sparkline (no chart library needed).
+function Sparkline({ points, stroke = "currentColor", height = 26 }) {
+  if (!points || points.length < 2) return null;
+  const w = 120;
+  const min = Math.min(...points), max = Math.max(...points);
+  const span = (max - min) || 1;
+  const step = w / (points.length - 1);
+  const d = points.map((v, i) =>
+    `${i === 0 ? "M" : "L"}${(i * step).toFixed(1)},${(height - ((v - min) / span) * height).toFixed(1)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" width="100%" height={height}>
+      <path d={d} fill="none" stroke={stroke} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+function Section({ T, icon: Icon, title, children }) {
+  return (
+    <div className="mb-3">
+      <div className={`mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${T.faint}`}>
+        {Icon && <Icon size={13} />} {title}
+      </div>
+      <div className="space-y-1.5">{children}</div>
+    </div>
+  );
+}
+function Row({ T, children }) {
+  return <div className={`flex items-center gap-2 rounded-lg ${T.subtle} px-2.5 py-1.5`}>{children}</div>;
+}
+function Empty({ T, text }) {
+  return <div className={`rounded-lg border border-dashed ${T.border} px-3 py-2 text-center text-xs ${T.faint}`}>{text}</div>;
+}
+
+// Visual escalation timeline (0–3 / 3–5 / 5–10 min) — the three notification tiers of S-05.
+function EscalationTimeline({ T, S, alert, state }) {
+  const elapsed = alert.status === "FIRED" ? state.clockSec - alert.firedAtSec
+    : alert.status === "CLOSED" || alert.status === "ACKNOWLEDGED" ? 99999 : 0;
+  const stages = [
+    { key: "t1", from: 0, label: S.pr6.escT1, who: S.pr6.escT1Who },
+    { key: "t2", from: 180, label: S.pr6.escT2, who: S.pr6.escT2Who },
+    { key: "t3", from: 300, label: S.pr6.escT3, who: S.pr6.escT3Who },
+  ];
+  return (
+    <div className="mt-3">
+      <div className={`mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${T.faint}`}>
+        <TrendingUp size={12} /> {S.pr6.escTimeline}
+      </div>
+      <div className="flex items-stretch gap-1.5">
+        {stages.map((st, i) => {
+          const next = stages[i + 1];
+          const active = alert.status === "FIRED" && elapsed >= st.from && (!next || elapsed < next.from);
+          const done = next ? elapsed >= next.from : elapsed >= st.from && alert.status !== "FIRED";
+          const tone = done ? "bg-red-500/20 text-red-500 ring-red-500/40"
+            : active ? "bg-amber-500/20 text-amber-500 ring-amber-500/50 animate-pulse"
+            : `${T.chip} ring-transparent`;
+          return (
+            <div key={st.key} className={`flex-1 rounded-lg px-2 py-1.5 ring-1 ${tone}`}>
+              <div className="flex items-center gap-1 text-[11px] font-bold">
+                {done ? <CheckCircle2 size={12} /> : active ? <Siren size={12} /> : <Circle size={12} />} {st.label}
+              </div>
+              <div className={`mt-0.5 text-[10px] leading-tight ${done || active ? "" : T.faint}`}>{st.who}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ICD-10 auto-complete search. Codes are the international standard and never translated.
+function Icd10Search({ T, S, lang, onPick }) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const results = q.trim().length >= 2 ? searchIcd10(q).slice(0, 6) : [];
+  return (
+    <div className="relative">
+      <input className={inputCls(T)} value={q} placeholder={S.pr6.searchDiagnosis}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} />
+      {open && results.length > 0 && (
+        <div className={`absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border ${T.border} ${T.card} p-1 shadow-2xl`}>
+          {results.map((r) => (
+            <button key={r.code} type="button"
+              onClick={() => { onPick(r); setQ(""); setOpen(false); }}
+              className={`flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left ${T.navIdle}`}>
+              <span className="shrink-0 rounded bg-brand/15 px-1.5 py-0.5 text-xs font-bold text-brand">{r.code}</span>
+              <span className={`text-xs ${T.text}`}>{r[lang] || r.tr}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Full clinical data-entry module (physician): diagnoses, drugs/infusions, procedures, fluid balance,
+// mini vital trends, NEWS2, per-patient thresholds and one-click epicrisis/handover report.
+function ClinicalModule({ T, S, store, state, patientId, lang }) {
+  const p = state.patients.find((x) => x.patient_id === patientId);
+  const rec = state.clinical[patientId] || { diagnoses: [], medications: [], procedures: [], fluids: [],
+    thresholds: { ...DEFAULT_THRESHOLDS }, vitalHistory: [] };
+  const [thOpen, setThOpen] = useState(false);
+  const [med, setMed] = useState({ name: MED_CATALOG[0]?.name || "", dose: "", unit: MED_CATALOG[0]?.unit || "" });
+  const [proc, setProc] = useState(PROCEDURE_CATALOG[0] || "");
+  const [fluid, setFluid] = useState({ kind: "in", label: "", ml: "" });
+  const [err, setErr] = useState("");
+  const wrap = (fn) => { try { fn(); setErr(""); } catch (ex) { setErr(ex.message); } };
+  const pickMed = (name) => { const m = MED_CATALOG.find((x) => x.name === name); setMed((s) => ({ ...s, name, unit: m?.unit || "" })); };
+
+  const intake = rec.fluids.filter((f) => f.kind === "in").reduce((a, f) => a + f.ml, 0);
+  const output = rec.fluids.filter((f) => f.kind === "out").reduce((a, f) => a + f.ml, 0);
+  const balance = intake - output;
+  const hist = rec.vitalHistory || [];
+
+  return (
+    <div className="mt-4">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div className={`text-xs font-semibold uppercase ${T.faint}`}>{S.pr6.clinicalModule}</div>
+        <News2Pill S={S} vitals={p?.vitals} />
+        <div className="ml-auto flex gap-1.5">
+          <button onClick={() => setThOpen(true)} className={`inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs ${T.ghost}`}>
+            <Sliders size={13} /> {S.pr6.thresholds}
+          </button>
+          <button onClick={() => printEpicrisis(S, p, rec, state)} className={`inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs ${T.primary}`}>
+            <FileText size={13} /> {S.pr6.epicrisis}
+          </button>
+        </div>
+      </div>
+
+      {err && <div className="mb-2 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-500">{err}</div>}
+
+      {hist.length >= 2 && (
+        <div className={`mb-3 grid grid-cols-3 gap-2 rounded-xl border ${T.border} ${T.subtle} p-3`}>
+          {[["SpO2", hist.map((h) => h.spo2), "#38bdf8"], ["HR", hist.map((h) => h.hr), "#f472b6"],
+            ["MAP", hist.map((h) => h.map), "#a3e635"]].map(([lbl, series, col]) => (
+            <div key={lbl}>
+              <div className={`mb-0.5 text-[10px] font-semibold uppercase ${T.faint}`}>{lbl}</div>
+              <Sparkline points={series} stroke={col} />
+              <div className={`text-right text-[10px] tabular-nums ${T.muted}`}>{series[series.length - 1]}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Section T={T} icon={ClipboardList} title={S.pr6.diagnoses}>
+        {rec.diagnoses.length === 0 && <Empty T={T} text={S.pr6.noDiagnoses} />}
+        {rec.diagnoses.map((d) => (
+          <Row key={d.id} T={T}>
+            <span className="shrink-0 rounded bg-brand/15 px-1.5 py-0.5 text-xs font-bold text-brand">{d.code}</span>
+            <span className={`text-sm ${T.text}`}>{d.text}</span>
+            <span className={`ml-auto shrink-0 text-[10px] ${T.faint}`}>{new Date(d.atMs).toLocaleDateString()}</span>
+          </Row>
+        ))}
+        <Icd10Search T={T} S={S} lang={lang} onPick={(r) => wrap(() => store.addDiagnosis({ patientId, code: r.code, text: r[lang] || r.tr }))} />
+      </Section>
+
+      <Section T={T} icon={Pill} title={S.pr6.medications}>
+        {rec.medications.length === 0 && <Empty T={T} text={S.pr6.noMedications} />}
+        {rec.medications.map((m) => (
+          <Row key={m.id} T={T}>
+            <Pill size={13} className={T.faint} />
+            <span className={`text-sm font-medium ${T.text}`}>{m.name}</span>
+            <span className={`text-xs tabular-nums ${T.muted}`}>{m.dose} {m.unit}</span>
+            {m.endMs
+              ? <span className="ml-auto rounded-full bg-slate-400/15 px-2 py-0.5 text-[10px] font-semibold text-slate-400">{S.pr6.stopped}</span>
+              : <>
+                  <span className="ml-auto rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-500">{S.pr6.ongoing}</span>
+                  <button onClick={() => wrap(() => store.stopMedication({ patientId, medId: m.id }))} title={S.pr6.stopMed} className="shrink-0 text-red-500"><StopCircle size={15} /></button>
+                </>}
+          </Row>
+        ))}
+        <div className="flex flex-wrap gap-1.5">
+          <select className={`${inputCls(T)} flex-1`} value={med.name} onChange={(e) => pickMed(e.target.value)}>
+            {MED_CATALOG.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
+          </select>
+          <input className={`${inputCls(T)} w-20`} placeholder={S.pr6.dose} value={med.dose} onChange={(e) => setMed((s) => ({ ...s, dose: e.target.value }))} />
+          <span className={`self-center text-xs ${T.faint}`}>{med.unit}</span>
+          <button onClick={() => wrap(() => { store.addMedication({ patientId, name: med.name, dose: med.dose, unit: med.unit }); setMed((s) => ({ ...s, dose: "" })); })} className={`${btnCls(T, "primary")} px-3 py-2`}><Plus size={15} /></button>
+        </div>
+      </Section>
+
+      <Section T={T} icon={Syringe} title={S.pr6.procedures}>
+        {rec.procedures.length === 0 && <Empty T={T} text={S.pr6.noProcedures} />}
+        {rec.procedures.map((pr) => (
+          <Row key={pr.id} T={T}>
+            <Syringe size={13} className={T.faint} />
+            <span className={`text-sm ${T.text}`}>{pr.name}</span>
+            <span className={`ml-auto shrink-0 text-[10px] tabular-nums ${T.faint}`}>{new Date(pr.atMs).toLocaleString()}</span>
+          </Row>
+        ))}
+        <div className="flex flex-wrap gap-1.5">
+          <select className={`${inputCls(T)} flex-1`} value={proc} onChange={(e) => setProc(e.target.value)}>
+            {PROCEDURE_CATALOG.map((pc) => <option key={pc} value={pc}>{pc}</option>)}
+          </select>
+          <button onClick={() => wrap(() => store.addProcedure({ patientId, name: proc }))} className={`${btnCls(T, "primary")} px-3 py-2`}><Plus size={15} /></button>
+        </div>
+      </Section>
+
+      <Section T={T} icon={Droplet} title={S.pr6.fluidBalance}>
+        <div className={`grid grid-cols-3 gap-2 rounded-xl border ${T.border} ${T.subtle} p-2 text-center`}>
+          <div><div className={`text-[10px] uppercase ${T.faint}`}>{S.pr6.intake}</div><div className="text-sm font-bold tabular-nums text-sky-500">{intake}</div></div>
+          <div><div className={`text-[10px] uppercase ${T.faint}`}>{S.pr6.output}</div><div className="text-sm font-bold tabular-nums text-amber-500">{output}</div></div>
+          <div><div className={`text-[10px] uppercase ${T.faint}`}>{S.pr6.balance}</div><div className={`text-sm font-bold tabular-nums ${balance >= 0 ? "text-emerald-500" : "text-red-500"}`}>{balance > 0 ? "+" : ""}{balance}</div></div>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <select className={inputCls(T)} value={fluid.kind} onChange={(e) => setFluid((s) => ({ ...s, kind: e.target.value }))}>
+            <option value="in">{S.pr6.intake}</option><option value="out">{S.pr6.output}</option>
+          </select>
+          <input className={`${inputCls(T)} flex-1`} type="number" placeholder={S.pr6.volumeMl} value={fluid.ml} onChange={(e) => setFluid((s) => ({ ...s, ml: e.target.value }))} />
+          <button onClick={() => wrap(() => { store.addFluid({ patientId, kind: fluid.kind, label: fluid.label, ml: fluid.ml }); setFluid((s) => ({ ...s, ml: "" })); })} className={`${btnCls(T, "primary")} px-3 py-2`}><Plus size={15} /></button>
+        </div>
+      </Section>
+
+      {thOpen && <ThresholdModal T={T} S={S} store={store} state={state} patientId={patientId} onClose={() => setThOpen(false)} />}
+    </div>
+  );
+}
+
+function ThresholdModal({ T, S, store, state, patientId, onClose }) {
+  const rec = state.clinical[patientId];
+  const [th, setTh] = useState({ ...DEFAULT_THRESHOLDS, ...(rec?.thresholds || {}) });
+  const [err, setErr] = useState("");
+  const upd = (k, v) => setTh((s) => ({ ...s, [k]: Number(v) }));
+  const save = () => { try { store.setThresholds({ patientId, thresholds: th }); onClose(); } catch (ex) { setErr(ex.message); } };
+  const fields = [["spo2Min", S.pr6.spo2Min], ["hrMin", S.pr6.hrMin], ["hrMax", S.pr6.hrMax], ["mapMin", S.pr6.mapMin], ["mapMax", S.pr6.mapMax]];
+  return (
+    <ModalShell T={T} title={S.pr6.thresholdSettings} sub={S.pr6.thresholdInfo} onClose={onClose}>
+      <div className="grid grid-cols-2 gap-3">
+        {fields.map(([k, lbl]) => (
+          <Field key={k} T={T} label={lbl}><input type="number" className={inputCls(T)} value={th[k]} onChange={(e) => upd(k, e.target.value)} /></Field>
+        ))}
+      </div>
+      {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+      <div className="flex justify-end gap-2 pt-1">
+        <button onClick={onClose} className={btnCls(T, "ghost")}>{S.cancel}</button>
+        <button onClick={save} className={btnCls(T, "primary")}><Check size={16} /> {S.pr6.saveThresholds}</button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// One-click epicrisis / handover report → printable window (browser print → PDF). ICD-10 codes and
+// active-ingredient names are printed verbatim; the report never contains a machine diagnosis.
+function printEpicrisis(S, patient, rec, state) {
+  if (!patient) return;
+  const P = S.pr6;
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const nm = state.maskNames ? maskName(patient.display_name) : patient.display_name;
+  const dxRows = rec.diagnoses.map((d) => `<tr><td>${esc(d.code)}</td><td>${esc(d.text)}</td><td>${esc(new Date(d.atMs).toLocaleString())}</td></tr>`).join("") || `<tr><td colspan="3">—</td></tr>`;
+  const medRows = rec.medications.map((m) => `<tr><td>${esc(m.name)}</td><td>${esc(m.dose)} ${esc(m.unit)}</td><td>${m.endMs ? esc(P.stopped) : esc(P.ongoing)}</td></tr>`).join("") || `<tr><td colspan="3">—</td></tr>`;
+  const prRows = rec.procedures.map((pr) => `<tr><td>${esc(pr.name)}</td><td>${esc(new Date(pr.atMs).toLocaleString())}</td></tr>`).join("") || `<tr><td colspan="2">—</td></tr>`;
+  const intake = rec.fluids.filter((f) => f.kind === "in").reduce((a, f) => a + f.ml, 0);
+  const output = rec.fluids.filter((f) => f.kind === "out").reduce((a, f) => a + f.ml, 0);
+  const hist = rec.vitalHistory || [];
+  const news2vals = hist.map((h) => computeNews2(h));
+  const nMin = news2vals.length ? Math.min(...news2vals) : "—";
+  const nMax = news2vals.length ? Math.max(...news2vals) : "—";
+  const nNow = patient.vitals ? computeNews2(patient.vitals) : "—";
+  const preparedBy = state.maskNames ? maskName(state.user?.full_name || "") : (state.user?.full_name || "");
+  const w = window.open("", "_blank", "width=820,height=920");
+  if (!w) return;
+  w.document.write(`<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>${esc(P.reportTitle)}</title>
+<style>*{box-sizing:border-box}body{font-family:system-ui,Segoe UI,Arial,sans-serif;color:#0f172a;padding:34px;max-width:770px;margin:auto}
+h1{font-size:21px;margin:0 0 4px}.sub{font-size:12px;color:#64748b;margin-bottom:8px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin:22px 0 6px;border-bottom:1px solid #e2e8f0;padding-bottom:4px}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{border:1px solid #e2e8f0;padding:6px 9px;text-align:left}th{background:#f8fafc}
+.grid{display:flex;flex-wrap:wrap;gap:22px;font-size:13px}.badge{display:inline-block;background:#eff6ff;color:#1d4ed8;border-radius:6px;padding:2px 9px;font-weight:700}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:14px}.dot{width:34px;height:34px;border-radius:9px;background:#2563eb;color:#fff;display:grid;place-items:center;font-weight:800}
+.foot{margin-top:30px;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px}@media print{body{padding:12px}}</style></head><body>
+<div class="brand"><div class="dot">H</div><div><div style="font-weight:800">${esc(S.appName)}</div><div class="sub" style="margin:0">${esc(S.tagline)}</div></div></div>
+<h1>${esc(P.reportTitle)}</h1>
+<div class="sub">${esc(nm)} · ${esc(patient.bedLabel || "")} · ${esc(S.protocolNo)} ${esc(patient.protocolNo || "")} · ${esc(S.mrn)} ${esc(patient.mrn || "")} · ${esc(S.tcno)} ${esc(patient.tcMasked || "")}</div>
+<h2>${esc(P.admissionDiagnosis)}</h2>
+<table><tr><th>ICD-10</th><th>${esc(S.admissionDx)}</th><th>${esc(P.auditTime)}</th></tr>${dxRows}</table>
+<h2>${esc(P.vitalTrendSummary)}</h2>
+<div class="grid"><div>${esc(P.last24h)}: <span class="badge">min ${nMin} / max ${nMax}</span></div><div>${esc(S.lastUpdate)}: <span class="badge">${nNow}</span></div></div>
+<h2>${esc(P.medsGiven)}</h2>
+<table><tr><th>${esc(P.drug)}</th><th>${esc(P.dose)}</th><th></th></tr>${medRows}</table>
+<h2>${esc(P.proceduresDone)}</h2>
+<table><tr><th>${esc(P.procedureType)}</th><th>${esc(P.auditTime)}</th></tr>${prRows}</table>
+<h2>${esc(P.fluidBalanceR)}</h2>
+<div class="grid"><div>${esc(P.intake)}: <b>${intake} mL</b></div><div>${esc(P.output)}: <b>${output} mL</b></div><div>${esc(P.balance)}: <b>${intake - output} mL</b></div></div>
+<div class="foot">${esc(P.generatedBy)}: ${esc(preparedBy)} · ${esc(P.generatedAt)}: ${esc(new Date().toLocaleString())}</div>
+</body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => { try { w.print(); } catch (e) { /* ignore */ } }, 400);
+}
+
+// Append-only audit log viewer (S-15). Actor names honour the KVKK mask toggle.
+function AuditLog({ T, S, state }) {
+  const rows = [...(state.auditLog || [])].reverse();
+  const label = (a) => (S.pr6.actions && S.pr6.actions[a]) || a;
+  return (
+    <div className={`rounded-2xl border ${T.border} ${T.card} ${T.lift} p-5`}>
+      <div className="mb-1 flex items-center gap-2">
+        <ScrollText size={17} className={T.accent} />
+        <h3 className={`font-bold ${T.heading}`}>{S.pr6.auditLog}</h3>
+        <span className={`ml-auto rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>{rows.length}</span>
+      </div>
+      <div className={`mt-2 max-h-[28rem] divide-y ${T.divide} overflow-y-auto rounded-xl border ${T.border}`}>
+        {rows.length === 0 && <div className={`px-3 py-6 text-center text-sm ${T.faint}`}>{S.pr6.noAudit}</div>}
+        {rows.map((r) => (
+          <div key={r.id} className="px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <span className={`shrink-0 rounded-md ${T.subtle} px-1.5 py-0.5 text-[11px] font-semibold ${T.muted}`}>{label(r.action)}</span>
+              <span className={`truncate text-xs ${T.text}`}>{maskedName(state, r.actor)}</span>
+              <span className={`ml-auto shrink-0 text-[10px] tabular-nums ${T.faint}`}>{new Date(r.atMs).toLocaleString()}</span>
+            </div>
+            {(r.target || r.detail) && <div className={`mt-0.5 truncate text-xs ${T.faint}`}>{r.target ? `${r.target} · ` : ""}{r.detail}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// KVKK / cookie & disclosure banner (dismiss persisted to localStorage).
+function KvkkBanner({ T, S }) {
+  const [dismissed, setDismissed] = useState(() => { try { return localStorage.getItem("homunculus-kvkk") === "1"; } catch { return false; } });
+  if (dismissed) return null;
+  const accept = () => { try { localStorage.setItem("homunculus-kvkk", "1"); } catch { /* ignore */ } setDismissed(true); };
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-[70] p-3 sm:p-4">
+      <div className={`mx-auto flex max-w-3xl flex-col gap-3 rounded-2xl border ${T.border} ${T.glass} p-4 sm:flex-row sm:items-center`}>
+        <ShieldAlert size={22} className="shrink-0 text-amber-500" />
+        <div className="min-w-0 flex-1">
+          <div className={`text-sm font-bold ${T.heading}`}>{S.pr6.cookieTitle}</div>
+          <div className={`mt-0.5 text-xs ${T.muted}`}>{S.pr6.cookieText}</div>
+        </div>
+        <button onClick={accept} className={`${btnCls(T, "primary")} shrink-0`}>{S.pr6.cookieAccept}</button>
+      </div>
+    </div>
+  );
+}
+
 // ================================================================ ROOT
 export function ClinicalDemo() {
   const storeRef = useRef(null);
@@ -1131,9 +1530,10 @@ export function ClinicalDemo() {
         </main>
       </div>
       {drawerPatient && (
-        <PatientDrawer T={T} S={S} state={state} store={store} patientId={drawerPatient}
+        <PatientDrawer T={T} S={S} state={state} store={store} patientId={drawerPatient} lang={lang}
           onClose={() => setDrawerPatient(null)} onTransfer={openTransfer} />
       )}
+      <KvkkBanner T={T} S={S} />
     </div>
   );
 }
