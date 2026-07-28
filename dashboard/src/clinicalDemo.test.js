@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  createDemoStore, computeEscalationStep, secondsToNextStep, canSnooze, snoozeCapMinutes,
-  TIER, ROLE, ESCALATION_STEP,
+  createDemoStore, buildRealisticState, computeEscalationStep, secondsToNextStep, canSnooze,
+  snoozeCapMinutes, TIER, ROLE, ESCALATION_STEP,
 } from "./clinicalDemo.js";
 
 // ---------------------------------------------------------------- pure escalation logic (S-05)
@@ -143,6 +143,81 @@ describe("snooze rules", () => {
     // After expiry (10 min = 600 s): re-fires.
     s.reconcile(601);
     expect(s.getState().alerts[0].status).toBe("FIRED");
+  });
+});
+
+// ---------------------------------------------------------------- realistic seed + admin/care actions
+describe("realistic environment", () => {
+  it("seeds two units, ten beds and six occupied patients", () => {
+    const s = createDemoStore(buildRealisticState());
+    const st = s.getState();
+    expect(st.structure.units).toHaveLength(2);
+    expect(st.beds).toHaveLength(10);
+    expect(st.patients).toHaveLength(6);
+    expect(st.beds.filter((b) => b.state === "OCCUPIED")).toHaveLength(6);
+  });
+
+  it("masks national IDs for non-neonates and shows none for neonates", () => {
+    const s = createDemoStore(buildRealisticState());
+    const st = s.getState();
+    const adult = st.patients.find((p) => !p.isNeonate);
+    const baby = st.patients.find((p) => p.isNeonate);
+    expect(adult.tcMasked).toMatch(/\*{3,}/);
+    expect(baby.tcMasked).toBe("—");
+  });
+
+  it("transfers a patient to an available bed and frees the old one", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.transferPatient({ patientId: "P-101", targetBedId: "bed-a103" });
+    const st = s.getState();
+    expect(st.beds.find((b) => b.id === "bed-a101").state).toBe("AVAILABLE");
+    expect(st.beds.find((b) => b.id === "bed-a103").state).toBe("OCCUPIED");
+    expect(st.patients.find((p) => p.patient_id === "P-101").bedId).toBe("bed-a103");
+  });
+
+  it("rejects a transfer onto an occupied bed", () => {
+    const s = createDemoStore(buildRealisticState());
+    expect(() => s.transferPatient({ patientId: "P-101", targetBedId: "bed-a102" }))
+      .toThrow(/müsait değil/);
+  });
+
+  it("assigns a care team", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.assignCareTeam({ patientId: "P-102", attendingId: "u-01", nurseId: "u-02" });
+    expect(s.getState().careTeam["P-102"]).toEqual({ attendingId: "u-01", nurseId: "u-02" });
+  });
+
+  it("requires a substantial handover note", () => {
+    const s = createDemoStore(buildRealisticState());
+    expect(() => s.createHandover({ patientId: "P-101", toName: "X", note: "kısa" }))
+      .toThrow(/karakter/);
+    const h = s.createHandover({ patientId: "P-101", fromName: "A", toName: "B",
+      note: "Hasta stabil, vazopresör dozu azaltıldı, gece takibi önerilir." });
+    expect(h.signedAtMs).toBeGreaterThan(0);
+    expect(s.getState().handovers).toHaveLength(1);
+  });
+});
+
+describe("admin actions", () => {
+  it("creates a user with validation", () => {
+    const s = createDemoStore(buildRealisticState());
+    expect(() => s.createUser({ full_name: "X", email: "bad", role: ROLE.ATTENDING }))
+      .toThrow(/e-posta/);
+    const u = s.createUser({ full_name: "Dr. Yeni Hekim", email: "yeni@homunculus.health",
+      role: ROLE.ATTENDING });
+    expect(u.id).toMatch(/^u-/);
+    expect(s.getState().users.some((x) => x.email === "yeni@homunculus.health")).toBe(true);
+  });
+
+  it("adds a unit, room and bed", () => {
+    const s = createDemoStore(buildRealisticState());
+    const unit = s.addUnit({ name: "Koroner YBÜ", type: "ADULT_ICU" });
+    const room = s.addRoom({ unitId: unit.id, label: "Oda C1" });
+    const bed = s.addBed({ unitId: unit.id, roomId: room.id, label: "301" });
+    const st = s.getState();
+    expect(st.structure.units.some((u) => u.id === unit.id)).toBe(true);
+    expect(st.beds.find((b) => b.id === bed.id).state).toBe("AVAILABLE");
+    expect(st.beds.find((b) => b.id === bed.id).roomLabel).toBe("Oda C1");
   });
 });
 
