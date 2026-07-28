@@ -142,11 +142,17 @@ def create_app(
         sched_router as shift_schedule_router,
         handover_router,
     )
+    from homunculus.escalation.router import (
+        router as alerts_router,
+        break_glass_router,
+    )
     app.include_router(auth_router)
     app.include_router(tenant_router)
     app.include_router(admission_router)
     app.include_router(shift_schedule_router)
     app.include_router(handover_router)
+    app.include_router(alerts_router)
+    app.include_router(break_glass_router)
 
     app.state.broadcaster = broadcaster
     app.state.ack_stores = stores
