@@ -19,6 +19,7 @@ TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 import homunculus.auth.models  # noqa: E402,F401
 import homunculus.tenant.models  # noqa: E402,F401
 import homunculus.admission.models  # noqa: E402,F401
+import homunculus.escalation.models  # noqa: E402,F401
 from homunculus.db import Base  # noqa: E402
 
 requires_db = pytest.mark.skipif(

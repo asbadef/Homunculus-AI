@@ -29,6 +29,7 @@ from homunculus.admission.schemas import (
     ShiftScheduleResponse, TransferInitiate,
 )
 from homunculus.admission.service import WorkflowError
+from homunculus.escalation import service as escalation_service
 from homunculus.auth.dependencies import get_current_active_user, require_roles
 from homunculus.auth.models import User, UserRole
 from homunculus.db import get_db
@@ -250,10 +251,13 @@ async def discharge_initiate(
     user: User = Depends(require_roles(UserRole.ATTENDING, UserRole.UNIT_PHYSICIAN)),
 ):
     admission = await _get_admission_or_404(db, admission_id)
+    unacked = await escalation_service.count_unacknowledged_critical(
+        db, admission_id=admission.id
+    )
     try:
         await service.initiate_discharge(
             db, admission, discharge_summary=payload.discharge_summary,
-            unacknowledged_critical_count=0,  # wired to alert engine in PR #3
+            unacknowledged_critical_count=unacked,  # wired to alert engine (PR #3)
         )
     except WorkflowError as exc:
         raise _wf(exc)
@@ -337,10 +341,14 @@ async def sign_outgoing(
     handover = await db.get(Handover, handover_id)
     if handover is None:
         raise HTTPException(status_code=404, detail="Handover not found.")
+    admission_ids = [uuid.UUID(a) for a in (handover.admission_ids or [])]
+    unacked = await escalation_service.count_unacknowledged_critical(
+        db, admission_ids=admission_ids
+    )
     try:
         await service.sign_handover_outgoing(
             db, handover, user_id=user.id, narrative_note=payload.narrative_note,
-            unacknowledged_critical_count=0,  # wired to alert engine in PR #3
+            unacknowledged_critical_count=unacked,  # wired to alert engine (PR #3)
         )
     except WorkflowError as exc:
         raise _wf(exc)
