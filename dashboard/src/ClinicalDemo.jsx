@@ -1,498 +1,843 @@
-// src/ClinicalDemo.jsx — interactive, in-browser clinical demo (login → role panels → admission →
-// live alarm / escalation / snooze). Wraps the synthetic engine in clinicalDemo.js. No network.
-import React, { useEffect, useMemo, useRef, useState } from "react";
+// src/ClinicalDemo.jsx — Homunculus clinical workspace (HBYS-grade shell).
+// A production-fidelity operator UI over the in-browser clinical engine (clinicalDemo.js).
+// Three runtime themes (clinicalTheme.js), four UI languages (clinicalI18n.js). All data is
+// SYNTHETIC and every national ID is masked. The system never diagnoses — machine-generated
+// alert text always reads "…kriterleri değerlendirilecek".
+
+import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
-  Activity, LogOut, Languages, ShieldAlert, BedDouble, UserPlus, AlertTriangle, Clock,
-  Check, BellOff, ArrowUpCircle, Play, Pause, Stethoscope, HeartPulse, Building2,
+  Activity, LayoutGrid, UserPlus, Users, Bell, Settings, ArrowLeftRight, Stethoscope,
+  HeartPulse, Building2, ShieldAlert, Sun, Moon, Monitor, Globe, ChevronDown, LogOut, Check,
+  BellOff, ArrowUpCircle, Play, Pause, Clock, AlertTriangle, Plus, PenLine, Thermometer, Wind,
+  Droplets, Gauge, Heart, UserCog, ClipboardList, Siren, PanelLeftClose, PanelLeft, CheckCircle2,
+  Circle, X,
 } from "lucide-react";
 import {
-  createDemoStore, DEMO_ACCOUNTS, ROLE, TIER, TIER_TO_SEV, ESCALATION_STEP, STEP_TARGET_ROLE,
-  ESCALATION_THRESHOLDS_SEC, secondsToNextStep, canSnooze, snoozeCapMinutes, ACK_REASON_MIN_CHARS,
+  createDemoStore, buildRealisticState, ROLE, TIER, ESCALATION_STEP, STEP_TARGET_ROLE,
+  secondsToNextStep, canSnooze, snoozeCapMinutes, ACK_REASON_MIN_CHARS,
 } from "./clinicalDemo.js";
-import { sev } from "./theme.js";
-import { LANGS, storedLang, persistLang } from "./i18n.js";
+import {
+  getTheme, storedTheme, persistTheme, THEME_KEYS,
+} from "./clinicalTheme.js";
+import { cstrings, storedClang, persistClang, LANGS } from "./clinicalI18n.js";
 
-// --------------------------------------------------------------------------- local strings (tr + az)
-const STR = {
-  tr: {
-    appName: "Homunculus", demoBadge: "DEMO · sentetik veri",
-    loginTitle: "Demo Girişi", loginSub: "Bir rol seçin ya da hesap bilgileriyle giriş yapın",
-    email: "E-posta", password: "Parola", signIn: "Giriş Yap", quickLogin: "Hızlı giriş",
-    invalid: "Geçersiz e-posta veya parola.",
-    roleName: { ATTENDING: "Sorumlu Hekim", CHARGE_NURSE: "Sorumlu Hemşire",
-                HOSPITAL_ADMIN: "Admin", RRT: "Hızlı Yanıt Ekibi (RRT)" },
-    logout: "Çıkış", role: "Rol", simClock: "Simülasyon saati", speed: "Demo hızı",
-    realtime: "gerçek zaman",
-    panelAdmin: "Yapı & Yatak Yönetimi", panelDoctor: "Klinik Panel", panelNurse: "Hemşire Paneli",
-    tenant: "Kurum", site: "Kampüs", unit: "Ünite", maxNurse: "Hemşire başı yatak",
-    beds: "Yataklar", bedAvailable: "Müsait", bedOccupied: "Dolu",
-    admission: "Yeni Hasta Yatışı", admissionHint: "Kabul notu (28 alan) demoda sadeleştirilmiştir.",
-    displayName: "Hasta adı (sentetik)", sex: "Cinsiyet", male: "Erkek", female: "Kadın",
-    selectBed: "Yatak seçin", diagnosis: "Kabul değerlendirmesi", admit: "Yatışı Onayla",
-    admissionOnlyDoctor: "Yeni yatış için Sorumlu Hekim rolü gerekir.",
-    noBeds: "Müsait yatak yok.",
-    board: "Hasta Panosu", noPatients: "Henüz yatan hasta yok. Soldan yeni yatış yapın.",
-    admittedBy: "Yatıran", bed: "Yatak",
-    fireAlert: "Alarm tetikle", alertKind: "Alarm", alertTier: "Seviye",
-    fireBtn: "Tetikle", activeAlerts: "Aktif Alarmlar", noAlerts: "Aktif alarm yok.",
-    elapsed: "Geçen süre", nextStep: "Sonraki adım", atTier3: "En üst eskalasyon (RRT)",
-    escChain: "Eskalasyon zinciri", step1: "3 dk · Sorumlu Hemşire", step2: "5 dk · Nöbetçi Hekim",
-    step3: "10 dk · RRT", sentTo: "Gönderildi", ack: "Onayla", snooze: "Ertele",
-    escalateRRT: "RRT'ye eskale et", statusFired: "Tetiklendi", statusAck: "Onaylandı",
-    statusSnoozed: "Ertelendi", snoozedUntil: "Erteleme bitişi",
-    ackTitle: "Alarmı Onayla", ackReason: "Gerekçe", ackNote: "Not",
-    ackNoteHintCrit: `Kritik alarm için zorunlu · en az ${ACK_REASON_MIN_CHARS} karakter`,
-    critNoSnooze: "Kritik alarm ertelenemez — zorunlu gerekçe ile onaylanmalı.",
-    snoozeTitle: "Alarmı Ertele", snoozeMinutes: "Süre (dk)", snoozeReason: "Gerekçe",
-    cancel: "Vazgeç", confirm: "Onayla", save: "Kaydet",
-    reasonOptions: { clinically_reviewed: "Klinik olarak değerlendirildi",
-                     intervention_done: "Müdahale yapıldı", clinically_expected: "Beklenen (kronik)",
-                     awaiting_labs: "Tetkik bekleniyor", other: "Diğer" },
-    breakGlass: "Break-Glass (Acil Erişim)", bgActive: "Aktif", bgActivate: "Etkinleştir",
-    bgExtend: "30 dk uzat", bgReason: "Acil erişim gerekçesi",
-    bgExpires: "Bitiş", bgInfo: "30 dk geçici acil erişim; zorunlu gerekçe.",
-    diagnosisPlaceholder: "Örn. Septik şok kriterleri değerlendirilecek",
-    namePlaceholder: "Örn. Sentetik Hasta 1",
-  },
-  az: {
-    appName: "Homunculus", demoBadge: "DEMO · sintetik məlumat",
-    loginTitle: "Demo Girişi", loginSub: "Rol seçin və ya hesabla daxil olun",
-    email: "E-poçt", password: "Parol", signIn: "Daxil ol", quickLogin: "Sürətli giriş",
-    invalid: "Yanlış e-poçt və ya parol.",
-    roleName: { ATTENDING: "Məsul Həkim", CHARGE_NURSE: "Məsul Tibb Bacısı",
-                HOSPITAL_ADMIN: "Admin", RRT: "Sürətli Cavab Qrupu (RRT)" },
-    logout: "Çıxış", role: "Rol", simClock: "Simulyasiya saatı", speed: "Demo sürəti",
-    realtime: "real vaxt",
-    panelAdmin: "Struktur & Çarpayı İdarəsi", panelDoctor: "Klinik Panel", panelNurse: "Tibb Bacısı Paneli",
-    tenant: "Qurum", site: "Kampus", unit: "Bölmə", maxNurse: "Tibb bacısı başına çarpayı",
-    beds: "Çarpayılar", bedAvailable: "Boş", bedOccupied: "Dolu",
-    admission: "Yeni Xəstə Qəbulu", admissionHint: "Qəbul qeydi (28 sahə) demoda sadələşdirilib.",
-    displayName: "Xəstə adı (sintetik)", sex: "Cins", male: "Kişi", female: "Qadın",
-    selectBed: "Çarpayı seçin", diagnosis: "Qəbul dəyərləndirməsi", admit: "Qəbulu Təsdiqlə",
-    admissionOnlyDoctor: "Yeni qəbul üçün Məsul Həkim rolu lazımdır.",
-    noBeds: "Boş çarpayı yoxdur.",
-    board: "Xəstə Panosu", noPatients: "Hələ yatan xəstə yoxdur. Soldan yeni qəbul edin.",
-    admittedBy: "Qəbul edən", bed: "Çarpayı",
-    fireAlert: "Xəbərdarlıq işə sal", alertKind: "Xəbərdarlıq", alertTier: "Səviyyə",
-    fireBtn: "İşə sal", activeAlerts: "Aktiv Xəbərdarlıqlar", noAlerts: "Aktiv xəbərdarlıq yoxdur.",
-    elapsed: "Keçən vaxt", nextStep: "Növbəti addım", atTier3: "Ən üst eskalasiya (RRT)",
-    escChain: "Eskalasiya zənciri", step1: "3 dəq · Məsul Tibb Bacısı", step2: "5 dəq · Növbətçi Həkim",
-    step3: "10 dəq · RRT", sentTo: "Göndərildi", ack: "Təsdiqlə", snooze: "Təxirə sal",
-    escalateRRT: "RRT-yə eskalasiya", statusFired: "İşə salındı", statusAck: "Təsdiqləndi",
-    statusSnoozed: "Təxirə salındı", snoozedUntil: "Təxir bitişi",
-    ackTitle: "Xəbərdarlığı Təsdiqlə", ackReason: "Əsas", ackNote: "Qeyd",
-    ackNoteHintCrit: `Kritik üçün məcburi · ən az ${ACK_REASON_MIN_CHARS} simvol`,
-    critNoSnooze: "Kritik xəbərdarlıq təxirə salına bilməz — məcburi əsasla təsdiqlənməlidir.",
-    snoozeTitle: "Xəbərdarlığı Təxirə Sal", snoozeMinutes: "Müddət (dəq)", snoozeReason: "Əsas",
-    cancel: "İmtina", confirm: "Təsdiqlə", save: "Yadda saxla",
-    reasonOptions: { clinically_reviewed: "Klinik dəyərləndirildi",
-                     intervention_done: "Müdaxilə edildi", clinically_expected: "Gözlənilən (xronik)",
-                     awaiting_labs: "Analiz gözlənilir", other: "Digər" },
-    breakGlass: "Break-Glass (Təcili Giriş)", bgActive: "Aktiv", bgActivate: "Aktivləşdir",
-    bgExtend: "30 dəq uzat", bgReason: "Təcili giriş əsası",
-    bgExpires: "Bitiş", bgInfo: "30 dəq müvəqqəti təcili giriş; məcburi əsas.",
-    diagnosisPlaceholder: "Məs. Septik şok kriterləri dəyərləndiriləcək",
-    namePlaceholder: "Məs. Sintetik Xəstə 1",
-  },
+// ---------------------------------------------------------------- shared visual maps
+// Fixed, theme-independent accent colours (present verbatim in source so Tailwind JIT keeps them).
+const RISK_UI = {
+  stable:   { dot: "bg-emerald-500", text: "text-emerald-500", ring: "ring-emerald-500/40", bar: "bg-emerald-500" },
+  low:      { dot: "bg-sky-500",     text: "text-sky-500",     ring: "ring-sky-500/40",     bar: "bg-sky-500" },
+  high:     { dot: "bg-amber-500",   text: "text-amber-500",   ring: "ring-amber-500/40",   bar: "bg-amber-500" },
+  critical: { dot: "bg-red-500",     text: "text-red-500",     ring: "ring-red-500/60",     bar: "bg-red-500" },
 };
-const useStr = (lang) => STR[lang] || STR.tr;
+const riskUi = (r) => RISK_UI[r] || RISK_UI.stable;
 
-// mm:ss from seconds.
-const fmt = (sec) => {
+const TIER_UI = {
+  CRITICAL: { text: "text-red-500",    dot: "bg-red-500",    chip: "bg-red-500/15 text-red-500" },
+  HIGH:     { text: "text-amber-500",  dot: "bg-amber-500",  chip: "bg-amber-500/15 text-amber-500" },
+  MEDIUM:   { text: "text-yellow-500", dot: "bg-yellow-500", chip: "bg-yellow-500/15 text-yellow-500" },
+  LOW:      { text: "text-sky-500",    dot: "bg-sky-500",    chip: "bg-sky-500/15 text-sky-500" },
+  INFO:     { text: "text-slate-400",  dot: "bg-slate-400",  chip: "bg-slate-400/15 text-slate-400" },
+};
+const tierUi = (t) => TIER_UI[t] || TIER_UI.INFO;
+
+// Neutral machine-generated alert text (never a diagnosis).
+const ALERT_TXT = {
+  tr: "Klinik kötüleşme kriterleri değerlendirilecek",
+  az: "Klinik pisləşmə kriterləri dəyərləndiriləcək",
+  en: "Clinical deterioration criteria to be assessed",
+  ru: "Критерии клинического ухудшения будут оценены",
+};
+
+const THEME_ICON = { icu: Moon, light: Sun, wall: Monitor };
+
+// ---------------------------------------------------------------- small helpers
+function fmtClock(sec) {
   const s = Math.max(0, Math.floor(sec));
-  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-};
-
-const TIER_LABEL = { CRITICAL: "CRITICAL", HIGH: "HIGH", MEDIUM: "MEDIUM", LOW: "LOW", INFO: "INFO" };
-
-// --------------------------------------------------------------------------- store hook + clock
-function useDemoStore() {
-  const storeRef = useRef(null);
-  if (!storeRef.current) storeRef.current = createDemoStore();
-  const store = storeRef.current;
-  const [, force] = useState(0);
-  useEffect(() => store.subscribe(() => force((n) => n + 1)), [store]);
-  return store;
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, "0")}`;
+}
+function losText(admittedAtMs, S) {
+  if (!admittedAtMs) return "—";
+  const h = Math.floor((Date.now() - admittedAtMs) / 3600000);
+  if (h < 24) return `${h} sa`;
+  return `${Math.floor(h / 24)} ${S.dayUnit}`;
+}
+function ageText(p, S) {
+  if (p.isNeonate) return `${p.ageDays ?? 0} ${S.dayUnit}`;
+  return `${p.age ?? "—"}`;
+}
+function useStore(store) {
+  const [, force] = useReducer((x) => x + 1, 0);
+  useEffect(() => store.subscribe(force), [store]);
+  return store.getState();
 }
 
-// --------------------------------------------------------------------------- Login
-function Login({ store, L, lang, setLang }) {
+// ---------------------------------------------------------------- generic dropdown menu
+function Menu({ T, triggerClass, trigger, align = "right", children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen((o) => !o)} className={triggerClass}>
+        {trigger}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className={`absolute z-50 mt-2 min-w-[15rem] rounded-xl border ${T.border} ${T.card} p-1.5 shadow-2xl ${align === "right" ? "right-0" : "left-0"}`}>
+            {children({ close: () => setOpen(false) })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- form primitives
+function Field({ T, label, hint, children }) {
+  return (
+    <label className="block">
+      <div className={`mb-1 font-medium ${T.sizes.label} ${T.muted}`}>{label}</div>
+      {children}
+      {hint && <div className={`mt-1 text-xs ${T.faint}`}>{hint}</div>}
+    </label>
+  );
+}
+const inputCls = (T) => `w-full rounded-lg border px-3 py-2.5 outline-none transition focus:ring-2 focus:ring-brand/40 ${T.input} ${T.sizes.nav}`;
+function btnCls(T, kind = "primary") {
+  const base = "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed";
+  const map = { primary: T.primary, ghost: T.ghost, danger: T.danger, warn: T.warn };
+  return `${base} ${map[kind] || T.primary} ${T.sizes.nav}`;
+}
+
+// ================================================================ LOGIN
+function Login({ T, S, store }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const submit = (e) => {
     e.preventDefault();
-    try { store.login(email.trim(), password); } catch { setErr(L.invalid); }
+    try { store.login(email.trim(), password); } catch (ex) { setErr(ex.message); }
   };
+  const quick = [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN];
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-100">
-      <div className="w-full max-w-md rounded-2xl bg-slate-900 p-8 ring-1 ring-slate-800">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Activity className="text-brand" size={22} />
-            <span className="text-lg font-semibold">{L.appName}</span>
-          </div>
-          <LangSelect lang={lang} setLang={setLang} L={L} />
-        </div>
-        <h1 className="text-xl font-semibold">{L.loginTitle}</h1>
-        <p className="mt-1 text-sm text-slate-400">{L.loginSub}</p>
-
-        <div className="mt-5 space-y-2">
-          <div className="text-xs uppercase tracking-wide text-slate-500">{L.quickLogin}</div>
-          <div className="grid gap-2">
-            {DEMO_ACCOUNTS.map((a) => (
-              <button
-                key={a.email}
-                onClick={() => store.loginAs(a.role)}
-                className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-left text-sm transition-colors hover:border-brand hover:bg-slate-800/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-              >
-                <span className="flex items-center gap-2">
-                  <RoleIcon role={a.role} />
-                  <span>
-                    <span className="font-medium text-slate-100">{a.full_name}</span>
-                    <span className="ml-2 text-xs text-slate-400">{L.roleName[a.role]}</span>
-                  </span>
-                </span>
-                <span className="font-mono text-xs text-slate-500">{a.email}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <form onSubmit={submit} className="mt-6 space-y-3">
-          <div>
-            <label className="block text-xs text-slate-400">{L.email}</label>
-            <input value={email} onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-              placeholder="hekim@demo" autoComplete="username" />
+    <div className={`min-h-screen ${T.app} flex items-center justify-center p-6`}>
+      <div className={`w-full max-w-md rounded-2xl border ${T.border} ${T.card} p-8`}>
+        <div className="mb-6 flex items-center gap-3">
+          <div className="grid h-11 w-11 place-items-center rounded-xl bg-brand text-white">
+            <Activity size={24} />
           </div>
           <div>
-            <label className="block text-xs text-slate-400">{L.password}</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-              placeholder="demo1234" autoComplete="current-password" />
+            <div className={`text-lg font-bold ${T.heading}`}>{S.appName}</div>
+            <div className={`text-xs ${T.muted}`}>{S.tagline}</div>
           </div>
-          {err && <p className="text-sm text-sev-critical">{err}</p>}
-          <button type="submit"
-            className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-            {L.signIn}
-          </button>
+        </div>
+        <h1 className={`mb-1 text-xl font-bold ${T.heading}`}>{S.loginTitle}</h1>
+        <p className={`mb-5 text-sm ${T.muted}`}>{S.loginSub}</p>
+        <form onSubmit={submit} className="space-y-4">
+          <Field T={T} label={S.email}>
+            <input className={inputCls(T)} value={email} onChange={(e) => setEmail(e.target.value)}
+              placeholder="dr.elif.yilmaz@homunculus.health" autoComplete="username" />
+          </Field>
+          <Field T={T} label={S.password}>
+            <input type="password" className={inputCls(T)} value={password}
+              onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" />
+          </Field>
+          {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+          <button type="submit" className={`${btnCls(T, "primary")} w-full`}>{S.signIn}</button>
         </form>
-        <p className="mt-4 text-center text-xs text-slate-500">{L.demoBadge}</p>
+        <div className={`my-5 flex items-center gap-3 text-xs ${T.faint}`}>
+          <div className={`h-px flex-1 ${T.border} border-t`} /> {S.orQuick} <div className={`h-px flex-1 ${T.border} border-t`} />
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          {quick.map((r) => (
+            <button key={r} onClick={() => store.loginAs(r)} className={`${btnCls(T, "ghost")} w-full justify-start`}>
+              <UserCog size={16} /> {S.roleName[r]}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-function RoleIcon({ role, size = 16 }) {
-  if (role === ROLE.ATTENDING) return <Stethoscope size={size} className="text-brand" />;
-  if (role === ROLE.CHARGE_NURSE) return <HeartPulse size={size} className="text-emerald-400" />;
-  if (role === ROLE.HOSPITAL_ADMIN) return <Building2 size={size} className="text-amber-300" />;
-  return <ShieldAlert size={size} className="text-sev-critical" />;
-}
-
-function LangSelect({ lang, setLang, L }) {
+// ================================================================ TOP BAR
+function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMenu }) {
+  const user = state.user;
+  const RoleIcon = user?.role === ROLE.HOSPITAL_ADMIN ? ShieldAlert
+    : user?.role === ROLE.CHARGE_NURSE ? HeartPulse : Stethoscope;
   return (
-    <label className="flex items-center gap-1 text-slate-400" title={L.langLabel}>
-      <Languages size={14} />
-      <select value={lang} onChange={(e) => setLang(e.target.value)}
-        className="cursor-pointer rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-        {LANGS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-      </select>
-    </label>
-  );
-}
-
-// --------------------------------------------------------------------------- header
-function Header({ store, st, L, lang, setLang }) {
-  const speeds = [1, 30, 60, 120];
-  return (
-    <header className="flex flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2">
-      <div className="flex items-center gap-2">
-        <Activity className="text-brand" size={18} />
-        <span className="font-semibold">{L.appName}</span>
-      </div>
-      <span className="rounded-full bg-teal-600 px-2 py-0.5 text-xs font-semibold text-white">{L.demoBadge}</span>
-
-      <div className="ml-2 flex items-center gap-1.5 rounded-full bg-slate-800 px-2.5 py-1 text-xs">
-        <RoleIcon role={st.user.role} size={14} />
-        <span className="font-medium">{st.user.full_name}</span>
-        <span className="text-slate-400">· {L.roleName[st.user.role]}</span>
+    <header className={`sticky top-0 z-30 flex items-center gap-3 border-b ${T.border} ${T.topbar} px-4 py-3 backdrop-blur`}>
+      <button onClick={onMenu} className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost} lg:hidden`}>
+        <PanelLeft size={18} />
+      </button>
+      <div className="min-w-0">
+        <div className={`truncate font-bold ${T.heading} ${T.sizes.name}`}>{S.nav[page]}</div>
+        <div className={`truncate text-xs ${T.faint}`}>{state.structure.tenant} · {state.structure.site}</div>
       </div>
 
-      <div className="ml-auto flex items-center gap-3">
-        {/* sim clock */}
-        <span className="flex items-center gap-1 rounded-full bg-slate-800 px-2.5 py-1 font-mono text-xs text-slate-300"
-          title={L.simClock}>
-          <Clock size={13} /> {fmt(st.clockSec)}
-        </span>
-        {/* run / pause */}
-        <button onClick={() => store.setRunning(!st.running)}
-          className="rounded p-1 text-slate-300 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-          title={st.running ? "Duraklat" : "Devam"}>
-          {st.running ? <Pause size={15} /> : <Play size={15} />}
-        </button>
-        {/* speed */}
-        <label className="flex items-center gap-1 text-xs text-slate-400">
-          {L.speed}
-          <select value={st.speed} onChange={(e) => store.setSpeed(Number(e.target.value))}
-            className="cursor-pointer rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-            {speeds.map((s) => <option key={s} value={s}>{s === 1 ? L.realtime : `${s}×`}</option>)}
-          </select>
-        </label>
-        <LangSelect lang={lang} setLang={setLang} L={L} />
-        <button onClick={() => store.logout()}
-          className="flex items-center gap-1 rounded px-2 py-1 text-xs text-slate-300 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-          <LogOut size={14} /> {L.logout}
+      <div className="ml-auto flex items-center gap-2">
+        {/* Role / profile switcher */}
+        <Menu T={T} triggerClass={`hidden items-center gap-2 rounded-lg px-3 py-2 sm:inline-flex ${T.ghost} ${T.sizes.nav}`}
+          trigger={<><RoleIcon size={16} /><span className="max-w-[9rem] truncate">{user?.full_name}</span><ChevronDown size={14} /></>}>
+          {({ close }) => (
+            <div>
+              <div className={`px-2 pb-1.5 pt-1 text-xs font-semibold uppercase tracking-wide ${T.faint}`}>{S.switchRole}</div>
+              {[ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN].map((r) => (
+                <button key={r} onClick={() => { store.loginAs(r); close(); }}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
+                  <UserCog size={15} /> {S.roleName[r]}
+                  {user?.role === r && <Check size={15} className="ml-auto text-brand" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </Menu>
+
+        {/* Theme selector */}
+        <Menu T={T} triggerClass={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost}`}
+          trigger={(() => { const I = THEME_ICON[theme] || Moon; return <I size={17} />; })()}>
+          {({ close }) => (
+            <div>
+              <div className={`px-2 pb-1.5 pt-1 text-xs font-semibold uppercase tracking-wide ${T.faint}`}>{S.themeLabel}</div>
+              {THEME_KEYS.map((k) => { const I = THEME_ICON[k]; return (
+                <button key={k} onClick={() => { setTheme(k); close(); }}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
+                  <I size={15} /> {S.theme[k]}
+                  {theme === k && <Check size={15} className="ml-auto text-brand" />}
+                </button>
+              ); })}
+            </div>
+          )}
+        </Menu>
+
+        {/* Language selector */}
+        <Menu T={T} triggerClass={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 ${T.ghost} ${T.sizes.nav}`}
+          trigger={<><Globe size={16} /><span>{(LANGS.find((l) => l[0] === lang) || LANGS[0])[2]}</span><ChevronDown size={13} /></>}>
+          {({ close }) => (
+            <div>
+              <div className={`px-2 pb-1.5 pt-1 text-xs font-semibold uppercase tracking-wide ${T.faint}`}>{S.langLabel}</div>
+              {LANGS.map(([code, label, flag]) => (
+                <button key={code} onClick={() => { setLang(code); close(); }}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
+                  <span className="text-base">{flag}</span> {label}
+                  {lang === code && <Check size={15} className="ml-auto text-brand" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </Menu>
+
+        {/* Shift + logout */}
+        <div className={`hidden items-center gap-2 rounded-lg px-3 py-1.5 md:flex ${T.chip}`}>
+          <Clock size={14} />
+          <div className="leading-tight">
+            <div className="text-xs font-semibold">{S.shiftDay}</div>
+            <div className="text-[10px] opacity-70">{S.onDuty}</div>
+          </div>
+        </div>
+        <button onClick={() => store.logout()} className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost}`} title={S.logout}>
+          <LogOut size={17} />
         </button>
       </div>
     </header>
   );
 }
 
-// --------------------------------------------------------------------------- admission form
-function AdmissionForm({ store, st, L }) {
-  const avail = st.beds.filter((b) => b.state === "AVAILABLE");
-  const [displayName, setDisplayName] = useState("");
-  const [sex, setSex] = useState("male");
-  const [bedId, setBedId] = useState(avail[0]?.id || "");
-  const [diagnosis, setDiagnosis] = useState("");
-  const [err, setErr] = useState("");
+// ================================================================ SIDEBAR
+const NAV_ITEMS = [
+  { key: "board", icon: LayoutGrid, roles: "all" },
+  { key: "admission", icon: UserPlus, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "clinical" },
+  { key: "care", icon: Users, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "clinical" },
+  { key: "alarms", icon: Bell, roles: "all", group: "clinical" },
+  { key: "admin", icon: Settings, roles: [ROLE.HOSPITAL_ADMIN], group: "admin" },
+];
+function canSee(item, role) { return item.roles === "all" || item.roles.includes(role); }
 
-  useEffect(() => { if (!avail.find((b) => b.id === bedId)) setBedId(avail[0]?.id || ""); }, [st.beds]);
-
-  const submit = (e) => {
-    e.preventDefault();
-    setErr("");
-    try {
-      store.admitPatient({
-        displayName: displayName.trim() || "Sentetik Hasta",
-        sex, bedId,
-        diagnosisText: diagnosis.trim() || L.diagnosisPlaceholder,
-      });
-      setDisplayName(""); setDiagnosis("");
-    } catch (ex) { setErr(ex.message); }
-  };
-
-  return (
-    <section className="rounded-xl bg-slate-900 p-4 ring-1 ring-slate-800">
-      <div className="flex items-center gap-2 font-semibold"><UserPlus size={16} className="text-brand" /> {L.admission}</div>
-      <p className="mt-1 text-xs text-slate-500">{L.admissionHint}</p>
-      {avail.length === 0
-        ? <p className="mt-3 text-sm text-amber-300">{L.noBeds}</p>
-        : (
-          <form onSubmit={submit} className="mt-3 space-y-3">
-            <div>
-              <label className="block text-xs text-slate-400">{L.displayName}</label>
-              <input value={displayName} onChange={(e) => setDisplayName(e.target.value)}
-                placeholder={L.namePlaceholder}
-                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-slate-400">{L.sex}</label>
-                <select value={sex} onChange={(e) => setSex(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-                  <option value="male">{L.male}</option>
-                  <option value="female">{L.female}</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400">{L.bed}</label>
-                <select value={bedId} onChange={(e) => setBedId(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-                  {avail.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400">{L.diagnosis}</label>
-              <textarea value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} rows={2}
-                placeholder={L.diagnosisPlaceholder}
-                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand" />
-            </div>
-            {err && <p className="text-sm text-sev-critical">{err}</p>}
-            <button type="submit"
-              className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-              {L.admit}
-            </button>
-          </form>
+function Sidebar({ T, S, state, page, setPage, collapsed, setCollapsed, mobileOpen, setMobileOpen }) {
+  const role = state.user?.role;
+  const visible = NAV_ITEMS.filter((i) => canSee(i, role));
+  const width = collapsed ? "w-16" : "w-64";
+  const body = (
+    <div className={`flex h-full flex-col border-r ${T.border} ${T.sidebar}`}>
+      <div className={`flex items-center gap-2.5 px-4 py-4 ${collapsed ? "justify-center" : ""}`}>
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand text-white">
+          <Activity size={20} />
+        </div>
+        {!collapsed && (
+          <div className="min-w-0">
+            <div className={`truncate font-bold ${T.heading}`}>{S.appName}</div>
+            <div className={`truncate text-[10px] ${T.faint}`}>{S.tagline}</div>
+          </div>
         )}
-    </section>
-  );
-}
-
-// --------------------------------------------------------------------------- bed grid
-function BedGrid({ st, L }) {
-  return (
-    <section className="rounded-xl bg-slate-900 p-4 ring-1 ring-slate-800">
-      <div className="flex items-center gap-2 font-semibold"><BedDouble size={16} className="text-brand" /> {L.beds}</div>
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {st.beds.map((b) => {
-          const occupied = b.state === "OCCUPIED";
-          const p = occupied ? st.patients.find((x) => x.patient_id === b.patientId) : null;
+      </div>
+      <nav className="flex-1 space-y-1 px-2.5 py-2">
+        {visible.map((item) => {
+          const Icon = item.icon;
+          const active = page === item.key;
           return (
-            <div key={b.id}
-              className={`rounded-lg p-3 ring-1 ${occupied ? "bg-slate-800 ring-brand/50" : "bg-slate-900 ring-slate-700"}`}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">{b.label}</span>
-                <span className={`h-2.5 w-2.5 rounded-full ${occupied ? "bg-brand" : "bg-slate-600"}`} />
-              </div>
-              {occupied
-                ? (
-                  <div className="mt-2 text-xs">
-                    <div className="font-medium text-slate-100">{p?.display_name}</div>
-                    <div className="mt-0.5 text-slate-400">{p?.patient_id}</div>
-                  </div>
-                )
-                : <div className="mt-2 text-xs text-slate-500">{L.bedAvailable}</div>}
-            </div>
+            <button key={item.key} title={S.nav[item.key]}
+              onClick={() => { setPage(item.key); setMobileOpen(false); }}
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 font-medium transition ${T.sizes.nav} ${active ? T.navActive : T.navIdle} ${collapsed ? "justify-center" : ""}`}>
+              <Icon size={20} className="shrink-0" />
+              {!collapsed && <span className="truncate">{S.nav[item.key]}</span>}
+            </button>
           );
         })}
-      </div>
-    </section>
-  );
-}
-
-// --------------------------------------------------------------------------- fire-alert control
-function FireAlertControl({ store, st, L }) {
-  const [patientId, setPatientId] = useState(st.patients[0]?.patient_id || "");
-  const [tier, setTier] = useState(TIER.CRITICAL);
-  useEffect(() => { if (!st.patients.find((p) => p.patient_id === patientId)) setPatientId(st.patients[0]?.patient_id || ""); }, [st.patients]);
-  if (st.patients.length === 0) return null;
-  const fire = () => {
-    if (!patientId) return;
-    const summary = tier === TIER.CRITICAL
-      ? "Septik şok kriterleri değerlendirilecek"
-      : "Klinik kötüleşme kriterleri değerlendirilecek";
-    store.fireAlert({ patientId, tier, summary });
-  };
-  return (
-    <section className="rounded-xl bg-slate-900 p-4 ring-1 ring-slate-800">
-      <div className="flex items-center gap-2 font-semibold"><AlertTriangle size={16} className="text-sev-critical" /> {L.fireAlert}</div>
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <select value={patientId} onChange={(e) => setPatientId(e.target.value)}
-          className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-          {st.patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.bedLabel} · {p.display_name}</option>)}
-        </select>
-        <select value={tier} onChange={(e) => setTier(e.target.value)}
-          className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-          <option value={TIER.CRITICAL}>CRITICAL</option>
-          <option value={TIER.HIGH}>HIGH</option>
-          <option value={TIER.MEDIUM}>MEDIUM</option>
-        </select>
-        <button onClick={fire}
-          className="rounded-lg bg-sev-critical px-3 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-          {L.fireBtn}
+      </nav>
+      <div className={`border-t ${T.border} p-2.5`}>
+        <button onClick={() => setCollapsed((c) => !c)}
+          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 ${T.navIdle} ${T.sizes.nav} ${collapsed ? "justify-center" : ""}`}>
+          {collapsed ? <PanelLeft size={18} /> : <><PanelLeftClose size={18} /><span>{S.collapse}</span></>}
         </button>
       </div>
-    </section>
-  );
-}
-
-// --------------------------------------------------------------------------- alert card
-function EscalationChain({ alert, L }) {
-  const steps = [
-    { step: ESCALATION_STEP.TIER_1_CHARGE_NURSE, label: L.step1 },
-    { step: ESCALATION_STEP.TIER_2_PHYSICIAN, label: L.step2 },
-    { step: ESCALATION_STEP.TIER_3_RRT, label: L.step3 },
-  ];
-  const crossed = new Set(alert.events.map((e) => e.step));
-  return (
-    <div className="mt-3 rounded-lg bg-slate-950/60 p-3 ring-1 ring-slate-800">
-      <div className="text-xs font-semibold text-slate-400">{L.escChain}</div>
-      <ol className="mt-2 space-y-1.5">
-        {steps.map((s) => {
-          const done = crossed.has(s.step);
-          return (
-            <li key={s.step} className="flex items-center gap-2 text-sm">
-              {done
-                ? <ArrowUpCircle size={15} className="text-sev-critical" />
-                : <span className="ml-0.5 h-3 w-3 rounded-full border border-slate-600" />}
-              <span className={done ? "font-medium text-slate-100" : "text-slate-500"}>{s.label}</span>
-              {done && <span className="ml-auto rounded-full bg-sev-critical/15 px-2 py-0.5 text-xs text-sev-critical">{L.sentTo}</span>}
-            </li>
-          );
-        })}
-      </ol>
     </div>
   );
-}
-
-function AlertCard({ store, st, alert, L, onAckOpen, onSnoozeOpen }) {
-  const s = sev(TIER_TO_SEV[alert.tier]);
-  const elapsed = alert.status === "FIRED" ? st.clockSec - alert.firedAtSec : 0;
-  const toNext = secondsToNextStep(elapsed, alert.tier);
-  const isCritical = alert.tier === TIER.CRITICAL;
-  const statusLabel = { FIRED: L.statusFired, ACKNOWLEDGED: L.statusAck, SNOOZED: L.statusSnoozed,
-                        CLOSED: "Kapalı" }[alert.status];
-
   return (
-    <div className={`rounded-xl bg-slate-900 p-4 ring-1 ${s.ring}`}>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${s.text} bg-slate-800`}>
-          <AlertTriangle size={13} /> {TIER_LABEL[alert.tier]}
-        </span>
-        <span className="font-medium text-slate-100">{alert.summary}</span>
-        <span className="ml-auto text-xs text-slate-400">{alert.bedLabel}</span>
-      </div>
-
-      <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-slate-400">
-        <span>{L.elapsed}: <span className="font-mono text-slate-200">{fmt(elapsed)}</span></span>
-        {alert.status === "FIRED" && (toNext !== null
-          ? <span>{L.nextStep}: <span className="font-mono text-slate-200">{fmt(toNext)}</span></span>
-          : <span className="text-sev-critical">{L.atTier3}</span>)}
-        <span className="rounded-full bg-slate-800 px-2 py-0.5">{statusLabel}</span>
-        {alert.status === "SNOOZED" && alert.snooze &&
-          <span>{L.snoozedUntil}: <span className="font-mono text-slate-200">{fmt(alert.snooze.until)}</span></span>}
-      </div>
-
-      {(alert.status === "FIRED" || alert.events.length > 0) && <EscalationChain alert={alert} L={L} />}
-
-      {alert.status === "ACKNOWLEDGED" && alert.ack && (
-        <p className="mt-3 flex items-center gap-1 text-sm text-emerald-400">
-          <Check size={14} /> {L.statusAck}: {alert.ack.by}
-          {alert.ack.note && <span className="text-slate-400">· {alert.ack.note}</span>}
-        </p>
-      )}
-
-      {alert.status !== "ACKNOWLEDGED" && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button onClick={() => onAckOpen(alert)}
-            className="flex items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-            <Check size={14} /> {L.ack}
-          </button>
-          {isCritical
-            ? (
-              <span title={L.critNoSnooze}
-                className="flex cursor-not-allowed items-center gap-1 rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-slate-500">
-                <BellOff size={14} /> {L.snooze}
-              </span>
-            )
-            : (
-              <button onClick={() => onSnoozeOpen(alert)}
-                className="flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-                <BellOff size={14} /> {L.snooze}
-              </button>
-            )}
-          {alert.currentStep !== ESCALATION_STEP.TIER_3_RRT && (
-            <button onClick={() => store.escalateToRRT(alert.id)}
-              className="flex items-center gap-1 rounded-lg border border-sev-critical/50 px-3 py-1.5 text-sm text-sev-critical hover:bg-sev-critical/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-              <ArrowUpCircle size={14} /> {L.escalateRRT}
-            </button>
-          )}
+    <>
+      <aside className={`hidden shrink-0 lg:block ${width} transition-all`}>{body}</aside>
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className={`absolute inset-0 ${T.overlay}`} onClick={() => setMobileOpen(false)} />
+          <div className="absolute left-0 top-0 h-full w-64">{body}</div>
         </div>
       )}
-      {isCritical && alert.status === "FIRED" && (
-        <p className="mt-2 text-xs text-slate-500">{L.critNoSnooze}</p>
+    </>
+  );
+}
+
+// ================================================================ VITALS
+const VITALS = [
+  { key: "hr", icon: Heart, unit: "bpm" },
+  { key: "map", icon: Gauge, unit: "mmHg", label: "MAP" },
+  { key: "spo2", icon: Droplets, unit: "%", label: "SpO2" },
+  { key: "temp", icon: Thermometer, unit: "°C" },
+  { key: "rr", icon: Wind, unit: "/dk", label: "RR" },
+];
+function VitalsGrid({ T, vitals, compact }) {
+  if (!vitals) return null;
+  return (
+    <div className={`grid grid-cols-5 gap-1.5 ${compact ? "" : "mt-3"}`}>
+      {VITALS.map((v) => {
+        const Icon = v.icon;
+        const val = vitals[v.key];
+        return (
+          <div key={v.key} className={`rounded-lg px-1.5 py-1.5 text-center ${T.vitalCell}`}>
+            <div className={`flex items-center justify-center gap-1 text-[10px] font-semibold uppercase ${T.faint}`}>
+              <Icon size={11} /> {v.label || v.key.toUpperCase()}
+            </div>
+            <div className={`font-bold leading-none tracking-tight tabular-nums ${T.text} ${T.sizes.vital}`}>{val ?? "—"}</div>
+            <div className={`text-[9px] ${T.faint}`}>{v.unit}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ================================================================ BED BOARD
+function BedBoard({ T, S, state, onOpenPatient }) {
+  const units = state.structure.units;
+  const [unitId, setUnitId] = useState("all");
+  const beds = unitId === "all" ? state.beds : state.beds.filter((b) => b.unitId === unitId);
+  const occupied = beds.filter((b) => b.state === "OCCUPIED").length;
+  const patientOf = (id) => state.patients.find((p) => p.patient_id === id);
+
+  return (
+    <div className="space-y-4">
+      {/* unit tabs + occupancy */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={() => setUnitId("all")}
+          className={`rounded-lg px-3 py-2 font-medium ${T.sizes.nav} ${unitId === "all" ? T.navActive : T.ghost}`}>
+          {S.allUnits}
+        </button>
+        {units.map((u) => (
+          <button key={u.id} onClick={() => setUnitId(u.id)}
+            className={`rounded-lg px-3 py-2 font-medium ${T.sizes.nav} ${unitId === u.id ? T.navActive : T.ghost}`}>
+            {u.name}
+          </button>
+        ))}
+        <div className={`ml-auto rounded-lg px-3 py-2 ${T.chip} ${T.sizes.nav}`}>
+          {S.occupancy}: <b>{occupied}</b> / {beds.length}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        {beds.map((bed) => {
+          const p = bed.patientId ? patientOf(bed.patientId) : null;
+          if (!p) {
+            return (
+              <div key={bed.id} className={`rounded-xl border border-dashed ${T.border} ${T.subtle} p-4 opacity-70`}>
+                <div className="flex items-center justify-between">
+                  <span className={`font-bold ${T.muted} ${T.sizes.name}`}>{bed.label}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs ${T.chip}`}>{S.available}</span>
+                </div>
+                <div className={`mt-6 text-center text-sm ${T.faint}`}>{S.noPatientBed}</div>
+              </div>
+            );
+          }
+          const ru = riskUi(p.risk);
+          return (
+            <button key={bed.id} onClick={() => onOpenPatient(p.patient_id)}
+              className={`group rounded-xl border ${T.border} ${T.card} ${T.hoverRing} p-4 text-left ring-1 transition`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`rounded-md ${T.subtle} px-2 py-0.5 text-xs font-bold ${T.muted}`}>{bed.label}</span>
+                    <span className={`truncate font-bold ${T.heading} ${T.sizes.name}`}>{p.display_name}</span>
+                  </div>
+                  <div className={`mt-0.5 text-xs ${T.faint}`}>
+                    {ageText(p, S)}{!p.isNeonate ? "y" : ""} · {p.sex === "male" ? S.male : S.female} · {S.protocolNo} {p.protocolNo}
+                  </div>
+                </div>
+                <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${ru.ring} ${ru.text}`}>
+                  <span className={`h-2 w-2 rounded-full ${ru.dot}`} /> {S.risk[p.risk]}
+                </span>
+              </div>
+              <div className={`mt-2 line-clamp-2 text-sm ${T.muted}`}>
+                <span className={`font-medium ${T.faint}`}>{S.admissionDx}: </span>{p.diagnosis}
+              </div>
+              <VitalsGrid T={T} vitals={p.vitals} />
+              <div className={`mt-3 flex items-center justify-between text-xs ${T.faint}`}>
+                <span>{S.mrn} {p.mrn}</span>
+                <span>{S.lengthOfStay}: {losText(p.admittedAtMs, S)}</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ================================================================ PATIENT DRAWER
+function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer }) {
+  const p = state.patients.find((x) => x.patient_id === patientId);
+  const [ho, setHo] = useState(false);
+  if (!p) return null;
+  const ru = riskUi(p.risk);
+  const team = state.careTeam[p.patient_id] || {};
+  const userName = (id) => state.users.find((u) => u.id === id)?.full_name || S.none;
+  return (
+    <div className="fixed inset-0 z-50">
+      <div className={`absolute inset-0 ${T.overlay}`} onClick={onClose} />
+      <div className={`absolute right-0 top-0 h-full w-full max-w-md overflow-y-auto border-l ${T.border} ${T.sidebar} p-5`}>
+        <div className="flex items-start justify-between">
+          <div>
+            <div className={`text-xs ${T.faint}`}>{S.patientDetail}</div>
+            <h2 className={`text-xl font-bold ${T.heading}`}>{p.display_name}</h2>
+          </div>
+          <button onClick={onClose} className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost}`}><X size={18} /></button>
+        </div>
+        <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${ru.ring} ${ru.text}`}>
+          <span className={`h-2 w-2 rounded-full ${ru.dot}`} /> {S.riskLevel}: {S.risk[p.risk]}
+        </span>
+
+        <dl className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border ${T.border} ${T.subtle} p-4 text-sm`}>
+          {[[S.protocolNo, p.protocolNo], [S.mrn, p.mrn], [S.tcno, p.tcMasked],
+            [S.age, `${ageText(p, S)}${p.isNeonate ? "" : ""}`], [S.sex, p.sex === "male" ? S.male : S.female],
+            [S.bed, p.bedLabel], [S.admittedBy, p.admittedBy], [S.lengthOfStay, losText(p.admittedAtMs, S)]].map(([k, v]) => (
+            <div key={k}><dt className={`text-xs ${T.faint}`}>{k}</dt><dd className={`font-semibold ${T.text}`}>{v}</dd></div>
+          ))}
+        </dl>
+
+        <div className="mt-4">
+          <div className={`mb-1 text-xs font-semibold uppercase ${T.faint}`}>{S.admissionDx}</div>
+          <div className={`rounded-xl border ${T.border} ${T.card} p-3 text-sm ${T.text}`}>{p.diagnosis}</div>
+        </div>
+
+        <div className="mt-4">
+          <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.vitals}</div>
+          <VitalsGrid T={T} vitals={p.vitals} compact />
+        </div>
+
+        <div className="mt-4">
+          <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.careTeamLabel}</div>
+          <div className={`space-y-1 rounded-xl border ${T.border} ${T.subtle} p-3 text-sm`}>
+            <div className="flex justify-between"><span className={T.muted}>{S.attending}</span><span className={`font-semibold ${T.text}`}>{userName(team.attendingId)}</span></div>
+            <div className="flex justify-between"><span className={T.muted}>{S.nurse}</span><span className={`font-semibold ${T.text}`}>{userName(team.nurseId)}</span></div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button onClick={() => setHo(true)} className={btnCls(T, "ghost")}><PenLine size={16} /> {S.handover}</button>
+          <button onClick={() => { onClose(); onTransfer(p.patient_id); }} className={btnCls(T, "ghost")}><ArrowLeftRight size={16} /> {S.transfer}</button>
+        </div>
+
+        {/* signed handovers list */}
+        {state.handovers.filter((h) => h.patientId === p.patient_id).map((h) => (
+          <div key={h.id} className={`mt-3 rounded-xl border ${T.border} ${T.subtle} p-3 text-sm`}>
+            <div className="flex items-center gap-2 text-emerald-500"><CheckCircle2 size={15} /> <span className="font-semibold">{S.signed}</span>
+              <span className={`ml-auto text-xs ${T.faint}`}>{new Date(h.signedAtMs).toLocaleString()}</span></div>
+            <div className={`mt-1 text-xs ${T.muted}`}>{h.fromName} → {h.toName}</div>
+            <div className={`mt-1 ${T.text}`}>{h.note}</div>
+          </div>
+        ))}
+
+        {ho && <HandoverModal T={T} S={S} store={store} state={state} patientId={p.patient_id} onClose={() => setHo(false)} />}
+      </div>
+    </div>
+  );
+}
+
+// ================================================================ HANDOVER MODAL
+function HandoverModal({ T, S, store, state, patientId, onClose }) {
+  const [toName, setToName] = useState("");
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState("");
+  const submit = () => {
+    try { store.createHandover({ patientId, fromName: state.user?.full_name, toName, note }); onClose(); }
+    catch (ex) { setErr(ex.message); }
+  };
+  return (
+    <ModalShell T={T} title={S.handoverTitle} sub={S.handoverSub} onClose={onClose}>
+      <Field T={T} label={S.handoverFrom}><input className={inputCls(T)} value={state.user?.full_name || ""} readOnly /></Field>
+      <Field T={T} label={S.handoverTo}><input className={inputCls(T)} value={toName} onChange={(e) => setToName(e.target.value)} /></Field>
+      <Field T={T} label={S.handoverNote} hint={`${S.required} · ≥ ${ACK_REASON_MIN_CHARS}`}>
+        <textarea rows={4} className={inputCls(T)} value={note} onChange={(e) => setNote(e.target.value)} placeholder={S.handoverPlaceholder} />
+      </Field>
+      {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+      <div className="flex justify-end gap-2 pt-1">
+        <button onClick={onClose} className={btnCls(T, "ghost")}>{S.cancel}</button>
+        <button onClick={submit} className={btnCls(T, "primary")}><PenLine size={16} /> {S.signBtn}</button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function ModalShell({ T, title, sub, onClose, children }) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className={`absolute inset-0 ${T.overlay}`} onClick={onClose} />
+      <div className={`relative w-full max-w-md rounded-2xl border ${T.border} ${T.card} p-5`}>
+        <div className="mb-4">
+          <h3 className={`text-lg font-bold ${T.heading}`}>{title}</h3>
+          {sub && <p className={`text-sm ${T.muted}`}>{sub}</p>}
+        </div>
+        <div className="space-y-3">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ================================================================ ADMISSION / TRANSFER
+function AdmissionPage({ T, S, store, state, preselectTransfer, clearPreselect }) {
+  const [tab, setTab] = useState(preselectTransfer ? "transfer" : "admit");
+  useEffect(() => { if (preselectTransfer) setTab("transfer"); }, [preselectTransfer]);
+  return (
+    <div className="max-w-3xl space-y-4">
+      <div className="flex gap-2">
+        <button onClick={() => setTab("admit")} className={`rounded-lg px-4 py-2.5 font-semibold ${T.sizes.nav} ${tab === "admit" ? T.navActive : T.ghost}`}>
+          <UserPlus size={16} className="mr-2 inline" />{S.admissionTitle}
+        </button>
+        <button onClick={() => setTab("transfer")} className={`rounded-lg px-4 py-2.5 font-semibold ${T.sizes.nav} ${tab === "transfer" ? T.navActive : T.ghost}`}>
+          <ArrowLeftRight size={16} className="mr-2 inline" />{S.transferTitle}
+        </button>
+      </div>
+      {tab === "admit"
+        ? <AdmitForm T={T} S={S} store={store} state={state} />
+        : <TransferForm T={T} S={S} store={store} state={state} preselect={preselectTransfer} clearPreselect={clearPreselect} />}
+    </div>
+  );
+}
+
+function AdmitForm({ T, S, store, state }) {
+  const units = state.structure.units;
+  const [f, setF] = useState({ name: "", age: "", sex: "male", isNeonate: false, unitId: units[0]?.id || "",
+    bedId: "", source: "emergency", risk: "stable", dx: "" });
+  const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
+  const upd = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const availBeds = state.beds.filter((b) => b.unitId === f.unitId && b.state === "AVAILABLE");
+  const submit = (e) => {
+    e.preventDefault(); setErr(""); setMsg("");
+    try {
+      const p = store.admitPatient({ displayName: f.name, sex: f.sex, bedId: f.bedId, diagnosisText: f.dx,
+        age: f.isNeonate ? 0 : Number(f.age) || null, isNeonate: f.isNeonate, ageDays: f.isNeonate ? Number(f.age) || 0 : null,
+        source: f.source, risk: f.risk });
+      setMsg(`${S.admittedOk} (${p.protocolNo})`);
+      setF((s) => ({ ...s, name: "", age: "", dx: "", bedId: "" }));
+    } catch (ex) { setErr(ex.message); }
+  };
+  return (
+    <form onSubmit={submit} className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+      <p className={`mb-4 text-sm ${T.muted}`}>{S.admissionSub}</p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field T={T} label={S.fName}><input className={inputCls(T)} value={f.name} onChange={(e) => upd("name", e.target.value)} required /></Field>
+        <Field T={T} label={f.isNeonate ? `${S.fAge} (${S.dayUnit})` : S.fAge}><input type="number" min="0" className={inputCls(T)} value={f.age} onChange={(e) => upd("age", e.target.value)} /></Field>
+        <Field T={T} label={S.fSex}>
+          <select className={inputCls(T)} value={f.sex} onChange={(e) => upd("sex", e.target.value)}>
+            <option value="male">{S.male}</option><option value="female">{S.female}</option>
+          </select>
+        </Field>
+        <Field T={T} label={S.riskLevel}>
+          <select className={inputCls(T)} value={f.risk} onChange={(e) => upd("risk", e.target.value)}>
+            {["stable", "low", "high", "critical"].map((r) => <option key={r} value={r}>{S.risk[r]}</option>)}
+          </select>
+        </Field>
+        <Field T={T} label={S.fUnit}>
+          <select className={inputCls(T)} value={f.unitId} onChange={(e) => { upd("unitId", e.target.value); upd("bedId", ""); }}>
+            {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        </Field>
+        <Field T={T} label={S.fBed}>
+          <select className={inputCls(T)} value={f.bedId} onChange={(e) => upd("bedId", e.target.value)} required>
+            <option value="">{availBeds.length ? S.selectTargetBed : S.noAvailableBed}</option>
+            {availBeds.map((b) => <option key={b.id} value={b.id}>{b.roomLabel} · {b.label}</option>)}
+          </select>
+        </Field>
+        <Field T={T} label={S.fSource}>
+          <select className={inputCls(T)} value={f.source} onChange={(e) => upd("source", e.target.value)}>
+            {Object.keys(S.source).map((k) => <option key={k} value={k}>{S.source[k]}</option>)}
+          </select>
+        </Field>
+        <label className={`flex items-center gap-2 self-end pb-2 ${T.sizes.nav} ${T.text}`}>
+          <input type="checkbox" checked={f.isNeonate} onChange={(e) => upd("isNeonate", e.target.checked)} /> {S.unitNicu}
+        </label>
+      </div>
+      <div className="mt-4">
+        <Field T={T} label={S.fDx}>
+          <textarea rows={3} className={inputCls(T)} value={f.dx} onChange={(e) => upd("dx", e.target.value)} placeholder={S.dxPlaceholder} required />
+        </Field>
+      </div>
+      {err && <div className="mt-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+      {msg && <div className="mt-3 rounded-lg bg-emerald-500/15 px-3 py-2 text-sm text-emerald-500">{msg}</div>}
+      <div className="mt-4 flex justify-end">
+        <button type="submit" className={btnCls(T, "primary")}><Check size={16} /> {S.admitBtn}</button>
+      </div>
+    </form>
+  );
+}
+
+function TransferForm({ T, S, store, state, preselect, clearPreselect }) {
+  const [patientId, setPatientId] = useState(preselect || "");
+  const [bedId, setBedId] = useState("");
+  const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
+  useEffect(() => { if (preselect) setPatientId(preselect); }, [preselect]);
+  const availBeds = state.beds.filter((b) => b.state === "AVAILABLE");
+  const submit = (e) => {
+    e.preventDefault(); setErr(""); setMsg("");
+    try { store.transferPatient({ patientId, targetBedId: bedId }); setMsg(S.transferredOk); setBedId(""); if (clearPreselect) clearPreselect(); }
+    catch (ex) { setErr(ex.message); }
+  };
+  return (
+    <form onSubmit={submit} className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+      <p className={`mb-4 text-sm ${T.muted}`}>{S.transferSub}</p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field T={T} label={S.selectPatient}>
+          <select className={inputCls(T)} value={patientId} onChange={(e) => setPatientId(e.target.value)} required>
+            <option value="">{S.selectPatient}</option>
+            {state.patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.bedLabel} · {p.display_name}</option>)}
+          </select>
+        </Field>
+        <Field T={T} label={S.selectTargetBed}>
+          <select className={inputCls(T)} value={bedId} onChange={(e) => setBedId(e.target.value)} required>
+            <option value="">{availBeds.length ? S.selectTargetBed : S.noAvailableBed}</option>
+            {availBeds.map((b) => <option key={b.id} value={b.id}>{b.unitName} · {b.roomLabel} · {b.label}</option>)}
+          </select>
+        </Field>
+      </div>
+      {err && <div className="mt-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+      {msg && <div className="mt-3 rounded-lg bg-emerald-500/15 px-3 py-2 text-sm text-emerald-500">{msg}</div>}
+      <div className="mt-4 flex justify-end">
+        <button type="submit" className={btnCls(T, "primary")}><ArrowLeftRight size={16} /> {S.transferBtn}</button>
+      </div>
+    </form>
+  );
+}
+
+// ================================================================ CARE TEAM
+function CareTeamPage({ T, S, store, state }) {
+  const attendings = state.users.filter((u) => u.role === ROLE.ATTENDING);
+  const nurses = state.users.filter((u) => u.role === ROLE.CHARGE_NURSE);
+  const userName = (id) => state.users.find((u) => u.id === id)?.full_name || S.none;
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      <div className="xl:col-span-2">
+        <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+          <p className={`mb-4 text-sm ${T.muted}`}>{S.careSub}</p>
+          <div className="space-y-3">
+            {state.patients.map((p) => {
+              const team = state.careTeam[p.patient_id] || {};
+              return (
+                <div key={p.patient_id} className={`rounded-xl border ${T.border} ${T.subtle} p-4`}>
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold">{p.bedLabel} · {p.display_name}</div>
+                    <span className={`text-xs ${T.faint}`}>{p.diagnosis}</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field T={T} label={S.attending}>
+                      <select className={inputCls(T)} value={team.attendingId || ""}
+                        onChange={(e) => store.assignCareTeam({ patientId: p.patient_id, attendingId: e.target.value })}>
+                        <option value="">{S.none}</option>
+                        {attendings.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                      </select>
+                    </Field>
+                    <Field T={T} label={S.nurse}>
+                      <select className={inputCls(T)} value={team.nurseId || ""}
+                        onChange={(e) => store.assignCareTeam({ patientId: p.patient_id, nurseId: e.target.value })}>
+                        <option value="">{S.none}</option>
+                        {nurses.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                      </select>
+                    </Field>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <div>
+        <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+          <h3 className={`mb-3 font-bold ${T.heading}`}>{S.shiftRoster}</h3>
+          <div className="space-y-2">
+            {state.users.map((u) => (
+              <div key={u.id} className={`flex items-center gap-3 rounded-lg ${T.subtle} px-3 py-2.5`}>
+                <div className="grid h-8 w-8 place-items-center rounded-full bg-brand/15 text-brand">
+                  {u.role === ROLE.HOSPITAL_ADMIN ? <ShieldAlert size={15} /> : u.role === ROLE.CHARGE_NURSE ? <HeartPulse size={15} /> : <Stethoscope size={15} />}
+                </div>
+                <div className="min-w-0">
+                  <div className={`truncate text-sm font-semibold ${T.text}`}>{u.full_name}</div>
+                  <div className={`truncate text-xs ${T.faint}`}>{S.roleName[u.role]}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ================================================================ ALARM MANAGEMENT
+function AlarmPage({ T, S, store, state, lang }) {
+  const alerts = [...state.alerts].filter((a) => a.status !== "CLOSED").reverse();
+  const [fp, setFp] = useState(state.patients[0]?.patient_id || "");
+  const [ft, setFt] = useState(TIER.CRITICAL);
+  const fire = () => { if (fp) store.fireAlert({ patientId: fp, tier: ft, summary: ALERT_TXT[lang] || ALERT_TXT.tr }); };
+  const [ackFor, setAckFor] = useState(null);
+  const [snzFor, setSnzFor] = useState(null);
+
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      {/* left: controls */}
+      <div className="space-y-4">
+        <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+          <h3 className={`mb-1 font-bold ${T.heading}`}>{S.fireAlert}</h3>
+          <p className={`mb-3 text-sm ${T.muted}`}>{S.alarmsSub}</p>
+          <div className="space-y-3">
+            <Field T={T} label={S.viewDetail}>
+              <select className={inputCls(T)} value={fp} onChange={(e) => setFp(e.target.value)}>
+                {state.patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.bedLabel} · {p.display_name}</option>)}
+              </select>
+            </Field>
+            <Field T={T} label={S.alertTier}>
+              <select className={inputCls(T)} value={ft} onChange={(e) => setFt(e.target.value)}>
+                {[TIER.CRITICAL, TIER.HIGH, TIER.MEDIUM, TIER.LOW].map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
+            <button onClick={fire} className={`${btnCls(T, "danger")} w-full`}><Siren size={16} /> {S.fireBtn}</button>
+          </div>
+        </div>
+
+        <TimeScale T={T} S={S} store={store} state={state} />
+        <BreakGlass T={T} S={S} store={store} state={state} />
+      </div>
+
+      {/* right: active alerts */}
+      <div className="xl:col-span-2">
+        <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className={`font-bold ${T.heading}`}>{S.activeAlerts}</h3>
+            <span className={`rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>{alerts.length}</span>
+          </div>
+          {alerts.length === 0
+            ? <div className={`py-10 text-center text-sm ${T.faint}`}>{S.noAlerts}</div>
+            : <div className="space-y-3">{alerts.map((a) => (
+                <AlertCard key={a.id} T={T} S={S} state={state} alert={a} onAck={() => setAckFor(a)} onSnooze={() => setSnzFor(a)}
+                  onEscalate={() => store.escalateToRRT(a.id)} />
+              ))}</div>}
+        </div>
+      </div>
+
+      {ackFor && <AckModal T={T} S={S} store={store} alert={ackFor} onClose={() => setAckFor(null)} />}
+      {snzFor && <SnoozeModal T={T} S={S} store={store} alert={snzFor} onClose={() => setSnzFor(null)} />}
+    </div>
+  );
+}
+
+function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate }) {
+  const ui = tierUi(alert.tier);
+  const patient = state.patients.find((p) => p.patient_id === alert.patientId);
+  const elapsed = alert.status === "FIRED" ? state.clockSec - alert.firedAtSec : 0;
+  const toNext = alert.status === "FIRED" ? secondsToNextStep(elapsed, alert.tier) : null;
+  const statusTxt = { FIRED: S.statusFired, ACKNOWLEDGED: S.statusAck, SNOOZED: S.statusSnoozed, CLOSED: S.statusClosed }[alert.status];
+  const reached = (step) => alert.events.some((e) => e.step === step);
+  const steps = [
+    { step: ESCALATION_STEP.TIER_1_CHARGE_NURSE, label: S.step1 },
+    { step: ESCALATION_STEP.TIER_2_PHYSICIAN, label: S.step2 },
+    { step: ESCALATION_STEP.TIER_3_RRT, label: S.step3 },
+  ];
+  return (
+    <div className={`rounded-xl border ${T.border} ${T.subtle} p-4`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-bold ${ui.chip}`}>
+              <span className={`h-2 w-2 rounded-full ${ui.dot}`} /> {alert.tier}
+            </span>
+            <span className={`text-sm font-semibold ${T.text}`}>{patient?.bedLabel} · {patient?.display_name}</span>
+          </div>
+          <div className={`mt-1 text-sm ${T.muted}`}>{alert.summary}</div>
+        </div>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${T.chip}`}>{statusTxt}</span>
+      </div>
+
+      {alert.status === "FIRED" && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          <span className={`inline-flex items-center gap-1 tabular-nums ${ui.text}`}><Clock size={13} /> {S.elapsed}: {fmtClock(elapsed)}</span>
+          <span className={T.faint}>{toNext != null ? `${S.nextStep}: ${fmtClock(toNext)}` : S.atTier3}</span>
+        </div>
+      )}
+      {alert.status === "SNOOZED" && alert.snooze && (
+        <div className={`mt-2 text-xs ${T.faint}`}>{S.snoozedUntil}: {fmtClock(alert.snooze.until)}</div>
+      )}
+
+      {/* escalation chain */}
+      <div className="mt-3 flex items-center gap-1.5">
+        {steps.map((s, i) => {
+          const on = reached(s.step);
+          return (
+            <React.Fragment key={s.step}>
+              <div className={`flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium ${on ? "bg-red-500/15 text-red-500" : T.chip}`}>
+                {on ? <CheckCircle2 size={12} /> : <Circle size={12} />} {s.label}
+              </div>
+              {i < steps.length - 1 && <div className={`h-px w-3 ${T.border} border-t`} />}
+            </React.Fragment>
+          );
+        })}
+      </div>
+
+      {alert.ack && (
+        <div className={`mt-3 rounded-lg ${T.card} border ${T.border} p-2 text-xs ${T.muted}`}>
+          <span className="font-semibold text-emerald-500">{S.statusAck}</span> · {alert.ack.by} · {S.reasonOptions[alert.ack.reason] || alert.ack.reason}
+          {alert.ack.note && <div className={`mt-0.5 ${T.text}`}>{alert.ack.note}</div>}
+        </div>
+      )}
+
+      {alert.status === "FIRED" && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button onClick={onAck} className={`${btnCls(T, "primary")} px-3 py-2`}><Check size={15} /> {S.ack}</button>
+          {canSnooze(alert.tier)
+            ? <button onClick={onSnooze} className={`${btnCls(T, "ghost")} px-3 py-2`}><BellOff size={15} /> {S.snooze}</button>
+            : <span className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs ${ui.chip}`}><AlertTriangle size={14} /> {S.critNoSnooze}</span>}
+          <button onClick={onEscalate} className={`${btnCls(T, "warn")} px-3 py-2`}><ArrowUpCircle size={15} /> {S.escalateRRT}</button>
+        </div>
       )}
     </div>
   );
 }
 
-// --------------------------------------------------------------------------- modals
-function AckModal({ store, alert, L, onClose }) {
-  const isCritical = alert.tier === TIER.CRITICAL;
+function AckModal({ T, S, store, alert, onClose }) {
+  const crit = alert.tier === TIER.CRITICAL;
   const [reason, setReason] = useState("clinically_reviewed");
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
@@ -501,235 +846,296 @@ function AckModal({ store, alert, L, onClose }) {
     catch (ex) { setErr(ex.message); }
   };
   return (
-    <Modal onClose={onClose} title={L.ackTitle}>
-      <div className="space-y-3">
-        <div>
-          <label className="block text-xs text-slate-400">{L.ackReason}{isCritical && " *"}</label>
-          <select value={reason} onChange={(e) => setReason(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-            {Object.entries(L.reasonOptions).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-slate-400">{L.ackNote}{isCritical && ` · ${L.ackNoteHintCrit}`}</label>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
-            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand" />
-        </div>
-        {err && <p className="text-sm text-sev-critical">{err}</p>}
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800">{L.cancel}</button>
-          <button onClick={submit} className="rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand/90">{L.confirm}</button>
-        </div>
+    <ModalShell T={T} title={S.ackTitle} onClose={onClose}>
+      <Field T={T} label={S.ackReason}>
+        <select className={inputCls(T)} value={reason} onChange={(e) => setReason(e.target.value)}>
+          {Object.keys(S.reasonOptions).map((k) => <option key={k} value={k}>{S.reasonOptions[k]}</option>)}
+        </select>
+      </Field>
+      <Field T={T} label={S.ackNote} hint={crit ? S.ackNoteHintCrit : S.optional}>
+        <textarea rows={3} className={inputCls(T)} value={note} onChange={(e) => setNote(e.target.value)} />
+      </Field>
+      {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+      <div className="flex justify-end gap-2 pt-1">
+        <button onClick={onClose} className={btnCls(T, "ghost")}>{S.cancel}</button>
+        <button onClick={submit} className={btnCls(T, "primary")}><Check size={16} /> {S.confirm}</button>
       </div>
-    </Modal>
+    </ModalShell>
   );
 }
 
-function SnoozeModal({ store, alert, L, onClose }) {
-  const cap = snoozeCapMinutes(alert.tier) || 0;
-  const [minutes, setMinutes] = useState(Math.min(15, cap));
+function SnoozeModal({ T, S, store, alert, onClose }) {
+  const cap = snoozeCapMinutes(alert.tier) || 30;
+  const [minutes, setMinutes] = useState(Math.min(10, cap));
   const [reason, setReason] = useState("clinically_expected");
+  const [note, setNote] = useState("");
   const [err, setErr] = useState("");
   const submit = () => {
-    try { store.snoozeAlert(alert.id, { minutes: Number(minutes), reason }); onClose(); }
+    try { store.snoozeAlert(alert.id, { minutes: Number(minutes), reason, note }); onClose(); }
     catch (ex) { setErr(ex.message); }
   };
   return (
-    <Modal onClose={onClose} title={L.snoozeTitle}>
-      <div className="space-y-3">
-        <p className="text-xs text-slate-400">{TIER_LABEL[alert.tier]} · max {cap} dk</p>
-        <div>
-          <label className="block text-xs text-slate-400">{L.snoozeMinutes}</label>
-          <input type="number" min={1} max={cap} value={minutes} onChange={(e) => setMinutes(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand" />
-        </div>
-        <div>
-          <label className="block text-xs text-slate-400">{L.snoozeReason} *</label>
-          <select value={reason} onChange={(e) => setReason(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-            {Object.entries(L.reasonOptions).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </div>
-        {err && <p className="text-sm text-sev-critical">{err}</p>}
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800">{L.cancel}</button>
-          <button onClick={submit} className="rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand/90">{L.save}</button>
-        </div>
+    <ModalShell T={T} title={S.snoozeTitle} onClose={onClose}>
+      <Field T={T} label={`${S.snoozeMinutes} (≤ ${cap})`}>
+        <input type="number" min="1" max={cap} className={inputCls(T)} value={minutes} onChange={(e) => setMinutes(e.target.value)} />
+      </Field>
+      <Field T={T} label={S.snoozeReason}>
+        <select className={inputCls(T)} value={reason} onChange={(e) => setReason(e.target.value)}>
+          {Object.keys(S.reasonOptions).map((k) => <option key={k} value={k}>{S.reasonOptions[k]}</option>)}
+        </select>
+      </Field>
+      <Field T={T} label={S.ackNote}><textarea rows={2} className={inputCls(T)} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+      {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+      <div className="flex justify-end gap-2 pt-1">
+        <button onClick={onClose} className={btnCls(T, "ghost")}>{S.cancel}</button>
+        <button onClick={submit} className={btnCls(T, "primary")}><BellOff size={16} /> {S.snooze}</button>
       </div>
-    </Modal>
+    </ModalShell>
   );
 }
 
-function Modal({ title, onClose, children }) {
+function TimeScale({ T, S, store, state }) {
+  const speeds = [1, 30, 60, 120];
   return (
-    <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/60 px-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-700" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-4 text-lg font-semibold text-slate-100">{title}</h3>
-        {children}
+    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className={`font-bold ${T.heading}`}>{S.timeScale}</h3>
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs tabular-nums ${T.chip}`}>
+          <Clock size={13} /> {fmtClock(state.clockSec)}
+        </span>
       </div>
+      <div className="mb-3 flex flex-wrap gap-2">
+        {speeds.map((s) => (
+          <button key={s} onClick={() => store.setSpeed(s)}
+            className={`rounded-lg px-3 py-2 text-sm font-semibold ${state.speed === s ? T.navActive : T.ghost}`}>
+            {s === 1 ? S.realtime : `${s}×`}
+          </button>
+        ))}
+      </div>
+      <button onClick={() => store.setRunning(!state.running)} className={`${btnCls(T, "ghost")} w-full`}>
+        {state.running ? <><Pause size={16} /> {S.pause}</> : <><Play size={16} /> {S.resume}</>}
+      </button>
     </div>
   );
 }
 
-// --------------------------------------------------------------------------- break-glass panel
-function BreakGlassPanel({ store, st, L }) {
-  const active = store.breakGlassActive();
+function BreakGlass({ T, S, store, state }) {
   const [reason, setReason] = useState("");
   const [err, setErr] = useState("");
-  const activate = () => {
-    try { store.activateBreakGlass(reason); setReason(""); setErr(""); }
-    catch (ex) { setErr(ex.message); }
-  };
+  const active = !!state.breakGlass && state.clockSec < state.breakGlass.expiresAtSec;
+  const submit = () => { try { store.activateBreakGlass(reason); setReason(""); setErr(""); } catch (ex) { setErr(ex.message); } };
   return (
-    <section className="rounded-xl bg-slate-900 p-4 ring-1 ring-slate-800">
-      <div className="flex items-center gap-2 font-semibold">
-        <ShieldAlert size={16} className="text-amber-300" /> {L.breakGlass}
-        {active && <span className="ml-1 rounded-full bg-amber-400/15 px-2 py-0.5 text-xs text-amber-300">{L.bgActive}</span>}
+    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+      <div className="mb-1 flex items-center gap-2">
+        <ShieldAlert size={17} className="text-amber-500" />
+        <h3 className={`font-bold ${T.heading}`}>{S.breakGlass}</h3>
+        {active && <span className="ml-auto rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-500">{S.bgActive}</span>}
       </div>
-      <p className="mt-1 text-xs text-slate-500">{L.bgInfo}</p>
-      {active
-        ? (
-          <div className="mt-3 space-y-2 text-sm">
-            <div className="text-slate-300">{st.breakGlass.reason}</div>
-            <div className="text-xs text-slate-400">{L.bgExpires}: <span className="font-mono">{fmt(st.breakGlass.expiresAtSec)}</span></div>
-            <button onClick={() => store.extendBreakGlass()}
-              className="rounded-lg border border-amber-400/40 px-3 py-1.5 text-sm text-amber-300 hover:bg-amber-400/10">{L.bgExtend}</button>
+      <p className={`mb-3 text-xs ${T.faint}`}>{S.bgInfo}</p>
+      {active ? (
+        <div className="space-y-2">
+          <div className={`rounded-lg ${T.subtle} px-3 py-2 text-sm ${T.text}`}>
+            {S.bgExpires}: <b className="tabular-nums">{fmtClock(state.breakGlass.expiresAtSec)}</b>
           </div>
-        )
-        : (
-          <div className="mt-3 space-y-2">
-            <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
-              placeholder={L.bgReason}
-              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand" />
-            {err && <p className="text-sm text-sev-critical">{err}</p>}
-            <button onClick={activate}
-              className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-semibold text-slate-900 hover:bg-amber-400">{L.bgActivate}</button>
-          </div>
-        )}
-    </section>
+          <button onClick={() => store.extendBreakGlass()} className={`${btnCls(T, "ghost")} w-full`}>{S.bgExtend}</button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <textarea rows={2} className={inputCls(T)} value={reason} onChange={(e) => setReason(e.target.value)}
+            placeholder={`${S.bgReason} (≥ ${ACK_REASON_MIN_CHARS})`} />
+          {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-500">{err}</div>}
+          <button onClick={submit} className={`${btnCls(T, "warn")} w-full`}>{S.bgActivate}</button>
+        </div>
+      )}
+    </div>
   );
 }
 
-// --------------------------------------------------------------------------- panels
-function AlertsColumn({ store, st, L }) {
-  const [ackAlert, setAckAlert] = useState(null);
-  const [snoozeAlert, setSnoozeAlert] = useState(null);
-  const active = st.alerts.filter((a) => a.status !== "ACKNOWLEDGED");
-  const acked = st.alerts.filter((a) => a.status === "ACKNOWLEDGED");
+// ================================================================ ADMIN
+function AdminPage({ T, S, store, state }) {
   return (
-    <section className="rounded-xl bg-slate-900 p-4 ring-1 ring-slate-800">
-      <div className="flex items-center gap-2 font-semibold">
-        <AlertTriangle size={16} className="text-sev-critical" /> {L.activeAlerts}
-        <span className="ml-1 rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">{active.length}</span>
-      </div>
-      {st.alerts.length === 0
-        ? <p className="mt-3 text-sm text-emerald-400">{L.noAlerts}</p>
-        : (
-          <div className="mt-3 space-y-3">
-            {active.map((a) => (
-              <AlertCard key={a.id} store={store} st={st} alert={a} L={L}
-                onAckOpen={setAckAlert} onSnoozeOpen={setSnoozeAlert} />
-            ))}
-            {acked.map((a) => (
-              <AlertCard key={a.id} store={store} st={st} alert={a} L={L}
-                onAckOpen={setAckAlert} onSnoozeOpen={setSnoozeAlert} />
-            ))}
-          </div>
-        )}
-      {ackAlert && <AckModal store={store} alert={ackAlert} L={L} onClose={() => setAckAlert(null)} />}
-      {snoozeAlert && <SnoozeModal store={store} alert={snoozeAlert} L={L} onClose={() => setSnoozeAlert(null)} />}
-    </section>
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <UserAdmin T={T} S={S} store={store} state={state} />
+      <StructureAdmin T={T} S={S} store={store} state={state} />
+    </div>
   );
 }
 
-function DoctorPanel({ store, st, L }) {
+function UserAdmin({ T, S, store, state }) {
+  const [f, setF] = useState({ full_name: "", email: "", role: ROLE.ATTENDING });
+  const [err, setErr] = useState("");
+  const submit = (e) => { e.preventDefault(); try { store.createUser(f); setF({ full_name: "", email: "", role: ROLE.ATTENDING }); setErr(""); } catch (ex) { setErr(ex.message); } };
   return (
-    <div className="grid gap-4 p-4 lg:grid-cols-[minmax(320px,380px)_1fr]">
-      <div className="space-y-4">
-        <AdmissionForm store={store} st={st} L={L} />
-        <FireAlertControl store={store} st={st} L={L} />
-        <BreakGlassPanel store={store} st={st} L={L} />
-      </div>
-      <div className="space-y-4">
-        <BedGrid st={st} L={L} />
-        <AlertsColumn store={store} st={st} L={L} />
+    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+      <h3 className={`mb-1 font-bold ${T.heading}`}>{S.usersSection}</h3>
+      <p className={`mb-4 text-sm ${T.muted}`}>{S.createUser}</p>
+      <form onSubmit={submit} className="space-y-3">
+        <Field T={T} label={S.uName}><input className={inputCls(T)} value={f.full_name} onChange={(e) => setF((s) => ({ ...s, full_name: e.target.value }))} /></Field>
+        <Field T={T} label={S.uEmail}><input className={inputCls(T)} value={f.email} onChange={(e) => setF((s) => ({ ...s, email: e.target.value }))} /></Field>
+        <Field T={T} label={S.uRole}>
+          <select className={inputCls(T)} value={f.role} onChange={(e) => setF((s) => ({ ...s, role: e.target.value }))}>
+            {[ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN, ROLE.RRT].map((r) => <option key={r} value={r}>{S.roleName[r]}</option>)}
+          </select>
+        </Field>
+        {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+        <button type="submit" className={`${btnCls(T, "primary")} w-full`}><Plus size={16} /> {S.addUser}</button>
+      </form>
+      <div className={`mt-4 text-xs font-semibold uppercase ${T.faint}`}>{S.userList}</div>
+      <div className={`mt-2 divide-y ${T.divide} rounded-xl border ${T.border}`}>
+        {state.users.map((u) => (
+          <div key={u.id} className="flex items-center gap-3 px-3 py-2.5">
+            <div className="min-w-0">
+              <div className={`truncate text-sm font-semibold ${T.text}`}>{u.full_name}</div>
+              <div className={`truncate text-xs ${T.faint}`}>{u.email}</div>
+            </div>
+            <span className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs ${T.chip}`}>{S.roleName[u.role]}</span>
+            {u.mfa && <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-500">{S.mfa}</span>}
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function NursePanel({ store, st, L }) {
+function StructureAdmin({ T, S, store, state }) {
+  const units = state.structure.units;
+  const [unitName, setUnitName] = useState(""); const [unitType, setUnitType] = useState("ADULT_ICU");
+  const [roomUnit, setRoomUnit] = useState(units[0]?.id || ""); const [roomName, setRoomName] = useState("");
+  const [bedUnit, setBedUnit] = useState(units[0]?.id || ""); const [bedRoom, setBedRoom] = useState(""); const [bedLabel, setBedLabel] = useState("");
+  const [err, setErr] = useState("");
+  const bedUnitRooms = units.find((u) => u.id === bedUnit)?.rooms || [];
+  const wrap = (fn) => { try { fn(); setErr(""); } catch (ex) { setErr(ex.message); } };
   return (
-    <div className="grid gap-4 p-4 lg:grid-cols-[minmax(320px,380px)_1fr]">
-      <div className="space-y-4">
-        <section className="rounded-xl bg-slate-900 p-4 text-sm text-slate-400 ring-1 ring-slate-800">
-          {L.admissionOnlyDoctor}
-        </section>
-        <FireAlertControl store={store} st={st} L={L} />
-        <BreakGlassPanel store={store} st={st} L={L} />
+    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+      <h3 className={`mb-1 font-bold ${T.heading}`}>{S.structureSection}</h3>
+      <p className={`mb-4 text-sm ${T.muted}`}>{S.adminSub}</p>
+      {err && <div className="mb-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+
+      {/* add unit */}
+      <div className={`mb-3 rounded-xl border ${T.border} ${T.subtle} p-3`}>
+        <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.addUnit}</div>
+        <div className="flex flex-wrap gap-2">
+          <input className={`${inputCls(T)} flex-1`} placeholder={S.unitName} value={unitName} onChange={(e) => setUnitName(e.target.value)} />
+          <select className={inputCls(T)} value={unitType} onChange={(e) => setUnitType(e.target.value)}>
+            <option value="ADULT_ICU">{S.unitAdult}</option><option value="NICU">{S.unitNicu}</option>
+          </select>
+          <button onClick={() => wrap(() => { store.addUnit({ name: unitName, type: unitType }); setUnitName(""); })} className={btnCls(T, "primary")}><Plus size={15} /></button>
+        </div>
       </div>
-      <div className="space-y-4">
-        <BedGrid st={st} L={L} />
-        <AlertsColumn store={store} st={st} L={L} />
+
+      {/* add room */}
+      <div className={`mb-3 rounded-xl border ${T.border} ${T.subtle} p-3`}>
+        <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.addRoom}</div>
+        <div className="flex flex-wrap gap-2">
+          <select className={inputCls(T)} value={roomUnit} onChange={(e) => setRoomUnit(e.target.value)}>
+            {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          <input className={`${inputCls(T)} flex-1`} placeholder={S.roomName} value={roomName} onChange={(e) => setRoomName(e.target.value)} />
+          <button onClick={() => wrap(() => { store.addRoom({ unitId: roomUnit, label: roomName }); setRoomName(""); })} className={btnCls(T, "primary")}><Plus size={15} /></button>
+        </div>
+      </div>
+
+      {/* add bed */}
+      <div className={`rounded-xl border ${T.border} ${T.subtle} p-3`}>
+        <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.addBed}</div>
+        <div className="flex flex-wrap gap-2">
+          <select className={inputCls(T)} value={bedUnit} onChange={(e) => { setBedUnit(e.target.value); setBedRoom(""); }}>
+            {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          <select className={inputCls(T)} value={bedRoom} onChange={(e) => setBedRoom(e.target.value)}>
+            <option value="">{S.selectRoom}</option>
+            {bedUnitRooms.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+          </select>
+          <input className={`${inputCls(T)} flex-1`} placeholder={S.bedLabel} value={bedLabel} onChange={(e) => setBedLabel(e.target.value)} />
+          <button onClick={() => wrap(() => { store.addBed({ unitId: bedUnit, roomId: bedRoom, label: bedLabel }); setBedLabel(""); })} className={btnCls(T, "primary")}><Plus size={15} /></button>
+        </div>
+      </div>
+
+      {/* structure summary */}
+      <div className="mt-4 space-y-2">
+        {units.map((u) => {
+          const unitBeds = state.beds.filter((b) => b.unitId === u.id);
+          return (
+            <div key={u.id} className={`rounded-lg ${T.subtle} px-3 py-2 text-sm`}>
+              <div className="flex items-center justify-between">
+                <span className={`font-semibold ${T.text}`}><Building2 size={14} className="mr-1.5 inline" />{u.name}</span>
+                <span className={`text-xs ${T.faint}`}>{(u.rooms || []).length} {S.room} · {unitBeds.length} {S.bed}</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function AdminPanel({ store, st, L }) {
-  const u = st.structure.unit;
-  return (
-    <div className="grid gap-4 p-4 lg:grid-cols-[minmax(320px,380px)_1fr]">
-      <div className="space-y-4">
-        <section className="rounded-xl bg-slate-900 p-4 ring-1 ring-slate-800">
-          <div className="flex items-center gap-2 font-semibold"><Building2 size={16} className="text-amber-300" /> {L.panelAdmin}</div>
-          <dl className="mt-3 space-y-1.5 text-sm">
-            <div className="flex justify-between"><dt className="text-slate-400">{L.tenant}</dt><dd className="text-slate-100">{st.structure.tenant}</dd></div>
-            <div className="flex justify-between"><dt className="text-slate-400">{L.site}</dt><dd className="text-slate-100">{st.structure.site}</dd></div>
-            <div className="flex justify-between"><dt className="text-slate-400">{L.unit}</dt><dd className="text-slate-100">{u.name} ({u.type})</dd></div>
-            <div className="flex justify-between"><dt className="text-slate-400">{L.maxNurse}</dt><dd className="text-slate-100">{u.maxBedsPerNurse}</dd></div>
-          </dl>
-        </section>
-        <AdmissionForm store={store} st={st} L={L} />
-      </div>
-      <div className="space-y-4">
-        <BedGrid st={st} L={L} />
-        <AlertsColumn store={store} st={st} L={L} />
-      </div>
-    </div>
-  );
-}
-
-// --------------------------------------------------------------------------- root
+// ================================================================ ROOT
 export function ClinicalDemo() {
-  const store = useDemoStore();
-  const st = store.getState();
-  const [lang, setLang] = useState(storedLang);
-  const L = useStr(lang);
-  useEffect(() => { persistLang(lang); }, [lang]);
+  const storeRef = useRef(null);
+  if (!storeRef.current) storeRef.current = createDemoStore(buildRealisticState());
+  const store = storeRef.current;
+  const state = useStore(store);
 
-  // Simulation clock: advance sim seconds by `speed` and reconcile escalation, ~4×/sec.
+  const [theme, setThemeState] = useState(storedTheme);
+  const [lang, setLangState] = useState(storedClang);
+  const [page, setPage] = useState("board");
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [drawerPatient, setDrawerPatient] = useState(null);
+  const [transferPatient, setTransferPatient] = useState(null);
+
+  const setTheme = (k) => { setThemeState(k); persistTheme(k); };
+  const setLang = (l) => { setLangState(l); persistClang(l); };
+
+  const T = useMemo(() => getTheme(theme), [theme]);
+  const S = useMemo(() => cstrings(lang), [lang]);
+
+  // simulated clock: advance escalation for all open alarms.
   useEffect(() => {
-    if (!st.user) return undefined;
     const id = setInterval(() => {
-      const s = store.getState();
-      if (!s.running) return;
-      store.reconcile(s.clockSec + s.speed * 0.25);
+      const st = store.getState();
+      if (st.running) store.reconcile(st.clockSec + st.speed * 0.25);
     }, 250);
     return () => clearInterval(id);
-  }, [st.user, store]);
+  }, [store]);
 
-  if (!st.user) return <Login store={store} L={L} lang={lang} setLang={setLang} />;
+  // apply dark class for any global dark-mode CSS hooks.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "light") root.classList.remove("dark"); else root.classList.add("dark");
+  }, [theme]);
 
-  const Panel = st.user.role === ROLE.HOSPITAL_ADMIN ? AdminPanel
-    : st.user.role === ROLE.CHARGE_NURSE ? NursePanel
-    : DoctorPanel;
+  if (!state.user) return <Login T={T} S={S} store={store} />;
+
+  // guard: page not permitted for the current role → fall back to board.
+  const role = state.user.role;
+  const activeItem = NAV_ITEMS.find((i) => i.key === page);
+  const effectivePage = activeItem && canSee(activeItem, role) ? page : "board";
+
+  const openTransfer = (pid) => { setTransferPatient(pid); setPage("admission"); };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <Header store={store} st={st} L={L} lang={lang} setLang={setLang} />
-      <Panel store={store} st={st} L={L} />
+    <div className={`flex min-h-screen ${T.app}`}>
+      <Sidebar T={T} S={S} state={state} page={effectivePage} setPage={setPage}
+        collapsed={collapsed} setCollapsed={setCollapsed} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar T={T} S={S} store={store} state={state} page={effectivePage} lang={lang} setLang={setLang}
+          theme={theme} setTheme={setTheme} onMenu={() => setMobileOpen(true)} />
+        <main className="flex-1 overflow-x-hidden p-4 lg:p-6">
+          {effectivePage === "board" && <BedBoard T={T} S={S} state={state} onOpenPatient={setDrawerPatient} />}
+          {effectivePage === "admission" && <AdmissionPage T={T} S={S} store={store} state={state}
+            preselectTransfer={transferPatient} clearPreselect={() => setTransferPatient(null)} />}
+          {effectivePage === "care" && <CareTeamPage T={T} S={S} store={store} state={state} />}
+          {effectivePage === "alarms" && <AlarmPage T={T} S={S} store={store} state={state} lang={lang} />}
+          {effectivePage === "admin" && <AdminPage T={T} S={S} store={store} state={state} />}
+        </main>
+      </div>
+      {drawerPatient && (
+        <PatientDrawer T={T} S={S} state={state} store={store} patientId={drawerPatient}
+          onClose={() => setDrawerPatient(null)} onTransfer={openTransfer} />
+      )}
     </div>
   );
 }
 
+export default ClinicalDemo;
