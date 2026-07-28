@@ -7,6 +7,15 @@ dependencies = [
     "pyyaml>=6.0",
     "sqlalchemy>=2.0",
     "fastapi>=0.110",
+    "python-jose[cryptography]>=3.3",   # JWT
+    "passlib[bcrypt]>=1.7",             # Password hashing
+    "pyotp>=2.9",                       # TOTP/MFA
+    "alembic>=1.13",                    # DB migrations
+    "psycopg2-binary>=2.9",             # PostgreSQL driver (sync, for Alembic)
+    "asyncpg>=0.29",                    # PostgreSQL driver (async, for SQLAlchemy)
+    "cryptography>=42.0",               # Fernet (PHI encryption)
+    "python-multipart>=0.0.9",          # Form data
+    "email-validator>=2.1",             # Email validation
 ]
 
 [project.optional-dependencies]
