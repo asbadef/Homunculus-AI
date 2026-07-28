@@ -13,11 +13,15 @@ export const ROLE = {
 };
 
 // Sign-in accounts (synthetic environment; a single shared non-secret password for all).
+// Each account also carries a 4-digit quick-PIN used on shared tablet/nurse-station screens for
+// the 3-second Fast Switcher (see switchUserByPin). PINs are synthetic and non-secret.
 export const DEMO_PASSWORD = "Homunculus2025";
 export const DEMO_ACCOUNTS = [
-  { email: "dr.elif.yilmaz@homunculus.health", password: DEMO_PASSWORD, full_name: "Dr. Elif Yılmaz", role: ROLE.ATTENDING },
-  { email: "ayse.demir@homunculus.health",     password: DEMO_PASSWORD, full_name: "Ayşe Demir",      role: ROLE.CHARGE_NURSE },
-  { email: "admin@homunculus.health",          password: DEMO_PASSWORD, full_name: "Mehmet Kaya",     role: ROLE.HOSPITAL_ADMIN },
+  { email: "dr.elif.yilmaz@homunculus.health", password: DEMO_PASSWORD, pin: "1111", full_name: "Dr. Elif Yılmaz", role: ROLE.ATTENDING },
+  { email: "ayse.demir@homunculus.health",     password: DEMO_PASSWORD, pin: "2222", full_name: "Ayşe Demir",      role: ROLE.CHARGE_NURSE },
+  { email: "admin@homunculus.health",          password: DEMO_PASSWORD, pin: "9999", full_name: "Mehmet Kaya",     role: ROLE.HOSPITAL_ADMIN },
+  { email: "dr.can.ozturk@homunculus.health",  password: DEMO_PASSWORD, pin: "3333", full_name: "Dr. Can Öztürk",  role: ROLE.ATTENDING },
+  { email: "selin.arslan@homunculus.health",   password: DEMO_PASSWORD, pin: "4444", full_name: "Selin Arslan",    role: ROLE.CHARGE_NURSE },
 ];
 
 // --------------------------------------------------------------------------- alert tiers
@@ -190,15 +194,19 @@ function seedState() {
     },
     users: [],
     careTeam: {},         // patientId → { attendingId, nurseId }
+    staffAssignments: {}, // userId → { bedIds:[], unitIds:[] }  (staff→bed matrix)
+    devices: [],          // { id, vendor, model, ip, bedId, connected, lastPacketMs, packets }
     handovers: [],        // { id, patientId, fromName, toName, note, signedAtMs }
     beds,
     patients: [],         // admitted patients (each on a bed)
     alerts: [],           // active/closed alerts
-    breakGlass: null,     // { by, reason, activatedAt, expiresAt }
+    breakGlass: null,     // { by, reason, activatedAt, expiresAt, reviewStatus, reviewedBy }
     clinical: {},         // patientId → { diagnoses, medications, procedures, fluids, thresholds, vitalHistory }
     auditLog: [],         // { id, atMs, actor, action, target, detail }
     maskNames: false,     // KVKK name-masking toggle (global)
     autoAlarm: true,      // automatic alarm engine on/off
+    online: true,         // PWA connectivity flag (offline resilience)
+    syncQueue: [],        // actions captured while offline
     seq: 1,
   };
 }
@@ -223,11 +231,11 @@ export function buildRealisticState() {
   const hrs = (h) => now - h * 3600 * 1000;
 
   const users = [
-    { id: "u-01", full_name: "Dr. Elif Yılmaz", email: "dr.elif.yilmaz@homunculus.health", role: ROLE.ATTENDING,    active: true, mfa: true },
-    { id: "u-02", full_name: "Ayşe Demir",      email: "ayse.demir@homunculus.health",     role: ROLE.CHARGE_NURSE,  active: true, mfa: true },
-    { id: "u-03", full_name: "Mehmet Kaya",     email: "admin@homunculus.health",          role: ROLE.HOSPITAL_ADMIN, active: true, mfa: true },
-    { id: "u-04", full_name: "Dr. Can Öztürk",  email: "dr.can.ozturk@homunculus.health",  role: ROLE.ATTENDING,    active: true, mfa: false },
-    { id: "u-05", full_name: "Selin Arslan",    email: "selin.arslan@homunculus.health",   role: ROLE.CHARGE_NURSE, active: true, mfa: true },
+    { id: "u-01", full_name: "Dr. Elif Yılmaz", email: "dr.elif.yilmaz@homunculus.health", role: ROLE.ATTENDING,    active: true, mfa: true,  pin: "1111" },
+    { id: "u-02", full_name: "Ayşe Demir",      email: "ayse.demir@homunculus.health",     role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  pin: "2222" },
+    { id: "u-03", full_name: "Mehmet Kaya",     email: "admin@homunculus.health",          role: ROLE.HOSPITAL_ADMIN, active: true, mfa: true, pin: "9999" },
+    { id: "u-04", full_name: "Dr. Can Öztürk",  email: "dr.can.ozturk@homunculus.health",  role: ROLE.ATTENDING,    active: true, mfa: false, pin: "3333" },
+    { id: "u-05", full_name: "Selin Arslan",    email: "selin.arslan@homunculus.health",   role: ROLE.CHARGE_NURSE, active: true, mfa: true,  pin: "4444" },
   ];
 
   const structure = {
@@ -289,9 +297,31 @@ export function buildRealisticState() {
 
   const careTeam = {
     "P-101": { attendingId: "u-01", nurseId: "u-02" },
+    "P-102": { attendingId: "u-04", nurseId: "u-02" },
+    "P-103": { attendingId: "u-01", nurseId: "u-05" },
     "P-104": { attendingId: "u-01", nurseId: "u-02" },
     "P-105": { attendingId: "u-04", nurseId: "u-05" },
+    "P-106": { attendingId: "u-04", nurseId: "u-05" },
   };
+
+  // Personel → yatak-grubu atama matrisi (C1/C3/B3). Bir hemşire birden çok yatağı üstlenir; nöbetçi
+  // hekim tüm üniteyi kapsayabilir. bedIds = doğrudan yatak; unitIds = tüm ünite ("nöbetçi hekim").
+  const staffAssignments = {
+    "u-01": { bedIds: [], unitIds: ["unit-adult"] },                 // Nöbetçi hekim · tüm Erişkin YBÜ
+    "u-02": { bedIds: ["bed-a101", "bed-a102", "bed-a104"], unitIds: [] }, // Ayşe → 101,102,104
+    "u-04": { bedIds: [], unitIds: ["unit-nicu"] },                  // Nöbetçi hekim · tüm Yenidoğan YBÜ
+    "u-05": { bedIds: ["bed-a105", "bed-n201", "bed-n202"], unitIds: [] }, // Selin → 105,201,202
+  };
+
+  // Mindray/GE hasta-başı monitör simülatörü (B4). Her cihaz bir yatağa atanır ve arka planda canlı
+  // HL7/IEEE 11073 paketleri üretiyormuş gibi vital verisi besler (reconcile içinde jitter uygulanır).
+  const devices = [
+    { id: "dev-01", vendor: "Mindray", model: "BeneVision N17", ip: "192.168.1.50", protocol: "HL7 / IEEE 11073", bedId: "bed-a101", connected: true, lastPacketMs: now, packets: 18432 },
+    { id: "dev-02", vendor: "Mindray", model: "BeneVision N12", ip: "192.168.1.51", protocol: "HL7 / IEEE 11073", bedId: "bed-a104", connected: true, lastPacketMs: now, packets: 9210 },
+    { id: "dev-03", vendor: "GE",      model: "CARESCAPE B650", ip: "192.168.1.60", protocol: "HL7 / IEEE 11073", bedId: "bed-a105", connected: true, lastPacketMs: now, packets: 4120 },
+    { id: "dev-04", vendor: "GE",      model: "CARESCAPE B450", ip: "192.168.1.61", protocol: "HL7 / IEEE 11073", bedId: "bed-n201", connected: true, lastPacketMs: now, packets: 22890 },
+    { id: "dev-05", vendor: "Mindray", model: "BeneVision N1",  ip: "192.168.1.52", protocol: "HL7 / IEEE 11073", bedId: null,       connected: false, lastPacketMs: null, packets: 0 },
+  ];
 
   // Build a plausible recent vital-trend history (last N samples) around each patient's current vitals.
   const trend = (base, n = 12) => {
@@ -355,6 +385,8 @@ export function buildRealisticState() {
     structure,
     users,
     careTeam,
+    staffAssignments,
+    devices,
     handovers: [],
     beds,
     patients,
@@ -364,6 +396,8 @@ export function buildRealisticState() {
     auditLog: [{ id: "AL-1", atMs: hrs(52), actor: "Dr. Elif Yılmaz", action: "PATIENT_ADMIT", target: "P-101", detail: "Erişkin YBÜ · Yatak 101" }],
     maskNames: false,
     autoAlarm: true,
+    online: true,         // PWA connectivity flag (offline resilience B5)
+    syncQueue: [],        // actions captured while offline, flushed on reconnect
     seq: 200,             // above the pre-seeded P-1xx range so generated IDs never collide
   };
 }
@@ -398,9 +432,12 @@ export function createDemoStore(initial) {
     set({ clinical: { ...state.clinical, [pid]: { ...cur, ...patch } } });
   };
 
-  function login(email, password) {
-    const acct = DEMO_ACCOUNTS.find((a) => a.email === email && a.password === password);
-    if (!acct) throw new Error("Geçersiz e-posta veya parola.");
+  // Kurumsal e-posta + PIN girişi. Rol DB'den (users listesi) gelir; UI paneli role göre otomatik
+  // yönlendirir (dışarıdan kayıt yok). E-posta + parola girişi de (eski akış) desteklenmeye devam eder.
+  function login(email, credential) {
+    const acct = DEMO_ACCOUNTS.find((a) => a.email === email
+      && (a.password === credential || a.pin === credential));
+    if (!acct) throw new Error("Geçersiz e-posta veya PIN/parola.");
     set({ user: { email: acct.email, full_name: acct.full_name, role: acct.role } });
     audit("LOGIN", acct.email, acct.role);
     return acct;
@@ -411,6 +448,21 @@ export function createDemoStore(initial) {
     return login(acct.email, acct.password);
   }
   function logout() { set({ user: null }); }
+
+  // 3 saniyede Hızlı PIN ile nöbet/kullanıcı geçişi (ortak tablet/banko ekranları). 4 haneli PIN'e
+  // karşılık gelen kullanıcıya anında geçiş yapar ve nöbet devrini denetim izine yazar (PIN_SWITCH).
+  function switchUserByPin(pin) {
+    const clean = String(pin || "").trim();
+    if (!/^\d{4}$/.test(clean)) throw new Error("PIN 4 haneli olmalıdır.");
+    // Önce canlı kullanıcı listesinden (DB), yoksa demo hesaplarından eşle.
+    const u = (state.users || []).find((x) => x.pin === clean && x.active)
+      || DEMO_ACCOUNTS.find((a) => a.pin === clean);
+    if (!u) throw new Error("PIN eşleşmedi.");
+    const prev = state.user?.full_name || null;
+    set({ user: { email: u.email, full_name: u.full_name, role: u.role } });
+    audit("PIN_SWITCH", u.email, prev ? `${prev} → ${u.full_name}` : u.full_name);
+    return u;
+  }
 
   // PR#2 admission: create + sign-off in one step. Occupies the bed and puts a patient card on the
   // board. Accepts optional production fields (age, source, risk, vitals…) — all default safely so
@@ -478,9 +530,26 @@ export function createDemoStore(initial) {
     return careTeam[patientId];
   }
 
-  // Shift handover with a mandatory signed note (S-14).
+  // Yanıtlanmamış (açık, onaylanmamış) CRITICAL alarmı olan hastaları döndürür. Vardiya devir-teslim
+  // imzasını bloke eden kural (S5) bunu kullanır: kritik alarm açıkken devir imzalanamaz.
+  function openCriticalAlerts(patientId) {
+    return state.alerts.filter((a) => a.tier === TIER.CRITICAL
+      && (patientId ? a.patientId === patientId : true)
+      && (a.status === "FIRED" || a.status === "SNOOZED"));
+  }
+
+  // Shift handover with a mandatory signed note (S-14). Blocked if the patient (or, for a unit-wide
+  // handover, any patient) has an unanswered CRITICAL alarm (S5).
   function createHandover({ patientId, fromName, toName, note }) {
     if (!state.patients.some((p) => p.patient_id === patientId)) throw new Error("Hasta bulunamadı.");
+    const blocking = openCriticalAlerts(patientId);
+    if (blocking.length > 0) {
+      const err = new Error("Yanıtlanmamış KRİTİK alarm varken vardiya devir-teslimi imzalanamaz.");
+      err.code = "HANDOVER_BLOCKED_CRITICAL";
+      err.alerts = blocking;
+      audit("HANDOVER_BLOCKED", patientId, `${blocking.length} açık KRİTİK alarm`);
+      throw err;
+    }
     if (!note || note.trim().length < ACK_REASON_MIN_CHARS) {
       throw new Error(`Devir-teslim notu en az ${ACK_REASON_MIN_CHARS} karakter olmalıdır.`);
     }
@@ -530,6 +599,95 @@ export function createDemoStore(initial) {
       roomId: roomId || null, roomLabel: room?.label || null, state: "AVAILABLE", patientId: null };
     set({ beds: [...state.beds, bed], seq: state.seq + 1 });
     return bed;
+  }
+
+  // --------------------------------------------------------------- staff → bed assignment matrix (C1/C3/B3)
+  // Bir personele bir yatak grubu ve/veya tüm bir üniteyi atar. Görsel matris bu haritayı yazar.
+  function assignStaffToBeds({ userId, bedIds, unitIds }) {
+    const u = state.users.find((x) => x.id === userId);
+    if (!u) throw new Error("Personel bulunamadı.");
+    const next = { bedIds: Array.isArray(bedIds) ? bedIds : (state.staffAssignments[userId]?.bedIds || []),
+                   unitIds: Array.isArray(unitIds) ? unitIds : (state.staffAssignments[userId]?.unitIds || []) };
+    set({ staffAssignments: { ...state.staffAssignments, [userId]: next } });
+    audit("STAFF_ASSIGN", userId, `${u.full_name} · ${next.bedIds.length} yatak${next.unitIds.length ? " · " + next.unitIds.length + " ünite" : ""}`);
+    return next;
+  }
+  // Tek bir hücreyi (personel × yatak) aç/kapat — görsel matris tıklaması için.
+  function toggleStaffBed({ userId, bedId }) {
+    const u = state.users.find((x) => x.id === userId);
+    if (!u) throw new Error("Personel bulunamadı.");
+    const cur = state.staffAssignments[userId] || { bedIds: [], unitIds: [] };
+    const has = cur.bedIds.includes(bedId);
+    const bedIds = has ? cur.bedIds.filter((b) => b !== bedId) : [...cur.bedIds, bedId];
+    return assignStaffToBeds({ userId, bedIds, unitIds: cur.unitIds });
+  }
+
+  // --------------------------------------------------------------- MDI device simulator (B4)
+  // "Cihaz Ekle & Yatağa Ata": arka planda gerçek hasta-başı monitörü ağa bağlıymış gibi canlı
+  // HL7/IEEE 11073 paketleri üreten bir simülatör kaydı oluşturur.
+  function addDevice({ vendor, model, ip, protocol, bedId } = {}) {
+    if (!model || !model.trim()) throw new Error("Cihaz modeli zorunludur.");
+    if (!ip || !/^\d{1,3}(\.\d{1,3}){3}$/.test(ip.trim())) throw new Error("Geçerli bir IP adresi girin (ör. 192.168.1.50).");
+    if (state.devices.some((d) => d.ip === ip.trim())) throw new Error("Bu IP adresi zaten kayıtlı.");
+    const dev = { id: `dev-${state.seq}`, vendor: vendor || "Mindray", model: model.trim(),
+      ip: ip.trim(), protocol: protocol || "HL7 / IEEE 11073",
+      bedId: bedId || null, connected: !!bedId, lastPacketMs: bedId ? Date.now() : null, packets: 0 };
+    set({ devices: [...state.devices, dev], seq: state.seq + 1 });
+    audit("DEVICE_ADD", dev.id, `${dev.vendor} ${dev.model} · ${dev.ip}`);
+    return dev;
+  }
+  function assignDeviceToBed({ deviceId, bedId }) {
+    const dev = state.devices.find((d) => d.id === deviceId);
+    if (!dev) throw new Error("Cihaz bulunamadı.");
+    // Aynı yatağa bağlı başka cihaz varsa onu boşa çıkar (tek monitör/yatak).
+    const devices = state.devices.map((d) => {
+      if (d.id === deviceId) return { ...d, bedId: bedId || null, connected: !!bedId, lastPacketMs: bedId ? Date.now() : null };
+      if (bedId && d.bedId === bedId) return { ...d, bedId: null, connected: false, lastPacketMs: null };
+      return d;
+    });
+    set({ devices });
+    const bed = state.beds.find((b) => b.id === bedId);
+    audit("DEVICE_ASSIGN", deviceId, bedId ? `${dev.model} → Yatak ${bed?.label || bedId}` : `${dev.model} → (bağlantı kesildi)`);
+    return devices.find((d) => d.id === deviceId);
+  }
+  const deviceForBed = (bedId) => state.devices.find((d) => d.bedId === bedId && d.connected) || null;
+
+  // --------------------------------------------------------------- break-glass review (C2/B2)
+  // Yönetici inceleme akışı: aktif/geçmiş break-glass oturumunu onaylar veya reddeder.
+  function reviewBreakGlass({ approve, note } = {}) {
+    if (!state.breakGlass) throw new Error("İncelenecek break-glass oturumu yok.");
+    const reviewStatus = approve ? "approved" : "rejected";
+    const breakGlass = { ...state.breakGlass, reviewStatus, reviewNote: note || null,
+      reviewedBy: state.user?.full_name || "—", reviewedAtSec: state.clockSec };
+    set({ breakGlass });
+    audit("BREAK_GLASS_REVIEW", null, `${approve ? "ONAY" : "RED"}${note ? " · " + note : ""}`);
+    return breakGlass;
+  }
+
+  // --------------------------------------------------------------- offline resilience & sync (B5)
+  // Bağlantı durumunu değiştirir. Çevrimdışıyken yazma işlemleri syncQueue'ya alınır; çevrimiçi
+  // olununca flushSyncQueue ile "sunucuya" eşitlenmiş sayılır (denetim izine yazılır).
+  function setOnline(online) {
+    const wasOffline = state.online === false;
+    set({ online: !!online });
+    audit(online ? "NET_ONLINE" : "NET_OFFLINE", null, online ? "Bağlantı geri geldi" : "Bağlantı kesildi (yerel önbellek)");
+    if (online && wasOffline) return flushSyncQueue();
+    return null;
+  }
+  // Çevrimdışıyken bir işlemi yerel kuyruğa (IndexedDB benzeri) yaz.
+  function queueOffline(kind, payload) {
+    const entry = { id: `SQ-${state.seq}`, kind, payload: payload || null, atSec: state.clockSec, atMs: Date.now() };
+    set({ syncQueue: [...state.syncQueue, entry], seq: state.seq + 1 });
+    audit("SYNC_QUEUED", null, `${kind} · sırada ${state.syncQueue.length + 1}`);
+    return entry;
+  }
+  // Bağlantı gelince kuyruğu "sunucuya" gönder (demo: kuyruğu temizle + denetim izine yaz).
+  function flushSyncQueue() {
+    const n = state.syncQueue.length;
+    if (n === 0) return { flushed: 0 };
+    set({ syncQueue: [] });
+    audit("SYNC_FLUSH", null, `${n} işlem sunucuya eşitlendi`);
+    return { flushed: n };
   }
 
   // --------------------------------------------------------------- clinical data entry (physician)
@@ -642,6 +800,35 @@ export function createDemoStore(initial) {
     let working = state.alerts;
     let seq = state.seq;
     const newAudit = [];
+
+    // -------- MDI device simulator (B4): connected monitors emit live packets. When online, every
+    // bed with a connected device gets a small physiologic jitter on its vitals (mimicking a real
+    // HL7/IEEE 11073 feed). Offline → no fresh packets (frozen last-known values).
+    if (state.online !== false && state.devices?.some((d) => d.connected && d.bedId)) {
+      const bedToDev = {};
+      for (const d of state.devices) if (d.connected && d.bedId) bedToDev[d.bedId] = d;
+      let touched = false;
+      const patients = state.patients.map((p) => {
+        const dev = bedToDev[p.bedId];
+        if (!dev || !p.vitals) return p;
+        touched = true;
+        const j = () => (Math.random() - 0.5);
+        const v = p.vitals;
+        return { ...p, vitals: {
+          hr:  v.hr  != null ? Math.max(20, Math.round(v.hr  + j() * 3)) : v.hr,
+          map: v.map != null ? Math.max(20, Math.round(v.map + j() * 2)) : v.map,
+          spo2:v.spo2!= null ? Math.min(100, Math.max(50, Math.round(v.spo2 + j() * 1.5))) : v.spo2,
+          temp:v.temp!= null ? Math.round((v.temp + j() * 0.1) * 10) / 10 : v.temp,
+          rr:  v.rr  != null ? Math.max(4, Math.round(v.rr + j() * 2)) : v.rr,
+        } };
+      });
+      if (touched) {
+        const devices = state.devices.map((d) => (d.connected && d.bedId
+          ? { ...d, lastPacketMs: Date.now(), packets: (d.packets || 0) + 1 } : d));
+        state = { ...state, patients, devices };
+        changed = true;
+      }
+    }
 
     // -------- Automatic alarm engine (S-05): device-driven vitals → auto-generated alarms.
     // For every occupied patient with no open alarm, evaluate NEWS2 and the physician's thresholds.
@@ -779,8 +966,10 @@ export function createDemoStore(initial) {
     if (!reason || reason.trim().length < ACK_REASON_MIN_CHARS) {
       throw new Error(`Break-glass için en az ${ACK_REASON_MIN_CHARS} karakter gerekçe gerekir.`);
     }
-    const breakGlass = { by: state.user?.full_name || "—", reason, activatedAtSec: state.clockSec,
-                         expiresAtSec: state.clockSec + BREAK_GLASS_MINUTES * 60 };
+    const breakGlass = { by: state.user?.full_name || "—", role: state.user?.role || null,
+                         reason, activatedAtSec: state.clockSec,
+                         expiresAtSec: state.clockSec + BREAK_GLASS_MINUTES * 60,
+                         reviewStatus: "pending", reviewedBy: null, reviewNote: null };
     set({ breakGlass });
     audit("BREAK_GLASS_ACTIVATE", null, reason);
     return breakGlass;
@@ -800,9 +989,13 @@ export function createDemoStore(initial) {
 
   return {
     getState, subscribe,
-    login, loginAs, logout,
-    admitPatient, transferPatient, assignCareTeam, createHandover,
+    login, loginAs, logout, switchUserByPin,
+    admitPatient, transferPatient, assignCareTeam, createHandover, openCriticalAlerts,
     createUser, addUnit, addRoom, addBed,
+    assignStaffToBeds, toggleStaffBed,
+    addDevice, assignDeviceToBed, deviceForBed,
+    reviewBreakGlass,
+    setOnline, queueOffline, flushSyncQueue,
     addDiagnosis, addMedication, stopMedication, addProcedure, addFluid, setThresholds,
     toggleMaskNames, setAutoAlarm,
     fireAlert, reconcile,
