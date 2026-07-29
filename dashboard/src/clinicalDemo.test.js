@@ -3,6 +3,7 @@ import {
   createDemoStore, buildRealisticState, computeEscalationStep, secondsToNextStep, canSnooze,
   snoozeCapMinutes, TIER, ROLE, ESCALATION_STEP,
   computeNews2, evaluateThresholds, searchIcd10, maskName, DEFAULT_THRESHOLDS, NEWS2_ALARM_THRESHOLD,
+  computeAnalytics, BED_STATES, BED_ADMIN_STATES,
 } from "./clinicalDemo.js";
 
 // ---------------------------------------------------------------- pure escalation logic (S-05)
@@ -473,5 +474,91 @@ describe("PR#7 · offline sync engine (B5)", () => {
     expect(s.getState().online).toBe(true);
     expect(s.getState().syncQueue).toHaveLength(0); // flushed
     expect(s.getState().auditLog.some((e) => e.action === "SYNC_FLUSH")).toBe(true);
+  });
+});
+
+// ================================================================ PR#8 · admin governance & analytics
+describe("PR#8 · user security management", () => {
+  it("sets a user password (min 6 chars) and blocks short ones", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    expect(() => s.setUserPassword({ userId: "u-01", password: "123" })).toThrow();
+    s.setUserPassword({ userId: "u-01", password: "yeniSifre1" });
+    const u = s.getState().users.find((x) => x.id === "u-01");
+    expect(u.password).toBe("yeniSifre1");
+    expect(s.getState().auditLog.some((e) => e.action === "USER_PASSWORD_RESET")).toBe(true);
+  });
+  it("issues a 6-digit temporary PIN", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const pin = s.resetUserPin({ userId: "u-02" });
+    expect(pin).toMatch(/^\d{6}$/);
+    expect(s.getState().users.find((x) => x.id === "u-02").tempPin).toBe(pin);
+  });
+  it("toggles a user active/passive and blocks passive login", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    s.toggleUserActive("u-04");
+    expect(s.getState().users.find((x) => x.id === "u-04").active).toBe(false);
+    expect(() => s.login("dr.can.ozturk@homunculus.health", "3333")).toThrow();
+  });
+  it("resets MFA enrolment and toggles MFA enforcement", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    s.resetUserMfa("u-01");
+    expect(s.getState().users.find((x) => x.id === "u-01").mfa).toBe(false);
+    s.setUserMfaRequired({ userId: "u-02", required: true });
+    expect(s.getState().users.find((x) => x.id === "u-02").mfaRequired).toBe(true);
+  });
+  it("assigns unit access, ignoring invalid unit ids", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    s.setUserUnits({ userId: "u-04", unitIds: ["unit-adult", "nope"] });
+    expect(s.getState().users.find((x) => x.id === "u-04").unitIds).toEqual(["unit-adult"]);
+  });
+});
+
+describe("PR#8 · bed operational state", () => {
+  it("moves an available bed to HOUSEKEEPING / FAULTY", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const avail = s.getState().beds.find((b) => b.state === "AVAILABLE");
+    s.setBedState({ bedId: avail.id, state: BED_STATES.HOUSEKEEPING });
+    expect(s.getState().beds.find((b) => b.id === avail.id).state).toBe("HOUSEKEEPING");
+    expect(BED_ADMIN_STATES).not.toContain("OCCUPIED");
+  });
+  it("refuses to change the state of an occupied bed", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const occ = s.getState().beds.find((b) => b.state === "OCCUPIED");
+    expect(() => s.setBedState({ bedId: occ.id, state: BED_STATES.FAULTY })).toThrow();
+  });
+});
+
+describe("PR#8 · device edit (port/serial/protocol)", () => {
+  it("updates IP, port and serial with validation", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const dev = s.getState().devices[0];
+    s.updateDevice({ deviceId: dev.id, ip: "10.0.0.9", port: 7001, serial: "SN-TEST-1" });
+    const upd = s.getState().devices.find((d) => d.id === dev.id);
+    expect(upd.ip).toBe("10.0.0.9");
+    expect(upd.port).toBe(7001);
+    expect(upd.serial).toBe("SN-TEST-1");
+    expect(() => s.updateDevice({ deviceId: dev.id, port: 99999 })).toThrow();
+  });
+});
+
+describe("PR#8 · computeAnalytics", () => {
+  it("computes occupancy, LOS and device health from state", () => {
+    const s = createDemoStore(buildRealisticState());
+    const a = computeAnalytics(s.getState());
+    expect(a.totalBeds).toBeGreaterThan(0);
+    expect(a.overallOccupancyPct).toBeGreaterThanOrEqual(0);
+    expect(a.overallOccupancyPct).toBeLessThanOrEqual(100);
+    expect(a.deviceHealth.total).toBe(s.getState().devices.length);
+    expect(a.occupancyByUnit.length).toBe(s.getState().structure.units.length);
+    expect(Array.isArray(a.deviceRows)).toBe(true);
+    expect(a.escalationCounts).toHaveProperty("tier1");
   });
 });
