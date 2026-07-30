@@ -24,7 +24,13 @@ export default defineConfig({
       workbox: { globPatterns: ["**/*.{js,css,html,json,woff2,svg}"] },
     }),
   ],
+  preview: {
+    host: true,
+    port: 3000,
+    allowedHosts: true,
+  },
   server: {
+    allowedHosts: true,
     proxy: {
       "/patients": "http://localhost:8000",
       "/stream": "http://localhost:8000",
