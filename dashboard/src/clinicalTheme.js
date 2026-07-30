@@ -1,13 +1,14 @@
 // src/clinicalTheme.js — theme engine for the clinical workspace.
-// Three production-grade skins selectable at runtime:
-//   • icu   → "Yoğun Bakım Modu" (dark, high-contrast night mode; default)
-//   • light → "Gündüz Klinik Modu" (clean white/medical)
-//   • wall  → "Banko Duvar Ekranı" (very high-contrast, oversized type for distant reading)
+// Four production-grade skins selectable at runtime:
+//   • light    → "Gündüz Klinik Modu" (clean white/medical)
+//   • icu      → "Gece / Nöbet Modu" (dark, low-brightness night mode; default)
+//   • contrast → "Yüksek Kontrast" (WCAG-driven accessibility: pure black/white + bold rings)
+//   • wall     → "Duvar Ekranı / Wallboard" (very high-contrast, oversized type for distant reading)
 // Every token is a full Tailwind class string so the JIT scanner (content: ./src/**/*.{js,jsx})
 // keeps them in the build. Components consume semantic tokens (T.card, T.text …) instead of
-// hard-coding slate colours, which is what makes all three skins possible from one component tree.
+// hard-coding slate colours, which is what makes all four skins possible from one component tree.
 
-export const THEME_KEYS = ["icu", "light", "wall"];
+export const THEME_KEYS = ["light", "icu", "contrast", "wall"];
 
 // i18n-independent, machine keys; display names come from clinicalI18n (theme.icu / theme.light …).
 export const THEMES = {
@@ -114,6 +115,43 @@ export const THEMES = {
     // Oversized type so names/labels read from across the nurses' station. Vitals stay at xl so
     // 3-digit (HR 112) and decimal (Temp 36.8) values never clip inside the compact bed-card cells.
     sizes: { vital: "text-xl", name: "text-2xl", label: "text-sm", nav: "text-base" },
+  },
+  // ---------------------------------------------------------------- High Contrast (accessibility, WCAG)
+  // Pure black background, pure white text, bright yellow primary + bold rings/borders so the UI
+  // stays legible for low-vision users and under harsh clinical lighting. Distinct from `wall`
+  // (which is about oversized distant-reading type, not maximal contrast).
+  contrast: {
+    key: "contrast",
+    app: "bg-black text-white",
+    sidebar: "bg-black border-white",
+    topbar: "bg-black border-white",
+    card: "bg-black ring-2 ring-white",
+    cardRing: "ring-white",
+    hoverRing: "hover:ring-yellow-300",
+    subtle: "bg-neutral-900",
+    chip: "bg-white text-black",
+    border: "border-white",
+    divide: "divide-white",
+    text: "text-white",
+    muted: "text-neutral-200",
+    faint: "text-neutral-300",
+    heading: "text-white",
+    input: "bg-black border-2 border-white text-white placeholder-neutral-400",
+    navActive: "bg-yellow-300 text-black ring-2 ring-yellow-300 font-bold",
+    navIdle: "text-white underline-offset-4 hover:bg-white hover:text-black hover:underline",
+    primary: "bg-yellow-300 text-black font-bold hover:bg-yellow-200 ring-2 ring-yellow-300",
+    ghost: "border-2 border-white text-white hover:bg-white hover:text-black",
+    danger: "bg-red-600 text-white font-bold hover:bg-red-500 ring-2 ring-red-400",
+    warn: "bg-amber-400 text-black font-bold hover:bg-amber-300",
+    vitalCell: "bg-black ring-2 ring-white",
+    overlay: "bg-black/85 backdrop-blur-sm",
+    glass: "bg-black/90 backdrop-blur-md ring-2 ring-white shadow-2xl shadow-black/80",
+    glassSubtle: "bg-black ring-2 ring-white",
+    hero: "bg-gradient-to-br from-black via-black to-yellow-300/10",
+    anim: "transition-all duration-200 ease-out",
+    lift: "transition-all duration-200 ease-out hover:-translate-y-0.5",
+    accent: "text-yellow-300",
+    sizes: { vital: "text-xl", name: "text-base", label: "text-xs", nav: "text-sm" },
   },
 };
 

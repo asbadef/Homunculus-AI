@@ -3,6 +3,7 @@ import {
   createDemoStore, buildRealisticState, computeEscalationStep, secondsToNextStep, canSnooze,
   snoozeCapMinutes, TIER, ROLE, ESCALATION_STEP,
   computeNews2, evaluateThresholds, searchIcd10, maskName, DEFAULT_THRESHOLDS, NEWS2_ALARM_THRESHOLD,
+  computeAnalytics, BED_STATES, BED_ADMIN_STATES,
 } from "./clinicalDemo.js";
 
 // ---------------------------------------------------------------- pure escalation logic (S-05)
@@ -156,6 +157,22 @@ describe("realistic environment", () => {
     expect(st.beds).toHaveLength(10);
     expect(st.patients).toHaveLength(6);
     expect(st.beds.filter((b) => b.state === "OCCUPIED")).toHaveLength(6);
+  });
+
+  it("initialises multi-tenant + invite state so tenant/invite actions never crash (Madde 5/6)", () => {
+    const st = buildRealisticState();
+    // Regresyon: bu alanlar eksik olursa createTenant/createInvite '.some of undefined' ile çöker.
+    expect(Array.isArray(st.tenants)).toBe(true);
+    expect(Array.isArray(st.sites)).toBe(true);
+    expect(Array.isArray(st.invites)).toBe(true);
+    expect(st.tenantSetup).toBe(false);
+    const s = createDemoStore(buildRealisticState());
+    const t = s.createTenant({ name: "Test Hastanesi", slug: "test-hastanesi", countryCode: "TR" });
+    expect(s.getState().tenants).toHaveLength(1);
+    s.createSite({ tenantId: t.id, name: "Merkez Kampüs" });
+    expect(s.getState().sites).toHaveLength(1);
+    s.completeTenantSetup();
+    expect(s.getState().tenantSetup).toBe(true);
   });
 
   it("masks national IDs for non-neonates and shows none for neonates", () => {
@@ -473,5 +490,245 @@ describe("PR#7 · offline sync engine (B5)", () => {
     expect(s.getState().online).toBe(true);
     expect(s.getState().syncQueue).toHaveLength(0); // flushed
     expect(s.getState().auditLog.some((e) => e.action === "SYNC_FLUSH")).toBe(true);
+  });
+});
+
+// ================================================================ PR#8 · admin governance & analytics
+describe("PR#8 · user security management", () => {
+  it("sets a user password (min 6 chars) and blocks short ones", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    expect(() => s.setUserPassword({ userId: "u-01", password: "123" })).toThrow();
+    s.setUserPassword({ userId: "u-01", password: "yeniSifre1" });
+    const u = s.getState().users.find((x) => x.id === "u-01");
+    expect(u.password).toBe("yeniSifre1");
+    expect(s.getState().auditLog.some((e) => e.action === "USER_PASSWORD_RESET")).toBe(true);
+  });
+  it("issues a 6-digit temporary PIN", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const pin = s.resetUserPin({ userId: "u-02" });
+    expect(pin).toMatch(/^\d{6}$/);
+    expect(s.getState().users.find((x) => x.id === "u-02").tempPin).toBe(pin);
+  });
+  it("toggles a user active/passive and blocks passive login", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    s.toggleUserActive("u-04");
+    expect(s.getState().users.find((x) => x.id === "u-04").active).toBe(false);
+    expect(() => s.login("dr.can.ozturk@homunculus.health", "3333")).toThrow();
+  });
+  it("resets MFA enrolment and toggles MFA enforcement", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    s.resetUserMfa("u-01");
+    expect(s.getState().users.find((x) => x.id === "u-01").mfa).toBe(false);
+    s.setUserMfaRequired({ userId: "u-02", required: true });
+    expect(s.getState().users.find((x) => x.id === "u-02").mfaRequired).toBe(true);
+  });
+  it("assigns unit access, ignoring invalid unit ids", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    s.setUserUnits({ userId: "u-04", unitIds: ["unit-adult", "nope"] });
+    expect(s.getState().users.find((x) => x.id === "u-04").unitIds).toEqual(["unit-adult"]);
+  });
+});
+
+describe("PR#8 · bed operational state", () => {
+  it("moves an available bed to HOUSEKEEPING / FAULTY", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const avail = s.getState().beds.find((b) => b.state === "AVAILABLE");
+    s.setBedState({ bedId: avail.id, state: BED_STATES.HOUSEKEEPING });
+    expect(s.getState().beds.find((b) => b.id === avail.id).state).toBe("HOUSEKEEPING");
+    expect(BED_ADMIN_STATES).not.toContain("OCCUPIED");
+  });
+  it("refuses to change the state of an occupied bed", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const occ = s.getState().beds.find((b) => b.state === "OCCUPIED");
+    expect(() => s.setBedState({ bedId: occ.id, state: BED_STATES.FAULTY })).toThrow();
+  });
+});
+
+describe("PR#8 · device edit (port/serial/protocol)", () => {
+  it("updates IP, port and serial with validation", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const dev = s.getState().devices[0];
+    s.updateDevice({ deviceId: dev.id, ip: "10.0.0.9", port: 7001, serial: "SN-TEST-1" });
+    const upd = s.getState().devices.find((d) => d.id === dev.id);
+    expect(upd.ip).toBe("10.0.0.9");
+    expect(upd.port).toBe(7001);
+    expect(upd.serial).toBe("SN-TEST-1");
+    expect(() => s.updateDevice({ deviceId: dev.id, port: 99999 })).toThrow();
+  });
+});
+
+describe("PR#8 · computeAnalytics", () => {
+  it("computes occupancy, LOS and device health from state", () => {
+    const s = createDemoStore(buildRealisticState());
+    const a = computeAnalytics(s.getState());
+    expect(a.totalBeds).toBeGreaterThan(0);
+    expect(a.overallOccupancyPct).toBeGreaterThanOrEqual(0);
+    expect(a.overallOccupancyPct).toBeLessThanOrEqual(100);
+    expect(a.deviceHealth.total).toBe(s.getState().devices.length);
+    expect(a.occupancyByUnit.length).toBe(s.getState().structure.units.length);
+    expect(Array.isArray(a.deviceRows)).toBe(true);
+    expect(a.escalationCounts).toHaveProperty("tier1");
+  });
+});
+
+
+describe("Faz A · MFA lifecycle (Madde 6)", () => {
+  it("setupMfa generates TOTP secret and provisioning URI", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const u = s.createUser({ full_name: "Test User", email: "test@example.com", role: ROLE.ATTENDING });
+    const mfa = s.setupMfa({ userId: u.id });
+    expect(mfa.secret).toBeTruthy();
+    expect(mfa.secret.length).toBe(32);
+    expect(mfa.provisioningUri).toContain("otpauth://totp/Homunculus");
+    expect(mfa.provisioningUri).toContain(u.email);
+  });
+
+  it("verifyMfa accepts valid code and marks MFA as enabled", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const u = s.createUser({ full_name: "Test User", email: "test@example.com", role: ROLE.ATTENDING });
+    s.setupMfa({ userId: u.id });
+    // Demo accepts "123456"
+    const verified = s.verifyMfa({ userId: u.id, code: "123456" });
+    expect(verified.mfa).toBe(true);
+  });
+
+  it("verifyMfa rejects invalid code", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const u = s.createUser({ full_name: "Test User", email: "test@example.com", role: ROLE.ATTENDING });
+    s.setupMfa({ userId: u.id });
+    expect(() => s.verifyMfa({ userId: u.id, code: "000000" })).toThrow("Geçersiz doğrulama kodu");
+  });
+});
+
+describe("Faz A · login MFA gate (Madde 6)", () => {
+  it("attemptLogin gates MFA-required role into mfaPending instead of opening session", () => {
+    const s = createDemoStore(buildRealisticState());
+    // dr.elif (u-01) mfaRequired:true, enrolled:true
+    const r = s.attemptLogin("dr.elif.yilmaz@homunculus.health", "1111");
+    expect(r.mfaRequired).toBe(true);
+    expect(s.getState().user).toBe(null);
+    expect(s.getState().mfaPending).toBeTruthy();
+    expect(s.getState().mfaPending.email).toBe("dr.elif.yilmaz@homunculus.health");
+  });
+
+  it("attemptLogin opens session directly when role does not require MFA", () => {
+    const s = createDemoStore(buildRealisticState());
+    // ayse (u-02) mfaRequired:false
+    const r = s.attemptLogin("ayse.demir@homunculus.health", "2222");
+    expect(r.mfaRequired).toBe(false);
+    expect(s.getState().user).toBeTruthy();
+    expect(s.getState().mfaPending).toBe(null);
+  });
+
+  it("completeMfaLogin verifies code and opens the gated session", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.attemptLogin("dr.elif.yilmaz@homunculus.health", "1111");
+    const u = s.completeMfaLogin("123456");
+    expect(u.email).toBe("dr.elif.yilmaz@homunculus.health");
+    expect(s.getState().user).toBeTruthy();
+    expect(s.getState().mfaPending).toBe(null);
+  });
+
+  it("cancelMfaLogin clears the pending challenge", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.attemptLogin("dr.elif.yilmaz@homunculus.health", "1111");
+    s.cancelMfaLogin();
+    expect(s.getState().mfaPending).toBe(null);
+    expect(s.getState().user).toBe(null);
+  });
+});
+
+describe("Faz A · user invite (Madde 6)", () => {
+  it("inviteUser creates pending invite", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const invite = s.inviteUser({ email: "new@example.com", fullName: "New User", role: ROLE.CHARGE_NURSE });
+    expect(invite.id).toContain("inv-");
+    expect(invite.status).toBe("PENDING");
+    expect(invite.email).toBe("new@example.com");
+    expect(s.getState().invites.length).toBe(1);
+  });
+
+  it("acceptInvite creates user account with password", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const invite = s.inviteUser({ email: "new@example.com", fullName: "New User", role: ROLE.CHARGE_NURSE });
+    const user = s.acceptInvite({ inviteId: invite.id, password: "securepass" });
+    expect(user.email).toBe("new@example.com");
+    expect(user.full_name).toBe("New User");
+    expect(user.role).toBe(ROLE.CHARGE_NURSE);
+    expect(s.getState().users.length).toBe(1);
+    const invAfter = s.getState().invites.find((i) => i.id === invite.id);
+    expect(invAfter.status).toBe("ACCEPTED");
+  });
+
+  it("cancelInvite marks invite as cancelled", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const invite = s.inviteUser({ email: "cancel@example.com", fullName: "Cancel User", role: ROLE.ATTENDING });
+    s.cancelInvite(invite.id);
+    const inv = s.getState().invites.find((i) => i.id === invite.id);
+    expect(inv.status).toBe("CANCELLED");
+  });
+
+  it("resendInvite audits resend action", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const invite = s.inviteUser({ email: "resend@example.com", fullName: "Resend User", role: ROLE.CHARGE_NURSE });
+    const logBefore = s.getState().auditLog.length;
+    s.resendInvite(invite.id);
+    expect(s.getState().auditLog.length).toBe(logBefore + 1);
+    const lastAudit = s.getState().auditLog[s.getState().auditLog.length - 1];
+    expect(lastAudit.action).toBe("INVITE_RESEND");
+  });
+});
+
+describe("Faz A · tenant setup wizard (Madde 5)", () => {
+  it("createTenant creates new tenant with slug", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const tenant = s.createTenant({ name: "Acme Hospital", slug: "acme", countryCode: "TR", timezone: "Europe/Istanbul" });
+    expect(tenant.id).toContain("tenant-");
+    expect(tenant.name).toBe("Acme Hospital");
+    expect(tenant.slug).toBe("acme");
+    expect(tenant.isActive).toBe(true);
+    expect(s.getState().tenants.length).toBe(1);
+  });
+
+  it("createSite links site to tenant", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const tenant = s.createTenant({ name: "Acme Hospital", slug: "acme" });
+    const site = s.createSite({ tenantId: tenant.id, name: "Main Campus", address: "123 Medical St" });
+    expect(site.id).toContain("site-");
+    expect(site.tenantId).toBe(tenant.id);
+    expect(site.name).toBe("Main Campus");
+    expect(s.getState().sites.length).toBe(1);
+  });
+
+  it("completeTenantSetup sets flag to true", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    expect(s.getState().tenantSetup).toBe(false);
+    s.completeTenantSetup();
+    expect(s.getState().tenantSetup).toBe(true);
+  });
+
+  it("createTenant rejects duplicate slug", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    s.createTenant({ name: "First", slug: "test" });
+    expect(() => s.createTenant({ name: "Second", slug: "test" })).toThrow("Bu slug zaten kullanılıyor");
   });
 });

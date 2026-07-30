@@ -32,6 +32,26 @@ export const TIER_TO_SEV = {
   CRITICAL: "critical", HIGH: "high", MEDIUM: "moderate", LOW: "low", INFO: "info",
 };
 
+// --------------------------------------------------------------------------- bed operational states (PR#8 §4)
+// A bed is more than Available/Occupied. Admins can flag it out of the clinical pool for housekeeping,
+// technical faults or decommissioning. OCCUPIED is patient-driven (set by admit/transfer, never manually).
+export const BED_STATES = {
+  AVAILABLE: "AVAILABLE",           // Müsait
+  OCCUPIED: "OCCUPIED",             // Dolu (hasta atanmış)
+  HOUSEKEEPING: "HOUSEKEEPING",     // Dezenfeksiyonda
+  FAULTY: "FAULTY",                 // Teknik Arızalı
+  OUT_OF_SERVICE: "OUT_OF_SERVICE", // Kullanım Dışı
+};
+// States an admin may set manually (OCCUPIED is excluded — only admission occupies a bed).
+export const BED_ADMIN_STATES = [
+  BED_STATES.AVAILABLE, BED_STATES.HOUSEKEEPING, BED_STATES.FAULTY, BED_STATES.OUT_OF_SERVICE,
+];
+// Turkish fallback labels for audit-trail detail lines (UI uses i18n).
+export const BED_STATE_LABEL = {
+  AVAILABLE: "Müsait", OCCUPIED: "Dolu", HOUSEKEEPING: "Dezenfeksiyonda",
+  FAULTY: "Teknik Arızalı", OUT_OF_SERVICE: "Kullanım Dışı",
+};
+
 // --------------------------------------------------------------------------- escalation (S-05)
 // Cumulative thresholds in SECONDS for unanswered CRITICAL / HIGH alarms.
 export const ESCALATION_STEP = {
@@ -181,9 +201,13 @@ function seedState() {
   ];
   return {
     user: null,
+    mfaPending: null,     // { userId, email } — MFA verification pending after password login
     clockSec: 0,          // simulated seconds since demo start
     speed: 60,            // 60× → 1 simulated minute per real second (so 3 min escalates in 3 s)
     running: true,
+    tenantSetup: false,   // multi-tenant setup wizard completed?
+    tenants: [],          // [ { id, name, slug, countryCode, timezone, isActive, createdAt } ]
+    sites: [],            // [ { id, tenantId, name, address, isActive, createdAt } ]
     structure: {
       tenant: "Homunculus Şehir Hastanesi",
       site: "Merkez Kampüs",
@@ -193,6 +217,7 @@ function seedState() {
       ],
     },
     users: [],
+    invites: [],          // [ { id, email, fullName, role, tenantId, invitedBy, invitedAt, status } ]
     careTeam: {},         // patientId → { attendingId, nurseId }
     staffAssignments: {}, // userId → { bedIds:[], unitIds:[] }  (staff→bed matrix)
     devices: [],          // { id, vendor, model, ip, bedId, connected, lastPacketMs, packets }
@@ -231,11 +256,11 @@ export function buildRealisticState() {
   const hrs = (h) => now - h * 3600 * 1000;
 
   const users = [
-    { id: "u-01", full_name: "Dr. Elif Yılmaz", email: "dr.elif.yilmaz@homunculus.health", role: ROLE.ATTENDING,    active: true, mfa: true,  pin: "1111" },
-    { id: "u-02", full_name: "Ayşe Demir",      email: "ayse.demir@homunculus.health",     role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  pin: "2222" },
-    { id: "u-03", full_name: "Mehmet Kaya",     email: "admin@homunculus.health",          role: ROLE.HOSPITAL_ADMIN, active: true, mfa: true, pin: "9999" },
-    { id: "u-04", full_name: "Dr. Can Öztürk",  email: "dr.can.ozturk@homunculus.health",  role: ROLE.ATTENDING,    active: true, mfa: false, pin: "3333" },
-    { id: "u-05", full_name: "Selin Arslan",    email: "selin.arslan@homunculus.health",   role: ROLE.CHARGE_NURSE, active: true, mfa: true,  pin: "4444" },
+    { id: "u-01", full_name: "Dr. Elif Yılmaz", email: "dr.elif.yilmaz@homunculus.health", role: ROLE.ATTENDING,    active: true, mfa: true,  mfaRequired: true,  pin: "1111", unitIds: ["unit-adult"] },
+    { id: "u-02", full_name: "Ayşe Demir",      email: "ayse.demir@homunculus.health",     role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "2222", unitIds: ["unit-adult"] },
+    { id: "u-03", full_name: "Mehmet Kaya",     email: "admin@homunculus.health",          role: ROLE.HOSPITAL_ADMIN, active: true, mfa: true, mfaRequired: true,  pin: "9999", unitIds: ["unit-adult", "unit-nicu"] },
+    { id: "u-04", full_name: "Dr. Can Öztürk",  email: "dr.can.ozturk@homunculus.health",  role: ROLE.ATTENDING,    active: true, mfa: false, mfaRequired: true,  pin: "3333", unitIds: ["unit-nicu"] },
+    { id: "u-05", full_name: "Selin Arslan",    email: "selin.arslan@homunculus.health",   role: ROLE.CHARGE_NURSE, active: true, mfa: true,  mfaRequired: false, pin: "4444", unitIds: ["unit-adult", "unit-nicu"] },
   ];
 
   const structure = {
@@ -316,11 +341,11 @@ export function buildRealisticState() {
   // Mindray/GE hasta-başı monitör simülatörü (B4). Her cihaz bir yatağa atanır ve arka planda canlı
   // HL7/IEEE 11073 paketleri üretiyormuş gibi vital verisi besler (reconcile içinde jitter uygulanır).
   const devices = [
-    { id: "dev-01", vendor: "Mindray", model: "BeneVision N17", ip: "192.168.1.50", protocol: "HL7 / IEEE 11073", bedId: "bed-a101", connected: true, lastPacketMs: now, packets: 18432 },
-    { id: "dev-02", vendor: "Mindray", model: "BeneVision N12", ip: "192.168.1.51", protocol: "HL7 / IEEE 11073", bedId: "bed-a104", connected: true, lastPacketMs: now, packets: 9210 },
-    { id: "dev-03", vendor: "GE",      model: "CARESCAPE B650", ip: "192.168.1.60", protocol: "HL7 / IEEE 11073", bedId: "bed-a105", connected: true, lastPacketMs: now, packets: 4120 },
-    { id: "dev-04", vendor: "GE",      model: "CARESCAPE B450", ip: "192.168.1.61", protocol: "HL7 / IEEE 11073", bedId: "bed-n201", connected: true, lastPacketMs: now, packets: 22890 },
-    { id: "dev-05", vendor: "Mindray", model: "BeneVision N1",  ip: "192.168.1.52", protocol: "HL7 / IEEE 11073", bedId: null,       connected: false, lastPacketMs: null, packets: 0 },
+    { id: "dev-01", vendor: "Mindray", model: "BeneVision N17", ip: "192.168.1.50", port: 6002, protocol: "HL7 / IEEE 11073", serial: "MR-N17-000421", bedId: "bed-a101", connected: true, lastPacketMs: now, packets: 18432 },
+    { id: "dev-02", vendor: "Mindray", model: "BeneVision N12", ip: "192.168.1.51", port: 6002, protocol: "HL7 / IEEE 11073", serial: "MR-N12-001188", bedId: "bed-a104", connected: true, lastPacketMs: now, packets: 9210 },
+    { id: "dev-03", vendor: "GE",      model: "CARESCAPE B650", ip: "192.168.1.60", port: 3001, protocol: "HL7 / IEEE 11073", serial: "GE-B650-774510", bedId: "bed-a105", connected: true, lastPacketMs: now, packets: 4120 },
+    { id: "dev-04", vendor: "GE",      model: "CARESCAPE B450", ip: "192.168.1.61", port: 3001, protocol: "HL7 / IEEE 11073", serial: "GE-B450-338097", bedId: "bed-n201", connected: true, lastPacketMs: now, packets: 22890 },
+    { id: "dev-05", vendor: "Mindray", model: "BeneVision N1",  ip: "192.168.1.52", port: 6002, protocol: "HL7 / IEEE 11073", serial: "MR-N1-050933",  bedId: null,       connected: false, lastPacketMs: null, packets: 0 },
   ];
 
   // Build a plausible recent vital-trend history (last N samples) around each patient's current vitals.
@@ -398,7 +423,89 @@ export function buildRealisticState() {
     autoAlarm: true,
     online: true,         // PWA connectivity flag (offline resilience B5)
     syncQueue: [],        // actions captured while offline, flushed on reconnect
+    // Madde 5/6 çok kiracılı kurulum + davet durumu (gerçekçi demo başlangıç değerleri)
+    tenantSetup: false,   // ilk giriş kurulum sihirbazı henüz tamamlanmadı (admin girişinde gösterilir)
+    tenants: [],          // [ { id, name, slug, countryCode, timezone, isActive, createdAt } ]
+    sites: [],            // [ { id, tenantId, name, address, isActive, createdAt } ]
+    invites: [],          // [ { id, email, fullName, role, tenantId, invitedBy, invitedAt, status } ]
     seq: 200,             // above the pre-seeded P-1xx range so generated IDs never collide
+  };
+}
+
+// --------------------------------------------------------------------------- executive analytics (PR#8 §3)
+// Pure, side-effect-free derivation of operational KPIs from a store snapshot. Reused by the UI
+// dashboard and by CSV/PDF export, and unit-tested directly.
+export function computeAnalytics(state, nowMs = Date.now()) {
+  const beds = state.beds || [];
+  const patients = state.patients || [];
+  const units = state.structure?.units || [];
+  const alerts = state.alerts || [];
+  const devices = state.devices || [];
+  const audit = state.auditLog || [];
+
+  // ---- Unit occupancy: occupied / (total usable) per unit.
+  const occupancyByUnit = units.map((u) => {
+    const unitBeds = beds.filter((b) => b.unitId === u.id);
+    const occupied = unitBeds.filter((b) => b.state === "OCCUPIED").length;
+    const outOfPool = unitBeds.filter((b) => b.state === "FAULTY" || b.state === "OUT_OF_SERVICE" || b.state === "HOUSEKEEPING").length;
+    const total = unitBeds.length;
+    const usable = total - outOfPool;
+    return { unitId: u.id, unitName: u.name, total, occupied, outOfPool,
+      available: unitBeds.filter((b) => b.state === "AVAILABLE").length,
+      occupancyPct: usable > 0 ? Math.round((occupied / usable) * 100) : 0 };
+  });
+  const totalBeds = beds.length;
+  const totalOccupied = beds.filter((b) => b.state === "OCCUPIED").length;
+  const overallOccupancyPct = totalBeds > 0 ? Math.round((totalOccupied / totalBeds) * 100) : 0;
+
+  // ---- Average length of stay (admitted patients, hours).
+  const losHours = patients
+    .filter((p) => p.admittedAtMs)
+    .map((p) => (nowMs - p.admittedAtMs) / 3600000);
+  const avgLosHours = losHours.length ? Math.round((losHours.reduce((a, b) => a + b, 0) / losHours.length) * 10) / 10 : 0;
+
+  // ---- Admissions / discharges in the last 24h (from the append-only audit trail).
+  const dayAgo = nowMs - 24 * 3600 * 1000;
+  const admitsToday = audit.filter((e) => e.action === "PATIENT_ADMIT" && (e.atMs || 0) >= dayAgo).length;
+  const dischargesToday = audit.filter((e) => /DISCHARGE/.test(e.action || "") && (e.atMs || 0) >= dayAgo).length;
+
+  // ---- Alarm quality: average time-to-acknowledge (sec) and escalation cascade counts.
+  const acked = alerts.filter((a) => a.ack && a.ack.atSec != null && a.firedAtSec != null);
+  const ttaSamples = acked.map((a) => a.ack.atSec - a.firedAtSec).filter((s) => s >= 0);
+  const avgTimeToAckSec = ttaSamples.length ? Math.round(ttaSamples.reduce((a, b) => a + b, 0) / ttaSamples.length) : 0;
+  // Count how many alarms reached each escalation tier (from emitted events).
+  const escalationCounts = { tier1: 0, tier2: 0, tier3: 0 };
+  for (const a of alerts) {
+    for (const ev of a.events || []) {
+      if (ev.step === "TIER_1_CHARGE_NURSE") escalationCounts.tier1 += 1;
+      else if (ev.step === "TIER_2_PHYSICIAN") escalationCounts.tier2 += 1;
+      else if (ev.step === "TIER_3_RRT") escalationCounts.tier3 += 1;
+    }
+  }
+  const openAlerts = alerts.filter((a) => a.status === "FIRED" || a.status === "SNOOZED").length;
+  const criticalOpen = alerts.filter((a) => a.tier === "CRITICAL" && (a.status === "FIRED" || a.status === "SNOOZED")).length;
+
+  // ---- Device & data-flow health. A connected device is "stale" if it hasn't emitted a packet
+  // in the last 30 s of wall-clock time (mimicking a lost HL7/IEEE 11073 feed).
+  const STALE_MS = 30000;
+  let online = 0, offline = 0, stale = 0;
+  const deviceRows = devices.map((d) => {
+    const isStale = d.connected && d.lastPacketMs != null && (nowMs - d.lastPacketMs) > STALE_MS;
+    if (!d.connected) offline += 1;
+    else if (isStale) stale += 1;
+    else online += 1;
+    const bed = beds.find((b) => b.id === d.bedId);
+    return { id: d.id, vendor: d.vendor, model: d.model, ip: d.ip, port: d.port,
+      bedId: d.bedId, bedLabel: bed?.label || d.bedId || "—", connected: !!d.connected, stale: isStale,
+      status: !d.connected ? "offline" : (isStale ? "stale" : "online") };
+  });
+
+  return {
+    occupancyByUnit, overallOccupancyPct, totalBeds, totalOccupied,
+    avgLosHours, admitsToday, dischargesToday,
+    avgTimeToAckSec, escalationCounts, openAlerts, criticalOpen, totalAlerts: alerts.length,
+    deviceHealth: { online, offline, stale, total: devices.length }, deviceRows,
+    generatedAtMs: nowMs,
   };
 }
 
@@ -434,14 +541,61 @@ export function createDemoStore(initial) {
 
   // Kurumsal e-posta + PIN girişi. Rol DB'den (users listesi) gelir; UI paneli role göre otomatik
   // yönlendirir (dışarıdan kayıt yok). E-posta + parola girişi de (eski akış) desteklenmeye devam eder.
-  function login(email, credential) {
+  // Kimlik bilgisi doğrulama (state'i değiştirmez). Başarılıysa { who, liveUser } döndürür, aksi halde hata fırlatır.
+  function _validateCredential(email, credential) {
+    const clean = String(credential || "");
+    // Canlı kullanıcı kaydı (yönetici tarafından düzenlenebilir: parola/PIN/geçici PIN/pasiflik).
+    const liveUser = (state.users || []).find((u) => u.email === email);
+    // Yönetici bir kullanıcıyı pasife aldıysa giriş engellenir (hesap askıya alınmış).
+    if (liveUser && liveUser.active === false) {
+      throw new Error("Bu hesap pasif durumda; sistem yöneticinizle görüşün.");
+    }
     const acct = DEMO_ACCOUNTS.find((a) => a.email === email
-      && (a.password === credential || a.pin === credential));
-    if (!acct) throw new Error("Geçersiz e-posta veya PIN/parola.");
-    set({ user: { email: acct.email, full_name: acct.full_name, role: acct.role } });
-    audit("LOGIN", acct.email, acct.role);
-    return acct;
+      && (a.password === clean || a.pin === clean));
+    // Canlı kullanıcı kaydındaki (yönetici tarafından atanmış) parola / PIN / geçici PIN de kabul edilir.
+    const liveMatch = liveUser && (liveUser.password === clean || liveUser.pin === clean
+      || (liveUser.tempPin && liveUser.tempPin === clean));
+    if (!acct && !liveMatch) throw new Error("Geçersiz e-posta veya PIN/parola.");
+    return { who: acct || liveUser, liveUser };
   }
+  function login(email, credential) {
+    const { who } = _validateCredential(email, credential);
+    set({ user: { email: who.email, full_name: who.full_name, role: who.role }, mfaPending: null });
+    audit("LOGIN", who.email, who.role);
+    return who;
+  }
+  // --------------------------------------------------------------- MFA'lı giriş akışı (Madde 6)
+  // Kimlik bilgilerini doğrula; rol MFA gerektiriyorsa oturumu açmadan mfaPending durumuna geç.
+  // Döner: { mfaRequired, enrolled, userId } — UI buna göre MfaGate gösterir.
+  function attemptLogin(email, credential) {
+    const { who, liveUser } = _validateCredential(email, credential);
+    // MFA bayrakları canlı kullanıcı kaydında saklanır (mfa = kayıtlı, mfaRequired = zorunlu).
+    const u = liveUser || (state.users || []).find((x) => x.email === who.email);
+    const mfaRequired = !!(u && u.mfaRequired);
+    if (mfaRequired) {
+      const enrolled = !!u.mfa;
+      set({ mfaPending: { userId: u.id, email: u.email, full_name: u.full_name, role: u.role, enrolled }, user: null });
+      audit("LOGIN_MFA_CHALLENGE", u.email, u.role);
+      return { mfaRequired: true, enrolled, userId: u.id };
+    }
+    // MFA gerekmiyorsa doğrudan oturum aç.
+    set({ user: { email: who.email, full_name: who.full_name, role: who.role }, mfaPending: null });
+    audit("LOGIN", who.email, who.role);
+    return { mfaRequired: false, userId: u ? u.id : null };
+  }
+  // Bekleyen MFA girişini 6 haneli kodla tamamla — kod doğruysa oturumu aç.
+  function completeMfaLogin(code) {
+    const pending = state.mfaPending;
+    if (!pending) throw new Error("Bekleyen bir doğrulama yok.");
+    // Kod doğrulaması (kayıtlı olsun olmasın aynı akış; kayıtsızsa ilk doğrulama TOTP'yi etkinleştirir).
+    verifyMfa({ userId: pending.userId, code });
+    const u = _findUser(pending.userId);
+    set({ user: { email: u.email, full_name: u.full_name, role: u.role }, mfaPending: null });
+    audit("LOGIN", u.email, u.role);
+    return u;
+  }
+  // Bekleyen MFA girişini iptal et (girişe geri dön).
+  function cancelMfaLogin() { set({ mfaPending: null }); }
   function loginAs(role) {
     const acct = DEMO_ACCOUNTS.find((a) => a.role === role);
     if (!acct) throw new Error("Rol bulunamadı.");
@@ -567,9 +721,230 @@ export function createDemoStore(initial) {
     if (!role) throw new Error("Rol seçimi zorunludur.");
     if (state.users.some((u) => u.email === email)) throw new Error("Bu e-posta zaten kayıtlı.");
     const user = { id: `u-${String(state.seq).padStart(2, "0")}`, full_name: full_name.trim(),
-      email: email.trim(), role, active: true, mfa: false };
+      email: email.trim(), role, active: true, mfa: false, mfaRequired: true, unitIds: [] };
     set({ users: [...state.users, user], seq: state.seq + 1 });
+    audit("USER_CREATE", user.id, `${user.full_name} · ${role}`);
     return user;
+  }
+
+  // --------------------------------------------------------------- admin: user & security management (PR#8 §2)
+  const _findUser = (userId) => {
+    const u = state.users.find((x) => x.id === userId);
+    if (!u) throw new Error("Kullanıcı bulunamadı.");
+    return u;
+  };
+  const _patchUser = (userId, patch) => {
+    const users = state.users.map((u) => (u.id === userId ? { ...u, ...patch } : u));
+    set({ users });
+    return users.find((u) => u.id === userId);
+  };
+  // Parola sıfırlama: yönetici yeni bir parola belirler (canlı kullanıcı kaydına yazılır, login kabul eder).
+  function setUserPassword({ userId, password }) {
+    const u = _findUser(userId);
+    if (!password || String(password).length < 6) throw new Error("Parola en az 6 karakter olmalıdır.");
+    const next = _patchUser(userId, { password: String(password), tempPin: null });
+    audit("USER_PASSWORD_RESET", userId, u.full_name);
+    return next;
+  }
+  // Geçici 6 haneli PIN üret: ilk girişte kullanılmak üzere yöneticiye bir kez gösterilir.
+  function resetUserPin({ userId } = {}) {
+    const u = _findUser(userId);
+    const tempPin = String(Math.floor(100000 + Math.random() * 900000)); // 6 hane
+    _patchUser(userId, { tempPin });
+    audit("USER_PIN_RESET", userId, `${u.full_name} · geçici PIN atandı`);
+    return tempPin;
+  }
+  // Hesabı aktif/pasif yap. Pasif kullanıcı giriş yapamaz (login engeller).
+  function toggleUserActive(userId) {
+    const u = _findUser(userId);
+    const next = _patchUser(userId, { active: !u.active });
+    audit("USER_ACTIVE_TOGGLE", userId, `${u.full_name} · ${next.active ? "AKTİF" : "PASİF"}`);
+    return next;
+  }
+  // MFA (çok adımlı doğrulama) kaydını sıfırla — kullanıcı bir sonraki girişte yeniden kaydolur.
+  function resetUserMfa(userId) {
+    const u = _findUser(userId);
+    const next = _patchUser(userId, { mfa: false });
+    audit("MFA_RESET", userId, `${u.full_name} · MFA sıfırlandı`);
+    return next;
+  }
+  // MFA zorunluluğunu aç/kapat (kurumsal politika).
+  function setUserMfaRequired({ userId, required }) {
+    const u = _findUser(userId);
+    const next = _patchUser(userId, { mfaRequired: !!required });
+    audit("MFA_ENFORCE", userId, `${u.full_name} · MFA ${next.mfaRequired ? "zorunlu" : "isteğe bağlı"}`);
+    return next;
+  }
+  // Kullanıcının erişebileceği üniteleri (YBÜ'ler) belirle — çoklu seçim.
+  function setUserUnits({ userId, unitIds }) {
+    const u = _findUser(userId);
+    const ids = Array.isArray(unitIds) ? unitIds.filter((id) => state.structure.units.some((un) => un.id === id)) : [];
+    const next = _patchUser(userId, { unitIds: ids });
+    const names = ids.map((id) => state.structure.units.find((un) => un.id === id)?.name || id).join(", ");
+    audit("USER_UNITS", userId, `${u.full_name} · ${ids.length ? names : "ünite yok"}`);
+    return next;
+  }
+
+  // --------------------------------------------------------------- MFA lifecycle (Madde 6)
+  // MFA kaydı başlat: gerçek uygulamada backend bir TOTP secret üretir ve provisioning URI döndürür.
+  // Burada simüle edilmiş bir secret ve otpauth:// URI üretiyoruz (QR kodu için).
+  function setupMfa({ userId } = {}) {
+    const u = _findUser(userId);
+    // Simüle edilmiş TOTP secret (32 karakter base32, gerçekte pyotp generate_secret() kullanılır)
+    const secret = Array.from({ length: 32 }, () => "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[Math.floor(Math.random() * 32)]).join("");
+    const provisioningUri = `otpauth://totp/Homunculus:${u.email}?secret=${secret}&issuer=Homunculus`;
+    // Secret'ı kullanıcıya kaydediyoruz (gerçekte backend'de şifrelenmiş saklanır)
+    _patchUser(userId, { totpSecret: secret });
+    audit("MFA_SETUP", userId, `${u.full_name} · TOTP kaydı başlatıldı`);
+    return { provisioningUri, secret };
+  }
+  // MFA doğrulama kodu kontrolü: 6 haneli TOTP kodu (gerçekte pyotp.verify_totp kullanılır).
+  // Burada simüle edilmiş doğrulama yapıyoruz — demo için "123456" veya secret'ın son 6 hanesi kabul edilir.
+  function verifyMfa({ userId, code } = {}) {
+    const u = _findUser(userId);
+    const clean = String(code || "").trim();
+    if (!/^\d{6}$/.test(clean)) throw new Error("Doğrulama kodu 6 haneli olmalıdır.");
+    // Simüle edilmiş doğrulama: demo için "123456" veya secret'ın son 6 hanesi
+    const validCodes = ["123456"];
+    if (u.totpSecret) validCodes.push(u.totpSecret.slice(-6));
+    if (!validCodes.includes(clean)) throw new Error("Geçersiz doğrulama kodu.");
+    const next = _patchUser(userId, { mfa: true });
+    audit("MFA_VERIFY", userId, `${u.full_name} · MFA doğrulandı`);
+    return next;
+  }
+
+  // --------------------------------------------------------------- kullanıcı daveti (Madde 6)
+  // Yeni kullanıcı davet et: e-posta ile davet gönder, kullanıcı kabul edince hesap oluşturulur.
+  function inviteUser({ email, fullName, role, tenantId } = {}) {
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("Geçerli bir e-posta gerekir.");
+    if (!fullName || !fullName.trim()) throw new Error("Ad Soyad zorunludur.");
+    if (!role) throw new Error("Rol seçimi zorunludur.");
+    if (state.users.some((u) => u.email === email)) throw new Error("Bu e-posta zaten kayıtlı.");
+    if (state.invites.some((i) => i.email === email && i.status === "PENDING")) {
+      throw new Error("Bu e-posta için bekleyen bir davet zaten var.");
+    }
+    const invite = { id: `inv-${String(state.seq).padStart(3, "0")}`, email: email.trim(),
+      fullName: fullName.trim(), role, tenantId: tenantId || null,
+      invitedBy: state.user?.full_name || "—", invitedAt: Date.now(), status: "PENDING" };
+    set({ invites: [...state.invites, invite], seq: state.seq + 1 });
+    audit("USER_INVITE", invite.id, `${fullName} · ${email} · ${role}`);
+    return invite;
+  }
+  // Davet kabul et: kullanıcı şifre belirler ve hesap oluşturulur.
+  function acceptInvite({ inviteId, password } = {}) {
+    const invite = state.invites.find((i) => i.id === inviteId);
+    if (!invite) throw new Error("Davet bulunamadı.");
+    if (invite.status !== "PENDING") throw new Error("Bu davet zaten kullanılmış veya iptal edilmiş.");
+    if (!password || String(password).length < 6) throw new Error("Parola en az 6 karakter olmalıdır.");
+    // Kullanıcı kaydı oluştur
+    const user = { id: `u-${String(state.seq).padStart(2, "0")}`, full_name: invite.fullName,
+      email: invite.email, role: invite.role, password: String(password),
+      active: true, mfa: false, mfaRequired: true, unitIds: [] };
+    const invites = state.invites.map((i) => (i.id === inviteId ? { ...i, status: "ACCEPTED" } : i));
+    set({ users: [...state.users, user], invites, seq: state.seq + 1 });
+    audit("INVITE_ACCEPT", inviteId, `${user.full_name} · ${user.email} · hesap oluşturuldu`);
+    return user;
+  }
+  // Davet yeniden gönder (bildirim)
+  function resendInvite(inviteId) {
+    const invite = state.invites.find((i) => i.id === inviteId);
+    if (!invite) throw new Error("Davet bulunamadı.");
+    if (invite.status !== "PENDING") throw new Error("Bu davet zaten kullanılmış veya iptal edilmiş.");
+    audit("INVITE_RESEND", inviteId, `${invite.fullName} · ${invite.email}`);
+    return invite;
+  }
+  // Davet iptal et
+  function cancelInvite(inviteId) {
+    const invite = state.invites.find((i) => i.id === inviteId);
+    if (!invite) throw new Error("Davet bulunamadı.");
+    const invites = state.invites.map((i) => (i.id === inviteId ? { ...i, status: "CANCELLED" } : i));
+    set({ invites });
+    audit("INVITE_CANCEL", inviteId, `${invite.fullName} · ${invite.email}`);
+    return invite;
+  }
+
+  // --------------------------------------------------------------- multi-tenant kurulum sihirbazı (Madde 5)
+  // Yeni kurum (tenant) oluştur
+  function createTenant({ name, slug, countryCode, timezone } = {}) {
+    if (!name || !name.trim()) throw new Error("Kurum adı zorunludur.");
+    if (!slug || !slug.trim()) throw new Error("Slug zorunludur.");
+    if (state.tenants.some((t) => t.slug === slug.trim())) throw new Error("Bu slug zaten kullanılıyor.");
+    const tenant = { id: `tenant-${String(state.seq).padStart(2, "0")}`, name: name.trim(),
+      slug: slug.trim(), countryCode: countryCode || "TR", timezone: timezone || "Europe/Istanbul",
+      isActive: true, createdAt: Date.now() };
+    set({ tenants: [...state.tenants, tenant], seq: state.seq + 1 });
+    audit("TENANT_CREATE", tenant.id, `${tenant.name} · ${tenant.slug}`);
+    return tenant;
+  }
+  // Yeni kampüs/site oluştur
+  function createSite({ tenantId, name, address } = {}) {
+    if (!tenantId) throw new Error("Kurum seçimi zorunludur.");
+    const tenant = state.tenants.find((t) => t.id === tenantId);
+    if (!tenant) throw new Error("Kurum bulunamadı.");
+    if (!name || !name.trim()) throw new Error("Kampüs adı zorunludur.");
+    const site = { id: `site-${String(state.seq).padStart(2, "0")}`, tenantId, name: name.trim(),
+      address: address || null, isActive: true, createdAt: Date.now() };
+    set({ sites: [...state.sites, site], seq: state.seq + 1 });
+    audit("SITE_CREATE", site.id, `${site.name} · ${tenant.name}`);
+    return site;
+  }
+  // Kurulum sihirbazını tamamla
+  function completeTenantSetup() {
+    set({ tenantSetup: true });
+    audit("TENANT_SETUP_COMPLETE", null, "Kurulum sihirbazı tamamlandı");
+  }
+
+  // --------------------------------------------------------------- admin: bed operational state (PR#8 §4)
+  // Bir yatağı klinik havuzun dışına al (dezenfeksiyon / arıza / kullanım dışı) veya tekrar müsait yap.
+  // Dolu (hasta atanmış) yatak manuel olarak değiştirilemez; önce taburcu/nakil gerekir.
+  function setBedState({ bedId, state: nextState, reason }) {
+    const bed = state.beds.find((b) => b.id === bedId);
+    if (!bed) throw new Error("Yatak bulunamadı.");
+    if (!BED_ADMIN_STATES.includes(nextState)) throw new Error("Geçersiz yatak durumu.");
+    if (bed.patientId || bed.state === BED_STATES.OCCUPIED) {
+      throw new Error("Dolu yatağın durumu değiştirilemez; önce hasta taburcu/nakil edilmeli.");
+    }
+    const beds = state.beds.map((b) => (b.id === bedId ? { ...b, state: nextState } : b));
+    set({ beds });
+    const label = BED_STATE_LABEL[nextState] || nextState;
+    audit("BED_STATE", bedId, `Yatak ${bed.label} · ${label}${reason ? " · " + reason : ""}`);
+    return beds.find((b) => b.id === bedId);
+  }
+
+  // --------------------------------------------------------------- admin: edit device connection (PR#8 §4)
+  // Cihazın ağ ayarlarını düzenle: IP, Port, Protokol (HL7 / IEEE 11073) ve seri numarası.
+  function updateDevice({ deviceId, vendor, model, ip, port, protocol, serial }) {
+    const dev = state.devices.find((d) => d.id === deviceId);
+    if (!dev) throw new Error("Cihaz bulunamadı.");
+    const patch = {};
+    if (vendor != null) patch.vendor = String(vendor).trim() || dev.vendor;
+    if (model != null) {
+      if (!String(model).trim()) throw new Error("Cihaz modeli zorunludur.");
+      patch.model = String(model).trim();
+    }
+    if (ip != null) {
+      const ipv = String(ip).trim();
+      if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ipv)) throw new Error("Geçerli bir IP adresi girin (ör. 192.168.1.50).");
+      if (state.devices.some((d) => d.id !== deviceId && d.ip === ipv)) throw new Error("Bu IP adresi başka bir cihazda kayıtlı.");
+      patch.ip = ipv;
+    }
+    if (port != null && port !== "") {
+      const p = Number(port);
+      if (!Number.isInteger(p) || p < 1 || p > 65535) throw new Error("Port 1-65535 aralığında olmalıdır.");
+      patch.port = p;
+    }
+    if (protocol != null) patch.protocol = String(protocol).trim() || dev.protocol;
+    if (serial != null) patch.serial = String(serial).trim();
+    const devices = state.devices.map((d) => (d.id === deviceId ? { ...d, ...patch } : d));
+    set({ devices });
+    audit("DEVICE_UPDATE", deviceId, `${patch.model || dev.model} · ${patch.ip || dev.ip}:${patch.port || dev.port || "—"}`);
+    return devices.find((d) => d.id === deviceId);
+  }
+
+  // --------------------------------------------------------------- notification test (PR#8 §1)
+  // "Bildirim Sistemini Test Et": denetim izine bir test-bildirim kaydı düşer (UI ayrıca Web Push tetikler).
+  function recordTestPush(detail) {
+    audit("NOTIFY_TEST", null, detail || "Test bildirimi gönderildi");
   }
 
   function addUnit({ name, type }) {
@@ -625,15 +1000,21 @@ export function createDemoStore(initial) {
   // --------------------------------------------------------------- MDI device simulator (B4)
   // "Cihaz Ekle & Yatağa Ata": arka planda gerçek hasta-başı monitörü ağa bağlıymış gibi canlı
   // HL7/IEEE 11073 paketleri üreten bir simülatör kaydı oluşturur.
-  function addDevice({ vendor, model, ip, protocol, bedId } = {}) {
+  function addDevice({ vendor, model, ip, port, protocol, serial, bedId } = {}) {
     if (!model || !model.trim()) throw new Error("Cihaz modeli zorunludur.");
     if (!ip || !/^\d{1,3}(\.\d{1,3}){3}$/.test(ip.trim())) throw new Error("Geçerli bir IP adresi girin (ör. 192.168.1.50).");
     if (state.devices.some((d) => d.ip === ip.trim())) throw new Error("Bu IP adresi zaten kayıtlı.");
+    let portNum = 6002;
+    if (port != null && String(port).trim() !== "") {
+      portNum = parseInt(port, 10);
+      if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) throw new Error("Port 1-65535 aralığında olmalıdır.");
+    }
     const dev = { id: `dev-${state.seq}`, vendor: vendor || "Mindray", model: model.trim(),
-      ip: ip.trim(), protocol: protocol || "HL7 / IEEE 11073",
+      ip: ip.trim(), port: portNum, protocol: protocol || "HL7 / IEEE 11073",
+      serial: (serial || "").trim(),
       bedId: bedId || null, connected: !!bedId, lastPacketMs: bedId ? Date.now() : null, packets: 0 };
     set({ devices: [...state.devices, dev], seq: state.seq + 1 });
-    audit("DEVICE_ADD", dev.id, `${dev.vendor} ${dev.model} · ${dev.ip}`);
+    audit("DEVICE_ADD", dev.id, `${dev.vendor} ${dev.model} · ${dev.ip}:${dev.port}`);
     return dev;
   }
   function assignDeviceToBed({ deviceId, bedId }) {
@@ -990,8 +1371,14 @@ export function createDemoStore(initial) {
   return {
     getState, subscribe,
     login, loginAs, logout, switchUserByPin,
+    attemptLogin, completeMfaLogin, cancelMfaLogin,
     admitPatient, transferPatient, assignCareTeam, createHandover, openCriticalAlerts,
     createUser, addUnit, addRoom, addBed,
+    setUserPassword, resetUserPin, toggleUserActive, resetUserMfa, setUserMfaRequired, setUserUnits,
+    setupMfa, verifyMfa,
+    inviteUser, acceptInvite, resendInvite, cancelInvite,
+    createTenant, createSite, completeTenantSetup,
+    setBedState, updateDevice, recordTestPush,
     assignStaffToBeds, toggleStaffBed,
     addDevice, assignDeviceToBed, deviceForBed,
     reviewBreakGlass,
