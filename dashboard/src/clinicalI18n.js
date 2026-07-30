@@ -25,7 +25,7 @@ const STRINGS = {
     shift: "Vardiya", shiftDay: "Gündüz vardiyası", shiftNight: "Gece vardiyası",
     onDuty: "Nöbette", profile: "Profil", switchRole: "Rol değiştir", logout: "Çıkış",
     themeLabel: "Tema", langLabel: "Dil",
-    theme: { light: "Aydınlık", icu: "Koyu", wall: "YB Yüksek Kontrast" },
+    theme: { light: "Gündüz Klinik", icu: "Gece / Nöbet", contrast: "Yüksek Kontrast", wall: "Duvar Ekranı" },
     // login
     loginTitle: "Oturum Aç", loginSub: "Hesap bilgilerinizle giriş yapın",
     email: "E-posta", password: "Parola", signIn: "Giriş Yap",
@@ -216,6 +216,25 @@ const STRINGS = {
       portRange: "Port 1-65535 aralığında olmalıdır.",
       loginWelcome: "Yoğun Bakım Klinik Zekâ Platformu", loginBrandLine: "Güvenli · KVKK/SB uyumlu · Kurumsal",
     },
+    pr9: {
+      brandHeadline: "Yoğun bakımda her saniye önemlidir.",
+      brandSub: "Homunculus, hasta başı cihaz verisini anlık işleyerek kötüleşmeyi erkenden fark eder ve doğru ekibi zamanında uyarır.",
+      props: [
+        ["Erken Uyarı Motoru", "NEWS2 / SOFA skorları ve trendlerle kötüleşmeyi dakikalar öncesinden işaretler."],
+        ["Kademeli Alarm Eskalasyonu", "3 → 5 → 10 dk zinciriyle Hemşire → Hekim → Hızlı Yanıt Ekibi. Hiçbir alarm gözden kaçmaz."],
+        ["Cihaz Bağımsız Entegrasyon", "HL7 ve IEEE 11073 ile marka fark etmeksizin tak-çalıştır bağlanır."],
+      ],
+      vitrinTitle: "Canlı platform",
+      statAlarms: "Bugün yanıtlanan alarm",
+      statAck: "Ort. yanıt süresi",
+      statUptime: "Kesintisiz çalışma",
+      demoAccess: "Demo erişimi",
+      demoHint: "Bu ortam tanıtım amaçlıdır. Aşağıdaki örnek hesaplarla giriş yapabilirsiniz.",
+      fillIn: "Doldur",
+      kvkkNote: "Giriş yaparak Aydınlatma Metni ve Kullanım Koşulları'nı kabul etmiş olursunuz.",
+      forgot: "Parolanızı mı unuttunuz?",
+      forgotHelp: "Parola sıfırlama, kurum yöneticiniz (Sistem Yöneticisi) tarafından yapılır.",
+    },
   },
 
   // ============================================================ Azərbaycan
@@ -229,7 +248,7 @@ const STRINGS = {
     shift: "Növbə", shiftDay: "Gündüz növbəsi", shiftNight: "Gecə növbəsi",
     onDuty: "Növbədə", profile: "Profil", switchRole: "Rolu dəyiş", logout: "Çıxış",
     themeLabel: "Tema", langLabel: "Dil",
-    theme: { light: "İşıqlı", icu: "Qaranlıq", wall: "Reanimasiya Yüksək Kontrast" },
+    theme: { light: "Gündüz Klinik", icu: "Gecə / Növbə", contrast: "Yüksək Kontrast", wall: "Divar Ekranı" },
     loginTitle: "Daxil ol", loginSub: "Hesab məlumatlarınızla daxil olun",
     email: "E-poçt", password: "Parol", signIn: "Daxil ol",
     invalid: "Yanlış e-poçt və ya parol.", orQuick: "Sürətli rol girişi",
@@ -410,6 +429,25 @@ const STRINGS = {
       portRange: "Port 1-65535 aralığında olmalıdır.",
       loginWelcome: "Reanimasiya Klinik Zəka Platforması", loginBrandLine: "Təhlükəsiz · Uyğun · Korporativ",
     },
+    pr9: {
+      brandHeadline: "Reanimasiyada hər saniyə önəmlidir.",
+      brandSub: "Homunculus xəstə yanı cihaz məlumatını canlı emal edərək pisləşməni erkən görür və doğru komandanı vaxtında xəbərdar edir.",
+      props: [
+        ["Erkən Xəbərdarlıq Mühərriki", "NEWS2 / SOFA balları və trendlərlə pisləşməni dəqiqələr əvvəl işarələyir."],
+        ["Mərhələli Xəbərdarlıq Eskalasiyası", "3 → 5 → 10 dəq zənciri: Tibb bacısı → Həkim → Sürətli Cavab Komandası. Heç bir siqnal itmir."],
+        ["Cihazdan Asılı Olmayan İnteqrasiya", "HL7 və IEEE 11073 ilə marka fərq etmədən qoş-işlət qoşulur."],
+      ],
+      vitrinTitle: "Canlı platforma",
+      statAlarms: "Bu gün cavablanan siqnal",
+      statAck: "Orta cavab müddəti",
+      statUptime: "Fasiləsiz iş",
+      demoAccess: "Demo giriş",
+      demoHint: "Bu mühit tanıtım məqsədlidir. Aşağıdakı nümunə hesablarla daxil ola bilərsiniz.",
+      fillIn: "Doldur",
+      kvkkNote: "Daxil olmaqla Məlumatlandırma Mətni və İstifadə Şərtlərini qəbul etmiş olursunuz.",
+      forgot: "Parolunuzu unutmusunuz?",
+      forgotHelp: "Parol sıfırlama qurum administratorunuz (Sistem Administratoru) tərəfindən aparılır.",
+    },
   },
 
   // ============================================================ English
@@ -423,7 +461,7 @@ const STRINGS = {
     shift: "Shift", shiftDay: "Day shift", shiftNight: "Night shift",
     onDuty: "On duty", profile: "Profile", switchRole: "Switch role", logout: "Sign out",
     themeLabel: "Theme", langLabel: "Language",
-    theme: { light: "Light", icu: "Dark", wall: "ICU High Contrast" },
+    theme: { light: "Day Clinical", icu: "Night / On-call", contrast: "High Contrast", wall: "Wallboard" },
     loginTitle: "Sign in", loginSub: "Sign in with your account",
     email: "Email", password: "Password", signIn: "Sign in",
     invalid: "Invalid email or password.", orQuick: "Quick role sign-in",
@@ -604,6 +642,25 @@ const STRINGS = {
       portRange: "Port must be between 1-65535.",
       loginWelcome: "Intensive Care Clinical Intelligence Platform", loginBrandLine: "Secure · Compliant · Enterprise",
     },
+    pr9: {
+      brandHeadline: "In intensive care, every second counts.",
+      brandSub: "Homunculus processes bedside device data in real time to catch deterioration early and alert the right team on time.",
+      props: [
+        ["Early Warning Engine", "Flags deterioration minutes ahead with NEWS2 / SOFA scores and trends."],
+        ["Tiered Alarm Escalation", "3 → 5 → 10 min chain: Nurse → Physician → Rapid Response Team. No alarm slips through."],
+        ["Vendor-Neutral Integration", "Plug-and-play via HL7 and IEEE 11073, regardless of device brand."],
+      ],
+      vitrinTitle: "Live platform",
+      statAlarms: "Alarms answered today",
+      statAck: "Avg. response time",
+      statUptime: "Continuous uptime",
+      demoAccess: "Demo access",
+      demoHint: "This is a demonstration environment. You can sign in with the sample accounts below.",
+      fillIn: "Fill",
+      kvkkNote: "By signing in you accept the Privacy Notice and Terms of Use.",
+      forgot: "Forgot your password?",
+      forgotHelp: "Password resets are handled by your institution administrator (System Administrator).",
+    },
   },
 
   // ============================================================ Русский
@@ -617,7 +674,7 @@ const STRINGS = {
     shift: "Смена", shiftDay: "Дневная смена", shiftNight: "Ночная смена",
     onDuty: "На дежурстве", profile: "Профиль", switchRole: "Сменить роль", logout: "Выйти",
     themeLabel: "Тема", langLabel: "Язык",
-    theme: { light: "Светлая", icu: "Тёмная", wall: "ОРИТ Высокий контраст" },
+    theme: { light: "Дневная", icu: "Ночная / Дежурство", contrast: "Высокий контраст", wall: "Настенный экран" },
     loginTitle: "Вход", loginSub: "Войдите с учётными данными",
     email: "Эл. почта", password: "Пароль", signIn: "Войти",
     invalid: "Неверная почта или пароль.", orQuick: "Быстрый вход по роли",
@@ -798,6 +855,25 @@ const STRINGS = {
       portRange: "Порт должен быть в диапазоне 1-65535.",
       loginWelcome: "Платформа клинического интеллекта интенсивной терапии", loginBrandLine: "Безопасно · Соответствует · Корпоративно",
     },
+    pr9: {
+      brandHeadline: "В реанимации важна каждая секунда.",
+      brandSub: "Homunculus в реальном времени обрабатывает данные прикроватных устройств, рано выявляет ухудшение и вовремя оповещает нужную команду.",
+      props: [
+        ["Система раннего предупреждения", "Отмечает ухудшение за минуты по шкалам NEWS2 / SOFA и трендам."],
+        ["Ступенчатая эскалация тревог", "Цепочка 3 → 5 → 10 мин: Медсестра → Врач → Бригада быстрого реагирования. Ни одна тревога не теряется."],
+        ["Вендор-независимая интеграция", "Подключение plug-and-play через HL7 и IEEE 11073 независимо от бренда."],
+      ],
+      vitrinTitle: "Живая платформа",
+      statAlarms: "Тревог обработано сегодня",
+      statAck: "Ср. время реакции",
+      statUptime: "Непрерывная работа",
+      demoAccess: "Демо-доступ",
+      demoHint: "Это демонстрационная среда. Вы можете войти с помощью примеров учётных записей ниже.",
+      fillIn: "Заполнить",
+      kvkkNote: "Выполняя вход, вы принимаете Уведомление о конфиденциальности и Условия использования.",
+      forgot: "Забыли пароль?",
+      forgotHelp: "Сброс пароля выполняется администратором вашего учреждения (Системный администратор).",
+    },
   },
 };
 
@@ -806,10 +882,28 @@ export function cstrings(lang) {
 }
 
 const STORAGE_KEY = "homunculus-clang";
+
+// Auto-detect the UI language from the browser/OS locale (navigator.language) so an
+// Azerbaijani device is greeted in AZ on first launch — a strong "made for us" signal in
+// the AZ market. Only used when the user has no explicit stored preference yet.
+export function detectClang() {
+  try {
+    const cands = [navigator.language, ...(navigator.languages || [])].filter(Boolean);
+    for (const c of cands) {
+      const two = String(c).slice(0, 2).toLowerCase();
+      if (LANG_KEYS.includes(two)) return two;
+    }
+  } catch {
+    /* ignore */
+  }
+  return "tr";
+}
+
 export function storedClang() {
   try {
     const v = localStorage.getItem(STORAGE_KEY);
-    return LANG_KEYS.includes(v) ? v : "tr";
+    if (LANG_KEYS.includes(v)) return v;
+    return detectClang();
   } catch {
     return "tr";
   }

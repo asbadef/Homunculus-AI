@@ -14,6 +14,7 @@ import {
   TrendingUp, StopCircle, Syringe,
   KeyRound, Wifi, WifiOff, Radio, Network, CloudOff, Cloud, Search, ShieldCheck, DoorOpen,
   BellRing, BarChart3, Wrench, Pencil, Bed, Download, Power, Lock,
+  Contrast, Fingerprint, Mail, ArrowRight, Sparkles,
 } from "lucide-react";
 import {
   createDemoStore, buildRealisticState, ROLE, TIER, ESCALATION_STEP, STEP_TARGET_ROLE,
@@ -55,7 +56,7 @@ const ALERT_TXT = {
   ru: "Критерии клинического ухудшения будут оценены",
 };
 
-const THEME_ICON = { icu: Moon, light: Sun, wall: Monitor };
+const THEME_ICON = { icu: Moon, light: Sun, contrast: Contrast, wall: Monitor };
 
 // ---------------------------------------------------------------- small helpers
 function fmtClock(sec) {
@@ -117,60 +118,216 @@ function btnCls(T, kind = "primary") {
 }
 
 // ================================================================ LOGIN
-function Login({ T, S, store }) {
+// ---------------------------------------------------------------- Brand mark (bespoke SVG logo)
+// Yeni nesil marka işareti: yumuşak köşeli teal→cyan rozet içinde beyaz EKG/nabız çizgisi.
+// Tek bir "H" hissi veren dikey vuruşlar + kalp atışı. Kütüphane değil, saf SVG.
+function HomunculusMark({ size = 44, glow = true }) {
+  const id = useMemo(() => "hm" + Math.random().toString(36).slice(2, 7), []);
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none"
+      className={glow ? "drop-shadow-[0_6px_16px_rgba(13,148,136,0.45)]" : ""} aria-hidden="true">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#0d9488" />
+          <stop offset="0.55" stopColor="#0891b2" />
+          <stop offset="1" stopColor="#06b6d4" />
+        </linearGradient>
+      </defs>
+      <rect x="1.5" y="1.5" width="45" height="45" rx="13" fill={`url(#${id})`} />
+      <rect x="1.5" y="1.5" width="45" height="45" rx="13" fill="white" fillOpacity="0.04" />
+      {/* H omuzları: iki dikey vuruş */}
+      <rect x="11" y="13" width="3.2" height="22" rx="1.6" fill="white" fillOpacity="0.9" />
+      <rect x="33.8" y="13" width="3.2" height="22" rx="1.6" fill="white" fillOpacity="0.9" />
+      {/* Kalp atışı / EKG köprüsü */}
+      <path d="M11 24 H17 L19.5 17 L23 31 L26 21 L28.5 24 H37"
+        stroke="white" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Kompakt bayrak dil seçici — giriş ekranı ve gerektiğinde her yerde kullanılabilir.
+function LangPills({ T, lang, setLang }) {
+  return (
+    <div className={`inline-flex items-center gap-0.5 rounded-xl border ${T.border} ${T.glassSubtle} p-0.5`}>
+      {LANGS.map(([code, label, flag]) => (
+        <button key={code} type="button" onClick={() => setLang(code)} title={label} aria-label={label}
+          className={`grid h-8 w-8 place-items-center rounded-lg text-lg leading-none transition ${lang === code ? "bg-brand/25 ring-1 ring-brand/50 scale-105" : "opacity-50 hover:opacity-100"}`}>
+          <span>{flag}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Login({ T, S, store, lang, setLang }) {
   const [email, setEmail] = useState("");
   const [credential, setCredential] = useState("");
   const [err, setErr] = useState("");
+  const [showDemo, setShowDemo] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
   const submit = (e) => {
     e.preventDefault();
-    // Kurumsal e-posta + PIN/parola. Rol DB'den gelir; panel role göre otomatik yönlenir.
+    // Kurumsal e-posta + parola. Rol DB'den gelir; panel role göre otomatik yönlenir.
     try { store.login(email.trim(), credential.trim()); } catch (ex) { setErr(ex.message); }
   };
-  return (
-    <div className={`relative min-h-screen ${T.app} flex items-center justify-center overflow-hidden p-6`}>
-      {/* Kurumsal glassmorphism arka plan: yumuşak gradyan + canlı EKG çizgisi */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand/25 via-transparent to-cyan-500/20" />
-      <div className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-brand/30 blur-3xl animate-pulse" />
-      <div className="pointer-events-none absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-cyan-500/25 blur-3xl animate-pulse" style={{ animationDelay: "1.2s" }} />
-      <svg className="pointer-events-none absolute inset-x-0 top-1/2 h-40 w-full -translate-y-1/2 opacity-[0.10]" preserveAspectRatio="none" viewBox="0 0 1200 120">
-        <polyline fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400"
-          points="0,60 180,60 210,60 225,20 240,100 255,60 420,60 450,60 465,25 480,95 495,60 660,60 690,60 705,20 720,100 735,60 900,60 930,60 945,25 960,95 975,60 1200,60" />
-      </svg>
+  const demoAccounts = [
+    ["dr.elif.yilmaz@homunculus.health", "1111"],
+    ["ayse.demir@homunculus.health", "2222"],
+    ["admin@homunculus.health", "9999"],
+  ];
+  const fill = (em, pin) => { setEmail(em); setCredential(pin); setErr(""); };
 
-      <div className={`relative z-10 w-full max-w-md rounded-3xl ${T.glass} p-8`}>
-        <div className="mb-6 flex items-center gap-3">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-brand to-cyan-500 text-white shadow-lg shadow-brand/30">
-            <Activity size={26} />
-          </div>
+  const iconInput = (icon, node) => (
+    <div className="relative">
+      <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${T.faint}`}>{icon}</span>
+      {node}
+    </div>
+  );
+
+  return (
+    <div className={`relative min-h-screen ${T.app} flex overflow-hidden`}>
+      {/* ============ SOL: Marka vitrini (yalnızca geniş ekran / web) ============ */}
+      <aside className="relative hidden w-[46%] max-w-[640px] flex-col justify-between overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-brand/30 p-10 text-white lg:flex xl:p-12">
+        <div className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-brand/40 blur-3xl animate-pulse" />
+        <div className="pointer-events-none absolute -bottom-32 -right-24 h-[28rem] w-[28rem] rounded-full bg-cyan-500/30 blur-3xl animate-pulse" style={{ animationDelay: "1.4s" }} />
+        <svg className="pointer-events-none absolute inset-x-0 top-1/2 h-48 w-full -translate-y-1/2 opacity-[0.12]" preserveAspectRatio="none" viewBox="0 0 1200 120">
+          <polyline fill="none" stroke="currentColor" strokeWidth="2.5" className="text-emerald-400"
+            points="0,60 180,60 210,60 225,18 240,102 255,60 420,60 450,60 465,24 480,96 495,60 660,60 690,60 705,18 720,102 735,60 900,60 930,60 945,24 960,96 975,60 1200,60" />
+        </svg>
+
+        {/* Logo + wordmark */}
+        <div className="relative z-10 flex items-center gap-3">
+          <HomunculusMark size={48} />
           <div>
-            <div className={`text-lg font-bold ${T.heading}`}>{S.appName}</div>
-            <div className={`text-xs ${T.muted}`}>{S.pr8.loginWelcome}</div>
+            <div className="text-xl font-black tracking-tight">{S.appName}</div>
+            <div className="text-xs font-medium text-white/70">{S.tagline}</div>
           </div>
         </div>
-        <h1 className={`mb-1 text-2xl font-bold ${T.heading}`}>{S.loginTitle}</h1>
-        <p className={`mb-5 text-sm ${T.muted}`}>{S.pr7.loginPinHint}</p>
-        <form onSubmit={submit} className="space-y-4">
-          <Field T={T} label={S.email}>
-            <input className={inputCls(T)} value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="dr.elif.yilmaz@homunculus.health" autoComplete="username" />
-          </Field>
-          <Field T={T} label={S.pr7.loginPinLabel}>
-            <input type="password" className={inputCls(T)} value={credential}
-              onChange={(e) => setCredential(e.target.value)} placeholder="•••• / ••••••••" autoComplete="current-password" />
-          </Field>
-          {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
-          <button type="submit" className={`${btnCls(T, "primary")} w-full`}>{S.signIn}</button>
-        </form>
-        <div className={`mt-5 rounded-2xl ${T.glassSubtle} p-3 text-xs ${T.muted}`}>
-          <div className="mb-1 flex items-center gap-1.5 font-semibold"><KeyRound size={13} /> Demo hesapları</div>
-          <div>dr.elif.yilmaz@homunculus.health · PIN <b>1111</b> · Hekim</div>
-          <div>ayse.demir@homunculus.health · PIN <b>2222</b> · Sorumlu Hemşire</div>
-          <div>admin@homunculus.health · PIN <b>9999</b> · Yönetici</div>
+
+        {/* Headline + değer önermeleri */}
+        <div className="relative z-10 max-w-md">
+          <h2 className="mb-3 text-3xl font-black leading-tight xl:text-[2.6rem]">{S.pr9.brandHeadline}</h2>
+          <p className="mb-8 text-sm leading-relaxed text-white/75">{S.pr9.brandSub}</p>
+          <ul className="space-y-4">
+            {S.pr9.props.map(([title, desc], i) => {
+              const Icon = [TrendingUp, Siren, Network][i] || Activity;
+              return (
+                <li key={i} className="flex items-start gap-3">
+                  <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/10 ring-1 ring-white/15 backdrop-blur">
+                    <Icon size={17} className="text-cyan-300" />
+                  </span>
+                  <div>
+                    <div className="text-sm font-bold">{title}</div>
+                    <div className="text-xs leading-snug text-white/60">{desc}</div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         </div>
-        <div className={`mt-4 flex items-center justify-center gap-2 text-[11px] font-medium ${T.faint}`}>
-          <ShieldCheck size={13} className="text-emerald-500" /> {S.pr8.loginBrandLine}
+
+        {/* Canlı vitrin istatistikleri */}
+        <div className="relative z-10">
+          <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/50">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+            </span>
+            {S.pr9.vitrinTitle}
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <VitrinStat value="12.480" label={S.pr9.statAlarms} />
+            <VitrinStat value="8 sn" label={S.pr9.statAck} />
+            <VitrinStat value="%99,9" label={S.pr9.statUptime} />
+          </div>
+          <div className="mt-6 flex items-center gap-2 text-[11px] font-medium text-white/50">
+            <ShieldCheck size={13} className="text-emerald-400" /> {S.pr8.loginBrandLine}
+          </div>
         </div>
-      </div>
+      </aside>
+
+      {/* ============ SAĞ: Giriş formu ============ */}
+      <main className="relative flex flex-1 items-center justify-center p-6 sm:p-10">
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand/10 via-transparent to-cyan-500/10 lg:hidden" />
+        {/* Üst-sağ dil seçici */}
+        <div className="absolute right-5 top-5 z-20">
+          <LangPills T={T} lang={lang} setLang={setLang} />
+        </div>
+
+        <div className="relative z-10 w-full max-w-sm">
+          {/* Mobil logo (marka paneli gizliyken) */}
+          <div className="mb-6 flex items-center gap-3 lg:hidden">
+            <HomunculusMark size={44} />
+            <div>
+              <div className={`text-lg font-black ${T.heading}`}>{S.appName}</div>
+              <div className={`text-xs ${T.muted}`}>{S.pr8.loginWelcome}</div>
+            </div>
+          </div>
+
+          <h1 className={`mb-1 text-2xl font-black ${T.heading}`}>{S.loginTitle}</h1>
+          <p className={`mb-6 text-sm ${T.muted}`}>{S.loginSub}</p>
+
+          <form onSubmit={submit} className="space-y-4">
+            <Field T={T} label={S.email}>
+              {iconInput(<Mail size={16} />,
+                <input className={`${inputCls(T)} pl-9`} value={email} onChange={(e) => setEmail(e.target.value)}
+                  placeholder="ad.soyad@kurum.health" autoComplete="username" />)}
+            </Field>
+            <Field T={T} label={S.pr7.loginPinLabel}>
+              {iconInput(<Lock size={16} />,
+                <input type="password" className={`${inputCls(T)} pl-9`} value={credential}
+                  onChange={(e) => setCredential(e.target.value)} placeholder="••••••••" autoComplete="current-password" />)}
+            </Field>
+            {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+            <button type="submit" className={`${btnCls(T, "primary")} group w-full`}>
+              {S.signIn}
+              <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+            </button>
+          </form>
+
+          <div className="mt-3 text-center">
+            <button type="button" onClick={() => setShowForgot((v) => !v)}
+              className={`text-xs font-medium ${T.accent} hover:underline`}>{S.pr9.forgot}</button>
+            {showForgot && (
+              <div className={`mt-2 rounded-lg ${T.glassSubtle} px-3 py-2 text-xs ${T.muted}`}>{S.pr9.forgotHelp}</div>
+            )}
+          </div>
+
+          <p className={`mt-6 text-center text-[11px] leading-snug ${T.faint}`}>{S.pr9.kvkkNote}</p>
+
+          {/* Demo erişimi — varsayılan gizli, katlanır */}
+          <div className={`mt-5 rounded-2xl border ${T.border} ${T.glassSubtle}`}>
+            <button type="button" onClick={() => setShowDemo((v) => !v)}
+              className={`flex w-full items-center gap-2 px-3 py-2.5 text-xs font-semibold ${T.muted}`}>
+              <Sparkles size={13} className={T.accent} /> {S.pr9.demoAccess}
+              <ChevronDown size={14} className={`ml-auto transition-transform ${showDemo ? "rotate-180" : ""}`} />
+            </button>
+            {showDemo && (
+              <div className={`space-y-1.5 border-t ${T.border} px-3 py-2.5`}>
+                <div className={`mb-1 text-[11px] leading-snug ${T.faint}`}>{S.pr9.demoHint}</div>
+                {demoAccounts.map(([em, pin]) => (
+                  <div key={em} className="flex items-center gap-2 text-xs">
+                    <code className={`flex-1 truncate ${T.muted}`}>{em}</code>
+                    <span className={`font-mono ${T.faint}`}>{pin}</span>
+                    <button type="button" onClick={() => fill(em, pin)}
+                      className={`rounded-md px-2 py-1 text-[11px] font-semibold ${T.ghost}`}>{S.pr9.fillIn}</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// Canlı vitrin sayaç kutusu (giriş marka panelinde).
+function VitrinStat({ value, label }) {
+  return (
+    <div className="rounded-2xl bg-white/5 p-3 ring-1 ring-white/10 backdrop-blur">
+      <div className="text-lg font-black text-white">{value}</div>
+      <div className="mt-0.5 text-[10px] font-medium leading-tight text-white/55">{label}</div>
     </div>
   );
 }
@@ -2377,7 +2534,7 @@ export function ClinicalDemo() {
     if (theme === "light") root.classList.remove("dark"); else root.classList.add("dark");
   }, [theme]);
 
-  if (!state.user) return <Login T={T} S={S} store={store} />;
+  if (!state.user) return <Login T={T} S={S} store={store} lang={lang} setLang={setLang} />;
 
   // guard: page not permitted for the current role → fall back to board.
   const role = state.user.role;
