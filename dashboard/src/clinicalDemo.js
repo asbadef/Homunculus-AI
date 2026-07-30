@@ -423,6 +423,11 @@ export function buildRealisticState() {
     autoAlarm: true,
     online: true,         // PWA connectivity flag (offline resilience B5)
     syncQueue: [],        // actions captured while offline, flushed on reconnect
+    // Madde 5/6 çok kiracılı kurulum + davet durumu (gerçekçi demo başlangıç değerleri)
+    tenantSetup: false,   // ilk giriş kurulum sihirbazı henüz tamamlanmadı (admin girişinde gösterilir)
+    tenants: [],          // [ { id, name, slug, countryCode, timezone, isActive, createdAt } ]
+    sites: [],            // [ { id, tenantId, name, address, isActive, createdAt } ]
+    invites: [],          // [ { id, email, fullName, role, tenantId, invitedBy, invitedAt, status } ]
     seq: 200,             // above the pre-seeded P-1xx range so generated IDs never collide
   };
 }
@@ -536,7 +541,8 @@ export function createDemoStore(initial) {
 
   // Kurumsal e-posta + PIN girişi. Rol DB'den (users listesi) gelir; UI paneli role göre otomatik
   // yönlendirir (dışarıdan kayıt yok). E-posta + parola girişi de (eski akış) desteklenmeye devam eder.
-  function login(email, credential) {
+  // Kimlik bilgisi doğrulama (state'i değiştirmez). Başarılıysa { who, liveUser } döndürür, aksi halde hata fırlatır.
+  function _validateCredential(email, credential) {
     const clean = String(credential || "");
     // Canlı kullanıcı kaydı (yönetici tarafından düzenlenebilir: parola/PIN/geçici PIN/pasiflik).
     const liveUser = (state.users || []).find((u) => u.email === email);
@@ -550,11 +556,46 @@ export function createDemoStore(initial) {
     const liveMatch = liveUser && (liveUser.password === clean || liveUser.pin === clean
       || (liveUser.tempPin && liveUser.tempPin === clean));
     if (!acct && !liveMatch) throw new Error("Geçersiz e-posta veya PIN/parola.");
-    const who = acct || liveUser;
-    set({ user: { email: who.email, full_name: who.full_name, role: who.role } });
+    return { who: acct || liveUser, liveUser };
+  }
+  function login(email, credential) {
+    const { who } = _validateCredential(email, credential);
+    set({ user: { email: who.email, full_name: who.full_name, role: who.role }, mfaPending: null });
     audit("LOGIN", who.email, who.role);
     return who;
   }
+  // --------------------------------------------------------------- MFA'lı giriş akışı (Madde 6)
+  // Kimlik bilgilerini doğrula; rol MFA gerektiriyorsa oturumu açmadan mfaPending durumuna geç.
+  // Döner: { mfaRequired, enrolled, userId } — UI buna göre MfaGate gösterir.
+  function attemptLogin(email, credential) {
+    const { who, liveUser } = _validateCredential(email, credential);
+    // MFA bayrakları canlı kullanıcı kaydında saklanır (mfa = kayıtlı, mfaRequired = zorunlu).
+    const u = liveUser || (state.users || []).find((x) => x.email === who.email);
+    const mfaRequired = !!(u && u.mfaRequired);
+    if (mfaRequired) {
+      const enrolled = !!u.mfa;
+      set({ mfaPending: { userId: u.id, email: u.email, full_name: u.full_name, role: u.role, enrolled }, user: null });
+      audit("LOGIN_MFA_CHALLENGE", u.email, u.role);
+      return { mfaRequired: true, enrolled, userId: u.id };
+    }
+    // MFA gerekmiyorsa doğrudan oturum aç.
+    set({ user: { email: who.email, full_name: who.full_name, role: who.role }, mfaPending: null });
+    audit("LOGIN", who.email, who.role);
+    return { mfaRequired: false, userId: u ? u.id : null };
+  }
+  // Bekleyen MFA girişini 6 haneli kodla tamamla — kod doğruysa oturumu aç.
+  function completeMfaLogin(code) {
+    const pending = state.mfaPending;
+    if (!pending) throw new Error("Bekleyen bir doğrulama yok.");
+    // Kod doğrulaması (kayıtlı olsun olmasın aynı akış; kayıtsızsa ilk doğrulama TOTP'yi etkinleştirir).
+    verifyMfa({ userId: pending.userId, code });
+    const u = _findUser(pending.userId);
+    set({ user: { email: u.email, full_name: u.full_name, role: u.role }, mfaPending: null });
+    audit("LOGIN", u.email, u.role);
+    return u;
+  }
+  // Bekleyen MFA girişini iptal et (girişe geri dön).
+  function cancelMfaLogin() { set({ mfaPending: null }); }
   function loginAs(role) {
     const acct = DEMO_ACCOUNTS.find((a) => a.role === role);
     if (!acct) throw new Error("Rol bulunamadı.");
@@ -1330,6 +1371,7 @@ export function createDemoStore(initial) {
   return {
     getState, subscribe,
     login, loginAs, logout, switchUserByPin,
+    attemptLogin, completeMfaLogin, cancelMfaLogin,
     admitPatient, transferPatient, assignCareTeam, createHandover, openCriticalAlerts,
     createUser, addUnit, addRoom, addBed,
     setUserPassword, resetUserPin, toggleUserActive, resetUserMfa, setUserMfaRequired, setUserUnits,

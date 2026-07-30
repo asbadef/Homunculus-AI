@@ -15,6 +15,7 @@ import {
   KeyRound, Wifi, WifiOff, Radio, Network, CloudOff, Cloud, Search, ShieldCheck, DoorOpen,
   BellRing, BarChart3, Wrench, Pencil, Bed, Download, Power, Lock, Shield,
   Contrast, Fingerprint, Mail, ArrowRight, Sparkles, QrCode, Send, RotateCcw, XCircle,
+  MapPin, ArrowLeft,
 } from "lucide-react";
 import {
   createDemoStore, buildRealisticState, ROLE, TIER, ESCALATION_STEP, STEP_TARGET_ROLE,
@@ -168,7 +169,8 @@ function Login({ T, S, store, lang, setLang }) {
   const submit = (e) => {
     e.preventDefault();
     // Kurumsal e-posta + parola. Rol DB'den gelir; panel role göre otomatik yönlenir.
-    try { store.login(email.trim(), credential.trim()); } catch (ex) { setErr(ex.message); }
+    // attemptLogin: rol MFA gerektiriyorsa oturumu açmadan MFA kapısına yönlendirir (mfaPending).
+    try { store.attemptLogin(email.trim(), credential.trim()); } catch (ex) { setErr(ex.message); }
   };
   const demoAccounts = [
     ["dr.elif.yilmaz@homunculus.health", "1111"],
@@ -328,6 +330,237 @@ function VitrinStat({ value, label }) {
     <div className="rounded-2xl bg-white/5 p-3 ring-1 ring-white/10 backdrop-blur">
       <div className="text-lg font-black text-white">{value}</div>
       <div className="mt-0.5 text-[10px] font-medium leading-tight text-white/55">{label}</div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- MFA kapısı (Madde 6)
+// Şifre girişi sonrası, rol iki adımlı doğrulama gerektiriyorsa gösterilir (state.mfaPending).
+// Kayıtlı değilse önce TOTP kurulumu (QR + gizli anahtar) yapılır, sonra 6 haneli kod doğrulanır.
+function MfaGate({ T, S, store, pending, lang, setLang }) {
+  const [code, setCode] = useState("");
+  const [err, setErr] = useState("");
+  const [setup, setSetup] = useState(null); // { provisioningUri, secret } — kayıtsız kullanıcılar için
+  const enrolled = pending.enrolled;
+
+  // Kayıtlı değilse TOTP kurulumunu bir kez başlat (QR + secret üret).
+  useEffect(() => {
+    if (!enrolled) {
+      try { setSetup(store.setupMfa({ userId: pending.userId })); } catch { /* ignore */ }
+    }
+  }, [enrolled, pending.userId]);
+
+  const verify = (e) => {
+    e.preventDefault();
+    try { store.completeMfaLogin(code.trim()); } catch (ex) { setErr(ex.message); }
+  };
+
+  return (
+    <div className={`relative flex min-h-screen items-center justify-center overflow-hidden ${T.app} p-6`}>
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand/10 via-transparent to-cyan-500/10" />
+      <div className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-brand/20 blur-3xl" />
+      <div className="absolute right-5 top-5 z-20"><LangPills T={T} lang={lang} setLang={setLang} /></div>
+
+      <div className={`relative z-10 w-full max-w-md rounded-3xl border ${T.border} ${T.card} p-7 shadow-2xl`}>
+        <div className="mb-5 flex items-center gap-3">
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-brand to-cyan-500 text-white shadow-lg">
+            <Fingerprint size={24} />
+          </span>
+          <div>
+            <h1 className={`text-xl font-black ${T.heading}`}>{S.pr11.mfaGateTitle}</h1>
+            <p className={`text-xs ${T.muted}`}>{pending.full_name} · {S.roleName[pending.role]}</p>
+          </div>
+        </div>
+
+        <p className={`mb-4 text-sm ${T.muted}`}>{enrolled ? S.pr11.mfaGateSub : S.pr11.mfaGateSetupSub}</p>
+
+        {/* Kayıtsız kullanıcı: QR + gizli anahtar göster */}
+        {!enrolled && setup && (
+          <div className={`mb-4 rounded-2xl border ${T.border} ${T.glassSubtle} p-4`}>
+            <div className={`mx-auto mb-3 grid h-32 w-32 place-items-center rounded-xl ${T.subtle}`}>
+              <QrCode size={104} className={T.faint} />
+            </div>
+            <div className={`text-center text-[11px] ${T.faint}`}>
+              {S.pr11.mfaSecretLabel}: <code className="font-mono">{setup.secret.slice(0, 16)}…</code>
+            </div>
+          </div>
+        )}
+
+        <form onSubmit={verify} className="space-y-3">
+          <Field T={T} label={S.pr11.mfaCodeLabel}>
+            <input inputMode="numeric" maxLength={6} autoFocus value={code}
+              onChange={(e) => { setCode(e.target.value.replace(/\D/g, "")); setErr(""); }}
+              placeholder={S.pr11.mfaCodePlaceholder}
+              className={`${inputCls(T)} text-center text-2xl font-black tracking-[0.5em]`} />
+          </Field>
+          {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+          <button type="submit" className={`${btnCls(T, "primary")} group w-full`}>
+            <ShieldCheck size={16} /> {S.pr11.mfaVerifyCta}
+            <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+          </button>
+        </form>
+
+        <div className="mt-3 flex items-center justify-between">
+          <button onClick={() => store.cancelMfaLogin()}
+            className={`inline-flex items-center gap-1 text-xs font-medium ${T.accent} hover:underline`}>
+            <ArrowLeft size={13} /> {S.pr11.mfaBack}
+          </button>
+          <span className={`text-[11px] ${T.faint}`}>{S.pr11.mfaDemoHint}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Kurum kurulum sihirbazı (Madde 5)
+// Platform ilk kez kuruluyorsa (state.tenantSetup=false) yönetici girişinde gösterilir.
+// Adımlar: Kurum (tenant) → Kampüs (site) → Tamamlandı. "Şimdilik atla" ile geçilebilir.
+function SetupWizard({ T, S, store, lang, setLang }) {
+  const [step, setStep] = useState(0); // 0=tenant, 1=site, 2=done
+  const [err, setErr] = useState("");
+  const [tenant, setTenant] = useState(null);
+  const [tf, setTf] = useState({ name: "", slug: "", countryCode: "TR", timezone: "Europe/Istanbul" });
+  const [sf, setSf] = useState({ name: "", address: "" });
+
+  const slugify = (s) => s.toLowerCase().trim()
+    .replace(/[çğıöşü]/g, (c) => ({ ç: "c", ğ: "g", ı: "i", ö: "o", ş: "s", ü: "u" }[c] || c))
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+  const steps = [S.pr11.wizStepTenant, S.pr11.wizStepSite, S.pr11.wizStepDone];
+  const stepIcons = [Building2, MapPin, CheckCircle2];
+
+  const nextFromTenant = (e) => {
+    e.preventDefault();
+    try {
+      const t = store.createTenant({ name: tf.name, slug: tf.slug || slugify(tf.name),
+        countryCode: tf.countryCode, timezone: tf.timezone });
+      setTenant(t); setErr(""); setStep(1);
+    } catch (ex) { setErr(ex.message); }
+  };
+  const finishSite = (e) => {
+    e.preventDefault();
+    try {
+      store.createSite({ tenantId: tenant.id, name: sf.name, address: sf.address || null });
+      store.completeTenantSetup();
+      setErr(""); setStep(2);
+    } catch (ex) { setErr(ex.message); }
+  };
+  const skip = () => { try { store.completeTenantSetup(); } catch { /* ignore */ } };
+
+  return (
+    <div className={`relative flex min-h-screen items-center justify-center overflow-hidden ${T.app} p-6`}>
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand/10 via-transparent to-cyan-500/10" />
+      <div className="absolute right-5 top-5 z-20"><LangPills T={T} lang={lang} setLang={setLang} /></div>
+
+      <div className={`relative z-10 w-full max-w-lg rounded-3xl border ${T.border} ${T.card} p-7 shadow-2xl`}>
+        <div className="mb-5 flex items-center gap-3">
+          <HomunculusMark size={44} />
+          <div>
+            <h1 className={`text-xl font-black ${T.heading}`}>{S.pr11.wizTitle}</h1>
+            <p className={`text-xs ${T.muted}`}>{S.pr11.wizSub}</p>
+          </div>
+        </div>
+
+        {/* Adım göstergesi */}
+        <div className="mb-6 flex items-center gap-2">
+          {steps.map((label, i) => {
+            const I = stepIcons[i]; const done = i < step; const active = i === step;
+            return (
+              <React.Fragment key={i}>
+                <div className="flex items-center gap-2">
+                  <span className={`grid h-8 w-8 place-items-center rounded-full text-xs font-bold transition
+                    ${active ? "bg-brand text-white shadow" : done ? "bg-emerald-500 text-white" : `${T.subtle} ${T.faint}`}`}>
+                    {done ? <Check size={15} /> : <I size={15} />}
+                  </span>
+                  <span className={`text-xs font-semibold ${active ? T.heading : T.faint}`}>{label}</span>
+                </div>
+                {i < steps.length - 1 && <span className={`h-px flex-1 ${done ? "bg-emerald-500" : T.divide}`} />}
+              </React.Fragment>
+            );
+          })}
+        </div>
+
+        {err && <div className="mb-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+
+        {/* Adım 1 — Kurum */}
+        {step === 0 && (
+          <form onSubmit={nextFromTenant} className="space-y-3">
+            <Field T={T} label={S.pr11.wizTenantName}>
+              <input className={inputCls(T)} value={tf.name} autoFocus
+                onChange={(e) => setTf((s) => ({ ...s, name: e.target.value, slug: slugify(e.target.value) }))}
+                placeholder="Örn. Acıbadem Sağlık Grubu" />
+            </Field>
+            <Field T={T} label={S.pr11.wizTenantSlug}>
+              <input className={inputCls(T)} value={tf.slug}
+                onChange={(e) => setTf((s) => ({ ...s, slug: slugify(e.target.value) }))}
+                placeholder="acibadem" />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field T={T} label={S.pr11.wizCountry}>
+                <select className={inputCls(T)} value={tf.countryCode}
+                  onChange={(e) => setTf((s) => ({ ...s, countryCode: e.target.value,
+                    timezone: e.target.value === "AZ" ? "Asia/Baku" : "Europe/Istanbul" }))}>
+                  <option value="TR">Türkiye (TR)</option>
+                  <option value="AZ">Azərbaycan (AZ)</option>
+                </select>
+              </Field>
+              <Field T={T} label={S.pr11.wizTimezone}>
+                <select className={inputCls(T)} value={tf.timezone}
+                  onChange={(e) => setTf((s) => ({ ...s, timezone: e.target.value }))}>
+                  <option value="Europe/Istanbul">Europe/Istanbul</option>
+                  <option value="Asia/Baku">Asia/Baku</option>
+                </select>
+              </Field>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <button type="button" onClick={skip} className={`${btnCls(T, "ghost")} text-sm`}>{S.pr11.wizSkip}</button>
+              <button type="submit" className={`${btnCls(T, "primary")} group ml-auto`}>
+                {S.pr11.wizNext} <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Adım 2 — Kampüs */}
+        {step === 1 && (
+          <form onSubmit={finishSite} className="space-y-3">
+            <div className={`rounded-xl ${T.glassSubtle} px-3 py-2 text-xs ${T.muted}`}>
+              <Check size={13} className="mr-1 inline text-emerald-500" />{S.pr11.wizCreatedTenant}: <b>{tenant?.name}</b>
+            </div>
+            <Field T={T} label={S.pr11.wizSiteName}>
+              <input className={inputCls(T)} value={sf.name} autoFocus
+                onChange={(e) => setSf((s) => ({ ...s, name: e.target.value }))}
+                placeholder="Örn. Merkez Kampüs" />
+            </Field>
+            <Field T={T} label={S.pr11.wizSiteAddress}>
+              <input className={inputCls(T)} value={sf.address}
+                onChange={(e) => setSf((s) => ({ ...s, address: e.target.value }))} />
+            </Field>
+            <div className="flex items-center gap-2 pt-1">
+              <button type="button" onClick={() => { setStep(0); setErr(""); }} className={`${btnCls(T, "ghost")} text-sm`}>
+                <ArrowLeft size={15} /> {S.pr11.wizBack}
+              </button>
+              <button type="submit" className={`${btnCls(T, "primary")} ml-auto`}>
+                <Check size={16} /> {S.pr11.wizFinish}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Adım 3 — Tamamlandı */}
+        {step === 2 && (
+          <div className="py-4 text-center">
+            <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-emerald-500/15 text-emerald-500">
+              <CheckCircle2 size={40} />
+            </span>
+            <h2 className={`mb-1 text-lg font-black ${T.heading}`}>{S.pr11.wizDoneTitle}</h2>
+            <p className={`mx-auto mb-5 max-w-sm text-sm ${T.muted}`}>{S.pr11.wizDoneSub}</p>
+            <button onClick={skip} className={`${btnCls(T, "primary")} group mx-auto`}>
+              {S.pr11.wizGoDashboard} <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -2682,7 +2915,14 @@ export function ClinicalDemo() {
     if (theme === "light") root.classList.remove("dark"); else root.classList.add("dark");
   }, [theme]);
 
+  // MFA kapısı: şifre doğru ama rol iki adımlı doğrulama gerektiriyor (Madde 6).
+  if (state.mfaPending) return <MfaGate T={T} S={S} store={store} pending={state.mfaPending} lang={lang} setLang={setLang} />;
   if (!state.user) return <Login T={T} S={S} store={store} lang={lang} setLang={setLang} />;
+
+  // Kurum kurulum sihirbazı: platform ilk kez kuruluyorsa yönetici girişinde gösterilir (Madde 5).
+  if (state.user.role === ROLE.HOSPITAL_ADMIN && !state.tenantSetup) {
+    return <SetupWizard T={T} S={S} store={store} lang={lang} setLang={setLang} />;
+  }
 
   // guard: page not permitted for the current role → fall back to board.
   const role = state.user.role;

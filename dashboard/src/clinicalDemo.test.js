@@ -159,6 +159,22 @@ describe("realistic environment", () => {
     expect(st.beds.filter((b) => b.state === "OCCUPIED")).toHaveLength(6);
   });
 
+  it("initialises multi-tenant + invite state so tenant/invite actions never crash (Madde 5/6)", () => {
+    const st = buildRealisticState();
+    // Regresyon: bu alanlar eksik olursa createTenant/createInvite '.some of undefined' ile çöker.
+    expect(Array.isArray(st.tenants)).toBe(true);
+    expect(Array.isArray(st.sites)).toBe(true);
+    expect(Array.isArray(st.invites)).toBe(true);
+    expect(st.tenantSetup).toBe(false);
+    const s = createDemoStore(buildRealisticState());
+    const t = s.createTenant({ name: "Test Hastanesi", slug: "test-hastanesi", countryCode: "TR" });
+    expect(s.getState().tenants).toHaveLength(1);
+    s.createSite({ tenantId: t.id, name: "Merkez Kampüs" });
+    expect(s.getState().sites).toHaveLength(1);
+    s.completeTenantSetup();
+    expect(s.getState().tenantSetup).toBe(true);
+  });
+
   it("masks national IDs for non-neonates and shows none for neonates", () => {
     const s = createDemoStore(buildRealisticState());
     const st = s.getState();
@@ -592,6 +608,44 @@ describe("Faz A · MFA lifecycle (Madde 6)", () => {
     const u = s.createUser({ full_name: "Test User", email: "test@example.com", role: ROLE.ATTENDING });
     s.setupMfa({ userId: u.id });
     expect(() => s.verifyMfa({ userId: u.id, code: "000000" })).toThrow("Geçersiz doğrulama kodu");
+  });
+});
+
+describe("Faz A · login MFA gate (Madde 6)", () => {
+  it("attemptLogin gates MFA-required role into mfaPending instead of opening session", () => {
+    const s = createDemoStore(buildRealisticState());
+    // dr.elif (u-01) mfaRequired:true, enrolled:true
+    const r = s.attemptLogin("dr.elif.yilmaz@homunculus.health", "1111");
+    expect(r.mfaRequired).toBe(true);
+    expect(s.getState().user).toBe(null);
+    expect(s.getState().mfaPending).toBeTruthy();
+    expect(s.getState().mfaPending.email).toBe("dr.elif.yilmaz@homunculus.health");
+  });
+
+  it("attemptLogin opens session directly when role does not require MFA", () => {
+    const s = createDemoStore(buildRealisticState());
+    // ayse (u-02) mfaRequired:false
+    const r = s.attemptLogin("ayse.demir@homunculus.health", "2222");
+    expect(r.mfaRequired).toBe(false);
+    expect(s.getState().user).toBeTruthy();
+    expect(s.getState().mfaPending).toBe(null);
+  });
+
+  it("completeMfaLogin verifies code and opens the gated session", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.attemptLogin("dr.elif.yilmaz@homunculus.health", "1111");
+    const u = s.completeMfaLogin("123456");
+    expect(u.email).toBe("dr.elif.yilmaz@homunculus.health");
+    expect(s.getState().user).toBeTruthy();
+    expect(s.getState().mfaPending).toBe(null);
+  });
+
+  it("cancelMfaLogin clears the pending challenge", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.attemptLogin("dr.elif.yilmaz@homunculus.health", "1111");
+    s.cancelMfaLogin();
+    expect(s.getState().mfaPending).toBe(null);
+    expect(s.getState().user).toBe(null);
   });
 });
 
