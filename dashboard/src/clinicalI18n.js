@@ -282,6 +282,15 @@ const STRINGS = {
       wizCreatedTenant: "Kurum oluşturuldu",
       wizCreatedSite: "Kampüs oluşturuldu",
     },
+    pr12: {
+      roleChange: "Rol değiştir",
+      roleChangeTitle: "Rol Değiştir / Yetkilendir",
+      roleChangeHint: "Kullanıcının sistemdeki rolünü değiştirin. Değişiklik denetim kaydına işlenir.",
+      roleLabel: "Rol",
+      roleChangeSave: "Rolü Kaydet",
+      initialPassword: "Başlangıç parolası (isteğe bağlı)",
+      initialPasswordHint: "Boş bırakılırsa sonra atanır",
+    },
   },
 
   // ============================================================ Azərbaycan
@@ -541,6 +550,15 @@ const STRINGS = {
       wizGoDashboard: "Panelə Get",
       wizCreatedTenant: "Qurum yaradıldı",
       wizCreatedSite: "Kampus yaradıldı",
+    },
+    pr12: {
+      roleChange: "Rolu dəyiş",
+      roleChangeTitle: "Rolu Dəyiş / Səlahiyyət Ver",
+      roleChangeHint: "İstifadəçinin sistemdəki rolunu dəyişin. Dəyişiklik audit jurnalına yazılır.",
+      roleLabel: "Rol",
+      roleChangeSave: "Rolu Yadda Saxla",
+      initialPassword: "Başlanğıc parol (istəyə bağlı)",
+      initialPasswordHint: "Boş buraxılsa sonra təyin olunur",
     },
   },
 
@@ -802,6 +820,15 @@ const STRINGS = {
       wizCreatedTenant: "Organization created",
       wizCreatedSite: "Campus created",
     },
+    pr12: {
+      roleChange: "Change role",
+      roleChangeTitle: "Change Role / Authorize",
+      roleChangeHint: "Change the user's role in the system. The change is written to the audit log.",
+      roleLabel: "Role",
+      roleChangeSave: "Save Role",
+      initialPassword: "Initial password (optional)",
+      initialPasswordHint: "Leave blank to set later",
+    },
   },
 
   // ============================================================ Русский
@@ -1061,6 +1088,15 @@ const STRINGS = {
       wizGoDashboard: "Перейти к панели",
       wizCreatedTenant: "Организация создана",
       wizCreatedSite: "Кампус создан",
+    },
+    pr12: {
+      roleChange: "Изменить роль",
+      roleChangeTitle: "Изменить роль / Назначить права",
+      roleChangeHint: "Измените роль пользователя в системе. Изменение фиксируется в журнале аудита.",
+      roleLabel: "Роль",
+      roleChangeSave: "Сохранить роль",
+      initialPassword: "Начальный пароль (необязательно)",
+      initialPasswordHint: "Оставьте пустым, чтобы задать позже",
     },
   },
 };

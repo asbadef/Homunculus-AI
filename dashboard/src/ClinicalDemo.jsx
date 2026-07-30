@@ -14,7 +14,7 @@ import {
   TrendingUp, StopCircle, Syringe,
   KeyRound, Wifi, WifiOff, Radio, Network, CloudOff, Cloud, Search, ShieldCheck, DoorOpen,
   BellRing, BarChart3, Wrench, Pencil, Bed, Download, Power, Lock, Shield,
-  Contrast, Fingerprint, Mail, ArrowRight, Sparkles, QrCode, Send, RotateCcw, XCircle,
+  Contrast, Fingerprint, Mail, ArrowRight, QrCode, Send, RotateCcw, XCircle,
   MapPin, ArrowLeft,
 } from "lucide-react";
 import {
@@ -164,7 +164,6 @@ function Login({ T, S, store, lang, setLang }) {
   const [email, setEmail] = useState("");
   const [credential, setCredential] = useState("");
   const [err, setErr] = useState("");
-  const [showDemo, setShowDemo] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const submit = (e) => {
     e.preventDefault();
@@ -172,12 +171,6 @@ function Login({ T, S, store, lang, setLang }) {
     // attemptLogin: rol MFA gerektiriyorsa oturumu açmadan MFA kapısına yönlendirir (mfaPending).
     try { store.attemptLogin(email.trim(), credential.trim()); } catch (ex) { setErr(ex.message); }
   };
-  const demoAccounts = [
-    ["dr.elif.yilmaz@homunculus.health", "1111"],
-    ["ayse.demir@homunculus.health", "2222"],
-    ["admin@homunculus.health", "9999"],
-  ];
-  const fill = (em, pin) => { setEmail(em); setCredential(pin); setErr(""); };
 
   const iconInput = (icon, node) => (
     <div className="relative">
@@ -296,28 +289,6 @@ function Login({ T, S, store, lang, setLang }) {
           </div>
 
           <p className={`mt-6 text-center text-[11px] leading-snug ${T.faint}`}>{S.pr9.kvkkNote}</p>
-
-          {/* Demo erişimi — varsayılan gizli, katlanır */}
-          <div className={`mt-5 rounded-2xl border ${T.border} ${T.glassSubtle}`}>
-            <button type="button" onClick={() => setShowDemo((v) => !v)}
-              className={`flex w-full items-center gap-2 px-3 py-2.5 text-xs font-semibold ${T.muted}`}>
-              <Sparkles size={13} className={T.accent} /> {S.pr9.demoAccess}
-              <ChevronDown size={14} className={`ml-auto transition-transform ${showDemo ? "rotate-180" : ""}`} />
-            </button>
-            {showDemo && (
-              <div className={`space-y-1.5 border-t ${T.border} px-3 py-2.5`}>
-                <div className={`mb-1 text-[11px] leading-snug ${T.faint}`}>{S.pr9.demoHint}</div>
-                {demoAccounts.map(([em, pin]) => (
-                  <div key={em} className="flex items-center gap-2 text-xs">
-                    <code className={`flex-1 truncate ${T.muted}`}>{em}</code>
-                    <span className={`font-mono ${T.faint}`}>{pin}</span>
-                    <button type="button" onClick={() => fill(em, pin)}
-                      className={`rounded-md px-2 py-1 text-[11px] font-semibold ${T.ghost}`}>{S.pr9.fillIn}</button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       </main>
     </div>
@@ -2043,15 +2014,17 @@ function ActionOverlay({ T, title, onClose, children }) {
 // aktif/pasif, MFA yönetimi, birim & vardiya erişimi).
 function UserRow({ T, S, store, state, u }) {
   const units = state.structure.units;
-  const [modal, setModal] = useState(null); // "password" | "pin" | "units"
+  const [modal, setModal] = useState(null); // "password" | "pin" | "units" | "role"
   const [pw, setPw] = useState("");
   const [pinResult, setPinResult] = useState("");
   const [copied, setCopied] = useState(false);
   const [selUnits, setSelUnits] = useState(u.unitIds || []);
+  const [selRole, setSelRole] = useState(u.role);
   const [err, setErr] = useState("");
   const wrap = (fn) => { try { fn(); setErr(""); } catch (ex) { setErr(ex.message); } };
   const active = u.active !== false;
 
+  const doRole = () => wrap(() => { store.setUserRole({ userId: u.id, role: selRole }); setModal(null); });
   const doPassword = () => wrap(() => { store.setUserPassword({ userId: u.id, password: pw }); setModal(null); setPw(""); });
   const doPin = () => wrap(() => { const pin = store.resetUserPin({ userId: u.id }); setPinResult(pin); setModal("pin"); });
   const doUnits = () => wrap(() => { store.setUserUnits({ userId: u.id, unitIds: selUnits }); setModal(null); });
@@ -2076,6 +2049,8 @@ function UserRow({ T, S, store, state, u }) {
             trigger={<><Settings size={14} /><span className="hidden sm:inline">{S.pr8.userActions}</span><ChevronDown size={13} /></>}>
             {({ close }) => (
               <div className="text-sm">
+                <button onClick={() => { setSelRole(u.role); setModal("role"); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><Shield size={14} /> {S.pr12.roleChange}</button>
+                <div className={`my-1 border-t ${T.border}`} />
                 <button onClick={() => { setModal("password"); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><KeyRound size={14} /> {S.pr8.resetPassword}</button>
                 <button onClick={() => { doPin(); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><Lock size={14} /> {S.pr8.setTempPin}</button>
                 <button onClick={() => { wrap(() => store.toggleUserActive(u.id)); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><Power size={14} /> {active ? S.pr8.deactivate : S.pr8.activate}</button>
@@ -2090,6 +2065,21 @@ function UserRow({ T, S, store, state, u }) {
         </div>
       </div>
       {err && <div className="mt-2 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-500">{err}</div>}
+
+      {modal === "role" && (
+        <ActionOverlay T={T} title={S.pr12.roleChangeTitle} onClose={() => setModal(null)}>
+          <p className={`mb-2 text-sm ${T.muted}`}>{S.pr12.roleChangeHint}</p>
+          <Field T={T} label={S.pr12.roleLabel}>
+            <select className={inputCls(T)} value={selRole} onChange={(e) => setSelRole(e.target.value)} autoFocus>
+              {Object.values(ROLE).map((r) => (
+                <option key={r} value={r}>{S.roleName[r]}</option>
+              ))}
+            </select>
+          </Field>
+          {err && <div className="mt-2 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-500">{err}</div>}
+          <button onClick={doRole} className={`${btnCls(T, "primary")} mt-3 w-full`}><Check size={15} /> {S.pr12.roleChangeSave}</button>
+        </ActionOverlay>
+      )}
 
       {modal === "password" && (
         <ActionOverlay T={T} title={S.pr8.resetPassword} onClose={() => { setModal(null); setPw(""); }}>
@@ -2277,9 +2267,9 @@ function MfaModal({ T, S, store, mfaModal, onClose }) {
 }
 
 function UserAdmin({ T, S, store, state }) {
-  const [f, setF] = useState({ full_name: "", email: "", role: ROLE.ATTENDING });
+  const [f, setF] = useState({ full_name: "", email: "", role: ROLE.ATTENDING, password: "" });
   const [err, setErr] = useState("");
-  const submit = (e) => { e.preventDefault(); try { store.createUser(f); setF({ full_name: "", email: "", role: ROLE.ATTENDING }); setErr(""); } catch (ex) { setErr(ex.message); } };
+  const submit = (e) => { e.preventDefault(); try { store.createUser(f); setF({ full_name: "", email: "", role: ROLE.ATTENDING, password: "" }); setErr(""); } catch (ex) { setErr(ex.message); } };
   return (
     <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
       <h3 className={`mb-1 font-bold ${T.heading}`}>{S.usersSection}</h3>
@@ -2291,6 +2281,9 @@ function UserAdmin({ T, S, store, state }) {
           <select className={inputCls(T)} value={f.role} onChange={(e) => setF((s) => ({ ...s, role: e.target.value }))}>
             {[ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN, ROLE.RRT].map((r) => <option key={r} value={r}>{S.roleName[r]}</option>)}
           </select>
+        </Field>
+        <Field T={T} label={S.pr12.initialPassword}>
+          <input className={inputCls(T)} type="text" placeholder={S.pr12.initialPasswordHint} value={f.password} onChange={(e) => setF((s) => ({ ...s, password: e.target.value }))} />
         </Field>
         {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
         <button type="submit" className={`${btnCls(T, "primary")} w-full`}><Plus size={16} /> {S.addUser}</button>

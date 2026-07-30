@@ -12,17 +12,20 @@ export const ROLE = {
   RRT: "RRT",                      // Hızlı Yanıt Ekibi (escalation tier-3 target)
 };
 
-// Sign-in accounts (synthetic environment; a single shared non-secret password for all).
-// Each account also carries a 4-digit quick-PIN used on shared tablet/nurse-station screens for
-// the 3-second Fast Switcher (see switchUserByPin). PINs are synthetic and non-secret.
-export const DEMO_PASSWORD = "Homunculus2025";
-export const DEMO_ACCOUNTS = [
-  { email: "dr.elif.yilmaz@homunculus.health", password: DEMO_PASSWORD, pin: "1111", full_name: "Dr. Elif Yılmaz", role: ROLE.ATTENDING },
-  { email: "ayse.demir@homunculus.health",     password: DEMO_PASSWORD, pin: "2222", full_name: "Ayşe Demir",      role: ROLE.CHARGE_NURSE },
-  { email: "admin@homunculus.health",          password: DEMO_PASSWORD, pin: "9999", full_name: "Mehmet Kaya",     role: ROLE.HOSPITAL_ADMIN },
-  { email: "dr.can.ozturk@homunculus.health",  password: DEMO_PASSWORD, pin: "3333", full_name: "Dr. Can Öztürk",  role: ROLE.ATTENDING },
-  { email: "selin.arslan@homunculus.health",   password: DEMO_PASSWORD, pin: "4444", full_name: "Selin Arslan",    role: ROLE.CHARGE_NURSE },
+// Programmatic/test role → session helper table (loginAs, PIN fast-switch fallback). This is NOT a
+// user-facing "demo login": the interactive login form validates ONLY against real seeded accounts
+// (state.users). It carries the same identities as the seed so loginAs() opens a matching session,
+// and the 4-digit quick-PIN backs the 3-second Fast Switcher on shared tablet/nurse-station screens.
+export const ROLE_ACCOUNTS = [
+  { email: "dr.elif.yilmaz@homunculus.health", pin: "1111", full_name: "Dr. Elif Yılmaz", role: ROLE.ATTENDING },
+  { email: "ayse.demir@homunculus.health",     pin: "2222", full_name: "Ayşe Demir",      role: ROLE.CHARGE_NURSE },
+  { email: "dijitalfabrikaaa@gmail.com",        pin: "9999", full_name: "Sistem Yöneticisi", role: ROLE.HOSPITAL_ADMIN },
+  { email: "dr.can.ozturk@homunculus.health",  pin: "3333", full_name: "Dr. Can Öztürk",  role: ROLE.ATTENDING },
+  { email: "selin.arslan@homunculus.health",   pin: "4444", full_name: "Selin Arslan",    role: ROLE.CHARGE_NURSE },
+  { email: "dr.murat.sahin@homunculus.health", pin: "5555", full_name: "Dr. Murat Şahin", role: ROLE.RRT },
 ];
+// Geriye dönük uyumluluk (eski isimler bazı içe aktarımlarda kullanılabilir).
+export const DEMO_ACCOUNTS = ROLE_ACCOUNTS;
 
 // --------------------------------------------------------------------------- alert tiers
 export const TIER = { CRITICAL: "CRITICAL", HIGH: "HIGH", MEDIUM: "MEDIUM", LOW: "LOW", INFO: "INFO" };
@@ -255,12 +258,17 @@ export function buildRealisticState() {
   const now = Date.now();
   const hrs = (h) => now - h * 3600 * 1000;
 
+  // GERÇEK başlangıç hesapları (canlı-benzeri). Her hesabın bireysel parolası vardır; paylaşımlı
+  // "demo parolası" kaldırıldı. Süper yönetici (u-03) diğer tüm rolleri yetkilendirebilir (setUserRole).
+  // PIN'ler ortak ekranlarda 3 saniyelik hızlı vardiya geçişi içindir. MFA gerektiren roller girişte
+  // iki adımlı doğrulama ister (demo doğrulama kodu: 123456).
   const users = [
-    { id: "u-01", full_name: "Dr. Elif Yılmaz", email: "dr.elif.yilmaz@homunculus.health", role: ROLE.ATTENDING,    active: true, mfa: true,  mfaRequired: true,  pin: "1111", unitIds: ["unit-adult"] },
-    { id: "u-02", full_name: "Ayşe Demir",      email: "ayse.demir@homunculus.health",     role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "2222", unitIds: ["unit-adult"] },
-    { id: "u-03", full_name: "Mehmet Kaya",     email: "admin@homunculus.health",          role: ROLE.HOSPITAL_ADMIN, active: true, mfa: true, mfaRequired: true,  pin: "9999", unitIds: ["unit-adult", "unit-nicu"] },
-    { id: "u-04", full_name: "Dr. Can Öztürk",  email: "dr.can.ozturk@homunculus.health",  role: ROLE.ATTENDING,    active: true, mfa: false, mfaRequired: true,  pin: "3333", unitIds: ["unit-nicu"] },
-    { id: "u-05", full_name: "Selin Arslan",    email: "selin.arslan@homunculus.health",   role: ROLE.CHARGE_NURSE, active: true, mfa: true,  mfaRequired: false, pin: "4444", unitIds: ["unit-adult", "unit-nicu"] },
+    { id: "u-01", full_name: "Dr. Elif Yılmaz", email: "dr.elif.yilmaz@homunculus.health", role: ROLE.ATTENDING,     active: true, mfa: true,  mfaRequired: true,  pin: "1111", password: "Hekim.Elif2025!",   unitIds: ["unit-adult"] },
+    { id: "u-02", full_name: "Ayşe Demir",      email: "ayse.demir@homunculus.health",     role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "2222", password: "Hemsire.Ayse2025!",  unitIds: ["unit-adult"] },
+    { id: "u-03", full_name: "Sistem Yöneticisi", email: "dijitalfabrikaaa@gmail.com",     role: ROLE.HOSPITAL_ADMIN, active: true, mfa: false, mfaRequired: false, pin: "9999", password: "Df123456!",           unitIds: ["unit-adult", "unit-nicu"] },
+    { id: "u-04", full_name: "Dr. Can Öztürk",  email: "dr.can.ozturk@homunculus.health",  role: ROLE.ATTENDING,     active: true, mfa: false, mfaRequired: true,  pin: "3333", password: "Hekim.Can2025!",    unitIds: ["unit-nicu"] },
+    { id: "u-05", full_name: "Selin Arslan",    email: "selin.arslan@homunculus.health",   role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "4444", password: "Hemsire.Selin2025!", unitIds: ["unit-adult", "unit-nicu"] },
+    { id: "u-06", full_name: "Dr. Murat Şahin", email: "dr.murat.sahin@homunculus.health", role: ROLE.RRT,           active: true, mfa: false, mfaRequired: false, pin: "5555", password: "Rrt.Murat2025!",     unitIds: ["unit-adult", "unit-nicu"] },
   ];
 
   const structure = {
@@ -539,24 +547,22 @@ export function createDemoStore(initial) {
     set({ clinical: { ...state.clinical, [pid]: { ...cur, ...patch } } });
   };
 
-  // Kurumsal e-posta + PIN girişi. Rol DB'den (users listesi) gelir; UI paneli role göre otomatik
-  // yönlendirir (dışarıdan kayıt yok). E-posta + parola girişi de (eski akış) desteklenmeye devam eder.
-  // Kimlik bilgisi doğrulama (state'i değiştirmez). Başarılıysa { who, liveUser } döndürür, aksi halde hata fırlatır.
+  // Kurumsal e-posta + parola/PIN girişi. Rol DB'den (users listesi) gelir; UI paneli role göre
+  // otomatik yönlendirir (dışarıdan self-servis kayıt yoktur; hesapları yönetici açar).
+  // Kimlik doğrulama — YALNIZCA gerçek hesaplara (state.users) karşı. Paylaşımlı demo parolası
+  // kaldırıldı: giriş, yöneticinin açtığı gerçek kullanıcının parolası / PIN'i / geçici PIN'i ile yapılır.
   function _validateCredential(email, credential) {
     const clean = String(credential || "");
-    // Canlı kullanıcı kaydı (yönetici tarafından düzenlenebilir: parola/PIN/geçici PIN/pasiflik).
     const liveUser = (state.users || []).find((u) => u.email === email);
+    if (!liveUser) throw new Error("Geçersiz e-posta veya parola.");
     // Yönetici bir kullanıcıyı pasife aldıysa giriş engellenir (hesap askıya alınmış).
-    if (liveUser && liveUser.active === false) {
+    if (liveUser.active === false) {
       throw new Error("Bu hesap pasif durumda; sistem yöneticinizle görüşün.");
     }
-    const acct = DEMO_ACCOUNTS.find((a) => a.email === email
-      && (a.password === clean || a.pin === clean));
-    // Canlı kullanıcı kaydındaki (yönetici tarafından atanmış) parola / PIN / geçici PIN de kabul edilir.
-    const liveMatch = liveUser && (liveUser.password === clean || liveUser.pin === clean
-      || (liveUser.tempPin && liveUser.tempPin === clean));
-    if (!acct && !liveMatch) throw new Error("Geçersiz e-posta veya PIN/parola.");
-    return { who: acct || liveUser, liveUser };
+    const match = liveUser.password === clean || liveUser.pin === clean
+      || (liveUser.tempPin && liveUser.tempPin === clean);
+    if (!match) throw new Error("Geçersiz e-posta veya parola.");
+    return { who: liveUser, liveUser };
   }
   function login(email, credential) {
     const { who } = _validateCredential(email, credential);
@@ -596,10 +602,15 @@ export function createDemoStore(initial) {
   }
   // Bekleyen MFA girişini iptal et (girişe geri dön).
   function cancelMfaLogin() { set({ mfaPending: null }); }
+  // Programatik/test rol girişi — MFA'yı atlar, oturumu doğrudan açar. Önce gerçek kullanıcıdan
+  // (state.users) o role sahip aktif hesabı, yoksa ROLE_ACCOUNTS tablosundan eşleşeni kullanır.
   function loginAs(role) {
-    const acct = DEMO_ACCOUNTS.find((a) => a.role === role);
-    if (!acct) throw new Error("Rol bulunamadı.");
-    return login(acct.email, acct.password);
+    const who = (state.users || []).find((u) => u.role === role && u.active !== false)
+      || ROLE_ACCOUNTS.find((a) => a.role === role);
+    if (!who) throw new Error("Rol bulunamadı.");
+    set({ user: { email: who.email, full_name: who.full_name, role: who.role }, mfaPending: null });
+    audit("LOGIN", who.email, who.role);
+    return who;
   }
   function logout() { set({ user: null }); }
 
@@ -715,16 +726,32 @@ export function createDemoStore(initial) {
   }
 
   // --------------------------------------------------------------- admin: users & structure (S-01/02)
-  function createUser({ full_name, email, role }) {
+  function createUser({ full_name, email, role, password } = {}) {
     if (!full_name || !full_name.trim()) throw new Error("Ad Soyad zorunludur.");
     if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("Geçerli bir e-posta gerekir.");
     if (!role) throw new Error("Rol seçimi zorunludur.");
+    if (!Object.values(ROLE).includes(role)) throw new Error("Geçersiz rol.");
     if (state.users.some((u) => u.email === email)) throw new Error("Bu e-posta zaten kayıtlı.");
+    if (password != null && String(password).length > 0 && String(password).length < 6)
+      throw new Error("Parola en az 6 karakter olmalıdır.");
+    // Yönetici tarafından açılan gerçek hesap. Başlangıç parolası opsiyonel; verilmezse
+    // yönetici sonradan "Parola belirle" ile atar. Yeni hesaplarda MFA varsayılan kapalı.
     const user = { id: `u-${String(state.seq).padStart(2, "0")}`, full_name: full_name.trim(),
-      email: email.trim(), role, active: true, mfa: false, mfaRequired: true, unitIds: [] };
+      email: email.trim(), role, active: true, mfa: false, mfaRequired: false, unitIds: [],
+      ...(password ? { password: String(password) } : {}) };
     set({ users: [...state.users, user], seq: state.seq + 1 });
     audit("USER_CREATE", user.id, `${user.full_name} · ${role}`);
     return user;
+  }
+
+  // Rol yetkilendirme: süper yönetici bir kullanıcının rolünü değiştirebilir/atayabilir.
+  function setUserRole({ userId, role } = {}) {
+    const u = _findUser(userId);
+    if (!role || !Object.values(ROLE).includes(role)) throw new Error("Geçersiz rol.");
+    const oldRole = u.role;
+    const next = _patchUser(userId, { role });
+    audit("USER_ROLE_CHANGE", userId, `${u.full_name} · ${oldRole} → ${role}`);
+    return next;
   }
 
   // --------------------------------------------------------------- admin: user & security management (PR#8 §2)
@@ -1373,7 +1400,7 @@ export function createDemoStore(initial) {
     login, loginAs, logout, switchUserByPin,
     attemptLogin, completeMfaLogin, cancelMfaLogin,
     admitPatient, transferPatient, assignCareTeam, createHandover, openCriticalAlerts,
-    createUser, addUnit, addRoom, addBed,
+    createUser, setUserRole, addUnit, addRoom, addBed,
     setUserPassword, resetUserPin, toggleUserActive, resetUserMfa, setUserMfaRequired, setUserUnits,
     setupMfa, verifyMfa,
     inviteUser, acceptInvite, resendInvite, cancelInvite,

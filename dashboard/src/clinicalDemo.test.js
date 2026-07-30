@@ -396,8 +396,52 @@ describe("PR#7 · fast PIN switch", () => {
   });
   it("logs in with a PIN as credential", () => {
     const s = createDemoStore(buildRealisticState());
-    const u = s.login("admin@homunculus.health", "9999");
+    const u = s.login("dijitalfabrikaaa@gmail.com", "9999");
     expect(u.role).toBe(ROLE.HOSPITAL_ADMIN);
+  });
+  it("logs the super-admin in with email + password", () => {
+    const s = createDemoStore(buildRealisticState());
+    const u = s.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    expect(u.role).toBe(ROLE.HOSPITAL_ADMIN);
+    expect(u.full_name).toBe("Sistem Yöneticisi");
+  });
+  it("rejects a login for an email that is not a real account", () => {
+    const s = createDemoStore(buildRealisticState());
+    expect(() => s.login("admin@homunculus.health", "9999")).toThrow();
+  });
+});
+
+describe("Faz B · super-admin seed + role authorization", () => {
+  it("seeds the super-admin account as HOSPITAL_ADMIN", () => {
+    const s = createDemoStore(buildRealisticState());
+    const admin = s.getState().users.find((u) => u.email === "dijitalfabrikaaa@gmail.com");
+    expect(admin).toBeTruthy();
+    expect(admin.role).toBe(ROLE.HOSPITAL_ADMIN);
+    expect(admin.active).toBe(true);
+  });
+  it("lets the admin change (authorize) another user's role and audits it", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const nurse = s.getState().users.find((u) => u.role === ROLE.CHARGE_NURSE);
+    const before = s.getState().auditLog.length;
+    const next = s.setUserRole({ userId: nurse.id, role: ROLE.ATTENDING });
+    expect(next.role).toBe(ROLE.ATTENDING);
+    const log = s.getState().auditLog;
+    expect(log.length).toBe(before + 1);
+    expect(log[log.length - 1].action).toBe("USER_ROLE_CHANGE");
+  });
+  it("rejects an invalid role in setUserRole", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const u = s.getState().users[0];
+    expect(() => s.setUserRole({ userId: u.id, role: "NOT_A_ROLE" })).toThrow();
+  });
+  it("creates a user with an initial password that can log in", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    s.createUser({ full_name: "Dr. Deneme", email: "deneme@homunculus.health", role: ROLE.ATTENDING, password: "Deneme.2025!" });
+    const u = s.login("deneme@homunculus.health", "Deneme.2025!");
+    expect(u.role).toBe(ROLE.ATTENDING);
   });
 });
 
