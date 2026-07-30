@@ -201,9 +201,13 @@ function seedState() {
   ];
   return {
     user: null,
+    mfaPending: null,     // { userId, email } — MFA verification pending after password login
     clockSec: 0,          // simulated seconds since demo start
     speed: 60,            // 60× → 1 simulated minute per real second (so 3 min escalates in 3 s)
     running: true,
+    tenantSetup: false,   // multi-tenant setup wizard completed?
+    tenants: [],          // [ { id, name, slug, countryCode, timezone, isActive, createdAt } ]
+    sites: [],            // [ { id, tenantId, name, address, isActive, createdAt } ]
     structure: {
       tenant: "Homunculus Şehir Hastanesi",
       site: "Merkez Kampüs",
@@ -213,6 +217,7 @@ function seedState() {
       ],
     },
     users: [],
+    invites: [],          // [ { id, email, fullName, role, tenantId, invitedBy, invitedAt, status } ]
     careTeam: {},         // patientId → { attendingId, nurseId }
     staffAssignments: {}, // userId → { bedIds:[], unitIds:[] }  (staff→bed matrix)
     devices: [],          // { id, vendor, model, ip, bedId, connected, lastPacketMs, packets }
@@ -739,6 +744,115 @@ export function createDemoStore(initial) {
     return next;
   }
 
+  // --------------------------------------------------------------- MFA lifecycle (Madde 6)
+  // MFA kaydı başlat: gerçek uygulamada backend bir TOTP secret üretir ve provisioning URI döndürür.
+  // Burada simüle edilmiş bir secret ve otpauth:// URI üretiyoruz (QR kodu için).
+  function setupMfa({ userId } = {}) {
+    const u = _findUser(userId);
+    // Simüle edilmiş TOTP secret (32 karakter base32, gerçekte pyotp generate_secret() kullanılır)
+    const secret = Array.from({ length: 32 }, () => "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[Math.floor(Math.random() * 32)]).join("");
+    const provisioningUri = `otpauth://totp/Homunculus:${u.email}?secret=${secret}&issuer=Homunculus`;
+    // Secret'ı kullanıcıya kaydediyoruz (gerçekte backend'de şifrelenmiş saklanır)
+    _patchUser(userId, { totpSecret: secret });
+    audit("MFA_SETUP", userId, `${u.full_name} · TOTP kaydı başlatıldı`);
+    return { provisioningUri, secret };
+  }
+  // MFA doğrulama kodu kontrolü: 6 haneli TOTP kodu (gerçekte pyotp.verify_totp kullanılır).
+  // Burada simüle edilmiş doğrulama yapıyoruz — demo için "123456" veya secret'ın son 6 hanesi kabul edilir.
+  function verifyMfa({ userId, code } = {}) {
+    const u = _findUser(userId);
+    const clean = String(code || "").trim();
+    if (!/^\d{6}$/.test(clean)) throw new Error("Doğrulama kodu 6 haneli olmalıdır.");
+    // Simüle edilmiş doğrulama: demo için "123456" veya secret'ın son 6 hanesi
+    const validCodes = ["123456"];
+    if (u.totpSecret) validCodes.push(u.totpSecret.slice(-6));
+    if (!validCodes.includes(clean)) throw new Error("Geçersiz doğrulama kodu.");
+    const next = _patchUser(userId, { mfa: true });
+    audit("MFA_VERIFY", userId, `${u.full_name} · MFA doğrulandı`);
+    return next;
+  }
+
+  // --------------------------------------------------------------- kullanıcı daveti (Madde 6)
+  // Yeni kullanıcı davet et: e-posta ile davet gönder, kullanıcı kabul edince hesap oluşturulur.
+  function inviteUser({ email, fullName, role, tenantId } = {}) {
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("Geçerli bir e-posta gerekir.");
+    if (!fullName || !fullName.trim()) throw new Error("Ad Soyad zorunludur.");
+    if (!role) throw new Error("Rol seçimi zorunludur.");
+    if (state.users.some((u) => u.email === email)) throw new Error("Bu e-posta zaten kayıtlı.");
+    if (state.invites.some((i) => i.email === email && i.status === "PENDING")) {
+      throw new Error("Bu e-posta için bekleyen bir davet zaten var.");
+    }
+    const invite = { id: `inv-${String(state.seq).padStart(3, "0")}`, email: email.trim(),
+      fullName: fullName.trim(), role, tenantId: tenantId || null,
+      invitedBy: state.user?.full_name || "—", invitedAt: Date.now(), status: "PENDING" };
+    set({ invites: [...state.invites, invite], seq: state.seq + 1 });
+    audit("USER_INVITE", invite.id, `${fullName} · ${email} · ${role}`);
+    return invite;
+  }
+  // Davet kabul et: kullanıcı şifre belirler ve hesap oluşturulur.
+  function acceptInvite({ inviteId, password } = {}) {
+    const invite = state.invites.find((i) => i.id === inviteId);
+    if (!invite) throw new Error("Davet bulunamadı.");
+    if (invite.status !== "PENDING") throw new Error("Bu davet zaten kullanılmış veya iptal edilmiş.");
+    if (!password || String(password).length < 6) throw new Error("Parola en az 6 karakter olmalıdır.");
+    // Kullanıcı kaydı oluştur
+    const user = { id: `u-${String(state.seq).padStart(2, "0")}`, full_name: invite.fullName,
+      email: invite.email, role: invite.role, password: String(password),
+      active: true, mfa: false, mfaRequired: true, unitIds: [] };
+    const invites = state.invites.map((i) => (i.id === inviteId ? { ...i, status: "ACCEPTED" } : i));
+    set({ users: [...state.users, user], invites, seq: state.seq + 1 });
+    audit("INVITE_ACCEPT", inviteId, `${user.full_name} · ${user.email} · hesap oluşturuldu`);
+    return user;
+  }
+  // Davet yeniden gönder (bildirim)
+  function resendInvite(inviteId) {
+    const invite = state.invites.find((i) => i.id === inviteId);
+    if (!invite) throw new Error("Davet bulunamadı.");
+    if (invite.status !== "PENDING") throw new Error("Bu davet zaten kullanılmış veya iptal edilmiş.");
+    audit("INVITE_RESEND", inviteId, `${invite.fullName} · ${invite.email}`);
+    return invite;
+  }
+  // Davet iptal et
+  function cancelInvite(inviteId) {
+    const invite = state.invites.find((i) => i.id === inviteId);
+    if (!invite) throw new Error("Davet bulunamadı.");
+    const invites = state.invites.map((i) => (i.id === inviteId ? { ...i, status: "CANCELLED" } : i));
+    set({ invites });
+    audit("INVITE_CANCEL", inviteId, `${invite.fullName} · ${invite.email}`);
+    return invite;
+  }
+
+  // --------------------------------------------------------------- multi-tenant kurulum sihirbazı (Madde 5)
+  // Yeni kurum (tenant) oluştur
+  function createTenant({ name, slug, countryCode, timezone } = {}) {
+    if (!name || !name.trim()) throw new Error("Kurum adı zorunludur.");
+    if (!slug || !slug.trim()) throw new Error("Slug zorunludur.");
+    if (state.tenants.some((t) => t.slug === slug.trim())) throw new Error("Bu slug zaten kullanılıyor.");
+    const tenant = { id: `tenant-${String(state.seq).padStart(2, "0")}`, name: name.trim(),
+      slug: slug.trim(), countryCode: countryCode || "TR", timezone: timezone || "Europe/Istanbul",
+      isActive: true, createdAt: Date.now() };
+    set({ tenants: [...state.tenants, tenant], seq: state.seq + 1 });
+    audit("TENANT_CREATE", tenant.id, `${tenant.name} · ${tenant.slug}`);
+    return tenant;
+  }
+  // Yeni kampüs/site oluştur
+  function createSite({ tenantId, name, address } = {}) {
+    if (!tenantId) throw new Error("Kurum seçimi zorunludur.");
+    const tenant = state.tenants.find((t) => t.id === tenantId);
+    if (!tenant) throw new Error("Kurum bulunamadı.");
+    if (!name || !name.trim()) throw new Error("Kampüs adı zorunludur.");
+    const site = { id: `site-${String(state.seq).padStart(2, "0")}`, tenantId, name: name.trim(),
+      address: address || null, isActive: true, createdAt: Date.now() };
+    set({ sites: [...state.sites, site], seq: state.seq + 1 });
+    audit("SITE_CREATE", site.id, `${site.name} · ${tenant.name}`);
+    return site;
+  }
+  // Kurulum sihirbazını tamamla
+  function completeTenantSetup() {
+    set({ tenantSetup: true });
+    audit("TENANT_SETUP_COMPLETE", null, "Kurulum sihirbazı tamamlandı");
+  }
+
   // --------------------------------------------------------------- admin: bed operational state (PR#8 §4)
   // Bir yatağı klinik havuzun dışına al (dezenfeksiyon / arıza / kullanım dışı) veya tekrar müsait yap.
   // Dolu (hasta atanmış) yatak manuel olarak değiştirilemez; önce taburcu/nakil gerekir.
@@ -1219,6 +1333,9 @@ export function createDemoStore(initial) {
     admitPatient, transferPatient, assignCareTeam, createHandover, openCriticalAlerts,
     createUser, addUnit, addRoom, addBed,
     setUserPassword, resetUserPin, toggleUserActive, resetUserMfa, setUserMfaRequired, setUserUnits,
+    setupMfa, verifyMfa,
+    inviteUser, acceptInvite, resendInvite, cancelInvite,
+    createTenant, createSite, completeTenantSetup,
     setBedState, updateDevice, recordTestPush,
     assignStaffToBeds, toggleStaffBed,
     addDevice, assignDeviceToBed, deviceForBed,

@@ -13,8 +13,8 @@ import {
   Circle, X, FileText, Pill, Droplet, Sliders, Eye, EyeOff, ScrollText, Volume2, VolumeX,
   TrendingUp, StopCircle, Syringe,
   KeyRound, Wifi, WifiOff, Radio, Network, CloudOff, Cloud, Search, ShieldCheck, DoorOpen,
-  BellRing, BarChart3, Wrench, Pencil, Bed, Download, Power, Lock,
-  Contrast, Fingerprint, Mail, ArrowRight, Sparkles,
+  BellRing, BarChart3, Wrench, Pencil, Bed, Download, Power, Lock, Shield,
+  Contrast, Fingerprint, Mail, ArrowRight, Sparkles, QrCode, Send, RotateCcw, XCircle,
 } from "lucide-react";
 import {
   createDemoStore, buildRealisticState, ROLE, TIER, ESCALATION_STEP, STEP_TARGET_ROLE,
@@ -1468,6 +1468,7 @@ function AdminPage({ T, S, store, state }) {
     { key: "reports", label: S.pr8.reports, icon: BarChart3 },
     { key: "structure", label: S.pr7.hierarchy, icon: Building2 },
     { key: "staff", label: S.pr7.staffMatrix, icon: Users },
+    { key: "security", label: S.pr10.inviteTitle, icon: Shield },
     { key: "devices", label: S.pr7.devices, icon: Radio },
     { key: "audit", label: S.pr7.auditSearch, icon: ScrollText },
   ];
@@ -1499,6 +1500,7 @@ function AdminPage({ T, S, store, state }) {
           <StaffMatrix T={T} S={S} store={store} state={state} />
         </div>
       )}
+      {tab === "security" && <InviteManagement T={T} S={S} store={store} state={state} />}
       {tab === "devices" && <DeviceAdmin T={T} S={S} store={store} state={state} />}
       {tab === "audit" && (
         <div className="space-y-4">
@@ -1891,6 +1893,152 @@ function UserRow({ T, S, store, state, u }) {
           <button onClick={doUnits} className={`${btnCls(T, "primary")} mt-3 w-full`}><Check size={15} /> {S.pr8.saveUnits}</button>
         </ActionOverlay>
       )}
+    </div>
+  );
+}
+
+// ================================================================ INVITE & MFA MANAGEMENT (Madde 6)
+function InviteManagement({ T, S, store, state }) {
+  const [f, setF] = useState({ email: "", fullName: "", role: ROLE.ATTENDING });
+  const [err, setErr] = useState("");
+  const [mfaModal, setMfaModal] = useState(null); // { userId, email, provisioning, secret } or null
+
+  const submitInvite = (e) => {
+    e.preventDefault();
+    try {
+      store.inviteUser({ email: f.email, fullName: f.fullName, role: f.role });
+      setF({ email: "", fullName: "", role: ROLE.ATTENDING });
+      setErr("");
+    } catch (ex) {
+      setErr(ex.message);
+    }
+  };
+
+  const pendingInvites = state.invites.filter((i) => i.status === "PENDING");
+
+  return (
+    <div className="space-y-4">
+      {/* Invite form */}
+      <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+        <h3 className={`mb-1 flex items-center gap-2 font-bold ${T.heading}`}>
+          <Send size={18} /> {S.pr10.inviteTitle}
+        </h3>
+        <p className={`mb-4 text-sm ${T.muted}`}>E-posta ile davet gönderin</p>
+        <form onSubmit={submitInvite} className="space-y-3">
+          <Field T={T} label={S.pr10.inviteEmail}>
+            <input className={inputCls(T)} type="email" value={f.email}
+              onChange={(e) => setF((s) => ({ ...s, email: e.target.value }))} />
+          </Field>
+          <Field T={T} label={S.pr10.inviteFullName}>
+            <input className={inputCls(T)} value={f.fullName}
+              onChange={(e) => setF((s) => ({ ...s, fullName: e.target.value }))} />
+          </Field>
+          <Field T={T} label={S.pr10.inviteRole}>
+            <select className={inputCls(T)} value={f.role}
+              onChange={(e) => setF((s) => ({ ...s, role: e.target.value }))}>
+              {[ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN, ROLE.RRT].map((r) => (
+                <option key={r} value={r}>{S.roleName[r]}</option>
+              ))}
+            </select>
+          </Field>
+          {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+          <button type="submit" className={`${btnCls(T, "primary")} w-full`}>
+            <Send size={16} /> {S.pr10.inviteButton}
+          </button>
+        </form>
+      </div>
+
+      {/* Pending invites list */}
+      {pendingInvites.length > 0 && (
+        <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+          <h3 className={`mb-1 flex items-center gap-2 font-bold ${T.heading}`}>
+            <Clock size={18} /> {S.pr10.inviteListTitle}
+          </h3>
+          <div className={`mt-3 divide-y ${T.divide}`}>
+            {pendingInvites.map((inv) => (
+              <div key={inv.id} className="flex items-center justify-between gap-3 py-3">
+                <div className="flex-1">
+                  <div className={`font-semibold ${T.text}`}>{inv.fullName}</div>
+                  <div className={`text-sm ${T.muted}`}>{inv.email} · {S.roleName[inv.role]}</div>
+                  <div className={`text-xs ${T.faint}`}>
+                    {S.pr10.inviteStatus[inv.status]} · {new Date(inv.invitedAt).toLocaleDateString()}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => store.resendInvite(inv.id)}
+                    className={`${btnCls(T, "ghost")} text-xs`}>
+                    <RotateCcw size={14} /> {S.pr10.inviteResend}
+                  </button>
+                  <button onClick={() => store.cancelInvite(inv.id)}
+                    className={`${btnCls(T, "danger")} text-xs`}>
+                    <XCircle size={14} /> {S.pr10.inviteCancel}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* MFA modal (if active) */}
+      {mfaModal && (
+        <MfaModal T={T} S={S} store={store} mfaModal={mfaModal} onClose={() => setMfaModal(null)} />
+      )}
+    </div>
+  );
+}
+
+// MFA setup modal (QR code + verification)
+function MfaModal({ T, S, store, mfaModal, onClose }) {
+  const [code, setCode] = useState("");
+  const [err, setErr] = useState("");
+  const [verified, setVerified] = useState(false);
+
+  const verify = () => {
+    try {
+      store.verifyMfa({ userId: mfaModal.userId, code });
+      setVerified(true);
+      setErr("");
+      setTimeout(onClose, 2000);
+    } catch (ex) {
+      setErr(ex.message);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className={`w-full max-w-md rounded-2xl border ${T.border} ${T.card} p-6`}>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className={`font-bold ${T.heading}`}>{S.pr10.mfaSetupTitle}</h3>
+          <button onClick={onClose} className={`rounded-lg p-1 ${T.ghost}`}><X size={20} /></button>
+        </div>
+
+        {!verified && (
+          <>
+            <p className={`mb-3 text-sm ${T.muted}`}>{S.pr10.mfaScanQR}</p>
+            {/* QR code (placeholder - in production this would be a real QR) */}
+            <div className={`mb-4 flex items-center justify-center rounded-xl ${T.subtle} p-6`}>
+              <QrCode size={120} className={T.faint} />
+            </div>
+            <p className={`mb-2 text-xs ${T.faint}`}>Secret: <code>{mfaModal.secret}</code></p>
+
+            <Field T={T} label={S.pr10.mfaEnterCode}>
+              <input className={inputCls(T)} type="text" maxLength={6} value={code}
+                onChange={(e) => setCode(e.target.value)} placeholder="123456" />
+            </Field>
+            {err && <div className="mt-2 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+            <button onClick={verify} className={`${btnCls(T, "primary")} mt-3 w-full`}>
+              <Check size={16} /> {S.pr10.mfaVerifyButton}
+            </button>
+          </>
+        )}
+
+        {verified && (
+          <div className="flex items-center gap-3 rounded-xl bg-green-500/15 px-4 py-3 text-green-500">
+            <CheckCircle2 size={20} /> <span className="font-semibold">{S.pr10.mfaVerified}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
