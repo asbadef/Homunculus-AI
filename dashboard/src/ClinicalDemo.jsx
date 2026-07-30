@@ -15,7 +15,7 @@ import {
   KeyRound, Wifi, WifiOff, Radio, Network, CloudOff, Cloud, Search, ShieldCheck, DoorOpen,
   BellRing, BarChart3, Wrench, Pencil, Bed, Download, Power, Lock, Shield,
   Contrast, Fingerprint, Mail, ArrowRight, QrCode, Send, RotateCcw, XCircle,
-  MapPin, ArrowLeft,
+  MapPin, ArrowLeft, Archive,
 } from "lucide-react";
 import {
   createDemoStore, buildRealisticState, ROLE, TIER, ESCALATION_STEP, STEP_TARGET_ROLE,
@@ -927,6 +927,38 @@ function BedBoard({ T, S, state, onOpenPatient }) {
   );
 }
 
+// Madde 26: PHI alan gösterimi — default masked, reveal butonu ile açılır, audit kaydı oluşur.
+function PhiField({ T, S, store, state, patient, field, label }) {
+  const value = patient[field];
+  const revealed = state.phiReveals[patient.patient_id]?.[field] || false;
+  const [err, setErr] = useState("");
+  const maskValue = (f, v) => {
+    if (!v) return "—";
+    if (f === "tc_no") return v.slice(0, 2) + "*".repeat(7) + v.slice(-2);
+    if (f === "phone") return v.slice(0, 5) + " *** ** " + v.slice(-2);
+    if (f === "address") return v.split(" ").slice(0, 2).join(" ") + " ···";
+    return v;
+  };
+  const reveal = () => {
+    try { store.revealPhiField({ patientId: patient.patient_id, field }); setErr(""); }
+    catch (ex) { setErr(ex.message); }
+  };
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <span className={`text-xs ${T.muted}`}>{label}</span>
+        {!revealed && value && (
+          <button onClick={reveal} className={`inline-flex items-center gap-1 text-xs ${T.accent}`}>
+            <Eye size={12} /> {S.pr13.reveal}
+          </button>
+        )}
+      </div>
+      <div className={`mt-0.5 font-mono text-sm ${T.text}`}>{revealed ? (value || "—") : maskValue(field, value)}</div>
+      {err && <div className="mt-1 text-xs text-red-500">{err}</div>}
+    </div>
+  );
+}
+
 // ================================================================ PATIENT DRAWER
 function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, lang }) {
   const p = state.patients.find((x) => x.patient_id === patientId);
@@ -951,12 +983,20 @@ function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, lan
         </span>
 
         <dl className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border ${T.border} ${T.subtle} p-4 text-sm`}>
-          {[[S.protocolNo, p.protocolNo], [S.mrn, p.mrn], [S.tcno, p.tcMasked],
+          {[[S.protocolNo, p.protocolNo], [S.mrn, p.mrn],
             [S.age, `${ageText(p, S)}${p.isNeonate ? "" : ""}`], [S.sex, p.sex === "male" ? S.male : S.female],
             [S.bed, p.bedLabel], [S.admittedBy, p.admittedBy], [S.lengthOfStay, losText(p.admittedAtMs, S)]].map(([k, v]) => (
             <div key={k}><dt className={`text-xs ${T.faint}`}>{k}</dt><dd className={`font-semibold ${T.text}`}>{v}</dd></div>
           ))}
         </dl>
+
+        {/* Madde 26: PHI alanları (TC, Telefon, Adres) — varsayılan masked, reveal butonu ile açılır */}
+        <div className={`mt-4 space-y-2 rounded-xl border ${T.border} ${T.subtle} p-4 text-sm`}>
+          <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr13.phiFields}</div>
+          <PhiField T={T} S={S} store={store} state={state} patient={p} field="tc_no" label={S.tcno} />
+          <PhiField T={T} S={S} store={store} state={state} patient={p} field="phone" label={S.pr13.phone} />
+          <PhiField T={T} S={S} store={store} state={state} patient={p} field="address" label={S.pr13.address} />
+        </div>
 
         <div className="mt-4">
           <div className={`mb-1 text-xs font-semibold uppercase ${T.faint}`}>{S.admissionDx}</div>
@@ -1675,6 +1715,8 @@ function AdminPage({ T, S, store, state }) {
     { key: "security", label: S.pr10.inviteTitle, icon: Shield },
     { key: "devices", label: S.pr7.devices, icon: Radio },
     { key: "audit", label: S.pr7.auditSearch, icon: ScrollText },
+    { key: "archive", label: S.pr13.archiveTitle, icon: Archive },
+    { key: "sessions", label: S.pr13.sessionsTitle, icon: Monitor },
   ];
   return (
     <div className="space-y-4">
@@ -1712,6 +1754,8 @@ function AdminPage({ T, S, store, state }) {
           <AuditLog T={T} S={S} state={state} />
         </div>
       )}
+      {tab === "archive" && <ArchiveManagement T={T} S={S} store={store} state={state} />}
+      {tab === "sessions" && <SessionManagement T={T} S={S} store={store} state={state} />}
     </div>
   );
 }
@@ -2718,6 +2762,70 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{border:1px solid 
   setTimeout(() => { try { w.print(); } catch (e) { /* ignore */ } }, 400);
 }
 
+// Madde 27: Arşiv Yönetimi — arşivlenmiş hastalar listesi + anonimizasyon.
+function ArchiveManagement({ T, S, store, state }) {
+  const [err, setErr] = useState("");
+  const wrap = (fn) => { try { fn(); setErr(""); } catch (ex) { setErr(ex.message); } };
+  return (
+    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+      <div className="mb-3 flex items-center gap-2">
+        <Archive size={17} className={T.accent} />
+        <h3 className={`font-bold ${T.heading}`}>{S.pr13.archiveTitle}</h3>
+        <span className={`ml-auto rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>{state.archivedPatients.length} {S.pr13.archived}</span>
+      </div>
+      {err && <div className="mb-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+      <div className={`divide-y ${T.divide} rounded-xl border ${T.border}`}>
+        {state.archivedPatients.length === 0 && <div className={`px-3 py-6 text-center text-sm ${T.faint}`}>{S.pr13.noArchived}</div>}
+        {state.archivedPatients.map((p) => (
+          <div key={p.patient_id} className="flex items-center gap-3 px-3 py-2.5">
+            <div className="min-w-0 flex-1">
+              <div className={`truncate font-semibold ${T.text}`}>{p.display_name}</div>
+              <div className={`truncate text-xs ${T.faint}`}>{p.mrn} · {new Date(p.archivedAtMs).toLocaleDateString()}</div>
+            </div>
+            {!p.anonymizedAtMs && (
+              <button onClick={() => wrap(() => store.anonymizePatient({ patientId: p.patient_id }))} className={`${btnCls(T, "ghost")} shrink-0 text-xs`}>
+                <XCircle size={14} /> {S.pr13.anonymize}
+              </button>
+            )}
+            {p.anonymizedAtMs && <span className={`shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-500`}>{S.pr13.anonymized}</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Madde 12: Oturum Yönetimi — aktif oturumlar listesi + sonlandırma.
+function SessionManagement({ T, S, store, state }) {
+  const [err, setErr] = useState("");
+  const wrap = (fn) => { try { fn(); setErr(""); } catch (ex) { setErr(ex.message); } };
+  return (
+    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+      <div className="mb-3 flex items-center gap-2">
+        <Monitor size={17} className={T.accent} />
+        <h3 className={`font-bold ${T.heading}`}>{S.pr13.sessionsTitle}</h3>
+        <span className={`ml-auto rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>{state.activeSessions.length} {S.pr13.active}</span>
+      </div>
+      {err && <div className="mb-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+      <div className={`divide-y ${T.divide} rounded-xl border ${T.border}`}>
+        {state.activeSessions.length === 0 && <div className={`px-3 py-6 text-center text-sm ${T.faint}`}>{S.pr13.noSessions}</div>}
+        {state.activeSessions.map((s) => (
+          <div key={s.id} className="flex items-center gap-3 px-3 py-2.5">
+            <Monitor size={15} className="shrink-0 text-emerald-500" />
+            <div className="min-w-0 flex-1">
+              <div className={`truncate font-semibold ${T.text}`}>{s.email}</div>
+              <div className={`truncate text-xs ${T.faint}`}>{s.device} · {s.ip} · {new Date(s.startedAtMs).toLocaleString()}</div>
+            </div>
+            <button onClick={() => wrap(() => store.terminateSession({ sessionId: s.id }))} className={`${btnCls(T, "ghost")} shrink-0 text-xs`}>
+              <Power size={14} /> {S.pr13.terminate}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Append-only audit log viewer + search panel (S-15/C2). Text search + action filter + date range.
 // Actor names honour the KVKK mask toggle.
 function AuditLog({ T, S, state }) {
@@ -2745,12 +2853,34 @@ function AuditLog({ T, S, state }) {
     }).reverse();
   }, [all, q, action, from, to]);
   const clear = () => { setQ(""); setAction(""); setFrom(""); setTo(""); };
+  const exportCSV = () => {
+    const headers = ["Tarih/Saat", "İşlem", "Kullanıcı", "Rol", "Hedef", "Detay"];
+    const csvRows = rows.map((r) => [
+      new Date(r.atMs).toLocaleString("tr-TR"),
+      label(r.action),
+      r.actor || "—",
+      r.role || "—",
+      r.target || "—",
+      (r.detail || "").replace(/"/g, '""'),
+    ]);
+    const csvContent = [headers, ...csvRows].map((row) => row.map((c) => `"${c}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `denetim-kaydi-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
   return (
     <div className={`rounded-2xl border ${T.border} ${T.card} ${T.lift} p-5`}>
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <ScrollText size={17} className={T.accent} />
         <h3 className={`font-bold ${T.heading}`}>{S.pr7.auditSearch}</h3>
-        <span className={`ml-auto rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>{rows.length} {S.pr7.resultCount}</span>
+        <span className={`rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>{rows.length} {S.pr7.resultCount}</span>
+        <button onClick={exportCSV} disabled={rows.length === 0} className={`ml-auto inline-flex items-center gap-1.5 ${btnCls(T, "ghost")} disabled:opacity-40 disabled:cursor-not-allowed`}>
+          <Download size={14} /> {S.pr13.exportCSV}
+        </button>
       </div>
       {/* search + filters */}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">

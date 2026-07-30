@@ -443,6 +443,51 @@ describe("Faz B · super-admin seed + role authorization", () => {
     const u = s.login("deneme@homunculus.health", "Deneme.2025!");
     expect(u.role).toBe(ROLE.ATTENDING);
   });
+  it("reveals a PHI field and audits it", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.ATTENDING);
+    const before = s.getState().auditLog.length;
+    s.revealPhiField({ patientId: "P-101", field: "tc_no" });
+    const phiReveals = s.getState().phiReveals;
+    expect(phiReveals["P-101"].tc_no).toBe(true);
+    const log = s.getState().auditLog;
+    expect(log.length).toBe(before + 1);
+    expect(log[log.length - 1].action).toBe("PHI_REVEAL");
+  });
+  it("archives a patient and frees the bed", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const patient = s.getState().patients[0];
+    const bedId = patient.bedId;
+    s.archivePatient({ patientId: patient.patient_id });
+    expect(s.getState().patients.find((p) => p.patient_id === patient.patient_id)).toBeFalsy();
+    expect(s.getState().archivedPatients.find((p) => p.patient_id === patient.patient_id)).toBeTruthy();
+    const bed = s.getState().beds.find((b) => b.id === bedId);
+    expect(bed.state).toBe("AVAILABLE");
+  });
+  it("anonymizes an archived patient", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const patient = s.getState().patients[0];
+    s.archivePatient({ patientId: patient.patient_id });
+    s.anonymizePatient({ patientId: patient.patient_id });
+    const anon = s.getState().archivedPatients.find((p) => p.patient_id === patient.patient_id);
+    expect(anon.display_name).toContain("Anonim Hasta");
+    expect(anon.tc_no).toBeNull();
+    expect(anon.phone).toBeNull();
+    expect(anon.address).toBeNull();
+  });
+  it("creates a session on login and terminates it", () => {
+    const s = createDemoStore(buildRealisticState());
+    const before = s.getState().activeSessions.length;
+    s.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    const sessions = s.getState().activeSessions;
+    expect(sessions.length).toBe(before + 1);
+    const session = sessions[sessions.length - 1];
+    expect(session.email).toBe("dijitalfabrikaaa@gmail.com");
+    s.terminateSession({ sessionId: session.id });
+    expect(s.getState().activeSessions.find((x) => x.id === session.id)).toBeFalsy();
+  });
 });
 
 describe("PR#7 · staff → bed matrix", () => {

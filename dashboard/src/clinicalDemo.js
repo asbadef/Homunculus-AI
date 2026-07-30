@@ -221,17 +221,20 @@ function seedState() {
     },
     users: [],
     invites: [],          // [ { id, email, fullName, role, tenantId, invitedBy, invitedAt, status } ]
+    activeSessions: [],   // madde 12: [ { id, userId, email, ip, device, startedAtMs, lastActivityMs } ]
     careTeam: {},         // patientId → { attendingId, nurseId }
     staffAssignments: {}, // userId → { bedIds:[], unitIds:[] }  (staff→bed matrix)
     devices: [],          // { id, vendor, model, ip, bedId, connected, lastPacketMs, packets }
     handovers: [],        // { id, patientId, fromName, toName, note, signedAtMs }
     beds,
     patients: [],         // admitted patients (each on a bed)
+    archivedPatients: [], // madde 27: arşivlenmiş hastalar (PHI korunur, board'da görünmez)
     alerts: [],           // active/closed alerts
     breakGlass: null,     // { by, reason, activatedAt, expiresAt, reviewStatus, reviewedBy }
     clinical: {},         // patientId → { diagnoses, medications, procedures, fluids, thresholds, vitalHistory }
     auditLog: [],         // { id, atMs, actor, action, target, detail }
     maskNames: false,     // KVKK name-masking toggle (global)
+    phiReveals: {},       // { [patientId]: { tc_no: bool, phone: bool, address: bool } } — madde 26
     autoAlarm: true,      // automatic alarm engine on/off
     online: true,         // PWA connectivity flag (offline resilience)
     syncQueue: [],        // actions captured while offline
@@ -297,31 +300,37 @@ export function buildRealisticState() {
 
   const patients = [
     { patient_id: "P-101", display_name: "Ahmet Yıldız", sex: "male", age: 67, isNeonate: false,
+      tc_no: "12345678934", phone: "0532 123 45 67", address: "Bahçelievler Mah. Çiçek Sok. No:12/4 Üsküdar/İstanbul",
       tcMasked: "12*******34", mrn: "MRN-104821", protocolNo: "2025/0004821",
       bedId: "bed-a101", bedLabel: "101", unitId: "unit-adult", admittedAtMs: hrs(52), admittedBy: "Dr. Elif Yılmaz",
       diagnosis: "Toplum kökenli pnömoni, akut solunum yetmezliği", risk: "high", source: "emergency",
       vitals: { hr: 112, map: 68, spo2: 89, temp: 38.4, rr: 28 } },
     { patient_id: "P-102", display_name: "Fatma Kaya", sex: "female", age: 54, isNeonate: false,
+      tc_no: "27654321006", phone: "0542 987 65 43", address: "Çamlıca Mah. Yeşil Cad. No:45/8 Kadıköy/İstanbul",
       tcMasked: "27*******06", mrn: "MRN-104822", protocolNo: "2025/0004822",
       bedId: "bed-a102", bedLabel: "102", unitId: "unit-adult", admittedAtMs: hrs(20), admittedBy: "Dr. Can Öztürk",
       diagnosis: "Postoperatif takip (majör abdominal cerrahi)", risk: "stable", source: "or",
       vitals: { hr: 82, map: 88, spo2: 97, temp: 36.8, rr: 16 } },
     { patient_id: "P-103", display_name: "Mehmet Demir", sex: "male", age: 72, isNeonate: false,
+      tc_no: "45678901219", phone: "0505 321 54 76", address: "Atatürk Bulvarı No:234/12 Çankaya/Ankara",
       tcMasked: "45*******19", mrn: "MRN-104823", protocolNo: "2025/0004823",
       bedId: "bed-a104", bedLabel: "104", unitId: "unit-adult", admittedAtMs: hrs(76), admittedBy: "Dr. Elif Yılmaz",
       diagnosis: "Akut böbrek hasarı, elektrolit dengesizliği", risk: "high", source: "ward",
       vitals: { hr: 96, map: 72, spo2: 94, temp: 37.1, rr: 20 } },
     { patient_id: "P-104", display_name: "Zeynep Şahin", sex: "female", age: 61, isNeonate: false,
+      tc_no: "63789012388", phone: "0533 654 32 10", address: "Kızılay Mah. Cumhuriyet Sok. No:7/3 Beylikdüzü/İstanbul",
       tcMasked: "63*******88", mrn: "MRN-104824", protocolNo: "2025/0004824",
       bedId: "bed-a105", bedLabel: "105", unitId: "unit-adult", admittedAtMs: hrs(6), admittedBy: "Dr. Elif Yılmaz",
       diagnosis: "Sepsis şüphesi, hipotansiyon", risk: "critical", source: "emergency",
       vitals: { hr: 128, map: 58, spo2: 91, temp: 39.2, rr: 32 } },
     { patient_id: "P-105", display_name: "Bebek Aydın", sex: "male", age: 0, isNeonate: true, ageDays: 3,
+      tc_no: null, phone: "0532 111 22 33", address: "Anne: Ayşe Aydın / Baba: Mehmet Aydın - Kadıköy/İstanbul",
       tcMasked: "—", mrn: "MRN-104825", protocolNo: "2025/0004825",
       bedId: "bed-n201", bedLabel: "201", unitId: "unit-nicu", admittedAtMs: hrs(70), admittedBy: "Dr. Can Öztürk",
       diagnosis: "Prematürite (32 hafta), respiratuar destek", risk: "high", source: "delivery",
       vitals: { hr: 158, map: 42, spo2: 92, temp: 36.5, rr: 52 } },
     { patient_id: "P-106", display_name: "Bebek Çelik", sex: "female", age: 0, isNeonate: true, ageDays: 8,
+      tc_no: null, phone: "0505 444 55 66", address: "Anne: Zehra Çelik / Baba: Ali Çelik - Ümraniye/İstanbul",
       tcMasked: "—", mrn: "MRN-104826", protocolNo: "2025/0004826",
       bedId: "bed-n202", bedLabel: "202", unitId: "unit-nicu", admittedAtMs: hrs(30), admittedBy: "Dr. Can Öztürk",
       diagnosis: "Yenidoğan sarılığı, fototerapi", risk: "low", source: "delivery",
@@ -417,17 +426,20 @@ export function buildRealisticState() {
     running: true,
     structure,
     users,
+    activeSessions: [],   // madde 12
     careTeam,
     staffAssignments,
     devices,
     handovers: [],
     beds,
     patients,
+    archivedPatients: [], // madde 27
     alerts: [],
     breakGlass: null,
     clinical,
     auditLog: [{ id: "AL-1", atMs: hrs(52), actor: "Dr. Elif Yılmaz", action: "PATIENT_ADMIT", target: "P-101", detail: "Erişkin YBÜ · Yatak 101" }],
     maskNames: false,
+    phiReveals: {},       // { [patientId]: { tc_no: bool, phone: bool, address: bool } } — madde 26
     autoAlarm: true,
     online: true,         // PWA connectivity flag (offline resilience B5)
     syncQueue: [],        // actions captured while offline, flushed on reconnect
@@ -566,7 +578,19 @@ export function createDemoStore(initial) {
   }
   function login(email, credential) {
     const { who } = _validateCredential(email, credential);
-    set({ user: { email: who.email, full_name: who.full_name, role: who.role }, mfaPending: null });
+    // Madde 12: aktif session oluştur (demo: simüle IP/device).
+    const sessionId = `S-${String(state.seq).padStart(4, "0")}`;
+    const session = {
+      id: sessionId,
+      userId: who.id,
+      email: who.email,
+      ip: "192.168.1." + Math.floor(Math.random() * 200 + 10),
+      device: "Chrome / Windows 10",
+      startedAtMs: Date.now(),
+      lastActivityMs: Date.now(),
+    };
+    set({ user: { email: who.email, full_name: who.full_name, role: who.role },
+      activeSessions: [...state.activeSessions, session], mfaPending: null, seq: state.seq + 1 });
     audit("LOGIN", who.email, who.role);
     return who;
   }
@@ -633,7 +657,7 @@ export function createDemoStore(initial) {
   // board. Accepts optional production fields (age, source, risk, vitals…) — all default safely so
   // the minimal test-driven signature keeps working.
   function admitPatient({ displayName, sex, bedId, diagnosisText, age, isNeonate, ageDays,
-                          source, risk, vitals } = {}) {
+                          source, risk, vitals, tc_no, phone, address } = {}) {
     const bed = state.beds.find((b) => b.id === bedId);
     if (!bed) throw new Error("Yatak bulunamadı.");
     if (bed.state !== "AVAILABLE") throw new Error("Seçilen yatak müsait değil.");
@@ -645,6 +669,9 @@ export function createDemoStore(initial) {
       age: age ?? null,
       isNeonate: !!isNeonate,
       ageDays: ageDays ?? null,
+      tc_no: tc_no || null,
+      phone: phone || null,
+      address: address || null,
       tcMasked: isNeonate ? "—" : maskTc(),
       mrn: `MRN-${100000 + state.seq}`,
       protocolNo: `2025/${String(4000 + state.seq).padStart(7, "0")}`,
@@ -1395,6 +1422,69 @@ export function createDemoStore(initial) {
   function setRunning(running) { set({ running }); }
   function reset() { state = seedState(); emit(); }
 
+  // Madde 26: PHI reveal — hassas bir alanı açmak (tc_no, phone, address) + audit kaydı.
+  function revealPhiField({ patientId, field } = {}) {
+    const patient = state.patients.find((p) => p.patient_id === patientId);
+    if (!patient) throw new Error("Hasta bulunamadı.");
+    const validFields = ["tc_no", "phone", "address"];
+    if (!validFields.includes(field)) throw new Error("Geçersiz PHI alanı.");
+    const reveals = { ...state.phiReveals };
+    if (!reveals[patientId]) reveals[patientId] = {};
+    reveals[patientId] = { ...reveals[patientId], [field]: true };
+    set({ phiReveals: reveals });
+    audit("PHI_REVEAL", patientId, `${patient.display_name} · ${field}`);
+  }
+
+  // Madde 27: Hasta arşivleme — aktif patient'tan archivedPatients'a taşı (yatak serbest bırakılır).
+  function archivePatient({ patientId } = {}) {
+    const patient = state.patients.find((p) => p.patient_id === patientId);
+    if (!patient) throw new Error("Hasta bulunamadı.");
+    const archived = { ...patient, archivedAtMs: Date.now(), archivedBy: state.user?.full_name || "—" };
+    const patients = state.patients.filter((p) => p.patient_id !== patientId);
+    const beds = state.beds.map((b) => (b.id === patient.bedId ? { ...b, state: "AVAILABLE", patientId: null } : b));
+    set({ patients, archivedPatients: [...state.archivedPatients, archived], beds });
+    audit("PATIENT_ARCHIVE", patientId, `${patient.display_name} · Arşive taşındı`);
+    return archived;
+  }
+
+  // Madde 27: GDPR/KVKK Unutulma Hakkı — PHI alanlarını anonimize et (geri dönüşsüz).
+  function anonymizePatient({ patientId } = {}) {
+    const idx = state.archivedPatients.findIndex((p) => p.patient_id === patientId);
+    if (idx === -1) throw new Error("Arşivlenmiş hasta bulunamadı.");
+    const patient = state.archivedPatients[idx];
+    const anonName = `Anonim Hasta #${patient.patient_id.slice(-3)}`;
+    const anon = {
+      ...patient,
+      display_name: anonName,
+      tc_no: null,
+      phone: null,
+      address: null,
+      anonymizedAtMs: Date.now(),
+      anonymizedBy: state.user?.full_name || "—",
+    };
+    const archivedPatients = [...state.archivedPatients];
+    archivedPatients[idx] = anon;
+    set({ archivedPatients });
+    audit("PATIENT_ANONYMIZE", patientId, `${patient.display_name} → ${anonName}`);
+    return anon;
+  }
+
+  // Madde 12: Tek oturum sonlandır.
+  function terminateSession({ sessionId } = {}) {
+    const session = state.activeSessions.find((s) => s.id === sessionId);
+    if (!session) throw new Error("Oturum bulunamadı.");
+    set({ activeSessions: state.activeSessions.filter((s) => s.id !== sessionId) });
+    audit("SESSION_TERMINATE", sessionId, `${session.email} · ${session.ip}`);
+  }
+
+  // Madde 12: Belirli bir kullanıcının tüm oturumlarını sonlandır (diğer cihazlarda).
+  function terminateAllUserSessions({ userId } = {}) {
+    const sessions = state.activeSessions.filter((s) => s.userId === userId);
+    if (sessions.length === 0) return;
+    set({ activeSessions: state.activeSessions.filter((s) => s.userId !== userId) });
+    audit("SESSION_TERMINATE_ALL", userId, `${sessions.length} oturum sonlandırıldı`);
+  }
+
   return {
     getState, subscribe,
     login, loginAs, logout, switchUserByPin,
@@ -1411,7 +1501,8 @@ export function createDemoStore(initial) {
     reviewBreakGlass,
     setOnline, queueOffline, flushSyncQueue,
     addDiagnosis, addMedication, stopMedication, addProcedure, addFluid, setThresholds,
-    toggleMaskNames, setAutoAlarm,
+    toggleMaskNames, setAutoAlarm, revealPhiField, archivePatient, anonymizePatient,
+    terminateSession, terminateAllUserSessions,
     fireAlert, reconcile,
     acknowledgeAlert, muteAlert, snoozeAlert, escalateToRRT, rrtHasAccess,
     activateBreakGlass, extendBreakGlass, breakGlassActive,
