@@ -4,6 +4,8 @@ import {
   snoozeCapMinutes, TIER, ROLE, ESCALATION_STEP,
   computeNews2, evaluateThresholds, searchIcd10, maskName, DEFAULT_THRESHOLDS, NEWS2_ALARM_THRESHOLD,
   computeAnalytics, BED_STATES, BED_ADMIN_STATES,
+  CLINICAL_PROFILES, UNIT_TYPE_KEYS, profileForUnitType, unitTypeForPatient, profileForPatient,
+  computeAlarmAnalytics, ALARM_CLASSIFICATION,
 } from "./clinicalDemo.js";
 
 // ---------------------------------------------------------------- pure escalation logic (S-05)
@@ -150,13 +152,13 @@ describe("snooze rules", () => {
 
 // ---------------------------------------------------------------- realistic seed + admin/care actions
 describe("realistic environment", () => {
-  it("seeds two units, ten beds and six occupied patients", () => {
+  it("seeds five branch units, sixteen beds and nine occupied patients (Madde 7)", () => {
     const s = createDemoStore(buildRealisticState());
     const st = s.getState();
-    expect(st.structure.units).toHaveLength(2);
-    expect(st.beds).toHaveLength(10);
-    expect(st.patients).toHaveLength(6);
-    expect(st.beds.filter((b) => b.state === "OCCUPIED")).toHaveLength(6);
+    expect(st.structure.units).toHaveLength(5);
+    expect(st.beds).toHaveLength(16);
+    expect(st.patients).toHaveLength(9);
+    expect(st.beds.filter((b) => b.state === "OCCUPIED")).toHaveLength(9);
   });
 
   it("initialises multi-tenant + invite state so tenant/invite actions never crash (Madde 5/6)", () => {
@@ -188,7 +190,8 @@ describe("realistic environment", () => {
     const s = createDemoStore(buildRealisticState());
     s.transferPatient({ patientId: "P-101", targetBedId: "bed-a103" });
     const st = s.getState();
-    expect(st.beds.find((b) => b.id === "bed-a101").state).toBe("AVAILABLE");
+    // After Madde 24: source bed → HOUSEKEEPING (design doc §4.6)
+    expect(st.beds.find((b) => b.id === "bed-a101").state).toBe("HOUSEKEEPING");
     expect(st.beds.find((b) => b.id === "bed-a103").state).toBe("OCCUPIED");
     expect(st.patients.find((p) => p.patient_id === "P-101").bedId).toBe("bed-a103");
   });
@@ -396,8 +399,97 @@ describe("PR#7 · fast PIN switch", () => {
   });
   it("logs in with a PIN as credential", () => {
     const s = createDemoStore(buildRealisticState());
-    const u = s.login("admin@homunculus.health", "9999");
+    const u = s.login("dijitalfabrikaaa@gmail.com", "9999");
     expect(u.role).toBe(ROLE.HOSPITAL_ADMIN);
+  });
+  it("logs the super-admin in with email + password", () => {
+    const s = createDemoStore(buildRealisticState());
+    const u = s.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    expect(u.role).toBe(ROLE.HOSPITAL_ADMIN);
+    expect(u.full_name).toBe("Sistem Yöneticisi");
+  });
+  it("rejects a login for an email that is not a real account", () => {
+    const s = createDemoStore(buildRealisticState());
+    expect(() => s.login("admin@homunculus.health", "9999")).toThrow();
+  });
+});
+
+describe("Faz B · super-admin seed + role authorization", () => {
+  it("seeds the super-admin account as HOSPITAL_ADMIN", () => {
+    const s = createDemoStore(buildRealisticState());
+    const admin = s.getState().users.find((u) => u.email === "dijitalfabrikaaa@gmail.com");
+    expect(admin).toBeTruthy();
+    expect(admin.role).toBe(ROLE.HOSPITAL_ADMIN);
+    expect(admin.active).toBe(true);
+  });
+  it("lets the admin change (authorize) another user's role and audits it", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const nurse = s.getState().users.find((u) => u.role === ROLE.CHARGE_NURSE);
+    const before = s.getState().auditLog.length;
+    const next = s.setUserRole({ userId: nurse.id, role: ROLE.ATTENDING });
+    expect(next.role).toBe(ROLE.ATTENDING);
+    const log = s.getState().auditLog;
+    expect(log.length).toBe(before + 1);
+    expect(log[log.length - 1].action).toBe("USER_ROLE_CHANGE");
+  });
+  it("rejects an invalid role in setUserRole", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const u = s.getState().users[0];
+    expect(() => s.setUserRole({ userId: u.id, role: "NOT_A_ROLE" })).toThrow();
+  });
+  it("creates a user with an initial password that can log in", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    s.createUser({ full_name: "Dr. Deneme", email: "deneme@homunculus.health", role: ROLE.ATTENDING, password: "Deneme.2025!" });
+    const u = s.login("deneme@homunculus.health", "Deneme.2025!");
+    expect(u.role).toBe(ROLE.ATTENDING);
+  });
+  it("reveals a PHI field and audits it", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.ATTENDING);
+    const before = s.getState().auditLog.length;
+    s.revealPhiField({ patientId: "P-101", field: "tc_no" });
+    const phiReveals = s.getState().phiReveals;
+    expect(phiReveals["P-101"].tc_no).toBe(true);
+    const log = s.getState().auditLog;
+    expect(log.length).toBe(before + 1);
+    expect(log[log.length - 1].action).toBe("PHI_REVEAL");
+  });
+  it("archives a patient and frees the bed", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const patient = s.getState().patients[0];
+    const bedId = patient.bedId;
+    s.archivePatient({ patientId: patient.patient_id });
+    expect(s.getState().patients.find((p) => p.patient_id === patient.patient_id)).toBeFalsy();
+    expect(s.getState().archivedPatients.find((p) => p.patient_id === patient.patient_id)).toBeTruthy();
+    const bed = s.getState().beds.find((b) => b.id === bedId);
+    expect(bed.state).toBe("AVAILABLE");
+  });
+  it("anonymizes an archived patient", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const patient = s.getState().patients[0];
+    s.archivePatient({ patientId: patient.patient_id });
+    s.anonymizePatient({ patientId: patient.patient_id });
+    const anon = s.getState().archivedPatients.find((p) => p.patient_id === patient.patient_id);
+    expect(anon.display_name).toContain("Anonim Hasta");
+    expect(anon.tc_no).toBeNull();
+    expect(anon.phone).toBeNull();
+    expect(anon.address).toBeNull();
+  });
+  it("creates a session on login and terminates it", () => {
+    const s = createDemoStore(buildRealisticState());
+    const before = s.getState().activeSessions.length;
+    s.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    const sessions = s.getState().activeSessions;
+    expect(sessions.length).toBe(before + 1);
+    const session = sessions[sessions.length - 1];
+    expect(session.email).toBe("dijitalfabrikaaa@gmail.com");
+    s.terminateSession({ sessionId: session.id });
+    expect(s.getState().activeSessions.find((x) => x.id === session.id)).toBeFalsy();
   });
 });
 
@@ -730,5 +822,346 @@ describe("Faz A · tenant setup wizard (Madde 5)", () => {
     s.loginAs(ROLE.HOSPITAL_ADMIN);
     s.createTenant({ name: "First", slug: "test" });
     expect(() => s.createTenant({ name: "Second", slug: "test" })).toThrow("Bu slug zaten kullanılıyor");
+  });
+});
+
+// ---------------------------------------------------------------- Faz C · branch clinical profiles (Madde 7)
+describe("Faz C · branş klinik profilleri (Madde 7)", () => {
+  it("exposes eight branch profiles keyed by unit type", () => {
+    expect(UNIT_TYPE_KEYS).toHaveLength(8);
+    for (const key of ["ADULT_ICU", "PICU", "NICU", "CVICU", "CORONARY", "EMERGENCY", "SURGICAL", "PALLIATIVE"]) {
+      expect(CLINICAL_PROFILES[key]).toBeTruthy();
+      expect(CLINICAL_PROFILES[key].names.tr).toBeTruthy();
+      expect(CLINICAL_PROFILES[key].thresholds).toHaveProperty("spo2Min");
+    }
+  });
+
+  it("profileForUnitType falls back to Adult ICU for unknown types", () => {
+    expect(profileForUnitType("CVICU").key).toBe("CVICU");
+    expect(profileForUnitType("NONSENSE").key).toBe("ADULT_ICU");
+  });
+
+  it("resolves a patient's branch profile from its unit (CVICU / palliative)", () => {
+    const st = buildRealisticState();
+    const cvc = st.patients.find((p) => p.patient_id === "P-107");
+    const pal = st.patients.find((p) => p.patient_id === "P-109");
+    expect(unitTypeForPatient(st, cvc)).toBe("CVICU");
+    expect(profileForPatient(st, pal).mode).toBe("comfort");
+  });
+
+  it("comfort-mode (palliative) suppresses aggressive auto-alarms even with breaching vitals", () => {
+    const s = createDemoStore(buildRealisticState());
+    // Palyatif hastasının vitalleri erişkin eşiklerini ihlal etse bile otomatik alarm üretilmez.
+    s.getState().patients.find((p) => p.patient_id === "P-109").vitals.spo2 = 78;
+    s.reconcile(600);
+    const palAlerts = s.getState().alerts.filter((a) => a.patientId === "P-109");
+    expect(palAlerts).toHaveLength(0);
+  });
+
+  it("standard branch units still auto-fire alarms on breach", () => {
+    const s = createDemoStore(buildRealisticState());
+    // KVC hastası (standart mod) kritik satürasyon düşüşünde alarm üretmeli.
+    const st = s.getState();
+    const cvc = st.patients.find((p) => p.patient_id === "P-107");
+    cvc.vitals.spo2 = 80;
+    cvc.vitals.map = 50;
+    s.reconcile(600);
+    const cvcAlerts = s.getState().alerts.filter((a) => a.patientId === "P-107");
+    expect(cvcAlerts.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------- Faz E · alarm analitiği (Madde 20)
+describe("Faz E · alarm analitiği & alarm yorgunluğu (Madde 20)", () => {
+  it("classifyAlert bir alarma klinisyen geri bildirimi ekler ve denetim izine yazar", () => {
+    const s = createDemoStore(buildRealisticState());
+    const al = s.fireAlert({ patientId: "P-101", tier: TIER.HIGH, summary: "test" });
+    const fb = s.classifyAlert({ alertId: al.id, classification: ALARM_CLASSIFICATION.FALSE, note: "artefakt" });
+    expect(fb.classification).toBe("FALSE");
+    const stored = s.getState().alerts.find((a) => a.id === al.id);
+    expect(stored.feedback.classification).toBe("FALSE");
+    expect(s.getState().auditLog.some((e) => e.action === "ALARM_CLASSIFY")).toBe(true);
+  });
+
+  it("classifyAlert geçersiz sınıflandırmayı reddeder", () => {
+    const s = createDemoStore(buildRealisticState());
+    const al = s.fireAlert({ patientId: "P-101", tier: TIER.HIGH, summary: "test" });
+    expect(() => s.classifyAlert({ alertId: al.id, classification: "XYZ" })).toThrow();
+  });
+
+  it("computeAlarmAnalytics yorgunluk endeksini ve aksiyon oranını doğru hesaplar", () => {
+    const s = createDemoStore(buildRealisticState());
+    const a1 = s.fireAlert({ patientId: "P-101", tier: TIER.CRITICAL, summary: "x" });
+    const a2 = s.fireAlert({ patientId: "P-102", tier: TIER.HIGH, summary: "x" });
+    const a3 = s.fireAlert({ patientId: "P-103", tier: TIER.HIGH, summary: "x" });
+    const a4 = s.fireAlert({ patientId: "P-104", tier: TIER.MEDIUM, summary: "x" });
+    s.classifyAlert({ alertId: a1.id, classification: ALARM_CLASSIFICATION.ACTIONABLE });
+    s.classifyAlert({ alertId: a2.id, classification: ALARM_CLASSIFICATION.FALSE });
+    s.classifyAlert({ alertId: a3.id, classification: ALARM_CLASSIFICATION.TECHNICAL });
+    // a4 sınıflandırılmadan bırakılır → UNCLASSIFIED
+    const an = computeAlarmAnalytics(s.getState());
+    expect(an.total).toBe(4);
+    expect(an.classified).toBe(3);
+    expect(an.byClass.UNCLASSIFIED).toBe(1);
+    // 3 sınıflandırılmışın 2'si non-actionable (FALSE+TECHNICAL) → %67
+    expect(an.fatigueIndexPct).toBe(67);
+    expect(an.actionablePct).toBe(33);
+  });
+
+  it("computeAlarmAnalytics en gürültülü yatakları sıralar", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.fireAlert({ patientId: "P-101", tier: TIER.HIGH, summary: "x" });
+    s.fireAlert({ patientId: "P-101", tier: TIER.MEDIUM, summary: "x" });
+    s.fireAlert({ patientId: "P-102", tier: TIER.HIGH, summary: "x" });
+    const an = computeAlarmAnalytics(s.getState());
+    expect(an.noisiestBeds[0].count).toBe(2);
+    expect(an.total).toBe(3);
+  });
+
+  it("boş state'te güvenli sıfır değerleri döndürür", () => {
+    const an = computeAlarmAnalytics({ alerts: [] });
+    expect(an.total).toBe(0);
+    expect(an.fatigueIndexPct).toBe(0);
+    expect(an.actionablePct).toBe(0);
+    expect(an.noisiestBeds).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------- Faz E: Operational Excellence & Reporting
+describe("Faz E: Madde 14 - Rapor Stüdyosu", () => {
+  it("createReportTemplate şablon oluşturur", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const tpl = s.createReportTemplate({
+      name: "Günlük Özet",
+      type: "DAILY_SUMMARY",
+      sections: [{ key: "vitals", title: "Vital Signs", dataSource: "patients" }],
+    });
+    expect(tpl.id).toMatch(/^RPT-/);
+    expect(tpl.name).toBe("Günlük Özet");
+    expect(tpl.type).toBe("DAILY_SUMMARY");
+    expect(s.getState().reportTemplates).toHaveLength(1);
+  });
+
+  it("generateReport şablona göre rapor üretir", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const tpl = s.createReportTemplate({ name: "Özet", type: "CUSTOM" });
+    const report = s.generateReport({ templateId: tpl.id, format: "PDF" });
+    expect(report.id).toMatch(/^RGEN-/);
+    expect(report.templateId).toBe(tpl.id);
+    expect(report.format).toBe("PDF");
+    expect(s.getState().generatedReports).toHaveLength(1);
+  });
+
+  it("geçersiz rapor formatını reddeder", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const tpl = s.createReportTemplate({ name: "Özet", type: "CUSTOM" });
+    expect(() => s.generateReport({ templateId: tpl.id, format: "TXT" })).toThrow("Geçerli format");
+  });
+});
+
+describe("Faz E: Madde 15 - KPI Dashboard", () => {
+  it("captureKpiSnapshot doluluk ve alarm yanıt süresini hesaplar", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const snap = s.captureKpiSnapshot({ unitId: "unit-adult", period: "DAILY" });
+    expect(snap.id).toMatch(/^KPI-/);
+    expect(snap.metrics.occupancy).toBeGreaterThan(0);
+    expect(snap.unitId).toBe("unit-adult");
+    expect(snap.period).toBe("DAILY");
+    expect(s.getState().kpiSnapshots).toHaveLength(1);
+  });
+
+  it("boş state'te sıfır değerleri döndürür", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const snap = s.captureKpiSnapshot({});
+    expect(snap.metrics.occupancy).toBe(0);
+    expect(snap.metrics.alarmResponseAvg).toBe(0);
+    expect(snap.metrics.mortalityRate).toBe(0);
+  });
+});
+
+describe("Faz E: Madde 16 - Kalite Göstergeleri", () => {
+  it("recordQualityMetric metrik kaydeder ve uyumluluğu belirler", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const m1 = s.recordQualityMetric({ metric: "HAND_HYGIENE", value: 95, target: 90, unitId: "unit-adult" });
+    expect(m1.id).toMatch(/^QM-/);
+    expect(m1.compliant).toBe(true);
+    const m2 = s.recordQualityMetric({ metric: "CENTRAL_LINE_INFECTION", value: 2.5, target: 3.0 });
+    expect(m2.compliant).toBe(false);
+    expect(s.getState().qualityMetrics).toHaveLength(2);
+  });
+
+  it("hedef olmadan uyumluluk null olur", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.HOSPITAL_ADMIN);
+    const m = s.recordQualityMetric({ metric: "FALL_PREVENTION", value: 100 });
+    expect(m.compliant).toBe(null);
+  });
+});
+
+describe("Faz E: Madde 17 - Vardiya Devir", () => {
+  it("generateShiftHandover hasta listesi ile devir raporu oluşturur", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.CHARGE_NURSE);
+    const handover = s.generateShiftHandover({
+      shiftDate: "2025-02-01",
+      fromShift: "SABAH",
+      toShift: "ÖĞLE",
+      unitId: "unit-adult",
+    });
+    expect(handover.id).toMatch(/^SH-/);
+    expect(handover.fromShift).toBe("SABAH");
+    expect(handover.toShift).toBe("ÖĞLE");
+    expect(handover.patients.length).toBeGreaterThan(0);
+    expect(handover.signedBy).toBe(null);
+  });
+
+  it("signShiftHandover devri imzalar", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.CHARGE_NURSE);
+    const handover = s.generateShiftHandover({
+      shiftDate: "2025-02-01",
+      fromShift: "GECE",
+      toShift: "SABAH",
+    });
+    const signed = s.signShiftHandover({ handoverId: handover.id });
+    expect(signed.signedBy).toBe(s.getState().user.full_name);
+    expect(signed.signedAt).toBeDefined();
+  });
+
+  it("geçersiz handover ID reddedilir", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.CHARGE_NURSE);
+    expect(() => s.signShiftHandover({ handoverId: "SH-999" })).toThrow("bulunamadı");
+  });
+});
+
+describe("Faz E: Madde 19 - Isı Haritası", () => {
+  it("computeHeatmap yatak yoğunluğu ve risk grid oluşturur", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.CHARGE_NURSE);
+    const heatmap = s.computeHeatmap({ unitId: "unit-adult" });
+    expect(heatmap.grid.length).toBeGreaterThan(0);
+    expect(heatmap.unitId).toBe("unit-adult");
+    expect(heatmap.generatedAt).toBeDefined();
+    const occupied = heatmap.grid.filter((b) => b.occupied);
+    expect(occupied.length).toBeGreaterThan(0);
+  });
+
+  it("risk seviyelerini NEWS2 ve alarm sayısına göre belirler", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.CHARGE_NURSE);
+    // P-101 için kritik alarm ekle
+    s.fireAlert({ patientId: "P-101", tier: TIER.CRITICAL, summary: "test" });
+    const heatmap = s.computeHeatmap({ unitId: "unit-adult" });
+    const p101bed = heatmap.grid.find((b) => b.occupied && s.getState().patients.find((p) => p.patient_id === "P-101" && p.bedId === b.bedId));
+    if (p101bed) {
+      expect(p101bed.risk).toBe("HIGH");
+    }
+  });
+
+  it("boş yatak için risk LOW olur", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.CHARGE_NURSE);
+    const heatmap = s.computeHeatmap({});
+    const emptyBed = heatmap.grid.find((b) => !b.occupied);
+    expect(emptyBed.risk).toBe("LOW");
+    expect(emptyBed.news2).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------- pr19: genişletilmiş kabul + sonuç/HBYS
+describe("pr19 admitPatient genişletilmiş alanlar", () => {
+  it("triyaj, alerji, kod durumu, izolasyon ve ekip atamasını kaydeder", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.ATTENDING);
+    const attending = s.getState().users.find((u) => u.role === ROLE.ATTENDING);
+    const nurse = s.getState().users.find((u) => u.role === ROLE.CHARGE_NURSE);
+    const bed = s.getState().beds.find((b) => b.state === "AVAILABLE");
+    const p = s.admitPatient({
+      displayName: "Sentetik Hasta", sex: "female", bedId: bed.id,
+      diagnosisText: "Pnömoni kriterleri değerlendirilecek",
+      triage: "emergent", allergies: "Penisilin", comorbidities: "DM, HT",
+      codeStatus: "dnr", isolation: "droplet", weight: 72, height: 168, bloodType: "A Rh+",
+      insurance: "SGK", emergencyContact: "Yakını", emergencyPhone: "0555...",
+      admittingComplaint: "nefes darlığı", attendingId: attending?.id, nurseId: nurse?.id,
+    });
+    expect(p.triage).toBe("emergent");
+    expect(p.codeStatus).toBe("dnr");
+    expect(p.isolation).toBe("droplet");
+    expect(p.weight).toBe(72);
+    expect(p.bloodType).toBe("A Rh+");
+    const team = s.getState().careTeam[p.patient_id];
+    expect(team.attendingId).toBe(attending?.id);
+    expect(team.nurseId).toBe(nurse?.id);
+  });
+  it("opsiyonel alanlar için güvenli varsayılanlar uygular", () => {
+    const s = createDemoStore();
+    s.loginAs(ROLE.ATTENDING);
+    const p = s.admitPatient({ displayName: "X", sex: "male", bedId: "bed-01", diagnosisText: "y" });
+    expect(p.triage).toBe("standard");
+    expect(p.codeStatus).toBe("full");
+    expect(p.isolation).toBe("none");
+  });
+});
+
+describe("pr19 sonuç yönetimi", () => {
+  function withPatient() {
+    const s = createDemoStore();
+    s.loginAs(ROLE.ATTENDING);
+    const p = s.admitPatient({ displayName: "Sonuç Hastası", sex: "male", bedId: "bed-01", diagnosisText: "z" });
+    return { s, pid: p.patient_id };
+  }
+  it("manuel sonuç ekler ve denetim kaydı üretir", () => {
+    const { s, pid } = withPatient();
+    const r = s.addResult({ patientId: pid, type: "lab", title: "Hemogram", summary: "WBC 12", critical: true });
+    expect(r.id).toMatch(/^RES-/);
+    expect(r.type).toBe("lab");
+    expect(r.critical).toBe(true);
+    expect(r.source).toBe("manual");
+    expect(s.getState().results).toHaveLength(1);
+  });
+  it("geçersiz sonuç türünü reddeder", () => {
+    const { s, pid } = withPatient();
+    expect(() => s.addResult({ patientId: pid, type: "gecersiz", title: "x" })).toThrow(/tür/);
+  });
+  it("sonucu görüldü olarak işaretler", () => {
+    const { s, pid } = withPatient();
+    const r = s.addResult({ patientId: pid, type: "radiology", title: "Toraks BT" });
+    const upd = s.markResultReviewed({ resultId: r.id });
+    expect(upd.status).toBe("reviewed");
+    expect(upd.reviewedBy).toBeTruthy();
+  });
+});
+
+describe("pr19 HBYS entegrasyonu", () => {
+  it("entegrasyonu açıp kapatır", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.ATTENDING);
+    expect(s.getState().hisIntegration.connected).toBe(false);
+    s.toggleHisIntegration(true);
+    expect(s.getState().hisIntegration.connected).toBe(true);
+    expect(s.getState().hisIntegration.lastSyncMs).toBeTruthy();
+    s.toggleHisIntegration(false);
+    expect(s.getState().hisIntegration.connected).toBe(false);
+  });
+  it("kapalıyken simüle sonuç üretmeyi reddeder", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.ATTENDING);
+    expect(() => s.simulateInboundResult({})).toThrow(/kapalı/);
+  });
+  it("açıkken simüle HBYS sonucu üretir (kaynak hl7)", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.loginAs(ROLE.ATTENDING);
+    s.toggleHisIntegration(true);
+    const r = s.simulateInboundResult({});
+    expect(r.source).toBe("hl7");
+    expect(["lab", "radiology", "epicrisis"]).toContain(r.type);
+    expect(s.getState().results.length).toBeGreaterThan(0);
   });
 });

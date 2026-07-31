@@ -14,8 +14,9 @@ import {
   TrendingUp, StopCircle, Syringe,
   KeyRound, Wifi, WifiOff, Radio, Network, CloudOff, Cloud, Search, ShieldCheck, DoorOpen,
   BellRing, BarChart3, Wrench, Pencil, Bed, Download, Power, Lock, Shield,
-  Contrast, Fingerprint, Mail, ArrowRight, Sparkles, QrCode, Send, RotateCcw, XCircle,
-  MapPin, ArrowLeft,
+  Contrast, Fingerprint, Mail, ArrowRight, QrCode, Send, RotateCcw, XCircle,
+  MapPin, ArrowLeft, Archive,
+  Sunset, FlaskConical, ScanLine, Grid3x3, RefreshCw, PlugZap, Upload, Inbox, HeartHandshake,
 } from "lucide-react";
 import {
   createDemoStore, buildRealisticState, ROLE, TIER, ESCALATION_STEP, STEP_TARGET_ROLE,
@@ -23,6 +24,7 @@ import {
   searchIcd10, MED_CATALOG, PROCEDURE_CATALOG, computeNews2, maskName, evaluateThresholds,
   NEWS2_ALARM_THRESHOLD, DEFAULT_THRESHOLDS,
   computeAnalytics, BED_STATES, BED_ADMIN_STATES, BED_STATE_LABEL,
+  CLINICAL_PROFILES, profileForPatient, profileForUnitType,
 } from "./clinicalDemo.js";
 import {
   getTheme, storedTheme, persistTheme, THEME_KEYS,
@@ -146,14 +148,61 @@ function HomunculusMark({ size = 44, glow = true }) {
   );
 }
 
+// Gerçek SVG bayraklar — emoji bayrakları Windows'ta "TR/AZ/GB/RU" harf çifti olarak
+// gösterildiği için (regional-indicator desteklenmez) her platformda görünen vektör bayraklar.
+const FLAG_SVG = {
+  tr: (
+    <svg viewBox="0 0 30 20" className="h-full w-full">
+      <rect width="30" height="20" fill="#E30A17" />
+      <circle cx="12" cy="10" r="5" fill="#fff" />
+      <circle cx="13.5" cy="10" r="4" fill="#E30A17" />
+      <path fill="#fff" d="M18 10l4.7-1.5-2.9 4v-5l2.9 4z" />
+    </svg>
+  ),
+  az: (
+    <svg viewBox="0 0 30 20" className="h-full w-full">
+      <rect width="30" height="6.67" fill="#00B5E2" />
+      <rect y="6.67" width="30" height="6.67" fill="#EF3340" />
+      <rect y="13.33" width="30" height="6.67" fill="#509E2F" />
+      <circle cx="15" cy="10" r="2.6" fill="#fff" />
+      <circle cx="15.8" cy="10" r="2.1" fill="#EF3340" />
+      <path fill="#fff" d="M18.4 10l2.4-.8-1.5 2v-2.5l1.5 2z" />
+    </svg>
+  ),
+  en: (
+    <svg viewBox="0 0 30 20" className="h-full w-full">
+      <rect width="30" height="20" fill="#012169" />
+      <path d="M0 0l30 20M30 0L0 20" stroke="#fff" strokeWidth="4" />
+      <path d="M0 0l30 20M30 0L0 20" stroke="#C8102E" strokeWidth="2" />
+      <path d="M15 0v20M0 10h30" stroke="#fff" strokeWidth="6" />
+      <path d="M15 0v20M0 10h30" stroke="#C8102E" strokeWidth="3.5" />
+    </svg>
+  ),
+  ru: (
+    <svg viewBox="0 0 30 20" className="h-full w-full">
+      <rect width="30" height="6.67" fill="#fff" />
+      <rect y="6.67" width="30" height="6.67" fill="#0039A6" />
+      <rect y="13.33" width="30" height="6.67" fill="#D52B1E" />
+    </svg>
+  ),
+};
+function Flag({ code, className = "" }) {
+  return (
+    <span className={`inline-block overflow-hidden rounded-[3px] ring-1 ring-black/10 ${className}`}>
+      {FLAG_SVG[code] || null}
+    </span>
+  );
+}
+
 // Kompakt bayrak dil seçici — giriş ekranı ve gerektiğinde her yerde kullanılabilir.
 function LangPills({ T, lang, setLang }) {
   return (
     <div className={`inline-flex items-center gap-0.5 rounded-xl border ${T.border} ${T.glassSubtle} p-0.5`}>
-      {LANGS.map(([code, label, flag]) => (
+      {LANGS.map(([code, label]) => (
         <button key={code} type="button" onClick={() => setLang(code)} title={label} aria-label={label}
-          className={`grid h-8 w-8 place-items-center rounded-lg text-lg leading-none transition ${lang === code ? "bg-brand/25 ring-1 ring-brand/50 scale-105" : "opacity-50 hover:opacity-100"}`}>
-          <span>{flag}</span>
+          className={`flex h-8 items-center gap-1.5 rounded-lg px-2 transition ${lang === code ? "bg-brand/25 ring-1 ring-brand/50" : "opacity-55 hover:opacity-100"}`}>
+          <Flag code={code} className="h-3.5 w-5" />
+          <span className="text-[11px] font-bold uppercase">{code}</span>
         </button>
       ))}
     </div>
@@ -164,7 +213,6 @@ function Login({ T, S, store, lang, setLang }) {
   const [email, setEmail] = useState("");
   const [credential, setCredential] = useState("");
   const [err, setErr] = useState("");
-  const [showDemo, setShowDemo] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const submit = (e) => {
     e.preventDefault();
@@ -172,12 +220,6 @@ function Login({ T, S, store, lang, setLang }) {
     // attemptLogin: rol MFA gerektiriyorsa oturumu açmadan MFA kapısına yönlendirir (mfaPending).
     try { store.attemptLogin(email.trim(), credential.trim()); } catch (ex) { setErr(ex.message); }
   };
-  const demoAccounts = [
-    ["dr.elif.yilmaz@homunculus.health", "1111"],
-    ["ayse.demir@homunculus.health", "2222"],
-    ["admin@homunculus.health", "9999"],
-  ];
-  const fill = (em, pin) => { setEmail(em); setCredential(pin); setErr(""); };
 
   const iconInput = (icon, node) => (
     <div className="relative">
@@ -249,8 +291,12 @@ function Login({ T, S, store, lang, setLang }) {
       </aside>
 
       {/* ============ SAĞ: Giriş formu ============ */}
-      <main className="relative flex flex-1 items-center justify-center p-6 sm:p-10">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand/10 via-transparent to-cyan-500/10 lg:hidden" />
+      <main className="relative flex flex-1 flex-col items-center justify-center p-6 sm:p-10">
+        {/* Dekoratif arka plan — ince ızgara + yumuşak ışıma (sağ taraf artık boş durmuyor) */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand/10 via-transparent to-cyan-500/10 lg:from-brand/[0.06] lg:to-cyan-500/[0.06]" />
+        <div className="pointer-events-none absolute inset-0 opacity-[0.4] dark:opacity-[0.25]"
+          style={{ backgroundImage: "radial-gradient(circle at 1px 1px, rgba(13,148,136,0.18) 1px, transparent 0)", backgroundSize: "26px 26px" }} />
+        <div className="pointer-events-none absolute -right-20 top-1/4 h-72 w-72 rounded-full bg-brand/10 blur-3xl" />
         {/* Üst-sağ dil seçici */}
         <div className="absolute right-5 top-5 z-20">
           <LangPills T={T} lang={lang} setLang={setLang} />
@@ -297,26 +343,30 @@ function Login({ T, S, store, lang, setLang }) {
 
           <p className={`mt-6 text-center text-[11px] leading-snug ${T.faint}`}>{S.pr9.kvkkNote}</p>
 
-          {/* Demo erişimi — varsayılan gizli, katlanır */}
-          <div className={`mt-5 rounded-2xl border ${T.border} ${T.glassSubtle}`}>
-            <button type="button" onClick={() => setShowDemo((v) => !v)}
-              className={`flex w-full items-center gap-2 px-3 py-2.5 text-xs font-semibold ${T.muted}`}>
-              <Sparkles size={13} className={T.accent} /> {S.pr9.demoAccess}
-              <ChevronDown size={14} className={`ml-auto transition-transform ${showDemo ? "rotate-180" : ""}`} />
-            </button>
-            {showDemo && (
-              <div className={`space-y-1.5 border-t ${T.border} px-3 py-2.5`}>
-                <div className={`mb-1 text-[11px] leading-snug ${T.faint}`}>{S.pr9.demoHint}</div>
-                {demoAccounts.map(([em, pin]) => (
-                  <div key={em} className="flex items-center gap-2 text-xs">
-                    <code className={`flex-1 truncate ${T.muted}`}>{em}</code>
-                    <span className={`font-mono ${T.faint}`}>{pin}</span>
-                    <button type="button" onClick={() => fill(em, pin)}
-                      className={`rounded-md px-2 py-1 text-[11px] font-semibold ${T.ghost}`}>{S.pr9.fillIn}</button>
-                  </div>
-                ))}
-              </div>
-            )}
+          {/* Uyum & standart rozetleri — sağ tarafı doldurur, kurumsal güven verir */}
+          <div className="mt-7">
+            <div className={`mb-2.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider ${T.faint}`}>
+              <span className={`h-px flex-1 ${T.border} border-t`} />
+              {S.pr19.loginStandards}
+              <span className={`h-px flex-1 ${T.border} border-t`} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[[ShieldCheck, S.pr19.loginTrustKvkk], [Lock, S.pr19.loginTrustIso],
+                [Network, S.pr19.loginTrustHl7], [Radio, S.pr19.loginTrustDevice]].map(([Icon, label], i) => (
+                <div key={i} className={`flex items-center gap-2 rounded-lg border ${T.border} ${T.glassSubtle} px-2.5 py-2`}>
+                  <Icon size={15} className="shrink-0 text-brand" />
+                  <span className={`text-[11px] font-medium leading-tight ${T.muted}`}>{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Alt bilgi — imza satırı */}
+        <div className={`relative z-10 mt-8 text-center text-[11px] ${T.faint}`}>
+          <div className="italic">{S.pr19.loginQuote}</div>
+          <div className="mt-1 flex items-center justify-center gap-1.5">
+            <Activity size={12} className="text-brand" /> {S.appName} · {S.pr19.loginSince}
           </div>
         </div>
       </main>
@@ -599,6 +649,68 @@ function PinSwitchModal({ T, S, store, onClose }) {
   );
 }
 
+// ================================================================ SHIFT MENU
+// Sağ üst vardiya göstergesi — saate göre otomatik algılanır (Gündüz/Akşam/Gece),
+// menüden elle sabitlenebilir. İmzalanmamış devir varsa rozetle uyarır.
+const SHIFT_DEFS = [
+  { key: "morning", icon: Sun, from: 8, to: 16 },
+  { key: "evening", icon: Sunset, from: 16, to: 24 },
+  { key: "night", icon: Moon, from: 0, to: 8 },
+];
+function autoShiftKey(h) { return h < 8 ? "night" : h < 16 ? "morning" : "evening"; }
+function shiftLabel(S, key) {
+  return key === "morning" ? S.pr19.shiftMorning : key === "evening" ? S.pr19.shiftEvening : S.pr19.shiftNightHrs;
+}
+function ShiftMenu({ T, S, state }) {
+  const [pin, setPin] = useState(null);
+  const hour = new Date().getHours();
+  const active = pin || autoShiftKey(hour);
+  const ActiveIcon = (SHIFT_DEFS.find((s) => s.key === active) || SHIFT_DEFS[0]).icon;
+  const unsigned = (state.shiftHandovers || []).filter((h) => !h.signedBy).length;
+  return (
+    <Menu T={T} align="right"
+      triggerClass={`hidden items-center gap-2 rounded-lg px-3 py-1.5 md:flex ${T.chip} relative`}
+      trigger={<>
+        <ActiveIcon size={15} className="text-brand" />
+        <div className="leading-tight text-left">
+          <div className="text-xs font-semibold">{shiftLabel(S, active).split(" (")[0]}</div>
+          <div className="text-[10px] opacity-70">{S.onDuty}</div>
+        </div>
+        <ChevronDown size={13} className="opacity-60" />
+        {unsigned > 0 && <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[9px] font-bold text-white">{unsigned}</span>}
+      </>}>
+      {({ close }) => (
+        <div className="w-60">
+          <div className={`px-2 pb-1.5 pt-1 text-xs font-semibold uppercase tracking-wide ${T.faint}`}>{S.pr19.shiftMenuTitle}</div>
+          {SHIFT_DEFS.map((s) => {
+            const I = s.icon; const isActive = s.key === active; const isAuto = s.key === autoShiftKey(hour);
+            return (
+              <button key={s.key} onClick={() => { setPin(s.key); close(); }}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
+                <I size={16} className={isActive ? "text-brand" : T.faint} />
+                <span className="flex-1">{shiftLabel(S, s.key)}</span>
+                {isAuto && <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${T.subtle} ${T.faint}`}>auto</span>}
+                {isActive && <Check size={15} className="text-brand" />}
+              </button>
+            );
+          })}
+          {pin && (
+            <button onClick={() => { setPin(null); close(); }}
+              className={`mt-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
+              <RefreshCw size={14} /> {S.pr19.switchShift} (auto)
+            </button>
+          )}
+          {unsigned > 0 && (
+            <div className={`mt-1 flex items-center gap-2 rounded-lg bg-amber-500/10 px-2.5 py-2 text-xs font-medium text-amber-600 dark:text-amber-400`}>
+              <PenLine size={14} /> {unsigned} {S.pr19.handoverPending}
+            </div>
+          )}
+        </div>
+      )}
+    </Menu>
+  );
+}
+
 // ================================================================ TOP BAR
 function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMenu,
                  soundOn, onEnableSound, notifyPerm, onEnableNotify, onTestPush }) {
@@ -690,25 +802,26 @@ function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMe
           )}
         </Menu>
 
-        {/* Language selector — görsel bayrak ikonları (🇹🇷 🇦🇿 🇬🇧 🇷🇺) */}
+        {/* Language selector — gerçek SVG bayraklar (Windows emoji bayrak sorununa dayanıklı) */}
         <div className={`hidden items-center gap-0.5 rounded-xl border ${T.border} ${T.subtle} p-0.5 sm:flex`} title={S.langLabel}>
-          {LANGS.map(([code, label, flag]) => (
+          {LANGS.map(([code, label]) => (
             <button key={code} onClick={() => setLang(code)} title={label} aria-label={label}
-              className={`grid h-8 w-8 place-items-center rounded-lg text-lg leading-none transition ${lang === code ? "bg-brand/20 ring-1 ring-brand/50 scale-105" : "opacity-55 hover:opacity-100"}`}>
-              <span>{flag}</span>
+              className={`flex h-8 items-center gap-1.5 rounded-lg px-2 transition ${lang === code ? "bg-brand/20 ring-1 ring-brand/50" : "opacity-55 hover:opacity-100"}`}>
+              <Flag code={code} className="h-3.5 w-5" />
+              <span className={`text-[11px] font-bold uppercase ${lang === code ? "text-brand" : ""}`}>{code}</span>
             </button>
           ))}
         </div>
         {/* Compact flag dropdown for narrow screens */}
         <Menu T={T} triggerClass={`inline-flex items-center gap-1 rounded-lg px-2 py-2 sm:hidden ${T.ghost} ${T.sizes.nav}`}
-          trigger={<><span className="text-base">{(LANGS.find((l) => l[0] === lang) || LANGS[0])[2]}</span><ChevronDown size={13} /></>}>
+          trigger={<><Flag code={lang} className="h-3.5 w-5" /><ChevronDown size={13} /></>}>
           {({ close }) => (
             <div>
               <div className={`px-2 pb-1.5 pt-1 text-xs font-semibold uppercase tracking-wide ${T.faint}`}>{S.langLabel}</div>
-              {LANGS.map(([code, label, flag]) => (
+              {LANGS.map(([code, label]) => (
                 <button key={code} onClick={() => { setLang(code); close(); }}
                   className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
-                  <span className="text-base">{flag}</span> {label}
+                  <Flag code={code} className="h-3.5 w-5" /> {label}
                   {lang === code && <Check size={15} className="ml-auto text-brand" />}
                 </button>
               ))}
@@ -716,14 +829,9 @@ function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMe
           )}
         </Menu>
 
-        {/* Shift + logout */}
-        <div className={`hidden items-center gap-2 rounded-lg px-3 py-1.5 md:flex ${T.chip}`}>
-          <Clock size={14} />
-          <div className="leading-tight">
-            <div className="text-xs font-semibold">{S.shiftDay}</div>
-            <div className="text-[10px] opacity-70">{S.onDuty}</div>
-          </div>
-        </div>
+        {/* Shift — çalışır vardiya menüsü: saate göre otomatik algılanır, elle değiştirilebilir */}
+        <ShiftMenu T={T} S={S} state={state} />
+        {/* logout */}
         <button onClick={() => store.logout()} className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost}`} title={S.logout}>
           <LogOut size={17} />
         </button>
@@ -734,11 +842,18 @@ function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMe
 
 // ================================================================ SIDEBAR
 const NAV_ITEMS = [
-  { key: "board", icon: LayoutGrid, roles: "all" },
+  { key: "board", icon: LayoutGrid, roles: "all", group: "clinical" },
   { key: "admission", icon: UserPlus, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "clinical" },
   { key: "care", icon: Users, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "clinical" },
   { key: "alarms", icon: Bell, roles: "all", group: "clinical" },
+  { key: "results", icon: Inbox, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "ops" },
+  { key: "heatmap", icon: Grid3x3, roles: "all", group: "ops" },
   { key: "admin", icon: Settings, roles: [ROLE.HOSPITAL_ADMIN], group: "admin" },
+];
+const NAV_GROUPS = [
+  { id: "clinical", label: "navGroupClinical" },
+  { id: "ops", label: "navGroupOps" },
+  { id: "admin", label: "navGroupAdmin" },
 ];
 function canSee(item, role) { return item.roles === "all" || item.roles.includes(role); }
 
@@ -759,17 +874,27 @@ function Sidebar({ T, S, state, page, setPage, collapsed, setCollapsed, mobileOp
           </div>
         )}
       </div>
-      <nav className="flex-1 space-y-1 px-2.5 py-2">
-        {visible.map((item) => {
-          const Icon = item.icon;
-          const active = page === item.key;
+      <nav className="flex-1 space-y-1 overflow-y-auto px-2.5 py-2">
+        {NAV_GROUPS.map((g) => {
+          const items = visible.filter((i) => (i.group || "clinical") === g.id);
+          if (!items.length) return null;
           return (
-            <button key={item.key} title={S.nav[item.key]}
-              onClick={() => { setPage(item.key); setMobileOpen(false); }}
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 font-medium transition ${T.sizes.nav} ${active ? T.navActive : T.navIdle} ${collapsed ? "justify-center" : ""}`}>
-              <Icon size={20} className="shrink-0" />
-              {!collapsed && <span className="truncate">{S.nav[item.key]}</span>}
-            </button>
+            <div key={g.id} className="mb-1.5">
+              {!collapsed && <div className={`px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider ${T.faint}`}>{S[g.label]}</div>}
+              {collapsed && <div className={`mx-2 my-1.5 border-t ${T.border}`} />}
+              {items.map((item) => {
+                const Icon = item.icon;
+                const active = page === item.key;
+                return (
+                  <button key={item.key} title={S.nav[item.key]}
+                    onClick={() => { setPage(item.key); setMobileOpen(false); }}
+                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 font-medium transition ${T.sizes.nav} ${active ? T.navActive : T.navIdle} ${collapsed ? "justify-center" : ""}`}>
+                    <Icon size={20} className="shrink-0" />
+                    {!collapsed && <span className="truncate">{S.nav[item.key]}</span>}
+                  </button>
+                );
+              })}
+            </div>
           );
         })}
       </nav>
@@ -859,7 +984,7 @@ function Waveform({ hr = 80, height = 34, stroke = "#10b981" }) {
   );
 }
 
-function BedBoard({ T, S, state, onOpenPatient }) {
+function BedBoard({ T, S, state, onOpenPatient, lang }) {
   const units = state.structure.units;
   const [unitId, setUnitId] = useState("all");
   const beds = unitId === "all" ? state.beds : state.beds.filter((b) => b.unitId === unitId);
@@ -934,6 +1059,7 @@ function BedBoard({ T, S, state, onOpenPatient }) {
               )}
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <News2Pill S={S} vitals={p.vitals} />
+                <BranchProfileBadge S={S} lang={lang} profile={profileForPatient(state, p)} size="sm" />
                 {dev ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-500 ring-1 ring-emerald-500/30">
                     <Radio size={11} className="animate-pulse" /> {S.pr7.live} · {dev.model} · {dev.ip}
@@ -956,12 +1082,107 @@ function BedBoard({ T, S, state, onOpenPatient }) {
   );
 }
 
+// Madde 26: PHI alan gösterimi — default masked, reveal butonu ile açılır, audit kaydı oluşur.
+function PhiField({ T, S, store, state, patient, field, label }) {
+  const value = patient[field];
+  const revealed = state.phiReveals[patient.patient_id]?.[field] || false;
+  const [err, setErr] = useState("");
+  const maskValue = (f, v) => {
+    if (!v) return "—";
+    if (f === "tc_no") return v.slice(0, 2) + "*".repeat(7) + v.slice(-2);
+    if (f === "phone") return v.slice(0, 5) + " *** ** " + v.slice(-2);
+    if (f === "address") return v.split(" ").slice(0, 2).join(" ") + " ···";
+    return v;
+  };
+  const reveal = () => {
+    try { store.revealPhiField({ patientId: patient.patient_id, field }); setErr(""); }
+    catch (ex) { setErr(ex.message); }
+  };
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <span className={`text-xs ${T.muted}`}>{label}</span>
+        {!revealed && value && (
+          <button onClick={reveal} className={`inline-flex items-center gap-1 text-xs ${T.accent}`}>
+            <Eye size={12} /> {S.pr13.reveal}
+          </button>
+        )}
+      </div>
+      <div className={`mt-0.5 font-mono text-sm ${T.text}`}>{revealed ? (value || "—") : maskValue(field, value)}</div>
+      {err && <div className="mt-1 text-xs text-red-500">{err}</div>}
+    </div>
+  );
+}
+
 // ================================================================ PATIENT DRAWER
-function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, lang }) {
+// pr19 #4 — sonuç türü ikon/etiket eşlemesi
+function resultTypeMeta(type, S) {
+  const P = S.pr19;
+  if (type === "radiology") return { icon: ScanLine, label: P.typeRadiology };
+  if (type === "epicrisis") return { icon: FileText, label: P.typeEpicrisis };
+  return { icon: FlaskConical, label: P.typeLab };
+}
+function resultStatusMeta(status, S) {
+  const P = S.pr19;
+  if (status === "reviewed") return { label: P.statusReviewed, cls: "bg-emerald-500/15 text-emerald-500" };
+  if (status === "resulted") return { label: P.statusResulted, cls: "bg-sky-500/15 text-sky-500" };
+  return { label: P.statusPending, cls: "bg-amber-500/15 text-amber-500" };
+}
+
+// pr19 #4 — bir hastaya ait sonuçların listesi (drawer içi)
+function PatientResults({ T, S, store, state, patientId }) {
+  const P = S.pr19;
+  const results = (state.results || []).filter((r) => r.patientId === patientId)
+    .sort((a, b) => b.atMs - a.atMs);
+  return (
+    <div className="mt-4">
+      <div className={`mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase ${T.faint}`}>
+        <Inbox size={13} /> {P.results}
+      </div>
+      {results.length === 0 ? (
+        <div className={`rounded-xl border ${T.border} ${T.subtle} p-3 text-sm ${T.muted}`}>{P.noResults}</div>
+      ) : (
+        <div className="space-y-2">
+          {results.map((r) => {
+            const tm = resultTypeMeta(r.type, S); const sm = resultStatusMeta(r.status, S);
+            const Icon = tm.icon;
+            return (
+              <div key={r.id} className={`rounded-xl border ${r.critical ? "border-red-500/40" : T.border} ${T.subtle} p-3 text-sm`}>
+                <div className="flex items-start gap-2">
+                  <span className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg ${T.chip}`}><Icon size={14} /></span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`font-semibold ${T.text}`}>{r.title}</span>
+                      {r.critical && <span className="rounded-full bg-red-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-red-500">{P.criticalValue}</span>}
+                      <span className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold ${sm.cls}`}>{sm.label}</span>
+                    </div>
+                    <div className={`mt-0.5 text-xs ${T.faint}`}>
+                      {tm.label} · {r.source === "hl7" ? P.sourceHl7 : P.sourceManual} · {new Date(r.atMs).toLocaleString()}
+                    </div>
+                    {r.summary && <div className={`mt-1 ${T.muted}`}>{r.summary}</div>}
+                    {r.status !== "reviewed" && (
+                      <button onClick={() => store.markResultReviewed({ resultId: r.id })}
+                        className={`mt-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold ${T.primary}`}>
+                        <Check size={13} /> {P.markReviewed}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, onExpand, lang }) {
   const p = state.patients.find((x) => x.patient_id === patientId);
   const [ho, setHo] = useState(false);
   if (!p) return null;
   const ru = riskUi(p.risk);
+  const profile = profileForPatient(state, p);
   const team = state.careTeam[p.patient_id] || {};
   const userName = (id) => state.users.find((u) => u.id === id)?.full_name || S.none;
   return (
@@ -973,19 +1194,37 @@ function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, lan
             <div className={`text-xs ${T.faint}`}>{S.patientDetail}</div>
             <h2 className={`text-xl font-bold ${T.heading}`}>{maskedName(state, p.display_name)}</h2>
           </div>
-          <button onClick={onClose} className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost}`}><X size={18} /></button>
+          <div className="flex items-center gap-1.5">
+            {/* Madde 8 — dar panelden geniş iki sütunlu tam ekran kokpite geç */}
+            <button onClick={() => onExpand(p.patient_id)} title={S.pr14.cockpitOpen}
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-xs font-semibold ${T.primary}`}>
+              <LayoutGrid size={15} /> <span className="hidden sm:inline">{S.pr14.cockpit}</span>
+            </button>
+            <button onClick={onClose} className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost}`}><X size={18} /></button>
+          </div>
         </div>
-        <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${ru.ring} ${ru.text}`}>
-          <span className={`h-2 w-2 rounded-full ${ru.dot}`} /> {S.riskLevel}: {S.risk[p.risk]}
-        </span>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${ru.ring} ${ru.text}`}>
+            <span className={`h-2 w-2 rounded-full ${ru.dot}`} /> {S.riskLevel}: {S.risk[p.risk]}
+          </span>
+          <BranchProfileBadge S={S} lang={lang} profile={profile} />
+        </div>
 
         <dl className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border ${T.border} ${T.subtle} p-4 text-sm`}>
-          {[[S.protocolNo, p.protocolNo], [S.mrn, p.mrn], [S.tcno, p.tcMasked],
+          {[[S.protocolNo, p.protocolNo], [S.mrn, p.mrn],
             [S.age, `${ageText(p, S)}${p.isNeonate ? "" : ""}`], [S.sex, p.sex === "male" ? S.male : S.female],
             [S.bed, p.bedLabel], [S.admittedBy, p.admittedBy], [S.lengthOfStay, losText(p.admittedAtMs, S)]].map(([k, v]) => (
             <div key={k}><dt className={`text-xs ${T.faint}`}>{k}</dt><dd className={`font-semibold ${T.text}`}>{v}</dd></div>
           ))}
         </dl>
+
+        {/* Madde 26: PHI alanları (TC, Telefon, Adres) — varsayılan masked, reveal butonu ile açılır */}
+        <div className={`mt-4 space-y-2 rounded-xl border ${T.border} ${T.subtle} p-4 text-sm`}>
+          <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr13.phiFields}</div>
+          <PhiField T={T} S={S} store={store} state={state} patient={p} field="tc_no" label={S.tcno} />
+          <PhiField T={T} S={S} store={store} state={state} patient={p} field="phone" label={S.pr13.phone} />
+          <PhiField T={T} S={S} store={store} state={state} patient={p} field="address" label={S.pr13.address} />
+        </div>
 
         <div className="mt-4">
           <div className={`mb-1 text-xs font-semibold uppercase ${T.faint}`}>{S.admissionDx}</div>
@@ -997,13 +1236,31 @@ function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, lan
           <VitalsGrid T={T} vitals={p.vitals} compact />
         </div>
 
+        {/* pr19 #3 — bakım ekibi ataması doğrudan hasta/yatak ekranından yapılabilir */}
         <div className="mt-4">
-          <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.careTeamLabel}</div>
-          <div className={`space-y-1 rounded-xl border ${T.border} ${T.subtle} p-3 text-sm`}>
-            <div className="flex justify-between"><span className={T.muted}>{S.attending}</span><span className={`font-semibold ${T.text}`}>{userName(team.attendingId)}</span></div>
-            <div className="flex justify-between"><span className={T.muted}>{S.nurse}</span><span className={`font-semibold ${T.text}`}>{userName(team.nurseId)}</span></div>
+          <div className={`mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase ${T.faint}`}>
+            <Users size={13} /> {S.careTeamLabel} · {S.pr19.assignFromBed}
+          </div>
+          <div className={`grid grid-cols-1 gap-3 rounded-xl border ${T.border} ${T.subtle} p-3 sm:grid-cols-2`}>
+            <Field T={T} label={S.pr19.assignAttending}>
+              <select className={inputCls(T)} value={team.attendingId || ""}
+                onChange={(e) => store.assignCareTeam({ patientId: p.patient_id, attendingId: e.target.value })}>
+                <option value="">{S.none}</option>
+                {state.users.filter((u) => u.role === ROLE.ATTENDING).map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+              </select>
+            </Field>
+            <Field T={T} label={S.pr19.assignNurse}>
+              <select className={inputCls(T)} value={team.nurseId || ""}
+                onChange={(e) => store.assignCareTeam({ patientId: p.patient_id, nurseId: e.target.value })}>
+                <option value="">{S.none}</option>
+                {state.users.filter((u) => u.role === ROLE.CHARGE_NURSE).map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+              </select>
+            </Field>
           </div>
         </div>
+
+        {/* pr19 #4 — hastaya ait lab/radyoloji/epikriz sonuçları */}
+        <PatientResults T={T} S={S} store={store} state={state} patientId={p.patient_id} />
 
         {/* PR#6 — clinical data entry & treatment module */}
         <div className="mt-5">
@@ -1099,7 +1356,7 @@ function AdmissionPage({ T, S, store, state, preselectTransfer, clearPreselect }
   const [tab, setTab] = useState(preselectTransfer ? "transfer" : "admit");
   useEffect(() => { if (preselectTransfer) setTab("transfer"); }, [preselectTransfer]);
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="max-w-5xl space-y-4">
       <div className="flex gap-2">
         <button onClick={() => setTab("admit")} className={`rounded-lg px-4 py-2.5 font-semibold ${T.sizes.nav} ${tab === "admit" ? T.navActive : T.ghost}`}>
           <UserPlus size={16} className="mr-2 inline" />{S.admissionTitle}
@@ -1115,67 +1372,181 @@ function AdmissionPage({ T, S, store, state, preselectTransfer, clearPreselect }
   );
 }
 
+function SectionHeader({ T, icon: Icon, title, hint }) {
+  return (
+    <div className="mb-3 mt-1 flex items-center gap-2">
+      {Icon && <span className={`grid h-7 w-7 place-items-center rounded-lg ${T.chip}`}><Icon size={15} /></span>}
+      <div>
+        <div className={`font-semibold ${T.heading}`}>{title}</div>
+        {hint && <div className={`text-xs ${T.faint}`}>{hint}</div>}
+      </div>
+    </div>
+  );
+}
+
 function AdmitForm({ T, S, store, state }) {
   const units = state.structure.units;
-  const [f, setF] = useState({ name: "", age: "", sex: "male", isNeonate: false, unitId: units[0]?.id || "",
-    bedId: "", source: "emergency", risk: "stable", dx: "" });
+  const P = S.pr19;
+  const attendings = state.users.filter((u) => u.role === ROLE.ATTENDING);
+  const nurses = state.users.filter((u) => u.role === ROLE.CHARGE_NURSE);
+  const [f, setF] = useState({
+    name: "", age: "", sex: "male", isNeonate: false, unitId: units[0]?.id || "",
+    bedId: "", source: "emergency", risk: "stable", dx: "",
+    triage: "standard", admittingComplaint: "", allergies: "", comorbidities: "",
+    codeStatus: "full", isolation: "none", weight: "", height: "", bloodType: "",
+    insurance: "", emergencyContact: "", emergencyPhone: "", attendingId: "", nurseId: "",
+  });
   const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
   const upd = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const availBeds = state.beds.filter((b) => b.unitId === f.unitId && b.state === "AVAILABLE");
+  const triageOpts = [
+    ["resus", P.triageResus], ["emergent", P.triageEmergent], ["urgent", P.triageUrgent],
+    ["standard", P.triageStandard], ["nonurgent", P.triageNonurgent],
+  ];
+  const codeOpts = [["full", P.codeFull], ["dnr", P.codeDnr], ["limited", P.codeLimited]];
+  const isoOpts = [["none", P.isoNone], ["contact", P.isoContact], ["droplet", P.isoDroplet], ["airborne", P.isoAirborne]];
   const submit = (e) => {
     e.preventDefault(); setErr(""); setMsg("");
     try {
-      const p = store.admitPatient({ displayName: f.name, sex: f.sex, bedId: f.bedId, diagnosisText: f.dx,
+      const p = store.admitPatient({
+        displayName: f.name, sex: f.sex, bedId: f.bedId, diagnosisText: f.dx,
         age: f.isNeonate ? 0 : Number(f.age) || null, isNeonate: f.isNeonate, ageDays: f.isNeonate ? Number(f.age) || 0 : null,
-        source: f.source, risk: f.risk });
+        source: f.source, risk: f.risk,
+        triage: f.triage, admittingComplaint: f.admittingComplaint,
+        allergies: f.allergies, comorbidities: f.comorbidities, codeStatus: f.codeStatus, isolation: f.isolation,
+        weight: Number(f.weight) || null, height: Number(f.height) || null, bloodType: f.bloodType,
+        insurance: f.insurance, emergencyContact: f.emergencyContact, emergencyPhone: f.emergencyPhone,
+        attendingId: f.attendingId || null, nurseId: f.nurseId || null,
+      });
       setMsg(`${S.admittedOk} (${p.protocolNo})`);
-      setF((s) => ({ ...s, name: "", age: "", dx: "", bedId: "" }));
+      setF((s) => ({ ...s, name: "", age: "", dx: "", bedId: "", admittingComplaint: "", allergies: "", comorbidities: "",
+        weight: "", height: "", bloodType: "", insurance: "", emergencyContact: "", emergencyPhone: "", attendingId: "", nurseId: "" }));
     } catch (ex) { setErr(ex.message); }
   };
+  const cardCls = `rounded-2xl border ${T.border} ${T.card} p-5`;
   return (
-    <form onSubmit={submit} className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-      <p className={`mb-4 text-sm ${T.muted}`}>{S.admissionSub}</p>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field T={T} label={S.fName}><input className={inputCls(T)} value={f.name} onChange={(e) => upd("name", e.target.value)} required /></Field>
-        <Field T={T} label={f.isNeonate ? `${S.fAge} (${S.dayUnit})` : S.fAge}><input type="number" min="0" className={inputCls(T)} value={f.age} onChange={(e) => upd("age", e.target.value)} /></Field>
-        <Field T={T} label={S.fSex}>
-          <select className={inputCls(T)} value={f.sex} onChange={(e) => upd("sex", e.target.value)}>
-            <option value="male">{S.male}</option><option value="female">{S.female}</option>
-          </select>
-        </Field>
-        <Field T={T} label={S.riskLevel}>
-          <select className={inputCls(T)} value={f.risk} onChange={(e) => upd("risk", e.target.value)}>
-            {["stable", "low", "high", "critical"].map((r) => <option key={r} value={r}>{S.risk[r]}</option>)}
-          </select>
-        </Field>
-        <Field T={T} label={S.fUnit}>
-          <select className={inputCls(T)} value={f.unitId} onChange={(e) => { upd("unitId", e.target.value); upd("bedId", ""); }}>
-            {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-        </Field>
-        <Field T={T} label={S.fBed}>
-          <select className={inputCls(T)} value={f.bedId} onChange={(e) => upd("bedId", e.target.value)} required>
-            <option value="">{availBeds.length ? S.selectTargetBed : S.noAvailableBed}</option>
-            {availBeds.map((b) => <option key={b.id} value={b.id}>{b.roomLabel} · {b.label}</option>)}
-          </select>
-        </Field>
-        <Field T={T} label={S.fSource}>
-          <select className={inputCls(T)} value={f.source} onChange={(e) => upd("source", e.target.value)}>
-            {Object.keys(S.source).map((k) => <option key={k} value={k}>{S.source[k]}</option>)}
-          </select>
-        </Field>
-        <label className={`flex items-center gap-2 self-end pb-2 ${T.sizes.nav} ${T.text}`}>
+    <form onSubmit={submit} className="space-y-4">
+      <p className={`text-sm ${T.muted}`}>{S.admissionSub}</p>
+
+      {/* Bölüm 1 — Hasta Kimliği */}
+      <div className={cardCls}>
+        <SectionHeader T={T} icon={UserPlus} title={P.secIdentity} />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field T={T} label={S.fName}><input className={inputCls(T)} value={f.name} onChange={(e) => upd("name", e.target.value)} required /></Field>
+          <Field T={T} label={f.isNeonate ? `${S.fAge} (${S.dayUnit})` : S.fAge}><input type="number" min="0" className={inputCls(T)} value={f.age} onChange={(e) => upd("age", e.target.value)} /></Field>
+          <Field T={T} label={S.fSex}>
+            <select className={inputCls(T)} value={f.sex} onChange={(e) => upd("sex", e.target.value)}>
+              <option value="male">{S.male}</option><option value="female">{S.female}</option>
+            </select>
+          </Field>
+          <Field T={T} label={`${P.bloodType} (${P.optional})`}>
+            <select className={inputCls(T)} value={f.bloodType} onChange={(e) => upd("bloodType", e.target.value)}>
+              <option value="">—</option>
+              {["0 Rh+", "0 Rh−", "A Rh+", "A Rh−", "B Rh+", "B Rh−", "AB Rh+", "AB Rh−"].map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </Field>
+          <Field T={T} label={`${P.weight} (${P.optional})`}><input type="number" min="0" step="0.1" className={inputCls(T)} value={f.weight} onChange={(e) => upd("weight", e.target.value)} /></Field>
+          <Field T={T} label={`${P.height} (${P.optional})`}><input type="number" min="0" className={inputCls(T)} value={f.height} onChange={(e) => upd("height", e.target.value)} /></Field>
+        </div>
+        <label className={`mt-3 flex items-center gap-2 ${T.sizes.nav} ${T.text}`}>
           <input type="checkbox" checked={f.isNeonate} onChange={(e) => upd("isNeonate", e.target.checked)} /> {S.unitNicu}
         </label>
       </div>
-      <div className="mt-4">
-        <Field T={T} label={S.fDx}>
-          <textarea rows={3} className={inputCls(T)} value={f.dx} onChange={(e) => upd("dx", e.target.value)} placeholder={S.dxPlaceholder} required />
-        </Field>
+
+      {/* Bölüm 2 — Klinik Değerlendirme & Triyaj */}
+      <div className={cardCls}>
+        <SectionHeader T={T} icon={Activity} title={P.secClinical} />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field T={T} label={P.triage}>
+            <select className={inputCls(T)} value={f.triage} onChange={(e) => upd("triage", e.target.value)}>
+              {triageOpts.map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
+            </select>
+          </Field>
+          <Field T={T} label={S.riskLevel}>
+            <select className={inputCls(T)} value={f.risk} onChange={(e) => upd("risk", e.target.value)}>
+              {["stable", "low", "high", "critical"].map((r) => <option key={r} value={r}>{S.risk[r]}</option>)}
+            </select>
+          </Field>
+          <Field T={T} label={P.codeStatus}>
+            <select className={inputCls(T)} value={f.codeStatus} onChange={(e) => upd("codeStatus", e.target.value)}>
+              {codeOpts.map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
+            </select>
+          </Field>
+          <Field T={T} label={P.isolation}>
+            <select className={inputCls(T)} value={f.isolation} onChange={(e) => upd("isolation", e.target.value)}>
+              {isoOpts.map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div className="mt-4">
+          <Field T={T} label={P.admittingComplaint}>
+            <input className={inputCls(T)} value={f.admittingComplaint} onChange={(e) => upd("admittingComplaint", e.target.value)} placeholder={P.complaintPlaceholder} />
+          </Field>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field T={T} label={`${P.allergies} (${P.optional})`}>
+            <input className={inputCls(T)} value={f.allergies} onChange={(e) => upd("allergies", e.target.value)} placeholder={P.allergyPlaceholder} />
+          </Field>
+          <Field T={T} label={`${P.comorbidities} (${P.optional})`}>
+            <input className={inputCls(T)} value={f.comorbidities} onChange={(e) => upd("comorbidities", e.target.value)} placeholder={P.comorbidPlaceholder} />
+          </Field>
+        </div>
+        <div className="mt-4">
+          <Field T={T} label={S.fDx}>
+            <textarea rows={3} className={inputCls(T)} value={f.dx} onChange={(e) => upd("dx", e.target.value)} placeholder={S.dxPlaceholder} required />
+          </Field>
+        </div>
       </div>
-      {err && <div className="mt-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
-      {msg && <div className="mt-3 rounded-lg bg-emerald-500/15 px-3 py-2 text-sm text-emerald-500">{msg}</div>}
-      <div className="mt-4 flex justify-end">
+
+      {/* Bölüm 3 — Yatak & Bakım Ekibi */}
+      <div className={cardCls}>
+        <SectionHeader T={T} icon={Bed} title={P.secBedTeam} />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field T={T} label={S.fUnit}>
+            <select className={inputCls(T)} value={f.unitId} onChange={(e) => { upd("unitId", e.target.value); upd("bedId", ""); }}>
+              {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </Field>
+          <Field T={T} label={S.fBed}>
+            <select className={inputCls(T)} value={f.bedId} onChange={(e) => upd("bedId", e.target.value)} required>
+              <option value="">{availBeds.length ? S.selectTargetBed : S.noAvailableBed}</option>
+              {availBeds.map((b) => <option key={b.id} value={b.id}>{b.roomLabel} · {b.label}</option>)}
+            </select>
+          </Field>
+          <Field T={T} label={S.fSource}>
+            <select className={inputCls(T)} value={f.source} onChange={(e) => upd("source", e.target.value)}>
+              {Object.keys(S.source).map((k) => <option key={k} value={k}>{S.source[k]}</option>)}
+            </select>
+          </Field>
+          <Field T={T} label={`${P.assignAttending} (${P.optional})`}>
+            <select className={inputCls(T)} value={f.attendingId} onChange={(e) => upd("attendingId", e.target.value)}>
+              <option value="">{S.none}</option>
+              {attendings.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+            </select>
+          </Field>
+          <Field T={T} label={`${P.assignNurse} (${P.optional})`}>
+            <select className={inputCls(T)} value={f.nurseId} onChange={(e) => upd("nurseId", e.target.value)}>
+              <option value="">{S.none}</option>
+              {nurses.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+            </select>
+          </Field>
+        </div>
+      </div>
+
+      {/* Bölüm 4 — İletişim & Güvence */}
+      <div className={cardCls}>
+        <SectionHeader T={T} icon={HeartHandshake} title={P.secContact} />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field T={T} label={`${P.insurance} (${P.optional})`}><input className={inputCls(T)} value={f.insurance} onChange={(e) => upd("insurance", e.target.value)} /></Field>
+          <Field T={T} label={`${P.emergencyContact} (${P.optional})`}><input className={inputCls(T)} value={f.emergencyContact} onChange={(e) => upd("emergencyContact", e.target.value)} /></Field>
+          <Field T={T} label={`${P.emergencyPhone} (${P.optional})`}><input className={inputCls(T)} value={f.emergencyPhone} onChange={(e) => upd("emergencyPhone", e.target.value)} /></Field>
+        </div>
+        <p className={`mt-3 text-xs ${T.faint}`}>{P.docsAfterAdmit || ""}</p>
+      </div>
+
+      {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+      {msg && <div className="rounded-lg bg-emerald-500/15 px-3 py-2 text-sm text-emerald-500">{msg}</div>}
+      <div className="flex justify-end">
         <button type="submit" className={btnCls(T, "primary")}><Check size={16} /> {S.admitBtn}</button>
       </div>
     </form>
@@ -1276,6 +1647,213 @@ function CareTeamPage({ T, S, store, state }) {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ================================================================ RESULTS INBOX (pr19 #4)
+function ResultsInbox({ T, S, store, state }) {
+  const P = S.pr19;
+  const patients = state.patients;
+  const [f, setF] = useState({ patientId: patients[0]?.patient_id || "", type: "lab", title: "", summary: "", critical: false, fileName: "" });
+  const [filter, setFilter] = useState("all"); // all | lab | radiology | epicrisis
+  const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
+  const upd = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const his = state.hisIntegration || { connected: false, lastSyncMs: null };
+  const allResults = [...(state.results || [])].sort((a, b) => b.atMs - a.atMs);
+  const results = filter === "all" ? allResults : allResults.filter((r) => r.type === filter);
+  const pendingCount = allResults.filter((r) => r.status !== "reviewed").length;
+  const patientName = (id) => { const p = patients.find((x) => x.patient_id === id); return p ? `${p.bedLabel} · ${maskedName(state, p.display_name)}` : "—"; };
+
+  const submit = (e) => {
+    e.preventDefault(); setErr(""); setMsg("");
+    if (!f.patientId) { setErr(P.selectPatientFirst); return; }
+    try {
+      store.addResult({ patientId: f.patientId, type: f.type, title: f.title, summary: f.summary, source: "manual", critical: f.critical, status: "resulted", fileName: f.fileName || null });
+      setMsg(P.resultAdded);
+      setF((s) => ({ ...s, title: "", summary: "", critical: false, fileName: "" }));
+    } catch (ex) { setErr(ex.message); }
+  };
+  const doSimulate = () => {
+    setErr(""); setMsg("");
+    try { store.simulateInboundResult({}); setMsg(P.resultAdded); }
+    catch (ex) { setErr(ex.message); }
+  };
+  const typeOpts = [["lab", P.typeLab], ["radiology", P.typeRadiology], ["epicrisis", P.typeEpicrisis]];
+
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      {/* Sol: sonuç listesi */}
+      <div className="space-y-4 xl:col-span-2">
+        {/* HBYS entegrasyon kartı */}
+        <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+          <div className="flex items-start gap-3">
+            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${his.connected ? "bg-emerald-500/15 text-emerald-500" : T.chip}`}>
+              <PlugZap size={20} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className={`font-semibold ${T.heading}`}>{P.integrationTitle}</div>
+              <div className={`mt-0.5 text-sm ${T.muted}`}>{his.connected ? P.integrationConnected : P.integrationDemo}</div>
+              {his.connected && his.lastSyncMs && (
+                <div className={`mt-1 text-xs ${T.faint}`}>{P.lastSync}: {new Date(his.lastSyncMs).toLocaleString()}</div>
+              )}
+            </div>
+            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-500">DEMO</span>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button onClick={() => store.toggleHisIntegration()}
+              className={btnCls(T, his.connected ? "ghost" : "primary")}>
+              <RefreshCw size={15} /> {P.integrationToggle}
+            </button>
+            <button onClick={doSimulate} disabled={!his.connected}
+              className={`${btnCls(T, "ghost")} ${!his.connected ? "cursor-not-allowed opacity-50" : ""}`}>
+              <Download size={15} /> {P.simulateInbound}
+            </button>
+            <span className={`ml-auto self-center text-xs ${T.faint}`}>{pendingCount} {P.pendingCount}</span>
+          </div>
+        </div>
+
+        {/* Filtre sekmeleri */}
+        <div className="flex flex-wrap gap-2">
+          {[["all", P.results], ...typeOpts].map(([k, lbl]) => (
+            <button key={k} onClick={() => setFilter(k)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${filter === k ? T.navActive : T.ghost}`}>{lbl}</button>
+          ))}
+        </div>
+
+        {/* Liste */}
+        <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+          {results.length === 0 ? (
+            <div className={`py-8 text-center text-sm ${T.muted}`}>{P.noResults}</div>
+          ) : (
+            <div className="space-y-2">
+              {results.map((r) => {
+                const tm = resultTypeMeta(r.type, S); const sm = resultStatusMeta(r.status, S); const Icon = tm.icon;
+                return (
+                  <div key={r.id} className={`rounded-xl border ${r.critical ? "border-red-500/40" : T.border} ${T.subtle} p-3 text-sm`}>
+                    <div className="flex items-start gap-2">
+                      <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${T.chip}`}><Icon size={15} /></span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`font-semibold ${T.text}`}>{r.title}</span>
+                          {r.critical && <span className="rounded-full bg-red-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-red-500">{P.criticalValue}</span>}
+                          <span className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold ${sm.cls}`}>{sm.label}</span>
+                        </div>
+                        <div className={`mt-0.5 text-xs ${T.faint}`}>
+                          {patientName(r.patientId)} · {tm.label} · {r.source === "hl7" ? P.sourceHl7 : P.sourceManual} · {new Date(r.atMs).toLocaleString()}
+                        </div>
+                        {r.summary && <div className={`mt-1 ${T.muted}`}>{r.summary}</div>}
+                        {r.status !== "reviewed" && (
+                          <button onClick={() => store.markResultReviewed({ resultId: r.id })}
+                            className={`mt-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold ${T.primary}`}>
+                            <Check size={13} /> {P.markReviewed}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Sağ: manuel yükleme formu */}
+      <div>
+        <form onSubmit={submit} className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+          <div className={`mb-3 flex items-center gap-2 font-semibold ${T.heading}`}><Upload size={17} /> {P.uploadResult}</div>
+          <div className="space-y-3">
+            <Field T={T} label={S.selectPatient}>
+              <select className={inputCls(T)} value={f.patientId} onChange={(e) => upd("patientId", e.target.value)} required>
+                {patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.bedLabel} · {maskedName(state, p.display_name)}</option>)}
+              </select>
+            </Field>
+            <Field T={T} label={P.resultType}>
+              <select className={inputCls(T)} value={f.type} onChange={(e) => upd("type", e.target.value)}>
+                {typeOpts.map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
+              </select>
+            </Field>
+            <Field T={T} label={P.resultTitle}><input className={inputCls(T)} value={f.title} onChange={(e) => upd("title", e.target.value)} placeholder={P.resultTitlePh} required /></Field>
+            <Field T={T} label={P.resultSummary}><textarea rows={3} className={inputCls(T)} value={f.summary} onChange={(e) => upd("summary", e.target.value)} placeholder={P.resultSummaryPh} /></Field>
+            <Field T={T} label={`${P.attachFile} (${P.optional})`}>
+              <input type="file" className={`${inputCls(T)} file:mr-2 file:rounded file:border-0 file:bg-brand/15 file:px-2 file:py-1 file:text-brand`}
+                onChange={(e) => upd("fileName", e.target.files?.[0]?.name || "")} />
+            </Field>
+            <label className={`flex items-center gap-2 ${T.sizes.nav} ${T.text}`}>
+              <input type="checkbox" checked={f.critical} onChange={(e) => upd("critical", e.target.checked)} /> {P.criticalValue}
+            </label>
+          </div>
+          {err && <div className="mt-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+          {msg && <div className="mt-3 rounded-lg bg-emerald-500/15 px-3 py-2 text-sm text-emerald-500">{msg}</div>}
+          <div className="mt-4 flex justify-end">
+            <button type="submit" className={btnCls(T, "primary")}><Plus size={16} /> {P.uploadResult}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ================================================================ UNIT HEATMAP (pr19 #2/#4)
+function HeatmapPage({ T, S, store, state }) {
+  const P = S.pr19;
+  const units = state.structure.units;
+  const [unitId, setUnitId] = useState("all");
+  const [grid, setGrid] = useState([]);
+  useEffect(() => {
+    const heat = store.computeHeatmap(unitId === "all" ? {} : { unitId });
+    setGrid(heat.grid || []);
+    // recompute when patients/alerts/beds/unit change
+  }, [unitId, state.patients, state.alerts, state.beds]); // eslint-disable-line react-hooks/exhaustive-deps
+  const riskCls = (risk, occupied) => {
+    if (!occupied) return `${T.subtle} ${T.faint}`;
+    if (risk === "HIGH") return "bg-red-500/20 text-red-600 ring-1 ring-red-500/40";
+    if (risk === "MEDIUM") return "bg-amber-500/20 text-amber-600 ring-1 ring-amber-500/40";
+    return "bg-emerald-500/15 text-emerald-600 ring-1 ring-emerald-500/30";
+  };
+  const counts = grid.reduce((a, g) => { if (g.occupied) a[g.risk] = (a[g.risk] || 0) + 1; return a; }, {});
+  const legend = [["HIGH", "bg-red-500/60", S.risk.critical], ["MEDIUM", "bg-amber-500/60", S.risk.high], ["LOW", "bg-emerald-500/50", S.risk.stable]];
+  return (
+    <div className="space-y-4">
+      <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className={`flex items-center gap-2 font-bold ${T.heading}`}><Grid3x3 size={18} /> {P.heatmapTitle}</div>
+            <div className={`mt-0.5 text-sm ${T.muted}`}>{P.heatmapSub}</div>
+          </div>
+          <select className={`${inputCls(T)} max-w-[220px]`} value={unitId} onChange={(e) => setUnitId(e.target.value)}>
+            <option value="all">{S.allUnits || S.nav.board}</option>
+            {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-4">
+          {legend.map(([k, dot, lbl]) => (
+            <div key={k} className={`flex items-center gap-1.5 text-xs ${T.muted}`}>
+              <span className={`h-3 w-3 rounded ${dot}`} /> {lbl} · {counts[k] || 0}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
+          {grid.map((g) => (
+            <div key={g.bedId} title={`${g.unitName} · ${g.roomLabel} · ${g.bedLabel}`}
+              className={`rounded-xl p-2.5 text-center ${riskCls(g.risk, g.occupied)}`}>
+              <div className="truncate text-[11px] font-bold">{g.bedLabel}</div>
+              {g.occupied ? (
+                <>
+                  <div className="mt-1 text-lg font-black leading-none tabular-nums">{g.news2}</div>
+                  <div className="text-[9px] font-semibold uppercase opacity-80">NEWS2</div>
+                  {g.alertCount > 0 && <div className="mt-0.5 text-[9px] font-bold">⚠ {g.alertCount}</div>}
+                </>
+              ) : (
+                <div className="mt-2 text-[10px] font-semibold uppercase opacity-70">{P.empty}</div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -1704,6 +2282,8 @@ function AdminPage({ T, S, store, state }) {
     { key: "security", label: S.pr10.inviteTitle, icon: Shield },
     { key: "devices", label: S.pr7.devices, icon: Radio },
     { key: "audit", label: S.pr7.auditSearch, icon: ScrollText },
+    { key: "archive", label: S.pr13.archiveTitle, icon: Archive },
+    { key: "sessions", label: S.pr13.sessionsTitle, icon: Monitor },
   ];
   return (
     <div className="space-y-4">
@@ -1741,6 +2321,8 @@ function AdminPage({ T, S, store, state }) {
           <AuditLog T={T} S={S} state={state} />
         </div>
       )}
+      {tab === "archive" && <ArchiveManagement T={T} S={S} store={store} state={state} />}
+      {tab === "sessions" && <SessionManagement T={T} S={S} store={store} state={state} />}
     </div>
   );
 }
@@ -2043,15 +2625,17 @@ function ActionOverlay({ T, title, onClose, children }) {
 // aktif/pasif, MFA yönetimi, birim & vardiya erişimi).
 function UserRow({ T, S, store, state, u }) {
   const units = state.structure.units;
-  const [modal, setModal] = useState(null); // "password" | "pin" | "units"
+  const [modal, setModal] = useState(null); // "password" | "pin" | "units" | "role"
   const [pw, setPw] = useState("");
   const [pinResult, setPinResult] = useState("");
   const [copied, setCopied] = useState(false);
   const [selUnits, setSelUnits] = useState(u.unitIds || []);
+  const [selRole, setSelRole] = useState(u.role);
   const [err, setErr] = useState("");
   const wrap = (fn) => { try { fn(); setErr(""); } catch (ex) { setErr(ex.message); } };
   const active = u.active !== false;
 
+  const doRole = () => wrap(() => { store.setUserRole({ userId: u.id, role: selRole }); setModal(null); });
   const doPassword = () => wrap(() => { store.setUserPassword({ userId: u.id, password: pw }); setModal(null); setPw(""); });
   const doPin = () => wrap(() => { const pin = store.resetUserPin({ userId: u.id }); setPinResult(pin); setModal("pin"); });
   const doUnits = () => wrap(() => { store.setUserUnits({ userId: u.id, unitIds: selUnits }); setModal(null); });
@@ -2076,6 +2660,8 @@ function UserRow({ T, S, store, state, u }) {
             trigger={<><Settings size={14} /><span className="hidden sm:inline">{S.pr8.userActions}</span><ChevronDown size={13} /></>}>
             {({ close }) => (
               <div className="text-sm">
+                <button onClick={() => { setSelRole(u.role); setModal("role"); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><Shield size={14} /> {S.pr12.roleChange}</button>
+                <div className={`my-1 border-t ${T.border}`} />
                 <button onClick={() => { setModal("password"); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><KeyRound size={14} /> {S.pr8.resetPassword}</button>
                 <button onClick={() => { doPin(); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><Lock size={14} /> {S.pr8.setTempPin}</button>
                 <button onClick={() => { wrap(() => store.toggleUserActive(u.id)); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><Power size={14} /> {active ? S.pr8.deactivate : S.pr8.activate}</button>
@@ -2090,6 +2676,21 @@ function UserRow({ T, S, store, state, u }) {
         </div>
       </div>
       {err && <div className="mt-2 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-500">{err}</div>}
+
+      {modal === "role" && (
+        <ActionOverlay T={T} title={S.pr12.roleChangeTitle} onClose={() => setModal(null)}>
+          <p className={`mb-2 text-sm ${T.muted}`}>{S.pr12.roleChangeHint}</p>
+          <Field T={T} label={S.pr12.roleLabel}>
+            <select className={inputCls(T)} value={selRole} onChange={(e) => setSelRole(e.target.value)} autoFocus>
+              {Object.values(ROLE).map((r) => (
+                <option key={r} value={r}>{S.roleName[r]}</option>
+              ))}
+            </select>
+          </Field>
+          {err && <div className="mt-2 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-500">{err}</div>}
+          <button onClick={doRole} className={`${btnCls(T, "primary")} mt-3 w-full`}><Check size={15} /> {S.pr12.roleChangeSave}</button>
+        </ActionOverlay>
+      )}
 
       {modal === "password" && (
         <ActionOverlay T={T} title={S.pr8.resetPassword} onClose={() => { setModal(null); setPw(""); }}>
@@ -2277,9 +2878,9 @@ function MfaModal({ T, S, store, mfaModal, onClose }) {
 }
 
 function UserAdmin({ T, S, store, state }) {
-  const [f, setF] = useState({ full_name: "", email: "", role: ROLE.ATTENDING });
+  const [f, setF] = useState({ full_name: "", email: "", role: ROLE.ATTENDING, password: "" });
   const [err, setErr] = useState("");
-  const submit = (e) => { e.preventDefault(); try { store.createUser(f); setF({ full_name: "", email: "", role: ROLE.ATTENDING }); setErr(""); } catch (ex) { setErr(ex.message); } };
+  const submit = (e) => { e.preventDefault(); try { store.createUser(f); setF({ full_name: "", email: "", role: ROLE.ATTENDING, password: "" }); setErr(""); } catch (ex) { setErr(ex.message); } };
   return (
     <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
       <h3 className={`mb-1 font-bold ${T.heading}`}>{S.usersSection}</h3>
@@ -2291,6 +2892,9 @@ function UserAdmin({ T, S, store, state }) {
           <select className={inputCls(T)} value={f.role} onChange={(e) => setF((s) => ({ ...s, role: e.target.value }))}>
             {[ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN, ROLE.RRT].map((r) => <option key={r} value={r}>{S.roleName[r]}</option>)}
           </select>
+        </Field>
+        <Field T={T} label={S.pr12.initialPassword}>
+          <input className={inputCls(T)} type="text" placeholder={S.pr12.initialPasswordHint} value={f.password} onChange={(e) => setF((s) => ({ ...s, password: e.target.value }))} />
         </Field>
         {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
         <button type="submit" className={`${btnCls(T, "primary")} w-full`}><Plus size={16} /> {S.addUser}</button>
@@ -2531,6 +3135,290 @@ function Icd10Search({ T, S, lang, onPick }) {
   );
 }
 
+// ================================================================ FAZ C — branş profili rozeti (Madde 7)
+// Hastanın bağlı olduğu ünitenin branş klinik profilini (Erişkin/Pediatri/Yenidoğan/KVC/Koroner/
+// Acil/Ameliyathane/Palyatif) renk + isim + skorlama modeli ile gösterir.
+function BranchProfileBadge({ S, lang, profile, size = "sm" }) {
+  if (!profile) return null;
+  const name = profile.names[lang] || profile.names.tr;
+  const pad = size === "lg" ? "px-3 py-1.5 text-sm" : "px-2 py-0.5 text-[11px]";
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full font-semibold ring-1 ${pad} ${profile.tone}`}>
+      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: profile.accent }} />
+      {name}
+      <span className="opacity-70">· {profile.score}</span>
+    </span>
+  );
+}
+
+// ================================================================ FAZ C — çok parametreli trend (Madde 18)
+// Tek zaman ekseni üzerinde HR / SpO₂ / MAP / Temp / RR eğrilerini üst üste çizer. Seri aç/kapa,
+// zaman aralığı yakınlaştırma (1s/3s/6s) ve ilaç başlangıç olay işaretleri içerir. Harici grafik
+// kütüphanesi kullanılmaz — saf SVG (Sparkline ile aynı yaklaşım).
+const TREND_SERIES = [
+  { key: "hr",   label: "HR",   color: "#f472b6", unit: "/dk" },
+  { key: "spo2", label: "SpO₂", color: "#38bdf8", unit: "%" },
+  { key: "map",  label: "MAP",  color: "#a3e635", unit: "mmHg" },
+  { key: "temp", label: "Temp", color: "#fb923c", unit: "°C" },
+  { key: "rr",   label: "RR",   color: "#c084fc", unit: "/dk" },
+];
+function MultiTrendChart({ T, S, hist, medications }) {
+  const [enabled, setEnabled] = useState({ hr: true, spo2: true, map: true, temp: false, rr: false });
+  const [rangeH, setRangeH] = useState(6);
+  const toggle = (k) => setEnabled((s) => ({ ...s, [k]: !s[k] }));
+  const now = Date.now();
+  const t0 = now - rangeH * 3600 * 1000;
+  const pts = (hist || []).filter((h) => h.tMs >= t0);
+  if (pts.length < 2) return <Empty T={T} text={S.pr14.noTrend} />;
+
+  const W = 680, H = 230, padL = 8, padR = 8, padT = 22, padB = 20;
+  const tMin = pts[0].tMs, tMax = pts[pts.length - 1].tMs;
+  const tSpan = (tMax - tMin) || 1;
+  const xFor = (tMs) => padL + ((tMs - tMin) / tSpan) * (W - padL - padR);
+  const seriesPath = (key) => {
+    const vals = pts.map((p) => p[key]).filter((v) => v != null);
+    if (vals.length < 2) return null;
+    const mn = Math.min(...vals), mx = Math.max(...vals), sp = (mx - mn) || 1;
+    const yFor = (v) => padT + (1 - (v - mn) / sp) * (H - padT - padB);
+    const d = pts.map((p, i) => `${i === 0 ? "M" : "L"}${xFor(p.tMs).toFixed(1)},${yFor(p[key]).toFixed(1)}`).join(" ");
+    return { d, last: vals[vals.length - 1] };
+  };
+  // İlaç başlangıç olay işaretleri (pencere içindeki startMs).
+  const events = (medications || []).filter((m) => m.startMs != null && m.startMs >= tMin && m.startMs <= tMax);
+  const fmtT = (ms) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <div>
+      {/* seri aç/kapa + latest değer + zaman aralığı */}
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        {TREND_SERIES.map((s) => {
+          const sp = seriesPath(s.key);
+          const on = enabled[s.key];
+          return (
+            <button key={s.key} onClick={() => toggle(s.key)}
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 transition ${on ? "ring-transparent" : `${T.chip} opacity-50`}`}
+              style={on ? { backgroundColor: `${s.color}22`, color: s.color } : undefined}>
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
+              {s.label}{sp && <span className="tabular-nums opacity-80">{sp.last}</span>}
+            </button>
+          );
+        })}
+        <div className="ml-auto flex items-center gap-1">
+          <span className={`text-[10px] uppercase ${T.faint}`}>{S.pr14.trendZoom}</span>
+          {[1, 3, 6].map((h) => (
+            <button key={h} onClick={() => setRangeH(h)}
+              className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${rangeH === h ? "bg-brand text-white" : T.ghost}`}>{h}s</button>
+          ))}
+        </div>
+      </div>
+      <div className={`rounded-xl border ${T.border} ${T.subtle} p-2`}>
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none">
+          {/* olay işaretleri: dikey kesikli çizgi + üçgen */}
+          {events.map((m, i) => {
+            const x = xFor(m.startMs);
+            return (
+              <g key={m.id || i}>
+                <line x1={x} y1={padT} x2={x} y2={H - padB} stroke={T.trendEvent || "#94a3b8"} strokeWidth="1" strokeDasharray="3 3" opacity="0.6" />
+                <polygon points={`${x - 4},${padT - 6} ${x + 4},${padT - 6} ${x},${padT}`} fill="#eab308" />
+              </g>
+            );
+          })}
+          {TREND_SERIES.filter((s) => enabled[s.key]).map((s) => {
+            const sp = seriesPath(s.key);
+            if (!sp) return null;
+            return <path key={s.key} d={sp.d} fill="none" stroke={s.color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />;
+          })}
+        </svg>
+        <div className={`mt-1 flex items-center justify-between text-[10px] tabular-nums ${T.faint}`}>
+          <span>{fmtT(tMin)}</span>
+          {events.length > 0 && <span className="inline-flex items-center gap-1"><Pill size={10} /> {S.pr14.events}</span>}
+          <span>{fmtT(tMax)} · {S.pr14.now}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ================================================================ FAZ C — sıvı dengesi zaman çizelgesi (Madde 21)
+// Kronolojik sıvı olaylarından kümülatif alınan/çıkan ve anlık dengeyi çizer. Denge eşik dışına
+// çıkarsa uyarı rozeti gösterir (sistem asla tanı koymaz — "yeniden değerlendirilecek").
+function FluidBalanceTimeline({ T, S, fluids }) {
+  const evs = [...(fluids || [])].sort((a, b) => a.atMs - b.atMs);
+  if (evs.length === 0) return <Empty T={T} text={S.pr14.noFluids} />;
+  let cin = 0, cout = 0;
+  const rows = evs.map((f) => {
+    if (f.kind === "in") cin += f.ml; else cout += f.ml;
+    return { ...f, cin, cout, bal: cin - cout };
+  });
+  const totalIn = cin, totalOut = cout, balance = cin - cout;
+  const maxCum = Math.max(cin, cout, 1);
+  const WARN = 1500; // ± eşik (mL) — demo amaçlı
+  const warn = Math.abs(balance) >= WARN;
+  const fmtT = (ms) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return (
+    <div>
+      <div className="mb-2 grid grid-cols-3 gap-2 text-center">
+        <div className={`rounded-lg border ${T.border} ${T.subtle} p-2`}>
+          <div className={`text-[10px] uppercase ${T.faint}`}>{S.pr14.cumulativeIn}</div>
+          <div className="text-sm font-bold tabular-nums text-sky-500">{totalIn} mL</div>
+        </div>
+        <div className={`rounded-lg border ${T.border} ${T.subtle} p-2`}>
+          <div className={`text-[10px] uppercase ${T.faint}`}>{S.pr14.cumulativeOut}</div>
+          <div className="text-sm font-bold tabular-nums text-amber-500">{totalOut} mL</div>
+        </div>
+        <div className={`rounded-lg border ${T.border} ${T.subtle} p-2`}>
+          <div className={`text-[10px] uppercase ${T.faint}`}>{S.pr14.runningBalance}</div>
+          <div className={`text-sm font-bold tabular-nums ${balance >= 0 ? "text-emerald-500" : "text-red-500"}`}>{balance > 0 ? "+" : ""}{balance} mL</div>
+        </div>
+      </div>
+      {warn && (
+        <div className="mb-2 flex items-center gap-2 rounded-lg bg-amber-500/15 px-3 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+          <AlertTriangle size={14} /> {S.pr14.balanceWarn}
+        </div>
+      )}
+      <div className="space-y-1">
+        {rows.map((r) => (
+          <div key={r.id} className="flex items-center gap-2">
+            <span className={`w-10 shrink-0 text-[10px] tabular-nums ${T.faint}`}>{fmtT(r.atMs)}</span>
+            <div className="flex h-4 flex-1 items-center overflow-hidden rounded bg-slate-500/10">
+              <div className="h-full" style={{ width: `${(r.cin / maxCum) * 100}%`, backgroundColor: "#38bdf8aa" }} />
+              <div className="h-full" style={{ width: `${(r.cout / maxCum) * 100}%`, backgroundColor: "#f59e0baa" }} />
+            </div>
+            <span className={`w-24 shrink-0 truncate text-[11px] ${T.text}`}>{r.label || (r.kind === "in" ? S.pr6.intake : S.pr6.output)}</span>
+            <span className={`w-12 shrink-0 text-right text-[11px] font-semibold tabular-nums ${r.bal >= 0 ? "text-emerald-500" : "text-red-500"}`}>{r.bal > 0 ? "+" : ""}{r.bal}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ================================================================ FAZ C — ilaç/infüzyon zaman çizelgesi (Madde 21)
+// Son 24 saatlik pencerede her ilaç/infüzyonu yatay Gantt çubuğu olarak gösterir (başlangıç→bitiş
+// veya "devam ediyor"). Aktif infüzyonlar canlı renkle vurgulanır.
+function MedicationTimeline({ T, S, medications }) {
+  const meds = medications || [];
+  if (meds.length === 0) return <Empty T={T} text={S.pr14.noMeds} />;
+  const now = Date.now();
+  const windowH = 24;
+  const t0 = now - windowH * 3600 * 1000;
+  const span = now - t0;
+  const fmtT = (ms) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return (
+    <div className="space-y-1.5">
+      <div className={`flex justify-between text-[10px] tabular-nums ${T.faint}`}>
+        <span>-{windowH}s</span><span>{S.pr14.now}</span>
+      </div>
+      {meds.map((m) => {
+        const start = Math.max(m.startMs || t0, t0);
+        const end = m.endMs || now;
+        const left = ((start - t0) / span) * 100;
+        const width = Math.max(2, ((Math.min(end, now) - start) / span) * 100);
+        const ongoing = !m.endMs;
+        return (
+          <div key={m.id} className="flex items-center gap-2">
+            <span className={`w-28 shrink-0 truncate text-[11px] font-medium ${T.text}`} title={m.name}>{m.name}</span>
+            <div className="relative h-4 flex-1 rounded bg-slate-500/10">
+              <div className={`absolute top-0 h-full rounded ${ongoing ? "bg-emerald-500/70" : "bg-slate-400/60"}`}
+                style={{ left: `${left}%`, width: `${width}%` }} title={`${fmtT(start)} → ${ongoing ? S.pr14.ongoing : fmtT(end)}`} />
+            </div>
+            <span className={`w-16 shrink-0 text-right text-[10px] tabular-nums ${ongoing ? "text-emerald-500" : T.faint}`}>{m.dose} {m.unit}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ================================================================ FAZ C — tam ekran hasta kokpiti (Madde 8)
+// Dar sürgü panelinin ("2. görsel") yarattığı sıkışıklığı çözer: geniş iki sütunlu, satır içi
+// düzenlenebilir kokpit. Sol sütun = izlem (branş profili, vitaller, NEWS2, çok parametreli trend,
+// sıvı/ilaç zaman çizelgeleri); sağ sütun = klinik veri girişi (ICD-10/ilaç/işlem/sıvı/eşik).
+function PatientCockpit({ T, S, state, store, patientId, onClose, lang }) {
+  const p = state.patients.find((x) => x.patient_id === patientId);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  if (!p) return null;
+  const ru = riskUi(p.risk);
+  const profile = profileForPatient(state, p);
+  const rec = state.clinical[patientId] || { diagnoses: [], medications: [], procedures: [], fluids: [], vitalHistory: [] };
+  const team = state.careTeam[p.patient_id] || {};
+  const userName = (id) => state.users.find((u) => u.id === id)?.full_name || S.none;
+  return (
+    <div className="fixed inset-0 z-[60]">
+      <div className={`absolute inset-0 ${T.overlay}`} onClick={onClose} />
+      <div className={`absolute inset-0 sm:inset-3 lg:inset-6 flex flex-col overflow-hidden rounded-none sm:rounded-2xl border ${T.border} ${T.card} shadow-2xl`}>
+        {/* başlık şeridi */}
+        <div className={`flex items-center gap-3 border-b ${T.border} ${T.sidebar} px-4 py-3`}
+          style={{ boxShadow: `inset 4px 0 0 ${profile.accent}` }}>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className={`truncate text-lg font-bold ${T.heading}`}>{maskedName(state, p.display_name)}</h2>
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${ru.ring} ${ru.text}`}>
+                <span className={`h-2 w-2 rounded-full ${ru.dot}`} /> {S.risk[p.risk]}
+              </span>
+              <BranchProfileBadge S={S} lang={lang} profile={profile} />
+            </div>
+            <div className={`mt-0.5 truncate text-xs ${T.faint}`}>
+              {p.bedLabel} · {S.mrn} {p.mrn} · {S.protocolNo} {p.protocolNo} · {ageText(p, S)} · {losText(p.admittedAtMs, S)}
+            </div>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <News2Pill S={S} vitals={p.vitals} />
+            <button onClick={onClose} className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost}`} title={S.close || "Kapat"}><X size={18} /></button>
+          </div>
+        </div>
+        {/* iki sütunlu gövde */}
+        <div className="grid flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-2">
+          {/* SOL — izlem */}
+          <div className="space-y-4">
+            <div className={`rounded-xl border ${T.border} ${T.subtle} p-3`}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: profile.accent }} />
+                <span className={`text-xs font-semibold ${T.heading}`}>{profile.names[lang] || profile.names.tr}</span>
+                <span className={`ml-auto text-[11px] ${T.faint}`}>{S.pr14.clinicalFocus}: {profile.focus[lang] || profile.focus.tr}</span>
+              </div>
+              <div className={`text-[11px] ${profile.mode === "comfort" ? "text-emerald-500" : T.muted}`}>
+                {profile.mode === "comfort" ? S.pr14.comfortMode : S.pr14.standardMode}
+              </div>
+            </div>
+            <div>
+              <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.vitals}</div>
+              <VitalsGrid T={T} vitals={p.vitals} />
+            </div>
+            <div>
+              <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr14.trendTitle}</div>
+              <MultiTrendChart T={T} S={S} hist={rec.vitalHistory} medications={rec.medications} />
+            </div>
+            <div>
+              <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr14.fluidTimeline}</div>
+              <FluidBalanceTimeline T={T} S={S} fluids={rec.fluids} />
+            </div>
+            <div>
+              <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr14.medTimeline}</div>
+              <MedicationTimeline T={T} S={S} medications={rec.medications} />
+            </div>
+            <div>
+              <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.careTeamLabel}</div>
+              <div className={`space-y-1 rounded-xl border ${T.border} ${T.subtle} p-3 text-sm`}>
+                <div className="flex justify-between"><span className={T.muted}>{S.attending}</span><span className={`font-semibold ${T.text}`}>{userName(team.attendingId)}</span></div>
+                <div className="flex justify-between"><span className={T.muted}>{S.nurse}</span><span className={`font-semibold ${T.text}`}>{userName(team.nurseId)}</span></div>
+              </div>
+            </div>
+          </div>
+          {/* SAĞ — klinik veri girişi (satır içi düzenlenebilir) */}
+          <div className={`rounded-xl border ${T.border} ${T.subtle} p-3`}>
+            <ClinicalModule T={T} S={S} store={store} state={state} patientId={patientId} lang={lang} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Full clinical data-entry module (physician): diagnoses, drugs/infusions, procedures, fluid balance,
 // mini vital trends, NEWS2, per-patient thresholds and one-click epicrisis/handover report.
 function ClinicalModule({ T, S, store, state, patientId, lang }) {
@@ -2725,6 +3613,70 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{border:1px solid 
   setTimeout(() => { try { w.print(); } catch (e) { /* ignore */ } }, 400);
 }
 
+// Madde 27: Arşiv Yönetimi — arşivlenmiş hastalar listesi + anonimizasyon.
+function ArchiveManagement({ T, S, store, state }) {
+  const [err, setErr] = useState("");
+  const wrap = (fn) => { try { fn(); setErr(""); } catch (ex) { setErr(ex.message); } };
+  return (
+    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+      <div className="mb-3 flex items-center gap-2">
+        <Archive size={17} className={T.accent} />
+        <h3 className={`font-bold ${T.heading}`}>{S.pr13.archiveTitle}</h3>
+        <span className={`ml-auto rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>{state.archivedPatients.length} {S.pr13.archived}</span>
+      </div>
+      {err && <div className="mb-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+      <div className={`divide-y ${T.divide} rounded-xl border ${T.border}`}>
+        {state.archivedPatients.length === 0 && <div className={`px-3 py-6 text-center text-sm ${T.faint}`}>{S.pr13.noArchived}</div>}
+        {state.archivedPatients.map((p) => (
+          <div key={p.patient_id} className="flex items-center gap-3 px-3 py-2.5">
+            <div className="min-w-0 flex-1">
+              <div className={`truncate font-semibold ${T.text}`}>{p.display_name}</div>
+              <div className={`truncate text-xs ${T.faint}`}>{p.mrn} · {new Date(p.archivedAtMs).toLocaleDateString()}</div>
+            </div>
+            {!p.anonymizedAtMs && (
+              <button onClick={() => wrap(() => store.anonymizePatient({ patientId: p.patient_id }))} className={`${btnCls(T, "ghost")} shrink-0 text-xs`}>
+                <XCircle size={14} /> {S.pr13.anonymize}
+              </button>
+            )}
+            {p.anonymizedAtMs && <span className={`shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-500`}>{S.pr13.anonymized}</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Madde 12: Oturum Yönetimi — aktif oturumlar listesi + sonlandırma.
+function SessionManagement({ T, S, store, state }) {
+  const [err, setErr] = useState("");
+  const wrap = (fn) => { try { fn(); setErr(""); } catch (ex) { setErr(ex.message); } };
+  return (
+    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+      <div className="mb-3 flex items-center gap-2">
+        <Monitor size={17} className={T.accent} />
+        <h3 className={`font-bold ${T.heading}`}>{S.pr13.sessionsTitle}</h3>
+        <span className={`ml-auto rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>{state.activeSessions.length} {S.pr13.active}</span>
+      </div>
+      {err && <div className="mb-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+      <div className={`divide-y ${T.divide} rounded-xl border ${T.border}`}>
+        {state.activeSessions.length === 0 && <div className={`px-3 py-6 text-center text-sm ${T.faint}`}>{S.pr13.noSessions}</div>}
+        {state.activeSessions.map((s) => (
+          <div key={s.id} className="flex items-center gap-3 px-3 py-2.5">
+            <Monitor size={15} className="shrink-0 text-emerald-500" />
+            <div className="min-w-0 flex-1">
+              <div className={`truncate font-semibold ${T.text}`}>{s.email}</div>
+              <div className={`truncate text-xs ${T.faint}`}>{s.device} · {s.ip} · {new Date(s.startedAtMs).toLocaleString()}</div>
+            </div>
+            <button onClick={() => wrap(() => store.terminateSession({ sessionId: s.id }))} className={`${btnCls(T, "ghost")} shrink-0 text-xs`}>
+              <Power size={14} /> {S.pr13.terminate}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Append-only audit log viewer + search panel (S-15/C2). Text search + action filter + date range.
 // Actor names honour the KVKK mask toggle.
 function AuditLog({ T, S, state }) {
@@ -2752,12 +3704,34 @@ function AuditLog({ T, S, state }) {
     }).reverse();
   }, [all, q, action, from, to]);
   const clear = () => { setQ(""); setAction(""); setFrom(""); setTo(""); };
+  const exportCSV = () => {
+    const headers = ["Tarih/Saat", "İşlem", "Kullanıcı", "Rol", "Hedef", "Detay"];
+    const csvRows = rows.map((r) => [
+      new Date(r.atMs).toLocaleString("tr-TR"),
+      label(r.action),
+      r.actor || "—",
+      r.role || "—",
+      r.target || "—",
+      (r.detail || "").replace(/"/g, '""'),
+    ]);
+    const csvContent = [headers, ...csvRows].map((row) => row.map((c) => `"${c}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `denetim-kaydi-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
   return (
     <div className={`rounded-2xl border ${T.border} ${T.card} ${T.lift} p-5`}>
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <ScrollText size={17} className={T.accent} />
         <h3 className={`font-bold ${T.heading}`}>{S.pr7.auditSearch}</h3>
-        <span className={`ml-auto rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>{rows.length} {S.pr7.resultCount}</span>
+        <span className={`rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>{rows.length} {S.pr7.resultCount}</span>
+        <button onClick={exportCSV} disabled={rows.length === 0} className={`ml-auto inline-flex items-center gap-1.5 ${btnCls(T, "ghost")} disabled:opacity-40 disabled:cursor-not-allowed`}>
+          <Download size={14} /> {S.pr13.exportCSV}
+        </button>
       </div>
       {/* search + filters */}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -2826,6 +3800,7 @@ export function ClinicalDemo() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [drawerPatient, setDrawerPatient] = useState(null);
+  const [cockpitPatient, setCockpitPatient] = useState(null); // Madde 8 — tam ekran kokpit
   const [transferPatient, setTransferPatient] = useState(null);
   const [soundOn, setSoundOn] = useState(false);
   const [notifyPerm, setNotifyPerm] = useState(
@@ -2969,17 +3944,24 @@ export function ClinicalDemo() {
           </div>
         )}
         <main className="flex-1 overflow-x-hidden p-4 lg:p-6">
-          {effectivePage === "board" && <BedBoard T={T} S={S} state={state} onOpenPatient={setDrawerPatient} />}
+          {effectivePage === "board" && <BedBoard T={T} S={S} state={state} onOpenPatient={setDrawerPatient} lang={lang} />}
           {effectivePage === "admission" && <AdmissionPage T={T} S={S} store={store} state={state}
             preselectTransfer={transferPatient} clearPreselect={() => setTransferPatient(null)} />}
           {effectivePage === "care" && <CareTeamPage T={T} S={S} store={store} state={state} />}
           {effectivePage === "alarms" && <AlarmPage T={T} S={S} store={store} state={state} lang={lang} />}
+          {effectivePage === "results" && <ResultsInbox T={T} S={S} store={store} state={state} />}
+          {effectivePage === "heatmap" && <HeatmapPage T={T} S={S} store={store} state={state} />}
           {effectivePage === "admin" && <AdminPage T={T} S={S} store={store} state={state} />}
         </main>
       </div>
       {drawerPatient && (
         <PatientDrawer T={T} S={S} state={state} store={store} patientId={drawerPatient} lang={lang}
-          onClose={() => setDrawerPatient(null)} onTransfer={openTransfer} />
+          onClose={() => setDrawerPatient(null)} onTransfer={openTransfer}
+          onExpand={(pid) => { setDrawerPatient(null); setCockpitPatient(pid); }} />
+      )}
+      {cockpitPatient && (
+        <PatientCockpit T={T} S={S} state={state} store={store} patientId={cockpitPatient} lang={lang}
+          onClose={() => setCockpitPatient(null)} />
       )}
       <KvkkBanner T={T} S={S} />
     </div>
