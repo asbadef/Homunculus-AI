@@ -2770,7 +2770,7 @@ function InviteManagement({ T, S, store, state }) {
           <Field T={T} label={S.pr10.inviteRole}>
             <select className={inputCls(T)} value={f.role}
               onChange={(e) => setF((s) => ({ ...s, role: e.target.value }))}>
-              {[ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN, ROLE.RRT].map((r) => (
+              {Object.values(ROLE).map((r) => (
                 <option key={r} value={r}>{S.roleName[r]}</option>
               ))}
             </select>
@@ -2890,7 +2890,7 @@ function UserAdmin({ T, S, store, state }) {
         <Field T={T} label={S.uEmail}><input className={inputCls(T)} value={f.email} onChange={(e) => setF((s) => ({ ...s, email: e.target.value }))} /></Field>
         <Field T={T} label={S.uRole}>
           <select className={inputCls(T)} value={f.role} onChange={(e) => setF((s) => ({ ...s, role: e.target.value }))}>
-            {[ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN, ROLE.RRT].map((r) => <option key={r} value={r}>{S.roleName[r]}</option>)}
+            {Object.values(ROLE).map((r) => <option key={r} value={r}>{S.roleName[r]}</option>)}
           </select>
         </Field>
         <Field T={T} label={S.pr12.initialPassword}>

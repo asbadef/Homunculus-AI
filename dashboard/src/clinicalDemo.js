@@ -25,6 +25,8 @@ export const ROLE_ACCOUNTS = [
   { email: "dr.can.ozturk@homunculus.health",  pin: "3333", full_name: "Dr. Can Öztürk",  role: ROLE.ATTENDING },
   { email: "selin.arslan@homunculus.health",   pin: "4444", full_name: "Selin Arslan",    role: ROLE.CHARGE_NURSE },
   { email: "dr.murat.sahin@homunculus.health", pin: "5555", full_name: "Dr. Murat Şahin", role: ROLE.RRT },
+  { email: "ecz.zeynep.kaya@homunculus.health", pin: "6666", full_name: "Ecz. Zeynep Kaya", role: ROLE.PHARMACIST },
+  { email: "biyomed.ahmet.yildiz@homunculus.health", pin: "7777", full_name: "Ahmet Yıldız", role: ROLE.BIOMEDICAL },
 ];
 // Geriye dönük uyumluluk (eski isimler bazı içe aktarımlarda kullanılabilir).
 export const DEMO_ACCOUNTS = ROLE_ACCOUNTS;
@@ -401,6 +403,8 @@ export function buildRealisticState() {
     { id: "u-04", full_name: "Dr. Can Öztürk",  email: "dr.can.ozturk@homunculus.health",  role: ROLE.ATTENDING,     active: true, mfa: false, mfaRequired: true,  pin: "3333", password: "Hekim.Can2025!",    unitIds: ["unit-nicu"] },
     { id: "u-05", full_name: "Selin Arslan",    email: "selin.arslan@homunculus.health",   role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "4444", password: "Hemsire.Selin2025!", unitIds: ["unit-adult", "unit-nicu"] },
     { id: "u-06", full_name: "Dr. Murat Şahin", email: "dr.murat.sahin@homunculus.health", role: ROLE.RRT,           active: true, mfa: false, mfaRequired: false, pin: "5555", password: "Rrt.Murat2025!",     unitIds: ["unit-adult", "unit-nicu"] },
+    { id: "u-07", full_name: "Ecz. Zeynep Kaya", email: "ecz.zeynep.kaya@homunculus.health", role: ROLE.PHARMACIST,  active: true, mfa: false, mfaRequired: false, pin: "6666", password: "Eczaci.Zeynep2025!", unitIds: ["unit-adult", "unit-nicu"] },
+    { id: "u-08", full_name: "Ahmet Yıldız",    email: "biyomed.ahmet.yildiz@homunculus.health", role: ROLE.BIOMEDICAL, active: true, mfa: false, mfaRequired: false, pin: "7777", password: "Biyomed.Ahmet2025!", unitIds: ["unit-adult", "unit-nicu"] },
   ];
 
   const structure = {

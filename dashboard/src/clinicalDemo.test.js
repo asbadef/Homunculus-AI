@@ -1165,3 +1165,38 @@ describe("pr19 HBYS entegrasyonu", () => {
     expect(s.getState().results.length).toBeGreaterThan(0);
   });
 });
+
+describe("PHARMACIST & BIOMEDICAL roles", () => {
+  it("seeds pharmacist and biomedical users", () => {
+    const state = buildRealisticState();
+    expect(state.users.length).toBeGreaterThanOrEqual(8);
+    const pharmacist = state.users.find(u => u.role === ROLE.PHARMACIST);
+    const biomedical = state.users.find(u => u.role === ROLE.BIOMEDICAL);
+    expect(pharmacist).toBeTruthy();
+    expect(pharmacist.email).toBe("ecz.zeynep.kaya@homunculus.health");
+    expect(biomedical).toBeTruthy();
+    expect(biomedical.email).toBe("biyomed.ahmet.yildiz@homunculus.health");
+  });
+
+  it("allows pharmacist login", () => {
+    const store = createDemoStore(buildRealisticState());
+    expect(() => store.login("ecz.zeynep.kaya@homunculus.health", "Eczaci.Zeynep2025!")).not.toThrow();
+    expect(store.getState().user.role).toBe(ROLE.PHARMACIST);
+  });
+
+  it("allows biomedical login", () => {
+    const store = createDemoStore(buildRealisticState());
+    expect(() => store.login("biyomed.ahmet.yildiz@homunculus.health", "Biyomed.Ahmet2025!")).not.toThrow();
+    expect(store.getState().user.role).toBe(ROLE.BIOMEDICAL);
+  });
+
+  it("admin can change user role to PHARMACIST", () => {
+    const store = createDemoStore(buildRealisticState());
+    store.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    const users = store.getState().users;
+    const targetUser = users.find(u => u.role === ROLE.ATTENDING);
+    expect(() => store.setUserRole({ userId: targetUser.id, role: ROLE.PHARMACIST })).not.toThrow();
+    const updated = store.getState().users.find(u => u.id === targetUser.id);
+    expect(updated.role).toBe(ROLE.PHARMACIST);
+  });
+});
