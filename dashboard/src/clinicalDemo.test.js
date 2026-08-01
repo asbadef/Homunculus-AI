@@ -6,6 +6,8 @@ import {
   computeAnalytics, BED_STATES, BED_ADMIN_STATES,
   CLINICAL_PROFILES, UNIT_TYPE_KEYS, profileForUnitType, unitTypeForPatient, profileForPatient,
   computeAlarmAnalytics, ALARM_CLASSIFICATION,
+  PERMISSION, ROLE_PERMISSIONS, roleCan,
+  visibleUnits, visiblePatients, visibleBeds, currentTenantId, isSuperAdmin,
 } from "./clinicalDemo.js";
 
 // ---------------------------------------------------------------- pure escalation logic (S-05)
@@ -167,14 +169,15 @@ describe("realistic environment", () => {
     expect(Array.isArray(st.tenants)).toBe(true);
     expect(Array.isArray(st.sites)).toBe(true);
     expect(Array.isArray(st.invites)).toBe(true);
-    expect(st.tenantSetup).toBe(false);
+    // Gerçekçi demo, varsayılan kurum (Homunculus Şehir Hastanesi) zaten kurulu başlar.
+    expect(st.tenantSetup).toBe(true);
+    expect(st.tenants).toHaveLength(1);
+    expect(st.sites).toHaveLength(1);
     const s = createDemoStore(buildRealisticState());
     const t = s.createTenant({ name: "Test Hastanesi", slug: "test-hastanesi", countryCode: "TR" });
-    expect(s.getState().tenants).toHaveLength(1);
-    s.createSite({ tenantId: t.id, name: "Merkez Kampüs" });
-    expect(s.getState().sites).toHaveLength(1);
-    s.completeTenantSetup();
-    expect(s.getState().tenantSetup).toBe(true);
+    expect(s.getState().tenants).toHaveLength(2);
+    s.createSite({ tenantId: t.id, name: "Şube Kampüs" });
+    expect(s.getState().sites).toHaveLength(2);
   });
 
   it("masks national IDs for non-neonates and shows none for neonates", () => {
@@ -1198,5 +1201,115 @@ describe("PHARMACIST & BIOMEDICAL roles", () => {
     expect(() => store.setUserRole({ userId: targetUser.id, role: ROLE.PHARMACIST })).not.toThrow();
     const updated = store.getState().users.find(u => u.id === targetUser.id);
     expect(updated.role).toBe(ROLE.PHARMACIST);
+  });
+});
+
+// ---------------------------------------------------------------- roller & yetki matrisi (PHYSICIAN/NURSE)
+describe("Rol hiyerarşisi & yetki matrisi", () => {
+  it("8 rol tanımlı (Hekim + Hemşire dahil)", () => {
+    expect(ROLE.PHYSICIAN).toBe("PHYSICIAN");
+    expect(ROLE.NURSE).toBe("NURSE");
+    expect(Object.keys(ROLE)).toHaveLength(8);
+  });
+  it("Hekim skorlama girebilir, Hemşire giremez", () => {
+    expect(roleCan(ROLE.PHYSICIAN, PERMISSION.EDIT_SCORING)).toBe(true);
+    expect(roleCan(ROLE.ATTENDING, PERMISSION.EDIT_SCORING)).toBe(true);
+    expect(roleCan(ROLE.NURSE, PERMISSION.EDIT_SCORING)).toBe(false);
+    expect(roleCan(ROLE.CHARGE_NURSE, PERMISSION.EDIT_SCORING)).toBe(false);
+  });
+  it("Admin tüm izinlere, eczacı sadece eczane+görüntülemeye sahip", () => {
+    expect(roleCan(ROLE.HOSPITAL_ADMIN, PERMISSION.ADMIN_CONFIG)).toBe(true);
+    expect(roleCan(ROLE.PHARMACIST, PERMISSION.PHARMACY)).toBe(true);
+    expect(roleCan(ROLE.PHARMACIST, PERMISSION.EDIT_SCORING)).toBe(false);
+    expect(roleCan(ROLE.BIOMEDICAL, PERMISSION.BIOMED)).toBe(true);
+  });
+  it("yeni Hekim ve Hemşire hesapları giriş yapabilir", () => {
+    const s = createDemoStore(buildRealisticState());
+    const dr = s.login("dr.deniz.aydin@homunculus.health", "Hekim.Deniz2025!");
+    expect(dr.role).toBe(ROLE.PHYSICIAN);
+    s.logout();
+    const n = s.login("merve.celik@homunculus.health", "Hemsire.Merve2025!");
+    expect(n.role).toBe(ROLE.NURSE);
+  });
+});
+
+// ---------------------------------------------------------------- çok-hastane veri izolasyonu (Madde 5)
+describe("Çok-hastane (multi-tenant) izolasyonu", () => {
+  it("varsayılan kurum kullanıcısı tüm demo ünitelerini görür", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.login("dr.deniz.aydin@homunculus.health", "Hekim.Deniz2025!");
+    const st = s.getState();
+    expect(currentTenantId(st)).toBe("tenant-hmn");
+    expect(visibleUnits(st).length).toBe(st.structure.units.length);
+  });
+  it("süper yönetici (admin) tüm kurumları görür", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    expect(isSuperAdmin(s.getState().user)).toBe(true);
+  });
+  it("yeni hastane kullanıcısı YALNIZCA kendi kurumunun hasta/ünitelerini görür", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    const res = s.createHospital({
+      name: "Med Hospital", slug: "med", siteName: "Med Merkez",
+      units: [{ name: "Med Erişkin YBÜ", type: "ADULT_ICU", beds: 3 }],
+      staff: [{ email: "dr.med@med.health", fullName: "Dr. Med Hekim", role: ROLE.PHYSICIAN }],
+    });
+    expect(res.tenant.id).toContain("tenant-");
+    expect(res.units).toHaveLength(1);
+    expect(res.beds).toHaveLength(3);
+    expect(res.users).toHaveLength(1);
+    // Med Hospital hekimi giriş yapınca sadece Med ünitesini görmeli, Homunculus hastalarını görmemeli
+    const medDoc = res.users[0];
+    s.logout();
+    // tempPin ile giriş (createHospital geçici PIN üretir)
+    s.login(medDoc.email, medDoc.tempPin);
+    const st = s.getState();
+    expect(currentTenantId(st)).toBe(res.tenant.id);
+    const vUnits = visibleUnits(st);
+    expect(vUnits).toHaveLength(1);
+    expect(vUnits[0].id).toBe(res.units[0].id);
+    // Homunculus'un demo hastaları görünmemeli (Med'in henüz hastası yok)
+    expect(visiblePatients(st)).toHaveLength(0);
+    expect(visibleBeds(st)).toHaveLength(3);
+  });
+  it("createHospital yinelenen slug'ı reddeder", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    expect(() => s.createHospital({ name: "X", slug: "homunculus" })).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------- skorlama mağaza entegrasyonu
+describe("Skorlama mağaza entegrasyonu", () => {
+  it("hekim skoru kaydedebilir, geçmiş en yeni önce sıralanır", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.login("dr.deniz.aydin@homunculus.health", "Hekim.Deniz2025!");
+    const e = s.saveScore({ patientId: "P-101", scoreType: "APACHE2",
+      inputs: { temp: 39.5, map: 45, hr: 145, rr: 36, ph: 7.2, na: 155, k: 6.5,
+        creatinine: 2.5, hct: 55, wbc: 25, gcs: 10, age: 70, chronicHealth: "emergency" } });
+    expect(e.scoreType).toBe("APACHE2");
+    expect(e.score).toBeGreaterThan(30);
+    expect(e.byRole).toBe(ROLE.PHYSICIAN);
+    const hist = s.scoresForPatient("P-101", "APACHE2");
+    expect(hist).toHaveLength(1);
+    s.saveScore({ patientId: "P-101", scoreType: "APACHE2", inputs: { temp: 37, age: 70 } });
+    expect(s.scoresForPatient("P-101", "APACHE2")).toHaveLength(2);
+    // en yeni önce
+    expect(s.scoresForPatient("P-101")[0].score).toBeLessThan(hist[0].score);
+  });
+  it("hemşire skor kaydedemez (yetki reddi)", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.login("merve.celik@homunculus.health", "Hemsire.Merve2025!");
+    expect(() => s.saveScore({ patientId: "P-101", scoreType: "SOFA", inputs: {} })).toThrow();
+  });
+  it("otomatik doldurma monitör vitallerini getirir", () => {
+    const s = createDemoStore(buildRealisticState());
+    s.login("dr.deniz.aydin@homunculus.health", "Hekim.Deniz2025!");
+    const af = s.autofillScoreInputs("P-101", "APACHE2");
+    expect(af.inputs.hr).toBe(112);
+    expect(af.inputs.map).toBe(68);
+    expect(af.inputs.temp).toBe(38.4);
+    expect(af.filled).toContain("hr");
   });
 });

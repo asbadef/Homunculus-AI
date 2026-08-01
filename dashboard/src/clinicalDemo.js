@@ -4,15 +4,50 @@
 // All data here is SYNTHETIC (fake people, masked IDs) but rendered at production fidelity.
 // The system never diagnoses — machine-generated alert text uses "…kriterleri değerlendirilecek".
 
+import { SCORE_DEFS, scoresForUnitType } from "./clinicalScoring.js";
+
 // --------------------------------------------------------------------------- roles & accounts
 export const ROLE = {
   ATTENDING: "ATTENDING",          // Sorumlu Hekim
+  PHYSICIAN: "PHYSICIAN",          // Hekim (servis hekimi / uzman / asistan)
   CHARGE_NURSE: "CHARGE_NURSE",    // Sorumlu Hemşire
+  NURSE: "NURSE",                  // Hemşire (servis hemşiresi)
   HOSPITAL_ADMIN: "HOSPITAL_ADMIN",// Sistem Yöneticisi
   RRT: "RRT",                      // Hızlı Yanıt Ekibi (escalation tier-3 target)
   PHARMACIST: "PHARMACIST",        // Eczacı (Madde 22)
   BIOMEDICAL: "BIOMEDICAL",        // Biyomedikal Teknisyen (Madde 23)
 };
+
+// ---------------------------------------------------------------------------- rol → yetki matrisi
+// Her rolün sistemde neleri yapabileceğini merkezî olarak tanımlar. UI bu matrise göre buton/sekme
+// gösterir; store mutasyonları da kritik işlemlerde bu izinleri kontrol eder (defans derinliği).
+export const PERMISSION = {
+  VIEW_PATIENTS: "VIEW_PATIENTS",         // hasta listesi / yatak paneli görüntüleme
+  ADMIT_PATIENT: "ADMIT_PATIENT",         // hasta kabul / transfer / taburcu
+  EDIT_SCORING: "EDIT_SCORING",           // hastalık şiddeti skorlaması girişi (hekim)
+  ASSIGN_TEAM: "ASSIGN_TEAM",             // bakım ekibi ataması
+  MANAGE_ALARMS: "MANAGE_ALARMS",         // alarm onay / snooze / eskalasyon
+  RECORD_VITALS: "RECORD_VITALS",         // vital / gözlem kaydı
+  PHARMACY: "PHARMACY",                   // ilaç uzlaştırma / eczane modülü
+  BIOMED: "BIOMED",                       // cihaz yönetimi / biyomedikal modülü
+  ADMIN_CONFIG: "ADMIN_CONFIG",           // kurum/ünite/kullanıcı yönetimi (admin)
+};
+
+export const ROLE_PERMISSIONS = {
+  ATTENDING:      [PERMISSION.VIEW_PATIENTS, PERMISSION.ADMIT_PATIENT, PERMISSION.EDIT_SCORING, PERMISSION.ASSIGN_TEAM, PERMISSION.MANAGE_ALARMS, PERMISSION.RECORD_VITALS],
+  PHYSICIAN:      [PERMISSION.VIEW_PATIENTS, PERMISSION.ADMIT_PATIENT, PERMISSION.EDIT_SCORING, PERMISSION.MANAGE_ALARMS, PERMISSION.RECORD_VITALS],
+  CHARGE_NURSE:   [PERMISSION.VIEW_PATIENTS, PERMISSION.ASSIGN_TEAM, PERMISSION.MANAGE_ALARMS, PERMISSION.RECORD_VITALS],
+  NURSE:          [PERMISSION.VIEW_PATIENTS, PERMISSION.MANAGE_ALARMS, PERMISSION.RECORD_VITALS],
+  RRT:            [PERMISSION.VIEW_PATIENTS, PERMISSION.MANAGE_ALARMS, PERMISSION.RECORD_VITALS],
+  PHARMACIST:     [PERMISSION.VIEW_PATIENTS, PERMISSION.PHARMACY],
+  BIOMEDICAL:     [PERMISSION.BIOMED],
+  HOSPITAL_ADMIN: [PERMISSION.VIEW_PATIENTS, PERMISSION.ADMIT_PATIENT, PERMISSION.EDIT_SCORING, PERMISSION.ASSIGN_TEAM, PERMISSION.MANAGE_ALARMS, PERMISSION.RECORD_VITALS, PERMISSION.PHARMACY, PERMISSION.BIOMED, PERMISSION.ADMIN_CONFIG],
+};
+
+// Bir rolün belirli bir izne sahip olup olmadığını döndürür.
+export function roleCan(role, permission) {
+  return (ROLE_PERMISSIONS[role] || []).includes(permission);
+}
 
 // Programmatic/test role → session helper table (loginAs, PIN fast-switch fallback). This is NOT a
 // user-facing "demo login": the interactive login form validates ONLY against real seeded accounts
@@ -27,6 +62,8 @@ export const ROLE_ACCOUNTS = [
   { email: "dr.murat.sahin@homunculus.health", pin: "5555", full_name: "Dr. Murat Şahin", role: ROLE.RRT },
   { email: "ecz.zeynep.kaya@homunculus.health", pin: "6666", full_name: "Ecz. Zeynep Kaya", role: ROLE.PHARMACIST },
   { email: "biyomed.ahmet.yildiz@homunculus.health", pin: "7777", full_name: "Ahmet Yıldız", role: ROLE.BIOMEDICAL },
+  { email: "dr.deniz.aydin@homunculus.health", pin: "1212", full_name: "Dr. Deniz Aydın", role: ROLE.PHYSICIAN },
+  { email: "merve.celik@homunculus.health", pin: "3434", full_name: "Merve Çelik", role: ROLE.NURSE },
 ];
 // Geriye dönük uyumluluk (eski isimler bazı içe aktarımlarda kullanılabilir).
 export const DEMO_ACCOUNTS = ROLE_ACCOUNTS;
@@ -306,6 +343,47 @@ export function profileForPatient(state, patient) {
   return profileForUnitType(unitTypeForPatient(state, patient));
 }
 
+// --------------------------------------------------------------------------- çok-hastane (multi-tenant) veri izolasyonu
+// Süper yönetici (isSuperAdmin) tüm kurumları görür. Diğer tüm kullanıcılar YALNIZCA kendi
+// kurumlarının (tenantId) üniteleri/yatakları/hastalarını görür. Böylece Med Hospital kullanıcısı
+// Homunculus hastalarını, Homunculus kullanıcısı da Med Hospital hastalarını göremez.
+export function isSuperAdmin(user) {
+  return !!(user && user.isSuperAdmin);
+}
+// Oturumdaki kullanıcının kurum kimliği.
+export function currentTenantId(state) {
+  return state?.user?.tenantId || null;
+}
+// Kullanıcının görebileceği üniteler (kurum filtrelemesi). Süper yönetici → tümü.
+export function visibleUnits(state) {
+  const units = state?.structure?.units || [];
+  const user = state?.user;
+  if (!user || isSuperAdmin(user)) return units;
+  const tid = user.tenantId;
+  if (!tid) return units; // tenantId'siz eski kayıtlar için geriye dönük uyumluluk
+  return units.filter((u) => !u.tenantId || u.tenantId === tid);
+}
+export function visibleUnitIds(state) {
+  return new Set(visibleUnits(state).map((u) => u.id));
+}
+// Kullanıcının görebileceği yataklar.
+export function visibleBeds(state) {
+  const ids = visibleUnitIds(state);
+  return (state?.beds || []).filter((b) => ids.has(b.unitId));
+}
+// Kullanıcının görebileceği hastalar (yatak → ünite → kurum zinciri üzerinden).
+export function visiblePatients(state) {
+  const user = state?.user;
+  if (!user || isSuperAdmin(user)) return state?.patients || [];
+  const ids = visibleUnitIds(state);
+  return (state?.patients || []).filter((p) => !p.unitId || ids.has(p.unitId));
+}
+// Kullanıcının görebileceği cihazlar (yatak üzerinden).
+export function visibleDevices(state) {
+  const beds = new Set(visibleBeds(state).map((b) => b.id));
+  return (state?.devices || []).filter((d) => !d.bedId || beds.has(d.bedId));
+}
+
 // --------------------------------------------------------------------------- helpers
 // A synthetic, masked national-ID string. Real national IDs never enter the system; only the first
 // two and last two digits are ever shown (KVKK data-minimisation).
@@ -333,6 +411,7 @@ function seedState() {
     tenantSetup: false,   // multi-tenant setup wizard completed?
     tenants: [],          // [ { id, name, slug, countryCode, timezone, isActive, createdAt } ]
     sites: [],            // [ { id, tenantId, name, address, isActive, createdAt } ]
+    scores: {},           // hastalık şiddeti skorlamaları: { [patientId]: [ ... ] }
     structure: {
       tenant: "Homunculus Şehir Hastanesi",
       site: "Merkez Kampüs",
@@ -397,29 +476,31 @@ export function buildRealisticState() {
   // PIN'ler ortak ekranlarda 3 saniyelik hızlı vardiya geçişi içindir. MFA gerektiren roller girişte
   // iki adımlı doğrulama ister (demo doğrulama kodu: 123456).
   const users = [
-    { id: "u-01", full_name: "Dr. Elif Yılmaz", email: "dr.elif.yilmaz@homunculus.health", role: ROLE.ATTENDING,     active: true, mfa: true,  mfaRequired: true,  pin: "1111", password: "Hekim.Elif2025!",   unitIds: ["unit-adult"] },
-    { id: "u-02", full_name: "Ayşe Demir",      email: "ayse.demir@homunculus.health",     role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "2222", password: "Hemsire.Ayse2025!",  unitIds: ["unit-adult"] },
-    { id: "u-03", full_name: "Sistem Yöneticisi", email: "dijitalfabrikaaa@gmail.com",     role: ROLE.HOSPITAL_ADMIN, active: true, mfa: false, mfaRequired: false, pin: "9999", password: "Df123456!",           unitIds: ["unit-adult", "unit-nicu"] },
-    { id: "u-04", full_name: "Dr. Can Öztürk",  email: "dr.can.ozturk@homunculus.health",  role: ROLE.ATTENDING,     active: true, mfa: false, mfaRequired: true,  pin: "3333", password: "Hekim.Can2025!",    unitIds: ["unit-nicu"] },
-    { id: "u-05", full_name: "Selin Arslan",    email: "selin.arslan@homunculus.health",   role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "4444", password: "Hemsire.Selin2025!", unitIds: ["unit-adult", "unit-nicu"] },
-    { id: "u-06", full_name: "Dr. Murat Şahin", email: "dr.murat.sahin@homunculus.health", role: ROLE.RRT,           active: true, mfa: false, mfaRequired: false, pin: "5555", password: "Rrt.Murat2025!",     unitIds: ["unit-adult", "unit-nicu"] },
-    { id: "u-07", full_name: "Ecz. Zeynep Kaya", email: "ecz.zeynep.kaya@homunculus.health", role: ROLE.PHARMACIST,  active: true, mfa: false, mfaRequired: false, pin: "6666", password: "Eczaci.Zeynep2025!", unitIds: ["unit-adult", "unit-nicu"] },
-    { id: "u-08", full_name: "Ahmet Yıldız",    email: "biyomed.ahmet.yildiz@homunculus.health", role: ROLE.BIOMEDICAL, active: true, mfa: false, mfaRequired: false, pin: "7777", password: "Biyomed.Ahmet2025!", unitIds: ["unit-adult", "unit-nicu"] },
+    { id: "u-01", full_name: "Dr. Elif Yılmaz", email: "dr.elif.yilmaz@homunculus.health", role: ROLE.ATTENDING,     active: true, mfa: true,  mfaRequired: true,  pin: "1111", password: "Hekim.Elif2025!",   unitIds: ["unit-adult"], tenantId: "tenant-hmn" },
+    { id: "u-02", full_name: "Ayşe Demir",      email: "ayse.demir@homunculus.health",     role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "2222", password: "Hemsire.Ayse2025!",  unitIds: ["unit-adult"], tenantId: "tenant-hmn" },
+    { id: "u-03", full_name: "Sistem Yöneticisi", email: "dijitalfabrikaaa@gmail.com",     role: ROLE.HOSPITAL_ADMIN, active: true, mfa: false, mfaRequired: false, pin: "9999", password: "Df123456!",           unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn", isSuperAdmin: true },
+    { id: "u-04", full_name: "Dr. Can Öztürk",  email: "dr.can.ozturk@homunculus.health",  role: ROLE.ATTENDING,     active: true, mfa: false, mfaRequired: true,  pin: "3333", password: "Hekim.Can2025!",    unitIds: ["unit-nicu"], tenantId: "tenant-hmn" },
+    { id: "u-05", full_name: "Selin Arslan",    email: "selin.arslan@homunculus.health",   role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "4444", password: "Hemsire.Selin2025!", unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn" },
+    { id: "u-06", full_name: "Dr. Murat Şahin", email: "dr.murat.sahin@homunculus.health", role: ROLE.RRT,           active: true, mfa: false, mfaRequired: false, pin: "5555", password: "Rrt.Murat2025!",     unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn" },
+    { id: "u-07", full_name: "Ecz. Zeynep Kaya", email: "ecz.zeynep.kaya@homunculus.health", role: ROLE.PHARMACIST,  active: true, mfa: false, mfaRequired: false, pin: "6666", password: "Eczaci.Zeynep2025!", unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn" },
+    { id: "u-08", full_name: "Ahmet Yıldız",    email: "biyomed.ahmet.yildiz@homunculus.health", role: ROLE.BIOMEDICAL, active: true, mfa: false, mfaRequired: false, pin: "7777", password: "Biyomed.Ahmet2025!", unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn" },
+    { id: "u-09", full_name: "Dr. Deniz Aydın", email: "dr.deniz.aydin@homunculus.health", role: ROLE.PHYSICIAN,     active: true, mfa: false, mfaRequired: true,  pin: "1212", password: "Hekim.Deniz2025!",   unitIds: ["unit-adult"], tenantId: "tenant-hmn" },
+    { id: "u-10", full_name: "Merve Çelik",     email: "merve.celik@homunculus.health",    role: ROLE.NURSE,         active: true, mfa: false, mfaRequired: false, pin: "3434", password: "Hemsire.Merve2025!", unitIds: ["unit-adult"], tenantId: "tenant-hmn" },
   ];
 
   const structure = {
     tenant: "Homunculus Şehir Hastanesi",
     site: "Merkez Kampüs",
     units: [
-      { id: "unit-adult", name: "Erişkin YBÜ", type: "ADULT_ICU", maxBedsPerNurse: 2,
+      { id: "unit-adult", name: "Erişkin YBÜ", type: "ADULT_ICU", maxBedsPerNurse: 2, tenantId: "tenant-hmn", siteId: "site-merkez",
         rooms: [{ id: "room-a1", label: "Oda A1" }, { id: "room-a2", label: "Oda A2" }] },
-      { id: "unit-nicu", name: "Yenidoğan YBÜ", type: "NICU", maxBedsPerNurse: 3,
+      { id: "unit-nicu", name: "Yenidoğan YBÜ", type: "NICU", maxBedsPerNurse: 3, tenantId: "tenant-hmn", siteId: "site-merkez",
         rooms: [{ id: "room-n1", label: "Oda N1" }] },
-      { id: "unit-cvicu", name: "KVC YBÜ", type: "CVICU", maxBedsPerNurse: 1,
+      { id: "unit-cvicu", name: "KVC YBÜ", type: "CVICU", maxBedsPerNurse: 1, tenantId: "tenant-hmn", siteId: "site-merkez",
         rooms: [{ id: "room-c1", label: "Oda C1" }] },
-      { id: "unit-coronary", name: "Koroner YBÜ", type: "CORONARY", maxBedsPerNurse: 2,
+      { id: "unit-coronary", name: "Koroner YBÜ", type: "CORONARY", maxBedsPerNurse: 2, tenantId: "tenant-hmn", siteId: "site-merkez",
         rooms: [{ id: "room-k1", label: "Oda K1" }] },
-      { id: "unit-palliative", name: "Palyatif Bakım", type: "PALLIATIVE", maxBedsPerNurse: 4,
+      { id: "unit-palliative", name: "Palyatif Bakım", type: "PALLIATIVE", maxBedsPerNurse: 4, tenantId: "tenant-hmn", siteId: "site-merkez",
         rooms: [{ id: "room-p1", label: "Oda P1" }] },
     ],
   };
@@ -642,10 +723,15 @@ export function buildRealisticState() {
     online: true,         // PWA connectivity flag (offline resilience B5)
     syncQueue: [],        // actions captured while offline, flushed on reconnect
     // Madde 5/6 çok kiracılı kurulum + davet durumu (gerçekçi demo başlangıç değerleri)
-    tenantSetup: false,   // ilk giriş kurulum sihirbazı henüz tamamlanmadı (admin girişinde gösterilir)
-    tenants: [],          // [ { id, name, slug, countryCode, timezone, isActive, createdAt } ]
-    sites: [],            // [ { id, tenantId, name, address, isActive, createdAt } ]
+    tenantSetup: true,    // demo başlangıcında varsayılan kurum zaten kurulu (Homunculus Şehir Hastanesi)
+    tenants: [            // [ { id, name, slug, countryCode, timezone, isActive, createdAt } ]
+      { id: "tenant-hmn", name: "Homunculus Şehir Hastanesi", slug: "homunculus", countryCode: "TR", timezone: "Europe/Istanbul", isActive: true, createdAt: now },
+    ],
+    sites: [              // [ { id, tenantId, name, address, isActive, createdAt } ]
+      { id: "site-merkez", tenantId: "tenant-hmn", name: "Merkez Kampüs", address: "Ankara", isActive: true, createdAt: now },
+    ],
     invites: [],          // [ { id, email, fullName, role, tenantId, invitedBy, invitedAt, status } ]
+    scores: {},           // hastalık şiddeti skorlamaları: { [patientId]: [ { id, scoreType, score, mortality, inputs, result, byName, byRole, atMs } ] }
     seq: 200,             // above the pre-seeded P-1xx range so generated IDs never collide
     // Faz E additions:
     reportTemplates: [],  // Madde 14: [ { id, name, type, sections, createdBy, createdAt } ]
@@ -865,6 +951,12 @@ export function createDemoStore(initial) {
     if (!match) throw new Error("Geçersiz e-posta veya parola.");
     return { who: liveUser, liveUser };
   }
+  // Oturum kullanıcı nesnesi — kurum izolasyonu için tenantId/isSuperAdmin/unitIds taşır.
+  function _sessionUser(who) {
+    if (!who) return null;
+    return { id: who.id || null, email: who.email, full_name: who.full_name, role: who.role,
+      tenantId: who.tenantId || null, isSuperAdmin: !!who.isSuperAdmin, unitIds: who.unitIds || [] };
+  }
   function login(email, credential) {
     const { who } = _validateCredential(email, credential);
     // Madde 12: aktif session oluştur (demo: simüle IP/device).
@@ -878,7 +970,7 @@ export function createDemoStore(initial) {
       startedAtMs: Date.now(),
       lastActivityMs: Date.now(),
     };
-    set({ user: { email: who.email, full_name: who.full_name, role: who.role },
+    set({ user: _sessionUser(who),
       activeSessions: [...state.activeSessions, session], mfaPending: null, seq: state.seq + 1 });
     audit("LOGIN", who.email, who.role);
     return who;
@@ -898,7 +990,7 @@ export function createDemoStore(initial) {
       return { mfaRequired: true, enrolled, userId: u.id };
     }
     // MFA gerekmiyorsa doğrudan oturum aç.
-    set({ user: { email: who.email, full_name: who.full_name, role: who.role }, mfaPending: null });
+    set({ user: _sessionUser(who), mfaPending: null });
     audit("LOGIN", who.email, who.role);
     return { mfaRequired: false, userId: u ? u.id : null };
   }
@@ -909,7 +1001,7 @@ export function createDemoStore(initial) {
     // Kod doğrulaması (kayıtlı olsun olmasın aynı akış; kayıtsızsa ilk doğrulama TOTP'yi etkinleştirir).
     verifyMfa({ userId: pending.userId, code });
     const u = _findUser(pending.userId);
-    set({ user: { email: u.email, full_name: u.full_name, role: u.role }, mfaPending: null });
+    set({ user: _sessionUser(u), mfaPending: null });
     audit("LOGIN", u.email, u.role);
     return u;
   }
@@ -921,7 +1013,7 @@ export function createDemoStore(initial) {
     const who = (state.users || []).find((u) => u.role === role && u.active !== false)
       || ROLE_ACCOUNTS.find((a) => a.role === role);
     if (!who) throw new Error("Rol bulunamadı.");
-    set({ user: { email: who.email, full_name: who.full_name, role: who.role }, mfaPending: null });
+    set({ user: _sessionUser(who), mfaPending: null });
     audit("LOGIN", who.email, who.role);
     return who;
   }
@@ -937,7 +1029,7 @@ export function createDemoStore(initial) {
       || DEMO_ACCOUNTS.find((a) => a.pin === clean);
     if (!u) throw new Error("PIN eşleşmedi.");
     const prev = state.user?.full_name || null;
-    set({ user: { email: u.email, full_name: u.full_name, role: u.role } });
+    set({ user: _sessionUser(u) });
     audit("PIN_SWITCH", u.email, prev ? `${prev} → ${u.full_name}` : u.full_name);
     return u;
   }
@@ -1347,6 +1439,117 @@ export function createDemoStore(initial) {
   function completeTenantSetup() {
     set({ tenantSetup: true });
     audit("TENANT_SETUP_COMPLETE", null, "Kurulum sihirbazı tamamlandı");
+  }
+
+  // --------------------------------------------------------------- tek adımda hastane oluştur (Madde 5)
+  // Admin bir kurum + kampüs + üniteler + personeli tek işlemde kurar. Tüm kayıtlar tenantId ile
+  // etiketlenir; böylece yeni hastane kendi veri adasında çalışır (izolasyon).
+  // units: [ { name, type, beds } ] · staff: [ { email, fullName, role } ]
+  function createHospital({ name, slug, siteName, address, units = [], staff = [] } = {}) {
+    if (!name || !name.trim()) throw new Error("Hastane adı zorunludur.");
+    if (!slug || !slug.trim()) throw new Error("Slug zorunludur.");
+    if (state.tenants.some((t) => t.slug === slug.trim())) throw new Error("Bu slug zaten kullanılıyor.");
+    let seq = state.seq;
+    const nextId = (prefix) => `${prefix}-${String(seq++).padStart(3, "0")}`;
+    const now = Date.now();
+    const tenantId = nextId("tenant");
+    const tenant = { id: tenantId, name: name.trim(), slug: slug.trim(), countryCode: "TR",
+      timezone: "Europe/Istanbul", isActive: true, createdAt: now };
+    const siteId = nextId("site");
+    const site = { id: siteId, tenantId, name: (siteName || "Merkez Kampüs").trim(),
+      address: address || null, isActive: true, createdAt: now };
+
+    const newUnits = [];
+    const newBeds = [];
+    (units || []).forEach((u, ui) => {
+      const unitId = nextId("unit");
+      const roomId = nextId("room");
+      newUnits.push({ id: unitId, name: (u.name || `Ünite ${ui + 1}`).trim(),
+        type: u.type || "ADULT_ICU", maxBedsPerNurse: u.maxBedsPerNurse || 2, tenantId, siteId,
+        rooms: [{ id: roomId, label: "Oda 1" }] });
+      const bedCount = Math.max(0, Math.min(40, parseInt(u.beds, 10) || 0));
+      for (let i = 0; i < bedCount; i++) {
+        newBeds.push({ id: nextId("bed"), label: `${ui + 1}${String(i + 1).padStart(2, "0")}`,
+          unitId, unitName: (u.name || `Ünite ${ui + 1}`).trim(), roomId, roomLabel: "Oda 1",
+          state: BED_STATES.AVAILABLE, patientId: null });
+      }
+    });
+
+    const newUnitIds = newUnits.map((u) => u.id);
+    const newUsers = [];
+    const newInvites = [];
+    (staff || []).forEach((m) => {
+      if (!m || !m.email || !m.role) return;
+      if (state.users.some((u) => u.email === m.email) || newUsers.some((u) => u.email === m.email)) return;
+      // Davet oluştur (kabul akışı için) + personeli doğrudan kullanıcı olarak da ekle (demo için
+      // hemen giriş yapabilsinler). Geçici PIN üretilir; parolayı davet kabulünde belirler.
+      const uid = nextId("u");
+      const tempPin = String(1000 + Math.floor(Math.random() * 9000));
+      newUsers.push({ id: uid, full_name: (m.fullName || m.email).trim(), email: m.email.trim(),
+        role: m.role, active: true, mfa: false, mfaRequired: m.role !== "NURSE",
+        tempPin, password: null, unitIds: newUnitIds, tenantId });
+      newInvites.push({ id: nextId("inv"), email: m.email.trim(), fullName: (m.fullName || m.email).trim(),
+        role: m.role, tenantId, invitedBy: state.user?.full_name || "—", invitedAt: now, status: "PENDING" });
+    });
+
+    set({
+      tenants: [...state.tenants, tenant],
+      sites: [...state.sites, site],
+      structure: { ...state.structure, units: [...(state.structure.units || []), ...newUnits] },
+      beds: [...state.beds, ...newBeds],
+      users: [...state.users, ...newUsers],
+      invites: [...state.invites, ...newInvites],
+      seq,
+    });
+    audit("HOSPITAL_CREATE", tenantId,
+      `${tenant.name} · ${newUnits.length} ünite · ${newBeds.length} yatak · ${newUsers.length} personel`);
+    return { tenant, site, units: newUnits, beds: newBeds, users: newUsers, invites: newInvites };
+  }
+
+  // --------------------------------------------------------------- hastalık şiddeti skorlaması (Madde: skorlama)
+  // Bir skorlamayı kaydeder. Girdi alanları ham olarak saklanır; sonuç motorca hesaplanır.
+  // Sadece EDIT_SCORING iznine sahip roller (hekim/sorumlu hekim/admin) kaydedebilir.
+  function saveScore({ patientId, scoreType, inputs } = {}) {
+    if (!patientId) throw new Error("Hasta seçimi zorunludur.");
+    const def = SCORE_DEFS[scoreType];
+    if (!def) throw new Error("Geçersiz skor tipi.");
+    if (state.user && !roleCan(state.user.role, PERMISSION.EDIT_SCORING)) {
+      throw new Error("Bu işlem için yetkiniz yok (skorlama girişi hekime aittir).");
+    }
+    const result = def.compute(inputs || {});
+    const entry = { id: `score-${String(state.seq).padStart(3, "0")}`, scoreType,
+      score: result.score, mortality: result.mortality ?? null, inputs: { ...(inputs || {}) },
+      result, byName: state.user?.full_name || "—", byRole: state.user?.role || null, atMs: Date.now() };
+    const list = state.scores[patientId] || [];
+    set({ scores: { ...state.scores, [patientId]: [entry, ...list] }, seq: state.seq + 1 });
+    audit("SCORE_SAVE", patientId, `${def.label} · skor ${result.score}${result.mortality != null ? " · mortalite %" + result.mortality : ""}`);
+    return entry;
+  }
+  // Bir hastanın kayıtlı skorlarını (en yeni önce) döndürür; scoreType verilirse filtreler.
+  function scoresForPatient(patientId, scoreType) {
+    const list = state.scores[patientId] || [];
+    return scoreType ? list.filter((s) => s.scoreType === scoreType) : list;
+  }
+  // Monitör vitalleri + son HBYS/lab sonuçlarından skor girdilerini otomatik doldurur.
+  // Klinik teyit gerektiren KARAR DESTEK: hekim değerleri kontrol edip onaylamalıdır.
+  function autofillScoreInputs(patientId, scoreType) {
+    const pat = state.patients.find((p) => p.patient_id === patientId);
+    if (!pat) return {};
+    const v = pat.vitals || {};
+    const out = {};
+    // Monitörden gelen ortak vitaller
+    if (v.hr != null) out.hr = v.hr;
+    if (v.map != null) out.map = v.map;
+    if (v.temp != null) out.temp = v.temp;
+    if (v.rr != null) out.rr = v.rr;
+    if (v.spo2 != null) out.spo2 = v.spo2;
+    if (pat.age != null) out.age = pat.age;
+    if (pat.ageDays != null) out.ageDays = pat.ageDays;
+    else if (pat.age != null) out.ageDays = pat.age * 365;
+    // GKS klinik kayıttan (varsa)
+    const clin = state.clinical[patientId];
+    if (clin && clin.gcs != null) out.gcs = clin.gcs;
+    return { inputs: out, filled: Object.keys(out), source: "monitör + HBYS" };
   }
 
   // --------------------------------------------------------------- admin: bed operational state (PR#8 §4)
@@ -2266,7 +2469,8 @@ export function createDemoStore(initial) {
     setUserPassword, resetUserPin, toggleUserActive, resetUserMfa, setUserMfaRequired, setUserUnits,
     setupMfa, verifyMfa,
     inviteUser, acceptInvite, resendInvite, cancelInvite,
-    createTenant, createSite, completeTenantSetup,
+    createTenant, createSite, completeTenantSetup, createHospital,
+    saveScore, scoresForPatient, autofillScoreInputs,
     setBedState, updateDevice, recordTestPush,
     assignStaffToBeds, toggleStaffBed,
     addDevice, assignDeviceToBed, deviceForBed,

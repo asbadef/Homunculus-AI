@@ -17,6 +17,7 @@ import {
   Contrast, Fingerprint, Mail, ArrowRight, QrCode, Send, RotateCcw, XCircle,
   MapPin, ArrowLeft, Archive,
   Sunset, FlaskConical, ScanLine, Grid3x3, RefreshCw, PlugZap, Upload, Inbox, HeartHandshake,
+  Trash2,
 } from "lucide-react";
 import {
   createDemoStore, buildRealisticState, ROLE, TIER, ESCALATION_STEP, STEP_TARGET_ROLE,
@@ -24,8 +25,10 @@ import {
   searchIcd10, MED_CATALOG, PROCEDURE_CATALOG, computeNews2, maskName, evaluateThresholds,
   NEWS2_ALARM_THRESHOLD, DEFAULT_THRESHOLDS,
   computeAnalytics, BED_STATES, BED_ADMIN_STATES, BED_STATE_LABEL,
-  CLINICAL_PROFILES, profileForPatient, profileForUnitType,
+  CLINICAL_PROFILES, profileForPatient, profileForUnitType, unitTypeForPatient,
+  PERMISSION, roleCan, isSuperAdmin, currentTenantId, visibleUnits, visiblePatients, visibleBeds,
 } from "./clinicalDemo.js";
+import { SCORE_DEFS, UNIT_SCORES, scoresForUnitType } from "./clinicalScoring.js";
 import {
   getTheme, storedTheme, persistTheme, THEME_KEYS,
 } from "./clinicalTheme.js";
@@ -985,11 +988,13 @@ function Waveform({ hr = 80, height = 34, stroke = "#10b981" }) {
 }
 
 function BedBoard({ T, S, state, onOpenPatient, lang }) {
-  const units = state.structure.units;
+  const units = visibleUnits(state);
+  const allBeds = visibleBeds(state);
+  const allPatients = visiblePatients(state);
   const [unitId, setUnitId] = useState("all");
-  const beds = unitId === "all" ? state.beds : state.beds.filter((b) => b.unitId === unitId);
+  const beds = unitId === "all" ? allBeds : allBeds.filter((b) => b.unitId === unitId);
   const occupied = beds.filter((b) => b.state === "OCCUPIED").length;
-  const patientOf = (id) => state.patients.find((p) => p.patient_id === id);
+  const patientOf = (id) => allPatients.find((p) => p.patient_id === id);
 
   return (
     <div className="space-y-4">
@@ -1177,6 +1182,232 @@ function PatientResults({ T, S, store, state, patientId }) {
   );
 }
 
+// ================================================================ HASTALIK ŞİDDETİ SKORLAMA (Madde: skorlama)
+// Skorlama formu alan meta verileri. type: num | bool | select. Klinik terimler evrensel/orijinal
+// bırakılmıştır. Değerler ham saklanır; hesaplama clinicalScoring.js motoruyla yapılır.
+const SCORE_FIELDS = {
+  APACHE2: [
+    { key: "temp", label: "Vücut Isısı (°C)", type: "num", step: 0.1 },
+    { key: "map", label: "Ortalama Kan Basıncı (mmHg)", type: "num" },
+    { key: "hr", label: "Kalp Hızı (/dk)", type: "num" },
+    { key: "rr", label: "Solunum Hızı (/dk)", type: "num" },
+    { key: "fio2", label: "FiO₂ (0–1)", type: "num", step: 0.01, hint: "≥0.5 ise A-aDO₂, <0.5 ise PaO₂ kullanılır" },
+    { key: "pao2", label: "PaO₂ (mmHg)", type: "num" },
+    { key: "aado2", label: "A-aDO₂", type: "num" },
+    { key: "ph", label: "Arteriyel pH", type: "num", step: 0.01 },
+    { key: "na", label: "Serum Na⁺ (mmol/L)", type: "num" },
+    { key: "k", label: "Serum K⁺ (mmol/L)", type: "num", step: 0.1 },
+    { key: "creatinine", label: "Serum Kreatinin (mg/dL)", type: "num", step: 0.1 },
+    { key: "acuteRenalFailure", label: "Akut Böbrek Yetmezliği", type: "bool" },
+    { key: "hct", label: "Hematokrit (%)", type: "num", step: 0.1 },
+    { key: "wbc", label: "Lökosit (×10³/µL)", type: "num", step: 0.1 },
+    { key: "gcs", label: "Glasgow Koma Skoru (3–15)", type: "num" },
+    { key: "age", label: "Yaş (yıl)", type: "num" },
+    { key: "chronicHealth", label: "Kronik Organ Yetmezliği", type: "select",
+      options: [["none", "Yok"], ["elective", "Elektif postoperatif"], ["emergency", "Acil / operatif olmayan"]] },
+    { key: "emergencySurgery", label: "Acil cerrahi (mortalite)", type: "bool" },
+  ],
+  SOFA: [
+    { key: "pfRatio", label: "PaO₂/FiO₂ oranı", type: "num" },
+    { key: "ventilated", label: "Mekanik ventilasyon", type: "bool" },
+    { key: "platelets", label: "Trombosit (×10³/µL)", type: "num" },
+    { key: "bilirubin", label: "Bilirubin (mg/dL)", type: "num", step: 0.1 },
+    { key: "cardioLevel", label: "Kardiyovasküler", type: "select",
+      options: [["0", "MAP ≥70"], ["1", "MAP <70"], ["2", "Düşük doz dopamin/dobutamin"], ["3", "Orta doz vazopresör"], ["4", "Yüksek doz vazopresör"]] },
+    { key: "gcs", label: "Glasgow Koma Skoru", type: "num" },
+    { key: "creatinine", label: "Kreatinin (mg/dL)", type: "num", step: 0.1 },
+  ],
+  MODS: [
+    { key: "pfRatio", label: "PaO₂/FiO₂ oranı", type: "num" },
+    { key: "creatinine", label: "Kreatinin (µmol/L)", type: "num" },
+    { key: "bilirubin", label: "Bilirubin (µmol/L)", type: "num" },
+    { key: "hr", label: "Kalp Hızı (/dk)", type: "num" },
+    { key: "cvp", label: "Santral Venöz Basınç (mmHg)", type: "num" },
+    { key: "map", label: "Ortalama Kan Basıncı (mmHg)", type: "num", hint: "PAR = KH × (CVP / MAP)" },
+    { key: "platelets", label: "Trombosit (×10³/µL)", type: "num" },
+    { key: "gcs", label: "Glasgow Koma Skoru", type: "num" },
+  ],
+  PRISM3: [
+    { key: "ageDays", label: "Yaş (gün)", type: "num", hint: "Yaş grubunu belirler" },
+    { key: "sbp", label: "Sistolik Kan Basıncı (mmHg)", type: "num" },
+    { key: "hr", label: "Kalp Hızı (/dk)", type: "num" },
+    { key: "temp", label: "Vücut Isısı (°C)", type: "num", step: 0.1 },
+    { key: "gcs", label: "Glasgow Koma Skoru", type: "num" },
+    { key: "pupils", label: "Pupiller", type: "select",
+      options: [["reactive", "Reaktif"], ["one", "Biri sabit (>3mm)"], ["both", "İkisi de sabit (>3mm)"]] },
+    { key: "ph", label: "Arteriyel pH", type: "num", step: 0.01 },
+    { key: "tco2", label: "TCO₂ (mmol/L)", type: "num" },
+    { key: "pco2", label: "PaCO₂ (mmHg)", type: "num" },
+    { key: "pao2", label: "PaO₂ (mmHg)", type: "num" },
+    { key: "glucose", label: "Glukoz (mg/dL)", type: "num" },
+    { key: "potassium", label: "Potasyum (mmol/L)", type: "num", step: 0.1 },
+    { key: "creatinine", label: "Kreatinin (mg/dL)", type: "num", step: 0.1 },
+    { key: "bun", label: "BUN (mg/dL)", type: "num" },
+    { key: "wbc", label: "Lökosit (×10³/µL)", type: "num", step: 0.1 },
+    { key: "platelets", label: "Trombosit (×10³/µL)", type: "num" },
+    { key: "pt", label: "PT (sn)", type: "num" },
+    { key: "ptt", label: "PTT (sn)", type: "num" },
+  ],
+  SNAPPE2: [
+    { key: "map", label: "Ortalama Kan Basıncı (mmHg)", type: "num" },
+    { key: "temp", label: "Vücut Isısı (°C)", type: "num", step: 0.1 },
+    { key: "pfRatio", label: "PaO₂/FiO₂ oranı", type: "num", step: 0.1 },
+    { key: "ph", label: "En düşük pH", type: "num", step: 0.01 },
+    { key: "multiSeizure", label: "Çoklu nöbet", type: "bool" },
+    { key: "urineOutput", label: "İdrar çıkışı (mL/kg/sa)", type: "num", step: 0.1 },
+    { key: "birthWeight", label: "Doğum ağırlığı (g)", type: "num" },
+    { key: "sga", label: "SGA (<3. persentil)", type: "bool" },
+    { key: "apgar", label: "5. dk APGAR", type: "num" },
+  ],
+};
+
+// Ham form girdilerini motorun beklediği şekle normalize eder (APACHE oksijenlenme iç içe alan).
+function normalizeScoreInputs(scoreType, raw) {
+  const inp = { ...raw };
+  if (scoreType === "APACHE2") {
+    inp.oxygenation = { fio2: raw.fio2, pao2: raw.pao2, aado2: raw.aado2 };
+  }
+  return inp;
+}
+
+function ScoringModule({ T, S, store, state, patientId, lang }) {
+  const patient = state.patients.find((p) => p.patient_id === patientId);
+  const unitType = unitTypeForPatient(state, patient);
+  const applicable = scoresForUnitType(unitType);
+  const [active, setActive] = useState(applicable[0]);
+  const [inputs, setInputs] = useState({});
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const canEdit = roleCan(state.user?.role, PERMISSION.EDIT_SCORING);
+  const SS = S.scoring || {};
+
+  // Aktif skor değişince formu temizle
+  const selectScore = (k) => { setActive(k); setInputs({}); setMsg(""); setErr(""); };
+
+  const setField = (key, value) => setInputs((prev) => ({ ...prev, [key]: value }));
+
+  const preview = useMemo(() => {
+    try { return SCORE_DEFS[active].compute(normalizeScoreInputs(active, inputs)); }
+    catch { return null; }
+  }, [active, inputs]);
+
+  const autofill = () => {
+    setErr(""); setMsg("");
+    try {
+      const af = store.autofillScoreInputs(patientId, active);
+      setInputs((prev) => ({ ...prev, ...(af.inputs || {}) }));
+      setMsg(`${SS.autofilled || "Monitör/HBYS bilgisi getirildi"}: ${(af.filled || []).length} alan`);
+    } catch (e) { setErr(e.message); }
+  };
+  const save = () => {
+    setErr(""); setMsg("");
+    try {
+      const e = store.saveScore({ patientId, scoreType: active, inputs: normalizeScoreInputs(active, inputs) });
+      setMsg(`${SCORE_DEFS[active].label} ${SS.saved || "kaydedildi"} · ${SS.score || "Skor"} ${e.score}`);
+    } catch (ex) { setErr(ex.message); }
+  };
+
+  const history = (state.scores?.[patientId] || []).filter((s) => s.scoreType === active);
+  const fields = SCORE_FIELDS[active] || [];
+
+  return (
+    <div className={`mt-5 rounded-xl border ${T.border} ${T.subtle} p-4`}>
+      <div className={`mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase ${T.faint}`}>
+        <Gauge size={13} /> {SS.title || "Hastalık Şiddeti Skorlaması"}
+      </div>
+      <div className={`mb-3 text-xs ${T.muted}`}>
+        {SS.disclaimer || "Karar destek amaçlıdır; tanı koymaz. Değerler hekim tarafından doğrulanmalıdır."}
+      </div>
+
+      {/* uygulanabilir skor sekmeleri (ünite tipine göre) */}
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {applicable.map((k) => (
+          <button key={k} onClick={() => selectScore(k)}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${active === k ? T.navActive : T.ghost}`}>
+            {SCORE_DEFS[k].label}
+          </button>
+        ))}
+      </div>
+
+      {/* canlı skor önizleme */}
+      {preview && (
+        <div className={`mb-3 flex flex-wrap items-center gap-3 rounded-lg border ${T.border} ${T.card} p-3`}>
+          <div>
+            <div className={`text-xs ${T.faint}`}>{SS.score || "Skor"}</div>
+            <div className={`text-2xl font-bold ${T.heading}`}>{preview.score}<span className={`text-sm font-normal ${T.faint}`}>/{preview.max}</span></div>
+          </div>
+          {preview.mortality != null && (
+            <div>
+              <div className={`text-xs ${T.faint}`}>{SS.mortality || "Beklenen mortalite"}</div>
+              <div className={`text-2xl font-bold ${T.heading}`}>%{preview.mortality}</div>
+            </div>
+          )}
+          {preview.ageGroup && <div className={`text-xs ${T.muted}`}>{SS.ageGroup || "Yaş grubu"}: {preview.ageGroup}</div>}
+          {preview.missing && preview.missing.length > 0 && (
+            <div className={`ml-auto text-xs text-amber-500`}>
+              <AlertTriangle size={12} className="inline" /> {preview.missing.length} {SS.missing || "eksik alan"}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* giriş alanları */}
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        {fields.map((f) => (
+          <div key={f.key}>
+            <label className={`mb-1 block text-xs ${T.faint}`}>{f.label}</label>
+            {f.type === "bool" ? (
+              <button type="button" disabled={!canEdit} onClick={() => setField(f.key, !inputs[f.key])}
+                className={`w-full rounded-lg px-3 py-2 text-xs font-semibold ${inputs[f.key] ? T.primary : T.ghost}`}>
+                {inputs[f.key] ? (SS.yes || "Evet") : (SS.no || "Hayır")}
+              </button>
+            ) : f.type === "select" ? (
+              <select className={inputCls(T)} disabled={!canEdit} value={inputs[f.key] ?? ""}
+                onChange={(e) => setField(f.key, e.target.value)}>
+                <option value="">—</option>
+                {f.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            ) : (
+              <input type="number" step={f.step || 1} className={inputCls(T)} disabled={!canEdit}
+                value={inputs[f.key] ?? ""} onChange={(e) => setField(f.key, e.target.value)} />
+            )}
+            {f.hint && <div className={`mt-0.5 text-[10px] ${T.faint}`}>{f.hint}</div>}
+          </div>
+        ))}
+      </div>
+
+      {msg && <div className="mt-3 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-500">{msg}</div>}
+      {err && <div className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-500">{err}</div>}
+
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button onClick={autofill} disabled={!canEdit} className={btnCls(T, "ghost")}>
+          <RefreshCw size={15} /> {SS.autofill || "Monitör Bilgisi Getir"}
+        </button>
+        <button onClick={save} disabled={!canEdit} className={btnCls(T, "primary")}>
+          <Check size={15} /> {SS.save || "Skoru Kaydet"}
+        </button>
+      </div>
+      {!canEdit && <div className={`mt-2 text-xs ${T.faint}`}>{SS.noPerm || "Skorlama girişi hekim yetkisi gerektirir."}</div>}
+
+      {/* skor geçmişi / trend */}
+      {history.length > 0 && (
+        <div className="mt-4">
+          <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{SS.history || "Skor Geçmişi"}</div>
+          <div className="space-y-1.5">
+            {history.map((h) => (
+              <div key={h.id} className={`flex items-center gap-2 rounded-lg border ${T.border} ${T.card} px-3 py-2 text-xs`}>
+                <span className={`font-bold ${T.heading}`}>{h.score}</span>
+                {h.mortality != null && <span className={T.muted}>%{h.mortality}</span>}
+                <span className={`ml-auto ${T.faint}`}>{h.byName} · {new Date(h.atMs).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, onExpand, lang }) {
   const p = state.patients.find((x) => x.patient_id === patientId);
   const [ho, setHo] = useState(false);
@@ -1266,6 +1497,9 @@ function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, onE
         <div className="mt-5">
           <ClinicalModule T={T} S={S} store={store} state={state} patientId={p.patient_id} lang={lang} />
         </div>
+
+        {/* Hastalık şiddeti skorlaması — ünite tipine göre uygun skorlar (APACHE II / SOFA / MODS / PRISM III / SNAPPE-II) */}
+        <ScoringModule T={T} S={S} store={store} state={state} patientId={p.patient_id} lang={lang} />
 
         <div className="mt-5 grid grid-cols-2 gap-2">
           <button onClick={() => setHo(true)} className={btnCls(T, "ghost")}><PenLine size={16} /> {S.handover}</button>
@@ -1385,7 +1619,7 @@ function SectionHeader({ T, icon: Icon, title, hint }) {
 }
 
 function AdmitForm({ T, S, store, state }) {
-  const units = state.structure.units;
+  const units = visibleUnits(state);
   const P = S.pr19;
   const attendings = state.users.filter((u) => u.role === ROLE.ATTENDING);
   const nurses = state.users.filter((u) => u.role === ROLE.CHARGE_NURSE);
@@ -1558,7 +1792,8 @@ function TransferForm({ T, S, store, state, preselect, clearPreselect }) {
   const [bedId, setBedId] = useState("");
   const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
   useEffect(() => { if (preselect) setPatientId(preselect); }, [preselect]);
-  const availBeds = state.beds.filter((b) => b.state === "AVAILABLE");
+  const availBeds = visibleBeds(state).filter((b) => b.state === "AVAILABLE");
+  const visPatients = visiblePatients(state);
   const submit = (e) => {
     e.preventDefault(); setErr(""); setMsg("");
     try { store.transferPatient({ patientId, targetBedId: bedId }); setMsg(S.transferredOk); setBedId(""); if (clearPreselect) clearPreselect(); }
@@ -1571,7 +1806,7 @@ function TransferForm({ T, S, store, state, preselect, clearPreselect }) {
         <Field T={T} label={S.selectPatient}>
           <select className={inputCls(T)} value={patientId} onChange={(e) => setPatientId(e.target.value)} required>
             <option value="">{S.selectPatient}</option>
-            {state.patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.bedLabel} · {p.display_name}</option>)}
+            {visPatients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.bedLabel} · {p.display_name}</option>)}
           </select>
         </Field>
         <Field T={T} label={S.selectTargetBed}>
@@ -1601,7 +1836,7 @@ function CareTeamPage({ T, S, store, state }) {
         <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
           <p className={`mb-4 text-sm ${T.muted}`}>{S.careSub}</p>
           <div className="space-y-3">
-            {state.patients.map((p) => {
+            {visiblePatients(state).map((p) => {
               const team = state.careTeam[p.patient_id] || {};
               return (
                 <div key={p.patient_id} className={`rounded-xl border ${T.border} ${T.subtle} p-4`}>
@@ -1656,7 +1891,7 @@ function CareTeamPage({ T, S, store, state }) {
 // ================================================================ RESULTS INBOX (pr19 #4)
 function ResultsInbox({ T, S, store, state }) {
   const P = S.pr19;
-  const patients = state.patients;
+  const patients = visiblePatients(state);
   const [f, setF] = useState({ patientId: patients[0]?.patient_id || "", type: "lab", title: "", summary: "", critical: false, fileName: "" });
   const [filter, setFilter] = useState("all"); // all | lab | radiology | epicrisis
   const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
@@ -1800,7 +2035,7 @@ function ResultsInbox({ T, S, store, state }) {
 // ================================================================ UNIT HEATMAP (pr19 #2/#4)
 function HeatmapPage({ T, S, store, state }) {
   const P = S.pr19;
-  const units = state.structure.units;
+  const units = visibleUnits(state);
   const [unitId, setUnitId] = useState("all");
   const [grid, setGrid] = useState([]);
   useEffect(() => {
@@ -1863,7 +2098,8 @@ function HeatmapPage({ T, S, store, state }) {
 // ================================================================ ALARM MANAGEMENT
 function AlarmPage({ T, S, store, state, lang }) {
   const alerts = [...state.alerts].filter((a) => a.status !== "CLOSED").reverse();
-  const [fp, setFp] = useState(state.patients[0]?.patient_id || "");
+  const visPatients = visiblePatients(state);
+  const [fp, setFp] = useState(visPatients[0]?.patient_id || "");
   const [ft, setFt] = useState(TIER.CRITICAL);
   const fire = () => { if (fp) store.fireAlert({ patientId: fp, tier: ft, summary: ALERT_TXT[lang] || ALERT_TXT.tr }); };
   const [ackFor, setAckFor] = useState(null);
@@ -1879,7 +2115,7 @@ function AlarmPage({ T, S, store, state, lang }) {
           <div className="space-y-3">
             <Field T={T} label={S.viewDetail}>
               <select className={inputCls(T)} value={fp} onChange={(e) => setFp(e.target.value)}>
-                {state.patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.bedLabel} · {maskedName(state, p.display_name)}</option>)}
+                {visPatients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.bedLabel} · {maskedName(state, p.display_name)}</option>)}
               </select>
             </Field>
             <Field T={T} label={S.alertTier}>
@@ -2272,11 +2508,155 @@ function AnalyticsPanel({ T, S, state }) {
   );
 }
 
+// ================================================================ HOSPITAL ADMIN (super-admin only)
+// Süper yönetici yeni bir hastane (tenant) oluşturur: kampüs + üniteler (tip & yatak sayısı) +
+// personel (e-posta/ad/rol). Personel geçici PIN ile hemen giriş yapabilir ve yalnızca kendi
+// hastanesinin verilerini görür (veri izolasyonu). Karar destek sistemi; teşhis koymaz.
+function HospitalAdmin({ T, S, store, state }) {
+  const H = S.hospital || {};
+  const roleOpts = ["HOSPITAL_ADMIN", "ATTENDING", "PHYSICIAN", "CHARGE_NURSE", "NURSE", "RRT", "PHARMACIST", "BIOMEDICAL"];
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [siteName, setSiteName] = useState("");
+  const [address, setAddress] = useState("");
+  const [units, setUnits] = useState([{ name: "", type: "ADULT_ICU", beds: "6" }]);
+  const [staff, setStaff] = useState([{ email: "", fullName: "", role: "HOSPITAL_ADMIN" }]);
+  const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
+
+  const autoSlug = (v) => v.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/ı/g, "i").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const updUnit = (i, k, v) => setUnits((s) => s.map((u, idx) => idx === i ? { ...u, [k]: v } : u));
+  const updStaff = (i, k, v) => setStaff((s) => s.map((u, idx) => idx === i ? { ...u, [k]: v } : u));
+  const addUnitRow = () => setUnits((s) => [...s, { name: "", type: "ADULT_ICU", beds: "6" }]);
+  const rmUnitRow = (i) => setUnits((s) => s.filter((_, idx) => idx !== i));
+  const addStaffRow = () => setStaff((s) => [...s, { email: "", fullName: "", role: "PHYSICIAN" }]);
+  const rmStaffRow = (i) => setStaff((s) => s.filter((_, idx) => idx !== i));
+
+  const submit = (e) => {
+    e.preventDefault(); setErr(""); setMsg("");
+    try {
+      const res = store.createHospital({
+        name, slug: slug || autoSlug(name), siteName, address,
+        units: units.filter((u) => u.name.trim()),
+        staff: staff.filter((m) => m.email.trim()),
+      });
+      setMsg((H.created || "Hastane oluşturuldu") + `: ${res.tenant.name} · ${res.units.length} ${H.units || "ünite"} · ${res.users.length} ${H.staff || "personel"}`);
+      setName(""); setSlug(""); setSiteName(""); setAddress("");
+      setUnits([{ name: "", type: "ADULT_ICU", beds: "6" }]);
+      setStaff([{ email: "", fullName: "", role: "HOSPITAL_ADMIN" }]);
+    } catch (ex) { setErr(ex.message); }
+  };
+
+  const tenants = state.tenants || [];
+  const countFor = (tid) => ({
+    units: (state.structure.units || []).filter((u) => u.tenantId === tid).length,
+    beds: (state.beds || []).filter((b) => (state.structure.units || []).some((u) => u.id === b.unitId && u.tenantId === tid)).length,
+    users: (state.users || []).filter((u) => u.tenantId === tid).length,
+  });
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={submit} className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+        <h3 className={`mb-1 flex items-center gap-2 font-bold ${T.heading}`}><Building2 size={18} /> {H.createTitle || "Yeni Hastane Oluştur"}</h3>
+        <p className={`mb-4 text-sm ${T.muted}`}>{H.createSub || "Hastane, kampüs, üniteler ve personel tanımlayın. Her hastane yalnızca kendi verisini görür (veri izolasyonu)."}</p>
+        {err && <div className="mb-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+        {msg && <div className="mb-3 rounded-lg bg-emerald-500/15 px-3 py-2 text-sm text-emerald-500">{msg}</div>}
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field T={T} label={H.name || "Hastane Adı"}>
+            <input className={inputCls(T)} value={name} onChange={(e) => setName(e.target.value)} placeholder="Örn. Anadolu Devlet Hastanesi" required />
+          </Field>
+          <Field T={T} label={H.slug || "Slug (kısa kod)"}>
+            <input className={inputCls(T)} value={slug} onChange={(e) => setSlug(autoSlug(e.target.value))} placeholder={name ? autoSlug(name) : "anadolu-devlet"} />
+          </Field>
+          <Field T={T} label={H.siteName || "Kampüs / Yerleşke"}>
+            <input className={inputCls(T)} value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="Merkez Kampüs" />
+          </Field>
+          <Field T={T} label={H.address || "Adres"}>
+            <input className={inputCls(T)} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="İl / İlçe" />
+          </Field>
+        </div>
+
+        {/* units */}
+        <div className="mt-4">
+          <div className={`mb-2 flex items-center justify-between text-xs font-semibold uppercase ${T.faint}`}>
+            <span>{H.unitsSection || "Üniteler"}</span>
+            <button type="button" onClick={addUnitRow} className={btnCls(T, "ghost")}><Plus size={14} /> {H.addUnit || "Ünite ekle"}</button>
+          </div>
+          <div className="space-y-2">
+            {units.map((u, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2">
+                <input className={`${inputCls(T)} flex-1`} value={u.name} onChange={(e) => updUnit(i, "name", e.target.value)} placeholder={(H.unitName || "Ünite adı") + " (örn. Erişkin YBÜ)"} />
+                <select className={inputCls(T)} value={u.type} onChange={(e) => updUnit(i, "type", e.target.value)}>
+                  <option value="ADULT_ICU">{S.unitAdult || "Erişkin YBÜ"}</option>
+                  <option value="NICU">{S.unitNicu || "Yenidoğan YBÜ (NICU)"}</option>
+                  <option value="PICU">PICU</option>
+                  <option value="WARD">{H.ward || "Servis"}</option>
+                </select>
+                <input type="number" min="0" max="40" className={`${inputCls(T)} w-24`} value={u.beds} onChange={(e) => updUnit(i, "beds", e.target.value)} placeholder={H.beds || "Yatak"} />
+                {units.length > 1 && <button type="button" onClick={() => rmUnitRow(i)} className={btnCls(T, "ghost")}><Trash2 size={14} /></button>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* staff */}
+        <div className="mt-4">
+          <div className={`mb-2 flex items-center justify-between text-xs font-semibold uppercase ${T.faint}`}>
+            <span>{H.staffSection || "Personel"}</span>
+            <button type="button" onClick={addStaffRow} className={btnCls(T, "ghost")}><Plus size={14} /> {H.addStaff || "Personel ekle"}</button>
+          </div>
+          <div className="space-y-2">
+            {staff.map((m, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2">
+                <input className={`${inputCls(T)} flex-1`} value={m.fullName} onChange={(e) => updStaff(i, "fullName", e.target.value)} placeholder={H.staffName || "Ad Soyad"} />
+                <input type="email" className={`${inputCls(T)} flex-1`} value={m.email} onChange={(e) => updStaff(i, "email", e.target.value)} placeholder="e-posta" />
+                <select className={inputCls(T)} value={m.role} onChange={(e) => updStaff(i, "role", e.target.value)}>
+                  {roleOpts.map((r) => <option key={r} value={r}>{S.roleName?.[r] || r}</option>)}
+                </select>
+                {staff.length > 1 && <button type="button" onClick={() => rmStaffRow(i)} className={btnCls(T, "ghost")}><Trash2 size={14} /></button>}
+              </div>
+            ))}
+          </div>
+          <p className={`mt-2 text-xs ${T.faint}`}>{H.staffNote || "Personele geçici PIN atanır ve davet gönderilir; ilk girişte parola belirler. Yalnızca kendi hastanesinin verisini görür."}</p>
+        </div>
+
+        <div className="mt-4">
+          <button type="submit" className={btnCls(T, "primary")}><Building2 size={15} /> {H.createBtn || "Hastane Oluştur"}</button>
+        </div>
+      </form>
+
+      {/* existing tenants */}
+      <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+        <h3 className={`mb-3 flex items-center gap-2 font-bold ${T.heading}`}><Network size={18} /> {H.listTitle || "Tanımlı Hastaneler"}</h3>
+        <div className="space-y-2">
+          {tenants.map((t) => {
+            const c = countFor(t.id);
+            return (
+              <div key={t.id} className={`rounded-xl border ${T.border} ${T.subtle} p-3`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className={`font-semibold ${T.text}`}><Building2 size={14} className="mr-1.5 inline" />{t.name}
+                    <span className={`ml-2 text-xs font-normal ${T.faint}`}>{t.slug}</span>
+                  </div>
+                  <span className={`text-xs ${T.faint}`}>{c.units} {H.units || "ünite"} · {c.beds} {S.bed || "yatak"} · {c.users} {H.staff || "personel"}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ================================================================ ADMIN
 function AdminPage({ T, S, store, state }) {
   const [tab, setTab] = useState("reports");
+  const superAdmin = isSuperAdmin(state.user);
+  const SH = S.hospital || {};
   const TABS = [
     { key: "reports", label: S.pr8.reports, icon: BarChart3 },
+    ...(superAdmin ? [{ key: "hospitals", label: SH.tabLabel || "Hastaneler", icon: Building2 }] : []),
     { key: "structure", label: S.pr7.hierarchy, icon: Building2 },
     { key: "staff", label: S.pr7.staffMatrix, icon: Users },
     { key: "security", label: S.pr10.inviteTitle, icon: Shield },
@@ -2301,6 +2681,7 @@ function AdminPage({ T, S, store, state }) {
       </div>
 
       {tab === "reports" && <AnalyticsPanel T={T} S={S} state={state} />}
+      {tab === "hospitals" && superAdmin && <HospitalAdmin T={T} S={S} store={store} state={state} />}
       {tab === "structure" && (
         <div className="space-y-4">
           <HierarchyTree T={T} S={S} state={state} />
@@ -2329,7 +2710,7 @@ function AdminPage({ T, S, store, state }) {
 
 // Hospital → Unit → Room → Bed tree with live device status per bed.
 function HierarchyTree({ T, S, state }) {
-  const units = state.structure.units;
+  const units = visibleUnits(state);
   return (
     <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
       <h3 className={`mb-1 flex items-center gap-2 font-bold ${T.heading}`}>
@@ -2385,7 +2766,7 @@ function HierarchyTree({ T, S, state }) {
 // Visual staff → bed assignment matrix (rows = staff, columns = beds).
 function StaffMatrix({ T, S, store, state }) {
   const staff = state.users.filter((u) => u.role === ROLE.ATTENDING || u.role === ROLE.CHARGE_NURSE);
-  const beds = state.beds;
+  const beds = visibleBeds(state);
   return (
     <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
       <h3 className={`mb-1 flex items-center gap-2 font-bold ${T.heading}`}>
@@ -2511,7 +2892,7 @@ function DeviceRow({ T, S, store, state, d, occupiedBeds }) {
 }
 
 function DeviceAdmin({ T, S, store, state }) {
-  const occupiedBeds = state.beds.filter((b) => b.state === "OCCUPIED");
+  const occupiedBeds = visibleBeds(state).filter((b) => b.state === "OCCUPIED");
   const [f, setF] = useState({ vendor: "Mindray", model: "BeneVision N17", ip: "", port: "6002", protocol: "HL7 / IEEE 11073", serial: "", bedId: "" });
   const [err, setErr] = useState("");
   const submit = (e) => {
@@ -2624,7 +3005,7 @@ function ActionOverlay({ T, title, onClose, children }) {
 // Tek bir kullanıcı satırı + tam yönetim eylemleri menüsü (parola sıfırlama, geçici PIN,
 // aktif/pasif, MFA yönetimi, birim & vardiya erişimi).
 function UserRow({ T, S, store, state, u }) {
-  const units = state.structure.units;
+  const units = visibleUnits(state);
   const [modal, setModal] = useState(null); // "password" | "pin" | "units" | "role"
   const [pw, setPw] = useState("");
   const [pinResult, setPinResult] = useState("");
@@ -2910,7 +3291,7 @@ function UserAdmin({ T, S, store, state }) {
 }
 
 function StructureAdmin({ T, S, store, state }) {
-  const units = state.structure.units;
+  const units = visibleUnits(state);
   const [unitName, setUnitName] = useState(""); const [unitType, setUnitType] = useState("ADULT_ICU");
   const [roomUnit, setRoomUnit] = useState(units[0]?.id || ""); const [roomName, setRoomName] = useState("");
   const [bedUnit, setBedUnit] = useState(units[0]?.id || ""); const [bedRoom, setBedRoom] = useState(""); const [bedLabel, setBedLabel] = useState("");
@@ -2982,7 +3363,7 @@ function StructureAdmin({ T, S, store, state }) {
       <div className="mt-5">
         <div className={`mb-2 flex items-center gap-2 text-xs font-semibold uppercase ${T.faint}`}><Bed size={14} /> {S.pr8.bedOps}</div>
         <div className={`divide-y ${T.divide} rounded-xl border ${T.border}`}>
-          {state.beds.map((b) => <BedStateRow key={b.id} T={T} S={S} store={store} bed={b} />)}
+          {visibleBeds(state).map((b) => <BedStateRow key={b.id} T={T} S={S} store={store} bed={b} />)}
         </div>
       </div>
     </div>
