@@ -1,0 +1,31 @@
+# Render Blueprint — Homunculus backend (FastAPI) → Supabase Postgres.
+# Frontend stays on Vercel; this deploys ONLY the API. On every push to the connected branch Render
+# rebuilds, runs `alembic upgrade head` (schema migrations against Supabase), and restarts uvicorn.
+#
+# Secrets are entered in the Render dashboard (sync:false / generateValue), never committed:
+#   DATABASE_URL   Supabase "Session pooler" URI, driver rewritten to postgresql+asyncpg://
+#                  e.g. postgresql+asyncpg://postgres.<ref>:<PWD>@aws-0-<region>.pooler.supabase.com:5432/postgres
+#   CORS_ORIGINS   the Vercel origin, e.g. https://homunculus-ai.vercel.app
+#   TENANTS        legacy bearer-token tenancy, e.g. demo-token:HOSP1
+services:
+  - type: web
+    name: homunculus-api
+    runtime: python
+    plan: free
+    rootDir: homunculus-engine
+    buildCommand: pip install -e .
+    startCommand: alembic upgrade head && uvicorn homunculus.api.prodserver:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL
+        value: require
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+      - key: TENANTS
+        sync: false

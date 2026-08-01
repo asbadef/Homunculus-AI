@@ -16,6 +16,7 @@ dependencies = [
     "cryptography>=42.0",               # Fernet (PHI encryption)
     "python-multipart>=0.0.9",          # Form data
     "email-validator>=2.1",             # Email validation
+    "uvicorn[standard]>=0.30",          # ASGI server (production serving)
 ]
 
 [project.optional-dependencies]

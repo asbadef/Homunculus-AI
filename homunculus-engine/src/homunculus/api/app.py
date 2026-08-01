@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Body, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from homunculus.api.ackstore import AckStore
@@ -132,6 +134,15 @@ def create_app(
 
     app = FastAPI(title="Homunculus", lifespan=lifespan)
 
+    # CORS: allow the deployed frontend origin(s). Set CORS_ORIGINS (comma-separated) on the host,
+    # e.g. "https://homunculus-ai.vercel.app". Empty => no cross-origin access (same-origin only).
+    _cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+    if _cors:
+        app.add_middleware(
+            CORSMiddleware, allow_origins=_cors, allow_credentials=True,
+            allow_methods=["*"], allow_headers=["*"],
+        )
+
     # New auth + tenant subsystems (JWT/TOTP identity, physical hierarchy).
     # These live alongside the existing bearer-token → hospital_id tenancy, which
     # is preserved unchanged for backward compatibility with the ingest/board API.
@@ -230,6 +241,11 @@ def create_app(
         audit.append(AuditEvent(hospital, "view", patient_id, "",
                                 {"role": body.get("role", "unknown")}))
         return {"ok": True}
+
+    @app.get("/health")
+    def health():
+        """Unauthenticated liveness probe for the host's health check."""
+        return {"status": "ok"}
 
     @app.get("/patients")
     def patients(authorization: str | None = Header(default=None)):

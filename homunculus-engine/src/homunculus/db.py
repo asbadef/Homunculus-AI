@@ -12,7 +12,15 @@ DATABASE_URL = os.getenv(
     "postgresql+asyncpg://homunculus:homunculus@localhost:5432/homunculus",
 )
 
-engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+# Managed Postgres (e.g. Supabase pooler) requires TLS. Enabled via env so local docker dev is
+# unaffected. statement_cache_size=0 keeps asyncpg compatible with the Supabase connection pooler
+# (pgbouncer). Set DATABASE_SSL=require on the host.
+_SSL = os.getenv("DATABASE_SSL", "").lower() in ("require", "true", "1")
+_CONNECT_ARGS = {"ssl": True, "statement_cache_size": 0} if _SSL else {}
+
+engine = create_async_engine(
+    DATABASE_URL, echo=False, pool_pre_ping=True, connect_args=_CONNECT_ARGS
+)
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
