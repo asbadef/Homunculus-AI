@@ -30,9 +30,11 @@ from homunculus.db import engine
 async def main() -> int:
     password = os.getenv("SEED_ADMIN_PASSWORD")
     if not password:
-        print("SEED_ADMIN_PASSWORD is required (refusing to seed a default password).",
-              file=sys.stderr)
-        return 2
+        # Deploys run this on every boot. Once the admin exists the operator can remove the
+        # password from the environment, and restarts must not fail — so skip loudly, not fatally.
+        # (There is deliberately no default password: no deployment ships a known credential.)
+        print("SEED_ADMIN_PASSWORD not set — skipping bootstrap seed.", file=sys.stderr)
+        return 0
 
     maker = async_sessionmaker(engine, expire_on_commit=False)
     async with maker() as session:
