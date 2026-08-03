@@ -8,7 +8,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "fastapi>=0.110",
     "python-jose[cryptography]>=3.3",   # JWT
-    "passlib[bcrypt]>=1.7",             # Password hashing
+    "bcrypt>=4.1",                      # Password hashing (passlib dropped: unmaintained, breaks on bcrypt>=4.1)
     "pyotp>=2.9",                       # TOTP/MFA
     "alembic>=1.13",                    # DB migrations
     "psycopg2-binary>=2.9",             # PostgreSQL driver (sync, for Alembic)

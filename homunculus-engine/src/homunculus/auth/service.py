@@ -5,7 +5,7 @@ Password hashing, token generation, MFA setup.
 from __future__ import annotations
 import uuid
 
-from passlib.context import CryptContext
+import bcrypt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,15 +13,27 @@ from homunculus.auth.jwt import create_access_token, create_refresh_token
 from homunculus.auth.models import MFA_REQUIRED_ROLES, TenantMembership, User, UserRole
 from homunculus.auth.totp import generate_provisioning_uri, generate_totp_secret, verify_totp
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt is used directly: passlib has been unmaintained since 2020 and is incompatible with
+# bcrypt >= 4.1 (it raised "password cannot be longer than 72 bytes" for every password, which
+# made user creation and login impossible).
+_BCRYPT_MAX_BYTES = 72
+
+
+def _secret(plain: str) -> bytes:
+    """Encode for bcrypt, which hashes at most 72 bytes. Longer secrets are truncated — bcrypt's
+    own long-standing behaviour, made explicit here instead of left to the driver to reject."""
+    return plain.encode("utf-8")[:_BCRYPT_MAX_BYTES]
 
 
 def hash_password(plain: str) -> str:
-    return _pwd_context.hash(plain)
+    return bcrypt.hashpw(_secret(plain), bcrypt.gensalt()).decode("ascii")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_context.verify(plain, hashed)
+    try:
+        return bcrypt.checkpw(_secret(plain), hashed.encode("ascii"))
+    except (ValueError, TypeError):
+        return False   # malformed stored hash must fail the login, not crash it
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
