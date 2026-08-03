@@ -27,6 +27,18 @@ requires_db = pytest.mark.skipif(
     reason="TEST_DATABASE_URL not set; skipping DB-backed tests.",
 )
 
+# SAFETY: the db_session fixture drops every table. Pointing TEST_DATABASE_URL at a real database
+# (a dev instance, or worse a managed one like Supabase) would destroy it. Require the database
+# name to say "test" so that can only ever happen deliberately.
+if TEST_DATABASE_URL is not None:
+    _db_name = TEST_DATABASE_URL.rsplit("/", 1)[-1].split("?")[0]
+    if "test" not in _db_name.lower():
+        raise RuntimeError(
+            f"Refusing to run DB tests against database {_db_name!r}: these tests DROP ALL TABLES. "
+            f"Point TEST_DATABASE_URL at a dedicated database whose name contains 'test' "
+            f"(e.g. .../homunculus_test)."
+        )
+
 
 @pytest_asyncio.fixture
 async def db_session():

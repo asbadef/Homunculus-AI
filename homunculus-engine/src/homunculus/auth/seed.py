@@ -9,12 +9,30 @@ Credentials come from the caller (CLI reads them from the environment) — never
 """
 from __future__ import annotations
 
+from pydantic import BaseModel, EmailStr, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.auth.models import TenantMembership, User, UserRole
 from homunculus.auth.service import hash_password
 from homunculus.tenant.models import Tenant
+
+
+class _EmailCheck(BaseModel):
+    """Same validation the login endpoint applies, so we never seed an unusable account."""
+    email: EmailStr
+
+
+def _validate_email(email: str) -> None:
+    try:
+        _EmailCheck(email=email)
+    except ValidationError as exc:
+        # e.g. ".local" / "localhost" are rejected as special-use domains by the login API — an
+        # account seeded with one could never be logged into, so refuse it here.
+        raise ValueError(
+            f"Geçersiz e-posta {email!r}: giriş API'si bu adresi kabul etmez, "
+            f"bu hesapla giriş yapılamaz."
+        ) from exc
 
 
 async def seed_bootstrap(
@@ -30,6 +48,8 @@ async def seed_bootstrap(
     role: UserRole = UserRole.HOSPITAL_ADMIN,
 ) -> tuple[Tenant, User]:
     """Create (or return) the bootstrap tenant, admin user, and their membership."""
+    _validate_email(email)
+
     tenant = (await db.execute(
         select(Tenant).where(Tenant.slug == tenant_slug)
     )).scalar_one_or_none()

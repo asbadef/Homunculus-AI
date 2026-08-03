@@ -3,7 +3,7 @@
 Idempotent — safe to re-run (the host may call it on every deploy).
 
 Run:
-    SEED_ADMIN_EMAIL=admin@hastane.local SEED_ADMIN_PASSWORD='...' \
+    SEED_ADMIN_EMAIL=admin@hastane.com.tr SEED_ADMIN_PASSWORD='...' \
     homunculus-engine/.venv/Scripts/python.exe homunculus-engine/scripts/seed_admin.py
 
 Env (all optional except the password):
@@ -11,7 +11,7 @@ Env (all optional except the password):
     SEED_TENANT_NAME      default "Demo Hastanesi"
     SEED_TENANT_SLUG      default "demo-hastanesi"
     SEED_TENANT_COUNTRY   default "TR"
-    SEED_ADMIN_EMAIL      default "admin@demo.local"
+    SEED_ADMIN_EMAIL      default "admin@example.com" (must pass the login API's email validation)
     SEED_ADMIN_NAME       default "Sistem Yöneticisi"
     SEED_ADMIN_PASSWORD   REQUIRED — no default, so no deployment ships a known password
 """
@@ -41,7 +41,7 @@ async def main() -> int:
             tenant_name=os.getenv("SEED_TENANT_NAME", "Demo Hastanesi"),
             tenant_slug=os.getenv("SEED_TENANT_SLUG", "demo-hastanesi"),
             country_code=os.getenv("SEED_TENANT_COUNTRY", "TR"),
-            email=os.getenv("SEED_ADMIN_EMAIL", "admin@demo.local"),
+            email=os.getenv("SEED_ADMIN_EMAIL", "admin@example.com"),
             full_name=os.getenv("SEED_ADMIN_NAME", "Sistem Yöneticisi"),
             password=password,
         )
