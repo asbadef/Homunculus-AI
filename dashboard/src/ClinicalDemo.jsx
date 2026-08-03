@@ -214,11 +214,17 @@ function Login({ T, S, store, lang, setLang }) {
   const [credential, setCredential] = useState("");
   const [err, setErr] = useState("");
   const [showForgot, setShowForgot] = useState(false);
-  const submit = (e) => {
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
     e.preventDefault();
     // Kurumsal e-posta + parola. Rol DB'den gelir; panel role göre otomatik yönlenir.
     // attemptLogin: rol MFA gerektiriyorsa oturumu açmadan MFA kapısına yönlendirir (mfaPending).
-    try { store.attemptLogin(email.trim(), credential.trim()); } catch (ex) { setErr(ex.message); }
+    // `await` hem simülasyonun senkron sürümünü hem canlı backend'in async sürümünü karşılar.
+    setErr("");
+    setBusy(true);
+    try { await store.attemptLogin(email.trim(), credential.trim()); }
+    catch (ex) { setErr(ex.message); }
+    finally { setBusy(false); }
   };
 
   const iconInput = (icon, node) => (
@@ -400,9 +406,11 @@ function MfaGate({ T, S, store, pending, lang, setLang }) {
     }
   }, [enrolled, pending.userId]);
 
-  const verify = (e) => {
+  const verify = async (e) => {
     e.preventDefault();
-    try { store.completeMfaLogin(code.trim()); } catch (ex) { setErr(ex.message); }
+    // `await` karşılar: simülasyon senkron, canlı backend async.
+    setErr("");
+    try { await store.completeMfaLogin(code.trim()); } catch (ex) { setErr(ex.message); }
   };
 
   return (
@@ -3788,9 +3796,11 @@ function KvkkBanner({ T, S }) {
 }
 
 // ================================================================ ROOT
-export function ClinicalDemo() {
+// `store` is injectable so the same UI can run against the in-browser simulation (default) or a
+// live store backed by the real API (see liveStore.js).
+export function ClinicalDemo({ store: injectedStore = null }) {
   const storeRef = useRef(null);
-  if (!storeRef.current) storeRef.current = createDemoStore(buildRealisticState());
+  if (!storeRef.current) storeRef.current = injectedStore || createDemoStore(buildRealisticState());
   const store = storeRef.current;
   const state = useStore(store);
 
