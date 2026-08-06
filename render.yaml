@@ -7,6 +7,12 @@
 #                  e.g. postgresql+asyncpg://postgres.<ref>:<PWD>@aws-0-<region>.pooler.supabase.com:5432/postgres
 #   CORS_ORIGINS   the Vercel origin, e.g. https://homunculus-ai.vercel.app
 #   TENANTS        legacy bearer-token tenancy, e.g. demo-token:HOSP1
+#
+# PLAN: `free` spins the service down after ~15 minutes of inactivity. While it is asleep the
+# BACKGROUND ESCALATION LOOP DOES NOT RUN, so an unacknowledged alert would not escalate until the
+# next request wakes the service. That is acceptable only because this pilot runs in parallel /
+# observation mode and nothing clinical depends on it. Before anyone relies on the alerting,
+# move to `starter` (always-on) in the Render dashboard.
 services:
   - type: web
     name: homunculus-api
@@ -37,3 +43,9 @@ services:
         sync: false
       - key: SEED_ADMIN_PASSWORD
         sync: false
+      # KNOWN GAP: Render's filesystem is ephemeral, so this SQLite audit is lost on every deploy
+      # and restart. The pilot carries real data and its audit trail is a legal requirement, so a
+      # Postgres-backed audit must replace this before the pilot is treated as a record of what the
+      # system saw and did. Until then, treat the audit as best-effort and say so.
+      - key: AUDIT_DB_PATH
+        value: /tmp/homunculus-audit.db
