@@ -21,17 +21,34 @@ from homunculus.canonical import Observation, SignalCode
 from homunculus.edge.mllp import serve_mllp
 from homunculus.edge.serialize import observation_to_fhir
 from homunculus.gateway.fhir import GatewayError
-from homunculus.gateway.hl7 import parse_hl7_oru
+from homunculus.gateway.hl7 import default_mapping, parse_hl7_oru
 
 _log = logging.getLogger(__name__)
 
 
 @dataclass
 class BridgeStats:
-    """Operational counters. Deliberately holds no message content."""
+    """Operational counters. Deliberately holds no message content.
+
+    `unmapped` counts OBX identifiers the site mapping does not cover. Those observations are
+    dropped, and without this counter that failure is invisible: messages keep arriving, ACKs keep
+    going back, and nothing reaches the engine.
+    """
     messages: int = 0
     observations: int = 0
     rejected: int = 0
+    unmapped: dict[str, int] = field(default_factory=dict)
+
+
+def _obx_codes(message: str) -> list[str]:
+    """OBX-3 identifiers in a message, first component only (``CODE^text`` -> ``CODE``)."""
+    codes: list[str] = []
+    for segment in message.replace("\n", "\r").split("\r"):
+        if segment.startswith("OBX"):
+            fields = segment.split("|")
+            if len(fields) > 3:
+                codes.append(fields[3].split("^")[0].strip())
+    return codes
 
 
 @dataclass
@@ -57,10 +74,30 @@ class EdgeBridge:
             _log.warning("rejected an unparseable HL7 message (content not logged)")
             raise
 
+        self._record_unmapped(message)
+
         for obs in observations:
             self.send(observation_to_fhir(obs))
         self.stats.observations += len(observations)
         return observations
+
+    def _record_unmapped(self, message: str) -> None:
+        """Count OBX identifiers this site's mapping does not cover."""
+        known = self.mapping if self.mapping is not None else default_mapping()
+        for code in _obx_codes(message):
+            if code and code not in known:
+                self.stats.unmapped[code] = self.stats.unmapped.get(code, 0) + 1
+
+    def discovery_report(self) -> str:
+        """Human-readable list of identifiers the device sent that nothing maps.
+
+        Reports the identifier and how often it arrived — never the measurement or the patient,
+        which are PHI. Empty string when every code is mapped.
+        """
+        if not self.stats.unmapped:
+            return ""
+        ranked = sorted(self.stats.unmapped.items(), key=lambda kv: kv[1], reverse=True)
+        return "Eşlenmemiş kodlar: " + ", ".join(f"{code} ({count})" for code, count in ranked)
 
     async def serve(self, host: str = "0.0.0.0", port: int = 2575) -> asyncio.AbstractServer:
         """Start listening. 2575 is the IANA-registered port for HL7 over MLLP."""

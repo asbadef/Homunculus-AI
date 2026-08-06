@@ -19,6 +19,12 @@ from homunculus.gateway.fhir import GatewayError, to_utc  # shared gateway contr
 _DEFAULT_MAP = {c.value: c for c in SignalCode}
 
 
+def default_mapping() -> dict[str, SignalCode]:
+    """The identifier table used when a site supplies none. Exposed so the edge bridge can report
+    which codes a device sent that nothing would map, without duplicating this definition."""
+    return dict(_DEFAULT_MAP)
+
+
 def _fields(segment: str) -> list[str]:
     return segment.split("|")
 
