@@ -3,8 +3,14 @@
   "buildCommand": "cd dashboard && npm install && npm run build",
   "outputDirectory": "dashboard/dist",
   "framework": "vite",
+  "functions": {
+    "api/index.py": { "maxDuration": 30 }
+  },
   "redirects": [
     { "source": "/", "missing": [{ "type": "query", "key": "demo" }], "destination": "/?demo=1" }
   ],
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.py" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
