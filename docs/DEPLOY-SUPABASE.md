@@ -22,6 +22,25 @@ Aşağıdakiler gerçek Postgres'e karşı çalıştırılıp doğrulandı (dock
 
 ---
 
+## ✅ Supabase'de HAZIR olanlar (MCP ile yapıldı, 2026-08-03)
+
+Proje: **Homunculus-AI** (`tfilvvlfhnxzgaqkxwaj`), eu-central-1, Postgres 17.6 — `ACTIVE_HEALTHY`.
+
+- **17 tablo kuruldu.** Alembic'in kendi offline SQL'i uygulandı, `alembic_version` = **0003 (head)**
+  → Render'daki `alembic upgrade head` **no-op** olacak, çakışma yok.
+- **RLS 17/17 tabloda açık, 0 politika.** Bu kasıtlı: bu uygulama PostgREST'i (`/rest/v1/`) hiç
+  kullanmaz; backend Postgres'e **tablo sahibi** olarak doğrudan bağlanır ve sahip RLS'i baypas eder.
+  Politikasız RLS → **anon/publishable anahtar her şeyden tamamen bloke**, backend etkilenmez.
+  (`FORCE ROW LEVEL SECURITY` **eklenmedi** — o, sahibi de kısıtlardı.)
+- Kalan tek uyarı INFO seviyesinde "RLS enabled, no policy" — yukarıdaki nedenle beklenen durum.
+
+> ⚠️ **Publishable/anon anahtarını yenile (rotate).** Anon anahtar tasarımı gereği herkese açıktır;
+> RLS açılmadan önce paylaşılmış bir anahtar varsa Supabase panelinden değiştir.
+
+**Geriye kalan tek şey:** Render'ı bağlayıp `DATABASE_URL` + seed parolasını girmek (Adım 1-2).
+
+---
+
 ## Adım 1 — Supabase bağlantı string'i (senin aksiyonun)
 
 1. Supabase → **Project Settings → Database → Connection string → "Session pooler"** sekmesi.
