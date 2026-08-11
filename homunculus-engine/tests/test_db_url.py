@@ -44,3 +44,16 @@ def test_non_postgres_urls_are_left_alone():
 def test_credentials_and_query_parameters_survive():
     url = f"postgresql://{SUPABASE}?application_name=homunculus"
     assert to_async_url(url) == f"postgresql+asyncpg://{SUPABASE}?application_name=homunculus"
+
+
+def test_warns_about_the_ipv6_only_direct_host():
+    """The failure it prevents is a bare "Network is unreachable" that names no cause."""
+    from homunculus.db import warn_if_ipv6_only_host
+
+    direct = "postgresql+asyncpg://postgres:pw@db.abc.supabase.co:5432/postgres"
+    hint = warn_if_ipv6_only_host(direct)
+    assert hint and "Session pooler" in hint
+
+    pooler = f"postgresql+asyncpg://{SUPABASE}"
+    assert warn_if_ipv6_only_host(pooler) is None
+    assert warn_if_ipv6_only_host("postgresql+asyncpg://u:p@localhost:5432/x") is None
