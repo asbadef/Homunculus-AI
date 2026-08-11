@@ -7,10 +7,27 @@ import os
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-DATABASE_URL = os.getenv(
+_PG_SCHEMES = ("postgresql+asyncpg://", "postgresql+psycopg2://", "postgresql://", "postgres://")
+
+
+def to_async_url(url: str) -> str:
+    """Normalise any pasted Postgres URL onto the async driver.
+
+    Managed-database dashboards hand out `postgresql://…`, which SQLAlchemy resolves to psycopg2 —
+    a sync driver that create_async_engine rejects at import time with an error that never mentions
+    the URL. Rather than asking an operator to remember the rewrite, accept whichever form they
+    paste. Non-Postgres URLs (SQLite in tests) are left untouched.
+    """
+    for scheme in _PG_SCHEMES:
+        if url.startswith(scheme):
+            return "postgresql+asyncpg://" + url[len(scheme):]
+    return url
+
+
+DATABASE_URL = to_async_url(os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://homunculus:homunculus@localhost:5432/homunculus",
-)
+))
 
 # Managed Postgres (e.g. Supabase pooler) requires TLS. Enabled via env so local docker dev is
 # unaffected. statement_cache_size=0 keeps asyncpg compatible with the Supabase connection pooler

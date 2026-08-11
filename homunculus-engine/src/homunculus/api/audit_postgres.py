@@ -25,10 +25,16 @@ from sqlalchemy import create_engine, text
 from homunculus.api.audit import AuditEvent, AuditRecord
 
 
+_PG_SCHEMES = ("postgresql+asyncpg://", "postgresql+psycopg2://", "postgresql://", "postgres://")
+
+
 def to_sync_url(url: str) -> str:
-    """Accept the application's async DATABASE_URL and use it with the sync driver, so a deployment
-    configures one connection string rather than two that can drift apart."""
-    return url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+    """Derive the sync-driver form of whatever DATABASE_URL was configured, so a deployment sets
+    one connection string rather than two that can drift apart. Non-Postgres URLs are untouched."""
+    for scheme in _PG_SCHEMES:
+        if url.startswith(scheme):
+            return "postgresql+psycopg2://" + url[len(scheme):]
+    return url
 
 
 class PostgresAuditLog:

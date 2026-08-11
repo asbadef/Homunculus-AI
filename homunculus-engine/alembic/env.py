@@ -15,7 +15,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from homunculus.db import Base
+from homunculus.db import Base, to_async_url
 
 # Import all model modules so their tables register on Base.metadata.
 import homunculus.auth.models  # noqa: F401
@@ -25,10 +25,12 @@ import homunculus.escalation.models  # noqa: F401
 
 config = context.config
 
-DATABASE_URL = os.getenv(
+# Normalised the same way the application does: migrations run through an async engine, so a
+# pasted `postgresql://…` (what managed-database dashboards show) must become the asyncpg form.
+DATABASE_URL = to_async_url(os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://homunculus:homunculus@localhost:5432/homunculus",
-)
+))
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 target_metadata = Base.metadata
