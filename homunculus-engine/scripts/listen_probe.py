@@ -246,6 +246,43 @@ async def run(ports: list[int], host: str, raw_dir: Path | None, interval: float
     await _report_loop(stats, interval)
 
 
+def _ask(args: argparse.Namespace) -> None:
+    """Ask what to do when started with no arguments.
+
+    This is run on a ward by someone holding a laptop, not from a shell session with the flags to
+    hand. Started with no arguments it asks; started with flags it behaves exactly as before, so
+    scripting it stays possible.
+    """
+    print("\n  HOMUNCULUS — CİHAZ KEŞİF ARACI\n")
+    print("  1) Dinle       — cihaz bu bilgisayara bir şey yolluyor mu?")
+    print("  2) Cihazı tara — cihaz hangi portları açık tutuyor?\n")
+    try:
+        choice = input("  Seçim [1]: ").strip()
+    except EOFError:
+        choice = ""
+
+    if choice == "2":
+        while True:
+            try:
+                host = input("  Cihazın IP adresi (ör. 10.10.96.203): ").strip()
+            except EOFError:
+                host = ""
+            if host:
+                args.scan = host
+                return
+            print("  IP adresi gerekli.")
+    print()
+
+
+def _pause() -> None:
+    """Hold the window open. A double-clicked console closes the instant it exits, taking the
+    answer with it."""
+    try:
+        input("\n  Kapatmak için Enter'a bas...")
+    except EOFError:
+        pass
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ports", default=",".join(str(p) for p in DEFAULT_PORTS),
@@ -276,14 +313,27 @@ def main() -> None:
             "depoya commit etmeyin, işiniz bitince silin.", raw_dir,
         )
 
+    # No flags means it was double-clicked or run bare: ask rather than silently pick a mode.
+    interactive = len(sys.argv) == 1 and sys.stdin is not None and sys.stdin.isatty()
+    if interactive:
+        _ask(args)
+
     try:
         if args.scan:
             asyncio.run(scan(args.scan, args.scan_timeout))
+            if interactive:
+                _pause()
             return
         ports = [int(p.strip()) for p in args.ports.split(",") if p.strip()]
         asyncio.run(run(ports, args.host, raw_dir, args.report_interval))
     except KeyboardInterrupt:
         _log.info("durduruldu")
+    except SystemExit as exc:
+        # A bind failure is the common one; without the pause the message vanishes with the window.
+        _log.error("%s", exc)
+        if interactive:
+            _pause()
+        raise
 
 
 if __name__ == "__main__":
