@@ -8,11 +8,17 @@
 #   CORS_ORIGINS   the Vercel origin, e.g. https://homunculus-ai.vercel.app
 #   TENANTS        legacy bearer-token tenancy, e.g. demo-token:HOSP1
 #
-# PLAN: `free` spins the service down after ~15 minutes of inactivity. While it is asleep the
-# BACKGROUND ESCALATION LOOP DOES NOT RUN, so an unacknowledged alert would not escalate until the
-# next request wakes the service. That is acceptable only because this pilot runs in parallel /
-# observation mode and nothing clinical depends on it. Before anyone relies on the alerting,
-# move to `starter` (always-on) in the Render dashboard.
+# PLAN — ACTION REQUIRED BEFORE ANY DEVICE IS CONNECTED.
+#
+# `free` sleeps after ~15 minutes of inactivity, and while it sleeps the BACKGROUND ESCALATION LOOP
+# DOES NOT RUN: an unacknowledged alert sits unescalated until some unrelated request happens to
+# wake the service. Escalation exists to fire when nobody is looking — which is precisely when a
+# sleeping service is asleep. It also costs the first visitor a ~50s cold start.
+#
+# The intended value is `starter` (always-on). It is left at `free` only because Render refuses the
+# upgrade with "Plan requires payment information on file". Add a payment method in the Render
+# dashboard, then change this line to `starter` and redeploy. Do not connect a device to a `free`
+# service and rely on its alerting.
 services:
   - type: web
     name: homunculus-api
