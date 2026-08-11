@@ -5,6 +5,7 @@ DATABASE_URL env var; falls back to the docker-compose default.
 from __future__ import annotations
 import logging
 import os
+import ssl
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -48,11 +49,39 @@ _hint = warn_if_ipv6_only_host(DATABASE_URL)
 if _hint:
     logging.getLogger(__name__).warning("%s", _hint)
 
-# Managed Postgres (e.g. Supabase pooler) requires TLS. Enabled via env so local docker dev is
-# unaffected. statement_cache_size=0 keeps asyncpg compatible with the Supabase connection pooler
-# (pgbouncer). Set DATABASE_SSL=require on the host.
-_SSL = os.getenv("DATABASE_SSL", "").lower() in ("require", "true", "1")
-_CONNECT_ARGS = {"ssl": True, "statement_cache_size": 0} if _SSL else {}
+def ssl_context():
+    """TLS settings for a managed Postgres, or None for a plain local connection.
+
+    The connection is always encrypted when DATABASE_SSL is set. Whether the server's certificate
+    is *verified* depends on DATABASE_CA_CERT:
+
+      * with it — full verification against that CA (Supabase publishes one; this is the right
+        setting for anything carrying real data over the public internet);
+      * without it — encrypted but unverified, because the Supabase pooler presents a chain that
+        is not in the system trust store, and `ssl=True` fails there with "self-signed certificate
+        in certificate chain". Traffic is still encrypted; what is lost is proof of who is on the
+        other end, so this is a pilot convenience, not the end state.
+    """
+    if os.getenv("DATABASE_SSL", "").lower() not in ("require", "true", "1", "verify"):
+        return None
+
+    ca_cert = os.getenv("DATABASE_CA_CERT")
+    if ca_cert:
+        return ssl.create_default_context(cafile=ca_cert)
+
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    logging.getLogger(__name__).warning(
+        "TLS is on but the server certificate is NOT verified. Set DATABASE_CA_CERT to Supabase's "
+        "CA bundle to enable verification before this carries real data."
+    )
+    return context
+
+
+# statement_cache_size=0 keeps asyncpg compatible with the Supabase connection pooler (pgbouncer).
+_SSL_CONTEXT = ssl_context()
+_CONNECT_ARGS = {"ssl": _SSL_CONTEXT, "statement_cache_size": 0} if _SSL_CONTEXT else {}
 
 engine = create_async_engine(
     DATABASE_URL, echo=False, pool_pre_ping=True, connect_args=_CONNECT_ARGS

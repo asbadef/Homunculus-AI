@@ -15,7 +15,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from homunculus.db import Base, to_async_url
+from homunculus.db import Base, ssl_context, to_async_url
 
 # Import all model modules so their tables register on Base.metadata.
 import homunculus.auth.models  # noqa: F401
@@ -57,8 +57,9 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_migrations_online() -> None:
     """Run migrations in 'online' mode using an async engine."""
-    _ssl = os.getenv("DATABASE_SSL", "").lower() in ("require", "true", "1")
-    _connect_args = {"ssl": True, "statement_cache_size": 0} if _ssl else {}
+    # Same TLS decision as the application, so migrations cannot fail on a setting the app accepts.
+    _ctx = ssl_context()
+    _connect_args = {"ssl": _ctx, "statement_cache_size": 0} if _ctx else {}
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

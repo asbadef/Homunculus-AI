@@ -57,3 +57,39 @@ def test_warns_about_the_ipv6_only_direct_host():
     pooler = f"postgresql+asyncpg://{SUPABASE}"
     assert warn_if_ipv6_only_host(pooler) is None
     assert warn_if_ipv6_only_host("postgresql+asyncpg://u:p@localhost:5432/x") is None
+
+
+def test_tls_is_off_without_the_env_var():
+    from homunculus.db import ssl_context
+    import os
+    os.environ.pop("DATABASE_SSL", None)
+    assert ssl_context() is None
+
+
+def test_tls_is_encrypted_but_unverified_without_a_ca(monkeypatch):
+    """The Supabase pooler's chain is not in the system trust store, so ssl=True fails there.
+    Encryption stays on; verification is what is traded away until a CA bundle is configured."""
+    import ssl as _ssl
+    from homunculus.db import ssl_context
+    monkeypatch.setenv("DATABASE_SSL", "require")
+    monkeypatch.delenv("DATABASE_CA_CERT", raising=False)
+
+    ctx = ssl_context()
+    assert ctx is not None
+    assert ctx.verify_mode == _ssl.CERT_NONE
+    assert ctx.check_hostname is False
+
+
+def test_a_ca_bundle_turns_verification_back_on(monkeypatch, tmp_path):
+    import ssl as _ssl
+    from homunculus.db import ssl_context
+    ca = tmp_path / "ca.pem"
+    ca.write_bytes(_ssl.get_default_verify_paths().cafile and open(_ssl.get_default_verify_paths().cafile, "rb").read() or b"")
+    if not ca.stat().st_size:
+        import pytest as _pytest
+        _pytest.skip("no system CA bundle available to reuse in this environment")
+    monkeypatch.setenv("DATABASE_SSL", "require")
+    monkeypatch.setenv("DATABASE_CA_CERT", str(ca))
+
+    ctx = ssl_context()
+    assert ctx.verify_mode == _ssl.CERT_REQUIRED
