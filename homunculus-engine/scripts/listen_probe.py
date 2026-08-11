@@ -255,11 +255,22 @@ def _ask(args: argparse.Namespace) -> None:
     """
     print("\n  HOMUNCULUS — CİHAZ KEŞİF ARACI\n")
     print("  1) Dinle       — cihaz bu bilgisayara bir şey yolluyor mu?")
-    print("  2) Cihazı tara — cihaz hangi portları açık tutuyor?\n")
+    print("  2) Cihazı tara — cihaz hangi portları açık tutuyor?")
+    print("  3) Dinle + ham mesajı kaydet  (şema tasarımı için)\n")
     try:
         choice = input("  Seçim [1]: ").strip()
     except EOFError:
         choice = ""
+
+    if choice == "3":
+        # The full message is what a schema has to be designed against — segment layout, whether
+        # PV1-3 carries a location, how the identifiers are spelled. Counts cannot answer that.
+        # It is also the one mode that writes patient data to disk, so it says so first.
+        args.raw_dir = "ham-mesajlar"
+        print("\n  UYARI: ham mesajlar 'ham-mesajlar' klasörüne yazılacak ve GERÇEK HASTA")
+        print("  VERİSİ içerebilir. Mümkünse hasta bağlı değilken, test ölçümüyle çalış.")
+        print("  İşin bitince klasörü sil.\n")
+        return
 
     if choice == "2":
         while True:
@@ -304,6 +315,12 @@ def main() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
+    # No flags means it was double-clicked or run bare: ask rather than silently pick a mode.
+    # This runs BEFORE raw_dir is resolved, because the menu can turn raw capture on.
+    interactive = len(sys.argv) == 1 and sys.stdin is not None and sys.stdin.isatty()
+    if interactive:
+        _ask(args)
+
     raw_dir = None
     if args.raw_dir:
         raw_dir = Path(args.raw_dir)
@@ -312,11 +329,6 @@ def main() -> None:
             "HAM KAYIT AÇIK (%s): bu dosyalar gerçek hasta verisi içerir. Şifreli diskte tutun, "
             "depoya commit etmeyin, işiniz bitince silin.", raw_dir,
         )
-
-    # No flags means it was double-clicked or run bare: ask rather than silently pick a mode.
-    interactive = len(sys.argv) == 1 and sys.stdin is not None and sys.stdin.isatty()
-    if interactive:
-        _ask(args)
 
     try:
         if args.scan:
