@@ -40,10 +40,13 @@ def warn_if_ipv6_only_host(url: str) -> str | None:
     return None
 
 
+# .strip() because a trailing newline pasted into a host's env var makes asyncpg look for a
+# database whose name ends in a newline, and report InvalidCatalogNameError — an error that never
+# mentions whitespace, and whose own message is cut off at that newline so it reads as truncated.
 DATABASE_URL = to_async_url(os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://homunculus:homunculus@localhost:5432/homunculus",
-))
+).strip())
 
 _hint = warn_if_ipv6_only_host(DATABASE_URL)
 if _hint:

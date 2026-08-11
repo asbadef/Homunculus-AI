@@ -31,6 +31,7 @@ _PG_SCHEMES = ("postgresql+asyncpg://", "postgresql+psycopg2://", "postgresql://
 def to_sync_url(url: str) -> str:
     """Derive the sync-driver form of whatever DATABASE_URL was configured, so a deployment sets
     one connection string rather than two that can drift apart. Non-Postgres URLs are untouched."""
+    url = url.strip()
     for scheme in _PG_SCHEMES:
         if url.startswith(scheme):
             return "postgresql+psycopg2://" + url[len(scheme):]
