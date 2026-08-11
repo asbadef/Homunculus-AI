@@ -44,6 +44,25 @@ DEFAULT_PORTS = (2575, 2576, 3001, 5000, 6661, 8080)
 
 _HEX_PREVIEW_BYTES = 12
 
+# What to look for on the device itself when it sends us nothing. An open web port is the useful
+# find: it often means the HL7 destination can be set from a browser, without the vendor's signed
+# configuration file.
+SCAN_PORTS: tuple[tuple[int, str], ...] = (
+    (80, "HTTP — web arayüzü olabilir, hedefi burada ayarlayabilirsin"),
+    (443, "HTTPS — web arayüzü olabilir, hedefi burada ayarlayabilirsin"),
+    (8080, "HTTP (alternatif)"),
+    (8443, "HTTPS (alternatif)"),
+    (2575, "HL7 MLLP"),
+    (2576, "HL7 MLLP (alternatif)"),
+    (281, "Welch Allyn / vendor servisi"),
+    (4001, "vendor servisi"),
+    (5000, "vendor servisi"),
+    (6661, "vendor servisi"),
+    (22, "SSH"),
+    (23, "Telnet — eski cihazlarda konsol"),
+    (21, "FTP — bazı cihazlar yapılandırmayı buradan alır"),
+)
+
 
 def _obx_codes(message: str) -> list[str]:
     """OBX-3 identifiers only (``CODE^text`` -> ``CODE``). Never the value in OBX-5."""
@@ -153,6 +172,51 @@ async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, *,
         writer.close()
 
 
+async def _probe_port(host: str, port: int, timeout: float) -> bool:
+    """True when a TCP connection is accepted. Connect-and-close only — nothing is sent."""
+    try:
+        _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
+    except (OSError, asyncio.TimeoutError):
+        return False
+    writer.close()
+    try:
+        await writer.wait_closed()
+    except OSError:
+        pass
+    return True
+
+
+async def scan(host: str, timeout: float) -> None:
+    """Report which ports the device accepts connections on.
+
+    Run this when the probe says nothing arrived: it separates "the device is unreachable" from
+    "the device is fine but was never told where to send", which look identical from the listener
+    side and have completely different fixes.
+    """
+    _log.info("taranıyor: %s (%s port)", host, len(SCAN_PORTS))
+    results = await asyncio.gather(
+        *(_probe_port(host, port, timeout) for port, _ in SCAN_PORTS)
+    )
+
+    open_ports = [(port, note) for (port, note), is_open in zip(SCAN_PORTS, results) if is_open]
+    if not open_ports:
+        _log.info(
+            "hiçbir port açık değil. Cihaz ya bu ağdan erişilemiyor, ya güvenlik duvarı "
+            "arkasında, ya da hiçbir servis çalıştırmıyor. Ping geçiyorsa cihaz ayakta ama "
+            "hiçbir şey dinlemiyor demektir."
+        )
+        return
+
+    _log.info("AÇIK PORTLAR:")
+    for port, note in open_ports:
+        _log.info("  %s/tcp — %s", port, note)
+    if any(port in (80, 443, 8080, 8443) for port, _ in open_ports):
+        _log.info(
+            "Web portu açık: tarayıcıdan http://%s adresine gir. HL7/ORU export hedefini "
+            "oradan ayarlayabiliyorsan imzalı yapılandırma dosyasına gerek kalmaz.", host,
+        )
+
+
 async def _report_loop(stats: ProbeStats, interval: float) -> None:
     while True:
         await asyncio.sleep(interval)
@@ -190,6 +254,9 @@ def main() -> None:
     parser.add_argument("--report-interval", type=float, default=15.0)
     parser.add_argument("--raw-dir", default=None,
                         help="ham baytları buraya yaz — GERÇEK HASTA VERİSİ içerir")
+    parser.add_argument("--scan", default=None, metavar="IP",
+                        help="dinlemek yerine cihazı tara: hangi portları açık")
+    parser.add_argument("--scan-timeout", type=float, default=2.0)
     args = parser.parse_args()
 
     # Windows consoles default to cp1252 and would mangle (or crash on) the Turkish text below.
@@ -209,8 +276,11 @@ def main() -> None:
             "depoya commit etmeyin, işiniz bitince silin.", raw_dir,
         )
 
-    ports = [int(p.strip()) for p in args.ports.split(",") if p.strip()]
     try:
+        if args.scan:
+            asyncio.run(scan(args.scan, args.scan_timeout))
+            return
+        ports = [int(p.strip()) for p in args.ports.split(",") if p.strip()]
         asyncio.run(run(ports, args.host, raw_dir, args.report_interval))
     except KeyboardInterrupt:
         _log.info("durduruldu")
