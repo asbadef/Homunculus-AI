@@ -43,9 +43,9 @@ services:
         sync: false
       - key: SEED_ADMIN_PASSWORD
         sync: false
-      # KNOWN GAP: Render's filesystem is ephemeral, so this SQLite audit is lost on every deploy
-      # and restart. The pilot carries real data and its audit trail is a legal requirement, so a
-      # Postgres-backed audit must replace this before the pilot is treated as a record of what the
-      # system saw and did. Until then, treat the audit as best-effort and say so.
+      # Audit goes to Postgres whenever DATABASE_URL is set (see prodserver._audit); this path is only
+      # the fallback for running without a database. Render's filesystem is ephemeral, so a SQLite
+      # audit there would be discarded on every deploy while still looking like a record.
+
       - key: AUDIT_DB_PATH
         value: /tmp/homunculus-audit.db

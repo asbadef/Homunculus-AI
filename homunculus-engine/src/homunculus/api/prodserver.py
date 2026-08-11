@@ -27,7 +27,23 @@ def _parse_tenants(raw: str | None) -> dict[str, str]:
     return tenants or {"demo-token": "HOSP1"}   # safe default; override via TENANTS in production
 
 
-app = create_app(
-    _parse_tenants(os.getenv("TENANTS")),
-    audit=SqliteAuditLog(os.getenv("AUDIT_DB_PATH", "/tmp/homunculus-audit.db")),
-)
+def _audit():
+    """Prefer the durable Postgres audit; fall back to SQLite only without a database.
+
+    Hosts like Render and Vercel discard the local filesystem on every deploy, so a SQLite audit
+    there disappears while still looking like a record — worse than having none. When DATABASE_URL
+    is configured the trail goes to the same managed Postgres as everything else.
+    """
+    url = os.getenv("DATABASE_URL")
+    if url and url.startswith("postgresql"):
+        from homunculus.api.audit_postgres import PostgresAuditLog
+
+        return PostgresAuditLog(
+            url, ssl_required=os.getenv("DATABASE_SSL", "").lower() in ("require", "true", "1")
+        )
+    # Relative by default so it resolves on any platform; an absolute "/tmp/..." is not a valid
+    # path on Windows, where developers run this too.
+    return SqliteAuditLog(os.getenv("AUDIT_DB_PATH", "homunculus-audit.db"))
+
+
+app = create_app(_parse_tenants(os.getenv("TENANTS")), audit=_audit())
