@@ -1,0 +1,64 @@
+# Homunculus edge bridge — on-prem deployment.
+#
+#   cd /opt/homunculus
+#   docker compose pull
+#   docker compose up -d
+#   docker compose logs -f
+#
+# Settings live in .env next to this file (copy .env.example). The token never appears here,
+# because this file is committed and .env is not.
+
+services:
+  bridge:
+    image: ghcr.io/${GHCR_OWNER:-asbadef}/homunculus-bridge:${IMAGE_TAG:-latest}
+    container_name: homunculus-bridge
+    restart: unless-stopped
+
+    # Bound to the host address that faces the device network rather than 0.0.0.0. This port
+    # accepts clinical data; it should be reachable from the segment that produces it and nowhere
+    # else. Set LISTEN_ADDR in .env.
+    ports:
+      - "${LISTEN_ADDR:-0.0.0.0}:2575:2575"
+
+    volumes:
+      # The store-and-forward buffer. It MUST be a persistent volume: it holds observations the
+      # cloud has not acknowledged yet, and a container restart would otherwise discard them.
+      # It holds real patient data in transit — keep it on encrypted storage and delete it after
+      # the pilot.
+      - bridge-data:/data
+      # The site mapping (OBX identifier -> signal). Read-only: the bridge never rewrites it, and
+      # a mapping that can change underneath a running pilot is a mapping nobody can audit.
+      - ./site-mapping.json:/app/site-mapping.json:ro
+
+    environment:
+      TZ: ${TZ:-Europe/Istanbul}
+
+    command:
+      - scripts/run_bridge.py
+      - --db
+      - /data/bridge.db
+      - --mapping
+      - /app/site-mapping.json
+      - --cloud-url
+      - ${CLOUD_URL}
+      - --token
+      - ${TENANT_TOKEN}
+
+    healthcheck:
+      # Proves the MLLP port is actually accepting connections, which is the one thing that must be
+      # true for the device to be able to reach us at all.
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 2575), 3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      # Bounded, so a long pilot cannot fill the disk the buffer also lives on.
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  bridge-data:

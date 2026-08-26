@@ -1,0 +1,14 @@
+# Keep the build context to what the bridge actually runs. Beyond image size, this is a safety
+# boundary: buffer databases hold real observations in transit and must never end up in an image
+# that gets pushed to a registry.
+*.db
+*.db-journal
+*.db-wal
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+alembic/
+docker-compose.yml
+Dockerfile

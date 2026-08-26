@@ -1,0 +1,71 @@
+# Build the edge-bridge image and publish it to GitHub Container Registry.
+#
+# The on-prem VM pulls from here rather than building on site: a hospital device VLAN usually has
+# no internet, and "git clone && docker build" needs both a package mirror and a toolchain on a
+# machine that should stay boring. Pulling one signed-by-provenance image is the smaller surface.
+#
+# The repository is private, so the published package is private too — the VM must authenticate
+# with a token that has read:packages. See docs/EDGE-BRIDGE-UBUNTU.md.
+
+name: bridge image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "homunculus-engine/src/**"
+      - "homunculus-engine/scripts/**"
+      - "homunculus-engine/Dockerfile"
+      - ".github/workflows/bridge-image.yml"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/homunculus-bridge
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # `latest` for the routine pull, and an immutable sha tag so a pilot can be pinned to the
+          # exact build it was validated against — "latest" is not an answer to "what is running on
+          # the ward right now?".
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: homunculus-engine
+          file: homunculus-engine/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+
+      - name: Smoke test the published image
+        # An image that builds but cannot import the bridge is worse than a failed build, because
+        # it looks deployable. This is the same check that would otherwise fail on the ward.
+        run: |
+          docker run --rm --entrypoint python \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            -c "from homunculus.edge.bridge import EdgeBridge; from homunculus.gateway.hl7 import default_mapping; print('ok', len(default_mapping()), 'codes')"

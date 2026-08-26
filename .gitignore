@@ -8,3 +8,8 @@ Thumbs.db
 *.db
 *.db-journal
 *.db-wal
+
+# Edge bridge deployment secrets — the tenant token authorises /ingest, so this must never be
+# committed. .env.example carries the shape; .env carries the value.
+deploy/bridge/.env
+deploy/bridge/site-mapping.json
