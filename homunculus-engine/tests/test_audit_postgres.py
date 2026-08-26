@@ -7,6 +7,9 @@ append-only triggers are part of what is being tested, so they cannot be faked i
 """
 from __future__ import annotations
 
+import importlib.util
+import pathlib
+
 import pytest
 from sqlalchemy import text
 
@@ -14,7 +17,10 @@ from homunculus.api.audit import AuditEvent
 from homunculus.api.audit_postgres import PostgresAuditLog, to_sync_url
 from tests.conftest import TEST_DATABASE_URL, requires_db
 
-pytestmark = requires_db
+# NOTE: no module-level `pytestmark = requires_db` here (on purpose). That would apply the
+# skipif to every test collected from this file, including the migration-chain test below —
+# which is exactly the kind of check that must run even without a database. Instead each
+# DB-backed test below is decorated individually with @requires_db.
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS audit (
@@ -54,11 +60,13 @@ def _event(**over) -> AuditEvent:
     return AuditEvent(**{**base, **over})
 
 
+@requires_db
 def test_url_is_rewritten_for_the_sync_driver():
     """One DATABASE_URL configures the app; the audit derives its sync form so they cannot drift."""
     assert to_sync_url("postgresql+asyncpg://u:p@h:5432/db") == "postgresql+psycopg2://u:p@h:5432/db"
 
 
+@requires_db
 def test_appends_and_reads_back(audit_log):
     record = audit_log.append(_event())
 
@@ -68,6 +76,7 @@ def test_appends_and_reads_back(audit_log):
     assert stored.payload == {"severity": "moderate"}       # JSONB round-trips
 
 
+@requires_db
 def test_filters_and_orders_and_limits(audit_log):
     audit_log.append(_event(event_type="ingest", subject="heart_rate"))
     audit_log.append(_event(tenant="HOSP2"))
@@ -81,6 +90,7 @@ def test_filters_and_orders_and_limits(audit_log):
     assert len(audit_log.records(limit=1)) == 1
 
 
+@requires_db
 def test_the_trail_cannot_be_rewritten(audit_log):
     """An audit that can be edited after the fact is not an audit."""
     audit_log.append(_event())
@@ -96,6 +106,7 @@ def test_the_trail_cannot_be_rewritten(audit_log):
     assert audit_log.records()[0].tenant == "HOSP1"         # untouched
 
 
+@requires_db
 def test_survives_a_new_connection(audit_log):
     """The point of moving off local disk: the record outlives the process that wrote it."""
     audit_log.append(_event())
@@ -105,3 +116,104 @@ def test_survives_a_new_connection(audit_log):
         assert len(reopened.records(tenant="HOSP1")) == 1
     finally:
         reopened.dispose()
+
+
+# --- migration-chain regression test -----------------------------------------------------
+#
+# The defect this whole file exists to catch: PostgresAuditLog INSERTs into and SELECTs from
+# an `audit` table that, until now, no Alembic migration created — it only existed on the
+# cloud database because someone created it there by hand. Every DB-backed test above proves
+# the table works correctly once it exists, via `_DDL` applied straight to the test database
+# by the `audit_log` fixture. That is exactly what masked the bug: those tests never ask
+# whether `alembic upgrade head` is what put the table there. They also all carry
+# @requires_db and are SKIPPED entirely when TEST_DATABASE_URL is unset — which is the
+# default on a plain dev machine or a minimal CI runner with no Postgres.
+#
+# So this test is deliberately static: it reads the migration file's source instead of
+# running it against a database. That makes it able to run everywhere, unconditionally,
+# including on a machine with no Postgres at all — which is precisely the coverage gap that
+# let this defect ship. It checks the migration chain (0004 exists, follows 0003) and that
+# the migration's DDL actually creates the `audit` table and both append-only triggers.
+
+_MIGRATIONS_DIR = pathlib.Path(__file__).resolve().parent.parent / "alembic" / "versions"
+
+
+def _load_migration(revision_id: str):
+    """Import a migration module directly from its file in alembic/versions/.
+
+    Migration files aren't meant to be imported as a normal package (their module names
+    start with a digit), so this loads by path rather than assuming an import path.
+    """
+    matches = sorted(_MIGRATIONS_DIR.glob(f"{revision_id}_*.py"))
+    assert matches, (
+        f"no migration file for revision {revision_id!r} found in {_MIGRATIONS_DIR} — "
+        f"the audit table would not exist on a fresh database."
+    )
+    path = matches[0]
+    spec = importlib.util.spec_from_file_location(f"migration_{revision_id}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module, path
+
+
+def test_migration_0004_exists_and_chains_from_0003():
+    module, path = _load_migration("0004")
+
+    assert module.revision == "0004"
+    assert module.down_revision == "0003", (
+        "0004 must chain from the current head (0003), or `alembic upgrade head` will not "
+        "reach it — or worse, will produce a second head."
+    )
+
+
+def test_migration_0004_creates_the_audit_table_with_the_right_columns():
+    """Column names must match audit_postgres.py's INSERT/SELECT exactly, or the queries
+    that code issues at runtime fail with UndefinedColumn even though the table exists."""
+    _module, path = _load_migration("0004")
+    source = path.read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS audit" in source
+    for column in ("id BIGSERIAL PRIMARY KEY", "ts TEXT NOT NULL", "tenant TEXT NOT NULL",
+                   "event_type TEXT NOT NULL", "patient_id TEXT NOT NULL",
+                   "subject TEXT NOT NULL", "payload JSONB NOT NULL"):
+        assert column in source, f"audit table is missing column definition: {column!r}"
+
+
+def test_migration_0004_creates_both_append_only_triggers():
+    """Immutability has to hold at the database, not only in application code (see
+    audit_postgres.py's module docstring) — a missing trigger here would let a bad credential
+    or a future bug quietly edit or erase the legal record."""
+    _module, path = _load_migration("0004")
+    source = path.read_text(encoding="utf-8")
+
+    assert "audit is append-only" in source
+    assert "CREATE TRIGGER audit_no_update BEFORE UPDATE ON audit" in source
+    assert "CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit" in source
+
+
+def test_migration_0004_is_idempotent_for_the_hand_created_cloud_table():
+    """The `audit` table already exists on the cloud database, created by hand before this
+    migration existed. `alembic upgrade head` must not fail when it reaches 0004 there."""
+    _module, path = _load_migration("0004")
+    source = path.read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS audit" in source
+    assert "CREATE OR REPLACE FUNCTION audit_is_append_only" in source
+    assert "DROP TRIGGER IF EXISTS audit_no_update" in source
+    assert "DROP TRIGGER IF EXISTS audit_no_delete" in source
+
+
+def test_migration_0004_is_the_single_head():
+    """Guards against a future migration accidentally branching off 0003 instead of 0004,
+    which would give the chain two heads and make `alembic upgrade head` ambiguous."""
+    revisions: dict[str, str | None] = {}
+    for path in _MIGRATIONS_DIR.glob("0*.py"):
+        spec = importlib.util.spec_from_file_location(path.stem, path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        revisions[module.revision] = module.down_revision
+
+    children = set(revisions.values())
+    heads = [rev for rev in revisions if rev not in children]
+
+    assert heads == ["0004"], f"expected a single head '0004', found {heads}"
