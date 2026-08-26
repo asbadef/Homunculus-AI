@@ -1,0 +1,33 @@
+# Homunculus API — FastAPI, the clinical engine, the escalation loop and the audit trail.
+#
+# Unlike the edge bridge (standard library only, see Dockerfile), this image installs the project's
+# dependencies: FastAPI, SQLAlchemy, asyncpg, Alembic, bcrypt, pyotp.
+#
+# Build from the homunculus-engine directory:
+#   docker build -t homunculus-api -f Dockerfile.api .
+
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+# pyproject first so the dependency layer is cached independently of source edits.
+COPY pyproject.toml /app/
+COPY src/ /app/src/
+COPY scripts/ /app/scripts/
+COPY alembic/ /app/alembic/
+COPY alembic.ini /app/
+
+RUN pip install --no-cache-dir -e . \
+    && useradd --system --uid 10002 --home /app homunculus \
+    && chown -R homunculus:homunculus /app
+
+USER homunculus
+
+EXPOSE 8000
+
+# Migrate, then bootstrap the first admin, then serve. seed_admin.py is idempotent and exits 0 when
+# SEED_ADMIN_PASSWORD is unset, so restarts keep working after the operator removes the password.
+CMD ["sh", "-c", "alembic upgrade head && python scripts/seed_admin.py && uvicorn homunculus.api.prodserver:app --host 0.0.0.0 --port 8000"]
