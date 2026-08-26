@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { Board } from "./Board.jsx";
 import { DemoApp } from "./demo.jsx";
 import { ClinicalDemo } from "./ClinicalDemo.jsx";
+import { DemoDataBanner } from "./DemoDataBanner.jsx";
 import { createDemoStore, buildRealisticState } from "./clinicalDemo.js";
 import { createLiveStore } from "./liveStore.js";
 import { backendApi } from "./backendApi.js";
@@ -32,4 +33,11 @@ function pickRoot() {
   return <Board token="dev-token" />;
 }
 
-createRoot(document.getElementById("root")).render(pickRoot());
+// The banner sits above whichever root is chosen: every mode currently draws its clinical content
+// from the simulation, so every mode has to say so. Phase 2 removes it along with the simulation.
+createRoot(document.getElementById("root")).render(
+  <>
+    <DemoDataBanner />
+    {pickRoot()}
+  </>,
+);
