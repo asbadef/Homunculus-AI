@@ -22,9 +22,10 @@ RUN pip install --no-cache-dir . \
     && chown -R homunculus:homunculus /app
 
 # Copy scripts and migrations after pip install so changes to these do not invalidate the dependency layer.
-COPY scripts/ /app/scripts/
-COPY alembic/ /app/alembic/
-COPY alembic.ini /app/
+# --chown applies the user created in the RUN above, ensuring files are not owned by root.
+COPY --chown=homunculus:homunculus scripts/ /app/scripts/
+COPY --chown=homunculus:homunculus alembic/ /app/alembic/
+COPY --chown=homunculus:homunculus alembic.ini /app/
 
 USER homunculus
 
