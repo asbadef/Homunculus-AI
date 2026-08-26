@@ -42,7 +42,9 @@ _log = logging.getLogger("probe")
 # HL7 over MLLP; the rest are common vendor defaults seen in the wild.
 DEFAULT_PORTS = (2575, 2576, 3001, 5000, 6661, 8080)
 
-_HEX_PREVIEW_BYTES = 12
+# Enough to carry a small proprietary handshake in full — the Welch Allyn WACP rendezvous is a few
+# dozen bytes, and truncating it to a dozen throws away the part that identifies it.
+_HEX_PREVIEW_BYTES = 64
 
 # What to look for on the device itself when it sends us nothing. An open web port is the useful
 # find: it often means the HL7 destination can be set from a browser, without the vendor's signed
@@ -121,6 +123,15 @@ def _hex_preview(chunk: bytes) -> str:
     return " ".join(f"{b:02x}" for b in head) + (" ..." if len(chunk) > len(head) else "")
 
 
+def _ascii_preview(chunk: bytes) -> str:
+    """Printable characters, others as '.'. Proprietary handshakes usually carry a protocol name or
+    version string in the clear, which names the protocol faster than any hex dump."""
+    head = chunk[:_HEX_PREVIEW_BYTES]
+    return "".join(chr(b) if 32 <= b < 127 else "." for b in head) + (
+        " ..." if len(chunk) > len(head) else ""
+    )
+
+
 async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, *,
                   port: int, stats: ProbeStats, raw_dir: Path | None) -> None:
     peer = writer.get_extra_info("peername")
@@ -160,10 +171,22 @@ async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, *,
                     # the device it was pointed at tells you nothing.
                     writer.write(VT + ack_for(message).encode("utf-8") + FS + b"\x0d")
                     await writer.drain()
-            elif VT not in chunk and FS not in chunk:
+            else:
+                # No complete HL7 message in this chunk. Show what actually arrived.
+                #
+                # This used to stay silent whenever the bytes contained VT or FS, on the theory
+                # that a partial MLLP frame was still being assembled. That reasoning fails for the
+                # case this tool exists to diagnose: a binary protocol contains 0x0B and 0x1C by
+                # chance, so the probe went quiet on precisely the traffic that identifies which
+                # protocol the device speaks. Report it either way, and say which case it looks
+                # like rather than deciding on the operator's behalf.
+                hint = ("MLLP çerçevesi olabilir, devamı bekleniyor"
+                        if (VT in chunk or FS in chunk) else "MLLP değil")
                 _log.info(
-                    "HAM   port=%s  %s bayt  MLLP değil  ilk baytlar: %s",
-                    port, len(chunk), _hex_preview(chunk),
+                    "HAM   port=%s  %s bayt  %s\n"
+                    "        hex  : %s\n"
+                    "        ascii: %s",
+                    port, len(chunk), hint, _hex_preview(chunk), _ascii_preview(chunk),
                 )
     except (ConnectionResetError, asyncio.IncompleteReadError):
         pass
