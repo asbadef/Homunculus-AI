@@ -1,0 +1,15 @@
+.git/
+Homunculus/
+homunculus-ml/
+homunculus-engine/.venv/
+homunculus-engine/alembic/__pycache__/
+dashboard/node_modules/
+dashboard/dist/
+**/__pycache__/
+**/*.pyc
+**/*.db
+**/*.db-journal
+**/*.db-wal
+deploy/local/.env
+deploy/bridge/.env
+docs/
