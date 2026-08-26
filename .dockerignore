@@ -1,3 +1,7 @@
+# Vercel-specific config. Must never reach the on-prem image, where it would bake an internet
+# host into the bundle and silently break clinical traffic on an offline ward network.
+dashboard/.env.production
+
 .git/
 Homunculus/
 homunculus-ml/
