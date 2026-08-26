@@ -13,3 +13,7 @@ Thumbs.db
 # committed. .env.example carries the shape; .env carries the value.
 deploy/bridge/.env
 deploy/bridge/site-mapping.json
+
+# Local on-prem deployment configuration (secrets, site mapping)
+deploy/local/.env
+deploy/local/site-mapping.json
