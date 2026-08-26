@@ -57,7 +57,11 @@ services:
     container_name: homunculus-web
     restart: unless-stopped
     ports:
-      - "${WEB_LISTEN_ADDR:-0.0.0.0}:80:80"
+      # No default: an unset value must fail `up` loudly rather than quietly binding the dashboard
+      # — real login, and the API proxied behind it — to every interface this server has. The
+      # device port below has no fallback either; the more sensitive port should not be the more
+      # forgiving one.
+      - "${WEB_LISTEN_ADDR}:80:80"
     depends_on:
       - api
 

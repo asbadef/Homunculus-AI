@@ -14,7 +14,8 @@ git clone https://github.com/asbadef/Homunculus-AI.git .        # or copy the re
 cd deploy/local
 
 cp .env.example .env && chmod 600 .env
-$EDITOR .env          # POSTGRES_PASSWORD, JWT_SECRET, TENANT_TOKEN, SEED_ADMIN_*, LISTEN_ADDR
+$EDITOR .env          # POSTGRES_PASSWORD, JWT_SECRET, TENANT_TOKEN, SEED_ADMIN_*,
+                      # LISTEN_ADDR (device network), WEB_LISTEN_ADDR (browser network)
 ```
 
 Generate the secrets rather than inventing them:
