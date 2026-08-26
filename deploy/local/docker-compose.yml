@@ -1,0 +1,99 @@
+# Homunculus, entirely on the hospital's own server.
+#
+#   cd /opt/homunculus/local
+#   cp .env.example .env && chmod 600 .env && $EDITOR .env
+#   docker compose up -d
+#
+# Only `web` and `bridge` publish ports. Postgres and the API are reachable only from inside the
+# Docker network: the database holds patient data and has no reason to be addressable from the ward
+# network.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: homunculus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: homunculus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: homunculus
+      TZ: ${TZ:-Europe/Istanbul}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # The API waits for this. Without it, `alembic upgrade head` races the database's first
+      # start and the API dies on a connection error that looks like a configuration fault.
+      test: ["CMD-SHELL", "pg_isready -U homunculus -d homunculus"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api:
+    build:
+      context: ../../homunculus-engine
+      dockerfile: Dockerfile.api
+    container_name: homunculus-api
+    restart: unless-stopped
+    environment:
+      # DATABASE_SSL is deliberately UNSET: ssl_context() then returns None and the connection is
+      # plain, which is correct for a database on the same host. Setting it would demand a
+      # certificate chain that does not exist here.
+      DATABASE_URL: postgresql://homunculus:${POSTGRES_PASSWORD}@postgres:5432/homunculus
+      JWT_SECRET: ${JWT_SECRET}
+      TENANTS: ${TENANT_TOKEN}:HOSP1
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME}
+      TZ: ${TZ:-Europe/Istanbul}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/local/web/Dockerfile
+    container_name: homunculus-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_LISTEN_ADDR:-0.0.0.0}:80:80"
+    depends_on:
+      - api
+
+  bridge:
+    image: ghcr.io/asbadef/homunculus-bridge:latest
+    container_name: homunculus-bridge
+    restart: unless-stopped
+    ports:
+      # Bound to the device-facing interface, never 0.0.0.0: MLLP carries patient data in plain
+      # text with no authentication.
+      - "${LISTEN_ADDR}:2575:2575"
+    volumes:
+      # Store-and-forward buffer. MUST persist: it holds observations the API has not acknowledged
+      # yet, and a restart would otherwise discard them. It holds patient data in transit.
+      - bridge-data:/data
+      - ./site-mapping.json:/app/site-mapping.json:ro
+    environment:
+      TZ: ${TZ:-Europe/Istanbul}
+    command:
+      - scripts/run_bridge.py
+      - --db
+      - /data/bridge.db
+      - --mapping
+      - /app/site-mapping.json
+      - --cloud-url
+      - http://api:8000
+      - --token
+      - ${TENANT_TOKEN}
+    depends_on:
+      - api
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  pgdata:
+  bridge-data:
