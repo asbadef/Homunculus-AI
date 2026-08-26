@@ -58,25 +58,38 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# pyproject first so the dependency layer is cached independently of source edits.
+# Copy pyproject and source; install dependencies before copying scripts and migrations.
+# This way, changes to scripts/alembic do not invalidate the pip layer.
 COPY pyproject.toml /app/
 COPY src/ /app/src/
-COPY scripts/ /app/scripts/
-COPY alembic/ /app/alembic/
-COPY alembic.ini /app/
-
-RUN pip install --no-cache-dir -e . \
+RUN pip install --no-cache-dir . \
     && useradd --system --uid 10002 --home /app homunculus \
     && chown -R homunculus:homunculus /app
+
+# Copy scripts and migrations after pip install so changes to these do not invalidate the dependency layer.
+# --chown applies the user created in the RUN above, ensuring files are not owned by root.
+COPY --chown=homunculus:homunculus scripts/ /app/scripts/
+COPY --chown=homunculus:homunculus alembic/ /app/alembic/
+COPY --chown=homunculus:homunculus alembic.ini /app/
 
 USER homunculus
 
 EXPOSE 8000
 
+# Liveness probe: the app exposes /health for orchestrator health checks.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).status==200 else 1)"
+
 # Migrate, then bootstrap the first admin, then serve. seed_admin.py is idempotent and exits 0 when
 # SEED_ADMIN_PASSWORD is unset, so restarts keep working after the operator removes the password.
-CMD ["sh", "-c", "alembic upgrade head && python scripts/seed_admin.py && uvicorn homunculus.api.prodserver:app --host 0.0.0.0 --port 8000"]
+# exec is used so uvicorn becomes PID 1 and receives SIGTERM on container shutdown (not sh).
+CMD ["sh", "-c", "alembic upgrade head && python scripts/seed_admin.py && exec uvicorn homunculus.api.prodserver:app --host 0.0.0.0 --port 8000"]
 ```
+
+> **Amended after review.** The first draft of this file used `pip install -e .`, omitted
+> `exec` before uvicorn (so SIGTERM never reached it and the escalation loop was killed rather
+> than shut down), left the post-`chown` COPYs owned by root, and — the blocking one — copied
+> `alembic/`, which `homunculus-engine/.dockerignore` excluded, so the image could not build at
+> all. The block above is the corrected version that was actually committed.
 
 - [ ] **Step 2: Verify the file parses as a Dockerfile locally**
 
@@ -408,12 +421,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 60s
+    # No healthcheck here: the image itself carries a HEALTHCHECK instruction (Dockerfile.api),
+    # which Compose honours. Declaring it twice invites the two definitions to drift apart.
 
   web:
     build:
