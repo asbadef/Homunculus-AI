@@ -1,5 +1,10 @@
-.obsidian/workspace.json
-.obsidian/workspace-mobile.json
+# Obsidian's per-machine UI state — pane layout, graph camera position. It changes every time the
+# vault is opened and means nothing to anyone else. These patterns need the leading ** because a
+# pattern containing a slash is anchored to this file's directory, and the vault lives one level
+# down in Homunculus/ — which is why the earlier, unanchored version never matched.
+**/.obsidian/workspace.json
+**/.obsidian/workspace-mobile.json
+**/.obsidian/graph.json
 .DS_Store
 Thumbs.db
 .claude/settings.local.json
@@ -17,3 +22,8 @@ deploy/bridge/site-mapping.json
 # Local on-prem deployment configuration (secrets, site mapping)
 deploy/local/.env
 deploy/local/site-mapping.json
+
+# Python bytecode. Never useful in a diff, and it pulled a compiled copy of a deleted module along
+# with it.
+__pycache__/
+*.pyc
