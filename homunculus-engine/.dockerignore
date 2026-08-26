@@ -1,6 +1,9 @@
-# Keep the build context to what the bridge actually runs. Beyond image size, this is a safety
-# boundary: buffer databases hold real observations in transit and must never end up in an image
-# that gets pushed to a registry.
+# Build context exclusions: buffer databases and build cruft. The context is shared by the bridge
+# and API images, so exclusions target only files that should never be distributed — database files,
+# bytecode, and build artifacts — not code that particular images use.
+#
+# Beyond image size, this is a safety boundary: buffer databases hold real observations in transit and
+# must never end up in an image that gets pushed to a registry.
 *.db
 *.db-journal
 *.db-wal
@@ -9,6 +12,5 @@ __pycache__/
 *.pyc
 .pytest_cache/
 tests/
-alembic/
 docker-compose.yml
 Dockerfile
