@@ -61,7 +61,7 @@ services:
       # — real login, and the API proxied behind it — to every interface this server has. The
       # device port below has no fallback either; the more sensitive port should not be the more
       # forgiving one.
-      - "${WEB_LISTEN_ADDR}:80:80"
+      - "${WEB_LISTEN_ADDR}:${WEB_PORT:-80}:80"
     depends_on:
       - api
 

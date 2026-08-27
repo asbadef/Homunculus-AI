@@ -15,7 +15,7 @@ cd deploy/local
 
 cp .env.example .env && chmod 600 .env
 $EDITOR .env          # POSTGRES_PASSWORD, JWT_SECRET, TENANT_TOKEN, SEED_ADMIN_*,
-                      # LISTEN_ADDR (device network), WEB_LISTEN_ADDR (browser network)
+                      # LISTEN_ADDR (device network), WEB_LISTEN_ADDR + WEB_PORT (browser)
 ```
 
 Generate the secrets rather than inventing them:
