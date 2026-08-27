@@ -7,6 +7,8 @@ append-only triggers are part of what is being tested, so they cannot be faked i
 """
 from __future__ import annotations
 
+import ast
+import re
 import importlib.util
 import pathlib
 
@@ -201,6 +203,64 @@ def test_migration_0004_is_idempotent_for_the_hand_created_cloud_table():
     assert "CREATE OR REPLACE FUNCTION audit_is_append_only" in source
     assert "DROP TRIGGER IF EXISTS audit_no_update" in source
     assert "DROP TRIGGER IF EXISTS audit_no_delete" in source
+
+
+def test_no_migration_passes_multiple_statements_to_one_execute():
+    """Every op.execute() must carry exactly one SQL statement.
+
+    Migrations run through the async engine (alembic/env.py), and asyncpg prepares every statement
+    it is handed, so a string containing several fails with "cannot insert multiple commands into a
+    prepared statement". Nothing in the suite caught this when 0004 was written: the DB-backed
+    fixture in this file talks to psycopg2, which accepts multi-statement strings, so the migration
+    passed every test and then failed on the first real deployment.
+
+    Applies to every migration, not just 0004 — the mistake is easy to repeat.
+    """
+    def statements(sql: str) -> int:
+        # Semicolons inside $$ … $$ separate statements *within* a function body and are not
+        # statement separators, so strip those spans before counting.
+        stripped = re.sub(r"\$\$.*?\$\$", "", sql, flags=re.S).strip().rstrip(";")
+        return stripped.count(";") + 1
+
+    offenders: list[str] = []
+    for path in sorted(_MIGRATIONS_DIR.glob("0*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+
+        # Module-level `_NAME = "SQL"` constants, so an op.execute(_NAME) can be resolved.
+        constants: dict[str, str] = {
+            target.id: node.value.value
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        }
+
+        # Only what is actually handed to op.execute() — scanning every string constant would
+        # flag module docstrings that happen to describe what the migration creates.
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "execute"
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "op"
+                    and node.args):
+                continue
+            arg = node.args[0]
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                sql, label = arg.value, arg.value
+            elif isinstance(arg, ast.Name) and arg.id in constants:
+                sql, label = constants[arg.id], arg.id
+            else:
+                continue                      # computed at runtime; not statically checkable
+            if statements(sql) > 1:
+                offenders.append(f"{path.name}: {label.strip()[:70]!r}")
+
+    assert not offenders, (
+        "these strings hold more than one SQL statement and will fail under asyncpg — "
+        "split them into one op.execute() per statement:\n  " + "\n  ".join(offenders)
+    )
 
 
 def test_migration_0004_is_the_single_head():

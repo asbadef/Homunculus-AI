@@ -47,6 +47,12 @@ depends_on: Union[str, Sequence[str], None] = None
 # op.execute(). The table is created the same way (rather than op.create_table) so the
 # whole DDL block stays together and matches the proven fixture in
 # tests/test_audit_postgres.py verbatim.
+#
+# ONE STATEMENT PER CONSTANT. This is not a formatting preference: migrations run through the async
+# engine (alembic/env.py), and asyncpg prepares every statement it is given, so a string holding
+# several statements fails with "cannot insert multiple commands into a prepared statement". The
+# fixture in tests/test_audit_postgres.py does not hit this because it talks to psycopg2, which
+# accepts multi-statement strings — which is exactly why this only surfaced on a real deployment.
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS audit (
     id BIGSERIAL PRIMARY KEY, ts TEXT NOT NULL, tenant TEXT NOT NULL,
@@ -61,20 +67,30 @@ BEGIN RAISE EXCEPTION 'audit is append-only'; END;
 $$ LANGUAGE plpgsql;
 """
 
-_CREATE_TRIGGERS = """
-DROP TRIGGER IF EXISTS audit_no_update ON audit;
+# The DROPs run first so the migration is idempotent against the cloud database, where this table
+# and its triggers were created by hand before the migration existed.
+_DROP_UPDATE_TRIGGER = "DROP TRIGGER IF EXISTS audit_no_update ON audit"
+
+_CREATE_UPDATE_TRIGGER = """
 CREATE TRIGGER audit_no_update BEFORE UPDATE ON audit
-    FOR EACH ROW EXECUTE FUNCTION audit_is_append_only();
-DROP TRIGGER IF EXISTS audit_no_delete ON audit;
+    FOR EACH ROW EXECUTE FUNCTION audit_is_append_only()
+"""
+
+_DROP_DELETE_TRIGGER = "DROP TRIGGER IF EXISTS audit_no_delete ON audit"
+
+_CREATE_DELETE_TRIGGER = """
 CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit
-    FOR EACH ROW EXECUTE FUNCTION audit_is_append_only();
+    FOR EACH ROW EXECUTE FUNCTION audit_is_append_only()
 """
 
 
 def upgrade() -> None:
     op.execute(_CREATE_TABLE)
     op.execute(_CREATE_FUNCTION)
-    op.execute(_CREATE_TRIGGERS)
+    op.execute(_DROP_UPDATE_TRIGGER)
+    op.execute(_CREATE_UPDATE_TRIGGER)
+    op.execute(_DROP_DELETE_TRIGGER)
+    op.execute(_CREATE_DELETE_TRIGGER)
 
 
 def downgrade() -> None:
