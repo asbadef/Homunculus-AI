@@ -11,6 +11,7 @@ PHI: file *names* are device metadata (peer address, port, timestamp) and may be
 from __future__ import annotations
 
 import re
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,3 +26,43 @@ def session_epoch(name: str) -> int | None:
     """The UTC epoch NCE stamped into a session filename, or None if it carries none."""
     match = _EPOCH_IN_NAME.search(name)
     return int(match.group(1)) if match else None
+
+
+class ProcessedLedger:
+    """Which session files have already been forwarded.
+
+    Keyed by name AND size AND modification time, not by name alone: if NCE appends to a session
+    after our first read, a name-keyed ledger would skip the new content forever and the loss would
+    be invisible. Modification time is stored as whole seconds because the value crosses a network
+    filesystem, where sub-second precision is neither stable nor comparable.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        self._conn = sqlite3.connect(str(path), check_same_thread=False)
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS processed ("
+            " name TEXT NOT NULL, size INTEGER NOT NULL, mtime INTEGER NOT NULL,"
+            " PRIMARY KEY (name, size, mtime))"
+        )
+        self._conn.commit()
+
+    def seen(self, name: str, size: int, mtime: int) -> bool:
+        row = self._conn.execute(
+            "SELECT 1 FROM processed WHERE name = ? AND size = ? AND mtime = ?",
+            (name, size, mtime),
+        ).fetchone()
+        return row is not None
+
+    def record(self, name: str, size: int, mtime: int) -> None:
+        self._conn.execute(
+            "INSERT OR IGNORE INTO processed (name, size, mtime) VALUES (?, ?, ?)",
+            (name, size, mtime),
+        )
+        self._conn.commit()
+
+    def count(self) -> int:
+        (total,) = self._conn.execute("SELECT count(*) FROM processed").fetchone()
+        return int(total)
+
+    def close(self) -> None:
+        self._conn.close()
