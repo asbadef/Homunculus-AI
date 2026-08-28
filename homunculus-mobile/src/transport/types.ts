@@ -81,6 +81,7 @@ export interface TransportListener {
 export interface Transport {
   start(): void;
   stop(): void;
+  /** Returns the unsubscribe function; call it to detach the listener. */
   subscribe(listener: TransportListener): () => void;
   ack(patientId: string, kind: string, role: Role): Promise<void>;
 }

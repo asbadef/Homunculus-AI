@@ -15,10 +15,8 @@ type KeysMatch<A, B> = [keyof A] extends [keyof B]
     ? true
     : never
   : never;
-const alertKeysMatch: KeysMatch<BoardAlert, JsonAlert> = true;
-const latestKeysMatch: KeysMatch<LatestVitals, JsonLatest> = true;
-void alertKeysMatch;
-void latestKeysMatch;
+true satisfies KeysMatch<BoardAlert, JsonAlert>;
+true satisfies KeysMatch<LatestVitals, JsonLatest>;
 
 describe("the committed recording", () => {
   it("declares its scenario and a step interval", () => {
