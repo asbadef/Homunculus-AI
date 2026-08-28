@@ -66,6 +66,17 @@ describe("escalatedKeys — port of api/escalation.py", () => {
     expect(keys.size).toBe(0);
   });
 
+  it("escalates exactly at the threshold — the boundary is >=, not >", () => {
+    const keys = escalatedKeys({
+      boards: ward(alert("septic_shock", "immediate")),
+      firstSeen: { "bed-3|septic_shock": T0 },
+      acknowledged: new Set(),
+      now: T0 + THRESHOLD,
+      thresholdMs: THRESHOLD,
+    });
+    expect(keys).toEqual(new Set(["bed-3|septic_shock"]));
+  });
+
   it("honours an acknowledgement that came from the server payload", () => {
     const keys = escalatedKeys({
       boards: ward(alert("septic_shock", "immediate", true)),

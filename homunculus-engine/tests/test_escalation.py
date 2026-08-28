@@ -41,3 +41,10 @@ def test_before_threshold_does_not_escalate():
     first_seen = {("bed-3", "septic_shock"): T0}
     now = T0 + timedelta(minutes=4, seconds=59)
     assert escalate(alerts, acks={}, first_seen=first_seen, now=now, threshold=THRESH) == set()
+
+
+def test_escalates_exactly_at_threshold_boundary_is_gte():
+    alerts = [("bed-3", _alert("septic_shock", "immediate"))]
+    first_seen = {("bed-3", "septic_shock"): T0}
+    now = T0 + THRESH
+    assert escalate(alerts, acks={}, first_seen=first_seen, now=now, threshold=THRESH) == {("bed-3", "septic_shock")}
