@@ -10,6 +10,10 @@ describe("localizeStaleInput", () => {
   it("passes an unknown label through untouched rather than guessing", () => {
     expect(localizeStaleInput("procalcitonin")).toBe("procalcitonin");
   });
+
+  it("translates NEWS2's vital labels too", () => {
+    expect(localizeStaleInput("systolic BP")).toBe("sistolik KB");
+  });
 });
 
 describe("ageLabel", () => {
@@ -17,6 +21,11 @@ describe("ageLabel", () => {
     expect(ageLabel(45 * 60 * 1000)).toBe("45 dk");
     expect(ageLabel(4 * 60 * 60 * 1000)).toBe("4 sa");
     expect(ageLabel(90 * 60 * 1000)).toBe("1 sa");
+  });
+
+  it("switches to hours exactly at the hour", () => {
+    expect(ageLabel(59 * 60 * 1000)).toBe("59 dk");
+    expect(ageLabel(60 * 60 * 1000)).toBe("1 sa");
   });
 });
 

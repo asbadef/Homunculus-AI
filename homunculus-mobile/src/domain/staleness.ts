@@ -1,6 +1,7 @@
-// The engine's stale_inputs carries labels only (rules/sofa.py _INPUT_LABEL). The project skill
-// asks the badge to state elapsed time; where the payload supplies an age we print it, and where it
-// does not we print the name alone. A guessed age on a clinical badge is worse than no age.
+// The engine's stale_inputs vocabulary is the union of rules/sofa.py _INPUT_LABEL and
+// rules/news2.py _VITAL_LABEL. The project skill asks the badge to state elapsed time; where the
+// payload supplies an age we print it, and where it does not we print the name alone. A label
+// missing from this map renders untranslated rather than guessed — same as an age we don't have.
 
 const LABELS_TR: Record<string, string> = {
   MAP: "OAB",
@@ -13,6 +14,11 @@ const LABELS_TR: Record<string, string> = {
   creatinine: "kreatinin",
   bilirubin: "bilirubin",
   platelets: "trombosit",
+  "resp rate": "solunum sayısı",
+  SpO2: "SpO2",
+  "systolic BP": "sistolik KB",
+  pulse: "nabız",
+  temperature: "ateş",
 };
 
 export function localizeStaleInput(label: string): string {
