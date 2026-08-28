@@ -357,6 +357,10 @@ eğitmek. **B4 audit dilimi de kuruldu** — her olay (gözlem/uyarı/onay/eskal
 ekle-sadece, DB-trigger'ıyla **değişmez** yazılır; kiracı-kapsamlı `/audit` ile okunur. Sıradaki B4
 parçaları: gerçek Postgres, çok-süreçli pub-sub. Ek olarak: durum kalıcılığı (audit-replay ile
 restart'tan sağ çıkma), first_seen kalıcılığı, KOAH-oksijen için komorbidite-farkındalıklı NEWS2,
-`view` denetimi, panoda bayat-veri rozeti ve bildirim geçmişi paneli de kuruldu.)*
+`view` denetimi, panoda bayat-veri rozeti ve bildirim geçmişi paneli de kuruldu. **Mobil eşlikçi
+uygulama (M1) da kuruldu** — Expo/React Native, kayıtlı üç yataklı koğuşu oynatan bir aktarım katmanı
+üzerinde: riske göre sıralı hasta listesi, vital kartları ve senaryo zamanı eğilimleri, kasadaki
+kaynak notlarına bağlanan kılavuz çekmecesi, eskalasyon farkındalıklı titreşim. Canlı veri M2'de,
+auth-bridge dilimi kodlandığında gelecek.)*
 
 > Bir terimi merak edip burada bulamazsan, söyle — hem cevaplarım hem de bu dosyaya eklerim.
