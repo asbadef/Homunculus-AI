@@ -11,9 +11,13 @@ export function useAlertHaptics(latest: BoardNotification | null, enabled: boole
   const lastTs = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!enabled || latest === null) return;
+    if (latest === null) return;
     if (latest.ts === lastTs.current) return;
+    // Track BEFORE the enabled gate: a notification that arrived while haptics were muted must
+    // not buzz later when the clinician unmutes — a stale buzz reads as "something just
+    // happened", which is the wrong signal on a clinical surface.
     lastTs.current = latest.ts;
+    if (!enabled) return;
     if (latest.trigger === "escalation") {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;

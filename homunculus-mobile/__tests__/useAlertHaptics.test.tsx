@@ -50,3 +50,24 @@ describe("useAlertHaptics", () => {
     expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("useAlertHaptics — hardened cases", () => {
+  it("stays silent for a routine or soon alert", async () => {
+    await render(<Probe latest={note({ urgency: "soon" })} enabled />);
+    await render(<Probe latest={note({ urgency: "routine", ts: "2026-07-26T17:24:00+00:00" })} enabled />);
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
+  });
+
+  it("dedupes on ts even when the notification object is rebuilt", async () => {
+    const { rerender } = await render(<Probe latest={note()} enabled />);
+    await rerender(<Probe latest={note()} enabled />); // fresh object, same ts
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not buzz on unmute for a notification that arrived while muted", async () => {
+    const muted = note();
+    const { rerender } = await render(<Probe latest={muted} enabled={false} />);
+    await rerender(<Probe latest={muted} enabled />); // clinician unmutes later
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
+  });
+});
