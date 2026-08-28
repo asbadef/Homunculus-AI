@@ -1662,11 +1662,18 @@ async def scan_loop(
 
     A file is recorded even when it is refused. Retrying a session that has no patient identifier
     would refuse it again every pass, forever, burying the log it needs to appear in.
+
+    The scan and every file read run via asyncio.to_thread: both do blocking network I/O against a
+    CIFS mount, and a hung mount stalling the event loop would also freeze flush_loop — a share
+    problem must not stop delivery of observations already buffered.
     """
     while True:
-        for session in pending_files(directory, ledger, since_epoch=since_epoch):
+        sessions = await asyncio.to_thread(
+            pending_files, directory, ledger, since_epoch=since_epoch)
+        for session in sessions:
             try:
-                text = session.path.read_text(encoding="utf-8", errors="replace")
+                text = await asyncio.to_thread(
+                    session.path.read_text, encoding="utf-8", errors="replace")
             except OSError as exc:
                 _log.warning("could not read %s (%s)", session.name, exc.__class__.__name__)
                 continue
@@ -1810,7 +1817,9 @@ cd homunculus-engine
 mkdir -p /tmp/nce-test
 printf '<?xml version="1.0"?><DeviceSession><PatientId>yatak-3</PatientId><MeasurementTimeUtc>2026-08-28T12:54:47Z</MeasurementTimeUtc><SpO2>97</SpO2></DeviceSession>' \
   > "/tmp/nce-test/TCP_10.0.0.1_35900-1787921687-1-DeviceSession.xml"
-timeout 40 python scripts/run_nce_bridge.py --dir /tmp/nce-test --db /tmp/nce-test/buf.db --all --report-interval 5
+# --db lives OUTSIDE the scanned directory, like production (/data vs /nce): the buffer and ledger
+# must not appear in their own scan.
+timeout 40 python scripts/run_nce_bridge.py --dir /tmp/nce-test --db /tmp/nce-buf.db --all --report-interval 5
 ```
 
 Expected within ~10 seconds:
@@ -1829,14 +1838,14 @@ mode exists for.
 
 ```bash
 cd homunculus-engine
-cat > /tmp/nce-test/mapping.json <<'JSON'
+cat > /tmp/nce-mapping.json <<'JSON'
 {"patient_fields": ["PatientId"],
  "timestamp_fields": ["MeasurementTimeUtc"],
  "signals": {"SpO2": {"signal": "spo2", "unit": "%"}}}
 JSON
-rm -f /tmp/nce-test/buf.db /tmp/nce-test/buf.db.ledger
-timeout 40 python scripts/run_nce_bridge.py --dir /tmp/nce-test --db /tmp/nce-test/buf.db \
-  --mapping /tmp/nce-test/mapping.json --all --report-interval 5 \
+rm -f /tmp/nce-buf.db /tmp/nce-buf.db.ledger
+timeout 40 python scripts/run_nce_bridge.py --dir /tmp/nce-test --db /tmp/nce-buf.db \
+  --mapping /tmp/nce-mapping.json --all --report-interval 5 \
   --cloud-url http://127.0.0.1:9 --token dummy
 ```
 
