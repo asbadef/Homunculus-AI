@@ -206,7 +206,7 @@ are exactly the ones the project skill names:
 | `border-clinical-border` | `clinical.border` | `hsl(217, 30%, 20%)` | hairlines |
 | `text-clinical-safe` | `clinical.safe` | `hsl(142, 60%, 45%)` | no active alert |
 | `text-clinical-warning` | `clinical.warning` | `hsl(38, 92%, 50%)` | moderate/high |
-| `text-clinical-critical` | `clinical.critical` | `hsl(346, 84%, 55%)` | critical / escalated |
+| `text-clinical-critical` | `clinical.critical` | `hsl(346, 84%, 60%)` | critical / escalated — the blueprint's 55% measures 4.22:1 on the card surface, under the 4.5:1 AA body bar at the sizes the app renders it; 60% clears it, enforced by a contrast test |
 | `text-clinical-stale` | `clinical.stale` | `hsl(215, 15%, 60%)` | staleness badges, muted text |
 
 Severity maps onto those three clinical hues through one function in `src/domain/risk.ts`; no

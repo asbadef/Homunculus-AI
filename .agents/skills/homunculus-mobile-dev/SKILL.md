@@ -33,7 +33,7 @@ Use these exact tailwind values configured in `tailwind.config.js`:
 *   `border-clinical-border`: `hsl(217, 30%, 20%)`
 *   `text-clinical-safe`: `hsl(142, 60%, 45%)` (Sage Green)
 *   `text-clinical-warning`: `hsl(38, 92%, 50%)` (Amber Gold)
-*   `text-clinical-critical`: `hsl(346, 84%, 55%)` (Crimson Rose)
+*   `text-clinical-critical`: `hsl(346, 84%, 60%)` (Crimson Rose — 55% fails WCAG AA on the card surface)
 *   `text-clinical-stale`: `hsl(215, 15%, 60%)` (Muted Grey)
 
 ### Spring Physics (withSpring)
