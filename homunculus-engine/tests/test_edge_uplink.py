@@ -41,3 +41,7 @@ def test_a_failure_stops_the_pass_and_leaves_the_rest_queued(tmp_path):
     assert [p["n"] for p in sent] == [1]
     assert delivered == 1
     assert buffer.depth() == 2       # 2 and 3 stay queued, in order
+
+    asyncio.run(flush_once(buffer, sender=sent.append))
+    assert [p["n"] for p in sent] == [1, 2, 3]
+    assert buffer.depth() == 0
