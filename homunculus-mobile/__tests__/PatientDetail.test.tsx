@@ -83,3 +83,24 @@ describe("PatientDetail", () => {
     expect(screen.queryByText("Onayla")).toBeNull();
   });
 });
+
+describe("citation wiring", () => {
+  it("hands the drawer the tapped alert's own confidence, not another's", async () => {
+    const { act, fireEvent, within } = require("@testing-library/react-native");
+    const second: BoardAlert = {
+      ...alert(), kind: "sepsis", summary: "Sepsis criteria met",
+      supporting_evidence: ["surviving-sepsis-campaign-2026"],
+      confidence: "Strong recommendation, very low certainty (SSC 2026).",
+    };
+    const two = view();
+    two.board.alerts = [alert(), second];
+    await render(<PatientDetail view={two} onAcknowledge={() => {}} />);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("citation-surviving-sepsis-campaign-2026"));
+    });
+    // Both confidences are on screen inside their cards — the assertion must scope to the drawer.
+    const drawer = within(screen.getByLabelText("guideline-drawer"));
+    expect(drawer.getByText("Strong recommendation, very low certainty (SSC 2026).")).toBeTruthy();
+    expect(drawer.queryByText("Criteria are deterministic (Sepsis-3).")).toBeNull();
+  });
+});

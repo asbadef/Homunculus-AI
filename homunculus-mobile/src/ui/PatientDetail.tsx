@@ -8,10 +8,7 @@ import { AlertCard } from "./AlertCard";
 import { GuidelineDrawer } from "./GuidelineDrawer";
 import { RiskPill } from "./RiskPill";
 import { VitalTile } from "./VitalTile";
-
-function bedNumber(patientId: string): string {
-  return patientId.replace(/^bed-/, "");
-}
+import { bedNumber } from "./bed";
 
 export function PatientDetail({
   view,
