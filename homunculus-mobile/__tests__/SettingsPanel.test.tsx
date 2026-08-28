@@ -81,3 +81,17 @@ describe("SettingsPanel — remaining controls", () => {
     expect(props.onThreshold).toHaveBeenCalledWith(60_000);
   });
 });
+
+describe("SettingsPanel — live mode", () => {
+  it("hides the playback controls once the board is live", async () => {
+    await panel({ hidePlayback: true });
+    expect(screen.queryByText("Oynat")).toBeNull();
+    expect(screen.queryByText("Duraklat")).toBeNull();
+    expect(screen.queryByText("Başa sar")).toBeNull();
+  });
+
+  it("keeps showing playback controls in replay mode", async () => {
+    await panel({ hidePlayback: false });
+    expect(screen.getByText("Duraklat")).toBeTruthy();
+  });
+});

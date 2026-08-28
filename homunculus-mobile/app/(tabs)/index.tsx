@@ -8,12 +8,12 @@ import { DemoBanner } from "../../src/ui/DemoBanner";
 import { WardList } from "../../src/ui/WardList";
 
 export default function PatientsScreen() {
-  const { ward } = useBoard();
+  const { ward, mode } = useBoard();
   const router = useRouter();
 
   return (
     <SafeAreaView edges={["top"]} className="flex-1 bg-background">
-      <DemoBanner />
+      {mode === "replay" ? <DemoBanner /> : null}
       <View className="px-4 pb-2 pt-3">
         <Text className="text-foreground text-2xl font-semibold">{t("ward.title")}</Text>
         <Text className="text-clinical-stale text-xs">{t("ward.subtitle")}</Text>

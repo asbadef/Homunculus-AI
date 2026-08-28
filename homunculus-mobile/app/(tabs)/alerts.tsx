@@ -8,12 +8,12 @@ import { DemoBanner } from "../../src/ui/DemoBanner";
 import { NotificationFeed } from "../../src/ui/NotificationFeed";
 
 export default function AlertsScreen() {
-  const { notifications } = useBoard();
+  const { notifications, mode } = useBoard();
   const router = useRouter();
 
   return (
     <SafeAreaView edges={["top"]} className="flex-1 bg-background">
-      <DemoBanner />
+      {mode === "replay" ? <DemoBanner /> : null}
       <View className="px-4 pb-1 pt-3">
         <Text className="text-foreground text-2xl font-semibold">{t("alerts.title")}</Text>
       </View>

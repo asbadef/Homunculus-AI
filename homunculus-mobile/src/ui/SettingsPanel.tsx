@@ -9,7 +9,7 @@ import type { Role } from "../transport/types";
 const SPEEDS = [1, 2, 4];
 const THRESHOLDS_MS = [10_000, 20_000, 60_000];
 
-function Row({ title, children }: { title: string; children: ReactNode }) {
+export function Row({ title, children }: { title: string; children: ReactNode }) {
   return (
     <View className="mb-4 rounded-xl border border-clinical-border bg-card p-4">
       <Text className="text-clinical-stale text-[11px] font-semibold uppercase tracking-wide">
@@ -20,7 +20,7 @@ function Row({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Chip({
+export function Chip({
   label,
   active,
   onPress,
@@ -56,6 +56,7 @@ export function SettingsPanel({
   onHaptics,
   onThreshold,
   version,
+  hidePlayback = false,
 }: {
   settings: Settings;
   playing: boolean;
@@ -67,30 +68,36 @@ export function SettingsPanel({
   onHaptics: (enabled: boolean) => void;
   onThreshold: (ms: number) => void;
   version: string;
+  /** M2: the replay transport keeps running under a live session (see BoardProvider's
+   * `controls`), but its play/pause/speed controls make no sense against a live stream. The
+   * screen sets this from `mode === "live"`. */
+  hidePlayback?: boolean;
 }) {
   return (
     <ScrollView contentContainerClassName="p-4">
-      <Row title={t("settings.playback")}>
-        <View className="flex-row gap-2">
-          <Chip
-            label={playing ? t("settings.pause") : t("settings.play")}
-            active
-            onPress={playing ? onPause : onPlay}
-          />
-          <Chip label={t("settings.restart")} active={false} onPress={onRestart} />
-        </View>
-        <View className="mt-3 flex-row items-center gap-2">
-          <Text className="text-clinical-stale text-sm">{t("settings.speed")}</Text>
-          {SPEEDS.map((speed) => (
+      {hidePlayback ? null : (
+        <Row title={t("settings.playback")}>
+          <View className="flex-row gap-2">
             <Chip
-              key={speed}
-              label={`${speed}x`}
-              active={settings.speed === speed}
-              onPress={() => onSpeed(speed)}
+              label={playing ? t("settings.pause") : t("settings.play")}
+              active
+              onPress={playing ? onPause : onPlay}
             />
-          ))}
-        </View>
-      </Row>
+            <Chip label={t("settings.restart")} active={false} onPress={onRestart} />
+          </View>
+          <View className="mt-3 flex-row items-center gap-2">
+            <Text className="text-clinical-stale text-sm">{t("settings.speed")}</Text>
+            {SPEEDS.map((speed) => (
+              <Chip
+                key={speed}
+                label={`${speed}x`}
+                active={settings.speed === speed}
+                onPress={() => onSpeed(speed)}
+              />
+            ))}
+          </View>
+        </Row>
+      )}
 
       <Row title={t("settings.role")}>
         <View className="flex-row gap-2">

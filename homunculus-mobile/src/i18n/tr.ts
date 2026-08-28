@@ -78,4 +78,23 @@ export const tr = {
   "settings.dataSource": "Veri kaynağı",
   "settings.dataSourceValue": "Kayıtlı senaryo — icu-ward.json",
   "settings.version": "Sürüm",
+
+  "server.title": "Sunucu",
+  "server.address": "Sunucu adresi",
+  "server.addressPlaceholder": "http://10.0.0.5",
+  "server.save": "Kaydet",
+  "server.login.email": "E-posta",
+  "server.login.password": "Parola",
+  "server.login.submit": "Giriş yap",
+  "server.logout": "Oturumu kapat",
+  "server.goLive": "Canlı moda geç",
+  "server.goReplay": "Gösterime dön",
+  "server.status.demo": "Gösterim modu — kayıtlı senaryo",
+  "server.status.connecting": "Bağlanıyor…",
+  "server.status.open": "Canlı — sunucuya bağlı",
+  "server.status.reconnecting": "Bağlantı koptu — yeniden bağlanıyor…",
+  "server.sessionNotice": "Oturum sona erdi; gösterime dönüldü.",
+
+  "login.mfaUnsupported": "Bu hesap doğrulama kodu istiyor; şimdilik panodan giriş yapın.",
+  "login.failed": "Giriş başarısız: {detail}",
 } as const;
