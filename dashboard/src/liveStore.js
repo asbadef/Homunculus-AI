@@ -6,16 +6,38 @@
 // so the UI stays whole while the real system grows underneath it, domain by domain.
 
 import { roleFromToken, UNSUPPORTED_ROLE } from "./liveAuth.js";
-import { patientsFromBoard } from "./liveAdapters.js";
+import { patientFromBoard, patientsFromBoard, bedsFromPatients, alertsFromPatients } from "./liveAdapters.js";
 import { CONNECTION, nextConnection } from "./liveConnection.js";
+
+// How long to wait before the ONE reconnect attempt after the stream drops. Not a retry loop:
+// each disconnect gets a single scheduled retry, which itself gets a fresh ticket (see connect()
+// in startLive() below) — the whole point being that the OLD ticket is spent and cannot be reused.
+const RECONNECT_DELAY_MS = 5000;
 
 /** Real SSE opener. `ticket` is a short-lived, single-use credential — never a JWT — because
  *  EventSource cannot send headers and a bearer token in the URL would leak into server logs,
- *  browser history and any Referer header the browser sends onward. */
-function defaultOpenStream(url) {
+ *  browser history and any Referer header the browser sends onward.
+ *
+ *  `handlers` is {onopen, onmessage, onerror} — the store owns the EventSource lifecycle so it can
+ *  merge frames into state and react to drops; this function only wires the plumbing. */
+function defaultOpenStream(url, handlers = {}) {
   if (typeof EventSource === "undefined") return () => {};   // no SSE (e.g. jsdom) -> no-op
   const source = new EventSource(url);
+  if (handlers.onopen) source.onopen = handlers.onopen;
+  if (handlers.onmessage) source.onmessage = handlers.onmessage;
+  if (handlers.onerror) source.onerror = handlers.onerror;
   return () => source.close();
+}
+
+/** Upsert `patient` into `patients` by patient_id — replace the matching entry, or append. Never
+ *  mutates the array it's given: every overlay update has to look like a fresh object to whatever
+ *  is watching, or subscribers relying on reference equality could miss the change. */
+function mergePatient(patients, patient) {
+  const idx = patients.findIndex((p) => p.patient_id === patient.patient_id);
+  if (idx === -1) return [...patients, patient];
+  const next = patients.slice();
+  next[idx] = patient;
+  return next;
 }
 
 export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
@@ -65,33 +87,104 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
 
   /** Load the board. On failure the patient list is emptied — NEVER left showing whatever the
    *  wrapped simulation store happens to hold. A clinician who logged in with real hospital
-   *  credentials must see "no data" on a failed fetch, not invented patients. */
+   *  credentials must see "no data" on a failed fetch, not invented patients.
+   *
+   *  `beds`/`alerts` are synthesized from the SAME patients (see liveAdapters.js) so BedBoard and
+   *  AlarmPage — written against the simulation's shapes — render real data unmodified. `devices`
+   *  is forced empty: the simulated device inventory (MDI/HL7 status badges) has no live source
+   *  yet, and showing it would be exactly the kind of fabricated-but-plausible data this store
+   *  exists to prevent. */
   async function refreshBoard() {
     try {
       const board = await api.boardPatients();
+      const patients = patientsFromBoard(board);
       setOverlay({
-        patients: patientsFromBoard(board),
+        patients,
+        beds: bedsFromPatients(patients),
+        alerts: alertsFromPatients(patients),
+        devices: [],
         connection: nextConnection(overlay.connection, { type: "loaded" }),
       });
     } catch {
       setOverlay({
         patients: [],
+        beds: [],
+        alerts: [],
+        devices: [],
         connection: nextConnection(overlay.connection, { type: "failed" }),
       });
     }
     emit();
   }
 
-  async function acknowledgeAlert(patientId, kind, role) {
+  /** AckModal calls this as `store.acknowledgeAlert(alert.id, {reason, note})` and must not
+   *  change — alert.id is "<patient_id>::<kind>" (alertsFromPatients). `reason`/`note` are not
+   *  forwarded: the backend's AckStore keeps only {by, at} in this slice, so there is nowhere for
+   *  them to go yet. The role is whoever is actually signed in, never invented. */
+  async function acknowledgeAlert(alertId, { reason, note } = {}) {
+    const id = String(alertId);
+    const sep = id.indexOf("::");
+    const patientId = sep === -1 ? id : id.slice(0, sep);
+    const kind = sep === -1 ? "" : id.slice(sep + 2);
+    const role = overlay.user?.role ?? "unknown";
     await api.acknowledge(patientId, kind, role);
     await refreshBoard();
   }
 
-  /** Open the live stream with a ticket, so no long-lived credential enters a URL. */
+  /** Open the live stream with a ticket, so no long-lived credential enters a URL. The store owns
+   *  the EventSource lifecycle from here: onopen/onmessage/onerror all update overlay state, and a
+   *  dropped stream gets exactly one scheduled reconnect — with a FRESH ticket, because tickets are
+   *  single-use and the one that opened the dead connection cannot open another. */
   async function startLive() {
     await refreshBoard();
-    const { ticket } = await api.streamTicket();
-    return openStream(`/stream?ticket=${encodeURIComponent(ticket)}`);
+
+    let closed = false;
+    let reconnectTimer = null;
+    let closeSource = () => {};
+
+    function handleMessage(event) {
+      let patient;
+      try {
+        patient = patientFromBoard(JSON.parse(event.data));
+      } catch {
+        return; // malformed frame: never crash, never touch the board
+      }
+      if (patient.patient_id == null) return; // no identity to key on — drop, don't corrupt the list
+      const patients = mergePatient(overlay.patients, patient);
+      setOverlay({ patients, beds: bedsFromPatients(patients), alerts: alertsFromPatients(patients) });
+      emit();
+    }
+
+    function handleError() {
+      setOverlay({ connection: nextConnection(overlay.connection, { type: "stream-lost" }) });
+      emit();
+      if (closed || reconnectTimer) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if (!closed) connect();
+      }, RECONNECT_DELAY_MS);
+    }
+
+    function handleOpen() {
+      setOverlay({ connection: nextConnection(overlay.connection, { type: "stream-open" }) });
+      emit();
+    }
+
+    async function connect() {
+      // A fresh ticket every time: the previous one (if any) is single-use and already spent.
+      const { ticket } = await api.streamTicket();
+      closeSource = openStream(`/stream?ticket=${encodeURIComponent(ticket)}`, {
+        onopen: handleOpen, onmessage: handleMessage, onerror: handleError,
+      });
+    }
+
+    await connect();
+
+    return () => {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      closeSource();
+    };
   }
 
   return {
