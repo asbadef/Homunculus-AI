@@ -8,8 +8,13 @@ import { DemoBanner } from "../../src/ui/DemoBanner";
 import { WardList } from "../../src/ui/WardList";
 
 export default function PatientsScreen() {
-  const { ward, mode } = useBoard();
+  const { ward, mode, connection } = useBoard();
   const router = useRouter();
+
+  // The spec's locked rule: empty and unreachable must never look alike. In live mode a ward is
+  // only honestly "empty" while the connection is open; anything else is the connection's state,
+  // said out loud instead of skeletons forever.
+  const liveDisconnected = mode === "live" && connection !== "open";
 
   return (
     <SafeAreaView edges={["top"]} className="flex-1 bg-background">
@@ -18,13 +23,25 @@ export default function PatientsScreen() {
         <Text className="text-foreground text-2xl font-semibold">{t("ward.title")}</Text>
         <Text className="text-clinical-stale text-xs">{t("ward.subtitle")}</Text>
       </View>
-      <WardList
-        ward={ward}
-        // M1: the recording never empties mid-run, so "no beds yet" and "loading" coincide. A live
-        // M2 feed can legitimately empty the ward — split this into a real has-loaded flag then.
-        loading={ward.length === 0}
-        onSelect={(patientId) => router.push(`/patient/${patientId}`)}
-      />
+      {liveDisconnected && ward.length === 0 ? (
+        <View className="flex-1 items-center justify-center p-8">
+          <Text
+            accessibilityLabel="connection-state"
+            className="text-clinical-warning text-center"
+          >
+            {t(connection === "reconnecting" ? "server.status.reconnecting" : "server.status.connecting")}
+          </Text>
+        </View>
+      ) : (
+        <WardList
+          ward={ward}
+          // Replay: the recording never empties mid-run, so "no beds yet" and "loading" coincide.
+          // Live: an open connection with zero beds is a genuinely empty ward — show the empty
+          // text, not skeletons.
+          loading={mode === "replay" && ward.length === 0}
+          onSelect={(patientId) => router.push(`/patient/${patientId}`)}
+        />
+      )}
     </SafeAreaView>
   );
 }
