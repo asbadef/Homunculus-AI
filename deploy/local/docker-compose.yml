@@ -41,10 +41,16 @@ services:
       # certificate chain that does not exist here.
       DATABASE_URL: postgresql://homunculus:${POSTGRES_PASSWORD}@postgres:5432/homunculus
       JWT_SECRET: ${JWT_SECRET}
-      TENANTS: ${TENANT_TOKEN}:HOSP1
+      # The engine's hospital key for this tenant IS the seeded tenant slug — TENANTS maps the
+      # bridge's bearer token to that same slug, and SEED_TENANT_SLUG (below) is what seed_admin.py
+      # actually creates. Both MUST read from TENANT_SLUG so they cannot drift: if they ever named
+      # different slugs, the admin account would be seeded under a hospital key the bridge (and any
+      # JWT issued for it) can never resolve to, and the board would stay empty with no obvious cause.
+      TENANTS: ${TENANT_TOKEN}:${TENANT_SLUG:-demo-hastanesi}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME}
+      SEED_TENANT_SLUG: ${TENANT_SLUG:-demo-hastanesi}
       TZ: ${TZ:-Europe/Istanbul}
     depends_on:
       postgres:
