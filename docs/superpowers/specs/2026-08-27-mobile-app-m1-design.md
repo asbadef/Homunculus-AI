@@ -52,8 +52,14 @@ A new top-level package `homunculus-mobile/`, with its own `package.json`, indep
 `dashboard/`. TypeScript in `strict` mode.
 
 Stack: Expo + Expo Router (file-system routing), NativeWind v4 (Tailwind for React Native),
-React Native Reanimated + Moti (animation), `react-native-svg` (sparklines), `expo-haptics`,
-`expo-blur` (glass cards), `lucide-react-native` (icons — no emoji, matching the dashboard's rule).
+React Native Reanimated 3 + Moti 2 (animation), `react-native-gesture-handler` (peer of
+`MotiPressable`), `react-native-svg` (sparklines), `expo-haptics`, `expo-blur` (glass cards),
+`lucide-react-native` (icons — no emoji, matching the dashboard's rule).
+
+The project skill `.agents/skills/homunculus-mobile-dev/SKILL.md` is **normative** for this app's
+visual and motion standards. Where it names an exact Tailwind class, spring constant or interaction
+primitive, that name is the requirement, not a suggestion; §7 below restates them so the two
+documents cannot drift apart silently.
 
 Versions are deliberately **not** pinned in this spec. The project is created with
 `create-expo-app@latest` and every dependency is added with `npx expo install`, which resolves the
@@ -136,10 +142,15 @@ and the notifications the individual recordings produced are still produced.
 ### 5. Escalation is a ported rule, not invented state
 
 `api/escalation.py` is a pure function — an alert escalates when its urgency is `immediate`, it is
-unacknowledged, and `now - first_seen >= threshold`. The recorded frames carry `first_seen_at`, and
-the app owns the acknowledgements in replay mode, so `src/domain/escalation.ts` reimplements that
-rule verbatim and is tested against the same cases as the Python original. This is a port of a real
-rule, not a screen pretending to have data behind it.
+unacknowledged, and `now - first_seen >= threshold`. `src/domain/escalation.ts` reimplements that
+rule verbatim and is tested against the same four cases as the Python original. This is a port of a
+real rule, not a screen pretending to have data behind it.
+
+The clock it measures is the app's own. The recorded `first_seen_at` is the wall-clock instant of
+the *recording session* — weeks in the past — so measuring against it would escalate everything
+immediately on launch. Instead the store stamps its own first-seen the moment an alert key first
+appears in the replay, which is exactly what the server does on `/ingest`: it stamps wall-clock time,
+deliberately not observation time. The port is therefore faithful in the way that matters.
 
 One honest adjustment: a fifteen-second replay never crosses a five-minute threshold. The app uses a
 compressed demo threshold (default 20 seconds), adjustable in Settings and labelled there as a demo
@@ -149,7 +160,7 @@ acceleration, not a clinical parameter.
 
 **Patients (tab).** The ward ordered by risk (critical → none), unacknowledged before acknowledged
 within a band. Each card: bed identifier (`ICU Yatak 3`), a risk pill, the most severe alert's
-summary, a miniature heart-rate sparkline, the SOFA total, and markers for unacknowledged and
+summary, a miniature MAP sparkline, the SOFA total, and markers for unacknowledged and
 escalated. Pressing scales the card to `0.97` and springs back; a critical card carries a slow
 pulsing outer glow; list changes animate with `Layout.springify()`; the first load shows shimmering
 skeletons rather than an empty screen.
@@ -157,7 +168,14 @@ skeletons rather than an empty screen.
 **Patient detail.** A vitals grid — heart rate, MAP, lactate, SOFA — as `VitalTile`s that can carry
 a staleness badge. Sparklines are drawn from the values accumulated as the replay advances, and are
 labelled with scenario elapsed time; they are **not** described as a 12-hour trend, because the
-recording is not twelve hours. Then the alert cards: severity-coloured, showing `summary`,
+recording is not twelve hours.
+
+Sparklines cover **MAP, lactate and SOFA**, not heart rate. The blueprint asks for heart-rate and
+SpO2 trends, but the three committed scenarios chart neither: `latest.heart_rate` is `null` in every
+frame of every recording, while MAP carries 22 readings and lactate 18. The heart-rate tile
+therefore renders an explicit *veri yok*, and `VitalSparkline` is written as a generic series
+component so a future recording that charts HR needs no new code. Then the alert cards:
+severity-coloured, showing `summary`,
 `clinical_reasoning`, `recommended_actions`, `confidence`, with `supporting_evidence` opening the
 guideline drawer, and an acknowledge button.
 
@@ -178,18 +196,18 @@ stating that everything on screen is recorded synthetic data.
 
 ### 7. Design system
 
-`src/theme/tokens.ts` holds the palette from the blueprint as the single source of colour, consumed
-by both the NativeWind preset and any inline animated style:
+One palette file feeds both the NativeWind preset and any inline animated style, and the class names
+are exactly the ones the project skill names:
 
-| Token | Value | Use |
-| --- | --- | --- |
-| `background` | `hsl(222, 47%, 8%)` | screen ground |
-| `card` | `hsl(222, 40%, 12%)` | surfaces |
-| `border` | `hsl(217, 30%, 20%)` | hairlines |
-| `clinical.safe` | `hsl(142, 60%, 45%)` | no active alert |
-| `clinical.warning` | `hsl(38, 92%, 50%)` | moderate/high |
-| `clinical.critical` | `hsl(346, 84%, 55%)` | critical / escalated |
-| `clinical.stale` | `hsl(215, 15%, 60%)` | staleness badges, muted text |
+| Class | Token | Value | Use |
+| --- | --- | --- | --- |
+| `bg-background` | `background` | `hsl(222, 47%, 8%)` | screen ground |
+| `bg-card` | `card` | `hsl(222, 40%, 12%)` | surfaces |
+| `border-clinical-border` | `clinical.border` | `hsl(217, 30%, 20%)` | hairlines |
+| `text-clinical-safe` | `clinical.safe` | `hsl(142, 60%, 45%)` | no active alert |
+| `text-clinical-warning` | `clinical.warning` | `hsl(38, 92%, 50%)` | moderate/high |
+| `text-clinical-critical` | `clinical.critical` | `hsl(346, 84%, 55%)` | critical / escalated |
+| `text-clinical-stale` | `clinical.stale` | `hsl(215, 15%, 60%)` | staleness badges, muted text |
 
 Severity maps onto those three clinical hues through one function in `src/domain/risk.ts`; no
 component picks a colour by hand. Alert cards are glass (`expo-blur` over a translucent surface)
@@ -197,14 +215,37 @@ with a thin coloured border rather than a solid severity block, so a ward of car
 with one thing shouting. Contrast for text on every surface is checked against WCAG AA during
 implementation.
 
+**Motion.** No linear transitions anywhere. `src/theme/motion.ts` exports the one spring the project
+skill specifies — `{ damping: 15, mass: 0.8, stiffness: 120 }` — and every animated component takes
+its transition from it. Patient cards are `MotiPressable` from `moti/interactions`, scaling to
+`0.97` while pressed and springing back; list changes use `Layout.springify()`; a critical card
+carries a slow repeating glow. A component that needs a different curve has to justify it in review
+rather than invent one inline.
+
+**The staleness badge and the age it cannot show.** The project skill requires the badge to state
+the elapsed time explicitly ("14h old"). The engine's payload does not carry it: `stale_inputs` is a
+list of labels, and the ages exist only inside `rules/sofa.py`, folded into the finding's prose. So
+`StalenessBadge` is written to render `label · age` and accepts an optional age per input; with no
+age it renders the label alone, never a guessed number. Emitting structured ages is a small additive
+engine change, and it is listed in Out of scope because on M1's recordings — which produce no stale
+inputs at all — it would light up nothing. The component is ready for the payload that carries them.
+
 ### 8. Charter rules become tests
 
 The two rules most easily lost in UI work are enforced mechanically:
 
-- **No orders.** `src/domain/noOrders.ts` holds a forbidden-verb vocabulary (Turkish and English:
-  ver, uygula, başla, enjekte, order, give, administer, …). A test runs every
-  `recommended_actions` string in the committed recordings, and every string in `src/i18n/tr.ts`,
-  through it. The charter rule fails a test run instead of surviving review.
+- **No orders**, checked two ways, because the two bodies of text fail differently.
+  The engine's own register states its rule in `reco/engine.py`: *"Every verb is one of: Consider /
+  Review / Assess / Evaluate / Monitor."* So the check on engine text is a **leading-verb
+  allow-list**, not a forbidden-substring scan — one of its approved recommendations reads "Review
+  whether antibiotics can be **given** within the 1-hour window", which a naive scan for "given"
+  would wrongly condemn. The governing verb is what makes a sentence an order, and it is the first
+  word. A test asserts every `recommended_actions` string in the committed recordings opens with an
+  approved verb. For the Turkish strings we write ourselves, `src/domain/noOrders.ts` holds a
+  curated forbidden-token list (verin, veriniz, uygulayın, başlayın, enjekte, reçete, order,
+  administer, prescribe) and a test runs the whole of `src/i18n/tr.ts` through it. Tokens are
+  compared whole, after splitting on non-letters and lowercasing with the Turkish locale, so
+  agglutinated words never produce a phantom match.
 - **No PHI.** A test asserts the board payload type has no name, identifier or date-of-birth field,
   and that the patient screens render only the bed identifier. Age and sex are not displayed at all
   in M1 — the recording does not carry them, and they will not be invented for a demo.
@@ -247,5 +288,8 @@ surface and a no-op there, and that degradation is explicit in the components ra
 - Push notifications (they need a backend push service and a PHI review of what a lock screen may
   show), background delivery, and offline persistence.
 - Richer scenarios that would exercise staleness, chronic-context downgrade and NEWS2 bands.
+- Structured staleness ages in the engine payload (`stale_inputs` carrying an age per input), which
+  is what the badge needs to state elapsed time as the project skill asks. Additive and small, but
+  invisible until a scenario produces a stale input.
 - A light theme.
 - App-store builds and signing; M1 runs in Expo Go.
