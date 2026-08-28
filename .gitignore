@@ -27,3 +27,9 @@ deploy/local/site-mapping.json
 # with it.
 __pycache__/
 *.pyc
+
+# Mobile app build + dependency output
+homunculus-mobile/node_modules/
+homunculus-mobile/.expo/
+homunculus-mobile/dist/
+homunculus-mobile/web-build/
