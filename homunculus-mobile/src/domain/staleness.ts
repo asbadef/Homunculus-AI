@@ -4,6 +4,7 @@
 // missing from this map renders untranslated rather than guessed — same as an age we don't have.
 
 const LABELS_TR: Record<string, string> = {
+  // rules/sofa.py _INPUT_LABEL
   MAP: "OAB",
   norepinephrine: "noradrenalin",
   epinephrine: "adrenalin",
@@ -14,6 +15,7 @@ const LABELS_TR: Record<string, string> = {
   creatinine: "kreatinin",
   bilirubin: "bilirubin",
   platelets: "trombosit",
+  // rules/news2.py _VITAL_LABEL
   "resp rate": "solunum sayısı",
   SpO2: "SpO2",
   "systolic BP": "sistolik KB",
@@ -25,6 +27,11 @@ export function localizeStaleInput(label: string): string {
   return LABELS_TR[label] ?? label;
 }
 
+/**
+ * Ages floor, the way a person's age does: "1 sa" means at least one hour, so 119 minutes reads
+ * "1 sa". Coarse on purpose — the badge marks that data is stale, it is not a stopwatch, and a
+ * floored age never overstates how fresh the data is.
+ */
 export function ageLabel(ms: number): string {
   const minutes = Math.floor(ms / 60_000);
   if (minutes < 60) return `${minutes} dk`;
