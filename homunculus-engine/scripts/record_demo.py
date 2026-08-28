@@ -1,6 +1,6 @@
 # homunculus-engine/scripts/record_demo.py
-"""Run the real engine over a scenario and record the exact board frames + notifications it emits,
-as a static JSON the browser demo replays. Synthetic data only — never any PHI."""
+"""Run the real engine over one or more scenarios (a ward) and record the exact board frames +
+notifications it emits, as a static JSON the demos replay. Synthetic data only — never any PHI."""
 from __future__ import annotations
 
 import json
@@ -25,7 +25,8 @@ def record_ward(scenario_paths: list[str | Path], out_path: str | Path,
     """Merge several scenarios into one ward and record what a SINGLE engine emits.
 
     The engine is already multi-patient (board_snapshot iterates patient_ids), so a ward needs no
-    engine or loader change — only the event streams merged in absolute time before ingest."""
+    engine or loader change — only the event streams merged in absolute time before ingest.
+    Events sharing a timestamp keep scenario-file order (stable sort)."""
     out_path = Path(out_path)
     engine, store, notifier = Engine(), AckStore(), Notifier()
     events: list[tuple[datetime, dict]] = []
