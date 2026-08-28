@@ -13,7 +13,7 @@
 // reason about and the resnapshot already covers whatever gap either stream left — there is no
 // benefit to keeping the other stream's now-stale connection alive while its sibling recovers.
 import { createSseParser } from "./sse";
-import { SessionExpiredError } from "./authClient";
+import { readDetail, SessionExpiredError } from "./authClient";
 import type { BoardNotification, PatientBoard, Role, Transport, TransportListener } from "./types";
 
 export type ConnectionState = "connecting" | "open" | "reconnecting";
@@ -58,6 +58,8 @@ export function createSseTransport(
     onConnectionChange?.(next);
   }
 
+  // The `stopped` checks here duplicate the caller-side generation guards on purpose — a second,
+  // independent line of defense on the one path that reaches a clinician's screen. Not dead code.
   function emitBoard(board: PatientBoard): void {
     if (stopped) return;
     for (const listener of listeners) listener.onBoard(board);
@@ -275,14 +277,7 @@ export function createSseTransport(
         body: JSON.stringify({ patient_id: patientId, kind, role: ackRole }),
       });
       if (!res.ok) {
-        let detail = `ack failed (${res.status})`;
-        try {
-          const body = await res.json();
-          if (body?.detail) detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
-        } catch {
-          // non-JSON body — keep the fallback
-        }
-        throw new Error(detail);
+        throw new Error(await readDetail(res, `ack failed (${res.status})`));
       }
     },
 

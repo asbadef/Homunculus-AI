@@ -60,7 +60,7 @@ export interface AuthClient {
 }
 
 /** FastAPI reports problems as {"detail": ...}; surface it so the UI can show the real reason. */
-async function readDetail(res: Response, fallback: string): Promise<string> {
+export async function readDetail(res: Response, fallback: string): Promise<string> {
   try {
     const body = await res.json();
     if (body?.detail) {
