@@ -24,13 +24,12 @@ import asyncio
 import json
 import logging
 import sys
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 from homunculus.canonical import SignalCode
 from homunculus.edge.bridge import EdgeBridge
 from homunculus.edge.buffer import SqliteBuffer
+from homunculus.edge.uplink import flush_loop
 
 _log = logging.getLogger("bridge")
 
@@ -51,45 +50,6 @@ def load_mapping(path: str | None) -> dict[str, SignalCode] | None:
         except ValueError:
             raise SystemExit(f"mapping {path}: unknown signal slug {slug!r} for OBX code {code!r}")
     return mapping
-
-
-def post_json(url: str, token: str, payload: dict, timeout: float = 10.0) -> None:
-    """Deliver one observation to the cloud. Raises on any non-2xx so the row stays queued."""
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        if not 200 <= response.status < 300:
-            raise RuntimeError(f"uplink returned {response.status}")
-
-
-async def flush_loop(buffer: SqliteBuffer, ingest_url: str, token: str, interval: float) -> None:
-    """Drain the buffer to the cloud, oldest first, acking only what was delivered.
-
-    A failure stops this pass and leaves the rest queued, preserving order: sending later
-    observations past a stuck earlier one would let the engine read the past as the present.
-    """
-    while True:
-        await asyncio.sleep(interval)
-        batch = buffer.pending(limit=100)
-        if not batch:
-            continue
-
-        delivered: list[int] = []
-        for row_id, payload in batch:
-            try:
-                await asyncio.to_thread(post_json, ingest_url, token, payload)
-                delivered.append(row_id)
-            except (urllib.error.URLError, RuntimeError, TimeoutError) as exc:
-                _log.warning("uplink unavailable (%s); %s observation(s) stay queued",
-                             exc.__class__.__name__, buffer.depth() - len(delivered))
-                break
-        buffer.ack(delivered)
-        if delivered:
-            _log.info("forwarded %s observation(s); %s still queued", len(delivered), buffer.depth())
 
 
 async def report_loop(bridge: EdgeBridge, buffer: SqliteBuffer, interval: float) -> None:
