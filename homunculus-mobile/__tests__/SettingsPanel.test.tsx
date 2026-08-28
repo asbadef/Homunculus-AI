@@ -67,3 +67,17 @@ describe("SettingsPanel", () => {
     ).toBeTruthy();
   });
 });
+
+describe("SettingsPanel — remaining controls", () => {
+  it("reports a haptics toggle", async () => {
+    const props = await panel();
+    fireEvent(screen.getByRole("switch"), "valueChange", false);
+    expect(props.onHaptics).toHaveBeenCalledWith(false);
+  });
+
+  it("reports a threshold choice in milliseconds", async () => {
+    const props = await panel();
+    fireEvent.press(screen.getByText("60s"));
+    expect(props.onThreshold).toHaveBeenCalledWith(60_000);
+  });
+});
