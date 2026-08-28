@@ -1,8 +1,24 @@
 /// <reference types="jest" />
 import recording from "../assets/demo/icu-ward.json";
-import type { Recording } from "../src/transport/types";
+import type { Recording, BoardAlert, LatestVitals } from "../src/transport/types";
 
 const ward = recording as Recording;
+
+// Compile-time contract: the hand-written types and the recorded data must agree on field
+// names in BOTH directions. The `as Recording` cast alone cannot enforce this — TypeScript
+// only rejects casts between insufficiently-overlapping types, and 17 of 18 matching fields
+// counts as sufficient overlap, so a renamed field would slip through silently.
+type JsonAlert = (typeof recording)["frames"][number]["boards"][number]["alerts"][number];
+type JsonLatest = (typeof recording)["frames"][number]["boards"][number]["latest"];
+type KeysMatch<A, B> = [keyof A] extends [keyof B]
+  ? [keyof B] extends [keyof A]
+    ? true
+    : never
+  : never;
+const alertKeysMatch: KeysMatch<BoardAlert, JsonAlert> = true;
+const latestKeysMatch: KeysMatch<LatestVitals, JsonLatest> = true;
+void alertKeysMatch;
+void latestKeysMatch;
 
 describe("the committed recording", () => {
   it("declares its scenario and a step interval", () => {
