@@ -10,10 +10,13 @@ PHI: file *names* are device metadata (peer address, port, timestamp) and may be
 """
 from __future__ import annotations
 
+import logging
 import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 # Session names look like: TCP_10.10.98.229_35900-1787921687-24464-DeviceSession.xml
 # The ten-digit group is seconds since the Unix epoch. This was established, not assumed:
@@ -66,3 +69,56 @@ class ProcessedLedger:
 
     def close(self) -> None:
         self._conn.close()
+
+
+@dataclass(frozen=True)
+class SessionFile:
+    """One session file on the share, with everything the ledger needs to key it."""
+    path: Path
+    name: str
+    size: int
+    mtime: int
+    epoch: int | None
+
+
+def pending_files(
+    directory: str | Path,
+    ledger: ProcessedLedger,
+    *,
+    since_epoch: int | None = None,
+    limit: int = 500,
+) -> list[SessionFile]:
+    """Unprocessed session files, oldest first.
+
+    Ordered by the epoch in the name so the buffer's oldest-first guarantee means something:
+    delivering a later observation past an earlier one would let the engine read a past state as the
+    present. Files whose name carries no epoch sort last, by name, rather than being dropped.
+
+    An unreadable directory returns an empty list and logs. A dropped mount is a condition to ride
+    out, not a reason to exit — the bridge that exits is the one nobody restarts.
+    """
+    root = Path(directory)
+    try:
+        entries = list(root.iterdir())
+    except OSError as exc:
+        _log.warning("session directory unreadable (%s): %s", exc.__class__.__name__, root)
+        return []
+
+    found: list[SessionFile] = []
+    for entry in entries:
+        try:
+            if not entry.is_file():
+                continue
+            stat = entry.stat()
+        except OSError:
+            continue        # vanished or unreadable between listing and stat; next pass will see it
+        epoch = session_epoch(entry.name)
+        if since_epoch is not None and epoch is not None and epoch < since_epoch:
+            continue
+        size, mtime = stat.st_size, int(stat.st_mtime)
+        if ledger.seen(entry.name, size, mtime):
+            continue
+        found.append(SessionFile(entry, entry.name, size, mtime, epoch))
+
+    found.sort(key=lambda f: (f.epoch is None, f.epoch or 0, f.name))
+    return found[:limit]

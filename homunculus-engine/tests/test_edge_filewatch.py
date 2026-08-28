@@ -5,7 +5,7 @@ a file feeder normally would. The ledger here is the only record that a session 
 """
 from __future__ import annotations
 
-from homunculus.edge.filewatch import ProcessedLedger, session_epoch
+from homunculus.edge.filewatch import ProcessedLedger, pending_files, session_epoch
 
 REAL_NAME = "TCP_10.10.98.229_35900-1787921687-24464-DeviceSession.xml"
 
@@ -44,3 +44,60 @@ def test_a_file_that_grew_after_we_read_it_is_offered_again(tmp_path):
     ledger.record(REAL_NAME, size=4096, mtime=1787921687)
 
     assert ledger.seen(REAL_NAME, size=8192, mtime=1787921700) is False
+
+
+def _write(directory, name, body="<S/>"):
+    path = directory / name
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def test_files_come_back_oldest_first(tmp_path):
+    _write(tmp_path, "TCP_10.0.0.1_35900-1787921687-2-DeviceSession.xml")
+    _write(tmp_path, "TCP_10.0.0.1_35900-1787921620-1-DeviceSession.xml")
+    # the ledger lives OUTSIDE the scanned directory — in production it sits next to the buffer, not on the share
+    ledger = ProcessedLedger(str(tmp_path) + "-ledger.db")
+
+    found = pending_files(tmp_path, ledger)
+
+    assert [f.epoch for f in found] == [1787921620, 1787921687]
+
+
+def test_a_recorded_file_is_skipped(tmp_path):
+    path = _write(tmp_path, "TCP_10.0.0.1_35900-1787921620-1-DeviceSession.xml")
+    ledger = ProcessedLedger(str(tmp_path) + "-ledger.db")
+    stat = path.stat()
+    ledger.record(path.name, stat.st_size, int(stat.st_mtime))
+
+    assert pending_files(tmp_path, ledger) == []
+
+
+def test_since_excludes_older_sessions(tmp_path):
+    _write(tmp_path, "TCP_10.0.0.1_35900-1787921620-1-DeviceSession.xml")
+    _write(tmp_path, "TCP_10.0.0.1_35900-1787921687-2-DeviceSession.xml")
+    ledger = ProcessedLedger(str(tmp_path) + "-ledger.db")
+
+    found = pending_files(tmp_path, ledger, since_epoch=1787921687)
+
+    assert [f.epoch for f in found] == [1787921687]
+
+
+def test_a_file_with_no_epoch_sorts_last_but_is_not_dropped(tmp_path):
+    """An unreadable name is not a reason to lose a reading."""
+    _write(tmp_path, "TCP_10.0.0.1_35900-1787921620-1-DeviceSession.xml")
+    _write(tmp_path, "odd-name.xml")
+    ledger = ProcessedLedger(str(tmp_path) + "-ledger.db")
+
+    found = pending_files(tmp_path, ledger)
+
+    assert [f.name for f in found] == [
+        "TCP_10.0.0.1_35900-1787921620-1-DeviceSession.xml",
+        "odd-name.xml",
+    ]
+
+
+def test_a_missing_directory_yields_nothing_rather_than_raising(tmp_path):
+    """A mount that has dropped must not kill the loop; it may come back on its own."""
+    ledger = ProcessedLedger(str(tmp_path) + "-ledger.db")
+
+    assert pending_files(tmp_path / "not-mounted", ledger) == []
