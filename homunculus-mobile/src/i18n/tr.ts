@@ -1,0 +1,81 @@
+// Every user-visible string in the app. A second locale is a sibling file, not a refactor.
+// These strings are also scanned by the no-orders charter test — see src/domain/noOrders.ts.
+export const tr = {
+  "app.name": "Homunculus",
+  "app.demoBanner": "GÖSTERİM VERİSİ — kayıtlı sentetik senaryo",
+
+  "tabs.patients": "Hastalar",
+  "tabs.alerts": "Uyarılar",
+  "tabs.settings": "Ayarlar",
+
+  "ward.title": "Yoğun Bakım Koğuşu",
+  "ward.subtitle": "Riske göre sıralı",
+  "ward.empty": "Koğuşta gösterilecek yatak yok.",
+  "ward.loading": "Koğuş yükleniyor…",
+
+  "bed.label": "YB Yatak {bed}",
+
+  "risk.none": "Sakin",
+  "risk.info": "Bilgi",
+  "risk.low": "Düşük",
+  "risk.moderate": "Orta",
+  "risk.high": "Yüksek",
+  "risk.critical": "Kritik",
+
+  "alert.unacknowledged": "Onaylanmadı",
+  "alert.acknowledged": "Onaylandı",
+  "alert.escalated": "ESKALE EDİLDİ",
+  "alert.acknowledge": "Onayla",
+  "alert.reasoning": "Klinik gerekçe",
+  "alert.actions": "Önerilen adımlar",
+  "alert.confidence": "Kanıt gücü",
+  "alert.sources": "Kaynaklar",
+  "alert.chronicContext": "Kronik bağlam",
+  "alert.downgraded": "Hastanın kendi bazaline göre indirgendi",
+
+  "stale.badge": "Bayat veri: {inputs}",
+
+  "vital.heartRate": "Kalp hızı",
+  "vital.map": "OAB",
+  "vital.lactate": "Laktat",
+  "vital.sofa": "SOFA",
+  "vital.noData": "veri yok",
+  "vital.trend": "Senaryo zamanı eğilimi",
+
+  "detail.vitals": "Vital bulgular",
+  "detail.alerts": "Aktif uyarılar",
+  "detail.noAlerts": "Aktif uyarı yok.",
+  "detail.back": "Geri",
+  "detail.missing": "Bu yatak koğuşta bulunamadı.",
+
+  "drawer.title": "Kılavuz kaynağı",
+  "drawer.authority": "Otorite",
+  "drawer.authority.high": "yüksek",
+  "drawer.authority.moderate": "orta",
+  "drawer.authority.low": "düşük",
+  "drawer.superseded": "Bu kaynak daha yeni bir baskıyla değiştirildi.",
+  "drawer.unknown": "Kaynak notu bulunamadı: {id}",
+  "drawer.note": "Kaynak başlığı Homunculus kasasından alınmıştır; kanıt gücü ifadesi uyarının kendi alanından gelir.",
+  "drawer.close": "Kapat",
+
+  "alerts.title": "Uyarı akışı",
+  "alerts.escalatedSection": "Eskale edilenler",
+  "alerts.newSection": "Yeni uyarılar",
+  "alerts.empty": "Henüz uyarı yok.",
+
+  "settings.title": "Ayarlar",
+  "settings.playback": "Oynatma",
+  "settings.play": "Oynat",
+  "settings.pause": "Duraklat",
+  "settings.restart": "Başa sar",
+  "settings.speed": "Hız",
+  "settings.role": "Rol",
+  "settings.role.nurse": "Hemşire",
+  "settings.role.doctor": "Hekim",
+  "settings.haptics": "Titreşimli geri bildirim",
+  "settings.threshold": "Eskalasyon eşiği",
+  "settings.thresholdNote": "Sunucudaki gerçek eşik 5 dakikadır. Buradaki kısa süre yalnızca gösterim hızlandırmasıdır.",
+  "settings.dataSource": "Veri kaynağı",
+  "settings.dataSourceValue": "Kayıtlı senaryo — icu-ward.json",
+  "settings.version": "Sürüm",
+} as const;
