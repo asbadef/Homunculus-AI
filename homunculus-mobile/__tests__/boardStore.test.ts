@@ -64,6 +64,37 @@ describe("boardReducer", () => {
     expect(state.acknowledged).toContain("bed-3|septic_shock");
   });
 
+  it("ignores a repeated acknowledgement instead of growing the list", () => {
+    const once = boardReducer(initialBoardState, {
+      type: "ack", patientId: "bed-3", kind: "septic_shock", role: "nurse", now: 400,
+    });
+    const twice = boardReducer(once, {
+      type: "ack", patientId: "bed-3", kind: "septic_shock", role: "doctor", now: 500,
+    });
+    expect(twice).toBe(once);
+    expect(twice.acknowledged).toEqual(["bed-3|septic_shock"]);
+  });
+
+  it("caps the notification feed at 50, newest surviving", () => {
+    let state = initialBoardState;
+    for (let i = 0; i < 55; i += 1) {
+      state = boardReducer(state, { type: "notification", note: { ...note, kind: `k${i}` } });
+    }
+    expect(state.notifications).toHaveLength(50);
+    expect(state.notifications[0].kind).toBe("k54");
+    expect(state.notifications.at(-1)!.kind).toBe("k5");
+  });
+
+  it("caps a vital series at 120, most recent surviving", () => {
+    let state = initialBoardState;
+    for (let i = 0; i < 125; i += 1) {
+      state = boardReducer(state, { type: "board", board: board("bed-3", i), now: i });
+    }
+    expect(state.series["bed-3"].sofa).toHaveLength(120);
+    expect(state.series["bed-3"].sofa[0]).toBe(5);
+    expect(state.series["bed-3"].sofa.at(-1)).toBe(124);
+  });
+
   it("clears everything on a loop, because the scenario starts over", () => {
     let state = boardReducer(initialBoardState, { type: "board", board: board("bed-3", 2), now: 100 });
     state = boardReducer(state, { type: "ack", patientId: "bed-3", kind: "x", role: "nurse", now: 200 });

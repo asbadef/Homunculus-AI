@@ -96,6 +96,8 @@ export interface PatientView {
   tone: Tone;
   escalated: boolean;
   unacknowledged: boolean;
+  /** Whole-ward sets, shared by reference across every view — plumbing for the detail screen,
+   *  which needs per-alert escalation/ack state. Do not "simplify" into per-patient copies. */
   escalatedKeys: ReadonlySet<string>;
   acknowledgedKeys: ReadonlySet<string>;
   series: VitalSeries;
