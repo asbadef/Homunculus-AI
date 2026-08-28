@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { createLiveStore } from "./liveStore.js";
 import { CONNECTION } from "./liveConnection.js";
 
-function fakeBase() {
-  const state = { patients: [{ patient_id: "SIMULATED", display_name: "Simüle Hasta" }] };
+function fakeBase(extra = {}) {
+  const state = { patients: [{ patient_id: "SIMULATED", display_name: "Simüle Hasta" }], ...extra };
   return { getState: () => state, subscribe: () => () => {}, logout: () => {} };
 }
 
@@ -127,6 +127,20 @@ describe("live store data layer", () => {
     expect(store.getState().connection).toBe(CONNECTION.CONNECTING);
   });
 
+  it("never shows the simulated ward's beds/alerts/devices before the first refresh resolves", () => {
+    // getState() spreads the overlay over the base's (simulated) state. Until the overlay seeds
+    // its own beds/alerts/devices, the base's fabricated ward shows through for a moment right
+    // after login — a clinician briefly sees a fake ward before the real board loads.
+    const base = fakeBase({
+      beds: ["SIMULATED-BED"], alerts: ["SIMULATED-ALERT"], devices: ["SIMULATED-DEVICE"],
+    });
+    const store = createLiveStore({ api: fakeApi(), base });
+
+    expect(store.getState().beds).toEqual([]);
+    expect(store.getState().alerts).toEqual([]);
+    expect(store.getState().devices).toEqual([]);
+  });
+
   it("synthesizes beds and alerts from the board on refresh, and clears the simulated devices", async () => {
     const api = fakeApi({
       boardPatients: vi.fn(async () => ({
@@ -146,6 +160,41 @@ describe("live store data layer", () => {
     expect(state.alerts).toHaveLength(1);
     expect(state.alerts[0].id).toBe("bed-3::sepsis");
     expect(state.devices).toEqual([]);
+  });
+
+  it("synthesizes alert firedAtSec using the simulation's own clockSec, not a raw Unix timestamp", async () => {
+    // AlertCard computes elapsed against the SIMULATION's local clock (clockSec), not wall time —
+    // the store has to hand alertsFromPatients that clock so a real alert's elapsed time and
+    // next-step countdown read correctly instead of as a huge negative number.
+    const api = fakeApi({
+      boardPatients: vi.fn(async () => ({
+        patients: [{ patient_id: "bed-3", risk: "high",
+          alerts: [{ kind: "sepsis", severity: "high", urgency: "immediate", summary: "NEWS2 9",
+                     acknowledged: false, escalated: false, first_seen_at: null }],
+          latest: { heart_rate: 120 } }],
+      })),
+    });
+    const store = createLiveStore({ api, base: fakeBase({ clockSec: 500 }) });
+
+    await store.refreshBoard();
+
+    expect(store.getState().alerts[0].firedAtSec).toBe(500);
+  });
+
+  it("marks synthesized alerts as device-sourced", async () => {
+    const api = fakeApi({
+      boardPatients: vi.fn(async () => ({
+        patients: [{ patient_id: "bed-3", risk: "high",
+          alerts: [{ kind: "sepsis", severity: "high", urgency: "immediate", summary: "NEWS2 9",
+                     acknowledged: false, escalated: false }],
+          latest: { heart_rate: 120 } }],
+      })),
+    });
+    const store = createLiveStore({ api, base: fakeBase() });
+
+    await store.refreshBoard();
+
+    expect(store.getState().alerts[0].source).toBe("device");
   });
 
   it("empties beds and alerts along with patients when the board is unavailable", async () => {
@@ -218,6 +267,22 @@ describe("live store — SSE stream", () => {
     expect(state.beds.map((b) => b.patientId).sort()).toEqual(["bed-3", "bed-9"]);
   });
 
+  it("a frame's synthesized alert also uses the simulation's clockSec for firedAtSec", async () => {
+    const api = fakeApi({
+      boardPatients: vi.fn(async () => ({ patients: [boardOf("bed-3")] })),
+    });
+    const { openStream, calls } = fakeOpenStream();
+    const store = createLiveStore({ api, base: fakeBase({ clockSec: 700 }), openStream });
+    await store.startLive();
+
+    calls[0].handlers.onmessage({ data: JSON.stringify(boardOf("bed-3", {
+      alerts: [{ kind: "sepsis", severity: "high", urgency: "immediate", summary: "NEWS2 9",
+                 acknowledged: false, escalated: false, first_seen_at: null }],
+    })) });
+
+    expect(store.getState().alerts[0].firedAtSec).toBe(700);
+  });
+
   it("a malformed frame does not crash and does not clear the board", async () => {
     const api = fakeApi({
       boardPatients: vi.fn(async () => ({ patients: [boardOf("bed-3")] })),
@@ -254,6 +319,19 @@ describe("live store — SSE stream", () => {
     calls[0].handlers.onerror();
 
     expect(store.getState().connection).toBe(CONNECTION.DEGRADED);
+  });
+
+  it("closes the dropped stream immediately on error, before scheduling the reconnect", async () => {
+    // A native EventSource auto-retries on its own, with its original — already spent — single-use
+    // ticket. Leaving it open means an abandoned connection keeps hitting /stream with a dead
+    // ticket (401 noise, a held connection) alongside the new one that actually works.
+    const { openStream, calls } = fakeOpenStream();
+    const store = createLiveStore({ api: fakeApi(), base: fakeBase(), openStream });
+    await store.startLive();
+
+    calls[0].handlers.onerror();
+
+    expect(calls[0].close).toHaveBeenCalled();
   });
 
   it("reconnects ~5s after an error by requesting a brand-new ticket", async () => {

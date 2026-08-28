@@ -42,7 +42,14 @@ function mergePatient(patients, patient) {
 
 export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
   // Session + board state owned by us; the rest of the state still comes from the simulation.
-  let overlay = { user: null, mfaPending: null, patients: [], connection: CONNECTION.CONNECTING };
+  // beds/alerts/devices are seeded empty (not omitted) from the start: getState() spreads overlay
+  // over the base's state, and until the first refreshBoard() resolves, an omitted key here would
+  // let the base's fabricated ward show through — a clinician briefly seeing a fake ward right
+  // after login.
+  let overlay = {
+    user: null, mfaPending: null, patients: [], beds: [], alerts: [], devices: [],
+    connection: CONNECTION.CONNECTING,
+  };
   const listeners = new Set();
   const emit = () => { for (const fn of listeners) fn(); };
 
@@ -101,7 +108,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
       setOverlay({
         patients,
         beds: bedsFromPatients(patients),
-        alerts: alertsFromPatients(patients),
+        alerts: alertsFromPatients(patients, base.getState().clockSec ?? 0),
         devices: [],
         connection: nextConnection(overlay.connection, { type: "loaded" }),
       });
@@ -151,11 +158,19 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
       }
       if (patient.patient_id == null) return; // no identity to key on — drop, don't corrupt the list
       const patients = mergePatient(overlay.patients, patient);
-      setOverlay({ patients, beds: bedsFromPatients(patients), alerts: alertsFromPatients(patients) });
+      setOverlay({
+        patients, beds: bedsFromPatients(patients),
+        alerts: alertsFromPatients(patients, base.getState().clockSec ?? 0),
+      });
       emit();
     }
 
     function handleError() {
+      // Close the dropped source before scheduling the reconnect: a native EventSource auto-retries
+      // on its own, with its original — already spent — single-use ticket. Left open, that
+      // abandoned connection keeps hitting /stream with a dead ticket (401 noise, a held
+      // connection) alongside the fresh one connect() is about to open below.
+      closeSource();
       setOverlay({ connection: nextConnection(overlay.connection, { type: "stream-lost" }) });
       emit();
       if (closed || reconnectTimer) return;

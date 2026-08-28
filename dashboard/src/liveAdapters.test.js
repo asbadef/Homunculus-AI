@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   patientFromBoard, patientsFromBoard, bedsFromPatients, alertsFromPatients,
 } from "./liveAdapters.js";
@@ -157,9 +157,53 @@ describe("alertsFromPatients", () => {
     expect(alert.ack.note).toBeNull();
   });
 
-  it("derives firedAtSec from first_seen_at, in seconds", () => {
+  // AlertCard (ClinicalDemo.jsx) computes `elapsed = state.clockSec - alert.firedAtSec`, where
+  // `clockSec` is the SIMULATION's own small local clock, not wall time. Handing it a raw Unix
+  // timestamp there produced a huge negative "elapsed" for every real alert. `firedAtSec` has to
+  // be translated into sim-clock coordinates at synthesis time instead.
+  describe("firedAtSec — translated onto the simulation's clock, not left as a Unix timestamp", () => {
+    it("places firedAtSec however many real seconds ago the alert fired, back from nowClockSec", () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date("2026-08-27T12:00:00Z"));
+        const firstSeenAt = new Date(Date.now() - 120_000).toISOString(); // fired 120s ago
+        const patient = patientFromBoard({
+          ...entry, alerts: [{ ...entry.alerts[0], first_seen_at: firstSeenAt }],
+        });
+
+        const alert = alertsFromPatients([patient], 500)[0];
+
+        expect(alert.firedAtSec).toBe(380); // 500 - 120
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("falls back to nowClockSec (elapsed 0) when first_seen_at is missing, rather than inventing a fired time", () => {
+      const patient = patientFromBoard({
+        ...entry, alerts: [{ ...entry.alerts[0], first_seen_at: null }],
+      });
+
+      const alert = alertsFromPatients([patient], 500)[0];
+
+      expect(alert.firedAtSec).toBe(500);
+    });
+
+    it("defaults nowClockSec to 0 when the caller passes none", () => {
+      const patient = patientFromBoard({
+        ...entry, alerts: [{ ...entry.alerts[0], first_seen_at: null }],
+      });
+
+      expect(alertsFromPatients([patient])[0].firedAtSec).toBe(0);
+    });
+  });
+
+  it("marks every synthesized alert as device-sourced, so the UI knows the backend owns its escalation timing", () => {
+    // The local escalation countdown in AlertCard is computed from the SIMULATION's own
+    // thresholds. Real alerts escalate server-side, on the backend's own timing, so the UI needs
+    // a way to tell a real alert apart from a simulated one and suppress that local countdown.
     const alert = alertsFromPatients([patientFromBoard(entry)])[0];
-    expect(alert.firedAtSec).toBe(Date.parse("2026-08-27T10:00:00Z") / 1000);
+    expect(alert.source).toBe("device");
   });
 
   it("sets bedLabel to the same honest device identifier the bed adapter uses", () => {

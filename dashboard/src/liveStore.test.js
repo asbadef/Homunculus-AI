@@ -132,11 +132,14 @@ describe("liveStore — real authentication over the simulation", () => {
   });
 
   it("delegates everything else to the simulation, which keeps working", async () => {
-    const base = fakeBase();
+    // beds/alerts/devices/patients are deliberately NOT simulation passthrough (the overlay seeds
+    // and owns them — see the "never shows the simulated ward" test in liveStore.live.test.js), so
+    // this checks passthrough via a field the overlay never touches.
+    const base = fakeBase({ structure: { units: ["unit-1"] } });
     const store = createLiveStore({ api: fakeApi(), base });
 
     expect(store.admitPatient({ name: "x" })).toBe("admitted");
     expect(base.admitPatient).toHaveBeenCalled();
-    expect(store.getState().beds).toEqual(["bed-1"]);   // simulation state still visible
+    expect(store.getState().structure).toEqual({ units: ["unit-1"] }); // simulation state still visible
   });
 });

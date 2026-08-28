@@ -1965,7 +1965,10 @@ function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate, onMute }) 
       {alert.status === "FIRED" && (
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
           <span className={`inline-flex items-center gap-1 tabular-nums ${ui.text}`}><Clock size={13} /> {S.elapsed}: {fmtClock(elapsed)}</span>
-          <span className={T.faint}>{toNext != null ? `${S.nextStep}: ${fmtClock(toNext)}` : S.atTier3}</span>
+          {/* The backend owns real escalation timing for device-sourced alerts; this local countdown reflects the simulation's own thresholds and would misrepresent the ward's. */}
+          {alert.source !== "device" && (
+            <span className={T.faint}>{toNext != null ? `${S.nextStep}: ${fmtClock(toNext)}` : S.atTier3}</span>
+          )}
         </div>
       )}
       {alert.status === "SNOOZED" && alert.snooze && (
