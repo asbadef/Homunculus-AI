@@ -17,7 +17,7 @@ from collections.abc import Awaitable, Callable
 
 from homunculus.api.app import create_app
 from homunculus.api.audit import SqliteAuditLog
-from homunculus.api.identity import hospital_for_slugs
+from homunculus.api.identity import hospital_for_slugs, unmatched_hospital_keys
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +105,64 @@ def make_jwt_hospital_resolver(
     return resolve
 
 
+def warn_about_unmatched_tenants(configured, known_slugs) -> None:
+    """Report configured hospital keys that no tenant slug matches.
+
+    A warning rather than a refusal to start: on a ward, a service that will not boot is worse
+    than one running with a fault that can be read in the log and fixed.
+
+    This is the check for the failure with no symptoms: if TENANTS names a hospital key the
+    database has no tenant for, the bridge will still write observations under that key, the
+    engine will still evaluate and alert on them — and no clinician's JWT will ever resolve to
+    it, so every screen for that hospital stays empty, forever, with nothing else complaining.
+    """
+    unmatched = unmatched_hospital_keys(configured, known_slugs)
+    if not unmatched:
+        return
+    known = sorted(set(known_slugs))
+    logger.warning(
+        "TENANTS names hospital key(s) %s that match no tenant slug in the database "
+        "(known slugs: %s). Observations sent under %s will be stored and evaluated, but no "
+        "clinician's JWT can ever resolve to %s, so that hospital's board will stay empty with "
+        "no other sign of failure. Fix: change TENANTS to use the tenant's actual slug, or "
+        "create a tenant row with that slug.",
+        ", ".join(unmatched), ", ".join(known) if known else "(none)",
+        ", ".join(unmatched), ", ".join(unmatched),
+    )
+
+
+async def _read_all_tenant_slugs() -> list[str]:
+    """All tenant slugs known to the database — used only for the startup TENANTS-vs-DB check.
+
+    Distinct from `_read_tenant_slugs`, which is scoped to one user's active memberships; this
+    reads every tenant so a configured hospital key can be checked against the full set.
+    """
+    from sqlalchemy import select
+
+    from homunculus.db import AsyncSessionLocal
+    from homunculus.tenant.models import Tenant
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Tenant.slug))
+        return [row[0] for row in result.all()]
+
+
+def make_startup_tenant_check(configured_hospitals: list[str]) -> Callable[[], Awaitable[None]]:
+    """Build the `on_startup_check` hook: compare the already-parsed TENANTS hospital keys
+    against the database's tenant slugs and warn about any that don't match.
+
+    Takes the parsed hospital list rather than re-reading TENANTS itself, so there is exactly
+    one place (`_parse_tenants(os.getenv("TENANTS"))`, below) that turns the env var into
+    hospital keys — nothing here can drift from what `create_app` was actually given.
+    """
+
+    async def check() -> None:
+        known_slugs = await _read_all_tenant_slugs()
+        warn_about_unmatched_tenants(configured_hospitals, known_slugs)
+
+    return check
+
+
 async def _read_tenant_slugs(user_id: str) -> list[str]:
     """The real membership query: Tenant.slug joined through TenantMembership, filtered to this
     user's *active* memberships — a revoked membership must not still grant board access.
@@ -130,8 +188,11 @@ async def _read_tenant_slugs(user_id: str) -> list[str]:
         return [row[0] for row in result.all()]
 
 
+_tenants = _parse_tenants(os.getenv("TENANTS"))
+
 app = create_app(
-    _parse_tenants(os.getenv("TENANTS")),
+    _tenants,
     audit=_audit(),
     resolve_jwt_hospital=make_jwt_hospital_resolver(_read_tenant_slugs),
+    on_startup_check=make_startup_tenant_check(list(_tenants.values())),
 )

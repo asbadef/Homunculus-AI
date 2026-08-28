@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -64,12 +65,17 @@ def create_app(
     run_escalation_loop: bool = True,
     audit: AuditLog | None = None,
     resolve_jwt_hospital: Callable[[str], Awaitable[str | None]] | None = None,
+    on_startup_check: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
     run_escalation_loop=False disables the background task so tests are deterministic.
     `resolve_jwt_hospital`, if given, resolves a clinician's JWT to a hospital id (decode ->
     load user -> membership -> tenant slug), letting the board routes accept a JWT as well as
-    the tenant token — injected so it can be tested without Postgres."""
+    the tenant token — injected so it can be tested without Postgres.
+    `on_startup_check`, if given, runs once during lifespan startup, before the app begins
+    serving — for diagnostics (e.g. TENANTS vs. the database's tenant slugs) that must never
+    block boot: a failure is logged and swallowed, because a service that will not start is
+    worse than one running with a fault an operator can read in the log."""
     engines: dict[str, Engine] = {}
     stores: dict[str, AckStore] = {}
     broadcaster = Broadcaster()
@@ -130,6 +136,11 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        if on_startup_check is not None:
+            try:
+                await on_startup_check()
+            except Exception:      # a diagnostic must never stop the service from starting
+                logging.getLogger(__name__).exception("tenant configuration check failed to run")
         task = asyncio.create_task(_escalation_loop()) if run_escalation_loop else None
         try:
             yield

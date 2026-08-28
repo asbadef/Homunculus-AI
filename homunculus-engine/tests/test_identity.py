@@ -37,3 +37,47 @@ def test_configured_keys_matching_no_tenant_are_reported():
 
 def test_unmatched_keys_are_reported_in_a_stable_order():
     assert unmatched_hospital_keys(["b", "a"], []) == ["a", "b"]
+
+
+def test_the_warning_names_the_key_and_says_what_breaks(caplog):
+    """The operator has to be able to act on this line without reading the source."""
+    import logging
+
+    from homunculus.api.prodserver import warn_about_unmatched_tenants
+
+    with caplog.at_level(logging.WARNING):
+        warn_about_unmatched_tenants(["HOSP1"], ["demo-hastanesi"])
+
+    message = caplog.text
+    assert "HOSP1" in message
+    assert "demo-hastanesi" in message
+
+
+def test_no_warning_when_every_key_matches(caplog):
+    import logging
+
+    from homunculus.api.prodserver import warn_about_unmatched_tenants
+
+    with caplog.at_level(logging.WARNING):
+        warn_about_unmatched_tenants(["demo-hastanesi"], ["demo-hastanesi"])
+
+    assert caplog.text == ""
+
+
+async def test_a_failing_startup_check_does_not_stop_the_service(caplog):
+    """A diagnostic that can take the ward's monitoring down is worse than the fault it reports."""
+    import logging
+
+    from fastapi.testclient import TestClient
+
+    from homunculus.api.app import create_app
+
+    async def exploding_check():
+        raise RuntimeError("database unreachable")
+
+    app = create_app({"t": "demo-hastanesi"}, run_escalation_loop=False,
+                     on_startup_check=exploding_check)
+
+    with caplog.at_level(logging.ERROR):
+        with TestClient(app) as client:
+            assert client.get("/health").status_code == 200
