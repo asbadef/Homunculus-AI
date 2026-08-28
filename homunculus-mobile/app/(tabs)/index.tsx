@@ -20,6 +20,8 @@ export default function PatientsScreen() {
       </View>
       <WardList
         ward={ward}
+        // M1: the recording never empties mid-run, so "no beds yet" and "loading" coincide. A live
+        // M2 feed can legitimately empty the ward — split this into a real has-loaded flag then.
         loading={ward.length === 0}
         onSelect={(patientId) => router.push(`/patient/${patientId}`)}
       />

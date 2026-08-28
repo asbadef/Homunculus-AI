@@ -1,5 +1,5 @@
 /// <reference types="jest" />
-import { render, screen } from "@testing-library/react-native";
+import { fireEvent, render, screen } from "@testing-library/react-native";
 
 import { WardList } from "../src/ui/WardList";
 import type { PatientView } from "../src/store/boardStore";
@@ -38,5 +38,14 @@ describe("WardList", () => {
     );
     expect(screen.getByLabelText("patient-card-bed-3")).toBeTruthy();
     expect(screen.getByLabelText("patient-card-bed-5")).toBeTruthy();
+  });
+});
+
+describe("WardList tap-through", () => {
+  it("reports the tapped bed to onSelect", async () => {
+    const onSelect = jest.fn();
+    await render(<WardList ward={[view("bed-3", "critical")]} loading={false} onSelect={onSelect} />);
+    fireEvent.press(screen.getByLabelText("patient-card-bed-3"));
+    expect(onSelect).toHaveBeenCalledWith("bed-3");
   });
 });
