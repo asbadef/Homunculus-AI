@@ -48,6 +48,9 @@ def patient_board(engine: Engine, patient_id: str, store: AckStore) -> dict:
         "latest": {
             "heart_rate": _latest(state, SignalCode.HEART_RATE),
             "map": _latest(state, SignalCode.MAP),
+            "spo2": _latest(state, SignalCode.SPO2),
+            "temperature": _latest(state, SignalCode.TEMPERATURE),
+            "resp_rate": _latest(state, SignalCode.RESP_RATE),
             "lactate": _latest(state, SignalCode.LACTATE),
             "sofa": total_sofa(state),
         },
