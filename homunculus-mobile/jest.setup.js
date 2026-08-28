@@ -12,6 +12,27 @@ jest.mock("expo-blur", () => {
   return { BlurView: View };
 });
 
+// expo-secure-store wraps the platform keychain/keystore, which doesn't exist under Jest.
+// In-memory Map stands in for it — good enough to exercise get/set/delete semantics without
+// a native module. __reset lets tests start each case from an empty store.
+jest.mock("expo-secure-store", () => {
+  let store = new Map();
+  return {
+    getItemAsync: jest.fn((key) => Promise.resolve(store.has(key) ? store.get(key) : null)),
+    setItemAsync: jest.fn((key, value) => {
+      store.set(key, value);
+      return Promise.resolve();
+    }),
+    deleteItemAsync: jest.fn((key) => {
+      store.delete(key);
+      return Promise.resolve();
+    }),
+    __reset: () => {
+      store = new Map();
+    },
+  };
+});
+
 // react-native-worklets (Reanimated 4's native worklets runtime, a separate package as of
 // Reanimated 4) eagerly initializes a native TurboModule the moment it is imported, and there is
 // no such native module under Jest — it throws immediately. react-native-reanimated's own
