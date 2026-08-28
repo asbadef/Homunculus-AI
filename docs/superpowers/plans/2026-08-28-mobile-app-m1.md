@@ -18,8 +18,7 @@
 
 | File | Responsibility |
 | --- | --- |
-| `homunculus-mobile/src/theme/palette.js` | The HSL palette, CommonJS so `tailwind.config.js` can require it |
-| `homunculus-mobile/src/theme/palette.d.ts` | Types for the palette |
+| `homunculus-mobile/src/theme/palette.js` | The HSL palette, CommonJS so `tailwind.config.js` can require it. No hand-written `.d.ts`: `allowJs` infers the shape, and a second declaration could only drift |
 | `homunculus-mobile/src/theme/tokens.ts` | Typed re-export + `Tone` → colour |
 | `homunculus-mobile/src/theme/motion.ts` | The one spring config; no other curve is allowed |
 | `homunculus-mobile/src/i18n/tr.ts` | Every user-visible string |
@@ -121,7 +120,7 @@ git commit -m "feat(mobile): scaffold the Expo companion app"
 ### Task 2: Palette, motion and NativeWind
 
 **Files:**
-- Create: `homunculus-mobile/src/theme/palette.js`, `palette.d.ts`, `tokens.ts`, `motion.ts`
+- Create: `homunculus-mobile/src/theme/palette.js`, `tokens.ts`, `motion.ts`
 - Create: `homunculus-mobile/tailwind.config.js`, `global.css`, `metro.config.js`, `nativewind-env.d.ts`
 - Modify: `homunculus-mobile/babel.config.js`, `homunculus-mobile/tsconfig.json`, `homunculus-mobile/app/_layout.tsx`
 
@@ -158,23 +157,10 @@ module.exports = {
 };
 ```
 
-Create `homunculus-mobile/src/theme/palette.d.ts`:
-
-```ts
-declare const palette: {
-  background: string;
-  card: string;
-  foreground: string;
-  clinical: {
-    border: string;
-    safe: string;
-    warning: string;
-    critical: string;
-    stale: string;
-  };
-};
-export default palette;
-```
+Do **not** write a `palette.d.ts`. With `allowJs: true` TypeScript infers the shape from the CommonJS
+module itself, and inference is not weaker — a reference to `palette.clinical.nosuchcolour` still
+fails with `TS2339`. A hand-written declaration would add no safety and would give a colour a second
+place to be declared, which is exactly what the comment above warns against.
 
 - [ ] **Step 3: Write the typed tokens and tone mapping**
 
@@ -286,7 +272,13 @@ Create `homunculus-mobile/nativewind-env.d.ts`:
 
 ```ts
 /// <reference types="nativewind/types" />
+
+declare module "*.css";
 ```
+
+The `declare module "*.css"` line is not optional. Without it, `import "../global.css"` fails
+typechecking with `TS2882`, and because neither `expo export` nor jest typechecks, that error would
+sit invisible and mask every genuine type error in the tasks that follow.
 
 In `homunculus-mobile/tsconfig.json`, ensure `compilerOptions` contains `"strict": true` and `"allowJs": true` (the palette is a `.js` module).
 
@@ -331,10 +323,18 @@ export default function Placeholder() {
 }
 ```
 
-- [ ] **Step 8: Verify the bundle still builds**
+- [ ] **Step 8: Verify the bundle builds and the types are clean**
 
-Run: `npx expo export --platform web`
-Expected: exit code 0.
+Add a `"typecheck": "tsc --noEmit"` script to `homunculus-mobile/package.json`, then run both:
+
+```bash
+npx tsc --noEmit
+npx expo export --platform web
+```
+
+Expected: zero TypeScript errors, and exit code 0 from the export. Run `npm run typecheck` at the end
+of every later task too — Metro strips types without checking them, so the export alone proves
+nothing about type safety.
 
 - [ ] **Step 9: Commit**
 
@@ -4608,6 +4608,7 @@ git commit -m "feat(mobile): tab shell, provider wiring and the M1 runbook"
 ## Definition of done
 
 - `npm test` passes in `homunculus-mobile/`, including the charter tests over the real recording.
+- `npm run typecheck` reports zero errors.
 - `homunculus-engine/.venv/Scripts/python.exe -m pytest homunculus-engine -q` still passes, with the four new `record_ward` cases.
 - `npx expo export --platform web` exits 0.
 - The web preview shows the three beds, the detail screen, the guideline drawer and working replay controls.
