@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -29,6 +30,7 @@ from homunculus.api.broadcast import Broadcaster
 from homunculus.api.escalation import escalate
 from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import rehydrate
+from homunculus.api.tickets import TicketStore
 from homunculus.gateway.fhir import GatewayError, parse_fhir_observation
 from homunculus.pipeline import Engine
 
@@ -81,6 +83,7 @@ def create_app(
     broadcaster = Broadcaster()
     notifier = Notifier()
     hub = NotificationHub()
+    tickets = TicketStore()
     audit = audit or InMemoryAuditLog()
 
     rehydrated: set[str] = set()
@@ -187,12 +190,21 @@ def create_app(
     app.state.notifier = notifier
     app.state.notification_hub = hub
     app.state.audit = audit
+    app.state.tickets = tickets
 
     def _tenant_from_token(token: str | None) -> str:
         hospital = tenants.get(token or "")
         if hospital is None:
             raise HTTPException(status_code=401, detail="unknown tenant token")
         return hospital
+
+    def _stream_hospital(token: str | None, ticket: str | None) -> str:
+        if ticket:
+            hospital = tickets.consume(ticket, now=time.monotonic())
+            if hospital is None:
+                raise HTTPException(status_code=401, detail="invalid or expired ticket")
+            return hospital
+        return _tenant_from_token(token)
 
     async def _hospital(authorization: str | None) -> str:
         """Resolve the caller's hospital from either credential.
@@ -290,9 +302,15 @@ def create_app(
         active = _engine(hospital).active_alerts(patient_id)
         return {"patient_id": patient_id, "alerts": [asdict(a) for a in active]}
 
+    @app.post("/stream-ticket")
+    async def stream_ticket(authorization: str | None = Header(default=None)):
+        """Exchange a credential for a short-lived, single-use SSE ticket."""
+        hospital = await _hospital(authorization)
+        return {"ticket": tickets.issue(hospital, now=time.monotonic()), "expires_in": 60}
+
     @app.get("/stream")
-    async def stream(token: str | None = None):
-        hospital = _tenant_from_token(token)
+    async def stream(token: str | None = None, ticket: str | None = None):
+        hospital = _stream_hospital(token, ticket)
         queue = broadcaster.subscribe(hospital)
 
         async def events():
@@ -305,8 +323,8 @@ def create_app(
         return StreamingResponse(events(), media_type="text/event-stream")
 
     @app.get("/notifications")
-    async def notifications(token: str | None = None, role: str = "nurse"):
-        hospital = _tenant_from_token(token)
+    async def notifications(token: str | None = None, ticket: str | None = None, role: str = "nurse"):
+        hospital = _stream_hospital(token, ticket)
         queue = hub.subscribe(hospital, role)
 
         async def events():
