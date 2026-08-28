@@ -3885,7 +3885,31 @@ export function ClinicalDemo({ store: injectedStore = null }) {
     }
   });
 
-  // simulated clock: advance escalation for all open alarms.
+  // The ONE live-wiring line in this file: once a clinician is signed in, ask the store to start
+  // fetching/streaming real patients. Everything about HOW that happens — the /patients fetch, the
+  // SSE handlers, synthesizing beds/alerts from live patients — lives in liveStore.js; this effect
+  // only decides WHEN to call it. The ref (not just the state.user dependency) stops a
+  // login→logout→login cycle from opening a second stream on top of one still starting.
+  const liveStartedRef = useRef(false);
+  useEffect(() => {
+    if (!state.user || typeof store.startLive !== "function" || liveStartedRef.current) return;
+    liveStartedRef.current = true;
+    let cancelled = false;
+    let close = null;
+    store.startLive().then((fn) => {
+      close = typeof fn === "function" ? fn : null;
+      if (cancelled) close?.();
+    });
+    return () => {
+      cancelled = true;
+      liveStartedRef.current = false;
+      close?.();
+    };
+  }, [state.user, store]);
+
+  // simulated clock: advance escalation for all open alarms. `store.reconcile` is always present —
+  // even the live store inherits it by spreading the simulation it wraps (see liveStore.js) — so no
+  // guard is needed here; the overlay masks its effect on patients/beds/alerts/devices regardless.
   useEffect(() => {
     const id = setInterval(() => {
       const st = store.getState();
