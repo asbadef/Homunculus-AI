@@ -16,8 +16,9 @@ export type ReplayTransport = Transport & ReplayControls;
 export interface ReplayOptions {
   recording: Recording;
   speed?: number;
-  /** Injected so tests drive the replay with a fake clock instead of waiting on real time. */
+  /** Unused by the replay today; kept so this options shape matches the M2 live transport's. */
   now?: () => number;
+  /** Injected so tests drive the replay with a fake clock instead of waiting on real time. */
   setTimer?: (fn: () => void, ms: number) => number;
   clearTimer?: (id: number) => void;
 }

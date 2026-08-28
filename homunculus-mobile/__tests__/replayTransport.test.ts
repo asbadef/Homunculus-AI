@@ -140,6 +140,18 @@ describe("createReplayTransport", () => {
     expect(h.boards.length).toBe(count);
   });
 
+  it("does not resume playback when speed changes or restart happens while paused", () => {
+    const h = harness();
+    h.transport.start();
+    h.transport.pause();
+    h.transport.setSpeed(4);
+    h.transport.restart();
+    const count = h.boards.length;
+    h.clock.advance(10_000);
+    expect(h.boards.length).toBe(count);
+    expect(h.transport.isPlaying()).toBe(false);
+  });
+
   it("resolves ack without a server", async () => {
     const h = harness();
     await expect(h.transport.ack("bed-3", "septic_shock", "nurse")).resolves.toBeUndefined();
