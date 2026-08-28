@@ -127,6 +127,24 @@ describe("selectWard", () => {
     });
     expect(selectWard(state, { now: 30_000, thresholdMs: 20_000 })[0].escalated).toBe(false);
   });
+
+  it("escalates on the server's own flag, even with no client-side signal at all", () => {
+    const state = boardReducer(initialBoardState, {
+      type: "board", board: board("bed-3", 6, [alert("septic_shock", { escalated: true })]), now: 0,
+    });
+    // now === firstSeen and thresholdMs is well beyond either, so the client-side rule cannot be
+    // what fires here — only the merge with the server's own `alert.escalated` can.
+    const view = selectWard(state, { now: 0, thresholdMs: 20_000 })[0];
+    expect(view.escalated).toBe(true);
+    expect(view.tone).toBe("critical");
+  });
+
+  it("stays calm when the server's flag is false and no client key fires either", () => {
+    const state = boardReducer(initialBoardState, {
+      type: "board", board: board("bed-3", 6, [alert("septic_shock", { escalated: false })]), now: 0,
+    });
+    expect(selectWard(state, { now: 0, thresholdMs: 20_000 })[0].escalated).toBe(false);
+  });
 });
 
 describe("selectPatient", () => {

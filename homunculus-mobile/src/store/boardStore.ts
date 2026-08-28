@@ -114,7 +114,14 @@ function viewFor(
   acked: ReadonlySet<string>,
   escalated: ReadonlySet<string>,
 ): PatientView {
-  const isEscalated = board.alerts.some((a) => escalated.has(alertKey(board.patient_id, a.kind)));
+  // Recorded frames always carry `alert.escalated: false`, so the client-side rule (`escalated`,
+  // keyed off the app's own first-seen clock) was the only signal in M1. Live frames set the
+  // server's own escalation flag from its five-minute loop — that flag wins outright, merged with
+  // (never overriding) the client rule, so replay behaviour is unchanged and M1's tests stay the
+  // guard for it.
+  const isEscalated = board.alerts.some(
+    (a) => a.escalated || escalated.has(alertKey(board.patient_id, a.kind)),
+  );
   return {
     board,
     top: topAlert(board),

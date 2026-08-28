@@ -85,7 +85,9 @@ export function PatientDetail({
                     alert.acknowledged ||
                     view.acknowledgedKeys.has(alertKey(board.patient_id, alert.kind)),
                 }}
-                escalated={view.escalatedKeys.has(alertKey(board.patient_id, alert.kind))}
+                escalated={
+                  alert.escalated || view.escalatedKeys.has(alertKey(board.patient_id, alert.kind))
+                }
                 onAcknowledge={() => onAcknowledge(alert.kind)}
                 onCite={(id) => setCitation({ id, confidence: alert.confidence })}
               />
