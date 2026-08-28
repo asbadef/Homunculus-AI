@@ -64,13 +64,16 @@ than silently, and an uplink that leaves a failed payload and everything after i
 design does not touch any of it. The MLLP listener is replaced by a directory reader; that is the
 whole change.
 
-### 2. Four units, each with one job
+### 2. Five units, each with one job
 
-- **`edge/ncefiles.py`** — a pure parser: session text in, `list[Observation]` out. It knows nothing
-  about the filesystem or the network, so it can be tested against a hand-written synthetic fixture
-  with no patient data in it.
+- **`edge/ncefiles.py`** — a pure parser: session text in, observations out. It knows nothing about
+  the filesystem or the network, so it can be tested against a hand-written synthetic fixture with
+  no patient data in it.
 - **`edge/filewatch.py`** — scans the directory, orders the work, and keeps the processed-file
   ledger. It does no parsing and makes no network calls.
+- **`edge/ncebridge.py`** — ties the parser to the send callback and keeps the counters that make a
+  wrong field table visible. Separate from the parser for the same reason `bridge.py` is separate
+  from `hl7.py`: the format has no business knowing what a pilot's operator needs to see.
 - **`edge/uplink.py`** — `post_json` and `flush_loop`, moved out of `scripts/run_bridge.py` so both
   bridges share one uplink instead of growing a second copy. A targeted extraction, justified by
   this work and no wider.
@@ -144,8 +147,8 @@ nothing in NCE is reconfigured; the only change there is exposing one folder rea
 
 ### 9. Backfill: new files only, by default
 
-By default the bridge processes only files that appear after it starts. An explicit `--since
-<ISO-date>` flag exists for deliberate backfill.
+By default the bridge processes only files that appear after it starts. Two explicit flags exist for
+deliberate backfill: `--since <ISO-date>` for a window, and `--all` for everything on the share.
 
 Replaying years of sessions would fill the board with discharged patients who are not on the ward,
 and would multiply patient data at rest before the parser has been validated against real files.
