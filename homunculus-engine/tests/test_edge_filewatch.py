@@ -19,7 +19,7 @@ def test_a_name_carrying_no_epoch_yields_none():
     assert session_epoch("NCEConfig.xml") is None
 
 
-def test_a_recorded_file_is_not_offered_again(tmp_path):
+def test_record_then_seen_round_trips(tmp_path):
     ledger = ProcessedLedger(tmp_path / "ledger.db")
 
     ledger.record(REAL_NAME, size=4096, mtime=1787921687)
@@ -101,3 +101,43 @@ def test_a_missing_directory_yields_nothing_rather_than_raising(tmp_path):
     ledger = ProcessedLedger(str(tmp_path) + "-ledger.db")
 
     assert pending_files(tmp_path / "not-mounted", ledger) == []
+
+
+def test_limit_keeps_the_oldest_not_an_arbitrary_slice(tmp_path):
+    _write(tmp_path, "TCP_10.0.0.1_35900-1787921620-1-DeviceSession.xml")
+    _write(tmp_path, "TCP_10.0.0.1_35900-1787921687-2-DeviceSession.xml")
+    _write(tmp_path, "TCP_10.0.0.1_35900-1787921700-3-DeviceSession.xml")
+    ledger = ProcessedLedger(str(tmp_path) + "-ledger.db")
+
+    found = pending_files(tmp_path, ledger, limit=2)
+
+    assert [f.epoch for f in found] == [1787921620, 1787921687]
+
+
+def test_the_ledger_file_itself_is_never_offered(tmp_path):
+    ledger = ProcessedLedger(tmp_path / "ledger.db")
+    _write(tmp_path, "TCP_10.0.0.1_35900-1787921620-1-DeviceSession.xml")
+
+    found = pending_files(tmp_path, ledger)
+
+    assert [f.name for f in found] == ["TCP_10.0.0.1_35900-1787921620-1-DeviceSession.xml"]
+
+
+def test_count_reflects_recorded_files(tmp_path):
+    ledger = ProcessedLedger(str(tmp_path) + "-ledger.db")
+
+    ledger.record("a.xml", size=1, mtime=1787921620)
+    ledger.record("b.xml", size=2, mtime=1787921687)
+    assert ledger.count() == 2
+
+    ledger.record("a.xml", size=1, mtime=1787921620)
+    assert ledger.count() == 2
+
+
+def test_a_dropped_mount_warns(tmp_path, caplog):
+    ledger = ProcessedLedger(str(tmp_path) + "-ledger.db")
+
+    with caplog.at_level("WARNING"):
+        pending_files(tmp_path / "not-mounted", ledger)
+
+    assert any("unreadable" in record.message for record in caplog.records)

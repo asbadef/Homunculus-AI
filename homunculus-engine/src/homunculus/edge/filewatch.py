@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,6 +42,9 @@ class ProcessedLedger:
     """
 
     def __init__(self, path: str | Path) -> None:
+        self.path = Path(path).resolve()
+        # check_same_thread=False: the scan runs via asyncio.to_thread, so calls may arrive from
+        # worker threads (sqlite3 is serialized-mode in CPython).
         self._conn = sqlite3.connect(str(path), check_same_thread=False)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS processed ("
@@ -94,6 +98,10 @@ def pending_files(
     delivering a later observation past an earlier one would let the engine read a past state as the
     present. Files whose name carries no epoch sort last, by name, rather than being dropped.
 
+    `since_epoch` deliberately does not filter out epoch-less names: dropping an unrecognised file
+    because of a date filter would lose a reading outright, so it is offered like any other file and,
+    if it turns out to be unusable, refused downstream where that is counted.
+
     An unreadable directory returns an empty list and logs. A dropped mount is a condition to ride
     out, not a reason to exit — the bridge that exits is the one nobody restarts.
     """
@@ -104,21 +112,38 @@ def pending_files(
         _log.warning("session directory unreadable (%s): %s", exc.__class__.__name__, root)
         return []
 
+    # Name-based, not resolve()-based: a resolve() is another network round-trip per entry, and NCE
+    # session names always look like TCP_..., never like a ledger file, so a name collision here
+    # would not be a realistic session file — it would be the ledger itself (or a sidecar).
+    ledger_names = {
+        ledger.path.name,
+        ledger.path.name + "-journal",
+        ledger.path.name + "-wal",
+        ledger.path.name + "-shm",
+    }
+
     found: list[SessionFile] = []
+    unreadable = 0
     for entry in entries:
+        if entry.name in ledger_names:
+            continue        # the ledger must never offer itself (or its sidecars) for forwarding
         try:
-            if not entry.is_file():
-                continue
-            stat = entry.stat()
+            st = entry.stat()
         except OSError:
+            unreadable += 1
             continue        # vanished or unreadable between listing and stat; next pass will see it
+        if not stat.S_ISREG(st.st_mode):
+            continue
         epoch = session_epoch(entry.name)
         if since_epoch is not None and epoch is not None and epoch < since_epoch:
             continue
-        size, mtime = stat.st_size, int(stat.st_mtime)
+        size, mtime = st.st_size, int(st.st_mtime)
         if ledger.seen(entry.name, size, mtime):
             continue
         found.append(SessionFile(entry, entry.name, size, mtime, epoch))
+
+    if unreadable:
+        _log.warning("skipped %s unreadable entr(y/ies) in %s", unreadable, root)
 
     found.sort(key=lambda f: (f.epoch is None, f.epoch or 0, f.name))
     return found[:limit]
