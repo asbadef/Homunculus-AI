@@ -11,42 +11,54 @@ import { createLiveStore } from "./liveStore.js";
 import { backendApi } from "./backendApi.js";
 
 const params = new URLSearchParams(window.location.search);
-// ?demo=1 has no flag of its own any more: the clinical demo IS the default, so the parameter
-// still works and simply falls through. Existing links keep resolving to the same screen.
-// Eski pasif replay demosu artık ?mode=replay (veya ?scenario=...) ile erişilebilir.
-const isReplay = params.get("mode") === "replay" || params.has("scenario");
-// ?live=1 → giriş gerçek backend'e (JWT/MFA) yapılır; backend'in henüz karşılamadığı ekranlar
-// simülasyonla çalışmaya devam eder.
-const isLive = params.get("live") === "1";
-// ?board=1 → the legacy bearer-token board. No longer the default: it authenticates with a tenant
-// token, so on any real deployment every fetch 401s and the screen sits at "reconnecting" — which
-// looks exactly like a quiet ward. Pass ?board=1&token=<tenant-token> to use it deliberately.
-const isBoard = params.get("board") === "1";
 
-function pickRoot() {
-  if (isLive) {
+/**
+ * Which mode a URL selects. Exported so the routing is testable without a DOM.
+ *
+ * The bare URL — no query string at all — is the live system: the address a clinician
+ * naturally types must be the real one, not a simulation. `?demo=1` keeps the simulation
+ * reachable for anyone who wants it deliberately. `?live=1` remains honoured for old links
+ * and, being an explicit ask for the real system, wins over a simultaneous `?demo=1`: showing
+ * simulated data by accident is the worse failure of the two.
+ */
+export function chooseMode(params) {
+  if (params.get("live") === "1") return "live";
+  if (params.get("demo") === "1") return "demo";
+  if (params.get("mode") === "replay" || params.has("scenario")) return "replay";
+  if (params.get("board") === "1") return "board";
+  return "live";
+}
+
+function pickRoot(mode) {
+  if (mode === "live") {
     const store = createLiveStore({
       api: backendApi,
       base: createDemoStore(buildRealisticState()),
     });
     return <ClinicalDemo store={store} />;
   }
-  if (isReplay) {
+  if (mode === "demo") return <ClinicalDemo />;
+  if (mode === "replay") {
     return <DemoApp scenario={params.get("scenario") || "septic_shock"} />;
   }
-  if (isBoard) return <Board token={params.get("token") || "dev-token"} />;
-  // Default: the clinical design running on simulated data, which is what the banner above says
-  // this is. Previously the bare URL fell through to the legacy Board, so the address a clinician
-  // would naturally type produced a permanently failing screen that the banner then mislabelled as
-  // demonstration data. Both halves of that were wrong.
-  return <ClinicalDemo />;
+  // ?board=1 → the legacy bearer-token board. It authenticates with a tenant token, so on any
+  // real deployment every fetch 401s and the screen sits at "reconnecting" — which looks exactly
+  // like a quiet ward. Pass ?board=1&token=<tenant-token> to use it deliberately.
+  return <Board token={params.get("token") || "dev-token"} />;
 }
 
-// The banner sits above whichever root is chosen: every mode currently draws its clinical content
-// from the simulation, so every mode has to say so. Phase 2 removes it along with the simulation.
-createRoot(document.getElementById("root")).render(
-  <>
-    <DemoDataBanner />
-    {pickRoot()}
-  </>,
-);
+// #/demo is an older deep link into the simulation; honour it ahead of the query string.
+const mode = window.location.hash.startsWith("#/demo") ? "demo" : chooseMode(params);
+
+// The banner belongs only to the simulation: demo and replay both draw from fabricated data, so
+// both say so. Live and board talk to the real API — labelling them as demonstration data would
+// be false, and a notice that is sometimes wrong is worse than none, because people stop reading it.
+const el = document.getElementById("root");
+if (el) {
+  createRoot(el).render(
+    <>
+      {mode === "demo" || mode === "replay" ? <DemoDataBanner /> : null}
+      {pickRoot(mode)}
+    </>,
+  );
+}
