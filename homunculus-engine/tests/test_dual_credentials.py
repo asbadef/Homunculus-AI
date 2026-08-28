@@ -1,0 +1,59 @@
+"""The clinical routes must accept either credential.
+
+The bridge authenticates with a static tenant token. A clinician authenticates with a JWT. Both
+have to reach the same engine, and anything else has to be refused — the tenant token also
+authorises /ingest, so it can never be handed to a browser.
+"""
+from __future__ import annotations
+
+import pytest
+from fastapi.testclient import TestClient
+
+from homunculus.api.app import create_app
+
+
+@pytest.fixture
+def client():
+    async def fake_jwt_hospital(token: str) -> str | None:
+        # Stands in for: decode JWT -> load user -> membership -> tenant slug.
+        return "demo-hastanesi" if token == "valid-jwt" else None
+
+    app = create_app(
+        {"bridge-token": "demo-hastanesi"},
+        run_escalation_loop=False,
+        resolve_jwt_hospital=fake_jwt_hospital,
+    )
+    with TestClient(app) as c:
+        yield c
+
+
+def test_the_bridge_token_still_works(client):
+    res = client.get("/patients", headers={"Authorization": "Bearer bridge-token"})
+    assert res.status_code == 200
+
+
+def test_a_jwt_reaches_the_same_board(client):
+    res = client.get("/patients", headers={"Authorization": "Bearer valid-jwt"})
+    assert res.status_code == 200
+
+
+def test_an_unknown_credential_is_refused(client):
+    assert client.get("/patients", headers={"Authorization": "Bearer nonsense"}).status_code == 401
+
+
+def test_a_missing_credential_is_refused(client):
+    assert client.get("/patients").status_code == 401
+
+
+def test_ingest_also_accepts_both(client):
+    """Same resolver everywhere: one place decides who a caller is."""
+    observation = {
+        "resourceType": "Observation",
+        "status": "final",
+        "code": {"coding": [{"system": "x", "code": "resp_rate"}]},
+        "subject": {"reference": "Patient/bed-3"},
+        "effectiveDateTime": "2026-08-27T10:00:00Z",
+        "valueQuantity": {"value": 96, "unit": "/min"},
+    }
+    assert client.post("/ingest", json=observation,
+                       headers={"Authorization": "Bearer bridge-token"}).status_code == 200

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
@@ -62,9 +63,13 @@ def create_app(
     escalate_interval: float = 20.0,
     run_escalation_loop: bool = True,
     audit: AuditLog | None = None,
+    resolve_jwt_hospital: Callable[[str], Awaitable[str | None]] | None = None,
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
-    run_escalation_loop=False disables the background task so tests are deterministic."""
+    run_escalation_loop=False disables the background task so tests are deterministic.
+    `resolve_jwt_hospital`, if given, resolves a clinician's JWT to a hospital id (decode ->
+    load user -> membership -> tenant slug), letting the board routes accept a JWT as well as
+    the tenant token — injected so it can be tested without Postgres."""
     engines: dict[str, Engine] = {}
     stores: dict[str, AckStore] = {}
     broadcaster = Broadcaster()
@@ -178,14 +183,30 @@ def create_app(
             raise HTTPException(status_code=401, detail="unknown tenant token")
         return hospital
 
-    def _tenant(authorization: str | None) -> str:
+    async def _hospital(authorization: str | None) -> str:
+        """Resolve the caller's hospital from either credential.
+
+        The static token is tried first: it is the device path, and it must not depend on the
+        database being reachable for authentication. Only then is the value treated as a JWT.
+        """
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="missing bearer token")
-        return _tenant_from_token(authorization.split(" ", 1)[1])
+        credential = authorization.split(" ", 1)[1]
+
+        hospital = tenants.get(credential)
+        if hospital is not None:
+            return hospital
+
+        if resolve_jwt_hospital is not None:
+            hospital = await resolve_jwt_hospital(credential)
+            if hospital is not None:
+                return hospital
+
+        raise HTTPException(status_code=401, detail="unknown credential")
 
     @app.post("/ingest")
     async def ingest(resource: dict, authorization: str | None = Header(default=None)):
-        hospital = _tenant(authorization)
+        hospital = await _hospital(authorization)
         try:
             obs = parse_fhir_observation(resource)
         except GatewayError as exc:
@@ -218,7 +239,7 @@ def create_app(
 
     @app.post("/ack")
     async def ack(authorization: str | None = Header(default=None), body: dict = Body(...)):
-        hospital = _tenant(authorization)
+        hospital = await _hospital(authorization)
         engine = _engine(hospital)
         store = _store(hospital)
         patient_id, kind = body.get("patient_id"), body.get("kind")
@@ -234,9 +255,9 @@ def create_app(
         return board
 
     @app.post("/view")
-    def view(authorization: str | None = Header(default=None), body: dict = Body(...)):
+    async def view(authorization: str | None = Header(default=None), body: dict = Body(...)):
         """Record that a clinician opened a patient. Attribution is role-level (no per-user login yet)."""
-        hospital = _tenant(authorization)
+        hospital = await _hospital(authorization)
         patient_id = body.get("patient_id", "")
         audit.append(AuditEvent(hospital, "view", patient_id, "",
                                 {"role": body.get("role", "unknown")}))
@@ -248,13 +269,13 @@ def create_app(
         return {"status": "ok"}
 
     @app.get("/patients")
-    def patients(authorization: str | None = Header(default=None)):
-        hospital = _tenant(authorization)
+    async def patients(authorization: str | None = Header(default=None)):
+        hospital = await _hospital(authorization)
         return {"patients": board_snapshot(_engine(hospital), _store(hospital))}
 
     @app.get("/alerts/{patient_id}")
-    def alerts(patient_id: str, authorization: str | None = Header(default=None)):
-        hospital = _tenant(authorization)
+    async def alerts(patient_id: str, authorization: str | None = Header(default=None)):
+        hospital = await _hospital(authorization)
         active = _engine(hospital).active_alerts(patient_id)
         return {"patient_id": patient_id, "alerts": [asdict(a) for a in active]}
 
@@ -287,9 +308,9 @@ def create_app(
         return StreamingResponse(events(), media_type="text/event-stream")
 
     @app.get("/audit")
-    def get_audit(patient_id: str | None = None, event_type: str | None = None,
-                  limit: int = 200, authorization: str | None = Header(default=None)):
-        hospital = _tenant(authorization)
+    async def get_audit(patient_id: str | None = None, event_type: str | None = None,
+                        limit: int = 200, authorization: str | None = Header(default=None)):
+        hospital = await _hospital(authorization)
         recs = audit.records(tenant=hospital, patient_id=patient_id,
                              event_type=event_type, limit=limit)
         return {"records": [asdict(r) for r in recs]}
