@@ -271,6 +271,12 @@ surface and a no-op there, and that degradation is explicit in the components ra
 
 ## Known limits, stated rather than designed around
 
+- The no-orders checker has verified residual gaps: a bare Turkish imperative ("Sıvı başla") is not
+  in the forbidden-token list, and the leading-verb check reads only the first word, so an approved
+  opener with an embedded order later in the sentence passes. Acceptable because both scanned
+  surfaces are small, curated and human-reviewed — the engine's register and our own catalogue —
+  not open text fields. Revisit if either input ever stops being curated.
+
 - Staleness and chronic-context rendering has no data in M1 (§ Decisions). Built, tested, dormant.
 - Sparklines cover scenario time, not twelve hours, and say so.
 - Acknowledgements are local and vanish when the replay loops. Nothing is persisted; there is no
