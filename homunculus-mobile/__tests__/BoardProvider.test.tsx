@@ -314,6 +314,73 @@ describe("BoardProvider", () => {
     expect(screen.getByLabelText("connection").props.children).toBe("reconnecting");
   });
 
+  it("does not let a stale goLive overwrite a newer goReplay", async () => {
+    const probe = await renderProbe();
+    await act(async () => {
+      await probe.current().setServerUrl("http://10.0.0.5");
+    });
+
+    // hasSession() is left pending on purpose — this is the await window goLive suspends in.
+    let resolveHasSession!: (value: boolean) => void;
+    mockAuthBehavior.hasSession.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        resolveHasSession = resolve;
+      }),
+    );
+
+    let goLivePromise!: Promise<void>;
+    await act(async () => {
+      // Deliberately not awaited: goLive suspends at `await client.hasSession()` and returns a
+      // pending promise synchronously, which is exactly the moment the race can happen.
+      goLivePromise = probe.current().goLive();
+    });
+
+    // A newer, fully-synchronous goReplay runs to completion while goLive is still suspended —
+    // this is what a session-expiry fallback (or a user's "disconnect" tap) looks like.
+    await act(() => {
+      probe.current().goReplay();
+    });
+    expect(screen.getByLabelText("mode").props.children).toBe("replay");
+
+    // Now let the stale goLive continuation resume.
+    await act(async () => {
+      resolveHasSession(true);
+      await goLivePromise;
+    });
+
+    expect(screen.getByLabelText("mode").props.children).toBe("replay");
+    for (const instance of mockSseInstances) {
+      expect(instance.start).not.toHaveBeenCalled();
+    }
+  });
+
+  it("auth.login reaches the mocked client, constructed with the stored server URL", async () => {
+    const probe = await renderProbe();
+    await act(async () => {
+      await probe.current().setServerUrl("http://10.0.0.5");
+    });
+
+    await act(async () => {
+      await probe.current().auth.login("nurse@example.com", "hunter2");
+    });
+
+    expect(mockAuthBehavior.login).toHaveBeenCalledWith("nurse@example.com", "hunter2");
+    expect(mockAuthClients.at(-1)).toEqual({ baseUrl: "http://10.0.0.5" });
+  });
+
+  it("auth.logout reaches the mocked client's logout", async () => {
+    const probe = await renderProbe();
+    await act(async () => {
+      await probe.current().setServerUrl("http://10.0.0.5");
+    });
+
+    await act(async () => {
+      await probe.current().auth.logout();
+    });
+
+    expect(mockAuthBehavior.logout).toHaveBeenCalledTimes(1);
+  });
+
   it("passes the current role to the live transport read-at-call-time, not the role at goLive", async () => {
     const probe = await renderProbe();
     await act(async () => {

@@ -104,6 +104,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const transportRef = useRef<Transport | null>(null);
   const replayRef = useRef<ReplayTransport | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
+  // goLive() suspends across an await (client.hasSession()); a synchronous goReplay() — from a
+  // session-expiry fallback, or a user's own tap — can run to completion in that window. Without
+  // this guard the stale goLive continuation resumes and unconditionally overwrites whatever
+  // goReplay just did (wrong `mode`, and it stops the transport goReplay just started). Every
+  // mode-changing entry point bumps this before doing anything else; goLive checks it's still the
+  // same epoch immediately after its one await, before touching the transport or state.
+  const modeEpochRef = useRef(0);
   if (transportRef.current === null) {
     const initial = createReplayTransport({ recording: recording as Recording });
     transportRef.current = initial;
@@ -146,6 +153,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }, []);
 
   function goReplay(): void {
+    modeEpochRef.current += 1;
     detach();
     dispatch({ type: "loop" });
     const fresh = createReplayTransport({ recording: recording as Recording });
@@ -163,8 +171,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   async function goLive(): Promise<void> {
     if (!serverUrl) throw new Error("No server address is configured yet.");
+    modeEpochRef.current += 1;
+    const epoch = modeEpochRef.current;
     const client = createAuthClient({ baseUrl: serverUrl });
     const has = await client.hasSession();
+    // A newer goLive or goReplay ran to completion while this call was suspended above — that
+    // newer call already left the provider in whatever state it should be in. This continuation
+    // is stale and must not touch the transport, dispatch a loop reset, or flip `mode`.
+    if (epoch !== modeEpochRef.current) return;
     if (!has) throw new Error("No active session. Log in first.");
 
     const live = createSseTransport({
