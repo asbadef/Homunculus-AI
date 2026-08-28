@@ -89,3 +89,10 @@ describe("AlertToast", () => {
     expect(onPress).toHaveBeenCalledWith("bed-3");
   });
 });
+
+describe("useToastQueue — escalation trigger", () => {
+  it("shows a toast for an escalation even at non-immediate urgency", async () => {
+    await render(<Probe latest={note({ trigger: "escalation", urgency: "soon" })} onPress={() => {}} />);
+    expect(screen.getByLabelText("alert-toast")).toBeTruthy();
+  });
+});

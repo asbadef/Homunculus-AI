@@ -23,11 +23,11 @@ function isToastable(note: BoardNotification): boolean {
 /**
  * Tracks the newest toastable notification and auto-clears it after `dismissMs`.
  *
- * Mirrors useAlertHaptics' "track before gating" shape: the seen-ts ref advances on every new
- * notification, toastable or not, before the toastable check runs. Otherwise a routine
- * notification that arrives while a toast is showing would never get recorded, and the *next*
- * toastable notification's dedup would have nothing to compare against — or worse, a later
- * rerender of that same routine note would slip past the ts guard and get evaluated again.
+ * The seen-ts ref advances before the toastable check, matching useAlertHaptics' shape for
+ * consistency. Unlike the haptics hook — where the gate (`enabled`) can change later and the
+ * ordering is load-bearing — `isToastable` is a pure function of the note, so for any given ts
+ * the ordering is not observable. It is kept this way so the two hooks read identically, not
+ * because this one needs it.
  */
 export function useToastQueue(
   latest: BoardNotification | null,

@@ -6,12 +6,10 @@ import { t } from "../../src/i18n";
 import { useBoard } from "../../src/store/BoardProvider";
 import { DemoBanner } from "../../src/ui/DemoBanner";
 import { NotificationFeed } from "../../src/ui/NotificationFeed";
-import { useAlertHaptics } from "../../src/ui/useAlertHaptics";
 
 export default function AlertsScreen() {
-  const { notifications, latestNotification, settings } = useBoard();
+  const { notifications } = useBoard();
   const router = useRouter();
-  useAlertHaptics(latestNotification, settings.haptics);
 
   return (
     <SafeAreaView edges={["top"]} className="flex-1 bg-background">

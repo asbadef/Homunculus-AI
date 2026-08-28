@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useBoard } from "../store/BoardProvider";
 import { AlertToast, useToastQueue } from "./AlertToast";
+import { useAlertHaptics } from "./useAlertHaptics";
 
 /**
  * The mounted instance: reads the board, renders nothing when there is nothing to show. Mounted
@@ -23,10 +24,14 @@ import { AlertToast, useToastQueue } from "./AlertToast";
  * workaround needed.
  */
 export default function AlertToastConnected() {
-  const { latestNotification } = useBoard();
+  const { latestNotification, settings } = useBoard();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { visible, dismiss } = useToastQueue(latestNotification);
+  // The haptic lives here, not on the alerts tab: the spec pairs "a haptic and a toast" for an
+  // arriving immediate alert, and both should reach a clinician on ANY screen. One mount point
+  // also means one seen-ts ref — mounting the hook on a tab as well would buzz twice.
+  useAlertHaptics(latestNotification, settings.haptics);
 
   if (visible === null) return null;
 
