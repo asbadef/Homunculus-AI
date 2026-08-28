@@ -360,7 +360,8 @@ restart'tan sağ çıkma), first_seen kalıcılığı, KOAH-oksijen için komorb
 `view` denetimi, panoda bayat-veri rozeti ve bildirim geçmişi paneli de kuruldu. **Mobil eşlikçi
 uygulama (M1) da kuruldu** — Expo/React Native, kayıtlı üç yataklı koğuşu oynatan bir aktarım katmanı
 üzerinde: riske göre sıralı hasta listesi, vital kartları ve senaryo zamanı eğilimleri, kasadaki
-kaynak notlarına bağlanan kılavuz çekmecesi, eskalasyon farkındalıklı titreşim. Canlı veri M2'de,
-auth-bridge dilimi kodlandığında gelecek.)*
+kaynak notlarına bağlanan kılavuz çekmecesi, eskalasyon farkındalıklı titreşim. M2 ile canlı bağlantı
+da kuruldu — telefon, web panosunun bağlandığı sunucuya JWT girişi ve tek kullanımlık SSE biletleriyle
+bağlanır; oturum düşerse gösterime döner.)*
 
 > Bir terimi merak edip burada bulamazsan, söyle — hem cevaplarım hem de bu dosyaya eklerim.
