@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { patientFromBoard, patientsFromBoard } from "./liveAdapters.js";
+import {
+  patientFromBoard, patientsFromBoard, bedsFromPatients, alertsFromPatients,
+} from "./liveAdapters.js";
 
 const entry = {
   patient_id: "bed-3",
@@ -80,5 +82,106 @@ describe("patientsFromBoard", () => {
 
   it("treats a null payload as no patients", () => {
     expect(patientsFromBoard(null)).toEqual([]);
+  });
+});
+
+// bedsFromPatients / alertsFromPatients synthesize the simulation's `beds` and `alerts` shapes
+// from live patients, so the existing BedBoard/AlarmPage components — written against the
+// simulation — render real data without changing a line of component code.
+describe("bedsFromPatients", () => {
+  it("makes one OCCUPIED bed per live patient, keyed by patient id", () => {
+    const patients = [patientFromBoard(entry), patientFromBoard({ ...entry, patient_id: "bed-4" })];
+
+    expect(bedsFromPatients(patients)).toEqual([
+      { id: "live-bed-bed-3", label: "bed-3", unitId: null, unitName: null, roomId: null,
+        roomLabel: null, state: "OCCUPIED", patientId: "bed-3" },
+      { id: "live-bed-bed-4", label: "bed-4", unitId: null, unitName: null, roomId: null,
+        roomLabel: null, state: "OCCUPIED", patientId: "bed-4" },
+    ]);
+  });
+
+  it("returns no beds for no patients", () => {
+    expect(bedsFromPatients([])).toEqual([]);
+  });
+});
+
+describe("alertsFromPatients", () => {
+  it("flattens one entry per patient alert, id-keyed by patient and kind", () => {
+    const alerts = alertsFromPatients([patientFromBoard(entry)]);
+
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].id).toBe("bed-3::sepsis");
+    expect(alerts[0].patientId).toBe("bed-3");
+    expect(alerts[0].kind).toBe("sepsis");
+    expect(alerts[0].summary).toBe("NEWS2 9");
+    expect(alerts[0].severity).toBe("high");
+    expect(alerts[0].urgency).toBe("immediate");
+    expect(alerts[0].escalated).toBe(false);
+  });
+
+  it("maps the engine's severity onto the tier the alarm UI colors by", () => {
+    const critical = { ...entry, alerts: [{ ...entry.alerts[0], severity: "critical" }] };
+    expect(alertsFromPatients([patientFromBoard(critical)])[0].tier).toBe("CRITICAL");
+    expect(alertsFromPatients([patientFromBoard(entry)])[0].tier).toBe("HIGH"); // severity "high"
+  });
+
+  it("is FIRED while unacknowledged, with no ack and an empty escalation chain", () => {
+    const alerts = alertsFromPatients([patientFromBoard(entry)]);
+
+    expect(alerts[0].status).toBe("FIRED");
+    expect(alerts[0].ack).toBeNull();
+    expect(alerts[0].snooze).toBeNull();
+    expect(alerts[0].mutedUntil).toBeNull();
+    expect(alerts[0].currentStep).toBe("NONE");
+    expect(alerts[0].events).toEqual([]);
+  });
+
+  it("switches to ACKNOWLEDGED and carries who acknowledged it, once the engine says so", () => {
+    const acked = { ...entry, alerts: [{ ...entry.alerts[0], acknowledged: true,
+      acknowledged_by: "nurse", acknowledged_at: "2026-08-27T10:05:00Z" }] };
+
+    const alert = alertsFromPatients([patientFromBoard(acked)])[0];
+
+    expect(alert.status).toBe("ACKNOWLEDGED");
+    expect(alert.ack.by).toBe("nurse");
+    expect(alert.ack.atSec).toBe(Date.parse("2026-08-27T10:05:00Z") / 1000);
+  });
+
+  it("never invents a reason or note the clinician did not enter — the backend does not store them yet", () => {
+    const acked = { ...entry, alerts: [{ ...entry.alerts[0], acknowledged: true,
+      acknowledged_by: "nurse", acknowledged_at: "2026-08-27T10:05:00Z" }] };
+
+    const alert = alertsFromPatients([patientFromBoard(acked)])[0];
+
+    expect(alert.ack.reason).toBeNull();
+    expect(alert.ack.note).toBeNull();
+  });
+
+  it("derives firedAtSec from first_seen_at, in seconds", () => {
+    const alert = alertsFromPatients([patientFromBoard(entry)])[0];
+    expect(alert.firedAtSec).toBe(Date.parse("2026-08-27T10:00:00Z") / 1000);
+  });
+
+  it("sets bedLabel to the same honest device identifier the bed adapter uses", () => {
+    const alert = alertsFromPatients([patientFromBoard(entry)])[0];
+    expect(alert.bedLabel).toBe("bed-3");
+  });
+
+  it("produces one entry per alert when a patient carries more than one", () => {
+    const two = { ...entry, alerts: [entry.alerts[0],
+      { ...entry.alerts[0], kind: "hypoxia", severity: "critical" }] };
+
+    const alerts = alertsFromPatients([patientFromBoard(two)]);
+
+    expect(alerts.map((a) => a.id).sort()).toEqual(["bed-3::hypoxia", "bed-3::sepsis"]);
+  });
+
+  it("returns no alerts for a patient with none", () => {
+    const clean = { patient_id: "bed-9", risk: "stable", alerts: [], latest: {} };
+    expect(alertsFromPatients([patientFromBoard(clean)])).toEqual([]);
+  });
+
+  it("returns no alerts for no patients", () => {
+    expect(alertsFromPatients([])).toEqual([]);
   });
 });
