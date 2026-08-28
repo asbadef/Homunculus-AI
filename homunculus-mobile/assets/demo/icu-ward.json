@@ -1,0 +1,2628 @@
+{
+  "scenario": "icu-ward",
+  "step_seconds": 1.0,
+  "frames": [
+    {
+      "t": 0.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": null,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 1.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": null,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 2.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 72.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 3.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 72.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 1
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 4.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 72.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 1
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 5.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 72.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": null,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 6.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 72.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": null,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 7.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 72.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 60.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 1
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 8.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 72.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 60.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 60.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        }
+      ],
+      "notifications": [
+        {
+          "tenant": "DEMO",
+          "patient_id": "bed-7",
+          "kind": "under_resuscitated_sepsis",
+          "severity": "high",
+          "urgency": "immediate",
+          "audience": "nurse",
+          "trigger": "new",
+          "title": "Yeni uyar\u0131",
+          "body": "bed-7: Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+          "ts": "2026-08-28T09:56:15.307467+00:00"
+        }
+      ]
+    },
+    {
+      "t": 9.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 72.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 60.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 60.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": null,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 10.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 72.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 60.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 60.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": null,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 11.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 72.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 60.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 60.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 82.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 12.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 72.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 60.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 60.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 82.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 13.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 72.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 60.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 60.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 82.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 14.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-3",
+              "kind": "sepsis",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Sepsis criteria met (SOFA 2)",
+              "clinical_reasoning": "Suspected infection with SOFA 2 (>= 2); acute organ dysfunction attributable to infection.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016"
+              ],
+              "recommended_actions": [
+                "Consider whether an infective source is being addressed.",
+                "Monitor the SOFA trend and repeat labs as indicated."
+              ],
+              "confidence": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "antibiotic_due",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Antibiotic window: 60 min remaining",
+              "clinical_reasoning": "Sepsis recognized at 10:10. Guideline target is within 1 h; 60 min remain. No antibiotic administration seen yet.",
+              "supporting_evidence": [
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review whether antibiotics can be given within the 1-hour window."
+              ],
+              "confidence": "Strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 66.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 2
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 60.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 60.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 82.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 15.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-3",
+              "kind": "sepsis",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Sepsis criteria met (SOFA 2)",
+              "clinical_reasoning": "Suspected infection with SOFA 2 (>= 2); acute organ dysfunction attributable to infection.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016"
+              ],
+              "recommended_actions": [
+                "Consider whether an infective source is being addressed.",
+                "Monitor the SOFA trend and repeat labs as indicated."
+              ],
+              "confidence": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "antibiotic_due",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Antibiotic window: 60 min remaining",
+              "clinical_reasoning": "Sepsis recognized at 10:10. Guideline target is within 1 h; 60 min remain. No antibiotic administration seen yet.",
+              "supporting_evidence": [
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review whether antibiotics can be given within the 1-hour window."
+              ],
+              "confidence": "Strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 66.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 2
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 60.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 60.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 82.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 16.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-3",
+              "kind": "sepsis",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Sepsis criteria met (SOFA 2)",
+              "clinical_reasoning": "Suspected infection with SOFA 2 (>= 2); acute organ dysfunction attributable to infection.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016"
+              ],
+              "recommended_actions": [
+                "Consider whether an infective source is being addressed.",
+                "Monitor the SOFA trend and repeat labs as indicated."
+              ],
+              "confidence": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "antibiotic_due",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Antibiotic window: 60 min remaining",
+              "clinical_reasoning": "Sepsis recognized at 10:10. Guideline target is within 1 h; 60 min remain. No antibiotic administration seen yet.",
+              "supporting_evidence": [
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review whether antibiotics can be given within the 1-hour window."
+              ],
+              "confidence": "Strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 66.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 2
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 60.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 60.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 82.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 17.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-3",
+              "kind": "sepsis",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Sepsis criteria met (SOFA 2)",
+              "clinical_reasoning": "Suspected infection with SOFA 2 (>= 2); acute organ dysfunction attributable to infection.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016"
+              ],
+              "recommended_actions": [
+                "Consider whether an infective source is being addressed.",
+                "Monitor the SOFA trend and repeat labs as indicated."
+              ],
+              "confidence": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "antibiotic_due",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Antibiotic window: 60 min remaining",
+              "clinical_reasoning": "Sepsis recognized at 10:10. Guideline target is within 1 h; 60 min remain. No antibiotic administration seen yet.",
+              "supporting_evidence": [
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review whether antibiotics can be given within the 1-hour window."
+              ],
+              "confidence": "Strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 66.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 2
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 61.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 61.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 82.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 18.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-3",
+              "kind": "sepsis",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Sepsis criteria met (SOFA 2)",
+              "clinical_reasoning": "Suspected infection with SOFA 2 (>= 2); acute organ dysfunction attributable to infection.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016"
+              ],
+              "recommended_actions": [
+                "Consider whether an infective source is being addressed.",
+                "Monitor the SOFA trend and repeat labs as indicated."
+              ],
+              "confidence": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "antibiotic_due",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Antibiotic window: 40 min remaining",
+              "clinical_reasoning": "Sepsis recognized at 10:10. Guideline target is within 1 h; 40 min remain. No antibiotic administration seen yet.",
+              "supporting_evidence": [
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review whether antibiotics can be given within the 1-hour window."
+              ],
+              "confidence": "Strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 66.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 2
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 61.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 61.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 82.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 19.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-3",
+              "kind": "sepsis",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Sepsis criteria met (SOFA 2)",
+              "clinical_reasoning": "Suspected infection with SOFA 2 (>= 2); acute organ dysfunction attributable to infection.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016"
+              ],
+              "recommended_actions": [
+                "Consider whether an infective source is being addressed.",
+                "Monitor the SOFA trend and repeat labs as indicated."
+              ],
+              "confidence": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "antibiotic_due",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Antibiotic window: 40 min remaining",
+              "clinical_reasoning": "Sepsis recognized at 10:10. Guideline target is within 1 h; 40 min remain. No antibiotic administration seen yet.",
+              "supporting_evidence": [
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review whether antibiotics can be given within the 1-hour window."
+              ],
+              "confidence": "Strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 62.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 2
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 61.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 61.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 82.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 20.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-3",
+              "kind": "sepsis",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Sepsis criteria met (SOFA 2)",
+              "clinical_reasoning": "Suspected infection with SOFA 2 (>= 2); acute organ dysfunction attributable to infection.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016"
+              ],
+              "recommended_actions": [
+                "Consider whether an infective source is being addressed.",
+                "Monitor the SOFA trend and repeat labs as indicated."
+              ],
+              "confidence": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "antibiotic_due",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Antibiotic window: 40 min remaining",
+              "clinical_reasoning": "Sepsis recognized at 10:10. Guideline target is within 1 h; 40 min remain. No antibiotic administration seen yet.",
+              "supporting_evidence": [
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review whether antibiotics can be given within the 1-hour window."
+              ],
+              "confidence": "Strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 62.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.8,
+            "sofa": 2
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 61.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 61.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 80.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 21.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-3",
+              "kind": "sepsis",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Sepsis criteria met (SOFA 2)",
+              "clinical_reasoning": "Suspected infection with SOFA 2 (>= 2); acute organ dysfunction attributable to infection.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016"
+              ],
+              "recommended_actions": [
+                "Consider whether an infective source is being addressed.",
+                "Monitor the SOFA trend and repeat labs as indicated."
+              ],
+              "confidence": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "antibiotic_due",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Antibiotic window: 35 min remaining",
+              "clinical_reasoning": "Sepsis recognized at 10:10. Guideline target is within 1 h; 35 min remain. No antibiotic administration seen yet.",
+              "supporting_evidence": [
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review whether antibiotics can be given within the 1-hour window."
+              ],
+              "confidence": "Strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 62.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 2.6,
+            "sofa": 2
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 61.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 61.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 80.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 22.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "critical",
+          "alerts": [
+            {
+              "patient_id": "bed-3",
+              "kind": "sepsis",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Sepsis criteria met (SOFA 4)",
+              "clinical_reasoning": "Suspected infection with SOFA 4 (>= 2); acute organ dysfunction attributable to infection.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016"
+              ],
+              "recommended_actions": [
+                "Consider whether an infective source is being addressed.",
+                "Monitor the SOFA trend and repeat labs as indicated."
+              ],
+              "confidence": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "antibiotic_due",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Antibiotic window: 30 min remaining",
+              "clinical_reasoning": "Sepsis recognized at 10:10. Guideline target is within 1 h; 30 min remain. No antibiotic administration seen yet.",
+              "supporting_evidence": [
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review whether antibiotics can be given within the 1-hour window."
+              ],
+              "confidence": "Strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "septic_shock",
+              "severity": "critical",
+              "urgency": "immediate",
+              "summary": "Septic shock criteria met",
+              "clinical_reasoning": "Suspected infection with a vasopressor running, lactate 2.6 mmol/L (> 2.0), after adequate fluid resuscitation (>= 30 mL/kg in 3 h). Hospital mortality > 40%.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review vasopressor titration against a MAP target of 65 mmHg.",
+                "Consider repeat lactate to confirm the trend.",
+                "Review antibiotic coverage and source control."
+              ],
+              "confidence": "Criteria are deterministic (Sepsis-3). Antibiotic urgency: strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.308320+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 62.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 2.6,
+            "sofa": 4
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 61.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 61.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 80.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": [
+        {
+          "tenant": "DEMO",
+          "patient_id": "bed-3",
+          "kind": "septic_shock",
+          "severity": "critical",
+          "urgency": "immediate",
+          "audience": "nurse",
+          "trigger": "new",
+          "title": "Yeni uyar\u0131",
+          "body": "bed-3: Septic shock criteria met",
+          "ts": "2026-08-28T09:56:15.308323+00:00"
+        }
+      ]
+    },
+    {
+      "t": 23.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "critical",
+          "alerts": [
+            {
+              "patient_id": "bed-3",
+              "kind": "sepsis",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Sepsis criteria met (SOFA 4)",
+              "clinical_reasoning": "Suspected infection with SOFA 4 (>= 2); acute organ dysfunction attributable to infection.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016"
+              ],
+              "recommended_actions": [
+                "Consider whether an infective source is being addressed.",
+                "Monitor the SOFA trend and repeat labs as indicated."
+              ],
+              "confidence": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "antibiotic_due",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Antibiotic window: 30 min remaining",
+              "clinical_reasoning": "Sepsis recognized at 10:10. Guideline target is within 1 h; 30 min remain. No antibiotic administration seen yet.",
+              "supporting_evidence": [
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review whether antibiotics can be given within the 1-hour window."
+              ],
+              "confidence": "Strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "septic_shock",
+              "severity": "critical",
+              "urgency": "immediate",
+              "summary": "Septic shock criteria met",
+              "clinical_reasoning": "Suspected infection with a vasopressor running, lactate 2.6 mmol/L (> 2.0), after adequate fluid resuscitation (>= 30 mL/kg in 3 h). Hospital mortality > 40%.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review vasopressor titration against a MAP target of 65 mmHg.",
+                "Consider repeat lactate to confirm the trend.",
+                "Review antibiotic coverage and source control."
+              ],
+              "confidence": "Criteria are deterministic (Sepsis-3). Antibiotic urgency: strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.308320+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 63.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 2.6,
+            "sofa": 4
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 61.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 61.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 80.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 24.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "critical",
+          "alerts": [
+            {
+              "patient_id": "bed-3",
+              "kind": "sepsis",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Sepsis criteria met (SOFA 5)",
+              "clinical_reasoning": "Suspected infection with SOFA 5 (>= 2); acute organ dysfunction attributable to infection.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016"
+              ],
+              "recommended_actions": [
+                "Consider whether an infective source is being addressed.",
+                "Monitor the SOFA trend and repeat labs as indicated."
+              ],
+              "confidence": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "antibiotic_due",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Antibiotic window: 15 min remaining",
+              "clinical_reasoning": "Sepsis recognized at 10:10. Guideline target is within 1 h; 15 min remain. No antibiotic administration seen yet.",
+              "supporting_evidence": [
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review whether antibiotics can be given within the 1-hour window."
+              ],
+              "confidence": "Strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "septic_shock",
+              "severity": "critical",
+              "urgency": "immediate",
+              "summary": "Septic shock criteria met",
+              "clinical_reasoning": "Suspected infection with a vasopressor running, lactate 2.6 mmol/L (> 2.0), after adequate fluid resuscitation (>= 30 mL/kg in 3 h). Hospital mortality > 40%.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review vasopressor titration against a MAP target of 65 mmHg.",
+                "Consider repeat lactate to confirm the trend.",
+                "Review antibiotic coverage and source control."
+              ],
+              "confidence": "Criteria are deterministic (Sepsis-3). Antibiotic urgency: strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.308320+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 63.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 2.6,
+            "sofa": 5
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 61.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 61.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 80.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 25.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "critical",
+          "alerts": [
+            {
+              "patient_id": "bed-3",
+              "kind": "sepsis",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Sepsis criteria met (SOFA 5)",
+              "clinical_reasoning": "Suspected infection with SOFA 5 (>= 2); acute organ dysfunction attributable to infection.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016"
+              ],
+              "recommended_actions": [
+                "Consider whether an infective source is being addressed.",
+                "Monitor the SOFA trend and repeat labs as indicated."
+              ],
+              "confidence": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "antibiotic_due",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Antibiotic window: 10 min remaining",
+              "clinical_reasoning": "Sepsis recognized at 10:10. Guideline target is within 1 h; 10 min remain. No antibiotic administration seen yet.",
+              "supporting_evidence": [
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review whether antibiotics can be given within the 1-hour window."
+              ],
+              "confidence": "Strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "septic_shock",
+              "severity": "critical",
+              "urgency": "immediate",
+              "summary": "Septic shock criteria met",
+              "clinical_reasoning": "Suspected infection with a vasopressor running, lactate 3.4 mmol/L (> 2.0), after adequate fluid resuscitation (>= 30 mL/kg in 3 h). Hospital mortality > 40%.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review vasopressor titration against a MAP target of 65 mmHg.",
+                "Consider repeat lactate to confirm the trend.",
+                "Review antibiotic coverage and source control."
+              ],
+              "confidence": "Criteria are deterministic (Sepsis-3). Antibiotic urgency: strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.308320+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 63.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.4,
+            "sofa": 5
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 61.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 61.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 80.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 26.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "critical",
+          "alerts": [
+            {
+              "patient_id": "bed-3",
+              "kind": "sepsis",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Sepsis criteria met (SOFA 6)",
+              "clinical_reasoning": "Suspected infection with SOFA 6 (>= 2); acute organ dysfunction attributable to infection.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016"
+              ],
+              "recommended_actions": [
+                "Consider whether an infective source is being addressed.",
+                "Monitor the SOFA trend and repeat labs as indicated."
+              ],
+              "confidence": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "antibiotic_due",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Antibiotic window: 10 min remaining",
+              "clinical_reasoning": "Sepsis recognized at 10:10. Guideline target is within 1 h; 10 min remain. No antibiotic administration seen yet.",
+              "supporting_evidence": [
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review whether antibiotics can be given within the 1-hour window."
+              ],
+              "confidence": "Strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "septic_shock",
+              "severity": "critical",
+              "urgency": "immediate",
+              "summary": "Septic shock criteria met",
+              "clinical_reasoning": "Suspected infection with a vasopressor running, lactate 3.4 mmol/L (> 2.0), after adequate fluid resuscitation (>= 30 mL/kg in 3 h). Hospital mortality > 40%.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review vasopressor titration against a MAP target of 65 mmHg.",
+                "Consider repeat lactate to confirm the trend.",
+                "Review antibiotic coverage and source control."
+              ],
+              "confidence": "Criteria are deterministic (Sepsis-3). Antibiotic urgency: strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.308320+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 63.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.4,
+            "sofa": 6
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 61.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 61.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 80.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.2,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 27.0,
+      "boards": [
+        {
+          "patient_id": "bed-3",
+          "risk": "critical",
+          "alerts": [
+            {
+              "patient_id": "bed-3",
+              "kind": "sepsis",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Sepsis criteria met (SOFA 6)",
+              "clinical_reasoning": "Suspected infection with SOFA 6 (>= 2); acute organ dysfunction attributable to infection.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016"
+              ],
+              "recommended_actions": [
+                "Consider whether an infective source is being addressed.",
+                "Monitor the SOFA trend and repeat labs as indicated."
+              ],
+              "confidence": "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "antibiotic_due",
+              "severity": "high",
+              "urgency": "soon",
+              "summary": "Antibiotic window: 10 min remaining",
+              "clinical_reasoning": "Sepsis recognized at 10:10. Guideline target is within 1 h; 10 min remain. No antibiotic administration seen yet.",
+              "supporting_evidence": [
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review whether antibiotics can be given within the 1-hour window."
+              ],
+              "confidence": "Strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307780+00:00",
+              "escalated": false
+            },
+            {
+              "patient_id": "bed-3",
+              "kind": "septic_shock",
+              "severity": "critical",
+              "urgency": "immediate",
+              "summary": "Septic shock criteria met",
+              "clinical_reasoning": "Suspected infection with a vasopressor running, lactate 3.4 mmol/L (> 2.0), after adequate fluid resuscitation (>= 30 mL/kg in 3 h). Hospital mortality > 40%.",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Review vasopressor titration against a MAP target of 65 mmHg.",
+                "Consider repeat lactate to confirm the trend.",
+                "Review antibiotic coverage and source control."
+              ],
+              "confidence": "Criteria are deterministic (Sepsis-3). Antibiotic urgency: strong recommendation, very low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.308320+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 63.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.4,
+            "sofa": 6
+          }
+        },
+        {
+          "patient_id": "bed-7",
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-7",
+              "kind": "under_resuscitated_sepsis",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+              "clinical_reasoning": "Lactate 3.5 mmol/L with MAP 61.0 mmHg, but < 30 mL/kg crystalloid given in the last 3 h. This may be under-resuscitation, not shock \u2014 the distinction changes the next action (volume vs pressors).",
+              "supporting_evidence": [
+                "sepsis-3-jama-2016",
+                "surviving-sepsis-campaign-2026"
+              ],
+              "recommended_actions": [
+                "Assess fluid responsiveness before escalating vasopressors.",
+                "Consider continuing crystalloid toward 30 mL/kg if not contraindicated.",
+                "Monitor lactate and MAP after the next fluid bolus."
+              ],
+              "confidence": "Fluid target: conditional recommendation, low certainty (SSC 2026).",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-08-28T09:56:15.307463+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": null,
+            "map": 61.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 3.5,
+            "sofa": 1
+          }
+        },
+        {
+          "patient_id": "bed-5",
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 80.0,
+            "spo2": null,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": 1.1,
+            "sofa": 0
+          }
+        }
+      ],
+      "notifications": []
+    }
+  ],
+  "notification_history": [
+    {
+      "tenant": "DEMO",
+      "patient_id": "bed-7",
+      "kind": "under_resuscitated_sepsis",
+      "severity": "high",
+      "urgency": "immediate",
+      "audience": "nurse",
+      "trigger": "new",
+      "title": "Yeni uyar\u0131",
+      "body": "bed-7: Hypoperfusion before adequate fluid \u2014 assess fluid resuscitation",
+      "ts": "2026-08-28T09:56:15.307467+00:00"
+    },
+    {
+      "tenant": "DEMO",
+      "patient_id": "bed-3",
+      "kind": "septic_shock",
+      "severity": "critical",
+      "urgency": "immediate",
+      "audience": "nurse",
+      "trigger": "new",
+      "title": "Yeni uyar\u0131",
+      "body": "bed-3: Septic shock criteria met",
+      "ts": "2026-08-28T09:56:15.308323+00:00"
+    }
+  ]
+}

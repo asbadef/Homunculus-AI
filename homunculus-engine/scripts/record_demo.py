@@ -20,11 +20,21 @@ from homunculus.scenarios.loader import load_scenario
 SCEN = Path(homunculus.scenarios.__file__).parent
 
 
-def record(scenario_path: str | Path, out_path: str | Path, step_seconds: float = 1.0) -> None:
-    scenario_path, out_path = Path(scenario_path), Path(out_path)
+def record_ward(scenario_paths: list[str | Path], out_path: str | Path,
+                step_seconds: float = 1.0, name: str = "icu-ward") -> None:
+    """Merge several scenarios into one ward and record what a SINGLE engine emits.
+
+    The engine is already multi-patient (board_snapshot iterates patient_ids), so a ward needs no
+    engine or loader change — only the event streams merged in absolute time before ingest."""
+    out_path = Path(out_path)
     engine, store, notifier = Engine(), AckStore(), Notifier()
+    events: list[tuple[datetime, dict]] = []
+    for path in scenario_paths:
+        events.extend(load_scenario(Path(path)))
+    events.sort(key=lambda pair: pair[0])
+
     frames, history = [], []
-    for i, (_ts, fhir) in enumerate(load_scenario(scenario_path)):
+    for i, (_ts, fhir) in enumerate(events):
         obs = parse_fhir_observation(fhir)
         engine.ingest(obs, now=obs.timestamp)
         wall = datetime.now(timezone.utc)
@@ -35,16 +45,31 @@ def record(scenario_path: str | Path, out_path: str | Path, step_seconds: float 
         frames.append({"t": round(i * step_seconds, 3),
                        "boards": board_snapshot(engine, store),
                        "notifications": notes})
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps({
-        "scenario": scenario_path.stem, "step_seconds": step_seconds,
+        "scenario": name, "step_seconds": step_seconds,
         "frames": frames, "notification_history": history}, indent=2), encoding="utf-8")
 
 
+def record(scenario_path: str | Path, out_path: str | Path, step_seconds: float = 1.0) -> None:
+    """One scenario is a ward of one."""
+    record_ward([scenario_path], out_path, step_seconds, name=Path(scenario_path).stem)
+
+
+REPO = Path(__file__).resolve().parents[2]
+WARD_SCENARIOS = ["septic_shock.yaml", "under_resuscitated.yaml", "stable_control.yaml"]
+
+
 def main() -> None:
-    name = sys.argv[1] if len(sys.argv) > 1 else "septic_shock.yaml"
-    out = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(
-        __file__).resolve().parents[2] / "dashboard" / "public" / "demo" / f"{Path(name).stem}.json"
+    args = sys.argv[1:]
+    if args and args[0] == "ward":
+        out = Path(args[1]) if len(args) > 1 else REPO / "homunculus-mobile" / "assets" / "demo" / "icu-ward.json"
+        record_ward([SCEN / s for s in WARD_SCENARIOS], out)
+        print(f"recorded ward -> {out}")
+        return
+    name = args[0] if args else "septic_shock.yaml"
+    out = Path(args[1]) if len(args) > 1 else REPO / "dashboard" / "public" / "demo" / f"{Path(name).stem}.json"
     record(SCEN / name, out)
     print(f"recorded {name} -> {out}")
 
