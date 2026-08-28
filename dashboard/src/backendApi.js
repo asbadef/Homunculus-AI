@@ -133,6 +133,21 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {})
       return authed("/auth/me");
     },
 
+    /** The clinical board for the caller's hospital. */
+    boardPatients() {
+      return authed("/patients");
+    },
+
+    /** A short-lived, single-use ticket for the SSE endpoints. */
+    streamTicket() {
+      return authed("/stream-ticket", { method: "POST" });
+    },
+
+    acknowledge(patientId, kind, role) {
+      return authed("/ack", { method: "POST",
+                              body: { patient_id: patientId, kind, role } });
+    },
+
     /** Escape hatch for endpoints not yet wrapped (admissions, alerts, tenant…). */
     request: authed,
   };
