@@ -44,7 +44,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     thresholdMs: DEFAULT_THRESHOLD_MS,
     speed: 1,
   });
-  const transport = useRef(createReplayTransport({ recording: recording as Recording })).current;
+  // Lazy init: useRef(create(...)) would build and discard a fresh transport on every render —
+  // the argument expression runs eagerly even though React keeps only the first .current.
+  const transportRef = useRef<ReturnType<typeof createReplayTransport> | null>(null);
+  if (transportRef.current === null) {
+    transportRef.current = createReplayTransport({ recording: recording as Recording });
+  }
+  const transport = transportRef.current;
 
   useEffect(() => {
     const unsubscribe = transport.subscribe({
@@ -64,6 +70,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id);
   }, []);
 
+  // `now` ticks every second, so the memo below recomputes selectWard at 1Hz — sort plus
+  // escalation over every bed. Fine for a ward this size; revisit if M2 grows the ward.
   const options = { now, thresholdMs: settings.thresholdMs };
 
   const value = useMemo<BoardContextValue>(

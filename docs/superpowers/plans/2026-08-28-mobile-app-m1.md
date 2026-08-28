@@ -14,6 +14,61 @@
 
 ---
 
+## Testing conventions — read before writing any test
+
+Tasks 5–24 were drafted against an older React Native Testing Library. Task 3 pinned the real
+versions, and two things differ from the snippets below. **Adapt every test in this plan
+accordingly; the snippets show the assertions, not the calling convention.**
+
+**1. `render()` is async in RNTL 14.** Called synchronously, `screen.getByLabelText(...)` throws
+``` `render` function has not been called ```, because the screen is only populated once the render
+promise resolves. Every component test is therefore an `async` `it` with an awaited render:
+
+```tsx
+// as written in the task snippets            // what to actually write
+it("shows the bed", () => {                   it("shows the bed", async () => {
+  render(<PatientCard view={view()} />);        await render(<PatientCard view={view()} />);
+  expect(screen.getByText("YB Yatak 3"))        expect(screen.getByText("YB Yatak 3"))
+    .toBeTruthy();                                .toBeTruthy();
+});                                           });
+```
+
+Pure-function tests (`risk`, `escalation`, `staleness`, `sparkline`, `noOrders`, `citations`,
+`boardStore`, `replayTransport`) render nothing and stay synchronous.
+
+**`act()` must be awaited too.** RNTL 14's `act` is async by default; un-awaited, the queued state
+update stays stuck in React's act-queue and the component never re-renders — and the test may still
+pass on stale first-render output, which is a false positive, not a failure. Every `act(() => ...)`
+in the task snippets below is really `await act(() => ...)`.
+
+**2. Every test file needs `/// <reference types="jest" />` as its first line.** This tsconfig
+(`moduleDetection: "force"`, `moduleResolution: "bundler"`, inherited from `expo/tsconfig.base`)
+does not pull in `@types/jest` globals automatically, so `describe`/`it`/`expect` are otherwise
+untyped and `npm run typecheck` fails.
+
+**3. The worklets mock is already in place.** `jest.setup.js` mocks `react-native-worklets` with the
+package's own shipped mock and calls `setUpTests()`. Real Reanimated and real Moti component code
+executes in tests — only the native runtime is substituted. Do not add further animation mocks; if a
+component test fails inside Reanimated, report it rather than stubbing the animation away.
+
+**4. The board carries seven vitals, not four.** While this plan was being executed, a concurrent
+slice added `spo2`, `temperature` and `resp_rate` to `api/board.py`'s `latest` block. Every test
+fixture in the tasks below that builds a `latest: {...}` or a `series: {...}` literal shows only
+`heart_rate`, `map`, `lactate`, `sofa` — add the three new keys (`null` in a `latest`, `[]` in a
+`series`) or TypeScript will reject the fixture. The three new vitals are typed, stored and
+accumulated; they are **not** given tiles on the detail screen in M1, because the committed
+scenarios chart none of them and five *veri yok* tiles would be a worse screen than one.
+
+**5. Verify each task with all three commands**, not just the tests:
+
+```bash
+npm test
+npm run typecheck        # zero errors
+npx expo export --platform web   # exit 0
+```
+
+---
+
 ## File Structure
 
 | File | Responsibility |
@@ -647,7 +702,9 @@ describe("the committed recording", () => {
   it("carries every field the screens read", () => {
     const board = ward.frames.at(-1)!.boards.find((b) => b.patient_id === "bed-3")!;
     expect(board.risk).toBe("critical");
-    expect(Object.keys(board.latest).sort()).toEqual(["heart_rate", "lactate", "map", "sofa"]);
+    expect(Object.keys(board.latest).sort()).toEqual([
+      "heart_rate", "lactate", "map", "resp_rate", "sofa", "spo2", "temperature",
+    ]);
     const alert = board.alerts[0];
     for (const key of [
       "kind", "severity", "urgency", "summary", "clinical_reasoning", "supporting_evidence",
@@ -708,6 +765,9 @@ export interface BoardAlert {
 export interface LatestVitals {
   heart_rate: number | null;
   map: number | null;
+  spo2: number | null;
+  temperature: number | null;
+  resp_rate: number | null;
   lactate: number | null;
   sofa: number | null;
 }
@@ -2223,6 +2283,9 @@ const NOTIFICATION_CAP = 50;
 export interface VitalSeries {
   heart_rate: number[];
   map: number[];
+  spo2: number[];
+  temperature: number[];
+  resp_rate: number[];
   lactate: number[];
   sofa: number[];
 }
@@ -2250,7 +2313,9 @@ export type BoardAction =
   | { type: "ack"; patientId: string; kind: string; role: Role; now: number }
   | { type: "loop" };
 
-const emptySeries = (): VitalSeries => ({ heart_rate: [], map: [], lactate: [], sofa: [] });
+const emptySeries = (): VitalSeries => ({
+  heart_rate: [], map: [], spo2: [], temperature: [], resp_rate: [], lactate: [], sofa: [],
+});
 
 const push = (series: number[], value: number | null): number[] =>
   value === null ? series : [...series, value].slice(-SERIES_CAP);
@@ -2274,6 +2339,9 @@ export function boardReducer(state: BoardState, action: BoardAction): BoardState
           [board.patient_id]: {
             heart_rate: push(previous.heart_rate, board.latest.heart_rate),
             map: push(previous.map, board.latest.map),
+            spo2: push(previous.spo2, board.latest.spo2),
+            temperature: push(previous.temperature, board.latest.temperature),
+            resp_rate: push(previous.resp_rate, board.latest.resp_rate),
             lactate: push(previous.lactate, board.latest.lactate),
             sofa: push(previous.sofa, board.latest.sofa),
           },
