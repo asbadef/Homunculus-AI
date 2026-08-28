@@ -45,6 +45,18 @@ def test_a_missing_credential_is_refused(client):
     assert client.get("/patients").status_code == 401
 
 
+def test_a_jwt_does_not_open_the_stream(client):
+    """The tenant token authorises /ingest as well as the board, so it must never be handed to a
+    browser — and the reverse restriction matters just as much: a JWT, valid on every other
+    clinical route, must not work as `/stream?token=`. `_stream_hospital` only ever calls
+    `_tenant_from_token` (never `resolve_jwt_hospital`), so this is true by construction today;
+    the point of this test is to catch a future edit that quietly wires a JWT into the stream
+    path, since that would put a bearer credential straight into a URL — logs, browser history,
+    proxies — for a token that is otherwise sent only in an Authorization header."""
+    res = client.get("/stream?token=valid-jwt")
+    assert res.status_code == 401
+
+
 def test_ingest_also_accepts_both(client):
     """Same resolver everywhere: one place decides who a caller is."""
     observation = {

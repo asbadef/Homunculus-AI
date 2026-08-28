@@ -163,28 +163,47 @@ def make_startup_tenant_check(configured_hospitals: list[str]) -> Callable[[], A
     return check
 
 
-async def _read_tenant_slugs(user_id: str) -> list[str]:
-    """The real membership query: Tenant.slug joined through TenantMembership, filtered to this
-    user's *active* memberships — a revoked membership must not still grant board access.
+def _tenant_slug_query(user_id: str):
+    """The membership query in isolation, so its filters can be inspected without a database.
 
-    Needs a live Postgres to exercise; the decision logic that consumes its result is covered by
-    tests/test_jwt_hospital_lookup.py without one.
+    Tenant.slug joined through TenantMembership joined through User, filtered to this user's
+    *active* membership on an *active* user account. Both checks matter and neither substitutes
+    for the other: an admin who deactivates a compromised or terminated account is deactivating
+    the User row, not touching any TenantMembership — mirroring `get_current_user` in
+    `auth/dependencies.py`, which is why that path already checks `user.is_active` and this one
+    must too. Filtering on membership alone (the original version of this query) left a
+    deactivated user's still-unexpired access token able to keep reaching every clinical route,
+    including /ingest, until it expired on its own.
     """
     from sqlalchemy import select
 
-    from homunculus.auth.models import TenantMembership
-    from homunculus.db import AsyncSessionLocal
+    from homunculus.auth.models import TenantMembership, User
     from homunculus.tenant.models import Tenant
 
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(Tenant.slug)
-            .join(TenantMembership, TenantMembership.tenant_id == Tenant.id)
-            .where(
-                TenantMembership.user_id == user_id,
-                TenantMembership.is_active == True,  # noqa: E712
-            )
+    return (
+        select(Tenant.slug)
+        .select_from(TenantMembership)
+        .join(Tenant, TenantMembership.tenant_id == Tenant.id)
+        .join(User, TenantMembership.user_id == User.id)
+        .where(
+            TenantMembership.user_id == user_id,
+            TenantMembership.is_active == True,  # noqa: E712
+            User.is_active == True,  # noqa: E712
         )
+    )
+
+
+async def _read_tenant_slugs(user_id: str) -> list[str]:
+    """Run `_tenant_slug_query` against the real database.
+
+    Needs a live Postgres to exercise end to end; the query's own filter construction is covered
+    without one by tests/test_jwt_hospital_lookup.py, and the decision logic that consumes its
+    result is covered there too.
+    """
+    from homunculus.db import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(_tenant_slug_query(user_id))
         return [row[0] for row in result.all()]
 
 
