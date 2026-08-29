@@ -29,6 +29,10 @@ the app falls back to the recording with a notice. The demo banner shows only in
 **Limitations:** TOTP (authenticator app) accounts cannot yet log in from the phone —
 use the dashboard for now.
 
+## Tema
+
+**Gece / Nöbet** (night, default) — Slate surfaces with teal brand accent. Matches the web cockpit's family look. **Gündüz Klinik** (day) is switchable in Ayarlar (Settings). Both skins pass WCAG AA contrast checks, enforced by the suite in `__tests__/contrast.test.ts`.
+
 ## Regenerate the ward
 
 ```bash

@@ -199,6 +199,8 @@ stating that everything on screen is recorded synthetic data.
 One palette file feeds both the NativeWind preset and any inline animated style, and the class names
 are exactly the ones the project skill names:
 
+> **Superseded (M3, 2026-08-28):** the values below are M1 history. The palette is now the web cockpit's two skins — see 2026-08-28-mobile-web-theme-m3-design.md.
+
 | Class | Token | Value | Use |
 | --- | --- | --- | --- |
 | `bg-background` | `background` | `hsl(222, 47%, 8%)` | screen ground |
