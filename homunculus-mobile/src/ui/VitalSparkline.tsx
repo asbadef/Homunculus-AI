@@ -1,7 +1,7 @@
 import Svg, { Path } from "react-native-svg";
 
 import { sparklinePath } from "../domain/sparkline";
-import { toneColor } from "../theme/tokens";
+import { useTheme } from "../theme/ThemeContext";
 import type { Tone } from "../theme/tokens";
 
 export function VitalSparkline({
@@ -15,6 +15,7 @@ export function VitalSparkline({
   height: number;
   tone: Tone;
 }) {
+  const { toneColor } = useTheme();
   const path = sparklinePath(values, { width, height, padding: 1.5 });
   if (path === "") return null;
   return (

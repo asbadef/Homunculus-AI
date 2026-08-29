@@ -2,10 +2,11 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 
 import { severityTone } from "../domain/risk";
 import { t } from "../i18n";
-import { toneColor } from "../theme/tokens";
+import { useTheme } from "../theme/ThemeContext";
 import type { BoardNotification } from "../transport/types";
 
 function Row({ note, onSelect }: { note: BoardNotification; onSelect: (id: string) => void }) {
+  const { toneColor } = useTheme();
   const color = toneColor(severityTone(note.severity));
   return (
     <Pressable

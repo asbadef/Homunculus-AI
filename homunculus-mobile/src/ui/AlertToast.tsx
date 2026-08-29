@@ -4,7 +4,7 @@ import { Pressable, Text } from "react-native";
 
 import { severityTone } from "../domain/risk";
 import { SPRING } from "../theme/motion";
-import { toneColor } from "../theme/tokens";
+import { useTheme } from "../theme/ThemeContext";
 import type { BoardNotification } from "../transport/types";
 
 // This file is deliberately expo-router-free. `useRouter` pulls in expo-router's
@@ -63,6 +63,7 @@ export function AlertToast({
   onPress: (patientId: string) => void;
   onDismiss: () => void;
 }) {
+  const { toneColor } = useTheme();
   const color = toneColor(severityTone(note.severity));
 
   return (

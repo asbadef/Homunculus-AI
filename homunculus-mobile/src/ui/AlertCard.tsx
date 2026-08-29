@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { lookupSource } from "../domain/citations";
 import { severityTone } from "../domain/risk";
 import { t } from "../i18n";
-import { toneColor } from "../theme/tokens";
+import { useTheme } from "../theme/ThemeContext";
 import type { BoardAlert } from "../transport/types";
 import { StalenessBadge } from "./StalenessBadge";
 
@@ -31,6 +31,7 @@ export function AlertCard({
   onAcknowledge: () => void;
   onCite: (citationId: string) => void;
 }) {
+  const { key, toneColor } = useTheme();
   const color = escalated ? toneColor("critical") : toneColor(severityTone(alert.severity));
 
   return (
@@ -39,7 +40,7 @@ export function AlertCard({
       className="mb-3 overflow-hidden rounded-2xl border"
       style={{ borderColor: color }}
     >
-      <BlurView intensity={24} tint="dark" className="p-4">
+      <BlurView intensity={24} tint={key === "icu" ? "dark" : "light"} className="p-4">
         <View className="flex-row items-start justify-between gap-3">
           <Text className="text-foreground flex-1 text-base font-semibold">{alert.summary}</Text>
           {escalated ? (

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 import { t } from "../i18n";
 import type { Settings } from "../store/BoardProvider";
-import { tokens } from "../theme/tokens";
+import { useTheme } from "../theme/ThemeContext";
 import type { Role } from "../transport/types";
 
 const SPEEDS = [1, 2, 4];
@@ -29,16 +29,16 @@ export function Chip({
   active: boolean;
   onPress: () => void;
 }) {
+  const { palette } = useTheme();
+  // Active chip state is a branding moment, not a severity — it uses the teal accent, not
+  // clinical.safe (green), which M1 borrowed incorrectly for this.
   return (
     <Pressable
       onPress={onPress}
       className="rounded-lg border px-3 py-1.5"
-      style={{ borderColor: active ? tokens.clinical.safe : tokens.clinical.border }}
+      style={{ borderColor: active ? palette.accent : palette.clinical.border }}
     >
-      <Text
-        className="text-sm"
-        style={{ color: active ? tokens.clinical.safe : tokens.clinical.stale }}
-      >
+      <Text className="text-sm" style={{ color: active ? palette.accent : palette.clinical.stale }}>
         {label}
       </Text>
     </Pressable>

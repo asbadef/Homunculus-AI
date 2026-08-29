@@ -1,7 +1,7 @@
 import { Text, View } from "react-native";
 
 import { t } from "../i18n";
-import { tokens } from "../theme/tokens";
+import { useTheme } from "../theme/ThemeContext";
 import type { Tone } from "../theme/tokens";
 import { StalenessBadge } from "./StalenessBadge";
 import { VitalSparkline } from "./VitalSparkline";
@@ -21,6 +21,7 @@ export function VitalTile({
   tone: Tone;
   staleInputs?: readonly string[];
 }) {
+  const { palette } = useTheme();
   return (
     <View
       accessibilityLabel={`vital-${label}`}
@@ -31,7 +32,7 @@ export function VitalTile({
         <Text className="text-clinical-stale mt-1 text-base">{t("vital.noData")}</Text>
       ) : (
         <View className="mt-1 flex-row items-baseline gap-1">
-          <Text className="text-2xl font-semibold" style={{ color: tokens.foreground }}>
+          <Text className="text-2xl font-semibold" style={{ color: palette.foreground }}>
             {value}
           </Text>
           <Text className="text-clinical-stale text-xs">{unit}</Text>

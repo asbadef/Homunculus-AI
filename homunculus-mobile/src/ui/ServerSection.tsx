@@ -3,7 +3,7 @@ import { Text, TextInput, View } from "react-native";
 
 import { t } from "../i18n";
 import type { MessageKey } from "../i18n";
-import { toneColor } from "../theme/tokens";
+import { useTheme } from "../theme/ThemeContext";
 import { Chip, Row } from "./SettingsPanel";
 
 type Connection = "demo" | "connecting" | "open" | "reconnecting";
@@ -35,6 +35,7 @@ export function ServerSection({
   onGoReplay: () => void;
   loginError: string | null;
 }) {
+  const { toneColor } = useTheme();
   const [address, setAddress] = useState(serverUrl ?? "");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
