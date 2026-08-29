@@ -17,9 +17,10 @@ export function RiskPill({ risk }: { risk: Risk }) {
   return (
     <View
       accessibilityLabel={`risk-pill-${risk}`}
-      className="rounded-full border px-2.5 py-0.5"
+      className="flex-row items-center gap-1.5 rounded-full border px-2.5 py-0.5"
       style={{ borderColor: color, backgroundColor: tint }}
     >
+      <View className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
       <Text className="text-xs font-semibold uppercase tracking-wide" style={{ color }}>
         {t(`risk.${risk}` as MessageKey)}
       </Text>

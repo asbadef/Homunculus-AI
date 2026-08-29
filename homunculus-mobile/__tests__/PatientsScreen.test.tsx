@@ -3,6 +3,8 @@ import { render, screen } from "@testing-library/react-native";
 
 import { useBoard } from "../src/store/BoardProvider";
 import PatientsScreen from "../app/(tabs)/index";
+import type { PatientView } from "../src/store/boardStore";
+import type { PatientBoard } from "../src/transport/types";
 
 jest.mock("../src/store/BoardProvider", () => ({
   useBoard: jest.fn(),
@@ -50,5 +52,30 @@ describe("PatientsScreen — empty and unreachable never look alike", () => {
     mockUseBoard.mockReturnValue({ ward: [], mode: "replay", connection: "demo" });
     await render(<PatientsScreen />);
     expect(screen.getAllByLabelText("skeleton").length).toBeGreaterThan(0);
+  });
+});
+
+describe("PatientsScreen — cockpit-style header", () => {
+  function view(id: string): PatientView {
+    const board: PatientBoard = {
+      patient_id: id, risk: "none", alerts: [],
+      latest: { heart_rate: null, map: null, spo2: null, temperature: null, resp_rate: null, lactate: null, sofa: null },
+    };
+    return {
+      board, top: null, tone: "muted", escalated: false, unacknowledged: false,
+      escalatedKeys: new Set(), acknowledgedKeys: new Set(),
+      series: { heart_rate: [], map: [], spo2: [], temperature: [], resp_rate: [], lactate: [], sofa: [] },
+    };
+  }
+
+  it("shows the single 'Tümü' unit tab and an occupancy chip counting the ward", async () => {
+    mockUseBoard.mockReturnValue({
+      ward: [view("bed-3"), view("bed-5")],
+      mode: "live",
+      connection: "open",
+    });
+    await render(<PatientsScreen />);
+    expect(screen.getByText("Tümü")).toBeTruthy();
+    expect(screen.getByText("Doluluk: 2 / 2")).toBeTruthy();
   });
 });
