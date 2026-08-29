@@ -46,7 +46,7 @@ Projenin bir anda bitmesi mümkün değil; **basamak basamak** ilerliyor. Şu an
 | **1. Bilgi vault'u** | Klinik bilgiyi kaynaklarıyla toplayan "ikinci beyin" (Obsidian) | ✅ Kuruldu (sepsis konusu) |
 | **2. Görünmez motor** | Cihaz verisini alıp, kuralları işletip, gerekçeli uyarı üreten çekirdek. Ekranı yok; sentetik (uydurma) hasta senaryolarıyla test edilir | ✅ Bitti — 54 test geçiyor |
 | **3. Canlı panel** | Doktorun/hemşirenin gerçek zamanlı gördüğü ekran + onay + eskalasyon | 🟡 Büyük kısmı bitti — canlı pano (B1) + onay/eskalasyon (B2) çalışıyor; bildirim kanalları (B3) kaldı |
-| **4. Gerçek cihaz + ML** | Gerçek hastane cihazlarına bağlanmak ve öğrenen bir ML modeli eklemek | ML ilk dilimi ✅ kuruldu; gerçek-veri eğitimi + gerçek cihaz bağlantısı 🔜 |
+| **4. Gerçek cihaz + ML** | Gerçek hastane cihazlarına bağlanmak ve öğrenen bir ML modeli eklemek | ML ilk dilimi ✅; cihaz köprüsü (NCE dosya rotası) ✅ yazıldı ve test edildi — sahada devreye alma (paylaşım + alan tablosu) 🔜 |
 
 **Şu anki dürüst tablo:** Beyin (vault) ve kalp (motor) çalışıyor. Motor, uydurma bir
 hastayı saat saat kötüleştirip doğru uyarıyı doğru anda ürettiğini kanıtlıyor. Ama henüz
@@ -244,6 +244,27 @@ kötüleşme, laboratuvar bunu yakalayana kadar saatler geçebilirken, sürekli 
 - *Basit:* Dışarıdan gelen mesajları alıp, içeride herkesin anladığı tek bir ortak biçime
   çeviren "gümrük kapısı". Bozuk mesajı reddeder, akışı çökertmez.
 
+**WACP**
+- *Basit:* Bazı üreticilerin (bizde Welch Allyn) kendi cihazlarıyla konuşmak için kullandığı,
+  dokümantasyonu dışarıya kapalı "özel dil". HL7 gibi ortak bir standart değildir.
+- *Homunculus'ta:* Pilot monitör (Connex Spot) HL7 değil WACP konuşuyor. Bunu keşif aracımız,
+  cihazın gönderdiği 37 baytın içindeki `RNDZCONNECT` selamından anladı — cihaz karşısında
+  üreticinin kendi sunucusunu arıyordu.
+
+**NCE (Network Connectivity Engine)**
+- *Basit:* Welch Allyn'in, cihazlarından WACP ile veri toplayan kendi sunucu yazılımı.
+- *Homunculus'ta:* Hastanede 2020'den beri çalışan bir NCE sunucusu bulundu; monitörler ona
+  bağlı ve her ölçüm oturumunu diske XML dosyası olarak yazıyor. Entegrasyon noktamız bu:
+  cihazla biz değil NCE konuşuyor, biz NCE'nin yazdığı dosyaları **salt-okunur** okuyoruz.
+
+**Keşif modu (discovery)**
+- *Basit:* Eşleme tablosunu yazmadan önce köprüyü "hiçbir şey iletme, sadece gördüğün alan
+  adlarını say ve raporla" kipinde çalıştırmak. Rapor `Eşlenmemiş alanlar: SpO2 (12), ...` gibi
+  bir satırdır — ölçüm değeri ya da hasta bilgisi asla içermez.
+- *Neden:* Satıcının alan adlarını tahmin etmek, pilotun her ekranı sağlıklı görünürken hiç
+  veri almamasının klasik yoludur. Yanlış tablo, sessiz bir servisle aynı görünür; sayaçlar bu
+  körlüğü görünür kılar.
+
 **Bayatlık (staleness)**
 - *Basit:* Bir ölçümün ne kadar "eski" olduğu. 10 dakika önceki laktat ile 4 saat önceki
   laktat aynı şey değildir. Sistem her değerin **yaşını** bilir.
@@ -319,6 +340,22 @@ Projenin en öğretici kararları. Bir şeyi *yapmamak* da bir tasarım kararıd
 - **Neden NICU'ya yetişkin/çocuk tanımını uygulamıyoruz?** Prematüre bir bebekte solunum ve
   dolaşım dalgalanması *zaten normaldir*; yetişkin skoru burada neredeyse tüm bebekleri "hasta"
   işaretler. NICU ayrı bir üründür.
+
+- **Neden cihazın özel protokolünü (WACP) kendimiz yazmadık?** Pilot monitörü köprümüze
+  yönlendirdiğimizde HL7 yerine anlaşılmaz 37 bayt geldi — içinde `RNDZCONNECT` yazıyordu:
+  Welch Allyn'in kapalı protokolü WACP'nin selamı. İlk akla gelen "o zaman WACP'yi biz yazalım"
+  oldu. Yazmadık, çünkü iz sürünce daha iyisi çıktı: cihazın içine yazılı IP'nin sahibi,
+  hastanede **2020'den beri çalışan gerçek bir NCE sunucusuydu** — cihazların aradığı muhatap
+  zaten oradaydı ve her ölçümü diske XML olarak yazıyordu. Üç yol vardı: (A) NCE'den HL7 çıkışı
+  ayarlatmak, (B) NCE'nin yazdığı dosyaları okumak, (C) WACP'yi sıfırdan yazmak. **B'yi seçtik:**
+  beş yıldır dört cihazın bağlı olduğu canlı klinik bir sisteme hiç dokunmadan, salt-okunur bir
+  paylaşımla veri alıyoruz. C ise spec'i olmayan tescilli bir protokolü tersine mühendislikle
+  yazmak demekti — aylar sürer ve klinik veride en tehlikeli hata sınıfını (sessizce *yanlış*
+  çözümlenen değer) davet eder. Ders: **cihaz konuşmuyorsa önce kiminle konuşmaya çalıştığını
+  bul** — sorunun cevabı çoğu zaman protokol yazmak değil, zaten çalışan bir sistemi bulmaktır.
+  (Bonus bulgu: sunucunun Windows saati, dosya adlarındaki UTC damgasından bir saat farklıydı.
+  Bu yüzden köprü yerel saate asla güvenmez: ya dosyanın içindeki UTC zamanı, ya dosya adındaki
+  UTC damgası — saat dilimi belirtmeyen bir zaman *reddedilir*, asla "yereldir" diye varsayılmaz.)
 
 - **Neden gerçek hasta verisini bu depoya koymuyoruz?** Asla PHI (hasta kimlik bilgisi) girmez.
   Model için ya sentetik ya da halka açık de-identifiye veri (MIMIC-IV/eICU) kullanılır. Bu
