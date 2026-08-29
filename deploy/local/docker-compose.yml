@@ -104,6 +104,42 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  nce:
+    image: ghcr.io/asbadef/homunculus-bridge:latest
+    container_name: homunculus-nce
+    restart: unless-stopped
+    volumes:
+      # The vendor's session files. READ-ONLY on both sides: :ro here, and `-o ro` on the host
+      # mount. The NCE server is a live clinical system; nothing here may write to it.
+      - ${NCE_SHARE_PATH}:/nce:ro
+      # Buffer and processed-file ledger. MUST persist: the buffer holds observations the API has
+      # not acknowledged, and the ledger is the ONLY record of which sessions were forwarded —
+      # losing it re-sends whatever the --since window covers.
+      - nce-data:/data
+      - ./nce-mapping.json:/app/nce-mapping.json:ro
+    environment:
+      TZ: ${TZ:-Europe/Istanbul}
+    command:
+      - scripts/run_nce_bridge.py
+      - --dir
+      - /nce
+      - --db
+      - /data/nce.db
+      - --mapping
+      - /app/nce-mapping.json
+      - --cloud-url
+      - http://api:8000
+      - --token
+      - ${TENANT_TOKEN}
+    depends_on:
+      - api
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
 volumes:
   pgdata:
   bridge-data:
+  nce-data:
