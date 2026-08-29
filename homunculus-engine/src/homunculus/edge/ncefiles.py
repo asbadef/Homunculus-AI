@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from homunculus.canonical import SignalCode
+from homunculus.canonical import Observation, SignalCode
 from homunculus.gateway.fhir import GatewayError
 
 
@@ -146,3 +146,81 @@ def parse_timestamp(raw: str) -> datetime | None:
     if parsed.tzinfo is None:
         return None
     return parsed.astimezone(timezone.utc)
+
+
+@dataclass(frozen=True)
+class ParsedSession:
+    """What one session yielded, and what it carried that we could not use.
+
+    The two failure lists are not diagnostics for later — they are the reason the operator report
+    can say a signal is going missing while files keep arriving.
+    """
+    observations: tuple[Observation, ...] = ()
+    non_numeric: tuple[str, ...] = ()
+    repeated: tuple[str, ...] = ()
+
+
+def _first_value(pairs: list[tuple[str, str]], names: tuple[str, ...]) -> str:
+    """The first non-empty value among `names`, preferring the order the site listed them in."""
+    for wanted in names:
+        for name, value in pairs:
+            if name == wanted and value:
+                return value
+    return ""
+
+
+def parse_session(
+    text: str,
+    mapping: SiteMapping,
+    *,
+    fallback_timestamp: datetime | None = None,
+    source_device: str = "nce",
+) -> ParsedSession:
+    """One session file -> the observations it carries.
+
+    Raises GatewayError when the session has no patient identifier or no trustworthy time: both make
+    every reading in it unusable, and inventing either would put real numbers on an imaginary
+    patient or an imaginary minute.
+    """
+    pairs = session_pairs(text, mapping)
+
+    patient_id = _first_value(pairs, mapping.patient_fields)
+    if not patient_id:
+        raise GatewayError("session carries no patient identifier in any configured field")
+
+    timestamp = parse_timestamp(_first_value(pairs, mapping.timestamp_fields))
+    if timestamp is None:
+        timestamp = fallback_timestamp
+    if timestamp is None:
+        raise GatewayError("session carries no usable UTC time and its filename has no epoch")
+
+    observations: list[Observation] = []
+    non_numeric: list[str] = []
+    repeated: list[str] = []
+    taken: set[str] = set()
+
+    for name, raw_value in pairs:
+        mapped = mapping.signals.get(name)
+        if mapped is None:
+            continue
+        if name in taken:
+            if name not in repeated:
+                repeated.append(name)
+            continue
+        try:
+            value = float(raw_value)
+        except ValueError:
+            if name not in non_numeric:
+                non_numeric.append(name)
+            continue
+        taken.add(name)
+        observations.append(Observation(
+            patient_id=patient_id,
+            code=mapped.signal,
+            value=value,
+            unit=mapped.unit,
+            timestamp=timestamp,
+            source_device=source_device,
+        ))
+
+    return ParsedSession(tuple(observations), tuple(non_numeric), tuple(repeated))

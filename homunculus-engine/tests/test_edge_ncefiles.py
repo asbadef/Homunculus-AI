@@ -12,8 +12,10 @@ import pytest
 
 from homunculus.canonical import SignalCode
 from homunculus.edge.ncefiles import (
+    MappedField,
     SiteMapping,
     load_site_mapping,
+    parse_session,
     parse_timestamp,
     session_fields,
     session_pairs,
@@ -151,3 +153,77 @@ def test_a_stamp_with_no_timezone_is_refused():
 
 def test_nonsense_is_refused_rather_than_guessed():
     assert parse_timestamp("bugün") is None
+
+
+FULL_MAPPING = SiteMapping(
+    signals={
+        "Nibp_Systolic": MappedField(SignalCode.SBP, "mmHg"),
+        "SpO2": MappedField(SignalCode.SPO2, "%"),
+        "Pulse": MappedField(SignalCode.HEART_RATE, "bpm"),
+    },
+    patient_fields=("PatientId",),
+    timestamp_fields=("MeasurementTimeUtc",),
+)
+
+EPOCH_FALLBACK = datetime(2026, 8, 28, 12, 54, 47, tzinfo=timezone.utc)
+
+
+def test_mapped_fields_become_observations():
+    parsed = parse_session(ELEMENT_STYLE, FULL_MAPPING)
+
+    by_code = {o.code: o for o in parsed.observations}
+    assert by_code[SignalCode.SBP].value == 128.0
+    assert by_code[SignalCode.SBP].unit == "mmHg"
+    assert by_code[SignalCode.SPO2].value == 97.0
+    assert all(o.patient_id == "yatak-3" for o in parsed.observations)
+    assert all(o.timestamp == EPOCH_FALLBACK for o in parsed.observations)
+
+
+def test_a_session_with_no_patient_identifier_is_refused():
+    """A vital recorded against the wrong patient is worse than one that never arrives, and a
+    placeholder patient is a wrong patient with a friendly name."""
+    anonymous = ELEMENT_STYLE.replace("<PatientId>yatak-3</PatientId>", "")
+
+    with pytest.raises(GatewayError) as caught:
+        parse_session(anonymous, FULL_MAPPING)
+
+    assert "patient" in str(caught.value).lower()
+
+
+def test_the_filename_epoch_is_used_when_the_session_carries_no_utc_time():
+    undated = ELEMENT_STYLE.replace(
+        "<MeasurementTimeUtc>2026-08-28T12:54:47Z</MeasurementTimeUtc>", ""
+    )
+
+    parsed = parse_session(undated, FULL_MAPPING, fallback_timestamp=EPOCH_FALLBACK)
+
+    assert all(o.timestamp == EPOCH_FALLBACK for o in parsed.observations)
+
+
+def test_a_session_with_no_usable_time_at_all_is_refused():
+    undated = ELEMENT_STYLE.replace(
+        "<MeasurementTimeUtc>2026-08-28T12:54:47Z</MeasurementTimeUtc>", ""
+    )
+
+    with pytest.raises(GatewayError):
+        parse_session(undated, FULL_MAPPING, fallback_timestamp=None)
+
+
+def test_a_mapped_field_that_is_not_a_number_is_reported_not_dropped():
+    broken = ELEMENT_STYLE.replace("<SpO2>97</SpO2>", "<SpO2>--</SpO2>")
+
+    parsed = parse_session(broken, FULL_MAPPING)
+
+    assert "SpO2" in parsed.non_numeric
+    assert SignalCode.SPO2 not in {o.code for o in parsed.observations}
+
+
+def test_a_mapped_field_appearing_twice_is_reported():
+    """The flat walk keeps the first value. If a session carries several readings per field that is
+    data loss, so it has to be visible rather than quiet."""
+    twice = ELEMENT_STYLE.replace("<SpO2>97</SpO2>", "<SpO2>97</SpO2><SpO2>95</SpO2>")
+
+    parsed = parse_session(twice, FULL_MAPPING)
+
+    assert "SpO2" in parsed.repeated
+    assert len([o for o in parsed.observations if o.code is SignalCode.SPO2]) == 1
