@@ -22,6 +22,20 @@ export default function PatientsScreen() {
       <View className="px-4 pb-2 pt-3">
         <Text className="text-foreground text-2xl font-semibold">{t("ward.title")}</Text>
         <Text className="text-clinical-stale text-xs">{t("ward.subtitle")}</Text>
+
+        {/* Cockpit-style bar: a single "Tümü" unit tab (only one ward exists on mobile, so it is
+            always active) + a right-aligned occupancy chip. Every recorded bed is occupied, so
+            occupied === total for now — honest rather than inventing a vacancy concept. */}
+        <View className="mt-3 flex-row items-center gap-2">
+          <View className="bg-accent rounded-lg px-3 py-1.5">
+            <Text className="text-xs font-medium text-white">{t("ward.allUnits")}</Text>
+          </View>
+          <View className="border-clinical-border ml-auto rounded-lg border px-3 py-1.5">
+            <Text className="text-clinical-stale text-xs font-medium">
+              {t("ward.occupancy", { occupied: ward.length, total: ward.length })}
+            </Text>
+          </View>
+        </View>
       </View>
       {liveDisconnected && ward.length === 0 ? (
         <View className="flex-1 items-center justify-center p-8">

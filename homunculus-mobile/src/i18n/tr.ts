@@ -42,6 +42,16 @@ export const tr = {
   "vital.noData": "veri yok",
   "vital.trend": "Senaryo zamanı eğilimi",
 
+  // Cockpit vitals-row cell labels (M4) — short forms for a narrow grid cell, distinct from the
+  // full names above used on the detail screen's trend tiles.
+  "vital.hr": "NB",
+  "vital.spo2": "SpO2",
+  "vital.tempShort": "Ateş",
+  "vital.rr": "SS",
+
+  "ward.allUnits": "Tümü",
+  "ward.occupancy": "Doluluk: {occupied} / {total}",
+
   "detail.vitals": "Vital bulgular",
   "detail.alerts": "Aktif uyarılar",
   "detail.noAlerts": "Aktif uyarı yok.",

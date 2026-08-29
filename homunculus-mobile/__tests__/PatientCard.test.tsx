@@ -49,10 +49,39 @@ describe("PatientCard", () => {
     expect(screen.getByText("ESKALE EDİLDİ")).toBeTruthy();
   });
 
-  it("shows the SOFA total and a MAP trend", async () => {
+  it("shows the SOFA total as a chip, with no MAP sparkline", async () => {
     await render(<PatientCard view={view()} onPress={() => {}} />);
     expect(screen.getByText("SOFA 6")).toBeTruthy();
-    expect(screen.getByLabelText("sparkline")).toBeTruthy();
+    expect(screen.queryByLabelText("sparkline")).toBeNull();
+  });
+
+  it("renders the five-cell vitals row", async () => {
+    await render(<PatientCard view={view()} onPress={() => {}} />);
+    // labels for all five cells
+    expect(screen.getByText("NB")).toBeTruthy();
+    expect(screen.getByText("OAB")).toBeTruthy();
+    expect(screen.getByText("SpO2")).toBeTruthy();
+    expect(screen.getByText("Ateş")).toBeTruthy();
+    expect(screen.getByText("SS")).toBeTruthy();
+    // the view's MAP value is present; the other four vitals are null → "—"
+    expect(screen.getByText("62")).toBeTruthy();
+    expect(screen.getAllByText("—").length).toBe(4);
+  });
+
+  it("hides the waveform strip when there is no heart rate", async () => {
+    await render(<PatientCard view={view()} onPress={() => {}} />);
+    expect(screen.queryByLabelText("waveform")).toBeNull();
+  });
+
+  it("shows the waveform strip when a heart rate is present", async () => {
+    const withHr = view({
+      board: {
+        patient_id: "bed-3", risk: "critical", alerts: [alert()],
+        latest: { heart_rate: 82, map: 62, spo2: null, temperature: null, resp_rate: null, lactate: 3.4, sofa: 6 },
+      },
+    });
+    await render(<PatientCard view={withHr} onPress={() => {}} />);
+    expect(screen.getByLabelText("waveform")).toBeTruthy();
   });
 
   it("exposes one accessible label describing the whole card", async () => {
@@ -69,6 +98,8 @@ describe("PatientCard", () => {
       top: null, tone: "muted", unacknowledged: false,
     });
     await render(<PatientCard view={calm} onPress={() => {}} />);
-    expect(screen.getByText("Sakin")).toBeTruthy();
+    // The risk pill and the card's faint footer both read the risk name (by design — the
+    // footer is a plain-language echo of the pill, not a duplicate label to disambiguate).
+    expect(screen.getAllByText("Sakin").length).toBe(2);
   });
 });
