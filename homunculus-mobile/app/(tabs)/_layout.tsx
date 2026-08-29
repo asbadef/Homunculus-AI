@@ -2,20 +2,23 @@ import { Tabs } from "expo-router";
 import { Activity, BellRing, Settings2 } from "lucide-react-native";
 
 import { t } from "../../src/i18n";
-import { tokens } from "../../src/theme/tokens";
+import { useTheme } from "../../src/theme/ThemeContext";
 
 export default function TabsLayout() {
+  const { palette } = useTheme();
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: tokens.clinical.safe,
-        tabBarInactiveTintColor: tokens.clinical.stale,
+        // Active tab tint is the teal accent (branding), not clinical.safe (severity) — the
+        // same fix as SettingsPanel's Chip.
+        tabBarActiveTintColor: palette.accent,
+        tabBarInactiveTintColor: palette.clinical.stale,
         tabBarStyle: {
-          backgroundColor: tokens.card,
-          borderTopColor: tokens.clinical.border,
+          backgroundColor: palette.card,
+          borderTopColor: palette.clinical.border,
         },
-        sceneStyle: { backgroundColor: tokens.background },
+        sceneStyle: { backgroundColor: palette.background },
       }}
     >
       <Tabs.Screen

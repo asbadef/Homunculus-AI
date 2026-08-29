@@ -7,11 +7,12 @@ import { t } from "../i18n";
 import type { PatientView } from "../store/boardStore";
 import { bedNumber } from "./bed";
 import { GLOW_DURATION_MS, PRESS_SCALE, SPRING } from "../theme/motion";
-import { toneColor } from "../theme/tokens";
+import { useTheme } from "../theme/ThemeContext";
 import { RiskPill } from "./RiskPill";
 import { VitalSparkline } from "./VitalSparkline";
 
 export function PatientCard({ view, onPress }: { view: PatientView; onPress: () => void }) {
+  const { toneColor } = useTheme();
   const color = toneColor(view.tone);
   const bed = t("bed.label", { bed: bedNumber(view.board.patient_id) });
 
