@@ -24,6 +24,7 @@ import asyncio
 import logging
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 from homunculus.edge.buffer import SqliteBuffer
 from homunculus.edge.filewatch import ProcessedLedger, pending_files
@@ -74,6 +75,11 @@ async def scan_loop(
                 bridge.handle_session(text, fallback_timestamp=fallback, source_device="nce")
             except GatewayError:
                 pass        # already counted and logged by the bridge; do not retry it forever
+            except Exception:
+                # An unexpected failure crashes the process LOUDLY (compose restarts it) — but the
+                # restart loop must be diagnosable, so name the file first. Name only: PHI-safe.
+                _log.error("session %s failed unexpectedly", session.name)
+                raise
             ledger.record(session.name, session.size, session.mtime)
 
         await asyncio.sleep(interval)
@@ -92,7 +98,32 @@ async def report_loop(bridge: NceFileBridge, buffer: SqliteBuffer, ledger: Proce
             _log.warning("%s", report)
 
 
+def parse_since(since: str, process_all: bool) -> int | None:
+    """The oldest session epoch to process, or None for no lower bound.
+
+    A date with no timezone is taken as UTC (the help text says so). A date that CARRIES an
+    offset is honoured, not clobbered: silently reinterpreting explicit operator input would
+    shift a clinical backfill window by hours.
+    """
+    if since:
+        parsed = datetime.fromisoformat(since)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return int(parsed.timestamp())
+    if process_all:
+        return None
+    # Default: only sessions written from now on. Replaying years of discharged admissions would
+    # fill the board with patients who are not on the ward, and multiply patient data at rest
+    # before the field table has been validated. The files stay on the NCE server either way.
+    return int(datetime.now(tz=timezone.utc).timestamp())
+
+
 async def main_async(args: argparse.Namespace) -> None:
+    if Path(args.db).resolve().parent == Path(args.dir).resolve():
+        raise SystemExit(
+            f"--db {args.db} sits inside --dir {args.dir}: the buffer holds patient data and "
+            f"must not be scanned as a session; put it elsewhere (production uses /data vs /nce)")
+
     buffer = SqliteBuffer(args.db, max_rows=args.max_buffer)
     ledger = ProcessedLedger(args.ledger or f"{args.db}.ledger")
     mapping = load_site_mapping(args.mapping) if args.mapping else SiteMapping()
@@ -104,16 +135,7 @@ async def main_async(args: argparse.Namespace) -> None:
 
     bridge = NceFileBridge(send=send, mapping=mapping)
 
-    since_epoch = None
-    if args.since:
-        since_epoch = int(
-            datetime.fromisoformat(args.since).replace(tzinfo=timezone.utc).timestamp()
-        )
-    elif not args.all:
-        # Default: only sessions written from now on. Replaying years of discharged admissions would
-        # fill the board with patients who are not on the ward, and multiply patient data at rest
-        # before the field table has been validated. The files stay on the NCE server either way.
-        since_epoch = int(datetime.now(tz=timezone.utc).timestamp())
+    since_epoch = parse_since(args.since, args.all)
 
     if capture_only:
         _log.warning("KEŞİF MODU: veri iletilmiyor, yalnızca alan adları raporlanıyor "
