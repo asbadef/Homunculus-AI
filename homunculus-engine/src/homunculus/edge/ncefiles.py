@@ -120,7 +120,7 @@ def _paired_attributes(
     return found
 
 
-def session_pairs(text: str, mapping: SiteMapping | None = None) -> list[tuple[str, str]]:
+def session_pairs(text: str | bytes, mapping: SiteMapping | None = None) -> list[tuple[str, str]]:
     """Every name/value pair a session carries.
 
     The flat element/attribute pairs come first, in document order; any pairs read via a
@@ -142,7 +142,7 @@ def session_pairs(text: str, mapping: SiteMapping | None = None) -> list[tuple[s
     return pairs
 
 
-def session_fields(text: str, mapping: SiteMapping | None = None) -> list[str]:
+def session_fields(text: str | bytes, mapping: SiteMapping | None = None) -> list[str]:
     """The field names a session carries, duplicates included. This is what discovery reports."""
     return [name for name, _ in session_pairs(text, mapping)]
 
@@ -197,7 +197,7 @@ def _sole_value(pairs: list[tuple[str, str]], names: tuple[str, ...], *, kind: s
 
 
 def parse_session(
-    text: str,
+    text: str | bytes,
     mapping: SiteMapping,
     *,
     fallback_timestamp: datetime | None = None,

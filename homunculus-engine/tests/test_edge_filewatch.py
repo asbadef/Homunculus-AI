@@ -38,6 +38,17 @@ def test_the_ledger_survives_a_restart(tmp_path):
     assert second.seen(REAL_NAME, size=4096, mtime=1787921687) is True
 
 
+def test_first_start_epoch_is_sticky_across_restarts(tmp_path):
+    path = tmp_path / "ledger.db"
+    first = ProcessedLedger(path)
+    assert first.first_start_epoch(1787921620) == 1787921620
+    assert first.first_start_epoch(1787999999) == 1787921620   # later boots do not move it
+    first.close()
+
+    reopened = ProcessedLedger(path)
+    assert reopened.first_start_epoch(1788000000) == 1787921620
+
+
 def test_a_file_that_grew_after_we_read_it_is_offered_again(tmp_path):
     """Keying on the name alone would skip appended content forever, invisibly."""
     ledger = ProcessedLedger(tmp_path / "ledger.db")

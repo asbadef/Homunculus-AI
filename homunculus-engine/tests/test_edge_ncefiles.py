@@ -99,6 +99,13 @@ def test_field_names_are_reported_for_discovery():
     assert "MeasurementTimeUtc" in names
 
 
+def test_a_utf16_document_is_parsed_not_rejected():
+    """NCE runs on Windows; UTF-16 output is realistic. expat reads the BOM when given bytes."""
+    pairs = session_pairs(ELEMENT_STYLE.encode("utf-16"))
+
+    assert ("PatientId", "yatak-3") in pairs
+
+
 def test_malformed_xml_raises_without_quoting_the_document():
     with pytest.raises(GatewayError) as caught:
         session_pairs("<DeviceSession><PatientId>yatak-3")

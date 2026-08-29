@@ -71,6 +71,22 @@ class ProcessedLedger:
         (total,) = self._conn.execute("SELECT count(*) FROM processed").fetchone()
         return int(total)
 
+    def first_start_epoch(self, now_epoch: int) -> int:
+        """The epoch of the FIRST-ever start, remembered across restarts.
+
+        The default scan window opens here, not at the current start: a bridge that reopens its
+        window at every boot silently drops the sessions written while it was down — exactly the
+        gap the ledger exists to close.
+        """
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)")
+        self._conn.execute(
+            "INSERT OR IGNORE INTO meta (key, value) VALUES ('first_start', ?)", (now_epoch,))
+        self._conn.commit()
+        (value,) = self._conn.execute(
+            "SELECT value FROM meta WHERE key = 'first_start'").fetchone()
+        return int(value)
+
     def close(self) -> None:
         self._conn.close()
 

@@ -57,8 +57,11 @@ async def scan_loop(
             pending_files, directory, ledger, since_epoch=since_epoch)
         for session in sessions:
             try:
-                text = await asyncio.to_thread(
-                    session.path.read_text, encoding="utf-8", errors="replace")
+                # Read as bytes, not str: NCE runs on Windows and a UTF-16 session file is
+                # realistic. expat reads the encoding from the BOM/XML declaration itself, while
+                # decoding here first as UTF-8 would turn it into replacement-character soup and
+                # get the session rejected as malformed.
+                text = await asyncio.to_thread(session.path.read_bytes)
             except OSError as exc:
                 _log.warning("could not read %s (%s)", session.name, exc.__class__.__name__)
                 continue
@@ -98,24 +101,24 @@ async def report_loop(bridge: NceFileBridge, buffer: SqliteBuffer, ledger: Proce
             _log.warning("%s", report)
 
 
-def parse_since(since: str, process_all: bool) -> int | None:
-    """The oldest session epoch to process, or None for no lower bound.
+def parse_since(since: str) -> int | None:
+    """An explicit --since as an epoch, or None when none was given.
 
     A date with no timezone is taken as UTC (the help text says so). A date that CARRIES an
     offset is honoured, not clobbered: silently reinterpreting explicit operator input would
     shift a clinical backfill window by hours.
     """
-    if since:
-        parsed = datetime.fromisoformat(since)
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return int(parsed.timestamp())
-    if process_all:
+    if not since:
         return None
-    # Default: only sessions written from now on. Replaying years of discharged admissions would
-    # fill the board with patients who are not on the ward, and multiply patient data at rest
-    # before the field table has been validated. The files stay on the NCE server either way.
-    return int(datetime.now(tz=timezone.utc).timestamp())
+    try:
+        parsed = datetime.fromisoformat(since)
+    except ValueError:
+        raise SystemExit(
+            f"--since {since!r}: ISO tarih bekleniyor, örn. 2026-08-01 veya "
+            f"2026-08-01T00:00:00+03:00") from None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return int(parsed.timestamp())
 
 
 async def main_async(args: argparse.Namespace) -> None:
@@ -135,7 +138,12 @@ async def main_async(args: argparse.Namespace) -> None:
 
     bridge = NceFileBridge(send=send, mapping=mapping)
 
-    since_epoch = parse_since(args.since, args.all)
+    since_epoch = parse_since(args.since)
+    if since_epoch is None and not args.all:
+        # Default: from the FIRST-ever start, remembered in the ledger — not from this boot.
+        # The ledger dedupes everything already forwarded, so a restart resumes rather than skips.
+        # (Replaying truly historical sessions stays a deliberate --since/--all decision.)
+        since_epoch = ledger.first_start_epoch(int(datetime.now(tz=timezone.utc).timestamp()))
 
     if capture_only:
         _log.warning("KEŞİF MODU: veri iletilmiyor, yalnızca alan adları raporlanıyor "

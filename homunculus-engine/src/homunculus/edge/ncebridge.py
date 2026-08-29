@@ -53,7 +53,7 @@ class NceFileBridge:
 
     def handle_session(
         self,
-        text: str,
+        text: str | bytes,
         *,
         fallback_timestamp: datetime | None = None,
         source_device: str = "nce",
@@ -82,7 +82,7 @@ class NceFileBridge:
         self.stats.observations += len(parsed.observations)
         return parsed.observations
 
-    def _record_unmapped(self, text: str) -> None:
+    def _record_unmapped(self, text: str | bytes) -> None:
         """Count field names the site table does not cover.
 
         Runs BEFORE parsing, so a session that is refused for a missing patient identifier still

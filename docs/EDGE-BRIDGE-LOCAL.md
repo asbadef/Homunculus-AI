@@ -69,11 +69,18 @@ WARNING nce-bridge: Eşlenmemiş alanlar: PatientId (12), SpO2 (12), Nibp_Systol
 
 Fill `nce-mapping.json` in from that line — `patient_fields`, `timestamp_fields` and `signals` —
 then `docker compose restart nce`. Guessing the vendor's field names instead is how a pilot receives
-nothing while every screen looks healthy.
+nothing while every screen looks healthy. Sessions that arrive *during* the discovery window are
+recorded as processed even though they were refused, so to re-ingest them once the mapping is
+filled in, stop the service, delete the ledger (`/data/nce.db.ledger` inside the `nce-data`
+volume), and start it again with `--since` covering that window.
 
-By default only sessions written after the bridge starts are forwarded. `--since 2026-08-01` or
-`--all` backfill deliberately; both put more patient data at rest, so they are a decision, not a
-default.
+The compose service passes `--cloud-url` from the start, so `docker compose logs nce` shows an
+`uplink:` line rather than the `KEŞİF MODU` banner — but with an empty mapping nothing is forwarded
+either way, which is what makes the first run a de-facto discovery run regardless.
+
+By default only sessions written since the bridge's first-ever start (remembered in the ledger, not
+reset on every restart) are forwarded. `--since 2026-08-01` or `--all` backfill deliberately; both
+put more patient data at rest, so they are a decision, not a default.
 
 Configuring an HL7 ORU output on NCE itself remains the production target. The file route is what
 unblocks the pilot without waiting on a vendor. See
@@ -147,12 +154,18 @@ docker compose pull bridge    # the bridge image comes from GHCR
 docker compose up -d
 ```
 
+This release adds `NCE_SHARE_PATH` to `.env` — without it, `docker compose up` fails on an invalid
+volume spec for the `nce` service and takes the unrelated services down with it. Add it (see
+`.env.example`) before pulling.
+
 Data survives: it lives in the `pgdata` volume, not in the containers.
 
 ## PHI
 
 - The `pgdata` volume holds patient data. Encrypted storage, and it is removed only deliberately.
 - The `bridge-data` volume holds observations in transit; delete it after the pilot.
+- The `nce-data` volume holds the same thing for the file route — the SQLite buffer and the
+  processed-file ledger; delete it after the pilot too.
 - The bridge logs counts, connection events and OBX identifiers — never measurements or patient
   identifiers.
 - Nothing in this directory may be committed with real values: `.env` and `site-mapping.json` are
