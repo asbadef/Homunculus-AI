@@ -1,0 +1,180 @@
+"""Run the NCE file bridge: session files in -> durable buffer -> cloud.
+
+Runs on the hospital server, reading a READ-ONLY mount of the NCE machine's SavedCopies folder.
+Nothing is installed on the NCE server and nothing there is reconfigured.
+
+Typical first run — discovery, forwards nothing:
+
+    python scripts/run_nce_bridge.py --dir /mnt/nce --db /data/nce.db
+
+That reports the field names the sessions actually carry, which is how nce-mapping.json gets
+written. Then, with a mapping and an uplink:
+
+    python scripts/run_nce_bridge.py --dir /mnt/nce --db /data/nce.db \
+        --mapping /app/nce-mapping.json --cloud-url http://api:8000 --token <tenant-token>
+
+PHI: nothing here logs session contents, measurements or patient identifiers — only counts, file
+names (device metadata) and field names. The buffer file holds real observations in transit: keep it
+on encrypted storage, never commit it, delete it after the pilot.
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import logging
+import sys
+from datetime import datetime, timezone
+
+from homunculus.edge.buffer import SqliteBuffer
+from homunculus.edge.filewatch import ProcessedLedger, pending_files
+from homunculus.edge.ncebridge import NceFileBridge
+from homunculus.edge.ncefiles import SiteMapping, load_site_mapping
+from homunculus.edge.uplink import flush_loop
+from homunculus.gateway.fhir import GatewayError
+
+_log = logging.getLogger("nce-bridge")
+
+
+async def scan_loop(
+    bridge: NceFileBridge,
+    ledger: ProcessedLedger,
+    directory: str,
+    interval: float,
+    since_epoch: int | None,
+) -> None:
+    """Forward every new session, oldest first, recording each one as it goes.
+
+    A file is recorded even when it is refused. Retrying a session that has no patient identifier
+    would refuse it again every pass, forever, burying the log it needs to appear in.
+
+    The scan and every file read run via asyncio.to_thread: both do blocking network I/O against a
+    CIFS mount, and a hung mount stalling the event loop would also freeze flush_loop — a share
+    problem must not stop delivery of observations already buffered.
+    """
+    while True:
+        sessions = await asyncio.to_thread(
+            pending_files, directory, ledger, since_epoch=since_epoch)
+        for session in sessions:
+            try:
+                text = await asyncio.to_thread(
+                    session.path.read_text, encoding="utf-8", errors="replace")
+            except OSError as exc:
+                _log.warning("could not read %s (%s)", session.name, exc.__class__.__name__)
+                continue
+
+            fallback = (
+                datetime.fromtimestamp(session.epoch, tz=timezone.utc)
+                if session.epoch is not None else None
+            )
+            try:
+                # source_device stays a constant, not the filename: every session has a distinct
+                # name, and storing it per observation would give the field unbounded cardinality
+                # while telling a clinician nothing. Which file a reading came from is a bridge-log
+                # question, not a patient-record one.
+                bridge.handle_session(text, fallback_timestamp=fallback, source_device="nce")
+            except GatewayError:
+                pass        # already counted and logged by the bridge; do not retry it forever
+            ledger.record(session.name, session.size, session.mtime)
+
+        await asyncio.sleep(interval)
+
+
+async def report_loop(bridge: NceFileBridge, buffer: SqliteBuffer, ledger: ProcessedLedger,
+                      interval: float) -> None:
+    """Periodic operator report: throughput, buffer depth, and what could not be used."""
+    while True:
+        await asyncio.sleep(interval)
+        stats = bridge.stats
+        _log.info("dosya=%s gözlem=%s reddedilen=%s kuyruk=%s işlenmiş=%s",
+                  stats.files, stats.observations, stats.rejected, buffer.depth(), ledger.count())
+        report = bridge.discovery_report()
+        if report:
+            _log.warning("%s", report)
+
+
+async def main_async(args: argparse.Namespace) -> None:
+    buffer = SqliteBuffer(args.db, max_rows=args.max_buffer)
+    ledger = ProcessedLedger(args.ledger or f"{args.db}.ledger")
+    mapping = load_site_mapping(args.mapping) if args.mapping else SiteMapping()
+    capture_only = not args.cloud_url
+
+    def send(payload: dict) -> None:
+        if not capture_only:
+            buffer.append(payload)
+
+    bridge = NceFileBridge(send=send, mapping=mapping)
+
+    since_epoch = None
+    if args.since:
+        since_epoch = int(
+            datetime.fromisoformat(args.since).replace(tzinfo=timezone.utc).timestamp()
+        )
+    elif not args.all:
+        # Default: only sessions written from now on. Replaying years of discharged admissions would
+        # fill the board with patients who are not on the ward, and multiply patient data at rest
+        # before the field table has been validated. The files stay on the NCE server either way.
+        since_epoch = int(datetime.now(tz=timezone.utc).timestamp())
+
+    if capture_only:
+        _log.warning("KEŞİF MODU: veri iletilmiyor, yalnızca alan adları raporlanıyor "
+                     "(iletmek için --cloud-url verin)")
+    else:
+        _log.info("uplink: %s", args.cloud_url)
+    _log.info("izlenen dizin: %s (since_epoch=%s)", args.dir, since_epoch)
+
+    tasks = [
+        asyncio.create_task(scan_loop(bridge, ledger, args.dir, args.poll_interval, since_epoch)),
+        asyncio.create_task(report_loop(bridge, buffer, ledger, args.report_interval)),
+    ]
+    if not capture_only:
+        ingest_url = args.cloud_url.rstrip("/") + "/ingest"
+        tasks.append(asyncio.create_task(
+            flush_loop(buffer, ingest_url, args.token, args.flush_interval)))
+
+    try:
+        await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        for task in tasks:
+            task.cancel()
+        _log.info("kapanıyor — kuyrukta %s gözlem kaldı (kaybolmaz)", buffer.depth())
+        buffer.close()
+        ledger.close()
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Homunculus NCE file bridge")
+    parser.add_argument("--dir", required=True, help="read-only mount of NCE's SavedCopies")
+    parser.add_argument("--db", default="nce-buffer.db", help="durable buffer file")
+    parser.add_argument("--ledger", default="", help="processed-file ledger (default: <db>.ledger)")
+    parser.add_argument("--mapping", default=None, help="nce-mapping.json")
+    parser.add_argument("--cloud-url", default="", help="e.g. http://api:8000 (empty = discovery)")
+    parser.add_argument("--token", default="", help="tenant bearer token")
+    parser.add_argument("--since", default="", help="backfill from this UTC date, e.g. 2026-08-01")
+    parser.add_argument("--all", action="store_true",
+                        help="process every session on the share, however old")
+    parser.add_argument("--poll-interval", type=float, default=5.0)
+    parser.add_argument("--flush-interval", type=float, default=2.0)
+    parser.add_argument("--report-interval", type=float, default=30.0)
+    parser.add_argument("--max-buffer", type=int, default=200_000)
+    args = parser.parse_args(argv)
+
+    # Windows consoles default to a code page that cannot encode Turkish characters, which would
+    # mangle or crash every log line. Force UTF-8 so this runs on the pilot laptop too.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
+
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    try:
+        asyncio.run(main_async(args))
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

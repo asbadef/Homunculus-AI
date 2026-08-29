@@ -1,0 +1,7 @@
+{
+  "_comment": "Field table for this site's NCE sessions. Written from discovery output, never guessed. Run the bridge without --cloud-url, read the 'Eşlenmemiş alanlar' line, and fill in the fields below. patient_fields and timestamp_fields are tried in the order listed. pair_attributes is only for the <Reading name=\"X\" value=\"1\"/> idiom; leave it empty otherwise.",
+  "patient_fields": [],
+  "timestamp_fields": [],
+  "pair_attributes": [],
+  "signals": {}
+}
