@@ -1827,7 +1827,7 @@ Expected within ~10 seconds:
 ```
 ... WARNING nce-bridge: KEŞİF MODU: veri iletilmiyor, yalnızca alan adları raporlanıyor ...
 ... INFO nce-bridge: dosya=1 gözlem=0 reddedilen=1 kuyruk=0 işlenmiş=1
-... WARNING nce-bridge: Eşlenmemiş alanlar: MeasurementTimeUtc (1), PatientId (1), SpO2 (1)
+... WARNING nce-bridge: Eşlenmemiş alanlar: PatientId (1), MeasurementTimeUtc (1), SpO2 (1)
 ```
 
 `reddedilen=1` is correct here: the mapping is empty, so there is no configured patient field and
