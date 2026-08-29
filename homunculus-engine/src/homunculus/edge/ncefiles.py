@@ -90,6 +90,21 @@ def _flat_pairs(root: ET.Element) -> list[tuple[str, str]]:
     return pairs
 
 
+def _paired_attributes(
+    root: ET.Element, pairs_config: tuple[tuple[str, str], ...]
+) -> list[tuple[str, str]]:
+    """Read the `<Reading name="SpO2" value="97"/>` idiom into ("SpO2", "97")."""
+    found: list[tuple[str, str]] = []
+    for element in root.iter():
+        attributes = {_local_name(k): (v or "").strip() for k, v in element.attrib.items()}
+        for name_attribute, value_attribute in pairs_config:
+            name = attributes.get(name_attribute, "")
+            value = attributes.get(value_attribute, "")
+            if name and value:
+                found.append((name, value))
+    return found
+
+
 def session_pairs(text: str, mapping: SiteMapping | None = None) -> list[tuple[str, str]]:
     """Every name/value pair a session carries, in document order.
 
@@ -102,7 +117,10 @@ def session_pairs(text: str, mapping: SiteMapping | None = None) -> list[tuple[s
         raise GatewayError(
             f"session is not well-formed XML ({exc.__class__.__name__})"
         ) from None
-    return _flat_pairs(root)
+    pairs = _flat_pairs(root)
+    if mapping is not None and mapping.pair_attributes:
+        pairs.extend(_paired_attributes(root, mapping.pair_attributes))
+    return pairs
 
 
 def session_fields(text: str, mapping: SiteMapping | None = None) -> list[str]:

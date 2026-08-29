@@ -95,3 +95,29 @@ def test_malformed_xml_raises_without_quoting_the_document():
         session_pairs("<DeviceSession><PatientId>yatak-3")
 
     assert "yatak-3" not in str(caught.value)     # the message must not carry patient data
+
+
+ATTRIBUTE_STYLE = """<?xml version="1.0"?>
+<DeviceSession>
+  <Reading name="SpO2" value="97"/>
+  <Reading name="Nibp_Systolic" value="128"/>
+</DeviceSession>
+"""
+
+
+def test_paired_attributes_become_a_named_value_when_configured():
+    mapping = SiteMapping(pair_attributes=(("name", "value"),))
+
+    pairs = session_pairs(ATTRIBUTE_STYLE, mapping)
+
+    assert ("SpO2", "97") in pairs
+    assert ("Nibp_Systolic", "128") in pairs
+
+
+def test_without_the_configuration_the_pairing_is_not_invented():
+    """Pairing every name/value attribute by default would misread documents that use them for
+    something else, so it stays off until a site says otherwise."""
+    pairs = session_pairs(ATTRIBUTE_STYLE)
+
+    assert ("SpO2", "97") not in pairs
+    assert ("name", "SpO2") in pairs
