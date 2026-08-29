@@ -63,6 +63,10 @@ export const tr = {
   "alerts.newSection": "Yeni uyarılar",
   "alerts.empty": "Henüz uyarı yok.",
 
+  "theme.title": "Tema",
+  "theme.icu": "Gece / Nöbet",
+  "theme.light": "Gündüz Klinik",
+
   "settings.title": "Ayarlar",
   "settings.playback": "Oynatma",
   "settings.play": "Oynat",

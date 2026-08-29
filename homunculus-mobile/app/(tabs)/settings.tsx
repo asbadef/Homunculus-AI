@@ -8,6 +8,7 @@ import { MfaRequiredError } from "../../src/transport/authClient";
 import { DemoBanner } from "../../src/ui/DemoBanner";
 import { ServerSection } from "../../src/ui/ServerSection";
 import { SettingsPanel } from "../../src/ui/SettingsPanel";
+import { ThemeSection } from "../../src/ui/ThemeSection";
 
 export default function SettingsScreen() {
   const {
@@ -66,6 +67,7 @@ export default function SettingsScreen() {
         version="1.0.0"
         hidePlayback={mode === "live"}
       />
+      <ThemeSection />
       <ServerSection
         serverUrl={serverUrl}
         mode={mode}

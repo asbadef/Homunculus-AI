@@ -35,6 +35,7 @@ export function Chip({
   return (
     <Pressable
       onPress={onPress}
+      accessibilityState={{ selected: active }}
       className="rounded-lg border px-3 py-1.5"
       style={{ borderColor: active ? palette.accent : palette.clinical.border }}
     >
