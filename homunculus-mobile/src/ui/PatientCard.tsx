@@ -8,6 +8,7 @@ import type { MessageKey } from "../i18n";
 import type { PatientView } from "../store/boardStore";
 import { bedNumber } from "./bed";
 import { GLOW_DURATION_MS, PRESS_SCALE, SPRING } from "../theme/motion";
+import { tintFor } from "../theme/tint";
 import { useTheme } from "../theme/ThemeContext";
 import { RiskPill } from "./RiskPill";
 import { VitalsRow } from "./VitalsRow";
@@ -18,7 +19,7 @@ import { Waveform } from "./Waveform";
 // strip when a heart rate exists, a chip row, and a faint footer. The MAP sparkline that used to
 // sit here moved out (trends stay on the detail screen); no name/age/MRN — bed identity only.
 export function PatientCard({ view, onPress }: { view: PatientView; onPress: () => void }) {
-  const { toneColor } = useTheme();
+  const { key, toneColor } = useTheme();
   const color = toneColor(view.tone);
   const bed = t("bed.label", { bed: bedNumber(view.board.patient_id) });
   const hr = view.board.latest.heart_rate;
@@ -88,7 +89,7 @@ export function PatientCard({ view, onPress }: { view: PatientView; onPress: () 
           {view.escalated ? (
             <View
               className="rounded-full px-2 py-0.5"
-              style={{ backgroundColor: `${toneColor("critical")}1A` }}
+              style={{ backgroundColor: tintFor(toneColor("critical"), key) }}
             >
               <Text className="text-xs font-bold" style={{ color: toneColor("critical") }}>
                 {t("alert.escalated")}
@@ -97,7 +98,7 @@ export function PatientCard({ view, onPress }: { view: PatientView; onPress: () 
           ) : view.unacknowledged ? (
             <View
               className="rounded-full px-2 py-0.5"
-              style={{ backgroundColor: `${toneColor("warning")}1A` }}
+              style={{ backgroundColor: tintFor(toneColor("warning"), key) }}
             >
               <Text className="text-clinical-warning text-xs font-semibold">
                 {t("alert.unacknowledged")}

@@ -3,17 +3,15 @@ import { Text, View } from "react-native";
 import { riskTone } from "../domain/risk";
 import { t } from "../i18n";
 import type { MessageKey } from "../i18n";
+import { tintFor } from "../theme/tint";
 import { useTheme } from "../theme/ThemeContext";
 import type { Risk } from "../transport/types";
 
 export function RiskPill({ risk }: { risk: Risk }) {
-  const { toneColor } = useTheme();
+  const { key, toneColor } = useTheme();
   const color = toneColor(riskTone(risk));
-  // M3: the palette moved from HSL function-notation strings to #rrggbb hex, so the old
-  // HSL-to-HSLA alpha rewrite is no longer valid here — but the usual hex-suffix trick
-  // (`${hex}1A` appends an 8-digit-hex alpha channel) now is. 1A = 10% opacity, matching the
-  // tint this pill has always rendered.
-  const tint = `${color}1A`;
+  // The tinted-chip idiom — see src/theme/tint.ts for why the two skins need different alphas.
+  const tint = tintFor(color, key);
   return (
     <View
       accessibilityLabel={`risk-pill-${risk}`}

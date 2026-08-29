@@ -12,6 +12,7 @@ import Animated, {
 import Svg, { G, Path } from "react-native-svg";
 
 import { GLOW_DURATION_MS } from "../theme/motion";
+import { tintFor } from "../theme/tint";
 import { useTheme } from "../theme/ThemeContext";
 
 const AnimatedG = Animated.createAnimatedComponent(G);
@@ -44,7 +45,7 @@ function ekgBeatPath(beats: number, beatW: number, mid: number, amp: number): st
  * scope as the web's SMIL version. Only rendered by callers when a heart rate exists.
  */
 export function Waveform({ hr, height = 34 }: { hr: number; height?: number }) {
-  const { palette } = useTheme();
+  const { key, palette } = useTheme();
   const beats = 4;
   const beatW = 46;
   const mid = height / 2;
@@ -55,9 +56,10 @@ export function Waveform({ hr, height = 34 }: { hr: number; height?: number }) {
 
   const offset = useSharedValue(0);
   useEffect(() => {
-    // The one sanctioned linear easing besides the skeleton (src/theme/motion.ts): a monitor
-    // strip has to scroll at a constant rate, or it visibly speeds up and slows down each loop —
-    // a stutter, not a heartbeat.
+    // A monitor strip has to scroll at a constant rate, or it visibly speeds up and slows down
+    // each loop — a stutter, not a heartbeat — so this breaks from the app's spring-only default
+    // on purpose. It is one of two sanctioned non-spring motions; see src/theme/motion.ts for the
+    // other (Skeleton's timing pulse) and why both are exceptions.
     offset.value = 0;
     offset.value = withRepeat(
       withTiming(-period, { duration: dur * 1000, easing: Easing.linear }),
@@ -69,7 +71,10 @@ export function Waveform({ hr, height = 34 }: { hr: number; height?: number }) {
   const animatedProps = useAnimatedProps(() => ({ translateX: offset.value }));
 
   const stroke = palette.clinical.safe;
-  const tint = `${stroke}14`; // ~8% alpha wash
+  // The bpm readout sits on `tint`, so it is a real text/background contrast pair — the tinted-
+  // chip idiom applies (src/theme/tint.ts). `ring` is a decorative border only, not text, so it
+  // keeps its own fixed alpha.
+  const tint = tintFor(stroke, key);
   const ring = `${stroke}33`; // ~20% alpha border
 
   return (
