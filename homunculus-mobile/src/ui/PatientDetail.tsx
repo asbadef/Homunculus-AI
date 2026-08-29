@@ -4,11 +4,40 @@ import { ScrollView, Text, View } from "react-native";
 import { alertKey } from "../domain/keys";
 import { t } from "../i18n";
 import type { PatientView } from "../store/boardStore";
+import type { Tone } from "../theme/tokens";
 import { AlertCard } from "./AlertCard";
 import { GuidelineDrawer } from "./GuidelineDrawer";
 import { RiskPill } from "./RiskPill";
-import { VitalTile } from "./VitalTile";
+import { VitalSparkline } from "./VitalSparkline";
+import { VitalsRow } from "./VitalsRow";
+import { Waveform } from "./Waveform";
 import { bedNumber } from "./bed";
+
+// A single trend-panel row: label, sparkline (or its "no data" fallback for a series still too
+// short to draw — VitalSparkline itself returns null under 2 points), latest value mono-bold.
+function TrendRow({
+  label,
+  values,
+  latest,
+  tone,
+}: {
+  label: string;
+  values: readonly number[];
+  latest: number | null;
+  tone: Tone;
+}) {
+  return (
+    <View className="mt-2 flex-row items-center justify-between gap-2">
+      <Text className="text-clinical-stale text-xs">{label}</Text>
+      {values.length < 2 ? (
+        <Text className="text-clinical-stale flex-1 text-right text-xs">{t("vital.noData")}</Text>
+      ) : (
+        <VitalSparkline values={values} width={200} height={28} tone={tone} />
+      )}
+      <Text className="text-foreground text-sm font-bold tabular-nums">{latest ?? "—"}</Text>
+    </View>
+  );
+}
 
 export function PatientDetail({
   view,
@@ -19,6 +48,7 @@ export function PatientDetail({
 }) {
   const [citation, setCitation] = useState<{ id: string; confidence: string } | null>(null);
   const { board, series } = view;
+  const hr = board.latest.heart_rate;
 
   return (
     <>
@@ -33,39 +63,27 @@ export function PatientDetail({
         <Text className="text-clinical-stale mt-4 text-[11px] font-semibold uppercase tracking-wide">
           {t("detail.vitals")}
         </Text>
-        <Text className="text-clinical-stale mt-0.5 text-[11px]">{t("vital.trend")}</Text>
 
-        <View className="mt-2 flex-row gap-3">
-          <VitalTile
-            label={t("vital.heartRate")}
-            value={board.latest.heart_rate}
-            unit="/dk"
-            values={series.heart_rate}
-            tone={view.tone}
-          />
-          <VitalTile
-            label={t("vital.map")}
-            value={board.latest.map}
-            unit="mmHg"
-            values={series.map}
-            tone={view.tone}
-          />
-        </View>
-        <View className="mt-3 flex-row gap-3">
-          <VitalTile
+        <VitalsRow latest={board.latest} />
+
+        {hr != null ? (
+          <View className="mt-3">
+            <Waveform hr={hr} />
+          </View>
+        ) : null}
+
+        <View className="mt-3 rounded-xl border border-clinical-border bg-card p-3">
+          <Text className="text-clinical-stale text-[11px] font-semibold uppercase tracking-wide">
+            {t("vital.trend")}
+          </Text>
+          <TrendRow label={t("vital.map")} values={series.map} latest={board.latest.map} tone={view.tone} />
+          <TrendRow
             label={t("vital.lactate")}
-            value={board.latest.lactate}
-            unit="mmol/L"
             values={series.lactate}
+            latest={board.latest.lactate}
             tone={view.tone}
           />
-          <VitalTile
-            label={t("vital.sofa")}
-            value={board.latest.sofa}
-            unit=""
-            values={series.sofa}
-            tone={view.tone}
-          />
+          <TrendRow label={t("vital.sofa")} values={series.sofa} latest={board.latest.sofa} tone={view.tone} />
         </View>
 
         <Text className="text-clinical-stale mt-6 text-[11px] font-semibold uppercase tracking-wide">

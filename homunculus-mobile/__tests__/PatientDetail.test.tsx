@@ -35,16 +35,34 @@ describe("PatientDetail", () => {
     expect(screen.getByText("YB Yatak 3")).toBeTruthy();
   });
 
-  it("renders the four vital tiles", async () => {
+  it("renders the five-cell vitals row", async () => {
     await render(<PatientDetail view={view()} onAcknowledge={() => {}} />);
-    for (const label of ["Kalp hızı", "OAB", "Laktat", "SOFA"]) {
-      expect(screen.getByLabelText(`vital-${label}`)).toBeTruthy();
+    // "OAB" (MAP) also labels a trend-panel row below the vitals row, so it can appear twice —
+    // every other cell label is unique to the row.
+    for (const label of ["NB", "OAB", "SpO2", "Ateş", "SS"]) {
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
   });
 
-  it("says heart rate has no data instead of drawing an empty trend", async () => {
+  it("says heart rate has no data: no waveform, an em dash in its cell", async () => {
     await render(<PatientDetail view={view()} onAcknowledge={() => {}} />);
-    expect(screen.getByText("veri yok")).toBeTruthy();
+    expect(screen.queryByLabelText("waveform")).toBeNull();
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+  });
+
+  it("shows a waveform when heart rate is present", async () => {
+    const withHr = { ...view(), board: { ...view().board, latest: { ...view().board.latest, heart_rate: 88 } } };
+    await render(<PatientDetail view={withHr} onAcknowledge={() => {}} />);
+    expect(screen.getByLabelText("waveform")).toBeTruthy();
+  });
+
+  it("shows no data for a trend series still too short to draw", async () => {
+    const noTrend = {
+      ...view(),
+      series: { heart_rate: [], map: [], spo2: [], temperature: [], resp_rate: [], lactate: [], sofa: [] },
+    };
+    await render(<PatientDetail view={noTrend} onAcknowledge={() => {}} />);
+    expect(screen.getAllByText("veri yok").length).toBe(3);
   });
 
   it("labels the trend as scenario time, not as a twelve-hour window", async () => {
