@@ -6,11 +6,18 @@ data, may enter this repository (CLAUDE.md hard rule 6).
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import pytest
 
 from homunculus.canonical import SignalCode
-from homunculus.edge.ncefiles import SiteMapping, load_site_mapping, session_fields, session_pairs
+from homunculus.edge.ncefiles import (
+    SiteMapping,
+    load_site_mapping,
+    parse_timestamp,
+    session_fields,
+    session_pairs,
+)
 from homunculus.gateway.fhir import GatewayError
 
 
@@ -121,3 +128,26 @@ def test_without_the_configuration_the_pairing_is_not_invented():
 
     assert ("SpO2", "97") not in pairs
     assert ("name", "SpO2") in pairs
+
+
+def test_an_iso_utc_stamp_is_accepted():
+    assert parse_timestamp("2026-08-28T12:54:47Z") == datetime(
+        2026, 8, 28, 12, 54, 47, tzinfo=timezone.utc
+    )
+
+
+def test_an_offset_stamp_is_converted_to_utc():
+    assert parse_timestamp("2026-08-28T15:54:47+03:00") == datetime(
+        2026, 8, 28, 12, 54, 47, tzinfo=timezone.utc
+    )
+
+
+def test_a_stamp_with_no_timezone_is_refused():
+    """The NCE server's local clock runs an hour ahead of Turkey time. Assuming local would shift
+    every observation by an unknown amount, quietly, in a system that reasons about time."""
+    assert parse_timestamp("2026-08-28T16:54:47") is None
+    assert parse_timestamp("20260828165447") is None
+
+
+def test_nonsense_is_refused_rather_than_guessed():
+    assert parse_timestamp("bugün") is None

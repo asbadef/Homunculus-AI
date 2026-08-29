@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from homunculus.canonical import SignalCode
@@ -126,3 +127,22 @@ def session_pairs(text: str, mapping: SiteMapping | None = None) -> list[tuple[s
 def session_fields(text: str, mapping: SiteMapping | None = None) -> list[str]:
     """The field names a session carries, duplicates included. This is what discovery reports."""
     return [name for name, _ in session_pairs(text, mapping)]
+
+
+def parse_timestamp(raw: str) -> datetime | None:
+    """A vendor timestamp as an aware UTC datetime, or None if it cannot be trusted.
+
+    A value carrying no timezone is REFUSED, not assumed local. The NCE server displays session
+    files an hour ahead of the UTC epoch in their own names, so "assume local" would shift every
+    observation by an unknown amount — silently, and in a system whose alerts are timers.
+    """
+    text = raw.strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
