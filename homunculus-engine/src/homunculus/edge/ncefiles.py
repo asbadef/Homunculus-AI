@@ -13,6 +13,7 @@ PHI: values are patient data. Nothing here logs, and no error message carries a 
 from __future__ import annotations
 
 import json
+import math
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -53,18 +54,25 @@ def load_site_mapping(path: str | Path) -> SiteMapping:
         unit = spec.get("unit", "") if isinstance(spec, dict) else ""
         try:
             signals[name] = MappedField(SignalCode(slug), unit)
-        except ValueError:
+        except (ValueError, TypeError):
             raise SystemExit(
                 f"{path}: unknown signal slug {slug!r} for device field {name!r}"
+            ) from None
+
+    pair_attributes: list[tuple[str, str]] = []
+    for pair in raw.get("pair_attributes") or ():
+        try:
+            pair_attributes.append((pair["name"], pair["value"]))
+        except (KeyError, TypeError):
+            raise SystemExit(
+                f"{path}: pair_attributes entries need 'name' and 'value'"
             ) from None
 
     return SiteMapping(
         signals=signals,
         patient_fields=tuple(raw.get("patient_fields") or ()),
         timestamp_fields=tuple(raw.get("timestamp_fields") or ()),
-        pair_attributes=tuple(
-            (pair["name"], pair["value"]) for pair in (raw.get("pair_attributes") or ())
-        ),
+        pair_attributes=tuple(pair_attributes),
     )
 
 
@@ -78,7 +86,13 @@ def _local_name(tag: str) -> str:
 
 
 def _flat_pairs(root: ET.Element) -> list[tuple[str, str]]:
-    """Every (name, value) in the document: element text and attributes alike."""
+    """Every (name, value) in the document: element text and attributes alike.
+
+    `.tail` text (mixed content — text sitting after a child element, still inside the parent) is
+    deliberately invisible here: machine-generated vendor XML is expected to be element/attribute
+    shaped, and tail text has no clean name to attribute a value to. If the first real session file
+    turns out to carry mixed content, this assumption needs revisiting.
+    """
     pairs: list[tuple[str, str]] = []
     for element in root.iter():
         text = (element.text or "").strip()
@@ -107,7 +121,11 @@ def _paired_attributes(
 
 
 def session_pairs(text: str, mapping: SiteMapping | None = None) -> list[tuple[str, str]]:
-    """Every name/value pair a session carries, in document order.
+    """Every name/value pair a session carries.
+
+    The flat element/attribute pairs come first, in document order; any pairs read via a
+    site-configured `pair_attributes` idiom (e.g. `<Reading name="SpO2" value="97"/>`) are appended
+    after them, not interleaved.
 
     Raises GatewayError if the document is not well-formed. The message names the failure class only
     — an XML parser's own error text can quote the offending bytes, which here are patient data.
@@ -160,12 +178,21 @@ class ParsedSession:
     repeated: tuple[str, ...] = ()
 
 
-def _first_value(pairs: list[tuple[str, str]], names: tuple[str, ...]) -> str:
-    """The first non-empty value among `names`, preferring the order the site listed them in."""
+def _sole_value(pairs: list[tuple[str, str]], names: tuple[str, ...], *, kind: str) -> str:
+    """First non-empty value among `names`, preferring the order the site listed them in.
+
+    A single configured field carrying two DIFFERING values is refused: in an undocumented
+    vendor format, the second value may be a previous patient still in device memory, and
+    quietly preferring the first would attribute vitals to the wrong patient. An identical
+    repeat (a header echo) is accepted. The error message names the field kind only — never
+    a value, which is patient data.
+    """
     for wanted in names:
-        for name, value in pairs:
-            if name == wanted and value:
-                return value
+        values = [value for name, value in pairs if name == wanted and value]
+        if len(set(values)) > 1:
+            raise GatewayError(f"session carries conflicting values in a {kind} field")
+        if values:
+            return values[0]
     return ""
 
 
@@ -184,11 +211,12 @@ def parse_session(
     """
     pairs = session_pairs(text, mapping)
 
-    patient_id = _first_value(pairs, mapping.patient_fields)
+    patient_id = _sole_value(pairs, mapping.patient_fields, kind="patient identifier")
     if not patient_id:
         raise GatewayError("session carries no patient identifier in any configured field")
 
-    timestamp = parse_timestamp(_first_value(pairs, mapping.timestamp_fields))
+    timestamp_text = _sole_value(pairs, mapping.timestamp_fields, kind="timestamp")
+    timestamp = parse_timestamp(timestamp_text)
     if timestamp is None:
         timestamp = fallback_timestamp
     if timestamp is None:
@@ -210,6 +238,16 @@ def parse_session(
         try:
             value = float(raw_value)
         except ValueError:
+            # A field can land in non_numeric AND still yield an observation: a junk first
+            # occurrence followed by a numeric one (e.g. a sentinel, then a real reading) is
+            # reported, not treated as a repeat that suppresses the good value. Nothing is
+            # silently lost either way.
+            if name not in non_numeric:
+                non_numeric.append(name)
+            continue
+        if not math.isfinite(value):
+            # Devices emit NaN/inf sentinels for a dropped reading. Handing that to the alerting
+            # engine would make every threshold comparison silently evaluate False.
             if name not in non_numeric:
                 non_numeric.append(name)
             continue

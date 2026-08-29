@@ -175,6 +175,8 @@ def test_mapped_fields_become_observations():
     assert by_code[SignalCode.SBP].value == 128.0
     assert by_code[SignalCode.SBP].unit == "mmHg"
     assert by_code[SignalCode.SPO2].value == 97.0
+    assert by_code[SignalCode.HEART_RATE].value == 88.0
+    assert len(parsed.observations) == 3
     assert all(o.patient_id == "yatak-3" for o in parsed.observations)
     assert all(o.timestamp == EPOCH_FALLBACK for o in parsed.observations)
 
@@ -227,3 +229,92 @@ def test_a_mapped_field_appearing_twice_is_reported():
 
     assert "SpO2" in parsed.repeated
     assert len([o for o in parsed.observations if o.code is SignalCode.SPO2]) == 1
+
+
+def test_conflicting_patient_identifiers_are_refused():
+    """The second value could be a previous patient still sitting in device memory. Quietly
+    keeping the first would attribute vitals to whichever patient happened to be written first,
+    which is exactly the wrong-patient risk this parser exists to avoid."""
+    conflicting = ELEMENT_STYLE.replace(
+        "<PatientId>yatak-3</PatientId>",
+        "<PatientId>yatak-3</PatientId><PatientId>yatak-9</PatientId>",
+    )
+
+    with pytest.raises(GatewayError) as caught:
+        parse_session(conflicting, FULL_MAPPING)
+
+    message = str(caught.value)
+    assert "conflict" in message.lower()
+    assert "yatak-3" not in message
+    assert "yatak-9" not in message
+
+
+def test_an_identical_repeated_patient_identifier_is_accepted():
+    """A header echo — the same value twice — is not a conflict."""
+    repeated = ELEMENT_STYLE.replace(
+        "<PatientId>yatak-3</PatientId>",
+        "<PatientId>yatak-3</PatientId><PatientId>yatak-3</PatientId>",
+    )
+
+    parsed = parse_session(repeated, FULL_MAPPING)
+
+    assert parsed.observations
+    assert all(o.patient_id == "yatak-3" for o in parsed.observations)
+
+
+def test_conflicting_timestamps_are_refused():
+    conflicting = ELEMENT_STYLE.replace(
+        "<MeasurementTimeUtc>2026-08-28T12:54:47Z</MeasurementTimeUtc>",
+        "<MeasurementTimeUtc>2026-08-28T12:54:47Z</MeasurementTimeUtc>"
+        "<MeasurementTimeUtc>2026-08-28T13:00:00Z</MeasurementTimeUtc>",
+    )
+
+    with pytest.raises(GatewayError):
+        parse_session(conflicting, FULL_MAPPING)
+
+
+def test_nan_and_inf_are_refused_as_values():
+    nan_session = ELEMENT_STYLE.replace("<SpO2>97</SpO2>", "<SpO2>nan</SpO2>")
+    parsed = parse_session(nan_session, FULL_MAPPING)
+    assert "SpO2" in parsed.non_numeric
+    assert SignalCode.SPO2 not in {o.code for o in parsed.observations}
+
+    inf_session = ELEMENT_STYLE.replace("<SpO2>97</SpO2>", "<SpO2>inf</SpO2>")
+    parsed = parse_session(inf_session, FULL_MAPPING)
+    assert "SpO2" in parsed.non_numeric
+    assert SignalCode.SPO2 not in {o.code for o in parsed.observations}
+
+
+def test_a_document_with_a_dtd_entity_is_refused():
+    hostile = (
+        '<?xml version="1.0"?>'
+        '<!DOCTYPE r [<!ENTITY x SYSTEM "file:///x">]>'
+        "<DeviceSession><PatientId>p</PatientId><V>&x;</V></DeviceSession>"
+    )
+
+    with pytest.raises(GatewayError):
+        parse_session(hostile, FULL_MAPPING)
+
+
+PAIR_ATTRIBUTE_SESSION = """<?xml version="1.0"?>
+<DeviceSession>
+  <PatientId>yatak-3</PatientId>
+  <MeasurementTimeUtc>2026-08-28T12:54:47Z</MeasurementTimeUtc>
+  <Reading name="SpO2" value="97"/>
+</DeviceSession>
+"""
+
+
+def test_paired_attribute_sessions_parse_end_to_end():
+    mapping = SiteMapping(
+        signals={"SpO2": MappedField(SignalCode.SPO2, "%")},
+        patient_fields=("PatientId",),
+        timestamp_fields=("MeasurementTimeUtc",),
+        pair_attributes=(("name", "value"),),
+    )
+
+    parsed = parse_session(PAIR_ATTRIBUTE_SESSION, mapping)
+
+    assert len(parsed.observations) == 1
+    assert parsed.observations[0].code is SignalCode.SPO2
+    assert parsed.observations[0].value == 97.0
