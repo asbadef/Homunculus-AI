@@ -1,6 +1,10 @@
-// The project skill (.agents/skills/homunculus-mobile-dev/SKILL.md) fixes one spring for the whole
-// app. Linear transitions are not used anywhere: a ward screen that eases linearly reads as a
-// spreadsheet, and the physical feel is the point.
+// The project skill (.agents/skills/homunculus-mobile-dev/SKILL.md) fixes one spring for
+// everything that moves like a physical object — a ward screen that eases linearly reads as a
+// spreadsheet, and that physical feel is the point. Two call sites break from it on purpose,
+// because neither is a physical object: Skeleton's timing-based opacity pulse (src/ui/
+// Skeleton.tsx) and Waveform's linear horizontal scroll (src/ui/Waveform.tsx) — a loading shimmer
+// and a monitor strip both need a constant, non-springy rate, not a bounce. Nothing else in the
+// app uses a non-spring transition.
 export const SPRING = { damping: 15, mass: 0.8, stiffness: 120 } as const;
 
 export const SPRING_TRANSITION = { type: "spring", ...SPRING } as const;
