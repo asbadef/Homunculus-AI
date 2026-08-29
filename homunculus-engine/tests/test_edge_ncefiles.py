@@ -10,7 +10,8 @@ import json
 import pytest
 
 from homunculus.canonical import SignalCode
-from homunculus.edge.ncefiles import SiteMapping, load_site_mapping
+from homunculus.edge.ncefiles import SiteMapping, load_site_mapping, session_fields, session_pairs
+from homunculus.gateway.fhir import GatewayError
 
 
 def test_a_mapping_file_becomes_signal_codes(tmp_path):
@@ -51,3 +52,46 @@ def test_an_empty_mapping_is_valid_and_maps_nothing(tmp_path):
     mapping = load_site_mapping(path)
 
     assert mapping == SiteMapping()
+
+
+ELEMENT_STYLE = """<?xml version="1.0"?>
+<DeviceSession xmlns="urn:welchallyn:nce">
+  <PatientId>yatak-3</PatientId>
+  <MeasurementTimeUtc>2026-08-28T12:54:47Z</MeasurementTimeUtc>
+  <Vitals Pulse="88">
+    <Nibp_Systolic>128</Nibp_Systolic>
+    <SpO2>97</SpO2>
+  </Vitals>
+</DeviceSession>
+"""
+
+
+def test_element_text_and_attributes_both_become_pairs():
+    pairs = session_pairs(ELEMENT_STYLE)
+
+    assert ("PatientId", "yatak-3") in pairs
+    assert ("Nibp_Systolic", "128") in pairs
+    assert ("Pulse", "88") in pairs          # attributes count too
+
+
+def test_namespaces_are_stripped_from_names():
+    """Every element in the fixture sits in urn:welchallyn:nce. A site table keyed on a namespace
+    URI would break the day the vendor renumbers it, for no clinical reason."""
+    names = session_fields(ELEMENT_STYLE)
+
+    assert "PatientId" in names                          # not "{urn:welchallyn:nce}PatientId"
+    assert not any("}" in name or ":" in name for name in names)
+
+
+def test_field_names_are_reported_for_discovery():
+    names = session_fields(ELEMENT_STYLE)
+
+    assert "SpO2" in names
+    assert "MeasurementTimeUtc" in names
+
+
+def test_malformed_xml_raises_without_quoting_the_document():
+    with pytest.raises(GatewayError) as caught:
+        session_pairs("<DeviceSession><PatientId>yatak-3")
+
+    assert "yatak-3" not in str(caught.value)     # the message must not carry patient data

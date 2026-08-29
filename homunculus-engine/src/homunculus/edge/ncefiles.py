@@ -13,10 +13,12 @@ PHI: values are patient data. Nothing here logs, and no error message carries a 
 from __future__ import annotations
 
 import json
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from homunculus.canonical import SignalCode
+from homunculus.gateway.fhir import GatewayError
 
 
 @dataclass(frozen=True)
@@ -63,3 +65,46 @@ def load_site_mapping(path: str | Path) -> SiteMapping:
             (pair["name"], pair["value"]) for pair in (raw.get("pair_attributes") or ())
         ),
     )
+
+
+def _local_name(tag: str) -> str:
+    """`{urn:welchallyn:nce}SpO2` -> `SpO2`.
+
+    Vendors add, drop and renumber namespaces between versions. A site table keyed on a namespace
+    URI would break on an upgrade for no clinical reason, so the URI is discarded.
+    """
+    return tag.rpartition("}")[2]
+
+
+def _flat_pairs(root: ET.Element) -> list[tuple[str, str]]:
+    """Every (name, value) in the document: element text and attributes alike."""
+    pairs: list[tuple[str, str]] = []
+    for element in root.iter():
+        text = (element.text or "").strip()
+        if text:
+            pairs.append((_local_name(element.tag), text))
+        for attribute, value in element.attrib.items():
+            value = (value or "").strip()
+            if value:
+                pairs.append((_local_name(attribute), value))
+    return pairs
+
+
+def session_pairs(text: str, mapping: SiteMapping | None = None) -> list[tuple[str, str]]:
+    """Every name/value pair a session carries, in document order.
+
+    Raises GatewayError if the document is not well-formed. The message names the failure class only
+    — an XML parser's own error text can quote the offending bytes, which here are patient data.
+    """
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError as exc:
+        raise GatewayError(
+            f"session is not well-formed XML ({exc.__class__.__name__})"
+        ) from None
+    return _flat_pairs(root)
+
+
+def session_fields(text: str, mapping: SiteMapping | None = None) -> list[str]:
+    """The field names a session carries, duplicates included. This is what discovery reports."""
+    return [name for name, _ in session_pairs(text, mapping)]
