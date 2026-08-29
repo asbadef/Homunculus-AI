@@ -104,3 +104,38 @@ def test_the_report_is_empty_when_everything_maps():
     bridge.handle_session(SESSION, fallback_timestamp=WHEN)
 
     assert bridge.discovery_report() == ""
+
+
+def test_non_numeric_and_repeated_reach_the_report():
+    session = SESSION.replace(
+        "<SpO2>97</SpO2>",
+        "<SpO2>--</SpO2><Nibp_Systolic>130</Nibp_Systolic>",
+    )
+    mapping = SiteMapping(
+        signals={
+            "SpO2": MappedField(SignalCode.SPO2, "%"),
+            "Nibp_Systolic": MappedField(SignalCode.SBP, "mmHg"),
+        },
+        patient_fields=("PatientId",),
+        timestamp_fields=("MeasurementTimeUtc",),
+    )
+    bridge = NceFileBridge(send=lambda _p: None, mapping=mapping)
+
+    bridge.handle_session(session, fallback_timestamp=WHEN)
+
+    assert bridge.stats.non_numeric["SpO2"] == 1
+    assert bridge.stats.repeated["Nibp_Systolic"] == 1
+    report = bridge.discovery_report()
+    assert "Sayı olmayan değerler" in report and "SpO2" in report
+    assert "Aynı dosyada tekrarlanan alanlar" in report
+
+
+def test_malformed_xml_is_rejected_and_counted_without_polluting_discovery():
+    bridge = NceFileBridge(send=lambda _p: None, mapping=MAPPING)
+
+    with pytest.raises(GatewayError):
+        bridge.handle_session("<DeviceSession><PatientId>x", fallback_timestamp=WHEN)
+
+    assert bridge.stats.files == 1
+    assert bridge.stats.rejected == 1
+    assert bridge.stats.unmapped == {}

@@ -105,7 +105,14 @@ class NceFileBridge:
     def discovery_report(self) -> str:
         """Human-readable list of what this site sent that we could not use. Empty when all is well.
 
-        Reports names and counts — never a measurement and never a patient identifier.
+        Reports names and counts — never a measurement and never a patient identifier. The count
+        means occurrences for unmapped fields, but files for non_numeric/repeated: ParsedSession
+        dedupes each of those per session, so a field junk in every reading of one file still
+        shows 1, not the number of readings.
+
+        If `pair_attributes` is configured, an attribute VALUE can be promoted to a field name and
+        surface in this report — so configure pairing only after a human has inspected real
+        session files. A pure discovery run (an empty mapping) promotes nothing.
         """
         sections: list[str] = []
         if self.stats.unmapped:
@@ -117,6 +124,12 @@ class NceFileBridge:
         return " | ".join(sections)
 
 
-def _rank(counter: dict[str, int]) -> str:
+def _rank(counter: dict[str, int], top: int = 50) -> str:
+    # This line is logged every ~30s; an undocumented vendor format could encode sequence
+    # numbers or other high-cardinality junk into field names, so the line must stay bounded
+    # and readable rather than growing without limit.
     ranked = sorted(counter.items(), key=lambda kv: kv[1], reverse=True)
-    return ", ".join(f"{name} ({count})" for name, count in ranked)
+    shown = ", ".join(f"{name} ({count})" for name, count in ranked[:top])
+    if len(ranked) > top:
+        shown += ", …"
+    return shown
