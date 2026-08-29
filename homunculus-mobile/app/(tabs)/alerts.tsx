@@ -14,7 +14,7 @@ export default function AlertsScreen() {
   return (
     <SafeAreaView edges={["top"]} className="flex-1 bg-background">
       {mode === "replay" ? <DemoBanner /> : null}
-      <View className="px-4 pb-1 pt-3">
+      <View className="px-4 pb-2 pt-3">
         <Text className="text-foreground text-2xl font-semibold">{t("alerts.title")}</Text>
       </View>
       <NotificationFeed
