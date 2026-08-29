@@ -3,8 +3,8 @@
 Everything runs on the server: the database, the engine, the dashboard and the HL7 bridge. No
 patient data leaves the building, and no internet access is required at run time.
 
-For the device-side story (discovery, mapping, the WACP finding) see
-[EDGE-BRIDGE-DOCKER.md](EDGE-BRIDGE-DOCKER.md).
+For running the bridge in Docker see [EDGE-BRIDGE-DOCKER.md](EDGE-BRIDGE-DOCKER.md). For why the
+devices reach us through NCE's files rather than HL7, see **The device route** below.
 
 ## Bring-up
 
@@ -40,6 +40,44 @@ nor the cause:
 
 The mapping **replaces** the built-in table rather than merging with it, so it must list every code
 the site sends. An unknown signal slug stops startup rather than silently dropping that signal.
+
+## The device route: NCE's files, not WACP
+
+The Connex Spot monitors do not speak HL7. The discovery probe caught a `RNDZCONNECT` rendezvous on
+2575 — Welch Allyn's own WACP — and the device hung up when nothing answered it. The address the
+device was calling turned out to be the hospital's **Welch Allyn NCE 5.2.0.2** server, which has
+been collecting from these monitors since 2020 and writes every session to `SavedCopies` as XML.
+
+So the bridge reads those files instead of implementing the vendor's protocol. The `nce` service in
+`deploy/local/docker-compose.yml` mounts that folder **read-only** and runs
+`scripts/run_nce_bridge.py`. Nothing is installed on the NCE server and nothing there is
+reconfigured: it is a live clinical system four devices have depended on for five years.
+
+Mount the share on the host before the first `up` — see `NCE_SHARE_PATH` in `.env.example` for the
+exact `mount -t cifs` line, including the `uid=10001` that the bridge container needs. Without it
+the container lists the directory fine and cannot open a single file, which looks exactly like an
+empty share.
+
+Unlike `site-mapping.json`, **`nce-mapping.json` ships in the repository** — already present next to
+the compose file, so the missing-bind-mount trap above does not apply to it. It ships *empty*, and
+that is deliberate: the first run is a discovery run. The bridge forwards nothing and reports the
+field names the sessions actually carry:
+
+```text
+WARNING nce-bridge: Eşlenmemiş alanlar: PatientId (12), SpO2 (12), Nibp_Systolic (12)
+```
+
+Fill `nce-mapping.json` in from that line — `patient_fields`, `timestamp_fields` and `signals` —
+then `docker compose restart nce`. Guessing the vendor's field names instead is how a pilot receives
+nothing while every screen looks healthy.
+
+By default only sessions written after the bridge starts are forwarded. `--since 2026-08-01` or
+`--all` backfill deliberately; both put more patient data at rest, so they are a decision, not a
+default.
+
+Configuring an HL7 ORU output on NCE itself remains the production target. The file route is what
+unblocks the pilot without waiting on a vendor. See
+[the design](superpowers/specs/2026-08-28-nce-file-bridge-design.md).
 
 ```bash
 docker compose up -d
