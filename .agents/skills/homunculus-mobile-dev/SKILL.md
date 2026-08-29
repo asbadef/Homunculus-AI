@@ -26,15 +26,9 @@ When starting or updating mobile components, ensure these packages are installed
 
 Do NOT generate flat, generic, or boring layouts. Adhere strictly to these design patterns:
 
-### Color Tokens (HSL)
-Use these exact tailwind values configured in `tailwind.config.js`:
-*   `bg-background`: `hsl(222, 47%, 8%)` (Deep Obsidian Slate)
-*   `bg-card`: `hsl(222, 40%, 12%)` (Soft Charcoal Glass)
-*   `border-clinical-border`: `hsl(217, 30%, 20%)`
-*   `text-clinical-safe`: `hsl(142, 60%, 45%)` (Sage Green)
-*   `text-clinical-warning`: `hsl(38, 92%, 50%)` (Amber Gold)
-*   `text-clinical-critical`: `hsl(346, 84%, 60%)` (Crimson Rose — 55% fails WCAG AA on the card surface)
-*   `text-clinical-stale`: `hsl(215, 15%, 60%)` (Muted Grey)
+### Color Tokens
+
+The class names (`bg-background`, `bg-card`, `border-clinical-border`, `text-clinical-safe`, `text-clinical-warning`, `text-clinical-critical`, `text-clinical-stale`, and `text-accent`) are mandatory and unchanged. Their values are no longer hardcoded — they are now the web cockpit's two skins (night slate + teal, default; day switchable in Settings), defined once in `homunculus-mobile/src/theme/palette.js` and documented in full in `docs/superpowers/specs/2026-08-28-mobile-web-theme-m3-design.md`. Colours reach inline and SVG styles via `useTheme()`, never a static import. WCAG AA contrast for both skins is enforced by the contrast test in `__tests__/contrast.test.ts`.
 
 ### Spring Physics (withSpring)
 Never use linear transitions. Always use spring physics for layout transitions:
@@ -53,8 +47,10 @@ export const SpringConfig = {
 Wrap patient cards or touchable items in `MotiPressable` to scale down to `0.97` on tap and bounce back:
 ```tsx
 import { MotiPressable } from 'moti/interactions';
+import { useTheme } from 'homunculus-mobile/src/theme/useTheme';
 
 export function PatientCard({ item }) {
+  const theme = useTheme();
   return (
     <MotiPressable
       onPress={() => console.log('Selected patient')}
@@ -65,7 +61,7 @@ export function PatientCard({ item }) {
         };
       }}
       transition={{ type: 'spring', damping: 15 }}
-      style={{ padding: 16, backgroundColor: 'hsl(222, 40%, 12%)', borderRadius: 12 }}
+      style={{ padding: 16, backgroundColor: theme.card, borderRadius: 12 }}
     >
       {/* Card Content */}
     </MotiPressable>
