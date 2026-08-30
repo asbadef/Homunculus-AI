@@ -55,7 +55,7 @@ describe("PatientsScreen — empty and unreachable never look alike", () => {
   });
 });
 
-describe("PatientsScreen — cockpit-style header", () => {
+describe("PatientsScreen — monitor header", () => {
   function view(id: string): PatientView {
     const board: PatientBoard = {
       patient_id: id, risk: "none", alerts: [],
@@ -68,14 +68,25 @@ describe("PatientsScreen — cockpit-style header", () => {
     };
   }
 
-  it("shows the single 'Tümü' unit tab and an occupancy chip counting the ward", async () => {
+  it("shows KOĞUŞ and the replay status, honestly labelled KAYIT", async () => {
+    mockUseBoard.mockReturnValue({
+      ward: [view("bed-3"), view("bed-5"), view("bed-7")],
+      mode: "replay",
+      connection: "demo",
+    });
+    await render(<PatientsScreen />);
+    expect(screen.getByText("KOĞUŞ")).toBeTruthy();
+    expect(screen.getByText("3 YATAK · KAYIT")).toBeTruthy();
+  });
+
+  it("shows the live status, honestly labelled CANLI, once connected", async () => {
     mockUseBoard.mockReturnValue({
       ward: [view("bed-3"), view("bed-5")],
       mode: "live",
       connection: "open",
     });
     await render(<PatientsScreen />);
-    expect(screen.getByText("Tümü")).toBeTruthy();
-    expect(screen.getByText("Doluluk: 2 / 2")).toBeTruthy();
+    expect(screen.getByText("KOĞUŞ")).toBeTruthy();
+    expect(screen.getByText("2 YATAK · CANLI")).toBeTruthy();
   });
 });

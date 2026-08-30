@@ -17,7 +17,7 @@ import { useAlertHaptics } from "./useAlertHaptics";
  * bundle that resolves `moti`'s re-export of `framer-motion` to a build that crashes at module
  * load ("Cannot destructure property '__extends' of ... undefined") the moment anything pulling
  * moti sits in the root layout's *eagerly*-required graph — confirmed by bisection: the same
- * import is harmless from a leaf route (e.g. PatientCard already imports moti there and exports
+ * import is harmless from a leaf route (e.g. MonitorTile already imports moti there and exports
  * fine), and swapping this file for a `React.lazy` + dynamic `import()` from `_layout.tsx` makes
  * the crash disappear because that bundle stage never has to evaluate it. AlertToast.tsx itself
  * stays a plain, eagerly-importable module — the jest tests import it directly with no

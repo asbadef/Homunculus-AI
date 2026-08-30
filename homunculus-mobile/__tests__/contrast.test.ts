@@ -110,6 +110,24 @@ describe("palette contrast (WCAG AA)", () => {
     it("accent on card clears 3:1 (UI chrome, not body text)", () => {
       expect(contrast(palette.accent, palette.card)).toBeGreaterThanOrEqual(chrome);
     });
+
+    // M5: MonitorTile's three channel numerals (NABIZ/OAB/LAKTAT) are the vital's own colour —
+    // channel identity, independent of severity — and they render at both oversized-numeral and
+    // label sizes (~8.5px uppercase tracked labels), so the label size is what actually holds
+    // this to the 4.5:1 body bar rather than the 3:1 large-text one. Both surfaces because the
+    // tile has no card background of its own — the screen `background` shows straight through
+    // behind row 2, while the label/value sit on `card` wherever a tile is later composed onto
+    // one (e.g. inside a future card-backed context).
+    it.each([
+      ["hr channel on card", palette.channel.hr, palette.card],
+      ["hr channel on background", palette.channel.hr, palette.background],
+      ["map channel on card", palette.channel.map, palette.card],
+      ["map channel on background", palette.channel.map, palette.background],
+      ["lactate channel on card", palette.channel.lactate, palette.card],
+      ["lactate channel on background", palette.channel.lactate, palette.background],
+    ])("%s clears 4.5:1", (_name, fg, bg) => {
+      expect(contrast(fg, bg)).toBeGreaterThanOrEqual(body);
+    });
   });
 });
 

@@ -43,8 +43,20 @@ function ekgBeatPath(beats: number, beatW: number, mid: number, amp: number): st
 /**
  * A visual rhythm indicator driven by the latest HR number — not a real ECG trace, same honesty
  * scope as the web's SMIL version. Only rendered by callers when a heart rate exists.
+ *
+ * `stroke` is an M5 addition: MonitorTile passes `palette.channel.hr` so the strip reads as the
+ * HR channel's own colour rather than the generic "safe" tone. Every other caller (the detail
+ * screen's trend panel) omits it and keeps the original `clinical.safe` stroke.
  */
-export function Waveform({ hr, height = 34 }: { hr: number; height?: number }) {
+export function Waveform({
+  hr,
+  height = 34,
+  stroke: strokeOverride,
+}: {
+  hr: number;
+  height?: number;
+  stroke?: string;
+}) {
   const { key, palette } = useTheme();
   const beats = 4;
   const beatW = 46;
@@ -70,7 +82,7 @@ export function Waveform({ hr, height = 34 }: { hr: number; height?: number }) {
 
   const animatedProps = useAnimatedProps(() => ({ translateX: offset.value }));
 
-  const stroke = palette.clinical.safe;
+  const stroke = strokeOverride ?? palette.clinical.safe;
   // The bpm readout sits on `tint`, so it is a real text/background contrast pair — the tinted-
   // chip idiom applies (src/theme/tint.ts). `ring` is a decorative border only, not text, so it
   // keeps its own fixed alpha.

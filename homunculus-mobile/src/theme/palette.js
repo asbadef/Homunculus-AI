@@ -18,6 +18,16 @@ module.exports = {
       critical: "#f87171", // red-400 (red-500 measures 4.3:1 on slate-900 — under AA)
       stale: "#94a3b8", // slate-400
     },
+    // M5: the monitor tile's three oversized vital numerals — a channel's colour is its vital
+    // identity (the ECG-green convention), independent of alert severity, so it lives in its own
+    // block rather than under `clinical`. Values are the approved mockup's exact hexes; on the
+    // icu skin's near-black surfaces they clear AA by a wide margin (11:1+ on both card and
+    // background — see __tests__/contrast.test.ts) without any adjustment.
+    channel: {
+      hr: "#4be9b6",
+      map: "#5cc8ff",
+      lactate: "#f5c964",
+    },
   },
   light: {
     background: "#f1f5f9", // slate-100
@@ -35,6 +45,20 @@ module.exports = {
       // (4.70:1 on background, 5.15:1 on card) while staying red-600-adjacent.
       critical: "#d61f1f",
       stale: "#64748b", // slate-500
+    },
+    // M5 day-skin channel colours: each is the icu channel hex darkened toward black by a uniform
+    // RGB scale factor (~41-47%), which preserves hue/saturation ratio (so "hr" reads as the same
+    // green family as the night skin, just deeper) while clearing 4.5:1 on BOTH `card` (#ffffff)
+    // and `background` (#f1f5f9) — background is the tighter of the two since it's slightly
+    // darker than card, so it's the binding constraint. Computed arithmetically (see
+    // __tests__/contrast.test.ts), not eyeballed:
+    //   hr      #287b60  card 5.13:1  background 4.68:1
+    //   map     #367595  card 5.08:1  background 4.64:1
+    //   lactate #836c35  card 5.05:1  background 4.61:1
+    channel: {
+      hr: "#287b60",
+      map: "#367595",
+      lactate: "#836c35",
     },
   },
 };
