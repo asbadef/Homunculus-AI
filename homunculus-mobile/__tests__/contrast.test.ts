@@ -135,7 +135,7 @@ describe("palette contrast (WCAG AA)", () => {
 // text, painted over that same colour's own tinted-alpha background — and the plain contrast()
 // check above cannot see it: it never composites the alpha, so it silently measured the text
 // against the *tint string itself* (transparent) or was never asked at all. This is the pairing
-// that actually renders on screen for RiskPill, PatientCard's escalated/unacknowledged chips,
+// that actually renders on screen for RiskPill, MonitorTile's flag chips,
 // Waveform's bpm readout, and the ward header's active tab — driven through the real `tintFor`
 // so this file tracks the idiom rather than a copy of its numbers.
 //
