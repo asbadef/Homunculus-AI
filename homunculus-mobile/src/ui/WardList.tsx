@@ -4,7 +4,7 @@ import Animated, { LinearTransition } from "react-native-reanimated";
 import { t } from "../i18n";
 import type { PatientView } from "../store/boardStore";
 import { SPRING } from "../theme/motion";
-import { PatientCard } from "./PatientCard";
+import { MonitorTile } from "./MonitorTile";
 import { Skeleton } from "./Skeleton";
 
 export function WardList({
@@ -36,6 +36,8 @@ export function WardList({
 
   // Animated.FlatList, not createAnimatedComponent(FlatList): only the former honours
   // itemLayoutAnimation, which is what makes a reordering ward spring instead of jump.
+  // No contentContainer padding (M5): MonitorTile is full-bleed — the hairlines are the
+  // separators, not card margins, so the tile has to touch the screen edges.
   return (
     <Animated.FlatList
       data={ward}
@@ -44,9 +46,8 @@ export function WardList({
         .mass(SPRING.mass)
         .stiffness(SPRING.stiffness)}
       keyExtractor={(item: PatientView) => item.board.patient_id}
-      contentContainerClassName="p-4"
       renderItem={({ item }: { item: PatientView }) => (
-        <PatientCard view={item} onPress={() => onSelect(item.board.patient_id)} />
+        <MonitorTile view={item} onPress={() => onSelect(item.board.patient_id)} />
       )}
     />
   );

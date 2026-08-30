@@ -56,7 +56,7 @@ const DEFAULT_KEY: ThemeKey = "icu";
 // Tests and any other isolated render of a component (no <ThemeProvider> ancestor) get this
 // rather than a thrown error — honesty note: the *app* always mounts ThemeProvider at the root
 // (see app/_layout.tsx), so this fallback is never live-authoritative. It exists purely so
-// component tests can render RiskPill/PatientCard/etc. in isolation, as they did before M3,
+// component tests can render RiskPill/MonitorTile/etc. in isolation, as they did before M3,
 // without every one of them growing a `<ThemeProvider>` wrapper. It is always the "icu" skin.
 const defaultTheme: Theme = {
   key: DEFAULT_KEY,

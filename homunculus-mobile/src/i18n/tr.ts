@@ -8,12 +8,14 @@ export const tr = {
   "tabs.alerts": "Uyarılar",
   "tabs.settings": "Ayarlar",
 
-  "ward.title": "Yoğun Bakım Koğuşu",
-  "ward.subtitle": "Riske göre sıralı",
   "ward.empty": "Koğuşta gösterilecek yatak yok.",
   "ward.loading": "Koğuş yükleniyor…",
 
   "bed.label": "YB Yatak {bed}",
+  // M5: MonitorTile's row-1 identity chip — shorter than `bed.label`, which the detail screen
+  // still uses ("YB Yatak {bed}"). A monitor tile has no room for the "YB" prefix and the mockup
+  // renders just the bed number.
+  "bed.tileLabel": "YATAK {bed}",
 
   "risk.none": "Sakin",
   "risk.info": "Bilgi",
@@ -49,8 +51,23 @@ export const tr = {
   "vital.tempShort": "Ateş",
   "vital.rr": "SS",
 
-  "ward.allUnits": "Tümü",
-  "ward.occupancy": "Doluluk: {occupied} / {total}",
+  "ward.monitorTitle": "KOĞUŞ",
+  "ward.monitorStatus.replay": "{n} YATAK · KAYIT",
+  "ward.monitorStatus.live": "{n} YATAK · CANLI",
+  "flag.stable": "STABİL",
+  "tile.escalated": "eskalasyon: açık",
+  "tile.unacknowledged": "onaysız",
+  "kind.septic_shock": "SEPTİK ŞOK",
+  "kind.under_resuscitated_sepsis": "SIVI YETERSİZ",
+  "kind.sepsis": "SEPSİS",
+  "kind.antibiotic_due": "ANTİBİYOTİK PENCERESİ",
+  "kind.antibiotic_overdue": "ANTİBİYOTİK GECİKTİ",
+  "kind.news2": "NEWS2",
+  "kind.acute_change": "AKUT DEĞİŞİM",
+  "kind.sepsis_watch": "SEPSİS İZLEM",
+  "channel.hr": "NABIZ",
+  "channel.map": "OAB",
+  "channel.lactate": "LAKTAT",
 
   "detail.vitals": "Vital bulgular",
   "detail.alerts": "Aktif uyarılar",
