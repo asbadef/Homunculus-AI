@@ -41,6 +41,8 @@ function cssVarsFor(palette: Palette): Record<string, string> {
   return {
     "--color-background": palette.background,
     "--color-card": palette.card,
+    "--color-panel": palette.panel,
+    "--color-soft": palette.soft,
     "--color-foreground": palette.foreground,
     "--color-accent": palette.accent,
     "--color-clinical-border": palette.clinical.border,
@@ -51,13 +53,15 @@ function cssVarsFor(palette: Palette): Record<string, string> {
   };
 }
 
-const DEFAULT_KEY: ThemeKey = "icu";
+// M6: light IS the kit (see src/theme/palette.js's header comment) and becomes the default — the
+// night skin is a derived, arithmetic-checked variant, not a separately-approved design.
+const DEFAULT_KEY: ThemeKey = "light";
 
 // Tests and any other isolated render of a component (no <ThemeProvider> ancestor) get this
 // rather than a thrown error — honesty note: the *app* always mounts ThemeProvider at the root
 // (see app/_layout.tsx), so this fallback is never live-authoritative. It exists purely so
 // component tests can render RiskPill/MonitorTile/etc. in isolation, as they did before M3,
-// without every one of them growing a `<ThemeProvider>` wrapper. It is always the "icu" skin.
+// without every one of them growing a `<ThemeProvider>` wrapper. It is always the DEFAULT_KEY skin.
 const defaultTheme: Theme = {
   key: DEFAULT_KEY,
   palette: palettes[DEFAULT_KEY],

@@ -11,6 +11,10 @@ module.exports = {
       colors: {
         background: "var(--color-background)",
         card: "var(--color-card)",
+        // M6: the kit's white inner panel (blue text lives ONLY here — see palette.js) and its
+        // chip/icon-circle fill.
+        panel: "var(--color-panel)",
+        soft: "var(--color-soft)",
         foreground: "var(--color-foreground)",
         accent: "var(--color-accent)",
         clinical: {
@@ -20,6 +24,13 @@ module.exports = {
           critical: "var(--color-clinical-critical)",
           stale: "var(--color-clinical-stale)",
         },
+      },
+      fontFamily: {
+        // M6: League Spartan is the kit's face. SemiBold is the default weight everywhere;
+        // heavier weights (700/800) are applied via explicit fontFamily styles where a component
+        // asks for them. system-ui is the fallback for the brief window before the font loads (or
+        // under any environment that never loads it, e.g. a headless export).
+        sans: ["LeagueSpartan_600SemiBold", "system-ui"],
       },
     },
   },

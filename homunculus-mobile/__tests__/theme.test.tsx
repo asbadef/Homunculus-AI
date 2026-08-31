@@ -23,7 +23,7 @@ function Probe() {
       <Text accessibilityLabel="key">{key}</Text>
       <Text accessibilityLabel="card">{palette.card}</Text>
       <Text accessibilityLabel="critical">{toneColor("critical")}</Text>
-      <Text accessibilityLabel="flip" onPress={() => setTheme("light")}>
+      <Text accessibilityLabel="flip" onPress={() => setTheme("icu")}>
         flip
       </Text>
     </>
@@ -31,17 +31,19 @@ function Probe() {
 }
 
 describe("ThemeProvider / useTheme", () => {
-  it("defaults to the icu (night) skin", async () => {
+  // M6: light IS the kit (see src/theme/palette.js) and is now the default — the night skin is a
+  // derived, arithmetic-checked variant a clinician opts into, not the app's resting state.
+  it("defaults to the light (kit) skin", async () => {
     await render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
-    expect(screen.getByLabelText("key").props.children).toBe("icu");
-    expect(screen.getByLabelText("card").props.children).toBe(palettes.icu.card);
+    expect(screen.getByLabelText("key").props.children).toBe("light");
+    expect(screen.getByLabelText("card").props.children).toBe(palettes.light.card);
   });
 
-  it("setTheme('light') flips the palette and persists the choice", async () => {
+  it("setTheme('icu') flips the palette and persists the choice", async () => {
     await render(
       <ThemeProvider>
         <Probe />
@@ -52,11 +54,10 @@ describe("ThemeProvider / useTheme", () => {
       screen.getByLabelText("flip").props.onPress();
     });
 
-    expect(screen.getByLabelText("key").props.children).toBe("light");
-    expect(screen.getByLabelText("card").props.children).toBe("#ffffff");
-    expect(palettes.light.card).toBe("#ffffff");
+    expect(screen.getByLabelText("key").props.children).toBe("icu");
+    expect(screen.getByLabelText("card").props.children).toBe(palettes.icu.card);
 
-    expect(await SecureStore.getItemAsync("homunculus.theme")).toBe("light");
+    expect(await SecureStore.getItemAsync("homunculus.theme")).toBe("icu");
   });
 
   it("toneColor('critical') differs between skins", async () => {
@@ -66,14 +67,14 @@ describe("ThemeProvider / useTheme", () => {
       </ThemeProvider>,
     );
     const before = screen.getByLabelText("critical").props.children;
-    expect(before).toBe(palettes.icu.clinical.critical);
+    expect(before).toBe(palettes.light.clinical.critical);
 
     await act(async () => {
       screen.getByLabelText("flip").props.onPress();
     });
 
     const after = screen.getByLabelText("critical").props.children;
-    expect(after).toBe(palettes.light.clinical.critical);
+    expect(after).toBe(palettes.icu.clinical.critical);
     expect(after).not.toBe(before);
   });
 });
