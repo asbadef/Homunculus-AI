@@ -20,6 +20,11 @@ function alert(overrides: Partial<BoardAlert> = {}): BoardAlert {
 }
 
 describe("AlertCard", () => {
+  it("shows the finding's own severity pill, and escalation overrides it to critical", async () => {
+    await render(<AlertCard alert={alert()} escalated={false} onAcknowledge={() => {}} onCite={() => {}} />);
+    expect(screen.getByText("SIVI YETERSİZ")).toBeTruthy();
+  });
+
   it("shows the summary, the reasoning and the confidence wording verbatim", async () => {
     await render(<AlertCard alert={alert()} escalated={false} onAcknowledge={() => {}} onCite={() => {}} />);
     expect(screen.getByText("Hypoperfusion before adequate fluid")).toBeTruthy();
@@ -46,8 +51,25 @@ describe("AlertCard", () => {
   it("opens the drawer for the citation that was tapped", async () => {
     const onCite = jest.fn();
     await render(<AlertCard alert={alert()} escalated={false} onAcknowledge={() => {}} onCite={onCite} />);
-    fireEvent.press(screen.getByText("Sepsis-3 (JAMA 2016)"));
+    // M6: the per-citation chip no longer shows the source's own title — it's a "Kılavuz" ghost
+    // pill, identified by its citation-scoped accessibility label (kept from the pre-kit anatomy).
+    fireEvent.press(screen.getByLabelText("citation-sepsis-3-jama-2016"));
     expect(onCite).toHaveBeenCalledWith("sepsis-3-jama-2016");
+  });
+
+  it("renders one ghost pill per citation, so a two-source alert keeps both reachable", async () => {
+    const onCite = jest.fn();
+    await render(
+      <AlertCard
+        alert={alert({ supporting_evidence: ["sepsis-3-jama-2016", "surviving-sepsis-campaign-2026"] })}
+        escalated={false}
+        onAcknowledge={() => {}}
+        onCite={onCite}
+      />,
+    );
+    expect(screen.getAllByText("Kılavuz").length).toBe(2);
+    fireEvent.press(screen.getByLabelText("citation-surviving-sepsis-campaign-2026"));
+    expect(onCite).toHaveBeenCalledWith("surviving-sepsis-campaign-2026");
   });
 
   it("shows the acknowledged state instead of the button once acknowledged", async () => {
