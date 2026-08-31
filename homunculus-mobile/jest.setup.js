@@ -7,11 +7,6 @@ jest.mock("expo-haptics", () => ({
   ImpactFeedbackStyle: { Light: "light", Medium: "medium", Heavy: "heavy" },
 }));
 
-jest.mock("expo-blur", () => {
-  const { View } = require("react-native");
-  return { BlurView: View };
-});
-
 // M6: the root layout gates first paint on useFonts (League Spartan) — see app/_layout.tsx.
 // jest-expo's auto-mocked native ExpoFontLoader.loadAsync (see node_modules/jest-expo/src/preset/
 // moduleMocks/expoModules.js — its `loadAsync` entry has no `functionType: 'promise'`, so the
@@ -58,7 +53,9 @@ jest.mock("expo-secure-store", () => {
 // that mock substrate instead of the native runtime, so Animated.View, entering/exiting
 // animations, etc. are the real Reanimated implementations — only the native worklets runtime is
 // swapped out.
-jest.mock("react-native-worklets", () => require("react-native-worklets/src/mock"));
+// SDK 54 note: react-native-worklets 0.5 ships no `src/mock` (that arrived with the 0.10 line for
+// Reanimated 4.5). Under jest-expo 54 + Reanimated ~4.1 the worklets runtime is expected to run in
+// its JS/jest fallback mode, so no module-level mock is needed here.
 
 // Reanimated's own testing guide (https://docs.swmansion.com/react-native-reanimated/docs/guides/testing/):
 // sets up its Jest-mode animation clock on top of the (now-mocked) worklets runtime.
