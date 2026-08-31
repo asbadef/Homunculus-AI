@@ -2,7 +2,8 @@ import type { MessageKey } from "../i18n";
 import { tr } from "../i18n/tr";
 import type { BoardAlert } from "../transport/types";
 
-// M5: the condition flag shown on a MonitorTile. A pure, tested lookup rather than inline ternary
+// M5: the condition flag shown on a bed card (M5's MonitorTile; M6's BedCard, unchanged here). A
+// pure, tested lookup rather than inline ternary
 // chains, because it has three genuinely different cases:
 //   - no alert at all -> the bed is stable ("flag.stable")
 //   - an alert whose kind the catalogue has a name for -> that finding's own name ("kind.<kind>")

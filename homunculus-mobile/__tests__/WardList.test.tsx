@@ -19,12 +19,12 @@ function view(id: string, risk: PatientBoard["risk"]): PatientView {
 
 describe("WardList", () => {
   it("shows skeletons while the first frame has not arrived", async () => {
-    await render(<WardList ward={[]} loading onSelect={() => {}} />);
+    await render(<WardList ward={[]} loading onSelect={() => {}} onAck={() => {}} />);
     expect(screen.getAllByLabelText("skeleton").length).toBeGreaterThan(0);
   });
 
   it("says the ward is empty once loading is done and nothing arrived", async () => {
-    await render(<WardList ward={[]} loading={false} onSelect={() => {}} />);
+    await render(<WardList ward={[]} loading={false} onSelect={() => {}} onAck={() => {}} />);
     expect(screen.getByText("Koğuşta gösterilecek yatak yok.")).toBeTruthy();
   });
 
@@ -34,6 +34,7 @@ describe("WardList", () => {
         ward={[view("bed-3", "critical"), view("bed-5", "none")]}
         loading={false}
         onSelect={() => {}}
+        onAck={() => {}}
       />,
     );
     expect(screen.getByLabelText("patient-card-bed-3")).toBeTruthy();
@@ -44,7 +45,7 @@ describe("WardList", () => {
 describe("WardList tap-through", () => {
   it("reports the tapped bed to onSelect", async () => {
     const onSelect = jest.fn();
-    await render(<WardList ward={[view("bed-3", "critical")]} loading={false} onSelect={onSelect} />);
+    await render(<WardList ward={[view("bed-3", "critical")]} loading={false} onSelect={onSelect} onAck={() => {}} />);
     fireEvent.press(screen.getByLabelText("patient-card-bed-3"));
     expect(onSelect).toHaveBeenCalledWith("bed-3");
   });

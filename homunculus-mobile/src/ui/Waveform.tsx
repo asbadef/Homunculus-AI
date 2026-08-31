@@ -12,7 +12,6 @@ import Animated, {
 import Svg, { G, Path } from "react-native-svg";
 
 import { GLOW_DURATION_MS } from "../theme/motion";
-import { tintFor } from "../theme/tint";
 import { useTheme } from "../theme/ThemeContext";
 
 const AnimatedG = Animated.createAnimatedComponent(G);
@@ -44,20 +43,13 @@ function ekgBeatPath(beats: number, beatW: number, mid: number, amp: number): st
  * A visual rhythm indicator driven by the latest HR number — not a real ECG trace, same honesty
  * scope as the web's SMIL version. Only rendered by callers when a heart rate exists.
  *
- * `stroke` is an M5 addition: MonitorTile passes `palette.channel.hr` so the strip reads as the
- * HR channel's own colour rather than the generic "safe" tone. Every other caller (the detail
- * screen's trend panel) omits it and keeps the original `clinical.safe` stroke.
+ * M6: the kit has no per-vital colour (M5's `palette.channel.hr` override is gone along with the
+ * rest of the channel block) — the trace is always the kit's own blue (`palette.accent`), and the
+ * strip itself is a white inner panel rather than a tinted chip, matching the mockup's "white wave
+ * strip with the ECG in kit blue" (see the M6 spec's Detail row, which the ward's BedCard shares).
  */
-export function Waveform({
-  hr,
-  height = 34,
-  stroke: strokeOverride,
-}: {
-  hr: number;
-  height?: number;
-  stroke?: string;
-}) {
-  const { key, palette } = useTheme();
+export function Waveform({ hr, height = 34 }: { hr: number; height?: number }) {
+  const { palette } = useTheme();
   const beats = 4;
   const beatW = 46;
   const mid = height / 2;
@@ -82,18 +74,17 @@ export function Waveform({
 
   const animatedProps = useAnimatedProps(() => ({ translateX: offset.value }));
 
-  const stroke = strokeOverride ?? palette.clinical.safe;
-  // The bpm readout sits on `tint`, so it is a real text/background contrast pair — the tinted-
-  // chip idiom applies (src/theme/tint.ts). `ring` is a decorative border only, not text, so it
-  // keeps its own fixed alpha.
-  const tint = tintFor(stroke, key);
-  const ring = `${stroke}33`; // ~20% alpha border
+  // The kit's blue, always — the strip is a white inner panel (blue text/strokes' only legal
+  // surface, per the layering law in src/theme/palette.js), not a tinted chip. The bpm readout is
+  // real text on that panel: `accent on panel` is one of the pairs contrast.test.ts checks
+  // directly, so this doesn't need its own composited-tint math the way the old tinted strip did.
+  const stroke = palette.accent;
 
   return (
     <View
       accessibilityLabel="waveform"
-      className="flex-row items-center gap-2 rounded-lg px-2 py-1"
-      style={{ backgroundColor: tint, borderWidth: 1, borderColor: ring }}
+      className="bg-panel flex-row items-center gap-2 rounded-lg px-2 py-1"
+      style={{ borderWidth: 1, borderColor: palette.clinical.border }}
     >
       <MotiView
         from={{ opacity: 0.5 }}

@@ -55,38 +55,59 @@ describe("PatientsScreen — empty and unreachable never look alike", () => {
   });
 });
 
-describe("PatientsScreen — monitor header", () => {
-  function view(id: string): PatientView {
+// M6: the monitor header became the kit's chip row. The facts survive in chip form — the
+// occupancy chip still carries the KAYIT/CANLI honesty label M5 introduced, and the counts
+// chips carry the ward's critical/alert totals.
+describe("PatientsScreen — kit header chips", () => {
+  function view(id: string, risk: PatientBoard["risk"] = "none", alerts: PatientBoard["alerts"] = []): PatientView {
     const board: PatientBoard = {
-      patient_id: id, risk: "none", alerts: [],
+      patient_id: id, risk, alerts,
       latest: { heart_rate: null, map: null, spo2: null, temperature: null, resp_rate: null, lactate: null, sofa: null },
     };
     return {
-      board, top: null, tone: "muted", escalated: false, unacknowledged: false,
+      board, top: alerts[0] ?? null, tone: "muted", escalated: false, unacknowledged: false,
       escalatedKeys: new Set(), acknowledgedKeys: new Set(),
       series: { heart_rate: [], map: [], spo2: [], temperature: [], resp_rate: [], lactate: [], sofa: [] },
     };
   }
 
-  it("shows KOĞUŞ and the replay status, honestly labelled KAYIT", async () => {
+  it("shows the title, the Tümü tab, and the occupancy chip honestly labelled KAYIT", async () => {
     mockUseBoard.mockReturnValue({
       ward: [view("bed-3"), view("bed-5"), view("bed-7")],
       mode: "replay",
       connection: "demo",
     });
     await render(<PatientsScreen />);
-    expect(screen.getByText("KOĞUŞ")).toBeTruthy();
-    expect(screen.getByText("3 YATAK · KAYIT")).toBeTruthy();
+    expect(screen.getByText("Koğuş")).toBeTruthy();
+    expect(screen.getByText("Tümü")).toBeTruthy();
+    expect(screen.getByText("3/3 dolu · KAYIT")).toBeTruthy();
   });
 
-  it("shows the live status, honestly labelled CANLI, once connected", async () => {
+  it("labels the occupancy chip CANLI once connected live", async () => {
     mockUseBoard.mockReturnValue({
       ward: [view("bed-3"), view("bed-5")],
       mode: "live",
       connection: "open",
     });
     await render(<PatientsScreen />);
-    expect(screen.getByText("KOĞUŞ")).toBeTruthy();
-    expect(screen.getByText("2 YATAK · CANLI")).toBeTruthy();
+    expect(screen.getByText("2/2 dolu · CANLI")).toBeTruthy();
+  });
+
+  it("counts critical beds and open alerts in the chips", async () => {
+    const alert: PatientBoard["alerts"][number] = {
+      patient_id: "bed-3", kind: "septic_shock", severity: "critical", urgency: "immediate",
+      summary: "s", clinical_reasoning: "", supporting_evidence: [], recommended_actions: [],
+      confidence: "", source: "rule", downgraded: false, chronic_context: "", stale_inputs: [],
+      acknowledged: false, acknowledged_by: null, acknowledged_at: null, first_seen_at: null,
+      escalated: false,
+    };
+    mockUseBoard.mockReturnValue({
+      ward: [view("bed-3", "critical", [alert]), view("bed-5")],
+      mode: "replay",
+      connection: "demo",
+    });
+    await render(<PatientsScreen />);
+    expect(screen.getByText("Kritik 1")).toBeTruthy();
+    expect(screen.getByText("Uyarı 1")).toBeTruthy();
   });
 });

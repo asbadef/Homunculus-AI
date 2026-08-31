@@ -51,12 +51,17 @@ export const tr = {
   "vital.tempShort": "Ateş",
   "vital.rr": "SS",
 
-  "ward.monitorTitle": "KOĞUŞ",
-  "ward.monitorStatus.replay": "{n} YATAK · KAYIT",
-  "ward.monitorStatus.live": "{n} YATAK · CANLI",
+  "ward.title": "Koğuş",
+  "ward.sourceReplay": "KAYIT",
+  "ward.sourceLive": "CANLI",
+  // M6: the kit's chip row (restored/added — M5's cockpit header dropped these; the bedside-
+  // monitor look is gone, the ward reads as the kit's ward screen now).
+  "ward.allUnits": "Tümü",
+  "ward.occupancy": "{occupied}/{total} dolu",
+  "ward.criticalCount": "Kritik {n}",
+  "ward.warningCount": "Uyarı {n}",
   "flag.stable": "STABİL",
-  "tile.escalated": "eskalasyon: açık",
-  "tile.unacknowledged": "onaysız",
+  "tile.escalatedPill": "ESKALE",
   "kind.septic_shock": "SEPTİK ŞOK",
   "kind.under_resuscitated_sepsis": "SIVI YETERSİZ",
   "kind.sepsis": "SEPSİS",
@@ -68,6 +73,10 @@ export const tr = {
   "channel.hr": "NABIZ",
   "channel.map": "OAB",
   "channel.lactate": "LAKTAT",
+  // M6: BedCard's stat pill labels — shorter than the full names above (`vital.lactate`) to fit a
+  // pill, distinct from the cockpit's row-cell abbreviations (`vital.hr` etc.) that Task 3/4's
+  // detail screen still uses.
+  "vital.lactateShort": "LAK",
 
   "detail.vitals": "Vital bulgular",
   "detail.alerts": "Aktif uyarılar",

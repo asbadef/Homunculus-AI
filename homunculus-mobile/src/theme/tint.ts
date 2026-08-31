@@ -1,9 +1,11 @@
 import type { ThemeKey } from "./ThemeContext";
 
 /**
- * The tinted-chip idiom used throughout the UI (RiskPill, MonitorTile's flag chip, Waveform's
- * tinted box): a colour's own hex with an alpha suffix appended, painted as a background behind
- * that same colour's text.
+ * The tinted-chip idiom used throughout the UI (RiskPill's flag chip, elsewhere in Tasks 3/4's
+ * screens): a colour's own hex with an alpha suffix appended, painted as a background behind
+ * that same colour's text. M6: BedCard's severity pill and Waveform's strip moved to the kit's
+ * own solid-fill / white-panel surfaces respectively (see palette.js's `sevSolid` and `panel`) —
+ * they no longer go through this idiom, but RiskPill still does.
  *
  * One alpha does not serve both skins. icu's parents (card `#0f172a`, background `#020617`) are
  * dark enough that even a 10% wash barely moves the composited background, so the pair's contrast

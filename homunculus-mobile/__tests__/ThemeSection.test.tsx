@@ -29,38 +29,40 @@ describe("ThemeSection", () => {
     expect(screen.getByText("Gündüz Klinik")).toBeTruthy();
   });
 
-  it("is on the night skin by default", async () => {
+  // M6: the kit's light skin becomes the default (the light theme IS the reference design);
+  // the night skin stays as the opt-in nöbet mode.
+  it("is on the day skin by default", async () => {
     await section();
-    expect(screen.getByText("Gece / Nöbet").parent?.props.accessibilityState).toEqual({
+    expect(screen.getByText("Gündüz Klinik").parent?.props.accessibilityState).toEqual({
       selected: true,
     });
-    expect(screen.getByText("Gündüz Klinik").parent?.props.accessibilityState).toEqual({
-      selected: false,
-    });
+    expect(screen.getByText("Gece / Nöbet").parent?.props.accessibilityState).toEqual(
+      expect.objectContaining({ selected: false }),
+    );
   });
 
-  it("flips to the day skin on press", async () => {
+  it("flips to the night skin on press", async () => {
     await section();
 
     await act(async () => {
-      fireEvent.press(screen.getByText("Gündüz Klinik"));
+      fireEvent.press(screen.getByText("Gece / Nöbet"));
     });
 
-    expect(screen.getByText("Gündüz Klinik").parent?.props.accessibilityState).toEqual({
+    expect(screen.getByText("Gece / Nöbet").parent?.props.accessibilityState).toEqual({
       selected: true,
     });
-    expect(screen.getByText("Gece / Nöbet").parent?.props.accessibilityState).toEqual({
-      selected: false,
-    });
+    expect(screen.getByText("Gündüz Klinik").parent?.props.accessibilityState).toEqual(
+      expect.objectContaining({ selected: false }),
+    );
   });
 
   it("persists the choice under homunculus.theme", async () => {
     await section();
 
     await act(async () => {
-      fireEvent.press(screen.getByText("Gündüz Klinik"));
+      fireEvent.press(screen.getByText("Gece / Nöbet"));
     });
 
-    expect(await SecureStore.getItemAsync("homunculus.theme")).toBe("light");
+    expect(await SecureStore.getItemAsync("homunculus.theme")).toBe("icu");
   });
 });
