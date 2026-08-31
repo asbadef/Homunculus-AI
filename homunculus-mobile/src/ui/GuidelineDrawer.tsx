@@ -3,7 +3,12 @@ import { Modal, Pressable, Text, View } from "react-native";
 import { lookupSource } from "../domain/citations";
 import { t } from "../i18n";
 import type { MessageKey } from "../i18n";
+import { useTheme } from "../theme/ThemeContext";
 
+// M6/Task 4: the kit's bottom sheet — a large-radius wash card (double BedCard's own 22px, since
+// this sheet spans the full width and reads better with a bigger curve) instead of M5's bordered
+// `rounded-t-3xl` panel; the close action becomes a ghost pill (`bg-panel` + border), matching
+// every other secondary action in the app (see SettingsPanel's `Chip`).
 export function GuidelineDrawer({
   citationId,
   confidence,
@@ -13,6 +18,7 @@ export function GuidelineDrawer({
   confidence: string;
   onClose: () => void;
 }) {
+  const { palette } = useTheme();
   if (citationId === null) return null;
   const note = lookupSource(citationId);
 
@@ -21,7 +27,7 @@ export function GuidelineDrawer({
       <View className="flex-1 justify-end bg-black/60">
         <View
           accessibilityLabel="guideline-drawer"
-          className="rounded-t-3xl border-t border-clinical-border bg-card p-5"
+          className="bg-card rounded-t-[32px] p-5"
         >
           <Text className="text-clinical-stale text-[11px] font-semibold uppercase tracking-wide">
             {t("drawer.title")}
@@ -51,7 +57,8 @@ export function GuidelineDrawer({
 
           <Pressable
             onPress={onClose}
-            className="mt-5 items-center rounded-xl border border-clinical-border py-2"
+            className="bg-panel mt-5 items-center rounded-full py-2.5"
+            style={{ borderWidth: 1, borderColor: palette.clinical.border }}
           >
             <Text className="text-foreground text-sm font-semibold">{t("drawer.close")}</Text>
           </Pressable>

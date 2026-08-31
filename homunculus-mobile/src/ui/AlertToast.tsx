@@ -1,11 +1,17 @@
 import { MotiView } from "moti";
 import { useEffect, useRef, useState } from "react";
-import { Pressable, Text } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
+import { flagKeyForKind } from "../domain/flags";
 import { severityTone } from "../domain/risk";
+import { t } from "../i18n";
 import { SPRING } from "../theme/motion";
+import palettes from "../theme/palette";
 import { useTheme } from "../theme/ThemeContext";
 import type { BoardNotification } from "../transport/types";
+
+/** Mirrors BedCard/AlertCard/NotificationFeed's own SevTone note. */
+type SevTone = "safe" | "warning" | "critical";
 
 // This file is deliberately expo-router-free. `useRouter` pulls in expo-router's
 // `standard-navigation` dependency, which ships ESM the project's jest transformIgnorePatterns
@@ -53,6 +59,11 @@ export function useToastQueue(
   return { visible, dismiss: () => setVisible(null) };
 }
 
+// M6/Task 4: the kit's card anatomy — white panel ground (the toast floats over the ward/detail
+// screen the same way the kit's own cards sit on white), a solid severity pill carrying the
+// finding's own name (the same lookup NotificationFeed/AlertCard/BedCard use), then the server's
+// title/body verbatim. No separate dismiss/ack pill exists here (there never was one — the whole
+// card is the tap target, and it still auto-clears on the same timer), so none is added.
 /** Presentational banner for one notification. Purely a function of its props — no store access. */
 export function AlertToast({
   note,
@@ -63,16 +74,18 @@ export function AlertToast({
   onPress: (patientId: string) => void;
   onDismiss: () => void;
 }) {
-  const { toneColor } = useTheme();
-  const color = toneColor(severityTone(note.severity));
+  const { palette } = useTheme();
+  const sevTone: SevTone = severityTone(note.severity) as SevTone;
+  const pillFill = palette.sevSolid[sevTone];
+  const pillText = palettes.sevSolidText[sevTone];
 
   return (
     <MotiView
       from={{ opacity: 0, translateY: -24 }}
       animate={{ opacity: 1, translateY: 0 }}
       transition={{ type: "spring", ...SPRING }}
-      style={{ borderColor: color }}
-      className="mx-4 overflow-hidden rounded-2xl border bg-card p-3"
+      style={{ borderWidth: 1, borderColor: palette.clinical.border }}
+      className="bg-panel mx-4 overflow-hidden rounded-[22px] p-3"
     >
       <Pressable
         accessibilityLabel="alert-toast"
@@ -82,9 +95,18 @@ export function AlertToast({
           onPress(note.patient_id);
         }}
       >
-        <Text className="text-xs font-semibold" style={{ color }}>
-          {note.title}
-        </Text>
+        <View
+          className="flex-row items-center gap-1 self-start rounded-full px-2.5 py-1"
+          style={{ backgroundColor: pillFill }}
+        >
+          <Text
+            className="text-[9px] font-bold uppercase tracking-widest"
+            style={{ color: pillText }}
+          >
+            {t(flagKeyForKind(note.kind, note.severity))}
+          </Text>
+        </View>
+        <Text className="text-foreground mt-2 text-xs font-semibold">{note.title}</Text>
         <Text className="text-foreground mt-1 text-sm">{note.body}</Text>
       </Pressable>
     </MotiView>

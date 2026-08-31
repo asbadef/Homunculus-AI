@@ -9,9 +9,12 @@ import type { Role } from "../transport/types";
 const SPEEDS = [1, 2, 4];
 const THRESHOLDS_MS = [10_000, 20_000, 60_000];
 
+// M6/Task 4: the kit's wash-card section — same `bg-card rounded-[22px]` BedCard/AlertCard use,
+// replacing the pre-kit bordered `rounded-xl` box. Every settings/server/theme section (all built
+// on this `Row`) picks up the kit's language for free.
 export function Row({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <View className="mb-4 rounded-xl border border-clinical-border bg-card p-4">
+    <View className="bg-card mb-4 rounded-[22px] p-4">
       <Text className="text-clinical-stale text-[11px] font-semibold uppercase tracking-wide">
         {title}
       </Text>
@@ -20,6 +23,13 @@ export function Row({ title, children }: { title: string; children: ReactNode })
   );
 }
 
+// M6/Task 4: the kit's pill button — solid accent fill for the primary/selected state, a ghost
+// `bg-panel` + border pill for the secondary/unselected one (see the M6 spec's Settings row).
+// `active` already carried exactly this distinction pre-kit (every call site either marks a
+// genuinely toggled/selected chip, e.g. the role/speed/threshold groups, or a permanently
+// `active` primary action, e.g. Kaydet/Giriş yap/Oturumu kapat) — the kit reskin needed no new
+// prop. Active chip state stays a branding moment, not a severity: it uses the accent, never
+// clinical.safe (green), which M1 borrowed incorrectly for this.
 export function Chip({
   label,
   active,
@@ -30,16 +40,21 @@ export function Chip({
   onPress: () => void;
 }) {
   const { palette } = useTheme();
-  // Active chip state is a branding moment, not a severity — it uses the teal accent, not
-  // clinical.safe (green), which M1 borrowed incorrectly for this.
   return (
     <Pressable
       onPress={onPress}
       accessibilityState={{ selected: active }}
-      className="rounded-lg border px-3 py-1.5"
-      style={{ borderColor: active ? palette.accent : palette.clinical.border }}
+      className="rounded-full px-3.5 py-2"
+      style={{
+        backgroundColor: active ? palette.accent : palette.panel,
+        borderWidth: active ? 0 : 1,
+        borderColor: palette.clinical.border,
+      }}
     >
-      <Text className="text-sm" style={{ color: active ? palette.accent : palette.clinical.stale }}>
+      <Text
+        className="text-sm font-semibold"
+        style={{ color: active ? "#ffffff" : palette.clinical.stale }}
+      >
         {label}
       </Text>
     </Pressable>

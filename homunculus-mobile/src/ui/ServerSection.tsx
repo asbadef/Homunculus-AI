@@ -35,7 +35,7 @@ export function ServerSection({
   onGoReplay: () => void;
   loginError: string | null;
 }) {
-  const { toneColor } = useTheme();
+  const { palette, toneColor } = useTheme();
   const [address, setAddress] = useState(serverUrl ?? "");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -58,7 +58,8 @@ export function ServerSection({
           placeholderTextColor={toneColor("muted")}
           autoCapitalize="none"
           autoCorrect={false}
-          className="text-foreground border-clinical-border flex-1 rounded-lg border px-3 py-2 text-sm"
+          className="bg-panel text-foreground flex-1 rounded-[14px] px-3 py-2 text-sm"
+          style={{ borderWidth: 1, borderColor: palette.clinical.border }}
         />
         <Chip label={t("server.save")} active onPress={() => onSaveUrl(address)} />
       </View>
@@ -79,7 +80,8 @@ export function ServerSection({
             onChangeText={setEmail}
             autoCapitalize="none"
             autoCorrect={false}
-            className="text-foreground border-clinical-border mt-1 rounded-lg border px-3 py-2 text-sm"
+            className="bg-panel text-foreground mt-1 rounded-[14px] px-3 py-2 text-sm"
+            style={{ borderWidth: 1, borderColor: palette.clinical.border }}
           />
           <Text className="text-clinical-stale mt-2 text-sm">{t("server.login.password")}</Text>
           <TextInput
@@ -89,7 +91,8 @@ export function ServerSection({
             secureTextEntry
             autoCapitalize="none"
             autoCorrect={false}
-            className="text-foreground border-clinical-border mt-1 rounded-lg border px-3 py-2 text-sm"
+            className="bg-panel text-foreground mt-1 rounded-[14px] px-3 py-2 text-sm"
+            style={{ borderWidth: 1, borderColor: palette.clinical.border }}
           />
           <View className="mt-2 flex-row">
             <Chip
