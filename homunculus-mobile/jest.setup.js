@@ -12,6 +12,19 @@ jest.mock("expo-blur", () => {
   return { BlurView: View };
 });
 
+// M6: the root layout gates first paint on useFonts (League Spartan) — see app/_layout.tsx.
+// jest-expo's auto-mocked native ExpoFontLoader.loadAsync (see node_modules/jest-expo/src/preset/
+// moduleMocks/expoModules.js — its `loadAsync` entry has no `functionType: 'promise'`, so the
+// generic mock returns a bare `jest.fn()`, not a Promise) makes the real @expo-google-fonts
+// useFonts hook throw on `.then` the instant any component calls it. Every component test in this
+// suite renders in isolation (no <RootLayout>), so this mock only has to make `useFonts` behave
+// like "already loaded" — no test should ever sit behind a font-loading gate.
+jest.mock("expo-font", () => ({
+  useFonts: () => [true, null],
+  loadAsync: jest.fn(() => Promise.resolve()),
+  isLoaded: () => true,
+}));
+
 // expo-secure-store wraps the platform keychain/keystore, which doesn't exist under Jest.
 // In-memory Map stands in for it — good enough to exercise get/set/delete semantics without
 // a native module. __reset lets tests start each case from an empty store.

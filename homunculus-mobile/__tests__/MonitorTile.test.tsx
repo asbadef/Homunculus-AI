@@ -155,24 +155,9 @@ describe("MonitorTile — condition flag (M5)", () => {
   });
 });
 
-describe("MonitorTile — channel identity", () => {
-  it("paints each vital in its own channel colour, never a neighbour's", async () => {
-    const { palettes } = { palettes: require("../src/theme/palette") };
-    const v = view({});
-    v.board.latest = { ...v.board.latest, heart_rate: 101, map: 62, lactate: 3.4 };
-    await render(<MonitorTile view={v} onPress={() => {}} />);
-    const icu = palettes.icu.channel;
-    const coloursOf = (text: string) =>
-      screen.getAllByText(text).map((node) => {
-        const style = Array.isArray(node.props.style)
-          ? Object.assign({}, ...node.props.style)
-          : node.props.style;
-        return style?.color;
-      });
-    // "101" renders twice — the HR channel numeral AND the waveform's bpm readout — so the HR
-    // assertion checks membership; MAP and lactate are unique on the tile.
-    expect(coloursOf("101")).toContain(icu.hr);
-    expect(coloursOf("62")).toEqual([icu.map]);
-    expect(coloursOf("3.4")).toEqual([icu.lactate]);
-  });
-});
+// M6: the "channel identity" describe block that used to live here (each vital painted in its
+// own channel colour) is retired along with src/theme/palette.js's `channel` block — the kit
+// language has no per-vital colour, a deliberate reversal per docs/superpowers/specs/
+// 2026-08-31-mobile-kit-language-m6-design.md. MonitorTile itself is replaced by BedCard in
+// Task 2 (see __tests__/BedCard.test.tsx), which carries this file's other behavioural cases
+// forward.

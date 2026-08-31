@@ -4,42 +4,22 @@
 // actually renders it (12px semibold pills, 11px section headers). A palette edit that pushes
 // any meaning-bearing pair back under the bar should fail here, not in a ward at night.
 //
-// M3: the palette became two skins (icu/light), both hex now (translated from the web cockpit's
-// Tailwind classes) rather than hsl(). The parser below learned #rrggbb; the hsl() path is kept
-// only so this file still fails loudly if a future edit reintroduces an hsl() literal by mistake.
+// M6: the app adopts the user's chosen Figma "Medical Health Mobile App" kit language (see
+// docs/superpowers/specs/2026-08-31-mobile-kit-language-m6-design.md). Light is now the kit and
+// the default skin; two surfaces are new (`panel`, `soft`) and the kit's own layering law is
+// tested here as arithmetic, not left as a style note: **blue (accent) text sits only on
+// `panel`, never on `card`** — measured directly off the kit, accent-on-card is 3.48:1, under the
+// 4.5:1 body bar, while accent-on-panel clears it. The channel-colour block (M5's per-vital
+// numeral colours) is gone — the kit has no per-vital colour, a deliberate reversal, not a loss;
+// its cases are deleted below rather than carried forward.
 import palettes from "../src/theme/palette";
 import type { ThemeKey } from "../src/theme/ThemeContext";
 import { tintFor } from "../src/theme/tint";
-
-function hslToRgb(hsl: string): [number, number, number] {
-  const m = /hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/.exec(hsl);
-  if (!m) throw new Error(`not an hsl() string: ${hsl}`);
-  const h = Number(m[1]) / 360;
-  const s = Number(m[2]) / 100;
-  const l = Number(m[3]) / 100;
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-  const channel = (t: number): number => {
-    if (t < 0) t += 1;
-    if (t > 1) t -= 1;
-    if (t < 1 / 6) return p + (q - p) * 6 * t;
-    if (t < 1 / 2) return q;
-    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-    return p;
-  };
-  return [channel(h + 1 / 3), channel(h), channel(h - 1 / 3)];
-}
 
 function hexToRgb(hex: string): [number, number, number] {
   const m = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(hex);
   if (!m) throw new Error(`not a #rrggbb string: ${hex}`);
   return [parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255];
-}
-
-function toRgb(color: string): [number, number, number] {
-  if (color.startsWith("#")) return hexToRgb(color);
-  if (color.startsWith("hsl(")) return hslToRgb(color);
-  throw new Error(`unrecognised colour format: ${color}`);
 }
 
 /** Relative luminance from an already-normalised (0..1) rgb triple — the shared math underneath
@@ -50,7 +30,7 @@ function luminanceRgb01([r, g, b]: [number, number, number]): number {
 }
 
 function luminance(color: string): number {
-  return luminanceRgb01(toRgb(color));
+  return luminanceRgb01(hexToRgb(color));
 }
 
 function contrastFromLuminance(l1: number, l2: number): number {
@@ -76,7 +56,7 @@ function compositeOver(fgHexWithAlpha: string, bgHex: string): [number, number, 
   if (!m) throw new Error(`not a #rrggbbaa string: ${fgHexWithAlpha}`);
   const [fr, fg, fb] = [m[1], m[2], m[3]].map((h) => parseInt(h, 16) / 255);
   const a = parseInt(m[4], 16) / 255;
-  const [br, bg, bb] = toRgb(bgHex);
+  const [br, bg, bb] = hexToRgb(bgHex);
   return [fr * a + br * (1 - a), fg * a + bg * (1 - a), fb * a + bb * (1 - a)];
 }
 
@@ -85,12 +65,13 @@ function contrastAgainstComposite(fg: string, compositedBg: [number, number, num
   return contrastFromLuminance(luminance(fg), luminanceRgb01(compositedBg));
 }
 
-const SKINS: ThemeKey[] = ["icu", "light"];
+const SKINS: ThemeKey[] = ["light", "icu"];
 
 describe("palette contrast (WCAG AA)", () => {
   const body = 4.5;
-  // accent is UI chrome (tab-bar active icon, chip borders/text at 14px+) — never body text — so
-  // it only has to clear the large-text/graphical-object bar, not the 4.5:1 body-text one.
+  // accent is UI chrome (nav-bar fill, chip borders/text at 14px+) — never body text — so it only
+  // has to clear the large-text/graphical-object bar, not the 4.5:1 body-text one, EXCEPT where it
+  // is used as text on `panel` (the layering law below), which is a real body-text usage.
   const chrome = 3;
 
   describe.each(SKINS)("%s skin", (skin) => {
@@ -98,56 +79,69 @@ describe("palette contrast (WCAG AA)", () => {
 
     it.each([
       ["foreground on background", palette.foreground, palette.background],
+      ["foreground on card", palette.foreground, palette.card],
       ["stale on card", palette.clinical.stale, palette.card],
-      ["warning on card", palette.clinical.warning, palette.card],
-      ["safe on card", palette.clinical.safe, palette.card],
-      ["critical on card", palette.clinical.critical, palette.card],
-      ["critical on background", palette.clinical.critical, palette.background],
+      ["stale on background", palette.clinical.stale, palette.background],
     ])("%s clears 4.5:1", (_name, fg, bg) => {
       expect(contrast(fg, bg)).toBeGreaterThanOrEqual(body);
     });
 
-    it("accent on card clears 3:1 (UI chrome, not body text)", () => {
+    // Severity as TEXT/border colour (`clinical.critical/warning/safe`) — the kit's layering law
+    // applies here too: these render on `panel` (or straight on `background`), never on the wash.
+    it.each([
+      ["critical on panel", palette.clinical.critical, palette.panel],
+      ["critical on background", palette.clinical.critical, palette.background],
+      ["warning on panel", palette.clinical.warning, palette.panel],
+      ["warning on background", palette.clinical.warning, palette.background],
+      ["safe on panel", palette.clinical.safe, palette.panel],
+      ["safe on background", palette.clinical.safe, palette.background],
+    ])("severity text-variant: %s clears 4.5:1", (_name, fg, bg) => {
+      expect(contrast(fg, bg)).toBeGreaterThanOrEqual(body);
+    });
+
+    // THE LAYERING LAW. Measured directly off the kit's own frames: accent (#2260FF) text on the
+    // pale wash (`card`, #CAD6FF) comes out to 3.48:1 — under the 4.5:1 body bar — which is why
+    // the kit always gives blue type a white inner panel (`panel`) instead. Both halves are
+    // asserted as arithmetic: `panel` must clear the bar the wash cannot, so a future edit that
+    // quietly brightens `card` enough to pass would have to update this test, not just eyeball it.
+    it("accent on panel clears 4.5:1 (blue text's only legal surface)", () => {
+      expect(contrast(palette.accent, palette.panel)).toBeGreaterThanOrEqual(body);
+    });
+
+    it("accent on card stays under 4.5:1 (the wash is not a legal surface for blue text)", () => {
+      expect(contrast(palette.accent, palette.card)).toBeLessThan(body);
+    });
+
+    it("accent on card still clears 3:1 (chrome only — borders, icons, never body text)", () => {
       expect(contrast(palette.accent, palette.card)).toBeGreaterThanOrEqual(chrome);
     });
 
-    // M5: MonitorTile's three channel numerals (NABIZ/OAB/LAKTAT) are the vital's own colour —
-    // channel identity, independent of severity — and they render at both oversized-numeral and
-    // label sizes (~8.5px uppercase tracked labels), so the label size is what actually holds
-    // this to the 4.5:1 body bar rather than the 3:1 large-text one. Both surfaces because the
-    // tile has no card background of its own — the screen `background` shows straight through
-    // behind row 2, while the label/value sit on `card` wherever a tile is later composed onto
-    // one (e.g. inside a future card-backed context).
+    it("white icon on solid accent fill clears 3:1 (floating nav bar chrome)", () => {
+      expect(contrast("#ffffff", palette.accent)).toBeGreaterThanOrEqual(chrome);
+    });
+
+    // Solid severity pills (BedCard's severity pill, ESKALE mini-pill): the fill's own text
+    // colour (white for critical/safe, dark ink for warning — see palette.js's sevSolidText
+    // comment on why warning can't just take the skin's own `foreground`) painted directly on
+    // the fill.
     it.each([
-      ["hr channel on card", palette.channel.hr, palette.card],
-      ["hr channel on background", palette.channel.hr, palette.background],
-      ["map channel on card", palette.channel.map, palette.card],
-      ["map channel on background", palette.channel.map, palette.background],
-      ["lactate channel on card", palette.channel.lactate, palette.card],
-      ["lactate channel on background", palette.channel.lactate, palette.background],
-    ])("%s clears 4.5:1", (_name, fg, bg) => {
-      expect(contrast(fg, bg)).toBeGreaterThanOrEqual(body);
+      ["critical", palettes.sevSolidText.critical, palette.sevSolid.critical],
+      ["warning", palettes.sevSolidText.warning, palette.sevSolid.warning],
+      ["safe", palettes.sevSolidText.safe, palette.sevSolid.safe],
+    ])("sevSolid %s: its text colour on its own fill clears 4.5:1", (_name, text, fill) => {
+      expect(contrast(text, fill)).toBeGreaterThanOrEqual(body);
     });
   });
 });
 
-// The pairs above are solid-on-solid. Every one of these is solid-on-*tint* — a coloured chip's
-// text, painted over that same colour's own tinted-alpha background — and the plain contrast()
-// check above cannot see it: it never composites the alpha, so it silently measured the text
-// against the *tint string itself* (transparent) or was never asked at all. This is the pairing
-// that actually renders on screen for RiskPill, MonitorTile's flag chips,
-// Waveform's bpm readout, and the ward header's active tab — driven through the real `tintFor`
-// so this file tracks the idiom rather than a copy of its numbers.
-//
-// Before src/theme/tint.ts split the alpha by skin (both skins at the old flat `1A`), this block
-// failed on light for every case below except the two riskpill/waveform "on card" safe-text
-// cases — for example:
-//   ● palette contrast: tinted-chip idiom (composited) › light skin › escalated chip: critical
-//     text over its tint, on card clears 4.5:1
-//     expect(received).toBeGreaterThanOrEqual(expected)
-//     Expected: >= 4.5
-//     Received:    4.374089...
-// `tintFor`'s reduced light-skin alpha (see src/theme/tint.ts) is what makes them pass now.
+// The pairs above are solid-on-solid. These are solid-on-*tint* — a severity colour's text,
+// painted over that same colour's own tinted-alpha background — and the plain contrast() check
+// above cannot see it: it never composites the alpha. This is the pairing that actually renders
+// for RiskPill, driven through the real `tintFor` so this file tracks the idiom rather than a
+// copy of its numbers. Composited onto `panel`, per the layering law above — not `card`: the wash
+// is dark enough itself (unlike the old slate-50 card it replaces) that a text colour tuned only
+// to clear `card` solid would fail once its own faint tint sat behind it there too; `panel` is
+// where these chips actually render in the kit language.
 describe("palette contrast: tinted-chip idiom (composited)", () => {
   const body = 4.5;
   const chrome = 3;
@@ -156,34 +150,17 @@ describe("palette contrast: tinted-chip idiom (composited)", () => {
     const palette = palettes[skin];
 
     it.each([
-      ["riskpill critical text over its tint, on card", palette.clinical.critical, palette.card],
-      ["riskpill warning text over its tint, on card", palette.clinical.warning, palette.card],
-      ["riskpill safe text over its tint, on card", palette.clinical.safe, palette.card],
-      [
-        "escalated chip: critical text over its tint, on card",
-        palette.clinical.critical,
-        palette.card,
-      ],
-      [
-        "unacknowledged chip: warning text over its tint, on card",
-        palette.clinical.warning,
-        palette.card,
-      ],
-      ["waveform bpm: safe text over its tint, on card", palette.clinical.safe, palette.card],
-      [
-        "waveform bpm: safe text over its tint, on background",
-        palette.clinical.safe,
-        palette.background,
-      ],
-    ])("%s clears 4.5:1", (_name, fg, bgParent) => {
-      const composited = compositeOver(tintFor(fg, skin), bgParent);
+      ["critical", palette.clinical.critical],
+      ["warning", palette.clinical.warning],
+      ["safe", palette.clinical.safe],
+    ])("riskpill %s text over its own tint, on panel, clears 4.5:1", (_name, fg) => {
+      const composited = compositeOver(tintFor(fg, skin), palette.panel);
       expect(contrastAgainstComposite(fg, composited)).toBeGreaterThanOrEqual(body);
     });
 
-    // Same chrome exception as the plain "accent on card" case above: this is the active ward
-    // tab's actual rendering (accent text over accent's own tint, over the screen background),
-    // so it only has to clear 3:1, not the 4.5:1 body-text bar.
-    it("ward tab: accent text over its tint, on background, clears 3:1 (chrome)", () => {
+    // The chip-row's active "Tümü" state and any other accent-tinted chrome chip: accent text
+    // over its own tint, on `background` — chrome bar only (same exception as the solid case).
+    it("accent text over its own tint, on background, clears 3:1 (chrome)", () => {
       const composited = compositeOver(tintFor(palette.accent, skin), palette.background);
       expect(contrastAgainstComposite(palette.accent, composited)).toBeGreaterThanOrEqual(chrome);
     });

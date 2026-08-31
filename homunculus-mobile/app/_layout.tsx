@@ -1,4 +1,11 @@
 import "../global.css";
+import {
+  LeagueSpartan_500Medium,
+  LeagueSpartan_600SemiBold,
+  LeagueSpartan_700Bold,
+  LeagueSpartan_800ExtraBold,
+} from "@expo-google-fonts/league-spartan";
+import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { Suspense, lazy } from "react";
@@ -37,6 +44,20 @@ function Shell() {
 }
 
 export default function RootLayout() {
+  // M6: League Spartan is the kit's face (see tailwind.config.js's fontFamily.sans and
+  // palette.js's header comment). The splash gate is deliberately simple — render nothing until
+  // the weights are in — rather than a manual expo-splash-screen hide/prevent dance; the app has
+  // no other slow startup work competing for that screen. Under jest, expo-font is mocked to
+  // report "already loaded" synchronously (see jest.setup.js), so no test ever sits behind this.
+  const [fontsLoaded] = useFonts({
+    LeagueSpartan_500Medium,
+    LeagueSpartan_600SemiBold,
+    LeagueSpartan_700Bold,
+    LeagueSpartan_800ExtraBold,
+  });
+
+  if (!fontsLoaded) return null;
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
