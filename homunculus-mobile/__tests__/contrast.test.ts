@@ -80,8 +80,16 @@ describe("palette contrast (WCAG AA)", () => {
     it.each([
       ["foreground on background", palette.foreground, palette.background],
       ["foreground on card", palette.foreground, palette.card],
+      // Task 4: foreground text on `panel` is new to the parameterised suite — StatPill/VitalsRow
+      // cell values already rendered this way (M3), but no case covered it. Task 4 adds several
+      // more (AlertToast's title/body, ServerSection's text-input value, GuidelineDrawer's close
+      // label), so it earns its own arithmetic case rather than staying an untested assumption.
+      ["foreground on panel", palette.foreground, palette.panel],
       ["stale on card", palette.clinical.stale, palette.card],
       ["stale on background", palette.clinical.stale, palette.background],
+      // Task 4: SettingsPanel's ghost pill (ThemeSection's unselected skin chip, every unselected
+      // role/speed/threshold chip) puts `clinical.stale` text on `panel` for the first time.
+      ["stale on panel", palette.clinical.stale, palette.panel],
     ])("%s clears 4.5:1", (_name, fg, bg) => {
       expect(contrast(fg, bg)).toBeGreaterThanOrEqual(body);
     });
