@@ -4,17 +4,19 @@ import Animated, { LinearTransition } from "react-native-reanimated";
 import { t } from "../i18n";
 import type { PatientView } from "../store/boardStore";
 import { SPRING } from "../theme/motion";
-import { MonitorTile } from "./MonitorTile";
+import { BedCard } from "./BedCard";
 import { Skeleton } from "./Skeleton";
 
 export function WardList({
   ward,
   loading,
   onSelect,
+  onAck,
 }: {
   ward: PatientView[];
   loading: boolean;
   onSelect: (patientId: string) => void;
+  onAck: (patientId: string, kind: string) => void;
 }) {
   if (loading && ward.length === 0) {
     return (
@@ -36,8 +38,8 @@ export function WardList({
 
   // Animated.FlatList, not createAnimatedComponent(FlatList): only the former honours
   // itemLayoutAnimation, which is what makes a reordering ward spring instead of jump.
-  // No contentContainer padding (M5): MonitorTile is full-bleed — the hairlines are the
-  // separators, not card margins, so the tile has to touch the screen edges.
+  // M6: padding returns — BedCard is a floating wash card on the white ground (the kit's ward),
+  // not M5's full-bleed monitor tile. Bottom padding clears the floating nav bar.
   return (
     <Animated.FlatList
       data={ward}
@@ -46,8 +48,13 @@ export function WardList({
         .mass(SPRING.mass)
         .stiffness(SPRING.stiffness)}
       keyExtractor={(item: PatientView) => item.board.patient_id}
+      contentContainerClassName="px-4 pt-1 pb-24"
       renderItem={({ item }: { item: PatientView }) => (
-        <MonitorTile view={item} onPress={() => onSelect(item.board.patient_id)} />
+        <BedCard
+          view={item}
+          onPress={() => onSelect(item.board.patient_id)}
+          onAck={onAck}
+        />
       )}
     />
   );
