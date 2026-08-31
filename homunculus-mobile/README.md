@@ -31,7 +31,7 @@ use the dashboard for now.
 
 ## Tema
 
-**Gece / Nöbet** (night, default) — Slate surfaces with teal brand accent. Matches the web cockpit's family look. **Gündüz Klinik** (day) is switchable in Ayarlar (Settings). Both skins pass WCAG AA contrast checks, enforced by the suite in `__tests__/contrast.test.ts`.
+**Gündüz Klinik** (light, default) — the app speaks the Figma Medical UI Kit's language: white ground, `#2260FF` accent (blue text only on white panels — the layering law in `src/theme/palette.js`), pale-wash cards, pill-shaped everything, League Spartan type, and a floating solid-blue nav bar. **Gece / Nöbet** (night) keeps the same shapes on a navy ground and is switchable in Ayarlar (Settings). Both skins pass WCAG AA contrast checks, enforced by the suite in `__tests__/contrast.test.ts`; the full design contract is `docs/superpowers/specs/2026-08-31-mobile-kit-language-m6-design.md`.
 
 ## Regenerate the ward
 
