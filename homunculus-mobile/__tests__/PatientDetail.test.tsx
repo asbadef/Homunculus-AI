@@ -35,11 +35,11 @@ describe("PatientDetail", () => {
     expect(screen.getByText("YB Yatak 3")).toBeTruthy();
   });
 
-  it("renders the five-cell vitals row", async () => {
+  it("renders the six-cell vitals slots", async () => {
     await render(<PatientDetail view={view()} onAcknowledge={() => {}} />);
-    // "OAB" (MAP) also labels a trend-panel row below the vitals row, so it can appear twice —
-    // every other cell label is unique to the row.
-    for (const label of ["NB", "OAB", "SpO2", "Ateş", "SS"]) {
+    // OAB/LAKTAT/SOFA also label a trend-panel row below the slots, so they can appear twice —
+    // NABIZ, SpO2 and Ateş are unique to the slot grid.
+    for (const label of ["NABIZ", "OAB", "LAKTAT", "SpO2", "Ateş", "SOFA"]) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
   });

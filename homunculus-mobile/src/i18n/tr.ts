@@ -34,6 +34,10 @@ export const tr = {
   "alert.sources": "Kaynaklar",
   "alert.chronicContext": "Kronik bağlam",
   "alert.downgraded": "Hastanın kendi bazaline göre indirgendi",
+  // M6: the detail screen's alert card ghost pill — opens the existing guideline drawer for one
+  // of the alert's supporting_evidence entries (see AlertCard.tsx; there is one pill per citation
+  // so a two-source alert keeps both sources reachable).
+  "alert.guideline": "Kılavuz",
 
   "stale.badge": "Bayat veri: {inputs}",
 
