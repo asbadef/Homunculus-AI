@@ -386,6 +386,11 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
     numaralı telleri çapraz geçen kablo. Düz kabloyla hiçbir şey gelmez.
   - **STOP kuralı:** Programı kapatmadan kabloyu çekersen ventilatör 3 saniye sonra ekranda ve
     sesli "iletişim hatası" verir. Önce Ctrl+C, sonra kablo.
+  - **Infinity Gateway:** Dräger'in yoğun bakım monitör ağından (Infinity Kappa başucu
+    monitörleri) HL7 çıkarmak için gereken ayrı bir yazılım. Hastanede kurulu olup olmadığı henüz
+    bilinmiyor — biomed'e sorulan sorular `docs/drager-infinity-biomed-sorulari.md`'de. Varsa,
+    hiç yeni kod yazmadan mevcut MLLP köprüsü (`run_bridge.py`) kullanılır; yoksa Kappa'nın kendi
+    seri protokolü (MS28819, X5 konektörü — MEDIBUS'tan farklı) bir sonraki seçenek olur.
 - **ML terimleri (ilk model kuruldu — [[early-sepsis-ml-model]]):**
   - **Etiket (label):** modele "doğru cevap" olarak verdiğimiz şey. Bizde: hasta 6 saat *sonra*
     sepsis olacak mı? (PhysioNet verisi bunu hazır işaretlemiş.)
