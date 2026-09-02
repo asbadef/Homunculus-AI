@@ -46,7 +46,7 @@ Projenin bir anda bitmesi mümkün değil; **basamak basamak** ilerliyor. Şu an
 | **1. Bilgi vault'u** | Klinik bilgiyi kaynaklarıyla toplayan "ikinci beyin" (Obsidian) | ✅ Kuruldu (sepsis konusu) |
 | **2. Görünmez motor** | Cihaz verisini alıp, kuralları işletip, gerekçeli uyarı üreten çekirdek. Ekranı yok; sentetik (uydurma) hasta senaryolarıyla test edilir | ✅ Bitti — 54 test geçiyor |
 | **3. Canlı panel** | Doktorun/hemşirenin gerçek zamanlı gördüğü ekran + onay + eskalasyon | 🟡 Büyük kısmı bitti — canlı pano (B1) + onay/eskalasyon (B2) çalışıyor; bildirim kanalları (B3) kaldı |
-| **4. Gerçek cihaz + ML** | Gerçek hastane cihazlarına bağlanmak ve öğrenen bir ML modeli eklemek | ML ilk dilimi ✅; cihaz köprüsü (NCE dosya rotası) ✅ yazıldı ve test edildi — sahada devreye alma (paylaşım + alan tablosu) 🔜 |
+| **4. Gerçek cihaz + ML** | Gerçek hastane cihazlarına bağlanmak ve öğrenen bir ML modeli eklemek | ML ilk dilimi ✅; cihaz köprüsü (NCE dosya rotası) ✅ yazıldı ve test edildi — sahada devreye alma (paylaşım + alan tablosu) 🔜; ventilatör köprüsü (MEDIBUS, `medibus/`) ✅ yazıldı, USB'den tek cihazda denenecek |
 
 **Şu anki dürüst tablo:** Beyin (vault) ve kalp (motor) çalışıyor. Motor, uydurma bir
 hastayı saat saat kötüleştirip doğru uyarıyı doğru anda ürettiğini kanıtlıyor. Ama henüz
@@ -369,6 +369,23 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
 
 - **Ventilatör / solunum terimleri** — PEEP, tidal hacim, plato basıncı, ARDSnet,
   weaning/ekstübasyon, kan gazı (ABG) yorumlama.
+- **Cihaz bağlantı terimleri (MEDIBUS köprüsü kuruldu — `medibus/`):**
+  - **MEDIBUS:** Dräger'in **ventilatör ve anestezi cihazlarının** (Evita, Savina, V500, Primus…)
+    arka COM portundan konuştuğu eski ama sağlam seri (RS-232) protokolü. Bilgisayar 2 saniyede bir
+    "ölçümleri ver" der, cihaz SpO2, nabız, solunum sayısı, FiO2, PEEP gibi kodlu değerlerle cevap
+    verir. Köprü yalnızca *okur*; ayar değiştirmez, alarm susturmaz.
+  - **Kappa ≠ MEDIBUS:** Yoğun bakımdaki Infinity Kappa başucu monitörleri vital verisini MEDIBUS
+    ile *vermez*; onların seri çıkışı ayrı bir protokoldür (*Infinity RS-232 Export Protocol*, X5
+    konektörü). Kappa'daki "MEDIBUS" özelliği ventilatör verisini monitöre *almak* içindir. Yani
+    MEDIBUS köprüsü ventilatöre takılır, monitöre değil.
+  - **Keşif modu:** Köprüyü hiçbir veri iletmeden çalıştırıp cihazın *hangi kodları* gönderdiğini
+    görmek. Eşleme tablosu (mapping) bu rapordan yazılır, kılavuzdan değil.
+  - **Loopback testi:** Adaptörün 2-3 pinlerini ataşla köprüleyip gönderdiğini geri alması.
+    Ventilatöre dokunmadan "adaptör, sürücü, COM numarası doğru mu?" sorusunu cevaplar.
+  - **Null-modem:** İki bilgisayar-tarafı cihazı (ventilatör ve laptop) birbirine bağlayan, 2 ile 3
+    numaralı telleri çapraz geçen kablo. Düz kabloyla hiçbir şey gelmez.
+  - **STOP kuralı:** Programı kapatmadan kabloyu çekersen ventilatör 3 saniye sonra ekranda ve
+    sesli "iletişim hatası" verir. Önce Ctrl+C, sonra kablo.
 - **ML terimleri (ilk model kuruldu — [[early-sepsis-ml-model]]):**
   - **Etiket (label):** modele "doğru cevap" olarak verdiğimiz şey. Bizde: hasta 6 saat *sonra*
     sepsis olacak mı? (PhysioNet verisi bunu hazır işaretlemiş.)
@@ -399,6 +416,8 @@ uygulama (M1) da kuruldu** — Expo/React Native, kayıtlı üç yataklı koğu�
 üzerinde: riske göre sıralı hasta listesi, vital kartları ve senaryo zamanı eğilimleri, kasadaki
 kaynak notlarına bağlanan kılavuz çekmecesi, eskalasyon farkındalıklı titreşim. M2 ile canlı bağlantı
 da kuruldu — telefon, web panosunun bağlandığı sunucuya JWT girişi ve tek kullanımlık SSE biletleriyle
-bağlanır; oturum düşerse gösterime döner. M6 ile uygulama, kullanıcının gösterdiği Figma Medical UI Kit dilinde baştan giydirildi — beyaz zemin, `#2260FF` mavi, hap biçimli her şey, League Spartan yazı tipi, yüzen mavi gezinme çubuğu; gece skini aynı formları lacivert zeminde korur ve Ayarlar'dan seçilir.)*
+bağlanır; oturum düşerse gösterime döner. M6 ile uygulama, kullanıcının gösterdiği Figma Medical UI Kit dilinde baştan giydirildi — beyaz zemin, `#2260FF` mavi, hap biçimli her şey, League Spartan yazı tipi, yüzen mavi gezinme çubuğu; gece skini aynı formları lacivert zeminde korur ve Ayarlar'dan seçilir. **MEDIBUS ventilatör
+köprüsü (`medibus/`) de kuruldu** — ayrı klasör, USB'den çalışır, sahte cihazla 86 testi geçer;
+biyomedikal onayıyla tek ventilatörde denenecek.)*
 
 > Bir terimi merak edip burada bulamazsan, söyle — hem cevaplarım hem de bu dosyaya eklerim.

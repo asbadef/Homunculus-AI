@@ -39,3 +39,6 @@ homunculus-mobile/web-build/
 # must never be committed. Sanitised text captures of the same facts live in Homunculus/raw/.
 site-photos/
 Homunculus/raw/dragger/
+
+# MEDIBUS site mapping (per-hospital device table; the example file is the shape)
+medibus/medibus-mapping.json

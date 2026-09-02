@@ -1,0 +1,22 @@
+{
+  "device": "Evita 4 / Savina (Dräger ICU devices, MEDIBUS 04.00)",
+  "verified": false,
+  "notes": [
+    "Codes come from the Dräger 'MEDIBUS for Intensive Care Devices' IFU tables, NOT from a device at this site.",
+    "Run the bridge in discovery mode first; keep only the codes the discovery report actually lists.",
+    "Only codes the Homunculus engine has a SignalCode for are mapped. Ventilator mechanics (PEEP 78, Ppeak 7D, MV B9, VTe 88, etCO2 E6) are seen and counted but not forwarded until the engine gains signals for them.",
+    "F0 is inspired O2 in percent; the engine's fio2 is a fraction, hence scale 0.01.",
+    "E1 pulse and EB SpO2 exist only when the ventilator has its own SpO2 sensor option; otherwise they never appear in the discovery report.",
+    "on_resp_support: every successful code-page-1 poll proves the ventilator is on and talking; the bridge emits on_resp_support=1 alongside it. It never emits 0 — absence of data is not evidence of no support.",
+    "The bridge ignores 'verified' and 'notes'; they are for the operator."
+  ],
+  "codepage1": {
+    "EB": {"signal": "spo2", "unit": "%"},
+    "E1": {"signal": "heart_rate", "unit": "/min"},
+    "D6": {"signal": "resp_rate", "unit": "/min"},
+    "F0": {"signal": "fio2", "unit": "fraction", "scale": 0.01}
+  },
+  "codepage2": {},
+  "settings": {},
+  "derived": {"on_resp_support": true}
+}
