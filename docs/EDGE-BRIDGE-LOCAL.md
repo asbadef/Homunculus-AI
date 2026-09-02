@@ -102,6 +102,62 @@ docker compose ps            # all services healthy
 docker compose logs -f api
 ```
 
+## The Dräger Infinity route: Gateway or ask
+
+The pilot ICU's real continuous-telemetry source is a Dräger Infinity network — 13 Kappa bedsides
+(VF9.1-C) on their own subnet, live ECG on occupied beds. Unlike the NCE monitors, this device
+generation's HL7 exit is **Infinity Gateway**, separate Dräger software that exports HL7 ORU from
+the Infinity network. Whether the hospital has it, or can license it, is an open question — see
+`docs/drager-infinity-biomed-sorulari.md` for the exact questions asked and
+`docs/superpowers/specs/2026-09-03-drager-infinity-integration-design.md` for the full design.
+
+**No new code is needed for this path.** The engine's existing MLLP bridge
+(`homunculus-engine/scripts/run_bridge.py`, `homunculus-engine/src/homunculus/edge/mllp.py`) is
+the same bridge already proven against the NCE and MEDIBUS work — it just needs Gateway's HL7
+output pointed at it.
+
+Once Gateway is configured to send its HL7 ORU output at the Homunculus host's MLLP port (the
+network path from `172.100.101.72` to the Dräger subnet was already verified reachable on
+2026-09-02), run the bridge in discovery mode from `homunculus-engine/`:
+
+```bash
+python scripts/run_bridge.py --db bridge.db
+```
+
+With no `--cloud-url`, nothing is forwarded — the log prints:
+
+```text
+KEŞİF MODU: veri iletilmiyor, yalnızca dinleniyor ve kodlar raporlanıyor (iletmek için --cloud-url verin)
+```
+
+followed by periodic `Eşlenmemiş kodlar: <code> (<count>), ...` lines as real Gateway traffic
+arrives. From those, write `drager-gateway-mapping.json` — the same flat shape `run_bridge.py`
+expects for any site (`{"<OBX code>": "<SignalCode slug>"}`), for example:
+
+```json
+{
+  "150456": "spo2",
+  "150455": "heart_rate",
+  "150457": "resp_rate"
+}
+```
+
+An unknown `SignalCode` slug fails startup loudly rather than silently dropping a signal for the
+whole pilot (`run_bridge.py`'s `load_mapping`). Re-run with the mapping and an uplink:
+
+```bash
+python scripts/run_bridge.py --db bridge.db \
+  --mapping drager-gateway-mapping.json --cloud-url https://<host>/api --token <tenant-token>
+```
+
+and confirm one live Dräger-fed bed's observations reach the dashboard, the same acceptance check
+already used for NCE and MEDIBUS.
+
+If Gateway turns out not to exist and cannot be licensed, the fallback is the Kappa bedside's own
+serial export (*Infinity RS-232 Export Protocol*, Dräger doc MS28819) — a second protocol driver
+inside the `medibus/` package, reusing its transport/buffer/CLI machinery, blocked on obtaining
+that document. See the design doc's "Track 2" for what that needs.
+
 ## Verifying
 
 ```bash
