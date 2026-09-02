@@ -1,0 +1,24 @@
+[project]
+name = "homunculus-medibus"
+version = "0.1.0"
+description = "Homunculus bedside bridge for Dräger MEDIBUS (RS-232) ventilators and anaesthesia machines"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+serial = ["pyserial>=3.5"]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+# The bridge reuses four stdlib-only engine modules (canonical, edge.serialize, edge.buffer,
+# edge.uplink); they are imported straight from the sibling checkout, no engine install needed.
+pythonpath = ["src", "../homunculus-engine/src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
