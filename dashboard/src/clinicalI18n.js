@@ -191,6 +191,7 @@ const STRINGS = {
     pr8: {
       notifyBannerTitle: "Kritik alarm bildirimlerini etkinleştirin",
       notifyBannerBody: "Sekme kapalı veya arka plandayken bile kritik klinik alarmları sesli ve titreşimli bildirim olarak almak için izin verin.",
+      notifyNeedsHttps: "Tarayıcı bildirimleri yalnızca güvenli (HTTPS) adreste çalışır — panele https:// adresinden girin.",
       notifyBannerEnable: "İzin Ver", notifyBannerLater: "Daha sonra",
       sendTestPush: "Bildirim Sistemini Test Et", testPushSent: "Test bildirimi gönderildi.",
       testPushTitle: "Homunculus · Test Bildirimi", testPushBody: "Bildirim sistemi çalışıyor. Kritik alarmlar bu şekilde iletilecek.",
@@ -693,6 +694,7 @@ const STRINGS = {
     pr8: {
       notifyBannerTitle: "Kritik xəbərdarlıq bildirişlərini aktivləşdirin",
       notifyBannerBody: "Tab bağlı və ya arxa planda olsa belə kritik klinik xəbərdarlıqları səsli və titrəyişli bildiriş kimi almaq üçün icazə verin.",
+      notifyNeedsHttps: "Brauzer bildirişləri yalnız təhlükəsiz (HTTPS) ünvanda işləyir — panelə https:// ünvanından daxil olun.",
       notifyBannerEnable: "İcazə ver", notifyBannerLater: "Sonra",
       sendTestPush: "Bildiriş Sistemini Test Et", testPushSent: "Test bildirişi göndərildi.",
       testPushTitle: "Homunculus · Test Bildirişi", testPushBody: "Bildiriş sistemi işləyir. Kritik xəbərdarlıqlar bu şəkildə çatdırılacaq.",
@@ -1187,6 +1189,7 @@ const STRINGS = {
     pr8: {
       notifyBannerTitle: "Enable critical alarm notifications",
       notifyBannerBody: "Allow notifications to receive critical clinical alarms with sound and vibration even when the tab is closed or in the background.",
+      notifyNeedsHttps: "Browser notifications only work on a secure (HTTPS) address — open the panel via https://.",
       notifyBannerEnable: "Allow", notifyBannerLater: "Later",
       sendTestPush: "Test Notification System", testPushSent: "Test notification sent.",
       testPushTitle: "Homunculus · Test Notification", testPushBody: "The notification system is working. Critical alarms will be delivered like this.",
@@ -1681,6 +1684,7 @@ const STRINGS = {
     pr8: {
       notifyBannerTitle: "Включите уведомления о критических тревогах",
       notifyBannerBody: "Разрешите уведомления, чтобы получать критические клинические тревоги со звуком и вибрацией, даже когда вкладка закрыта или в фоне.",
+      notifyNeedsHttps: "Уведомления браузера работают только по защищённому адресу (HTTPS) — откройте панель через https://.",
       notifyBannerEnable: "Разрешить", notifyBannerLater: "Позже",
       sendTestPush: "Проверить систему уведомлений", testPushSent: "Тестовое уведомление отправлено.",
       testPushTitle: "Homunculus · Тестовое уведомление", testPushBody: "Система уведомлений работает. Критические тревоги будут доставляться так.",

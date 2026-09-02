@@ -68,6 +68,14 @@ services:
       # device port below has no fallback either; the more sensitive port should not be the more
       # forgiving one.
       - "${WEB_LISTEN_ADDR}:${WEB_PORT:-80}:80"
+      # HTTPS: Chrome disables the Notification API on plain HTTP, so alarm notifications need
+      # the https:// address. Self-signed cert, minted on first start, kept on web-certs so a
+      # rebuild does not re-trigger the browser warning on every ward machine.
+      - "${WEB_LISTEN_ADDR}:${WEB_TLS_PORT:-8443}:443"
+    environment:
+      WEB_TLS_IP: ${WEB_LISTEN_ADDR}
+    volumes:
+      - web-certs:/etc/nginx/certs
     depends_on:
       - api
 
@@ -143,3 +151,4 @@ volumes:
   pgdata:
   bridge-data:
   nce-data:
+  web-certs:

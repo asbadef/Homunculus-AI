@@ -29,6 +29,11 @@ RUN if grep -rq "onrender.com" dist/assets/*.js; then \
     fi
 
 FROM nginx:alpine
+# openssl: the entrypoint script below mints a self-signed certificate on first start, because
+# Chrome disables the Notification API on plain-HTTP origins and the ward needs those alarms.
+RUN apk add --no-cache openssl
 COPY --from=build /build/dist /usr/share/nginx/html
 COPY deploy/local/web/nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+COPY deploy/local/web/10-selfsigned-cert.sh /docker-entrypoint.d/10-selfsigned-cert.sh
+RUN chmod +x /docker-entrypoint.d/10-selfsigned-cert.sh
+EXPOSE 80 443

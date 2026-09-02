@@ -721,7 +721,7 @@ function ShiftMenu({ T, S, state }) {
 
 // ================================================================ TOP BAR
 function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMenu,
-                 soundOn, onEnableSound, notifyPerm, onEnableNotify, onTestPush }) {
+                 soundOn, onEnableSound, notifyPerm, onEnableNotify, onTestPush, notifyBlocked }) {
   const user = state.user;
   const [pinOpen, setPinOpen] = useState(false);
   const RoleIcon = user?.role === ROLE.HOSPITAL_ADMIN ? ShieldAlert
@@ -763,7 +763,8 @@ function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMe
 
         {/* Web push / notification enable */}
         <button onClick={onEnableNotify}
-          title={notifyPerm === "granted" ? S.pr7.notifyOn : S.pr7.notifyEnable}
+          title={notifyBlocked ? S.pr8.notifyNeedsHttps
+            : notifyPerm === "granted" ? S.pr7.notifyOn : S.pr7.notifyEnable}
           className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost} ${notifyPerm === "granted" ? "text-brand" : T.faint}`}>
           {notifyPerm === "granted" ? <Bell size={17} /> : <BellOff size={17} />}
         </button>
@@ -3829,8 +3830,13 @@ export function ClinicalDemo({ store: injectedStore = null }) {
     if (enableAudio()) setSoundOn(true);
   };
   const [notifyBannerDismissed, setNotifyBannerDismissed] = useState(false);
+  // Chrome disables the Notification API entirely on a plain-HTTP origin: the permission prompt
+  // never opens, so the enable button looks dead. Detect the insecure context and SAY it — a
+  // silently dead button already cost one ward visit's worth of confusion.
+  const notifyBlocked =
+    typeof window !== "undefined" && window.isSecureContext === false;
   const onEnableNotify = async () => {
-    if (typeof Notification === "undefined") return;
+    if (typeof Notification === "undefined" || notifyBlocked) return;
     if (Notification.permission === "granted") { setNotifyPerm("granted"); return; }
     try { const p = await Notification.requestPermission(); setNotifyPerm(p); } catch { /* ignore */ }
   };
@@ -3951,18 +3957,22 @@ export function ClinicalDemo({ store: injectedStore = null }) {
         <TopBar T={T} S={S} store={store} state={state} page={effectivePage} lang={lang} setLang={setLang}
           theme={theme} setTheme={setTheme} onMenu={() => setMobileOpen(true)}
           soundOn={soundOn} onEnableSound={onEnableSound} notifyPerm={notifyPerm} onEnableNotify={onEnableNotify}
-          onTestPush={onTestPush} />
+          onTestPush={onTestPush} notifyBlocked={notifyBlocked} />
         {notifyPerm !== "granted" && !notifyBannerDismissed && (
           <div className="flex items-center gap-3 border-b border-brand/30 bg-gradient-to-r from-brand/15 to-cyan-500/10 px-4 py-2.5 text-sm">
             <BellRing className="h-5 w-5 shrink-0 animate-pulse text-brand" />
             <div className="min-w-0 flex-1">
               <div className={`font-semibold ${T.heading}`}>{S.pr8.notifyBannerTitle}</div>
-              <div className={`truncate text-xs ${T.faint}`}>{S.pr8.notifyBannerBody}</div>
+              <div className={`truncate text-xs ${T.faint}`}>
+                {notifyBlocked ? S.pr8.notifyNeedsHttps : S.pr8.notifyBannerBody}
+              </div>
             </div>
-            <button onClick={onEnableNotify}
-              className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white shadow hover:opacity-90">
-              {S.pr8.notifyBannerEnable}
-            </button>
+            {!notifyBlocked && (
+              <button onClick={onEnableNotify}
+                className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white shadow hover:opacity-90">
+                {S.pr8.notifyBannerEnable}
+              </button>
+            )}
             <button onClick={() => setNotifyBannerDismissed(true)}
               className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium ${T.ghost}`}>
               {S.pr8.notifyBannerLater}
