@@ -64,7 +64,14 @@ def parse_hl7_oru(message: str, mapping: dict[str, SignalCode] | None = None) ->
     patient_id = ""
     for seg in segments:
         if seg.startswith("PID"):
-            patient_id = _first_component(_at(_fields(seg), 3))
+            # The CX datatype puts the identifier in the first component, but real senders
+            # scatter it — Welch Allyn NCE, for one, ships PID-3 with leading empty components.
+            # The first NON-EMPTY component is still the sender's own identifier: nothing is
+            # invented, only the sender's punctuation is forgiven.
+            for component in _at(_fields(seg), 3).split("^"):
+                if component.strip():
+                    patient_id = component.strip()
+                    break
             break
     if not patient_id:
         raise GatewayError("missing or empty PID-3 patient identifier")

@@ -219,3 +219,29 @@ def test_an_hl7_copy_with_no_filename_epoch_is_refused():
         bridge.handle_session(HL7_COPY, fallback_timestamp=None)
 
     assert bridge.stats.rejected == 1
+
+
+def test_an_hl7_copy_with_cx_style_patient_id_is_accepted():
+    """The real NCE fills PID-3 but hides the identifier behind leading empty CX components;
+    that must parse, not masquerade as a missing identifier."""
+    cx_style = HL7_COPY.replace("PID|||yatak-3\r", "PID|||^^yatak-3\r")
+    bridge = NceFileBridge(send=lambda _p: None, mapping=HL7_MAPPING)
+
+    observations = bridge.handle_session(cx_style, fallback_timestamp=WHEN)
+
+    assert len(observations) == 2
+    assert all(o.patient_id == "yatak-3" for o in observations)
+
+
+def test_rejection_logs_name_the_reason(caplog):
+    """A uniform 'rejected' line forced a blind diagnosis session once; never again. The
+    GatewayError text is safe by construction — static strings or message metadata only."""
+    import logging as _logging
+    bridge = NceFileBridge(send=lambda _p: None, mapping=HL7_MAPPING)
+    query = HL7_COPY.replace("ORU^R01", "QBP^Q22")
+
+    with caplog.at_level(_logging.WARNING):
+        with pytest.raises(GatewayError):
+            bridge.handle_session(query, fallback_timestamp=WHEN)
+
+    assert any("expected ORU" in r.getMessage() for r in caplog.records)

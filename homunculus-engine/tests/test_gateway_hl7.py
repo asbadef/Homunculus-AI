@@ -99,3 +99,18 @@ def test_non_oru_message_raises_gateway_error():
 def test_message_without_msh_raises_gateway_error():
     with pytest.raises(GatewayError):
         parse_hl7_oru("PID|1||bed-3^^^HOSP^MR")
+
+
+def test_pid3_identifier_survives_leading_empty_components():
+    """Welch Allyn NCE ships PID-3 as CX with leading empty components (e.g. ^^1234567).
+    The identifier is still the sender's own — only its punctuation is forgiven."""
+    message = (
+        "MSH|^~\\&|NCE|HOSP|HIS|HOSP|20260901155301||ORU^R01^ORU_R01|X1|P|2.5\r"
+        "PID|||^^yatak-77\r"
+        "OBX|1|NM|heart_rate||88|bpm|||||F|||20260901155301\r"
+    )
+
+    observations = parse_hl7_oru(message)
+
+    assert observations
+    assert all(o.patient_id == "yatak-77" for o in observations)

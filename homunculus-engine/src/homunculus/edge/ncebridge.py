@@ -80,9 +80,12 @@ class NceFileBridge:
                 text, self.mapping,
                 fallback_timestamp=fallback_timestamp, source_device=source_device,
             )
-        except GatewayError:
+        except GatewayError as exc:
             self.stats.rejected += 1
-            _log.warning("rejected an unusable NCE session (content not logged)")
+            # GatewayError texts are safe by construction: static strings or message metadata
+            # (an MSH-9 type), never a value — so naming the reason costs no PHI and saves the
+            # next person a blind diagnosis session.
+            _log.warning("rejected an unusable NCE session: %s (content not logged)", exc)
             raise
 
         for name in parsed.non_numeric:
@@ -121,9 +124,12 @@ class NceFileBridge:
 
         try:
             observations = parse_hl7_oru(message, self.mapping.hl7_signals)
-        except GatewayError:
+        except GatewayError as exc:
             self.stats.rejected += 1
-            _log.warning("rejected an unusable NCE session (content not logged)")
+            # GatewayError texts are safe by construction: static strings or message metadata
+            # (an MSH-9 type), never a value — so naming the reason costs no PHI and saves the
+            # next person a blind diagnosis session.
+            _log.warning("rejected an unusable NCE session: %s (content not logged)", exc)
             raise
 
         restamped = tuple(
