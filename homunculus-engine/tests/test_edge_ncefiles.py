@@ -325,3 +325,23 @@ def test_paired_attribute_sessions_parse_end_to_end():
     assert len(parsed.observations) == 1
     assert parsed.observations[0].code is SignalCode.SPO2
     assert parsed.observations[0].value == 97.0
+
+
+def test_hl7_signals_load_from_the_mapping_file(tmp_path):
+    path = tmp_path / "nce-mapping.json"
+    path.write_text(json.dumps({"hl7_signals": {"150456": "spo2", "150021": "sbp"}}),
+                    encoding="utf-8")
+
+    mapping = load_site_mapping(path)
+
+    assert mapping.hl7_signals == {"150456": SignalCode.SPO2, "150021": SignalCode.SBP}
+
+
+def test_an_unknown_hl7_slug_stops_startup(tmp_path):
+    path = tmp_path / "nce-mapping.json"
+    path.write_text(json.dumps({"hl7_signals": {"150456": "blood_unicorns"}}), encoding="utf-8")
+
+    with pytest.raises(SystemExit) as caught:
+        load_site_mapping(path)
+
+    assert "blood_unicorns" in str(caught.value)

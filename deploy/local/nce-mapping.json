@@ -1,7 +1,13 @@
 {
-  "_comment": "Field table for this site's NCE sessions. Written from discovery output, never guessed. Run the bridge without --cloud-url, read the 'Eşlenmemiş alanlar' line, and fill in the fields below. patient_fields and timestamp_fields are tried in the order listed. pair_attributes is only for the <Reading name=\"X\" value=\"1\"/> idiom; leave it empty otherwise.",
+  "_comment": "Field table for this site's NCE sessions, written from the 2026-09-02 discovery run, never guessed. This site's data path is the NCEToHost HL7 copies NCE drops into SavedCopies alongside the device XML: hl7_signals maps their OBX-3 numeric MDC codes to our slugs. 150022 (MDC_PRESS_BLD_NONINV_DIA, diastolic) is deliberately unmapped — the engine has no diastolic signal — so it will show in the discovery report; that is expected, not a fault. The XML sections below stay empty: the device XML is WACP object serialisation (MEMBER name= / child VALUE), kept for discovery only.",
   "patient_fields": [],
   "timestamp_fields": [],
   "pair_attributes": [],
-  "signals": {}
+  "signals": {},
+  "hl7_signals": {
+    "150021": "sbp",
+    "150023": "map",
+    "150456": "spo2",
+    "149546": "heart_rate"
+  }
 }

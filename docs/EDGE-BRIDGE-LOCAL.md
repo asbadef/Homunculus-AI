@@ -58,10 +58,20 @@ exact `mount -t cifs` line, including the `uid=10001` that the bridge container 
 the container lists the directory fine and cannot open a single file, which looks exactly like an
 empty share.
 
+**What discovery actually found at this site (2026-09-02):** `SavedCopies` holds two kinds of file.
+The `DeviceToNCE.xml` sessions are WACP object serialisation — useful for discovery, painful to
+map. But the `NCEToHost.txt` copies are **NCE's own HL7 ORU rendering of the same readings**, with
+standard MDC codes (`150456^MDC_PULS_OXIM_SAT_O2^MDC` and friends). The bridge therefore parses any
+file starting `MSH|` with the same HL7 gateway the MLLP bridge uses, mapped through `hl7_signals`
+in `nce-mapping.json` (keyed by the numeric OBX-3 code), and restamps every observation with the
+filename's UTC epoch — the vendor's own timestamps are naive local time from a machine with a known
+one-hour clock skew. `nce-mapping.json` in the repository already carries this site's four codes;
+diastolic (150022) is deliberately unmapped and shows in the report by design.
+
 Unlike `site-mapping.json`, **`nce-mapping.json` ships in the repository** — already present next to
-the compose file, so the missing-bind-mount trap above does not apply to it. It ships *empty*, and
-that is deliberate: the first run is a discovery run. The bridge forwards nothing and reports the
-field names the sessions actually carry:
+the compose file, so the missing-bind-mount trap above does not apply to it. Its XML sections ship
+*empty*, and that is deliberate: for a new site the first run is a discovery run. The bridge
+forwards nothing it cannot map and reports the field names the sessions actually carry:
 
 ```text
 WARNING nce-bridge: Eşlenmemiş alanlar: PatientId (12), SpO2 (12), Nibp_Systolic (12)

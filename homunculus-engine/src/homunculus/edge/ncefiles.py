@@ -32,11 +32,17 @@ class MappedField:
 
 @dataclass(frozen=True)
 class SiteMapping:
-    """The per-site field table. Empty is valid: it means discovery has not happened yet."""
+    """The per-site field table. Empty is valid: it means discovery has not happened yet.
+
+    `hl7_signals` covers the OTHER kind of file NCE drops into the same folder: its own HL7
+    rendering of a reading (the NCEToHost copies), keyed by OBX-3 identifier — at this site the
+    numeric MDC code, e.g. "150456" for MDC_PULS_OXIM_SAT_O2.
+    """
     signals: dict[str, MappedField] = field(default_factory=dict)
     patient_fields: tuple[str, ...] = ()
     timestamp_fields: tuple[str, ...] = ()
     pair_attributes: tuple[tuple[str, str], ...] = ()
+    hl7_signals: dict[str, SignalCode] = field(default_factory=dict)
 
 
 def load_site_mapping(path: str | Path) -> SiteMapping:
@@ -68,11 +74,21 @@ def load_site_mapping(path: str | Path) -> SiteMapping:
                 f"{path}: pair_attributes entries need 'name' and 'value'"
             ) from None
 
+    hl7_signals: dict[str, SignalCode] = {}
+    for code, slug in (raw.get("hl7_signals") or {}).items():
+        try:
+            hl7_signals[code] = SignalCode(slug)
+        except (ValueError, TypeError):
+            raise SystemExit(
+                f"{path}: unknown signal slug {slug!r} for HL7 code {code!r}"
+            ) from None
+
     return SiteMapping(
         signals=signals,
         patient_fields=tuple(raw.get("patient_fields") or ()),
         timestamp_fields=tuple(raw.get("timestamp_fields") or ()),
         pair_attributes=tuple(pair_attributes),
+        hl7_signals=hl7_signals,
     )
 
 
