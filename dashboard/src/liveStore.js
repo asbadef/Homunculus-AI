@@ -49,6 +49,11 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
   let overlay = {
     user: null, mfaPending: null, patients: [], beds: [], alerts: [], devices: [],
     connection: CONNECTION.CONNECTING,
+    // The simulation greets a first-time admin with its tenant-setup wizard — but on a live
+    // deployment the tenant already exists (created by the backend seed), and the wizard writes
+    // only to the in-browser simulation. Left unset, its in-memory flag resets on every page
+    // load and the wizard re-asks a real clinician for the hospital name on every refresh.
+    tenantSetup: true,
   };
   const listeners = new Set();
   const emit = () => { for (const fn of listeners) fn(); };

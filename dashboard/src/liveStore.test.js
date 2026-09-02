@@ -177,3 +177,11 @@ describe("liveStore — session survives a page refresh", () => {
     expect(store.getState().user).toBeNull();
   });
 });
+
+describe("liveStore — no setup theatre on a live deployment", () => {
+  it("marks tenant setup complete so the wizard never gates a real clinician", () => {
+    const store = createLiveStore({ api: fakeApi(), base: fakeBase() });
+
+    expect(store.getState().tenantSetup).toBe(true);
+  });
+});
