@@ -232,6 +232,25 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
       return openSession(resolveRole(tokens.access_token));
     },
 
+    /** Reopen the session from tokens a previous page load left in storage. A browser refresh
+     *  must not log a clinician out mid-shift: `api.me()` rides the stored access token (and
+     *  backendApi refreshes it once if it has expired); any failure clears the stale tokens and
+     *  leaves the login screen showing — quietly, because "you were not signed in" is a state,
+     *  not a fault worth an error banner. */
+    async restoreSession() {
+      if (typeof api.accessToken !== "function" || !api.accessToken()) return false;
+      try {
+        const me = await api.me();
+        const role = resolveRole(api.accessToken());  // reread: me() may have refreshed the token
+        setOverlay({ user: { email: me.email, full_name: me.full_name, role }, mfaPending: null });
+        emit();
+        return true;
+      } catch {
+        api.logout();
+        return false;
+      }
+    },
+
     logout() {
       api.logout();
       setOverlay({ user: null, mfaPending: null });

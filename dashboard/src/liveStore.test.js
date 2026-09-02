@@ -143,3 +143,37 @@ describe("liveStore — real authentication over the simulation", () => {
     expect(store.getState().structure).toEqual({ units: ["unit-1"] }); // simulation state still visible
   });
 });
+
+describe("liveStore — session survives a page refresh", () => {
+  it("restores the session from stored tokens instead of logging out", async () => {
+    const api = fakeApi();
+    api.accessToken = () => adminToken;
+    const store = createLiveStore({ api, base: fakeBase() });
+
+    const restored = await store.restoreSession();
+
+    expect(restored).toBe(true);
+    expect(api.login).not.toHaveBeenCalled();          // no password re-entry
+    expect(store.getState().user).toMatchObject({ email: "admin@example.com" });
+  });
+
+  it("does nothing when no token was stored", async () => {
+    const api = fakeApi();
+    api.accessToken = () => null;
+    const store = createLiveStore({ api, base: fakeBase() });
+
+    expect(await store.restoreSession()).toBe(false);
+    expect(api.me).not.toHaveBeenCalled();
+    expect(store.getState().user).toBeNull();
+  });
+
+  it("clears stale tokens quietly when the backend refuses them", async () => {
+    const api = fakeApi({ me: vi.fn(async () => { throw new Error("401"); }) });
+    api.accessToken = () => adminToken;
+    const store = createLiveStore({ api, base: fakeBase() });
+
+    expect(await store.restoreSession()).toBe(false);
+    expect(api.logout).toHaveBeenCalled();
+    expect(store.getState().user).toBeNull();
+  });
+});

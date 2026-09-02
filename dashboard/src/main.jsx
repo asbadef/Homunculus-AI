@@ -35,6 +35,9 @@ function pickRoot(mode) {
       api: backendApi,
       base: createDemoStore(buildRealisticState()),
     });
+    // Fire-and-forget: a page refresh must reopen the stored session instead of logging the
+    // clinician out; failure quietly leaves the login screen, which renders meanwhile anyway.
+    store.restoreSession();
     return <ClinicalDemo store={store} />;
   }
   if (mode === "demo") return <ClinicalDemo />;
