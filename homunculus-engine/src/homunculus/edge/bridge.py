@@ -70,10 +70,13 @@ class EdgeBridge:
         self.stats.messages += 1
         try:
             observations = parse_hl7_oru(message, self.mapping)
-        except GatewayError:
-            # Structurally broken message. Count it; never log its content (PHI).
+        except GatewayError as exc:
+            # Count it and name the reason; never log the content (PHI). GatewayError texts are
+            # static strings or message metadata by construction, never a value — and a
+            # rejection that does not say why costs a blind diagnosis round (ward, 2026-09-04:
+            # every ORU from NCE was "unparseable" because PID-3 carried no id).
             self.stats.rejected += 1
-            _log.warning("rejected an unparseable HL7 message (content not logged)")
+            _log.warning("rejected an unusable HL7 message: %s (content not logged)", exc)
             raise
 
         self._record_unmapped(message)
