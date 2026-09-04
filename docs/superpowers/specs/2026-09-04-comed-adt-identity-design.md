@@ -150,5 +150,10 @@ Tüm test verileri sentetik.
 3. Protokol numarası PID-3'ün hangi bileşeninde; servis/oda/yatak PV1-3'te hangi kodlarla?
 4. Test ortamı var mı; ilk aşamada yalnızca yoğun bakım filtrelenebilir mi?
 5. ADT gerçek zamanlı mı gidiyor, yoksa toplu mu?
+6. **MSH-7 saat dilimi taşıyor mu?** Offset'siz bir zaman damgası UTC sayılır; Comed yerel Bakü
+   saatini (UTC+4) offset'siz gönderiyorsa kayıtların zamanı dört saat kayar. İki Comed mesajının
+   birbirine göre sırasını bozmaz (kayma her ikisinde aynı), ama taburcu sonrası 24 saatlik
+   temizlik penceresini kaydırır. NCE'nin ORU'ları `+0400` taşıyor; Comed'in de taşıması beklenir,
+   doğrulanmalı.
 
 Bağlam: `docs/hastane-hl7-omurgasi-analizi.md`.
