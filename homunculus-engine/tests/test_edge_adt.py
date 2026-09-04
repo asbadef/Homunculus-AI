@@ -1,0 +1,94 @@
+"""HL7 ADT -> PatientIdentity, and its FHIR rendering for the uplink.
+
+All names here are synthetic. Comed sends A01/A02/A03/A08 keyed on the protocol number the
+nurse also types into the Connex Spot; that number is PID-3.1 and the join key everywhere.
+"""
+from datetime import datetime, timezone
+
+import pytest
+
+from homunculus.edge.adt import PatientIdentity, identity_to_fhir, parse_hl7_adt
+from homunculus.gateway.fhir import GatewayError
+
+A01 = (
+    "MSH|^~\\&|COMED|HOSP|HOMUNCULUS|HOSP|20260904143000||ADT^A01|MSG1|P|2.5\r"
+    "EVN|A01|20260904143000\r"
+    "PID|1||20239121^^^COMED^PI||YILMAZ^AYSE^N||19800115|F\r"
+    "PV1|1|I|YB^304^2||||||||||||||||V1\r"
+)
+ORU = (
+    "MSH|^~\\&|CDIS-NCE|WelchAllyn|EMR|HIS|20260904143525||ORU^R01^ORU_R01|X1|P|2.6\r"
+    "PID|1||20239121^^^X^PI\r"
+    "OBX|1|NM|150456^MDC_PULS_OXIM_SAT_O2^MDC||97|%|||||F\r"
+)
+
+
+def test_an_admit_carries_id_name_birth_sex_and_bed():
+    identity = parse_hl7_adt(A01)
+    assert identity == PatientIdentity(
+        patient_id="20239121",
+        family="YILMAZ",
+        given="AYSE",
+        birth_date="1980-01-15",
+        sex="female",
+        unit="YB",
+        room="304",
+        bed="2",
+        state="admitted",
+        at=datetime(2026, 9, 4, 14, 30, tzinfo=timezone.utc),
+    )
+
+
+def test_a_transfer_changes_only_the_location():
+    a02 = A01.replace("ADT^A01", "ADT^A02").replace("YB^304^2", "YB^301^1")
+    identity = parse_hl7_adt(a02)
+    assert (identity.room, identity.bed, identity.state) == ("301", "1", "admitted")
+
+
+def test_a_discharge_marks_the_record_discharged():
+    a03 = A01.replace("ADT^A01", "ADT^A03")
+    assert parse_hl7_adt(a03).state == "discharged"
+    a13 = A01.replace("ADT^A01", "ADT^A13")      # discharge cancelled -> back to admitted
+    assert parse_hl7_adt(a13).state == "admitted"
+    a11 = A01.replace("ADT^A01", "ADT^A11")      # admit cancelled -> discharged
+    assert parse_hl7_adt(a11).state == "discharged"
+
+
+def test_a_message_that_is_not_adt_is_not_ours():
+    assert parse_hl7_adt(ORU) is None
+    assert parse_hl7_adt("garbage") is None
+
+
+def test_an_unhandled_adt_type_is_ignored_rather_than_guessed():
+    a31 = A01.replace("ADT^A01", "ADT^A31")
+    assert parse_hl7_adt(a31) is None
+
+
+def test_an_adt_without_a_protocol_number_is_refused_by_name():
+    empty = A01.replace("20239121^^^COMED^PI", "^^^COMED^PI")
+    with pytest.raises(GatewayError, match="PID-3"):
+        parse_hl7_adt(empty)
+
+
+def test_the_identity_renders_as_a_fhir_patient_and_encounter():
+    patient, encounter = identity_to_fhir(parse_hl7_adt(A01), source="comed")
+    assert patient["resourceType"] == "Patient"
+    assert patient["identifier"][0]["value"] == "20239121"
+    assert patient["name"][0] == {"family": "YILMAZ", "given": ["AYSE"]}
+    assert patient["birthDate"] == "1980-01-15"
+    assert patient["gender"] == "female"
+    assert patient["active"] is True
+    assert patient["meta"] == {"lastUpdated": "2026-09-04T14:30:00+00:00", "source": "comed"}
+
+    assert encounter["resourceType"] == "Encounter"
+    assert encounter["status"] == "in-progress"
+    assert encounter["subject"] == {"reference": "Patient/20239121"}
+    assert encounter["location"][0]["location"]["display"] == "YB^304^2"
+    assert encounter["meta"]["lastUpdated"] == "2026-09-04T14:30:00+00:00"
+
+
+def test_a_discharged_identity_renders_as_inactive_and_finished():
+    a03 = A01.replace("ADT^A01", "ADT^A03")
+    patient, encounter = identity_to_fhir(parse_hl7_adt(a03), source="comed")
+    assert patient["active"] is False
+    assert encounter["status"] == "finished"
