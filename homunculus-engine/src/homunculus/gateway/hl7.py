@@ -48,10 +48,17 @@ def _parse_hl7_ts(ts: str) -> datetime | None:
     return None
 
 
+def split_segments(message: str) -> list[str]:
+    """An HL7 message's `\\r`-terminated segments, tolerant of `\\n`/`\\r\\n` from senders and
+    tools that don't preserve the wire terminator. Shared by every HL7 parser in this package so
+    segment-boundary handling can't drift between them."""
+    return [s for s in message.replace("\r\n", "\r").replace("\n", "\r").split("\r") if s]
+
+
 def parse_hl7_oru(message: str, mapping: dict[str, SignalCode] | None = None) -> list[Observation]:
     table = mapping if mapping is not None else _DEFAULT_MAP
 
-    segments = [s for s in message.replace("\r\n", "\r").replace("\n", "\r").split("\r") if s]
+    segments = split_segments(message)
     if not segments or not segments[0].startswith("MSH"):
         raise GatewayError("message does not start with an MSH segment")
 

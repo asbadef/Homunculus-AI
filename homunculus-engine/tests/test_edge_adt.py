@@ -70,6 +70,23 @@ def test_an_adt_without_a_protocol_number_is_refused_by_name():
         parse_hl7_adt(empty)
 
 
+def test_a_repeated_pid3_with_no_id_in_the_first_repetition_is_refused_not_scavenged():
+    # First repetition ("^^^MEDNET^MR") carries no value in CX.1-3 -- "MEDNET" sits in CX.4, off
+    # limits by the same rule that keeps CX.4/CX.5 out of the single-repetition case. The real
+    # protocol number sits in the second repetition, but the parser only ever reads the first --
+    # so this refuses rather than reaching past the "~" for it or returning "MEDNET".
+    repeated = A01.replace("20239121^^^COMED^PI", "^^^MEDNET^MR~20239121^^^COMED^PI")
+    with pytest.raises(GatewayError, match="PID-3"):
+        parse_hl7_adt(repeated)
+
+
+def test_a_repeated_pid3_uses_only_the_first_repetitions_id():
+    # First repetition carries a usable id; a second repetition follows after "~". The first
+    # repetition's id wins -- the parser never looks past the first "~".
+    repeated = A01.replace("20239121^^^COMED^PI", "20239121^^^COMED^PI~99887^^^COMED^MR")
+    assert parse_hl7_adt(repeated).patient_id == "20239121"
+
+
 def test_the_identity_renders_as_a_fhir_patient_and_encounter():
     patient, encounter = identity_to_fhir(parse_hl7_adt(A01), source="comed")
     assert patient["resourceType"] == "Patient"
