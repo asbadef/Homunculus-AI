@@ -28,7 +28,9 @@ DISCHARGED_TTL = timedelta(hours=24)
 
 def _iso(value: datetime | None) -> str:
     """ISO-8601 in UTC, so the ordering comparison on these strings is chronological.
-    A naive datetime is taken as UTC by the same convention the gateways use."""
+    A naive datetime is taken as UTC by the same convention the gateways use. `None` — an ADT
+    whose MSH-7 was missing or unparseable — is stamped with the moment it arrived here, which
+    means such a record wins against anything genuinely earlier."""
     return to_utc(value or datetime.now(tz=timezone.utc)).isoformat()
 
 
@@ -69,11 +71,18 @@ class IdentityMirror:
         self._conn.commit()
         if cur.rowcount > 0:
             return True
-        stored = self._conn.execute(
-            "SELECT at FROM identity WHERE patient_id = ?", (identity.patient_id,)).fetchone()
+        # The decision is already made and committed above — a log line must never cost us that
+        # decided answer, so a failure reading it back (e.g. a second writer holding the file's
+        # lock, the exact contention this atomic upsert exists to tolerate) is swallowed here.
+        try:
+            row = self._conn.execute(
+                "SELECT at FROM identity WHERE patient_id = ?", (identity.patient_id,)).fetchone()
+            stored = row[0] if row else "?"
+        except sqlite3.Error:
+            stored = "?"
         _log.info(
             "identity refused as older than the stored record: %s (incoming=%s stored=%s)",
-            identity.patient_id, stamp, stored[0] if stored else "?",
+            identity.patient_id, stamp, stored,
         )
         return False
 
