@@ -81,9 +81,21 @@ docker logs --since 30m homunculus-api 2>&1 | grep -E "POST /ingest" | awk '{pri
 [ -z "$(docker logs --since 30m homunculus-api 2>&1 | grep -E 'POST /ingest')" ] && echo "(son 30 dk'da hiç /ingest yok)"
 docker logs --since 30m homunculus-api 2>&1 | grep -E "ERROR|Traceback|401|400 " | tail -3
 
+hr "5b. en yeni HL7 kopyalarında hasta kimliği var mı? (PID-3 biçimi: rakam->d, harf->a)"
+# ^^^X^PI = cihazda hasta kimliği GİRİLMEDEN kaydedilmiş ölçüm: CX.1-3 boş, X = kurum, PI = tip.
+# Köprü bunu "missing or empty PID-3" ile reddeder; çözüm cihazda kimlik girmektir, yazılım değil.
+for f in $(ls -t "$SHARE" 2>/dev/null | grep NCEToHost | head -5); do
+  tr '\r' '\n' < "$SHARE/$f" | tr -d '\013\034' | awk -F'|' -v f="$f" '/^PID/ {s=$4; gsub(/[0-9]/,"d",s); gsub(/[A-Za-z]/,"a",s); tag=(s ~ /^\^\^\^/) ? "  !! kimlik yok" : ""; print "   " substr(f,1,40) "...  PID-3=" s tag}'
+done
+
 hr "6. pano: /patients"
+# nginx yalnızca WEB_LISTEN_ADDR'a bağlanır; 127.0.0.1 çoğu kurulumda reddeder.
+ADDR="$(getenv WEB_LISTEN_ADDR)"; ADDR="${ADDR:-127.0.0.1}"
 if [ -n "$TOKEN" ]; then
-  curl -s -m 5 -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:${WEB_PORT}/patients" | python3 -c 'import sys,json; d=json.load(sys.stdin)["patients"]; print("hasta sayısı:", len(d)); [print("  ", p["patient_id"], "risk=", p["risk"], "dolu alan=", sum(1 for k,v in p["latest"].items() if v is not None)) for p in d]' 2>/dev/null || echo "!! /patients cevap vermedi (port $WEB_PORT, token?)"
+  code=$(curl -s -m 5 -o /tmp/nce-doctor-p.json -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "http://${ADDR}:${WEB_PORT}/patients")
+  echo "GET http://${ADDR}:${WEB_PORT}/patients -> http $code"
+  [ -s /tmp/nce-doctor-p.json ] && docker exec -i homunculus-api python -c 'import sys,json; d=json.load(sys.stdin)["patients"]; print("hasta sayısı:", len(d)); [print("  ", p["patient_id"], "risk=", p["risk"], "uyarı=", len(p["alerts"]), "dolu alan=", [k for k,v in p["latest"].items() if v is not None]) for p in d]' < /tmp/nce-doctor-p.json
+  rm -f /tmp/nce-doctor-p.json
 else
   echo "(.env'de TENANT_TOKEN bulunamadı, atlandı)"
 fi

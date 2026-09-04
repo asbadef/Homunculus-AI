@@ -68,6 +68,19 @@ filename's UTC epoch — the vendor's own timestamps are naive local time from a
 one-hour clock skew. `nce-mapping.json` in the repository already carries this site's four codes;
 diastolic (150022) is deliberately unmapped and shows in the report by design.
 
+**A reading saved without a patient id does not reach the board — by design (2026-09-03/04).**
+The Connex Spot lets a clinician save vitals without entering or scanning a patient id. NCE then
+renders PID-3 as `^^^X^PI`: the identifier components are empty, and only the assigning authority
+(`X`) and the identifier-type code (`PI`) are filled. Those are HL7 code-table values, not
+identifiers. Until 2026-09-04 the gateway accepted the first non-empty component and so filed every
+anonymous reading from every device under one pseudo-patient `X` — a new reading silently
+overwrote the previous one on the same card, which is what "I took a reading and nothing changed"
+looked like on the ward. The gateway now takes the id only from CX.1–CX.3 and rejects the rest with
+`missing or empty PID-3 patient identifier`; the bridge counts it under `reddedilen` and logs the
+reason. **The fix on the ward is procedural: enter or scan the patient id on the device before
+saving the reading.** `deploy/local/nce-doctor.sh` prints the PID-3 shape of the newest copies so
+this is visible in one look.
+
 Unlike `site-mapping.json`, **`nce-mapping.json` ships in the repository** — already present next to
 the compose file, so the missing-bind-mount trap above does not apply to it. Its XML sections ship
 *empty*, and that is deliberate: for a new site the first run is a discovery run. The bridge

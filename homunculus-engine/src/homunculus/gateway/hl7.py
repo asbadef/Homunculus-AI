@@ -65,16 +65,21 @@ def parse_hl7_oru(message: str, mapping: dict[str, SignalCode] | None = None) ->
     for seg in segments:
         if seg.startswith("PID"):
             # The CX datatype puts the identifier in the first component, but real senders
-            # scatter it — Welch Allyn NCE, for one, ships PID-3 with leading empty components.
-            # The first NON-EMPTY component is still the sender's own identifier: nothing is
-            # invented, only the sender's punctuation is forgiven.
-            for component in _at(_fields(seg), 3).split("^"):
+            # scatter it — Welch Allyn NCE, for one, ships PID-3 with leading empty components
+            # (^^1234567^X^PI). The first NON-EMPTY of the first three components is still the
+            # sender's own identifier: nothing is invented, only the punctuation is forgiven.
+            # Components 4 and 5 are the assigning authority and the identifier-type code —
+            # HL7 code-table values, never identifiers. A reading saved on the device with no
+            # patient id arrives as ^^^X^PI, and taking "X" from there merged every anonymous
+            # reading on the ward into one pseudo-patient (seen 2026-09-03).
+            for component in _at(_fields(seg), 3).split("^")[:3]:
                 if component.strip():
                     patient_id = component.strip()
                     break
             break
     if not patient_id:
-        raise GatewayError("missing or empty PID-3 patient identifier")
+        raise GatewayError("missing or empty PID-3 patient identifier (CX.1–CX.3 empty; "
+                           "a reading saved without a patient id on the device looks like this)")
 
     observations: list[Observation] = []
     for seg in segments:

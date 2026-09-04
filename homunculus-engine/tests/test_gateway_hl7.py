@@ -114,3 +114,28 @@ def test_pid3_identifier_survives_leading_empty_components():
 
     assert observations
     assert all(o.patient_id == "yatak-77" for o in observations)
+
+
+def test_pid3_with_empty_identifier_is_rejected_even_when_cx4_cx5_are_filled():
+    """Seen on the ward 2026-09-03: a Connex Spot reading saved with NO patient id arrives as
+    PID-3 = ^^^X^PI — the identifier components are empty and only the assigning authority (CX.4,
+    "X") and the identifier-type code (CX.5, "PI") are present. Those are HL7 code-table values,
+    never identifiers. Accepting "X" merged every anonymous reading into one pseudo-patient."""
+    message = (
+        "MSH|^~\\&|NCE|HOSP|HIS|HOSP|20260903160934+0400||ORU^R01^ORU_R01|X1|P|2.5\r"
+        "PID|||^^^X^PI||^^\r"
+        "OBX|1|NM|heart_rate||88|bpm|||||F|||20260903160934+0400\r"
+    )
+    with pytest.raises(GatewayError, match="PID-3"):
+        parse_hl7_oru(message)
+
+
+def test_pid3_identifier_in_a_leading_component_still_wins_over_cx4_cx5():
+    """The NCE quirk with an id entered: ^^1234567^X^PI — the id sits in a leading component,
+    followed by the same authority/type codes. The id is taken; X and PI are not."""
+    message = (
+        "MSH|^~\\&|NCE|HOSP|HIS|HOSP|20260903160934+0400||ORU^R01^ORU_R01|X1|P|2.5\r"
+        "PID|||^^yatak-77^X^PI\r"
+        "OBX|1|NM|heart_rate||88|bpm|||||F|||20260903160934+0400\r"
+    )
+    assert parse_hl7_oru(message)[0].patient_id == "yatak-77"
