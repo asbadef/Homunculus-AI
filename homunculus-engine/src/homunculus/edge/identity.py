@@ -12,18 +12,24 @@ protocol number is stored in the clear because it IS the lookup key. Discharged 
 """
 from __future__ import annotations
 
+import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from homunculus.crypto import decrypt_phi, encrypt_phi
 from homunculus.edge.adt import PatientIdentity
+from homunculus.gateway.fhir import to_utc
+
+_log = logging.getLogger(__name__)
 
 DISCHARGED_TTL = timedelta(hours=24)
 
 
 def _iso(value: datetime | None) -> str:
-    return (value or datetime.now(tz=timezone.utc)).isoformat()
+    """ISO-8601 in UTC, so the ordering comparison on these strings is chronological.
+    A naive datetime is taken as UTC by the same convention the gateways use."""
+    return to_utc(value or datetime.now(tz=timezone.utc)).isoformat()
 
 
 class IdentityMirror:
@@ -43,24 +49,33 @@ class IdentityMirror:
         self._conn.commit()
 
     def upsert(self, identity: PatientIdentity) -> bool:
-        """Write the record. Returns False when an OLDER message was refused."""
-        row = self._conn.execute(
-            "SELECT at FROM identity WHERE patient_id = ?", (identity.patient_id,)).fetchone()
+        """Write the record. Returns False when an OLDER message was refused.
+
+        The compare-and-write is a single conditional statement, not a Python-side SELECT
+        followed by a write — two `IdentityMirror`s on the same file (the live bridge, plus an
+        operator script) could otherwise interleave so an older write lands after a newer one."""
         stamp = _iso(identity.at)
-        if row is not None and row[0] > stamp:
-            return False
-        self._conn.execute(
+        cur = self._conn.execute(
             "INSERT INTO identity (patient_id, family, given, birth_date, sex,"
             " unit, room, bed, state, at) VALUES (?,?,?,?,?,?,?,?,?,?)"
             " ON CONFLICT(patient_id) DO UPDATE SET family=excluded.family, given=excluded.given,"
             " birth_date=excluded.birth_date, sex=excluded.sex, unit=excluded.unit,"
-            " room=excluded.room, bed=excluded.bed, state=excluded.state, at=excluded.at",
+            " room=excluded.room, bed=excluded.bed, state=excluded.state, at=excluded.at"
+            " WHERE excluded.at >= identity.at",
             (identity.patient_id, encrypt_phi(identity.family), encrypt_phi(identity.given),
              encrypt_phi(identity.birth_date), encrypt_phi(identity.sex),
              identity.unit, identity.room, identity.bed, identity.state, stamp),
         )
         self._conn.commit()
-        return True
+        if cur.rowcount > 0:
+            return True
+        stored = self._conn.execute(
+            "SELECT at FROM identity WHERE patient_id = ?", (identity.patient_id,)).fetchone()
+        _log.info(
+            "identity refused as older than the stored record: %s (incoming=%s stored=%s)",
+            identity.patient_id, stamp, stored[0] if stored else "?",
+        )
+        return False
 
     def get(self, patient_id: str) -> PatientIdentity | None:
         row = self._conn.execute(
@@ -80,7 +95,7 @@ class IdentityMirror:
 
     def prune(self, now: datetime, ttl: timedelta = DISCHARGED_TTL) -> int:
         """Drop discharged rows older than `ttl`. Returns how many went."""
-        cutoff = (now - ttl).isoformat()
+        cutoff = (to_utc(now) - ttl).isoformat()
         cur = self._conn.execute(
             "DELETE FROM identity WHERE state = 'discharged' AND at < ?", (cutoff,))
         self._conn.commit()

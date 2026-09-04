@@ -88,3 +88,25 @@ def test_decryption_round_trips_through_the_engine_helper(tmp_path):
     row = mirror._conn.execute("SELECT family FROM identity").fetchone()
     assert decrypt_phi(row[0]) == "YILMAZ"
     mirror.close()
+
+
+def test_a_non_utc_timestamp_does_not_sort_as_newer_than_it_actually_is(tmp_path):
+    """A +04:00 stamp of 11:00 is 07:00 UTC -- genuinely EARLIER than a record already stored at
+    10:00 UTC. Comparing raw offset strings would let it win; normalising to UTC first must not."""
+    mirror = IdentityMirror(tmp_path / "identity.db")
+    mirror.upsert(record(family="ONCEKI", at=datetime(2026, 9, 4, 10, 0, tzinfo=timezone.utc)))
+    accepted = mirror.upsert(record(
+        family="BAKU", at=datetime(2026, 9, 4, 11, 0, tzinfo=timezone(timedelta(hours=4)))))
+    assert accepted is False
+    assert mirror.get("20239121").family == "ONCEKI"
+    mirror.close()
+
+
+def test_a_message_with_no_timestamp_is_still_stored(tmp_path):
+    """MSH-7 missing or unparseable -> parse_hl7_adt hands back at=None. The mirror still records
+    the identity, stamped with the moment it arrived, rather than dropping it."""
+    mirror = IdentityMirror(tmp_path / "identity.db")
+    accepted = mirror.upsert(record(at=None))
+    assert accepted is True
+    assert mirror.get("20239121").given == "AYSE"
+    mirror.close()
