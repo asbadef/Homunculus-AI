@@ -47,7 +47,7 @@ def test_a_pdq_query_is_answered_with_the_queried_id_and_nothing_else():
     # The extra fields are present but empty: no name, no DOB, no sex is ever invented.
     assert len(seg["PID"]) == 9
     assert seg["PID"][4:] == [""] * 5
-    assert reply.count("PID|||123456A||||||") == 1
+    assert reply.count("PID|||123456A|||||\r") == 1     # id, then five empty fields
 
 
 def test_the_id_is_found_whether_nce_writes_pid_3_1_or_pid3_1():
