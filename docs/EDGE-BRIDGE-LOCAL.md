@@ -338,3 +338,14 @@ direct path is confirmed, stop the `nce` service or the same reading will be ing
 
 **Do not** touch the transform sheets: the id path works through the query, and the sheets are the
 vendor's customised 2020 set for this site.
+
+**Root cause of the missing id, found in the sheets (2026-09-04, after the direct path was live):**
+`TransformSheets\nce.hl7.segment.pid.xsl` (customised 18.03.2020) renders PID-3.1 as
+`substring-before($patient-id, '_')` — the 2020 HIS integration had clinicians enter
+`<patientId>_<visitNumber>` on the device, and the sheet splits it (the visit part goes to PV1-19).
+An id with no underscore yields an EMPTY PID-3.1, which is why every reading at this site — validated
+or not — arrived as `^^^X^PI`. The fix is a one-line fallback in that sheet (keep the split when an
+underscore is present, otherwise pass the id through), applied on the NCE server with a backup and a
+service restart; see the PowerShell in the ward notes. The bridge's PDQ reply is still required
+(the device otherwise reports the patient as not found), and it is now field-complete
+(`PID|||id|||||`) because the query sheets slice fields with `substring-before(…,'|')`.
