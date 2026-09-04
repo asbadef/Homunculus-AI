@@ -8,6 +8,7 @@ nce.hl7.patient.query.xsl, seen on the ward 2026-09-04), so the bridge answers w
 echoing the queried id and nothing else: no demographics are invented.
 """
 import asyncio
+import sqlite3
 
 import pytest
 
@@ -104,3 +105,40 @@ def test_the_edge_bridge_answers_queries_and_counts_them_apart_from_results():
     reply = bridge.answer_query(QBP)
     assert reply is not None and "PID|||123456A" in reply
     assert (bridge.stats.queries, bridge.stats.messages, bridge.stats.rejected) == (1, 0, 0)
+
+
+def test_a_known_patient_is_answered_with_name_birth_date_and_sex():
+    """The vendor's own sample is PID|||id||Family^Given||dob|sex (Connex CSK IDS 60059617 §5.4.2).
+    Field positions matter: NCE's sheets slice with substring-before(...,'|')."""
+    from datetime import datetime, timezone
+
+    from homunculus.edge.adt import PatientIdentity
+
+    known = PatientIdentity(patient_id="123456A", family="YILMAZ", given="AYSE",
+                            birth_date="1980-01-15", sex="female",
+                            at=datetime(2026, 9, 4, tzinfo=timezone.utc))
+    reply = patient_query_response(QBP, lookup=lambda pid: known if pid == "123456A" else None)
+    pid_fields = segments(reply)["PID"]
+    assert pid_fields[3] == "123456A"
+    assert pid_fields[5] == "YILMAZ^AYSE"
+    assert pid_fields[7] == "19800115"          # HL7 date, not ISO
+    assert pid_fields[8] == "F"
+    assert len(pid_fields) == 9
+
+
+def test_an_unknown_patient_still_gets_the_id_only_answer():
+    """A patient Comed has not sent us must not block a reading: the id is echoed, nothing else."""
+    reply = patient_query_response(QBP, lookup=lambda _pid: None)
+    pid_fields = segments(reply)["PID"]
+    assert pid_fields[3] == "123456A"
+    assert pid_fields[5:] == ["", "", "", ""]
+
+
+def test_a_lookup_that_raises_degrades_to_the_id_only_answer():
+    """A broken mirror must not take the device down."""
+    def boom(_pid):
+        raise sqlite3.OperationalError("database is locked")
+
+    reply = patient_query_response(QBP, lookup=boom)
+    assert segments(reply)["PID"][3] == "123456A"
+    assert "MSA|AA" in reply
