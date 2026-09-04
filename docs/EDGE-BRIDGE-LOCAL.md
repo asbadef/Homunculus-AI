@@ -264,3 +264,59 @@ timedatectl                  # expect "System clock synchronized: yes"
 
 The engine evaluates against the observation timestamp and escalates against the wall clock. A
 monitor with a wrong clock makes stale readings look fresh and shifts every scoring window.
+
+## NCE → bridge direct HL7 output (the production target) — Windows-side runbook
+
+NCE is a Welch Allyn/Hillrom "gateway software": WACP in from the devices, HL7 out through
+configurable XSL transform sheets to up to four **Host Index** endpoints — 1 Vitals Send,
+2 Patient Query, 3 Clinician Query, 4 Patient List Query — each with a Host Address and Host Port
+(Connex CSK HL7 Interface Design Specification, doc 60059617 ver C, §7–8; NCE is the CSK/DataCatcher
+successor with the same model). Our MLLP bridge (`LISTEN_ADDR:2575`) is a valid Host: it ACKs every
+message. Point Host Index 1 at it and vitals arrive the moment NCE receives them, no share polling.
+
+**What the ward found (2026-09-04):** the device sends the patient id it was given
+(`Container.Identifier` in the WACP session), but NCE's ORU rendering emits `PID-3 = ^^^X^PI`
+because the id was never *validated* — the device's `QBP^Q22` patient query (Host Index 2) had no
+host to answer it. So the same change fixes both problems: Host Index 2 → our bridge, and the bridge
+answers `RSP^K22` echoing the queried id (see the QBP responder slice). Until then, readings arrive
+without an id and are rejected with a named reason.
+
+**1. Inspect first (read-only, PHI-safe — names and settings, no readings):**
+
+```powershell
+$nce = "C:\Program Files (x86)\Welch Allyn\NCE"
+# a) host / transport settings in NCEConfig.xml (passwords excluded)
+[xml]$cfg = Get-Content "$nce\NCEConfig.xml"
+foreach ($d in $cfg.SelectNodes("//DEFINITION")) {
+  $cls = $d.GetAttribute("class")
+  foreach ($m in $d.SelectNodes("MEMBERS/MEMBER")) {
+    $n = $m.GetAttribute("name"); $v = $m.SelectSingleNode("VALUE")
+    if ($n -match "Host|Port|Address|Index|Enabled|Protocol|Timeout|Retry|Ack|Patient|Query|Validat|Transform|Sheet|Listen|Facility|Application|Assign|Authority|Send|Unknown|Interface|Network" -and $n -notmatch "Password|Secret") {
+      if ($v -and $v.InnerText.Trim()) { "{0,-28} {1,-30} = {2}" -f $cls, $n, $v.InnerText.Trim() }
+    }
+  }
+}
+# b) transform sheets: which files exist, and how the ORU sheet builds PID
+Get-ChildItem "$nce\TransformSheets" -Recurse -File | Select-Object FullName, Length, LastWriteTime | Format-Table -AutoSize
+Get-ChildItem "$nce\TransformSheets" -Recurse -Include *.xsl,*.xslt | Select-String -Pattern "PID" -Context 2,8 | Select-Object -First 60
+# c) NCE's live sockets: what it listens on and which host it is (trying to) talk to
+$id = (Get-CimInstance Win32_Service -Filter "Name='Welch Allyn NCE'").ProcessId
+Get-NetTCPConnection -OwningProcess $id | Select-Object State, LocalAddress, LocalPort, RemoteAddress, RemotePort | Format-Table -AutoSize
+# d) can this box reach our bridge?
+Test-NetConnection 172.100.101.72 -Port 2575
+# e) host-connection errors in the newest debug log (addresses/status lines only)
+Get-ChildItem "$nce\NCEDebugLog-*.txt" | Sort-Object LastWriteTime | Select-Object -Last 1 |
+  ForEach-Object { Select-String -Path $_.FullName -Pattern "Host|host|connect|Connect|refused|timeout|Timeout|NAK|Index" | Select-Object -Last 40 | ForEach-Object Line }
+```
+
+**2. Change (after the inspection output has been read):** open the NCE configuration UI
+(`NCETray.exe` tray icon → configuration; CSK called the page "Information Network"), set
+**Host Index 1 (Vitals Send)** Host Address `172.100.101.72`, Host Port `2575`; leave the other
+indexes for the QBP responder step. Save, then `Restart-Service "Welch Allyn NCE"` in a quiet
+moment — the Connex Spot stores readings while NCE is down and resends them.
+
+**3. Verify on the Linux host:** `docker logs -f homunculus-bridge` shows `mesaj=` climbing on the
+next reading; `nce-doctor.sh` shows the PID-3 shape of the copy NCE still writes to SavedCopies.
+
+**Do not** edit NCEConfig.xml by hand while the service runs, and do not touch the transform sheets
+until the QBP responder is in place: the file bridge keeps working in parallel throughout.
