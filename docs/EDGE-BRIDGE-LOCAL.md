@@ -277,9 +277,22 @@ message. Point Host Index 1 at it and vitals arrive the moment NCE receives them
 **What the ward found (2026-09-04):** the device sends the patient id it was given
 (`Container.Identifier` in the WACP session), but NCE's ORU rendering emits `PID-3 = ^^^X^PI`
 because the id was never *validated* — the device's `QBP^Q22` patient query (Host Index 2) had no
-host to answer it. So the same change fixes both problems: Host Index 2 → our bridge, and the bridge
-answers `RSP^K22` echoing the queried id (see the QBP responder slice). Until then, readings arrive
-without an id and are rejected with a named reason.
+host to answer it. So the same change fixes both problems: the patient-query host → our bridge, and
+the bridge answers `RSP^K22` echoing the queried id (`edge/pdq.py`, wired into `EdgeBridge.serve`;
+counted as `sorgu=` in the report line). No demographics are invented: the id the clinician typed
+is the id the reading carries, which is the same trust model as any manual identifier here.
+
+**What the inspection showed at this site (NCEConfig.xml, 2026-09-04):** `HostInformation` is an
+array of eight `CHostInformation` entries matching `TransformSheets\Host0..7`: **Host0 = episodic
+vitals → 10.10.201.33:7776**, **Host1 = patient query → 10.10.201.33:7775**, Host2 clinician query
+(port 0), Host3 location query (file directory), Host4 timesync (file), Host5 alarms (0), Host6
+continuous (0), Host7 device.sessions (file). `10.10.201.33` (`aag3lis`, the 2020 HIS/LIS
+integration) still pings but **both ports are closed** — NCE has been sending into the void, which
+is why every copy in SavedCopies is a "failed" copy. Redirecting Host0 and Host1 breaks nothing
+that is alive. NCE also serves its configuration UI over HTTP on **port 8000** (`CSHTTPDConfig`,
+`DCMain.htm`) — `http://10.10.218.5:8000/` from the server itself. Devices reach NCE on TCP 281 /
+UDP 291; the sheets `nce.hl7.segment.pid.xsl`, `patient.query.xsl`, `message.observation.xsl`,
+`hl7.config.xsl`, `segment.pv1.xsl` were customised in March 2020 (`*_default.xsl` are the originals).
 
 **1. Inspect first (read-only, PHI-safe — names and settings, no readings):**
 
@@ -309,14 +322,19 @@ Get-ChildItem "$nce\NCEDebugLog-*.txt" | Sort-Object LastWriteTime | Select-Obje
   ForEach-Object { Select-String -Path $_.FullName -Pattern "Host|host|connect|Connect|refused|timeout|Timeout|NAK|Index" | Select-Object -Last 40 | ForEach-Object Line }
 ```
 
-**2. Change (after the inspection output has been read):** open the NCE configuration UI
-(`NCETray.exe` tray icon → configuration; CSK called the page "Information Network"), set
-**Host Index 1 (Vitals Send)** Host Address `172.100.101.72`, Host Port `2575`; leave the other
-indexes for the QBP responder step. Save, then `Restart-Service "Welch Allyn NCE"` in a quiet
-moment — the Connex Spot stores readings while NCE is down and resends them.
+**2. Change:** in the NCE configuration UI (`http://10.10.218.5:8000/` on the server, or the
+`NCETray.exe` icon), set **Host0 (episodic / vitals)** and **Host1 (patient query)** both to Host
+Address `172.100.101.72`, Host Port `2575`; leave the rest as they are. Save, then
+`Restart-Service "Welch Allyn NCE"` in a quiet moment — the Connex Spot stores readings while NCE is
+down and resends them. If the UI will not take the change, stop the service, edit the two
+`CHostInformation` entries' `HostURL`/`HostPort` in `NCEConfig.xml` (back it up first), start the
+service; never edit the file while the service runs.
 
-**3. Verify on the Linux host:** `docker logs -f homunculus-bridge` shows `mesaj=` climbing on the
-next reading; `nce-doctor.sh` shows the PID-3 shape of the copy NCE still writes to SavedCopies.
+**3. Verify on the Linux host:** `docker logs -f homunculus-bridge` shows `sorgu=` climbing when a
+clinician enters an id on the device and `mesaj=`/`gözlem=` climbing when the reading is saved;
+`nce-doctor.sh` shows the PID-3 shape of the copy NCE still writes to SavedCopies, which should now
+carry the id in CX.1. The file bridge keeps running in parallel and de-duplicates nothing — once the
+direct path is confirmed, stop the `nce` service or the same reading will be ingested twice.
 
-**Do not** edit NCEConfig.xml by hand while the service runs, and do not touch the transform sheets
-until the QBP responder is in place: the file bridge keeps working in parallel throughout.
+**Do not** touch the transform sheets: the id path works through the query, and the sheets are the
+vendor's customised 2020 set for this site.

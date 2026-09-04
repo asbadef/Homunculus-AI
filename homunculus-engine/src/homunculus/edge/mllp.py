@@ -103,12 +103,17 @@ async def serve_mllp(
     host: str,
     port: int,
     handler: Callable[[str], None],
+    responder: Callable[[str], str | None] | None = None,
 ) -> asyncio.AbstractServer:
     """Start an MLLP server. `handler` is called with each complete HL7 message.
 
     Returns the asyncio server so the caller controls its lifetime (and can read the bound port
     when `port` is 0). A handler that raises is reported to the sender as AE and does not close
     the connection.
+
+    `responder`, when given, sees every message first. If it returns a message, that reply is
+    sent instead of an ACK and the handler is not called — this is how a query (a QBP^Q22 patient
+    lookup) gets an RSP rather than being mistaken for a result and rejected.
     """
 
     async def on_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -121,13 +126,21 @@ async def serve_mllp(
                 if not chunk:
                     break                                   # sender closed the link
                 for message in framer.feed(chunk):
-                    code = "AA"
-                    try:
-                        handler(message)
-                    except Exception:                       # never let one message kill the link
-                        code = "AE"
-                        _log.exception("MLLP handler failed for a message from %s", peer)
-                    writer.write(_framed(ack_for(message, code=code)))
+                    reply = None
+                    if responder is not None:
+                        try:
+                            reply = responder(message)
+                        except Exception:                   # a broken reply must not go silent
+                            _log.exception("MLLP responder failed for a message from %s", peer)
+                    if reply is None:
+                        code = "AA"
+                        try:
+                            handler(message)
+                        except Exception:                   # never let one message kill the link
+                            code = "AE"
+                            _log.exception("MLLP handler failed for a message from %s", peer)
+                        reply = ack_for(message, code=code)
+                    writer.write(_framed(reply))
                     await writer.drain()
         except (ConnectionResetError, asyncio.IncompleteReadError):
             _log.info("MLLP client dropped: %s", peer)

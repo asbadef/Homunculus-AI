@@ -57,8 +57,9 @@ async def report_loop(bridge: EdgeBridge, buffer: SqliteBuffer, interval: float)
     while True:
         await asyncio.sleep(interval)
         stats = bridge.stats
-        _log.info("mesaj=%s gözlem=%s reddedilen=%s kuyruk=%s",
-                  stats.messages, stats.observations, stats.rejected, buffer.depth())
+        _log.info("mesaj=%s gözlem=%s reddedilen=%s sorgu=%s kuyruk=%s",
+                  stats.messages, stats.observations, stats.rejected, stats.queries,
+                  buffer.depth())
         report = bridge.discovery_report()
         if report:
             _log.warning("%s", report)

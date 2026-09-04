@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from homunculus.canonical import Observation, SignalCode
 from homunculus.edge.mllp import serve_mllp
+from homunculus.edge.pdq import patient_query_response
 from homunculus.edge.serialize import observation_to_fhir
 from homunculus.gateway.fhir import GatewayError
 from homunculus.gateway.hl7 import default_mapping, parse_hl7_oru
@@ -37,6 +38,7 @@ class BridgeStats:
     messages: int = 0
     observations: int = 0
     rejected: int = 0
+    queries: int = 0            # QBP^Q22 patient lookups answered (id echoed, nothing invented)
     unmapped: dict[str, int] = field(default_factory=dict)
 
 
@@ -99,7 +101,19 @@ class EdgeBridge:
         ranked = sorted(self.stats.unmapped.items(), key=lambda kv: kv[1], reverse=True)
         return "Eşlenmemiş kodlar: " + ", ".join(f"{code} ({count})" for code, count in ranked)
 
+    def answer_query(self, message: str) -> str | None:
+        """Reply to a patient lookup (QBP^Q22) ourselves; everything else goes to handle_message.
+
+        A Welch Allyn NCE asks its patient-query host to validate the id typed on the device
+        before it will put that id into the reading's PID-3. Echoing the id back is what makes a
+        manually entered identifier survive into the observation.
+        """
+        reply = patient_query_response(message)
+        if reply is not None:
+            self.stats.queries += 1
+        return reply
+
     async def serve(self, host: str = "0.0.0.0", port: int = 2575) -> asyncio.AbstractServer:
         """Start listening. 2575 is the IANA-registered port for HL7 over MLLP."""
         _log.info("edge bridge listening for MLLP on %s:%s", host, port)
-        return await serve_mllp(host, port, handler=self.handle_message)
+        return await serve_mllp(host, port, handler=self.handle_message, responder=self.answer_query)
