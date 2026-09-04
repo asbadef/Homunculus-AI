@@ -60,5 +60,9 @@ def patient_query_response(message: str) -> str | None:
         "|".join(["QPD", _at(qpd, 1), query_tag, f"@PID.3.1^{patient_id}" if patient_id else ""]),
     ]
     if patient_id:
-        out.append("|".join(["PID", "", "", patient_id]))
+        # Field-complete like the vendor's sample (PID|||id||name||dob|sex), with the demographic
+        # fields present but EMPTY. NCE's transform sheets slice fields with
+        # substring-before(…,'|'), which yields "" when no delimiter follows — a PID that ended
+        # right after the id came back to the device with no id at all (ward, 2026-09-04).
+        out.append("|".join(["PID", "", "", patient_id, "", "", "", "", ""]))
     return "\r".join(out) + "\r"

@@ -41,7 +41,13 @@ def test_a_pdq_query_is_answered_with_the_queried_id_and_nothing_else():
     assert seg["QAK"][1:3] == ["20260903160900123", "OK"]
     assert seg["QPD"][3] == "@PID.3.1^123456A"
     assert seg["PID"][3] == "123456A"
-    assert len(seg["PID"]) == 4                                      # id only: no name, no DOB, no sex
+    # Field-complete like the vendor's own sample (PID|||id||name||dob|sex): NCE's sheets cut
+    # fields out with substring-before(…,'|'), which returns EMPTY when the delimiter after a
+    # field is missing — a PID that ends right after the id lost the id on the ward (2026-09-04).
+    # The extra fields are present but empty: no name, no DOB, no sex is ever invented.
+    assert len(seg["PID"]) == 9
+    assert seg["PID"][4:] == [""] * 5
+    assert reply.count("PID|||123456A||||||") == 1
 
 
 def test_the_id_is_found_whether_nce_writes_pid_3_1_or_pid3_1():
