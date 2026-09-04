@@ -349,3 +349,16 @@ underscore is present, otherwise pass the id through), applied on the NCE server
 service restart; see the PowerShell in the ward notes. The bridge's PDQ reply is still required
 (the device otherwise reports the patient as not found), and it is now field-complete
 (`PID|||id|||||`) because the query sheets slice fields with `substring-before(…,'|')`.
+
+**Direct path live (2026-09-04 16:00):** after the pid-sheet fallback, readings arrive on 2575 with
+the id in PID-3.1 and the board grows a card per id. Two things bit on the way and are now set:
+`site-mapping.json` for this source must key on the **numeric** MDC code (`150456`, `149546`,
+`150021`, `150023`, `150344`), because NCE's OBX-3 first component is the number, not
+`MDC_…`; and the mapping loader treats *every* key as an OBX code — a `_comment` key crashes the
+bridge into a restart loop. The `nce` file service is **stopped** (`docker compose stop nce`) so the
+same reading is not ingested twice; `docker compose start nce` is the fallback if the direct path
+ever fails (SavedCopies keeps 14 days). Name and room typed on the device do not reach the HL7
+copy: once the host answers a patient query, the device adopts the host's demographics, and our
+reply carries none by design — the HL7 shows `PID-5 = ^^^^^^L`, `PV1-3 = WA^^`. Names on the
+board are a product/PHI decision, not a transport gap; bed/room needs a location source (ADT or
+the device's location workflow) — see `docs/hastane-hl7-omurgasi-analizi.md`.
