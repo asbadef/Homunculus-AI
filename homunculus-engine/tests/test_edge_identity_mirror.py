@@ -110,3 +110,48 @@ def test_a_message_with_no_timestamp_is_still_stored(tmp_path):
     assert accepted is True
     assert mirror.get("20239121").given == "AYSE"
     mirror.close()
+
+
+def test_an_update_after_discharge_does_not_readmit(tmp_path):
+    """A03, then an A08 an hour later (a billing edit). The mirror keeps "discharged" -- so the
+    row still expires -- instead of turning it back into an admission."""
+    mirror = IdentityMirror(tmp_path / "identity.db")
+    mirror.upsert(record(state="discharged"))
+    assert mirror.upsert(record(state=None, family="DUZELTME", at=WHEN + timedelta(hours=1))) is True
+    got = mirror.get("20239121")
+    assert (got.state, got.family) == ("discharged", "DUZELTME")
+    assert mirror.prune(now=WHEN + timedelta(hours=26)) == 1
+    mirror.close()
+
+
+def test_a_thin_transfer_keeps_the_name_and_a_thin_update_keeps_the_bed(tmp_path):
+    """Empty means "not told", never "cleared": a transfer with no PID-5 must not blank the name
+    the nurse checks the bed against. A location is one group, so WARD2^^ does clear room/bed."""
+    mirror = IdentityMirror(tmp_path / "identity.db")
+    mirror.upsert(record())
+    mirror.upsert(record(state=None, family="", given="", birth_date="", sex="unknown",
+                         unit="WARD2", room="", bed="", at=WHEN + timedelta(minutes=1)))
+    got = mirror.get("20239121")
+    assert (got.family, got.given, got.birth_date, got.sex) == ("YILMAZ", "AYSE", "1980-01-15", "female")
+    assert (got.unit, got.room, got.bed) == ("WARD2", "", "")
+    mirror.upsert(record(state=None, family="YENI", unit="", room="", bed="",
+                         at=WHEN + timedelta(minutes=2)))
+    got = mirror.get("20239121")
+    assert got.family == "YENI" and (got.unit, got.room, got.bed) == ("WARD2", "", "")
+    mirror.close()
+
+
+def test_a_first_message_without_a_state_is_stored_as_admitted(tmp_path):
+    mirror = IdentityMirror(tmp_path / "identity.db")
+    mirror.upsert(record(state=None))
+    assert mirror.get("20239121").state == "admitted"
+    mirror.close()
+
+
+def test_a_refusal_is_logged_without_the_protocol_number(tmp_path, caplog):
+    mirror = IdentityMirror(tmp_path / "identity.db")
+    mirror.upsert(record(at=WHEN))
+    with caplog.at_level("INFO", logger="homunculus.edge.identity"):
+        assert mirror.upsert(record(at=WHEN - timedelta(minutes=5))) is False
+    assert caplog.records and all("20239121" not in r.getMessage() for r in caplog.records)
+    mirror.close()

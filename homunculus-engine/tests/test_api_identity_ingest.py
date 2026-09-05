@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from homunculus.api.app import create_app
 from homunculus.api.audit import InMemoryAuditLog
-from homunculus.api.patient_identity import InMemoryIdentityStore
+from homunculus.api.patient_identity import InMemoryIdentityStore, parse_fhir_patient
 
 TOKEN = "tok-1"
 HEAD = {"Authorization": f"Bearer {TOKEN}"}
@@ -137,9 +137,24 @@ def test_retention_keeps_existing_measurements_but_removes_the_identity():
     {**PATIENT, "identifier": "bad"},
     {**PATIENT, "name": "bad"},
     {**PATIENT, "meta": {"lastUpdated": "not-a-date"}},
-    {**ENCOUNTER, "status": "unknown"},
+    {**ENCOUNTER, "status": "cancelled"},          # "unknown" is valid: state unchanged
+    {**PATIENT, "meta": {"lastUpdated": WHEN.isoformat(), "source": "Comed HIS / YILMAZ"}},
 ])
 def test_invalid_identity_shapes_return_400_without_payload_content(client, broken):
     response = client.post("/ingest", json=broken, headers=HEAD)
     assert response.status_code == 400
     assert "YILMAZ" not in response.text
+
+
+def test_retention_sweeps_a_tenant_nobody_has_touched_since_restart():
+    """The identity store is durable and outlives the engine's memory: a discharged card for a
+    tenant with no engine yet must still get its "removed" frame."""
+    identities = InMemoryIdentityStore()
+    identities.apply("h1", parse_fhir_patient({**PATIENT, "active": False}))
+    app = create_app({TOKEN: "h1"}, run_escalation_loop=False, identities=identities)
+    with TestClient(app) as client:
+        queue = app.state.broadcaster.subscribe("h1")
+        client.portal.call(app.state.escalation_cycle, WHEN + timedelta(hours=25))
+        event = queue.get_nowait()
+        assert event["removed"] is True and event["patient_id"] == "20239121"
+        assert identities.get("h1", "20239121") is None

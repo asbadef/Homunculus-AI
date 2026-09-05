@@ -40,9 +40,11 @@ def test_an_admit_carries_id_name_birth_sex_and_bed():
 
 
 def test_a_transfer_changes_only_the_location():
+    """A02 moves the bed and says nothing about admission (state None): the receiving stores
+    keep whatever state they hold, so a transfer can never readmit or discharge anyone."""
     a02 = A01.replace("ADT^A01", "ADT^A02").replace("YB^304^2", "YB^301^1")
     identity = parse_hl7_adt(a02)
-    assert (identity.room, identity.bed, identity.state) == ("301", "1", "admitted")
+    assert (identity.room, identity.bed, identity.state) == ("301", "1", None)
 
 
 def test_a_discharge_marks_the_record_discharged():
@@ -116,3 +118,18 @@ def test_a_discharged_identity_renders_as_inactive_and_finished():
     patient, encounter = identity_to_fhir(parse_hl7_adt(a03), source="comed")
     assert patient["active"] is False
     assert encounter["status"] == "finished"
+
+
+def test_an_update_says_nothing_about_admission():
+    """A08 is what a HIS sends for any edit -- a name correction, a billing field -- including
+    long after discharge. Reading it as "admitted" put discharged patients back on the board."""
+    a08 = A01.replace("ADT^A01", "ADT^A08")
+    assert parse_hl7_adt(a08).state is None
+
+
+def test_a_stateless_identity_renders_without_active_and_with_status_unknown():
+    a02 = A01.replace("ADT^A01", "ADT^A02")
+    patient, encounter = identity_to_fhir(parse_hl7_adt(a02), source="comed")
+    assert "active" not in patient
+    assert encounter["status"] == "unknown"
+    assert encounter["location"][0]["location"]["display"] == "YB^304^2"

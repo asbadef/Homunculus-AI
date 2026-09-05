@@ -136,21 +136,19 @@ def create_app(
                         audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
                                                 {"audience": note.audience, "trigger": note.trigger}))
 
-        expired = []
-        for hospital in engines:
-            for pid in identities.patient_ids(hospital):
-                record = identities.get(hospital, pid)
-                if (record is not None and record.state == "discharged" and record.updated_at
-                        and record.updated_at < now - DISCHARGED_TTL):
-                    expired.append((hospital, record))
+        # Retention: a card discharged more than DISCHARGED_TTL ago leaves the board (or keeps its
+        # readings and loses its name). Every tenant this app serves is swept, engine or not — the
+        # identity store is durable and outlives the engine's memory, so a tenant nobody has
+        # touched since restart still owes its clients the "removed" frame.
+        for hospital in set(tenants.values()) | set(engines):
+            for record in identities.expired(hospital, now):
+                engine = engines.get(hospital)
+                if engine is not None and record.patient_id in set(engine.patient_ids()):
+                    board = patient_board(engine, record.patient_id, _store(hospital))
+                else:
+                    board = {**identity_only_board(record), "identity": None, "removed": True}
+                await broadcaster.publish(hospital, board)
         identities.prune(now)
-        for hospital, record in expired:
-            engine = engines[hospital]
-            if record.patient_id in set(engine.patient_ids()):
-                board = patient_board(engine, record.patient_id, _store(hospital))
-            else:
-                board = {**identity_only_board(record), "identity": None, "removed": True}
-            await broadcaster.publish(hospital, board)
 
     async def _escalation_loop() -> None:
         while True:

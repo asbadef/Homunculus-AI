@@ -46,7 +46,6 @@ class PostgresIdentityStore:
             if merged is None:
                 return None
             values = asdict(merged)
-            values.pop("resource_type")
             values["updated_at"] = merged.updated_at.isoformat()
             for key in _PHI:
                 values[key] = encrypt_phi(values[key])
@@ -75,6 +74,15 @@ class PostgresIdentityStore:
 
     def patient_ids(self, hospital: str) -> list[str]:
         return self._ids(hospital)
+
+    def expired(self, hospital: str, now: datetime,
+                ttl: timedelta = DISCHARGED_TTL) -> list[IdentityRecord]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT * FROM patient_identity WHERE tenant=:tenant AND state='discharged'"
+                " AND updated_at < :cutoff ORDER BY patient_id"),
+                {"tenant": hospital, "cutoff": (to_utc(now) - ttl).isoformat()}).mappings().all()
+        return [_decode(row) for row in rows]
 
     def prune(self, now: datetime, ttl: timedelta = DISCHARGED_TTL) -> int:
         with self._engine.begin() as conn:

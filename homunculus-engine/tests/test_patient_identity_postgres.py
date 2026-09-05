@@ -44,7 +44,8 @@ def test_postgres_identity_retention_is_encrypted_tenant_scoped_and_durable():
             value = conn.execute(text("SELECT family FROM patient_identity WHERE tenant=:tenant"),
                                  {"tenant": hospital}).scalar_one()
             assert value.startswith("enc::v1::") and "YILMAZ" not in value
-        stale = {**PATIENT, "meta": {"lastUpdated": (WHEN - timedelta(hours=1)).isoformat()}}
+        stale = {**PATIENT, "meta": {"lastUpdated": (WHEN - timedelta(hours=1)).isoformat(),
+                                     "source": "comed"}}
         assert store.apply(hospital, parse_fhir_patient(stale)) is None
         store.close()
         store = PostgresIdentityStore(TEST_DATABASE_URL)

@@ -9,10 +9,14 @@ we do not track.
 """
 from __future__ import annotations
 
-from datetime import datetime
+import re
+from datetime import datetime, timedelta, timezone
 
 from homunculus.canonical import Observation, SignalCode
 from homunculus.gateway.fhir import GatewayError, to_utc  # shared gateway contract
+
+# HL7 DTM: YYYY[MM[DD[HH[MM[SS[.S[S[S[S]]]]]]]]][+/-ZZZZ]. The fraction is dropped, the offset kept.
+_DTM = re.compile(r"^\s*(\d+)(?:\.\d+)?\s*(?:([+-])(\d{2})(\d{2}))?")
 
 # Default identifier table: OBX-3 code == our SignalCode slug. A per-hospital mapping table
 # (vendor OBX code -> SignalCode) is passed in for real sites and replaces this default.
@@ -38,11 +42,26 @@ def _first_component(field: str) -> str:
 
 
 def _parse_hl7_ts(ts: str) -> datetime | None:
-    digits = "".join(c for c in ts if c.isdigit())
+    """An HL7 timestamp as aware UTC; None when unusable.
+
+    The sender's offset is honoured when it carries one: NCE stamps `+0400` (Baku), and reading
+    that as UTC put every observation four hours into the future — and, once identities were
+    ordered and expired on the same stamps, a manual correction typed at 15:00 local lost to a
+    HIS message from 14:30 local. Without an offset the stamp is taken as UTC, the convention
+    every gateway here shares (see `to_utc`).
+    """
+    match = _DTM.match(ts or "")
+    if not match:
+        return None
+    digits, sign, hours, minutes = match.groups()
+    tz = timezone.utc
+    if sign:
+        offset = timedelta(hours=int(hours), minutes=int(minutes))
+        tz = timezone(-offset if sign == "-" else offset)
     for width, fmt in ((14, "%Y%m%d%H%M%S"), (12, "%Y%m%d%H%M"), (8, "%Y%m%d")):
         if len(digits) >= width:
             try:
-                return to_utc(datetime.strptime(digits[:width], fmt))
+                return to_utc(datetime.strptime(digits[:width], fmt).replace(tzinfo=tz))
             except ValueError:
                 return None
     return None

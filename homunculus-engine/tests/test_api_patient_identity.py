@@ -198,3 +198,63 @@ def test_null_identifier_is_not_a_patient_named_none():
 def test_null_names_remain_empty_and_multiple_given_names_are_preserved():
     record = parse_fhir_patient({**PATIENT, "name": [{"family": None, "given": ["DEMO", "SECOND"]}]})
     assert record.family == "" and record.given == "DEMO SECOND"
+
+
+def test_an_update_after_discharge_does_not_readmit(store):
+    """A08 -- what a HIS sends for any edit, including billing weeks later -- carries no
+    admission state. Reading it as "admitted" resurrected discharged patients onto the board,
+    where nothing would ever prune them."""
+    store.apply("h1", parse_fhir_patient({**PATIENT, "active": False}))
+    edit = {**PATIENT, "name": [{"family": "DUZELTME", "given": ["AYSE"]}],
+            "meta": {"lastUpdated": (WHEN + timedelta(hours=1)).isoformat(), "source": "comed"}}
+    del edit["active"]
+    record = store.apply("h1", parse_fhir_patient(edit))
+    assert (record.state, record.family) == ("discharged", "DUZELTME")
+    assert store.prune(WHEN + timedelta(hours=26)) == 1
+
+
+def test_a_thin_transfer_keeps_the_name(store):
+    """Empty means "not told", never "cleared"."""
+    store.apply("h1", parse_fhir_patient(PATIENT))
+    thin = {**PATIENT, "name": [{"family": "", "given": []}], "birthDate": "", "gender": "unknown",
+            "meta": {"lastUpdated": (WHEN + timedelta(minutes=1)).isoformat(), "source": "comed"}}
+    del thin["active"]
+    record = store.apply("h1", parse_fhir_patient(thin))
+    assert record.display_name == "AYSE YILMAZ" and record.birth_date == "1980-01-15"
+    assert record.sex == "female" and record.state == "admitted"
+
+
+def test_a_stateless_encounter_keeps_the_state_and_moves_the_bed(store):
+    store.apply("h1", parse_fhir_patient(PATIENT))
+    store.apply("h1", parse_fhir_encounter(ENCOUNTER))
+    move = {**ENCOUNTER, "status": "unknown", "location": [{"location": {"display": "YB^301^1"}}],
+            "meta": {"lastUpdated": (WHEN + timedelta(minutes=1)).isoformat(), "source": "comed"}}
+    record = store.apply("h1", parse_fhir_encounter(move))
+    assert record.bed_label == "YB 301-1" and record.state == "admitted"
+
+
+def test_a_discharge_frees_the_bed_but_keeps_the_name(store):
+    """The card stays 24 h with a "taburcu" badge; a readmission into the same bed must not show
+    two cards with one bed label."""
+    store.apply("h1", parse_fhir_patient(PATIENT))
+    store.apply("h1", parse_fhir_encounter(ENCOUNTER))
+    done = {**ENCOUNTER, "status": "finished",
+            "meta": {"lastUpdated": (WHEN + timedelta(hours=2)).isoformat(), "source": "comed"}}
+    record = store.apply("h1", parse_fhir_encounter(done))
+    assert record.bed_label == "" and record.display_name == "AYSE YILMAZ"
+
+
+def test_expired_lists_what_prune_would_remove(store):
+    store.apply("h1", parse_fhir_patient({**PATIENT, "active": False}))
+    store.apply("h2", parse_fhir_patient({**PATIENT, "active": False}))
+    assert store.expired("h1", WHEN + timedelta(hours=23)) == []
+    [gone] = store.expired("h1", WHEN + timedelta(hours=25))
+    assert gone.patient_id == "20239121" and gone.state == "discharged"
+    assert len(store.expired("h2", WHEN + timedelta(hours=25))) == 1
+
+
+def test_a_source_that_is_not_a_short_token_is_refused():
+    """meta.source is written into the append-only audit and rendered on cards."""
+    for bad in ("", "Comed HIS", "x" * 33, "hasta:YILMAZ", None):
+        with pytest.raises(GatewayError, match="meta.source"):
+            parse_fhir_patient({**PATIENT, "meta": {"lastUpdated": WHEN.isoformat(), "source": bad}})

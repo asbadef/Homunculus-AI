@@ -58,6 +58,17 @@ def _fernet_instance() -> Fernet:
     return _fernet
 
 
+def validate_key() -> None:
+    """Build the Fernet now, at startup, so a malformed PHI_ENCRYPTION_KEY is a named failure
+    at boot rather than a 500 at the first admission — which is the moment nobody is watching the
+    logs. Raises ValueError; the message never carries the key material."""
+    try:
+        _fernet_instance()
+    except (ValueError, TypeError):
+        raise ValueError("PHI_ENCRYPTION_KEY is not a valid Fernet key "
+                         "(44 characters of url-safe base64; see .env.example)") from None
+
+
 def encrypt_phi(plaintext: str | None) -> str | None:
     """Encrypt a plaintext PHI string. Returns None for None input."""
     if plaintext is None:

@@ -51,8 +51,15 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     url = args.cloud_url.rstrip("/") + "/ingest"
     for resource in resources(args):
-        post_json(url, args.token, resource)      # signature is (url, token, payload, timeout)
-        print(f"{resource['resourceType']} sent")
+        reply = post_json(url, args.token, resource) or {}
+        outcome = reply.get("identity", "?")
+        print(f"{resource['resourceType']}: {outcome}")
+        if outcome == "stale":
+            # The API holds a NEWER record for this protocol number, so this entry changed
+            # nothing. Almost always a clock: the HIS stamp vs this machine's, or an offset.
+            print("REDDEDİLDİ: API'deki kayıt daha yeni, bu giriş uygulanmadı — saatleri "
+                  "(HIS damgası / bu makine / saat dilimi) kontrol edin", file=sys.stderr)
+            return 1
     return 0
 
 

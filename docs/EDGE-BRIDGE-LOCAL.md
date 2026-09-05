@@ -372,8 +372,21 @@ The bridge mirrors the identity locally, answers subsequent patient queries with
 name, and queues FHIR Patient and Encounter resources alongside observations. `/ingest`
 accepts all three resource types, so an ADT does not block later readings.
 
-- Set `PHI_ENCRYPTION_KEY` for both API and bridge before using real identities. Generate a
-  Fernet key using the command in `.env.example`; retain it across rebuilds and restarts.
+- `PHI_ENCRYPTION_KEY` is REQUIRED for the API and the bridge: compose refuses to start
+  without it, the API refuses to boot on a malformed one, the bridge starts without its mirror
+  (readings unaffected, device query answered with the id only). Generate a Fernet key with the
+  command in `.env.example` **before the first real admission** and keep it with the backups:
+  rows written under one key cannot be read under another — names go blank on the board, the
+  card and its readings stay. Rotation is not supported in this slice.
+- An identity record the API refuses (any HTTP error status) is dropped by the bridge and
+  counted; the readings queued behind it are never held up, and the next ADT or device query
+  resends it. An unreachable API holds everything, in order, as before.
+- A transfer or update (A02/A08) never changes the admission state — an A08 after discharge is
+  a billing edit, not a readmission. An empty field never clears a known one (a thin transfer
+  keeps the name); a location is one group, so `WARD2^^` does clear the old room and bed.
+  Discharge frees the bed and keeps the name for the 24 h the card stays.
+- HL7 timestamps with an offset (`20260904143000+0400`) are read as that offset, not as UTC —
+  this also corrects NCE observation times, which were stored four hours ahead.
 - API production identities use the existing PostgreSQL database and migration `0005`.
   Deploy the API migration and receiving code **before** enabling the Comed feed. The local
   Docker API runs `alembic upgrade head` on startup. Rebuild the API/web and deploy a bridge

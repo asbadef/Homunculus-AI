@@ -139,3 +139,22 @@ def test_pid3_identifier_in_a_leading_component_still_wins_over_cx4_cx5():
         "OBX|1|NM|heart_rate||88|bpm|||||F|||20260903160934+0400\r"
     )
     assert parse_hl7_oru(message)[0].patient_id == "yatak-77"
+
+
+def test_a_senders_utc_offset_is_honoured_not_stripped():
+    """NCE stamps OBX-14 and MSH-7 with +0400 (Baku). Stripping the offset read 16:09 Baku as
+    16:09 UTC -- four hours in the future -- and the identity slice orders records and expires
+    cards on the same parser. No offset still means UTC, the convention every gateway shares."""
+    from homunculus.gateway.hl7 import _parse_hl7_ts
+
+    message = (
+        "MSH|^~\\&|NCE|HOSP|HIS|HOSP|20260903160934+0400||ORU^R01^ORU_R01|X1|P|2.5\r"
+        "PID|||yatak-77\r"
+        "OBX|1|NM|heart_rate||88|bpm|||||F|||20260903160934+0400\r"
+    )
+    assert parse_hl7_oru(message)[0].timestamp == datetime(2026, 9, 3, 12, 9, 34, tzinfo=timezone.utc)
+    assert _parse_hl7_ts("20260903160934-0500") == datetime(2026, 9, 3, 21, 9, 34, tzinfo=timezone.utc)
+    assert _parse_hl7_ts("20260903160934") == datetime(2026, 9, 3, 16, 9, 34, tzinfo=timezone.utc)
+    assert _parse_hl7_ts("20260903160934.1234+0400") == datetime(2026, 9, 3, 12, 9, 34, tzinfo=timezone.utc)
+    assert _parse_hl7_ts("202609031609+0400") == datetime(2026, 9, 3, 12, 9, tzinfo=timezone.utc)
+    assert _parse_hl7_ts("") is None and _parse_hl7_ts("not-a-time") is None

@@ -208,9 +208,15 @@ async def _read_tenant_slugs(user_id: str) -> list[str]:
 
 
 def _identities():
-    """Use managed Postgres in production; SQLite persists local development identities."""
-    from homunculus.api.patient_identity import SqliteIdentityStore
+    """Use managed Postgres in production; SQLite persists local development identities.
 
+    The PHI key is validated here, at boot: a malformed key would otherwise surface as a 500 on
+    the first admission and — because the bridge drops identity records the API refuses — as a
+    ward with readings but no names, with nothing in the API log until someone looks."""
+    from homunculus.api.patient_identity import SqliteIdentityStore
+    from homunculus.crypto import validate_key
+
+    validate_key()
     url = os.getenv("DATABASE_URL", "")
     if url.startswith(("postgresql", "postgres://")):
         from homunculus.api.patient_identity_postgres import PostgresIdentityStore

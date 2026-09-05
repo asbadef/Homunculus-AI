@@ -25,18 +25,23 @@ from homunculus.gateway.hl7 import (  # shared HL7 primitives
 )
 
 # Which trigger events we act on, and what each one means for the record's state. An event that
-# is not here is not guessed at: it is ignored (the caller still ACKs it).
-_ADMITTED = "admitted"
-_DISCHARGED = "discharged"
-_EVENTS = {
+# is not here is not guessed at: it is ignored (the caller still ACKs it). None means the trigger
+# says nothing about admission: a transfer moves the bed and an update corrects the name, and a
+# HIS sends A08 for billing edits long after discharge -- reading that as "admitted" resurrected
+# discharged patients onto the board, where nothing would ever prune them.
+ADMITTED = "admitted"
+DISCHARGED = "discharged"
+_ADMITTED, _DISCHARGED = ADMITTED, DISCHARGED
+_EVENTS: dict[str, str | None] = {
     "A01": _ADMITTED,    # admit
     "A04": _ADMITTED,    # register
-    "A02": _ADMITTED,    # transfer  (location changes, patient stays)
-    "A08": _ADMITTED,    # update    (demographics change)
+    "A02": None,         # transfer  (location changes, state untouched)
+    "A08": None,         # update    (demographics change, state untouched)
     "A13": _ADMITTED,    # discharge cancelled
     "A03": _DISCHARGED,  # discharge
     "A11": _DISCHARGED,  # admit cancelled
 }
+_ENCOUNTER_STATUS = {_ADMITTED: "in-progress", _DISCHARGED: "finished", None: "unknown"}
 
 # HL7 table 0001 -> FHIR AdministrativeGender. Anything else is "unknown": a sex we cannot read
 # is not a sex we invent.
@@ -54,8 +59,8 @@ class PatientIdentity:
     unit: str = ""
     room: str = ""
     bed: str = ""
-    state: str = _ADMITTED
-    at: datetime | None = None   # MSH-7: how two messages about one patient are ordered
+    state: str | None = _ADMITTED   # None: this message did not say (transfer, update)
+    at: datetime | None = None      # MSH-7: how two messages about one patient are ordered
 
     @property
     def bed_label(self) -> str:
@@ -125,9 +130,10 @@ def parse_hl7_adt(message: str) -> PatientIdentity | None:
     message_type = _at(msh, 8)
     if _first_component(message_type).upper() != "ADT":
         return None
-    state = _EVENTS.get(_component(message_type, 2).upper())
-    if state is None:
+    trigger = _component(message_type, 2).upper()
+    if trigger not in _EVENTS:
         return None
+    state = _EVENTS[trigger]
 
     pid = next((_fields(s) for s in segments if s.startswith("PID")), [])
     patient_id = _protocol_number(pid)
@@ -156,11 +162,12 @@ def identity_to_fhir(identity: PatientIdentity, source: str) -> tuple[dict, dict
     """(Patient, Encounter) for the uplink, in that order — the Encounter references the Patient.
 
     `meta.lastUpdated` carries MSH-7 so the receiving store can refuse a message that arrives out
-    of order, and `meta.source` says which feed it came from ("comed" | "manuel").
+    of order, and `meta.source` says which feed it came from ("comed" | "manuel"). A message that
+    says nothing about admission (state None) renders without `Patient.active` and with
+    `Encounter.status = "unknown"`, and the receiving store leaves the state as it was.
     """
     stamp = identity.at.isoformat() if identity.at else ""
     meta = {"lastUpdated": stamp, "source": source}
-    admitted = identity.state == _ADMITTED
 
     patient = {
         "resourceType": "Patient",
@@ -169,12 +176,13 @@ def identity_to_fhir(identity: PatientIdentity, source: str) -> tuple[dict, dict
         "name": [{"family": identity.family, "given": [identity.given]}],
         "birthDate": identity.birth_date,
         "gender": identity.sex,
-        "active": admitted,
         "meta": meta,
     }
+    if identity.state is not None:
+        patient["active"] = identity.state == _ADMITTED
     encounter = {
         "resourceType": "Encounter",
-        "status": "in-progress" if admitted else "finished",
+        "status": _ENCOUNTER_STATUS[identity.state],
         "subject": {"reference": f"Patient/{identity.patient_id}"},
         # "^"-joined, not `identity.bed_label` -- this display is for the receiving API to parse
         # back apart, not for a person to read; bed_label is the human-readable form.

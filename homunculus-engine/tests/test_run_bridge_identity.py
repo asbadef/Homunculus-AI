@@ -43,3 +43,16 @@ def test_no_path_means_no_mirror_and_no_noise(caplog):
     with caplog.at_level("ERROR", logger="bridge"):
         assert run_bridge.open_identity_mirror(None) is None
     assert caplog.records == []
+
+
+def test_a_malformed_phi_key_costs_the_mirror_not_the_bridge(tmp_path, caplog, monkeypatch):
+    """A typo in PHI_ENCRYPTION_KEY must surface at startup as a named error and a mirror-less
+    bridge -- never as a crash at the first admission, hours later, with the readings."""
+    from homunculus import crypto
+
+    monkeypatch.setenv("PHI_ENCRYPTION_KEY", "not-a-fernet-key")
+    monkeypatch.setattr(crypto, "_fernet", None)
+    with caplog.at_level("ERROR", logger="bridge"):
+        assert run_bridge.open_identity_mirror(str(tmp_path / "identity.db")) is None
+    assert any("ValueError" in r.getMessage() for r in caplog.records)
+    assert not any("not-a-fernet-key" in r.getMessage() for r in caplog.records)

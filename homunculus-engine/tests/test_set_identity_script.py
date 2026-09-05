@@ -35,3 +35,20 @@ def test_a_discharge_flips_both_resources():
 def test_the_patient_id_is_required():
     with pytest.raises(SystemExit):
         set_identity.build_parser().parse_args(["--cloud-url", "http://api:8000", "--token", "t"])
+
+
+def test_a_stale_answer_is_a_failure_not_a_sent(monkeypatch, capsys):
+    """The API holds a newer record: this entry changed nothing, and the nurse must know."""
+    monkeypatch.setattr(set_identity, "post_json", lambda *a, **k: {"identity": "stale"})
+    code = set_identity.main(["--patient-id", "20239121", "--family", "YILMAZ",
+                              "--cloud-url", "http://api:8000", "--token", "t"])
+    assert code == 1
+    assert "stale" in capsys.readouterr().out
+
+
+def test_an_ok_answer_reports_both_resources(monkeypatch, capsys):
+    monkeypatch.setattr(set_identity, "post_json", lambda *a, **k: {"identity": "ok"})
+    assert set_identity.main(["--patient-id", "20239121", "--cloud-url", "http://api:8000",
+                              "--token", "t"]) == 0
+    out = capsys.readouterr().out
+    assert "Patient: ok" in out and "Encounter: ok" in out

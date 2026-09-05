@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from homunculus.crypto import decrypt_phi, encrypt_phi
-from homunculus.edge.adt import PatientIdentity
+from homunculus.edge.adt import ADMITTED, PatientIdentity
 from homunculus.gateway.fhir import to_utc
 
 _log = logging.getLogger(__name__)
@@ -55,35 +55,49 @@ class IdentityMirror:
 
         The compare-and-write is a single conditional statement, not a Python-side SELECT
         followed by a write — two `IdentityMirror`s on the same file (the live bridge, plus an
-        operator script) could otherwise interleave so an older write lands after a newer one."""
-        stamp = _iso(identity.at)
+        operator script) could otherwise interleave so an older write lands after a newer one.
+
+        What a message does not say, it does not change. An empty name on a transfer is "not
+        told", never "cleared" — a thin A02 must not blank the name the nurse checks the bed
+        against — and a trigger that carries no admission state (A02/A08) leaves the state as it
+        was: an A08 after discharge is a billing edit, not a readmission. The name is one group
+        and the location is one group (`WARD2^^` really does clear the old room and bed).
+        """
+        params = {
+            "patient_id": identity.patient_id,
+            "family": encrypt_phi(identity.family), "given": encrypt_phi(identity.given),
+            "birth_date": encrypt_phi(identity.birth_date), "sex": encrypt_phi(identity.sex),
+            "unit": identity.unit, "room": identity.room, "bed": identity.bed,
+            "state": identity.state or ADMITTED, "at": _iso(identity.at),
+            "has_state": identity.state is not None,
+            "has_name": bool(identity.family or identity.given),
+            "has_birth": bool(identity.birth_date),
+            "has_sex": identity.sex not in ("", "unknown"),
+            "has_location": bool(identity.unit or identity.room or identity.bed),
+        }
         cur = self._conn.execute(
             "INSERT INTO identity (patient_id, family, given, birth_date, sex,"
-            " unit, room, bed, state, at) VALUES (?,?,?,?,?,?,?,?,?,?)"
-            " ON CONFLICT(patient_id) DO UPDATE SET family=excluded.family, given=excluded.given,"
-            " birth_date=excluded.birth_date, sex=excluded.sex, unit=excluded.unit,"
-            " room=excluded.room, bed=excluded.bed, state=excluded.state, at=excluded.at"
+            " unit, room, bed, state, at) VALUES (:patient_id, :family, :given, :birth_date,"
+            " :sex, :unit, :room, :bed, :state, :at)"
+            " ON CONFLICT(patient_id) DO UPDATE SET"
+            " family = CASE WHEN :has_name THEN excluded.family ELSE identity.family END,"
+            " given = CASE WHEN :has_name THEN excluded.given ELSE identity.given END,"
+            " birth_date = CASE WHEN :has_birth THEN excluded.birth_date ELSE identity.birth_date END,"
+            " sex = CASE WHEN :has_sex THEN excluded.sex ELSE identity.sex END,"
+            " unit = CASE WHEN :has_location THEN excluded.unit ELSE identity.unit END,"
+            " room = CASE WHEN :has_location THEN excluded.room ELSE identity.room END,"
+            " bed = CASE WHEN :has_location THEN excluded.bed ELSE identity.bed END,"
+            " state = CASE WHEN :has_state THEN excluded.state ELSE identity.state END,"
+            " at = excluded.at"
             " WHERE excluded.at >= identity.at",
-            (identity.patient_id, encrypt_phi(identity.family), encrypt_phi(identity.given),
-             encrypt_phi(identity.birth_date), encrypt_phi(identity.sex),
-             identity.unit, identity.room, identity.bed, identity.state, stamp),
+            params,
         )
         self._conn.commit()
         if cur.rowcount > 0:
             return True
-        # The decision is already made and committed above — a log line must never cost us that
-        # decided answer, so a failure reading it back (e.g. a second writer holding the file's
-        # lock, the exact contention this atomic upsert exists to tolerate) is swallowed here.
-        try:
-            row = self._conn.execute(
-                "SELECT at FROM identity WHERE patient_id = ?", (identity.patient_id,)).fetchone()
-            stored = row[0] if row else "?"
-        except sqlite3.Error:
-            stored = "?"
-        _log.info(
-            "identity refused as older than the stored record: %s (incoming=%s stored=%s)",
-            identity.patient_id, stamp, stored,
-        )
+        # Counted by the caller (adt_stale). The protocol number is an identifier and stays out
+        # of the log, like every other id on this bridge.
+        _log.info("identity refused as older than the stored record (counted, not written)")
         return False
 
     def get(self, patient_id: str) -> PatientIdentity | None:

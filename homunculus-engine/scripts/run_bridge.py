@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from homunculus.canonical import SignalCode
+from homunculus.crypto import validate_key
 from homunculus.edge.bridge import EdgeBridge
 from homunculus.edge.buffer import SqliteBuffer
 from homunculus.edge.identity import IdentityMirror
@@ -68,15 +69,17 @@ def identity_path(args: argparse.Namespace) -> str | None:
 def open_identity_mirror(path: str | None) -> IdentityMirror | None:
     """The mirror if it can be opened; None — loudly — if it cannot.
 
-    A corrupt or unwritable identity file must cost the device its name on the next
-    query, never the ward its readings: the bridge that refuses to start over the
-    optional half of its job is the bridge nobody restarts at 3 a.m.
+    A corrupt or unwritable identity file — or a malformed PHI_ENCRYPTION_KEY, checked here
+    rather than at the first admission — must cost the device its name on the next query,
+    never the ward its readings: the bridge that refuses to start over the optional half of
+    its job is the bridge nobody restarts at 3 a.m.
     """
     if not path:
         return None
     try:
+        validate_key()
         return IdentityMirror(path)
-    except Exception as exc:                 # sqlite3.Error, OSError — the reason, never content
+    except Exception as exc:                 # sqlite3.Error, OSError, ValueError — the reason, never content
         _log.error("kimlik aynası açılamadı, köprü aynasız devam ediyor: %s (%s)",
                    path, exc.__class__.__name__)
         return None
