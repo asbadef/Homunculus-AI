@@ -207,11 +207,24 @@ async def _read_tenant_slugs(user_id: str) -> list[str]:
         return [row[0] for row in result.all()]
 
 
+def _identities():
+    """Use managed Postgres in production; SQLite persists local development identities."""
+    from homunculus.api.patient_identity import SqliteIdentityStore
+
+    url = os.getenv("DATABASE_URL", "")
+    if url.startswith(("postgresql", "postgres://")):
+        from homunculus.api.patient_identity_postgres import PostgresIdentityStore
+        return PostgresIdentityStore(
+            url, ssl_required=os.getenv("DATABASE_SSL", "").lower() in ("require", "true", "1"))
+    return SqliteIdentityStore(os.getenv("IDENTITY_DB_PATH", "homunculus-identity.db"))
+
+
 _tenants = _parse_tenants(os.getenv("TENANTS"))
 
 app = create_app(
     _tenants,
     audit=_audit(),
+    identities=_identities(),
     resolve_jwt_hospital=make_jwt_hospital_resolver(_read_tenant_slugs),
     on_startup_check=make_startup_tenant_check(list(_tenants.values())),
 )

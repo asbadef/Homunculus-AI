@@ -24,32 +24,18 @@ from tests.conftest import TEST_DATABASE_URL, requires_db
 # which is exactly the kind of check that must run even without a database. Instead each
 # DB-backed test below is decorated individually with @requires_db.
 
-_DDL = """
-CREATE TABLE IF NOT EXISTS audit (
-    id BIGSERIAL PRIMARY KEY, ts TEXT NOT NULL, tenant TEXT NOT NULL,
-    event_type TEXT NOT NULL, patient_id TEXT NOT NULL, subject TEXT NOT NULL,
-    payload JSONB NOT NULL
-);
-CREATE OR REPLACE FUNCTION audit_is_append_only() RETURNS trigger AS $$
-BEGIN RAISE EXCEPTION 'audit is append-only'; END;
-$$ LANGUAGE plpgsql;
-DROP TRIGGER IF EXISTS audit_no_update ON audit;
-CREATE TRIGGER audit_no_update BEFORE UPDATE ON audit
-    FOR EACH ROW EXECUTE FUNCTION audit_is_append_only();
-DROP TRIGGER IF EXISTS audit_no_delete ON audit;
-CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit
-    FOR EACH ROW EXECUTE FUNCTION audit_is_append_only();
-"""
-
-
 @pytest.fixture
 def audit_log():
     log = PostgresAuditLog(TEST_DATABASE_URL)
     with log._engine.begin() as conn:                      # noqa: SLF001 — test setup
         conn.execute(text("DROP TABLE IF EXISTS audit CASCADE"))
-        for statement in _DDL.split(";\n"):
-            if statement.strip():
-                conn.execute(text(statement))
+        # Splitting SQL on semicolons truncates the dollar-quoted trigger function.
+        # Exercise the same migration used by the server, with its complete statements.
+        from alembic.migration import MigrationContext
+        from alembic.operations import Operations
+        migration, _ = _load_migration("0004")
+        with Operations.context(MigrationContext.configure(conn)):
+            migration.upgrade()
     yield log
     with log._engine.begin() as conn:                      # noqa: SLF001
         conn.execute(text("DROP TABLE IF EXISTS audit CASCADE"))
@@ -263,7 +249,7 @@ def test_no_migration_passes_multiple_statements_to_one_execute():
     )
 
 
-def test_migration_0004_is_the_single_head():
+def test_migration_chain_has_a_single_head():
     """Guards against a future migration accidentally branching off 0003 instead of 0004,
     which would give the chain two heads and make `alembic upgrade head` ambiguous."""
     revisions: dict[str, str | None] = {}
@@ -276,4 +262,4 @@ def test_migration_0004_is_the_single_head():
     children = set(revisions.values())
     heads = [rev for rev in revisions if rev not in children]
 
-    assert heads == ["0004"], f"expected a single head '0004', found {heads}"
+    assert heads == ["0005"], f"expected a single head '0005', found {heads}"
