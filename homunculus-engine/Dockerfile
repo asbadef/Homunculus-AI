@@ -1,14 +1,17 @@
 # Homunculus edge bridge — the on-prem HL7 listener.
 #
-# Deliberately minimal: the bridge's entire import chain is the Python standard library, so there
-# is nothing to pip install and no wheel to fetch at build time. That is worth preserving — a
-# hospital device VLAN frequently has no internet, and an image that needs a package mirror is an
-# image that cannot be rebuilt on site.
+# Deliberately minimal: the bridge's import chain is the Python standard library plus ONE wheel,
+# `cryptography`, which the identity mirror needs to keep patient names encrypted at rest
+# (homunculus.crypto, Fernet). Nothing else — no SQLAlchemy, no FastAPI. That is worth preserving:
+# a hospital device VLAN frequently has no internet, and an image that needs a package mirror is an
+# image that cannot be rebuilt on site. tests/test_bridge_import_chain.py guards the chain.
 #
 # Build:  docker build -t homunculus-bridge -f homunculus-engine/Dockerfile homunculus-engine
 # Run:    see deploy/bridge/docker-compose.yml
 
 FROM python:3.12-slim
+
+RUN pip install --no-cache-dir "cryptography>=42.0"
 
 # PYTHONUNBUFFERED: without it Python buffers stdout when it is not a terminal, and `docker logs -f`
 # shows nothing for minutes — which reads as a dead bridge during exactly the moment someone is

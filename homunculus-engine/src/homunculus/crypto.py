@@ -19,7 +19,15 @@ import logging
 import os
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy.types import String, TypeDecorator
+
+# SQLAlchemy is an API dependency, not a bridge one. The edge bridge's identity mirror uses
+# encrypt_phi/decrypt_phi from this module and runs from an image that carries only the standard
+# library plus `cryptography` — a hard import here would stop that container at startup, and with
+# it every reading on the ward. The column type below is only defined when SQLAlchemy is present.
+try:
+    from sqlalchemy.types import String, TypeDecorator
+except ImportError:                                    # bridge image
+    String = TypeDecorator = None                      # type: ignore[assignment,misc]
 
 logger = logging.getLogger(__name__)
 
@@ -73,18 +81,20 @@ def decrypt_phi(ciphertext: str | None) -> str | None:
         raise ValueError("PHI decryption failed — key mismatch or corrupted value.")
 
 
-class EncryptedString(TypeDecorator):
-    """
-    SQLAlchemy column type that transparently encrypts PHI at rest.
+if TypeDecorator is not None:
 
-    Store/return Python `str`; the database sees only Fernet ciphertext.
-    """
+    class EncryptedString(TypeDecorator):
+        """
+        SQLAlchemy column type that transparently encrypts PHI at rest.
 
-    impl = String
-    cache_ok = True
+        Store/return Python `str`; the database sees only Fernet ciphertext.
+        """
 
-    def process_bind_param(self, value, dialect):  # type: ignore[override]
-        return encrypt_phi(value)
+        impl = String
+        cache_ok = True
 
-    def process_result_value(self, value, dialect):  # type: ignore[override]
-        return decrypt_phi(value)
+        def process_bind_param(self, value, dialect):  # type: ignore[override]
+            return encrypt_phi(value)
+
+        def process_result_value(self, value, dialect):  # type: ignore[override]
+            return decrypt_phi(value)
