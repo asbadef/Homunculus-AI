@@ -48,6 +48,36 @@ def queried_patient_id(qpd: list[str]) -> str:
     return ""
 
 
+def _safe_text(value: object) -> str:
+    """Text that cannot break out of the field it is written into.
+
+    HL7's delimiters (`| ^ ~ \\ &`) are legal characters in a person's name, and one of them
+    inside PID-5 slides every field after it one place along: the date of birth lands in the sex
+    slot and the device shows a patient who does not exist. `O^BRIEN` is worse still — it parses
+    as a different name, and a WRONG name on the screen is more dangerous than none, because it
+    is what the nurse checks the bed against.
+
+    They are replaced with a space rather than escaped. The receiving system parses this reply
+    with XSL `substring-before`, not an HL7 parser, so it would render `\\S\\` literally and show
+    the clinician punctuation soup. A delimiter in a name is a data-quality artefact; a space
+    keeps the name readable and makes the corruption impossible.
+    """
+    text = "" if value is None else str(value)
+    for delimiter in "|^~\\&":
+        text = text.replace(delimiter, " ")
+    return " ".join(text.split())
+
+
+def _hl7_date(iso_date: object) -> str:
+    """`1980-01-15` -> `19800115`; anything that is not a whole ISO date -> empty.
+
+    A malformed date passed through verbatim reaches the device looking like a real one. An
+    empty field says "we were not told", which is the truth.
+    """
+    digits = "".join(c for c in str(iso_date or "") if c.isdigit())
+    return digits if len(digits) == 8 else ""
+
+
 def patient_query_response(
     message: str,
     lookup: Callable[[str], "PatientIdentity | None"] | None = None,
@@ -72,12 +102,20 @@ def patient_query_response(
     query_tag = _at(qpd, 2) or control_id
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
 
-    known = None
+    # The lookup AND everything read off what it returned sit inside one guard. A record with a
+    # missing field is as capable of breaking the reply as a lookup that raises, and the promise
+    # here is the same either way: the device gets an answer, always.
+    name = dob = sex = ""
     if patient_id and lookup is not None:
         try:
             known = lookup(patient_id)
+            if known is not None:
+                family, given = _safe_text(known.family), _safe_text(known.given)
+                name = f"{family}^{given}" if (family or given) else ""
+                dob = _hl7_date(known.birth_date)
+                sex = _FHIR_SEX_TO_HL7.get(known.sex, "")
         except Exception:                      # a mirror fault degrades, never blocks
-            known = None
+            name = dob = sex = ""
 
     out = [
         "|".join(["MSH", "^~\\&", _at(msh, 4) or "HOMUNCULUS", _at(msh, 5), _at(msh, 2), _at(msh, 3),
@@ -91,8 +129,5 @@ def patient_query_response(
         # demographics present but EMPTY. NCE's transform sheets slice fields with
         # substring-before(…,'|'), which yields "" when no delimiter follows — a PID that ended
         # right after the id came back to the device with no id at all (ward, 2026-09-04).
-        name = f"{known.family}^{known.given}" if known else ""
-        dob = known.birth_date.replace("-", "") if known else ""
-        sex = _FHIR_SEX_TO_HL7.get(known.sex, "") if known else ""
         out.append("|".join(["PID", "", "", patient_id, "", name, "", dob, sex]))
     return "\r".join(out) + "\r"

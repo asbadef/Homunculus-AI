@@ -4,8 +4,9 @@ Welch Allyn NCE forwards the patient id a clinician types or scans on a Connex S
 query to its "patient query" host. If nothing answers, the id is never *validated* and NCE's ORU
 rendering emits PID-3 as ^^^X^PI — the reading arrives without a patient. NCE's own query sheet
 accepts a response that contains MSA|AA and a PID segment (TransformSheets/Host1/
-nce.hl7.patient.query.xsl, seen on the ward 2026-09-04), so the bridge answers with exactly that,
-echoing the queried id and nothing else: no demographics are invented.
+nce.hl7.patient.query.xsl, seen on the ward 2026-09-04), so the bridge answers with exactly that:
+the queried id always, plus whatever the HIS told us about it. Nothing is ever invented — a
+demographic we were not given comes back as an empty field.
 """
 import asyncio
 import sqlite3
@@ -142,3 +143,62 @@ def test_a_lookup_that_raises_degrades_to_the_id_only_answer():
     reply = patient_query_response(QBP, lookup=boom)
     assert segments(reply)["PID"][3] == "123456A"
     assert "MSA|AA" in reply
+
+
+def known_lookup(**over):
+    """A lookup returning one synthetic patient, overridable field by field."""
+    from datetime import datetime, timezone
+
+    from homunculus.edge.adt import PatientIdentity
+
+    base = dict(patient_id="123456A", family="YILMAZ", given="AYSE",
+                birth_date="1980-01-15", sex="female",
+                at=datetime(2026, 9, 4, tzinfo=timezone.utc))
+    record = PatientIdentity(**{**base, **over})
+    return lambda pid: record if pid == "123456A" else None
+
+
+def test_a_delimiter_in_a_name_cannot_shift_the_fields_after_it():
+    """`|`, `^`, `~` are legal in a name and would slide the date of birth into the sex slot.
+    Worse, `O^BRIEN` parses as a different person — and a wrong name is what the nurse checks
+    the bed against."""
+    for hostile in ("SMITH|JONES", "O^BRIEN", "TILDE~NAME", "BACK\\SLASH", "AMP&SAND"):
+        reply = patient_query_response(QBP, lookup=known_lookup(family=hostile))
+        pid_fields = segments(reply)["PID"]
+        assert len(pid_fields) == 9, f"{hostile!r} shifted the PID fields"
+        assert pid_fields[7] == "19800115"     # date of birth still in its own slot
+        assert pid_fields[8] == "F"            # sex still in its own slot
+        assert not any(c in pid_fields[5] for c in "|~\\&")
+        assert pid_fields[5].count("^") == 1   # the one separator we put there ourselves
+
+
+def test_a_turkish_name_survives_intact():
+    """This is a Turkish-speaking hospital: Ş, İ and ğ are ordinary, not edge cases."""
+    reply = patient_query_response(QBP, lookup=known_lookup(family="ŞAHİN", given="GÜLŞAH"))
+    assert segments(reply)["PID"][5] == "ŞAHİN^GÜLŞAH"
+
+
+def test_a_malformed_birth_date_is_left_empty_rather_than_sent_as_data():
+    for malformed in ("not-a-date", "1980", "", "19800115999"):
+        reply = patient_query_response(QBP, lookup=known_lookup(birth_date=malformed))
+        assert segments(reply)["PID"][7] == ""
+
+
+def test_a_record_with_no_name_at_all_sends_an_empty_field_not_a_bare_separator():
+    reply = patient_query_response(QBP, lookup=known_lookup(family="", given=""))
+    pid_fields = segments(reply)["PID"]
+    assert pid_fields[5] == ""
+    assert pid_fields[7] == "19800115"         # the rest of the record still gets through
+
+
+def test_a_record_missing_a_field_degrades_like_a_broken_lookup():
+    """Any callable can be passed as the lookup; one returning a half-built record must cost
+    the device its name, never its answer."""
+    class HalfBuilt:
+        patient_id, family, given, sex = "123456A", "YILMAZ", "AYSE", "female"
+        birth_date = None                      # would raise on .replace(), once upon a time
+
+    reply = patient_query_response(QBP, lookup=lambda _pid: HalfBuilt())
+    pid_fields = segments(reply)["PID"]
+    assert pid_fields[3] == "123456A" and "MSA|AA" in reply
+    assert len(pid_fields) == 9
