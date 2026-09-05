@@ -219,6 +219,11 @@ class Session:
             self._suspended_at = None
         elif byte == CAN[0]:
             self._inflight = None
+            if self.state is State.INITIALISING:
+                # The cancelled ICC cannot receive an answer. Return to the retry path;
+                # INITIALISING requires a pending command on every tick.
+                self.state = State.IDLE
+                self._icc_not_before = now + self.config.icc_retry
 
     def _on_command(self, frame: Frame, now: float) -> None:
         if not frame.checksum_ok:

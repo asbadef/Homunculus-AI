@@ -235,6 +235,23 @@ def test_can_aborts_the_command_in_flight():
     assert s.outgoing() == NOP_CMD                   # nothing in flight any more
 
 
+def test_can_during_initialisation_retries_and_resumes_polling():
+    s = Session(SessionConfig())
+    s.tick(0.0)
+    assert s.outgoing() == ICC_CMD
+    s.receive(CAN, 0.1)
+    s.tick(0.1)
+    assert s.outgoing() == b""
+    s.tick(3.1)
+    assert s.outgoing() == ICC_CMD
+    s.receive(ICC_RSP, 3.2)
+    assert s.outgoing() == DEVID_CMD
+    s.receive(EVITA_ID, 3.3)
+    s.tick(3.3)
+    assert s.state is State.ACTIVE
+    assert s.outgoing() == DATA_CMD
+
+
 def test_measured_response_when_nothing_in_flight_is_still_used():
     s = Session(SessionConfig(poll_interval=100.0))
     t = connect(s)
