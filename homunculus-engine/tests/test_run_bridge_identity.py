@@ -28,3 +28,18 @@ def test_an_explicit_identity_path_wins():
 def test_identity_can_be_switched_off_for_a_site_with_no_his():
     args = run_bridge.build_parser().parse_args(["--db", "/data/bridge.db", "--no-identity"])
     assert run_bridge.identity_path(args) is None
+
+
+def test_a_mirror_that_cannot_be_opened_does_not_stop_the_bridge(tmp_path, caplog):
+    """A directory where a file should be: sqlite cannot open it. The runner must carry on."""
+    blocked = tmp_path / "identity.db"
+    blocked.mkdir()
+    with caplog.at_level("ERROR", logger="bridge"):
+        assert run_bridge.open_identity_mirror(str(blocked)) is None
+    assert any("aynasız devam" in r.getMessage() for r in caplog.records)
+
+
+def test_no_path_means_no_mirror_and_no_noise(caplog):
+    with caplog.at_level("ERROR", logger="bridge"):
+        assert run_bridge.open_identity_mirror(None) is None
+    assert caplog.records == []

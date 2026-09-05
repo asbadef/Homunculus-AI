@@ -65,6 +65,23 @@ def identity_path(args: argparse.Namespace) -> str | None:
     return args.identity_db or f"{args.db}.identity"
 
 
+def open_identity_mirror(path: str | None) -> IdentityMirror | None:
+    """The mirror if it can be opened; None — loudly — if it cannot.
+
+    A corrupt or unwritable identity file must cost the device its name on the next
+    query, never the ward its readings: the bridge that refuses to start over the
+    optional half of its job is the bridge nobody restarts at 3 a.m.
+    """
+    if not path:
+        return None
+    try:
+        return IdentityMirror(path)
+    except Exception as exc:                 # sqlite3.Error, OSError — the reason, never content
+        _log.error("kimlik aynası açılamadı, köprü aynasız devam ediyor: %s (%s)",
+                   path, exc.__class__.__name__)
+        return None
+
+
 async def report_loop(bridge: EdgeBridge, buffer: SqliteBuffer, interval: float) -> None:
     """Periodic operator report: throughput, buffer depth, and unmapped identifiers."""
     while True:
@@ -90,8 +107,7 @@ async def main_async(args: argparse.Namespace) -> None:
         if not capture_only:
             buffer.append(payload)
 
-    path = identity_path(args)
-    identity = IdentityMirror(path) if path else None
+    identity = open_identity_mirror(identity_path(args))
     bridge = EdgeBridge(send=send, mapping=load_mapping(args.mapping), identity=identity)
     server = await bridge.serve(host=args.listen_host, port=args.listen_port)
 
