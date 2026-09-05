@@ -24,11 +24,13 @@ import asyncio
 import json
 import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from homunculus.canonical import SignalCode
 from homunculus.edge.bridge import EdgeBridge
 from homunculus.edge.buffer import SqliteBuffer
+from homunculus.edge.identity import IdentityMirror
 from homunculus.edge.uplink import flush_loop
 
 _log = logging.getLogger("bridge")
@@ -52,14 +54,29 @@ def load_mapping(path: str | None) -> dict[str, SignalCode] | None:
     return mapping
 
 
+def identity_path(args: argparse.Namespace) -> str | None:
+    """Where the identity mirror lives: beside the buffer unless told otherwise, or nowhere.
+
+    A site with no HIS feed has nothing to mirror, and `--no-identity` says so out loud rather
+    than leaving an empty database to puzzle over.
+    """
+    if getattr(args, "no_identity", False):
+        return None
+    return args.identity_db or f"{args.db}.identity"
+
+
 async def report_loop(bridge: EdgeBridge, buffer: SqliteBuffer, interval: float) -> None:
     """Periodic operator report: throughput, buffer depth, and unmapped identifiers."""
     while True:
         await asyncio.sleep(interval)
         stats = bridge.stats
-        _log.info("mesaj=%s gözlem=%s reddedilen=%s sorgu=%s kuyruk=%s",
+        kimlik = bridge.identity.count() if bridge.identity is not None else 0
+        _log.info("mesaj=%s gözlem=%s reddedilen=%s sorgu=%s adt=%s yoksayılan=%s bayat=%s "
+                  "kimlik=%s kuyruk=%s",
                   stats.messages, stats.observations, stats.rejected, stats.queries,
-                  buffer.depth())
+                  stats.adt, stats.adt_ignored, stats.adt_stale, kimlik, buffer.depth())
+        if bridge.identity is not None:
+            bridge.identity.prune(now=datetime.now(tz=timezone.utc))
         report = bridge.discovery_report()
         if report:
             _log.warning("%s", report)
@@ -73,7 +90,9 @@ async def main_async(args: argparse.Namespace) -> None:
         if not capture_only:
             buffer.append(payload)
 
-    bridge = EdgeBridge(send=send, mapping=load_mapping(args.mapping))
+    path = identity_path(args)
+    identity = IdentityMirror(path) if path else None
+    bridge = EdgeBridge(send=send, mapping=load_mapping(args.mapping), identity=identity)
     server = await bridge.serve(host=args.listen_host, port=args.listen_port)
 
     if capture_only:
@@ -98,9 +117,11 @@ async def main_async(args: argparse.Namespace) -> None:
             task.cancel()
         _log.info("kapanıyor — kuyrukta %s gözlem kaldı (kaybolmaz)", buffer.depth())
         buffer.close()
+        if identity is not None:
+            identity.close()
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Homunculus on-prem edge bridge")
     parser.add_argument("--listen-host", default="0.0.0.0")
     parser.add_argument("--listen-port", type=int, default=2575,
@@ -113,7 +134,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report-interval", type=float, default=30.0)
     parser.add_argument("--max-buffer", type=int, default=200_000,
                         help="queued observations to keep before dropping the oldest")
-    args = parser.parse_args(argv)
+    parser.add_argument("--identity-db", default="", help="identity mirror (default: <db>.identity)")
+    parser.add_argument("--no-identity", action="store_true",
+                        help="no HIS feed at this site: do not keep an identity mirror")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
 
     # Windows consoles default to a legacy code page that cannot encode Turkish characters, which
     # would mangle or crash every log line. Force UTF-8 so this runs on the pilot laptop.
