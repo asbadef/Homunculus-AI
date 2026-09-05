@@ -18,6 +18,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from homunculus.canonical import Observation, SignalCode
+from homunculus.edge.adt import identity_to_fhir, parse_hl7_adt
+from homunculus.edge.identity import IdentityMirror
 from homunculus.edge.mllp import serve_mllp
 from homunculus.edge.pdq import patient_query_response
 from homunculus.edge.serialize import observation_to_fhir
@@ -39,6 +41,7 @@ class BridgeStats:
     observations: int = 0
     rejected: int = 0
     queries: int = 0            # QBP^Q22 patient lookups answered (id echoed, nothing invented)
+    adt: int = 0                # ADT messages accepted (identity records, not readings)
     unmapped: dict[str, int] = field(default_factory=dict)
 
 
@@ -63,11 +66,27 @@ class EdgeBridge:
 
     send: Callable[[dict], None]
     mapping: dict[str, SignalCode] | None = None
+    identity: IdentityMirror | None = None
+    identity_source: str = "comed"
     stats: BridgeStats = field(default_factory=BridgeStats)
 
     def handle_message(self, message: str) -> list[Observation]:
-        """Parse one HL7 message and forward every observation it carries."""
+        """Parse one HL7 message and forward what it carries.
+
+        Three kinds arrive on this port: ADT (who a protocol number is), ORU (readings), and
+        QBP queries — the last are answered by `answer_query` before they ever reach here.
+        """
         self.stats.messages += 1
+        try:
+            identity = parse_hl7_adt(message)
+        except GatewayError as exc:
+            self.stats.rejected += 1
+            _log.warning("rejected an unusable ADT message: %s (content not logged)", exc)
+            raise
+        if identity is not None:
+            self._record_identity(identity)
+            return []
+
         try:
             observations = parse_hl7_oru(message, self.mapping)
         except GatewayError as exc:
@@ -85,6 +104,17 @@ class EdgeBridge:
             self.send(observation_to_fhir(obs))
         self.stats.observations += len(observations)
         return observations
+
+    def _record_identity(self, identity) -> None:
+        """Mirror it for the device, then forward it upstream for the board."""
+        if self.identity is not None:
+            try:
+                self.identity.upsert(identity)
+            except Exception:       # a mirror fault must not stop the upstream record
+                _log.exception("could not write the identity mirror (content not logged)")
+        for resource in identity_to_fhir(identity, source=self.identity_source):
+            self.send(resource)
+        self.stats.adt += 1
 
     def _record_unmapped(self, message: str) -> None:
         """Count OBX identifiers this site's mapping does not cover."""
@@ -109,9 +139,11 @@ class EdgeBridge:
 
         A Welch Allyn NCE asks its patient-query host to validate the id typed on the device
         before it will put that id into the reading's PID-3. Echoing the id back is what makes a
-        manually entered identifier survive into the observation.
+        manually entered identifier survive into the observation; when Comed has told us who that
+        id is, the answer carries the name too and the device shows the patient.
         """
-        reply = patient_query_response(message)
+        reply = patient_query_response(
+            message, lookup=self.identity.get if self.identity is not None else None)
         if reply is not None:
             self.stats.queries += 1
         return reply
