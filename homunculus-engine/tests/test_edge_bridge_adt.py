@@ -92,3 +92,43 @@ def test_a_mirror_that_cannot_be_written_does_not_stop_the_record(tmp_path):
     bridge.handle_message(A01)
     assert [r["resourceType"] for r in sent] == ["Patient", "Encounter"]
     assert bridge.stats.adt == 1
+
+
+def test_an_adt_trigger_we_do_not_act_on_is_acknowledged_not_nakked(tmp_path):
+    """A31 (merge), pre-admits, cancels, ... are outside the seven we act on. The module's own
+    contract is to ignore them, not guess -- and falling through to the ORU parser here would NAK
+    them instead, which is exactly what makes a HIS interface engine suspend the whole feed."""
+    bridge, sent, mirror = make(tmp_path)
+    a05 = A01.replace("ADT^A01", "ADT^A05")
+    assert bridge.handle_message(a05) == []
+    assert sent == []
+    assert (bridge.stats.rejected, bridge.stats.adt_ignored) == (0, 1)
+    mirror.close()
+
+
+def test_a_send_failing_partway_through_is_counted_before_it_propagates(tmp_path):
+    """Patient delivered, Encounter not (or vice versa): the exception must still surface
+    somewhere, or the message becomes invisible to every counter."""
+    calls: list[dict] = []
+
+    def flaky(resource: dict) -> None:
+        calls.append(resource)
+        if len(calls) == 2:
+            raise RuntimeError("uplink dropped mid-send")
+
+    bridge = EdgeBridge(send=flaky)
+    with pytest.raises(RuntimeError, match="uplink dropped"):
+        bridge.handle_message(A01)
+    assert (bridge.stats.rejected, bridge.stats.adt) == (1, 0)
+
+
+def test_a_stale_adt_is_still_forwarded_but_counted_separately(tmp_path):
+    """The mirror refusing an older message must not be silently dropped -- upstream still gets
+    it (its own ordering rule applies, and a resend is idempotent), but the refusal is counted."""
+    bridge, sent, mirror = make(tmp_path)
+    newer = A01.replace("20260904143000||ADT^A01", "20260904150000||ADT^A01")
+    bridge.handle_message(newer)
+    bridge.handle_message(A01)   # same patient, an older message arriving after the newer one
+    assert (bridge.stats.adt, bridge.stats.adt_stale) == (2, 1)
+    assert [r["resourceType"] for r in sent] == ["Patient", "Encounter", "Patient", "Encounter"]
+    mirror.close()

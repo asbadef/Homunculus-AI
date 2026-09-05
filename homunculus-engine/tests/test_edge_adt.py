@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from homunculus.edge.adt import PatientIdentity, identity_to_fhir, parse_hl7_adt
+from homunculus.edge.adt import PatientIdentity, identity_to_fhir, is_adt, parse_hl7_adt
 from homunculus.gateway.fhir import GatewayError
 
 A01 = (
@@ -62,6 +62,13 @@ def test_a_message_that_is_not_adt_is_not_ours():
 def test_an_unhandled_adt_type_is_ignored_rather_than_guessed():
     a31 = A01.replace("ADT^A01", "ADT^A31")
     assert parse_hl7_adt(a31) is None
+
+
+def test_is_adt_is_true_for_any_trigger_and_false_for_non_adt():
+    assert is_adt(A01) is True
+    assert is_adt(A01.replace("ADT^A01", "ADT^A05")) is True   # a trigger we do not act on
+    assert is_adt(ORU) is False
+    assert is_adt("garbage") is False
 
 
 def test_an_adt_without_a_protocol_number_is_refused_by_name():

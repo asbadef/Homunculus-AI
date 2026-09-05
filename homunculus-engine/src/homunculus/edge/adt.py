@@ -98,6 +98,20 @@ def _iso_date(hl7_date: str) -> str:
     return f"{digits[:4]}-{digits[4:6]}-{digits[6:]}"
 
 
+def is_adt(message: str) -> bool:
+    """True when MSH-9's first component is ADT, whatever the trigger.
+
+    Same gate `parse_hl7_adt` applies before it looks at the trigger event, extracted so a
+    caller can tell "an ADT we do not act on" apart from "not an ADT at all" without duplicating
+    the MSH inspection.
+    """
+    segments = split_segments(message)
+    if not segments or not segments[0].startswith("MSH"):
+        return False
+    msh = _fields(segments[0])
+    return _first_component(_at(msh, 8)).upper() == "ADT"
+
+
 def parse_hl7_adt(message: str) -> PatientIdentity | None:
     """A `PatientIdentity` for an ADT we act on; None for anything else (the caller carries on).
 

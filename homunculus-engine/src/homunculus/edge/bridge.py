@@ -16,15 +16,19 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from homunculus.canonical import Observation, SignalCode
-from homunculus.edge.adt import identity_to_fhir, parse_hl7_adt
+from homunculus.edge.adt import identity_to_fhir, is_adt, parse_hl7_adt
 from homunculus.edge.identity import IdentityMirror
 from homunculus.edge.mllp import serve_mllp
 from homunculus.edge.pdq import patient_query_response
 from homunculus.edge.serialize import observation_to_fhir
 from homunculus.gateway.fhir import GatewayError
-from homunculus.gateway.hl7 import default_mapping, parse_hl7_oru
+from homunculus.gateway.hl7 import default_mapping, parse_hl7_oru, split_segments
+
+if TYPE_CHECKING:                    # import only for typing, same idiom as edge/pdq.py
+    from homunculus.edge.adt import PatientIdentity
 
 _log = logging.getLogger(__name__)
 
@@ -42,13 +46,15 @@ class BridgeStats:
     rejected: int = 0
     queries: int = 0            # QBP^Q22 patient lookups answered (id echoed, nothing invented)
     adt: int = 0                # ADT messages accepted (identity records, not readings)
+    adt_ignored: int = 0        # ADT triggers outside the seven we act on (still ACKed, not NAKed)
+    adt_stale: int = 0          # ADTs the mirror refused as older than what it already had
     unmapped: dict[str, int] = field(default_factory=dict)
 
 
 def _obx_codes(message: str) -> list[str]:
     """OBX-3 identifiers in a message, first component only (``CODE^text`` -> ``CODE``)."""
     codes: list[str] = []
-    for segment in message.replace("\n", "\r").split("\r"):
+    for segment in split_segments(message):
         if segment.startswith("OBX"):
             fields = segment.split("|")
             if len(fields) > 3:
@@ -86,6 +92,14 @@ class EdgeBridge:
         if identity is not None:
             self._record_identity(identity)
             return []
+        if is_adt(message):
+            # An ADT trigger outside the seven we act on (merge, pre-admit, cancel, ...): the
+            # module's own contract is to ignore it, not guess -- but "ignore" still means ACK.
+            # Falling through to the ORU parser here would NAK it instead, and a HIS interface
+            # engine that keeps getting NAKed suspends the whole feed over a message we meant to
+            # shrug off.
+            self.stats.adt_ignored += 1
+            return []
 
         try:
             observations = parse_hl7_oru(message, self.mapping)
@@ -105,15 +119,28 @@ class EdgeBridge:
         self.stats.observations += len(observations)
         return observations
 
-    def _record_identity(self, identity) -> None:
-        """Mirror it for the device, then forward it upstream for the board."""
+    def _record_identity(self, identity: PatientIdentity) -> None:
+        """Mirror it for the device, then forward it upstream for the board.
+
+        Staleness (the mirror already held a newer record for this id) does not stop the upstream
+        send: the API applies its own ordering rule and a resend is idempotent, so the only thing
+        worth doing here is counting it -- a silent drop would hide a clock or ordering problem.
+        """
         if self.identity is not None:
             try:
-                self.identity.upsert(identity)
+                if self.identity.upsert(identity) is False:
+                    self.stats.adt_stale += 1
             except Exception:       # a mirror fault must not stop the upstream record
                 _log.exception("could not write the identity mirror (content not logged)")
-        for resource in identity_to_fhir(identity, source=self.identity_source):
-            self.send(resource)
+
+        try:
+            for resource in identity_to_fhir(identity, source=self.identity_source):
+                self.send(resource)
+        except Exception:
+            # A send that fails partway through (Patient delivered, Encounter not, or vice versa)
+            # must still show up somewhere; otherwise the message is invisible to every counter.
+            self.stats.rejected += 1
+            raise
         self.stats.adt += 1
 
     def _record_unmapped(self, message: str) -> None:
