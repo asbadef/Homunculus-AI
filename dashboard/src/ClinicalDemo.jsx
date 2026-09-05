@@ -1042,11 +1042,12 @@ function BedBoard({ T, S, state, onOpenPatient, lang }) {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className={`rounded-md ${T.subtle} px-2 py-0.5 text-xs font-bold ${T.muted}`}>{bed.label}</span>
-                    <span className={`truncate font-bold ${T.heading} ${T.sizes.name}`}>{maskedName(state, p.display_name)}</span>
+                    <span className={`truncate font-bold ${T.heading} ${T.sizes.name}`}>{maskedName(state, p.display_name) || p.patient_id}</span>
                   </div>
                   <div className={`mt-0.5 text-xs ${T.faint}`}>
                     {ageText(p, S)}{!p.isNeonate ? "y" : ""} · {p.sex === "male" ? S.male : S.female} · {S.protocolNo} {p.protocolNo}
                   </div>
+                  <IdentityStatus p={p} S={S} className={`mt-1 text-xs ${T.faint}`} />
                 </div>
                 <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${ru.ring} ${ru.text}`}>
                   <span className={`h-2 w-2 rounded-full ${ru.dot}`} /> {S.risk[p.risk]}
@@ -1201,7 +1202,8 @@ function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, onE
         <div className="flex items-start justify-between">
           <div>
             <div className={`text-xs ${T.faint}`}>{S.patientDetail}</div>
-            <h2 className={`text-xl font-bold ${T.heading}`}>{maskedName(state, p.display_name)}</h2>
+            <h2 className={`text-xl font-bold ${T.heading}`}>{maskedName(state, p.display_name) || p.patient_id}</h2>
+            <IdentityStatus p={p} S={S} className={`text-xs ${T.faint}`} />
           </div>
           <div className="flex items-center gap-1.5">
             {/* Madde 8 — dar panelden geniş iki sütunlu tam ekran kokpite geç */}
@@ -3038,6 +3040,16 @@ function BedStateRow({ T, S, store, bed }) {
 // KVKK name masking helper — applied at the render layer so the store keeps the real synthetic name.
 function maskedName(state, name) {
   return state && state.maskNames && name ? maskName(name) : name;
+}
+function IdentityStatus({ p, S, className }) {
+  if (!p.identityState && p.source !== "device") return null;
+  if (!p.identityState) return <div className={className}>{S.identity.missing}</div>;
+  const stamp = p.identityUpdatedAt ? new Date(p.identityUpdatedAt) : null;
+  return <div className={className}>
+    {p.source === "comed" ? "Comed" : S.identity.manual}
+    {stamp && !Number.isNaN(stamp.getTime()) ? ` · ${stamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+    {p.identityState === "discharged" ? ` · ${S.identity.discharged}` : ""}
+  </div>;
 }
 function news2Level(score) {
   if (score >= 7) return { text: "text-red-500", ring: "ring-red-500/50" };

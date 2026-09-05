@@ -4,13 +4,15 @@
 // risk. Everything else on a patient record (name, national ID, bed, diagnosis, admitting
 // clinician) is typed in by clinicians and is not in this payload.
 //
-// Those fields are set to null, deliberately and explicitly. An invented name or bed number on a
+// The optional identity block now supplies the HIS name and bed; other fields stay null.
+// An invented name or bed number on a
 // clinical board is worse than a blank one: a blank prompts someone to fill it in, a plausible
 // value gets trusted and acted on.
 
 /** One board entry -> one patient record. */
 export function patientFromBoard(entry) {
   const latest = entry?.latest ?? {};
+  const identity = entry?.identity ?? null;
   return {
     patient_id: entry?.patient_id ?? null,
     risk: entry?.risk ?? null,
@@ -25,8 +27,8 @@ export function patientFromBoard(entry) {
     },
     lactate: latest.lactate ?? null,
     sofa: latest.sofa ?? null,
-    // Awaiting a clinician. Null, never a placeholder that could be mistaken for data.
-    display_name: null,
+    // HIS demographics only; missing fields stay null.
+    display_name: identity?.display_name || null,
     sex: null,
     age: null,
     ageDays: null,
@@ -36,14 +38,16 @@ export function patientFromBoard(entry) {
     phone: null,
     address: null,
     mrn: null,
-    protocolNo: null,
+    protocolNo: identity?.patient_id ?? null,
     bedId: null,
-    bedLabel: null,
+    bedLabel: identity?.bed_label || null,
     unitId: null,
     diagnosis: null,
     admittedBy: null,
     admittedAtMs: null,
-    source: "device",
+    identityState: identity?.state ?? null,
+    identityUpdatedAt: identity?.updated_at ?? null,
+    source: identity?.source || "device",
   };
 }
 
@@ -66,7 +70,7 @@ export function bedsFromPatients(patients) {
   const list = Array.isArray(patients) ? patients : [];
   return list.map((p) => ({
     id: `live-bed-${p.patient_id}`,
-    label: p.patient_id,
+    label: p.bedLabel || p.patient_id,
     unitId: null,
     unitName: null,
     roomId: null,
@@ -126,7 +130,7 @@ export function alertsFromPatients(patients, nowClockSec = 0) {
         id: `${p.patient_id}::${a.kind}`,
         patientId: p.patient_id,
         // Same honesty rule as bedsFromPatients: the patient id IS the device's bed identifier.
-        bedLabel: p.patient_id,
+        bedLabel: p.bedLabel || p.patient_id,
         kind: a.kind ?? null,
         tier: SEVERITY_TO_TIER[a.severity] ?? null,
         severity: a.severity ?? null,

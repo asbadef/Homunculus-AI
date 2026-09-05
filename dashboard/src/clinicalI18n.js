@@ -188,6 +188,7 @@ const STRINGS = {
       notifyTitle: "KRİTİK Alarm", notifyBody: "yatağında yanıtlanmamış kritik alarm",
       deviceCol: "Cihaz", statusCol: "Durum", none: "—",
     },
+    identity: { missing: "Kimlik kaydı yok", discharged: "Taburcu", manual: "Elle giriş" },
     pr8: {
       notifyBannerTitle: "Kritik alarm bildirimlerini etkinleştirin",
       notifyBannerBody: "Sekme kapalı veya arka plandayken bile kritik klinik alarmları sesli ve titreşimli bildirim olarak almak için izin verin.",
@@ -691,6 +692,7 @@ const STRINGS = {
       notifyTitle: "KRİTİK Xəbərdarlıq", notifyBody: "çarpayısında cavablanmamış kritik xəbərdarlıq",
       deviceCol: "Cihaz", statusCol: "Status", none: "—",
     },
+    identity: { missing: "Kimlik qeydi yoxdur", discharged: "Evə buraxılıb", manual: "Əl ilə daxil edilib" },
     pr8: {
       notifyBannerTitle: "Kritik xəbərdarlıq bildirişlərini aktivləşdirin",
       notifyBannerBody: "Tab bağlı və ya arxa planda olsa belə kritik klinik xəbərdarlıqları səsli və titrəyişli bildiriş kimi almaq üçün icazə verin.",
@@ -1186,6 +1188,7 @@ const STRINGS = {
       notifyTitle: "CRITICAL Alarm", notifyBody: "has an unanswered critical alarm",
       deviceCol: "Device", statusCol: "Status", none: "—",
     },
+    identity: { missing: "No identity record", discharged: "Discharged", manual: "Manual entry" },
     pr8: {
       notifyBannerTitle: "Enable critical alarm notifications",
       notifyBannerBody: "Allow notifications to receive critical clinical alarms with sound and vibration even when the tab is closed or in the background.",
@@ -1681,6 +1684,7 @@ const STRINGS = {
       notifyTitle: "КРИТИЧЕСКАЯ тревога", notifyBody: "имеет неотвеченную критическую тревогу",
       deviceCol: "Устройство", statusCol: "Статус", none: "—",
     },
+    identity: { missing: "Нет данных пациента", discharged: "Выписан", manual: "Ручной ввод" },
     pr8: {
       notifyBannerTitle: "Включите уведомления о критических тревогах",
       notifyBannerBody: "Разрешите уведомления, чтобы получать критические клинические тревоги со звуком и вибрацией, даже когда вкладка закрыта или в фоне.",

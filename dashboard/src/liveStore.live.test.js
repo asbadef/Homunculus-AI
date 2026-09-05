@@ -31,6 +31,22 @@ function fakeApi(overrides = {}) {
 }
 
 describe("live store data layer", () => {
+  it("removes an expired identity-only card from the live board", async () => {
+    let handlers;
+    const api = fakeApi({ boardPatients: vi.fn(async () => ({
+      patients: [{ patient_id: "P-1", risk: "none", alerts: [], latest: {} }],
+    })) });
+    const store = createLiveStore({ api, base: fakeBase(), openStream: (_url, value) => {
+      handlers = value;
+      return () => {};
+    } });
+    const stop = await store.startLive();
+    expect(store.getState().patients).toHaveLength(1);
+    handlers.onmessage({ data: JSON.stringify({ patient_id: "P-1", removed: true }) });
+    expect(store.getState().patients).toEqual([]);
+    expect(store.getState().beds).toEqual([]);
+    stop();
+  });
   it("replaces the simulated patients with what the API returned", async () => {
     const api = fakeApi({
       boardPatients: vi.fn(async () => ({

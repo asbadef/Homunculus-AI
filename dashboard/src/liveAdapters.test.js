@@ -229,3 +229,42 @@ describe("alertsFromPatients", () => {
     expect(alertsFromPatients([])).toEqual([]);
   });
 });
+
+describe("identity on a board entry", () => {
+  const withIdentity = {
+    patient_id: "20239121",
+    risk: "none",
+    alerts: [],
+    latest: { heart_rate: 84, spo2: 97 },
+    identity: {
+      patient_id: "20239121",
+      display_name: "AYSE YILMAZ",
+      bed_label: "YB 304-2",
+      state: "admitted",
+      source: "comed",
+      updated_at: "2026-09-04T14:30:00+00:00",
+    },
+  };
+
+  it("carries the name, the bed and where they came from", () => {
+    const patient = patientFromBoard(withIdentity);
+    expect(patient.display_name).toBe("AYSE YILMAZ");
+    expect(patient.bedLabel).toBe("YB 304-2");
+    expect(patient.protocolNo).toBe("20239121");
+    expect(patient.source).toBe("comed");
+    expect(patient.identityUpdatedAt).toBe("2026-09-04T14:30:00+00:00");
+  });
+
+  it("leaves every identity field null when the HIS has said nothing", () => {
+    const patient = patientFromBoard({ ...withIdentity, identity: null });
+    expect(patient.display_name).toBeNull();
+    expect(patient.bedLabel).toBeNull();
+    expect(patient.protocolNo).toBeNull();
+    expect(patient.source).toBe("device");
+  });
+
+  it("does not treat a discharged patient as admitted", () => {
+    const discharged = { ...withIdentity, identity: { ...withIdentity.identity, state: "discharged" } };
+    expect(patientFromBoard(discharged).identityState).toBe("discharged");
+  });
+});

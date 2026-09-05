@@ -156,13 +156,18 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
 
     function handleMessage(event) {
       let patient;
+      let removed;
       try {
-        patient = patientFromBoard(JSON.parse(event.data));
+        const entry = JSON.parse(event.data);
+        removed = entry.removed === true;
+        patient = patientFromBoard(entry);
       } catch {
         return; // malformed frame: never crash, never touch the board
       }
       if (patient.patient_id == null) return; // no identity to key on — drop, don't corrupt the list
-      const patients = mergePatient(overlay.patients, patient);
+      const patients = removed
+        ? overlay.patients.filter((p) => p.patient_id !== patient.patient_id)
+        : mergePatient(overlay.patients, patient);
       setOverlay({
         patients, beds: bedsFromPatients(patients),
         alerts: alertsFromPatients(patients, base.getState().clockSec ?? 0),
