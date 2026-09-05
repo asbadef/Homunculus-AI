@@ -99,3 +99,62 @@ def test_an_outage_holds_identity_records_too(tmp_path):
 
     assert asyncio.run(flush_once(buffer, sender=sender)) == 0
     assert buffer.depth() == 1
+
+
+def test_an_identity_the_api_cannot_take_right_now_is_held_not_dropped(tmp_path):
+    """500 while Postgres restarts, 401 while a token is fixed: a decision about the moment, not
+    the record. The row waits for the next pass; the reading behind it does not wait at all."""
+    from homunculus.edge.uplink import UplinkRefused, UplinkStats
+
+    for status in (500, 503, 401, 403):
+        buffer = SqliteBuffer(tmp_path / f"b{status}.db")
+        buffer.append({"resourceType": "Patient", "n": 1})
+        buffer.append({"resourceType": "Observation", "n": 2})
+        sent: list[dict] = []
+        stats = UplinkStats()
+
+        def sender(payload: dict) -> None:
+            if payload["resourceType"] == "Patient":
+                raise UplinkRefused(status)
+            sent.append(payload)
+
+        assert asyncio.run(flush_once(buffer, sender=sender, stats=stats)) == 1
+        assert [p["n"] for p in sent] == [2]
+        assert buffer.depth() == 1                          # the Patient is still queued
+        assert (stats.identity_dropped, stats.identity_held) == (0, 1)
+
+        # ...and delivered on the next pass once the API takes it.
+        assert asyncio.run(flush_once(buffer, sender=sent.append, stats=stats)) == 1
+        assert buffer.depth() == 0 and stats.identity_held == 0
+
+
+def test_the_held_head_is_bounded_so_it_cannot_starve_the_readings(tmp_path):
+    from homunculus.edge.uplink import UplinkRefused, UplinkStats
+
+    buffer = SqliteBuffer(tmp_path / "b.db")
+    for n in range(1, 5):
+        buffer.append({"resourceType": "Patient", "n": n})
+    buffer.append({"resourceType": "Observation", "n": 5})
+    stats = UplinkStats()
+
+    def sender(payload: dict) -> None:
+        if payload["resourceType"] == "Patient":
+            raise UplinkRefused(503)
+
+    assert asyncio.run(flush_once(buffer, sender=sender, stats=stats, hold_limit=2)) == 1
+    assert (stats.identity_dropped, stats.identity_held) == (2, 2)     # oldest two went
+    assert [p["n"] for _id, p in buffer.pending()] == [3, 4]
+
+
+def test_a_payload_refusal_counts_as_dropped_in_the_stats(tmp_path):
+    from homunculus.edge.uplink import UplinkRefused, UplinkStats
+
+    buffer = SqliteBuffer(tmp_path / "b.db")
+    buffer.append({"resourceType": "Encounter", "n": 1})
+    stats = UplinkStats()
+
+    def sender(payload: dict) -> None:
+        raise UplinkRefused(422)
+
+    assert asyncio.run(flush_once(buffer, sender=sender, stats=stats)) == 0
+    assert (stats.identity_dropped, stats.identity_held, buffer.depth()) == (1, 0, 0)

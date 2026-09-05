@@ -32,7 +32,7 @@ from homunculus.crypto import validate_key
 from homunculus.edge.bridge import EdgeBridge
 from homunculus.edge.buffer import SqliteBuffer
 from homunculus.edge.identity import IdentityMirror
-from homunculus.edge.uplink import flush_loop
+from homunculus.edge.uplink import UplinkStats, flush_loop
 
 _log = logging.getLogger("bridge")
 
@@ -85,16 +85,19 @@ def open_identity_mirror(path: str | None) -> IdentityMirror | None:
         return None
 
 
-async def report_loop(bridge: EdgeBridge, buffer: SqliteBuffer, interval: float) -> None:
+async def report_loop(bridge: EdgeBridge, buffer: SqliteBuffer, interval: float,
+                      uplink: UplinkStats | None = None) -> None:
     """Periodic operator report: throughput, buffer depth, and unmapped identifiers."""
     while True:
         await asyncio.sleep(interval)
         stats = bridge.stats
         kimlik = bridge.identity.count() if bridge.identity is not None else 0
+        up = uplink or UplinkStats()
         _log.info("mesaj=%s gözlem=%s reddedilen=%s sorgu=%s adt=%s yoksayılan=%s bayat=%s "
-                  "kimlik=%s kuyruk=%s",
+                  "kimlik=%s kimlik_düşen=%s kimlik_bekleyen=%s kuyruk=%s",
                   stats.messages, stats.observations, stats.rejected, stats.queries,
-                  stats.adt, stats.adt_ignored, stats.adt_stale, kimlik, buffer.depth())
+                  stats.adt, stats.adt_ignored, stats.adt_stale, kimlik,
+                  up.identity_dropped, up.identity_held, buffer.depth())
         if bridge.identity is not None:
             bridge.identity.prune(now=datetime.now(tz=timezone.utc))
         report = bridge.discovery_report()
@@ -120,11 +123,12 @@ async def main_async(args: argparse.Namespace) -> None:
     else:
         _log.info("uplink: %s", args.cloud_url)
 
-    tasks = [asyncio.create_task(report_loop(bridge, buffer, args.report_interval))]
+    uplink = UplinkStats()
+    tasks = [asyncio.create_task(report_loop(bridge, buffer, args.report_interval, uplink))]
     if not capture_only:
         ingest_url = args.cloud_url.rstrip("/") + "/ingest"
         tasks.append(asyncio.create_task(
-            flush_loop(buffer, ingest_url, args.token, args.flush_interval)))
+            flush_loop(buffer, ingest_url, args.token, args.flush_interval, stats=uplink)))
 
     try:
         async with server:

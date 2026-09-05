@@ -109,7 +109,7 @@ def _meta(resource: dict) -> tuple[datetime, str]:
     except (ValueError, TypeError):
         raise GatewayError("invalid identity meta.lastUpdated") from None
     source = meta.get("source", "")
-    if not isinstance(source, str) or not _SOURCE.match(source):
+    if not isinstance(source, str) or not _SOURCE.fullmatch(source):
         raise GatewayError("invalid identity meta.source")
     return to_utc(when or datetime.now(timezone.utc)), source
 

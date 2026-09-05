@@ -378,9 +378,14 @@ accepts all three resource types, so an ADT does not block later readings.
   command in `.env.example` **before the first real admission** and keep it with the backups:
   rows written under one key cannot be read under another — names go blank on the board, the
   card and its readings stay. Rotation is not supported in this slice.
-- An identity record the API refuses (any HTTP error status) is dropped by the bridge and
-  counted; the readings queued behind it are never held up, and the next ADT or device query
-  resends it. An unreachable API holds everything, in order, as before.
+- An identity record never holds a reading. One the API refuses as a payload (400/422) is
+  dropped and counted (`kimlik_düşen=` in the report); the next ADT or device query resends it.
+  One the API cannot take right now (5xx while its database restarts, 401/403 while a token is
+  fixed) is held for the next pass (`kimlik_bekleyen=`) while the readings behind it flow; at
+  most 50 are held, beyond that the oldest go. An unreachable API holds everything, in order.
+- Deploy note: the offset fix moves NCE observation stamps four hours earlier the moment the
+  new bridge starts, so for up to four hours "latest" on a card can still be an old
+  future-stamped reading. Deploy at a quiet moment or accept the transient.
 - A transfer or update (A02/A08) never changes the admission state — an A08 after discharge is
   a billing edit, not a readmission. An empty field never clears a known one (a thin transfer
   keeps the name); a location is one group, so `WARD2^^` does clear the old room and bed.

@@ -216,8 +216,13 @@ def _identities():
     from homunculus.api.patient_identity import SqliteIdentityStore
     from homunculus.crypto import validate_key
 
-    validate_key()
     url = os.getenv("DATABASE_URL", "")
+    if url.startswith(("postgresql", "postgres://")) and not os.getenv("PHI_ENCRYPTION_KEY"):
+        # The compose file already refuses to start without the key; this covers a server run
+        # any other way. Real names must never be written under the JWT_SECRET-derived dev key.
+        raise SystemExit("PHI_ENCRYPTION_KEY is required with a Postgres DATABASE_URL "
+                         "(see deploy/local/.env.example)")
+    validate_key()
     if url.startswith(("postgresql", "postgres://")):
         from homunculus.api.patient_identity_postgres import PostgresIdentityStore
         return PostgresIdentityStore(
