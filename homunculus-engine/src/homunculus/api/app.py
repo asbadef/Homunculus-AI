@@ -25,7 +25,11 @@ from fastapi.responses import StreamingResponse
 
 from homunculus.api.ackstore import AckStore
 from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog
-from homunculus.api.board import board_snapshot, patient_board
+from homunculus.api.board import board_snapshot, identity_only_board, patient_board
+from homunculus.api.patient_identity import (
+    DISCHARGED_TTL, IdentityStore, InMemoryIdentityStore, parse_fhir_encounter,
+    parse_fhir_patient,
+)
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.escalation import escalate
 from homunculus.api.notify import NotificationHub, Notifier
@@ -66,6 +70,7 @@ def create_app(
     escalate_interval: float = 20.0,
     run_escalation_loop: bool = True,
     audit: AuditLog | None = None,
+    identities: IdentityStore | None = None,
     resolve_jwt_hospital: Callable[[str], Awaitable[str | None]] | None = None,
     on_startup_check: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
@@ -85,6 +90,7 @@ def create_app(
     hub = NotificationHub()
     tickets = TicketStore()
     audit = audit or InMemoryAuditLog()
+    identities = identities if identities is not None else InMemoryIdentityStore()
 
     rehydrated: set[str] = set()
 
@@ -118,7 +124,8 @@ def create_app(
                 changed = {pid for (pid, _k) in (newly ^ store.escalated)}
                 store.escalated = newly
                 for pid in changed:
-                    await broadcaster.publish(hospital, patient_board(engine, pid, store))
+                    await broadcaster.publish(hospital, patient_board(
+                        engine, pid, store, identity=identities.get(hospital, pid)))
                 if added:
                     alert_by_key = {(pid, a.kind): a for (pid, a) in alerts}
                     for key in added:
@@ -128,6 +135,22 @@ def create_app(
                         await hub.publish(hospital, note)
                         audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
                                                 {"audience": note.audience, "trigger": note.trigger}))
+
+        expired = []
+        for hospital in engines:
+            for pid in identities.patient_ids(hospital):
+                record = identities.get(hospital, pid)
+                if (record is not None and record.state == "discharged" and record.updated_at
+                        and record.updated_at < now - DISCHARGED_TTL):
+                    expired.append((hospital, record))
+        identities.prune(now)
+        for hospital, record in expired:
+            engine = engines[hospital]
+            if record.patient_id in set(engine.patient_ids()):
+                board = patient_board(engine, record.patient_id, _store(hospital))
+            else:
+                board = {**identity_only_board(record), "identity": None, "removed": True}
+            await broadcaster.publish(hospital, board)
 
     async def _escalation_loop() -> None:
         while True:
@@ -230,6 +253,28 @@ def create_app(
     @app.post("/ingest")
     async def ingest(resource: dict, authorization: str | None = Header(default=None)):
         hospital = await _hospital(authorization)
+        kind = resource.get("resourceType")
+        if kind in ("Patient", "Encounter"):
+            parse = parse_fhir_patient if kind == "Patient" else parse_fhir_encounter
+            try:
+                incoming = parse(resource)
+            except GatewayError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
+            except (TypeError, AttributeError, KeyError, IndexError):
+                raise HTTPException(status_code=400, detail="malformed identity resource") from None
+            record = identities.apply(hospital, incoming)
+            if record is None:
+                return {"patient_id": incoming.patient_id, "identity": "stale"}
+            # Demographics stay in the encrypted store, never in the audit payload.
+            audit.append(AuditEvent(hospital, "identity", record.patient_id, "",
+                                    {"source": record.source, "state": record.state,
+                                     "resource": kind}))
+            engine = _engine(hospital)
+            board = (patient_board(engine, record.patient_id, _store(hospital), identity=record)
+                     if record.patient_id in set(engine.patient_ids())
+                     else identity_only_board(record))
+            await broadcaster.publish(hospital, board)
+            return {"patient_id": record.patient_id, "identity": "ok"}
         try:
             obs = parse_fhir_observation(resource)
         except GatewayError as exc:
@@ -251,7 +296,8 @@ def create_app(
                 audit.append(AuditEvent(hospital, "first_seen", obs.patient_id, a.kind,
                                         {"at": wall_now.isoformat()}))
         store.prune(_live_keys(engine))
-        await broadcaster.publish(hospital, patient_board(engine, obs.patient_id, store))
+        await broadcaster.publish(hospital, patient_board(
+            engine, obs.patient_id, store, identity=identities.get(hospital, obs.patient_id)))
         # Push a notification for any newly-appeared immediate alert (nurse audience).
         for note in notifier.for_new(hospital, engine.active_alerts(obs.patient_id)):
             await hub.publish(hospital, note)
@@ -273,7 +319,8 @@ def create_app(
         store.escalated.discard((patient_id, kind))  # ack immediately stops escalation
         audit.append(AuditEvent(hospital, "ack", patient_id, kind,
                                 {"role": role, "at": datetime.now(timezone.utc).isoformat()}))
-        board = patient_board(engine, patient_id, store)
+        board = patient_board(engine, patient_id, store,
+                              identity=identities.get(hospital, patient_id))
         await broadcaster.publish(hospital, board)
         return board
 
@@ -294,7 +341,8 @@ def create_app(
     @app.get("/patients")
     async def patients(authorization: str | None = Header(default=None)):
         hospital = await _hospital(authorization)
-        return {"patients": board_snapshot(_engine(hospital), _store(hospital))}
+        return {"patients": board_snapshot(_engine(hospital), _store(hospital),
+                                           identities=identities, hospital=hospital)}
 
     @app.get("/alerts/{patient_id}")
     async def alerts(patient_id: str, authorization: str | None = Header(default=None)):

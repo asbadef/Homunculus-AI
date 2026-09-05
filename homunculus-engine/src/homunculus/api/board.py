@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from homunculus.api.ackstore import AckStore
+from homunculus.api.patient_identity import IdentityRecord, IdentityStore
 from homunculus.canonical import SignalCode
 from homunculus.pipeline import Engine
 from homunculus.reco.engine import Alert
@@ -38,11 +39,23 @@ def _merge_alert(patient_id: str, alert: Alert, store: AckStore) -> dict:
     }
 
 
-def patient_board(engine: Engine, patient_id: str, store: AckStore) -> dict:
+def identity_only_board(record: IdentityRecord) -> dict:
+    """Admissions have a card before the first reading, without creating engine state."""
+    return {
+        "patient_id": record.patient_id, "risk": "none", "alerts": [],
+        "latest": {key: None for key in (
+            "heart_rate", "map", "spo2", "temperature", "resp_rate", "lactate", "sofa")},
+        "identity": record.as_board(),
+    }
+
+
+def patient_board(engine: Engine, patient_id: str, store: AckStore,
+                  identity: IdentityRecord | None = None) -> dict:
     alerts = engine.active_alerts(patient_id)
     state = engine.state(patient_id)
     return {
         "patient_id": patient_id,
+        "identity": identity.as_board() if identity is not None else None,
         "risk": _risk(alerts),
         "alerts": [_merge_alert(patient_id, a, store) for a in alerts],
         "latest": {
@@ -57,5 +70,18 @@ def patient_board(engine: Engine, patient_id: str, store: AckStore) -> dict:
     }
 
 
-def board_snapshot(engine: Engine, store: AckStore) -> list[dict]:
-    return [patient_board(engine, pid, store) for pid in engine.patient_ids()]
+def board_snapshot(engine: Engine, store: AckStore,
+                   identities: IdentityStore | None = None, hospital: str = "") -> list[dict]:
+    measured = engine.patient_ids()
+    boards = [patient_board(engine, pid, store,
+                            identity=identities.get(hospital, pid) if identities else None)
+              for pid in measured]
+    if identities is not None:
+        seen = set(measured)
+        # Keep discharged admissions visible until the store's 24-hour retention expires.
+        for pid in identities.patient_ids(hospital):
+            if pid not in seen:
+                record = identities.get(hospital, pid)
+                if record is not None:
+                    boards.append(identity_only_board(record))
+    return boards
