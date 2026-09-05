@@ -26,6 +26,14 @@ hospital encryption key, then verify Comed ADT → device query → real observa
   the dev fallback replaced by a real `PHI_ENCRYPTION_KEY` after the first admissions) degrades
   to an empty name on that card instead of a 500 on `/patients`; retention reads one constant
   (`DISCHARGED_TTL`).
+- Whole-branch review (2026-09-05, ten findings, all fixed in `fd75c98`): A02/A08 no longer
+  carry an admission state (an A08 after discharge had readmitted the patient for good); an
+  empty field never clears a known one and discharge frees the bed; the uplink drops an
+  identity row the API refuses instead of holding every reading behind it; HL7 `+HHMM` offsets
+  are honoured (NCE stamps had been stored four hours ahead); `PHI_ENCRYPTION_KEY` is required
+  by compose and validated at boot, and the bridge no longer receives `JWT_SECRET`; the mirror's
+  refusal log carries no id; `meta.source` is a bounded token; the retention sweep covers every
+  tenant in one query each. The bridge image now installs exactly one wheel, `cryptography`.
 
 ---
 
