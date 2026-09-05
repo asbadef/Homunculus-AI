@@ -106,7 +106,7 @@ def test_an_identity_the_api_cannot_take_right_now_is_held_not_dropped(tmp_path)
     the record. The row waits for the next pass; the reading behind it does not wait at all."""
     from homunculus.edge.uplink import UplinkRefused, UplinkStats
 
-    for status in (500, 503, 401, 403):
+    for status in (500, 503, 401, 403, 404, 405, 429):
         buffer = SqliteBuffer(tmp_path / f"b{status}.db")
         buffer.append({"resourceType": "Patient", "n": 1})
         buffer.append({"resourceType": "Observation", "n": 2})

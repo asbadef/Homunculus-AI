@@ -36,8 +36,9 @@ from homunculus.edge.buffer import SqliteBuffer
 _log = logging.getLogger(__name__)
 
 _IDENTITY_RESOURCES = ("Patient", "Encounter")
-# 4xx that speak about the moment, not the payload: auth being fixed, a timeout, back-pressure.
-_NOT_A_PAYLOAD_REFUSAL = (401, 403, 408, 429)
+# 4xx that speak about the moment or the route, not the payload: auth being fixed, a mistyped
+# --cloud-url or a proxy miss (404/405), a timeout, back-pressure.
+_NOT_A_PAYLOAD_REFUSAL = (401, 403, 404, 405, 408, 429)
 DEFAULT_HOLD_LIMIT = 50
 
 
