@@ -52,10 +52,17 @@ export function PatientDetail({
       <ScrollView className="flex-1 bg-background" contentContainerClassName="p-4">
         <View className="flex-row items-center justify-between">
           <Text className="text-foreground text-2xl font-semibold">
-            {t("bed.label", { bed: bedNumber(board.patient_id) })}
+            {board.identity?.bed_label || t("bed.label", { bed: bedNumber(board.patient_id) })}
           </Text>
           <RiskPill risk={board.risk} />
         </View>
+
+        <Text className="text-foreground mt-1 text-base font-semibold">
+          {board.identity?.display_name || t("identity.missing")}
+        </Text>
+        {board.identity?.state === "discharged" ? (
+          <Text className="text-clinical-stale text-xs">{t("identity.discharged")}</Text>
+        ) : null}
 
         {/* M6: the kit's wash panel — dark-on-wash heading (never blue; the layering law reserves
             blue text for `panel`, see src/theme/palette.js), six white vital slots, the ECG strip

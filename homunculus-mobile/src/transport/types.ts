@@ -38,11 +38,22 @@ export interface LatestVitals {
   sofa: number | null;
 }
 
+export interface BoardIdentity {
+  patient_id: string;
+  display_name: string;
+  bed_label: string;
+  state: "admitted" | "discharged";
+  source: string;
+  updated_at: string | null;
+}
+
 export interface PatientBoard {
   patient_id: string;
   risk: Risk;
   alerts: BoardAlert[];
   latest: LatestVitals;
+  identity?: BoardIdentity | null;
+  removed?: boolean;
 }
 
 export interface BoardNotification {

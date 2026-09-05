@@ -51,6 +51,13 @@ export function boardReducer(state: BoardState, action: BoardAction): BoardState
   switch (action.type) {
     case "board": {
       const { board, now } = action;
+      if (board.removed) {
+        const patients = { ...state.patients };
+        const series = { ...state.series };
+        delete patients[board.patient_id];
+        delete series[board.patient_id];
+        return { ...state, patients, series };
+      }
       const firstSeen = { ...state.firstSeen };
       for (const alert of board.alerts) {
         const key = alertKey(board.patient_id, alert.kind);

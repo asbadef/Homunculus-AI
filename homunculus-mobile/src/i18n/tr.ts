@@ -1,6 +1,9 @@
 // Every user-visible string in the app. A second locale is a sibling file, not a refactor.
 // These strings are also scanned by the no-orders charter test — see src/domain/noOrders.ts.
 export const tr = {
+  "identity.missing": "Kimlik kaydı yok",
+  "identity.manual": "Elle giriş",
+  "identity.discharged": "Taburcu",
   "app.name": "Homunculus",
   "app.demoBanner": "GÖSTERİM VERİSİ — kayıtlı sentetik senaryo",
 

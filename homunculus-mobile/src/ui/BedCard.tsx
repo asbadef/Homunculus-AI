@@ -51,7 +51,7 @@ export function BedCard({
 }) {
   const { palette, toneColor } = useTheme();
   const { board, top } = view;
-  const bedLabel = t("bed.tileLabel", { bed: bedNumber(board.patient_id) });
+  const bedLabel = board.identity?.bed_label || t("bed.tileLabel", { bed: bedNumber(board.patient_id) });
 
   const alertTone = top === null ? "safe" : view.escalated ? "critical" : severityTone(top.severity);
   // severityTone's type admits "muted" (it shares riskTone), but a real alert severity never
@@ -114,6 +114,20 @@ export function BedCard({
             {/* The kit's white inner panel — the only surface bed name (blue) may sit on. */}
             <View className="bg-panel rounded-[14px] px-3 py-2">
               <Text className="text-accent text-[13px] font-extrabold">{bedLabel}</Text>
+              {board.identity?.display_name ? (
+                <Text className="text-foreground text-[13px] font-semibold" numberOfLines={1}>
+                  {board.identity.display_name}
+                </Text>
+              ) : (
+                <Text className="text-clinical-stale text-[11px]">{t("identity.missing")}</Text>
+              )}
+              {board.identity ? (
+                <Text className="text-clinical-stale text-[11px]">
+                  {board.identity.source === "comed" ? "Comed" : t("identity.manual")}
+                  {board.identity.updated_at ? ` · ${new Date(board.identity.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+                  {board.identity.state === "discharged" ? ` · ${t("identity.discharged")}` : ""}
+                </Text>
+              ) : null}
               {top !== null ? (
                 <Text className="text-foreground mt-0.5 text-[11px] leading-4" numberOfLines={2}>
                   {top.summary}

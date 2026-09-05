@@ -27,6 +27,13 @@ const note: BoardNotification = {
 };
 
 describe("boardReducer", () => {
+  it("removes an expired identity-only board and its series", () => {
+    const entry = board("bed-3", null);
+    const state = boardReducer(initialBoardState, { type: "board", board: entry, now: 100 });
+    const next = boardReducer(state, { type: "board", board: { ...entry, removed: true }, now: 200 });
+    expect(next.patients["bed-3"]).toBeUndefined();
+    expect(next.series["bed-3"]).toBeUndefined();
+  });
   it("upserts a patient board", () => {
     const state = boardReducer(initialBoardState, { type: "board", board: board("bed-3", 2), now: 100 });
     expect(state.patients["bed-3"].latest.sofa).toBe(2);
