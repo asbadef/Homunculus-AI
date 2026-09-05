@@ -1,5 +1,34 @@
 # Comed ADT identity — Implementation Plan
 
+## Execution status — 2026-09-05
+
+Tasks 1–5 were already implemented on `feat/comed-adt-identity`. Tasks 6–13 are now implemented
+in the working tree and locally verified. The original step-by-step text below is retained as
+the design record; its commit commands and hardware/deployment acceptance steps have not been run.
+
+- Patient identity lives in `api/patient_identity.py`; existing `api/identity.py` continues to
+  resolve hospital membership. Production uses `patient_identity_postgres.py` and migration
+  `0005`; local development uses encrypted SQLite.
+- `/ingest` accepts Patient/Encounter/Observation, and the durable-queue regression test proves
+  an ADT followed by an ORU drains successfully. Tenant isolation, stale updates, encryption,
+  restart durability and discharge retention are covered.
+- Web and mobile show names/beds/source/discharge state. Expired identity-only cards are
+  removed over SSE; measured cards keep readings while losing the expired identity.
+- Manual entry script, shared encryption-key configuration, diagnostics and runbook are added.
+- Review follow-up: MEDIBUS CAN during initialization now returns to a retryable state.
+- Validation: engine suite exercised against an isolated PostgreSQL 16 container; the existing
+  audit-test SQL splitting bug was corrected and all affected database tests passed. Dashboard,
+  mobile and MEDIBUS suites passed; final focused regressions, web build and mobile typecheck passed.
+
+Remaining external acceptance: deploy API/migration and the updated bridge, configure the
+hospital encryption key, then verify Comed ADT → device query → real observation at the site.
+- Review follow-up (2026-09-05): a PHI key that no longer matches the stored rows (rotation, or
+  the dev fallback replaced by a real `PHI_ENCRYPTION_KEY` after the first admissions) degrades
+  to an empty name on that card instead of a 500 on `/patients`; retention reads one constant
+  (`DISCHARGED_TTL`).
+
+---
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A patient's name and bed reach the board and the bedside device from the hospital's HIS (Comed) ADT feed, keyed on the protocol number the nurse already types into the Connex Spot.

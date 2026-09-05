@@ -41,6 +41,7 @@ services:
       # certificate chain that does not exist here.
       DATABASE_URL: postgresql://homunculus:${POSTGRES_PASSWORD}@postgres:5432/homunculus
       JWT_SECRET: ${JWT_SECRET}
+      PHI_ENCRYPTION_KEY: ${PHI_ENCRYPTION_KEY}
       # The engine's hospital key for this tenant IS the seeded tenant slug — TENANTS maps the
       # bridge's bearer token to that same slug, and SEED_TENANT_SLUG (below) is what seed_admin.py
       # actually creates. Both MUST read from TENANT_SLUG so they cannot drift: if they ever named
@@ -94,6 +95,8 @@ services:
       - ./site-mapping.json:/app/site-mapping.json:ro
     environment:
       TZ: ${TZ:-Europe/Istanbul}
+      PHI_ENCRYPTION_KEY: ${PHI_ENCRYPTION_KEY}
+      JWT_SECRET: ${JWT_SECRET}
     command:
       - scripts/run_bridge.py
       - --db

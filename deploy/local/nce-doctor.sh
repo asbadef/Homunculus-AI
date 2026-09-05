@@ -57,7 +57,7 @@ docker logs --since 30m homunculus-nce 2>&1 | grep -E "dosya=|rejected|Eşlenmem
 echo "-- son rapor satırı:"; docker logs homunculus-nce 2>&1 | grep -E "dosya=" | tail -1
 
 hr "4b. ledger + kuyruk (konteyner içi SQLite)"
-docker exec homunculus-nce python - <<'PY' 2>&1
+docker exec -i homunculus-nce python - <<'PY' 2>&1
 import sqlite3, datetime, os
 def utc(e): return datetime.datetime.fromtimestamp(int(e), datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
 try:
@@ -99,4 +99,20 @@ if [ -n "$TOKEN" ]; then
 else
   echo "(.env'de TENANT_TOKEN bulunamadı, atlandı)"
 fi
-printf '\n== bitti — bu çıktıyı olduğu gibi yapıştır (hasta verisi içermez)\n'
+hr "7. kimlik (Comed ADT)"
+docker logs --since 30m homunculus-bridge 2>&1 | grep -E 'adt=[0-9]+' | tail -1
+# Aggregate counts only: no names or protocol numbers.
+docker exec -i homunculus-api python - <<'PY' 2>&1
+import os
+from sqlalchemy import create_engine, text
+from homunculus.api.audit_postgres import to_sync_url
+engine = create_engine(to_sync_url(os.environ['DATABASE_URL']))
+tenant = os.environ.get('SEED_TENANT_SLUG', '')
+with engine.connect() as conn:
+    count, stamp = conn.execute(text(
+        'SELECT count(*), max(updated_at) FROM patient_identity WHERE tenant=:tenant'),
+        {'tenant': tenant}).one()
+print('kimlik kaydi:', count, 'son guncelleme:', stamp or '-')
+engine.dispose()
+PY
+printf '\n== bitti\n'

@@ -362,3 +362,43 @@ copy: once the host answers a patient query, the device adopts the host's demogr
 reply carries none by design — the HL7 shows `PID-5 = ^^^^^^L`, `PV1-3 = WA^^`. Names on the
 board are a product/PHI decision, not a transport gap; bed/room needs a location source (ADT or
 the device's location workflow) — see `docs/hastane-hl7-omurgasi-analizi.md`.
+
+## Comed ADT: patient names and beds
+
+The identity integration now supplies the missing demographics described above. Comed's
+ADT output (A01/A04/A02/A08/A13/A03/A11) uses the existing MLLP listener at
+`LISTEN_ADDR:2575`. PID-3 must contain the protocol number the clinician enters on the device.
+The bridge mirrors the identity locally, answers subsequent patient queries with the known
+name, and queues FHIR Patient and Encounter resources alongside observations. `/ingest`
+accepts all three resource types, so an ADT does not block later readings.
+
+- Set `PHI_ENCRYPTION_KEY` for both API and bridge before using real identities. Generate a
+  Fernet key using the command in `.env.example`; retain it across rebuilds and restarts.
+- API production identities use the existing PostgreSQL database and migration `0005`.
+  Deploy the API migration and receiving code **before** enabling the Comed feed. The local
+  Docker API runs `alembic upgrade head` on startup. Rebuild the API/web and deploy a bridge
+  image containing this branch; the configured `:latest` bridge image must actually be updated.
+- Local development uses `homunculus-identity.db` (override with `IDENTITY_DB_PATH` in
+  `prodserver`). The bridge mirror remains beside its buffer in the `bridge-data` volume.
+  Names, birth dates and sex are encrypted in both stores. The transit outbox still requires
+  encrypted storage, just as it does for observations.
+- Identity records are tenant scoped. Older messages cannot overwrite newer records.
+  Discharged identities remain for 24 hours, then are pruned. Live cards lose the identity;
+  cards with no observations are removed, while existing measurements remain available.
+- Web and mobile cards show the HIS name, bed, source and discharge state. A missing identity
+  remains visibly unknown. Identity-only admissions appear before their first measurement.
+- Audit events record resource type, source and state, never names or birth dates.
+  `nce-doctor.sh` reports aggregate identity counts and the latest update timestamp.
+
+Until Comed is connected, `homunculus-engine/scripts/set_identity.py` sends the same resources
+with source `manuel`. For synthetic local testing:
+
+```powershell
+python scripts/set_identity.py --patient-id TEST-ADT-1 --family DEMO --given PATIENT --bed "TEST^1^1" --cloud-url http://127.0.0.1:8000 --token dev-token
+```
+
+The manual script updates the API only; the bedside query mirror is populated by ADT on the
+MLLP port. Manual arguments can be recorded in shell history, so use synthetic data for this
+example. Confirm the protocol number, message timestamps/timezone and supported triggers with
+Comed IT before connecting the live feed. Hardware acceptance still requires an actual admission,
+device query and subsequent observation at the hospital.
