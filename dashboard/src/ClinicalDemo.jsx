@@ -1565,32 +1565,83 @@ function HeatmapPage({ T, S, store, state }) {
 }
 
 // ================================================================ ALARM MANAGEMENT
+/**
+ * Alarm yönetimi — cevapsız alarmın bulunduğu değil, **cevaplandığı** ekran.
+ *
+ * Eski düzende her alarm kartı eskalasyon çizelgesini baştan çiziyordu: kart başına ~280 piksel
+ * ve beş alarmda beşincisi ekranın dışında kalıyordu. Alarm yorgunluğunu azaltmak için yazılmış
+ * bir sistemde, açık alarmı bulmak için kaydırmak gerekiyordu.
+ *
+ * Yeni düzen üç şey yapar:
+ *   • **En uzun cevapsız üstte ve açık durur** — sıralama "en yeni" değil "en çok bekleyen".
+ *   • Diğerleri tek satır; tıklanınca açılır. Beş alarm tek ekrana sığar.
+ *   • Cevaplanmış olanlar listeden düşmez, soluklaşır — kimin, ne zaman, hangi gerekçeyle
+ *     kapattığı bu ekranın asıl kaydıdır.
+ */
 function AlarmPage({ T, S, store, state, lang, simulation = false }) {
-  const alerts = [...state.alerts].filter((a) => a.status !== "CLOSED").reverse();
+  const all = state.alerts.filter((a) => a.status !== "CLOSED");
+  const elapsedOf = (a) => (a.status === "FIRED" ? state.clockSec - a.firedAtSec : -1);
+  const open = all.filter((a) => a.status === "FIRED").sort((x, y) => elapsedOf(y) - elapsedOf(x));
+  const handled = all.filter((a) => a.status !== "FIRED");
+  const [filter, setFilter] = useState("open");   // open | handled
+  const [openId, setOpenId] = useState(null);
   const [fp, setFp] = useState(state.patients[0]?.patient_id || "");
   const [ft, setFt] = useState(TIER.CRITICAL);
   const fire = () => { if (fp) store.fireAlert({ patientId: fp, tier: ft, summary: ALERT_TXT[lang] || ALERT_TXT.tr }); };
   const [ackFor, setAckFor] = useState(null);
   const [snzFor, setSnzFor] = useState(null);
 
+  const shown = filter === "open" ? open : handled;
+  // İlk kart açık gelir: en uzun cevapsız alarm, kimsenin tıklamasını beklemeden görünür.
+  const expandedId = openId || (filter === "open" ? open[0]?.id : null);
+
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-      {/* left: controls. The alarm-firing panel and the clock control are simulation tooling —
-          see the `simulation` note on ClinicalDemo. Break-glass is a real clinical control and
-          stays in every mode. */}
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+      <div className="space-y-3 xl:col-span-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => { setFilter("open"); setOpenId(null); }}
+            className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 font-semibold ${T.sizes.nav} ${filter === "open" ? "bg-red-500/15 text-red-500 ring-1 ring-red-500/30" : T.navIdle}`}>
+            {S.pr6.unanswered || S.statusFired}
+            <span className="rounded-full bg-red-500 px-1.5 text-[11px] font-bold text-white">{open.length}</span>
+          </button>
+          <button onClick={() => { setFilter("handled"); setOpenId(null); }}
+            className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 font-semibold ${T.sizes.nav} ${filter === "handled" ? T.navActive : T.navIdle}`}>
+            {S.statusAck} · {S.statusSnoozed}
+            <span className={`rounded-full px-1.5 text-[11px] font-bold ${T.chip}`}>{handled.length}</span>
+          </button>
+          <span className={`ml-auto text-xs ${T.faint}`}>{S.pr6.sortedByWait || "En uzun cevapsız üstte"}</span>
+        </div>
+
+        {shown.length === 0 ? (
+          <div className={`rounded-2xl border border-dashed ${T.border} py-12 text-center text-sm ${T.faint}`}>{S.noAlerts}</div>
+        ) : (
+          <div className="space-y-2">
+            {shown.map((a) => (
+              <AlertCard key={a.id} T={T} S={S} state={state} alert={a}
+                expanded={a.id === expandedId}
+                onToggle={() => setOpenId(a.id === expandedId ? "none" : a.id)}
+                onAck={() => setAckFor(a)} onSnooze={() => setSnzFor(a)}
+                onEscalate={() => store.escalateToRRT(a.id)} onMute={() => store.muteAlert(a.id)} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Sağ kolon: acil erişim her modda; alarm tetikleme ve saat yalnız simülasyonda. */}
       <div className="space-y-4">
+        <BreakGlass T={T} S={S} store={store} state={state} />
         {simulation && (
-          <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+          <div className={`rounded-2xl border ${T.border} ${T.card} p-4`}>
             <h3 className={`mb-1 font-bold ${T.heading}`}>{S.fireAlert}</h3>
-            <p className={`mb-3 text-sm ${T.muted}`}>{S.alarmsSub}</p>
-            <div className="space-y-3">
+            <p className={`mb-3 text-xs ${T.muted}`}>{S.alarmsSub}</p>
+            <div className="space-y-2.5">
               <Field T={T} label={S.viewDetail}>
-                <select className={inputCls(T)} value={fp} onChange={(e) => setFp(e.target.value)}>
+                <select className={`${inputCls(T)} px-2.5 py-2`} value={fp} onChange={(e) => setFp(e.target.value)}>
                   {state.patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.bedLabel} · {maskedName(state, p.display_name)}</option>)}
                 </select>
               </Field>
               <Field T={T} label={S.alertTier}>
-                <select className={inputCls(T)} value={ft} onChange={(e) => setFt(e.target.value)}>
+                <select className={`${inputCls(T)} px-2.5 py-2`} value={ft} onChange={(e) => setFt(e.target.value)}>
                   {[TIER.CRITICAL, TIER.HIGH, TIER.MEDIUM, TIER.LOW].map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </Field>
@@ -1598,25 +1649,7 @@ function AlarmPage({ T, S, store, state, lang, simulation = false }) {
             </div>
           </div>
         )}
-
         {simulation && <TimeScale T={T} S={S} store={store} state={state} />}
-        <BreakGlass T={T} S={S} store={store} state={state} />
-      </div>
-
-      {/* right: active alerts */}
-      <div className="xl:col-span-2">
-        <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className={`font-bold ${T.heading}`}>{S.activeAlerts}</h3>
-            <span className={`rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>{alerts.length}</span>
-          </div>
-          {alerts.length === 0
-            ? <div className={`py-10 text-center text-sm ${T.faint}`}>{S.noAlerts}</div>
-            : <div className="space-y-3">{alerts.map((a) => (
-                <AlertCard key={a.id} T={T} S={S} state={state} alert={a} onAck={() => setAckFor(a)} onSnooze={() => setSnzFor(a)}
-                  onEscalate={() => store.escalateToRRT(a.id)} onMute={() => store.muteAlert(a.id)} />
-              ))}</div>}
-        </div>
       </div>
 
       {ackFor && <AckModal T={T} S={S} store={store} alert={ackFor} onClose={() => setAckFor(null)} />}
@@ -1625,12 +1658,20 @@ function AlarmPage({ T, S, store, state, lang, simulation = false }) {
   );
 }
 
-function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate, onMute }) {
+/**
+ * Bir alarm satırı. Kapalıyken tek satır, açıkken eskalasyonu ve eylemleri gösterir.
+ *
+ * Eskalasyon üç ayrı kutu olarak çiziliyordu ve her kartta baştan tekrarlanıyordu; oysa okunan
+ * şey tek bir cümle: **kim, saat kaçta bildirildi, şu an nerede.** Tek şerit onu söyler ve
+ * kartın yüksekliğinin yarısını geri verir.
+ */
+function AlertCard({ T, S, state, alert, expanded, onToggle, onAck, onSnooze, onEscalate, onMute }) {
   const ui = tierUi(alert.tier);
   const patient = state.patients.find((p) => p.patient_id === alert.patientId);
   const isMuted = alert.mutedUntil != null && alert.mutedUntil > state.clockSec;
-  const elapsed = alert.status === "FIRED" ? state.clockSec - alert.firedAtSec : 0;
-  const toNext = alert.status === "FIRED" ? secondsToNextStep(elapsed, alert.tier) : null;
+  const fired = alert.status === "FIRED";
+  const elapsed = fired ? state.clockSec - alert.firedAtSec : 0;
+  const toNext = fired ? secondsToNextStep(elapsed, alert.tier) : null;
   const statusTxt = { FIRED: S.statusFired, ACKNOWLEDGED: S.statusAck, SNOOZED: S.statusSnoozed, CLOSED: S.statusClosed }[alert.status];
   const reached = (step) => alert.events.some((e) => e.step === step);
   const steps = [
@@ -1638,78 +1679,100 @@ function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate, onMute }) 
     { step: ESCALATION_STEP.TIER_2_PHYSICIAN, label: S.step2 },
     { step: ESCALATION_STEP.TIER_3_RRT, label: S.step3 },
   ];
+  const atStep = steps.filter((x) => reached(x.step)).length;
+
   return (
-    <div className={`rounded-xl border ${T.border} ${T.subtle} p-4`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-bold ${ui.chip}`}>
-              <span className={`h-2 w-2 rounded-full ${ui.dot}`} /> {alert.tier}
+    <div className={`overflow-hidden rounded-xl border ${fired ? "border-red-500/40" : T.border} ${T.card} ${fired ? "" : "opacity-75"}`}>
+      {/* --- her zaman görünen satır --- */}
+      <button type="button" onClick={onToggle}
+        className="flex w-full items-center gap-3 px-3.5 py-3 text-left">
+        <span className={`h-9 w-1.5 shrink-0 rounded-full ${fired ? ui.dot : T.chip}`} aria-hidden="true" />
+        <span className={`shrink-0 font-mono text-lg font-bold leading-none ${fired ? ui.text : T.faint}`}>
+          {patient?.bedLabel || "—"}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className={`block truncate font-semibold ${T.text}`}>
+            {maskedName(state, patient?.display_name) || patient?.patient_id || "—"}
+            {alert.trigger && <span className={`ml-2 text-xs font-normal ${ui.text}`}>{alert.trigger}</span>}
+          </span>
+          <span className={`block truncate text-xs ${T.muted}`}>{alert.summary}</span>
+        </span>
+        {alert.auto && (
+          <span className="hidden shrink-0 items-center gap-1 rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-bold text-brand sm:inline-flex">
+            <Siren size={10} /> {S.pr6.autoBadge}
+          </span>
+        )}
+        {isMuted && <VolumeX size={14} className={`shrink-0 ${T.faint}`} />}
+        {fired ? (
+          <>
+            <span className={`shrink-0 font-mono text-sm font-bold tabular-nums ${ui.text}`}>{fmtClock(elapsed)}</span>
+            <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold sm:inline ${ui.chip}`}>
+              {atStep > 0 ? `${S.pr6.tierShort || "Kademe"} ${atStep}` : alert.tier}
             </span>
-            {alert.auto && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-brand/15 px-2 py-0.5 text-[11px] font-bold text-brand">
-                <Siren size={11} /> {S.pr6.autoBadge}
+          </>
+        ) : (
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+            alert.status === "ACKNOWLEDGED" ? "bg-emerald-500/15 text-emerald-500" : T.chip}`}>{statusTxt}</span>
+        )}
+        <ChevronDown size={15} className={`shrink-0 transition ${T.faint} ${expanded ? "rotate-180" : ""}`} />
+      </button>
+
+      {expanded && (
+        <div className={`border-t ${T.border} px-3.5 py-3`}>
+          {/* --- eskalasyon: üç kutu değil tek şerit --- */}
+          <div className="flex items-center gap-1">
+            {steps.map((st, i) => {
+              const on = reached(st.step);
+              const event = alert.events.find((e) => e.step === st.step);
+              return (
+                <React.Fragment key={st.step}>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <span className={`h-2.5 w-2.5 rounded-full ${on ? "bg-red-500" : T.chip} ${on && i === atStep - 1 ? "ring-4 ring-red-500/25" : ""}`} />
+                    <span className={`text-[11px] ${on ? T.text : T.faint}`}>
+                      {st.label}{event ? ` · ${fmtClock(event.atSec - alert.firedAtSec)}` : ""}
+                    </span>
+                  </span>
+                  {i < steps.length - 1 && (
+                    <span className={`h-px flex-1 ${reached(steps[i + 1].step) ? "bg-red-500" : T.chip}`} />
+                  )}
+                </React.Fragment>
+              );
+            })}
+            {fired && alert.source !== "device" && (
+              <span className={`ml-2 shrink-0 text-[11px] ${T.faint}`}>
+                {toNext != null ? `${S.nextStep}: ${fmtClock(toNext)}` : S.atTier3}
               </span>
             )}
-            <span className={`text-sm font-semibold ${T.text}`}>{patient?.bedLabel} · {maskedName(state, patient?.display_name)}</span>
           </div>
-          <div className={`mt-1 text-sm ${T.muted}`}>{alert.summary}</div>
-          {alert.trigger && <div className={`mt-0.5 text-xs ${ui.text}`}>{alert.trigger}</div>}
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <span className={`rounded-full px-2 py-0.5 text-xs ${T.chip}`}>{statusTxt}</span>
-          {isMuted && <span className="inline-flex items-center gap-1 rounded-full bg-slate-400/15 px-2 py-0.5 text-[11px] text-slate-400"><VolumeX size={11} /> {S.pr6.muted}</span>}
-        </div>
-      </div>
 
-      {alert.status === "FIRED" && (
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-          <span className={`inline-flex items-center gap-1 tabular-nums ${ui.text}`}><Clock size={13} /> {S.elapsed}: {fmtClock(elapsed)}</span>
-          {/* The backend owns real escalation timing for device-sourced alerts; this local countdown reflects the simulation's own thresholds and would misrepresent the ward's. */}
-          {alert.source !== "device" && (
-            <span className={T.faint}>{toNext != null ? `${S.nextStep}: ${fmtClock(toNext)}` : S.atTier3}</span>
+          {alert.status === "SNOOZED" && alert.snooze && (
+            <div className={`mt-2 text-xs ${T.faint}`}>{S.snoozedUntil}: {fmtClock(alert.snooze.until)}</div>
           )}
-        </div>
-      )}
-      {alert.status === "SNOOZED" && alert.snooze && (
-        <div className={`mt-2 text-xs ${T.faint}`}>{S.snoozedUntil}: {fmtClock(alert.snooze.until)}</div>
-      )}
+          {alert.ack && (
+            <div className={`mt-2 rounded-lg ${T.subtle} p-2.5 text-xs ${T.muted}`}>
+              <span className="font-semibold text-emerald-500">{S.statusAck}</span> · {alert.ack.by} · {S.reasonOptions[alert.ack.reason] || alert.ack.reason}
+              {alert.ack.note && <div className={`mt-0.5 ${T.text}`}>{alert.ack.note}</div>}
+            </div>
+          )}
 
-      {/* escalation chain */}
-      <div className="mt-3 flex items-center gap-1.5">
-        {steps.map((s, i) => {
-          const on = reached(s.step);
-          return (
-            <React.Fragment key={s.step}>
-              <div className={`flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium ${on ? "bg-red-500/15 text-red-500" : T.chip}`}>
-                {on ? <CheckCircle2 size={12} /> : <Circle size={12} />} {s.label}
-              </div>
-              {i < steps.length - 1 && <div className={`h-px w-3 ${T.border} border-t`} />}
-            </React.Fragment>
-          );
-        })}
-      </div>
-
-      {/* PR#6 — visual escalation timeline (0-3 / 3-5 / 5-10 min) */}
-      {alert.status === "FIRED" && <EscalationTimeline T={T} S={S} alert={alert} state={state} />}
-
-      {alert.ack && (
-        <div className={`mt-3 rounded-lg ${T.card} border ${T.border} p-2 text-xs ${T.muted}`}>
-          <span className="font-semibold text-emerald-500">{S.statusAck}</span> · {alert.ack.by} · {S.reasonOptions[alert.ack.reason] || alert.ack.reason}
-          {alert.ack.note && <div className={`mt-0.5 ${T.text}`}>{alert.ack.note}</div>}
-        </div>
-      )}
-
-      {alert.status === "FIRED" && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button onClick={onAck} className={`${btnCls(T, "primary")} px-3 py-2`}><Check size={15} /> {S.ack}</button>
-          {canSnooze(alert.tier)
-            ? <button onClick={onSnooze} className={`${btnCls(T, "ghost")} px-3 py-2`}><BellOff size={15} /> {S.snooze}</button>
-            : <span className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs ${ui.chip}`}><AlertTriangle size={14} /> {S.critNoSnooze}</span>}
-          <button onClick={onMute} disabled={isMuted} className={`${btnCls(T, "ghost")} px-3 py-2 ${isMuted ? "opacity-50" : ""}`}>
-            {isMuted ? <Volume2 size={15} /> : <VolumeX size={15} />} {isMuted ? S.pr6.muted : S.pr6.mute}
-          </button>
-          <button onClick={onEscalate} className={`${btnCls(T, "warn")} px-3 py-2`}><ArrowUpCircle size={15} /> {S.escalateRRT}</button>
+          {fired && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button onClick={onAck} className={`${btnCls(T, "primary")} px-3 py-2`}><Check size={15} /> {S.ack}</button>
+              {canSnooze(alert.tier) && (
+                <button onClick={onSnooze} className={`${btnCls(T, "ghost")} px-3 py-2`}><BellOff size={15} /> {S.snooze}</button>
+              )}
+              <button onClick={onMute} disabled={isMuted} className={`${btnCls(T, "ghost")} px-3 py-2 ${isMuted ? "opacity-50" : ""}`}>
+                {isMuted ? <Volume2 size={15} /> : <VolumeX size={15} />} {isMuted ? S.pr6.muted : S.pr6.mute}
+              </button>
+              <button onClick={onEscalate} className={`${btnCls(T, "warn")} px-3 py-2`}><ArrowUpCircle size={15} /> {S.escalateRRT}</button>
+              {/* Uyarı, düğme değil: eskiden düğmelerin arasında duruyor ve tıklanacak sanılıyordu. */}
+              {!canSnooze(alert.tier) && (
+                <span className={`ml-auto inline-flex items-center gap-1.5 text-[11px] ${T.faint}`}>
+                  <AlertTriangle size={12} /> {S.critNoSnooze}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1780,8 +1843,11 @@ function TimeScale({ T, S, store, state }) {
     <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
       <div className="mb-3 flex items-center justify-between">
         <h3 className={`font-bold ${T.heading}`}>{S.timeScale}</h3>
-        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs tabular-nums ${T.chip}`}>
-          <Clock size={13} /> {fmtClock(state.clockSec)}
+        {/* Bu sayının ne olduğu yazmıyordu ve 60× hızda saatlere çıkıyordu: "318:30" gören
+            kimse onu "simülasyon başladığından beri geçen süre" diye okumaz. */}
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs tabular-nums ${T.chip}`}
+          title={S.pr6?.simClockHint || "Simülasyon başladığından beri geçen süre"}>
+          <Clock size={13} /> {S.pr6?.simClock || "Simülasyon saati"}: {fmtClock(state.clockSec)}
         </span>
       </div>
       <div className="mb-3 flex flex-wrap gap-2">
@@ -3222,16 +3288,23 @@ export function ClinicalDemo({ store: injectedStore = null, simulation = false }
     };
   }, [state.user, store]);
 
-  // simulated clock: advance escalation for all open alarms. `store.reconcile` is always present —
-  // even the live store inherits it by spreading the simulation it wraps (see liveStore.js) — so no
-  // guard is needed here; the overlay masks its effect on patients/beds/alerts/devices regardless.
+  // Eskalasyon saati.
+  //
+  // ⚠️ 21.09.2026 — canlıda bu saat 60× hızla koşuyordu. `speed: 60` simülasyonun varsayılanı
+  // (1 gerçek saniye = 1 simüle dakika, böylece 3 dakikalık kademe demoda 3 saniyede geliyor) ve
+  // canlı store onu değiştirmiyordu. Sonucu: bir dakikadır cevapsız olan alarm ekranda bir saat
+  // görünüyor, eskalasyon kademeleri saniyeler içinde tükeniyordu — yani koğuşun **cevap süresi**
+  // ölçüsü altmış kat yanlıştı. Canlıda saat gerçek zamanla ilerler; hızlandırma yalnız
+  // simülasyonun oyuncağıdır.
   useEffect(() => {
     const id = setInterval(() => {
       const st = store.getState();
-      if (st.running) store.reconcile(st.clockSec + st.speed * 0.25);
+      if (!st.running) return;
+      const step = simulation ? st.speed * 0.25 : 0.25;
+      store.reconcile(st.clockSec + step);
     }, 250);
     return () => clearInterval(id);
-  }, [store]);
+  }, [store, simulation]);
 
   // apply dark class for any global dark-mode CSS hooks.
   useEffect(() => {

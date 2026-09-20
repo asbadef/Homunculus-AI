@@ -38,10 +38,20 @@ export const tierUi = (t) => TIER_UI[t] || TIER_UI.INFO;
 export const THEME_ICON = { icu: Moon, light: Sun, contrast: Contrast, wall: Monitor };
 
 // ---------------------------------------------------------------- small helpers
+/**
+ * Saniyeyi saat göstergesine çevirir.
+ *
+ * Bir saati geçince saat alanı açılır: cevapsız bir alarmın süresi "318:30" diye yazıldığında
+ * kimse onu beş buçuk saat diye okumuyor — sayı büyüdükçe anlamı kayboluyor. Bir alarmın kaç
+ * saattir açık olduğu, alarm yorgunluğunun ölçüldüğü yerde okunması gereken ilk şeydir.
+ */
 export function fmtClock(sec) {
   const s = Math.max(0, Math.floor(sec));
-  const m = Math.floor(s / 60);
-  return `${m}:${String(s % 60).padStart(2, "0")}`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, "0");
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${ss}`;
+  return `${m}:${ss}`;
 }
 
 export function useStore(store) {
