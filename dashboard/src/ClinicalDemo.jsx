@@ -14,7 +14,7 @@ import {
   StopCircle, Syringe, KeyRound, Wifi, WifiOff, Radio, Network, CloudOff, Cloud, ShieldCheck,
   DoorOpen, BellRing, BarChart3, Bed, Download, Lock, Shield, Fingerprint, Mail, ArrowRight,
   QrCode, MapPin, ArrowLeft, Archive, Sunset, FlaskConical, ScanLine, Grid3x3, RefreshCw,
-  PlugZap, Upload, Inbox, HeartHandshake,
+  PlugZap, Upload, Inbox, HeartHandshake, Ambulance, Hourglass,
 } from "lucide-react";
 import {
   createDemoStore, buildRealisticState, ROLE, TIER, ESCALATION_STEP, secondsToNextStep,
@@ -33,6 +33,7 @@ import {
   SCOPE_REASON, scopeForUser, visibleAlerts, visibleBeds, visiblePatients, visibleUnits,
 } from "./patientScope.js";
 import { alarmDensity, hourLabel, intensity } from "./alarmDensity.js";
+import { rrtQueue } from "./rrtQueue.js";
 import { SeverityScorePanel } from "./severityScore.jsx";
 import { formatAge, wardFeedHealth } from "./feedHealth.js";
 import {
@@ -770,6 +771,11 @@ const NAV_ITEMS = [
   // ilgilendiriyor ve kabul formundaki "sorumlu hekim / hemşire" alanlarının aynısını yapıyordu.
   { key: "admission", icon: UserPlus, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "clinical" },
   { key: "alarms", icon: Bell, roles: "all", group: "clinical" },
+  // RRT'nin kendi ekranı. Bugüne kadar hızlı yanıt ekibi herkesle aynı alarm listesine bakıyordu
+  // ve kendisine eskale edileni orada aramak zorundaydı — oysa bir alarm ona ulaştığında iki
+  // kademe zaten geçilmiş, iki kişi cevap verememiştir. Aramak, eskalasyonun kazandırdığı
+  // dakikaları geri vermektir. Yönetici de görür; zincirin sonuna ne düştüğü onun da işidir.
+  { key: "rrt", icon: Ambulance, roles: [ROLE.RRT, ROLE.HOSPITAL_ADMIN], group: "clinical" },
   { key: "results", icon: Inbox, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "ops" },
   // ⚠️ Isı haritası buradan kaldırıldı: yatak paneliyle aynı veriyi (NEWS2 + açık alarm)
   // daha azıyla gösteriyordu — isim yok, vital yok, alarm metni yok. İki ekranın aynı soruya
@@ -812,6 +818,9 @@ function navBadge(key, state) {
     return (state.results || []).filter((r) => r.status !== "reviewed" && ids.has(r.patientId)).length;
   }
   if (key === "admission") return awaitingLocalAdmission(visiblePatients(state, scope)).length;
+  // RRT rozeti yalnız cevapsız olanı sayar; "yolda" olanlar rozete girmez — henüz kimsenin
+  // işi değil, ve kırmızı bir sayı her zaman "şu an bekleyen iş" demek zorunda.
+  if (key === "rrt") return rrtQueue(state).open.length;
   return 0;
 }
 
@@ -923,21 +932,22 @@ function MobileTabBar({ T, S, state, page, setPage, setMobileOpen }) {
   const role = state.user?.role;
   const visible = NAV_ITEMS.filter((i) => canSee(i, role));
   const primary = visible.slice(0, 4);
-  const openAlarms = visibleAlerts(state, scopeForUser(state, UNRESTRICTED_SCOPE_ROLES))
-    .filter((a) => a.status === "FIRED").length;
   const label = (key) => S.navShort?.[key] || S.nav[key];
   return (
     <nav className={`fixed inset-x-0 bottom-0 z-40 flex border-t ${T.border} ${T.sidebar} px-1 pb-[env(safe-area-inset-bottom)] lg:hidden`}>
       {primary.map((item) => {
         const Icon = item.icon;
         const active = page === item.key;
+        // Rozet sol paneldekiyle aynı kaynaktan gelir. Önceden yalnız alarm sekmesi rozet
+        // taşıyordu; mobilde sol panel kapalı olduğu için bekleyen iş orada hiç görünmüyordu.
+        const badge = navBadge(item.key, state);
         return (
           <button key={item.key} onClick={() => setPage(item.key)} title={S.nav[item.key]}
             className={`relative flex min-h-[54px] flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 ${active ? "text-brand" : T.navIdle}`}>
             <Icon size={20} />
             <span className="line-clamp-1 text-[10px] font-semibold leading-none">{label(item.key)}</span>
-            {item.key === "alarms" && openAlarms > 0 && (
-              <span className="absolute right-[18%] top-1 grid h-[17px] min-w-[17px] place-items-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{openAlarms}</span>
+            {badge > 0 && (
+              <span className="absolute right-[18%] top-1 grid h-[17px] min-w-[17px] place-items-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{badge}</span>
             )}
           </button>
         );
@@ -1663,6 +1673,140 @@ function HeatmapPage({ T, S, store, state }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Hızlı yanıt ekibinin ekranı.
+ *
+ * Bu rol vardı ama işi yoktu: RRT herkesle aynı alarm listesine bakıyor, kendisine eskale
+ * edileni orada arıyordu. Bir alarm ona ulaştığında iki kademe geçilmiş ve iki kişi cevap
+ * verememiştir; o alarmı bir listede aratmak, eskalasyonun kazandırdığı dakikaları geri vermek
+ * demektir.
+ *
+ * İki bölüm var ve ikincisi asıl fark: **bana gelenler** ve **yolda olanlar.** Yolda olanlar 10.
+ * dakikayı doldurmamış ama cevapsız duran alarmlar — RRT için "birazdan beni arayacaklar"
+ * demektir ve hazırlanabileceği tek yer burasıdır.
+ *
+ * ⚠️ Kapsam süzgeci burada **uygulanmaz**, bilerek: RRT'nin erişimi yatak atamasından değil,
+ * alarmın kendisine eskale edilmiş olmasından gelir (store.rrtHasAccess ile aynı mantık).
+ * Kendisine yükseltilmiş bir alarmı kapsam dışı diye gizlemek, çağrıyı yapıp kapıyı kilitlemektir.
+ */
+function RrtPage({ T, S, store, state, simulation = false }) {
+  const P = S.pr19;
+  const q = useMemo(() => rrtQueue(state), [state.alerts, state.clockSec]);
+  const [openId, setOpenId] = useState(null);
+  const [ackFor, setAckFor] = useState(null);
+  const [snzFor, setSnzFor] = useState(null);
+  const expandedId = openId || q.open[0]?.alert.id || null;
+
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+      <div className="space-y-4 xl:col-span-3">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h2 className={`flex items-center gap-2 text-lg font-bold ${T.heading}`}>
+            <Ambulance size={20} className="text-red-500" /> {P.rrtTitle}
+          </h2>
+          <span className={`text-xs ${T.muted}`}>{P.rrtSub}</span>
+        </div>
+
+        <section className="space-y-2">
+          <div className="flex items-center gap-2">
+            <h3 className={`text-sm font-bold ${T.heading}`}>{P.rrtMine}</h3>
+            <span className={`rounded-full px-1.5 text-[11px] font-bold ${q.open.length ? "bg-red-500 text-white" : T.chip}`}>
+              {q.open.length}
+            </span>
+          </div>
+          {q.open.length === 0 ? (
+            <div className={`rounded-2xl border border-dashed ${T.border} p-6 text-center`}>
+              <div className={`text-sm font-medium ${T.heading}`}>{P.rrtEmpty}</div>
+              {q.incoming.length === 0 && (
+                <div className={`mt-1 text-xs ${T.faint}`}>{P.rrtEmptyIncoming}</div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {q.open.map(({ alert, manual }) => (
+                <div key={alert.id}>
+                  <div className={`mb-1 flex items-center gap-2 text-[11px] font-semibold ${manual ? "text-amber-500" : T.faint}`}>
+                    {manual ? <ArrowUpCircle size={13} /> : <Clock size={13} />}
+                    {manual ? P.rrtManual : P.rrtAuto}
+                  </div>
+                  <AlertCard T={T} S={S} state={state} alert={alert}
+                    expanded={alert.id === expandedId}
+                    onToggle={() => setOpenId(alert.id === expandedId ? "none" : alert.id)}
+                    onAck={() => setAckFor(alert)} onSnooze={() => setSnzFor(alert)}
+                    onEscalate={() => store.escalateToRRT(alert.id)} onMute={() => store.muteAlert(alert.id)} />
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Yolda: henüz RRT'nin değil, ama az sonra olacak. Sayaç motorun eşiğinden çıkar. */}
+        {q.incoming.length > 0 && (
+          <section className="space-y-2">
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <h3 className={`flex items-center gap-1.5 text-sm font-bold ${T.heading}`}>
+                <Hourglass size={15} className="text-amber-500" /> {P.rrtIncoming}
+              </h3>
+              <span className={`text-xs ${T.faint}`}>{P.rrtIncomingSub}</span>
+            </div>
+            <div className={`overflow-hidden rounded-2xl border ${T.border} ${T.card}`}>
+              {q.incoming.map(({ alert, elapsed, etaSec }, i) => {
+                const ui = tierUi(alert.tier);
+                const patient = state.patients.find((p) => p.patient_id === alert.patientId);
+                return (
+                  <div key={alert.id}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 ${i > 0 ? `border-t ${T.border}` : ""}`}>
+                    <span className={`h-7 w-1.5 shrink-0 rounded-full ${ui.dot}`} aria-hidden="true" />
+                    <span className={`shrink-0 font-mono text-base font-bold ${ui.text}`}>
+                      {patient?.bedLabel || "—"}
+                    </span>
+                    <span className={`min-w-0 flex-1 truncate text-sm ${T.muted}`}>{alert.summary}</span>
+                    <span className={`hidden shrink-0 font-mono text-xs tabular-nums sm:inline ${T.faint}`}>
+                      {fmtClock(elapsed)} {P.rrtUnanswered}
+                    </span>
+                    <span className="shrink-0 rounded-md bg-amber-500/15 px-2 py-1 font-mono text-xs font-bold tabular-nums text-amber-500">
+                      {fmtClock(etaSec)} {P.rrtEta}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {q.handled.length > 0 && (
+          <section className="space-y-2">
+            <h3 className={`text-sm font-bold ${T.heading}`}>{P.rrtHandled} · {q.handled.length}</h3>
+            <div className="space-y-2">
+              {q.handled.map(({ alert }) => (
+                <AlertCard key={alert.id} T={T} S={S} state={state} alert={alert}
+                  expanded={false} onToggle={() => {}}
+                  onAck={() => setAckFor(alert)} onSnooze={() => setSnzFor(alert)}
+                  onEscalate={() => store.escalateToRRT(alert.id)} onMute={() => store.muteAlert(alert.id)} />
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+
+      <div className="space-y-4">
+        {/* Boşluğu gizlemek yerine adını koyuyoruz: pilotta bu kademe kapalı. */}
+        <div className={`rounded-2xl border ${T.border} ${T.card} p-4`}>
+          <div className={`mb-1.5 flex items-center gap-2 text-sm font-bold ${T.heading}`}>
+            <AlertTriangle size={15} className="text-amber-500" /> {S.pr19.rrtTitle}
+          </div>
+          <p className={`text-xs leading-relaxed ${T.muted}`}>{P.rrtPilotNote}</p>
+        </div>
+        <BreakGlass T={T} S={S} store={store} state={state} />
+        {simulation && <TimeScale T={T} S={S} store={store} state={state} />}
+      </div>
+
+      {ackFor && <AckModal T={T} S={S} store={store} alert={ackFor} onClose={() => setAckFor(null)} />}
+      {snzFor && <SnoozeModal T={T} S={S} store={store} alert={snzFor} onClose={() => setSnzFor(null)} />}
     </div>
   );
 }
@@ -3803,6 +3947,7 @@ export function ClinicalDemo({ store: injectedStore = null, simulation = false }
           {effectivePage === "admission" && <AdmissionPage T={T} S={S} store={store} state={state} lang={lang}
             preselectTransfer={transferPatient} clearPreselect={() => setTransferPatient(null)} />}
           {effectivePage === "alarms" && <AlarmPage T={T} S={S} store={store} state={state} lang={lang} simulation={simulation} />}
+          {effectivePage === "rrt" && <RrtPage T={T} S={S} store={store} state={state} simulation={simulation} />}
           {effectivePage === "results" && <ResultsInbox T={T} S={S} store={store} state={state} simulation={simulation} />}
           {effectivePage === "tech" && <TechPage T={T} S={S} store={store} state={state} />}
           {effectivePage === "pharmacy" && <PharmacyPage T={T} S={S} state={state} />}
