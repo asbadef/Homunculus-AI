@@ -778,7 +778,10 @@ const NAV_ITEMS = [
   { key: "admission", icon: UserPlus, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "clinical" },
   { key: "alarms", icon: Bell, roles: "all", group: "clinical" },
   { key: "results", icon: Inbox, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "ops" },
-  { key: "heatmap", icon: Grid3x3, roles: "all", group: "ops" },
+  // ⚠️ Isı haritası buradan kaldırıldı: yatak paneliyle aynı veriyi (NEWS2 + açık alarm)
+  // daha azıyla gösteriyordu — isim yok, vital yok, alarm metni yok. İki ekranın aynı soruya
+  // cevap vermesi, hangisine bakılacağını da belirsizleştiriyordu. Ünite düzeyinde yoğunluk
+  // bir yönetim sorusudur; ekran yönetici panelinde sekme olarak duruyor.
   // Biomedical could reach no screen of its own: DeviceAdmin was written, but locked inside the
   // admin page, which only HOSPITAL_ADMIN can open. So the role responsible for the devices was
   // the one role that could not see them. This page is theirs — device inventory plus the feed
@@ -2113,6 +2116,93 @@ function TechPage({ T, S, store, state }) {
   );
 }
 
+/**
+ * Çalışan sürüm.
+ *
+ * Panelde hiçbir yerde yazmıyordu: 20.09.2026'da pilotta hangi sürümün canlı olduğu ancak
+ * dosya adındaki karma değere bakarak anlaşıldı. Bir hastane sisteminde "sizde hangi sürüm
+ * var" sorusunun cevabı ekranda olmalı. Derleme `.git` olmadan yapıldıysa uydurulmaz.
+ */
+function BuildInfo({ T, S, className = "" }) {
+  const sha = typeof __BUILD_SHA__ === "string" ? __BUILD_SHA__ : "";
+  const at = typeof __BUILD_TIME__ === "string" ? __BUILD_TIME__ : "";
+  const when = at ? new Date(at).toLocaleString() : "";
+  const P = S.pr8 || {};
+  return (
+    <div className={`text-[11px] tabular-nums ${T.faint} ${className}`}>
+      {P.buildLabel || "Sürüm"}: <span className="font-mono">{sha || (P.buildUnknown || "bilinmiyor")}</span>
+      {when ? ` · ${when}` : ""}
+    </div>
+  );
+}
+
+/**
+ * "Dikkat gerekenler" — yöneticinin panosu bir rakam tablosuyla değil, **bekleyen işle** açılır.
+ *
+ * Dört büyük KPI (doluluk, ortalama yatış, kabul, taburcu) bir yöneticiyi hiçbir işe götürmüyordu:
+ * hepsi doğruydu, hiçbiri bir eylem gerektirmiyordu. Buradaki dördü ise yalnızca **birinin bir
+ * şey yapması gerektiğinde** görünür ve tıklanınca o işin yapılacağı ekrana götürür.
+ *
+ * Hepsi mevcut durumdan hesaplanır; hiçbiri yeni bir kayıt ya da yeni bir uç gerektirmez.
+ * Sayılacak bir şey yoksa şerit hiç çıkmaz — boş bir "0" satırı, bakılacak bir şey varmış gibi
+ * duran bir gürültüdür.
+ */
+function AttentionStrip({ T, S, state }) {
+  const P = S.pr8 || {};
+  const openAlarms = (state.alerts || []).filter((a) => a.status === "FIRED");
+  const oldest = openAlarms.reduce((m, a) => Math.max(m, state.clockSec - a.firedAtSec), 0);
+  const feeds = wardFeedHealth(state.patients || []);
+  const hasFeedClock = (state.patients || []).some((p) => p?.measuredAt && Object.keys(p.measuredAt).length > 0);
+  const waitingHis = awaitingLocalAdmission(state.patients || []).length;
+  const unseenResults = (state.results || []).filter((r) => r.status !== "reviewed").length;
+
+  const items = [
+    openAlarms.length > 0 && {
+      key: "alarms", tone: "bad", icon: Bell, n: openAlarms.length,
+      text: P.attnAlarms || "cevapsız alarm", hint: oldest > 0 ? `${P.attnOldest || "en eskisi"} ${fmtClock(oldest)}` : null,
+    },
+    hasFeedClock && feeds.silentCount > 0 && {
+      key: "feeds", tone: "warn", icon: Radio, n: feeds.silentCount,
+      text: P.attnSilent || "yatakta cihaz susmuş", hint: null,
+    },
+    unseenResults > 0 && {
+      key: "results", tone: "neutral", icon: Inbox, n: unseenResults,
+      text: P.attnResults || "sonuç görülmedi", hint: null,
+    },
+    waitingHis > 0 && {
+      key: "his", tone: "neutral", icon: PlugZap, n: waitingHis,
+      text: P.attnWaiting || "HBYS hastası yatağa alınmadı", hint: null,
+    },
+  ].filter(Boolean);
+
+  if (items.length === 0) return null;
+
+  const tones = {
+    bad: "border-red-500/35 bg-red-500/[0.06] text-red-500",
+    warn: "border-amber-500/35 bg-amber-500/[0.06] text-amber-500",
+    neutral: `${T.border} ${T.card} ${T.faint}`,
+  };
+  return (
+    <div>
+      <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${T.faint}`}>
+        {P.attnTitle || "Dikkat gerekenler"}
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {items.map(({ key, tone, icon: Icon, n, text, hint }) => (
+          <div key={key} className={`flex items-start gap-3 rounded-2xl border p-4 ${tones[tone]}`}>
+            <span className="mt-0.5 shrink-0"><Icon size={18} /></span>
+            <span className="min-w-0">
+              <span className={`block text-2xl font-bold leading-none ${T.heading}`}>{n}</span>
+              <span className={`mt-1 block text-xs leading-snug ${T.muted}`}>{text}</span>
+              {hint && <span className={`mt-0.5 block text-[11px] ${T.faint}`}>{hint}</span>}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdminPage({ T, S, store, state }) {
   const [tab, setTab] = useState("reports");
   const TABS = [
@@ -2125,9 +2215,11 @@ function AdminPage({ T, S, store, state }) {
     { key: "audit", label: S.pr7.auditSearch, icon: ScrollText },
     { key: "archive", label: S.pr13.archiveTitle, icon: Archive },
     { key: "sessions", label: S.pr13.sessionsTitle, icon: Monitor },
+    { key: "heatmap", label: S.nav.heatmap, icon: Grid3x3 },
   ];
   return (
     <div className="space-y-4">
+      <AttentionStrip T={T} S={S} state={state} />
       {/* section tabs */}
       <div className={`flex flex-wrap gap-1.5 rounded-2xl border ${T.border} ${T.card} p-1.5`}>
         {TABS.map((t) => {
@@ -2165,6 +2257,9 @@ function AdminPage({ T, S, store, state }) {
       )}
       {tab === "archive" && <ArchiveManagement T={T} S={S} store={store} state={state} />}
       {tab === "sessions" && <SessionManagement T={T} S={S} store={store} state={state} />}
+      {tab === "heatmap" && <HeatmapPage T={T} S={S} store={store} state={state} />}
+
+      <BuildInfo T={T} S={S} className="pt-1 text-right" />
     </div>
   );
 }
@@ -3625,7 +3720,6 @@ export function ClinicalDemo({ store: injectedStore = null, simulation = false }
             preselectTransfer={transferPatient} clearPreselect={() => setTransferPatient(null)} />}
           {effectivePage === "alarms" && <AlarmPage T={T} S={S} store={store} state={state} lang={lang} simulation={simulation} />}
           {effectivePage === "results" && <ResultsInbox T={T} S={S} store={store} state={state} simulation={simulation} />}
-          {effectivePage === "heatmap" && <HeatmapPage T={T} S={S} store={store} state={state} />}
           {effectivePage === "tech" && <TechPage T={T} S={S} store={store} state={state} />}
           {effectivePage === "pharmacy" && <PharmacyPage T={T} S={S} state={state} />}
           {effectivePage === "admin" && <AdminPage T={T} S={S} store={store} state={state} />}

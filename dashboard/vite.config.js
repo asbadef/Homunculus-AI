@@ -1,8 +1,30 @@
+import { execSync } from "node:child_process";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
+/**
+ * Bu paketin hangi koddan çıktığı.
+ *
+ * Panelde çalışan sürüm hiçbir yerde yazmıyordu: 20.09.2026'da pilotta hangi sürümün canlı
+ * olduğu ancak dosya adındaki karma değere bakılarak anlaşıldı. Bir hastane sisteminde bu,
+ * hata ayıklamanın ilk adımıdır — "sizde hangi sürüm var" sorusunun cevabı ekranda olmalı.
+ *
+ * Docker imajı `.git` olmadan derlenebilir; o durumda uydurulmaz, "bilinmiyor" denir.
+ */
+function gitSha() {
+  try {
+    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch {
+    return "";
+  }
+}
+
 export default defineConfig({
+  define: {
+    __BUILD_SHA__: JSON.stringify(gitSha()),
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [
     react(),
     VitePWA({
@@ -59,5 +81,9 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: "./src/setupTests.js",
+    // Bu paketin testleri tam uygulamayı jsdom'da render ediyor; 5 sn'lik varsayılan, makine
+    // yüklüyken sağlam testleri de düşürüyordu (aynı test tek başına 2 sn'de geçiyor). Zaman
+    // aşımı bir performans ölçüsü değil, takılmayı yakalama ağıdır — 20 sn o işi görür.
+    testTimeout: 20000,
   },
 });

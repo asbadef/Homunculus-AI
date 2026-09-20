@@ -2168,7 +2168,12 @@ export function createDemoStore(initial) {
       let risk = "LOW";
 
       if (patient) {
-        news2 = computeNews2(patient.vitals || {});
+        // Skoru motor verir. Burada yerel hesap kullanılıyordu; yatak kartı motorun skorunu,
+        // ısı haritası kendi hesabını gösterdiğinde aynı hasta iki ekranda iki farklı renkte
+        // görünür — ve hangisinin doğru olduğunu ekrana bakan kişi bilemez.
+        news2 = patient.news2 && typeof patient.news2.total === "number"
+          ? patient.news2.total
+          : computeNews2(patient.vitals || {});
         alertCount = state.alerts.filter(
           (a) => a.patientId === patient.patient_id && (a.status === "FIRED" || a.status === "SNOOZED")
         ).length;
