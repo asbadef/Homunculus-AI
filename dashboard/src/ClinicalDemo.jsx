@@ -75,14 +75,31 @@ function ageText(p, S) {
 
 
 
+const REMEMBER_KEY = "homunculus-remember-email";
+
 function Login({ T, S, store, lang, setLang }) {
-  const [email, setEmail] = useState("");
+  // "Beni hatırla" burada **e-postayı** hatırlar, oturumu değil.
+  //
+  // Bir koğuş bilgisayarı ortak kullanılır: açık bırakılmış bir oturum, bir sonraki kişinin
+  // başkasının adıyla hasta verisi görmesi demektir — ve denetim kaydında o kişinin adı yazar.
+  // Kolaylık tarafı zaten e-postayı yeniden yazmamakta; kimlik doğrulaması her girişte istenir.
+  // Vardiya içinde hızlı geçiş gerekiyorsa onun kendi yolu var (Hızlı PIN).
+  const [email, setEmail] = useState(() => {
+    try { return localStorage.getItem(REMEMBER_KEY) || ""; } catch { return ""; }
+  });
+  const [remember, setRemember] = useState(() => {
+    try { return Boolean(localStorage.getItem(REMEMBER_KEY)); } catch { return false; }
+  });
   const [credential, setCredential] = useState("");
   const [err, setErr] = useState("");
   const [showForgot, setShowForgot] = useState(false);
   const [busy, setBusy] = useState(false);
   const submit = async (e) => {
     e.preventDefault();
+    try {
+      if (remember && email.trim()) localStorage.setItem(REMEMBER_KEY, email.trim());
+      else localStorage.removeItem(REMEMBER_KEY);
+    } catch { /* gizli sekmede yazılamaz; giriş yine de sürer */ }
     // Kurumsal e-posta + parola. Rol DB'den gelir; panel role göre otomatik yönlenir.
     // attemptLogin: rol MFA gerektiriyorsa oturumu açmadan MFA kapısına yönlendirir (mfaPending).
     // `await` hem simülasyonun senkron sürümünü hem canlı backend'in async sürümünü karşılar.
@@ -126,7 +143,7 @@ function Login({ T, S, store, lang, setLang }) {
       </aside>
 
       {/* ============ SAĞ: Giriş formu ============ */}
-      <main className="relative flex flex-1 flex-col items-center justify-center overflow-y-auto p-6 sm:p-10">
+      <main className="relative flex flex-1 flex-col items-center justify-center overflow-y-auto overflow-x-hidden p-6 sm:p-10">
         {/* Dekoratif arka plan — ince ızgara + yumuşak ışıma (sağ taraf artık boş durmuyor) */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand/10 via-transparent to-cyan-500/10 lg:from-brand/[0.06] lg:to-cyan-500/[0.06]" />
         <div className="pointer-events-none absolute inset-0 opacity-[0.4] dark:opacity-[0.25]"
@@ -137,7 +154,7 @@ function Login({ T, S, store, lang, setLang }) {
           <LangPills T={T} lang={lang} setLang={setLang} />
         </div>
 
-        <div className="relative z-10 w-full max-w-sm">
+        <div className={`relative z-10 w-full max-w-sm rounded-2xl border ${T.border} ${T.card} p-6 shadow-xl sm:p-7`}>
           {/* Mobil logo (marka paneli gizliyken) */}
           <div className="mb-6 flex items-center gap-3 lg:hidden">
             <HomunculusMark size={44} />
@@ -148,7 +165,7 @@ function Login({ T, S, store, lang, setLang }) {
           </div>
 
           <h1 className={`mb-1 text-2xl font-black ${T.heading}`}>{S.loginTitle}</h1>
-          <p className={`mb-6 text-sm ${T.muted}`}>{S.loginSub}</p>
+          <p className={`mb-5 text-sm ${T.muted}`}>{S.pr9.loginSubHelp || S.loginSub}</p>
 
           <form onSubmit={submit} className="space-y-4">
             <Field T={T} label={S.email}>
@@ -161,6 +178,15 @@ function Login({ T, S, store, lang, setLang }) {
                 <input type="password" className={`${inputCls(T)} pl-9`} value={credential}
                   onChange={(e) => setCredential(e.target.value)} placeholder="••••••••" autoComplete="current-password" />)}
             </Field>
+            <div className="flex items-start gap-2.5">
+              <input id="hom-remember" type="checkbox" checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-brand" />
+              <label htmlFor="hom-remember" className={`text-xs leading-snug ${T.muted}`}>
+                <span className={`font-medium ${T.text}`}>{S.pr9.rememberEmail || "E-postamı hatırla"}</span>
+                <span className={`block ${T.faint}`}>{S.pr9.rememberNote || "Yalnız e-posta hatırlanır; PIN veya parola her girişte istenir."}</span>
+              </label>
+            </div>
             {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
             <button type="submit" className={`${btnCls(T, "primary")} group w-full`}>
               {S.signIn}
@@ -178,8 +204,9 @@ function Login({ T, S, store, lang, setLang }) {
 
           <p className={`mt-6 text-center text-[11px] leading-snug ${T.faint}`}>{S.pr9.kvkkNote}</p>
 
-          {/* Uyum & standart rozetleri — sağ tarafı doldurur, kurumsal güven verir */}
-          <div className="mt-7">
+          {/* Bu bölüm kartın içinde ama görsel olarak ayrı: giriş işi yukarıda biter,
+              aşağısı kurumun sorduğu sorulara cevaptır. */}
+          <div className={`mt-6 border-t ${T.border} pt-5`}>
             <div className={`mb-2.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider ${T.faint}`}>
               <span className={`h-px flex-1 ${T.border} border-t`} />
               {S.pr19.loginStandards}
