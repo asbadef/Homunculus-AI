@@ -32,7 +32,7 @@ import { SeverityScorePanel } from "./severityScore.jsx";
 import { formatAge, wardFeedHealth } from "./feedHealth.js";
 import {
   Bar, Empty, Field, Flag, HomunculusMark, KpiCard, LangPills, Menu, ModalShell, Row, Section,
-  SectionHeader, Sparkline, THEME_ICON, VitrinStat, Waveform, btnCls, fmtClock, inputCls,
+  Collapsible, SectionHeader, Sparkline, THEME_ICON, VitrinStat, Waveform, btnCls, fmtClock, inputCls,
   maskedName, riskUi, tierUi, useStore,
 } from "./clinicalUi.jsx";
 import {
@@ -1839,15 +1839,28 @@ function SnoozeModal({ T, S, store, alert, onClose }) {
 
 function TimeScale({ T, S, store, state }) {
   const speeds = [1, 30, 60, 120];
+  // Gerçek saat de burada durur: hızlandırılmış bir saatin yanında gerçek zamanın görünmemesi,
+  // demoyu izleyenin "şu an saat kaç" diye başka yere bakmasına yol açıyordu.
+  const [wall, setWall] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setWall(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const hhmm = `${String(wall.getHours()).padStart(2, "0")}:${String(wall.getMinutes()).padStart(2, "0")}`;
   return (
     <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
       <div className="mb-3 flex items-center justify-between">
         <h3 className={`font-bold ${T.heading}`}>{S.timeScale}</h3>
         {/* Bu sayının ne olduğu yazmıyordu ve 60× hızda saatlere çıkıyordu: "318:30" gören
             kimse onu "simülasyon başladığından beri geçen süre" diye okumaz. */}
-        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs tabular-nums ${T.chip}`}
-          title={S.pr6?.simClockHint || "Simülasyon başladığından beri geçen süre"}>
-          <Clock size={13} /> {S.pr6?.simClock || "Simülasyon saati"}: {fmtClock(state.clockSec)}
+        <span className="flex flex-col items-end gap-0.5">
+          <span className={`inline-flex items-center gap-1.5 text-xs font-semibold tabular-nums ${T.text}`}>
+            <Clock size={13} className={T.faint} /> {hhmm}
+          </span>
+          <span className={`text-[10px] tabular-nums ${T.faint}`}
+            title={S.pr6?.simClockHint || "Simülasyon başladığından beri geçen süre"}>
+            {S.pr6?.simClock || "Simülasyon saati"}: {fmtClock(state.clockSec)}
+          </span>
         </span>
       </div>
       <div className="mb-3 flex flex-wrap gap-2">
@@ -2575,24 +2588,40 @@ function PatientCockpit({ T, S, state, store, patientId, onClose, lang }) {
               <VitalsGrid T={T} vitals={p.vitals} />
             </div>
 
+            {/* Katlama hastanın durumundan hesaplanır, sabit bir tercih değil: vazopresör
+                akan hastada ilaç satırı açık gelir, akmayan hastada kapalı ve tek satır özet.
+                Kapalı bölüm boş bir başlık değildir — içindekini özetler. */}
             {rec.vitalHistory?.length > 1 && (
-              <div>
-                <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr14.trendTitle}</div>
+              <Collapsible T={T} icon={TrendingUp} title={S.pr14.trendTitle} defaultOpen
+                summary={`${rec.vitalHistory.length} ${S.pr6.measurement || "ölçüm"}`}>
                 <MultiTrendChart T={T} S={S} hist={rec.vitalHistory} medications={rec.medications} />
-              </div>
+              </Collapsible>
             )}
-            {rec.fluids?.length > 0 && (
-              <div>
-                <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr14.fluidTimeline}</div>
-                <FluidBalanceTimeline T={T} S={S} fluids={rec.fluids} />
-              </div>
-            )}
-            {rec.medications?.length > 0 && (
-              <div>
-                <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr14.medTimeline}</div>
-                <MedicationTimeline T={T} S={S} medications={rec.medications} />
-              </div>
-            )}
+            {rec.medications?.length > 0 && (() => {
+              const active = rec.medications.filter((m) => !m.endMs);
+              const pressor = active.some((m) => /noradrenalin|adrenalin|dopamin|dobutamin/i.test(m.name));
+              return (
+                <Collapsible T={T} icon={Pill} title={S.pr14.medTimeline}
+                  tone={pressor ? "warn" : undefined}
+                  defaultOpen={pressor}
+                  summary={active.length
+                    ? active.map((m) => `${m.name} ${m.dose}${m.unit ? " " + m.unit : ""}`).join(" · ")
+                    : S.pr6.noMedications}>
+                  <MedicationTimeline T={T} S={S} medications={rec.medications} />
+                </Collapsible>
+              );
+            })()}
+            {rec.fluids?.length > 0 && (() => {
+              const inMl = rec.fluids.filter((f) => f.kind === "in").reduce((a, f) => a + f.ml, 0);
+              const outMl = rec.fluids.filter((f) => f.kind === "out").reduce((a, f) => a + f.ml, 0);
+              const bal = inMl - outMl;
+              return (
+                <Collapsible T={T} icon={Droplet} title={S.pr14.fluidTimeline}
+                  summary={`${S.pr6.balance}: ${bal > 0 ? "+" : ""}${bal} mL`}>
+                  <FluidBalanceTimeline T={T} S={S} fluids={rec.fluids} />
+                </Collapsible>
+              );
+            })()}
 
             {/* Kayıt yoksa gizlemek değil, tek satırda söylemek: "boş" da bir bulgudur —
                 ama dört kutu yerine bir cümle kadar yer tutar. */}
@@ -2602,13 +2631,13 @@ function PatientCockpit({ T, S, state, store, patientId, onClose, lang }) {
               </div>
             )}
 
-            <div>
-              <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.careTeamLabel}</div>
-              <div className={`flex flex-wrap gap-x-6 gap-y-1 rounded-xl border ${T.border} ${T.subtle} px-3 py-2.5 text-sm`}>
+            <Collapsible T={T} icon={Users} title={S.careTeamLabel}
+              summary={`${userName(team.attendingId)} · ${userName(team.nurseId)}`}>
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
                 <span className="flex items-center gap-2"><span className={T.muted}>{S.attending}</span><span className={`font-semibold ${T.text}`}>{userName(team.attendingId)}</span></span>
                 <span className="flex items-center gap-2"><span className={T.muted}>{S.nurse}</span><span className={`font-semibold ${T.text}`}>{userName(team.nurseId)}</span></span>
               </div>
-            </div>
+            </Collapsible>
           </div>
           {/* SAĞ — klinik veri girişi (satır içi düzenlenebilir) */}
           <div className={`rounded-xl border ${T.border} ${T.subtle} p-3`}>
@@ -2859,6 +2888,7 @@ function ClinicalModule({ T, S, store, state, patientId, lang }) {
   const rec = state.clinical[patientId] || { diagnoses: [], medications: [], procedures: [], fluids: [],
     thresholds: { ...DEFAULT_THRESHOLDS }, vitalHistory: [] };
   const [thOpen, setThOpen] = useState(false);
+  const [tab, setTab] = useState("clinical");
   const [med, setMed] = useState({ name: MED_CATALOG[0]?.name || "", dose: "", unit: MED_CATALOG[0]?.unit || "" });
   const [proc, setProc] = useState(PROCEDURE_CATALOG[0] || "");
   const [fluid, setFluid] = useState({ kind: "in", label: "", ml: "" });
@@ -2870,6 +2900,20 @@ function ClinicalModule({ T, S, store, state, patientId, lang }) {
   const output = rec.fluids.filter((f) => f.kind === "out").reduce((a, f) => a + f.ml, 0);
   const balance = intake - output;
   const hist = rec.vitalHistory || [];
+
+  // Sağ kolon altı bölümü alt alta diziyordu ve hepsi aynı ağırlıktaydı: sepsis kutusu, skor,
+  // tanı, ilaç, prosedür, sıvı. Hekim tek bir iş için geliyor ve o işi bulmak için kaydırıyordu.
+  // Sekmeler işi ayırır: değerlendirme · tedavi · skor · sonuç.
+  const tabs = [
+    { key: "clinical", label: S.pr6.tabClinical || S.admissionDx, icon: Activity },
+    { key: "treatment", label: S.pr6.tabTreatment || S.pr6.medications, icon: Pill },
+    { key: "scores", label: S.pr6.tabScores || S.pr6.severityTitle, icon: ClipboardList },
+    { key: "results", label: S.pr19.results, icon: Inbox },
+  ];
+  const patientResults = (state.results || [])
+    .filter((r) => r.patientId === patientId)
+    .sort((a, b) => b.atMs - a.atMs);
+  const unseenResults = patientResults.filter((r) => r.status !== "reviewed").length;
 
   return (
     <div className="mt-4">
@@ -2884,6 +2928,18 @@ function ClinicalModule({ T, S, store, state, patientId, lang }) {
             <FileText size={13} /> {S.pr6.epicrisis}
           </button>
         </div>
+      </div>
+
+      <div className={`mb-3 flex flex-wrap gap-1 rounded-xl border ${T.border} ${T.subtle} p-1`}>
+        {tabs.map(({ key, label, icon: Icon }) => (
+          <button key={key} type="button" onClick={() => setTab(key)}
+            className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold transition ${tab === key ? T.navActive : T.navIdle}`}>
+            <Icon size={14} /> {label}
+            {key === "results" && unseenResults > 0 && (
+              <span className="grid h-[17px] min-w-[17px] place-items-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{unseenResults}</span>
+            )}
+          </button>
+        ))}
       </div>
 
       {err && <div className="mb-2 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-500">{err}</div>}
@@ -2901,18 +2957,23 @@ function ClinicalModule({ T, S, store, state, patientId, lang }) {
         </div>
       )}
 
-      {typeof store.setSuspectedInfection === "function" && typeof store.setProfile === "function" && (
+      {tab === "clinical" && typeof store.setSuspectedInfection === "function" && typeof store.setProfile === "function" && (
         <SepsisPanel T={T} S={S} store={store} patient={p} patientId={patientId} />
       )}
 
-      {typeof store.severityForm === "function" && (
-        <Section T={T} icon={ClipboardList} title={S.pr6.severityTitle}>
-          <SeverityScorePanel
-            T={T} S={S} store={store} patient={p} patientId={patientId}
-            onPrint={(payload) => printSeverityForm(S, payload, state)} />
-        </Section>
+      {tab === "scores" && (
+        typeof store.severityForm === "function" ? (
+          <Section T={T} icon={ClipboardList} title={S.pr6.severityTitle}>
+            <SeverityScorePanel
+              T={T} S={S} store={store} patient={p} patientId={patientId}
+              onPrint={(payload) => printSeverityForm(S, payload, state)} />
+          </Section>
+        ) : (
+          <Empty T={T} text={S.pr6.severityNoEngine || "Şiddet skoru motordan gelir — bu kurulumda skor ucu yok."} />
+        )
       )}
 
+      {tab === "clinical" && (
       <Section T={T} icon={ClipboardList} title={S.pr6.diagnoses}>
         {rec.diagnoses.length === 0 && <Empty T={T} text={S.pr6.noDiagnoses} />}
         {rec.diagnoses.map((d) => (
@@ -2924,7 +2985,9 @@ function ClinicalModule({ T, S, store, state, patientId, lang }) {
         ))}
         <Icd10Search T={T} S={S} lang={lang} onPick={(r) => wrap(() => store.addDiagnosis({ patientId, code: r.code, text: r[lang] || r.tr }))} />
       </Section>
+      )}
 
+      {tab === "treatment" && (<>
       <Section T={T} icon={Pill} title={S.pr6.medications}>
         {rec.medications.length === 0 && <Empty T={T} text={S.pr6.noMedications} />}
         {rec.medications.map((m) => (
@@ -2981,6 +3044,61 @@ function ClinicalModule({ T, S, store, state, patientId, lang }) {
           <button onClick={() => wrap(() => { store.addFluid({ patientId, kind: fluid.kind, label: fluid.label, ml: fluid.ml }); setFluid((s) => ({ ...s, ml: "" })); })} className={`${btnCls(T, "primary")} px-3 py-2`}><Plus size={15} /></button>
         </div>
       </Section>
+      </>)}
+
+      {/* Sonuçlar — hastanın kendi laboratuvar, radyoloji ve patoloji sonuçları.
+          Aynı veri Sonuçlar modülünde de durur: orada "koğuşta görülmemiş ne var", burada
+          "bu hastada ne çıktı". Boş liste **hiçbir zaman** "sonuç yok" demek değildir; besleme
+          bağlı değilse bunu açıkça söyler, çünkü ikisi aynı ekranda aynı görünürdü. */}
+      {tab === "results" && (
+        <div className="space-y-2">
+          {!state.hisIntegration?.connected && (
+            <div className={`flex items-start gap-2.5 rounded-xl border border-dashed ${T.border} p-3`}>
+              <PlugZap size={15} className={`mt-0.5 shrink-0 ${T.faint}`} />
+              <div className={`text-xs leading-relaxed ${T.muted}`}>
+                {S.pr19.resultsFeedOff || "HBYS sonuç beslemesi bağlı değil — aşağıdaki liste yalnız elle yüklenenleri gösterir."}
+              </div>
+            </div>
+          )}
+          {patientResults.length === 0 ? (
+            <Empty T={T} text={S.pr19.noResults} />
+          ) : patientResults.map((r) => (
+            <div key={r.id} className={`rounded-xl border ${r.critical ? "border-red-500/40" : T.border} ${T.subtle} p-3`}>
+              <div className="flex items-start gap-2">
+                <span className={`mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                  r.type === "lab" ? "bg-sky-500/15 text-sky-500"
+                  : r.type === "radiology" ? "bg-violet-500/15 text-violet-500"
+                  : `${T.chip}`}`}>
+                  {r.type === "lab" ? S.pr19.typeLab : r.type === "radiology" ? S.pr19.typeRadiology : S.pr19.typeEpicrisis}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className={`block truncate text-sm font-semibold ${T.text}`}>{r.title}</span>
+                  <span className={`block text-xs ${T.muted}`}>{r.summary}</span>
+                </span>
+                {r.critical && (
+                  <span className="shrink-0 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-bold text-red-500">
+                    {S.pr19.criticalValue}
+                  </span>
+                )}
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <span className={`text-[11px] tabular-nums ${T.faint}`}>{new Date(r.atMs).toLocaleString()}</span>
+                <span className={`text-[11px] ${T.faint}`}>· {r.source === "manual" ? S.pr19.sourceManual : S.pr19.sourceHl7}</span>
+                {r.status !== "reviewed" ? (
+                  <button onClick={() => wrap(() => store.markResultReviewed({ resultId: r.id }))}
+                    className={`ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] ${T.ghost}`}>
+                    <Check size={12} /> {S.pr19.markReviewed}
+                  </button>
+                ) : (
+                  <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-emerald-500">
+                    <Check size={12} /> {S.pr19.statusReviewed}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {thOpen && <ThresholdModal T={T} S={S} store={store} state={state} patientId={patientId} onClose={() => setThOpen(false)} />}
     </div>

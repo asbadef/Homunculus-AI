@@ -329,6 +329,41 @@ export function Sparkline({ points, stroke = "currentColor", height = 26 }) {
   );
 }
 
+/**
+ * Katlanabilir bölüm — kapalıyken bile konuşur.
+ *
+ * Klinik bir ekranda "neyin önemli olduğu" sabit değildir: vazopresör alan hastada ilaç
+ * satırı, sepsis şüphesi işaretlenmiş hastada sepsis kutusu, kritik sonucu olan hastada
+ * sonuçlar önemlidir. Bu yüzden `defaultOpen` sabit bir tercih değil, **hastanın durumundan
+ * hesaplanan** bir değerdir; çağıran onu duruma göre verir.
+ *
+ * `summary` katlamanın bedelini öder: kapalı bir bölüm boş bir başlık değildir, içindekinin
+ * tek satırlık özetini taşır ("Noradrenalin 0,08"). Bilgiyi gizleyen değil, sıkıştıran bir
+ * katlama; açmak ayrıntı içindir, varlığını öğrenmek için değil.
+ */
+export function Collapsible({ T, icon: Icon, title, summary, defaultOpen = false, tone, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const toneCls = tone === "alert" ? "text-red-500" : tone === "warn" ? "text-amber-500" : T.faint;
+  return (
+    <div className={`rounded-xl border ${T.border} ${open ? T.subtle : ""}`}>
+      <button type="button" onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left">
+        {Icon && <Icon size={14} className={`shrink-0 ${toneCls}`} />}
+        <span className={`text-[11px] font-semibold uppercase tracking-wide ${T.faint}`}>{title}</span>
+        {!open && summary && (
+          <span className={`min-w-0 flex-1 truncate text-xs ${T.muted}`}>{summary}</span>
+        )}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+          strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+          className={`ml-auto shrink-0 transition ${T.faint} ${open ? "rotate-180" : ""}`}>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {open && <div className="px-3 pb-3">{children}</div>}
+    </div>
+  );
+}
+
 export function Section({ T, icon: Icon, title, children }) {
   return (
     <div className="mb-3">
