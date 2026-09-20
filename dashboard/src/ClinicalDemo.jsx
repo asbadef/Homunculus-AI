@@ -27,6 +27,7 @@ import { getTheme, storedTheme, persistTheme, THEME_KEYS } from "./clinicalTheme
 // bakım ekibi ataması birlikte durur (bkz. admissionPage.jsx dosya başı).
 import { AdmissionPage } from "./admissionPage.jsx";
 import { WallBoard } from "./wallBoard.jsx";
+import { LoginHero } from "./loginHero.jsx";
 import { awaitingLocalAdmission } from "./liveAdapters.js";
 import {
   SCOPE_REASON, scopeForUser, visibleAlerts, visibleBeds, visiblePatients, visibleUnits,
@@ -100,9 +101,11 @@ function Login({ T, S, store, lang, setLang }) {
   );
 
   return (
-    <div className={`relative min-h-screen ${T.app} flex overflow-hidden`}>
+    // Giriş ekranı tek ekrandır: sayfa kaymaz. Küçük bir dizüstünde form sütunu kendi
+    // içinde kayar, kabuk yerinde durur — bir giriş ekranında "aşağıda ne var" sorusu olmamalı.
+    <div className={`relative h-full min-h-0 ${T.app} flex overflow-hidden`}>
       {/* ============ SOL: Marka vitrini (yalnızca geniş ekran / web) ============ */}
-      <aside className="relative hidden w-[46%] max-w-[640px] flex-col justify-between overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-brand/30 p-10 text-white lg:flex xl:p-12">
+      <aside className="relative hidden w-[54%] max-w-[760px] flex-col gap-4 overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-brand/30 p-8 text-white lg:flex xl:p-10">
         <div className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-brand/40 blur-3xl animate-pulse" />
         <div className="pointer-events-none absolute -bottom-32 -right-24 h-[28rem] w-[28rem] rounded-full bg-cyan-500/30 blur-3xl animate-pulse" style={{ animationDelay: "1.4s" }} />
         <svg className="pointer-events-none absolute inset-x-0 top-1/2 h-48 w-full -translate-y-1/2 opacity-[0.12]" preserveAspectRatio="none" viewBox="0 0 1200 120">
@@ -119,53 +122,11 @@ function Login({ T, S, store, lang, setLang }) {
           </div>
         </div>
 
-        {/* Headline + değer önermeleri */}
-        <div className="relative z-10 max-w-md">
-          <h2 className="mb-3 text-3xl font-black leading-tight xl:text-[2.6rem]">{S.pr9.brandHeadline}</h2>
-          <p className="mb-8 text-sm leading-relaxed text-white/75">{S.pr9.brandSub}</p>
-          <ul className="space-y-4">
-            {S.pr9.props.map(([title, desc], i) => {
-              const Icon = [TrendingUp, Siren, Network][i] || Activity;
-              return (
-                <li key={i} className="flex items-start gap-3">
-                  <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/10 ring-1 ring-white/15 backdrop-blur">
-                    <Icon size={17} className="text-cyan-300" />
-                  </span>
-                  <div>
-                    <div className="text-sm font-bold">{title}</div>
-                    <div className="text-xs leading-snug text-white/60">{desc}</div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-
-        {/* ⚠️ Burada "12.480 alarm · 8 sn · %99,9" yazan üç kutu vardı ve hiçbiri ölçülmüş
-            değildi — giriş ekranı henüz kimseyi tanımadığı için ölçemez de. Sahte bir rakam,
-            uydurma veri göstermeyeceğini söyleyen bir ürünün ilk ekranında duruyordu; hastane
-            IT'si ilk sorduğunda savunulacak bir tarafı da yok.
-            Yerine ürünün gerçekten taahhüt ettiği üç şey kondu: ikisi anayasası, biri dağıtım
-            modeli. Hepsi doğrulanabilir. */}
-        <div className="relative z-10 space-y-3">
-          <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10 backdrop-blur">
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-cyan-300/80">
-              {S.pr9.promiseTitle}
-            </div>
-            <ul className="space-y-2 text-xs leading-relaxed text-white/70">
-              <li className="flex gap-2"><span className="text-cyan-300">·</span>{S.pr9.promiseNoDiagnosis}</li>
-              <li className="flex gap-2"><span className="text-cyan-300">·</span>{S.pr9.promiseNoOrders}</li>
-              <li className="flex gap-2"><span className="text-cyan-300">·</span>{S.pr9.promiseOnPrem}</li>
-            </ul>
-          </div>
-          <div className="flex items-center gap-2 text-[11px] font-medium text-white/50">
-            <ShieldCheck size={13} className="text-emerald-400" /> {S.pr8.loginBrandLine}
-          </div>
-        </div>
+        <LoginHero S={S} />
       </aside>
 
       {/* ============ SAĞ: Giriş formu ============ */}
-      <main className="relative flex flex-1 flex-col items-center justify-center p-6 sm:p-10">
+      <main className="relative flex flex-1 flex-col items-center justify-center overflow-y-auto p-6 sm:p-10">
         {/* Dekoratif arka plan — ince ızgara + yumuşak ışıma (sağ taraf artık boş durmuyor) */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand/10 via-transparent to-cyan-500/10 lg:from-brand/[0.06] lg:to-cyan-500/[0.06]" />
         <div className="pointer-events-none absolute inset-0 opacity-[0.4] dark:opacity-[0.25]"
@@ -3708,7 +3669,7 @@ export function ClinicalDemo({ store: injectedStore = null, simulation = false }
 
   return (
     <SimulationContext.Provider value={simulation}>
-    <div className={`flex min-h-screen ${T.app} ${T.decor || ""}`}>
+    <div className={`flex h-full min-h-0 ${T.app} ${T.decor || ""}`}>
       <Sidebar T={T} S={S} state={state} page={effectivePage} setPage={setPage}
         collapsed={collapsed} setCollapsed={setCollapsed} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
       <div className="flex min-w-0 flex-1 flex-col">

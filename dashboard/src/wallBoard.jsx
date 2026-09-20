@@ -77,8 +77,10 @@ function WallCell({ bed, patient, alert, device, maskNames, elapsed, simulation 
         <span className={`font-mono text-2xl font-bold leading-none ${critical ? "text-red-400" : "text-cyan-300"}`}>
           {bed.label}
         </span>
+        {/* Kimlik gelmemişse cihazın ham hasta numarası ("Test001") ad yerine geçmez: yatak
+            numarası zaten solda duruyor, buraya neyin eksik olduğu yazılır. */}
         <span className="min-w-0 flex-1 truncate text-base font-semibold text-neutral-200">
-          {name || "—"}
+          {name || <span className="text-sm font-normal text-neutral-500">{S.pr14?.identityPending || "kimlik bekleniyor"}</span>}
         </span>
         {news2 && (
           <span className={`shrink-0 font-mono text-xl font-bold leading-none ${
@@ -88,12 +90,18 @@ function WallCell({ bed, patient, alert, device, maskNames, elapsed, simulation 
         )}
       </div>
 
+      {/* Ölçülmeyen kanal tire olarak basılıyordu; canlı koğuşta beş kanalın üçü boş olduğu
+          için hücrenin yarısı "—" oluyordu. Ölçülen gösterilir, hiçbiri yoksa bu söylenir:
+          boşluk da bir bulgudur ama beş kez tekrar edilmesi bilgi taşımıyor. */}
       <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
-        <VitalNumber code="hr" value={v.hr} unit="bpm" big />
-        <VitalNumber code="spo2" value={v.spo2} unit="SpO₂" big />
-        <VitalNumber code="map" value={v.map} unit="mmHg" />
-        <VitalNumber code="rr" value={v.rr} unit="/dk" />
-        <VitalNumber code="temp" value={v.temp} unit="°C" />
+        {v.hr != null && <VitalNumber code="hr" value={v.hr} unit="bpm" big />}
+        {v.spo2 != null && <VitalNumber code="spo2" value={v.spo2} unit="SpO₂" big />}
+        {v.map != null && <VitalNumber code="map" value={v.map} unit="mmHg" />}
+        {v.rr != null && <VitalNumber code="rr" value={v.rr} unit="/dk" />}
+        {v.temp != null && <VitalNumber code="temp" value={v.temp} unit="°C" />}
+        {["hr", "spo2", "map", "rr", "temp"].every((k) => v[k] == null) && (
+          <span className="text-sm text-neutral-600">{S.pr7?.offlineDev || "ölçüm yok"}</span>
+        )}
       </div>
 
       {device ? (
@@ -191,7 +199,8 @@ export function WallBoard({ S, state, onExit, cycleSeconds = 0, simulation = fal
       </div>
 
       <div className="grid flex-1 gap-3 overflow-y-auto p-3"
-        style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${minCell}px, 1fr))` }}>
+        style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${minCell}px, 1fr))`,
+                 alignContent: "start" }}>
         {beds.map((bed) => {
           const p = bed.patientId ? patientOf(bed.patientId) : null;
           const alert = p ? openAlerts.find((a) => a.patientId === p.patient_id) : null;
