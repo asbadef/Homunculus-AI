@@ -33,6 +33,11 @@ class UserRole(str, enum.Enum):
     HOSPITAL_ADMIN = "HOSPITAL_ADMIN"
     AUDITOR = "AUDITOR"
     PLATFORM_SUPPORT = "PLATFORM_SUPPORT"
+    # Both exist on the dashboard and did not exist here, so no real account could hold either:
+    # the pharmacist and the biomedical engineer could be drawn on a screen but never signed in
+    # as. The device page in particular is unreachable without BIOMEDICAL.
+    PHARMACIST = "PHARMACIST"
+    BIOMEDICAL = "BIOMEDICAL"
 
 
 # Roles that REQUIRE TOTP MFA (S-21)

@@ -55,6 +55,13 @@ services:
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME}
       SEED_TENANT_SLUG: ${TENANT_SLUG:-demo-hastanesi}
       TZ: ${TZ:-Europe/Istanbul}
+      BED_MAPPING_PATH: /app/bed-mapping.json
+    volumes:
+      # This site's HIS-location -> our-bed table. Copy bed-mapping.example.json to
+      # bed-mapping.json before the first `up`: Docker leaves a DIRECTORY at a bind-mount target
+      # whose source is missing. The API survives that (it treats a directory as "no table"), but
+      # then no patient lands on a bed and every location shows up in the discovery report.
+      - ./bed-mapping.json:/app/bed-mapping.json:ro
     depends_on:
       postgres:
         condition: service_healthy

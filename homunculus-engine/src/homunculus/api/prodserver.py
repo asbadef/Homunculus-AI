@@ -18,6 +18,7 @@ from collections.abc import Awaitable, Callable
 from homunculus.api.app import create_app
 from homunculus.api.audit import SqliteAuditLog
 from homunculus.api.identity import hospital_for_slugs, unmatched_hospital_keys
+from homunculus.tenant.bedmap import BedMap
 
 logger = logging.getLogger(__name__)
 
@@ -232,10 +233,23 @@ def _identities():
 
 _tenants = _parse_tenants(os.getenv("TENANTS"))
 
+def _bedmap():
+    """This site's HIS-location → our-bed table.
+
+    A missing file is not a failure: BedMap.from_file returns an empty table, every location
+    then resolves as unmatched-and-counted, and every patient still gets a card. That is the
+    correct state for a deployment whose table has not been written yet — the discovery report
+    is what tells the operator to write it. Compare the device field tables, which are read the
+    same way and for the same reason.
+    """
+    return BedMap.from_file(os.getenv("BED_MAPPING_PATH", "/app/bed-mapping.json"))
+
+
 app = create_app(
     _tenants,
     audit=_audit(),
     identities=_identities(),
+    bedmap=_bedmap(),
     resolve_jwt_hospital=make_jwt_hospital_resolver(_read_tenant_slugs),
     on_startup_check=make_startup_tenant_check(list(_tenants.values())),
 )

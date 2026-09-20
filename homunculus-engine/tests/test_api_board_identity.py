@@ -36,6 +36,20 @@ def test_a_card_with_an_identity_carries_name_bed_state_and_source():
         "state": "admitted",
         "source": "comed",
         "updated_at": WHEN.isoformat(),
+        # No bed table was passed, so the HIS location resolves to nothing — and says which
+        # key an operator would have to add. The card is still produced: a patient is never
+        # withheld for want of a bed match.
+        "bed_id": None,
+        "bed_matched": False,
+        "bed_key": "YB^304^2",
+        # This record was built by hand and carried no DG1, so the list is empty — which means
+        # "the message did not say", not "this patient has no diagnoses".
+        "diagnoses": [],
+        # Carried so the admission form does not ask a clinician to retype what the HIS sent.
+        # This fixture's message carried neither, and both come through as "not told" rather
+        # than as a guess.
+        "birth_date": "",
+        "sex": "unknown",
     }
 
 
@@ -44,9 +58,13 @@ def test_an_admitted_patient_with_no_reading_still_gets_a_card():
     assert board["patient_id"] == "20239121"
     assert board["risk"] == "none" and board["alerts"] == []
     assert board["identity"]["display_name"] == "AYSE YILMAZ"
-    assert set(board["latest"]) == {"heart_rate", "map", "spo2", "temperature", "resp_rate",
-                                    "lactate", "sofa"}
-    assert all(v is None for v in board["latest"].values())
+    assert set(board["latest"]) == {"heart_rate", "map", "sbp", "spo2", "temperature",
+                                    "resp_rate", "lactate", "sofa", "news2", "at"}
+    # All null, news2 included: this card has never had an observation, and a NEWS2 of 0 would
+    # read as "measured and normal" rather than "nothing has been measured".
+    assert all(v is None for key, v in board["latest"].items() if key != "at")
+    # `at` keeps its shape so a consumer never branches — every channel present, every one null.
+    assert all(v is None for v in board["latest"]["at"].values())
 
 
 def test_the_snapshot_unions_measured_patients_and_admitted_ones():

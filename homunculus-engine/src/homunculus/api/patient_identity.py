@@ -14,6 +14,7 @@ in the clear. Discharged records are dropped 24 hours later.
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 import sqlite3
@@ -78,6 +79,10 @@ class IdentityRecord:
     state: str | None = _ADMITTED
     source: str = ""
     updated_at: datetime | None = None
+    # ICD-10 diagnoses the HIS sent with the admission (ADT DG1). Empty means "this message
+    # carried none", never "this patient has none": a transfer says nothing about diagnosis and
+    # must not blank what an admission established.
+    diagnoses: tuple[dict, ...] = ()
 
     @property
     def display_name(self) -> str:
@@ -98,6 +103,14 @@ class IdentityRecord:
             "state": self.state,
             "source": self.source,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "diagnoses": [dict(d) for d in self.diagnoses],
+            # Date of birth and sex travel because the admission form asks for exactly these and
+            # the HIS already knows them: leaving them off means a clinician retypes what the
+            # hospital sent, which is the re-entry this whole path exists to remove — and a
+            # retyped date of birth is a date of birth that can be wrong. Both are encrypted at
+            # rest; the board is authenticated and already carries the name.
+            "birth_date": self.birth_date,
+            "sex": self.sex,
         }
 
 
@@ -155,6 +168,34 @@ def parse_fhir_patient(resource: dict) -> IdentityRecord:
     )
 
 
+def _reason_codes(resource: dict) -> tuple[dict, ...]:
+    """Encounter.reasonCode -> the diagnoses the HIS sent, de-duplicated on the code.
+
+    A malformed entry is skipped rather than allowed to fail the message: the patient and the
+    bed matter more than the diagnosis list, and losing an admission over a bad code would be
+    the worse trade. An entry with no code is dropped too — a blank chip on a clinical card
+    invites someone to trust it.
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+    for reason in (resource.get("reasonCode") or []):
+        try:
+            coding = (reason.get("coding") or [{}])[0]
+            code = str(coding.get("code") or "").strip()
+            if not code or code in seen:
+                continue
+            seen.add(code)
+            out.append({
+                "code": code,
+                "text": str(coding.get("display") or reason.get("text") or "").strip(),
+                "system": str(coding.get("system") or "").strip(),
+                "kind": str(reason.get("kind") or "").strip().upper(),
+            })
+        except (AttributeError, TypeError, IndexError):
+            continue
+    return tuple(out)
+
+
 def parse_fhir_encounter(resource: dict) -> IdentityRecord:
     """FHIR Encounter -> the location half of a record. Status "unknown" means "state unchanged"."""
     if resource.get("resourceType") != "Encounter":
@@ -178,6 +219,7 @@ def parse_fhir_encounter(resource: dict) -> IdentityRecord:
         state=_ENCOUNTER_STATUS[status],
         source=source,
         updated_at=when,
+        diagnoses=_reason_codes(resource),
     )
 
 
@@ -205,6 +247,8 @@ def _merge(existing: IdentityRecord | None, incoming: IdentityRecord) -> Identit
         changed["sex"] = incoming.sex
     if incoming.unit or incoming.room or incoming.bed:
         changed.update(unit=incoming.unit, room=incoming.room, bed=incoming.bed)
+    if incoming.diagnoses:
+        changed["diagnoses"] = incoming.diagnoses
     state = incoming.state if incoming.state is not None else (base.state or _ADMITTED)
     if state == _DISCHARGED:
         changed.update(unit="", room="", bed="")
@@ -270,7 +314,23 @@ class InMemoryIdentityStore:
 
 
 _SELECT = ("SELECT patient_id, family, given, birth_date, sex, unit, room, bed, state, source,"
-           " updated_at FROM identity")
+           " updated_at, diagnoses FROM identity")
+
+
+def _decode_diagnoses(stored: str | None) -> tuple[dict, ...]:
+    """The stored diagnosis list, or nothing.
+
+    Unreadable rather than absent gets the same answer for the same reason `plain` gives one:
+    the board decrypts every identity it shows, so a single bad row must cost that card its
+    diagnoses, never the ward its board.
+    """
+    if not stored:
+        return ()
+    try:
+        parsed = json.loads(plain(stored) or "[]")
+    except ValueError:
+        return ()
+    return tuple(d for d in parsed if isinstance(d, dict)) if isinstance(parsed, list) else ()
 
 
 class SqliteIdentityStore:
@@ -284,9 +344,16 @@ class SqliteIdentityStore:
             " tenant TEXT NOT NULL, patient_id TEXT NOT NULL,"
             " family TEXT, given TEXT, birth_date TEXT, sex TEXT,"
             " unit TEXT, room TEXT, bed TEXT,"
-            " state TEXT NOT NULL, source TEXT, updated_at TEXT,"
+            " state TEXT NOT NULL, source TEXT, updated_at TEXT, diagnoses TEXT,"
             " PRIMARY KEY (tenant, patient_id))"
         )
+        # A store created before diagnoses existed keeps its rows; adding the column is the
+        # whole migration. Wrapped because SQLite has no ADD COLUMN IF NOT EXISTS and a second
+        # start must not fail on the column it added the first time.
+        try:
+            self._conn.execute("ALTER TABLE identity ADD COLUMN diagnoses TEXT")
+        except sqlite3.OperationalError:
+            pass
         self._conn.commit()
 
     def apply(self, hospital: str, incoming: IdentityRecord) -> IdentityRecord | None:
@@ -305,15 +372,19 @@ class SqliteIdentityStore:
             return None
         self._conn.execute(
             "INSERT INTO identity (tenant, patient_id, family, given, birth_date, sex,"
-            " unit, room, bed, state, source, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+            " unit, room, bed, state, source, updated_at, diagnoses)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
             " ON CONFLICT(tenant, patient_id) DO UPDATE SET family=excluded.family,"
             " given=excluded.given, birth_date=excluded.birth_date, sex=excluded.sex,"
             " unit=excluded.unit, room=excluded.room, bed=excluded.bed, state=excluded.state,"
-            " source=excluded.source, updated_at=excluded.updated_at",
+            " source=excluded.source, updated_at=excluded.updated_at,"
+            " diagnoses=excluded.diagnoses",
             (hospital, merged.patient_id, encrypt_phi(merged.family), encrypt_phi(merged.given),
              encrypt_phi(merged.birth_date), encrypt_phi(merged.sex),
              merged.unit, merged.room, merged.bed, merged.state, merged.source,
-             merged.updated_at.isoformat() if merged.updated_at else None),
+             merged.updated_at.isoformat() if merged.updated_at else None,
+             # A diagnosis is health data, so it is encrypted at rest like the name is.
+             encrypt_phi(json.dumps([dict(d) for d in merged.diagnoses]))),
         )
         self._conn.commit()
         return merged
@@ -327,6 +398,7 @@ class SqliteIdentityStore:
             unit=row[5] or "", room=row[6] or "", bed=row[7] or "",
             state=row[8], source=row[9] or "",
             updated_at=datetime.fromisoformat(row[10]) if row[10] else None,
+            diagnoses=_decode_diagnoses(row[11] if len(row) > 11 else None),
         )
 
     def get(self, hospital: str, patient_id: str) -> IdentityRecord | None:

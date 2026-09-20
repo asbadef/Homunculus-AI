@@ -1,0 +1,1286 @@
+{
+  "scenario": "news2_partial_nce_only",
+  "step_seconds": 1.0,
+  "frames": [
+    {
+      "t": 0.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": null,
+            "sbp": null,
+            "spo2": 98.0,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 0,
+              "partial": true,
+              "missing": [
+                "respiration_rate",
+                "systolic_bp",
+                "pulse",
+                "temperature"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 0,
+                "systolic_bp": 0,
+                "pulse": 0,
+                "temperature": 0,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 1.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": null,
+            "sbp": 124.0,
+            "spo2": 98.0,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 0,
+              "partial": true,
+              "missing": [
+                "respiration_rate",
+                "pulse",
+                "temperature"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 0,
+                "systolic_bp": 0,
+                "pulse": 0,
+                "temperature": 0,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 2.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": null,
+            "map": 88.0,
+            "sbp": 124.0,
+            "spo2": 98.0,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 0,
+              "partial": true,
+              "missing": [
+                "respiration_rate",
+                "pulse",
+                "temperature"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 0,
+                "systolic_bp": 0,
+                "pulse": 0,
+                "temperature": 0,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 3.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": 72.0,
+            "map": 88.0,
+            "sbp": 124.0,
+            "spo2": 98.0,
+            "temperature": null,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 0,
+              "partial": true,
+              "missing": [
+                "respiration_rate",
+                "temperature"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 0,
+                "systolic_bp": 0,
+                "pulse": 0,
+                "temperature": 0,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 4.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": 72.0,
+            "map": 88.0,
+            "sbp": 124.0,
+            "spo2": 98.0,
+            "temperature": 36.8,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 0,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 0,
+                "systolic_bp": 0,
+                "pulse": 0,
+                "temperature": 0,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 5.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": 72.0,
+            "map": 88.0,
+            "sbp": 124.0,
+            "spo2": 96.0,
+            "temperature": 36.8,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 0,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 0,
+                "systolic_bp": 0,
+                "pulse": 0,
+                "temperature": 0,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 6.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": 72.0,
+            "map": 88.0,
+            "sbp": 112.0,
+            "spo2": 96.0,
+            "temperature": 36.8,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 0,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 0,
+                "systolic_bp": 0,
+                "pulse": 0,
+                "temperature": 0,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 7.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": 72.0,
+            "map": 82.0,
+            "sbp": 112.0,
+            "spo2": 96.0,
+            "temperature": 36.8,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 0,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 0,
+                "systolic_bp": 0,
+                "pulse": 0,
+                "temperature": 0,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 8.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": 92.0,
+            "map": 82.0,
+            "sbp": 112.0,
+            "spo2": 96.0,
+            "temperature": 36.8,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 1,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 0,
+                "systolic_bp": 0,
+                "pulse": 1,
+                "temperature": 0,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 9.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": 92.0,
+            "map": 82.0,
+            "sbp": 112.0,
+            "spo2": 96.0,
+            "temperature": 37.4,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 1,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 0,
+                "systolic_bp": 0,
+                "pulse": 1,
+                "temperature": 0,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 10.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": 92.0,
+            "map": 82.0,
+            "sbp": 112.0,
+            "spo2": 94.0,
+            "temperature": 37.4,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 2,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 1,
+                "systolic_bp": 0,
+                "pulse": 1,
+                "temperature": 0,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 11.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": 92.0,
+            "map": 82.0,
+            "sbp": 104.0,
+            "spo2": 94.0,
+            "temperature": 37.4,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 3,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 1,
+                "systolic_bp": 1,
+                "pulse": 1,
+                "temperature": 0,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 12.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": 92.0,
+            "map": 74.0,
+            "sbp": 104.0,
+            "spo2": 94.0,
+            "temperature": 37.4,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 3,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 1,
+                "systolic_bp": 1,
+                "pulse": 1,
+                "temperature": 0,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 13.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": 106.0,
+            "map": 74.0,
+            "sbp": 104.0,
+            "spo2": 94.0,
+            "temperature": 37.4,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 3,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 1,
+                "systolic_bp": 1,
+                "pulse": 1,
+                "temperature": 0,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 14.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "none",
+          "alerts": [],
+          "latest": {
+            "heart_rate": 106.0,
+            "map": 74.0,
+            "sbp": 104.0,
+            "spo2": 94.0,
+            "temperature": 38.2,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 4,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 1,
+                "systolic_bp": 1,
+                "pulse": 1,
+                "temperature": 1,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 15.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "moderate",
+          "alerts": [
+            {
+              "patient_id": "bed-2",
+              "kind": "news2",
+              "severity": "moderate",
+              "urgency": "soon",
+              "summary": "NEWS2 5 \u2014 medium risk",
+              "clinical_reasoning": "NEWS2 5 (medium risk \u2014 urgent clinician review). Contributing: spo2 2, systolic_bp 1, pulse 1, temperature 1. Screen for deterioration, not a diagnosis; the response is review, not an order. This is a partial NEWS2: respiration_rate not recently recorded, so the true aggregate can only be higher.",
+              "supporting_evidence": [
+                "news2-rcp-2017"
+              ],
+              "recommended_actions": [
+                "Review the patient against the NEWS2 escalation response for this band.",
+                "Assess for a reversible cause of the abnormal parameter(s).",
+                "Consider the patient's own baseline \u2014 a chronic-abnormal vital may not reflect acute change."
+              ],
+              "confidence": "Validated screening aggregate (RCP 2017), not a diagnosis; a population threshold that does not adjust for the patient's baseline.",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-09-07T22:01:22.954653+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": 106.0,
+            "map": 74.0,
+            "sbp": 104.0,
+            "spo2": 92.0,
+            "temperature": 38.2,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 5,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 2,
+                "systolic_bp": 1,
+                "pulse": 1,
+                "temperature": 1,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 16.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "moderate",
+          "alerts": [
+            {
+              "patient_id": "bed-2",
+              "kind": "news2",
+              "severity": "moderate",
+              "urgency": "soon",
+              "summary": "NEWS2 6 \u2014 medium risk",
+              "clinical_reasoning": "NEWS2 6 (medium risk \u2014 urgent clinician review). Contributing: spo2 2, systolic_bp 2, pulse 1, temperature 1. Screen for deterioration, not a diagnosis; the response is review, not an order. This is a partial NEWS2: respiration_rate not recently recorded, so the true aggregate can only be higher.",
+              "supporting_evidence": [
+                "news2-rcp-2017"
+              ],
+              "recommended_actions": [
+                "Review the patient against the NEWS2 escalation response for this band.",
+                "Assess for a reversible cause of the abnormal parameter(s).",
+                "Consider the patient's own baseline \u2014 a chronic-abnormal vital may not reflect acute change."
+              ],
+              "confidence": "Validated screening aggregate (RCP 2017), not a diagnosis; a population threshold that does not adjust for the patient's baseline.",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-09-07T22:01:22.954653+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": 106.0,
+            "map": 74.0,
+            "sbp": 96.0,
+            "spo2": 92.0,
+            "temperature": 38.2,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 0,
+            "news2": {
+              "total": 6,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 2,
+                "systolic_bp": 2,
+                "pulse": 1,
+                "temperature": 1,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 17.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "moderate",
+          "alerts": [
+            {
+              "patient_id": "bed-2",
+              "kind": "news2",
+              "severity": "moderate",
+              "urgency": "soon",
+              "summary": "NEWS2 6 \u2014 medium risk",
+              "clinical_reasoning": "NEWS2 6 (medium risk \u2014 urgent clinician review). Contributing: spo2 2, systolic_bp 2, pulse 1, temperature 1. Screen for deterioration, not a diagnosis; the response is review, not an order. This is a partial NEWS2: respiration_rate not recently recorded, so the true aggregate can only be higher.",
+              "supporting_evidence": [
+                "news2-rcp-2017"
+              ],
+              "recommended_actions": [
+                "Review the patient against the NEWS2 escalation response for this band.",
+                "Assess for a reversible cause of the abnormal parameter(s).",
+                "Consider the patient's own baseline \u2014 a chronic-abnormal vital may not reflect acute change."
+              ],
+              "confidence": "Validated screening aggregate (RCP 2017), not a diagnosis; a population threshold that does not adjust for the patient's baseline.",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-09-07T22:01:22.954653+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": 106.0,
+            "map": 68.0,
+            "sbp": 96.0,
+            "spo2": 92.0,
+            "temperature": 38.2,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 1,
+            "news2": {
+              "total": 6,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 2,
+                "systolic_bp": 2,
+                "pulse": 1,
+                "temperature": 1,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 18.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-2",
+              "kind": "news2",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "NEWS2 7 \u2014 high risk",
+              "clinical_reasoning": "NEWS2 7 (high risk \u2014 immediate emergency-team review). Contributing: spo2 2, systolic_bp 2, pulse 2, temperature 1. Screen for deterioration, not a diagnosis; the response is review, not an order. This is a partial NEWS2: respiration_rate not recently recorded, so the true aggregate can only be higher.",
+              "supporting_evidence": [
+                "news2-rcp-2017"
+              ],
+              "recommended_actions": [
+                "Review the patient against the NEWS2 escalation response for this band.",
+                "Assess for a reversible cause of the abnormal parameter(s).",
+                "Consider the patient's own baseline \u2014 a chronic-abnormal vital may not reflect acute change."
+              ],
+              "confidence": "Validated screening aggregate (RCP 2017), not a diagnosis; a population threshold that does not adjust for the patient's baseline.",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-09-07T22:01:22.954653+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": 118.0,
+            "map": 68.0,
+            "sbp": 96.0,
+            "spo2": 92.0,
+            "temperature": 38.2,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 1,
+            "news2": {
+              "total": 7,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 2,
+                "systolic_bp": 2,
+                "pulse": 2,
+                "temperature": 1,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": [
+        {
+          "tenant": "DEMO",
+          "patient_id": "bed-2",
+          "kind": "news2",
+          "severity": "high",
+          "urgency": "immediate",
+          "audience": "nurse",
+          "trigger": "new",
+          "title": "Yeni uyar\u0131",
+          "body": "bed-2: NEWS2 7 \u2014 high risk",
+          "ts": "2026-09-07T22:01:22.955670+00:00"
+        }
+      ]
+    },
+    {
+      "t": 19.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-2",
+              "kind": "news2",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "NEWS2 7 \u2014 high risk",
+              "clinical_reasoning": "NEWS2 7 (high risk \u2014 immediate emergency-team review). Contributing: spo2 2, systolic_bp 2, pulse 2, temperature 1. Screen for deterioration, not a diagnosis; the response is review, not an order. This is a partial NEWS2: respiration_rate not recently recorded, so the true aggregate can only be higher.",
+              "supporting_evidence": [
+                "news2-rcp-2017"
+              ],
+              "recommended_actions": [
+                "Review the patient against the NEWS2 escalation response for this band.",
+                "Assess for a reversible cause of the abnormal parameter(s).",
+                "Consider the patient's own baseline \u2014 a chronic-abnormal vital may not reflect acute change."
+              ],
+              "confidence": "Validated screening aggregate (RCP 2017), not a diagnosis; a population threshold that does not adjust for the patient's baseline.",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-09-07T22:01:22.954653+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": 118.0,
+            "map": 68.0,
+            "sbp": 96.0,
+            "spo2": 92.0,
+            "temperature": 38.9,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 1,
+            "news2": {
+              "total": 7,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": false,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 2,
+                "systolic_bp": 2,
+                "pulse": 2,
+                "temperature": 1,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 20.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-2",
+              "kind": "news2",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "NEWS2 8 \u2014 high risk",
+              "clinical_reasoning": "NEWS2 8 (high risk \u2014 immediate emergency-team review). Contributing: spo2 3, systolic_bp 2, pulse 2, temperature 1. Screen for deterioration, not a diagnosis; the response is review, not an order. This is a partial NEWS2: respiration_rate not recently recorded, so the true aggregate can only be higher.",
+              "supporting_evidence": [
+                "news2-rcp-2017"
+              ],
+              "recommended_actions": [
+                "Review the patient against the NEWS2 escalation response for this band.",
+                "Assess for a reversible cause of the abnormal parameter(s).",
+                "Consider the patient's own baseline \u2014 a chronic-abnormal vital may not reflect acute change."
+              ],
+              "confidence": "Validated screening aggregate (RCP 2017), not a diagnosis; a population threshold that does not adjust for the patient's baseline.",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-09-07T22:01:22.954653+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": 118.0,
+            "map": 68.0,
+            "sbp": 96.0,
+            "spo2": 90.0,
+            "temperature": 38.9,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 1,
+            "news2": {
+              "total": 8,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": true,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 3,
+                "systolic_bp": 2,
+                "pulse": 2,
+                "temperature": 1,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 21.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-2",
+              "kind": "news2",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "NEWS2 9 \u2014 high risk",
+              "clinical_reasoning": "NEWS2 9 (high risk \u2014 immediate emergency-team review). Contributing: spo2 3, systolic_bp 3, pulse 2, temperature 1. Screen for deterioration, not a diagnosis; the response is review, not an order. This is a partial NEWS2: respiration_rate not recently recorded, so the true aggregate can only be higher.",
+              "supporting_evidence": [
+                "news2-rcp-2017"
+              ],
+              "recommended_actions": [
+                "Review the patient against the NEWS2 escalation response for this band.",
+                "Assess for a reversible cause of the abnormal parameter(s).",
+                "Consider the patient's own baseline \u2014 a chronic-abnormal vital may not reflect acute change."
+              ],
+              "confidence": "Validated screening aggregate (RCP 2017), not a diagnosis; a population threshold that does not adjust for the patient's baseline.",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-09-07T22:01:22.954653+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": 118.0,
+            "map": 68.0,
+            "sbp": 86.0,
+            "spo2": 90.0,
+            "temperature": 38.9,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 1,
+            "news2": {
+              "total": 9,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": true,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 3,
+                "systolic_bp": 3,
+                "pulse": 2,
+                "temperature": 1,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 22.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-2",
+              "kind": "news2",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "NEWS2 9 \u2014 high risk",
+              "clinical_reasoning": "NEWS2 9 (high risk \u2014 immediate emergency-team review). Contributing: spo2 3, systolic_bp 3, pulse 2, temperature 1. Screen for deterioration, not a diagnosis; the response is review, not an order. This is a partial NEWS2: respiration_rate not recently recorded, so the true aggregate can only be higher.",
+              "supporting_evidence": [
+                "news2-rcp-2017"
+              ],
+              "recommended_actions": [
+                "Review the patient against the NEWS2 escalation response for this band.",
+                "Assess for a reversible cause of the abnormal parameter(s).",
+                "Consider the patient's own baseline \u2014 a chronic-abnormal vital may not reflect acute change."
+              ],
+              "confidence": "Validated screening aggregate (RCP 2017), not a diagnosis; a population threshold that does not adjust for the patient's baseline.",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-09-07T22:01:22.954653+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": 118.0,
+            "map": 62.0,
+            "sbp": 86.0,
+            "spo2": 90.0,
+            "temperature": 38.9,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 1,
+            "news2": {
+              "total": 9,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": true,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 3,
+                "systolic_bp": 3,
+                "pulse": 2,
+                "temperature": 1,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 23.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-2",
+              "kind": "news2",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "NEWS2 9 \u2014 high risk",
+              "clinical_reasoning": "NEWS2 9 (high risk \u2014 immediate emergency-team review). Contributing: spo2 3, systolic_bp 3, pulse 2, temperature 1. Screen for deterioration, not a diagnosis; the response is review, not an order. This is a partial NEWS2: respiration_rate not recently recorded, so the true aggregate can only be higher.",
+              "supporting_evidence": [
+                "news2-rcp-2017"
+              ],
+              "recommended_actions": [
+                "Review the patient against the NEWS2 escalation response for this band.",
+                "Assess for a reversible cause of the abnormal parameter(s).",
+                "Consider the patient's own baseline \u2014 a chronic-abnormal vital may not reflect acute change."
+              ],
+              "confidence": "Validated screening aggregate (RCP 2017), not a diagnosis; a population threshold that does not adjust for the patient's baseline.",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-09-07T22:01:22.954653+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": 130.0,
+            "map": 62.0,
+            "sbp": 86.0,
+            "spo2": 90.0,
+            "temperature": 38.9,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 1,
+            "news2": {
+              "total": 9,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": true,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 3,
+                "systolic_bp": 3,
+                "pulse": 2,
+                "temperature": 1,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    },
+    {
+      "t": 24.0,
+      "boards": [
+        {
+          "patient_id": "bed-2",
+          "identity": null,
+          "risk": "high",
+          "alerts": [
+            {
+              "patient_id": "bed-2",
+              "kind": "news2",
+              "severity": "high",
+              "urgency": "immediate",
+              "summary": "NEWS2 10 \u2014 high risk",
+              "clinical_reasoning": "NEWS2 10 (high risk \u2014 immediate emergency-team review). Contributing: spo2 3, systolic_bp 3, pulse 2, temperature 2. Screen for deterioration, not a diagnosis; the response is review, not an order. This is a partial NEWS2: respiration_rate not recently recorded, so the true aggregate can only be higher.",
+              "supporting_evidence": [
+                "news2-rcp-2017"
+              ],
+              "recommended_actions": [
+                "Review the patient against the NEWS2 escalation response for this band.",
+                "Assess for a reversible cause of the abnormal parameter(s).",
+                "Consider the patient's own baseline \u2014 a chronic-abnormal vital may not reflect acute change."
+              ],
+              "confidence": "Validated screening aggregate (RCP 2017), not a diagnosis; a population threshold that does not adjust for the patient's baseline.",
+              "source": "rule",
+              "downgraded": false,
+              "chronic_context": "",
+              "stale_inputs": [],
+              "acknowledged": false,
+              "acknowledged_by": null,
+              "acknowledged_at": null,
+              "first_seen_at": "2026-09-07T22:01:22.954653+00:00",
+              "escalated": false
+            }
+          ],
+          "latest": {
+            "heart_rate": 130.0,
+            "map": 62.0,
+            "sbp": 86.0,
+            "spo2": 90.0,
+            "temperature": 39.4,
+            "resp_rate": null,
+            "lactate": null,
+            "sofa": 1,
+            "news2": {
+              "total": 10,
+              "partial": true,
+              "missing": [
+                "respiration_rate"
+              ],
+              "red_param": true,
+              "breakdown": {
+                "respiration_rate": 0,
+                "spo2": 3,
+                "systolic_bp": 3,
+                "pulse": 2,
+                "temperature": 2,
+                "air_or_oxygen": 0,
+                "consciousness": 0
+              }
+            }
+          }
+        }
+      ],
+      "notifications": []
+    }
+  ],
+  "notification_history": [
+    {
+      "tenant": "DEMO",
+      "patient_id": "bed-2",
+      "kind": "news2",
+      "severity": "high",
+      "urgency": "immediate",
+      "audience": "nurse",
+      "trigger": "new",
+      "title": "Yeni uyar\u0131",
+      "body": "bed-2: NEWS2 7 \u2014 high risk",
+      "ts": "2026-09-07T22:01:22.955670+00:00"
+    }
+  ]
+}

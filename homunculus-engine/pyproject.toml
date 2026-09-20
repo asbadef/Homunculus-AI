@@ -20,7 +20,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "httpx>=0.27", "uvicorn>=0.30"]
+# pytest-asyncio is not optional despite the name: [tool.pytest.ini_options] below sets
+# asyncio_mode = "auto", so without it conftest.py fails to import and the whole suite is
+# unrunnable on a clean checkout.
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "httpx>=0.27", "uvicorn>=0.30"]
 
 [build-system]
 requires = ["setuptools>=68"]

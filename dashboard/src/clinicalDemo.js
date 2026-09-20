@@ -21,7 +21,7 @@ export const ROLE = {
 export const ROLE_ACCOUNTS = [
   { email: "dr.elif.yilmaz@homunculus.health", pin: "1111", full_name: "Dr. Elif Yılmaz", role: ROLE.ATTENDING },
   { email: "ayse.demir@homunculus.health",     pin: "2222", full_name: "Ayşe Demir",      role: ROLE.CHARGE_NURSE },
-  { email: "dijitalfabrikaaa@gmail.com",        pin: "9999", full_name: "Sistem Yöneticisi", role: ROLE.HOSPITAL_ADMIN },
+  { email: "sistem.yoneticisi@homunculus.health", pin: "9999", full_name: "Sistem Yöneticisi", role: ROLE.HOSPITAL_ADMIN },
   { email: "dr.can.ozturk@homunculus.health",  pin: "3333", full_name: "Dr. Can Öztürk",  role: ROLE.ATTENDING },
   { email: "selin.arslan@homunculus.health",   pin: "4444", full_name: "Selin Arslan",    role: ROLE.CHARGE_NURSE },
   { email: "dr.murat.sahin@homunculus.health", pin: "5555", full_name: "Dr. Murat Şahin", role: ROLE.RRT },
@@ -399,7 +399,7 @@ export function buildRealisticState() {
   const users = [
     { id: "u-01", full_name: "Dr. Elif Yılmaz", email: "dr.elif.yilmaz@homunculus.health", role: ROLE.ATTENDING,     active: true, mfa: true,  mfaRequired: true,  pin: "1111", password: "Hekim.Elif2025!",   unitIds: ["unit-adult"] },
     { id: "u-02", full_name: "Ayşe Demir",      email: "ayse.demir@homunculus.health",     role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "2222", password: "Hemsire.Ayse2025!",  unitIds: ["unit-adult"] },
-    { id: "u-03", full_name: "Sistem Yöneticisi", email: "dijitalfabrikaaa@gmail.com",     role: ROLE.HOSPITAL_ADMIN, active: true, mfa: false, mfaRequired: false, pin: "9999", password: "Df123456!",           unitIds: ["unit-adult", "unit-nicu"] },
+    { id: "u-03", full_name: "Sistem Yöneticisi", email: "sistem.yoneticisi@homunculus.health",     role: ROLE.HOSPITAL_ADMIN, active: true, mfa: false, mfaRequired: false, pin: "9999", password: "Df123456!",           unitIds: ["unit-adult", "unit-nicu"] },
     { id: "u-04", full_name: "Dr. Can Öztürk",  email: "dr.can.ozturk@homunculus.health",  role: ROLE.ATTENDING,     active: true, mfa: false, mfaRequired: true,  pin: "3333", password: "Hekim.Can2025!",    unitIds: ["unit-nicu"] },
     { id: "u-05", full_name: "Selin Arslan",    email: "selin.arslan@homunculus.health",   role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "4444", password: "Hemsire.Selin2025!", unitIds: ["unit-adult", "unit-nicu"] },
     { id: "u-06", full_name: "Dr. Murat Şahin", email: "dr.murat.sahin@homunculus.health", role: ROLE.RRT,           active: true, mfa: false, mfaRequired: false, pin: "5555", password: "Rrt.Murat2025!",     unitIds: ["unit-adult", "unit-nicu"] },
@@ -946,6 +946,7 @@ export function createDemoStore(initial) {
   // board. Accepts optional production fields (age, source, risk, vitals…) — all default safely so
   // the minimal test-driven signature keeps working.
   function admitPatient({ displayName, sex, bedId, diagnosisText, age, isNeonate, ageDays,
+                          birthDate,
                           source, risk, vitals, tc_no, phone, address,
                           // #1: genişletilmiş kabul alanları
                           triage, allergies, comorbidities, codeStatus, isolation,
@@ -962,6 +963,9 @@ export function createDemoStore(initial) {
       age: age ?? null,
       isNeonate: !!isNeonate,
       ageDays: ageDays ?? null,
+      // Doğum tarihi hastanın barkod etiketinde ve kimlik doğrulamasında kullanılır. Yaş bundan
+      // türetilir; ikisi ayrı ayrı saklanmaz ki biri eskiyip diğeriyle çelişmesin.
+      birthDate: birthDate || null,
       tc_no: tc_no || null,
       phone: phone || null,
       address: address || null,

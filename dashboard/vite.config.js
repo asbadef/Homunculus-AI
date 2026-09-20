@@ -31,15 +31,29 @@ export default defineConfig({
   },
   server: {
     allowedHosts: true,
-    proxy: {
-      "/patients": "http://localhost:8000",
-      "/stream": "http://localhost:8000",
-      "/ingest": "http://localhost:8000",
-      "/ack": "http://localhost:8000",
-      "/notifications": "http://localhost:8000",
-      "/audit": "http://localhost:8000",
-      "/view": "http://localhost:8000",
-    },
+    // Every path the dashboard actually calls. This list had fallen behind the API: /auth and
+    // /clinical were missing, so on the dev server a clinician could not sign in and nothing they
+    // charted reached the engine — the two things a person opening this locally does first.
+    proxy: Object.fromEntries([
+      "/auth",            // login, refresh, /me, TOTP
+      "/patients",
+      "/stream",
+      "/stream-ticket",
+      "/ingest",
+      "/ack",
+      "/notifications",
+      "/audit",           // also covers /audit/verify
+      "/alarm-quality",
+      "/clinical",        // charting + the patient profile
+      "/admissions",
+      "/alerts",
+      "/tenant",
+      "/handovers",
+      "/shift-schedule",
+      "/break-glass",
+      "/health",
+      "/view",
+    ].map((path) => [path, "http://localhost:8000"])),
   },
   test: {
     environment: "jsdom",

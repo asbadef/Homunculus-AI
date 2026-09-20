@@ -399,12 +399,12 @@ describe("PR#7 · fast PIN switch", () => {
   });
   it("logs in with a PIN as credential", () => {
     const s = createDemoStore(buildRealisticState());
-    const u = s.login("dijitalfabrikaaa@gmail.com", "9999");
+    const u = s.login("sistem.yoneticisi@homunculus.health", "9999");
     expect(u.role).toBe(ROLE.HOSPITAL_ADMIN);
   });
   it("logs the super-admin in with email + password", () => {
     const s = createDemoStore(buildRealisticState());
-    const u = s.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    const u = s.login("sistem.yoneticisi@homunculus.health", "Df123456!");
     expect(u.role).toBe(ROLE.HOSPITAL_ADMIN);
     expect(u.full_name).toBe("Sistem Yöneticisi");
   });
@@ -417,7 +417,7 @@ describe("PR#7 · fast PIN switch", () => {
 describe("Faz B · super-admin seed + role authorization", () => {
   it("seeds the super-admin account as HOSPITAL_ADMIN", () => {
     const s = createDemoStore(buildRealisticState());
-    const admin = s.getState().users.find((u) => u.email === "dijitalfabrikaaa@gmail.com");
+    const admin = s.getState().users.find((u) => u.email === "sistem.yoneticisi@homunculus.health");
     expect(admin).toBeTruthy();
     expect(admin.role).toBe(ROLE.HOSPITAL_ADMIN);
     expect(admin.active).toBe(true);
@@ -483,11 +483,11 @@ describe("Faz B · super-admin seed + role authorization", () => {
   it("creates a session on login and terminates it", () => {
     const s = createDemoStore(buildRealisticState());
     const before = s.getState().activeSessions.length;
-    s.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    s.login("sistem.yoneticisi@homunculus.health", "Df123456!");
     const sessions = s.getState().activeSessions;
     expect(sessions.length).toBe(before + 1);
     const session = sessions[sessions.length - 1];
-    expect(session.email).toBe("dijitalfabrikaaa@gmail.com");
+    expect(session.email).toBe("sistem.yoneticisi@homunculus.health");
     s.terminateSession({ sessionId: session.id });
     expect(s.getState().activeSessions.find((x) => x.id === session.id)).toBeFalsy();
   });
@@ -1192,7 +1192,7 @@ describe("PHARMACIST & BIOMEDICAL roles", () => {
 
   it("admin can change user role to PHARMACIST", () => {
     const store = createDemoStore(buildRealisticState());
-    store.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    store.login("sistem.yoneticisi@homunculus.health", "Df123456!");
     const users = store.getState().users;
     const targetUser = users.find(u => u.role === ROLE.ATTENDING);
     expect(() => store.setUserRole({ userId: targetUser.id, role: ROLE.PHARMACIST })).not.toThrow();

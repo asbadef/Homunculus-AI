@@ -24,19 +24,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from homunculus.api.ackstore import AckStore
-from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog
+from homunculus.api.alarm_quality import alarm_quality
+from homunculus.api.audit import AuditEvent, AuditLog, InMemoryAuditLog, verify_chain
 from homunculus.api.board import board_snapshot, identity_only_board, patient_board
 from homunculus.api.patient_identity import (
     DISCHARGED_TTL, IdentityStore, InMemoryIdentityStore, parse_fhir_encounter,
     parse_fhir_patient,
 )
 from homunculus.api.broadcast import Broadcaster
+from homunculus.api.clinical import (
+    ClinicalEntryError, build_entries, profile_from_payload, profile_to_payload,
+)
 from homunculus.api.escalation import escalate
 from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import rehydrate
 from homunculus.api.tickets import TicketStore
 from homunculus.gateway.fhir import GatewayError, parse_fhir_observation
 from homunculus.pipeline import Engine
+from homunculus.scoring import sofa_form
+from homunculus.scoring.signing import (
+    ScoreSigningError, parse_overrides, sign as sign_score,
+)
+from homunculus.tenant.bedmap import BedMap
 
 
 async def sse_board_frames(queue: asyncio.Queue, keepalive: float = 15.0):
@@ -71,6 +80,7 @@ def create_app(
     run_escalation_loop: bool = True,
     audit: AuditLog | None = None,
     identities: IdentityStore | None = None,
+    bedmap: BedMap | None = None,
     resolve_jwt_hospital: Callable[[str], Awaitable[str | None]] | None = None,
     on_startup_check: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
@@ -91,6 +101,10 @@ def create_app(
     tickets = TicketStore()
     audit = audit or InMemoryAuditLog()
     identities = identities if identities is not None else InMemoryIdentityStore()
+    # No table is a working state, not an error: every location comes back unmatched and counted,
+    # every patient still gets a card, and the discovery report is what tells the operator the
+    # table has yet to be written.
+    bedmap = bedmap if bedmap is not None else BedMap()
 
     rehydrated: set[str] = set()
 
@@ -125,7 +139,8 @@ def create_app(
                 store.escalated = newly
                 for pid in changed:
                     await broadcaster.publish(hospital, patient_board(
-                        engine, pid, store, identity=identities.get(hospital, pid)))
+                        engine, pid, store, identity=identities.get(hospital, pid),
+                        bedmap=bedmap))
                 if added:
                     alert_by_key = {(pid, a.kind): a for (pid, a) in alerts}
                     for key in added:
@@ -144,7 +159,8 @@ def create_app(
             for record in identities.expired(hospital, now):
                 engine = engines.get(hospital)
                 if engine is not None and record.patient_id in set(engine.patient_ids()):
-                    board = patient_board(engine, record.patient_id, _store(hospital))
+                    board = patient_board(engine, record.patient_id, _store(hospital),
+                                          bedmap=bedmap)
                 else:
                     board = {**identity_only_board(record), "identity": None, "removed": True}
                 await broadcaster.publish(hospital, board)
@@ -248,6 +264,110 @@ def create_app(
 
         raise HTTPException(status_code=401, detail="unknown credential")
 
+    def _charted_by(authorization: str | None) -> str:
+        """Who charted this, for the audit record.
+
+        A clinician's JWT names them; the static tenant token does not (it is the bridge's
+        credential, shared by a machine). Rather than invent an author, the token path is
+        recorded as exactly what it is — an entry nobody can be asked about later.
+        """
+        credential = (authorization or "").removeprefix("Bearer ")
+        if credential in tenants:
+            return "tenant-token"
+        try:
+            from homunculus.auth.jwt import decode_token
+            return str(decode_token(credential).get("sub") or "unknown")
+        except Exception:
+            # _hospital has already authenticated the caller by this point; failing to name
+            # them must not lose the clinical fact they charted.
+            return "unknown"
+
+    @app.post("/clinical/{patient_id}")
+    async def chart(patient_id: str, body: dict = Body(...),
+                    authorization: str | None = Header(default=None)):
+        """Record what a clinician observed — the inputs no device produces.
+
+        This is the door `suspected_infection` comes through, and with it the whole sepsis
+        branch: until something charts it, `septic_shock.evaluate` returns at its first line.
+        """
+        hospital = await _hospital(authorization)
+        stamp = body.get("recorded_at")
+        try:
+            recorded_at = datetime.fromisoformat(stamp) if stamp else None
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="geçersiz recorded_at") from None
+
+        try:
+            charted = build_entries(patient_id, body.get("entries") or [],
+                                    charted_by=_charted_by(authorization),
+                                    recorded_at=recorded_at)
+        except ClinicalEntryError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+        engine = _engine(hospital)
+        store = _store(hospital)
+        alerts: list = []
+        for item in charted:
+            obs = item.observation
+            alerts = engine.ingest(obs, now=obs.timestamp)
+            audit.append(AuditEvent(hospital, "chart", obs.patient_id, obs.code.value,
+                                    {"value": obs.value, "unit": obs.unit,
+                                     "obs_ts": obs.timestamp.isoformat(),
+                                     "charted_by": item.charted_by}))
+        for a in alerts:
+            audit.append(AuditEvent(hospital, "alert", a.patient_id, a.kind,
+                                    {"severity": a.severity, "urgency": a.urgency,
+                                     "summary": a.summary, "source": a.source,
+                                     "evidence": a.supporting_evidence}))
+        # First-seen uses WALL-CLOCK time, and is AUDITED — the /ingest path already does both and
+        # this one only did the first half. Two things were quietly lost by that: an alert raised
+        # from a clinician's charting was invisible to the alarm-quality report (no episode to
+        # count), and, worse, `rehydrate` had no row to replay, so a restart handed such an alert a
+        # fresh escalation clock. An alarm that had gone unanswered for four minutes started its
+        # five-minute grace over again after a deploy, and nothing looked broken.
+        now = datetime.now(timezone.utc)
+        for pid, kind in _live_keys(engine):
+            if store.stamp_first_seen(pid, kind, now):
+                audit.append(AuditEvent(hospital, "first_seen", pid, kind,
+                                        {"at": now.isoformat()}))
+
+        board = patient_board(engine, patient_id, store,
+                              identity=identities.get(hospital, patient_id), bedmap=bedmap)
+        await broadcaster.publish(hospital, board)
+        return {"patient_id": patient_id, "charted": len(charted),
+                "alerts": [a.kind for a in alerts]}
+
+    @app.put("/clinical/{patient_id}/profile")
+    async def set_patient_profile(patient_id: str, body: dict = Body(...),
+                                  authorization: str | None = Header(default=None)):
+        """The patient's own normal: charted comorbidities and baseline vital ranges.
+
+        This is the input the patient-relative layer has been waiting for since it was written.
+        Without it every patient is scored against the population threshold, so a chronic-AF
+        patient living at 105 bpm alarms on every measurement — the alarm fatigue the layer
+        exists to prevent. The boundary is always the clinician's; we never mint one.
+        """
+        hospital = await _hospital(authorization)
+        engine = _engine(hospital)
+        try:
+            # Merged over what is already charted, not replacing it: the admission form and the
+            # sepsis panel write to this same door with different halves of the profile.
+            profile = profile_from_payload(patient_id, body, engine.profile(patient_id))
+        except ClinicalEntryError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+        engine.set_profile(profile)
+        # Audited so a restart can replay it. A profile a deploy forgot would restart the
+        # alarms it was written to quieten, without anything looking broken.
+        audit.append(AuditEvent(hospital, "profile", profile.patient_id, "",
+                                {**profile_to_payload(profile),
+                                 "charted_by": _charted_by(authorization)}))
+
+        board = patient_board(engine, patient_id, _store(hospital),
+                              identity=identities.get(hospital, patient_id), bedmap=bedmap)
+        await broadcaster.publish(hospital, board)
+        return {"patient_id": profile.patient_id, **profile_to_payload(profile)}
+
     @app.post("/ingest")
     async def ingest(resource: dict, authorization: str | None = Header(default=None)):
         hospital = await _hospital(authorization)
@@ -268,9 +388,10 @@ def create_app(
                                     {"source": record.source, "state": record.state,
                                      "resource": kind}))
             engine = _engine(hospital)
-            board = (patient_board(engine, record.patient_id, _store(hospital), identity=record)
+            board = (patient_board(engine, record.patient_id, _store(hospital), identity=record,
+                                   bedmap=bedmap)
                      if record.patient_id in set(engine.patient_ids())
-                     else identity_only_board(record))
+                     else identity_only_board(record, bedmap))
             await broadcaster.publish(hospital, board)
             return {"patient_id": record.patient_id, "identity": "ok"}
         try:
@@ -295,7 +416,8 @@ def create_app(
                                         {"at": wall_now.isoformat()}))
         store.prune(_live_keys(engine))
         await broadcaster.publish(hospital, patient_board(
-            engine, obs.patient_id, store, identity=identities.get(hospital, obs.patient_id)))
+            engine, obs.patient_id, store, identity=identities.get(hospital, obs.patient_id),
+            bedmap=bedmap))
         # Push a notification for any newly-appeared immediate alert (nurse audience).
         for note in notifier.for_new(hospital, engine.active_alerts(obs.patient_id)):
             await hub.publish(hospital, note)
@@ -318,7 +440,7 @@ def create_app(
         audit.append(AuditEvent(hospital, "ack", patient_id, kind,
                                 {"role": role, "at": datetime.now(timezone.utc).isoformat()}))
         board = patient_board(engine, patient_id, store,
-                              identity=identities.get(hospital, patient_id))
+                              identity=identities.get(hospital, patient_id), bedmap=bedmap)
         await broadcaster.publish(hospital, board)
         return board
 
@@ -340,7 +462,8 @@ def create_app(
     async def patients(authorization: str | None = Header(default=None)):
         hospital = await _hospital(authorization)
         return {"patients": board_snapshot(_engine(hospital), _store(hospital),
-                                           identities=identities, hospital=hospital)}
+                                           identities=identities, hospital=hospital,
+                                           bedmap=bedmap)}
 
     @app.get("/alerts/{patient_id}")
     async def alerts(patient_id: str, authorization: str | None = Header(default=None)):
@@ -389,5 +512,117 @@ def create_app(
         recs = audit.records(tenant=hospital, patient_id=patient_id,
                              event_type=event_type, limit=limit)
         return {"records": [asdict(r) for r in recs]}
+
+    @app.get("/scores/sofa/{patient_id}")
+    async def sofa_severity_form(patient_id: str, hours: float = 24,
+                                 authorization: str | None = Header(default=None)):
+        """The SOFA severity form, filled from the record.
+
+        Not the SOFA the alerting rules use. That one reads the latest values and asks whether the
+        patient is deteriorating now; this one reads the WORST values of the window and asks how
+        sick they were over it — which is what the hospital's paper form is scored on, and what a
+        physician currently reconstructs by reading back through a chart.
+
+        It comes back unsigned and it raises nothing. A prognostic score used as an alarm source
+        is a documented clinical failure, and a severity score entering quality reporting with no
+        clinician behind it is the other one.
+        """
+        hospital = await _hospital(authorization)
+        engine = _engine(hospital)
+        record = identities.get(hospital, patient_id)
+        form = sofa_form.build(
+            engine.state(patient_id), datetime.now(timezone.utc),
+            window=timedelta(hours=max(1.0, min(float(hours), 168.0))),
+            admitted_at=getattr(record, "admitted_at", None),
+        )
+        audit.append(AuditEvent(hospital, "score", patient_id, "SOFA",
+                                {"total": form.total, "window_hours": form.window_hours,
+                                 "unmeasured": form.unmeasured_organs,
+                                 "read_by": _charted_by(authorization)}))
+        return form.as_dict()
+
+    @app.post("/scores/sofa/{patient_id}")
+    async def sign_sofa_form(patient_id: str, body: dict = Body(...), hours: float = 24,
+                             authorization: str | None = Header(default=None)):
+        """Sign a SOFA severity form, with the clinician's corrections.
+
+        The form arrives pre-filled, which is the product's value and also its risk: a number that
+        appeared on its own is a number nobody checked. This is where a person takes responsibility
+        for it.
+
+        A correction replaces the VALUE and the row is re-scored from the table — a clinician says
+        "the platelet count was 38", never "this row scores 2". Both numbers are kept, because a
+        pattern of corrections on one parameter is exactly the signal that a feed is wrong, and an
+        override that erased the original would destroy the only evidence of it.
+
+        The signature goes into the append-only audit and is sealed into its hash chain, so the
+        record of who signed what cannot later be edited quietly.
+        """
+        hospital = await _hospital(authorization)
+        engine = _engine(hospital)
+        signed_by = _charted_by(authorization)
+        now = datetime.now(timezone.utc)
+        window = timedelta(hours=max(1.0, min(float(hours), 168.0)))
+        record = identities.get(hospital, patient_id)
+        admitted = getattr(record, "admitted_at", None)
+        state = engine.state(patient_id)
+
+        # Built twice on purpose: `auto` is what the record alone produced, `rebuilt` is what the
+        # clinician is signing. The difference is the audit trail of the correction.
+        auto = sofa_form.build(state, now, window=window, admitted_at=admitted)
+        try:
+            overrides = parse_overrides(body.get("overrides"), auto)
+        except ScoreSigningError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+        rebuilt = sofa_form.build(state, now, window=window, admitted_at=admitted,
+                                  overrides={o.code: o.value for o in overrides})
+        try:
+            signed = sign_score(auto, rebuilt, signed_by=signed_by, overrides=overrides, now=now)
+        except ScoreSigningError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+        audit.append(AuditEvent(hospital, "score_signed", patient_id, "SOFA", {
+            "total": signed.total,
+            "auto_total": auto.total,
+            "window_hours": rebuilt.window_hours,
+            "unmeasured": rebuilt.unmeasured_organs,
+            "overrides": [o.as_dict() for o in overrides],
+            "signed_by": signed_by,
+            "at": now.isoformat(),
+        }))
+        return signed.as_dict()
+
+    @app.get("/alarm-quality")
+    async def get_alarm_quality(days: int = 7, limit: int = 20000,
+                                authorization: str | None = Header(default=None)):
+        """Of the alarms this system raised, how many did a human answer, and how fast?
+
+        The number the product's whole premise rests on, and nothing computed it. Read from the
+        audit log rather than from `AckStore` because the store is live state that a restart
+        empties — a quality figure quoted to a hospital has to come from the durable record.
+        """
+        hospital = await _hospital(authorization)
+        now = datetime.now(timezone.utc)
+        since = now - timedelta(days=max(1, days))
+        recs = [r for r in audit.records(tenant=hospital, limit=limit)
+                if (r.ts or "") >= since.isoformat()]
+        report = alarm_quality(recs, now)
+        return {**report.as_dict(), "days": days}
+
+    @app.get("/audit/verify")
+    async def verify_audit(limit: int = 10000, authorization: str | None = Header(default=None)):
+        """Has this hospital's audit log been altered?
+
+        Recomputes every seal from the genesis hash forward and names the first record that fails.
+        Deliberately unfiltered: a chain can only be verified as the complete run for one tenant,
+        because a filtered slice is missing its own predecessors by construction and would report a
+        break that is not there. `limit` bounds the work, and the response says how far it got so a
+        partial verification is never mistaken for a whole one.
+        """
+        hospital = await _hospital(authorization)
+        recs = audit.records(tenant=hospital, limit=limit)
+        report = verify_chain(recs)
+        return {**report.as_dict(), "records": len(recs), "complete": len(recs) < limit}
 
     return app

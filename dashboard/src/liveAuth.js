@@ -20,15 +20,22 @@ const ROLE_MAP = {
   NURSE: ROLE.CHARGE_NURSE,              // nurse panel (the UI has no separate plain-nurse view)
   RAPID_RESPONSE: ROLE.RRT,
   HOSPITAL_ADMIN: ROLE.HOSPITAL_ADMIN,
+  PHARMACIST: ROLE.PHARMACIST,
+  BIOMEDICAL: ROLE.BIOMEDICAL,
   // AUDITOR (read-only) and PLATFORM_SUPPORT (vendor-side) have no UI counterpart: mapping them
-  // onto HOSPITAL_ADMIN would grant powers they must not have. PHARMACIST / BIOMEDICAL exist in
-  // the UI but not yet in the backend role catalogue.
+  // onto HOSPITAL_ADMIN would grant powers they must not have.
 };
 
 // Most-privileged first — a user holding several memberships gets the highest.
+//
+// PHARMACIST and BIOMEDICAL sit at the bottom: neither is a clinical decision-maker, and a
+// person who is both a nurse and the biomedical contact should get the nurse's ward, not the
+// device page. Anyone absent from this list cannot be selected at all, which is why every
+// mapped role has to appear here.
 const PRECEDENCE = [
   "HOSPITAL_ADMIN", "ATTENDING", "UNIT_PHYSICIAN", "ONCALL_PHYSICIAN",
   "ASSOCIATE_PHYSICIAN", "RAPID_RESPONSE", "CHARGE_NURSE", "NURSE",
+  "PHARMACIST", "BIOMEDICAL",
 ];
 
 /** Decode a JWT payload client-side (display only — the signature is verified by the API). */

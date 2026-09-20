@@ -4,52 +4,46 @@
 // SYNTHETIC and every national ID is masked. The system never diagnoses — machine-generated
 // alert text always reads "…kriterleri değerlendirilecek".
 
-import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, LayoutGrid, UserPlus, Users, Bell, Settings, ArrowLeftRight, Stethoscope,
-  HeartPulse, Building2, ShieldAlert, Sun, Moon, Monitor, Globe, ChevronDown, LogOut, Check,
-  BellOff, ArrowUpCircle, Play, Pause, Clock, AlertTriangle, Plus, PenLine, Thermometer, Wind,
-  Droplets, Gauge, Heart, UserCog, ClipboardList, Siren, PanelLeftClose, PanelLeft, CheckCircle2,
-  Circle, X, FileText, Pill, Droplet, Sliders, Eye, EyeOff, ScrollText, Volume2, VolumeX,
-  TrendingUp, StopCircle, Syringe,
-  KeyRound, Wifi, WifiOff, Radio, Network, CloudOff, Cloud, Search, ShieldCheck, DoorOpen,
-  BellRing, BarChart3, Wrench, Pencil, Bed, Download, Power, Lock, Shield,
-  Contrast, Fingerprint, Mail, ArrowRight, QrCode, Send, RotateCcw, XCircle,
-  MapPin, ArrowLeft, Archive,
-  Sunset, FlaskConical, ScanLine, Grid3x3, RefreshCw, PlugZap, Upload, Inbox, HeartHandshake,
+  HeartPulse, Building2, ShieldAlert, Sun, Moon, Monitor, ChevronDown, LogOut, Check, BellOff,
+  ArrowUpCircle, Play, Pause, Clock, AlertTriangle, Plus, PenLine, Thermometer, Wind, Droplets,
+  Gauge, Heart, ClipboardList, Siren, PanelLeftClose, PanelLeft, CheckCircle2, Circle, X,
+  FileText, Pill, Droplet, Sliders, Eye, EyeOff, ScrollText, Volume2, VolumeX, TrendingUp,
+  StopCircle, Syringe, KeyRound, Wifi, WifiOff, Radio, Network, CloudOff, Cloud, ShieldCheck,
+  DoorOpen, BellRing, BarChart3, Bed, Download, Lock, Shield, Fingerprint, Mail, ArrowRight,
+  QrCode, MapPin, ArrowLeft, Archive, Sunset, FlaskConical, ScanLine, Grid3x3, RefreshCw,
+  PlugZap, Upload, Inbox, HeartHandshake,
 } from "lucide-react";
 import {
-  createDemoStore, buildRealisticState, ROLE, TIER, ESCALATION_STEP, STEP_TARGET_ROLE,
-  secondsToNextStep, canSnooze, snoozeCapMinutes, ACK_REASON_MIN_CHARS,
-  searchIcd10, MED_CATALOG, PROCEDURE_CATALOG, computeNews2, maskName, evaluateThresholds,
-  NEWS2_ALARM_THRESHOLD, DEFAULT_THRESHOLDS,
-  computeAnalytics, BED_STATES, BED_ADMIN_STATES, BED_STATE_LABEL,
-  CLINICAL_PROFILES, profileForPatient, profileForUnitType,
+  createDemoStore, buildRealisticState, ROLE, TIER, ESCALATION_STEP, secondsToNextStep,
+  canSnooze, snoozeCapMinutes, ACK_REASON_MIN_CHARS, searchIcd10, MED_CATALOG,
+  PROCEDURE_CATALOG, computeNews2, maskName, DEFAULT_THRESHOLDS, computeAnalytics,
+  profileForPatient,
 } from "./clinicalDemo.js";
+import { getTheme, storedTheme, persistTheme, THEME_KEYS } from "./clinicalTheme.js";
+// Hasta kabul / transfer / bakım ekibi kendi dosyasında: tek ekran düzeni, barkod etiketi ve
+// bakım ekibi ataması birlikte durur (bkz. admissionPage.jsx dosya başı).
+import { AdmissionPage } from "./admissionPage.jsx";
+import { awaitingLocalAdmission } from "./liveAdapters.js";
+import { SeverityScorePanel } from "./severityScore.jsx";
+import { formatAge, wardFeedHealth } from "./feedHealth.js";
 import {
-  getTheme, storedTheme, persistTheme, THEME_KEYS,
-} from "./clinicalTheme.js";
+  Bar, Empty, Field, Flag, HomunculusMark, KpiCard, LangPills, Menu, ModalShell, Row, Section,
+  SectionHeader, Sparkline, THEME_ICON, VitrinStat, Waveform, btnCls, fmtClock, inputCls,
+  maskedName, riskUi, tierUi, useStore,
+} from "./clinicalUi.jsx";
+import {
+  AlarmQualityPanel, ArchiveManagement, AuditLog, BreakGlassReview, DeviceAdmin, HierarchyTree,
+  InviteManagement,
+  SessionManagement, StaffMatrix, StructureAdmin, UserAdmin,
+} from "./clinicalAdmin.jsx";
+
 import { cstrings, storedClang, persistClang, LANGS } from "./clinicalI18n.js";
 import { enableAudio, isAudioEnabled, syncAlarm } from "./clinicalAudio.js";
 
-// ---------------------------------------------------------------- shared visual maps
-// Fixed, theme-independent accent colours (present verbatim in source so Tailwind JIT keeps them).
-const RISK_UI = {
-  stable:   { dot: "bg-emerald-500", text: "text-emerald-500", ring: "ring-emerald-500/40", bar: "bg-emerald-500" },
-  low:      { dot: "bg-sky-500",     text: "text-sky-500",     ring: "ring-sky-500/40",     bar: "bg-sky-500" },
-  high:     { dot: "bg-amber-500",   text: "text-amber-500",   ring: "ring-amber-500/40",   bar: "bg-amber-500" },
-  critical: { dot: "bg-red-500",     text: "text-red-500",     ring: "ring-red-500/60",     bar: "bg-red-500" },
-};
-const riskUi = (r) => RISK_UI[r] || RISK_UI.stable;
 
-const TIER_UI = {
-  CRITICAL: { text: "text-red-500",    dot: "bg-red-500",    chip: "bg-red-500/15 text-red-500" },
-  HIGH:     { text: "text-amber-500",  dot: "bg-amber-500",  chip: "bg-amber-500/15 text-amber-500" },
-  MEDIUM:   { text: "text-yellow-500", dot: "bg-yellow-500", chip: "bg-yellow-500/15 text-yellow-500" },
-  LOW:      { text: "text-sky-500",    dot: "bg-sky-500",    chip: "bg-sky-500/15 text-sky-500" },
-  INFO:     { text: "text-slate-400",  dot: "bg-slate-400",  chip: "bg-slate-400/15 text-slate-400" },
-};
-const tierUi = (t) => TIER_UI[t] || TIER_UI.INFO;
 
 // Neutral machine-generated alert text (never a diagnosis).
 const ALERT_TXT = {
@@ -59,14 +53,7 @@ const ALERT_TXT = {
   ru: "Критерии клинического ухудшения будут оценены",
 };
 
-const THEME_ICON = { icu: Moon, light: Sun, contrast: Contrast, wall: Monitor };
 
-// ---------------------------------------------------------------- small helpers
-function fmtClock(sec) {
-  const s = Math.max(0, Math.floor(sec));
-  const m = Math.floor(s / 60);
-  return `${m}:${String(s % 60).padStart(2, "0")}`;
-}
 function losText(admittedAtMs, S) {
   if (!admittedAtMs) return "—";
   const h = Math.floor((Date.now() - admittedAtMs) / 3600000);
@@ -77,137 +64,11 @@ function ageText(p, S) {
   if (p.isNeonate) return `${p.ageDays ?? 0} ${S.dayUnit}`;
   return `${p.age ?? "—"}`;
 }
-function useStore(store) {
-  const [, force] = useReducer((x) => x + 1, 0);
-  useEffect(() => store.subscribe(force), [store]);
-  return store.getState();
-}
 
-// ---------------------------------------------------------------- generic dropdown menu
-function Menu({ T, triggerClass, trigger, align = "right", children }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <button type="button" onClick={() => setOpen((o) => !o)} className={triggerClass}>
-        {trigger}
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className={`absolute z-50 mt-2 min-w-[15rem] rounded-xl border ${T.border} ${T.card} p-1.5 shadow-2xl ${align === "right" ? "right-0" : "left-0"}`}>
-            {children({ close: () => setOpen(false) })}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
 
-// ---------------------------------------------------------------- form primitives
-function Field({ T, label, hint, children }) {
-  return (
-    <label className="block">
-      <div className={`mb-1 font-medium ${T.sizes.label} ${T.muted}`}>{label}</div>
-      {children}
-      {hint && <div className={`mt-1 text-xs ${T.faint}`}>{hint}</div>}
-    </label>
-  );
-}
-const inputCls = (T) => `w-full rounded-lg border px-3 py-2.5 outline-none transition focus:ring-2 focus:ring-brand/40 ${T.input} ${T.sizes.nav}`;
-function btnCls(T, kind = "primary") {
-  const base = "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed";
-  const map = { primary: T.primary, ghost: T.ghost, danger: T.danger, warn: T.warn };
-  return `${base} ${map[kind] || T.primary} ${T.sizes.nav}`;
-}
 
-// ================================================================ LOGIN
-// ---------------------------------------------------------------- Brand mark (bespoke SVG logo)
-// Yeni nesil marka işareti: yumuşak köşeli teal→cyan rozet içinde beyaz EKG/nabız çizgisi.
-// Tek bir "H" hissi veren dikey vuruşlar + kalp atışı. Kütüphane değil, saf SVG.
-function HomunculusMark({ size = 44, glow = true }) {
-  const id = useMemo(() => "hm" + Math.random().toString(36).slice(2, 7), []);
-  return (
-    <svg width={size} height={size} viewBox="0 0 48 48" fill="none"
-      className={glow ? "drop-shadow-[0_6px_16px_rgba(13,148,136,0.45)]" : ""} aria-hidden="true">
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#0d9488" />
-          <stop offset="0.55" stopColor="#0891b2" />
-          <stop offset="1" stopColor="#06b6d4" />
-        </linearGradient>
-      </defs>
-      <rect x="1.5" y="1.5" width="45" height="45" rx="13" fill={`url(#${id})`} />
-      <rect x="1.5" y="1.5" width="45" height="45" rx="13" fill="white" fillOpacity="0.04" />
-      {/* H omuzları: iki dikey vuruş */}
-      <rect x="11" y="13" width="3.2" height="22" rx="1.6" fill="white" fillOpacity="0.9" />
-      <rect x="33.8" y="13" width="3.2" height="22" rx="1.6" fill="white" fillOpacity="0.9" />
-      {/* Kalp atışı / EKG köprüsü */}
-      <path d="M11 24 H17 L19.5 17 L23 31 L26 21 L28.5 24 H37"
-        stroke="white" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
-// Gerçek SVG bayraklar — emoji bayrakları Windows'ta "TR/AZ/GB/RU" harf çifti olarak
-// gösterildiği için (regional-indicator desteklenmez) her platformda görünen vektör bayraklar.
-const FLAG_SVG = {
-  tr: (
-    <svg viewBox="0 0 30 20" className="h-full w-full">
-      <rect width="30" height="20" fill="#E30A17" />
-      <circle cx="12" cy="10" r="5" fill="#fff" />
-      <circle cx="13.5" cy="10" r="4" fill="#E30A17" />
-      <path fill="#fff" d="M18 10l4.7-1.5-2.9 4v-5l2.9 4z" />
-    </svg>
-  ),
-  az: (
-    <svg viewBox="0 0 30 20" className="h-full w-full">
-      <rect width="30" height="6.67" fill="#00B5E2" />
-      <rect y="6.67" width="30" height="6.67" fill="#EF3340" />
-      <rect y="13.33" width="30" height="6.67" fill="#509E2F" />
-      <circle cx="15" cy="10" r="2.6" fill="#fff" />
-      <circle cx="15.8" cy="10" r="2.1" fill="#EF3340" />
-      <path fill="#fff" d="M18.4 10l2.4-.8-1.5 2v-2.5l1.5 2z" />
-    </svg>
-  ),
-  en: (
-    <svg viewBox="0 0 30 20" className="h-full w-full">
-      <rect width="30" height="20" fill="#012169" />
-      <path d="M0 0l30 20M30 0L0 20" stroke="#fff" strokeWidth="4" />
-      <path d="M0 0l30 20M30 0L0 20" stroke="#C8102E" strokeWidth="2" />
-      <path d="M15 0v20M0 10h30" stroke="#fff" strokeWidth="6" />
-      <path d="M15 0v20M0 10h30" stroke="#C8102E" strokeWidth="3.5" />
-    </svg>
-  ),
-  ru: (
-    <svg viewBox="0 0 30 20" className="h-full w-full">
-      <rect width="30" height="6.67" fill="#fff" />
-      <rect y="6.67" width="30" height="6.67" fill="#0039A6" />
-      <rect y="13.33" width="30" height="6.67" fill="#D52B1E" />
-    </svg>
-  ),
-};
-function Flag({ code, className = "" }) {
-  return (
-    <span className={`inline-block overflow-hidden rounded-[3px] ring-1 ring-black/10 ${className}`}>
-      {FLAG_SVG[code] || null}
-    </span>
-  );
-}
 
-// Kompakt bayrak dil seçici — giriş ekranı ve gerektiğinde her yerde kullanılabilir.
-function LangPills({ T, lang, setLang }) {
-  return (
-    <div className={`inline-flex items-center gap-0.5 rounded-xl border ${T.border} ${T.glassSubtle} p-0.5`}>
-      {LANGS.map(([code, label]) => (
-        <button key={code} type="button" onClick={() => setLang(code)} title={label} aria-label={label}
-          className={`flex h-8 items-center gap-1.5 rounded-lg px-2 transition ${lang === code ? "bg-brand/25 ring-1 ring-brand/50" : "opacity-55 hover:opacity-100"}`}>
-          <Flag code={code} className="h-3.5 w-5" />
-          <span className="text-[11px] font-bold uppercase">{code}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function Login({ T, S, store, lang, setLang }) {
   const [email, setEmail] = useState("");
@@ -380,15 +241,6 @@ function Login({ T, S, store, lang, setLang }) {
   );
 }
 
-// Canlı vitrin sayaç kutusu (giriş marka panelinde).
-function VitrinStat({ value, label }) {
-  return (
-    <div className="rounded-2xl bg-white/5 p-3 ring-1 ring-white/10 backdrop-blur">
-      <div className="text-lg font-black text-white">{value}</div>
-      <div className="mt-0.5 text-[10px] font-medium leading-tight text-white/55">{label}</div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------- MFA kapısı (Madde 6)
 // Şifre girişi sonrası, rol iki adımlı doğrulama gerektiriyorsa gösterilir (state.mfaPending).
@@ -720,131 +572,183 @@ function ShiftMenu({ T, S, state }) {
 }
 
 // ================================================================ TOP BAR
-function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMenu,
+/**
+ * Üst bar — üç bölge: NEREDEYİM · NE OLUYOR · BEN.
+ *
+ * Eskisi on iki ikonu yan yana aynı ağırlıkta diziyordu: bulut, ses, bildirim, test, siren,
+ * göz, tema, dört bayrak, vardiya, çıkış. Hangisinin durum göstergesi hangisinin düğme olduğu
+ * belli değildi ve dört bayrak kalıcı olarak 150 piksel yer tutuyordu.
+ *
+ * Yeni düzende ayrım şu: bir şeyin üst barda sürekli yeri olması için **koğuşun o andaki
+ * durumunu** söylemesi gerekir. Cihaz akışı ve açık alarm sayısı bunu yapar — ikisi de
+ * tıklanınca ilgili ekrana götürür. Ses, bildirim, tema, dil, maskeleme birer tercihtir ve
+ * kullanıcı menüsüne iner; ama **bozulduklarında** (ses kapalı, bildirim kapalı, çevrimdışı)
+ * durum çipi olarak geri çıkarlar — sessiz bir alarm sisteminin sessiz kaldığını söylemesi
+ * bir tercih değil, güvenlik bilgisidir.
+ */
+function StatusChip({ T, tone = "neutral", icon: Icon, label, onClick, title }) {
+  const tones = {
+    good: "bg-emerald-500/12 text-emerald-500 ring-1 ring-emerald-500/25",
+    warn: "bg-amber-500/12 text-amber-500 ring-1 ring-amber-500/25",
+    bad: "bg-red-500/12 text-red-500 ring-1 ring-red-500/25",
+    neutral: `${T.subtle} ${T.muted}`,
+  };
+  const cls = `inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${tones[tone] || tones.neutral}`;
+  if (!onClick) return <span className={cls} title={title}>{Icon && <Icon size={13} />}{label}</span>;
+  return (
+    <button type="button" onClick={onClick} title={title} className={`${cls} transition hover:opacity-80`}>
+      {Icon && <Icon size={13} />}{label}
+    </button>
+  );
+}
+
+function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMenu, setPage,
                  soundOn, onEnableSound, notifyPerm, onEnableNotify, onTestPush, notifyBlocked }) {
   const user = state.user;
+  const P = S.top || {};
   const [pinOpen, setPinOpen] = useState(false);
   const RoleIcon = user?.role === ROLE.HOSPITAL_ADMIN ? ShieldAlert
     : user?.role === ROLE.CHARGE_NURSE ? HeartPulse : Stethoscope;
   const online = state.online !== false;
+  const openAlarms = (state.alerts || []).filter((a) => a.status === "FIRED").length;
+  // Besleme sağlığı: "sessiz" yatak, cihazı hiç konuşmayan yataktır. On-prem'de köprüye
+  // dışarıdan bakılamadığı için bu sayı üst barın taşıdığı en pahalı bilgidir.
+  //
+  // ⚠️ Ölçüm saati hiç taşımayan bir pano (simülasyon, ya da `latest.at` yayınlamayan eski bir
+  // motor) her yatağı "sessiz" gösterirdi — kartında "CANLI" yazan yatağı bile. Bilinmeyeni
+  // kötü haber diye göstermek, gerçek bir kesintiyi de inandırıcılıktan düşürür: saat yoksa
+  // çip hiç çıkmaz.
+  const patients = state.patients || [];
+  const hasFeedClock = patients.some((p) => p?.measuredAt && Object.keys(p.measuredAt).length > 0);
+  const feeds = wardFeedHealth(patients);
+  const feedTone = feeds.silentCount > 0 ? "bad" : feeds.staleCount > 0 ? "warn" : "good";
+  const initials = (user?.full_name || "")
+    .split(" ").filter(Boolean).slice(-2).map((w) => w[0]).join("").toUpperCase() || "?";
+
   return (
-    <header className={`sticky top-0 z-30 flex items-center gap-3 border-b ${T.border} ${T.topbar} px-4 py-3 backdrop-blur`}>
-      <button onClick={onMenu} className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost} lg:hidden`}>
+    <header className={`sticky top-0 z-30 flex items-center gap-3 border-b ${T.border} ${T.topbar} px-4 py-2.5 backdrop-blur`}>
+      {/* --- NEREDEYİM --- */}
+      <button onClick={onMenu} aria-label={S.expand} className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${T.ghost} lg:hidden`}>
         <PanelLeft size={18} />
       </button>
-      <div className="min-w-0">
+      <div className="min-w-0 shrink">
         <div className={`truncate font-bold ${T.heading} ${T.sizes.name}`}>{S.nav[page]}</div>
         <div className={`truncate text-xs ${T.faint}`}>{state.structure.tenant} · {state.structure.site}</div>
       </div>
 
-      <div className="ml-auto flex items-center gap-2">
-        {/* Fast PIN switcher — 3-second shift/user change on shared screens */}
-        <button onClick={() => setPinOpen(true)}
-          title={S.pr7.fastSwitch}
-          className={`hidden items-center gap-2 rounded-lg px-3 py-2 sm:inline-flex ${T.ghost} ${T.sizes.nav}`}>
-          <RoleIcon size={16} /><span className="max-w-[9rem] truncate">{user?.full_name}</span>
-          <KeyRound size={14} className="text-brand" />
-        </button>
-        {pinOpen && <PinSwitchModal T={T} S={S} store={store} onClose={() => setPinOpen(false)} />}
-
-        {/* Offline / online toggle (PWA resilience) */}
-        <button onClick={() => store.setOnline(!online)}
-          title={online ? S.pr7.goOffline : S.pr7.goOnline}
-          className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost} ${online ? "text-emerald-500" : "text-amber-500"}`}>
-          {online ? <Cloud size={17} /> : <CloudOff size={17} />}
-        </button>
-
-        {/* Alarm sound (IEC 60601-1-8) enable */}
-        <button onClick={onEnableSound}
-          title={soundOn ? S.pr7.soundOn : S.pr7.soundOff}
-          className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost} ${soundOn ? "text-brand" : T.faint}`}>
-          {soundOn ? <Volume2 size={17} /> : <VolumeX size={17} />}
-        </button>
-
-        {/* Web push / notification enable */}
-        <button onClick={onEnableNotify}
-          title={notifyBlocked ? S.pr8.notifyNeedsHttps
-            : notifyPerm === "granted" ? S.pr7.notifyOn : S.pr7.notifyEnable}
-          className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost} ${notifyPerm === "granted" ? "text-brand" : T.faint}`}>
-          {notifyPerm === "granted" ? <Bell size={17} /> : <BellOff size={17} />}
-        </button>
-
-        {/* Bildirim Sistemini Test Et — only when notifications are granted */}
-        {notifyPerm === "granted" && (
-          <button onClick={onTestPush}
-            title={S.pr8.sendTestPush}
-            className={`hidden h-9 w-9 place-items-center rounded-lg sm:grid ${T.ghost} text-emerald-500`}>
-            <Radio size={17} />
-          </button>
+      {/* --- NE OLUYOR --- */}
+      <div className="ml-4 hidden items-center gap-2 md:flex">
+        {hasFeedClock && (
+          <StatusChip T={T} tone={feedTone} icon={Radio}
+            label={feeds.silentCount > 0
+              ? `${feeds.silentCount} ${P.feedSilent || "yatak sessiz"}`
+              : `${feeds.healthyCount + feeds.staleCount} ${P.feedLive || "yatak akıyor"}`}
+            title={P.feedTitle} onClick={() => setPage("tech")} />
         )}
-
-        {/* Auto-alarm toggle */}
-        <button
-          onClick={() => store.setAutoAlarm(!state.autoAlarm)}
-          title={state.autoAlarm ? S.pr6.autoAlarmOn : S.pr6.autoAlarmOff}
-          className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost} ${state.autoAlarm ? "text-red-500" : T.faint}`}>
-          {state.autoAlarm ? <Siren size={17} /> : <BellOff size={17} />}
-        </button>
-
-        {/* KVKK name-mask toggle */}
-        <button
-          onClick={() => store.toggleMaskNames()}
-          title={S.pr6.maskNames}
-          className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost} ${state.maskNames ? "text-brand" : T.faint}`}>
-          {state.maskNames ? <EyeOff size={17} /> : <Eye size={17} />}
-        </button>
-
-        {/* Theme selector */}
-        <Menu T={T} triggerClass={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost}`}
-          trigger={(() => { const I = THEME_ICON[theme] || Moon; return <I size={17} />; })()}>
-          {({ close }) => (
-            <div>
-              <div className={`px-2 pb-1.5 pt-1 text-xs font-semibold uppercase tracking-wide ${T.faint}`}>{S.themeLabel}</div>
-              {THEME_KEYS.map((k) => { const I = THEME_ICON[k]; return (
-                <button key={k} onClick={() => { setTheme(k); close(); }}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
-                  <I size={15} /> {S.theme[k]}
-                  {theme === k && <Check size={15} className="ml-auto text-brand" />}
-                </button>
-              ); })}
-            </div>
-          )}
-        </Menu>
-
-        {/* Language selector — gerçek SVG bayraklar (Windows emoji bayrak sorununa dayanıklı) */}
-        <div className={`hidden items-center gap-0.5 rounded-xl border ${T.border} ${T.subtle} p-0.5 sm:flex`} title={S.langLabel}>
-          {LANGS.map(([code, label]) => (
-            <button key={code} onClick={() => setLang(code)} title={label} aria-label={label}
-              className={`flex h-8 items-center gap-1.5 rounded-lg px-2 transition ${lang === code ? "bg-brand/20 ring-1 ring-brand/50" : "opacity-55 hover:opacity-100"}`}>
-              <Flag code={code} className="h-3.5 w-5" />
-              <span className={`text-[11px] font-bold uppercase ${lang === code ? "text-brand" : ""}`}>{code}</span>
-            </button>
-          ))}
-        </div>
-        {/* Compact flag dropdown for narrow screens */}
-        <Menu T={T} triggerClass={`inline-flex items-center gap-1 rounded-lg px-2 py-2 sm:hidden ${T.ghost} ${T.sizes.nav}`}
-          trigger={<><Flag code={lang} className="h-3.5 w-5" /><ChevronDown size={13} /></>}>
-          {({ close }) => (
-            <div>
-              <div className={`px-2 pb-1.5 pt-1 text-xs font-semibold uppercase tracking-wide ${T.faint}`}>{S.langLabel}</div>
-              {LANGS.map(([code, label]) => (
-                <button key={code} onClick={() => { setLang(code); close(); }}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
-                  <Flag code={code} className="h-3.5 w-5" /> {label}
-                  {lang === code && <Check size={15} className="ml-auto text-brand" />}
-                </button>
-              ))}
-            </div>
-          )}
-        </Menu>
-
-        {/* Shift — çalışır vardiya menüsü: saate göre otomatik algılanır, elle değiştirilebilir */}
-        <ShiftMenu T={T} S={S} state={state} />
-        {/* logout */}
-        <button onClick={() => store.logout()} className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost}`} title={S.logout}>
-          <LogOut size={17} />
-        </button>
+        <StatusChip T={T} tone={openAlarms > 0 ? "bad" : "neutral"} icon={Bell}
+          label={`${openAlarms} ${P.openAlarms || "açık alarm"}`}
+          onClick={() => setPage("alarms")} />
+        {/* Yalnız bozukken görünenler */}
+        {!online && <StatusChip T={T} tone="warn" icon={CloudOff} label={S.pr7.offlineBanner} onClick={() => store.setOnline(true)} />}
+        {!soundOn && <StatusChip T={T} tone="warn" icon={VolumeX} label={P.soundOff || "Ses kapalı"} onClick={onEnableSound} />}
+        {notifyPerm !== "granted" && (
+          <StatusChip T={T} tone="warn" icon={BellOff} label={P.notifyOff || "Bildirim kapalı"}
+            title={notifyBlocked ? S.pr8.notifyNeedsHttps : undefined} onClick={onEnableNotify} />
+        )}
       </div>
+
+      {/* --- BEN --- */}
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <ShiftMenu T={T} S={S} state={state} />
+        <Menu T={T}
+          triggerClass={`inline-flex items-center gap-2 rounded-xl border ${T.border} ${T.subtle} py-1.5 pl-1.5 pr-2.5`}
+          trigger={<>
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand/15 text-[11px] font-bold text-brand">{initials}</span>
+            <span className="hidden flex-col items-start leading-tight sm:flex">
+              <span className={`text-xs font-semibold ${T.text}`}>{user?.full_name}</span>
+              <span className={`text-[10px] ${T.faint}`}>{S.roleName[user?.role]} · {lang.toUpperCase()}</span>
+            </span>
+            <ChevronDown size={13} className={T.faint} />
+          </>}>
+          {({ close }) => (
+            <div className="min-w-[17rem]">
+              <div className={`flex items-center gap-2.5 px-2.5 pb-2 pt-1`}>
+                <span className="grid h-9 w-9 place-items-center rounded-full bg-brand/15 text-brand"><RoleIcon size={17} /></span>
+                <span className="min-w-0">
+                  <span className={`block truncate text-sm font-semibold ${T.text}`}>{user?.full_name}</span>
+                  <span className={`block truncate text-xs ${T.faint}`}>{S.roleName[user?.role]}</span>
+                </span>
+              </div>
+              <div className={`my-1 border-t ${T.border}`} />
+
+              <button onClick={() => { setPinOpen(true); close(); }}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
+                <KeyRound size={15} className="text-brand" /> {S.pr7.fastSwitch}
+              </button>
+
+              <div className={`px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide ${T.faint}`}>{P.display || S.themeLabel}</div>
+              <div className="flex flex-wrap gap-1 px-2 pb-1">
+                {THEME_KEYS.map((k) => { const I = THEME_ICON[k]; return (
+                  <button key={k} onClick={() => setTheme(k)} title={S.theme[k]} aria-label={S.theme[k]}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs ${theme === k ? T.navActive : T.navIdle}`}>
+                    <I size={14} /> {S.theme[k]}
+                  </button>
+                ); })}
+              </div>
+              <div className="flex flex-wrap gap-1 px-2 pb-1 pt-1">
+                {LANGS.map(([code, label]) => (
+                  <button key={code} onClick={() => setLang(code)} title={label} aria-label={label}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 ${lang === code ? T.navActive : T.navIdle}`}>
+                    <Flag code={code} className="h-3 w-4" />
+                    <span className="text-[11px] font-bold uppercase">{code}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className={`px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide ${T.faint}`}>{P.alarmsAndPrivacy || S.alarmsTitle}</div>
+              <button onClick={onEnableSound}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
+                {soundOn ? <Volume2 size={15} className="text-brand" /> : <VolumeX size={15} className="text-amber-500" />}
+                <span className="flex-grow">{soundOn ? S.pr7.soundOn : S.pr7.soundOff}</span>
+              </button>
+              <button onClick={onEnableNotify}
+                title={notifyBlocked ? S.pr8.notifyNeedsHttps : undefined}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
+                {notifyPerm === "granted" ? <Bell size={15} className="text-brand" /> : <BellOff size={15} className="text-amber-500" />}
+                <span className="flex-grow">{notifyPerm === "granted" ? S.pr7.notifyOn : S.pr7.notifyEnable}</span>
+              </button>
+              {notifyPerm === "granted" && (
+                <button onClick={onTestPush}
+                  className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
+                  <Radio size={15} className="text-emerald-500" /> {S.pr8.sendTestPush}
+                </button>
+              )}
+              <button onClick={() => store.setAutoAlarm(!state.autoAlarm)}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
+                {state.autoAlarm ? <Siren size={15} className="text-red-500" /> : <BellOff size={15} className={T.faint} />}
+                <span className="flex-grow">{state.autoAlarm ? S.pr6.autoAlarmOn : S.pr6.autoAlarmOff}</span>
+              </button>
+              <button onClick={() => store.toggleMaskNames()}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
+                {state.maskNames ? <EyeOff size={15} className="text-brand" /> : <Eye size={15} className={T.faint} />}
+                <span className="flex-grow">{S.pr6.maskNames}</span>
+              </button>
+              <button onClick={() => store.setOnline(!online)}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
+                {online ? <Cloud size={15} className="text-emerald-500" /> : <CloudOff size={15} className="text-amber-500" />}
+                <span className="flex-grow">{online ? S.pr7.goOffline : S.pr7.goOnline}</span>
+              </button>
+
+              <div className={`my-1 border-t ${T.border}`} />
+              <button onClick={() => store.logout()}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-red-500 hover:bg-red-500/10 ${T.sizes.nav}`}>
+                <LogOut size={15} /> {S.logout}
+              </button>
+            </div>
+          )}
+        </Menu>
+      </div>
+      {pinOpen && <PinSwitchModal T={T} S={S} store={store} onClose={() => setPinOpen(false)} />}
     </header>
   );
 }
@@ -852,11 +756,21 @@ function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMe
 // ================================================================ SIDEBAR
 const NAV_ITEMS = [
   { key: "board", icon: LayoutGrid, roles: "all", group: "clinical" },
+  // Bakım ekibi ataması bu ekranın üçüncü sekmesi. Kendi menü maddesiyken aynı üç rolü
+  // ilgilendiriyor ve kabul formundaki "sorumlu hekim / hemşire" alanlarının aynısını yapıyordu.
   { key: "admission", icon: UserPlus, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "clinical" },
-  { key: "care", icon: Users, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "clinical" },
   { key: "alarms", icon: Bell, roles: "all", group: "clinical" },
   { key: "results", icon: Inbox, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "ops" },
   { key: "heatmap", icon: Grid3x3, roles: "all", group: "ops" },
+  // Biomedical could reach no screen of its own: DeviceAdmin was written, but locked inside the
+  // admin page, which only HOSPITAL_ADMIN can open. So the role responsible for the devices was
+  // the one role that could not see them. This page is theirs — device inventory plus the feed
+  // health that on-prem makes impossible to check from anywhere else.
+  { key: "tech", icon: Radio, roles: [ROLE.BIOMEDICAL, ROLE.HOSPITAL_ADMIN], group: "ops" },
+  // The pharmacist's own page. Until now PHARMACIST, RAPID_RESPONSE and BIOMEDICAL saw the same
+  // three screens and none of them appeared here — "rol var, işi yok". The antibiotic clock is
+  // this role's work, and it was reachable only as an alert that had already fired.
+  { key: "pharmacy", icon: Pill, roles: [ROLE.PHARMACIST, ROLE.ATTENDING, ROLE.HOSPITAL_ADMIN], group: "clinical" },
   { key: "admin", icon: Settings, roles: [ROLE.HOSPITAL_ADMIN], group: "admin" },
 ];
 const NAV_GROUPS = [
@@ -866,40 +780,82 @@ const NAV_GROUPS = [
 ];
 function canSee(item, role) { return item.roles === "all" || item.roles.includes(role); }
 
+/**
+ * Menüdeki sayı rozeti — işin nerede biriktiğini menüden okutur.
+ *
+ * Yalnız **bekleyen iş** sayılır: açık alarm, görülmemiş sonuç, yatağa alınmayı bekleyen HBYS
+ * hastası. Toplam sayı (kaç hasta, kaç cihaz) rozete girmez; rozet kırmızıdır ve kırmızı bir
+ * sayı her zaman "burada bekleyen bir şey var" demek zorundadır, yoksa okunmaz olur.
+ */
+function navBadge(key, state) {
+  if (key === "alarms") return (state.alerts || []).filter((a) => a.status === "FIRED").length;
+  if (key === "results") return (state.results || []).filter((r) => r.status !== "reviewed").length;
+  if (key === "admission") return awaitingLocalAdmission(state.patients || []).length;
+  return 0;
+}
+
+/**
+ * Sol panel — iki genişlik, ikisi de okunabilir.
+ *
+ * Daraltılmış hâl artık yalnız ikon değildir: ikonun altında kısa ad durur (S.navShort). Yalnız
+ * ikon bırakan menü, ikonu ezberlememiş herkes için tahmin oyunudur ve vardiyaya yeni başlayan
+ * hemşire tam olarak o kişidir. Kısa ad ayrı bir dizedir, uzun başlığın kırpılmışı değil —
+ * "Hasta Kabul / Tra…" hiçbir dilde okunmuyordu.
+ */
 function Sidebar({ T, S, state, page, setPage, collapsed, setCollapsed, mobileOpen, setMobileOpen }) {
   const role = state.user?.role;
   const visible = NAV_ITEMS.filter((i) => canSee(i, role));
-  const width = collapsed ? "w-16" : "w-64";
+  const width = collapsed ? "w-[88px]" : "w-64";
+  const navLabel = (key) => (collapsed ? (S.navShort?.[key] || S.nav[key]) : S.nav[key]);
   const body = (
     <div className={`flex h-full flex-col border-r ${T.border} ${T.sidebar}`}>
-      <div className={`flex items-center gap-2.5 px-4 py-4 ${collapsed ? "justify-center" : ""}`}>
+      <div className={`flex items-center gap-2.5 px-3 py-4 ${collapsed ? "flex-col" : ""}`}>
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand text-white">
           <Activity size={20} />
         </div>
         {!collapsed && (
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className={`truncate font-bold ${T.heading}`}>{S.appName}</div>
             <div className={`truncate text-[10px] ${T.faint}`}>{S.tagline}</div>
           </div>
         )}
+        <button onClick={() => setCollapsed((c) => !c)} title={collapsed ? S.expand : S.collapse}
+          aria-label={collapsed ? S.expand : S.collapse}
+          className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${T.navIdle}`}>
+          {collapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
+        </button>
       </div>
-      <nav className="flex-1 space-y-1 overflow-y-auto px-2.5 py-2">
+      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-2">
         {NAV_GROUPS.map((g) => {
           const items = visible.filter((i) => (i.group || "clinical") === g.id);
           if (!items.length) return null;
           return (
             <div key={g.id} className="mb-1.5">
-              {!collapsed && <div className={`px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider ${T.faint}`}>{S[g.label]}</div>}
-              {collapsed && <div className={`mx-2 my-1.5 border-t ${T.border}`} />}
+              {collapsed
+                ? <div className={`mx-3 my-2 border-t ${T.border}`} />
+                : <div className={`px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider ${T.faint}`}>{S[g.label]}</div>}
               {items.map((item) => {
                 const Icon = item.icon;
                 const active = page === item.key;
+                const badge = navBadge(item.key, state);
                 return (
                   <button key={item.key} title={S.nav[item.key]}
                     onClick={() => { setPage(item.key); setMobileOpen(false); }}
-                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 font-medium transition ${T.sizes.nav} ${active ? T.navActive : T.navIdle} ${collapsed ? "justify-center" : ""}`}>
+                    className={collapsed
+                      ? `relative flex w-full flex-col items-center gap-1 rounded-xl px-1 py-2.5 font-medium transition ${active ? T.navActive : T.navIdle}`
+                      : `relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition ${T.sizes.nav} ${active ? T.navActive : T.navIdle}`}>
+                    {active && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-brand" />}
                     <Icon size={20} className="shrink-0" />
-                    {!collapsed && <span className="truncate">{S.nav[item.key]}</span>}
+                    <span className={collapsed
+                      ? "line-clamp-2 text-center text-[10px] font-semibold leading-tight"
+                      : "flex-1 truncate text-left"}>{navLabel(item.key)}</span>
+                    {badge > 0 && (
+                      <span className={collapsed
+                        ? "absolute right-2 top-1.5 grid h-[17px] min-w-[17px] place-items-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white"
+                        : "grid h-[19px] min-w-[19px] shrink-0 place-items-center rounded-full bg-red-500 px-1.5 text-[10.5px] font-bold text-white"}>
+                        {badge}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -907,17 +863,24 @@ function Sidebar({ T, S, state, page, setPage, collapsed, setCollapsed, mobileOp
           );
         })}
       </nav>
-      <div className={`border-t ${T.border} p-2.5`}>
-        <button onClick={() => setCollapsed((c) => !c)}
-          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 ${T.navIdle} ${T.sizes.nav} ${collapsed ? "justify-center" : ""}`}>
-          {collapsed ? <PanelLeft size={18} /> : <><PanelLeftClose size={18} /><span>{S.collapse}</span></>}
-        </button>
+      <div className={`border-t ${T.border} px-2 py-2`}>
+        <div className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${collapsed ? "flex-col text-center" : ""}`}>
+          <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand/15 text-brand">
+            <Stethoscope size={14} />
+          </div>
+          <div className="min-w-0">
+            <div className={`truncate text-[11px] font-semibold ${T.text}`}>
+              {state.maskNames ? maskName(state.user?.full_name || "") : state.user?.full_name}
+            </div>
+            {!collapsed && <div className={`truncate text-[10px] ${T.faint}`}>{S.roleName[role]}</div>}
+          </div>
+        </div>
       </div>
     </div>
   );
   return (
     <>
-      <aside className={`hidden shrink-0 lg:block ${width} transition-all`}>{body}</aside>
+      <aside className={`hidden shrink-0 lg:block ${width} transition-all`} data-testid="sidebar">{body}</aside>
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className={`absolute inset-0 ${T.overlay}`} onClick={() => setMobileOpen(false)} />
@@ -925,6 +888,44 @@ function Sidebar({ T, S, state, page, setPage, collapsed, setCollapsed, mobileOp
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * Mobil alt bar — telefonda sol menünün yerini alır.
+ *
+ * Bir hemşire koğuşta tek elle, çoğu zaman eldivenle çalışıyor: menüyü açıp içinden seçmek
+ * iki dokunuş ve iki saniyedir. Alt bar en çok kullanılan dördü doğrudan verir, kalanı
+ * "Menü"nün arkasında durur. Dokunma hedefleri 44 pikselden küçük değildir.
+ */
+function MobileTabBar({ T, S, state, page, setPage, setMobileOpen }) {
+  const role = state.user?.role;
+  const visible = NAV_ITEMS.filter((i) => canSee(i, role));
+  const primary = visible.slice(0, 4);
+  const openAlarms = (state.alerts || []).filter((a) => a.status === "FIRED").length;
+  const label = (key) => S.navShort?.[key] || S.nav[key];
+  return (
+    <nav className={`fixed inset-x-0 bottom-0 z-40 flex border-t ${T.border} ${T.sidebar} px-1 pb-[env(safe-area-inset-bottom)] lg:hidden`}>
+      {primary.map((item) => {
+        const Icon = item.icon;
+        const active = page === item.key;
+        return (
+          <button key={item.key} onClick={() => setPage(item.key)} title={S.nav[item.key]}
+            className={`relative flex min-h-[54px] flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 ${active ? "text-brand" : T.navIdle}`}>
+            <Icon size={20} />
+            <span className="line-clamp-1 text-[10px] font-semibold leading-none">{label(item.key)}</span>
+            {item.key === "alarms" && openAlarms > 0 && (
+              <span className="absolute right-[18%] top-1 grid h-[17px] min-w-[17px] place-items-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{openAlarms}</span>
+            )}
+          </button>
+        );
+      })}
+      <button onClick={() => setMobileOpen(true)} title={S.expand}
+        className={`flex min-h-[54px] flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 ${T.navIdle}`}>
+        <PanelLeft size={20} />
+        <span className="text-[10px] font-semibold leading-none">{S.navGroupOps}</span>
+      </button>
+    </nav>
   );
 }
 
@@ -957,41 +958,6 @@ function VitalsGrid({ T, vitals, compact }) {
   );
 }
 
-// ================================================================ BED BOARD
-// Canlı EKG / SpO₂ dalga formu — akan yeşil çizgi + nabızla senkron parlama.
-// Saf SVG + SMIL animasyonu (harici kütüphane yok); hasta-başı monitör hissi verir.
-function ekgBeatPath(beats, beatW, mid, amp) {
-  // Tek bir vuruş şablonu (P–QRS–T), midline'a göre y ofsetleri.
-  const tpl = [[0, 0], [9, 0], [12, -0.18], [15, 0], [18, 0], [19, 0.5], [21, -0.95],
-    [23, 0.6], [25, 0], [30, 0], [33, -0.32], [36, 0], [40, 0]];
-  let d = "";
-  for (let b = 0; b < beats; b++) {
-    for (let i = 0; i < tpl.length; i++) {
-      const [rx, ry] = tpl[i];
-      const x = b * beatW + (rx / 40) * beatW;
-      const y = mid + ry * amp;
-      d += `${i === 0 && b === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)} `;
-    }
-  }
-  return d.trim();
-}
-function Waveform({ hr = 80, height = 34, stroke = "#10b981" }) {
-  const beats = 4, beatW = 46, mid = height / 2, amp = height * 0.38;
-  const period = beats * beatW;
-  // İki periyot yan yana → kesintisiz kayar. HR'a bağlı süre (daha hızlı kalp = daha hızlı akış).
-  const path = useMemo(() => ekgBeatPath(beats * 2, beatW, mid, amp), [beatW, mid, amp]);
-  const dur = Math.max(2, (beats * 60) / Math.max(40, hr));
-  return (
-    <div className="relative w-full overflow-hidden rounded-lg" style={{ height }} aria-hidden="true">
-      <svg width="100%" height={height} viewBox={`0 0 ${period} ${height}`} preserveAspectRatio="none">
-        <g>
-          <path d={path} fill="none" stroke={stroke} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" opacity="0.9" />
-          <animateTransform attributeName="transform" type="translate" from="0" to={`-${period}`} dur={`${dur}s`} repeatCount="indefinite" />
-        </g>
-      </svg>
-    </div>
-  );
-}
 
 function BedBoard({ T, S, state, onOpenPatient, lang }) {
   const units = state.structure.units;
@@ -1068,7 +1034,7 @@ function BedBoard({ T, S, state, onOpenPatient, lang }) {
                 </div>
               )}
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <News2Pill S={S} vitals={p.vitals} />
+                <News2Pill S={S} vitals={p.vitals} news2={p.news2} />
                 <BranchProfileBadge S={S} lang={lang} profile={profileForPatient(state, p)} size="sm" />
                 {dev ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-500 ring-1 ring-emerald-500/30">
@@ -1347,325 +1313,9 @@ function HandoverModal({ T, S, store, state, patientId, onClose }) {
   );
 }
 
-function ModalShell({ T, title, sub, onClose, children }) {
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className={`absolute inset-0 ${T.overlay}`} onClick={onClose} />
-      <div className={`relative w-full max-w-md rounded-2xl border ${T.border} ${T.card} p-5`}>
-        <div className="mb-4">
-          <h3 className={`text-lg font-bold ${T.heading}`}>{title}</h3>
-          {sub && <p className={`text-sm ${T.muted}`}>{sub}</p>}
-        </div>
-        <div className="space-y-3">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-// ================================================================ ADMISSION / TRANSFER
-function AdmissionPage({ T, S, store, state, preselectTransfer, clearPreselect }) {
-  const [tab, setTab] = useState(preselectTransfer ? "transfer" : "admit");
-  useEffect(() => { if (preselectTransfer) setTab("transfer"); }, [preselectTransfer]);
-  return (
-    <div className="max-w-5xl space-y-4">
-      <div className="flex gap-2">
-        <button onClick={() => setTab("admit")} className={`rounded-lg px-4 py-2.5 font-semibold ${T.sizes.nav} ${tab === "admit" ? T.navActive : T.ghost}`}>
-          <UserPlus size={16} className="mr-2 inline" />{S.admissionTitle}
-        </button>
-        <button onClick={() => setTab("transfer")} className={`rounded-lg px-4 py-2.5 font-semibold ${T.sizes.nav} ${tab === "transfer" ? T.navActive : T.ghost}`}>
-          <ArrowLeftRight size={16} className="mr-2 inline" />{S.transferTitle}
-        </button>
-      </div>
-      {tab === "admit"
-        ? <AdmitForm T={T} S={S} store={store} state={state} />
-        : <TransferForm T={T} S={S} store={store} state={state} preselect={preselectTransfer} clearPreselect={clearPreselect} />}
-    </div>
-  );
-}
-
-function SectionHeader({ T, icon: Icon, title, hint }) {
-  return (
-    <div className="mb-3 mt-1 flex items-center gap-2">
-      {Icon && <span className={`grid h-7 w-7 place-items-center rounded-lg ${T.chip}`}><Icon size={15} /></span>}
-      <div>
-        <div className={`font-semibold ${T.heading}`}>{title}</div>
-        {hint && <div className={`text-xs ${T.faint}`}>{hint}</div>}
-      </div>
-    </div>
-  );
-}
-
-function AdmitForm({ T, S, store, state }) {
-  const units = state.structure.units;
-  const P = S.pr19;
-  const attendings = state.users.filter((u) => u.role === ROLE.ATTENDING);
-  const nurses = state.users.filter((u) => u.role === ROLE.CHARGE_NURSE);
-  const [f, setF] = useState({
-    name: "", age: "", sex: "male", isNeonate: false, unitId: units[0]?.id || "",
-    bedId: "", source: "emergency", risk: "stable", dx: "",
-    triage: "standard", admittingComplaint: "", allergies: "", comorbidities: "",
-    codeStatus: "full", isolation: "none", weight: "", height: "", bloodType: "",
-    insurance: "", emergencyContact: "", emergencyPhone: "", attendingId: "", nurseId: "",
-  });
-  const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
-  const upd = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const availBeds = state.beds.filter((b) => b.unitId === f.unitId && b.state === "AVAILABLE");
-  const triageOpts = [
-    ["resus", P.triageResus], ["emergent", P.triageEmergent], ["urgent", P.triageUrgent],
-    ["standard", P.triageStandard], ["nonurgent", P.triageNonurgent],
-  ];
-  const codeOpts = [["full", P.codeFull], ["dnr", P.codeDnr], ["limited", P.codeLimited]];
-  const isoOpts = [["none", P.isoNone], ["contact", P.isoContact], ["droplet", P.isoDroplet], ["airborne", P.isoAirborne]];
-  const submit = (e) => {
-    e.preventDefault(); setErr(""); setMsg("");
-    try {
-      const p = store.admitPatient({
-        displayName: f.name, sex: f.sex, bedId: f.bedId, diagnosisText: f.dx,
-        age: f.isNeonate ? 0 : Number(f.age) || null, isNeonate: f.isNeonate, ageDays: f.isNeonate ? Number(f.age) || 0 : null,
-        source: f.source, risk: f.risk,
-        triage: f.triage, admittingComplaint: f.admittingComplaint,
-        allergies: f.allergies, comorbidities: f.comorbidities, codeStatus: f.codeStatus, isolation: f.isolation,
-        weight: Number(f.weight) || null, height: Number(f.height) || null, bloodType: f.bloodType,
-        insurance: f.insurance, emergencyContact: f.emergencyContact, emergencyPhone: f.emergencyPhone,
-        attendingId: f.attendingId || null, nurseId: f.nurseId || null,
-      });
-      setMsg(`${S.admittedOk} (${p.protocolNo})`);
-      setF((s) => ({ ...s, name: "", age: "", dx: "", bedId: "", admittingComplaint: "", allergies: "", comorbidities: "",
-        weight: "", height: "", bloodType: "", insurance: "", emergencyContact: "", emergencyPhone: "", attendingId: "", nurseId: "" }));
-    } catch (ex) { setErr(ex.message); }
-  };
-  const cardCls = `rounded-2xl border ${T.border} ${T.card} p-5`;
-  return (
-    <form onSubmit={submit} className="space-y-4">
-      <p className={`text-sm ${T.muted}`}>{S.admissionSub}</p>
-
-      {/* Bölüm 1 — Hasta Kimliği */}
-      <div className={cardCls}>
-        <SectionHeader T={T} icon={UserPlus} title={P.secIdentity} />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Field T={T} label={S.fName}><input className={inputCls(T)} value={f.name} onChange={(e) => upd("name", e.target.value)} required /></Field>
-          <Field T={T} label={f.isNeonate ? `${S.fAge} (${S.dayUnit})` : S.fAge}><input type="number" min="0" className={inputCls(T)} value={f.age} onChange={(e) => upd("age", e.target.value)} /></Field>
-          <Field T={T} label={S.fSex}>
-            <select className={inputCls(T)} value={f.sex} onChange={(e) => upd("sex", e.target.value)}>
-              <option value="male">{S.male}</option><option value="female">{S.female}</option>
-            </select>
-          </Field>
-          <Field T={T} label={`${P.bloodType} (${P.optional})`}>
-            <select className={inputCls(T)} value={f.bloodType} onChange={(e) => upd("bloodType", e.target.value)}>
-              <option value="">—</option>
-              {["0 Rh+", "0 Rh−", "A Rh+", "A Rh−", "B Rh+", "B Rh−", "AB Rh+", "AB Rh−"].map((b) => <option key={b} value={b}>{b}</option>)}
-            </select>
-          </Field>
-          <Field T={T} label={`${P.weight} (${P.optional})`}><input type="number" min="0" step="0.1" className={inputCls(T)} value={f.weight} onChange={(e) => upd("weight", e.target.value)} /></Field>
-          <Field T={T} label={`${P.height} (${P.optional})`}><input type="number" min="0" className={inputCls(T)} value={f.height} onChange={(e) => upd("height", e.target.value)} /></Field>
-        </div>
-        <label className={`mt-3 flex items-center gap-2 ${T.sizes.nav} ${T.text}`}>
-          <input type="checkbox" checked={f.isNeonate} onChange={(e) => upd("isNeonate", e.target.checked)} /> {S.unitNicu}
-        </label>
-      </div>
-
-      {/* Bölüm 2 — Klinik Değerlendirme & Triyaj */}
-      <div className={cardCls}>
-        <SectionHeader T={T} icon={Activity} title={P.secClinical} />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field T={T} label={P.triage}>
-            <select className={inputCls(T)} value={f.triage} onChange={(e) => upd("triage", e.target.value)}>
-              {triageOpts.map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
-            </select>
-          </Field>
-          <Field T={T} label={S.riskLevel}>
-            <select className={inputCls(T)} value={f.risk} onChange={(e) => upd("risk", e.target.value)}>
-              {["stable", "low", "high", "critical"].map((r) => <option key={r} value={r}>{S.risk[r]}</option>)}
-            </select>
-          </Field>
-          <Field T={T} label={P.codeStatus}>
-            <select className={inputCls(T)} value={f.codeStatus} onChange={(e) => upd("codeStatus", e.target.value)}>
-              {codeOpts.map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
-            </select>
-          </Field>
-          <Field T={T} label={P.isolation}>
-            <select className={inputCls(T)} value={f.isolation} onChange={(e) => upd("isolation", e.target.value)}>
-              {isoOpts.map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
-            </select>
-          </Field>
-        </div>
-        <div className="mt-4">
-          <Field T={T} label={P.admittingComplaint}>
-            <input className={inputCls(T)} value={f.admittingComplaint} onChange={(e) => upd("admittingComplaint", e.target.value)} placeholder={P.complaintPlaceholder} />
-          </Field>
-        </div>
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field T={T} label={`${P.allergies} (${P.optional})`}>
-            <input className={inputCls(T)} value={f.allergies} onChange={(e) => upd("allergies", e.target.value)} placeholder={P.allergyPlaceholder} />
-          </Field>
-          <Field T={T} label={`${P.comorbidities} (${P.optional})`}>
-            <input className={inputCls(T)} value={f.comorbidities} onChange={(e) => upd("comorbidities", e.target.value)} placeholder={P.comorbidPlaceholder} />
-          </Field>
-        </div>
-        <div className="mt-4">
-          <Field T={T} label={S.fDx}>
-            <textarea rows={3} className={inputCls(T)} value={f.dx} onChange={(e) => upd("dx", e.target.value)} placeholder={S.dxPlaceholder} required />
-          </Field>
-        </div>
-      </div>
-
-      {/* Bölüm 3 — Yatak & Bakım Ekibi */}
-      <div className={cardCls}>
-        <SectionHeader T={T} icon={Bed} title={P.secBedTeam} />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Field T={T} label={S.fUnit}>
-            <select className={inputCls(T)} value={f.unitId} onChange={(e) => { upd("unitId", e.target.value); upd("bedId", ""); }}>
-              {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          </Field>
-          <Field T={T} label={S.fBed}>
-            <select className={inputCls(T)} value={f.bedId} onChange={(e) => upd("bedId", e.target.value)} required>
-              <option value="">{availBeds.length ? S.selectTargetBed : S.noAvailableBed}</option>
-              {availBeds.map((b) => <option key={b.id} value={b.id}>{b.roomLabel} · {b.label}</option>)}
-            </select>
-          </Field>
-          <Field T={T} label={S.fSource}>
-            <select className={inputCls(T)} value={f.source} onChange={(e) => upd("source", e.target.value)}>
-              {Object.keys(S.source).map((k) => <option key={k} value={k}>{S.source[k]}</option>)}
-            </select>
-          </Field>
-          <Field T={T} label={`${P.assignAttending} (${P.optional})`}>
-            <select className={inputCls(T)} value={f.attendingId} onChange={(e) => upd("attendingId", e.target.value)}>
-              <option value="">{S.none}</option>
-              {attendings.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-            </select>
-          </Field>
-          <Field T={T} label={`${P.assignNurse} (${P.optional})`}>
-            <select className={inputCls(T)} value={f.nurseId} onChange={(e) => upd("nurseId", e.target.value)}>
-              <option value="">{S.none}</option>
-              {nurses.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-            </select>
-          </Field>
-        </div>
-      </div>
-
-      {/* Bölüm 4 — İletişim & Güvence */}
-      <div className={cardCls}>
-        <SectionHeader T={T} icon={HeartHandshake} title={P.secContact} />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field T={T} label={`${P.insurance} (${P.optional})`}><input className={inputCls(T)} value={f.insurance} onChange={(e) => upd("insurance", e.target.value)} /></Field>
-          <Field T={T} label={`${P.emergencyContact} (${P.optional})`}><input className={inputCls(T)} value={f.emergencyContact} onChange={(e) => upd("emergencyContact", e.target.value)} /></Field>
-          <Field T={T} label={`${P.emergencyPhone} (${P.optional})`}><input className={inputCls(T)} value={f.emergencyPhone} onChange={(e) => upd("emergencyPhone", e.target.value)} /></Field>
-        </div>
-        <p className={`mt-3 text-xs ${T.faint}`}>{P.docsAfterAdmit || ""}</p>
-      </div>
-
-      {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
-      {msg && <div className="rounded-lg bg-emerald-500/15 px-3 py-2 text-sm text-emerald-500">{msg}</div>}
-      <div className="flex justify-end">
-        <button type="submit" className={btnCls(T, "primary")}><Check size={16} /> {S.admitBtn}</button>
-      </div>
-    </form>
-  );
-}
-
-function TransferForm({ T, S, store, state, preselect, clearPreselect }) {
-  const [patientId, setPatientId] = useState(preselect || "");
-  const [bedId, setBedId] = useState("");
-  const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
-  useEffect(() => { if (preselect) setPatientId(preselect); }, [preselect]);
-  const availBeds = state.beds.filter((b) => b.state === "AVAILABLE");
-  const submit = (e) => {
-    e.preventDefault(); setErr(""); setMsg("");
-    try { store.transferPatient({ patientId, targetBedId: bedId }); setMsg(S.transferredOk); setBedId(""); if (clearPreselect) clearPreselect(); }
-    catch (ex) { setErr(ex.message); }
-  };
-  return (
-    <form onSubmit={submit} className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-      <p className={`mb-4 text-sm ${T.muted}`}>{S.transferSub}</p>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field T={T} label={S.selectPatient}>
-          <select className={inputCls(T)} value={patientId} onChange={(e) => setPatientId(e.target.value)} required>
-            <option value="">{S.selectPatient}</option>
-            {state.patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.bedLabel} · {p.display_name}</option>)}
-          </select>
-        </Field>
-        <Field T={T} label={S.selectTargetBed}>
-          <select className={inputCls(T)} value={bedId} onChange={(e) => setBedId(e.target.value)} required>
-            <option value="">{availBeds.length ? S.selectTargetBed : S.noAvailableBed}</option>
-            {availBeds.map((b) => <option key={b.id} value={b.id}>{b.unitName} · {b.roomLabel} · {b.label}</option>)}
-          </select>
-        </Field>
-      </div>
-      {err && <div className="mt-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
-      {msg && <div className="mt-3 rounded-lg bg-emerald-500/15 px-3 py-2 text-sm text-emerald-500">{msg}</div>}
-      <div className="mt-4 flex justify-end">
-        <button type="submit" className={btnCls(T, "primary")}><ArrowLeftRight size={16} /> {S.transferBtn}</button>
-      </div>
-    </form>
-  );
-}
-
-// ================================================================ CARE TEAM
-function CareTeamPage({ T, S, store, state }) {
-  const attendings = state.users.filter((u) => u.role === ROLE.ATTENDING);
-  const nurses = state.users.filter((u) => u.role === ROLE.CHARGE_NURSE);
-  const userName = (id) => state.users.find((u) => u.id === id)?.full_name || S.none;
-  return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-      <div className="xl:col-span-2">
-        <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-          <p className={`mb-4 text-sm ${T.muted}`}>{S.careSub}</p>
-          <div className="space-y-3">
-            {state.patients.map((p) => {
-              const team = state.careTeam[p.patient_id] || {};
-              return (
-                <div key={p.patient_id} className={`rounded-xl border ${T.border} ${T.subtle} p-4`}>
-                  <div className="flex items-center justify-between">
-                    <div className="font-semibold">{p.bedLabel} · {maskedName(state, p.display_name)}</div>
-                    <span className={`text-xs ${T.faint}`}>{p.diagnosis}</span>
-                  </div>
-                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Field T={T} label={S.attending}>
-                      <select className={inputCls(T)} value={team.attendingId || ""}
-                        onChange={(e) => store.assignCareTeam({ patientId: p.patient_id, attendingId: e.target.value })}>
-                        <option value="">{S.none}</option>
-                        {attendings.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-                      </select>
-                    </Field>
-                    <Field T={T} label={S.nurse}>
-                      <select className={inputCls(T)} value={team.nurseId || ""}
-                        onChange={(e) => store.assignCareTeam({ patientId: p.patient_id, nurseId: e.target.value })}>
-                        <option value="">{S.none}</option>
-                        {nurses.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-                      </select>
-                    </Field>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-      <div>
-        <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-          <h3 className={`mb-3 font-bold ${T.heading}`}>{S.shiftRoster}</h3>
-          <div className="space-y-2">
-            {state.users.map((u) => (
-              <div key={u.id} className={`flex items-center gap-3 rounded-lg ${T.subtle} px-3 py-2.5`}>
-                <div className="grid h-8 w-8 place-items-center rounded-full bg-brand/15 text-brand">
-                  {u.role === ROLE.HOSPITAL_ADMIN ? <ShieldAlert size={15} /> : u.role === ROLE.CHARGE_NURSE ? <HeartPulse size={15} /> : <Stethoscope size={15} />}
-                </div>
-                <div className="min-w-0">
-                  <div className={`truncate text-sm font-semibold ${T.text}`}>{u.full_name}</div>
-                  <div className={`truncate text-xs ${T.faint}`}>{S.roleName[u.role]}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ================================================================ RESULTS INBOX (pr19 #4)
-function ResultsInbox({ T, S, store, state }) {
+function ResultsInbox({ T, S, store, state, simulation = false }) {
   const P = S.pr19;
   const patients = state.patients;
   const [f, setF] = useState({ patientId: patients[0]?.patient_id || "", type: "lab", title: "", summary: "", critical: false, fileName: "" });
@@ -1711,17 +1361,26 @@ function ResultsInbox({ T, S, store, state }) {
                 <div className={`mt-1 text-xs ${T.faint}`}>{P.lastSync}: {new Date(his.lastSyncMs).toLocaleString()}</div>
               )}
             </div>
-            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-500">DEMO</span>
+            {simulation && (
+              <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-500">DEMO</span>
+            )}
           </div>
+          {/* The toggle and the fabricated inbound result are simulation tooling; a fabricated lab
+              value on a live ward is written to the record and cannot afterwards be told from a
+              real one. The pending count is real and stays in both modes. */}
           <div className="mt-4 flex flex-wrap gap-2">
-            <button onClick={() => store.toggleHisIntegration()}
-              className={btnCls(T, his.connected ? "ghost" : "primary")}>
-              <RefreshCw size={15} /> {P.integrationToggle}
-            </button>
-            <button onClick={doSimulate} disabled={!his.connected}
-              className={`${btnCls(T, "ghost")} ${!his.connected ? "cursor-not-allowed opacity-50" : ""}`}>
-              <Download size={15} /> {P.simulateInbound}
-            </button>
+            {simulation && (
+              <>
+                <button onClick={() => store.toggleHisIntegration()}
+                  className={btnCls(T, his.connected ? "ghost" : "primary")}>
+                  <RefreshCw size={15} /> {P.integrationToggle}
+                </button>
+                <button onClick={doSimulate} disabled={!his.connected}
+                  className={`${btnCls(T, "ghost")} ${!his.connected ? "cursor-not-allowed opacity-50" : ""}`}>
+                  <Download size={15} /> {P.simulateInbound}
+                </button>
+              </>
+            )}
             <span className={`ml-auto self-center text-xs ${T.faint}`}>{pendingCount} {P.pendingCount}</span>
           </div>
         </div>
@@ -1872,7 +1531,7 @@ function HeatmapPage({ T, S, store, state }) {
 }
 
 // ================================================================ ALARM MANAGEMENT
-function AlarmPage({ T, S, store, state, lang }) {
+function AlarmPage({ T, S, store, state, lang, simulation = false }) {
   const alerts = [...state.alerts].filter((a) => a.status !== "CLOSED").reverse();
   const [fp, setFp] = useState(state.patients[0]?.patient_id || "");
   const [ft, setFt] = useState(TIER.CRITICAL);
@@ -1882,27 +1541,31 @@ function AlarmPage({ T, S, store, state, lang }) {
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-      {/* left: controls */}
+      {/* left: controls. The alarm-firing panel and the clock control are simulation tooling —
+          see the `simulation` note on ClinicalDemo. Break-glass is a real clinical control and
+          stays in every mode. */}
       <div className="space-y-4">
-        <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-          <h3 className={`mb-1 font-bold ${T.heading}`}>{S.fireAlert}</h3>
-          <p className={`mb-3 text-sm ${T.muted}`}>{S.alarmsSub}</p>
-          <div className="space-y-3">
-            <Field T={T} label={S.viewDetail}>
-              <select className={inputCls(T)} value={fp} onChange={(e) => setFp(e.target.value)}>
-                {state.patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.bedLabel} · {maskedName(state, p.display_name)}</option>)}
-              </select>
-            </Field>
-            <Field T={T} label={S.alertTier}>
-              <select className={inputCls(T)} value={ft} onChange={(e) => setFt(e.target.value)}>
-                {[TIER.CRITICAL, TIER.HIGH, TIER.MEDIUM, TIER.LOW].map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </Field>
-            <button onClick={fire} className={`${btnCls(T, "danger")} w-full`}><Siren size={16} /> {S.fireBtn}</button>
+        {simulation && (
+          <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+            <h3 className={`mb-1 font-bold ${T.heading}`}>{S.fireAlert}</h3>
+            <p className={`mb-3 text-sm ${T.muted}`}>{S.alarmsSub}</p>
+            <div className="space-y-3">
+              <Field T={T} label={S.viewDetail}>
+                <select className={inputCls(T)} value={fp} onChange={(e) => setFp(e.target.value)}>
+                  {state.patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.bedLabel} · {maskedName(state, p.display_name)}</option>)}
+                </select>
+              </Field>
+              <Field T={T} label={S.alertTier}>
+                <select className={inputCls(T)} value={ft} onChange={(e) => setFt(e.target.value)}>
+                  {[TIER.CRITICAL, TIER.HIGH, TIER.MEDIUM, TIER.LOW].map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </Field>
+              <button onClick={fire} className={`${btnCls(T, "danger")} w-full`}><Siren size={16} /> {S.fireBtn}</button>
+            </div>
           </div>
-        </div>
+        )}
 
-        <TimeScale T={T} S={S} store={store} state={state} />
+        {simulation && <TimeScale T={T} S={S} store={store} state={state} />}
         <BreakGlass T={T} S={S} store={store} state={state} />
       </div>
 
@@ -2134,34 +1797,6 @@ function BreakGlass({ T, S, store, state }) {
   );
 }
 
-// ================================================================ EXECUTIVE ANALYTICS (§PR8)
-// Canlı KPI'lar, alarm kalitesi ve cihaz sağlığı — hepsi computeAnalytics(state) saf fonksiyonundan.
-function KpiCard({ T, icon: Icon, label, value, sub, accent = "text-brand" }) {
-  return (
-    <div className={`rounded-2xl border ${T.border} ${T.card} p-4`}>
-      <div className="flex items-center gap-2">
-        <span className={`grid h-9 w-9 place-items-center rounded-xl ${T.subtle} ${accent}`}><Icon size={17} /></span>
-        <span className={`text-xs font-semibold uppercase tracking-wide ${T.faint}`}>{label}</span>
-      </div>
-      <div className={`mt-2 text-3xl font-bold ${T.heading}`}>{value}</div>
-      {sub && <div className={`mt-0.5 text-xs ${T.muted}`}>{sub}</div>}
-    </div>
-  );
-}
-function Bar({ T, label, value, max, accent = "bg-brand", suffix = "" }) {
-  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
-  return (
-    <div>
-      <div className="mb-1 flex items-center justify-between text-xs">
-        <span className={T.muted}>{label}</span>
-        <span className={`font-semibold ${T.text}`}>{value}{suffix}</span>
-      </div>
-      <div className={`h-2.5 w-full overflow-hidden rounded-full ${T.subtle}`}>
-        <div className={`h-full rounded-full ${accent}`} style={{ width: `${Math.min(100, pct)}%` }} />
-      </div>
-    </div>
-  );
-}
 function AnalyticsPanel({ T, S, state }) {
   const a = useMemo(() => computeAnalytics(state), [state]);
   const p8 = S.pr8;
@@ -2287,6 +1922,75 @@ function AnalyticsPanel({ T, S, state }) {
 }
 
 // ================================================================ ADMIN
+/**
+ * Devices and data flow — the biomedical engineer's page.
+ *
+ * On an on-prem deployment nobody can look at the bridge from outside the hospital, so the
+ * question "is anything still arriving?" has to be answerable from inside the product. A ward
+ * with no alarms and a ward whose monitors stopped an hour ago look identical on a board that
+ * shows only values, and the second one is the dangerous one: everybody believes the bed is
+ * being watched.
+ */
+function TechPage({ T, S, store, state }) {
+  const health = wardFeedHealth(state.patients);
+  const pill = (status) => ({
+    live: "text-emerald-500 ring-emerald-500/40",
+    stale: "text-amber-500 ring-amber-500/50",
+    absent: `${T.faint} ring-current/20`,
+  }[status]);
+
+  return (
+    <div className="space-y-4">
+      {/* One line an engineer can read from the doorway. */}
+      <div className={`grid grid-cols-3 gap-3`}>
+        {[
+          ["Sessiz yatak", health.silentCount, "text-red-500"],
+          ["Bayat kanal", health.staleCount, "text-amber-500"],
+          ["Sağlıklı", health.healthyCount, "text-emerald-500"],
+        ].map(([label, value, tone]) => (
+          <div key={label} className={`rounded-2xl border ${T.border} ${T.card} p-4`}>
+            <div className={`text-2xl font-bold ${tone}`}>{value}</div>
+            <div className={`text-xs ${T.muted}`}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
+        <SectionHeader T={T} icon={Activity} title="Veri akışı"
+                       hint="Her yatak için hangi kanal geliyor, en son ne zaman geldi. Sessiz yataklar üstte." />
+        {health.beds.length === 0 && <Empty T={T} text="Yatak yok." />}
+        <div className="space-y-2">
+          {health.beds.map((bed) => (
+            <div key={bed.patientId}
+                 className={`rounded-xl border p-3 ${bed.silent ? "border-red-500/40" : T.border}`}>
+              <div className="mb-2 flex items-center justify-between">
+                <div className={`font-semibold ${T.heading}`}>{bed.bedLabel || bed.patientId}</div>
+                {bed.silent && (
+                  <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-red-500">
+                    veri gelmiyor
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {bed.channels.map((c) => (
+                  <span key={c.key}
+                        title={`${c.source} · ${c.status === "absent" ? "hiç gelmedi" : formatAge(c.age) + " önce"}`}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${pill(c.status)}`}>
+                    {c.label} · {c.status === "absent" ? "—" : formatAge(c.age)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* The inventory screen that already existed, now reachable by the role that needs it. */}
+      <DeviceAdmin T={T} S={S} store={store} state={state} />
+    </div>
+  );
+}
+
 function AdminPage({ T, S, store, state }) {
   const [tab, setTab] = useState("reports");
   const TABS = [
@@ -2295,6 +1999,7 @@ function AdminPage({ T, S, store, state }) {
     { key: "staff", label: S.pr7.staffMatrix, icon: Users },
     { key: "security", label: S.pr10.inviteTitle, icon: Shield },
     { key: "devices", label: S.pr7.devices, icon: Radio },
+    { key: "alarms", label: S.pr7.alarmQuality, icon: BellRing },
     { key: "audit", label: S.pr7.auditSearch, icon: ScrollText },
     { key: "archive", label: S.pr13.archiveTitle, icon: Archive },
     { key: "sessions", label: S.pr13.sessionsTitle, icon: Monitor },
@@ -2329,10 +2034,11 @@ function AdminPage({ T, S, store, state }) {
       )}
       {tab === "security" && <InviteManagement T={T} S={S} store={store} state={state} />}
       {tab === "devices" && <DeviceAdmin T={T} S={S} store={store} state={state} />}
+      {tab === "alarms" && <AlarmQualityPanel T={T} S={S} store={store} />}
       {tab === "audit" && (
         <div className="space-y-4">
           <BreakGlassReview T={T} S={S} store={store} state={state} />
-          <AuditLog T={T} S={S} state={state} />
+          <AuditLog T={T} S={S} state={state} store={store} />
         </div>
       )}
       {tab === "archive" && <ArchiveManagement T={T} S={S} store={store} state={state} />}
@@ -2341,667 +2047,16 @@ function AdminPage({ T, S, store, state }) {
   );
 }
 
-// Hospital → Unit → Room → Bed tree with live device status per bed.
-function HierarchyTree({ T, S, state }) {
-  const units = state.structure.units;
-  return (
-    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-      <h3 className={`mb-1 flex items-center gap-2 font-bold ${T.heading}`}>
-        <Building2 size={18} /> {S.pr7.hierarchy}
-      </h3>
-      <p className={`mb-4 text-sm ${T.muted}`}>{state.structure.tenant} · {state.structure.site}</p>
-      <div className="space-y-3">
-        {units.map((u) => {
-          const rooms = u.rooms || [];
-          const unitBeds = state.beds.filter((b) => b.unitId === u.id);
-          return (
-            <div key={u.id} className={`rounded-xl border ${T.border} ${T.subtle} p-3`}>
-              <div className={`mb-2 flex items-center gap-2 font-semibold ${T.text}`}>
-                <Network size={15} className="text-brand" /> {u.name}
-                <span className={`ml-auto text-xs font-normal ${T.faint}`}>{rooms.length} {S.pr7.room} · {unitBeds.length} {S.pr7.beds}</span>
-              </div>
-              <div className="space-y-2 pl-4">
-                {rooms.map((r) => {
-                  const roomBeds = unitBeds.filter((b) => b.roomId === r.id);
-                  return (
-                    <div key={r.id}>
-                      <div className={`mb-1 flex items-center gap-1.5 text-sm font-medium ${T.muted}`}>
-                        <DoorOpen size={14} /> {r.label}
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 pl-5">
-                        {roomBeds.length === 0 && <span className={`text-xs ${T.faint}`}>—</span>}
-                        {roomBeds.map((b) => {
-                          const dev = state.devices?.find((d) => d.bedId === b.id && d.connected);
-                          const occ = b.state === "OCCUPIED";
-                          return (
-                            <span key={b.id}
-                              className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium ${occ ? "bg-brand/10 text-brand" : `${T.chip}`}`}>
-                              {S.pr7.bed} {b.label}
-                              {dev
-                                ? <Radio size={11} className="animate-pulse text-emerald-500" />
-                                : occ && <WifiOff size={11} className={T.faint} />}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
-// Visual staff → bed assignment matrix (rows = staff, columns = beds).
-function StaffMatrix({ T, S, store, state }) {
-  const staff = state.users.filter((u) => u.role === ROLE.ATTENDING || u.role === ROLE.CHARGE_NURSE);
-  const beds = state.beds;
-  return (
-    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-      <h3 className={`mb-1 flex items-center gap-2 font-bold ${T.heading}`}>
-        <Users size={18} /> {S.pr7.staffMatrix}
-      </h3>
-      <p className={`mb-4 text-sm ${T.muted}`}>{S.pr7.staffMatrixInfo}</p>
-      {staff.length === 0 ? (
-        <div className={`text-sm ${T.faint}`}>{S.pr7.noStaff}</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-xs">
-            <thead>
-              <tr>
-                <th className={`sticky left-0 z-10 ${T.card} px-2 py-1.5 text-left font-semibold ${T.muted}`}>{S.pr7.staff}</th>
-                {beds.map((b) => (
-                  <th key={b.id} className={`px-1 py-1.5 text-center font-medium ${T.faint}`} title={`${b.unitName} · ${b.roomLabel}`}>
-                    {b.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {staff.map((u) => {
-                const a = state.staffAssignments?.[u.id] || { bedIds: [], unitIds: [] };
-                return (
-                  <tr key={u.id} className={`border-t ${T.border}`}>
-                    <td className={`sticky left-0 z-10 ${T.card} px-2 py-1.5`}>
-                      <div className={`font-semibold ${T.text}`}>{u.full_name}</div>
-                      <div className={`text-[10px] ${T.faint}`}>{S.roleName[u.role]}</div>
-                      {a.unitIds?.length > 0 && (
-                        <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-brand/10 px-1.5 py-0.5 text-[9px] font-semibold text-brand">
-                          <Network size={9} /> {S.pr7.wholeUnit}
-                        </span>
-                      )}
-                    </td>
-                    {beds.map((b) => {
-                      const viaUnit = a.unitIds?.includes(b.unitId);
-                      const direct = a.bedIds?.includes(b.id);
-                      const on = viaUnit || direct;
-                      return (
-                        <td key={b.id} className="p-0.5 text-center">
-                          <button
-                            disabled={viaUnit}
-                            onClick={() => store.toggleStaffBed({ userId: u.id, bedId: b.id })}
-                            title={b.label}
-                            className={`h-7 w-7 rounded-md transition ${
-                              viaUnit ? "cursor-not-allowed bg-brand/40" :
-                              direct ? "bg-brand text-white hover:bg-brand/80" :
-                              `${T.subtle} hover:ring-2 hover:ring-brand/40`
-                            }`}>
-                            {on ? <Check size={13} className="mx-auto" /> : ""}
-                          </button>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
 
-// Mindray / GE bedside-monitor simulator admin — add device & assign to a bed.
-// Düzenlenebilir cihaz satırı — IP, Port, Protokol (HL7 / IEEE 11073) ve seri numarası.
-function DeviceRow({ T, S, store, state, d, occupiedBeds }) {
-  const [edit, setEdit] = useState(false);
-  const [f, setF] = useState({ vendor: d.vendor, model: d.model, ip: d.ip, port: d.port ?? "", protocol: d.protocol, serial: d.serial || "" });
-  const [err, setErr] = useState("");
-  const start = () => { setF({ vendor: d.vendor, model: d.model, ip: d.ip, port: d.port ?? "", protocol: d.protocol, serial: d.serial || "" }); setErr(""); setEdit(true); };
-  const save = () => { try { store.updateDevice({ deviceId: d.id, ...f }); setErr(""); setEdit(false); } catch (ex) { setErr(ex.message); } };
 
-  if (edit) {
-    return (
-      <div className={`space-y-2 px-3 py-3 ${T.subtle}`}>
-        {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-500">{err}</div>}
-        <div className="grid grid-cols-2 gap-2">
-          <select className={`${inputCls(T)} py-1.5 text-xs`} value={f.vendor} onChange={(e) => setF((s) => ({ ...s, vendor: e.target.value }))}>
-            <option value="Mindray">Mindray</option><option value="GE Healthcare">GE Healthcare</option>
-            <option value="Philips">Philips</option><option value="Dräger">Dräger</option>
-          </select>
-          <input className={`${inputCls(T)} py-1.5 text-xs`} placeholder={S.pr7.model} value={f.model} onChange={(e) => setF((s) => ({ ...s, model: e.target.value }))} />
-          <input className={`${inputCls(T)} py-1.5 text-xs`} placeholder="192.168.1.50" value={f.ip} onChange={(e) => setF((s) => ({ ...s, ip: e.target.value }))} />
-          <input className={`${inputCls(T)} py-1.5 text-xs`} placeholder={S.pr8.devicePort} value={f.port} onChange={(e) => setF((s) => ({ ...s, port: e.target.value }))} />
-          <input className={`${inputCls(T)} py-1.5 text-xs`} placeholder={S.pr7.protocol} value={f.protocol} onChange={(e) => setF((s) => ({ ...s, protocol: e.target.value }))} />
-          <input className={`${inputCls(T)} py-1.5 text-xs`} placeholder={S.pr8.deviceSerial} value={f.serial} onChange={(e) => setF((s) => ({ ...s, serial: e.target.value }))} />
-        </div>
-        <div className="flex gap-2">
-          <button onClick={save} className={`${btnCls(T, "primary")} flex-1 py-1.5 text-xs`}><Check size={14} /> {S.pr8.saveDevice}</button>
-          <button onClick={() => setEdit(false)} className={`${btnCls(T, "ghost")} py-1.5 text-xs`}><X size={14} /> {S.pr8.cancelEdit}</button>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="flex items-center gap-3 px-3 py-2.5">
-      <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${d.connected ? "bg-emerald-500/15 text-emerald-500" : `${T.subtle} ${T.faint}`}`}>
-        {d.connected ? <Radio size={17} className="animate-pulse" /> : <WifiOff size={17} />}
-      </div>
-      <div className="min-w-0">
-        <div className={`truncate text-sm font-semibold ${T.text}`}>{d.vendor} {d.model}</div>
-        <div className={`truncate text-xs ${T.faint}`}>{d.ip}:{d.port ?? "—"} · {d.protocol}</div>
-        {d.serial && <div className={`truncate text-[10px] ${T.faint}`}>{S.pr8.deviceSerial}: {d.serial}</div>}
-      </div>
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        <div className="text-right">
-          <select value={d.bedId || ""} onChange={(e) => store.assignDeviceToBed({ deviceId: d.id, bedId: e.target.value })}
-            className={`${inputCls(T)} mb-1 py-1 text-xs`}>
-            <option value="">{S.pr7.unassigned}</option>
-            {occupiedBeds.map((b) => <option key={b.id} value={b.id}>{S.pr7.bed} {b.label}</option>)}
-          </select>
-          {d.connected
-            ? <div className="text-[10px] font-semibold text-emerald-500">{S.pr7.live} · {d.packets} {S.pr7.packets}</div>
-            : <div className={`text-[10px] ${T.faint}`}>{S.pr7.disconnected}</div>}
-        </div>
-        <button onClick={start} title={S.pr8.editDevice} className={`grid h-8 w-8 place-items-center rounded-lg ${T.ghost}`}><Pencil size={14} /></button>
-      </div>
-    </div>
-  );
-}
 
-function DeviceAdmin({ T, S, store, state }) {
-  const occupiedBeds = state.beds.filter((b) => b.state === "OCCUPIED");
-  const [f, setF] = useState({ vendor: "Mindray", model: "BeneVision N17", ip: "", port: "6002", protocol: "HL7 / IEEE 11073", serial: "", bedId: "" });
-  const [err, setErr] = useState("");
-  const submit = (e) => {
-    e.preventDefault();
-    try { store.addDevice(f); setF({ vendor: "Mindray", model: "", ip: "", port: "6002", protocol: "HL7 / IEEE 11073", serial: "", bedId: "" }); setErr(""); }
-    catch (ex) { setErr(ex.message); }
-  };
-  return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-        <h3 className={`mb-1 flex items-center gap-2 font-bold ${T.heading}`}><Radio size={18} /> {S.pr7.addDevice}</h3>
-        <p className={`mb-4 text-sm ${T.muted}`}>{S.pr7.deviceInfo}</p>
-        {err && <div className="mb-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
-        <form onSubmit={submit} className="space-y-3">
-          <Field T={T} label={S.pr7.vendor}>
-            <select className={inputCls(T)} value={f.vendor} onChange={(e) => setF((s) => ({ ...s, vendor: e.target.value }))}>
-              <option value="Mindray">Mindray</option><option value="GE Healthcare">GE Healthcare</option>
-              <option value="Philips">Philips</option><option value="Dräger">Dräger</option>
-            </select>
-          </Field>
-          <Field T={T} label={S.pr7.model}><input className={inputCls(T)} value={f.model} placeholder="BeneVision N17" onChange={(e) => setF((s) => ({ ...s, model: e.target.value }))} /></Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field T={T} label={S.pr7.ipAddress}><input className={inputCls(T)} value={f.ip} placeholder="192.168.1.50" onChange={(e) => setF((s) => ({ ...s, ip: e.target.value }))} /></Field>
-            <Field T={T} label={S.pr8.devicePort} hint={S.pr8.portRange}><input className={inputCls(T)} value={f.port} placeholder="6002" onChange={(e) => setF((s) => ({ ...s, port: e.target.value }))} /></Field>
-          </div>
-          <Field T={T} label={S.pr7.protocol}><input className={inputCls(T)} value={f.protocol} onChange={(e) => setF((s) => ({ ...s, protocol: e.target.value }))} /></Field>
-          <Field T={T} label={S.pr8.deviceSerial}><input className={inputCls(T)} value={f.serial} placeholder="MR-N17-000421" onChange={(e) => setF((s) => ({ ...s, serial: e.target.value }))} /></Field>
-          <Field T={T} label={S.pr7.assignToBed}>
-            <select className={inputCls(T)} value={f.bedId} onChange={(e) => setF((s) => ({ ...s, bedId: e.target.value }))}>
-              <option value="">{S.pr7.unassigned}</option>
-              {occupiedBeds.map((b) => <option key={b.id} value={b.id}>{b.unitName} · {S.pr7.bed} {b.label}</option>)}
-            </select>
-          </Field>
-          <button type="submit" className={`${btnCls(T, "primary")} w-full`}><Plus size={16} /> {S.pr7.addDevice}</button>
-        </form>
-      </div>
 
-      <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-        <h3 className={`mb-4 flex items-center gap-2 font-bold ${T.heading}`}><Network size={18} /> {S.pr7.devices}</h3>
-        {(!state.devices || state.devices.length === 0) ? (
-          <div className={`text-sm ${T.faint}`}>{S.pr7.noDevices}</div>
-        ) : (
-          <div className={`divide-y ${T.divide} rounded-xl border ${T.border}`}>
-            {state.devices.map((d) => (
-              <DeviceRow key={d.id} T={T} S={S} store={store} state={state} d={d} occupiedBeds={occupiedBeds} />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
-// Break-glass emergency-access review workflow (approve / reject with note).
-function BreakGlassReview({ T, S, store, state }) {
-  const bg = state.breakGlass;
-  const [note, setNote] = useState("");
-  const [err, setErr] = useState("");
-  const review = (approve) => { try { store.reviewBreakGlass({ approve, note }); setNote(""); setErr(""); } catch (ex) { setErr(ex.message); } };
-  const statusUi = {
-    pending: { text: "text-amber-500", label: S.pr7.bgPending },
-    approved: { text: "text-emerald-500", label: S.pr7.bgApproved },
-    rejected: { text: "text-red-500", label: S.pr7.bgRejected },
-  };
-  return (
-    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-      <h3 className={`mb-1 flex items-center gap-2 font-bold ${T.heading}`}><ShieldCheck size={18} /> {S.pr7.breakGlassReview}</h3>
-      {!bg ? (
-        <p className={`mt-2 text-sm ${T.faint}`}>{S.pr7.bgNone}</p>
-      ) : (
-        <div className={`mt-3 rounded-xl border ${T.border} ${T.subtle} p-4`}>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <div><div className={`text-[10px] font-semibold uppercase ${T.faint}`}>{S.pr7.bgActivatedBy}</div><div className={`text-sm ${T.text}`}>{bg.by}{bg.role ? ` · ${S.roleName[bg.role] || bg.role}` : ""}</div></div>
-            <div><div className={`text-[10px] font-semibold uppercase ${T.faint}`}>{S.pr7.bgStatus}</div><div className={`text-sm font-semibold ${(statusUi[bg.reviewStatus] || {}).text || T.text}`}>{(statusUi[bg.reviewStatus] || {}).label || bg.reviewStatus}</div></div>
-          </div>
-          <div className="mt-3"><div className={`text-[10px] font-semibold uppercase ${T.faint}`}>{S.pr7.bgReason}</div><div className={`text-sm ${T.text}`}>{bg.reason}</div></div>
-          {bg.reviewNote && <div className="mt-2 text-xs italic text-brand">“{bg.reviewNote}”</div>}
-          {bg.reviewStatus === "pending" && (
-            <div className="mt-4 space-y-2">
-              {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
-              <input className={inputCls(T)} placeholder={S.pr7.bgReviewNote} value={note} onChange={(e) => setNote(e.target.value)} />
-              <div className="flex gap-2">
-                <button onClick={() => review(true)} className={`${btnCls(T, "primary")} flex-1`}><Check size={15} /> {S.pr7.bgApprove}</button>
-                <button onClick={() => review(false)} className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500/15 px-3 py-2 text-sm font-semibold text-red-500 hover:bg-red-500/25`}><X size={15} /> {S.pr7.bgReject}</button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
-// Küçük merkezi modal kabuğu — kullanıcı eylemleri (parola/PIN/birim) için.
-function ActionOverlay({ T, title, onClose, children }) {
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className={`absolute inset-0 ${T.overlay}`} onClick={onClose} />
-      <div className={`relative w-full max-w-sm rounded-2xl border ${T.border} ${T.card} p-5 shadow-2xl`}>
-        <div className="mb-3 flex items-center justify-between">
-          <h4 className={`font-bold ${T.heading}`}>{title}</h4>
-          <button onClick={onClose} className={`grid h-8 w-8 place-items-center rounded-lg ${T.ghost}`}><X size={16} /></button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
 
-// Tek bir kullanıcı satırı + tam yönetim eylemleri menüsü (parola sıfırlama, geçici PIN,
-// aktif/pasif, MFA yönetimi, birim & vardiya erişimi).
-function UserRow({ T, S, store, state, u }) {
-  const units = state.structure.units;
-  const [modal, setModal] = useState(null); // "password" | "pin" | "units" | "role"
-  const [pw, setPw] = useState("");
-  const [pinResult, setPinResult] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [selUnits, setSelUnits] = useState(u.unitIds || []);
-  const [selRole, setSelRole] = useState(u.role);
-  const [err, setErr] = useState("");
-  const wrap = (fn) => { try { fn(); setErr(""); } catch (ex) { setErr(ex.message); } };
-  const active = u.active !== false;
 
-  const doRole = () => wrap(() => { store.setUserRole({ userId: u.id, role: selRole }); setModal(null); });
-  const doPassword = () => wrap(() => { store.setUserPassword({ userId: u.id, password: pw }); setModal(null); setPw(""); });
-  const doPin = () => wrap(() => { const pin = store.resetUserPin({ userId: u.id }); setPinResult(pin); setModal("pin"); });
-  const doUnits = () => wrap(() => { store.setUserUnits({ userId: u.id, unitIds: selUnits }); setModal(null); });
-  const copyPin = () => { try { navigator.clipboard?.writeText(pinResult); } catch { /* ignore */ } setCopied(true); setTimeout(() => setCopied(false), 1500); };
-  const toggleUnit = (id) => setSelUnits((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
 
-  return (
-    <div className="px-3 py-2.5">
-      <div className="flex items-center gap-3">
-        <div className="min-w-0">
-          <div className={`truncate text-sm font-semibold ${T.text}`}>{u.full_name}</div>
-          <div className={`truncate text-xs ${T.faint}`}>{u.email}</div>
-        </div>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${T.chip}`}>{S.roleName[u.role]}</span>
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${active ? "bg-emerald-500/15 text-emerald-500" : "bg-red-500/15 text-red-500"}`}>
-            {active ? S.pr8.activeYes : S.pr8.passiveNo}
-          </span>
-          {u.mfaRequired && <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-500">{S.pr8.mfaRequired}</span>}
-          {u.mfa && <span className="shrink-0 rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-semibold text-brand">{S.mfa}</span>}
-          <Menu T={T} triggerClass={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 ${T.ghost} ${T.sizes.nav}`}
-            trigger={<><Settings size={14} /><span className="hidden sm:inline">{S.pr8.userActions}</span><ChevronDown size={13} /></>}>
-            {({ close }) => (
-              <div className="text-sm">
-                <button onClick={() => { setSelRole(u.role); setModal("role"); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><Shield size={14} /> {S.pr12.roleChange}</button>
-                <div className={`my-1 border-t ${T.border}`} />
-                <button onClick={() => { setModal("password"); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><KeyRound size={14} /> {S.pr8.resetPassword}</button>
-                <button onClick={() => { doPin(); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><Lock size={14} /> {S.pr8.setTempPin}</button>
-                <button onClick={() => { wrap(() => store.toggleUserActive(u.id)); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><Power size={14} /> {active ? S.pr8.deactivate : S.pr8.activate}</button>
-                <div className={`my-1 border-t ${T.border}`} />
-                <button onClick={() => { wrap(() => store.resetUserMfa(u.id)); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><ShieldAlert size={14} /> {S.pr8.resetMfa}</button>
-                <button onClick={() => { wrap(() => store.setUserMfaRequired({ userId: u.id, required: !u.mfaRequired })); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><ShieldCheck size={14} /> {u.mfaRequired ? S.pr8.mfaEnforceOff : S.pr8.mfaEnforceOn}</button>
-                <div className={`my-1 border-t ${T.border}`} />
-                <button onClick={() => { setSelUnits(u.unitIds || []); setModal("units"); close(); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}><Building2 size={14} /> {S.pr8.unitAccess}</button>
-              </div>
-            )}
-          </Menu>
-        </div>
-      </div>
-      {err && <div className="mt-2 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-500">{err}</div>}
-
-      {modal === "role" && (
-        <ActionOverlay T={T} title={S.pr12.roleChangeTitle} onClose={() => setModal(null)}>
-          <p className={`mb-2 text-sm ${T.muted}`}>{S.pr12.roleChangeHint}</p>
-          <Field T={T} label={S.pr12.roleLabel}>
-            <select className={inputCls(T)} value={selRole} onChange={(e) => setSelRole(e.target.value)} autoFocus>
-              {Object.values(ROLE).map((r) => (
-                <option key={r} value={r}>{S.roleName[r]}</option>
-              ))}
-            </select>
-          </Field>
-          {err && <div className="mt-2 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-500">{err}</div>}
-          <button onClick={doRole} className={`${btnCls(T, "primary")} mt-3 w-full`}><Check size={15} /> {S.pr12.roleChangeSave}</button>
-        </ActionOverlay>
-      )}
-
-      {modal === "password" && (
-        <ActionOverlay T={T} title={S.pr8.resetPassword} onClose={() => { setModal(null); setPw(""); }}>
-          <Field T={T} label={S.pr8.newPasswordLabel}>
-            <input type="text" className={inputCls(T)} value={pw} onChange={(e) => setPw(e.target.value)} autoFocus />
-          </Field>
-          {err && <div className="mt-2 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-500">{err}</div>}
-          <button onClick={doPassword} className={`${btnCls(T, "primary")} mt-3 w-full`}><Check size={15} /> {S.pr8.resetPassword}</button>
-        </ActionOverlay>
-      )}
-
-      {modal === "pin" && (
-        <ActionOverlay T={T} title={S.pr8.setTempPin} onClose={() => { setModal(null); setPinResult(""); }}>
-          <p className={`mb-2 text-sm ${T.muted}`}>{S.pr8.tempPinIssued}</p>
-          <div className={`flex items-center justify-between gap-2 rounded-xl border ${T.border} ${T.subtle} px-4 py-3`}>
-            <span className={`font-mono text-2xl font-bold tracking-[0.3em] ${T.heading}`}>{pinResult}</span>
-            <button onClick={copyPin} className={btnCls(T, "ghost")}><Check size={14} className={copied ? "text-emerald-500" : ""} /> {copied ? S.pr8.copied : S.pr8.copyPin}</button>
-          </div>
-        </ActionOverlay>
-      )}
-
-      {modal === "units" && (
-        <ActionOverlay T={T} title={S.pr8.unitAccess} onClose={() => setModal(null)}>
-          <p className={`mb-2 text-sm ${T.muted}`}>{S.pr8.selectUnits}</p>
-          <div className="space-y-1.5">
-            {units.length === 0 && <div className={`text-sm ${T.faint}`}>{S.pr8.noUnits}</div>}
-            {units.map((un) => (
-              <label key={un.id} className={`flex cursor-pointer items-center gap-2.5 rounded-lg border ${T.border} ${T.subtle} px-3 py-2 text-sm`}>
-                <input type="checkbox" className="h-4 w-4 accent-current text-brand" checked={selUnits.includes(un.id)} onChange={() => toggleUnit(un.id)} />
-                <Building2 size={14} /> <span className={T.text}>{un.name}</span>
-              </label>
-            ))}
-          </div>
-          <button onClick={doUnits} className={`${btnCls(T, "primary")} mt-3 w-full`}><Check size={15} /> {S.pr8.saveUnits}</button>
-        </ActionOverlay>
-      )}
-    </div>
-  );
-}
-
-// ================================================================ INVITE & MFA MANAGEMENT (Madde 6)
-function InviteManagement({ T, S, store, state }) {
-  const [f, setF] = useState({ email: "", fullName: "", role: ROLE.ATTENDING });
-  const [err, setErr] = useState("");
-  const [mfaModal, setMfaModal] = useState(null); // { userId, email, provisioning, secret } or null
-
-  const submitInvite = (e) => {
-    e.preventDefault();
-    try {
-      store.inviteUser({ email: f.email, fullName: f.fullName, role: f.role });
-      setF({ email: "", fullName: "", role: ROLE.ATTENDING });
-      setErr("");
-    } catch (ex) {
-      setErr(ex.message);
-    }
-  };
-
-  const pendingInvites = state.invites.filter((i) => i.status === "PENDING");
-
-  return (
-    <div className="space-y-4">
-      {/* Invite form */}
-      <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-        <h3 className={`mb-1 flex items-center gap-2 font-bold ${T.heading}`}>
-          <Send size={18} /> {S.pr10.inviteTitle}
-        </h3>
-        <p className={`mb-4 text-sm ${T.muted}`}>E-posta ile davet gönderin</p>
-        <form onSubmit={submitInvite} className="space-y-3">
-          <Field T={T} label={S.pr10.inviteEmail}>
-            <input className={inputCls(T)} type="email" value={f.email}
-              onChange={(e) => setF((s) => ({ ...s, email: e.target.value }))} />
-          </Field>
-          <Field T={T} label={S.pr10.inviteFullName}>
-            <input className={inputCls(T)} value={f.fullName}
-              onChange={(e) => setF((s) => ({ ...s, fullName: e.target.value }))} />
-          </Field>
-          <Field T={T} label={S.pr10.inviteRole}>
-            <select className={inputCls(T)} value={f.role}
-              onChange={(e) => setF((s) => ({ ...s, role: e.target.value }))}>
-              {Object.values(ROLE).map((r) => (
-                <option key={r} value={r}>{S.roleName[r]}</option>
-              ))}
-            </select>
-          </Field>
-          {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
-          <button type="submit" className={`${btnCls(T, "primary")} w-full`}>
-            <Send size={16} /> {S.pr10.inviteButton}
-          </button>
-        </form>
-      </div>
-
-      {/* Pending invites list */}
-      {pendingInvites.length > 0 && (
-        <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-          <h3 className={`mb-1 flex items-center gap-2 font-bold ${T.heading}`}>
-            <Clock size={18} /> {S.pr10.inviteListTitle}
-          </h3>
-          <div className={`mt-3 divide-y ${T.divide}`}>
-            {pendingInvites.map((inv) => (
-              <div key={inv.id} className="flex items-center justify-between gap-3 py-3">
-                <div className="flex-1">
-                  <div className={`font-semibold ${T.text}`}>{inv.fullName}</div>
-                  <div className={`text-sm ${T.muted}`}>{inv.email} · {S.roleName[inv.role]}</div>
-                  <div className={`text-xs ${T.faint}`}>
-                    {S.pr10.inviteStatus[inv.status]} · {new Date(inv.invitedAt).toLocaleDateString()}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => store.resendInvite(inv.id)}
-                    className={`${btnCls(T, "ghost")} text-xs`}>
-                    <RotateCcw size={14} /> {S.pr10.inviteResend}
-                  </button>
-                  <button onClick={() => store.cancelInvite(inv.id)}
-                    className={`${btnCls(T, "danger")} text-xs`}>
-                    <XCircle size={14} /> {S.pr10.inviteCancel}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* MFA modal (if active) */}
-      {mfaModal && (
-        <MfaModal T={T} S={S} store={store} mfaModal={mfaModal} onClose={() => setMfaModal(null)} />
-      )}
-    </div>
-  );
-}
-
-// MFA setup modal (QR code + verification)
-function MfaModal({ T, S, store, mfaModal, onClose }) {
-  const [code, setCode] = useState("");
-  const [err, setErr] = useState("");
-  const [verified, setVerified] = useState(false);
-
-  const verify = () => {
-    try {
-      store.verifyMfa({ userId: mfaModal.userId, code });
-      setVerified(true);
-      setErr("");
-      setTimeout(onClose, 2000);
-    } catch (ex) {
-      setErr(ex.message);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className={`w-full max-w-md rounded-2xl border ${T.border} ${T.card} p-6`}>
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className={`font-bold ${T.heading}`}>{S.pr10.mfaSetupTitle}</h3>
-          <button onClick={onClose} className={`rounded-lg p-1 ${T.ghost}`}><X size={20} /></button>
-        </div>
-
-        {!verified && (
-          <>
-            <p className={`mb-3 text-sm ${T.muted}`}>{S.pr10.mfaScanQR}</p>
-            {/* QR code (placeholder - in production this would be a real QR) */}
-            <div className={`mb-4 flex items-center justify-center rounded-xl ${T.subtle} p-6`}>
-              <QrCode size={120} className={T.faint} />
-            </div>
-            <p className={`mb-2 text-xs ${T.faint}`}>Secret: <code>{mfaModal.secret}</code></p>
-
-            <Field T={T} label={S.pr10.mfaEnterCode}>
-              <input className={inputCls(T)} type="text" maxLength={6} value={code}
-                onChange={(e) => setCode(e.target.value)} placeholder="123456" />
-            </Field>
-            {err && <div className="mt-2 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
-            <button onClick={verify} className={`${btnCls(T, "primary")} mt-3 w-full`}>
-              <Check size={16} /> {S.pr10.mfaVerifyButton}
-            </button>
-          </>
-        )}
-
-        {verified && (
-          <div className="flex items-center gap-3 rounded-xl bg-green-500/15 px-4 py-3 text-green-500">
-            <CheckCircle2 size={20} /> <span className="font-semibold">{S.pr10.mfaVerified}</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function UserAdmin({ T, S, store, state }) {
-  const [f, setF] = useState({ full_name: "", email: "", role: ROLE.ATTENDING, password: "" });
-  const [err, setErr] = useState("");
-  const submit = (e) => { e.preventDefault(); try { store.createUser(f); setF({ full_name: "", email: "", role: ROLE.ATTENDING, password: "" }); setErr(""); } catch (ex) { setErr(ex.message); } };
-  return (
-    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-      <h3 className={`mb-1 font-bold ${T.heading}`}>{S.usersSection}</h3>
-      <p className={`mb-4 text-sm ${T.muted}`}>{S.createUser}</p>
-      <form onSubmit={submit} className="space-y-3">
-        <Field T={T} label={S.uName}><input className={inputCls(T)} value={f.full_name} onChange={(e) => setF((s) => ({ ...s, full_name: e.target.value }))} /></Field>
-        <Field T={T} label={S.uEmail}><input className={inputCls(T)} value={f.email} onChange={(e) => setF((s) => ({ ...s, email: e.target.value }))} /></Field>
-        <Field T={T} label={S.uRole}>
-          <select className={inputCls(T)} value={f.role} onChange={(e) => setF((s) => ({ ...s, role: e.target.value }))}>
-            {Object.values(ROLE).map((r) => <option key={r} value={r}>{S.roleName[r]}</option>)}
-          </select>
-        </Field>
-        <Field T={T} label={S.pr12.initialPassword}>
-          <input className={inputCls(T)} type="text" placeholder={S.pr12.initialPasswordHint} value={f.password} onChange={(e) => setF((s) => ({ ...s, password: e.target.value }))} />
-        </Field>
-        {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
-        <button type="submit" className={`${btnCls(T, "primary")} w-full`}><Plus size={16} /> {S.addUser}</button>
-      </form>
-      <div className={`mt-4 text-xs font-semibold uppercase ${T.faint}`}>{S.userList}</div>
-      <div className={`mt-2 divide-y ${T.divide} rounded-xl border ${T.border}`}>
-        {state.users.map((u) => (
-          <UserRow key={u.id} T={T} S={S} store={store} state={state} u={u} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function StructureAdmin({ T, S, store, state }) {
-  const units = state.structure.units;
-  const [unitName, setUnitName] = useState(""); const [unitType, setUnitType] = useState("ADULT_ICU");
-  const [roomUnit, setRoomUnit] = useState(units[0]?.id || ""); const [roomName, setRoomName] = useState("");
-  const [bedUnit, setBedUnit] = useState(units[0]?.id || ""); const [bedRoom, setBedRoom] = useState(""); const [bedLabel, setBedLabel] = useState("");
-  const [err, setErr] = useState("");
-  const bedUnitRooms = units.find((u) => u.id === bedUnit)?.rooms || [];
-  const wrap = (fn) => { try { fn(); setErr(""); } catch (ex) { setErr(ex.message); } };
-  return (
-    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-      <h3 className={`mb-1 font-bold ${T.heading}`}>{S.structureSection}</h3>
-      <p className={`mb-4 text-sm ${T.muted}`}>{S.adminSub}</p>
-      {err && <div className="mb-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
-
-      {/* add unit */}
-      <div className={`mb-3 rounded-xl border ${T.border} ${T.subtle} p-3`}>
-        <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.addUnit}</div>
-        <div className="flex flex-wrap gap-2">
-          <input className={`${inputCls(T)} flex-1`} placeholder={S.unitName} value={unitName} onChange={(e) => setUnitName(e.target.value)} />
-          <select className={inputCls(T)} value={unitType} onChange={(e) => setUnitType(e.target.value)}>
-            <option value="ADULT_ICU">{S.unitAdult}</option><option value="NICU">{S.unitNicu}</option>
-          </select>
-          <button onClick={() => wrap(() => { store.addUnit({ name: unitName, type: unitType }); setUnitName(""); })} className={btnCls(T, "primary")}><Plus size={15} /></button>
-        </div>
-      </div>
-
-      {/* add room */}
-      <div className={`mb-3 rounded-xl border ${T.border} ${T.subtle} p-3`}>
-        <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.addRoom}</div>
-        <div className="flex flex-wrap gap-2">
-          <select className={inputCls(T)} value={roomUnit} onChange={(e) => setRoomUnit(e.target.value)}>
-            {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-          <input className={`${inputCls(T)} flex-1`} placeholder={S.roomName} value={roomName} onChange={(e) => setRoomName(e.target.value)} />
-          <button onClick={() => wrap(() => { store.addRoom({ unitId: roomUnit, label: roomName }); setRoomName(""); })} className={btnCls(T, "primary")}><Plus size={15} /></button>
-        </div>
-      </div>
-
-      {/* add bed */}
-      <div className={`rounded-xl border ${T.border} ${T.subtle} p-3`}>
-        <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.addBed}</div>
-        <div className="flex flex-wrap gap-2">
-          <select className={inputCls(T)} value={bedUnit} onChange={(e) => { setBedUnit(e.target.value); setBedRoom(""); }}>
-            {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-          <select className={inputCls(T)} value={bedRoom} onChange={(e) => setBedRoom(e.target.value)}>
-            <option value="">{S.selectRoom}</option>
-            {bedUnitRooms.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-          </select>
-          <input className={`${inputCls(T)} flex-1`} placeholder={S.bedLabel} value={bedLabel} onChange={(e) => setBedLabel(e.target.value)} />
-          <button onClick={() => wrap(() => { store.addBed({ unitId: bedUnit, roomId: bedRoom, label: bedLabel }); setBedLabel(""); })} className={btnCls(T, "primary")}><Plus size={15} /></button>
-        </div>
-      </div>
-
-      {/* structure summary */}
-      <div className="mt-4 space-y-2">
-        {units.map((u) => {
-          const unitBeds = state.beds.filter((b) => b.unitId === u.id);
-          return (
-            <div key={u.id} className={`rounded-lg ${T.subtle} px-3 py-2 text-sm`}>
-              <div className="flex items-center justify-between">
-                <span className={`font-semibold ${T.text}`}><Building2 size={14} className="mr-1.5 inline" />{u.name}</span>
-                <span className={`text-xs ${T.faint}`}>{(u.rooms || []).length} {S.room} · {unitBeds.length} {S.bed}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* PR#8 · bed operations — durum yönetimi (Boş / Dolu / Dezenfeksiyonda / Teknik Arızalı / Kullanım Dışı) */}
-      <div className="mt-5">
-        <div className={`mb-2 flex items-center gap-2 text-xs font-semibold uppercase ${T.faint}`}><Bed size={14} /> {S.pr8.bedOps}</div>
-        <div className={`divide-y ${T.divide} rounded-xl border ${T.border}`}>
-          {state.beds.map((b) => <BedStateRow key={b.id} T={T} S={S} store={store} bed={b} />)}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // Yatak durum kartı — dolu yataklar kilitli (hasta çıkışı olmadan durum değiştirilemez).
 const BED_STATE_BADGE = {
@@ -3011,36 +2066,9 @@ const BED_STATE_BADGE = {
   FAULTY: "bg-amber-500/15 text-amber-500",
   OUT_OF_SERVICE: "bg-red-500/15 text-red-500",
 };
-function BedStateRow({ T, S, store, bed }) {
-  const [err, setErr] = useState("");
-  const occupied = bed.state === "OCCUPIED";
-  const change = (e) => { try { store.setBedState({ bedId: bed.id, state: e.target.value }); setErr(""); } catch (ex) { setErr(ex.message); } };
-  return (
-    <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 text-sm">
-      <Bed size={15} className={T.faint} />
-      <span className={`font-semibold ${T.text}`}>{bed.unitName ? `${bed.unitName} · ` : ""}{S.bed} {bed.label}</span>
-      <span className={`ml-1 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${BED_STATE_BADGE[bed.state] || T.chip}`}>
-        {S.pr8.bedStateLabels[bed.state] || bed.state}
-      </span>
-      <div className="ml-auto flex items-center gap-2">
-        {occupied ? (
-          <span className={`inline-flex items-center gap-1 text-[11px] ${T.faint}`}><Lock size={12} /> {S.pr8.occupiedLock}</span>
-        ) : (
-          <select value={bed.state} onChange={change} className={`${inputCls(T)} py-1 text-xs`}>
-            {BED_ADMIN_STATES.map((s) => <option key={s} value={s}>{S.pr8.bedStateLabels[s] || s}</option>)}
-          </select>
-        )}
-      </div>
-      {err && <div className="w-full rounded-lg bg-red-500/15 px-3 py-1.5 text-xs text-red-500">{err}</div>}
-    </div>
-  );
-}
 
 // ================================================================ PR#6 · shared clinical UI
 // KVKK name masking helper — applied at the render layer so the store keeps the real synthetic name.
-function maskedName(state, name) {
-  return state && state.maskNames && name ? maskName(name) : name;
-}
 function IdentityStatus({ p, S, className }) {
   if (!p.identityState && p.source !== "device") return null;
   if (!p.identityState) return <div className={className}>{S.identity.missing}</div>;
@@ -3056,46 +2084,43 @@ function news2Level(score) {
   if (score >= 5) return { text: "text-amber-500", ring: "ring-amber-500/50" };
   return { text: "text-emerald-500", ring: "ring-emerald-500/40" };
 }
-function News2Pill({ S, vitals }) {
-  if (!vitals) return null;
-  const score = computeNews2(vitals);
+// Short labels for the NEWS2 parameters the engine reports as unmeasured.
+const NEWS2_MISSING_LABEL = {
+  respiration_rate: "solunum hızı", spo2: "SpO2", systolic_bp: "sistolik TA",
+  pulse: "nabız", temperature: "ateş",
+};
+
+/**
+ * The NEWS2 badge.
+ *
+ * `news2` is the engine's own score — {total, partial, missing[]} — and is preferred whenever
+ * it is there. The local `computeNews2(vitals)` is a simplified stand-in that substitutes mean
+ * arterial pressure for systolic and drops the oxygen and consciousness terms; it exists for
+ * the simulation, which has no engine behind it, and must never be what a ward reads. Showing
+ * two different numbers under one name is the failure this signature exists to prevent.
+ *
+ * A partial score is marked, not hidden: NEWS2 scores an unmeasured parameter as 0, so a score
+ * computed from four of five vitals can only understate the patient.
+ */
+function News2Pill({ S, vitals, news2 = null }) {
+  const fromEngine = news2 && typeof news2.total === "number";
+  if (!fromEngine && !vitals) return null;
+
+  const score = fromEngine ? news2.total : computeNews2(vitals);
+  const partial = fromEngine ? Boolean(news2.partial) : false;
   const lv = news2Level(score);
+  const missing = partial
+    ? (news2.missing || []).map((m) => NEWS2_MISSING_LABEL[m] || m).join(", ")
+    : "";
+
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${lv.ring} ${lv.text}`}>
+    <span
+      title={partial ? `Kısmi skor — ${missing} ölçülmedi; gerçek toplam daha yüksek olabilir.` : undefined}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${lv.ring} ${lv.text}`}>
       <TrendingUp size={13} /> {S.pr6.news2}: {score}
+      {partial && <span className="opacity-80" aria-label="kısmi skor">*</span>}
     </span>
   );
-}
-// Lightweight inline SVG sparkline (no chart library needed).
-function Sparkline({ points, stroke = "currentColor", height = 26 }) {
-  if (!points || points.length < 2) return null;
-  const w = 120;
-  const min = Math.min(...points), max = Math.max(...points);
-  const span = (max - min) || 1;
-  const step = w / (points.length - 1);
-  const d = points.map((v, i) =>
-    `${i === 0 ? "M" : "L"}${(i * step).toFixed(1)},${(height - ((v - min) / span) * height).toFixed(1)}`).join(" ");
-  return (
-    <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" width="100%" height={height}>
-      <path d={d} fill="none" stroke={stroke} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
-}
-function Section({ T, icon: Icon, title, children }) {
-  return (
-    <div className="mb-3">
-      <div className={`mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${T.faint}`}>
-        {Icon && <Icon size={13} />} {title}
-      </div>
-      <div className="space-y-1.5">{children}</div>
-    </div>
-  );
-}
-function Row({ T, children }) {
-  return <div className={`flex items-center gap-2 rounded-lg ${T.subtle} px-2.5 py-1.5`}>{children}</div>;
-}
-function Empty({ T, text }) {
-  return <div className={`rounded-lg border border-dashed ${T.border} px-3 py-2 text-center text-xs ${T.faint}`}>{text}</div>;
 }
 
 // Visual escalation timeline (0–3 / 3–5 / 5–10 min) — the three notification tiers of S-05.
@@ -3391,7 +2416,7 @@ function PatientCockpit({ T, S, state, store, patientId, onClose, lang }) {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <News2Pill S={S} vitals={p.vitals} />
+            <News2Pill S={S} vitals={p.vitals} news2={p.news2} />
             <button onClick={onClose} className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost}`} title={S.close || "Kapat"}><X size={18} /></button>
           </div>
         </div>
@@ -3445,6 +2470,238 @@ function PatientCockpit({ T, S, state, store, patientId, onClose, lang }) {
 
 // Full clinical data-entry module (physician): diagnoses, drugs/infusions, procedures, fluid balance,
 // mini vital trends, NEWS2, per-patient thresholds and one-click epicrisis/handover report.
+/**
+ * The pharmacy view (E9).
+ *
+ * PHARMACIST existed as a role and could reach no screen this system did not also show to
+ * everyone else — "rol var, işi yok". This page is its work.
+ *
+ * What belongs to a pharmacist in this engine is the **1-hour antibiotic window** after sepsis
+ * recognition. Until now that was reachable only as an alert that had already fired, which is
+ * precisely too late to be useful to the person who could have stopped it firing. Here the clock
+ * is visible while it is still running.
+ *
+ * Two lines this screen does not cross:
+ *   - **It suggests no dose.** Creatinine and weight are shown because a pharmacist reads a
+ *     regimen against them; turning them into a number would be an order, and the register
+ *     forbids one. The system states facts; the pharmacist and the physician decide.
+ *   - **It never renders "nothing charted" as "not given".** Those are different situations and
+ *     one of them is an accusation.
+ */
+function PharmacyPage({ T, S, state }) {
+  const patients = state.patients || [];
+  const withClock = patients.filter((p) => p?.meds?.antibiotic_clock);
+  const onInfusion = patients.filter((p) => p?.meds?.on_pressor && !p?.meds?.antibiotic_clock);
+
+  return (
+    <div className="space-y-4">
+      <div className={`rounded-2xl border ${T.border} ${T.card} ${T.lift} p-5`}>
+        <div className="mb-1 flex flex-wrap items-center gap-2">
+          <Pill size={17} className={T.accent} />
+          <h3 className={`font-bold ${T.heading}`}>{S.pr7.pharmacyTitle}</h3>
+        </div>
+        <p className={`text-xs ${T.muted}`}>{S.pr7.pharmacySubtitle}</p>
+        <p className={`mt-1 text-[11px] ${T.faint}`}>{S.pr7.pxOrderWarning}</p>
+      </div>
+
+      {withClock.length === 0 && onInfusion.length === 0 && (
+        <div className={`rounded-2xl border ${T.border} ${T.card} p-5 text-sm ${T.muted}`}>
+          {S.pr7.pxEmpty}
+        </div>
+      )}
+
+      {withClock.length > 0 && (
+        <div>
+          <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr7.pxUrgent}</div>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {withClock.map((p) => <PharmacyCard key={p.patient_id} T={T} S={S} p={p} />)}
+          </div>
+        </div>
+      )}
+
+      {onInfusion.length > 0 && (
+        <div>
+          <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr7.pxOther}</div>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {onInfusion.map((p) => <PharmacyCard key={p.patient_id} T={T} S={S} p={p} />)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One bed, from the pharmacy's point of view: the clock, what is running, and the renal context. */
+function PharmacyCard({ T, S, p }) {
+  const meds = p.meds || {};
+  const clock = meds.antibiotic_clock;
+  const mins = (sec) => Math.round(Math.abs(sec) / 60);
+
+  // Three states, never collapsed into two. `null` is the one that matters: it means nobody
+  // charted an antibiotic either way, and calling that a missed dose accuses a ward of something
+  // it may not have done.
+  let clockTone = T.muted, clockText = S.pr7.pxNoClock, hint = "";
+  if (clock) {
+    if (meds.antibiotic_given === true) {
+      clockTone = clock.met ? "text-emerald-500" : "text-amber-500";
+      clockText = clock.met ? S.pr7.pxGiven : S.pr7.pxGivenLate;
+    } else if (meds.antibiotic_given === false) {
+      clockTone = "text-amber-500";
+      clockText = S.pr7.pxNoneCharted;
+    } else if (clock.remaining_sec != null && clock.remaining_sec < 0) {
+      clockTone = "text-red-500";
+      clockText = `${S.pr7.pxOverdue} · ${mins(clock.remaining_sec)} dk`;
+      hint = S.pr7.pxNotChartedHint;
+    } else {
+      clockTone = "text-amber-500";
+      clockText = `${mins(clock.remaining_sec ?? 0)} dk ${S.pr7.pxRemaining}`;
+      hint = S.pr7.pxNotChartedHint;
+    }
+  }
+
+  const running = Object.entries(meds.pressors || {})
+    .filter(([, rate]) => rate != null && rate > 0);
+
+  return (
+    <div className={`rounded-2xl border ${T.border} ${T.card} ${T.lift} p-4`}>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className={`font-bold ${T.heading}`}>{p.bedLabel || p.patient_id}</span>
+        {p.display_name && <span className={`text-xs ${T.muted}`}>{p.display_name}</span>}
+      </div>
+
+      <div className={`rounded-xl border ${T.border} ${T.subtle} p-2.5`}>
+        <div className={`text-[10px] font-semibold uppercase ${T.faint}`}>{S.pr7.pxClock}</div>
+        <div className={`text-sm font-bold ${clockTone}`}>{clockText}</div>
+        {clock && (
+          <div className={`mt-0.5 text-[11px] ${T.faint}`}>
+            {S.pr7.pxRecognized}: {new Date(clock.recognized_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+          </div>
+        )}
+        {hint && <div className={`mt-1 text-[11px] leading-snug ${T.faint}`}>{hint}</div>}
+      </div>
+
+      <div className={`mt-2 rounded-xl border ${T.border} ${T.subtle} p-2.5`}>
+        <div className={`text-[10px] font-semibold uppercase ${T.faint}`}>{S.pr7.pxInfusions}</div>
+        {running.length === 0
+          ? <div className={`text-xs ${T.muted}`}>{S.pr7.pxNoInfusion}</div>
+          : (
+            <div className="mt-0.5 flex flex-wrap gap-1.5">
+              {running.map(([name, rate]) => (
+                <span key={name} className={`rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>
+                  {name} {rate} mcg/kg/dk
+                </span>
+              ))}
+            </div>
+          )}
+      </div>
+
+      {/* Facts, not a dose. The pharmacist reads a regimen against these; the system does not. */}
+      <div className={`mt-2 flex flex-wrap items-baseline gap-x-3 text-xs ${T.muted}`}>
+        <span className={`text-[10px] font-semibold uppercase ${T.faint}`}>{S.pr7.pxRenal}</span>
+        <span>kreatinin {meds.creatinine ?? "—"} mg/dL</span>
+        <span>{meds.weight_kg ?? "—"} kg</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The two facts the whole sepsis branch depends on, and neither had a control anywhere.
+ *
+ * `suspected_infection` is a gate: the engine's `septic_shock.evaluate` returns at its first line
+ * until a clinician charts it, so a bed with no sepsis alert may simply be a bed nobody assessed.
+ * `store.setSuspectedInfection` existed and was called from nothing — the branch was unreachable
+ * from the ward.
+ *
+ * `baseline_sofa` is what the score is compared against. Sepsis-3 asks for a RISE of 2 points, so
+ * on a chronic-dialysis patient carrying 3 renal points every day of their life, the absolute
+ * total says "sepsis" forever. The physician is the only person who knows that patient's normal,
+ * so this is where they say it.
+ *
+ * Rendered only where the store can actually reach the engine — in the simulation it is absent
+ * rather than a button that pretends.
+ */
+function SepsisPanel({ T, S, store, patient, patientId }) {
+  const sep = patient?.sepsis || null;
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+
+  const charted = sep?.baseline_sofa;
+  useEffect(() => { setDraft(charted === null || charted === undefined ? "" : String(charted)); },
+            [charted]);
+
+  const run = async (tag, fn) => {
+    setBusy(tag); setErr("");
+    try { await fn(); } catch (ex) { setErr(ex?.message || String(ex)); }
+    finally { setBusy(""); }
+  };
+
+  const suspected = sep?.suspected_infection;   // true | false | null (never charted)
+  const gateText = suspected === true ? S.pr6.sepsisGateYes
+    : suspected === false ? S.pr6.sepsisGateNo : S.pr6.sepsisGateNone;
+  const gateTone = suspected === true ? "text-amber-500"
+    : suspected === false ? T.muted : "text-sky-500";
+
+  return (
+    <Section T={T} icon={Activity} title={S.pr6.sepsisTitle}>
+      <div className={`rounded-lg border ${T.border} ${T.subtle} p-2.5`}>
+        <div className={`text-[11px] font-semibold uppercase ${T.faint}`}>{S.pr6.sepsisGate}</div>
+        <div className={`mt-0.5 text-xs ${gateTone}`}>{gateText}</div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <button
+            disabled={!!busy}
+            onClick={() => run("yes", () => store.setSuspectedInfection(patientId, true))}
+            className={`${btnCls(T, suspected === true ? "primary" : "ghost")} px-2.5 py-1.5 text-xs`}>
+            {S.pr6.sepsisMark}
+          </button>
+          <button
+            disabled={!!busy}
+            onClick={() => run("no", () => store.setSuspectedInfection(patientId, false))}
+            className={`${btnCls(T, "ghost")} px-2.5 py-1.5 text-xs`}>
+            {S.pr6.sepsisClear}
+          </button>
+        </div>
+      </div>
+
+      <div className={`mt-2 rounded-lg border ${T.border} ${T.subtle} p-2.5`}>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className={`text-[11px] font-semibold uppercase ${T.faint}`}>{S.pr6.sepsisSofa}</span>
+          <span className={`text-sm font-bold tabular-nums ${T.text}`}>{sep?.sofa ?? "—"}</span>
+          {sep && sep.baseline_assumed === false && (
+            <>
+              <span className={`text-[11px] font-semibold uppercase ${T.faint}`}>{S.pr6.sepsisRise}</span>
+              <span className={`text-sm font-bold tabular-nums ${sep.rise >= 2 ? "text-amber-500" : T.muted}`}>
+                +{sep.rise}
+              </span>
+            </>
+          )}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <label className={`text-xs ${T.muted}`} htmlFor={`bsofa-${patientId}`}>{S.pr6.sepsisBaseline}</label>
+          <input
+            id={`bsofa-${patientId}`} type="number" min="0" max="24" step="1"
+            className={`${inputCls(T)} w-20`} value={draft}
+            onChange={(e) => setDraft(e.target.value)} />
+          <button
+            disabled={!!busy || draft === ""}
+            onClick={() => run("baseline", () =>
+              store.setProfile(patientId, { baselineSofa: Number(draft) }))}
+            className={`${btnCls(T, "primary")} px-2.5 py-1.5 text-xs`}>
+            {S.pr6.sepsisSave}
+          </button>
+        </div>
+        <div className={`mt-1 text-[11px] leading-snug ${T.faint}`}>{S.pr6.sepsisBaselineHint}</div>
+        {sep?.baseline_assumed && (
+          <div className="mt-1 text-[11px] leading-snug text-sky-500">{S.pr6.sepsisAssumed}</div>
+        )}
+      </div>
+
+      {err && <div className="mt-2 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-500">{err}</div>}
+    </Section>
+  );
+}
+
 function ClinicalModule({ T, S, store, state, patientId, lang }) {
   const p = state.patients.find((x) => x.patient_id === patientId);
   const rec = state.clinical[patientId] || { diagnoses: [], medications: [], procedures: [], fluids: [],
@@ -3466,7 +2723,7 @@ function ClinicalModule({ T, S, store, state, patientId, lang }) {
     <div className="mt-4">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <div className={`text-xs font-semibold uppercase ${T.faint}`}>{S.pr6.clinicalModule}</div>
-        <News2Pill S={S} vitals={p?.vitals} />
+        <News2Pill S={S} vitals={p?.vitals} news2={p?.news2} />
         <div className="ml-auto flex gap-1.5">
           <button onClick={() => setThOpen(true)} className={`inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs ${T.ghost}`}>
             <Sliders size={13} /> {S.pr6.thresholds}
@@ -3490,6 +2747,18 @@ function ClinicalModule({ T, S, store, state, patientId, lang }) {
             </div>
           ))}
         </div>
+      )}
+
+      {typeof store.setSuspectedInfection === "function" && typeof store.setProfile === "function" && (
+        <SepsisPanel T={T} S={S} store={store} patient={p} patientId={patientId} />
+      )}
+
+      {typeof store.severityForm === "function" && (
+        <Section T={T} icon={ClipboardList} title={S.pr6.severityTitle}>
+          <SeverityScorePanel
+            T={T} S={S} store={store} patient={p} patientId={patientId}
+            onPrint={(payload) => printSeverityForm(S, payload, state)} />
+        </Section>
       )}
 
       <Section T={T} icon={ClipboardList} title={S.pr6.diagnoses}>
@@ -3591,6 +2860,83 @@ function ThresholdModal({ T, S, store, state, patientId, onClose }) {
 
 // One-click epicrisis / handover report → printable window (browser print → PDF). ICD-10 codes and
 // active-ingredient names are printed verbatim; the report never contains a machine diagnosis.
+/**
+ * The printable severity form — the document the hospital's own screen produces at the end.
+ *
+ * Two things it prints that the paper version cannot, and both are the point of the module:
+ * the TIMESTAMP behind every value, so the physician signing it can find the measurement in the
+ * chart; and an explicit mark on any cell a clinician corrected, with what the record originally
+ * held. A printout that hid corrections would make a reviewed form and an unreviewed one look
+ * identical, which is the opposite of what a signature is for.
+ *
+ * An unsigned form prints with the signature line EMPTY rather than omitted. A severity score on
+ * paper with no space for a name invites someone to treat it as already authorised.
+ */
+function printSeverityForm(S, { form, signed, patient, hours, score }, state) {
+  if (!form) return;
+  const P = S.pr6;
+  const esc = (v) => String(v == null ? "" : v).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const nm = state?.maskNames ? maskName(patient?.display_name) : (patient?.display_name || "");
+  const when = (iso) => (iso ? new Date(iso).toLocaleString("tr-TR") : "—");
+  const organName = (k) => (P.sevOrgans && P.sevOrgans[k]) || k;
+
+  const rows = (form.rows || []).map((r) => {
+    const cells = (r.inputs || []).map((c) => {
+      const flags = [
+        c.overridden ? `${esc(P.sevCorrected)} (${esc(c.original)})` : "",
+        c.outside_window ? esc(P.sevOutside) : "",
+        !c.measured ? esc(P.sevNotMeasured) : "",
+      ].filter(Boolean).join(", ");
+      return `<div class="cell"><b>${esc(c.code)}</b> ${esc(c.value ?? "—")}
+        <span class="t">${esc(when(c.at))}${c.source ? " · " + esc(c.source) : ""}</span>
+        ${flags ? `<span class="f">${flags}</span>` : ""}</div>`;
+    }).join("");
+    return `<tr><td>${esc(organName(r.organ))}</td><td class="n">${esc(r.points)}</td>
+      <td>${cells || "—"}</td></tr>`;
+  }).join("");
+
+  const corrections = (signed?.overrides || []).map((o) =>
+    `<tr><td>${esc(o.code)}</td><td class="n">${esc(o.original ?? "—")} → ${esc(o.value)}</td>
+     <td>${esc(o.reason)}</td></tr>`).join("");
+
+  const w = window.open("", "_blank", "width=820,height=920");
+  if (!w) return;
+  w.document.write(`<!doctype html><html lang="tr"><head><meta charset="utf-8">
+<title>${esc(score)} — ${esc(P.severityTitle)}</title>
+<style>*{box-sizing:border-box}body{font-family:system-ui,Segoe UI,Arial,sans-serif;color:#0f172a;padding:34px;max-width:770px;margin:auto}
+h1{font-size:20px;margin:0 0 2px}.sub{font-size:12px;color:#64748b;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12px}
+th,td{border:1px solid #cbd5e1;padding:5px 7px;text-align:left;vertical-align:top}
+th{background:#f1f5f9}.n{text-align:right;font-variant-numeric:tabular-nums;width:56px}
+.cell{margin-bottom:2px}.t{color:#64748b}.f{color:#b45309;margin-left:4px}
+.tot{font-size:16px;font-weight:700;margin:8px 0}
+.note{font-size:11px;color:#64748b;margin-top:10px;line-height:1.5}
+.sig{margin-top:26px;border-top:1px solid #cbd5e1;padding-top:10px;font-size:12px}
+.sig .line{display:inline-block;min-width:240px;border-bottom:1px solid #94a3b8;height:20px}</style></head><body>
+<h1>${esc(score)} — ${esc(P.severityTitle)}</h1>
+<div class="sub">${esc(nm)} ${patient?.patient_id ? "· " + esc(patient.patient_id) : ""}
+ · ${esc(P.sevWindow)}: ${esc(hours)} ${esc(String(form.window_hours ? "" : ""))}h
+ · ${esc(when(form.window_from))} – ${esc(when(form.window_to))}</div>
+<div class="tot">${esc(P.sevTotal)}: ${esc(form.total)}${
+  form.auto_total != null && form.auto_total !== form.total
+    ? ` <span class="t">(${esc(P.sevAuto)}: ${esc(form.auto_total)})</span>` : ""}</div>
+${form.covers_full_window === false ? `<div class="f">${esc(P.sevPartialWindow)}</div>` : ""}
+<table><thead><tr><th>${esc(P.sevOrgan)}</th><th class="n">${esc(P.sevPoints)}</th>
+<th>${esc(P.sevValue)} · ${esc(P.sevWhen)}</th></tr></thead><tbody>${rows}</tbody></table>
+${corrections ? `<h3 style="font-size:13px;margin:14px 0 4px">${esc(P.sevCorrected)}</h3>
+<table><thead><tr><th>${esc(P.sevOrgan)}</th><th>${esc(P.sevValue)}</th>
+<th>${esc(P.sevReason)}</th></tr></thead><tbody>${corrections}</tbody></table>` : ""}
+<div class="note">${esc(P.severitySub).replace("{h}", esc(hours))}<br>${esc(P.sevNotMeasuredHint)}<br>
+${esc(P.sevSource)}: ${esc(form.source || "")}</div>
+<div class="sig">${esc(P.sevSign)}: ${
+  signed ? `<b>${esc(signed.signed_by)}</b> · ${esc(when(signed.signed_at))}`
+         : `<span class="line"></span>`}</div>
+</body></html>`);
+  w.document.close();
+  w.focus();
+  w.print();
+}
+
 function printEpicrisis(S, patient, rec, state) {
   if (!patient) return;
   const P = S.pr6;
@@ -3637,160 +2983,8 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{border:1px solid 
   setTimeout(() => { try { w.print(); } catch (e) { /* ignore */ } }, 400);
 }
 
-// Madde 27: Arşiv Yönetimi — arşivlenmiş hastalar listesi + anonimizasyon.
-function ArchiveManagement({ T, S, store, state }) {
-  const [err, setErr] = useState("");
-  const wrap = (fn) => { try { fn(); setErr(""); } catch (ex) { setErr(ex.message); } };
-  return (
-    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-      <div className="mb-3 flex items-center gap-2">
-        <Archive size={17} className={T.accent} />
-        <h3 className={`font-bold ${T.heading}`}>{S.pr13.archiveTitle}</h3>
-        <span className={`ml-auto rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>{state.archivedPatients.length} {S.pr13.archived}</span>
-      </div>
-      {err && <div className="mb-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
-      <div className={`divide-y ${T.divide} rounded-xl border ${T.border}`}>
-        {state.archivedPatients.length === 0 && <div className={`px-3 py-6 text-center text-sm ${T.faint}`}>{S.pr13.noArchived}</div>}
-        {state.archivedPatients.map((p) => (
-          <div key={p.patient_id} className="flex items-center gap-3 px-3 py-2.5">
-            <div className="min-w-0 flex-1">
-              <div className={`truncate font-semibold ${T.text}`}>{p.display_name}</div>
-              <div className={`truncate text-xs ${T.faint}`}>{p.mrn} · {new Date(p.archivedAtMs).toLocaleDateString()}</div>
-            </div>
-            {!p.anonymizedAtMs && (
-              <button onClick={() => wrap(() => store.anonymizePatient({ patientId: p.patient_id }))} className={`${btnCls(T, "ghost")} shrink-0 text-xs`}>
-                <XCircle size={14} /> {S.pr13.anonymize}
-              </button>
-            )}
-            {p.anonymizedAtMs && <span className={`shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-500`}>{S.pr13.anonymized}</span>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
-// Madde 12: Oturum Yönetimi — aktif oturumlar listesi + sonlandırma.
-function SessionManagement({ T, S, store, state }) {
-  const [err, setErr] = useState("");
-  const wrap = (fn) => { try { fn(); setErr(""); } catch (ex) { setErr(ex.message); } };
-  return (
-    <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-      <div className="mb-3 flex items-center gap-2">
-        <Monitor size={17} className={T.accent} />
-        <h3 className={`font-bold ${T.heading}`}>{S.pr13.sessionsTitle}</h3>
-        <span className={`ml-auto rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>{state.activeSessions.length} {S.pr13.active}</span>
-      </div>
-      {err && <div className="mb-3 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
-      <div className={`divide-y ${T.divide} rounded-xl border ${T.border}`}>
-        {state.activeSessions.length === 0 && <div className={`px-3 py-6 text-center text-sm ${T.faint}`}>{S.pr13.noSessions}</div>}
-        {state.activeSessions.map((s) => (
-          <div key={s.id} className="flex items-center gap-3 px-3 py-2.5">
-            <Monitor size={15} className="shrink-0 text-emerald-500" />
-            <div className="min-w-0 flex-1">
-              <div className={`truncate font-semibold ${T.text}`}>{s.email}</div>
-              <div className={`truncate text-xs ${T.faint}`}>{s.device} · {s.ip} · {new Date(s.startedAtMs).toLocaleString()}</div>
-            </div>
-            <button onClick={() => wrap(() => store.terminateSession({ sessionId: s.id }))} className={`${btnCls(T, "ghost")} shrink-0 text-xs`}>
-              <Power size={14} /> {S.pr13.terminate}
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
-// Append-only audit log viewer + search panel (S-15/C2). Text search + action filter + date range.
-// Actor names honour the KVKK mask toggle.
-function AuditLog({ T, S, state }) {
-  const label = (a) => (S.pr6.actions && S.pr6.actions[a]) || a;
-  const [q, setQ] = useState("");
-  const [action, setAction] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const all = state.auditLog || [];
-  // Distinct actions present in the log (for the filter dropdown).
-  const actions = useMemo(() => Array.from(new Set(all.map((r) => r.action))), [all]);
-  const rows = useMemo(() => {
-    const ql = q.trim().toLocaleLowerCase("tr");
-    const fromMs = from ? new Date(from).getTime() : null;
-    const toMs = to ? new Date(to).getTime() + 24 * 3600 * 1000 : null; // inclusive end-of-day
-    return all.filter((r) => {
-      if (action && r.action !== action) return false;
-      if (fromMs && r.atMs < fromMs) return false;
-      if (toMs && r.atMs > toMs) return false;
-      if (ql) {
-        const hay = `${label(r.action)} ${r.actor || ""} ${r.target || ""} ${r.detail || ""}`.toLocaleLowerCase("tr");
-        if (!hay.includes(ql)) return false;
-      }
-      return true;
-    }).reverse();
-  }, [all, q, action, from, to]);
-  const clear = () => { setQ(""); setAction(""); setFrom(""); setTo(""); };
-  const exportCSV = () => {
-    const headers = ["Tarih/Saat", "İşlem", "Kullanıcı", "Rol", "Hedef", "Detay"];
-    const csvRows = rows.map((r) => [
-      new Date(r.atMs).toLocaleString("tr-TR"),
-      label(r.action),
-      r.actor || "—",
-      r.role || "—",
-      r.target || "—",
-      (r.detail || "").replace(/"/g, '""'),
-    ]);
-    const csvContent = [headers, ...csvRows].map((row) => row.map((c) => `"${c}"`).join(",")).join("\n");
-    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `denetim-kaydi-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-  return (
-    <div className={`rounded-2xl border ${T.border} ${T.card} ${T.lift} p-5`}>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <ScrollText size={17} className={T.accent} />
-        <h3 className={`font-bold ${T.heading}`}>{S.pr7.auditSearch}</h3>
-        <span className={`rounded-full px-2.5 py-0.5 text-xs ${T.chip}`}>{rows.length} {S.pr7.resultCount}</span>
-        <button onClick={exportCSV} disabled={rows.length === 0} className={`ml-auto inline-flex items-center gap-1.5 ${btnCls(T, "ghost")} disabled:opacity-40 disabled:cursor-not-allowed`}>
-          <Download size={14} /> {S.pr13.exportCSV}
-        </button>
-      </div>
-      {/* search + filters */}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="relative sm:col-span-2 lg:col-span-1">
-          <Search size={14} className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 ${T.faint}`} />
-          <input className={`${inputCls(T)} pl-8`} placeholder={S.pr7.searchPlaceholder} value={q} onChange={(e) => setQ(e.target.value)} />
-        </div>
-        <select className={inputCls(T)} value={action} onChange={(e) => setAction(e.target.value)}>
-          <option value="">{S.pr7.allActions}</option>
-          {actions.map((a) => <option key={a} value={a}>{label(a)}</option>)}
-        </select>
-        <input type="date" className={inputCls(T)} value={from} onChange={(e) => setFrom(e.target.value)} aria-label={S.pr7.dateFrom} />
-        <input type="date" className={inputCls(T)} value={to} onChange={(e) => setTo(e.target.value)} aria-label={S.pr7.dateTo} />
-      </div>
-      {(q || action || from || to) && (
-        <button onClick={clear} className={`mt-2 inline-flex items-center gap-1.5 text-xs ${T.accent}`}>
-          <X size={12} /> {S.pr7.clearFilters}
-        </button>
-      )}
-      <div className={`mt-3 max-h-[28rem] divide-y ${T.divide} overflow-y-auto rounded-xl border ${T.border}`}>
-        {rows.length === 0 && <div className={`px-3 py-6 text-center text-sm ${T.faint}`}>{S.pr6.noAudit}</div>}
-        {rows.map((r) => (
-          <div key={r.id} className="px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <span className={`shrink-0 rounded-md ${T.subtle} px-1.5 py-0.5 text-[11px] font-semibold ${T.muted}`}>{label(r.action)}</span>
-              <span className={`truncate text-xs ${T.text}`}>{maskedName(state, r.actor)}</span>
-              <span className={`ml-auto shrink-0 text-[10px] tabular-nums ${T.faint}`}>{new Date(r.atMs).toLocaleString()}</span>
-            </div>
-            {(r.target || r.detail) && <div className={`mt-0.5 truncate text-xs ${T.faint}`}>{r.target ? `${r.target} · ` : ""}{r.detail}</div>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 // KVKK / cookie & disclosure banner (dismiss persisted to localStorage).
 function KvkkBanner({ T, S }) {
@@ -3814,7 +3008,19 @@ function KvkkBanner({ T, S }) {
 // ================================================================ ROOT
 // `store` is injectable so the same UI can run against the in-browser simulation (default) or a
 // live store backed by the real API (see liveStore.js).
-export function ClinicalDemo({ store: injectedStore = null }) {
+/**
+ * `simulation` — true only in the fabricated-data modes (`?demo=1`, replay).
+ *
+ * The simulation controls (fire an alarm by hand, run the clock at 30×/60×/120× or pause it,
+ * fabricate an inbound result) are demonstration tooling. On a live ward they are worse than
+ * useless: what they produce is written to the audit log and is then indistinguishable from a
+ * real alarm or a real lab result, which corrupts both the statutory record and the quality
+ * figures drawn from it. "Pause" is the worst of them — on a monitoring screen it reads as
+ * "monitoring has stopped".
+ *
+ * Default false: a mode that forgets to declare itself gets the safe behaviour.
+ */
+export function ClinicalDemo({ store: injectedStore = null, simulation = false }) {
   const storeRef = useRef(null);
   if (!storeRef.current) storeRef.current = injectedStore || createDemoStore(buildRealisticState());
   const store = storeRef.current;
@@ -3950,7 +3156,18 @@ export function ClinicalDemo({ store: injectedStore = null }) {
   if (!state.user) return <Login T={T} S={S} store={store} lang={lang} setLang={setLang} />;
 
   // Kurum kurulum sihirbazı: platform ilk kez kuruluyorsa yönetici girişinde gösterilir (Madde 5).
-  if (state.user.role === ROLE.HOSPITAL_ADMIN && !state.tenantSetup) {
+  // The setup wizard belongs to the simulation, where creating a tenant is the only way one
+  // comes into existence.
+  //
+  // A real deployment already has its tenant before anyone logs in: seed_admin.py creates it at
+  // first boot from SEED_TENANT_SLUG, and docker-compose.yml goes to some length to keep that
+  // slug identical to the one in TENANTS — because if the two ever name different hospitals,
+  // login succeeds and the board stays silently empty. Showing the wizard there asks the
+  // administrator to create something that exists, writes their answer to browser memory only,
+  // and reappears on the next machine. If they type a different name they then believe the
+  // system is configured as they wrote it, which is that same silent divergence arriving by a
+  // different door.
+  if (simulation && state.user.role === ROLE.HOSPITAL_ADMIN && !state.tenantSetup) {
     return <SetupWizard T={T} S={S} store={store} lang={lang} setLang={setLang} />;
   }
 
@@ -3967,7 +3184,7 @@ export function ClinicalDemo({ store: injectedStore = null }) {
         collapsed={collapsed} setCollapsed={setCollapsed} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar T={T} S={S} store={store} state={state} page={effectivePage} lang={lang} setLang={setLang}
-          theme={theme} setTheme={setTheme} onMenu={() => setMobileOpen(true)}
+          theme={theme} setTheme={setTheme} onMenu={() => setMobileOpen(true)} setPage={setPage}
           soundOn={soundOn} onEnableSound={onEnableSound} notifyPerm={notifyPerm} onEnableNotify={onEnableNotify}
           onTestPush={onTestPush} notifyBlocked={notifyBlocked} />
         {notifyPerm !== "granted" && !notifyBannerDismissed && (
@@ -4002,17 +3219,20 @@ export function ClinicalDemo({ store: injectedStore = null }) {
             )}
           </div>
         )}
-        <main className="flex-1 overflow-x-hidden p-4 lg:p-6">
+        {/* pb-20: mobil alt bar içeriğin son satırını kapatmasın */}
+        <main className="flex-1 overflow-x-hidden p-4 pb-20 lg:p-6 lg:pb-6">
           {effectivePage === "board" && <BedBoard T={T} S={S} state={state} onOpenPatient={setDrawerPatient} lang={lang} />}
-          {effectivePage === "admission" && <AdmissionPage T={T} S={S} store={store} state={state}
+          {effectivePage === "admission" && <AdmissionPage T={T} S={S} store={store} state={state} lang={lang}
             preselectTransfer={transferPatient} clearPreselect={() => setTransferPatient(null)} />}
-          {effectivePage === "care" && <CareTeamPage T={T} S={S} store={store} state={state} />}
-          {effectivePage === "alarms" && <AlarmPage T={T} S={S} store={store} state={state} lang={lang} />}
-          {effectivePage === "results" && <ResultsInbox T={T} S={S} store={store} state={state} />}
+          {effectivePage === "alarms" && <AlarmPage T={T} S={S} store={store} state={state} lang={lang} simulation={simulation} />}
+          {effectivePage === "results" && <ResultsInbox T={T} S={S} store={store} state={state} simulation={simulation} />}
           {effectivePage === "heatmap" && <HeatmapPage T={T} S={S} store={store} state={state} />}
+          {effectivePage === "tech" && <TechPage T={T} S={S} store={store} state={state} />}
+          {effectivePage === "pharmacy" && <PharmacyPage T={T} S={S} state={state} />}
           {effectivePage === "admin" && <AdminPage T={T} S={S} store={store} state={state} />}
         </main>
       </div>
+      <MobileTabBar T={T} S={S} state={state} page={effectivePage} setPage={setPage} setMobileOpen={setMobileOpen} />
       {drawerPatient && (
         <PatientDrawer T={T} S={S} state={state} store={store} patientId={drawerPatient} lang={lang}
           onClose={() => setDrawerPatient(null)} onTransfer={openTransfer}

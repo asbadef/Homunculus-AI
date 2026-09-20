@@ -11,14 +11,15 @@ const entry = {
       acknowledged: false, acknowledged_by: null, acknowledged_at: null,
       first_seen_at: "2026-08-27T10:00:00Z", escalated: false },
   ],
-  latest: { heart_rate: 123, map: 61, spo2: 89, temperature: 38.4, resp_rate: 28,
-            lactate: 3.1, sofa: 7 },
+  latest: { heart_rate: 123, map: 61, sbp: 96, spo2: 89, temperature: 38.4, resp_rate: 28,
+            lactate: 3.1, sofa: 7,
+            news2: { total: 9, partial: false, missing: [], red_param: true, breakdown: {} } },
 };
 
 describe("patientFromBoard", () => {
   it("carries the machine-measured vitals across", () => {
     expect(patientFromBoard(entry).vitals)
-      .toEqual({ hr: 123, map: 61, spo2: 89, temp: 38.4, rr: 28 });
+      .toEqual({ hr: 123, map: 61, sbp: 96, spo2: 89, temp: 38.4, rr: 28 });
   });
 
   it("keeps the patient id and the engine's risk", () => {
@@ -49,24 +50,24 @@ describe("patientFromBoard", () => {
 
   it("renders an unmeasured vital as null, not zero", () => {
     const sparse = { patient_id: "bed-9", risk: "stable", alerts: [],
-                     latest: { heart_rate: null, map: null, spo2: null,
+                     latest: { heart_rate: null, map: null, sbp: null, spo2: null,
                                temperature: null, resp_rate: null, lactate: null, sofa: null } };
     expect(patientFromBoard(sparse).vitals)
-      .toEqual({ hr: null, map: null, spo2: null, temp: null, rr: null });
+      .toEqual({ hr: null, map: null, sbp: null, spo2: null, temp: null, rr: null });
   });
 
   it("survives a payload with no latest block at all", () => {
     const p = patientFromBoard({ patient_id: "bed-1", risk: "stable", alerts: [] });
-    expect(p.vitals).toEqual({ hr: null, map: null, spo2: null, temp: null, rr: null });
+    expect(p.vitals).toEqual({ hr: null, map: null, sbp: null, spo2: null, temp: null, rr: null });
   });
 
   it("does not turn a real zero into null", () => {
     // A measured 0 is a clinical finding, not a missing value. `??` is correct here and `||`
     // would be a bug.
     const zeroed = { patient_id: "bed-2", risk: "critical", alerts: [],
-                     latest: { heart_rate: 0, map: 0, spo2: 0, temperature: 0, resp_rate: 0 } };
+                     latest: { heart_rate: 0, map: 0, sbp: 0, spo2: 0, temperature: 0, resp_rate: 0 } };
     expect(patientFromBoard(zeroed).vitals)
-      .toEqual({ hr: 0, map: 0, spo2: 0, temp: 0, rr: 0 });
+      .toEqual({ hr: 0, map: 0, sbp: 0, spo2: 0, temp: 0, rr: 0 });
   });
 });
 

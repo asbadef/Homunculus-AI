@@ -1,19 +1,23 @@
 """Encrypted patient identities in the managed database, independent of the audit trail."""
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from datetime import datetime, timedelta
 
 from sqlalchemy import create_engine, text
 
 from homunculus.api.audit_postgres import to_sync_url
-from homunculus.api.patient_identity import DISCHARGED_TTL, IdentityRecord, _merge, plain
+from homunculus.api.patient_identity import (
+    DISCHARGED_TTL, IdentityRecord, _decode_diagnoses, _merge, plain,
+)
 from homunculus.crypto import encrypt_phi
 from homunculus.gateway.fhir import to_utc
 
+# A diagnosis is health data, so it is encrypted at rest alongside the name.
 _PHI = ("family", "given", "birth_date", "sex")
 _COLUMNS = ("patient_id", "family", "given", "birth_date", "sex", "unit", "room", "bed",
-            "state", "source", "updated_at")
+            "state", "source", "updated_at", "diagnoses")
 
 
 def _decode(row) -> IdentityRecord | None:
@@ -23,6 +27,7 @@ def _decode(row) -> IdentityRecord | None:
     for key in _PHI:
         values[key] = plain(values[key], "unknown" if key == "sex" else "")
     values["updated_at"] = datetime.fromisoformat(values["updated_at"])
+    values["diagnoses"] = _decode_diagnoses(values.get("diagnoses"))
     return IdentityRecord(**values)
 
 
@@ -47,6 +52,10 @@ class PostgresIdentityStore:
                 return None
             values = asdict(merged)
             values["updated_at"] = merged.updated_at.isoformat()
+            # asdict leaves a tuple of dicts, which no TEXT column can take. Serialised and
+            # encrypted like the name: a diagnosis is health data.
+            values["diagnoses"] = encrypt_phi(
+                json.dumps([dict(d) for d in merged.diagnoses]))
             for key in _PHI:
                 values[key] = encrypt_phi(values[key])
             values["tenant"] = hospital

@@ -32,10 +32,10 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Boolean, DateTime, Enum, ForeignKey, Integer, String, Text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from homunculus.db import Base
+from homunculus.db import Base, JSON_COLUMN
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +257,7 @@ class BreakGlassSession(Base):
     extension_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # System-captured list of records read/written during the window (§3.5).
-    accessed_records: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    accessed_records: Mapped[list | None] = mapped_column(JSON_COLUMN, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

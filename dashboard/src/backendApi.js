@@ -148,6 +148,101 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {})
                               body: { patient_id: patientId, kind, role } });
     },
 
+    /**
+     * Record what a clinician observed — the inputs no device produces: suspected infection,
+     * weight, the pressor running, the fluid given, the antibiotic administered, a GCS.
+     *
+     * `entries` is `[{code, value}]`; the engine fixes the unit for each code, so a caller
+     * cannot chart a pressor in the wrong scale. All-or-nothing: one rejected entry rejects
+     * the request, because a half-applied chart leaves nobody able to say which half landed.
+     */
+    chart(patientId, entries, recordedAt = null) {
+      return authed(`/clinical/${encodeURIComponent(patientId)}`, {
+        method: "POST",
+        body: { entries, ...(recordedAt ? { recorded_at: recordedAt } : {}) },
+      });
+    },
+
+    /**
+     * The patient's own normal: charted comorbidities and baseline vital ranges.
+     *
+     * Without it every patient is judged against the population threshold, so someone whose
+     * atrial fibrillation lives at 105 bpm alarms on every measurement. The boundary is always
+     * the clinician's — the system never mints one.
+     */
+    /**
+     * The engine's append-only audit for this hospital.
+     *
+     * This is the record a KVKK or ministry inspection asks for, and it is deliberately
+     * PHI-free: names live in the encrypted identity store and never in an audit payload, so
+     * these rows can be displayed and exported without carrying a patient's identity out.
+     */
+    audit({ patientId = null, eventType = null, limit = 200 } = {}) {
+      const query = new URLSearchParams();
+      if (patientId) query.set("patient_id", patientId);
+      if (eventType) query.set("event_type", eventType);
+      if (limit) query.set("limit", String(limit));
+      const suffix = query.toString();
+      return authed(`/audit${suffix ? `?${suffix}` : ""}`);
+    },
+
+    /**
+     * Has this hospital's audit log been altered? The engine recomputes every seal from the
+     * genesis hash forward and names the first record that fails.
+     *
+     * Unfiltered on purpose: a chain can only be verified as the complete run for one tenant,
+     * because a filtered slice is missing its own predecessors and would report a break that is
+     * not there.
+     */
+    /**
+     * Alarm quality: of the alarms we raised, how many did a human answer and how fast.
+     *
+     * Computed by the engine from the durable audit log, not from live state that a restart
+     * empties — a figure quoted to a hospital has to come from the record an inspection reads.
+     */
+    alarmQuality(days = 7) {
+      return authed(`/alarm-quality?days=${encodeURIComponent(days)}`);
+    },
+
+    /**
+     * The severity form, filled from the record: each organ row scored on the WORST value of the
+     * window, with the measurement and timestamp behind it.
+     *
+     * Not the SOFA the board shows. That one reads the latest values and asks whether the patient
+     * is deteriorating now; this one reads the worst and asks how sick they were over the day.
+     * The two are both correct and are not the same number.
+     */
+    severityForm(patientId, { score = "sofa", hours = 24 } = {}) {
+      return authed(`/scores/${score}/${encodeURIComponent(patientId)}?hours=${hours}`);
+    },
+
+    /**
+     * Sign the form, with the clinician's corrections.
+     *
+     * `overrides` is `[{code, value, reason}]`. A correction replaces the VALUE — the engine
+     * re-scores the row from the band table, because a typed point value would enter quality
+     * reporting unbanded. The reason is mandatory and the engine enforces its length.
+     */
+    signSeverityForm(patientId, { score = "sofa", hours = 24, overrides = [] } = {}) {
+      return authed(`/scores/${score}/${encodeURIComponent(patientId)}?hours=${hours}`, {
+        method: "POST", body: { overrides },
+      });
+    },
+
+    verifyAudit(limit = 10000) {
+      return authed(`/audit/verify?limit=${encodeURIComponent(limit)}`);
+    },
+
+    setProfile(patientId, { comorbidities = [], baselines = {}, baselineSofa = null } = {}) {
+      return authed(`/clinical/${encodeURIComponent(patientId)}/profile`, {
+        method: "PUT",
+        // Sent only when charted. Omitting the key means "unchanged/not stated"; sending null
+        // would be indistinguishable from a physician clearing a baseline they had entered.
+        body: { comorbidities, baselines,
+                ...(baselineSofa === null || baselineSofa === "" ? {} : { baseline_sofa: baselineSofa }) },
+      });
+    },
+
     /** Escape hatch for endpoints not yet wrapped (admissions, alerts, tenant…). */
     request: authed,
   };

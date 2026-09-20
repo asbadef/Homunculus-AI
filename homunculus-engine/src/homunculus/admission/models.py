@@ -30,11 +30,11 @@ from sqlalchemy import (
     Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer,
     String, Text, UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from homunculus.crypto import EncryptedString
-from homunculus.db import Base
+from homunculus.db import Base, JSON_COLUMN
 
 
 # ---------------------------------------------------------------------------
@@ -176,10 +176,10 @@ class Admission(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )                                                                                              # #8
     admission_diagnosis_free_text: Mapped[str] = mapped_column(String(500), nullable=False)        # #9
-    icd10_codes: Mapped[list | None] = mapped_column(JSONB, nullable=True)                          # #10
-    active_comorbidities: Mapped[list | None] = mapped_column(JSONB, nullable=True)                 # #11
-    active_medications_on_admission: Mapped[list | None] = mapped_column(JSONB, nullable=True)      # #12
-    known_allergies: Mapped[list | None] = mapped_column(JSONB, nullable=True)                      # #13
+    icd10_codes: Mapped[list | None] = mapped_column(JSON_COLUMN, nullable=True)                          # #10
+    active_comorbidities: Mapped[list | None] = mapped_column(JSON_COLUMN, nullable=True)                 # #11
+    active_medications_on_admission: Mapped[list | None] = mapped_column(JSON_COLUMN, nullable=True)      # #12
+    known_allergies: Mapped[list | None] = mapped_column(JSON_COLUMN, nullable=True)                      # #13
     baseline_spo2_range: Mapped[str | None] = mapped_column(String(64), nullable=True)              # #14
     baseline_heart_rate_range: Mapped[str | None] = mapped_column(String(64), nullable=True)        # #15
     baseline_blood_pressure_range: Mapped[str | None] = mapped_column(String(64), nullable=True)    # #16
@@ -324,9 +324,9 @@ class Handover(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     # Admissions covered by this handover (list of admission UUIDs as strings).
-    admission_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    admission_ids: Mapped[list | None] = mapped_column(JSON_COLUMN, nullable=True)
     # Auto-populated summary snapshot (§4.5 step 2): active alerts, tasks, vitals…
-    auto_populated_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    auto_populated_summary: Mapped[dict | None] = mapped_column(JSON_COLUMN, nullable=True)
     narrative_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     status: Mapped[HandoverStatus] = mapped_column(

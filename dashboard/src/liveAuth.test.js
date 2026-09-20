@@ -70,3 +70,28 @@ describe("roleFromToken", () => {
     expect(roleFromToken(t)).toBe(ROLE.HOSPITAL_ADMIN);
   });
 });
+
+describe("the two roles the UI had and the backend did not", () => {
+  // Both were drawn on screens — the pharmacist since the medication work, the biomedical
+  // engineer since the device inventory — while no account could hold either, so the device
+  // page was unreachable by the only role whose job it is. Added to the engine in 0007.
+  it("a pharmacist signs in as a pharmacist", () => {
+    expect(roleFromToken(tokenWith({ roles: { t: "PHARMACIST" } }))).toBe("PHARMACIST");
+  });
+
+  it("a biomedical engineer signs in as one", () => {
+    expect(roleFromToken(tokenWith({ roles: { t: "BIOMEDICAL" } }))).toBe("BIOMEDICAL");
+  });
+
+  it("neither outranks a clinical role held by the same person", () => {
+    // Someone who is both a nurse and the biomedical contact gets the ward, not the devices.
+    expect(roleFromToken(tokenWith({ roles: { a: "BIOMEDICAL", b: "CHARGE_NURSE" } })))
+      .toBe("CHARGE_NURSE");
+    expect(roleFromToken(tokenWith({ roles: { a: "PHARMACIST", b: "ATTENDING" } })))
+      .toBe("ATTENDING");
+  });
+
+  it("still fails closed for roles with no UI at all", () => {
+    expect(roleFromToken(tokenWith({ roles: { t: "AUDITOR" } }))).toBe(UNSUPPORTED_ROLE);
+  });
+});

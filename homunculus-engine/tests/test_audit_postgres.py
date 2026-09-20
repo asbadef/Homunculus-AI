@@ -262,4 +262,13 @@ def test_migration_chain_has_a_single_head():
     children = set(revisions.values())
     heads = [rev for rev in revisions if rev not in children]
 
-    assert heads == ["0005"], f"expected a single head '0005', found {heads}"
+    # Asserted as "exactly one", not as a specific number: naming the head meant editing this
+    # test on every migration, which trains people to change the assertion rather than read it.
+    # The invariant that matters is that `alembic upgrade head` is never ambiguous.
+    assert len(heads) == 1, f"expected a single head, found {sorted(heads)}"
+    # And the chain must be whole: every parent named actually exists.
+    missing = {parent for parent in children if parent is not None} - set(revisions)
+    assert not missing, f"these migrations name a parent that does not exist: {sorted(missing)}"
+    # Exactly one root, or the chain is two chains.
+    roots = [rev for rev, parent in revisions.items() if parent is None]
+    assert len(roots) == 1, f"expected a single root migration, found {sorted(roots)}"

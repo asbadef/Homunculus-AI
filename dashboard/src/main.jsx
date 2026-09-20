@@ -38,9 +38,10 @@ function pickRoot(mode) {
     // Fire-and-forget: a page refresh must reopen the stored session instead of logging the
     // clinician out; failure quietly leaves the login screen, which renders meanwhile anyway.
     store.restoreSession();
+    // simulation stays false: this is the real ward. See the note on ClinicalDemo.
     return <ClinicalDemo store={store} />;
   }
-  if (mode === "demo") return <ClinicalDemo />;
+  if (mode === "demo") return <ClinicalDemo simulation />;
   if (mode === "replay") {
     return <DemoApp scenario={params.get("scenario") || "septic_shock"} />;
   }

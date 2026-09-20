@@ -212,6 +212,81 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     };
   }
 
+  /**
+   * Send a charted clinical fact to the engine, then refresh so the board shows what it did.
+   *
+   * The simulation's versions of these write to the local store and stop there — which is what
+   * they were for. On a live ward that silence was the bug: a physician charted noradrenaline,
+   * the engine never saw it, and the cardiovascular limb of SOFA stayed at zero on a patient
+   * who was on pressors. `base` is still updated so the screen the clinician is looking at
+   * responds immediately; the board then arrives with the engine's own view.
+   */
+  /**
+   * "DM, HT, KOAH" -> ["dm", "ht", "koah"].
+   *
+   * The admission form's comorbidity box is free text, and it is worth taking seriously: only
+   * some of what a clinician writes there maps to a rule (COPD explains a standing +2 for
+   * oxygen), but the rest is context for whoever reads the card next. Splitting on commas and
+   * semicolons keeps both, and drops neither.
+   */
+  function splitComorbidities(raw) {
+    if (Array.isArray(raw)) raw = raw.join(",");
+    return String(raw || "")
+      .split(/[,;/]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  /**
+   * One engine audit record in the shape the existing audit screen renders.
+   *
+   * The screen was already written, with filters and CSV export, reading the simulation's own
+   * `auditLog`. On a live ward that meant the audit page showed what had happened in THIS
+   * BROWSER while the real append-only record sat unreachable — which is worse than no page at
+   * all, because it implies the record is what you are looking at.
+   */
+  function auditRowFromRecord(record) {
+    const payload = record?.payload ?? {};
+    // Who did it, when the record names someone. `charted_by` is a clinician; `by` comes from
+    // an acknowledgement; ingest is a device and has neither.
+    const actor = payload.charted_by || payload.by || payload.device || "—";
+    const detail = Object.entries(payload)
+      .filter(([key]) => !["charted_by", "by", "device"].includes(key))
+      .map(([key, value]) => `${key}=${value}`)
+      .join(" · ");
+    return {
+      atMs: Date.parse(record?.ts) || 0,
+      action: record?.event_type || "—",
+      actor,
+      role: "",
+      target: [record?.patient_id, record?.subject].filter(Boolean).join(" · "),
+      detail,
+      id: record?.id,
+    };
+  }
+
+  /**
+   * Replace the audit view with the engine's record.
+   *
+   * Replaces rather than merges: mixing browser-local events into a legal record would make it
+   * impossible to say afterwards which rows the engine actually holds.
+   */
+  async function refreshAudit(filters = {}) {
+    if (typeof api.audit !== "function") return null;
+    const { records } = await api.audit(filters);
+    const rows = (records || []).map(auditRowFromRecord).sort((a, b) => a.atMs - b.atMs);
+    setOverlay({ auditLog: rows });
+    emit();
+    return rows;
+  }
+
+  async function chart(patientId, entries) {
+    if (!patientId || !entries?.length) return null;
+    const result = await api.chart(patientId, entries);
+    await refreshBoard();
+    return result;
+  }
+
   return {
     ...base,
     getState,
@@ -219,6 +294,100 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     refreshBoard,
     acknowledgeAlert,
     startLive,
+    chart,
+    refreshAudit,
+
+    /** The severity form, filled from the engine's record. Unsigned. */
+    async severityForm(patientId, options) {
+      return api.severityForm(patientId, options);
+    },
+
+    /** Sign it. The engine refuses an unidentified signer and a correction with no reason. */
+    async signSeverityForm(patientId, options) {
+      return api.signSeverityForm(patientId, options);
+    },
+
+    /** Alarm fatigue, measured. Passed through unchanged — including `answered_rate: null`,
+     *  which means "nothing has settled yet" and must never be rendered as 0%. */
+    async alarmQuality(days = 7) {
+      return api.alarmQuality(days);
+    },
+
+    /** The integrity check an inspection actually asks for. Passes the engine's verdict through
+     *  untouched — a UI that softened "broken" into "warning" would be the wrong kind of help. */
+    async verifyAudit(limit = 10000) {
+      return api.verifyAudit(limit);
+    },
+
+    /** Charted by the physician: infection suspected, or no longer suspected. */
+    async setSuspectedInfection(patientId, suspected = true) {
+      return chart(patientId, [{ code: "suspected_infection", value: suspected ? 1 : 0 }]);
+    },
+
+    /** A vasopressor/inotrope rate in ug/kg/min. Also updates the simulation's own timeline so
+     *  the medication list the clinician just typed into does not appear to forget it. */
+    async addMedication(entry) {
+      const RATES = {
+        noradrenalin: "norepinephrine_rate", norepinefrin: "norepinephrine_rate",
+        adrenalin: "epinephrine_rate", epinefrin: "epinephrine_rate",
+        dopamin: "dopamine_rate", dobutamin: "dobutamine_rate",
+      };
+      const code = RATES[String(entry?.name || "").trim().toLowerCase()];
+      if (typeof base.addMedication === "function") base.addMedication(entry);
+      if (!code || entry?.dose == null) return null;   // not a rate we score; charted locally only
+      return chart(entry.patientId, [{ code, value: Number(entry.dose) }]);
+    },
+
+    /**
+     * Admission. The form already asks for the two things the rules have been missing —
+     * weight, and the chronic conditions — and until now both stopped at the browser. Weight
+     * is charted as an observation (nothing can evaluate "30 mL/kg" without it); the chronic
+     * conditions become the patient's profile, which is what stops a chronic-AF patient
+     * alarming on every measurement.
+     *
+     * The admission itself still runs locally: the API has no admission endpoint wired yet.
+     * A failure to chart must not lose the admission the clinician just completed, so each
+     * side-channel is attempted independently and its failure reported, not thrown.
+     */
+    admitPatient(form = {}) {
+      // SYNCHRONOUS on purpose. The admission form reads `p.protocolNo` off the return value
+      // and catches "bed unavailable" in a try/catch on the same tick; returning a promise
+      // would blank the confirmation and turn a validation error into an unhandled rejection.
+      // The admission is also the clinician's, not the network's — it must not wait on a POST.
+      const patient = typeof base.admitPatient === "function" ? base.admitPatient(form) : null;
+      const patientId = patient?.patient_id || form.patient_id;
+      if (!patientId) return patient;
+
+      // Side channels, fired and not awaited. Each failure is swallowed on purpose: the
+      // admission has already succeeded and must not be undone by a POST that did not, and
+      // both of these can be charted again from the patient's own screen.
+      if (form.weight != null && form.weight !== "") {
+        Promise.resolve()
+          .then(() => chart(patientId, [{ code: "weight_kg", value: Number(form.weight) }]))
+          .catch(() => {});
+      }
+      const comorbidities = splitComorbidities(form.comorbidities);
+      if (comorbidities.length) {
+        Promise.resolve()
+          .then(() => api.setProfile(patientId, { comorbidities }))
+          .catch(() => {});
+      }
+      return patient;
+    },
+
+    /** The patient's own normal — charted ranges and chronic conditions. */
+    async setProfile(patientId, profile) {
+      const result = await api.setProfile(patientId, profile);
+      await refreshBoard();
+      return result;
+    },
+
+    /** Fluid in. Only intake reaches the engine: "30 mL/kg given" is what the shock rule asks. */
+    async addFluid(entry) {
+      if (typeof base.addFluid === "function") base.addFluid(entry);
+      if (entry?.kind !== "in" || entry?.ml == null) return null;
+      return chart(entry.patientId, [{ code: "crystalloid_bolus_ml", value: Number(entry.ml) }]);
+    },
 
     /** Password step. Resolves to {mfaRequired} — the UI shows the TOTP gate when true. */
     async attemptLogin(email, credential) {

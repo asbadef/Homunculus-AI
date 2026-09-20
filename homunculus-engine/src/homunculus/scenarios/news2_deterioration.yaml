@@ -1,0 +1,69 @@
+# Synthetic. No patient data. An adult deteriorating over four hours, on the vitals a bedside
+# monitor and a ventilator actually send.
+#
+# WHY THIS FILE EXISTS
+# The other three scenarios drive the sepsis branch, and every one of them is built from
+# lactate, platelets, vasopressor rates and fluid volumes — none of which the pilot's devices
+# send. Measured on 07.09.2026: the Welch Allyn bridge delivers sbp, map, spo2, heart_rate and
+# temperature; the Dräger MEDIBUS bridge adds resp_rate and fio2. So the branch the tests and
+# the demo exercise cannot fire on a real ward, and the branch that CAN fire — NEWS2 — had no
+# scenario at all. This is that scenario.
+#
+# Every code here is one a device on this site emits. `on_resp_support` is the exception and is
+# honest about itself: MEDIBUS emits it as a derived flag whenever the ventilator answers a
+# poll, which is exactly what it means here.
+#
+# MEASURED SHAPE (Scale 1, air; rr/spo2/sbp/pulse/temp)
+#   t=0    16 / 98 / 124 / 72  / 36.8  -> 0    settled, complete
+#   t=60   19 / 96 / 112 / 92  / 37.4  -> 1    drifting, still no alert
+#   t=120  22 / 94 / 104 / 106 / 38.2  -> 6    MEDIUM — first alert fires here
+#   t=180  25 / 92 / 96  / 118 / 38.9  -> 10   HIGH, and respiration alone scores 3
+#   t=240  28 / 90 / 86  / 130 / 39.4  -> 13   HIGH
+#
+# These numbers are measured, not predicted: test_scenario_news2.py asserts them, so a change
+# to the scoring table shows up here as a failing test rather than as a stale comment.
+patient_id: bed-1
+start: "2026-09-08T08:00:00+00:00"
+events:
+  # --- t=0 · settled -------------------------------------------------------------------
+  - {at_min: 0,   code: resp_rate,       value: 16,   unit: /min,  device: medibus}
+  - {at_min: 0,   code: spo2,            value: 98,   unit: "%",   device: nce}
+  - {at_min: 0,   code: sbp,             value: 124,  unit: mmHg,  device: nce}
+  - {at_min: 0,   code: map,             value: 88,   unit: mmHg,  device: nce}
+  - {at_min: 0,   code: heart_rate,      value: 72,   unit: /min,  device: nce}
+  - {at_min: 0,   code: temperature,     value: 36.8, unit: Cel,   device: nce}
+
+  # --- t=60 · drifting, still inside every band ---------------------------------------
+  - {at_min: 60,  code: resp_rate,       value: 19,   unit: /min,  device: medibus}
+  - {at_min: 60,  code: spo2,            value: 96,   unit: "%",   device: nce}
+  - {at_min: 60,  code: sbp,             value: 112,  unit: mmHg,  device: nce}
+  - {at_min: 60,  code: map,             value: 82,   unit: mmHg,  device: nce}
+  - {at_min: 60,  code: heart_rate,      value: 92,   unit: /min,  device: nce}
+  - {at_min: 60,  code: temperature,     value: 37.4, unit: Cel,   device: nce}
+
+  # --- t=120 · oxygen started; the score crosses into medium risk ---------------------
+  - {at_min: 120, code: resp_rate,       value: 22,   unit: /min,  device: medibus}
+  - {at_min: 120, code: spo2,            value: 94,   unit: "%",   device: nce}
+  - {at_min: 120, code: sbp,             value: 104,  unit: mmHg,  device: nce}
+  - {at_min: 120, code: map,             value: 74,   unit: mmHg,  device: nce}
+  - {at_min: 120, code: heart_rate,      value: 106,  unit: /min,  device: nce}
+  - {at_min: 120, code: temperature,     value: 38.2, unit: Cel,   device: nce}
+
+  # --- t=180 · high risk ---------------------------------------------------------------
+  - {at_min: 180, code: resp_rate,       value: 25,   unit: /min,  device: medibus}
+  - {at_min: 180, code: spo2,            value: 92,   unit: "%",   device: nce}
+  - {at_min: 180, code: sbp,             value: 96,   unit: mmHg,  device: nce}
+  - {at_min: 180, code: map,             value: 68,   unit: mmHg,  device: nce}
+  - {at_min: 180, code: heart_rate,      value: 118,  unit: /min,  device: nce}
+  - {at_min: 180, code: temperature,     value: 38.9, unit: Cel,   device: nce}
+  # The ventilator is answering polls by now, so MEDIBUS emits the support flag with the rest.
+  - {at_min: 180, code: on_resp_support, value: 1,    unit: bool,  device: medibus}
+  - {at_min: 180, code: fio2,            value: 0.4,  unit: fraction, device: medibus}
+
+  # --- t=240 · several parameters at their maximum ------------------------------------
+  - {at_min: 240, code: resp_rate,       value: 28,   unit: /min,  device: medibus}
+  - {at_min: 240, code: spo2,            value: 90,   unit: "%",   device: nce}
+  - {at_min: 240, code: sbp,             value: 86,   unit: mmHg,  device: nce}
+  - {at_min: 240, code: map,             value: 62,   unit: mmHg,  device: nce}
+  - {at_min: 240, code: heart_rate,      value: 130,  unit: /min,  device: nce}
+  - {at_min: 240, code: temperature,     value: 39.4, unit: Cel,   device: nce}
