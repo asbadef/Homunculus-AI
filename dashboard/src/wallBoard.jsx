@@ -139,6 +139,10 @@ export function WallBoard({ S, state, onExit, cycleSeconds = 0, simulation = fal
   // gösterir. Kapsamsız bir kullanıcıda (yönetici, atanmamış) bugünkü davranış sürer.
   const units = visibleUnits(state, scope);
   const scopedBeds = visibleBeds(state, scope);
+  // ⚠️ Duvar ekranı koridordan görünür. Burada isim kullanıcının tercihi değil, **kurumun
+  // politikası**: kişisel "maskeyi kapat" tercihi bir hasta odasında geçerli olabilir, ziyaretçi
+  // trafiğine bakan bir ekranda geçerli olamaz. Politika açıksa kullanıcı tercihi ezilir.
+  const maskOnWall = state.settings?.privacy?.maskOnWall !== false || state.maskNames;
   const [unitIx, setUnitIx] = useState(0);
   const [now, setNow] = useState(() => new Date());
 
@@ -209,7 +213,7 @@ export function WallBoard({ S, state, onExit, cycleSeconds = 0, simulation = fal
           const elapsed = `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
           return (
             <WallCell key={bed.id} bed={bed} patient={p} alert={alert} device={device}
-              maskNames={state.maskNames} elapsed={elapsed} simulation={simulation} />
+              maskNames={maskOnWall} elapsed={elapsed} simulation={simulation} />
           );
         })}
       </div>

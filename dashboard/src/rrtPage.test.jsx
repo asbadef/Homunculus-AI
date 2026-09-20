@@ -22,6 +22,9 @@ const P = S.pr19;
 function storeWithRrtAlert(role = ROLE.RRT) {
   const store = createDemoStore(buildRealisticState());
   store.loginAs(role);
+  // Zincir artık kurum ayarı ve pilot 3. kademeyi kapalı gönderiyor; bu testler kademenin
+  // açık olduğu bir kurulumu anlatıyor. Kapalı hâlin davranışı policySettings.test.jsx'te.
+  store.setEscalationTier(ESCALATION_STEP.TIER_3_RRT, { enabled: true });
   const pid = store.getState().patients[0].patient_id;
   store.fireAlert({ patientId: pid, tier: TIER.CRITICAL, summary: "SpO2 düşüşü" });
   const id = store.getState().alerts[0].id;
@@ -84,6 +87,7 @@ describe("ekran ne gösteriyor", () => {
   it("cevapsız duran ama henüz ulaşmamış alarm 'yolda' bölümünde görünür", async () => {
     const store = createDemoStore(buildRealisticState());
     store.loginAs(ROLE.RRT);
+    store.setEscalationTier(ESCALATION_STEP.TIER_3_RRT, { enabled: true });
     const pid = store.getState().patients[0].patient_id;
     store.fireAlert({ patientId: pid, tier: TIER.CRITICAL, summary: "MAP düşüşü" });
     renderWith(store);

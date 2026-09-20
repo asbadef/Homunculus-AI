@@ -20,7 +20,7 @@ import {
   createDemoStore, buildRealisticState, ROLE, TIER, ESCALATION_STEP, secondsToNextStep,
   canSnooze, snoozeCapMinutes, ACK_REASON_MIN_CHARS, searchIcd10, MED_CATALOG,
   PROCEDURE_CATALOG, computeNews2, maskName, DEFAULT_THRESHOLDS, computeAnalytics,
-  profileForPatient,
+  profileForPatient, escalationChain, lastChainStep, ESCALATION_ORDER, ESCALATION_THRESHOLDS_SEC,
 } from "./clinicalDemo.js";
 import { getTheme, storedTheme, persistTheme, THEME_KEYS } from "./clinicalTheme.js";
 // Hasta kabul / transfer / bakım ekibi kendi dosyasında: tek ekran düzeni, barkod etiketi ve
@@ -43,7 +43,7 @@ import {
 } from "./clinicalUi.jsx";
 import {
   AlarmQualityPanel, ArchiveManagement, AuditLog, BreakGlassReview, DeviceAdmin, HierarchyTree,
-  InviteManagement,
+  InviteManagement, PolicySettings,
   SessionManagement, StaffMatrix, StructureAdmin, UserAdmin,
 } from "./clinicalAdmin.jsx";
 
@@ -509,20 +509,43 @@ function PinSwitchModal({ T, S, store, onClose }) {
 // ================================================================ SHIFT MENU
 // Sağ üst vardiya göstergesi — saate göre otomatik algılanır (Gündüz/Akşam/Gece),
 // menüden elle sabitlenebilir. İmzalanmamış devir varsa rozetle uyarır.
-const SHIFT_DEFS = [
-  { key: "morning", icon: Sun, from: 8, to: 16 },
-  { key: "evening", icon: Sunset, from: 16, to: 24 },
-  { key: "night", icon: Moon, from: 0, to: 8 },
-];
-function autoShiftKey(h) { return h < 8 ? "night" : h < 16 ? "morning" : "evening"; }
+/**
+ * Vardiya düzeni artık koda gömülü değil, kurum ayarından gelir.
+ *
+ * 08/16/24 üçlü düzen ülkede yaygın olan tek düzen değil: 12 saatlik ikili düzen (08–20 / 20–08)
+ * en az onun kadar yaygın ve **vardiya devir raporu buna bağlı**. Sabit saatler, 12 saatlik
+ * çalışan bir ünitede devri yanlış saate böler — rapor doğru görünür, içeriği yanlıştır.
+ */
+function shiftDefs(settings) {
+  const start = Number(settings?.shift?.startHour ?? 8);
+  const wrap = (h) => ((h % 24) + 24) % 24;
+  if (settings?.shift?.pattern === "12h") {
+    return [
+      { key: "morning", icon: Sun, from: wrap(start), to: wrap(start + 12) },
+      { key: "night", icon: Moon, from: wrap(start + 12), to: wrap(start) },
+    ];
+  }
+  return [
+    { key: "morning", icon: Sun, from: wrap(start), to: wrap(start + 8) },
+    { key: "evening", icon: Sunset, from: wrap(start + 8), to: wrap(start + 16) },
+    { key: "night", icon: Moon, from: wrap(start + 16), to: wrap(start) },
+  ];
+}
+/** Saat kaçsa o vardiya. Gece vardiyası gün sınırını aştığı için pencere sarmalı hesaplanır. */
+function autoShiftKey(h, settings) {
+  const defs = shiftDefs(settings);
+  const inWindow = (hour, from, to) => (from < to ? hour >= from && hour < to : hour >= from || hour < to);
+  return (defs.find((d) => inWindow(h, d.from, d.to)) || defs[0]).key;
+}
 function shiftLabel(S, key) {
   return key === "morning" ? S.pr19.shiftMorning : key === "evening" ? S.pr19.shiftEvening : S.pr19.shiftNightHrs;
 }
 function ShiftMenu({ T, S, state }) {
   const [pin, setPin] = useState(null);
   const hour = new Date().getHours();
-  const active = pin || autoShiftKey(hour);
-  const ActiveIcon = (SHIFT_DEFS.find((s) => s.key === active) || SHIFT_DEFS[0]).icon;
+  const defs = shiftDefs(state.settings);
+  const active = pin || autoShiftKey(hour, state.settings);
+  const ActiveIcon = (defs.find((s) => s.key === active) || defs[0]).icon;
   const unsigned = (state.shiftHandovers || []).filter((h) => !h.signedBy).length;
   return (
     <Menu T={T} align="right"
@@ -539,8 +562,8 @@ function ShiftMenu({ T, S, state }) {
       {({ close }) => (
         <div className="w-60">
           <div className={`px-2 pb-1.5 pt-1 text-xs font-semibold uppercase tracking-wide ${T.faint}`}>{S.pr19.shiftMenuTitle}</div>
-          {SHIFT_DEFS.map((s) => {
-            const I = s.icon; const isActive = s.key === active; const isAuto = s.key === autoShiftKey(hour);
+          {defs.map((s) => {
+            const I = s.icon; const isActive = s.key === active; const isAuto = s.key === autoShiftKey(hour, state.settings);
             return (
               <button key={s.key} onClick={() => { setPin(s.key); close(); }}
                 className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
@@ -1794,13 +1817,16 @@ function RrtPage({ T, S, store, state, simulation = false }) {
       </div>
 
       <div className="space-y-4">
-        {/* Boşluğu gizlemek yerine adını koyuyoruz: pilotta bu kademe kapalı. */}
-        <div className={`rounded-2xl border ${T.border} ${T.card} p-4`}>
-          <div className={`mb-1.5 flex items-center gap-2 text-sm font-bold ${T.heading}`}>
-            <AlertTriangle size={15} className="text-amber-500" /> {S.pr19.rrtTitle}
+        {/* Boşluğu gizlemek yerine adını koyuyoruz — ve artık sabit metin değil, ayarın kendisi.
+            Kademe açıksa bu uyarı hiç çıkmaz; kapalıysa ekranın neden boş olduğunu söyler. */}
+        {!q.tierEnabled && (
+          <div className={`rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4`}>
+            <div className="mb-1.5 flex items-center gap-2 text-sm font-bold text-amber-600 dark:text-amber-400">
+              <AlertTriangle size={15} /> {P.rrtTierOff}
+            </div>
+            <p className={`text-xs leading-relaxed ${T.muted}`}>{P.rrtPilotNote}</p>
           </div>
-          <p className={`text-xs leading-relaxed ${T.muted}`}>{P.rrtPilotNote}</p>
-        </div>
+        )}
         <BreakGlass T={T} S={S} store={store} state={state} />
         {simulation && <TimeScale T={T} S={S} store={store} state={state} />}
       </div>
@@ -1907,14 +1933,17 @@ function AlertCard({ T, S, state, alert, expanded, onToggle, onAck, onSnooze, on
   const isMuted = alert.mutedUntil != null && alert.mutedUntil > state.clockSec;
   const fired = alert.status === "FIRED";
   const elapsed = fired ? state.clockSec - alert.firedAtSec : 0;
-  const toNext = fired ? secondsToNextStep(elapsed, alert.tier) : null;
+  const toNext = fired ? secondsToNextStep(elapsed, alert.tier, state.settings) : null;
   const statusTxt = { FIRED: S.statusFired, ACKNOWLEDGED: S.statusAck, SNOOZED: S.statusSnoozed, CLOSED: S.statusClosed }[alert.status];
   const reached = (step) => alert.events.some((e) => e.step === step);
-  const steps = [
-    { step: ESCALATION_STEP.TIER_1_CHARGE_NURSE, label: S.step1 },
-    { step: ESCALATION_STEP.TIER_2_PHYSICIAN, label: S.step2 },
-    { step: ESCALATION_STEP.TIER_3_RRT, label: S.step3 },
-  ];
+  // Zincir kurum ayarından gelir: kapalı bir kademe şeritte **çizilmez.** Hiç gelmeyecek bir
+  // durağı yolda göstermek, alarmın oraya gideceğini söylemektir — gitmeyecek.
+  const STEP_LABEL = {
+    [ESCALATION_STEP.TIER_1_CHARGE_NURSE]: S.step1,
+    [ESCALATION_STEP.TIER_2_PHYSICIAN]: S.step2,
+    [ESCALATION_STEP.TIER_3_RRT]: S.step3,
+  };
+  const steps = escalationChain(state.settings).map((t) => ({ step: t.step, label: STEP_LABEL[t.step] }));
   const atStep = steps.filter((x) => reached(x.step)).length;
 
   return (
@@ -2003,7 +2032,11 @@ function AlertCard({ T, S, state, alert, expanded, onToggle, onAck, onSnooze, on
               <button onClick={onMute} disabled={isMuted} className={`${btnCls(T, "ghost")} px-3 py-2 ${isMuted ? "opacity-50" : ""}`}>
                 {isMuted ? <Volume2 size={15} /> : <VolumeX size={15} />} {isMuted ? S.pr6.muted : S.pr6.mute}
               </button>
-              <button onClick={onEscalate} className={`${btnCls(T, "warn")} px-3 py-2`}><ArrowUpCircle size={15} /> {S.escalateRRT}</button>
+              {/* Kademe kapalıysa düğme yok: basıldığında hiçbir yere gitmeyecek bir çağrıyı
+                  sunmak, alarmı devredilmiş göstermenin en kolay yolu. */}
+              {escalationChain(state.settings).some((t) => t.step === ESCALATION_STEP.TIER_3_RRT) && (
+                <button onClick={onEscalate} className={`${btnCls(T, "warn")} px-3 py-2`}><ArrowUpCircle size={15} /> {S.escalateRRT}</button>
+              )}
               {/* Uyarı, düğme değil: eskiden düğmelerin arasında duruyor ve tıklanacak sanılıyordu. */}
               {!canSnooze(alert.tier) && (
                 <span className={`ml-auto inline-flex items-center gap-1.5 text-[11px] ${T.faint}`}>
@@ -2431,8 +2464,11 @@ function AttentionStrip({ T, S, state }) {
 }
 
 function AdminPage({ T, S, store, state }) {
-  const [tab, setTab] = useState("reports");
+  const [tab, setTab] = useState("policy");
   const TABS = [
+    // ⚠️ Politika en başta: ekranın adı "Sistem Ayarları" ve bugüne kadar içinde tek bir ayar
+    // yoktu — on sekmenin hepsi kayıt listesi ya da rapordu.
+    { key: "policy", label: S.pr19.polTitle, icon: Sliders },
     { key: "reports", label: S.pr8.reports, icon: BarChart3 },
     { key: "structure", label: S.pr7.hierarchy, icon: Building2 },
     { key: "staff", label: S.pr7.staffMatrix, icon: Users },
@@ -2460,6 +2496,7 @@ function AdminPage({ T, S, store, state }) {
         })}
       </div>
 
+      {tab === "policy" && <PolicySettings T={T} S={S} store={store} state={state} />}
       {tab === "reports" && <AnalyticsPanel T={T} S={S} state={state} />}
       {tab === "structure" && (
         <div className="space-y-4">

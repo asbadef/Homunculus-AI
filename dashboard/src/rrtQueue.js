@@ -15,7 +15,7 @@
 // sessiz bir arızadır. Kademe kapatılırken kodu silinmedi — bu ekran, RRT'si olan bir kurulumda
 // zincirin son durağının nereye düştüğünü gösterir. Ekranın kendisi bunu gizlemez.
 
-import { ESCALATION_STEP, ESCALATION_THRESHOLDS_SEC, TIER } from "./clinicalDemo.js";
+import { ESCALATION_STEP, TIER, escalationChain } from "./clinicalDemo.js";
 
 const RRT = ESCALATION_STEP.TIER_3_RRT;
 
@@ -61,14 +61,17 @@ export function rrtQueue(state) {
   const handled = mine.filter((a) => a.status !== "FIRED").map(decorate)
     .sort((x, y) => (y.atRrtSec ?? 0) - (x.atRrtSec ?? 0));
 
-  const incoming = alerts
+  // Eşik kurum ayarından gelir. Kademe kapalıysa **hiçbir alarm yolda değildir** — kapalı bir
+  // kademeye geri sayım göstermek, gelmeyecek bir çağrıyı bekletmek olurdu.
+  const rrtTier = escalationChain(state?.settings).find((t) => t.step === RRT);
+  const incoming = !rrtTier ? [] : alerts
     .filter((a) => a.status === "FIRED" && escalates(a) && !reachedRrt(a))
     .map((a) => {
       const elapsed = Math.max(0, clockSec - (a.firedAtSec ?? clockSec));
-      return { alert: a, elapsed, etaSec: ESCALATION_THRESHOLDS_SEC.TIER_3_RRT - elapsed };
+      return { alert: a, elapsed, etaSec: rrtTier.thresholdSec - elapsed };
     })
     .filter((x) => x.etaSec > 0)
     .sort((x, y) => x.etaSec - y.etaSec);
 
-  return { open, handled, incoming, total: mine.length };
+  return { open, handled, incoming, total: mine.length, tierEnabled: !!rrtTier };
 }

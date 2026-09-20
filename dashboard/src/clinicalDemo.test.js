@@ -77,6 +77,10 @@ function admittedStore() {
 describe("escalation cycle", () => {
   it("advances through tier-1/2/3 and is idempotent", () => {
     const { s, pid } = admittedStore();
+    // The chain is configuration now, and the pilot ships with tier 3 closed — no rapid response
+    // team exists there. This test is about the mechanism, so it opens the tier explicitly; the
+    // policy's own behaviour is covered in policySettings.test.jsx.
+    s.setEscalationTier(ESCALATION_STEP.TIER_3_RRT, { enabled: true });
     const a = s.fireAlert({ patientId: pid, tier: TIER.CRITICAL, summary: "Septik şok" });
     s.reconcile(180);
     expect(s.getState().alerts[0].currentStep).toBe(ESCALATION_STEP.TIER_1_CHARGE_NURSE);
@@ -116,6 +120,7 @@ describe("escalation cycle", () => {
 
   it("manual escalation jumps to RRT and grants RRT access", () => {
     const { s, pid } = admittedStore();
+    s.setEscalationTier(ESCALATION_STEP.TIER_3_RRT, { enabled: true });   // kademe açık bir kurulum
     const a = s.fireAlert({ patientId: pid, tier: TIER.HIGH, summary: "x" });
     expect(s.rrtHasAccess(pid)).toBe(false);
     s.escalateToRRT(a.id);

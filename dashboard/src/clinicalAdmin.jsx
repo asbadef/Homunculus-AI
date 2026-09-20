@@ -8,6 +8,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Archive,
   Bed,
   BellRing,
@@ -32,6 +33,7 @@ import {
   Search,
   Send,
   Settings,
+  Sun,
   Shield,
   ShieldAlert,
   ShieldCheck,
@@ -41,7 +43,7 @@ import {
   XCircle,
 } from "lucide-react";
 
-import { ROLE } from "./clinicalDemo.js";
+import { ROLE, ESCALATION_ORDER, ESCALATION_STEP, escalationChain, lastChainStep } from "./clinicalDemo.js";
 import {
   ActionOverlay, Field, Menu, btnCls, inputCls, maskedName,
 } from "./clinicalUi.jsx";
@@ -1081,6 +1083,133 @@ export function AuditLog({ T, S, state, store }) {
             {(r.target || r.detail) && <div className={`mt-0.5 truncate text-xs ${T.faint}`}>{r.target ? `${r.target} · ` : ""}{r.detail}</div>}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Kurum Politikası — "Sistem Ayarları" ekranının nihayet ayar tuttuğu yer.
+ *
+ * Denetimde çıkan bulgu şuydu: adı **Sistem Ayarları** olan ekranın on sekmesinde tek bir ayar
+ * yoktu. Hepsi kayıt listesi (kullanıcı, cihaz, ünite, davet) veya rapordu; politika olan her şey
+ * ya koda gömülüydü ya kişisel tercihti. Aradaki fark klinik olarak önemli — **kişisel tercih
+ * vardiyayla değişir, kurum politikası değişmez.** Cevapsız bir alarmın en son kime gideceği,
+ * hasta adının koridordan görünen ekranda yazıp yazmayacağı ve vardiyanın kaçta başladığı üç
+ * ayrı kişinin tercihi olamaz.
+ *
+ * Üç blok, üçü de gerçekten bağlı: eskalasyon zinciri motorun tick'ini, gizlilik duvar ekranını,
+ * vardiya üst bardaki devri besliyor. Hiçbiri yalnız burada durup hiçbir yeri etkilemiyor.
+ */
+export function PolicySettings({ T, S, store, state }) {
+  const P = S.pr19;
+  const settings = state.settings || {};
+  const chain = escalationChain(settings);
+  const last = lastChainStep(settings);
+  const [err, setErr] = useState(null);
+
+  const STEP_LABEL = {
+    [ESCALATION_STEP.TIER_1_CHARGE_NURSE]: S.step1,
+    [ESCALATION_STEP.TIER_2_PHYSICIAN]: S.step2,
+    [ESCALATION_STEP.TIER_3_RRT]: S.step3,
+  };
+  const guard = (fn) => { try { setErr(null); fn(); } catch (e) { setErr(e.message); } };
+
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      {/* ---------------------------------------------------------------- eskalasyon zinciri */}
+      <div className={`rounded-2xl border ${T.border} ${T.card} p-4 xl:col-span-2`}>
+        <div className="mb-1 flex items-center gap-2">
+          <ShieldAlert size={17} className="text-brand" />
+          <h3 className={`font-bold ${T.heading}`}>{P.polEscTitle}</h3>
+        </div>
+        <p className={`mb-3 text-xs leading-relaxed ${T.muted}`}>{P.polEscSub}</p>
+
+        <div className="space-y-2">
+          {ESCALATION_ORDER.map((step) => {
+            const tier = settings.escalation?.tiers?.[step] || {};
+            const on = tier.enabled !== false;
+            const mins = Math.round((tier.thresholdSec ?? 0) / 60);
+            return (
+              <div key={step}
+                className={`flex flex-wrap items-center gap-3 rounded-xl border px-3.5 py-3 ${on ? T.border : "border-dashed " + T.border} ${on ? "" : "opacity-70"}`}>
+                <button type="button" onClick={() => guard(() => store.setEscalationTier(step, { enabled: !on }))}
+                  className={`h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-brand" : T.chip}`}
+                  aria-label={STEP_LABEL[step]} aria-pressed={on}>
+                  <span className={`block h-5 w-5 rounded-full bg-white transition ${on ? "ml-[22px]" : "ml-0.5"}`} />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <div className={`font-semibold ${T.heading}`}>{STEP_LABEL[step]}</div>
+                  <div className={`text-xs ${T.faint}`}>
+                    {on ? `${mins} ${P.polMinutes}` : P.polTierOff}
+                  </div>
+                </div>
+                <label className="flex shrink-0 items-center gap-2">
+                  <span className={`text-xs ${T.muted}`}>{P.polThreshold}</span>
+                  <input type="number" min="1" max="120" value={mins} disabled={!on}
+                    onChange={(e) => guard(() => store.setEscalationTier(step, { thresholdSec: Number(e.target.value) * 60 }))}
+                    className={`${inputCls(T)} w-20 px-2 py-1.5 text-right disabled:opacity-50`} />
+                  <span className={`text-xs ${T.muted}`}>{P.polMinutes}</span>
+                </label>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Zincirin sonu ayrı bir cümle olarak yazılır: boşluğu bilerek bırakmak,
+            bilmeden bırakmaktan iyidir ([[Pilotta Eskalasyon İki Kademe]]). */}
+        <div className={`mt-3 flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs leading-relaxed ${chain.length < 3 ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" : T.subtle + " " + T.muted}`}>
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>
+            {last ? `${P.polChainEnds}: ${STEP_LABEL[last.step]} · ${Math.round(last.thresholdSec / 60)} ${P.polMinutes}.` : P.polChainEmpty}
+            {" "}{P.polChainNote}
+          </span>
+        </div>
+        {err && <div className="mt-2 text-xs font-medium text-red-500">{err}</div>}
+      </div>
+
+      {/* ---------------------------------------------------------------- gizlilik */}
+      <div className={`rounded-2xl border ${T.border} ${T.card} p-4`}>
+        <div className="mb-1 flex items-center gap-2">
+          <Shield size={17} className="text-brand" />
+          <h3 className={`font-bold ${T.heading}`}>{P.polPrivacyTitle}</h3>
+        </div>
+        <p className={`mb-3 text-xs leading-relaxed ${T.muted}`}>{P.polPrivacySub}</p>
+        <label className={`flex cursor-pointer items-center gap-3 rounded-xl border ${T.border} px-3.5 py-3`}>
+          <input type="checkbox" className="h-4 w-4 accent-[var(--brand)]"
+            checked={settings.privacy?.maskOnWall !== false}
+            onChange={(e) => store.setPrivacyPolicy({ maskOnWall: e.target.checked })} />
+          <span className="min-w-0 flex-1">
+            <span className={`block font-semibold ${T.heading}`}>{P.polMaskWall}</span>
+            <span className={`block text-xs ${T.faint}`}>{P.polMaskWallSub}</span>
+          </span>
+        </label>
+      </div>
+
+      {/* ---------------------------------------------------------------- vardiya */}
+      <div className={`rounded-2xl border ${T.border} ${T.card} p-4`}>
+        <div className="mb-1 flex items-center gap-2">
+          <Sun size={17} className="text-brand" />
+          <h3 className={`font-bold ${T.heading}`}>{P.polShiftTitle}</h3>
+        </div>
+        <p className={`mb-3 text-xs leading-relaxed ${T.muted}`}>{P.polShiftSub}</p>
+        <div className="flex flex-wrap items-end gap-3">
+          <Field T={T} label={P.polShiftPattern}>
+            <select className={`${inputCls(T)} px-2.5 py-2`} value={settings.shift?.pattern || "8h"}
+              onChange={(e) => guard(() => store.setShiftPattern(e.target.value, settings.shift?.startHour))}>
+              <option value="8h">{P.polShift8}</option>
+              <option value="12h">{P.polShift12}</option>
+            </select>
+          </Field>
+          <Field T={T} label={P.polShiftStart}>
+            <select className={`${inputCls(T)} px-2.5 py-2`} value={String(settings.shift?.startHour ?? 8)}
+              onChange={(e) => guard(() => store.setShiftPattern(settings.shift?.pattern || "8h", Number(e.target.value)))}>
+              {Array.from({ length: 24 }, (_, h) => (
+                <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+              ))}
+            </select>
+          </Field>
+        </div>
       </div>
     </div>
   );
