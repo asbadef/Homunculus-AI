@@ -1000,67 +1000,87 @@ function BedBoard({ T, S, state, onOpenPatient, lang }) {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {beds.map((bed) => {
           const p = bed.patientId ? patientOf(bed.patientId) : null;
+          // Boş yatak dolu yatakla aynı alanı kaplıyordu; 16 yataklı bir koğuşta bu, ekranın
+          // yarısının "boş" yazmasıydı. Artık ince bir satır ve doğrudan kabule götürüyor.
           if (!p) {
             return (
-              <div key={bed.id} className={`rounded-xl border border-dashed ${T.border} ${T.subtle} p-4 opacity-70`}>
-                <div className="flex items-center justify-between">
-                  <span className={`font-bold ${T.muted} ${T.sizes.name}`}>{bed.label}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-xs ${T.chip}`}>{S.available}</span>
-                </div>
-                <div className={`mt-6 text-center text-sm ${T.faint}`}>{S.noPatientBed}</div>
+              <div key={bed.id} className={`flex items-center gap-2.5 rounded-xl border border-dashed ${T.border} px-3 py-2.5`}>
+                <Bed size={15} className={T.faint} />
+                <span className={`font-bold ${T.muted}`}>{bed.label}</span>
+                <span className={`text-xs ${T.faint}`}>{S.available}</span>
               </div>
             );
           }
           const ru = riskUi(p.risk);
           const dev = state.devices?.find((d) => d.bedId === bed.id && d.connected);
+          const openAlarm = (state.alerts || []).find((a) => a.patientId === p.patient_id && a.status === "FIRED");
           return (
             <button key={bed.id} onClick={() => onOpenPatient(p.patient_id)}
-              className={`group rounded-xl border ${T.border} ${T.card} ${T.hoverRing} p-4 text-left ring-1 transition`}>
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className={`rounded-md ${T.subtle} px-2 py-0.5 text-xs font-bold ${T.muted}`}>{bed.label}</span>
-                    <span className={`truncate font-bold ${T.heading} ${T.sizes.name}`}>{maskedName(state, p.display_name) || p.patient_id}</span>
-                  </div>
-                  <div className={`mt-0.5 text-xs ${T.faint}`}>
-                    {ageText(p, S)}{!p.isNeonate ? "y" : ""} · {p.sex === "male" ? S.male : S.female} · {S.protocolNo} {p.protocolNo}
-                  </div>
-                  <IdentityStatus p={p} S={S} className={`mt-1 text-xs ${T.faint}`} />
-                </div>
-                <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${ru.ring} ${ru.text}`}>
-                  <span className={`h-2 w-2 rounded-full ${ru.dot}`} /> {S.risk[p.risk]}
-                </span>
-              </div>
-              <div className={`mt-2 line-clamp-2 text-sm ${T.muted}`}>
-                <span className={`font-medium ${T.faint}`}>{S.admissionDx}: </span>{p.diagnosis}
-              </div>
-              <VitalsGrid T={T} vitals={p.vitals} />
-              {dev && (
-                <div className="relative mt-2 rounded-lg bg-emerald-500/5 ring-1 ring-emerald-500/20">
-                  <span className="pointer-events-none absolute inset-0 rounded-lg bg-emerald-500/10 blur-md animate-pulse" aria-hidden="true" />
-                  <div className="relative flex items-center gap-2 px-2 py-1">
-                    <Heart size={12} className="shrink-0 text-emerald-500 animate-pulse" />
-                    <div className="min-w-0 flex-1"><Waveform hr={p.vitals?.hr || 80} height={30} /></div>
-                    <span className="shrink-0 font-mono text-[11px] font-bold tabular-nums text-emerald-500">{p.vitals?.hr ?? "—"}<span className="text-[8px] font-normal"> bpm</span></span>
-                  </div>
-                </div>
-              )}
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <News2Pill S={S} vitals={p.vitals} news2={p.news2} />
-                <BranchProfileBadge S={S} lang={lang} profile={profileForPatient(state, p)} size="sm" />
-                {dev ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-500 ring-1 ring-emerald-500/30">
-                    <Radio size={11} className="animate-pulse" /> {S.pr7.live} · {dev.model} · {dev.ip}
+              className={`group flex overflow-hidden rounded-xl border ${T.border} ${T.card} ${T.hoverRing} text-left ring-1 transition`}>
+              {/* Kritiklik şeridi: rozetten önce görülen tek şey. Üç metre öteden okunur. */}
+              <span className={`w-1.5 shrink-0 ${ru.bar}`} aria-hidden="true" />
+              <div className="min-w-0 flex-1 p-3.5">
+                <div className="flex items-start gap-2.5">
+                  <span className={`shrink-0 font-mono text-lg font-bold leading-none ${ru.text}`}>{bed.label}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className={`block truncate font-bold ${T.heading} ${T.sizes.name}`}>
+                      {maskedName(state, p.display_name) || `${S.bed} ${bed.label}`}
+                    </span>
+                    <span className={`block truncate text-xs ${T.faint}`}>
+                      {[p.age != null || p.ageDays != null ? `${ageText(p, S)}${!p.isNeonate ? "y" : ""}` : null,
+                        p.sex ? (p.sex === "male" ? S.male : S.female) : null,
+                        p.admittedAtMs ? losText(p.admittedAtMs, S) : null,
+                      ].filter(Boolean).join(" · ")}
+                    </span>
                   </span>
-                ) : (
-                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${T.chip} ${T.faint}`}>
-                    <WifiOff size={11} /> {S.pr7.offlineDev}
+                  <span className="shrink-0 text-right leading-none">
+                    <News2Pill S={S} vitals={p.vitals} news2={p.news2} />
                   </span>
+                </div>
+
+                {/* Vitaller tek satır: kutu yerine sayı. Yalnız ölçülmüş olan gösterilir. */}
+                <div className="mt-2.5 flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
+                  {VITALS.map((v) => {
+                    const val = p.vitals?.[v.key];
+                    if (val == null) return null;
+                    return (
+                      <span key={v.key} className="inline-flex items-baseline gap-1">
+                        <span className={`font-mono text-lg font-semibold tabular-nums ${T.text}`}>{val}</span>
+                        <span className={`text-[10px] uppercase ${T.faint}`}>{v.label || v.key}</span>
+                      </span>
+                    );
+                  })}
+                  {!VITALS.some((v) => p.vitals?.[v.key] != null) && (
+                    <span className={`text-xs ${T.faint}`}>{S.pr7.offlineDev}</span>
+                  )}
+                </div>
+
+                {/* Açık alarm kartın kendisinde: alarm ekranına gitmeden görülür. */}
+                {openAlarm && (
+                  <div className="mt-2.5 flex items-center gap-2 rounded-lg bg-red-500/10 px-2.5 py-1.5">
+                    <AlertTriangle size={13} className="shrink-0 text-red-500" />
+                    {/* Alarmın kendi gerekçesi (`summary`) yazılır — makine metni hiçbir zaman
+                        tanı koymaz, "…kriterleri değerlendirilecek" biçimindedir. */}
+                    <span className="min-w-0 flex-1 truncate text-xs font-semibold text-red-500">
+                      {openAlarm.summary || ALERT_TXT[lang] || ALERT_TXT.tr}
+                    </span>
+                    <span className="shrink-0 font-mono text-[11px] text-red-500">{fmtClock(state.clockSec - openAlarm.firedAtSec)}</span>
+                  </div>
                 )}
-              </div>
-              <div className={`mt-3 flex items-center justify-between text-xs ${T.faint}`}>
-                <span>{S.mrn} {p.mrn}</span>
-                <span>{S.lengthOfStay}: {losText(p.admittedAtMs, S)}</span>
+
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                  <BranchProfileBadge S={S} lang={lang} profile={profileForPatient(state, p)} size="sm" />
+                  {/* Cihazın markası ve IP'si hekimi ilgilendirmiyor — akıp akmadığı ilgilendiriyor.
+                      Model ve adres biyomedikalin ekranında duruyor. */}
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${dev ? "bg-emerald-500/12 text-emerald-500" : `${T.chip} ${T.faint}`}`}>
+                    {dev ? <Radio size={11} /> : <WifiOff size={11} />} {dev ? S.pr7.live : S.pr7.offlineDev}
+                  </span>
+                  <IdentityStatus p={p} S={S} className={`text-[11px] ${T.faint}`} />
+                </div>
+
+                {p.diagnosis && (
+                  <div className={`mt-2 line-clamp-1 text-xs ${T.muted}`}>{p.diagnosis}</div>
+                )}
               </div>
             </button>
           );
