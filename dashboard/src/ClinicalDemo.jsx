@@ -705,6 +705,18 @@ function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMe
                 ))}
               </div>
 
+              {/* Duvar ekranı ve nöbet odası: tarayıcı çerçevesi olmadan. Tam ekran isteği
+                  kullanıcı hareketine bağlı olmak zorunda, bu yüzden menüden çağrılıyor. */}
+              <button onClick={() => {
+                  const el = document.documentElement;
+                  if (document.fullscreenElement) document.exitFullscreen?.();
+                  else el.requestFullscreen?.().catch(() => { /* tarayıcı reddedebilir */ });
+                }}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
+                <Monitor size={15} className={T.faint} />
+                <span className="flex-grow">{P.fullscreen || "Tam ekran"}</span>
+              </button>
+
               <div className={`px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide ${T.faint}`}>{P.alarmsAndPrivacy || S.alarmsTitle}</div>
               <button onClick={onEnableSound}
                 className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
@@ -2099,19 +2111,41 @@ const NEWS2_MISSING_LABEL = {
  * the simulation, which has no engine behind it, and must never be what a ward reads. Showing
  * two different numbers under one name is the failure this signature exists to prevent.
  *
- * A partial score is marked, not hidden: NEWS2 scores an unmeasured parameter as 0, so a score
- * computed from four of five vitals can only understate the patient.
+ * ⚠️ 20.09.2026 — the fallback WAS what the ward read. On the pilot, the engine predates the
+ * board payload that carries `news2`, so every card fell through to the local sum; and because
+ * NEWS2 scores an unmeasured parameter as 0 and the ward's monitors send no respiratory rate,
+ * the screen showed a calm green **"NEWS2: 0"** on patients nobody had scored. A number the
+ * system cannot stand behind is worse than no number: the blank prompts someone to look, the
+ * zero tells them not to. Live mode now shows "—" and says why; the local sum is confined to
+ * the simulation, where there is no engine to disagree with.
+ *
+ * A partial score is marked, not hidden, for the same reason.
  */
+const SimulationContext = React.createContext(false);
+
 function News2Pill({ S, vitals, news2 = null }) {
+  const simulation = React.useContext(SimulationContext);
   const fromEngine = news2 && typeof news2.total === "number";
+
+  if (!fromEngine && !simulation) {
+    // Canlı mod, motor skoru yok: hesabı ekran yapmaz.
+    return (
+      <span title={S.pr6?.news2NoEngine || "Motor bu hasta için NEWS2 göndermiyor — ekran kendi hesabını yapmaz."}
+        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold text-slate-400 ring-1 ring-slate-400/40">
+        <TrendingUp size={13} /> {S.pr6.news2}: —
+      </span>
+    );
+  }
   if (!fromEngine && !vitals) return null;
 
   const score = fromEngine ? news2.total : computeNews2(vitals);
-  const partial = fromEngine ? Boolean(news2.partial) : false;
+  // Simülasyonda da eksik vital kısmi skordur: ölçülmeyeni 0 saymak hastayı olduğundan iyi gösterir.
+  const localMissing = fromEngine ? [] : ["hr", "map", "spo2", "temp", "rr"].filter((k) => vitals?.[k] == null);
+  const partial = fromEngine ? Boolean(news2.partial) : localMissing.length > 0;
   const lv = news2Level(score);
-  const missing = partial
+  const missing = fromEngine
     ? (news2.missing || []).map((m) => NEWS2_MISSING_LABEL[m] || m).join(", ")
-    : "";
+    : localMissing.map((m) => NEWS2_MISSING_LABEL[{ rr: "respiration_rate", spo2: "spo2", hr: "pulse", temp: "temperature", map: "systolic_bp" }[m]] || m).join(", ");
 
   return (
     <span
@@ -2405,14 +2439,30 @@ function PatientCockpit({ T, S, state, store, patientId, onClose, lang }) {
           style={{ boxShadow: `inset 4px 0 0 ${profile.accent}` }}>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className={`truncate text-lg font-bold ${T.heading}`}>{maskedName(state, p.display_name)}</h2>
+              {/* Kimliği olmayan hasta: pilotta HBYS beslemesi yokken kart adsız açılıyor ve
+                  başlık "· — ·" diye görünüyordu. Adın yerine yatağı koymak, ekranın hangi
+                  hastadan söz ettiğini her durumda söyler. */}
+              <h2 className={`truncate text-lg font-bold ${T.heading}`}>
+                {maskedName(state, p.display_name) || `${S.bed} ${p.bedLabel || "—"}`}
+              </h2>
+              {!p.display_name && (
+                <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${T.chip}`}>{S.pr14.identityPending || "kimlik bekleniyor"}</span>
+              )}
               <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${ru.ring} ${ru.text}`}>
                 <span className={`h-2 w-2 rounded-full ${ru.dot}`} /> {S.risk[p.risk]}
               </span>
               <BranchProfileBadge S={S} lang={lang} profile={profile} />
             </div>
-            <div className={`mt-0.5 truncate text-xs ${T.faint}`}>
-              {p.bedLabel} · {S.mrn} {p.mrn} · {S.protocolNo} {p.protocolNo} · {ageText(p, S)} · {losText(p.admittedAtMs, S)}
+            <div className={`mt-0.5 flex flex-wrap gap-x-2 truncate text-xs ${T.faint}`}>
+              {/* Boş kimlik alanı yazılmaz: "Protokol No —" bilinmeyen ile yok olanı karıştırır. */}
+              {[p.display_name ? p.bedLabel : null,
+                p.mrn ? `${S.mrn} ${p.mrn}` : null,
+                p.protocolNo ? `${S.protocolNo} ${p.protocolNo}` : null,
+                p.age != null || p.ageDays != null ? ageText(p, S) : null,
+                p.admittedAtMs ? losText(p.admittedAtMs, S) : null,
+              ].filter(Boolean).map((bit, i, arr) => (
+                <span key={bit}>{bit}{i < arr.length - 1 ? " ·" : ""}</span>
+              ))}
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
@@ -2422,39 +2472,53 @@ function PatientCockpit({ T, S, state, store, patientId, onClose, lang }) {
         </div>
         {/* iki sütunlu gövde */}
         <div className="grid flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-2">
-          {/* SOL — izlem */}
+          {/* SOL — izlem.
+              Bölüm sırası bilinçli: ölçülen en üstte, kaydedilen altında, boş olan hiç yok.
+              Eski düzende trend/sıvı/ilaç/ekip başlıkları kayıt olmasa da basılıyordu ve ekranın
+              yarısı dört ayrı "yok" kutusuna gidiyordu — bakan kişi hiçbirini okumuyor, ama
+              vitallerin altındaki boşluk onları ekranın dışına itiyordu. */}
           <div className="space-y-4">
-            <div className={`rounded-xl border ${T.border} ${T.subtle} p-3`}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: profile.accent }} />
-                <span className={`text-xs font-semibold ${T.heading}`}>{profile.names[lang] || profile.names.tr}</span>
-                <span className={`ml-auto text-[11px] ${T.faint}`}>{S.pr14.clinicalFocus}: {profile.focus[lang] || profile.focus.tr}</span>
-              </div>
-              <div className={`text-[11px] ${profile.mode === "comfort" ? "text-emerald-500" : T.muted}`}>
-                {profile.mode === "comfort" ? S.pr14.comfortMode : S.pr14.standardMode}
-              </div>
-            </div>
             <div>
-              <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.vitals}</div>
+              <div className={`mb-2 flex items-center gap-2 text-xs font-semibold uppercase ${T.faint}`}>
+                {S.vitals}
+                <span className="h-px flex-1 bg-current opacity-20" />
+                <span className="normal-case">{profile.names[lang] || profile.names.tr} · {profile.focus[lang] || profile.focus.tr}</span>
+              </div>
               <VitalsGrid T={T} vitals={p.vitals} />
             </div>
-            <div>
-              <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr14.trendTitle}</div>
-              <MultiTrendChart T={T} S={S} hist={rec.vitalHistory} medications={rec.medications} />
-            </div>
-            <div>
-              <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr14.fluidTimeline}</div>
-              <FluidBalanceTimeline T={T} S={S} fluids={rec.fluids} />
-            </div>
-            <div>
-              <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr14.medTimeline}</div>
-              <MedicationTimeline T={T} S={S} medications={rec.medications} />
-            </div>
+
+            {rec.vitalHistory?.length > 1 && (
+              <div>
+                <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr14.trendTitle}</div>
+                <MultiTrendChart T={T} S={S} hist={rec.vitalHistory} medications={rec.medications} />
+              </div>
+            )}
+            {rec.fluids?.length > 0 && (
+              <div>
+                <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr14.fluidTimeline}</div>
+                <FluidBalanceTimeline T={T} S={S} fluids={rec.fluids} />
+              </div>
+            )}
+            {rec.medications?.length > 0 && (
+              <div>
+                <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr14.medTimeline}</div>
+                <MedicationTimeline T={T} S={S} medications={rec.medications} />
+              </div>
+            )}
+
+            {/* Kayıt yoksa gizlemek değil, tek satırda söylemek: "boş" da bir bulgudur —
+                ama dört kutu yerine bir cümle kadar yer tutar. */}
+            {!(rec.vitalHistory?.length > 1) && !(rec.fluids?.length) && !(rec.medications?.length) && (
+              <div className={`rounded-xl border border-dashed ${T.border} px-3 py-2.5 text-xs ${T.faint}`}>
+                {S.pr14.noChartYet || "Bu hastada henüz trend, sıvı ve ilaç kaydı yok — sağdaki alanlardan girilir."}
+              </div>
+            )}
+
             <div>
               <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.careTeamLabel}</div>
-              <div className={`space-y-1 rounded-xl border ${T.border} ${T.subtle} p-3 text-sm`}>
-                <div className="flex justify-between"><span className={T.muted}>{S.attending}</span><span className={`font-semibold ${T.text}`}>{userName(team.attendingId)}</span></div>
-                <div className="flex justify-between"><span className={T.muted}>{S.nurse}</span><span className={`font-semibold ${T.text}`}>{userName(team.nurseId)}</span></div>
+              <div className={`flex flex-wrap gap-x-6 gap-y-1 rounded-xl border ${T.border} ${T.subtle} px-3 py-2.5 text-sm`}>
+                <span className="flex items-center gap-2"><span className={T.muted}>{S.attending}</span><span className={`font-semibold ${T.text}`}>{userName(team.attendingId)}</span></span>
+                <span className="flex items-center gap-2"><span className={T.muted}>{S.nurse}</span><span className={`font-semibold ${T.text}`}>{userName(team.nurseId)}</span></span>
               </div>
             </div>
           </div>
@@ -3179,7 +3243,8 @@ export function ClinicalDemo({ store: injectedStore = null, simulation = false }
   const openTransfer = (pid) => { setTransferPatient(pid); setPage("admission"); };
 
   return (
-    <div className={`flex min-h-screen ${T.app}`}>
+    <SimulationContext.Provider value={simulation}>
+    <div className={`flex min-h-screen ${T.app} ${T.decor || ""}`}>
       <Sidebar T={T} S={S} state={state} page={effectivePage} setPage={setPage}
         collapsed={collapsed} setCollapsed={setCollapsed} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
       <div className="flex min-w-0 flex-1 flex-col">
@@ -3196,7 +3261,16 @@ export function ClinicalDemo({ store: injectedStore = null, simulation = false }
                 {notifyBlocked ? S.pr8.notifyNeedsHttps : S.pr8.notifyBannerBody}
               </div>
             </div>
-            {!notifyBlocked && (
+            {/* HTTPS engeli bir kullanıcı hatası değil, yanlış adres: aynı sunucu 8443'te
+                TLS ile de duruyor. Banner'ın "HTTPS gerekir" demesi tek başına kimseyi
+                oraya götürmüyordu — 20.09.2026'da pilotta bildirimlerin hiç çalışmadığı,
+                kimsenin de bunu fark etmediği böyle görüldü. */}
+            {notifyBlocked ? (
+              <a href={`https://${window.location.hostname}:8443${window.location.pathname}${window.location.search}`}
+                className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white shadow hover:opacity-90">
+                {S.pr8.notifyGoHttps || "Güvenli adrese geç"}
+              </a>
+            ) : (
               <button onClick={onEnableNotify}
                 className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white shadow hover:opacity-90">
                 {S.pr8.notifyBannerEnable}
@@ -3244,6 +3318,7 @@ export function ClinicalDemo({ store: injectedStore = null, simulation = false }
       )}
       <KvkkBanner T={T} S={S} />
     </div>
+    </SimulationContext.Provider>
   );
 }
 

@@ -16,6 +16,9 @@ export const THEMES = {
   icu: {
     key: "icu",
     app: "bg-slate-950 text-slate-100",
+    // Gece nöbeti: sağ üstten inen soluk teal parıltı — koğuş karanlığında ekranın
+    // düz siyah bir dikdörtgen olmasını engeller, parlaklığı artırmaz.
+    decor: "bg-[radial-gradient(1200px_600px_at_88%_-12%,rgba(13,148,136,0.12),transparent_62%)]",
     sidebar: "bg-slate-900 border-slate-800",
     topbar: "bg-slate-900/95 border-slate-800",
     card: "bg-slate-900 ring-1 ring-slate-800",
@@ -50,6 +53,7 @@ export const THEMES = {
   light: {
     key: "light",
     app: "bg-slate-100 text-slate-900",
+    decor: "bg-[radial-gradient(1000px_520px_at_100%_-8%,rgba(13,148,136,0.09),transparent_60%)]",
     sidebar: "bg-white border-slate-200",
     topbar: "bg-white/95 border-slate-200",
     card: "bg-white ring-1 ring-slate-200 shadow-sm",
@@ -84,6 +88,8 @@ export const THEMES = {
   wall: {
     key: "wall",
     app: "bg-black text-white",
+    // Duvar ekranı: uzaktan bakıldığında panonun nerede bittiğini gösteren soğuk vurgu.
+    decor: "bg-[radial-gradient(1100px_620px_at_50%_-18%,rgba(34,211,238,0.10),transparent_65%)]",
     sidebar: "bg-neutral-950 border-neutral-800",
     topbar: "bg-black border-neutral-800",
     card: "bg-neutral-950 ring-2 ring-neutral-700",
@@ -123,6 +129,9 @@ export const THEMES = {
   contrast: {
     key: "contrast",
     app: "bg-black text-white",
+    // Yüksek kontrast: dekor YOK. Zemindeki her ek ton, bu temanın var olma sebebi
+    // olan kontrast oranını düşürür.
+    decor: "",
     sidebar: "bg-black border-white",
     topbar: "bg-black border-white",
     card: "bg-black ring-2 ring-white",
