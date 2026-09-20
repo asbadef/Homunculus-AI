@@ -28,6 +28,9 @@ import { getTheme, storedTheme, persistTheme, THEME_KEYS } from "./clinicalTheme
 import { AdmissionPage } from "./admissionPage.jsx";
 import { WallBoard } from "./wallBoard.jsx";
 import { awaitingLocalAdmission } from "./liveAdapters.js";
+import {
+  SCOPE_REASON, scopeForUser, visibleAlerts, visibleBeds, visiblePatients, visibleUnits,
+} from "./patientScope.js";
 import { SeverityScorePanel } from "./severityScore.jsx";
 import { formatAge, wardFeedHealth } from "./feedHealth.js";
 import {
@@ -614,7 +617,8 @@ function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMe
   const RoleIcon = user?.role === ROLE.HOSPITAL_ADMIN ? ShieldAlert
     : user?.role === ROLE.CHARGE_NURSE ? HeartPulse : Stethoscope;
   const online = state.online !== false;
-  const openAlarms = (state.alerts || []).filter((a) => a.status === "FIRED").length;
+  const topScope = scopeForUser(state, UNRESTRICTED_SCOPE_ROLES);
+  const openAlarms = visibleAlerts(state, topScope).filter((a) => a.status === "FIRED").length;
   // Besleme sağlığı: "sessiz" yatak, cihazı hiç konuşmayan yataktır. On-prem'de köprüye
   // dışarıdan bakılamadığı için bu sayı üst barın taşıdığı en pahalı bilgidir.
   //
@@ -800,6 +804,10 @@ const NAV_GROUPS = [
 ];
 function canSee(item, role) { return item.roles === "all" || item.roles.includes(role); }
 
+// Hasta listesi kısıtlanmayan roller: biri kurumu yönetir, diğeri cihaz envanterini —
+// ikisi de koğuşun tamamına bakar. (Biyomedikalin hasta *adını* görmemesi ayrı bir iş.)
+const UNRESTRICTED_SCOPE_ROLES = [ROLE.HOSPITAL_ADMIN, ROLE.BIOMEDICAL];
+
 /**
  * Menüdeki sayı rozeti — işin nerede biriktiğini menüden okutur.
  *
@@ -808,9 +816,13 @@ function canSee(item, role) { return item.roles === "all" || item.roles.includes
  * sayı her zaman "burada bekleyen bir şey var" demek zorundadır, yoksa okunmaz olur.
  */
 function navBadge(key, state) {
-  if (key === "alarms") return (state.alerts || []).filter((a) => a.status === "FIRED").length;
-  if (key === "results") return (state.results || []).filter((r) => r.status !== "reviewed").length;
-  if (key === "admission") return awaitingLocalAdmission(state.patients || []).length;
+  const scope = scopeForUser(state, UNRESTRICTED_SCOPE_ROLES);
+  if (key === "alarms") return visibleAlerts(state, scope).filter((a) => a.status === "FIRED").length;
+  if (key === "results") {
+    const ids = new Set(visiblePatients(state, scope).map((p) => p.patient_id));
+    return (state.results || []).filter((r) => r.status !== "reviewed" && ids.has(r.patientId)).length;
+  }
+  if (key === "admission") return awaitingLocalAdmission(visiblePatients(state, scope)).length;
   return 0;
 }
 
@@ -922,7 +934,8 @@ function MobileTabBar({ T, S, state, page, setPage, setMobileOpen }) {
   const role = state.user?.role;
   const visible = NAV_ITEMS.filter((i) => canSee(i, role));
   const primary = visible.slice(0, 4);
-  const openAlarms = (state.alerts || []).filter((a) => a.status === "FIRED").length;
+  const openAlarms = visibleAlerts(state, scopeForUser(state, UNRESTRICTED_SCOPE_ROLES))
+    .filter((a) => a.status === "FIRED").length;
   const label = (key) => S.navShort?.[key] || S.nav[key];
   return (
     <nav className={`fixed inset-x-0 bottom-0 z-40 flex border-t ${T.border} ${T.sidebar} px-1 pb-[env(safe-area-inset-bottom)] lg:hidden`}>
@@ -979,10 +992,37 @@ function VitalsGrid({ T, vitals, compact }) {
 }
 
 
+/**
+ * Kapsam bildirimi.
+ *
+ * Üç durum aynı görünemez: atanmış bir kapsamla bakmak, kapsamı hiç atanmamış olmak ve
+ * break-glass ile geçici olarak her şeyi görmek. Ortadaki, yöneticinin yapacak bir işi
+ * olduğunu söyler; sonuncusu, kullanıcının şu anda kayda geçen bir yetkiyle baktığını.
+ * Atanmış kapsamda hiçbir şey yazılmaz — normal durum bildirim gerektirmez.
+ */
+function ScopeNotice({ T, S, scope }) {
+  const P = S.pr8 || {};
+  if (!scope || scope.reason === SCOPE_REASON.ASSIGNED) return null;
+  if (scope.reason === SCOPE_REASON.UNRESTRICTED_ROLE) return null;
+  const isBg = scope.reason === SCOPE_REASON.BREAK_GLASS;
+  return (
+    <div className={`flex items-start gap-2.5 rounded-xl px-3 py-2 text-xs ${
+      isBg ? "bg-amber-500/12 text-amber-500" : `${T.subtle} ${T.muted}`}`}>
+      {isBg ? <ShieldAlert size={14} className="mt-px shrink-0" /> : <Users size={14} className="mt-px shrink-0" />}
+      <span>{isBg ? (P.scopeBreakGlass || "Acil erişim açık — kapsam dışındaki yataklar da görünüyor, bu erişim kayda geçiyor.")
+                  : (P.scopeUnassigned || "Kapsam atanmamış: tüm koğuş görünüyor. Yönetici, Sistem Ayarları → Personel-Yatak matrisinden atama yapabilir.")}</span>
+    </div>
+  );
+}
+
 function BedBoard({ T, S, state, onOpenPatient, lang }) {
-  const units = state.structure.units;
+  // Kapsam: kullanıcının gördüğü yatak kümesi (bkz. patientScope.js). Sekme listesi de
+  // kapsamdan üretilir — görünmeyen bir sekmeye basılamaz, yetki arayüzde saklanmaz.
+  const scope = scopeForUser(state, UNRESTRICTED_SCOPE_ROLES);
+  const units = visibleUnits(state, scope);
+  const scopedBeds = visibleBeds(state, scope);
   const [unitId, setUnitId] = useState("all");
-  const beds = unitId === "all" ? state.beds : state.beds.filter((b) => b.unitId === unitId);
+  const beds = unitId === "all" ? scopedBeds : scopedBeds.filter((b) => b.unitId === unitId);
   const occupied = beds.filter((b) => b.state === "OCCUPIED").length;
   const patientOf = (id) => state.patients.find((p) => p.patient_id === id);
 
@@ -1007,6 +1047,7 @@ function BedBoard({ T, S, state, onOpenPatient, lang }) {
           <b>{occupied}</b>/{beds.length}
         </div>
       </div>
+      <ScopeNotice T={T} S={S} scope={scope} />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {beds.map((bed) => {
@@ -1588,7 +1629,10 @@ function HeatmapPage({ T, S, store, state }) {
  *     kapattığı bu ekranın asıl kaydıdır.
  */
 function AlarmPage({ T, S, store, state, lang, simulation = false }) {
-  const all = state.alerts.filter((a) => a.status !== "CLOSED");
+  // Alarm da kapsamla süzülür: kapsamı dışındaki bir yatağın alarmını cevaplayacak kişi,
+  // o yatağı zaten göremeyen kişi değildir.
+  const scope = scopeForUser(state, UNRESTRICTED_SCOPE_ROLES);
+  const all = visibleAlerts(state, scope).filter((a) => a.status !== "CLOSED");
   const elapsedOf = (a) => (a.status === "FIRED" ? state.clockSec - a.firedAtSec : -1);
   const open = all.filter((a) => a.status === "FIRED").sort((x, y) => elapsedOf(y) - elapsedOf(x));
   const handled = all.filter((a) => a.status !== "FIRED");
@@ -3656,6 +3700,7 @@ export function ClinicalDemo({ store: injectedStore = null, simulation = false }
     return (
       <SimulationContext.Provider value={simulation}>
         <WallBoard S={S} state={state} cycleSeconds={0} simulation={simulation}
+          scope={scopeForUser(state, UNRESTRICTED_SCOPE_ROLES)}
           onExit={() => { setWallMode(false); if (document.fullscreenElement) document.exitFullscreen?.(); }} />
       </SimulationContext.Provider>
     );

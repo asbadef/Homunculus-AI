@@ -124,8 +124,13 @@ function WallCell({ bed, patient, alert, device, maskNames, elapsed, simulation 
  * `units` boşsa tüm koğuş tek ızgarada; birden çok ünite varsa ve `cycleSeconds` verilmişse
  * üniteler sırayla gösterilir — banko ekranı tek bir üniteye ait olmayabilir.
  */
-export function WallBoard({ S, state, onExit, cycleSeconds = 0, simulation = false }) {
-  const units = state.structure?.units || [];
+import { visibleBeds, visibleUnits } from "./patientScope.js";
+
+export function WallBoard({ S, state, onExit, cycleSeconds = 0, simulation = false, scope = null }) {
+  // Duvar ekranı da kapsamı izler: banko ekranı kimin oturumuyla açıldıysa onun yataklarını
+  // gösterir. Kapsamsız bir kullanıcıda (yönetici, atanmamış) bugünkü davranış sürer.
+  const units = visibleUnits(state, scope);
+  const scopedBeds = visibleBeds(state, scope);
   const [unitIx, setUnitIx] = useState(0);
   const [now, setNow] = useState(() => new Date());
 
@@ -148,8 +153,8 @@ export function WallBoard({ S, state, onExit, cycleSeconds = 0, simulation = fal
 
   const unit = units.length > 1 && cycleSeconds ? units[unitIx] : null;
   const beds = useMemo(
-    () => (unit ? (state.beds || []).filter((b) => b.unitId === unit.id) : (state.beds || [])),
-    [state.beds, unit],
+    () => (unit ? scopedBeds.filter((b) => b.unitId === unit.id) : scopedBeds),
+    [scopedBeds, unit],
   );
   const patientOf = (id) => (state.patients || []).find((p) => p.patient_id === id);
   const openAlerts = (state.alerts || []).filter((a) => a.status === "FIRED");
