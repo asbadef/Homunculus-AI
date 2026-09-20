@@ -138,21 +138,24 @@ function Login({ T, S, store, lang, setLang }) {
           </ul>
         </div>
 
-        {/* Canlı vitrin istatistikleri */}
-        <div className="relative z-10">
-          <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/50">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-            </span>
-            {S.pr9.vitrinTitle}
+        {/* ⚠️ Burada "12.480 alarm · 8 sn · %99,9" yazan üç kutu vardı ve hiçbiri ölçülmüş
+            değildi — giriş ekranı henüz kimseyi tanımadığı için ölçemez de. Sahte bir rakam,
+            uydurma veri göstermeyeceğini söyleyen bir ürünün ilk ekranında duruyordu; hastane
+            IT'si ilk sorduğunda savunulacak bir tarafı da yok.
+            Yerine ürünün gerçekten taahhüt ettiği üç şey kondu: ikisi anayasası, biri dağıtım
+            modeli. Hepsi doğrulanabilir. */}
+        <div className="relative z-10 space-y-3">
+          <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10 backdrop-blur">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-cyan-300/80">
+              {S.pr9.promiseTitle}
+            </div>
+            <ul className="space-y-2 text-xs leading-relaxed text-white/70">
+              <li className="flex gap-2"><span className="text-cyan-300">·</span>{S.pr9.promiseNoDiagnosis}</li>
+              <li className="flex gap-2"><span className="text-cyan-300">·</span>{S.pr9.promiseNoOrders}</li>
+              <li className="flex gap-2"><span className="text-cyan-300">·</span>{S.pr9.promiseOnPrem}</li>
+            </ul>
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            <VitrinStat value="12.480" label={S.pr9.statAlarms} />
-            <VitrinStat value="8 sn" label={S.pr9.statAck} />
-            <VitrinStat value="%99,9" label={S.pr9.statUptime} />
-          </div>
-          <div className="mt-6 flex items-center gap-2 text-[11px] font-medium text-white/50">
+          <div className="flex items-center gap-2 text-[11px] font-medium text-white/50">
             <ShieldCheck size={13} className="text-emerald-400" /> {S.pr8.loginBrandLine}
           </div>
         </div>
@@ -937,7 +940,7 @@ function MobileTabBar({ T, S, state, page, setPage, setMobileOpen }) {
       <button onClick={() => setMobileOpen(true)} title={S.expand}
         className={`flex min-h-[54px] flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 ${T.navIdle}`}>
         <PanelLeft size={20} />
-        <span className="text-[10px] font-semibold leading-none">{S.navGroupOps}</span>
+        <span className="text-[10px] font-semibold leading-none">{S.top?.more || S.expand}</span>
       </button>
     </nav>
   );
@@ -982,20 +985,23 @@ function BedBoard({ T, S, state, onOpenPatient, lang }) {
 
   return (
     <div className="space-y-4">
-      {/* unit tabs + occupancy */}
-      <div className="flex flex-wrap items-center gap-2">
-        <button onClick={() => setUnitId("all")}
-          className={`rounded-lg px-3 py-2 font-medium ${T.sizes.nav} ${unitId === "all" ? T.navActive : T.ghost}`}>
-          {S.allUnits}
-        </button>
-        {units.map((u) => (
-          <button key={u.id} onClick={() => setUnitId(u.id)}
-            className={`rounded-lg px-3 py-2 font-medium ${T.sizes.nav} ${unitId === u.id ? T.navActive : T.ghost}`}>
-            {u.name}
+      {/* Ünite sekmeleri: telefonda altı ünite iki satıra taşıyor ve ekranın üçte birini
+          yiyordu. Tek satır, yatay kaydırmalı. */}
+      <div className="flex items-center gap-2">
+        <div className="-mx-1 flex flex-1 gap-2 overflow-x-auto px-1 pb-1">
+          <button onClick={() => setUnitId("all")}
+            className={`shrink-0 rounded-lg px-3 py-2 font-medium ${T.sizes.nav} ${unitId === "all" ? T.navActive : T.ghost}`}>
+            {S.allUnits}
           </button>
-        ))}
-        <div className={`ml-auto rounded-lg px-3 py-2 ${T.chip} ${T.sizes.nav}`}>
-          {S.occupancy}: <b>{occupied}</b> / {beds.length}
+          {units.map((u) => (
+            <button key={u.id} onClick={() => setUnitId(u.id)}
+              className={`shrink-0 rounded-lg px-3 py-2 font-medium ${T.sizes.nav} ${unitId === u.id ? T.navActive : T.ghost}`}>
+              {u.name}
+            </button>
+          ))}
+        </div>
+        <div className={`shrink-0 rounded-lg px-3 py-2 ${T.chip} ${T.sizes.nav}`}>
+          <b>{occupied}</b>/{beds.length}
         </div>
       </div>
 
@@ -1719,8 +1725,11 @@ function AlertCard({ T, S, state, alert, expanded, onToggle, onAck, onSnooze, on
 
       {expanded && (
         <div className={`border-t ${T.border} px-3.5 py-3`}>
-          {/* --- eskalasyon: üç kutu değil tek şerit --- */}
-          <div className="flex items-center gap-1">
+          {/* --- eskalasyon: üç kutu değil tek şerit ---
+              Telefonda şerit 549 pikselde taşıyordu (ekran 390) ve kademe adları birbirinin
+              üstüne biniyordu: dar ekranda alt alta diziliyor, aradaki bağlantı çizgileri
+              yalnız yer olduğunda çiziliyor. */}
+          <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5">
             {steps.map((st, i) => {
               const on = reached(st.step);
               const event = alert.events.find((e) => e.step === st.step);
@@ -1733,13 +1742,13 @@ function AlertCard({ T, S, state, alert, expanded, onToggle, onAck, onSnooze, on
                     </span>
                   </span>
                   {i < steps.length - 1 && (
-                    <span className={`h-px flex-1 ${reached(steps[i + 1].step) ? "bg-red-500" : T.chip}`} />
+                    <span className={`hidden h-px flex-1 sm:block ${reached(steps[i + 1].step) ? "bg-red-500" : T.chip}`} />
                   )}
                 </React.Fragment>
               );
             })}
             {fired && alert.source !== "device" && (
-              <span className={`ml-2 shrink-0 text-[11px] ${T.faint}`}>
+              <span className={`shrink-0 text-[11px] sm:ml-2 ${T.faint}`}>
                 {toNext != null ? `${S.nextStep}: ${fmtClock(toNext)}` : S.atTier3}
               </span>
             )}

@@ -35,7 +35,7 @@ function VitalNumber({ code, value, unit, big = false }) {
   return (
     <div className="flex items-baseline gap-1.5">
       <span className="font-mono font-bold leading-none tabular-nums"
-        style={{ color, fontSize: big ? "2.6rem" : "1.9rem" }}>
+        style={{ color, fontSize: big ? "clamp(1.9rem, 6vw, 2.6rem)" : "clamp(1.4rem, 4.5vw, 1.9rem)" }}>
         {value == null ? "—" : value}
       </span>
       <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color, opacity: 0.7 }}>
@@ -52,7 +52,7 @@ function VitalNumber({ code, value, unit, big = false }) {
 function WallCell({ bed, patient, alert, device, maskNames, elapsed, simulation = false }) {
   if (!patient) {
     return (
-      <div className="flex flex-col justify-between rounded-xl border border-neutral-800 bg-neutral-950/60 p-3">
+      <div className="flex min-h-[150px] flex-col justify-between rounded-xl border border-neutral-800 bg-neutral-950/60 p-3">
         <span className="font-mono text-2xl font-bold text-neutral-700">{bed.label}</span>
         <span className="text-xs uppercase tracking-widest text-neutral-700">boş</span>
       </div>
@@ -69,7 +69,7 @@ function WallCell({ bed, patient, alert, device, maskNames, elapsed, simulation 
   const news2 = fromEngine
     || (simulation ? { total: computeNews2(v), partial: localPartial } : null);
   return (
-    <div className={`relative flex flex-col gap-2 rounded-xl border p-3 transition ${
+    <div className={`relative flex min-h-[150px] min-w-0 flex-col gap-2 rounded-xl border p-3 transition ${
       critical ? "border-red-500 bg-red-950/30" : "border-neutral-800 bg-neutral-950/60"}`}>
       {critical && <span className="pointer-events-none absolute inset-0 animate-pulse rounded-xl ring-2 ring-red-500/60" aria-hidden="true" />}
 
@@ -97,12 +97,12 @@ function WallCell({ bed, patient, alert, device, maskNames, elapsed, simulation 
       </div>
 
       {device ? (
-        <div className="flex items-center gap-2">
+        <div className="hidden items-center gap-2 sm:flex">
           <Radio size={12} className="shrink-0 text-emerald-500" />
           <div className="min-w-0 flex-1"><Waveform hr={v.hr || 80} height={26} /></div>
         </div>
       ) : (
-        <div className="flex items-center gap-2 text-[11px] text-neutral-600">
+        <div className="hidden items-center gap-2 text-[11px] text-neutral-600 sm:flex">
           <WifiOff size={12} /> cihaz bağlı değil
         </div>
       )}
@@ -155,13 +155,14 @@ export function WallBoard({ S, state, onExit, cycleSeconds = 0, simulation = fal
   const openAlerts = (state.alerts || []).filter((a) => a.status === "FIRED");
   const occupied = beds.filter((b) => b.state === "OCCUPIED").length;
 
-  // Izgara: yatak sayısına göre sütun. 16 yatakta 4×4, 8 yatakta 4×2 — hücre ne kadar büyükse
-  // o kadar uzaktan okunur, o yüzden sütun sayısı gereğinden fazla artırılmıyor.
-  const cols = beds.length <= 4 ? 2 : beds.length <= 9 ? 3 : beds.length <= 16 ? 4 : 5;
+  // Izgara: hücre genişliği tabandan bağlanır, sütun sayısı ondan çıkar. Sabit sütunla
+  // yazılmıştı ve telefonda dört sütun yan yana sıkışıp rakamlar üst üste biniyordu —
+  // duvar ekranı telefonda kullanılmaz, ama açık kaldığında bozuk görünmemeli.
+  const minCell = beds.length <= 6 ? 320 : 260;
 
   return (
     <div className="fixed inset-0 z-[80] flex flex-col bg-black text-white">
-      <div className="flex items-center gap-5 border-b border-neutral-800 px-5 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-neutral-800 px-5 py-2.5">
         <span className="text-lg font-bold tracking-tight">
           {unit ? unit.name : (S.allUnits || "Tüm üniteler")}
         </span>
@@ -185,7 +186,7 @@ export function WallBoard({ S, state, onExit, cycleSeconds = 0, simulation = fal
       </div>
 
       <div className="grid flex-1 gap-3 overflow-y-auto p-3"
-        style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: "minmax(0, 1fr)" }}>
+        style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${minCell}px, 1fr))` }}>
         {beds.map((bed) => {
           const p = bed.patientId ? patientOf(bed.patientId) : null;
           const alert = p ? openAlerts.find((a) => a.patientId === p.patient_id) : null;
@@ -199,7 +200,9 @@ export function WallBoard({ S, state, onExit, cycleSeconds = 0, simulation = fal
         })}
       </div>
 
-      <div className="border-t border-neutral-800 px-5 py-1.5 text-[11px] text-neutral-600">
+      {/* Telefonda klavye yok: "Esc" ipucu orada anlamsız ve son hücrenin üstüne biniyordu.
+          Çıkış düğmesi üstte duruyor. */}
+      <div className="hidden border-t border-neutral-800 px-5 py-1.5 text-[11px] text-neutral-600 sm:block">
         {S.pr14?.wallHint || "Çıkmak için Esc"}
       </div>
     </div>
