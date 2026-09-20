@@ -1187,7 +1187,7 @@ function PatientResults({ T, S, store, state, patientId }) {
   );
 }
 
-function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, onExpand, lang }) {
+function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, onExpand, lang, simulation = false }) {
   const p = state.patients.find((x) => x.patient_id === patientId);
   const [ho, setHo] = useState(false);
   if (!p) return null;
@@ -1275,7 +1275,7 @@ function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, onE
 
         {/* PR#6 — clinical data entry & treatment module */}
         <div className="mt-5">
-          <ClinicalModule T={T} S={S} store={store} state={state} patientId={p.patient_id} lang={lang} />
+          <ClinicalModule T={T} S={S} store={store} state={state} patientId={p.patient_id} lang={lang} simulation={simulation} />
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2">
@@ -2518,7 +2518,7 @@ function MedicationTimeline({ T, S, medications }) {
 // Dar sürgü panelinin ("2. görsel") yarattığı sıkışıklığı çözer: geniş iki sütunlu, satır içi
 // düzenlenebilir kokpit. Sol sütun = izlem (branş profili, vitaller, NEWS2, çok parametreli trend,
 // sıvı/ilaç zaman çizelgeleri); sağ sütun = klinik veri girişi (ICD-10/ilaç/işlem/sıvı/eşik).
-function PatientCockpit({ T, S, state, store, patientId, onClose, lang }) {
+function PatientCockpit({ T, S, state, store, patientId, onClose, lang, simulation = false }) {
   const p = state.patients.find((x) => x.patient_id === patientId);
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -2641,7 +2641,7 @@ function PatientCockpit({ T, S, state, store, patientId, onClose, lang }) {
           </div>
           {/* SAĞ — klinik veri girişi (satır içi düzenlenebilir) */}
           <div className={`rounded-xl border ${T.border} ${T.subtle} p-3`}>
-            <ClinicalModule T={T} S={S} store={store} state={state} patientId={patientId} lang={lang} />
+            <ClinicalModule T={T} S={S} store={store} state={state} patientId={patientId} lang={lang} simulation={simulation} />
           </div>
         </div>
       </div>
@@ -2883,7 +2883,7 @@ function SepsisPanel({ T, S, store, patient, patientId }) {
   );
 }
 
-function ClinicalModule({ T, S, store, state, patientId, lang }) {
+function ClinicalModule({ T, S, store, state, patientId, lang, simulation = false }) {
   const p = state.patients.find((x) => x.patient_id === patientId);
   const rec = state.clinical[patientId] || { diagnoses: [], medications: [], procedures: [], fluids: [],
     thresholds: { ...DEFAULT_THRESHOLDS }, vitalHistory: [] };
@@ -3100,29 +3100,117 @@ function ClinicalModule({ T, S, store, state, patientId, lang }) {
         </div>
       )}
 
-      {thOpen && <ThresholdModal T={T} S={S} store={store} state={state} patientId={patientId} onClose={() => setThOpen(false)} />}
+      {thOpen && <ThresholdModal T={T} S={S} store={store} state={state} patientId={patientId}
+        simulation={simulation} onClose={() => setThOpen(false)} />}
     </div>
   );
 }
 
-function ThresholdModal({ T, S, store, state, patientId, onClose }) {
+/**
+ * Hastaya göre alarm ayarı.
+ *
+ * ⚠️ 21.09.2026'da ölçüldü: bu kutu **hiçbir yere bağlı değildi.** `setThresholds` yalnız
+ * simülasyon store'unda vardı; canlıda hekimin girdiği eşik tarayıcı belleğinde kalıyor,
+ * sayfa yenilenince kayboluyor ve motorun ürettiği alarmları hiç etkilemiyordu. Motor ise
+ * tam bu bilgiyi bekliyordu: `PUT /clinical/{id}/profile` · `baselines`.
+ *
+ * Kutunun anlamı da belirsizdi. İki ayrı şey aynı başlık altında duruyordu:
+ *   1. **Cihazın alarm eşiği** — "SpO₂ 90'ın altına inince öt". Bu monitörün işi, bizim değil;
+ *      buradan değiştirilemez ve değiştirilmemeli.
+ *   2. **Hastanın kendi normali** — kronik AF hastası 105 bpm'de yaşıyorsa, nüfus eşiğine göre
+ *      her ölçümde alarm üretmek o hastayı izlemeyi bırakmanın en hızlı yoludur.
+ *
+ * Bu ekran ikincisidir ve artık onu söylüyor.
+ */
+function ThresholdModal({ T, S, store, state, patientId, onClose, simulation = false }) {
+  const P = S.pr6;
   const rec = state.clinical[patientId];
-  const [th, setTh] = useState({ ...DEFAULT_THRESHOLDS, ...(rec?.thresholds || {}) });
+  const [base, setBase] = useState(() => {
+    const b = rec?.baselines || {};
+    const val = (k) => ({ low: b[k]?.low ?? "", high: b[k]?.high ?? "" });
+    return { heart_rate: val("heart_rate"), resp_rate: val("resp_rate"), spo2: val("spo2"),
+             sbp: val("sbp"), temperature: val("temperature") };
+  });
   const [err, setErr] = useState("");
-  const upd = (k, v) => setTh((s) => ({ ...s, [k]: Number(v) }));
-  const save = () => { try { store.setThresholds({ patientId, thresholds: th }); onClose(); } catch (ex) { setErr(ex.message); } };
-  const fields = [["spo2Min", S.pr6.spo2Min], ["hrMin", S.pr6.hrMin], ["hrMax", S.pr6.hrMax], ["mapMin", S.pr6.mapMin], ["mapMax", S.pr6.mapMax]];
+  const [busy, setBusy] = useState(false);
+  const [ok, setOk] = useState("");
+
+  const rows = [
+    ["heart_rate", P.hrLabel || "Nabız", "bpm"],
+    ["resp_rate", P.rrLabel || "Solunum", "/dk"],
+    ["spo2", "SpO₂", "%"],
+    ["sbp", P.sbpLabel || "Sistolik TA", "mmHg"],
+    ["temperature", P.tempLabel || "Ateş", "°C"],
+  ];
+  const setCell = (k, side, v) => setBase((s) => ({ ...s, [k]: { ...s[k], [side]: v } }));
+
+  // Ters aralık motorda reddediliyor; burada da yazılmadan önce söylenir — çevirmek, bir yazım
+  // hatasını kasıtlı görünen bir aralığın arkasına gizlerdi.
+  const inverted = rows.filter(([k]) => {
+    const { low, high } = base[k];
+    return low !== "" && high !== "" && Number(low) > Number(high);
+  }).map(([, label]) => label);
+
+  const save = async () => {
+    setErr(""); setOk("");
+    if (inverted.length) { setErr(`${P.invertedRange || "Alt sınır üst sınırdan büyük"}: ${inverted.join(", ")}`); return; }
+    const baselines = {};
+    rows.forEach(([k]) => {
+      const { low, high } = base[k];
+      if (low === "" && high === "") return;         // girilmeyen parametre gönderilmez
+      baselines[k] = {};
+      if (low !== "") baselines[k].low = Number(low);
+      if (high !== "") baselines[k].high = Number(high);
+    });
+    try {
+      setBusy(true);
+      if (typeof store.setProfile === "function") {
+        await store.setProfile(patientId, { baselines });
+        setOk(P.baselineSaved || "Hastanın bazali motora yazıldı.");
+      } else {
+        // Motor yoksa bunu söyler. Sessizce "kaydedildi" demek, bu kutunun bugüne kadarki
+        // hatasının ta kendisiydi: hekim kaydettiğini sanıyor, hiçbir yere gitmiyordu.
+        setErr(P.baselineNoEngine || "Bu kurulumda motor bağlı değil — değer kaydedilmedi.");
+        setBusy(false);
+        return;
+      }
+      setTimeout(onClose, 600);
+    } catch (ex) {
+      setErr(ex.message || String(ex));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <ModalShell T={T} title={S.pr6.thresholdSettings} sub={S.pr6.thresholdInfo} onClose={onClose}>
-      <div className="grid grid-cols-2 gap-3">
-        {fields.map(([k, lbl]) => (
-          <Field key={k} T={T} label={lbl}><input type="number" className={inputCls(T)} value={th[k]} onChange={(e) => upd(k, e.target.value)} /></Field>
+    <ModalShell T={T} title={P.baselineTitle || "Hastaya Göre Alarm Ayarı"}
+      sub={P.baselineSub || "Hastanın kendi normali — cihaz alarmı değil"} onClose={onClose}>
+      <div className={`rounded-lg ${T.subtle} p-3 text-xs leading-relaxed ${T.muted}`}>
+        {P.baselineExplain || "Bu değerler cihazın kendi alarmını değiştirmez. Sistemin bu hastayı nüfus eşiğine göre değil, kendi normaline göre değerlendirmesini sağlar. Boş bırakılan parametre için nüfus eşiği geçerli kalır."}
+      </div>
+
+      <div className="space-y-2">
+        <div className={`grid grid-cols-[1fr_5rem_5rem] gap-2 px-1 text-[10px] font-semibold uppercase ${T.faint}`}>
+          <span>{P.parameter || "Parametre"}</span><span>{P.lowLabel || "Alt"}</span><span>{P.highLabel || "Üst"}</span>
+        </div>
+        {rows.map(([k, label, unit]) => (
+          <div key={k} className="grid grid-cols-[1fr_5rem_5rem] items-center gap-2">
+            <span className={`text-sm ${T.text}`}>{label} <span className={`text-xs ${T.faint}`}>{unit}</span></span>
+            <input type="number" className={`${inputCls(T)} px-2 py-1.5`} value={base[k].low}
+              onChange={(e) => setCell(k, "low", e.target.value)} placeholder="—" />
+            <input type="number" className={`${inputCls(T)} px-2 py-1.5`} value={base[k].high}
+              onChange={(e) => setCell(k, "high", e.target.value)} placeholder="—" />
+          </div>
         ))}
       </div>
+
       {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+      {ok && <div className="rounded-lg bg-emerald-500/15 px-3 py-2 text-sm text-emerald-500">{ok}</div>}
       <div className="flex justify-end gap-2 pt-1">
         <button onClick={onClose} className={btnCls(T, "ghost")}>{S.cancel}</button>
-        <button onClick={save} className={btnCls(T, "primary")}><Check size={16} /> {S.pr6.saveThresholds}</button>
+        <button onClick={save} disabled={busy} className={btnCls(T, "primary")}>
+          <Check size={16} /> {busy ? (P.saving || "Kaydediliyor…") : (P.saveBaseline || "Bazali Kaydet")}
+        </button>
       </div>
     </ModalShell>
   );
@@ -3536,12 +3624,12 @@ export function ClinicalDemo({ store: injectedStore = null, simulation = false }
       </div>
       <MobileTabBar T={T} S={S} state={state} page={effectivePage} setPage={setPage} setMobileOpen={setMobileOpen} />
       {drawerPatient && (
-        <PatientDrawer T={T} S={S} state={state} store={store} patientId={drawerPatient} lang={lang}
+        <PatientDrawer T={T} S={S} state={state} store={store} patientId={drawerPatient} lang={lang} simulation={simulation}
           onClose={() => setDrawerPatient(null)} onTransfer={openTransfer}
           onExpand={(pid) => { setDrawerPatient(null); setCockpitPatient(pid); }} />
       )}
       {cockpitPatient && (
-        <PatientCockpit T={T} S={S} state={state} store={store} patientId={cockpitPatient} lang={lang}
+        <PatientCockpit T={T} S={S} state={state} store={store} patientId={cockpitPatient} lang={lang} simulation={simulation}
           onClose={() => setCockpitPatient(null)} />
       )}
       <KvkkBanner T={T} S={S} />

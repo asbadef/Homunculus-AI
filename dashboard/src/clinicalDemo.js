@@ -328,7 +328,11 @@ function seedState() {
     user: null,
     mfaPending: null,     // { userId, email } — MFA verification pending after password login
     clockSec: 0,          // simulated seconds since demo start
-    speed: 60,            // 60× → 1 simulated minute per real second (so 3 min escalates in 3 s)
+    // Gerçek zaman varsayılan. 60× hızlandırma demoyu izlerken eskalasyonu saniyelerde
+    // gösteriyordu, ama ekranda duran süreler de aynı oranda şişiyordu: yarım saat açık kalan
+    // bir demoda alarmlar "14:51:16" cevapsız görünüyordu ve o sayı kimseye bir şey söylemiyor.
+    // Hızlandırma artık kullanıcının seçimi (Zaman ölçeği), varsayılanı değil.
+    speed: 1,
     running: true,
     tenantSetup: false,   // multi-tenant setup wizard completed?
     tenants: [],          // [ { id, name, slug, countryCode, timezone, isActive, createdAt } ]
@@ -620,7 +624,7 @@ export function buildRealisticState() {
   return {
     user: null,
     clockSec: 0,
-    speed: 60,
+    speed: 1,
     running: true,
     structure,
     users,
