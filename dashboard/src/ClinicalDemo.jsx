@@ -32,6 +32,7 @@ import { awaitingLocalAdmission } from "./liveAdapters.js";
 import {
   SCOPE_REASON, scopeForUser, visibleAlerts, visibleBeds, visiblePatients, visibleUnits,
 } from "./patientScope.js";
+import { alarmDensity, hourLabel, intensity } from "./alarmDensity.js";
 import { SeverityScorePanel } from "./severityScore.jsx";
 import { formatAge, wardFeedHealth } from "./feedHealth.js";
 import {
@@ -1540,82 +1541,132 @@ function ResultsInbox({ T, S, store, state, simulation = false }) {
 }
 
 // ================================================================ UNIT HEATMAP (pr19 #2/#4)
+/**
+ * Alarm yoğunluğu — hangi yatak, hangi saat.
+ *
+ * Buradaki ekran eskiden "şu an kim kötü" diyordu: yatak paneliyle aynı veriyi (NEWS2 + açık
+ * alarm) renk olarak gösteriyor, ama isim, vital ve alarm metni taşımıyordu. İki ekranın aynı
+ * soruya cevap vermesi hangisine bakılacağını da belirsizleştiriyordu.
+ *
+ * Yöneticinin sorusu başka: **alarm nerede birikiyor.** Sürekli öten bir yatak iki şeyden birini
+ * anlatır — ya eşik o hastaya göre yanlış (hastanın kendi normali girilmemiş), ya da hasta
+ * gerçekten kötüleşiyor ve müdahale yetmiyor. İkisi de yöneticinin işidir ve ikisi de yalnız
+ * zaman içinde görünür.
+ *
+ * Kaynak denetim kaydıdır; yeniden başlatma yoğunluğu sıfırlamaz. Kayıtta alarm doğuşu yoksa
+ * ekran boş ızgara çizmez — sıfır dolu bir ısı haritası sakin bir koğuş gibi görünür.
+ */
 function HeatmapPage({ T, S, store, state }) {
   const P = S.pr19;
-  const units = state.structure.units;
-  const [unitId, setUnitId] = useState("all");
-  const [grid, setGrid] = useState([]);
-  useEffect(() => {
-    const heat = store.computeHeatmap(unitId === "all" ? {} : { unitId });
-    setGrid(heat.grid || []);
-    // recompute when patients/alerts/beds/unit change
-  }, [unitId, state.patients, state.alerts, state.beds]); // eslint-disable-line react-hooks/exhaustive-deps
-  const riskCls = (risk, occupied) => {
-    if (!occupied) return `${T.subtle} ${T.faint}`;
-    if (risk === "HIGH") return "bg-red-500/20 text-red-600 ring-1 ring-red-500/40";
-    if (risk === "MEDIUM") return "bg-amber-500/20 text-amber-600 ring-1 ring-amber-500/40";
-    return "bg-emerald-500/15 text-emerald-600 ring-1 ring-emerald-500/30";
+  const [hours, setHours] = useState(24);
+  const density = useMemo(
+    () => alarmDensity(state.auditLog || [], { hours }),
+    [state.auditLog, hours],
+  );
+
+  if (!density.hasHistory) {
+    return (
+      <div className={`rounded-2xl border border-dashed ${T.border} p-8 text-center`}>
+        <Grid3x3 size={22} className={`mx-auto mb-2 ${T.faint}`} />
+        <div className={`font-semibold ${T.heading}`}>{P.densityTitle || "Alarm Yoğunluğu"}</div>
+        <div className={`mx-auto mt-1 max-w-md text-sm ${T.muted}`}>
+          {P.densityNoHistory || "Bu kurulumun denetim kaydında alarm doğuş kaydı yok — yoğunluk hesaplanamıyor. Boş bir ızgara, sakin bir koğuşla aynı görünürdü."}
+        </div>
+      </div>
+    );
+  }
+
+  const cellColor = (n) => {
+    const t = intensity(n, density.maxCell);
+    if (!t) return T.subtle;
+    // Tek renk üzerinde koyulaşan bir ölçek: renk değiştirmek (yeşil→kırmızı) burada
+    // "iyi/kötü" der, oysa ölçülen şey iyilik değil yoğunluk.
+    return "";
   };
-  const counts = grid.reduce((a, g) => { if (g.occupied) a[g.risk] = (a[g.risk] || 0) + 1; return a; }, {});
-  const legend = [["HIGH", "bg-red-500/60", S.risk.critical], ["MEDIUM", "bg-amber-500/60", S.risk.high], ["LOW", "bg-emerald-500/50", S.risk.stable]];
+
   return (
     <div className="space-y-4">
       <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className={`flex items-center gap-2 font-bold ${T.heading}`}><Grid3x3 size={18} /> {P.heatmapTitle}</div>
-            <div className={`mt-0.5 text-sm ${T.muted}`}>{P.heatmapSub}</div>
-          </div>
-          <select className={`${inputCls(T)} max-w-[220px]`} value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-            <option value="all">{S.allUnits || S.nav.board}</option>
-            {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-4">
-          {legend.map(([k, dot, lbl]) => (
-            <div key={k} className={`flex items-center gap-1.5 text-xs ${T.muted}`}>
-              <span className={`h-3 w-3 rounded ${dot}`} /> {lbl} · {counts[k] || 0}
+            <div className={`flex items-center gap-2 font-bold ${T.heading}`}>
+              <Grid3x3 size={18} /> {P.densityTitle || "Alarm Yoğunluğu"}
             </div>
-          ))}
+            <div className={`mt-0.5 text-sm ${T.muted}`}>
+              {P.densitySub || "Denetim kaydından: hangi yatakta, hangi saatte alarm doğdu."}
+            </div>
+          </div>
+          <div className={`inline-flex rounded-xl border ${T.border} ${T.subtle} p-1`}>
+            {[24, 72, 168].map((h) => (
+              <button key={h} onClick={() => setHours(h)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${hours === h ? T.navActive : T.navIdle}`}>
+                {h === 24 ? "24 sa" : h === 72 ? "3 gün" : "7 gün"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className={`rounded-xl ${T.subtle} px-3 py-2.5`}>
+            <div className={`text-[10px] uppercase ${T.faint}`}>{P.densityTotal || "Toplam alarm"}</div>
+            <div className={`text-xl font-bold ${T.heading}`}>{density.totalAlarms}</div>
+          </div>
+          <div className={`rounded-xl ${T.subtle} px-3 py-2.5`}>
+            <div className={`text-[10px] uppercase ${T.faint}`}>{P.densityBusiestBed || "En çok üreten yatak"}</div>
+            <div className={`text-xl font-bold ${T.heading}`}>
+              {density.busiestBed?.bed || "—"}
+              <span className={`ml-1.5 text-xs font-medium ${T.muted}`}>{density.busiestBed ? `· ${density.busiestBed.total}` : ""}</span>
+            </div>
+          </div>
+          <div className={`rounded-xl ${T.subtle} px-3 py-2.5`}>
+            <div className={`text-[10px] uppercase ${T.faint}`}>{P.densityBusiestHour || "En yoğun saat"}</div>
+            <div className={`text-xl font-bold ${T.heading}`}>
+              {density.busiestHourIx != null ? hourLabel(density.hoursAxis[density.busiestHourIx]) : "—"}
+            </div>
+          </div>
+          <div className={`rounded-xl ${T.subtle} px-3 py-2.5`}>
+            <div className={`text-[10px] uppercase ${T.faint}`}>{P.densityBeds || "Alarm üreten yatak"}</div>
+            <div className={`text-xl font-bold ${T.heading}`}>{density.beds.length}</div>
+          </div>
         </div>
       </div>
-      <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
-          {grid.map((g) => (
-            <div key={g.bedId} title={`${g.unitName} · ${g.roomLabel} · ${g.bedLabel}`}
-              className={`rounded-xl p-2.5 text-center ${riskCls(g.risk, g.occupied)}`}>
-              <div className="truncate text-[11px] font-bold">{g.bedLabel}</div>
-              {g.occupied ? (
-                <>
-                  <div className="mt-1 text-lg font-black leading-none tabular-nums">{g.news2}</div>
-                  <div className="text-[9px] font-semibold uppercase opacity-80">NEWS2</div>
-                  {g.alertCount > 0 && <div className="mt-0.5 text-[9px] font-bold">⚠ {g.alertCount}</div>}
-                </>
-              ) : (
-                <div className="mt-2 text-[10px] font-semibold uppercase opacity-70">{P.empty}</div>
-              )}
-            </div>
-          ))}
+
+      <div className={`overflow-x-auto rounded-2xl border ${T.border} ${T.card} p-5`}>
+        <div className="min-w-[640px]">
+          <div className="flex items-end gap-1 pl-16">
+            {density.hoursAxis.map((h, i) => (
+              <div key={h} className={`flex-1 text-center text-[9px] ${T.faint}`}>
+                {i % Math.ceil(density.hours / 12) === 0 ? hourLabel(h).slice(0, 2) : ""}
+              </div>
+            ))}
+          </div>
+          <div className="mt-1 space-y-1">
+            {density.beds.map((row) => (
+              <div key={row.bed} className="flex items-center gap-1">
+                <div className={`w-16 shrink-0 truncate font-mono text-xs font-bold ${T.text}`}>{row.bed}</div>
+                {row.cells.map((n, i) => (
+                  <div key={i} className={`h-6 flex-1 rounded-sm ${n ? "" : T.subtle}`}
+                    style={n ? { backgroundColor: `rgba(244,63,94,${0.18 + 0.72 * intensity(n, density.maxCell)})` } : undefined}
+                    title={`${row.bed} · ${hourLabel(density.hoursAxis[i])} · ${n} ${P.densityAlarmWord || "alarm"}`} />
+                ))}
+                <div className={`w-8 shrink-0 text-right text-xs font-bold ${T.muted}`}>{row.total}</div>
+              </div>
+            ))}
+          </div>
+          <div className={`mt-3 flex items-center gap-2 text-[11px] ${T.faint}`}>
+            {P.densityLegend || "Koyuluk, o saatte o yatakta doğan alarm sayısıdır."}
+            <span className="ml-auto inline-flex items-center gap-1">
+              {[0.2, 0.45, 0.7, 1].map((t) => (
+                <span key={t} className="h-3 w-5 rounded-sm" style={{ backgroundColor: `rgba(244,63,94,${0.18 + 0.72 * t})` }} />
+              ))}
+            </span>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// ================================================================ ALARM MANAGEMENT
-/**
- * Alarm yönetimi — cevapsız alarmın bulunduğu değil, **cevaplandığı** ekran.
- *
- * Eski düzende her alarm kartı eskalasyon çizelgesini baştan çiziyordu: kart başına ~280 piksel
- * ve beş alarmda beşincisi ekranın dışında kalıyordu. Alarm yorgunluğunu azaltmak için yazılmış
- * bir sistemde, açık alarmı bulmak için kaydırmak gerekiyordu.
- *
- * Yeni düzen üç şey yapar:
- *   • **En uzun cevapsız üstte ve açık durur** — sıralama "en yeni" değil "en çok bekleyen".
- *   • Diğerleri tek satır; tıklanınca açılır. Beş alarm tek ekrana sığar.
- *   • Cevaplanmış olanlar listeden düşmez, soluklaşır — kimin, ne zaman, hangi gerekçeyle
- *     kapattığı bu ekranın asıl kaydıdır.
- */
 function AlarmPage({ T, S, store, state, lang, simulation = false }) {
   // Alarm da kapsamla süzülür: kapsamı dışındaki bir yatağın alarmını cevaplayacak kişi,
   // o yatağı zaten göremeyen kişi değildir.

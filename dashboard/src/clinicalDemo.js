@@ -1689,6 +1689,9 @@ export function createDemoStore(initial) {
       snooze: null,                  // { until, reason, note, atSec }
     };
     set({ alerts: [...state.alerts, alert], seq: state.seq + 1 });
+    // Alarmın doğduğu an kayda geçer: yoğunluk haritası ve alarm kalitesi ölçümü bu kayıttan
+    // besleniyor, ve "bu alarm ne zaman doğdu" sorusunun kalıcı cevabı başka yerde yok.
+    audit("ALERT_FIRE", alert.id, `${patient.bedLabel} · ${tier} · ${alert.kind}`);
     return alert;
   }
 
@@ -1757,7 +1760,8 @@ export function createDemoStore(initial) {
             events: [], ack: null, snooze: null,
           }];
           newAudit.push({ id: `AL-${seq}`, atMs: Date.now(), atSec: nowSec, actor: "Otomatik Alarm Motoru",
-            role: null, action: "ALERT_AUTO_FIRE", target: `A-${seq}`, detail: `${p.bedLabel} · ${tier} · ${metric}` });
+            role: null, action: "ALERT_AUTO_FIRE", target: `A-${seq}`, bedLabel: p.bedLabel,
+            detail: `${p.bedLabel} · ${tier} · ${metric}` });
           seq += 1;
           changed = true;
         }
