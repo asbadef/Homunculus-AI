@@ -26,6 +26,7 @@ import { getTheme, storedTheme, persistTheme, THEME_KEYS } from "./clinicalTheme
 // Hasta kabul / transfer / bakım ekibi kendi dosyasında: tek ekran düzeni, barkod etiketi ve
 // bakım ekibi ataması birlikte durur (bkz. admissionPage.jsx dosya başı).
 import { AdmissionPage } from "./admissionPage.jsx";
+import { WallBoard } from "./wallBoard.jsx";
 import { awaitingLocalAdmission } from "./liveAdapters.js";
 import { SeverityScorePanel } from "./severityScore.jsx";
 import { formatAge, wardFeedHealth } from "./feedHealth.js";
@@ -602,7 +603,7 @@ function StatusChip({ T, tone = "neutral", icon: Icon, label, onClick, title }) 
   );
 }
 
-function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMenu, setPage,
+function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMenu, setPage, onWallMode,
                  soundOn, onEnableSound, notifyPerm, onEnableNotify, onTestPush, notifyBlocked }) {
   const user = state.user;
   const P = S.top || {};
@@ -705,16 +706,17 @@ function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMe
                 ))}
               </div>
 
-              {/* Duvar ekranı ve nöbet odası: tarayıcı çerçevesi olmadan. Tam ekran isteği
-                  kullanıcı hareketine bağlı olmak zorunda, bu yüzden menüden çağrılıyor. */}
+              {/* Banko ekranı: kabuk kalkar, ekranın tamamı yataklar olur. Tam ekran isteği
+                  kullanıcı hareketine bağlı olmak zorunda — bu yüzden burada, tıklamanın
+                  içinde yapılıyor. */}
               <button onClick={() => {
-                  const el = document.documentElement;
-                  if (document.fullscreenElement) document.exitFullscreen?.();
-                  else el.requestFullscreen?.().catch(() => { /* tarayıcı reddedebilir */ });
+                  document.documentElement.requestFullscreen?.().catch(() => { /* tarayıcı reddedebilir */ });
+                  onWallMode?.();
+                  close();
                 }}
                 className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left ${T.navIdle} ${T.sizes.nav}`}>
                 <Monitor size={15} className={T.faint} />
-                <span className="flex-grow">{P.fullscreen || "Tam ekran"}</span>
+                <span className="flex-grow">{P.wallMode || "Duvar ekranı"}</span>
               </button>
 
               <div className={`px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide ${T.faint}`}>{P.alarmsAndPrivacy || S.alarmsTitle}</div>
@@ -3117,6 +3119,8 @@ export function ClinicalDemo({ store: injectedStore = null, simulation = false }
   const [mobileOpen, setMobileOpen] = useState(false);
   const [drawerPatient, setDrawerPatient] = useState(null);
   const [cockpitPatient, setCockpitPatient] = useState(null); // Madde 8 — tam ekran kokpit
+  // Duvar ekranı: banko/koridor ekranı için kabuğu tamamen kaldıran mod (bkz. wallBoard.jsx).
+  const [wallMode, setWallMode] = useState(false);
   const [transferPatient, setTransferPatient] = useState(null);
   const [soundOn, setSoundOn] = useState(false);
   const [notifyPerm, setNotifyPerm] = useState(
@@ -3262,6 +3266,18 @@ export function ClinicalDemo({ store: injectedStore = null, simulation = false }
 
   const openTransfer = (pid) => { setTransferPatient(pid); setPage("admission"); };
 
+  // Duvar ekranı modu kabuğun tamamının yerine geçer: menü, üst bar ve banner'lar çizilmez.
+  // Tam ekran isteği burada değil, onu açan düğmede yapılır — tarayıcı bunu kullanıcı
+  // hareketine bağlı ister ve bir render sırasında verilen istek sessizce reddedilir.
+  if (wallMode) {
+    return (
+      <SimulationContext.Provider value={simulation}>
+        <WallBoard S={S} state={state} cycleSeconds={0} simulation={simulation}
+          onExit={() => { setWallMode(false); if (document.fullscreenElement) document.exitFullscreen?.(); }} />
+      </SimulationContext.Provider>
+    );
+  }
+
   return (
     <SimulationContext.Provider value={simulation}>
     <div className={`flex min-h-screen ${T.app} ${T.decor || ""}`}>
@@ -3270,6 +3286,7 @@ export function ClinicalDemo({ store: injectedStore = null, simulation = false }
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar T={T} S={S} store={store} state={state} page={effectivePage} lang={lang} setLang={setLang}
           theme={theme} setTheme={setTheme} onMenu={() => setMobileOpen(true)} setPage={setPage}
+          onWallMode={() => setWallMode(true)}
           soundOn={soundOn} onEnableSound={onEnableSound} notifyPerm={notifyPerm} onEnableNotify={onEnableNotify}
           onTestPush={onTestPush} notifyBlocked={notifyBlocked} />
         {notifyPerm !== "granted" && !notifyBannerDismissed && (
