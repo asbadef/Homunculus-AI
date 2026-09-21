@@ -115,6 +115,11 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
         beds: bedsFromPatients(patients),
         alerts: alertsFromPatients(patients, base.getState().clockSec ?? 0),
         devices: [],
+        // Motorun uyguladığı kapsam, listeyle birlikte. Bu blok olmadan boş bir pano ile sakin
+        // bir koğuş aynı görünür — ve bu ikisini ayırt edemeyen bir hemşire, kapsam işinin
+        // önlemek için var olduğu tehlikenin ta kendisidir.
+        engineScope: board?.scope ?? null,
+        scopeNote: board?.scope_note ?? null,
         connection: nextConnection(overlay.connection, { type: "loaded" }),
       });
     } catch {
@@ -123,6 +128,10 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
         beds: [],
         alerts: [],
         devices: [],
+        // Başarısız bir istekte kapsam da düşer. Eski bir kapsam bloğu, boş bir panoyu
+        // "kapsamınız bu kadar" diye açıklardı — oysa sebep bağlantının kopmuş olması.
+        engineScope: null,
+        scopeNote: null,
         connection: nextConnection(overlay.connection, { type: "failed" }),
       });
     }
@@ -317,6 +326,54 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
      *  untouched — a UI that softened "broken" into "warning" would be the wrong kind of help. */
     async verifyAudit(limit = 10000) {
       return api.verifyAudit(limit);
+    },
+
+    /**
+     * Kapsam ataması — artık motora yazılıyor.
+     *
+     * Bu çağrı 21.09.2026'ya kadar yalnız tarayıcı belleğine yazıyordu: yönetici matriste
+     * hücreleri işaretliyor, sayfa yenilendiğinde hepsi kayboluyordu. Motor tarafı yazılsa bile
+     * `staff_scopes` tablosu sonsuza kadar boş kalacağı için kapsam katmanının tamamı ölü
+     * doğardı — bu projenin imza hatasının tam olarak nasıl tekrarlandığı.
+     *
+     * Yerel matris de güncelleniyor: simülasyon aynı eylemle çalışıyor ve yönetici işaretlediği
+     * hücreyi anında görmeli. Ama motor reddederse yerel hâl geri alınır — "kaydedildi" demeden
+     * kaydetmemiş olmak, bu üründe kabul edilen bir hata değil.
+     */
+    async assignStaffToBeds({ userId, bedIds, unitIds } = {}) {
+      const before = base.getState().staffAssignments?.[userId];
+      const local = typeof base.assignStaffToBeds === "function"
+        ? base.assignStaffToBeds({ userId, bedIds, unitIds }) : null;
+      const next = local || { bedIds: bedIds || [], unitIds: unitIds || [] };
+      const grants = [
+        ...(next.unitIds || []).map((unit_id) => ({ unit_id })),
+        ...(next.bedIds || []).map((bed_id) => ({ bed_id })),
+      ];
+      try {
+        return await api.setScope(userId, grants);
+      } catch (err) {
+        if (typeof base.assignStaffToBeds === "function") {
+          base.assignStaffToBeds({ userId,
+                                   bedIds: before?.bedIds || [],
+                                   unitIds: before?.unitIds || [] });
+        }
+        emit();
+        throw err;
+      }
+    },
+
+    /** Tek hücre tıklaması. Aynı yoldan gider: matris ile motoru ayıran bir ikinci yol,
+     *  ikisinin sessizce ayrışması demek olurdu. */
+    async toggleStaffBed({ userId, bedId }) {
+      const cur = base.getState().staffAssignments?.[userId] || { bedIds: [], unitIds: [] };
+      const has = (cur.bedIds || []).includes(bedId);
+      const bedIds = has ? cur.bedIds.filter((b) => b !== bedId) : [...(cur.bedIds || []), bedId];
+      return this.assignStaffToBeds({ userId, bedIds, unitIds: cur.unitIds || [] });
+    },
+
+    /** Kapsamı atanmamış kaç kullanıcı var — yöneticinin yapacak işi olduğunu söyleyen sayı. */
+    async unassignedScopes() {
+      return api.unassignedScopes();
     },
 
     /** Charted by the physician: infection suspected, or no longer suspected. */

@@ -1024,14 +1024,51 @@ function VitalsGrid({ T, vitals, compact }) {
  */
 function ScopeNotice({ T, S, scope }) {
   const P = S.pr8 || {};
-  if (!scope || scope.reason === SCOPE_REASON.ASSIGNED) return null;
+  if (!scope) return null;
+
+  // ⚠️ En önemli hâli: kapsam uygulandı ve hiçbir yatak geçmedi. Boş bir pano, sakin bir
+  // koğuşla birebir aynı görünür — ve hemşire onu "bakılacak kimse yok" diye okur. Bu yüzden
+  // bu satır sessiz bir bilgi kutusu değil, kırmızı bir uyarıdır ve motorun kendi cümlesini
+  // aynen gösterir: sebebi bilen taraf orası.
+  if (scope.blind) {
+    return (
+      <div className="flex items-start gap-2.5 rounded-xl bg-rose-500/12 px-3 py-2 text-xs text-rose-400">
+        <ShieldAlert size={14} className="mt-px shrink-0" />
+        <span>{scope.note || "Kapsamınızda panoda karşılığı olan hiçbir yatak yok — bu, koğuşun sakin olduğu anlamına GELMEZ. Yöneticinizin kapsam atamasını kontrol etmesi gerekir."}</span>
+      </div>
+    );
+  }
+
+  // Motor kapsamı çözemedi (süresi dolmuş oturum, veritabanı cevap vermiyor). Kapalı tarafa
+  // düşer ve bunu söyler; sessizce boş bir pano göstermez.
+  if (scope.reason === SCOPE_REASON.UNKNOWN) {
+    return (
+      <div className="flex items-start gap-2.5 rounded-xl bg-rose-500/12 px-3 py-2 text-xs text-rose-400">
+        <ShieldAlert size={14} className="mt-px shrink-0" />
+        <span>Yetkiniz şu anda doğrulanamıyor, bu yüzden hasta gösterilmiyor. Oturumu yenileyin; sürerse sistem yöneticisine bildirin.</span>
+      </div>
+    );
+  }
+
+  if (scope.reason === SCOPE_REASON.ASSIGNED) {
+    // Atanmış kapsamda normalde bir şey yazılmaz. Tek istisna: motor, kapsamdaki bir anahtarın
+    // panoda karşılığı olmadığını söylediyse — ünite boş da olabilir, tablo yanlış da.
+    return scope.note ? (
+      <div className={`flex items-start gap-2.5 rounded-xl px-3 py-2 text-xs ${T.subtle} ${T.muted}`}>
+        <Users size={14} className="mt-px shrink-0" />
+        <span>{scope.note}</span>
+      </div>
+    ) : null;
+  }
   if (scope.reason === SCOPE_REASON.UNRESTRICTED_ROLE) return null;
+  if (scope.reason === SCOPE_REASON.TENANT_TOKEN) return null;
+
   const isBg = scope.reason === SCOPE_REASON.BREAK_GLASS;
   return (
     <div className={`flex items-start gap-2.5 rounded-xl px-3 py-2 text-xs ${
       isBg ? "bg-amber-500/12 text-amber-500" : `${T.subtle} ${T.muted}`}`}>
       {isBg ? <ShieldAlert size={14} className="mt-px shrink-0" /> : <Users size={14} className="mt-px shrink-0" />}
-      <span>{isBg ? (P.scopeBreakGlass || "Acil erişim açık — kapsam dışındaki yataklar da görünüyor, bu erişim kayda geçiyor.")
+      <span>{isBg ? (P.scopeBreakGlass || "Acil erişim açık — açtığınız hasta görünüyor ve bu erişim kayda geçiyor.")
                   : (P.scopeUnassigned || "Kapsam atanmamış: tüm koğuş görünüyor. Yönetici, Sistem Ayarları → Personel-Yatak matrisinden atama yapabilir.")}</span>
     </div>
   );

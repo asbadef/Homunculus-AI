@@ -133,9 +133,30 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {})
       return authed("/auth/me");
     },
 
-    /** The clinical board for the caller's hospital. */
+    /** The clinical board for the caller's hospital, already narrowed to the caller's scope.
+     *  The response also carries `scope` and `scope_note`: a board's SIZE is not self-explaining,
+     *  and an empty one has to be able to say whether the ward is quiet or the scope is wrong. */
     boardPatients() {
       return authed("/patients");
+    },
+
+    /** What the caller may see, and why. */
+    myScope() {
+      return authed("/scope/me");
+    },
+
+    /** Replace one user's scope. `grants` is a list of `{unit_id}` / `{bed_id}` objects.
+     *  Replacement, not a diff: two administrators saving diffs concurrently would merge into
+     *  the union of both — the more permissive outcome, chosen by neither. */
+    setScope(userId, grants) {
+      return authed(`/scope/${encodeURIComponent(userId)}`, {
+        method: "PUT", body: { grants },
+      });
+    },
+
+    /** How many active users hold no scope at all — the administrator's to-do counter. */
+    unassignedScopes() {
+      return authed("/scope/unassigned");
     },
 
     /** A short-lived, single-use ticket for the SSE endpoints. */

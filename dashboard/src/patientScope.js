@@ -20,16 +20,48 @@
 //      ikisi de yatak listesine bakar. (Biyomedikalin hasta *adını* görmemesi ayrı bir iş.)
 //   5. **Break-glass kapsamı geçici olarak açar.** Gerekçesi zorunlu ve denetime düşüyor.
 //
-// ⚠️ Bu **ekran kapsamıdır.** API'ye doğrudan istek atan biri hâlâ tüm panoyu alır: motor
-// tarafında kapsam yok (kullanıcı-ünite eşlemesi motorda tanımlı değil). Yetki kontrolünün
-// asıl yeri orasıdır ve o iş açık duruyor — bu dosya onun yerine geçmez, ekranı düzeltir.
+// 21.09.2026 · Motor tarafı yazıldı (`homunculus/scope/`) ve pano artık **süzülmüş** geliyor;
+// `/patients` cevabı yanında `scope` bloğunu da taşıyor. İki şey değişti:
+//
+//   • **Canlıda kapsamı motor uygular, bu dosya değil.** Aşağıdaki yerel kurallar yalnız
+//     simülasyonda çalışır. Sebebi ölçüldü: canlı modda `bedsFromPatients` yatakları
+//     `unitId: null` ve `live-bed-<pid>` kimliğiyle üretiyor — yani ünite ataması canlı bir
+//     yatakla hiçbir zaman eşleşemiyordu. Bu süzgeç canlıda yıllardır **boşa çalışıyordu**;
+//     "atama yok" yoluna düşüp her şeyi gösteriyordu.
+//   • **Motor süzdüyse bir daha süzülmez.** İkinci bir süzgeç, eşleşmeyen yerel kimliklerle
+//     panoyu tamamen boşaltırdı. Liste zaten kapsamın kendisidir; bu dosyanın canlıdaki işi
+//     süzmek değil, **ekranın neden bu boyutta olduğunu söylemek**.
+//
+// ⚠️ Yerel yol hâlâ ekran kapsamıdır ve tek başına bir yetki kontrolü değildir.
 
 export const SCOPE_REASON = {
   UNRESTRICTED_ROLE: "role",        // yönetici / biyomedikal
   NO_ASSIGNMENT: "unassigned",      // atama yapılmamış
   BREAK_GLASS: "break_glass",       // geçici acil erişim
   ASSIGNED: "assigned",             // gerçek kapsam
+  TENANT_TOKEN: "tenant_token",     // makine kimliği (köprü, duvar ekranı)
+  UNKNOWN: "unknown",               // motor kapsamı çözemedi — hiçbir şey gösterilmez
 };
+
+/**
+ * Motorun uyguladığı kapsam, panonun yanında geldiği hâliyle.
+ *
+ * `unrestricted: true` burada "kısıt yok" demek **değil**; "kısıt zaten uygulandı, bu listeyi
+ * bir daha süzme" demek. Ayrımı `serverEnforced` taşıyor ve bildirimi o belirliyor.
+ */
+function serverScope(state) {
+  const s = state?.engineScope;
+  if (!s) return null;
+  return {
+    unrestricted: true,
+    serverEnforced: true,
+    reason: s.reason || SCOPE_REASON.ASSIGNED,
+    blind: Boolean(s.blind),
+    note: state.scopeNote || null,
+    unitIds: Array.isArray(s.unit_ids) ? s.unit_ids : [],
+    bedIds: Array.isArray(s.bed_ids) ? s.bed_ids : [],
+  };
+}
 
 /** Oturumdaki kullanıcının kayıt satırı (state.user yalnız e-posta/rol taşıyor). */
 export function currentStaff(state) {
@@ -53,6 +85,11 @@ function breakGlassActive(state) {
  * yoksa break-glass mı — üçü aynı görünmemeli.
  */
 export function scopeForUser(state, unrestrictedRoles = []) {
+  // Motor konuştuysa son söz onundur — iki kapsam tanımı, iki farklı cevap demektir ve bu
+  // ekrandaki NEWS2 hatasının (tek isim, iki hesap) aynısı olurdu.
+  const fromServer = serverScope(state);
+  if (fromServer) return fromServer;
+
   const role = state?.user?.role;
   if (unrestrictedRoles.includes(role)) {
     return { unrestricted: true, reason: SCOPE_REASON.UNRESTRICTED_ROLE, unitIds: [], bedIds: [] };

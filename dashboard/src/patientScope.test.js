@@ -131,3 +131,56 @@ describe("kısıtlamanın durduğu yerler", () => {
     expect(visiblePatients(st, scope).map((p) => p.patient_id)).toContain("P-9");
   });
 });
+
+/**
+ * Motor kapsamı uyguladığında ne olur.
+ *
+ * 21.09.2026'da kapsam motora taşındı (`homunculus/scope/`). Pano artık **süzülmüş** geliyor.
+ * Buradaki testler iki şeyi sabitler: motorun sözü yerel matrisi ezer, ve süzülmüş bir liste
+ * ikinci kez süzülmez — canlı yataklarda `unitId` null olduğu için ikinci süzgeç panoyu
+ * tamamen boşaltırdı.
+ */
+describe("motor kapsamı uyguladığında", () => {
+  const served = (scope, note = null) => world({
+    engineScope: scope,
+    scopeNote: note,
+    // Yerel matris bilerek çelişiyor: kazananın hangisi olduğu görünsün.
+    staffAssignments: { "u-01": { unitIds: ["unit-nicu"], bedIds: [] } },
+  });
+
+  it("motorun sebebini taşır, yerel matrisinkini değil", () => {
+    const st = served({ reason: "assigned", unrestricted: false, unit_ids: ["unit-adult"], bed_ids: [], blind: false });
+    expect(scopeForUser(st, UNRESTRICTED).reason).toBe(SCOPE_REASON.ASSIGNED);
+    expect(scopeForUser(st, UNRESTRICTED).unitIds).toEqual(["unit-adult"]);
+  });
+
+  it("süzülmüş listeyi ikinci kez süzmez", () => {
+    // Motor zaten yalnız erişkin yataklarını gönderdi; burada elimizdeki liste kapsamın kendisi.
+    const st = served({ reason: "assigned", unrestricted: false, unit_ids: ["unit-adult"], bed_ids: [], blind: false });
+    const scope = scopeForUser(st, UNRESTRICTED);
+    expect(scope.serverEnforced).toBe(true);
+    expect(visibleBeds(st, scope)).toHaveLength(st.beds.length);
+  });
+
+  it("kör kapsamı taşır — boş pano ile sakin koğuş ayrılabilsin", () => {
+    const st = served(
+      { reason: "assigned", unrestricted: false, unit_ids: ["unit-yok"], bed_ids: [], blind: true },
+      "Kapsamınızda panoda karşılığı olan hiçbir yatak yok",
+    );
+    const scope = scopeForUser(st, UNRESTRICTED);
+    expect(scope.blind).toBe(true);
+    expect(scope.note).toMatch(/hiçbir yatak yok/);
+  });
+
+  it("motor konuşmadıysa yerel kurallar geçerli kalır", () => {
+    const st = world({ staffAssignments: { "u-01": { unitIds: ["unit-adult"], bedIds: [] } } });
+    const scope = scopeForUser(st, UNRESTRICTED);
+    expect(scope.serverEnforced).toBeUndefined();
+    expect(visibleBeds(st, scope).map((b) => b.id)).toEqual(["bed-a1", "bed-a2"]);
+  });
+
+  it("motor yetkiyi çözemediyse sebep 'unknown' olarak taşınır", () => {
+    const st = served({ reason: "unknown", unrestricted: false, unit_ids: [], bed_ids: [], blind: true });
+    expect(scopeForUser(st, UNRESTRICTED).reason).toBe(SCOPE_REASON.UNKNOWN);
+  });
+});
