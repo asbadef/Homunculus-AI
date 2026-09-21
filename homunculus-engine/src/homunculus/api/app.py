@@ -45,29 +45,45 @@ from homunculus.scoring import sofa_form
 from homunculus.scoring.signing import (
     ScoreSigningError, parse_overrides, sign as sign_score,
 )
+from homunculus.scope import Scope, ScopeReason, apply_scope, scope_report, sees_patient
 from homunculus.tenant.bedmap import BedMap
 
+logger = logging.getLogger(__name__)
 
-async def sse_board_frames(queue: asyncio.Queue, keepalive: float = 15.0):
+
+async def sse_board_frames(queue: asyncio.Queue, keepalive: float = 15.0,
+                           allow: Callable[[dict], bool] | None = None):
     """Yield SSE frames for boards arriving on `queue`; keep-alive comment on idle. Tested directly
     (httpx ASGITransport cannot read an unbounded stream). Cancellation (client disconnect, via
-    Starlette) interrupts the wait; the caller's finally unsubscribes. Do NOT read request.receive."""
+    Starlette) interrupts the wait; the caller's finally unsubscribes. Do NOT read request.receive.
+
+    `allow` is the subscriber's scope. The broadcaster publishes one board per tenant to every
+    subscriber of that tenant, so without a per-subscriber filter here the live feed would carry
+    every patient in the hospital to a nurse whose `/patients` response was filtered a second
+    earlier. A board that does not pass is dropped silently rather than replaced by a placeholder:
+    the fact that a patient exists elsewhere in the ward is itself the thing being withheld.
+    """
     while True:
         try:
             board = await asyncio.wait_for(queue.get(), timeout=keepalive)
         except asyncio.TimeoutError:
             yield ": keep-alive\n\n"
             continue
+        if allow is not None and not allow(board):
+            continue
         yield f"data: {json.dumps(board)}\n\n"
 
 
-async def sse_notification_frames(queue: asyncio.Queue, keepalive: float = 15.0):
+async def sse_notification_frames(queue: asyncio.Queue, keepalive: float = 15.0,
+                                  allow: Callable[[dict], bool] | None = None):
     """Same shape as sse_board_frames, for the /notifications stream. Tested directly."""
     while True:
         try:
             note = await asyncio.wait_for(queue.get(), timeout=keepalive)
         except asyncio.TimeoutError:
             yield ": keep-alive\n\n"
+            continue
+        if allow is not None and not allow(note):
             continue
         yield f"data: {json.dumps(note)}\n\n"
 
@@ -82,6 +98,7 @@ def create_app(
     identities: IdentityStore | None = None,
     bedmap: BedMap | None = None,
     resolve_jwt_hospital: Callable[[str], Awaitable[str | None]] | None = None,
+    resolve_scope: Callable[[str], Awaitable[Scope]] | None = None,
     on_startup_check: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
@@ -89,6 +106,12 @@ def create_app(
     `resolve_jwt_hospital`, if given, resolves a clinician's JWT to a hospital id (decode ->
     load user -> membership -> tenant slug), letting the board routes accept a JWT as well as
     the tenant token — injected so it can be tested without Postgres.
+    `resolve_scope`, if given, turns a caller's credential into the set of beds they may see
+    (`homunculus.scope`). Injected for the same reason as the hospital resolver: the decision is
+    testable without Postgres, and a deployment that has not wired it keeps today's behaviour —
+    every authenticated caller sees the whole hospital. That default is the honest one for a
+    pilot with no assignments in the database, and the route says which of the two it is doing
+    rather than leaving a screen to guess.
     `on_startup_check`, if given, runs once during lifespan startup, before the app begins
     serving — for diagnostics (e.g. TENANTS vs. the database's tenant slugs) that must never
     block boot: a failure is logged and swallowed, because a service that will not start is
@@ -213,6 +236,7 @@ def create_app(
         router as alerts_router,
         break_glass_router,
     )
+    from homunculus.scope.router import router as scope_router
     app.include_router(auth_router)
     app.include_router(tenant_router)
     app.include_router(admission_router)
@@ -220,6 +244,7 @@ def create_app(
     app.include_router(handover_router)
     app.include_router(alerts_router)
     app.include_router(break_glass_router)
+    app.include_router(scope_router)
 
     app.state.broadcaster = broadcaster
     app.state.ack_stores = stores
@@ -235,13 +260,19 @@ def create_app(
             raise HTTPException(status_code=401, detail="unknown tenant token")
         return hospital
 
-    def _stream_hospital(token: str | None, ticket: str | None) -> str:
+    def _stream_hospital(token: str | None, ticket: str | None) -> tuple[str, Scope]:
+        """The hospital and the scope a stream is opened under.
+
+        The `token` branch is the machine one — a static tenant token in the query string, used
+        by the wall board — and carries no user, so it streams the hospital unscoped, exactly as
+        `_scope` treats the same credential on every other route.
+        """
         if ticket:
-            hospital = tickets.consume(ticket, now=time.monotonic())
-            if hospital is None:
+            entry = tickets.consume(ticket, now=time.monotonic())
+            if entry is None:
                 raise HTTPException(status_code=401, detail="invalid or expired ticket")
-            return hospital
-        return _tenant_from_token(token)
+            return entry
+        return _tenant_from_token(token), _UNSCOPED
 
     async def _hospital(authorization: str | None) -> str:
         """Resolve the caller's hospital from either credential.
@@ -263,6 +294,53 @@ def create_app(
                 return hospital
 
         raise HTTPException(status_code=401, detail="unknown credential")
+
+    _UNSCOPED = Scope(True, ScopeReason.TENANT_TOKEN)
+
+    async def _scope(authorization: str | None) -> Scope:
+        """What the caller may see.
+
+        The static tenant token is unscoped by design and not by omission: it is a machine's
+        credential — the bridge, the wall board in the corridor — and there is no user behind it
+        whose assignment could be looked up. Narrowing it would blank the wall board and stop the
+        bridge, and it would narrow nothing that a person holds.
+
+        With no resolver wired, every caller is unscoped. That is today's behaviour, kept
+        deliberately: the pilot's database has no assignments in it, so enforcing scope the day
+        this ships would empty every clinical screen in the hospital at once.
+        """
+        if resolve_scope is None:
+            return _UNSCOPED
+        credential = (authorization or "").removeprefix("Bearer ")
+        if credential in tenants:
+            return _UNSCOPED
+        return await resolve_scope(credential)
+
+    async def _require_patient(authorization: str | None, hospital: str, patient_id: str) -> None:
+        """Refuse a single-patient route the caller's scope does not reach.
+
+        Every route that names a patient in its path or body goes through here. Filtering only
+        the board would be theatre: the board is a list of ids, and a caller who has one — from
+        yesterday's shift, from a screenshot, by trying — reaches the patient through
+        `/alerts`, `/clinical` or the score routes with the list never involved.
+
+        404 rather than 403. A 403 confirms that this patient exists and is under care here,
+        which is precisely the fact being withheld; answering the way an unknown id answers
+        tells the caller nothing they did not already supply.
+
+        The refusal is audited. An attempt to read outside one's own scope is exactly the event
+        an inspection asks for, and a log holding only the successful reads cannot produce it.
+        """
+        scope = await _scope(authorization)
+        if scope.unrestricted:
+            return
+        board = patient_board(_engine(hospital), patient_id, _store(hospital),
+                              identity=identities.get(hospital, patient_id), bedmap=bedmap)
+        if sees_patient(board, scope):
+            return
+        audit.append(AuditEvent(hospital, "scope_denied", patient_id, scope.reason,
+                                {"units": sorted(scope.unit_ids), "beds": sorted(scope.bed_ids)}))
+        raise HTTPException(status_code=404, detail="hasta bulunamadı")
 
     def _charted_by(authorization: str | None) -> str:
         """Who charted this, for the audit record.
@@ -291,6 +369,7 @@ def create_app(
         branch: until something charts it, `septic_shock.evaluate` returns at its first line.
         """
         hospital = await _hospital(authorization)
+        await _require_patient(authorization, hospital, patient_id)
         stamp = body.get("recorded_at")
         try:
             recorded_at = datetime.fromisoformat(stamp) if stamp else None
@@ -348,6 +427,7 @@ def create_app(
         exists to prevent. The boundary is always the clinician's; we never mint one.
         """
         hospital = await _hospital(authorization)
+        await _require_patient(authorization, hospital, patient_id)
         engine = _engine(hospital)
         try:
             # Merged over what is already charted, not replacing it: the admission form and the
@@ -433,6 +513,7 @@ def create_app(
         store = _store(hospital)
         patient_id, kind = body.get("patient_id"), body.get("kind")
         role = body.get("role", "unknown")
+        await _require_patient(authorization, hospital, str(patient_id or ""))
         if (patient_id, kind) not in _live_keys(engine):
             raise HTTPException(status_code=404, detail="no such active alert")
         store.acknowledge(patient_id, kind, role, datetime.now(timezone.utc))
@@ -449,6 +530,10 @@ def create_app(
         """Record that a clinician opened a patient. Attribution is role-level (no per-user login yet)."""
         hospital = await _hospital(authorization)
         patient_id = body.get("patient_id", "")
+        # Guarded too, though it only writes a log line. A caller who can record "I opened this
+        # patient" for a patient they may not open puts a false entry in the one record an
+        # inspection trusts — and this route's whole purpose is that record.
+        await _require_patient(authorization, hospital, str(patient_id or ""))
         audit.append(AuditEvent(hospital, "view", patient_id, "",
                                 {"role": body.get("role", "unknown")}))
         return {"ok": True}
@@ -460,31 +545,60 @@ def create_app(
 
     @app.get("/patients")
     async def patients(authorization: str | None = Header(default=None)):
+        """The ward, narrowed to what this caller may see — and told why it is that size.
+
+        `scope` travels with the patients rather than being left for the screen to infer. An
+        empty board and a quiet ward are the same picture; only this block can tell them apart,
+        and a nurse who cannot tell them apart is the failure this whole change exists to
+        prevent.
+        """
         hospital = await _hospital(authorization)
-        return {"patients": board_snapshot(_engine(hospital), _store(hospital),
-                                           identities=identities, hospital=hospital,
-                                           bedmap=bedmap)}
+        scope = await _scope(authorization)
+        result = apply_scope(
+            board_snapshot(_engine(hospital), _store(hospital), identities=identities,
+                           hospital=hospital, bedmap=bedmap),
+            scope,
+        )
+        if result.blind:
+            # Not a 403 and not an error: the caller is authenticated and the request is valid.
+            # It goes in the log because an administrator hunting "the nurses see nothing" should
+            # find it on the server, not only in a screenshot from the ward.
+            logger.warning("scope yielded an empty board for a %s caller in %s (grants: %s)",
+                           scope.reason, hospital, ", ".join(result.unmatched_grants) or "none")
+        return {"patients": result.boards,
+                "scope": result.as_dict(),
+                "scope_note": scope_report(result)}
 
     @app.get("/alerts/{patient_id}")
     async def alerts(patient_id: str, authorization: str | None = Header(default=None)):
         hospital = await _hospital(authorization)
+        await _require_patient(authorization, hospital, patient_id)
         active = _engine(hospital).active_alerts(patient_id)
         return {"patient_id": patient_id, "alerts": [asdict(a) for a in active]}
 
     @app.post("/stream-ticket")
     async def stream_ticket(authorization: str | None = Header(default=None)):
-        """Exchange a credential for a short-lived, single-use SSE ticket."""
+        """Exchange a credential for a short-lived, single-use SSE ticket.
+
+        The scope is resolved **here**, while the caller is still presenting a credential, and
+        bound to the ticket. It cannot be resolved at `/stream` time: `EventSource` sends no
+        headers, so by then the only thing identifying the caller is the ticket itself. Without
+        this binding the board would be filtered on request and unfiltered on the live feed —
+        a filter that any patient's next observation walks straight past.
+        """
         hospital = await _hospital(authorization)
-        return {"ticket": tickets.issue(hospital, now=time.monotonic()), "expires_in": 60}
+        scope = await _scope(authorization)
+        return {"ticket": tickets.issue(hospital, now=time.monotonic(), scope=scope),
+                "expires_in": 60}
 
     @app.get("/stream")
     async def stream(token: str | None = None, ticket: str | None = None):
-        hospital = _stream_hospital(token, ticket)
+        hospital, scope = _stream_hospital(token, ticket)
         queue = broadcaster.subscribe(hospital)
 
         async def events():
             try:
-                async for frame in sse_board_frames(queue):
+                async for frame in sse_board_frames(queue, allow=lambda b: sees_patient(b, scope)):
                     yield frame
             finally:
                 broadcaster.unsubscribe(hospital, queue)
@@ -493,12 +607,28 @@ def create_app(
 
     @app.get("/notifications")
     async def notifications(token: str | None = None, ticket: str | None = None, role: str = "nurse"):
-        hospital = _stream_hospital(token, ticket)
+        hospital, scope = _stream_hospital(token, ticket)
         queue = hub.subscribe(hospital, role)
+
+        def allow(note: dict) -> bool:
+            """A notification names a patient, so it is scoped like anything else that does.
+
+            Its body is `"{patient_id}: {summary}"`, which means letting an out-of-scope
+            notification through would hand over the identifier *and* the finding — more than
+            the board itself would have shown.
+            """
+            if scope.unrestricted:
+                return True
+            pid = str(note.get("patient_id") or "")
+            return sees_patient(
+                patient_board(_engine(hospital), pid, _store(hospital),
+                              identity=identities.get(hospital, pid), bedmap=bedmap),
+                scope,
+            )
 
         async def events():
             try:
-                async for frame in sse_notification_frames(queue):
+                async for frame in sse_notification_frames(queue, allow=allow):
                     yield frame
             finally:
                 hub.unsubscribe(hospital, role, queue)
@@ -509,6 +639,17 @@ def create_app(
     async def get_audit(patient_id: str | None = None, event_type: str | None = None,
                         limit: int = 200, authorization: str | None = Header(default=None)):
         hospital = await _hospital(authorization)
+        if patient_id:
+            # Asking the audit log about one patient is asking about that patient. The trail
+            # carries no PHI, but it does carry who was alerted about whom and when, which is
+            # the same question the board answers and must get the same answer.
+            await _require_patient(authorization, hospital, patient_id)
+        elif not (await _scope(authorization)).unrestricted:
+            # The unfiltered trail spans every bed in the hospital. It is an administrator's and
+            # an auditor's view, and narrowing it per bed would produce a partial record that
+            # reads like a whole one — worse than refusing.
+            raise HTTPException(status_code=403,
+                                detail="denetim kaydının tamamı kapsam dışı; bir patient_id verin")
         recs = audit.records(tenant=hospital, patient_id=patient_id,
                              event_type=event_type, limit=limit)
         return {"records": [asdict(r) for r in recs]}
@@ -528,6 +669,7 @@ def create_app(
         clinician behind it is the other one.
         """
         hospital = await _hospital(authorization)
+        await _require_patient(authorization, hospital, patient_id)
         engine = _engine(hospital)
         record = identities.get(hospital, patient_id)
         form = sofa_form.build(
@@ -559,6 +701,7 @@ def create_app(
         record of who signed what cannot later be edited quietly.
         """
         hospital = await _hospital(authorization)
+        await _require_patient(authorization, hospital, patient_id)
         engine = _engine(hospital)
         signed_by = _charted_by(authorization)
         now = datetime.now(timezone.utc)

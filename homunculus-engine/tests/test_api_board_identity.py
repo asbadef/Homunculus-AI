@@ -40,6 +40,10 @@ def test_a_card_with_an_identity_carries_name_bed_state_and_source():
         # key an operator would have to add. The card is still produced: a patient is never
         # withheld for want of a bed match.
         "bed_id": None,
+        # The unit that bed belongs to, for the same reason and with the same caveat: it comes
+        # from the bed table, so with no table there is nothing to say. It is what a unit-level
+        # scope grant matches against, and until the board published it no filter could see it.
+        "unit_id": None,
         "bed_matched": False,
         "bed_key": "YB^304^2",
         # This record was built by hand and carried no DG1, so the list is empty — which means

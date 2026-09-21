@@ -170,9 +170,13 @@ def _merge_alert(patient_id: str, alert: Alert, store: AckStore) -> dict:
 def _bed_resolution(record: IdentityRecord | None, bedmap: BedMap | None) -> dict:
     """How the HIS location this record names lines up with a bed we know.
 
-    Always three keys, so a consumer never branches on presence:
+    Always four keys, so a consumer never branches on presence:
 
     * `bed_id`      our bed, or None when the table does not cover this location
+    * `unit_id`     the unit that bed belongs to, as the mapping table names it. The bed map has
+                    always carried it (`BedRef.unit_id`) and the board never published it, which
+                    left scope — "this nurse covers this unit" — with nothing to match against:
+                    no consumer could tell which unit a card was on without re-reading the table.
     * `bed_matched` False also when there is no table at all — an unwritten table and an
                     unknown bed are the same situation from the ward's point of view
     * `bed_key`     the normalised HIS location, which is exactly the line an operator adds
@@ -182,13 +186,16 @@ def _bed_resolution(record: IdentityRecord | None, bedmap: BedMap | None) -> dic
     The patient is never withheld for want of a match; the card still carries the HIS bed text.
     """
     if record is None:
-        return {"bed_id": None, "bed_matched": False, "bed_key": None}
+        return {"bed_id": None, "unit_id": None, "bed_matched": False, "bed_key": None}
     key = normalise_key(record.unit, record.room, record.bed)
     if bedmap is None:
-        return {"bed_id": None, "bed_matched": False, "bed_key": key}
+        return {"bed_id": None, "unit_id": None, "bed_matched": False, "bed_key": key}
     resolution = bedmap.resolve(record.unit, record.room, record.bed)
     return {
         "bed_id": resolution.ref.bed_id if resolution.ref else None,
+        # Empty string and None are not the same thing here: the table may name a bed without
+        # naming its unit, and that bed is then reachable by a bed grant but by no unit grant.
+        "unit_id": (resolution.ref.unit_id or None) if resolution.ref else None,
         "bed_matched": resolution.matched,
         "bed_key": resolution.key,
     }

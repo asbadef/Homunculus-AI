@@ -245,11 +245,32 @@ def _bedmap():
     return BedMap.from_file(os.getenv("BED_MAPPING_PATH", "/app/bed-mapping.json"))
 
 
+def _scope_resolver():
+    """Wire the staff-scope boundary to the real database.
+
+    Assembled here rather than inside `create_app` for the same reason the hospital resolver is:
+    the decision logic stays testable without Postgres, and an app built any other way — a test,
+    a local run against SQLite — keeps working without one.
+
+    Nothing narrows until a `staff_scopes` row exists. With the table empty every user resolves
+    as unassigned and sees the whole hospital exactly as before, which is why this can ship to a
+    running pilot without a screen changing. Narrowing begins when an administrator assigns
+    somebody, and becomes deny-by-default only when `SCOPE_ENFORCE_UNASSIGNED` is set.
+    """
+    from homunculus.scope.resolver import (
+        break_glass_patient_ids, make_scope_resolver, read_scope_for_user,
+    )
+
+    return make_scope_resolver(read_scope_for_user, decode=_decode_access_token,
+                               break_glass=break_glass_patient_ids)
+
+
 app = create_app(
     _tenants,
     audit=_audit(),
     identities=_identities(),
     bedmap=_bedmap(),
     resolve_jwt_hospital=make_jwt_hospital_resolver(_read_tenant_slugs),
+    resolve_scope=_scope_resolver(),
     on_startup_check=make_startup_tenant_check(list(_tenants.values())),
 )
