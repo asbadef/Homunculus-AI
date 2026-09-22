@@ -1,0 +1,25 @@
+[Unit]
+Description=Homunculus Infinity research receiver (no clinical forwarding)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=homunculus-infinity
+Group=homunculus-infinity
+EnvironmentFile=/etc/homunculus-infinity/hub.env
+WorkingDirectory=/opt/homunculus/homunculus-engine
+ExecStart=/opt/homunculus/homunculus-engine/.venv/bin/python scripts/run_infinity_transport.py hub --inventory /etc/homunculus-infinity/inventory.json --database /var/lib/homunculus-infinity/archive.sqlite --host ${INFINITY_BIND_IP} --port 8766 --tls-cert /etc/homunculus-infinity/server.pem --tls-key /etc/homunculus-infinity/server-key.pem
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+StateDirectory=homunculus-infinity
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

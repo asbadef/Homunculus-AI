@@ -1,0 +1,12 @@
+{
+  "collector_id": "infinity-worker-01",
+  "interface": "10.10.203.101/24",
+  "devices": [
+    {
+      "id": "infinity-monitor-28",
+      "source": "10.10.203.28",
+      "group": "224.0.2.28",
+      "port": 2050
+    }
+  ]
+}
