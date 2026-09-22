@@ -184,3 +184,27 @@ yaklaşık 28 dakikada çarpar ve hub 507 döndürürdü.
 Gösterilen "diagram", parametre değerlerinin zaman içindeki trend çizgisidir. Monitördeki
 EKG/pleth dalga formu **çizilmez**; dalga formu paketleri (`522/468/346` bayt) çözülmedi ve
 bunların dalga formu olduğu iddia edilmez. Ayrı iştir.
+
+## Yatak adları ve bir işletim tuzağı — 22 Eylül 2026, 12:20 UTC
+
+Yatak adı yayında yoktur; envanterdeki `id` alanı taşır ve yalnız merkezi istasyon ekranıyla
+doğrulanmış eşlemeler için yazılır: `BED06=.29`, `BED07=.28`, `BED08=.37`, `BED09=.26`.
+Diğer dokuz cihaz adres türevli kimlikte kalır ve ekranda "Yatak eşlenmedi" olarak görünür.
+Koğuş envanteri `deploy/infinity/inventory.icu2.json` olarak repodadır.
+
+**Tuzak.** Bir cihazın `id`'si değiştirildiğinde, önce hub yeniden başlatılırsa worker'ın
+outbox'ında eski kimlikle üretilmiş olaylar kalır; hub bunları reddeder (`device.id !=
+event["device_id"]`, HTTP 400), collector 400'ü "sonra dene" sayar ve kuyruğun başı sonsuza
+dek tıkanır — yeni olaylar arkada bekler, `forward_errors` artar. Bu tam olarak yaşandı:
+7006 satır, 108 sn, sıfır kabul. Karışık kuyruk (eski + yeni kimlik) hiçbir envanterle
+boşaltılamaz; tek çıkış outbox'ı kenara almak oldu (`wedged-<zaman>-outbox.sqlite` olarak
+saklandı, ~2 dakikalık araştırma taşıma verisi; hub zaten 900 sn tutuyor).
+
+**Doğru sıra (kimlik değişikliği için):** worker'ı durdur → outbox'ın boş olduğunu doğrula
+(`/v1/status` → `queue_rows=0`; boş değilse worker'ı eski envanterle çalıştırıp boşalt) →
+iki envanteri değiştir → hub'ı başlat → worker'ı başlat. "Hub önce" kuralı **şema
+eklemeleri** içindir (yeni sayaç adı gibi); kimlik yeniden adlandırması için yeterli değildir.
+
+**Açık düzeltme:** collector, hub'ın 400 ile reddettiği bir batch'i zehirli sayıp
+karantinaya almalı (kuyruğu tıkamamalı); ya da hub olayı `(source, group, port)` ile eşleyip
+etiket alanını görüntü meselesi olarak yok saymalı. İkisi de test gerektirir; yapılmadı.
