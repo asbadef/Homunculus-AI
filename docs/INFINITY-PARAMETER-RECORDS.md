@@ -154,3 +154,33 @@ kabul edip yok sayar.
 
 Testler: `tests/test_infinity_records.py` (14) ve `tests/test_infinity_live.py` (12).
 Hepsi sentetiktir; hiçbir hasta değeri veya saha kaydı test verisine girmez.
+
+## Production dağıtımı — 22 Eylül 2026, ~12:08 UTC
+
+Dal `feat/infinity-production-integration` (`97f8bde`, taban `873cbe2`) hub host'una git
+bundle ile taşındı ve `/opt/homunculus` o dala alındı. `web` ve `api` imajları VM'de
+derlendi; yalnız bu iki container yeniden yaratıldı (`postgres`, `bridge`, `nce`, volume'lar
+dokunulmadı). Önceki imajlar geri dönüş için: web `41e720ea7ef8`, api `057bbea76f89`.
+
+Yapılandırma: `.env`'e `INFINITY_HUB_URL`, `INFINITY_VIEWER_TOKEN` (hub'ın **viewer**
+kimliği), `INFINITY_HUB_CA_FILE`, `INFINITY_HUB_CA_HOST_PATH` eklendi; hub'ın public CA'sı
+`/etc/homunculus/infinity-ca.pem` olarak (644) kopyalandı — hub config dizini mount
+edilmedi, orada collector token ve TLS özel anahtarı da var.
+
+Doğrulama (kimlik doğrulamasız ve container içinden):
+- `GET /infinity-research/state` token'sız → 401 JSON. Nginx yolu API'ye gidiyor; SPA
+  fallback'e düşmüyor.
+- API container'ından `fetch_state`: 13 cihaz, `evidence=record_decoded`,
+  `clinical_ingest_enabled=false`, ret 0; altı yatak 6–10 parametre ve ~2 dakikalık trend.
+- Servis edilen bundle paneli içeriyor; `/health` 200; API log'unda hata yok.
+
+Tarayıcı oturumuyla görsel doğrulama kullanıcı tarafından yapılır (BIOMEDICAL veya
+HOSPITAL_ADMIN, "Cihaz & Veri Akışı"). Bu belge yazıldığında henüz yapılmamıştı.
+
+Envanter 13 cihaza çıkarıldı ve journal boyutu buna göre ayarlandı: 256 MiB / 200.000 satır
+/ 900 s tutma. Eski değerlerle (128 MiB / 100.000 / 3600 s) 13 yatak × 5 pps kapasiteye
+yaklaşık 28 dakikada çarpar ve hub 507 döndürürdü.
+
+Gösterilen "diagram", parametre değerlerinin zaman içindeki trend çizgisidir. Monitördeki
+EKG/pleth dalga formu **çizilmez**; dalga formu paketleri (`522/468/346` bayt) çözülmedi ve
+bunların dalga formu olduğu iddia edilmez. Ayrı iştir.
