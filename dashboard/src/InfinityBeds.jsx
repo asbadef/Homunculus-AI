@@ -90,14 +90,24 @@ function Parameter({ T, name, entry }) {
   );
 }
 
+/** The bed label is the inventory's `id` and is set only where the device↔bed pairing was
+ *  verified against the central station. The stream itself carries no bed name, so a device
+ *  without a verified label is shown as exactly that, with its address — not with a guess. */
+export function bedTitle(device) {
+  return /^BED\d+$/i.test(device.device_id) ? device.device_id.toUpperCase() : null;
+}
+
 function Bed({ T, device }) {
   const [label, pill] = DEVICE_STATUS[device.status] || [device.status, "ring-current/20"];
   const names = ORDER.filter((n) => device.parameters[n]);
+  const title = bedTitle(device);
   return (
     <div className={`rounded-2xl border ${T.border} ${T.card} p-4`} data-testid={`bed-${device.source_ip}`}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className={`font-semibold ${T.heading}`}>{device.device_id}</div>
+          {title
+            ? <div className={`text-lg font-black ${T.heading}`}>{title}</div>
+            : <div className={`font-semibold ${T.muted}`}>Yatak eşlenmedi</div>}
           <div className={`text-[11px] ${T.faint}`}>{device.source_ip} · {device.packets} paket</div>
         </div>
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${pill}`}>{label}</span>

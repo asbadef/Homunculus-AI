@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, act, cleanup } from "@testing-library/react";
-import { InfinityBeds, classify, Sparkline } from "./InfinityBeds.jsx";
+import { InfinityBeds, classify, Sparkline, bedTitle } from "./InfinityBeds.jsx";
 
 const T = { border: "b", card: "c", muted: "m", faint: "f", heading: "h" };
 
@@ -63,18 +63,35 @@ describe("InfinityBeds", () => {
   });
 
   it("drops the old numbers and names the failure when the request fails", async () => {
-    let calls = 0;
+    // The outage is switched on by the test, not by a timer racing the first assertion.
+    let failing = false;
     const store = { researchState: vi.fn(async () => {
-      calls += 1;
-      if (calls === 1) return state([{ device_id: "d", source_ip: "10.10.203.26", status: "streaming",
+      if (failing) throw Object.assign(new Error("x"), { status: 503, detail: { reason: "upstream_unreachable" } });
+      return state([{ device_id: "d", source_ip: "10.10.203.26", status: "streaming",
         packets: 1, packet_age_ms: 100, parameters: { hr: parameter(72) } }]);
-      throw Object.assign(new Error("x"), { status: 503, detail: { reason: "upstream_unreachable" } });
     }) };
     await act(async () => { render(<InfinityBeds T={T} store={store} pollMs={10} />); });
     expect(screen.getByText("72")).toBeInTheDocument();
+    failing = true;
     await act(async () => { await new Promise((r) => setTimeout(r, 40)); });
     expect(screen.queryByText("72")).not.toBeInTheDocument();
     expect(screen.getByText(/ulaşılamıyor/)).toBeInTheDocument();
+    cleanup();
+  });
+});
+
+describe("bed title", () => {
+  it("shows a verified bed label, and says so when there is none instead of inventing one", async () => {
+    expect(bedTitle({ device_id: "BED09" })).toBe("BED09");
+    expect(bedTitle({ device_id: "bed06" })).toBe("BED06");
+    expect(bedTitle({ device_id: "infinity-monitor-23" })).toBeNull();
+    await renderWith(async () => state([
+      { device_id: "BED09", source_ip: "10.10.203.26", status: "streaming", packets: 1, packet_age_ms: 100, parameters: {} },
+      { device_id: "infinity-monitor-23", source_ip: "10.10.203.23", status: "no_parameters", packets: 1, packet_age_ms: 100, parameters: {} },
+    ]));
+    expect(screen.getByText("BED09")).toBeInTheDocument();
+    expect(screen.getByText("Yatak eşlenmedi")).toBeInTheDocument();
+    expect(screen.queryByText("infinity-monitor-23")).not.toBeInTheDocument();
     cleanup();
   });
 });

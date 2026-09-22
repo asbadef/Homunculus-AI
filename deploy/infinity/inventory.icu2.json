@@ -1,0 +1,84 @@
+{
+  "collector_id": "infinity-worker-01",
+  "interface": "10.10.203.101/24",
+  "devices": [
+    {
+      "id": "infinity-monitor-23",
+      "source": "10.10.203.23",
+      "group": "224.0.2.23",
+      "port": 2050
+    },
+    {
+      "id": "infinity-monitor-24",
+      "source": "10.10.203.24",
+      "group": "224.0.2.24",
+      "port": 2050
+    },
+    {
+      "id": "infinity-monitor-25",
+      "source": "10.10.203.25",
+      "group": "224.0.2.25",
+      "port": 2050
+    },
+    {
+      "id": "BED09",
+      "source": "10.10.203.26",
+      "group": "224.0.2.26",
+      "port": 2050
+    },
+    {
+      "id": "infinity-monitor-27",
+      "source": "10.10.203.27",
+      "group": "224.0.2.27",
+      "port": 2050
+    },
+    {
+      "id": "BED07",
+      "source": "10.10.203.28",
+      "group": "224.0.2.28",
+      "port": 2050
+    },
+    {
+      "id": "BED06",
+      "source": "10.10.203.29",
+      "group": "224.0.2.29",
+      "port": 2050
+    },
+    {
+      "id": "infinity-monitor-31",
+      "source": "10.10.203.31",
+      "group": "224.0.2.31",
+      "port": 2050
+    },
+    {
+      "id": "infinity-monitor-32",
+      "source": "10.10.203.32",
+      "group": "224.0.2.32",
+      "port": 2050
+    },
+    {
+      "id": "infinity-monitor-33",
+      "source": "10.10.203.33",
+      "group": "224.0.2.33",
+      "port": 2050
+    },
+    {
+      "id": "infinity-monitor-34",
+      "source": "10.10.203.34",
+      "group": "224.0.2.34",
+      "port": 2050
+    },
+    {
+      "id": "BED08",
+      "source": "10.10.203.37",
+      "group": "224.0.2.37",
+      "port": 2050
+    },
+    {
+      "id": "infinity-monitor-38",
+      "source": "10.10.203.38",
+      "group": "224.0.2.38",
+      "port": 2050
+    }
+  ]
+}
