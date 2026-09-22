@@ -22,11 +22,18 @@ STALE_AFTER_MS = 3000.0
 # A record that took this long to arrive is not a live measurement whatever its contents:
 # the outbox retries, so an old row must never be presented as the bed's current state.
 MAX_TRANSPORT_DELAY = 3.0
+# A short trend, kept here rather than accumulated in the browser so that a screen opened
+# now shows the last few minutes instead of an empty graph that fills as you watch. One
+# sample a second is plenty: the device sends five, and a displayed vital does not move
+# faster than the eye reads it.
+HISTORY_SECONDS = 180.0
+HISTORY_INTERVAL = 1.0
 
 
 class DeviceState:
     def __init__(self):
         self.parameters = {}
+        self.history = {}
         self.last_epoch = None
         self.last_arrival = None
         self.unsupported = False
@@ -85,6 +92,17 @@ class LiveResearchView:
                 continue
             state.parameters[name] = dict(record, epoch=epoch, arrival=state.last_arrival,
                                           delay=now - epoch)
+            if record["valid"]:
+                self._remember(state, name, epoch, record["value"])
+
+    def _remember(self, state, name, epoch, value):
+        samples = state.history.setdefault(name, [])
+        if samples and epoch - samples[-1][0] < HISTORY_INTERVAL:
+            return
+        samples.append((epoch, value))
+        cutoff = epoch - HISTORY_SECONDS
+        while samples and samples[0][0] < cutoff:
+            samples.pop(0)
 
     def _age_ms(self, record, now, tick):
         # Retain the initial transport delay, and use monotonic time so that a backward
@@ -111,6 +129,10 @@ class LiveResearchView:
                         "alarm_high": record["alarm_high"],
                         "evidence": record["evidence"],
                         "capture_epoch": record["epoch"],
+                        # Trend only; a point here was valid when recorded and is not
+                        # re-judged for freshness. The current reading is `value`.
+                        "history": [[stamp, sample] for stamp, sample
+                                    in state.history.get(name, ())],
                     }
                 # The device's status follows its parameters, not its last packet. A bed
                 # interleaves waveform-shaped payloads that carry no records, so judging by
@@ -138,6 +160,7 @@ class LiveResearchView:
                 "schema": SCHEMA, "mode": "live", "evidence": "record_decoded",
                 "clinical_ingest_enabled": False, "clinical_mapping_verified": False,
                 "clinical_validity": "unknown", "stale_after_ms": STALE_AFTER_MS,
+                "history_seconds": HISTORY_SECONDS,
                 "accepted_packets": self.accepted, "rejected_packets": self.rejected,
                 "old_or_duplicate_packets": self.old_packets, "replay_cycle": None,
                 "devices": devices,

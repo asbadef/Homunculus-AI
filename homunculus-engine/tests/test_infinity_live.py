@@ -193,3 +193,42 @@ def test_a_device_recovers_from_unsupported_once_a_good_packet_arrives():
     now[0] = 1001.
     view.consume([event(1001.)])
     assert device(view.snapshot())["status"] == "streaming"
+
+
+def test_history_keeps_one_sample_a_second_for_three_minutes_and_no_more():
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    item = event(now[0])
+    for index in range(5 * 400):              # 400 s at the device's five packets a second
+        now[0] = 1000 + index / 5
+        view.consume([dict(item, received_at=now[0], id=str(uuid.UUID(int=index + 1)))])
+    history = device(view.snapshot())["parameters"]["hr"]["history"]
+    assert 179 <= len(history) <= 181           # one a second, not five, and bounded
+    # Sampling is at most once a second, so the newest point sits within a second of
+    # the newest packet rather than on it.
+    assert now[0] - 1 < history[-1][0] <= now[0]
+    # The window is measured from the newest sample, since trimming happens on append.
+    assert history[0][0] >= history[-1][0] - 180
+    assert all(sample == 70 for _, sample in history)
+    assert view.snapshot()["history_seconds"] == 180
+
+
+def test_an_invalid_reading_never_enters_the_trend():
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000.)])
+    now[0] = 1002.
+    view.consume([event(1002., record(HR, 4, valid=False))])
+    history = device(view.snapshot())["parameters"]["hr"]["history"]
+    assert history == [[1000., 70]]
+
+
+def test_the_trend_outlives_the_current_value_going_stale():
+    # The graph shows what was valid; only the headline number is subject to freshness.
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000.)])
+    now[0] = 1010.
+    entry = device(view.snapshot())["parameters"]["hr"]
+    assert entry["value"] is None and entry["status"] == "stale"
+    assert entry["history"] == [[1000., 70]]
