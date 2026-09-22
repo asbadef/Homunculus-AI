@@ -376,6 +376,13 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
       return api.unassignedScopes();
     },
 
+    /** The Infinity research window: every monitored bed's decoded parameter records, with
+     *  the device's own validity flag and alarm limits. Candidate values, never observations —
+     *  passed through untouched so the page can show "device reports invalid" as exactly that. */
+    async researchState() {
+      return api.request("/infinity-research/state");
+    },
+
     /** Charted by the physician: infection suspected, or no longer suspected. */
     async setSuspectedInfection(patientId, suspected = true) {
       return chart(patientId, [{ code: "suspected_infection", value: suspected ? 1 : 0 }]);

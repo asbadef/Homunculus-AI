@@ -1,0 +1,7 @@
+{
+  "collector_id": "infinity-collector-a",
+  "interface": "192.0.2.220/24",
+  "devices": [
+    {"id": "test-monitor-01", "source": "192.0.2.27", "group": "239.10.2.27", "port": 2050}
+  ]
+}

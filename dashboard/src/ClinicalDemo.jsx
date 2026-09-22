@@ -36,6 +36,7 @@ import { alarmDensity, hourLabel, intensity } from "./alarmDensity.js";
 import { rrtQueue } from "./rrtQueue.js";
 import { SeverityScorePanel } from "./severityScore.jsx";
 import { formatAge, wardFeedHealth } from "./feedHealth.js";
+import { InfinityBeds } from "./InfinityBeds.jsx";
 import {
   Bar, Empty, Field, Flag, HomunculusMark, KpiCard, LangPills, Menu, ModalShell, Row, Section,
   Collapsible, SectionHeader, Sparkline, THEME_ICON, VitrinStat, Waveform, btnCls, fmtClock, inputCls,
@@ -2406,6 +2407,11 @@ function TechPage({ T, S, store, state }) {
           ))}
         </div>
       </div>
+
+      {/* Research decoding of the Dräger monitors' own multicast: candidate values with the
+          device's validity flag and alarm limits. Renders nothing on a store that has no
+          research window (the simulation), so the demo page is unchanged. */}
+      <InfinityBeds T={T} store={store} />
 
       {/* The inventory screen that already existed, now reachable by the role that needs it. */}
       <DeviceAdmin T={T} S={S} store={store} state={state} />

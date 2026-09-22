@@ -56,12 +56,23 @@ services:
       SEED_TENANT_SLUG: ${TENANT_SLUG:-demo-hastanesi}
       TZ: ${TZ:-Europe/Istanbul}
       BED_MAPPING_PATH: /app/bed-mapping.json
+      # Infinity research window (optional). All three must be set or the page reports
+      # "not configured"; none defaults, so a half-filled .env cannot point the API at a hub
+      # it will then trust. The viewer token is the HUB's viewer credential — not the
+      # collector token, and never handed to the browser.
+      INFINITY_HUB_URL: ${INFINITY_HUB_URL:-}
+      INFINITY_VIEWER_TOKEN: ${INFINITY_VIEWER_TOKEN:-}
+      INFINITY_HUB_CA_FILE: ${INFINITY_HUB_CA_FILE:-}
     volumes:
       # This site's HIS-location -> our-bed table. Copy bed-mapping.example.json to
       # bed-mapping.json before the first `up`: Docker leaves a DIRECTORY at a bind-mount target
       # whose source is missing. The API survives that (it treats a directory as "no table"), but
       # then no patient lands on a bed and every location shows up in the discovery report.
       - ./bed-mapping.json:/app/bed-mapping.json:ro
+      # The research hub's PUBLIC CA certificate, one file, read-only. Only this file — the
+      # hub's config directory also holds the collector token and the TLS private key, and
+      # neither belongs in a container that faces the ward network.
+      - ${INFINITY_HUB_CA_HOST_PATH:-./infinity-ca.pem}:/etc/homunculus/infinity-ca.pem:ro
     depends_on:
       postgres:
         condition: service_healthy

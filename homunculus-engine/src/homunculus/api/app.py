@@ -237,6 +237,9 @@ def create_app(
         break_glass_router,
     )
     from homunculus.scope.router import router as scope_router
+    # The device-research window: same origin, role-gated, credential held server-side.
+    # Off unless INFINITY_HUB_URL / _VIEWER_TOKEN / _HUB_CA_FILE are all set.
+    from homunculus.api.infinity_research import router as infinity_research_router
     app.include_router(auth_router)
     app.include_router(tenant_router)
     app.include_router(admission_router)
@@ -245,6 +248,7 @@ def create_app(
     app.include_router(alerts_router)
     app.include_router(break_glass_router)
     app.include_router(scope_router)
+    app.include_router(infinity_research_router)
 
     app.state.broadcaster = broadcaster
     app.state.ack_stores = stores
