@@ -40,7 +40,7 @@ ward out of its own admin.
 | How AD users arrive | Administrator searches AD from the admin UI and imports. No just-in-time creation: an AD account that was not imported cannot sign in. |
 | AD unreachable | Local (bcrypt) accounts keep working; AD users cannot sign in; open sessions last until their token expires. AD passwords are never cached. |
 | AD groups | Mapping table (AD group DN → Homunculus group) applied at import and on every sign-in, on top of manual assignments, which are preserved. |
-| Permission granularity | Feature-level (~18 keys). Unit-scoped visibility is out of scope. |
+| Permission granularity | Feature-level (19 keys). Unit-scoped visibility is out of scope. |
 | MFA | Per group (`mfa_required` flag), applies to local and AD users alike; the TOTP secret lives in Homunculus. |
 | RBAC mechanism | Permissions in the JWT + per-user `token_version` so changes take effect immediately without a per-request permission query. |
 | AD mechanism | LDAPS: service-account search, then bind as the user. `ldap3`. Kerberos/SAML out of scope. |
@@ -78,7 +78,7 @@ PostgreSQL `userrole` enum type stays on the now-unused column until a later cle
 ## 2. Permission catalogue
 
 Defined once, in code (`homunculus/auth/permissions.py`), as the complete list of things a
-signed-in user may be allowed to do. `require_permission()` refuses an unknown key at import
+signed-in user may be allowed to do — 19 keys. `require_permission()` refuses an unknown key at import
 time, so a typo in a route guard fails at startup rather than silently denying everyone.
 
 | Key | Grants |
@@ -90,7 +90,8 @@ time, so a typo in a route guard fails at startup rather than silently denying e
 | `admissions.admit` | Create an admission. |
 | `admissions.sign_off` | Physician sign-off of an admission. |
 | `admissions.move.initiate` | Initiate a transfer or discharge. |
-| `admissions.move.confirm` | Confirm a transfer or discharge; release the bed. |
+| `admissions.transfer.confirm` | Confirm a transfer arrival. |
+| `admissions.discharge.confirm` | Confirm a discharge; release the bed. |
 | `care_team.claim` | Claim a care-team role on a patient. |
 | `care_team.assign` | Assign others to a patient's care team. |
 | `handover.sign` | Sign or countersign a handover. |
@@ -115,12 +116,12 @@ require only a valid sign-in are a separate matter; see *What the defaults tight
 
 | Slug | Name (TR) | Legacy role | Permissions | MFA |
 | --- | --- | --- | --- | --- |
-| `hospital_admin` | Sistem Yöneticisi | HOSPITAL_ADMIN | all | yes |
+| `hospital_admin` | Sistem Yöneticisi | HOSPITAL_ADMIN | all — see *The system group* | yes |
 | `attending` | Sorumlu Hekim | ATTENDING | board.view, alerts.ack, alerts.escalate, admissions.view, admissions.sign_off, admissions.move.initiate, care_team.claim, care_team.assign, handover.sign, break_glass.use | yes |
 | `unit_physician` | Ünite Hekimi | UNIT_PHYSICIAN | as `attending` minus care_team.claim and care_team.assign | yes |
 | `physician` | Hekim | ASSOCIATE_PHYSICIAN, ONCALL_PHYSICIAN | board.view, alerts.ack, alerts.escalate, admissions.view, handover.sign, break_glass.use | no |
-| `charge_nurse` | Sorumlu Hemşire | CHARGE_NURSE | board.view, alerts.ack, alerts.escalate, admissions.view, admissions.admit, admissions.move.confirm, care_team.claim, handover.sign, shifts.manage, break_glass.use | no |
-| `nurse` | Hemşire | NURSE | board.view, alerts.ack, admissions.view, admissions.admit, handover.sign | no |
+| `charge_nurse` | Sorumlu Hemşire | CHARGE_NURSE | board.view, alerts.ack, alerts.escalate, admissions.view, admissions.admit, admissions.transfer.confirm, admissions.discharge.confirm, care_team.claim, handover.sign, shifts.manage, break_glass.use | no |
+| `nurse` | Hemşire | NURSE | board.view, alerts.ack, admissions.view, admissions.admit, admissions.transfer.confirm, handover.sign | no |
 | `rapid_response` | Hızlı Yanıt Ekibi | RAPID_RESPONSE | board.view, alerts.ack, alerts.escalate, admissions.view, break_glass.use | no |
 | `auditor` | Denetçi | AUDITOR | board.view, audit.view | no |
 | `platform_support` | Üretici Destek | PLATFORM_SUPPORT | audit.view, devices.manage | yes |
@@ -131,11 +132,25 @@ Only `hospital_admin` is `is_system`. Every other default may be renamed, have i
 changed, or be deleted once it has no members and no LDAP mapping. Administrators may create any
 number of further groups.
 
+**The system group.** `hospital_admin` holds every permission in the catalogue **by rule, not by
+its rows**: at token issuance a member of a system group receives the whole catalogue, including
+any key added after the tenant was seeded, so the administrator can never fall behind the
+software. Its permission set and its MFA flag cannot be edited (409); it cannot be deleted. Its
+`group_permissions` rows are still seeded, so the admin screen shows them, but they are display
+only. Note that this **widens** the legacy HOSPITAL_ADMIN, which could not sign off admissions,
+admit, initiate a move, sign a handover or use break-glass; the spec accepts that on purpose —
+one account that can do everything is the break-glass path the design relies on.
+
+**Defaults are seed values.** After seeding, a tenant owns its groups. A later change to the
+defaults in code reaches new tenants only; existing tenants' non-system groups change only
+through the admin screen. Migration 0006 carries a frozen copy of the defaults as they stood
+then, and its test pins that copy to a snapshot inside the test — never to the live defaults.
+
 **What the defaults tighten.** Today `GET /admissions*`, `/handovers*`, the escalation router
 (`POST /alerts`, acknowledge, snooze, escalate), `/break-glass*` and `GET /audit` accept **any**
 signed-in user. Under the defaults above they become permission-gated, which narrows some groups
-on purpose: `nurse` loses manual escalation and break-glass; `rapid_response` loses handover
-signing; `auditor` keeps the board and the audit trail and loses the clinical actions;
+on purpose: `nurse` loses manual escalation and break-glass (it keeps transfer confirmation,
+which it has today); `rapid_response` loses handover signing; `auditor` keeps the board and the audit trail and loses the clinical actions;
 `pharmacist` keeps the board and admissions reading; `biomedical` and `platform_support` lose the
 board. `/audit` is now readable only by `hospital_admin`, `auditor` and `platform_support`. An
 administrator who wants any of these back adds the permission to the group — that is the point of
@@ -225,7 +240,8 @@ succeeds if the token's `perms` contains **any** of the listed keys.
 | `GET /admissions*` | `admissions.view` |
 | `POST /admissions/{id}/sign-off` | `admissions.sign_off` |
 | `.../transfer/initiate`, `.../discharge/initiate` | `admissions.move.initiate` |
-| `.../transfer/confirm`, `.../discharge/confirm`, bed release | `admissions.move.confirm` |
+| `.../transfer/confirm` | `admissions.transfer.confirm` |
+| `.../discharge/confirm`, bed release | `admissions.discharge.confirm` |
 | `.../care-team/claim` / `POST .../care-team` | `care_team.claim` / `care_team.assign` |
 | `/handovers*` | `handover.sign` |
 | `POST /shift-schedule` | `shifts.manage` |
@@ -261,7 +277,8 @@ another tenant is a 404.
 - `GET /admin/groups` — with member counts.
 - `POST /admin/groups {slug, name, description, mfa_required, permissions[]}`
 - `PATCH /admin/groups/{id}` — any of the above; permission changes bump `token_version` of every
-  member.
+  member. On the system group, `permissions` and `mfa_required` are refused with 409; name and
+  description may change.
 - `DELETE /admin/groups/{id}` — 409 if the group has members, has LDAP mappings, or is `is_system`.
 
 ### Users (`users.manage`)
@@ -278,9 +295,10 @@ another tenant is a 404.
 
 ### Guards
 
-- The last active user holding `users.manage` in a tenant cannot be deactivated, and cannot have
-  that permission removed through a group change — including by themselves. 409
-  `Son yönetici pasifleştirilemez`.
+- An *administrator* is an active user holding both `users.manage` and `groups.manage` (through
+  any of their groups). The last administrator of a tenant cannot be deactivated, and no group
+  change may leave the tenant without one — including changes an administrator makes to their
+  own groups. 409 `Son yönetici pasifleştirilemez` / `Son yönetici yetkisi kaldırılamaz`.
 - Manual and LDAP memberships are separate rows; neither operation can delete the other's.
 
 **Audit.** Every mutation appends to the existing `AuditLog` for the tenant with
@@ -442,6 +460,8 @@ refusal to boot: local sign-in must keep working while the operator fixes the di
   mappings, or `is_system` → 409; `PUT .../groups` never removes `ldap` rows.
 - Migration: on a database seeded with one member per legacy role, `0006` yields exactly one
   `user_groups` row per membership in the expected group, and every tenant has the 11 defaults.
+  The migration's frozen defaults are pinned to a snapshot in the test file, not to the live
+  defaults, so a later change to the defaults never asks anyone to edit a released migration.
 - LDAP with `FakeDirectory`: bind ok → tokens + profile update; bad password → 401; unavailable →
   503 and an audit line; disabled in AD → 401 with `is_active` unchanged; mapping sync adds and
   removes `ldap` rows and leaves `manual` rows; import is idempotent and reports `skipped`;

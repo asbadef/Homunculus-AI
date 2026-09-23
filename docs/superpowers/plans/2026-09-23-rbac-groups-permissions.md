@@ -10,6 +10,13 @@
 
 **Branch:** `feat/ldap-rbac` (already created; the spec is committed there as `4a94487`).
 
+**Review amendments (after Task 1's code review, 2026-09-23):** the confirm permission is split
+into `admissions.transfer.confirm` (nurse, charge_nurse) and `admissions.discharge.confirm`
+(charge_nurse) so no legacy role loses a right (19 keys); the system group holds the whole
+catalogue by rule at token issuance and its rights are immutable; an *administrator* for the
+last-admin guard holds both `users.manage` and `groups.manage`; migration 0006's frozen defaults
+are pinned to a snapshot in the test, not to the live defaults. The spec carries the same changes.
+
 **Baseline note:** the working tree contains untracked Infinity-branch files. `tests/test_infinity_research_api.py` fails at collection *before this plan starts* (`UserRole.BIOMEDICAL` does not exist). Every full backend run in this plan therefore uses `--ignore=tests/test_infinity_research_api.py`. Do not modify the untracked Infinity files; the spec records that `infinity_research.py` becomes `require_permission("devices.manage")` when that branch is merged.
 
 **Commands:** backend tests run from `homunculus-engine/` with `.venv/Scripts/python.exe -m pytest …`; DB-backed tests need `TEST_DATABASE_URL` (a Postgres whose database name contains `test`, see `tests/conftest.py`) and are skipped otherwise. Frontend tests run from `dashboard/` with `npx vitest run …`. Commits are made from the repository root.
@@ -101,14 +108,15 @@ from homunculus.auth.permissions import (
 
 SPEC_KEYS = {
     "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.admit",
-    "admissions.sign_off", "admissions.move.initiate", "admissions.move.confirm",
+    "admissions.sign_off", "admissions.move.initiate", "admissions.transfer.confirm",
+    "admissions.discharge.confirm",
     "care_team.claim", "care_team.assign", "handover.sign", "shifts.manage",
     "break_glass.use", "audit.view", "users.manage", "groups.manage", "structure.manage",
     "devices.manage",
 }
 
 
-def test_the_catalogue_is_exactly_the_specified_eighteen_keys():
+def test_the_catalogue_is_exactly_the_specified_nineteen_keys():
     assert set(PERMISSIONS) == SPEC_KEYS
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
 
@@ -156,7 +164,10 @@ def test_the_legacy_rights_are_preserved_group_by_group():
     assert "admissions.sign_off" in by_slug["unit_physician"]
     assert "admissions.sign_off" not in by_slug["physician"]
     assert "shifts.manage" in by_slug["charge_nurse"] and "shifts.manage" not in by_slug["nurse"]
-    assert "admissions.move.confirm" in by_slug["charge_nurse"]
+    assert "admissions.transfer.confirm" in by_slug["nurse"]          # nurses confirm transfers today
+    assert "admissions.discharge.confirm" not in by_slug["nurse"]      # discharge stays charge-nurse
+    assert "admissions.transfer.confirm" in by_slug["charge_nurse"]
+    assert "admissions.discharge.confirm" in by_slug["charge_nurse"]
     assert "admissions.admit" in by_slug["nurse"]
     assert by_slug["auditor"] == {"board.view", "audit.view"}
     assert by_slug["biomedical"] == {"devices.manage"}
@@ -175,6 +186,53 @@ def test_effective_permissions_is_the_union_across_groups():
     assert effective_permissions([["board.view"], ["board.view", "alerts.ack"]]) == \
         frozenset({"board.view", "alerts.ack"})
     assert effective_permissions([]) == frozenset()
+
+
+def test_a_bare_string_is_refused_not_split_into_characters():
+    with pytest.raises(TypeError):
+        validate_permissions("board.view")
+    with pytest.raises(TypeError):
+        effective_permissions(["board.view"])   # a flat list where sets were expected
+
+
+# The whole §3 table, so a stray key added to any group fails here, not in a ward.
+SPEC_GROUPS = {
+    "hospital_admin": (True, True, SPEC_KEYS),
+    "attending": (True, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
+                                "admissions.sign_off", "admissions.move.initiate",
+                                "care_team.claim", "care_team.assign", "handover.sign",
+                                "break_glass.use"}),
+    "unit_physician": (True, False, {"board.view", "alerts.ack", "alerts.escalate",
+                                     "admissions.view", "admissions.sign_off",
+                                     "admissions.move.initiate", "handover.sign",
+                                     "break_glass.use"}),
+    "physician": (False, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
+                                 "handover.sign", "break_glass.use"}),
+    "charge_nurse": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
+                                    "admissions.view", "admissions.admit",
+                                    "admissions.transfer.confirm", "admissions.discharge.confirm",
+                                    "care_team.claim", "handover.sign", "shifts.manage",
+                                    "break_glass.use"}),
+    "nurse": (False, False, {"board.view", "alerts.ack", "admissions.view", "admissions.admit",
+                             "admissions.transfer.confirm", "handover.sign"}),
+    "rapid_response": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
+                                      "admissions.view", "break_glass.use"}),
+    "auditor": (False, False, {"board.view", "audit.view"}),
+    "platform_support": (True, False, {"audit.view", "devices.manage"}),
+    "pharmacist": (False, False, {"board.view", "admissions.view"}),
+    "biomedical": (False, False, {"devices.manage"}),
+}
+
+
+def test_every_default_group_matches_the_spec_table_exactly():
+    by_slug = {g["slug"]: g for g in DEFAULT_GROUPS}
+    assert set(by_slug) == set(SPEC_GROUPS)
+    for slug, (mfa, system, perms) in SPEC_GROUPS.items():
+        g = by_slug[slug]
+        assert g["mfa_required"] is mfa, slug
+        assert g["is_system"] is system, slug
+        assert set(g["permissions"]) == perms, slug
+        assert len(g["permissions"]) == len(set(g["permissions"])), slug   # no duplicates
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -202,6 +260,7 @@ PHI RULE: no patient data here. CLINICAL RULE: infrastructure only.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import TypedDict
 
 PERMISSIONS: dict[str, str] = {
     "board.view": "See the live board, patient detail and the event stream",
@@ -211,7 +270,8 @@ PERMISSIONS: dict[str, str] = {
     "admissions.admit": "Create an admission",
     "admissions.sign_off": "Physician sign-off of an admission",
     "admissions.move.initiate": "Initiate a transfer or discharge",
-    "admissions.move.confirm": "Confirm a transfer or discharge; release the bed",
+    "admissions.transfer.confirm": "Confirm a transfer arrival",
+    "admissions.discharge.confirm": "Confirm a discharge; release the bed",
     "care_team.claim": "Claim a care-team role on a patient",
     "care_team.assign": "Assign others to a patient's care team",
     "handover.sign": "Sign or countersign a handover",
@@ -234,6 +294,8 @@ class UnknownPermission(ValueError):
 
 def validate_permissions(keys: Iterable[str]) -> tuple[str, ...]:
     """Return `keys` as a tuple, or raise `UnknownPermission` naming every unknown key."""
+    if isinstance(keys, str):
+        raise TypeError("expected an iterable of permission keys, not a single string")
     keys = tuple(keys)
     unknown = [k for k in keys if k not in PERMISSIONS]
     if unknown:
@@ -245,6 +307,8 @@ def effective_permissions(permission_sets: Iterable[Iterable[str]]) -> frozenset
     """The union of several groups' permissions — a user's effective rights."""
     out: set[str] = set()
     for keys in permission_sets:
+        if isinstance(keys, str):
+            raise TypeError("expected an iterable of permission SETS, got a bare key")
         out.update(keys)
     return frozenset(out)
 
@@ -263,7 +327,20 @@ _ATTENDING = (
     "break_glass.use",
 )
 
-DEFAULT_GROUPS: tuple[dict, ...] = (
+
+class GroupSpec(TypedDict):
+    slug: str
+    name: str
+    description: str
+    mfa_required: bool
+    is_system: bool
+    permissions: tuple[str, ...]
+
+
+# The SYSTEM group (`is_system`) holds the whole catalogue BY RULE at token issuance — including
+# keys added after a tenant was seeded — and its rows cannot be edited. Its rows are seeded all
+# the same, so the admin screen can show them.
+DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
     {"slug": "hospital_admin", "name": "Sistem Yöneticisi",
      "description": "Kullanıcı, grup, yapı ve cihaz yönetimi; denetim kaydı.",
      "mfa_required": True, "is_system": True, "permissions": tuple(PERMISSIONS)},
@@ -283,13 +360,14 @@ DEFAULT_GROUPS: tuple[dict, ...] = (
      "description": "Hasta kabul, transfer/taburcu onayı, nöbet çizelgesi, bakım ekibi.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
-                     "admissions.admit", "admissions.move.confirm", "care_team.claim",
-                     "handover.sign", "shifts.manage", "break_glass.use")},
+                     "admissions.admit", "admissions.transfer.confirm",
+                     "admissions.discharge.confirm", "care_team.claim", "handover.sign",
+                     "shifts.manage", "break_glass.use")},
     {"slug": "nurse", "name": "Hemşire",
      "description": "Pano, alarm onayı, hasta kabul, devir imzası.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "admissions.view", "admissions.admit",
-                     "handover.sign")},
+                     "admissions.transfer.confirm", "handover.sign")},
     {"slug": "rapid_response", "name": "Hızlı Yanıt Ekibi",
      "description": "Pano, alarm onayı ve eskalasyon, break-glass.",
      "mfa_required": False, "is_system": False,
@@ -323,15 +401,28 @@ LEGACY_ROLE_TO_GROUP: dict[str, str] = {
     "PLATFORM_SUPPORT": "platform_support",
 }
 
-# The catalogue must never carry a key the defaults reference but the software cannot enforce.
-for _group in DEFAULT_GROUPS:
-    validate_permissions(_group["permissions"])
+def _self_check() -> None:
+    """Import-time invariants: every default key is in the catalogue, slugs are unique, every
+    legacy role maps to a default slug, and exactly one group is the system group."""
+    slugs = [g["slug"] for g in DEFAULT_GROUPS]
+    if len(slugs) != len(set(slugs)):
+        raise RuntimeError("DEFAULT_GROUPS: duplicate slug")
+    for g in DEFAULT_GROUPS:
+        validate_permissions(g["permissions"])
+    missing = set(LEGACY_ROLE_TO_GROUP.values()) - set(slugs)
+    if missing:
+        raise RuntimeError(f"LEGACY_ROLE_TO_GROUP names unknown group(s): {sorted(missing)}")
+    if [g["slug"] for g in DEFAULT_GROUPS if g["is_system"]] != ["hospital_admin"]:
+        raise RuntimeError("exactly one system group, hospital_admin, is expected")
+
+
+_self_check()
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_permissions.py -q`
-Expected: `10 passed`
+Expected: `12 passed`
 
 - [ ] **Step 5: Commit**
 
@@ -665,19 +756,57 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] **Step 1: Write the failing test**
 
 The migration carries a *frozen copy* of the defaults (a migration must not change when the
-live defaults change later). This test pins the two copies together at authoring time.
+live defaults change later). The test pins that copy to a snapshot **inside the test** — never
+to the live `DEFAULT_GROUPS`, which are free to evolve for tenants created later. At authoring
+time the snapshot, the migration and the live defaults are identical; only the first two must
+stay so.
 
 ```python
 # homunculus-engine/tests/test_migration_0006_defaults.py
-"""Migration 0006 seeds a frozen copy of the default groups. The live copy in
-auth/permissions.py is what new tenants get later. They must agree NOW, or a tenant migrated
-today and a tenant created tomorrow start with different rights for the same group name."""
+"""Migration 0006 seeds a FROZEN copy of the default groups. This test pins that copy to the
+snapshot below — the defaults as they stood at revision 0006. It deliberately does not import
+the live DEFAULT_GROUPS: those may change for tenants created later, and a released migration
+must not follow them. If this test fails, the migration file was edited; revert it."""
 from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
 
-from homunculus.auth.permissions import DEFAULT_GROUPS, LEGACY_ROLE_TO_GROUP
+from homunculus.auth.permissions import ALL_PERMISSIONS
+
+ATTENDING = {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
+             "admissions.sign_off", "admissions.move.initiate", "care_team.claim",
+             "care_team.assign", "handover.sign", "break_glass.use"}
+SNAPSHOT = {   # slug: (mfa_required, is_system, permissions) as of 0006
+    "hospital_admin": (True, True, {
+        "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.admit",
+        "admissions.sign_off", "admissions.move.initiate", "admissions.transfer.confirm",
+        "admissions.discharge.confirm", "care_team.claim", "care_team.assign", "handover.sign",
+        "shifts.manage", "break_glass.use", "audit.view", "users.manage", "groups.manage",
+        "structure.manage", "devices.manage"}),
+    "attending": (True, False, ATTENDING),
+    "unit_physician": (True, False, ATTENDING - {"care_team.claim", "care_team.assign"}),
+    "physician": (False, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
+                                 "handover.sign", "break_glass.use"}),
+    "charge_nurse": (False, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
+                                    "admissions.admit", "admissions.transfer.confirm",
+                                    "admissions.discharge.confirm", "care_team.claim",
+                                    "handover.sign", "shifts.manage", "break_glass.use"}),
+    "nurse": (False, False, {"board.view", "alerts.ack", "admissions.view", "admissions.admit",
+                             "admissions.transfer.confirm", "handover.sign"}),
+    "rapid_response": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
+                                      "admissions.view", "break_glass.use"}),
+    "auditor": (False, False, {"board.view", "audit.view"}),
+    "platform_support": (True, False, {"audit.view", "devices.manage"}),
+    "pharmacist": (False, False, {"board.view", "admissions.view"}),
+    "biomedical": (False, False, {"devices.manage"}),
+}
+LEGACY_SNAPSHOT = {
+    "HOSPITAL_ADMIN": "hospital_admin", "ATTENDING": "attending",
+    "UNIT_PHYSICIAN": "unit_physician", "ASSOCIATE_PHYSICIAN": "physician",
+    "ONCALL_PHYSICIAN": "physician", "CHARGE_NURSE": "charge_nurse", "NURSE": "nurse",
+    "RAPID_RESPONSE": "rapid_response", "AUDITOR": "auditor", "PLATFORM_SUPPORT": "platform_support",
+}
 
 _PATH = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "0006_groups_and_permissions.py"
 
@@ -689,20 +818,24 @@ def _load():
     return module
 
 
-def test_the_frozen_defaults_match_the_live_defaults():
-    m = _load()
-    frozen = {g["slug"]: g for g in m._DEFAULT_GROUPS}
-    live = {g["slug"]: g for g in DEFAULT_GROUPS}
-    assert frozen.keys() == live.keys()
-    for slug, g in live.items():
-        assert set(frozen[slug]["permissions"]) == set(g["permissions"]), slug
-        assert frozen[slug]["mfa_required"] == g["mfa_required"], slug
-        assert frozen[slug]["is_system"] == g["is_system"], slug
-        assert frozen[slug]["name"] == g["name"], slug
+def test_the_frozen_defaults_match_the_0006_snapshot():
+    frozen = {g["slug"]: g for g in _load()._DEFAULT_GROUPS}
+    assert frozen.keys() == SNAPSHOT.keys()
+    for slug, (mfa, system, perms) in SNAPSHOT.items():
+        assert set(frozen[slug]["permissions"]) == perms, slug
+        assert frozen[slug]["mfa_required"] is mfa, slug
+        assert frozen[slug]["is_system"] is system, slug
 
 
-def test_the_frozen_legacy_map_matches():
-    assert _load()._LEGACY == LEGACY_ROLE_TO_GROUP
+def test_the_frozen_legacy_map_matches_the_snapshot():
+    assert _load()._LEGACY == LEGACY_SNAPSHOT
+
+
+def test_every_frozen_key_is_still_in_the_catalogue():
+    """Retiring a catalogue key needs a data migration for the rows 0006 wrote; this is the
+    reminder. Adding keys is free."""
+    for g in _load()._DEFAULT_GROUPS:
+        assert set(g["permissions"]) <= ALL_PERMISSIONS, g["slug"]
 
 
 def test_revision_chain():
@@ -759,7 +892,8 @@ depends_on: Union[str, Sequence[str], None] = None
 # ---------------------------------------------------------------------------------------------
 _ALL = (
     "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.admit",
-    "admissions.sign_off", "admissions.move.initiate", "admissions.move.confirm",
+    "admissions.sign_off", "admissions.move.initiate", "admissions.transfer.confirm",
+    "admissions.discharge.confirm",
     "care_team.claim", "care_team.assign", "handover.sign", "shifts.manage",
     "break_glass.use", "audit.view", "users.manage", "groups.manage", "structure.manage",
     "devices.manage",
@@ -789,13 +923,14 @@ _DEFAULT_GROUPS = (
      "description": "Hasta kabul, transfer/taburcu onayı, nöbet çizelgesi, bakım ekibi.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
-                     "admissions.admit", "admissions.move.confirm", "care_team.claim",
-                     "handover.sign", "shifts.manage", "break_glass.use")},
+                     "admissions.admit", "admissions.transfer.confirm",
+                     "admissions.discharge.confirm", "care_team.claim", "handover.sign",
+                     "shifts.manage", "break_glass.use")},
     {"slug": "nurse", "name": "Hemşire",
      "description": "Pano, alarm onayı, hasta kabul, devir imzası.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "admissions.view", "admissions.admit",
-                     "handover.sign")},
+                     "admissions.transfer.confirm", "handover.sign")},
     {"slug": "rapid_response", "name": "Hızlı Yanıt Ekibi",
      "description": "Pano, alarm onayı ve eskalasyon, break-glass.",
      "mfa_required": False, "is_system": False,
@@ -973,7 +1108,7 @@ def downgrade() -> None:
 - [ ] **Step 4: Run the pin test**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_migration_0006_defaults.py -q`
-Expected: `3 passed`
+Expected: `4 passed`
 
 - [ ] **Step 5: If a test database is available, run the migration against it**
 
@@ -1110,7 +1245,9 @@ from homunculus.auth.groups import (
     GroupError, bump_group_members, count_admins, ensure_default_groups, groups_of,
     set_manual_groups, summarize, tenant_of_user,
 )
-from homunculus.auth.models import SOURCE_LDAP, TenantMembership, User, UserGroup
+from homunculus.auth.models import (
+    SOURCE_LDAP, Group, GroupPermission, TenantMembership, User, UserGroup,
+)
 from homunculus.auth.permissions import DEFAULT_GROUPS
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
@@ -1197,7 +1334,21 @@ async def test_summarize_unions_permissions_and_mfa(db_session):
     assert s.mfa_required is True                       # attending demands it
 
 
-async def test_count_admins_counts_active_holders_of_users_manage(db_session):
+async def test_a_system_group_member_holds_the_whole_catalogue_by_rule(db_session):
+    t = await _tenant(db_session)
+    groups = await ensure_default_groups(db_session, t.id)
+    u = await _user(db_session, t, "admin")
+    await set_manual_groups(db_session, user=u, tenant_id=t.id,
+                            group_ids=[groups["hospital_admin"].id], granted_by_id=None)
+    # Simulate a tenant seeded before a key existed: drop one row from the system group.
+    admin = groups["hospital_admin"]
+    admin.permissions.remove(next(p for p in admin.permissions if p.permission == "audit.view"))
+    await db_session.flush()
+    s = summarize(await groups_of(db_session, u.id, t.id))
+    assert "audit.view" in s.perms                       # by rule, not by rows
+
+
+async def test_count_admins_counts_active_users_holding_both_admin_permissions(db_session):
     t = await _tenant(db_session)
     groups = await ensure_default_groups(db_session, t.id)
     a = await _user(db_session, t, "admin")
@@ -1205,6 +1356,14 @@ async def test_count_admins_counts_active_holders_of_users_manage(db_session):
     for u in (a, b):
         await set_manual_groups(db_session, user=u, tenant_id=t.id,
                                 group_ids=[groups["hospital_admin"].id], granted_by_id=None)
+    # users.manage alone is not an administrator: groups.manage is needed too.
+    half = Group(tenant_id=t.id, slug="user_desk", name="Kullanıcı Masası", is_system=False)
+    half.permissions = [GroupPermission(permission="users.manage")]
+    db_session.add(half)
+    await db_session.flush()
+    c = await _user(db_session, t, "yarim")
+    await set_manual_groups(db_session, user=c, tenant_id=t.id, group_ids=[half.id],
+                            granted_by_id=None)
     assert await count_admins(db_session, t.id) == 1
     assert await count_admins(db_session, t.id, excluding_user_id=a.id) == 0
     assert await count_admins(db_session, t.id, excluding_group_id=groups["hospital_admin"].id) == 0
@@ -1269,7 +1428,7 @@ from homunculus.api.identity import hospital_for_slugs
 from homunculus.auth.models import (
     SOURCE_MANUAL, Group, GroupPermission, TenantMembership, User, UserGroup,
 )
-from homunculus.auth.permissions import DEFAULT_GROUPS, effective_permissions
+from homunculus.auth.permissions import ALL_PERMISSIONS, DEFAULT_GROUPS, effective_permissions
 from homunculus.tenant.models import Tenant
 
 
@@ -1321,11 +1480,17 @@ async def groups_of(db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID) 
 
 
 def summarize(links: Iterable[UserGroup]) -> GroupSummary:
+    """What a token is minted from. A SYSTEM group grants the whole catalogue by rule, so an
+    administrator never falls behind a catalogue that grew after the tenant was seeded."""
     groups = sorted((link.group for link in links), key=lambda g: g.slug)
+    if any(g.is_system for g in groups):
+        perms = ALL_PERMISSIONS
+    else:
+        perms = effective_permissions(g.permission_keys for g in groups)
     return GroupSummary(
         slugs=tuple(g.slug for g in groups),
         names=tuple(g.name for g in groups),
-        perms=effective_permissions(g.permission_keys for g in groups),
+        perms=perms,
         mfa_required=any(g.mfa_required for g in groups),
     )
 
@@ -1366,24 +1531,35 @@ async def bump_group_members(db: AsyncSession, group_id: uuid.UUID) -> int:
     return result.rowcount or 0
 
 
+def _holds(tenant_id: uuid.UUID, permission: str, excluding_group_id: uuid.UUID | None):
+    """EXISTS: the outer User has `permission` through some group of the tenant. A system group
+    counts for every permission, matching the rule in `summarize`."""
+    stmt = (
+        select(UserGroup.user_id)
+        .join(Group, Group.id == UserGroup.group_id)
+        .outerjoin(GroupPermission, GroupPermission.group_id == Group.id)
+        .where(UserGroup.user_id == User.id, Group.tenant_id == tenant_id,
+               (GroupPermission.permission == permission) | (Group.is_system == True))  # noqa: E712
+    )
+    if excluding_group_id is not None:
+        stmt = stmt.where(Group.id != excluding_group_id)
+    return stmt.exists()
+
+
 async def count_admins(
     db: AsyncSession, tenant_id: uuid.UUID, *,
     excluding_user_id: uuid.UUID | None = None, excluding_group_id: uuid.UUID | None = None,
 ) -> int:
-    """Active users holding `users.manage` through any group of the tenant."""
+    """Active ADMINISTRATORS of the tenant: users holding both `users.manage` and
+    `groups.manage`, through any of their groups. The last one is protected (spec §6)."""
     stmt = (
-        select(func.count(func.distinct(User.id)))
-        .select_from(User)
-        .join(UserGroup, UserGroup.user_id == User.id)
-        .join(Group, Group.id == UserGroup.group_id)
-        .join(GroupPermission, GroupPermission.group_id == Group.id)
-        .where(Group.tenant_id == tenant_id, GroupPermission.permission == "users.manage",
-               User.is_active == True)  # noqa: E712
+        select(func.count(User.id))
+        .where(User.is_active == True)  # noqa: E712
+        .where(_holds(tenant_id, "users.manage", excluding_group_id))
+        .where(_holds(tenant_id, "groups.manage", excluding_group_id))
     )
     if excluding_user_id is not None:
         stmt = stmt.where(User.id != excluding_user_id)
-    if excluding_group_id is not None:
-        stmt = stmt.where(Group.id != excluding_group_id)
     return int((await db.execute(stmt)).scalar_one())
 
 
@@ -1405,7 +1581,7 @@ async def tenant_of_user(db: AsyncSession, user_id: uuid.UUID) -> TenantRef | No
 - [ ] **Step 4: Run the tests**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_groups_service.py -q`
-Expected: `9 passed` with `TEST_DATABASE_URL`, `9 skipped` without — and no import error either way.
+Expected: `10 passed` with `TEST_DATABASE_URL`, `10 skipped` without — and no import error either way.
 
 - [ ] **Step 5: Commit**
 
@@ -2687,7 +2863,8 @@ Permission guards (see auth/permissions.py):
   * admissions.view            list / read admissions, patients and care teams
   * admissions.sign_off        physician sign-off
   * admissions.move.initiate   initiate a transfer or discharge
-  * admissions.move.confirm    confirm a transfer or discharge
+  * admissions.transfer.confirm   confirm a transfer arrival
+  * admissions.discharge.confirm  confirm a discharge, release the bed
   * care_team.claim / .assign  claim or assign a care-team role
   * shifts.manage              shift schedules
   * handover.sign              open, sign, countersign a handover
@@ -2707,8 +2884,8 @@ Then change every guard — the old text on the left becomes the new text on the
 | claim_attending | `user: User = Depends(require_roles(\n        UserRole.ATTENDING, UserRole.CHARGE_NURSE, UserRole.HOSPITAL_ADMIN)),` | `user: User = Depends(require_permission("care_team.claim")),` |
 | add_care_team_member | `user: User = Depends(require_roles(UserRole.ATTENDING)),` | `user: User = Depends(require_permission("care_team.assign")),` |
 | transfer_initiate, discharge_initiate | `user: User = Depends(require_roles(UserRole.ATTENDING, UserRole.UNIT_PHYSICIAN)),` | `user: User = Depends(require_permission("admissions.move.initiate")),` |
-| transfer_confirm | `user: User = Depends(require_roles(UserRole.NURSE, UserRole.CHARGE_NURSE)),` | `user: User = Depends(require_permission("admissions.move.confirm")),` |
-| discharge_confirm | `user: User = Depends(require_roles(UserRole.CHARGE_NURSE)),` | `user: User = Depends(require_permission("admissions.move.confirm")),` |
+| transfer_confirm | `user: User = Depends(require_roles(UserRole.NURSE, UserRole.CHARGE_NURSE)),` | `user: User = Depends(require_permission("admissions.transfer.confirm")),` |
+| discharge_confirm | `user: User = Depends(require_roles(UserRole.CHARGE_NURSE)),` | `user: User = Depends(require_permission("admissions.discharge.confirm")),` |
 | create_shift_schedule | `user: User = Depends(require_roles(UserRole.CHARGE_NURSE)),` | `user: User = Depends(require_permission("shifts.manage")),` |
 | open_handover, sign_outgoing, countersign | `user: User = Depends(get_current_active_user),` | `user: User = Depends(require_permission("handover.sign")),` |
 
@@ -3473,11 +3650,28 @@ async def test_changing_a_groups_permissions_retires_its_members_tokens(client, 
     assert decode_token(refreshed["access_token"])["perms"] == ["board.view"]
 
 
-async def test_removing_users_manage_from_the_only_admin_group_is_refused(client, world, db_session):
+async def test_the_system_groups_rights_are_immutable_but_its_labels_are_not(client, world, db_session):
     c, _ = client
     admin, _ = await _headers(db_session, world["admin"])
-    res = await c.patch(f"/admin/groups/{world['groups']['hospital_admin'].id}", headers=admin,
-                        json={"permissions": ["board.view"]})
+    gid = world["groups"]["hospital_admin"].id
+    assert (await c.patch(f"/admin/groups/{gid}", headers=admin,
+                          json={"permissions": ["board.view"]})).status_code == 409
+    assert (await c.patch(f"/admin/groups/{gid}", headers=admin,
+                          json={"mfa_required": False})).status_code == 409
+    res = await c.patch(f"/admin/groups/{gid}", headers=admin, json={"name": "BT Yönetimi"})
+    assert res.status_code == 200 and res.json()["name"] == "BT Yönetimi"
+
+
+async def test_the_last_administrator_cannot_lose_groups_manage_either(client, world, db_session):
+    """An administrator holds users.manage AND groups.manage; moving the only one into a group
+    that has just users.manage would leave nobody able to edit groups."""
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    res = await c.post("/admin/groups", headers=admin, json={
+        "slug": "user_desk", "name": "Kullanıcı Masası", "permissions": ["users.manage"]})
+    assert res.status_code == 201
+    res = await c.put(f"/admin/users/{world['admin'].id}/groups", headers=admin,
+                      json={"group_ids": [res.json()["id"]]})
     assert res.status_code == 409
 
 
@@ -3772,6 +3966,9 @@ async def create_group(db: AsyncSession, tenant_id: uuid.UUID, *, slug: str, nam
 async def update_group(db: AsyncSession, tenant_id: uuid.UUID, group: Group, *,
                        name: str | None, description: str | None, mfa_required: bool | None,
                        permissions: list[str] | None) -> Group:
+    if group.is_system and (permissions is not None or mfa_required is not None):
+        # The system group's rights are a rule, not rows (spec §3); only its labels may change.
+        raise AdminError(409, "Sistem grubunun izinleri ve MFA kuralı değiştirilemez")
     rights_changed = False
     if name is not None:
         group.name = name.strip()
@@ -4179,7 +4376,7 @@ Create the empty `homunculus-engine/src/homunculus/admin/__init__.py`.
 - [ ] **Step 7: Run the tests**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_admin_api.py -q`
-Expected: `14 passed` with `TEST_DATABASE_URL`, `14 skipped` without.
+Expected: `15 passed` with `TEST_DATABASE_URL`, `15 skipped` without.
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py`
 Expected: all pass.
@@ -4338,8 +4535,8 @@ import {
 import { createDemoStore, buildRealisticState, ROLE } from "./clinicalDemo.js";
 
 describe("permission keys", () => {
-  it("mirrors the backend catalogue (18 keys)", () => {
-    expect(PERMISSION_KEYS).toHaveLength(18);
+  it("mirrors the backend catalogue (19 keys)", () => {
+    expect(PERMISSION_KEYS).toHaveLength(19);
     expect(PERMISSION_KEYS).toContain("board.view");
     expect(PERMISSION_KEYS).toContain("devices.manage");
   });
@@ -4409,7 +4606,7 @@ Expected: FAIL — cannot resolve `./permissions.js`
 export const PERMISSION_KEYS = [
   "board.view", "alerts.ack", "alerts.escalate",
   "admissions.view", "admissions.admit", "admissions.sign_off",
-  "admissions.move.initiate", "admissions.move.confirm",
+  "admissions.move.initiate", "admissions.transfer.confirm", "admissions.discharge.confirm",
   "care_team.claim", "care_team.assign", "handover.sign", "shifts.manage",
   "break_glass.use", "audit.view",
   "users.manage", "groups.manage", "structure.manage", "devices.manage",
@@ -4425,8 +4622,8 @@ export const ROLE_PERMS = {
   ],
   CHARGE_NURSE: [
     "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.admit",
-    "admissions.move.confirm", "care_team.claim", "handover.sign", "shifts.manage",
-    "break_glass.use",
+    "admissions.transfer.confirm", "admissions.discharge.confirm", "care_team.claim",
+    "handover.sign", "shifts.manage", "break_glass.use",
   ],
   RRT: ["board.view", "alerts.ack", "alerts.escalate", "admissions.view", "break_glass.use"],
   PHARMACIST: ["board.view", "admissions.view"],
@@ -5483,7 +5680,8 @@ Turkish (`tr`):
         "admissions.view": "Kabul kayıtlarını okuma", "admissions.admit": "Hasta kabul",
         "admissions.sign_off": "Kabul onayı (hekim)",
         "admissions.move.initiate": "Transfer/taburcu başlatma",
-        "admissions.move.confirm": "Transfer/taburcu onaylama",
+        "admissions.transfer.confirm": "Transfer onaylama",
+        "admissions.discharge.confirm": "Taburcu onaylama",
         "care_team.claim": "Bakım ekibinde rol üstlenme", "care_team.assign": "Bakım ekibi atama",
         "handover.sign": "Devir-teslim imzalama", "shifts.manage": "Nöbet çizelgesi",
         "break_glass.use": "Acil erişim (break-glass)", "audit.view": "Denetim kaydını görme",
@@ -5526,7 +5724,8 @@ Azerbaijani (`az`):
         "admissions.view": "Qəbul qeydlərini oxuma", "admissions.admit": "Xəstə qəbulu",
         "admissions.sign_off": "Qəbul təsdiqi (həkim)",
         "admissions.move.initiate": "Köçürmə/evə yazılma başlatma",
-        "admissions.move.confirm": "Köçürmə/evə yazılma təsdiqi",
+        "admissions.transfer.confirm": "Köçürmə təsdiqi",
+        "admissions.discharge.confirm": "Evə yazılma təsdiqi",
         "care_team.claim": "Baxım komandasında rol götürmə", "care_team.assign": "Baxım komandası təyini",
         "handover.sign": "Növbə təhvili imzası", "shifts.manage": "Növbə cədvəli",
         "break_glass.use": "Təcili giriş (break-glass)", "audit.view": "Audit qeydinə baxış",
@@ -5569,7 +5768,8 @@ English (`en`):
         "admissions.view": "Read admissions", "admissions.admit": "Admit patients",
         "admissions.sign_off": "Sign off admissions (physician)",
         "admissions.move.initiate": "Initiate transfer/discharge",
-        "admissions.move.confirm": "Confirm transfer/discharge",
+        "admissions.transfer.confirm": "Confirm transfer",
+        "admissions.discharge.confirm": "Confirm discharge",
         "care_team.claim": "Claim a care-team role", "care_team.assign": "Assign the care team",
         "handover.sign": "Sign handovers", "shifts.manage": "Shift schedules",
         "break_glass.use": "Emergency access (break-glass)", "audit.view": "View the audit trail",
@@ -5612,7 +5812,8 @@ Russian (`ru`):
         "admissions.view": "Чтение госпитализаций", "admissions.admit": "Госпитализация пациентов",
         "admissions.sign_off": "Подтверждение госпитализации (врач)",
         "admissions.move.initiate": "Инициировать перевод/выписку",
-        "admissions.move.confirm": "Подтвердить перевод/выписку",
+        "admissions.transfer.confirm": "Подтвердить перевод",
+        "admissions.discharge.confirm": "Подтвердить выписку",
         "care_team.claim": "Взять роль в бригаде", "care_team.assign": "Назначить бригаду",
         "handover.sign": "Подписание передачи смены", "shifts.manage": "График смен",
         "break_glass.use": "Экстренный доступ (break-glass)", "audit.view": "Просмотр журнала аудита",
