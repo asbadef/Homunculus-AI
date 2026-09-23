@@ -1,0 +1,79 @@
+# homunculus-engine/tests/test_migration_0006_defaults.py
+"""Migration 0006 seeds a FROZEN copy of the default groups. This test pins that copy to the
+snapshot below — the defaults as they stood at revision 0006. It deliberately does not import
+the live DEFAULT_GROUPS: those may change for tenants created later, and a released migration
+must not follow them. If this test fails, the migration file was edited; revert it."""
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+from homunculus.auth.permissions import ALL_PERMISSIONS
+
+ATTENDING = {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
+             "admissions.sign_off", "admissions.move.initiate", "care_team.claim",
+             "care_team.assign", "handover.sign", "break_glass.use"}
+SNAPSHOT = {   # slug: (mfa_required, is_system, permissions) as of 0006
+    "hospital_admin": (True, True, {
+        "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.admit",
+        "admissions.sign_off", "admissions.move.initiate", "admissions.transfer.confirm",
+        "admissions.discharge.confirm", "care_team.claim", "care_team.assign", "handover.sign",
+        "shifts.manage", "break_glass.use", "audit.view", "users.manage", "groups.manage",
+        "structure.manage", "devices.manage"}),
+    "attending": (True, False, ATTENDING),
+    "unit_physician": (True, False, ATTENDING - {"care_team.claim", "care_team.assign"}),
+    "physician": (False, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
+                                 "handover.sign", "break_glass.use"}),
+    "charge_nurse": (False, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
+                                    "admissions.admit", "admissions.transfer.confirm",
+                                    "admissions.discharge.confirm", "care_team.claim",
+                                    "handover.sign", "shifts.manage", "break_glass.use"}),
+    "nurse": (False, False, {"board.view", "alerts.ack", "admissions.view", "admissions.admit",
+                             "admissions.transfer.confirm", "handover.sign"}),
+    "rapid_response": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
+                                      "admissions.view", "break_glass.use"}),
+    "auditor": (False, False, {"board.view", "audit.view"}),
+    "platform_support": (True, False, {"audit.view", "devices.manage"}),
+    "pharmacist": (False, False, {"board.view", "admissions.view"}),
+    "biomedical": (False, False, {"devices.manage"}),
+}
+LEGACY_SNAPSHOT = {
+    "HOSPITAL_ADMIN": "hospital_admin", "ATTENDING": "attending",
+    "UNIT_PHYSICIAN": "unit_physician", "ASSOCIATE_PHYSICIAN": "physician",
+    "ONCALL_PHYSICIAN": "physician", "CHARGE_NURSE": "charge_nurse", "NURSE": "nurse",
+    "RAPID_RESPONSE": "rapid_response", "AUDITOR": "auditor", "PLATFORM_SUPPORT": "platform_support",
+}
+
+_PATH = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "0006_groups_and_permissions.py"
+
+
+def _load():
+    spec = importlib.util.spec_from_file_location("migration_0006", _PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_frozen_defaults_match_the_0006_snapshot():
+    frozen = {g["slug"]: g for g in _load()._DEFAULT_GROUPS}
+    assert frozen.keys() == SNAPSHOT.keys()
+    for slug, (mfa, system, perms) in SNAPSHOT.items():
+        assert set(frozen[slug]["permissions"]) == perms, slug
+        assert frozen[slug]["mfa_required"] is mfa, slug
+        assert frozen[slug]["is_system"] is system, slug
+
+
+def test_the_frozen_legacy_map_matches_the_snapshot():
+    assert _load()._LEGACY == LEGACY_SNAPSHOT
+
+
+def test_every_frozen_key_is_still_in_the_catalogue():
+    """Retiring a catalogue key needs a data migration for the rows 0006 wrote; this is the
+    reminder. Adding keys is free."""
+    for g in _load()._DEFAULT_GROUPS:
+        assert set(g["permissions"]) <= ALL_PERMISSIONS, g["slug"]
+
+
+def test_revision_chain():
+    m = _load()
+    assert m.revision == "0006" and m.down_revision == "0005"
