@@ -2251,13 +2251,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import hashlib
+import hmac
 
 import bcrypt
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.auth.groups import bump_user, groups_of, summarize, tenant_of_user
-from homunculus.auth.jwt import create_access_token, create_refresh_token
+from homunculus.auth.jwt import JWT_SECRET, create_access_token, create_refresh_token
 from homunculus.auth.models import AUTH_LOCAL, User
 from homunculus.auth.totp import generate_provisioning_uri, generate_totp_secret, verify_totp
 
@@ -2342,12 +2343,13 @@ async def build_context(db: AsyncSession, user: User) -> AuthContext:
 
 
 def credential_fingerprint(user: User) -> str:
-    """A short digest of the credentials a session was opened with (password hash + TOTP secret).
-    The refresh token carries it; `/auth/refresh` refuses a token whose fingerprint no longer
-    matches, so a password change or reset and an MFA reset end every session — not just the
-    one-hour access token. It is a digest of hashes, never of a secret itself."""
+    """A short keyed digest of the credentials a session was opened with (password hash + TOTP
+    secret). The refresh token carries it; `/auth/refresh` refuses a token whose fingerprint no
+    longer matches, so a password change or reset and an MFA reset end every session — not just
+    the one-hour access token. HMAC-keyed with the signing secret: the token is readable by the
+    client and the TOTP secret is part of the input."""
     material = f"{user.hashed_password or ''}|{user.totp_secret or ''}".encode()
-    return hashlib.sha256(material).hexdigest()[:16]
+    return hmac.new(JWT_SECRET.encode(), material, hashlib.sha256).hexdigest()[:16]
 
 
 def issue_tokens(user: User, ctx: AuthContext, *, mfa_verified: bool) -> dict:
@@ -2380,10 +2382,15 @@ def mark_login(user: User) -> None:
 
 
 async def setup_totp(db: AsyncSession, user: User) -> tuple[str, str]:
-    """Generate and store a new TOTP secret. Returns (secret, provisioning_uri)."""
+    """Generate and store a new TOTP secret. Returns (secret, provisioning_uri).
+
+    First enrolment: `totp_enabled` stays False until the first verified code. REPLACING an
+    authenticator (only reachable from an MFA-verified session, see get_user_for_enrolment):
+    `totp_enabled` stays True, so the account never drops back to "not enrolled" — which would
+    reopen password-only enrolment. Abandoning the replacement locks the old device out; the
+    fix is an administrator's MFA reset (fails closed)."""
     secret = generate_totp_secret()
     user.totp_secret = secret
-    user.totp_enabled = False  # Only enabled after first successful verify
     await db.commit()
     uri = generate_provisioning_uri(secret, user.email or user.username)
     return secret, uri
@@ -2526,6 +2533,7 @@ GET  /auth/me           — profile, tenant, groups, permissions (allowed before
 POST /auth/password     — change own password (local accounts)
 """
 from __future__ import annotations
+import hmac
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -2631,7 +2639,7 @@ async def refresh_token(body: RefreshRequest, db: AsyncSession = Depends(get_db)
     user = await get_user_by_id(db, user_id)
     if not user or not user.is_active:
         raise credentials_exc
-    if payload.get("cv") != credential_fingerprint(user):
+    if not hmac.compare_digest(str(payload.get("cv", "")), credential_fingerprint(user)):
         # The password or the authenticator changed since this session opened: sign in again.
         raise credentials_exc
 
@@ -2690,7 +2698,9 @@ def test_a_legacy_token_without_tv_is_refused_so_the_client_refreshes(real_clien
     assert res.status_code == 401 and res.json()["detail"] == "token_version"
 ```
 
-Any existing test in that file that mints a token without `tv` must pass `tv` explicitly.
+Any existing test in that file that mints a token without `tv` must pass `tv` explicitly. In the
+module docstring, the `get_current_user_pre_mfa` line becomes "ONLY for /auth/totp/verify and
+/auth/me" (setup now goes through `get_user_for_enrolment`).
 
 - [ ] **Step 8: Run the pure tests**
 
@@ -2877,19 +2887,24 @@ async def test_an_enrolled_user_cannot_replace_the_authenticator_with_the_passwo
 
 
 async def test_an_mfa_reset_ends_the_verified_session(client, world, db_session):
-    """After an administrator clears the authenticator, the old refresh token must not bring
-    back a verified session."""
+    """An MFA-verified session must not survive an administrator clearing the authenticator:
+    the old refresh token neither refreshes nor brings back "verified"."""
+    import pyotp
     c, _ = client
-    tokens = (await _login(c, "ayse")).json()
-    world["nurse"].totp_secret, world["nurse"].totp_enabled = None, False   # what reset-mfa does
-    world["nurse"].hashed_password = world["nurse"].hashed_password          # unchanged
+    secret = "JBSWY3DPEHPK3PXP"
+    world["admin"].totp_secret, world["admin"].totp_enabled = secret, True
     await db_session.commit()
-    ok = await c.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
-    assert ok.status_code == 200                       # no authenticator before or after: same cv
-    world["nurse"].totp_secret = "JBSWY3DPEHPK3PXP"
+    pending = (await _login(c, "admin")).json()
+    verified = (await c.post("/auth/totp/verify",
+                             headers={"Authorization": f"Bearer {pending['access_token']}"},
+                             json={"code": pyotp.TOTP(secret).now()})).json()
+    assert decode_token(verified["access_token"])["mfa_verified"] is True
+
+    world["admin"].totp_secret, world["admin"].totp_enabled = None, False   # what reset-mfa does
     await db_session.commit()
-    stale = await c.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
-    assert stale.status_code == 401                    # credentials moved
+
+    res = await c.post("/auth/refresh", json={"refresh_token": verified["refresh_token"]})
+    assert res.status_code == 401
 
 
 async def test_sign_ins_are_audited_without_the_password(client, world):
@@ -4733,8 +4748,13 @@ from fastapi.routing import APIRoute
 from homunculus.api.app import create_app
 from homunculus.auth.dependencies import get_principal, get_principal_pre_mfa
 
-GUARDED_MODULES = {"homunculus.admission.router", "homunculus.escalation.router",
-                   "homunculus.tenant.router", "homunculus.admin.router"}
+# Routes that are deliberately reachable without the MFA-gated principal. Everything else — any
+# router added later, including one merged from another branch — must reach get_principal.
+PUBLIC = {"/auth/login", "/auth/refresh"}
+PRE_MFA = {"/auth/totp/setup", "/auth/totp/verify", "/auth/me"}
+# The board and device routes live in api/app.py and resolve their caller through the separate
+# Caller resolver (tenant token or JWT), not through FastAPI dependencies.
+CALLER_RESOLVED_MODULE = "homunculus.api.app"
 
 
 def _calls(dependant) -> set:
@@ -4752,9 +4772,11 @@ def _routes():
     return [r for r in app.routes if isinstance(r, APIRoute)]
 
 
-def test_every_router_route_reaches_the_mfa_gated_principal():
+def test_every_route_is_guarded_or_explicitly_exempt():
     missing = [f"{sorted(r.methods)} {r.path}" for r in _routes()
-               if r.endpoint.__module__ in GUARDED_MODULES and get_principal not in _calls(r.dependant)]
+               if r.endpoint.__module__ != CALLER_RESOLVED_MODULE
+               and r.path not in PUBLIC | PRE_MFA
+               and get_principal not in _calls(r.dependant)]
     assert missing == []
 
 
@@ -4762,12 +4784,23 @@ def test_only_enrolment_and_profile_routes_skip_the_mfa_gate():
     pre_only = {r.path for r in _routes()
                 if get_principal_pre_mfa in _calls(r.dependant)
                 and get_principal not in _calls(r.dependant)}
-    assert pre_only == {"/auth/totp/setup", "/auth/totp/verify", "/auth/me"}
+    assert pre_only == PRE_MFA
 ```
 
 Add to `tests/test_admin_api.py`:
 
 ```python
+async def test_an_admin_mfa_reset_ends_the_users_sessions(client, world, db_session):
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    world["nurse"].totp_secret, world["nurse"].totp_enabled = "JBSWY3DPEHPK3PXP", True
+    await db_session.commit()
+    nurse_tokens = (await c.post("/auth/login", json={"login": "ayse", "password": PASSWORD})).json()
+    assert (await c.post(f"/admin/users/{world['nurse'].id}/reset-mfa", headers=admin)).status_code == 200
+    res = await c.post("/auth/refresh", json={"refresh_token": nurse_tokens["refresh_token"]})
+    assert res.status_code == 401
+
+
 async def test_an_admin_password_reset_ends_the_users_sessions(client, world, db_session):
     c, _ = client
     admin, _ = await _headers(db_session, world["admin"])
@@ -4783,7 +4816,7 @@ Add `homunculus-engine/tests/test_route_inventory.py` to this task's commit.
 - [ ] **Step 7: Run the tests**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_admin_api.py tests/test_route_inventory.py -q`
-Expected: `16 passed` with `TEST_DATABASE_URL`, `16 skipped` without, plus the 2 route-inventory tests.
+Expected: `17 passed` with `TEST_DATABASE_URL`, `17 skipped` without, plus the 2 route-inventory tests.
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py`
 Expected: all pass.
@@ -7168,6 +7201,18 @@ Expected: green, clean build.
 6. Deactivate the nurse: their next request lands on the login screen.
 7. Try to deactivate the admin: the UI shows "Son yönetici pasifleştirilemez".
 8. `GET /audit?event_type=admin` (as admin) lists every step above.
+
+**Deploy notes for the VM (record them in the handoff):**
+- Back up first (`pg_dump`), then `alembic upgrade head`. Migration 0006 stops, changing nothing, if
+  two accounts' e-mails differ only by case or an e-mail is longer than 128 characters; merge or
+  rename them and rerun.
+- Check `JWT_SECRET` in `/opt/homunculus/deploy/local/.env` is at least 32 characters and not the
+  default — from Task 9 on the API refuses to boot otherwise. `openssl rand -base64 36` gives 48.
+- **Every user, mobile included, signs in once after the upgrade.** Tokens issued by the old code
+  carry no `tv` and no credential fingerprint, so both the access and the refresh token are refused.
+  Tell the ward before the deploy window.
+- An administrator who resets their OWN password or MFA through the admin screen ends their own
+  session and lands on the login screen. That is expected.
 
 - [ ] **Step 5: Record the outcome in this plan**
 

@@ -194,7 +194,9 @@ The `roles` claim is removed. The refresh token carries `sub`, `type = refresh`,
 carry `tv`. `/auth/refresh` refuses a refresh token whose `cv` no longer matches, so a password
 change or reset and an MFA reset end every session, not only the one-hour access token; and it
 carries `mfa_verified` forward only while the user still has an authenticator. An access token
-without `tv` (minted before this design) is refused with 401 so the client refreshes.
+without `tv` (minted before this design) is refused with 401; its refresh token has no `cv`
+either, so at the cut-over every user signs in once. The fingerprint is an HMAC keyed with the
+signing secret.
 
 `TokenResponse` gains `mfa_enrolled` (the user has a verified TOTP secret). `requires_mfa` now
 means "must complete TOTP before the app may be used" — `mfa_required && !mfa_verified` — rather
@@ -224,7 +226,9 @@ and `/auth/refresh`; every other route returns 403 `mfa_required`. A user in an 
 not enrolled is walked through setup (QR) and verification on first sign-in. A user who **has**
 enrolled cannot call `/auth/totp/setup` from a pending session (403 `mfa_reset_required`):
 otherwise the password alone would replace the authenticator and pass the gate. A lost device
-is an administrator's MFA reset.
+is an administrator's MFA reset. Replacing an authenticator from a verified session keeps the
+account enrolled throughout (it never drops back to "not enrolled"); abandoning the replacement
+fails closed.
 
 ### Password change
 
@@ -365,6 +369,13 @@ list and is what the unit tests use.
 3. Read `displayName`, `mail`, `userPrincipalName`, `memberOf`, `userAccountControl`. A disabled
    account (`ACCOUNTDISABLE`) → 401; the local `is_active` flag is **not** changed automatically
    (an automatic off-boarding sync is a separate, scheduled slice — see out of scope).
+
+**Refresh for an AD account.** The credential fingerprint of an AD account covers only its TOTP
+secret (there is no local password hash), so it cannot notice a password change or a disabled
+account in AD. `/auth/refresh` for an `auth_source = ldap` user therefore reads the account by
+`objectGUID` with the service account: disabled (`ACCOUNTDISABLE`) or `pwdLastSet` later than the
+refresh token's `iat` → 401. If the directory is unreachable the refresh proceeds — the §4 outage
+decision (open sessions continue) — and the audit records `refresh.directory_unavailable`.
 4. Update `full_name`, `email`, `ldap_dn`.
 5. **Group sync:** `memberOf` (case-insensitive) ∩ `ldap_group_mappings` for the tenant → the set
    of target groups. The sync runs the §6 administrator guard: a removal that would leave the
