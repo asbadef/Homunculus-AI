@@ -1,16 +1,21 @@
 """
-Authentication business logic.
-Password hashing, token generation, MFA setup.
+Authentication business logic: passwords, the sign-in lookup, the session context a token is
+minted from, token issuance, TOTP, password change.
 """
 from __future__ import annotations
+import hashlib
+import hmac
 import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import bcrypt
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from homunculus.auth.jwt import create_access_token, create_refresh_token
-from homunculus.auth.models import MFA_REQUIRED_ROLES, TenantMembership, User, UserRole
+from homunculus.auth.groups import bump_user, groups_of, summarize, tenant_of_user
+from homunculus.auth.jwt import JWT_SECRET, create_access_token, create_refresh_token
+from homunculus.auth.models import AUTH_LOCAL, User
 from homunculus.auth.totp import generate_provisioning_uri, generate_totp_secret, verify_totp
 
 # bcrypt is used directly: passlib has been unmaintained since 2020 and is incompatible with
@@ -36,9 +41,32 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False   # malformed stored hash must fail the login, not crash it
 
 
-async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
-    result = await db.execute(select(User).where(User.email == email))
-    return result.scalar_one_or_none()
+# Compared against when there is no such account, no local password, or an AD account: the
+# response then costs the same bcrypt work as a wrong password, so timing does not reveal
+# whether a login exists.
+_DUMMY_HASH = hash_password("homunculus-no-such-account")
+
+
+def normalize_login(value: str | None) -> str:
+    return (value or "").strip().lower()
+
+
+async def find_user_by_login(db: AsyncSession, login: str) -> User | None:
+    """By username OR e-mail, case-insensitively (both are stored lower-case)."""
+    key = normalize_login(login)
+    if not key:
+        return None
+    result = await db.execute(select(User).where(or_(User.username == key, User.email == key)))
+    return result.scalars().first()
+
+
+def verify_local_password(user: User | None, password: str) -> bool:
+    """True only for an existing LOCAL account whose bcrypt hash matches. Every other case
+    performs a dummy comparison and returns False."""
+    if user is None or user.auth_source != AUTH_LOCAL or not user.hashed_password:
+        verify_password(password, _DUMMY_HASH)
+        return False
+    return verify_password(password, user.hashed_password)
 
 
 async def get_user_by_id(db: AsyncSession, user_id: uuid.UUID) -> User | None:
@@ -46,47 +74,85 @@ async def get_user_by_id(db: AsyncSession, user_id: uuid.UUID) -> User | None:
     return result.scalar_one_or_none()
 
 
-async def authenticate_user(db: AsyncSession, email: str, password: str) -> User | None:
-    user = await get_user_by_email(db, email)
-    if not user or not user.is_active:
-        return None
-    if not verify_password(password, user.hashed_password):
-        return None
-    return user
+@dataclass(frozen=True)
+class AuthContext:
+    """What a token is minted from: the resolved tenant and the user's groups in it."""
+    tenant_id: uuid.UUID | None
+    tenant: str | None
+    groups: tuple[str, ...]
+    group_names: tuple[str, ...]
+    perms: frozenset[str]
+    mfa_required: bool
 
 
-async def get_user_memberships(
-    db: AsyncSession, user_id: uuid.UUID
-) -> list[TenantMembership]:
-    result = await db.execute(
-        select(TenantMembership).where(
-            TenantMembership.user_id == user_id,
-            TenantMembership.is_active == True,  # noqa: E712
-        )
+EMPTY_CONTEXT = AuthContext(None, None, (), (), frozenset(), False)
+
+
+async def build_context(db: AsyncSession, user: User) -> AuthContext:
+    ref = await tenant_of_user(db, user.id)
+    if ref is None:
+        return EMPTY_CONTEXT
+    summary = summarize(await groups_of(db, user.id, ref.id))
+    return AuthContext(tenant_id=ref.id, tenant=ref.slug, groups=summary.slugs,
+                       group_names=summary.names, perms=summary.perms,
+                       mfa_required=summary.mfa_required)
+
+
+def credential_fingerprint(user: User) -> str:
+    """A short keyed digest of the credentials a session was opened with (password hash + TOTP
+    secret). The refresh token carries it; `/auth/refresh` refuses a token whose fingerprint no
+    longer matches, so a password change or reset and an MFA reset end every session — not just
+    the one-hour access token. HMAC-keyed with the signing secret: the token is readable by the
+    client and the TOTP secret is part of the input."""
+    material = f"{user.hashed_password or ''}|{user.totp_secret or ''}".encode()
+    return hmac.new(JWT_SECRET.encode(), material, hashlib.sha256).hexdigest()[:16]
+
+
+def issue_tokens(user: User, ctx: AuthContext, *, mfa_verified: bool) -> dict:
+    """Access + refresh tokens. `requires_mfa` means "a TOTP step is still pending"."""
+    access = create_access_token(
+        subject=str(user.id),
+        extra={
+            "tenant": ctx.tenant,
+            "groups": list(ctx.groups),
+            "perms": sorted(ctx.perms),
+            "mfa_required": ctx.mfa_required,
+            "mfa_verified": mfa_verified,
+            "tv": int(user.token_version),
+        },
     )
-    return list(result.scalars().all())
+    refresh = create_refresh_token(subject=str(user.id),
+                                   extra={"mfa_verified": mfa_verified,
+                                          "cv": credential_fingerprint(user)})
+    return {
+        "access_token": access,
+        "refresh_token": refresh,
+        "token_type": "bearer",
+        "requires_mfa": bool(ctx.mfa_required and not mfa_verified),
+        "mfa_enrolled": bool(user.totp_enabled),
+    }
 
 
-def requires_mfa(role: UserRole) -> bool:
-    return role in MFA_REQUIRED_ROLES
+def mark_login(user: User) -> None:
+    user.last_login_at = datetime.now(timezone.utc)
 
 
 async def setup_totp(db: AsyncSession, user: User) -> tuple[str, str]:
-    """
-    Generate and store a new TOTP secret for the user.
-    Returns (secret, provisioning_uri).
-    NOTE: Secret is stored in plaintext here for MVP; in production encrypt with Fernet.
-    """
+    """Generate and store a new TOTP secret. Returns (secret, provisioning_uri).
+
+    First enrolment: `totp_enabled` stays False until the first verified code. REPLACING an
+    authenticator (only reachable from an MFA-verified session, see get_user_for_enrolment):
+    `totp_enabled` stays True, so the account never drops back to "not enrolled" — which would
+    reopen password-only enrolment. Abandoning the replacement locks the old device out; the
+    fix is an administrator's MFA reset (fails closed)."""
     secret = generate_totp_secret()
     user.totp_secret = secret
-    user.totp_enabled = False  # Only enabled after first successful verify
     await db.commit()
-    uri = generate_provisioning_uri(secret, user.email)
+    uri = generate_provisioning_uri(secret, user.email or user.username)
     return secret, uri
 
 
 async def enable_totp(db: AsyncSession, user: User, code: str) -> bool:
-    """Verify a TOTP code and mark TOTP as enabled."""
     if not user.totp_secret:
         return False
     if not verify_totp(user.totp_secret, code):
@@ -96,38 +162,17 @@ async def enable_totp(db: AsyncSession, user: User, code: str) -> bool:
     return True
 
 
-def issue_tokens(user: User, memberships: list[TenantMembership]) -> dict:
-    """
-    Issue access + refresh tokens.
-    Access token carries: user_id, roles per tenant, mfa_verified flag.
-    """
-    tenant_roles = {
-        str(m.tenant_id): m.role for m in memberships if m.role
-    }
-    access = create_access_token(
-        subject=str(user.id),
-        extra={"roles": tenant_roles, "mfa_verified": False},
-    )
-    refresh = create_refresh_token(subject=str(user.id))
-    return {
-        "access_token": access,
-        "refresh_token": refresh,
-        "token_type": "bearer",
-        "requires_mfa": user.totp_enabled,
-    }
+class PasswordError(ValueError):
+    """A password change that cannot be made; the message is shown to the user."""
 
 
-def issue_mfa_verified_tokens(user: User, memberships: list[TenantMembership]) -> dict:
-    """Issue tokens after successful TOTP verification."""
-    tenant_roles = {str(m.tenant_id): m.role for m in memberships if m.role}
-    access = create_access_token(
-        subject=str(user.id),
-        extra={"roles": tenant_roles, "mfa_verified": True},
-    )
-    refresh = create_refresh_token(subject=str(user.id))
-    return {
-        "access_token": access,
-        "refresh_token": refresh,
-        "token_type": "bearer",
-        "requires_mfa": False,
-    }
+async def change_password(db: AsyncSession, user: User, current: str, new: str) -> None:
+    if user.auth_source != AUTH_LOCAL:
+        raise PasswordError("Parola Active Directory tarafından yönetiliyor")
+    if not verify_local_password(user, current):
+        raise PasswordError("Mevcut parola yanlış")
+    if len(new) < 8:
+        raise PasswordError("Yeni parola en az 8 karakter olmalı")
+    user.hashed_password = hash_password(new)
+    await bump_user(db, user)
+    await db.commit()

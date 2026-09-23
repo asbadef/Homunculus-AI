@@ -182,6 +182,33 @@ def test_a_stale_token_version_is_refused_even_on_the_pre_mfa_route(real_client)
     assert res.status_code == 401 and res.json()["detail"] == "token_version"
 
 
+def test_a_legacy_token_without_tv_is_refused_so_the_client_refreshes(real_client):
+    client, stored = real_client
+    legacy = create_access_token(str(stored.id), extra={"roles": {"t": "NURSE"}})
+    res = client.get("/me", headers=_bearer(legacy))
+    assert res.status_code == 401 and res.json()["detail"] == "token_version"
+
+
+def test_a_token_without_tv_is_refused_even_for_a_user_at_version_zero(monkeypatch):
+    """The test above cannot tell "missing" from "0" (its user is at version 3). A user who has
+    never had a rights change sits at 0, and a token without `tv` must not pass for them."""
+    stored = _user(id=uuid.UUID("77777777-7777-7777-7777-777777777777"), token_version=0)
+
+    async def fake_get_user_by_id(_db, user_id):
+        return stored if user_id == stored.id else None
+
+    async def no_db():
+        yield None
+
+    monkeypatch.setattr(deps, "get_user_by_id", fake_get_user_by_id)
+    app = _app()
+    app.dependency_overrides[get_db] = no_db
+    client = TestClient(app)
+    legacy = create_access_token(str(stored.id), extra={"roles": {"t": "NURSE"}})
+    res = client.get("/me", headers=_bearer(legacy))
+    assert res.status_code == 401 and res.json()["detail"] == "token_version"
+
+
 @pytest.mark.parametrize("bad_tv", ["3", None])
 def test_a_non_integer_token_version_is_refused_not_a_server_error(real_client, bad_tv):
     client, stored = real_client

@@ -32,13 +32,17 @@ def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> st
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-def create_refresh_token(subject: str) -> str:
+def create_refresh_token(subject: str, extra: dict[str, Any] | None = None) -> str:
+    """The refresh token carries `mfa_verified` (set after a TOTP step) so that the hourly
+    transparent refresh does not send a verified clinician back to the MFA gate. It never
+    carries `tv`: a rights change must survive a refresh, not end the session."""
     payload = {
         "sub": subject,
         "iat": _now(),
         "exp": _now() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
         "jti": str(uuid.uuid4()),
         "type": "refresh",
+        **(extra or {}),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 

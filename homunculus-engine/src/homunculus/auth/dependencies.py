@@ -5,7 +5,8 @@ FastAPI dependencies for authentication and authorisation.
                             token version -> Principal (401 on any failure)
     get_principal           + the MFA gate: 403 `mfa_required` while a TOTP step is pending
     get_current_user        the User behind get_principal
-    get_current_user_pre_mfa the User behind get_principal_pre_mfa — ONLY for /auth/totp/*, /auth/me
+    get_current_user_pre_mfa the User behind get_principal_pre_mfa — ONLY for /auth/totp/verify
+                            and /auth/me
     get_user_for_enrolment  the User behind get_principal_pre_mfa, but an already-enrolled user
                             may only pass it once MFA is verified — see its docstring
     require_permission(*k)  any-of check against the token's `perms` -> 403 naming the keys
@@ -89,9 +90,10 @@ async def get_principal_pre_mfa(
     user = await get_user_by_id(db, user_id)
     if user is None or not user.is_active:
         raise _unauthorized()
-    tv = claims.get("tv", 0)  # missing `tv` still reads as 0 for now; Task 6 makes it mandatory
+    tv = claims.get("tv")
     if type(tv) is not int or tv != user.token_version:
-        # The user's rights changed after this token was minted (or the claim is malformed).
+        # The user's rights changed after this token was minted, or the claim is malformed or
+        # missing (a token from before `tv` existed carries no `perms` either).
         # The client refreshes and gets a token built from the current groups; nothing is lost
         # but one round trip.
         raise _unauthorized("token_version")
