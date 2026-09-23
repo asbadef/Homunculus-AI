@@ -107,6 +107,7 @@ class User(Base):
         cascade="all, delete-orphan",
         foreign_keys="UserGroup.user_id",
         lazy="raise",
+        passive_deletes=True,
     )
 
 
