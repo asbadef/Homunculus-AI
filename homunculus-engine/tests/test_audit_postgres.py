@@ -262,4 +262,4 @@ def test_migration_chain_has_a_single_head():
     children = set(revisions.values())
     heads = [rev for rev in revisions if rev not in children]
 
-    assert heads == ["0005"], f"expected a single head '0005', found {heads}"
+    assert heads == ["0006"], f"expected a single head '0006', found {heads}"
