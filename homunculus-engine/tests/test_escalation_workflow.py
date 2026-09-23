@@ -43,7 +43,8 @@ async def _env(db):
     await db.flush()
     bed = Bed(room_id=room.id, label="1A", state=BedState.AVAILABLE)
     db.add(bed)
-    user = User(email=f"dr{uuid.uuid4().hex[:6]}@example.com", full_name="Dr. Test",
+    user_email = f"dr{uuid.uuid4().hex[:6]}@example.com"
+    user = User(email=user_email, username=user_email, full_name="Dr. Test",
                 hashed_password="x")
     db.add(user)
     await db.flush()
@@ -328,7 +329,8 @@ async def test_handover_blocked_by_unacknowledged_critical(db_session):
     db = db_session
     tenant, unit, bed, user, patient = await _env(db)
     adm = await _admission(db, tenant, unit, bed, user)
-    incoming = User(email=f"in{uuid.uuid4().hex[:6]}@example.com",
+    incoming_email = f"in{uuid.uuid4().hex[:6]}@example.com"
+    incoming = User(email=incoming_email, username=incoming_email,
                     full_name="Dr. Devralan", hashed_password="x")
     db.add(incoming)
     await db.flush()

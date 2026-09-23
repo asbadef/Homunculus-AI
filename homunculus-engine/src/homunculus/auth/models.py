@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint,
+    Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, false,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -74,7 +74,9 @@ class User(Base):
         String(16), nullable=False, default=AUTH_LOCAL, server_default=AUTH_LOCAL
     )
     # AD objectGUID — stable across renames and OU moves (Plan 2).
-    external_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    external_id: Mapped[str | None] = mapped_column(
+        String(64), unique=True, nullable=True, index=True
+    )
     ldap_dn: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Incremented whenever the user's rights change; an access token whose `tv` claim differs
     # is refused, and the client's transparent refresh mints one with the current rights.
@@ -104,6 +106,7 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
         foreign_keys="UserGroup.user_id",
+        lazy="raise",
     )
 
 
@@ -145,9 +148,13 @@ class Group(Base):
     slug: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    mfa_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    mfa_required: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default=false()
+    )
     # Only `hospital_admin`: cannot be deleted; holds the whole catalogue by rule.
-    is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_system: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default=false()
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now
@@ -155,6 +162,7 @@ class Group(Base):
 
     permissions: Mapped[list[GroupPermission]] = relationship(
         "GroupPermission", back_populates="group", cascade="all, delete-orphan", lazy="selectin",
+        passive_deletes=True,
     )
 
     __table_args__ = (UniqueConstraint("tenant_id", "slug", name="uq_groups_tenant_slug"),)
@@ -195,7 +203,9 @@ class UserGroup(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
-    user: Mapped[User] = relationship("User", foreign_keys=[user_id], back_populates="group_links")
+    user: Mapped[User] = relationship(
+        "User", foreign_keys=[user_id], back_populates="group_links", lazy="raise",
+    )
     group: Mapped[Group] = relationship("Group", lazy="selectin")
 
 

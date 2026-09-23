@@ -102,7 +102,7 @@ def issue_tokens(user: User, memberships: list[TenantMembership]) -> dict:
     Access token carries: user_id, roles per tenant, mfa_verified flag.
     """
     tenant_roles = {
-        str(m.tenant_id): m.role.value for m in memberships
+        str(m.tenant_id): m.role for m in memberships if m.role
     }
     access = create_access_token(
         subject=str(user.id),
@@ -119,7 +119,7 @@ def issue_tokens(user: User, memberships: list[TenantMembership]) -> dict:
 
 def issue_mfa_verified_tokens(user: User, memberships: list[TenantMembership]) -> dict:
     """Issue tokens after successful TOTP verification."""
-    tenant_roles = {str(m.tenant_id): m.role.value for m in memberships}
+    tenant_roles = {str(m.tenant_id): m.role for m in memberships if m.role}
     access = create_access_token(
         subject=str(user.id),
         extra={"roles": tenant_roles, "mfa_verified": True},

@@ -49,9 +49,11 @@ async def _fixture_env(db, *, max_beds_per_nurse=2, n_beds=2):
         b = Bed(room_id=room.id, label=f"{i+1}A", state=BedState.AVAILABLE)
         db.add(b)
         beds.append(b)
-    attending = User(email=f"dr{uuid.uuid4().hex[:6]}@example.com",
+    attending_email = f"dr{uuid.uuid4().hex[:6]}@example.com"
+    attending = User(email=attending_email, username=attending_email,
                      full_name="Dr. Test", hashed_password="x")
-    nurse = User(email=f"hem{uuid.uuid4().hex[:6]}@example.com",
+    nurse_email = f"hem{uuid.uuid4().hex[:6]}@example.com"
+    nurse = User(email=nurse_email, username=nurse_email,
                  full_name="Hemşire Test", hashed_password="x")
     db.add_all([attending, nurse])
     await db.flush()
