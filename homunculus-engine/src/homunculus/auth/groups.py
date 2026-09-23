@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from homunculus.api.identity import hospital_for_slugs
 from homunculus.auth.models import (
@@ -40,7 +41,9 @@ class TenantRef:
 
 
 async def ensure_default_groups(db: AsyncSession, tenant_id: uuid.UUID) -> dict[str, Group]:
-    """Create any default group this tenant is missing. Idempotent. Returns slug -> Group."""
+    """Create any default group this tenant is missing. Idempotent. Returns every group of the
+    tenant (custom ones too) keyed by slug. Not safe against a concurrent call for the same
+    tenant — callers are tenant creation (fresh id) and the single-process boot seed."""
     result = await db.execute(select(Group).where(Group.tenant_id == tenant_id))
     existing = {g.slug: g for g in result.scalars().all()}
     for spec in DEFAULT_GROUPS:
@@ -75,7 +78,9 @@ def summarize(links: Iterable[UserGroup]) -> GroupSummary:
     if any(g.is_system for g in groups):
         perms = ALL_PERMISSIONS
     else:
-        perms = effective_permissions(g.permission_keys for g in groups)
+        # Intersected with ALL_PERMISSIONS so a key retired from the catalogue, but still sitting
+        # in a group's rows from before it was retired, never reaches a token.
+        perms = effective_permissions(g.permission_keys for g in groups) & ALL_PERMISSIONS
     return GroupSummary(
         slugs=tuple(g.slug for g in groups),
         names=tuple(g.name for g in groups),
@@ -84,12 +89,29 @@ def summarize(links: Iterable[UserGroup]) -> GroupSummary:
     )
 
 
+async def bump_user(db: AsyncSession, user: User) -> int:
+    """Increment the user's token_version IN SQL and keep the loaded object in step. A
+    Python-side `+= 1` loses a bump when the in-memory value is stale (e.g. after
+    `bump_group_members`), and races with a concurrent edit; this cannot."""
+    tv = (await db.execute(
+        update(User).where(User.id == user.id)
+        .values(token_version=User.token_version + 1)
+        .returning(User.token_version)
+        .execution_options(synchronize_session=False)
+    )).scalar_one()
+    set_committed_value(user, "token_version", tv)
+    return tv
+
+
 async def set_manual_groups(
     db: AsyncSession, *, user: User, tenant_id: uuid.UUID,
     group_ids: Iterable[uuid.UUID], granted_by_id: uuid.UUID | None,
 ) -> list[UserGroup]:
     """Make the user's MANUAL memberships in this tenant exactly `group_ids`. LDAP-sourced rows
-    are never touched here. Bumps the user's token version."""
+    are never touched here: a group held through the AD mapping stays that single row, and
+    requesting it manually is a no-op — the primary key is (user_id, group_id), so inserting a
+    second, manual row for the same group would violate it. Bumps the user's token version,
+    unless nothing actually changed."""
     wanted = set(group_ids)
     if wanted:
         rows = (await db.execute(
@@ -99,19 +121,25 @@ async def set_manual_groups(
             raise GroupError("unknown group for this tenant")
     current = await groups_of(db, user.id, tenant_id)
     manual = {link.group_id: link for link in current if link.source == SOURCE_MANUAL}
-    for group_id, link in manual.items():
-        if group_id not in wanted:
-            await db.delete(link)
-    for group_id in wanted - set(manual):
+    held_otherwise = {link.group_id for link in current if link.source != SOURCE_MANUAL}
+    to_delete = [link for gid, link in manual.items() if gid not in wanted]
+    to_add = wanted - set(manual) - held_otherwise
+    if not to_delete and not to_add:
+        return current
+    for link in to_delete:
+        await db.delete(link)
+    for group_id in to_add:
         db.add(UserGroup(user_id=user.id, group_id=group_id, source=SOURCE_MANUAL,
                          granted_by_id=granted_by_id))
-    user.token_version += 1
     await db.flush()
+    await bump_user(db, user)
     return await groups_of(db, user.id, tenant_id)
 
 
 async def bump_group_members(db: AsyncSession, group_id: uuid.UUID) -> int:
-    """Invalidate every member's access tokens after the group itself changed."""
+    """Invalidate every member's access tokens after the group itself changed. User objects
+    already loaded in this session keep their old token_version; re-read them if you need the
+    value."""
     members = select(UserGroup.user_id).where(UserGroup.group_id == group_id)
     result = await db.execute(
         update(User).where(User.id.in_(members)).values(token_version=User.token_version + 1)
@@ -120,7 +148,7 @@ async def bump_group_members(db: AsyncSession, group_id: uuid.UUID) -> int:
     return result.rowcount or 0
 
 
-def _holds(tenant_id: uuid.UUID, permission: str, excluding_group_id: uuid.UUID | None):
+def _holds(tenant_id: uuid.UUID, permission: str):
     """EXISTS: the outer User has `permission` through some group of the tenant. A system group
     counts for every permission, matching the rule in `summarize`."""
     stmt = (
@@ -130,25 +158,29 @@ def _holds(tenant_id: uuid.UUID, permission: str, excluding_group_id: uuid.UUID 
         .where(UserGroup.user_id == User.id, Group.tenant_id == tenant_id,
                (GroupPermission.permission == permission) | (Group.is_system == True))  # noqa: E712
     )
-    if excluding_group_id is not None:
-        stmt = stmt.where(Group.id != excluding_group_id)
     return stmt.exists()
 
 
-async def count_admins(
-    db: AsyncSession, tenant_id: uuid.UUID, *,
-    excluding_user_id: uuid.UUID | None = None, excluding_group_id: uuid.UUID | None = None,
-) -> int:
+async def count_admins(db: AsyncSession, tenant_id: uuid.UUID) -> int:
     """Active ADMINISTRATORS of the tenant: users holding both `users.manage` and
-    `groups.manage`, through any of their groups. The last one is protected (spec §6)."""
+    `groups.manage`, through any of their groups, with an active membership in this tenant.
+    The last one is protected (spec §6).
+
+    Call this AFTER applying the change you want to guard, in the same transaction: it takes a
+    per-tenant advisory lock so two concurrent demotions cannot both see the guard pass, and
+    holds it until the caller commits or rolls back — under READ COMMITTED the count then sees
+    the other transaction's committed change. Roll back on 0."""
+    await db.execute(select(func.pg_advisory_xact_lock(
+        func.hashtextextended(f"homunculus.admin-guard:{tenant_id}", 0))))
     stmt = (
         select(func.count(User.id))
         .where(User.is_active == True)  # noqa: E712
-        .where(_holds(tenant_id, "users.manage", excluding_group_id))
-        .where(_holds(tenant_id, "groups.manage", excluding_group_id))
+        .where(_holds(tenant_id, "users.manage"))
+        .where(_holds(tenant_id, "groups.manage"))
+        .where(select(TenantMembership.id).where(
+            TenantMembership.user_id == User.id, TenantMembership.tenant_id == tenant_id,
+            TenantMembership.is_active == True).exists())  # noqa: E712
     )
-    if excluding_user_id is not None:
-        stmt = stmt.where(User.id != excluding_user_id)
     return int((await db.execute(stmt)).scalar_one())
 
 
