@@ -1259,11 +1259,16 @@ def _sync_url() -> str:
     return TEST_DATABASE_URL
 
 
-def _owned(name, type_, parent_names):
+def _owned(object_, name, type_, reflected, compare_to):
+    """include_object, not include_name: Alembic runs include_name only over the REFLECTED
+    (database) side, so excluded-but-existing tables would show up as "missing" on the metadata
+    side. include_object is consulted on both sides."""
     if type_ == "table":
         return name in OWNED_TABLES
-    if type_ == "column" and parent_names.get("table_name") == "users":
-        return name in OWNED_USER_COLUMNS
+    if type_ == "column":
+        table_name = object_.table.name if object_ is not None else None
+        if table_name == "users":
+            return name in OWNED_USER_COLUMNS
     return True
 
 
@@ -1289,7 +1294,7 @@ def test_alembic_and_the_models_agree_on_the_rbac_schema(migrated):
         ctx = MigrationContext.configure(conn, opts={
             "compare_type": True,
             "compare_server_default": False,   # text renderings differ; the values are tested elsewhere
-            "include_name": _owned,
+            "include_object": _owned,
         })
         diffs = compare_metadata(ctx, Base.metadata)
     assert diffs == [], diffs
@@ -1299,6 +1304,10 @@ Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_migr
 Expected: `1 passed` with `TEST_DATABASE_URL` (an empty diff list), `1 skipped` without. If it reports a
 difference, fix the MIGRATION to match the model unless the model is wrong — the models are what
 every service is written against.
+
+- [ ] **Step 5d: The single-head guard**
+
+`tests/test_audit_postgres.py::test_migration_chain_has_a_single_head` pins the head revision; bump its expected value from `"0005"` to `"0006"` (one-line change, separate commit `test(db): bump the single-head guard to 0006`).
 
 - [ ] **Step 6: Commit**
 
