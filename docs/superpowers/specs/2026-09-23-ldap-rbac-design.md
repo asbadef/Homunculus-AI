@@ -299,7 +299,12 @@ another tenant is a 404.
   any of their groups). The last administrator of a tenant cannot be deactivated, and no group
   change may leave the tenant without one — including changes an administrator makes to their
   own groups. 409 `Son yönetici pasifleştirilemez` / `Son yönetici yetkisi kaldırılamaz`.
-- Manual and LDAP memberships are separate rows; neither operation can delete the other's.
+- Manual and LDAP memberships are separate rows; neither operation can delete the other's. A
+  user holds a given group through ONE row (the key is user + group): a manual request for a
+  group already held through the AD mapping is a no-op, and the LDAP sync leaves a manual row for a
+  mapped group as it is.
+- The guard is race-free: it runs after the change, in the same transaction, under a per-tenant
+  transaction-scoped advisory lock, and counts only users with an active membership in the tenant.
 
 **Audit.** Every mutation appends to the existing `AuditLog` for the tenant with
 `event_type = admin`, `kind` = one of `user.create`, `user.update`, `user.groups`,
@@ -355,7 +360,8 @@ list and is what the unit tests use.
    (an automatic off-boarding sync is a separate, scheduled slice — see out of scope).
 4. Update `full_name`, `email`, `ldap_dn`.
 5. **Group sync:** `memberOf` (case-insensitive) ∩ `ldap_group_mappings` for the tenant → the set
-   of target groups. The user's `source = ldap` rows are made equal to that set (rows added and
+   of target groups. The sync runs the §6 administrator guard: a removal that would leave the
+   tenant without an administrator is skipped and audited (`ldap.sync.guarded`), never applied. The user's `source = ldap` rows are made equal to that set (rows added and
    removed); `source = manual` rows are untouched. If the set changed, an `admin/user.groups`
    audit event is written with `actor = ldap-sync` and `token_version` is bumped.
 6. Issue tokens as in §4.

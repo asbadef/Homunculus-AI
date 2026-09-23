@@ -17,6 +17,14 @@ catalogue by rule at token issuance and its rights are immutable; an *administra
 last-admin guard holds both `users.manage` and `groups.manage`; migration 0006's frozen defaults
 are pinned to a snapshot in the test, not to the live defaults. The spec carries the same changes.
 
+**Task 4 as amended in review:** `auth/groups.py` gained `bump_user(db, user)` (a SQL-side
+`token_version` increment that keeps the loaded object in step); every later task bumps a single
+user through it, never with `+= 1`. `count_admins(db, tenant_id)` takes no `excluding_*` arguments,
+locks the tenant's admin guard (`pg_advisory_xact_lock`) and counts only active memberships; call
+it after applying a change, in the same transaction. `set_manual_groups` skips groups already held
+through the AD mapping and does not bump when nothing changed. The committed code and tests are
+authoritative where they differ from the Task 4 text below.
+
 **Do not deploy mid-plan.** Between migration 0006 (Task 3) and the sign-in rewrite (Task 6) and the
 seed rewrite (Task 7), stored e-mails are lower-cased while sign-in still matches case-sensitively,
 and the seed cannot create the administrator. The branch reaches the VM only after Task 20.
@@ -2222,7 +2230,7 @@ import bcrypt
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from homunculus.auth.groups import groups_of, summarize, tenant_of_user
+from homunculus.auth.groups import bump_user, groups_of, summarize, tenant_of_user
 from homunculus.auth.jwt import create_access_token, create_refresh_token
 from homunculus.auth.models import AUTH_LOCAL, User
 from homunculus.auth.totp import generate_provisioning_uri, generate_totp_secret, verify_totp
@@ -2366,7 +2374,7 @@ async def change_password(db: AsyncSession, user: User, current: str, new: str) 
     if len(new) < 8:
         raise PasswordError("Yeni parola en az 8 karakter olmalı")
     user.hashed_password = hash_password(new)
-    user.token_version += 1
+    await bump_user(db, user)
     await db.commit()
 ```
 
@@ -2881,6 +2889,23 @@ async def test_seed_is_idempotent(db_session):
     assert (await db_session.execute(select(func.count(Group.id)))).scalar_one() == 11
 
 
+async def test_seed_does_not_re_promote_a_demoted_bootstrap_admin(db_session):
+    """The seed runs on every boot. A hospital that moved the generic account out of
+    hospital_admin must not find it promoted again after the next restart."""
+    tenant, user = await seed_bootstrap(db_session, **ARGS)
+    groups = {g.slug: g for g in (await db_session.execute(
+        select(Group).where(Group.tenant_id == tenant.id))).scalars()}
+    from homunculus.auth.groups import set_manual_groups
+    await set_manual_groups(db_session, user=user, tenant_id=tenant.id,
+                            group_ids=[groups["auditor"].id], granted_by_id=None)
+    await db_session.commit()
+
+    await seed_bootstrap(db_session, **ARGS)                  # the next boot
+
+    slugs = [link.group.slug for link in await groups_of(db_session, user.id, tenant.id)]
+    assert slugs == ["auditor"]
+
+
 async def test_seed_refuses_an_email_the_login_api_would_reject(db_session):
     """`.local` / `localhost` fail EmailStr validation; refuse them at seed time so no
     deployment ships an administrator whose address the UI's own validation rejects."""
@@ -2955,6 +2980,7 @@ async def seed_bootstrap(
         await db.flush()
     groups = await ensure_default_groups(db, tenant.id)
 
+    created = False
     user = (await db.execute(
         select(User).where(User.username == key)
     )).scalar_one_or_none()
@@ -2965,6 +2991,7 @@ async def seed_bootstrap(
         )
         db.add(user)
         await db.flush()
+        created = True
 
     membership = (await db.execute(
         select(TenantMembership).where(
@@ -2975,11 +3002,17 @@ async def seed_bootstrap(
     if membership is None:
         db.add(TenantMembership(user_id=user.id, tenant_id=tenant.id))
         await db.flush()
+        created = True
 
-    held = {link.group.slug for link in await groups_of(db, user.id, tenant.id)}
-    if "hospital_admin" not in held:
+    # Grant hospital_admin ONLY to an account or membership this run created. The seed runs on
+    # every boot; re-granting on each start would silently undo a hospital's decision to demote
+    # the generic bootstrap account. Additive, so it never strips groups the account already has.
+    if created:
+        links = await groups_of(db, user.id, tenant.id)
+        manual_ids = {link.group_id for link in links if link.source == "manual"}
         await set_manual_groups(db, user=user, tenant_id=tenant.id,
-                                group_ids=[groups["hospital_admin"].id], granted_by_id=None)
+                                group_ids=manual_ids | {groups["hospital_admin"].id},
+                                granted_by_id=None)
 
     await db.commit()
     await db.refresh(tenant)
@@ -3115,7 +3148,7 @@ Expected: only `src/homunculus/api/infinity_research.py` (untracked, Infinity br
 - [ ] **Step 8: Run the suite**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py`
-Expected: all pass (the seed tests are skipped without `TEST_DATABASE_URL`; with it, 3 pass).
+Expected: all pass (the seed tests are skipped without `TEST_DATABASE_URL`; with it, 4 pass).
 
 - [ ] **Step 9: Commit**
 
@@ -4026,7 +4059,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from homunculus.auth.groups import (
-    GroupError, bump_group_members, count_admins, set_manual_groups,
+    GroupError, bump_group_members, bump_user, count_admins, set_manual_groups,
 )
 from homunculus.auth.models import (
     AUTH_LOCAL, Group, GroupPermission, LdapGroupMapping, TenantMembership, User, UserGroup,
@@ -4233,8 +4266,8 @@ async def patch_user(db: AsyncSession, tenant_id: uuid.UUID, user: User, *,
         user.email = mail
     if is_active is not None and is_active != user.is_active:
         user.is_active = is_active
-        user.token_version += 1
         await db.flush()
+        await bump_user(db, user)
         if not is_active and await count_admins(db, tenant_id) == 0:
             raise AdminError(409, "Son yönetici pasifleştirilemez")
     await db.flush()
@@ -4257,15 +4290,15 @@ async def reset_password(db: AsyncSession, user: User, password: str) -> None:
     if user.auth_source != AUTH_LOCAL:
         raise AdminError(400, "Parola Active Directory tarafından yönetiliyor")
     user.hashed_password = hash_password(password)
-    user.token_version += 1
     await db.flush()
+    await bump_user(db, user)
 
 
 async def reset_mfa(db: AsyncSession, user: User) -> None:
     user.totp_secret = None
     user.totp_enabled = False
-    user.token_version += 1
     await db.flush()
+    await bump_user(db, user)
 ```
 
 - [ ] **Step 5: Write the router**
