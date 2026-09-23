@@ -4159,7 +4159,7 @@ from homunculus.admin.service import AdminError
 from homunculus.auth.audit import append_audit
 from homunculus.auth.dependencies import Principal, get_principal, require_permission
 from homunculus.auth.models import Group, User
-from homunculus.auth.permissions import PERMISSIONS
+from homunculus.auth.permissions import ALL_PERMISSIONS, PERMISSIONS
 from homunculus.db import get_db
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -4182,7 +4182,10 @@ async def _scope(principal: Principal, db: AsyncSession) -> uuid.UUID:
 def _group_out(group: Group, count: int) -> GroupOut:
     return GroupOut(id=group.id, slug=group.slug, name=group.name,
                     description=group.description, mfa_required=group.mfa_required,
-                    is_system=group.is_system, permissions=group.permission_keys,
+                    is_system=group.is_system,
+                    # A system group's rights are the whole catalogue by rule (spec §3); report
+                    # that, not the rows seeded when the tenant was created.
+                    permissions=sorted(ALL_PERMISSIONS) if group.is_system else group.permission_keys,
                     member_count=count)
 
 
