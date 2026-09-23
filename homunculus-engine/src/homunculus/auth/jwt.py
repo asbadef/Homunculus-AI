@@ -44,5 +44,6 @@ def create_refresh_token(subject: str) -> str:
 
 
 def decode_token(token: str) -> dict[str, Any]:
-    """Raises JWTError on invalid/expired token."""
-    return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    """Raises JWTError on invalid/expired token, or one missing `exp`/`sub`."""
+    return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM],
+                       options={"require_exp": True, "require_sub": True})
