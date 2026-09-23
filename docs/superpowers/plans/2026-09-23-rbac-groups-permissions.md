@@ -17,6 +17,10 @@ catalogue by rule at token issuance and its rights are immutable; an *administra
 last-admin guard holds both `users.manage` and `groups.manage`; migration 0006's frozen defaults
 are pinned to a snapshot in the test, not to the live defaults. The spec carries the same changes.
 
+**Do not deploy mid-plan.** Between migration 0006 (Task 3) and the sign-in rewrite (Task 6) and the
+seed rewrite (Task 7), stored e-mails are lower-cased while sign-in still matches case-sensitively,
+and the seed cannot create the administrator. The branch reaches the VM only after Task 20.
+
 **Baseline note:** the working tree contains untracked Infinity-branch files. `tests/test_infinity_research_api.py` fails at collection *before this plan starts* (`UserRole.BIOMEDICAL` does not exist). Every full backend run in this plan therefore uses `--ignore=tests/test_infinity_research_api.py`. Do not modify the untracked Infinity files; the spec records that `infinity_research.py` becomes `require_permission("devices.manage")` when that branch is merged.
 
 **Commands:** backend tests run from `homunculus-engine/` with `.venv/Scripts/python.exe -m pytest …`; DB-backed tests need `TEST_DATABASE_URL` (a Postgres whose database name contains `test`, see `tests/conftest.py`) and are skipped otherwise. Frontend tests run from `dashboard/` with `npx vitest run …`. Commits are made from the repository root.
@@ -864,8 +868,12 @@ ONE STATEMENT PER op.execute / bind.execute: migrations run through the async en
 prepares every statement, so a string holding several statements fails (see 0004).
 
 DOWNGRADE IS LOSSY BY DESIGN: it drops the group tables and restores `role NOT NULL`. It cannot
-rebuild roles from groups, and it fails if any user has no password (an AD account) or any
-membership has a NULL role. Back the database up before `upgrade` (runbook: pg_dump).
+rebuild roles from groups, and it fails if any user has no password or no e-mail (an AD account)
+or any membership has a NULL role. Back the database up before `upgrade` (runbook: pg_dump).
+
+An INACTIVE membership keeps its legacy `role` but gets no group: reactivating it later grants no
+rights until an administrator assigns a group. That is intended. Offline mode (`alembic upgrade
+--sql`) is not supported: the seeding reads the tenants table.
 
 Revision ID: 0006
 Revises: 0005
@@ -990,6 +998,19 @@ def _convert_memberships_sql() -> str:
 
 
 def upgrade() -> None:
+    # ---- pre-flight: the username backfill needs distinct, lower-cased e-mails that fit ----
+    bind = op.get_bind()
+    clashes = [row[0] for row in bind.execute(sa.text(
+        "SELECT lower(email) FROM users GROUP BY lower(email) HAVING count(*) > 1")).all()]
+    too_long = [row[0] for row in bind.execute(sa.text(
+        "SELECT email FROM users WHERE length(email) > 128")).all()]
+    if clashes or too_long:
+        raise RuntimeError(
+            "Migration 0006 cannot backfill usernames. E-mails that differ only by case: "
+            f"{clashes or 'none'}; e-mails longer than 128 characters: {too_long or 'none'}. "
+            "Merge or rename these accounts, then run the upgrade again. Nothing was changed."
+        )
+
     # ---- tables ----
     op.create_table(
         "groups",
@@ -1064,7 +1085,6 @@ def upgrade() -> None:
     op.alter_column("tenant_memberships", "role", nullable=True)
 
     # ---- default groups for every tenant that exists today ----
-    bind = op.get_bind()
     tenant_ids = [row[0] for row in bind.execute(sa.text("SELECT id FROM tenants")).all()]
     for tenant_id in tenant_ids:
         for spec in _DEFAULT_GROUPS:
@@ -1179,41 +1199,71 @@ def test_legacy_roles_become_group_memberships(clean_db):
     engine, cfg = clean_db
     command.upgrade(cfg, "0005")
 
-    tenant_id = uuid.uuid4()
+    demo, other = uuid.uuid4(), uuid.uuid4()
     with engine.begin() as conn:
-        conn.execute(text("INSERT INTO tenants (id, name, slug, country_code, timezone, is_active) "
-                          "VALUES (:id, 'Demo', 'demo-hastanesi', 'TR', 'UTC', true)"),
-                     {"id": tenant_id})
-        for role in LEGACY:
+        for tid, slug in ((demo, "demo-hastanesi"), (other, "other")):
+            conn.execute(text("INSERT INTO tenants (id, name, slug, country_code, timezone, is_active) "
+                              "VALUES (:id, :slug, :slug, 'TR', 'UTC', true)"), {"id": tid, "slug": slug})
+
+        def add_user(email, name):
             uid = uuid.uuid4()
             conn.execute(text("INSERT INTO users (id, email, full_name, hashed_password, totp_enabled, "
                               "is_active, is_platform_support) VALUES (:id, :email, :name, 'x', false, "
-                              "true, false)"),
-                         {"id": uid, "email": f"{role}@Example.com", "name": role})
+                              "true, false)"), {"id": uid, "email": email, "name": name})
+            return uid
+
+        def add_membership(uid, tid, role, active=True):
             conn.execute(text("INSERT INTO tenant_memberships (id, user_id, tenant_id, role, is_active) "
-                              "VALUES (:id, :uid, :tid, CAST(:role AS userrole), true)"),
-                         {"id": uuid.uuid4(), "uid": uid, "tid": tenant_id, "role": role})
+                              "VALUES (:id, :uid, :tid, CAST(:role AS userrole), :active)"),
+                         {"id": uuid.uuid4(), "uid": uid, "tid": tid, "role": role, "active": active})
+
+        for role in LEGACY:
+            add_membership(add_user(f"{role}@Example.com", role), demo, role)
+        add_membership(add_user("inactive@example.com", "INACTIVE"), demo, "ATTENDING", active=False)
+        add_membership(add_user("other-nurse@example.com", "OTHER_NURSE"), other, "NURSE")
 
     command.upgrade(cfg, "head")
 
     with engine.begin() as conn:
-        groups = conn.execute(text("SELECT count(*) FROM groups WHERE tenant_id = :t"),
-                              {"t": tenant_id}).scalar_one()
-        assert groups == 11
+        per_tenant = dict(conn.execute(text("SELECT tenant_id, count(*) FROM groups GROUP BY tenant_id")).all())
+        assert per_tenant == {demo: 11, other: 11}
         rows = conn.execute(text(
-            "SELECT u.full_name AS role, g.slug, ug.source FROM user_groups ug "
-            "JOIN users u ON u.id = ug.user_id JOIN groups g ON g.id = ug.group_id")).all()
-        assert len(rows) == len(LEGACY)                       # exactly one row per membership
-        assert {r.role: r.slug for r in rows} == EXPECTED
-        assert {r.source for r in rows} == {"manual"}
-        usernames = conn.execute(text("SELECT username, email FROM users")).all()
-        assert all(r.username == r.email and r.email == r.email.lower() for r in usernames)
-        nulls = conn.execute(text("SELECT count(*) FROM tenant_memberships WHERE role IS NULL")).scalar_one()
-        assert nulls == 0                                     # the legacy value is kept, not cleared
+            "SELECT u.full_name AS who, g.slug, g.tenant_id AS group_tenant, m.tenant_id AS member_tenant, "
+            "ug.source FROM user_groups ug JOIN users u ON u.id = ug.user_id "
+            "JOIN groups g ON g.id = ug.group_id JOIN tenant_memberships m ON m.user_id = ug.user_id")).all()
+        assert len(rows) == len(LEGACY) + 1                          # one row per ACTIVE membership
+        assert {r.who: r.slug for r in rows if r.who != "OTHER_NURSE"} == EXPECTED
+        assert next(r for r in rows if r.who == "OTHER_NURSE").slug == "nurse"
+        assert all(r.group_tenant == r.member_tenant for r in rows)   # never across tenants
+        assert all(r.source == "manual" for r in rows)
+        assert "INACTIVE" not in {r.who for r in rows}                # inactive membership: no group
+        users = conn.execute(text("SELECT username, email, auth_source, token_version FROM users")).all()
+        assert all(r.username == r.email == r.email.lower() for r in users)
+        assert all(r.auth_source == "local" and r.token_version == 0 for r in users)
+        nullable = conn.execute(text(
+            "SELECT is_nullable FROM information_schema.columns "
+            "WHERE table_name = 'tenant_memberships' AND column_name = 'role'")).scalar_one()
+        assert nullable == "YES"
+        assert conn.execute(text("SELECT count(*) FROM tenant_memberships WHERE role IS NULL")).scalar_one() == 0
+
+
+def test_email_case_collisions_block_the_upgrade_before_any_change(clean_db):
+    engine, cfg = clean_db
+    command.upgrade(cfg, "0005")
+    with engine.begin() as conn:
+        for email in ("Ayse@example.com", "ayse@example.com"):
+            conn.execute(text("INSERT INTO users (id, email, full_name, hashed_password, totp_enabled, "
+                              "is_active, is_platform_support) VALUES (:id, :email, 'x', 'x', false, "
+                              "true, false)"), {"id": uuid.uuid4(), "email": email})
+    with pytest.raises(Exception, match="differ only by case"):
+        command.upgrade(cfg, "head")
+    with engine.begin() as conn:
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0005"
+        assert conn.execute(text("SELECT to_regclass('public.groups')")).scalar_one() is None
 ```
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_migration_0006_conversion.py -q`
-Expected: `1 passed` with `TEST_DATABASE_URL`, `1 skipped` without.
+Expected: `2 passed` with `TEST_DATABASE_URL`, `2 skipped` without.
 
 - [ ] **Step 5c: Prove the migration and the models describe the same RBAC schema**
 
