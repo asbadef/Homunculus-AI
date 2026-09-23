@@ -57,34 +57,64 @@ def test_legacy_roles_become_group_memberships(clean_db):
     engine, cfg = clean_db
     command.upgrade(cfg, "0005")
 
-    tenant_id = uuid.uuid4()
+    demo, other = uuid.uuid4(), uuid.uuid4()
     with engine.begin() as conn:
-        conn.execute(text("INSERT INTO tenants (id, name, slug, country_code, timezone, is_active) "
-                          "VALUES (:id, 'Demo', 'demo-hastanesi', 'TR', 'UTC', true)"),
-                     {"id": tenant_id})
-        for role in LEGACY:
+        for tid, slug in ((demo, "demo-hastanesi"), (other, "other")):
+            conn.execute(text("INSERT INTO tenants (id, name, slug, country_code, timezone, is_active) "
+                              "VALUES (:id, :slug, :slug, 'TR', 'UTC', true)"), {"id": tid, "slug": slug})
+
+        def add_user(email, name):
             uid = uuid.uuid4()
             conn.execute(text("INSERT INTO users (id, email, full_name, hashed_password, totp_enabled, "
                               "is_active, is_platform_support) VALUES (:id, :email, :name, 'x', false, "
-                              "true, false)"),
-                         {"id": uid, "email": f"{role}@Example.com", "name": role})
+                              "true, false)"), {"id": uid, "email": email, "name": name})
+            return uid
+
+        def add_membership(uid, tid, role, active=True):
             conn.execute(text("INSERT INTO tenant_memberships (id, user_id, tenant_id, role, is_active) "
-                              "VALUES (:id, :uid, :tid, CAST(:role AS userrole), true)"),
-                         {"id": uuid.uuid4(), "uid": uid, "tid": tenant_id, "role": role})
+                              "VALUES (:id, :uid, :tid, CAST(:role AS userrole), :active)"),
+                         {"id": uuid.uuid4(), "uid": uid, "tid": tid, "role": role, "active": active})
+
+        for role in LEGACY:
+            add_membership(add_user(f"{role}@Example.com", role), demo, role)
+        add_membership(add_user("inactive@example.com", "INACTIVE"), demo, "ATTENDING", active=False)
+        add_membership(add_user("other-nurse@example.com", "OTHER_NURSE"), other, "NURSE")
 
     command.upgrade(cfg, "head")
 
     with engine.begin() as conn:
-        groups = conn.execute(text("SELECT count(*) FROM groups WHERE tenant_id = :t"),
-                              {"t": tenant_id}).scalar_one()
-        assert groups == 11
+        per_tenant = dict(conn.execute(text("SELECT tenant_id, count(*) FROM groups GROUP BY tenant_id")).all())
+        assert per_tenant == {demo: 11, other: 11}
         rows = conn.execute(text(
-            "SELECT u.full_name AS role, g.slug, ug.source FROM user_groups ug "
-            "JOIN users u ON u.id = ug.user_id JOIN groups g ON g.id = ug.group_id")).all()
-        assert len(rows) == len(LEGACY)                       # exactly one row per membership
-        assert {r.role: r.slug for r in rows} == EXPECTED
-        assert {r.source for r in rows} == {"manual"}
-        usernames = conn.execute(text("SELECT username, email FROM users")).all()
-        assert all(r.username == r.email and r.email == r.email.lower() for r in usernames)
-        nulls = conn.execute(text("SELECT count(*) FROM tenant_memberships WHERE role IS NULL")).scalar_one()
-        assert nulls == 0                                     # the legacy value is kept, not cleared
+            "SELECT u.full_name AS who, g.slug, g.tenant_id AS group_tenant, m.tenant_id AS member_tenant, "
+            "ug.source FROM user_groups ug JOIN users u ON u.id = ug.user_id "
+            "JOIN groups g ON g.id = ug.group_id JOIN tenant_memberships m ON m.user_id = ug.user_id")).all()
+        assert len(rows) == len(LEGACY) + 1                          # one row per ACTIVE membership
+        assert {r.who: r.slug for r in rows if r.who != "OTHER_NURSE"} == EXPECTED
+        assert next(r for r in rows if r.who == "OTHER_NURSE").slug == "nurse"
+        assert all(r.group_tenant == r.member_tenant for r in rows)   # never across tenants
+        assert all(r.source == "manual" for r in rows)
+        assert "INACTIVE" not in {r.who for r in rows}                # inactive membership: no group
+        users = conn.execute(text("SELECT username, email, auth_source, token_version FROM users")).all()
+        assert all(r.username == r.email == r.email.lower() for r in users)
+        assert all(r.auth_source == "local" and r.token_version == 0 for r in users)
+        nullable = conn.execute(text(
+            "SELECT is_nullable FROM information_schema.columns "
+            "WHERE table_name = 'tenant_memberships' AND column_name = 'role'")).scalar_one()
+        assert nullable == "YES"
+        assert conn.execute(text("SELECT count(*) FROM tenant_memberships WHERE role IS NULL")).scalar_one() == 0
+
+
+def test_email_case_collisions_block_the_upgrade_before_any_change(clean_db):
+    engine, cfg = clean_db
+    command.upgrade(cfg, "0005")
+    with engine.begin() as conn:
+        for email in ("Ayse@example.com", "ayse@example.com"):
+            conn.execute(text("INSERT INTO users (id, email, full_name, hashed_password, totp_enabled, "
+                              "is_active, is_platform_support) VALUES (:id, :email, 'x', 'x', false, "
+                              "true, false)"), {"id": uuid.uuid4(), "email": email})
+    with pytest.raises(Exception, match="differ only by case"):
+        command.upgrade(cfg, "head")
+    with engine.begin() as conn:
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0005"
+        assert conn.execute(text("SELECT to_regclass('public.groups')")).scalar_one() is None

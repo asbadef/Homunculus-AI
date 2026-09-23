@@ -12,7 +12,12 @@ prepares every statement, so a string holding several statements fails (see 0004
 
 DOWNGRADE IS LOSSY BY DESIGN: it drops the group tables and restores `role NOT NULL`. It cannot
 rebuild roles from groups, and it fails if any user has no password (an AD account) or any
-membership has a NULL role. Back the database up before `upgrade` (runbook: pg_dump).
+membership has a NULL role. Back the database up before `upgrade` (runbook: pg_dump). The
+downgrade also fails restoring `email SET NOT NULL` if an AD account was created with no e-mail
+in the meantime. An INACTIVE membership keeps its legacy `role` value but gets no `user_groups`
+row; reactivating it later grants no rights until an administrator assigns a group — this is
+intended, not a bug. Offline generation (`alembic upgrade --sql`) is not supported: seeding the
+default groups reads the `tenants` table at migration time.
 
 Revision ID: 0006
 Revises: 0005
@@ -137,6 +142,19 @@ def _convert_memberships_sql() -> str:
 
 
 def upgrade() -> None:
+    # ---- pre-flight: the username backfill needs distinct, lower-cased e-mails that fit ----
+    bind = op.get_bind()
+    clashes = [row[0] for row in bind.execute(sa.text(
+        "SELECT lower(email) FROM users GROUP BY lower(email) HAVING count(*) > 1")).all()]
+    too_long = [row[0] for row in bind.execute(sa.text(
+        "SELECT email FROM users WHERE length(email) > 128")).all()]
+    if clashes or too_long:
+        raise RuntimeError(
+            "Migration 0006 cannot backfill usernames. E-mails that differ only by case: "
+            f"{clashes or 'none'}; e-mails longer than 128 characters: {too_long or 'none'}. "
+            "Merge or rename these accounts, then run the upgrade again. Nothing was changed."
+        )
+
     # ---- tables ----
     op.create_table(
         "groups",
@@ -211,7 +229,6 @@ def upgrade() -> None:
     op.alter_column("tenant_memberships", "role", nullable=True)
 
     # ---- default groups for every tenant that exists today ----
-    bind = op.get_bind()
     tenant_ids = [row[0] for row in bind.execute(sa.text("SELECT id FROM tenants")).all()]
     for tenant_id in tenant_ids:
         for spec in _DEFAULT_GROUPS:
