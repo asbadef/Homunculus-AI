@@ -361,7 +361,9 @@ list and is what the unit tests use.
 4. Update `full_name`, `email`, `ldap_dn`.
 5. **Group sync:** `memberOf` (case-insensitive) ∩ `ldap_group_mappings` for the tenant → the set
    of target groups. The sync runs the §6 administrator guard: a removal that would leave the
-   tenant without an administrator is skipped and audited (`ldap.sync.guarded`), never applied. The user's `source = ldap` rows are made equal to that set (rows added and
+   tenant without an administrator is skipped and audited (`ldap.sync.guarded`), never applied.
+   (Mechanics: the removal runs inside a savepoint; the guard counts; on 0 the savepoint is rolled
+   back, so the profile update from step 4 survives.) The user's `source = ldap` rows are made equal to that set (rows added and
    removed); `source = manual` rows are untouched. If the set changed, an `admin/user.groups`
    audit event is written with `actor = ldap-sync` and `token_version` is bumped.
 6. Issue tokens as in §4.
@@ -390,7 +392,9 @@ list and is what the unit tests use.
 - Result sets are capped; searches require `users.manage`.
 - The TOTP secret of an AD user is stored in Homunculus like a local user's; the group MFA flag
   applies identically.
-- A local `hospital_admin` account always exists (§6 guards), so an AD outage or a mapping mistake
+- In Plan 2 the §6 guard is tightened: a tenant must keep at least one active administrator whose
+  `auth_source` is `local`, so an AD outage can never leave it with only administrators who cannot
+  sign in. A local `hospital_admin` account therefore always exists, so an AD outage or a mapping mistake
   can be repaired from inside Homunculus.
 
 ## 8. Dashboard

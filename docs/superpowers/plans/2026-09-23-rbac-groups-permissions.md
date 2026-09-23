@@ -2932,7 +2932,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.auth.groups import ensure_default_groups, groups_of, set_manual_groups
-from homunculus.auth.models import TenantMembership, User
+from homunculus.auth.models import SOURCE_MANUAL, TenantMembership, User
 from homunculus.auth.service import hash_password, normalize_login
 from homunculus.tenant.models import Tenant
 
@@ -3009,7 +3009,7 @@ async def seed_bootstrap(
     # the generic bootstrap account. Additive, so it never strips groups the account already has.
     if created:
         links = await groups_of(db, user.id, tenant.id)
-        manual_ids = {link.group_id for link in links if link.source == "manual"}
+        manual_ids = {link.group_id for link in links if link.source == SOURCE_MANUAL}
         await set_manual_groups(db, user=user, tenant_id=tenant.id,
                                 group_ids=manual_ids | {groups["hospital_admin"].id},
                                 granted_by_id=None)
