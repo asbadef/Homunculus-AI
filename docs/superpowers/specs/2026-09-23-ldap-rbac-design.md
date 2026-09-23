@@ -189,8 +189,12 @@ Access token: `sub`, `type`, `iat`, `exp`, `jti`, plus:
 | `mfa_verified` | False until a TOTP code is verified in this session. |
 | `tv` | The user's `token_version` at issuance. |
 
-The `roles` claim is removed. The refresh token is unchanged (`sub`, `type = refresh`) and does
-**not** carry `tv`.
+The `roles` claim is removed. The refresh token carries `sub`, `type = refresh`, `mfa_verified` and
+`cv` — a short digest of the password hash and TOTP secret it was issued against — and does **not**
+carry `tv`. `/auth/refresh` refuses a refresh token whose `cv` no longer matches, so a password
+change or reset and an MFA reset end every session, not only the one-hour access token; and it
+carries `mfa_verified` forward only while the user still has an authenticator. An access token
+without `tv` (minted before this design) is refused with 401 so the client refreshes.
 
 `TokenResponse` gains `mfa_enrolled` (the user has a verified TOTP secret). `requires_mfa` now
 means "must complete TOTP before the app may be used" — `mfa_required && !mfa_verified` — rather
@@ -217,7 +221,10 @@ clinician one transparent refresh, not a sign-out. Deactivation makes the refres
 Today nothing on the API checks `mfa_verified`. New rule: a token with `mfa_required = true` and
 `mfa_verified = false` is accepted only by `/auth/totp/setup`, `/auth/totp/verify`, `/auth/me`
 and `/auth/refresh`; every other route returns 403 `mfa_required`. A user in an MFA group who has
-not enrolled is walked through setup (QR) and verification on first sign-in.
+not enrolled is walked through setup (QR) and verification on first sign-in. A user who **has**
+enrolled cannot call `/auth/totp/setup` from a pending session (403 `mfa_reset_required`):
+otherwise the password alone would replace the authenticator and pass the gate. A lost device
+is an administrator's MFA reset.
 
 ### Password change
 
@@ -504,7 +511,8 @@ the `LDAP_*` configuration in §9, and the LDAP tests in §10.
 - Kerberos/SPNEGO single sign-on; SAML/OIDC through ADFS or Entra.
 - Scheduled AD synchronisation and automatic off-boarding of accounts disabled in AD.
 - The invitation flow, quick PINs and per-user MFA overrides that exist only in the simulation.
-- Login rate limiting and lockout (bcrypt and the LDAP bind bound brute force; a dedicated limiter
+- Login and TOTP-verification rate limiting and lockout (bcrypt and the LDAP bind bound brute
+  force; a pending-MFA token can guess codes until it expires; a dedicated limiter
   is a follow-up).
 - A session-revocation UI beyond deactivation.
 - Dropping the PostgreSQL `userrole` enum type and the `tenant_memberships.role` column.

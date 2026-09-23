@@ -25,6 +25,12 @@ it after applying a change, in the same transaction. `set_manual_groups` skips g
 through the AD mapping and does not bump when nothing changed. The committed code and tests are
 authoritative where they differ from the Task 4 text below.
 
+**Task 5 as amended in review:** `auth/dependencies.py` reads claims strictly (`tv` must be an int,
+MFA flags must be `True`, groups/perms must be lists of strings), refuses `require_permission()`
+with no keys, and adds `get_user_for_enrolment` for `/auth/totp/setup`: an already-enrolled user
+may replace the authenticator only from an MFA-verified session (otherwise the password alone
+would pass the MFA gate by re-enrolling). `decode_token` requires `exp` and `sub`.
+
 **Do not deploy mid-plan.** Between migration 0006 (Task 3) and the sign-in rewrite (Task 6) and the
 seed rewrite (Task 7), stored e-mails are lower-cased while sign-in still matches case-sensitively,
 and the seed cannot create the administrator. The branch reaches the VM only after Task 20.
@@ -2110,7 +2116,8 @@ from homunculus.auth.jwt import decode_token
 from homunculus.auth.models import AUTH_LDAP, User
 from homunculus.auth.schemas import LoginRequest
 from homunculus.auth.service import (
-    AuthContext, hash_password, issue_tokens, normalize_login, verify_local_password,
+    AuthContext, credential_fingerprint, hash_password, issue_tokens, normalize_login,
+    verify_local_password,
 )
 
 
@@ -2118,6 +2125,7 @@ def _user(**kw) -> User:
     return User(id=uuid.uuid4(), username="ayse", email="ayse@example.com", full_name="Ayşe",
                 hashed_password=kw.get("hashed_password", hash_password("Gizli-123")),
                 auth_source=kw.get("auth_source", "local"), token_version=kw.get("tv", 4),
+                totp_secret=kw.get("totp_secret"),
                 totp_enabled=kw.get("totp_enabled", False), is_active=True)
 
 
@@ -2154,6 +2162,22 @@ def test_the_refresh_token_remembers_that_mfa_was_verified():
     tokens = issue_tokens(_user(), _ctx(mfa_required=True), mfa_verified=True)
     assert decode_token(tokens["refresh_token"])["mfa_verified"] is True
     assert "tv" not in decode_token(tokens["refresh_token"])
+
+
+def test_the_refresh_token_is_bound_to_the_current_credentials():
+    """A password or authenticator change must end every session, including the 7-day refresh
+    token: the refresh token carries a fingerprint of the credentials it was issued against."""
+    u = _user()
+    claims = decode_token(issue_tokens(u, _ctx(), mfa_verified=False)["refresh_token"])
+    assert claims["cv"] == credential_fingerprint(u)
+    before = credential_fingerprint(u)
+    u.hashed_password = hash_password("Baska-Parola-1")
+    assert credential_fingerprint(u) != before
+    before = credential_fingerprint(u)
+    u.totp_secret = "JBSWY3DPEHPK3PXP"
+    assert credential_fingerprint(u) != before
+    assert credential_fingerprint(_user(hashed_password=None)) == credential_fingerprint(
+        _user(hashed_password=None))                     # stable for an AD account
 
 
 def test_normalize_login_lowercases_and_trims():
@@ -2225,6 +2249,8 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+
+import hashlib
 
 import bcrypt
 from sqlalchemy import or_, select
@@ -2315,6 +2341,15 @@ async def build_context(db: AsyncSession, user: User) -> AuthContext:
                        mfa_required=summary.mfa_required)
 
 
+def credential_fingerprint(user: User) -> str:
+    """A short digest of the credentials a session was opened with (password hash + TOTP secret).
+    The refresh token carries it; `/auth/refresh` refuses a token whose fingerprint no longer
+    matches, so a password change or reset and an MFA reset end every session — not just the
+    one-hour access token. It is a digest of hashes, never of a secret itself."""
+    material = f"{user.hashed_password or ''}|{user.totp_secret or ''}".encode()
+    return hashlib.sha256(material).hexdigest()[:16]
+
+
 def issue_tokens(user: User, ctx: AuthContext, *, mfa_verified: bool) -> dict:
     """Access + refresh tokens. `requires_mfa` means "a TOTP step is still pending"."""
     access = create_access_token(
@@ -2328,7 +2363,9 @@ def issue_tokens(user: User, ctx: AuthContext, *, mfa_verified: bool) -> dict:
             "tv": int(user.token_version),
         },
     )
-    refresh = create_refresh_token(subject=str(user.id), extra={"mfa_verified": mfa_verified})
+    refresh = create_refresh_token(subject=str(user.id),
+                                   extra={"mfa_verified": mfa_verified,
+                                          "cv": credential_fingerprint(user)})
     return {
         "access_token": access,
         "refresh_token": refresh,
@@ -2496,7 +2533,9 @@ from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.auth.audit import append_audit
-from homunculus.auth.dependencies import get_current_user, get_current_user_pre_mfa
+from homunculus.auth.dependencies import (
+    Principal, get_current_user_pre_mfa, get_principal, get_user_for_enrolment,
+)
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.models import AUTH_LDAP, User
 from homunculus.auth.schemas import (
@@ -2504,8 +2543,8 @@ from homunculus.auth.schemas import (
     TOTPVerifyRequest, TokenResponse, UserMeResponse,
 )
 from homunculus.auth.service import (
-    PasswordError, build_context, change_password, enable_totp, find_user_by_login,
-    get_user_by_id, issue_tokens, mark_login, normalize_login, setup_totp,
+    PasswordError, build_context, change_password, credential_fingerprint, enable_totp,
+    find_user_by_login, get_user_by_id, issue_tokens, mark_login, normalize_login, setup_totp,
     verify_local_password,
 )
 from homunculus.auth.totp import verify_totp
@@ -2547,7 +2586,7 @@ async def login(body: LoginRequest, request: Request,
 
 @router.post("/totp/setup", response_model=TOTPSetupResponse, summary="Setup TOTP authenticator")
 async def totp_setup(
-    current_user: User = Depends(get_current_user_pre_mfa),
+    current_user: User = Depends(get_user_for_enrolment),
     db: AsyncSession = Depends(get_db),
 ) -> TOTPSetupResponse:
     _secret, uri = await setup_totp(db, current_user)
@@ -2592,9 +2631,15 @@ async def refresh_token(body: RefreshRequest, db: AsyncSession = Depends(get_db)
     user = await get_user_by_id(db, user_id)
     if not user or not user.is_active:
         raise credentials_exc
+    if payload.get("cv") != credential_fingerprint(user):
+        # The password or the authenticator changed since this session opened: sign in again.
+        raise credentials_exc
 
     ctx = await build_context(db, user)
-    return TokenResponse(**issue_tokens(user, ctx, mfa_verified=bool(payload.get("mfa_verified"))))
+    # Verified only if the refresh token says so AND an authenticator still exists (an MFA reset
+    # must send the user back through enrolment, not keep a stale "verified").
+    verified = payload.get("mfa_verified") is True and user.totp_enabled
+    return TokenResponse(**issue_tokens(user, ctx, mfa_verified=verified))
 
 
 @router.get("/me", response_model=UserMeResponse, summary="Current user profile")
@@ -2611,23 +2656,46 @@ async def me(current_user: User = Depends(get_current_user_pre_mfa),
     )
 
 
-@router.post("/password", summary="Change own password (local accounts)")
+@router.post("/password", response_model=TokenResponse,
+             summary="Change own password (local accounts); returns fresh tokens")
 async def password(body: PasswordChangeRequest, request: Request,
-                   current_user: User = Depends(get_current_user),
-                   db: AsyncSession = Depends(get_db)) -> dict:
+                   principal: Principal = Depends(get_principal),
+                   db: AsyncSession = Depends(get_db)) -> TokenResponse:
+    """The change retires every existing session (token version and credential fingerprint
+    both move), so the caller receives a fresh pair and keeps working."""
+    current_user = principal.user
     try:
         await change_password(db, current_user, body.current_password, body.new_password)
     except PasswordError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    append_audit(request, tenant=None, event_type="auth", subject="password.change",
+    append_audit(request, tenant=principal.tenant, event_type="auth", subject="password.change",
                  payload={"user": current_user.username})
-    return {"ok": True}
+    ctx = await build_context(db, current_user)
+    return TokenResponse(**issue_tokens(current_user, ctx, mfa_verified=principal.mfa_verified))
 ```
+
+- [ ] **Step 7b: `tv` becomes mandatory**
+
+Every token the service now issues carries `tv`, so a token without it is from the old code (it
+has no `perms` either and would only collect 403s). Refuse it with 401 so the client refreshes into
+a current token. In `auth/dependencies.py`, `get_principal_pre_mfa`, change
+`tv = claims.get("tv", 0)` to `tv = claims.get("tv")` (the existing `type(tv) is not int` check then
+refuses a missing claim), and add to `tests/test_auth_dependencies.py`:
+
+```python
+def test_a_legacy_token_without_tv_is_refused_so_the_client_refreshes(real_client):
+    client, stored = real_client
+    legacy = create_access_token(str(stored.id), extra={"roles": {"t": "NURSE"}})
+    res = client.get("/me", headers=_bearer(legacy))
+    assert res.status_code == 401 and res.json()["detail"] == "token_version"
+```
+
+Any existing test in that file that mints a token without `tv` must pass `tv` explicitly.
 
 - [ ] **Step 8: Run the pure tests**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_auth_tokens.py tests/test_auth_dependencies.py -q`
-Expected: `20 passed`
+Expected: all pass
 
 - [ ] **Step 9: Write the DB-backed sign-in tests**
 
@@ -2784,8 +2852,44 @@ async def test_password_change_works_and_retires_the_old_token(client, world):
                        json={"current_password": PASSWORD, "new_password": "Yeni-Parola-1"})
     assert res.status_code == 200
     assert (await c.get("/auth/me", headers=headers)).status_code == 401   # tv bumped
+    old_refresh = await c.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+    assert old_refresh.status_code == 401                                   # credentials moved
+    fresh = {"Authorization": f"Bearer {res.json()['access_token']}"}
+    assert (await c.get("/auth/me", headers=fresh)).status_code == 200      # the caller keeps working
     assert (await _login(c, "ayse", "Yeni-Parola-1")).status_code == 200
     assert (await _login(c, "ayse", PASSWORD)).status_code == 401
+
+
+async def test_an_enrolled_user_cannot_replace_the_authenticator_with_the_password_alone(
+        client, world, db_session):
+    """The MFA bypass this closes: password -> pending token -> /totp/setup (new secret) ->
+    /totp/verify with a code the attacker controls -> verified tokens."""
+    c, _ = client
+    world["admin"].totp_secret, world["admin"].totp_enabled = "JBSWY3DPEHPK3PXP", True
+    await db_session.commit()
+    pending = (await _login(c, "admin")).json()
+    assert pending["requires_mfa"] is True and pending["mfa_enrolled"] is True
+    res = await c.post("/auth/totp/setup",
+                       headers={"Authorization": f"Bearer {pending['access_token']}"})
+    assert res.status_code == 403 and res.json()["detail"] == "mfa_reset_required"
+    await db_session.refresh(world["admin"])
+    assert world["admin"].totp_secret == "JBSWY3DPEHPK3PXP"                  # untouched
+
+
+async def test_an_mfa_reset_ends_the_verified_session(client, world, db_session):
+    """After an administrator clears the authenticator, the old refresh token must not bring
+    back a verified session."""
+    c, _ = client
+    tokens = (await _login(c, "ayse")).json()
+    world["nurse"].totp_secret, world["nurse"].totp_enabled = None, False   # what reset-mfa does
+    world["nurse"].hashed_password = world["nurse"].hashed_password          # unchanged
+    await db_session.commit()
+    ok = await c.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+    assert ok.status_code == 200                       # no authenticator before or after: same cv
+    world["nurse"].totp_secret = "JBSWY3DPEHPK3PXP"
+    await db_session.commit()
+    stale = await c.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+    assert stale.status_code == 401                    # credentials moved
 
 
 async def test_sign_ins_are_audited_without_the_password(client, world):
@@ -2802,15 +2906,16 @@ async def test_sign_ins_are_audited_without_the_password(client, world):
 - [ ] **Step 10: Run the DB-backed tests**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_auth_login.py -q`
-Expected: `10 passed` with `TEST_DATABASE_URL`, `10 skipped` without.
+Expected: `12 passed` with `TEST_DATABASE_URL`, `12 skipped` without.
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py`
-Expected: all pass. (`tests/test_auth_seed.py` still imports `UserRole`, which exists until Task 7.)
+Expected: all pass except the three `tests/test_auth_seed.py` tests (the seed cannot set `username`
+until Task 7 rewrites it) and the unrelated `tests/test_infinity_vm_pilot.py` PowerShell test.
 
 - [ ] **Step 11: Commit**
 
 ```bash
-git add homunculus-engine/src/homunculus/auth/jwt.py homunculus-engine/src/homunculus/auth/service.py homunculus-engine/src/homunculus/auth/schemas.py homunculus-engine/src/homunculus/auth/audit.py homunculus-engine/src/homunculus/auth/router.py homunculus-engine/tests/test_auth_tokens.py homunculus-engine/tests/test_auth_login.py
+git add homunculus-engine/src/homunculus/auth/jwt.py homunculus-engine/src/homunculus/auth/service.py homunculus-engine/src/homunculus/auth/schemas.py homunculus-engine/src/homunculus/auth/audit.py homunculus-engine/src/homunculus/auth/router.py homunculus-engine/src/homunculus/auth/dependencies.py homunculus-engine/tests/test_auth_tokens.py homunculus-engine/tests/test_auth_login.py homunculus-engine/tests/test_auth_dependencies.py
 git commit -m "feat(auth): sign in by username or e-mail; tokens carry tenant, groups, perms, MFA flags and tv; own-password change; auth audit
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -3544,6 +3649,23 @@ async def test_a_pending_mfa_step_blocks_the_board():
 
 async def test_no_tenant_means_no_hospital():
     assert await make_jwt_caller_resolver(_load())(_token(tenant=None)) is None
+
+
+async def test_claims_are_read_strictly():
+    resolve = make_jwt_caller_resolver(_load())
+    assert await resolve(create_access_token(UID, extra={"tenant": "demo-hastanesi"})) is None  # no tv
+    assert await resolve(_token(tv="2")) is None
+    assert await resolve(_token(mfa_required=True, mfa_verified="true")) is None
+    caller = await resolve(_token(perms="board.view", groups="nurse"))
+    assert caller.perms == frozenset() and caller.groups == ()
+
+
+def test_a_weak_jwt_secret_is_named():
+    from homunculus.auth.jwt import jwt_secret_problem
+    assert jwt_secret_problem(None) and jwt_secret_problem("")
+    assert jwt_secret_problem("CHANGE_ME_IN_PRODUCTION_USE_32_CHARS_MIN")
+    assert jwt_secret_problem("kisa")
+    assert jwt_secret_problem("x" * 48) is None
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -3585,6 +3707,11 @@ def _decode_access_claims(token: str) -> dict | None:
     return claims
 
 
+def _strings(value) -> list[str]:
+    """A list claim's string items; anything else reads as empty (fails closed)."""
+    return [x for x in value if isinstance(x, str)] if isinstance(value, list) else []
+
+
 def make_jwt_caller_resolver(
     load_user: Callable[[str], Awaitable[UserAuthRow | None]],
     *,
@@ -3604,17 +3731,18 @@ def make_jwt_caller_resolver(
         row = await load_user(str(claims["sub"]))
         if row is None or not row.is_active:
             return None
-        if int(claims.get("tv", 0)) != int(row.token_version):
+        tv = claims.get("tv")
+        if type(tv) is not int or tv != row.token_version:
             return None
-        if claims.get("mfa_required") and not claims.get("mfa_verified"):
+        if claims.get("mfa_required") is True and claims.get("mfa_verified") is not True:
             return None
         tenant = claims.get("tenant")
-        if not tenant:
+        if not isinstance(tenant, str) or not tenant:
             return None
         return Caller(
             hospital=tenant, actor=row.username,
-            groups=tuple(claims.get("groups") or ()),
-            perms=frozenset(claims.get("perms") or ()),
+            groups=tuple(_strings(claims.get("groups"))),
+            perms=frozenset(_strings(claims.get("perms"))),
         )
 
     return resolve
@@ -3651,12 +3779,45 @@ Move `from dataclasses import dataclass` and `from homunculus.api.identity impor
 
 Update the module docstring's `TENANTS` line to read: `TENANTS "tokenA:slugA,tokenB:slugB" (device bearer tokens; the slug is the tenant slug and the engine's hospital key)`.
 
+**Refuse a weak signing key.** The token is now the only authority for `perms` and `tenant`, so
+anyone who knows the secret can mint an administrator. In `auth/jwt.py` add:
+
+```python
+_DEFAULT_SECRET = "CHANGE_ME_IN_PRODUCTION_USE_32_CHARS_MIN"
+
+
+def jwt_secret_problem(secret: str | None) -> str | None:
+    """Why a signing key is unfit for a real deployment, or None."""
+    if not secret:
+        return "JWT_SECRET is not set"
+    if secret == _DEFAULT_SECRET:
+        return "JWT_SECRET is the public default"
+    if len(secret) < 32:
+        return "JWT_SECRET is shorter than 32 characters"
+    return None
+```
+
+and use `_DEFAULT_SECRET` as the `os.getenv("JWT_SECRET", …)` fallback. In `api/prodserver.py`, next
+to the existing PHI-key check in `_identities()` (same condition: a Postgres `DATABASE_URL`), add:
+
+```python
+    problem = jwt_secret_problem(os.getenv("JWT_SECRET"))
+    if url.startswith(("postgresql", "postgres://")) and problem:
+        raise SystemExit(f"{problem}. Generate one: openssl rand -base64 36")
+```
+
+(import `jwt_secret_problem` from `homunculus.auth.jwt`). In `deploy/local/docker-compose.yml`
+change `JWT_SECRET: ${JWT_SECRET}` to
+`JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is missing in .env - generate one, see .env.example}`.
+Add `homunculus-engine/src/homunculus/auth/jwt.py` and `deploy/local/docker-compose.yml` to this
+task's commit.
+
 - [ ] **Step 4: Delete the old test and run**
 
 Run: `git rm -q homunculus-engine/tests/test_jwt_hospital_lookup.py`
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_jwt_caller.py tests/test_identity.py -q`
-Expected: `6 passed` + the identity tests still pass.
+Expected: `8 passed` + the identity tests still pass.
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py`
 Expected: all pass.
@@ -3664,7 +3825,7 @@ Expected: all pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add homunculus-engine/src/homunculus/api/prodserver.py homunculus-engine/tests/test_jwt_caller.py
+git add homunculus-engine/src/homunculus/api/prodserver.py homunculus-engine/src/homunculus/auth/jwt.py deploy/local/docker-compose.yml homunculus-engine/tests/test_jwt_caller.py
 git commit -m "feat(api): production JWT resolver yields a Caller from the token's tenant, groups and perms
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -4556,10 +4717,73 @@ and after `app.include_router(break_glass_router)`:
 
 Create the empty `homunculus-engine/src/homunculus/admin/__init__.py`.
 
+- [ ] **Step 6b: The route inventory**
+
+Every router route must reach the MFA-gated principal, and only the three enrolment/profile routes
+may use the pre-MFA one. Walk the app's dependency graph so a future route cannot skip the guard.
+
+```python
+# homunculus-engine/tests/test_route_inventory.py
+"""Every JWT route reaches the MFA-gated principal; only /auth/totp/* and /auth/me may stop at the
+pre-MFA one. A route added later without a guard fails here, not in a ward."""
+from __future__ import annotations
+
+from fastapi.routing import APIRoute
+
+from homunculus.api.app import create_app
+from homunculus.auth.dependencies import get_principal, get_principal_pre_mfa
+
+GUARDED_MODULES = {"homunculus.admission.router", "homunculus.escalation.router",
+                   "homunculus.tenant.router", "homunculus.admin.router"}
+
+
+def _calls(dependant) -> set:
+    out, stack = set(), [dependant]
+    while stack:
+        d = stack.pop()
+        if d.call is not None:
+            out.add(d.call)
+        stack.extend(d.dependencies)
+    return out
+
+
+def _routes():
+    app = create_app({"t": "HOSP1"}, run_escalation_loop=False)
+    return [r for r in app.routes if isinstance(r, APIRoute)]
+
+
+def test_every_router_route_reaches_the_mfa_gated_principal():
+    missing = [f"{sorted(r.methods)} {r.path}" for r in _routes()
+               if r.endpoint.__module__ in GUARDED_MODULES and get_principal not in _calls(r.dependant)]
+    assert missing == []
+
+
+def test_only_enrolment_and_profile_routes_skip_the_mfa_gate():
+    pre_only = {r.path for r in _routes()
+                if get_principal_pre_mfa in _calls(r.dependant)
+                and get_principal not in _calls(r.dependant)}
+    assert pre_only == {"/auth/totp/setup", "/auth/totp/verify", "/auth/me"}
+```
+
+Add to `tests/test_admin_api.py`:
+
+```python
+async def test_an_admin_password_reset_ends_the_users_sessions(client, world, db_session):
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    nurse_tokens = (await c.post("/auth/login", json={"login": "ayse", "password": PASSWORD})).json()
+    assert (await c.post(f"/admin/users/{world['nurse'].id}/reset-password", headers=admin,
+                         json={"password": "Yeni-Parola-1"})).status_code == 200
+    res = await c.post("/auth/refresh", json={"refresh_token": nurse_tokens["refresh_token"]})
+    assert res.status_code == 401
+```
+
+Add `homunculus-engine/tests/test_route_inventory.py` to this task's commit.
+
 - [ ] **Step 7: Run the tests**
 
-Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_admin_api.py -q`
-Expected: `15 passed` with `TEST_DATABASE_URL`, `15 skipped` without.
+Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_admin_api.py tests/test_route_inventory.py -q`
+Expected: `16 passed` with `TEST_DATABASE_URL`, `16 skipped` without, plus the 2 route-inventory tests.
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py`
 Expected: all pass.
@@ -4567,7 +4791,7 @@ Expected: all pass.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add homunculus-engine/src/homunculus/admin homunculus-engine/src/homunculus/api/app.py homunculus-engine/tests/test_admin_api.py
+git add homunculus-engine/src/homunculus/admin homunculus-engine/src/homunculus/api/app.py homunculus-engine/tests/test_admin_api.py homunculus-engine/tests/test_route_inventory.py
 git commit -m "feat(admin): /admin API — users, groups, permission catalogue, last-admin guards, audit
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -5484,12 +5708,13 @@ describe("backendApi — admin and account calls", () => {
     expect(await api.adminDeleteGroup("g1")).toBeNull();
   });
 
-  it("changePassword posts both passwords to /auth/password", async () => {
-    const { api, fetchImpl } = await signedIn(() => ({ status: 200, body: { ok: true } }));
+  it("changePassword posts both passwords and keeps the fresh tokens it gets back", async () => {
+    const { api, fetchImpl } = await signedIn(() => ({ status: 200, body: { access_token: "A2", refresh_token: "R2" } }));
     await api.changePassword("eski", "yeni-parola");
     const [url, init] = lastCall(fetchImpl);
     expect(url).toBe("/auth/password");
     expect(JSON.parse(init.body)).toEqual({ current_password: "eski", new_password: "yeni-parola" });
+    expect(api.accessToken()).toBe("A2");      // the change retired the old pair
   });
 
   it("the other admin calls hit the documented paths", async () => {
@@ -5650,9 +5875,12 @@ Replace `acknowledge(patientId, kind, role)` with:
       return authed("/ack", { method: "POST", body: { patient_id: patientId, kind } });
     },
 
-    changePassword(currentPassword, newPassword) {
-      return authed("/auth/password", { method: "POST",
-                                        body: { current_password: currentPassword, new_password: newPassword } });
+    /** The change retires every existing session; the API answers with a fresh pair. */
+    async changePassword(currentPassword, newPassword) {
+      const tokens = await authed("/auth/password", { method: "POST",
+                                                      body: { current_password: currentPassword, new_password: newPassword } });
+      setTokens(tokens);
+      return tokens;
     },
 
     // ---- administration (/admin, see homunculus-engine admin/router.py) ----
