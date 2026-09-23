@@ -2954,7 +2954,7 @@ and in `create_tenant`, after `db.add(tenant)` add a flush and the group seeding
 
 - [ ] **Step 6: Delete `UserRole`, the shim, and the role list in the TOTP docstring**
 
-In `auth/models.py` delete the whole `class UserRole(str, enum.Enum): …` block and the `import enum` line. In `auth/dependencies.py` delete everything from the `# TEMPORARY SHIM` comment block to the end of the file. In `auth/totp.py` replace the docstring with:
+In `auth/models.py` delete the whole `class UserRole(str, enum.Enum): …` block, the `MFA_REQUIRED_ROLES` set that Task 2 kept alongside it (Task 6's `service.py` no longer imports it), and the `import enum` line. In `auth/dependencies.py` delete everything from the `# TEMPORARY SHIM` comment block to the end of the file. In `auth/totp.py` replace the docstring with:
 
 ```python
 """
