@@ -15,14 +15,15 @@ from homunculus.auth.permissions import (
 
 SPEC_KEYS = {
     "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.admit",
-    "admissions.sign_off", "admissions.move.initiate", "admissions.move.confirm",
+    "admissions.sign_off", "admissions.move.initiate", "admissions.transfer.confirm",
+    "admissions.discharge.confirm",
     "care_team.claim", "care_team.assign", "handover.sign", "shifts.manage",
     "break_glass.use", "audit.view", "users.manage", "groups.manage", "structure.manage",
     "devices.manage",
 }
 
 
-def test_the_catalogue_is_exactly_the_specified_eighteen_keys():
+def test_the_catalogue_is_exactly_the_specified_nineteen_keys():
     assert set(PERMISSIONS) == SPEC_KEYS
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
 
@@ -70,7 +71,10 @@ def test_the_legacy_rights_are_preserved_group_by_group():
     assert "admissions.sign_off" in by_slug["unit_physician"]
     assert "admissions.sign_off" not in by_slug["physician"]
     assert "shifts.manage" in by_slug["charge_nurse"] and "shifts.manage" not in by_slug["nurse"]
-    assert "admissions.move.confirm" in by_slug["charge_nurse"]
+    assert "admissions.transfer.confirm" in by_slug["nurse"]          # nurses confirm transfers today
+    assert "admissions.discharge.confirm" not in by_slug["nurse"]      # discharge stays charge-nurse
+    assert "admissions.transfer.confirm" in by_slug["charge_nurse"]
+    assert "admissions.discharge.confirm" in by_slug["charge_nurse"]
     assert "admissions.admit" in by_slug["nurse"]
     assert by_slug["auditor"] == {"board.view", "audit.view"}
     assert by_slug["biomedical"] == {"devices.manage"}
@@ -89,3 +93,50 @@ def test_effective_permissions_is_the_union_across_groups():
     assert effective_permissions([["board.view"], ["board.view", "alerts.ack"]]) == \
         frozenset({"board.view", "alerts.ack"})
     assert effective_permissions([]) == frozenset()
+
+
+def test_a_bare_string_is_refused_not_split_into_characters():
+    with pytest.raises(TypeError):
+        validate_permissions("board.view")
+    with pytest.raises(TypeError):
+        effective_permissions(["board.view"])   # a flat list where sets were expected
+
+
+# The whole §3 table, so a stray key added to any group fails here, not in a ward.
+SPEC_GROUPS = {
+    "hospital_admin": (True, True, SPEC_KEYS),
+    "attending": (True, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
+                                "admissions.sign_off", "admissions.move.initiate",
+                                "care_team.claim", "care_team.assign", "handover.sign",
+                                "break_glass.use"}),
+    "unit_physician": (True, False, {"board.view", "alerts.ack", "alerts.escalate",
+                                     "admissions.view", "admissions.sign_off",
+                                     "admissions.move.initiate", "handover.sign",
+                                     "break_glass.use"}),
+    "physician": (False, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
+                                 "handover.sign", "break_glass.use"}),
+    "charge_nurse": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
+                                    "admissions.view", "admissions.admit",
+                                    "admissions.transfer.confirm", "admissions.discharge.confirm",
+                                    "care_team.claim", "handover.sign", "shifts.manage",
+                                    "break_glass.use"}),
+    "nurse": (False, False, {"board.view", "alerts.ack", "admissions.view", "admissions.admit",
+                             "admissions.transfer.confirm", "handover.sign"}),
+    "rapid_response": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
+                                      "admissions.view", "break_glass.use"}),
+    "auditor": (False, False, {"board.view", "audit.view"}),
+    "platform_support": (True, False, {"audit.view", "devices.manage"}),
+    "pharmacist": (False, False, {"board.view", "admissions.view"}),
+    "biomedical": (False, False, {"devices.manage"}),
+}
+
+
+def test_every_default_group_matches_the_spec_table_exactly():
+    by_slug = {g["slug"]: g for g in DEFAULT_GROUPS}
+    assert set(by_slug) == set(SPEC_GROUPS)
+    for slug, (mfa, system, perms) in SPEC_GROUPS.items():
+        g = by_slug[slug]
+        assert g["mfa_required"] is mfa, slug
+        assert g["is_system"] is system, slug
+        assert set(g["permissions"]) == perms, slug
+        assert len(g["permissions"]) == len(set(g["permissions"])), slug   # no duplicates

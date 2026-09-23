@@ -14,6 +14,7 @@ PHI RULE: no patient data here. CLINICAL RULE: infrastructure only.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import TypedDict
 
 PERMISSIONS: dict[str, str] = {
     "board.view": "See the live board, patient detail and the event stream",
@@ -23,7 +24,8 @@ PERMISSIONS: dict[str, str] = {
     "admissions.admit": "Create an admission",
     "admissions.sign_off": "Physician sign-off of an admission",
     "admissions.move.initiate": "Initiate a transfer or discharge",
-    "admissions.move.confirm": "Confirm a transfer or discharge; release the bed",
+    "admissions.transfer.confirm": "Confirm a transfer arrival",
+    "admissions.discharge.confirm": "Confirm a discharge; release the bed",
     "care_team.claim": "Claim a care-team role on a patient",
     "care_team.assign": "Assign others to a patient's care team",
     "handover.sign": "Sign or countersign a handover",
@@ -46,6 +48,8 @@ class UnknownPermission(ValueError):
 
 def validate_permissions(keys: Iterable[str]) -> tuple[str, ...]:
     """Return `keys` as a tuple, or raise `UnknownPermission` naming every unknown key."""
+    if isinstance(keys, str):
+        raise TypeError("expected an iterable of permission keys, not a single string")
     keys = tuple(keys)
     unknown = [k for k in keys if k not in PERMISSIONS]
     if unknown:
@@ -57,6 +61,8 @@ def effective_permissions(permission_sets: Iterable[Iterable[str]]) -> frozenset
     """The union of several groups' permissions — a user's effective rights."""
     out: set[str] = set()
     for keys in permission_sets:
+        if isinstance(keys, str):
+            raise TypeError("expected an iterable of permission SETS, got a bare key")
         out.update(keys)
     return frozenset(out)
 
@@ -75,7 +81,20 @@ _ATTENDING = (
     "break_glass.use",
 )
 
-DEFAULT_GROUPS: tuple[dict, ...] = (
+
+class GroupSpec(TypedDict):
+    slug: str
+    name: str
+    description: str
+    mfa_required: bool
+    is_system: bool
+    permissions: tuple[str, ...]
+
+
+# The SYSTEM group (`is_system`) holds the whole catalogue BY RULE at token issuance — including
+# keys added after a tenant was seeded — and its rows cannot be edited. Its rows are seeded all
+# the same, so the admin screen can show them.
+DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
     {"slug": "hospital_admin", "name": "Sistem Yöneticisi",
      "description": "Kullanıcı, grup, yapı ve cihaz yönetimi; denetim kaydı.",
      "mfa_required": True, "is_system": True, "permissions": tuple(PERMISSIONS)},
@@ -95,13 +114,14 @@ DEFAULT_GROUPS: tuple[dict, ...] = (
      "description": "Hasta kabul, transfer/taburcu onayı, nöbet çizelgesi, bakım ekibi.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
-                     "admissions.admit", "admissions.move.confirm", "care_team.claim",
-                     "handover.sign", "shifts.manage", "break_glass.use")},
+                     "admissions.admit", "admissions.transfer.confirm",
+                     "admissions.discharge.confirm", "care_team.claim", "handover.sign",
+                     "shifts.manage", "break_glass.use")},
     {"slug": "nurse", "name": "Hemşire",
      "description": "Pano, alarm onayı, hasta kabul, devir imzası.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "admissions.view", "admissions.admit",
-                     "handover.sign")},
+                     "admissions.transfer.confirm", "handover.sign")},
     {"slug": "rapid_response", "name": "Hızlı Yanıt Ekibi",
      "description": "Pano, alarm onayı ve eskalasyon, break-glass.",
      "mfa_required": False, "is_system": False,
@@ -135,6 +155,20 @@ LEGACY_ROLE_TO_GROUP: dict[str, str] = {
     "PLATFORM_SUPPORT": "platform_support",
 }
 
-# The catalogue must never carry a key the defaults reference but the software cannot enforce.
-for _group in DEFAULT_GROUPS:
-    validate_permissions(_group["permissions"])
+
+def _self_check() -> None:
+    """Import-time invariants: every default key is in the catalogue, slugs are unique, every
+    legacy role maps to a default slug, and exactly one group is the system group."""
+    slugs = [g["slug"] for g in DEFAULT_GROUPS]
+    if len(slugs) != len(set(slugs)):
+        raise RuntimeError("DEFAULT_GROUPS: duplicate slug")
+    for g in DEFAULT_GROUPS:
+        validate_permissions(g["permissions"])
+    missing = set(LEGACY_ROLE_TO_GROUP.values()) - set(slugs)
+    if missing:
+        raise RuntimeError(f"LEGACY_ROLE_TO_GROUP names unknown group(s): {sorted(missing)}")
+    if [g["slug"] for g in DEFAULT_GROUPS if g["is_system"]] != ["hospital_admin"]:
+        raise RuntimeError("exactly one system group, hospital_admin, is expected")
+
+
+_self_check()
