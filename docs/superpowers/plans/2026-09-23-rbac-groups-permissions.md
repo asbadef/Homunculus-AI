@@ -46,8 +46,10 @@ advisory lock, refuses an inactive, non-local or other-tenant account, and hashe
 `tests/route_walk.py::api_routes`. FastAPI 0.139 puts `_IncludedRouter` wrappers in `app.routes`,
 so `isinstance(r, APIRoute)` alone misses every router route. The `get_current_active_user`
 alias is deleted. **Task 7b** (new) scopes every admission, escalation and structure route to the
-caller's tenant and makes tenant creation a platform-operator action. Task 10's `_scope` may
-delegate to 7b's `caller_tenant_id` (same 403 message).
+caller's tenant and makes tenant creation a platform-operator action. Task 10's admin routes take
+`tenant_id: uuid.UUID = Depends(caller_tenant_id)`. The Task 10 code below already does, and
+`tenant_id_for_slug`/`_scope` are gone: 7b's inverted structural test fails any route outside
+its allow-list that does not depend on `caller_tenant_id`.
 
 **Task 7b as amended in review:** `caller_tenant_id` no longer trusts the slug alone. In ONE
 query it requires the slug's tenant to be active AND the caller to hold an active membership
@@ -4423,13 +4425,8 @@ class AdminError(Exception):
         self.detail = detail
 
 
-async def tenant_id_for_slug(db: AsyncSession, slug: str | None) -> uuid.UUID:
-    if not slug:
-        raise AdminError(403, "Hesabınıza kurum tanımlanmamış")
-    tenant_id = (await db.execute(select(Tenant.id).where(Tenant.slug == slug))).scalar_one_or_none()
-    if tenant_id is None:
-        raise AdminError(404, "Tenant not found")
-    return tenant_id
+# The caller's tenant comes from `auth.dependencies.caller_tenant_id` (Task 7b), which also checks
+# the membership and the tenant are active. (If `Tenant` is now unused in this module, drop its import.)
 
 
 # ---------------------------------------------------------------- groups
@@ -4688,7 +4685,9 @@ from homunculus.admin.schemas import (
 )
 from homunculus.admin.service import AdminError
 from homunculus.auth.audit import append_audit
-from homunculus.auth.dependencies import Principal, get_principal, require_permission
+from homunculus.auth.dependencies import (
+    Principal, caller_tenant_id, get_principal, require_permission,
+)
 from homunculus.auth.models import Group, User
 from homunculus.auth.permissions import ALL_PERMISSIONS, PERMISSIONS
 from homunculus.db import get_db
@@ -4701,13 +4700,6 @@ _users = [Depends(require_permission("users.manage"))]
 
 def _http(exc: AdminError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=exc.detail)
-
-
-async def _scope(principal: Principal, db: AsyncSession) -> uuid.UUID:
-    try:
-        return await service.tenant_id_for_slug(db, principal.tenant)
-    except AdminError as exc:
-        raise _http(exc)
 
 
 def _group_out(group: Group, count: int) -> GroupOut:
@@ -4750,15 +4742,16 @@ async def _run(db: AsyncSession, coro):
 
 # ---------------------------------------------------------------- permissions & groups
 
-@router.get("/permissions", response_model=list[PermissionOut], dependencies=_groups)
+@router.get("/permissions", response_model=list[PermissionOut],
+            dependencies=[*_groups, Depends(caller_tenant_id)])
 async def list_permissions() -> list[PermissionOut]:
     return [PermissionOut(key=k, description=d) for k, d in PERMISSIONS.items()]
 
 
 @router.get("/groups", response_model=list[GroupOut], dependencies=_groups)
 async def list_groups(principal: Principal = Depends(get_principal),
+                      tenant_id: uuid.UUID = Depends(caller_tenant_id),
                       db: AsyncSession = Depends(get_db)) -> list[GroupOut]:
-    tenant_id = await _scope(principal, db)
     return [_group_out(g, n) for g, n in await service.list_groups(db, tenant_id)]
 
 
@@ -4766,8 +4759,8 @@ async def list_groups(principal: Principal = Depends(get_principal),
              dependencies=_groups)
 async def create_group(body: GroupCreate, request: Request,
                        principal: Principal = Depends(get_principal),
+                       tenant_id: uuid.UUID = Depends(caller_tenant_id),
                        db: AsyncSession = Depends(get_db)) -> GroupOut:
-    tenant_id = await _scope(principal, db)
     group = await _run(db, service.create_group(
         db, tenant_id, slug=body.slug, name=body.name, description=body.description,
         mfa_required=body.mfa_required, permissions=body.permissions))
@@ -4781,8 +4774,8 @@ async def create_group(body: GroupCreate, request: Request,
 @router.patch("/groups/{group_id}", response_model=GroupOut, dependencies=_groups)
 async def update_group(group_id: uuid.UUID, body: GroupPatch, request: Request,
                        principal: Principal = Depends(get_principal),
+                       tenant_id: uuid.UUID = Depends(caller_tenant_id),
                        db: AsyncSession = Depends(get_db)) -> GroupOut:
-    tenant_id = await _scope(principal, db)
     group = await _run(db, service.get_group(db, tenant_id, group_id))
     before = {"name": group.name, "permissions": group.permission_keys,
               "mfa_required": group.mfa_required}
@@ -4800,8 +4793,8 @@ async def update_group(group_id: uuid.UUID, body: GroupPatch, request: Request,
                dependencies=_groups)
 async def delete_group(group_id: uuid.UUID, request: Request,
                        principal: Principal = Depends(get_principal),
+                       tenant_id: uuid.UUID = Depends(caller_tenant_id),
                        db: AsyncSession = Depends(get_db)) -> Response:
-    tenant_id = await _scope(principal, db)
     group = await _run(db, service.get_group(db, tenant_id, group_id))
     slug = group.slug
     await _run(db, service.delete_group(db, group))
@@ -4814,8 +4807,8 @@ async def delete_group(group_id: uuid.UUID, request: Request,
 
 @router.get("/users", response_model=list[UserOut], dependencies=_users)
 async def list_users(principal: Principal = Depends(get_principal),
+                     tenant_id: uuid.UUID = Depends(caller_tenant_id),
                      db: AsyncSession = Depends(get_db)) -> list[UserOut]:
-    tenant_id = await _scope(principal, db)
     return [_user_out(u, tenant_id) for u in await service.list_users(db, tenant_id)]
 
 
@@ -4823,8 +4816,8 @@ async def list_users(principal: Principal = Depends(get_principal),
              dependencies=_users)
 async def create_user(body: UserCreate, request: Request,
                       principal: Principal = Depends(get_principal),
+                      tenant_id: uuid.UUID = Depends(caller_tenant_id),
                       db: AsyncSession = Depends(get_db)) -> UserOut:
-    tenant_id = await _scope(principal, db)
     user = await _run(db, service.create_local_user(
         db, tenant_id, username=body.username, email=body.email, full_name=body.full_name,
         password=body.password, group_ids=body.group_ids, actor_id=principal.user.id))
@@ -4838,8 +4831,8 @@ async def create_user(body: UserCreate, request: Request,
 @router.patch("/users/{user_id}", response_model=UserOut, dependencies=_users)
 async def update_user(user_id: uuid.UUID, body: UserPatch, request: Request,
                       principal: Principal = Depends(get_principal),
+                      tenant_id: uuid.UUID = Depends(caller_tenant_id),
                       db: AsyncSession = Depends(get_db)) -> UserOut:
-    tenant_id = await _scope(principal, db)
     user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
     before = {"full_name": user.full_name, "email": user.email, "is_active": user.is_active}
     user = await _run(db, service.patch_user(
@@ -4854,8 +4847,8 @@ async def update_user(user_id: uuid.UUID, body: UserPatch, request: Request,
 @router.put("/users/{user_id}/groups", response_model=UserOut, dependencies=_users)
 async def set_user_groups(user_id: uuid.UUID, body: UserGroupsIn, request: Request,
                           principal: Principal = Depends(get_principal),
+                          tenant_id: uuid.UUID = Depends(caller_tenant_id),
                           db: AsyncSession = Depends(get_db)) -> UserOut:
-    tenant_id = await _scope(principal, db)
     user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
     before = [g.slug for g in _user_out(user, tenant_id).groups]
     user = await _run(db, service.set_user_groups(db, tenant_id, user, body.group_ids,
@@ -4870,8 +4863,8 @@ async def set_user_groups(user_id: uuid.UUID, body: UserGroupsIn, request: Reque
 @router.post("/users/{user_id}/reset-password", dependencies=_users)
 async def reset_password(user_id: uuid.UUID, body: PasswordResetIn, request: Request,
                          principal: Principal = Depends(get_principal),
+                         tenant_id: uuid.UUID = Depends(caller_tenant_id),
                          db: AsyncSession = Depends(get_db)) -> dict:
-    tenant_id = await _scope(principal, db)
     user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
     await _run(db, service.reset_password(db, user, body.password))
     await db.commit()
@@ -4882,8 +4875,8 @@ async def reset_password(user_id: uuid.UUID, body: PasswordResetIn, request: Req
 @router.post("/users/{user_id}/reset-mfa", dependencies=_users)
 async def reset_mfa(user_id: uuid.UUID, request: Request,
                     principal: Principal = Depends(get_principal),
+                    tenant_id: uuid.UUID = Depends(caller_tenant_id),
                     db: AsyncSession = Depends(get_db)) -> dict:
-    tenant_id = await _scope(principal, db)
     user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
     await _run(db, service.reset_mfa(db, user))
     await db.commit()
