@@ -32,6 +32,7 @@ from homunculus.api.patient_identity import (
 )
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.escalation import escalate
+from homunculus.api.identity import Caller
 from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import rehydrate
 from homunculus.api.tickets import TicketStore
@@ -71,14 +72,14 @@ def create_app(
     run_escalation_loop: bool = True,
     audit: AuditLog | None = None,
     identities: IdentityStore | None = None,
-    resolve_jwt_hospital: Callable[[str], Awaitable[str | None]] | None = None,
+    resolve_jwt: Callable[[str], Awaitable[Caller | None]] | None = None,
     on_startup_check: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
     run_escalation_loop=False disables the background task so tests are deterministic.
-    `resolve_jwt_hospital`, if given, resolves a clinician's JWT to a hospital id (decode ->
-    load user -> membership -> tenant slug), letting the board routes accept a JWT as well as
-    the tenant token — injected so it can be tested without Postgres.
+    `resolve_jwt`, if given, resolves a clinician's JWT to a `Caller` (hospital, actor, groups,
+    permissions), letting the board routes accept a JWT as well as the tenant token and check
+    permissions — injected so it can be tested without Postgres.
     `on_startup_check`, if given, runs once during lifespan startup, before the app begins
     serving — for diagnostics (e.g. TENANTS vs. the database's tenant slugs) that must never
     block boot: a failure is logged and swallowed, because a service that will not start is
@@ -227,8 +228,8 @@ def create_app(
             return hospital
         return _tenant_from_token(token)
 
-    async def _hospital(authorization: str | None) -> str:
-        """Resolve the caller's hospital from either credential.
+    async def _caller(authorization: str | None) -> Caller:
+        """Resolve the caller from either credential.
 
         The static token is tried first: it is the device path, and it must not depend on the
         database being reachable for authentication. Only then is the value treated as a JWT.
@@ -239,18 +240,23 @@ def create_app(
 
         hospital = tenants.get(credential)
         if hospital is not None:
-            return hospital
+            return Caller(hospital=hospital)
 
-        if resolve_jwt_hospital is not None:
-            hospital = await resolve_jwt_hospital(credential)
-            if hospital is not None:
-                return hospital
+        if resolve_jwt is not None:
+            caller = await resolve_jwt(credential)
+            if caller is not None:
+                return caller
 
         raise HTTPException(status_code=401, detail="unknown credential")
 
+    def _require(caller: Caller, permission: str) -> None:
+        """A device passes; a clinician needs the permission in their token."""
+        if not caller.can(permission):
+            raise HTTPException(status_code=403, detail=f"permission required: {permission}")
+
     @app.post("/ingest")
     async def ingest(resource: dict, authorization: str | None = Header(default=None)):
-        hospital = await _hospital(authorization)
+        hospital = (await _caller(authorization)).hospital
         kind = resource.get("resourceType")
         if kind in ("Patient", "Encounter"):
             parse = parse_fhir_patient if kind == "Patient" else parse_fhir_encounter
@@ -306,17 +312,21 @@ def create_app(
 
     @app.post("/ack")
     async def ack(authorization: str | None = Header(default=None), body: dict = Body(...)):
-        hospital = await _hospital(authorization)
+        caller = await _caller(authorization)
+        _require(caller, "alerts.ack")
+        hospital = caller.hospital
         engine = _engine(hospital)
         store = _store(hospital)
         patient_id, kind = body.get("patient_id"), body.get("kind")
-        role = body.get("role", "unknown")
+        # A clinician is attributed from the signed token; only the device path may name a role.
+        actor = caller.actor or body.get("role", "unknown")
         if (patient_id, kind) not in _live_keys(engine):
             raise HTTPException(status_code=404, detail="no such active alert")
-        store.acknowledge(patient_id, kind, role, datetime.now(timezone.utc))
+        store.acknowledge(patient_id, kind, actor, datetime.now(timezone.utc))
         store.escalated.discard((patient_id, kind))  # ack immediately stops escalation
         audit.append(AuditEvent(hospital, "ack", patient_id, kind,
-                                {"role": role, "at": datetime.now(timezone.utc).isoformat()}))
+                                {"role": actor, "groups": list(caller.groups),
+                                 "at": datetime.now(timezone.utc).isoformat()}))
         board = patient_board(engine, patient_id, store,
                               identity=identities.get(hospital, patient_id))
         await broadcaster.publish(hospital, board)
@@ -324,11 +334,13 @@ def create_app(
 
     @app.post("/view")
     async def view(authorization: str | None = Header(default=None), body: dict = Body(...)):
-        """Record that a clinician opened a patient. Attribution is role-level (no per-user login yet)."""
-        hospital = await _hospital(authorization)
+        """Record that a clinician opened a patient — attributed from the token."""
+        caller = await _caller(authorization)
+        _require(caller, "board.view")
         patient_id = body.get("patient_id", "")
-        audit.append(AuditEvent(hospital, "view", patient_id, "",
-                                {"role": body.get("role", "unknown")}))
+        audit.append(AuditEvent(caller.hospital, "view", patient_id, "",
+                                {"role": caller.actor or body.get("role", "unknown"),
+                                 "groups": list(caller.groups)}))
         return {"ok": True}
 
     @app.get("/health")
@@ -340,20 +352,26 @@ def create_app(
 
     @app.get("/patients")
     async def patients(authorization: str | None = Header(default=None)):
-        hospital = await _hospital(authorization)
+        caller = await _caller(authorization)
+        _require(caller, "board.view")
+        hospital = caller.hospital
         return {"patients": board_snapshot(_engine(hospital), _store(hospital),
                                            identities=identities, hospital=hospital)}
 
     @app.get("/alerts/{patient_id}")
     async def alerts(patient_id: str, authorization: str | None = Header(default=None)):
-        hospital = await _hospital(authorization)
+        caller = await _caller(authorization)
+        _require(caller, "board.view")
+        hospital = caller.hospital
         active = _engine(hospital).active_alerts(patient_id)
         return {"patient_id": patient_id, "alerts": [asdict(a) for a in active]}
 
     @app.post("/stream-ticket")
     async def stream_ticket(authorization: str | None = Header(default=None)):
         """Exchange a credential for a short-lived, single-use SSE ticket."""
-        hospital = await _hospital(authorization)
+        caller = await _caller(authorization)
+        _require(caller, "board.view")
+        hospital = caller.hospital
         return {"ticket": tickets.issue(hospital, now=time.monotonic()), "expires_in": 60}
 
     @app.get("/stream")
@@ -387,7 +405,9 @@ def create_app(
     @app.get("/audit")
     async def get_audit(patient_id: str | None = None, event_type: str | None = None,
                         limit: int = 200, authorization: str | None = Header(default=None)):
-        hospital = await _hospital(authorization)
+        caller = await _caller(authorization)
+        _require(caller, "audit.view")
+        hospital = caller.hospital
         recs = audit.records(tenant=hospital, patient_id=patient_id,
                              event_type=event_type, limit=limit)
         return {"records": [asdict(r) for r in recs]}

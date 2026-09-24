@@ -236,6 +236,9 @@ app = create_app(
     _tenants,
     audit=_audit(),
     identities=_identities(),
-    resolve_jwt_hospital=make_jwt_hospital_resolver(_read_tenant_slugs),
+    # Interim, until the token -> Caller resolver is wired here: a clinician's JWT is refused on
+    # the board routes (401). The hospital-only resolver above carries no actor or permissions,
+    # and a Caller without an actor is a device, exempt from every permission check.
+    resolve_jwt=None,
     on_startup_check=make_startup_tenant_check(list(_tenants.values())),
 )

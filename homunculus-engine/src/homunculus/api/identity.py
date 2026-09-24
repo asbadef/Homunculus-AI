@@ -12,6 +12,7 @@ them live in app.py.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 
 
 def hospital_for_slugs(slugs: Sequence[str]) -> str | None:
@@ -33,3 +34,24 @@ def unmatched_hospital_keys(configured: Iterable[str], known_slugs: Iterable[str
     """
     known = set(known_slugs)
     return sorted({key for key in configured if key not in known})
+
+
+@dataclass(frozen=True)
+class Caller:
+    """Who is calling a board route.
+
+    A device (the bridge's static tenant token) has no `actor`: it is a machine identity and
+    is exempt from permission checks — it can only ever reach the hospital its token names.
+    A clinician's JWT resolves to an actor, their groups and their permissions.
+    """
+    hospital: str
+    actor: str | None = None
+    groups: tuple[str, ...] = ()
+    perms: frozenset[str] = frozenset()
+
+    @property
+    def is_device(self) -> bool:
+        return self.actor is None
+
+    def can(self, permission: str) -> bool:
+        return self.is_device or permission in self.perms

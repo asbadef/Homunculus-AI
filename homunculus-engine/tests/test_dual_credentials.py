@@ -10,18 +10,22 @@ import pytest
 from fastapi.testclient import TestClient
 
 from homunculus.api.app import create_app
+from homunculus.api.identity import Caller
 
 
 @pytest.fixture
 def client():
-    async def fake_jwt_hospital(token: str) -> str | None:
-        # Stands in for: decode JWT -> load user -> membership -> tenant slug.
-        return "demo-hastanesi" if token == "valid-jwt" else None
+    async def fake_jwt(token: str) -> Caller | None:
+        # Stands in for: decode JWT -> load user -> check active + tv -> Caller from claims.
+        if token == "valid-jwt":
+            return Caller(hospital="demo-hastanesi", actor="dr.elif", groups=("attending",),
+                          perms=frozenset({"board.view", "alerts.ack"}))
+        return None
 
     app = create_app(
         {"bridge-token": "demo-hastanesi"},
         run_escalation_loop=False,
-        resolve_jwt_hospital=fake_jwt_hospital,
+        resolve_jwt=fake_jwt,
     )
     with TestClient(app) as c:
         yield c
@@ -49,7 +53,7 @@ def test_a_jwt_does_not_open_the_stream(client):
     """The tenant token authorises /ingest as well as the board, so it must never be handed to a
     browser — and the reverse restriction matters just as much: a JWT, valid on every other
     clinical route, must not work as `/stream?token=`. `_stream_hospital` only ever calls
-    `_tenant_from_token` (never `resolve_jwt_hospital`), so this is true by construction today;
+    `_tenant_from_token` (never `resolve_jwt`), so this is true by construction today;
     the point of this test is to catch a future edit that quietly wires a JWT into the stream
     path, since that would put a bearer credential straight into a URL — logs, browser history,
     proxies — for a token that is otherwise sent only in an Authorization header."""
