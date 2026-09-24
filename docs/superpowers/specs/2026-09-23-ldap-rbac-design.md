@@ -270,8 +270,8 @@ succeeds if the token's `perms` contains **any** of the listed keys.
 the legacy `?board=1` screen) is a machine identity and is exempt from permission checks. The
 `_hospital()` helper in `api/app.py` becomes `_caller()` returning `(hospital, principal | None)`:
 for a tenant token, `principal` is `None` and no permission is demanded; for a JWT, the `tenant`
-claim supplies the hospital (the claim is signed, so it needs no membership query), the user row
-is loaded for `is_active` and `tv`, and `_require(caller, perm)` raises 403 when the permission is
+claim supplies the hospital, the user row is loaded for `is_active` and `tv`, and the same query
+confirms an active membership in the active tenant of that slug (see "Tenant isolation" below), and `_require(caller, perm)` raises 403 when the permission is
 missing. The per-request membership query in the current resolver goes away.
 
 **Attribution.** For a JWT caller, `/ack` and `/view` record the actor from the token —
@@ -289,8 +289,15 @@ objects:
 - A break-glass session can be extended or closed only by the user who opened it, and a closed or
   expired one cannot be extended.
 
+The tenant claim is not trusted by name alone. On every router request and every board request,
+one query confirms three things: that the slug's tenant exists, that it is active, and that the
+caller holds an active membership in it. An unknown slug is 401, so the client refreshes and gets
+the current slug. An inactive tenant or membership is 403. The signature proves who minted the
+token, but a slug can be renamed and reused, and a membership can be deactivated inside the
+token's hour. A user named in a request body must be an active user with an active membership.
+
 Creating a tenant is a platform-operator action (`users.is_platform_support`, set in SQL, granted
-by no group). A hospital administrator's tenant would have no members and could not be
+by no group). The operator is always MFA-verified. A hospital administrator's tenant would have no members and could not be
 administered through `/admin`. A new tenant's first administrator comes from
 `scripts/seed_admin.py`. (Added after Task 7's review: before this, no route filtered by tenant.
 The old `require_roles` accepted a role held in any tenant.)

@@ -49,6 +49,15 @@ alias is deleted. **Task 7b** (new) scopes every admission, escalation and struc
 caller's tenant and makes tenant creation a platform-operator action. Task 10's `_scope` may
 delegate to 7b's `caller_tenant_id` (same 403 message).
 
+**Task 7b as amended in review:** `caller_tenant_id` no longer trusts the slug alone. In ONE
+query it requires the slug's tenant to be active AND the caller to hold an active membership
+in it. An unknown slug is 401, so the client refreshes and gets the current slug; an inactive
+tenant or membership is 403. `tenant_of_user` skips inactive tenants.
+`require_platform_operator` demands `mfa_verified`, and `build_context` sets `mfa_required` for
+`is_platform_support` (the no-tenant branch included). `ensure_members` requires
+`User.is_active`. Closing a break-glass session that is already closed or expired is 409.
+**Task 9's board resolver must apply the same tenant condition** (see the note in Task 9).
+
 **Do not deploy mid-plan.** Between migration 0006 (Task 3) and the sign-in rewrite (Task 6) and the
 seed rewrite (Task 7), stored e-mails are lower-cased while sign-in still matches case-sensitively,
 and the seed cannot create the administrator. The branch reaches the VM only after Task 20.
@@ -3938,6 +3947,14 @@ async def _read_user_auth(user_id: str) -> UserAuthRow | None:
                        token_version=row.token_version)
 ```
 
+**Tenant check (added after Task 7b's review).** The board path must not trust the slug alone
+either: a renamed slug that a new tenant reuses, a deactivated tenant or a deactivated membership
+would otherwise still reach the board. `_read_user_auth` takes the claim's slug as well and, in
+its one query, also reports whether the user holds an active membership in an ACTIVE tenant with
+that slug. This is the same condition as Task 7b's `caller_tenant_id`; share the SQL rather than
+copy it. `UserAuthRow` gains `tenant_ok: bool`, and `resolve` returns None when it is False. Add a
+resolver test for each of the three cases.
+
 Move `from dataclasses import dataclass` and `from homunculus.api.identity import Caller` up to the module's import block (`hospital_for_slugs` is no longer imported here; keep `unmatched_hospital_keys`). At the bottom replace `resolve_jwt_hospital=make_jwt_hospital_resolver(_read_tenant_slugs),` with:
 
 ```python
@@ -7418,6 +7435,21 @@ Expected: green, clean build.
   Tell the ward before the deploy window.
 - An administrator who resets their OWN password or MFA through the admin screen ends their own
   session and lands on the login screen. That is expected.
+- **Cross-tenant rows written before Task 7b.** The old code let a user of one tenant write into
+  another. The side-effect paths trust stored ids: discharge and transfer act on
+  `admission.bed_id`, and handover sign-off counts alerts through `handover.admission_ids`. Before the
+  upgrade, run read-only queries for rows whose objects span tenants:
+  - admissions whose unit (through site), bed (through room, unit, site) or patient belongs to
+    another tenant;
+  - alerts whose patient, admission or unit belongs to another tenant;
+  - break-glass sessions whose patient belongs to another tenant;
+  - handovers whose `admission_ids` name another tenant's admissions.
+
+  Expect zero rows when the VM has one tenant (`SELECT slug FROM tenants`). Anything found is
+  reported to the hospital, never fixed silently.
+- A platform operator is flagged with `UPDATE users SET is_platform_support = true WHERE username = '…'`.
+  The flag does not bump `token_version`, so the operator signs in again, with MFA, before
+  `POST /tenant/tenants` works.
 
 - [ ] **Step 5: Record the outcome in this plan**
 
@@ -7465,6 +7497,24 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   `/tenant/beds/{id}/transition` (`structure.manage`). Spec §5 lists bed release under
   `admissions.discharge.confirm`, so a charge nurse cannot free a bed today. It needs its own route
   or a narrower guard on the transition.
+- **Consistency inside one tenant is not checked.** The tenant checks do not cover these:
+  - an admission's bed may sit in a different unit from its admitting unit;
+  - a shift may assign a bed outside its unit;
+  - a handover may name admissions outside its unit;
+  - a transfer's confirm target may differ from its initiate target;
+  - an alert's patient may not match its admission.
+- **Break-glass:**
+  - extend takes no body, so S-23's "refresh the reason" is never enforced;
+  - `extension_count += 1` can lose an update under a race;
+  - no supervisor can revoke a session. Add a revoke route with its own permission and an audit
+    row for suspected misuse.
+- **The handover EXPIRED marking is lost.** `sign_handover_outgoing` flushes EXPIRED and then
+  raises, and the router never commits, so the marking is rolled back. This predates the plan.
+- **Platform operator vs the `platform_support` group.** The names are confusingly close. An
+  operator with no tenant cannot list tenants, because the list sits behind `structure.manage`.
+  Give operators their own `require_platform_operator` listing if a vendor console is ever built.
+- **Layering.** `tenant/scope.py` imports the admission models. Move the scope helpers to a
+  neutral module if a cycle ever appears.
 - **Structure reads need `structure.manage`.** Users who admit patients cannot look up unit or bed
   ids through the API. A read-only `structure.view`, or folding the reads under `admissions.view`,
   is the likely fix.
