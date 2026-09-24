@@ -13,6 +13,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.auth.dependencies import require_permission
@@ -45,12 +46,21 @@ async def _get_or_404(db: AsyncSession, model, obj_id: uuid.UUID, name: str):
 async def create_tenant(
     body: TenantCreate, db: AsyncSession = Depends(get_db), _user=_admin,
 ) -> TenantResponse:
+    taken = HTTPException(status_code=status.HTTP_409_CONFLICT,
+                          detail=f"A tenant with slug {body.slug!r} already exists")
+    if (await db.execute(select(Tenant.id).where(Tenant.slug == body.slug))).first():
+        raise taken
     tenant = Tenant(
         name=body.name, slug=body.slug,
         country_code=body.country_code, timezone=body.timezone,
     )
     db.add(tenant)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # A concurrent request took the slug between the check and the insert.
+        await db.rollback()
+        raise taken from None
     # A tenant without its default groups could never be administered.
     await ensure_default_groups(db, tenant.id)
     await db.commit()

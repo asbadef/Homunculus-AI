@@ -12,7 +12,8 @@ Permission guards (see auth/permissions.py):
   * shifts.manage              shift schedules
   * handover.sign              open, sign, countersign a handover
 
-PHI: patient identity is returned only in the admission-detail endpoint. List and
+PHI: patient identity is returned only by the patient-detail endpoint
+(`GET /admissions/{id}/patient`), to holders of `admissions.view`. List and
 board contexts never include patient identity here.
 """
 from __future__ import annotations
@@ -125,7 +126,8 @@ async def get_admission(admission_id: uuid.UUID, db: AsyncSession = Depends(get_
 @router.get("/{admission_id}/patient", response_model=PatientResponse,
             dependencies=[Depends(require_permission("admissions.view"))])
 async def get_admission_patient(admission_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    """PHI detail — returned only to authenticated care-team members."""
+    """PHI detail. Patient identity is returned only by this endpoint, to holders of
+    `admissions.view`. Reads of it are not audited yet."""
     admission = await _get_admission_or_404(db, admission_id)
     patient = await db.get(Patient, admission.patient_id)
     if patient is None:
@@ -162,7 +164,8 @@ async def claim_attending(
     user: User = Depends(require_permission("care_team.claim")),
 ):
     admission = await _get_admission_or_404(db, admission_id)
-    # Attending claims themselves; charge nurse / admin assign on behalf via body-less default.
+    # The caller becomes the attending of record. There is no claiming on someone else's
+    # behalf here: adding another clinician goes through POST .../care-team (care_team.assign).
     member = await service.claim_attending(
         db, admission, attending_id=user.id, granted_by_id=user.id,
     )

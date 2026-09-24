@@ -134,13 +134,12 @@ async def get_user_for_enrolment(principal: Principal = Depends(get_principal_pr
     return principal.user
 
 
-# The older name for get_current_user (the MFA-gated user), kept for code that still imports it.
-get_current_active_user = get_current_user
-
-
 def require_permission(*keys: str) -> Callable[..., Awaitable[User]]:
     """Dependency factory: the caller must hold ANY of `keys`. Unknown keys fail here, at
-    import time, so a typo in a route guard stops the service from starting."""
+    import time, so a typo in a route guard stops the service from starting.
+
+    The returned dependency carries the keys as `.permissions` (a frozenset): tests read it to
+    map routes to keys."""
     if not keys:
         raise ValueError("require_permission needs at least one key")
     wanted = frozenset(validate_permissions(keys))
@@ -153,4 +152,5 @@ def require_permission(*keys: str) -> Callable[..., Awaitable[User]]:
             )
         return principal.user
 
+    _check.permissions = wanted  # type: ignore[attr-defined]
     return _check

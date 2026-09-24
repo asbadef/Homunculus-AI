@@ -2,8 +2,9 @@
 Pydantic schemas for the admission workflow API.
 
 PHI fields (patient identity) are accepted on input but never echoed back in a
-list/board context; detail responses return them only to authorised care-team
-members (enforced in the router).
+list/board context. They are returned only by the patient-detail endpoint
+(`GET /admissions/{id}/patient`), to holders of `admissions.view`; reads of it are
+not audited yet.
 """
 from __future__ import annotations
 
