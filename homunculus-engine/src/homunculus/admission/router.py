@@ -1,11 +1,16 @@
 """
 FastAPI routes for the patient admission workflow (§4, §5).
 
-Role guards follow the workflow ownership in the design doc:
-  * NURSE / CHARGE_NURSE open the admission (§4.1 step 2)
-  * ATTENDING / UNIT_PHYSICIAN sign it off (§4.1 step 4), transfer, discharge
-  * ATTENDING manages the care team (§4.2–4.3)
-  * CHARGE_NURSE schedules nurses and confirms discharge/transfer (§4.4/4.6/4.7)
+Permission guards (see auth/permissions.py):
+  * admissions.admit           open an admission
+  * admissions.view            list / read admissions, patients and care teams
+  * admissions.sign_off        physician sign-off
+  * admissions.move.initiate   initiate a transfer or discharge
+  * admissions.transfer.confirm   confirm a transfer arrival
+  * admissions.discharge.confirm  confirm a discharge, release the bed
+  * care_team.claim / .assign  claim or assign a care-team role
+  * shifts.manage              shift schedules
+  * handover.sign              open, sign, countersign a handover
 
 PHI: patient identity is returned only in the admission-detail endpoint. List and
 board contexts never include patient identity here.
@@ -30,8 +35,8 @@ from homunculus.admission.schemas import (
 )
 from homunculus.admission.service import WorkflowError
 from homunculus.escalation import service as escalation_service
-from homunculus.auth.dependencies import get_current_active_user, require_roles
-from homunculus.auth.models import User, UserRole
+from homunculus.auth.dependencies import require_permission
+from homunculus.auth.models import User
 from homunculus.db import get_db
 from homunculus.tenant.models import Site, Unit
 
@@ -67,7 +72,7 @@ async def _get_admission_or_404(db: AsyncSession, admission_id: uuid.UUID) -> Ad
 # Create DRAFT admission (§4.1)
 # ---------------------------------------------------------------------------
 @router.post("", response_model=AdmissionResponse, status_code=201,
-             dependencies=[Depends(require_roles(UserRole.NURSE, UserRole.CHARGE_NURSE))])
+             dependencies=[Depends(require_permission("admissions.admit"))])
 async def create_admission(payload: AdmissionCreate, db: AsyncSession = Depends(get_db)):
     tenant_id = await _resolve_tenant_id(db, payload.note.admitting_unit_id)
 
@@ -100,7 +105,7 @@ async def create_admission(payload: AdmissionCreate, db: AsyncSession = Depends(
 # List / detail
 # ---------------------------------------------------------------------------
 @router.get("", response_model=list[AdmissionResponse],
-            dependencies=[Depends(get_current_active_user)])
+            dependencies=[Depends(require_permission("admissions.view"))])
 async def list_admissions(
     unit_id: uuid.UUID | None = None, db: AsyncSession = Depends(get_db)
 ):
@@ -112,13 +117,13 @@ async def list_admissions(
 
 
 @router.get("/{admission_id}", response_model=AdmissionResponse,
-            dependencies=[Depends(get_current_active_user)])
+            dependencies=[Depends(require_permission("admissions.view"))])
 async def get_admission(admission_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     return await _get_admission_or_404(db, admission_id)
 
 
 @router.get("/{admission_id}/patient", response_model=PatientResponse,
-            dependencies=[Depends(get_current_active_user)])
+            dependencies=[Depends(require_permission("admissions.view"))])
 async def get_admission_patient(admission_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """PHI detail — returned only to authenticated care-team members."""
     admission = await _get_admission_or_404(db, admission_id)
@@ -135,7 +140,7 @@ async def get_admission_patient(admission_id: uuid.UUID, db: AsyncSession = Depe
 async def sign_off(
     admission_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.ATTENDING, UserRole.UNIT_PHYSICIAN)),
+    user: User = Depends(require_permission("admissions.sign_off")),
 ):
     admission = await _get_admission_or_404(db, admission_id)
     try:
@@ -154,8 +159,7 @@ async def sign_off(
 async def claim_attending(
     admission_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(
-        UserRole.ATTENDING, UserRole.CHARGE_NURSE, UserRole.HOSPITAL_ADMIN)),
+    user: User = Depends(require_permission("care_team.claim")),
 ):
     admission = await _get_admission_or_404(db, admission_id)
     # Attending claims themselves; charge nurse / admin assign on behalf via body-less default.
@@ -172,7 +176,7 @@ async def add_care_team_member(
     admission_id: uuid.UUID,
     payload: CareTeamAdd,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.ATTENDING)),
+    user: User = Depends(require_permission("care_team.assign")),
 ):
     admission = await _get_admission_or_404(db, admission_id)
     try:
@@ -189,7 +193,7 @@ async def add_care_team_member(
 
 
 @router.get("/{admission_id}/care-team", response_model=list[CareTeamMemberResponse],
-            dependencies=[Depends(get_current_active_user)])
+            dependencies=[Depends(require_permission("admissions.view"))])
 async def list_care_team(admission_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(CareTeamMember).where(CareTeamMember.admission_id == admission_id)
@@ -205,7 +209,7 @@ async def transfer_initiate(
     admission_id: uuid.UUID,
     payload: TransferInitiate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.ATTENDING, UserRole.UNIT_PHYSICIAN)),
+    user: User = Depends(require_permission("admissions.move.initiate")),
 ):
     admission = await _get_admission_or_404(db, admission_id)
     try:
@@ -225,7 +229,7 @@ async def transfer_confirm(
     admission_id: uuid.UUID,
     payload: TransferInitiate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.NURSE, UserRole.CHARGE_NURSE)),
+    user: User = Depends(require_permission("admissions.transfer.confirm")),
 ):
     admission = await _get_admission_or_404(db, admission_id)
     try:
@@ -248,7 +252,7 @@ async def discharge_initiate(
     admission_id: uuid.UUID,
     payload: DischargeInitiate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.ATTENDING, UserRole.UNIT_PHYSICIAN)),
+    user: User = Depends(require_permission("admissions.move.initiate")),
 ):
     admission = await _get_admission_or_404(db, admission_id)
     unacked = await escalation_service.count_unacknowledged_critical(
@@ -270,7 +274,7 @@ async def discharge_initiate(
 async def discharge_confirm(
     admission_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.CHARGE_NURSE)),
+    user: User = Depends(require_permission("admissions.discharge.confirm")),
 ):
     admission = await _get_admission_or_404(db, admission_id)
     try:
@@ -292,7 +296,7 @@ sched_router = APIRouter(prefix="/shift-schedule", tags=["shift-schedule"])
 async def create_shift_schedule(
     payload: ShiftScheduleCreate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.CHARGE_NURSE)),
+    user: User = Depends(require_permission("shifts.manage")),
 ):
     assignments = [a.model_dump() for a in payload.assignments]
     try:
@@ -320,7 +324,7 @@ handover_router = APIRouter(prefix="/handovers", tags=["handovers"])
 async def open_handover(
     payload: HandoverOpen,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(require_permission("handover.sign")),
 ):
     handover = await service.open_handover(
         db, unit_id=payload.unit_id, outgoing_user_id=user.id,
@@ -336,7 +340,7 @@ async def sign_outgoing(
     handover_id: uuid.UUID,
     payload: HandoverSign,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(require_permission("handover.sign")),
 ):
     handover = await db.get(Handover, handover_id)
     if handover is None:
@@ -361,7 +365,7 @@ async def sign_outgoing(
 async def countersign(
     handover_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(require_permission("handover.sign")),
 ):
     handover = await db.get(Handover, handover_id)
     if handover is None:

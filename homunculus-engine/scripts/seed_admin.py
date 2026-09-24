@@ -1,4 +1,5 @@
-"""Create the bootstrap tenant + HOSPITAL_ADMIN so a fresh database can be logged into.
+"""Create the bootstrap tenant, its default groups, and the first administrator (in the
+`hospital_admin` group) so a fresh database can be logged into.
 
 Idempotent — safe to re-run (the host may call it on every deploy).
 

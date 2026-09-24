@@ -1,9 +1,9 @@
 """
-Bootstrap seeding — the first tenant and its HOSPITAL_ADMIN.
+Bootstrap seeding — the first tenant, its default groups, and its first administrator.
 
-A freshly migrated database has no users, so nobody could log in and no admin could
-create anyone. This module creates that first account. It is **idempotent**: running it
-again on an already-seeded database changes nothing.
+A freshly migrated database has no users, so nobody could sign in and no admin could create
+anyone. This module creates that first account. It is **idempotent**: running it again on an
+already-seeded database changes nothing.
 
 Credentials come from the caller (CLI reads them from the environment) — never hardcoded.
 """
@@ -13,13 +13,16 @@ from pydantic import BaseModel, EmailStr, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from homunculus.auth.models import TenantMembership, User, UserRole
-from homunculus.auth.service import hash_password
+from homunculus.auth.groups import ensure_default_groups, groups_of, set_manual_groups
+from homunculus.auth.models import SOURCE_MANUAL, TenantMembership, User
+from homunculus.auth.service import (
+    find_user_by_login, hash_password, normalize_login, run_bcrypt,
+)
 from homunculus.tenant.models import Tenant
 
 
 class _EmailCheck(BaseModel):
-    """Same validation the login endpoint applies, so we never seed an unusable account."""
+    """The dashboard validates addresses the same way; never seed one it would refuse."""
     email: EmailStr
 
 
@@ -27,10 +30,8 @@ def _validate_email(email: str) -> None:
     try:
         _EmailCheck(email=email)
     except ValidationError as exc:
-        # e.g. ".local" / "localhost" are rejected as special-use domains by the login API — an
-        # account seeded with one could never be logged into, so refuse it here.
         raise ValueError(
-            f"Geçersiz e-posta {email!r}: giriş API'si bu adresi kabul etmez, "
+            f"Geçersiz e-posta {email!r}: giriş ekranı bu adresi kabul etmez, "
             f"bu hesapla giriş yapılamaz."
         ) from exc
 
@@ -45,10 +46,11 @@ async def seed_bootstrap(
     full_name: str,
     password: str,
     timezone: str = "UTC",
-    role: UserRole = UserRole.HOSPITAL_ADMIN,
 ) -> tuple[Tenant, User]:
-    """Create (or return) the bootstrap tenant, admin user, and their membership."""
+    """Create (or return) the bootstrap tenant, its default groups, the admin user, the
+    membership, and the admin's `hospital_admin` group membership."""
     _validate_email(email)
+    key = normalize_login(email)
 
     tenant = (await db.execute(
         select(Tenant).where(Tenant.slug == tenant_slug)
@@ -60,17 +62,21 @@ async def seed_bootstrap(
         )
         db.add(tenant)
         await db.flush()
+    groups = await ensure_default_groups(db, tenant.id)
 
-    user = (await db.execute(
-        select(User).where(User.email == email)
-    )).scalar_one_or_none()
+    created = False
+    # By username OR e-mail: a hospital may rename the bootstrap account's username, and a
+    # username-only lookup would then INSERT a second user with the same e-mail on the next
+    # boot — the unique constraint would fail the boot script.
+    user = await find_user_by_login(db, key)
     if user is None:
         user = User(
-            email=email, full_name=full_name,
-            hashed_password=hash_password(password), is_active=True,
+            username=key, email=key, full_name=full_name,
+            hashed_password=await run_bcrypt(hash_password, password), is_active=True,
         )
         db.add(user)
         await db.flush()
+        created = True
 
     membership = (await db.execute(
         select(TenantMembership).where(
@@ -79,7 +85,19 @@ async def seed_bootstrap(
         )
     )).scalar_one_or_none()
     if membership is None:
-        db.add(TenantMembership(user_id=user.id, tenant_id=tenant.id, role=role))
+        db.add(TenantMembership(user_id=user.id, tenant_id=tenant.id))
+        await db.flush()
+        created = True
+
+    # Grant hospital_admin ONLY to an account or membership this run created. The seed runs on
+    # every boot; re-granting on each start would silently undo a hospital's decision to demote
+    # the generic bootstrap account. Additive, so it never strips groups the account already has.
+    if created:
+        links = await groups_of(db, user.id, tenant.id)
+        manual_ids = {link.group_id for link in links if link.source == SOURCE_MANUAL}
+        await set_manual_groups(db, user=user, tenant_id=tenant.id,
+                                group_ids=manual_ids | {groups["hospital_admin"].id},
+                                granted_by_id=None)
 
     await db.commit()
     await db.refresh(tenant)

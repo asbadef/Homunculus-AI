@@ -134,7 +134,7 @@ async def get_user_for_enrolment(principal: Principal = Depends(get_principal_pr
     return principal.user
 
 
-# Existing routers import this name; it is the MFA-gated user, exactly as before.
+# The older name for get_current_user (the MFA-gated user), kept for code that still imports it.
 get_current_active_user = get_current_user
 
 
@@ -153,16 +153,4 @@ def require_permission(*keys: str) -> Callable[..., Awaitable[User]]:
             )
         return principal.user
 
-    return _check
-
-
-# --------------------------------------------------------------------------------------------
-# TEMPORARY SHIM — deleted in Task 7 together with UserRole. Routers still import it, and from
-# THIS commit it refuses every role-guarded route (tokens no longer carry a `roles` claim): no
-# build of this branch is deployable until Task 7 moves each router to require_permission.
-# --------------------------------------------------------------------------------------------
-def require_roles(*roles):
-    async def _check(principal: Principal = Depends(get_principal)) -> User:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="role guards are being replaced by permissions")
     return _check

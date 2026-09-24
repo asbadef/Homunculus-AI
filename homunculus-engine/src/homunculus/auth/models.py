@@ -10,7 +10,6 @@ PHI RULE: No real patient data. This file contains only identity/auth data.
 CLINICAL RULE: System states criteria met — never diagnoses.
 """
 from __future__ import annotations
-import enum
 import uuid
 from datetime import datetime, timezone
 
@@ -30,30 +29,6 @@ SOURCE_LDAP = "ldap"
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-class UserRole(str, enum.Enum):
-    """DEPRECATED — deleted in this same plan (Task 7) once every router uses permissions."""
-    ATTENDING = "ATTENDING"
-    ASSOCIATE_PHYSICIAN = "ASSOCIATE_PHYSICIAN"
-    ONCALL_PHYSICIAN = "ONCALL_PHYSICIAN"
-    UNIT_PHYSICIAN = "UNIT_PHYSICIAN"
-    CHARGE_NURSE = "CHARGE_NURSE"
-    NURSE = "NURSE"
-    RAPID_RESPONSE = "RAPID_RESPONSE"
-    HOSPITAL_ADMIN = "HOSPITAL_ADMIN"
-    AUDITOR = "AUDITOR"
-    PLATFORM_SUPPORT = "PLATFORM_SUPPORT"
-
-
-# Roles that REQUIRE TOTP MFA (S-21). Still consumed by auth.service until Task 7 removes
-# UserRole and this alongside it.
-MFA_REQUIRED_ROLES = {
-    UserRole.HOSPITAL_ADMIN,
-    UserRole.ATTENDING,
-    UserRole.UNIT_PHYSICIAN,
-    UserRole.PLATFORM_SUPPORT,
-}
 
 
 class User(Base):

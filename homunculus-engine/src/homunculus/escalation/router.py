@@ -1,10 +1,10 @@
 """
 FastAPI routes for the alarm, escalation and break-glass subsystem.
 
-Role guards follow the design doc:
-  * Any active clinician may acknowledge/snooze/manually-escalate an alert they can
-    see (§6.2/§6.3); CRITICAL acknowledgement enforces a mandatory reason + note.
-  * Break-glass may be activated by any clinician with an active session (§3.5).
+Permission guards (see auth/permissions.py):
+  * alerts.escalate   create an alert manually; escalate one to the RRT tier
+  * alerts.ack        acknowledge or snooze (CRITICAL acknowledgement enforces reason + note)
+  * break_glass.use   open, extend, close a break-glass session
 
 PHI: alerts carry only internal ids plus a PHI-minimal summary (bed label + finding),
 never patient-identifiable data.
@@ -16,7 +16,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from homunculus.auth.dependencies import get_current_active_user
+from homunculus.auth.dependencies import require_permission
 from homunculus.auth.models import User
 from homunculus.db import get_db
 from homunculus.escalation import service
@@ -49,7 +49,7 @@ async def _get_alert_or_404(db: AsyncSession, alert_id: uuid.UUID) -> Alert:
 async def create_alert(
     payload: AlertCreate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(require_permission("alerts.escalate")),
 ):
     """
     Create an alert. Alerts are normally raised by the rules/model engine; this
@@ -72,7 +72,7 @@ async def acknowledge_alert(
     alert_id: uuid.UUID,
     payload: AlertAcknowledge,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(require_permission("alerts.ack")),
 ):
     alert = await _get_alert_or_404(db, alert_id)
     try:
@@ -91,7 +91,7 @@ async def snooze_alert(
     alert_id: uuid.UUID,
     payload: AlertSnoozeRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(require_permission("alerts.ack")),
 ):
     alert = await _get_alert_or_404(db, alert_id)
     try:
@@ -111,7 +111,7 @@ async def manual_escalate(
     alert_id: uuid.UUID,
     payload: ManualEscalateRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(require_permission("alerts.escalate")),
 ):
     """§6.3 step 4 — manual escalation jumps straight to the RRT tier."""
     alert = await _get_alert_or_404(db, alert_id)
@@ -131,7 +131,7 @@ async def manual_escalate(
 async def activate_break_glass(
     payload: BreakGlassActivate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(require_permission("break_glass.use")),
 ):
     tenant_id = await _tenant_of_patient(db, payload.patient_id)
     try:
@@ -150,7 +150,7 @@ async def activate_break_glass(
 async def extend_break_glass(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(require_permission("break_glass.use")),
 ):
     session = await db.get(BreakGlassSession, session_id)
     if session is None:
@@ -168,7 +168,7 @@ async def extend_break_glass(
 async def close_break_glass(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_active_user),
+    user: User = Depends(require_permission("break_glass.use")),
 ):
     session = await db.get(BreakGlassSession, session_id)
     if session is None:

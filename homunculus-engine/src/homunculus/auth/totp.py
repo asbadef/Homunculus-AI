@@ -1,6 +1,6 @@
 """
 TOTP utilities using pyotp.
-S-21: TOTP is mandatory for HOSPITAL_ADMIN, ATTENDING, UNIT_PHYSICIAN, PLATFORM_SUPPORT.
+Whether MFA is required is a property of the user's groups (`groups.mfa_required`).
 """
 from __future__ import annotations
 import hmac

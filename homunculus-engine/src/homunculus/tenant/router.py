@@ -2,9 +2,9 @@
 Tenant hierarchy API routes (Tenant → Site → Unit → Room → Bed).
 Design doc §1.1 – §1.3.
 
-Structural configuration is a HOSPITAL_ADMIN responsibility (§2). Every mutating
-endpoint requires the HOSPITAL_ADMIN role. Bed state transitions are validated
-against the bed lifecycle state machine (§1.3).
+Structural configuration is guarded by the `structure.manage` permission (held by the
+`hospital_admin` group by default), on reads as well as mutations. Bed state transitions are
+validated against the bed lifecycle state machine (§1.3).
 
 PHI RULE: infrastructure only — no patient data.
 """
@@ -15,8 +15,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from homunculus.auth.dependencies import require_roles
-from homunculus.auth.models import UserRole
+from homunculus.auth.dependencies import require_permission
+from homunculus.auth.groups import ensure_default_groups
 from homunculus.db import get_db
 from homunculus.tenant.models import Bed, Room, Site, Tenant, Unit
 from homunculus.tenant.schemas import (
@@ -27,8 +27,9 @@ from homunculus.tenant.schemas import (
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 
-# Only HOSPITAL_ADMIN may configure the physical hierarchy (§2).
-_admin = Depends(require_roles(UserRole.HOSPITAL_ADMIN))
+# The physical hierarchy is configured by whoever holds structure.manage (hospital_admin by
+# default). Mutations AND reads: the tree names units and beds, which is operational data.
+_admin = Depends(require_permission("structure.manage"))
 
 
 async def _get_or_404(db: AsyncSession, model, obj_id: uuid.UUID, name: str):
@@ -49,6 +50,9 @@ async def create_tenant(
         country_code=body.country_code, timezone=body.timezone,
     )
     db.add(tenant)
+    await db.flush()
+    # A tenant without its default groups could never be administered.
+    await ensure_default_groups(db, tenant.id)
     await db.commit()
     await db.refresh(tenant)
     return TenantResponse.model_validate(tenant)
