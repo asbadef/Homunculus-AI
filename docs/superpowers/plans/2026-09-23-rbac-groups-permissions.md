@@ -31,9 +31,11 @@ with no keys, and adds `get_user_for_enrolment` for `/auth/totp/setup`: an alrea
 may replace the authenticator only from an MFA-verified session (otherwise the password alone
 would pass the MFA gate by re-enrolling). `decode_token` requires `exp` and `sub`.
 
-**Task 6 as amended in review:** bcrypt runs in the thread pool (`run_in_threadpool`) — one
+**Task 6 as amended in review:** bcrypt runs off the event loop through
+`auth.service.run_bcrypt(fn, *args)` (a worker thread under a 4-slot `CapacityLimiter`) — one
 uvicorn worker also serves ingest, SSE and escalation, so every `hash_password`/`verify_*` call in
-later tasks goes through it too. Login lookup prefers a username match. `/auth/totp/verify` is
+later tasks goes through it too. `verify_local_password(auth_source, hashed, password)` takes plain
+values; `/health` is async. Login lookup prefers a username match. `/auth/totp/verify` is
 limited (5 failures → 5-minute lock, `auth/limits.py`) and refuses a replayed code. Known users'
 failed sign-ins are audited under their tenant; MFA steps are audited.
 
@@ -4239,7 +4241,6 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from starlette.concurrency import run_in_threadpool
 
 from homunculus.auth.groups import (
     GroupError, bump_group_members, bump_user, count_admins, set_manual_groups,
@@ -4248,7 +4249,7 @@ from homunculus.auth.models import (
     AUTH_LOCAL, Group, GroupPermission, LdapGroupMapping, TenantMembership, User, UserGroup,
 )
 from homunculus.auth.permissions import UnknownPermission, validate_permissions
-from homunculus.auth.service import hash_password, normalize_login
+from homunculus.auth.service import hash_password, normalize_login, run_bcrypt
 from homunculus.tenant.models import Tenant
 
 LAST_ADMIN = "Son yönetici yetkisi kaldırılamaz"
@@ -4426,7 +4427,7 @@ async def create_local_user(db: AsyncSession, tenant_id: uuid.UUID, *, username:
     if not key:
         raise AdminError(422, "Kullanıcı adı zorunludur")
     await _refuse_duplicate_login(db, username=key, email=mail)
-    hashed = await run_in_threadpool(hash_password, password)   # bcrypt off the event loop
+    hashed = await run_bcrypt(hash_password, password)   # bcrypt off the event loop, bounded
     user = User(username=key, email=mail, full_name=full_name.strip(),
                 hashed_password=hashed, auth_source=AUTH_LOCAL)
     db.add(user)
@@ -4478,7 +4479,7 @@ async def set_user_groups(db: AsyncSession, tenant_id: uuid.UUID, user: User,
 async def reset_password(db: AsyncSession, user: User, password: str) -> None:
     if user.auth_source != AUTH_LOCAL:
         raise AdminError(400, "Parola Active Directory tarafından yönetiliyor")
-    user.hashed_password = await run_in_threadpool(hash_password, password)
+    user.hashed_password = await run_bcrypt(hash_password, password)
     await db.flush()
     await bump_user(db, user)
 
