@@ -3953,8 +3953,11 @@ async def _read_user_auth(user_id: str) -> UserAuthRow | None:
 either: a renamed slug that a new tenant reuses, a deactivated tenant or a deactivated membership
 would otherwise still reach the board. `_read_user_auth` takes the claim's slug as well and, in
 its one query, also reports whether the user holds an active membership in an ACTIVE tenant with
-that slug. This is the same condition as Task 7b's `caller_tenant_id`; share the SQL rather than
-copy it. `UserAuthRow` gains `tenant_ok: bool`, and `resolve` returns None when it is False. Add a
+that slug. This is the same condition as Task 7b's `caller_tenant_id`, so share the SQL rather than
+copy it: `homunculus.auth.groups.tenant_claim_query(user_id, slug)` (columns `tenant_id`,
+`tenant_active`, `member_active`; one row or none) can be embedded as a subquery or join, and
+`tenant_claim_verdict(row)` returns `(tenant_id | None, "ok" | "unknown" | "inactive")`. The
+board resolver returns None for anything but "ok". `UserAuthRow` gains `tenant_ok: bool`, and `resolve` returns None when it is False. Add a
 resolver test for each of the three cases.
 
 Move `from dataclasses import dataclass` and `from homunculus.api.identity import Caller` up to the module's import block (`hospital_for_slugs` is no longer imported here; keep `unmatched_hospital_keys`). At the bottom replace `resolve_jwt_hospital=make_jwt_hospital_resolver(_read_tenant_slugs),` with:
