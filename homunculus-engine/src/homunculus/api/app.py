@@ -332,8 +332,10 @@ def create_app(
         return {"ok": True}
 
     @app.get("/health")
-    def health():
-        """Unauthenticated liveness probe for the host's health check."""
+    async def health():
+        """Unauthenticated liveness probe for the host's health check. `async` because it does
+        no blocking work: a sync route would wait for a thread-pool worker, and a burst of
+        sign-ins (bcrypt runs on worker threads) must not make the service look dead."""
         return {"status": "ok"}
 
     @app.get("/patients")

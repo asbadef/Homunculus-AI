@@ -35,7 +35,7 @@ class TOTPSetupResponse(BaseModel):
 
 
 class TOTPVerifyRequest(BaseModel):
-    code: str  # 6-digit TOTP code
+    code: str = Field(max_length=16)  # 6-digit TOTP code; the cap only bounds the input
 
 
 class TokenResponse(BaseModel):

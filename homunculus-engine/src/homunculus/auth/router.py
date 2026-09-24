@@ -17,7 +17,6 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.concurrency import run_in_threadpool
 
 from homunculus.auth.audit import append_audit
 from homunculus.auth.dependencies import (
@@ -34,8 +33,8 @@ from homunculus.auth.schemas import (
 )
 from homunculus.auth.service import (
     PasswordError, build_context, change_password, credential_fingerprint, enable_totp,
-    find_user_by_login, get_user_by_id, issue_tokens, mark_login, normalize_login, setup_totp,
-    verify_local_password,
+    find_user_by_login, get_user_by_id, issue_tokens, mark_login, normalize_login, run_bcrypt,
+    setup_totp, verify_local_password,
 )
 from homunculus.auth.totp import accepted_step
 from homunculus.db import get_db
@@ -48,19 +47,21 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _last_step: dict[uuid.UUID, int] = {}
 
 _TOTP_LOCKED = "Çok fazla hatalı kod. 5 dakika sonra tekrar deneyin."
+_TOTP_REPLAYED = "Bu kod zaten kullanıldı; yeni kodu bekleyin."
+_NO_USER = uuid.UUID(int=0)
 
 
 async def _login_failed(request: Request, db: AsyncSession, user: User | None, key: str,
                         reason: str) -> None:
     """Audit a failed sign-in. A known account's failure is filed under its hospital, so the
     hospital's own (tenant-scoped) audit shows attempts on its accounts; an unknown login has
-    no hospital and is filed under "-"."""
-    tenant = None
-    if user is not None:
-        ref = await tenant_of_user(db, user.id)
-        tenant = ref.slug if ref is not None else None
-    append_audit(request, tenant=tenant, event_type="auth", subject="login.fail",
-                 payload={"login": key, "reason": reason})
+    no hospital and is filed under "-".
+
+    The tenant lookup runs for an unknown login too (with the nil UUID, which matches nothing):
+    a failure then costs the same queries whether or not the account exists."""
+    ref = await tenant_of_user(db, user.id if user is not None else _NO_USER)
+    append_audit(request, tenant=ref.slug if ref is not None else None, event_type="auth",
+                 subject="login.fail", payload={"login": key, "reason": reason})
 
 
 @router.post("/login", response_model=TokenResponse, summary="Sign in with username or e-mail")
@@ -76,8 +77,11 @@ async def login(body: LoginRequest, request: Request,
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail="Dizin sunucusuna ulaşılamıyor")
 
-    # bcrypt is ~0.2 s of CPU: off the event loop, or every sign-in stalls ingest and SSE.
-    if not await run_in_threadpool(verify_local_password, user, body.password):
+    # bcrypt is ~0.2 s of CPU: off the event loop, or every sign-in stalls ingest and SSE. The
+    # account's fields are read here, on the loop; the worker thread gets plain values.
+    source = user.auth_source if user is not None else None
+    hashed = user.hashed_password if user is not None else None
+    if not await run_bcrypt(verify_local_password, source, hashed, body.password):
         await _login_failed(request, db, user, key, "bad_credentials")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     if not user.is_active:
@@ -129,17 +133,24 @@ async def totp_verify(
 
     key = str(user.id)
     if totp_failures.locked(key):
-        audit("mfa.fail", reason="locked")
+        # No audit row per refusal: the lock was recorded once, as `mfa.locked`, when it engaged.
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=_TOTP_LOCKED)
 
     # The code is checked exactly once, here, for a first enrolment and a routine sign-in alike.
     # No await between the check and recording the step: two concurrent requests carrying the
     # same code cannot both pass.
     step = accepted_step(user.totp_secret, body.code)
-    if step is None or step <= _last_step.get(user.id, -1):
-        totp_failures.failed(key)
-        audit("mfa.fail", reason="bad_code" if step is None else "replayed_code")
+    if step is None:
+        audit("mfa.fail", reason="bad_code")
+        if totp_failures.failed(key):
+            audit("mfa.locked", lock_seconds=totp_failures.lock_seconds)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
+    if step <= _last_step.get(user.id, -1):
+        # A genuine code, already used — the clinician re-typed it, or someone replayed it. Not a
+        # guess (it had to be right), so it does not count toward the lock; it is refused and
+        # recorded all the same.
+        audit("mfa.fail", reason="replayed_code")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_TOTP_REPLAYED)
     _last_step[user.id] = step
     totp_failures.succeeded(key)
 

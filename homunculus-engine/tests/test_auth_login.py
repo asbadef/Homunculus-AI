@@ -7,6 +7,8 @@ loops.
 """
 from __future__ import annotations
 
+import time
+
 import pyotp
 import pytest
 import pytest_asyncio
@@ -398,11 +400,16 @@ async def test_five_wrong_codes_lock_the_verify_step(client, world, db_session):
     await _enrolled_admin(world, db_session)
     pending = (await _login(c, "admin")).json()
     for _ in range(5):
-        assert (await _verify(c, pending["access_token"], "xxxxxx")).status_code == 401
-    res = await _verify(c, pending["access_token"], pyotp.TOTP(SECRET).now())
-    assert res.status_code == 429 and "5 dakika" in res.json()["detail"]
-    reasons = [r.payload["reason"] for r in _auth_events(app, "mfa.fail")]
-    assert reasons == ["bad_code"] * 5 + ["locked"]
+        res = await _verify(c, pending["access_token"], "xxxxxx")
+        assert res.status_code == 401 and res.json()["detail"] == "Invalid TOTP code"
+    assert [r.payload["reason"] for r in _auth_events(app, "mfa.fail")] == ["bad_code"] * 5
+    assert len(_auth_events(app, "mfa.locked")) == 1            # once, when the lock engaged
+
+    rows_before = len(app.state.audit.records(limit=10_000))
+    for _ in range(3):                                          # even the right code is refused
+        res = await _verify(c, pending["access_token"], pyotp.TOTP(SECRET).now())
+        assert res.status_code == 429 and "5 dakika" in res.json()["detail"]
+    assert len(app.state.audit.records(limit=10_000)) == rows_before   # no row per refusal
 
 
 async def test_a_totp_code_cannot_be_used_twice(client, world, db_session):
@@ -413,4 +420,44 @@ async def test_a_totp_code_cannot_be_used_twice(client, world, db_session):
     assert (await _verify(c, pending["access_token"], code)).status_code == 200
     again = await _verify(c, pending["access_token"], code)
     assert again.status_code == 401
+    assert again.json()["detail"] == "Bu kod zaten kullanıldı; yeni kodu bekleyin."
     assert [r.payload["reason"] for r in _auth_events(app, "mfa.fail")] == ["replayed_code"]
+
+
+async def test_a_replayed_code_does_not_count_toward_the_lock(client, world, db_session):
+    """A clinician re-typing the code they just used is not guessing: six replays, then the
+    next code, must still get through."""
+    c, app = client
+    await _enrolled_admin(world, db_session)
+    pending = (await _login(c, "admin")).json()
+    totp = pyotp.TOTP(SECRET)
+    step = int(time.time() // 30)
+    assert (await _verify(c, pending["access_token"], totp.generate_otp(step))).status_code == 200
+    for _ in range(6):
+        res = await _verify(c, pending["access_token"], totp.generate_otp(step))
+        assert res.status_code == 401 and "zaten kullanıldı" in res.json()["detail"]
+    # The next step's code is inside the ±1 window whether or not the clock has moved on since.
+    res = await _verify(c, pending["access_token"], totp.generate_otp(step + 1))
+    assert res.status_code == 200
+    assert _auth_events(app, "mfa.locked") == []
+
+
+async def test_known_and_unknown_login_failures_cost_the_same_tenant_lookup(
+        client, world, monkeypatch):
+    """The failure audit looks up the tenant for an unknown login too (and finds none), so a
+    failed sign-in takes the same queries whether or not the account exists."""
+    import homunculus.auth.router as auth_router_module
+
+    real = auth_router_module.tenant_of_user
+    looked_up = []
+
+    async def counting(db, user_id):
+        looked_up.append(user_id)
+        return await real(db, user_id)
+
+    monkeypatch.setattr(auth_router_module, "tenant_of_user", counting)
+    c, app = client
+    assert (await _login(c, "kimse")).status_code == 401
+    assert (await _login(c, "ayse", "yanlis")).status_code == 401
+    assert len(looked_up) == 2 and looked_up[1] == world["nurse"].id
+    assert [r.tenant for r in _auth_events(app, "login.fail")] == ["-", "demo-hastanesi"]

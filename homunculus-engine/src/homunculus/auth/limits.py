@@ -35,13 +35,16 @@ class FailureLimiter:
             return False
         return True
 
-    def failed(self, key: str) -> None:
+    def failed(self, key: str) -> bool:
+        """Count a failure. True exactly when THIS failure engages the lock — the moment worth
+        one audit row; requests refused while the lock holds are not."""
         count = self._failures.get(key, 0) + 1
         if count >= self.max_failures:
             self._failures.pop(key, None)
             self._locked_until[key] = self._clock() + self.lock_seconds
-        else:
-            self._failures[key] = count
+            return True
+        self._failures[key] = count
+        return False
 
     def succeeded(self, key: str) -> None:
         self._failures.pop(key, None)

@@ -33,6 +33,16 @@ def test_the_limiter_locks_after_five_consecutive_failures():
     assert lim.locked("u") is True
 
 
+def test_failed_reports_true_exactly_when_it_engages_the_lock():
+    """The route writes one `mfa.locked` audit row at that moment, not one per refused request."""
+    clock = FakeClock()
+    lim = _limiter(clock)
+    assert [lim.failed("u") for _ in range(5)] == [False, False, False, False, True]
+    clock.t += 300
+    assert lim.locked("u") is False
+    assert [lim.failed("u") for _ in range(5)] == [False, False, False, False, True]
+
+
 def test_the_lock_lifts_after_300_seconds():
     clock = FakeClock()
     lim = _limiter(clock)

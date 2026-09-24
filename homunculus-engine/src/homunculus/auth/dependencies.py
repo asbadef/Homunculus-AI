@@ -5,8 +5,8 @@ FastAPI dependencies for authentication and authorisation.
                             token version -> Principal (401 on any failure)
     get_principal           + the MFA gate: 403 `mfa_required` while a TOTP step is pending
     get_current_user        the User behind get_principal
-    get_current_user_pre_mfa the User behind get_principal_pre_mfa — ONLY for /auth/totp/verify
-                            and /auth/me
+    get_current_user_pre_mfa the User behind get_principal_pre_mfa — ONLY for /auth/me
+                            (/auth/totp/verify takes get_principal_pre_mfa itself, for the tenant)
     get_user_for_enrolment  the User behind get_principal_pre_mfa, but an already-enrolled user
                             may only pass it once MFA is verified — see its docstring
     require_permission(*k)  any-of check against the token's `perms` -> 403 naming the keys

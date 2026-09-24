@@ -1,18 +1,28 @@
 """
 Authentication business logic: passwords, the sign-in lookup, the session context a token is
 minted from, token issuance, TOTP, password change.
+
+bcrypt from async code goes through `run_bcrypt(fn, *args)` — e.g.
+`await run_bcrypt(hash_password, plain)` or `await run_bcrypt(verify_local_password, source,
+hashed, plain)` — never called inline (it would stall the single worker's event loop) and never
+through the shared thread pool directly (a burst of sign-ins would starve every other sync
+route). Pass plain values, not ORM objects: the function runs on a worker thread.
 """
 from __future__ import annotations
+import functools
 import hashlib
 import hmac
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any, TypeVar
 
+import anyio
+import anyio.to_thread
 import bcrypt
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.concurrency import run_in_threadpool
 
 from homunculus.auth.groups import bump_user, groups_of, summarize, tenant_of_user
 from homunculus.auth.jwt import JWT_SECRET, create_access_token, create_refresh_token
@@ -47,6 +57,19 @@ def verify_password(plain: str, hashed: str) -> bool:
 # whether a login exists.
 _DUMMY_HASH = hash_password("homunculus-no-such-account")
 
+# At most four bcrypt computations at once, on their own tokens: the shared thread pool (40
+# threads) also serves every sync route and dependency, and a burst of sign-ins must queue
+# behind this limit rather than occupy the whole pool.
+BCRYPT_LIMITER = anyio.CapacityLimiter(4)
+
+_T = TypeVar("_T")
+
+
+async def run_bcrypt(fn: Callable[..., _T], *args: Any) -> _T:
+    """Run a bcrypt-bound function (`hash_password`, `verify_password`, `verify_local_password`)
+    on a worker thread under BCRYPT_LIMITER. Arguments must be plain values."""
+    return await anyio.to_thread.run_sync(functools.partial(fn, *args), limiter=BCRYPT_LIMITER)
+
 
 def normalize_login(value: str | None) -> str:
     """Trimmed and lower-cased. The Turkish capital `İ` (a keyboard auto-capitalises `i` to it)
@@ -71,16 +94,17 @@ async def find_user_by_login(db: AsyncSession, login: str) -> User | None:
     return result.scalars().first()
 
 
-def verify_local_password(user: User | None, password: str) -> bool:
-    """True only for an existing LOCAL account whose bcrypt hash matches. Every other case
-    performs a dummy comparison and returns False.
+def verify_local_password(auth_source: str | None, hashed: str | None, password: str) -> bool:
+    """True only for a LOCAL account whose bcrypt hash matches. No account (`auth_source` None),
+    an AD account, or no stored hash: a dummy comparison, then False.
 
-    CPU-bound (~0.2 s of bcrypt): from an async route call it through `run_in_threadpool`, or
-    the single worker's event loop — ingest, SSE, escalation — stalls for every sign-in."""
-    if user is None or user.auth_source != AUTH_LOCAL or not user.hashed_password:
+    Takes the account's `auth_source` and `hashed_password` as plain values, read by the caller
+    on the event loop: this runs on a worker thread (via `run_bcrypt`, ~0.2 s of CPU) and must
+    not touch an ORM object there."""
+    if auth_source != AUTH_LOCAL or not hashed:
         verify_password(password, _DUMMY_HASH)
         return False
-    return verify_password(password, user.hashed_password)
+    return verify_password(password, hashed)
 
 
 async def get_user_by_id(db: AsyncSession, user_id: uuid.UUID) -> User | None:
@@ -190,8 +214,9 @@ async def change_password(db: AsyncSession, user: User, current: str, new: str) 
         raise PasswordError("Parola Active Directory tarafından yönetiliyor", "directory_account")
     if len(new) < 8:
         raise PasswordError("Yeni parola en az 8 karakter olmalı", "too_short")
-    if not await run_in_threadpool(verify_local_password, user, current):
+    if not await run_bcrypt(verify_local_password, user.auth_source, user.hashed_password,
+                            current):
         raise PasswordError("Mevcut parola yanlış", "wrong_current")
-    user.hashed_password = await run_in_threadpool(hash_password, new)
+    user.hashed_password = await run_bcrypt(hash_password, new)
     await bump_user(db, user)
     await db.commit()
