@@ -421,10 +421,13 @@ async def extend_break_glass(
     db: AsyncSession, session: BreakGlassSession, *, reason_text: str | None = None,
     now: datetime | None = None,
 ) -> BreakGlassSession:
-    """S-23: extend the window by another 30 minutes by refreshing the reason."""
+    """S-23: extend the window by another 30 minutes by refreshing the reason. Only a session
+    still open is extended: a closed or expired one stays ended (open a new one instead)."""
     now = now or _now()
     if session.closed_at is not None:
         raise EscalationError("Cannot extend a closed break-glass session.")
+    if now >= session.expires_at:
+        raise EscalationError("Cannot extend an expired break-glass session; open a new one.")
     session.expires_at = now + BREAK_GLASS_WINDOW
     session.extension_count += 1
     if reason_text:

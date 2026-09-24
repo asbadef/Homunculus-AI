@@ -5,26 +5,25 @@ The table is the plan's Task 7 guard tables and the spec's §5 enforcement table
 deliberately NOT generated from the code, so a guard that drifts (a wrong key, a dropped guard, a
 new unguarded route) fails here instead of shipping. The HTTP tests at the bottom check that the
 guards actually admit and refuse by group, end to end through sign-in context and token.
+
+Creating a tenant demands no group permission at all: it is a platform operator's action
+(`require_platform_operator`, spec §5), written in the table as the sentinel `PLATFORM`.
 """
 from __future__ import annotations
 
 import uuid
 
-import pytest
 import pytest_asyncio
 from fastapi import APIRouter, FastAPI
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from homunculus.api.app import create_app
-from homunculus.auth.groups import ensure_default_groups, set_manual_groups
-from homunculus.auth.models import Group, TenantMembership, User
-from homunculus.auth.service import build_context, issue_tokens
-from homunculus.db import get_db
+from homunculus.auth.groups import ensure_default_groups
+from homunculus.auth.models import Group
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
 from tests.route_walk import api_routes
+from tests.signed_in import add_user, api_client, bearer
 
 GUARDED_MODULES = {
     "homunculus.admission.router",
@@ -34,9 +33,13 @@ GUARDED_MODULES = {
 
 _S = "structure.manage"
 
+# Not a permission key (keys are dotted lower-case): the route is guarded by
+# `require_platform_operator`, which marks itself `.platform_only`.
+PLATFORM = frozenset({"<platform operator>"})
+
 EXPECTED: dict[tuple[str, str], frozenset[str]] = {
     # tenant/router.py — the whole physical hierarchy, reads included (spec §5: /tenant/*)
-    ("POST", "/tenant/tenants"): frozenset({_S}),
+    ("POST", "/tenant/tenants"): PLATFORM,
     ("GET", "/tenant/tenants"): frozenset({_S}),
     ("POST", "/tenant/tenants/{tenant_id}/sites"): frozenset({_S}),
     ("GET", "/tenant/tenants/{tenant_id}/sites"): frozenset({_S}),
@@ -83,14 +86,17 @@ def _app() -> FastAPI:
     return create_app({"t": "HOSP1"}, run_escalation_loop=False)
 
 
-def _permissions(dependant) -> frozenset[str]:
+def _guards(dependant) -> frozenset[str]:
     """Every key demanded anywhere in the route's dependency tree (`require_permission` records
-    its keys on the dependency it returns)."""
+    its keys on the dependency it returns), plus `PLATFORM` where `require_platform_operator`
+    guards it."""
     found: set[str] = set()
     stack = [dependant]
     while stack:
         node = stack.pop()
         found |= getattr(node.call, "permissions", frozenset())
+        if getattr(node.call, "platform_only", False):
+            found |= PLATFORM
         stack.extend(node.dependencies)
     return frozenset(found)
 
@@ -100,7 +106,7 @@ def _actual() -> dict[tuple[str, str], frozenset[str]]:
     for route in api_routes(_app()):
         if route.endpoint.__module__ in GUARDED_MODULES:
             for method in route.methods:
-                table[(method, route.path)] = _permissions(route.dependant)
+                table[(method, route.path)] = _guards(route.dependant)
     return table
 
 
@@ -149,8 +155,8 @@ def test_no_table_entry_lacks_a_route():
     assert sorted(set(EXPECTED) - set(_actual())) == []
 
 
-def test_every_guarded_route_demands_a_permission():
-    assert sorted(key for key, perms in _actual().items() if not perms) == []
+def test_every_guarded_route_demands_a_permission_or_a_platform_operator():
+    assert sorted(key for key, guards in _actual().items() if not guards) == []
 
 
 def test_every_guarded_route_demands_exactly_the_expected_permission():
@@ -163,40 +169,30 @@ def test_every_guarded_route_demands_exactly_the_expected_permission():
 # ---------------------------------------------------------------- end to end, by group
 @pytest_asyncio.fixture
 async def guarded(db_session):
-    """A tenant with its default groups, one user in each of three groups, and a client. Tokens
-    are minted as sign-in does, MFA-verified wherever the group requires MFA."""
+    """A tenant with its default groups, one user in each of three groups, a platform operator
+    (a vendor-side account in no tenant and no group), and a client. Tokens are minted as sign-in
+    does, MFA-verified wherever the group requires MFA."""
     tenant = Tenant(name="Demo", slug="demo-hastanesi", country_code="TR", timezone="UTC")
     db_session.add(tenant)
     await db_session.flush()
     groups = await ensure_default_groups(db_session, tenant.id)
 
-    tokens: dict[str, str] = {}
+    auth: dict[str, dict[str, str]] = {}
     for slug in ("hospital_admin", "nurse", "attending"):
-        user = User(username=f"{slug}@example.com", email=f"{slug}@example.com",
-                    full_name=slug, hashed_password=None, is_active=True)
-        db_session.add(user)
-        await db_session.flush()
-        db_session.add(TenantMembership(user_id=user.id, tenant_id=tenant.id))
-        await set_manual_groups(db_session, user=user, tenant_id=tenant.id,
-                                group_ids=[groups[slug].id], granted_by_id=None)
-        await db_session.commit()
-        ctx = await build_context(db_session, user)
-        tokens[slug] = issue_tokens(user, ctx, mfa_verified=ctx.mfa_required)["access_token"]
+        user = await add_user(db_session, username=f"{slug}@example.com", tenant_id=tenant.id,
+                              group=groups[slug])
+        auth[slug] = await bearer(db_session, user)
+    operator = await add_user(db_session, username="operator@example.com",
+                              platform_support=True)
+    auth["platform"] = await bearer(db_session, operator)
 
-    app = _app()
-    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
-
-    async def _db():
-        async with maker() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = _db
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        yield client, {slug: {"Authorization": f"Bearer {t}"} for slug, t in tokens.items()}
+    async with api_client(db_session) as client:
+        yield client, auth
 
 
 NEW_TENANT = {"name": "Yeni Hastane", "slug": "yeni-hastane", "country_code": "TR",
               "timezone": "UTC"}
+PLATFORM_ONLY = "Platform operatörü yetkisi gerekli"
 
 
 @requires_db
@@ -204,13 +200,25 @@ async def test_a_nurse_may_not_create_a_tenant(guarded):
     client, auth = guarded
     r = await client.post("/tenant/tenants", json=NEW_TENANT, headers=auth["nurse"])
     assert r.status_code == 403
-    assert r.json()["detail"] == "permission required: structure.manage"
+    assert r.json()["detail"] == PLATFORM_ONLY
 
 
 @requires_db
-async def test_an_administrator_creates_a_tenant_with_its_default_groups(guarded, db_session):
+async def test_a_hospital_administrator_may_not_create_a_tenant(guarded, db_session):
+    """A tenant a hospital administrator created would have no members and could not be
+    administered through /admin, which works inside the caller's own tenant only."""
     client, auth = guarded
     r = await client.post("/tenant/tenants", json=NEW_TENANT, headers=auth["hospital_admin"])
+    assert r.status_code == 403
+    assert r.json()["detail"] == PLATFORM_ONLY
+    assert (await db_session.execute(
+        select(func.count(Tenant.id)).where(Tenant.slug == "yeni-hastane"))).scalar_one() == 0
+
+
+@requires_db
+async def test_a_platform_operator_creates_a_tenant_with_its_default_groups(guarded, db_session):
+    client, auth = guarded
+    r = await client.post("/tenant/tenants", json=NEW_TENANT, headers=auth["platform"])
     assert r.status_code == 201, r.text
 
     created = uuid.UUID(r.json()["id"])
@@ -221,9 +229,9 @@ async def test_an_administrator_creates_a_tenant_with_its_default_groups(guarded
 @requires_db
 async def test_a_duplicate_tenant_slug_is_a_409_not_a_500(guarded, db_session):
     client, auth = guarded
-    first = await client.post("/tenant/tenants", json=NEW_TENANT, headers=auth["hospital_admin"])
+    first = await client.post("/tenant/tenants", json=NEW_TENANT, headers=auth["platform"])
     again = await client.post("/tenant/tenants", json={**NEW_TENANT, "name": "Başka"},
-                              headers=auth["hospital_admin"])
+                              headers=auth["platform"])
 
     assert first.status_code == 201
     assert again.status_code == 409 and "yeni-hastane" in again.json()["detail"]

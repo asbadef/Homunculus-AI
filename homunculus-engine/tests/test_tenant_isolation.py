@@ -1,0 +1,567 @@
+"""
+Tenant isolation on the admission, escalation and structure routes (plan Task 7b, spec §5).
+
+A permission is held in ONE tenant, the token's `tenant` claim. These tests put two hospitals, A and
+B, side by side: each has site → unit → room → two beds, a patient with an ACTIVE admission, an
+alert, a handover and a break-glass session. They sign in as A's administrator, who holds every
+permission, and check that every route acts on A's objects only:
+
+* an object of B named by id, in the path or in the body, is a 404 identical to a missing one, and
+  nothing at all is written;
+* a user of B named in a body is a 422;
+* lists hold A's rows only;
+* a break-glass session is extended or closed by its owner alone, and a closed or expired one
+  cannot be extended;
+* creating a tenant is a platform operator's action, not a hospital administrator's.
+
+Each refusal has a control: the same call with A's own ids gets past the scoping, and its answer is
+the route's own 2xx or the domain's 409.
+
+Synthetic data only.
+"""
+from __future__ import annotations
+
+import uuid
+from collections.abc import Callable
+from dataclasses import dataclass, fields
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+import pytest
+import pytest_asyncio
+from httpx import AsyncClient, Response
+from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from homunculus.admission import service as adm_service
+from homunculus.admission.models import (
+    Admission, CareTeamMember, Handover, NurseBedAssignment, Patient,
+)
+from homunculus.auth.dependencies import caller_tenant_id
+from homunculus.auth.groups import ensure_default_groups
+from homunculus.auth.jwt import create_access_token, decode_token
+from homunculus.auth.models import Group, TenantMembership, User, UserGroup
+from homunculus.escalation import service as esc_service
+from homunculus.escalation.models import (
+    Alert, AlertSnooze, AlertTier, BreakGlassReason, BreakGlassSession, EscalationEvent,
+)
+from homunculus.tenant.models import Bed, Room, Site, Tenant, Unit, UnitType
+from tests.conftest import requires_db
+from tests.route_walk import api_routes
+from tests.signed_in import add_user, api_client, bearer, make_app
+
+NO_TENANT = "Hesabınıza kurum tanımlanmamış"
+NOT_A_MEMBER = "Kullanıcı bu kurumun üyesi değil"
+NOT_YOURS = "Bu acil erişim oturumu size ait değil"
+PLATFORM_ONLY = "Platform operatörü yetkisi gerekli"
+
+
+# ---------------------------------------------------------------- the two hospitals
+@dataclass(frozen=True)
+class Side:
+    """One hospital's objects, by id."""
+    tenant: uuid.UUID
+    site: uuid.UUID
+    unit: uuid.UUID
+    room: uuid.UUID
+    bed: uuid.UUID        # occupied by the admission
+    free_bed: uuid.UUID   # AVAILABLE
+    patient: uuid.UUID
+    admission: uuid.UUID  # ACTIVE
+    alert: uuid.UUID      # HIGH, fired
+    handover: uuid.UUID   # OPEN; outgoing = the administrator, incoming = the nurse
+    session: uuid.UUID    # break-glass, opened by the administrator
+    member: uuid.UUID     # a nurse of this tenant
+
+    @classmethod
+    def missing(cls) -> Side:
+        """Ids that name nothing at all."""
+        return cls(*(uuid.uuid4() for _ in fields(cls)))
+
+
+MISSING = Side.missing()
+
+
+@dataclass
+class World:
+    db: AsyncSession
+    client: AsyncClient
+    auth: dict[str, str]   # A's administrator (every permission, MFA verified)
+    caller: User
+    a: Side
+    b: Side
+
+
+async def _hospital(db: AsyncSession, slug: str) -> tuple[Side, User]:
+    tenant = Tenant(name=f"Sentetik {slug}", slug=slug, country_code="TR", timezone="UTC")
+    db.add(tenant)
+    await db.flush()
+    groups = await ensure_default_groups(db, tenant.id)
+    admin = await add_user(db, username=f"admin@{slug}.example.com", tenant_id=tenant.id,
+                           group=groups["hospital_admin"])
+    nurse = await add_user(db, username=f"nurse@{slug}.example.com", tenant_id=tenant.id,
+                           group=groups["nurse"])
+
+    site = Site(tenant_id=tenant.id, name="Ana Kampüs")
+    db.add(site)
+    await db.flush()
+    unit = Unit(site_id=site.id, name="Erişkin YBÜ", unit_type=UnitType.ADULT_ICU,
+                max_beds_per_nurse=2)
+    db.add(unit)
+    await db.flush()
+    room = Room(unit_id=unit.id, name="Oda 1")
+    db.add(room)
+    await db.flush()
+    bed, free_bed = Bed(room_id=room.id, label="1A"), Bed(room_id=room.id, label="1B")
+    db.add_all([bed, free_bed])
+    patient = Patient(tenant_id=tenant.id, display_name=f"Sentetik Hasta {slug}",
+                      date_of_birth="1980-01-01", sex="female")
+    db.add(patient)
+    await db.flush()
+
+    admission = await adm_service.create_draft_admission(
+        db, tenant_id=tenant.id, patient=patient,
+        note_fields={"admitting_unit_id": unit.id, "bed_id": bed.id,
+                     "attending_physician_id": admin.id,
+                     "admission_diagnosis_free_text": "Sentetik tanı"},
+    )
+    await adm_service.sign_off_admission(db, admission, signing_user_id=admin.id)
+    alert = await esc_service.create_alert(
+        db, tenant_id=tenant.id, admission_id=admission.id, patient_id=patient.id,
+        unit_id=unit.id, kind="news2", tier=AlertTier.HIGH, summary="1A: sentetik bulgu",
+    )
+    handover = await adm_service.open_handover(
+        db, unit_id=unit.id, outgoing_user_id=admin.id, incoming_user_id=nurse.id,
+        admission_ids=[admission.id],
+    )
+    session = await esc_service.activate_break_glass(
+        db, tenant_id=tenant.id, user_id=admin.id, patient_id=patient.id,
+        reason=BreakGlassReason.RAPID_DETERIORATION,
+    )
+    await db.commit()
+    return Side(tenant=tenant.id, site=site.id, unit=unit.id, room=room.id, bed=bed.id,
+                free_bed=free_bed.id, patient=patient.id, admission=admission.id,
+                alert=alert.id, handover=handover.id, session=session.id,
+                member=nurse.id), admin
+
+
+@pytest_asyncio.fixture
+async def world(db_session):
+    a, caller = await _hospital(db_session, "hastane-a")
+    b, _ = await _hospital(db_session, "hastane-b")
+    auth = await bearer(db_session, caller)
+    async with api_client(db_session) as client:
+        yield World(db=db_session, client=client, auth=auth, caller=caller, a=a, b=b)
+
+
+# ---------------------------------------------------------------- helpers
+_TABLES = (Tenant, Site, Unit, Room, Bed, Patient, Admission, CareTeamMember, NurseBedAssignment,
+           Handover, Alert, AlertSnooze, EscalationEvent, BreakGlassSession, TenantMembership,
+           Group, UserGroup)
+
+
+async def _snapshot(db: AsyncSession) -> dict[str, list[str]]:
+    """Every row of every table these routes could write, as committed right now. A refused
+    request must leave it exactly as it was."""
+    out: dict[str, list[str]] = {}
+    for model in _TABLES:
+        rows = (await db.execute(select(model.__table__))).all()
+        out[model.__tablename__] = sorted(repr(tuple(row)) for row in rows)
+    return out
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_jsonable(v) for v in value]
+    return value
+
+
+async def _call(world: World, method: str, path: str, body: dict | None = None,
+                headers: dict[str, str] | None = None) -> Response:
+    return await world.client.request(
+        method, path, json=None if body is None else _jsonable(body),
+        headers=world.auth if headers is None else headers,
+    )
+
+
+def _admission_body(unit: uuid.UUID, bed: uuid.UUID, attending: uuid.UUID | None = None) -> dict:
+    note: dict[str, Any] = {"admitting_unit_id": unit, "bed_id": bed,
+                            "admission_diagnosis_free_text": "Sentetik tanı"}
+    if attending is not None:
+        note["attending_physician_id"] = attending
+    return {"patient": {"display_name": "Sentetik Yeni Hasta", "date_of_birth": "1990-02-02",
+                        "sex": "male"},
+            "note": note}
+
+
+def _shift_body(unit: uuid.UUID, bed: uuid.UUID, nurse: uuid.UUID) -> dict:
+    start = datetime.now(timezone.utc).replace(microsecond=0)
+    return {"unit_id": unit,
+            "assignments": [{"bed_id": bed, "nurse_id": nurse, "shift_start": start.isoformat(),
+                             "shift_end": (start + timedelta(hours=8)).isoformat()}]}
+
+
+def _handover_body(unit: uuid.UUID, incoming: uuid.UUID, admissions: list[uuid.UUID]) -> dict:
+    return {"unit_id": unit, "incoming_user_id": incoming, "admission_ids": admissions}
+
+
+# ---------------------------------------------------------------- objects named by PATH id
+@dataclass(frozen=True)
+class ById:
+    method: str
+    path: Callable[[Side], str]                     # names an object of the given side
+    body: Callable[[Side], dict] | None = None      # built from the CALLER's side
+    control: int = 200                              # the answer for the caller's own object
+
+
+BY_ID: dict[str, ById] = {
+    "admission detail": ById("GET", lambda s: f"/admissions/{s.admission}"),
+    "admission patient": ById("GET", lambda s: f"/admissions/{s.admission}/patient"),
+    "care-team list": ById("GET", lambda s: f"/admissions/{s.admission}/care-team"),
+    "sign-off": ById("POST", lambda s: f"/admissions/{s.admission}/sign-off", control=409),
+    "care-team claim": ById("POST", lambda s: f"/admissions/{s.admission}/care-team/claim"),
+    "care-team add": ById(
+        "POST", lambda s: f"/admissions/{s.admission}/care-team",
+        lambda a: {"user_id": a.member, "role": "ASSOCIATE_PHYSICIAN"}, 201),
+    "transfer initiate": ById(
+        "POST", lambda s: f"/admissions/{s.admission}/transfer/initiate",
+        lambda a: {"target_bed_id": a.free_bed, "target_unit_id": a.unit}),
+    "transfer confirm": ById(
+        "POST", lambda s: f"/admissions/{s.admission}/transfer/confirm",
+        lambda a: {"target_bed_id": a.free_bed, "target_unit_id": a.unit}, 409),
+    "discharge initiate": ById(
+        "POST", lambda s: f"/admissions/{s.admission}/discharge/initiate",
+        lambda a: {"discharge_summary": "Sentetik taburcu özeti"}),
+    "discharge confirm": ById(
+        "POST", lambda s: f"/admissions/{s.admission}/discharge/confirm", control=409),
+    "alert acknowledge": ById("POST", lambda s: f"/alerts/{s.alert}/acknowledge", lambda a: {}),
+    "alert snooze": ById(
+        "POST", lambda s: f"/alerts/{s.alert}/snooze",
+        lambda a: {"reason": "PATIENT_BASELINE", "duration_minutes": 15}),
+    "alert escalate": ById(
+        "POST", lambda s: f"/alerts/{s.alert}/escalate",
+        lambda a: {"reason": "Sentetik manuel eskalasyon"}),
+    "break-glass extend": ById("POST", lambda s: f"/break-glass/{s.session}/extend"),
+    "break-glass close": ById("POST", lambda s: f"/break-glass/{s.session}/close"),
+    "handover sign-outgoing": ById(
+        "POST", lambda s: f"/handovers/{s.handover}/sign-outgoing", lambda a: {}),
+    "handover countersign": ById(
+        "POST", lambda s: f"/handovers/{s.handover}/countersign", control=409),
+    "site list": ById("GET", lambda s: f"/tenant/tenants/{s.tenant}/sites"),
+    "site create": ById(
+        "POST", lambda s: f"/tenant/tenants/{s.tenant}/sites",
+        lambda a: {"name": "Yeni Kampüs"}, 201),
+    "unit list": ById("GET", lambda s: f"/tenant/sites/{s.site}/units"),
+    "unit create": ById(
+        "POST", lambda s: f"/tenant/sites/{s.site}/units",
+        lambda a: {"name": "Yeni Ünite", "unit_type": "NICU"}, 201),
+    "room list": ById("GET", lambda s: f"/tenant/units/{s.unit}/rooms"),
+    "room create": ById(
+        "POST", lambda s: f"/tenant/units/{s.unit}/rooms", lambda a: {"name": "Oda 9"}, 201),
+    "bed list": ById("GET", lambda s: f"/tenant/rooms/{s.room}/beds"),
+    "bed create": ById(
+        "POST", lambda s: f"/tenant/rooms/{s.room}/beds", lambda a: {"label": "9Z"}, 201),
+    "bed transition": ById(
+        "POST", lambda s: f"/tenant/beds/{s.free_bed}/transition",
+        lambda a: {"new_state": "OCCUPIED"}),
+}
+
+
+@requires_db
+@pytest.mark.parametrize("name", sorted(BY_ID))
+async def test_another_tenants_object_by_id_is_a_404_exactly_like_a_missing_one(world, name):
+    case = BY_ID[name]
+    body = case.body(world.a) if case.body else None
+    before = await _snapshot(world.db)
+
+    foreign = await _call(world, case.method, case.path(world.b), body)
+    missing = await _call(world, case.method, case.path(MISSING), body)
+
+    assert foreign.status_code == 404, foreign.text
+    assert foreign.json() == missing.json()
+    assert await _snapshot(world.db) == before
+
+
+@requires_db
+@pytest.mark.parametrize("name", sorted(BY_ID))
+async def test_the_callers_own_object_by_id_gets_past_the_scoping(world, name):
+    case = BY_ID[name]
+    r = await _call(world, case.method, case.path(world.a),
+                    case.body(world.a) if case.body else None)
+    assert r.status_code == case.control, r.text
+
+
+# ---------------------------------------------------------------- objects named in a BODY
+@dataclass(frozen=True)
+class InBody:
+    method: str
+    path: Callable[[Side], str]                     # built from the caller's side
+    body: Callable[[Side, Any], dict]               # (caller's side, the thing under test)
+    control: int
+
+
+IN_BODY: dict[str, InBody] = {
+    "admit into another tenant's unit": InBody(
+        "POST", lambda a: "/admissions", lambda a, x: _admission_body(x.unit, a.free_bed), 201),
+    "admit into another tenant's bed": InBody(
+        "POST", lambda a: "/admissions", lambda a, x: _admission_body(a.unit, x.free_bed), 201),
+    "transfer to another tenant's bed": InBody(
+        "POST", lambda a: f"/admissions/{a.admission}/transfer/initiate",
+        lambda a, x: {"target_bed_id": x.free_bed, "target_unit_id": a.unit}, 200),
+    "transfer to another tenant's unit": InBody(
+        "POST", lambda a: f"/admissions/{a.admission}/transfer/initiate",
+        lambda a, x: {"target_bed_id": a.free_bed, "target_unit_id": x.unit}, 200),
+    "transfer confirmed into another tenant's bed": InBody(
+        "POST", lambda a: f"/admissions/{a.admission}/transfer/confirm",
+        lambda a, x: {"target_bed_id": x.free_bed, "target_unit_id": a.unit}, 409),
+    "alert for another tenant's patient": InBody(
+        "POST", lambda a: "/alerts",
+        lambda a, x: {"patient_id": x.patient, "kind": "manual", "tier": "HIGH"}, 201),
+    "alert on another tenant's admission": InBody(
+        "POST", lambda a: "/alerts",
+        lambda a, x: {"admission_id": x.admission, "kind": "manual", "tier": "HIGH"}, 201),
+    "alert on another tenant's unit": InBody(
+        "POST", lambda a: "/alerts",
+        lambda a, x: {"patient_id": a.patient, "unit_id": x.unit, "kind": "manual",
+                      "tier": "HIGH"}, 201),
+    "break-glass on another tenant's patient": InBody(
+        "POST", lambda a: "/break-glass",
+        lambda a, x: {"patient_id": x.patient, "reason": "CARDIAC_ARREST"}, 201),
+    "handover on another tenant's unit": InBody(
+        "POST", lambda a: "/handovers",
+        lambda a, x: _handover_body(x.unit, a.member, [a.admission]), 201),
+    "handover naming another tenant's admission": InBody(
+        "POST", lambda a: "/handovers",
+        lambda a, x: _handover_body(a.unit, a.member, [a.admission, x.admission]), 201),
+    "shift on another tenant's unit": InBody(
+        "POST", lambda a: "/shift-schedule",
+        lambda a, x: _shift_body(x.unit, a.free_bed, a.member), 201),
+    "shift on another tenant's bed": InBody(
+        "POST", lambda a: "/shift-schedule",
+        lambda a, x: _shift_body(a.unit, x.free_bed, a.member), 201),
+}
+
+
+@requires_db
+@pytest.mark.parametrize("name", sorted(IN_BODY))
+async def test_another_tenants_id_in_a_body_is_a_404_exactly_like_a_missing_one(world, name):
+    case = IN_BODY[name]
+    before = await _snapshot(world.db)
+
+    foreign = await _call(world, case.method, case.path(world.a), case.body(world.a, world.b))
+    missing = await _call(world, case.method, case.path(world.a), case.body(world.a, MISSING))
+
+    assert foreign.status_code == 404, foreign.text
+    assert foreign.json() == missing.json()
+    assert await _snapshot(world.db) == before
+
+
+@requires_db
+@pytest.mark.parametrize("name", sorted(IN_BODY))
+async def test_the_callers_own_ids_in_a_body_get_past_the_scoping(world, name):
+    case = IN_BODY[name]
+    r = await _call(world, case.method, case.path(world.a), case.body(world.a, world.a))
+    assert r.status_code == case.control, r.text
+
+
+# ---------------------------------------------------------------- users named in a BODY
+USERS: dict[str, InBody] = {
+    "admitting attending": InBody(
+        "POST", lambda a: "/admissions",
+        lambda a, u: _admission_body(a.unit, a.free_bed, attending=u), 201),
+    "care-team member": InBody(
+        "POST", lambda a: f"/admissions/{a.admission}/care-team",
+        lambda a, u: {"user_id": u, "role": "ASSOCIATE_PHYSICIAN"}, 201),
+    "handover incoming user": InBody(
+        "POST", lambda a: "/handovers", lambda a, u: _handover_body(a.unit, u, [a.admission]),
+        201),
+    "shift nurse": InBody(
+        "POST", lambda a: "/shift-schedule", lambda a, u: _shift_body(a.unit, a.free_bed, u), 201),
+}
+
+
+@requires_db
+@pytest.mark.parametrize("name", sorted(USERS))
+async def test_a_user_of_another_tenant_in_a_body_is_a_422(world, name):
+    case = USERS[name]
+    before = await _snapshot(world.db)
+
+    for user_id in (world.b.member, uuid.uuid4()):
+        r = await _call(world, case.method, case.path(world.a), case.body(world.a, user_id))
+        assert r.status_code == 422, r.text
+        assert r.json()["detail"] == NOT_A_MEMBER
+
+    assert await _snapshot(world.db) == before
+
+
+@requires_db
+@pytest.mark.parametrize("name", sorted(USERS))
+async def test_a_member_of_the_callers_tenant_in_a_body_is_accepted(world, name):
+    case = USERS[name]
+    r = await _call(world, case.method, case.path(world.a), case.body(world.a, world.a.member))
+    assert r.status_code == case.control, r.text
+
+
+@requires_db
+async def test_an_inactive_membership_is_no_membership(world):
+    await world.db.execute(update(TenantMembership)
+                           .where(TenantMembership.user_id == world.a.member)
+                           .values(is_active=False))
+    await world.db.commit()
+    case = USERS["care-team member"]
+    r = await _call(world, case.method, case.path(world.a), case.body(world.a, world.a.member))
+    assert r.status_code == 422 and r.json()["detail"] == NOT_A_MEMBER
+
+
+# ---------------------------------------------------------------- lists
+@requires_db
+async def test_the_admission_list_holds_only_the_callers_tenant(world):
+    r = await _call(world, "GET", "/admissions")
+    assert r.status_code == 200
+    ids = {row["id"] for row in r.json()}
+    assert str(world.a.admission) in ids
+    assert str(world.b.admission) not in ids
+
+    r = await world.client.get("/admissions", params={"unit_id": str(world.b.unit)},
+                               headers=world.auth)
+    assert r.status_code == 200 and r.json() == []
+
+
+@requires_db
+async def test_the_tenant_list_holds_only_the_callers_tenant(world):
+    r = await _call(world, "GET", "/tenant/tenants")
+    assert r.status_code == 200
+    assert [t["id"] for t in r.json()] == [str(world.a.tenant)]
+
+
+@requires_db
+async def test_a_platform_operator_lists_every_tenant(world):
+    await world.db.execute(update(User).where(User.id == world.caller.id)
+                           .values(is_platform_support=True))
+    await world.db.commit()
+    r = await _call(world, "GET", "/tenant/tenants")
+    assert r.status_code == 200
+    assert {t["id"] for t in r.json()} == {str(world.a.tenant), str(world.b.tenant)}
+
+
+# ---------------------------------------------------------------- break-glass
+@requires_db
+async def test_a_break_glass_session_is_extended_and_closed_by_its_owner_alone(world):
+    theirs = await esc_service.activate_break_glass(
+        world.db, tenant_id=world.a.tenant, user_id=world.a.member,
+        patient_id=world.a.patient, reason=BreakGlassReason.CARDIAC_ARREST,
+    )
+    await world.db.commit()
+    before = await _snapshot(world.db)
+
+    for action in ("extend", "close"):
+        r = await _call(world, "POST", f"/break-glass/{theirs.id}/{action}")
+        assert r.status_code == 403, r.text
+        assert r.json()["detail"] == NOT_YOURS
+
+    assert await _snapshot(world.db) == before
+
+
+@requires_db
+async def test_a_closed_break_glass_session_cannot_be_extended(world):
+    closed = await _call(world, "POST", f"/break-glass/{world.a.session}/close")
+    assert closed.status_code == 200
+    before = await _snapshot(world.db)
+
+    r = await _call(world, "POST", f"/break-glass/{world.a.session}/extend")
+
+    assert r.status_code == 409, r.text
+    assert await _snapshot(world.db) == before
+
+
+@requires_db
+async def test_an_expired_break_glass_session_cannot_be_extended(world):
+    expired = await esc_service.activate_break_glass(
+        world.db, tenant_id=world.a.tenant, user_id=world.caller.id,
+        patient_id=world.a.patient, reason=BreakGlassReason.CARDIAC_ARREST,
+        now=datetime.now(timezone.utc) - timedelta(hours=1),
+    )
+    await world.db.commit()
+    before = await _snapshot(world.db)
+
+    r = await _call(world, "POST", f"/break-glass/{expired.id}/extend")
+
+    assert r.status_code == 409, r.text
+    assert await _snapshot(world.db) == before
+
+
+# ---------------------------------------------------------------- the caller's tenant itself
+def _with_tenant(auth: dict[str, str], tenant: str | None) -> dict[str, str]:
+    """The same signed-in token, re-minted with a different `tenant` claim."""
+    claims = decode_token(auth["Authorization"].split()[1])
+    extra = {k: v for k, v in claims.items() if k not in ("sub", "iat", "exp", "jti", "type")}
+    extra["tenant"] = tenant
+    return {"Authorization": f"Bearer {create_access_token(claims['sub'], extra)}"}
+
+
+@requires_db
+async def test_a_token_that_names_no_tenant_is_refused(world):
+    r = await _call(world, "GET", "/admissions", headers=_with_tenant(world.auth, None))
+    assert r.status_code == 403 and r.json()["detail"] == NO_TENANT
+
+
+@requires_db
+async def test_a_token_naming_a_tenant_that_no_longer_exists_is_refused(world):
+    await world.db.execute(update(Tenant).where(Tenant.id == world.a.tenant)
+                           .values(slug="hastane-a-eski"))
+    await world.db.commit()
+    r = await _call(world, "GET", "/admissions")
+    assert r.status_code == 403 and r.json()["detail"] == NO_TENANT
+
+
+# ---------------------------------------------------------------- tenant creation
+@requires_db
+async def test_tenant_creation_is_a_platform_operator_action(world):
+    body = {"name": "Sentetik Yeni Hastane", "slug": "hastane-c", "country_code": "TR"}
+
+    r = await _call(world, "POST", "/tenant/tenants", body)
+    assert r.status_code == 403 and r.json()["detail"] == PLATFORM_ONLY
+
+    # A vendor-side account: no tenant, no group, no permission, only the platform flag.
+    operator = await add_user(world.db, username="operator@vendor.example.com",
+                              platform_support=True)
+    r = await _call(world, "POST", "/tenant/tenants", body,
+                    headers=await bearer(world.db, operator))
+    assert r.status_code == 201, r.text
+    created = uuid.UUID(r.json()["id"])
+    assert (await world.db.execute(
+        select(func.count(Group.id)).where(Group.tenant_id == created))).scalar_one() == 11
+
+
+# ---------------------------------------------------------------- every route is scoped
+SCOPED_MODULES = {
+    "homunculus.admission.router",
+    "homunculus.escalation.router",
+    "homunculus.tenant.router",
+}
+
+
+def _depends_on(dependant, target) -> bool:
+    stack = [dependant]
+    while stack:
+        node = stack.pop()
+        if node.call is target:
+            return True
+        stack.extend(node.dependencies)
+    return False
+
+
+def test_every_admission_escalation_and_structure_route_resolves_the_callers_tenant():
+    unscoped = sorted(
+        (method, route.path)
+        for route in api_routes(make_app())
+        if route.endpoint.__module__ in SCOPED_MODULES
+        and not _depends_on(route.dependant, caller_tenant_id)
+        for method in route.methods
+    )
+    # Creating a tenant is the one route outside any tenant (a platform operator's action).
+    assert unscoped == [("POST", "/tenant/tenants")]

@@ -6,6 +6,13 @@ Permission guards (see auth/permissions.py):
   * alerts.ack        acknowledge or snooze (CRITICAL acknowledgement enforces reason + note)
   * break_glass.use   open, extend, close a break-glass session
 
+Tenant isolation (spec §5): every route also takes `caller_tenant_id` and acts on the caller's
+tenant only. An alert or break-glass session of another tenant named in the path, or a patient,
+admission or unit of another tenant named in the body, is a 404 identical to a missing one (see
+tenant/scope.py). A break-glass session is extended or closed by the user who opened it alone
+(403 otherwise), and a closed or expired session cannot be extended (409). Every check runs
+before anything is written.
+
 PHI: alerts carry only internal ids plus a PHI-minimal summary (bed label + finding),
 never patient-identifiable data.
 """
@@ -16,7 +23,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from homunculus.auth.dependencies import require_permission
+from homunculus.auth.dependencies import caller_tenant_id, require_permission
 from homunculus.auth.models import User
 from homunculus.db import get_db
 from homunculus.escalation import service
@@ -26,20 +33,41 @@ from homunculus.escalation.schemas import (
     BreakGlassActivate, BreakGlassResponse, ManualEscalateRequest,
 )
 from homunculus.escalation.service import EscalationError
+from homunculus.tenant import scope
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 break_glass_router = APIRouter(prefix="/break-glass", tags=["break-glass"])
+
+# The caller's tenant (the token's `tenant` claim); every route below takes it.
+_tenant = Depends(caller_tenant_id)
+
+NOT_YOUR_SESSION = "Bu acil erişim oturumu size ait değil"
 
 
 def _err(exc: EscalationError) -> HTTPException:
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
 
-async def _get_alert_or_404(db: AsyncSession, alert_id: uuid.UUID) -> Alert:
+async def _get_alert_or_404(
+    db: AsyncSession, alert_id: uuid.UUID, caller_tenant: uuid.UUID,
+) -> Alert:
+    """The alert, if it is the caller's tenant's; another tenant's is exactly as absent."""
     alert = await db.get(Alert, alert_id)
-    if alert is None:
-        raise HTTPException(status_code=404, detail="Alert not found.")
+    scope.ensure_owned(alert.tenant_id if alert else None, caller_tenant, "Alert not found.")
     return alert
+
+
+async def _get_own_session(
+    db: AsyncSession, session_id: uuid.UUID, caller_tenant: uuid.UUID, user: User,
+) -> BreakGlassSession:
+    """The caller's OWN break-glass session: another tenant's is a 404 like a missing one; a
+    colleague's in the same tenant is a 403."""
+    session = await db.get(BreakGlassSession, session_id)
+    scope.ensure_owned(session.tenant_id if session else None, caller_tenant,
+                       "Break-glass session not found.")
+    if session.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NOT_YOUR_SESSION)
+    return session
 
 
 # ---------------------------------------------------------------------------
@@ -50,14 +78,29 @@ async def create_alert(
     payload: AlertCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("alerts.escalate")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
     """
     Create an alert. Alerts are normally raised by the rules/model engine; this
     endpoint exists for integration and manual clinical flagging.
+
+    Every patient, admission and unit it names must be the caller's tenant's.
     """
-    tenant_id = await _resolve_tenant_id(db, payload)
+    if payload.patient_id is None and payload.admission_id is None:
+        raise HTTPException(
+            status_code=400, detail="An alert requires a patient_id or admission_id."
+        )
+    if payload.patient_id is not None:
+        scope.ensure_owned(await scope.tenant_of_patient(db, payload.patient_id),
+                           caller_tenant, "Patient not found.")
+    if payload.admission_id is not None:
+        scope.ensure_owned(await scope.tenant_of_admission(db, payload.admission_id),
+                           caller_tenant, "Admission not found.")
+    if payload.unit_id is not None:
+        scope.ensure_owned(await scope.tenant_of_unit(db, payload.unit_id),
+                           caller_tenant, "Unit not found.")
     alert = await service.create_alert(
-        db, tenant_id=tenant_id, kind=payload.kind, tier=payload.tier,
+        db, tenant_id=caller_tenant, kind=payload.kind, tier=payload.tier,
         admission_id=payload.admission_id, patient_id=payload.patient_id,
         unit_id=payload.unit_id, summary=payload.summary,
         source_signal=payload.source_signal,
@@ -73,8 +116,9 @@ async def acknowledge_alert(
     payload: AlertAcknowledge,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("alerts.ack")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    alert = await _get_alert_or_404(db, alert_id)
+    alert = await _get_alert_or_404(db, alert_id, caller_tenant)
     try:
         await service.acknowledge_alert(
             db, alert, user_id=user.id, reason=payload.reason, note=payload.note,
@@ -92,8 +136,9 @@ async def snooze_alert(
     payload: AlertSnoozeRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("alerts.ack")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    alert = await _get_alert_or_404(db, alert_id)
+    alert = await _get_alert_or_404(db, alert_id, caller_tenant)
     try:
         await service.snooze_alert(
             db, alert, user_id=user.id, reason=payload.reason,
@@ -112,9 +157,10 @@ async def manual_escalate(
     payload: ManualEscalateRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("alerts.escalate")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
     """§6.3 step 4 — manual escalation jumps straight to the RRT tier."""
-    alert = await _get_alert_or_404(db, alert_id)
+    alert = await _get_alert_or_404(db, alert_id, caller_tenant)
     try:
         await service.manual_escalate(db, alert, user_id=user.id, reason=payload.reason)
     except EscalationError as exc:
@@ -132,11 +178,13 @@ async def activate_break_glass(
     payload: BreakGlassActivate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("break_glass.use")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    tenant_id = await _tenant_of_patient(db, payload.patient_id)
+    scope.ensure_owned(await scope.tenant_of_patient(db, payload.patient_id), caller_tenant,
+                       "Patient not found.")
     try:
         session = await service.activate_break_glass(
-            db, tenant_id=tenant_id, user_id=user.id, patient_id=payload.patient_id,
+            db, tenant_id=caller_tenant, user_id=user.id, patient_id=payload.patient_id,
             reason=payload.reason, reason_text=payload.reason_text,
         )
     except EscalationError as exc:
@@ -151,11 +199,11 @@ async def extend_break_glass(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("break_glass.use")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    session = await db.get(BreakGlassSession, session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Break-glass session not found.")
+    session = await _get_own_session(db, session_id, caller_tenant, user)
     try:
+        # A closed or expired session is refused (409): extending never revives one.
         await service.extend_break_glass(db, session)
     except EscalationError as exc:
         raise _err(exc)
@@ -169,37 +217,10 @@ async def close_break_glass(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("break_glass.use")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    session = await db.get(BreakGlassSession, session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Break-glass session not found.")
+    session = await _get_own_session(db, session_id, caller_tenant, user)
     await service.close_break_glass(db, session)
     await db.commit()
     await db.refresh(session)
     return session
-
-
-# ---------------------------------------------------------------------------
-# Tenant resolution helpers
-# ---------------------------------------------------------------------------
-async def _tenant_of_patient(db: AsyncSession, patient_id: uuid.UUID) -> uuid.UUID:
-    from homunculus.admission.models import Patient as PatientModel
-    patient = await db.get(PatientModel, patient_id)
-    if patient is None:
-        raise HTTPException(status_code=404, detail="Patient not found.")
-    return patient.tenant_id
-
-
-async def _resolve_tenant_id(db: AsyncSession, payload: AlertCreate) -> uuid.UUID:
-    """Derive tenant_id from the alert's patient (preferred) or admission."""
-    if payload.patient_id is not None:
-        return await _tenant_of_patient(db, payload.patient_id)
-    if payload.admission_id is not None:
-        from homunculus.admission.models import Admission as AdmissionModel
-        admission = await db.get(AdmissionModel, payload.admission_id)
-        if admission is None:
-            raise HTTPException(status_code=404, detail="Admission not found.")
-        return admission.tenant_id
-    raise HTTPException(
-        status_code=400, detail="An alert requires a patient_id or admission_id."
-    )

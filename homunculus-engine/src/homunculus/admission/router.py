@@ -12,9 +12,15 @@ Permission guards (see auth/permissions.py):
   * shifts.manage              shift schedules
   * handover.sign              open, sign, countersign a handover
 
+Tenant isolation (spec §5): every route also takes `caller_tenant_id` and acts on the caller's
+tenant only. An admission, unit, bed or handover of another tenant, named in the path or in the
+body, is a 404 identical to a missing one; a user of another tenant named in the body is a 422
+(see tenant/scope.py). Every check runs before anything is written.
+
 PHI: patient identity is returned only by the patient-detail endpoint
-(`GET /admissions/{id}/patient`), to holders of `admissions.view`. List and
-board contexts never include patient identity here.
+(`GET /admissions/{id}/patient`), to holders of `admissions.view` in the patient's own
+tenant. Reads of it are not audited yet. List and board contexts never include patient
+identity here.
 """
 from __future__ import annotations
 
@@ -36,12 +42,21 @@ from homunculus.admission.schemas import (
 )
 from homunculus.admission.service import WorkflowError
 from homunculus.escalation import service as escalation_service
-from homunculus.auth.dependencies import require_permission
+from homunculus.auth.dependencies import caller_tenant_id, require_permission
 from homunculus.auth.models import User
 from homunculus.db import get_db
-from homunculus.tenant.models import Site, Unit
+from homunculus.tenant import scope
 
 router = APIRouter(prefix="/admissions", tags=["admissions"])
+
+# The caller's tenant (the token's `tenant` claim); every route below takes it.
+_tenant = Depends(caller_tenant_id)
+
+ADMISSION_NOT_FOUND = "Admission not found."
+PATIENT_NOT_FOUND = "Patient not found."
+UNIT_NOT_FOUND = "Unit not found."
+BED_NOT_FOUND = "Bed not found."
+HANDOVER_NOT_FOUND = "Handover not found."
 
 
 # ---------------------------------------------------------------------------
@@ -51,22 +66,31 @@ def _wf(exc: WorkflowError) -> HTTPException:
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
 
-async def _resolve_tenant_id(db: AsyncSession, unit_id: uuid.UUID) -> uuid.UUID:
-    """Derive tenant_id from unit → site → tenant."""
-    result = await db.execute(
-        select(Site.tenant_id).join(Unit, Unit.site_id == Site.id).where(Unit.id == unit_id)
-    )
-    tenant_id = result.scalar_one_or_none()
-    if tenant_id is None:
-        raise HTTPException(status_code=404, detail="Unit/tenant not found.")
-    return tenant_id
-
-
-async def _get_admission_or_404(db: AsyncSession, admission_id: uuid.UUID) -> Admission:
+async def _get_admission_or_404(
+    db: AsyncSession, admission_id: uuid.UUID, caller_tenant: uuid.UUID,
+) -> Admission:
+    """The admission, if it is the caller's tenant's; another tenant's is exactly as absent."""
     admission = await db.get(Admission, admission_id)
-    if admission is None:
-        raise HTTPException(status_code=404, detail="Admission not found.")
+    scope.ensure_owned(admission.tenant_id if admission else None, caller_tenant,
+                       ADMISSION_NOT_FOUND)
     return admission
+
+
+async def _ensure_unit_and_bed(
+    db: AsyncSession, unit_id: uuid.UUID, bed_id: uuid.UUID, caller_tenant: uuid.UUID,
+) -> None:
+    """The unit (unit → site → tenant) and the bed named in a body are the caller's tenant's."""
+    scope.ensure_owned(await scope.tenant_of_unit(db, unit_id), caller_tenant, UNIT_NOT_FOUND)
+    scope.ensure_owned(await scope.tenant_of_bed(db, bed_id), caller_tenant, BED_NOT_FOUND)
+
+
+async def _get_handover_or_404(
+    db: AsyncSession, handover_id: uuid.UUID, caller_tenant: uuid.UUID,
+) -> Handover:
+    """The handover, if its unit is the caller's tenant's."""
+    scope.ensure_owned(await scope.tenant_of_handover(db, handover_id), caller_tenant,
+                       HANDOVER_NOT_FOUND)
+    return await db.get(Handover, handover_id)
 
 
 # ---------------------------------------------------------------------------
@@ -74,11 +98,18 @@ async def _get_admission_or_404(db: AsyncSession, admission_id: uuid.UUID) -> Ad
 # ---------------------------------------------------------------------------
 @router.post("", response_model=AdmissionResponse, status_code=201,
              dependencies=[Depends(require_permission("admissions.admit"))])
-async def create_admission(payload: AdmissionCreate, db: AsyncSession = Depends(get_db)):
-    tenant_id = await _resolve_tenant_id(db, payload.note.admitting_unit_id)
+async def create_admission(
+    payload: AdmissionCreate, db: AsyncSession = Depends(get_db),
+    caller_tenant: uuid.UUID = _tenant,
+):
+    # The admitting unit and the bed belong to the caller's tenant and the attending is a member
+    # of it, all checked before the patient row is written.
+    await _ensure_unit_and_bed(db, payload.note.admitting_unit_id, payload.note.bed_id,
+                               caller_tenant)
+    await scope.ensure_members(db, caller_tenant, [payload.note.attending_physician_id])
 
     patient = Patient(
-        tenant_id=tenant_id,
+        tenant_id=caller_tenant,
         display_name=payload.patient.display_name,
         date_of_birth=payload.patient.date_of_birth.isoformat(),
         sex=payload.patient.sex.value,
@@ -93,7 +124,7 @@ async def create_admission(payload: AdmissionCreate, db: AsyncSession = Depends(
         pass
     try:
         admission = await service.create_draft_admission(
-            db, tenant_id=tenant_id, patient=patient, note_fields=note,
+            db, tenant_id=caller_tenant, patient=patient, note_fields=note,
         )
     except WorkflowError as exc:
         raise _wf(exc)
@@ -108,9 +139,10 @@ async def create_admission(payload: AdmissionCreate, db: AsyncSession = Depends(
 @router.get("", response_model=list[AdmissionResponse],
             dependencies=[Depends(require_permission("admissions.view"))])
 async def list_admissions(
-    unit_id: uuid.UUID | None = None, db: AsyncSession = Depends(get_db)
+    unit_id: uuid.UUID | None = None, db: AsyncSession = Depends(get_db),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    stmt = select(Admission)
+    stmt = select(Admission).where(Admission.tenant_id == caller_tenant)
     if unit_id is not None:
         stmt = stmt.where(Admission.admitting_unit_id == unit_id)
     result = await db.execute(stmt.order_by(Admission.created_at.desc()))
@@ -119,19 +151,24 @@ async def list_admissions(
 
 @router.get("/{admission_id}", response_model=AdmissionResponse,
             dependencies=[Depends(require_permission("admissions.view"))])
-async def get_admission(admission_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    return await _get_admission_or_404(db, admission_id)
+async def get_admission(
+    admission_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+    caller_tenant: uuid.UUID = _tenant,
+):
+    return await _get_admission_or_404(db, admission_id, caller_tenant)
 
 
 @router.get("/{admission_id}/patient", response_model=PatientResponse,
             dependencies=[Depends(require_permission("admissions.view"))])
-async def get_admission_patient(admission_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_admission_patient(
+    admission_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+    caller_tenant: uuid.UUID = _tenant,
+):
     """PHI detail. Patient identity is returned only by this endpoint, to holders of
-    `admissions.view`. Reads of it are not audited yet."""
-    admission = await _get_admission_or_404(db, admission_id)
+    `admissions.view` in the patient's own tenant. Reads of it are not audited yet."""
+    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     patient = await db.get(Patient, admission.patient_id)
-    if patient is None:
-        raise HTTPException(status_code=404, detail="Patient not found.")
+    scope.ensure_owned(patient.tenant_id if patient else None, caller_tenant, PATIENT_NOT_FOUND)
     return patient
 
 
@@ -143,8 +180,9 @@ async def sign_off(
     admission_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("admissions.sign_off")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    admission = await _get_admission_or_404(db, admission_id)
+    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     try:
         await service.sign_off_admission(db, admission, signing_user_id=user.id)
     except WorkflowError as exc:
@@ -162,8 +200,9 @@ async def claim_attending(
     admission_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("care_team.claim")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    admission = await _get_admission_or_404(db, admission_id)
+    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     # The caller becomes the attending of record. There is no claiming on someone else's
     # behalf here: adding another clinician goes through POST .../care-team (care_team.assign).
     member = await service.claim_attending(
@@ -180,8 +219,10 @@ async def add_care_team_member(
     payload: CareTeamAdd,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("care_team.assign")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    admission = await _get_admission_or_404(db, admission_id)
+    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
+    await scope.ensure_members(db, caller_tenant, [payload.user_id])
     try:
         member = await service.add_care_team_member(
             db, admission, user_id=payload.user_id, role=payload.role,
@@ -197,7 +238,11 @@ async def add_care_team_member(
 
 @router.get("/{admission_id}/care-team", response_model=list[CareTeamMemberResponse],
             dependencies=[Depends(require_permission("admissions.view"))])
-async def list_care_team(admission_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def list_care_team(
+    admission_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+    caller_tenant: uuid.UUID = _tenant,
+):
+    await _get_admission_or_404(db, admission_id, caller_tenant)
     result = await db.execute(
         select(CareTeamMember).where(CareTeamMember.admission_id == admission_id)
     )
@@ -213,8 +258,10 @@ async def transfer_initiate(
     payload: TransferInitiate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("admissions.move.initiate")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    admission = await _get_admission_or_404(db, admission_id)
+    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
+    await _ensure_unit_and_bed(db, payload.target_unit_id, payload.target_bed_id, caller_tenant)
     try:
         await service.initiate_transfer(
             db, admission, target_bed_id=payload.target_bed_id,
@@ -233,8 +280,10 @@ async def transfer_confirm(
     payload: TransferInitiate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("admissions.transfer.confirm")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    admission = await _get_admission_or_404(db, admission_id)
+    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
+    await _ensure_unit_and_bed(db, payload.target_unit_id, payload.target_bed_id, caller_tenant)
     try:
         new_admission = await service.confirm_transfer_arrival(
             db, admission, target_bed_id=payload.target_bed_id,
@@ -256,8 +305,9 @@ async def discharge_initiate(
     payload: DischargeInitiate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("admissions.move.initiate")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    admission = await _get_admission_or_404(db, admission_id)
+    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     unacked = await escalation_service.count_unacknowledged_critical(
         db, admission_id=admission.id
     )
@@ -278,8 +328,9 @@ async def discharge_confirm(
     admission_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("admissions.discharge.confirm")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    admission = await _get_admission_or_404(db, admission_id)
+    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     try:
         await service.confirm_discharge(db, admission)
     except WorkflowError as exc:
@@ -300,7 +351,16 @@ async def create_shift_schedule(
     payload: ShiftScheduleCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("shifts.manage")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
+    # The unit and every assigned bed belong to the caller's tenant; every nurse, and the charge
+    # nurse (the caller), is a member of it.
+    scope.ensure_owned(await scope.tenant_of_unit(db, payload.unit_id), caller_tenant,
+                       UNIT_NOT_FOUND)
+    for bed_id in dict.fromkeys(a.bed_id for a in payload.assignments):
+        scope.ensure_owned(await scope.tenant_of_bed(db, bed_id), caller_tenant, BED_NOT_FOUND)
+    await scope.ensure_members(db, caller_tenant,
+                               [user.id, *(a.nurse_id for a in payload.assignments)])
     assignments = [a.model_dump() for a in payload.assignments]
     try:
         created, warnings = await service.create_shift_schedule(
@@ -328,7 +388,12 @@ async def open_handover(
     payload: HandoverOpen,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("handover.sign")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
+    scope.ensure_owned(await scope.tenant_of_unit(db, payload.unit_id), caller_tenant,
+                       UNIT_NOT_FOUND)
+    await scope.ensure_admissions(db, caller_tenant, payload.admission_ids, ADMISSION_NOT_FOUND)
+    await scope.ensure_members(db, caller_tenant, [payload.incoming_user_id])
     handover = await service.open_handover(
         db, unit_id=payload.unit_id, outgoing_user_id=user.id,
         incoming_user_id=payload.incoming_user_id, admission_ids=payload.admission_ids,
@@ -344,10 +409,9 @@ async def sign_outgoing(
     payload: HandoverSign,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("handover.sign")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    handover = await db.get(Handover, handover_id)
-    if handover is None:
-        raise HTTPException(status_code=404, detail="Handover not found.")
+    handover = await _get_handover_or_404(db, handover_id, caller_tenant)
     admission_ids = [uuid.UUID(a) for a in (handover.admission_ids or [])]
     unacked = await escalation_service.count_unacknowledged_critical(
         db, admission_ids=admission_ids
@@ -369,10 +433,9 @@ async def countersign(
     handover_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("handover.sign")),
+    caller_tenant: uuid.UUID = _tenant,
 ):
-    handover = await db.get(Handover, handover_id)
-    if handover is None:
-        raise HTTPException(status_code=404, detail="Handover not found.")
+    handover = await _get_handover_or_404(db, handover_id, caller_tenant)
     try:
         await service.countersign_handover_incoming(db, handover, user_id=user.id)
     except WorkflowError as exc:

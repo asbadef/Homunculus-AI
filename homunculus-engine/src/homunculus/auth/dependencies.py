@@ -10,6 +10,8 @@ FastAPI dependencies for authentication and authorisation.
     get_user_for_enrolment  the User behind get_principal_pre_mfa, but an already-enrolled user
                             may only pass it once MFA is verified — see its docstring
     require_permission(*k)  any-of check against the token's `perms` -> 403 naming the keys
+    caller_tenant_id        the id of the tenant the token's `tenant` claim names -> 403 if none
+    require_platform_operator  the MFA-gated principal of a `users.is_platform_support` account
 
 The permission check reads the token, not the database: the token was minted from the user's
 groups, and `token_version` guarantees it still reflects them (a change bumps the version and
@@ -29,6 +31,7 @@ from typing import Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.auth.jwt import decode_token
@@ -36,8 +39,12 @@ from homunculus.auth.models import User
 from homunculus.auth.permissions import validate_permissions
 from homunculus.auth.service import get_user_by_id
 from homunculus.db import get_db
+from homunculus.tenant.models import Tenant
 
 _bearer = HTTPBearer(auto_error=False)
+
+NO_TENANT = "Hesabınıza kurum tanımlanmamış"
+PLATFORM_ONLY = "Platform operatörü yetkisi gerekli"
 
 
 @dataclass(frozen=True)
@@ -154,3 +161,37 @@ def require_permission(*keys: str) -> Callable[..., Awaitable[User]]:
 
     _check.permissions = wanted  # type: ignore[attr-defined]
     return _check
+
+
+async def caller_tenant_id(
+    principal: Principal = Depends(get_principal),
+    db: AsyncSession = Depends(get_db),
+) -> uuid.UUID:
+    """The tenant the caller acts in: the one the token's `tenant` claim names. A permission is
+    held in that tenant only, so every admission, escalation and structure route takes this next
+    to its permission guard and acts on that tenant's objects alone. The claim is signed, so no
+    membership query is needed; a token naming no tenant, or a slug that no longer exists, is
+    refused. `get_principal` is cached per request, so the token is decoded once."""
+    if principal.tenant is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NO_TENANT)
+    tenant_id = (await db.execute(
+        select(Tenant.id).where(Tenant.slug == principal.tenant)
+    )).scalar_one_or_none()
+    if tenant_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NO_TENANT)
+    return tenant_id
+
+
+async def require_platform_operator(principal: Principal = Depends(get_principal)) -> User:
+    """A vendor-side platform operator (`users.is_platform_support`, set in SQL; no group grants
+    it). Creating a tenant is theirs alone: a tenant a hospital administrator created would have no
+    members and could not be administered through `/admin`, which works inside the caller's own
+    tenant only.
+
+    Carries `.platform_only = True` so the route map test can tell this guard from a missing one."""
+    if not principal.user.is_platform_support:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=PLATFORM_ONLY)
+    return principal.user
+
+
+require_platform_operator.platform_only = True  # type: ignore[attr-defined]
