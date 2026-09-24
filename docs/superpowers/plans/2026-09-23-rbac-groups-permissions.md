@@ -39,6 +39,16 @@ values; `/health` is async. Login lookup prefers a username match. `/auth/totp/v
 limited (5 failures → 5-minute lock, `auth/limits.py`) and refuses a replayed code. Known users'
 failed sign-ins are audited under their tenant; MFA steps are audited.
 
+**Task 7 as amended in review:** the seed finds the account by username or e-mail, takes an
+advisory lock, refuses an inactive, non-local or other-tenant account, and hashes through
+`run_bcrypt`. `require_permission` records its keys on the dependency (`.permissions`), and
+`tests/test_route_permissions.py` pins every router route to its keys, walking routes with
+`tests/route_walk.py::api_routes`. FastAPI 0.139 puts `_IncludedRouter` wrappers in `app.routes`,
+so `isinstance(r, APIRoute)` alone misses every router route. The `get_current_active_user`
+alias is deleted. **Task 7b** (new) scopes every admission, escalation and structure route to the
+caller's tenant and makes tenant creation a platform-operator action. Task 10's `_scope` may
+delegate to 7b's `caller_tenant_id` (same 403 message).
+
 **Do not deploy mid-plan.** Between migration 0006 (Task 3) and the sign-in rewrite (Task 6) and the
 seed rewrite (Task 7), stored e-mails are lower-cased while sign-in still matches case-sensitively,
 and the seed cannot create the administrator. The branch reaches the VM only after Task 20.
@@ -3289,6 +3299,140 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
+## Task 7b: Tenant isolation on the admission, escalation and structure routes
+
+*Added after Task 7's code review (2026-09-24).* A user's permissions come from ONE tenant, the
+token's `tenant` claim. Until this task, though, no admission, alert, break-glass, handover, shift
+or structure route filtered by tenant. A pharmacist of hospital A could list hospital B's
+admissions and read its patients' names and dates of birth by id, and a nurse of A could admit a
+patient into B's bed. The gap predates this plan: the old `require_roles` accepted a role "in ANY
+tenant". It is closed here because a per-tenant permission means nothing if the objects are not
+per-tenant too.
+
+**Files:**
+- Modify: `homunculus-engine/src/homunculus/auth/dependencies.py` (`caller_tenant_id`, `require_platform_operator`)
+- Create: `homunculus-engine/src/homunculus/tenant/scope.py`. It holds the lookups: which tenant owns a site, unit, room, bed, admission or handover; and whether user ids in a payload hold an active membership in the tenant.
+- Modify: `homunculus-engine/src/homunculus/admission/router.py`, `homunculus-engine/src/homunculus/escalation/router.py`, `homunculus-engine/src/homunculus/tenant/router.py`, and their `service.py` only where a query itself must take the tenant.
+- Modify: `homunculus-engine/src/homunculus/admission/schemas.py` (PHI wording)
+- Modify: `homunculus-engine/tests/test_route_permissions.py` (`POST /tenant/tenants` is platform-only)
+- Create: `homunculus-engine/tests/test_tenant_isolation.py`
+
+**The rules**
+
+1. **`caller_tenant_id`** is a dependency in `auth/dependencies.py`. It resolves `Principal.tenant` (a
+   slug) to the tenant id. If the token names no tenant, or names a slug that no longer exists, it
+   returns 403 "Hesabınıza kurum tanımlanmamış". Every route below takes it next to its permission
+   guard. FastAPI caches `get_principal` per request, so the token is decoded once.
+2. **An object named by a PATH id** that belongs to another tenant gets 404, with the same detail
+   as a missing object. Never 403: that would confirm the id exists.
+3. **An object named in a PAYLOAD** that belongs to another tenant also gets 404, as in rule 2. This
+   covers unit, bed, room, patient and admission ids, and every entry of `admission_ids`.
+4. **A USER named in a payload** must hold an active membership in the caller's tenant. This covers
+   `attending_physician_id`, `CareTeamAdd.user_id`, the shift assignment's `nurse_id` and
+   `charge_nurse_id`, and `HandoverOpen.incoming_user_id`. Otherwise the answer is 422
+   "Kullanıcı bu kurumun üyesi değil".
+5. **Lists** return only the caller's tenant's rows. This covers `GET /admissions`,
+   `GET /tenant/tenants`, and the site, unit, room and bed lists (through their parent's check).
+6. **`POST /admissions`**: the admitting unit and the bed must belong to the caller's tenant. The
+   existing unit→site→tenant lookup stays, and its result is compared with the caller's tenant.
+7. **Escalation:**
+   - An alert named by id is checked against `Alert.tenant_id`.
+   - `POST /alerts`: the tenant resolved from the patient, admission or unit must be the caller's.
+   - Break-glass activation: checked against the patient's tenant.
+   - Break-glass extend and close:
+     - the session must belong to the caller's tenant (otherwise 404);
+     - it must be the caller's OWN session (otherwise 403 "Bu acil erişim oturumu size ait değil");
+     - a closed or expired session cannot be extended (409). Today extend revives an expired session.
+8. **Structure:**
+   - For `/tenant/tenants/{tenant_id}/…`, `tenant_id` must be the caller's (otherwise 404).
+   - For `/sites/{id}`, `/units/{id}`, `/rooms/{id}` and `/beds/{id}`, walk up to the owning tenant
+     (otherwise 404).
+   - `GET /tenant/tenants` lists only the caller's own tenant; a platform operator sees all tenants.
+9. **Creating a tenant is a platform-operator action.**
+   - `POST /tenant/tenants` requires `require_platform_operator`: the MFA-gated principal AND
+     `users.is_platform_support = true`. Otherwise 403 "Platform operatörü yetkisi gerekli".
+   - The `is_platform_support` column already exists. No default group grants it and no API sets
+     it; an operator sets it in SQL.
+   - Why a hospital's own administrator does not create tenants: a new tenant has no members, and
+     `/admin` works only inside the caller's own tenant. A tenant a hospital admin created would be
+     an orphan that they could still restructure.
+   - The first administrator of a new tenant comes from `scripts/seed_admin.py`, run with
+     `SEED_TENANT_SLUG` and an e-mail not already in another tenant (the seed refuses one that is).
+   - The dependency sets `.platform_only = True` so the route map test can name it. In
+     `tests/test_route_permissions.py`, change `EXPECTED` for `POST /tenant/tenants` to a sentinel
+     such as `PLATFORM`.
+10. **Handovers and shifts:**
+    - A handover named by id is checked through its unit's tenant.
+    - `HandoverOpen`: its `unit_id`, every `admission_ids` entry, and `incoming_user_id`.
+    - `ShiftScheduleCreate`: its `unit_id`, and each assignment's bed, nurse and charge nurse.
+
+- [ ] **Step 1: Write `tests/test_tenant_isolation.py` first (DB-backed, `requires_db`)**
+
+Fixture:
+- Two tenants, A and B. Each has site → unit → room → bed, a patient with an admission, an alert,
+  a handover and a break-glass session.
+- The caller is a user in A who holds `hospital_admin` (every permission), with MFA verified.
+- A nurse of B, for the membership checks.
+- Mint tokens the way `tests/test_route_permissions.py` does.
+
+Tests (parametrise where it reads well):
+- **Every by-id route with B's id → 404:**
+  - admissions: get, patient, care-team list, sign-off, claim, care-team add, transfer
+    initiate/confirm, discharge initiate/confirm;
+  - alerts: acknowledge, snooze, escalate;
+  - break-glass: extend, close;
+  - handovers: sign-outgoing, countersign;
+  - structure: the site, unit, room and bed lists and creates under B's parents, and bed transition.
+- **Lists:** `GET /admissions` returns A's admission and not B's. `GET /tenant/tenants` returns only A.
+- **Payload ids from B → 404:**
+  - `POST /admissions` with B's unit or bed;
+  - transfer initiate to B's bed;
+  - `POST /alerts` for B's patient;
+  - `POST /break-glass` for B's patient;
+  - `POST /handovers` with B's unit or one of B's admissions;
+  - `POST /shift-schedule` with B's unit.
+- **A user of B in a payload → 422:** care-team add, handover incoming user, shift nurse.
+- **Control cases:** the same calls with A's own ids get past the scoping. The response is 2xx, or
+  the domain's own 4xx/409; the point is that it is not a 404 from scoping.
+- **Break-glass:** another user's session in the SAME tenant → extend/close 403; a closed session →
+  extend 409.
+- **`POST /tenant/tenants`:** `hospital_admin` → 403; a user with `is_platform_support` → 201, and
+  the new tenant has 11 groups.
+
+- [ ] **Step 2: Run it and watch it fail**
+
+Run: `cd homunculus-engine && TEST_DATABASE_URL=… .venv/Scripts/python.exe -m pytest tests/test_tenant_isolation.py -q -p no:cacheprovider`
+Expected: most tests fail: 200/201 where 404/422/403 is wanted.
+
+- [ ] **Step 3: Implement the rules above**
+
+Keep the scoping in the routers and `tenant/scope.py`. Pass the tenant into a service function
+only where the query itself lists rows (the admission list). One helper per owner type, each
+returning the owning tenant id or None, makes rules 2 and 3 a single comparison at each call site.
+
+- [ ] **Step 4: PHI wording**
+
+The `GET /admissions/{id}/patient` docstring and the `admission/schemas.py` module docstring
+change to: identity is returned only by this endpoint, to holders of `admissions.view` in the
+patient's own tenant. Reads are not audited yet (see Follow-ups).
+
+- [ ] **Step 5: Run the suite**
+
+Run: `cd homunculus-engine && TEST_DATABASE_URL=… .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py -p no:cacheprovider`
+Expected: only the known `test_infinity_vm_pilot.py::test_capture_output_inside_repository_is_rejected` fails.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add homunculus-engine/src/homunculus/auth/dependencies.py homunculus-engine/src/homunculus/tenant/scope.py homunculus-engine/src/homunculus/admission/router.py homunculus-engine/src/homunculus/admission/schemas.py homunculus-engine/src/homunculus/escalation/router.py homunculus-engine/src/homunculus/tenant/router.py homunculus-engine/tests/test_route_permissions.py homunculus-engine/tests/test_tenant_isolation.py
+# plus any service.py that changed
+git commit -m "feat(auth): every admission, escalation and structure route is scoped to the caller's tenant; tenant creation is a platform-operator action
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
 ## Task 8: The board routes resolve a JWT to a `Caller` and check permissions
 
 **Files:**
@@ -4757,10 +4901,9 @@ may use the pre-MFA one. Walk the app's dependency graph so a future route canno
 pre-MFA one. A route added later without a guard fails here, not in a ward."""
 from __future__ import annotations
 
-from fastapi.routing import APIRoute
-
 from homunculus.api.app import create_app
 from homunculus.auth.dependencies import get_principal, get_principal_pre_mfa
+from tests.route_walk import api_routes      # descends into FastAPI's _IncludedRouter wrappers
 
 # Routes that are deliberately reachable without the MFA-gated principal. Everything else — any
 # router added later, including one merged from another branch — must reach get_principal.
@@ -4782,8 +4925,7 @@ def _calls(dependant) -> set:
 
 
 def _routes():
-    app = create_app({"t": "HOSP1"}, run_escalation_loop=False)
-    return [r for r in app.routes if isinstance(r, APIRoute)]
+    return api_routes(create_app({"t": "HOSP1"}, run_escalation_loop=False))
 
 
 def test_every_route_is_guarded_or_explicitly_exempt():
@@ -7205,6 +7347,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `docs/homunculus-rehber-TR.md`
+- Modify: `docs/DEPLOY-SUPABASE.md` (lines ~18–20 still say HOSPITAL_ADMIN: the seeded admin is in the `hospital_admin` group)
 - Modify: `docs/superpowers/plans/2026-09-23-rbac-groups-permissions.md` (execution status)
 
 - [ ] **Step 1: Glossary entries in the Turkish guide**
@@ -7305,3 +7448,23 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - The Infinity branch's `infinity_research.py` must switch to `require_permission("devices.manage")`
   when merged.
 - Dropping the PostgreSQL `userrole` enum type and `tenant_memberships.role` (cleanup migration).
+  The same migration should add a unique `(user_id, tenant_id)` on `tenant_memberships`; the seed's
+  advisory lock covers the only writer that races today.
+- **Care-team claim (behaviour predates this plan; needs a clinical decision).** `POST
+  /admissions/{id}/care-team/claim` always makes the CALLER the attending of record. A charge nurse
+  or administrator holding `care_team.claim` therefore becomes the attending, and that satisfies
+  the sign-off precondition.
+- **PHI reads are not audited, and not limited to the care team or unit.** `GET
+  /admissions/{id}/patient` answers any `admissions.view` holder in the tenant. Unit-scoped
+  visibility is already out of scope in the spec. An audit row per identity read is cheap and worth
+  doing first.
+- **S-06 (RRT access window) is not enforced.** `escalation/service.py::rrt_has_access` still tests
+  the old "RAPID_RESPONSE" role string, and nothing calls it. `rapid_response` holds
+  `admissions.view` at all times.
+- **Bed release.** HOUSEKEEPING → AVAILABLE is reachable only through
+  `/tenant/beds/{id}/transition` (`structure.manage`). Spec §5 lists bed release under
+  `admissions.discharge.confirm`, so a charge nurse cannot free a bed today. It needs its own route
+  or a narrower guard on the transition.
+- **Structure reads need `structure.manage`.** Users who admit patients cannot look up unit or bed
+  ids through the API. A read-only `structure.view`, or folding the reads under `admissions.view`,
+  is the likely fix.

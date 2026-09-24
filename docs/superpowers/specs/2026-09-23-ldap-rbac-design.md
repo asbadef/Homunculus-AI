@@ -260,7 +260,8 @@ succeeds if the token's `perms` contains **any** of the listed keys.
 | `POST /alerts`, `.../escalate` | `alerts.escalate` |
 | `.../acknowledge`, `.../snooze` | `alerts.ack` |
 | `/break-glass*` | `break_glass.use` |
-| `/tenant/*` | `structure.manage` |
+| `/tenant/*` (the caller's own tenant only) | `structure.manage` |
+| `POST /tenant/tenants` | platform operator (`users.is_platform_support`); no group permission |
 | Infinity research router | `devices.manage` (replaces the dangling `UserRole.BIOMEDICAL`) |
 | `/admin/users*`, `/admin/ldap/*` | `users.manage` |
 | `/admin/groups*`, `GET /admin/permissions` | `groups.manage` |
@@ -277,6 +278,22 @@ missing. The per-request membership query in the current resolver goes away.
 `username` and `groups` — instead of the body's self-declared `role`; the body field is honoured
 only on the device path. `/notifications?role=` stays: it selects a notification channel, it is
 not an authorisation.
+
+**Tenant isolation.** A permission is held in one tenant, the token's `tenant` claim, so every
+admission, alert, break-glass, handover, shift and structure route acts only on that tenant's
+objects:
+- An object of another tenant named by id, in the path or in the body, is a 404 with the same
+  detail as a missing one.
+- A user of another tenant named in a body is a 422.
+- Lists return only the caller's tenant.
+- A break-glass session can be extended or closed only by the user who opened it, and a closed or
+  expired one cannot be extended.
+
+Creating a tenant is a platform-operator action (`users.is_platform_support`, set in SQL, granted
+by no group). A hospital administrator's tenant would have no members and could not be
+administered through `/admin`. A new tenant's first administrator comes from
+`scripts/seed_admin.py`. (Added after Task 7's review: before this, no route filtered by tenant.
+The old `require_roles` accepted a role held in any tenant.)
 
 ## 6. Administration API
 
