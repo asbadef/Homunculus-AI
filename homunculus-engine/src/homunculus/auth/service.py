@@ -14,7 +14,7 @@ import hashlib
 import hmac
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, TypeVar
 
@@ -127,13 +127,17 @@ EMPTY_CONTEXT = AuthContext(None, None, (), (), frozenset(), False)
 
 
 async def build_context(db: AsyncSession, user: User) -> AuthContext:
+    """What the user's tokens are minted from. MFA is required by the user's groups, and ALWAYS
+    for a platform operator (`is_platform_support`), a vendor account in no tenant included: it
+    is asked for TOTP at sign-in."""
+    operator = bool(user.is_platform_support)
     ref = await tenant_of_user(db, user.id)
     if ref is None:
-        return EMPTY_CONTEXT
+        return EMPTY_CONTEXT if not operator else replace(EMPTY_CONTEXT, mfa_required=True)
     summary = summarize(await groups_of(db, user.id, ref.id))
     return AuthContext(tenant_id=ref.id, tenant=ref.slug, groups=summary.slugs,
                        group_names=summary.names, perms=summary.perms,
-                       mfa_required=summary.mfa_required)
+                       mfa_required=summary.mfa_required or operator)
 
 
 def credential_fingerprint(user: User) -> str:

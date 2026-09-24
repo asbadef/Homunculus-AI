@@ -10,8 +10,8 @@ Tenant isolation (spec §5): every route also takes `caller_tenant_id` and acts 
 tenant only. An alert or break-glass session of another tenant named in the path, or a patient,
 admission or unit of another tenant named in the body, is a 404 identical to a missing one (see
 tenant/scope.py). A break-glass session is extended or closed by the user who opened it alone
-(403 otherwise), and a closed or expired session cannot be extended (409). Every check runs
-before anything is written.
+(403 otherwise), and a closed or expired session can be neither extended nor closed again (409).
+Every check runs before anything is written.
 
 PHI: alerts carry only internal ids plus a PHI-minimal summary (bed label + finding),
 never patient-identifiable data.
@@ -52,9 +52,7 @@ async def _get_alert_or_404(
     db: AsyncSession, alert_id: uuid.UUID, caller_tenant: uuid.UUID,
 ) -> Alert:
     """The alert, if it is the caller's tenant's; another tenant's is exactly as absent."""
-    alert = await db.get(Alert, alert_id)
-    scope.ensure_owned(alert.tenant_id if alert else None, caller_tenant, "Alert not found.")
-    return alert
+    return await scope.get_owned(db, Alert, alert_id, caller_tenant, "Alert not found.")
 
 
 async def _get_own_session(
@@ -62,9 +60,8 @@ async def _get_own_session(
 ) -> BreakGlassSession:
     """The caller's OWN break-glass session: another tenant's is a 404 like a missing one; a
     colleague's in the same tenant is a 403."""
-    session = await db.get(BreakGlassSession, session_id)
-    scope.ensure_owned(session.tenant_id if session else None, caller_tenant,
-                       "Break-glass session not found.")
+    session = await scope.get_owned(db, BreakGlassSession, session_id, caller_tenant,
+                                    "Break-glass session not found.")
     if session.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NOT_YOUR_SESSION)
     return session
@@ -220,7 +217,12 @@ async def close_break_glass(
     caller_tenant: uuid.UUID = _tenant,
 ):
     session = await _get_own_session(db, session_id, caller_tenant, user)
-    await service.close_break_glass(db, session)
+    try:
+        # Closed once: an already-closed or expired session is refused (409) and left as it is;
+        # the row is the audit record of when access ended.
+        await service.close_break_glass(db, session)
+    except EscalationError as exc:
+        raise _err(exc)
     await db.commit()
     await db.refresh(session)
     return session

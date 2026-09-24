@@ -1,5 +1,6 @@
 """Group persistence: seeding the defaults, a user's groups, manual membership, token-version
-bumps, the administrator count that guards the last admin, and a user's tenant.
+bumps, the administrator count that guards the last admin, a user's tenant, and the check of a
+token's tenant claim (`resolve_tenant_claim`).
 
 Pure decisions (union of permissions, which tenant wins) are in `permissions.py` and
 `api/identity.py`; this module is the part that touches the database.
@@ -10,7 +11,7 @@ import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from sqlalchemy import func, select, update
+from sqlalchemy import Select, and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -185,15 +186,73 @@ async def count_admins(db: AsyncSession, tenant_id: uuid.UUID) -> int:
 
 
 async def tenant_of_user(db: AsyncSession, user_id: uuid.UUID) -> TenantRef | None:
-    """The tenant a user's session runs in: the lowest slug among active memberships — the
-    same deterministic rule the board resolver applied per request until now."""
+    """The tenant a user's session runs in: the lowest slug among active memberships in active
+    tenants — the same deterministic rule the board resolver applied per request until now."""
     rows = (await db.execute(
         select(Tenant.id, Tenant.slug)
         .join(TenantMembership, TenantMembership.tenant_id == Tenant.id)
         .where(TenantMembership.user_id == user_id,
-               TenantMembership.is_active == True)  # noqa: E712
+               TenantMembership.is_active == True,  # noqa: E712
+               Tenant.is_active == True)  # noqa: E712
     )).all()
     slug = hospital_for_slugs([row.slug for row in rows])
     if slug is None:
         return None
     return next(TenantRef(id=row.id, slug=row.slug) for row in rows if row.slug == slug)
+
+
+# ---------------------------------------------------------------- the tenant claim
+TENANT_OK = "ok"              # an active tenant the user holds an active membership in
+TENANT_UNKNOWN = "unknown"    # no tenant with that slug, or the user was never a member of it
+TENANT_INACTIVE = "inactive"  # the tenant, or the user's membership in it, is deactivated
+
+
+def tenant_claim_query(user_id: uuid.UUID, slug: str) -> Select:
+    """ONE query behind every check of a token's `tenant` claim: the slug's tenant, whether it
+    is active, and whether `user_id` holds an active membership in it. At most one row (slugs
+    are unique); none when no tenant has the slug. `member_active` is NULL when the user has no
+    membership row there, True when any membership row is active, else False.
+
+    Exposed so a caller that already runs its own per-request query (the board resolver, Task 9)
+    can embed the same condition instead of copying it; read the row with `tenant_claim_verdict`."""
+    return (
+        select(Tenant.id.label("tenant_id"),
+               Tenant.is_active.label("tenant_active"),
+               func.bool_or(TenantMembership.is_active).label("member_active"))
+        .outerjoin(TenantMembership, and_(TenantMembership.tenant_id == Tenant.id,
+                                          TenantMembership.user_id == user_id))
+        .where(Tenant.slug == slug)
+        .group_by(Tenant.id, Tenant.is_active)
+    )
+
+
+def tenant_claim_verdict(row) -> tuple[uuid.UUID | None, str]:
+    """Read a `tenant_claim_query` row (or None): `(tenant_id, TENANT_OK)`,
+    `(None, TENANT_UNKNOWN)` or `(None, TENANT_INACTIVE)`."""
+    if row is None or row.member_active is None:
+        return None, TENANT_UNKNOWN
+    if not row.tenant_active or not row.member_active:
+        return None, TENANT_INACTIVE
+    return row.tenant_id, TENANT_OK
+
+
+async def resolve_tenant_claim(
+    db: AsyncSession, user_id: uuid.UUID, slug: str,
+) -> tuple[uuid.UUID | None, str]:
+    """Check a token's `tenant` claim against the database, in one query (spec §5: the claim is
+    not trusted by name alone). The signature proves who minted the token, but within its hour a
+    slug can be renamed and reused by another tenant, a tenant can be deactivated, and a
+    membership can be deactivated.
+
+    Returns:
+      (tenant_id, "ok")    the slug names an ACTIVE tenant in which the user holds an ACTIVE
+                           membership — act in `tenant_id`.
+      (None, "unknown")    no tenant has the slug, or the user has no membership in it (a renamed
+                           slug, perhaps reused by another tenant). Answer 401: the client's
+                           refresh mints a token carrying the current slug.
+      (None, "inactive")   the tenant or the user's membership in it is deactivated. Answer 403.
+
+    Used by `auth.dependencies.caller_tenant_id` on every admission, escalation and structure
+    request; the board resolver (Task 9) applies the same condition."""
+    row = (await db.execute(tenant_claim_query(user_id, slug))).first()
+    return tenant_claim_verdict(row)

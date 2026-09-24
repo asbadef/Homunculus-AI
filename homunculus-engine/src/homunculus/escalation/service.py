@@ -439,7 +439,14 @@ async def extend_break_glass(
 async def close_break_glass(
     db: AsyncSession, session: BreakGlassSession, *, now: datetime | None = None,
 ) -> BreakGlassSession:
+    """End an open session now. The session row is the audit record of when emergency access
+    ended, so it is written once: a session already closed, or one that expired without being
+    closed (access ended at `expires_at`), is refused and left unchanged."""
     now = now or _now()
+    if session.closed_at is not None:
+        raise EscalationError("Break-glass session is already closed.")
+    if now >= session.expires_at:
+        raise EscalationError("Break-glass session has already expired; access ended then.")
     session.closed_at = now
     await db.flush()
     return session

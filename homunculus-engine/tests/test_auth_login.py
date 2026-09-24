@@ -107,6 +107,23 @@ async def test_an_mfa_group_member_is_held_at_the_gate_and_told_to_enrol(client,
             ).status_code == 403                                            # gated
 
 
+async def test_a_platform_operator_is_always_held_at_the_mfa_gate(client, world, db_session):
+    """In a group that needs no MFA, and as a vendor account in no tenant at all."""
+    c, _ = client
+    await world["make"]("hemsire.operator", "hemsire.operator@example.com", "nurse",
+                        is_platform_support=True)
+    db_session.add(User(username="vendor", email="vendor@example.com", full_name="Vendor",
+                        hashed_password=hash_password(PASSWORD), is_platform_support=True))
+    await db_session.commit()
+
+    for login, tenant in (("hemsire.operator", "demo-hastanesi"), ("vendor", None)):
+        body = (await _login(c, login)).json()
+        assert body["requires_mfa"] is True, login
+        claims = decode_token(body["access_token"])
+        assert claims["mfa_required"] is True and claims["mfa_verified"] is False
+        assert claims["tenant"] == tenant
+
+
 async def test_wrong_password_unknown_login_and_inactive_are_all_401(client, world):
     c, _ = client
     assert (await _login(c, "ayse", "yanlis")).status_code == 401

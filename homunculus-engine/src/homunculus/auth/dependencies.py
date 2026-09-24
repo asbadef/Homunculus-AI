@@ -10,8 +10,9 @@ FastAPI dependencies for authentication and authorisation.
     get_user_for_enrolment  the User behind get_principal_pre_mfa, but an already-enrolled user
                             may only pass it once MFA is verified — see its docstring
     require_permission(*k)  any-of check against the token's `perms` -> 403 naming the keys
-    caller_tenant_id        the id of the tenant the token's `tenant` claim names -> 403 if none
-    require_platform_operator  the MFA-gated principal of a `users.is_platform_support` account
+    caller_tenant_id        the id of the tenant the token's `tenant` claim names, checked against
+                            an active membership in an active tenant -> 401 / 403 otherwise
+    require_platform_operator  an MFA-VERIFIED principal of a `users.is_platform_support` account
 
 The permission check reads the token, not the database: the token was minted from the user's
 groups, and `token_version` guarantees it still reflects them (a change bumps the version and
@@ -31,19 +32,19 @@ from typing import Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from homunculus.auth.groups import TENANT_UNKNOWN, resolve_tenant_claim
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.models import User
 from homunculus.auth.permissions import validate_permissions
 from homunculus.auth.service import get_user_by_id
 from homunculus.db import get_db
-from homunculus.tenant.models import Tenant
 
 _bearer = HTTPBearer(auto_error=False)
 
 NO_TENANT = "Hesabınıza kurum tanımlanmamış"
+MEMBERSHIP_INACTIVE = "Bu kurumdaki üyeliğiniz etkin değil"
 PLATFORM_ONLY = "Platform operatörü yetkisi gerekli"
 
 
@@ -169,16 +170,21 @@ async def caller_tenant_id(
 ) -> uuid.UUID:
     """The tenant the caller acts in: the one the token's `tenant` claim names. A permission is
     held in that tenant only, so every admission, escalation and structure route takes this next
-    to its permission guard and acts on that tenant's objects alone. The claim is signed, so no
-    membership query is needed; a token naming no tenant, or a slug that no longer exists, is
-    refused. `get_principal` is cached per request, so the token is decoded once."""
+    to its permission guard and acts on that tenant's objects alone.
+
+    The claim is not trusted by name alone (spec §5): one query (`resolve_tenant_claim`) confirms
+    that the slug's tenant exists and is active and that the caller holds an active membership
+    in it — so this also establishes the CALLER's own membership for the route. A slug unknown
+    to the caller (renamed, perhaps reused by another tenant) is 401, so the client refreshes
+    and gets its current slug; a deactivated tenant or membership is 403. `get_principal` is
+    cached per request, so the token is decoded once."""
     if principal.tenant is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NO_TENANT)
-    tenant_id = (await db.execute(
-        select(Tenant.id).where(Tenant.slug == principal.tenant)
-    )).scalar_one_or_none()
+    tenant_id, verdict = await resolve_tenant_claim(db, principal.user.id, principal.tenant)
+    if verdict == TENANT_UNKNOWN:
+        raise _unauthorized("tenant")
     if tenant_id is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NO_TENANT)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=MEMBERSHIP_INACTIVE)
     return tenant_id
 
 
@@ -188,9 +194,15 @@ async def require_platform_operator(principal: Principal = Depends(get_principal
     members and could not be administered through `/admin`, which works inside the caller's own
     tenant only.
 
+    The operator is ALWAYS MFA-verified, whatever their groups say: `get_principal` gates only
+    on the token's `mfa_required`, which a token minted before the flag was set would not carry
+    (sign-in sets it for every operator, see `auth.service.build_context`).
+
     Carries `.platform_only = True` so the route map test can tell this guard from a missing one."""
     if not principal.user.is_platform_support:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=PLATFORM_ONLY)
+    if not principal.mfa_verified:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="mfa_required")
     return principal.user
 
 

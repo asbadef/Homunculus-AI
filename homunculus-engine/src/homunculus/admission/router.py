@@ -70,10 +70,7 @@ async def _get_admission_or_404(
     db: AsyncSession, admission_id: uuid.UUID, caller_tenant: uuid.UUID,
 ) -> Admission:
     """The admission, if it is the caller's tenant's; another tenant's is exactly as absent."""
-    admission = await db.get(Admission, admission_id)
-    scope.ensure_owned(admission.tenant_id if admission else None, caller_tenant,
-                       ADMISSION_NOT_FOUND)
-    return admission
+    return await scope.get_owned(db, Admission, admission_id, caller_tenant, ADMISSION_NOT_FOUND)
 
 
 async def _ensure_unit_and_bed(
@@ -119,9 +116,6 @@ async def create_admission(
     await db.flush()
 
     note = payload.note.model_dump()
-    if note.get("transplant_day_zero") is not None:
-        # stored as Date column
-        pass
     try:
         admission = await service.create_draft_admission(
             db, tenant_id=caller_tenant, patient=patient, note_fields=note,
@@ -167,9 +161,8 @@ async def get_admission_patient(
     """PHI detail. Patient identity is returned only by this endpoint, to holders of
     `admissions.view` in the patient's own tenant. Reads of it are not audited yet."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
-    patient = await db.get(Patient, admission.patient_id)
-    scope.ensure_owned(patient.tenant_id if patient else None, caller_tenant, PATIENT_NOT_FOUND)
-    return patient
+    return await scope.get_owned(db, Patient, admission.patient_id, caller_tenant,
+                                 PATIENT_NOT_FOUND)
 
 
 # ---------------------------------------------------------------------------
@@ -353,14 +346,13 @@ async def create_shift_schedule(
     user: User = Depends(require_permission("shifts.manage")),
     caller_tenant: uuid.UUID = _tenant,
 ):
-    # The unit and every assigned bed belong to the caller's tenant; every nurse, and the charge
-    # nurse (the caller), is a member of it.
+    # The unit and every assigned bed belong to the caller's tenant, and every nurse is a member
+    # of it. The charge nurse is the caller, whose membership `caller_tenant_id` established.
     scope.ensure_owned(await scope.tenant_of_unit(db, payload.unit_id), caller_tenant,
                        UNIT_NOT_FOUND)
-    for bed_id in dict.fromkeys(a.bed_id for a in payload.assignments):
-        scope.ensure_owned(await scope.tenant_of_bed(db, bed_id), caller_tenant, BED_NOT_FOUND)
-    await scope.ensure_members(db, caller_tenant,
-                               [user.id, *(a.nurse_id for a in payload.assignments)])
+    await scope.ensure_beds(db, caller_tenant, (a.bed_id for a in payload.assignments),
+                            BED_NOT_FOUND)
+    await scope.ensure_members(db, caller_tenant, (a.nurse_id for a in payload.assignments))
     assignments = [a.model_dump() for a in payload.assignments]
     try:
         created, warnings = await service.create_shift_schedule(

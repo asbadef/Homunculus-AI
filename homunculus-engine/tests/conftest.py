@@ -40,6 +40,51 @@ if TEST_DATABASE_URL is not None:
         )
 
 
+# ONE run at a time on the test database. `db_session` drops and recreates every table per test,
+# and the migration tests rebuild the schema, so two runs against one TEST_DATABASE_URL corrupt
+# each other (missing tables, a `pg_type` unique violation, a deadlocked DROP). The run holds a
+# Postgres SESSION-level advisory lock on a dedicated connection from start to finish; a second run
+# waits for it, saying so once. Advisory locks are per database, and the server releases a
+# session lock when the connection goes away, so a crashed or killed run frees it too. Taken only
+# when TEST_DATABASE_URL is set: runs without the database pay nothing.
+_RUN_LOCK_ID = 0x486F6D756E63   # "Homunc": this project's test-run lock
+_RUN_LOCK = pytest.StashKey[object]()
+
+
+def _libpq_url(url: str) -> str:
+    """The sync (psycopg2) form of an async SQLAlchemy URL, password included."""
+    from sqlalchemy.engine import make_url
+    return make_url(url).set(drivername="postgresql").render_as_string(hide_password=False)
+
+
+def pytest_sessionstart(session):
+    if TEST_DATABASE_URL is None:
+        return
+    import psycopg2
+
+    conn = psycopg2.connect(_libpq_url(TEST_DATABASE_URL))
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_try_advisory_lock(%s)", (_RUN_LOCK_ID,))
+        if not cur.fetchone()[0]:
+            line = (f"waiting for another test run on database {_db_name!r} to finish "
+                    f"(advisory lock {_RUN_LOCK_ID:#x})")
+            reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+            if reporter is not None:
+                reporter.write_line(line)
+            else:
+                print(line, flush=True)
+            cur.execute("SELECT pg_advisory_lock(%s)", (_RUN_LOCK_ID,))
+    session.config.stash[_RUN_LOCK] = conn
+
+
+def pytest_sessionfinish(session, exitstatus):
+    conn = session.config.stash.get(_RUN_LOCK, None)
+    if conn is not None:
+        conn.close()   # ends the database session, which releases the lock
+        del session.config.stash[_RUN_LOCK]
+
+
 @pytest_asyncio.fixture
 async def db_session():
     if TEST_DATABASE_URL is None:

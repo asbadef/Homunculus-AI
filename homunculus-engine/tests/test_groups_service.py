@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 
 from homunculus.auth.groups import (
-    GroupError, bump_group_members, count_admins, ensure_default_groups, groups_of,
-    set_manual_groups, summarize, tenant_of_user,
+    TENANT_INACTIVE, TENANT_OK, TENANT_UNKNOWN, GroupError, bump_group_members, count_admins,
+    ensure_default_groups, groups_of, resolve_tenant_claim, set_manual_groups, summarize,
+    tenant_of_user,
 )
 from homunculus.auth.models import (
     SOURCE_LDAP, Group, GroupPermission, TenantMembership, User, UserGroup,
@@ -286,6 +288,62 @@ async def test_tenant_of_user_ignores_an_inactive_membership(db_session):
     await db_session.flush()
     ref = await tenant_of_user(db_session, u.id)
     assert ref is not None and ref.slug == "b"
+
+
+async def test_tenant_of_user_skips_an_inactive_tenant(db_session):
+    t1 = await _tenant(db_session, "a")
+    t2 = await _tenant(db_session, "b")
+    u = await _user(db_session, t1, "dr3")
+    db_session.add(TenantMembership(user_id=u.id, tenant_id=t2.id))
+    t1.is_active = False
+    await db_session.flush()
+    ref = await tenant_of_user(db_session, u.id)
+    assert ref is not None and ref.slug == "b"          # "a" is lower, but deactivated
+
+    t2.is_active = False
+    await db_session.flush()
+    assert await tenant_of_user(db_session, u.id) is None
+
+
+# ---------------------------------------------------------------- resolve_tenant_claim
+async def test_the_tenant_claim_is_ok_for_an_active_membership_in_an_active_tenant(db_session):
+    t = await _tenant(db_session, "a")
+    u = await _user(db_session, t, "dr")
+    assert await resolve_tenant_claim(db_session, u.id, "a") == (t.id, TENANT_OK)
+
+
+async def test_an_unknown_slug_or_a_tenant_the_user_never_joined_is_unknown(db_session):
+    t = await _tenant(db_session, "a")
+    other = await _tenant(db_session, "b")
+    u = await _user(db_session, t, "dr")
+    assert await resolve_tenant_claim(db_session, u.id, "yok") == (None, TENANT_UNKNOWN)
+    # A slug renamed and then reused by another tenant: the user has no membership there.
+    assert await resolve_tenant_claim(db_session, u.id, other.slug) == (None, TENANT_UNKNOWN)
+
+
+async def test_a_deactivated_tenant_or_membership_is_inactive(db_session):
+    t = await _tenant(db_session, "a")
+    u = await _user(db_session, t, "dr")
+    t.is_active = False
+    await db_session.flush()
+    assert await resolve_tenant_claim(db_session, u.id, "a") == (None, TENANT_INACTIVE)
+
+    t.is_active = True
+    membership = (await db_session.execute(
+        select(TenantMembership).where(TenantMembership.user_id == u.id))).scalar_one()
+    membership.is_active = False
+    await db_session.flush()
+    assert await resolve_tenant_claim(db_session, u.id, "a") == (None, TENANT_INACTIVE)
+
+
+async def test_one_active_membership_row_is_enough(db_session):
+    """No unique constraint on (user, tenant): a stale inactive row next to an active one must
+    neither hide the active one nor produce two rows."""
+    t = await _tenant(db_session, "a")
+    u = await _user(db_session, t, "dr")
+    db_session.add(TenantMembership(user_id=u.id, tenant_id=t.id, is_active=False))
+    await db_session.flush()
+    assert await resolve_tenant_claim(db_session, u.id, "a") == (t.id, TENANT_OK)
 
 
 async def test_groups_of_is_scoped_to_the_tenant(db_session):
