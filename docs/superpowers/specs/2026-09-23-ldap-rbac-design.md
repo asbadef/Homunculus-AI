@@ -286,13 +286,15 @@ objects:
   detail as a missing one.
 - A user of another tenant named in a body is a 422.
 - Lists return only the caller's tenant.
-- A break-glass session can be extended or closed only by the user who opened it, and a closed or
-  expired one cannot be extended.
+- A break-glass session can be extended or closed only by the user who opened it. A closed or
+  expired one can be neither extended nor closed again (409), so `closed_at` records when access
+  really ended.
 
 The tenant claim is not trusted by name alone. On every router request and every board request,
 one query confirms three things: that the slug's tenant exists, that it is active, and that the
-caller holds an active membership in it. An unknown slug is 401, so the client refreshes and gets
-the current slug. An inactive tenant or membership is 403. The signature proves who minted the
+caller holds an active membership in it. An unknown slug is 401, and so is a tenant in which the caller has no
+membership row at all (a renamed slug that another tenant reuses). The client refreshes and gets the
+current slug; the two cases answer identically. An inactive tenant or membership is 403. The signature proves who minted the
 token, but a slug can be renamed and reused, and a membership can be deactivated inside the
 token's hour. A user named in a request body must be an active user with an active membership.
 

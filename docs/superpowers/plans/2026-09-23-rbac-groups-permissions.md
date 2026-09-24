@@ -7474,7 +7474,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - The `archive` and `sessions` admin tabs still write only to the simulation in live mode; only
   `security` (invitations) is hidden by this plan, as the spec scoped.
 - The Infinity branch's `infinity_research.py` must switch to `require_permission("devices.manage")`
-  when merged.
+  when merged, take `caller_tenant_id`, and be mounted in `create_app`. The
+  route tests walk only `create_app()`, so a router mounted anywhere else escapes them.
 - Dropping the PostgreSQL `userrole` enum type and `tenant_memberships.role` (cleanup migration).
   The same migration should add a unique `(user_id, tenant_id)` on `tenant_memberships`; the seed's
   advisory lock covers the only writer that races today.
@@ -7511,6 +7512,15 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   Give operators their own `require_platform_operator` listing if a vendor console is ever built.
 - **Layering.** `tenant/scope.py` imports the admission models. Move the scope helpers to a
   neutral module if a cycle ever appears.
+- **The answers to an inactive tenant or membership (403).** A user who still belongs to another
+  active tenant stays locked out until the token's hour ends, because the client refreshes only on
+  a 401. A 401 would move them on at once, since the refresh mints the next tenant and it cannot
+  loop. It would cost the clearer message. The same case on the board resolver (Task 9) answers
+  401, so a user left with no active tenant makes one refresh per board request. Decide both
+  together.
+- **The test-run lock (`tests/conftest.py`).** An unreachable `TEST_DATABASE_URL` aborts the whole
+  run. pytest-xdist, if it is ever added, needs the lock skipped in workers
+  (`config.workerinput`). Paths outside `tests/` need `-p tests.conftest`.
 - **Structure reads need `structure.manage`.** Users who admit patients cannot look up unit or bed
   ids through the API. A read-only `structure.view`, or folding the reads under `admissions.view`,
   is the likely fix.
