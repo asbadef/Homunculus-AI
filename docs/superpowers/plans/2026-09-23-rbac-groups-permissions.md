@@ -31,6 +31,12 @@ with no keys, and adds `get_user_for_enrolment` for `/auth/totp/setup`: an alrea
 may replace the authenticator only from an MFA-verified session (otherwise the password alone
 would pass the MFA gate by re-enrolling). `decode_token` requires `exp` and `sub`.
 
+**Task 6 as amended in review:** bcrypt runs in the thread pool (`run_in_threadpool`) — one
+uvicorn worker also serves ingest, SSE and escalation, so every `hash_password`/`verify_*` call in
+later tasks goes through it too. Login lookup prefers a username match. `/auth/totp/verify` is
+limited (5 failures → 5-minute lock, `auth/limits.py`) and refuses a replayed code. Known users'
+failed sign-ins are audited under their tenant; MFA steps are audited.
+
 **Do not deploy mid-plan.** Between migration 0006 (Task 3) and the sign-in rewrite (Task 6) and the
 seed rewrite (Task 7), stored e-mails are lower-cased while sign-in still matches case-sensitively,
 and the seed cannot create the administrator. The branch reaches the VM only after Task 20.
@@ -4233,6 +4239,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from starlette.concurrency import run_in_threadpool
 
 from homunculus.auth.groups import (
     GroupError, bump_group_members, bump_user, count_admins, set_manual_groups,
@@ -4397,6 +4404,7 @@ async def _refuse_duplicate_login(db: AsyncSession, *, username: str | None, ema
     clauses = []
     if username:
         clauses.append(User.username == username)
+        clauses.append(User.email == username)      # a username may not be someone's e-mail
     if email:
         clauses.append(User.email == email)
         clauses.append(User.username == email)
@@ -4418,8 +4426,9 @@ async def create_local_user(db: AsyncSession, tenant_id: uuid.UUID, *, username:
     if not key:
         raise AdminError(422, "Kullanıcı adı zorunludur")
     await _refuse_duplicate_login(db, username=key, email=mail)
+    hashed = await run_in_threadpool(hash_password, password)   # bcrypt off the event loop
     user = User(username=key, email=mail, full_name=full_name.strip(),
-                hashed_password=hash_password(password), auth_source=AUTH_LOCAL)
+                hashed_password=hashed, auth_source=AUTH_LOCAL)
     db.add(user)
     await db.flush()
     db.add(TenantMembership(user_id=user.id, tenant_id=tenant_id, granted_by_id=actor_id))
@@ -4442,6 +4451,10 @@ async def patch_user(db: AsyncSession, tenant_id: uuid.UUID, user: User, *,
         user.email = mail
     if is_active is not None and is_active != user.is_active:
         user.is_active = is_active
+        if not is_active:
+            # Refresh tokens issued before now stay dead even if the account is reactivated
+            # later ("phone stolen, deactivate, reactivate tomorrow").
+            user.sessions_revoked_at = datetime.now(timezone.utc)
         await db.flush()
         await bump_user(db, user)
         if not is_active and await count_admins(db, tenant_id) == 0:
@@ -4465,7 +4478,7 @@ async def set_user_groups(db: AsyncSession, tenant_id: uuid.UUID, user: User,
 async def reset_password(db: AsyncSession, user: User, password: str) -> None:
     if user.auth_source != AUTH_LOCAL:
         raise AdminError(400, "Parola Active Directory tarafından yönetiliyor")
-    user.hashed_password = hash_password(password)
+    user.hashed_password = await run_in_threadpool(hash_password, password)
     await db.flush()
     await bump_user(db, user)
 
@@ -4813,10 +4826,53 @@ async def test_an_admin_password_reset_ends_the_users_sessions(client, world, db
 
 Add `homunculus-engine/tests/test_route_inventory.py` to this task's commit.
 
+- [ ] **Step 6c: Deactivation ends sessions for good**
+
+Neither `tv` (deliberately not in refresh tokens) nor the credential fingerprint changes on
+deactivation, so a refresh token issued before a deactivation would work again after a
+reactivation. Add a revocation instant:
+
+- `auth/models.py`, `User`: `sessions_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)`.
+- `alembic/versions/0006_groups_and_permissions.py` (unreleased — it has never run on the VM):
+  in `upgrade()` next to the other `users` columns
+  `op.add_column("users", sa.Column("sessions_revoked_at", sa.DateTime(timezone=True), nullable=True))`,
+  and `op.drop_column("users", "sessions_revoked_at")` in `downgrade()`. Add
+  `"sessions_revoked_at"` to `OWNED_USER_COLUMNS` in `tests/test_migration_0006_schema_parity.py`.
+- `auth/router.py`, `/auth/refresh`, after the active check:
+```python
+    revoked = user.sessions_revoked_at
+    iat = payload.get("iat")
+    if revoked is not None and (type(iat) is not int or iat <= revoked.timestamp()):
+        raise credentials_exc          # issued before the last deactivation
+```
+- Test in `tests/test_admin_api.py`:
+```python
+async def test_reactivation_does_not_revive_old_sessions(client, world, db_session):
+    import asyncio
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    nurse_tokens = (await c.post("/auth/login", json={"login": "ayse", "password": PASSWORD})).json()
+    await c.patch(f"/admin/users/{world['nurse'].id}", headers=admin, json={"is_active": False})
+    await c.patch(f"/admin/users/{world['nurse'].id}", headers=admin, json={"is_active": True})
+    res = await c.post("/auth/refresh", json={"refresh_token": nurse_tokens["refresh_token"]})
+    assert res.status_code == 401
+    await asyncio.sleep(1.1)                     # a fresh sign-in after the revocation instant works
+    assert (await c.post("/auth/login", json={"login": "ayse", "password": PASSWORD})).status_code == 200
+
+
+async def test_a_username_may_not_be_another_users_email(client, world, db_session):
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    res = await c.post("/admin/users", headers=admin, json={
+        "username": "ayse@example.com", "full_name": "Taklit", "password": "Gecici-Parola-1"})
+    assert res.status_code == 409
+```
+Add `auth/models.py`, `auth/router.py`, the migration and the parity test to this task's commit.
+
 - [ ] **Step 7: Run the tests**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_admin_api.py tests/test_route_inventory.py -q`
-Expected: `17 passed` with `TEST_DATABASE_URL`, `17 skipped` without, plus the 2 route-inventory tests.
+Expected: `19 passed` with `TEST_DATABASE_URL`, `19 skipped` without, plus the 2 route-inventory tests; the migration tests still pass.
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py`
 Expected: all pass.
@@ -4824,7 +4880,7 @@ Expected: all pass.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add homunculus-engine/src/homunculus/admin homunculus-engine/src/homunculus/api/app.py homunculus-engine/tests/test_admin_api.py homunculus-engine/tests/test_route_inventory.py
+git add homunculus-engine/src/homunculus/admin homunculus-engine/src/homunculus/api/app.py homunculus-engine/src/homunculus/auth/models.py homunculus-engine/src/homunculus/auth/router.py homunculus-engine/alembic/versions/0006_groups_and_permissions.py homunculus-engine/tests/test_admin_api.py homunculus-engine/tests/test_route_inventory.py homunculus-engine/tests/test_migration_0006_schema_parity.py
 git commit -m "feat(admin): /admin API — users, groups, permission catalogue, last-admin guards, audit
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -5622,7 +5678,12 @@ Replace the `attemptLogin`, `completeMfaLogin`, `restoreSession` methods and add
       return openSession(resolveSession(tokens.access_token));
     },
 
-    /** Live MFA enrolment: the API mints the secret; the gate shows the QR and the manual key. */
+    /** Live MFA enrolment: the API mints the secret; the gate shows the QR and the manual key.
+     *  Each call ROTATES the secret and ends every refresh token issued before it, so the gate
+     *  calls it once per showing (MfaGate's effect does); after a reload the user scans again.
+     *  `verifyTotp` stays a plain POST: a wrong code is 401 and must never go through the
+     *  refresh-and-retry path, which would spend the now-dead refresh token and log the user out.
+     *  429 means the code limit was hit — show the API's message. */
     async setupMfa() {
       const res = await api.setupTotp();
       return {

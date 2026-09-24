@@ -69,6 +69,7 @@ Changes to `users`:
 | `ldap_dn` | new, nullable | Last-seen DN, for diagnostics only. |
 | `token_version` | new, `INTEGER NOT NULL DEFAULT 0` | See §3. |
 | `last_login_at` | new, nullable | Shown in the admin list. |
+| `sessions_revoked_at` | new, nullable | Set on deactivation; `/auth/refresh` refuses a refresh token issued at or before it, so reactivating an account never revives its old sessions. |
 
 `tenant_memberships` keeps its job as the user ↔ tenant link. Its `role` column becomes nullable
 and is no longer written. `UserRole`, `MFA_REQUIRED_ROLES` and `require_roles` are **deleted** from
@@ -522,9 +523,11 @@ the `LDAP_*` configuration in §9, and the LDAP tests in §10.
 - Kerberos/SPNEGO single sign-on; SAML/OIDC through ADFS or Entra.
 - Scheduled AD synchronisation and automatic off-boarding of accounts disabled in AD.
 - The invitation flow, quick PINs and per-user MFA overrides that exist only in the simulation.
-- Login and TOTP-verification rate limiting and lockout (bcrypt and the LDAP bind bound brute
-  force; a pending-MFA token can guess codes until it expires; a dedicated limiter
-  is a follow-up).
+- Login rate limiting (bcrypt runs in the thread pool and bounds throughput; a per-account lockout
+  would let anyone lock a nurse out by typing her username, so it needs its own design). TOTP
+  verification IS limited in Plan 1: 5 wrong codes lock that user's verification for 5 minutes and
+  a used code cannot be replayed — without it, the password alone reached the MFA-protected groups
+  in minutes.
 - A session-revocation UI beyond deactivation.
 - Dropping the PostgreSQL `userrole` enum type and the `tenant_memberships.role` column.
 - The Infinity branch's `UserRole.BIOMEDICAL` reference: on merge it becomes
