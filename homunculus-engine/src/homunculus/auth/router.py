@@ -7,6 +7,8 @@ POST /auth/totp/verify  — verify 6-digit code; re-issues tokens with mfa_verif
 POST /auth/refresh      — exchange refresh token for new tokens built from the CURRENT groups
 GET  /auth/me           — profile, tenant, groups, permissions (allowed before MFA)
 POST /auth/password     — change own password (local accounts)
+
+Every sign-in, MFA and password event goes to the audit trail (never a password or a code).
 """
 from __future__ import annotations
 import hmac
@@ -15,12 +17,16 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from homunculus.auth.audit import append_audit
 from homunculus.auth.dependencies import (
-    Principal, get_current_user_pre_mfa, get_principal, get_user_for_enrolment,
+    Principal, get_current_user_pre_mfa, get_principal, get_principal_pre_mfa,
+    get_user_for_enrolment,
 )
+from homunculus.auth.groups import tenant_of_user
 from homunculus.auth.jwt import decode_token
+from homunculus.auth.limits import totp_failures
 from homunculus.auth.models import AUTH_LDAP, User
 from homunculus.auth.schemas import (
     GroupBrief, LoginRequest, PasswordChangeRequest, RefreshRequest, TOTPSetupResponse,
@@ -31,10 +37,30 @@ from homunculus.auth.service import (
     find_user_by_login, get_user_by_id, issue_tokens, mark_login, normalize_login, setup_totp,
     verify_local_password,
 )
-from homunculus.auth.totp import verify_totp
+from homunculus.auth.totp import accepted_step
 from homunculus.db import get_db
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# The last TOTP time step accepted per user: a code at or before it is refused, so a code that
+# was seen once (over a shoulder, in a proxy log) cannot be used again. In memory, like the
+# attempt limit in `auth/limits.py` — the engine is a single process.
+_last_step: dict[uuid.UUID, int] = {}
+
+_TOTP_LOCKED = "Çok fazla hatalı kod. 5 dakika sonra tekrar deneyin."
+
+
+async def _login_failed(request: Request, db: AsyncSession, user: User | None, key: str,
+                        reason: str) -> None:
+    """Audit a failed sign-in. A known account's failure is filed under its hospital, so the
+    hospital's own (tenant-scoped) audit shows attempts on its accounts; an unknown login has
+    no hospital and is filed under "-"."""
+    tenant = None
+    if user is not None:
+        ref = await tenant_of_user(db, user.id)
+        tenant = ref.slug if ref is not None else None
+    append_audit(request, tenant=tenant, event_type="auth", subject="login.fail",
+                 payload={"login": key, "reason": reason})
 
 
 @router.post("/login", response_model=TokenResponse, summary="Sign in with username or e-mail")
@@ -46,34 +72,42 @@ async def login(body: LoginRequest, request: Request,
     if user is not None and user.auth_source == AUTH_LDAP:
         # Plan 2 wires the directory in here. Until then an AD account cannot sign in, and the
         # reason is the directory — a 503 the clinician should report, never a 401.
-        append_audit(request, tenant=None, event_type="auth", subject="login.fail",
-                     payload={"login": key, "reason": "directory_unavailable"})
+        await _login_failed(request, db, user, key, "directory_unavailable")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail="Dizin sunucusuna ulaşılamıyor")
 
-    if not verify_local_password(user, body.password):
-        append_audit(request, tenant=None, event_type="auth", subject="login.fail",
-                     payload={"login": key, "reason": "bad_credentials"})
+    # bcrypt is ~0.2 s of CPU: off the event loop, or every sign-in stalls ingest and SSE.
+    if not await run_in_threadpool(verify_local_password, user, body.password):
+        await _login_failed(request, db, user, key, "bad_credentials")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     if not user.is_active:
-        append_audit(request, tenant=None, event_type="auth", subject="login.fail",
-                     payload={"login": key, "reason": "inactive"})
+        await _login_failed(request, db, user, key, "inactive")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     ctx = await build_context(db, user)
     mark_login(user)
     await db.commit()
+    tokens = issue_tokens(user, ctx, mfa_verified=False)
     append_audit(request, tenant=ctx.tenant, event_type="auth", subject="login.ok",
-                 payload={"login": key, "user": user.username, "source": user.auth_source})
-    return TokenResponse(**issue_tokens(user, ctx, mfa_verified=False))
+                 payload={"login": key, "user": user.username, "source": user.auth_source,
+                          "mfa_pending": tokens["requires_mfa"]})
+    return TokenResponse(**tokens)
 
 
 @router.post("/totp/setup", response_model=TOTPSetupResponse, summary="Setup TOTP authenticator")
 async def totp_setup(
+    request: Request,
     current_user: User = Depends(get_user_for_enrolment),
+    principal: Principal = Depends(get_principal_pre_mfa),   # same cached instance; for the tenant
     db: AsyncSession = Depends(get_db),
 ) -> TOTPSetupResponse:
+    replace = bool(current_user.totp_enabled)
     _secret, uri = await setup_totp(db, current_user)
+    # A new secret starts a new code sequence; steps accepted under the old one say nothing
+    # about it (and would hold a replacement's first code back until the next step).
+    _last_step.pop(current_user.id, None)
+    append_audit(request, tenant=principal.tenant, event_type="auth", subject="mfa.enrol",
+                 payload={"user": current_user.username, "replace": replace})
     return TOTPSetupResponse(provisioning_uri=uri)
 
 
@@ -81,21 +115,40 @@ async def totp_setup(
              summary="Verify TOTP and get MFA-verified tokens")
 async def totp_verify(
     body: TOTPVerifyRequest,
-    current_user: User = Depends(get_current_user_pre_mfa),
+    request: Request,
+    principal: Principal = Depends(get_principal_pre_mfa),
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
-    if not current_user.totp_secret:
+    user = principal.user
+    if not user.totp_secret:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not set up")
 
-    if not current_user.totp_enabled:
-        # First-time activation.
-        if not await enable_totp(db, current_user, body.code):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
-    elif not verify_totp(current_user.totp_secret, body.code):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
+    def audit(subject: str, **payload) -> None:
+        append_audit(request, tenant=principal.tenant, event_type="auth", subject=subject,
+                     payload={"user": user.username, **payload})
 
-    ctx = await build_context(db, current_user)
-    return TokenResponse(**issue_tokens(current_user, ctx, mfa_verified=True))
+    key = str(user.id)
+    if totp_failures.locked(key):
+        audit("mfa.fail", reason="locked")
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=_TOTP_LOCKED)
+
+    # The code is checked exactly once, here, for a first enrolment and a routine sign-in alike.
+    # No await between the check and recording the step: two concurrent requests carrying the
+    # same code cannot both pass.
+    step = accepted_step(user.totp_secret, body.code)
+    if step is None or step <= _last_step.get(user.id, -1):
+        totp_failures.failed(key)
+        audit("mfa.fail", reason="bad_code" if step is None else "replayed_code")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
+    _last_step[user.id] = step
+    totp_failures.succeeded(key)
+
+    first = not user.totp_enabled
+    if first:
+        await enable_totp(db, user)
+    audit("mfa.ok", first_enrolment=first)
+    ctx = await build_context(db, user)
+    return TokenResponse(**issue_tokens(user, ctx, mfa_verified=True))
 
 
 @router.post("/refresh", response_model=TokenResponse,
@@ -115,7 +168,11 @@ async def refresh_token(body: RefreshRequest, db: AsyncSession = Depends(get_db)
     user = await get_user_by_id(db, user_id)
     if not user or not user.is_active:
         raise credentials_exc
-    if not hmac.compare_digest(str(payload.get("cv", "")), credential_fingerprint(user)):
+    cv = payload.get("cv")
+    # Compared as bytes: `compare_digest` raises TypeError on a non-ASCII str, which a claim
+    # can hold — that must be a 401, not a 500.
+    if not isinstance(cv, str) or not hmac.compare_digest(
+            cv.encode(), credential_fingerprint(user).encode()):
         # The password or the authenticator changed since this session opened: sign in again.
         raise credentials_exc
 
@@ -151,8 +208,12 @@ async def password(body: PasswordChangeRequest, request: Request,
     try:
         await change_password(db, current_user, body.current_password, body.new_password)
     except PasswordError as exc:
+        append_audit(request, tenant=principal.tenant, event_type="auth",
+                     subject="password.change.fail",
+                     payload={"user": current_user.username, "reason": exc.reason})
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     append_audit(request, tenant=principal.tenant, event_type="auth", subject="password.change",
                  payload={"user": current_user.username})
     ctx = await build_context(db, current_user)
-    return TokenResponse(**issue_tokens(current_user, ctx, mfa_verified=principal.mfa_verified))
+    verified = principal.mfa_verified and current_user.totp_enabled
+    return TokenResponse(**issue_tokens(current_user, ctx, mfa_verified=verified))

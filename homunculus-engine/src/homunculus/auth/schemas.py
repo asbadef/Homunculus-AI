@@ -3,13 +3,19 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
+
+# Upper bounds, so an oversized body is a 422 before any lookup or bcrypt work. 254 is the longest
+# valid e-mail address; bcrypt reads only 72 bytes, 1024 is a generous cap for a passphrase.
+_LOGIN_MAX = 254
+_PASSWORD_MAX = 1024
 
 
 class LoginRequest(BaseModel):
-    login: str | None = None     # username or e-mail
-    email: str | None = None     # legacy alias — the mobile client still sends `email`
-    password: str
+    login: str | None = Field(default=None, max_length=_LOGIN_MAX)   # username or e-mail
+    # Legacy alias — the mobile client still sends `email`.
+    email: str | None = Field(default=None, max_length=_LOGIN_MAX)
+    password: str = Field(max_length=_PASSWORD_MAX)
 
     @model_validator(mode="after")
     def _needs_an_identifier(self):
@@ -64,5 +70,5 @@ class UserMeResponse(BaseModel):
 
 
 class PasswordChangeRequest(BaseModel):
-    current_password: str
-    new_password: str
+    current_password: str = Field(max_length=_PASSWORD_MAX)
+    new_password: str = Field(max_length=_PASSWORD_MAX)

@@ -5,15 +5,19 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.models import AUTH_LDAP, User
-from homunculus.auth.schemas import LoginRequest
+from homunculus.auth.router import router as auth_router
+from homunculus.auth.schemas import LoginRequest, PasswordChangeRequest
 from homunculus.auth.service import (
-    AuthContext, credential_fingerprint, hash_password, issue_tokens, normalize_login,
-    verify_local_password,
+    AuthContext, PasswordError, change_password, credential_fingerprint, hash_password,
+    issue_tokens, normalize_login, verify_local_password,
 )
+from homunculus.db import get_db
 
 
 def _user(**kw) -> User:
@@ -80,6 +84,14 @@ def test_normalize_login_lowercases_and_trims():
     assert normalize_login(None) == ""
 
 
+def test_normalize_login_folds_the_turkish_capital_dotted_i_to_a_plain_i():
+    """A Turkish keyboard auto-capitalises `i` to `İ`, and `"İ".lower()` is `i` + a combining
+    dot (two code points) — which would never match the stored, plain-ASCII login."""
+    assert "İ".lower() != "i"                                  # the trap this guards against
+    assert normalize_login("İbrahim") == "ibrahim"
+    assert normalize_login("AYŞE.DEMİR@EXAMPLE.COM") == "ayşe.demir@example.com"
+
+
 def test_verify_local_password_accepts_the_right_password():
     assert verify_local_password(_user(), "Gizli-123") is True
     assert verify_local_password(_user(), "yanlis") is False
@@ -106,3 +118,53 @@ def test_login_request_accepts_the_legacy_email_field_as_an_alias():
     assert LoginRequest(login="ayse", password="x").identifier == "ayse"
     with pytest.raises(ValidationError):
         LoginRequest(password="x")
+
+
+def test_login_and_password_fields_are_length_limited():
+    LoginRequest(login="a" * 254, password="p" * 1024)
+    with pytest.raises(ValidationError):
+        LoginRequest(login="a" * 255, password="x")
+    with pytest.raises(ValidationError):
+        LoginRequest(email="a" * 255, password="x")
+    with pytest.raises(ValidationError):
+        LoginRequest(login="ayse", password="p" * 1025)
+    PasswordChangeRequest(current_password="p" * 1024, new_password="q" * 1024)
+    with pytest.raises(ValidationError):
+        PasswordChangeRequest(current_password="p" * 1025, new_password="x")
+    with pytest.raises(ValidationError):
+        PasswordChangeRequest(current_password="x", new_password="q" * 1025)
+
+
+def test_an_over_long_login_is_a_422_before_any_database_work():
+    app = FastAPI()
+    app.include_router(auth_router)
+
+    async def no_db():
+        yield None
+
+    app.dependency_overrides[get_db] = no_db
+    res = TestClient(app).post("/auth/login", json={"login": "a" * 255, "password": "x"})
+    assert res.status_code == 422
+
+
+# --- password change: the checks that run before any database work ---------------------------
+
+async def test_a_too_short_new_password_is_reported_before_the_current_one_is_checked():
+    """Checked in this order, a stolen session cannot test guesses at the current password by
+    sending a short new one (which would otherwise fail harmlessly only when the guess is right)."""
+    with pytest.raises(PasswordError) as exc:
+        await change_password(None, _user(), "yanlis-tahmin", "kisa")
+    assert exc.value.reason == "too_short"
+
+
+async def test_a_wrong_current_password_is_refused():
+    with pytest.raises(PasswordError) as exc:
+        await change_password(None, _user(), "yanlis-tahmin", "Yeni-Parola-1")
+    assert exc.value.reason == "wrong_current"
+
+
+async def test_an_ad_account_cannot_change_its_password_here():
+    with pytest.raises(PasswordError) as exc:
+        await change_password(None, _user(auth_source=AUTH_LDAP, hashed_password=None),
+                              "x", "Yeni-Parola-1")
+    assert exc.value.reason == "directory_account"

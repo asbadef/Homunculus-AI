@@ -12,11 +12,12 @@ from datetime import datetime, timezone
 import bcrypt
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from homunculus.auth.groups import bump_user, groups_of, summarize, tenant_of_user
 from homunculus.auth.jwt import JWT_SECRET, create_access_token, create_refresh_token
 from homunculus.auth.models import AUTH_LOCAL, User
-from homunculus.auth.totp import generate_provisioning_uri, generate_totp_secret, verify_totp
+from homunculus.auth.totp import generate_provisioning_uri, generate_totp_secret
 
 # bcrypt is used directly: passlib has been unmaintained since 2020 and is incompatible with
 # bcrypt >= 4.1 (it raised "password cannot be longer than 72 bytes" for every password, which
@@ -48,21 +49,34 @@ _DUMMY_HASH = hash_password("homunculus-no-such-account")
 
 
 def normalize_login(value: str | None) -> str:
-    return (value or "").strip().lower()
+    """Trimmed and lower-cased. The Turkish capital `İ` (a keyboard auto-capitalises `i` to it)
+    is folded to a plain `i` first: `"İ".lower()` is `i` + a combining dot, two code points that
+    would never match the stored login."""
+    return (value or "").strip().replace("İ", "i").lower()
 
 
 async def find_user_by_login(db: AsyncSession, login: str) -> User | None:
-    """By username OR e-mail, case-insensitively (both are stored lower-case)."""
+    """By username OR e-mail, case-insensitively (both are stored lower-case). When the key is
+    one account's username and another's e-mail, the username wins — always the same account,
+    whatever order the rows happen to come back in."""
     key = normalize_login(login)
     if not key:
         return None
-    result = await db.execute(select(User).where(or_(User.username == key, User.email == key)))
+    result = await db.execute(
+        select(User)
+        .where(or_(User.username == key, User.email == key))
+        .order_by((User.username == key).desc())
+        .limit(1)
+    )
     return result.scalars().first()
 
 
 def verify_local_password(user: User | None, password: str) -> bool:
     """True only for an existing LOCAL account whose bcrypt hash matches. Every other case
-    performs a dummy comparison and returns False."""
+    performs a dummy comparison and returns False.
+
+    CPU-bound (~0.2 s of bcrypt): from an async route call it through `run_in_threadpool`, or
+    the single worker's event loop — ingest, SSE, escalation — stalls for every sign-in."""
     if user is None or user.auth_source != AUTH_LOCAL or not user.hashed_password:
         verify_password(password, _DUMMY_HASH)
         return False
@@ -152,27 +166,32 @@ async def setup_totp(db: AsyncSession, user: User) -> tuple[str, str]:
     return secret, uri
 
 
-async def enable_totp(db: AsyncSession, user: User, code: str) -> bool:
-    if not user.totp_secret:
-        return False
-    if not verify_totp(user.totp_secret, code):
-        return False
+async def enable_totp(db: AsyncSession, user: User) -> None:
+    """Mark the authenticator as verified. The caller has already checked the code — once, with
+    the attempt limit and the replay check (see /auth/totp/verify)."""
     user.totp_enabled = True
     await db.commit()
-    return True
 
 
 class PasswordError(ValueError):
-    """A password change that cannot be made; the message is shown to the user."""
+    """A password change that cannot be made. The message is shown to the user; `reason` is a
+    short code for the audit trail."""
+
+    def __init__(self, message: str, reason: str) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 async def change_password(db: AsyncSession, user: User, current: str, new: str) -> None:
+    """The new password's length is checked BEFORE the current password: the other order would
+    let a stolen session test guesses at the current password by sending a too-short new one —
+    "too short" would mean "right guess", and nothing would change or look unusual."""
     if user.auth_source != AUTH_LOCAL:
-        raise PasswordError("Parola Active Directory tarafından yönetiliyor")
-    if not verify_local_password(user, current):
-        raise PasswordError("Mevcut parola yanlış")
+        raise PasswordError("Parola Active Directory tarafından yönetiliyor", "directory_account")
     if len(new) < 8:
-        raise PasswordError("Yeni parola en az 8 karakter olmalı")
-    user.hashed_password = hash_password(new)
+        raise PasswordError("Yeni parola en az 8 karakter olmalı", "too_short")
+    if not await run_in_threadpool(verify_local_password, user, current):
+        raise PasswordError("Mevcut parola yanlış", "wrong_current")
+    user.hashed_password = await run_in_threadpool(hash_password, new)
     await bump_user(db, user)
     await db.commit()

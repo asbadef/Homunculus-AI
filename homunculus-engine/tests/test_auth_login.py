@@ -7,15 +7,18 @@ loops.
 """
 from __future__ import annotations
 
+import pyotp
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from homunculus.api.app import create_app
 from homunculus.auth.groups import ensure_default_groups, set_manual_groups
-from homunculus.auth.jwt import decode_token
+from homunculus.auth.jwt import create_refresh_token, decode_token
 from homunculus.auth.models import AUTH_LDAP, TenantMembership, User
-from homunculus.auth.service import hash_password
+from homunculus.auth.service import (
+    build_context, credential_fingerprint, hash_password, issue_tokens,
+)
 from homunculus.db import get_db
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
@@ -50,7 +53,8 @@ async def world(db_session):
                            hashed_password=None)
     await make("pasif", "pasif@example.com", "nurse", is_active=False)
     await db_session.commit()
-    return {"tenant": tenant, "groups": groups, "admin": admin, "nurse": nurse, "ldap": ldap_user}
+    return {"tenant": tenant, "groups": groups, "admin": admin, "nurse": nurse, "ldap": ldap_user,
+            "make": make}
 
 
 @pytest_asyncio.fixture
@@ -204,3 +208,209 @@ async def test_sign_ins_are_audited_without_the_password(client, world):
     assert "login.ok" in subjects and "login.fail" in subjects
     for r in records:
         assert PASSWORD not in str(r.payload) and "yanlis" not in str(r.payload)
+
+
+# --- review fixes: flows the dashboard depends on, TOTP limits, lookup, audit ------------------
+
+SECRET = "JBSWY3DPEHPK3PXP"
+
+
+def _bearer(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _enrolled_admin(world, db_session):
+    world["admin"].totp_secret, world["admin"].totp_enabled = SECRET, True
+    await db_session.commit()
+    return world["admin"]
+
+
+async def _verify(c, access_token, code):
+    return await c.post("/auth/totp/verify", headers=_bearer(access_token), json={"code": code})
+
+
+def _auth_events(app, subject):
+    return [r for r in app.state.audit.records(event_type="auth", limit=10_000)
+            if r.subject == subject]
+
+
+async def test_first_enrolment_end_to_end(client, world, db_session):
+    """login (pending, not enrolled) -> setup -> verify -> refresh keeps "verified"."""
+    c, app = client
+    login = (await _login(c, "admin")).json()
+    assert login["requires_mfa"] is True and login["mfa_enrolled"] is False
+
+    setup = await c.post("/auth/totp/setup", headers=_bearer(login["access_token"]))
+    assert setup.status_code == 200
+    secret = pyotp.parse_uri(setup.json()["provisioning_uri"]).secret
+    # A new secret moves the credential fingerprint: the login's refresh token is retired.
+    assert (await c.post("/auth/refresh", json={"refresh_token": login["refresh_token"]})
+            ).status_code == 401
+
+    res = await _verify(c, login["access_token"], pyotp.TOTP(secret).now())
+    assert res.status_code == 200
+    verified = res.json()
+    assert verified["requires_mfa"] is False and verified["mfa_enrolled"] is True
+    assert decode_token(verified["access_token"])["mfa_verified"] is True
+    await db_session.refresh(world["admin"])
+    assert world["admin"].totp_enabled is True
+
+    refreshed = await c.post("/auth/refresh", json={"refresh_token": verified["refresh_token"]})
+    assert refreshed.status_code == 200
+    assert decode_token(refreshed.json()["access_token"])["mfa_verified"] is True
+    assert refreshed.json()["requires_mfa"] is False
+
+    assert [r.payload["replace"] for r in _auth_events(app, "mfa.enrol")] == [False]
+    assert [r.payload["first_enrolment"] for r in _auth_events(app, "mfa.ok")] == [True]
+
+
+async def test_a_refresh_carries_mfa_verified_forward(client, world, db_session):
+    c, _ = client
+    await _enrolled_admin(world, db_session)
+    pending = (await _login(c, "admin")).json()
+    verified = (await _verify(c, pending["access_token"], pyotp.TOTP(SECRET).now())).json()
+
+    res = await c.post("/auth/refresh", json={"refresh_token": verified["refresh_token"]})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["requires_mfa"] is False
+    assert decode_token(body["access_token"])["mfa_verified"] is True
+    assert decode_token(body["refresh_token"])["mfa_verified"] is True     # and the next one too
+
+
+async def test_replacing_the_authenticator_from_a_verified_session_keeps_it_enrolled(
+        client, world, db_session):
+    c, app = client
+    await _enrolled_admin(world, db_session)
+    pending = (await _login(c, "admin")).json()
+    verified = (await _verify(c, pending["access_token"], pyotp.TOTP(SECRET).now())).json()
+
+    setup = await c.post("/auth/totp/setup", headers=_bearer(verified["access_token"]))
+    assert setup.status_code == 200
+    new_secret = pyotp.parse_uri(setup.json()["provisioning_uri"]).secret
+    await db_session.refresh(world["admin"])
+    assert world["admin"].totp_enabled is True                  # never back to "not enrolled"
+    assert world["admin"].totp_secret == new_secret != SECRET
+
+    # The new device's first code is accepted at once — the old secret's used step does not
+    # hold it back.
+    res = await _verify(c, verified["access_token"], pyotp.TOTP(new_secret).now())
+    assert res.status_code == 200
+    assert [r.payload["replace"] for r in _auth_events(app, "mfa.enrol")] == [True]
+
+
+@pytest.mark.parametrize("cv", [None, 12345, "çok-gizli-ş", ["x"]])
+async def test_a_refresh_token_without_a_valid_fingerprint_is_refused(client, world, cv):
+    c, _ = client
+    nurse = world["nurse"]
+    extra = {"mfa_verified": False} if cv is None else {"mfa_verified": False, "cv": cv}
+    res = await c.post("/auth/refresh",
+                       json={"refresh_token": create_refresh_token(str(nurse.id), extra=extra)})
+    assert res.status_code == 401
+
+
+async def test_a_refresh_token_with_the_current_fingerprint_is_accepted(client, world):
+    """The positive control for the test above: the same hand-built token, correct `cv`."""
+    c, _ = client
+    nurse = world["nurse"]
+    token = create_refresh_token(str(nurse.id), extra={"mfa_verified": False,
+                                                       "cv": credential_fingerprint(nurse)})
+    assert (await c.post("/auth/refresh", json={"refresh_token": token})).status_code == 200
+
+
+async def test_password_change_error_paths_are_400_and_audited(client, world, db_session):
+    c, app = client
+    nurse = (await _login(c, "ayse")).json()
+    headers = _bearer(nurse["access_token"])
+
+    wrong = await c.post("/auth/password", headers=headers,
+                         json={"current_password": "yanlis-parola", "new_password": "Yeni-Parola-1"})
+    assert wrong.status_code == 400 and "yanlış" in wrong.json()["detail"]
+    # Too short is reported even with a wrong current password: length is checked first.
+    short = await c.post("/auth/password", headers=headers,
+                         json={"current_password": "yanlis-parola", "new_password": "kisa"})
+    assert short.status_code == 400 and "8 karakter" in short.json()["detail"]
+
+    ldap = world["ldap"]
+    ldap_tokens = issue_tokens(ldap, await build_context(db_session, ldap), mfa_verified=False)
+    ad = await c.post("/auth/password", headers=_bearer(ldap_tokens["access_token"]),
+                      json={"current_password": "x", "new_password": "Yeni-Parola-1"})
+    assert ad.status_code == 400 and "Active Directory" in ad.json()["detail"]
+
+    fails = _auth_events(app, "password.change.fail")
+    assert [r.payload["reason"] for r in fails] == ["wrong_current", "too_short",
+                                                     "directory_account"]
+    assert all(r.tenant == "demo-hastanesi" for r in fails)
+    for r in fails:
+        assert "yanlis-parola" not in str(r.payload) and "Yeni-Parola-1" not in str(r.payload)
+    # Nothing changed: the original password still signs in.
+    assert (await _login(c, "ayse")).status_code == 200
+
+
+async def test_a_sign_in_records_last_login_at(client, world, db_session):
+    c, _ = client
+    assert world["nurse"].last_login_at is None
+    assert (await _login(c, "ayse")).status_code == 200
+    await db_session.refresh(world["nurse"])
+    assert world["nurse"].last_login_at is not None
+
+
+async def test_failed_sign_ins_are_filed_under_the_accounts_hospital(client, world):
+    c, app = client
+    await _login(c, "pasif")                       # right password, inactive account
+    await _login(c, "ldapci", "her-neyse")         # AD account, no directory yet
+    await _login(c, "ayse", "yanlis")              # known account, wrong password
+    await _login(c, "kimse")                       # no such account
+    fails = {(r.payload["login"], r.payload["reason"], r.tenant)
+             for r in _auth_events(app, "login.fail")}
+    assert fails == {
+        ("pasif", "inactive", "demo-hastanesi"),
+        ("ldapci", "directory_unavailable", "demo-hastanesi"),
+        ("ayse", "bad_credentials", "demo-hastanesi"),
+        ("kimse", "bad_credentials", "-"),
+    }
+
+
+async def test_login_ok_records_whether_an_mfa_step_is_pending(client, world):
+    c, app = client
+    await _login(c, "ayse")
+    await _login(c, "admin")
+    pending = {r.payload["user"]: r.payload["mfa_pending"] for r in _auth_events(app, "login.ok")}
+    assert pending == {"ayse": False, "admin": True}
+
+
+async def test_a_username_that_is_another_accounts_email_resolves_to_the_username_owner(
+        client, world, db_session):
+    c, _ = client
+    make = world["make"]
+    # The e-mail holder is created first, so plain row order would favour it.
+    await make("baska", "ortak@example.com", "nurse")
+    owner = await make("ortak@example.com", "sahip@example.com", "nurse")
+    await db_session.commit()
+    for _ in range(3):                             # each sign-in rewrites last_login_at
+        res = await _login(c, "ortak@example.com")
+        assert res.status_code == 200
+        assert decode_token(res.json()["access_token"])["sub"] == str(owner.id)
+
+
+async def test_five_wrong_codes_lock_the_verify_step(client, world, db_session):
+    c, app = client
+    await _enrolled_admin(world, db_session)
+    pending = (await _login(c, "admin")).json()
+    for _ in range(5):
+        assert (await _verify(c, pending["access_token"], "xxxxxx")).status_code == 401
+    res = await _verify(c, pending["access_token"], pyotp.TOTP(SECRET).now())
+    assert res.status_code == 429 and "5 dakika" in res.json()["detail"]
+    reasons = [r.payload["reason"] for r in _auth_events(app, "mfa.fail")]
+    assert reasons == ["bad_code"] * 5 + ["locked"]
+
+
+async def test_a_totp_code_cannot_be_used_twice(client, world, db_session):
+    c, app = client
+    await _enrolled_admin(world, db_session)
+    pending = (await _login(c, "admin")).json()
+    code = pyotp.TOTP(SECRET).now()
+    assert (await _verify(c, pending["access_token"], code)).status_code == 200
+    again = await _verify(c, pending["access_token"], code)
+    assert again.status_code == 401
+    assert [r.payload["reason"] for r in _auth_events(app, "mfa.fail")] == ["replayed_code"]
