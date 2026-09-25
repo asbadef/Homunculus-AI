@@ -99,6 +99,14 @@ tenant or membership is 403. `tenant_of_user` skips inactive tenants.
 - **Guard:** keeps one LOCAL administrator.
 - **Frontend (Tasks 15–18) must follow the same rules.** An administrator holds the whole catalogue.
   Username errors arrive in Turkish, with a transliteration hint; translate them in Task 16.
+  **From Task 15's review (UI hints; the server decides):**
+  - `liveAdmin.groupRights` does not intersect a custom group's keys with the catalogue, but the
+    server does. A retired key then makes a group look harder to grant than it is. Filter
+    `own` by the catalogue when the panels (Tasks 17–18) use it.
+  - The hints read the token's `perms`, but the server reads the caller's rights from the database.
+    After a deploy that adds a key, an administrator's older token under-reports their rights until
+    it refreshes. Re-read `/auth/me` when the admin screen opens, or let the server's answer decide
+    and hide nothing that only the hint refuses.
   **Task 19 must also fix these screens (found in Task 14):**
   - **`MfaGate` crashes on a first live enrolment.** `ClinicalDemo.jsx` calls
     `setSetup(store.setupMfa(...))` synchronously, stores the Promise, and throws on
