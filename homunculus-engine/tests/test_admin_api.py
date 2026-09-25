@@ -15,6 +15,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+import homunculus.auth.groups as groups_module
 from homunculus.admin import service
 from homunculus.admin.service import Actor, AdminError
 from homunculus.api.app import create_app
@@ -228,34 +229,48 @@ async def test_the_last_administrator_cannot_lose_groups_manage_either(client, w
     assert res.status_code == 409
 
 
-async def test_a_group_edit_may_not_strip_the_last_administrator(client, world, db_session):
-    """The only administrator holds the whole catalogue through a custom group; editing THAT
-    group's permissions is the other way to take it away — refused, and nothing left behind."""
+async def test_the_last_system_group_member_may_not_leave_it_for_a_copy_of_its_keys(
+        client, world, db_session):
+    """Probe E12: the only administrator once moved from hospital_admin into a custom group
+    holding every key (200). The day a release added a key, that group no longer held it, the
+    count fell to 0, and the way back into hospital_admin was beyond their rights (403). Only
+    the system group holds the whole catalogue by rule, so only its local members count."""
     c, _ = client
     admin, _ = await _headers(db_session, world["admin"])
-    everything = sorted(ALL_PERMISSIONS)
-    res = await c.post("/admin/groups", headers=admin, json={
-        "slug": "it_admin", "name": "BT Yönetimi", "permissions": everything})
-    gid = res.json()["id"]
-    res = await c.put(f"/admin/users/{world['admin'].id}/groups", headers=admin,
-                      json={"group_ids": [gid]})
-    assert res.status_code == 200                    # still an administrator, through it_admin
-    admin, _ = await _headers(db_session, await _fresh(db_session, world["admin"].id))
+    ha = str(world["groups"]["hospital_admin"].id)
+    copy = (await c.post("/admin/groups", headers=admin, json={
+        "slug": "tam_yetki", "name": "Tam Yetki",
+        "permissions": sorted(ALL_PERMISSIONS)})).json()["id"]
 
-    for keys in ([k for k in everything if k != "audit.view"],       # ANY key short counts
-                 [k for k in everything if k != "users.manage"], []):
-        res = await c.patch(f"/admin/groups/{gid}", headers=admin, json={"permissions": keys})
-        assert res.status_code == 409, keys
-        assert res.json()["detail"] == service.LAST_ADMIN
-    groups = {g["slug"]: g for g in (await c.get("/admin/groups", headers=admin)).json()}
-    assert groups["it_admin"]["permissions"] == everything
-    # ... and a second administrator, made through the API (a full administrator may give
-    # hospital_admin), makes the same edit acceptable.
-    res = await c.put(f"/admin/users/{world['nurse'].id}/groups", headers=admin,
-                      json={"group_ids": [str(world["groups"]["hospital_admin"].id)]})
+    res = await c.put(f"/admin/users/{world['admin'].id}/groups", headers=admin,
+                      json={"group_ids": [copy]})
+    assert (res.status_code, res.json()["detail"]) == (409, service.LAST_ADMIN)
+    assert await _groups_of(db_session, world["admin"].id) == ["hospital_admin"]
+    # Holding the copy AS WELL is fine, and editing a custom group never touches the guard.
+    res = await c.put(f"/admin/users/{world['admin'].id}/groups", headers=admin,
+                      json={"group_ids": [copy, ha]})
     assert res.status_code == 200
-    res = await c.patch(f"/admin/groups/{gid}", headers=admin,
-                        json={"permissions": [k for k in everything if k != "audit.view"]})
+    admin, _ = await _headers(db_session, await _fresh(db_session, world["admin"].id))
+    assert (await c.patch(f"/admin/groups/{copy}", headers=admin,
+                          json={"permissions": []})).status_code == 200
+
+
+async def test_a_system_group_administrator_survives_a_catalogue_change(client, world, db_session,
+                                                                      monkeypatch):
+    """The control: a release adds a key. The system group holds it by rule, so its member is
+    still an administrator, and still holds every right the rules compare against."""
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])      # minted before the change
+    grown = frozenset(ALL_PERMISSIONS | {"future.key"})
+    for module in (groups_module, service):
+        monkeypatch.setattr(module, "ALL_PERMISSIONS", grown)
+    async with async_sessionmaker(db_session.bind)() as check:
+        assert await count_admins(check, world["tenant"].id) == 1
+    res = await c.put(f"/admin/users/{world['nurse'].id}/groups", headers=admin,
+                      json={"group_ids": [str(world["groups"]["charge_nurse"].id)]})
+    assert res.status_code == 200
+    res = await c.patch(f"/admin/groups/{world['groups']['nurse'].id}", headers=admin,
+                        json={"permissions": ["board.view"]})
     assert res.status_code == 200
 
 
@@ -1190,61 +1205,56 @@ async def test_two_concurrent_demotions_cannot_both_pass(world, db_session):
         assert await count_admins(check, tid) == 1
 
 
-async def test_a_group_edit_racing_a_demotion_cannot_leave_no_administrator(world, db_session):
-    """`ikinci` is an administrator through a custom group holding the whole catalogue; one
-    transaction takes a key off that group while another demotes the only other one."""
+async def test_a_deactivation_racing_a_demotion_cannot_leave_no_administrator(world,
+                                                                             db_session):
+    """Two administrators; one transaction deactivates the first while another takes the
+    second out of hospital_admin. Each alone leaves one administrator; together, none."""
     tid = world["tenant"].id
-    it_admin = Group(tenant_id=tid, slug="it_admin", name="BT", is_system=False)
-    it_admin.permissions = [GroupPermission(permission=k) for k in sorted(ALL_PERMISSIONS)]
-    db_session.add(it_admin)
-    await db_session.flush()
-    second = await _make_user(db_session, world["tenant"], world["groups"], "ikinci", None)
-    await set_manual_groups(db_session, user=second, tenant_id=tid, group_ids=[it_admin.id],
-                            granted_by_id=None)
+    ikinci = await _make_user(db_session, world["tenant"], world["groups"], "ikinci",
+                              "hospital_admin")
     await db_session.commit()
-    actor = _root(world["admin"])
 
-    async def strip_group(s):
-        group = await service.get_group(s, tid, it_admin.id, for_update=True)
-        await service.update_group(s, tid, group, actor, name=None, description=None,
-                                   mfa_required=None,
-                                   permissions=sorted(ALL_PERMISSIONS - {"audit.view"}))
-
-    async def demote_admin(s):
+    async def deactivate_admin(s):
         user = await service.get_tenant_user(s, tid, world["admin"].id)
-        await service.set_user_groups(s, tid, user, [world["groups"]["nurse"].id], actor)
+        await service.update_user(s, tid, user, _root(ikinci), full_name=None, email=None,
+                                  is_active=False)
 
-    refused = await _race(db_session, strip_group, demote_admin)
+    async def demote_ikinci(s):
+        user = await service.get_tenant_user(s, tid, ikinci.id)
+        await service.set_user_groups(s, tid, user, [world["groups"]["nurse"].id],
+                                      _root(world["admin"]))
+
+    refused = await _race(db_session, deactivate_admin, demote_ikinci)
     assert refused is not None and refused.status_code == 409
     async with async_sessionmaker(db_session.bind)() as check:
         assert await count_admins(check, tid) == 1
 
 
-async def test_deleting_a_group_racing_a_move_into_it_cannot_leave_no_administrator(world,
-                                                                                  db_session):
-    """The only administrator is moved into an empty custom group while another request deletes
-    that group. Without a guard, the delete's cascade would silently take the membership the
-    move had just committed."""
+async def test_deleting_a_group_racing_a_move_into_it_keeps_the_new_membership(world,
+                                                                             db_session):
+    """A nurse is put into an empty custom group while another request deletes that group.
+    Without the row lock, the delete counted no members and its cascade then silently took the
+    membership the move had just committed (the nurse's token still carrying the group)."""
     tid = world["tenant"].id
-    it_admin = Group(tenant_id=tid, slug="it_admin", name="BT", is_system=False)
-    it_admin.permissions = [GroupPermission(permission=k) for k in sorted(ALL_PERMISSIONS)]
-    db_session.add(it_admin)
+    ward = Group(tenant_id=tid, slug="servis", name="Servis", is_system=False)
+    ward.permissions = [GroupPermission(permission="board.view")]
+    db_session.add(ward)
     await db_session.commit()
     actor = _root(world["admin"])
 
-    async def move_admin(s):
-        user = await service.get_tenant_user(s, tid, world["admin"].id)
-        await service.set_user_groups(s, tid, user, [it_admin.id], actor)
+    async def move_nurse(s):
+        user = await service.get_tenant_user(s, tid, world["nurse"].id)
+        await service.set_user_groups(s, tid, user, [world["groups"]["nurse"].id, ward.id],
+                                      actor)
 
     async def delete_group(s):
-        group = await service.get_group(s, tid, it_admin.id, for_update=True)
+        group = await service.get_group(s, tid, ward.id, for_update=True)
         await service.delete_group(s, tid, group, actor)
 
-    refused = await _race(db_session, move_admin, delete_group)
+    refused = await _race(db_session, move_nurse, delete_group)
     assert refused is not None and refused.status_code == 409
-    async with async_sessionmaker(db_session.bind)() as check:
-        assert await count_admins(check, tid) == 1
-        assert (await check.execute(select(Group.id).where(Group.id == it_admin.id))).first()
+    assert refused.detail == "Üyesi olan grup silinemez"
+    assert await _groups_of(db_session, world["nurse"].id) == ["nurse", "servis"]
 
 
 async def _queued_behind(db_session, tid, send, meanwhile):

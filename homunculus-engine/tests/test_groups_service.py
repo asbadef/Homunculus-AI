@@ -112,7 +112,7 @@ async def test_a_system_group_member_holds_the_whole_catalogue_by_rule(db_sessio
     assert "audit.view" in s.perms                       # by rule, not by rows
 
 
-async def test_count_admins_counts_active_holders_of_the_whole_catalogue(db_session):
+async def test_count_admins_counts_active_members_of_the_system_group(db_session):
     t = await _tenant(db_session)
     groups = await ensure_default_groups(db_session, t.id)
     a = await _user(db_session, t, "admin")
@@ -213,25 +213,27 @@ async def test_count_admins_is_scoped_to_the_tenant(db_session):
     assert await count_admins(db_session, t2.id) == 0
 
 
-async def test_count_admins_counts_the_catalogue_split_across_two_groups(db_session):
+async def test_count_admins_counts_the_system_group_not_a_copy_of_its_keys(db_session):
+    """Every catalogue key through custom groups is not an administrator: those groups do not
+    gain the keys a later release adds, the system group does (by rule). An AD link to the
+    system group counts like a manual one (the account must still be local, see above)."""
     t = await _tenant(db_session)
-    await ensure_default_groups(db_session, t.id)
+    groups = await ensure_default_groups(db_session, t.id)
     keys = sorted(ALL_PERMISSIONS)
     g1 = Group(tenant_id=t.id, slug="g1", name="G1", is_system=False)
     g1.permissions = [GroupPermission(permission=k) for k in keys[:10]]
     g2 = Group(tenant_id=t.id, slug="g2", name="G2", is_system=False)
-    g2.permissions = [GroupPermission(permission=k) for k in keys[9:]]    # one key in both
-    g2.permissions.append(GroupPermission(permission="retired.key"))    # outside: not counted
+    g2.permissions = [GroupPermission(permission=k) for k in keys[9:]]
     db_session.add_all([g1, g2])
     await db_session.flush()
     u = await _user(db_session, t, "split")
     await set_manual_groups(db_session, user=u, tenant_id=t.id, group_ids=[g1.id, g2.id],
                             granted_by_id=None)
-    assert await count_admins(db_session, t.id) == 1
-    # One catalogue key short, however many other rows: not an administrator.
-    g2.permissions.remove(next(p for p in g2.permissions if p.permission == keys[-1]))
-    await db_session.flush()
     assert await count_admins(db_session, t.id) == 0
+    db_session.add(UserGroup(user_id=u.id, group_id=groups["hospital_admin"].id,
+                             source=SOURCE_LDAP))
+    await db_session.flush()
+    assert await count_admins(db_session, t.id) == 1
 
 
 async def test_count_admins_ignores_an_inactive_membership(db_session):

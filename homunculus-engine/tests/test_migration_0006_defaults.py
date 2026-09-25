@@ -9,6 +9,7 @@ import importlib.util
 from pathlib import Path
 
 from homunculus.auth.permissions import ALL_PERMISSIONS
+from homunculus.auth.service import normalize_login
 
 ATTENDING = {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
              "admissions.sign_off", "admissions.move.initiate", "care_team.claim",
@@ -44,6 +45,15 @@ LEGACY_SNAPSHOT = {
     "RAPID_RESPONSE": "rapid_response", "AUDITOR": "auditor", "PLATFORM_SUPPORT": "platform_support",
 }
 
+# What 0006's frozen login fold makes of a legacy e-mail, as of 0006.
+FOLD_SNAPSHOT = {
+    "  Ayse.Demir@Example.COM ": "ayse.demir@example.com",
+    "Aydın@Hastane.az": "aydin@hastane.az",
+    "İLKER@HASTANE.AZ": "ilker@hastane.az",
+    "IŞIK@hastane.az": "işik@hastane.az",
+    "şükrü@hastane.az": "şükrü@hastane.az",
+}
+
 _PATH = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "0006_groups_and_permissions.py"
 
 
@@ -77,3 +87,15 @@ def test_every_frozen_key_is_still_in_the_catalogue():
 def test_revision_chain():
     m = _load()
     assert m.revision == "0006" and m.down_revision == "0005"
+
+
+def test_the_frozen_login_fold_matches_the_0006_snapshot():
+    fold = _load()._fold_login
+    assert {raw: fold(raw) for raw in FOLD_SNAPSHOT} == FOLD_SNAPSHOT
+
+
+def test_sign_in_still_folds_like_0006():
+    """0006 stored every legacy login through its frozen fold. If sign-in's `normalize_login`
+    ever folds differently, logins 0006 wrote stop matching what users type: do NOT edit 0006 —
+    write a new migration that re-folds the stored usernames and e-mails."""
+    assert {raw: normalize_login(raw) for raw in FOLD_SNAPSHOT} == FOLD_SNAPSHOT

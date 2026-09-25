@@ -20,8 +20,9 @@ computes them).
     edit directly — and two lesser desks cannot pool their rights on a puppet.
 So a `users.manage`-only desk cannot make anyone (itself included) more than it is, and a
 `groups.manage`-only desk cannot widen any group, its own included. A caller holding the whole
-catalogue (the system group) is not restricted — and only such a caller counts as an
-administrator for the last-admin guard (`count_admins`).
+catalogue (the system group) is not restricted. The last-admin guard (`count_admins`) counts
+local members of the system group only: the one group certain to hold the whole catalogue
+after a release adds a key.
 
 Accounts are global (409). `is_active`, the password, the TOTP secret, the e-mail and the name
 live on the one `users` row every tenant shares. They are not changed here for a platform
@@ -41,7 +42,7 @@ Concurrency (spec §6, Guards):
     the membership gets 403, and the rules above judge the caller's rights as they are NOW.
   * Every change that can take administrator rights away ends with `count_admins` (which takes
     the same lock) and is refused on 0 — so the guard holds for any caller of these functions,
-    through the router or not. `count_admins` counts LOCAL holders of the whole catalogue only.
+    through the router or not. `count_admins` counts LOCAL members of the system group only.
   * A group being edited or deleted is read with `get_group(..., for_update=True)`: the row lock
     serialises two edits of one group, and it blocks anyone adding a member to the group (the
     foreign key takes a KEY SHARE lock on it) while its member count is checked.

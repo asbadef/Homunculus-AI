@@ -7,6 +7,7 @@ the conftest guard already refuses any database whose name does not contain "tes
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from pathlib import Path
 
@@ -118,3 +119,84 @@ def test_email_case_collisions_block_the_upgrade_before_any_change(clean_db):
     with engine.begin() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0005"
         assert conn.execute(text("SELECT to_regclass('public.groups')")).scalar_one() is None
+
+
+def _legacy_user(conn, email, *, password_hash="x"):
+    uid = uuid.uuid4()
+    conn.execute(text("INSERT INTO users (id, email, full_name, hashed_password, totp_enabled, "
+                      "is_active, is_platform_support) VALUES (:id, :email, 'x', :pw, false, "
+                      "true, false)"), {"id": uid, "email": email, "pw": password_hash})
+    return uid
+
+
+async def _sign_in(logins, password):
+    """POST /auth/login for each login against the migrated database, as the app runs it."""
+    from httpx import ASGITransport, AsyncClient
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from homunculus.api.app import create_app
+    from homunculus.db import get_db
+
+    engine = create_async_engine(TEST_DATABASE_URL)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    app = create_app({"t": "HOSP1"}, run_escalation_loop=False)
+
+    async def _db():
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            return {login: (await c.post("/auth/login", json={"login": login,
+                                                              "password": password})).status_code
+                    for login in logins}
+    finally:
+        await engine.dispose()
+
+
+def test_turkish_i_in_a_legacy_email_is_folded_like_sign_in_and_signs_in(clean_db):
+    """A legacy `Aydın.İlhan@...`: SQL lower() would have kept the dotless ı (and, under a C
+    ctype, the İ as well), while sign-in folds both to `i` — the account could never sign in
+    again. The migration folds with a frozen copy of the sign-in fold."""
+    from homunculus.auth.service import hash_password
+
+    engine, cfg = clean_db
+    command.upgrade(cfg, "0005")
+    tenant = uuid.uuid4()
+    password = "Gizli-Parola-123"
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO tenants (id, name, slug, country_code, timezone, is_active) "
+                          "VALUES (:id, 'Baku', 'baku', 'AZ', 'UTC', true)"), {"id": tenant})
+        uid = _legacy_user(conn, "Aydın.İlhan@Hastane.az", password_hash=hash_password(password))
+        conn.execute(text("INSERT INTO tenant_memberships (id, user_id, tenant_id, role, is_active) "
+                          "VALUES (:id, :uid, :tid, CAST('NURSE' AS userrole), true)"),
+                     {"id": uuid.uuid4(), "uid": uid, "tid": tenant})
+
+    command.upgrade(cfg, "head")
+
+    with engine.begin() as conn:
+        row = conn.execute(text("SELECT username, email FROM users WHERE id = :id"),
+                           {"id": uid}).one()
+    assert (row.username, row.email) == ("aydin.ilhan@hastane.az", "aydin.ilhan@hastane.az")
+    logins = ["aydın.ilhan@hastane.az", "AYDIN.İLHAN@HASTANE.AZ", "Aydın.İlhan@Hastane.az",
+              "aydin.ilhan@hastane.az"]
+    assert asyncio.run(_sign_in(logins, password)) == {login: 200 for login in logins}
+
+
+@pytest.mark.parametrize("pair", [("aydın@hastane.az", "aydin@hastane.az"),
+                                  ("İlker@hastane.az", "ilker@hastane.az")], ids=["ı", "İ"])
+def test_emails_that_fold_to_one_login_block_the_upgrade_before_any_change(clean_db, pair):
+    """Folded, the two would be one login: sign-in could reach only one of the accounts, so the
+    upgrade refuses loudly, as it does for a case clash, rather than hide the other."""
+    engine, cfg = clean_db
+    command.upgrade(cfg, "0005")
+    with engine.begin() as conn:
+        for email in pair:
+            _legacy_user(conn, email)
+    with pytest.raises(Exception, match="differ only by case or by the Turkish"):
+        command.upgrade(cfg, "head")
+    with engine.begin() as conn:
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0005"
+        assert conn.execute(text("SELECT to_regclass('public.groups')")).scalar_one() is None
+        assert sorted(conn.execute(text("SELECT email FROM users")).scalars()) == sorted(pair)

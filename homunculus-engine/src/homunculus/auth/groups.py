@@ -11,7 +11,7 @@ import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from sqlalchemy import Select, and_, func, or_, select, update
+from sqlalchemy import Select, and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -149,25 +149,14 @@ async def bump_group_members(db: AsyncSession, group_id: uuid.UUID) -> int:
     return result.rowcount or 0
 
 
-def _holds_the_catalogue(tenant_id: uuid.UUID):
-    """The outer User holds EVERY key of the catalogue in the tenant — exactly when `summarize`
-    over their groups there gives ALL_PERMISSIONS: a system group (all of it, by rule), or the
-    catalogue's keys spread over any of their groups (keys outside the catalogue do not count)."""
-    system = (
+def _in_the_system_group(tenant_id: uuid.UUID):
+    """EXISTS: the outer User holds the tenant's system group (manual or AD link alike)."""
+    return (
         select(UserGroup.user_id)
         .join(Group, Group.id == UserGroup.group_id)
         .where(UserGroup.user_id == User.id, Group.tenant_id == tenant_id,
                Group.is_system == True)  # noqa: E712
     ).exists()
-    keys = (
-        select(func.count(func.distinct(GroupPermission.permission)))
-        .select_from(UserGroup)
-        .join(Group, Group.id == UserGroup.group_id)
-        .join(GroupPermission, GroupPermission.group_id == Group.id)
-        .where(UserGroup.user_id == User.id, Group.tenant_id == tenant_id,
-               GroupPermission.permission.in_(sorted(ALL_PERMISSIONS)))
-    ).scalar_subquery()
-    return or_(system, keys == len(ALL_PERMISSIONS))
 
 
 async def lock_admin_guard(db: AsyncSession, tenant_id: uuid.UUID) -> None:
@@ -181,13 +170,16 @@ async def lock_admin_guard(db: AsyncSession, tenant_id: uuid.UUID) -> None:
 
 async def count_admins(db: AsyncSession, tenant_id: uuid.UUID) -> int:
     """Active LOCAL ADMINISTRATORS of the tenant: local accounts with a password and an active
-    membership in this tenant, holding the WHOLE catalogue here (the system group, or every key
-    through their groups). The last one is protected (spec §6).
+    membership in this tenant who hold its SYSTEM group (`hospital_admin`). The last one is
+    protected (spec §6): they cannot leave the system group, be deactivated, or lose the tenant,
+    whatever other groups they hold.
 
-    The whole catalogue, not merely `users.manage` + `groups.manage`: the /admin API lets nobody
-    grant beyond their own rights, so only a holder of every right can give `hospital_admin` or
-    administer clinical accounts. A tenant whose last such holder left would keep "managers"
-    who can do neither, and recovery would need SQL.
+    The system group, not "every right": the /admin API lets nobody grant beyond their own
+    rights, so only a holder of the whole catalogue can give `hospital_admin` or administer
+    clinical accounts — and only the system group is certain to keep holding the whole
+    catalogue, because it holds it by rule. A custom group holding every key today stops doing
+    so the day a release adds a key, and a tenant whose administrators held their rights that
+    way would be locked out (neither managers with two keys nor such a group count).
 
     Local only: an administrator who signs in through the directory is of no use while the
     directory is down, and local accounts exist precisely so that an AD outage never locks the
@@ -202,7 +194,7 @@ async def count_admins(db: AsyncSession, tenant_id: uuid.UUID) -> int:
         select(func.count(User.id))
         .where(User.is_active == True)  # noqa: E712
         .where(User.auth_source == AUTH_LOCAL, User.hashed_password.is_not(None))
-        .where(_holds_the_catalogue(tenant_id))
+        .where(_in_the_system_group(tenant_id))
         .where(select(TenantMembership.id).where(
             TenantMembership.user_id == User.id, TenantMembership.tenant_id == tenant_id,
             TenantMembership.is_active == True).exists())  # noqa: E712

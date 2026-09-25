@@ -2,10 +2,13 @@
 """groups and permissions (RBAC); users columns for LDAP sign-in and token versioning
 
 Creates `groups`, `group_permissions`, `user_groups`, `ldap_group_mappings`; adds `username`,
-`auth_source`, `external_id`, `ldap_dn`, `token_version`, `last_login_at` to `users`; makes
-`users.email`, `users.hashed_password` and `tenant_memberships.role` nullable; seeds the default
-groups for every existing tenant; converts every active membership's legacy role into a
-`user_groups` row.
+`auth_source`, `external_id`, `ldap_dn`, `token_version`, `last_login_at`, `sessions_revoked_at`
+to `users`; makes `users.email`, `users.hashed_password` and `tenant_memberships.role` nullable;
+seeds the default groups for every existing tenant; converts every active membership's legacy
+role into a `user_groups` row. Every e-mail is normalised, and becomes the username, with a frozen copy of the
+sign-in fold (`_fold_login`) — in Python, row by row: SQL `lower()` depends on the database's
+ctype (under C / C.UTF-8 it leaves non-ASCII alone) and folds neither `İ` nor `ı`, so a stored
+`aydın@...` would never again match what sign-in computes from the typed login.
 
 ONE STATEMENT PER op.execute / bind.execute: migrations run through the async engine and asyncpg
 prepares every statement, so a string holding several statements fails (see 0004).
@@ -114,6 +117,16 @@ _LEGACY = {
     "PLATFORM_SUPPORT": "platform_support",
 }
 
+# FROZEN COPY of homunculus.auth.service.normalize_login as of 0006: trimmed, the Turkish capital
+# `İ` folded to `i`, lower-cased, the dotless `ı` folded to `i`. Deliberately not imported (a
+# migration must give the same result forever); tests/test_migration_0006_defaults.py pins it
+# to the live function at authoring.
+def _fold_login(value: str | None) -> str:
+    return (value or "").strip().replace("İ", "i").lower().replace("ı", "i")
+
+
+_MAX_LOGIN = 128   # users.username
+
 _UUID = postgresql.UUID(as_uuid=True)
 
 _INSERT_GROUP = sa.text(
@@ -142,16 +155,22 @@ def _convert_memberships_sql() -> str:
 
 
 def upgrade() -> None:
-    # ---- pre-flight: the username backfill needs distinct, lower-cased e-mails that fit ----
+    # ---- pre-flight: the username backfill needs distinct, folded e-mails that fit ----
+    # The SAME fold as the backfill below: two e-mails that fold to one login would make one
+    # account unreachable (sign-in finds only one), so the upgrade refuses instead.
     bind = op.get_bind()
-    clashes = [row[0] for row in bind.execute(sa.text(
-        "SELECT lower(email) FROM users GROUP BY lower(email) HAVING count(*) > 1")).all()]
-    too_long = [row[0] for row in bind.execute(sa.text(
-        "SELECT email FROM users WHERE length(email) > 128")).all()]
-    if clashes or too_long:
+    users = [(row.id, row.email) for row in bind.execute(sa.text("SELECT id, email FROM users"))]
+    by_login: dict[str, list[str]] = {}
+    for _id, email in users:
+        by_login.setdefault(_fold_login(email), []).append(email)
+    clashes = sorted(sorted(emails) for login, emails in by_login.items() if len(emails) > 1)
+    too_long = sorted(email for _id, email in users if len(_fold_login(email)) > _MAX_LOGIN)
+    empty = sorted(repr(email) for _id, email in users if not _fold_login(email))
+    if clashes or too_long or empty:
         raise RuntimeError(
-            "Migration 0006 cannot backfill usernames. E-mails that differ only by case: "
-            f"{clashes or 'none'}; e-mails longer than 128 characters: {too_long or 'none'}. "
+            "Migration 0006 cannot backfill usernames. E-mails that differ only by case or by "
+            f"the Turkish İ/ı: {clashes or 'none'}; e-mails longer than {_MAX_LOGIN} characters: "
+            f"{too_long or 'none'}; e-mails that are blank: {empty or 'none'}. "
             "Merge or rename these accounts, then run the upgrade again. Nothing was changed."
         )
 
@@ -219,8 +238,12 @@ def upgrade() -> None:
     op.add_column("users", sa.Column("last_login_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("users", sa.Column("sessions_revoked_at", sa.DateTime(timezone=True),
                                      nullable=True))
-    op.execute("UPDATE users SET email = lower(email)")
-    op.execute("UPDATE users SET username = lower(email) WHERE username IS NULL")
+    # One UPDATE per user (the table is small). The pre-flight guarantees the folded values are
+    # distinct, and a folded value is its own fold, so no row can transiently take another's.
+    for user_id, email in users:
+        login = _fold_login(email)
+        bind.execute(sa.text("UPDATE users SET email = :login, username = :login WHERE id = :id"),
+                     {"login": login, "id": user_id})
     op.alter_column("users", "username", nullable=False)
     op.create_index("ix_users_username", "users", ["username"], unique=True)
     op.create_index("ix_users_external_id", "users", ["external_id"], unique=True)
