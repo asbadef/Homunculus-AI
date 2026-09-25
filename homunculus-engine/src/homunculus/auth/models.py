@@ -3,8 +3,8 @@ Identity tables: users, tenant memberships, groups, group permissions, user–gr
 LDAP group mapping (used by Plan 2).
 
 A user's rights come from the groups they hold in a tenant; the permission catalogue is in
-`auth/permissions.py`. `tenant_memberships.role` is a legacy column: nullable, never written,
-kept only so the PostgreSQL enum type can be dropped in a later cleanup migration.
+`auth/permissions.py`. `tenant_memberships.role` is a legacy column: `varchar(40)` since migration
+0006, nullable, never written; a later cleanup migration drops it with the `userrole` enum type.
 
 PHI RULE: No real patient data. This file contains only identity/auth data.
 CLINICAL RULE: System states criteria met — never diagnoses.
@@ -104,8 +104,10 @@ class TenantMembership(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    # LEGACY. In PostgreSQL this column is still the `userrole` enum type; the ORM reads it as
-    # text and never writes it. Dropped in a later cleanup migration.
+    # LEGACY: the pre-0006 role, kept as text. Migration 0006 turns the column from the `userrole`
+    # enum into varchar(40), so the ORM's INSERT, which names it as NULL::VARCHAR, is accepted (on
+    # the enum PostgreSQL refused it: deploy blocker B1). Never written; every new membership has
+    # NULL. Dropped, with the `userrole` type, in a later cleanup migration.
     role: Mapped[str | None] = mapped_column(String(40), nullable=True)
     granted_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True

@@ -8,12 +8,14 @@ DB-backed tests are skipped so the pure-logic suite still runs anywhere.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
+ENGINE_ROOT = Path(__file__).resolve().parents[1]   # homunculus-engine/, holds alembic.ini
 
 # Import all model modules so their tables register on Base.metadata.
 import homunculus.auth.models  # noqa: E402,F401
@@ -99,3 +101,38 @@ async def db_session():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
+
+
+def _reset_public_schema(engine) -> None:
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+
+
+@pytest.fixture
+def clean_db(monkeypatch):
+    """An EMPTY `public` schema, a sync engine on it, and the Alembic config that builds it the
+    way production does: `command.upgrade(cfg, "head")` (or any revision). `db_session` builds
+    the schema from the models with `create_all`, so it cannot see a migration that leaves a
+    column differently typed from its model (deploy blocker B1); tests that must see the deployed
+    schema run the real chain through this fixture.
+
+    The tests using it are sync on purpose: `alembic/env.py` drives its async engine with
+    `asyncio.run`, which cannot run inside a running event loop, so their async parts go through
+    `asyncio.run` too. `public` is rebuilt before and after; the name guard above refuses any
+    database whose name does not contain "test"."""
+    if TEST_DATABASE_URL is None:
+        pytest.skip("TEST_DATABASE_URL not set.")
+    from alembic.config import Config
+    from sqlalchemy import create_engine
+
+    monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)   # alembic/env.py reads this
+    engine = create_engine(_libpq_url(TEST_DATABASE_URL))
+    _reset_public_schema(engine)
+    cfg = Config(str(ENGINE_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(ENGINE_ROOT / "alembic"))
+    yield engine, cfg
+    _reset_public_schema(engine)
+    engine.dispose()

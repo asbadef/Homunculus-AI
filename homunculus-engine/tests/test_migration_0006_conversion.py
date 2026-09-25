@@ -1,26 +1,25 @@
 # homunculus-engine/tests/test_migration_0006_conversion.py
 """Migration 0006 on a database that holds legacy roles: one user_groups row per active
-membership, in the mapped group; usernames backfilled from e-mail; 11 default groups per tenant.
+membership, in the mapped group; usernames backfilled from e-mail; 11 default groups per tenant;
+`tenant_memberships.role` kept as `varchar(40)` text, and turned back into the enum on downgrade.
 
-Runs the real Alembic chain, so it needs TEST_DATABASE_URL. It rebuilds the `public` schema —
-the conftest guard already refuses any database whose name does not contain "test".
+Runs the real Alembic chain (the `clean_db` fixture in conftest), so it needs TEST_DATABASE_URL.
+It rebuilds the `public` schema — the conftest guard already refuses any database whose name does
+not contain "test".
 """
 from __future__ import annotations
 
 import asyncio
 import uuid
-from pathlib import Path
 
 import pytest
 from alembic import command
-from alembic.config import Config
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from tests.conftest import TEST_DATABASE_URL, requires_db
 
 pytestmark = [requires_db]
 
-ROOT = Path(__file__).resolve().parents[1]
 LEGACY = ["HOSPITAL_ADMIN", "ATTENDING", "UNIT_PHYSICIAN", "ASSOCIATE_PHYSICIAN",
           "ONCALL_PHYSICIAN", "CHARGE_NURSE", "NURSE", "RAPID_RESPONSE", "AUDITOR",
           "PLATFORM_SUPPORT"]
@@ -29,29 +28,6 @@ EXPECTED = {"HOSPITAL_ADMIN": "hospital_admin", "ATTENDING": "attending",
             "ONCALL_PHYSICIAN": "physician", "CHARGE_NURSE": "charge_nurse", "NURSE": "nurse",
             "RAPID_RESPONSE": "rapid_response", "AUDITOR": "auditor",
             "PLATFORM_SUPPORT": "platform_support"}
-
-
-def _sync_url() -> str:
-    for scheme in ("postgresql+asyncpg://", "postgresql://"):
-        if TEST_DATABASE_URL.startswith(scheme):
-            return "postgresql+psycopg2://" + TEST_DATABASE_URL[len(scheme):]
-    return TEST_DATABASE_URL
-
-
-@pytest.fixture
-def clean_db(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)   # alembic/env.py reads this
-    engine = create_engine(_sync_url())
-    with engine.begin() as conn:
-        conn.execute(text("DROP SCHEMA public CASCADE"))
-        conn.execute(text("CREATE SCHEMA public"))
-    cfg = Config(str(ROOT / "alembic.ini"))
-    cfg.set_main_option("script_location", str(ROOT / "alembic"))
-    yield engine, cfg
-    with engine.begin() as conn:
-        conn.execute(text("DROP SCHEMA public CASCADE"))
-        conn.execute(text("CREATE SCHEMA public"))
-    engine.dispose()
 
 
 def test_legacy_roles_become_group_memberships(clean_db):
@@ -99,11 +75,13 @@ def test_legacy_roles_become_group_memberships(clean_db):
         users = conn.execute(text("SELECT username, email, auth_source, token_version FROM users")).all()
         assert all(r.username == r.email == r.email.lower() for r in users)
         assert all(r.auth_source == "local" and r.token_version == 0 for r in users)
-        nullable = conn.execute(text(
-            "SELECT is_nullable FROM information_schema.columns "
-            "WHERE table_name = 'tenant_memberships' AND column_name = 'role'")).scalar_one()
-        assert nullable == "YES"
-        assert conn.execute(text("SELECT count(*) FROM tenant_memberships WHERE role IS NULL")).scalar_one() == 0
+        # Legacy: nullable, and plain text the ORM can insert NULL into (B1), every value kept.
+        column = conn.execute(text(
+            "SELECT is_nullable, data_type, character_maximum_length FROM information_schema.columns "
+            "WHERE table_name = 'tenant_memberships' AND column_name = 'role'")).one()
+        assert tuple(column) == ("YES", "character varying", 40)
+        roles = conn.execute(text("SELECT role FROM tenant_memberships")).scalars().all()
+        assert sorted(roles) == sorted(LEGACY + ["ATTENDING", "NURSE"])
 
 
 def test_email_case_collisions_block_the_upgrade_before_any_change(clean_db):
@@ -200,3 +178,31 @@ def test_emails_that_fold_to_one_login_block_the_upgrade_before_any_change(clean
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0005"
         assert conn.execute(text("SELECT to_regclass('public.groups')")).scalar_one() is None
         assert sorted(conn.execute(text("SELECT email FROM users")).scalars()) == sorted(pair)
+
+
+def test_downgrade_turns_the_legacy_roles_back_into_the_enum(clean_db):
+    """0006 stores `role` as text; its downgrade must give 0005 back its `userrole` column with
+    the values intact. (Lossy elsewhere by design: a membership the new code wrote has no role
+    and fails the downgrade's NOT NULL — see the migration's docstring.)"""
+    engine, cfg = clean_db
+    command.upgrade(cfg, "0005")
+    tenant = uuid.uuid4()
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO tenants (id, name, slug, country_code, timezone, is_active) "
+                          "VALUES (:id, 'Demo', 'demo', 'TR', 'UTC', true)"), {"id": tenant})
+        for role in ("HOSPITAL_ADMIN", "NURSE"):
+            uid = _legacy_user(conn, f"{role.lower()}@example.com")
+            conn.execute(text("INSERT INTO tenant_memberships (id, user_id, tenant_id, role, "
+                              "is_active) VALUES (:id, :uid, :tid, CAST(:role AS userrole), true)"),
+                         {"id": uuid.uuid4(), "uid": uid, "tid": tenant, "role": role})
+
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, "0005")
+
+    with engine.begin() as conn:
+        column = conn.execute(text(
+            "SELECT is_nullable, udt_name FROM information_schema.columns "
+            "WHERE table_name = 'tenant_memberships' AND column_name = 'role'")).one()
+        assert tuple(column) == ("NO", "userrole")
+        roles = conn.execute(text("SELECT role::text FROM tenant_memberships")).scalars().all()
+        assert sorted(roles) == ["HOSPITAL_ADMIN", "NURSE"]

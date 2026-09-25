@@ -9,7 +9,8 @@ below is kept as the design record. Where it differs from the committed code and
 is authoritative (see the "as amended in review" notes). The checkboxes are marked from the commit
 record and the final runs below. **Nothing has been deployed.**
 
-**The end-to-end check found a deploy blocker, B1. Task 20 records it and does not fix it.**
+**The end-to-end check found a deploy blocker, B1. Task 20 recorded it; it is now fixed (see
+"B1 fixed" below).**
 
 **B1 — `tenant_memberships.role`: a new membership cannot be written on a migrated database.**
 Migration 0006 leaves the column as the PostgreSQL enum `userrole` (made nullable). Since Task 2
@@ -40,6 +41,31 @@ Either way, add a regression test that runs `alembic upgrade head` and then the 
 `POST /admin/users` against the migrated schema, and widen the parity test to
 `tenant_memberships`.
 
+**B1 fixed (2026-09-25), option (b), in the commit that records this note.** Migration 0006 was
+never run on the VM, so it was edited in place:
+- `upgrade()` ends with `ALTER TABLE tenant_memberships ALTER COLUMN role TYPE varchar(40) USING
+  role::text`, after the role-to-group conversion has read the column. The column stays nullable,
+  and the legacy values are kept as text.
+- The `userrole` type is kept, unused. `downgrade()` casts back to it (`USING role::userrole`),
+  0001's downgrade drops it, and the cleanup migration drops it with the column. The downgrade is
+  lossy as before: it fails on a NULL role, which every membership written after the upgrade has.
+- Tests that run the real migrations (`clean_db` in `tests/conftest.py`, shared by every
+  `test_migration_0006_*` file):
+  - `tests/test_migration_0006_orm_writes.py` runs the seed on a database built by `alembic upgrade
+    head`. It also has a legacy `HOSPITAL_ADMIN`, converted by the upgrade, create a nurse through
+    `POST /admin/users`: 201.
+  - The parity test now covers `tenant_memberships`, and compares every mapped column's type across
+    the whole schema. The only type mismatch it found was `role`.
+  - The conversion test checks the `varchar(40)` column and the downgrade round-trip.
+  - Before the fix, 5 of these tests failed, each on the `role` type: the seed with this exact
+    `DatatypeMismatchError`, and `POST /admin/users` with a 500.
+- `deploy/local/docker-compose.yml` now refuses a blank `POSTGRES_PASSWORD` too
+  (`${POSTGRES_PASSWORD:?…}`, in the database and in the API's `DATABASE_URL`). `docker compose
+  config` refuses `.env.example` and a blank or missing value, and renders with synthetic values.
+- Full backend run after the fix (the command below, with `TEST_DATABASE_URL`): **1264 passed,
+  1 skipped, 1 failed**. The four new tests are among the passes, and the failure is the same
+  Infinity test as below.
+
 | Task | Implementation | Review follow-ups (fixes; plan/spec notes) |
 | --- | --- | --- |
 | 1 Permission catalogue | `93f6c18` | `a04c6f8`; `9083458`, `f1e7c2c` |
@@ -63,6 +89,7 @@ Either way, add a regression test that runs `alembic upgrade head` and then the 
 | 18 `LiveUserAdmin`, `LiveStaffTab` | `a768ad1` | `bf1aeae`; `8ab4fb8` |
 | 19 `ClinicalDemo.jsx` integration | `dae7f02` | `ef330d6`, `d881045`; `b518765`, `1e8b67a` |
 | 20 Docs, deploy files, e2e, this record | the commit that adds this section | — |
+| B1 fix: 0006 turns `tenant_memberships.role` into `varchar(40)` | the commit that adds this row | — |
 
 **Verification (2026-09-25, code at `d881045`):**
 - **Backend.** `pytest -q --ignore=tests/test_infinity_research_api.py -p no:cacheprovider`, with
@@ -80,9 +107,10 @@ Either way, add a regression test that runs `alembic upgrade head` and then the 
 - **End-to-end (Task 20 Step 4), API level.** Run against `prodserver` under uvicorn on
   PostgreSQL 16, in a throwaway database (`homunculus_e2e`, migrated with `alembic upgrade head`,
   dropped afterwards). Accounts and data were synthetic.
-  - **On the schema exactly as migrated:** the seed fails and `POST /admin/users` answers 500 (B1).
+  - **On the schema exactly as migrated before the B1 fix:** the seed fails and `POST /admin/users`
+    answers 500 (B1).
   - **With `tenant_memberships.role` converted to `varchar(40)` on that database only: 72/72 checks
-    passed.**
+    passed.** This is the schema migration 0006 produces since the B1 fix.
     - **MFA.** The seeded admin signs in as "MFA pending, not enrolled". The token carries 19
       perms, `hospital_admin`, the tenant and `tv`. A pending session gets 403 `mfa_required` on the
       board and `/admin`, while `/auth/me` works. The QR URI's code verifies. A used code is refused
@@ -126,7 +154,7 @@ Either way, add a regression test that runs `alembic upgrade head` and then the 
 - **Not run:**
   - the two-browser UI walk (the QR on screen, the sidebar contents, the UI's wording of refusals).
     The Vitest suites cover the dashboard side, but nobody clicked through it;
-  - the VM deployment (see the deploy notes in Task 20, B1 first).
+  - the VM deployment (see the deploy notes in Task 20).
 
 ---
 
@@ -7683,7 +7711,7 @@ Expected: all pass; DB-backed suites pass when `TEST_DATABASE_URL` is set, other
 Run: `cd dashboard && npx vitest run && npm run build`
 Expected: green, clean build.
 
-- [ ] **Step 4: Manual end-to-end against a local stack (when a Postgres is available)** — *open: fails on the migrated schema (B1); see the outcome below*
+- [x] **Step 4: Manual end-to-end against a local stack (when a Postgres is available)** — *passed at the API level, 72/72, on the schema migration 0006 produces since the B1 fix; the two-browser UI walk was not run; see the outcome below*
 
 1. `cd homunculus-engine && alembic upgrade head && SEED_ADMIN_PASSWORD=… python scripts/seed_admin.py`
 2. Start the API (`uvicorn homunculus.api.prodserver:app --port 8000`) and the dashboard (`npm run dev`).
@@ -7698,15 +7726,20 @@ Expected: green, clean build.
 
 *Outcome (Task 20):* see the execution status at the top. Every step was walked at the API level,
 together with the rules added in review. The walk passed 72/72 once `tenant_memberships.role` was
-converted to `varchar(40)` in the throwaway database. On the schema exactly as migrated, the seed
-and `POST /admin/users` fail (B1). Item 7 now answers `Kendi hesabınızı pasifleştiremezsiniz`,
+converted to `varchar(40)` in the throwaway database. Since the B1 fix, migration 0006 produces
+exactly that schema, and `tests/test_migration_0006_orm_writes.py` runs the seed and `POST
+/admin/users` on it. Before the fix, on the schema exactly as migrated, the seed and `POST
+/admin/users` failed (B1). Item 7 now answers `Kendi hesabınızı pasifleştiremezsiniz`,
 because Task 10's self rule comes first. The two-browser UI walk was not run.
 
 **Deploy notes for the VM (record them in the handoff).** In order. None of this has been run.
 
-0. **Fix B1 first** (see the execution status). Do not deploy until the fix and its regression test
-   against a migrated schema are in. Without it, the staff tab cannot add anyone (500), and a boot
-   whose seed must create an account restart-loops the API container.
+0. **B1 is fixed** (the commit that records this; see "B1 fixed" in the execution status). The fix
+   is in migration 0006: `alembic upgrade head` turns `tenant_memberships.role` into `varchar(40)`,
+   so nothing extra runs at deploy time. The regression test runs the seed and `POST /admin/users`
+   on a database built by the migrations. Deploy only a release that contains the fix: without it,
+   the staff tab cannot add anyone (500), and a boot whose seed must create an account
+   restart-loops the API container.
 1. **Tell the ward before the window.**
    - **Every user, mobile included, signs in once after the upgrade.** Tokens issued by the old
      code carry no `tv` and no credential fingerprint, so both the access and the refresh token are
@@ -7779,7 +7812,7 @@ because Task 10's self rule comes first. The two-browser UI walk was not run.
      değiştir"; nothing forces this yet.
 9. **Recovering a tenant with no usable administrator.**
    - Run `scripts/seed_admin.py` with a NEW `SEED_ADMIN_EMAIL`: the seed grants `hospital_admin`
-     only to an account it newly links. This path needs B1 fixed.
+     only to an account it newly links. This path needs the B1 fix, which is in.
    - Or have a second administrator reset the account.
    - Reactivating a deactivated local administrator through `/admin` also restores the tenant.
 10. **A platform operator, only if one is needed.** Flag the account with
@@ -7859,8 +7892,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   when merged, take `caller_tenant_id`, and be mounted in `create_app`. The
   route tests walk only `create_app()`, so a router mounted anywhere else escapes them.
 - Dropping the PostgreSQL `userrole` enum type and `tenant_memberships.role` (cleanup migration).
-  Fix B1 option (b) (see the execution status) is this migration or its first step. Do not
-  deploy before B1 is fixed.
+  The B1 fix took the first step: since 0006 the column is `varchar(40)`. No column uses the type
+  any more; it is kept for 0006's downgrade.
   The same migration should add a unique `(user_id, tenant_id)` on `tenant_memberships`; the seed's
   advisory lock covers the only writer that races today.
 - **Care-team claim (behaviour predates this plan; needs a clinical decision).** `POST

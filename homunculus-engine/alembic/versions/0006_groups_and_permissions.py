@@ -5,17 +5,27 @@ Creates `groups`, `group_permissions`, `user_groups`, `ldap_group_mappings`; add
 `auth_source`, `external_id`, `ldap_dn`, `token_version`, `last_login_at`, `sessions_revoked_at`
 to `users`; makes `users.email`, `users.hashed_password` and `tenant_memberships.role` nullable;
 seeds the default groups for every existing tenant; converts every active membership's legacy
-role into a `user_groups` row. Every e-mail is normalised, and becomes the username, with a frozen copy of the
-sign-in fold (`_fold_login`) — in Python, row by row: SQL `lower()` depends on the database's
-ctype (under C / C.UTF-8 it leaves non-ASCII alone) and folds neither `İ` nor `ı`, so a stored
-`aydın@...` would never again match what sign-in computes from the typed login.
+role into a `user_groups` row. Every e-mail is normalised, and becomes the username, with a
+frozen copy of the sign-in fold (`_fold_login`) — in Python, row by row: SQL `lower()` depends on
+the database's ctype (under C / C.UTF-8 it leaves non-ASCII alone) and folds neither `İ` nor `ı`,
+so a stored `aydın@...` would never again match what sign-in computes from the typed login.
+
+`tenant_memberships.role` ENDS AS `varchar(40)`, nullable, the legacy values kept as text. It is
+converted from the `userrole` enum last, after the role-to-group conversion has read it. The
+model maps it as `String(40)`, and the ORM names it in every INSERT (as `NULL::VARCHAR`), which
+PostgreSQL refuses on an enum column: left as the enum, no membership could be written, and the
+seed and `POST /admin/users` failed on a migrated database (deploy blocker B1). The `userrole`
+TYPE is kept, unused: the downgrade casts back to it (0001's downgrade drops it), and the cleanup
+migration that drops the column drops the type with it.
 
 ONE STATEMENT PER op.execute / bind.execute: migrations run through the async engine and asyncpg
 prepares every statement, so a string holding several statements fails (see 0004).
 
-DOWNGRADE IS LOSSY BY DESIGN: it drops the group tables and restores `role NOT NULL`. It cannot
-rebuild roles from groups, and it fails if any user has no password (an AD account) or any
-membership has a NULL role. Back the database up before `upgrade` (runbook: pg_dump). The
+DOWNGRADE IS LOSSY BY DESIGN: it drops the group tables, turns `role` back into the `userrole`
+enum (`USING role::userrole`) and restores `role NOT NULL`. It cannot rebuild roles from groups,
+and it fails if any user has no password (an AD account), or any membership has a NULL role
+(every membership written after the upgrade does) or a role that is not a `userrole` label (the
+ORM never writes one). Back the database up before `upgrade` (runbook: pg_dump). The
 downgrade also fails restoring `email SET NOT NULL` if an AD account was created with no e-mail
 in the meantime. An INACTIVE membership keeps its legacy `role` value but gets no `user_groups`
 row; reactivating it later grants no rights until an administrator assigns a group — this is
@@ -269,6 +279,11 @@ def upgrade() -> None:
     # ---- legacy role -> group, one row per active membership ----
     op.execute(_convert_memberships_sql())
 
+    # ---- memberships: the legacy role becomes text the ORM can write (B1) ----
+    # After the conversion above has read it (that read casts `role::text`, so it works on either
+    # form). The values are kept; the `userrole` type stays for the downgrade (see the docstring).
+    op.execute("ALTER TABLE tenant_memberships ALTER COLUMN role TYPE varchar(40) USING role::text")
+
 
 def downgrade() -> None:
     op.drop_index("ix_ldap_group_mappings_group_id", table_name="ldap_group_mappings")
@@ -292,4 +307,7 @@ def downgrade() -> None:
     # Fails if an AD account (no password) or a membership without a role exists — see docstring.
     op.alter_column("users", "hashed_password", nullable=False)
     op.alter_column("users", "email", nullable=False)
+    # Fails on a role that is not a `userrole` label; the ORM never writes one (see docstring).
+    op.execute("ALTER TABLE tenant_memberships "
+               "ALTER COLUMN role TYPE userrole USING role::userrole")
     op.alter_column("tenant_memberships", "role", nullable=False)

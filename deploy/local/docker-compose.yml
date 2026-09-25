@@ -15,7 +15,9 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: homunculus
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Required, like the other secrets: compose refuses a missing or blank value. Blank, a fresh
+      # volume would fail to initialise, and the API's DATABASE_URL below would carry no password.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is missing in .env - generate one, see .env.example}
       POSTGRES_DB: homunculus
       TZ: ${TZ:-Europe/Istanbul}
     volumes:
@@ -39,7 +41,7 @@ services:
       # DATABASE_SSL is deliberately UNSET: ssl_context() then returns None and the connection is
       # plain, which is correct for a database on the same host. Setting it would demand a
       # certificate chain that does not exist here.
-      DATABASE_URL: postgresql://homunculus:${POSTGRES_PASSWORD}@postgres:5432/homunculus
+      DATABASE_URL: postgresql://homunculus:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is missing in .env - generate one, see .env.example}@postgres:5432/homunculus
       # Required, not defaulted: the token is the only authority for a clinician's permissions and
       # tenant. Compose refuses a missing key; the API refuses a default or short one at start.
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is missing in .env - generate one, see .env.example}
