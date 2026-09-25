@@ -118,6 +118,14 @@ tenant or membership is 403. `tenant_of_user` skips inactive tenants.
     - the fresh token pair is stored by the API client;
     - an AD account sees the API's "managed by Active Directory" refusal, translated;
     - with the i18n keys in all four languages.
+  **From Tasks 17–18 (integration in Task 19):**
+  - **The staff tab.** Render `<LiveStaffTab T S lang store state/>` when `state.live` and the
+    session holds `users.manage` or `groups.manage`. Pass `lang` everywhere.
+  - **Hint rights.** Add a store action that re-reads `/auth/me` for the hint rights (`/auth/me`
+    returns the database rights), or re-derives the session from the access token after every
+    refresh. Call it from `LiveStaffTab`'s mount effect, and update that file's comment.
+  - **The "retry" button** for `state.sessionError` must not fire two `restoreSession()` calls at
+    once. Use an in-flight guard.
   **Task 19 must also fix these screens (found in Task 14):**
   - **`MfaGate` crashes on a first live enrolment.** `ClinicalDemo.jsx` calls
     `setSetup(store.setupMfa(...))` synchronously, stores the Promise, and throws on
