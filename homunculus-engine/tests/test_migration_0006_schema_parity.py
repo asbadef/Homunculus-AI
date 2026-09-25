@@ -32,7 +32,7 @@ pytestmark = [requires_db]
 ROOT = Path(__file__).resolve().parents[1]
 OWNED_TABLES = {"groups", "group_permissions", "user_groups", "ldap_group_mappings", "users"}
 OWNED_USER_COLUMNS = {"username", "email", "hashed_password", "auth_source", "external_id",
-                      "ldap_dn", "token_version", "last_login_at"}
+                      "ldap_dn", "token_version", "last_login_at", "sessions_revoked_at"}
 
 
 def _sync_url() -> str:

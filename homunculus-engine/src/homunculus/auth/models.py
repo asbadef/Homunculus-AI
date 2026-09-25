@@ -59,6 +59,11 @@ class User(Base):
         Integer, nullable=False, default=0, server_default="0"
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Set when the account is deactivated. /auth/refresh refuses a refresh token issued at or
+    # before it, so reactivating the account never revives the sessions it had.
+    sessions_revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # TOTP secret (Base32)
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

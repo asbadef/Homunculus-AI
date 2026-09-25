@@ -26,12 +26,15 @@ from tests.route_walk import api_routes
 from tests.signed_in import add_user, api_client, bearer
 
 GUARDED_MODULES = {
+    "homunculus.admin.router",
     "homunculus.admission.router",
     "homunculus.escalation.router",
     "homunculus.tenant.router",
 }
 
 _S = "structure.manage"
+_U = "users.manage"
+_G = "groups.manage"
 
 # Not a permission key (keys are dotted lower-case): the route is guarded by
 # `require_platform_operator`, which marks itself `.platform_only`.
@@ -79,6 +82,19 @@ EXPECTED: dict[tuple[str, str], frozenset[str]] = {
     ("POST", "/break-glass"): frozenset({"break_glass.use"}),
     ("POST", "/break-glass/{session_id}/extend"): frozenset({"break_glass.use"}),
     ("POST", "/break-glass/{session_id}/close"): frozenset({"break_glass.use"}),
+    # admin/router.py (spec §5: /admin/users* users.manage; /admin/groups* and
+    # GET /admin/permissions groups.manage)
+    ("GET", "/admin/permissions"): frozenset({_G}),
+    ("GET", "/admin/groups"): frozenset({_G}),
+    ("POST", "/admin/groups"): frozenset({_G}),
+    ("PATCH", "/admin/groups/{group_id}"): frozenset({_G}),
+    ("DELETE", "/admin/groups/{group_id}"): frozenset({_G}),
+    ("GET", "/admin/users"): frozenset({_U}),
+    ("POST", "/admin/users"): frozenset({_U}),
+    ("PATCH", "/admin/users/{user_id}"): frozenset({_U}),
+    ("PUT", "/admin/users/{user_id}/groups"): frozenset({_U}),
+    ("POST", "/admin/users/{user_id}/reset-password"): frozenset({_U}),
+    ("POST", "/admin/users/{user_id}/reset-mfa"): frozenset({_U}),
 }
 
 
@@ -143,8 +159,8 @@ def test_the_walker_refuses_an_include_it_cannot_report_in_full():
 
 
 # ---------------------------------------------------------------- the map
-def test_the_table_covers_all_34_guarded_routes():
-    assert len(EXPECTED) == 34
+def test_the_table_covers_all_45_guarded_routes():
+    assert len(EXPECTED) == 45
 
 
 def test_no_guarded_route_is_missing_from_the_table():

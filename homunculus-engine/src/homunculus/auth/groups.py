@@ -162,6 +162,15 @@ def _holds(tenant_id: uuid.UUID, permission: str):
     return stmt.exists()
 
 
+async def lock_admin_guard(db: AsyncSession, tenant_id: uuid.UUID) -> None:
+    """Take the tenant's admin-guard lock: a transaction-scoped advisory lock, held until the
+    caller commits or rolls back. Re-entrant within one transaction (Postgres stacks it), so a
+    caller that already holds it may still call `count_admins`. The /admin API takes it at the
+    start of every write, so writes to one tenant's users and groups run one at a time."""
+    await db.execute(select(func.pg_advisory_xact_lock(
+        func.hashtextextended(f"homunculus.admin-guard:{tenant_id}", 0))))
+
+
 async def count_admins(db: AsyncSession, tenant_id: uuid.UUID) -> int:
     """Active ADMINISTRATORS of the tenant: users holding both `users.manage` and
     `groups.manage`, through any of their groups, with an active membership in this tenant.
@@ -171,8 +180,7 @@ async def count_admins(db: AsyncSession, tenant_id: uuid.UUID) -> int:
     per-tenant advisory lock so two concurrent demotions cannot both see the guard pass, and
     holds it until the caller commits or rolls back — under READ COMMITTED the count then sees
     the other transaction's committed change. Roll back on 0."""
-    await db.execute(select(func.pg_advisory_xact_lock(
-        func.hashtextextended(f"homunculus.admin-guard:{tenant_id}", 0))))
+    await lock_admin_guard(db, tenant_id)
     stmt = (
         select(func.count(User.id))
         .where(User.is_active == True)  # noqa: E712

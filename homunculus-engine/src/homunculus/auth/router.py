@@ -179,6 +179,12 @@ async def refresh_token(body: RefreshRequest, db: AsyncSession = Depends(get_db)
     user = await get_user_by_id(db, user_id)
     if not user or not user.is_active:
         raise credentials_exc
+    revoked = user.sessions_revoked_at
+    iat = payload.get("iat")
+    if revoked is not None and (type(iat) is not int or iat <= revoked.timestamp()):
+        # Issued before the account's last deactivation: reactivating it must not revive the
+        # sessions it had ("phone stolen, deactivate, reactivate tomorrow").
+        raise credentials_exc
     cv = payload.get("cv")
     # Compared as bytes: `compare_digest` raises TypeError on a non-ASCII str, which a claim
     # can hold — that must be a 401, not a 500.

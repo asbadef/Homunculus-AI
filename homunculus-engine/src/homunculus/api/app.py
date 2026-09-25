@@ -233,6 +233,7 @@ def create_app(
         router as alerts_router,
         break_glass_router,
     )
+    from homunculus.admin.router import router as admin_router
     app.include_router(auth_router)
     app.include_router(tenant_router)
     app.include_router(admission_router)
@@ -240,6 +241,7 @@ def create_app(
     app.include_router(handover_router)
     app.include_router(alerts_router)
     app.include_router(break_glass_router)
+    app.include_router(admin_router)
 
     app.state.broadcaster = broadcaster
     app.state.ack_stores = stores

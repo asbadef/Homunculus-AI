@@ -217,6 +217,8 @@ def upgrade() -> None:
     op.add_column("users", sa.Column("token_version", sa.Integer(), nullable=False,
                                      server_default="0"))
     op.add_column("users", sa.Column("last_login_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column("users", sa.Column("sessions_revoked_at", sa.DateTime(timezone=True),
+                                     nullable=True))
     op.execute("UPDATE users SET email = lower(email)")
     op.execute("UPDATE users SET username = lower(email) WHERE username IS NULL")
     op.alter_column("users", "username", nullable=False)
@@ -257,6 +259,7 @@ def downgrade() -> None:
 
     op.drop_index("ix_users_external_id", table_name="users")
     op.drop_index("ix_users_username", table_name="users")
+    op.drop_column("users", "sessions_revoked_at")
     op.drop_column("users", "last_login_at")
     op.drop_column("users", "token_version")
     op.drop_column("users", "ldap_dn")
