@@ -129,7 +129,8 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
   }
 
   /** The UI's user object. `role` is DISPLAY ONLY (icons, labels); gating uses `perms`. `id` is
-   *  the account's, for the admin rules that never let you reset or deactivate yourself. */
+   *  the account's, for the admin rules that never let you reset or deactivate yourself. `email`
+   *  can be null (UserMeResponse.email); the UI shows the username then. */
   function sessionUser(me, session) {
     const groups = Array.isArray(me.groups) ? me.groups : [];
     return {
@@ -138,6 +139,65 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
       perms: session.perms, groups: session.groups,
       groupNames: groups.map((g) => g.name),
     };
+  }
+
+  // ---------------------------------------------------------------- the session's rights
+  // `user.perms` is a HINT for the UI (navigation, the admin panels); the server decides every
+  // call. It must not outlive what it was read from, though. backendApi refreshes the access
+  // token transparently (a 401, /auth/refresh, a retry), and a refreshed token carries the
+  // rights of the CURRENT groups; syncRights() re-reads them after every call the store makes.
+  // refreshRights() reads the database's rights from /auth/me, which the admin rules check.
+
+  // The access token `user.perms` was last read from; null = not yet (the next call reads it).
+  let rightsToken = null;
+  // Group names by slug, from the last profile: a token names groups by slug only.
+  let groupNameBySlug = new Map();
+
+  const currentToken = () => (typeof api.accessToken === "function" ? api.accessToken() : null);
+  const sameList = (a, b) => a.length === b.length && [...a].sort().join("\n") === [...b].sort().join("\n");
+
+  /** Remember the profile's group names and read the rights from the current token again. */
+  function rememberProfile(me) {
+    const groups = Array.isArray(me?.groups) ? me.groups : [];
+    groupNameBySlug = new Map(groups.filter((g) => g && typeof g.slug === "string")
+      .map((g) => [g.slug, g.name]));
+    rightsToken = null;
+  }
+
+  /** The user with these rights, or the same object when nothing changed (a new object would
+   *  look like a new session to whatever watches `state.user`). */
+  function withRights(user, perms, groups, names) {
+    const nextNames = names ?? groups.map((slug) => groupNameBySlug.get(slug) ?? slug);
+    if (sameList(user.perms ?? [], perms) && sameList(user.groups ?? [], groups)
+        && (user.groupNames ?? []).join("\n") === nextNames.join("\n")) {
+      return user;
+    }
+    return { ...user, role: uiRoleFromPerms(perms), perms, groups, groupNames: nextNames };
+  }
+
+  /** Re-read the rights when the access token changed since they were read. True if the user
+   *  changed (the caller emits). A token the UI cannot read changes nothing: the server still
+   *  checks every request, so this fails closed either way. */
+  function syncRights() {
+    const token = currentToken();
+    if (!overlay.user || !token || token === rightsToken) return false;
+    const session = sessionFromToken(token);
+    if (!session) return false;
+    rightsToken = token;
+    const user = withRights(overlay.user, session.perms, session.groups);
+    if (user === overlay.user) return false;
+    setOverlay({ user });
+    return true;
+  }
+
+  /** Run one API call, then re-read the rights: a 401 inside it may have refreshed the token.
+   *  Also after a refusal, whose refresh may have brought narrower rights. */
+  async function tracked(call) {
+    try {
+      return await call();
+    } finally {
+      if (syncRights()) emit();
+    }
   }
 
   function pendingMfa(login, me, session, enrolled) {
@@ -152,7 +212,9 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
   async function openSession(session) {
     const me = await api.me();
     clearAdmin();
+    rememberProfile(me);
     setOverlay({ user: sessionUser(me, session), mfaPending: null, sessionError: null });
+    syncRights();                  // me() may have refreshed the token the session came from
     emit();
     return { mfaRequired: false };
   }
@@ -186,6 +248,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
         connection: nextConnection(overlay.connection, { type: "failed" }),
       });
     }
+    syncRights();
     emit();
   }
 
@@ -200,7 +263,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     const sep = id.indexOf("::");
     const patientId = sep === -1 ? id : id.slice(0, sep);
     const kind = sep === -1 ? "" : id.slice(sep + 2);
-    await api.acknowledge(patientId, kind);
+    await tracked(() => api.acknowledge(patientId, kind));
     await refreshBoard();
   }
 
@@ -258,7 +321,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
 
     async function connect() {
       // A fresh ticket every time: the previous one (if any) is single-use and already spent.
-      const { ticket } = await api.streamTicket();
+      const { ticket } = await tracked(() => api.streamTicket());
       closeSource = openStream(`/stream?ticket=${encodeURIComponent(ticket)}`, {
         onopen: handleOpen, onmessage: handleMessage, onerror: handleError,
       });
@@ -303,6 +366,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
       ask(may("groups.manage"), () => api.adminPermissions()),
     ]);
     if (seq !== adminLoadSeq) return;           // superseded by a newer load or a sign-out
+    syncRights();
     const list = (r, adapt) => (r.status === "fulfilled" && Array.isArray(r.value)
       ? (adapt ? r.value.map(adapt) : r.value) : []);
     const failed = [users, groups, catalogue].find((r) => r.status === "rejected");
@@ -322,7 +386,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
    *  refreshed once on a 401 (a request queued behind the caller's own demotion) and never
    *  refreshes on a 403 or 409. */
   const thenReload = async (call) => {
-    const result = await call();
+    const result = await tracked(call);
     await loadAdmin();
     return result;
   };
@@ -353,7 +417,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     adminUpdateUser: (id, body) => thenReload(() => api.adminUpdateUser(id, body)),
     adminSetUserGroups: (id, groupIds) => thenReload(() => api.adminSetUserGroups(id, groupIds)),
     /** Nothing on screen changes with a password, so nothing is reloaded. */
-    adminResetPassword: (id, password) => api.adminResetPassword(id, password),
+    adminResetPassword: (id, password) => tracked(() => api.adminResetPassword(id, password)),
     adminResetMfa: (id) => thenReload(() => api.adminResetMfa(id)),
     adminSaveGroup: (g) => thenReload(() => saveGroup(g)),
     adminDeleteGroup: (id) => thenReload(() => api.adminDeleteGroup(id)),
@@ -408,8 +472,43 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
       emit();
     },
 
+    /** The user's own password. The API answers with a fresh token pair (backendApi stores it),
+     *  whose rights are read here. A refusal — the current password wrong, the new one too short,
+     *  an Active Directory account — rejects with the API's message for the dialog to show. */
     changePassword(current, next) {
-      return api.changePassword(current, next);
+      return tracked(() => api.changePassword(current, next));
+    },
+
+    /** Re-read the signed-in user's rights from /auth/me: the DATABASE's rights, which the admin
+     *  rules check. A token minted before a deploy that added a key under-reports them until it
+     *  refreshes, and the admin panels' hints would then refuse what the server allows.
+     *  LiveStaffTab calls this when it opens. Resolves to true when the profile was applied.
+     *  Never rejects: on a failure the rights stay as they were, and the server still decides. */
+    async refreshRights() {
+      if (!overlay.user) return false;
+      let me;
+      try {
+        me = await api.me();
+      } catch {
+        if (syncRights()) emit();
+        return false;
+      }
+      const user = overlay.user;
+      // The session may have ended, or another begun, while the profile was on its way.
+      if (!user || !me || me.id !== user.id || !Array.isArray(me.perms)) {
+        if (syncRights()) emit();
+        return false;
+      }
+      const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
+      const groups = Array.isArray(me.groups) ? me.groups.filter((g) => g && typeof g.slug === "string") : [];
+      rememberProfile(me);
+      rightsToken = currentToken();  // read now: the same token must not undo the database's answer
+      const next = withRights(user, strings(me.perms), groups.map((g) => g.slug), groups.map((g) => g.name));
+      if (next !== user) {
+        setOverlay({ user: next });
+        emit();
+      }
+      return true;
     },
 
     /** Reopen the session from tokens a previous page load left in storage. A token whose MFA
@@ -432,7 +531,9 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
                        mfaPending: pendingMfa(me.email || me.username, me, session,
                                               me.totp_enabled === true) });
         } else {
+          rememberProfile(me);
           setOverlay({ user: sessionUser(me, session), mfaPending: null, sessionError: null });
+          syncRights();
         }
         emit();
         return true;

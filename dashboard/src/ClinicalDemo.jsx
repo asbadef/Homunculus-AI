@@ -4,7 +4,7 @@
 // SYNTHETIC and every national ID is masked. The system never diagnoses — machine-generated
 // alert text always reads "…kriterleri değerlendirilecek".
 
-import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useReducer, useRef, useState } from "react";
 import {
   Activity, LayoutGrid, UserPlus, Users, Bell, Settings, ArrowLeftRight, Stethoscope,
   HeartPulse, Building2, ShieldAlert, Sun, Moon, Monitor, Globe, ChevronDown, LogOut, Check,
@@ -30,7 +30,10 @@ import {
   getTheme, storedTheme, persistTheme, THEME_KEYS,
 } from "./clinicalTheme.js";
 import { Field, inputCls, btnCls, ActionOverlay } from "./ui.jsx";
-import { cstrings, storedClang, persistClang, LANGS } from "./clinicalI18n.js";
+import { hasAny } from "./permissions.js";
+import { LiveStaffTab } from "./admin/LiveStaffTab.jsx";
+import QRCode from "qrcode";
+import { cstrings, storedClang, persistClang, LANGS, translateApiError } from "./clinicalI18n.js";
 import { enableAudio, isAudioEnabled, syncAlarm } from "./clinicalAudio.js";
 
 // ---------------------------------------------------------------- shared visual maps
@@ -85,11 +88,11 @@ function useStore(store) {
 }
 
 // ---------------------------------------------------------------- generic dropdown menu
-function Menu({ T, triggerClass, trigger, align = "right", children }) {
+function Menu({ T, triggerClass, trigger, align = "right", title, children }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
-      <button type="button" onClick={() => setOpen((o) => !o)} className={triggerClass}>
+      <button type="button" onClick={() => setOpen((o) => !o)} className={triggerClass} title={title}>
         {trigger}
       </button>
       {open && (
@@ -193,22 +196,41 @@ function LangPills({ T, lang, setLang }) {
   );
 }
 
-function Login({ T, S, store, lang, setLang }) {
+function Login({ T, S, store, lang, setLang, sessionError = null }) {
   const [email, setEmail] = useState("");
   const [credential, setCredential] = useState("");
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState(null);   // the error itself: shown translated, in the current language
   const [showForgot, setShowForgot] = useState(false);
   const [busy, setBusy] = useState(false);
   const submit = async (e) => {
     e.preventDefault();
-    // Kurumsal e-posta + parola. Rol DB'den gelir; panel role göre otomatik yönlenir.
-    // attemptLogin: rol MFA gerektiriyorsa oturumu açmadan MFA kapısına yönlendirir (mfaPending).
+    // Kurumsal e-posta + parola. Yetkiler gruplardan gelir; panel izinlere göre yönlenir.
+    // attemptLogin: gruplardan biri MFA gerektiriyorsa oturumu açmadan MFA kapısına yönlendirir.
     // `await` hem simülasyonun senkron sürümünü hem canlı backend'in async sürümünü karşılar.
-    setErr("");
+    if (busy) return;
+    setErr(null);
     setBusy(true);
     try { await store.attemptLogin(email.trim(), credential.trim()); }
-    catch (ex) { setErr(ex.message); }
+    catch (ex) { setErr(ex); }
     finally { setBusy(false); }
+  };
+
+  // A stored session the server could not check (state.sessionError, SESSION_UNREACHABLE): the
+  // tokens are kept, and "retry" asks again. One call at a time — the ref stops a second click
+  // that lands before the re-render disables the button.
+  const retrying = useRef(false);
+  const [retryBusy, setRetryBusy] = useState(false);
+  const canRetry = typeof store.restoreSession === "function";
+  const retry = () => {
+    if (retrying.current || !canRetry) return;
+    retrying.current = true;
+    setRetryBusy(true);
+    let call;
+    try { call = store.restoreSession(); } catch { call = null; }   // it never rejects; be safe anyway
+    Promise.resolve(call).catch(() => {}).finally(() => {
+      retrying.current = false;
+      setRetryBusy(false);
+    });
   };
 
   const iconInput = (icon, node) => (
@@ -305,6 +327,21 @@ function Login({ T, S, store, lang, setLang }) {
           <h1 className={`mb-1 text-2xl font-black ${T.heading}`}>{S.loginTitle}</h1>
           <p className={`mb-6 text-sm ${T.muted}`}>{S.loginSub}</p>
 
+          {sessionError && (
+            <div role="alert" className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-2.5 text-sm text-amber-600 dark:text-amber-400">
+              <div className="flex items-start gap-2">
+                <CloudOff size={16} className="mt-0.5 shrink-0" />
+                <span>{translateApiError(sessionError, lang)}</span>
+              </div>
+              {canRetry && (
+                <button type="button" onClick={retry} disabled={retryBusy} className={`${btnCls(T, "ghost")} mt-2 w-full`}>
+                  <RefreshCw size={15} className={retryBusy ? "animate-spin" : ""} />
+                  {retryBusy ? S.rbac.retrying : S.rbac.retry}
+                </button>
+              )}
+            </div>
+          )}
+
           <form onSubmit={submit} className="space-y-4">
             <Field T={T} label={S.email}>
               {iconInput(<Mail size={16} />,
@@ -316,8 +353,8 @@ function Login({ T, S, store, lang, setLang }) {
                 <input type="password" className={`${inputCls(T)} pl-9`} value={credential}
                   onChange={(e) => setCredential(e.target.value)} placeholder="••••••••" autoComplete="current-password" />)}
             </Field>
-            {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
-            <button type="submit" className={`${btnCls(T, "primary")} group w-full`}>
+            {err && <div role="alert" className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{translateApiError(err, lang)}</div>}
+            <button type="submit" disabled={busy} className={`${btnCls(T, "primary")} group w-full`}>
               {S.signIn}
               <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
             </button>
@@ -375,26 +412,68 @@ function VitrinStat({ value, label }) {
 }
 
 // ---------------------------------------------------------------- MFA kapısı (Madde 6)
-// Şifre girişi sonrası, rol iki adımlı doğrulama gerektiriyorsa gösterilir (state.mfaPending).
-// Kayıtlı değilse önce TOTP kurulumu (QR + gizli anahtar) yapılır, sonra 6 haneli kod doğrulanır.
-function MfaGate({ T, S, store, pending, lang, setLang }) {
+// Şifre girişi sonrası, gruplardan biri iki adımlı doğrulama gerektiriyorsa gösterilir
+// (state.mfaPending). Kayıtlı değilse önce TOTP kurulumu (QR + elle giriş anahtarı) yapılır, sonra
+// 6 haneli kod doğrulanır.
+//
+// Enrolment: `store.setupMfa` is synchronous in the simulation and async against the API, where
+// every call ROTATES the secret. So it runs ONCE per showing of the gate: the call is kept in a
+// ref, which survives React StrictMode's mount → unmount → mount of the same component, and the
+// second effect reuses it instead of minting a second secret and leaving a stale one on screen.
+// The QR is drawn in the page by the `qrcode` package, with no network call: the secret never
+// leaves the browser. A refusal (403 mfa_reset_required) and every refused code (401 wrong or
+// replayed, 429 locked) are shown translated, and the gate stays open.
+function MfaGate({ T, S, store, pending, lang, setLang, live = false }) {
   const [code, setCode] = useState("");
-  const [err, setErr] = useState("");
-  const [setup, setSetup] = useState(null); // { provisioningUri, secret } — kayıtsız kullanıcılar için
+  const [err, setErr] = useState(null);           // a refused code: the error, shown translated
+  const [busy, setBusy] = useState(false);
+  const [setup, setSetup] = useState(null);       // { provisioningUri, secret } — kayıtsız kullanıcılar için
+  const [setupErr, setSetupErr] = useState(null); // the enrolment refused
+  const [qr, setQr] = useState(null);             // data URL, when the renderer managed
+  const [copied, setCopied] = useState(false);
   const enrolled = pending.enrolled;
+  const enrolment = useRef(null);                 // { key, call } — this showing's one setupMfa()
+  const enrolKey = `${pending.userId ?? ""}|${pending.email ?? ""}`;
 
-  // Kayıtlı değilse TOTP kurulumunu bir kez başlat (QR + secret üret).
   useEffect(() => {
-    if (!enrolled) {
-      try { setSetup(store.setupMfa({ userId: pending.userId })); } catch { /* ignore */ }
+    if (enrolled) return undefined;
+    if (!enrolment.current || enrolment.current.key !== enrolKey) {
+      enrolment.current = { key: enrolKey,
+        call: Promise.resolve().then(() => store.setupMfa({ userId: pending.userId })) };
     }
-  }, [enrolled, pending.userId]);
+    let current = true;
+    enrolment.current.call.then(
+      (s) => {
+        if (!current) return;
+        setSetupErr(null);
+        setSetup(s || null);
+        if (!s?.provisioningUri) return;
+        QRCode.toDataURL(s.provisioningUri, { margin: 1 })
+          .then((url) => { if (current) setQr(url); })
+          .catch(() => { /* the manual key below still works */ });
+      },
+      (ex) => { if (current) setSetupErr(ex); },
+    );
+    return () => { current = false; };
+  }, [enrolled, enrolKey, store]);
+
+  const copyKey = () => {
+    try {
+      Promise.resolve(navigator.clipboard?.writeText(setup?.secret || "")).catch(() => {});
+    } catch { /* ignore */ }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   const verify = async (e) => {
     e.preventDefault();
+    if (busy) return;
     // `await` karşılar: simülasyon senkron, canlı backend async.
-    setErr("");
-    try { await store.completeMfaLogin(code.trim()); } catch (ex) { setErr(ex.message); }
+    setErr(null);
+    setBusy(true);
+    try { await store.completeMfaLogin(code.trim()); }
+    catch (ex) { setErr(ex); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -410,20 +489,41 @@ function MfaGate({ T, S, store, pending, lang, setLang }) {
           </span>
           <div>
             <h1 className={`text-xl font-black ${T.heading}`}>{S.pr11.mfaGateTitle}</h1>
-            <p className={`text-xs ${T.muted}`}>{pending.full_name} · {S.roleName[pending.role]}</p>
+            <p className={`text-xs ${T.muted}`}>
+              {pending.full_name} · {pending.groupNames?.length ? pending.groupNames.join(", ") : S.roleName[pending.role]}
+            </p>
           </div>
         </div>
 
         <p className={`mb-4 text-sm ${T.muted}`}>{enrolled ? S.pr11.mfaGateSub : S.pr11.mfaGateSetupSub}</p>
 
-        {/* Kayıtsız kullanıcı: QR + gizli anahtar göster */}
+        {/* Kayıtsız kullanıcı: QR + elle giriş anahtarı göster */}
+        {!enrolled && !setup && !setupErr && (
+          <div role="status" className={`mb-4 text-center text-sm ${T.faint}`}>{S.rbac.loading}</div>
+        )}
+        {!enrolled && setupErr && (
+          <div role="alert" className="mb-4 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">
+            {translateApiError(setupErr, lang)}
+          </div>
+        )}
         {!enrolled && setup && (
           <div className={`mb-4 rounded-2xl border ${T.border} ${T.glassSubtle} p-4`}>
-            <div className={`mx-auto mb-3 grid h-32 w-32 place-items-center rounded-xl ${T.subtle}`}>
-              <QrCode size={104} className={T.faint} />
-            </div>
-            <div className={`text-center text-[11px] ${T.faint}`}>
-              {S.pr11.mfaSecretLabel}: <code className="font-mono">{setup.secret.slice(0, 16)}…</code>
+            {qr ? (
+              <img src={qr} alt="TOTP QR" className="mx-auto mb-3 h-36 w-36 rounded-xl bg-white p-1" />
+            ) : (
+              <div className={`mx-auto mb-3 grid h-32 w-32 place-items-center rounded-xl ${T.subtle}`}>
+                <QrCode size={104} className={T.faint} />
+              </div>
+            )}
+            {!qr && <div className={`mb-2 text-center text-[11px] ${T.faint}`}>{S.rbac.mfaQrUnavailable}</div>}
+            <div className={`text-center text-[11px] ${T.faint}`}>{S.rbac.mfaManualKey}</div>
+            <div className="mt-1 flex items-center justify-center gap-2">
+              <code className={`font-mono text-sm tracking-widest ${T.text}`}>
+                {(setup.secret || "").replace(/(.{4})/g, "$1 ").trim()}
+              </code>
+              <button type="button" onClick={copyKey} className={btnCls(T, "ghost")}>
+                {copied ? S.rbac.copied : S.rbac.mfaCopy}
+              </button>
             </div>
           </div>
         )}
@@ -431,23 +531,24 @@ function MfaGate({ T, S, store, pending, lang, setLang }) {
         <form onSubmit={verify} className="space-y-3">
           <Field T={T} label={S.pr11.mfaCodeLabel}>
             <input inputMode="numeric" maxLength={6} autoFocus value={code}
-              onChange={(e) => { setCode(e.target.value.replace(/\D/g, "")); setErr(""); }}
+              onChange={(e) => { setCode(e.target.value.replace(/\D/g, "")); setErr(null); }}
               placeholder={S.pr11.mfaCodePlaceholder}
               className={`${inputCls(T)} text-center text-2xl font-black tracking-[0.5em]`} />
           </Field>
-          {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
-          <button type="submit" className={`${btnCls(T, "primary")} group w-full`}>
+          {err && <div role="alert" className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{translateApiError(err, lang)}</div>}
+          <button type="submit" disabled={busy} className={`${btnCls(T, "primary")} group w-full`}>
             <ShieldCheck size={16} /> {S.pr11.mfaVerifyCta}
             <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
           </button>
         </form>
 
         <div className="mt-3 flex items-center justify-between">
-          <button onClick={() => store.cancelMfaLogin()}
-            className={`inline-flex items-center gap-1 text-xs font-medium ${T.accent} hover:underline`}>
+          {/* Not while a code is being checked: its answer would reopen the session just left. */}
+          <button type="button" onClick={() => store.cancelMfaLogin()} disabled={busy}
+            className={`inline-flex items-center gap-1 text-xs font-medium ${T.accent} hover:underline disabled:opacity-40`}>
             <ArrowLeft size={13} /> {S.pr11.mfaBack}
           </button>
-          <span className={`text-[11px] ${T.faint}`}>{S.pr11.mfaDemoHint}</span>
+          {!live && <span className={`text-[11px] ${T.faint}`}>{S.pr11.mfaDemoHint}</span>}
         </div>
       </div>
     </div>
@@ -707,6 +808,7 @@ function ShiftMenu({ T, S, state }) {
 function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMenu,
                  soundOn, onEnableSound, notifyPerm, onEnableNotify, onTestPush, notifyBlocked }) {
   const user = state.user;
+  const live = state.live === true;
   const [pinOpen, setPinOpen] = useState(false);
   const RoleIcon = user?.role === ROLE.HOSPITAL_ADMIN ? ShieldAlert
     : user?.role === ROLE.CHARGE_NURSE ? HeartPulse : Stethoscope;
@@ -722,14 +824,22 @@ function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMe
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        {/* Fast PIN switcher — 3-second shift/user change on shared screens */}
-        <button onClick={() => setPinOpen(true)}
-          title={S.pr7.fastSwitch}
-          className={`hidden items-center gap-2 rounded-lg px-3 py-2 sm:inline-flex ${T.ghost} ${T.sizes.nav}`}>
-          <RoleIcon size={16} /><span className="max-w-[9rem] truncate">{user?.full_name}</span>
-          <KeyRound size={14} className="text-brand" />
-        </button>
-        {pinOpen && <PinSwitchModal T={T} S={S} store={store} onClose={() => setPinOpen(false)} />}
+        {live ? (
+          // Live: who is signed in, and the user's own password change. The PIN switch below
+          // writes only to the simulation, so it is not offered against the real backend.
+          <UserMenu T={T} S={S} store={store} user={user} lang={lang} RoleIcon={RoleIcon} />
+        ) : (
+          <>
+            {/* Fast PIN switcher — 3-second shift/user change on shared screens */}
+            <button onClick={() => setPinOpen(true)}
+              title={S.pr7.fastSwitch}
+              className={`hidden items-center gap-2 rounded-lg px-3 py-2 sm:inline-flex ${T.ghost} ${T.sizes.nav}`}>
+              <RoleIcon size={16} /><span className="max-w-[9rem] truncate">{user?.full_name}</span>
+              <KeyRound size={14} className="text-brand" />
+            </button>
+            {pinOpen && <PinSwitchModal T={T} S={S} store={store} onClose={() => setPinOpen(false)} />}
+          </>
+        )}
 
         {/* Offline / online toggle (PWA resilience) */}
         <button onClick={() => store.setOnline(!online)}
@@ -833,26 +943,116 @@ function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMe
   );
 }
 
+// ---------------------------------------------------------------- the user's own account (live)
+// The e-mail can be missing (UserMeResponse.email is optional): the username stands in for it.
+function UserMenu({ T, S, store, user, lang, RoleIcon }) {
+  const R = S.rbac;
+  const [pwOpen, setPwOpen] = useState(false);
+  const who = user?.email || user?.username || "";
+  const groups = Array.isArray(user?.groupNames) ? user.groupNames.filter(Boolean) : [];
+  return (
+    <>
+      <Menu T={T} title={R.account}
+        triggerClass={`inline-flex items-center gap-2 rounded-lg px-3 py-2 ${T.ghost} ${T.sizes.nav}`}
+        trigger={<><RoleIcon size={16} /><span className="hidden max-w-[9rem] truncate sm:inline">{user?.full_name}</span><ChevronDown size={13} /></>}>
+        {({ close }) => (
+          <div className="text-sm">
+            <div className="px-2.5 pb-2 pt-1.5">
+              <div className={`text-[10px] font-semibold uppercase tracking-wide ${T.faint}`}>{R.account}</div>
+              <div className={`truncate font-semibold ${T.text}`}>{user?.full_name}</div>
+              {who && <div className={`truncate text-xs ${T.muted}`}>{who}</div>}
+              {groups.length > 0 && <div className={`mt-0.5 truncate text-xs ${T.faint}`}>{groups.join(", ")}</div>}
+            </div>
+            <div className={`my-1 border-t ${T.border}`} />
+            <button type="button" onClick={() => { setPwOpen(true); close(); }}
+              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${T.navIdle}`}>
+              <KeyRound size={14} /> {R.changeOwnPassword}
+            </button>
+          </div>
+        )}
+      </Menu>
+      {pwOpen && <PasswordChangeDialog T={T} S={S} store={store} lang={lang} onClose={() => setPwOpen(false)} />}
+    </>
+  );
+}
+
+// The user's own password (POST /auth/password). The fields are masked and emptied as soon as a
+// request has used them, whatever its answer; the API's fresh token pair is stored by the client.
+// Refusals — the current password wrong, the new one too short, an Active Directory account — are
+// the API's, translated.
+function PasswordChangeDialog({ T, S, store, lang, onClose }) {
+  const R = S.rbac;
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [again, setAgain] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);   // an API error, or { local: "<rbac key>" }
+  const [done, setDone] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    setDone(false);
+    if (!current || !next || !again) { setErr({ local: "passwordFieldsRequired" }); return; }
+    if (next !== again) { setErr({ local: "passwordMismatch" }); return; }
+    setErr(null);
+    setBusy(true);
+    try {
+      await store.changePassword(current, next);
+      setDone(true);
+    } catch (ex) {
+      setErr(ex);
+    } finally {
+      setCurrent(""); setNext(""); setAgain("");
+      setBusy(false);
+    }
+  };
+  const message = err ? (err.local ? R[err.local] : translateApiError(err, lang)) : null;
+  const field = (label, value, set, autoComplete) => (
+    <Field T={T} label={label}>
+      <input type="password" autoComplete={autoComplete} className={inputCls(T)} value={value}
+        onChange={(e) => { set(e.target.value); setDone(false); }} disabled={busy} />
+    </Field>
+  );
+  return (
+    <ActionOverlay T={T} title={R.changeOwnPassword} onClose={onClose} busy={busy} closeLabel={S.close}>
+      <form onSubmit={submit} className="space-y-3">
+        <p className={`text-xs ${T.muted}`}>{R.passwordChangeHint}</p>
+        {field(R.currentPassword, current, setCurrent, "current-password")}
+        {field(R.newPassword, next, setNext, "new-password")}
+        {field(R.repeatPassword, again, setAgain, "new-password")}
+        {message && <div role="alert" className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{message}</div>}
+        {done && <div role="status" className="rounded-lg bg-emerald-500/15 px-3 py-2 text-sm text-emerald-600">{R.passwordChanged}</div>}
+        <button type="submit" disabled={busy} className={`${btnCls(T, "primary")} w-full`}>
+          <Check size={15} /> {R.save}
+        </button>
+      </form>
+    </ActionOverlay>
+  );
+}
+
 // ================================================================ SIDEBAR
-const NAV_ITEMS = [
-  { key: "board", icon: LayoutGrid, roles: "all", group: "clinical" },
-  { key: "admission", icon: UserPlus, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "clinical" },
-  { key: "care", icon: Users, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "clinical" },
-  { key: "alarms", icon: Bell, roles: "all", group: "clinical" },
-  { key: "results", icon: Inbox, roles: [ROLE.ATTENDING, ROLE.CHARGE_NURSE, ROLE.HOSPITAL_ADMIN], group: "ops" },
-  { key: "heatmap", icon: Grid3x3, roles: "all", group: "ops" },
-  { key: "admin", icon: Settings, roles: [ROLE.HOSPITAL_ADMIN], group: "admin" },
+// `perm` is a list — the item shows when the session holds ANY of them; null = everyone. The
+// session's `perms` gate it in both modes (the simulation's users carry their role's defaults).
+export const NAV_ITEMS = [
+  { key: "board", icon: LayoutGrid, perm: null, group: "clinical" },
+  { key: "admission", icon: UserPlus, perm: ["admissions.admit", "admissions.sign_off"], group: "clinical" },
+  { key: "care", icon: Users, perm: ["care_team.claim", "care_team.assign"], group: "clinical" },
+  { key: "alarms", icon: Bell, perm: null, group: "clinical" },
+  { key: "results", icon: Inbox, perm: ["admissions.view"], group: "ops" },
+  { key: "heatmap", icon: Grid3x3, perm: null, group: "ops" },
+  { key: "admin", icon: Settings,
+    perm: ["users.manage", "groups.manage", "structure.manage", "devices.manage", "audit.view"], group: "admin" },
 ];
 const NAV_GROUPS = [
   { id: "clinical", label: "navGroupClinical" },
   { id: "ops", label: "navGroupOps" },
   { id: "admin", label: "navGroupAdmin" },
 ];
-function canSee(item, role) { return item.roles === "all" || item.roles.includes(role); }
+export function canSee(item, perms) { return hasAny(perms, item.perm); }
 
 function Sidebar({ T, S, state, page, setPage, collapsed, setCollapsed, mobileOpen, setMobileOpen }) {
-  const role = state.user?.role;
-  const visible = NAV_ITEMS.filter((i) => canSee(i, role));
+  const perms = state.user?.perms || [];
+  const visible = NAV_ITEMS.filter((i) => canSee(i, perms));
   const width = collapsed ? "w-16" : "w-64";
   const body = (
     <div className={`flex h-full flex-col border-r ${T.border} ${T.sidebar}`}>
@@ -1332,12 +1532,14 @@ function HandoverModal({ T, S, store, state, patientId, onClose }) {
 }
 
 function ModalShell({ T, title, sub, onClose, children }) {
+  const titleId = useId();
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className={`absolute inset-0 ${T.overlay}`} onClick={onClose} />
-      <div className={`relative w-full max-w-md rounded-2xl border ${T.border} ${T.card} p-5`}>
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId}
+        className={`relative w-full max-w-md rounded-2xl border ${T.border} ${T.card} p-5`}>
         <div className="mb-4">
-          <h3 className={`text-lg font-bold ${T.heading}`}>{title}</h3>
+          <h3 id={titleId} className={`text-lg font-bold ${T.heading}`}>{title}</h3>
           {sub && <p className={`text-sm ${T.muted}`}>{sub}</p>}
         </div>
         <div className="space-y-3">{children}</div>
@@ -1906,7 +2108,7 @@ function AlarmPage({ T, S, store, state, lang }) {
         </div>
       </div>
 
-      {ackFor && <AckModal T={T} S={S} store={store} alert={ackFor} onClose={() => setAckFor(null)} />}
+      {ackFor && <AckModal T={T} S={S} store={store} alert={ackFor} lang={lang} onClose={() => setAckFor(null)} />}
       {snzFor && <SnoozeModal T={T} S={S} store={store} alert={snzFor} onClose={() => setSnzFor(null)} />}
     </div>
   );
@@ -2003,17 +2205,32 @@ function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate, onMute }) 
   );
 }
 
-function AckModal({ T, S, store, alert, onClose }) {
+// `await` covers both stores: the simulation acknowledges synchronously (a refusal throws), the
+// live store asks the API. A refusal — 403 "permission required: alerts.ack" among them — keeps the
+// dialog open with the reason, translated: nothing was acknowledged. While the request is in
+// flight the dialog cannot be closed, so its answer always lands in front of the clinician.
+function AckModal({ T, S, store, alert, onClose, lang }) {
   const crit = alert.tier === TIER.CRITICAL;
   const [reason, setReason] = useState("clinically_reviewed");
   const [note, setNote] = useState("");
-  const [err, setErr] = useState("");
-  const submit = () => {
-    try { store.acknowledgeAlert(alert.id, { reason, note }); onClose(); }
-    catch (ex) { setErr(ex.message); }
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (busy) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      await store.acknowledgeAlert(alert.id, { reason, note });
+      onClose();
+    } catch (ex) {
+      setErr(ex);
+    } finally {
+      setBusy(false);
+    }
   };
+  const close = () => { if (!busy) onClose(); };
   return (
-    <ModalShell T={T} title={S.ackTitle} onClose={onClose}>
+    <ModalShell T={T} title={S.ackTitle} onClose={close}>
       <Field T={T} label={S.ackReason}>
         <select className={inputCls(T)} value={reason} onChange={(e) => setReason(e.target.value)}>
           {Object.keys(S.reasonOptions).map((k) => <option key={k} value={k}>{S.reasonOptions[k]}</option>)}
@@ -2022,10 +2239,10 @@ function AckModal({ T, S, store, alert, onClose }) {
       <Field T={T} label={S.ackNote} hint={crit ? S.ackNoteHintCrit : S.optional}>
         <textarea rows={3} className={inputCls(T)} value={note} onChange={(e) => setNote(e.target.value)} />
       </Field>
-      {err && <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{err}</div>}
+      {err && <div role="alert" className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{translateApiError(err, lang)}</div>}
       <div className="flex justify-end gap-2 pt-1">
-        <button onClick={onClose} className={btnCls(T, "ghost")}>{S.cancel}</button>
-        <button onClick={submit} className={btnCls(T, "primary")}><Check size={16} /> {S.confirm}</button>
+        <button onClick={close} disabled={busy} className={btnCls(T, "ghost")}>{S.cancel}</button>
+        <button onClick={submit} disabled={busy} className={btnCls(T, "primary")}><Check size={16} /> {S.confirm}</button>
       </div>
     </ModalShell>
   );
@@ -2271,56 +2488,68 @@ function AnalyticsPanel({ T, S, state }) {
 }
 
 // ================================================================ ADMIN
-function AdminPage({ T, S, store, state }) {
-  const [tab, setTab] = useState("reports");
-  const TABS = [
-    { key: "reports", label: S.pr8.reports, icon: BarChart3 },
-    { key: "structure", label: S.pr7.hierarchy, icon: Building2 },
-    { key: "staff", label: S.pr7.staffMatrix, icon: Users },
-    { key: "security", label: S.pr10.inviteTitle, icon: Shield },
-    { key: "devices", label: S.pr7.devices, icon: Radio },
-    { key: "audit", label: S.pr7.auditSearch, icon: ScrollText },
-    { key: "archive", label: S.pr13.archiveTitle, icon: Archive },
-    { key: "sessions", label: S.pr13.sessionsTitle, icon: Monitor },
-  ];
+// Admin tabs: `perm` any-of, like NAV_ITEMS. `demoOnly` tabs write only to the simulation and
+// are hidden in live mode — a control that writes nowhere is never shown as if it worked.
+export const ADMIN_TABS = [
+  { key: "reports", icon: BarChart3, perm: ["audit.view", "users.manage", "structure.manage"], label: (S) => S.pr8.reports },
+  { key: "structure", icon: Building2, perm: ["structure.manage"], label: (S) => S.pr7.hierarchy },
+  { key: "staff", icon: Users, perm: ["users.manage", "groups.manage"], label: (S) => S.pr7.staffMatrix },
+  { key: "security", icon: Shield, perm: ["users.manage"], demoOnly: true, label: (S) => S.pr10.inviteTitle },
+  { key: "devices", icon: Radio, perm: ["devices.manage"], label: (S) => S.pr7.devices },
+  { key: "audit", icon: ScrollText, perm: ["audit.view"], label: (S) => S.pr7.auditSearch },
+  { key: "archive", icon: Archive, perm: ["users.manage"], label: (S) => S.pr13.archiveTitle },
+  { key: "sessions", icon: Monitor, perm: ["users.manage"], label: (S) => S.pr13.sessionsTitle },
+];
+
+function AdminPage({ T, S, store, state, lang }) {
+  const perms = state.user?.perms || [];
+  const live = state.live === true;
+  const tabs = ADMIN_TABS.filter((t) => canSee(t, perms) && !(live && t.demoOnly));
+  const [tab, setTab] = useState(tabs[0]?.key ?? null);
+  // A tab the session may not see (its rights changed meanwhile) falls back to the first it may;
+  // with none, nothing is shown.
+  const active = tabs.some((t) => t.key === tab) ? tab : (tabs[0]?.key ?? null);
+  const TABS = tabs.map((t) => ({ key: t.key, label: t.label(S), icon: t.icon }));
   return (
     <div className="space-y-4">
       {/* section tabs */}
       <div className={`flex flex-wrap gap-1.5 rounded-2xl border ${T.border} ${T.card} p-1.5`}>
         {TABS.map((t) => {
-          const I = t.icon; const active = tab === t.key;
+          const I = t.icon; const isActive = active === t.key;
           return (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition ${active ? T.navActive : T.navIdle}`}>
+              className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition ${isActive ? T.navActive : T.navIdle}`}>
               <I size={16} /> <span className="truncate">{t.label}</span>
             </button>
           );
         })}
       </div>
 
-      {tab === "reports" && <AnalyticsPanel T={T} S={S} state={state} />}
-      {tab === "structure" && (
+      {active === "reports" && <AnalyticsPanel T={T} S={S} state={state} />}
+      {active === "structure" && (
         <div className="space-y-4">
           <HierarchyTree T={T} S={S} state={state} />
           <StructureAdmin T={T} S={S} store={store} state={state} />
         </div>
       )}
-      {tab === "staff" && (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <UserAdmin T={T} S={S} store={store} state={state} />
-          <StaffMatrix T={T} S={S} store={store} state={state} />
-        </div>
-      )}
-      {tab === "security" && <InviteManagement T={T} S={S} store={store} state={state} />}
-      {tab === "devices" && <DeviceAdmin T={T} S={S} store={store} state={state} />}
-      {tab === "audit" && (
+      {active === "staff" && (live
+        ? <LiveStaffTab T={T} S={S} lang={lang} store={store} state={state} />
+        : (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <UserAdmin T={T} S={S} store={store} state={state} />
+            <StaffMatrix T={T} S={S} store={store} state={state} />
+          </div>
+        ))}
+      {active === "security" && <InviteManagement T={T} S={S} store={store} state={state} />}
+      {active === "devices" && <DeviceAdmin T={T} S={S} store={store} state={state} />}
+      {active === "audit" && (
         <div className="space-y-4">
           <BreakGlassReview T={T} S={S} store={store} state={state} />
           <AuditLog T={T} S={S} state={state} />
         </div>
       )}
-      {tab === "archive" && <ArchiveManagement T={T} S={S} store={store} state={state} />}
-      {tab === "sessions" && <SessionManagement T={T} S={S} store={store} state={state} />}
+      {active === "archive" && <ArchiveManagement T={T} S={S} store={store} state={state} />}
+      {active === "sessions" && <SessionManagement T={T} S={S} store={store} state={state} />}
     </div>
   );
 }
@@ -2660,7 +2889,7 @@ function UserRow({ T, S, store, state, u }) {
       {err && <div className="mt-2 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-500">{err}</div>}
 
       {modal === "role" && (
-        <ActionOverlay T={T} title={S.pr12.roleChangeTitle} onClose={() => setModal(null)}>
+        <ActionOverlay T={T} title={S.pr12.roleChangeTitle} closeLabel={S.close} onClose={() => setModal(null)}>
           <p className={`mb-2 text-sm ${T.muted}`}>{S.pr12.roleChangeHint}</p>
           <Field T={T} label={S.pr12.roleLabel}>
             <select className={inputCls(T)} value={selRole} onChange={(e) => setSelRole(e.target.value)} autoFocus>
@@ -2675,7 +2904,7 @@ function UserRow({ T, S, store, state, u }) {
       )}
 
       {modal === "password" && (
-        <ActionOverlay T={T} title={S.pr8.resetPassword} onClose={() => { setModal(null); setPw(""); }}>
+        <ActionOverlay T={T} title={S.pr8.resetPassword} closeLabel={S.close} onClose={() => { setModal(null); setPw(""); }}>
           <Field T={T} label={S.pr8.newPasswordLabel}>
             <input type="text" className={inputCls(T)} value={pw} onChange={(e) => setPw(e.target.value)} autoFocus />
           </Field>
@@ -2685,7 +2914,7 @@ function UserRow({ T, S, store, state, u }) {
       )}
 
       {modal === "pin" && (
-        <ActionOverlay T={T} title={S.pr8.setTempPin} onClose={() => { setModal(null); setPinResult(""); }}>
+        <ActionOverlay T={T} title={S.pr8.setTempPin} closeLabel={S.close} onClose={() => { setModal(null); setPinResult(""); }}>
           <p className={`mb-2 text-sm ${T.muted}`}>{S.pr8.tempPinIssued}</p>
           <div className={`flex items-center justify-between gap-2 rounded-xl border ${T.border} ${T.subtle} px-4 py-3`}>
             <span className={`font-mono text-2xl font-bold tracking-[0.3em] ${T.heading}`}>{pinResult}</span>
@@ -2695,7 +2924,7 @@ function UserRow({ T, S, store, state, u }) {
       )}
 
       {modal === "units" && (
-        <ActionOverlay T={T} title={S.pr8.unitAccess} onClose={() => setModal(null)}>
+        <ActionOverlay T={T} title={S.pr8.unitAccess} closeLabel={S.close} onClose={() => setModal(null)}>
           <p className={`mb-2 text-sm ${T.muted}`}>{S.pr8.selectUnits}</p>
           <div className="space-y-1.5">
             {units.length === 0 && <div className={`text-sm ${T.faint}`}>{S.pr8.noUnits}</div>}
@@ -3914,18 +4143,23 @@ export function ClinicalDemo({ store: injectedStore = null }) {
   }, [theme]);
 
   // MFA kapısı: şifre doğru ama rol iki adımlı doğrulama gerektiriyor (Madde 6).
-  if (state.mfaPending) return <MfaGate T={T} S={S} store={store} pending={state.mfaPending} lang={lang} setLang={setLang} />;
-  if (!state.user) return <Login T={T} S={S} store={store} lang={lang} setLang={setLang} />;
+  if (state.mfaPending) {
+    return <MfaGate T={T} S={S} store={store} pending={state.mfaPending} lang={lang} setLang={setLang}
+      live={state.live === true} />;
+  }
+  if (!state.user) {
+    return <Login T={T} S={S} store={store} lang={lang} setLang={setLang} sessionError={state.sessionError || null} />;
+  }
 
   // Kurum kurulum sihirbazı: platform ilk kez kuruluyorsa yönetici girişinde gösterilir (Madde 5).
   if (state.user.role === ROLE.HOSPITAL_ADMIN && !state.tenantSetup) {
     return <SetupWizard T={T} S={S} store={store} lang={lang} setLang={setLang} />;
   }
 
-  // guard: page not permitted for the current role → fall back to board.
-  const role = state.user.role;
+  // guard: page not permitted by the session's permissions → fall back to board.
+  const perms = state.user.perms || [];
   const activeItem = NAV_ITEMS.find((i) => i.key === page);
-  const effectivePage = activeItem && canSee(activeItem, role) ? page : "board";
+  const effectivePage = activeItem && canSee(activeItem, perms) ? page : "board";
 
   const openTransfer = (pid) => { setTransferPatient(pid); setPage("admission"); };
 
@@ -3978,7 +4212,7 @@ export function ClinicalDemo({ store: injectedStore = null }) {
           {effectivePage === "alarms" && <AlarmPage T={T} S={S} store={store} state={state} lang={lang} />}
           {effectivePage === "results" && <ResultsInbox T={T} S={S} store={store} state={state} />}
           {effectivePage === "heatmap" && <HeatmapPage T={T} S={S} store={store} state={state} />}
-          {effectivePage === "admin" && <AdminPage T={T} S={S} store={store} state={state} />}
+          {effectivePage === "admin" && <AdminPage T={T} S={S} store={store} state={state} lang={lang} />}
         </main>
       </div>
       {drawerPatient && (

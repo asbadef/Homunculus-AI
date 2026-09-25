@@ -49,13 +49,26 @@ describe("permission keys", () => {
   });
 
   it("derives a display role from permissions, most privileged first", () => {
-    expect(uiRoleFromPerms(["users.manage", "board.view"])).toBe(ROLE.HOSPITAL_ADMIN);
+    expect(uiRoleFromPerms([...PERMISSION_KEYS])).toBe(ROLE.HOSPITAL_ADMIN);
+    expect(uiRoleFromPerms([...PERMISSION_KEYS].reverse())).toBe(ROLE.HOSPITAL_ADMIN);
     expect(uiRoleFromPerms(["admissions.sign_off"])).toBe(ROLE.ATTENDING);
     expect(uiRoleFromPerms(["admissions.admit"])).toBe(ROLE.CHARGE_NURSE);
     expect(uiRoleFromPerms(["alerts.escalate"])).toBe(ROLE.RRT);
     expect(uiRoleFromPerms(["devices.manage"])).toBe(ROLE.BIOMEDICAL);
     expect(uiRoleFromPerms(["admissions.view"])).toBe(ROLE.PHARMACIST);
     expect(uiRoleFromPerms([])).toBeNull();
+  });
+
+  it("shows the administrator only for the whole catalogue, never for a user manager", () => {
+    // A staff desk holding users.manage (even with groups.manage) is not displayed as an
+    // administrator: the icon would claim rights the session does not have.
+    expect(uiRoleFromPerms(["users.manage", "board.view"])).not.toBe(ROLE.HOSPITAL_ADMIN);
+    expect(uiRoleFromPerms(["users.manage", "groups.manage", "board.view"])).toBeNull();
+    expect(uiRoleFromPerms(PERMISSION_KEYS.filter((k) => k !== "devices.manage")))
+      .toBe(ROLE.ATTENDING);
+    // Duplicates or unknown extras do not make an incomplete set whole.
+    expect(uiRoleFromPerms([...PERMISSION_KEYS.slice(1), "x.y", "x.y"])).not.toBe(ROLE.HOSPITAL_ADMIN);
+    expect(uiRoleFromPerms(null)).toBeNull();
   });
 });
 

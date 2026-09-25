@@ -1,0 +1,376 @@
+// dashboard/src/ClinicalDemo.rbac.test.jsx — the clinical workspace against a live store (the real
+// createLiveStore over a fake API) and against the simulation: navigation by permission, the MFA
+// enrolment gate, alarm acknowledgement, the session error on the login screen, the user's own
+// password change and the live staff tab. Synthetic data only; no real account, token or secret.
+import React from "react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
+import { ClinicalDemo } from "./ClinicalDemo.jsx";
+import { createLiveStore } from "./liveStore.js";
+import { createDemoStore, buildRealisticState, ROLE, TIER } from "./clinicalDemo.js";
+import { cstrings } from "./clinicalI18n.js";
+import { PERMISSION_KEYS } from "./permissions.js";
+
+const S = cstrings("tr");
+const R = S.rbac;
+
+beforeEach(() => { localStorage.setItem("homunculus-clang", "tr"); });
+afterEach(() => { localStorage.clear(); });
+
+/** An unsigned JWT-shaped token — the client only decodes the payload. */
+function tokenWith(payload) {
+  const b64 = (o) => {
+    const bytes = new TextEncoder().encode(JSON.stringify(o));
+    let binary = "";
+    for (const b of bytes) binary += String.fromCharCode(b);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  };
+  return `${b64({ alg: "HS256" })}.${b64(payload)}.sig`;
+}
+const apiError = (message, status) => Object.assign(new Error(message), { status });
+
+const ADMIN = { tenant: "t1", groups: ["hospital_admin"], perms: [...PERMISSION_KEYS],
+                mfa_required: true, mfa_verified: true };
+const NURSE = { tenant: "t1", groups: ["nurse"], perms: ["board.view", "alerts.ack", "admissions.view"] };
+// The API may answer `email: null` (UserMeResponse.email is optional).
+const ME = { id: "u-1", username: "deniz", email: null, full_name: "Deniz Yönetici", auth_source: "local",
+             totp_enabled: true, groups: [{ slug: "hospital_admin", name: "Sistem Yöneticisi" }],
+             perms: [...PERMISSION_KEYS] };
+const SECRET = "JBSWY3DPEHPK3PXP";
+const ALERT_BOARD = { patients: [{ patient_id: "bed-3", risk: "high", latest: {},
+  alerts: [{ kind: "sepsis", severity: "high", summary: "Canlı test alarmı" }] }] };
+
+/** A fake backendApi: it hands out `token` the way the real client stores its pair. */
+function liveApi({ session = ADMIN } = {}) {
+  let token = null;
+  const api = {
+    setToken: (payload) => { token = payload ? tokenWith(payload) : null; },
+    accessToken: vi.fn(() => token),
+    login: vi.fn(async () => { token = tokenWith(session); return { access_token: token, requires_mfa: false }; }),
+    logout: vi.fn(() => { token = null; }),
+    me: vi.fn(async () => ME),
+    verifyTotp: vi.fn(async () => { token = tokenWith(session); return { access_token: token }; }),
+    setupTotp: vi.fn(async () => ({ provisioning_uri: `otpauth://totp/Homunculus:deniz?secret=${SECRET}&issuer=Homunculus` })),
+    boardPatients: vi.fn(async () => ({ patients: [] })),
+    streamTicket: vi.fn(async () => ({ ticket: "t" })),
+    acknowledge: vi.fn(async () => ({})),
+    changePassword: vi.fn(async () => ({ access_token: token })),
+    adminUsers: vi.fn(async () => []),
+    adminGroups: vi.fn(async () => []),
+    adminPermissions: vi.fn(async () => []),
+  };
+  return api;
+}
+const liveStore = (api) => createLiveStore({ api, base: createDemoStore(buildRealisticState()),
+                                             openStream: () => () => {} });
+
+/** A live session waiting at the MFA gate. */
+async function atGate({ enrolled }) {
+  const api = liveApi();
+  api.login.mockImplementation(async () => {
+    api.setToken({ ...ADMIN, mfa_verified: false });
+    return { access_token: api.accessToken(), requires_mfa: true, mfa_enrolled: enrolled };
+  });
+  const store = liveStore(api);
+  await store.attemptLogin("deniz", "gizli-parola");
+  return { api, store };
+}
+
+async function signedIn(options) {
+  const api = liveApi(options);
+  const store = liveStore(api);
+  await store.attemptLogin("deniz", "gizli-parola");
+  return { api, store };
+}
+
+/** Render a signed-in live workspace and let its board load and stream start (outside of which
+ *  the store's updates would land after the test). */
+async function renderLive(store, api) {
+  const view = render(<ClinicalDemo store={store} />);
+  await waitFor(() => expect(api.streamTicket).toHaveBeenCalled());
+  return view;
+}
+
+const navButton = (key) => screen.getByRole("button", { name: S.nav[key] });
+const cardOf = (text) => screen.getByText(text).closest(".rounded-xl");
+
+// ------------------------------------------------------------------------------ render in both modes
+describe("the workspace renders in both modes", () => {
+  it("simulation: the login screen, then the attending's permitted pages", () => {
+    const { unmount } = render(<ClinicalDemo />);
+    expect(screen.getByRole("heading", { name: S.loginTitle })).toBeInTheDocument();
+    unmount();
+
+    const store = createDemoStore(buildRealisticState());
+    store.loginAs(ROLE.ATTENDING);
+    render(<ClinicalDemo store={store} />);
+    for (const key of ["board", "admission", "care", "alarms", "results", "heatmap"]) {
+      expect(navButton(key)).toBeInTheDocument();
+    }
+    expect(screen.queryByRole("button", { name: S.nav.admin })).toBeNull();
+    // The simulation keeps its fast PIN switch.
+    expect(screen.getByTitle(S.pr7.fastSwitch)).toBeInTheDocument();
+  });
+
+  it("live: navigation follows the token's permissions", async () => {
+    const { api, store } = await signedIn({ session: NURSE });
+    await renderLive(store, api);
+    expect(navButton("board")).toBeInTheDocument();
+    expect(navButton("results")).toBeInTheDocument();       // admissions.view
+    expect(screen.queryByRole("button", { name: S.nav.admission })).toBeNull();
+    expect(screen.queryByRole("button", { name: S.nav.care })).toBeNull();
+    expect(screen.queryByRole("button", { name: S.nav.admin })).toBeNull();
+    // The simulation-only PIN switch is not offered against the real backend.
+    expect(screen.queryByTitle(S.pr7.fastSwitch)).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------------------ MFA gate
+describe("the MFA gate", () => {
+  it("enrols once per showing, even under StrictMode, with the QR drawn locally and the manual key", async () => {
+    const { api, store } = await atGate({ enrolled: false });
+    render(<React.StrictMode><ClinicalDemo store={store} /></React.StrictMode>);
+
+    expect(await screen.findByText("JBSW Y3DP EHPK 3PXP")).toBeInTheDocument();
+    expect(screen.getByText(R.mfaManualKey)).toBeInTheDocument();
+    const qr = await screen.findByAltText("TOTP QR");
+    expect(qr.getAttribute("src")).toMatch(/^data:image\//);   // rendered in the page, not fetched
+    // setupMfa ROTATES the secret: a second call would make the key on screen stale.
+    expect(api.setupTotp).toHaveBeenCalledTimes(1);
+    // The simulation's demo hint is not shown against the real backend.
+    expect(screen.queryByText(S.pr11.mfaDemoHint)).toBeNull();
+  });
+
+  it("shows the API's refusal to enrol, translated", async () => {
+    const { api, store } = await atGate({ enrolled: false });
+    api.setupTotp.mockRejectedValueOnce(apiError("mfa_reset_required", 403));
+    render(<ClinicalDemo store={store} />);
+    expect(await screen.findByText(R.err.mfaResetRequired)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: S.pr11.mfaGateTitle })).toBeInTheDocument();
+  });
+
+  it("an enrolled user is not enrolled again", async () => {
+    const { api, store } = await atGate({ enrolled: true });
+    render(<ClinicalDemo store={store} />);
+    expect(screen.getByRole("heading", { name: S.pr11.mfaGateTitle })).toBeInTheDocument();
+    await act(async () => {});
+    expect(api.setupTotp).not.toHaveBeenCalled();
+    expect(screen.queryByText(R.mfaManualKey)).toBeNull();
+  });
+
+  it.each([
+    [401, "Invalid TOTP code", "invalidTotp"],
+    [401, "Bu kod zaten kullanıldı; yeni kodu bekleyin.", "totpReplayed"],
+    [429, "Çok fazla hatalı kod. 5 dakika sonra tekrar deneyin.", "totpLocked"],
+  ])("a refused code (%i) is shown translated and the gate stays open", async (status, message, key) => {
+    const { api, store } = await atGate({ enrolled: true });
+    api.verifyTotp.mockRejectedValueOnce(apiError(message, status));
+    localStorage.setItem("homunculus-clang", "en");
+    const E = cstrings("en");
+    render(<ClinicalDemo store={store} />);
+
+    fireEvent.change(screen.getByLabelText(E.pr11.mfaCodeLabel), { target: { value: "000000" } });
+    fireEvent.click(screen.getByRole("button", { name: E.pr11.mfaVerifyCta }));
+
+    expect(await screen.findByText(E.rbac.err[key])).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: E.pr11.mfaGateTitle })).toBeInTheDocument();
+    expect(store.getState().user).toBeNull();
+  });
+
+  it("a verified code opens the workspace", async () => {
+    const { api, store } = await atGate({ enrolled: true });
+    render(<ClinicalDemo store={store} />);
+    fireEvent.change(screen.getByLabelText(S.pr11.mfaCodeLabel), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: S.pr11.mfaVerifyCta }));
+    expect(await screen.findByRole("button", { name: S.nav.admin })).toBeInTheDocument();
+    expect(api.verifyTotp).toHaveBeenCalledWith("123456");
+  });
+
+  it("the simulation's enrolment still works, synchronously", async () => {
+    const store = createDemoStore(buildRealisticState());
+    store.attemptLogin("dr.can.ozturk@homunculus.health", "Hekim.Can2025!");   // MFA required, not enrolled
+    render(<ClinicalDemo store={store} />);
+    expect(await screen.findByText(R.mfaManualKey)).toBeInTheDocument();
+    expect(screen.getByText(S.pr11.mfaDemoHint)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(S.pr11.mfaCodeLabel), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: S.pr11.mfaVerifyCta }));
+    expect(await screen.findByRole("button", { name: S.nav.alarms })).toBeInTheDocument();
+  });
+});
+
+// ------------------------------------------------------------------------------ acknowledgement
+describe("acknowledging an alarm", () => {
+  const openAck = async (summary) => {
+    fireEvent.click(navButton("alarms"));
+    fireEvent.click(within(await waitFor(() => cardOf(summary))).getByRole("button", { name: S.ack }));
+    return screen.getByRole("dialog", { name: S.ackTitle });
+  };
+
+  it("live: a refusal keeps the dialog open and says which right is missing", async () => {
+    const { api, store } = await signedIn();
+    api.boardPatients.mockResolvedValue(ALERT_BOARD);
+    let answer;
+    api.acknowledge
+      .mockRejectedValueOnce(apiError("permission required: alerts.ack", 403))
+      .mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    render(<ClinicalDemo store={store} />);
+
+    const dialog = await openAck("Canlı test alarmı");
+    fireEvent.click(within(dialog).getByRole("button", { name: S.confirm }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      R.err.permissionRequired.replace("{perms}", R.perm["alerts.ack"]));
+    expect(screen.getByRole("dialog", { name: S.ackTitle })).toBeInTheDocument();
+
+    // A second try: the buttons wait while the request is in flight, then the dialog closes.
+    fireEvent.click(within(dialog).getByRole("button", { name: S.confirm }));
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: S.confirm })).toBeDisabled());
+    expect(within(dialog).getByRole("button", { name: S.cancel })).toBeDisabled();
+    await act(async () => { answer({}); });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: S.ackTitle })).toBeNull());
+    expect(api.acknowledge).toHaveBeenCalledWith("bed-3", "sepsis");
+  });
+
+  it("simulation: an acknowledgement closes the dialog; a refused one keeps it open", async () => {
+    const store = createDemoStore(buildRealisticState());
+    store.loginAs(ROLE.ATTENDING);
+    const patientId = store.getState().patients[0].patient_id;
+    store.fireAlert({ patientId, tier: TIER.CRITICAL, summary: "Kritik test alarmı" });
+    store.fireAlert({ patientId, tier: TIER.HIGH, summary: "Yüksek test alarmı" });
+    render(<ClinicalDemo store={store} />);
+
+    // CRITICAL needs a note: the simulation refuses synchronously, and the dialog stays.
+    let dialog = await openAck("Kritik test alarmı");
+    fireEvent.click(within(dialog).getByRole("button", { name: S.confirm }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/Kritik alarm onayı/);
+    fireEvent.click(within(dialog).getByRole("button", { name: S.cancel }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    dialog = await openAck("Yüksek test alarmı");
+    fireEvent.click(within(dialog).getByRole("button", { name: S.confirm }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const acked = store.getState().alerts.find((a) => a.summary === "Yüksek test alarmı");
+    expect(acked.status).toBe("ACKNOWLEDGED");
+  });
+});
+
+// ------------------------------------------------------------------------------ session error
+describe("the session error on the login screen", () => {
+  it("says the server is unreachable and the session is kept, and retries once at a time", async () => {
+    const api = liveApi();
+    api.setToken(ADMIN);                                   // a stored session from an earlier load
+    api.me.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const store = liveStore(api);
+    await store.restoreSession();
+    let answer;
+    api.me.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    render(<ClinicalDemo store={store} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(R.err.sessionUnreachable);
+    const retry = screen.getByRole("button", { name: R.retry });
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+    expect(api.me).toHaveBeenCalledTimes(2);               // the first load and ONE retry
+    expect(retry).toBeDisabled();
+
+    await act(async () => { answer(ME); });
+    expect(await screen.findByRole("button", { name: S.nav.admin })).toBeInTheDocument();
+    expect(api.logout).not.toHaveBeenCalled();
+  });
+
+  it("a sign-in error is shown translated", async () => {
+    const api = liveApi();
+    api.login.mockRejectedValueOnce(apiError("Invalid credentials", 401));
+    localStorage.setItem("homunculus-clang", "ru");
+    const RU = cstrings("ru");
+    render(<ClinicalDemo store={liveStore(api)} />);
+    fireEvent.change(screen.getByLabelText(RU.email), { target: { value: "deniz" } });
+    fireEvent.change(screen.getByLabelText(RU.pr7.loginPinLabel), { target: { value: "yanlis" } });
+    fireEvent.click(screen.getByRole("button", { name: RU.signIn }));
+    expect(await screen.findByText(RU.rbac.err.invalidCredentials)).toBeInTheDocument();
+  });
+});
+
+// ------------------------------------------------------------------------------ own account
+describe("the user menu (live)", () => {
+  const openPasswordDialog = () => {
+    fireEvent.click(screen.getByRole("button", { name: /Deniz Yönetici/ }));
+    fireEvent.click(screen.getByRole("button", { name: R.changeOwnPassword }));
+    const dialog = screen.getByRole("dialog", { name: R.changeOwnPassword });
+    const field = (label) => within(dialog).getByLabelText(label);
+    return { dialog, current: field(R.currentPassword), next: field(R.newPassword), again: field(R.repeatPassword),
+             save: within(dialog).getByRole("button", { name: R.save }) };
+  };
+  const type = (el, value) => fireEvent.change(el, { target: { value } });
+
+  it("shows the username when the account has no e-mail, and the groups", async () => {
+    const { api, store } = await signedIn();
+    await renderLive(store, api);
+    fireEvent.click(screen.getByRole("button", { name: /Deniz Yönetici/ }));
+    expect(screen.getByText("deniz")).toBeInTheDocument();
+    expect(screen.getByText("Sistem Yöneticisi")).toBeInTheDocument();
+  });
+
+  it("changes the user's own password with masked fields that are cleared after use", async () => {
+    const { api, store } = await signedIn();
+    await renderLive(store, api);
+    const { dialog, current, next, again, save } = openPasswordDialog();
+    for (const el of [current, next, again]) expect(el).toHaveAttribute("type", "password");
+
+    type(current, "eski-parola"); type(next, "yeni-parola-1"); type(again, "yeni-parola-2");
+    fireEvent.click(save);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(R.passwordMismatch);
+    expect(api.changePassword).not.toHaveBeenCalled();
+
+    type(again, "yeni-parola-1");
+    fireEvent.click(save);
+    expect(await within(dialog).findByText(R.passwordChanged)).toBeInTheDocument();
+    expect(api.changePassword).toHaveBeenCalledWith("eski-parola", "yeni-parola-1");
+    for (const el of [current, next, again]) expect(el).toHaveValue("");
+  });
+
+  it("an Active Directory account gets the translated refusal", async () => {
+    const { api, store } = await signedIn();
+    api.changePassword.mockRejectedValueOnce(apiError("Parola Active Directory tarafından yönetiliyor", 400));
+    render(<ClinicalDemo store={store} />);
+    const { dialog, current, next, again, save } = openPasswordDialog();
+    type(current, "eski-parola"); type(next, "yeni-parola-1"); type(again, "yeni-parola-1");
+    fireEvent.click(save);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(R.err.directoryPassword);
+    for (const el of [current, next, again]) expect(el).toHaveValue("");
+  });
+
+  it("the dialog's close button is named in the UI language", async () => {
+    const { api, store } = await signedIn();
+    await renderLive(store, api);
+    const { dialog } = openPasswordDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: S.close }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------------------ live staff tab
+describe("the admin page (live)", () => {
+  it("shows the live staff tab, re-reads the rights and hides simulation-only tabs", async () => {
+    const { api, store } = await signedIn();
+    await renderLive(store, api);
+    fireEvent.click(navButton("admin"));
+    expect(screen.queryByRole("button", { name: S.pr10.inviteTitle })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: S.pr7.staffMatrix }));
+
+    await waitFor(() => expect(api.adminUsers).toHaveBeenCalledTimes(1));
+    expect(api.me).toHaveBeenCalledTimes(2);              // sign-in, then the rights re-read
+    expect((await screen.findAllByText(R.usersTitle)).length).toBeGreaterThan(0);
+    expect(screen.getByText(R.groupsTitle)).toBeInTheDocument();
+  });
+
+  it("the simulation keeps its own staff screens", () => {
+    const store = createDemoStore(buildRealisticState());
+    store.loginAs(ROLE.HOSPITAL_ADMIN);
+    store.completeTenantSetup();
+    render(<ClinicalDemo store={store} />);
+    fireEvent.click(navButton("admin"));
+    expect(screen.getByRole("button", { name: S.pr10.inviteTitle })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: S.pr7.staffMatrix }));
+    expect(screen.queryByText(R.groupsTitle)).toBeNull();      // no live panels in the simulation
+  });
+});

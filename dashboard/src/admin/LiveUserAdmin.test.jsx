@@ -423,6 +423,30 @@ describe("LiveStaffTab", () => {
     expect(screen.getByText("Gruplar ve İzinler")).toBeInTheDocument();
   });
 
+  it("re-reads the session's rights from the server before it loads", async () => {
+    // The hints must reflect the database's rights (/auth/me), not an older token's; loadAdmin
+    // then asks for what those rights cover.
+    const calls = [];
+    const store = {
+      refreshRights: vi.fn(async () => { calls.push("rights"); return true; }),
+      loadAdmin: vi.fn(async () => { calls.push("load"); }),
+    };
+    render(<LiveStaffTab T={T} S={S} store={store} state={tabState()} />);
+    await loaded();
+    expect(store.refreshRights).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(["rights", "load"]);
+  });
+
+  it("still loads when re-reading the rights fails", async () => {
+    const store = {
+      refreshRights: vi.fn(async () => { throw new Error("boom"); }),
+      loadAdmin: vi.fn(async () => {}),
+    };
+    render(<LiveStaffTab T={T} S={S} store={store} state={tabState()} />);
+    await loaded();
+    expect(store.loadAdmin).toHaveBeenCalledTimes(1);
+  });
+
   it("says it is loading until the data arrives", async () => {
     let finish;
     const store = { loadAdmin: vi.fn(() => new Promise((resolve) => { finish = resolve; })) };

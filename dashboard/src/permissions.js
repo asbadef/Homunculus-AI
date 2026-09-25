@@ -74,10 +74,12 @@ export function hasAny(perms, keys) {
   return Array.isArray(perms) && keys.some((k) => perms.includes(k));
 }
 
-/** A DISPLAY role for icons and labels only — never used to gate anything. */
+/** A DISPLAY role for icons and labels only — never used to gate anything. The administrator is
+ *  shown only for the whole catalogue (the system group's rule): a user manager holding
+ *  users.manage is not displayed as an administrator. */
 export function uiRoleFromPerms(perms) {
   const p = Array.isArray(perms) ? perms : [];
-  if (p.includes("users.manage")) return "HOSPITAL_ADMIN";
+  if (PERMISSION_KEYS.every((k) => p.includes(k))) return "HOSPITAL_ADMIN";
   if (p.includes("admissions.sign_off")) return "ATTENDING";
   if (p.includes("admissions.admit")) return "CHARGE_NURSE";
   if (p.includes("alerts.escalate")) return "RRT";

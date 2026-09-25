@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createLiveStore, SESSION_UNREACHABLE } from "./liveStore.js";
 import { ROLE } from "./clinicalDemo.js";
 import { accessProblem } from "./liveAuth.js";
+import { PERMISSION_KEYS } from "./permissions.js";
 
 // accessProblem is wrapped (it keeps its real behaviour) so one test can make it answer a reason
 // code that does not exist yet, and prove the store refuses codes it has never heard of.
@@ -28,7 +29,8 @@ function apiError(message, props = {}) {
   return Object.assign(new Error(message), props);
 }
 
-const ADMIN_PERMS = ["board.view", "alerts.ack", "users.manage", "groups.manage"];
+// The system group holds the whole catalogue (the backend's rule at token issuance).
+const ADMIN_PERMS = [...PERMISSION_KEYS];
 const adminToken = tokenWith({ tenant: "t1", groups: ["hospital_admin"], perms: ADMIN_PERMS });
 const nurseToken = tokenWith({ tenant: "t1", groups: ["nurse"], perms: ["board.view", "alerts.ack", "admissions.admit"] });
 const biomedToken = tokenWith({ tenant: "t1", groups: ["biomedical"], perms: ["devices.manage"] });
@@ -331,5 +333,143 @@ describe("liveStore — session survives a page reload", () => {
     await store.attemptLogin("admin", "gizli");
 
     expect(store.getState().sessionError).toBeNull();
+  });
+});
+
+describe("liveStore — the session's rights stay current", () => {
+  const NURSE_ME = { ...ME, id: "u-nurse", username: "ayse", full_name: "Ayşe Demir",
+                     groups: [{ slug: "nurse", name: "Hemşire" }] };
+  const NURSE = { tenant: "t1", groups: ["nurse"], perms: ["board.view", "alerts.ack"] };
+  const WIDER = { tenant: "t1", groups: ["nurse", "charge_nurse"],
+                  perms: ["board.view", "alerts.ack", "admissions.admit"] };
+
+  /** A signed-in nurse whose API hands out `current` as the access token, the way backendApi
+   *  does after a transparent refresh. */
+  async function signedIn(extra = {}) {
+    let current = tokenWith(NURSE);
+    const api = {
+      ...fakeApi({
+        login: vi.fn(async () => ({ access_token: current, requires_mfa: false })),
+        me: vi.fn(async () => NURSE_ME),
+        accessToken: vi.fn(() => current),
+      }),
+      boardPatients: vi.fn(async () => ({ patients: [] })),
+      acknowledge: vi.fn(async () => ({})),
+      ...extra,
+    };
+    const store = createLiveStore({ api, base: fakeBase() });
+    await store.attemptLogin("ayse", "gizli");
+    return { api, store, setToken: (payload) => { current = tokenWith(payload); } };
+  }
+
+  it("does not display a user manager as an administrator", async () => {
+    const desk = tokenWith({ tenant: "t1", groups: ["desk"], perms: ["board.view", "users.manage", "groups.manage"] });
+    const store = createLiveStore({ api: fakeApi({ login: vi.fn(async () => ({ access_token: desk })) }),
+                                    base: fakeBase() });
+    await store.attemptLogin("desk", "gizli");
+    expect(store.getState().user.role).toBeNull();
+    expect(store.getState().user.perms).toContain("users.manage");
+  });
+
+  it("re-derives the rights from a token refreshed during a call", async () => {
+    const { api, store, setToken } = await signedIn();
+    expect(store.getState().user.perms).toEqual(NURSE.perms);
+    api.boardPatients.mockImplementationOnce(async () => { setToken(WIDER); return { patients: [] }; });
+    const seen = vi.fn();
+    store.subscribe(seen);
+
+    await store.refreshBoard();
+
+    const user = store.getState().user;
+    expect(user.perms).toEqual(WIDER.perms);
+    expect(user.groups).toEqual(WIDER.groups);
+    expect(user.role).toBe(ROLE.CHARGE_NURSE);
+    // A refreshed token names groups by slug; a name the last profile did not give stays the slug.
+    expect(user.groupNames).toEqual(["Hemşire", "charge_nurse"]);
+    expect(user.id).toBe("u-nurse");
+    expect(seen).toHaveBeenCalled();
+  });
+
+  it("re-reads the rights after a refused call too", async () => {
+    const { api, store, setToken } = await signedIn();
+    api.acknowledge.mockImplementationOnce(async () => {
+      setToken({ ...NURSE, perms: ["board.view"] });
+      throw apiError("permission required: alerts.ack", { status: 403 });
+    });
+    await expect(store.acknowledgeAlert("bed-1::sepsis")).rejects.toThrow("alerts.ack");
+    expect(store.getState().user.perms).toEqual(["board.view"]);
+  });
+
+  it("keeps the same user object when a refreshed token carries the same rights", async () => {
+    const { api, store, setToken } = await signedIn();
+    const before = store.getState().user;
+    api.boardPatients.mockImplementationOnce(async () => {
+      setToken({ ...NURSE, exp: 9999999999 });        // a new token, the same rights
+      return { patients: [] };
+    });
+    await store.refreshBoard();
+    expect(store.getState().user).toBe(before);
+  });
+
+  it("re-reads the rights from the fresh pair a password change returns", async () => {
+    const { store, setToken } = await signedIn({
+      changePassword: vi.fn(async () => { setToken(WIDER); return { access_token: "x" }; }),
+    });
+    await store.changePassword("eski", "yeni-parola-1");
+    expect(store.getState().user.perms).toEqual(WIDER.perms);
+  });
+
+  it("refreshRights re-reads the database's rights from /auth/me", async () => {
+    const { api, store } = await signedIn();
+    api.me.mockResolvedValueOnce({ ...NURSE_ME, perms: WIDER.perms,
+      groups: [{ slug: "nurse", name: "Hemşire" }, { slug: "charge_nurse", name: "Sorumlu Hemşire" }] });
+
+    expect(await store.refreshRights()).toBe(true);
+
+    const user = store.getState().user;
+    expect(user.perms).toEqual(WIDER.perms);
+    expect(user.groups).toEqual(["nurse", "charge_nurse"]);
+    expect(user.groupNames).toEqual(["Hemşire", "Sorumlu Hemşire"]);
+    expect(user.role).toBe(ROLE.CHARGE_NURSE);
+  });
+
+  it("a later call with the same token does not undo what /auth/me said", async () => {
+    const { api, store } = await signedIn();
+    api.me.mockResolvedValueOnce({ ...NURSE_ME, perms: WIDER.perms });
+    await store.refreshRights();
+    await store.refreshBoard();
+    expect(store.getState().user.perms).toEqual(WIDER.perms);
+  });
+
+  it("refreshRights never rejects: on failure the rights stay as they were", async () => {
+    const { api, store } = await signedIn();
+    api.me.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    expect(await store.refreshRights()).toBe(false);
+    expect(store.getState().user.perms).toEqual(NURSE.perms);
+  });
+
+  it("refreshRights ignores a profile without a rights list", async () => {
+    const { api, store } = await signedIn();
+    api.me.mockResolvedValueOnce({ ...NURSE_ME });           // no `perms`
+    expect(await store.refreshRights()).toBe(false);
+    expect(store.getState().user.perms).toEqual(NURSE.perms);
+  });
+
+  it("refreshRights does not reopen a session that ended while it was in flight", async () => {
+    const { api, store } = await signedIn();
+    let answer;
+    api.me.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    const pending = store.refreshRights();
+    store.logout();
+    answer({ ...NURSE_ME, perms: WIDER.perms });
+    expect(await pending).toBe(false);
+    expect(store.getState().user).toBeNull();
+  });
+
+  it("refreshRights does nothing without a session", async () => {
+    const api = fakeApi();
+    const store = createLiveStore({ api, base: fakeBase() });
+    expect(await store.refreshRights()).toBe(false);
+    expect(api.me).not.toHaveBeenCalled();
   });
 });

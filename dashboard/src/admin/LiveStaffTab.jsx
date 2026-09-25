@@ -3,10 +3,11 @@
 // the users with users.manage, the groups with users.manage or groups.manage (read-only without
 // groups.manage) — the same split as liveStore.loadAdmin, which asks only for those.
 //
-// The rights read here are the session token's `perms`. They are not re-read when the tab opens:
-// the store keeps the token's list and exposes no re-read of /auth/me, so an older token can
-// under-report a key added since it was minted, until it refreshes. The panels' rules are hints;
-// the server decides every write.
+// The rights read here are the session's `perms`. When the tab opens it first asks the store to
+// re-read them from /auth/me (`refreshRights`, the DATABASE's rights, which the admin rules
+// check), so an older token that under-reports a key added since it was minted does not grey out
+// what the server allows; then it loads. The panels' rules are hints; the server decides every
+// write.
 import React, { useEffect, useState } from "react";
 import { LiveUserAdmin } from "./LiveUserAdmin.jsx";
 import { GroupAdmin } from "./GroupAdmin.jsx";
@@ -20,7 +21,10 @@ export function LiveStaffTab({ T, S, lang = "tr", store, state }) {
 
   useEffect(() => {
     let current = true;
-    Promise.resolve().then(() => store.loadAdmin())
+    Promise.resolve()
+      .then(() => (typeof store.refreshRights === "function" ? store.refreshRights() : null))
+      .catch(() => {})                 // refreshRights never rejects; the old rights stay if it fails
+      .then(() => store.loadAdmin())
       .catch(() => {})                 // loadAdmin never rejects: a refusal lands in adminError
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
