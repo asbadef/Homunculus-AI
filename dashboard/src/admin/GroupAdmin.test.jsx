@@ -1,6 +1,6 @@
 // dashboard/src/admin/GroupAdmin.test.jsx
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
 import { GroupAdmin } from "./GroupAdmin.jsx";
 import { cstrings } from "../clinicalI18n.js";
 import { getTheme } from "../clinicalTheme.js";
@@ -47,6 +47,14 @@ const row = (slug) => within(screen.getByTestId(`group-${slug}`));
 const editor = () => within(screen.getByTestId("group-editor"));
 const permBox = (label) => editor().getByLabelText(new RegExp(`^${label}`));
 const refusal = (message, extra = {}) => Object.assign(new Error(message), extra);
+/** A store call that stays pending until the test settles it. */
+function pending() {
+  const call = { fn: null, resolve: null, reject: null };
+  call.fn = vi.fn(() => new Promise((res, rej) => { call.resolve = res; call.reject = rej; }));
+  return call;
+}
+// What a groups desk (DESK) lacks of the whole catalogue, as the reason names it.
+const SYSTEM_BEYOND = /^Yetkileriniz bu grubu vermeye yetmiyor\. Eksik yetkiler: .*Nöbet çizelgesi/;
 
 describe("GroupAdmin — list", () => {
   it("lists groups with member counts, flags and translated permission labels", () => {
@@ -121,7 +129,7 @@ describe("GroupAdmin — create and edit", () => {
     });
   });
 
-  it("the system group: name and description editable, rights and MFA read-only", async () => {
+  it("a full-rights session can rename the system group; its rights and MFA stay read-only", async () => {
     const store = setup({ perms: PERMISSION_KEYS });
     fireEvent.click(screen.getByLabelText("Grubu düzenle Sistem Yöneticisi"));
     for (const p of PERMS) {
@@ -134,6 +142,8 @@ describe("GroupAdmin — create and edit", () => {
     expect(mfa).toBeChecked();
     expect(mfa).toBeDisabled();
     expect(editor().getByText(R.err.systemGroupRights)).toBeInTheDocument();
+    expect(screen.getByLabelText("Grup adı")).toBeEnabled();
+    expect(screen.getByLabelText("Açıklama")).toBeEnabled();
     fireEvent.change(screen.getByLabelText("Grup adı"), { target: { value: "Yönetim" } });
     fireEvent.change(screen.getByLabelText("Açıklama"), { target: { value: "BT" } });
     fireEvent.click(screen.getByText("Kaydet"));
@@ -143,27 +153,42 @@ describe("GroupAdmin — create and edit", () => {
     });
   });
 
-  it("a group beyond the session's rights: rights and MFA read-only, no delete, the reason shown", async () => {
+  it("a lesser session sees the system group read-only, labels included", () => {
+    const store = setup();
+    fireEvent.click(screen.getByLabelText("Grubu düzenle Sistem Yöneticisi"));
+    expect(editor().getByText(SYSTEM_BEYOND)).toBeInTheDocument();
+    for (const label of ["Grup adı", "Açıklama", "İki adımlı doğrulama zorunlu"]) {
+      expect(screen.getByLabelText(label)).toBeDisabled();
+      expect(screen.getByLabelText(label)).toHaveAccessibleDescription(SYSTEM_BEYOND);
+    }
+    for (const p of PERMS) expect(editor().getByLabelText(new RegExp(`^${R.perm[p.key]}`))).toBeDisabled();
+    expect(screen.queryByText("Kaydet")).toBeNull();
+    fireEvent.click(editor().getByRole("button", { name: "Vazgeç" }));
+    expect(screen.queryByTestId("group-editor")).toBeNull();
+    expect(store.adminSaveGroup).not.toHaveBeenCalled();
+  });
+
+  it("a lesser session cannot edit a group beyond its rights at all, nor delete it; the reason is shown once", () => {
     const store = setup();
     const reason = "Yetkileriniz bu grubu vermeye yetmiyor. Eksik yetkiler: Nöbet çizelgesi";
     const charge = row("charge_nurse");
     expect(charge.getByText(reason)).toBeInTheDocument();
-    expect(charge.getByLabelText("Sil Sorumlu Hemşire")).toBeDisabled();
+    const del = charge.getByLabelText("Sil Sorumlu Hemşire");
+    expect(del).toBeDisabled();
+    expect(del).toHaveAccessibleDescription(reason);
     fireEvent.click(charge.getByLabelText("Grubu düzenle Sorumlu Hemşire"));
-    expect(editor().getByText(reason)).toBeInTheDocument();
+    expect(editor().getByText(reason)).toBeInTheDocument();          // once: getByText refuses two
+    for (const label of ["Grup adı", "Açıklama", "İki adımlı doğrulama zorunlu"]) {
+      expect(screen.getByLabelText(label)).toBeDisabled();
+      expect(screen.getByLabelText(label)).toHaveAccessibleDescription(reason);
+    }
     for (const label of ["Panoyu görme", "Nöbet çizelgesi", "Kullanıcı yönetimi"]) {
       expect(permBox(label)).toBeDisabled();
       expect(permBox(label)).toHaveAccessibleDescription(reason);
     }
     expect(permBox("Nöbet çizelgesi")).toBeChecked();
-    expect(screen.getByLabelText("İki adımlı doğrulama zorunlu")).toBeDisabled();
-    // The label stays editable; the server has the last word on it.
-    fireEvent.change(screen.getByLabelText("Grup adı"), { target: { value: "Sorumlu" } });
-    fireEvent.click(screen.getByText("Kaydet"));
-    await waitFor(() => expect(store.adminSaveGroup).toHaveBeenCalled());
-    expect(store.adminSaveGroup.mock.calls[0][0]).toMatchObject({
-      id: "g3", name: "Sorumlu", permissions: ["board.view", "shifts.manage"], mfaRequired: false,
-    });
+    expect(screen.queryByText("Kaydet")).toBeNull();
+    expect(store.adminSaveGroup).not.toHaveBeenCalled();
   });
 
   it("a retired key does not make a group look beyond, and is not sent back", async () => {
@@ -202,6 +227,23 @@ describe("GroupAdmin — create and edit", () => {
     expect(screen.queryByText(/Kendi yetkilerinizi/)).toBeNull();
     expect(screen.getByTestId("group-editor")).toBeInTheDocument();
     expect(screen.getByText("Save")).toBeEnabled();
+  });
+
+  it("the editor cannot be closed while a save runs, so a late refusal is still shown", async () => {
+    const save = pending();
+    setup({ store: { adminSaveGroup: save.fn } });
+    fireEvent.click(screen.getByLabelText("Grubu düzenle Hemşire"));
+    fireEvent.click(screen.getByText("Kaydet"));
+    const cancel = editor().getByRole("button", { name: "Vazgeç" });
+    await waitFor(() => expect(cancel).toBeDisabled());
+    expect(screen.getByText("Kaydet")).toBeDisabled();
+    fireEvent.click(cancel);
+    expect(screen.getByTestId("group-editor")).toBeInTheDocument();
+    await act(async () => { save.reject(refusal("Group not found", { status: 404 })); });
+    expect(editor().getByText(R.err.groupNotFound)).toBeInTheDocument();
+    expect(cancel).toBeEnabled();
+    fireEvent.click(cancel);
+    expect(screen.queryByTestId("group-editor")).toBeNull();
   });
 
   it("a 422 is shown field by field and the editor stays open", async () => {
@@ -243,6 +285,20 @@ describe("GroupAdmin — delete", () => {
     fireEvent.click(within(screen.getByTestId("group-delete")).getByRole("button", { name: "Vazgeç" }));
     expect(screen.queryByTestId("group-delete")).toBeNull();
     expect(store.adminDeleteGroup).not.toHaveBeenCalled();
+  });
+
+  it("the confirmation cannot be closed while the delete runs", async () => {
+    const del = pending();
+    setup({ store: { adminDeleteGroup: del.fn } });
+    fireEvent.click(screen.getByLabelText("Sil Hemşire"));
+    const dialog = within(screen.getByTestId("group-delete"));
+    fireEvent.click(dialog.getByRole("button", { name: "Sil" }));
+    const cancel = dialog.getByRole("button", { name: "Vazgeç" });
+    await waitFor(() => expect(cancel).toBeDisabled());
+    fireEvent.click(cancel);
+    expect(screen.getByTestId("group-delete")).toBeInTheDocument();
+    await act(async () => { del.reject(refusal("Üyesi olan grup silinemez", { status: 409 })); });
+    expect(dialog.getByText(R.err.groupHasMembers)).toBeInTheDocument();
   });
 
   it("surfaces the server's 409 translated, and keeps the confirmation open", async () => {

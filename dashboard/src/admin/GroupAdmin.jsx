@@ -6,11 +6,16 @@
 // re-checks every write (its members-aware rule included, which the client cannot see) and its
 // refusal — 403, 409, 422 — is shown through translateApiError, with the form kept open.
 //   - Without groups.manage the list is read-only (a users.manage desk lists groups to assign).
-//   - The system group holds the whole catalogue by rule: its rights and MFA rule are read-only,
-//     its name and description editable, and it is never offered for deletion.
-//   - A group whose rights the session does not cover: rights and MFA read-only, no deletion,
-//     with the reason. Its labels stay editable; the server decides those.
+//   - A group whose rights the session does not cover is read-only, labels included, and cannot
+//     be deleted; the reason (cannotGrantReason) is shown once. The server checks the group's
+//     current rights before looking at any field (admin/service.py `update_group`), so even a
+//     rename of such a group is refused (403): offering it would be a dead end.
+//   - The system group holds the whole catalogue by rule, so only a session holding the whole
+//     catalogue covers it. That session may edit its name and description; its rights and MFA
+//     rule stay read-only, and it is never offered for deletion. Anyone else sees it read-only.
 //   - A new or editable group is offered only the keys the session holds.
+//   - While a save or delete is in flight its form cannot be closed, so a refusal arriving
+//     afterwards is shown, not lost.
 //   - A custom group's keys the catalogue no longer holds (retired) are not rights: they are
 //     neither shown, nor judged, nor sent back (the server would refuse them as unknown).
 import React, { useId, useState } from "react";
@@ -23,6 +28,8 @@ import { translateApiError, permLabel, cannotGrantReason } from "../clinicalI18n
 const BLANK = Object.freeze({
   id: null, slug: "", name: "", description: "", mfaRequired: false, isSystem: false, permissions: [],
 });
+
+const UNLOCKED = Object.freeze({ readOnly: false, rightsLocked: false, reason: "" });
 
 const catalogueKeys = (catalogue) => (Array.isArray(catalogue) ? catalogue : [])
   .map((p) => (typeof p === "string" ? p : p?.key)).filter((k) => typeof k === "string");
@@ -52,11 +59,19 @@ export function GroupAdmin({ T, S, lang = "tr", store, state }) {
   const [busy, setBusy] = useState(false);
   const noteId = useId();
 
-  /** Why a group's rights and MFA rule are read-only here, or "" when they are not. */
-  const lockReason = (g) => {
-    if (g.isSystem === true) return R.err.systemGroupRights;
+  /** What the session may change on `g`:
+   *    readOnly     — its rights are beyond the session's: nothing, labels included, and no delete;
+   *    rightsLocked — its rights and MFA rule are fixed (readOnly, or the system group);
+   *    reason       — why, shown once; "" when nothing is locked. */
+  const lockOf = (g) => {
     const missing = rightsBeyond(perms, rightsOf(g, keys));
-    return missing.length ? cannotGrantReason(missing, lang) : "";
+    if (missing.length) {
+      return { readOnly: true, rightsLocked: true, reason: cannotGrantReason(missing, lang) };
+    }
+    if (g.isSystem === true) {
+      return { readOnly: false, rightsLocked: true, reason: R.err.systemGroupRights };
+    }
+    return UNLOCKED;
   };
 
   const openEditor = (g) => {
@@ -70,6 +85,8 @@ export function GroupAdmin({ T, S, lang = "tr", store, state }) {
   };
   const openDelete = (g) => { setErr(null); setEditing(null); setDeleting(g); };
   const close = () => { setEditing(null); setDeleting(null); setErr(null); };
+  // Backdrop, X and Cancel: not while a request runs, or its refusal would land in a closed form.
+  const dismiss = () => { if (!busy) close(); };
 
   const toggle = (key) => setEditing((g) => ({
     ...g,
@@ -116,7 +133,10 @@ export function GroupAdmin({ T, S, lang = "tr", store, state }) {
 
       <div className={`divide-y ${T.divide} rounded-xl border ${T.border}`}>
         {groups.map((g) => {
-          const reason = canManage && g.isSystem !== true ? lockReason(g) : "";
+          // The reason for the disabled Delete; the system group is never offered for deletion.
+          const lock = canManage && g.isSystem !== true ? lockOf(g) : UNLOCKED;
+          const reason = lock.readOnly ? lock.reason : "";
+          const reasonId = `${noteId}-row-${g.id}`;
           return (
             <div key={g.id} className="px-3 py-2.5" data-testid={`group-${g.slug}`}>
               <div className="flex items-start gap-3">
@@ -144,7 +164,7 @@ export function GroupAdmin({ T, S, lang = "tr", store, state }) {
                   </div>
                   {reason && (
                     <div className={`mt-1 flex items-center gap-1 text-[11px] ${T.faint}`}>
-                      <Lock size={10} className="shrink-0" /><span>{reason}</span>
+                      <Lock size={10} className="shrink-0" /><span id={reasonId}>{reason}</span>
                     </div>
                   )}
                 </div>
@@ -154,7 +174,8 @@ export function GroupAdmin({ T, S, lang = "tr", store, state }) {
                       aria-label={`${R.editGroup} ${g.name}`}><Pencil size={14} /></button>
                     {!g.isSystem && (
                       <button onClick={() => openDelete(g)} disabled={Boolean(reason)}
-                        title={reason || undefined} className={btnCls(T, "ghost")}
+                        title={reason || undefined} aria-describedby={reason ? reasonId : undefined}
+                        className={btnCls(T, "ghost")}
                         aria-label={`${R.delete} ${g.name}`}><Trash2 size={14} /></button>
                     )}
                   </div>
@@ -169,18 +190,20 @@ export function GroupAdmin({ T, S, lang = "tr", store, state }) {
         // Judged on the group as the server last reported it (not on the draft), in the current
         // language; a group reloaded away meanwhile is judged as it was opened.
         const lock = editing.source
-          ? lockReason(groups.find((g) => g.id === editing.id) || editing.source) : "";
+          ? lockOf(groups.find((g) => g.id === editing.id) || editing.source) : UNLOCKED;
+        const { readOnly, rightsLocked } = lock;
         // Rows come from the catalogue; without one, the group's own keys, read-only.
         const rows = keys.length ? keys : editing.permissions;
-        const rowLocked = (k) => Boolean(lock) || keys.length === 0 || !perms.includes(k);
-        const note = lock || (keys.length === 0 ? R.loadFailed
+        const rowLocked = (k) => rightsLocked || keys.length === 0 || !perms.includes(k);
+        const note = lock.reason || (keys.length === 0 ? R.loadFailed
           : (rows.some(rowLocked) ? R.err.beyondOwnRights : ""));
         const described = (locked) => (locked && note ? noteId : undefined);
         return (
-          <ActionOverlay T={T} title={editing.id ? R.editGroup : R.newGroup} onClose={close}>
+          <ActionOverlay T={T} title={editing.id ? R.editGroup : R.newGroup} onClose={dismiss}>
             <div className="space-y-3" data-testid="group-editor">
               <Field T={T} label={R.groupName}>
-                <input className={inputCls(T)} value={editing.name} autoFocus
+                <input className={inputCls(T)} value={editing.name} autoFocus={!readOnly}
+                  disabled={readOnly} aria-describedby={described(readOnly)}
                   onChange={(e) => setEditing((g) => ({ ...g, name: e.target.value }))} />
               </Field>
               {!editing.id && (
@@ -191,12 +214,13 @@ export function GroupAdmin({ T, S, lang = "tr", store, state }) {
               )}
               <Field T={T} label={R.groupDesc}>
                 <input className={inputCls(T)} value={editing.description}
+                  disabled={readOnly} aria-describedby={described(readOnly)}
                   onChange={(e) => setEditing((g) => ({ ...g, description: e.target.value }))} />
               </Field>
               <div>
                 <label className={`flex items-center gap-2 text-sm ${T.text}`}>
-                  <input type="checkbox" checked={editing.mfaRequired} disabled={Boolean(lock)}
-                    aria-describedby={described(Boolean(lock))}
+                  <input type="checkbox" checked={editing.mfaRequired} disabled={rightsLocked}
+                    aria-describedby={described(rightsLocked)}
                     onChange={(e) => setEditing((g) => ({ ...g, mfaRequired: e.target.checked }))} />
                   {R.mfaRequired}
                 </label>
@@ -222,14 +246,19 @@ export function GroupAdmin({ T, S, lang = "tr", store, state }) {
                 })}
               </div>
               {errorBox}
-              <button onClick={save} disabled={busy} className={`${btnCls(T, "primary")} w-full`}>{R.save}</button>
+              <div className="flex gap-2">
+                <button onClick={dismiss} disabled={busy} className={`${btnCls(T, "ghost")} flex-1`}>{R.cancel}</button>
+                {!readOnly && (
+                  <button onClick={save} disabled={busy} className={`${btnCls(T, "primary")} flex-1`}>{R.save}</button>
+                )}
+              </div>
             </div>
           </ActionOverlay>
         );
       })()}
 
       {canManage && deleting && (
-        <ActionOverlay T={T} title={R.deleteConfirm} onClose={close}>
+        <ActionOverlay T={T} title={R.deleteConfirm} onClose={dismiss}>
           <div className="space-y-3" data-testid="group-delete">
             <div>
               <div className={`text-sm font-semibold ${T.text}`}>{deleting.name}</div>
@@ -237,7 +266,7 @@ export function GroupAdmin({ T, S, lang = "tr", store, state }) {
             </div>
             {errorBox}
             <div className="flex gap-2">
-              <button onClick={close} className={`${btnCls(T, "ghost")} flex-1`}>{R.cancel}</button>
+              <button onClick={dismiss} disabled={busy} className={`${btnCls(T, "ghost")} flex-1`}>{R.cancel}</button>
               <button onClick={remove} disabled={busy} className={`${btnCls(T, "danger")} flex-1`}>{R.delete}</button>
             </div>
           </div>
