@@ -32,7 +32,7 @@ from homunculus.api.patient_identity import (
 )
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.escalation import escalate
-from homunculus.api.identity import Caller
+from homunculus.api.identity import Caller, bounded_role
 from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import rehydrate
 from homunculus.api.tickets import TicketStore
@@ -52,13 +52,10 @@ DEVICE_ROLE_MAX = 64
 
 
 def _device_role(value: object) -> str:
-    """The device path's self-declared `role`, bounded: a non-blank string of at most
-    DEVICE_ROLE_MAX characters, else "unknown". It lands in the audit row and, through `rehydrate`,
-    in the board's `acknowledged_by`, which the legacy board renders — a dict or a page of text
-    must not reach either."""
-    if isinstance(value, str) and value.strip() and len(value) <= DEVICE_ROLE_MAX:
-        return value
-    return "unknown"
+    """The device path's self-declared `role`: `bounded_role` with the tighter DEVICE_ROLE_MAX,
+    since no signed-in name stands behind it. It lands in the audit row and, through `rehydrate`,
+    in the board's `acknowledged_by`."""
+    return bounded_role(value, DEVICE_ROLE_MAX)
 
 
 async def sse_board_frames(queue: asyncio.Queue, keepalive: float = 15.0):

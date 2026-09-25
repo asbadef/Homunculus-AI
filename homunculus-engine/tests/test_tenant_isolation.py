@@ -606,6 +606,21 @@ async def test_a_token_that_names_no_tenant_is_refused(world):
     assert r.status_code == 403 and r.json()["detail"] == NO_TENANT
 
 
+@requires_db
+@pytest.mark.parametrize("blank", ["", "   "], ids=repr)
+async def test_a_blank_tenant_claim_names_no_tenant_even_if_such_a_slug_exists(world, blank):
+    """As on the board: a blank slug is no tenant (403), even where a tenant carries that slug
+    (slugs are not validated) and the caller holds an active membership in it."""
+    blank_tenant = Tenant(name="Sentetik Boş Slug", slug=blank, country_code="TR")
+    world.db.add(blank_tenant)
+    await world.db.flush()
+    world.db.add(TenantMembership(user_id=world.caller.id, tenant_id=blank_tenant.id))
+    await world.db.commit()
+
+    r = await _call(world, "GET", "/admissions", headers=_with_tenant(world.auth, blank))
+    assert r.status_code == 403 and r.json()["detail"] == NO_TENANT
+
+
 async def _rename_a(world: World) -> None:
     await world.db.execute(update(Tenant).where(Tenant.id == world.a.tenant)
                            .values(slug="hastane-a-yeni"))

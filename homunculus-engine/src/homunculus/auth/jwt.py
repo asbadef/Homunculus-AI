@@ -21,9 +21,16 @@ REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 def jwt_secret_problem(secret: str | None) -> str | None:
     """Why a signing key is unfit for a real deployment, or None. The token is the only
     authority for `perms` and `tenant`, so whoever knows the key can mint an administrator.
-    The reason never quotes the key."""
-    if not secret:
+    The reason never quotes the key.
+
+    Check the key that actually signs (`JWT_SECRET` above), not a re-read of the environment. A
+    key with leading or trailing whitespace is refused outright rather than judged stripped:
+    padding could otherwise dress up the public default or a short key, and a pasted trailing
+    newline would sign with a key the operator does not know they set."""
+    if not isinstance(secret, str) or not secret.strip():
         return "JWT_SECRET is not set"
+    if secret != secret.strip():
+        return "JWT_SECRET has leading or trailing whitespace"
     if secret == _DEFAULT_SECRET:
         return "JWT_SECRET is the public default"
     if len(secret) < 32:

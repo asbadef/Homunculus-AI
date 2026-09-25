@@ -51,7 +51,9 @@ services:
       # actually creates. Both MUST read from TENANT_SLUG so they cannot drift: if they ever named
       # different slugs, the admin account would be seeded under a hospital key the bridge (and any
       # JWT issued for it) can never resolve to, and the board would stay empty with no obvious cause.
-      TENANTS: ${TENANT_TOKEN}:${TENANT_SLUG:-demo-hastanesi}
+      # Required: without a device token the API refuses to start (the bridge could send nothing
+      # and every board would freeze silently), so compose refuses first, with a clearer message.
+      TENANTS: ${TENANT_TOKEN:?TENANT_TOKEN is missing in .env - generate one, see .env.example}:${TENANT_SLUG:-demo-hastanesi}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME}

@@ -6,7 +6,10 @@
 #   DATABASE_URL   Supabase "Session pooler" URI, driver rewritten to postgresql+asyncpg://
 #                  e.g. postgresql+asyncpg://postgres.<ref>:<PWD>@aws-0-<region>.pooler.supabase.com:5432/postgres
 #   CORS_ORIGINS   the Vercel origin, e.g. https://homunculus-ai.vercel.app
-#   TENANTS        legacy bearer-token tenancy, e.g. demo-token:HOSP1
+#   TENANTS        the bridge's device token and the tenant slug: <openssl rand -base64 36>:<tenant slug>
+#                  The slug must be the tenant's slug (the seed creates demo-hastanesi); any other
+#                  key, e.g. HOSP1, matches no clinician's board. REQUIRED: without it the API
+#                  refuses to start.
 #
 # PLAN — ACTION REQUIRED BEFORE ANY DEVICE IS CONNECTED.
 #

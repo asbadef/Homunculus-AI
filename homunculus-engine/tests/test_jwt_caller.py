@@ -11,8 +11,13 @@ every decision the resolver makes with real signed tokens. The resolver answers 
 * 403 for what a refresh cannot repair: a pending MFA step, a token naming no tenant, a
   deactivated tenant or membership.
 
+A database error propagates (a 5xx), never a None: a 401 would make the dashboard refresh, the
+refresh would fail on the same database, and the clinician would be signed out.
+
 The second part runs the real `_read_user_auth` against the test database, and the third drives
-`prodserver.app` itself, both skipped without TEST_DATABASE_URL. Then the signing-key check.
+`prodserver.app` itself, both skipped without TEST_DATABASE_URL. The last part is the production
+start-up refusals: a weak signing key (the one that signs), a missing PHI key, no usable device
+token.
 
 Synthetic data only.
 """
@@ -223,6 +228,34 @@ def test_the_one_read_embeds_the_routers_tenant_condition():
     assert "tenants" not in without and "users.token_version" in without
 
 
+class _DatabaseDown(RuntimeError):
+    pass
+
+
+async def _unreachable(user_id, slug):
+    raise _DatabaseDown("synthetic: the database is unreachable")
+
+
+async def test_a_database_error_propagates_and_is_not_read_as_a_bad_token():
+    """None would be a 401: the dashboard refreshes, `/auth/refresh` fails on the same
+    database, and the clinician is signed out. The error must stay an error."""
+    with pytest.raises(_DatabaseDown):
+        await make_jwt_caller_resolver(_unreachable)(_token())
+
+
+async def test_a_database_error_is_a_5xx_on_the_board_while_the_device_path_keeps_working():
+    from homunculus.api.app import create_app
+
+    app = create_app({"bridge-token": SLUG}, run_escalation_loop=False,
+                     resolve_jwt=make_jwt_caller_resolver(_unreachable))
+    async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False),
+                           base_url="http://test") as client:
+        r = await client.get("/patients", headers={"Authorization": f"Bearer {_token()}"})
+        assert r.status_code >= 500, r.status_code
+        bridge = await client.get("/patients", headers={"Authorization": "Bearer bridge-token"})
+        assert bridge.status_code == 200
+
+
 # ---------------------------------------------------------------- the real read, test database
 @pytest_asyncio.fixture
 async def ward(db_session, monkeypatch):
@@ -366,7 +399,12 @@ async def test_a_pending_mfa_step_or_no_tenant_is_a_403(ward):
     assert r.status_code == 403 and r.json()["detail"] == NO_TENANT
 
 
-# ---------------------------------------------------------------- the signing key
+# ---------------------------------------------------------------- production start-up
+PG = "postgresql+asyncpg://synthetic@127.0.0.1:1/none"     # never connected to: the checks run first
+STRONG = "s" * 48
+TENANTS_OK = "synthetic-device-token:demo-hastanesi"
+
+
 def test_a_weak_jwt_secret_is_named():
     from homunculus.auth.jwt import jwt_secret_problem
     assert jwt_secret_problem(None) and jwt_secret_problem("")
@@ -377,34 +415,128 @@ def test_a_weak_jwt_secret_is_named():
     assert jwt_secret_problem("x" * 48) is None
 
 
+@pytest.mark.parametrize("secret", [" " * 40, "\t\n" * 20, "x" * 32 + "\n", "  " + "x" * 40,
+                                    " CHANGE_ME_IN_PRODUCTION_USE_32_CHARS_MIN ",
+                                    "kisa" + " " * 40])
+def test_whitespace_can_neither_make_nor_disguise_a_key(secret):
+    """Refused outright, not judged stripped: padding must not dress up the default or a short
+    key, and a pasted newline must not sign with a key the operator does not know they set."""
+    from homunculus.auth.jwt import jwt_secret_problem
+    problem = jwt_secret_problem(secret)
+    assert problem is not None
+    assert not secret.strip() or secret.strip() not in problem
+
+
 def test_the_public_default_is_the_fallback_key():
     assert auth_jwt._DEFAULT_SECRET == "CHANGE_ME_IN_PRODUCTION_USE_32_CHARS_MIN"
 
 
-@pytest.mark.parametrize("secret", [None, "CHANGE_ME_IN_PRODUCTION_USE_32_CHARS_MIN",
-                                    "change-me", "kisa-ama-gizli-anahtar"])
-def test_a_postgres_deployment_refuses_a_weak_key(monkeypatch, secret):
+@pytest.fixture
+def production_env(monkeypatch):
+    """Everything a production start needs, valid; each test breaks one thing."""
+    monkeypatch.setenv("PHI_ENCRYPTION_KEY", "synthetic-presence-only")
+    monkeypatch.setattr(auth_jwt, "JWT_SECRET", STRONG)
+    monkeypatch.setenv("TENANTS", TENANTS_OK)
+    return monkeypatch
+
+
+def test_a_valid_production_configuration_starts(production_env):
+    prodserver._refuse_unsafe_start(PG)
+
+
+@pytest.mark.parametrize("secret", ["CHANGE_ME_IN_PRODUCTION_USE_32_CHARS_MIN", "change-me",
+                                    "kisa-ama-gizli-anahtar", STRONG + "\n"])
+def test_production_refuses_a_weak_signing_key(production_env, secret):
     """The token is the only authority for `perms` and `tenant`: whoever knows the key can mint
     an administrator. The refusal names the problem and never echoes the key."""
-    monkeypatch.setenv("DATABASE_URL", "postgresql://synthetic@localhost:1/none")
-    monkeypatch.setenv("PHI_ENCRYPTION_KEY", "synthetic-not-checked-here")
-    if secret is None:
-        monkeypatch.delenv("JWT_SECRET", raising=False)
-    else:
-        monkeypatch.setenv("JWT_SECRET", secret)
+    production_env.setattr(auth_jwt, "JWT_SECRET", secret)
     with pytest.raises(SystemExit) as exc:
-        prodserver._identities()
+        prodserver._refuse_unsafe_start(PG)
     message = str(exc.value)
     assert "JWT_SECRET" in message and "openssl rand" in message
-    if secret:
-        assert secret not in message
+    assert secret.strip() not in message
 
 
-def test_the_key_check_applies_to_postgres_only():
-    strong = "s" * 48
+def test_the_check_reads_the_key_that_signs_not_the_environment(production_env):
+    production_env.setenv("JWT_SECRET", STRONG)
+    production_env.setattr(auth_jwt, "JWT_SECRET", "kisa")
+    with pytest.raises(SystemExit, match="JWT_SECRET"):
+        prodserver._refuse_unsafe_start(PG)
+    production_env.setenv("JWT_SECRET", "kisa")
+    production_env.setattr(auth_jwt, "JWT_SECRET", STRONG)
+    prodserver._refuse_unsafe_start(PG)
+
+
+def test_production_refuses_a_missing_phi_key(production_env):
+    production_env.delenv("PHI_ENCRYPTION_KEY")
+    with pytest.raises(SystemExit, match="PHI_ENCRYPTION_KEY"):
+        prodserver._refuse_unsafe_start(PG)
+
+
+@pytest.mark.parametrize("raw", [None, "", "   ", ":demo-hastanesi", "secret-tok:", " , ",
+                                 "secret-tok", " :demo-hastanesi , secret-tok: "], ids=repr)
+def test_production_refuses_to_start_without_a_usable_device_token(production_env, raw):
+    """With no device token the API would look healthy while no observation ever arrived and
+    every board froze. TENANTS is read once, at deploy time, while an operator watches."""
+    if raw is None:
+        production_env.delenv("TENANTS")
+    else:
+        production_env.setenv("TENANTS", raw)
+    with pytest.raises(SystemExit) as exc:
+        prodserver._refuse_unsafe_start(PG)
+    message = str(exc.value)
+    assert "TENANTS" in message and "secret-tok" not in message
+    assert "demo-hastanesi" not in message
+
+
+def test_one_valid_device_token_is_enough(production_env):
+    production_env.setenv("TENANTS", f"{TENANTS_OK}, :bozuk-giris")
+    prodserver._refuse_unsafe_start(PG)
+
+
+@pytest.mark.parametrize("url", ["", "sqlite:///dev.db", "  "])
+def test_outside_production_every_check_passes(monkeypatch, url):
+    monkeypatch.delenv("PHI_ENCRYPTION_KEY", raising=False)
+    monkeypatch.delenv("TENANTS", raising=False)
+    monkeypatch.setattr(auth_jwt, "JWT_SECRET", "kisa")
+    prodserver._refuse_unsafe_start(url)
+
+
+def test_production_is_a_postgres_url_read_as_db_py_reads_it(monkeypatch):
     for url in ("postgresql+asyncpg://x@h/db", "postgresql://x@h/db", "postgres://x@h/db"):
+        assert prodserver._is_production(url)
         with pytest.raises(SystemExit):
             prodserver._refuse_weak_jwt_secret(url, "kisa")
-        prodserver._refuse_weak_jwt_secret(url, strong)
-    for url in ("", "sqlite:///dev.db"):
+        prodserver._refuse_weak_jwt_secret(url, STRONG)
+    for url in ("", "sqlite:///dev.db", "mysql://x@h/db"):
+        assert not prodserver._is_production(url)
         prodserver._refuse_weak_jwt_secret(url, None)
+    monkeypatch.setenv("DATABASE_URL", "  postgresql://x@h/db\n")
+    assert prodserver._database_url() == "postgresql://x@h/db"
+
+
+def _import_prodserver(**env) -> "subprocess.CompletedProcess[str]":
+    """Import prodserver in a fresh interpreter with a synthetic production environment: the
+    refusals run at import, before anything is built or connected. The environment is the
+    child's alone; nothing is exported here."""
+    import os
+    import subprocess
+    import sys
+
+    child = {k: v for k, v in os.environ.items()
+             if k not in ("DATABASE_URL", "TENANTS", "JWT_SECRET", "PHI_ENCRYPTION_KEY")}
+    child.update({k: v for k, v in env.items() if v is not None})
+    return subprocess.run([sys.executable, "-c", "import homunculus.api.prodserver"],
+                          capture_output=True, text=True, timeout=120, env=child)
+
+
+def test_the_refusals_run_when_prodserver_is_imported():
+    base = {"DATABASE_URL": " " + PG + "\n", "PHI_ENCRYPTION_KEY": "synthetic-presence-only",
+            "JWT_SECRET": STRONG, "TENANTS": TENANTS_OK}
+    weak = _import_prodserver(**{**base, "JWT_SECRET": "kisa-anahtar"})
+    assert weak.returncode != 0 and "JWT_SECRET is shorter than 32" in weak.stderr
+    assert "kisa-anahtar" not in weak.stderr
+    unset = _import_prodserver(**{**base, "JWT_SECRET": None})
+    assert unset.returncode != 0 and "JWT_SECRET is the public default" in unset.stderr
+    no_tenants = _import_prodserver(**{**base, "TENANTS": None})
+    assert no_tenants.returncode != 0 and "TENANTS is not set" in no_tenants.stderr

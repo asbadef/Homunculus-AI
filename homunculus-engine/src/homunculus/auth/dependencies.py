@@ -108,7 +108,8 @@ async def get_principal_pre_mfa(
     tenant = claims.get("tenant")
     return Principal(
         user=user,
-        tenant=tenant if isinstance(tenant, str) else None,
+        # A blank slug names no tenant (403 NO_TENANT), exactly as on the board resolver.
+        tenant=tenant if isinstance(tenant, str) and tenant.strip() else None,
         groups=_strings(claims.get("groups")),
         perms=frozenset(_strings(claims.get("perms"))),
         mfa_required=claims.get("mfa_required") is True,

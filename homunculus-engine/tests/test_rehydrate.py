@@ -53,3 +53,25 @@ def test_rehydrate_writes_no_new_audit_records():
     engine, store = Engine(), AckStore()
     rehydrate(engine, store, audit.records(tenant="HOSP1"))
     assert len(audit.records(tenant="HOSP1")) == before   # replay does not re-audit
+
+
+def _replayed_by(role):
+    audit = _audit_with_shock()
+    audit.append(AuditEvent("HOSP1", "ack", "bed-3", "septic_shock", {"role": role, "at": T0}))
+    engine, store = Engine(), AckStore()
+    rehydrate(engine, store, audit.records(tenant="HOSP1"))
+    return store.acks[("bed-3", "septic_shock")]["by"]
+
+
+def test_a_replayed_role_that_is_not_a_short_string_is_unknown():
+    """Rows written before the device role was bounded may hold anything the body sent. The
+    legacy board renders `acknowledged_by` as text; a dict there breaks the render."""
+    for role in ({"name": "dr.x"}, ["nurse"], 7, None, "", "r" * 129):
+        assert _replayed_by(role) == "unknown", role
+
+
+def test_a_replayed_username_survives_whole():
+    """128, not the device path's 64: a signed-in user's username may be that long."""
+    assert _replayed_by("ayse") == "ayse"
+    assert _replayed_by("u" * 128) == "u" * 128
+    assert _replayed_by("r" * 64) == "r" * 64

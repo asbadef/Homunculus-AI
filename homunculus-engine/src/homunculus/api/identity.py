@@ -28,6 +28,21 @@ def hospital_for_slugs(slugs: Sequence[str]) -> str | None:
     return min(slugs) if slugs else None
 
 
+# The longest name that can stand in `acknowledged_by`: a signed-in user's username
+# (`users.username` is String(128)).
+ROLE_MAX = 128
+
+
+def bounded_role(value: object, limit: int = ROLE_MAX) -> str:
+    """Who acted, as it may reach the board: a non-blank string of at most `limit` characters,
+    else "unknown". The value becomes an ack's `acknowledged_by`, which the legacy board renders
+    as text — a dict, a list or a page of text must never get there, whether it arrives live
+    (the device path's self-declared role) or from an old audit row on replay."""
+    if isinstance(value, str) and value.strip() and len(value) <= limit:
+        return value
+    return "unknown"
+
+
 def unmatched_hospital_keys(configured: Iterable[str], known_slugs: Iterable[str]) -> list[str]:
     """Configured TENANTS hospital keys that match no tenant slug.
 

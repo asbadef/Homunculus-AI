@@ -9,6 +9,11 @@ Env:
                    slug and the engine's hospital key)
     AUDIT_DB_PATH  path for the SQLite audit log (default /tmp; ephemeral on Render — synthetic only)
     DATABASE_URL / DATABASE_SSL / JWT_SECRET / CORS_ORIGINS  read by db.py / auth.jwt / app.py
+
+Production means a Postgres DATABASE_URL (`_is_production`). There, before anything is built,
+`_refuse_unsafe_start` stops the process (SystemExit) on a missing PHI key, a weak signing key or
+unusable device tokens: a deploy that fails loudly while an operator watches is safer than a
+service that looks healthy and is not.
 """
 from __future__ import annotations
 
@@ -24,6 +29,7 @@ from sqlalchemy import Select, select, true
 from homunculus.api.app import create_app
 from homunculus.api.audit import SqliteAuditLog
 from homunculus.api.identity import Caller, unmatched_hospital_keys
+from homunculus.auth import jwt as auth_jwt
 from homunculus.auth.dependencies import MEMBERSHIP_INACTIVE, NO_TENANT
 from homunculus.auth.groups import (
     TENANT_INACTIVE, TENANT_OK, TENANT_UNKNOWN, tenant_claim_query, tenant_claim_verdict,
@@ -37,23 +43,11 @@ logger = logging.getLogger(__name__)
 _DEV_TENANTS = {"demo-token": "HOSP1"}
 
 
-def _parse_tenants(raw: str | None) -> dict[str, str]:
-    """`"tokenA:HOSP1,tokenB:HOSP2"` -> {token: hospital}.
-
-    An entry whose token or hospital is empty is skipped with a warning. An empty token would
-    otherwise become a device credential that a request with no token at all matches. The
-    warning gives the entry's position, never its text, because the text may hold a token.
-
-    Unset or blank, TENANTS falls back to the development default. Set but holding no valid
-    entry, it configures NO device token: an error is logged and `{}` returned, so the bridge's
-    /ingest is refused (401) until TENANTS is fixed. It never falls back to the development
-    default there: that token is public (it is in this file) and a device is exempt from every
-    permission check. `{}` rather than refusing to start: sign-in and the clinicians' board keep
-    working while the operator reads the log (see `warn_about_unmatched_tenants`).
-    """
-    if raw is None or not raw.strip():
-        return dict(_DEV_TENANTS)     # local development only; production sets TENANTS
+def _split_tenants(raw: str) -> tuple[dict[str, str], list[int]]:
+    """The valid `token:hospital` entries of a TENANTS value, and the 1-based positions of the
+    invalid ones (a missing ":" or an empty part). Pure: the callers decide what to say."""
     tenants: dict[str, str] = {}
+    invalid: list[int] = []
     for position, pair in enumerate(raw.split(","), start=1):
         pair = pair.strip()
         if not pair:
@@ -61,10 +55,32 @@ def _parse_tenants(raw: str | None) -> dict[str, str]:
         token, sep, hospital = pair.partition(":")
         token, hospital = token.strip(), hospital.strip()
         if not sep or not token or not hospital:
-            logger.warning("TENANTS entry %d is not token:hospital with both parts non-empty; "
-                           "ignored", position)
+            invalid.append(position)
             continue
         tenants[token] = hospital
+    return tenants, invalid
+
+
+def _parse_tenants(raw: str | None) -> dict[str, str]:
+    """`"tokenA:HOSP1,tokenB:HOSP2"` -> {token: hospital}.
+
+    An entry whose token or hospital is empty is skipped with a warning. An empty token would
+    otherwise become a device credential that a request with no token at all matches. The
+    warning gives the entry's position, never its text, because the text may hold a token.
+
+    In production (a Postgres DATABASE_URL) `_refuse_unsafe_start` has already stopped the
+    process unless TENANTS holds at least one valid entry. Outside it: unset or blank, TENANTS
+    falls back to the development default; set but holding no valid entry, it configures NO
+    device token (an error is logged and `{}` returned). It never falls back to the development
+    default there: that token is public (it is in this file) and a device is exempt from every
+    permission check.
+    """
+    if raw is None or not raw.strip():
+        return dict(_DEV_TENANTS)     # local development only; production sets TENANTS
+    tenants, invalid = _split_tenants(raw)
+    for position in invalid:
+        logger.warning("TENANTS entry %d is not token:hospital with both parts non-empty; "
+                       "ignored", position)
     if not tenants:
         logger.error("TENANTS is set but holds no valid token:hospital entry, so no device token "
                      "is accepted and the bridge's /ingest is refused until it is fixed. The "
@@ -79,8 +95,8 @@ def _audit():
     there disappears while still looking like a record — worse than having none. When DATABASE_URL
     is configured the trail goes to the same managed Postgres as everything else.
     """
-    url = os.getenv("DATABASE_URL")
-    if url and url.startswith("postgresql"):
+    url = _database_url()
+    if _is_production(url):
         from homunculus.api.audit_postgres import PostgresAuditLog
 
         return PostgresAuditLog(
@@ -268,13 +284,63 @@ async def _read_user_auth(user_id: str, slug: str | None) -> UserAuthRow | None:
                        token_version=row.token_version, tenant_verdict=verdict)
 
 
+def _database_url() -> str:
+    """DATABASE_URL as db.py reads it, stripped: a pasted trailing newline must not make the
+    start-up checks, the audit and the identity store disagree with the engine about whether
+    this is production."""
+    return os.getenv("DATABASE_URL", "").strip()
+
+
+def _is_production(url: str) -> bool:
+    """The one rule for "this is a real deployment": a Postgres DATABASE_URL."""
+    return url.startswith(("postgresql", "postgres://"))
+
+
+def _refuse_missing_phi_key(url: str, key: str | None) -> None:
+    """In production, refuse to start without PHI_ENCRYPTION_KEY. The compose file already
+    refuses; this covers a server run any other way. Real names must never be written under the
+    JWT_SECRET-derived dev key."""
+    if _is_production(url) and not key:
+        raise SystemExit("PHI_ENCRYPTION_KEY is required with a Postgres DATABASE_URL "
+                         "(see deploy/local/.env.example)")
+
+
 def _refuse_weak_jwt_secret(url: str, secret: str | None) -> None:
-    """With a Postgres DATABASE_URL (a real deployment), refuse to start on a weak signing key:
-    the token is the only authority for `perms` and `tenant`, so whoever knows the key can mint
-    an administrator. The message never quotes the key."""
+    """In production, refuse to start on a weak signing key: the token is the only authority
+    for `perms` and `tenant`, so whoever knows the key can mint an administrator. Pass the key
+    that actually signs (`auth.jwt.JWT_SECRET`). The message never quotes the key."""
     problem = jwt_secret_problem(secret)
-    if url.startswith(("postgresql", "postgres://")) and problem:
+    if _is_production(url) and problem:
         raise SystemExit(f"{problem}. Generate one: openssl rand -base64 36")
+
+
+def _refuse_bad_tenants(url: str, raw: str | None) -> None:
+    """In production, refuse to start without a usable device token (TENANTS unset, blank, or
+    holding no valid entry). With none the API looks healthy (sign-in works, the SSE keep-alives
+    say "connected") while no observation ever arrives and every board silently freezes.
+    TENANTS is read once, at start-up, so a bad value shows up only at deploy time, when an
+    operator is watching: compose restart-loops, Render keeps the previous deploy. The central
+    station stays the primary alarm system, so loudly down is safer than quietly stale. The
+    message never carries token text."""
+    if not _is_production(url):
+        return
+    if raw is None or not raw.strip():
+        raise SystemExit("TENANTS is not set. With a Postgres DATABASE_URL it must map the "
+                         "bridge's token to the tenant slug: TENANTS=<token>:<tenant slug>, the "
+                         "token generated with openssl rand -base64 36")
+    tenants, _invalid = _split_tenants(raw)
+    if not tenants:
+        raise SystemExit("TENANTS holds no valid <token>:<tenant slug> entry (each entry needs "
+                         "a ':' and both parts non-empty), so no device could send "
+                         "observations")
+
+
+def _refuse_unsafe_start(url: str) -> None:
+    """Every production start-up refusal, in one place, run at import before anything is
+    built. Outside production (no Postgres DATABASE_URL) each check passes."""
+    _refuse_missing_phi_key(url, os.getenv("PHI_ENCRYPTION_KEY"))
+    _refuse_weak_jwt_secret(url, auth_jwt.JWT_SECRET)
+    _refuse_bad_tenants(url, os.getenv("TENANTS"))
 
 
 def _identities():
@@ -282,25 +348,22 @@ def _identities():
 
     The PHI key is validated here, at boot: a malformed key would otherwise surface as a 500 on
     the first admission and — because the bridge drops identity records the API refuses — as a
-    ward with readings but no names, with nothing in the API log until someone looks. The JWT
-    signing key is checked here too, under the same condition (a Postgres DATABASE_URL)."""
+    ward with readings but no names, with nothing in the API log until someone looks. (A
+    MISSING key in production was already refused by `_refuse_unsafe_start`.)"""
     from homunculus.api.patient_identity import SqliteIdentityStore
     from homunculus.crypto import validate_key
 
-    url = os.getenv("DATABASE_URL", "")
-    if url.startswith(("postgresql", "postgres://")) and not os.getenv("PHI_ENCRYPTION_KEY"):
-        # The compose file already refuses to start without the key; this covers a server run
-        # any other way. Real names must never be written under the JWT_SECRET-derived dev key.
-        raise SystemExit("PHI_ENCRYPTION_KEY is required with a Postgres DATABASE_URL "
-                         "(see deploy/local/.env.example)")
-    _refuse_weak_jwt_secret(url, os.getenv("JWT_SECRET"))
+    url = _database_url()
     validate_key()
-    if url.startswith(("postgresql", "postgres://")):
+    if _is_production(url):
         from homunculus.api.patient_identity_postgres import PostgresIdentityStore
         return PostgresIdentityStore(
             url, ssl_required=os.getenv("DATABASE_SSL", "").lower() in ("require", "true", "1"))
     return SqliteIdentityStore(os.getenv("IDENTITY_DB_PATH", "homunculus-identity.db"))
 
+
+# Before anything is built: a production start with an unsafe configuration stops here, loudly.
+_refuse_unsafe_start(_database_url())
 
 _tenants = _parse_tenants(os.getenv("TENANTS"))
 

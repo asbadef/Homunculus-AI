@@ -11,6 +11,7 @@ from datetime import datetime
 
 from homunculus.api.ackstore import AckStore
 from homunculus.api.audit import AuditRecord
+from homunculus.api.identity import bounded_role
 from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
 
@@ -40,5 +41,7 @@ def _replay_ingest(engine: Engine, rec: AuditRecord) -> None:
 
 
 def _replay_ack(store: AckStore, rec: AuditRecord) -> None:
+    """`role` is replayed as `acknowledged_by`, bounded like the live path: rows written before
+    the device role was bounded may hold anything the body sent (a dict, a page of text)."""
     at = datetime.fromisoformat(rec.payload["at"])
-    store.acknowledge(rec.patient_id, rec.subject, rec.payload.get("role", "unknown"), at)
+    store.acknowledge(rec.patient_id, rec.subject, bounded_role(rec.payload.get("role")), at)

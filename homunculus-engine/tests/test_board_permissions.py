@@ -165,6 +165,42 @@ def test_a_device_role_that_is_not_a_short_string_is_recorded_as_unknown(role):
         assert _shock(again)["acknowledged_by"] == "unknown"
 
 
+def test_roles_survive_a_restart_bounded_but_whole():
+    """A restart replays the audit log. An old row's dict role (written before the device role
+    was bounded) comes back as "unknown"; a signed-in username of the full 128 characters comes
+    back whole, not cut to the device path's 64."""
+    from datetime import datetime, timezone
+
+    from homunculus.api.audit import AuditEvent
+
+    long_name = "u" * 128
+
+    async def resolve(token):
+        if token == "long-name-jwt":
+            return Caller(hospital="HOSP1", actor=long_name, groups=("nurse",),
+                          perms=frozenset({"board.view", "alerts.ack"}))
+        return None
+
+    audit = InMemoryAuditLog()
+    app = create_app({"tok": "HOSP1"}, run_escalation_loop=False, resolve_jwt=resolve, audit=audit)
+    with TestClient(app) as first:
+        p = _drive_shock(first)
+        board = first.get("/patients", headers=_hdr("tok")).json()["patients"]
+        kinds = sorted(a["kind"] for b in board for a in b["alerts"] if a["kind"] != "septic_shock")
+        assert first.post("/ack", json={"patient_id": p, "kind": "septic_shock"},
+                          headers=_hdr("long-name-jwt")).status_code == 200
+    # What an app before this fix wrote for a device ack whose body role was a dict.
+    audit.append(AuditEvent("HOSP1", "ack", p, kinds[0],
+                            {"role": {"name": "dr.x"}, "via": "device", "actor": None,
+                             "groups": [], "at": datetime.now(timezone.utc).isoformat()}))
+
+    with TestClient(create_app({"tok": "HOSP1"}, run_escalation_loop=False, audit=audit)) as again:
+        alerts = {a["kind"]: a for b in again.get("/patients", headers=_hdr("tok")).json()["patients"]
+                  for a in b["alerts"]}
+        assert alerts["septic_shock"]["acknowledged_by"] == long_name
+        assert alerts[kinds[0]]["acknowledged_by"] == "unknown"
+
+
 def test_a_device_role_of_up_to_64_characters_is_kept(client):
     p = _drive_shock(client)
     role = "r" * 64

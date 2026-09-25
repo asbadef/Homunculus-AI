@@ -20,7 +20,9 @@ Env (all optional except the password):
     SEED_ADMIN_EMAIL      default "admin@example.com" — becomes the admin's username AND e-mail:
                           no spaces, exactly one '@' with text on both sides, at most 128 chars
     SEED_ADMIN_NAME       default "Sistem Yöneticisi"
-    SEED_ADMIN_PASSWORD   REQUIRED — no default, so no deployment ships a known password
+    SEED_ADMIN_PASSWORD   REQUIRED — no default, so no deployment ships a known password. A NEW
+                          administrator needs at least 12 characters and no known placeholder
+                          (change-me, password, ...); otherwise the seed is skipped, loudly
 """
 from __future__ import annotations
 
@@ -57,7 +59,8 @@ async def main() -> int:
             )
     except SeedRefused as exc:
         # The account exists and was deliberately left alone (e.g. a hospital deactivated the
-        # generic bootstrap account). Same rule as above: skip loudly, never stop the boot.
+        # generic bootstrap account), or would have been created with a weak password. Same rule
+        # as above: skip loudly, never stop the boot.
         print(f"bootstrap seed skipped: {exc}", file=sys.stderr)
         return 0
     finally:

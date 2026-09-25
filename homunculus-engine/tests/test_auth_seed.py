@@ -177,3 +177,39 @@ async def test_seeded_admin_can_sign_in(db_session):
     assert user is not None
     assert verify_local_password(user.auth_source, user.hashed_password, "Str0ng-Pass-123") is True
     assert verify_local_password(user.auth_source, user.hashed_password, "wrong-password") is False
+
+
+@pytest.mark.parametrize("password", ["change-me", "kisa", "11-karakter", "Password1234",
+                                      "ADMINISTRATOR", " change-me-now "], ids=repr)
+async def test_a_new_admin_is_not_created_with_a_weak_password(db_session, password):
+    """The bootstrap administrator holds every permission: a placeholder from a deployment file
+    or a short password must not become its password. Refused (the boot carries on, see
+    scripts/seed_admin.py), nothing written, and the password is never quoted."""
+    with pytest.raises(SeedRefused, match="SEED_ADMIN_PASSWORD") as exc:
+        await seed_bootstrap(db_session, **{**ARGS, "password": password})
+    assert password.strip() not in str(exc.value)
+
+    assert (await db_session.execute(select(func.count(User.id)))).scalar_one() == 0
+    assert (await db_session.execute(select(func.count(Tenant.id)))).scalar_one() == 0
+
+
+async def test_twelve_characters_that_are_no_placeholder_are_enough(db_session):
+    _, user = await seed_bootstrap(db_session, **{**ARGS, "password": "Kuzey-Yildiz"})
+    assert verify_password("Kuzey-Yildiz", user.hashed_password)
+
+
+async def test_an_existing_admins_password_is_never_checked_or_changed(db_session):
+    """Later boots may still carry a weak SEED_ADMIN_PASSWORD (or one that changed): the
+    existing account is found, its password neither judged nor replaced."""
+    await seed_bootstrap(db_session, **ARGS)
+    _, user = await seed_bootstrap(db_session, **{**ARGS, "password": "change-me"})
+    assert verify_password("Str0ng-Pass-123", user.hashed_password)
+    assert not verify_password("change-me", user.hashed_password)
+
+
+async def test_the_weak_password_rule():
+    from homunculus.auth.seed import MIN_SEED_PASSWORD, seed_password_problem
+
+    assert MIN_SEED_PASSWORD == 12
+    assert seed_password_problem("x" * 11) and seed_password_problem("password1234")
+    assert seed_password_problem("Kuzey-Yildiz") is None

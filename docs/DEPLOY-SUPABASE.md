@@ -67,10 +67,15 @@ Proje: **Homunculus-AI** (`tfilvvlfhnxzgaqkxwaj`), eu-central-1, Postgres 17.6 �
    | `DATABASE_URL` | Adım 1'deki asyncpg URI |
    | `DATABASE_SSL` | `require` (zaten varsayılan) |
    | `CORS_ORIGINS` | `https://homunculus-ai.vercel.app` |
-   | `TENANTS` | `demo-token:HOSP1` |
+   | `TENANTS` | `<openssl rand -base64 36 çıktısı>:demo-hastanesi` — köprünün cihaz token'ı ve kurum slug'ı (aşağıdaki nota bak) |
    | `SEED_ADMIN_EMAIL` | ör. `admin@hastane.com.tr` (**`.local`/`localhost` KABUL EDİLMEZ**) |
    | `SEED_ADMIN_PASSWORD` | güçlü parola (**ilk deploy'dan sonra sil**) |
    | `JWT_SECRET` | Render otomatik üretir |
+
+   > **`TENANTS`:** `:`'dan sonraki kısım kurumun **slug'ı** olmalı — seed `demo-hastanesi`
+   > oluşturur. `HOSP1` gibi başka bir anahtar hiçbir klinisyenin panosuyla eşleşmez; veriler gelir
+   > ama pano boş kalır. Token'ı `openssl rand -base64 36` ile üret, repoda duran `demo-token`'ı
+   > kullanma. `TENANTS` boş ya da geçersizse API başlamayı reddeder.
 
 3. **Deploy.** Başlangıç komutu sırayla: `alembic upgrade head` → `seed_admin.py` → `uvicorn`.
    Supabase → **Table Editor**'da 17 tabloyu ve `users` içinde admini görmelisin.

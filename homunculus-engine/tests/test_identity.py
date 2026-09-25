@@ -160,3 +160,22 @@ async def test_a_failing_startup_check_does_not_stop_the_service(caplog):
     with caplog.at_level(logging.ERROR):
         with TestClient(app) as client:
             assert client.get("/health").status_code == 200
+
+
+# ---------------------------------------------------------------- who acted, bounded
+def test_a_role_is_a_short_non_blank_string_or_unknown():
+    from homunculus.api.identity import ROLE_MAX, bounded_role
+
+    assert bounded_role("ayse") == "ayse"
+    assert bounded_role("r" * ROLE_MAX) == "r" * ROLE_MAX
+    for bad in ({"name": "dr.x"}, ["nurse"], 7, None, True, "", "   ", "r" * (ROLE_MAX + 1)):
+        assert bounded_role(bad) == "unknown", bad
+    assert bounded_role("r" * 65, limit=64) == "unknown"
+
+
+def test_the_role_bound_fits_every_username():
+    """A signed-in user's username is replayed as `acknowledged_by`: it must never be cut."""
+    from homunculus.api.identity import ROLE_MAX
+    from homunculus.auth.models import User
+
+    assert ROLE_MAX == User.__table__.c.username.type.length

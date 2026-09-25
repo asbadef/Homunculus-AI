@@ -10,7 +10,10 @@ It runs on every boot, so it is careful about what it finds:
     `(user_id, tenant_id)`, so racing boots could otherwise insert a duplicate membership);
   * an EXISTING account at the configured address is only linked to the seed tenant if it is an
     active local account with no membership in another tenant — anything else raises
-    `SeedRefused` rather than hand `hospital_admin` to the wrong account.
+    `SeedRefused` rather than hand `hospital_admin` to the wrong account;
+  * a NEW account is created only with a password that is at least 12 characters long and not
+    a known placeholder (`change-me`, `password`, ...) — otherwise `SeedRefused`. An existing
+    account's password is never checked, and never changed.
 
 Credentials come from the caller (CLI reads them from the environment) — never hardcoded.
 """
@@ -35,8 +38,30 @@ _MAX_LOGIN = min(User.__table__.c.username.type.length, User.__table__.c.email.t
 
 
 class SeedRefused(ValueError):
-    """An account already exists at the bootstrap address but must not be made the seed
-    tenant's administrator (inactive, not a local account, or a member of another tenant)."""
+    """The seed leaves the database as it is: an account exists at the bootstrap address but
+    must not be made the seed tenant's administrator (inactive, not a local account, or a member
+    of another tenant), or the account would be created with a weak password."""
+
+
+# The bootstrap administrator holds every permission. A deployment file's placeholder, or the
+# first word an operator types, must not become that account's password. (Entries shorter than
+# MIN_SEED_PASSWORD are refused by length already; they are listed so the list reads as intent.)
+MIN_SEED_PASSWORD = 12
+_PLACEHOLDER_PASSWORDS = frozenset({
+    "change-me", "changeme", "change_me", "change-me-now", "password", "password1234",
+    "passw0rd1234", "admin", "administrator", "admin1234567", "123456789012", "qwertyuiop12",
+    "homunculus", "homunculus123", "parola", "sifre", "yonetici", "yönetici",
+})
+
+
+def seed_password_problem(password: str) -> str | None:
+    """Why `password` must not be the NEW bootstrap administrator's password, or None. The
+    reason never quotes the password."""
+    if len(password) < MIN_SEED_PASSWORD:
+        return f"en az {MIN_SEED_PASSWORD} karakter olmalı"
+    if password.strip().casefold() in _PLACEHOLDER_PASSWORDS:
+        return "bilinen bir örnek/varsayılan parola"
+    return None
 
 
 def _bootstrap_login(email: str) -> str:
@@ -102,6 +127,10 @@ async def seed_bootstrap(
         if elsewhere is not None:
             await _refuse(db, f"{key!r} hesabı başka bir kurumun ({elsewhere!r}) üyesi; "
                               f"tohumlama onu {tenant_slug!r} yöneticisi yapmaz.")
+    elif (problem := seed_password_problem(password)) is not None:
+        # Only when the account would be CREATED: an existing one keeps its own password.
+        await _refuse(db, f"SEED_ADMIN_PASSWORD zayıf ({problem}); {key!r} yönetici hesabı "
+                          f"oluşturulmadı. Güçlü bir parola verip yeniden başlatın.")
 
     tenant = (await db.execute(
         select(Tenant).where(Tenant.slug == tenant_slug)
