@@ -24,11 +24,11 @@ Aşağıdakiler gerçek Postgres'e karşı çalıştırılıp doğrulandı (dock
   (`hospital_admin` MFA ister: ilk girişte panel doğrulayıcı için QR gösterir)
 - Test paketi: **306 backend / 190 frontend** yeşil
 
-> ⚠️ **RBAC dalı (`feat/ldap-rbac`) için açık engel — B1 (2026-09-25):** migration 0006'dan geçmiş
-> bir veritabanında `tenant_memberships.role` sütunu hâlâ `userrole` enum tipinde. Bu yüzden yeni
-> bir kurum üyeliği yazılamıyor: seed yeni yönetici **oluşturamıyor** (hata verip çıkıyor, bu da
-> `startCommand`'ı durduruyor) ve `POST /admin/users` 500 dönüyor. Düzeltilene kadar bu dalı deploy
-> etme. Ayrıntı: `docs/superpowers/plans/2026-09-23-rbac-groups-permissions.md`, "Execution status".
+> ℹ️ **RBAC dalı (`feat/ldap-rbac`), B1 — düzeltildi (2026-09-26):** migration 0006 artık
+> `tenant_memberships.role` sütununu `varchar(40)` yapıyor; seed ve `POST /admin/users` gerçek
+> migration'dan geçmiş veritabanında çalışıyor (`tests/test_migration_0006_orm_writes.py`). Deploy
+> sırası ve kontroller: `docs/superpowers/plans/2026-09-23-rbac-groups-permissions.md`, Task 20
+> "Deploy notes for the VM".
 
 ---
 

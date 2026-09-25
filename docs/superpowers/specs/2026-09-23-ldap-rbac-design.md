@@ -74,7 +74,9 @@ Changes to `users`:
 `tenant_memberships` keeps its job as the user ↔ tenant link. Its `role` column becomes nullable
 and is no longer written. `UserRole`, `MFA_REQUIRED_ROLES` and `require_roles` are **deleted** from
 the Python code; the legacy-role → group conversion happens once, in the migration, in SQL. The
-PostgreSQL `userrole` enum type stays on the now-unused column until a later cleanup migration.
+migration turns the now-unused column into `varchar(40)` (an enum-typed column rejects the NULL
+the ORM writes); the PostgreSQL `userrole` enum type itself stays until a later cleanup migration
+drops it together with the column.
 
 ## 2. Permission catalogue
 

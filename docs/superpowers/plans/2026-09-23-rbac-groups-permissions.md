@@ -7976,6 +7976,9 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
     `audit.view` or `devices.manage`.
   - **Rows outside the catalogue.** Keys outside the catalogue that are already in a group's rows
     are ignored everywhere but survive edits. Clean them up in the cleanup migration.
+- **`uq_one_active_admission_per_patient`** (one active admission per patient) exists only in migration
+  0002, not on the model. The `create_all` test databases never enforce it, so production is stricter
+  than the tests. Mirror it on the model (`Index(..., unique=True, postgresql_where=...)`).
 - **Migration 0006 pre-flight:** the too-long and blank-login refusals work (probed) but have no repo
   test; add two parametrised cases to `test_migration_0006_conversion.py`.
 - **The test-run lock (`tests/conftest.py`).** An unreachable `TEST_DATABASE_URL` aborts the whole
