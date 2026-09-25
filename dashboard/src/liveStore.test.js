@@ -46,7 +46,7 @@ function fakeBase(extra = {}) {
   };
 }
 
-const ME = { email: "admin@example.com", username: "admin", full_name: "Sistem Yöneticisi",
+const ME = { id: "u-admin", email: "admin@example.com", username: "admin", full_name: "Sistem Yöneticisi",
              groups: [{ slug: "hospital_admin", name: "Sistem Yöneticisi" }], totp_enabled: false };
 
 function fakeApi({ login, me, verifyTotp, setupTotp, accessToken, changePassword } = {}) {
@@ -72,7 +72,7 @@ describe("liveStore — real authentication over the simulation", () => {
 
     expect(api.login).toHaveBeenCalledWith("admin", "gizli");
     expect(store.getState().user).toEqual({
-      email: "admin@example.com", username: "admin", full_name: "Sistem Yöneticisi",
+      id: "u-admin", email: "admin@example.com", username: "admin", full_name: "Sistem Yöneticisi",
       role: ROLE.HOSPITAL_ADMIN, perms: ADMIN_PERMS, groups: ["hospital_admin"],
       groupNames: ["Sistem Yöneticisi"],
     });

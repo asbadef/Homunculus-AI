@@ -31,8 +31,18 @@ describe("backendApi — auth", () => {
     const [url, opts] = fetchMock.mock.calls[0];
     expect(url).toBe("https://api.test/auth/login");
     expect(opts.method).toBe("POST");
-    expect(JSON.parse(opts.body)).toEqual({ email: "admin@demo.local", password: "gizli" });
+    // `login` takes a username or an e-mail; `email` is only the backend's legacy alias.
+    expect(JSON.parse(opts.body)).toEqual({ login: "admin@demo.local", password: "gizli" });
     expect(api.accessToken()).toBe("acc-1");
+  });
+
+  it("signs in with a username as the login", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(TOKENS));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+
+    await api.login("selin.arslan", "gizli");
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ login: "selin.arslan", password: "gizli" });
   });
 
   it("reports when MFA is required so the UI can show the TOTP gate", async () => {

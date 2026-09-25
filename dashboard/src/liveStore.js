@@ -1,15 +1,17 @@
 // src/liveStore.js — the seam that puts the real backend behind the clinical UI.
 //
 // The design (ClinicalDemo) drives a simulation store. This wraps that store and replaces ONLY the
-// authentication actions with real API calls, overlaying the resulting session on top of the
-// simulated state. Everything the backend does not implement yet keeps working exactly as before,
-// so the UI stays whole while the real system grows underneath it, domain by domain.
+// actions the backend implements (authentication, the board, acknowledgements, administration)
+// with real API calls, overlaying the resulting state on top of the simulated state. Everything
+// the backend does not implement yet keeps working exactly as before, so the UI stays whole while
+// the real system grows underneath it, domain by domain.
 
 import {
   sessionFromToken, accessProblem, secretFromProvisioningUri, NO_PERMISSIONS, NO_BOARD_ACCESS,
 } from "./liveAuth.js";
-import { uiRoleFromPerms } from "./permissions.js";
+import { uiRoleFromPerms, hasAny } from "./permissions.js";
 import { patientFromBoard, patientsFromBoard, bedsFromPatients, alertsFromPatients } from "./liveAdapters.js";
+import { userFromApi, groupFromApi } from "./liveAdmin.js";
 import { CONNECTION, nextConnection } from "./liveConnection.js";
 
 // How long to wait before the ONE reconnect attempt after the stream drops. Not a retry loop:
@@ -28,6 +30,14 @@ const REFUSAL_MESSAGES = new Map([
   [NO_BOARD_ACCESS, "Panoya erişim yetkiniz yok. Sistem yöneticinizle görüşün."],
 ]);
 const REFUSED_GENERIC = "Bu hesapla oturum açılamıyor. Sistem yöneticinizle görüşün.";
+
+// Administration state lives under its own keys so the simulation's `users` is untouched (the
+// simulated admission/care pickers still read it in live mode; they are not backed). Empty until
+// loadAdmin(), and emptied again when the session ends: a shared ward workstation must not show
+// the previous administrator's staff list to whoever signs in next.
+const ADMIN_EMPTY = Object.freeze({
+  adminUsers: [], adminGroups: [], adminPermissions: [], adminError: null,
+});
 
 /** True when an API failure means the server REFUSED the session: a refresh it turned down
  *  (backendApi marks the error `sessionEnded`), or a 401/403 on the call itself. Anything else —
@@ -81,6 +91,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     // Set by restoreSession() when the server could not be reached ({code, message, detail});
     // null otherwise. See SESSION_UNREACHABLE.
     sessionError: null,
+    ...ADMIN_EMPTY,
   };
   const listeners = new Set();
   const emit = () => { for (const fn of listeners) fn(); };
@@ -117,11 +128,12 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     return session;
   }
 
-  /** The UI's user object. `role` is DISPLAY ONLY (icons, labels); gating uses `perms`. */
+  /** The UI's user object. `role` is DISPLAY ONLY (icons, labels); gating uses `perms`. `id` is
+   *  the account's, for the admin rules that never let you reset or deactivate yourself. */
   function sessionUser(me, session) {
     const groups = Array.isArray(me.groups) ? me.groups : [];
     return {
-      email: me.email, username: me.username, full_name: me.full_name,
+      id: me.id, email: me.email, username: me.username, full_name: me.full_name,
       role: uiRoleFromPerms(session.perms),
       perms: session.perms, groups: session.groups,
       groupNames: groups.map((g) => g.name),
@@ -139,6 +151,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
   /** Fetch the profile and open the session. */
   async function openSession(session) {
     const me = await api.me();
+    clearAdmin();
     setOverlay({ user: sessionUser(me, session), mfaPending: null, sessionError: null });
     emit();
     return { mfaRequired: false };
@@ -260,6 +273,73 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     };
   }
 
+  // ---------------------------------------------------------------- administration (/admin)
+
+  // Bumped by every load and by clearAdmin(): a load that finishes after a newer one started, or
+  // after the session ended, is dropped instead of overwriting what is on screen.
+  let adminLoadSeq = 0;
+
+  function clearAdmin() {
+    adminLoadSeq += 1;
+    setOverlay(ADMIN_EMPTY);
+  }
+
+  /** Load users, groups and the catalogue. Never rejects. A refused call (403) leaves the others
+   *  loaded and the reason in `adminError`. It asks only for what the session's perms cover (the
+   *  routes in admin/router.py): the users with users.manage, the groups with users.manage or
+   *  groups.manage, the catalogue with groups.manage. So a user desk sees users and groups, and
+   *  no refusal for the catalogue it may not read. Without a session it asks for all three and
+   *  lets the server answer. */
+  async function loadAdmin() {
+    const seq = ++adminLoadSeq;
+    const perms = overlay.user?.perms;
+    const may = (...keys) => !Array.isArray(perms) || hasAny(perms, keys);
+    // Not asked: an empty list, no error. Promise.resolve().then turns a synchronous throw into
+    // a rejection, so allSettled sees every failure.
+    const ask = (allowed, call) => (allowed ? Promise.resolve().then(call) : Promise.resolve([]));
+    const [users, groups, catalogue] = await Promise.allSettled([
+      ask(may("users.manage"), () => api.adminUsers()),
+      ask(may("users.manage", "groups.manage"), () => api.adminGroups()),
+      ask(may("groups.manage"), () => api.adminPermissions()),
+    ]);
+    if (seq !== adminLoadSeq) return;           // superseded by a newer load or a sign-out
+    const list = (r, adapt) => (r.status === "fulfilled" && Array.isArray(r.value)
+      ? (adapt ? r.value.map(adapt) : r.value) : []);
+    const failed = [users, groups, catalogue].find((r) => r.status === "rejected");
+    setOverlay({
+      adminUsers: list(users, userFromApi),
+      adminGroups: list(groups, groupFromApi),
+      adminPermissions: list(catalogue),
+      adminError: failed ? (failed.reason?.message || String(failed.reason)) : null,
+    });
+    emit();
+  }
+
+  /** Run an admin call, then reload so the screen shows what the server now holds. A refusal
+   *  (403 beyond your rights; 409 last administrator, shared account, yourself, system group;
+   *  422 validation; 404) rejects with the API's error as it is, its message and `status`, for
+   *  the panel to show. Nothing is reloaded then, since nothing changed. backendApi has already
+   *  refreshed once on a 401 (a request queued behind the caller's own demotion) and never
+   *  refreshes on a 403 or 409. */
+  const thenReload = async (call) => {
+    const result = await call();
+    await loadAdmin();
+    return result;
+  };
+
+  /** A group from the editor ({id?, slug, name, description, mfaRequired, isSystem, permissions})
+   *  onto the API. The system group's rights and MFA rule are fixed (409), so only its name and
+   *  description are sent. The slug is set at creation and never changes. */
+  function saveGroup(g) {
+    if (!g.id) {
+      return api.adminCreateGroup({ slug: g.slug, name: g.name, description: g.description,
+                                    mfa_required: g.mfaRequired, permissions: g.permissions });
+    }
+    const labels = { name: g.name, description: g.description };
+    return api.adminUpdateGroup(g.id, g.isSystem === true ? labels
+      : { ...labels, mfa_required: g.mfaRequired, permissions: g.permissions });
+  }
+
   return {
     ...base,
     getState,
@@ -267,6 +347,16 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     refreshBoard,
     acknowledgeAlert,
     startLive,
+
+    loadAdmin,
+    adminCreateUser: (body) => thenReload(() => api.adminCreateUser(body)),
+    adminUpdateUser: (id, body) => thenReload(() => api.adminUpdateUser(id, body)),
+    adminSetUserGroups: (id, groupIds) => thenReload(() => api.adminSetUserGroups(id, groupIds)),
+    /** Nothing on screen changes with a password, so nothing is reloaded. */
+    adminResetPassword: (id, password) => api.adminResetPassword(id, password),
+    adminResetMfa: (id) => thenReload(() => api.adminResetMfa(id)),
+    adminSaveGroup: (g) => thenReload(() => saveGroup(g)),
+    adminDeleteGroup: (id) => thenReload(() => api.adminDeleteGroup(id)),
 
     /** Password step. Resolves to {mfaRequired, enrolled?} — the UI shows the TOTP gate when
      *  mfaRequired, and the enrolment (QR) flow inside it when not yet enrolled. */
@@ -313,6 +403,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
      *  store — leaving OUR overlay's mfaPending set and the gate stuck on screen. */
     cancelMfaLogin() {
       api.logout();
+      clearAdmin();
       setOverlay({ user: null, mfaPending: null, sessionError: null });
       emit();
     },
@@ -363,6 +454,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
 
     logout() {
       api.logout();
+      clearAdmin();
       setOverlay({ user: null, mfaPending: null, sessionError: null });
       emit();
       if (typeof base.logout === "function") base.logout();

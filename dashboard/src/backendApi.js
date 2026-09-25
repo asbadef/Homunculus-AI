@@ -1,10 +1,15 @@
 // src/backendApi.js — client for the real Homunculus backend (FastAPI).
 //
 // Separate from api.js (the legacy board/ingest transport) because this one speaks the
-// authenticated API: JWT login, TOTP/MFA, and — later — admissions, alerts and the tenant
-// hierarchy. It holds the access/refresh pair, attaches the bearer header, and transparently
-// refreshes once on a 401 so a expiring token never bounces the clinician to the login screen
-// mid-shift.
+// authenticated API: JWT login, TOTP/MFA, the account (password change), the administration API
+// (/admin: users, groups, the permission catalogue — homunculus-engine admin/router.py) and —
+// later — admissions, alerts and the tenant hierarchy. It holds the access/refresh pair, attaches
+// the bearer header, and transparently refreshes once on a 401 so a expiring token never bounces
+// the clinician to the login screen mid-shift.
+//
+// Every refusal rejects with the API's own message and the HTTP `status`, so a screen can show
+// "Kendi yetkilerinizi aşan bir işlem yapılamaz: …" (403) or "Son yönetici yetkisi
+// kaldırılamaz" (409) as the server wrote it.
 //
 // The base URL comes from VITE_API_URL at build time; empty means same-origin (the Vite dev
 // proxy). Tokens live in localStorage so a page reload keeps the session.
@@ -57,14 +62,26 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {})
   async function failure(res, fallback) {
     // FastAPI reports problems as {"detail": ...}; surface it so the UI can show the real reason.
     let detail = fallback;
+    let fieldErrors;
     try {
       const body = await res.json();
-      if (body?.detail) detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+      if (Array.isArray(body?.detail)) {
+        // A request validation error (422). Its items echo the rejected `input` — a password
+        // among them — so only the field and the message are kept, never the raw detail.
+        fieldErrors = validationErrors(body.detail);
+        const text = fieldErrors
+          .map((e) => (e.field ? `${e.field}: ${e.message}` : e.message))
+          .filter(Boolean).join("; ");
+        if (text) detail = text;
+      } else if (body?.detail) {
+        detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+      }
     } catch { /* non-JSON body — keep the fallback */ }
     // The status travels with the message, so a caller can tell a refusal (4xx) from a server
     // that could not answer (5xx) without parsing text. A network failure has no status at all.
     const err = new Error(detail);
     err.status = res.status;
+    if (fieldErrors) err.fieldErrors = fieldErrors;
     return err;
   }
 
@@ -117,15 +134,20 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {})
       res = await send();
     }
     if (!res.ok) throw await failure(res, `İstek başarısız (${res.status})`);
+    if (res.status === 204) return null;     // DELETE answers with no body
     return res.json();
   }
+
+  /** A path segment from an id: an id can name a record, never another route. */
+  const seg = (id) => encodeURIComponent(String(id));
 
   return {
     accessToken,
     logout,
 
-    async login(email, password) {
-      const res = await post("/auth/login", { email, password });
+    /** `login` is a username or an e-mail (the API's `email` field is a legacy alias). */
+    async login(login, password) {
+      const res = await post("/auth/login", { login, password });
       if (!res.ok) throw await failure(res, "Giriş başarısız.");
       const tokens = await res.json();
       setTokens(tokens);
@@ -160,14 +182,64 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {})
       return authed("/stream-ticket", { method: "POST" });
     },
 
-    acknowledge(patientId, kind, role) {
-      return authed("/ack", { method: "POST",
-                              body: { patient_id: patientId, kind, role } });
+    /** The actor is attributed by the API from the token; nothing about who is sent. */
+    acknowledge(patientId, kind) {
+      return authed("/ack", { method: "POST", body: { patient_id: patientId, kind } });
     },
+
+    /** The change retires every existing session; the API answers with a fresh pair. */
+    async changePassword(currentPassword, newPassword) {
+      const tokens = await authed("/auth/password", {
+        method: "POST", body: { current_password: currentPassword, new_password: newPassword },
+      });
+      setTokens(tokens);
+      return tokens;
+    },
+
+    // ---- administration (/admin, see homunculus-engine admin/router.py) ----
+    // Bodies are the admin schemas' (admin/schemas.py): GroupCreate {slug, name, description,
+    // mfa_required, permissions}, GroupPatch (any of name, description, mfa_required,
+    // permissions), UserCreate {username, email, full_name, password, group_ids}, UserPatch (any
+    // of full_name, email — "" clears it —, is_active). Groups answer GroupOut, users UserOut.
+
+    /** [{key, description}] — needs groups.manage. */
+    adminPermissions() { return authed("/admin/permissions"); },
+    /** [GroupOut] — users.manage OR groups.manage. The system group reports the whole catalogue. */
+    adminGroups() { return authed("/admin/groups"); },
+    adminCreateGroup(body) { return authed("/admin/groups", { method: "POST", body }); },
+    adminUpdateGroup(id, body) { return authed(`/admin/groups/${seg(id)}`, { method: "PATCH", body }); },
+    /** 204: resolves to null. */
+    adminDeleteGroup(id) { return authed(`/admin/groups/${seg(id)}`, { method: "DELETE" }); },
+    /** [UserOut] — users.manage. */
+    adminUsers() { return authed("/admin/users"); },
+    adminCreateUser(body) { return authed("/admin/users", { method: "POST", body }); },
+    adminUpdateUser(id, body) { return authed(`/admin/users/${seg(id)}`, { method: "PATCH", body }); },
+    /** Replaces the user's MANUAL memberships; directory-held ones stay. */
+    adminSetUserGroups(id, groupIds) {
+      return authed(`/admin/users/${seg(id)}/groups`, { method: "PUT", body: { group_ids: groupIds } });
+    },
+    adminResetPassword(id, password) {
+      return authed(`/admin/users/${seg(id)}/reset-password`, { method: "POST", body: { password } });
+    },
+    adminResetMfa(id) { return authed(`/admin/users/${seg(id)}/reset-mfa`, { method: "POST" }); },
 
     /** Escape hatch for endpoints not yet wrapped (admissions, alerts, tenant…). */
     request: authed,
   };
+}
+
+/** The items of a FastAPI validation error as {field, type, message}: the field is the `loc`
+ *  path without "body", the message without pydantic's "Value error, " prefix. `input` and
+ *  `ctx` are dropped. */
+function validationErrors(detail) {
+  return detail.filter((e) => e && typeof e === "object").map((e) => {
+    const loc = Array.isArray(e.loc) ? e.loc.filter((p) => p !== "body") : [];
+    return {
+      field: loc.length ? loc.join(".") : null,
+      type: typeof e.type === "string" ? e.type : null,
+      message: typeof e.msg === "string" ? e.msg.replace(/^Value error, /, "") : "",
+    };
+  });
 }
 
 // Shared instance for the app; tests build their own with an injected fetch.
