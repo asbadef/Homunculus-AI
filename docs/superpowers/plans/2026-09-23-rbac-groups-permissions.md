@@ -7685,6 +7685,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
     `audit.view` or `devices.manage`.
   - **Rows outside the catalogue.** Keys outside the catalogue that are already in a group's rows
     are ignored everywhere but survive edits. Clean them up in the cleanup migration.
+- **Migration 0006 pre-flight:** the too-long and blank-login refusals work (probed) but have no repo
+  test; add two parametrised cases to `test_migration_0006_conversion.py`.
 - **The test-run lock (`tests/conftest.py`).** An unreachable `TEST_DATABASE_URL` aborts the whole
   run. pytest-xdist, if it is ever added, needs the lock skipped in workers
   (`config.workerinput`). Paths outside `tests/` need `-p tests.conftest`.
