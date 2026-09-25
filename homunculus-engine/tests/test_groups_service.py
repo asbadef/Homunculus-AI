@@ -10,7 +10,7 @@ from homunculus.auth.groups import (
     tenant_of_user,
 )
 from homunculus.auth.models import (
-    SOURCE_LDAP, Group, GroupPermission, TenantMembership, User, UserGroup,
+    AUTH_LDAP, SOURCE_LDAP, Group, GroupPermission, TenantMembership, User, UserGroup,
 )
 from homunculus.auth.permissions import DEFAULT_GROUPS
 from homunculus.tenant.models import Tenant
@@ -178,6 +178,26 @@ async def test_count_admins_counts_a_system_group_member_by_rule(db_session):
         admin.permissions.remove(next(p for p in admin.permissions if p.permission == key))
     await db_session.flush()
     assert await count_admins(db_session, t.id) == 1     # by rule, not by rows
+
+
+async def test_count_admins_counts_local_accounts_with_a_password_only(db_session):
+    """An AD administrator is of no use while the directory is down, and a local account without
+    a password cannot sign in: neither keeps the tenant administrable."""
+    t = await _tenant(db_session)
+    groups = await ensure_default_groups(db_session, t.id)
+    ad = await _user(db_session, t, "dizin")
+    ad.auth_source, ad.hashed_password = AUTH_LDAP, None
+    no_password = await _user(db_session, t, "parolasiz")
+    no_password.hashed_password = None
+    local = await _user(db_session, t, "yerel")
+    for u in (ad, no_password):
+        await set_manual_groups(db_session, user=u, tenant_id=t.id,
+                                group_ids=[groups["hospital_admin"].id], granted_by_id=None)
+    await db_session.flush()
+    assert await count_admins(db_session, t.id) == 0
+    await set_manual_groups(db_session, user=local, tenant_id=t.id,
+                            group_ids=[groups["hospital_admin"].id], granted_by_id=None)
+    assert await count_admins(db_session, t.id) == 1
 
 
 async def test_count_admins_is_scoped_to_the_tenant(db_session):

@@ -2,7 +2,8 @@
 /admin — users and groups of the caller's tenant.
 
   GET    /admin/permissions               groups.manage
-  GET    /admin/groups                    groups.manage
+  GET    /admin/groups                    users.manage OR groups.manage (a user desk lists the
+                                          groups it may give)
   POST   /admin/groups                    groups.manage
   PATCH  /admin/groups/{id}               groups.manage
   DELETE /admin/groups/{id}               groups.manage
@@ -15,12 +16,17 @@
 
 Everything is scoped to the tenant in the caller's token (`caller_tenant_id`, which also checks
 the caller's active membership in an active tenant); a user or group of another tenant is a 404,
-the same answer as an id that names nothing. Every write starts by taking the tenant's
-admin-guard lock (`service.serialise`), and every successful mutation is audited as event_type
-"admin" with {actor, target, before, after} — never a password, hash or TOTP secret.
+the same answer as an id that names nothing. On top of the route's permission, nobody grants
+beyond their own rights, and accounts shared with another tenant (or a platform operator's) keep
+their credentials and flags — see `admin/service.py`.
+
+Every write starts with `service.serialise`: the tenant's admin-guard lock, then a re-read of the
+caller under it. Every mutation that changed something is audited as event_type "admin" with
+{actor, target, before, after} — never a password, hash or TOTP secret.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -31,7 +37,7 @@ from homunculus.admin.schemas import (
     GroupCreate, GroupOut, GroupPatch, PasswordResetIn, PermissionOut, UserCreate,
     UserGroupOut, UserGroupsIn, UserOut, UserPatch,
 )
-from homunculus.admin.service import AdminError
+from homunculus.admin.service import Actor, AdminError
 from homunculus.auth.audit import append_audit
 from homunculus.auth.dependencies import (
     Principal, caller_tenant_id, get_principal, require_permission,
@@ -40,14 +46,26 @@ from homunculus.auth.models import Group, User
 from homunculus.auth.permissions import ALL_PERMISSIONS, PERMISSIONS
 from homunculus.db import get_db
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 _groups = [Depends(require_permission("groups.manage"))]
 _users = [Depends(require_permission("users.manage"))]
+# Listing groups: an administrator of either kind (require_permission takes ANY of its keys).
+_either = [Depends(require_permission("users.manage", "groups.manage"))]
 
 
 def _http(exc: AdminError) -> HTTPException:
-    return HTTPException(status_code=exc.status_code, detail=exc.detail)
+    headers = {"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None
+    return HTTPException(status_code=exc.status_code, detail=exc.detail, headers=headers)
+
+
+def _actor(principal: Principal) -> Actor:
+    # `principal.user.token_version` equals the token's `tv`: get_principal checked it on load,
+    # and nothing has changed the row in this request yet.
+    return Actor(id=principal.user.id, perms=principal.perms,
+                 token_version=principal.user.token_version)
 
 
 def _group_out(group: Group, count: int) -> GroupOut:
@@ -74,9 +92,19 @@ def _user_out(user: User, tenant_id: uuid.UUID) -> UserOut:
 
 def _audit(request: Request, principal: Principal, kind: str, target: str, *,
            before=None, after=None) -> None:
-    append_audit(request, tenant=principal.tenant, event_type="admin", subject=kind,
-                 payload={"actor": principal.user.username, "target": target,
-                          "before": before, "after": after})
+    """Append the audit row. It runs AFTER the commit: if the trail refuses the row, the change
+    stands unaudited — say so loudly (no payload, no exception text: nothing that could carry
+    account data) and let the error surface."""
+    try:
+        append_audit(request, tenant=principal.tenant, event_type="admin", subject=kind,
+                     payload={"actor": principal.user.username, "target": target,
+                              "before": before, "after": after})
+    except Exception as exc:
+        logger.error(
+            "admin change COMMITTED but NOT AUDITED: event=%s target=%s actor=%s tenant=%s "
+            "error=%s", kind, target, principal.user.username, principal.tenant,
+            type(exc).__name__)
+        raise
 
 
 async def _run(db: AsyncSession, coro):
@@ -88,6 +116,10 @@ async def _run(db: AsyncSession, coro):
         raise _http(exc) from None
 
 
+async def _begin(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor) -> None:
+    await _run(db, service.serialise(db, tenant_id, actor))
+
+
 # ---------------------------------------------------------------- permissions & groups
 
 @router.get("/permissions", response_model=list[PermissionOut],
@@ -96,7 +128,7 @@ async def list_permissions() -> list[PermissionOut]:
     return [PermissionOut(key=k, description=d) for k, d in PERMISSIONS.items()]
 
 
-@router.get("/groups", response_model=list[GroupOut], dependencies=_groups)
+@router.get("/groups", response_model=list[GroupOut], dependencies=_either)
 async def list_groups(tenant_id: uuid.UUID = Depends(caller_tenant_id),
                       db: AsyncSession = Depends(get_db)) -> list[GroupOut]:
     return [_group_out(g, n) for g, n in await service.list_groups(db, tenant_id)]
@@ -108,9 +140,10 @@ async def create_group(body: GroupCreate, request: Request,
                        principal: Principal = Depends(get_principal),
                        tenant_id: uuid.UUID = Depends(caller_tenant_id),
                        db: AsyncSession = Depends(get_db)) -> GroupOut:
-    await service.serialise(db, tenant_id)
+    actor = _actor(principal)
+    await _begin(db, tenant_id, actor)
     group = await _run(db, service.create_group(
-        db, tenant_id, slug=body.slug, name=body.name, description=body.description,
+        db, tenant_id, actor, slug=body.slug, name=body.name, description=body.description,
         mfa_required=body.mfa_required, permissions=body.permissions))
     await db.commit()
     _audit(request, principal, "group.create", str(group.id),
@@ -124,17 +157,19 @@ async def update_group(group_id: uuid.UUID, body: GroupPatch, request: Request,
                        principal: Principal = Depends(get_principal),
                        tenant_id: uuid.UUID = Depends(caller_tenant_id),
                        db: AsyncSession = Depends(get_db)) -> GroupOut:
-    await service.serialise(db, tenant_id)
+    actor = _actor(principal)
+    await _begin(db, tenant_id, actor)
     group = await _run(db, service.get_group(db, tenant_id, group_id, for_update=True))
     before = {"name": group.name, "description": group.description,
               "permissions": group.permission_keys, "mfa_required": group.mfa_required}
-    group = await _run(db, service.update_group(
-        db, tenant_id, group, name=body.name, description=body.description,
+    changed = await _run(db, service.update_group(
+        db, tenant_id, group, actor, name=body.name, description=body.description,
         mfa_required=body.mfa_required, permissions=body.permissions))
     await db.commit()
-    _audit(request, principal, "group.update", str(group.id), before=before,
-           after={"name": group.name, "description": group.description,
-                  "permissions": group.permission_keys, "mfa_required": group.mfa_required})
+    if changed:
+        _audit(request, principal, "group.update", str(group.id), before=before,
+               after={"name": group.name, "description": group.description,
+                      "permissions": group.permission_keys, "mfa_required": group.mfa_required})
     return _group_out(group, await service.member_count(db, group.id))
 
 
@@ -144,10 +179,11 @@ async def delete_group(group_id: uuid.UUID, request: Request,
                        principal: Principal = Depends(get_principal),
                        tenant_id: uuid.UUID = Depends(caller_tenant_id),
                        db: AsyncSession = Depends(get_db)) -> Response:
-    await service.serialise(db, tenant_id)
+    actor = _actor(principal)
+    await _begin(db, tenant_id, actor)
     group = await _run(db, service.get_group(db, tenant_id, group_id, for_update=True))
     before = {"slug": group.slug, "name": group.name, "permissions": group.permission_keys}
-    await _run(db, service.delete_group(db, tenant_id, group))
+    await _run(db, service.delete_group(db, tenant_id, group, actor))
     await db.commit()
     _audit(request, principal, "group.delete", str(group_id), before=before)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -167,10 +203,11 @@ async def create_user(body: UserCreate, request: Request,
                       principal: Principal = Depends(get_principal),
                       tenant_id: uuid.UUID = Depends(caller_tenant_id),
                       db: AsyncSession = Depends(get_db)) -> UserOut:
-    await service.serialise(db, tenant_id)
+    actor = _actor(principal)
+    await _begin(db, tenant_id, actor)
     user = await _run(db, service.create_local_user(
-        db, tenant_id, username=body.username, email=body.email, full_name=body.full_name,
-        password=body.password, group_ids=body.group_ids, actor_id=principal.user.id))
+        db, tenant_id, actor, username=body.username, email=body.email,
+        full_name=body.full_name, password=body.password, group_ids=body.group_ids))
     await db.commit()
     out = _user_out(user, tenant_id)
     _audit(request, principal, "user.create", str(user.id),
@@ -184,15 +221,18 @@ async def update_user(user_id: uuid.UUID, body: UserPatch, request: Request,
                       principal: Principal = Depends(get_principal),
                       tenant_id: uuid.UUID = Depends(caller_tenant_id),
                       db: AsyncSession = Depends(get_db)) -> UserOut:
-    await service.serialise(db, tenant_id)
+    actor = _actor(principal)
+    await _begin(db, tenant_id, actor)
     user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
     before = {"full_name": user.full_name, "email": user.email, "is_active": user.is_active}
-    user = await _run(db, service.patch_user(
-        db, tenant_id, user, full_name=body.full_name, email=body.email,
+    changed = await _run(db, service.update_user(
+        db, tenant_id, user, actor, full_name=body.full_name, email=body.email,
         is_active=body.is_active))
     await db.commit()
-    _audit(request, principal, "user.update", str(user.id), before=before,
-           after={"full_name": user.full_name, "email": user.email, "is_active": user.is_active})
+    if changed:
+        _audit(request, principal, "user.update", str(user.id), before=before,
+               after={"full_name": user.full_name, "email": user.email,
+                      "is_active": user.is_active})
     return _user_out(await service.get_tenant_user(db, tenant_id, user.id), tenant_id)
 
 
@@ -201,11 +241,11 @@ async def set_user_groups(user_id: uuid.UUID, body: UserGroupsIn, request: Reque
                           principal: Principal = Depends(get_principal),
                           tenant_id: uuid.UUID = Depends(caller_tenant_id),
                           db: AsyncSession = Depends(get_db)) -> UserOut:
-    await service.serialise(db, tenant_id)
+    actor = _actor(principal)
+    await _begin(db, tenant_id, actor)
     user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
     before = [g.slug for g in _user_out(user, tenant_id).groups]
-    user = await _run(db, service.set_user_groups(db, tenant_id, user, body.group_ids,
-                                                  principal.user.id))
+    user = await _run(db, service.set_user_groups(db, tenant_id, user, body.group_ids, actor))
     await db.commit()
     out = _user_out(user, tenant_id)
     _audit(request, principal, "user.groups", str(user.id), before=before,
@@ -218,9 +258,10 @@ async def reset_password(user_id: uuid.UUID, body: PasswordResetIn, request: Req
                          principal: Principal = Depends(get_principal),
                          tenant_id: uuid.UUID = Depends(caller_tenant_id),
                          db: AsyncSession = Depends(get_db)) -> dict:
-    await service.serialise(db, tenant_id)
+    actor = _actor(principal)
+    await _begin(db, tenant_id, actor)
     user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
-    await _run(db, service.reset_password(db, user, body.password))
+    await _run(db, service.reset_password(db, tenant_id, user, actor, body.password))
     await db.commit()
     _audit(request, principal, "user.password_reset", str(user.id))
     return {"ok": True}
@@ -231,10 +272,11 @@ async def reset_mfa(user_id: uuid.UUID, request: Request,
                     principal: Principal = Depends(get_principal),
                     tenant_id: uuid.UUID = Depends(caller_tenant_id),
                     db: AsyncSession = Depends(get_db)) -> dict:
-    await service.serialise(db, tenant_id)
+    actor = _actor(principal)
+    await _begin(db, tenant_id, actor)
     user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
     before = {"totp_enabled": user.totp_enabled}
-    await _run(db, service.reset_mfa(db, user))
+    await _run(db, service.reset_mfa(db, tenant_id, user, actor))
     await db.commit()
     _audit(request, principal, "user.mfa_reset", str(user.id), before=before,
            after={"totp_enabled": False})

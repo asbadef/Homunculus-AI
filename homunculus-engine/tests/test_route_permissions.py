@@ -6,6 +6,11 @@ deliberately NOT generated from the code, so a guard that drifts (a wrong key, a
 new unguarded route) fails here instead of shipping. The HTTP tests at the bottom check that the
 guards actually admit and refuse by group, end to end through sign-in context and token.
 
+Each entry is the set of GUARDS on the route; a guard is the set of keys it accepts, any one of
+them (`require_permission(*keys)` passes on ANY of its keys). `ANY("a")` is one guard demanding
+`a`; `ANY("a", "b")` one guard accepting either — which the table must be able to tell apart from
+two guards demanding `a` AND `b`.
+
 Creating a tenant demands no group permission at all: it is a platform operator's action
 (`require_platform_operator`, spec §5), written in the table as the sentinel `PLATFORM`.
 """
@@ -14,10 +19,11 @@ from __future__ import annotations
 import uuid
 
 import pytest_asyncio
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from sqlalchemy import func, select
 
 from homunculus.api.app import create_app
+from homunculus.auth.dependencies import require_permission
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.models import Group
 from homunculus.tenant.models import Tenant
@@ -36,65 +42,73 @@ _S = "structure.manage"
 _U = "users.manage"
 _G = "groups.manage"
 
+Guards = frozenset[frozenset[str]]
+
+
+def ANY(*keys: str) -> Guards:
+    """One guard that accepts any of `keys`."""
+    return frozenset({frozenset(keys)})
+
+
 # Not a permission key (keys are dotted lower-case): the route is guarded by
 # `require_platform_operator`, which marks itself `.platform_only`.
-PLATFORM = frozenset({"<platform operator>"})
+PLATFORM = ANY("<platform operator>")
 
-EXPECTED: dict[tuple[str, str], frozenset[str]] = {
+EXPECTED: dict[tuple[str, str], Guards] = {
     # tenant/router.py — the whole physical hierarchy, reads included (spec §5: /tenant/*)
     ("POST", "/tenant/tenants"): PLATFORM,
-    ("GET", "/tenant/tenants"): frozenset({_S}),
-    ("POST", "/tenant/tenants/{tenant_id}/sites"): frozenset({_S}),
-    ("GET", "/tenant/tenants/{tenant_id}/sites"): frozenset({_S}),
-    ("POST", "/tenant/sites/{site_id}/units"): frozenset({_S}),
-    ("GET", "/tenant/sites/{site_id}/units"): frozenset({_S}),
-    ("POST", "/tenant/units/{unit_id}/rooms"): frozenset({_S}),
-    ("GET", "/tenant/units/{unit_id}/rooms"): frozenset({_S}),
-    ("POST", "/tenant/rooms/{room_id}/beds"): frozenset({_S}),
-    ("GET", "/tenant/rooms/{room_id}/beds"): frozenset({_S}),
-    ("POST", "/tenant/beds/{bed_id}/transition"): frozenset({_S}),
+    ("GET", "/tenant/tenants"): ANY(_S),
+    ("POST", "/tenant/tenants/{tenant_id}/sites"): ANY(_S),
+    ("GET", "/tenant/tenants/{tenant_id}/sites"): ANY(_S),
+    ("POST", "/tenant/sites/{site_id}/units"): ANY(_S),
+    ("GET", "/tenant/sites/{site_id}/units"): ANY(_S),
+    ("POST", "/tenant/units/{unit_id}/rooms"): ANY(_S),
+    ("GET", "/tenant/units/{unit_id}/rooms"): ANY(_S),
+    ("POST", "/tenant/rooms/{room_id}/beds"): ANY(_S),
+    ("GET", "/tenant/rooms/{room_id}/beds"): ANY(_S),
+    ("POST", "/tenant/beds/{bed_id}/transition"): ANY(_S),
     # admission/router.py
-    ("POST", "/admissions"): frozenset({"admissions.admit"}),
-    ("GET", "/admissions"): frozenset({"admissions.view"}),
-    ("GET", "/admissions/{admission_id}"): frozenset({"admissions.view"}),
-    ("GET", "/admissions/{admission_id}/patient"): frozenset({"admissions.view"}),
-    ("GET", "/admissions/{admission_id}/care-team"): frozenset({"admissions.view"}),
-    ("POST", "/admissions/{admission_id}/sign-off"): frozenset({"admissions.sign_off"}),
-    ("POST", "/admissions/{admission_id}/care-team/claim"): frozenset({"care_team.claim"}),
-    ("POST", "/admissions/{admission_id}/care-team"): frozenset({"care_team.assign"}),
+    ("POST", "/admissions"): ANY("admissions.admit"),
+    ("GET", "/admissions"): ANY("admissions.view"),
+    ("GET", "/admissions/{admission_id}"): ANY("admissions.view"),
+    ("GET", "/admissions/{admission_id}/patient"): ANY("admissions.view"),
+    ("GET", "/admissions/{admission_id}/care-team"): ANY("admissions.view"),
+    ("POST", "/admissions/{admission_id}/sign-off"): ANY("admissions.sign_off"),
+    ("POST", "/admissions/{admission_id}/care-team/claim"): ANY("care_team.claim"),
+    ("POST", "/admissions/{admission_id}/care-team"): ANY("care_team.assign"),
     ("POST", "/admissions/{admission_id}/transfer/initiate"):
-        frozenset({"admissions.move.initiate"}),
+        ANY("admissions.move.initiate"),
     ("POST", "/admissions/{admission_id}/discharge/initiate"):
-        frozenset({"admissions.move.initiate"}),
+        ANY("admissions.move.initiate"),
     ("POST", "/admissions/{admission_id}/transfer/confirm"):
-        frozenset({"admissions.transfer.confirm"}),
+        ANY("admissions.transfer.confirm"),
     ("POST", "/admissions/{admission_id}/discharge/confirm"):
-        frozenset({"admissions.discharge.confirm"}),
-    ("POST", "/shift-schedule"): frozenset({"shifts.manage"}),
-    ("POST", "/handovers"): frozenset({"handover.sign"}),
-    ("POST", "/handovers/{handover_id}/sign-outgoing"): frozenset({"handover.sign"}),
-    ("POST", "/handovers/{handover_id}/countersign"): frozenset({"handover.sign"}),
+        ANY("admissions.discharge.confirm"),
+    ("POST", "/shift-schedule"): ANY("shifts.manage"),
+    ("POST", "/handovers"): ANY("handover.sign"),
+    ("POST", "/handovers/{handover_id}/sign-outgoing"): ANY("handover.sign"),
+    ("POST", "/handovers/{handover_id}/countersign"): ANY("handover.sign"),
     # escalation/router.py
-    ("POST", "/alerts"): frozenset({"alerts.escalate"}),
-    ("POST", "/alerts/{alert_id}/escalate"): frozenset({"alerts.escalate"}),
-    ("POST", "/alerts/{alert_id}/acknowledge"): frozenset({"alerts.ack"}),
-    ("POST", "/alerts/{alert_id}/snooze"): frozenset({"alerts.ack"}),
-    ("POST", "/break-glass"): frozenset({"break_glass.use"}),
-    ("POST", "/break-glass/{session_id}/extend"): frozenset({"break_glass.use"}),
-    ("POST", "/break-glass/{session_id}/close"): frozenset({"break_glass.use"}),
+    ("POST", "/alerts"): ANY("alerts.escalate"),
+    ("POST", "/alerts/{alert_id}/escalate"): ANY("alerts.escalate"),
+    ("POST", "/alerts/{alert_id}/acknowledge"): ANY("alerts.ack"),
+    ("POST", "/alerts/{alert_id}/snooze"): ANY("alerts.ack"),
+    ("POST", "/break-glass"): ANY("break_glass.use"),
+    ("POST", "/break-glass/{session_id}/extend"): ANY("break_glass.use"),
+    ("POST", "/break-glass/{session_id}/close"): ANY("break_glass.use"),
     # admin/router.py (spec §5: /admin/users* users.manage; /admin/groups* and
-    # GET /admin/permissions groups.manage)
-    ("GET", "/admin/permissions"): frozenset({_G}),
-    ("GET", "/admin/groups"): frozenset({_G}),
-    ("POST", "/admin/groups"): frozenset({_G}),
-    ("PATCH", "/admin/groups/{group_id}"): frozenset({_G}),
-    ("DELETE", "/admin/groups/{group_id}"): frozenset({_G}),
-    ("GET", "/admin/users"): frozenset({_U}),
-    ("POST", "/admin/users"): frozenset({_U}),
-    ("PATCH", "/admin/users/{user_id}"): frozenset({_U}),
-    ("PUT", "/admin/users/{user_id}/groups"): frozenset({_U}),
-    ("POST", "/admin/users/{user_id}/reset-password"): frozenset({_U}),
-    ("POST", "/admin/users/{user_id}/reset-mfa"): frozenset({_U}),
+    # GET /admin/permissions groups.manage; listing the groups: either)
+    ("GET", "/admin/permissions"): ANY(_G),
+    ("GET", "/admin/groups"): ANY(_U, _G),        # a user desk lists what it may give
+    ("POST", "/admin/groups"): ANY(_G),
+    ("PATCH", "/admin/groups/{group_id}"): ANY(_G),
+    ("DELETE", "/admin/groups/{group_id}"): ANY(_G),
+    ("GET", "/admin/users"): ANY(_U),
+    ("POST", "/admin/users"): ANY(_U),
+    ("PATCH", "/admin/users/{user_id}"): ANY(_U),
+    ("PUT", "/admin/users/{user_id}/groups"): ANY(_U),
+    ("POST", "/admin/users/{user_id}/reset-password"): ANY(_U),
+    ("POST", "/admin/users/{user_id}/reset-mfa"): ANY(_U),
 }
 
 
@@ -102,23 +116,25 @@ def _app() -> FastAPI:
     return create_app({"t": "HOSP1"}, run_escalation_loop=False)
 
 
-def _guards(dependant) -> frozenset[str]:
-    """Every key demanded anywhere in the route's dependency tree (`require_permission` records
-    its keys on the dependency it returns), plus `PLATFORM` where `require_platform_operator`
-    guards it."""
-    found: set[str] = set()
+def _guards(dependant) -> Guards:
+    """Every guard anywhere in the route's dependency tree — the key set each
+    `require_permission` records on the dependency it returns — plus `PLATFORM` where
+    `require_platform_operator` guards it."""
+    found: set[frozenset[str]] = set()
     stack = [dependant]
     while stack:
         node = stack.pop()
-        found |= getattr(node.call, "permissions", frozenset())
+        keys = getattr(node.call, "permissions", None)
+        if keys:
+            found.add(frozenset(keys))
         if getattr(node.call, "platform_only", False):
             found |= PLATFORM
         stack.extend(node.dependencies)
     return frozenset(found)
 
 
-def _actual() -> dict[tuple[str, str], frozenset[str]]:
-    table: dict[tuple[str, str], frozenset[str]] = {}
+def _actual() -> dict[tuple[str, str], Guards]:
+    table: dict[tuple[str, str], Guards] = {}
     for route in api_routes(_app()):
         if route.endpoint.__module__ in GUARDED_MODULES:
             for method in route.methods:
@@ -159,6 +175,24 @@ def test_the_walker_refuses_an_include_it_cannot_report_in_full():
 
 
 # ---------------------------------------------------------------- the map
+def test_the_map_tells_one_either_guard_from_two_guards():
+    app = FastAPI()
+
+    @app.get("/either", dependencies=[Depends(require_permission(_U, _G))])
+    def either():
+        return {}
+
+    @app.get("/both", dependencies=[Depends(require_permission(_U)),
+                                    Depends(require_permission(_G))])
+    def both():
+        return {}
+
+    got = {route.path: _guards(route.dependant) for route in api_routes(app)}
+    assert got["/either"] == ANY(_U, _G)
+    assert got["/both"] == ANY(_U) | ANY(_G)
+    assert got["/either"] != got["/both"]
+
+
 def test_the_table_covers_all_45_guarded_routes():
     assert len(EXPECTED) == 45
 

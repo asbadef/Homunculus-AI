@@ -17,7 +17,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 
 from homunculus.api.identity import hospital_for_slugs
 from homunculus.auth.models import (
-    SOURCE_MANUAL, Group, GroupPermission, TenantMembership, User, UserGroup,
+    AUTH_LOCAL, SOURCE_MANUAL, Group, GroupPermission, TenantMembership, User, UserGroup,
 )
 from homunculus.auth.permissions import ALL_PERMISSIONS, DEFAULT_GROUPS, effective_permissions
 from homunculus.tenant.models import Tenant
@@ -172,9 +172,13 @@ async def lock_admin_guard(db: AsyncSession, tenant_id: uuid.UUID) -> None:
 
 
 async def count_admins(db: AsyncSession, tenant_id: uuid.UUID) -> int:
-    """Active ADMINISTRATORS of the tenant: users holding both `users.manage` and
-    `groups.manage`, through any of their groups, with an active membership in this tenant.
-    The last one is protected (spec §6).
+    """Active LOCAL ADMINISTRATORS of the tenant: local accounts with a password, holding both
+    `users.manage` and `groups.manage` through any of their groups, with an active membership in
+    this tenant. The last one is protected (spec §6).
+
+    Local only: an administrator who signs in through the directory is of no use while the
+    directory is down, and local accounts exist precisely so that an AD outage never locks the
+    hospital out of administration. An AD administrator therefore never counts toward the guard.
 
     Call this AFTER applying the change you want to guard, in the same transaction: it takes a
     per-tenant advisory lock so two concurrent demotions cannot both see the guard pass, and
@@ -184,6 +188,7 @@ async def count_admins(db: AsyncSession, tenant_id: uuid.UUID) -> int:
     stmt = (
         select(func.count(User.id))
         .where(User.is_active == True)  # noqa: E712
+        .where(User.auth_source == AUTH_LOCAL, User.hashed_password.is_not(None))
         .where(_holds(tenant_id, "users.manage"))
         .where(_holds(tenant_id, "groups.manage"))
         .where(select(TenantMembership.id).where(

@@ -6,18 +6,21 @@ Synthetic accounts only."""
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from homunculus.admin import service
-from homunculus.admin.service import AdminError
+from homunculus.admin.service import Actor, AdminError
 from homunculus.api.app import create_app
-from homunculus.auth.groups import count_admins, ensure_default_groups, set_manual_groups
+from homunculus.auth.groups import (
+    count_admins, ensure_default_groups, lock_admin_guard, set_manual_groups,
+)
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.models import (
     AUTH_LDAP, SOURCE_LDAP, Group, GroupPermission, TenantMembership, User, UserGroup,
@@ -34,7 +37,8 @@ PASSWORD = "Gizli-123"
 
 
 async def _make_user(db, tenant, groups, username, group_slug, **kw):
-    u = User(username=username, email=f"{username}@example.com", full_name=username.title(),
+    u = User(username=username, email=kw.pop("email", f"{username}@example.com"),
+             full_name=username.title(),
              hashed_password=kw.pop("hashed_password", hash_password(PASSWORD)), **kw)
     db.add(u)
     await db.flush()
@@ -244,8 +248,10 @@ async def test_a_group_edit_may_not_strip_the_last_administrator(client, world, 
     groups = {g["slug"]: g for g in (await c.get("/admin/groups", headers=admin)).json()}
     assert groups["it_admin"]["permissions"] == ["groups.manage", "users.manage"]
     # ... and a second administrator makes the same edit acceptable.
-    await c.put(f"/admin/users/{world['nurse'].id}/groups", headers=admin,
-                json={"group_ids": [str(world["groups"]["hospital_admin"].id)]})
+    await set_manual_groups(db_session, user=await _fresh(db_session, world["nurse"].id),
+                            tenant_id=world["tenant"].id,
+                            group_ids=[world["groups"]["hospital_admin"].id], granted_by_id=None)
+    await db_session.commit()
     res = await c.patch(f"/admin/groups/{gid}", headers=admin,
                         json={"permissions": ["users.manage"]})
     assert res.status_code == 200
@@ -330,7 +336,7 @@ async def test_deactivation_guard_and_effect(client, world, db_session):
     nurse, _ = await _headers(db_session, world["nurse"])
     res = await c.patch(f"/admin/users/{world['admin'].id}", headers=admin,
                         json={"is_active": False})
-    assert res.status_code == 409
+    assert res.status_code == 409 and res.json()["detail"] == service.SELF_DEACTIVATE
     assert (await _fresh(db_session, world["admin"].id)).is_active is True
     assert (await c.patch(f"/admin/users/{world['nurse'].id}", headers=admin,
                           json={"is_active": False})).status_code == 200
@@ -549,13 +555,17 @@ async def test_a_username_may_not_be_another_users_email(client, world, db_sessi
 async def test_an_email_may_not_be_another_users_login_either(client, world, db_session):
     c, _ = client
     admin, _ = await _headers(db_session, world["admin"])
+    # A legacy local account signs in with its address as the USERNAME and has no e-mail.
+    await _make_user(db_session, world["tenant"], world["groups"], "eski@hastane.local", "nurse",
+                     email=None)
+    await db_session.commit()
     assert (await c.post("/admin/users", headers=admin, json={
-        "username": "taklit", "email": "AYSE", "full_name": "Taklit",
+        "username": "taklit", "email": "Eski@Hastane.local", "full_name": "Taklit",
         "password": "Gecici-Parola-1"})).status_code == 409          # someone's username
     assert (await c.post("/admin/users", headers=admin, json={
         "username": "taklit", "email": "ayse@example.com", "full_name": "Taklit",
         "password": "Gecici-Parola-1"})).status_code == 409          # someone's e-mail
-    for email in ("admin", "Admin@Example.com"):
+    for email in ("eski@hastane.local", "Admin@Example.com"):
         res = await c.patch(f"/admin/users/{world['nurse'].id}", headers=admin,
                             json={"email": email})
         assert res.status_code == 409, email
@@ -564,30 +574,392 @@ async def test_an_email_may_not_be_another_users_login_either(client, world, db_
     assert res.status_code == 200 and res.json()["email"] == "ayse@example.com"
 
 
-# ---------------------------------------------------------------- the guard under concurrency
-# Two transactions race on separate connections. The second is let run until Postgres makes it
-# wait; the first then commits, and the second must see that commit before it decides.
+# ---------------------------------------------------------------- no grant beyond your own rights
 
-async def _until_a_transaction_waits(maker) -> None:
+async def _desk(db, world, member, slug, keys, *, also=()):
+    """A custom group of the demo tenant holding `keys`; `member` is put into it and into the
+    default groups `also`. Returns the group and the member's (headers, tokens)."""
+    group = Group(tenant_id=world["tenant"].id, slug=slug, name=slug, is_system=False)
+    group.permissions = [GroupPermission(permission=k) for k in keys]
+    db.add(group)
+    await db.flush()
+    await set_manual_groups(db, user=await _fresh(db, member.id), tenant_id=world["tenant"].id,
+                            group_ids=[group.id, *(world["groups"][g].id for g in also)],
+                            granted_by_id=None)
+    await db.commit()
+    return group, await _headers(db, await _fresh(db, member.id))
+
+
+def _beyond(res) -> bool:
+    return res.status_code == 403 and res.json()["detail"].startswith(service.BEYOND_OWN_RIGHTS)
+
+
+async def _groups_of(db, user_id) -> list[str]:
+    return sorted((await db.execute(
+        select(Group.slug).join(UserGroup, UserGroup.group_id == Group.id)
+        .where(UserGroup.user_id == user_id))).scalars().all())
+
+
+async def test_a_user_desk_cannot_make_anyone_an_administrator(client, world, db_session):
+    """Probe P1: `users.manage` alone once let its holder PUT themselves into hospital_admin and
+    create a fresh hospital_admin account."""
+    c, _ = client
+    masa = await _make_user(db_session, world["tenant"], world["groups"], "masa", None)
+    desk, (auth, _) = await _desk(db_session, world, masa, "user_desk", ["users.manage"])
+    ha = str(world["groups"]["hospital_admin"].id)
+
+    listing = await c.get("/admin/groups", headers=auth)      # it may see what exists ...
+    assert listing.status_code == 200 and "hospital_admin" in {g["slug"] for g in listing.json()}
+    assert _beyond(await c.put(f"/admin/users/{masa.id}/groups", headers=auth,
+                               json={"group_ids": [str(desk.id), ha]}))
+    assert _beyond(await c.post("/admin/users", headers=auth, json={
+        "username": "golge", "full_name": "Gölge", "password": "Gecici-Parola-1",
+        "group_ids": [ha]}))
+    assert _beyond(await c.post("/admin/users", headers=auth, json={
+        "username": "golge", "full_name": "Gölge", "password": "Gecici-Parola-1",
+        "group_ids": [str(world["groups"]["nurse"].id)]}))   # board rights it does not hold
+    assert await _groups_of(db_session, masa.id) == ["user_desk"]
+    assert (await db_session.execute(select(User.id).where(User.username == "golge"))).first() \
+        is None
+
+
+async def test_a_user_desk_cannot_take_over_the_administrator(client, world, db_session):
+    """Probe P1b: `users.manage` alone once reset the real administrator's password and MFA."""
+    c, _ = client
+    masa = await _make_user(db_session, world["tenant"], world["groups"], "masa", None)
+    _, (auth, _) = await _desk(db_session, world, masa, "user_desk", ["users.manage"])
+    admin_id = world["admin"].id
+    before = await _fresh(db_session, admin_id)
+    snapshot = (before.hashed_password, before.totp_secret, before.token_version,
+                before.is_active, before.full_name)
+
+    calls = [("POST", "/reset-password", {"password": "Ele-Gecirildi-1"}),
+             ("POST", "/reset-mfa", None),
+             ("PATCH", "", {"is_active": False}), ("PATCH", "", {"full_name": "x"}),
+             ("PUT", "/groups", {"group_ids": []})]
+    for method, suffix, body in calls:
+        res = await c.request(method, f"/admin/users/{admin_id}{suffix}", headers=auth, json=body)
+        assert _beyond(res), (method, suffix)
+    after = await _fresh(db_session, admin_id)
+    assert (after.hashed_password, after.totp_secret, after.token_version, after.is_active,
+            after.full_name) == snapshot
+    assert (await c.post("/auth/login", json={"login": "admin", "password": "Ele-Gecirildi-1"})
+            ).status_code == 401
+
+
+async def test_a_group_desk_cannot_widen_any_group_its_own_included(client, world, db_session):
+    """Probe P2: `groups.manage` alone once added users.manage to its own group."""
+    c, _ = client
+    masa = await _make_user(db_session, world["tenant"], world["groups"], "masa", None)
+    desk, (auth, _) = await _desk(db_session, world, masa, "group_desk", ["groups.manage"])
+
+    assert _beyond(await c.patch(f"/admin/groups/{desk.id}", headers=auth, json={
+        "permissions": ["groups.manage", "users.manage"]}))
+    assert _beyond(await c.post("/admin/groups", headers=auth, json={
+        "slug": "arka_kapi", "name": "Arka Kapı", "permissions": ["users.manage"]}))
+    assert _beyond(await c.patch(f"/admin/groups/{world['groups']['nurse'].id}", headers=auth,
+                                 json={"permissions": ["board.view"]}))   # nurse: beyond it now
+    ha = world["groups"]["hospital_admin"].id
+    assert _beyond(await c.patch(f"/admin/groups/{ha}", headers=auth, json={"name": "x"}))
+    assert _beyond(await c.delete(f"/admin/groups/{ha}", headers=auth))
+    # Within its own rights it works: a group of groups.manage, emptied, deleted.
+    res = await c.post("/admin/groups", headers=auth, json={
+        "slug": "ikinci_masa", "name": "İkinci Masa", "permissions": ["groups.manage"]})
+    assert res.status_code == 201
+    assert (await c.patch(f"/admin/groups/{res.json()['id']}", headers=auth,
+                          json={"permissions": []})).status_code == 200
+    assert (await c.delete(f"/admin/groups/{res.json()['id']}", headers=auth)).status_code == 204
+    group = (await db_session.execute(select(Group).where(Group.id == desk.id)
+                                      .execution_options(populate_existing=True))).scalar_one()
+    assert group.permission_keys == ["groups.manage"]
+
+
+async def test_a_charge_nurse_with_the_user_desk_manages_nurses_and_no_one_above(client, world,
+                                                                               db_session):
+    """The intended lower tier: a charge nurse who also holds users.manage. Every right a nurse
+    has is hers too, so she may create nurses, re-group them and reset their credentials — and
+    nobody whose rights exceed hers."""
+    c, _ = client
+    sorumlu = await _make_user(db_session, world["tenant"], world["groups"], "sorumlu", None)
+    _, (auth, _) = await _desk(db_session, world, sorumlu, "user_desk", ["users.manage"],
+                               also=("charge_nurse",))
+    doktor = await _make_user(db_session, world["tenant"], world["groups"], "doktor",
+                              "attending")
+    await db_session.commit()
+    nurse_id, g = world["nurse"].id, world["groups"]
+
+    res = await c.post("/admin/users", headers=auth, json={
+        "username": "yeni.hemsire", "full_name": "Yeni Hemşire",
+        "password": "Gecici-Parola-1", "group_ids": [str(g["nurse"].id)]})
+    assert res.status_code == 201 and [x["slug"] for x in res.json()["groups"]] == ["nurse"]
+    for slugs in (["charge_nurse"], ["nurse"]):
+        res = await c.put(f"/admin/users/{nurse_id}/groups", headers=auth,
+                          json={"group_ids": [str(g[s].id) for s in slugs]})
+        assert res.status_code == 200 and [x["slug"] for x in res.json()["groups"]] == slugs
+    assert (await c.post(f"/admin/users/{nurse_id}/reset-password", headers=auth,
+                         json={"password": "Yeni-Parola-1"})).status_code == 200
+    assert (await c.post(f"/admin/users/{nurse_id}/reset-mfa", headers=auth)).status_code == 200
+    assert (await c.patch(f"/admin/users/{nurse_id}", headers=auth,
+                          json={"full_name": "Ayşe Yılmaz"})).status_code == 200
+
+    assert _beyond(await c.post(f"/admin/users/{doktor.id}/reset-password", headers=auth,
+                                json={"password": "Ele-Gecirildi-1"}))
+    assert _beyond(await c.patch(f"/admin/users/{doktor.id}", headers=auth,
+                                 json={"is_active": False}))
+    assert _beyond(await c.put(f"/admin/users/{nurse_id}/groups", headers=auth,
+                               json={"group_ids": [str(g["attending"].id)]}))
+    assert _beyond(await c.put(f"/admin/users/{sorumlu.id}/groups", headers=auth, json={
+        "group_ids": [str(g["charge_nurse"].id), str(g["hospital_admin"].id)]}))
+    assert await _groups_of(db_session, doktor.id) == ["attending"]
+    assert await _groups_of(db_session, nurse_id) == ["nurse"]
+
+
+# ---------------------------------------------------------------- accounts shared with others
+
+async def _account_snapshot(db, user_id):
+    u = await _fresh(db, user_id)
+    return (u.hashed_password, u.totp_secret, u.totp_enabled, u.email, u.full_name,
+            u.is_active, u.sessions_revoked_at)
+
+
+async def test_another_tenants_administrator_is_untouchable_from_here(client, world, db_session):
+    """Probe P3: `yabanci` is the ONLY administrator of tenant `other` and a plain member of
+    demo. Demo's administrator once deactivated them (leaving `other` with none) and rewrote
+    their password and e-mail."""
+    c, _ = client
+    other_id = world["other_groups"]["nurse"].tenant_id
+    stranger = await _fresh(db_session, world["stranger"].id)
+    await set_manual_groups(db_session, user=stranger, tenant_id=other_id,
+                            group_ids=[world["other_groups"]["hospital_admin"].id],
+                            granted_by_id=None)
+    db_session.add(TenantMembership(user_id=stranger.id, tenant_id=world["tenant"].id))
+    await db_session.commit()
+    admin, _ = await _headers(db_session, world["admin"])
+    snapshot = await _account_snapshot(db_session, stranger.id)
+
+    calls = [("PATCH", "", {"is_active": False}), ("PATCH", "", {"email": "x@evil.test"}),
+             ("PATCH", "", {"full_name": "Başka Biri"}),
+             ("POST", "/reset-password", {"password": "Ele-Gecirildi-1"}),
+             ("POST", "/reset-mfa", None)]
+    for method, suffix, body in calls:
+        res = await c.request(method, f"/admin/users/{stranger.id}{suffix}", headers=admin,
+                              json=body)
+        assert (res.status_code, res.json()["detail"]) == (409, service.SHARED_ACCOUNT), body
+    assert await _account_snapshot(db_session, stranger.id) == snapshot
+    async with async_sessionmaker(db_session.bind)() as check:
+        assert await count_admins(check, other_id) == 1
+    # Its groups HERE are demo's business.
+    res = await c.put(f"/admin/users/{stranger.id}/groups", headers=admin,
+                      json={"group_ids": [str(world["groups"]["nurse"].id)]})
+    assert res.status_code == 200 and [g["slug"] for g in res.json()["groups"]] == ["nurse"]
+
+
+async def test_an_inactive_membership_elsewhere_does_not_make_an_account_shared(client, world,
+                                                                               db_session):
+    c, _ = client
+    stranger_id = world["stranger"].id
+    db_session.add(TenantMembership(user_id=stranger_id, tenant_id=world["tenant"].id))
+    await db_session.execute(
+        TenantMembership.__table__.update()
+        .where(TenantMembership.user_id == stranger_id,
+               TenantMembership.tenant_id == world["other_groups"]["nurse"].tenant_id)
+        .values(is_active=False))
+    await db_session.commit()
+    admin, _ = await _headers(db_session, world["admin"])
+    assert (await c.post(f"/admin/users/{stranger_id}/reset-password", headers=admin,
+                         json={"password": "Yeni-Parola-1"})).status_code == 200
+
+
+async def test_a_platform_operators_account_is_untouchable_from_here(client, world, db_session):
+    """Probe P4: a hospital administrator once reset a vendor operator's password and MFA,
+    enrolled their own authenticator and created a tenant as the operator."""
+    c, _ = client
+    op = await _make_user(db_session, world["tenant"], world["groups"], "vendor_op",
+                          "platform_support", is_platform_support=True)
+    await db_session.commit()
+    admin, _ = await _headers(db_session, world["admin"])
+    snapshot = await _account_snapshot(db_session, op.id)
+
+    calls = [("POST", "/reset-password", {"password": "Ele-Gecirildi-1"}),
+             ("POST", "/reset-mfa", None), ("PATCH", "", {"is_active": False}),
+             ("PATCH", "", {"email": "x@evil.test"})]
+    for method, suffix, body in calls:
+        res = await c.request(method, f"/admin/users/{op.id}{suffix}", headers=admin, json=body)
+        assert (res.status_code, res.json()["detail"]) == (409, service.PLATFORM_ACCOUNT), body
+    assert await _account_snapshot(db_session, op.id) == snapshot
+    assert (await c.post("/auth/login", json={"login": "vendor_op",
+                                              "password": "Ele-Gecirildi-1"})).status_code == 401
+
+
+async def test_an_administrator_may_not_reset_or_deactivate_themselves_here(client, world,
+                                                                          db_session):
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    me = world["admin"].id
+    res = await c.post(f"/admin/users/{me}/reset-password", headers=admin,
+                       json={"password": "Yeni-Parola-1"})
+    assert (res.status_code, res.json()["detail"]) == (409, service.SELF_CREDENTIALS)
+    res = await c.post(f"/admin/users/{me}/reset-mfa", headers=admin)
+    assert (res.status_code, res.json()["detail"]) == (409, service.SELF_CREDENTIALS)
+    res = await c.patch(f"/admin/users/{me}", headers=admin, json={"is_active": False})
+    assert (res.status_code, res.json()["detail"]) == (409, service.SELF_DEACTIVATE)
+    res = await c.patch(f"/admin/users/{me}", headers=admin, json={"full_name": "Yönetici"})
+    assert res.status_code == 200 and res.json()["full_name"] == "Yönetici"
+
+
+# ---------------------------------------------------------------- at least one LOCAL administrator
+
+async def test_a_directory_administrator_does_not_count_toward_the_guard(client, world,
+                                                                       db_session):
+    """Probe P9: with an AD-held hospital_admin present, the last LOCAL administrator could be
+    deactivated — and an AD outage would then lock the hospital out of administration."""
+    c, _ = client
+    db_session.add(UserGroup(user_id=world["ldap"].id,
+                             group_id=world["groups"]["hospital_admin"].id, source=SOURCE_LDAP))
+    await db_session.commit()
+    ad_admin, _ = await _headers(db_session, await _fresh(db_session, world["ldap"].id))
+    admin_id = world["admin"].id
+
+    res = await c.patch(f"/admin/users/{admin_id}", headers=ad_admin, json={"is_active": False})
+    assert (res.status_code, res.json()["detail"]) == (409, service.LAST_ADMIN_DEACTIVATE)
+    res = await c.put(f"/admin/users/{admin_id}/groups", headers=ad_admin,
+                      json={"group_ids": []})
+    assert (res.status_code, res.json()["detail"]) == (409, service.LAST_ADMIN)
+    assert (await _fresh(db_session, admin_id)).is_active is True
+
+    await _make_user(db_session, world["tenant"], world["groups"], "ikinci", "hospital_admin")
+    await db_session.commit()                       # a second LOCAL administrator ...
+    res = await c.patch(f"/admin/users/{admin_id}", headers=ad_admin, json={"is_active": False})
+    assert res.status_code == 200                   # ... and the same change is fine
+
+
+# ---------------------------------------------------------------- audit written after the commit
+
+async def test_an_audit_failure_after_commit_is_logged_without_secrets(client, world, db_session,
+                                                                      caplog):
+    c, app = client
+    admin, _ = await _headers(db_session, world["admin"])
+
+    def refuse(event):
+        # The message carries the password on purpose: it must never reach the log.
+        raise RuntimeError("audit store down while writing Yeni-Parola-1")
+
+    working = app.state.audit.append
+    app.state.audit.append = refuse
+    with caplog.at_level(logging.ERROR, logger="homunculus.admin.router"):
+        with pytest.raises(RuntimeError):
+            await c.post(f"/admin/users/{world['nurse'].id}/reset-password", headers=admin,
+                         json={"password": "Yeni-Parola-1"})
+    records = [r for r in caplog.records if r.name == "homunculus.admin.router"]
+    assert len(records) == 1 and records[0].levelno == logging.ERROR
+    message = records[0].getMessage()
+    assert "NOT AUDITED" in message and "user.password_reset" in message
+    assert str(world["nurse"].id) in message and "RuntimeError" in message
+    assert "Yeni-Parola-1" not in caplog.text and "$2b$" not in caplog.text
+    # The change itself stands: it was committed before the trail refused the row.
+    app.state.audit.append = working
+    assert (await c.post("/auth/login", json={"login": "ayse", "password": "Yeni-Parola-1"})
+            ).status_code == 200
+
+
+# ---------------------------------------------------------------- input
+
+async def test_group_input_is_validated_after_normalising(client, world, db_session):
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    bad = [{"slug": "abc\n", "name": "x"},                  # `$` would have let this through
+           {"slug": "bosluk", "name": "   "},
+           {"slug": "uzun", "name": "x", "description": "d" * 501}]
+    for body in bad:
+        assert (await c.post("/admin/groups", headers=admin, json=body)).status_code == 422, body
+    assert (await c.patch(f"/admin/groups/{world['groups']['nurse'].id}", headers=admin,
+                          json={"name": "  "})).status_code == 422
+    res = await c.post("/admin/groups", headers=admin,
+                       json={"slug": "iyi_ad", "name": "  Temiz Ad  ", "description": "d" * 500})
+    assert res.status_code == 201 and res.json()["name"] == "Temiz Ad"
+
+
+async def test_user_input_is_validated_after_normalising(client, world, db_session):
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    base = {"full_name": "Deneme", "password": "Gecici-Parola-1"}
+    bad = [{"username": " a "}, {"username": "ali veli"}, {"username": "ali​veli"},
+           {"username": "ali/veli"}, {"username": "tamam", "full_name": "   "},
+           {"username": "tamam", "email": "not an email"},
+           {"username": "tamam", "email": "a@@example.com"},
+           {"username": "tamam", "email": "@example.com"},
+           {"username": "tamam", "email": "ali@example.com​"}]
+    for body in bad:
+        res = await c.post("/admin/users", headers=admin, json={**base, **body})
+        assert res.status_code == 422, body
+    nurse = world["nurse"].id
+    for body in ({"full_name": "  "}, {"email": "bozuk"}):
+        assert (await c.patch(f"/admin/users/{nurse}", headers=admin, json=body)
+                ).status_code == 422, body
+
+    # Turkish capital İ still folds to a plain i, for the username and the e-mail alike.
+    res = await c.post("/admin/users", headers=admin, json={
+        **base, "username": "İBRAHİM", "email": "İbo@Example.com", "full_name": " İbrahim "})
+    assert res.status_code == 201
+    assert (res.json()["username"], res.json()["email"], res.json()["full_name"]) == \
+        ("ibrahim", "ibo@example.com", "İbrahim")
+    for login in ("ibrahim", "İBRAHİM", "ibo@example.com"):
+        assert (await c.post("/auth/login", json={"login": login, "password": "Gecici-Parola-1"})
+                ).status_code == 200, login
+
+    res = await c.patch(f"/admin/users/{nurse}", headers=admin, json={"email": ""})
+    assert res.status_code == 200 and res.json()["email"] is None       # "" clears it
+
+
+async def test_a_patch_that_changes_nothing_is_not_audited(client, world, db_session):
+    c, app = client
+    admin, _ = await _headers(db_session, world["admin"])
+    nurse, _ = await _headers(db_session, world["nurse"])
+    group = world["groups"]["nurse"]
+    calls = [(f"/admin/users/{world['nurse'].id}", {}),
+             (f"/admin/users/{world['nurse'].id}",
+              {"full_name": " Ayse ", "email": "AYSE@example.com", "is_active": True}),
+             (f"/admin/groups/{group.id}", {}),
+             (f"/admin/groups/{group.id}",
+              {"name": "Hemşire", "permissions": group.permission_keys, "mfa_required": False})]
+    for path, body in calls:
+        assert (await c.patch(path, headers=admin, json=body)).status_code == 200, body
+    assert app.state.audit.records(event_type="admin") == []
+    assert (await c.get("/auth/me", headers=nurse)).status_code == 200    # no token bump
+
+
+# ---------------------------------------------------------------- the guard under concurrency
+# Two transactions race on separate connections. The second is let run until Postgres makes IT
+# wait (its own backend pid, so another test run queued on the conftest lock cannot pass for
+# it); the first then commits, and the second must see that commit before it decides.
+
+def _root(user: User) -> Actor:
+    """An actor holding the whole catalogue: the rights rules do not get in the way."""
+    return Actor(id=user.id, perms=ALL_PERMISSIONS, token_version=user.token_version)
+
+
+async def _until_waiting(maker, pid: int) -> None:
     async with maker() as probe:
-        for _ in range(200):
+        for _ in range(400):
             waiting = (await probe.execute(
-                text("SELECT count(*) FROM pg_locks WHERE NOT granted"))).scalar_one()
+                text("SELECT count(*) FROM pg_locks WHERE pid = :pid AND NOT granted"),
+                {"pid": pid})).scalar_one()
             if waiting:
                 return
             await asyncio.sleep(0.025)
-    raise AssertionError("the racing transaction never waited for the first one")
+    raise AssertionError(f"backend {pid} never waited for the first transaction")
 
 
 async def _race(db_session, first, second):
-    """Run `first(session)` to just before its commit, start `second(session)`, wait until it
+    """Run `first(session)` to just before its commit, start `second(session)`, wait until IT
     blocks on the first, commit the first, and return what the second raised (or None)."""
     maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
     async with maker() as s1, maker() as s2:
         await first(s1)
+        pid = (await s2.execute(select(func.pg_backend_pid()))).scalar_one()
         racing = asyncio.create_task(second(s2))
         try:
-            await _until_a_transaction_waits(maker)
+            await _until_waiting(maker, pid)
         finally:
             await s1.commit()
         try:
@@ -604,11 +976,12 @@ async def test_two_concurrent_demotions_cannot_both_pass(world, db_session):
     second = await _make_user(db_session, world["tenant"], world["groups"], "ikinci",
                               "hospital_admin")
     await db_session.commit()
+    actor = _root(world["admin"])
 
     def demote(user_id):
         async def run(s):
             user = await service.get_tenant_user(s, tid, user_id)
-            await service.set_user_groups(s, tid, user, [nurse_group], None)
+            await service.set_user_groups(s, tid, user, [nurse_group], actor)
         return run
 
     refused = await _race(db_session, demote(world["admin"].id), demote(second.id))
@@ -629,15 +1002,16 @@ async def test_a_group_edit_racing_a_demotion_cannot_leave_no_administrator(worl
     await set_manual_groups(db_session, user=second, tenant_id=tid, group_ids=[it_admin.id],
                             granted_by_id=None)
     await db_session.commit()
+    actor = _root(world["admin"])
 
     async def strip_group(s):
         group = await service.get_group(s, tid, it_admin.id, for_update=True)
-        await service.update_group(s, tid, group, name=None, description=None,
+        await service.update_group(s, tid, group, actor, name=None, description=None,
                                    mfa_required=None, permissions=["users.manage"])
 
     async def demote_admin(s):
         user = await service.get_tenant_user(s, tid, world["admin"].id)
-        await service.set_user_groups(s, tid, user, [world["groups"]["nurse"].id], None)
+        await service.set_user_groups(s, tid, user, [world["groups"]["nurse"].id], actor)
 
     refused = await _race(db_session, strip_group, demote_admin)
     assert refused is not None and refused.status_code == 409
@@ -656,17 +1030,64 @@ async def test_deleting_a_group_racing_a_move_into_it_cannot_leave_no_administra
                             for k in ("users.manage", "groups.manage")]
     db_session.add(it_admin)
     await db_session.commit()
+    actor = _root(world["admin"])
 
     async def move_admin(s):
         user = await service.get_tenant_user(s, tid, world["admin"].id)
-        await service.set_user_groups(s, tid, user, [it_admin.id], None)
+        await service.set_user_groups(s, tid, user, [it_admin.id], actor)
 
     async def delete_group(s):
         group = await service.get_group(s, tid, it_admin.id, for_update=True)
-        await service.delete_group(s, tid, group)
+        await service.delete_group(s, tid, group, actor)
 
     refused = await _race(db_session, move_admin, delete_group)
     assert refused is not None and refused.status_code == 409
     async with async_sessionmaker(db_session.bind)() as check:
         assert await count_admins(check, tid) == 1
         assert (await check.execute(select(Group.id).where(Group.id == it_admin.id))).first()
+
+
+async def test_a_request_that_waited_behind_the_callers_own_demotion_is_refused(world,
+                                                                               db_session):
+    """Through the router, so the lock-first path is what is exercised: a second administrator's
+    request has passed its permission guard and waits on the tenant lock while another
+    transaction demotes that administrator. Once the lock is free, the request must be judged by
+    the caller's rights NOW, not at arrival."""
+    tid = world["tenant"].id
+    ikinci = await _make_user(db_session, world["tenant"], world["groups"], "ikinci",
+                              "hospital_admin")
+    await db_session.commit()
+    ikinci_auth, _ = await _headers(db_session, ikinci)
+
+    app = create_app({"bridge-token": "demo-hastanesi"}, run_escalation_loop=False)
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    pids: list[int] = []
+
+    async def _db():
+        async with maker() as session:
+            pids.append((await session.execute(select(func.pg_backend_pid()))).scalar_one())
+            yield session
+
+    app.dependency_overrides[get_db] = _db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        async with maker() as holder:
+            await lock_admin_guard(holder, tid)
+            request = asyncio.create_task(c.put(
+                f"/admin/users/{world['nurse'].id}/groups", headers=ikinci_auth,
+                json={"group_ids": [str(world["groups"]["hospital_admin"].id)]}))
+            for _ in range(400):
+                if pids:
+                    break
+                await asyncio.sleep(0.01)
+            await _until_waiting(maker, pids[0])
+            demoted = await service.get_tenant_user(holder, tid, ikinci.id)
+            await service.set_user_groups(holder, tid, demoted, [world["groups"]["nurse"].id],
+                                          _root(world["admin"]))
+            await holder.commit()
+        res = await request
+
+    assert res.status_code == 401 and res.json()["detail"] == "token_version"
+    nurse_groups = (await db_session.execute(
+        select(Group.slug).join(UserGroup, UserGroup.group_id == Group.id)
+        .where(UserGroup.user_id == world["nurse"].id))).scalars().all()
+    assert nurse_groups == ["nurse"]
