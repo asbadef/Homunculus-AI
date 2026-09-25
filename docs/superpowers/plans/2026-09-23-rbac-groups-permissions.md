@@ -98,7 +98,10 @@ tenant or membership is 403. `tenant_of_user` skips inactive tenants.
   - a request queued behind the caller's own demotion (401, re-checked under the lock).
 - **Guard:** keeps one LOCAL administrator.
 - **Frontend (Tasks 15–18) must follow the same rules.** An administrator holds the whole catalogue.
-  Username errors arrive in Turkish, with a transliteration hint; translate them in Task 16. A
+  Username errors arrive in Turkish, with a transliteration hint; translate them in Task 16.
+  `permissions.js::uiRoleFromPerms` (display only) calls anyone holding `users.manage` an
+  administrator. In Task 19, show the administrator icon only for the whole catalogue, so a user
+  manager is not displayed as an administrator. A
   greyed-out group says why ("yetkileriniz bu grubu vermeye yetmiyor"). The rules:
   - offer only the groups whose rights are within the session's `perms`;
   - hide or disable actions on users whose rights exceed the session's, and on
