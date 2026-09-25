@@ -345,10 +345,12 @@ another tenant is a 404.
 
 ### Guards
 
-- An *administrator* is an active user holding both `users.manage` and `groups.manage` (through
-  any of their groups). The last administrator of a tenant cannot be deactivated, and no group
-  change may leave the tenant without one — including changes an administrator makes to their
-  own groups. 409 `Son yönetici pasifleştirilemez` / `Son yönetici yetkisi kaldırılamaz`.
+- An *administrator* is an active LOCAL user with a password and an active membership who holds
+  the WHOLE permission catalogue in the tenant (the system group gives that by rule). Only such a
+  user can manage every account and group under the rule below, so only such a user counts. The
+  last administrator of a tenant cannot be deactivated, and no group change may leave the tenant
+  without one, including changes an administrator makes to their own groups. 409 `Son yönetici
+  pasifleştirilemez` / `Son yönetici yetkisi kaldırılamaz`.
 - Manual and LDAP memberships are separate rows; neither operation can delete the other's. A
   user holds a given group through ONE row (the key is user + group): a manual request for a
   group already held through the AD mapping is a no-op, and the LDAP sync leaves a manual row for a
@@ -364,7 +366,13 @@ another tenant is a 404.
   - a user can be edited, reset or regrouped only if that user's effective rights in the tenant are
     within the caller's;
   - a group can be granted, created, edited or deleted only if its effective rights (before and
-    after) are within the caller's. The system group counts as the whole catalogue.
+    after) are within the caller's. The system group counts as the whole catalogue;
+  - an edit that changes a group's rights or its MFA flag, or deletes it, also needs every current
+    member's rights, before and after, to be within the caller's. A group edit changes its members,
+    so the user rule applies to each of them.
+
+  The caller's rights are read from the database under the admin lock, not from the token, so a
+  newly added catalogue key never locks out an administrator whose token predates it.
 
   Otherwise the answer is 403. So `users.manage` alone makes a *user manager*, for example a charge
   nurse who puts staff into the nurse groups, not an administrator. Only a holder of every key can
@@ -460,6 +468,12 @@ decision (open sessions continue) — and the audit records `refresh.directory_u
   as `skipped: exists`; the call is idempotent.
 - `GET /admin/ldap/groups?q=` → AD groups for the mapping picker.
 - `GET /admin/ldap/group-mappings`, `POST {ad_group_dn, group_id}`, `DELETE /{id}`.
+- **The §6 rule applies here too.**
+  - Creating a mapping to a group, or an import that grants groups (mapped or
+    `extra_group_ids`), needs each group's rights within the caller's.
+  - Deleting a mapping removes rights from its members, so their rights must be within the
+    caller's too, as for a group edit.
+  - Otherwise, a user manager could map an AD group to `hospital_admin`.
 
 ### Security
 

@@ -97,7 +97,9 @@ tenant or membership is 403. `tenant_of_user` skips inactive tenants.
   - self-reset and self-deactivation (409);
   - a request queued behind the caller's own demotion (401, re-checked under the lock).
 - **Guard:** keeps one LOCAL administrator.
-- **Frontend (Tasks 15, 17, 18) must follow the same rules:**
+- **Frontend (Tasks 15–18) must follow the same rules.** An administrator holds the whole catalogue.
+  Username errors arrive in Turkish, with a transliteration hint; translate them in Task 16. A
+  greyed-out group says why ("yetkileriniz bu grubu vermeye yetmiyor"). The rules:
   - offer only the groups whose rights are within the session's `perms`;
   - hide or disable actions on users whose rights exceed the session's, and on
     yourself (reset, deactivate);
@@ -7529,8 +7531,11 @@ Expected: green, clean build.
 - **Every user, mobile included, signs in once after the upgrade.** Tokens issued by the old code
   carry no `tv` and no credential fingerprint, so both the access and the refresh token are refused.
   Tell the ward before the deploy window.
-- An administrator who resets their OWN password or MFA through the admin screen ends their own
-  session and lands on the login screen. That is expected.
+- An administrator cannot reset their own password or MFA, or deactivate themselves, through the
+  admin screen (409). Their own password goes through the profile's password change.
+- **Recovering a tenant with no administrator.** This is reachable only through SQL, or through
+  AD-only administration once Plan 2 is in. Run `scripts/seed_admin.py` with a NEW
+  `SEED_ADMIN_EMAIL`: the seed grants `hospital_admin` only to an account it newly links.
 - **Cross-tenant rows written before Task 7b.** The old code let a user of one tenant write into
   another. The side-effect paths trust stored ids: discharge and transfer act on
   `admission.bed_id`, and handover sign-off counts alerts through `handover.admission_ids`. Before the
@@ -7667,6 +7672,12 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
     so bcrypt doesn't hold other admin writes at a shift change.
   - **Enforce `serialise` structurally.** Make `serialise` a dependency, so the route map can check
     that every admin write takes the lock.
+  - **MFA follows sensitive keys, not only groups.** A `users.manage` holder in an MFA group can
+    create a puppet in a non-MFA group with the same keys and so skip MFA. Consider requiring MFA
+    at token issue whenever the rights include `users.manage`, `groups.manage`, `break_glass.use`,
+    `audit.view` or `devices.manage`.
+  - **Rows outside the catalogue.** Keys outside the catalogue that are already in a group's rows
+    are ignored everywhere but survive edits. Clean them up in the cleanup migration.
 - **The test-run lock (`tests/conftest.py`).** An unreachable `TEST_DATABASE_URL` aborts the whole
   run. pytest-xdist, if it is ever added, needs the lock skipped in workers
   (`config.workerinput`). Paths outside `tests/` need `-p tests.conftest`.
