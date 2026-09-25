@@ -64,6 +64,23 @@ def test_no_warning_when_every_key_matches(caplog):
     assert caplog.text == ""
 
 
+def test_tenants_entries_with_an_empty_token_or_hospital_are_dropped(caplog):
+    """`TENANTS="tokA:HOSP1, :HOSP2"` once parsed to a "" token: a request with no token at all
+    was then HOSP2's device, and `/stream` with no token streamed HOSP2's board. The warning
+    names the entry's position only, since an entry may hold a token."""
+    import logging
+
+    from homunculus.api.prodserver import _parse_tenants
+
+    with caplog.at_level(logging.WARNING):
+        parsed = _parse_tenants("tokA:HOSP1, :HOSP2, secret-tok: ,no-colon-tok, tokE:HOSP5,")
+
+    assert parsed == {"tokA": "HOSP1", "tokE": "HOSP5"}
+    for position in (2, 3, 4):
+        assert f"entry {position} " in caplog.text
+    assert "secret-tok" not in caplog.text and "no-colon-tok" not in caplog.text
+
+
 async def test_a_failing_startup_check_does_not_stop_the_service(caplog):
     """A diagnostic that can take the ward's monitoring down is worse than the fault it reports."""
     import logging

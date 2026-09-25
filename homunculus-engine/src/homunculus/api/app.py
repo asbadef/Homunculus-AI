@@ -36,8 +36,17 @@ from homunculus.api.identity import Caller
 from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import rehydrate
 from homunculus.api.tickets import TicketStore
+from homunculus.auth.permissions import validate_permissions
 from homunculus.gateway.fhir import GatewayError, parse_fhir_observation
 from homunculus.pipeline import Engine
+
+log = logging.getLogger(__name__)
+
+# The board's permission keys, checked against the catalogue when this module is imported. A
+# typo here would otherwise refuse every clinician on that route with a 403, and nothing else
+# would complain.
+BOARD_VIEW, ALERTS_ACK, AUDIT_VIEW = validate_permissions(
+    ("board.view", "alerts.ack", "audit.view"))
 
 
 async def sse_board_frames(queue: asyncio.Queue, keepalive: float = 15.0):
@@ -84,6 +93,16 @@ def create_app(
     serving — for diagnostics (e.g. TENANTS vs. the database's tenant slugs) that must never
     block boot: a failure is logged and swallowed, because a service that will not start is
     worse than one running with a fault an operator can read in the log."""
+    # A device token is a non-empty string. A missing token reads as "" further down, so an empty
+    # key in this map would let a request with no credential at all in as that hospital's device.
+    empty = [hospital for token, hospital in tenants.items()
+             if not isinstance(token, str) or not token.strip()]
+    if empty:
+        log.warning("ignoring an empty device token configured for hospital(s) %s",
+                    ", ".join(sorted(map(str, empty))))
+    tenants = {token: hospital for token, hospital in tenants.items()
+               if isinstance(token, str) and token.strip()}
+
     engines: dict[str, Engine] = {}
     stores: dict[str, AckStore] = {}
     broadcaster = Broadcaster()
@@ -214,8 +233,14 @@ def create_app(
     app.state.audit = audit
     app.state.tickets = tickets
 
+    def _device_hospital(credential: str | None) -> str | None:
+        """The hospital a static device token names, or None. An empty value is never a token."""
+        if not credential or not credential.strip():
+            return None
+        return tenants.get(credential)
+
     def _tenant_from_token(token: str | None) -> str:
-        hospital = tenants.get(token or "")
+        hospital = _device_hospital(token)
         if hospital is None:
             raise HTTPException(status_code=401, detail="unknown tenant token")
         return hospital
@@ -237,26 +262,53 @@ def create_app(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="missing bearer token")
         credential = authorization.split(" ", 1)[1]
+        if not credential.strip():
+            raise HTTPException(status_code=401, detail="missing bearer token")
 
-        hospital = tenants.get(credential)
+        hospital = _device_hospital(credential)
         if hospital is not None:
-            return Caller(hospital=hospital)
+            return Caller(hospital=hospital, device=True)
 
         if resolve_jwt is not None:
             caller = await resolve_jwt(credential)
             if caller is not None:
+                # A JWT is a person: never a device, never anonymous. Anything else is a resolver
+                # fault, and it is refused rather than trusted with a device's exemption.
+                if (not isinstance(caller, Caller) or caller.is_device
+                        or not isinstance(caller.actor, str) or not caller.actor.strip()):
+                    log.warning("refused a JWT that resolved to a device or to no actor")
+                    raise HTTPException(status_code=401, detail="unknown credential")
                 return caller
 
         raise HTTPException(status_code=401, detail="unknown credential")
 
     def _require(caller: Caller, permission: str) -> None:
         """A device passes; a clinician needs the permission in their token."""
+        validate_permissions((permission,))   # a typo fails loudly, not as a 403 for everyone
         if not caller.can(permission):
             raise HTTPException(status_code=403, detail=f"permission required: {permission}")
 
+    def _attribution(caller: Caller, body: dict) -> dict:
+        """Who acted, for the ack store and the audit row of /ack and /view.
+
+        `role` is what `rehydrate` replays as `acknowledged_by`: the body's self-declared role on
+        the device path, the signed-in username otherwise. `via` and `actor` record which of the
+        two it was, so a device naming a user never reads as that user's own action.
+        """
+        if caller.is_device:
+            return {"role": body.get("role", "unknown"), "via": "device", "actor": None,
+                    "groups": []}
+        return {"role": caller.actor, "via": "user", "actor": caller.actor,
+                "groups": list(caller.groups)}
+
     @app.post("/ingest")
     async def ingest(resource: dict, authorization: str | None = Header(default=None)):
-        hospital = (await _caller(authorization)).hospital
+        caller = await _caller(authorization)
+        if not caller.is_device:
+            # Observations raise alerts and Patient/Encounter resources overwrite demographics.
+            # Both come from the bridge; no clinician client posts here.
+            raise HTTPException(status_code=403, detail="ingest requires a device token")
+        hospital = caller.hospital
         kind = resource.get("resourceType")
         if kind in ("Patient", "Encounter"):
             parse = parse_fhir_patient if kind == "Patient" else parse_fhir_encounter
@@ -313,20 +365,19 @@ def create_app(
     @app.post("/ack")
     async def ack(authorization: str | None = Header(default=None), body: dict = Body(...)):
         caller = await _caller(authorization)
-        _require(caller, "alerts.ack")
+        _require(caller, ALERTS_ACK)
         hospital = caller.hospital
         engine = _engine(hospital)
         store = _store(hospital)
         patient_id, kind = body.get("patient_id"), body.get("kind")
         # A clinician is attributed from the signed token; only the device path may name a role.
-        actor = caller.actor or body.get("role", "unknown")
+        who = _attribution(caller, body)
         if (patient_id, kind) not in _live_keys(engine):
             raise HTTPException(status_code=404, detail="no such active alert")
-        store.acknowledge(patient_id, kind, actor, datetime.now(timezone.utc))
+        store.acknowledge(patient_id, kind, who["role"], datetime.now(timezone.utc))
         store.escalated.discard((patient_id, kind))  # ack immediately stops escalation
         audit.append(AuditEvent(hospital, "ack", patient_id, kind,
-                                {"role": actor, "groups": list(caller.groups),
-                                 "at": datetime.now(timezone.utc).isoformat()}))
+                                {**who, "at": datetime.now(timezone.utc).isoformat()}))
         board = patient_board(engine, patient_id, store,
                               identity=identities.get(hospital, patient_id))
         await broadcaster.publish(hospital, board)
@@ -336,11 +387,10 @@ def create_app(
     async def view(authorization: str | None = Header(default=None), body: dict = Body(...)):
         """Record that a clinician opened a patient — attributed from the token."""
         caller = await _caller(authorization)
-        _require(caller, "board.view")
+        _require(caller, BOARD_VIEW)
         patient_id = body.get("patient_id", "")
         audit.append(AuditEvent(caller.hospital, "view", patient_id, "",
-                                {"role": caller.actor or body.get("role", "unknown"),
-                                 "groups": list(caller.groups)}))
+                                _attribution(caller, body)))
         return {"ok": True}
 
     @app.get("/health")
@@ -353,7 +403,7 @@ def create_app(
     @app.get("/patients")
     async def patients(authorization: str | None = Header(default=None)):
         caller = await _caller(authorization)
-        _require(caller, "board.view")
+        _require(caller, BOARD_VIEW)
         hospital = caller.hospital
         return {"patients": board_snapshot(_engine(hospital), _store(hospital),
                                            identities=identities, hospital=hospital)}
@@ -361,7 +411,7 @@ def create_app(
     @app.get("/alerts/{patient_id}")
     async def alerts(patient_id: str, authorization: str | None = Header(default=None)):
         caller = await _caller(authorization)
-        _require(caller, "board.view")
+        _require(caller, BOARD_VIEW)
         hospital = caller.hospital
         active = _engine(hospital).active_alerts(patient_id)
         return {"patient_id": patient_id, "alerts": [asdict(a) for a in active]}
@@ -370,7 +420,7 @@ def create_app(
     async def stream_ticket(authorization: str | None = Header(default=None)):
         """Exchange a credential for a short-lived, single-use SSE ticket."""
         caller = await _caller(authorization)
-        _require(caller, "board.view")
+        _require(caller, BOARD_VIEW)
         hospital = caller.hospital
         return {"ticket": tickets.issue(hospital, now=time.monotonic()), "expires_in": 60}
 
@@ -406,7 +456,7 @@ def create_app(
     async def get_audit(patient_id: str | None = None, event_type: str | None = None,
                         limit: int = 200, authorization: str | None = Header(default=None)):
         caller = await _caller(authorization)
-        _require(caller, "audit.view")
+        _require(caller, AUDIT_VIEW)
         hospital = caller.hospital
         recs = audit.records(tenant=hospital, patient_id=patient_id,
                              event_type=event_type, limit=limit)

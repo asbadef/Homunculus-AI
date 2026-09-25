@@ -23,12 +23,24 @@ logger = logging.getLogger(__name__)
 
 
 def _parse_tenants(raw: str | None) -> dict[str, str]:
+    """`"tokenA:HOSP1,tokenB:HOSP2"` -> {token: hospital}.
+
+    An entry whose token or hospital is empty is skipped with a warning. An empty token would
+    otherwise become a device credential that a request with no token at all matches. The
+    warning gives the entry's position, never its text, because the text may hold a token.
+    """
     tenants: dict[str, str] = {}
-    for pair in (raw or "").split(","):
+    for position, pair in enumerate((raw or "").split(","), start=1):
         pair = pair.strip()
-        if ":" in pair:
-            token, hospital = pair.split(":", 1)
-            tenants[token.strip()] = hospital.strip()
+        if not pair:
+            continue                                # "a:X," — a trailing comma, nothing lost
+        token, sep, hospital = pair.partition(":")
+        token, hospital = token.strip(), hospital.strip()
+        if not sep or not token or not hospital:
+            logger.warning("TENANTS entry %d is not token:hospital with both parts non-empty; "
+                           "ignored", position)
+            continue
+        tenants[token] = hospital
     return tenants or {"demo-token": "HOSP1"}   # safe default; override via TENANTS in production
 
 

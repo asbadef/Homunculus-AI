@@ -40,18 +40,23 @@ def unmatched_hospital_keys(configured: Iterable[str], known_slugs: Iterable[str
 class Caller:
     """Who is calling a board route.
 
-    A device (the bridge's static tenant token) has no `actor`: it is a machine identity and
-    is exempt from permission checks — it can only ever reach the hospital its token names.
-    A clinician's JWT resolves to an actor, their groups and their permissions.
+    A device (the bridge's static tenant token) is a machine identity: it is exempt from
+    permission checks and can only ever reach the hospital its token names. A clinician's JWT
+    resolves to an actor, their groups and their permissions.
+
+    Being a device is stated, never inferred. `device` defaults to False, so a Caller that
+    merely lacks an actor is not a device; it has no permissions, and the board refuses it
+    outright (`_caller` in app.py).
     """
     hospital: str
     actor: str | None = None
     groups: tuple[str, ...] = ()
     perms: frozenset[str] = frozenset()
+    device: bool = False
 
     @property
     def is_device(self) -> bool:
-        return self.actor is None
+        return self.device
 
     def can(self, permission: str) -> bool:
-        return self.is_device or permission in self.perms
+        return self.device or permission in self.perms
