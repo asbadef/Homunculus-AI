@@ -267,16 +267,26 @@ succeeds if the token's `perms` contains **any** of the listed keys.
 | `/admin/groups*`, `GET /admin/permissions` | `groups.manage` |
 
 **The device path is unchanged.** A static tenant token (the bridge's `/ingest` credential, and
-the legacy `?board=1` screen) is a machine identity and is exempt from permission checks. The
-`_hospital()` helper in `api/app.py` becomes `_caller()` returning `(hospital, principal | None)`:
-for a tenant token, `principal` is `None` and no permission is demanded; for a JWT, the `tenant`
-claim supplies the hospital, the user row is loaded for `is_active` and `tv`, and the same query
-confirms an active membership in the active tenant of that slug (see "Tenant isolation" below), and `_require(caller, perm)` raises 403 when the permission is
-missing. The per-request membership query in the current resolver goes away.
+the legacy `?board=1` screen) is a machine identity and is exempt from permission checks.
+
+The `_hospital()` helper in `api/app.py` becomes `_caller()`, which returns a `Caller`:
+- A tenant token gives `Caller(hospital, device=True)`. No permission is demanded, and "device" is
+  explicit, never inferred from a missing actor.
+- For a JWT:
+  - the `tenant` claim supplies the hospital;
+  - the user row is loaded for `is_active` and `tv`;
+  - the same query confirms an active membership in the active tenant of that slug (see "Tenant
+    isolation" below);
+  - the `Caller` carries the username as `actor`, together with the token's groups and perms.
+- `_require(caller, perm)` raises 403 when the permission is missing.
+- A refusal a refresh can fix is 401. A pending MFA step or an inactive tenant is 403.
+- The per-request membership query in the current resolver goes away.
+- `/ingest` is device-only: a JWT gets 403.
 
 **Attribution.** For a JWT caller, `/ack` and `/view` record the actor from the token —
 `username` and `groups` — instead of the body's self-declared `role`; the body field is honoured
-only on the device path. `/notifications?role=` stays: it selects a notification channel, it is
+only on the device path. The audit row says which: `via` is `device` or `user`, and `actor` is the
+username (None for a device). `role` stays, because rehydration reads it. `/notifications?role=` stays: it selects a notification channel, it is
 not an authorisation.
 
 **Tenant isolation.** A permission is held in one tenant, the token's `tenant` claim, so every

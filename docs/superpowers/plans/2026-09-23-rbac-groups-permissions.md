@@ -60,6 +60,16 @@ tenant or membership is 403. `tenant_of_user` skips inactive tenants.
 `User.is_active`. Closing a break-glass session that is already closed or expired is 409.
 **Task 9's board resolver must apply the same tenant condition** (see the note in Task 9).
 
+**Task 8 as amended in review:**
+- `Caller` has an explicit `device: bool = False`. Only the static-token path sets it, and
+  `_caller` refuses (401) a resolver result that is a device or has a blank actor.
+- `/ingest` is device-only: a JWT gets 403.
+- The `/ack` and `/view` audit rows carry `via` (`device`|`user`) and `actor` next to `role`.
+- `tests/test_board_permissions.py` pins every `api/app.py` route in a `BOARD_EXPECTED` table.
+- Empty device tokens are ignored.
+- `prodserver` passes `resolve_jwt=None` until Task 9, which replaces those lines (see the Task 9
+  notes).
+
 **Do not deploy mid-plan.** Between migration 0006 (Task 3) and the sign-in rewrite (Task 6) and the
 seed rewrite (Task 7), stored e-mails are lower-cased while sign-in still matches case-sensitively,
 and the seed cannot create the administrator. The branch reaches the VM only after Task 20.
@@ -3776,6 +3786,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from homunculus.api.prodserver import UserAuthRow, make_jwt_caller_resolver
 from homunculus.auth.jwt import create_access_token, create_refresh_token
 
@@ -3820,8 +3832,13 @@ async def test_a_stale_token_version_is_refused():
 
 
 async def test_a_pending_mfa_step_blocks_the_board():
+    """403, not None: a refresh cannot finish the MFA step, so a 401 would only make the dashboard
+    refresh on every board request (spec §4: pending MFA is 403 `mfa_required` everywhere)."""
+    from fastapi import HTTPException
     resolve = make_jwt_caller_resolver(_load())
-    assert await resolve(_token(mfa_required=True, mfa_verified=False)) is None
+    with pytest.raises(HTTPException) as exc:
+        await resolve(_token(mfa_required=True, mfa_verified=False))
+    assert exc.value.status_code == 403 and exc.value.detail == "mfa_required"
     assert await resolve(_token(mfa_required=True, mfa_verified=True)) is not None
 
 
@@ -3913,7 +3930,9 @@ def make_jwt_caller_resolver(
         if type(tv) is not int or tv != row.token_version:
             return None
         if claims.get("mfa_required") is True and claims.get("mfa_verified") is not True:
-            return None
+            # A refresh cannot complete the MFA step: answer like get_principal does (403),
+            # not with None (401), or the dashboard refreshes on every board request.
+            raise HTTPException(status_code=403, detail="mfa_required")
         tenant = claims.get("tenant")
         if not isinstance(tenant, str) or not tenant:
             return None
@@ -3948,6 +3967,37 @@ async def _read_user_auth(user_id: str) -> UserAuthRow | None:
     return UserAuthRow(username=row.username, is_active=row.is_active,
                        token_version=row.token_version)
 ```
+
+**Refusals a refresh cannot fix are 403 (added after Task 8's review).** The resolver returns
+`None` (the board answers 401, and the dashboard refreshes once and retries) only for what a refresh
+can repair or what must look like a bad credential:
+- a bad or expired signature;
+- an unknown or inactive user;
+- a stale `tv`;
+- a slug the verdict calls `unknown`.
+
+It RAISES `HTTPException(403, …)` for:
+- a pending MFA step (`"mfa_required"`, as in the test above);
+- a tenant or membership the verdict calls `inactive` ("Bu kurumdaki üyeliğiniz etkin değil", the
+  same text as `caller_tenant_id`).
+
+`_caller` lets the exception through. Import `HTTPException` from `fastapi` in `prodserver.py`, and
+add a resolver test for the inactive case.
+
+**What Task 8 left for this task to replace or remove:**
+- `prodserver.py`: the interim comment and `resolve_jwt=None,` in the `create_app(...)` call (4
+  lines). They replace what the text below calls `resolve_jwt_hospital=make_jwt_hospital_resolver(_read_tenant_slugs),`.
+- The `hospital_for_slugs` import in `prodserver.py`. Keep the function in `identity.py`, since
+  `auth/groups.py` uses it.
+- `_decode_access_token` and `make_jwt_hospital_resolver`: their docstring names the removed
+  `resolve_jwt_hospital` hook.
+- `_tenant_slug_query`, `_read_tenant_slugs` and `tests/test_jwt_hospital_lookup.py`.
+- The `_read_all_tenant_slugs` docstring, which says "Distinct from `_read_tenant_slugs`…".
+- The `api/identity.py` module docstring. It still says a user "resolves to theirs through their
+  membership", and that the queries live in `app.py`. Now the tenant comes from the token claim, the
+  query lives in `prodserver`, and the module also holds `Caller`.
+- The resolver must build its `Caller` with `device=False` (the default) and a non-blank `actor`,
+  because `_caller` refuses anything else.
 
 **Tenant check (added after Task 7b's review).** The board path must not trust the slug alone
 either: a renamed slug that a new tenant reuses, a deactivated tenant or a deactivated membership
@@ -7469,8 +7519,22 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - **Plan 2 — LDAP/AD:** `auth/ldap.py`, the LDAP branch of `/auth/login`, `/admin/ldap/*`, the AD
   panel, `LDAP_*` configuration and the directory tests (spec §7). The 503 branch in the login
   route and the `ldap_group_mappings` table are already in place for it.
-- `/ingest` still accepts a clinician JWT (as today); the spec lists no permission for it. Worth a
-  dedicated `observations.ingest` permission or a device-only rule in a follow-up.
+- `/ingest` is device-only since Task 8's review. A future clinician-entered observation route
+  would need its own `observations.ingest` permission.
+- **The device token is a broad credential.** It is exempt from every permission, `audit.view` and
+  `alerts.ack` included, and the legacy `?board=1` screen carries it in the browser URL. Replace
+  that screen's token with a board-only ticket, or retire it.
+- **An open SSE stream outlives revocation.** A ticket is checked once, when the stream opens, so a
+  deactivated user, or one who lost `board.view`, keeps receiving the board until the connection
+  drops. Reconnects re-check. Close the user's streams on a `tv` bump, or re-check periodically.
+- **The live store shows a 403 as a lost connection.** `liveStore.js` catches every
+  `boardPatients` error as "failed". Losing `board.view` mid-shift (a `tv` bump, a refresh, then a
+  403) reads as "reconnecting" instead of "Panoya erişim yetkiniz yok". Consider it in Task 14 or
+  after.
+- **`prodserver` falls back to `demo-token` when `TENANTS` is unset,** even with a Postgres
+  `DATABASE_URL`. Refuse to start in the Postgres configuration without `TENANTS`, like the PHI-key
+  check.
+- **`/audit?limit=` has no upper bound** (predates the plan).
 - The `archive` and `sessions` admin tabs still write only to the simulation in live mode; only
   `security` (invitations) is hidden by this plan, as the spec scoped.
 - The Infinity branch's `infinity_research.py` must switch to `require_permission("devices.manage")`
