@@ -74,7 +74,13 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {})
     return doFetch(url(path), { method: "POST", headers, body: JSON.stringify(body ?? {}) });
   }
 
-  /** Authenticated request; on a 401 it refreshes once and retries, else clears the session. */
+  /** Authenticated request; on a 401 it refreshes once and retries.
+   *
+   *  Only a 401 refreshes: a 403 (`mfa_required`, no tenant, an inactive membership, a missing
+   *  permission) is something a refresh would answer with the same token, so its message goes
+   *  to the caller as it is. A refresh the server REFUSES (4xx) ends the session. A refresh the
+   *  server could not ANSWER (5xx, or no network) keeps it: an outage never signs a clinician
+   *  out, and the next request tries again. */
   async function authed(path, { method = "GET", body } = {}) {
     const send = () => {
       const headers = { Authorization: `Bearer ${accessToken()}` };
@@ -92,6 +98,10 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {})
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: refreshToken() }),
       });
+      if (refreshed.status >= 500) {
+        throw await failure(refreshed,
+          "Sunucuya şu an ulaşılamıyor; oturumunuz açık, biraz sonra tekrar deneyin.");
+      }
       if (!refreshed.ok) {
         logout();
         throw await failure(refreshed, "Oturum süresi doldu, tekrar giriş yapın.");

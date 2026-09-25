@@ -97,6 +97,64 @@ describe("backendApi — auth", () => {
     expect(api.accessToken()).toBeNull();      // session cleared, UI must send the user to login
   });
 
+  it("also clears the session when the refresh is forbidden", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(TOKENS))
+      .mockResolvedValueOnce(jsonResponse({}, { ok: false, status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({}, { ok: false, status: 403 }));   // refresh refused
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+
+    await api.login("a@b.c", "x");
+    await expect(api.me()).rejects.toThrow();
+    expect(api.accessToken()).toBeNull();
+  });
+
+  it("KEEPS the session when the refresh fails with a server error", async () => {
+    // An outage is not a sign-out (spec §4): the server could not answer, it did not refuse.
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(TOKENS))
+      .mockResolvedValueOnce(jsonResponse({}, { ok: false, status: 401 }))
+      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => { throw new SyntaxError("html"); } });
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+
+    await api.login("a@b.c", "x");
+    await expect(api.me()).rejects.toThrow(/oturumunuz açık/);
+    expect(api.accessToken()).toBe("acc-1");
+    expect(store.get("homunculus-refresh-token")).toBe("ref-1");
+  });
+
+  it("KEEPS the session when the refresh cannot reach the server", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(TOKENS))
+      .mockResolvedValueOnce(jsonResponse({}, { ok: false, status: 401 }))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"));              // refresh: no network
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+
+    await api.login("a@b.c", "x");
+    await expect(api.me()).rejects.toThrow();
+    expect(api.accessToken()).toBe("acc-1");
+    expect(store.get("homunculus-refresh-token")).toBe("ref-1");
+  });
+
+  it.each([
+    "mfa_required",
+    "Hesabınıza kurum tanımlanmamış",
+    "Bu kurumdaki üyeliğiniz etkin değil",
+    "permission required: board.view",
+  ])("never refreshes on a 403 (%s) and shows its message", async (detail) => {
+    // A refresh cannot finish an MFA step, name a tenant or grant a right: it would mint the
+    // same token. The session stays; the UI shows why.
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(TOKENS))
+      .mockResolvedValueOnce(jsonResponse({ detail }, { ok: false, status: 403 }));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+
+    await api.login("a@b.c", "x");
+    await expect(api.me()).rejects.toThrow(detail);
+    expect(fetchMock.mock.calls.map(([u]) => u)).not.toContain("/auth/refresh");
+    expect(api.accessToken()).toBe("acc-1");
+  });
+
   it("throws a useful error when the backend rejects the login", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({ detail: "Incorrect email or password" }, { ok: false, status: 401 }));

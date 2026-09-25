@@ -1,10 +1,13 @@
+// dashboard/src/liveAuth.test.js
 import { describe, it, expect } from "vitest";
-import { decodeJwtPayload, roleFromToken, UNSUPPORTED_ROLE } from "./liveAuth.js";
-import { ROLE } from "./clinicalDemo.js";
+import {
+  decodeJwtPayload, sessionFromToken, accessProblem, secretFromProvisioningUri,
+  NO_PERMISSIONS, NO_BOARD_ACCESS,
+} from "./liveAuth.js";
 
 /** Build an unsigned JWT-shaped token (only the payload matters to the client).
  *  Encodes UTF-8 bytes before base64url, exactly as a real JWT library does — btoa() alone
- *  cannot represent non-ASCII characters. */
+ *  cannot represent non-ASCII characters. Synthetic: no real account, no real signature. */
 function tokenWith(payload) {
   const b64 = (o) => {
     const bytes = new TextEncoder().encode(JSON.stringify(o));
@@ -17,56 +20,80 @@ function tokenWith(payload) {
 
 describe("decodeJwtPayload", () => {
   it("reads the payload of a base64url token", () => {
-    const t = tokenWith({ sub: "u1", roles: { "tenant-1": "ATTENDING" } });
-    expect(decodeJwtPayload(t).sub).toBe("u1");
+    expect(decodeJwtPayload(tokenWith({ sub: "u1" })).sub).toBe("u1");
   });
-
   it("returns null for a malformed token instead of throwing", () => {
     expect(decodeJwtPayload("not-a-jwt")).toBeNull();
     expect(decodeJwtPayload("")).toBeNull();
     expect(decodeJwtPayload(null)).toBeNull();
   });
-
   it("handles unicode in the payload", () => {
-    const t = tokenWith({ name: "Dr. Elif Yılmaz" });
-    expect(decodeJwtPayload(t).name).toBe("Dr. Elif Yılmaz");
+    expect(decodeJwtPayload(tokenWith({ name: "Dr. Elif Yılmaz" })).name).toBe("Dr. Elif Yılmaz");
   });
 });
 
-describe("roleFromToken", () => {
-  it("maps the backend roles that have a direct UI equivalent", () => {
-    expect(roleFromToken(tokenWith({ roles: { t: "ATTENDING" } }))).toBe(ROLE.ATTENDING);
-    expect(roleFromToken(tokenWith({ roles: { t: "CHARGE_NURSE" } }))).toBe(ROLE.CHARGE_NURSE);
-    expect(roleFromToken(tokenWith({ roles: { t: "HOSPITAL_ADMIN" } }))).toBe(ROLE.HOSPITAL_ADMIN);
-    expect(roleFromToken(tokenWith({ roles: { t: "RAPID_RESPONSE" } }))).toBe(ROLE.RRT);
+describe("sessionFromToken", () => {
+  it("reads tenant, groups, perms and the MFA flags", () => {
+    const s = sessionFromToken(tokenWith({
+      tenant: "demo-hastanesi", groups: ["nurse"], perms: ["board.view", "alerts.ack"],
+      mfa_required: true, mfa_verified: false,
+    }));
+    expect(s).toEqual({
+      tenant: "demo-hastanesi", groups: ["nurse"], perms: ["board.view", "alerts.ack"],
+      mfaRequired: true, mfaVerified: false,
+    });
   });
 
-  it("maps the physician variants onto the physician panel", () => {
-    for (const r of ["ASSOCIATE_PHYSICIAN", "ONCALL_PHYSICIAN", "UNIT_PHYSICIAN"]) {
-      expect(roleFromToken(tokenWith({ roles: { t: r } }))).toBe(ROLE.ATTENDING);
-    }
+  it("fails closed on missing or malformed claims", () => {
+    expect(sessionFromToken(tokenWith({ sub: "u1" }))).toEqual({
+      tenant: null, groups: [], perms: [], mfaRequired: false, mfaVerified: false,
+    });
+    expect(sessionFromToken(tokenWith({ perms: "board.view", groups: 7 })).perms).toEqual([]);
+    expect(sessionFromToken(tokenWith({ perms: ["board.view", 3, null] })).perms).toEqual(["board.view"]);
+    expect(sessionFromToken("garbage")).toBeNull();
   });
 
-  it("maps a plain NURSE onto the nurse panel", () => {
-    expect(roleFromToken(tokenWith({ roles: { t: "NURSE" } }))).toBe(ROLE.CHARGE_NURSE);
+  it("reads a blank tenant as none, as the server does", () => {
+    // auth/dependencies.py and the board resolver treat a blank slug as no tenant (403 NO_TENANT).
+    expect(sessionFromToken(tokenWith({ tenant: "", perms: ["board.view"] })).tenant).toBeNull();
+    expect(sessionFromToken(tokenWith({ tenant: "   ", perms: ["board.view"] })).tenant).toBeNull();
+    expect(sessionFromToken(tokenWith({ tenant: 7, perms: ["board.view"] })).tenant).toBeNull();
   });
 
-  it("FAILS CLOSED for roles with no safe UI equivalent — never silently grants admin", () => {
-    // AUDITOR is read-only and PLATFORM_SUPPORT is vendor-side; mapping either onto
-    // HOSPITAL_ADMIN would be a privilege escalation.
-    expect(roleFromToken(tokenWith({ roles: { t: "AUDITOR" } }))).toBe(UNSUPPORTED_ROLE);
-    expect(roleFromToken(tokenWith({ roles: { t: "PLATFORM_SUPPORT" } }))).toBe(UNSUPPORTED_ROLE);
-    expect(roleFromToken(tokenWith({ roles: { t: "SOMETHING_NEW" } }))).toBe(UNSUPPORTED_ROLE);
+  it("does not read a truthy non-boolean as an MFA flag", () => {
+    const s = sessionFromToken(tokenWith({ mfa_required: "true", mfa_verified: 1 }));
+    expect(s.mfaRequired).toBe(false);
+    expect(s.mfaVerified).toBe(false);
   });
+});
 
-  it("returns null when the token carries no roles at all", () => {
-    expect(roleFromToken(tokenWith({ sub: "u1" }))).toBeNull();
-    expect(roleFromToken(tokenWith({ roles: {} }))).toBeNull();
-    expect(roleFromToken("garbage")).toBeNull();
+describe("accessProblem", () => {
+  const s = (perms) => ({ tenant: "t", groups: [], perms, mfaRequired: false, mfaVerified: false });
+  it("refuses a session with no permissions at all", () => {
+    expect(accessProblem(s([]))).toBe(NO_PERMISSIONS);
+    expect(accessProblem(null)).toBe(NO_PERMISSIONS);
+    expect(accessProblem({ tenant: "t" })).toBe(NO_PERMISSIONS);   // not a session: fail closed
   });
+  it("refuses a session that names no tenant", () => {
+    // Every right is held in a tenant; the server answers 403 NO_TENANT to such a token on every
+    // tenant-scoped route, and a refresh would mint the same token.
+    expect(accessProblem({ ...s(["board.view"]), tenant: null })).toBe(NO_PERMISSIONS);
+  });
+  it("refuses a session that cannot see the board", () => {
+    expect(accessProblem(s(["devices.manage"]))).toBe(NO_BOARD_ACCESS);
+  });
+  it("accepts a session with board.view", () => {
+    expect(accessProblem(s(["board.view"]))).toBeNull();
+  });
+});
 
-  it("prefers the highest-privilege role when a user holds several", () => {
-    const t = tokenWith({ roles: { a: "NURSE", b: "HOSPITAL_ADMIN", c: "ATTENDING" } });
-    expect(roleFromToken(t)).toBe(ROLE.HOSPITAL_ADMIN);
+describe("secretFromProvisioningUri", () => {
+  it("extracts the shared secret for manual authenticator entry", () => {
+    expect(secretFromProvisioningUri("otpauth://totp/Homunculus:ayse?secret=JBSWY3DPEHPK3PXP&issuer=Homunculus"))
+      .toBe("JBSWY3DPEHPK3PXP");
+  });
+  it("returns null when there is none", () => {
+    expect(secretFromProvisioningUri("otpauth://totp/x")).toBeNull();
+    expect(secretFromProvisioningUri("nonsense")).toBeNull();
   });
 });

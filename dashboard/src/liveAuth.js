@@ -1,35 +1,16 @@
-// src/liveAuth.js — translate the backend's identity into what the UI understands.
+// src/liveAuth.js — read the session the backend put into the access token.
 //
-// The access token carries {roles: {tenant_id: BACKEND_ROLE}}; the UI routes on its own smaller
-// ROLE set. Mapping is explicit and **fails closed**: a backend role with no safe UI equivalent
-// resolves to UNSUPPORTED_ROLE rather than being quietly widened into HOSPITAL_ADMIN, which would
-// be a privilege escalation in a clinical system.
+// The token carries {tenant, groups, perms, mfa_required, mfa_verified} (auth/service.py
+// `issue_tokens`). The UI gates on `perms` and nothing else; there is no role map any more, so
+// there is nothing to widen by accident. Reading fails closed: a claim that is not the expected
+// shape is treated as absent, the way auth/dependencies.py reads it on the server.
+//
+// Everything here is a DISPLAY and GATING HINT. The signature is not checked in the browser and
+// cannot be; the API re-checks the token, its `tv` and the tenant membership on every request.
 
-import { ROLE } from "./clinicalDemo.js";
-
-/** Returned when the account's role has no safe UI equivalent — the UI must refuse the session. */
-export const UNSUPPORTED_ROLE = "UNSUPPORTED_ROLE";
-
-// Backend UserRole -> UI ROLE. Anything absent here is deliberately unsupported.
-const ROLE_MAP = {
-  ATTENDING: ROLE.ATTENDING,
-  ASSOCIATE_PHYSICIAN: ROLE.ATTENDING,   // physician panel
-  ONCALL_PHYSICIAN: ROLE.ATTENDING,
-  UNIT_PHYSICIAN: ROLE.ATTENDING,
-  CHARGE_NURSE: ROLE.CHARGE_NURSE,
-  NURSE: ROLE.CHARGE_NURSE,              // nurse panel (the UI has no separate plain-nurse view)
-  RAPID_RESPONSE: ROLE.RRT,
-  HOSPITAL_ADMIN: ROLE.HOSPITAL_ADMIN,
-  // AUDITOR (read-only) and PLATFORM_SUPPORT (vendor-side) have no UI counterpart: mapping them
-  // onto HOSPITAL_ADMIN would grant powers they must not have. PHARMACIST / BIOMEDICAL exist in
-  // the UI but not yet in the backend role catalogue.
-};
-
-// Most-privileged first — a user holding several memberships gets the highest.
-const PRECEDENCE = [
-  "HOSPITAL_ADMIN", "ATTENDING", "UNIT_PHYSICIAN", "ONCALL_PHYSICIAN",
-  "ASSOCIATE_PHYSICIAN", "RAPID_RESPONSE", "CHARGE_NURSE", "NURSE",
-];
+/** Reason codes for refusing a session. */
+export const NO_PERMISSIONS = "NO_PERMISSIONS";
+export const NO_BOARD_ACCESS = "NO_BOARD_ACCESS";
 
 /** Decode a JWT payload client-side (display only — the signature is verified by the API). */
 export function decodeJwtPayload(token) {
@@ -48,21 +29,79 @@ export function decodeJwtPayload(token) {
   }
 }
 
-/**
- * The UI role for an access token.
- * Returns null when the token carries no roles, and UNSUPPORTED_ROLE when it carries only
- * roles the UI cannot safely represent.
- */
-export function roleFromToken(token) {
-  const payload = decodeJwtPayload(token);
-  const roles = payload?.roles;
-  if (!roles || typeof roles !== "object") return null;
+const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
 
+/** The session described by an access token, or null when the token is unreadable. */
+export function sessionFromToken(token) {
+  const p = decodeJwtPayload(token);
+  if (!p || typeof p !== "object") return null;
+  return {
+    // A blank slug names no tenant, exactly as on the server (403 NO_TENANT there).
+    tenant: typeof p.tenant === "string" && p.tenant.trim() ? p.tenant : null,
+    groups: strings(p.groups),
+    perms: strings(p.perms),
+    mfaRequired: p.mfa_required === true,
+    mfaVerified: p.mfa_verified === true,
+  };
+}
+
+/** Why a session cannot open the clinical UI, or null when it can.
+ *  A session naming no tenant holds no rights anywhere (every permission is held in a tenant, and
+ *  the server refuses such a token with 403 NO_TENANT), so it reads as NO_PERMISSIONS. */
+export function accessProblem(session) {
+  if (!session || !Array.isArray(session.perms) || session.perms.length === 0) return NO_PERMISSIONS;
+  if (session.tenant == null) return NO_PERMISSIONS;
+  if (!session.perms.includes("board.view")) return NO_BOARD_ACCESS;
+  return null;
+}
+
+/** The shared secret inside an otpauth:// URI, for manual entry into an authenticator. */
+export function secretFromProvisioningUri(uri) {
+  try {
+    return new URL(uri).searchParams.get("secret") || null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// TEMPORARY SHIM — Task 14 deletes everything from here to the end of the file.
+//
+// liveStore.js still resolves a UI role from the legacy `roles` claim until Task 14 moves it onto
+// sessionFromToken / accessProblem. The committed backend no longer issues `roles`, so against it
+// this answers null for every token and the store refuses the session: the shim only keeps the
+// store and its tests whole between the two commits. Do not use it in new code.
+
+import { ROLE } from "./clinicalDemo.js";
+
+/** Legacy: returned when the account's role has no safe UI equivalent. */
+export const UNSUPPORTED_ROLE = "UNSUPPORTED_ROLE";
+
+const LEGACY_ROLE_MAP = {
+  ATTENDING: ROLE.ATTENDING,
+  ASSOCIATE_PHYSICIAN: ROLE.ATTENDING,
+  ONCALL_PHYSICIAN: ROLE.ATTENDING,
+  UNIT_PHYSICIAN: ROLE.ATTENDING,
+  CHARGE_NURSE: ROLE.CHARGE_NURSE,
+  NURSE: ROLE.CHARGE_NURSE,
+  RAPID_RESPONSE: ROLE.RRT,
+  HOSPITAL_ADMIN: ROLE.HOSPITAL_ADMIN,
+};
+
+const LEGACY_PRECEDENCE = [
+  "HOSPITAL_ADMIN", "ATTENDING", "UNIT_PHYSICIAN", "ONCALL_PHYSICIAN",
+  "ASSOCIATE_PHYSICIAN", "RAPID_RESPONSE", "CHARGE_NURSE", "NURSE",
+];
+
+/** Legacy: the UI role for a token's `roles` claim; null when there is none, UNSUPPORTED_ROLE
+ *  when none of the roles held is safely representable. */
+export function roleFromToken(token) {
+  const roles = decodeJwtPayload(token)?.roles;
+  if (!roles || typeof roles !== "object") return null;
   const held = Object.values(roles);
   if (held.length === 0) return null;
-
-  for (const candidate of PRECEDENCE) {
-    if (held.includes(candidate)) return ROLE_MAP[candidate];
+  for (const candidate of LEGACY_PRECEDENCE) {
+    if (held.includes(candidate)) return LEGACY_ROLE_MAP[candidate];
   }
-  return UNSUPPORTED_ROLE;   // roles exist, but none is safely representable
+  return UNSUPPORTED_ROLE;
 }
