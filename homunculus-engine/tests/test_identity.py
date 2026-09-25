@@ -6,7 +6,9 @@ tested without a database.
 """
 from __future__ import annotations
 
-from homunculus.api.identity import hospital_for_slugs, unmatched_hospital_keys
+import pytest
+
+from homunculus.api.identity import Caller, hospital_for_slugs, unmatched_hospital_keys
 
 
 def test_no_membership_means_no_hospital():
@@ -79,6 +81,66 @@ def test_tenants_entries_with_an_empty_token_or_hospital_are_dropped(caplog):
     for position in (2, 3, 4):
         assert f"entry {position} " in caplog.text
     assert "secret-tok" not in caplog.text and "no-colon-tok" not in caplog.text
+
+
+def test_unset_or_blank_tenants_is_the_development_default():
+    from homunculus.api.prodserver import _parse_tenants
+
+    for raw in (None, "", "   ", "\n"):
+        assert _parse_tenants(raw) == {"demo-token": "HOSP1"}
+
+
+@pytest.mark.parametrize("raw", [":HOSP1", "secret-tok:", " , ", ",", "secret-tok",
+                                 " :HOSP1 , secret-tok: "])
+def test_tenants_set_but_holding_no_valid_entry_configures_no_device(caplog, raw):
+    """Fail closed. The development default's token is public (it is in this repository) and a
+    device is exempt from every permission check, so a mistyped TENANTS must never turn into it.
+    The error says what breaks and never carries an entry's text."""
+    import logging
+
+    from homunculus.api.prodserver import _parse_tenants
+
+    with caplog.at_level(logging.WARNING):
+        assert _parse_tenants(raw) == {}
+    errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert len(errors) == 1 and "TENANTS" in errors[0].getMessage()
+    assert "secret-tok" not in caplog.text and "HOSP1" not in caplog.text
+    assert "demo-token" not in caplog.text
+
+
+# ---------------------------------------------------------------- Caller
+def test_a_caller_is_a_device_only_when_it_says_so():
+    person = Caller(hospital="H")
+    assert person.is_device is False and not person.can("board.view")
+    device = Caller(hospital="H", device=True)
+    assert device.is_device is True and device.can("board.view")
+
+
+def test_a_caller_holds_exactly_its_permissions():
+    caller = Caller(hospital="H", actor="ayse", groups=("nurse",),
+                    perms=frozenset({"board.view"}))
+    assert caller.can("board.view") and not caller.can("board") and not caller.can("alerts.ack")
+
+
+def test_a_person_may_be_built_without_an_actor():
+    """A device has no actor, and a resolver fault with a blank one is refused by `_caller` in
+    app.py (401), not here."""
+    assert Caller(hospital="H").actor is None
+    assert Caller(hospital="H", actor="").actor == ""
+
+
+@pytest.mark.parametrize("fields", [
+    {"hospital": ""}, {"hospital": "   "}, {"hospital": None}, {"hospital": 5},
+    {"perms": "board.view"},                     # `in` on a string is a substring match
+    {"perms": {"board.view"}}, {"perms": ["board.view"]}, {"perms": frozenset({1})},
+    {"perms": None},
+    {"groups": ["nurse"]}, {"groups": "nurse"}, {"groups": ("nurse", 1)}, {"groups": None},
+    {"device": 1}, {"device": "yes"}, {"device": None},
+    {"actor": 5}, {"actor": b"ayse"}, {"actor": ("ayse",)},
+], ids=repr)
+def test_a_malformed_caller_cannot_be_built(fields):
+    with pytest.raises((TypeError, ValueError)):
+        Caller(**{"hospital": "H", **fields})
 
 
 async def test_a_failing_startup_check_does_not_stop_the_service(caplog):

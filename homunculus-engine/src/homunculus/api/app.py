@@ -48,6 +48,18 @@ log = logging.getLogger(__name__)
 BOARD_VIEW, ALERTS_ACK, AUDIT_VIEW = validate_permissions(
     ("board.view", "alerts.ack", "audit.view"))
 
+DEVICE_ROLE_MAX = 64
+
+
+def _device_role(value: object) -> str:
+    """The device path's self-declared `role`, bounded: a non-blank string of at most
+    DEVICE_ROLE_MAX characters, else "unknown". It lands in the audit row and, through `rehydrate`,
+    in the board's `acknowledged_by`, which the legacy board renders — a dict or a page of text
+    must not reach either."""
+    if isinstance(value, str) and value.strip() and len(value) <= DEVICE_ROLE_MAX:
+        return value
+    return "unknown"
+
 
 async def sse_board_frames(queue: asyncio.Queue, keepalive: float = 15.0):
     """Yield SSE frames for boards arriving on `queue`; keep-alive comment on idle. Tested directly
@@ -102,6 +114,13 @@ def create_app(
                     ", ".join(sorted(map(str, empty))))
     tenants = {token: hospital for token, hospital in tenants.items()
                if isinstance(token, str) and token.strip()}
+    # A device is a `Caller`, and a `Caller` needs a hospital: a token naming none is dropped here,
+    # once, rather than answering 500 on every request it makes. The warning names no token.
+    nowhere = [token for token, hospital in tenants.items()
+               if not isinstance(hospital, str) or not hospital.strip()]
+    if nowhere:
+        log.warning("ignoring %d device token(s) configured with no hospital", len(nowhere))
+    tenants = {token: hospital for token, hospital in tenants.items() if token not in nowhere}
 
     engines: dict[str, Engine] = {}
     stores: dict[str, AckStore] = {}
@@ -258,6 +277,9 @@ def create_app(
 
         The static token is tried first: it is the device path, and it must not depend on the
         database being reachable for authentication. Only then is the value treated as a JWT.
+        The resolver returns None for what a refresh can repair (401 here); it raises its own
+        403 for what a refresh cannot (a pending MFA step, a token naming no tenant, an inactive
+        tenant or membership), and that passes through.
         """
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="missing bearer token")
@@ -296,7 +318,7 @@ def create_app(
         two it was, so a device naming a user never reads as that user's own action.
         """
         if caller.is_device:
-            return {"role": body.get("role", "unknown"), "via": "device", "actor": None,
+            return {"role": _device_role(body.get("role")), "via": "device", "actor": None,
                     "groups": []}
         return {"role": caller.actor, "via": "user", "actor": caller.actor,
                 "groups": list(caller.groups)}

@@ -10,10 +10,25 @@ from typing import Any
 
 from jose import JWTError, jwt
 
-JWT_SECRET = os.getenv("JWT_SECRET", "CHANGE_ME_IN_PRODUCTION_USE_32_CHARS_MIN")
+_DEFAULT_SECRET = "CHANGE_ME_IN_PRODUCTION_USE_32_CHARS_MIN"
+
+JWT_SECRET = os.getenv("JWT_SECRET", _DEFAULT_SECRET)
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
+
+def jwt_secret_problem(secret: str | None) -> str | None:
+    """Why a signing key is unfit for a real deployment, or None. The token is the only
+    authority for `perms` and `tenant`, so whoever knows the key can mint an administrator.
+    The reason never quotes the key."""
+    if not secret:
+        return "JWT_SECRET is not set"
+    if secret == _DEFAULT_SECRET:
+        return "JWT_SECRET is the public default"
+    if len(secret) < 32:
+        return "JWT_SECRET is shorter than 32 characters"
+    return None
 
 
 def _now() -> datetime:

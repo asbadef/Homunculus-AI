@@ -143,6 +143,37 @@ def test_the_device_token_is_exempt_and_keeps_the_body_role(client):
     assert payload["actor"] is None and payload["groups"] == []
 
 
+@pytest.mark.parametrize("role", [{"name": "dr.x"}, ["nurse"], 7, None, True, "", "   ",
+                                  "r" * 65], ids=repr)
+def test_a_device_role_that_is_not_a_short_string_is_recorded_as_unknown(role):
+    """The device path's `role` is self-declared. Anything but a short string (a dict reached the
+    audit row, and the legacy board's React render as `acknowledged_by`) is recorded as
+    "unknown" — on the ack store, in the audit row, and after a restart."""
+    audit = InMemoryAuditLog()
+    with TestClient(_app(audit)) as c:
+        p = _drive_shock(c)
+        res = c.post("/ack", json={"patient_id": p, "kind": "septic_shock", "role": role},
+                     headers=_hdr("tok"))
+        assert res.status_code == 200
+        shock = next(a for a in res.json()["alerts"] if a["kind"] == "septic_shock")
+        assert shock["acknowledged_by"] == "unknown"
+        assert c.post("/view", json={"patient_id": p, "role": role},
+                      headers=_hdr("tok")).status_code == 200
+        assert _rows(c, "ack")[-1].payload["role"] == "unknown"
+        assert _rows(c, "view")[-1].payload["role"] == "unknown"
+    with TestClient(_app(audit)) as again:
+        assert _shock(again)["acknowledged_by"] == "unknown"
+
+
+def test_a_device_role_of_up_to_64_characters_is_kept(client):
+    p = _drive_shock(client)
+    role = "r" * 64
+    client.post("/ack", json={"patient_id": p, "kind": "septic_shock", "role": role},
+                headers=_hdr("tok"))
+    assert _shock(client)["acknowledged_by"] == role
+    assert _rows(client, "ack")[-1].payload["role"] == role
+
+
 def test_a_device_naming_a_user_never_reads_as_that_users_action(client):
     """The device token also sits in a browser URL (the legacy `?board=1` screen). Whatever name
     it puts in the body, its row says `via: device` and has no actor."""

@@ -181,6 +181,30 @@ async def test_the_streams_refuse_a_missing_or_empty_token():
             assert res.status_code == 401, path
 
 
+async def test_a_device_token_naming_no_hospital_is_ignored(caplog):
+    """A device is a `Caller`, and a `Caller` needs a hospital. A token mapped to a blank or
+    non-string hospital is dropped when the app is built, with a warning that names no token,
+    rather than answering 500 on every request it makes. Bounded: a stream that wrongly opened
+    would never end."""
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        app = create_app({"blank-tok": "  ", "none-tok": None, "bridge-token": HOSPITAL},
+                         run_escalation_loop=False)
+    assert "blank-tok" not in caplog.text and "none-tok" not in caplog.text
+    assert "no hospital" in caplog.text
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        for token in ("blank-tok", "none-tok"):
+            for method, path, body in (("GET", "/patients", None), ("POST", "/ingest", OBSERVATION),
+                                       ("POST", "/stream-ticket", None),
+                                       ("GET", f"/stream?token={token}", None),
+                                       ("GET", f"/notifications?token={token}", None)):
+                res = await asyncio.wait_for(
+                    ac.request(method, path, headers=_hdr(token), json=body), timeout=5)
+                assert res.status_code == 401, (token, path)
+        assert (await ac.get("/patients", headers=_hdr("bridge-token"))).status_code == 200
+
+
 def test_the_empty_token_is_ignored_even_if_the_resolver_is_absent():
     """No JWT resolver, "" configured: an empty bearer still reaches nobody."""
     app = create_app({"": "HOSP2"}, run_escalation_loop=False)

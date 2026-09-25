@@ -40,7 +40,9 @@ services:
       # plain, which is correct for a database on the same host. Setting it would demand a
       # certificate chain that does not exist here.
       DATABASE_URL: postgresql://homunculus:${POSTGRES_PASSWORD}@postgres:5432/homunculus
-      JWT_SECRET: ${JWT_SECRET}
+      # Required, not defaulted: the token is the only authority for a clinician's permissions and
+      # tenant. Compose refuses a missing key; the API refuses a default or short one at start.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is missing in .env - generate one, see .env.example}
       # Required, not defaulted: without it the engine would fall back to a key derived from
       # JWT_SECRET and silently encrypt real names with it. Compose refuses to start instead.
       PHI_ENCRYPTION_KEY: ${PHI_ENCRYPTION_KEY:?PHI_ENCRYPTION_KEY is missing in .env - generate a Fernet key, see .env.example}

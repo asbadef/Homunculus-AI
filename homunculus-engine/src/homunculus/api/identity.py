@@ -1,13 +1,16 @@
 # src/homunculus/api/identity.py
-"""Which hospital a request belongs to.
+"""Which hospital a request belongs to, and who is calling a board route.
 
 Two credentials reach the clinical routes: the bridge's static tenant token, and a clinician's
 JWT. They meet because the engine's hospital key *is* the tenant slug — so the bridge is
-configured with the slug, and a user resolves to theirs through their membership. No second
-mapping table to drift out of step with the first.
+configured with the slug, and a clinician's token carries theirs in its `tenant` claim (sign-in
+resolves it once, with `hospital_for_slugs`). No second mapping table to drift out of step with
+the first.
 
-These functions are pure so the decisions can be tested without a database; the queries that feed
-them live in app.py.
+`Caller` is what the board routes in app.py act on. The functions here are pure so the decisions
+can be tested without a database; the query behind a clinician's `Caller` (account, token
+version, and the tenant claim checked against an active membership) lives in
+`api/prodserver.py`.
 """
 from __future__ import annotations
 
@@ -53,6 +56,22 @@ class Caller:
     groups: tuple[str, ...] = ()
     perms: frozenset[str] = frozenset()
     device: bool = False
+
+    def __post_init__(self) -> None:
+        """Refuse a malformed Caller when it is built, not when a route reads it. `perms` above
+        all: a plain string would pass `in` as a substring match ("board" in "board.view"). A
+        blank `actor` is allowed here — a device has none — and refused for a JWT by `_caller`."""
+        if not isinstance(self.hospital, str) or not self.hospital.strip():
+            raise ValueError("Caller.hospital must be a non-blank string")
+        if self.actor is not None and not isinstance(self.actor, str):
+            raise TypeError("Caller.actor must be None or a string")
+        if not isinstance(self.groups, tuple) or not all(isinstance(g, str) for g in self.groups):
+            raise TypeError("Caller.groups must be a tuple of strings")
+        if (not isinstance(self.perms, frozenset)
+                or not all(isinstance(p, str) for p in self.perms)):
+            raise TypeError("Caller.perms must be a frozenset of strings")
+        if not isinstance(self.device, bool):
+            raise TypeError("Caller.device must be a bool")
 
     @property
     def is_device(self) -> bool:
