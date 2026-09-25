@@ -87,6 +87,22 @@ tenant or membership is 403. `tenant_of_user` skips inactive tenants.
 - **Deploy defaults:** `.env.example` ships empty `JWT_SECRET`/`TENANT_TOKEN`, so compose refuses
   at `up`.
 
+**Task 10 as amended in review:**
+- **Rule:** the caller's rights bound what they can do (spec §6), "no grant beyond your own
+  rights". A user manager holding only `users.manage` may put staff into groups within its
+  rights and may list groups (`GET /admin/groups` takes `groups.manage` or `users.manage`).
+- **Refused:**
+  - editing global attributes of an account shared with another tenant, or of a platform
+    operator (409);
+  - self-reset and self-deactivation (409);
+  - a request queued behind the caller's own demotion (401, re-checked under the lock).
+- **Guard:** keeps one LOCAL administrator.
+- **Frontend (Tasks 15, 17, 18) must follow the same rules:**
+  - offer only the groups whose rights are within the session's `perms`;
+  - hide or disable actions on users whose rights exceed the session's, and on
+    yourself (reset, deactivate);
+  - show the API's 403 and 409 messages.
+
 **Do not deploy mid-plan.** Between migration 0006 (Task 3) and the sign-in rewrite (Task 6) and the
 seed rewrite (Task 7), stored e-mails are lower-cased while sign-in still matches case-sensitively,
 and the seed cannot create the administrator. The branch reaches the VM only after Task 20.
@@ -7635,6 +7651,22 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   the placeholder denylist. Coordinate the rotation with the bridge first (see Task 20).
 - **The test conftest should refuse or unset `DATABASE_URL`,** so a developer's exported production
   URL can never be reached by a test.
+- **Admin API, from Task 10's review:**
+  - **Audit in the same transaction.** Write the admin audit row through the request's own
+    database session, before commit. Today it is appended after commit, through a separate engine,
+    so a failed append leaves a committed change with no record (the failure is logged at ERROR).
+  - **Audit refusals.** Decide whether the guard's 409s are audited as `admin.refused` {actor,
+    kind, target, reason}. Today they aren't, and a test pins that.
+  - **Temporary passwords.** Add a "must change at next sign-in" flag for passwords set by an admin
+    (spec §6 calls them temporary; nothing enforces it), and reuse the seed's placeholder denylist.
+  - **A tenant that already has no administrator refuses unrelated changes** with a misleading
+    message. Refuse only a change that drops the count from above zero to zero.
+  - **`sessions_revoked_at` vs `iat`.** Both are whole seconds, taken before the commit. Add a margin
+    of 1–2 s, so a refresh racing the deactivation cannot survive a later reactivation.
+  - **Hash outside the lock.** Hash the password before taking the tenant lock (create and reset),
+    so bcrypt doesn't hold other admin writes at a shift change.
+  - **Enforce `serialise` structurally.** Make `serialise` a dependency, so the route map can check
+    that every admin write takes the lock.
 - **The test-run lock (`tests/conftest.py`).** An unreachable `TEST_DATABASE_URL` aborts the whole
   run. pytest-xdist, if it is ever added, needs the lock skipped in workers
   (`config.workerinput`). Paths outside `tests/` need `-p tests.conftest`.

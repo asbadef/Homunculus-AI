@@ -264,7 +264,8 @@ succeeds if the token's `perms` contains **any** of the listed keys.
 | `POST /tenant/tenants` | platform operator (`users.is_platform_support`); no group permission |
 | Infinity research router | `devices.manage` (replaces the dangling `UserRole.BIOMEDICAL`) |
 | `/admin/users*`, `/admin/ldap/*` | `users.manage` |
-| `/admin/groups*`, `GET /admin/permissions` | `groups.manage` |
+| `/admin/groups*` writes, `GET /admin/permissions` | `groups.manage` |
+| `GET /admin/groups` | `groups.manage` or `users.manage` (a user manager lists the groups it may grant) |
 
 **The device path is unchanged.** A static tenant token (the bridge's `/ingest` credential, and
 the legacy `?board=1` screen) is a machine identity and is exempt from permission checks.
@@ -354,6 +355,29 @@ another tenant is a 404.
   mapped group as it is.
 - The guard is race-free: it runs after the change, in the same transaction, under a per-tenant
   transaction-scoped advisory lock, and counts only users with an active membership in the tenant.
+  Every admin write takes that lock first. Under the lock it re-reads the caller's `token_version`
+  and `is_active`, so a request queued behind the caller's own demotion is refused (401).
+- The guard keeps at least one active LOCAL administrator: a local account with a password. An AD
+  outage must never lock the ward out of its own administration, so AD-held administrators do not
+  count toward it.
+- **No grant beyond your own rights.** The caller's permissions bound everything they can do:
+  - a user can be edited, reset or regrouped only if that user's effective rights in the tenant are
+    within the caller's;
+  - a group can be granted, created, edited or deleted only if its effective rights (before and
+    after) are within the caller's. The system group counts as the whole catalogue.
+
+  Otherwise the answer is 403. So `users.manage` alone makes a *user manager*, for example a charge
+  nurse who puts staff into the nurse groups, not an administrator. Only a holder of every key can
+  manage `hospital_admin`.
+- **An account shared with another tenant is not this tenant's to change.** The password, MFA,
+  `is_active`, e-mail and name live on the global user row. A target that holds an active
+  membership in another tenant, or is a platform operator (`is_platform_support`), can be regrouped
+  within this tenant but not otherwise changed (409).
+- **Not on yourself.** An administrator cannot reset their own password or MFA, or deactivate
+  themselves, through `/admin` (409). Their own password goes through `/auth/password`, which checks
+  the current one.
+- Usernames are global. A 409 on a username or e-mail held only in another tenant therefore tells
+  the caller that the account exists. That is accepted.
 
 **Audit.** Every mutation appends to the existing `AuditLog` for the tenant with
 `event_type = admin`, `kind` = one of `user.create`, `user.update`, `user.groups`,
