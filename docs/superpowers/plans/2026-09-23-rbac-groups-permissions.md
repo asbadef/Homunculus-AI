@@ -7428,6 +7428,14 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 **Files:**
 - Modify: `docs/homunculus-rehber-TR.md`
 - Modify: `docs/DEPLOY-SUPABASE.md` (lines ~18–20 still say HOSPITAL_ADMIN: the seeded admin is in the `hospital_admin` group)
+- Modify: `deploy/local/.env.example`. Blank `SEED_ADMIN_PASSWORD`, with a note that it needs 12 or more
+  characters and no placeholder: the seed now refuses `change-me`, and a fresh install that follows
+  the example would get no admin. Consider blanking `POSTGRES_PASSWORD` too.
+- Modify: `deploy/bridge/.env.example` and `deploy/bridge/docker-compose.yml`. The bridge-only
+  deployment still ships `TENANT_TOKEN=change-me` and uses `${TENANT_TOKEN}` without `:?`. Match the
+  local deployment: an empty value in the example, and `:?` in compose.
+- Modify: `render.yaml`. Declare `PHI_ENCRYPTION_KEY` (`sync: false`). The API has refused to start
+  without it since before this plan, so a blueprint deploy that follows the docs cannot boot.
 - Modify: `docs/superpowers/plans/2026-09-23-rbac-groups-permissions.md` (execution status)
 
 - [ ] **Step 1: Glossary entries in the Turkish guide**
@@ -7492,7 +7500,8 @@ Expected: green, clean build.
   two accounts' e-mails differ only by case or an e-mail is longer than 128 characters; merge or
   rename them and rerun.
 - **Before `up`, check `/opt/homunculus/deploy/local/.env`:**
-  - `JWT_SECRET` must be at least 32 characters (after stripping) and not the default. From Task 9
+  - `JWT_SECRET` must be at least 32 characters, not the default, and have no surrounding
+    whitespace. The API refuses a padded key outright, so don't quote it with spaces. From Task 9
     on, the API refuses to boot otherwise, and compose restart-loops, so every clinician would lose
     the board. `openssl rand -base64 36` gives 48 characters. Rotating the key signs everyone out,
     which the cut-over does anyway.
