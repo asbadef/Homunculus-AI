@@ -7642,8 +7642,28 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   `DATABASE_URL`. Refuse to start in the Postgres configuration without `TENANTS`, like the PHI-key
   check.
 - **`/audit?limit=` has no upper bound** (predates the plan).
-- The `archive` and `sessions` admin tabs still write only to the simulation in live mode; only
-  `security` (invitations) is hidden by this plan, as the spec scoped.
+- **Live mode shows nothing simulated** (widened after Task 19's review; the spec scoped only
+  `security`). In live mode the dashboard hides:
+  - the admin tabs backed by the simulation (reports, structure, devices, audit, archive, sessions,
+    security), and the simulation-backed clinical pages;
+  - the simulation controls: fire-alert, TimeScale, break-glass, the offline toggle, the auto-alarm
+    toggle;
+  - an alert card's Escalate, Mute and Snooze, and the ack reason and note.
+
+  The simulation clock and auto-alarm engine stop, and a device alert's age follows the wall clock.
+  Follow-ups to bring these back for real:
+  - wire Escalate and Snooze to `POST /alerts/{id}/escalate` and `/snooze` (the backend routes exist);
+  - store the ack reason and note on the server, and enforce "critical needs a note" there;
+  - back the audit tab with `GET /audit`;
+  - back the sessions tab with a server-side session list and revocation;
+  - back structure and devices with `/tenant/*` and the device registry.
+- **`main` has the live-mode alarm-clock and silent-action bugs too** (found in Task 19's review):
+  - real alarms are timed on the 60× simulation clock, so elapsed time and escalation stages are
+    wrong;
+  - "RRT'ye Eskale Et", "Sessize al" and "Alarm Tetikle" silently do nothing on real alarms.
+
+  If the VM serves `main` in live mode, the ward sees this today. A hotfix on `main` needs the
+  user's decision, including whether to deploy it.
 - The Infinity branch's `infinity_research.py` must switch to `require_permission("devices.manage")`
   when merged, take `caller_tenant_id`, and be mounted in `create_app`. The
   route tests walk only `create_app()`, so a router mounted anywhere else escapes them.
