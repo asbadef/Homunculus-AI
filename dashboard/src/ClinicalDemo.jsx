@@ -29,6 +29,7 @@ import {
 import {
   getTheme, storedTheme, persistTheme, THEME_KEYS,
 } from "./clinicalTheme.js";
+import { Field, inputCls, btnCls, ActionOverlay } from "./ui.jsx";
 import { cstrings, storedClang, persistClang, LANGS } from "./clinicalI18n.js";
 import { enableAudio, isAudioEnabled, syncAlarm } from "./clinicalAudio.js";
 
@@ -101,23 +102,6 @@ function Menu({ T, triggerClass, trigger, align = "right", children }) {
       )}
     </div>
   );
-}
-
-// ---------------------------------------------------------------- form primitives
-function Field({ T, label, hint, children }) {
-  return (
-    <label className="block">
-      <div className={`mb-1 font-medium ${T.sizes.label} ${T.muted}`}>{label}</div>
-      {children}
-      {hint && <div className={`mt-1 text-xs ${T.faint}`}>{hint}</div>}
-    </label>
-  );
-}
-const inputCls = (T) => `w-full rounded-lg border px-3 py-2.5 outline-none transition focus:ring-2 focus:ring-brand/40 ${T.input} ${T.sizes.nav}`;
-function btnCls(T, kind = "primary") {
-  const base = "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed";
-  const map = { primary: T.primary, ghost: T.ghost, danger: T.danger, warn: T.warn };
-  return `${base} ${map[kind] || T.primary} ${T.sizes.nav}`;
 }
 
 // ================================================================ LOGIN
@@ -2615,22 +2599,6 @@ function BreakGlassReview({ T, S, store, state }) {
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-// Küçük merkezi modal kabuğu — kullanıcı eylemleri (parola/PIN/birim) için.
-function ActionOverlay({ T, title, onClose, children }) {
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className={`absolute inset-0 ${T.overlay}`} onClick={onClose} />
-      <div className={`relative w-full max-w-sm rounded-2xl border ${T.border} ${T.card} p-5 shadow-2xl`}>
-        <div className="mb-3 flex items-center justify-between">
-          <h4 className={`font-bold ${T.heading}`}>{title}</h4>
-          <button onClick={onClose} className={`grid h-8 w-8 place-items-center rounded-lg ${T.ghost}`}><X size={16} /></button>
-        </div>
-        {children}
-      </div>
     </div>
   );
 }
