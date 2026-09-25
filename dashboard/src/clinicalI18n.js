@@ -294,6 +294,105 @@ const STRINGS = {
       initialPassword: "Başlangıç parolası (isteğe bağlı)",
       initialPasswordHint: "Boş bırakılırsa sonra atanır",
     },
+    rbac: {
+      groupsTitle: "Gruplar ve İzinler",
+      groupsSub: "Her grup bir izin kümesi taşır; bir kullanıcı gruplarının birleşimi kadar yetkilidir.",
+      usersTitle: "Kullanıcılar", usersSub: "Yerel hesaplar burada açılır; AD hesapları içe alınır.",
+      newGroup: "Yeni grup", editGroup: "Grubu düzenle", groupName: "Grup adı", groupSlug: "Kısa ad",
+      groupSlugHint: "Küçük harf, rakam ve _ (ör. sorumlu_hemsire). Sonradan değişmez.",
+      groupDesc: "Açıklama", mfaRequired: "İki adımlı doğrulama zorunlu",
+      mfaRequiredHint: "Bu gruptaki herkes girişte doğrulama kodu girer.",
+      permissions: "İzinler", members: "üye", system: "Sistem grubu",
+      save: "Kaydet", cancel: "Vazgeç", delete: "Sil", deleteConfirm: "Bu grup silinsin mi?",
+      noGroups: "Henüz grup yok.", loading: "Yükleniyor…", loadFailed: "Yönetim verisi alınamadı",
+      username: "Kullanıcı adı", usernameHint: "Girişte kullanılır; küçük harfe çevrilir.",
+      email: "E-posta", emailOptional: "E-posta (isteğe bağlı)", fullName: "Ad Soyad",
+      tempPassword: "Geçici parola", tempPasswordHint: "En az 8 karakter; kullanıcı ilk girişte değiştirir.",
+      createUser: "Kullanıcı oluştur", groupsLabel: "Gruplar", editGroups: "Grupları düzenle",
+      editGroupsHint: "AD eşlemesinden gelen üyelikler burada değiştirilemez.", saveGroups: "Grupları kaydet",
+      sourceLocal: "Yerel", sourceLdap: "Active Directory", lastLogin: "Son giriş", never: "Hiç",
+      active: "Aktif", passive: "Pasif",
+      resetPassword: "Parola sıfırla", newPassword: "Yeni parola", resetMfa: "MFA sıfırla",
+      deactivate: "Pasifleştir", activate: "Aktifleştir",
+      passwordManagedByAd: "Parola Active Directory tarafından yönetiliyor",
+      noGroupsAssigned: "Grup atanmamış", fromAd: "AD",
+      mfaManualKey: "Elle giriş anahtarı", mfaCopy: "Kopyala", copied: "Kopyalandı",
+      mfaQrUnavailable: "QR üretilemedi; anahtarı elle girin.",
+      // A group whose rights exceed the session's is offered greyed out, with this reason.
+      cannotGrant: "Yetkileriniz bu grubu vermeye yetmiyor.",
+      cannotGrantList: "Yetkileriniz bu grubu vermeye yetmiyor. Eksik yetkiler: {perms}",
+      listOr: "veya",
+      perm: {
+        "board.view": "Panoyu görme", "alerts.ack": "Alarm onaylama",
+        "alerts.escalate": "Alarm oluşturma ve eskalasyon",
+        "admissions.view": "Kabul kayıtlarını okuma", "admissions.admit": "Hasta kabul",
+        "admissions.sign_off": "Kabul onayı (hekim)",
+        "admissions.move.initiate": "Transfer/taburcu başlatma",
+        "admissions.transfer.confirm": "Transfer onaylama",
+        "admissions.discharge.confirm": "Taburcu onaylama",
+        "care_team.claim": "Bakım ekibinde rol üstlenme", "care_team.assign": "Bakım ekibi atama",
+        "handover.sign": "Devir-teslim imzalama", "shifts.manage": "Nöbet çizelgesi",
+        "break_glass.use": "Acil erişim (break-glass)", "audit.view": "Denetim kaydını görme",
+        "users.manage": "Kullanıcı yönetimi", "groups.manage": "Grup ve izin yönetimi",
+        "structure.manage": "Yapı yönetimi (ünite/oda/yatak)", "devices.manage": "Cihaz yönetimi",
+      },
+      // The API's refusals, by translateApiError() below. {perms} is a list of permission names.
+      err: {
+        noTenant: "Hesabınıza kurum tanımlanmamış. Sistem yöneticinizle görüşün.",
+        membershipInactive: "Bu kurumdaki üyeliğiniz etkin değil. Sistem yöneticinizle görüşün.",
+        platformOnly: "Bu işlem platform operatörü yetkisi gerektirir.",
+        mfaRequired: "Bu işlem iki adımlı doğrulama gerektirir. Doğrulama kodunuzla yeniden giriş yapın.",
+        mfaResetRequired: "Hesabınızda kayıtlı bir doğrulayıcı var; değiştirmeden önce iki adımlı doğrulamayı tamamlayın. Cihazınızı kaybettiyseniz yöneticinizden MFA sıfırlamasını isteyin.",
+        permissionRequired: "Bu işlem için yetkiniz yok. Gerekli yetki: {perms}",
+        notAuthenticated: "Oturumunuz doğrulanamadı; lütfen yeniden giriş yapın.",
+        tokenVersion: "Yetkileriniz değişti; lütfen yeniden giriş yapın.",
+        tenantChanged: "Kurum bilginiz değişti; lütfen yeniden giriş yapın.",
+        totpLocked: "Çok fazla hatalı kod. 5 dakika sonra tekrar deneyin.",
+        totpReplayed: "Bu kod zaten kullanıldı; yeni kodu bekleyin.",
+        totpNotSetUp: "İki adımlı doğrulama henüz kurulmamış.",
+        invalidTotp: "Doğrulama kodu geçersiz.",
+        directoryUnreachable: "Dizin sunucusuna (Active Directory) ulaşılamıyor. Biraz sonra tekrar deneyin.",
+        invalidCredentials: "Kullanıcı adı veya parola hatalı.",
+        loginFailed: "Giriş başarısız.",
+        loginRequired: "Kullanıcı adınızı veya e-postanızı girin.",
+        sessionExpired: "Oturum süresi doldu; lütfen yeniden giriş yapın.",
+        sessionUnreachable: "Sunucuya şu an ulaşılamıyor; oturumunuz açık. Biraz sonra tekrar deneyin.",
+        network: "Sunucuya bağlanılamadı. Ağ bağlantınızı kontrol edin.",
+        requestFailed: "İstek başarısız ({status}).",
+        unknown: "İşlem tamamlanamadı.",
+        noPermissions: "Hesabınıza kurum yetkisi tanımlanmamış. Sistem yöneticinizle görüşün.",
+        noBoardAccess: "Panoya erişim yetkiniz yok. Sistem yöneticinizle görüşün.",
+        sessionRefused: "Bu hesapla oturum açılamıyor. Sistem yöneticinizle görüşün.",
+        passwordTooShort: "Parola en az 8 karakter olmalı.",
+        wrongCurrentPassword: "Mevcut parola yanlış.",
+        directoryPassword: "Parola Active Directory tarafından yönetiliyor; buradan değiştirilemez.",
+        lastAdmin: "Son yöneticinin yetkisi kaldırılamaz.",
+        lastAdminDeactivate: "Son yönetici pasifleştirilemez.",
+        groupNotFound: "Grup bulunamadı.",
+        userNotFound: "Kullanıcı bulunamadı.",
+        unknownGroup: "Seçilen grup bu kuruma ait değil.",
+        slugTaken: "Bu kısa ad zaten kullanılıyor.",
+        loginTaken: "Bu kullanıcı adı veya e-posta zaten kayıtlı.",
+        concurrentChange: "Kayıt aynı anda başka biri tarafından değiştirildi; lütfen tekrar deneyin.",
+        beyondOwnRights: "Kendi yetkilerinizi aşan bir işlem yapılamaz.",
+        beyondOwnRightsList: "Kendi yetkilerinizi aşan bir işlem yapılamaz. Sizde olmayan yetkiler: {perms}",
+        platformAccount: "Platform operatörü hesabı kurum yönetiminden değiştirilemez; yalnızca bu kurumdaki grupları ayarlanabilir.",
+        sharedAccount: "Bu hesap başka bir kurumda da etkin; parola, MFA, e-posta, ad ve etkinlik buradan değiştirilemez, yalnızca bu kurumdaki grupları ayarlanabilir.",
+        selfCredentials: "Kendi parolanızı veya MFA'nızı buradan sıfırlayamazsınız; parola için Hesabım > Parola değiştir'i kullanın.",
+        selfDeactivate: "Kendi hesabınızı pasifleştiremezsiniz.",
+        systemGroupRights: "Sistem grubunun izinleri ve MFA kuralı değiştirilemez.",
+        systemGroupDelete: "Sistem grubu silinemez.",
+        groupHasMembers: "Üyesi olan grup silinemez.",
+        groupHasAdMapping: "AD eşlemesi olan grup silinemez.",
+        usernameRequired: "Kullanıcı adı zorunludur.",
+        unknownPermission: "Tanımsız izin: {perms}",
+        usernameRule: "Kullanıcı adı 2-128 karakter olmalı; yalnızca a-z, 0-9 ve . _ @ - kullanılabilir. Türkçe/Azerbaycanca harfleri Latin karşılığıyla yazın: ş→s, ç→c, ğ→g, ö→o, ü→u, ı→i, ə→e.",
+        emailInvalid: "Geçerli bir e-posta adresi girin: tek bir @, iki yanında metin, boşluk yok.",
+        slugInvalid: "Kısa ad 2-64 karakter olmalı; yalnızca küçük harf, rakam ve _ kullanılabilir.",
+        fullNameRequired: "Ad Soyad boş bırakılamaz.",
+        groupNameRequired: "Grup adı boş bırakılamaz.",
+      },
+    },
     pr13: {
       exportCSV: "CSV İndir",
       phiFields: "Kişisel Sağlık Bilgileri (PHI)",
@@ -798,6 +897,103 @@ const STRINGS = {
       initialPassword: "Başlanğıc parol (istəyə bağlı)",
       initialPasswordHint: "Boş buraxılsa sonra təyin olunur",
     },
+    rbac: {
+      groupsTitle: "Qruplar və İcazələr",
+      groupsSub: "Hər qrup bir icazə dəsti daşıyır; istifadəçi qruplarının birləşməsi qədər səlahiyyətlidir.",
+      usersTitle: "İstifadəçilər", usersSub: "Yerli hesablar burada açılır; AD hesabları idxal edilir.",
+      newGroup: "Yeni qrup", editGroup: "Qrupu redaktə et", groupName: "Qrup adı", groupSlug: "Qısa ad",
+      groupSlugHint: "Kiçik hərf, rəqəm və _ (məs. mesul_tibb_bacisi). Sonradan dəyişmir.",
+      groupDesc: "Təsvir", mfaRequired: "İki mərhələli doğrulama məcburidir",
+      mfaRequiredHint: "Bu qrupdakı hər kəs girişdə doğrulama kodu daxil edir.",
+      permissions: "İcazələr", members: "üzv", system: "Sistem qrupu",
+      save: "Yadda saxla", cancel: "İmtina", delete: "Sil", deleteConfirm: "Bu qrup silinsin?",
+      noGroups: "Hələ qrup yoxdur.", loading: "Yüklənir…", loadFailed: "İdarəetmə məlumatı alınmadı",
+      username: "İstifadəçi adı", usernameHint: "Girişdə istifadə olunur; kiçik hərfə çevrilir.",
+      email: "E-poçt", emailOptional: "E-poçt (könüllü)", fullName: "Ad Soyad",
+      tempPassword: "Müvəqqəti parol", tempPasswordHint: "Ən azı 8 simvol; istifadəçi ilk girişdə dəyişir.",
+      createUser: "İstifadəçi yarat", groupsLabel: "Qruplar", editGroups: "Qrupları redaktə et",
+      editGroupsHint: "AD uyğunlaşdırmasından gələn üzvlüklər burada dəyişdirilə bilməz.", saveGroups: "Qrupları yadda saxla",
+      sourceLocal: "Yerli", sourceLdap: "Active Directory", lastLogin: "Son giriş", never: "Heç",
+      active: "Aktiv", passive: "Passiv",
+      resetPassword: "Parolu sıfırla", newPassword: "Yeni parol", resetMfa: "MFA sıfırla",
+      deactivate: "Passivləşdir", activate: "Aktivləşdir",
+      passwordManagedByAd: "Parol Active Directory tərəfindən idarə olunur",
+      noGroupsAssigned: "Qrup təyin edilməyib", fromAd: "AD",
+      mfaManualKey: "Əl ilə giriş açarı", mfaCopy: "Kopyala", copied: "Kopyalandı",
+      mfaQrUnavailable: "QR yaradıla bilmədi; açarı əl ilə daxil edin.",
+      cannotGrant: "Səlahiyyətləriniz bu qrupu verməyə kifayət etmir.",
+      cannotGrantList: "Səlahiyyətləriniz bu qrupu verməyə kifayət etmir. Çatışmayan səlahiyyətlər: {perms}",
+      listOr: "və ya",
+      perm: {
+        "board.view": "Panelə baxış", "alerts.ack": "Xəbərdarlığı təsdiqləmə",
+        "alerts.escalate": "Xəbərdarlıq yaratma və eskalasiya",
+        "admissions.view": "Qəbul qeydlərini oxuma", "admissions.admit": "Xəstə qəbulu",
+        "admissions.sign_off": "Qəbul təsdiqi (həkim)",
+        "admissions.move.initiate": "Köçürmə/evə yazılma başlatma",
+        "admissions.transfer.confirm": "Köçürmə təsdiqi",
+        "admissions.discharge.confirm": "Evə yazılma təsdiqi",
+        "care_team.claim": "Baxım qrupunda rol götürmə", "care_team.assign": "Baxım qrupu təyini",
+        "handover.sign": "Növbə təhvili imzası", "shifts.manage": "Növbə cədvəli",
+        "break_glass.use": "Təcili giriş (break-glass)", "audit.view": "Audit qeydinə baxış",
+        "users.manage": "İstifadəçi idarəsi", "groups.manage": "Qrup və icazə idarəsi",
+        "structure.manage": "Struktur idarəsi (bölmə/otaq/çarpayı)", "devices.manage": "Cihaz idarəsi",
+      },
+      err: {
+        noTenant: "Hesabınıza qurum təyin edilməyib. Sistem administratorunuza müraciət edin.",
+        membershipInactive: "Bu qurumdakı üzvlüyünüz aktiv deyil. Sistem administratorunuza müraciət edin.",
+        platformOnly: "Bu əməliyyat üçün platforma operatoru səlahiyyəti tələb olunur.",
+        mfaRequired: "Bu əməliyyat üçün iki mərhələli doğrulama tələb olunur. Doğrulama kodunuzla yenidən daxil olun.",
+        mfaResetRequired: "Hesabınızda artıq qeydiyyatlı doğrulayıcı var; onu dəyişməzdən əvvəl iki mərhələli doğrulamanı tamamlayın. Cihazınızı itirmisinizsə, administratordan MFA-nı sıfırlamasını xahiş edin.",
+        permissionRequired: "Bu əməliyyat üçün icazəniz yoxdur. Tələb olunan icazə: {perms}",
+        notAuthenticated: "Sessiyanızı təsdiqləmək mümkün olmadı; yenidən daxil olun.",
+        tokenVersion: "Səlahiyyətləriniz dəyişib; yenidən daxil olun.",
+        tenantChanged: "Qurum məlumatlarınız dəyişib; yenidən daxil olun.",
+        totpLocked: "Həddindən artıq yanlış kod daxil edildi. 5 dəqiqədən sonra yenidən cəhd edin.",
+        totpReplayed: "Bu kod artıq istifadə olunub; növbəti kodu gözləyin.",
+        totpNotSetUp: "İki mərhələli doğrulama hələ quraşdırılmayıb.",
+        invalidTotp: "Doğrulama kodu yanlışdır.",
+        directoryUnreachable: "Kataloq serverinə (Active Directory) qoşulmaq mümkün deyil. Bir az sonra yenidən cəhd edin.",
+        invalidCredentials: "İstifadəçi adı və ya parol yanlışdır.",
+        loginFailed: "Giriş alınmadı.",
+        loginRequired: "İstifadəçi adınızı və ya e-poçtunuzu daxil edin.",
+        sessionExpired: "Sessiyanın müddəti bitib; yenidən daxil olun.",
+        sessionUnreachable: "Server hazırda əlçatan deyil; sessiyanız açıq qalır. Bir az sonra yenidən cəhd edin.",
+        network: "Serverə qoşulmaq mümkün olmadı. Şəbəkə bağlantınızı yoxlayın.",
+        requestFailed: "Sorğu uğursuz oldu ({status}).",
+        unknown: "Əməliyyatı tamamlamaq mümkün olmadı.",
+        noPermissions: "Hesabınıza qurum səlahiyyəti təyin edilməyib. Sistem administratorunuza müraciət edin.",
+        noBoardAccess: "Panelə giriş icazəniz yoxdur. Sistem administratorunuza müraciət edin.",
+        sessionRefused: "Bu hesabla daxil olmaq mümkün deyil. Sistem administratorunuza müraciət edin.",
+        passwordTooShort: "Parol ən azı 8 simvol olmalıdır.",
+        wrongCurrentPassword: "Cari parol yanlışdır.",
+        directoryPassword: "Parol Active Directory tərəfindən idarə olunur; burada dəyişdirilə bilməz.",
+        lastAdmin: "Son administratorun səlahiyyəti götürülə bilməz.",
+        lastAdminDeactivate: "Son administrator passivləşdirilə bilməz.",
+        groupNotFound: "Qrup tapılmadı.",
+        userNotFound: "İstifadəçi tapılmadı.",
+        unknownGroup: "Seçilmiş qrup bu quruma aid deyil.",
+        slugTaken: "Bu qısa ad artıq istifadə olunur.",
+        loginTaken: "Bu istifadəçi adı və ya e-poçt artıq qeydiyyatdadır.",
+        concurrentChange: "Qeyd eyni anda başqası tərəfindən dəyişdirildi; yenidən cəhd edin.",
+        beyondOwnRights: "Öz səlahiyyətlərinizi aşan əməliyyat etmək olmaz.",
+        beyondOwnRightsList: "Öz səlahiyyətlərinizi aşan əməliyyat etmək olmaz. Sizdə olmayan səlahiyyətlər: {perms}",
+        platformAccount: "Platforma operatoru hesabı qurum idarəetməsindən dəyişdirilə bilməz; yalnız onun bu qurumdakı qrupları təyin edilə bilər.",
+        sharedAccount: "Bu hesab başqa qurumda da aktivdir; parol, MFA, e-poçt, ad və aktivlik statusu burada dəyişdirilə bilməz, yalnız onun bu qurumdakı qrupları təyin edilə bilər.",
+        selfCredentials: "Öz parolunuzu və ya MFA-nızı burada sıfırlaya bilməzsiniz; parolu dəyişmək üçün Hesabım > Parolu dəyiş bölməsindən istifadə edin.",
+        selfDeactivate: "Öz hesabınızı passivləşdirə bilməzsiniz.",
+        systemGroupRights: "Sistem qrupunun icazələri və MFA qaydası dəyişdirilə bilməz.",
+        systemGroupDelete: "Sistem qrupu silinə bilməz.",
+        groupHasMembers: "Üzvü olan qrup silinə bilməz.",
+        groupHasAdMapping: "AD uyğunlaşdırması olan qrup silinə bilməz.",
+        usernameRequired: "İstifadəçi adı məcburidir.",
+        unknownPermission: "Naməlum icazə: {perms}",
+        usernameRule: "İstifadəçi adı 2-128 simvol olmalıdır; yalnız a-z, 0-9 və . _ @ - istifadə oluna bilər. Türk və Azərbaycan hərflərini Latın qarşılığı ilə yazın: ş→s, ç→c, ğ→g, ö→o, ü→u, ı→i, ə→e.",
+        emailInvalid: "Düzgün e-poçt ünvanı daxil edin: bir @, hər iki tərəfində mətn, boşluqsuz.",
+        slugInvalid: "Qısa ad 2-64 simvol olmalıdır; yalnız kiçik hərf, rəqəm və _ istifadə oluna bilər.",
+        fullNameRequired: "Ad Soyad boş ola bilməz.",
+        groupNameRequired: "Qrup adı boş ola bilməz.",
+      },
+    },
     pr13: {
       exportCSV: "CSV Yüklə",
       phiFields: "Şəxsi Sağlamlıq Məlumatları (PHI)",
@@ -1293,6 +1489,103 @@ const STRINGS = {
       roleChangeSave: "Save Role",
       initialPassword: "Initial password (optional)",
       initialPasswordHint: "Leave blank to set later",
+    },
+    rbac: {
+      groupsTitle: "Groups and Permissions",
+      groupsSub: "Each group carries a set of permissions; a user holds the union of their groups.",
+      usersTitle: "Users", usersSub: "Local accounts are created here; AD accounts are imported.",
+      newGroup: "New group", editGroup: "Edit group", groupName: "Group name", groupSlug: "Short name",
+      groupSlugHint: "Lower-case letters, digits and _ (e.g. charge_nurse). Cannot be changed later.",
+      groupDesc: "Description", mfaRequired: "Two-step verification required",
+      mfaRequiredHint: "Everyone in this group enters a verification code at sign-in.",
+      permissions: "Permissions", members: "members", system: "System group",
+      save: "Save", cancel: "Cancel", delete: "Delete", deleteConfirm: "Delete this group?",
+      noGroups: "No groups yet.", loading: "Loading…", loadFailed: "Administration data could not be loaded",
+      username: "Username", usernameHint: "Used at sign-in; stored in lower case.",
+      email: "Email", emailOptional: "Email (optional)", fullName: "Full name",
+      tempPassword: "Temporary password", tempPasswordHint: "At least 8 characters; the user changes it at first sign-in.",
+      createUser: "Create user", groupsLabel: "Groups", editGroups: "Edit groups",
+      editGroupsHint: "Memberships that come from the AD mapping cannot be changed here.", saveGroups: "Save groups",
+      sourceLocal: "Local", sourceLdap: "Active Directory", lastLogin: "Last sign-in", never: "Never",
+      active: "Active", passive: "Inactive",
+      resetPassword: "Reset password", newPassword: "New password", resetMfa: "Reset MFA",
+      deactivate: "Deactivate", activate: "Activate",
+      passwordManagedByAd: "The password is managed by Active Directory",
+      noGroupsAssigned: "No groups assigned", fromAd: "AD",
+      mfaManualKey: "Manual entry key", mfaCopy: "Copy", copied: "Copied",
+      mfaQrUnavailable: "The QR code could not be rendered; enter the key manually.",
+      cannotGrant: "Your permissions are not enough to grant this group.",
+      cannotGrantList: "Your permissions are not enough to grant this group. Missing: {perms}",
+      listOr: "or",
+      perm: {
+        "board.view": "View the board", "alerts.ack": "Acknowledge alerts",
+        "alerts.escalate": "Create and escalate alerts",
+        "admissions.view": "Read admissions", "admissions.admit": "Admit patients",
+        "admissions.sign_off": "Sign off admissions (physician)",
+        "admissions.move.initiate": "Initiate transfer/discharge",
+        "admissions.transfer.confirm": "Confirm transfer",
+        "admissions.discharge.confirm": "Confirm discharge",
+        "care_team.claim": "Claim a care-team role", "care_team.assign": "Assign the care team",
+        "handover.sign": "Sign handovers", "shifts.manage": "Shift schedules",
+        "break_glass.use": "Emergency access (break-glass)", "audit.view": "View the audit trail",
+        "users.manage": "Manage users", "groups.manage": "Manage groups and permissions",
+        "structure.manage": "Manage structure (unit/room/bed)", "devices.manage": "Manage devices",
+      },
+      err: {
+        noTenant: "No organization is assigned to your account. Contact your system administrator.",
+        membershipInactive: "Your membership in this organization is not active. Contact your system administrator.",
+        platformOnly: "This action requires platform operator rights.",
+        mfaRequired: "This action requires two-step verification. Sign in again with your verification code.",
+        mfaResetRequired: "An authenticator is already registered to your account; complete two-step verification before replacing it. If you lost the device, ask an administrator to reset your MFA.",
+        permissionRequired: "You do not have permission for this action. Required: {perms}",
+        notAuthenticated: "Your session could not be verified; please sign in again.",
+        tokenVersion: "Your permissions have changed; please sign in again.",
+        tenantChanged: "Your organization details have changed; please sign in again.",
+        totpLocked: "Too many incorrect codes. Try again in 5 minutes.",
+        totpReplayed: "This code has already been used; wait for the next one.",
+        totpNotSetUp: "Two-step verification is not set up yet.",
+        invalidTotp: "The verification code is invalid.",
+        directoryUnreachable: "The directory server (Active Directory) cannot be reached. Try again shortly.",
+        invalidCredentials: "Incorrect username or password.",
+        loginFailed: "Sign-in failed.",
+        loginRequired: "Enter your username or email.",
+        sessionExpired: "Your session has expired; please sign in again.",
+        sessionUnreachable: "The server cannot be reached right now; your session is kept. Try again shortly.",
+        network: "Could not connect to the server. Check your network connection.",
+        requestFailed: "The request failed ({status}).",
+        unknown: "The action could not be completed.",
+        noPermissions: "No organization permissions are assigned to your account. Contact your system administrator.",
+        noBoardAccess: "You do not have access to the board. Contact your system administrator.",
+        sessionRefused: "This account cannot sign in. Contact your system administrator.",
+        passwordTooShort: "The password must be at least 8 characters.",
+        wrongCurrentPassword: "The current password is incorrect.",
+        directoryPassword: "The password is managed by Active Directory and cannot be changed here.",
+        lastAdmin: "The last administrator's rights cannot be removed.",
+        lastAdminDeactivate: "The last administrator cannot be deactivated.",
+        groupNotFound: "Group not found.",
+        userNotFound: "User not found.",
+        unknownGroup: "The selected group does not belong to this organization.",
+        slugTaken: "This short name is already in use.",
+        loginTaken: "This username or email is already registered.",
+        concurrentChange: "Someone else changed this record at the same time; please try again.",
+        beyondOwnRights: "You cannot perform an action beyond your own permissions.",
+        beyondOwnRightsList: "You cannot perform an action beyond your own permissions. Permissions you do not hold: {perms}",
+        platformAccount: "A platform operator account cannot be changed from organization administration; only its groups in this organization can be set.",
+        sharedAccount: "This account is also active in another organization; its password, MFA, email, name and active status cannot be changed here — only its groups in this organization can be set.",
+        selfCredentials: "You cannot reset your own password or MFA here; to change your password, use My account > Change password.",
+        selfDeactivate: "You cannot deactivate your own account.",
+        systemGroupRights: "The system group's permissions and MFA rule cannot be changed.",
+        systemGroupDelete: "The system group cannot be deleted.",
+        groupHasMembers: "A group that has members cannot be deleted.",
+        groupHasAdMapping: "A group with an AD mapping cannot be deleted.",
+        usernameRequired: "A username is required.",
+        unknownPermission: "Unknown permission: {perms}",
+        usernameRule: "The username must be 2–128 characters, using only a-z, 0-9 and . _ @ -. Write Turkish and Azerbaijani letters with their Latin equivalents: ş→s, ç→c, ğ→g, ö→o, ü→u, ı→i, ə→e.",
+        emailInvalid: "Enter a valid email address: one @ with text on both sides, no spaces.",
+        slugInvalid: "The short name must be 2–64 characters: lower-case letters, digits and _ only.",
+        fullNameRequired: "Full name cannot be empty.",
+        groupNameRequired: "Group name cannot be empty.",
+      },
     },
     pr13: {
       exportCSV: "Export CSV",
@@ -1790,6 +2083,103 @@ const STRINGS = {
       initialPassword: "Начальный пароль (необязательно)",
       initialPasswordHint: "Оставьте пустым, чтобы задать позже",
     },
+    rbac: {
+      groupsTitle: "Группы и права",
+      groupsSub: "Каждая группа несёт набор прав; пользователь имеет объединение прав своих групп.",
+      usersTitle: "Пользователи", usersSub: "Локальные учётные записи создаются здесь; учётные записи AD импортируются.",
+      newGroup: "Новая группа", editGroup: "Изменить группу", groupName: "Название группы", groupSlug: "Короткое имя",
+      groupSlugHint: "Строчные буквы, цифры и _ (напр. charge_nurse). Не меняется впоследствии.",
+      groupDesc: "Описание", mfaRequired: "Двухэтапная проверка обязательна",
+      mfaRequiredHint: "Все участники этой группы вводят код при входе.",
+      permissions: "Права", members: "участн.", system: "Системная группа",
+      save: "Сохранить", cancel: "Отмена", delete: "Удалить", deleteConfirm: "Удалить эту группу?",
+      noGroups: "Групп пока нет.", loading: "Загрузка…", loadFailed: "Не удалось загрузить данные администрирования",
+      username: "Имя пользователя", usernameHint: "Используется при входе; хранится в нижнем регистре.",
+      email: "Эл. почта", emailOptional: "Эл. почта (необязательно)", fullName: "Полное имя",
+      tempPassword: "Временный пароль", tempPasswordHint: "Не менее 8 символов; пользователь меняет его при первом входе.",
+      createUser: "Создать пользователя", groupsLabel: "Группы", editGroups: "Изменить группы",
+      editGroupsHint: "Членство, полученное из сопоставления AD, здесь изменить нельзя.", saveGroups: "Сохранить группы",
+      sourceLocal: "Локальная", sourceLdap: "Active Directory", lastLogin: "Последний вход", never: "Никогда",
+      active: "Активен", passive: "Неактивен",
+      resetPassword: "Сбросить пароль", newPassword: "Новый пароль", resetMfa: "Сбросить MFA",
+      deactivate: "Деактивировать", activate: "Активировать",
+      passwordManagedByAd: "Пароль управляется Active Directory",
+      noGroupsAssigned: "Группы не назначены", fromAd: "AD",
+      mfaManualKey: "Ключ для ручного ввода", mfaCopy: "Копировать", copied: "Скопировано",
+      mfaQrUnavailable: "QR-код не удалось построить; введите ключ вручную.",
+      cannotGrant: "Ваших прав недостаточно, чтобы выдать эту группу.",
+      cannotGrantList: "Ваших прав недостаточно, чтобы выдать эту группу. Не хватает прав: {perms}",
+      listOr: "или",
+      perm: {
+        "board.view": "Просмотр панели", "alerts.ack": "Подтверждение тревог",
+        "alerts.escalate": "Создание и эскалация тревог",
+        "admissions.view": "Чтение госпитализаций", "admissions.admit": "Госпитализация пациентов",
+        "admissions.sign_off": "Подтверждение госпитализации (врач)",
+        "admissions.move.initiate": "Инициировать перевод/выписку",
+        "admissions.transfer.confirm": "Подтвердить перевод",
+        "admissions.discharge.confirm": "Подтвердить выписку",
+        "care_team.claim": "Взять роль в бригаде", "care_team.assign": "Назначить бригаду",
+        "handover.sign": "Подписание передачи смены", "shifts.manage": "График смен",
+        "break_glass.use": "Экстренный доступ (break-glass)", "audit.view": "Просмотр журнала аудита",
+        "users.manage": "Управление пользователями", "groups.manage": "Управление группами и правами",
+        "structure.manage": "Управление структурой (отделение/палата/койка)", "devices.manage": "Управление устройствами",
+      },
+      err: {
+        noTenant: "Вашей учётной записи не назначена организация. Обратитесь к системному администратору.",
+        membershipInactive: "Ваше членство в этой организации неактивно. Обратитесь к системному администратору.",
+        platformOnly: "Для этого действия нужны права оператора платформы.",
+        mfaRequired: "Для этого действия требуется двухэтапная проверка. Войдите снова с кодом подтверждения.",
+        mfaResetRequired: "К вашей учётной записи уже привязан аутентификатор; пройдите двухэтапную проверку, прежде чем заменить его. Если устройство утеряно, попросите администратора сбросить MFA.",
+        permissionRequired: "У вас нет прав на это действие. Требуется: {perms}",
+        notAuthenticated: "Не удалось проверить сеанс; войдите снова.",
+        tokenVersion: "Ваши права изменились; войдите снова.",
+        tenantChanged: "Данные вашей организации изменились; войдите снова.",
+        totpLocked: "Слишком много неверных кодов. Повторите попытку через 5 минут.",
+        totpReplayed: "Этот код уже использован; дождитесь следующего.",
+        totpNotSetUp: "Двухэтапная проверка ещё не настроена.",
+        invalidTotp: "Неверный код подтверждения.",
+        directoryUnreachable: "Сервер каталога (Active Directory) недоступен. Повторите попытку позже.",
+        invalidCredentials: "Неверное имя пользователя или пароль.",
+        loginFailed: "Не удалось войти.",
+        loginRequired: "Введите имя пользователя или эл. почту.",
+        sessionExpired: "Срок сеанса истёк; войдите снова.",
+        sessionUnreachable: "Сервер сейчас недоступен; ваш сеанс сохранён. Повторите попытку позже.",
+        network: "Не удалось подключиться к серверу. Проверьте сетевое подключение.",
+        requestFailed: "Запрос не выполнен ({status}).",
+        unknown: "Не удалось выполнить действие.",
+        noPermissions: "Вашей учётной записи не назначены права в организации. Обратитесь к системному администратору.",
+        noBoardAccess: "У вас нет доступа к панели. Обратитесь к системному администратору.",
+        sessionRefused: "С этой учётной записью войти нельзя. Обратитесь к системному администратору.",
+        passwordTooShort: "Пароль должен содержать не менее 8 символов.",
+        wrongCurrentPassword: "Текущий пароль неверен.",
+        directoryPassword: "Пароль управляется Active Directory; здесь его изменить нельзя.",
+        lastAdmin: "Нельзя лишить прав последнего администратора.",
+        lastAdminDeactivate: "Нельзя деактивировать последнего администратора.",
+        groupNotFound: "Группа не найдена.",
+        userNotFound: "Пользователь не найден.",
+        unknownGroup: "Выбранная группа не относится к этой организации.",
+        slugTaken: "Это короткое имя уже занято.",
+        loginTaken: "Это имя пользователя или адрес эл. почты уже зарегистрированы.",
+        concurrentChange: "Запись одновременно изменил другой пользователь; повторите попытку.",
+        beyondOwnRights: "Нельзя выполнить действие, выходящее за пределы ваших прав.",
+        beyondOwnRightsList: "Нельзя выполнить действие, выходящее за пределы ваших прав. У вас нет прав: {perms}",
+        platformAccount: "Учётную запись оператора платформы нельзя изменить из администрирования организации; можно настроить только её группы в этой организации.",
+        sharedAccount: "Эта учётная запись активна и в другой организации; пароль, MFA, эл. почту, имя и статус активности здесь изменить нельзя — можно настроить только её группы в этой организации.",
+        selfCredentials: "Здесь нельзя сбросить собственный пароль или MFA; чтобы сменить пароль, используйте «Моя учётная запись > Сменить пароль».",
+        selfDeactivate: "Нельзя деактивировать собственную учётную запись.",
+        systemGroupRights: "Права и правило MFA системной группы изменить нельзя.",
+        systemGroupDelete: "Системную группу удалить нельзя.",
+        groupHasMembers: "Группу, в которой есть участники, удалить нельзя.",
+        groupHasAdMapping: "Группу с сопоставлением AD удалить нельзя.",
+        usernameRequired: "Имя пользователя обязательно.",
+        unknownPermission: "Неизвестное право: {perms}",
+        usernameRule: "Имя пользователя должно содержать 2–128 символов: только a-z, 0-9 и . _ @ -. Турецкие и азербайджанские буквы пишите латинскими аналогами: ş→s, ç→c, ğ→g, ö→o, ü→u, ı→i, ə→e.",
+        emailInvalid: "Введите корректный адрес эл. почты: один символ @, текст по обе стороны от него, без пробелов.",
+        slugInvalid: "Короткое имя: 2–64 символа, только строчные латинские буквы, цифры и _.",
+        fullNameRequired: "Полное имя не может быть пустым.",
+        groupNameRequired: "Название группы не может быть пустым.",
+      },
+    },
     pr13: {
       exportCSV: "Экспорт CSV",
       phiFields: "Защищенная медицинская информация (PHI)",
@@ -2020,6 +2410,192 @@ const STRINGS = {
 
 export function cstrings(lang) {
   return STRINGS[lang] || STRINGS.tr;
+}
+
+// ------------------------------------------------------------ API errors → rbac.err
+// The API writes its refusals mostly in Turkish, some in English (homunculus-engine:
+// auth/dependencies.py, auth/router.py, auth/service.py, auth/groups.py, auth/permissions.py,
+// admin/service.py, admin/schemas.py), and the client adds its own (backendApi.js, liveStore.js).
+// translateApiError() shows them in the UI language. i18n.rbac.test.js reads those sources as
+// text and fails when a message there is not mapped here: change both sides together.
+
+const own = (obj, key) => obj != null && Object.prototype.hasOwnProperty.call(obj, key);
+
+// Exact texts (after trimming).
+const API_MESSAGES = new Map([
+  // auth/dependencies.py
+  ["Hesabınıza kurum tanımlanmamış", "noTenant"],
+  ["Bu kurumdaki üyeliğiniz etkin değil", "membershipInactive"],
+  ["Platform operatörü yetkisi gerekli", "platformOnly"],
+  ["mfa_required", "mfaRequired"],
+  ["mfa_reset_required", "mfaResetRequired"],
+  ["Invalid or missing authentication credentials", "notAuthenticated"],
+  ["token_version", "tokenVersion"],
+  ["tenant", "tenantChanged"],
+  // auth/router.py
+  ["Çok fazla hatalı kod. 5 dakika sonra tekrar deneyin.", "totpLocked"],
+  ["Bu kod zaten kullanıldı; yeni kodu bekleyin.", "totpReplayed"],
+  ["TOTP not set up", "totpNotSetUp"],
+  ["Invalid TOTP code", "invalidTotp"],
+  ["Dizin sunucusuna ulaşılamıyor", "directoryUnreachable"],
+  ["Invalid credentials", "invalidCredentials"],
+  ["Invalid or expired refresh token", "sessionExpired"],
+  // auth/service.py (own password change); the first is also admin/service.py's
+  ["Parola Active Directory tarafından yönetiliyor", "directoryPassword"],
+  ["Yeni parola en az 8 karakter olmalı", "passwordTooShort"],
+  ["Mevcut parola yanlış", "wrongCurrentPassword"],
+  // auth/schemas.py
+  ["login is required", "loginRequired"],
+  // admin/service.py, auth/groups.py
+  ["Son yönetici yetkisi kaldırılamaz", "lastAdmin"],
+  ["Son yönetici pasifleştirilemez", "lastAdminDeactivate"],
+  ["Group not found", "groupNotFound"],
+  ["User not found", "userNotFound"],
+  ["unknown group for this tenant", "unknownGroup"],
+  ["Bu kısa ad zaten kullanılıyor", "slugTaken"],
+  ["Bu kullanıcı adı veya e-posta zaten kayıtlı", "loginTaken"],
+  ["Kayıt aynı anda değiştirildi; lütfen tekrar deneyin", "concurrentChange"],
+  ["Kendi yetkilerinizi aşan bir işlem yapılamaz", "beyondOwnRights"],
+  ["Platform operatörü hesabı kurum yönetiminden değiştirilemez; yalnızca bu kurumdaki grupları "
+    + "ayarlanabilir", "platformAccount"],
+  ["Bu hesap başka bir kurumda da etkin; parola, MFA, e-posta, ad ve etkinlik buradan "
+    + "değiştirilemez, yalnızca bu kurumdaki grupları ayarlanabilir", "sharedAccount"],
+  ["Kendi parolanızı veya MFA'nızı buradan sıfırlayamazsınız; parola için Hesabım > Parola "
+    + "değiştir'i kullanın", "selfCredentials"],
+  ["Kendi hesabınızı pasifleştiremezsiniz", "selfDeactivate"],
+  ["Sistem grubunun izinleri ve MFA kuralı değiştirilemez", "systemGroupRights"],
+  ["Sistem grubu silinemez", "systemGroupDelete"],
+  ["Üyesi olan grup silinemez", "groupHasMembers"],
+  ["AD eşlemesi olan grup silinemez", "groupHasAdMapping"],
+  ["Kullanıcı adı zorunludur", "usernameRequired"],
+  // backendApi.js
+  ["Sunucuya şu an ulaşılamıyor; oturumunuz açık, biraz sonra tekrar deneyin.", "sessionUnreachable"],
+  ["Oturum süresi doldu, tekrar giriş yapın.", "sessionExpired"],
+  ["Giriş başarısız.", "loginFailed"],
+  ["Doğrulama kodu geçersiz.", "invalidTotp"],
+  // liveStore.js
+  ["Hesabınıza kurum yetkisi tanımlanmamış. Sistem yöneticinizle görüşün.", "noPermissions"],
+  ["Panoya erişim yetkiniz yok. Sistem yöneticinizle görüşün.", "noBoardAccess"],
+  ["Bu hesapla oturum açılamıyor. Sistem yöneticinizle görüşün.", "sessionRefused"],
+  ["Sunucuya ulaşılamıyor; oturumunuz korunuyor. Biraz sonra tekrar deneyin.", "sessionUnreachable"],
+  // fetch() rejecting with no response: Chrome/Edge, Firefox, Safari
+  ["Failed to fetch", "network"],
+  ["NetworkError when attempting to fetch resource.", "network"],
+  ["Load failed", "network"],
+]);
+
+// Messages that carry a list of permission keys after a fixed prefix. `or`: the list reads
+// "a or b" (any of them is enough), otherwise "a, b".
+const API_PREFIXES = [
+  { prefix: "permission required: ", sep: " or ", key: "permissionRequired", or: true },  // dependencies.py
+  { prefix: "Kendi yetkilerinizi aşan bir işlem yapılamaz: ", sep: ", ", key: "beyondOwnRightsList" },
+  { prefix: "unknown permission(s): ", sep: ", ", key: "unknownPermission" },            // permissions.py
+];
+const REQUEST_FAILED = /^İstek başarısız \((\d{3})\)$/;                                   // backendApi.js
+
+// liveStore.js / liveAuth.js codes (`err.code`, `state.sessionError.code`); they win over the text.
+const API_CODES = new Map([
+  ["NO_PERMISSIONS", "noPermissions"],
+  ["NO_BOARD_ACCESS", "noBoardAccess"],
+  ["SESSION_UNREACHABLE", "sessionUnreachable"],
+]);
+
+// A 422's items (backendApi.js `err.fieldErrors`: {field, type, message}) by field, then type.
+// admin/schemas.py: the username rule (Turkish, with the transliteration hint), e-mail, slug,
+// blank names; the length limits of pydantic's Field(min_length/max_length).
+const FIELD_ERRORS = new Map([
+  ["username", new Map([["value_error", "usernameRule"], ["string_too_short", "usernameRule"],
+                        ["string_too_long", "usernameRule"]])],
+  ["email", new Map([["value_error", "emailInvalid"], ["string_too_long", "emailInvalid"]])],
+  ["slug", new Map([["value_error", "slugInvalid"]])],
+  ["password", new Map([["string_too_short", "passwordTooShort"]])],
+  ["full_name", new Map([["value_error", "fullNameRequired"], ["string_too_short", "fullNameRequired"]])],
+  ["name", new Map([["value_error", "groupNameRequired"], ["string_too_short", "groupNameRequired"]])],
+]);
+
+function messageOf(err) {
+  if (typeof err === "string") return err;
+  return err && typeof err.message === "string" ? err.message : "";
+}
+
+function messageKey(message) {
+  const text = String(message ?? "").trim();
+  if (!text) return null;
+  if (API_MESSAGES.has(text)) return { key: API_MESSAGES.get(text), params: {} };
+  for (const rule of API_PREFIXES) {
+    if (!text.startsWith(rule.prefix)) continue;
+    const perms = text.slice(rule.prefix.length).split(rule.sep).map((k) => k.trim()).filter(Boolean);
+    if (perms.length) return { key: rule.key, params: { perms }, or: rule.or === true };
+  }
+  const failed = REQUEST_FAILED.exec(text);
+  if (failed) return { key: "requestFailed", params: { status: failed[1] } };
+  return null;
+}
+
+function fieldErrorKey(item) {
+  const byType = FIELD_ERRORS.get(item.field);
+  if (byType && byType.has(item.type)) return { key: byType.get(item.type), params: {} };
+  return messageKey(item.message);
+}
+
+/** Which rbac.err entry an API failure is — `{key, params}` — or null when it is not known.
+ *  Takes an Error (its `code` first, then its `message`), a {code, message} object such as
+ *  `state.sessionError`, or the message itself. */
+export function apiErrorKey(err) {
+  if (err && typeof err === "object" && API_CODES.has(err.code)) {
+    return { key: API_CODES.get(err.code), params: {} };
+  }
+  return messageKey(messageOf(err));
+}
+
+/** A permission's name in the UI language; a key the catalogue does not know, as it is. */
+export function permLabel(key, lang) {
+  const perm = cstrings(lang).rbac.perm;
+  return own(perm, key) ? perm[key] : String(key);
+}
+
+function render(lang, hit) {
+  const R = cstrings(lang).rbac;
+  const template = own(R.err, hit.key) ? R.err[hit.key] : null;
+  if (!template) return null;
+  const sep = hit.or ? ` ${R.listOr} ` : ", ";
+  const values = {
+    ...hit.params,
+    ...(hit.params.perms ? { perms: hit.params.perms.map((k) => permLabel(k, lang)).join(sep) } : {}),
+  };
+  return template.replace(/\{(\w+)\}/g, (m, name) => (own(values, name) ? String(values[name]) : m));
+}
+
+/** An API failure as the UI shows it, in `lang`. A known message is translated, keeping its
+ *  parameters (permission keys by their names, the HTTP status); a 422 is translated field by
+ *  field; anything else is shown as the server wrote it. Never an empty string. */
+export function translateApiError(err, lang) {
+  const coded = err && typeof err === "object" && API_CODES.has(err.code);
+  const items = !coded && err && Array.isArray(err.fieldErrors)
+    ? err.fieldErrors.filter((i) => i && typeof i === "object") : [];
+  const parts = items.map((item) => {
+    const hit = fieldErrorKey(item);
+    const text = hit ? render(lang, hit) : null;
+    if (text) return text;
+    const raw = String(item.message ?? "").trim();
+    if (!raw) return null;
+    return item.field ? `${item.field}: ${raw}` : raw;
+  }).filter(Boolean);
+  if (parts.length) return [...new Set(parts)].join("; ");
+
+  const hit = apiErrorKey(err);
+  const text = hit ? render(lang, hit) : null;
+  if (text) return text;
+  return messageOf(err).trim() || cstrings(lang).rbac.err.unknown;
+}
+
+/** Why a group is offered greyed out: the session's rights do not cover it. `missing` — the
+ *  rights it lacks (liveAdmin.js rightsBeyond) — is listed by name. */
+export function cannotGrantReason(missing, lang) {
+  const R = cstrings(lang).rbac;
+  const keys = Array.isArray(missing) ? missing.filter((k) => typeof k === "string" && k) : [];
+  if (!keys.length) return R.cannotGrant;
+  return R.cannotGrantList.replace("{perms}", () => keys.map((k) => permLabel(k, lang)).join(", "));
 }
 
 const STORAGE_KEY = "homunculus-clang";
