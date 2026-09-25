@@ -61,7 +61,11 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {})
       const body = await res.json();
       if (body?.detail) detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
     } catch { /* non-JSON body — keep the fallback */ }
-    return new Error(detail);
+    // The status travels with the message, so a caller can tell a refusal (4xx) from a server
+    // that could not answer (5xx) without parsing text. A network failure has no status at all.
+    const err = new Error(detail);
+    err.status = res.status;
+    return err;
   }
 
   function url(path) {
@@ -78,9 +82,10 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {})
    *
    *  Only a 401 refreshes: a 403 (`mfa_required`, no tenant, an inactive membership, a missing
    *  permission) is something a refresh would answer with the same token, so its message goes
-   *  to the caller as it is. A refresh the server REFUSES (4xx) ends the session. A refresh the
-   *  server could not ANSWER (5xx, or no network) keeps it: an outage never signs a clinician
-   *  out, and the next request tries again. */
+   *  to the caller as it is. A refresh the server REFUSES (4xx) ends the session, and the error
+   *  says so (`sessionEnded`). A refresh the server could not ANSWER (5xx, or no network) keeps
+   *  it: an outage never signs a clinician out, and the next request tries again. Every HTTP
+   *  error carries its `status`. */
   async function authed(path, { method = "GET", body } = {}) {
     const send = () => {
       const headers = { Authorization: `Bearer ${accessToken()}` };
@@ -104,7 +109,9 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {})
       }
       if (!refreshed.ok) {
         logout();
-        throw await failure(refreshed, "Oturum süresi doldu, tekrar giriş yapın.");
+        const ended = await failure(refreshed, "Oturum süresi doldu, tekrar giriş yapın.");
+        ended.sessionEnded = true;   // the tokens are gone: the caller must not keep the session
+        throw ended;
       }
       setTokens(await refreshed.json());
       res = await send();

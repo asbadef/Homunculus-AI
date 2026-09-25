@@ -155,6 +155,72 @@ describe("backendApi — auth", () => {
     expect(api.accessToken()).toBe("acc-1");
   });
 
+  it("says the session ended when the refresh is refused", async () => {
+    // The caller (restoreSession) signs out on this, and only on a refusal like it.
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(TOKENS))
+      .mockResolvedValueOnce(jsonResponse({}, { ok: false, status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ detail: "Invalid or expired refresh token" }, { ok: false, status: 401 }));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+
+    await api.login("a@b.c", "x");
+    const err = await api.me().catch((e) => e);
+
+    expect(err.message).toBe("Invalid or expired refresh token");
+    expect(err.sessionEnded).toBe(true);
+    expect(err.status).toBe(401);
+  });
+
+  it("does NOT say the session ended when the refresh could not be answered", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(TOKENS))
+      .mockResolvedValueOnce(jsonResponse({}, { ok: false, status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({}, { ok: false, status: 503 }));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+
+    await api.login("a@b.c", "x");
+    const err = await api.me().catch((e) => e);
+
+    expect(err.sessionEnded).toBeUndefined();
+    expect(err.status).toBe(503);
+  });
+
+  it("an error carries the HTTP status next to the API's message", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(TOKENS))
+      .mockResolvedValueOnce(jsonResponse({ detail: "permission required: alerts.ack" }, { ok: false, status: 403 }));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+
+    await api.login("a@b.c", "x");
+    const err = await api.acknowledge("bed-3", "sepsis").catch((e) => e);
+
+    expect(err.message).toBe("permission required: alerts.ack");
+    expect(err.status).toBe(403);
+    expect(err.sessionEnded).toBeUndefined();
+  });
+
+  it.each([
+    [401, "Invalid TOTP code"],
+    [401, "Bu kod zaten kullanıldı; yeni kodu bekleyin."],
+    [429, "Çok fazla hatalı kod. 5 dakika sonra tekrar deneyin."],
+  ])("a refused TOTP code (%i) is never retried through refresh, and the session stays", async (status, detail) => {
+    // /auth/totp/setup ends every earlier refresh token: a refresh here would spend a dead one
+    // and sign the user out for typing a wrong code.
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ ...TOKENS, requires_mfa: true }))
+      .mockResolvedValueOnce(jsonResponse({ detail }, { ok: false, status }));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+
+    await api.login("a@b.c", "x");
+    const err = await api.verifyTotp("000000").catch((e) => e);
+
+    expect(err.message).toBe(detail);
+    expect(err.status).toBe(status);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.map(([u]) => u)).not.toContain("/auth/refresh");
+    expect(api.accessToken()).toBe("acc-1");
+  });
+
   it("throws a useful error when the backend rejects the login", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({ detail: "Incorrect email or password" }, { ok: false, status: 401 }));

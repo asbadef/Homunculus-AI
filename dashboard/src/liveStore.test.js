@@ -1,7 +1,17 @@
+// dashboard/src/liveStore.test.js
 import { describe, it, expect, vi } from "vitest";
-import { createLiveStore } from "./liveStore.js";
+import { createLiveStore, SESSION_UNREACHABLE } from "./liveStore.js";
 import { ROLE } from "./clinicalDemo.js";
+import { accessProblem } from "./liveAuth.js";
 
+// accessProblem is wrapped (it keeps its real behaviour) so one test can make it answer a reason
+// code that does not exist yet, and prove the store refuses codes it has never heard of.
+vi.mock("./liveAuth.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, accessProblem: vi.fn(actual.accessProblem) };
+});
+
+/** An unsigned JWT-shaped token — the client only decodes the payload. Synthetic data only. */
 function tokenWith(payload) {
   const b64 = (o) => {
     const bytes = new TextEncoder().encode(JSON.stringify(o));
@@ -12,9 +22,17 @@ function tokenWith(payload) {
   return `${b64({ alg: "HS256" })}.${b64(payload)}.sig`;
 }
 
-const adminToken = tokenWith({ roles: { t1: "HOSPITAL_ADMIN" } });
-const nurseToken = tokenWith({ roles: { t1: "CHARGE_NURSE" } });
-const auditorToken = tokenWith({ roles: { t1: "AUDITOR" } });
+/** An error shaped like the ones backendApi throws: the API's message, plus the HTTP status and,
+ *  when a refused refresh dropped the tokens, `sessionEnded`. */
+function apiError(message, props = {}) {
+  return Object.assign(new Error(message), props);
+}
+
+const ADMIN_PERMS = ["board.view", "alerts.ack", "users.manage", "groups.manage"];
+const adminToken = tokenWith({ tenant: "t1", groups: ["hospital_admin"], perms: ADMIN_PERMS });
+const nurseToken = tokenWith({ tenant: "t1", groups: ["nurse"], perms: ["board.view", "alerts.ack", "admissions.admit"] });
+const biomedToken = tokenWith({ tenant: "t1", groups: ["biomedical"], perms: ["devices.manage"] });
+const mfaToken = tokenWith({ tenant: "t1", groups: ["hospital_admin"], perms: ADMIN_PERMS, mfa_required: true, mfa_verified: false });
 
 /** Minimal stand-in for the simulation store the live store wraps. */
 function fakeBase(extra = {}) {
@@ -28,95 +46,158 @@ function fakeBase(extra = {}) {
   };
 }
 
-function fakeApi({ login, me, verifyTotp } = {}) {
+const ME = { email: "admin@example.com", username: "admin", full_name: "Sistem Yöneticisi",
+             groups: [{ slug: "hospital_admin", name: "Sistem Yöneticisi" }], totp_enabled: false };
+
+function fakeApi({ login, me, verifyTotp, setupTotp, accessToken, changePassword } = {}) {
   return {
-    login: login || vi.fn(async () => ({ access_token: adminToken, requires_mfa: false })),
-    me: me || vi.fn(async () => ({ email: "admin@example.com", full_name: "Sistem Yöneticisi" })),
-    verifyTotp: verifyTotp || vi.fn(async () => ({ access_token: adminToken, requires_mfa: false })),
+    login: login || vi.fn(async () => ({ access_token: adminToken, requires_mfa: false, mfa_enrolled: false })),
+    me: me || vi.fn(async () => ME),
+    verifyTotp: verifyTotp || vi.fn(async () => ({ access_token: adminToken, requires_mfa: false, mfa_enrolled: true })),
+    setupTotp: setupTotp || vi.fn(async () => ({
+      provisioning_uri: "otpauth://totp/Homunculus:admin?secret=JBSWY3DPEHPK3PXP&issuer=Homunculus",
+    })),
+    accessToken: accessToken || vi.fn(() => null),
+    changePassword: changePassword || vi.fn(async () => ({ access_token: adminToken })),
     logout: vi.fn(),
   };
 }
 
 describe("liveStore — real authentication over the simulation", () => {
-  it("opens a session from the backend and maps the role for the UI", async () => {
+  it("opens a session carrying the token's perms and groups", async () => {
     const api = fakeApi();
     const store = createLiveStore({ api, base: fakeBase() });
 
-    await store.attemptLogin("admin@example.com", "gizli");
+    await store.attemptLogin("admin", "gizli");
 
-    expect(api.login).toHaveBeenCalledWith("admin@example.com", "gizli");
+    expect(api.login).toHaveBeenCalledWith("admin", "gizli");
     expect(store.getState().user).toEqual({
-      email: "admin@example.com", full_name: "Sistem Yöneticisi", role: ROLE.HOSPITAL_ADMIN,
+      email: "admin@example.com", username: "admin", full_name: "Sistem Yöneticisi",
+      role: ROLE.HOSPITAL_ADMIN, perms: ADMIN_PERMS, groups: ["hospital_admin"],
+      groupNames: ["Sistem Yöneticisi"],
     });
+    expect(store.getState().live).toBe(true);
   });
 
-  it("maps a nurse account onto the nurse panel", async () => {
+  it("derives a display role from perms for a nurse", async () => {
     const api = fakeApi({ login: vi.fn(async () => ({ access_token: nurseToken, requires_mfa: false })) });
     const store = createLiveStore({ api, base: fakeBase() });
-
-    await store.attemptLogin("hemsire@example.com", "gizli");
-
+    await store.attemptLogin("ayse", "gizli");
     expect(store.getState().user.role).toBe(ROLE.CHARGE_NURSE);
+    expect(store.getState().user.perms).toContain("admissions.admit");
   });
 
-  it("holds the session at the MFA gate when the backend demands it", async () => {
-    const api = fakeApi({ login: vi.fn(async () => ({ access_token: adminToken, requires_mfa: true })) });
+  it("holds the session at the MFA gate and says whether the user is enrolled", async () => {
+    const api = fakeApi({ login: vi.fn(async () => ({ access_token: mfaToken, requires_mfa: true, mfa_enrolled: false })) });
     const store = createLiveStore({ api, base: fakeBase() });
 
-    const res = await store.attemptLogin("admin@example.com", "gizli");
+    const res = await store.attemptLogin("admin", "gizli");
 
-    expect(res.mfaRequired).toBe(true);
-    expect(store.getState().user).toBeNull();          // not signed in yet
-    expect(store.getState().mfaPending).toMatchObject({ email: "admin@example.com" });
-    expect(api.me).not.toHaveBeenCalled();
+    expect(res).toEqual({ mfaRequired: true, enrolled: false });
+    expect(store.getState().user).toBeNull();
+    expect(store.getState().mfaPending).toMatchObject({
+      email: "admin", full_name: "Sistem Yöneticisi", enrolled: false, live: true,
+      groupNames: ["Sistem Yöneticisi"],
+    });
   });
 
   it("completes the session once the TOTP code verifies", async () => {
-    const api = fakeApi({ login: vi.fn(async () => ({ access_token: adminToken, requires_mfa: true })) });
+    const api = fakeApi({ login: vi.fn(async () => ({ access_token: mfaToken, requires_mfa: true, mfa_enrolled: true })) });
     const store = createLiveStore({ api, base: fakeBase() });
-    await store.attemptLogin("admin@example.com", "gizli");
+    await store.attemptLogin("admin", "gizli");
 
-    await store.completeMfaLogin("123456");
+    await store.completeMfaLogin(" 123456 ");
 
     expect(api.verifyTotp).toHaveBeenCalledWith("123456");
-    expect(store.getState().user.role).toBe(ROLE.HOSPITAL_ADMIN);
+    expect(store.getState().user.perms).toEqual(ADMIN_PERMS);
     expect(store.getState().mfaPending).toBeNull();
   });
 
-  it("REFUSES a role the UI cannot safely represent, and drops the tokens", async () => {
-    const api = fakeApi({ login: vi.fn(async () => ({ access_token: auditorToken, requires_mfa: false })) });
+  it.each([
+    [401, "Invalid TOTP code"],
+    [401, "Bu kod zaten kullanıldı; yeni kodu bekleyin."],
+    [429, "Çok fazla hatalı kod. 5 dakika sonra tekrar deneyin."],
+  ])("a refused code (%i) keeps the gate and the tokens, and shows the API's message", async (status, detail) => {
+    const api = fakeApi({
+      login: vi.fn(async () => ({ access_token: mfaToken, requires_mfa: true, mfa_enrolled: true })),
+      verifyTotp: vi.fn(async () => { throw apiError(detail, { status }); }),
+    });
     const store = createLiveStore({ api, base: fakeBase() });
+    await store.attemptLogin("admin", "gizli");
 
-    await expect(store.attemptLogin("denetci@example.com", "gizli")).rejects.toThrow(/desteklenmiyor/i);
+    await expect(store.completeMfaLogin("000000")).rejects.toThrow(detail);
+
     expect(store.getState().user).toBeNull();
-    expect(api.logout).toHaveBeenCalled();             // no half-open session left behind
+    expect(store.getState().mfaPending).toMatchObject({ enrolled: true, live: true });
+    expect(api.logout).not.toHaveBeenCalled();     // a wrong code is not a sign-out
   });
 
-  it("refuses an account with no tenant role at all", async () => {
-    const noRole = tokenWith({ sub: "u1" });
-    const api = fakeApi({ login: vi.fn(async () => ({ access_token: noRole, requires_mfa: false })) });
+  it("live MFA enrolment returns the provisioning URI and the manual key", async () => {
+    const store = createLiveStore({ api: fakeApi(), base: fakeBase() });
+    const setup = await store.setupMfa({ userId: "ignored" });
+    expect(setup.provisioningUri).toMatch(/^otpauth:/);
+    expect(setup.secret).toBe("JBSWY3DPEHPK3PXP");
+  });
+
+  it("live MFA enrolment passes on the API's refusal to replace an authenticator", async () => {
+    // An enrolled user on a pending-MFA session gets 403 mfa_reset_required: replacing the
+    // authenticator needs a verified session or an administrator's MFA reset.
+    const api = fakeApi({ setupTotp: vi.fn(async () => { throw apiError("mfa_reset_required", { status: 403 }); }) });
+    const store = createLiveStore({ api, base: fakeBase() });
+    await expect(store.setupMfa()).rejects.toThrow("mfa_reset_required");
+    expect(api.setupTotp).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancelling the MFA gate clears the pending session and the tokens", async () => {
+    const api = fakeApi({ login: vi.fn(async () => ({ access_token: mfaToken, requires_mfa: true, mfa_enrolled: true })) });
+    const store = createLiveStore({ api, base: fakeBase() });
+    await store.attemptLogin("admin", "gizli");
+
+    store.cancelMfaLogin();
+
+    expect(store.getState().mfaPending).toBeNull();
+    expect(api.logout).toHaveBeenCalled();
+  });
+
+  it("REFUSES a session with no permissions and drops the tokens", async () => {
+    const api = fakeApi({ login: vi.fn(async () => ({ access_token: tokenWith({ sub: "u1" }), requires_mfa: false })) });
+    const store = createLiveStore({ api, base: fakeBase() });
+    await expect(store.attemptLogin("bos", "gizli")).rejects.toThrow(/yetki/i);
+    expect(store.getState().user).toBeNull();
+    expect(api.logout).toHaveBeenCalled();
+  });
+
+  it("REFUSES a session that cannot see the board", async () => {
+    const api = fakeApi({ login: vi.fn(async () => ({ access_token: biomedToken, requires_mfa: false })) });
+    const store = createLiveStore({ api, base: fakeBase() });
+    await expect(store.attemptLogin("ahmet", "gizli")).rejects.toThrow(/Panoya/i);
+    expect(api.logout).toHaveBeenCalled();
+  });
+
+  it("REFUSES a session for a reason code it has never heard of (fails closed)", async () => {
+    // A reason added to accessProblem later must not slip through for want of a message.
+    accessProblem.mockReturnValueOnce("A_REASON_ADDED_LATER");
+    const api = fakeApi();
     const store = createLiveStore({ api, base: fakeBase() });
 
-    await expect(store.attemptLogin("bos@example.com", "gizli")).rejects.toThrow(/yetki/i);
+    await expect(store.attemptLogin("admin", "gizli")).rejects.toThrow(/Sistem yöneticinizle/);
+
     expect(store.getState().user).toBeNull();
+    expect(api.logout).toHaveBeenCalled();
+    expect(api.me).not.toHaveBeenCalled();
   });
 
   it("surfaces the backend's own error message on a bad password", async () => {
-    const api = fakeApi({
-      login: vi.fn(async () => { throw new Error("Incorrect email or password"); }),
-    });
+    const api = fakeApi({ login: vi.fn(async () => { throw new Error("Invalid credentials"); }) });
     const store = createLiveStore({ api, base: fakeBase() });
-
-    await expect(store.attemptLogin("a@b.co", "yanlis")).rejects.toThrow(/Incorrect email or password/);
+    await expect(store.attemptLogin("a", "yanlis")).rejects.toThrow(/Invalid credentials/);
   });
 
   it("logging out clears the session and the tokens", async () => {
     const api = fakeApi();
     const store = createLiveStore({ api, base: fakeBase() });
-    await store.attemptLogin("admin@example.com", "gizli");
-
+    await store.attemptLogin("admin", "gizli");
     store.logout();
-
     expect(api.logout).toHaveBeenCalled();
     expect(store.getState().user).toBeNull();
   });
@@ -125,63 +206,130 @@ describe("liveStore — real authentication over the simulation", () => {
     const store = createLiveStore({ api: fakeApi(), base: fakeBase() });
     const seen = vi.fn();
     store.subscribe(seen);
-
-    await store.attemptLogin("admin@example.com", "gizli");
-
+    await store.attemptLogin("admin", "gizli");
     expect(seen).toHaveBeenCalled();
   });
 
-  it("delegates everything else to the simulation, which keeps working", async () => {
-    // beds/alerts/devices/patients are deliberately NOT simulation passthrough (the overlay seeds
-    // and owns them — see the "never shows the simulated ward" test in liveStore.live.test.js), so
-    // this checks passthrough via a field the overlay never touches.
+  it("changing the password goes to the API", async () => {
+    const api = fakeApi();
+    const store = createLiveStore({ api, base: fakeBase() });
+    await store.changePassword("eski", "yeni-parola");
+    expect(api.changePassword).toHaveBeenCalledWith("eski", "yeni-parola");
+  });
+
+  it("delegates everything else to the simulation, which keeps working", () => {
     const base = fakeBase({ structure: { units: ["unit-1"] } });
     const store = createLiveStore({ api: fakeApi(), base });
+    expect(store.getState().structure.units).toEqual(["unit-1"]);
+    expect(store.admitPatient({})).toBe("admitted");
+  });
 
-    expect(store.admitPatient({ name: "x" })).toBe("admitted");
-    expect(base.admitPatient).toHaveBeenCalled();
-    expect(store.getState().structure).toEqual({ units: ["unit-1"] }); // simulation state still visible
+  it("marks tenant setup complete so the wizard never gates a real clinician", () => {
+    const store = createLiveStore({ api: fakeApi(), base: fakeBase() });
+    expect(store.getState().tenantSetup).toBe(true);
   });
 });
 
-describe("liveStore — session survives a page refresh", () => {
-  it("restores the session from stored tokens instead of logging out", async () => {
-    const api = fakeApi();
-    api.accessToken = () => adminToken;
+describe("liveStore — session survives a page reload", () => {
+  it("restoreSession reopens a stored session", async () => {
+    const api = fakeApi({ accessToken: vi.fn(() => adminToken) });
     const store = createLiveStore({ api, base: fakeBase() });
-
-    const restored = await store.restoreSession();
-
-    expect(restored).toBe(true);
-    expect(api.login).not.toHaveBeenCalled();          // no password re-entry
-    expect(store.getState().user).toMatchObject({ email: "admin@example.com" });
+    expect(await store.restoreSession()).toBe(true);
+    expect(store.getState().user.perms).toEqual(ADMIN_PERMS);
+    expect(api.login).not.toHaveBeenCalled();
   });
 
-  it("does nothing when no token was stored", async () => {
+  it("restoreSession does nothing when no token was stored", async () => {
     const api = fakeApi();
-    api.accessToken = () => null;
     const store = createLiveStore({ api, base: fakeBase() });
-
     expect(await store.restoreSession()).toBe(false);
     expect(api.me).not.toHaveBeenCalled();
     expect(store.getState().user).toBeNull();
   });
 
-  it("clears stale tokens quietly when the backend refuses them", async () => {
-    const api = fakeApi({ me: vi.fn(async () => { throw new Error("401"); }) });
-    api.accessToken = () => adminToken;
+  it("restoreSession lands a pending-MFA token on the gate, not in the app", async () => {
+    const api = fakeApi({ accessToken: vi.fn(() => mfaToken) });
     const store = createLiveStore({ api, base: fakeBase() });
+    expect(await store.restoreSession()).toBe(true);
+    expect(store.getState().user).toBeNull();
+    expect(store.getState().mfaPending).toMatchObject({ enrolled: false, live: true });
+  });
 
+  it("restoreSession clears stale tokens when the API refuses them", async () => {
+    // A 401 that could not be refreshed: the access token is dead and nothing can renew it.
+    const api = fakeApi({ accessToken: vi.fn(() => adminToken),
+                          me: vi.fn(async () => { throw apiError("Invalid or missing authentication credentials", { status: 401 }); }) });
+    const store = createLiveStore({ api, base: fakeBase() });
+    expect(await store.restoreSession()).toBe(false);
+    expect(api.logout).toHaveBeenCalled();
+    expect(store.getState().user).toBeNull();
+    expect(store.getState().sessionError).toBeNull();   // quietly: not signed in is a state
+  });
+
+  it("restoreSession signs out when the refresh was refused", async () => {
+    const api = fakeApi({ accessToken: vi.fn(() => adminToken),
+                          me: vi.fn(async () => { throw apiError("Invalid or expired refresh token", { status: 401, sessionEnded: true }); }) });
+    const store = createLiveStore({ api, base: fakeBase() });
     expect(await store.restoreSession()).toBe(false);
     expect(api.logout).toHaveBeenCalled();
     expect(store.getState().user).toBeNull();
   });
-});
 
-describe("liveStore — no setup theatre on a live deployment", () => {
-  it("marks tenant setup complete so the wizard never gates a real clinician", () => {
-    const store = createLiveStore({ api: fakeApi(), base: fakeBase() });
+  it("restoreSession signs out quietly when the stored session can no longer see the board", async () => {
+    const api = fakeApi({ accessToken: vi.fn(() => biomedToken) });
+    const store = createLiveStore({ api, base: fakeBase() });
+    expect(await store.restoreSession()).toBe(false);
+    expect(api.logout).toHaveBeenCalled();
+    expect(store.getState().user).toBeNull();
+    expect(store.getState().sessionError).toBeNull();
+  });
 
-    expect(store.getState().tenantSetup).toBe(true);
+  it.each([
+    ["a server error", () => apiError("İstek başarısız (503)", { status: 503 })],
+    ["a refresh the server could not answer",
+     () => apiError("Sunucuya şu an ulaşılamıyor; oturumunuz açık, biraz sonra tekrar deneyin.", { status: 502 })],
+    ["no network", () => new TypeError("Failed to fetch")],
+  ])("restoreSession KEEPS the tokens on %s and says the server is unreachable", async (_label, makeError) => {
+    // A reload during an outage must not sign the clinician out: the server did not refuse the
+    // session, it did not answer.
+    const api = fakeApi({ accessToken: vi.fn(() => adminToken),
+                          me: vi.fn(async () => { throw makeError(); }) });
+    const store = createLiveStore({ api, base: fakeBase() });
+    const seen = vi.fn();
+    store.subscribe(seen);
+
+    expect(await store.restoreSession()).toBe(false);
+
+    expect(api.logout).not.toHaveBeenCalled();
+    expect(store.getState().user).toBeNull();
+    expect(store.getState().sessionError).toMatchObject({ code: SESSION_UNREACHABLE });
+    expect(store.getState().sessionError.message).toMatch(/ulaşılamıyor/);
+    expect(seen).toHaveBeenCalled();
+  });
+
+  it("a later restoreSession, once the server answers, opens the session and clears the error", async () => {
+    const me = vi.fn()
+      .mockRejectedValueOnce(apiError("İstek başarısız (503)", { status: 503 }))
+      .mockResolvedValueOnce(ME);
+    const api = fakeApi({ accessToken: vi.fn(() => adminToken), me });
+    const store = createLiveStore({ api, base: fakeBase() });
+
+    expect(await store.restoreSession()).toBe(false);
+    expect(await store.restoreSession()).toBe(true);
+
+    expect(store.getState().user.perms).toEqual(ADMIN_PERMS);
+    expect(store.getState().sessionError).toBeNull();
+  });
+
+  it("signing in after an outage clears the error", async () => {
+    const api = fakeApi({ accessToken: vi.fn(() => adminToken),
+                          me: vi.fn().mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValue(ME) });
+    const store = createLiveStore({ api, base: fakeBase() });
+    await store.restoreSession();
+    expect(store.getState().sessionError).not.toBeNull();
+
+    await store.attemptLogin("admin", "gizli");
+
+    expect(store.getState().sessionError).toBeNull();
   });
 });

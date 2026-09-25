@@ -5,7 +5,10 @@
 // simulated state. Everything the backend does not implement yet keeps working exactly as before,
 // so the UI stays whole while the real system grows underneath it, domain by domain.
 
-import { roleFromToken, UNSUPPORTED_ROLE } from "./liveAuth.js";
+import {
+  sessionFromToken, accessProblem, secretFromProvisioningUri, NO_PERMISSIONS, NO_BOARD_ACCESS,
+} from "./liveAuth.js";
+import { uiRoleFromPerms } from "./permissions.js";
 import { patientFromBoard, patientsFromBoard, bedsFromPatients, alertsFromPatients } from "./liveAdapters.js";
 import { CONNECTION, nextConnection } from "./liveConnection.js";
 
@@ -13,6 +16,25 @@ import { CONNECTION, nextConnection } from "./liveConnection.js";
 // each disconnect gets a single scheduled retry, which itself gets a fresh ticket (see connect()
 // in startLive() below) — the whole point being that the OLD ticket is spent and cannot be reused.
 const RECONNECT_DELAY_MS = 5000;
+
+/** `state.sessionError.code` when a stored session could not be checked because the server did
+ *  not answer. The tokens are kept; calling restoreSession() again retries. */
+export const SESSION_UNREACHABLE = "SESSION_UNREACHABLE";
+
+// Why a session was refused, per accessProblem() reason. A reason missing here still refuses
+// (resolveSession fails closed), with the generic message.
+const REFUSAL_MESSAGES = new Map([
+  [NO_PERMISSIONS, "Hesabınıza kurum yetkisi tanımlanmamış. Sistem yöneticinizle görüşün."],
+  [NO_BOARD_ACCESS, "Panoya erişim yetkiniz yok. Sistem yöneticinizle görüşün."],
+]);
+const REFUSED_GENERIC = "Bu hesapla oturum açılamıyor. Sistem yöneticinizle görüşün.";
+
+/** True when an API failure means the server REFUSED the session: a refresh it turned down
+ *  (backendApi marks the error `sessionEnded`), or a 401/403 on the call itself. Anything else —
+ *  a 5xx, no network — means it did not answer, and the session may be perfectly good. */
+function sessionRefused(err) {
+  return err?.sessionEnded === true || err?.status === 401 || err?.status === 403;
+}
 
 /** Real SSE opener. `ticket` is a short-lived, single-use credential — never a JWT — because
  *  EventSource cannot send headers and a bearer token in the URL would leak into server logs,
@@ -54,6 +76,11 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     // only to the in-browser simulation. Left unset, its in-memory flag resets on every page
     // load and the wizard re-asks a real clinician for the hospital name on every refresh.
     tenantSetup: true,
+    // Tells the UI it is talking to the real backend: simulation-only controls hide on it.
+    live: true,
+    // Set by restoreSession() when the server could not be reached ({code, message, detail});
+    // null otherwise. See SESSION_UNREACHABLE.
+    sessionError: null,
   };
   const listeners = new Set();
   const emit = () => { for (const fn of listeners) fn(); };
@@ -72,27 +99,47 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     return () => { listeners.delete(fn); if (typeof offBase === "function") offBase(); };
   };
 
-  /** Resolve the UI role for a token, refusing anything we cannot represent safely. */
-  function resolveRole(accessToken) {
-    const role = roleFromToken(accessToken);
-    if (role === UNSUPPORTED_ROLE) {
+  /** The session in a token, refusing anything that cannot open the clinical UI.
+   *
+   *  Fails closed: ANY answer from accessProblem() other than null refuses, including a reason
+   *  code added there later and never listed in REFUSAL_MESSAGES. A refusal drops the tokens, and
+   *  its error says so (`sessionEnded`, `code`), like a refresh the server turned down. */
+  function resolveSession(accessToken) {
+    const session = sessionFromToken(accessToken);
+    const problem = accessProblem(session);
+    if (problem !== null) {
       api.logout();
-      throw new Error("Bu hesabın rolü bu arayüzde desteklenmiyor. Sistem yöneticinizle görüşün.");
+      const err = new Error(REFUSAL_MESSAGES.get(problem) ?? REFUSED_GENERIC);
+      err.code = problem;
+      err.sessionEnded = true;
+      throw err;
     }
-    if (!role) {
-      api.logout();
-      throw new Error("Hesabınıza kurum yetkisi tanımlanmamış. Sistem yöneticinizle görüşün.");
-    }
-    return role;
+    return session;
+  }
+
+  /** The UI's user object. `role` is DISPLAY ONLY (icons, labels); gating uses `perms`. */
+  function sessionUser(me, session) {
+    const groups = Array.isArray(me.groups) ? me.groups : [];
+    return {
+      email: me.email, username: me.username, full_name: me.full_name,
+      role: uiRoleFromPerms(session.perms),
+      perms: session.perms, groups: session.groups,
+      groupNames: groups.map((g) => g.name),
+    };
+  }
+
+  function pendingMfa(login, me, session, enrolled) {
+    return {
+      email: login, full_name: me.full_name, role: uiRoleFromPerms(session.perms),
+      groupNames: (Array.isArray(me.groups) ? me.groups : []).map((g) => g.name),
+      enrolled, live: true,
+    };
   }
 
   /** Fetch the profile and open the session. */
-  async function openSession(role) {
+  async function openSession(session) {
     const me = await api.me();
-    setOverlay({
-      user: { email: me.email, full_name: me.full_name, role },
-      mfaPending: null,
-    });
+    setOverlay({ user: sessionUser(me, session), mfaPending: null, sessionError: null });
     emit();
     return { mfaRequired: false };
   }
@@ -132,14 +179,15 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
   /** AckModal calls this as `store.acknowledgeAlert(alert.id, {reason, note})` and must not
    *  change — alert.id is "<patient_id>::<kind>" (alertsFromPatients). `reason`/`note` are not
    *  forwarded: the backend's AckStore keeps only {by, at} in this slice, so there is nowhere for
-   *  them to go yet. The role is whoever is actually signed in, never invented. */
+   *  them to go yet. The actor is attributed by the API from the signed token, never sent from
+   *  here. A refusal (403 "permission required: alerts.ack") rejects with the API's message for
+   *  the caller to show; the board is not reloaded, since nothing was acknowledged. */
   async function acknowledgeAlert(alertId, { reason, note } = {}) {
     const id = String(alertId);
     const sep = id.indexOf("::");
     const patientId = sep === -1 ? id : id.slice(0, sep);
     const kind = sep === -1 ? "" : id.slice(sep + 2);
-    const role = overlay.user?.role ?? "unknown";
-    await api.acknowledge(patientId, kind, role);
+    await api.acknowledge(patientId, kind);
     await refreshBoard();
   }
 
@@ -220,50 +268,102 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     acknowledgeAlert,
     startLive,
 
-    /** Password step. Resolves to {mfaRequired} — the UI shows the TOTP gate when true. */
-    async attemptLogin(email, credential) {
-      const tokens = await api.login(email, credential);
-      const role = resolveRole(tokens.access_token);
-
+    /** Password step. Resolves to {mfaRequired, enrolled?} — the UI shows the TOTP gate when
+     *  mfaRequired, and the enrolment (QR) flow inside it when not yet enrolled. */
+    async attemptLogin(login, credential) {
+      const tokens = await api.login(login, credential);
+      const session = resolveSession(tokens.access_token);
       if (tokens.requires_mfa) {
-        // Hold the session closed until the authenticator code verifies.
-        setOverlay({ user: null, mfaPending: { email, role, enrolled: true } });
+        // The profile is readable before the MFA step; the gate shows who is enrolling.
+        const me = await api.me();
+        const enrolled = tokens.mfa_enrolled === true;
+        setOverlay({ user: null, mfaPending: pendingMfa(login, me, session, enrolled),
+                     sessionError: null });
         emit();
-        return { mfaRequired: true, enrolled: true };
+        return { mfaRequired: true, enrolled };
       }
-      return openSession(role);
+      return openSession(session);
     },
 
-    /** Authenticator step of the LOGIN flow (the MFA gate) — exchanges the 6-digit code for
-     *  MFA-verified tokens. (`verifyMfa` stays delegated to the simulation: that is the admin's
-     *  MFA *enrolment* flow, which the backend does not expose yet.) */
+    /** Authenticator step of the LOGIN flow — exchanges the 6-digit code for MFA-verified tokens.
+     *  A refused code (401 wrong or replayed, 429 locked) rejects with the API's message and
+     *  leaves the gate and the tokens as they are. (`verifyMfa` stays delegated to the
+     *  simulation: only its admin-panel MfaModal uses it, never the login flow.) */
     async completeMfaLogin(code) {
       const tokens = await api.verifyTotp(String(code).trim());
-      return openSession(resolveRole(tokens.access_token));
+      return openSession(resolveSession(tokens.access_token));
     },
 
-    /** Reopen the session from tokens a previous page load left in storage. A browser refresh
-     *  must not log a clinician out mid-shift: `api.me()` rides the stored access token (and
-     *  backendApi refreshes it once if it has expired); any failure clears the stale tokens and
-     *  leaves the login screen showing — quietly, because "you were not signed in" is a state,
-     *  not a fault worth an error banner. */
+    /** Live MFA enrolment: the API mints the secret; the gate shows the QR and the manual key.
+     *  Each call ROTATES the secret and ends every refresh token issued before it, so the gate
+     *  calls it once per showing (MfaGate's effect does); after a reload the user scans again.
+     *  `verifyTotp` stays a plain POST: a wrong code is 401 and must never go through the
+     *  refresh-and-retry path, which would spend the now-dead refresh token and log the user out.
+     *  429 means the code limit was hit — show the API's message. An enrolled user on a
+     *  pending-MFA session gets 403 `mfa_reset_required`; that rejects to the caller too. */
+    async setupMfa() {
+      const res = await api.setupTotp();
+      return {
+        provisioningUri: res.provisioning_uri,
+        secret: secretFromProvisioningUri(res.provisioning_uri),
+      };
+    },
+
+    /** Back out of the MFA gate. Overrides the simulation's version, which writes to the base
+     *  store — leaving OUR overlay's mfaPending set and the gate stuck on screen. */
+    cancelMfaLogin() {
+      api.logout();
+      setOverlay({ user: null, mfaPending: null, sessionError: null });
+      emit();
+    },
+
+    changePassword(current, next) {
+      return api.changePassword(current, next);
+    },
+
+    /** Reopen the session from tokens a previous page load left in storage. A token whose MFA
+     *  step is still pending lands on the gate, never in the app. Never rejects.
+     *
+     *  A browser reload must not sign a clinician out mid-shift, and above all not during an
+     *  outage. So the failures are told apart:
+     *  - REFUSED (a refresh the server turned down, a 401/403, or a session the UI cannot open):
+     *    the tokens are dead. Clear them and leave the login screen — quietly, because "you were
+     *    not signed in" is a state, not a fault worth an error banner.
+     *  - NOT ANSWERED (5xx, no network): the session may be perfectly good. Keep the tokens, set
+     *    `sessionError` (SESSION_UNREACHABLE) for the UI to show; calling this again retries. */
     async restoreSession() {
       if (typeof api.accessToken !== "function" || !api.accessToken()) return false;
       try {
         const me = await api.me();
-        const role = resolveRole(api.accessToken());  // reread: me() may have refreshed the token
-        setOverlay({ user: { email: me.email, full_name: me.full_name, role }, mfaPending: null });
+        const session = resolveSession(api.accessToken());  // reread: me() may have refreshed
+        if (session.mfaRequired && !session.mfaVerified) {
+          setOverlay({ user: null, sessionError: null,
+                       mfaPending: pendingMfa(me.email || me.username, me, session,
+                                              me.totp_enabled === true) });
+        } else {
+          setOverlay({ user: sessionUser(me, session), mfaPending: null, sessionError: null });
+        }
         emit();
         return true;
-      } catch {
-        api.logout();
+      } catch (err) {
+        if (sessionRefused(err)) {
+          api.logout();
+          setOverlay({ user: null, mfaPending: null, sessionError: null });
+        } else {
+          setOverlay({ sessionError: {
+            code: SESSION_UNREACHABLE,
+            message: "Sunucuya ulaşılamıyor; oturumunuz korunuyor. Biraz sonra tekrar deneyin.",
+            detail: typeof err?.message === "string" ? err.message : null,
+          } });
+        }
+        emit();
         return false;
       }
     },
 
     logout() {
       api.logout();
-      setOverlay({ user: null, mfaPending: null });
+      setOverlay({ user: null, mfaPending: null, sessionError: null });
       emit();
       if (typeof base.logout === "function") base.logout();
     },

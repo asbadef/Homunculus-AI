@@ -18,7 +18,7 @@ function tokenWith(payload) {
   };
   return `${b64({ alg: "HS256" })}.${b64(payload)}.sig`;
 }
-const nurseToken = tokenWith({ roles: { t1: "NURSE" } });
+const nurseToken = tokenWith({ tenant: "t1", groups: ["nurse"], perms: ["board.view", "alerts.ack"] });
 
 function fakeApi(overrides = {}) {
   return {
@@ -89,7 +89,7 @@ describe("live store data layer", () => {
   it("acknowledges through the API using the id AckModal actually sends, and refreshes", async () => {
     // AckModal calls store.acknowledgeAlert(alert.id, {reason, note}) and must not change — the
     // live store has to speak that call, not the other way round. The id round-trips
-    // "<patient_id>::<kind>" (see alertsFromPatients); the role comes from the signed-in user.
+    // "<patient_id>::<kind>" (see alertsFromPatients); the actor is attributed by the API from the token.
     const api = fakeApi({
       login: vi.fn(async () => ({ access_token: nurseToken, requires_mfa: false })),
       me: vi.fn(async () => ({ email: "n@example.com", full_name: "Hemşire" })),
@@ -99,17 +99,30 @@ describe("live store data layer", () => {
 
     await store.acknowledgeAlert("bed-3::sepsis", { reason: "clinically_reviewed", note: "ok" });
 
-    expect(api.acknowledge).toHaveBeenCalledWith("bed-3", "sepsis", "CHARGE_NURSE");
+    expect(api.acknowledge).toHaveBeenCalledWith("bed-3", "sepsis");
     expect(api.boardPatients).toHaveBeenCalled();
   });
 
-  it("acknowledges with role \"unknown\" rather than inventing one when nobody is signed in", async () => {
+  it("acknowledges without inventing an actor when nobody is signed in", async () => {
     const api = fakeApi();
     const store = createLiveStore({ api, base: fakeBase() });
 
     await store.acknowledgeAlert("bed-3::sepsis", { reason: "clinically_reviewed", note: "ok" });
 
-    expect(api.acknowledge).toHaveBeenCalledWith("bed-3", "sepsis", "unknown");
+    expect(api.acknowledge).toHaveBeenCalledWith("bed-3", "sepsis");
+  });
+
+  it("a refused acknowledgement reaches the caller with the API's message", async () => {
+    // 403 "permission required: alerts.ack" is shown to the clinician, never swallowed; nothing
+    // was acknowledged, so the board is not reloaded as if it had been.
+    const api = fakeApi({
+      acknowledge: vi.fn(async () => { throw Object.assign(new Error("permission required: alerts.ack"), { status: 403 }); }),
+    });
+    const store = createLiveStore({ api, base: fakeBase() });
+
+    await expect(store.acknowledgeAlert("bed-3::sepsis", { reason: "clinically_reviewed" }))
+      .rejects.toThrow("permission required: alerts.ack");
+    expect(api.boardPatients).not.toHaveBeenCalled();
   });
 
   it("asks for a fresh ticket before opening the stream", async () => {
