@@ -2,19 +2,26 @@
 administrable. Every function raises AdminError(status, detail); the router turns that into
 the HTTP response and rolls the session back, so a refused change leaves nothing behind.
 
-No grant beyond your own rights (403). `Actor.perms` are the caller's rights (the token's
-`perms`, confirmed current by `serialise`). A right is what a token minted from the group would
-carry: the whole catalogue for a system group, else its keys (`group_rights`); a user's rights
-are the union over their groups in this tenant (`user_rights`, as `summarize` computes them).
+No grant beyond your own rights (403). `Actor.perms` are the caller's rights in this tenant,
+read from the database under the tenant lock by `serialise` (not from the token, which may
+predate a catalogue key). A group's rights are what a token minted from it would carry: the
+whole catalogue for a system group, else its catalogue keys (`group_rights`); a user's rights
+are the union over their groups in this tenant, manual and AD (`user_rights`, as `summarize`
+computes them).
   * A write that targets a user (PATCH, PUT groups, password or MFA reset) needs the target's
     current rights within the caller's: nobody edits, demotes or takes over an account that can
     do more than they can.
   * A group given to a user (PUT groups, create) needs its rights within the caller's.
   * Creating a group needs its permissions within the caller's; editing or deleting one needs
     its rights before AND after within the caller's.
+  * A group edit that changes rights (keys or the MFA rule), and a deletion, also needs every
+    CURRENT member's rights, before and after, within the caller's: a group edit is a change to
+    each member's rights, so a desk may not demote, widen or drop the MFA of anyone it could not
+    edit directly — and two lesser desks cannot pool their rights on a puppet.
 So a `users.manage`-only desk cannot make anyone (itself included) more than it is, and a
 `groups.manage`-only desk cannot widen any group, its own included. A caller holding the whole
-catalogue (the system group) is not restricted.
+catalogue (the system group) is not restricted — and only such a caller counts as an
+administrator for the last-admin guard (`count_admins`).
 
 Accounts are global (409). `is_active`, the password, the TOTP secret, the e-mail and the name
 live on the one `users` row every tenant shares. They are not changed here for a platform
@@ -28,12 +35,13 @@ Concurrency (spec §6, Guards):
   * The router calls `serialise` first in every write: the tenant's admin-guard lock, held to
     the end of the transaction, so writes to one tenant's users and groups run one at a time.
     Their before/after snapshots are then exact, and two token bumps over overlapping members
-    cannot deadlock. Under the lock it re-reads the caller: a request that waited behind a
-    change to the caller's own rights is refused (401 `token_version`) instead of acting with
-    the rights the caller had when the request arrived.
+    cannot deadlock. Under the lock it re-reads the caller — account, token version, membership,
+    tenant — and their rights: a request that waited behind a change to the caller's own rights
+    is refused (401 `token_version`), one that waited behind a deactivation of the tenant or of
+    the membership gets 403, and the rules above judge the caller's rights as they are NOW.
   * Every change that can take administrator rights away ends with `count_admins` (which takes
     the same lock) and is refused on 0 — so the guard holds for any caller of these functions,
-    through the router or not. `count_admins` counts LOCAL administrators only.
+    through the router or not. `count_admins` counts LOCAL holders of the whole catalogue only.
   * A group being edited or deleted is read with `get_group(..., for_update=True)`: the row lock
     serialises two edits of one group, and it blocks anyone adding a member to the group (the
     foreign key takes a KEY SHARE lock on it) while its member count is checked.
@@ -52,7 +60,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from homunculus.auth.dependencies import MEMBERSHIP_INACTIVE
 from homunculus.auth.groups import (
@@ -64,6 +72,7 @@ from homunculus.auth.models import (
 )
 from homunculus.auth.permissions import ALL_PERMISSIONS, UnknownPermission, validate_permissions
 from homunculus.auth.service import hash_password, normalize_login, run_bcrypt
+from homunculus.tenant.models import Tenant
 
 LAST_ADMIN = "Son yönetici yetkisi kaldırılamaz"
 LAST_ADMIN_DEACTIVATE = "Son yönetici pasifleştirilemez"
@@ -95,34 +104,45 @@ class AdminError(Exception):
 
 @dataclass(frozen=True)
 class Actor:
-    """Who makes the change: their account, the rights their token carries and the token's
-    version (checked against the database under the lock by `serialise`)."""
+    """Who makes the change: their account, their rights in this tenant (from the database,
+    see `serialise`) and the version of the token they called with."""
     id: uuid.UUID
     perms: frozenset[str]
     token_version: int
 
 
-async def serialise(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor) -> None:
+async def serialise(db: AsyncSession, tenant_id: uuid.UUID, user_id: uuid.UUID,
+                    token_version: int) -> Actor:
     """Start an /admin write: take the tenant's admin-guard lock for this transaction, then
-    re-read the caller. The permission guard ran before the lock; a change to the caller's own
-    rights committed while this request waited (a demotion, a deactivation) bumps their token
-    version, and the request is refused as the dependency would refuse it now."""
+    re-read the caller and return them as an Actor carrying their CURRENT rights.
+
+    The permission guard ran before the lock. A change to the caller's own rights committed
+    while this request waited (a demotion, a deactivation) bumps their token version: 401
+    `token_version`, as the dependency would answer now. A tenant or membership deactivated
+    meanwhile: 403, as `caller_tenant_id` would answer. The rights come from the database, not
+    the token, with the rule `summarize` applies — so a token minted before a catalogue key
+    existed does not cost a full administrator that key (a 403 would not make the client
+    refresh)."""
     await lock_admin_guard(db, tenant_id)
     member = select(TenantMembership.id).where(
         TenantMembership.user_id == User.id,
         TenantMembership.tenant_id == tenant_id,
         TenantMembership.is_active == True,  # noqa: E712
     ).exists()
+    tenant_active = select(Tenant.is_active).where(Tenant.id == tenant_id).scalar_subquery()
     row = (await db.execute(
-        select(User.token_version, User.is_active, member.label("member"))
-        .where(User.id == actor.id)
+        select(User.token_version, User.is_active, member.label("member"),
+               tenant_active.label("tenant_active"))
+        .where(User.id == user_id)
     )).first()
     if row is None or not row.is_active:
         raise AdminError(401, NOT_AUTHENTICATED)
-    if row.token_version != actor.token_version:
+    if row.token_version != token_version:
         raise AdminError(401, TOKEN_VERSION)
-    if not row.member:
+    if not row.member or not row.tenant_active:
         raise AdminError(403, MEMBERSHIP_INACTIVE)
+    groups = (await _rights_by_user(db, tenant_id, UserGroup.user_id == user_id)).get(user_id, {})
+    return Actor(id=user_id, perms=_union(groups), token_version=token_version)
 
 
 # ---------------------------------------------------------------- rights
@@ -143,6 +163,45 @@ def _within(actor: Actor, rights: Iterable[str]) -> None:
     beyond = frozenset(rights) - actor.perms
     if beyond:
         raise AdminError(403, f"{BEYOND_OWN_RIGHTS}: {', '.join(sorted(beyond))}")
+
+
+async def _rights_by_user(db: AsyncSession, tenant_id: uuid.UUID,
+                          users) -> dict[uuid.UUID, dict[uuid.UUID, set[str]]]:
+    """For the users matching `users` (a clause on `UserGroup.user_id`): each of their groups in
+    this tenant, manual or AD, with its rights by `group_rights`' rule — in ONE query."""
+    rows = (await db.execute(
+        select(UserGroup.user_id, Group.id, Group.is_system, GroupPermission.permission)
+        .join(Group, Group.id == UserGroup.group_id)
+        .outerjoin(GroupPermission, GroupPermission.group_id == Group.id)
+        .where(Group.tenant_id == tenant_id, users)
+    )).all()
+    out: dict[uuid.UUID, dict[uuid.UUID, set[str]]] = {}
+    for user_id, group_id, is_system, key in rows:
+        keys = out.setdefault(user_id, {}).setdefault(
+            group_id, set(ALL_PERMISSIONS) if is_system else set())
+        if not is_system and key in ALL_PERMISSIONS:
+            keys.add(key)
+    return out
+
+
+def _union(groups: dict[uuid.UUID, set[str]]) -> frozenset[str]:
+    return frozenset().union(*groups.values())
+
+
+async def _members_within(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
+                          group_id: uuid.UUID, after: frozenset[str] | None) -> None:
+    """Every current member of the group — their rights in the tenant before, and after the
+    group's rights become `after` (None: the group is gone) — within the caller's."""
+    link = aliased(UserGroup)
+    members = select(link.user_id).where(link.group_id == group_id)
+    for groups in (await _rights_by_user(db, tenant_id,
+                                         UserGroup.user_id.in_(members))).values():
+        then = dict(groups)
+        if after is None:
+            then.pop(group_id, None)
+        else:
+            then[group_id] = set(after)
+        _within(actor, _union(groups) | _union(then))
 
 
 async def _grantable(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
@@ -255,6 +314,13 @@ async def update_group(db: AsyncSession, tenant_id: uuid.UUID, group: Group, act
     if permissions is not None:
         new = set(_keys(permissions))
         _within(actor, new)                             # ... and after
+    keys_change = new is not None and new != set(group.permission_keys)
+    mfa_change = mfa_required is not None and mfa_required != group.mfa_required
+    if keys_change or mfa_change:
+        # A change to every member's rights (or MFA): they must all be within the caller's.
+        await _members_within(db, tenant_id, actor, group.id,
+                              frozenset(new) & ALL_PERMISSIONS if keys_change
+                              else group_rights(group))
     changed = rights_changed = False
     if name is not None and name.strip() != group.name:
         group.name = name.strip()
@@ -293,6 +359,7 @@ async def delete_group(db: AsyncSession, tenant_id: uuid.UUID, group: Group,
     _within(actor, group_rights(group))
     if group.is_system:
         raise AdminError(409, "Sistem grubu silinemez")
+    await _members_within(db, tenant_id, actor, group.id, None)
     if await member_count(db, group.id) > 0:
         raise AdminError(409, "Üyesi olan grup silinemez")
     mappings = int((await db.execute(

@@ -2,7 +2,8 @@
 
 Values are validated AFTER normalising, since that is what is stored and what sign-in compares:
 names are trimmed and may not end up empty; a username is `normalize_login`-ed (trimmed,
-lower-cased, Turkish `İ` folded to `i`) and must then be 2-128 characters of `a-z 0-9 . _ @ -`;
+lower-cased, Turkish `İ` and `ı` folded to `i`) and must then be 2-128 characters of
+`a-z 0-9 . _ @ -` (the refusal says how to transliterate ş ç ğ ö ü ı ə);
 an e-mail is normalised the same way and must have one `@` with text on both sides and no
 whitespace or invisible characters. Upper bounds match the columns (so an oversized value is a
 422, not a database error) and the auth schemas (1024 for a password: bcrypt reads only 72
@@ -30,10 +31,16 @@ def _name(value: str) -> str:
     return value
 
 
+USERNAME_RULE = (
+    "Kullanıcı adı 2-128 karakter olmalı; yalnızca a-z, 0-9 ve . _ @ - kullanılabilir. "
+    "Türkçe/Azerbaycanca harfleri Latin karşılığıyla yazın: ş→s, ç→c, ğ→g, ö→o, ü→u, ı→i, ə→e."
+)
+
+
 def _username(value: str) -> str:
     key = normalize_login(value)
     if not _USERNAME.fullmatch(key):
-        raise ValueError("username: 2-128 characters, a-z 0-9 . _ @ - only (after lower-casing)")
+        raise ValueError(USERNAME_RULE)
     return key
 
 

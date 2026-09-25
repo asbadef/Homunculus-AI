@@ -61,13 +61,6 @@ def _http(exc: AdminError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=exc.detail, headers=headers)
 
 
-def _actor(principal: Principal) -> Actor:
-    # `principal.user.token_version` equals the token's `tv`: get_principal checked it on load,
-    # and nothing has changed the row in this request yet.
-    return Actor(id=principal.user.id, perms=principal.perms,
-                 token_version=principal.user.token_version)
-
-
 def _group_out(group: Group, count: int) -> GroupOut:
     return GroupOut(id=group.id, slug=group.slug, name=group.name,
                     description=group.description, mfa_required=group.mfa_required,
@@ -116,8 +109,12 @@ async def _run(db: AsyncSession, coro):
         raise _http(exc) from None
 
 
-async def _begin(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor) -> None:
-    await _run(db, service.serialise(db, tenant_id, actor))
+async def _begin(db: AsyncSession, tenant_id: uuid.UUID, principal: Principal) -> Actor:
+    """Lock the tenant's admin writes and re-read the caller under the lock: the Actor carries
+    the caller's rights from the database. `principal.user.token_version` equals the token's
+    `tv` (get_principal checked it on load, and nothing has changed the row in this request)."""
+    return await _run(db, service.serialise(db, tenant_id, principal.user.id,
+                                            principal.user.token_version))
 
 
 # ---------------------------------------------------------------- permissions & groups
@@ -140,8 +137,7 @@ async def create_group(body: GroupCreate, request: Request,
                        principal: Principal = Depends(get_principal),
                        tenant_id: uuid.UUID = Depends(caller_tenant_id),
                        db: AsyncSession = Depends(get_db)) -> GroupOut:
-    actor = _actor(principal)
-    await _begin(db, tenant_id, actor)
+    actor = await _begin(db, tenant_id, principal)
     group = await _run(db, service.create_group(
         db, tenant_id, actor, slug=body.slug, name=body.name, description=body.description,
         mfa_required=body.mfa_required, permissions=body.permissions))
@@ -157,8 +153,7 @@ async def update_group(group_id: uuid.UUID, body: GroupPatch, request: Request,
                        principal: Principal = Depends(get_principal),
                        tenant_id: uuid.UUID = Depends(caller_tenant_id),
                        db: AsyncSession = Depends(get_db)) -> GroupOut:
-    actor = _actor(principal)
-    await _begin(db, tenant_id, actor)
+    actor = await _begin(db, tenant_id, principal)
     group = await _run(db, service.get_group(db, tenant_id, group_id, for_update=True))
     before = {"name": group.name, "description": group.description,
               "permissions": group.permission_keys, "mfa_required": group.mfa_required}
@@ -179,8 +174,7 @@ async def delete_group(group_id: uuid.UUID, request: Request,
                        principal: Principal = Depends(get_principal),
                        tenant_id: uuid.UUID = Depends(caller_tenant_id),
                        db: AsyncSession = Depends(get_db)) -> Response:
-    actor = _actor(principal)
-    await _begin(db, tenant_id, actor)
+    actor = await _begin(db, tenant_id, principal)
     group = await _run(db, service.get_group(db, tenant_id, group_id, for_update=True))
     before = {"slug": group.slug, "name": group.name, "permissions": group.permission_keys}
     await _run(db, service.delete_group(db, tenant_id, group, actor))
@@ -203,8 +197,7 @@ async def create_user(body: UserCreate, request: Request,
                       principal: Principal = Depends(get_principal),
                       tenant_id: uuid.UUID = Depends(caller_tenant_id),
                       db: AsyncSession = Depends(get_db)) -> UserOut:
-    actor = _actor(principal)
-    await _begin(db, tenant_id, actor)
+    actor = await _begin(db, tenant_id, principal)
     user = await _run(db, service.create_local_user(
         db, tenant_id, actor, username=body.username, email=body.email,
         full_name=body.full_name, password=body.password, group_ids=body.group_ids))
@@ -221,8 +214,7 @@ async def update_user(user_id: uuid.UUID, body: UserPatch, request: Request,
                       principal: Principal = Depends(get_principal),
                       tenant_id: uuid.UUID = Depends(caller_tenant_id),
                       db: AsyncSession = Depends(get_db)) -> UserOut:
-    actor = _actor(principal)
-    await _begin(db, tenant_id, actor)
+    actor = await _begin(db, tenant_id, principal)
     user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
     before = {"full_name": user.full_name, "email": user.email, "is_active": user.is_active}
     changed = await _run(db, service.update_user(
@@ -241,8 +233,7 @@ async def set_user_groups(user_id: uuid.UUID, body: UserGroupsIn, request: Reque
                           principal: Principal = Depends(get_principal),
                           tenant_id: uuid.UUID = Depends(caller_tenant_id),
                           db: AsyncSession = Depends(get_db)) -> UserOut:
-    actor = _actor(principal)
-    await _begin(db, tenant_id, actor)
+    actor = await _begin(db, tenant_id, principal)
     user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
     before = [g.slug for g in _user_out(user, tenant_id).groups]
     user = await _run(db, service.set_user_groups(db, tenant_id, user, body.group_ids, actor))
@@ -258,8 +249,7 @@ async def reset_password(user_id: uuid.UUID, body: PasswordResetIn, request: Req
                          principal: Principal = Depends(get_principal),
                          tenant_id: uuid.UUID = Depends(caller_tenant_id),
                          db: AsyncSession = Depends(get_db)) -> dict:
-    actor = _actor(principal)
-    await _begin(db, tenant_id, actor)
+    actor = await _begin(db, tenant_id, principal)
     user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
     await _run(db, service.reset_password(db, tenant_id, user, actor, body.password))
     await db.commit()
@@ -272,8 +262,7 @@ async def reset_mfa(user_id: uuid.UUID, request: Request,
                     principal: Principal = Depends(get_principal),
                     tenant_id: uuid.UUID = Depends(caller_tenant_id),
                     db: AsyncSession = Depends(get_db)) -> dict:
-    actor = _actor(principal)
-    await _begin(db, tenant_id, actor)
+    actor = await _begin(db, tenant_id, principal)
     user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
     before = {"totp_enabled": user.totp_enabled}
     await _run(db, service.reset_mfa(db, tenant_id, user, actor))

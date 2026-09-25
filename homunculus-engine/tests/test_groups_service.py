@@ -12,7 +12,7 @@ from homunculus.auth.groups import (
 from homunculus.auth.models import (
     AUTH_LDAP, SOURCE_LDAP, Group, GroupPermission, TenantMembership, User, UserGroup,
 )
-from homunculus.auth.permissions import DEFAULT_GROUPS
+from homunculus.auth.permissions import ALL_PERMISSIONS, DEFAULT_GROUPS
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
 
@@ -112,7 +112,7 @@ async def test_a_system_group_member_holds_the_whole_catalogue_by_rule(db_sessio
     assert "audit.view" in s.perms                       # by rule, not by rows
 
 
-async def test_count_admins_counts_active_users_holding_both_admin_permissions(db_session):
+async def test_count_admins_counts_active_holders_of_the_whole_catalogue(db_session):
     t = await _tenant(db_session)
     groups = await ensure_default_groups(db_session, t.id)
     a = await _user(db_session, t, "admin")
@@ -120,13 +120,15 @@ async def test_count_admins_counts_active_users_holding_both_admin_permissions(d
     for u in (a, b):
         await set_manual_groups(db_session, user=u, tenant_id=t.id,
                                 group_ids=[groups["hospital_admin"].id], granted_by_id=None)
-    # users.manage alone is not an administrator: groups.manage is needed too.
-    half = Group(tenant_id=t.id, slug="user_desk", name="Kullanıcı Masası", is_system=False)
-    half.permissions = [GroupPermission(permission="users.manage")]
-    db_session.add(half)
+    # users.manage + groups.manage is not an administrator: under "no grant beyond your own
+    # rights" such an account cannot give hospital_admin nor touch a clinical account.
+    managers = Group(tenant_id=t.id, slug="it_admin", name="BT", is_system=False)
+    managers.permissions = [GroupPermission(permission=k)
+                            for k in ("users.manage", "groups.manage")]
+    db_session.add(managers)
     await db_session.flush()
     c = await _user(db_session, t, "yarim")
-    await set_manual_groups(db_session, user=c, tenant_id=t.id, group_ids=[half.id],
+    await set_manual_groups(db_session, user=c, tenant_id=t.id, group_ids=[managers.id],
                             granted_by_id=None)
     assert await count_admins(db_session, t.id) == 1
 
@@ -211,19 +213,25 @@ async def test_count_admins_is_scoped_to_the_tenant(db_session):
     assert await count_admins(db_session, t2.id) == 0
 
 
-async def test_count_admins_counts_split_rights_across_two_groups(db_session):
+async def test_count_admins_counts_the_catalogue_split_across_two_groups(db_session):
     t = await _tenant(db_session)
     await ensure_default_groups(db_session, t.id)
+    keys = sorted(ALL_PERMISSIONS)
     g1 = Group(tenant_id=t.id, slug="g1", name="G1", is_system=False)
-    g1.permissions = [GroupPermission(permission="users.manage")]
+    g1.permissions = [GroupPermission(permission=k) for k in keys[:10]]
     g2 = Group(tenant_id=t.id, slug="g2", name="G2", is_system=False)
-    g2.permissions = [GroupPermission(permission="groups.manage")]
+    g2.permissions = [GroupPermission(permission=k) for k in keys[9:]]    # one key in both
+    g2.permissions.append(GroupPermission(permission="retired.key"))    # outside: not counted
     db_session.add_all([g1, g2])
     await db_session.flush()
     u = await _user(db_session, t, "split")
     await set_manual_groups(db_session, user=u, tenant_id=t.id, group_ids=[g1.id, g2.id],
                             granted_by_id=None)
     assert await count_admins(db_session, t.id) == 1
+    # One catalogue key short, however many other rows: not an administrator.
+    g2.permissions.remove(next(p for p in g2.permissions if p.permission == keys[-1]))
+    await db_session.flush()
+    assert await count_admins(db_session, t.id) == 0
 
 
 async def test_count_admins_ignores_an_inactive_membership(db_session):

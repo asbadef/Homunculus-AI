@@ -90,6 +90,8 @@ def test_normalize_login_folds_the_turkish_capital_dotted_i_to_a_plain_i():
     dot (two code points) — which would never match the stored, plain-ASCII login."""
     assert "İ".lower() != "i"                                  # the trap this guards against
     assert normalize_login("İbrahim") == "ibrahim"
+    assert normalize_login("ıbrahim") == "ibrahim"              # the dotless ı as well
+    assert normalize_login("IŞIK") == normalize_login("ışık") == "işik"
     assert normalize_login("AYŞE.DEMİR@EXAMPLE.COM") == "ayşe.demir@example.com"
 
 

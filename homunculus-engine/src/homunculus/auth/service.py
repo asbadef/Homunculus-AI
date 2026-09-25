@@ -72,10 +72,12 @@ async def run_bcrypt(fn: Callable[..., _T], *args: Any) -> _T:
 
 
 def normalize_login(value: str | None) -> str:
-    """Trimmed and lower-cased. The Turkish capital `İ` (a keyboard auto-capitalises `i` to it)
-    is folded to a plain `i` first: `"İ".lower()` is `i` + a combining dot, two code points that
-    would never match the stored login."""
-    return (value or "").strip().replace("İ", "i").lower()
+    """Trimmed and lower-cased, with the Turkish i's folded to a plain `i`:
+    - the capital `İ` (a keyboard auto-capitalises `i` to it) first, since `"İ".lower()` is `i` +
+      a combining dot, two code points that would never match the stored login;
+    - the dotless `ı`, which a Turkish keyboard types where `i` was meant (`ıbrahim`).
+    Usernames created through /admin are ASCII only, so the fold cannot make two of them one."""
+    return (value or "").strip().replace("İ", "i").lower().replace("ı", "i")
 
 
 async def find_user_by_login(db: AsyncSession, login: str) -> User | None:
