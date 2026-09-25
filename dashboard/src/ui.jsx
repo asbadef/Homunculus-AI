@@ -1,7 +1,7 @@
 // src/ui.jsx — small form and overlay primitives shared by the clinical workspace and the admin
 // panels. Moved out of ClinicalDemo.jsx so a component in another file can use them without
 // importing the whole workspace.
-import React from "react";
+import React, { useId } from "react";
 import { X } from "lucide-react";
 
 export function Field({ T, label, hint, children }) {
@@ -22,13 +22,16 @@ export function btnCls(T, kind = "primary") {
   return `${base} ${map[kind] || T.primary} ${T.sizes.nav}`;
 }
 
+/** A modal dialog, named by its title for assistive technology. */
 export function ActionOverlay({ T, title, onClose, children }) {
+  const titleId = useId();
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className={`absolute inset-0 ${T.overlay}`} onClick={onClose} />
-      <div className={`relative w-full max-w-sm rounded-2xl border ${T.border} ${T.card} p-5 shadow-2xl`}>
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId}
+        className={`relative w-full max-w-sm rounded-2xl border ${T.border} ${T.card} p-5 shadow-2xl`}>
         <div className="mb-3 flex items-center justify-between">
-          <h4 className={`font-bold ${T.heading}`}>{title}</h4>
+          <h4 id={titleId} className={`font-bold ${T.heading}`}>{title}</h4>
           <button onClick={onClose} className={`grid h-8 w-8 place-items-center rounded-lg ${T.ghost}`}><X size={16} /></button>
         </div>
         {children}

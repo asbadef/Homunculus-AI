@@ -1,6 +1,6 @@
 // dashboard/src/ui.test.jsx
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { Field, ActionOverlay, inputCls, btnCls } from "./ui.jsx";
 import { getTheme } from "./clinicalTheme.js";
 
@@ -20,6 +20,13 @@ describe("ui primitives", () => {
     expect(screen.getByText("Başlık")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button"));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("ActionOverlay is a modal dialog named by its title", () => {
+    render(<ActionOverlay T={T} title="Başlık" onClose={() => {}}><p>içerik</p></ActionOverlay>);
+    const dialog = screen.getByRole("dialog", { name: "Başlık" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(within(dialog).getByText("içerik")).toBeInTheDocument();
   });
 
   it("class helpers produce theme-bound class strings", () => {
