@@ -10,6 +10,11 @@
 #                  The slug must be the tenant's slug (the seed creates demo-hastanesi); any other
 #                  key, e.g. HOSP1, matches no clinician's board. REQUIRED: without it the API
 #                  refuses to start.
+#   PHI_ENCRYPTION_KEY  Fernet key for patient identities at rest (44 characters of url-safe
+#                  base64). REQUIRED: without it, or with a malformed one, the API refuses to start.
+#                  Generate once, keep it with the database backups: rows written under one key
+#                  cannot be read under another.
+#                  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 #
 # PLAN — ACTION REQUIRED BEFORE ANY DEVICE IS CONNECTED.
 #
@@ -46,8 +51,12 @@ services:
         sync: false
       - key: TENANTS
         sync: false
-      # Bootstrap admin — set for the first deploy, then remove. The email must pass the login
-      # API's validation (".local"/"localhost" domains are rejected).
+      # Patient identities are encrypted with this; see the header. Required on Postgres.
+      - key: PHI_ENCRYPTION_KEY
+        sync: false
+      # Bootstrap admin — set for the first deploy, then remove. The address becomes the admin's
+      # username and e-mail. A NEW admin needs a password of at least 12 characters that is not a
+      # known placeholder (change-me, password, ...); otherwise the seed skips it and logs why.
       - key: SEED_ADMIN_EMAIL
         sync: false
       - key: SEED_ADMIN_PASSWORD

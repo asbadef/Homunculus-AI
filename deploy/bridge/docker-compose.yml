@@ -42,7 +42,9 @@ services:
       - --cloud-url
       - ${CLOUD_URL}
       - --token
-      - ${TENANT_TOKEN}
+      # Required, not defaulted: compose refuses to start without a token rather than run a bridge
+      # whose every upload the API would refuse.
+      - "${TENANT_TOKEN:?TENANT_TOKEN is missing in .env - generate one, see .env.example}"
 
     healthcheck:
       # Proves the MLLP port is actually accepting connections, which is the one thing that must be

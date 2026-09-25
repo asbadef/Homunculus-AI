@@ -15,10 +15,20 @@ Database → Supabase Postgres (kalıcı; şema push'ta migration ile güncellen
 Aşağıdakiler gerçek Postgres'e karşı çalıştırılıp doğrulandı (docker compose):
 
 - `alembic upgrade head` → **17 tablo** kuruluyor
-- `scripts/seed_admin.py` → ilk kurum + HOSPITAL_ADMIN (idempotent; parola yoksa **atlar**, hata vermez)
+- `scripts/seed_admin.py` → ilk kurum + 11 varsayılan grup + ilk yönetici, **`hospital_admin`**
+  (Sistem Yöneticisi) grubunda (idempotent; parola yoksa **atlar**, hata vermez; yeni yönetici için
+  parola 12 karakterden kısa ya da `change-me` gibi bilinen bir örnekse yöneticiyi **oluşturmaz**
+  ve nedenini log'a yazar)
 - Gerçek HTTP: `POST /auth/login` → JWT · `GET /auth/me` → kullanıcı · yanlış parola → **401**
-- Frontend `liveStore` → gerçek backend → `{email, full_name, role: HOSPITAL_ADMIN}`
+- Frontend `liveStore` → gerçek backend → `{username, email, full_name, groups: [hospital_admin], perms: [...]}`
+  (`hospital_admin` MFA ister: ilk girişte panel doğrulayıcı için QR gösterir)
 - Test paketi: **306 backend / 190 frontend** yeşil
+
+> ⚠️ **RBAC dalı (`feat/ldap-rbac`) için açık engel — B1 (2026-09-25):** migration 0006'dan geçmiş
+> bir veritabanında `tenant_memberships.role` sütunu hâlâ `userrole` enum tipinde. Bu yüzden yeni
+> bir kurum üyeliği yazılamıyor: seed yeni yönetici **oluşturamıyor** (hata verip çıkıyor, bu da
+> `startCommand`'ı durduruyor) ve `POST /admin/users` 500 dönüyor. Düzeltilene kadar bu dalı deploy
+> etme. Ayrıntı: `docs/superpowers/plans/2026-09-23-rbac-groups-permissions.md`, "Execution status".
 
 ---
 
@@ -68,8 +78,9 @@ Proje: **Homunculus-AI** (`tfilvvlfhnxzgaqkxwaj`), eu-central-1, Postgres 17.6 �
    | `DATABASE_SSL` | `require` (zaten varsayılan) |
    | `CORS_ORIGINS` | `https://homunculus-ai.vercel.app` |
    | `TENANTS` | `<openssl rand -base64 36 çıktısı>:demo-hastanesi` — köprünün cihaz token'ı ve kurum slug'ı (aşağıdaki nota bak) |
-   | `SEED_ADMIN_EMAIL` | ör. `admin@hastane.com.tr` (**`.local`/`localhost` KABUL EDİLMEZ**) |
-   | `SEED_ADMIN_PASSWORD` | güçlü parola (**ilk deploy'dan sonra sil**) |
+   | `SEED_ADMIN_EMAIL` | ör. `admin@hastane.com.tr` — yöneticinin hem kullanıcı adı hem e-postası olur |
+   | `SEED_ADMIN_PASSWORD` | güçlü parola, **en az 12 karakter**, `change-me` gibi bir örnek değil (**ilk deploy'dan sonra sil**) |
+   | `PHI_ENCRYPTION_KEY` | Fernet anahtarı: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` — **bir kez üret, yedeklerle birlikte sakla**; yoksa API başlamaz |
    | `JWT_SECRET` | Render otomatik üretir |
 
    > **`TENANTS`:** `:`'dan sonraki kısım kurumun **slug'ı** olmalı — seed `demo-hastanesi`
@@ -86,6 +97,8 @@ Proje: **Homunculus-AI** (`tfilvvlfhnxzgaqkxwaj`), eu-central-1, Postgres 17.6 �
      -H "Content-Type: application/json" \
      -d '{"email":"admin@hastane.com.tr","password":"<parola>"}'
    ```
+   Yanıtta `requires_mfa: true` beklenir: `hospital_admin` grubu MFA ister. Doğrulayıcı kurulumu
+   panelden (`?live=1`) ilk girişte yapılır; kod girilene kadar API klinik rotalara 403 verir.
 5. **İlk başarılı deploy'dan sonra `SEED_ADMIN_PASSWORD`'ü Render env'inden sil.** Seed onsuz
    sessizce atlar, restart'lar sorunsuz devam eder.
 
@@ -124,4 +137,5 @@ TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:5432/homu
 - [ ] `JWT_SECRET` → Render env (otomatik üretilir)
 - [ ] `CORS_ORIGINS` → Render env
 - [ ] `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` → Render env (parolayı sonra sil)
+- [ ] `PHI_ENCRYPTION_KEY` → Render env (bir kopyası yedeklerle birlikte)
 - [ ] `VITE_API_URL` → Vercel env

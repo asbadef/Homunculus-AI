@@ -306,6 +306,148 @@ kötüleşme, laboratuvar bunu yakalayana kadar saatler geçebilirken, sürekli 
 
 ---
 
+### 3.5 Kimlik ve yetki terimleri
+
+Bu bölüm, gerçek sistemde (`?live=1`) kimin neyi yapabildiğini anlatır. Kaynağı tasarım belgesi
+(`docs/superpowers/specs/2026-09-23-ldap-rbac-design.md`) ve kod (`homunculus-engine/src/homunculus/auth/`,
+`admin/`). Active Directory (LDAP) ile giriş ayrı bir iştir (Plan 2) ve henüz kurulmadı.
+
+**İzin (permission)**
+- *Basit:* "Panoyu görebilir", "alarm onaylayabilir", "kullanıcı yönetebilir" gibi tek tek haklar.
+- *Homunculus'ta:* 19 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…).
+  Liste kodda yaşar (`auth/permissions.py`), çünkü yazılımın *neler yapabildiği* yazılımın
+  özelliğidir; bunları *kimin* yapabileceği ise hastanenin kararıdır ve veritabanında, gruplarda
+  yaşar. Her API rotası bir izinle korunur. Bir test her rotayı kendi iznine sabitler: izni
+  tanımlanmamış yeni bir rota testten geçemez.
+
+**Grup (group)**
+- *Basit:* Kullanıcıların konulduğu kutu: Hemşire, Sorumlu Hemşire, Hekim, Sistem Yöneticisi…
+  Yönetici yeni kutu açabilir, adını ve içindeki hakları değiştirebilir.
+- *Homunculus'ta:* Her grup bir **izin kümesi** ve bir MFA bayrağı taşır. Bir kullanıcının yetkisi,
+  üye olduğu grupların izinlerinin **birleşimidir**. Her kurumda 11 varsayılan grup hazır gelir.
+  `hospital_admin` (Sistem Yöneticisi) **sistem grubudur**: kural gereği bütün kataloğu taşır
+  (sonraki sürümlerin eklediği izinler dahil); hakları ve MFA bayrağı değiştirilemez, kendisi
+  silinemez. Üyesi olan bir grup da silinemez.
+
+**RBAC (rol tabanlı erişim denetimi)**
+- *Basit:* "Kişiye göre" değil "göreve göre" yetki. Yeni bir hemşire geldiğinde tek tek hak
+  vermek yerine Hemşire grubuna eklenir.
+- *Homunculus'ta:* Girişte kullanıcının izinleri **token'a yazılır** (`perms`); rotalar izni
+  token'dan okur. Her istekte hesabın hâlâ etkin olduğu, kurum üyeliği ve `token_version` sayacı
+  kontrol edilir. Yetkisi değişen kullanıcının sayacı artar; eski token reddedilir, panel fark
+  ettirmeden yenisini alır ve oturum kapanmaz. Pasifleştirme, parola sıfırlama ve MFA sıfırlama
+  ise kullanıcının **bütün oturumlarını** kapatır.
+- *Geçiş notu:* Eski sürümün token'larında bu sayaç yok. Yükseltmeden sonra herkes (mobil dahil)
+  bir kez yeniden giriş yapar.
+
+**Yönetici (administrator)**
+- *Basit:* Kullanıcıları, grupları ve kurum ayarlarını yöneten kişi.
+- *Homunculus'ta:* Yönetici = `hospital_admin` grubunun **yerel** üyesi: parolası olan, etkin, kurumda
+  etkin üyeliği bulunan yerel bir hesap. Başka gruplar üzerinden bütün izinleri toplamış biri
+  yönetici sayılmaz, çünkü özel bir grup yeni sürümün eklediği izni kendiliğinden kazanmaz. Active
+  Directory hesapları da sayılmaz: dizin sunucusu çöktüğünde koğuş kendi yönetiminden kilitlenmemeli.
+  Sistem son yöneticiyi korur: "Son yönetici pasifleştirilemez", "Son yöneticinin yetkisi
+  kaldırılamaz". Her yönetim değişikliği denetim kaydına yazılır (`event_type=admin`: kim, kime,
+  önce, sonra); girişler ve MFA adımları `auth` olarak yazılır.
+- **Her hastanede en az İKİ yerel yönetici olmalı,** her birinin kendi doğrulayıcı telefonu olmalı.
+  Tek yönetici telefonunu kaybederse ya da parolasını unutursa sistem bunu kendi içinden çözemez:
+  kimse kendi MFA'sını ya da parolasını yönetici ekranından sıfırlayamaz; ilk kurulum betiği de var
+  olan bir hesabın parolasını değiştirmez. O zaman hesabı ikinci yönetici sıfırlar. Son çare:
+  `scripts/seed_admin.py` YENİ bir `SEED_ADMIN_EMAIL` ile yeni bir yönetici açar.
+
+**"Kendi yetkinden fazlasını veremezsin" kuralı**
+- *Basit:* Kimse elinde olmayan bir anahtarı başkasına veremez.
+- *Homunculus'ta:* Yönetim işlemini yapan kişinin hakları, yapabileceklerinin sınırıdır:
+  - bir kullanıcıyı düzenlemek, parolasını sıfırlamak ya da gruplarını değiştirmek için o
+    kullanıcının hakları sizinkilerin içinde kalmalı;
+  - bir grubu vermek, açmak, düzenlemek ya da silmek için grubun hakları (değişiklikten önce ve
+    sonra) sizinkilerin içinde kalmalı; `hospital_admin` bütün katalog sayılır;
+  - bir grubun haklarını değiştirmek bütün üyelerini değiştirir, bu yüzden aynı kontrol her üye
+    için de yapılır.
+
+  Haklarınız token'dan değil, veritabanından okunur. Kuralı aşan istek 403 ile reddedilir. Panel,
+  veremeyeceğiniz grubu gri gösterir ve nedenini yazar: "Yetkileriniz bu grubu vermeye yetmiyor."
+- *Kendinize uygulanamayanlar:* Yönetici ekranından kendi parolanızı ya da MFA'nızı sıfırlayamaz,
+  kendinizi pasifleştiremezsiniz (409). Kendi parolanız için "Parolamı değiştir" kullanılır.
+- *Başka kurumla paylaşılan hesap:* Başka bir kurumda da etkin üyeliği olan bir hesabın ya da bir
+  platform operatörünün parolası, MFA'sı, adı, e-postası ve etkinliği bu kurumdan değiştirilemez
+  (409); yalnızca bu kurumdaki grupları değiştirilebilir.
+
+**Kullanıcı yöneticisi (user manager)**
+- *Basit:* Personeli gruplara yerleştirebilen ama "her şeyin yöneticisi" olmayan kişi. Örnek: kendi
+  hemşirelerini Hemşire grubuna ekleyen bir sorumlu hemşire.
+- *Homunculus'ta:* `users.manage` izni olan ama bütün kataloğu taşımayan kullanıcı. Grupları
+  listeleyebilir, kullanıcı açabilir ve yukarıdaki kural içinde kalan grupları verebilir.
+  Varsayılan gruplarda bu izin yalnızca Sistem Yöneticisi'nde vardır; bir yönetici onu yeni bir
+  grupla başkasına verebilir. Panel, yönetici simgesini yalnızca bütün kataloğu taşıyana gösterir.
+
+**Kiracı (tenant) ve kiracı yalıtımı**
+- *Basit:* Kiracı, sistemi kullanan bir kurumdur (hastane). Yalıtım: bir hastanenin kullanıcısı
+  başka bir hastanenin hiçbir kaydını göremez, değiştiremez.
+- *Homunculus'ta:* Token kullanıcının kurumunu (`tenant`) taşır. Kabul, alarm, break-glass (acil
+  erişim oturumu), devir, nöbet ve yapı rotalarının hepsi yalnızca o kurumun kayıtları üzerinde
+  çalışır: başka kurumun bir kaydı "yok" gibi yanıtlanır (404), listeler yalnızca kendi kurumu
+  gösterir. Token'daki kurum adına tek başına güvenilmez; her istekte kurumun etkin olduğu ve
+  kullanıcının orada etkin üyeliği bulunduğu yeniden kontrol edilir.
+
+**Platform operatörü**
+- *Basit:* Hastanenin değil, yazılımı sağlayan tarafın (üreticinin) teknik hesabı.
+- *Homunculus'ta:* Veritabanında `is_platform_support` bayrağıyla işaretlenir; hiçbir grup bu
+  yetkiyi vermez. Yeni bir kurum (kiracı) açabilen tek hesaptır, bunun için de her zaman MFA ile
+  doğrulanmış olmalıdır. Bayrak konduktan sonra operatör MFA ile yeniden giriş yapar. Yeni kurumun
+  ilk yöneticisi `scripts/seed_admin.py` ile açılır.
+- *Karıştırmayın:* "Üretici Destek" grubu (`platform_support`) başka bir şeydir. Yalnızca denetim
+  kaydına ve cihaz uç noktalarına erişim verir, kurum açamaz.
+
+**MFA (iki adımlı doğrulama)**
+- *Basit:* Paroladan sonra telefondaki doğrulayıcı uygulamasının (Google/Microsoft Authenticator)
+  ürettiği 6 haneli kod.
+- *Homunculus'ta:* **Grup bazlıdır** (`mfa_required`): kullanıcının gruplarından biri istiyorsa
+  gereklidir. Varsayılan olarak Sistem Yöneticisi, Sorumlu Hekim, Ünite Hekimi ve Üretici Destek
+  gruplarında açıktır. Kod girilmeden API yalnızca doğrulayıcı kurma ve doğrulama, profil okuma ve
+  token yenileme isteklerini kabul eder; başka hiçbir rotaya izin vermez. İlk girişte panel QR kodunu
+  ve elle giriş anahtarını gösterir. 5 yanlış kod doğrulamayı 5 dakika kilitler; kullanılmış bir kod
+  ikinci kez geçmez. Telefonunu kaybeden kullanıcının MFA'sını bir yönetici sıfırlar. Mobil
+  uygulamada henüz kod adımı yok, bu yüzden MFA isteyen bir gruptaki kişi mobili şimdilik kullanamaz.
+
+**"Parolamı değiştir"**
+- *Homunculus'ta:* Canlı modda kullanıcı menüsündedir. Mevcut parola, yeni parola ve tekrarı
+  istenir; sunucu en az 8 karakter ister. Değişiklik diğer bütün oturumları kapatır, bu oturum
+  yeni bir token çiftiyle açık kalır. Yöneticinin verdiği parola geçicidir; kullanıcı onu ilk
+  girişte buradan değiştirmelidir (sistem bunu henüz zorlamıyor). Active Directory hesabı "Parola
+  Active Directory tarafından yönetiliyor" yanıtını alır.
+
+**Yetkilerin yeniden okunması**
+- *Basit:* Panelin menüde gösterdiği haklar bir ipucudur; asıl kararı her istekte sunucu verir.
+- *Homunculus'ta:* Panel, fark ettirmeden yenilenen her token'dan hakları yeniden okur, böylece bir
+  yetki değişikliği oturum kapanmadan menüye yansır. Personel sekmesi açılırken haklar `/auth/me`
+  üzerinden veritabanından okunur: yeni bir sürüm izin eklediyse, eski token'ı olan bir yönetici de
+  gerçek haklarını görür. Bir hak kaybedilirse sunucu 403 der; hata her zaman kapalı yönde olur.
+
+**Oturumun korunması ve "Tekrar dene"**
+- *Homunculus'ta:* Sayfa yenilenince panel kayıtlı oturumu sunucuya sorar. Sunucu oturumu
+  **reddederse** (401/403) oturum temizlenir ve giriş ekranı gelir. Sunucuya **ulaşılamazsa** (ağ
+  kesintisi, 5xx) oturum kapatılmaz: giriş ekranı "Sunucuya şu an ulaşılamıyor; oturumunuz açık"
+  der ve "Tekrar dene" düğmesini gösterir. Aynı anda yalnızca bir deneme yapılır. Böylece bir kesinti
+  klinisyeni vardiya ortasında oturumdan atmaz.
+
+**Canlı mod: simüle edilen hiçbir şey gösterilmez**
+- *Basit:* Gerçek sistemde, arkasında gerçek bir kayıt olmayan hiçbir düğme "çalışıyormuş gibi"
+  durmaz.
+- *Homunculus'ta:* `?live=1` iken panel şunları gizler:
+  - simülasyona dayanan yönetim sekmeleri (raporlar, yapı, cihazlar, denetim, arşiv, oturumlar,
+    güvenlik) ve simülasyona dayanan klinik sayfalar;
+  - simülasyon kontrolleri (alarm tetikleme, zaman ölçeği, break-glass, çevrimdışı ve otomatik
+    alarm anahtarları);
+  - alarm kartındaki "RRT'ye Eskale Et", "Sessize Al" ve "Ertele" düğmeleri, onayın nedeni ve
+    notu.
+
+  Simülasyon saati ve otomatik alarm motoru durur; gerçek bir alarmın yaşı duvar saatine göre
+  sayılır. Gizlenenler gerçek API'ye bağlandıkça geri gelecek. Demo modu (`?demo=1`) eskisi gibi
+  her şeyi gösterir.
+
+---
+
 ## 4. "Neden bunu kullanmıyoruz" köşesi
 
 Projenin en öğretici kararları. Bir şeyi *yapmamak* da bir tasarım kararıdır.

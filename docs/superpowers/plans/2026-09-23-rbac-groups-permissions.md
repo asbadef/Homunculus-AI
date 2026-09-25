@@ -1,5 +1,135 @@
 # RBAC — groups, permissions, user management (Plan 1 of 2) — Implementation Plan
 
+## Execution status — 2026-09-25
+
+Tasks 1–19 and 7b are implemented on `feat/ldap-rbac` (spec `4a94487`, this plan `6a74ed9`). Each
+was reviewed, and the review follow-ups are committed (table below). Task 20 adds the Turkish glossary (§3.5 of
+`docs/homunculus-rehber-TR.md`), fixes the deploy files and writes this record. The step text
+below is kept as the design record. Where it differs from the committed code and tests, the code
+is authoritative (see the "as amended in review" notes). The checkboxes are marked from the commit
+record and the final runs below. **Nothing has been deployed.**
+
+**The end-to-end check found a deploy blocker, B1. Task 20 records it and does not fix it.**
+
+**B1 — `tenant_memberships.role`: a new membership cannot be written on a migrated database.**
+Migration 0006 leaves the column as the PostgreSQL enum `userrole` (made nullable). Since Task 2
+the model maps it as `String(40)`, which is what the tests' `Base.metadata.create_all` builds.
+SQLAlchemy inserts every column that has no default, so each ORM insert of a `TenantMembership`
+sends `role = NULL::VARCHAR`, and PostgreSQL refuses it: `column "role" is of type userrole but
+expression is of type character varying`. Reproduced on a fresh `alembic upgrade head`:
+- `scripts/seed_admin.py` cannot create an administrator. It raises, and exits 1. The API
+  container runs `alembic upgrade head && python scripts/seed_admin.py && exec uvicorn …`, so a
+  boot whose seed must create an account (a fresh install, or a recovery with a new
+  `SEED_ADMIN_EMAIL`) never starts the API, and the container restart-loops. A seed that finds
+  its existing account and membership writes no membership and is unaffected.
+- `POST /admin/users` answers 500 for every new user, so the staff tab cannot add anyone.
+
+The suite misses it for two reasons. The DB fixtures build the schema from the models, not the
+migrations. The schema-parity test (`test_migration_0006_schema_parity.py`) covers only the RBAC
+tables and `users`.
+
+The fix needs a decision:
+- **(a)** Stop the ORM writing the column, with no migration: drop `role` from the mapping
+  (`__mapper_args__ = {"exclude_properties": ["role"]}`), or give it a `server_default` so the
+  insert omits it.
+- **(b)** A migration that turns the column into `varchar(40)`, or that drops it together with the
+  `userrole` type (the cleanup already listed in the follow-ups). The e2e walk below passed 72/72
+  on exactly that schema.
+
+Either way, add a regression test that runs `alembic upgrade head` and then the seed and
+`POST /admin/users` against the migrated schema, and widen the parity test to
+`tenant_memberships`.
+
+| Task | Implementation | Review follow-ups (fixes; plan/spec notes) |
+| --- | --- | --- |
+| 1 Permission catalogue | `93f6c18` | `a04c6f8`; `9083458`, `f1e7c2c` |
+| 2 Models | `1d1b5f8` | `2d0c40c`, `0bd5c95`; `3435a66`, `f831534` |
+| 3 Migration 0006 | `863809e`, `096134c` | `a7e51ef`; `d485ee8`, `66aac55` |
+| 4 Group service | `73f16b8` | `fe9af0d`; `d9ce260`, `5982faa` |
+| 5 `Principal`, `require_permission`, MFA gate | `e9cfec1` | `fdec596`; `961e8ae`, `d718aa6` |
+| 6 Sign-in, tokens, `/auth/me`, `/auth/password` | `5eb67fc` | `d4e9255`, `8fb8d97`; `a917d05`, `80756e7` |
+| 7 Route guards by permission; `UserRole` removed | `af51f61` | `6dde2e9`; `9093b7c` |
+| 7b Tenant isolation | `520fa3d` | `2c94e46`; `4db409b`, `02040f7`, `854b1f9`, `bb16c23` |
+| 8 Board routes → `Caller` | `9a54ab3` | `7e646c6`; `e6c05fc` |
+| 9 Production JWT resolver | `4bc4349` | `5945dab`; `a813a97`, `ae125c1` |
+| 10 `/admin` API | `a01fd84` | `2d14f02`, `7e5948e`, `f6440ed`; `8471641`, `04b2a52`, `eff03f0`, `e08f6e1` |
+| 11 `ui.jsx` primitives | `ddb9e02` | — |
+| 12 Permission keys, demo perms | `2e74b63` | `f85f57a` |
+| 13 `liveAuth.js` session from the token | `fae1f7b` | — |
+| 14 Live store: perms, MFA enrolment, ack | `4c5e246` | `7661c94` |
+| 15 API client, adapters, store admin actions | `485f425` | `ee02f09` |
+| 16 i18n `rbac` strings | `768e5df` | `95e87b2` |
+| 17 `GroupAdmin` | `ca27d28` | `5d1669a` |
+| 18 `LiveUserAdmin`, `LiveStaffTab` | `a768ad1` | `bf1aeae`; `8ab4fb8` |
+| 19 `ClinicalDemo.jsx` integration | `dae7f02` | `ef330d6`, `d881045`; `b518765`, `1e8b67a` |
+| 20 Docs, deploy files, e2e, this record | the commit that adds this section | — |
+
+**Verification (2026-09-25, code at `d881045`):**
+- **Backend.** `pytest -q --ignore=tests/test_infinity_research_api.py -p no:cacheprovider`, with
+  `TEST_DATABASE_URL` set: **1260 passed, 1 skipped, 1 failed**. The one failure is
+  `tests/test_infinity_vm_pilot.py::test_capture_output_inside_repository_is_rejected`, which
+  belongs to the untracked Infinity files and is outside this plan.
+- **Frontend.** `npx vitest run`: **637 tests passed in 30 files**. `src/InfinityBeds.test.jsx`, an
+  untracked Infinity file, fails at import (`./clinicalUi.jsx` does not exist) and is outside this
+  plan. `npx vite build` is clean apart from the existing warning about a chunk over 500 kB. The
+  default build bundles the Render URL from `dashboard/.env.production` (see the deploy notes).
+- **Deploy files.** `docker compose config` refuses both shipped examples: the bridge's for its
+  blank `TENANT_TOKEN`, the local one for its blank `JWT_SECRET`, `PHI_ENCRYPTION_KEY` and
+  `TENANT_TOKEN`. Both render with synthetic values, and `render.yaml` parses and declares
+  `PHI_ENCRYPTION_KEY`.
+- **End-to-end (Task 20 Step 4), API level.** Run against `prodserver` under uvicorn on
+  PostgreSQL 16, in a throwaway database (`homunculus_e2e`, migrated with `alembic upgrade head`,
+  dropped afterwards). Accounts and data were synthetic.
+  - **On the schema exactly as migrated:** the seed fails and `POST /admin/users` answers 500 (B1).
+  - **With `tenant_memberships.role` converted to `varchar(40)` on that database only: 72/72 checks
+    passed.**
+    - **MFA.** The seeded admin signs in as "MFA pending, not enrolled". The token carries 19
+      perms, `hospital_admin`, the tenant and `tv`. A pending session gets 403 `mfa_required` on the
+      board and `/admin`, while `/auth/me` works. The QR URI's code verifies. A used code is refused
+      (401, replay). An enrolled user cannot re-enrol from a pending session (403).
+    - **Board.** The JWT and the device token both read the board and get a stream ticket. A user
+      without `board.view` gets 403, and `/ingest` with a JWT gets 403. A synthetic observation
+      posted with the device token shows on tenant A's board and not on tenant B's.
+    - **Groups and users.** The 11 default groups and the 19-key catalogue are listed. A nurse is
+      created; they sign in without MFA, hold exactly the nurse rights and are refused `/admin` and
+      `/audit`.
+    - **Rights change.** Moving the nurse to `charge_nurse` makes their old token 401. The refresh
+      returns the new rights without a sign-out.
+    - **No grant beyond your own rights.** A user manager (the nurse rights plus `users.manage`)
+      lists groups and users and creates a nurse. It is refused (403) when it tries to grant
+      `charge_nurse` or `hospital_admin`, reset the administrator, regroup a charge nurse or create a
+      group. Resetting its own password through `/admin` is a 409.
+    - **Sessions end.** After an admin password reset, the old access and refresh tokens are 401,
+      the old password is 401 and the new one signs in. In the own password change, a short or wrong
+      password is refused (400) and a fresh pair is returned; the old refresh token is then 401.
+      After a deactivation, the next request, the refresh and a sign-in are all 401.
+    - **Guards (409).** Deactivating yourself (`Kendi hesabınızı pasifleştiremezsiniz`); your own
+      MFA reset; the only administrator leaving `hospital_admin` (`Son yönetici yetkisi
+      kaldırılamaz`); editing or deleting the system group; deleting a group with members. A second
+      local administrator can be created, and is sent to MFA enrolment.
+    - **Platform operator.** A hospital administrator cannot create a tenant (403). An account
+      flagged in SQL needs MFA even from a non-MFA group: it gets 403 before MFA and 201 after. The
+      tenant cannot reset that account (409). The seed refuses `change-me`, creating nothing and
+      exiting 0, and creates tenant B's administrator from a strong password.
+    - **Tenant isolation.** Each administrator lists only their own tenant. B gets 404 on A's
+      structure and users, and 422 when granting A's group. B's user list and audit hold nothing of
+      A's. A validly signed token naming a tenant where the user has no membership gets 401 on the
+      routers and on the board.
+    - **Cut-over.** A token without `tv` gets 401.
+    - **Audit.** `GET /audit?event_type=admin` lists `user.create`, `user.groups`, `user.update`,
+      `user.password_reset` and `group.create`, each with its actor. `event_type=auth` lists
+      `login.ok`/`login.fail`, `mfa.enrol`/`mfa.ok`/`mfa.fail` and
+      `password.change`/`password.change.fail`. A nurse gets 403.
+  - **Step 4.7 as written is superseded by Task 10's self rule.** An administrator deactivating
+    themselves gets `Kendi hesabınızı pasifleştiremezsiniz`, never `Son yönetici pasifleştirilemez`.
+    The last-admin guard shows through self-demotion instead.
+- **Not run:**
+  - the two-browser UI walk (the QR on screen, the sidebar contents, the UI's wording of refusals).
+    The Vitest suites cover the dashboard side, but nobody clicked through it;
+  - the VM deployment (see the deploy notes in Task 20, B1 first).
+
+---
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the `UserRole` enum with administrator-defined groups that carry permission sets, put the permissions in the JWT with a per-user `token_version`, guard every route by permission, and give the dashboard a real user/group administration screen — as specified in `docs/superpowers/specs/2026-09-23-ldap-rbac-design.md` (§1–§6, §8–§10). LDAP/AD is Plan 2.
@@ -214,7 +344,7 @@ and the seed cannot create the administrator. The branch reaches the VM only aft
 | `liveAuth.test.js`, `liveStore.test.js`, `liveStore.live.test.js` | Updated for `perms`. |
 | `package.json` | `qrcode` dependency. |
 
-**Docs:** `docs/homunculus-rehber-TR.md` glossary entries (Task 21).
+**Docs:** `docs/homunculus-rehber-TR.md` glossary entries (Task 20).
 
 ---
 
@@ -224,7 +354,7 @@ and the seed cannot create the administrator. The branch reaches the VM only aft
 - Create: `homunculus-engine/src/homunculus/auth/permissions.py`
 - Test: `homunculus-engine/tests/test_permissions.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # homunculus-engine/tests/test_permissions.py
@@ -372,12 +502,12 @@ def test_every_default_group_matches_the_spec_table_exactly():
         assert len(g["permissions"]) == len(set(g["permissions"])), slug   # no duplicates
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_permissions.py -q`
 Expected: `ModuleNotFoundError: No module named 'homunculus.auth.permissions'`
 
-- [ ] **Step 3: Write the catalogue**
+- [x] **Step 3: Write the catalogue**
 
 ```python
 # homunculus-engine/src/homunculus/auth/permissions.py
@@ -556,12 +686,12 @@ def _self_check() -> None:
 _self_check()
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_permissions.py -q`
 Expected: `12 passed`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add homunculus-engine/src/homunculus/auth/permissions.py homunculus-engine/tests/test_permissions.py
@@ -580,7 +710,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `homunculus-engine/src/homunculus/auth/models.py`
 - Test: `homunculus-engine/tests/test_auth_models.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # homunculus-engine/tests/test_auth_models.py
@@ -638,12 +768,12 @@ def test_ldap_mapping_is_unique_per_tenant_dn_and_group():
     assert "uq_ldap_mapping" in names
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_auth_models.py -q`
 Expected: `ImportError: cannot import name 'Group'`
 
-- [ ] **Step 3: Rewrite `auth/models.py`**
+- [x] **Step 3: Rewrite `auth/models.py`**
 
 Replace the whole file with:
 
@@ -863,7 +993,7 @@ class LdapGroupMapping(Base):
     )
 ```
 
-- [ ] **Step 4: Run the model tests and the whole pure suite**
+- [x] **Step 4: Run the model tests and the whole pure suite**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_auth_models.py -q`
 Expected: `7 passed`
@@ -873,7 +1003,7 @@ Expected: everything that passed before still passes (`TenantMembership.role` is
 `seed.py` as an enum member — that write is a `UserRole` value going into a `String` column; the
 DB-backed seed test is skipped without `TEST_DATABASE_URL`, and Task 7 rewrites the seed).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add homunculus-engine/src/homunculus/auth/models.py homunculus-engine/tests/test_auth_models.py
@@ -890,7 +1020,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Create: `homunculus-engine/alembic/versions/0006_groups_and_permissions.py`
 - Test: `homunculus-engine/tests/test_migration_0006_defaults.py`, `tests/test_migration_0006_conversion.py`, `tests/test_migration_0006_schema_parity.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 The migration carries a *frozen copy* of the defaults (a migration must not change when the
 live defaults change later). The test pins that copy to a snapshot **inside the test** — never
@@ -980,12 +1110,12 @@ def test_revision_chain():
     assert m.revision == "0006" and m.down_revision == "0005"
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_migration_0006_defaults.py -q`
 Expected: `FileNotFoundError` (module path does not exist)
 
-- [ ] **Step 3: Write the migration**
+- [x] **Step 3: Write the migration**
 
 ```python
 # homunculus-engine/alembic/versions/0006_groups_and_permissions.py
@@ -1258,19 +1388,19 @@ def downgrade() -> None:
     op.alter_column("tenant_memberships", "role", nullable=False)
 ```
 
-- [ ] **Step 4: Run the pin test**
+- [x] **Step 4: Run the pin test**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_migration_0006_defaults.py -q`
 Expected: `4 passed`
 
-- [ ] **Step 5: If a test database is available, run the migration against it**
+- [x] **Step 5: If a test database is available, run the migration against it**
 
 Only when `TEST_DATABASE_URL` is set (the fixture's guard requires "test" in the database name):
 
 Run: `cd homunculus-engine && DATABASE_URL="$TEST_DATABASE_URL" .venv/Scripts/python.exe -m alembic upgrade head && DATABASE_URL="$TEST_DATABASE_URL" .venv/Scripts/python.exe -m alembic downgrade 0005 && DATABASE_URL="$TEST_DATABASE_URL" .venv/Scripts/python.exe -m alembic upgrade head`
 Expected: three clean runs, no error. (The DB-backed pytest fixture drops and recreates the tables afterwards, so this leaves nothing behind.)
 
-- [ ] **Step 5b: Prove the legacy conversion on a real database**
+- [x] **Step 5b: Prove the legacy conversion on a real database**
 
 ```python
 # homunculus-engine/tests/test_migration_0006_conversion.py
@@ -1398,7 +1528,7 @@ def test_email_case_collisions_block_the_upgrade_before_any_change(clean_db):
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_migration_0006_conversion.py -q`
 Expected: `2 passed` with `TEST_DATABASE_URL`, `2 skipped` without.
 
-- [ ] **Step 5c: Prove the migration and the models describe the same RBAC schema**
+- [x] **Step 5c: Prove the migration and the models describe the same RBAC schema**
 
 Tests build the schema with `Base.metadata.create_all`; production builds it with Alembic. A drift
 between the two passes every test and fails on the ward, so compare them with Alembic's own
@@ -1488,11 +1618,11 @@ Expected: `1 passed` with `TEST_DATABASE_URL` (an empty diff list), `1 skipped` 
 difference, fix the MIGRATION to match the model unless the model is wrong — the models are what
 every service is written against.
 
-- [ ] **Step 5d: The single-head guard**
+- [x] **Step 5d: The single-head guard**
 
 `tests/test_audit_postgres.py::test_migration_chain_has_a_single_head` pins the head revision; bump its expected value from `"0005"` to `"0006"` (one-line change, separate commit `test(db): bump the single-head guard to 0006`).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add homunculus-engine/alembic/versions/0006_groups_and_permissions.py homunculus-engine/tests/test_migration_0006_defaults.py homunculus-engine/tests/test_migration_0006_conversion.py homunculus-engine/tests/test_migration_0006_schema_parity.py
@@ -1509,7 +1639,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Create: `homunculus-engine/src/homunculus/auth/groups.py`
 - Test: `homunculus-engine/tests/test_groups_service.py` (DB-backed, skipped without `TEST_DATABASE_URL`)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # homunculus-engine/tests/test_groups_service.py
@@ -1677,12 +1807,12 @@ async def test_a_user_without_membership_has_no_tenant(db_session):
     assert await tenant_of_user(db_session, u.id) is None
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_groups_service.py -q`
 Expected: `ModuleNotFoundError: No module named 'homunculus.auth.groups'` — the import fails before any skip
 
-- [ ] **Step 3: Write the service**
+- [x] **Step 3: Write the service**
 
 ```python
 # homunculus-engine/src/homunculus/auth/groups.py
@@ -1855,12 +1985,12 @@ async def tenant_of_user(db: AsyncSession, user_id: uuid.UUID) -> TenantRef | No
     return next(TenantRef(id=row.id, slug=row.slug) for row in rows if row.slug == slug)
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_groups_service.py -q`
 Expected: `10 passed` with `TEST_DATABASE_URL`, `10 skipped` without — and no import error either way.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add homunculus-engine/src/homunculus/auth/groups.py homunculus-engine/tests/test_groups_service.py
@@ -1879,7 +2009,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `homunculus-engine/src/homunculus/auth/dependencies.py` (rewrite)
 - Test: `homunculus-engine/tests/test_auth_dependencies.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # homunculus-engine/tests/test_auth_dependencies.py
@@ -2046,12 +2176,12 @@ def test_an_unknown_user_is_refused(real_client):
     assert client.get("/any", headers=_bearer(token)).status_code == 401
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_auth_dependencies.py -q`
 Expected: `ImportError: cannot import name 'Principal'`
 
-- [ ] **Step 3: Rewrite `auth/dependencies.py`**
+- [x] **Step 3: Rewrite `auth/dependencies.py`**
 
 ```python
 """
@@ -2190,7 +2320,7 @@ def require_roles(*roles):
     return _check
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_auth_dependencies.py -q`
 Expected: `12 passed`
@@ -2198,7 +2328,7 @@ Expected: `12 passed`
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py`
 Expected: no import errors; the same pass count as before this task.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add homunculus-engine/src/homunculus/auth/dependencies.py homunculus-engine/tests/test_auth_dependencies.py
@@ -2219,7 +2349,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `homunculus-engine/src/homunculus/auth/router.py` (rewrite)
 - Test: `homunculus-engine/tests/test_auth_tokens.py` (pure), `homunculus-engine/tests/test_auth_login.py` (DB-backed)
 
-- [ ] **Step 1: Write the failing pure tests**
+- [x] **Step 1: Write the failing pure tests**
 
 ```python
 # homunculus-engine/tests/test_auth_tokens.py
@@ -2332,12 +2462,12 @@ def test_login_request_accepts_the_legacy_email_field_as_an_alias():
         LoginRequest(password="x")
 ```
 
-- [ ] **Step 2: Run the pure tests to verify they fail**
+- [x] **Step 2: Run the pure tests to verify they fail**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_auth_tokens.py -q`
 Expected: `ImportError: cannot import name 'AuthContext'`
 
-- [ ] **Step 3: Extend `auth/jwt.py`**
+- [x] **Step 3: Extend `auth/jwt.py`**
 
 Replace `create_refresh_token` with:
 
@@ -2357,7 +2487,7 @@ def create_refresh_token(subject: str, extra: dict[str, Any] | None = None) -> s
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 ```
 
-- [ ] **Step 4: Rewrite `auth/service.py`**
+- [x] **Step 4: Rewrite `auth/service.py`**
 
 ```python
 """
@@ -2541,7 +2671,7 @@ async def change_password(db: AsyncSession, user: User, current: str, new: str) 
     await db.commit()
 ```
 
-- [ ] **Step 5: Rewrite `auth/schemas.py`**
+- [x] **Step 5: Rewrite `auth/schemas.py`**
 
 ```python
 """Pydantic request/response schemas for auth endpoints."""
@@ -2614,7 +2744,7 @@ class PasswordChangeRequest(BaseModel):
     new_password: str
 ```
 
-- [ ] **Step 6: Create `auth/audit.py`**
+- [x] **Step 6: Create `auth/audit.py`**
 
 ```python
 # homunculus-engine/src/homunculus/auth/audit.py
@@ -2638,7 +2768,7 @@ def append_audit(request: Request, *, tenant: str | None, event_type: str, subje
     log.append(AuditEvent(tenant or "-", event_type, "", subject, payload))
 ```
 
-- [ ] **Step 7: Rewrite `auth/router.py`**
+- [x] **Step 7: Rewrite `auth/router.py`**
 
 ```python
 """
@@ -2801,7 +2931,7 @@ async def password(body: PasswordChangeRequest, request: Request,
     return TokenResponse(**issue_tokens(current_user, ctx, mfa_verified=principal.mfa_verified))
 ```
 
-- [ ] **Step 7b: `tv` becomes mandatory**
+- [x] **Step 7b: `tv` becomes mandatory**
 
 Every token the service now issues carries `tv`, so a token without it is from the old code (it
 has no `perms` either and would only collect 403s). Refuse it with 401 so the client refreshes into
@@ -2821,12 +2951,12 @@ Any existing test in that file that mints a token without `tv` must pass `tv` ex
 module docstring, the `get_current_user_pre_mfa` line becomes "ONLY for /auth/totp/verify and
 /auth/me" (setup now goes through `get_user_for_enrolment`).
 
-- [ ] **Step 8: Run the pure tests**
+- [x] **Step 8: Run the pure tests**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_auth_tokens.py tests/test_auth_dependencies.py -q`
 Expected: all pass
 
-- [ ] **Step 9: Write the DB-backed sign-in tests**
+- [x] **Step 9: Write the DB-backed sign-in tests**
 
 ```python
 # homunculus-engine/tests/test_auth_login.py
@@ -3037,7 +3167,7 @@ async def test_sign_ins_are_audited_without_the_password(client, world):
         assert PASSWORD not in str(r.payload) and "yanlis" not in str(r.payload)
 ```
 
-- [ ] **Step 10: Run the DB-backed tests**
+- [x] **Step 10: Run the DB-backed tests**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_auth_login.py -q`
 Expected: `12 passed` with `TEST_DATABASE_URL`, `12 skipped` without.
@@ -3046,7 +3176,7 @@ Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest -q --ignore=tes
 Expected: all pass except the three `tests/test_auth_seed.py` tests (the seed cannot set `username`
 until Task 7 rewrites it) and the unrelated `tests/test_infinity_vm_pilot.py` PowerShell test.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add homunculus-engine/src/homunculus/auth/jwt.py homunculus-engine/src/homunculus/auth/service.py homunculus-engine/src/homunculus/auth/schemas.py homunculus-engine/src/homunculus/auth/audit.py homunculus-engine/src/homunculus/auth/router.py homunculus-engine/src/homunculus/auth/dependencies.py homunculus-engine/tests/test_auth_tokens.py homunculus-engine/tests/test_auth_login.py homunculus-engine/tests/test_auth_dependencies.py
@@ -3069,7 +3199,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `homunculus-engine/src/homunculus/auth/seed.py` (rewrite)
 - Modify: `homunculus-engine/tests/test_auth_seed.py` (rewrite)
 
-- [ ] **Step 1: Rewrite the seed test (it will fail until the seed is rewritten)**
+- [x] **Step 1: Rewrite the seed test (it will fail until the seed is rewritten)**
 
 ```python
 # homunculus-engine/tests/test_auth_seed.py
@@ -3152,7 +3282,7 @@ async def test_seed_refuses_an_email_the_login_api_would_reject(db_session):
         await seed_bootstrap(db_session, **{**ARGS, "email": "admin@hastane.local"})
 ```
 
-- [ ] **Step 2: Rewrite `auth/seed.py`**
+- [x] **Step 2: Rewrite `auth/seed.py`**
 
 ```python
 """
@@ -3259,7 +3389,7 @@ async def seed_bootstrap(
     return tenant, user
 ```
 
-- [ ] **Step 3: Move the admission router to permissions**
+- [x] **Step 3: Move the admission router to permissions**
 
 In `admission/router.py`, replace the two auth imports:
 
@@ -3307,7 +3437,7 @@ Then change every guard — the old text on the left becomes the new text on the
 
 The `_admin`-style comment lines that mention roles ("Attending claims themselves; charge nurse / admin assign…") stay as they are.
 
-- [ ] **Step 4: Move the escalation router to permissions**
+- [x] **Step 4: Move the escalation router to permissions**
 
 In `escalation/router.py`, replace the import line `from homunculus.auth.dependencies import get_current_active_user` with `from homunculus.auth.dependencies import require_permission`, replace the docstring's "Role guards follow…" block with:
 
@@ -3333,7 +3463,7 @@ and change the guards:
 | acknowledge_alert, snooze_alert | `user: User = Depends(require_permission("alerts.ack")),` |
 | activate_break_glass, extend_break_glass, close_break_glass | `user: User = Depends(require_permission("break_glass.use")),` |
 
-- [ ] **Step 5: Move the tenant router to permissions and seed groups on tenant creation**
+- [x] **Step 5: Move the tenant router to permissions and seed groups on tenant creation**
 
 In `tenant/router.py`:
 
@@ -3368,7 +3498,7 @@ and in `create_tenant`, after `db.add(tenant)` add a flush and the group seeding
     await db.commit()
 ```
 
-- [ ] **Step 6: Delete `UserRole`, the shim, and the role list in the TOTP docstring**
+- [x] **Step 6: Delete `UserRole`, the shim, and the role list in the TOTP docstring**
 
 In `auth/models.py` delete the whole `class UserRole(str, enum.Enum): …` block, the `MFA_REQUIRED_ROLES` set that Task 2 kept alongside it (Task 6's `service.py` no longer imports it), and the `import enum` line. In `auth/dependencies.py` delete everything from the `# TEMPORARY SHIM` comment block to the end of the file. In `auth/totp.py` replace the docstring with:
 
@@ -3379,17 +3509,17 @@ Whether MFA is required is a property of the user's groups (`groups.mfa_required
 """
 ```
 
-- [ ] **Step 7: Verify nothing tracked still references the old names**
+- [x] **Step 7: Verify nothing tracked still references the old names**
 
 Run: `cd homunculus-engine && grep -rn "require_roles\|UserRole\|MFA_REQUIRED_ROLES\|get_current_active_user" src tests --include=*.py`
 Expected: only `src/homunculus/api/infinity_research.py` (untracked, Infinity branch) and, for `get_current_active_user`, only its alias definition in `auth/dependencies.py`.
 
-- [ ] **Step 8: Run the suite**
+- [x] **Step 8: Run the suite**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py`
 Expected: all pass (the seed tests are skipped without `TEST_DATABASE_URL`; with it, 4 pass).
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add homunculus-engine/src/homunculus/admission/router.py homunculus-engine/src/homunculus/escalation/router.py homunculus-engine/src/homunculus/tenant/router.py homunculus-engine/src/homunculus/auth/models.py homunculus-engine/src/homunculus/auth/dependencies.py homunculus-engine/src/homunculus/auth/totp.py homunculus-engine/src/homunculus/auth/seed.py homunculus-engine/tests/test_auth_seed.py
@@ -3467,7 +3597,7 @@ per-tenant too.
     - `HandoverOpen`: its `unit_id`, every `admission_ids` entry, and `incoming_user_id`.
     - `ShiftScheduleCreate`: its `unit_id`, and each assignment's bed, nurse and charge nurse.
 
-- [ ] **Step 1: Write `tests/test_tenant_isolation.py` first (DB-backed, `requires_db`)**
+- [x] **Step 1: Write `tests/test_tenant_isolation.py` first (DB-backed, `requires_db`)**
 
 Fixture:
 - Two tenants, A and B. Each has site → unit → room → bed, a patient with an admission, an alert,
@@ -3500,29 +3630,29 @@ Tests (parametrise where it reads well):
 - **`POST /tenant/tenants`:** `hospital_admin` → 403; a user with `is_platform_support` → 201, and
   the new tenant has 11 groups.
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `cd homunculus-engine && TEST_DATABASE_URL=… .venv/Scripts/python.exe -m pytest tests/test_tenant_isolation.py -q -p no:cacheprovider`
 Expected: most tests fail: 200/201 where 404/422/403 is wanted.
 
-- [ ] **Step 3: Implement the rules above**
+- [x] **Step 3: Implement the rules above**
 
 Keep the scoping in the routers and `tenant/scope.py`. Pass the tenant into a service function
 only where the query itself lists rows (the admission list). One helper per owner type, each
 returning the owning tenant id or None, makes rules 2 and 3 a single comparison at each call site.
 
-- [ ] **Step 4: PHI wording**
+- [x] **Step 4: PHI wording**
 
 The `GET /admissions/{id}/patient` docstring and the `admission/schemas.py` module docstring
 change to: identity is returned only by this endpoint, to holders of `admissions.view` in the
 patient's own tenant. Reads are not audited yet (see Follow-ups).
 
-- [ ] **Step 5: Run the suite**
+- [x] **Step 5: Run the suite**
 
 Run: `cd homunculus-engine && TEST_DATABASE_URL=… .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py -p no:cacheprovider`
 Expected: only the known `test_infinity_vm_pilot.py::test_capture_output_inside_repository_is_rejected` fails.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add homunculus-engine/src/homunculus/auth/dependencies.py homunculus-engine/src/homunculus/tenant/scope.py homunculus-engine/src/homunculus/admission/router.py homunculus-engine/src/homunculus/admission/schemas.py homunculus-engine/src/homunculus/escalation/router.py homunculus-engine/src/homunculus/tenant/router.py homunculus-engine/tests/test_route_permissions.py homunculus-engine/tests/test_tenant_isolation.py
@@ -3542,7 +3672,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `homunculus-engine/tests/test_dual_credentials.py`
 - Test: `homunculus-engine/tests/test_board_permissions.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Replace the fixture in `tests/test_dual_credentials.py` with one that returns a `Caller`:
 
@@ -3675,12 +3805,12 @@ def test_the_device_token_is_exempt_and_keeps_the_body_role(client):
     assert client.get("/audit", headers=_hdr("tok")).status_code == 200
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_dual_credentials.py tests/test_board_permissions.py -q`
 Expected: `ImportError: cannot import name 'Caller'`
 
-- [ ] **Step 3: Add `Caller` to `api/identity.py`**
+- [x] **Step 3: Add `Caller` to `api/identity.py`**
 
 Append to the module (keep `hospital_for_slugs` and `unmatched_hospital_keys`):
 
@@ -3711,7 +3841,7 @@ class Caller:
 
 Move the `from dataclasses import dataclass` line up with the other imports.
 
-- [ ] **Step 4: Change `create_app` in `api/app.py`**
+- [x] **Step 4: Change `create_app` in `api/app.py`**
 
 Add the import `from homunculus.api.identity import Caller` next to the other `homunculus.api` imports. In the `create_app` signature replace
 
@@ -3826,7 +3956,7 @@ Then update each route. `/ingest`: replace its first line `hospital = await _hos
         hospital = caller.hospital
 ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_dual_credentials.py tests/test_board_permissions.py tests/test_api_ack.py tests/test_api_audit.py -q`
 Expected: all pass (`test_api_ack.py` and `test_api_audit.py` use the device token and are unchanged).
@@ -3834,7 +3964,7 @@ Expected: all pass (`test_api_ack.py` and `test_api_audit.py` use the device tok
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py`
 Expected: only `tests/test_jwt_hospital_lookup.py` fails (it still imports the old resolver — Task 9 replaces it).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add homunculus-engine/src/homunculus/api/identity.py homunculus-engine/src/homunculus/api/app.py homunculus-engine/tests/test_dual_credentials.py homunculus-engine/tests/test_board_permissions.py
@@ -3852,7 +3982,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Delete: `homunculus-engine/tests/test_jwt_hospital_lookup.py`
 - Test: `homunculus-engine/tests/test_jwt_caller.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # homunculus-engine/tests/test_jwt_caller.py
@@ -3943,12 +4073,12 @@ def test_a_weak_jwt_secret_is_named():
     assert jwt_secret_problem("x" * 48) is None
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_jwt_caller.py -q`
 Expected: `ImportError: cannot import name 'UserAuthRow'`
 
-- [ ] **Step 3: Replace the resolver in `api/prodserver.py`**
+- [x] **Step 3: Replace the resolver in `api/prodserver.py`**
 
 Delete `_decode_access_token`, `make_jwt_hospital_resolver`, `_tenant_slug_query` and `_read_tenant_slugs` (keep `_parse_tenants`, `_audit`, `warn_about_unmatched_tenants`, `_read_all_tenant_slugs`, `make_startup_tenant_check`, `_identities`). Add, after `_audit`:
 
@@ -4131,7 +4261,7 @@ change `JWT_SECRET: ${JWT_SECRET}` to
 Add `homunculus-engine/src/homunculus/auth/jwt.py` and `deploy/local/docker-compose.yml` to this
 task's commit.
 
-- [ ] **Step 4: Delete the old test and run**
+- [x] **Step 4: Delete the old test and run**
 
 Run: `git rm -q homunculus-engine/tests/test_jwt_hospital_lookup.py`
 
@@ -4141,7 +4271,7 @@ Expected: `8 passed` + the identity tests still pass.
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add homunculus-engine/src/homunculus/api/prodserver.py homunculus-engine/src/homunculus/auth/jwt.py deploy/local/docker-compose.yml homunculus-engine/tests/test_jwt_caller.py
@@ -4162,7 +4292,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `homunculus-engine/src/homunculus/api/app.py` (mount the router)
 - Test: `homunculus-engine/tests/test_admin_api.py` (DB-backed)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # homunculus-engine/tests/test_admin_api.py
@@ -4423,12 +4553,12 @@ async def test_admin_actions_are_audited(client, world, db_session):
     assert rec.payload["actor"] == "admin" and rec.payload["after"] == ["charge_nurse"]
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_admin_api.py -q`
 Expected: with `TEST_DATABASE_URL`, every test fails with `404` on `/admin/...`; without it, skipped. (Nothing imports the admin package yet, so there is no import error to see.)
 
-- [ ] **Step 3: Write the schemas**
+- [x] **Step 3: Write the schemas**
 
 ```python
 # homunculus-engine/src/homunculus/admin/schemas.py
@@ -4522,7 +4652,7 @@ class PasswordResetIn(BaseModel):
     password: str = Field(min_length=8)
 ```
 
-- [ ] **Step 4: Write the service**
+- [x] **Step 4: Write the service**
 
 ```python
 # homunculus-engine/src/homunculus/admin/service.py
@@ -4782,7 +4912,7 @@ async def reset_mfa(db: AsyncSession, user: User) -> None:
     await bump_user(db, user)
 ```
 
-- [ ] **Step 5: Write the router**
+- [x] **Step 5: Write the router**
 
 ```python
 # homunculus-engine/src/homunculus/admin/router.py
@@ -5017,7 +5147,7 @@ async def reset_mfa(user_id: uuid.UUID, request: Request,
     return {"ok": True}
 ```
 
-- [ ] **Step 6: Mount the router**
+- [x] **Step 6: Mount the router**
 
 In `api/app.py`, next to the other router imports inside `create_app`:
 
@@ -5033,7 +5163,7 @@ and after `app.include_router(break_glass_router)`:
 
 Create the empty `homunculus-engine/src/homunculus/admin/__init__.py`.
 
-- [ ] **Step 6b: The route inventory**
+- [x] **Step 6b: The route inventory**
 
 Every router route must reach the MFA-gated principal, and only the three enrolment/profile routes
 may use the pre-MFA one. Walk the app's dependency graph so a future route cannot skip the guard.
@@ -5112,7 +5242,7 @@ async def test_an_admin_password_reset_ends_the_users_sessions(client, world, db
 
 Add `homunculus-engine/tests/test_route_inventory.py` to this task's commit.
 
-- [ ] **Step 6c: Deactivation ends sessions for good**
+- [x] **Step 6c: Deactivation ends sessions for good**
 
 Neither `tv` (deliberately not in refresh tokens) nor the credential fingerprint changes on
 deactivation, so a refresh token issued before a deactivation would work again after a
@@ -5155,7 +5285,7 @@ async def test_a_username_may_not_be_another_users_email(client, world, db_sessi
 ```
 Add `auth/models.py`, `auth/router.py`, the migration and the parity test to this task's commit.
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest tests/test_admin_api.py tests/test_route_inventory.py -q`
 Expected: `19 passed` with `TEST_DATABASE_URL`, `19 skipped` without, plus the 2 route-inventory tests; the migration tests still pass.
@@ -5163,7 +5293,7 @@ Expected: `19 passed` with `TEST_DATABASE_URL`, `19 skipped` without, plus the 2
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py`
 Expected: all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add homunculus-engine/src/homunculus/admin homunculus-engine/src/homunculus/api/app.py homunculus-engine/src/homunculus/auth/models.py homunculus-engine/src/homunculus/auth/router.py homunculus-engine/alembic/versions/0006_groups_and_permissions.py homunculus-engine/tests/test_admin_api.py homunculus-engine/tests/test_route_inventory.py homunculus-engine/tests/test_migration_0006_schema_parity.py
@@ -5185,7 +5315,7 @@ about the file changes in this task.
 - Modify: `dashboard/src/ClinicalDemo.jsx`
 - Test: `dashboard/src/ui.test.jsx`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```jsx
 // dashboard/src/ui.test.jsx
@@ -5220,12 +5350,12 @@ describe("ui primitives", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify failure**
+- [x] **Step 2: Run it to verify failure**
 
 Run: `cd dashboard && npx vitest run src/ui.test.jsx`
 Expected: FAIL — `Failed to resolve import "./ui.jsx"`
 
-- [ ] **Step 3: Create `ui.jsx`**
+- [x] **Step 3: Create `ui.jsx`**
 
 ```jsx
 // src/ui.jsx — small form and overlay primitives shared by the clinical workspace and the admin
@@ -5268,7 +5398,7 @@ export function ActionOverlay({ T, title, onClose, children }) {
 }
 ```
 
-- [ ] **Step 4: Remove the four definitions from `ClinicalDemo.jsx` and import them**
+- [x] **Step 4: Remove the four definitions from `ClinicalDemo.jsx` and import them**
 
 Delete, from `ClinicalDemo.jsx`:
 
@@ -5283,12 +5413,12 @@ Add, after the `./clinicalTheme.js` import block:
 import { Field, inputCls, btnCls, ActionOverlay } from "./ui.jsx";
 ```
 
-- [ ] **Step 5: Run the whole frontend suite**
+- [x] **Step 5: Run the whole frontend suite**
 
 Run: `cd dashboard && npx vitest run`
 Expected: all green (same count as before plus 3).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add dashboard/src/ui.jsx dashboard/src/ui.test.jsx dashboard/src/ClinicalDemo.jsx
@@ -5306,7 +5436,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `dashboard/src/clinicalDemo.js`
 - Test: `dashboard/src/permissions.test.js`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 // dashboard/src/permissions.test.js
@@ -5372,12 +5502,12 @@ describe("demo sessions carry perms", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `cd dashboard && npx vitest run src/permissions.test.js`
 Expected: FAIL — cannot resolve `./permissions.js`
 
-- [ ] **Step 3: Create `permissions.js`**
+- [x] **Step 3: Create `permissions.js`**
 
 ```js
 // src/permissions.js — the permission keys the UI gates on, mirrored from the backend catalogue
@@ -5439,7 +5569,7 @@ export function uiRoleFromPerms(perms) {
 }
 ```
 
-- [ ] **Step 4: Attach perms to every demo session**
+- [x] **Step 4: Attach perms to every demo session**
 
 In `clinicalDemo.js` add the import near the top:
 
@@ -5464,12 +5594,12 @@ Then replace the five session writes:
 | `loginAs` | `set({ user: { email: who.email, full_name: who.full_name, role: who.role }, mfaPending: null });` | `set({ user: sessionUser(who), mfaPending: null });` |
 | `switchUserByPin` | `set({ user: { email: u.email, full_name: u.full_name, role: u.role } });` | `set({ user: sessionUser(u) });` |
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `cd dashboard && npx vitest run src/permissions.test.js src/clinicalDemo.test.js`
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add dashboard/src/permissions.js dashboard/src/permissions.test.js dashboard/src/clinicalDemo.js
@@ -5486,7 +5616,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `dashboard/src/liveAuth.js` (rewrite)
 - Modify: `dashboard/src/liveAuth.test.js` (rewrite)
 
-- [ ] **Step 1: Rewrite the tests**
+- [x] **Step 1: Rewrite the tests**
 
 ```js
 // dashboard/src/liveAuth.test.js
@@ -5569,12 +5699,12 @@ describe("secretFromProvisioningUri", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `cd dashboard && npx vitest run src/liveAuth.test.js`
 Expected: FAIL — `sessionFromToken` is not exported
 
-- [ ] **Step 3: Rewrite `liveAuth.js`**
+- [x] **Step 3: Rewrite `liveAuth.js`**
 
 ```js
 // src/liveAuth.js — read the session the backend put into the access token.
@@ -5635,12 +5765,12 @@ export function secretFromProvisioningUri(uri) {
 }
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `cd dashboard && npx vitest run src/liveAuth.test.js`
 Expected: `11 passed`. (`liveStore.test.js` now fails to import `roleFromToken` — Task 14 rewrites the store.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add dashboard/src/liveAuth.js dashboard/src/liveAuth.test.js
@@ -5658,7 +5788,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `dashboard/src/liveStore.test.js` (rewrite)
 - Modify: `dashboard/src/liveStore.live.test.js` (token + two assertions)
 
-- [ ] **Step 1: Rewrite `liveStore.test.js`**
+- [x] **Step 1: Rewrite `liveStore.test.js`**
 
 ```js
 // dashboard/src/liveStore.test.js
@@ -5847,7 +5977,7 @@ describe("liveStore — real authentication over the simulation", () => {
 });
 ```
 
-- [ ] **Step 2: Update `liveStore.live.test.js`**
+- [x] **Step 2: Update `liveStore.live.test.js`**
 
 Replace the token line:
 
@@ -5866,12 +5996,12 @@ assertion to:
 Rename the next test to `"acknowledges without inventing an actor when nobody is signed in"` and
 change its assertion to the same `toHaveBeenCalledWith("bed-3", "sepsis")`.
 
-- [ ] **Step 3: Run to verify failure**
+- [x] **Step 3: Run to verify failure**
 
 Run: `cd dashboard && npx vitest run src/liveStore.test.js src/liveStore.live.test.js`
 Expected: FAIL — `roleFromToken` import error / assertions on `perms`.
 
-- [ ] **Step 4: Change `liveStore.js`**
+- [x] **Step 4: Change `liveStore.js`**
 
 Replace the `liveAuth` import with:
 
@@ -6012,12 +6142,12 @@ Replace the `attemptLogin`, `completeMfaLogin`, `restoreSession` methods and add
     },
 ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `cd dashboard && npx vitest run src/liveStore.test.js src/liveStore.live.test.js`
 Expected: all pass (`15` + the live file's tests).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add dashboard/src/liveStore.js dashboard/src/liveStore.test.js dashboard/src/liveStore.live.test.js
@@ -6036,7 +6166,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `dashboard/src/liveStore.js` (admin overlay + actions)
 - Test: `dashboard/src/backendApi.admin.test.js`, `dashboard/src/liveAdmin.test.js`, `dashboard/src/liveStore.admin.test.js`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 // dashboard/src/backendApi.admin.test.js
@@ -6234,12 +6364,12 @@ describe("liveStore — administration", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `cd dashboard && npx vitest run src/backendApi.admin.test.js src/liveAdmin.test.js src/liveStore.admin.test.js`
 Expected: FAIL — missing module / missing methods.
 
-- [ ] **Step 3: Extend `backendApi.js`**
+- [x] **Step 3: Extend `backendApi.js`**
 
 In `authed`, before `return res.json();` add:
 
@@ -6283,7 +6413,7 @@ Replace `acknowledge(patientId, kind, role)` with:
 
 Update the file's header comment: the client now also speaks the administration API.
 
-- [ ] **Step 4: Create `liveAdmin.js`**
+- [x] **Step 4: Create `liveAdmin.js`**
 
 ```js
 // src/liveAdmin.js — adapters from the /admin payloads onto the shapes the admin panels render.
@@ -6321,7 +6451,7 @@ export function groupFromApi(g) {
 }
 ```
 
-- [ ] **Step 5: Add the admin overlay and actions to `liveStore.js`**
+- [x] **Step 5: Add the admin overlay and actions to `liveStore.js`**
 
 Add the import:
 
@@ -6381,12 +6511,12 @@ In the returned object add:
     adminDeleteGroup: (id) => thenReload(api.adminDeleteGroup(id)),
 ```
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 Run: `cd dashboard && npx vitest run`
 Expected: all green.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add dashboard/src/backendApi.js dashboard/src/liveAdmin.js dashboard/src/liveStore.js dashboard/src/backendApi.admin.test.js dashboard/src/liveAdmin.test.js dashboard/src/liveStore.admin.test.js
@@ -6403,7 +6533,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `dashboard/src/clinicalI18n.js`
 - Test: `dashboard/src/i18n.rbac.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 // dashboard/src/i18n.rbac.test.js
@@ -6428,12 +6558,12 @@ describe("rbac strings", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `cd dashboard && npx vitest run src/i18n.rbac.test.js`
 Expected: FAIL — `rbac` undefined for `tr`.
 
-- [ ] **Step 3: Add the block to each language**
+- [x] **Step 3: Add the block to each language**
 
 In `clinicalI18n.js`, inside **each** of the four language objects, insert the `rbac` object
 immediately before that language's `pr13: {` line.
@@ -6614,12 +6744,12 @@ Russian (`ru`):
     },
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `cd dashboard && npx vitest run src/i18n.rbac.test.js src/i18n.test.jsx`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add dashboard/src/clinicalI18n.js dashboard/src/i18n.rbac.test.js
@@ -6636,7 +6766,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Create: `dashboard/src/admin/GroupAdmin.jsx`
 - Test: `dashboard/src/admin/GroupAdmin.test.jsx`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```jsx
 // dashboard/src/admin/GroupAdmin.test.jsx
@@ -6731,12 +6861,12 @@ describe("GroupAdmin", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `cd dashboard && npx vitest run src/admin/GroupAdmin.test.jsx`
 Expected: FAIL — cannot resolve `./GroupAdmin.jsx`
 
-- [ ] **Step 3: Write the component**
+- [x] **Step 3: Write the component**
 
 ```jsx
 // src/admin/GroupAdmin.jsx — groups and their permission sets, backed by /admin/groups.
@@ -6874,12 +7004,12 @@ export function GroupAdmin({ T, S, store, state }) {
 }
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `cd dashboard && npx vitest run src/admin/GroupAdmin.test.jsx`
 Expected: `6 passed`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add dashboard/src/admin/GroupAdmin.jsx dashboard/src/admin/GroupAdmin.test.jsx
@@ -6897,7 +7027,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Create: `dashboard/src/admin/LiveStaffTab.jsx`
 - Test: `dashboard/src/admin/LiveUserAdmin.test.jsx`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```jsx
 // dashboard/src/admin/LiveUserAdmin.test.jsx
@@ -7015,12 +7145,12 @@ describe("LiveStaffTab", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `cd dashboard && npx vitest run src/admin/LiveUserAdmin.test.jsx`
 Expected: FAIL — cannot resolve the two modules
 
-- [ ] **Step 3: Write `LiveUserAdmin.jsx`**
+- [x] **Step 3: Write `LiveUserAdmin.jsx`**
 
 ```jsx
 // src/admin/LiveUserAdmin.jsx — the user list and local-account creation, backed by /admin/users.
@@ -7182,7 +7312,7 @@ export function LiveUserAdmin({ T, S, store, state }) {
 }
 ```
 
-- [ ] **Step 4: Write `LiveStaffTab.jsx`**
+- [x] **Step 4: Write `LiveStaffTab.jsx`**
 
 ```jsx
 // src/admin/LiveStaffTab.jsx — the "staff" tab of the admin page in LIVE mode: loads the
@@ -7209,12 +7339,12 @@ export function LiveStaffTab({ T, S, store, state }) {
 }
 ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `cd dashboard && npx vitest run src/admin`
 Expected: all pass (6 + 6 + 2).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add dashboard/src/admin/LiveUserAdmin.jsx dashboard/src/admin/LiveStaffTab.jsx dashboard/src/admin/LiveUserAdmin.test.jsx
@@ -7232,12 +7362,12 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `dashboard/src/ClinicalDemo.jsx`
 - Test: `dashboard/src/nav.test.js`
 
-- [ ] **Step 1: Install the QR renderer**
+- [x] **Step 1: Install the QR renderer**
 
 Run: `cd dashboard && npm install qrcode@^1.5.4`
 Expected: `package.json` gains `"qrcode": "^1.5.4"` under `dependencies`; `package-lock.json` updates.
 
-- [ ] **Step 2: Write the failing navigation test**
+- [x] **Step 2: Write the failing navigation test**
 
 ```js
 // dashboard/src/nav.test.js
@@ -7274,12 +7404,12 @@ describe("navigation gates on permissions", () => {
 });
 ```
 
-- [ ] **Step 3: Run to verify failure**
+- [x] **Step 3: Run to verify failure**
 
 Run: `cd dashboard && npx vitest run src/nav.test.js`
 Expected: FAIL — `NAV_ITEMS` / `canSee` / `ADMIN_TABS` are not exported
 
-- [ ] **Step 4: Navigation and page guard**
+- [x] **Step 4: Navigation and page guard**
 
 In `ClinicalDemo.jsx` add the imports (next to the `./ui.jsx` import):
 
@@ -7340,7 +7470,7 @@ with
   const effectivePage = activeItem && canSee(activeItem, perms) ? page : "board";
 ```
 
-- [ ] **Step 5: Admin page tabs**
+- [x] **Step 5: Admin page tabs**
 
 Above `function AdminPage(` add the exported tab table (labels are resolved inside the component
 because they come from `S`):
@@ -7389,7 +7519,7 @@ className). Replace the `staff` branch with:
         ))}
 ```
 
-- [ ] **Step 6: The MFA gate — async enrolment, QR, manual key, group names**
+- [x] **Step 6: The MFA gate — async enrolment, QR, manual key, group names**
 
 Replace the top of `MfaGate` (from `function MfaGate(` through the `useEffect` that calls
 `store.setupMfa`) with:
@@ -7467,7 +7597,7 @@ Replace the demo hint `<span className={`text-[11px] ${T.faint}`}>{S.pr11.mfaDem
 Where `MfaGate` is rendered (the `if (state.mfaPending) return <MfaGate …` line), pass
 `live={state.live === true}`.
 
-- [ ] **Step 7: Run the whole frontend suite and build**
+- [x] **Step 7: Run the whole frontend suite and build**
 
 Run: `cd dashboard && npx vitest run`
 Expected: all green, including `src/nav.test.js` (4).
@@ -7475,7 +7605,7 @@ Expected: all green, including `src/nav.test.js` (4).
 Run: `cd dashboard && npm run build`
 Expected: a clean Vite build (this also proves the `qrcode` import resolves in the browser bundle).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add dashboard/package.json dashboard/package-lock.json dashboard/src/ClinicalDemo.jsx dashboard/src/nav.test.js
@@ -7501,7 +7631,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   without it since before this plan, so a blueprint deploy that follows the docs cannot boot.
 - Modify: `docs/superpowers/plans/2026-09-23-rbac-groups-permissions.md` (execution status)
 
-- [ ] **Step 1: Glossary entries in the Turkish guide**
+- [x] **Step 1: Glossary entries in the Turkish guide**
 
 In `docs/homunculus-rehber-TR.md`, at the end of section `## 3. Sözlük` (before `## 4.`), add:
 
@@ -7535,17 +7665,25 @@ In `docs/homunculus-rehber-TR.md`, at the end of section `## 3. Sözlük` (befor
 
 (Replace `3.x` with the next free subsection number in the file.)
 
-- [ ] **Step 2: Full backend run**
+*As written (Task 20):* §3.5, with the entries brought up to what was built. The catalogue has 19
+keys. `hospital_admin` holds the whole catalogue by rule and is immutable. MFA is on by default
+for Sistem Yöneticisi, Sorumlu Hekim, Ünite Hekimi and Üretici Destek. The added entries cover the
+administrator (a local member of `hospital_admin`; keep two), the "no grant beyond your own
+rights" rule, the user manager, tenant isolation, the platform operator, "Parolamı değiştir", the
+rights re-read, the session retry, and live mode hiding everything simulated. The guide is
+authoritative.
+
+- [x] **Step 2: Full backend run**
 
 Run: `cd homunculus-engine && .venv/Scripts/python.exe -m pytest -q --ignore=tests/test_infinity_research_api.py`
 Expected: all pass; DB-backed suites pass when `TEST_DATABASE_URL` is set, otherwise skipped.
 
-- [ ] **Step 3: Full frontend run and build**
+- [x] **Step 3: Full frontend run and build**
 
 Run: `cd dashboard && npx vitest run && npm run build`
 Expected: green, clean build.
 
-- [ ] **Step 4: Manual end-to-end against a local stack (when a Postgres is available)**
+- [ ] **Step 4: Manual end-to-end against a local stack (when a Postgres is available)** — *open: fails on the migrated schema (B1); see the outcome below*
 
 1. `cd homunculus-engine && alembic upgrade head && SEED_ADMIN_PASSWORD=… python scripts/seed_admin.py`
 2. Start the API (`uvicorn homunculus.api.prodserver:app --port 8000`) and the dashboard (`npm run dev`).
@@ -7558,63 +7696,104 @@ Expected: green, clean build.
 7. Try to deactivate the admin: the UI shows "Son yönetici pasifleştirilemez".
 8. `GET /audit?event_type=admin` (as admin) lists every step above.
 
-**Deploy notes for the VM (record them in the handoff):**
-- Back up first (`pg_dump`), then `alembic upgrade head`. Migration 0006 stops, changing nothing, if
-  two accounts' e-mails differ only by case or an e-mail is longer than 128 characters; merge or
-  rename them and rerun.
-- **Before `up`, check `/opt/homunculus/deploy/local/.env`:**
-  - `JWT_SECRET` must be at least 32 characters, not the default, and have no surrounding
-    whitespace. The API refuses a padded key outright, so don't quote it with spaces. From Task 9
-    on, the API refuses to boot otherwise, and compose restart-loops, so every clinician would lose
-    the board. `openssl rand -base64 36` gives 48 characters. Rotating the key signs everyone out,
-    which the cut-over does anyway.
-  - `TENANT_TOKEN` must be set. On Postgres the API refuses to start without a usable `TENANTS`.
-  - If `TENANT_TOKEN` is short or a known placeholder (`demo-token`, `dev-token`, `pilot-token`,
-    `change-me`), rotate it on BOTH sides in the same window: the hub `.env` AND the edge bridge's
-    configuration. The bridge holds observations on a 401 and resends them once the tokens match
-    again. Rotating only one side freezes the board.
-- **Every user, mobile included, signs in once after the upgrade.** Tokens issued by the old code
-  carry no `tv` and no credential fingerprint, so both the access and the refresh token are refused.
-  Tell the ward before the deploy window.
-- An administrator cannot reset their own password or MFA, or deactivate themselves, through the
-  admin screen (409). Their own password goes through the profile's password change.
-- **Keep at least TWO local members of `hospital_admin`,** each with their own authenticator. The API
-  cannot recover these cases:
-  - the only administrator loses their authenticator: a pending-MFA session cannot use `/admin`,
-    and a self reset is refused;
-  - the only administrator forgets their password: the seed never changes an existing account's
-    password.
-- **Recovering a tenant with no usable administrator.** Run `scripts/seed_admin.py` with a NEW
-  `SEED_ADMIN_EMAIL`: the seed grants `hospital_admin` only to an account it newly links. Or have a
-  second administrator reset the account. Reactivating a deactivated local administrator through
-  `/admin` also restores the tenant.
-- **Cross-tenant rows written before Task 7b.** The old code let a user of one tenant write into
-  another. The side-effect paths trust stored ids: discharge and transfer act on
-  `admission.bed_id`, and handover sign-off counts alerts through `handover.admission_ids`. Before the
-  upgrade, run read-only queries for rows whose objects span tenants:
-  - admissions whose unit (through site), bed (through room, unit, site) or patient belongs to
-    another tenant;
-  - alerts whose patient, admission or unit belongs to another tenant;
-  - break-glass sessions whose patient belongs to another tenant;
-  - handovers whose `admission_ids` name another tenant's admissions.
+*Outcome (Task 20):* see the execution status at the top. Every step was walked at the API level,
+together with the rules added in review. The walk passed 72/72 once `tenant_memberships.role` was
+converted to `varchar(40)` in the throwaway database. On the schema exactly as migrated, the seed
+and `POST /admin/users` fail (B1). Item 7 now answers `Kendi hesabınızı pasifleştiremezsiniz`,
+because Task 10's self rule comes first. The two-browser UI walk was not run.
 
-  Expect zero rows when the VM has one tenant (`SELECT slug FROM tenants`). Anything found is
-  reported to the hospital, never fixed silently.
-- **The dashboard's API address.** The current build bundles
-  `https://homunculus-api-bkrf.onrender.com` (from `VITE_API_URL`). The VM build must set its own
-  `VITE_API_URL`, or same-origin, before `vite build`. Check the built `index-*.js` for the Render URL
-  before deploying.
-- A platform operator is flagged with `UPDATE users SET is_platform_support = true WHERE username = '…'`.
-  The flag does not bump `token_version`, so the operator signs in again, with MFA, before
-  `POST /tenant/tenants` works.
+**Deploy notes for the VM (record them in the handoff).** In order. None of this has been run.
 
-- [ ] **Step 5: Record the outcome in this plan**
+0. **Fix B1 first** (see the execution status). Do not deploy until the fix and its regression test
+   against a migrated schema are in. Without it, the staff tab cannot add anyone (500), and a boot
+   whose seed must create an account restart-loops the API container.
+1. **Tell the ward before the window.**
+   - **Every user, mobile included, signs in once after the upgrade.** Tokens issued by the old
+     code carry no `tv` and no credential fingerprint, so both the access and the refresh token are
+     refused (the e2e walk confirmed it: 401).
+   - Members of the MFA groups enrol an authenticator at their first sign-in: Sistem Yöneticisi,
+     Sorumlu Hekim, Ünite Hekimi and Üretici Destek. The dashboard shows the QR and the manual key.
+     Until the mobile app has a TOTP step, these users cannot use it.
+2. **Build the dashboard for the VM.**
+   - Built through `deploy/local/web/Dockerfile`, it is same-origin already. The image deletes
+     `.env.production` and fails its own build if the bundle contains `onrender.com`.
+   - Built any other way, for example `npm run build` on a workstation and copied into a release,
+     it carries `https://homunculus-api-bkrf.onrender.com` from `dashboard/.env.production`. Set
+     `VITE_API_URL` to the VM's origin in the build's environment. A value in the process
+     environment overrides `.env.production` (checked on this branch).
+   - Either way, search the built `assets/index-*.js` for `onrender.com` before shipping.
+3. **Back up:** a `pg_dump` of the hub database, kept off the VM. The downgrade of 0006 is lossy by
+   design, so the rollback is the dump plus the previous release.
+4. **Read-only checks before the upgrade.** Anything found is reported to the hospital, never fixed
+   silently.
+   - **Cross-tenant rows written before Task 7b.** The old code let a user of one tenant write into
+     another. The side-effect paths trust stored ids: discharge and transfer act on
+     `admission.bed_id`, and handover sign-off counts alerts through `handover.admission_ids`.
+     Query for rows whose objects span tenants:
+     - admissions whose unit (through site), bed (through room, unit, site) or patient belongs to
+       another tenant;
+     - alerts whose patient, admission or unit belongs to another tenant;
+     - break-glass sessions whose patient belongs to another tenant;
+     - handovers whose `admission_ids` name another tenant's admissions.
+
+     Expect zero rows when the VM has one tenant (`SELECT slug FROM tenants`).
+   - **The pre-flight of migration 0006.** The API container runs `alembic upgrade head` at every
+     start. 0006 stops, changing nothing, in three cases: two accounts' e-mails fold to the same
+     login (case, and the Turkish `İ`/`ı`, folded as sign-in folds them); an e-mail longer than 128
+     characters; a blank e-mail. The error names the e-mails. A stopped migration leaves the
+     container restart-looping, so look first. `SELECT lower(email), count(*) FROM users GROUP BY 1
+     HAVING count(*) > 1` catches the plain case clashes, but not the `İ`/`ı` ones. Merge or rename,
+     then upgrade.
+5. **Before `up`, check `/opt/homunculus/deploy/local/.env`.** The new `.env.example` does not
+   touch an existing `.env`, so compare the two by hand.
+   - `JWT_SECRET` must be at least 32 characters, not the default, and have no surrounding
+     whitespace. The API refuses a padded key outright, so don't quote it with spaces. From Task 9
+     on, the API refuses to boot otherwise, and compose restart-loops, so every clinician would lose
+     the board. `openssl rand -base64 36` gives 48 characters. Rotating the key signs everyone out,
+     which the cut-over does anyway.
+   - `TENANT_TOKEN` must be set. On Postgres the API refuses to start without a usable `TENANTS`.
+   - If `TENANT_TOKEN` is short or a known placeholder (`demo-token`, `dev-token`, `pilot-token`,
+     `change-me`), rotate it on BOTH sides in the same window: the hub `.env` AND the edge bridge's
+     configuration. The bridge holds observations on a 401 and resends them once the tokens match
+     again. Rotating only one side freezes the board. A standalone bridge on `deploy/bridge` now
+     refuses to start without a `TENANT_TOKEN` (`:?` in its compose).
+   - `PHI_ENCRYPTION_KEY` must still be the key the stored identities were written with.
+   - `SEED_ADMIN_*`: the seed only ever creates an account that does not exist yet. For an existing
+     administrator it changes nothing, so a leftover value is harmless.
+6. **`up`, then check.**
+   - `/health` answers.
+   - The existing administrator (converted to `hospital_admin` by 0006) signs in and enrols MFA
+     from the QR, or types the code if they enrolled before. The board opens.
+   - `GET /audit?event_type=auth` shows the sign-in.
+7. **Right away, create a second local member of `hospital_admin`.** They sign in and enrol their
+   own authenticator. **Keep at least TWO local administrators** at all times, each with their own
+   authenticator, because the API cannot recover these cases:
+   - the only administrator loses their authenticator: a pending-MFA session cannot use `/admin`,
+     and a self reset is refused;
+   - the only administrator forgets their password: the seed never changes an existing account's
+     password.
+8. **What administrators need to know.**
+   - An administrator cannot reset their own password or MFA, or deactivate themselves, through
+     the admin screen (409). Their own password goes through "Parolamı değiştir" in the user menu.
+   - A password set by an administrator is temporary. The user replaces it through "Parolamı
+     değiştir"; nothing forces this yet.
+9. **Recovering a tenant with no usable administrator.**
+   - Run `scripts/seed_admin.py` with a NEW `SEED_ADMIN_EMAIL`: the seed grants `hospital_admin`
+     only to an account it newly links. This path needs B1 fixed.
+   - Or have a second administrator reset the account.
+   - Reactivating a deactivated local administrator through `/admin` also restores the tenant.
+10. **A platform operator, only if one is needed.** Flag the account with
+    `UPDATE users SET is_platform_support = true WHERE username = '…'`. The flag does not bump
+    `token_version`, so the operator signs in again, with MFA, before `POST /tenant/tenants` works.
+    The tenant cannot reset an operator's password or MFA (409).
+
+- [x] **Step 5: Record the outcome in this plan**
 
 Add an `## Execution status — <date>` section under the title (the repository's convention, see
 `2026-09-04-comed-adt-identity.md`) stating which tasks ran, what was verified locally, and which
 acceptance steps (Step 4 above, the VM deployment) have not been run.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/homunculus-rehber-TR.md docs/superpowers/plans/2026-09-23-rbac-groups-permissions.md
@@ -7680,6 +7859,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   when merged, take `caller_tenant_id`, and be mounted in `create_app`. The
   route tests walk only `create_app()`, so a router mounted anywhere else escapes them.
 - Dropping the PostgreSQL `userrole` enum type and `tenant_memberships.role` (cleanup migration).
+  Fix B1 option (b) (see the execution status) is this migration or its first step. Do not
+  deploy before B1 is fixed.
   The same migration should add a unique `(user_id, tenant_id)` on `tenant_memberships`; the seed's
   advisory lock covers the only writer that races today.
 - **Care-team claim (behaviour predates this plan; needs a clinical decision).** `POST
