@@ -280,7 +280,8 @@ The `_hospital()` helper in `api/app.py` becomes `_caller()`, which returns a `C
   - the `Caller` carries the username as `actor`, together with the token's groups and perms.
 - `_require(caller, perm)` raises 403 when the permission is missing.
 - A refusal a refresh can fix is 401. A pending MFA step or an inactive tenant is 403.
-- The per-request membership query in the current resolver goes away.
+- The resolver makes one read per request: the user row joined with the tenant condition above.
+  A database error stays a 5xx, never a 401, so an outage never signs clinicians out.
 - `/ingest` is device-only: a JWT gets 403.
 
 **Attribution.** For a JWT caller, `/ack` and `/view` record the actor from the token —

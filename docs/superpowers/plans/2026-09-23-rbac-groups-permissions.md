@@ -70,6 +70,23 @@ tenant or membership is 403. `tenant_of_user` skips inactive tenants.
 - `prodserver` passes `resolve_jwt=None` until Task 9, which replaces those lines (see the Task 9
   notes).
 
+**Task 9 as amended in review:**
+- **Resolver:**
+  - `UserAuthRow` carries `tenant_verdict: str` (required), not `tenant_ok: bool`, and
+    `load_user(user_id, slug)` embeds `tenant_claim_query` in its one read.
+  - A token with no tenant (or a blank one) raises 403 `NO_TENANT` rather than returning None,
+    because a refresh would mint the same token.
+  - A database error propagates as a 5xx.
+- **Validation:** `Caller.__post_init__` validates its fields, and the device path bounds `role`
+  (64 characters). Rehydration bounds replayed roles (128).
+- **Postgres mode refuses to start on:**
+  - a PHI key problem;
+  - a weak JWT key, checked on the effective, stripped secret;
+  - an unusable `TENANTS` (unset, blank, or no valid entry).
+- **Blank tenant claims:** the routers treat a blank tenant claim as none, like the board.
+- **Deploy defaults:** `.env.example` ships empty `JWT_SECRET`/`TENANT_TOKEN`, so compose refuses
+  at `up`.
+
 **Do not deploy mid-plan.** Between migration 0006 (Task 3) and the sign-in rewrite (Task 6) and the
 seed rewrite (Task 7), stored e-mails are lower-cased while sign-in still matches case-sensitively,
 and the seed cannot create the administrator. The branch reaches the VM only after Task 20.
@@ -7474,8 +7491,16 @@ Expected: green, clean build.
 - Back up first (`pg_dump`), then `alembic upgrade head`. Migration 0006 stops, changing nothing, if
   two accounts' e-mails differ only by case or an e-mail is longer than 128 characters; merge or
   rename them and rerun.
-- Check `JWT_SECRET` in `/opt/homunculus/deploy/local/.env` is at least 32 characters and not the
-  default — from Task 9 on the API refuses to boot otherwise. `openssl rand -base64 36` gives 48.
+- **Before `up`, check `/opt/homunculus/deploy/local/.env`:**
+  - `JWT_SECRET` must be at least 32 characters (after stripping) and not the default. From Task 9
+    on, the API refuses to boot otherwise, and compose restart-loops, so every clinician would lose
+    the board. `openssl rand -base64 36` gives 48 characters. Rotating the key signs everyone out,
+    which the cut-over does anyway.
+  - `TENANT_TOKEN` must be set. On Postgres the API refuses to start without a usable `TENANTS`.
+  - If `TENANT_TOKEN` is short or a known placeholder (`demo-token`, `dev-token`, `pilot-token`,
+    `change-me`), rotate it on BOTH sides in the same window: the hub `.env` AND the edge bridge's
+    configuration. The bridge holds observations on a 401 and resends them once the tokens match
+    again. Rotating only one side freezes the board.
 - **Every user, mobile included, signs in once after the upgrade.** Tokens issued by the old code
   carry no `tv` and no credential fingerprint, so both the access and the refresh token are refused.
   Tell the ward before the deploy window.
@@ -7579,9 +7604,28 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - **The answers to an inactive tenant or membership (403).** A user who still belongs to another
   active tenant stays locked out until the token's hour ends, because the client refreshes only on
   a 401. A 401 would move them on at once, since the refresh mints the next tenant and it cannot
-  loop. It would cost the clearer message. The same case on the board resolver (Task 9) answers
-  401, so a user left with no active tenant makes one refresh per board request. Decide both
-  together.
+  loop. It would cost the clearer message. The board resolver (Task 9) now answers the same way,
+  with 403 for an inactive tenant or membership and for a token with no tenant, so the same
+  lock-out applies to the board. Decide both together.
+- **Database availability on the board (Task 9's review).**
+  - Configure asyncpg `connect_args={"timeout": 5, "command_timeout": 10}` and a `pool_timeout` of
+    about 5 s. Today a hanging database holds board requests for 30–60 s.
+  - Answer a DB error in `_caller` with 503 and a log line.
+  - Dashboard: retry `/stream-ticket` failures with backoff (today the rejection is unhandled and
+    the live board freezes until a reload), and call `refreshBoard()` on reconnect.
+  - Sign out only on a 401/403 from `/auth/refresh`, not on a 5xx.
+  - `PostgresAuditLog` uses synchronous psycopg2 inside async routes.
+- **What counts as production.** The boot checks key off a Postgres `DATABASE_URL`, but `db.py`
+  defaults to a local Postgres when `DATABASE_URL` is unset. An explicit production flag, or a
+  dev opt-out that fails closed, would be clearer.
+- **`mfa_required is True` fails open on a malformed claim** (routers and board alike). Only an
+  issuer bug could reach it. Gate unless the claim is exactly `False`, in both paths together.
+- **Tenant slugs are unvalidated.** Add a regex on `TenantCreate.slug` plus a CHECK constraint, so a
+  blank slug, a `,` or a `:` cannot be created: the last two cannot be written in `TENANTS`.
+- **Device-token strength.** In Postgres mode, refuse a `TENANTS` token under 32 characters or on
+  the placeholder denylist. Coordinate the rotation with the bridge first (see Task 20).
+- **The test conftest should refuse or unset `DATABASE_URL`,** so a developer's exported production
+  URL can never be reached by a test.
 - **The test-run lock (`tests/conftest.py`).** An unreachable `TEST_DATABASE_URL` aborts the whole
   run. pytest-xdist, if it is ever added, needs the lock skipped in workers
   (`config.workerinput`). Paths outside `tests/` need `-p tests.conftest`.
