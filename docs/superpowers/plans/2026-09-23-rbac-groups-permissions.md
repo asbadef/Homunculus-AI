@@ -99,6 +99,21 @@ tenant or membership is 403. `tenant_of_user` skips inactive tenants.
 - **Guard:** keeps one LOCAL administrator.
 - **Frontend (Tasks 15–18) must follow the same rules.** An administrator holds the whole catalogue.
   Username errors arrive in Turkish, with a transliteration hint; translate them in Task 16.
+  **Task 19 must also fix these screens (found in Task 14):**
+  - **`MfaGate` crashes on a first live enrolment.** `ClinicalDemo.jsx` calls
+    `setSetup(store.setupMfa(...))` synchronously, stores the Promise, and throws on
+    `setup.secret.slice`. Live `mfaPending` can now be `enrolled: false`, so a first-time
+    administrator reaches this path. Await it inside the effect, once per showing, and show the
+    rejection (403 `mfa_reset_required`).
+  - **`AckModal` swallows the 403.** It calls `store.acknowledgeAlert(...)` without `await` and
+    closes. Await it, keep the modal open, and show `permission required: alerts.ack`. This works
+    with the synchronous simulation too.
+  - **`state.sessionError` (`SESSION_UNREACHABLE`).** On the login screen, show "server unreachable,
+    your session is kept" with a retry that calls `store.restoreSession()`.
+  - **`me.email` can be null** (`UserMeResponse.email`). Display the username as the fallback.
+  - **Stale rights.** `user.perms` is not re-read after a mid-session rights change: a transparent
+    refresh mints new claims, but the store keeps the old list. Re-derive the session from the new
+    access token after a refresh, or accept it and let a 403 say so. It fails closed either way.
   `permissions.js::uiRoleFromPerms` (display only) calls anyone holding `users.manage` an
   administrator. In Task 19, show the administrator icon only for the whole catalogue, so a user
   manager is not displayed as an administrator. A
