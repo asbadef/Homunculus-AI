@@ -4,6 +4,8 @@
 // All data here is SYNTHETIC (fake people, masked IDs) but rendered at production fidelity.
 // The system never diagnoses — machine-generated alert text uses "…kriterleri değerlendirilecek".
 
+import { permsForRole } from "./permissions.js";
+
 // --------------------------------------------------------------------------- roles & accounts
 export const ROLE = {
   ATTENDING: "ATTENDING",          // Sorumlu Hekim
@@ -865,6 +867,8 @@ export function createDemoStore(initial) {
     if (!match) throw new Error("Geçersiz e-posta veya parola.");
     return { who: liveUser, liveUser };
   }
+  // Every session user carries `perms` so navigation gates on permissions in both modes.
+  const sessionUser = (u) => ({ email: u.email, full_name: u.full_name, role: u.role, perms: permsForRole(u.role) });
   function login(email, credential) {
     const { who } = _validateCredential(email, credential);
     // Madde 12: aktif session oluştur (demo: simüle IP/device).
@@ -878,7 +882,7 @@ export function createDemoStore(initial) {
       startedAtMs: Date.now(),
       lastActivityMs: Date.now(),
     };
-    set({ user: { email: who.email, full_name: who.full_name, role: who.role },
+    set({ user: sessionUser(who),
       activeSessions: [...state.activeSessions, session], mfaPending: null, seq: state.seq + 1 });
     audit("LOGIN", who.email, who.role);
     return who;
@@ -898,7 +902,7 @@ export function createDemoStore(initial) {
       return { mfaRequired: true, enrolled, userId: u.id };
     }
     // MFA gerekmiyorsa doğrudan oturum aç.
-    set({ user: { email: who.email, full_name: who.full_name, role: who.role }, mfaPending: null });
+    set({ user: sessionUser(who), mfaPending: null });
     audit("LOGIN", who.email, who.role);
     return { mfaRequired: false, userId: u ? u.id : null };
   }
@@ -909,7 +913,7 @@ export function createDemoStore(initial) {
     // Kod doğrulaması (kayıtlı olsun olmasın aynı akış; kayıtsızsa ilk doğrulama TOTP'yi etkinleştirir).
     verifyMfa({ userId: pending.userId, code });
     const u = _findUser(pending.userId);
-    set({ user: { email: u.email, full_name: u.full_name, role: u.role }, mfaPending: null });
+    set({ user: sessionUser(u), mfaPending: null });
     audit("LOGIN", u.email, u.role);
     return u;
   }
@@ -921,7 +925,7 @@ export function createDemoStore(initial) {
     const who = (state.users || []).find((u) => u.role === role && u.active !== false)
       || ROLE_ACCOUNTS.find((a) => a.role === role);
     if (!who) throw new Error("Rol bulunamadı.");
-    set({ user: { email: who.email, full_name: who.full_name, role: who.role }, mfaPending: null });
+    set({ user: sessionUser(who), mfaPending: null });
     audit("LOGIN", who.email, who.role);
     return who;
   }
@@ -937,7 +941,7 @@ export function createDemoStore(initial) {
       || DEMO_ACCOUNTS.find((a) => a.pin === clean);
     if (!u) throw new Error("PIN eşleşmedi.");
     const prev = state.user?.full_name || null;
-    set({ user: { email: u.email, full_name: u.full_name, role: u.role } });
+    set({ user: sessionUser(u) });
     audit("PIN_SWITCH", u.email, prev ? `${prev} → ${u.full_name}` : u.full_name);
     return u;
   }
