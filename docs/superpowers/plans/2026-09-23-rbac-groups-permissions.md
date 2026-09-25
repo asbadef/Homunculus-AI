@@ -7600,6 +7600,10 @@ Expected: green, clean build.
 
   Expect zero rows when the VM has one tenant (`SELECT slug FROM tenants`). Anything found is
   reported to the hospital, never fixed silently.
+- **The dashboard's API address.** The current build bundles
+  `https://homunculus-api-bkrf.onrender.com` (from `VITE_API_URL`). The VM build must set its own
+  `VITE_API_URL`, or same-origin, before `vite build`. Check the built `index-*.js` for the Render URL
+  before deploying.
 - A platform operator is flagged with `UPDATE users SET is_platform_support = true WHERE username = '…'`.
   The flag does not bump `token_version`, so the operator signs in again, with MFA, before
   `POST /tenant/tenants` works.
@@ -7657,6 +7661,14 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   - back the audit tab with `GET /audit`;
   - back the sessions tab with a server-side session list and revocation;
   - back structure and devices with `/tenant/*` and the device registry.
+- **Alarm age follows the workstation's clock.** Since Task 19's follow-up, a device alert's age is
+  wall-clock time minus the backend's `first_seen_at` (UTC). A workstation clock that is ahead
+  inflates every age, and one that is behind holds them at 0. Have the backend send its own time, or
+  derive the offset from the response's `Date` header. Add a test with the backend's real format
+  (microseconds, `+00:00`).
+- **Plan 2: the LDAP bind timeout must stay under 15 s.** Every dashboard request is aborted at 15 s,
+  so the server's "directory unreachable" must arrive first.
+- **Wire `GET /audit` into the live audit tab.** It is the first simulated tab to bring back for real.
 - **`main` has the live-mode alarm-clock and silent-action bugs too** (found in Task 19's review):
   - real alarms are timed on the 60× simulation clock, so elapsed time and escalation stages are
     wrong;
