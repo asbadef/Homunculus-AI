@@ -56,18 +56,25 @@ const keysOf = (list) => (Array.isArray(list)
 const sortedSet = (keys) => [...new Set(keys)].sort();
 
 /** A group's rights, as a token minted from it would carry them (service.py `group_rights`):
- *  the whole catalogue for the system group, otherwise its keys. `catalogue` is
- *  `state.adminPermissions` (or plain keys). A users.manage desk cannot read the catalogue, so for
- *  the system group it is widened with the UI's mirrored PERMISSION_KEYS and the keys the API
- *  reported for the group (GroupOut already reports the whole catalogue for it): the system group
- *  never reads as holding less than everything. An ordinary group's keys are taken as they are
- *  (the server ignores a key no longer in the catalogue; here it only makes the group harder to
- *  grant). Sorted. */
+ *  the whole catalogue for the system group, otherwise its keys within the catalogue. `catalogue`
+ *  is `state.adminPermissions` (or plain keys).
+ *    - The system group: a users.manage desk cannot read the catalogue, so it is widened with the
+ *      UI's mirrored PERMISSION_KEYS and the keys the API reported for the group (GroupOut already
+ *      reports the whole catalogue for it). It never reads as holding less than everything.
+ *    - An ordinary group: a key the catalogue no longer holds is retired, and the server ignores
+ *      it, so it is dropped here too. Without a catalogue its keys are taken as they are; a retired
+ *      key then only makes the group look harder to grant.
+ *  Every rule below judges groups through this, so the panels need no filter of their own. Sorted. */
 export function groupRights(group, catalogue = []) {
   if (!group || typeof group !== "object") return [];
   const own = keysOf(group.permissions);
-  const system = group.isSystem === true || group.is_system === true;
-  return sortedSet(system ? [...keysOf(catalogue), ...PERMISSION_KEYS, ...own] : own);
+  const known = keysOf(catalogue);
+  if (group.isSystem === true || group.is_system === true) {
+    return sortedSet([...known, ...PERMISSION_KEYS, ...own]);
+  }
+  if (known.length === 0) return sortedSet(own);
+  const inCatalogue = new Set(known);
+  return sortedSet(own.filter((k) => inCatalogue.has(k)));
 }
 
 /** A user's rights: the union of their groups' rights, manual and directory-held alike

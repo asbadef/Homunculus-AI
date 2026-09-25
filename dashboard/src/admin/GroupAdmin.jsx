@@ -34,17 +34,15 @@ const UNLOCKED = Object.freeze({ readOnly: false, rightsLocked: false, reason: "
 const catalogueKeys = (catalogue) => (Array.isArray(catalogue) ? catalogue : [])
   .map((p) => (typeof p === "string" ? p : p?.key)).filter((k) => typeof k === "string");
 
-/** A group's rights as the server counts them, in catalogue order: `groupRights`, with a custom
- *  group's retired keys dropped. Without a catalogue (not loaded, or a users.manage desk), a
- *  custom group's keys are taken as they are. */
+/** A group's rights as the server counts them (`groupRights`: a custom group's retired keys are
+ *  already dropped), in catalogue order for display and the editor; the system group's keys the
+ *  catalogue does not list come last. Without a catalogue, groupRights' order. */
 function rightsOf(group, keys) {
   const rights = groupRights(group, keys);
   if (keys.length === 0) return rights;
   const held = new Set(rights);
-  const inCatalogue = keys.filter((k) => held.has(k));
-  if (group.isSystem !== true) return inCatalogue;
   const known = new Set(keys);
-  return [...inCatalogue, ...rights.filter((k) => !known.has(k))];
+  return [...keys.filter((k) => held.has(k)), ...rights.filter((k) => !known.has(k))];
 }
 
 export function GroupAdmin({ T, S, lang = "tr", store, state }) {
@@ -199,7 +197,8 @@ export function GroupAdmin({ T, S, lang = "tr", store, state }) {
           : (rows.some(rowLocked) ? R.err.beyondOwnRights : ""));
         const described = (locked) => (locked && note ? noteId : undefined);
         return (
-          <ActionOverlay T={T} title={editing.id ? R.editGroup : R.newGroup} onClose={dismiss}>
+          <ActionOverlay T={T} title={editing.id ? R.editGroup : R.newGroup} onClose={dismiss}
+            busy={busy} closeLabel={S.close}>
             <div className="space-y-3" data-testid="group-editor">
               <Field T={T} label={R.groupName}>
                 <input className={inputCls(T)} value={editing.name} autoFocus={!readOnly}
@@ -258,7 +257,7 @@ export function GroupAdmin({ T, S, lang = "tr", store, state }) {
       })()}
 
       {canManage && deleting && (
-        <ActionOverlay T={T} title={R.deleteConfirm} onClose={dismiss}>
+        <ActionOverlay T={T} title={R.deleteConfirm} onClose={dismiss} busy={busy} closeLabel={S.close}>
           <div className="space-y-3" data-testid="group-delete">
             <div>
               <div className={`text-sm font-semibold ${T.text}`}>{deleting.name}</div>

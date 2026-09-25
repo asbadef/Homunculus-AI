@@ -2,6 +2,9 @@
 // Only actions the backend implements exist here: create (local), edit manual groups, activate /
 // deactivate, reset password (local only), reset MFA. Invitations, quick PINs, per-user MFA
 // policy and unit assignment live only in the simulation and are deliberately absent.
+// Deactivation and an MFA reset each end the user's sessions at once, so both ask first: the
+// user's name, what follows, Vazgeç, and a danger-styled confirm. Reactivation is one click; a
+// password reset and a group edit already open their own dialog.
 //
 // What is offered follows liveAdmin.js's rules, and those are HINTS: the server re-checks every
 // write under the tenant lock, with the caller's rights read from the database, and its refusal —
@@ -11,9 +14,9 @@
 //     does not hold has unknown rights and is not acted on.
 //   - A password reset exists only for a local account.
 //   - A group is offered only when canGrant holds; the others are disabled, with the reason.
-//   - A custom group's keys the catalogue no longer holds (retired) are not rights: they are
-//     dropped before judging. Without a catalogue (a users.manage desk cannot read it) a group is
-//     judged with what is known.
+//   - A custom group's keys the catalogue no longer holds (retired) are not rights: groupRights
+//     drops them, for every rule. Without a catalogue (a users.manage desk cannot read it) a group
+//     is judged with what is known.
 //   - What the UI cannot see — an account shared with another tenant, a platform operator's, the
 //     last administrator — the server refuses with a 409, shown as it arrives.
 //   - The hints read the session token's perms. An older token under-reports a key added since it
@@ -33,17 +36,6 @@ const NONE = new Set();
 
 const catalogueKeys = (catalogue) => (Array.isArray(catalogue) ? catalogue : [])
   .map((p) => (typeof p === "string" ? p : p?.key)).filter((k) => typeof k === "string");
-
-/** The groups with a custom group's retired keys dropped, as the server counts rights. Without a
- *  catalogue they are taken as they are. The system group is left alone: groupRights gives it the
- *  whole catalogue by rule. */
-function judgedGroups(groups, keys) {
-  if (keys.length === 0) return groups;
-  const known = new Set(keys);
-  return groups.map((g) => (g.isSystem === true ? g : {
-    ...g, permissions: (Array.isArray(g.permissions) ? g.permissions : []).filter((k) => known.has(k)),
-  }));
-}
 
 // admin/schemas.py: the username is normalize_login-ed (trimmed, İ and ı folded to i, lower-cased)
 // and must then be 2-128 of a-z 0-9 . _ @ -. The live hint flags what can never pass; the server
@@ -168,8 +160,8 @@ function when(iso) {
   return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString();
 }
 
-function UserRowLive({ T, R, lang, store, groups, perms, keys, selfId, u }) {
-  const [modal, setModal] = useState(null);         // "groups" | "password" | null
+function UserRowLive({ T, R, lang, store, groups, perms, keys, closeLabel, selfId, u }) {
+  const [modal, setModal] = useState(null);         // "groups" | "password" | "deactivate" | "mfa" | null
   const [sel, setSel] = useState(u.manualGroupIds);
   const [pw, setPw] = useState("");
   const [err, setErr] = useState(null);             // the last refusal (an Error), row or dialog
@@ -233,9 +225,10 @@ function UserRowLive({ T, R, lang, store, groups, perms, keys, selfId, u }) {
       <div className="mt-2 flex flex-wrap gap-1.5">
         {action(why.groups, () => openModal("groups"), <Users size={14} />, R.editGroups)}
         {local && action(why.password, () => openModal("password"), <KeyRound size={14} />, R.resetPassword)}
-        {action(why.mfa, () => run(() => store.adminResetMfa(u.id)), <ShieldAlert size={14} />, R.resetMfa)}
-        {action(why.active, () => run(() => store.adminUpdateUser(u.id, { is_active: !u.active })),
-          <Power size={14} />, u.active ? R.deactivate : R.activate)}
+        {action(why.mfa, () => openModal("mfa"), <ShieldAlert size={14} />, R.resetMfa)}
+        {action(why.active, () => (u.active ? openModal("deactivate")
+          : run(() => store.adminUpdateUser(u.id, { is_active: true }))),
+        <Power size={14} />, u.active ? R.deactivate : R.activate)}
       </div>
       {notes.length > 0 && (
         <div className={`mt-1.5 space-y-0.5 text-[11px] ${T.faint}`}>
@@ -249,7 +242,7 @@ function UserRowLive({ T, R, lang, store, groups, perms, keys, selfId, u }) {
       {!modal && err && <div className="mt-2"><ErrorBox err={err} lang={lang} /></div>}
 
       {modal === "groups" && (
-        <ActionOverlay T={T} title={R.editGroups} onClose={dismiss}>
+        <ActionOverlay T={T} title={R.editGroups} onClose={dismiss} busy={busy} closeLabel={closeLabel}>
           <div className="space-y-3">
             <p className={`text-sm ${T.muted}`}>{R.editGroupsHint}</p>
             <GroupChoices T={T} R={R} lang={lang} groups={groups} perms={perms} keys={keys}
@@ -268,7 +261,7 @@ function UserRowLive({ T, R, lang, store, groups, perms, keys, selfId, u }) {
       )}
 
       {modal === "password" && (
-        <ActionOverlay T={T} title={R.resetPassword} onClose={dismiss}>
+        <ActionOverlay T={T} title={R.resetPassword} onClose={dismiss} busy={busy} closeLabel={closeLabel}>
           <form className="space-y-3" onSubmit={(e) => {
             e.preventDefault();
             if (pw) run(() => store.adminResetPassword(u.id, pw));
@@ -288,6 +281,32 @@ function UserRowLive({ T, R, lang, store, groups, perms, keys, selfId, u }) {
           </form>
         </ActionOverlay>
       )}
+
+      {(modal === "deactivate" || modal === "mfa") && (() => {
+        const mfa = modal === "mfa";
+        const confirm = () => run(() => (mfa ? store.adminResetMfa(u.id)
+          : store.adminUpdateUser(u.id, { is_active: false })));
+        return (
+          <ActionOverlay T={T} title={mfa ? R.resetMfaConfirm : R.deactivateConfirm} onClose={dismiss}
+            busy={busy} closeLabel={closeLabel}>
+            <div className="space-y-3" data-testid="user-confirm">
+              <div>
+                <div className={`text-sm font-semibold ${T.text}`}>{u.full_name || u.username}</div>
+                <div className={`text-xs ${T.faint}`}>{u.username}{u.email ? ` · ${u.email}` : ""}</div>
+              </div>
+              <p className={`text-sm ${T.muted}`}>{mfa ? R.resetMfaConsequence : R.deactivateConsequence}</p>
+              <ErrorBox err={err} lang={lang} />
+              <div className="flex gap-2">
+                <button type="button" onClick={dismiss} disabled={busy}
+                  className={`${btnCls(T, "ghost")} flex-1`}>{R.cancel}</button>
+                <button type="button" onClick={confirm} disabled={busy} className={`${btnCls(T, "danger")} flex-1`}>
+                  {mfa ? <ShieldAlert size={15} /> : <Power size={15} />} {mfa ? R.resetMfa : R.deactivate}
+                </button>
+              </div>
+            </div>
+          </ActionOverlay>
+        );
+      })()}
     </div>
   );
 }
@@ -296,10 +315,10 @@ export function LiveUserAdmin({ T, S, lang = "tr", store, state }) {
   const R = S.rbac;
   const users = Array.isArray(state.adminUsers) ? state.adminUsers : [];
   const keys = catalogueKeys(state.adminPermissions);
-  const groups = judgedGroups(Array.isArray(state.adminGroups) ? state.adminGroups : [], keys);
+  const groups = Array.isArray(state.adminGroups) ? state.adminGroups : [];
   const perms = Array.isArray(state.user?.perms) ? state.user.perms : [];
   const selfId = state.user?.id ?? null;
-  const shared = { T, R, lang, store, groups, perms, keys };
+  const shared = { T, R, lang, store, groups, perms, keys, closeLabel: S.close };
   return (
     <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
       <h3 className={`mb-1 font-bold ${T.heading}`}>{R.usersTitle}</h3>

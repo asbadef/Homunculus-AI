@@ -246,24 +246,83 @@ describe("LiveUserAdmin — actions", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("resets MFA through the store", async () => {
+  it("resets MFA only once confirmed, naming the user and the consequence", async () => {
     const store = setup();
     fireEvent.click(row("ldapci").getByText("MFA sıfırla"));
+    const dialog = within(screen.getByRole("dialog", { name: R.resetMfaConfirm }));
+    expect(dialog.getByText("AD Kullanıcı")).toBeInTheDocument();
+    expect(dialog.getByText(R.resetMfaConsequence)).toBeInTheDocument();
+    expect(store.adminResetMfa).not.toHaveBeenCalled();
+    fireEvent.click(dialog.getByRole("button", { name: /MFA sıfırla/ }));
     await waitFor(() => expect(store.adminResetMfa).toHaveBeenCalledWith("u2"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("deactivates and reactivates through the store", async () => {
+  it("deactivates only once confirmed; reactivation is one click", async () => {
     const store = setup();
     fireEvent.click(row("ayse").getByText("Pasifleştir"));
+    const dialog = within(screen.getByRole("dialog", { name: R.deactivateConfirm }));
+    expect(dialog.getByText("Ayşe Demir")).toBeInTheDocument();
+    expect(dialog.getByText(R.deactivateConsequence)).toBeInTheDocument();
+    expect(store.adminUpdateUser).not.toHaveBeenCalled();
+    fireEvent.click(dialog.getByRole("button", { name: /Pasifleştir/ }));
     await waitFor(() => expect(store.adminUpdateUser).toHaveBeenCalledWith("u1", { is_active: false }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     fireEvent.click(row("pasif").getByText("Aktifleştir"));
+    expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => expect(store.adminUpdateUser).toHaveBeenCalledWith("u4", { is_active: true }));
   });
 
-  it("surfaces a refusal from the server", async () => {
+  it("Vazgeç sends nothing, and it holds the focus when a confirmation opens", () => {
+    const store = setup();
+    fireEvent.click(row("ayse").getByText("Pasifleştir"));
+    const cancel = within(screen.getByRole("dialog")).getByRole("button", { name: "Vazgeç" });
+    expect(cancel).toHaveFocus();                     // Enter on open cancels, never confirms
+    fireEvent.click(cancel);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(row("ayse").getByText("MFA sıfırla"));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Kapat" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(store.adminUpdateUser).not.toHaveBeenCalled();
+    expect(store.adminResetMfa).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a refusal from the server in the open confirmation", async () => {
     setup({ store: { adminUpdateUser: vi.fn(async () => { throw new Error("Son yönetici pasifleştirilemez"); }) } });
     fireEvent.click(row("ayse").getByText("Pasifleştir"));
-    expect(await row("ayse").findByText(R.err.lastAdminDeactivate)).toBeInTheDocument();
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.click(dialog.getByRole("button", { name: /Pasifleştir/ }));
+    expect(await dialog.findByRole("alert")).toHaveTextContent(R.err.lastAdminDeactivate);
+    expect(screen.getByRole("dialog", { name: R.deactivateConfirm })).toBeInTheDocument();
+  });
+
+  it("a confirmation cannot be closed while its request runs", async () => {
+    let fail;
+    const store = setup({ store: {
+      adminResetMfa: vi.fn(() => new Promise((_, reject) => { fail = reject; })),
+    } });
+    fireEvent.click(row("ayse").getByText("MFA sıfırla"));
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.click(dialog.getByRole("button", { name: /MFA sıfırla/ }));
+    await waitFor(() => expect(store.adminResetMfa).toHaveBeenCalledWith("u1"));
+    expect(dialog.getByRole("button", { name: "Vazgeç" })).toBeDisabled();
+    expect(dialog.getByRole("button", { name: "Kapat" })).toBeDisabled();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    fail(refusal("Bu hesap başka bir kurumda da etkin; parola, MFA, e-posta, ad ve etkinlik buradan "
+      + "değiştirilemez, yalnızca bu kurumdaki grupları ayarlanabilir", { status: 409 }));
+    expect(await dialog.findByRole("alert")).toHaveTextContent(R.err.sharedAccount);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a refusal to reactivate is shown in the row", async () => {
+    setup({ store: { adminUpdateUser: vi.fn(async () => {
+      throw refusal("Platform operatörü hesabı kurum yönetiminden değiştirilemez; yalnızca bu kurumdaki "
+        + "grupları ayarlanabilir", { status: 409 });
+    }) } });
+    fireEvent.click(row("pasif").getByText("Aktifleştir"));
+    expect(await row("pasif").findByRole("alert")).toHaveTextContent(R.err.platformAccount);
   });
 
   it("shows the refusals only the server can make (shared account, platform operator)", async () => {
@@ -278,9 +337,14 @@ describe("LiveUserAdmin — actions", () => {
       }),
     } });
     fireEvent.click(row("ayse").getByText("MFA sıfırla"));
-    expect(await row("ayse").findByText(R.err.sharedAccount)).toBeInTheDocument();
+    let dialog = within(screen.getByRole("dialog"));
+    fireEvent.click(dialog.getByRole("button", { name: /MFA sıfırla/ }));
+    expect(await dialog.findByRole("alert")).toHaveTextContent(R.err.sharedAccount);
+    fireEvent.click(dialog.getByRole("button", { name: "Vazgeç" }));
     fireEvent.click(row("ldapci").getByText("Pasifleştir"));
-    expect(await row("ldapci").findByText(R.err.platformAccount)).toBeInTheDocument();
+    dialog = within(screen.getByRole("dialog"));
+    fireEvent.click(dialog.getByRole("button", { name: /Pasifleştir/ }));
+    expect(await dialog.findByRole("alert")).toHaveTextContent(R.err.platformAccount);
   });
 
   it("never offers a reset or deactivation on yourself, and says why", () => {
@@ -335,7 +399,11 @@ describe("LiveUserAdmin — actions", () => {
     const ayse = row("ayse");
     expect(ayse.getByText(E.sourceLocal)).toBeInTheDocument();
     fireEvent.click(ayse.getByText(E.deactivate));
-    expect(await ayse.findByText(E.err.lastAdminDeactivate)).toBeInTheDocument();
+    const dialog = within(screen.getByRole("dialog", { name: E.deactivateConfirm }));
+    expect(dialog.getByText(E.deactivateConsequence)).toBeInTheDocument();
+    expect(dialog.getByRole("button", { name: cstrings("en").close })).toBeInTheDocument();
+    fireEvent.click(dialog.getByRole("button", { name: new RegExp(E.deactivate) }));
+    expect(await dialog.findByText(E.err.lastAdminDeactivate)).toBeInTheDocument();
   });
 });
 

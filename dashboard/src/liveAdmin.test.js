@@ -89,6 +89,29 @@ describe("groupRights", () => {
   it("is empty for nothing", () => {
     expect(groupRights(null, CATALOGUE)).toEqual([]);
   });
+
+  // service.py group_rights: a custom group's keys, intersected with the catalogue.
+  const RETIRED = { ...NURSE, id: "g3", slug: "archive", permissions: ["board.view", "legacy.key"] };
+
+  it("drops a custom group's key the catalogue no longer holds, as the server does", () => {
+    expect(groupRights(RETIRED, CATALOGUE)).toEqual(["board.view"]);
+    expect(groupRights(RETIRED, CATALOGUE.map((p) => p.key))).toEqual(["board.view"]);
+  });
+
+  it("without a catalogue (a users.manage desk) takes a custom group's keys as they are", () => {
+    expect(groupRights(RETIRED, [])).toEqual(["board.view", "legacy.key"]);
+    expect(groupRights(RETIRED)).toEqual(["board.view", "legacy.key"]);
+  });
+
+  it("the rules follow: a group or user judged without the retired key", () => {
+    const perms = ["board.view", "users.manage"];
+    expect(canGrant(perms, RETIRED, CATALOGUE)).toBe(true);
+    expect(canGrant(perms, RETIRED, [])).toBe(false);
+    const archivist = user("u7", [RETIRED]);
+    expect(userRights(archivist, [RETIRED], CATALOGUE)).toEqual(["board.view"]);
+    expect(canManageUser(perms, archivist, [RETIRED], "u-me", CATALOGUE).within).toBe(true);
+    expect(canManageUser(perms, archivist, [RETIRED], "u-me", []).beyond).toEqual(["legacy.key"]);
+  });
 });
 
 describe("userRights", () => {
