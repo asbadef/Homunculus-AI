@@ -107,6 +107,17 @@ tenant or membership is 403. `tenant_of_user` skips inactive tenants.
     After a deploy that adds a key, an administrator's older token under-reports their rights until
     it refreshes. Re-read `/auth/me` when the admin screen opens, or let the server's answer decide
     and hide nothing that only the hint refuses.
+  **From Task 16:**
+  - The panels show errors through `translateApiError(err, lang)` (`clinicalI18n.js`), never
+    `ex.message` raw. That goes for `state.adminError` and `state.sessionError` too.
+  - A greyed-out group shows `cannotGrantReason(rightsBeyond(perms, groupRights(g)), lang)`.
+  - **Task 19 adds the user's own password change.** The server's refusal for a self-reset points to
+    "Hesabım > Parola değiştir", and an admin-set password is temporary, but the dashboard has no
+    such screen yet. In the user menu, add "Parolamı değiştir" (live mode):
+    - current password, new password and repeat, calling `store.changePassword(current, next)`;
+    - the fresh token pair is stored by the API client;
+    - an AD account sees the API's "managed by Active Directory" refusal, translated;
+    - with the i18n keys in all four languages.
   **Task 19 must also fix these screens (found in Task 14):**
   - **`MfaGate` crashes on a first live enrolment.** `ClinicalDemo.jsx` calls
     `setSetup(store.setupMfa(...))` synchronously, stores the Promise, and throws on
