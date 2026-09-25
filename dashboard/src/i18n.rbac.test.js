@@ -9,6 +9,7 @@ import {
 import { PERMISSION_KEYS } from "./permissions.js";
 import { NO_PERMISSIONS, NO_BOARD_ACCESS } from "./liveAuth.js";
 import { SESSION_UNREACHABLE } from "./liveStore.js";
+import { REQUEST_TIMEOUT } from "./backendApi.js";
 
 const langs = LANGS.map((l) => l[0]);          // LANGS entries are [key, label, flag]
 
@@ -120,6 +121,7 @@ const PLAIN = [
   ...literals(GROUPS, String.raw`GroupError\(${STR}\)`).map((m) => ["auth/groups.py", m]),
   ...literals(AUTH_SCHEMAS, String.raw`ValueError\(${STR}\)`).map((m) => ["auth/schemas.py", m]),
   ...literals(BACKEND_API, String.raw`failure\(\w+,\s*${STR}\)`).map((m) => ["backendApi.js", m]),
+  ...literals(BACKEND_API, String.raw`TIMEOUT_MESSAGE = ${STR}`).map((m) => ["backendApi.js timeout", m]),
   ...literals(LIVE_STORE, String.raw`\[NO_[A-Z_]+, ${STR}\]`).map((m) => ["liveStore.js refusal", m]),
   ...literals(LIVE_STORE, String.raw`REFUSED_GENERIC = ${STR}`).map((m) => ["liveStore.js", m]),
   ...literals(LIVE_STORE, String.raw`code: SESSION_UNREACHABLE,\s*message: ${STR}`)
@@ -143,6 +145,7 @@ describe("server and client messages are mapped", () => {
       "Sunucuya ulaşılamıyor; oturumunuz korunuyor. Biraz sonra tekrar deneyin.",
       "Sunucuya şu an ulaşılamıyor; oturumunuz açık, biraz sonra tekrar deneyin.",
     ]) expect(has(m), m).toBe(true);
+    expect(PLAIN.some(([where]) => where === "backendApi.js timeout"), "the timeout message").toBe(true);
     expect(ADMIN_CONST.get("SHARED_ACCOUNT")).toMatch(/^Bu hesap başka bir kurumda da etkin; .+ayarlanabilir$/);
     expect(ADMIN_CONST.get("SELF_CREDENTIALS")).toContain("MFA'nızı");
     expect(PLAIN.length).toBeGreaterThan(45);
@@ -256,6 +259,14 @@ describe("codes", () => {
     expect(apiErrorKey(err).key).toBe("wrongCurrentPassword");
   });
 
+  it("translates a request the server did not answer in time, by its code", () => {
+    for (const lang of langs) {
+      const err = Object.assign(new Error("whatever"), { code: REQUEST_TIMEOUT });
+      expect(translateApiError(err, lang), lang).toBe(cstrings(lang).rbac.err.requestTimeout);
+    }
+    expect(REQUEST_TIMEOUT).toBe("REQUEST_TIMEOUT");
+  });
+
   it("translates the network failure", () => {
     expect(translateApiError(new TypeError("Failed to fetch"), "az"))
       .toBe(cstrings("az").rbac.err.network);
@@ -304,6 +315,18 @@ describe("field errors (422)", () => {
     }
     expect(translateApiError(err("password", "string_too_short", "String should have at least 8 characters"), "ru"))
       .toBe(cstrings("ru").rbac.err.passwordTooShort);
+  });
+
+  it("translates a password over the length limit, the user's own change included", () => {
+    // auth/schemas.py PasswordChangeRequest and admin/schemas.py cap passwords at 1024.
+    expect(AUTH_SCHEMAS).toContain("current_password: str = Field(max_length=_PASSWORD_MAX)");
+    expect(AUTH_SCHEMAS).toContain("new_password: str = Field(max_length=_PASSWORD_MAX)");
+    for (const field of ["current_password", "new_password", "password"]) {
+      for (const lang of langs) {
+        expect(translateApiError(err(field, "string_too_long", "String should have at most 1024 characters"), lang),
+          `${lang} ${field}`).toBe(cstrings(lang).rbac.err.passwordTooLong);
+      }
+    }
   });
 
   it("a model-level error with no field is read by its message", () => {

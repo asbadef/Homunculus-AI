@@ -17,6 +17,13 @@
 const ACCESS_KEY = "homunculus-access-token";
 const REFRESH_KEY = "homunculus-refresh-token";
 
+/** `err.code` of a request the server did not answer in time. */
+export const REQUEST_TIMEOUT = "REQUEST_TIMEOUT";
+/** How long a request waits for an answer by default. A Wi-Fi drop without a TCP reset can
+ *  otherwise leave a request, and the dialog waiting on it, hanging for minutes. */
+export const DEFAULT_TIMEOUT_MS = 15_000;
+const TIMEOUT_MESSAGE = "Sunucu yanıt vermedi. İşlem gerçekleşmiş olabilir; listeyi kontrol edip gerekirse tekrar deneyin.";
+
 function defaultBaseUrl() {
   try {
     return import.meta.env?.VITE_API_URL || "";
@@ -33,9 +40,29 @@ function storage() {
   }
 }
 
-export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {}) {
-  const doFetch = fetchImpl || ((...args) => fetch(...args));
+export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  const fetchNow = fetchImpl || ((...args) => fetch(...args));
   const mem = { access: null, refresh: null };
+
+  /** Run one request (its fetches and the reading of its answer) against the clock: past
+   *  `timeoutMs` it is aborted and rejects with REQUEST_TIMEOUT — no `status`, never
+   *  `sessionEnded`, so no caller mistakes it for a refusal and signs the clinician out. The
+   *  SSE stream is an EventSource, not a request made here, and has no such limit. */
+  function timed(run) {
+    const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+    let timer;
+    const expired = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        ctrl?.abort();
+        const err = new Error(TIMEOUT_MESSAGE);
+        err.code = REQUEST_TIMEOUT;
+        reject(err);
+      }, timeoutMs);
+    });
+    const doFetch = (input, init = {}) => fetchNow(input, ctrl ? { ...init, signal: ctrl.signal } : init);
+    return Promise.race([Promise.resolve().then(() => run(doFetch)), expired])
+      .finally(() => clearTimeout(timer));
+  }
 
   const readToken = (key, field) => {
     if (mem[field] !== null) return mem[field];
@@ -89,7 +116,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {})
     return `${baseUrl}${path}`;
   }
 
-  async function post(path, body, { auth = false } = {}) {
+  function post(doFetch, path, body, { auth = false } = {}) {
     const headers = { "Content-Type": "application/json" };
     if (auth && accessToken()) headers.Authorization = `Bearer ${accessToken()}`;
     return doFetch(url(path), { method: "POST", headers, body: JSON.stringify(body ?? {}) });
@@ -102,8 +129,12 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {})
    *  to the caller as it is. A refresh the server REFUSES (4xx) ends the session, and the error
    *  says so (`sessionEnded`). A refresh the server could not ANSWER (5xx, or no network) keeps
    *  it: an outage never signs a clinician out, and the next request tries again. Every HTTP
-   *  error carries its `status`. */
-  async function authed(path, { method = "GET", body } = {}) {
+   *  error carries its `status`. The whole exchange, refresh included, is one timed request. */
+  function authed(path, options = {}) {
+    return timed((doFetch) => authedOnce(doFetch, path, options));
+  }
+
+  async function authedOnce(doFetch, path, { method = "GET", body } = {}) {
     const send = () => {
       const headers = { Authorization: `Bearer ${accessToken()}` };
       const init = { method, headers };
@@ -146,21 +177,25 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl } = {})
     logout,
 
     /** `login` is a username or an e-mail (the API's `email` field is a legacy alias). */
-    async login(login, password) {
-      const res = await post("/auth/login", { login, password });
-      if (!res.ok) throw await failure(res, "Giriş başarısız.");
-      const tokens = await res.json();
-      setTokens(tokens);
-      return tokens;
+    login(login, password) {
+      return timed(async (doFetch) => {
+        const res = await post(doFetch, "/auth/login", { login, password });
+        if (!res.ok) throw await failure(res, "Giriş başarısız.");
+        const tokens = await res.json();
+        setTokens(tokens);
+        return tokens;
+      });
     },
 
     /** Exchange the 6-digit authenticator code for MFA-verified tokens. */
-    async verifyTotp(code) {
-      const res = await post("/auth/totp/verify", { code }, { auth: true });
-      if (!res.ok) throw await failure(res, "Doğrulama kodu geçersiz.");
-      const tokens = await res.json();
-      setTokens(tokens);
-      return tokens;
+    verifyTotp(code) {
+      return timed(async (doFetch) => {
+        const res = await post(doFetch, "/auth/totp/verify", { code }, { auth: true });
+        if (!res.ok) throw await failure(res, "Doğrulama kodu geçersiz.");
+        const tokens = await res.json();
+        setTokens(tokens);
+        return tokens;
+      });
     },
 
     /** Provisioning URI for the authenticator app (QR). */

@@ -157,44 +157,29 @@ describe("alertsFromPatients", () => {
     expect(alert.ack.note).toBeNull();
   });
 
-  // AlertCard (ClinicalDemo.jsx) computes `elapsed = state.clockSec - alert.firedAtSec`, where
-  // `clockSec` is the SIMULATION's own small local clock, not wall time. Handing it a raw Unix
-  // timestamp there produced a huge negative "elapsed" for every real alert. `firedAtSec` has to
-  // be translated into sim-clock coordinates at synthesis time instead.
-  describe("firedAtSec — translated onto the simulation's clock, not left as a Unix timestamp", () => {
-    it("places firedAtSec however many real seconds ago the alert fired, back from nowClockSec", () => {
-      vi.useFakeTimers();
-      try {
-        vi.setSystemTime(new Date("2026-08-27T12:00:00Z"));
-        const firstSeenAt = new Date(Date.now() - 120_000).toISOString(); // fired 120s ago
+  // A real alarm's age is WALL-CLOCK time since the backend first saw it. It used to be placed on
+  // the simulation's clock, which runs at 60x: a real alarm first seen 10 s ago read "elapsed
+  // 310 s" five seconds later, and its escalation stages lit within seconds. The alert now carries
+  // the backend's instant, and nothing on the simulation's clock.
+  describe("firstSeenAtMs — the backend's first-seen instant on the wall clock", () => {
+    it("carries first_seen_at as epoch milliseconds", () => {
+      const patient = patientFromBoard(entry);
+      const alert = alertsFromPatients([patient])[0];
+      expect(alert.firstSeenAtMs).toBe(Date.parse("2026-08-27T10:00:00Z"));
+    });
+
+    it("is null when first_seen_at is missing or unreadable, rather than inventing a time", () => {
+      for (const firstSeenAt of [null, undefined, "", "not a date"]) {
         const patient = patientFromBoard({
           ...entry, alerts: [{ ...entry.alerts[0], first_seen_at: firstSeenAt }],
         });
-
-        const alert = alertsFromPatients([patient], 500)[0];
-
-        expect(alert.firedAtSec).toBe(380); // 500 - 120
-      } finally {
-        vi.useRealTimers();
+        expect(alertsFromPatients([patient])[0].firstSeenAtMs, String(firstSeenAt)).toBeNull();
       }
     });
 
-    it("falls back to nowClockSec (elapsed 0) when first_seen_at is missing, rather than inventing a fired time", () => {
-      const patient = patientFromBoard({
-        ...entry, alerts: [{ ...entry.alerts[0], first_seen_at: null }],
-      });
-
-      const alert = alertsFromPatients([patient], 500)[0];
-
-      expect(alert.firedAtSec).toBe(500);
-    });
-
-    it("defaults nowClockSec to 0 when the caller passes none", () => {
-      const patient = patientFromBoard({
-        ...entry, alerts: [{ ...entry.alerts[0], first_seen_at: null }],
-      });
-
-      expect(alertsFromPatients([patient])[0].firedAtSec).toBe(0);
+    it("puts nothing on the simulation's clock", () => {
+      const alert = alertsFromPatients([patientFromBoard(entry)], 500)[0];
+      expect(alert.firedAtSec).toBeNull();
     });
   });
 

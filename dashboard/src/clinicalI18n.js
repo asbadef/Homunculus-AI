@@ -331,6 +331,8 @@ const STRINGS = {
       passwordMismatch: "Yeni parola ile tekrarı aynı değil.",
       passwordChanged: "Parolanız değiştirildi.",
       retry: "Tekrar dene", retrying: "Deneniyor…",
+      mfaQrAlt: "Doğrulayıcı uygulamasıyla taranacak QR kodu",
+      ackLiveHint: "Onay, adınız ve saatiyle kaydedilir.",
       // A group whose rights exceed the session's is offered greyed out, with this reason.
       cannotGrant: "Yetkileriniz bu grubu vermeye yetmiyor.",
       cannotGrantList: "Yetkileriniz bu grubu vermeye yetmiyor. Eksik yetkiler: {perms}",
@@ -377,6 +379,8 @@ const STRINGS = {
         noBoardAccess: "Panoya erişim yetkiniz yok. Sistem yöneticinizle görüşün.",
         sessionRefused: "Bu hesapla oturum açılamıyor. Sistem yöneticinizle görüşün.",
         passwordTooShort: "Parola en az 8 karakter olmalı.",
+        passwordTooLong: "Parola en fazla 1024 karakter olabilir.",
+        requestTimeout: "Sunucu yanıt vermedi. İşlem gerçekleşmiş olabilir; listeyi kontrol edip gerekirse tekrar deneyin.",
         wrongCurrentPassword: "Mevcut parola yanlış.",
         directoryPassword: "Parola Active Directory tarafından yönetiliyor; buradan değiştirilemez.",
         lastAdmin: "Son yöneticinin yetkisi kaldırılamaz.",
@@ -946,6 +950,8 @@ const STRINGS = {
       passwordMismatch: "Yeni parol ilə onun təkrarı eyni deyil.",
       passwordChanged: "Parolunuz dəyişdirildi.",
       retry: "Yenidən cəhd et", retrying: "Cəhd edilir…",
+      mfaQrAlt: "Doğrulama tətbiqi ilə skan ediləcək QR kod",
+      ackLiveHint: "Təsdiq adınız və vaxtı ilə qeyd olunur.",
       cannotGrant: "Səlahiyyətləriniz bu qrupu verməyə kifayət etmir.",
       cannotGrantList: "Səlahiyyətləriniz bu qrupu verməyə kifayət etmir. Çatışmayan səlahiyyətlər: {perms}",
       listOr: "və ya",
@@ -990,6 +996,8 @@ const STRINGS = {
         noBoardAccess: "Panelə giriş icazəniz yoxdur. Sistem administratorunuza müraciət edin.",
         sessionRefused: "Bu hesabla daxil olmaq mümkün deyil. Sistem administratorunuza müraciət edin.",
         passwordTooShort: "Parol ən azı 8 simvol olmalıdır.",
+        passwordTooLong: "Parol ən çoxu 1024 simvol ola bilər.",
+        requestTimeout: "Server cavab vermədi. Əməliyyat yerinə yetirilmiş ola bilər; siyahını yoxlayın və lazım olsa yenidən cəhd edin.",
         wrongCurrentPassword: "Cari parol yanlışdır.",
         directoryPassword: "Parol Active Directory tərəfindən idarə olunur; burada dəyişdirilə bilməz.",
         lastAdmin: "Son administratorun səlahiyyəti götürülə bilməz.",
@@ -1551,6 +1559,8 @@ const STRINGS = {
       passwordMismatch: "The new password and its repetition do not match.",
       passwordChanged: "Your password has been changed.",
       retry: "Try again", retrying: "Trying…",
+      mfaQrAlt: "QR code to scan with your authenticator app",
+      ackLiveHint: "The acknowledgement is recorded with your name and the time.",
       cannotGrant: "Your permissions are not enough to grant this group.",
       cannotGrantList: "Your permissions are not enough to grant this group. Missing: {perms}",
       listOr: "or",
@@ -1595,6 +1605,8 @@ const STRINGS = {
         noBoardAccess: "You do not have access to the board. Contact your system administrator.",
         sessionRefused: "This account cannot sign in. Contact your system administrator.",
         passwordTooShort: "The password must be at least 8 characters.",
+        passwordTooLong: "The password can be at most 1024 characters.",
+        requestTimeout: "The server did not answer. The action may have gone through: check the list and try again if needed.",
         wrongCurrentPassword: "The current password is incorrect.",
         directoryPassword: "The password is managed by Active Directory and cannot be changed here.",
         lastAdmin: "The last administrator's rights cannot be removed.",
@@ -2156,6 +2168,8 @@ const STRINGS = {
       passwordMismatch: "Новый пароль и его повтор не совпадают.",
       passwordChanged: "Ваш пароль изменён.",
       retry: "Повторить", retrying: "Повторная попытка…",
+      mfaQrAlt: "QR-код для сканирования приложением-аутентификатором",
+      ackLiveHint: "Подтверждение записывается с вашим именем и временем.",
       cannotGrant: "Ваших прав недостаточно, чтобы выдать эту группу.",
       cannotGrantList: "Ваших прав недостаточно, чтобы выдать эту группу. Не хватает прав: {perms}",
       listOr: "или",
@@ -2200,6 +2214,8 @@ const STRINGS = {
         noBoardAccess: "У вас нет доступа к панели. Обратитесь к системному администратору.",
         sessionRefused: "С этой учётной записью войти нельзя. Обратитесь к системному администратору.",
         passwordTooShort: "Пароль должен содержать не менее 8 символов.",
+        passwordTooLong: "Пароль может содержать не более 1024 символов.",
+        requestTimeout: "Сервер не ответил. Действие могло быть выполнено: проверьте список и при необходимости повторите.",
         wrongCurrentPassword: "Текущий пароль неверен.",
         directoryPassword: "Пароль управляется Active Directory; здесь его изменить нельзя.",
         lastAdmin: "Нельзя лишить прав последнего администратора.",
@@ -2519,6 +2535,8 @@ const API_MESSAGES = new Map([
   ["Kullanıcı adı zorunludur", "usernameRequired"],
   // backendApi.js
   ["Sunucuya şu an ulaşılamıyor; oturumunuz açık, biraz sonra tekrar deneyin.", "sessionUnreachable"],
+  ["Sunucu yanıt vermedi. İşlem gerçekleşmiş olabilir; listeyi kontrol edip gerekirse tekrar deneyin.",
+    "requestTimeout"],
   ["Oturum süresi doldu, tekrar giriş yapın.", "sessionExpired"],
   ["Giriş başarısız.", "loginFailed"],
   ["Doğrulama kodu geçersiz.", "invalidTotp"],
@@ -2542,8 +2560,10 @@ const API_PREFIXES = [
 ];
 const REQUEST_FAILED = /^İstek başarısız \((\d{3})\)$/;                                   // backendApi.js
 
-// liveStore.js / liveAuth.js codes (`err.code`, `state.sessionError.code`); they win over the text.
+// liveStore.js / liveAuth.js / backendApi.js codes (`err.code`, `state.sessionError.code`); they
+// win over the text.
 const API_CODES = new Map([
+  ["REQUEST_TIMEOUT", "requestTimeout"],
   ["NO_PERMISSIONS", "noPermissions"],
   ["NO_BOARD_ACCESS", "noBoardAccess"],
   ["SESSION_UNREACHABLE", "sessionUnreachable"],
@@ -2557,7 +2577,10 @@ const FIELD_ERRORS = new Map([
                         ["string_too_long", "usernameRule"]])],
   ["email", new Map([["value_error", "emailInvalid"], ["string_too_long", "emailInvalid"]])],
   ["slug", new Map([["value_error", "slugInvalid"]])],
-  ["password", new Map([["string_too_short", "passwordTooShort"]])],
+  ["password", new Map([["string_too_short", "passwordTooShort"], ["string_too_long", "passwordTooLong"]])],
+  // auth/schemas.py PasswordChangeRequest (the user's own change)
+  ["current_password", new Map([["string_too_long", "passwordTooLong"]])],
+  ["new_password", new Map([["string_too_long", "passwordTooLong"]])],
   ["full_name", new Map([["value_error", "fullNameRequired"], ["string_too_short", "fullNameRequired"]])],
   ["name", new Map([["value_error", "groupNameRequired"], ["string_too_short", "groupNameRequired"]])],
 ]);

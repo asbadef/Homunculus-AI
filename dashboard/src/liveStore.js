@@ -88,6 +88,11 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     tenantSetup: true,
     // Tells the UI it is talking to the real backend: simulation-only controls hide on it.
     live: true,
+    // The simulation's clock (60x) and its automatic alarm engine are stopped: a real alarm's age
+    // is wall-clock time (alertsFromPatients), and every alarm on screen is the backend's. The
+    // store's reconcile() is a no-op for the same reason (see the returned object).
+    running: false,
+    autoAlarm: false,
     // Set by restoreSession() when the server could not be reached ({code, message, detail});
     // null otherwise. See SESSION_UNREACHABLE.
     sessionError: null,
@@ -138,7 +143,26 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
       role: uiRoleFromPerms(session.perms),
       perms: session.perms, groups: session.groups,
       groupNames: groups.map((g) => g.name),
+      // The hospital the session is in (the token's slug): the top bar shows it in live mode.
+      tenant: typeof me.tenant === "string" && me.tenant.trim() ? me.tenant : session.tenant,
     };
+  }
+
+  // ---------------------------------------------------------------- the session's lifetime
+  // Bumped whenever a session begins or ends. A call that started under an older session drops
+  // its answer instead of applying it: a restore that finishes after a new sign-in must neither
+  // show the old account's name nor wipe the new session's tokens.
+  let sessionEpoch = 0;
+  const nextEpoch = () => { sessionEpoch += 1; return sessionEpoch; };
+
+  /** Sign out locally: tokens, the session, the administration data. */
+  function endSession() {
+    nextEpoch();
+    api.logout();
+    clearAdmin();
+    setOverlay({ user: null, mfaPending: null, sessionError: null });
+    emit();
+    if (typeof base.logout === "function") base.logout();
   }
 
   // ---------------------------------------------------------------- the session's rights
@@ -191,10 +215,17 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
   }
 
   /** Run one API call, then re-read the rights: a 401 inside it may have refreshed the token.
-   *  Also after a refusal, whose refresh may have brought narrower rights. */
+   *  Also after a refusal, whose refresh may have brought narrower rights. A refresh the server
+   *  REFUSED (`sessionEnded`: backendApi has already dropped the tokens) ends the session here,
+   *  so the clinician lands on the login screen rather than in a tokenless app that only ever
+   *  says "reconnecting". A server that did not answer (5xx, network, REQUEST_TIMEOUT) never
+   *  ends it. The error still reaches the caller. */
   async function tracked(call) {
     try {
       return await call();
+    } catch (err) {
+      if (err?.sessionEnded === true && (overlay.user || overlay.mfaPending)) endSession();
+      throw err;
     } finally {
       if (syncRights()) emit();
     }
@@ -208,9 +239,10 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     };
   }
 
-  /** Fetch the profile and open the session. */
-  async function openSession(session) {
+  /** Fetch the profile and open the session, unless another session began or ended meanwhile. */
+  async function openSession(session, epoch = sessionEpoch) {
     const me = await api.me();
+    if (epoch !== sessionEpoch) return { mfaRequired: false, superseded: true };
     clearAdmin();
     rememberProfile(me);
     setOverlay({ user: sessionUser(me, session), mfaPending: null, sessionError: null });
@@ -230,12 +262,12 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
    *  exists to prevent. */
   async function refreshBoard() {
     try {
-      const board = await api.boardPatients();
+      const board = await tracked(() => api.boardPatients());
       const patients = patientsFromBoard(board);
       setOverlay({
         patients,
         beds: bedsFromPatients(patients),
-        alerts: alertsFromPatients(patients, base.getState().clockSec ?? 0),
+        alerts: alertsFromPatients(patients),
         devices: [],
         connection: nextConnection(overlay.connection, { type: "loaded" }),
       });
@@ -255,16 +287,20 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
   /** AckModal calls this as `store.acknowledgeAlert(alert.id, {reason, note})` and must not
    *  change — alert.id is "<patient_id>::<kind>" (alertsFromPatients). `reason`/`note` are not
    *  forwarded: the backend's AckStore keeps only {by, at} in this slice, so there is nowhere for
-   *  them to go yet. The actor is attributed by the API from the signed token, never sent from
+   *  them to go yet, and in live mode the dialog does not ask for them. The actor is attributed by the API from the signed token, never sent from
    *  here. A refusal (403 "permission required: alerts.ack") rejects with the API's message for
-   *  the caller to show; the board is not reloaded, since nothing was acknowledged. */
+   *  the caller to show; the board is not reloaded, since nothing was acknowledged.
+   *
+   *  It resolves as soon as the API took the acknowledgement; the board reload that follows is
+   *  not awaited, so a slow reload never keeps the dialog waiting on an ack already recorded.
+   *  refreshBoard() never rejects. */
   async function acknowledgeAlert(alertId, { reason, note } = {}) {
     const id = String(alertId);
     const sep = id.indexOf("::");
     const patientId = sep === -1 ? id : id.slice(0, sep);
     const kind = sep === -1 ? "" : id.slice(sep + 2);
     await tracked(() => api.acknowledge(patientId, kind));
-    await refreshBoard();
+    void refreshBoard();
   }
 
   /** Open the live stream with a ticket, so no long-lived credential enters a URL. The store owns
@@ -272,7 +308,10 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
    *  dropped stream gets exactly one scheduled reconnect — with a FRESH ticket, because tickets are
    *  single-use and the one that opened the dead connection cannot open another. */
   async function startLive() {
+    const epoch = sessionEpoch;
     await refreshBoard();
+    // The board load found the session ended (and signed out): there is nothing to stream.
+    if (epoch !== sessionEpoch) return () => {};
 
     let closed = false;
     let reconnectTimer = null;
@@ -294,7 +333,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
         : mergePatient(overlay.patients, patient);
       setOverlay({
         patients, beds: bedsFromPatients(patients),
-        alerts: alertsFromPatients(patients, base.getState().clockSec ?? 0),
+        alerts: alertsFromPatients(patients),
       });
       emit();
     }
@@ -361,9 +400,9 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     // a rejection, so allSettled sees every failure.
     const ask = (allowed, call) => (allowed ? Promise.resolve().then(call) : Promise.resolve([]));
     const [users, groups, catalogue] = await Promise.allSettled([
-      ask(may("users.manage"), () => api.adminUsers()),
-      ask(may("users.manage", "groups.manage"), () => api.adminGroups()),
-      ask(may("groups.manage"), () => api.adminPermissions()),
+      ask(may("users.manage"), () => tracked(() => api.adminUsers())),
+      ask(may("users.manage", "groups.manage"), () => tracked(() => api.adminGroups())),
+      ask(may("groups.manage"), () => tracked(() => api.adminPermissions())),
     ]);
     if (seq !== adminLoadSeq) return;           // superseded by a newer load or a sign-out
     syncRights();
@@ -408,6 +447,8 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     ...base,
     getState,
     subscribe,
+    /** The simulation's clock does not run against the real backend (see `running`). */
+    reconcile() {},
     refreshBoard,
     acknowledgeAlert,
     startLive,
@@ -425,18 +466,20 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     /** Password step. Resolves to {mfaRequired, enrolled?} — the UI shows the TOTP gate when
      *  mfaRequired, and the enrolment (QR) flow inside it when not yet enrolled. */
     async attemptLogin(login, credential) {
+      const epoch = nextEpoch();          // a restore still in flight drops its answer
       const tokens = await api.login(login, credential);
       const session = resolveSession(tokens.access_token);
       if (tokens.requires_mfa) {
         // The profile is readable before the MFA step; the gate shows who is enrolling.
         const me = await api.me();
+        if (epoch !== sessionEpoch) return { mfaRequired: true, superseded: true };
         const enrolled = tokens.mfa_enrolled === true;
         setOverlay({ user: null, mfaPending: pendingMfa(login, me, session, enrolled),
                      sessionError: null });
         emit();
         return { mfaRequired: true, enrolled };
       }
-      return openSession(session);
+      return openSession(session, epoch);
     },
 
     /** Authenticator step of the LOGIN flow — exchanges the 6-digit code for MFA-verified tokens.
@@ -444,8 +487,10 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
      *  leaves the gate and the tokens as they are. (`verifyMfa` stays delegated to the
      *  simulation: only its admin-panel MfaModal uses it, never the login flow.) */
     async completeMfaLogin(code) {
+      const epoch = sessionEpoch;
       const tokens = await api.verifyTotp(String(code).trim());
-      return openSession(resolveSession(tokens.access_token));
+      if (epoch !== sessionEpoch) return { mfaRequired: false, superseded: true };
+      return openSession(resolveSession(tokens.access_token), epoch);
     },
 
     /** Live MFA enrolment: the API mints the secret; the gate shows the QR and the manual key.
@@ -456,7 +501,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
      *  429 means the code limit was hit — show the API's message. An enrolled user on a
      *  pending-MFA session gets 403 `mfa_reset_required`; that rejects to the caller too. */
     async setupMfa() {
-      const res = await api.setupTotp();
+      const res = await tracked(() => api.setupTotp());
       return {
         provisioningUri: res.provisioning_uri,
         secret: secretFromProvisioningUri(res.provisioning_uri),
@@ -466,6 +511,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     /** Back out of the MFA gate. Overrides the simulation's version, which writes to the base
      *  store — leaving OUR overlay's mfaPending set and the gate stuck on screen. */
     cancelMfaLogin() {
+      nextEpoch();
       api.logout();
       clearAdmin();
       setOverlay({ user: null, mfaPending: null, sessionError: null });
@@ -488,9 +534,8 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
       if (!overlay.user) return false;
       let me;
       try {
-        me = await api.me();
+        me = await tracked(() => api.me());
       } catch {
-        if (syncRights()) emit();
         return false;
       }
       const user = overlay.user;
@@ -523,8 +568,13 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
      *    `sessionError` (SESSION_UNREACHABLE) for the UI to show; calling this again retries. */
     async restoreSession() {
       if (typeof api.accessToken !== "function" || !api.accessToken()) return false;
+      // A sign-in, sign-out or newer restore while this one waits supersedes it: its answer is
+      // dropped, whatever it is, so it neither shows this account with another's rights nor
+      // clears the tokens a new sign-in just stored.
+      const epoch = nextEpoch();
       try {
         const me = await api.me();
+        if (epoch !== sessionEpoch) return false;
         const session = resolveSession(api.accessToken());  // reread: me() may have refreshed
         if (session.mfaRequired && !session.mfaVerified) {
           setOverlay({ user: null, sessionError: null,
@@ -538,6 +588,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
         emit();
         return true;
       } catch (err) {
+        if (epoch !== sessionEpoch) return false;
         if (sessionRefused(err)) {
           api.logout();
           setOverlay({ user: null, mfaPending: null, sessionError: null });
@@ -554,11 +605,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     },
 
     logout() {
-      api.logout();
-      clearAdmin();
-      setOverlay({ user: null, mfaPending: null, sessionError: null });
-      emit();
-      if (typeof base.logout === "function") base.logout();
+      endSession();
     },
   };
 }

@@ -76,7 +76,7 @@ describe("liveStore — real authentication over the simulation", () => {
     expect(store.getState().user).toEqual({
       id: "u-admin", email: "admin@example.com", username: "admin", full_name: "Sistem Yöneticisi",
       role: ROLE.HOSPITAL_ADMIN, perms: ADMIN_PERMS, groups: ["hospital_admin"],
-      groupNames: ["Sistem Yöneticisi"],
+      groupNames: ["Sistem Yöneticisi"], tenant: "t1",
     });
     expect(store.getState().live).toBe(true);
   });
@@ -320,6 +320,50 @@ describe("liveStore — session survives a page reload", () => {
     expect(await store.restoreSession()).toBe(true);
 
     expect(store.getState().user.perms).toEqual(ADMIN_PERMS);
+    expect(store.getState().sessionError).toBeNull();
+  });
+
+  it("drops its answer when someone signed in while it waited: no name from one, rights from another", async () => {
+    let current = adminToken;                       // the stored session from an earlier load
+    let answerRestore;
+    const me = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { answerRestore = resolve; }))
+      .mockResolvedValue({ ...ME, id: "u-nurse", username: "ayse", full_name: "Ayşe Demir",
+                           groups: [{ slug: "nurse", name: "Hemşire" }] });
+    const api = fakeApi({
+      accessToken: vi.fn(() => current), me,
+      login: vi.fn(async () => { current = nurseToken; return { access_token: nurseToken, requires_mfa: false }; }),
+    });
+    const store = createLiveStore({ api, base: fakeBase() });
+
+    const restoring = store.restoreSession();
+    await store.attemptLogin("ayse", "gizli");
+    answerRestore(ME);                              // the administrator's profile, too late
+
+    expect(await restoring).toBe(false);
+    expect(store.getState().user).toMatchObject({ id: "u-nurse", full_name: "Ayşe Demir" });
+    expect(store.getState().user.perms).not.toContain("users.manage");
+  });
+
+  it("a refusal that arrives after a new sign-in does not wipe the new session's tokens", async () => {
+    let current = adminToken;
+    let refuse;
+    const me = vi.fn()
+      .mockImplementationOnce(() => new Promise((_, reject) => { refuse = reject; }))
+      .mockResolvedValue(ME);
+    const api = fakeApi({
+      accessToken: vi.fn(() => current), me,
+      login: vi.fn(async () => { current = nurseToken; return { access_token: nurseToken, requires_mfa: false }; }),
+    });
+    const store = createLiveStore({ api, base: fakeBase() });
+
+    const restoring = store.restoreSession();
+    await store.attemptLogin("ayse", "gizli");
+    refuse(apiError("Invalid or missing authentication credentials", { status: 401 }));
+
+    expect(await restoring).toBe(false);
+    expect(api.logout).not.toHaveBeenCalled();
+    expect(store.getState().user).not.toBeNull();
     expect(store.getState().sessionError).toBeNull();
   });
 

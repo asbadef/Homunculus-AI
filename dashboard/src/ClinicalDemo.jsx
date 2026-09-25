@@ -30,7 +30,7 @@ import {
   getTheme, storedTheme, persistTheme, THEME_KEYS,
 } from "./clinicalTheme.js";
 import { Field, inputCls, btnCls, ActionOverlay } from "./ui.jsx";
-import { hasAny } from "./permissions.js";
+import { hasAny, hasPerm } from "./permissions.js";
 import { LiveStaffTab } from "./admin/LiveStaffTab.jsx";
 import QRCode from "qrcode";
 import { cstrings, storedClang, persistClang, LANGS, translateApiError } from "./clinicalI18n.js";
@@ -81,10 +81,31 @@ function ageText(p, S) {
   if (p.isNeonate) return `${p.ageDays ?? 0} ${S.dayUnit}`;
   return `${p.age ?? "—"}`;
 }
+/** Age, sex and protocol number as far as they are known — a bed card's second line. */
+function demographics(p, S) {
+  const known = p.isNeonate ? p.ageDays != null : p.age != null;
+  return [
+    known ? `${ageText(p, S)}${!p.isNeonate ? "y" : ""}` : null,
+    p.sex === "male" ? S.male : p.sex === "female" ? S.female : null,
+    p.protocolNo ? `${S.protocolNo} ${p.protocolNo}` : null,
+  ].filter(Boolean);
+}
 function useStore(store) {
   const [, force] = useReducer((x) => x + 1, 0);
   useEffect(() => store.subscribe(force), [store]);
   return store.getState();
+}
+/** Wall-clock milliseconds, re-read every `intervalMs` (none when it is null). A real alarm's age
+ *  is measured with it: the simulation's clock runs at 60x and stands still in live mode. */
+function useNow(intervalMs) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!intervalMs) return undefined;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
 }
 
 // ---------------------------------------------------------------- generic dropdown menu
@@ -207,7 +228,7 @@ function Login({ T, S, store, lang, setLang, sessionError = null }) {
     // Kurumsal e-posta + parola. Yetkiler gruplardan gelir; panel izinlere göre yönlenir.
     // attemptLogin: gruplardan biri MFA gerektiriyorsa oturumu açmadan MFA kapısına yönlendirir.
     // `await` hem simülasyonun senkron sürümünü hem canlı backend'in async sürümünü karşılar.
-    if (busy) return;
+    if (busy || retrying.current) return;   // a session retry in flight would race this sign-in
     setErr(null);
     setBusy(true);
     try { await store.attemptLogin(email.trim(), credential.trim()); }
@@ -222,7 +243,7 @@ function Login({ T, S, store, lang, setLang, sessionError = null }) {
   const [retryBusy, setRetryBusy] = useState(false);
   const canRetry = typeof store.restoreSession === "function";
   const retry = () => {
-    if (retrying.current || !canRetry) return;
+    if (retrying.current || busy || !canRetry) return;
     retrying.current = true;
     setRetryBusy(true);
     let call;
@@ -334,7 +355,7 @@ function Login({ T, S, store, lang, setLang, sessionError = null }) {
                 <span>{translateApiError(sessionError, lang)}</span>
               </div>
               {canRetry && (
-                <button type="button" onClick={retry} disabled={retryBusy} className={`${btnCls(T, "ghost")} mt-2 w-full`}>
+                <button type="button" onClick={retry} disabled={retryBusy || busy} className={`${btnCls(T, "ghost")} mt-2 w-full`}>
                   <RefreshCw size={15} className={retryBusy ? "animate-spin" : ""} />
                   {retryBusy ? S.rbac.retrying : S.rbac.retry}
                 </button>
@@ -354,7 +375,7 @@ function Login({ T, S, store, lang, setLang, sessionError = null }) {
                   onChange={(e) => setCredential(e.target.value)} placeholder="••••••••" autoComplete="current-password" />)}
             </Field>
             {err && <div role="alert" className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{translateApiError(err, lang)}</div>}
-            <button type="submit" disabled={busy} className={`${btnCls(T, "primary")} group w-full`}>
+            <button type="submit" disabled={busy || retryBusy} className={`${btnCls(T, "primary")} group w-full`}>
               {S.signIn}
               <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
             </button>
@@ -433,11 +454,17 @@ function MfaGate({ T, S, store, pending, lang, setLang, live = false }) {
   const [copied, setCopied] = useState(false);
   const enrolled = pending.enrolled;
   const enrolment = useRef(null);                 // { key, call } — this showing's one setupMfa()
-  const enrolKey = `${pending.userId ?? ""}|${pending.email ?? ""}`;
+  // Bumped by "retry" after an enrolment the server did not answer (network, 5xx, timeout).
+  const [attempt, setAttempt] = useState(0);
+  const enrolKey = `${pending.userId ?? ""}|${pending.email ?? ""}|${attempt}`;
+  const canCopy = typeof navigator !== "undefined" && typeof navigator.clipboard?.writeText === "function";
 
   useEffect(() => {
     if (enrolled) return undefined;
     if (!enrolment.current || enrolment.current.key !== enrolKey) {
+      // A new key — another pending sign-in, or a retry: nothing of the last call may stay on
+      // screen, because its secret is no longer the one the server holds.
+      setSetup(null); setQr(null); setSetupErr(null); setCopied(false);
       enrolment.current = { key: enrolKey,
         call: Promise.resolve().then(() => store.setupMfa({ userId: pending.userId })) };
     }
@@ -457,13 +484,19 @@ function MfaGate({ T, S, store, pending, lang, setLang, live = false }) {
     return () => { current = false; };
   }, [enrolled, enrolKey, store]);
 
-  const copyKey = () => {
+  // "Copied" only once the clipboard took it: a refused write must not claim the key is there.
+  const copyKey = async () => {
     try {
-      Promise.resolve(navigator.clipboard?.writeText(setup?.secret || "")).catch(() => {});
-    } catch { /* ignore */ }
+      await navigator.clipboard.writeText(setup?.secret || "");
+    } catch {
+      return;
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
+  // A failure with no answer (network, timeout) or a server error can be retried; a refusal
+  // (403 mfa_reset_required) would get the same answer again.
+  const setupRetryable = !!setupErr && (setupErr.status == null || setupErr.status >= 500);
 
   const verify = async (e) => {
     e.preventDefault();
@@ -502,14 +535,21 @@ function MfaGate({ T, S, store, pending, lang, setLang, live = false }) {
           <div role="status" className={`mb-4 text-center text-sm ${T.faint}`}>{S.rbac.loading}</div>
         )}
         {!enrolled && setupErr && (
-          <div role="alert" className="mb-4 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">
-            {translateApiError(setupErr, lang)}
+          <div className="mb-4 space-y-2">
+            <div role="alert" className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">
+              {translateApiError(setupErr, lang)}
+            </div>
+            {setupRetryable && (
+              <button type="button" onClick={() => setAttempt((n) => n + 1)} className={`${btnCls(T, "ghost")} w-full`}>
+                <RefreshCw size={15} /> {S.rbac.retry}
+              </button>
+            )}
           </div>
         )}
         {!enrolled && setup && (
           <div className={`mb-4 rounded-2xl border ${T.border} ${T.glassSubtle} p-4`}>
             {qr ? (
-              <img src={qr} alt="TOTP QR" className="mx-auto mb-3 h-36 w-36 rounded-xl bg-white p-1" />
+              <img src={qr} alt={S.rbac.mfaQrAlt} className="mx-auto mb-3 h-36 w-36 rounded-xl bg-white p-1" />
             ) : (
               <div className={`mx-auto mb-3 grid h-32 w-32 place-items-center rounded-xl ${T.subtle}`}>
                 <QrCode size={104} className={T.faint} />
@@ -521,9 +561,12 @@ function MfaGate({ T, S, store, pending, lang, setLang, live = false }) {
               <code className={`font-mono text-sm tracking-widest ${T.text}`}>
                 {(setup.secret || "").replace(/(.{4})/g, "$1 ").trim()}
               </code>
-              <button type="button" onClick={copyKey} className={btnCls(T, "ghost")}>
-                {copied ? S.rbac.copied : S.rbac.mfaCopy}
-              </button>
+              {/* No clipboard on a plain-HTTP origin: no button that cannot work. */}
+              {canCopy && (
+                <button type="button" onClick={copyKey} className={btnCls(T, "ghost")}>
+                  {copied ? S.rbac.copied : S.rbac.mfaCopy}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -759,7 +802,8 @@ function ShiftMenu({ T, S, state }) {
   const hour = new Date().getHours();
   const active = pin || autoShiftKey(hour);
   const ActiveIcon = (SHIFT_DEFS.find((s) => s.key === active) || SHIFT_DEFS[0]).icon;
-  const unsigned = (state.shiftHandovers || []).filter((h) => !h.signedBy).length;
+  // The shift handovers are the simulation's: live mode counts none.
+  const unsigned = state.live === true ? 0 : (state.shiftHandovers || []).filter((h) => !h.signedBy).length;
   return (
     <Menu T={T} align="right"
       triggerClass={`hidden items-center gap-2 rounded-lg px-3 py-1.5 md:flex ${T.chip} relative`}
@@ -820,7 +864,10 @@ function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMe
       </button>
       <div className="min-w-0">
         <div className={`truncate font-bold ${T.heading} ${T.sizes.name}`}>{S.nav[page]}</div>
-        <div className={`truncate text-xs ${T.faint}`}>{state.structure.tenant} · {state.structure.site}</div>
+        {/* Live: the session's hospital (the token's tenant), never the simulated one. */}
+        <div className={`truncate text-xs ${T.faint}`}>
+          {live ? (user?.tenant || "") : `${state.structure.tenant} · ${state.structure.site}`}
+        </div>
       </div>
 
       <div className="ml-auto flex items-center gap-2">
@@ -841,12 +888,14 @@ function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMe
           </>
         )}
 
-        {/* Offline / online toggle (PWA resilience) */}
-        <button onClick={() => store.setOnline(!online)}
-          title={online ? S.pr7.goOffline : S.pr7.goOnline}
-          className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost} ${online ? "text-emerald-500" : "text-amber-500"}`}>
-          {online ? <Cloud size={17} /> : <CloudOff size={17} />}
-        </button>
+        {/* Offline / online toggle (PWA resilience) — the simulation's own network flag; not live */}
+        {!live && (
+          <button onClick={() => store.setOnline(!online)}
+            title={online ? S.pr7.goOffline : S.pr7.goOnline}
+            className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost} ${online ? "text-emerald-500" : "text-amber-500"}`}>
+            {online ? <Cloud size={17} /> : <CloudOff size={17} />}
+          </button>
+        )}
 
         {/* Alarm sound (IEC 60601-1-8) enable */}
         <button onClick={onEnableSound}
@@ -872,13 +921,16 @@ function TopBar({ T, S, store, state, page, lang, setLang, theme, setTheme, onMe
           </button>
         )}
 
-        {/* Auto-alarm toggle */}
-        <button
-          onClick={() => store.setAutoAlarm(!state.autoAlarm)}
-          title={state.autoAlarm ? S.pr6.autoAlarmOn : S.pr6.autoAlarmOff}
-          className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost} ${state.autoAlarm ? "text-red-500" : T.faint}`}>
-          {state.autoAlarm ? <Siren size={17} /> : <BellOff size={17} />}
-        </button>
+        {/* Auto-alarm toggle — the simulation's alarm engine. Not live: there, "off" would read as
+            "the ward's alarms are off". */}
+        {!live && (
+          <button
+            onClick={() => store.setAutoAlarm(!state.autoAlarm)}
+            title={state.autoAlarm ? S.pr6.autoAlarmOn : S.pr6.autoAlarmOff}
+            className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost} ${state.autoAlarm ? "text-red-500" : T.faint}`}>
+            {state.autoAlarm ? <Siren size={17} /> : <BellOff size={17} />}
+          </button>
+        )}
 
         {/* KVKK name-mask toggle */}
         <button
@@ -1033,26 +1085,34 @@ function PasswordChangeDialog({ T, S, store, lang, onClose }) {
 // ================================================================ SIDEBAR
 // `perm` is a list — the item shows when the session holds ANY of them; null = everyone. The
 // session's `perms` gate it in both modes (the simulation's users carry their role's defaults).
+// `demoOnly` pages read or write only the simulation, so live mode hides them: in live mode nothing
+// simulated may look real. Admission, care team and results write only to the simulation; the
+// heatmap is computed from the simulated ward. The admin page shows when any of its tabs does.
 export const NAV_ITEMS = [
   { key: "board", icon: LayoutGrid, perm: null, group: "clinical" },
-  { key: "admission", icon: UserPlus, perm: ["admissions.admit", "admissions.sign_off"], group: "clinical" },
-  { key: "care", icon: Users, perm: ["care_team.claim", "care_team.assign"], group: "clinical" },
+  { key: "admission", icon: UserPlus, perm: ["admissions.admit", "admissions.sign_off"], group: "clinical", demoOnly: true },
+  { key: "care", icon: Users, perm: ["care_team.claim", "care_team.assign"], group: "clinical", demoOnly: true },
   { key: "alarms", icon: Bell, perm: null, group: "clinical" },
-  { key: "results", icon: Inbox, perm: ["admissions.view"], group: "ops" },
-  { key: "heatmap", icon: Grid3x3, perm: null, group: "ops" },
-  { key: "admin", icon: Settings,
-    perm: ["users.manage", "groups.manage", "structure.manage", "devices.manage", "audit.view"], group: "admin" },
+  { key: "results", icon: Inbox, perm: ["admissions.view"], group: "ops", demoOnly: true },
+  { key: "heatmap", icon: Grid3x3, perm: null, group: "ops", demoOnly: true },
+  { key: "admin", icon: Settings, perm: null, viaTabs: true, group: "admin" },
 ];
 const NAV_GROUPS = [
   { id: "clinical", label: "navGroupClinical" },
   { id: "ops", label: "navGroupOps" },
   { id: "admin", label: "navGroupAdmin" },
 ];
-export function canSee(item, perms) { return hasAny(perms, item.perm); }
+/** Whether a page or an admin tab shows for these permissions — in live mode, only what the API
+ *  backs. */
+export function canSee(item, perms, live = false) {
+  if (live && item.demoOnly) return false;
+  if (item.viaTabs) return ADMIN_TABS.some((t) => canSee(t, perms, live));
+  return hasAny(perms, item.perm);
+}
 
 function Sidebar({ T, S, state, page, setPage, collapsed, setCollapsed, mobileOpen, setMobileOpen }) {
   const perms = state.user?.perms || [];
-  const visible = NAV_ITEMS.filter((i) => canSee(i, perms));
+  const visible = NAV_ITEMS.filter((i) => canSee(i, perms, state.live === true));
   const width = collapsed ? "w-16" : "w-64";
   const body = (
     <div className={`flex h-full flex-col border-r ${T.border} ${T.sidebar}`}>
@@ -1178,7 +1238,9 @@ function Waveform({ hr = 80, height = 34, stroke = "#10b981" }) {
 }
 
 function BedBoard({ T, S, state, onOpenPatient, lang }) {
-  const units = state.structure.units;
+  const live = state.live === true;
+  // Live beds carry no unit yet: the unit tabs would be the simulation's hospital.
+  const units = live ? [] : state.structure.units;
   const [unitId, setUnitId] = useState("all");
   const beds = unitId === "all" ? state.beds : state.beds.filter((b) => b.unitId === unitId);
   const occupied = beds.filter((b) => b.state === "OCCUPIED").length;
@@ -1188,10 +1250,12 @@ function BedBoard({ T, S, state, onOpenPatient, lang }) {
     <div className="space-y-4">
       {/* unit tabs + occupancy */}
       <div className="flex flex-wrap items-center gap-2">
-        <button onClick={() => setUnitId("all")}
-          className={`rounded-lg px-3 py-2 font-medium ${T.sizes.nav} ${unitId === "all" ? T.navActive : T.ghost}`}>
-          {S.allUnits}
-        </button>
+        {!live && (
+          <button onClick={() => setUnitId("all")}
+            className={`rounded-lg px-3 py-2 font-medium ${T.sizes.nav} ${unitId === "all" ? T.navActive : T.ghost}`}>
+            {S.allUnits}
+          </button>
+        )}
         {units.map((u) => (
           <button key={u.id} onClick={() => setUnitId(u.id)}
             className={`rounded-lg px-3 py-2 font-medium ${T.sizes.nav} ${unitId === u.id ? T.navActive : T.ghost}`}>
@@ -1228,18 +1292,21 @@ function BedBoard({ T, S, state, onOpenPatient, lang }) {
                     <span className={`rounded-md ${T.subtle} px-2 py-0.5 text-xs font-bold ${T.muted}`}>{bed.label}</span>
                     <span className={`truncate font-bold ${T.heading} ${T.sizes.name}`}>{maskedName(state, p.display_name) || p.patient_id}</span>
                   </div>
-                  <div className={`mt-0.5 text-xs ${T.faint}`}>
-                    {ageText(p, S)}{!p.isNeonate ? "y" : ""} · {p.sex === "male" ? S.male : S.female} · {S.protocolNo} {p.protocolNo}
-                  </div>
+                  {/* Only what is known: a missing sex is not "female", a missing age not "—y". */}
+                  {demographics(p, S).length > 0 && (
+                    <div className={`mt-0.5 text-xs ${T.faint}`}>{demographics(p, S).join(" · ")}</div>
+                  )}
                   <IdentityStatus p={p} S={S} className={`mt-1 text-xs ${T.faint}`} />
                 </div>
                 <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${ru.ring} ${ru.text}`}>
                   <span className={`h-2 w-2 rounded-full ${ru.dot}`} /> {S.risk[p.risk]}
                 </span>
               </div>
-              <div className={`mt-2 line-clamp-2 text-sm ${T.muted}`}>
-                <span className={`font-medium ${T.faint}`}>{S.admissionDx}: </span>{p.diagnosis}
-              </div>
+              {p.diagnosis && (
+                <div className={`mt-2 line-clamp-2 text-sm ${T.muted}`}>
+                  <span className={`font-medium ${T.faint}`}>{S.admissionDx}: </span>{p.diagnosis}
+                </div>
+              )}
               <VitalsGrid T={T} vitals={p.vitals} />
               {dev && (
                 <div className="relative mt-2 rounded-lg bg-emerald-500/5 ring-1 ring-emerald-500/20">
@@ -1253,8 +1320,10 @@ function BedBoard({ T, S, state, onOpenPatient, lang }) {
               )}
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <News2Pill S={S} vitals={p.vitals} />
-                <BranchProfileBadge S={S} lang={lang} profile={profileForPatient(state, p)} size="sm" />
-                {dev ? (
+                {/* Live: the unit profile is the simulation's, and the device inventory has no live
+                    source — "not connected" on a card fed by the device itself would be false. */}
+                {!live && <BranchProfileBadge S={S} lang={lang} profile={profileForPatient(state, p)} size="sm" />}
+                {live ? null : dev ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-500 ring-1 ring-emerald-500/30">
                     <Radio size={11} className="animate-pulse" /> {S.pr7.live} · {dev.model} · {dev.ip}
                   </span>
@@ -1264,10 +1333,12 @@ function BedBoard({ T, S, state, onOpenPatient, lang }) {
                   </span>
                 )}
               </div>
-              <div className={`mt-3 flex items-center justify-between text-xs ${T.faint}`}>
-                <span>{S.mrn} {p.mrn}</span>
-                <span>{S.lengthOfStay}: {losText(p.admittedAtMs, S)}</span>
-              </div>
+              {(p.mrn || p.admittedAtMs) && (
+                <div className={`mt-3 flex items-center justify-between text-xs ${T.faint}`}>
+                  <span>{S.mrn} {p.mrn}</span>
+                  <span>{S.lengthOfStay}: {losText(p.admittedAtMs, S)}</span>
+                </div>
+              )}
             </button>
           );
         })}
@@ -1375,6 +1446,13 @@ function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, onE
   const p = state.patients.find((x) => x.patient_id === patientId);
   const [ho, setHo] = useState(false);
   if (!p) return null;
+  // Live: only what the backend sent. The cockpit, the PHI fields, the care team, the results,
+  // the clinical module and the handover read or write only the simulation.
+  const live = state.live === true;
+  const perms = state.user?.perms || [];
+  // A transfer is started on the admission page, which is shown only where it exists.
+  const canTransfer = hasPerm(perms, "admissions.move.initiate")
+    && canSee(NAV_ITEMS.find((i) => i.key === "admission"), perms, live);
   const ru = riskUi(p.risk);
   const profile = profileForPatient(state, p);
   const team = state.careTeam[p.patient_id] || {};
@@ -1391,10 +1469,12 @@ function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, onE
           </div>
           <div className="flex items-center gap-1.5">
             {/* Madde 8 — dar panelden geniş iki sütunlu tam ekran kokpite geç */}
-            <button onClick={() => onExpand(p.patient_id)} title={S.pr14.cockpitOpen}
-              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-xs font-semibold ${T.primary}`}>
-              <LayoutGrid size={15} /> <span className="hidden sm:inline">{S.pr14.cockpit}</span>
-            </button>
+            {!live && (
+              <button onClick={() => onExpand(p.patient_id)} title={S.pr14.cockpitOpen}
+                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-xs font-semibold ${T.primary}`}>
+                <LayoutGrid size={15} /> <span className="hidden sm:inline">{S.pr14.cockpit}</span>
+              </button>
+            )}
             <button onClick={onClose} className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost}`}><X size={18} /></button>
           </div>
         </div>
@@ -1402,17 +1482,29 @@ function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, onE
           <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${ru.ring} ${ru.text}`}>
             <span className={`h-2 w-2 rounded-full ${ru.dot}`} /> {S.riskLevel}: {S.risk[p.risk]}
           </span>
-          <BranchProfileBadge S={S} lang={lang} profile={profile} />
+          {!live && <BranchProfileBadge S={S} lang={lang} profile={profile} />}
         </div>
 
         <dl className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border ${T.border} ${T.subtle} p-4 text-sm`}>
           {[[S.protocolNo, p.protocolNo], [S.mrn, p.mrn],
-            [S.age, `${ageText(p, S)}${p.isNeonate ? "" : ""}`], [S.sex, p.sex === "male" ? S.male : S.female],
-            [S.bed, p.bedLabel], [S.admittedBy, p.admittedBy], [S.lengthOfStay, losText(p.admittedAtMs, S)]].map(([k, v]) => (
-            <div key={k}><dt className={`text-xs ${T.faint}`}>{k}</dt><dd className={`font-semibold ${T.text}`}>{v}</dd></div>
-          ))}
+            [S.age, (p.isNeonate ? p.ageDays != null : p.age != null) ? ageText(p, S) : null],
+            [S.sex, p.sex === "male" ? S.male : p.sex === "female" ? S.female : null],
+            [S.bed, p.bedLabel], [S.admittedBy, p.admittedBy],
+            [S.lengthOfStay, p.admittedAtMs ? losText(p.admittedAtMs, S) : null]]
+            .filter(([, v]) => !live || (v != null && v !== ""))     // live: only what is known
+            .map(([k, v]) => (
+              <div key={k}><dt className={`text-xs ${T.faint}`}>{k}</dt><dd className={`font-semibold ${T.text}`}>{v ?? "—"}</dd></div>
+            ))}
         </dl>
 
+        {live && (
+          <div className="mt-4">
+            <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.vitals}</div>
+            <VitalsGrid T={T} vitals={p.vitals} compact />
+          </div>
+        )}
+
+        {!live && (<>
         {/* Madde 26: PHI alanları (TC, Telefon, Adres) — varsayılan masked, reveal butonu ile açılır */}
         <div className={`mt-4 space-y-2 rounded-xl border ${T.border} ${T.subtle} p-4 text-sm`}>
           <div className={`mb-2 text-xs font-semibold uppercase ${T.faint}`}>{S.pr13.phiFields}</div>
@@ -1464,7 +1556,9 @@ function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, onE
 
         <div className="mt-5 grid grid-cols-2 gap-2">
           <button onClick={() => setHo(true)} className={btnCls(T, "ghost")}><PenLine size={16} /> {S.handover}</button>
-          <button onClick={() => { onClose(); onTransfer(p.patient_id); }} className={btnCls(T, "ghost")}><ArrowLeftRight size={16} /> {S.transfer}</button>
+          {canTransfer && (
+            <button onClick={() => { onClose(); onTransfer(p.patient_id); }} className={btnCls(T, "ghost")}><ArrowLeftRight size={16} /> {S.transfer}</button>
+          )}
         </div>
 
         {/* signed handovers list */}
@@ -1478,6 +1572,7 @@ function PatientDrawer({ T, S, state, store, patientId, onClose, onTransfer, onE
         ))}
 
         {ho && <HandoverModal T={T} S={S} store={store} state={state} patientId={p.patient_id} onClose={() => setHo(false)} />}
+        </>)}
       </div>
     </div>
   );
@@ -1531,18 +1626,44 @@ function HandoverModal({ T, S, store, state, patientId, onClose }) {
   );
 }
 
-function ModalShell({ T, title, sub, onClose, children }) {
+const MODAL_FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), '
+  + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** A modal dialog named by its title. Like ui.jsx's ActionOverlay: on opening, focus moves into
+ *  it (unless a child already took it), and back to what held it on closing; Escape and the
+ *  backdrop close it through `onClose`, except while `busy`. */
+function ModalShell({ T, title, sub, onClose, children, busy = false }) {
   const titleId = useId();
+  const cardRef = useRef(null);
+  const titleRef = useRef(null);
+  const bodyRef = useRef(null);
+  const [opener] = useState(() => (typeof document === "undefined" ? null : document.activeElement));
+  const close = () => { if (!busy && onClose) onClose(); };
+  useEffect(() => {
+    if (!cardRef.current?.contains(document.activeElement)) {
+      (bodyRef.current?.querySelector(MODAL_FOCUSABLE) || titleRef.current)?.focus();
+    }
+    return () => {
+      if (opener && opener !== document.body && opener.isConnected && typeof opener.focus === "function") {
+        opener.focus();
+      }
+    };
+  }, [opener]);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); close(); } };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className={`absolute inset-0 ${T.overlay}`} onClick={onClose} />
-      <div role="dialog" aria-modal="true" aria-labelledby={titleId}
+      <div className={`absolute inset-0 ${T.overlay}`} onClick={close} />
+      <div ref={cardRef} role="dialog" aria-modal="true" aria-labelledby={titleId}
         className={`relative w-full max-w-md rounded-2xl border ${T.border} ${T.card} p-5`}>
         <div className="mb-4">
-          <h3 id={titleId} className={`text-lg font-bold ${T.heading}`}>{title}</h3>
+          <h3 ref={titleRef} id={titleId} tabIndex={-1} className={`text-lg font-bold outline-none ${T.heading}`}>{title}</h3>
           {sub && <p className={`text-sm ${T.muted}`}>{sub}</p>}
         </div>
-        <div className="space-y-3">{children}</div>
+        <div ref={bodyRef} className="space-y-3">{children}</div>
       </div>
     </div>
   );
@@ -2059,6 +2180,9 @@ function HeatmapPage({ T, S, store, state }) {
 
 // ================================================================ ALARM MANAGEMENT
 function AlarmPage({ T, S, store, state, lang }) {
+  // Live: the alarms are the backend's. The fire-alert panel, the time scale and break-glass
+  // write only to the simulation, and an alarm card offers only what the API does (see AlertCard).
+  const live = state.live === true;
   const alerts = [...state.alerts].filter((a) => a.status !== "CLOSED").reverse();
   const [fp, setFp] = useState(state.patients[0]?.patient_id || "");
   const [ft, setFt] = useState(TIER.CRITICAL);
@@ -2067,9 +2191,9 @@ function AlarmPage({ T, S, store, state, lang }) {
   const [snzFor, setSnzFor] = useState(null);
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+    <div className={`grid grid-cols-1 gap-4 ${live ? "" : "xl:grid-cols-3"}`}>
       {/* left: controls */}
-      <div className="space-y-4">
+      {!live && <div className="space-y-4">
         <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
           <h3 className={`mb-1 font-bold ${T.heading}`}>{S.fireAlert}</h3>
           <p className={`mb-3 text-sm ${T.muted}`}>{S.alarmsSub}</p>
@@ -2090,10 +2214,10 @@ function AlarmPage({ T, S, store, state, lang }) {
 
         <TimeScale T={T} S={S} store={store} state={state} />
         <BreakGlass T={T} S={S} store={store} state={state} />
-      </div>
+      </div>}
 
       {/* right: active alerts */}
-      <div className="xl:col-span-2">
+      <div className={live ? "" : "xl:col-span-2"}>
         <div className={`rounded-2xl border ${T.border} ${T.card} p-5`}>
           <div className="mb-3 flex items-center justify-between">
             <h3 className={`font-bold ${T.heading}`}>{S.activeAlerts}</h3>
@@ -2108,7 +2232,8 @@ function AlarmPage({ T, S, store, state, lang }) {
         </div>
       </div>
 
-      {ackFor && <AckModal T={T} S={S} store={store} alert={ackFor} lang={lang} onClose={() => setAckFor(null)} />}
+      {ackFor && <AckModal key={ackFor.id} T={T} S={S} store={store} alert={ackFor} lang={lang} live={live}
+        onClose={() => setAckFor(null)} />}
       {snzFor && <SnoozeModal T={T} S={S} store={store} alert={snzFor} onClose={() => setSnzFor(null)} />}
     </div>
   );
@@ -2118,8 +2243,17 @@ function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate, onMute }) 
   const ui = tierUi(alert.tier);
   const patient = state.patients.find((p) => p.patient_id === alert.patientId);
   const isMuted = alert.mutedUntil != null && alert.mutedUntil > state.clockSec;
-  const elapsed = alert.status === "FIRED" ? state.clockSec - alert.firedAtSec : 0;
-  const toNext = alert.status === "FIRED" ? secondsToNextStep(elapsed, alert.tier) : null;
+  // A device alert is the backend's: its age is wall-clock time since the backend first saw it
+  // (none when the backend did not say), and its escalation runs on the server — the simulation's
+  // countdown, stages and chain are not shown for it. In live mode the card offers only the
+  // acknowledgement: escalate, mute and snooze write only to the simulation.
+  const device = alert.source === "device";
+  const actionsSimulated = state.live !== true && !device;
+  const now = useNow(device && alert.status === "FIRED" ? 1000 : null);
+  const elapsed = alert.status !== "FIRED" ? 0
+    : device ? (alert.firstSeenAtMs != null ? Math.max(0, (now - alert.firstSeenAtMs) / 1000) : null)
+    : state.clockSec - alert.firedAtSec;
+  const toNext = alert.status === "FIRED" && !device ? secondsToNextStep(elapsed, alert.tier) : null;
   const statusTxt = { FIRED: S.statusFired, ACKNOWLEDGED: S.statusAck, SNOOZED: S.statusSnoozed, CLOSED: S.statusClosed }[alert.status];
   const reached = (step) => alert.events.some((e) => e.step === step);
   const steps = [
@@ -2151,11 +2285,13 @@ function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate, onMute }) 
         </div>
       </div>
 
-      {alert.status === "FIRED" && (
+      {alert.status === "FIRED" && (elapsed != null || !device) && (
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-          <span className={`inline-flex items-center gap-1 tabular-nums ${ui.text}`}><Clock size={13} /> {S.elapsed}: {fmtClock(elapsed)}</span>
+          {elapsed != null && (
+            <span className={`inline-flex items-center gap-1 tabular-nums ${ui.text}`}><Clock size={13} /> {S.elapsed}: {fmtClock(elapsed)}</span>
+          )}
           {/* The backend owns real escalation timing for device-sourced alerts; this local countdown reflects the simulation's own thresholds and would misrepresent the ward's. */}
-          {alert.source !== "device" && (
+          {!device && (
             <span className={T.faint}>{toNext != null ? `${S.nextStep}: ${fmtClock(toNext)}` : S.atTier3}</span>
           )}
         </div>
@@ -2164,8 +2300,8 @@ function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate, onMute }) 
         <div className={`mt-2 text-xs ${T.faint}`}>{S.snoozedUntil}: {fmtClock(alert.snooze.until)}</div>
       )}
 
-      {/* escalation chain */}
-      <div className="mt-3 flex items-center gap-1.5">
+      {/* escalation chain — the simulation's; a device alert escalates on the server */}
+      {!device && <div className="mt-3 flex items-center gap-1.5">
         {steps.map((s, i) => {
           const on = reached(s.step);
           return (
@@ -2177,14 +2313,16 @@ function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate, onMute }) 
             </React.Fragment>
           );
         })}
-      </div>
+      </div>}
 
-      {/* PR#6 — visual escalation timeline (0-3 / 3-5 / 5-10 min) */}
-      {alert.status === "FIRED" && <EscalationTimeline T={T} S={S} alert={alert} state={state} />}
+      {/* PR#6 — visual escalation timeline (0-3 / 3-5 / 5-10 min), on the simulation's clock */}
+      {alert.status === "FIRED" && !device && <EscalationTimeline T={T} S={S} alert={alert} state={state} />}
 
       {alert.ack && (
         <div className={`mt-3 rounded-lg ${T.card} border ${T.border} p-2 text-xs ${T.muted}`}>
-          <span className="font-semibold text-emerald-500">{S.statusAck}</span> · {alert.ack.by} · {S.reasonOptions[alert.ack.reason] || alert.ack.reason}
+          <span className="font-semibold text-emerald-500">{S.statusAck}</span>
+          {alert.ack.by ? ` · ${alert.ack.by}` : ""}
+          {alert.ack.reason ? ` · ${S.reasonOptions[alert.ack.reason] || alert.ack.reason}` : ""}
           {alert.ack.note && <div className={`mt-0.5 ${T.text}`}>{alert.ack.note}</div>}
         </div>
       )}
@@ -2192,13 +2330,15 @@ function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate, onMute }) 
       {alert.status === "FIRED" && (
         <div className="mt-3 flex flex-wrap gap-2">
           <button onClick={onAck} className={`${btnCls(T, "primary")} px-3 py-2`}><Check size={15} /> {S.ack}</button>
-          {canSnooze(alert.tier)
-            ? <button onClick={onSnooze} className={`${btnCls(T, "ghost")} px-3 py-2`}><BellOff size={15} /> {S.snooze}</button>
-            : <span className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs ${ui.chip}`}><AlertTriangle size={14} /> {S.critNoSnooze}</span>}
-          <button onClick={onMute} disabled={isMuted} className={`${btnCls(T, "ghost")} px-3 py-2 ${isMuted ? "opacity-50" : ""}`}>
-            {isMuted ? <Volume2 size={15} /> : <VolumeX size={15} />} {isMuted ? S.pr6.muted : S.pr6.mute}
-          </button>
-          <button onClick={onEscalate} className={`${btnCls(T, "warn")} px-3 py-2`}><ArrowUpCircle size={15} /> {S.escalateRRT}</button>
+          {actionsSimulated && (<>
+            {canSnooze(alert.tier)
+              ? <button onClick={onSnooze} className={`${btnCls(T, "ghost")} px-3 py-2`}><BellOff size={15} /> {S.snooze}</button>
+              : <span className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs ${ui.chip}`}><AlertTriangle size={14} /> {S.critNoSnooze}</span>}
+            <button onClick={onMute} disabled={isMuted} className={`${btnCls(T, "ghost")} px-3 py-2 ${isMuted ? "opacity-50" : ""}`}>
+              {isMuted ? <Volume2 size={15} /> : <VolumeX size={15} />} {isMuted ? S.pr6.muted : S.pr6.mute}
+            </button>
+            <button onClick={onEscalate} className={`${btnCls(T, "warn")} px-3 py-2`}><ArrowUpCircle size={15} /> {S.escalateRRT}</button>
+          </>)}
         </div>
       )}
     </div>
@@ -2207,41 +2347,54 @@ function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate, onMute }) 
 
 // `await` covers both stores: the simulation acknowledges synchronously (a refusal throws), the
 // live store asks the API. A refusal — 403 "permission required: alerts.ack" among them — keeps the
-// dialog open with the reason, translated: nothing was acknowledged. While the request is in
-// flight the dialog cannot be closed, so its answer always lands in front of the clinician.
-function AckModal({ T, S, store, alert, onClose, lang }) {
+// dialog open with the reason, translated: nothing was acknowledged. Confirm waits while the
+// request is in flight, but the dialog can always be left: a request that hangs (backendApi gives
+// up after 15 s) must never hold the board and every other alarm behind it. Leaving abandons the
+// wait; the alarm list then shows whether the acknowledgement was taken.
+//
+// Live: no reason or note is asked for. The server keeps neither yet (its record is who and when),
+// and "a critical alarm needs a note" is not enforced there, so asking would pretend otherwise.
+function AckModal({ T, S, store, alert, onClose, lang, live = false }) {
   const crit = alert.tier === TIER.CRITICAL;
   const [reason, setReason] = useState("clinically_reviewed");
   const [note, setNote] = useState("");
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
+  const open = useRef(true);                 // false once the dialog is gone: a late answer is dropped
+  useEffect(() => {
+    open.current = true;                     // again after StrictMode's test unmount
+    return () => { open.current = false; };
+  }, []);
   const submit = async () => {
     if (busy) return;
     setErr(null);
     setBusy(true);
     try {
-      await store.acknowledgeAlert(alert.id, { reason, note });
-      onClose();
+      await store.acknowledgeAlert(alert.id, live ? {} : { reason, note });
+      if (open.current) onClose();
     } catch (ex) {
-      setErr(ex);
+      if (open.current) setErr(ex);
     } finally {
-      setBusy(false);
+      if (open.current) setBusy(false);
     }
   };
-  const close = () => { if (!busy) onClose(); };
   return (
-    <ModalShell T={T} title={S.ackTitle} onClose={close}>
-      <Field T={T} label={S.ackReason}>
-        <select className={inputCls(T)} value={reason} onChange={(e) => setReason(e.target.value)}>
-          {Object.keys(S.reasonOptions).map((k) => <option key={k} value={k}>{S.reasonOptions[k]}</option>)}
-        </select>
-      </Field>
-      <Field T={T} label={S.ackNote} hint={crit ? S.ackNoteHintCrit : S.optional}>
-        <textarea rows={3} className={inputCls(T)} value={note} onChange={(e) => setNote(e.target.value)} />
-      </Field>
+    <ModalShell T={T} title={S.ackTitle} onClose={onClose}>
+      {live ? (
+        <p className={`text-sm ${T.muted}`}>{S.rbac.ackLiveHint}</p>
+      ) : (<>
+        <Field T={T} label={S.ackReason}>
+          <select className={inputCls(T)} value={reason} onChange={(e) => setReason(e.target.value)}>
+            {Object.keys(S.reasonOptions).map((k) => <option key={k} value={k}>{S.reasonOptions[k]}</option>)}
+          </select>
+        </Field>
+        <Field T={T} label={S.ackNote} hint={crit ? S.ackNoteHintCrit : S.optional}>
+          <textarea rows={3} className={inputCls(T)} value={note} onChange={(e) => setNote(e.target.value)} />
+        </Field>
+      </>)}
       {err && <div role="alert" className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{translateApiError(err, lang)}</div>}
       <div className="flex justify-end gap-2 pt-1">
-        <button onClick={close} disabled={busy} className={btnCls(T, "ghost")}>{S.cancel}</button>
+        <button onClick={onClose} className={btnCls(T, "ghost")}>{S.cancel}</button>
         <button onClick={submit} disabled={busy} className={btnCls(T, "primary")}><Check size={16} /> {S.confirm}</button>
       </div>
     </ModalShell>
@@ -2488,23 +2641,26 @@ function AnalyticsPanel({ T, S, state }) {
 }
 
 // ================================================================ ADMIN
-// Admin tabs: `perm` any-of, like NAV_ITEMS. `demoOnly` tabs write only to the simulation and
-// are hidden in live mode — a control that writes nowhere is never shown as if it worked.
+// Admin tabs: `perm` any-of, like NAV_ITEMS. `demoOnly` tabs show only the simulation's data or
+// write only to it, and are hidden in live mode — nothing simulated is shown as if it were real,
+// and no control that writes nowhere is shown as if it worked. Only the staff tab is backed by
+// the API (LiveStaffTab); the reports, the structure, the devices, the audit, the archive and the
+// sessions come back when the API backs them.
 export const ADMIN_TABS = [
-  { key: "reports", icon: BarChart3, perm: ["audit.view", "users.manage", "structure.manage"], label: (S) => S.pr8.reports },
-  { key: "structure", icon: Building2, perm: ["structure.manage"], label: (S) => S.pr7.hierarchy },
+  { key: "reports", icon: BarChart3, perm: ["audit.view", "users.manage", "structure.manage"], demoOnly: true, label: (S) => S.pr8.reports },
+  { key: "structure", icon: Building2, perm: ["structure.manage"], demoOnly: true, label: (S) => S.pr7.hierarchy },
   { key: "staff", icon: Users, perm: ["users.manage", "groups.manage"], label: (S) => S.pr7.staffMatrix },
   { key: "security", icon: Shield, perm: ["users.manage"], demoOnly: true, label: (S) => S.pr10.inviteTitle },
-  { key: "devices", icon: Radio, perm: ["devices.manage"], label: (S) => S.pr7.devices },
-  { key: "audit", icon: ScrollText, perm: ["audit.view"], label: (S) => S.pr7.auditSearch },
-  { key: "archive", icon: Archive, perm: ["users.manage"], label: (S) => S.pr13.archiveTitle },
-  { key: "sessions", icon: Monitor, perm: ["users.manage"], label: (S) => S.pr13.sessionsTitle },
+  { key: "devices", icon: Radio, perm: ["devices.manage"], demoOnly: true, label: (S) => S.pr7.devices },
+  { key: "audit", icon: ScrollText, perm: ["audit.view"], demoOnly: true, label: (S) => S.pr7.auditSearch },
+  { key: "archive", icon: Archive, perm: ["users.manage"], demoOnly: true, label: (S) => S.pr13.archiveTitle },
+  { key: "sessions", icon: Monitor, perm: ["users.manage"], demoOnly: true, label: (S) => S.pr13.sessionsTitle },
 ];
 
 function AdminPage({ T, S, store, state, lang }) {
   const perms = state.user?.perms || [];
   const live = state.live === true;
-  const tabs = ADMIN_TABS.filter((t) => canSee(t, perms) && !(live && t.demoOnly));
+  const tabs = ADMIN_TABS.filter((t) => canSee(t, perms, live));
   const [tab, setTab] = useState(tabs[0]?.key ?? null);
   // A tab the session may not see (its rights changed meanwhile) falls back to the first it may;
   // with none, nothing is shown.
@@ -4125,16 +4281,27 @@ export function ClinicalDemo({ store: injectedStore = null }) {
     };
   }, [state.user, store]);
 
-  // simulated clock: advance escalation for all open alarms. `store.reconcile` is always present —
-  // even the live store inherits it by spreading the simulation it wraps (see liveStore.js) — so no
-  // guard is needed here; the overlay masks its effect on patients/beds/alerts/devices regardless.
+  // simulated clock: advance escalation for all open alarms — in the simulation only. Live, nothing
+  // simulated advances: the clock runs at 60x and would age a real alarm a minute per second. The
+  // live store stops the clock and makes reconcile a no-op (liveStore.js); this loop does not even
+  // start.
   useEffect(() => {
+    if (store.getState().live === true) return undefined;
     const id = setInterval(() => {
       const st = store.getState();
       if (st.running) store.reconcile(st.clockSec + st.speed * 0.25);
     }, 250);
     return () => clearInterval(id);
   }, [store]);
+
+  // Whoever signs in next starts on the board, with no patient left open from the last session.
+  useEffect(() => {
+    if (state.user) return;
+    setDrawerPatient(null);
+    setCockpitPatient(null);
+    setTransferPatient(null);
+    setPage("board");
+  }, [state.user]);
 
   // apply dark class for any global dark-mode CSS hooks.
   useEffect(() => {
@@ -4158,8 +4325,9 @@ export function ClinicalDemo({ store: injectedStore = null }) {
 
   // guard: page not permitted by the session's permissions → fall back to board.
   const perms = state.user.perms || [];
+  const live = state.live === true;
   const activeItem = NAV_ITEMS.find((i) => i.key === page);
-  const effectivePage = activeItem && canSee(activeItem, perms) ? page : "board";
+  const effectivePage = activeItem && canSee(activeItem, perms, live) ? page : "board";
 
   const openTransfer = (pid) => { setTransferPatient(pid); setPage("admission"); };
 
@@ -4193,7 +4361,7 @@ export function ClinicalDemo({ store: injectedStore = null }) {
             </button>
           </div>
         )}
-        {state.online === false && (
+        {state.online === false && !live && (
           <div className="flex items-center gap-2 border-b border-amber-500/40 bg-amber-500/15 px-4 py-2 text-sm font-medium text-amber-600 dark:text-amber-400">
             <CloudOff className="h-4 w-4 shrink-0" />
             <span>{S.pr7.offlineBanner}</span>

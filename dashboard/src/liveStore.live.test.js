@@ -125,6 +125,75 @@ describe("live store data layer", () => {
     expect(api.boardPatients).not.toHaveBeenCalled();
   });
 
+  it("resolves once the API took the acknowledgement, without waiting for the board to reload", async () => {
+    // A slow or stalled board reload must not keep the dialog waiting on an ack already taken.
+    let answerBoard;
+    const api = fakeApi({
+      boardPatients: vi.fn(() => new Promise((resolve) => { answerBoard = resolve; })),
+    });
+    const store = createLiveStore({ api, base: fakeBase() });
+
+    await store.acknowledgeAlert("bed-3::sepsis");
+
+    expect(api.acknowledge).toHaveBeenCalledWith("bed-3", "sepsis");
+    expect(api.boardPatients).toHaveBeenCalledTimes(1);    // started, still in flight
+    answerBoard({ patients: [] });
+  });
+
+  it("ends the session when a call finds the session ended, instead of a tokenless app", async () => {
+    // backendApi marks a refresh the server refused `sessionEnded` and has already dropped the
+    // tokens; the UI must go back to the login screen, not sit at "reconnecting".
+    const ended = () => Object.assign(new Error("Invalid or expired refresh token"),
+      { status: 401, sessionEnded: true });
+    const api = fakeApi({
+      login: vi.fn(async () => ({ access_token: nurseToken, requires_mfa: false })),
+      me: vi.fn(async () => ({ id: "u-n", email: "n@example.com", full_name: "Hemşire" })),
+      acknowledge: vi.fn(async () => { throw ended(); }),
+    });
+    const store = createLiveStore({ api, base: fakeBase() });
+    await store.attemptLogin("n@example.com", "pw");
+
+    await expect(store.acknowledgeAlert("bed-3::sepsis")).rejects.toThrow("refresh token");
+
+    expect(store.getState().user).toBeNull();
+    expect(api.logout).toHaveBeenCalled();
+  });
+
+  it("a board load that finds the session ended signs out too", async () => {
+    const api = fakeApi({
+      login: vi.fn(async () => ({ access_token: nurseToken, requires_mfa: false })),
+      me: vi.fn(async () => ({ id: "u-n", email: "n@example.com", full_name: "Hemşire" })),
+      boardPatients: vi.fn(async () => {
+        throw Object.assign(new Error("Oturum süresi doldu, tekrar giriş yapın."), { status: 401, sessionEnded: true });
+      }),
+    });
+    const store = createLiveStore({ api, base: fakeBase() });
+    await store.attemptLogin("n@example.com", "pw");
+
+    await store.refreshBoard();
+
+    expect(store.getState().user).toBeNull();
+    expect(store.getState().patients).toEqual([]);
+  });
+
+  it("a server that does not answer never signs the clinician out", async () => {
+    const timeout = () => Object.assign(new Error("Sunucu yanıt vermedi"), { code: "REQUEST_TIMEOUT" });
+    const api = fakeApi({
+      login: vi.fn(async () => ({ access_token: nurseToken, requires_mfa: false })),
+      me: vi.fn(async () => ({ id: "u-n", email: "n@example.com", full_name: "Hemşire" })),
+      acknowledge: vi.fn(async () => { throw timeout(); }),
+      boardPatients: vi.fn(async () => { throw timeout(); }),
+    });
+    const store = createLiveStore({ api, base: fakeBase() });
+    await store.attemptLogin("n@example.com", "pw");
+
+    await expect(store.acknowledgeAlert("bed-3::sepsis")).rejects.toThrow("yanıt vermedi");
+    await store.refreshBoard();
+
+    expect(store.getState().user).not.toBeNull();
+    expect(api.logout).not.toHaveBeenCalled();
+  });
+
   it("asks for a fresh ticket before opening the stream", async () => {
     // The JWT must never reach the URL; the ticket is what goes there.
     const api = fakeApi();
@@ -191,15 +260,13 @@ describe("live store data layer", () => {
     expect(state.devices).toEqual([]);
   });
 
-  it("synthesizes alert firedAtSec using the simulation's own clockSec, not a raw Unix timestamp", async () => {
-    // AlertCard computes elapsed against the SIMULATION's local clock (clockSec), not wall time —
-    // the store has to hand alertsFromPatients that clock so a real alert's elapsed time and
-    // next-step countdown read correctly instead of as a huge negative number.
+  it("dates a real alert by the backend's first-seen instant, never by the simulation's clock", async () => {
+    // The simulation's clock runs at 60x; a real alarm timed on it aged a minute per second.
     const api = fakeApi({
       boardPatients: vi.fn(async () => ({
         patients: [{ patient_id: "bed-3", risk: "high",
           alerts: [{ kind: "sepsis", severity: "high", urgency: "immediate", summary: "NEWS2 9",
-                     acknowledged: false, escalated: false, first_seen_at: null }],
+                     acknowledged: false, escalated: false, first_seen_at: "2026-09-25T10:00:00Z" }],
           latest: { heart_rate: 120 } }],
       })),
     });
@@ -207,7 +274,18 @@ describe("live store data layer", () => {
 
     await store.refreshBoard();
 
-    expect(store.getState().alerts[0].firedAtSec).toBe(500);
+    expect(store.getState().alerts[0].firstSeenAtMs).toBe(Date.parse("2026-09-25T10:00:00Z"));
+    expect(store.getState().alerts[0].firedAtSec).toBeNull();
+  });
+
+  it("stops the simulation's clock, its auto-alarm engine and its reconcile loop", () => {
+    const reconcile = vi.fn();
+    const base = { ...fakeBase({ running: true, autoAlarm: true, speed: 60, clockSec: 5 }), reconcile };
+    const store = createLiveStore({ api: fakeApi(), base });
+    expect(store.getState().running).toBe(false);
+    expect(store.getState().autoAlarm).toBe(false);
+    store.reconcile(9999);
+    expect(reconcile).not.toHaveBeenCalled();
   });
 
   it("marks synthesized alerts as device-sourced", async () => {
@@ -296,7 +374,7 @@ describe("live store — SSE stream", () => {
     expect(state.beds.map((b) => b.patientId).sort()).toEqual(["bed-3", "bed-9"]);
   });
 
-  it("a frame's synthesized alert also uses the simulation's clockSec for firedAtSec", async () => {
+  it("a frame's synthesized alert is dated by its first-seen instant too", async () => {
     const api = fakeApi({
       boardPatients: vi.fn(async () => ({ patients: [boardOf("bed-3")] })),
     });
@@ -306,10 +384,11 @@ describe("live store — SSE stream", () => {
 
     calls[0].handlers.onmessage({ data: JSON.stringify(boardOf("bed-3", {
       alerts: [{ kind: "sepsis", severity: "high", urgency: "immediate", summary: "NEWS2 9",
-                 acknowledged: false, escalated: false, first_seen_at: null }],
+                 acknowledged: false, escalated: false, first_seen_at: "2026-09-25T10:00:00Z" }],
     })) });
 
-    expect(store.getState().alerts[0].firedAtSec).toBe(700);
+    expect(store.getState().alerts[0].firstSeenAtMs).toBe(Date.parse("2026-09-25T10:00:00Z"));
+    expect(store.getState().alerts[0].firedAtSec).toBeNull();
   });
 
   it("a malformed frame does not crash and does not clear the board", async () => {

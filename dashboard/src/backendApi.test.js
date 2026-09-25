@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createBackendApi } from "./backendApi.js";
+import { createBackendApi, REQUEST_TIMEOUT } from "./backendApi.js";
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
   return { ok, status, json: async () => body, text: async () => JSON.stringify(body) };
@@ -250,5 +250,72 @@ describe("backendApi — auth", () => {
     restored.logout();
     expect(restored.accessToken()).toBeNull();
     expect(createBackendApi({ baseUrl: "", fetchImpl: fetchMock }).accessToken()).toBeNull();
+  });
+});
+
+describe("backendApi — a server that does not answer", () => {
+  // A Wi-Fi drop without a TCP reset can leave a request hanging for minutes. Every request gives
+  // up after `timeoutMs` (15 s by default) with REQUEST_TIMEOUT: translated for the clinician,
+  // and never a sign-out, because the server did not refuse anything.
+  const hanging = () => new Promise(() => {});
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  async function signedIn(fetchMock, options = {}) {
+    fetchMock.mockResolvedValueOnce(jsonResponse(TOKENS));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock, ...options });
+    await api.login("admin", "gizli");
+    return api;
+  }
+
+  it("gives up after 15 s by default, aborts the request and keeps the tokens", async () => {
+    const fetchMock = vi.fn();
+    const api = await signedIn(fetchMock);
+    fetchMock.mockImplementationOnce(hanging);
+
+    const call = api.me();
+    const outcome = call.then(() => "answered", (err) => err);
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(await Promise.race([outcome, Promise.resolve("pending")])).toBe("pending");
+    await vi.advanceTimersByTimeAsync(1);
+
+    const err = await outcome;
+    expect(err).toBeInstanceOf(Error);
+    expect(err.code).toBe(REQUEST_TIMEOUT);
+    expect(err.status).toBeUndefined();
+    expect(err.sessionEnded).toBeUndefined();
+    expect(fetchMock.mock.calls[1][1].signal.aborted).toBe(true);
+    expect(api.accessToken()).toBe("acc-1");
+  });
+
+  it("a refresh that does not answer does not sign out either", async () => {
+    const fetchMock = vi.fn();
+    const api = await signedIn(fetchMock);
+    fetchMock.mockResolvedValueOnce(jsonResponse({ detail: "token_version" }, { ok: false, status: 401 }))
+      .mockImplementationOnce(hanging);
+
+    const outcome = api.me().catch((err) => err);
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect((await outcome).code).toBe(REQUEST_TIMEOUT);
+    expect(api.accessToken()).toBe("acc-1");
+  });
+
+  it("covers the sign-in and the MFA code too", async () => {
+    const fetchMock = vi.fn(hanging);
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock, timeoutMs: 1_000 });
+    const login = api.login("admin", "gizli").catch((err) => err);
+    const code = api.verifyTotp("123456").catch((err) => err);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect((await login).code).toBe(REQUEST_TIMEOUT);
+    expect((await code).code).toBe(REQUEST_TIMEOUT);
+  });
+
+  it("an answer in time leaves no timer behind", async () => {
+    const fetchMock = vi.fn();
+    const api = await signedIn(fetchMock);
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: "u" }));
+    await expect(api.me()).resolves.toEqual({ id: "u" });
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -93,35 +93,27 @@ function secondsFromTimestamp(iso) {
   return Number.isNaN(ms) ? null : ms / 1000;
 }
 
-/** Translate a real, wall-clock "first seen" instant into the SIMULATION clock's coordinate
- *  system. `AlertCard` (ClinicalDemo.jsx) computes `elapsed = state.clockSec - alert.firedAtSec`,
- *  where `clockSec` is the simulation's own small local clock (it starts near zero), not wall
- *  time. Handing that a raw Unix timestamp makes elapsed a huge negative number for every real
- *  alert. Placing firedAtSec at "nowClockSec, minus however many real seconds ago this fired"
- *  keeps elapsed correct and lets it grow normally as the sim clock ticks between refreshes.
- *
- *  Missing `first_seen_at` -> nowClockSec (elapsed 0): honest for an alert we just learned about,
- *  rather than fabricating a fired time. */
-function firedAtSecOnSimClock(firstSeenAt, nowClockSec) {
-  const firedEpochSec = secondsFromTimestamp(firstSeenAt);
-  if (firedEpochSec == null) return nowClockSec;
-  const nowEpochSec = Date.now() / 1000;
-  return nowClockSec - Math.max(0, nowEpochSec - firedEpochSec);
+/** ISO-8601 -> epoch milliseconds, or null if absent/unparseable. */
+function msFromTimestamp(iso) {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : ms;
 }
 
 /** Flattens every patient's alerts into the flat list AlarmPage/AlertCard and the audio/push
  *  effects in ClinicalDemo.jsx read. `id` is "<patient_id>::<kind>" — a delimiter that cannot
  *  appear in a kind, so it round-trips through acknowledgeAlert unambiguously (see liveStore.js).
  *
- *  `nowClockSec` is the simulation clock at the moment of synthesis (the store passes
- *  `base.getState().clockSec`) — see firedAtSecOnSimClock above for why firedAtSec needs it.
+ *  A real alarm's age is WALL-CLOCK time since the backend first saw it: `firstSeenAtMs` (epoch
+ *  ms), null when the payload does not say — then the UI shows no age rather than an invented
+ *  one. Nothing is put on the simulation's clock (`firedAtSec` is null): that clock runs at 60x
+ *  and would age a real alarm a minute per second.
  *
  *  Escalation-chain fields (`currentStep`, `events`, `snooze`, `mutedUntil`) stay at their "just
  *  fired" defaults: escalation for live alerts happens server-side (the engine's own escalation
- *  loop), not by replaying the simulation's local clock over data that isn't on that clock.
- *  `source: "device"` marks that explicitly, so AlertCard can suppress the local escalation
- *  countdown it would otherwise compute from the simulation's own thresholds. */
-export function alertsFromPatients(patients, nowClockSec = 0) {
+ *  loop). `source: "device"` marks that explicitly, so AlertCard shows none of the simulation's
+ *  local escalation countdown, stages or chain for it. */
+export function alertsFromPatients(patients) {
   const list = Array.isArray(patients) ? patients : [];
   const out = [];
   for (const p of list) {
@@ -138,7 +130,8 @@ export function alertsFromPatients(patients, nowClockSec = 0) {
         summary: a.summary ?? null,
         status: a.acknowledged ? "ACKNOWLEDGED" : "FIRED",
         escalated: !!a.escalated,
-        firedAtSec: firedAtSecOnSimClock(a.first_seen_at, nowClockSec),
+        firstSeenAtMs: msFromTimestamp(a.first_seen_at),
+        firedAtSec: null,
         currentStep: "NONE",
         events: [],
         // Only `by` and `atSec` are known: the backend does not persist a reason/note yet (Slice
