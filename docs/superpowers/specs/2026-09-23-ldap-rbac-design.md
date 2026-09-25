@@ -346,11 +346,12 @@ another tenant is a 404.
 ### Guards
 
 - An *administrator* is an active LOCAL user with a password and an active membership who holds
-  the WHOLE permission catalogue in the tenant (the system group gives that by rule). Only such a
-  user can manage every account and group under the rule below, so only such a user counts. The
-  last administrator of a tenant cannot be deactivated, and no group change may leave the tenant
-  without one, including changes an administrator makes to their own groups. 409 `Son yönetici
-  pasifleştirilemez` / `Son yönetici yetkisi kaldırılamaz`.
+  the tenant's SYSTEM group (`hospital_admin`, which carries the whole catalogue by rule, now and
+  after any release that adds a key). Holding every key through custom groups does not count: a
+  custom group does not gain a key a release adds, so its holder would stop being able to
+  administer. The last administrator of a tenant cannot be deactivated or leave `hospital_admin`,
+  and no group change may leave the tenant without one, including changes an administrator makes
+  to their own groups. 409 `Son yönetici pasifleştirilemez` / `Son yönetici yetkisi kaldırılamaz`.
 - Manual and LDAP memberships are separate rows; neither operation can delete the other's. A
   user holds a given group through ONE row (the key is user + group): a manual request for a
   group already held through the AD mapping is a no-op, and the LDAP sync leaves a manual row for a

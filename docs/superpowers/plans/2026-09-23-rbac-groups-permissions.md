@@ -7533,9 +7533,16 @@ Expected: green, clean build.
   Tell the ward before the deploy window.
 - An administrator cannot reset their own password or MFA, or deactivate themselves, through the
   admin screen (409). Their own password goes through the profile's password change.
-- **Recovering a tenant with no administrator.** This is reachable only through SQL, or through
-  AD-only administration once Plan 2 is in. Run `scripts/seed_admin.py` with a NEW
-  `SEED_ADMIN_EMAIL`: the seed grants `hospital_admin` only to an account it newly links.
+- **Keep at least TWO local members of `hospital_admin`,** each with their own authenticator. The API
+  cannot recover these cases:
+  - the only administrator loses their authenticator: a pending-MFA session cannot use `/admin`,
+    and a self reset is refused;
+  - the only administrator forgets their password: the seed never changes an existing account's
+    password.
+- **Recovering a tenant with no usable administrator.** Run `scripts/seed_admin.py` with a NEW
+  `SEED_ADMIN_EMAIL`: the seed grants `hospital_admin` only to an account it newly links. Or have a
+  second administrator reset the account. Reactivating a deactivated local administrator through
+  `/admin` also restores the tenant.
 - **Cross-tenant rows written before Task 7b.** The old code let a user of one tenant write into
   another. The side-effect paths trust stored ids: discharge and transfer act on
   `admission.bed_id`, and handover sign-off counts alerts through `handover.admission_ids`. Before the
