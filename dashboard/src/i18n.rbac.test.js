@@ -8,7 +8,7 @@ import {
 } from "./clinicalI18n.js";
 import { PERMISSION_KEYS } from "./permissions.js";
 import { NO_PERMISSIONS, NO_BOARD_ACCESS } from "./liveAuth.js";
-import { SESSION_UNREACHABLE } from "./liveStore.js";
+import { SESSION_UNREACHABLE, LIVE_UNAVAILABLE } from "./liveStore.js";
 import { REQUEST_TIMEOUT } from "./backendApi.js";
 
 const langs = LANGS.map((l) => l[0]);          // LANGS entries are [key, label, flag]
@@ -122,8 +122,10 @@ const PLAIN = [
   ...literals(AUTH_SCHEMAS, String.raw`ValueError\(${STR}\)`).map((m) => ["auth/schemas.py", m]),
   ...literals(BACKEND_API, String.raw`failure\(\w+,\s*${STR}\)`).map((m) => ["backendApi.js", m]),
   ...literals(BACKEND_API, String.raw`TIMEOUT_MESSAGE = ${STR}`).map((m) => ["backendApi.js timeout", m]),
+  ...literals(BACKEND_API, String.raw`SUPERSEDED_MESSAGE = ${STR}`).map((m) => ["backendApi.js superseded", m]),
   ...literals(LIVE_STORE, String.raw`\[NO_[A-Z_]+, ${STR}\]`).map((m) => ["liveStore.js refusal", m]),
   ...literals(LIVE_STORE, String.raw`REFUSED_GENERIC = ${STR}`).map((m) => ["liveStore.js", m]),
+  ...literals(LIVE_STORE, String.raw`LIVE_UNAVAILABLE_MESSAGE = ${STR}`).map((m) => ["liveStore.js live mode", m]),
   ...literals(LIVE_STORE, String.raw`code: SESSION_UNREACHABLE,\s*message: ${STR}`)
     .map((m) => ["liveStore.js sessionError", m]),
   ["browser (Chrome, Edge)", "Failed to fetch"],
@@ -146,6 +148,8 @@ describe("server and client messages are mapped", () => {
       "Sunucuya şu an ulaşılamıyor; oturumunuz açık, biraz sonra tekrar deneyin.",
     ]) expect(has(m), m).toBe(true);
     expect(PLAIN.some(([where]) => where === "backendApi.js timeout"), "the timeout message").toBe(true);
+    expect(PLAIN.some(([where]) => where === "liveStore.js live mode"), "the live-mode refusal").toBe(true);
+    expect(PLAIN.some(([where]) => where === "backendApi.js superseded"), "the superseded request").toBe(true);
     expect(ADMIN_CONST.get("SHARED_ACCOUNT")).toMatch(/^Bu hesap başka bir kurumda da etkin; .+ayarlanabilir$/);
     expect(ADMIN_CONST.get("SELF_CREDENTIALS")).toContain("MFA'nızı");
     expect(PLAIN.length).toBeGreaterThan(45);
@@ -257,6 +261,13 @@ describe("codes", () => {
   it("an unknown code falls back to the message", () => {
     const err = Object.assign(new Error("Mevcut parola yanlış"), { code: "SOMETHING_NEW" });
     expect(apiErrorKey(err).key).toBe("wrongCurrentPassword");
+  });
+
+  it("translates a simulation action refused in live mode, by its code", () => {
+    for (const lang of langs) {
+      const err = Object.assign(new Error("whatever"), { code: LIVE_UNAVAILABLE });
+      expect(translateApiError(err, lang), lang).toBe(cstrings(lang).rbac.err.liveUnavailable);
+    }
   });
 
   it("translates a request the server did not answer in time, by its code", () => {

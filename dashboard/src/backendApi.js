@@ -24,6 +24,11 @@ export const REQUEST_TIMEOUT = "REQUEST_TIMEOUT";
 export const DEFAULT_TIMEOUT_MS = 15_000;
 const TIMEOUT_MESSAGE = "Sunucu yanıt vermedi. İşlem gerçekleşmiş olabilir; listeyi kontrol edip gerekirse tekrar deneyin.";
 
+/** `err.code` (and `err.superseded`) of a request whose session was replaced or ended while it
+ *  waited for a token refresh: its answer belongs to the old session and is not applied. */
+export const SESSION_SUPERSEDED = "SESSION_SUPERSEDED";
+const SUPERSEDED_MESSAGE = "Bu istek önceki oturuma aitti; sonucu uygulanmadı.";
+
 function defaultBaseUrl() {
   try {
     return import.meta.env?.VITE_API_URL || "";
@@ -73,6 +78,27 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
   const accessToken = () => readToken(ACCESS_KEY, "access");
   const refreshToken = () => readToken(REFRESH_KEY, "refresh");
 
+  // Bumped whenever the token pair is REPLACED rather than refreshed: a sign-in, the MFA step, a
+  // password change (each retires or supersedes the old pair) and a sign-out. A refresh that was
+  // sent under an older generation belongs to a session that is gone: whatever the server says to
+  // it, the current tokens are left alone. Parallel requests of one session may each refresh (the
+  // refresh token is not single-use), so a refresh does not bump it.
+  let generation = 0;
+
+  /** The pair of a new or changed session. */
+  function replaceTokens(tokens) {
+    generation += 1;
+    setTokens(tokens);
+  }
+
+  function superseded() {
+    const err = new Error(SUPERSEDED_MESSAGE);
+    err.code = SESSION_SUPERSEDED;
+    err.superseded = true;
+    err.status = 401;
+    return err;
+  }
+
   function setTokens(tokens) {
     mem.access = tokens?.access_token ?? null;
     mem.refresh = tokens?.refresh_token ?? null;
@@ -83,6 +109,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
   }
 
   function logout() {
+    generation += 1;
     setTokens(null);
   }
 
@@ -135,6 +162,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
   }
 
   async function authedOnce(doFetch, path, { method = "GET", body } = {}) {
+    const gen = generation;
     const send = () => {
       const headers = { Authorization: `Bearer ${accessToken()}` };
       const init = { method, headers };
@@ -146,7 +174,16 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     };
 
     let res = await send();
-    if (res.status === 401 && refreshToken()) {
+    if (res.status === 401 && gen !== generation) throw superseded();
+    if (res.status === 401 && !refreshToken()) {
+      // Nothing can renew this session: it has ended. Said so, so the caller signs out instead of
+      // keeping a tokenless app that only ever says "reconnecting".
+      logout();
+      const ended = await failure(res, "Oturum süresi doldu, tekrar giriş yapın.");
+      ended.sessionEnded = true;
+      throw ended;
+    }
+    if (res.status === 401) {
       const refreshed = await doFetch(url("/auth/refresh"), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: refreshToken() }),
@@ -156,12 +193,18 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
           "Sunucuya şu an ulaşılamıyor; oturumunuz açık, biraz sonra tekrar deneyin.");
       }
       if (!refreshed.ok) {
-        logout();
         const ended = await failure(refreshed, "Oturum süresi doldu, tekrar giriş yapın.");
+        // Signed in again (or out) while this refresh was on its way: the refusal is the old
+        // session's, and the newer tokens stay.
+        if (gen !== generation) throw superseded();
+        logout();
         ended.sessionEnded = true;   // the tokens are gone: the caller must not keep the session
         throw ended;
       }
-      setTokens(await refreshed.json());
+      const tokens = await refreshed.json();
+      // Likewise a GRANTED refresh of an old session never puts its pair over a newer one.
+      if (gen !== generation) throw superseded();
+      setTokens(tokens);
       res = await send();
     }
     if (!res.ok) throw await failure(res, `İstek başarısız (${res.status})`);
@@ -182,7 +225,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         const res = await post(doFetch, "/auth/login", { login, password });
         if (!res.ok) throw await failure(res, "Giriş başarısız.");
         const tokens = await res.json();
-        setTokens(tokens);
+        replaceTokens(tokens);
         return tokens;
       });
     },
@@ -193,7 +236,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         const res = await post(doFetch, "/auth/totp/verify", { code }, { auth: true });
         if (!res.ok) throw await failure(res, "Doğrulama kodu geçersiz.");
         const tokens = await res.json();
-        setTokens(tokens);
+        replaceTokens(tokens);
         return tokens;
       });
     },
@@ -227,7 +270,9 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       const tokens = await authed("/auth/password", {
         method: "POST", body: { current_password: currentPassword, new_password: newPassword },
       });
-      setTokens(tokens);
+      // Every older session (the old refresh token included) is retired by the change: a refresh
+      // still on its way with it must not undo this pair.
+      replaceTokens(tokens);
       return tokens;
     },
 

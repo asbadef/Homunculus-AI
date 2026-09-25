@@ -64,8 +64,8 @@ function liveApi({ session = ADMIN } = {}) {
   };
   return api;
 }
-const liveStore = (api) => createLiveStore({ api, base: createDemoStore(buildRealisticState()),
-                                             openStream: () => () => {} });
+const liveStore = (api, base = createDemoStore(buildRealisticState())) =>
+  createLiveStore({ api, base, openStream: () => () => {} });
 
 /** A live session waiting at the MFA gate. */
 async function atGate({ enrolled }) {
@@ -79,9 +79,9 @@ async function atGate({ enrolled }) {
   return { api, store };
 }
 
-async function signedIn(options) {
+async function signedIn(options = {}) {
   const api = liveApi(options);
-  const store = liveStore(api);
+  const store = liveStore(api, options.base);
   await store.attemptLogin("deniz", "gizli-parola");
   return { api, store };
 }
@@ -390,6 +390,23 @@ describe("the session error on the login screen", () => {
     expect(api.logout).not.toHaveBeenCalled();
   });
 
+  it("the sign-in waits while the stored session is checked at load", async () => {
+    // A sign-in made while the load-time restore is in flight would race it for the tokens.
+    const api = liveApi();
+    api.setToken(ADMIN);
+    let answer;
+    api.me.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    const store = liveStore(api);
+    const restoring = store.restoreSession();              // what main.jsx does at load
+    render(<ClinicalDemo store={store} />);
+
+    expect(screen.getByRole("button", { name: S.signIn })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent(R.sessionChecking);
+
+    await act(async () => { answer(ME); await restoring; });
+    expect(await screen.findByRole("button", { name: S.nav.admin })).toBeInTheDocument();
+  });
+
   it("a sign-in error is shown translated", async () => {
     const api = liveApi();
     api.login.mockRejectedValueOnce(apiError("Invalid credentials", 401));
@@ -450,6 +467,17 @@ describe("the user menu (live)", () => {
     fireEvent.click(save);
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(R.err.directoryPassword);
     for (const el of [current, next, again]) expect(el).toHaveValue("");
+  });
+
+  it("a change the server did not answer says the password may have changed", async () => {
+    // If the server did change it, every session is retired and the next request signs out.
+    const { api, store } = await signedIn();
+    api.changePassword.mockRejectedValueOnce(Object.assign(new Error("x"), { code: "REQUEST_TIMEOUT" }));
+    await renderLive(store, api);
+    const { dialog, current, next, again, save } = openPasswordDialog();
+    type(current, "eski-parola"); type(next, "yeni-parola-1"); type(again, "yeni-parola-1");
+    fireEvent.click(save);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(R.passwordMaybeChanged);
   });
 
   it("the dialog's close button is named in the UI language", async () => {
@@ -531,6 +559,17 @@ describe("live mode: nothing simulated looks real", () => {
     }
   });
 
+  it("says when the backend has escalated a real alarm", async () => {
+    const { api, store } = await signedIn();
+    api.boardPatients.mockResolvedValue({ patients: [{ patient_id: "bed-3", risk: "high", latest: {},
+      alerts: [{ kind: "sepsis", severity: "high", summary: "Eskale alarm", escalated: true },
+               { kind: "shock", severity: "high", summary: "Yeni alarm", escalated: false }] }] });
+    await renderLive(store, api);
+    fireEvent.click(navButton("alarms"));
+    expect(await waitFor(() => cardOf("Eskale alarm"))).toHaveTextContent(R.escalated);
+    expect(cardOf("Yeni alarm")).not.toHaveTextContent(R.escalated);
+  });
+
   it("an alarm the backend did not date shows no age rather than an invented one", async () => {
     const { api, store } = await signedIn();
     api.boardPatients.mockResolvedValue(ALERT_BOARD);             // no first_seen_at
@@ -541,9 +580,11 @@ describe("live mode: nothing simulated looks real", () => {
   });
 
   it("no call-for-help or simulation control that would silently do nothing", async () => {
-    const { api, store } = await signedIn();
+    const base = createDemoStore(buildRealisticState());
+    base.setOnline(false);              // the simulation's own flag: it must not show in live mode
+    const { api, store } = await signedIn({ base });
     api.boardPatients.mockResolvedValue(TWO_ALERTS);
-    store.setOnline(false);             // the simulation's own flag: it must not show in live mode
+    expect(() => store.setOnline(false)).toThrow();   // and the live store refuses to set it
     await renderLive(store, api);
     fireEvent.click(navButton("alarms"));
     for (const summary of ["Canlı test alarmı", "Canlı kritik alarm"]) {
@@ -617,6 +658,22 @@ describe("the patient drawer (simulation)", () => {
     nurse.loginAs(ROLE.CHARGE_NURSE);                      // confirms transfers, does not start them
     render(<ClinicalDemo store={nurse} />);
     expect(within(openDrawer(nurse)).queryByRole("button", { name: S.transfer })).toBeNull();
+  });
+
+  it("the admission page offers the transfer tab only to a session that may start one", () => {
+    const store = createDemoStore(buildRealisticState());
+    store.loginAs(ROLE.ATTENDING);
+    const { unmount } = render(<ClinicalDemo store={store} />);
+    fireEvent.click(navButton("admission"));
+    expect(screen.getByRole("button", { name: S.transferTitle })).toBeInTheDocument();
+    unmount();
+
+    const nurse = createDemoStore(buildRealisticState());
+    nurse.loginAs(ROLE.CHARGE_NURSE);                      // admits, confirms transfers, starts none
+    render(<ClinicalDemo store={nurse} />);
+    fireEvent.click(navButton("admission"));
+    expect(screen.getByRole("button", { name: S.admissionTitle })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: S.transferTitle })).toBeNull();
   });
 
   it("is closed for whoever signs in next", async () => {

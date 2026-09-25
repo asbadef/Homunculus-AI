@@ -319,3 +319,97 @@ describe("backendApi — a server that does not answer", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+describe("backendApi — a newer session's tokens are never another session's to drop", () => {
+  // A page loads with a stale session whose refresh the server will refuse; while that refresh is
+  // in flight, someone else signs in. The late refusal belongs to the OLD session: it must not
+  // drop the new session's tokens, nor put the old session's refreshed pair over them.
+  const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+  function setup({ refreshAnswer }) {
+    let release;
+    const fetchMock = vi.fn(async (url, init = {}) => {
+      const auth = init.headers?.Authorization || "";
+      if (url === "/auth/login") {
+        const { login } = JSON.parse(init.body);
+        return login === "a"
+          ? json(200, { access_token: "A-EXPIRED", refresh_token: "A-REFRESH" })
+          : json(200, { access_token: "B-ACCESS", refresh_token: "B-REFRESH" });
+      }
+      if (url === "/auth/refresh") {
+        await new Promise((resolve) => { release = resolve; });
+        return refreshAnswer;
+      }
+      if (url === "/auth/me") {
+        return auth === "Bearer B-ACCESS" || auth === "Bearer A-FRESH"
+          ? json(200, { id: auth.includes("B") ? "B" : "A" })
+          : json(401, { detail: "token_version" });
+      }
+      return json(404, { detail: "nf" });
+    });
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    return { api, fetchMock, release: () => release() };
+  }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("a refused refresh for the old session leaves the new session's tokens in place", async () => {
+    const { api, release } = setup({ refreshAnswer: json(401, { detail: "Invalid or expired refresh token" }) });
+    await api.login("a", "x");
+    const stale = api.me().catch((err) => err);
+    await settle();
+    await api.login("b", "y");                          // B signs in while A's refresh waits
+    release();
+
+    const err = await stale;
+    expect(err.sessionEnded).not.toBe(true);             // A's end is not B's
+    expect(err.superseded).toBe(true);
+    expect(api.accessToken()).toBe("B-ACCESS");
+    await expect(api.me()).resolves.toEqual({ id: "B" });
+  });
+
+  it("a granted refresh for the old session does not put its pair over the new one", async () => {
+    const { api, release } = setup({ refreshAnswer: json(200, { access_token: "A-FRESH", refresh_token: "A-REFRESH-2" }) });
+    await api.login("a", "x");
+    const stale = api.me().catch((err) => err);
+    await settle();
+    await api.login("b", "y");
+    release();
+
+    expect((await stale).superseded).toBe(true);
+    expect(api.accessToken()).toBe("B-ACCESS");
+  });
+
+  it("parallel requests of one session may each refresh, and all go through", async () => {
+    // Refresh tokens are not single-use: requests that all met an expired token refresh side by
+    // side, and none of them is "another session".
+    let refreshes = 0;
+    const fetchMock = vi.fn(async (url, init = {}) => {
+      const auth = init.headers?.Authorization || "";
+      if (url === "/auth/login") return json(200, { access_token: "OLD", refresh_token: "R" });
+      if (url === "/auth/refresh") {
+        refreshes += 1;
+        return json(200, { access_token: `NEW-${refreshes}`, refresh_token: "R" });
+      }
+      return auth.startsWith("Bearer NEW") ? json(200, { ok: true }) : json(401, { detail: "token_version" });
+    });
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    await api.login("n", "x");
+    const answers = await Promise.all([api.me(), api.boardPatients(), api.adminUsers()]);
+    expect(answers).toEqual([{ ok: true }, { ok: true }, { ok: true }]);
+    expect(refreshes).toBeGreaterThan(0);
+  });
+
+  it("a 401 with no refresh token left ends the session", async () => {
+    const fetchMock = vi.fn(async (url) => (url === "/auth/login"
+      ? json(200, { access_token: "ONLY-ACCESS" })                    // no refresh token
+      : json(401, { detail: "Invalid or missing authentication credentials" })));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    await api.login("n", "x");
+
+    const err = await api.boardPatients().catch((e) => e);
+
+    expect(err.status).toBe(401);
+    expect(err.sessionEnded).toBe(true);
+    expect(api.accessToken()).toBeNull();
+    expect(fetchMock.mock.calls.map(([url]) => url)).not.toContain("/auth/refresh");
+  });
+});

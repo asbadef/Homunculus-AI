@@ -1,10 +1,11 @@
 // src/liveStore.js — the seam that puts the real backend behind the clinical UI.
 //
-// The design (ClinicalDemo) drives a simulation store. This wraps that store and replaces ONLY the
+// The design (ClinicalDemo) drives a simulation store. This wraps that store and replaces the
 // actions the backend implements (authentication, the board, acknowledgements, administration)
-// with real API calls, overlaying the resulting state on top of the simulated state. Everything
-// the backend does not implement yet keeps working exactly as before, so the UI stays whole while
-// the real system grows underneath it, domain by domain.
+// with real API calls, overlaying the resulting state on top of the simulated state. The
+// simulation's other actions are REFUSED here (LIVE_UNAVAILABLE): in live mode nothing may write
+// to the simulation as if it were the ward, and the UI hides the controls that would call them.
+// Only a few reads and a display preference pass through (LIVE_SAFE_SIMULATION).
 
 import {
   sessionFromToken, accessProblem, secretFromProvisioningUri, NO_PERMISSIONS, NO_BOARD_ACCESS,
@@ -22,6 +23,58 @@ const RECONNECT_DELAY_MS = 5000;
 /** `state.sessionError.code` when a stored session could not be checked because the server did
  *  not answer. The tokens are kept; calling restoreSession() again retries. */
 export const SESSION_UNREACHABLE = "SESSION_UNREACHABLE";
+
+/** `err.code` of a simulation action called in live mode. */
+export const LIVE_UNAVAILABLE = "LIVE_UNAVAILABLE";
+const LIVE_UNAVAILABLE_MESSAGE = "Bu işlem canlı sistemde henüz yok; yalnızca simülasyonda çalışır.";
+
+/** The simulation's actions that write only to the simulation. In live mode each one throws
+ *  LIVE_UNAVAILABLE instead: a screen that calls one shows the translated reason, and nothing is
+ *  written to the simulated ward. liveStore.test.js fails when the simulation gains a function
+ *  that is in neither this list nor LIVE_SAFE_SIMULATION, nor one the live store implements. */
+export const SIMULATION_ONLY = Object.freeze([
+  // sessions and staff of the simulation
+  "login", "loginAs", "switchUserByPin", "createUser", "setUserRole", "setUserPassword",
+  "resetUserPin", "toggleUserActive", "resetUserMfa", "setUserMfaRequired", "setUserUnits",
+  "verifyMfa", "inviteUser", "acceptInvite", "resendInvite", "cancelInvite",
+  "terminateSession", "terminateAllUserSessions", "assignStaffToBeds", "toggleStaffBed",
+  // hospital structure and devices
+  "createTenant", "createSite", "completeTenantSetup", "addUnit", "addRoom", "addBed",
+  "setBedState", "updateDevice", "addDevice", "assignDeviceToBed",
+  // patients, admission, transfer, care team, handover
+  "admitPatient", "transferPatient", "assignCareTeam", "createHandover", "initiateDischarge",
+  "confirmDischarge", "initiateTransfer", "acceptTransfer", "completeTransfer",
+  "archivePatient", "anonymizePatient", "revealPhiField",
+  "generateShiftHandover", "signShiftHandover",
+  // clinical record and results
+  "addDiagnosis", "addMedication", "stopMedication", "addProcedure", "addFluid", "setThresholds",
+  "addResult", "markResultReviewed", "toggleHisIntegration", "simulateInboundResult",
+  // alarms, call for help, break-glass
+  "fireAlert", "muteAlert", "snoozeAlert", "escalateToRRT", "activateRRT", "resolveRRT",
+  "classifyAlert", "logNotification", "markNotificationRead",
+  "activateBreakGlass", "extendBreakGlass", "reviewBreakGlass",
+  // the simulation's own machinery
+  "setOnline", "queueOffline", "flushSyncQueue", "setAutoAlarm", "setSpeed", "setRunning", "reset",
+  "recordTestPush", "createReportTemplate", "generateReport", "captureKpiSnapshot",
+  "recordQualityMetric",
+]);
+
+/** The simulation's functions the live store passes through unchanged: reads a hidden screen
+ *  may still render (they must never throw during a render), and the name-masking display
+ *  preference, which changes only what this screen shows. */
+export const LIVE_SAFE_SIMULATION = Object.freeze([
+  "openCriticalAlerts", "deviceForBed", "rrtHasAccess", "breakGlassActive", "computeHeatmap",
+  "toggleMaskNames",
+]);
+
+function refusedInLive(name) {
+  return () => {
+    const err = new Error(LIVE_UNAVAILABLE_MESSAGE);
+    err.code = LIVE_UNAVAILABLE;
+    err.action = name;
+    throw err;
+  };
+}
 
 // Why a session was refused, per accessProblem() reason. A reason missing here still refuses
 // (resolveSession fails closed), with the generic message.
@@ -96,6 +149,9 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     // Set by restoreSession() when the server could not be reached ({code, message, detail});
     // null otherwise. See SESSION_UNREACHABLE.
     sessionError: null,
+    // True while restoreSession() checks a stored session: the login form waits, since a sign-in
+    // made meanwhile would race it for the tokens.
+    sessionRestoring: false,
     ...ADMIN_EMPTY,
   };
   const listeners = new Set();
@@ -221,10 +277,14 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
    *  says "reconnecting". A server that did not answer (5xx, network, REQUEST_TIMEOUT) never
    *  ends it. The error still reaches the caller. */
   async function tracked(call) {
+    const epoch = sessionEpoch;
     try {
       return await call();
     } catch (err) {
-      if (err?.sessionEnded === true && (overlay.user || overlay.mfaPending)) endSession();
+      // Only the session the call was made under: a stale call's end is not a newer session's.
+      if (err?.sessionEnded === true && epoch === sessionEpoch && (overlay.user || overlay.mfaPending)) {
+        endSession();
+      }
       throw err;
     } finally {
       if (syncRights()) emit();
@@ -443,8 +503,12 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
       : { ...labels, mfa_required: g.mfaRequired, permissions: g.permissions });
   }
 
+  // Restores in flight (a newer one may start while an older one still waits for its answer).
+  let restoresInFlight = 0;
+
   return {
     ...base,
+    ...Object.fromEntries(SIMULATION_ONLY.map((name) => [name, refusedInLive(name)])),
     getState,
     subscribe,
     /** The simulation's clock does not run against the real backend (see `running`). */
@@ -572,6 +636,9 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
       // dropped, whatever it is, so it neither shows this account with another's rights nor
       // clears the tokens a new sign-in just stored.
       const epoch = nextEpoch();
+      restoresInFlight += 1;
+      setOverlay({ sessionRestoring: true });
+      emit();
       try {
         const me = await api.me();
         if (epoch !== sessionEpoch) return false;
@@ -601,6 +668,12 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
         }
         emit();
         return false;
+      } finally {
+        restoresInFlight -= 1;
+        if (restoresInFlight === 0) {
+          setOverlay({ sessionRestoring: false });
+          emit();
+        }
       }
     },
 

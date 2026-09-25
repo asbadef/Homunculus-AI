@@ -34,6 +34,7 @@ import { hasAny, hasPerm } from "./permissions.js";
 import { LiveStaffTab } from "./admin/LiveStaffTab.jsx";
 import QRCode from "qrcode";
 import { cstrings, storedClang, persistClang, LANGS, translateApiError } from "./clinicalI18n.js";
+import { REQUEST_TIMEOUT } from "./backendApi.js";
 import { enableAudio, isAudioEnabled, syncAlarm } from "./clinicalAudio.js";
 
 // ---------------------------------------------------------------- shared visual maps
@@ -217,7 +218,7 @@ function LangPills({ T, lang, setLang }) {
   );
 }
 
-function Login({ T, S, store, lang, setLang, sessionError = null }) {
+function Login({ T, S, store, lang, setLang, sessionError = null, sessionRestoring = false }) {
   const [email, setEmail] = useState("");
   const [credential, setCredential] = useState("");
   const [err, setErr] = useState(null);   // the error itself: shown translated, in the current language
@@ -228,7 +229,8 @@ function Login({ T, S, store, lang, setLang, sessionError = null }) {
     // Kurumsal e-posta + parola. Yetkiler gruplardan gelir; panel izinlere göre yönlenir.
     // attemptLogin: gruplardan biri MFA gerektiriyorsa oturumu açmadan MFA kapısına yönlendirir.
     // `await` hem simülasyonun senkron sürümünü hem canlı backend'in async sürümünü karşılar.
-    if (busy || retrying.current) return;   // a session retry in flight would race this sign-in
+    // A stored session being checked (at load, or by "retry") would race this sign-in for the tokens.
+    if (busy || retrying.current || sessionRestoring) return;
     setErr(null);
     setBusy(true);
     try { await store.attemptLogin(email.trim(), credential.trim()); }
@@ -243,7 +245,7 @@ function Login({ T, S, store, lang, setLang, sessionError = null }) {
   const [retryBusy, setRetryBusy] = useState(false);
   const canRetry = typeof store.restoreSession === "function";
   const retry = () => {
-    if (retrying.current || busy || !canRetry) return;
+    if (retrying.current || busy || sessionRestoring || !canRetry) return;
     retrying.current = true;
     setRetryBusy(true);
     let call;
@@ -355,7 +357,7 @@ function Login({ T, S, store, lang, setLang, sessionError = null }) {
                 <span>{translateApiError(sessionError, lang)}</span>
               </div>
               {canRetry && (
-                <button type="button" onClick={retry} disabled={retryBusy || busy} className={`${btnCls(T, "ghost")} mt-2 w-full`}>
+                <button type="button" onClick={retry} disabled={retryBusy || busy || sessionRestoring} className={`${btnCls(T, "ghost")} mt-2 w-full`}>
                   <RefreshCw size={15} className={retryBusy ? "animate-spin" : ""} />
                   {retryBusy ? S.rbac.retrying : S.rbac.retry}
                 </button>
@@ -375,7 +377,10 @@ function Login({ T, S, store, lang, setLang, sessionError = null }) {
                   onChange={(e) => setCredential(e.target.value)} placeholder="••••••••" autoComplete="current-password" />)}
             </Field>
             {err && <div role="alert" className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-500">{translateApiError(err, lang)}</div>}
-            <button type="submit" disabled={busy || retryBusy} className={`${btnCls(T, "primary")} group w-full`}>
+            {sessionRestoring && !retryBusy && (
+              <div role="status" className={`text-center text-xs ${T.faint}`}>{S.rbac.sessionChecking}</div>
+            )}
+            <button type="submit" disabled={busy || retryBusy || sessionRestoring} className={`${btnCls(T, "primary")} group w-full`}>
               {S.signIn}
               <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
             </button>
@@ -1058,7 +1063,12 @@ function PasswordChangeDialog({ T, S, store, lang, onClose }) {
       setBusy(false);
     }
   };
-  const message = err ? (err.local ? R[err.local] : translateApiError(err, lang)) : null;
+  // No answer in time: the server may have made the change — then every session is retired and
+  // the next request signs the user out. Say so, rather than the generic "check the list".
+  const message = !err ? null
+    : err.local ? R[err.local]
+    : err.code === REQUEST_TIMEOUT ? R.passwordMaybeChanged
+    : translateApiError(err, lang);
   const field = (label, value, set, autoComplete) => (
     <Field T={T} label={label}>
       <input type="password" autoComplete={autoComplete} className={inputCls(T)} value={value}
@@ -1671,17 +1681,23 @@ function ModalShell({ T, title, sub, onClose, children, busy = false }) {
 
 // ================================================================ ADMISSION / TRANSFER
 function AdmissionPage({ T, S, store, state, preselectTransfer, clearPreselect }) {
-  const [tab, setTab] = useState(preselectTransfer ? "transfer" : "admit");
+  // Starting a transfer takes admissions.move.initiate, as the drawer's Transfer button does: a
+  // charge nurse confirms transfers but does not start them.
+  const mayTransfer = hasPerm(state.user?.perms || [], "admissions.move.initiate");
+  const [chosen, setTab] = useState(preselectTransfer ? "transfer" : "admit");
   useEffect(() => { if (preselectTransfer) setTab("transfer"); }, [preselectTransfer]);
+  const tab = chosen === "transfer" && !mayTransfer ? "admit" : chosen;
   return (
     <div className="max-w-5xl space-y-4">
       <div className="flex gap-2">
         <button onClick={() => setTab("admit")} className={`rounded-lg px-4 py-2.5 font-semibold ${T.sizes.nav} ${tab === "admit" ? T.navActive : T.ghost}`}>
           <UserPlus size={16} className="mr-2 inline" />{S.admissionTitle}
         </button>
-        <button onClick={() => setTab("transfer")} className={`rounded-lg px-4 py-2.5 font-semibold ${T.sizes.nav} ${tab === "transfer" ? T.navActive : T.ghost}`}>
-          <ArrowLeftRight size={16} className="mr-2 inline" />{S.transferTitle}
-        </button>
+        {mayTransfer && (
+          <button onClick={() => setTab("transfer")} className={`rounded-lg px-4 py-2.5 font-semibold ${T.sizes.nav} ${tab === "transfer" ? T.navActive : T.ghost}`}>
+            <ArrowLeftRight size={16} className="mr-2 inline" />{S.transferTitle}
+          </button>
+        )}
       </div>
       {tab === "admit"
         ? <AdmitForm T={T} S={S} store={store} state={state} />
@@ -2272,6 +2288,12 @@ function AlertCard({ T, S, state, alert, onAck, onSnooze, onEscalate, onMute }) 
             {alert.auto && (
               <span className="inline-flex items-center gap-1 rounded-full bg-brand/15 px-2 py-0.5 text-[11px] font-bold text-brand">
                 <Siren size={11} /> {S.pr6.autoBadge}
+              </span>
+            )}
+            {/* The backend's own escalation of a real alarm (its escalation loop, board payload). */}
+            {device && alert.escalated === true && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-bold text-red-500">
+                <ArrowUpCircle size={11} /> {S.rbac.escalated}
               </span>
             )}
             <span className={`text-sm font-semibold ${T.text}`}>{patient?.bedLabel} · {maskedName(state, patient?.display_name)}</span>
@@ -4315,7 +4337,8 @@ export function ClinicalDemo({ store: injectedStore = null }) {
       live={state.live === true} />;
   }
   if (!state.user) {
-    return <Login T={T} S={S} store={store} lang={lang} setLang={setLang} sessionError={state.sessionError || null} />;
+    return <Login T={T} S={S} store={store} lang={lang} setLang={setLang} sessionError={state.sessionError || null}
+      sessionRestoring={state.sessionRestoring === true} />;
   }
 
   // Kurum kurulum sihirbazı: platform ilk kez kuruluyorsa yönetici girişinde gösterilir (Madde 5).

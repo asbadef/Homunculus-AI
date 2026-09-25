@@ -1,7 +1,12 @@
 // dashboard/src/liveStore.test.js
-import { describe, it, expect, vi } from "vitest";
-import { createLiveStore, SESSION_UNREACHABLE } from "./liveStore.js";
-import { ROLE } from "./clinicalDemo.js";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import {
+  createLiveStore, SESSION_UNREACHABLE, LIVE_UNAVAILABLE, LIVE_SAFE_SIMULATION, SIMULATION_ONLY,
+} from "./liveStore.js";
+import { ROLE, createDemoStore, buildRealisticState } from "./clinicalDemo.js";
+import { createBackendApi } from "./backendApi.js";
+import { CONNECTION } from "./liveConnection.js";
+import { cstrings, translateApiError, LANGS } from "./clinicalI18n.js";
 import { accessProblem } from "./liveAuth.js";
 import { PERMISSION_KEYS } from "./permissions.js";
 
@@ -219,11 +224,12 @@ describe("liveStore — real authentication over the simulation", () => {
     expect(api.changePassword).toHaveBeenCalledWith("eski", "yeni-parola");
   });
 
-  it("delegates everything else to the simulation, which keeps working", () => {
+  it("still reads the simulation's state, but refuses its writes", () => {
     const base = fakeBase({ structure: { units: ["unit-1"] } });
     const store = createLiveStore({ api: fakeApi(), base });
     expect(store.getState().structure.units).toEqual(["unit-1"]);
-    expect(store.admitPatient({})).toBe("admitted");
+    expect(() => store.admitPatient({})).toThrow(expect.objectContaining({ code: LIVE_UNAVAILABLE }));
+    expect(base.admitPatient).not.toHaveBeenCalled();
   });
 
   it("marks tenant setup complete so the wizard never gates a real clinician", () => {
@@ -515,5 +521,135 @@ describe("liveStore — the session's rights stay current", () => {
     const store = createLiveStore({ api, base: fakeBase() });
     expect(await store.refreshRights()).toBe(false);
     expect(api.me).not.toHaveBeenCalled();
+  });
+});
+
+describe("liveStore — a stale answer never ends a newer session", () => {
+  const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  afterEach(() => localStorage.clear());
+
+  it("B's sign-in survives the refusal of A's stale session (the real backendApi)", async () => {
+    // A page loads with A's stale session; its refresh is refused only after nurse B signed in.
+    const B_ACCESS = tokenWith({ tenant: "t1", groups: ["nurse"], perms: ["board.view", "alerts.ack"] });
+    let release;
+    const fetchImpl = async (url, init = {}) => {
+      const auth = init.headers?.Authorization || "";
+      if (url === "/auth/login") {
+        return JSON.parse(init.body).login === "a"
+          ? json(200, { access_token: "A-EXPIRED", refresh_token: "A-REFRESH" })
+          : json(200, { access_token: B_ACCESS, refresh_token: "B-REFRESH", requires_mfa: false });
+      }
+      if (url === "/auth/refresh") {
+        await new Promise((resolve) => { release = resolve; });
+        return json(401, { detail: "Invalid or expired refresh token" });
+      }
+      const b = auth === `Bearer ${B_ACCESS}`;
+      if (url === "/auth/me") {
+        return b ? json(200, { id: "B", username: "b", email: null, full_name: "Nurse B", groups: [], perms: [], tenant: "t1" })
+          : json(401, { detail: "token_version" });
+      }
+      if (url === "/patients") return b ? json(200, { patients: [] }) : json(401, { detail: "token_version" });
+      return json(404, { detail: "nf" });
+    };
+    const api = createBackendApi({ baseUrl: "", fetchImpl });
+    await api.login("a", "x");                       // A's pair, left by an earlier page load
+    const store = createLiveStore({ api, base: fakeBase() });
+
+    const restoring = store.restoreSession();
+    await settle();
+    await store.attemptLogin("b", "y");
+    release();
+
+    expect(await restoring).toBe(false);
+    expect(api.accessToken()).toBe(B_ACCESS);
+    expect(store.getState().user).toMatchObject({ full_name: "Nurse B" });
+    await store.refreshBoard();
+    expect(store.getState().user).not.toBeNull();
+    expect(store.getState().connection).not.toBe(CONNECTION.UNAVAILABLE);
+  });
+
+  it("a stale call's refused refresh does not end the session that replaced it", async () => {
+    let refuse;
+    const api = { ...fakeApi({ accessToken: vi.fn(() => adminToken) }),
+      acknowledge: vi.fn(() => new Promise((_, reject) => { refuse = reject; })),
+      boardPatients: vi.fn(async () => ({ patients: [] })) };
+    const store = createLiveStore({ api, base: fakeBase() });
+    await store.attemptLogin("admin", "gizli");
+    const stale = store.acknowledgeAlert("bed-1::k").catch((err) => err);
+    store.logout();
+    await store.attemptLogin("admin", "gizli");
+
+    refuse(apiError("Invalid or expired refresh token", { status: 401, sessionEnded: true }));
+    expect((await stale).sessionEnded).toBe(true);
+
+    expect(store.getState().user).not.toBeNull();
+    expect(api.logout).toHaveBeenCalledTimes(1);     // the deliberate sign-out only
+  });
+
+  it("says while a stored session is being checked, so the login form can wait", async () => {
+    let answer;
+    const api = fakeApi({ accessToken: vi.fn(() => adminToken),
+                          me: vi.fn(() => new Promise((resolve) => { answer = resolve; })) });
+    const store = createLiveStore({ api, base: fakeBase() });
+    expect(store.getState().sessionRestoring).toBe(false);
+
+    const restoring = store.restoreSession();
+    expect(store.getState().sessionRestoring).toBe(true);
+    answer(ME);
+    await restoring;
+    expect(store.getState().sessionRestoring).toBe(false);
+
+    api.me.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await store.restoreSession();
+    expect(store.getState().sessionRestoring).toBe(false);
+  });
+});
+
+describe("liveStore — the simulation's own actions are refused in live mode", () => {
+  // A future screen that calls a simulation action in live mode must hear "not in the live system",
+  // never write to the simulation as if it were the ward.
+  const langs = LANGS.map((l) => l[0]);
+
+  it("every simulation function is the live store's own, a read it may use, or refused", () => {
+    const demo = createDemoStore(buildRealisticState());
+    const store = createLiveStore({ api: fakeApi(), base: demo });
+    const fns = Object.keys(demo).filter((k) => typeof demo[k] === "function");
+    // Passed through unchanged: exactly the reads and the display preference listed as safe. A new
+    // simulation action fails here until it is classified.
+    expect(fns.filter((k) => store[k] === demo[k]).sort()).toEqual([...LIVE_SAFE_SIMULATION].sort());
+    for (const name of fns.filter((k) => store[k] !== demo[k] && SIMULATION_ONLY.includes(k))) {
+      expect(() => store[name](), name).toThrow(expect.objectContaining({ code: LIVE_UNAVAILABLE }));
+    }
+    for (const name of ["escalateToRRT", "muteAlert", "snoozeAlert", "fireAlert", "activateBreakGlass",
+                        "extendBreakGlass", "setOnline", "setAutoAlarm", "setSpeed", "setRunning",
+                        "admitPatient", "transferPatient", "assignCareTeam", "addResult", "loginAs",
+                        "switchUserByPin"]) {
+      expect(SIMULATION_ONLY, name).toContain(name);
+    }
+  });
+
+  it("a refused action writes nothing to the simulation and says why, in every language", () => {
+    const demo = createDemoStore(buildRealisticState());
+    const store = createLiveStore({ api: fakeApi(), base: demo });
+    const patientId = demo.getState().patients[0].patient_id;
+    const before = demo.getState();
+    for (const [name, args] of [
+      ["escalateToRRT", ["A-1"]], ["muteAlert", ["A-1"]], ["snoozeAlert", ["A-1", { minutes: 5, reason: "x" }]],
+      ["fireAlert", [{ patientId, tier: "CRITICAL" }]], ["activateBreakGlass", ["acil durum gerekçesi uzun"]],
+      ["setOnline", [false]], ["setAutoAlarm", [false]],
+    ]) {
+      let err;
+      try { store[name](...args); } catch (ex) { err = ex; }
+      expect(err?.code, name).toBe(LIVE_UNAVAILABLE);
+      for (const lang of langs) {
+        expect(translateApiError(err, lang), `${lang} ${name}`).toBe(cstrings(lang).rbac.err.liveUnavailable);
+      }
+    }
+    const after = demo.getState();
+    expect(after.auditLog).toBe(before.auditLog);
+    expect(after.alerts).toBe(before.alerts);
+    expect(after.online).toBe(before.online);
+    expect(after.breakGlass).toBe(before.breakGlass);
   });
 });
