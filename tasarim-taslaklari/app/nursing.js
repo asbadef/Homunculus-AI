@@ -444,10 +444,10 @@
       { key:"wound", pid:"p6", date:"21.09", at:"08:20", user:"hs.gulnar", d:{ woundId:"w1", regions:["sakrum"], view:"arka", tur:"Basınç ülseri", evre:"2", oy:"İç kaynaklı (hastanede)", L:"3,5", W:"2,6", D:"0,2", eksMik:1, doku:2, _area:9.1, _push:11 } },
       { key:"wound", pid:"p6", date:"22.09", at:"08:15", user:"hs.gulnar", d:{ woundId:"w1", regions:["sakrum"], view:"arka", tur:"Basınç ülseri", evre:"2", oy:"İç kaynaklı (hastanede)", L:"3,2", W:"2,4", D:"0,2", eksMik:1, doku:2, _area:7.7, _push:10 } },
       { key:"wound", pid:"p1", date:"22.09", at:"09:00", user:"hs.sevda", d:{ woundId:"w2", regions:["topuk_sag"], view:"arka", tur:"Basınç ülseri", evre:"1", oy:"İç kaynaklı (hastanede)", L:"2", W:"1,5", D:"0", eksMik:0, doku:1, _area:3, _push:6 } },
-      { key:"pain", pid:"p6", date:TODAY, at:"09:05", user:"hs.gulnar", d:{ scale:"NRS", regions:["karin_sag_alt", "karin_sol_alt"], _score:3 } },
-      { key:"pain", pid:"p10", date:TODAY, at:"16:10", user:"hs.gulnar", d:{ scale:"NRS", regions:["karin_sag_ust"], _score:4 } },
-      { key:"io", pid:"p6", date:TODAY, at:"14:00", user:"hs.gulnar", d:{ _in:1050, _out:850 } },
-    ],
+      { key:"pain", pid:"p6", date:"24.09.2026", at:"09:05", user:"hs.gulnar", d:{ scale:"NRS", regions:["karin_sag_alt", "karin_sol_alt"], _score:3 } },
+      { key:"pain", pid:"p10", date:"24.09.2026", at:"16:10", user:"hs.gulnar", d:{ scale:"NRS", regions:["karin_sag_ust"], _score:4 } },
+      { key:"io", pid:"p6", date:"24.09.2026", at:"14:00", user:"hs.gulnar", d:{ _in:1050, _out:850 } },
+    ].map(r => { const [d, a] = H.recShift(r.date, r.at); return Object.assign(r, { date:d, at:a }); }),   // 30.09c: yazıldığı an 24.09 21:42 → gerçek saate kaydırılır
     ongoing:[
       { pid:"p6", name:"Damar yolu", region:"on_kol_sol", day:2 }, { pid:"p6", name:"Mesane sonda", region:null, day:3 },
       { pid:"p1", name:"CVP", region:"boyun", day:2 }, { pid:"p1", name:"Arter kateteri", region:"on_kol_sol", day:2 }, { pid:"p1", name:"Entübasyon", region:null, day:2 },
@@ -826,7 +826,7 @@
         H.log("Şiddetli ağrı · hekime bildirim", `${H.bed(p.bed).no} · ${d.scale} ${f1(s)}/10`);
       }
       const add = { "30 dk":.5, "1 saat":1, "2 saat":2, "4 saat":4 }[d.reas];
-      if (add) H.data.tasks.push({ pid:p.id, t:21.7 + add, kind:"form", label:"Ağrı yeniden değerlendirme", form:"pain", state:"plan" });
+      if (add) H.data.tasks.push({ pid:p.id, t:H.nowT() + add, kind:"form", label:"Ağrı yeniden değerlendirme", form:"pain", state:"plan" });
       return `${d.scale} ${s == null ? "—" : f1(s)}/${painMax(d)}${d.diffuse ? " · tüm vücut" : d.regions.length ? " · " + d.regions.map(bodyName).join(", ") : ""}`;
     },
   };
@@ -1005,7 +1005,7 @@
       if (["hr", "sbp", "dbp", "spo2", "temp"].includes(f) && d._dev && d._dev[f] != null && d._dev[f] !== d[f]) (d._edited = d._edited || {})[f] = true;
       if (f !== "src") return;
       const p = F.p;
-      if (d.src === "Portatif cihaz") { d.measuring = true; d.srcBadge = ""; setTimeout(() => { if (!F.root.isConnected || d.src !== "Portatif cihaz") return; const v = devVals(p, true); Object.assign(d, v); d._dev = v; d._edited = {}; d.measuring = false; d.srcBadge = "Portatif cihaz P-07 · 21:44"; draw(F); H.toast("Portatif cihazdan değerler alındı. Solunum ve bilinci siz girin."); }, 1500); }
+      if (d.src === "Portatif cihaz") { d.measuring = true; d.srcBadge = ""; setTimeout(() => { if (!F.root.isConnected || d.src !== "Portatif cihaz") return; const v = devVals(p, true); Object.assign(d, v); d._dev = v; d._edited = {}; d.measuring = false; d.srcBadge = `Portatif cihaz P-07 · ${H.now()}`; draw(F); H.toast("Portatif cihazdan değerler alındı. Solunum ve bilinci siz girin."); }, 1500); }
       else if (d.src === "Monitör") { d.measuring = false; if (!p.monitored) { d.src = "Elle"; d.srcBadge = ""; H.toast("Bu yatakta monitör bağlı değil. Elle girin ya da portatif cihaz kullanın.", "w"); return; }
         const v = devVals(p, false); v.rr = String(p.v.rr); Object.assign(d, v); d._dev = v; d._edited = {}; d.srcBadge = `Monitör · canlı · ${H.now()}`; }
       else { d.measuring = false; d.srcBadge = ""; d._dev = null; }
@@ -1351,7 +1351,7 @@
       onMount(el) { const re = () => { el.querySelector(".mb").innerHTML = body(); };
         el.addEventListener("click", (e) => { const r = e.target.closest("[data-m-res]"); if (r) { S.res = r.dataset.mRes; return re(); } const w = e.target.closest("[data-m-why]"); if (w) { S.why = w.dataset.mWhy; return re(); }
           const b = e.target.closest("[data-mx]"); if (!b) return; if (b.dataset.mx === "c") return H.closeModal();
-          if (b.dataset.mx === "later") { t.state = "plan"; t.deferred = hhmm(21.7 + 0.5); H.log("İlaç ertelendi", `${H.bed(p.bed).no} · ${t.label} → ${t.deferred}`); H.closeModal(); H.toast("30 dk ertelendi · " + t.deferred, "w"); if (opt.onDone) opt.onDone(t); return rerender(); }
+          if (b.dataset.mx === "later") { t.state = "plan"; t.deferred = hhmm(H.nowT() + 0.5); H.log("İlaç ertelendi", `${H.bed(p.bed).no} · ${t.label} → ${t.deferred}`); H.closeModal(); H.toast("30 dk ertelendi · " + t.deferred, "w"); if (opt.onDone) opt.onDone(t); return rerender(); }
           if (!S.res) return H.toast("Sonucu seçin.", "e"); if (S.res === "Uygulanmadı" && !S.why) return H.toast("Uygulanmama nedenini seçin.", "e");
           if (S.res === "Uygulandı" && !S.scan) return H.toast("Önce bileklik ve ilaç barkodunu okutun.", "e");
           t.state = S.res === "Uygulandı" ? "done" : "miss"; t.reason = S.why; t.note = S.note; t.doneAt = H.now(); t.by = uname();
@@ -1414,13 +1414,13 @@
         const order = Object.keys(groups).sort((a, b) => Object.keys(KIND).indexOf(a.split("|")[0]) - Object.keys(KIND).indexOf(b.split("|")[0]) || a.localeCompare(b, "tr"));
         const lt = ts.filter(t => t.state === "late").length, du = ts.filter(t => t.state === "due").length, cl = TS.collapsed.has(p.id);
         return `<tr class="pt"><td><div class="tkP${cl ? " cl" : ""}" data-tk-tg="${p.id}">${I("chevD")}<span class="bn">${E(H.bed(p.bed).no)}</span><b>${E(p.name)}</b></div></td>
-          <td colspan="24" class="ps"><div class="psIn">${H.ageText(p)} · ${E(p.dx)} · ${lt ? `<span class="tag c">${lt} geciken</span> ` : ""}${du ? `<span class="tag">${du} şimdi</span> ` : ""}${ts.length} iş</div></td></tr>`
+          <td colspan="24" class="ps"><div class="psIn"><span>${H.ageText(p)} · <span>${E(p.dx)}</span> · </span>${lt ? `<span class="tag c">${lt} geciken</span> ` : ""}${du ? `<span class="tag">${du} şimdi</span> ` : ""}<span>${ts.length} iş</span></div></td></tr>`
           + (cl ? "" : order.map(k => { const [kind, label] = k.split("|"), g = groups[k];
             return `<tr><td class="lbl" title="${E(label)}">${I(KIND[kind][0])}${E(label)}</td>${hours.map(h => { const c = g.filter(t => Math.floor(t.t) === h); const dc = h === 24 ? ' class="dayb"' : ""; if (!c.length) return `<td${dc}></td>`;
               const t = c.slice().sort((a, b) => PRIO[a.state] - PRIO[b.state])[0];
               return `<td${dc}><button type="button" class="tc ${t.state}" data-tk-i="${H.data.tasks.indexOf(t)}" title="${hhmm(t.t)} · ${E(label)} · ${stTxt[t.state]}">${tcIcon(t.state)}${c.length > 1 ? `<sup>${c.length}</sup>` : ""}</button></td>`; }).join("")}</tr>`; }).join(""));
       }).join("");
-      bodyHtml = `<div class="tkWrap"><div class="tkIn"><div class="tkNow"><span>${H.now()}</span></div><table class="tk"><thead><tr><th>Hasta / iş<small class="tkDay">${H.wd(0)} ${H.dm(0)} → ${H.wd(1)} ${H.dm(1)}</small></th>${hours.map(h => `<th class="${h === 21 ? "nowh" : ""}${h === 24 ? " dayb" : ""}">${h === 8 || h === 24 ? `<small class="tkDay">${H.wd(h === 24 ? 1 : 0)} ${H.dm(h === 24 ? 1 : 0)}</small>` : ""}${String(h % 24).padStart(2, "0")}</th>`).join("")}</tr></thead>
+      bodyHtml = `<div class="tkWrap"><div class="tkIn"><div class="tkNow" style="left:calc(var(--fc) + ${Math.max(0, Math.min(24, H.nowT() - 8)).toFixed(2)} * var(--cw))"><span>${H.now()}</span></div><table class="tk"><thead><tr><th>Hasta / iş<small class="tkDay">${H.wd(0)} ${H.dm(0)} → ${H.wd(1)} ${H.dm(1)}</small></th>${hours.map(h => `<th class="${h === Math.floor(H.nowT()) ? "nowh" : ""}${h === 24 ? " dayb" : ""}">${h === 8 || h === 24 ? `<small class="tkDay">${H.wd(h === 24 ? 1 : 0)} ${H.dm(h === 24 ? 1 : 0)}</small>` : ""}${String(h % 24).padStart(2, "0")}</th>`).join("")}</tr></thead>
         <tbody>${rows || `<tr><td colspan="25" style="text-align:center;padding:26px;color:var(--mute)">Bu filtreyle iş yok.</td></tr>`}</tbody></table></div></div>
         <div class="tkLeg"><span><span class="tc done">${I("ok")}</span> tamamlandı</span><span><span class="tc late">!</span> gecikti</span><span><span class="tc due">${I("clock")}</span> şimdi</span><span><span class="tc plan"></span> planlı</span><span><span class="tc miss">${I("x")}</span> uygulanmadı</span><span>· kırmızı çizgi: şimdi (${H.nowFull()})</span><span>· kalın çizgi: gün değişimi (${H.dm(1)} 00:00)</span></div>`;
     } else {
@@ -1492,7 +1492,7 @@
       const fld = ([k, l, u, inc, mn, mx, who]) => { const need = who === "nurse" || (BS.src === "manual"), edited = BS.dev[k] != null && String(BS.dev[k]) !== String(BS.v[k]);
         return `<div class="${who === "nurse" && N(BS.v[k]) == null ? "need" : ""}"><label>${l}<span>${who === "nurse" ? "hemşire girer" : BS.src === "dev" ? (edited ? "elle düzeltildi" : "cihaz") : "elle"}</span></label>
           <div class="step" data-bs-stf="${k}" data-inc="${inc}" data-min="${mn}" data-max="${mx}"><button type="button" data-bs-st="-1">−</button><input data-bs-f="${k}" inputmode="decimal" value="${E(BS.v[k] ?? "")}" placeholder="${E(String(p.v[k] ?? ""))}"><button type="button" data-bs-st="1">+</button><span class="u">${u}</span></div></div>`; };
-      main = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">${BS.src === "dev" ? `<span class="nfSrc">${I("tablet")}Portatif cihaz P-07 · 21:44</span>` : `<span class="nfSrc">${I("edit")}Elle giriş · ${H.now()}</span>`}<span class="mute" style="font-size:12.5px">Değerler düzeltilebilir. Solunum ve bilinç cihazdan gelmez.</span></div>
+      main = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">${BS.src === "dev" ? `<span class="nfSrc">${I("tablet")}Portatif cihaz P-07 · ${H.now()}</span>` : `<span class="nfSrc">${I("edit")}Elle giriş · ${H.now()}</span>`}<span class="mute" style="font-size:12.5px">Değerler düzeltilebilir. Solunum ve bilinç cihazdan gelmez.</span></div>
         <div class="bsV">${BS_F.map(fld).join("")}
           <div class="${!BS.v.acvpu ? "need" : ""}"><label>Bilinç (ACVPU)<span>hemşire girer</span></label><div class="opts">${ACV.map(([k, l]) => `<i data-bs-acv="${k}" class="${BS.v.acvpu === k ? "on" : ""}">${l}</i>`).join("")}</div></div>
           <div><label>O₂ desteği</label><div class="opts">${["Oda havası", "Ek oksijen"].map(x => `<i data-bs-o2="${x}" class="${BS.v.o2 === x ? "on" : ""}">${x}</i>`).join("")}</div></div></div>
@@ -1536,7 +1536,7 @@
         const v = p.v, n = (k) => N(BS.v[k]); Object.assign(v, { hr:n("hr"), sbp:n("sbp"), dbp:n("dbp"), spo2:n("spo2"), rr:n("rr"), temp:n("temp") }); v.map = Math.round((v.sbp + 2 * v.dbp) / 3);
         if (BS.v.o2) v.o2 = BS.v.o2 === "Ek oksijen" ? (["CPAP", "HFNC", "NIV", "MV"].includes(v.o2) ? v.o2 : "Ek oksijen") : "Oda havası"; if (BS.v.acvpu) v.loc = ACV_TXT[BS.v.acvpu];
         const r = bsNews(p); let sum = `Nb ${v.hr} · KB ${v.sbp}/${v.dbp} · SpO₂ ${v.spo2} · SS ${v.rr} · ${f1(v.temp)}°C`; if (r && r.complete) { p.news2 = r.total; sum += ` · NEWS2 ${r.total}` + applyNews2Risk(p, r); }
-        const src = BS.src === "dev" ? "Portatif cihaz P-07 · 21:44" : "Elle";
+        const src = BS.src === "dev" ? `Portatif cihaz P-07 · ${H.now()}` : "Elle";
         NS.records.push({ key:"vitals", pid:p.id, date:TODAY, at:H.now(), user:H.state.user ? H.state.user.u : "—", d:{ ...BS.v, source:src, edited:Object.keys(BS.dev).filter(k => String(BS.dev[k]) !== String(BS.v[k])) }, summary:sum });
         doneTask(p.id, t => t.form === "vitals"); H.log("form:vitals", p.id);
         BS.saved = { at:H.now(), sum:`${sum} · kaynak: ${src}` }; BS.step = 4; H.toast("Vital bulgular kaydedildi · " + p.name); return again(); }

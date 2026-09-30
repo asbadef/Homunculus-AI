@@ -192,7 +192,7 @@
   const setView = (v, err = "", info = "") => { V.view = v; V.err = err; V.info = info; V.shake = !!err; renderAuth(); };
 
   function signIn(user) {
-    user.fails = 0; user.lastLogin = "23.09.2026 " + H.now(); V.view = "login"; V.err = ""; V.info = ""; V.prefill = null;
+    user.fails = 0; user.lastLogin = `${H.dmy(H.calOff())} ${H.now()}`; V.view = "login"; V.err = ""; V.info = ""; V.prefill = null;
     H.state.user = user; V.locked = false; H.log("giriş", "başarılı");
     const home = H.data.roles[user.role].home; H.state.page = H.pages[home] ? home : "beds"; H.state.params = {};
     H.renderApp(true);
@@ -321,8 +321,8 @@
       ${showUnits ? `<div class="chip" data-menu="unit">${I("building")}${cur ? H.esc(cur.tr) : "Birimlerim · " + units.length} ${I("chevD")}</div>` : ""}
       ${clinical ? `<label class="search">${I("search")}<input data-search placeholder="${H.t("search_ph")}"><kbd>Ctrl K</kbd></label>` : `<span style="margin-left:auto"></span>`}
       ${previewChip()}
-      <div class="today" title="${H.esc(H.today())}">${I("clock")}<span>${H.esc(H.wd(0))} ${H.dm(0)}</span><b>${H.now()}</b></div>
-      ${H.can("beds") || H.can("tasks") ? `<div class="shift" title="Nöbet ${H.SHIFT.start} → ${H.SHIFT.end}"><i></i>${H.t("shift_left_lbl")} <b>${H.SHIFT.left}</b></div>` : ""}
+      <div class="today" data-hclock title="${H.esc(H.today())}">${I("clock")}<span>${H.esc(H.wd(H.calOff()))} ${H.dm(H.calOff())}</span><b>${H.now()}</b></div>
+      ${H.can("beds") || H.can("tasks") ? `<div class="shift" title="Nöbet ${H.SHIFT.start} → ${H.SHIFT.end}"><i></i>${H.t("shift_left_lbl")} <b data-hshift>${H.SHIFT.left}</b></div>` : ""}
       <div class="tools">
         <button class="lsel" data-menu="lang" title="Dil / Language">${H.flagBox(H.state.lang)}<b>${H.state.lang}</b>${I("chevD")}</button>
         <button class="ib" data-theme-toggle title="${H.t(H.state.theme === "gece" ? "lg_day" : "lg_night")}">${I(H.state.theme === "gece" ? "sun" : "moon")}</button>
@@ -342,14 +342,14 @@
 `;
   }
   // Canlı akış benzetimi: oturum açıkken arada bir rolüne uygun yeni bildirim düşer (prototip).
-  const LIVE = { hekim:["Yeni sonuç", "REA02 · arter kan gazı sonuçlandı", ["patient", { pid:"p2", tab:"sonuc" }], "p2"], hemsire:["İş zamanı geldi", "Pozisyon verme · 22:00", ["tasks"], null],
+  const LIVE = { hekim:["Yeni sonuç", "REA02 · arter kan gazı sonuçlandı", ["patient", { pid:"p2", tab:"sonuc" }], "p2"], hemsire:["İş zamanı geldi", () => `Pozisyon verme · ${H.clockT(2 * Math.ceil((H.nowT() + 0.01) / 2))}`, ["tasks"], null],   // 30.09c: bir sonraki çift saat turu (takvim)
     biyomed:["Arıza kaydı açıldı", "hs.sevda · REA03 infüzyon pompası tıkanma uyarısı veriyor", ["devices", { tab:"ariza" }], null], kabul:["Yeni yatış", "Ön kabul kaydı geldi · Genel Cerrahi Servisi", ["admission"], null],
     eczaci:["Yeni order", "REA01 · antibiyotik değişikliği", ["pharmacy"], null], yonetici:["Uzun yanıtsız alarm", "Bir alarm 10 dakikayı geçti · Erişkin Yoğun Bakım", ["quality"], null],
     kalite:["Uzun yanıtsız alarm", "Bir alarm 10 dakikayı geçti · Erişkin Yoğun Bakım", ["quality"], null], sistem:["Bağlantı düzeldi", "Hastane kaydı bağlantısı yeniden yanıt veriyor", ["admin", { tab:"integrations" }], null] };
   let liveTimer = null;
   function startLive() { clearTimeout(liveTimer); const u = H.state.user; if (!u) return; const d = LIVE[u.role]; if (!d) return;
     liveTimer = setTimeout(() => { if (H.state.user !== u) return;
-      const n = H.pushNotif({ at:H.now(), to:[u.role], sev:"", title:d[0], body:d[1], go:d[2], pid:d[3] });
+      const n = H.pushNotif({ at:H.now(), to:[u.role], sev:"", title:d[0], body:typeof d[1] === "function" ? d[1]() : d[1], go:d[2], pid:d[3] });
       H.toast(`${n.title} · ${n.body}`); H.renderApp(); }, 45000); }
   /* 24.09 · kilit ekranı (Ozan: "bize uygun olsun"). Giriş ekranının dili: koyu zemin, canlı saat, marka.
      Kilitliyken hasta verisi yok; yalnız birimdeki AÇIK alarmların SAYISI görünür (ad, yatak, değer yok) —
@@ -511,6 +511,20 @@
       const p = H.myPatients().find(x => x.name.toLowerCase().includes(q) || H.bed(x.bed).no.toLowerCase() === q);
       if (p && H.can("patient")) H.go("patient", { pid:p.id, tab:"ozet" }); else H.toast(p ? "Hasta ekranına erişim yetkiniz yok." : "Birimlerinizde eşleşen hasta yok.", "w"); }
   });
+
+  /* ---------- 30.09c · canlı saat ----------
+   * Üst çubuktaki gün/tarih/saat ve "Nöbet bitimine" 30 sn'de bir güncellenir; sayfa yeniden çizilmez (açık form, kaydırma korunur).
+   * data-hclock: <span> gün + tarih, <b> saat · data-hshift: kalan süre · data-hnow: yalnız saat yazan diğer yerler (duvar ekranı vb.). */
+  H.tickClock = () => {
+    const off = H.calOff(), day = `${H.wd(off)} ${H.dm(off)}`, now = H.now();
+    document.querySelectorAll("[data-hclock]").forEach(el => { const s = el.querySelector("span"), b = el.querySelector("b");
+      if (s && s.textContent !== day) s.textContent = day; if (b && b.textContent !== now) b.textContent = now; el.title = H.today(); });
+    document.querySelectorAll("[data-hshift]").forEach(b => { const l = H.shiftLeft(); if (b.textContent !== l) b.textContent = l; });
+    document.querySelectorAll("[data-hnow]").forEach(b => { if (b.textContent !== now) b.textContent = now; });
+    const full = H.nowFull(); document.querySelectorAll("[data-hfull]").forEach(b => { if (b.textContent !== full) b.textContent = full; });
+  };
+  // ilk güncelleme bir sonraki :00 ya da :30 saniyede, sonra 30 sn'de bir → dakika değişimi en geç ~0,2 sn gecikir
+  if (!H.CLOCK_FORCED) { const d = new Date(), ms = ((60 - d.getSeconds()) * 1000 - d.getMilliseconds()) % 30000 + 200; setTimeout(() => { H.tickClock(); setInterval(H.tickClock, 30000); }, ms); }
 
   /* ---------- açılış ---------- */
   document.documentElement.lang = H.state.lang.toLowerCase();

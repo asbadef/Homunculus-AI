@@ -607,10 +607,10 @@
   let remDone = false;
   function remind() {
     if (remDone || !MQ.matches || !H.state.user || !H.can("tasks") || pref("mRem", "1") !== "1") return; remDone = true;
-    const [hh, mm] = String(H.now()).split(":").map(Number), now = hh + mm / 60;
+    const now = H.nowT();   // 30.09c: nöbet saati (gece yarısından sonra 24+), görev saatleriyle aynı ölçek
     const soon = H.data.tasks.filter(t => H.inScope(t.pid) && t.state !== "done" && t.t >= now && t.t <= now + .5).slice(0, 3);
     if (!soon.length) return;
-    setTimeout(() => { H.toast(H.t("rem_t") + ": " + soon.map(t => { const p = H.pt(t.pid); return String(Math.floor(t.t)).padStart(2, "0") + ":" + String(Math.round(t.t % 1 * 60)).padStart(2, "0") + " " + t.label + (p ? " · " + (H.bed(p.bed) || {}).no : ""); }).join(" · "));
+    setTimeout(() => { H.toast(H.t("rem_t") + ": " + soon.map(t => { const p = H.pt(t.pid); return H.when(Math.floor(t.t) % 24, Math.round(t.t % 1 * 60)) + " " + t.label + (p ? " · " + (H.bed(p.bed) || {}).no : ""); }).join(" · "));
       if (navigator.vibrate) try { navigator.vibrate([120, 80, 120]); } catch (e) {} }, 1200);
   }
 

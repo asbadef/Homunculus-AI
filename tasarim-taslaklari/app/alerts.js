@@ -10,8 +10,10 @@
 (function () {
   const H = window.H;
   const esc = (s) => H.esc(s);
-  const DAY = H.dm(0), TODAY_ISO = "2026-09-24";   // demo günü core.js'ten
-  const stamp = () => `${DAY} ${H.now()}`;
+  // 30.09c · gerçek saat: damga takvim gününü taşır (gece yarısından sonra ertesi gün); başlangıç tarihi bugünden ileri seçilemez
+  const TODAY_ISO = H.isoD(H.clockDate());
+  const stamp = () => `${H.dm(H.calOff())} ${H.now()}`;
+  const tStamp = (t) => `${H.dm(Math.floor(t / 24))} ${clk(t)}`;   // nöbet saati → "dd.mm HH:MM"
   const stampNum = (s) => { const m = /^(\d\d)\.(\d\d) (\d\d):(\d\d)$/.exec(s || ""); return m ? ((+m[2] * 31 + +m[1]) * 1440 + +m[3] * 60 + +m[4]) : 0; };
   const clk = (h) => { h = ((h % 24) + 24) % 24; const a = Math.floor(h), m = Math.round((h - a) * 60); return `${String(a).padStart(2, "0")}:${String(m).padStart(2, "0")}`; };
   const svg = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
@@ -252,14 +254,14 @@
   /* ================= kayıttan türetilenler ================= */
   const ISO_MAP = [[/sıkı|genişletilmiş/i, "sikiTemas"], [/rsv/i, "rsv"], [/damlac/i, "damlacik"], [/solunum|hava ?yolu|havayolu/i, "solunum"], [/koruyucu|ters/i, "koruyucu"], [/temas/i, "temas"]];
   const isoKey = (s) => { if (!s) return null; for (const [re, k] of ISO_MAP) if (re.test(s)) return k; return null; };
-  const lastForm = (pid, form) => { const d = (H.data.tasks || []).filter(x => x.pid === pid && x.form === form && x.state === "done"); if (!d.length) return null; return clk(Math.max(...d.map(x => x.t))); };
+  const lastForm = (pid, form) => { const d = (H.data.tasks || []).filter(x => x.pid === pid && x.form === form && x.state === "done"); if (!d.length) return null; return Math.max(...d.map(x => x.t)); };
   const autoOf = (p) => {
     const out = [], f = p.flags || {};
     if (p.allergies && p.allergies.length) out.push({ type:"alerji", source:"oto", by:null, at:null, from:"Hasta kaydı · alerji alanı", note:p.allergies.join(", ") });
     const ik = isoKey(p.isolation);
     if (ik) out.push({ type:ik, source:"oto", by:null, at:null, from:`Hasta kaydı · izolasyon: ${p.isolation}`, note:"" });
-    if (f.fall === "yüksek") { const t = lastForm(p.id, "fall"); out.push({ type:"dusme", source:"oto", by:p.nurse, at:t ? `${DAY} ${t}` : null, from:t ? `Düşme riski formu ${t}` : "Düşme riski değerlendirmesi", note:"Risk düzeyi: yüksek" }); }
-    if (f.braden === "yüksek" || f.braden === "orta") { const t = lastForm(p.id, "braden"); out.push({ type:"basi", source:"oto", by:p.nurse, at:t ? `${DAY} ${t}` : null, from:t ? `Bası yarası riski formu ${t}` : "Bası yarası riski değerlendirmesi", note:`Risk düzeyi: ${f.braden}` }); }
+    if (f.fall === "yüksek") { const t = lastForm(p.id, "fall"); out.push({ type:"dusme", source:"oto", by:p.nurse, at:t != null ? tStamp(t) : null, from:t != null ? `Düşme riski formu ${clk(t)}` : "Düşme riski değerlendirmesi", note:"Risk düzeyi: yüksek" }); }
+    if (f.braden === "yüksek" || f.braden === "orta") { const t = lastForm(p.id, "braden"); out.push({ type:"basi", source:"oto", by:p.nurse, at:t != null ? tStamp(t) : null, from:t != null ? `Bası yarası riski formu ${clk(t)}` : "Bası yarası riski değerlendirmesi", note:`Risk düzeyi: ${f.braden}` }); }
     if (p.codeStatus && p.codeStatus !== "Tam") out.push({ type:"cpr", source:"oto", by:p.attending, at:null, from:"Hekim kaydı · kod durumu", note:`Canlandırma kararı: ${p.codeStatus} · karar hekimindir` });
     if (/nötropeni/i.test(p.dx || "")) out.push({ type:"notropeni", source:"oto", by:null, at:null, from:"Hasta kaydı · tanı metninde “nötropeni” geçiyor", note:"" });
     return out;
@@ -268,8 +270,9 @@
   /* ================= elle eklenenler + tarihçe (modül içi durum; sayfa yenilenince başa döner) ================= */
   const ST = {};
   const st = (pid) => ST[pid] || (ST[pid] = { man:[], hist:[] });
-  const seedAdd = (pid, type, by, at, note, start) => { if (!H.pt(pid)) return; const s = st(pid); s.man.push({ type, source:"elle", by, at, note, start:start || null }); s.hist.push({ act:"add", type, by, at, note, start:start || null }); };
-  const seedRm = (pid, type, by, at, why) => { if (!H.pt(pid)) return; const s = st(pid); s.man = s.man.filter(a => a.type !== type); s.hist.push({ act:"rm", type, by, at, note:why }); };
+  // 30.09c · tohum zamanları "24.09 21:42" varsayımıyla yazıldı → H.ts ile gerçek saate kaydırılır (başlangıç tarihi aynı andan)
+  const seedAdd = (pid, type, by, at0, note, start0) => { if (!H.pt(pid)) return; const at = H.ts(at0), start = start0 ? H.ts(start0 + "T" + at0.slice(-5)).slice(0, 10) : null; const s = st(pid); s.man.push({ type, source:"elle", by, at, note, start:start || null }); s.hist.push({ act:"add", type, by, at, note, start:start || null }); };
+  const seedRm = (pid, type, by, at0, why) => { if (!H.pt(pid)) return; const at = H.ts(at0); const s = st(pid); s.man = s.man.filter(a => a.type !== type); s.hist.push({ act:"rm", type, by, at, note:why }); };
   // Uydurma demo (kişiler core.js'teki uydurma kullanıcılar)
   seedAdd("p1", "zorHava", "dr.kamran", "22.09 03:15", "Entübasyon zor geçti · video laringoskopla, 2. denemede");
   seedAdd("p1", "npo", "hs.sevda", "22.09 07:00", "Girişim öncesi · hekim istemi");

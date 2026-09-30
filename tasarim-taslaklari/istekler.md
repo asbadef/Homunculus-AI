@@ -356,4 +356,10 @@
 | 306 | Push: ana sayfa bitince hepsi birlikte; başka alana dokunulmayacak | ⏳ | Mobil dal hazır (`deneme/expo-sdk57`, 16 commit, 377/377). Tasarım klasörünün gidişi ölçülüp onaylanacak |
 | 307 | Faz 1 kopuklukları | ✅ | 9/9 düzeltildi, 33/33 kontrol; ayrıntı `kontrol-2026-09-30.md` › Düzeltmeler 30.09. Konsey değişikliği geri alındı (konsültasyon bölümü yedekle bayt bayt aynı) |
 | 308 | Push hazırlığı | ✅ · ⏳ onay | `deneme/expo-sdk57` (16 commit, tsc 0, 377/377) + `tasarim/prototip` (d76db5a, 243 dosya ≈14 MB, yedek hariç). Sır taraması iki dalda temiz |
+| 309 | Ana sayfa › Mobil bölümündeki iki telefon görseli güzel olmamış | 🔧 | ana sayfa kolunda: aynı ölçek, üst üste binen eğik ikili, boşluk dolacak |
+| 310 | Uygulamanın sağ üstünde "Perşembe" ve saat yanlış; güncel tarih/saat olmalı; sistemde saatleri kontrol edip bitir | 🔧 | Sebep: `core.js:447-452` demo saati sabit (24.09 Per · 21:42). Gerçek tarih + işleyen saat; örnek kayıtlar şimdiye göre kaydırılıyor |
+| 311 | Saat işi: yalnız bugünden sonrası yeterli | ✅ karar | geçmiş gün verisine dokunulmuyor |
+| 312 | Örnek verilerin hepsi silinsin mi? | ✅ karar | Hayır — Ozan'ın 30.09 cevabı: veri kalır, "Hızlı giriş" gibi demo düğmeleri kalkar (#213: veri canlıya geçerken silinir) |
+| 313 | Çeviriler kontrol + tamamla (giriş ekranı AZ'de TR kalmış: "Kurumsal …", "Kullanıcı adı veya şifre hatalı.") | 🔧 | ayrıca giriş ekranındaki "Məlumat xəstəxanada" çipi ana sayfadaki gibi "kurulum yerini hastane seçer" olmalı |
+| 314 | "Hızlı giriş" vb. düğmeler kalksın; her şey canlıya hazır görünsün | 🔧 | hesaplar çalışmaya devam eder; ekip için giriş bilgileri ayrı dosyada |
 | 288 | Evden çalışıyor → telefon denemesi | ✅ | `telefon.html`: Expo `exp://192.168.1.115:8083` (yeni sunucu, ev adresi) + PWA `http://192.168.1.115:5199/app/`, iki QR. 8082 hâlâ ofis adresini veriyor |

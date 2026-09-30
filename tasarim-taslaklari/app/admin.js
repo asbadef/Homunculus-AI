@@ -111,7 +111,7 @@
   const st = document.createElement("style"); st.id = "adm-css"; st.textContent = css; document.head.appendChild(st);
 
   /* ================= sabitler ve yardımcılar ================= */
-  const TODAY = new Date(2026, 8, 23);
+  const TODAY = new Date(H.DAY0);   // 30.09c: gerçek nöbet günü (yaş hesabı)
   const AGE_L = { adult:"Erişkin", child:"Çocuk", neonate:"Yenidoğan" };
   const BST = { bos:"Boş", dolu:"Dolu", temizlik:"Temizlik", bloke:"Bloke", rezerve:"Rezerve" };
   const ADM_T = { medikal:"Medikal yatış", ameliyat:"Ameliyat", yb:"Yoğun bakım", mudahale:"Müdahale" };
@@ -186,17 +186,17 @@
   /* ================= demo verisine ekler (uydurma) ================= */
   const LAST = { "dr.kamran":"23.09 19:58", "hs.sevda":"23.09 20:05", "hs.gulnar":"23.09 08:04", "hs.nuray":"23.09 07:52", "rrt.emil":"23.09 21:03", "ecz.lale":"23.09 16:40",
     "bio.orxan":"23.09 13:12", "kabul.ulviyye":"23.09 19:31", "mudur.rauf":"22.09 23:15", admin:"23.09 20:10", "kalite.tural":"23.09 17:08" };
-  H.data.users.forEach(x => { if ((!x.lastLogin || x.lastLogin === "—") && LAST[x.u]) x.lastLogin = LAST[x.u]; });
-  if (!H.userBy("hs.melek")) H.data.users.push({ u:"hs.melek", pw:"Demo123!", name:"Mələk Abbasova", role:"hemsire", units:["rea"], title:"Tibb bacısı", mfa:false, active:true, fails:5, lockedUntil:Date.now() + 11 * 60000, lastLogin:"23.09 07:58", email:"" });
-  if (!H.userBy("dr.samir")) H.data.users.push({ u:"dr.samir", pw:"Demo123!", name:"Dr. Samir Quliyev", role:"hekim", units:["cer"], title:"Cərrah", mfa:true, active:false, fails:0, lockedUntil:0, lastLogin:"02.09 18:20", email:"" });
+  H.data.users.forEach(x => { if ((!x.lastLogin || x.lastLogin === "—") && LAST[x.u]) x.lastLogin = H.ts(LAST[x.u]); });   // 30.09c: gerçek saate kaydırılır
+  if (!H.userBy("hs.melek")) H.data.users.push({ u:"hs.melek", pw:"Demo123!", name:"Mələk Abbasova", role:"hemsire", units:["rea"], title:"Tibb bacısı", mfa:false, active:true, fails:5, lockedUntil:Date.now() + 11 * 60000, lastLogin:H.ts("23.09 07:58"), email:"" });
+  if (!H.userBy("dr.samir")) H.data.users.push({ u:"dr.samir", pw:"Demo123!", name:"Dr. Samir Quliyev", role:"hekim", units:["cer"], title:"Cərrah", mfa:true, active:false, fails:0, lockedUntil:0, lastLogin:H.ts("02.09 18:20"), email:"" });
 
   /* hastane kaydından gelen bekleyen yatışlar (HL7 ADT ön kabul) */
   const HBYS_Q = [
-    { id:"h1", proto:"2026-104512", name:"Orxan", surname:"Cəlilov", father:"Vüqar", sex:"E", dob:"1962-03-14", fin:"4TR7K2M", type:"yb", unit:"rea", doc:"dr.kamran", reason:"Solunum sıkıntısı, yakın izlem talebi", at:"21:12", blood:"B Rh(+)", weight:86, height:178, allergies:[], comp:"Oğlu · +994 50 *** ** 14" },
-    { id:"h5", proto:"2026-104509", name:"Vüsal", surname:"Kazımov", father:"Arif", sex:"E", dob:"1977-01-30", fin:"9LC3H6D", type:"mudahale", unit:"dax", doc:"dr.kamran", reason:"Endoskopik işlem sonrası gözlem", at:"21:05", blood:"Bilinmiyor", weight:90, height:182, allergies:[], comp:"Yok" },
-    { id:"h2", proto:"2026-104497", name:"Günay", surname:"Məlikova", father:"Rafiq", sex:"K", dob:"1990-07-02", fin:"7WE2S5N", type:"ameliyat", unit:"cer", doc:"dr.kamran", reason:"Planlı ameliyat · safra kesesi taşı", at:"20:47", blood:"A Rh(-)", weight:61, height:165, allergies:["Lateks"], comp:"Eşi" },
-    { id:"h3", proto:"2026-104490", name:"Eldar", surname:"Hacıyev", father:"Musa", sex:"E", dob:"1951-11-20", fin:"3FG8B1K", type:"medikal", unit:"dax", doc:"yeni.hekim", reason:"Nefes darlığı, bacaklarda ödem", at:"20:31", blood:"0 Rh(+)", weight:79, height:170, allergies:[], comp:"Kızı" },
-    { id:"h4", proto:"2026-104478", name:"Aylin", surname:"Novruzova", father:"Ramin", sex:"K", dob:"2020-05-09", fin:"—", type:"medikal", unit:"usq", doc:"dr.kamran", reason:"Yüksek ateş, sıvı alımında azalma", at:"19:58", blood:"A Rh(+)", weight:21, height:116, allergies:[], comp:"Annesi (refakatçi kalacak)" },
+    { id:"h1", proto:"2026-104512", name:"Orxan", surname:"Cəlilov", father:"Vüqar", sex:"E", dob:"1962-03-14", fin:"4TR7K2M", type:"yb", unit:"rea", doc:"dr.kamran", reason:"Solunum sıkıntısı, yakın izlem talebi", at:H.at("21:12"), blood:"B Rh(+)", weight:86, height:178, allergies:[], comp:"Oğlu · +994 50 *** ** 14" },
+    { id:"h5", proto:"2026-104509", name:"Vüsal", surname:"Kazımov", father:"Arif", sex:"E", dob:"1977-01-30", fin:"9LC3H6D", type:"mudahale", unit:"dax", doc:"dr.kamran", reason:"Endoskopik işlem sonrası gözlem", at:H.at("21:05"), blood:"Bilinmiyor", weight:90, height:182, allergies:[], comp:"Yok" },
+    { id:"h2", proto:"2026-104497", name:"Günay", surname:"Məlikova", father:"Rafiq", sex:"K", dob:"1990-07-02", fin:"7WE2S5N", type:"ameliyat", unit:"cer", doc:"dr.kamran", reason:"Planlı ameliyat · safra kesesi taşı", at:H.at("20:47"), blood:"A Rh(-)", weight:61, height:165, allergies:["Lateks"], comp:"Eşi" },
+    { id:"h3", proto:"2026-104490", name:"Eldar", surname:"Hacıyev", father:"Musa", sex:"E", dob:"1951-11-20", fin:"3FG8B1K", type:"medikal", unit:"dax", doc:"yeni.hekim", reason:"Nefes darlığı, bacaklarda ödem", at:H.at("20:31"), blood:"0 Rh(+)", weight:79, height:170, allergies:[], comp:"Kızı" },
+    { id:"h4", proto:"2026-104478", name:"Aylin", surname:"Novruzova", father:"Ramin", sex:"K", dob:"2020-05-09", fin:"—", type:"medikal", unit:"usq", doc:"dr.kamran", reason:"Yüksek ateş, sıvı alımında azalma", at:H.at("19:58"), blood:"A Rh(+)", weight:21, height:116, allergies:[], comp:"Annesi (refakatçi kalacak)" },
   ];
   /* HBYS kişi dizini — geçici kayıtların eşleştirme adayları */
   const HBYS_DIR = [
@@ -253,7 +253,7 @@
   // Demo: acilden gelen, kimliği bilinmeyen bir geçici kayıt (eşleşme ekranı boş görünmesin)
   (function seed() { const b = H.bed("cer-6"); if (!b || b.status !== "bos") return; const proto = nextG();
     admit({ name:`Bilinmeyen hasta (E) · ${proto}`, sex:"E", age:45, ageGroup:"adult", dx:"Acil başvuru · kimlik belgesi yok, gözlem", attending:"dr.kamran",
-      meta:{ temp:true, proto, source:"elle", unknown:true, estAge:45, consent:"sonra alınacak", admitType:"medikal", admittedAt:"19:36", admittedBy:"kabul.ulviyye" } }, "cer-6"); })();
+      meta:{ temp:true, proto, source:"elle", unknown:true, estAge:45, consent:"sonra alınacak", admitType:"medikal", admittedAt:H.at("19:36"), admittedBy:"kabul.ulviyye" } }, "cer-6"); })();
 
   /* ================= yapı seçici: Bina > Kat > Birim > oda/yatak ızgarası ================= */
   const locOf = (unitId) => { for (const b of H.data.hospital.buildings) for (const f of b.floors) if (f.units.some(u => u.id === unitId)) return { b:b.id, f:f.id }; return {}; };
@@ -305,7 +305,7 @@
     type:"medikal", attending:"", reason:"", allergy:"", noAllergy:false, blood:"Bilinmiyor", weight:"", height:"", kvkk:false, sms:false, unconscious:false, bed:null });
   const doctors = () => H.data.users.filter(x => x.role === "hekim" && x.active !== false);
   const docOpts = (v) => [["", "Seçin…"], ...doctors().map(d => [d.u, d.name])];
-  const hbysChip = () => `<span class="tag"><span class="adm-dot"></span>Kayıt bağlantısı çalışıyor · 21:40</span>`;
+  const hbysChip = () => `<span class="tag"><span class="adm-dot"></span>Kayıt bağlantısı çalışıyor · ${H.at("21:40")}</span>`;
 
   H.register("admission", { title:() => "Hasta kabul", perm:["admission", "admission_view"], render(root, params) {
     root.innerHTML = ""; const el = document.createElement("div"); el.className = "adm"; root.appendChild(el);
@@ -1248,7 +1248,7 @@
     const md = H.settings.modes;
     body.innerHTML = `<div class="g2">
       <div class="box"><h5>${I("link")} HBYS bağlantısı <span class="r adm-row"><span class="adm-dot"></span>Bağlı</span></h5>
-        ${kv("Son mesaj", "21:40")}${kv("Kuyrukta", "0")}${kv("Protokol", "HL7 v2 · FHIR R4")}${kv("Mesaj türleri", "ADT · ORM · ORU")}
+        ${kv("Son mesaj", H.at("21:40"))}${kv("Kuyrukta", "0")}${kv("Protokol", "HL7 v2 · FHIR R4")}${kv("Mesaj türleri", "ADT · ORM · ORU")}
         <div class="note i" style="margin-top:10px">Uç nokta, kimlik bilgileri ve kod eşlemeleri entegrasyon ekibinde yapılandırılır; bu ekranda gösterilmez.</div>
         <div class="adm-row" style="margin-top:10px"><button class="btn sm" data-act="test">${I("zap")}Bağlantıyı sına</button></div></div>
       <div class="box"><h5>${I("cpu")} Cihaz ağ geçidi <span class="r"><span class="tag">salt okunur</span></span></h5>
@@ -1256,7 +1256,7 @@
         <p class="adm-sub" style="margin:10px 0 0">Cihaz ekibinin alanıdır; eşleştirme ve sürücüler buradan değiştirilmez.</p>
         ${H.can("devices") ? `<div class="adm-row" style="margin-top:10px"><button class="btn sm g" data-act="devices">${I("chevR")}Cihazlar ekranı</button></div>` : ""}</div>
       <div class="box"><h5>${I("eye")} PACS bağlantısı <span class="r adm-row"><span class="adm-dot"></span>Bağlı</span></h5>
-        ${kv("Görüntüleyici", "HBYS protokolüyle açılır")}${kv("Son sorgu", "21:36")}${kv("Rapor kaynağı", "HBYS (Mod 1)")}</div>
+        ${kv("Görüntüleyici", "HBYS protokolüyle açılır")}${kv("Son sorgu", H.at("21:36"))}${kv("Rapor kaynağı", "HBYS (Mod 1)")}</div>
       <div class="box"><h5>${I("edit")} E-imza <span class="r"><span class="tag w">kısmi</span></span></h5>
         ${kv("Kurum içi imza", "Kullanıcı + PIN · etkin")}${kv("Nitelikli e-imza", "Yapılandırılmadı")}
         <p class="adm-sub" style="margin:10px 0 0">Skor onayı ve hemşirelik formları için kullanılır. Nitelikli e-imza sağlayıcısı hastanenin sözleşmesine bağlıdır.</p></div>
@@ -1412,7 +1412,7 @@
     ["22.09.2026", "19:12", "dr.kamran", "Başarısız giriş", "1. deneme"],
     ["22.09.2026", "11:30", "admin", "Sistem ayarları kaydedildi", "Oturum zaman aşımı 20 → 15 dk"],
     ["22.09.2026", "09:18", "admin", "Kullanıcı pasifleştirildi", "dr.samir · görev değişikliği"],
-  ].map(([d, t, user, action, detail]) => ({ d, t, user, action, detail }));
+  ].map(([d0, t0, user, action, detail]) => { const [d, t] = H.tsPair(d0, t0); return { d, t, user, action, detail }; });   // 30.09c: gerçek saate kaydırılır
   const TYPES = [
     ["Başarısız giriş", /başarısız/i], ["Giriş / çıkış", /^(giriş|çıkış|oturum|ekran kilit|kilit açıldı)/i], ["Kırılan cam", /kırılan cam/i], ["Form kaydı", /form/i], ["Skor imzası", /skor|imza/i],
     ["Şifre sıfırlama", /şifre/i], ["Yetki değişikliği", /yetki|rol/i], ["Kullanıcı yönetimi", /kullanıcı|hesap kilidi/i], ["Hastane yapısı", /^yapı/i],
@@ -1837,7 +1837,7 @@
         SECS.forEach(([s]) => { const a = src[s], b = W[s], n = Math.max(a.length, b.length); for (let i = 0; i < n; i++) if (JSON.stringify(a[i]) !== JSON.stringify(b[i])) c++; });
         const d = CC.edit(), ix = d.findIndex(x => x.key === key);
         if (W.name !== src.name && !W.was) W.was = src.name;
-        W.changed = `${new Date(2026, 8, 24).toLocaleDateString("tr-TR")}`; W.by = H.state.user.u; d[ix] = W; CC.draftN += c;
+        W.changed = `${H.clockDate().toLocaleDateString("tr-TR")}`; W.by = H.state.user.u; d[ix] = W; CC.draftN += c;
         H.log("Bakım kataloğu: tanı düzenlendi (taslak)", `${W.name} · ${c} değişiklik`);
         H.closeModal(); H.toast(ccT("adm_cc_toast_draft_tpl", { n:W.name, c })); redraw(); } });
   }
@@ -1900,10 +1900,11 @@
    * Buradaki diziler SENTETİKTİR: arka ucun döndüreceği yanıtın BİÇİMİNİ gösterir. Her dizinin üstündeki "BACKEND:"
    * bloğu uç noktayı ve alanları tarif eder. Geliştirici notu ekranda yalnız H.adminNote ile (yönetim hesabına) görünür.
    * Gizlilik: bu ekranlarda hasta adı YOK; kayıtlar yalnız yatak no ile anılır. Kullanıcı adları H.data.users'tan gelir.
-   * Saat: kabuğun sabit saati H.now() = 21:42, gün H.dm(0). */
-  const IZ = { hAt:"21:41", ev:{ lvl:"", src:"", rng:"24h", q:"" }, live:false, liveN:0, liveT:0, intR:"today", intAt:null,
+   * Saat (30.09c): gerçek saat. Tohum zamanları "24.09 21:42" varsayımıyla yazıldı → core.js H.at / H.atD ile kaydırılır. */
+  const IZ = { hAt:H.atHM("21:41"), ev:{ lvl:"", src:"", rng:"24h", q:"" }, live:false, liveN:0, liveT:0, intR:"today", intAt:null,
     ses:{ role:"", dev:"", q:"" }, ann:null, dis:new Set(), bk:null };
-  const NOW_MIN = 1440 + 21 * 60 + 42;   // dün 00:00 = 0 · bugün 00:00 = 1440 · şimdi = bugün 21:42
+  const NOW0 = H.clockDate(), NOW_MIN = 1440 + NOW0.getHours() * 60 + NOW0.getMinutes();   // dün 00:00 = 0 · bugün (takvim) 00:00 = 1440 · şimdi
+  const isoCal = (off) => { const d = H.clockDate(); d.setDate(d.getDate() + off); return H.isoD(d); };   // takvim gününe göre (olay günlüğü)
   /* sağdan açılan ayrıntı çekmecesi: H.modal'ın kendisi (kapatma, Esc, arka plan tıklaması aynı) + .adm-drw sınıfı */
   function drawer(title, body, actions, onMount) { const m = H.modal({ title, body, actions, onMount }); m.parentElement.classList.add("adm-drw"); return m; }
   const kv2 = (k, v, fig) => `<div class="kv"><span>${esc(k)}</span><b${fig ? ` style="font-family:Figtree"` : ""}>${v}</b></div>`;
@@ -1927,15 +1928,15 @@
   const HST = { ok:["Çalışıyor", "var(--ok)"], warn:["Uyarı", "var(--mid)"], down:["Çalışmıyor", "var(--crit)"] };
   const hsv = (s) => `<span class="sv" style="--r:${HST[s][1]}">${HST[s][0]}</span>`;
   const HEALTH = [
-    { key:"app", icon:"cpu", name:"Uygulama sunucusu", status:"ok", detail:"Çalışma süresi 12 gün 4 saat", m:[["Yanıt süresi", "38 ms"], ["Sürüm", "2.6.1"], ["Bellek kullanımı", "%54"]], at:"21:41", ms:38 },
-    { key:"db", icon:"file", name:"Veritabanı", status:"ok", detail:"Birincil ve yedek sunucu eşit", m:[["Bağlantı havuzu", "14 / 50"], ["Ortalama sorgu", "6 ms"], ["Eşleme gecikmesi", "0,3 sn"]], at:"21:41", ms:6 },
-    { key:"monitor", icon:"activity", name:"Monitör köprüsü (Infinity)", status:"warn", detail:"9 / 10 yatak bağlı · REA07 yanıt vermiyor", m:[["Bağlı yatak", "9 / 10"], ["Son veri", "4 sn önce"], ["Kopuk", "REA07 · 21:38'den beri"]], at:"21:41", ms:112 },
-    { key:"devices", icon:"tablet", name:"Portatif cihazlar", status:"ok", detail:"6 / 6 cihaz eşleşmiş", m:[["Son veri", "3 dk önce"], ["Pili azalan", "1 cihaz"]], at:"21:40", ms:null },
-    { key:"hbys", icon:"link", name:"Hastane kaydı (HBYS) bağlantısı", status:"warn", detail:"Son mesaj 12 dk önce · yanıt yavaş", m:[["Son mesaj", "21:30"], ["Yanıt süresi", "1840 ms"], ["Kuyrukta", "4 mesaj"]], at:"21:41", ms:1840 },
-    { key:"queue", icon:"list", name:"Bildirim kuyruğu", status:"ok", detail:"Bekleyen 3 · başarısız 0", m:[["Bekleyen", "3"], ["Başarısız (24 sa)", "0"], ["Ortalama bekleme", "1,2 sn"]], at:"21:41", ms:null },
-    { key:"push", icon:"bell", name:"Anlık bildirim ve SMS kanalı", status:"ok", detail:"Teslim oranı %99,2", m:[["Anlık bildirim", "Çalışıyor"], ["SMS sağlayıcısı", "Çalışıyor"], ["Teslim edilemeyen (24 sa)", "2"]], at:"21:40", ms:240 },
-    { key:"disk", icon:"file", name:"Disk ve yedek alanı", status:"ok", detail:"Veri diski %61 dolu", m:[["Veri diski", "%61 · 1,2 TB boş"], ["Yedek alanı", "%48 · 3,1 TB boş"], ["Tahmini dolma", "~140 gün"]], at:"21:35", ms:null },
-    { key:"clock", icon:"clock", name:"Saat eşitleme", status:"ok", detail:"Sapma 0,04 sn", m:[["Zaman sunucusu", "ntp.hastane.local"], ["Son eşitleme", "21:30"]], at:"21:41", ms:null },
+    { key:"app", icon:"cpu", name:"Uygulama sunucusu", status:"ok", detail:"Çalışma süresi 12 gün 4 saat", m:[["Yanıt süresi", "38 ms"], ["Sürüm", "2.6.1"], ["Bellek kullanımı", "%54"]], at:H.atHM("21:41"), ms:38 },
+    { key:"db", icon:"file", name:"Veritabanı", status:"ok", detail:"Birincil ve yedek sunucu eşit", m:[["Bağlantı havuzu", "14 / 50"], ["Ortalama sorgu", "6 ms"], ["Eşleme gecikmesi", "0,3 sn"]], at:H.atHM("21:41"), ms:6 },
+    { key:"monitor", icon:"activity", name:"Monitör köprüsü (Infinity)", status:"warn", detail:"9 / 10 yatak bağlı · REA07 yanıt vermiyor", m:[["Bağlı yatak", "9 / 10"], ["Son veri", "4 sn önce"], ["Kopuk", `REA07 · ${H.atHM("21:38")}'den beri`]], at:H.atHM("21:41"), ms:112 },
+    { key:"devices", icon:"tablet", name:"Portatif cihazlar", status:"ok", detail:"6 / 6 cihaz eşleşmiş", m:[["Son veri", "3 dk önce"], ["Pili azalan", "1 cihaz"]], at:H.atHM("21:40"), ms:null },
+    { key:"hbys", icon:"link", name:"Hastane kaydı (HBYS) bağlantısı", status:"warn", detail:"Son mesaj 12 dk önce · yanıt yavaş", m:[["Son mesaj", H.at("21:30")], ["Yanıt süresi", "1840 ms"], ["Kuyrukta", "4 mesaj"]], at:H.atHM("21:41"), ms:1840 },
+    { key:"queue", icon:"list", name:"Bildirim kuyruğu", status:"ok", detail:"Bekleyen 3 · başarısız 0", m:[["Bekleyen", "3"], ["Başarısız (24 sa)", "0"], ["Ortalama bekleme", "1,2 sn"]], at:H.atHM("21:41"), ms:null },
+    { key:"push", icon:"bell", name:"Anlık bildirim ve SMS kanalı", status:"ok", detail:"Teslim oranı %99,2", m:[["Anlık bildirim", "Çalışıyor"], ["SMS sağlayıcısı", "Çalışıyor"], ["Teslim edilemeyen (24 sa)", "2"]], at:H.atHM("21:40"), ms:240 },
+    { key:"disk", icon:"file", name:"Disk ve yedek alanı", status:"ok", detail:"Veri diski %61 dolu", m:[["Veri diski", "%61 · 1,2 TB boş"], ["Yedek alanı", "%48 · 3,1 TB boş"], ["Tahmini dolma", "~140 gün"]], at:H.atHM("21:35"), ms:null },
+    { key:"clock", icon:"clock", name:"Saat eşitleme", status:"ok", detail:"Sapma 0,04 sn", m:[["Zaman sunucusu", "ntp.hastane.local"], ["Son eşitleme", H.at("21:30")]], at:H.atHM("21:41"), ms:null },
   ];
   H.healthWarn = () => HEALTH.filter(h => h.status !== "ok").length;
   function hHist(h) {
@@ -1944,7 +1945,7 @@
       const bad = h.status !== "ok" && i < (h.key === "monitor" ? 1 : 4);
       const ms = h.ms == null ? null : Math.max(2, Math.round((bad || h.key !== "hbys" ? h.ms : 210) + ((i * 7) % 11) - 5));
       const note = h.key === "monitor" ? (bad ? "REA07 yanıt vermiyor" : "10 / 10 yatak bağlı") : h.key === "hbys" ? (bad ? "Yanıt yavaş · eşik 1000 ms" : "Yanıt normal") : "Normal";
-      out.push({ at:`${pad(Math.floor(t / 60))}:${pad(t % 60)}`, status:bad ? h.status : "ok", ms, note });
+      const tt = ((t % 1440) + 1440) % 1440; out.push({ at:`${pad(Math.floor(tt / 60))}:${pad(tt % 60)}`, status:bad ? h.status : "ok", ms, note });   // gece yarısını geçerken
     }
     return out;
   }
@@ -1963,13 +1964,14 @@
     body.innerHTML = `<div class="hl-sum ${cls}">${I(cls === "ok" ? "ok" : "alert")}<div>
         <b>${bad.length ? `${bad.length} uyarı` : "Tüm sistemler çalışıyor"}</b>
         <div class="adm-sub">${bad.length ? bad.map(h => `<span>${esc(h.name)}</span>`).join(" · ") : `<span>${HEALTH.length} bileşen denetlendi</span>`}</div></div>
-        <div class="hl-at"><span class="adm-sub">Son denetim</span> <b class="mono">${H.dm(0)} · ${IZ.hAt}</b><span class="adm-sub">Her 30 saniyede bir</span></div>
+        <div class="hl-at"><span class="adm-sub">Son denetim</span> <b class="mono">${H.dm(H.calOff())} · ${IZ.hAt}</b><span class="adm-sub">Her 30 saniyede bir</span></div>
         <button class="btn sm" data-hl-run>${I("swap")}Şimdi denetle</button></div>
       <div class="hl-grid">${HEALTH.map(h => `<div class="box hl-t" style="--c:${HST[h.status][1]}">
         <div class="hl-h">${I(h.icon)}<b>${esc(h.name)}</b>${hsv(h.status)}</div>
         <div class="hl-d">${esc(h.detail)}</div>
         ${h.m.map(([k, v]) => kv2(k, esc(v), /[a-zçğışöü]{4,}/i.test(v))).join("")}
         <div class="hl-f"><span class="adm-sub">Son denetim</span><span class="mono adm-sub">${h.at}</span><button class="btn sm g" data-hl="${h.key}">Ayrıntı${I("chevR")}</button></div></div>`).join("")}</div>
+      ${H.adminNote("Prototip saat testi: adrese ?saat=SS:DD (isteğe bağlı &gun=YYYY-AA-GG) eklenirse saat o anda durur ve bütün örnek kayıtlar o ana göre kurulur. Parametresiz adres gerçek saati gösterir.", "div")}
       ${H.adminNote("Kurulum notu: bu ekran GET /api/admin/health uç noktasından 30 saniyede bir beslenir → { checkedAt, items:[{ key, name, status: ok|warn|down, detail, metrics, lastCheck, ms }] }. Eşikler (ör. HBYS yanıtı 1000 ms üstü = uyarı) sunucu yapılandırmasındadır. Ayrıntı: /api/admin/health/:key/history.", "div")}`;
     body.onclick = e => {
       const d = e.target.closest("[data-hl]"); if (d) return hlDrawer(HEALTH.find(h => h.key === d.dataset.hl));
@@ -2036,8 +2038,11 @@
     [0, "20:15:47", "warn", "server", "Disk yazma yeniden denendi · başarılı", { volume:"data", retries:1 }],
     [0, "19:31:12", "info", "bridge", "Monitör yeniden bağlandı · 10 / 10 yatak", { gateway:"inf-gw-01", beds:10 }, "2de6a1"],
     [0, "19:30:00", "info", "bridge", "Köprü yeniden başlatıldı · planlı bakım", { gateway:"inf-gw-01", reason:"planned" }, "2de6a1"],
-  ].map((r, i) => { const [hh, mm] = r[1].split(":").map(Number);
-    return { id:"ev-" + (48120 - i), day:r[0], d:H.dm(r[0] - 1), t:r[1], min:r[0] * 1440 + hh * 60 + mm, level:r[2], source:r[3], msg:r[4], payload:r[5] || {}, corr:"c-" + (r[6] || hexOf(i + 7).slice(0, 6)) }; });
+  ].map((r, i) => {
+    // 30.09c · yazılmış an (1 = 24.09, 0 = 23.09) → gerçek saate kaydırılır; gün yeniden takvime göre (1 = bugün, 0 = dün, <0 daha eski)
+    const [h0, m0, s0] = r[1].split(":").map(Number), a = new Date(2026, 8, 23 + r[0], h0, m0, s0), n = new Date(+a + H.SHIFT_MS);
+    const day = 1 + H.dOff(n) - H.calOff(), hh = n.getHours(), mm = n.getMinutes(), t = `${pad(hh)}:${pad(mm)}:${pad(n.getSeconds())}`;
+    return { id:"ev-" + (48120 - i), day, d:H.dm(H.dOff(n)), t, min:day * 1440 + hh * 60 + mm, level:r[2], source:r[3], msg:r[4], payload:r[5] || {}, corr:"c-" + (r[6] || hexOf(i + 7).slice(0, 6)) }; });
   const EV_LIVE = [
     ["info", "bridge", "Köprü kalp atışı · 9 / 10 yatak bağlı", { gateway:"inf-gw-01", beds:10, connected:9 }],
     ["info", "notify", "Kritik alarm bildirimi teslim edildi · REA02", { channel:"push", target:"role:hemsire unit:rea", devices:3, latencyMs:610 }],
@@ -2046,7 +2051,7 @@
   ];
   function evDrawer(e) {
     const rel = EVENTS.filter(x => x.corr === e.corr && x !== e);
-    const js = { id:e.id, at:`${isoDay(e.day - 1)}T${e.t}+04:00`, level:e.level, source:e.source, message:e.msg, corrId:e.corr, payload:e.payload };
+    const js = { id:e.id, at:`${isoCal(e.day - 1)}T${e.t}+04:00`, level:e.level, source:e.source, message:e.msg, corrId:e.corr, payload:e.payload };
     drawer("Olay ayrıntısı", `<div class="adm-row" style="margin-bottom:10px"><span class="${EV_LVL[e.level][1]}">${EV_LVL[e.level][0]}</span><span class="pill">${EV_SRC[e.source]}</span><span class="mono adm-sub">${e.d} · ${e.t}</span></div>
       <p class="ev-msg">${esc(e.msg)}</p>
       ${kv2("Olay kimliği", e.id)}${kv2("İlişki kimliği", e.corr)}
@@ -2083,9 +2088,9 @@
         : `<div class="empty">Filtreye uyan olay yok.</div>`; };
     const tick = () => {
       if (!list.isConnected || !IZ.live) { clearInterval(IZ.liveT); IZ.liveT = 0; return; }
-      const L = EV_LIVE[IZ.liveN % EV_LIVE.length], s = 5 * (++IZ.liveN), tm = 21 * 60 + 42 + Math.floor(s / 60);
+      const L = EV_LIVE[IZ.liveN % EV_LIVE.length], s = 5 * (++IZ.liveN), tm = NOW_MIN - 1440 + Math.floor(s / 60);
       EVENTS.forEach(e => { e.fresh = false; });
-      EVENTS.unshift({ id:"ev-" + (48120 + IZ.liveN), day:1, d:H.dm(0), t:`${pad(Math.floor(tm / 60) % 24)}:${pad(tm % 60)}:${pad(s % 60)}`, min:NOW_MIN + Math.floor(s / 60),
+      EVENTS.unshift({ id:"ev-" + (48120 + IZ.liveN), day:1, d:H.dm(H.calOff()), t:`${pad(Math.floor(tm / 60) % 24)}:${pad(tm % 60)}:${pad(s % 60)}`, min:NOW_MIN + Math.floor(s / 60),
         level:L[0], source:L[1], msg:L[2], payload:L[3], corr:"c-" + hexOf(900 + IZ.liveN).slice(0, 6), fresh:true });
       drawList(); };
     const live = (on) => { IZ.live = on; clearInterval(IZ.liveT); IZ.liveT = on ? setInterval(tick, 3000) : 0; drawList(); };
@@ -2095,8 +2100,8 @@
       if (e.target.matches("[data-ev-live]")) { live(e.target.checked); H.toast(e.target.checked ? "Canlı izleme açıldı" : "Canlı izleme kapandı"); } };
     body.onclick = e => {
       if (e.target.closest("[data-ev-csv]")) { const rs = rows(), q = (s) => `"${String(s).replace(/"/g, '""')}"`;
-        const txt = ["zaman;duzey;kaynak;ileti;iliski_kimligi", ...rs.map(x => [`${isoDay(x.day - 1)} ${x.t}`, x.level, x.source, x.msg, x.corr].map(q).join(";"))].join("\r\n");
-        try { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + txt], { type:"text/csv;charset=utf-8" })); a.download = `olay-gunlugu-${isoDay(0)}.csv`;
+        const txt = ["zaman;duzey;kaynak;ileti;iliski_kimligi", ...rs.map(x => [`${isoCal(x.day - 1)} ${x.t}`, x.level, x.source, x.msg, x.corr].map(q).join(";"))].join("\r\n");
+        try { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + txt], { type:"text/csv;charset=utf-8" })); a.download = `olay-gunlugu-${isoCal(0)}.csv`;
           document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800); } catch (er) {}
         H.log("Olay günlüğü dışa aktarıldı", `${rs.length} kayıt · CSV`); H.toast(`${rs.length} kayıt CSV olarak indirildi`); return; }
       const r = e.target.closest("[data-evid]"); if (r) evDrawer(EVENTS.find(x => x.id === r.dataset.evid));
@@ -2214,7 +2219,7 @@
     ["bio.orxan", "android", "Samsung Galaxy Tab S9 · Homunculus 1.6.0", "10.20.5.60", "", "09:10", 71],
     ["mudur.rauf", "web", "macOS · Safari 18", "10.20.1.22", "", "17:40", 124],
     ["kalite.tural", "web", "Windows · Chrome 129", "10.20.1.31", "", "09:02", 190],
-  ].filter(r => H.userBy(r[0])).map((r, i) => ({ id:"s-" + (7100 + i), u:r[0], dev:r[1], client:r[2], ip:r[3], unit:r[4], login:r[5], idle:r[6], cur:!!r[7] })));
+  ].filter(r => H.userBy(r[0])).map((r, i) => ({ id:"s-" + (7100 + i), u:r[0], dev:r[1], client:r[2], ip:r[3], unit:r[4], login:(d => `${H.dm(H.dOff(d))} ${H.hm(d)}`)(H.atD(r[5], true)), idle:r[6], cur:!!r[7] })));   // 30.09c: giriş saati kayar
   const idleTxt = (n) => n === 0 ? "şimdi" : n < 60 ? `${n} dk önce` : `${Math.floor(n / 60)} sa önce`;
   function sesConfirm(title, rows, note, okLbl, onOk) {
     H.modal({ title, body:`${rows}<div class="note" style="margin-top:12px">${note}</div>`,
@@ -2236,7 +2241,7 @@
         ${rs.map(s => { const u = H.userBy(s.u) || { name:s.u }, un = s.unit && H.unit(s.unit);
           return `<tr><td style="white-space:nowrap"><b>${esc(u.name)}</b><div class="adm-sub mono">${esc(s.u)}</div></td><td>${esc(H.roleLabel(u))}</td>
             <td><div class="ses-dev">${I(DEV_K[s.dev][1])}<div><b>${DEV_K[s.dev][0]}</b><div class="adm-sub">${esc(s.client)}</div></div></div></td>
-            <td class="mono adm-sub">${esc(s.ip)}</td><td class="adm-sub">${un ? esc(un.tr) : "—"}</td><td class="mono" style="white-space:nowrap">${H.dm(0)} ${s.login}</td>
+            <td class="mono adm-sub">${esc(s.ip)}</td><td class="adm-sub">${un ? esc(un.tr) : "—"}</td><td class="mono" style="white-space:nowrap">${s.login}</td>
             <td>${s.cur ? `<span class="sv" style="--r:var(--ok)">Bu oturum</span>` : `<span class="adm-sub">${idleTxt(s.idle)}</span>`}</td>
             <td><div class="adm-acts">${s.cur ? "" : `<button class="btn sm g" data-ses-x="${s.id}">${I("out")}Oturumu kapat</button>`}
               ${s.u === meU ? "" : `<button class="btn sm g" data-ses-all="${esc(s.u)}">${I("lock")}Tüm cihazlardan çıkış</button>`}</div></td></tr>`; }).join("")}</tbody></table></div>`
@@ -2264,14 +2269,15 @@
    *          sev:"info"|"warn", start:"ISO", end:"ISO", banner:boolean (üst şerit), notify:boolean (bildirim kanalı),
    *          by:"kullanıcı adı", seen:number (şeridi gören kişi sayısı), ended?:boolean (elle sonlandırıldı) }
    *   Durum sunucuda hesaplanır: start > şimdi → planlandı · end ≤ şimdi ya da ended → geçmiş · diğerleri → yayında. */
-  const ANN_NOW = `${isoDay(0)}T21:42`;
+  // 30.09c · "şimdi" gerçek saat (takvim). Sürüm duyurusu bir OLAY'dır (kayar); bakım ve tatbikat pencereleri takvimdir (nöbet gününe göre).
+  const annNow = () => `${H.isoD(H.clockDate())}T${H.now()}`;
   H.data.announcements = H.data.announcements || [
-    { id:"an-104", title:"Yeni sürüm 2.6.1 kuruldu", body:"Yönetim ekranına İzleme bölümü eklendi: sistem durumu, olay günlüğü, veri bütünlüğü ve açık oturumlar.", target:{ kind:"role", ids:["sistem"] }, sev:"info", start:`${isoDay(0)}T14:10`, end:`${isoDay(3)}T18:00`, banner:true, notify:false, by:"admin", seen:1 },
+    { id:"an-104", title:"Yeni sürüm 2.6.1 kuruldu", body:"Yönetim ekranına İzleme bölümü eklendi: sistem durumu, olay günlüğü, veri bütünlüğü ve açık oturumlar.", target:{ kind:"role", ids:["sistem"] }, sev:"info", start:H.ts("2026-09-24T14:10"), end:`${isoDay(3)}T18:00`, banner:true, notify:false, by:"admin", seen:1 },
     { id:"an-103", title:"Planlı bakım: hastane kaydı bağlantısı", body:"Gece 02:00–03:00 arasında hastane kaydı (HBYS) bağlantısı bakımda olacak. Bu sürede kabul ve sonuçlar gecikebilir; kayıtlar sonra kendiliğinden aktarılır.", target:{ kind:"all", ids:[] }, sev:"warn", start:`${isoDay(1)}T00:00`, end:`${isoDay(1)}T03:30`, banner:true, notify:true, by:"admin", seen:0 },
     { id:"an-102", title:"Yangın tatbikatı · 2. Blok", body:"Saat 10:00'da 2. Blok'ta yangın tatbikatı yapılacak. Yoğun bakım yatakları tahliye edilmeyecek.", target:{ kind:"unit", ids:["usq", "nic", "pic"] }, sev:"warn", start:`${isoDay(-2)}T08:00`, end:`${isoDay(-1)}T11:00`, banner:true, notify:true, by:"admin", seen:37 },
     { id:"an-101", title:"Şifre yenileme hatırlatması", body:"Şifresi 90 günü dolan hesaplar ilk girişte yeni şifre ister.", target:{ kind:"all", ids:[] }, sev:"info", start:`${isoDay(-9)}T08:00`, end:`${isoDay(-2)}T08:00`, banner:false, notify:true, by:"admin", seen:212 },
   ];
-  const annSt = (a) => a.ended || a.end <= ANN_NOW ? "past" : a.start > ANN_NOW ? "scheduled" : "active";
+  const annSt = (a) => { const now = annNow(); return a.ended || a.end <= now ? "past" : a.start > now ? "scheduled" : "active"; };
   const annFor = (a, u) => a.target.kind === "all" || (a.target.kind === "role" ? a.target.ids.includes(u.role) : (u.units || []).some(x => a.target.ids.includes(x)));
   const annDt = (s) => `${s.slice(8, 10)}.${s.slice(5, 7)} ${s.slice(11, 16)}`;
   const annTgt = (t) => t.kind === "all" ? `<span>Herkes</span>` : t.kind === "role" ? t.ids.map(k => `<span>${esc((H.data.roles[k] || { name:k }).name)}</span>`).join(", ") : t.ids.map(k => esc((H.unit(k) || { tr:k }).tr)).join(", ");
@@ -2331,7 +2337,7 @@
     body.onclick = e => {
       if (e.target.closest("[data-an-clear]")) { IZ.ann = null; return tabAnnounce(body); }
       const en = e.target.closest("[data-an-end]"); if (en) { const a = A.find(x => x.id === en.dataset.anEnd);
-        a.ended = true; a.end = ANN_NOW < a.end ? ANN_NOW : a.end; H.log("Duyuru sonlandırıldı", a.title); H.toast("Duyuru sonlandırıldı", "w"); annRefresh(); return tabAnnounce(body); }
+        a.ended = true; a.end = annNow() < a.end ? annNow() : a.end; H.log("Duyuru sonlandırıldı", a.title); H.toast("Duyuru sonlandırıldı", "w"); annRefresh(); return tabAnnounce(body); }
       const cp = e.target.closest("[data-an-copy]"); if (cp) { const a = A.find(x => x.id === cp.dataset.anCopy);
         IZ.ann = { title:a.title, body:a.body, tk:a.target.kind, units:a.target.kind === "unit" ? a.target.ids.slice() : [], roles:a.target.kind === "role" ? a.target.ids.slice() : [],
           sev:a.sev, start:`${isoDay(0)}T22:00`, end:`${isoDay(1)}T08:00`, banner:a.banner, notify:a.notify };

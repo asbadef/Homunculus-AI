@@ -116,6 +116,105 @@
   H.state = { user:null, lang:pref("lang", "AZ"), theme:pref("theme", "gece"), size:pref("size", "normal"), bedView:pref("bedView", "kart"),
               page:null, params:{}, unitId:null, rememberUser:pref("rememberUser2", "") };
 
+  /* ================= saat ve tarih: TEK çapa (30.09 c) =================
+   * Ozan (30.09): "sağ üst köşede perşembe ve saat yazıyor, doğru olması lazım, güncel saat yazmıyor".
+   * Önceden: H.now() = "21:42" donmuş, gün 24.09.2026 Perşembe sabitti. Artık ekran GERÇEK tarihi ve saati gösterir.
+   *
+   * Demo verisi "şimdi = 24.09.2026 Perşembe 21:42" varsayılarak yazıldı (A_NOW). TEK kural:
+   *   yazılmış her OLAY zamanı T  →  T + (ŞİMDİ − A_NOW)          (H.at, H.atT, H.ts, H.tShift)
+   * Böylece olaylar arasındaki aralar ve sıralar aynen korunur: "3 dk önce" 3 dk önce kalır, 21:39 alarmı şimdiden 3 dk önce,
+   * eskalasyon +3/+5 dk'da, hiçbir biten olay geleceğe kaymaz, hiçbir plan geçmişe düşmez. ?saat=21:42&gun=2026-09-24 → eskisiyle birebir.
+   * Nöbet günü (H.DAY0): saat 08:00 ve sonrası → bugün; 00:00–07:59 → dün (nöbet 08:00 → ertesi gün 08:00; 0–7 ertesi takvim günü).
+   * Nöbetin ilk saatlerinde (örn. 08:05) sabah/akşam yazılmış olaylar ÖNCEKİ nöbet gününe düşer; tarihleri "29.09 · 18:40" gibi yazılır.
+   *   (Seçilen en basit kural: kaydırma hiç kırpılmaz. Kırpmak "biten olay gelecekte" hatasını doğururdu.)
+   * KAYDIRILMAYANLAR (takvim/politika): nöbet değişimi 08:00, tur saatleri (08·12·16·20·24), ilaç saatleri (14·22·06),
+   *   gece yedeği 02:00, günlük denetim 06:00, bakım duyurusu saatleri. Bunların DURUMU (bitti/gecikti/şimdi/planlı) gerçek saate göre
+   *   hesaplanır (H.taskState).
+   * Geliştirici testi: adrese ?saat=HH:MM (isteğe bağlı &gun=YYYY-MM-DD) → saat o anda DONAR. Normal ekranlarda anılmaz
+   *   (yalnız yönetici notunda, H.adminNote). Göreli "N dk önce" yazıları sayfa yüklendiği ana göre sabittir. */
+  const p2 = (n) => String(n).padStart(2, "0");
+  const FORCED = (() => { try {
+    const q = new URLSearchParams(location.search), s = /^(\d{1,2}):(\d{2})$/.exec(q.get("saat") || ""), g = /^(\d{4})-(\d{2})-(\d{2})$/.exec(q.get("gun") || "");
+    if (!s && !g) return null;
+    const d = g ? new Date(+g[1], +g[2] - 1, +g[3]) : new Date(); d.setHours(s ? +s[1] : d.getHours(), s ? +s[2] : d.getMinutes(), 0, 0); return +d;
+  } catch { return null; } })();
+  H.CLOCK_FORCED = FORCED != null;
+  H.clockDate = () => new Date(FORCED != null ? FORCED : Date.now());
+  const NOW0 = H.clockDate(); NOW0.setSeconds(0, 0);
+  H.DAY0 = new Date(NOW0.getFullYear(), NOW0.getMonth(), NOW0.getDate()); if (NOW0.getHours() < 8) H.DAY0.setDate(H.DAY0.getDate() - 1);
+  const A0 = new Date(2026, 8, 24), A_NOW = new Date(2026, 8, 24, 21, 42);                 // verinin yazıldığı an
+  const HOUR = 3600000, DAY0_8 = () => { const d = new Date(H.DAY0); d.setHours(8, 0, 0, 0); return d; };
+  H.SHIFT_MS = NOW0 - A_NOW;                                                               // olay kaydırması
+  H.DSHIFT = Math.round((H.DAY0 - A0) / 86400000);                                         // yalnız tarihli kayıtlar: nöbet günü farkı
+  const tOf = (d) => 8 + (d - DAY0_8()) / HOUR;                                            // Date → nöbet saati (8 = DAY0 08:00, 24 = gece yarısı)
+  H.NOW_T0 = tOf(NOW0);                                                                    // yükleme anı (veri buna göre kuruldu)
+  H.nowT = () => tOf(H.clockDate());                                                       // canlı
+  H.DT = H.NOW_T0 - 21.7;                                                                  // yazılmış nöbet saatine eklenecek fark (saat)
+  H.tShift = (t) => t + H.DT;
+  H.hm = (d) => `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  H.dOff = (d) => Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - H.DAY0) / 86400000);   // DAY0'a göre takvim günü
+  H.dateOfT = (t) => new Date(+DAY0_8() + (t - 8) * HOUR);
+  // nöbet saati → "21:39" ya da gün değişince "01.10 · 03:18" (H.when kuralı)
+  // tarihsiz saat yalnız nöbet gününün kendi takvim gününde (DAY0 08:00–23:59) yazılır; gerisi tarihli (H.when kuralıyla aynı)
+  const bare = (d) => H.dOff(d) === 0 && d.getHours() >= 8;
+  H.clockT = (t, sep = " · ") => { const d = H.dateOfT(Math.round(t * 60) / 60); return `${bare(d) ? "" : H.dm(H.dOff(d)) + sep}${H.hm(d)}`; };
+  // yazılmış nöbet günü saati ("21:30"; 00–07 ertesi gün) → kaydırılmış Date / nöbet saati / yazı
+  const hmIn = (s) => { const m = /^(\d{1,2}):(\d{2})/.exec(String(s || "")); return m ? [+m[1], +m[2]] : null; };
+  // past = true: 00–07 aynı günün sabahıdır (ör. oturum açılışı 07:55); varsayılan nöbet kuralı: 00–07 ertesi gün
+  H.atD = (s, past) => { const m = hmIn(s); if (!m) return null; const d = new Date(A0); d.setHours(m[0], m[1], 0, 0); if (m[0] < 8 && !past) d.setDate(d.getDate() + 1); return new Date(+d + H.SHIFT_MS); };
+  H.atT = (s) => { const d = H.atD(s); return d ? tOf(d) : null; };
+  H.at = (s, sep = " · ") => { const d = H.atD(s); if (!d) return s; return `${bare(d) ? "" : H.dm(H.dOff(d)) + sep}${H.hm(d)}`; };
+  H.atHM = (s) => { const d = H.atD(s); return d ? H.hm(d) : s; };                       // yalnız saat (son dakikalar; dar alanlar)
+  // her zaman tarihli: "30.09 · 21:30" (belge/rapor satırları). dayOff: yazıldığı günden fark (−1 = 23.09'da yazılmış)
+  H.atFull = (s, dayOff = 0) => { const d0 = H.atD(s); if (!d0) return s; const d = new Date(+d0 + dayOff * 86400000); return `${H.dm(H.dOff(d))} · ${H.hm(d)}`; };
+  H.clockTF = (t) => { const d = H.dateOfT(Math.round(t * 60) / 60); return `${H.dm(H.dOff(d))} · ${H.hm(d)}`; };
+  // tarihli yazılmış kayıt → aynı biçimde kaydırılmış: "23.09 21:38" · "23.09.2026" · "23.09" · "2026-09-23" · "2026-09-24T21:36"
+  H.ts = (s) => {
+    s = String(s ?? ""); let m;
+    if ((m = /^(\d{2})\.(\d{2})(\.(\d{4}))?(\s*(?:·\s*)?)(\d{2}):(\d{2})$/.exec(s))) {
+      const d = new Date(m[4] ? +m[4] : 2026, +m[2] - 1, +m[1], +m[6], +m[7]), n = new Date(+d + H.SHIFT_MS);
+      return `${p2(n.getDate())}.${p2(n.getMonth() + 1)}${m[3] ? "." + n.getFullYear() : ""}${m[5]}${H.hm(n)}`; }
+    if ((m = /^(\d{2})\.(\d{2})(\.(\d{4}))?$/.exec(s))) {
+      const n = new Date(m[4] ? +m[4] : 2026, +m[2] - 1, +m[1] + H.DSHIFT); return `${p2(n.getDate())}.${p2(n.getMonth() + 1)}${m[3] ? "." + n.getFullYear() : ""}`; }
+    if ((m = /^(\d{4})-(\d{2})-(\d{2})(T(\d{2}):(\d{2}))?$/.exec(s))) {
+      if (m[4]) { const n = new Date(+new Date(+m[1], +m[2] - 1, +m[3], +m[5], +m[6]) + H.SHIFT_MS); return `${H.isoD(n)}T${H.hm(n)}`; }
+      return H.isoD(new Date(+m[1], +m[2] - 1, +m[3] + H.DSHIFT)); }
+    return s;
+  };
+  // tarih + saat ayrı alanlarda: ["23.09", "21:38"] ya da ["2026-09-24", "21:36"] → kaydırılmış çift (biçim korunur)
+  H.tsPair = (date, at) => { const iso = /^\d{4}-/.test(date), full = /^\d{2}\.\d{2}\.\d{4}$/.test(date);
+    const dd = iso ? date.split("-").reverse().join(".") : full ? date : date + ".2026";
+    const r = H.ts(`${dd} ${at}`).split(" "); const [D, M, Y] = r[0].split(".");
+    return [iso ? `${Y}-${M}-${D}` : full ? r[0] : `${D}.${M}`, r[1]]; };
+  // hemşirelik kaydı biçimi: date = NÖBET günü ("24.09.2026" ya da "22.09"), at = saat (00–07 → takvimde ertesi gün).
+  // Kaydırılmış çift de aynı kurala göre döner (gece yarısından sonrası önceki nöbet gününün tarihini taşır).
+  H.recShift = (date, at) => { const m = /^(\d{2})\.(\d{2})(\.(\d{4}))?$/.exec(date), c = hmIn(at); if (!m || !c) return [date, at];
+    const d = new Date(m[4] ? +m[4] : 2026, +m[2] - 1, +m[1] + (c[0] < 8 ? 1 : 0), c[0], c[1]), n = new Date(+d + H.SHIFT_MS), duty = new Date(n);
+    if (n.getHours() < 8) duty.setDate(duty.getDate() - 1);
+    return [`${p2(duty.getDate())}.${p2(duty.getMonth() + 1)}${m[3] ? "." + duty.getFullYear() : ""}`, H.hm(n)]; };
+  H.isoD = (d) =>`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+  // saatli plan (tur, ilaç saati, görev): durum gerçek saate göre. Geçmiş saat dilimleri bitti; bu saatin içinde 15 dk geçmişse gecikti;
+  // bu saat ve bir sonraki saat "şimdi"; sonrası planlı. (21:42'de eski kuralla birebir: <21 bitti · 21 gecikti · 22 şimdi · 23+ planlı)
+  H.taskState = (t, now = H.NOW_T0) => { const h = Math.floor(now + 1e-9); return t < h ? "done" : t < h + 1 ? (now - t >= 0.25 ? "late" : "due") : t < h + 2 ? "due" : "plan"; };
+  // "Nöbet bitimine" · bir sonraki 08:00'e kalan (canlı)
+  H.shiftLeft = () => { const m = Math.max(0, 32 * 60 - Math.floor(H.nowT() * 60 + 1e-6)); return `${Math.floor(m / 60)}:${p2(m % 60)}`; };   // saatle aynı dakikada değişir
+  H.now = () => H.hm(H.clockDate());                                                      // gerçek saat "HH:MM" (?saat= ile donar)
+  /* 24.09 (2. oturum) · tarih her yerde görünür (Ozan: "sistemin çoğu yerinde tarih yok").
+   * Nöbet DAY0 08:00 → ertesi gün 08:00; gece yarısından sonrası ERTESİ GÜN.
+   * Kural: aynı gün içinde yalnız saat yeterli; gün değişen her yerde "01.10 · 02:00" yazılır. */
+  const WD = { AZ:["B.", "B.e.", "Ç.a.", "Ç.", "C.a.", "C.", "Ş."], TR:["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"], RU:["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"], EN:["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] };
+  const dayAt = (off) => { const d = new Date(H.DAY0); d.setDate(d.getDate() + off); return d; };
+  H.dm = (off = 0) => { const d = dayAt(off); return `${p2(d.getDate())}.${p2(d.getMonth() + 1)}`; };
+  H.dmy = (off = 0) => H.dm(off) + "." + dayAt(off).getFullYear();
+  H.wd = (off = 0) => (WD[H.state.lang] || WD.TR)[dayAt(off).getDay()];
+  H.calOff = () => H.dOff(H.clockDate());                                                  // takvimde bugün (gece yarısından sonra 1)
+  H.today = () => `${H.wd(H.calOff())} ${H.dmy(H.calOff())}`;
+  H.nowFull = () => `${H.dm(H.calOff())} · ${H.now()}`;
+  // Nöbet ızgarasındaki saat (0-23) hangi güne düşer: 08-23 bugün, 00-07 yarın.
+  H.shiftDayOff = (h) => (h < 8 ? 1 : 0);
+  H.when = (h, m = 0) => { const off = H.shiftDayOff(h); return `${off ? H.dm(off) + " · " : ""}${p2(h)}:${p2(m)}`; };
+  H.SHIFT = { start:`${H.dm(0)} 08:00`, end:`${H.dm(1)} 08:00`, get left() { return H.shiftLeft(); } };
+
   /* ================= hastane yapısı: Blok > Mərtəbə (kat) > Birim > Oda > Yatak =================
    * 24.09: Ozan'ın paylaştığı birim ağacı örnek alındı (Blok/Mərtəbə, kodlu odalar, yatak tipi, kullanım dışı).
    * Birim katmanları (Eleştirmen, konsey 24.09):
@@ -313,7 +412,7 @@
     { id:2, pid:"p2", txt:"SpO₂ 86 · 3 dakikadır", sev:"high", ageMin:2.7, step:0, state:"open" },
     { id:3, pid:"p6", txt:"NEWS2 6 · değerlendirme zamanı", sev:"high", ageMin:4.2, step:1, state:"open" },
     { id:4, pid:"p13", txt:"SpO₂ 89 · desatürasyon epizodu", sev:"high", ageMin:1.1, step:0, state:"open" },
-    { id:5, pid:"p3", txt:"Potasyum 5.8 · Sevda Q. gördü 21:30", sev:"mid", ageMin:12.2, step:0, state:"seen" },
+    { id:5, pid:"p3", txt:`Potasyum 5.8 · Sevda Q. gördü ${H.at("21:30")}`, sev:"mid", ageMin:12.2, step:0, state:"seen" },
     { id:6, pid:"p15", txt:"PEWS 6 · değerlendirme zamanı", sev:"high", ageMin:3.4, step:1, state:"open" },
   ];
   H.openAlarms = () => H.data.alarms.filter(a => a.state === "open" && H.inScope(a.pid));
@@ -330,13 +429,14 @@
    * Kanal gerçeği (gerçek üründe bugün): uygulama içi ✓ (engine api/notify.py, SSE) · tarayıcı bildirimi + ses ✓ (dashboard notifications.js)
    * · telefona push ✗ · SMS ✗. Ekranda böyle yazılır; prototip olmayanı varmış gibi göstermez. */
   H.CHANNELS = [["app", "Uygulama içi", true], ["browser", "Tarayıcı bildirimi + ses", true], ["push", "Telefona bildirim", false], ["sms", "SMS", false]];
-  const N0 = (id, at, to, sev, title, body, go, extra = {}) => Object.assign({ id, at, to, sev, title, body, go, read:false }, extra);
+  // 30.09c · at: yazıldığı saat (21:42 varsayımı) → H.at ile gerçek saate kaydırılır; "08:00" günlük özet takvim saatidir, kaydırılmaz.
+  const N0 = (id, at, to, sev, title, body, go, extra = {}) => Object.assign({ id, at:at === "08:00" ? at : H.at(at), to, sev, title, body, go, read:false }, extra);
   H.data.notifs = [
     N0(1, "21:35", ["hekim"], "crit", "Eskalasyon · 5. dakika", "REA01 · kötüleşme kriterleri karşılanıyor, hemşire yanıtı yok", ["alarms"], { pid:"p1" }),
     N0(2, "21:31", ["hekim"], "", "Yeni sonuç", "REA01 · laktat 4.1 mmol/L (kritik)", ["patient", { pid:"p1", tab:"sonuc" }], { pid:"p1" }),
     N0(3, "21:20", ["hekim"], "", "İmza bekliyor", "REA01 · SOFA 11 · sistem doldurdu, onayınız bekleniyor", ["patient", { pid:"p1", tab:"skor" }], { pid:"p1" }),
     N0(4, "21:39", ["hemsire"], "high", "Yeni alarm", "REA02 · SpO₂ 86, 3 dakikadır", ["alarms"], { pid:"p2" }),
-    N0(5, "21:30", ["hemsire"], "", "İş zamanı geldi", "Vital bulgular · 22:00 turu yaklaşıyor", ["tasks"]),
+    N0(5, "21:30", ["hemsire"], "", "İş zamanı geldi", `Vital bulgular · ${H.at("22:00")} turu yaklaşıyor`, ["tasks"]),
     N0(6, "21:12", ["charge"], "", "Yeni yatış yolda", "Erişkin yoğun bakıma bir yatış bekleniyor · yatak atanmadı", ["admission"]),
     N0(7, "20:55", ["hemsire"], "", "Devir imzası", "3 hastanın devri karşı imzanızı bekliyor", ["hand"]),
     N0(8, "21:38", ["rrt"], "crit", "Size eskale edildi", "REA01 · 4. kat · Oda ICU-01 · 7:40 dk", ["rrt"], { pid:"p1" }),
@@ -369,8 +469,9 @@
   H.forms = { open:(key, pid) => H.toast("Bu form henüz yüklenmedi: " + key, "w") }; // nursing.js üzerine yazar
 
   /* ================= görevler (hemşire saatli planı) =================
+   * 30.09c · saatler TAKVİMdir (kaydırılmaz); durum gerçek saate göre H.taskState ile.
    * t: saat (0-23, nöbet 08:00'de başlar), kind: form | med | care | lab, state: done | due | late | plan */
-  const T0 = (pid, t, kind, label, extra = {}) => Object.assign({ pid, t, kind, label, state: t < 21 ? "done" : t < 22 ? "late" : t < 23 ? "due" : "plan" }, extra);
+  const T0 = (pid, t, kind, label, extra = {}) => Object.assign({ pid, t, kind, label, state:H.taskState(t) }, extra);
   H.data.tasks = [];
   H.data.patients.forEach((p, i) => {
     if (!H.isClinical(H.unit(H.bed(p.bed).unitId))) return;   // operasyonel birimlerde hemşirelik planı üretilmez
@@ -442,42 +543,27 @@
   H.closeModal = () => { const m = document.getElementById("modalBg"); if (m) m.remove(); };
   H.toast = (msg, kind = "") => { let box = document.querySelector(".toasts"); if (!box) { box = document.createElement("div"); box.className = "toasts"; document.body.appendChild(box); }
     const t = document.createElement("div"); t.className = "toast " + kind; t.textContent = msg; box.appendChild(t); setTimeout(() => t.remove(), 3600); };
-  H.audit = []; H.log = (action, detail = "") => H.audit.unshift({ at:new Date(), user:H.state.user ? H.state.user.u : "—", action, detail });
+  H.audit = []; H.log = (action, detail = "") => H.audit.unshift({ at:H.clockDate(), user:H.state.user ? H.state.user.u : "—", action, detail });
   H.esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" })[c]);
-  H.now = () => "21:42";   // demo saati: nöbetin içinde sabit
-  /* 24.09 (2. oturum) · tarih her yerde görünür (Ozan: "sistemin çoğu yerinde tarih yok").
-   * Demo günü 24.09.2026 Perşembe. Nöbet 24.09 08:00 → 25.09 08:00; gece yarısından sonrası ERTESİ GÜN.
-   * Kural: aynı gün içinde yalnız saat yeterli; gün değişen her yerde "25.09 · 02:00" yazılır. */
-  const WD = { AZ:["B.", "B.e.", "Ç.a.", "Ç.", "C.a.", "C.", "Ş."], TR:["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"], RU:["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"], EN:["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] };
-  H.DAY0 = new Date(2026, 8, 24);
-  const dayAt = (off) => { const d = new Date(H.DAY0); d.setDate(d.getDate() + off); return d; };
-  const p2 = (n) => String(n).padStart(2, "0");
-  H.dm = (off = 0) => { const d = dayAt(off); return `${p2(d.getDate())}.${p2(d.getMonth() + 1)}`; };
-  H.dmy = (off = 0) => H.dm(off) + "." + dayAt(off).getFullYear();
-  H.wd = (off = 0) => (WD[H.state.lang] || WD.TR)[dayAt(off).getDay()];
-  H.today = () => `${H.wd(0)} ${H.dmy(0)}`;
-  H.nowFull = () => `${H.dm(0)} · ${H.now()}`;
-  // Nöbet ızgarasındaki saat (0-23) hangi güne düşer: 08-23 bugün, 00-07 yarın.
-  H.shiftDayOff = (h) => (h < 8 ? 1 : 0);
-  H.when = (h, m = 0) => { const off = H.shiftDayOff(h); return `${off ? H.dm(off) + " · " : ""}${p2(h)}:${p2(m)}`; };
-  H.SHIFT = { start:`${H.dm(0)} 08:00`, end:`${H.dm(1)} 08:00`, left:"10:18" };
 
   /* 30.09 · son GERÇEK kayıt (kontrol-2026-09-30 §4-6): ekranlardaki sabit "20:00 / 21:00" yazıları yerine.
    * Önce hemşirelik form kaydı (H.data.nursing.records, nursing.js), yoksa Görevlerim'de tamamlanmış aynı formun işi.
    * Döner: { at:"HH:MM", day:"bugün"|"dd.mm", t:saat (0-30 nöbet saati), by, src:"form"|"task" } ya da null. */
-  const hOfClock = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || "")); return m ? +m[1] + +m[2] / 60 : null; };
+  // 30.09c · nöbet saati: 00–07 ertesi takvim gününe düşer → 24–31 (gece yarısından sonraki kayıtlar da doğru sıralanır)
+  const hOfClock = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || "")); return m ? (+m[1] < 8 ? 24 : 0) + +m[1] + +m[2] / 60 : null; };
   H.lastEntry = (pid, key) => {
     const R = ((H.data.nursing || {}).records || []).filter(r => r.pid === pid && r.key === key);
     const r = R[R.length - 1], today = H.dmy(0);
     if (r) { const u = H.userBy(r.user); return { at:r.at, today:r.date === today, day:r.date === today ? "" : String(r.date).slice(0, 5), t:r.date === today ? hOfClock(r.at) : null, by:u ? u.name : r.user, src:"form" }; }
     const T = (H.data.tasks || []).filter(x => x.pid === pid && x.form === key && x.state === "done").sort((a, b) => a.t - b.t).pop();
     if (!T) return null;
-    const at = T.doneAt || `${p2(Math.floor(T.t) % 24)}:${p2(Math.round((T.t % 1) * 60))}`;
+    const at = T.doneAt || H.when(Math.floor(T.t) % 24, Math.round((T.t % 1) * 60));
     return { at, today:true, day:"", t:T.doneAt ? hOfClock(T.doneAt) : T.t, by:T.by || null, src:"task" };
   };
   H.entryText = (e) => e ? (e.today ? e.at : `${e.day} ${e.at}`) : "—";
-  // "1 sa 42 dk önce" — yalnız bugünün kaydı için; H.now() demo saatine göre
-  H.agoText = (e) => { if (!e || !e.today) return ""; const n = hOfClock(H.now()), a = hOfClock(e.at); if (n == null || a == null) return "";
+  H.entryFull = (e) => e ? (e.today && e.t != null ? H.clockTF(e.t) : e.today ? `${H.dm(0)} · ${e.at}` : `${e.day} · ${e.at}`) : "—";   // her zaman tarihli
+  // "1 sa 42 dk önce" — yalnız bugünün (nöbet günü) kaydı için; gerçek saate göre (30.09c)
+  H.agoText = (e) => { if (!e || !e.today) return ""; const n = H.nowT(), a = e.t != null ? e.t : hOfClock(e.at); if (n == null || a == null) return "";
     const m = Math.max(0, Math.round((n - a) * 60)), h = Math.floor(m / 60), mm = m % 60; return h ? `${h} sa ${mm} dk önce` : `${mm} dk önce`; };
 
   /* 30.09 · NEWS2 bandı → hasta risk düzeyi (kontrol §4-1: vital girilince risk ve alarm değişmiyordu).

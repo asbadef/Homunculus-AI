@@ -137,7 +137,7 @@
     d.innerHTML = `<div class="mf-top"><b class="mono" style="color:${H.SEV[p.risk].c}">${esc(b.no)}</b>
         <span class="mf-nm">${H.showNames() ? esc(p.name) : ""} <small>${H.ageText(p)} · ${p.sex === "K" ? "♀" : "♂"} · ${esc(u.tr)}</small></span>
         ${a ? `<span class="mf-al s-${a.sev}">${esc(a.txt)}</span>` : ""}
-        <span class="mf-clk mono">${H.nowFull()}</span>
+        <span class="mf-clk mono" data-hfull>${H.nowFull()}</span>
         <button class="mf-b" data-snd="lab"></button>
         <button class="mf-b" data-snd-pause title="${H.t("mw_pause")}">${svg(IC.bell, 16)}<i class="mono"></i></button>
         <button class="mf-b" data-mf-close title="${H.t("mw_close")}">${svg(IC.x, 18)}</button></div>
@@ -161,7 +161,7 @@
       <button class="wt-o" data-mon-full="${p.id}" title="${H.t("mw_wallview")}">${svg(IC.full, 14)}</button></div>
       ${a ? `<div class="wt-al s-${a.sev}">${esc(a.txt)}</div>` : ""}`;
     const v = p.v;
-    const body = p.monitored ? H.monitor.html(p) : `<div class="wt-man"><span class="mute">${H.t("mw_nomon")} · 21:00</span>
+    const body = p.monitored ? H.monitor.html(p) : `<div class="wt-man"><span class="mute">${H.t("mw_nomon")} · ${esc(H.lastEntry ? H.entryText(H.lastEntry(p.id, "vitals")) : "—")}</span>
       <div><b style="color:var(--v-hr)">${v.hr}</b><b style="color:var(--v-map)">${v.sbp}/${v.dbp}</b><b style="color:var(--v-spo)">${v.spo2}</b><b style="color:var(--v-rr)">${v.rr}</b><b style="color:var(--v-t)">${v.temp.toFixed(1)}</b></div></div>`;
     return `<div class="wt ${sev ? "a-" + sev : ""} ${p.monitored ? "" : "man"}" data-wt="${p.id}">${head}${body}</div>`;
   }
@@ -177,7 +177,7 @@
         <div class="wl-t"><b>${H.t("m_wall")}</b><small>${H.t("mw_sub")}</small></div>
         <div class="wl-u">${units.length > 1 ? `<span class="${W.unit === "all" ? "on" : ""}" data-wu="all">${H.t("mw_all")}</span>` : ""}${units.map(u => `<span class="${W.unit === u.id || units.length === 1 ? "on" : ""}" data-wu="${u.id}">${esc(u.tr)}</span>`).join("")}</div>
         <div class="wl-c"><span class="mono">${nBeds} ${H.t("mw_beds")}</span>${nC ? `<span class="s-crit">${nC} ${H.t("mw_crit")}</span>` : ""}${nH ? `<span class="s-high">${nH} ${H.t("mw_high")}</span>` : ""}</div>
-        <div class="wl-ctl"><span class="mono wl-clk">${H.nowFull()}</span>
+        <div class="wl-ctl"><span class="mono wl-clk" data-hfull>${H.nowFull()}</span>
         <button class="mf-b" data-snd="lab"></button>
         <button class="mf-b" data-snd-pause title="${H.t("mw_pause")}">${svg(IC.bell, 16)}<i class="mono"></i></button>
         <details class="wl-opt"><summary class="mf-b">⋯</summary><div>

@@ -26,8 +26,11 @@
   const E = (s) => H.esc(s);
   const I = (k) => H.icon(k);
   const me = () => (H.state.user && H.state.user.name) || "—";
-  const TODAY = "24.09";                                     // demo günü: 24.09.2026, nöbet 08–20 / 20–08
-  const stamp = () => `${TODAY} ${H.now()}`;
+  // 30.09c · gerçek tarih: TODAY = takvimde bugün (gece yarısından sonra ertesi gün); bakım vardiyaları 08–20 / 20–08
+  const TODAY = H.dm(H.calOff()), TODAY_Y = () => H.dmy(H.calOff());
+  // öneri gerekçesindeki form saati: şablondaki tur saati yerine son GERÇEK kayıt (henüz yapılmadıysa saat yazılmaz)
+  const formAt = (p, key, s, hm) => { const e = H.lastEntry && H.lastEntry(p.id, key); return e ? s.replace(hm, H.entryText(e)) : s.replace(" · " + hm, ""); };
+  const stamp = () => `${H.dm(H.calOff())} ${H.now()}`;
   const norm = (s) => String(s || "").toLocaleLowerCase("tr");
   const seedOf = (s) => { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return ((h >>> 0) % 2147483646) + 1; };
   const seeded = (seed) => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -738,7 +741,9 @@
   ];
   // Faaliyet sıklığı: Görevlerim'e düşme biçimi. Bu vardiya (20–08, şimdi 21:42) için saatler; 24+ ertesi gün.
   const FREQS = ["shift", "q4", "q8", "prn"];
-  const FREQ_H = { shift:[22], q4:[22, 26, 30], q8:[22, 30], prn:[] };
+  // 30.09c · saatler içinde bulunulan vardiyanın başlangıcına göre (gece 20 / gündüz 8): +2 · +6 · +10. 21:42'de eskisiyle aynı (22/26/30).
+  const SH_B = H.NOW_T0 >= 20 ? 20 : 8;
+  const FREQ_H = { shift:[SH_B + 2], q4:[SH_B + 2, SH_B + 6, SH_B + 10], q8:[SH_B + 2, SH_B + 10], prn:[] };
   const FORM_FREQ = { vitals:"q4", pain:"q4", gcs:"q4", io:"q4", fall:"q8", braden:"shift", wound:"shift", glucose:"prn", activity:"prn" };
   const defFreq = (t, l) => { if (l && l.startsWith("form:")) return FORM_FREQ[l.slice(5)] || "shift"; if (l === "care:Pozisyon ver") return "q4";
     if (/4 saatte bir/.test(t)) return "q4"; if (/gerektiğinde|gerekiyorsa|hekim istemine göre|bildirilecek|hekime/i.test(t)) return "prn"; return "shift"; };
@@ -1003,15 +1008,15 @@
   const rowOf = (s) => { const o = P(s); return { t:o.t, off:false, u:o.u }; };
   const actOf = (s) => { const o = P(s); return { t:o.t, l:o.l, f:o.f || defFreq(o.t, o.l), off:false, u:o.u }; };
   const MASTER = CAT_RAW.map(c => ({ key:c.key, name:ALIGN[c.key] || c.name, was:ALIGN[c.key] ? c.name : null, group:c.group, ages:c.ages || null, opt:c.opt || null,
-    hbys:false, passive:false, units:DX_UNITS[c.key] ? scList(DX_UNITS[c.key]) : null, src:"baslangic", changed:ALIGN[c.key] ? "24.09.2026" : "15.09.2026", by:"admin",
+    hbys:false, passive:false, units:DX_UNITS[c.key] ? scList(DX_UNITS[c.key]) : null, src:"baslangic", changed:ALIGN[c.key] ? H.ts("24.09.2026") : H.ts("15.09.2026"), by:"admin",
     causes:c.causes.map(rowOf), goals:c.goals.map(rowOf), acts:c.acts.map(a => { const [t, l] = Array.isArray(a) ? a : [a, null]; return { t, l, f:defFreq(t, l), off:false, u:null }; }) }));
   HBYS_NAMES.forEach(([key, name, group]) => { const m = MASTER.find(x => x.key === key); if (m) { m.hbys = true; return; }
-    MASTER.push({ key, name, was:null, group, ages:null, opt:null, hbys:true, passive:false, units:null, src:"baslangic", changed:"24.09.2026", by:"admin", causes:[], goals:[], acts:[] }); });
-  const fill = (m, d, src) => { m.causes = d.c.map(rowOf); m.goals = d.g.map(rowOf); m.acts = d.a.map(actOf); if (d.units) m.units = scList(d.units); m.src = src; m.changed = "24.09.2026"; };
+    MASTER.push({ key, name, was:null, group, ages:null, opt:null, hbys:true, passive:false, units:null, src:"baslangic", changed:H.ts("24.09.2026"), by:"admin", causes:[], goals:[], acts:[] }); });
+  const fill = (m, d, src) => { m.causes = d.c.map(rowOf); m.goals = d.g.map(rowOf); m.acts = d.a.map(actOf); if (d.units) m.units = scList(d.units); m.src = src; m.changed = H.ts("24.09.2026"); };
   Object.entries(HOSP).forEach(([k, d]) => { const m = MASTER.find(x => x.key === k); if (m) fill(m, d, "hastane"); });
   Object.entries(START).forEach(([k, d]) => { const m = MASTER.find(x => x.key === k); if (m && !m.acts.length) fill(m, d, "baslangic"); });
-  NEW_DX.forEach(d => { const m = { key:d.key, name:d.name, was:null, group:d.group, ages:null, opt:null, hbys:false, passive:false, units:null, src:"baslangic", changed:"24.09.2026", by:"admin" }; fill(m, d, "baslangic"); MASTER.push(m); });
-  Object.entries(EXTRA).forEach(([k, d]) => { const m = MASTER.find(x => x.key === k); if (!m) return; (d.c || []).forEach(s => m.causes.push(rowOf(s))); (d.a || []).forEach(s => m.acts.push(actOf(s))); m.changed = "24.09.2026"; });
+  NEW_DX.forEach(d => { const m = { key:d.key, name:d.name, was:null, group:d.group, ages:null, opt:null, hbys:false, passive:false, units:null, src:"baslangic", changed:H.ts("24.09.2026"), by:"admin" }; fill(m, d, "baslangic"); MASTER.push(m); });
+  Object.entries(EXTRA).forEach(([k, d]) => { const m = MASTER.find(x => x.key === k); if (!m) return; (d.c || []).forEach(s => m.causes.push(rowOf(s))); (d.a || []).forEach(s => m.acts.push(actOf(s))); m.changed = H.ts("24.09.2026"); });
   Object.entries(SCOPE_PATCH).forEach(([k, L]) => { const m = MASTER.find(x => x.key === k); if (!m) return;
     [...m.causes, ...m.goals, ...m.acts].forEach(r => { const hit = L.find(([re]) => re.test(r.t)); if (hit && !r.u) r.u = scList(hit[1]); }); });
   const pubOf = (m) => { const C = m.causes.filter(x => !x.off), G = m.goals.filter(x => !x.off), a = m.acts.filter(x => !x.off).map(x => ({ t:x.t, l:x.l, f:x.f || "shift", u:x.u || null }));
@@ -1033,8 +1038,8 @@
   const ongoingOf = (p, re) => ((H.data.nursing || {}).ongoing || []).filter(o => o.pid === p.id && re.test(o.name));
   const f1 = (n) => String(n).replace(".", H.state.lang === "EN" ? "." : ",");
   const FIELDS = {
-    fall:{ kind:"lvl", get:p => (p.flags || {}).fall, why:(p) => tpl("cp_w_fall_tpl", { v:p.flags.fall }) },
-    braden:{ kind:"lvl", get:p => (p.flags || {}).braden, why:(p) => tpl("cp_w_braden_tpl", { v:p.flags.braden }) },
+    fall:{ kind:"lvl", get:p => (p.flags || {}).fall, why:(p) => formAt(p, "fall", tpl("cp_w_fall_tpl", { v:p.flags.fall }), "16:00") },
+    braden:{ kind:"lvl", get:p => (p.flags || {}).braden, why:(p) => formAt(p, "braden", tpl("cp_w_braden_tpl", { v:p.flags.braden }), "08:00") },
     pain:{ kind:"num", op:">=", get:p => (p.flags || {}).pain, why:(p, r) => tpl("cp_w_pain_tpl", { v:p.flags.pain, t:r.v }) },
     temp:{ kind:"num", op:">=", get:p => (p.v || {}).temp, why:(p, r) => tpl("cp_w_temp_tpl", { v:f1(p.v.temp), t:f1(r.v) }) },
     age:{ kind:"num", op:">=", get:p => p.ageGroup === "neonate" ? null : p.age, why:(p, r) => tpl("cp_w_age_tpl", { v:p.age, t:r.v }) },
@@ -1096,8 +1101,8 @@
     const m = (base || MASTER).find(x => x.key === key) || CAT_BY[key]; return !m || inSc(m.units, sc); };
   // Birim sorumlu hemşiresinin "bu birim için madde öner" kayıtları → Yönetim → Bekleyen öneriler.
   const PROPOSALS = [
-    { id:"pr1", key:"gogus_tupu", kind:"acts", t:"Transfer sırasında drenaj sistemi klemplenmeden, göğüs seviyesinin altında taşınır", f:"prn", sc:"cvicu", by:"hs.sevda", at:"23.09.2026 10:40", state:"pending" },
-    { id:"pr2", key:"mv_takip", kind:"acts", t:"Ziyarette hasta yakınına solunum cihazıyla ilgili kısa bilgi verilir", f:"prn", sc:"icu", by:"hs.sevda", at:"24.09.2026 09:15", state:"pending" },
+    { id:"pr1", key:"gogus_tupu", kind:"acts", t:"Transfer sırasında drenaj sistemi klemplenmeden, göğüs seviyesinin altında taşınır", f:"prn", sc:"cvicu", by:"hs.sevda", at:H.ts("23.09.2026 10:40"), state:"pending" },
+    { id:"pr2", key:"mv_takip", kind:"acts", t:"Ziyarette hasta yakınına solunum cihazıyla ilgili kısa bilgi verilir", f:"prn", sc:"icu", by:"hs.sevda", at:H.ts("24.09.2026 09:15"), state:"pending" },
   ];
   /* Excel'den içe aktarma: hastanenin geri gönderdiği şablon satırları ana katalogla karşılaştırılır.
    * Dosya bu ekranda satır satır okunmaz; aşağıdaki fark kümesi hastanenin düzelttiği şablonun karşılığıdır. */
@@ -1112,9 +1117,9 @@
 
   /* ---------------- sürümler ---------------- */
   const VERSIONS = [
-    { v:1, at:"01.09.2026 10:12", by:"admin", kind:"init", add:25, change:0 },
-    { v:2, at:"15.09.2026 14:30", by:"admin", kind:"edit", add:0, change:12 },
-    { v:3, at:"24.09.2026 03:40", by:"admin", kind:"import", add:38, change:7 },
+    { v:1, at:H.ts("01.09.2026 10:12"), by:"admin", kind:"init", add:25, change:0 },
+    { v:2, at:H.ts("15.09.2026 14:30"), by:"admin", kind:"edit", add:0, change:12 },
+    { v:3, at:H.ts("24.09.2026 03:40"), by:"admin", kind:"import", add:38, change:7 },
   ];
   const CC = H.careCatalog = {
     get version() { return VERSIONS[VERSIONS.length - 1].v; },
@@ -1141,10 +1146,10 @@
     // birime özgü madde: ana katalogda kapsamlı satır olarak taslağa girer
     addRow(key, kind, t, f, sc, by) { const d = CC.edit(), m = d.find(x => x.key === key); if (!m || !t) return false;
       m[kind].push(kind === "acts" ? { t, l:null, f:f || "shift", off:false, u:sc ? [sc] : null } : { t, off:false, u:sc ? [sc] : null });
-      m.changed = `${TODAY}.2026`; m.by = by; CC.draftN++; return true; },
-    propose(o) { const pr = Object.assign({ id:"pr" + (PROPOSALS.length + 1) + "_" + Date.now() % 1000, at:`${TODAY}.2026 ${H.now()}`, state:"pending" }, o); PROPOSALS.unshift(pr); return pr; },
+      m.changed = TODAY_Y(); m.by = by; CC.draftN++; return true; },
+    propose(o) { const pr = Object.assign({ id:"pr" + (PROPOSALS.length + 1) + "_" + Date.now() % 1000, at:`${TODAY_Y()} ${H.now()}`, state:"pending" }, o); PROPOSALS.unshift(pr); return pr; },
     decide(id, ok, by) { const pr = PROPOSALS.find(x => x.id === id); if (!pr || pr.state !== "pending") return null;
-      pr.state = ok ? "approved" : "rejected"; pr.dec = { by, at:`${TODAY}.2026 ${H.now()}` }; if (ok) CC.addRow(pr.key, pr.kind, pr.t, pr.f, pr.sc, by); return pr; },
+      pr.state = ok ? "approved" : "rejected"; pr.dec = { by, at:`${TODAY_Y()} ${H.now()}` }; if (ok) CC.addRow(pr.key, pr.kind, pr.t, pr.f, pr.sc, by); return pr; },
     // Excel'den içe aktarma önizlemesi: toplam ve birim bazında eklenecek / değişecek / aynı kalan / pasife alınacak
     xlsxPreview() { const base = CC.draft || MASTER, find = (k) => base.find(x => x.key === k);
       const add = XLSX_DELTA.add.filter(a => { const m = find(a.key); return m && !m[a.kind].some(r => r.t === a.t); });
@@ -1160,14 +1165,14 @@
       pv.add.forEach(a => { const m = find(a.key); m[a.kind].push(a.kind === "acts" ? { t:a.t, l:null, f:a.f || "shift", off:false, u:a.u || null } : { t:a.t, off:false, u:a.u || null }); touch.add(m); });
       pv.change.forEach(c => { const m = find(c.key), r = m[c.kind].find(y => y.t === c.from); r.t = c.to; touch.add(m); });
       pv.off.forEach(o => { const m = find(o.key), r = m[o.kind].find(y => y.t === o.t); r.off = true; touch.add(m); });
-      touch.forEach(m => { m.src = "hastane"; m.changed = `${TODAY}.2026`; m.by = by; });
+      touch.forEach(m => { m.src = "hastane"; m.changed = TODAY_Y(); m.by = by; });
       return CC.publish(by, "excel", pv.add.length, pv.change.length + pv.off.length + CC.draftN); },
     // yönetim taslağı: MASTER'ın kopyası üzerinde çalışılır; yayımlanınca MASTER değişir, sürüm +1 olur.
     draft:null, draftN:0,
     edit() { if (!CC.draft) { CC.draft = clone(MASTER); CC.draftN = 0; } return CC.draft; },
     discard() { CC.draft = null; CC.draftN = 0; },
     publish(by, kind, add, change) { const src = CC.draft || MASTER; MASTER.splice(0, MASTER.length, ...clone(src));
-      const v = CC.version + 1; VERSIONS.push({ v, at:`${TODAY}.2026 ${H.now()}`, by, kind, add:add || 0, change:change == null ? CC.draftN : change });
+      const v = CC.version + 1; VERSIONS.push({ v, at:`${TODAY_Y()} ${H.now()}`, by, kind, add:add || 0, change:change == null ? CC.draftN : change });
       CC.draft = null; CC.draftN = 0; setPublished(); return v; },
     // hastane kaydıyla karşılaştırma: eklenecek (hastanede var, bizde yok) · değişecek (ad yazımı farklı) · aynı · yalnız bizde
     importPreview() { const base = CC.draft || MASTER, add = [], change = [];
@@ -1175,8 +1180,8 @@
         if (!m) add.push({ key, name, group }); else if (m.name !== name) change.push({ key:m.key, from:m.name, to:name }); });
       return { add, change, same:HBYS_NAMES.length - add.length - change.length, local:base.filter(m => !HBYS_NAMES.some(h => h[0] === m.key)).length }; },
     importApply(by) { const pv = CC.importPreview(), d = CC.edit();
-      pv.add.forEach(a => d.push({ key:a.key, name:a.name, was:null, group:a.group, ages:null, opt:null, hbys:true, passive:false, changed:`${TODAY}.2026`, by, causes:[], goals:[], acts:[] }));
-      pv.change.forEach(c => { const m = d.find(x => x.key === c.key); if (m) { m.was = m.was || c.from; m.name = c.to; m.hbys = true; m.changed = `${TODAY}.2026`; m.by = by; } });
+      pv.add.forEach(a => d.push({ key:a.key, name:a.name, was:null, group:a.group, ages:null, opt:null, hbys:true, passive:false, changed:TODAY_Y(), by, causes:[], goals:[], acts:[] }));
+      pv.change.forEach(c => { const m = d.find(x => x.key === c.key); if (m) { m.was = m.was || c.from; m.name = c.to; m.hbys = true; m.changed = TODAY_Y(); m.by = by; } });
       return CC.publish(by, "import", pv.add.length, pv.change.length + CC.draftN); },
     hits:(r, p) => ruleHits(r, p),
     plansByVersion() { const out = {}; Object.values(H.data.carePlans || {}).forEach(L => L.forEach(pl => { out[pl.cv] = (out[pl.cv] || 0) + 1; })); return out; },
@@ -1184,18 +1189,23 @@
   const LINK_NAME = (l) => { if (!l) return ""; const [k, v] = l.split(":"); if (k === "care") return v; const f = (H.FORMS || []).find(x => x.key === v); return f ? f.name : v; };
 
   /* ================================ vardiyalar ================================
-   * Son 3 gün × 2 vardiya; bugün en solda (HBYS gibi). İndis 0 = içinde bulunduğumuz vardiya (24.09 20–08). */
-  // [gün, gün farkı (H.wd ile render anında dile göre kısa gün adı), iso]
-  const DAYS = [["24.09", 0, "2026-09-24"], ["23.09", -1, "2026-09-23"], ["22.09", -2, "2026-09-22"]];
+   * Son 6 vardiya (12 saatlik); bugün en solda (HBYS gibi). İndis 0 = içinde bulunduğumuz vardiya.
+   * 30.09c · gerçek saate göre: nöbet saati 20 ve sonrası (20:00–07:59) → bugünün GECE'si; 08:00–19:59 → bugünün GÜNDÜZ'ü.
+   * Tohum değerlendirmeleri indisle yazıldı (0 = şimdiki, 1 = bir önceki …): anlamları korunur. 21:42'de eskisiyle birebir. */
+  const CUR_NIGHT = H.NOW_T0 >= 20, isoOff = (off) => { const d = new Date(H.DAY0); d.setDate(d.getDate() + off); return H.isoD(d); };
   const SH = [];
-  DAYS.forEach(([d, off, iso], di) => { SH.push({ k:d + "|N", d, off, iso, n:"20–08", night:true, di }); SH.push({ k:d + "|D", d, off, iso, n:"08–20", night:false, di }); });
+  { let off = 0, night = CUR_NIGHT;
+    for (let i = 0; i < 6; i++) { const d = H.dm(off); SH.push({ k:d + "|" + (night ? "N" : "D"), d, off, iso:isoOff(off), n:night ? "20–08" : "08–20", night, di:-off });
+      if (night) night = false; else { night = true; off--; } } }
+  // [gün, gün farkı (H.wd ile render anında dile göre kısa gün adı), iso, o güne düşen vardiya sayısı]
+  const DAYS = []; SH.forEach(s => { const g = DAYS.find(x => x[1] === s.off); if (g) g[3]++; else DAYS.push([s.d, s.off, s.iso, 1]); });
   const SH_LABEL = (i) => `${SH[i].d} ${SH[i].n}`;
   const GOAL_K = { met:["cp_g_met", "var(--ok)", "✓"], partial:["cp_g_partial", "var(--mid)", "◐"], unmet:["cp_g_unmet", "var(--high)", "✕"] };
   const GOAL = new Proxy({}, { get:(_, k) => GOAL_K[k] && [H.t(GOAL_K[k][0]), GOAL_K[k][1], GOAL_K[k][2]], ownKeys:() => Reflect.ownKeys(GOAL_K), getOwnPropertyDescriptor:(_, k) => ({ enumerable:true, configurable:true, value:GOAL[k] }) });
   const END_REASONS = ["goal", "disch", "invalid"];            // kayıtta anahtar tutulur, ekranda H.t ile çizilir
   const endReason = (r) => END_REASONS.includes(r) ? H.t("cp_end_" + r) : r;
   // Vardiya değerlendirmesinde "kayıttan" ön işaret: bugünün görev listesi (H.data.tasks) yalnız son iki vardiyayı kapsar.
-  const TASK_WIN = { 0:[20, 32], 1:[8, 20] };
+  const TASK_WIN = {}; SH.forEach((s, i) => { if (s.off === 0) TASK_WIN[i] = s.night ? [20, 32] : [8, 20]; });   // görev listesi yalnız bu nöbet gününü kapsar
   const hhmm = (t) => { const h = Math.floor(t), m = Math.round((t - h) * 60); return String(h % 24).padStart(2, "0") + ":" + String(m).padStart(2, "0"); };
   const autoDone = (p, link, si, plId, ai) => {
     const w = TASK_WIN[si]; if (!w || (!link && !plId)) return null;
@@ -1224,13 +1234,18 @@
     pl.hist.push({ at:startAt, by, what:() => H.t("cp_h_added"), sub:() => tpl("cp_h_startshift_tpl", { s:SH_LABEL(startIdx) }) });
     Object.entries(evals || {}).forEach(([i, v]) => {
       if (!v) return; i = +i; const s = SH[i];
-      const at = `${s.night ? (i === 0 ? TODAY : nextDay(s.d)) : s.d} ${v.at || (s.night ? (i === 0 ? "21:05" : "07:10") : "19:30")}`;
+      const at = evalAt(s, i, v.at);
       const doneActs = pl.acts.filter((_, j) => !(v.skip || []).includes(j));
       pl.evals[s.k] = { goal:v.g, acts:doneActs, note:v.note || "", by:v.by || (s.night ? nightNurse(i) : dayNurse), at, late:false };
     });
     return pl;
   }
-  const nextDay = (d) => ({ "22.09":"23.09", "23.09":"24.09", "24.09":"25.09" })[d] || d;
+  /* 30.09c · tohum değerlendirme saati. Şimdiki vardiya (i = 0): yazıldığı gibi şimdiden önce (21:05 → 37 dk önce; v.at verilmişse
+   * 21:42'ye göre o kadar önce), ama vardiya başlangıcından önceye düşmez. Biten vardiyalar: gece 07:10 (ertesi sabah), gündüz 19:30. */
+  const dtOf = (t) => { const d = H.dateOfT(t); return `${H.dm(H.dOff(d))} ${H.hm(d)}`; };
+  const evalAt = (s, i, vat) => { const st = s.off * 24 + (s.night ? 20 : 8);
+    if (i === 0) { const m = vat ? /^(\d\d):(\d\d)$/.exec(vat) : null, ago = m ? 21.7 - (+m[1] + +m[2] / 60) : 21.7 - 21 - 5 / 60; return dtOf(Math.max(st, H.NOW_T0 - ago)); }
+    return dtOf(s.night ? st + 11 + 1 / 6 : st + 11.5); };
 
   function seed() {
     if (H.data.carePlans.__seeded) return;
@@ -1238,18 +1253,18 @@
     // p1 · 3 aktif tanı. Solunum: son iki değerlendirmede hedef karşılanmadı → uyarı örneği. Ağrı: 23.09 gecesi boş.
     // 22–23.09'da yazılan planlar katalog v2 ile yazıldı (v3 24.09'da yayımlandı) → kendi sürümleriyle açılır.
     H.data.carePlans.p1 = [
-      mkPlan("agri", 5, "22.09 10:15", dayNurse, { c:[1, 2], g:[0, 1], a:[0, 1, 2, 3, 6] },
+      mkPlan("agri", 5, H.ts("22.09 10:15"), dayNurse, { c:[1, 2], g:[0, 1], a:[0, 1, 2, 3, 6] },
         { 5:{ g:"unmet", note:"Hekime bildirildi, istem güncellendi." }, 4:{ g:"partial" }, 3:{ g:"partial", skip:[4] }, 2:null, 1:{ g:"partial" } }, 2),
-      mkPlan("dusme", 5, "22.09 10:20", dayNurse, { c:[0, 1, 3], g:[0, 1], a:[0, 1, 2, 3, 5] },
+      mkPlan("dusme", 5, H.ts("22.09 10:20"), dayNurse, { c:[0, 1, 3], g:[0, 1], a:[0, 1, 2, 3, 5] },
         { 5:{ g:"met" }, 4:{ g:"met" }, 3:{ g:"met" }, 2:{ g:"met" }, 1:{ g:"met" }, 0:{ g:"met", at:"20:40", by:"Sevda Q." } }, 2),
-      mkPlan("solunum", 3, "23.09 11:30", dayNurse, { c:[0, 1], g:[1, 2], a:[0, 1, 2, 3, 5] },
+      mkPlan("solunum", 3, H.ts("23.09 11:30"), dayNurse, { c:[0, 1], g:[1, 2], a:[0, 1, 2, 3, 5] },
         { 3:{ g:"partial" }, 2:{ g:"unmet", note:"Ek oksijenle satürasyon hedefin altında seyretti, hekime bildirildi." }, 1:{ g:"unmet", note:"Solunum sıkıntısı sürüyor; hekim değerlendirdi." } }, 2),
     ];
     // p2 · 2 aktif tanı; birkaç boş hücre.
     H.data.carePlans.p2 = [
-      mkPlan("havayolu", 5, "22.09 09:40", dayNurse, { c:[0, 1, 3], g:[0, 1, 2], a:[0, 1, 2, 3, 5] },
+      mkPlan("havayolu", 5, H.ts("22.09 09:40"), dayNurse, { c:[0, 1, 3], g:[0, 1, 2], a:[0, 1, 2, 3, 5] },
         { 5:{ g:"partial" }, 4:null, 3:{ g:"partial" }, 2:{ g:"partial", skip:[1] }, 1:{ g:"met" } }, 2),
-      mkPlan("deri_risk", 4, "22.09 22:30", "Aygün M.", { c:[0, 2], g:[0, 1] },
+      mkPlan("deri_risk", 4, H.ts("22.09 22:30"), "Aygün M.", { c:[0, 2], g:[0, 1] },
         { 4:{ g:"met" }, 3:{ g:"met" }, 2:null, 1:{ g:"met" } }, 2),
     ];
     // Görevlerim bağı: aktif planların seçili faaliyetleri bu vardiyanın kalan saatlerine iş olarak düşer (geçmiş saatler uydurulmaz).
@@ -1267,12 +1282,13 @@
       const fq = (pl.freq || {})[ai] || a.f || "shift", hours = FREQ_H[fq] || [];
       const [lk, lv] = (a.l || "").split(":");
       // bağlı işte aynı iş sıklığın yarı aralığında zaten varsa (vardiyada 1 → bu vardiyada) yenisi açılmaz
-      const near = (x, h) => fq === "shift" ? x.t >= 20 && x.t < 32 : Math.abs(x.t - h) <= (fq === "q8" ? 4 : 2);
+      const near = (x, h) => fq === "shift" ? x.t >= SH_B && x.t < SH_B + 12 : Math.abs(x.t - h) <= (fq === "q8" ? 4 : 2);
       hours.forEach(h => {
+        if (h < Math.floor(H.nowT())) return;   // 30.09c: vardiyanın geçmiş saatine iş uydurulmaz
         const base = lk === "form" ? { kind:"form", label:(H.FORMS.find(f => f.key === lv) || { name:a.t }).name, form:lv } : lk === "care" ? { kind:"care", label:lv } : { kind:"care", label:a.t };
         if (lk && T.some(x => x.pid === p.id && near(x, h) && (lk === "form" ? x.form === lv : x.kind === "care" && x.label === lv))) return;
         if (T.some(x => x.cp === pl.id && x.ai === ai && x.t === h)) return;
-        if (!dry) T.push(Object.assign({ pid:p.id, t:h, state:h < 23 ? "due" : "plan", src:"cp", cp:pl.id, ai }, base)); n++;
+        if (!dry) T.push(Object.assign({ pid:p.id, t:h, state:H.taskState(h, H.nowT()) === "plan" ? "plan" : "due", src:"cp", cp:pl.id, ai }, base)); n++;
       });
     });
     return n;
@@ -1341,7 +1357,7 @@
           : `<div class="cp-sgf" style="margin-top:6px">${H.t("cp_sug_none")}</div>`}
         <div class="cp-sgf">${H.t("cp_sug_foot")}${AN("cp_adm_sug_rules")}${nDis ? ` · ${tpl("cp_sug_dismissed_tpl", { n:nDis })} — <a data-cp-undo>${H.t("cp_undo")}</a>` : ""}</div></div>` : "";
 
-    const head = `<thead><tr><th class="cp-dxh" rowspan="2">${H.t("cp_th_dx")}</th>${DAYS.map(([d, off], i) => `<th colspan="2" class="cp-day ${i === 0 ? "today" : ""}">${i === 0 ? H.t("cp_today") + " · " : ""}${H.wd(off)} ${d}</th>`).join("")}</tr>
+    const head = `<thead><tr><th class="cp-dxh" rowspan="2">${H.t("cp_th_dx")}</th>${DAYS.map(([d, off, iso, n], i) => `<th colspan="${n}" class="cp-day ${i === 0 ? "today" : ""}">${i === 0 ? H.t("cp_today") + " · " : ""}${H.wd(off)} ${d}</th>`).join("")}</tr>
       <tr>${SH.map((s, i) => `<th class="cp-shh ${i === 0 ? "now" : ""}">${s.n}${i === 0 ? `<small>${H.t("cp_now")}</small>` : ""}</th>`).join("")}</tr></thead>`;
     const rows = act.map(pl => {
       const c = cOf(pl), open = U.open.has(pl.id);
@@ -1418,7 +1434,7 @@
     const SC = scopeOfUnit(unitObj);
     const favs = ((SC && PKG[SC] ? PKG[SC].favs : FAVS[unitType]) || FAVS.icu).filter(k => CAT_BY[k]);
     const src = (k) => edit ? o.plan.snap : CAT_BY[k];
-    const S = { q:"", sel:{}, tabs:[], focus:null, date:"2026-09-24", sh:"N", restored:null, other:false, prop:null };
+    const S = { q:"", sel:{}, tabs:[], focus:null, date:SH[0].iso, sh:SH[0].night ? "N" : "D", restored:null, other:false, prop:null };
     const canProp = !edit && !!SC && ((H.state.user || {}).extras || []).includes("charge");
     const uOf = (c, kind, i) => kind === "c" ? (c.cu || [])[i] : kind === "g" ? (c.gu || [])[i] : ((c.acts[i] || {}).u);
     const rowIn = (c, kind, i) => inSc(uOf(c, kind, i), SC);
@@ -1516,7 +1532,7 @@
 
     const body = `<div class="cp-nd">
       ${edit ? "" : `<div class="cp-ndTop">
-          <label>${H.t("cp_start")} <input type="date" data-cpn-date value="${S.date}" max="2026-09-24"></label>
+          <label>${H.t("cp_start")} <input type="date" data-cpn-date value="${S.date}" max="${H.isoD(H.clockDate())}"></label>
           <div class="seg" data-cpn-sh><button type="button" data-v="D" class="${S.sh === "D" ? "on" : ""}">08–20</button><button type="button" data-v="N" class="${S.sh === "N" ? "on" : ""}">20–08</button></div>
           <span class="cp-cat" style="margin-left:auto">${tpl("cp_cat_v_tpl", { label:`<b>${E(H.t("cp_cat_label"))}</b>`, v:CC.version, n:CAT.length })}${AN("cp_adm_cat")}</span></div>`}
       ${S.restored ? `<div class="note i">${E(tpl("cp_draft_restored_tpl", S.restored))}</div>` : ""}
@@ -1608,9 +1624,9 @@
         H.log("Bakım planı düzenlendi · mühürlendi", `${bedNo(p)} · ${c.name} · ${dl.join(", ")} · ${n} iş`);
         H.closeModal(); H.toast(tpl("cp_toast_sealed_edit_tpl", { t:n })); rerender(); return;
       }
-      if (S.date > "2026-09-24") { H.toast(H.t("cp_toast_future"), "e"); return; }
-      const di = DAYS.findIndex(x => x[2] === S.date);
-      const idx = di < 0 ? SH.length - 1 : Math.max(0, di * 2 + (S.sh === "N" ? 0 : 1));
+      if (S.date > H.isoD(H.clockDate())) { H.toast(H.t("cp_toast_future"), "e"); return; }
+      const di = DAYS.findIndex(x => x[2] === S.date), si = SH.findIndex(s => s.iso === S.date && s.night === (S.sh === "N"));
+      const idx = si >= 0 ? si : di === 0 ? 0 : SH.length - 1;   // bugünün henüz başlamamış vardiyası → şimdiki
       const [yy, mm, dd] = S.date.split("-");
       const list = plansOf(p.id); let n = 0;
       keys.forEach(k => {
@@ -1696,7 +1712,7 @@
       actions:`<button class="btn" data-x>${H.t("cp_close")}</button>` });
   }
 
-  H.carePlan = { html:planHtml, after:planAfter, summary, suggestions, plans:(pid) => plansOf(pid) };
+  H.carePlan = { html:planHtml, after:planAfter, summary, suggestions, plans:(pid) => plansOf(pid), shifts:SH };   // shifts: yazdir.js
   seed();                             // Görevlerim, bakım planı sekmesi açılmadan da plan işlerini görsün
 
   /* ====================================================================================================
@@ -1762,7 +1778,13 @@
     const uo = ({ p1:0.35, p3:0.3, p7:1.6, p13:2.2 }[p.id]) || (neo ? 3 : p.risk === "crit" ? 0.4 : 0.9);
     // by:null → ekranda "Gece hemşiresi" (dile göre) · pompa girişlerinde ekranda "İnfüzyon pompası" (dile göre) çizilir
     const D = {}, nurse = (i) => i < 12 ? dayNurse : ((H.userBy(p.nurse) || {}).name || null);
-    const add = (k, i, ml, src, extra) => { if (!(ml > 0)) return; ((D[k] = D[k] || {})[i] = D[k][i] || []).push(Object.assign({ ml, src, by:src === "pompa" ? "İnfüzyon pompası" : nurse(i), at:`${HL(i)}:${src === "pompa" ? "59" : String(10 + Math.floor(r() * 40)).padStart(2, "0")}` }, extra || {})); };
+    /* 30.09c · gerçek saat: gelecekteki saate kayıt yazılmaz (şimdiki saatte dakika da şimdiden ileri olamaz).
+     * OLAY girişleri (bolus, kusma, dışkı, kan, hat düzeltmesi, idrar boşluğu) 21:42'ye göre yazıldı → ev(i) ile şimdiye göre kayar;
+     * rutin girişler (pompa, 4 saatlik dren/NG, beslenme, idrar) saat dilimine bağlıdır. */
+    const EVS = NOWI - 13, ev = (i) => i + EVS;
+    const add = (k, i, ml, src, extra) => { if (!(ml > 0) || i < 0 || i > NOWI) return; const mm = src === "pompa" ? 59 : 10 + Math.floor(r() * 40);
+      if (i === NOWI && !(extra && extra.live) && mm > NOW_M) return;
+      ((D[k] = D[k] || {})[i] = D[k][i] || []).push(Object.assign({ ml, src, by:src === "pompa" ? "İnfüzyon pompası" : nurse(i), at:`${HL(i)}:${String(mm).padStart(2, "0")}` }, extra || {})); };
     const hasEnt = use.has("oral") || use.has("ngin");
     const pumpTot = inBase * (hasEnt ? 0.72 : 0.95);
     const ivRate = use.has("tpn") ? pumpTot * 0.55 : pumpTot, tpnRate = use.has("tpn") ? pumpTot * 0.45 : 0;
@@ -1773,7 +1795,7 @@
       if (use.has("pcai")) add("pcai", i, rd(4 * frac), "pompa", now);
       if (use.has("pcab")) { const b = Math.floor(r() * 3); if (b && i < NOWI) add("pcab", i, b, "pompa"); }
     }
-    if (p.id === "p1") add("iv", 11, 500, "pompa", { note:() => H.t("cp_io_n_bolus") });
+    if (p.id === "p1") add("iv", ev(11), 500, "pompa", { note:() => H.t("cp_io_n_bolus").replace("19:40", H.at("19:40")) });
     const entInt = neo ? 3 : 4;
     for (let i = neo ? 1 : 0; i <= NOWI; i += entInt) {
       const amt = inBase * entInt * (hasEnt ? 0.28 : 0) * (0.85 + r() * 0.3);
@@ -1782,19 +1804,19 @@
     }
     if (use.has("uri")) {
       if (neo) for (let i = 2; i < NOWI; i += 3) add("uri", i, rd(uo * kg * 3 * (0.8 + r() * 0.4)), "tartı");
-      else if (p.monitored) for (let i = 0; i < NOWI; i++) { if (p.id === "p2" && i === 7) continue; add("uri", i, r5(uo * kg * (0.7 + r() * 0.6) * (p.id === "p1" && i >= 10 ? 0.6 : 1))); }
+      else if (p.monitored) for (let i = 0; i < NOWI; i++) { if (p.id === "p2" && i === ev(7)) continue; add("uri", i, r5(uo * kg * (0.7 + r() * 0.6) * (p.id === "p1" && i >= ev(10) ? 0.6 : 1))); }
       else [1, 5, 9, 12].forEach((i, j) => { if (i < NOWI) add("uri", i, r5(uo * kg * (j ? 4 : 2) * (0.8 + r() * 0.4) + (p.id === "p7" && i === 5 ? 180 : 0)), "elle"); });
     }
     const every4 = (k, lo, hi) => [3, 7, 11].forEach(i => add(k, i, r5(lo + r() * (hi - lo)), "elle"));
     if (use.has("dr1")) every4("dr1", p.id === "p10" ? 10 : p.id === "p16" ? 40 : 30, p.id === "p10" ? 25 : p.id === "p16" ? 80 : 60);
     if (use.has("dr2")) every4("dr2", 20, 45);
     if (use.has("ngd")) every4("ngd", p.id === "p4" ? 80 : 50, p.id === "p4" ? 150 : 120);
-    if (use.has("kusma")) [2, 6].forEach(i => add("kusma", i, r5(60 + r() * 60), "elle"));
-    if (use.has("gaita")) [3, 9, 11].forEach(i => add("gaita", i, r5(80 + r() * 70), "elle"));
-    if (use.has("blood")) add("blood", p.id === "p16" ? 2 : 6, p.id === "p16" ? 300 : 250, "elle", { note:() => H.t("cp_io_n_blood") });
+    if (use.has("kusma")) [2, 6].forEach(i => add("kusma", ev(i), r5(60 + r() * 60), "elle"));
+    if (use.has("gaita")) [3, 9, 11].forEach(i => add("gaita", ev(i), r5(80 + r() * 70), "elle"));
+    if (use.has("blood")) add("blood", ev(p.id === "p16" ? 2 : 6), p.id === "p16" ? 300 : 250, "elle", { note:() => H.t("cp_io_n_blood") });
     if (use.has("irrin")) for (let i = 0; i < NOWI; i++) { add("irrin", i, 250, "elle"); add("irrout", i, r5(240 + r() * 30), "elle"); }
     // pompa satırında elle düzeltme örneği (uyarıda görünür)
-    if (p.id === "p2" && D.iv && D.iv[9]) D.iv[9].push({ ml:-20, src:"elle", by:dayNurse, at:"17:35", note:() => H.t("cp_io_n_line") });
+    if (p.id === "p2" && D.iv && D.iv[ev(9)]) D.iv[ev(9)].push({ ml:-20, src:"elle", by:dayNurse, at:H.atHM("17:35"), note:() => H.t("cp_io_n_line") });
     return (H.data.ioGrid[p.id] = D);
   }
   const cellSum = (D, k, from, to) => { let s = 0, any = false; for (let i = from; i < to; i++) (D[k] && D[k][i] || []).forEach(e => { s += e.ml; any = true; }); return any ? s : null; };
@@ -1867,7 +1889,7 @@
       <div class="cp-foot">${H.t("cp_io_foot")}${AN("cp_adm_io")}</div>`;
   }
 
-  function gridHtml(p) { return `<div class="box cp-io-root" data-cpio-root="${E(p.id)}"><h5>${I("drop")}${H.t("cp_io_title")} · ${TODAY} 08:00 → 25.09 08:00 <span class="r mute">${H.t("cp_io_dutyday")}</span></h5><div data-cpio-body>${gridInner(p)}</div></div>`; }
+  function gridHtml(p) { return `<div class="box cp-io-root" data-cpio-root="${E(p.id)}"><h5>${I("drop")}${H.t("cp_io_title")} · ${H.dm(0)} 08:00 → ${H.dm(1)} 08:00 <span class="r mute">${H.t("cp_io_dutyday")}</span></h5><div data-cpio-body>${gridInner(p)}</div></div>`; }
 
   function gridAfter(el, p) {
     const root = el && (el.matches && el.matches(".cp-io-root") ? el : el.querySelector(".cp-io-root"));

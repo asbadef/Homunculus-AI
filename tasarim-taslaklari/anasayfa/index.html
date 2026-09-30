@@ -388,24 +388,28 @@ section.s.alt { background:var(--card); border-top:1px solid var(--line); border
 .store span { display:grid; line-height:1.1; }
 .store small { font:600 10.5px Figtree, system-ui, sans-serif; letter-spacing:.06em; text-transform:uppercase; color:#b9c6d4; }
 .store b { font:600 19px Figtree, system-ui, sans-serif; letter-spacing:-.01em; }
-.mb-vis { position:relative; min-height:640px; perspective:2000px; }
-.mb-vis::before { content:""; position:absolute; left:8%; right:8%; top:10%; bottom:6%; border-radius:50%; background:radial-gradient(closest-side, color-mix(in srgb, var(--pri) 28%, transparent), transparent); filter:blur(30px); z-index:0; }
-.mb-vis .dv { position:absolute; z-index:1; --pw:clamp(200px, 16vw, 262px); width:var(--pw); }
-.mb-vis .dv.and { left:8%; top:0; animation:hpf 8s ease-in-out -3s infinite; }
-.mb-vis .dv.ios { right:8%; top:70px; z-index:2; animation:hpf 7s ease-in-out infinite; }
+/* 30.09 (Ozan, 4. tur): iki cihaz aynı boyda, üst üste binen bilinçli bir çift — önde iPhone (İşlerim), arkada yana kaymış Android
+   (hasta kartı); ikisi de kahramandaki telefon gibi hafif eğik. Arkada yumuşak petrol parıltısı + halka; boş kutu yok. */
+.mb-vis { position:relative; display:grid; place-items:center; padding:12px 0; }
+.mb-pair { --pw:clamp(200px, 12.6vw, 248px); position:relative; width:calc(var(--pw) * 1.66); height:calc(var(--pw) * 2.2 + 64px); perspective:1600px; }
+.mb-pair::before { content:""; position:absolute; left:50%; top:50%; width:min(calc(var(--pw) * 2.5), calc(100vw - 32px)); aspect-ratio:1; transform:translate(-50%, -50%); border-radius:50%; background:radial-gradient(closest-side, color-mix(in srgb, var(--pri) 26%, transparent), color-mix(in srgb, var(--pri) 7%, transparent) 72%, transparent); z-index:0; pointer-events:none; }
+.mb-pair::after { content:""; position:absolute; left:50%; top:50%; width:min(calc(var(--pw) * 2), calc(100vw - 48px)); aspect-ratio:1; transform:translate(-50%, -50%); border-radius:50%; border:1px solid color-mix(in srgb, var(--pri) 22%, transparent); z-index:0; pointer-events:none; }
+.mb-pair .dv { position:absolute; width:var(--pw); transform:rotateY(-16deg) rotateX(4deg) rotateZ(2.5deg); transform-origin:60% 50%; }
+.mb-pair .dv.and { left:0; top:0; z-index:1; animation:hpf 8s ease-in-out -3s infinite; }
+.mb-pair .dv.ios { right:0; bottom:0; z-index:2; animation:hpf 7s ease-in-out infinite; }
 .mb-chip { position:absolute; z-index:3; display:flex; align-items:center; gap:9px; padding:9px 13px 9px 9px; border-radius:14px; background:var(--card); border:1px solid var(--line); box-shadow:var(--shadow); font:700 12.5px Figtree, system-ui, sans-serif; white-space:nowrap; animation:flt 6s ease-in-out infinite; }
 .mb-chip i { width:28px; height:28px; border-radius:9px; display:grid; place-items:center; font-style:normal; flex:none; }
 .mb-chip i svg.i { width:15px; height:15px; }
 .mb-chip small { display:block; font:600 11px Figtree, system-ui, sans-serif; color:var(--mute); }
-.mb-chip.c1 { left:0; bottom:16%; } .mb-chip.c1 i { background:var(--critSoft); color:var(--crit); }
+.mb-chip.c1 { left:-38px; bottom:15%; } .mb-chip.c1 i { background:var(--critSoft); color:var(--crit); }
 .mb-chip.c2 { right:0; bottom:4%; animation-delay:-2.5s; } .mb-chip.c2 i { background:var(--okSoft); color:var(--ok); }
 @keyframes flt { 0%, 100% { transform:translateY(0); } 50% { transform:translateY(-6px); } }
 @media (prefers-reduced-motion: reduce) { .mb-chip { animation:none; } }
-@media (max-width:1080px) { .mob { grid-template-columns:minmax(0, 1fr); } .mb-vis { min-height:600px; max-width:620px; width:100%; margin:0 auto; } }
+@media (max-width:1080px) { .mob { grid-template-columns:minmax(0, 1fr); } }
 @media (max-width:560px) {
-  .mb-vis { min-height:470px; }
-  .mb-vis .dv { --pw:168px; } .mb-vis .dv.and { left:0; } .mb-vis .dv.ios { right:0; top:48px; }
-  .mb-chip.c1 { bottom:2%; left:4px; } .mb-chip.c2 { display:none; }
+  .mb-pair { --pw:150px; }
+  .mb-chip.c1 { left:-8px; }
+
   .store { flex:1 1 150px; justify-content:center; padding:0 14px; }
 }
 
@@ -598,10 +602,19 @@ section[hidden], .anc[hidden] { display:none !important; }
 .stage.push .hpush { transform:none; opacity:1; }
 .stage.al .hphone .dv.ios { filter:drop-shadow(0 0 12px rgba(239,68,68,.45)); }
 
-/* ---- iki cihaz: saf CSS, marka logosu yok. Ekran = durum çubuğu + ekran görüntüsü (390×844 oranında, kırpılmaz) ---- */
-.dv { position:relative; --scr:#f4f6fa; --ink2:#152231; }
-[data-theme="gece"] .dv { --scr:#07101f; --ink2:#e8eef7; }
-.dv .scr { position:relative; overflow:hidden; background:var(--scr); }
+/* ---- cihazlar (30.09, 5. tur): saf CSS, marka logosu yok. Gerçek telefon katmanları, dıştan içe:
+   metal bant (2–3 px, metalik degrade + sol üstte parlama) → 1 px koyu çizgi → ince siyah cam çerçeve (~%2) → ekran.
+   Köşeler eş merkezli: dış yarıçap = ekran + çerçeve + bant. Boyutlar --pw'den (cihaz genişliği) hesaplanır.
+   Ekran = durum çubuğu + ekran görüntüsü (390×844 oranında, kırpılmaz). */
+.dv { --pw:220px; --band:3px; --bz:calc(var(--pw) * .02); --rs:calc(var(--pw) * .13); --scr:#f4f6fa; --ink2:#152231; --btn:#b9bec6;
+  position:relative; padding:var(--band); border-radius:calc(var(--rs) + var(--bz) + var(--band));
+  background:linear-gradient(135deg, rgba(255,255,255,.55) 0%, rgba(255,255,255,0) 14%), linear-gradient(90deg, #7d828b 0%, #d9dde3 12%, #9ba0a8 30%, #c9cdd3 55%, #8a8f98 78%, #d2d6dc 92%, #6e737b 100%);
+  box-shadow:0 34px 60px -26px rgba(15,30,45,.34), 0 10px 20px -12px rgba(15,30,45,.28), 0 1px 2px rgba(0,0,0,.18); }
+.hphone .dv, .mb-pair .dv { --pw:inherit; }
+[data-theme="gece"] .dv { --scr:#07101f; --ink2:#e8eef7; --btn:#9aa0a8;
+  background:linear-gradient(135deg, rgba(255,255,255,.6) 0%, rgba(255,255,255,0) 14%), linear-gradient(90deg, #8d929a 0%, #e4e7eb 12%, #a9aeb6 30%, #d6d9de 55%, #979ca4 78%, #dfe2e6 92%, #7c8189 100%);
+  box-shadow:0 34px 70px -24px rgba(0,0,0,.65), 0 10px 22px -12px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.08); }
+.dv .scr { position:relative; overflow:hidden; background:var(--scr); border:var(--bz) solid #050607; border-radius:calc(var(--rs) + var(--bz)); box-shadow:0 0 0 1px #1b1d21; }
 .dv img { display:block; width:100%; height:auto; aspect-ratio:390 / 844; object-fit:cover; object-position:top; }
 .dv .sb { position:relative; display:flex; align-items:center; justify-content:space-between; font:700 9px Figtree, system-ui, sans-serif; color:var(--ink2); background:var(--scr); }
 .dv .sb b { font:600 9px Figtree, system-ui, sans-serif; letter-spacing:.01em; }
@@ -609,28 +622,25 @@ section[hidden], .anc[hidden] { display:none !important; }
 .dv .sb .sig { display:block; width:11px; height:7px; background:linear-gradient(90deg, currentColor 0 2px, transparent 2px 3px, currentColor 3px 5px, transparent 5px 6px, currentColor 6px 8px, transparent 8px 9px, currentColor 9px 11px); -webkit-mask:linear-gradient(to top right, #000 50%, transparent 52%); mask:linear-gradient(to top right, #000 50%, transparent 52%); }
 .dv .sb .bat { position:relative; display:block; width:14px; height:7px; border-radius:2px; border:1.2px solid currentColor; opacity:.9; }
 .dv .sb .bat::after { content:""; position:absolute; left:1px; top:1px; bottom:1px; width:72%; border-radius:1px; background:currentColor; }
-.dv .gl { position:absolute; inset:0; border-radius:inherit; pointer-events:none; z-index:2; }
-/* iPhone tarzı: ince ve eşit çerçeve, yuvarlak köşeler, Dynamic Island, yan tuşlar */
-.dv.ios { padding:3.1%; border-radius:15.5% / 7.2%; background:#050607; box-shadow:0 0 0 1.6px #6b717b, 0 0 0 2.8px #1b1e23, 0 30px 60px -22px rgba(6,20,30,.55), 0 14px 28px -16px rgba(6,20,30,.35); }
-[data-theme="gece"] .dv.ios { box-shadow:0 0 0 1.6px #59606b, 0 0 0 2.8px #0d1017, 0 30px 70px -22px rgba(0,0,0,.85); }
-.dv.ios .scr { border-radius:12.6% / 5.9%; }
+/* ekran camı: çok hafif çapraz yansıma (≤ .06) */
+.dv .gl { position:absolute; inset:calc(var(--band) + var(--bz)); border-radius:var(--rs); background:linear-gradient(125deg, rgba(255,255,255,.06) 0%, rgba(255,255,255,.02) 35%, rgba(255,255,255,0) 50%); pointer-events:none; z-index:2; }
+/* yan tuşlar: bant renginde, ince (3 px), bandın arkasından çıkar */
+.dv::before, .dv::after { content:""; position:absolute; width:3px; z-index:-1; }
+/* iPhone tarzı: sol — eylem tuşu + ses aç/kıs; sağ — yan tuş. Dynamic Island ekranın içinde, üstte ortada */
+.dv.ios::before { left:-2px; top:17%; height:17%; border-radius:2px 0 0 2px; background:linear-gradient(to bottom, var(--btn) 0 14%, transparent 14% 30%, var(--btn) 30% 62%, transparent 62% 68%, var(--btn) 68% 100%); }
+.dv.ios::after { right:-2px; top:26%; height:11%; border-radius:0 2px 2px 0; background:var(--btn); }
 .dv.ios .sb { aspect-ratio:390 / 46; padding:0 10% 0 11%; }
-.dv.ios .sb .isl { position:absolute; left:50%; top:52%; width:31%; height:64%; transform:translate(-50%, -50%); border-radius:40px; background:#000; }
-.dv.ios::before, .dv.ios::after { content:""; position:absolute; width:2.5px; background:#5d636c; }
-.dv.ios::before { left:-4px; top:16%; height:3.2%; border-radius:2px 0 0 2px; box-shadow:0 calc(var(--pw, 190px) * .16) 0 #5d636c, 0 calc(var(--pw, 190px) * .32) 0 #5d636c; }
-.dv.ios::after { right:-4px; top:24%; height:10%; border-radius:0 2px 2px 0; }
-.dv.ios .gl { background:linear-gradient(118deg, rgba(255,255,255,.13) 0%, rgba(255,255,255,.02) 28%, rgba(255,255,255,0) 40%); }
-/* Android tarzı: daha köşeli, düz kenar, ortada delik kamera, altta hareket çubuğu */
-.dv.and { padding:2.4%; border-radius:8.5% / 4%; background:#101216; box-shadow:0 0 0 1.4px #33373e, 0 30px 60px -22px rgba(6,20,30,.5), 0 12px 24px -16px rgba(6,20,30,.3); }
-[data-theme="gece"] .dv.and { box-shadow:0 0 0 1.4px #3a4150, 0 30px 70px -22px rgba(0,0,0,.85); }
-.dv.and .scr { border-radius:6.6% / 3%; }
+.dv.ios .sb .isl { position:absolute; left:50%; top:10%; width:35%; height:64%; transform:translateX(-50%); border-radius:40px; background:#000; }
+/* Android tarzı: daha köşeli, alüminyum bant, ortada delik kamera, altta hareket çubuğu; sağda ses + güç */
+.dv.and { --band:2.5px; --bz:calc(var(--pw) * .022); --rs:calc(var(--pw) * .075); --btn:#6f747c;
+  background:linear-gradient(135deg, rgba(255,255,255,.35) 0%, rgba(255,255,255,0) 14%), linear-gradient(90deg, #3b3f45 0%, #9aa0a8 12%, #50555c 30%, #7d838b 55%, #43474e 78%, #8c929a 92%, #3b3f45 100%); }
+[data-theme="gece"] .dv.and { --btn:#8a9098; background:linear-gradient(135deg, rgba(255,255,255,.45) 0%, rgba(255,255,255,0) 14%), linear-gradient(90deg, #5a5f67 0%, #b7bcc3 12%, #6b7078 30%, #9ca1a9 55%, #60656d 78%, #aeb3ba 92%, #565b62 100%); }
+.dv.and::after { right:-2px; top:22%; height:20%; border-radius:0 2px 2px 0; background:linear-gradient(to bottom, var(--btn) 0 58%, transparent 58% 72%, var(--btn) 72% 100%); }
 .dv.and .sb { aspect-ratio:390 / 36; padding:0 6% 0 7%; }
-.dv.and .sb .cam { position:absolute; left:50%; top:50%; width:4.6%; aspect-ratio:1; transform:translate(-50%, -50%); border-radius:50%; background:#000; box-shadow:0 0 0 1.5px #1c1f25; }
+.dv.and .sb .cam { position:absolute; left:50%; top:50%; width:2.8%; aspect-ratio:1; transform:translate(-50%, -50%); border-radius:50%; background:#000; box-shadow:0 0 0 1px #202329; }
 .dv.and .gb { aspect-ratio:390 / 22; display:grid; place-items:center; background:var(--scr); }
 .dv.and .gb::before { content:""; width:28%; height:3.5px; border-radius:3px; background:var(--ink2); opacity:.55; }
-.dv.and::after { content:""; position:absolute; right:-3.5px; top:20%; width:2.5px; height:14%; border-radius:0 2px 2px 0; background:#3a3f47; box-shadow:0 calc(var(--pw, 190px) * .5) 0 -0px #3a3f47; }
-.dv.and .gl { background:linear-gradient(135deg, rgba(255,255,255,.08) 0%, rgba(255,255,255,0) 30%); }
-@media (prefers-reduced-motion: reduce) { .hphone .dv, .mb-vis .dv { animation:none !important; } .hpush { transition:none; } }
+@media (prefers-reduced-motion: reduce) { .hphone .dv, .mb-vis .dv, .mb-pair .dv { animation:none !important; } .hpush { transition:none; } }
 @media (prefers-reduced-motion: reduce) { .hp-pulse { animation:none !important; } }
 @media (max-width:1280px) { .stage { --pw:200px; } .hp-cap { display:none; } }
 @media (max-width:1080px) { .stage { padding:0 0 12px; } .stage .scene { margin-right:0; } .stage::before, .hphone { display:none; } }
@@ -899,10 +909,11 @@ section[hidden], .anc[hidden] { display:none !important; }
         <div class="store" role="img" data-ia="st_and"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#00d7fe" d="M3.61 1.81 13.79 12 3.61 22.19c-.37-.2-.61-.6-.61-1.07V2.88c0-.47.24-.87.61-1.07Z"/><path fill="#00f076" d="M3.61 1.81c.33-.18.75-.2 1.14.02l12.02 6.9L13.79 12Z"/><path fill="#ff3a44" d="M13.79 12l2.98 3.27-12.02 6.9c-.39.22-.81.2-1.14.02Z"/><path fill="#ffd500" d="M16.77 8.73 20.3 10.76c.93.53.93 1.95 0 2.48l-3.53 2.03L13.79 12Z"/></svg><span><small data-i="mb_soon"></small><b>Google Play</b></span></div>
       </div>
     </div>
-    <div class="mb-vis rv">
+    <div class="mb-vis rv"><div class="mb-pair">
       <div class="dv and"><div class="scr"><div class="sb"><b>21:42</b><i class="cam"></i><span><i class="sig"></i><i class="bat"></i></span></div><img data-mimg="hasta" data-ia="alt_pt" alt="" width="390" height="844" loading="lazy" decoding="async"><div class="gb"></div></div><i class="gl"></i></div>
       <div class="dv ios"><div class="scr"><div class="sb"><b>21:42</b><i class="isl"></i><span><i class="sig"></i><i class="bat"></i></span></div><img data-mimg="islerim" data-ia="alt_tasks" alt="" width="390" height="844" loading="lazy" decoding="async"></div><i class="gl"></i></div>
-    </div>
+      <div class="mb-chip c1" aria-hidden="true"><i><svg class="i" data-ic="bell"></svg></i><span>REA02 · SpO₂ 86<small data-i="hs_noresp"></small></span></div>
+    </div></div>
   </div>
 </section>
 

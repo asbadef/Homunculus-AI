@@ -320,7 +320,7 @@
     preconditions:{ legal:false, policy:false, signage:false, audit:true, noRecord:true, privacy:true, onPrem:true },
     preMeta:{},                                    // koşul → { by, at } (kim, ne zaman işaretledi)
     map:{ "rea-1":"Kanal 1", "rea-2":"Kanal 2", "rea-3":"Kanal 3", "rea-4":"Kanal 4", "kvc-1":"Kanal 9" },
-    privacy:{ "rea-2":{ on:true, by:"hs.sevda", at:"21:30" } },   // bedId → perde açık mı, kim, ne zaman
+    privacy:{ "rea-2":{ on:true, by:"hs.sevda", at:H.at("21:30") } },   // bedId → perde açık mı, kim, ne zaman
     rules:{ maxMin:10 },                           // izleme oturumu en çok X dk sonra "devam ediyor musunuz?" diye sorar
     sessions:[],                                   // kapanmış izleme oturumları { bedId, bedNo, u, reason, note, at, sec, why }
     live:{},                                       // bedId → açık oturum ("şu an izleniyor" göstergesi)

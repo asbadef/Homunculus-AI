@@ -15,7 +15,11 @@
     re:new RegExp("^" + k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace("\\{\\*\\}", "(.+)") + "$") }));
 
   // bir metnin karşılığı: yoksa null
-  function tr(s, lang) {
+  // 30.09c · gerçek saat: bir olay önceki/sonraki güne kayınca "21:30" yerine "29.09 · 21:30" yazılır. Sözlükte "{#}" diye
+  // kayıtlı kalıp bulunamazsa tarih+saat tek sayı sayılarak bir kez daha denenir (yeni sözlük girdisi gerekmez).
+  const DTN = /\d{2}\.\d{2}(?:\.\d{4})? · \d{2}:\d{2}|\d+(?:[.,:]\d+)*/g, DTQ = /\d{2}\.\d{2}(?:\.\d{4})? · \d{2}:\d{2}/;
+  function tr(s, lang) { const r = tr1(s, lang, NUM); return r != null || !DTQ.test(s) ? r : tr1(s, lang, DTN); }
+  function tr1(s, lang, NUM) {
     const t = s.trim(); if (!t || t.length < 2) return null;
     const nums = t.match(NUM) || [], k = t.replace(NUM, "{#}");
     let e = D[k], tpl = e && e[lang];

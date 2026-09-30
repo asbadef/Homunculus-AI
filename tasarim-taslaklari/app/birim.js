@@ -122,7 +122,7 @@
   const t = (k, v) => { let s = H.t(k.startsWith("m_") ? k : "bu_" + k); if (v) Object.keys(v).forEach(x => { s = s.split("{" + x + "}").join(v[x]); }); return s; };
 
   /* ================= ortak yardımcılar ================= */
-  const NOW = (() => { const [h, m] = H.now().split(":").map(Number); return h + m / 60; })();
+  const NOW = H.NOW_T0;   // 30.09c: nöbet saati (8 … 31.99; gece yarısından sonra 24+) — görev saatleriyle aynı ölçek
   const hh = (h) => String(Math.floor(h) % 24).padStart(2, "0") + ":00";
   const hash = (s) => [...String(s)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
   const bedOf = (p) => H.bed(p.bed) || { no:"—", unitId:null, iso:false };

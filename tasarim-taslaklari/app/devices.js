@@ -392,7 +392,10 @@
   const st = document.createElement("style"); st.id = "dv-css"; st.textContent = css; document.head.appendChild(st);
 
   /* ================= tarih yardımcıları (bugün 24.09.2026) ================= */
-  const TODAY = "2026-09-24";
+  const TODAY = H.isoD(H.clockDate());   // 30.09c: gerçek takvim günü (bakım tarihleri buna göre üretilir)
+  const M0 = H.clockDate().getMonth(), Y0 = H.clockDate().getFullYear();
+  // yazılmış "dün 16:20" gibi son görülme → kaydırılır; takvimde yine dünse "dün HH:MM", değilse tarihli
+  const seenAgo = (hm, dayOff) => { const d = new Date(+H.atD(hm) + dayOff * 864e5), c = H.dOff(d) - H.calOff(); return c === 0 ? H.hm(d) : c === -1 ? `dün ${H.hm(d)}` : `${H.dm(H.dOff(d))} ${H.hm(d)}`; };
   const pd = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
   const iso = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
   const addD = (s, n) => { const d = pd(s); d.setDate(d.getDate() + n); return iso(d); };
@@ -457,7 +460,7 @@
     d.nextPM = nextDate(K.pm, .10); d.lastPM = addM(d.nextPM, -K.pm);
     if (K.cal) { d.nextCal = nextDate(K.cal, .06); d.lastCal = addM(d.nextCal, -K.cal); d.certNo = `KAL-${d.lastCal.slice(0, 4)}-${ri(1000, 9999)}`; d.calBy = CAL_BY[ri(0, 1)]; }
     else { d.nextCal = null; d.lastCal = null; d.certNo = null; d.calBy = null; }
-    if (kind === "port") d.lastSeen = `21:${String(ri(0, 41)).padStart(2, "0")}`;
+    if (kind === "port") d.lastSeen = H.at(`21:${String(ri(0, 41)).padStart(2, "0")}`);
     Object.assign(d, extra || {});
     devices.push(d); return d;
   }
@@ -482,7 +485,7 @@
       add("ekg", u, "Müşahidə", null);
     }
     if (u.id === "dax") {
-      add("port", u, room(0), null); add("port", u, room(3), null); add("port", u, "Depo", null, { status:"depoda", online:false, lastSeen:"dün 16:20" });
+      add("port", u, room(0), null); add("port", u, room(3), null); add("port", u, "Depo", null, { status:"depoda", online:false, lastSeen:seenAgo("16:20", -1) });
       add("inf", u, room(1), null); add("inf", u, room(2), null); add("inf", u, room(4), null);
       const dax8 = byNo("DAX08"); if (dax8) add("asp", u, dax8.room, dax8, { status:"ariza" });   // DAX08 yatağı "bloke · arıza" — sebebi bu cihaz
       add("asp", u, room(5), null); add("ekg", u, "Hemşire istasyonu", null);
@@ -493,7 +496,7 @@
       add("inf", u, "Depo", null, { status:"kullanim_disi", online:null });
       add("asp", u, room(4), null); add("ekg", u, "Hemşire istasyonu", null);
     }
-    if (u.id === "usq") { add("port", u, room(0), null); add("port", u, "Depo", null, { status:"depoda", online:false, lastSeen:"22.09 09:10" }); add("inf", u, room(1), null); add("inf", u, room(2), null); }
+    if (u.id === "usq") { add("port", u, room(0), null); add("port", u, "Depo", null, { status:"depoda", online:false, lastSeen:H.ts("22.09 09:10") }); add("inf", u, room(1), null); add("inf", u, room(2), null); }
     if (u.id === "bmt") { B.forEach(b => add("inf", u, b.room, b)); add("port", u, room(0), null); }
     if (u.id === "kem") B.slice(0, 4).forEach(b => add("inf", u, b.room, b));
     add("defib", u, "Koridor · acil arabası", null);
@@ -518,15 +521,17 @@
   /* ================= uydurma veri: arıza iş emirleri ================= */
   const dev = (pred) => devices.find(pred) || devices[0];
   const WO = (id, d, date, time, by, text, state, priority, more) => Object.assign({ id, deviceId:d.id, date, time, by, text, state, priority, assignee:null, closedAt:null, closeNote:null }, more || {});
+  // 30.09c · tohum iş emirleri "24.09 21:42" varsayımıyla yazıldı → tarih ve saat gerçek saate kaydırılır
+  const WO0 = (id, d, date0, time0, ...rest) => { const [date, time] = H.tsPair(date0, time0), w = WO(id, d, date, time, ...rest); if (w.closedAt) w.closedAt = H.ts(w.closedAt); return w; };
   H.data.workOrders = [
-    WO("İE-0418", re07 || devices[0], "2026-09-24", "21:36", "sistem", "Monitör merkeze veri göndermiyor (6 dk). Ağ kablosu ya da cihaz ağ kartı kontrol edilmeli.", "acik", "yüksek"),
-    WO("İE-0417", dev(d => d.kind === "mon" && d.bedId === "rea-2"), "2026-09-24", "20:15", "hs.sevda", "SpO₂ probu bağlantısı gevşek, sinyal ara ara kesiliyor.", "acik", "yüksek"),
-    WO("İE-0416", dev(d => d.kind === "asp" && d.unitId === "dax" && d.status === "ariza"), "2026-09-24", "14:02", "hs.gulnar", "Duvar aspiratörü vakum oluşturmuyor. Yatak kullanıma kapatıldı.", "atandi", "yüksek", { assignee:"bio.orxan" }),
-    WO("İE-0415", dev(d => d.kind === "inf" && d.unitId === "usq"), "2026-09-23", "22:40", "hs.nuray", "Hat açıkken de tıkanma alarmı veriyor.", "acik", "orta"),
-    WO("İE-0414", dev(d => d.kind === "port" && d.unitId === "cer" && d.battery < 20), "2026-09-23", "08:15", "hs.gulnar", "Batarya yarım nöbet dayanmıyor.", "atandi", "düşük", { assignee:"Yetkili servis" }),
-    WO("İE-0412", picSyr || devices[1], "2026-09-21", "10:30", "hs.nuray", "Dokunmatik ekran yanıt vermiyor.", "atandi", "orta", { assignee:"bio.orxan" }),
-    WO("İE-0409", kvcVent || devices[2], "2026-09-19", "03:20", "hs.sevda", "Hortum kaçak alarmı sık tekrarlıyor.", "kapandi", "yüksek", { assignee:"bio.orxan", closedAt:"2026-09-20", closeNote:"Ekshalasyon valfi değiştirildi; kaçak testi uygun. Periyodik bakıma alındı." }),
-    WO("İE-0405", dev(d => d.kind === "defib" && d.unitId === "aci"), "2026-09-15", "11:05", "rrt.emil", "Günlük test sırasında şarj süresi uzun.", "kapandi", "orta", { assignee:"bio.orxan", closedAt:"2026-09-16", closeNote:"Batarya yenilendi; şarj ve enerji testi uygun." }),
+    WO0("İE-0418", re07 || devices[0], "2026-09-24", "21:36", "sistem", "Monitör merkeze veri göndermiyor (6 dk). Ağ kablosu ya da cihaz ağ kartı kontrol edilmeli.", "acik", "yüksek"),
+    WO0("İE-0417", dev(d => d.kind === "mon" && d.bedId === "rea-2"), "2026-09-24", "20:15", "hs.sevda", "SpO₂ probu bağlantısı gevşek, sinyal ara ara kesiliyor.", "acik", "yüksek"),
+    WO0("İE-0416", dev(d => d.kind === "asp" && d.unitId === "dax" && d.status === "ariza"), "2026-09-24", "14:02", "hs.gulnar", "Duvar aspiratörü vakum oluşturmuyor. Yatak kullanıma kapatıldı.", "atandi", "yüksek", { assignee:"bio.orxan" }),
+    WO0("İE-0415", dev(d => d.kind === "inf" && d.unitId === "usq"), "2026-09-23", "22:40", "hs.nuray", "Hat açıkken de tıkanma alarmı veriyor.", "acik", "orta"),
+    WO0("İE-0414", dev(d => d.kind === "port" && d.unitId === "cer" && d.battery < 20), "2026-09-23", "08:15", "hs.gulnar", "Batarya yarım nöbet dayanmıyor.", "atandi", "düşük", { assignee:"Yetkili servis" }),
+    WO0("İE-0412", picSyr || devices[1], "2026-09-21", "10:30", "hs.nuray", "Dokunmatik ekran yanıt vermiyor.", "atandi", "orta", { assignee:"bio.orxan" }),
+    WO0("İE-0409", kvcVent || devices[2], "2026-09-19", "03:20", "hs.sevda", "Hortum kaçak alarmı sık tekrarlıyor.", "kapandi", "yüksek", { assignee:"bio.orxan", closedAt:"2026-09-20", closeNote:"Ekshalasyon valfi değiştirildi; kaçak testi uygun. Periyodik bakıma alındı." }),
+    WO0("İE-0405", dev(d => d.kind === "defib" && d.unitId === "aci"), "2026-09-15", "11:05", "rrt.emil", "Günlük test sırasında şarj süresi uzun.", "kapandi", "orta", { assignee:"bio.orxan", closedAt:"2026-09-16", closeNote:"Batarya yenilendi; şarj ve enerji testi uygun." }),
   ];
   let woSeq = 419;
 
@@ -576,7 +581,7 @@
 
   /* ================= sayfa ================= */
   const TABS = [["ozet", "dev_tab_ozet"], ["envanter", "dev_tab_envanter"], ["takvim", "dev_tab_takvim"], ["ariza", "dev_tab_ariza"], ["odalar", "dev_tab_odalar"]];
-  const DV = { tab:"ozet", f:{ unit:"", kind:"", status:"", due:"", q:"", special:"" }, month:8, day:TODAY, calView:"takvim", wo:"aktif", roomUnit:"rea" };
+  const DV = { tab:"ozet", f:{ unit:"", kind:"", status:"", due:"", q:"", special:"" }, month:M0, day:TODAY, calView:"takvim", wo:"aktif", roomUnit:"rea" };
   let redraw = () => {}, redrawInv = () => {};
 
   H.register("devices", { title:() => H.t("m_devices"), perm:"devices", render(root, params) {
@@ -608,7 +613,7 @@
       if ((el = q("[data-reopen]"))) { const w = H.data.workOrders.find(x => x.id === el.dataset.reopen); w.state = "acik"; w.closedAt = null; H.log("arıza kaydı yeniden açıldı", w.id); return draw(); }
       if ((el = q("[data-wof] button"))) { DV.wo = el.dataset.v; return draw(); }
       if ((el = q("[data-calv] button"))) { DV.calView = el.dataset.v; return draw(); }
-      if ((el = q("[data-mon]"))) { DV.month = Math.max(8, Math.min(9, DV.month + Number(el.dataset.mon))); DV.day = DV.month === 8 ? TODAY : null; return draw(); }
+      if ((el = q("[data-mon]"))) { DV.month = Math.max(M0, Math.min(M0 + 1, DV.month + Number(el.dataset.mon))); DV.day = DV.month === M0 ? TODAY : null; return draw(); }
       if ((el = q("[data-day]"))) { DV.day = el.dataset.day; return draw(); }
       if ((el = q("[data-dev]"))) return openDevice(el.dataset.dev);
     });
@@ -715,7 +720,7 @@
   const evSort = (a, b) => ["late", "plan", "done"].indexOf(a.state) - ["late", "plan", "done"].indexOf(b.state) || a.d.id.localeCompare(b.d.id);
 
   function tabTakvim(body) {
-    const y = 2026, m = DV.month, map = monthEvents(y, m), first = new Date(y, m, 1), lead = (first.getDay() + 6) % 7, nd = new Date(y, m + 1, 0).getDate();
+    const y = Y0 + Math.floor(DV.month / 12), m = DV.month % 12, map = monthEvents(y, m), first = new Date(y, m, 1), lead = (first.getDay() + 6) % 7, nd = new Date(y, m + 1, 0).getDate();
     const cnt = (list, s) => list.filter(e => e.state === s).length;
     const late = lateItems();
     let grid = "";

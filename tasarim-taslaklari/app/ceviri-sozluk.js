@@ -10813,4 +10813,16 @@ Object.assign(window.HMC_SOZLUK, {
   "Damar yolu yok": { AZ:"Venoz yol yoxdur", RU:"Нет венозного доступа", EN:"No IV access" },
   "Planlanan": { AZ:"Planlaşdırılan", RU:"Запланировано", EN:"Planned" },
   "Planlanan saat": { AZ:"Planlaşdırılan vaxt", RU:"Запланированное время", EN:"Planned time" },
+  // 30.09c · gerçek saat: nöbetin başka anlarında görünür hâle gelen kalıplar (21:42'de başka biçimde çiziliyordu)
+  "Kötüleşme kriteri karşılanmıyor · son hesaplama {#}": { AZ:"Pisləşmə meyarları qarşılanmır · son hesablama {#}", RU:"Критерии ухудшения не выполнены · последний расчёт {#}", EN:"Deterioration criteria not met · last calculated {#}" },
+  "Prototip saat testi: adrese ?saat=SS:DD (isteğe bağlı &gun=YYYY-AA-GG) eklenirse saat o anda durur ve bütün örnek kayıtlar o ana göre kurulur. Parametresiz adres gerçek saati gösterir.": { AZ:"Prototip saat testi: ünvana ?saat=SS:DD (istəyə görə &gun=İİİİ-AA-GG) əlavə edilərsə, saat həmin anda dayanır və bütün nümunə qeydlər həmin ana görə qurulur. Parametrsiz ünvan real saatı göstərir.", RU:"Проверка времени в прототипе: если добавить к адресу ?saat=ЧЧ:ММ (и при желании &gun=ГГГГ-ММ-ДД), часы останавливаются на этом моменте, и все демонстрационные записи строятся относительно него. Адрес без параметров показывает реальное время.", EN:"Prototype clock test: adding ?saat=HH:MM (optionally &gun=YYYY-MM-DD) to the address freezes the clock at that moment and builds all sample records around it. Without the parameter the real time is shown." },
+  "geciken iş yok": { AZ:"gecikən iş yoxdur", RU:"просроченных задач нет", EN:"no overdue tasks" },
+  "Vital zamanı · {#}": { AZ:"Vital vaxtı · {#}", RU:"Время витальных · {#}", EN:"Vitals due · {#}" },
+  "Vital gecikti · {#}": { AZ:"Vital gecikdi · {#}", RU:"Витальные просрочены · {#}", EN:"Vitals overdue · {#}" },
+  "geciken iş yok · düşme riski yüksek": { AZ:"gecikən iş yoxdur · yıxılma riski yüksəkdir", RU:"просроченных задач нет · высокий риск падения", EN:"no overdue tasks · high fall risk" },
+  "geciken iş yok · bası yarası riski yüksek": { AZ:"gecikən iş yoxdur · yataq yarası riski yüksəkdir", RU:"просроченных задач нет · высокий риск пролежней", EN:"no overdue tasks · high pressure injury risk" },
+  "geciken iş yok · düşme riski yüksek · bası yarası riski yüksek": { AZ:"gecikən iş yoxdur · yıxılma riski yüksəkdir · yataq yarası riski yüksəkdir", RU:"просроченных задач нет · высокий риск падения · высокий риск пролежней", EN:"no overdue tasks · high fall risk · high pressure injury risk" },
+  "{#} geciken iş var · düşme riski yüksek": { AZ:"{#} gecikən iş var · yıxılma riski yüksəkdir", RU:"Просроченных задач: {#} · высокий риск падения", EN:"{#} overdue task(s) · high fall risk" },
+  "{#} geciken iş var · bası yarası riski yüksek": { AZ:"{#} gecikən iş var · yataq yarası riski yüksəkdir", RU:"Просроченных задач: {#} · высокий риск пролежней", EN:"{#} overdue task(s) · high pressure injury risk" },
+  "{#} geciken iş var · düşme riski yüksek · bası yarası riski yüksek": { AZ:"{#} gecikən iş var · yıxılma riski yüksəkdir · yataq yarası riski yüksəkdir", RU:"Просроченных задач: {#} · высокий риск падения · высокий риск пролежней", EN:"{#} overdue task(s) · high fall risk · high pressure injury risk" },
 });

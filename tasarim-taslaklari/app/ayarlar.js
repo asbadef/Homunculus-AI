@@ -53,7 +53,7 @@
         ${row("Ekran kilidi", `Hareketsiz kalınca ekran kilitlenir. Hastane üst sınırı: ${max} dk.`, seg("lockMin", [5, 10, max].filter((v, i, a) => v <= max && a.indexOf(v) === i).map(v => [String(v), v + " dk"]).concat([["0", "Hep açık"]]), cur === 0 ? "0" : String(Math.min(cur, max))))}
         <div class="st-card"><h4>${I("tablet")} Açık oturumlar</h4>
           <div class="st-sess"><div><b>Bu cihaz</b><small>Hemşire istasyonu · tarayıcı · şimdi</small></div><span class="pill">${I("ok")}Bu oturum</span></div>
-          <div class="st-sess"><div><b>Tablet · yatak başı</b><small>Son etkinlik 20:14</small></div><button class="btn sm g" data-kill>Oturumu kapat</button></div>
+          <div class="st-sess"><div><b>Tablet · yatak başı</b><small>Son etkinlik ${H.at("20:14")}</small></div><button class="btn sm g" data-kill>Oturumu kapat</button></div>
           <div style="margin-top:10px"><button class="btn sm" data-killall>Diğer bütün oturumları kapat</button></div></div>`;
     },
     notif(u) {

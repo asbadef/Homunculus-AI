@@ -34,7 +34,11 @@ Sunucu: `http://localhost:5199/app/` (python http.server). Harici kütüphane YO
 - `H.register(key, { title:()=>'…', perm:'…', render(root, params) })` → sayfa kaydı. `root` içerik alanıdır (padding'li). `render` HTML basar ve olay dinleyicilerini `root`a bağlar.
 - `H.go(page, params)` → sayfaya git (ör. `H.go('patient', {pid:'p1', tab:'ozet'})`)
 - `H.modal({ title, body, wide, actions, onMount(modalEl), onClose })`, `H.closeModal()`
-- `H.toast(msg, ''|'w'|'e')`, `H.log(action, detail)` (denetim kaydı), `H.esc(str)`, `H.now()` → "21:42"
+- `H.toast(msg, ''|'w'|'e')`, `H.log(action, detail)` (denetim kaydı), `H.esc(str)`, `H.now()` → gerçek saat "HH:MM" (30.09c; `?saat=HH:MM&gun=YYYY-MM-DD` ile donar)
+- Saat ve tarih (30.09c, core.js "TEK çapa"): `H.DAY0` nöbet günü (08:00'den önce dün), `H.nowT()` nöbet saati (8…31.99), `H.clockDate()`, `H.calOff()` takvimde bugün.
+  Veri "24.09 21:42" varsayılarak yazıldı; **olay** saatleri şu yardımcılarla gerçek saate kaydırılır: `H.at("21:30")` (gün değişince "29.09 · 21:30"),
+  `H.atHM`, `H.atFull`, `H.ts("23.09 21:38" | "2026-09-23" …)`, `H.tsPair(tarih, saat)`, `H.recShift(nöbetTarihi, saat)`, `H.tShift(t)`.
+  **Takvim** saatleri (tur, ilaç, 08:00 nöbet değişimi, 02:00 yedek…) kaydırılmaz; durumu `H.taskState(t)` verir. Yeni yazılan kod sabit "21:42" varsaymaz.
 - `H.t(key)`, `H.LANGS`, `H.flag('AZ'|'TR'|'RU'|'EN')`
 
 ## CSS sınıfları (app.css)

@@ -5,12 +5,15 @@
 (function () {
   const H = window.H;
   const esc = (s) => H.esc(s);
-  const NOW = 21.7;                         // H.now() = 21:42
-  const TODAY = H.DAY0.getDate();           // demo günü core.js'ten (24.09.2026)
+  /* 30.09c · gerçek saat (core.js "saat ve tarih: TEK çapa"). NOW = yükleme anının nöbet saati (8 = 08:00 … 24 = gece yarısı … 31.99).
+   * Veri "şimdi = 24.09 21:42" varsayılarak yazıldı: yazılmış OLAY saatleri A/A_DAY'e göre görelidir (t = olay − A), bu yüzden
+   * gerçek saatte de "3 dk önce" 3 dk önce kalır. Takvim saatleri (06:10 sabah laboratuvarı, tur ve ilaç saatleri) NOW'a göredir. */
+  const A = 21.7, A_DAY = 24;               // verinin yazıldığı an: 24.09 21:42
+  const NOW = H.NOW_T0;
   const r1 = (v, d = 0) => +(+v).toFixed(d);
   const clk = (h) => { h = ((h % 24) + 24) % 24; let a = Math.floor(h), m = Math.round((h - a) * 60); if (m === 60) { a = (a + 1) % 24; m = 0; } return `${String(a).padStart(2, "0")}:${String(m).padStart(2, "0")}`; };
-  const dayOf = (t) => TODAY + Math.floor((NOW + t) / 24);          // t: şimdiye göre saat
-  const stamp = (t) => `${String(dayOf(t)).padStart(2, "0")}.09 ${clk(NOW + t)}`;
+  const dayOf = (t) => Math.floor((NOW + t) / 24);                  // t: şimdiye göre saat → DAY0'a göre takvim günü farkı
+  const stamp = (t) => `${H.dm(dayOf(t))} ${clk(NOW + t)}`;
   const seeded = (s) => () => (s = (s * 16807) % 2147483647) / 2147483647;
   const seedOf = (str) => { let h = 7; for (const c of str) h = (h * 31 + c.charCodeAt(0)) % 2147483000; return h || 11; };
   const unitOf = (p) => H.unit(H.bed(p.bed).unitId);
@@ -289,9 +292,9 @@
     const cur = pv(p)[def.k], ref = refFor(p, def), rnd = seeded(seedOf(key));
     const days = Math.min(7, Math.max(1, p.admitDays)), ts = [];
     for (let dd = -(days - 1); dd <= 0; dd++) ts.push(dd * 24 + 6.17 - NOW);
-    if (ts.length < 2) ts.push(14.17 - NOW);                       // ilk gün: 06:10 + 14:10
-    if (def.k === "lac" && (p.risk === "crit" || p.risk === "high")) ts.push(15.5 - NOW, 21.5 - NOW);
-    if (p.id === "p3" && def.k === "k") ts.push(21.17 - NOW);
+    if (ts.length < 2) ts.push(14.17 - A);                         // ilk gün: 06:10 (takvim) + 14:10 (olay, kaydırılır)
+    if (def.k === "lac" && (p.risk === "crit" || p.risk === "high")) ts.push(15.5 - A, 21.5 - A);
+    if (p.id === "p3" && def.k === "k") ts.push(21.17 - A);
     ts.sort((a, b) => a - b);
     const start = cur > ref[1] ? Math.max(ref[1] * 0.9, cur * 0.55) : cur < ref[0] ? Math.min(ref[0] * 1.05, cur * 1.25) : cur * (1 + (rnd() - .5) * .08);
     const n = ts.length;
@@ -300,9 +303,9 @@
     return (labCache[key] = out);
   };
   // yeni (görülmemiş) sonuç: bugün 18:00'den sonra gelenler; önceden görülenler
-  const PRESEEN = { p3:{ k:{ by:"hs.sevda", at:"21:30" } } };
+  const PRESEEN = { p3:{ k:{ by:"hs.sevda", at:H.at("21:30") } } };
   const seenOf = (p, def) => { const st = S(p.id); if (st.seen[def.k]) return st.seen[def.k]; if (PRESEEN[p.id] && PRESEEN[p.id][def.k]) { const s = PRESEEN[p.id][def.k]; return { by:H.userBy(s.by).name, at:s.at }; }
-    const h = labHist(p, def), last = h[h.length - 1]; if (NOW + last.t >= 18) return null; return { by:H.userBy(p.attending).name, at:clk(NOW + last.t + 1.1) }; };
+    const h = labHist(p, def), last = h[h.length - 1]; if (A + last.t >= 18) return null; return { by:H.userBy(p.attending).name, at:clk(NOW + last.t + 1.1) }; };
   const unseenLabs = (p) => labDefs(p).filter(d => !seenOf(p, d));
 
   /* ================= skor tabloları (standart sürümler) ================= */
@@ -336,23 +339,23 @@
   const medsFor = (p) => {
     const L = [], icuA = isIcuAdult(p);
     const abx = H.data.tasks.find(t => t.pid === p.id && t.kind === "med" && !t.med);
-    if (abx) L.push({ id:"abx", name:abx.label, freq:"8 saatte bir · 14:00 · 22:00 · 06:00", kind:"task", start:`${TODAY - p.antibioticDay + 1}.09` });
-    if (p.risk === "crit" && p.ageGroup === "adult") L.push({ id:"ne", name:"Noradrenalin 4 mg / 50 mL", freq:"sürekli infüzyon · 0.08 µg/kg/dk (pompa)", kind:"inf", since:"20:25", src:"Pompa · canlı", start:`${TODAY}.09` });
+    if (abx) L.push({ id:"abx", name:abx.label, freq:"8 saatte bir · 14:00 · 22:00 · 06:00", kind:"task", start:H.dm(1 - p.antibioticDay) });
+    if (p.risk === "crit" && p.ageGroup === "adult") L.push({ id:"ne", name:"Noradrenalin 4 mg / 50 mL", freq:"sürekli infüzyon · 0.08 µg/kg/dk (pompa)", kind:"inf", since:H.at("20:25"), src:"Pompa · canlı", start:H.dm(dayOf(20.42 - A)) });
     if (icuA) L.push({ id:"ppi", name:"Pantoprazol 40 mg IV", freq:"24 saatte bir", times:[30] });
-    if (p.ageGroup === "adult" && p.v.temp >= 38) L.push({ id:"pcm", name:"Parasetamol 1 g IV", freq:"gerekirse · en az 6 saat ara", kind:"prn", last:"18:00" });
-    if (p.chronic.includes("Diabetes mellitus")) L.push({ id:"ins", name:"Hızlı etkili insülin SC", freq:"kan şekerine göre · order'daki skala", kind:"prn", last:"17:05" });
+    if (p.ageGroup === "adult" && p.v.temp >= 38) L.push({ id:"pcm", name:"Parasetamol 1 g IV", freq:"gerekirse · en az 6 saat ara", kind:"prn", last:H.at("18:00") });
+    if (p.chronic.includes("Diabetes mellitus")) L.push({ id:"ins", name:"Hızlı etkili insülin SC", freq:"kan şekerine göre · order'daki skala", kind:"prn", last:H.at("17:05") });
     if (p.chronic.includes("KOAH")) L.push({ id:"neb", name:"Salbutamol + ipratropium nebül", freq:"6 saatte bir", times:[12, 18, 24, 30] });
     if (p.icd.startsWith("I50")) L.push({ id:"fur", name:"Furosemid 40 mg IV", freq:"12 saatte bir", times:[10, 22] });
     if (p.icd.startsWith("I21")) L.push({ id:"asa", name:"Asetilsalisilik asit 100 mg PO", freq:"24 saatte bir", times:[10] }, { id:"enx", name:"Enoksaparin 80 mg SC", freq:"12 saatte bir", times:[10, 22] });
     if (p.id === "p10") L.push({ id:"pcm8", name:"Parasetamol 1 g IV", freq:"8 saatte bir", times:[14, 22, 30] });
-    if (p.id === "p11") L.push({ id:"salb", name:"Salbutamol nebül", freq:"4 saatte bir", times:[10, 14, 18, 22, 26, 30] }, { id:"pcmc", name:"Parasetamol şurup PO", freq:"gerekirse · order'daki doz", kind:"prn", last:"16:20" });
+    if (p.id === "p11") L.push({ id:"salb", name:"Salbutamol nebül", freq:"4 saatte bir", times:[10, 14, 18, 22, 26, 30] }, { id:"pcmc", name:"Parasetamol şurup PO", freq:"gerekirse · order'daki doz", kind:"prn", last:H.at("16:20") });
     if (p.id === "p12") L.push({ id:"iv", name:"%0.9 NaCl IV", freq:"sürekli · order'daki hız", kind:"inf", since:"yatıştan beri", src:"hastane kaydı" });
     if (p.id === "p13") L.push({ id:"caf", name:"Kafein sitrat IV", freq:"24 saatte bir", times:[10] }, { id:"tpn", name:"Parenteral beslenme", freq:"sürekli · eczane hazırlığı", kind:"inf", since:"08:00", src:"hastane kaydı" });
     const prn = S(p.id).prnLast || {};
-    return L.map(m => Object.assign({ kind:"sched", src:"hastane kaydı", start:`${TODAY - Math.min(p.admitDays, 3) + 1}.09`, by:p.attending }, m, prn[m.id] ? { last:prn[m.id] } : {}));
+    return L.map(m => Object.assign({ kind:"sched", src:"hastane kaydı", start:H.dm(1 - Math.min(p.admitDays, 3)), by:p.attending }, m, prn[m.id] ? { last:prn[m.id] } : {}));
   };
   H.ptMeds = medsFor;   // salt okunur: yazdir.js infüzyon etiketi order'ı buradan okur
-  const stateAt = (t) => t < 21 ? "done" : t < 22 ? "late" : t < 23 ? "due" : "plan";
+  const stateAt = (t) => H.taskState(t);   // 30.09c: ilaç saatleri takvimdir; durum gerçek saate göre
   /* 30.09 · kontrol §4-5: TEK ilaç çizelgesi. Planlı dozlar (nebül, pantoprazol, furosemid…) önceden yalnız bu sayfanın yerel
    * listesindeydi ve Görevlerim'e hiç düşmüyordu. Artık hepsi H.data.tasks'ta ({ kind:"med", med:<order id> }): hasta İlaç/Takip
    * sekmesi ve Görevlerim aynı nesneyi okur; uygulama penceresi de tek (nursing.js H.medAct). */
@@ -376,10 +379,10 @@
     const uo = ({ p1:0.35, p3:0.3, p7:1.6, p13:2.2 }[p.id]) || (neo ? 3 : p.risk === "crit" ? 0.4 : 0.9);
     const rows = [];
     for (let i = 23; i >= 0; i--) {
-      const hh = Math.floor(NOW) - i; let ins = inBase * (0.8 + rnd() * 0.4), out = uo * kg * (0.7 + rnd() * 0.6);
-      if (p.id === "p1" && (hh === 19 || hh === 20)) ins += 250;               // 500 mL sıvı 19:40
-      if (p.id === "p7" && (hh === 11 || hh === 12)) out += 180;               // diüretik sonrası
-      if (p.id === "p1" && hh >= 18) out *= 0.6;
+      const hh = Math.floor(NOW) - i, ha = Math.floor(A) - i; let ins = inBase * (0.8 + rnd() * 0.4), out = uo * kg * (0.7 + rnd() * 0.6);   // ha: yazıldığı saat (olaylar kayar)
+      if (p.id === "p1" && (ha === 19 || ha === 20)) ins += 250;               // 500 mL sıvı 19:40
+      if (p.id === "p7" && (ha === 11 || ha === 12)) out += 180;               // diüretik sonrası
+      if (p.id === "p1" && ha >= 18) out *= 0.6;
       rows.push({ h:((hh % 24) + 24) % 24, i:Math.round(ins), o:Math.round(out) });
     }
     return (ioCache[p.id] = rows);
@@ -390,14 +393,14 @@
     const ev = [];
     H.data.alarms.filter(a => a.pid === p.id).forEach(a => ev.push({ t:-a.ageMin / 60, label:a.txt, kind:"al" }));
     dosesOf(p).filter(d => d.state === "done" && d.given !== false).forEach(d => ev.push({ t:d.t - NOW, label:d.label, kind:"tx" }));
-    if (p.risk === "crit") ev.push({ t:20.42 - NOW, label:"Noradrenalin başlandı", kind:"tx" }, { t:19.67 - NOW, label:"Sıvı 500 mL", kind:"tx" }, { t:-3.1, label:"NEWS2 10", kind:"al" });
+    if (p.risk === "crit") ev.push({ t:20.42 - A, label:"Noradrenalin başlandı", kind:"tx" }, { t:19.67 - A, label:"Sıvı 500 mL", kind:"tx" }, { t:-3.1, label:"NEWS2 10", kind:"al" });
     if (p.risk === "high") ev.push({ t:-5.4, label:"SpO₂ düşük · kısa epizod", kind:"al" });
     return ev;
   };
   const xTicksFor = (hours) => {
     const st = hours <= 6 ? 1 : hours <= 24 ? 4 : 12, out = [];
     for (let k = Math.ceil((NOW - hours) / st) * st; k <= NOW; k += st) { const t = k - NOW; if (t < -hours) continue;
-      out.push([t, hours > 24 && ((k % 24) + 24) % 24 === 0 ? `${String(dayOf(t)).padStart(2, "0")}.09` : clk(k)]); }
+      out.push([t, hours > 24 && ((k % 24) + 24) % 24 === 0 ? H.dm(dayOf(t)) : clk(k)]); }
     return out;
   };
   const stepFor = (p, hours) => p.monitored ? (hours > 24 ? 30 : hours > 6 ? 15 : 5) : 240;
@@ -481,7 +484,7 @@
       ${H.sound ? H.sound.toolsHtml(p.id) : ""}</div>
       <div class="nums">
         <div class="nu"><small style="color:var(--v-hr)"><span>HR</span><span>/dk</span></small><b style="color:var(--v-hr)">${v.hr}</b></div>
-        <div class="nu"><small style="color:var(--v-map)"><span>${art ? "ART" : "NIBP"}</span><span>${art ? "mmHg" : "21:30"}</span></small><b style="color:var(--v-map)">${v.sbp}<em>/${v.dbp}</em> <em>(${v.map})</em></b></div>
+        <div class="nu"><small style="color:var(--v-map)"><span>${art ? "ART" : "NIBP"}</span><span>${art ? "mmHg" : H.atHM("21:30")}</span></small><b style="color:var(--v-map)">${v.sbp}<em>/${v.dbp}</em> <em>(${v.map})</em></b></div>
         <div class="nu"><small style="color:var(--v-spo)"><span>SpO₂</span><span>%</span></small><b style="color:var(--v-spo)">${v.spo2}</b></div>
         <div class="nu"><small style="color:var(--v-rr)"><span>RESP</span><span>/dk</span></small><b style="color:var(--v-rr)">${v.rr}</b></div>
         <div class="nu" style="border:0"><small style="color:var(--v-t)"><span>ISI</span><span>elle · ${lastTxt(p.id, "vitals")}</span></small><b style="color:var(--v-t)">${v.temp.toFixed(1)}</b></div>
@@ -493,7 +496,7 @@
    * Her vital: son değer · bir öncekine göre fark · son 24 saatin mini eğrisi · alarm eşiği dışıysa kırmızı çerçeve. */
   const spotHtml = (p) => {
     const v = p.v, nextV = H.data.tasks.filter(t => t.pid === p.id && t.form === "vitals" && t.state !== "done").sort((a, b) => a.t - b.t)[0];
-    const LE = H.lastEntry ? H.lastEntry(p.id, "vitals") : null, LAST = LE && LE.t != null ? LE.t : 20, NOWH = 21 + 42 / 60, nextH = nextV ? nextV.t : LAST + 4, pct = Math.max(0, Math.min(100, (NOWH - LAST) / Math.max(.1, nextH - LAST) * 100));
+    const LE = H.lastEntry ? H.lastEntry(p.id, "vitals") : null, LAST = LE && LE.t != null ? LE.t : 20, NOWH = H.nowT(), nextH = nextV ? nextV.t : LAST + 4, pct = Math.max(0, Math.min(100, (NOWH - LAST) / Math.max(.1, nextH - LAST) * 100));
     const late = nextV && nextV.t < NOWH;
     const cell = (k, label, val, unit, extra = "") => {
       const V = H.VITAL[k], pts = H.series(p.id, k, 24, 240).map(q => q.v), prev = pts[pts.length - 2], now = pts[pts.length - 1];
@@ -575,7 +578,7 @@
         <ul>${reasonsOf(p).map(r => `<li>${r}</li>`).join("")}</ul>
         <div class="src">Dayanak: hastanenin onayladığı erken uyarı eşikleri${p.ageGroup === "adult" ? " · NEWS2 (RCP 2017)" : ""}${p.risk === "crit" && p.ageGroup === "adult" ? " · Sepsis-3 (2016)" : ""}</div>
         ${st.reco ? `<div class="done">${H.icon("ok")} ${st.reco}</div>` : `<div class="pt-row"><button class="btn p" data-act="reco-ok">Değerlendirdim</button><button class="btn d" data-act="reco-esc">Eskale et</button></div>`}</div>`;
-    } else reco = `<div class="note i">Kötüleşme kriteri karşılanmıyor · son hesaplama 21:40</div>`;
+    } else reco = `<div class="note i">Kötüleşme kriteri karşılanmıyor · son hesaplama ${H.at("21:40")}</div>`;
     const score = isIcuAdult(p)
       ? `<div class="box" style="margin-top:12px"><h5>Anlık SOFA <span class="mute" style="text-transform:none;letter-spacing:0">son değerlerden</span><span class="r"><a href="#" data-tab="skor">24 saatlik formu aç →</a></span></h5><div class="pt-row" style="align-items:baseline"><b style="font:700 30px 'Space Grotesk'">${p.sofa}</b><span class="mute" style="font-size:12.5px">günlük form ${st.sofaSigned ? `<b style="color:var(--ok)">onaylandı ✓</b>` : `<b style="color:var(--attInk)">onay bekliyor</b>`}</span></div></div>`
       : `<div class="box" style="margin-top:12px"><h5>Skor <span class="r"><a href="#" data-tab="skor">Skorlar →</a></span></h5><b style="font:700 24px 'Space Grotesk'">${esc(H.scoreLabel(p))}</b><div class="mute" style="font-size:12.5px">${esc(u.rule)} · ${esc(u.tr)}</div></div>`;
@@ -625,7 +628,7 @@
       ["Solunum", `PaO₂/FiO₂ ${L.pf}${sup ? " · solunum desteği" : ""}`, "Kan gazı · 07:40", SOFA.resp(L.pf, sup)],
       ["Pıhtılaşma", `Trombosit ${L.plt} bin`, "Laboratuvar · 06:10", SOFA.coag(L.plt)],
       ["Karaciğer", `Bilirubin ${L.bili} mg/dL`, "Laboratuvar · 06:10", SOFA.liver(L.bili)],
-      ["Dolaşım", ne ? `Noradrenalin ${ne} µg/kg/dk` : `MAP ${p.v.map} mmHg`, ne ? "Pompa · canlı" : "Monitör · 21:37", SOFA.cardio(p.v.map, ne)],
+      ["Dolaşım", ne ? `Noradrenalin ${ne} µg/kg/dk` : `MAP ${p.v.map} mmHg`, ne ? "Pompa · canlı" : `Monitör · ${H.at("21:37")}`, SOFA.cardio(p.v.map, ne)],
       ["Böbrek", `Kreatinin ${L.cre} mg/dL`, "Laboratuvar · 06:10", SOFA.renal(L.cre)],
     ];
     const base = org.reduce((a, o) => a + o[3], 0), g = SOFA_GCS.find(x => x[0] === st.sofaGcs), tot = g ? base + g[1] : null;
@@ -643,8 +646,8 @@
   function apacheCard(p) {
     const st = S(p.id), L = pv(p), v = p.v, arf = p.icd.startsWith("N17");
     const rows = [
-      ["Vücut ısısı", `${v.temp.toFixed(1)} °C`, "monitör · 21:40", AP.temp(v.temp)],
-      ["Ortalama kan basıncı", `${v.map} mmHg`, "monitör · 21:37", AP.map(v.map)],
+      ["Vücut ısısı", `${v.temp.toFixed(1)} °C`, `monitör · ${H.at("21:40")}`, AP.temp(v.temp)],
+      ["Ortalama kan basıncı", `${v.map} mmHg`, `monitör · ${H.at("21:37")}`, AP.map(v.map)],
       ["Kalp hızı", `${v.hr} /dk`, "monitör", AP.hr(v.hr)],
       ["Solunum hızı", `${v.rr} /dk`, "monitör", AP.rr(v.rr)],
       ["Oksijenlenme", `PaO₂ ${L.pao2} mmHg (FiO₂ < 0.5)`, "kan gazı · 07:40", AP.pao2(L.pao2)],
@@ -671,7 +674,7 @@
     }
     const gcsDay1 = { p1:11, p2:14, p3:15, p5:15 }[p.id] ?? 15, tot = base + (15 - gcsDay1);
     return `<div class="box" style="margin-top:12px"><h5>APACHE II <span class="r mute">salt okunur</span></h5>
-      <div class="pt-row" style="align-items:baseline"><b style="font:700 26px 'Space Grotesk'">${tot}</b><span class="mute" style="font-size:12.5px">1. gün hesaplandı (${TODAY - p.admitDays + 1}.09) · bir kez hesaplanır · ${esc(H.userBy(p.attending).name)} onayladı</span></div>
+      <div class="pt-row" style="align-items:baseline"><b style="font:700 26px 'Space Grotesk'">${tot}</b><span class="mute" style="font-size:12.5px">1. gün hesaplandı (${H.dm(1 - p.admitDays)}) · bir kez hesaplanır · ${esc(H.userBy(p.attending).name)} onayladı</span></div>
       <details style="margin-top:8px"><summary class="mute" style="cursor:pointer;font-size:12.5px">Maddeleri göster</summary>${rowHtml}<div class="pt-ap"><span>Glasgow Koma Skoru</span><span class="v">${gcsDay1}</span><span class="s">hekim</span><span class="p">${15 - gcsDay1}</span></div><div class="pt-ap"><span>Kronik sağlık durumu</span><span class="v">Yok</span><span class="s">hekim</span><span class="p">0</span></div></details>${note}</div>`;
   }
   const news2Pts = (p) => { const now = p.news2 ?? 0, st = Math.max(0, now - ({ crit:6, high:3, mid:1 }[p.risk] || 0)), rnd = seeded(seedOf(p.id + "n2"));
@@ -690,7 +693,7 @@
     H.lineChart(svg, { series:[{ pts:news2Pts(p), color:H.cssVar("--pri"), width:2, dots:true }], lo:0, hi:20, bands:[[7, 20, H.cssVar("--band-al")], [5, 7, H.cssVar("--att")]], ticks:[0, 5, 7, 20], hours:24, height:140, xLabels:true, xTicks:xTicksFor(24) }); };
   function tabSkor(p) {
     const u = unitOf(p);
-    if (p.ageGroup === "neonate") return `<div class="g2"><div class="box"><h5>nSOFA · yenidoğan organ yetmezliği</h5><div class="pt-row"><div class="scoreBadge"><b>${p.nsofa}</b><small>nSOFA</small></div><span class="mute" style="font-size:12.5px">motor hesapladı · 21:40</span></div>
+    if (p.ageGroup === "neonate") return `<div class="g2"><div class="box"><h5>nSOFA · yenidoğan organ yetmezliği</h5><div class="pt-row"><div class="scoreBadge"><b>${p.nsofa}</b><small>nSOFA</small></div><span class="mute" style="font-size:12.5px">motor hesapladı · ${H.at("21:40")}</span></div>
         ${H.adminNote("Puan tablosu arşive alınacak · madde ayrıntısı o zaman gösterilecek. Hastanenin onayı gerekir.", "div")}</div>
       <div class="box"><h5>SNAPPE II · bilgi</h5><div class="kv"><span>Doğum ağırlığı</span><b>${p.birthWeight} g</b></div><div class="kv"><span>Gebelik haftası</span><b>${p.gestWeeks} hf</b></div><div class="kv"><span>Yaş</span><b>${p.ageDays} gün</b></div>
         <div class="mute" style="font-size:12.5px;margin-top:8px">SNAPPE II, yatışın ilk 12 saatinin en kötü değerlerinden bir kez hesaplanır.</div><div class="note" style="margin-top:8px">Puan tablosu arşive alınacak.</div></div></div>`;
@@ -745,7 +748,7 @@
           const bed = H.bed(p.bed).no;
           if (b.dataset.m === "yes") { d.state = "done"; d.given = true; d.doneAt = H.now(); d.by = me(); H.log("İlaç uygulandı", `${bed} · ${d.label} · ${clk(d.t)}`); H.toast("Uygulandı olarak kaydedildi · " + H.now()); }
           else if (b.dataset.m === "no") { if (!reason) { H.toast("Uygulanmadı için neden seçin", "w"); return; } d.state = "done"; d.given = false; d.reason = reason; d.doneAt = H.now(); d.by = me(); H.log("İlaç uygulanmadı", `${bed} · ${d.label} · ${reason}`); H.toast("Uygulanmadı · " + reason, "w"); }
-          else { d.state = "plan"; d.deferred = clk(NOW + 0.5); H.log("İlaç ertelendi", `${bed} · ${d.label} → ${d.deferred}`); H.toast("30 dk ertelendi · " + d.deferred, "w"); }
+          else { d.state = "plan"; d.deferred = clk(H.nowT() + 0.5); H.log("İlaç ertelendi", `${bed} · ${d.label} → ${d.deferred}`); H.toast("30 dk ertelendi · " + d.deferred, "w"); }
           H.closeModal(); onDone && onDone(); }); } });
   }
   function taskClick(p, x, refresh) {
@@ -825,7 +828,7 @@
 
   /* ---------- Sonuçlar ---------- */
   const RAD = {
-    p1:[{ n:"Akciğer grafisi (yatak başı AP)", st:3, t:"18:50", rep:"Sağ alt zonda konsolidasyonla uyumlu opasite. Sağ sinüs kapalı; az miktarda plevral sıvı ile uyumlu olabilir. Kalp gölgesi normal sınırlarda. 21.09 grafisine göre sağ alt zonda artış." },
+    p1:[{ n:"Akciğer grafisi (yatak başı AP)", st:3, t:"18:50", rep:"Sağ alt zonda konsolidasyonla uyumlu opasite. Sağ sinüs kapalı; az miktarda plevral sıvı ile uyumlu olabilir. Kalp gölgesi normal sınırlarda. " + H.ts("21.09 10:40").slice(0, 5) + " grafisine göre sağ alt zonda artış." },
         { n:"Toraks BT (kontrastsız)", st:1, t:"19:15", wait:"çekim bekleniyor · sırada 2. hasta" }],
     p2:[{ n:"Akciğer grafisi (PA)", st:4, t:"09:20", rep:"Her iki akciğerde havalanma artışı, diyafram kubbeleri düzleşmiş. Aktif infiltrasyon ayırt edilmedi." }],
     p3:[{ n:"Üriner sistem USG", st:4, t:"11:05", rep:"Her iki böbrek boyutu normal, parankim ekojenitesi grade 1 artmış. Hidronefroz saptanmadı." }],
@@ -881,7 +884,7 @@
       if (view === "graf") {
         const svg = m.querySelector("[data-lab]"), vals = h.map(q => q.v), lo0 = Math.min(ref[0], ...vals), hi0 = Math.max(ref[1], ...vals), pad = (hi0 - lo0) * .15 || 1;
         const lo = r1(Math.max(0, lo0 - pad), d.d), hi = r1(hi0 + pad, d.d), ro = m.querySelector("[data-ro]");
-        const xt = []; for (let dd = -6; dd <= 0; dd++) xt.push([dd * 24 - NOW + 12, `${TODAY + dd}.09`]);
+        const xt = []; for (let dd = -6; dd <= 0; dd++) xt.push([dd * 24 - NOW + 12, H.dm(dd)]);
         ro.innerHTML = "Noktaların üzerinde gezinin";
         H.lineChart(svg, { series:[{ pts:h, color:fl.crit ? H.cssVar("--crit") : H.cssVar("--pri"), width:2, dots:true }], lo, hi, bands:[[ref[0], ref[1], H.cssVar("--band-n")]], ticks:[lo, ref[0], ref[1], hi], t0:-(6 * 24) - NOW, t1:24 - NOW, height:240, xLabels:true, xTicks:xt,
           onHover:(t) => { if (t == null) { ro.innerHTML = "Noktaların üzerinde gezinin"; return; } const q = nearest(h, t); ro.innerHTML = `<b>${stamp(q.t)}</b> · ${d.n} <b>${q.v}</b> ${d.u} ${flagOf(p, d, q.v).hl}`; } });
@@ -1060,9 +1063,9 @@
   const dayN = (n) => ({ AZ:`${n}-${azSuf(n)} gün`, RU:`${n}-й день`, EN:`day ${n}` })[H.state.lang] || `${n}. gün`;
   const dur = (h) => { const m = Math.max(0, Math.round(h * 60)), d = Math.floor(m / 1440), hh = Math.floor((m % 1440) / 60), mm = m % 60;
     return d ? `${d} ${L("u_d")} ${hh} ${L("u_h")}` : hh ? `${hh} ${L("u_h")} ${mm} ${L("u_m")}` : `${mm} ${L("u_m")}`; };
-  const when = (t) => dayOf(t) === TODAY ? clk(NOW + t) : `${String(dayOf(t)).padStart(2, "0")}.09 ${clk(NOW + t)}`;
+  const when = (t) => dayOf(t) === 0 && NOW + t >= 8 ? clk(NOW + t) : `${H.dm(dayOf(t))} ${clk(NOW + t)}`;   // tarihsiz yalnız nöbet gününün 08:00–23:59'u
   const hOf = (hhmm) => { const [a, b] = String(hhmm).split(":").map(Number); return a + (b || 0) / 60; };
-  const relT = (day, hhmm) => (day - TODAY) * 24 + hOf(hhmm) - NOW;           // tarih + saat → şimdiye göre saat
+  const relT = (day, hhmm) => (day - A_DAY) * 24 + hOf(hhmm) - A;             // YAZILMIŞ tarih (eylül günü) + saat → şimdiye göre saat (30.09c: kayar)
   const isPostop = (p) => /Postoperatif/i.test(p.dx || "") || !!(p.flags && p.flags.postop);
 
   /* ---------- #3 kateter ve cihaz günleri ---------- */
@@ -1141,10 +1144,11 @@
   const radOf = (p) => {
     if (radCache[p.id]) return radCache[p.id];
     const att = H.userBy(p.attending), attN = att ? att.name : "—";
-    const prev = (RADX[p.id] || []).map((r, i) => ({ id:"rx" + i, ex:exOf(r.n), n:r.n, day:r.day, tm:r.tm, rep:r.rep, st:4, pre:[{ by:attN, at:`${String(r.day).padStart(2, "0")}.09 ${addMin(r.tm, 45)}` }] }));
-    const cur = (RAD[p.id] || []).map((r, i) => { const m = /^(\d\d)\.09 (.*)$/.exec(r.t), day = m ? +m[1] : TODAY, tm = m ? m[2] : r.t;
-      return { id:"rad" + i, ex:exOf(r.n), n:r.n, day, tm, rep:r.rep, wait:r.wait, st:r.st, pre:r.st === 4 ? [{ by:attN, at:`${String(day).padStart(2, "0")}.09 ${addMin(tm, 40)}` }] : [] }; });
-    return (radCache[p.id] = prev.concat(cur).map(s => Object.assign(s, { t:relT(s.day, s.tm), notify:{ to:attN, at:`${String(s.day).padStart(2, "0")}.09 ${addMin(s.tm, 2)}` } })).sort((a, b) => a.t - b.t));
+    const prev = (RADX[p.id] || []).map((r, i) => ({ id:"rx" + i, ex:exOf(r.n), n:r.n, day:r.day, tm:r.tm, rep:r.rep, st:4, pre:[{ by:attN, at:stamp(relT(r.day, r.tm) + 0.75) }] }));
+    const cur = (RAD[p.id] || []).map((r, i) => { const m = /^(\d\d)\.09 (.*)$/.exec(r.t), day = m ? +m[1] : A_DAY, tm = m ? m[2] : r.t;
+      return { id:"rad" + i, ex:exOf(r.n), n:r.n, day, tm, rep:r.rep, wait:r.wait, st:r.st, pre:r.st === 4 ? [{ by:attN, at:stamp(relT(day, tm) + 40 / 60) }] : [] }; });
+    // 30.09c · yazılmış gün/saat → göreli t; gösterim için day = DAY0'a göre takvim günü farkı, tm = gerçek saat
+    return (radCache[p.id] = prev.concat(cur).map(s => { const t = relT(s.day, s.tm); return Object.assign(s, { t, day:dayOf(t), tm:clk(NOW + t), notify:{ to:attN, at:stamp(t + 2 / 60) } }); }).sort((a, b) => a.t - b.t));
   };
   const radSeen = (p, s) => { const st = S(p.id), mine = (st.radSeen || {})[s.id] || []; return s.pre.concat(mine); };
   const radUnseen = (p) => radOf(p).filter(s => s.st >= 3 && s.rep && !radSeen(p, s).length);
@@ -1156,7 +1160,7 @@
     const exams = [...new Map(R.map(s => [s.ex, s])).keys()], days = [...new Set(R.map(s => s.day))].sort((a, b) => a - b);
     const cell = (s) => { const un = s.st >= 3 && s.rep && !radSeen(p, s).length, wt = s.st < 3;
       return `<span class="pt-rc${un ? " un" : ""}${wt ? " wt" : ""}${s === sel ? " on" : ""}" data-rsel="${s.id}" title="${esc(s.n)} · ${esc(wt ? L("rad_waitst") : un ? L("rad_unseen") : L("rad_seen"))}">${wt ? H.icon("clock") : H.icon("file") + H.icon("eye")}${esc(s.tm)}${un ? `<em>●</em>` : ""}</span>`; };
-    const grid = `<div class="pt-gw"><table class="pt-grid pt-rg"><thead><tr><th class="lb">${esc(L("rad_exam"))}</th>${days.map(d => `<th>${String(d).padStart(2, "0")}.09</th>`).join("")}</tr></thead><tbody>
+    const grid = `<div class="pt-gw"><table class="pt-grid pt-rg"><thead><tr><th class="lb">${esc(L("rad_exam"))}</th>${days.map(d => `<th>${H.dm(d)}</th>`).join("")}</tr></thead><tbody>
       ${exams.map(ex => { const nm = R.filter(s => s.ex === ex).slice(-1)[0].n.replace(/\s*\(.*\)$/, "");
         return `<tr><td class="lb" title="${esc(nm)}">${esc(nm)}</td>${days.map(d => `<td>${R.filter(s => s.ex === ex && s.day === d).map(cell).join("")}</td>`).join("")}</tr>`; }).join("")}</tbody></table></div>
       <div class="pt-leg"><span><span class="pt-rc" style="cursor:default">${H.icon("file")}${esc(L("rad_rep"))}</span></span><span><span class="pt-rc" style="cursor:default">${H.icon("eye")}${esc(L("rad_img"))}</span></span><span><span class="pt-rc un" style="cursor:default">${esc(L("rad_unseen"))}</span></span><span><span class="pt-rc wt" style="cursor:default">${H.icon("clock")}${esc(L("rad_waitst"))}</span></span><span>${esc(L("rad_hint"))}</span></div>`;
@@ -1165,10 +1169,10 @@
     if (sel) {
       const prev = R.filter(s => s.ex === sel.ex && s.t < sel.t && s.rep).slice(-1)[0], seen = radSeen(p, sel), stp = seen.length ? 4 : sel.st;
       const mineSeen = seen.some(x => x.by === me());
-      det = `<div class="box pt-cb" style="margin-top:12px"><h5>${esc(sel.n)} · ${String(sel.day).padStart(2, "0")}.09 ${esc(sel.tm)} <span class="r">${sel.st < 3 ? `<span class="pill">${esc(sel.wait || L("rad_waitst"))}</span>` : seen.length ? `<span class="pill">${esc(L("rad_seen"))}</span>` : `<span class="tag c">${esc(L("rad_unseen"))}</span>`}</span></h5>
+      det = `<div class="box pt-cb" style="margin-top:12px"><h5>${esc(sel.n)} · ${H.dm(sel.day)} ${esc(sel.tm)} <span class="r">${sel.st < 3 ? `<span class="pill">${esc(sel.wait || L("rad_waitst"))}</span>` : seen.length ? `<span class="pill">${esc(L("rad_seen"))}</span>` : `<span class="tag c">${esc(L("rad_unseen"))}</span>`}</span></h5>
         <div class="pt-tl">${[1, 2, 3, 4].map((x, j) => `<span class="${j < stp ? "done" : j === stp ? "now" : ""}">${esc(L("rad_s" + x))}</span>`).join("")}</div>
-        ${sel.rep ? `<div class="pt-rxc${prev ? "" : " one"}"><div><div class="lb">${esc(L("rad_this"))} · ${String(sel.day).padStart(2, "0")}.09 ${esc(sel.tm)}</div><div class="pt-rep">${esc(sel.rep)}</div></div>
-          ${prev ? `<div><div class="lb">${esc(L("rad_prev"))} · ${String(prev.day).padStart(2, "0")}.09 ${esc(prev.tm)}</div><div class="pt-rep prev">${esc(prev.rep)}</div></div>` : ""}</div>
+        ${sel.rep ? `<div class="pt-rxc${prev ? "" : " one"}"><div><div class="lb">${esc(L("rad_this"))} · ${H.dm(sel.day)} ${esc(sel.tm)}</div><div class="pt-rep">${esc(sel.rep)}</div></div>
+          ${prev ? `<div><div class="lb">${esc(L("rad_prev"))} · ${H.dm(prev.day)} ${esc(prev.tm)}</div><div class="pt-rep prev">${esc(prev.rep)}</div></div>` : ""}</div>
           ${prev ? "" : `<div class="mute" style="font-size:12px">${esc(L("rad_noprev"))}</div>`}
           <div class="mute" style="font-size:11.5px;margin-top:4px">${esc(L("rad_src"))}</div>` : ""}
         <div class="pt-row" style="margin-top:8px">${sel.st >= 3 ? `<a href="#" class="btn sm" data-pacs>${H.icon("link")}${esc(L("rad_pacs"))}</a>` : ""}${sel.rep && !mineSeen ? `<button class="btn p sm" data-radseen="${sel.id}">${H.icon("eye")}${esc(L("rad_iseen"))}</button>` : ""}</div>
@@ -1179,7 +1183,7 @@
 
   /* ---------- #11 ameliyat sonrası ilk 24 saat ---------- */
   // end/arrive: şimdiye göre saat. pain: [t, NRS] (ağrı formu kayıtları). mob: ilk mobilizasyon kaydı.
-  const POSTOP = { p4:{ op:"Kolektomi", end:relT(TODAY, "06:40"), arrive:relT(TODAY, "07:05"), pain:[[relT(TODAY, "07:20"), 5], [relT(TODAY, "11:00"), 4], [relT(TODAY, "15:05"), 3], [relT(TODAY, "18:10"), 3], [relT(TODAY, "21:00"), 2]], mob:{ t:relT(TODAY, "16:25"), what:"sit", by:"hs.sevda" } } };
+  const POSTOP = { p4:{ op:"Kolektomi", end:relT(A_DAY, "06:40"), arrive:relT(A_DAY, "07:05"), pain:[[relT(A_DAY, "07:20"), 5], [relT(A_DAY, "11:00"), 4], [relT(A_DAY, "15:05"), 3], [relT(A_DAY, "18:10"), 3], [relT(A_DAY, "21:00"), 2]], mob:{ t:relT(A_DAY, "16:25"), what:"sit", by:"hs.sevda" } } };
   const poOf = (p) => { if (POSTOP[p.id]) return POSTOP[p.id];
     const rnd = seeded(seedOf(p.id + "po")), end = -(6 + Math.floor(rnd() * 14)) - .25, fp = (p.flags || {}).pain;
     return (POSTOP[p.id] = { op:(p.dx || "").replace(/^Postoperatif takip\s*·\s*/i, ""), end, arrive:end + .4, pain:fp != null ? [[end + 1, Math.min(10, fp + 2)], [end / 2, fp + 1], [-0.7, fp]] : [], mob:null }); };
@@ -1237,8 +1241,8 @@
   };
   function famDialog(p, entry, refresh) {
     if (!canFam()) return;
-    const x = entry ? Object.assign({}, entry, { top:entry.top.slice() }) : { rel:null, how:"face", top:[], nm:"", txt:"", date:"2026-09-24", time:H.now() };
-    if (entry && typeof entry.t === "number") { x.date = `2026-09-${String(dayOf(entry.t)).padStart(2, "0")}`; x.time = clk(NOW + entry.t); }
+    const x = entry ? Object.assign({}, entry, { top:entry.top.slice() }) : { rel:null, how:"face", top:[], nm:"", txt:"", date:H.isoD(H.clockDate()), time:H.now() };
+    if (entry && typeof entry.t === "number") { x.date = H.isoD(H.dateOfT(NOW + entry.t)); x.time = clk(NOW + entry.t); }
     const opts = (name, keys, pre, multi) => `<div class="opts" data-fo="${name}">${keys.map(k => `<i data-v="${k}" class="${(multi ? x[name].includes(k) : x[name] === k) ? "on" : ""}">${esc(L(pre + k))}</i>`).join("")}</div>`;
     H.modal({ title:`${esc(L("fm_title"))} · ${esc(H.bed(p.bed).no)}${H.showNames() ? " · " + esc(p.name) : ""}`, wide:true,
       body:`<div class="fld"><label>${esc(L("fm_rel"))}</label>${opts("rel", REL, "rel_")}</div>
@@ -1290,7 +1294,7 @@
     const tab = TAB_FN[params.tab] && tabsFor(p).some(([k]) => k === params.tab) ? params.tab : "ozet";
     const forms = H.FORMS.filter(f => f.ages.includes(p.ageGroup));
     root.innerHTML = `<div class="pt-wrap">${H.patientHeader(p)}
-      <div class="pt-bar"><span class="src">${H.icon("link").replace("<svg", '<svg style="width:13px;height:13px;vertical-align:-2px"')} Kimlik ve tanı: hastane kaydı · son eşitleme 21:40</span>
+      <div class="pt-bar"><span class="src">${H.icon("link").replace("<svg", '<svg style="width:13px;height:13px;vertical-align:-2px"')} Kimlik ve tanı: hastane kaydı · son eşitleme ${H.at("21:40")}</span>
         <div class="pt-dd"><button class="btn sm" data-act="fm">${H.icon("clip")}Form doldur ${H.icon("chevD")}</button>
           <div class="menu hidden" data-fm>${forms.map(f => `<a data-form="${f.key}">${H.icon(f.icon)}${esc(f.name)} <span class="mute" style="margin-left:auto;font-size:11px;font-weight:600">${esc(f.freq)}</span></a>`).join("")}</div></div></div>
       ${p.monitored ? monitorHtml(p) : vitalBarHtml(p)}

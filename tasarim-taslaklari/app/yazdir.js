@@ -233,8 +233,8 @@
   const sexT = (p) => L(p.sex === "E" ? "pr_male" : "pr_female");
   const sexTR = (p) => (p.sex === "E" ? "Erkek" : "Kadın");
   const uname = (u) => { const x = H.userBy(u); return x ? x.name : "—"; };
-  const stampNow = () => `${H.dmy(0)} ${H.now()}`;
-  const NOWH = (() => { const [h, m] = H.now().split(":").map(Number); return h + m / 60; })();
+  const stampNow = () => `${H.dmy(H.calOff())} ${H.now()}`;
+  const NOWH = H.NOW_T0;   // 30.09c: nöbet saati (gece yarısından sonra 24+) — veriler bu ana göre kuruldu
   // göreli saat (t ≤ 0, saat) → "23.09 22:42"
   const clockOf = (t) => { let x = NOWH + t, off = 0; while (x < 0) { x += 24; off--; } while (x >= 24) { x -= 24; off++; } const h = Math.floor(x + 1e-6), m = Math.round((x - h) * 60) % 60; return { d:H.dm(off), hm:`${p2(h)}:${p2(m)}`, off }; };
   // nöbet ızgarası saati (8…32) → "22:30" / "25.09 02:00"
@@ -361,7 +361,8 @@
     return { band, blocks:bl, unitLine:units.join(" · ") };
   }
 
-  const SHIFTS = (() => { const out = []; [["24.09", 0], ["23.09", -1], ["22.09", -2]].forEach(([d]) => { out.push({ k:d + "|N", l:`${d} 20–08` }); out.push({ k:d + "|D", l:`${d} 08–20` }); }); return out; })();
+  // 30.09c · bakım planı vardiyaları careplan.js'ten (gerçek saate göre: şimdiki vardiya en başta)
+  const SHIFTS = () => ((H.carePlan && H.carePlan.shifts) || []).map(s => ({ k:s.k, l:`${s.d} ${s.n}` }));
   const GOAL_S = { met:"✓", partial:"◐", unmet:"✕" };
   function docCp(p) {
     const bl = [], plans = H.carePlan ? H.carePlan.plans(p.id).slice().sort((a, b) => (a.status === "active" ? 0 : 1) - (b.status === "active" ? 0 : 1)) : [];
@@ -378,7 +379,7 @@
         <div><h4>Faaliyetler</h4>${li(pl.acts.map(i => { const a = (c.acts || [])[i] || {}; return `<li>${E(a.t)} <span class="pr-mute">· ${E(fq((pl.freq || {})[i] || a.f || "shift"))}</span></li>`; }))}</div></div>
         ${pl.note ? `<p><b>Not:</b> ${E(pl.note)}</p>` : ""}` });
       bl.push({ table:{ cls:"pr-ev", head:`<tr><th>Vardiya</th><th>Hedef</th><th>Değerlendiren</th><th>Saat</th><th>Not</th></tr>`,
-        rows:SHIFTS.map((s, i) => { const e = (pl.evals || {})[s.k], na = i > pl.start.idx;
+        rows:SHIFTS().map((s, i) => { const e = (pl.evals || {})[s.k], na = i > pl.start.idx;
           return `<tr><td class="mono">${s.l}</td><td>${na ? "—" : e ? `${GOAL_S[e.goal] || ""} ${E(H.t("cp_g_" + e.goal))}` : "<b>Değerlendirilmedi</b>"}</td><td>${e ? E(e.by) : ""}</td><td class="mono">${e ? E(e.at) : ""}</td><td>${e ? E(e.note || "") : ""}</td></tr>`; }) } });
     });
     bl.push({ html:`<p class="pr-foot">Hemşirelik tanısı hemşirenin kararıdır; sistem yalnız öneri sunar. ✓ karşılandı · ◐ kısmen · ✕ karşılanmadı.</p>` });
@@ -445,7 +446,7 @@
   }
 
   /* ---------- biyomedikal: cihaz etiketi ve bakım iş listesi (hasta bilgisi yok) ---------- */
-  const DEV_TODAY = "2026-09-24";                       // devices.js ile aynı gün
+  const DEV_TODAY = H.isoD(H.clockDate());              // devices.js ile aynı gün (30.09c: gerçek takvim)
   const isoD = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
   const dayDiff = (s) => Math.round((isoD(s) - isoD(DEV_TODAY)) / 864e5);
   const fmtD = (s) => s ? s.split("-").reverse().join(".") : "—";

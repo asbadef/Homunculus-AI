@@ -204,7 +204,7 @@
   const bedNo = (p) => (H.bed(p.bed) || {}).no || p.bed;
   const shortName = (n) => { const a = String(n).split(" "); return a.length > 1 ? `${a[0]} ${a[1][0]}.` : a[0]; };
   const nameOf = (p) => (H.showNames() ? p.name : "");
-  const nowH = () => parseInt(H.now(), 10) || 0;
+  const nowH = () => Math.floor(H.nowT());   // 30.09c: nöbet saati (gece yarısından sonra 24+) → gün öneki doğru düşer
   const p2 = (n) => String(n).padStart(2, "0");
   // t: saat (0 = şimdiki saat, negatif geçmiş) → "21:00" ya da "23.09 · 22:00"
   const clock = (tt) => { const a = nowH() + Math.round(tt), off = Math.floor(a / 24), h = ((a % 24) + 24) % 24; return (off ? H.dm(off) + " · " : "") + p2(h) + ":00"; };

@@ -219,7 +219,7 @@
   const isDoc = () => H.can("scores_sign");                        // hekim
   const isNurse = () => H.can("forms") && !isDoc();                // hemşire
   const admitOff = (p) => -Math.max(0, p.admitDays - 1);           // patient.js ile aynı: "Yatış 2. gün" → dün yatış
-  const vitalAt = (p) => p.monitored ? { src:"Monitör · canlı", at:H.nowFull() } : { src:"Vital formu", at:`${H.dm(0)} · 20:00` };
+  const vitalAt = (p) => p.monitored ? { src:"Monitör · canlı", at:H.nowFull() } : { src:"Vital formu", at:H.entryFull(H.lastEntry && H.lastEntry(p.id, "vitals")) };   // 30.09c: son gerçek vital kaydı
 
   /* ---------- laboratuvar: patient.js'in sentetik tablosunun aynası (H.labs varsa o) ---------- */
   const LABDEF = [
@@ -238,14 +238,14 @@
     p11:{ lac:1.5, cre:0.4, k:4.3, na:138, crp:34, hb:12.1, plt:310, aptt:32, glu:96 }, p12:{ lac:1.9, cre:0.6, k:3.3, na:133, crp:8, hb:12.6, plt:290, aptt:31, glu:72 },
     p13:{ lac:2.6, cre:0.9, k:5.2, na:134, crp:14, hb:13.2, plt:118, aptt:48, glu:58 }, p14:{ lac:1.2, cre:0.6, k:4.8, na:139, crp:2, hb:17.9, plt:240, aptt:38, glu:72, bil:16.8 },
   };
-  const PREV = { p1:{ lac:[2.2, `${H.dm(0)} · 15:30`] } };
+  const PREV = { p1:{ lac:[2.2, H.atFull("15:30")] } };   // 30.09c: olay saatleri gerçek saate kaydırılır (core.js H.at)
   const refFor = (p, d) => {
     if (p.ageGroup === "neonate") return ({ cre:[0.3, 1.0], hb:[13.5, 21.5], glu:[50, 110], bil:[1, 12], aptt:[30, 50] })[d.k] || d.ref;
     if (p.ageGroup === "child") return ({ cre:[0.3, 0.7], hb:[11.5, 15.5] })[d.k] || d.ref;
     if (d.k === "hb") return p.sex === "E" ? [13.5, 17.5] : [12, 15.5];
     return d.ref;
   };
-  const labTime = (p, k) => k === "lac" && (p.risk === "crit" || p.risk === "high") ? `${H.dm(0)} · 21:30` : p.id === "p3" && k === "k" ? `${H.dm(0)} · 21:10` : `${H.dm(0)} · 06:10`;
+  const labTime = (p, k) => k === "lac" && (p.risk === "crit" || p.risk === "high") ? H.atFull("21:30") : p.id === "p3" && k === "k" ? H.atFull("21:10") : `${H.dm(0)} · 06:10`;   // 06:10 sabah laboratuvarı (takvim)
   // → [{ n, v, u, ref, arrow, crit, at, prev }] bu hastanın bugünkü tüm sonuçları (hepsi son 24 saat içinde alındı)
   const allLabs = (p) => {
     if (H.labs && H.labs.all) return H.labs.all(p);
@@ -294,7 +294,7 @@
       return L2("dc_src_score", t("dc_daily"), n === 1 ? tp("dc_l_sc1_tpl", { s:nm, b:h[0] }) : tp("dc_l_scst_tpl", { s:nm, seq:days.join(" → "), x:sgn(h[h.length - 1] - h[0]) })); }); };
   // vital: 24 saatlik seri → en düşük / en yüksek / şimdi
   const VIT24 = ["hr", "map", "spo2", "rr", "temp"];
-  const vit24Lines = (p) => { const src = p.monitored ? "dc_src_mon" : "dc_src_vit", at = `${H.dm(-1)} · ${H.now()} → ${H.nowFull()}`;
+  const vit24Lines = (p) => { const src = p.monitored ? "dc_src_mon" : "dc_src_vit", at = `${H.clockTF(H.nowT() - 24)} → ${H.nowFull()}`;
     const out = VIT24.map(k => { const S = H.series(p.id, k, 24).map(x => +x.v), V = H.VITAL[k], lo = Math.min(...S), hi = Math.max(...S), f = (v) => (k === "temp" ? (+v).toFixed(1) : v);
       return L2(src, at, tp("dc_l_vit_tpl", { k:k === "temp" ? t("dc_v_temp") : V.s, lo:f(lo), hi:f(hi), now:f(p.v[k]), u:V.u === "%" || V.u[0] === "/" ? V.u : " " + (k === "temp" ? "°C" : V.u) })); });
     const a = vitalAt(p); out.push(L2(src, a.at, tp("dc_l_vit_now_tpl", { o2:p.v.o2, loc:p.v.loc }))); return out; };
@@ -322,7 +322,7 @@
   const abnLines = (p) => { const A = abnormalLabs(p); if (A == null) return [L2("dc_src_lab", "", t("dc_l_nolab"))];
     return A.length ? A.map(x => L2("dc_src_lab", x.at, labFmt(x) + ".")) : [L2("dc_src_lab", `${H.dm(0)} · 06:10`, t("dc_l_labok"))]; };
   const alarmLines2 = (p) => { const A = H.data.alarms.filter(a => a.pid === p.id); if (!A.length) return [L2("dc_src_alarm", "", t("dc_l_noalarm"))];
-    return A.map(a => L2("dc_src_alarm", `${H.dm(0)} · ${clockAgo(a.ageMin)}`, tp("dc_l_alarm_tpl", { txt:a.txt, sev:(H.SEV[a.sev] || {}).l || a.sev,
+    return A.map(a => L2("dc_src_alarm", clockAgo(a.ageMin), tp("dc_l_alarm_tpl", { txt:a.txt, sev:(H.SEV[a.sev] || {}).l || a.sev,
       st:a.state === "open" ? t("dc_al_open") + (a.step ? " · " + tp("dc_al_esc_tpl", { n:a.step }) : "") : a.state === "seen" ? t("dc_al_seen") : t("dc_al_closed") }) + ".")); };
   const eventLines = (p) => { const A = H.data.alarms.filter(a => a.pid === p.id), esc = A.filter(a => a.step);
     return alarmLines2(p).concat(esc.length ? [L2("dc_src_alarm", H.nowFull(), tp("dc_l_esc_sum_tpl", { n:esc.length, s:Math.max(...esc.map(a => a.step)) }))] : []); };
@@ -357,8 +357,8 @@
     if (!A.length) return [L("Laboratuvar kaydı", `${H.dm(0)} · 06:10`, "Son sonuçlar referans aralığında.")];
     return A.map(x => L("Laboratuvar", x.at, `${x.n} ${x.v} ${x.u} ${x.arrow}${x.crit ? " kritik" : ""} (ref ${x.ref[0]}–${x.ref[1]})${x.prev ? ` · önceki ${x.prev[0]} (${x.prev[1]})` : ""}.`)); };
   const alarmLines = (p, all) => H.data.alarms.filter(a => a.pid === p.id && (all || a.state === "open")).map(a =>
-    L("Alarm", `${H.dm(0)} · ${clockAgo(a.ageMin)}`, `${a.txt} · ${(H.SEV[a.sev] || {}).l || a.sev} · ${a.state === "open" ? `yanıt bekliyor${a.step ? ` (eskalasyon ${a.step}. adım)` : ""}` : a.state === "seen" ? "görüldü" : "kapandı"}.`));
-  const clockAgo = (min) => { const t = 21 * 60 + 42 - Math.round(min); return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; };
+    L("Alarm", clockAgo(a.ageMin), `${a.txt} · ${(H.SEV[a.sev] || {}).l || a.sev} · ${a.state === "open" ? `yanıt bekliyor${a.step ? ` (eskalasyon ${a.step}. adım)` : ""}` : a.state === "seen" ? "görüldü" : "kapandı"}.`));
+  const clockAgo = (min) => H.clockTF(H.NOW_T0 - Math.round(min) / 60);   // 30.09c: gerçek saatten geriye, tarihli
   const openTasks = (p, n = 4) => H.data.tasks.filter(t => t.pid === p.id && t.state !== "done" && t.t < 26).sort((a, b) => a.t - b.t).slice(0, n).map(t => `${H.when(Math.floor(t.t % 24), Math.round((t.t % 1) * 60))} ${t.label}`);
   const doneTasks = (p) => { const c = {}; H.data.tasks.filter(t => t.pid === p.id && t.state === "done").forEach(t => { c[t.label] = (c[t.label] || 0) + 1; }); return Object.entries(c).map(([k, n]) => `${k}${n > 1 ? ` ×${n}` : ""}`); };
   const abxLine = (p) => { if (!p.antibioticDay) return L("İlaç order'ı", "", "Antibiyotik kaydı yok.");
@@ -368,7 +368,7 @@
   // Ateş yok: core.js H.series ateşin başlangıcını da risk katsayısıyla ölçekliyor (kritik hastada ~28 °C) — düzelene kadar gidişe alınmaz.
   const TREND_KEYS = ["hr", "map", "spo2", "rr"];
   const trendLine = (p) => { const parts = TREND_KEYS.map(k => { const s = H.series(p.id, k, 24), a = s[0].v, b = p.v[k], V = H.VITAL[k]; return `${V.n} ${a}→${b}${V.u === "%" ? "%" : " " + V.u}`; });
-    return L(p.monitored ? "Monitör" : "Vital kayıtları", `${H.dm(-1)} · 21:42 → ${H.nowFull()}`, `24 saatte: ${parts.join(" · ")}.`); };
+    return L(p.monitored ? "Monitör" : "Vital kayıtları", `${H.clockTF(H.nowT() - 24)} → ${H.nowFull()}`, `24 saatte: ${parts.join(" · ")}.`); };
   const recordLines = (p) => { const u = unitOf(p);
     return [L("Hastane kaydı", "", `Yatış tanısı: ${p.dx} (${p.icd}) · ${u.tr} · yatışın ${p.admitDays}. günü.`),
       L("Hastane kaydı", "", `${p.chronic.length ? "Kronik: " + p.chronic.join(", ") + ". " : "Kronik hastalık kaydı yok. "}${p.allergies.length ? "Alerji: " + p.allergies.join(", ") + "." : "Bilinen alerji yok."}${p.isolation ? ` İzolasyon: ${p.isolation}.` : ""}`)]; };
@@ -376,7 +376,7 @@
     if (f.pain != null) x.push(`ağrı puanı ${f.pain}/10`); if (f.fall) x.push(`düşme riski ${f.fall}`); if (f.braden) x.push(`bası yarası riski ${f.braden}`);
     return x.length ? L("Hemşirelik formları", painAt(p), x.join(" · ") + ".") : null; };
   // 30.09 · kontrol §4-6: sabit "09:00" yerine son gerçek ağrı kaydının saati
-  const painAt = (p) => { const e = H.lastEntry && H.lastEntry(p.id, "pain"); return e ? (e.today ? `${H.dm(0)} · ${e.at}` : H.entryText(e)) : H.dm(0); };
+  const painAt = (p) => { const e = H.lastEntry && H.lastEntry(p.id, "pain"); return e ? H.entryFull(e) : H.dm(0); };
 
   // Bölüm → sistemden doldurulacak satırlar. Boş dizi = sistemde bu bölüme ait kayıt yok.
   const FILL = {
@@ -462,7 +462,7 @@
     if (H.data.docs.some(d => d.pid === p.id && d.type === "epikriz")) return;
     const clinical = H.isClinical(unitOf(p));
     if (clinical && p.admitDays >= 2 && p.attending) {
-      const d = newDoc(p, "izlem", { by:p.attending, at:`${H.dm(-1)} · 09:20`, status:"muhur", sealedBy:p.attending, sealedAt:`${H.dm(-1)} · 09:48` });
+      const d = newDoc(p, "izlem", { by:p.attending, at:H.atFull("09:20", -1), status:"muhur", sealedBy:p.attending, sealedAt:H.atFull("09:48", -1) });
       // Dünkü not: yalnız dünün kayıtta olan değeri (günlük skor) yazılır; dünkü vital/sıvı dizisi bellekte yok, boş kalır.
       const S = scoresOf(p);
       d.sec.skor24 = S.length ? S.map(([k, n]) => { const h = scoreHist(p, k); return p.admitDays >= 3 ? L2("dc_src_score", `${H.dm(-2)} → ${H.dm(-1)}`, `${n}: ${H.dm(-2)} ${h[0]} → ${H.dm(-1)} ${h[1]} · ${sgn(h[1] - h[0])}`) : L2("dc_src_score", H.dm(-1), `${n}: ${h[1]}`); }).join("\n") : "";
@@ -471,8 +471,8 @@
       d.vit = null;   // dünkü vital değerleri bellekte yok; bugünküleri dünün belgesine koymayız
     }
     if (clinical && p.nurse) {
-      const d = newDoc(p, "hemsire", { by:p.nurse, at:`${H.dm(0)} · 20:10`, status:"muhur", sealedBy:p.nurse, sealedAt:`${H.dm(0)} · 20:14`, demo:true });
-      d.sec.gozlem = L("Vital formu", `${H.dm(0)} · 20:00`, "Vital bulgular kaydedildi (form)."); d.sec.bakim = (FILL.bakim(p).filter(Boolean).join("\n"));
+      const d = newDoc(p, "hemsire", { by:p.nurse, at:H.atFull("20:10"), status:"muhur", sealedBy:p.nurse, sealedAt:H.atFull("20:14"), demo:true });
+      d.sec.gozlem = L("Vital formu", H.atFull("20:00"), "Vital bulgular kaydedildi (form)."); d.sec.bakim = (FILL.bakim(p).filter(Boolean).join("\n"));
       d.sec.teslim = FILL.teslim(p).filter(Boolean).join("\n");
     }
     const e = newDoc(p, "epikriz", { by:"sistem", at:H.nowFull() }); Object.assign(e.sec, compileEpi(p)); e.compiledAt = H.nowFull();
