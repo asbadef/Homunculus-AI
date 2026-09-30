@@ -63,7 +63,7 @@
    * Not: AZ/RU/EN karşılıkları taslaktır, yerel kontrol gerekir. Form içerikleri şimdilik Türkçe. */
   const T = {
     login_title:{ AZ:"Daxil olun", TR:"Oturum açın", RU:"Вход в систему", EN:"Sign in" },
-    login_sub:{ AZ:"Kurumsal istifadəçi adınız və şifrənizlə", TR:"Kurumsal kullanıcı adınız ve şifrenizle", RU:"С корпоративным логином и паролем", EN:"With your hospital username and password" },
+    login_sub:{ AZ:"Korporativ istifadəçi adınız və şifrənizlə", TR:"Kurumsal kullanıcı adınız ve şifrenizle", RU:"С корпоративным логином и паролем", EN:"With your hospital username and password" },
     username:{ AZ:"İstifadəçi adı", TR:"Kullanıcı adı", RU:"Имя пользователя", EN:"Username" },
     password:{ AZ:"Şifrə", TR:"Şifre", RU:"Пароль", EN:"Password" },
     remember:{ AZ:"İstifadəçi adını xatırla", TR:"Kullanıcı adımı hatırla", RU:"Запомнить имя", EN:"Remember username" },

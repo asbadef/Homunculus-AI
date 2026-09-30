@@ -18,7 +18,16 @@
   // 30.09c · gerçek saat: bir olay önceki/sonraki güne kayınca "21:30" yerine "29.09 · 21:30" yazılır. Sözlükte "{#}" diye
   // kayıtlı kalıp bulunamazsa tarih+saat tek sayı sayılarak bir kez daha denenir (yeni sözlük girdisi gerekmez).
   const DTN = /\d{2}\.\d{2}(?:\.\d{4})? · \d{2}:\d{2}|\d+(?:[.,:]\d+)*/g, DTQ = /\d{2}\.\d{2}(?:\.\d{4})? · \d{2}:\d{2}/;
-  function tr(s, lang) { const r = tr1(s, lang, NUM); return r != null || !DTQ.test(s) ? r : tr1(s, lang, DTN); }
+  function tr(s, lang) { const r = tr0(s, lang); return r != null || !s.includes(" · ") ? r : parca(s, lang); }
+  function tr0(s, lang) { const r = tr1(s, lang, NUM); return r != null || !DTQ.test(s) ? r : tr1(s, lang, DTN); }
+  // 01.10 · parça yedeği: "Витальные показатели · 24 ч · sesle yazdır" gibi kodun bir kısmını çevirip Türkçe bir parça
+  // eklediği metinler tam haliyle sözlükte yoktur. "·" ile ayrılan her parça ayrı aranır; bulunmayan parça (hasta adı,
+  // oda, tanı gibi veri) olduğu gibi kalır.
+  function parca(s, lang) {
+    const t = s.trim(), segs = t.split(" · "); let hit = false;
+    const out = segs.map(g => { const r = tr0(g, lang); if (r == null) return g; hit = true; return r; });
+    return hit ? s.replace(t, out.join(" · ")) : null;
+  }
   function tr1(s, lang, NUM) {
     const t = s.trim(); if (!t || t.length < 2) return null;
     const nums = t.match(NUM) || [], k = t.replace(NUM, "{#}");

@@ -2,6 +2,9 @@
 (function () {
   const H = window.H, I = H.icon;
   const V = { view:"login", pending:null, err:"", info:"", resetUser:null, locked:false, lastPage:null };
+  // 01.10 (#314): "Hızlı giriş" kutusu canlıda görünmez; ekip için adres sonuna ?hizli=1 (giriş bilgileri: ../GIRIS-BILGILERI.md).
+  // Düğmeler DOM'da kalır: mobildeki PIN ile hızlı dönüş ve ?demo= onları tıklayarak giriş yapar.
+  const HIZLI = /[?&]hizli=1\b/.test(location.search);
 
   /* ---------- şifre kuralları ---------- */
   const RULES = [["10+ karakter", s => s.length >= 10], ["Büyük harf", s => /[A-ZÇĞİÖŞÜƏ]/.test(s)], ["Küçük harf", s => /[a-zçğıöşüə]/.test(s)], ["Rakam", s => /\d/.test(s)], ["Özel karakter (!?.*…)", s => /[^A-Za-z0-9çğıöşüəÇĞİÖŞÜƏ]/.test(s)]];
@@ -120,7 +123,7 @@
           ${H.social ? H.social.iconsHtml("lg-soc") : ""}
         </div>
       </div>
-      <details class="lg-acc"${V.accOpen ? " open" : ""}><summary title="${H.t("lg_demo")}">${I("userPlus")}<span>${H.t("lg_quick")}</span></summary>
+      <details class="lg-acc"${V.accOpen ? " open" : ""}${HIZLI ? "" : " hidden"}><summary title="${H.t("lg_demo")}">${I("userPlus")}<span>${H.t("lg_quick")}</span></summary>
         <div class="lg-acc-p"><h6>${H.t("lg_demo")}</h6><div class="list">${H.data.users.filter(u => u.active !== false).map(u => `<button class="a" data-demo="${u.u}"><b>${H.esc(H.roleLabel(u))}</b><span>${u.u}</span></button>`).join("")}</div>
         <div class="mute" style="font-size:12px;margin-top:8px">${H.t("lg_quick_s")} · Demo123! · admin: Admin123! · 2FA: <b class="mono">${H.MFA_CODE}</b> · ${H.t("forgot")}: <b class="mono">${H.RESET_CODE}</b></div></div></details>
       </div>`;
