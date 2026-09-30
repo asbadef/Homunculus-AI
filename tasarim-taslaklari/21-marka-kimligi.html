@@ -1,0 +1,878 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marka Kimliği</title>
+<link rel="icon" id="fav" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geologica:wght@500;600;700&family=Mulish:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Onest:wght@400;500;600;700&family=Noto+Sans+Mono:wght@500;600&family=Commissioner:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=Martian+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&family=Lora:wght@500;600;700&family=Noto+Sans:wght@400;500;600;700&family=Unbounded:wght@500;600;700&family=Fira+Sans:wght@400;500;600;700&family=Tektur:wght@500;600;700&family=Space+Grotesk:wght@600;700&family=Figtree:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --page:#f4f5f7; --panel:#ffffff; --panel2:#eef0f4; --ink:#141a24; --mute:#5b6676; --line:#dfe3ea; --line2:#c9d0db;
+  --pri:#0e7490; --onpri:#fff; --priSoft:#e1f1f6; --warn:#8a5a00; --warnSoft:#fff6e0; --okSoft:#e6f6ec; --ok:#17763a; --noSoft:#fdecec; --no:#b42318;
+  --shadow:0 10px 28px rgba(20,30,50,.08);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --page:#0a0f18; --panel:#111826; --panel2:#172133; --ink:#e7ecf3; --mute:#98a6ba; --line:#223047; --line2:#2d3e5a;
+    --pri:#3fb6d3; --onpri:#04131a; --priSoft:rgba(63,182,211,.14); --warn:#f2c46b; --warnSoft:rgba(242,196,107,.1); --okSoft:rgba(60,190,110,.13); --ok:#6ad08f; --noSoft:rgba(239,68,68,.13); --no:#ff8a80;
+    --shadow:0 10px 28px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"]{
+  --page:#0a0f18; --panel:#111826; --panel2:#172133; --ink:#e7ecf3; --mute:#98a6ba; --line:#223047; --line2:#2d3e5a;
+  --pri:#3fb6d3; --onpri:#04131a; --priSoft:rgba(63,182,211,.14); --warn:#f2c46b; --warnSoft:rgba(242,196,107,.1); --okSoft:rgba(60,190,110,.13); --ok:#6ad08f; --noSoft:rgba(239,68,68,.13); --no:#ff8a80;
+  --shadow:0 10px 28px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--page);color:var(--ink);font:15px/1.55 Inter,system-ui,sans-serif;overflow-x:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+.wrap{max-width:1200px;margin:0 auto;padding:0 16px}
+h1,h2,h3,h4,h5,h6{margin:0;line-height:1.2}
+p{margin:0}
+.mute{color:var(--mute)}
+section{scroll-margin-top:70px}
+
+/* üst çubuk */
+.top{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--page) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:10px;padding-bottom:10px}
+.top b{font-weight:700;font-size:14px}
+.top .sp{flex:1}
+.seg{display:inline-flex;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:3px}
+.seg button{border:0;background:transparent;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:600;color:var(--mute)}
+.seg button.on{background:var(--panel);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.14)}
+.jump{display:flex;gap:5px;flex-wrap:wrap}
+.jump a{font-size:13px;font-weight:700;color:var(--mute);text-decoration:none;padding:4px 9px;border-radius:8px;border:1px solid var(--line)}
+.jump a:hover{color:var(--ink);border-color:var(--line2)}
+
+.intro{padding:34px 0 6px}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--pri)}
+.intro h1{font-size:clamp(26px,5vw,40px);font-weight:800;letter-spacing:-.02em;margin:8px 0 12px}
+.intro>p{max-width:780px;color:var(--mute)}
+.learn{margin-top:20px;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:var(--shadow)}
+.learn h2{font-size:18px}
+.learn>p{color:var(--mute);font-size:14px;margin-top:4px}
+.lgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:12px}
+.li{background:var(--panel2);border-radius:14px;padding:13px 14px;font-size:14px}
+.li b{display:block;margin-bottom:4px}
+.li .n{font:700 12px "JetBrains Mono",monospace;color:var(--pri)}
+.fixed{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:10px}
+.note{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 15px;font-size:14px;min-width:0}
+.note b{display:block;margin-bottom:4px}
+.stat{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.stat span{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:3px 9px 3px 6px;border-radius:999px;background:var(--panel2)}
+.stat i{width:11px;height:11px;border-radius:50%;display:inline-block}
+.frow{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin-top:6px;font-size:13px}
+.frow .fn{font-weight:700;min-width:118px}
+
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--panel2);color:var(--mute);white-space:nowrap}
+.badge.ok{background:var(--okSoft);color:var(--ok)}
+.badge.no{background:var(--noSoft);color:var(--no)}
+.badge.mid{background:var(--warnSoft);color:var(--warn)}
+
+/* yön kartı */
+.dir{margin-top:28px;background:var(--panel);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:var(--shadow);scroll-margin-top:70px}
+.dir.picked{outline:3px solid var(--pri);outline-offset:2px}
+.dhead{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;padding:22px 22px 8px}
+.letter{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;font:800 22px Inter;background:var(--panel2);border:1px solid var(--line);flex:none}
+.dhead .t{flex:1;min-width:220px}
+.dhead h2{font-size:24px;letter-spacing:-.01em}
+.dhead p{color:var(--mute);margin-top:5px;max-width:780px}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.tag{font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--panel2);color:var(--mute);border:1px solid var(--line)}
+.pick{border:1px solid var(--pri);background:transparent;color:var(--pri);font-weight:700;border-radius:12px;padding:10px 16px;white-space:nowrap}
+.pick.on{background:var(--pri);color:var(--onpri)}
+.dbody{padding:12px 22px 22px;display:grid;gap:16px}
+.row2{display:grid;grid-template-columns:1.25fr 1fr;gap:16px}
+.box{border:1px solid var(--line);border-radius:16px;padding:16px;min-width:0}
+.box>h4{margin:0 0 12px;font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--mute)}
+.box>h4 em{font-style:normal;text-transform:none;letter-spacing:0;font-weight:600}
+
+.logos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.lk{border-radius:12px;padding:22px 12px;display:flex;align-items:center;justify-content:center;min-height:112px;overflow:hidden;min-width:0}
+.lk.mono{grid-column:1/-1;min-height:84px;background:#fff;border:1px solid #e3e6ea;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:16px 18px}
+.lk.mono small{color:#5b6676;font-size:12px;font-weight:600}
+.sizes{display:flex;align-items:flex-end;gap:14px;margin-top:12px;flex-wrap:wrap}
+.sizes div{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;color:var(--mute)}
+.markrow{border-radius:12px;padding:12px 14px;margin-top:12px}
+.case{font-size:13.5px;margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--panel2)}
+.story{font-size:14px;margin-top:10px}
+
+.icons{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end}
+.icons figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:11px;color:var(--mute)}
+.pix{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;align-items:flex-end}
+.pix figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;color:var(--mute);text-align:center}
+.pix canvas{width:64px;height:64px;image-rendering:pixelated;border:1px solid var(--line);border-radius:6px}
+.tabs{border-radius:10px 10px 0 0;padding:6px 6px 0;display:flex;gap:4px;margin-top:14px;overflow:hidden;min-width:0}
+.tab{display:flex;align-items:center;gap:7px;padding:7px 10px;border-radius:8px 8px 0 0;font:500 12px Inter,system-ui;white-space:nowrap;min-width:0;overflow:hidden}
+.tab span{overflow:hidden;text-overflow:ellipsis}
+.tab.on{flex:0 1 230px}
+.tab.off{flex:0 1 120px;opacity:.75}
+.tab .x{margin-left:auto;opacity:.5;font-size:11px}
+.url{padding:6px 10px 8px;font:500 11.5px Inter;border-radius:0 0 10px 10px}
+.url span{display:block;border-radius:999px;padding:4px 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* palet */
+.pal{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(205px,100%),1fr));gap:8px}
+.sw{border:1px solid var(--line);border-radius:12px;padding:9px 10px;font-size:12.5px;min-width:0}
+.sw>b{display:block;font-size:13px}
+.sw>small{display:block;color:var(--mute);font-size:12px;margin-bottom:6px}
+.sv{display:flex;align-items:center;gap:8px;margin-top:5px;flex-wrap:wrap}
+.sv i{width:30px;height:30px;border-radius:8px;flex:none;box-shadow:inset 0 0 0 1px rgba(128,128,128,.25)}
+.sv code{font:500 11.5px "JetBrains Mono",monospace;color:var(--ink);min-width:62px}
+.sv em{font-style:normal;font-size:11px;color:var(--mute);width:30px}
+.rule{font-size:13.5px;margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--panel2)}
+.subh{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin:16px 0 8px}
+
+/* yazı */
+.type .spec{font-size:13.5px;color:var(--mute);margin-bottom:10px}
+.type .big{font-size:32px;line-height:1.15;margin-bottom:8px;overflow-wrap:anywhere;color:var(--ink)}
+.type .body{font-size:15.5px;color:var(--ink)}
+.type .ru{font-size:15.5px;color:var(--ink);margin-top:4px}
+.type .nums{font-size:21px;margin-top:8px;color:var(--ink);overflow-wrap:anywhere}
+.fams{display:grid;gap:6px;margin-top:12px}
+
+/* uygulanmış */
+.apply{display:grid;grid-template-columns:auto minmax(0,1fr);gap:16px;align-items:start}
+.apply2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:16px;align-items:start;margin-top:16px}
+.app{min-width:0}
+.app>small{display:block;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin-bottom:8px;font-size:11.5px}
+
+.phone{width:176px;height:350px;border-radius:30px;padding:7px;background:#11141a;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.scr{width:100%;height:100%;border-radius:24px;overflow:hidden;display:flex;flex-direction:column;padding:10px 10px 8px}
+.sbar{display:flex;justify-content:space-between;font:600 10px Inter;margin-bottom:14px;padding:0 4px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px 6px}
+.ic{display:flex;flex-direction:column;align-items:center;gap:3px;font:500 8px Inter;white-space:nowrap;overflow:hidden}
+.ic span{max-width:46px;overflow:hidden;text-overflow:ellipsis}
+.ic .g{width:32px;height:32px;border-radius:8px;display:block}
+.dock{margin-top:auto;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:7px 5px;border-radius:18px;background:rgba(255,255,255,.18)}
+.dock .g{width:28px;height:28px;border-radius:8px;margin:auto;display:block}
+
+/* giriş (kapsayıcı sorgulu) */
+.lg{container-type:inline-size;min-width:0}
+.lg-in{display:grid;grid-template-columns:1.05fr 1fr;border-radius:14px;overflow:hidden;border:1px solid var(--k-line);background:var(--k-surf);color:var(--k-ink);font-family:var(--k-fb)}
+.lg-l{padding:16px;position:relative;overflow:hidden;background:linear-gradient(160deg,color-mix(in srgb,var(--k-pri) 14%,var(--k-bg)),var(--k-bg) 62%)}
+.lg-l>*{position:relative;z-index:2}
+.lg-ey{display:inline-block;margin-top:14px;font-size:9.5px;font-weight:600;padding:3px 8px;border-radius:999px;border:1px solid color-mix(in srgb,var(--k-pri) 45%,var(--k-line));color:var(--k-prit)}
+.lg-h{font-family:var(--k-fh);font-weight:var(--k-hw);letter-spacing:var(--k-hls);font-size:20px;line-height:1.12;margin:8px 0 6px}
+.lg-h em{font-style:normal;color:var(--k-prit)}
+.lg-l p{font-size:10.5px;color:var(--k-mute)}
+.lg-beds{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:12px;padding:7px;border:1px solid var(--k-line);border-radius:10px;background:var(--k-surf)}
+.mb{border:1px solid var(--k-line);border-radius:7px;padding:4px 5px;font-size:8px;min-width:0;background:var(--k-bg)}
+.mb b{display:flex;justify-content:space-between;font:600 8px var(--k-fn)}
+.mb b i{width:5px;height:5px;border-radius:50%;background:var(--k-ok);display:inline-block}
+.mb svg{display:block;width:100%;height:12px;margin:2px 0}
+.mb .v{font:700 12px var(--k-fn);text-align:right;font-variant-numeric:tabular-nums}
+.lg-r{padding:16px 18px;display:flex;flex-direction:column;justify-content:center;background:var(--k-surf)}
+.lg-top{display:flex;justify-content:flex-end;gap:5px;margin-bottom:10px}
+.lg-top span{font-size:9.5px;border:1px solid var(--k-line);border-radius:7px;padding:2px 7px;color:var(--k-mute)}
+.lg-r h5{font:var(--k-hw) 18px var(--k-fh);letter-spacing:var(--k-hls);color:var(--k-ink)}
+.lg-r .sub{font-size:10.5px;color:var(--k-mute);margin:2px 0 10px}
+.fld{font-size:8.5px;font-weight:700;letter-spacing:.06em;color:var(--k-mute);margin-bottom:3px}
+.inp{height:28px;border:1px solid var(--k-line);border-radius:8px;background:var(--k-bg);margin-bottom:8px;display:flex;align-items:center;padding:0 8px;font-size:11px;color:var(--k-ink)}
+.inp.f{border-color:var(--k-pri);box-shadow:0 0 0 3px color-mix(in srgb,var(--k-pri) 18%,transparent)}
+.kbtn{display:flex;align-items:center;justify-content:center;height:32px;border-radius:8px;font-size:12px;font-weight:600;background:var(--k-pri);color:var(--k-onpri);margin-top:2px}
+.lfoot{margin-top:10px;font-size:9.5px;color:var(--k-mute);display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+@container (max-width:470px){
+  .lg-in{grid-template-columns:1fr}
+  .lg-beds{grid-template-columns:repeat(2,1fr)}
+}
+
+/* uygulama içi */
+.am{container-type:inline-size;min-width:0}
+.am-in{border:1px solid var(--k-line);border-radius:14px;overflow:hidden;background:var(--k-bg);color:var(--k-ink);font-family:var(--k-fb)}
+.am-top{display:flex;align-items:center;gap:9px;padding:9px 12px;background:var(--k-surf);border-bottom:1px solid var(--k-line);min-width:0}
+.am-top .u{font:var(--k-hw) 13px var(--k-fh);letter-spacing:var(--k-hls);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.am-top .sp{flex:1}
+.pill{font-size:10px;font-weight:600;padding:3px 8px;border-radius:999px;background:var(--k-bg);border:1px solid var(--k-line);color:var(--k-mute);white-space:nowrap}
+.pill b{font-family:var(--k-fn);color:var(--k-ink)}
+.av{width:24px;height:24px;border-radius:50%;background:var(--k-pri);color:var(--k-onpri);font:700 9.5px/24px var(--k-fb);text-align:center;flex:none}
+.am-b{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px}
+.bc{border:1px solid var(--k-line);border-radius:12px;background:var(--k-surf);padding:10px 11px;min-width:0}
+.bc.crit{border-left:4px solid var(--k-crit)}
+.bc.ok{border-left:4px solid var(--k-okc)}
+.bc-h{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.bc-h b{font:600 12px var(--k-fn)}
+.chipS{font-size:9px;font-weight:800;letter-spacing:.06em;padding:2px 7px;border-radius:999px;white-space:nowrap}
+.bc .who{font-size:10.5px;color:var(--k-mute);margin-top:1px}
+.bc .sc{display:flex;align-items:baseline;gap:6px;margin-top:6px}
+.bc .sc strong{font:700 26px/1 var(--k-fn);font-variant-numeric:tabular-nums}
+.bc .sc small{font-size:9.5px;color:var(--k-mute);font-weight:600}
+.vit{display:flex;gap:9px;flex-wrap:wrap;font:600 10.5px var(--k-fn);margin-top:6px;color:var(--k-ink)}
+.vit span small{font:600 8.5px var(--k-fb);color:var(--k-mute);margin-right:2px}
+.why1{font-size:10px;color:var(--k-mute);margin-top:6px}
+.bb{display:flex;gap:6px;margin-top:8px}
+.bb span{height:26px;padding:0 11px;border-radius:7px;font-size:11px;font-weight:600;display:inline-flex;align-items:center}
+.bb .p{background:var(--k-pri);color:var(--k-onpri)}
+.bb .g{border:1px solid var(--k-line);color:var(--k-ink)}
+@container (max-width:430px){ .am-b{grid-template-columns:1fr} .am-top .pill{display:none} }
+
+/* tanıtım */
+.hr{container-type:inline-size;min-width:0}
+.hr-in{border:1px solid var(--k-line);border-radius:14px;overflow:hidden;background:var(--k-bg);color:var(--k-ink);font-family:var(--k-fb);position:relative}
+.hnav{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--k-line);position:relative;z-index:2}
+.hnav .links{margin-left:auto;display:flex;gap:10px;font-size:10px;color:var(--k-mute);align-items:center}
+.hnav .mini{height:24px;padding:0 10px;border-radius:7px;background:var(--k-pri);color:var(--k-onpri);font-size:10px;font-weight:600;display:inline-flex;align-items:center;white-space:nowrap}
+.hbody{display:grid;grid-template-columns:1.1fr 1fr;gap:14px;padding:20px 14px;position:relative;z-index:2;align-items:center}
+.hbody .ey{font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--k-prit)}
+.hbody h6{margin:6px 0 8px;font:var(--k-hw) 22px/1.1 var(--k-fh);letter-spacing:var(--k-hls);color:var(--k-ink)}
+.hbody p{font-size:11px;color:var(--k-mute)}
+.hbtns{display:flex;gap:6px;margin-top:11px;flex-wrap:wrap}
+.hbtns span{height:27px;padding:0 11px;border-radius:7px;font-size:10.5px;font-weight:600;display:inline-flex;align-items:center}
+.hb1{background:var(--k-pri);color:var(--k-onpri)}
+.hb2{border:1px solid var(--k-line);color:var(--k-ink);background:var(--k-surf)}
+.prev{border:1px solid var(--k-line);background:var(--k-surf);border-radius:10px;padding:8px;min-width:0}
+.prev .ph{display:flex;justify-content:space-between;font-size:9px;color:var(--k-mute);margin-bottom:6px;gap:4px}
+.beds{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.bed{border:1px solid var(--k-line);border-radius:7px;padding:5px 6px;font-size:9px;background:var(--k-bg);min-width:0}
+.bed b{font:600 9px var(--k-fn);display:flex;justify-content:space-between;align-items:center;gap:3px}
+.bed i{display:inline-block;width:7px;height:7px;border-radius:50%}
+.bed .n{font:700 14px var(--k-fn);margin-top:2px;color:var(--k-ink)}
+.bed .n small{font:500 8px var(--k-fb);color:var(--k-mute)}
+.deco{position:absolute;inset:0;z-index:1;pointer-events:none;width:100%;height:100%}
+@container (max-width:470px){ .hbody{grid-template-columns:1fr} .hnav .links span:not(.mini){display:none} }
+
+.why{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.why .box{background:var(--panel2);border-color:transparent}
+.why .weak{background:var(--warnSoft)}
+.why h4{color:var(--ink)}
+.why ul{margin:0;padding-left:18px;font-size:14px}
+.why li+li{margin-top:6px}
+
+/* yan yana */
+#compare{display:none}
+body.cmp #compare{display:block}
+body.cmp #dirs{display:none}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;margin-top:14px}
+.ccard{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.ccard.picked{outline:3px solid var(--pri)}
+.ccard h3{font-size:16px;display:flex;align-items:center;gap:8px}
+.ccard h3 .letter{width:30px;height:30px;font-size:15px;border-radius:9px}
+.cicons{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.cpal{display:flex;height:16px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.cpal i{flex:1}
+
+/* cevap */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--shadow)}
+.answer{margin:40px 0 60px}
+.q{margin-top:16px}
+.q h3{font-size:15px;margin-bottom:8px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line2);background:var(--panel);border-radius:999px;padding:7px 13px;font-size:14px;font-weight:600;min-width:46px}
+.chip:hover{border-color:var(--pri)}
+.chip.on{background:var(--pri);border-color:var(--pri);color:var(--onpri)}
+textarea{width:100%;min-height:56px;border:1px solid var(--line2);border-radius:12px;background:var(--panel2);color:var(--ink);font:14px Inter;padding:10px 12px;resize:vertical}
+.line{margin-top:16px;border:2px dashed var(--pri);border-radius:14px;padding:14px 16px;font:600 15px/1.5 "JetBrains Mono",monospace;background:var(--priSoft);overflow-wrap:anywhere}
+.copy{margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.copy button{border:0;background:var(--pri);color:var(--onpri);font-weight:700;border-radius:12px;padding:11px 18px}
+.copy .reset{background:transparent;color:var(--mute);border:1px solid var(--line2)}
+
+@media (max-width:900px){
+  .row2,.why,.apply2{grid-template-columns:1fr}
+}
+@media (max-width:700px){
+  .apply{grid-template-columns:1fr}
+  .phone{margin:0 auto}
+  .dhead,.dbody{padding-left:14px;padding-right:14px}
+  .logos{grid-template-columns:1fr}
+  .top .jump{display:none}
+  .cgrid{grid-template-columns:1fr}
+  .dbody .box{padding:13px}
+  .pal{grid-template-columns:1fr 1fr}
+  .sw{padding:8px}
+  .sv{gap:5px}
+  .sv[style]{margin-left:0!important}
+  .sv i{width:22px;height:22px}
+  .sv em{width:auto}
+  .sw .badge{white-space:normal}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <b>Homunculus · Taslak 21 · Marka kimliği</b>
+    <nav class="jump" aria-label="Yönler">
+      <a href="#ogrendik">Öğrendik</a><a href="#yon-A">A</a><a href="#yon-B">B</a><a href="#yon-C">C</a><a href="#yon-D">D</a><a href="#yon-E">E</a><a href="#yon-F">F</a><a href="#cevap">Cevap</a>
+    </nav>
+    <span class="sp"></span>
+    <div class="seg" role="group" aria-label="Görünüm">
+      <button id="vDetail" class="on" type="button">Tek tek</button>
+      <button id="vCmp" type="button">Yan yana</button>
+    </div>
+    <div class="seg" role="group" aria-label="Tema">
+      <button data-th="light" type="button">Açık</button>
+      <button data-th="dark" type="button">Koyu</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="intro">
+    <div class="eyebrow">24.09.2026 · Marka kimliği · Altı yön</div>
+    <h1>Altı marka yönü, hepsi kullanıldığı yerde.</h1>
+    <p>Her yönde logo (açık, koyu, tek renk), 60 pikselden 16 piksele kadar boyut testi, uygulama simgesi ve tarayıcı sekmesi, ölçülmüş renkler, ölçülmüş yazı tipleri ve <b>dört yerde uygulanmış hâli</b> var: telefonun ana ekranı, giriş ekranı, uygulamanın içi (kritik kırmızı yanında) ve tanıtım sayfasının üstü. Burada yalnız seçim yaparsın. <b>Uygulamada ve tanıtım sayfasında henüz hiçbir şey değişmedi.</b></p>
+
+    <section class="learn" id="ogrendik">
+      <h2>Önceki turlardan öğrendiklerimiz</h2>
+      <p>01, 02–04, 07 ve 09 reddedildi, 16'nın tarzını beğendin. Sebebini bana söylemedin; aşağıdakiler sayfalara bakarak yaptığım <b>tahmin</b>. Yanlışsa en alttaki nota yaz.</p>
+      <div class="lgrid">
+        <div class="li"><span class="n">01</span><b>Hikâye önce geldi, kullanım sonra.</b>07 ve 09'da önce karakter anlatıldı (Nöbetçi, Nightingale lambası, Buta madalyonu), logo o hikâyeyi taşımak için süslendi. Sen ekranda nasıl duracağını görmek istedin: 16'da "aynı üç yer"i beğenmen bunu söylüyor. Burada karakter, maskot, hikâye yok; her yön önce kullanımda görünüyor.</div>
+        <div class="li"><span class="n">02</span><b>Parlak dairelerde birbirine benzeyen simgeler.</b>02–04'teki altı işaretin hepsi aynı ışıltılı lacivert dairede duruyordu: fark fikirdeydi ama göz rengi ve parıltıyı gördü, küçük boyutta bulanıklaştı, "hazır simge paketi" gibi durdu. Burada her işaret düz, tek renkle basılabilir ve 16 pikselde piksel piksel sınanıyor.</div>
+        <div class="li"><span class="n">03</span><b>Klişe ve kelimesi kelimesine semboller.</b>Kalp atışı çizgisi neredeyse her turda vardı; lamba, eller, beyin haritası, buta madalyonu ürünü değil bir sembolü anlattı. Burada kalp, haç, yılan, maskot yok. Dalga yalnız B'de, bir kez ve yumuşak.</div>
+        <div class="li"><span class="n">04</span><b>Yazı tipi ve dil ölçülmeden seçildi.</b>09'daki Sora ve Outfit "ə" çizmiyordu. Bugün uygulamada kullanılan yazıların durumu aşağıda <strong>şu anda ölçülüyor</strong>: uygulama Rusça da konuştuğu için bu sayfada Kiril çizmeyen yazı tipi yok.</div>
+      </div>
+    </section>
+
+    <div class="fixed">
+      <div class="note"><b>Bugünkü uygulama yazıları · canlı ölçüm</b>
+        <div class="frow"><span class="fn">Space Grotesk</span><span data-fam="Space Grotesk"></span></div>
+        <div class="frow"><span class="fn">Figtree</span><span data-fam="Figtree"></span></div>
+        <div class="frow"><span class="fn">JetBrains Mono</span><span data-fam="JetBrains Mono"></span></div>
+        <p class="mute" style="font-size:12.5px;margin-top:8px">✕ olan harfler başka bir yazı tipiyle çiziliyor: Rusça ekranda başlık ve gövde karışık görünüyor. Hangi yön seçilirse seçilsin bu düzelir.</p>
+      </div>
+      <div class="note"><b>Her yönde sabit: klinik durum renkleri</b>Markadan bağımsızdır, marka değişince değişmez. Her yönün paletinde bu dört rengin o yönün zeminindeki kontrastı ve ana renkle ton farkı ölçülür.
+        <div class="stat" id="statRow"></div>
+      </div>
+      <div class="note"><b>Neden altı yönün rengi hep mavi-yeşil bandında?</b>Kırmızı, turuncu ve sarı alarma; yeşil "stabil"e; mavi ve mor MedRapor'a (#1E40AF, #A855F7) ayrılmış. Geriye mavi-yeşil ve renksizler kalıyor. Yönleri bu yüzden ton, zemin ve biçim ayırıyor. Logolar kodla elle çizilmiş konsept; seçilen yön baskı kalitesinde yeniden çizilir. Azerbaycanca metinler benim, yayından önce yerel biri okumalı.</div>
+    </div>
+  </div>
+
+  <div id="dirs"></div>
+
+  <section id="compare" class="sec">
+    <h2 style="margin-top:28px;font-size:22px">Yan yana · aynı giriş ekranı</h2>
+    <p class="mute">Altı yön aynı ekranda. Ayrıntı ve gerekçe için "Tek tek" görünümüne dön.</p>
+    <div class="cgrid" id="cgrid"></div>
+  </section>
+
+  <section id="cevap" class="answer">
+    <div class="card">
+      <h2 style="font-size:22px">Cevap satırı</h2>
+      <p class="mute" style="margin-top:4px">Yönü seç, istersen başka bir yönden bir parça ödünç al. Satırı kopyalayıp bana gönder, yeter.</p>
+      <div class="q"><h3>Marka</h3><div class="chips" data-q="dir"></div></div>
+      <div class="q"><h3>Rengi şuradan ödünç al</h3><div class="chips" data-q="renk"></div></div>
+      <div class="q"><h3>Yazı tipini şuradan ödünç al</h3><div class="chips" data-q="yazi"></div></div>
+      <div class="q"><h3>İşareti şuradan ödünç al</h3><div class="chips" data-q="isaret"></div></div>
+      <div class="q"><h3>Kelime işareti</h3><div class="chips" data-q="harf"></div></div>
+      <div class="q"><h3>Kendi notun (isteğe bağlı)</h3><textarea id="free" placeholder="Örn: C'nin noktası güzel ama rengi A'daki petrol olsun; önceki turlarda asıl rahatsız olduğum şey…"></textarea></div>
+      <div class="line" id="line"></div>
+      <div class="copy"><button type="button" id="copyBtn">Satırı kopyala</button><button type="button" class="reset" id="resetBtn">Seçimleri temizle</button><span class="mute" id="copyMsg" aria-live="polite"></span></div>
+    </div>
+  </section>
+</main>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------- saklama (yalnız bu tarayıcı) ---------- */
+const KEY="homunculus-21-marka";
+function load(){ try{ return JSON.parse(localStorage.getItem(KEY)||"{}"); }catch(e){ return {}; } }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(st)); }catch(e){} }
+const st=Object.assign({dir:null,renk:null,yazi:null,isaret:null,harf:null,free:"",theme:null},load());
+
+/* ---------- sabit klinik durum renkleri ---------- */
+const STATUS=[
+  {k:"crit",n:"Kritik",l:"#DC2626",d:"#EF4444"},
+  {k:"high",n:"Yüksek",l:"#EA580C",d:"#F97316"},
+  {k:"mid", n:"Orta",  l:"#CA8A04",d:"#EAB308"},
+  {k:"ok",  n:"Stabil",l:"#16A34A",d:"#22C55E"}
+];
+const BUTA="M20 46C8 46 3 36 6 27C9 18 18 16 22 10C25 6 24 2 21 1C29 2 33 10 32 19C31 26 34 32 31 38C29 43 25 46 20 46Z M20 38C14 38 12 32 15 28C18 24 24 26 23 31";
+let uid=0;
+
+/* ---------- işaretler: 64×64 kutuda elle çizildi ---------- */
+const S=(d,c,w,extra)=>`<path d="${d}" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="${extra||"round"}" fill="none"${extra==="miter"?' stroke-miterlimit="10"':""}/>`;
+const MARK={
+  A:(c,o)=> (o.bare?"":`<rect x="4" y="4" width="56" height="56" rx="15" fill="${c.bg}"/>`)
+      + S("M24 14.5V49.5M24 33.5C24 26.6 28.4 23 34 23C39.6 23 42.5 26.8 42.5 33V49.5",c.fg,7.4),
+  B:(c,o)=> o.small
+      ? S("M5 47H29V11M29 32C29 25 33.5 22 38.5 22S48 25 48 32V47H59",c.fg,7)
+      : S("M3 46H12C14.6 46 15.6 38.5 18.2 38.5S21.8 46 24.4 46H29V10M29 31C29 24 33.5 21 38.5 21S48 24 48 31V46H61",c.fg,5.2),
+  C:(c,o)=> S("M52 32A20 20 0 1 1 32 12",c.fg,o.small?9:8) + `<circle cx="46.2" cy="17.8" r="${o.small?6:5.4}" fill="${c.acc}"/>`,
+  D:(c,o)=> `<path d="M13.5 9.5H50.5C51.9 9.5 53 10.6 53 12V30C53 43.5 44 52.5 32 58.5C20 52.5 11 43.5 11 30V12C11 10.6 12.1 9.5 13.5 9.5Z" fill="${c.bg}"/>`
+      + S("M25 18V44M25 32.5C25 27.5 28.2 25 32 25S39 27.5 39 32.5V44",c.fg,o.small?6.4:5.6),
+  E:(c,o)=> (o.bare?"":`<rect x="4" y="4" width="56" height="56" rx="12" fill="${c.bg}"/>`)
+      + (o.small?"":`<rect x="9" y="9" width="46" height="46" rx="8" stroke="${c.fg}" stroke-opacity=".35" stroke-width="1.4" fill="none"/>`)
+      + S("M22.5 13.5V50.5",c.fg,6.6) + S("M22.5 40C22.5 32 26.5 28 32.5 23.5C38.5 28 42.5 32 42.5 40V50.5",c.fg,6.6,"miter"),
+  F:(c,o)=> `<path d="M10 58V6H22V19.22A24 24 0 0 1 58 40V58H46V40A12 12 0 0 0 22 40V58Z" fill="${c.fg}"/><rect x="48" y="6" width="10" height="10" rx="1.2" fill="${c.acc}"/>`
+};
+
+/* ---------- altı yön ---------- */
+const D=[
+{ id:"A", name:"Petrol", sub:"Bugünkü tonun olgunlaşmış hâli",
+  tone:"Tanıdık, sakin, klinik. Beğendiğin giriş ekranının marka hâli.",
+  about:"Açık zemin, petrol mavisi, eşit genişlikte rakamlar. İşaret, uygulamanın sol üstündeki \"h\" karesinin elle yeniden çizilmiş hâli: harf artık bir yazı tipinden gelmiyor, ölçülerek çizildi; kalp atışı çizgisi çıkarıldı. Yazı tipleri değişiyor, çünkü bugünkü Space Grotesk Rusça çizmiyor, Figtree ise ne \"ə\" ne Rusça çiziyor (yukarıda ölçülü).",
+  tags:["mevcut ton","en az değişiklik","sakin","klinik"],
+  fh:"Geologica", fb:"Mulish", fn:"JetBrains Mono", hw:"600", hls:"-.02em",
+  fontWhy:"Geologica, Space Grotesk'in geometrik ve teknik havasını taşıyor ama Rusça da çiziyor. Mulish, Figtree'ye en yakın yumuşak gövde yazısı. Rakamlar bugünkü gibi JetBrains Mono.",
+  wm:{t:"homunculus",w:600,ls:"-.02em"},
+  caseWhy:"<b>küçük harf.</b> Uygulamada zaten öyle; uzun ve yabancı bir adı yumuşatır, karedeki h ile aynı harfi tekrar eder.",
+  light:{bg:"#F4F6F9",surf:"#FFFFFF",ink:"#152231",mute:"#5C6B7D",line:"#E1E6EE",pri:"#0E7490",onpri:"#FFFFFF"},
+  dark:{bg:"#07101F",surf:"#0F1B2E",ink:"#E8EEF7",mute:"#8FA1BA",line:"#1C2C45",pri:"#22B8D6",onpri:"#03141C"},
+  priName:"Petrol mavisi",
+  mc:t=>({bg:t.pri,fg:t.onpri}), mono:{bg:"#000",fg:"#fff"}, tile:true,
+  icon:{bg:"#0E7490",c:{fg:"#FFFFFF"},scale:1.02,bare:true},
+  story:"Karedeki h, Homunculus'un baş harfi ve giriş ekranında zaten gördüğün işaret. Değişen: sap ve omuz elle çizildi, köşe yuvarlığı ile çizgi kalınlığı aynı ölçüden geliyor. 16 pikselde dolu bir kare ve içinde beyaz bir h olarak okunuyor.",
+  rule:"Ekranda tek vurgu rengi petrol. Düğme, bağlantı, seçili sekme. Uyarı ve alarm hiçbir zaman petrol olmaz.",
+  why:["Beğendiğin giriş ekranı zaten bu dilde. Seçilirse uygulamada en az şey değişir, kimse yeniden alışmak zorunda kalmaz.","Petrol mavisi alarm renklerinin (kırmızı, turuncu, sarı) tam karşısında durur: kritik kart ekranda tek başına öne çıkar.","Yeni yazı tipleri Azerbaycan, Türk ve Rus harflerinin hepsini çiziyor (ölçüldü); bugünküler çizmiyor."],
+  weak:["Rakiplerden ayrışması en zayıf yön: sağlıkta mavi-yeşil ve harf karesi çok görülür.","MedRapor da camgöbeği (#06B6D4) kullanıyor; koyu temada iki ürün aynı aile gibi okunabilir."],
+  deco:(t)=>{ const id="ad"+(++uid); return `<svg class="deco" viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice"><defs><pattern id="${id}" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="${t.pri}" fill-opacity=".22"/></pattern><radialGradient id="${id}g" cx="0" cy="0" r="1"><stop offset="0" stop-color="${t.pri}" stop-opacity=".18"/><stop offset="1" stop-color="${t.pri}" stop-opacity="0"/></radialGradient></defs><rect width="400" height="240" fill="url(#${id})"/><circle cx="0" cy="0" r="220" fill="url(#${id}g)"/></svg>`; }
+},
+{ id:"B", name:"Tek Çizgi", sub:"Konseyin önerisi, ilk kez sana",
+  tone:"Renksiz, zarif, tek hareket.",
+  about:"İşaret tek bir çizgi: soldan düz gelir, bir kez yumuşakça kabarır (monitör dalgası), yükselip küçük bir \"h\" olur ve düz devam eder. Marka rengi yok: mürekkep siyahı ve kâğıt beyazı. Ekranda renkli olan tek şey hastanın durumu olur. Taslak 16'daki Tek Çizgi'den farkı: sivri kalp atışı yok, uçta nokta yok, küçük boyut için ayrı, sade bir sürüm var.",
+  tags:["renksiz","zarif","tek çizgi","konsey önerisi"],
+  fh:"Onest", fb:"Onest", fn:"Noto Sans Mono", hw:"600", hls:"-.02em",
+  fontWhy:"Onest tek aile: yumuşak, yeni, Rusçayı da aynı özenle çiziyor. Çizginin yumuşak dönüşleriyle aynı dili konuşur. Rakamlar Noto Sans Mono: sade, eşit genişlikte.",
+  wm:{t:"homunculus",w:500,ls:"-.015em"},
+  caseWhy:"<b>küçük harf.</b> Çizginin devamı gibi alçak ve sakin durur; işaretteki h ile aynı harf.",
+  light:{bg:"#F7F6F2",surf:"#FFFFFF",ink:"#14171C",mute:"#5E636B",line:"#E4E2DC",pri:"#14171C",onpri:"#F7F6F2"},
+  dark:{bg:"#111316",surf:"#1A1D22",ink:"#F2F1ED",mute:"#9DA2AA",line:"#2B2F36",pri:"#F2F1ED",onpri:"#111316"},
+  priName:"Mürekkep",
+  mc:t=>({fg:t.ink}), mono:{fg:"#000"},
+  icon:{bg:"#14171C",c:{fg:"#F7F6F2"},scale:.84},
+  story:"Çizgi hiç kopmuyor: hasta ile ekip arasındaki sürekli izlem. Kabarma bir kez ve yumuşak, çünkü sistem bağırmıyor, fark ediyor. Kabarma 20 pikselin altında kaybolacağı için küçük boyutta sade bir h + taban çizgisi kullanılır (aşağıda iki sürüm de var).",
+  rule:"Markada renk yok. Düğmeler mürekkep siyahı (koyu temada kâğıt beyazı). Kırmızı, turuncu, sarı ve yeşil yalnız hastanın durumunu anlatır.",
+  why:["Renk alarm için saklanıyor: markada renk olmayınca kritik kırmızı ekranda tartışmasız öne çıkar.","Tek renkle her yere basılır: faks, damga, cihaz etiketi, yaka kartı. Baskı en ucuz, en kolay.","Konseyin önerisiydi: tek pazara kilitlenmez; Bakü'de, İstanbul'da, Almatı'da aynı çalışır."],
+  weak:["Monitör dalgası sağlıkta sık görülen bir motif; özgünlüğü dalganın h'ye dönüşmesi taşıyor.","Renksiz marka tanıtım sayfasında soğuk durabilir; sıcaklığı fotoğraf ve metin taşımak zorunda.","16 pikselde asıl fikir (dalga) görünmüyor; küçük sürüm bilerek sade."],
+  deco:(t)=>`<svg class="deco" viewBox="0 0 400 240" preserveAspectRatio="none"><path d="M-10 214H150C158 214 161 200 168 200S177 214 185 214H410" stroke="${t.ink}" stroke-opacity=".16" stroke-width="1.6" fill="none"/></svg>`
+},
+{ id:"C", name:"Dikkat Noktası", sub:"16'daki H + nokta fikrinin daha iyisi",
+  tone:"Sistemin ne yaptığını tek şekille söyler: izler ve fark eder.",
+  about:"Kapanmayan bir çember ve boşlukta duran bir nokta. Çember sürekli izlem; nokta, çemberin kesildiği yerde duran tek şey: fark edilen an. 16'daki \"H + nokta\" harfe bağlıydı; bu işaret harfsiz, bu yüzden 16 pikselde bile bir halka ve bir nokta olarak seçiliyor. Gece laciverti zemin, noktada tek parlak renk.",
+  tags:["anlamlı","en küçükte net","soyut","hareket edebilir"],
+  fh:"Commissioner", fb:"Inter", fn:"Martian Mono", hw:"700", hls:"-.02em",
+  fontWhy:"Commissioner dik ve sakin, başlıkta ciddiyet veriyor. Gövde Inter: küçük boyutta en okunaklılardan. Rakamlar Martian Mono: geniş ve net, uzaktan okunur.",
+  wm:{t:"homunculus",w:600,ls:"-.015em"},
+  caseWhy:"<b>küçük harf.</b> Halka, \"homunculus\"taki o ve u harfleriyle kafiyeli; büyük H bu ritmi bozar.",
+  light:{bg:"#F4F7FB",surf:"#FFFFFF",ink:"#0E2236",mute:"#56697F",line:"#DCE3EC",pri:"#123A5A",onpri:"#FFFFFF",acc:"#0B8FA0"},
+  dark:{bg:"#0A1624",surf:"#112236",ink:"#E6EEF7",mute:"#8EA2B9",line:"#1E3450",pri:"#5FD3E0",onpri:"#06202A",acc:"#5FD3E0"},
+  priName:"Gece laciverti", accName:"Nokta · buz camgöbeği",
+  mc:t=>({fg:t.ink,acc:t.acc}), mono:{fg:"#000",acc:"#000"},
+  icon:{bg:"#123A5A",c:{fg:"#FFFFFF",acc:"#5FE0EC"},scale:.8},
+  story:"Çember kapanmıyor, çünkü izlem hiç bitmiyor. Nokta çemberin kesildiği yerde: sistemin bir şeyi fark ettiği an. Yükleniyor simgesinde ve bildirimde aynı şekil hareket edebilir (nokta çemberin üstünde döner).",
+  rule:"Nokta rengi yalnız işarette ve \"sistem fark etti\" anlarında (yeni öneri, gerekçe). Düğmeler lacivert. Alarm hiçbir zaman nokta rengiyle gösterilmez.",
+  why:["İşaret ürünün yaptığı işi anlatıyor, hikâye gerektirmiyor: izle, fark et.","En küçük boyutta en iyi okunan şekillerden: halka ve nokta 16 pikselde de ayrışıyor (piksel testi aşağıda).","\"Fark ettim\" ile \"alarm\" ayrı renkte konuşuyor: nokta camgöbeği, alarm kırmızı."],
+  weak:["Soyut: tek başına \"sağlık\" demiyor; adın ve sloganın yanında durmalı.","Halka + nokta kamera, kayıt tuşu, konum gibi başka alanlarda da var; tescil araştırması şart.","Koyu temada camgöbeği yine MedRapor'un renk ailesine yakın; ton daha koyu ve sakin tutuldu."],
+  deco:(t)=>`<svg class="deco" viewBox="0 0 400 240" preserveAspectRatio="xMaxYMid slice"><g transform="translate(250 -40) scale(3.4)" opacity=".10"><path d="M52 32A20 20 0 1 1 32 12" stroke="${t.ink}" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="46.2" cy="17.8" r="3" fill="${t.acc}"/></g></svg>`
+},
+{ id:"D", name:"Kalkan", sub:"Veri hastanenin içinde kalır",
+  tone:"Sakin, kurumsal, sesini yükseltmeyen.",
+  about:"Arduaz (koyu gri-mavi) bir kalkanın içinde küçük bir h. Kalkan, sistemin hastanenin kendi sunucusunda çalıştığını söyler. Renk kısık, yazı IBM Plex: bir ihale dosyasında, bir cihaz etiketinde, bir bakanlık sunumunda aynı ciddiyetle durur. Kalkanın üstü düz, altı yuvarlak: arma değil, bir koruma.",
+  tags:["kurumsal","güven","kısık renk","ihale dostu"],
+  fh:"IBM Plex Sans", fb:"IBM Plex Sans", fn:"IBM Plex Mono", hw:"600", hls:"-.01em",
+  fontWhy:"Tek aile: başlık, gövde ve rakam aynı elden. IBM'in teknik belgeler için çizdiği yazı; soğuk değil, düzgün. Rusça dahil tam (ölçüldü).",
+  wm:{t:"Homunculus",w:600,ls:"-.005em"},
+  caseWhy:"<b>Büyük H.</b> Resmî yazışma, antet ve ihale belgesinde kurum adı gibi durur; kalkanın ciddiyetiyle uyumlu.",
+  light:{bg:"#F5F5F2",surf:"#FFFFFF",ink:"#1E2A33",mute:"#5D6873",line:"#E2E2DC",pri:"#2F4A5E",onpri:"#FFFFFF"},
+  dark:{bg:"#0F1418",surf:"#182027",ink:"#E9ECEE",mute:"#97A3AD",line:"#26313A",pri:"#A9C3D6",onpri:"#0F1418"},
+  priName:"Arduaz",
+  mc:t=>({bg:t.pri,fg:t.onpri}), mono:{bg:"#000",fg:"#fff"},
+  icon:{bg:"#2F4A5E",c:{bg:"#F5F5F2",fg:"#2F4A5E"},scale:.86},
+  story:"Kalkanın içindeki h, hastanenin içinde çalışan sistem. Tek renkle damgaya, antete ve cihaz etiketine basılır. Küçük boyutta kalkan ve h birlikte okunuyor, çünkü içerideki çizgi kalın tutuldu.",
+  rule:"Arduaz yalnız düğme, başlık çizgisi ve işaret. Renk kısık olduğu için kritik kırmızı ekranda en çok bu yönde öne çıkar.",
+  why:["Satın alan başhekim ve bilgi işlemin ilk sorusu \"veri nereye gidiyor?\". İşaret bu soruya cevap veriyor.","En kısık renk: arduaz alarmla, stabil yeşille ve MedRapor mavisiyle yarışmıyor.","IBM Plex tek aile, üç dilde tam; belge, rapor ve ekran aynı yazıyla çıkar."],
+  weak:["Kalkan güvenlik yazılımlarının klişesi; sağlıkla bağı zayıf.","En az heyecan veren yön; hemşire ve hekim için sıcaklık yok.","\"Veri hastanede kalır\" sözü ancak kurulum gerçekten öyleyse kullanılabilir; her hastanede doğrulanmalı."],
+  deco:()=>""
+},
+{ id:"E", name:"Kemer ve Buta", sub:"Azerbaycan katmanlı",
+  tone:"Sıcak, yerel, ama klinikte sade.",
+  about:"Firuze bir çini karosunda, omzu sivri kemer olan bir h: İçərişəhər kapılarındaki ve Şirvanşahlar Sarayı'ndaki kemerlerin çizgisi. Buta logoda yok; yalnız ikinci katmanda: tanıtım sayfasının kenarında, broşürde, fuar standında. Uygulamanın içinde (giriş ve yatak ekranları) buta hiç yok. Zemin fildişi, başlıklar tırnaklı yazı.",
+  tags:["yerel","sıcak","katmanlı","klinikte sade"],
+  fh:"Lora", fb:"Noto Sans", fn:"Noto Sans", hw:"600", hls:"-.01em",
+  fontWhy:"Lora tırnaklı ve sıcak: kitap ve kitabe gibi. Noto Sans Azerbaycan, Türk ve Rus harflerini aynı biçimde çiziyor; rakamlar Noto Sans'ın eşit genişlikte rakamlarıyla.",
+  wm:{t:"Homunculus",w:600,ls:"0"},
+  caseWhy:"<b>Büyük H.</b> Tırnaklı yazıda kitap kapağı gibi durur; işaretteki kemerli h zaten küçük harf, ikisi birbirini tekrar etmez.",
+  light:{bg:"#F6F1E7",surf:"#FFFDF8",ink:"#1C2B4B",mute:"#665F55",line:"#E4DBC9",pri:"#0B7F7A",onpri:"#FFFFFF"},
+  dark:{bg:"#101A2C",surf:"#17243B",ink:"#F3EEE3",mute:"#A8A195",line:"#2A3A57",pri:"#3CC4BA",onpri:"#06201E"},
+  priName:"Firuze", extra:[["Mis (yalnız basılı)","#A5673F","#C98A5E","Buta deseni, broşür, stand. Ekranda asla: turuncuya yakın, alarmla karışır."]],
+  mc:t=>({bg:t.pri,fg:t.onpri}), mono:{bg:"#000",fg:"#fff"}, tile:true,
+  icon:{bg:"#0B7F7A",c:{fg:"#F6F1E7"},scale:1,bare:true,frame:true},
+  story:"Kemer, Azerbaycan mimarisinin en tanıdık çizgisi ama ulusal bir simge değil: logoda ulusal simge kullanmanın hukuki riski yok. Buta ikinci katmanda kalır; başka ülkeye gidince yalnız o katman değişir, logo kalır.",
+  rule:"Firuze ekranda tek vurgu. Mis (bakır) yalnız basılı işlerde ve buta deseninde. Buta uygulama ekranlarına girmez.",
+  why:["İlk pazar Azerbaycan: başhekim ilk bakışta \"bizim için yapılmış\" hisseder, ama klinik ekran sade kalır.","Konseyin ayrımı uygulanmış: çekirdek sade, Azerbaycan yüzü ikinci katmanda.","Sıcaklığı fildişi zemin ve tırnaklı başlık taşıyor; firuze alarm renklerine hiç yaklaşmıyor."],
+  weak:["Buta'nın ticari kullanımı doğrulanmadı; ikinci katmanda bile bir Azerbaycanlı marka avukatına sorulmalı.","Tırnaklı başlık yoğun bakım ekranında (küçük punto, gece) yorabilir; uygulamada yalnız büyük başlıklarda.","Kemerin sivri tepesi 16 pikselde yuvarlanıyor; küçük boyutta sıradan bir h'ye yaklaşıyor."],
+  deco:(t,dark)=>{ const id="bp"+(++uid); const c=dark?t.pri:"#A5673F"; return `<svg class="deco" viewBox="0 0 400 240" preserveAspectRatio="xMaxYMid slice"><defs><pattern id="${id}" width="44" height="52" patternUnits="userSpaceOnUse"><g transform="translate(2 2)"><path d="${BUTA}" fill="none" stroke="${c}" stroke-width="1.3" stroke-opacity=".35"/></g></pattern><linearGradient id="${id}f" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity="1"/></linearGradient><mask id="${id}m"><rect x="290" width="110" height="240" fill="url(#${id}f)"/></mask></defs><rect x="290" y="0" width="110" height="240" fill="url(#${id})" mask="url(#${id}m)"/></svg>`; }
+},
+{ id:"F", name:"Cesur", sub:"Tek güçlü renk, geometrik yazı",
+  tone:"Genç, kendinden emin, fuarda uzaktan görünen.",
+  about:"Siyah, beyaz ve tek güçlü renk: nane turkuazı. İşaret iki dolu geometrik parçadan: kalın bir sap ve yarım daire kemer; köşede turkuaz bir kare. Kelime işareti geniş ve kalın büyük harf (Unbounded). Bir tıp yazılımından çok bir teknoloji şirketi gibi durur; bilerek.",
+  tags:["cesur","geometrik","siyah-beyaz","akılda kalan"],
+  fh:"Unbounded", fb:"Fira Sans", fn:"Tektur", hw:"700", hls:"-.02em",
+  fontWhy:"Unbounded geniş ve kalın: afiş gibi. Gövde Fira Sans, dar ve çok okunaklı. Rakamlar Tektur: köşeli, dijital ekran hissi.",
+  wm:{t:"HOMUNCULUS",w:700,ls:"-.01em",size:.72},
+  caseWhy:"<b>BÜYÜK HARF.</b> Kalın geniş yazıda afiş gibi durur, fuarda ve sunumda uzaktan okunur; uzun ad tek blok olur.",
+  light:{bg:"#FFFFFF",surf:"#F3F4F4",ink:"#0A0B0C",mute:"#5A5F66",line:"#E3E5E7",pri:"#00C9A7",onpri:"#0A0B0C",prit:"#0A0B0C"},
+  dark:{bg:"#0A0B0C",surf:"#16181B",ink:"#F4F5F6",mute:"#9BA1A8",line:"#26292E",pri:"#00E0BA",onpri:"#0A0B0C"},
+  priName:"Nane turkuazı",
+  mc:t=>({fg:t.ink,acc:t.pri}), mono:{fg:"#000",acc:"#000"},
+  icon:{bg:"#0A0B0C",c:{fg:"#F4F5F6",acc:"#00E0BA"},scale:.72},
+  story:"Kare, sistemin fark ettiği şey: harfin dışında, köşede. Parçalar dolu, çizgi yok; bu yüzden 16 pikselde en kalın ve en net işaret. Tek renkte kare siyah olur, işaret yine okunur.",
+  rule:"Turkuaz yalnız dolgu: düğme, kare, büyük alan. Açık zeminde asla yazı rengi değil (kontrast yetmez, aşağıda ölçülü); yazı her zaman siyah ya da beyaz.",
+  why:["Rakiplerin hepsi lacivert ve yumuşak; siyah ve turkuaz bir fuar salonunda ilk görülen stant olur.","Dolu geometrik işaret en küçük boyutta en net olanı: incelen çizgi yok.","Kural sert ve basit: turkuaz dolgu, yazı siyah-beyaz. Yanlış kullanmak zor."],
+  weak:["Başhekim ve bakanlık için fazla \"girişim\" durabilir; ciddiyet tonu en düşük yön.","Nane turkuazı stabil yeşile yakın (ton farkı aşağıda ölçülü); yatak kartında yeşil her zaman yazılı etiketle kullanılmalı.","Unbounded çok geniş: \"HOMUNCULUS\" dar ekranda küçülmek zorunda."],
+  deco:(t)=>`<svg class="deco" viewBox="0 0 400 240" preserveAspectRatio="xMaxYMax slice"><rect x="360" y="200" width="40" height="40" fill="${t.pri}"/></svg>`
+}
+];
+const LETTER_ABL={A:"A'dan",B:"B'den",C:"C'den",D:"D'den",E:"E'den",F:"F'den"};
+
+/* ---------- renk ölçümü ---------- */
+function rgb(h){ h=h.replace("#",""); if(h.length===3) h=h.split("").map(x=>x+x).join(""); return [0,2,4].map(i=>parseInt(h.substr(i,2),16)/255); }
+function lum(h){ const [r,g,b]=rgb(h).map(v=>v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)); return .2126*r+.7152*g+.0722*b; }
+function cr(a,b){ const x=lum(a),y=lum(b); return (Math.max(x,y)+.05)/(Math.min(x,y)+.05); }
+function hsl(h){ const [r,g,b]=rgb(h); const mx=Math.max(r,g,b),mn=Math.min(r,g,b),l=(mx+mn)/2; let s=0,hh=0; if(mx!==mn){ const d=mx-mn; s=l>.5?d/(2-mx-mn):d/(mx+mn); hh= mx===r?((g-b)/d+(g<b?6:0)) : mx===g?((b-r)/d+2) : ((r-g)/d+4); hh*=60; } return {h:hh,s,l}; }
+function hueDist(a,b){ const d=Math.abs(a-b)%360; return d>180?360-d:d; }
+function crBadge(fg,bg,need,label){
+  const r=cr(fg,bg), txt=r.toFixed(1)+":1";
+  if(!need) return `<span class="badge" title="Eşik yok: yalnız ayırıcı">${txt} · süs</span>`;
+  const ok=r>=need;
+  return `<span class="badge ${ok?"ok":"no"}" title="${label}: en az ${need}:1 gerekir">${txt} · ${label} ${ok?"✓":"✕"}</span>`;
+}
+
+/* ---------- yardımcılar ---------- */
+function isDark(){ if(st.theme) return st.theme==="dark"; try{ return window.matchMedia("(prefers-color-scheme: dark)").matches; }catch(e){ return false; } }
+function tok(d,dark){ return (dark===undefined?isDark():dark)?d.dark:d.light; }
+function kvars(d,t,dark){
+  const s=STATUS, dk=(dark===undefined?isDark():dark);
+  const crit=dk?s[0].d:s[0].l, okc=dk?s[3].d:s[3].l;
+  return `--k-bg:${t.bg};--k-surf:${t.surf};--k-ink:${t.ink};--k-mute:${t.mute};--k-line:${t.line};--k-pri:${t.pri};--k-onpri:${t.onpri};--k-prit:${t.prit||t.pri};--k-crit:${crit};--k-okc:${okc};--k-ok:${okc};--k-fh:'${d.fh}',system-ui,sans-serif;--k-fb:'${d.fb}',system-ui,sans-serif;--k-fn:'${d.fn}',monospace;--k-hw:${d.hw};--k-hls:${d.hls}`;
+}
+function markSvg(d,size,c,o){ o=o||{}; const small=o.small!==undefined?o.small:size<=22; return `<svg width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true" style="flex:none;display:block">${MARK[d.id](c,{small,bare:o.bare})}</svg>`; }
+function iconInner(d,size){
+  const I=d.icon, small=size<=24;
+  let inner=MARK[d.id](I.c,{small,bare:I.bare});
+  const s=I.scale;
+  return `<rect width="64" height="64" fill="${I.bg}"/><g transform="translate(32 32) scale(${s}) translate(-32 -32)">${inner}</g>`;
+}
+function iconSvg(d,size,radius){
+  const r=radius!==undefined?radius:Math.round(size*.225);
+  return `<svg width="${size}" height="${size}" viewBox="0 0 64 64" style="border-radius:${r}px;display:block;flex:none;box-shadow:0 0 0 1px rgba(128,128,128,.28)" aria-hidden="true"><defs><clipPath id="ic${++uid}"><rect width="64" height="64" rx="${64*r/size}"/></clipPath></defs><g clip-path="url(#ic${uid})">${iconInner(d,size)}</g></svg>`;
+}
+function iconSvgRaw(d,px,rad){ // bağımsız svg metni (piksel testi için)
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 64 64"><clipPath id="k"><rect width="64" height="64" rx="${rad}"/></clipPath><g clip-path="url(#k)">${iconInner(d,px)}</g></svg>`;
+}
+function wordmark(d,color,size){
+  const sz=Math.round(size*(d.wm.size||1));
+  return `<span style="font-family:'${d.fh}',system-ui,sans-serif;font-weight:${d.wm.w};letter-spacing:${d.wm.ls};font-size:${sz}px;color:${color};line-height:1;white-space:nowrap">${d.wm.t}</span>`;
+}
+function lockup(d,t,size,c){
+  const mc=c||d.mc(t);
+  return `<span style="display:inline-flex;align-items:center;gap:${Math.round(size*.36)}px;min-width:0">${markSvg(d,Math.round(size*1.3),mc,{small:false})}${wordmark(d,c?"#000":t.ink,size)}</span>`;
+}
+function spark(color,seed){
+  let y=[7,6,7,5,6,8,6,7,5,6], p=""; y=y.map((v,i)=>v+((seed*7+i*3)%3)-1);
+  y.forEach((v,i)=>{ p+=(i?"L":"M")+(i*6.6).toFixed(1)+" "+v; });
+  return `<svg viewBox="0 0 60 12" preserveAspectRatio="none"><path d="${p}" stroke="${color}" stroke-width="1.2" fill="none" stroke-linejoin="round"/></svg>`;
+}
+
+/* ---------- dört uygulama ---------- */
+function phone(d){
+  const dark=isDark();
+  const wall = dark ? "linear-gradient(160deg,#1d2433,#0d1119 70%)" : "linear-gradient(160deg,#dfe6ee,#b9c6d4 75%)";
+  const txt = dark ? "#e8edf3" : "#1b2330";
+  const grey = dark ? ["#3a4354","#2f3747","#465063","#353d4d"] : ["#ffffff","#eef1f5","#f7f8fa","#e6eaf0"];
+  const names=["Telefon","Mesajlar","Kamera","Takvim","Saat","Harita","Notlar","Posta","Hava","Fotoğraf","Ayarlar"];
+  let cells="", n=0;
+  for(let k=0;k<12;k++){
+    if(k===5){ cells+=`<div class="ic">${iconSvg(d,32,7)}<span style="color:${txt};font-weight:600">Homunculus</span></div>`; continue; }
+    cells+=`<div class="ic"><i class="g" style="background:${grey[k%4]};box-shadow:inset 0 0 0 1px rgba(0,0,0,.06)"></i><span style="color:${txt}">${names[n++]||""}</span></div>`;
+  }
+  let dock=""; for(let k=0;k<4;k++) dock+=`<i class="g" style="background:${grey[(k+1)%4]}"></i>`;
+  return `<div class="phone"><div class="scr" style="background:${wall};color:${txt}"><div class="sbar"><span>09:41</span><span>●●● 5G</span></div><div class="grid4">${cells}</div><div class="dock">${dock}</div></div></div>`;
+}
+function login(d,dark){
+  const t=tok(d,dark), mc=d.mc(t);
+  const beds=[["REA01",96],["REA02",94],["REA03",97],["REA04",98]].map((b,i)=>`<div class="mb"><b>${b[0]}<i></i></b>${spark(t.prit||t.pri,i)}<div class="v">${b[1]}</div></div>`).join("");
+  return `<div class="lg" style="${kvars(d,t,dark)}"><div class="lg-in">
+    <div class="lg-l"><div style="display:flex;align-items:center;gap:8px">${markSvg(d,26,mc)}${wordmark(d,t.ink,16)}</div>
+      <span class="lg-ey">● Klinik qərar dəstəyi</span>
+      <div class="lg-h">Hər çarpayı, hər növbə — <em>bir baxışda.</em></div>
+      <p>Cihaz məlumatlarını toplayır, pisləşməni erkən göstərir, doğru komandanı çağırır. Qərarı həkim verir.</p>
+      <div class="lg-beds">${beds}</div>
+    </div>
+    <div class="lg-r"><div class="lg-top"><span>AZ ▾</span><span>☾</span></div>
+      <h5>Daxil olun</h5><div class="sub">Xəstəxana istifadəçi adı və şifrənizlə</div>
+      <div class="fld">İSTİFADƏÇİ ADI</div><div class="inp f">dr.kamran</div>
+      <div class="fld">ŞİFRƏ</div><div class="inp">••••••••</div>
+      <span class="kbtn">Daxil ol ›</span>
+      <div class="lfoot"><span>Məxfilik</span><span>Şərtlər</span><span>Əlaqə</span></div>
+    </div></div></div>`;
+}
+function appMock(d){
+  const t=tok(d), dark=isDark(), mc=d.mc(t);
+  const crit=dark?STATUS[0].d:STATUS[0].l, ok=dark?STATUS[3].d:STATUS[3].l;
+  const soft=(c)=>`color-mix(in srgb,${c} ${dark?22:13}%,${t.surf})`;
+  return `<div class="am" style="${kvars(d,t)}"><div class="am-in">
+    <div class="am-top">${markSvg(d,22,mc)}${wordmark(d,t.ink,14)}<span style="width:1px;height:18px;background:${t.line};flex:none"></span><span class="u">Reanimasiya · 12 çarpayı</span><span class="sp"></span><span class="pill">Növbə <b>08:00–20:00</b></span><span class="av">KƏ</span></div>
+    <div class="am-b">
+      <div class="bc crit"><div class="bc-h"><b>REA03</b><span class="chipS" style="background:${soft(crit)};color:${crit}">KRİTİK</span></div>
+        <div class="who">Kişi · 67 yaş · 2-ci gün</div>
+        <div class="sc"><strong style="color:${crit}">9</strong><small>NEWS2</small></div>
+        <div class="vit"><span><small>HR</small>131</span><span><small>MAP</small>58</span><span><small>SpO₂</small>88</span></div>
+        <div class="why1">Hipotenziya + taxikardiya · 4 dəq əvvəl</div>
+        <div class="bb"><span class="p">Aç</span><span class="g">Gördüm</span></div></div>
+      <div class="bc ok"><div class="bc-h"><b>REA05</b><span class="chipS" style="background:${soft(ok)};color:${ok}">STABİL</span></div>
+        <div class="who">Qadın · 54 yaş · 5-ci gün</div>
+        <div class="sc"><strong>1</strong><small>NEWS2</small></div>
+        <div class="vit"><span><small>HR</small>82</span><span><small>MAP</small>88</span><span><small>SpO₂</small>97</span></div>
+        <div class="why1">Son ölçüm 2 dəq əvvəl</div>
+        <div class="bb"><span class="p">Aç</span></div></div>
+    </div></div></div>`;
+}
+function hero(d){
+  const t=tok(d), dark=isDark(), mc=d.mc(t);
+  const st4=[["REA01",0,11],["REA02",3,1],["REA03",2,5],["REA04",3,2]];
+  const beds=st4.map(b=>{ const s=STATUS[b[1]]; return `<div class="bed"><b>${b[0]}<i style="background:${dark?s.d:s.l}"></i></b><div class="n">${b[2]} <small>NEWS2</small></div></div>`; }).join("");
+  return `<div class="hr" style="${kvars(d,t)}"><div class="hr-in">${d.deco(t,dark)}
+    <div class="hnav">${markSvg(d,20,mc)}${wordmark(d,t.ink,14)}<div class="links"><span>Necə işləyir</span><span>Ekranlar</span><span>Təhlükəsizlik</span><span class="mini">Demo istəyin</span></div></div>
+    <div class="hbody">
+      <div><div class="ey">Klinik qərar dəstəyi</div><h6>Hər çarpayı, hər növbə — bir baxışda.</h6><p>Cihaz məlumatlarını toplayır, pisləşməni erkən göstərir, doğru komandanı çağırır. Qərarı həkim verir.</p>
+        <div class="hbtns"><span class="hb1">Demo istəyin</span><span class="hb2">Ekranlara baxın</span></div></div>
+      <div class="prev"><div class="ph"><span>Böyüklər reanimasiyası</span><span>12 çarpayı</span></div><div class="beds">${beds}</div></div>
+    </div></div></div>`;
+}
+function tabs(d,dark){
+  const ch = dark?{bar:"#1f2229",tab:"#35363a",ink:"#e8eaed",url:"#202124",field:"#35363a"}:{bar:"#dee1e6",tab:"#ffffff",ink:"#1f1f1f",url:"#ffffff",field:"#f1f3f4"};
+  return `<div><div class="tabs" style="background:${ch.bar}"><div class="tab on" style="background:${ch.tab};color:${ch.ink}">${iconSvg(d,16,3)}<span>Homunculus · Reanimasiya</span><span class="x">✕</span></div><div class="tab off" style="color:${ch.ink}"><i style="width:14px;height:14px;border-radius:50%;background:${dark?"#5f6368":"#9aa0a6"};flex:none;display:block"></i><span>Poçt</span></div></div><div class="url" style="background:${ch.url}"><span style="background:${ch.field};color:${ch.ink}">homunculus.az/reanimasiya</span></div></div>`;
+}
+
+/* ---------- palet kutusu ---------- */
+function palette(d){
+  const L=d.light, K=d.dark;
+  const rows=[
+    ["Ana renk","pri",d.priName,(t)=>crBadge(t.pri,t.bg,3,"simge")+" "+crBadge(t.onpri,t.pri,4.5,"düğme yazısı")],
+    ...(L.acc?[["Nokta","acc",d.accName,(t)=>crBadge(t.acc,t.bg,3,"simge")]]:[]),
+    ["Yazı","ink","Başlık ve metin",(t)=>crBadge(t.ink,t.bg,4.5,"metin")],
+    ["İkincil yazı","mute","Açıklama, etiket",(t)=>crBadge(t.mute,t.bg,4.5,"metin")],
+    ["Zemin","bg","Sayfa zemini",(t)=>crBadge(t.surf,t.bg,0)],
+    ["Yüzey","surf","Kart, form",(t)=>crBadge(t.surf,t.bg,0)],
+    ["Çizgi","line","Ayırıcı",(t)=>crBadge(t.line,t.bg,0)]
+  ];
+  const sw=rows.map(r=>`<div class="sw"><b>${r[0]}</b><small>${r[2]}</small>
+      <div class="sv"><em>Açık</em><i style="background:${L[r[1]]}"></i><code>${L[r[1]]}</code></div><div class="sv" style="margin-left:38px">${r[3](L)}</div>
+      <div class="sv"><em>Koyu</em><i style="background:${K[r[1]]}"></i><code>${K[r[1]]}</code></div><div class="sv" style="margin-left:38px">${r[3](K)}</div></div>`).join("");
+  const ex=(d.extra||[]).map(x=>`<div class="sw"><b>${x[0]}</b><small>${x[3]}</small><div class="sv"><em>Açık</em><i style="background:${x[1]}"></i><code>${x[1]}</code></div><div class="sv"><em>Koyu</em><i style="background:${x[2]}"></i><code>${x[2]}</code></div></div>`).join("");
+  const ph=hsl(L.pri), grey=(Math.max(...rgb(L.pri))-Math.min(...rgb(L.pri)))<.08;
+  const stat=STATUS.map(s=>{
+    const hd=grey?null:Math.round(hueDist(ph.h,hsl(s.l).h));
+    const hb= grey?`<span class="badge ok">ana renk renksiz · çatışma yok</span>` : `<span class="badge ${hd>=40?"ok":hd>=25?"mid":"no"}" title="Ana renkle ton farkı; 40° ve üstü rahat ayrışır">ana renkle ton farkı ${hd}° ${hd>=40?"✓":hd>=25?"yakın":"✕"}</span>`;
+    return `<div class="sw"><b>${s.n}</b><small>sabit · markadan bağımsız</small>
+      <div class="sv"><em>Açık</em><i style="background:${s.l}"></i><code>${s.l}</code></div><div class="sv" style="margin-left:38px">${crBadge(s.l,L.bg,3,"simge")}</div>
+      <div class="sv"><em>Koyu</em><i style="background:${s.d}"></i><code>${s.d}</code></div><div class="sv" style="margin-left:38px">${crBadge(s.d,K.bg,3,"simge")}</div>
+      <div class="sv">${hb}</div></div>`;
+  }).join("");
+  return `<div class="box"><h4>Renk paleti <em>· kontrast bu sayfada hesaplanıyor (WCAG: metin 4.5:1, simge ve büyük yazı 3:1)</em></h4>
+    <div class="pal">${sw}${ex}</div>
+    <p class="rule"><b>Renk kuralı.</b> ${d.rule}</p>
+    <div class="subh">Klinik durum renkleri bu yönün zemininde</div>
+    <div class="pal">${stat}</div></div>`;
+}
+
+/* ---------- yazı tipi desteği ölçümü ----------
+   Yöntem: yazı tipini örnek harfler için yükle; aynı metni iki farklı yedek yazı tipiyle ölç.
+   Yazı tipi harfi çiziyorsa iki genişlik aynı çıkar; çizmiyorsa yedeğe düşer, genişlikler ayrılır.
+   Önce Latin harfleri sınanır: onlar da yedeğe düşüyorsa yazı tipi hiç yüklenmemiştir ("yüklenemedi"),
+   eksik harf sanılmaz. */
+const TESTS={lat:"Hamburgefonstiv",az:"əƏəƏə",tr:"ğĞşŞıİ",cy:"ЖжЩщЯяЫыЁё"};
+const cv=document.createElement("canvas").getContext("2d");
+function wd(fam,fb,txt){ cv.font=`600 40px "${fam}", ${fb}`; return cv.measureText(txt).width; }
+const fcache={};
+async function support(fam){
+  if(fcache[fam]) return fcache[fam];
+  fcache[fam]=(async()=>{
+    const out={};
+    cv.font="600 40px monospace"; const b1=cv.measureText("əЖğ").width; cv.font="600 40px serif"; const b2=cv.measureText("əЖğ").width;
+    if(Math.abs(b1-b2)<.5) return {unk:true};
+    for(const k in TESTS){ try{ await document.fonts.load(`600 40px "${fam}"`,TESTS[k]); }catch(e){} out[k]=Math.abs(wd(fam,"monospace",TESTS[k])-wd(fam,"serif",TESTS[k]))<.5; }
+    return out;
+  })();
+  return fcache[fam];
+}
+function fbadges(r){
+  if(r.unk) return `<span class="badge">ölçülemedi (tarayıcı ayırt edemedi)</span>`;
+  if(!r.lat) return `<span class="badge mid">yüklenemedi (internet?) · ölçüm geçersiz</span>`;
+  const b=(ok,l)=>`<span class="badge ${ok?"ok":"no"}">${l} ${ok?"✓":"✕"}</span>`;
+  return b(r.az,"Azərbaycan ə")+" "+b(r.tr,"Türkçe ğ ş ı İ")+" "+b(r.cy,"Кириллица");
+}
+async function checkFonts(){
+  if(!document.fonts) { document.querySelectorAll("[data-fam]").forEach(el=>el.innerHTML=`<span class="badge">ölçülemedi</span>`); return; }
+  const els=[...document.querySelectorAll("[data-fam]")];
+  for(const el of els){ if(!el.innerHTML) el.innerHTML=`<span class="badge">ölçülüyor…</span>`; }
+  for(const el of els){ const r=await support(el.dataset.fam); el.innerHTML=fbadges(r); }
+}
+
+/* ---------- piksel testi ---------- */
+function pixelTests(){
+  document.querySelectorAll("canvas[data-px]").forEach(cn=>{
+    const d=D.find(x=>x.id===cn.dataset.px), kind=cn.dataset.kind, dark=cn.dataset.dark==="1";
+    const t=dark?d.dark:d.light;
+    let svg;
+    if(kind==="icon") svg=iconSvgRaw(d,16,12);
+    else svg=`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 64 64"><rect width="64" height="64" fill="${t.bg}"/>${MARK[d.id](d.mc(t),{small:true})}</svg>`;
+    const img=new Image();
+    img.onload=()=>{ const x=cn.getContext("2d"); x.clearRect(0,0,16,16); x.drawImage(img,0,0,16,16); };
+    img.src="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
+  });
+}
+
+/* ---------- yön kartı ---------- */
+function dirCard(d){
+  const L=d.light, K=d.dark, picked=st.dir===d.id, t=tok(d);
+  const fams=[...new Set([d.fh,d.fb,d.fn])];
+  const sizes=[60,40,28,20,16].map(s=>`<div style="color:${L.mute}">${markSvg(d,s,d.mc(L))}${s} px</div>`).join("");
+  const sizesK=[60,40,28,20,16].map(s=>`<div style="color:${K.mute}">${markSvg(d,s,d.mc(K))}${s}</div>`).join("");
+  return `<article class="dir${picked?" picked":""}" id="yon-${d.id}">
+    <div class="dhead"><div class="letter">${d.id}</div>
+      <div class="t"><h2>${d.id} · ${d.name} <span class="mute" style="font-size:15px;font-weight:600">· ${d.sub}</span></h2><p><b style="color:var(--ink)">${d.tone}</b> ${d.about}</p><div class="tags">${d.tags.map(x=>`<span class="tag">${x}</span>`).join("")}</div></div>
+      <button type="button" class="pick${picked?" on":""}" data-pick="${d.id}">${picked?"✓ Seçildi":"Bu yönü seç"}</button>
+    </div>
+    <div class="dbody">
+      <div class="row2">
+        <div class="box"><h4>Logo · açık, koyu, tek renk</h4>
+          <div class="logos">
+            <div class="lk" style="background:${L.bg};border:1px solid ${L.line}">${lockup(d,L,28)}</div>
+            <div class="lk" style="background:${K.bg}">${lockup(d,K,28)}</div>
+            <div class="lk mono">${lockup(d,L,24,d.mono)}<small>Tek renk (siyah) · damga, faks, cihaz etiketi</small></div>
+          </div>
+          <div class="markrow" style="background:${L.bg};border:1px solid ${L.line}"><div class="sizes" style="margin:0">${sizes}</div></div>
+          <div class="markrow" style="background:${K.bg}"><div class="sizes" style="margin:0">${sizesK}</div></div>
+          <p class="case">Kelime işareti ${d.caseWhy}</p>
+          <p class="story">${d.story}</p>
+        </div>
+        <div class="box"><h4>Uygulama simgesi ve sekme</h4>
+          <div class="icons">
+            <figure>${iconSvg(d,120)}iPhone · 120</figure>
+            <figure>${iconSvg(d,60)}60</figure>
+            <figure>${iconSvg(d,40)}40</figure>
+            <figure>${iconSvg(d,28)}28</figure>
+            <figure>${iconSvg(d,20,4)}20</figure>
+          </div>
+          ${tabs(d,false)}
+          ${tabs(d,true)}
+          <div class="pix">
+            <figure><canvas width="16" height="16" data-px="${d.id}" data-kind="icon"></canvas>sekme simgesi<br>16 px, gerçek pikseller</figure>
+            <figure><canvas width="16" height="16" data-px="${d.id}" data-kind="mark"></canvas>işaret, açık<br>16 px</figure>
+            <figure><canvas width="16" height="16" data-px="${d.id}" data-kind="mark" data-dark="1"></canvas>işaret, koyu<br>16 px</figure>
+          </div>
+          <p class="mute" style="font-size:12.5px;margin-top:8px">Kareler 16×16 piksele çizilip 4 kat büyütüldü: tarayıcı sekmesinde gözün göreceği şey tam olarak bu.</p>
+        </div>
+      </div>
+      ${palette(d)}
+      <div class="box type" style="${kvars(d,t)}"><h4>Yazı tipi · ${d.fh}${d.fb!==d.fh?" + "+d.fb:""} · rakam ${d.fn}</h4>
+        <p class="spec">${d.fontWhy}</p>
+        <div class="big" style="font-family:var(--k-fh);font-weight:${d.hw};letter-spacing:${d.hls}">Həkim · Xəstə · Növbə</div>
+        <div class="body" style="font-family:var(--k-fb)">Azərbaycanca: Qərarı həkim verir. Ğ ş ç ö ü ı İ ə Ə. Türkçe: Kararı hekim verir; yoğun bakım, nöbet.</div>
+        <div class="ru" style="font-family:var(--k-fb)">Русский: Решение принимает врач. Реанимация, дежурство.</div>
+        <div class="nums" style="font-family:var(--k-fn);font-weight:600;font-variant-numeric:tabular-nums">NEWS2 14 · HR 131 · SpO₂ 91 · 08:45</div>
+        <div class="fams">${fams.map(f=>`<div class="frow"><span class="fn" style="font-family:'${f}'">${f}</span><span data-fam="${f}"></span></div>`).join("")}</div>
+      </div>
+      <div class="box"><h4>Uygulanmış hâli · dört yerde</h4>
+        <div class="apply">
+          <div class="app"><small>1 · Telefon ana ekranı</small>${phone(d)}</div>
+          <div class="app"><small>2 · Giriş ekranı</small>${login(d)}</div>
+        </div>
+        <div class="apply2">
+          <div class="app"><small>3 · Uygulamanın içi · kritik kırmızı ile ana renk yan yana</small>${appMock(d)}</div>
+          <div class="app"><small>4 · Tanıtım sayfası, üst bölüm</small>${hero(d)}</div>
+        </div>
+      </div>
+      <div class="why">
+        <div class="box"><h4>Neden böyle?</h4><ul>${d.why.map(x=>`<li>${x}</li>`).join("")}</ul></div>
+        <div class="box weak"><h4>Zayıf yanı (dürüst)</h4><ul>${d.weak.map(x=>`<li>${x}</li>`).join("")}</ul></div>
+      </div>
+    </div>
+  </article>`;
+}
+function cmpCard(d){
+  const t=tok(d), picked=st.dir===d.id;
+  const strip=[t.pri,t.acc,t.bg,t.surf,t.ink,t.mute].filter(Boolean).map(c=>`<i style="background:${c}"></i>`).join("")+STATUS.map(s=>`<i style="background:${isDark()?s.d:s.l}"></i>`).join("");
+  return `<div class="ccard${picked?" picked":""}">
+    <h3><span class="letter">${d.id}</span>${d.name}</h3>
+    <div class="lk" style="background:${t.bg};border:1px solid ${t.line};min-height:84px">${lockup(d,t,22)}</div>
+    <div class="cicons">${iconSvg(d,56)}${iconSvg(d,32)}${iconSvg(d,20,4)}${iconSvg(d,16,3)}</div>
+    <div class="cpal">${strip}</div>
+    ${login(d)}
+    <button type="button" class="pick${picked?" on":""}" data-pick="${d.id}">${picked?"✓ Seçildi":"Bunu seç"}</button>
+  </div>`;
+}
+
+/* ---------- cevap ---------- */
+const LETTERS=D.map(d=>[d.id,d.id]);
+const Q={
+  dir:[...D.map(d=>[d.id,d.id+" · "+d.name]),["hicbiri","Hiçbiri"]],
+  renk:LETTERS, yazi:LETTERS, isaret:LETTERS,
+  harf:[["kucuk","küçük harf"],["buyuk","Büyük H"],["tam","TÜMÜ BÜYÜK"]]
+};
+function renderChips(){
+  document.querySelectorAll(".chips[data-q]").forEach(box=>{
+    const q=box.dataset.q;
+    box.innerHTML=Q[q].map(([v,l])=>{ const on=st[q]===v; return `<button type="button" class="chip${on?" on":""}" data-v="${v}" aria-pressed="${on}">${l}</button>`; }).join("");
+  });
+}
+function lineText(){
+  const dir = st.dir ? (st.dir==="hicbiri"?"Hiçbiri":st.dir+" ("+D.find(d=>d.id===st.dir).name+")") : "_";
+  const parts=[`Marka: ${dir}`];
+  if(st.renk) parts.push(`renk ${LETTER_ABL[st.renk]}`);
+  if(st.yazi) parts.push(`yazı tipi ${LETTER_ABL[st.yazi]}`);
+  if(st.isaret) parts.push(`işaret ${LETTER_ABL[st.isaret]}`);
+  if(st.harf) parts.push(`kelime işareti: ${Q.harf.find(x=>x[0]===st.harf)[1]}`);
+  const f=(st.free||"").trim(); if(f) parts.push(`not: ${f}`);
+  return parts.join(" · ");
+}
+function renderLine(){ document.getElementById("line").textContent=lineText(); }
+
+/* ---------- çizim ---------- */
+function renderStat(){
+  const dk=isDark();
+  document.getElementById("statRow").innerHTML=STATUS.map(s=>`<span><i style="background:${dk?s.d:s.l}"></i>${s.n} <code style="font:500 11px 'JetBrains Mono';color:var(--mute)">${dk?s.d:s.l}</code></span>`).join("");
+}
+function renderDirs(){
+  uid=0;
+  document.getElementById("dirs").innerHTML=D.map(dirCard).join("");
+  document.getElementById("cgrid").innerHTML=D.map(cmpCard).join("");
+  renderStat(); pixelTests(); checkFonts();
+  /* tarayıcı sekmesi: seçilen yönün gerçek simgesi */
+  try{ const pd=D.find(x=>x.id===st.dir)||D[0]; document.getElementById("fav").href="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(iconSvgRaw(pd,32,12)); }catch(e){}
+}
+function renderTheme(){
+  if(st.theme) document.documentElement.setAttribute("data-theme",st.theme); else document.documentElement.removeAttribute("data-theme");
+  const dk=isDark();
+  document.querySelectorAll("[data-th]").forEach(b=>b.classList.toggle("on",(b.dataset.th==="dark")===dk));
+}
+function renderAll(){ renderTheme(); renderChips(); renderDirs(); renderLine(); document.getElementById("free").value=st.free||""; }
+
+/* ---------- olaylar ---------- */
+document.addEventListener("click",e=>{
+  const chip=e.target.closest(".chips[data-q] .chip");
+  if(chip){ const q=chip.parentElement.dataset.q, v=chip.dataset.v; st[q]=st[q]===v?null:v; save(); renderChips(); renderLine(); if(q==="dir") renderDirs(); return; }
+  const pk=e.target.closest("[data-pick]");
+  if(pk){ const v=pk.dataset.pick; st.dir=st.dir===v?null:v; save(); renderChips(); renderDirs(); renderLine(); return; }
+  const th=e.target.closest("[data-th]");
+  if(th){ st.theme=th.dataset.th; save(); renderTheme(); renderDirs(); return; }
+});
+const vD=document.getElementById("vDetail"), vC=document.getElementById("vCmp");
+vD.onclick=()=>{ document.body.classList.remove("cmp"); vD.classList.add("on"); vC.classList.remove("on"); };
+vC.onclick=()=>{ document.body.classList.add("cmp"); vC.classList.add("on"); vD.classList.remove("on"); document.getElementById("compare").scrollIntoView({block:"start"}); };
+document.getElementById("free").addEventListener("input",e=>{ st.free=e.target.value; save(); renderLine(); });
+document.getElementById("copyBtn").onclick=async()=>{
+  const txt=lineText(), msg=document.getElementById("copyMsg"); let ok=false;
+  try{ if(navigator.clipboard){ await navigator.clipboard.writeText(txt); ok=true; } }catch(e){}
+  if(!ok){ try{ const ta=document.createElement("textarea"); ta.value=txt; document.body.appendChild(ta); ta.select(); ok=document.execCommand("copy"); ta.remove(); }catch(e){} }
+  if(!ok){ const r=document.createRange(); r.selectNodeContents(document.getElementById("line")); const s=getSelection(); s.removeAllRanges(); s.addRange(r); }
+  msg.textContent = ok ? "Kopyalandı. Bana yapıştırıp gönder." : "Satır seçildi, Ctrl+C ile kopyala.";
+};
+document.getElementById("resetBtn").onclick=()=>{ Object.assign(st,{dir:null,renk:null,yazi:null,isaret:null,harf:null,free:""}); save(); renderAll(); };
+try{ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{ if(!st.theme){ renderTheme(); renderDirs(); } }); }catch(e){}
+
+renderAll();
+if(document.fonts && document.fonts.ready) document.fonts.ready.then(()=>{ for(const k in fcache) delete fcache[k]; checkFonts(); });
+})();
+</script>
+</body>
+</html>

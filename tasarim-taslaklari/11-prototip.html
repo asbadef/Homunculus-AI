@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homunculus Prototip</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root, [data-theme="gece"] {
+    --page:#0b0f16; --app:#07101f; --rail:#0a1628; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60;
+    --pri:#22b8d6; --onpri:#03141c; --priSoft:rgba(34,184,214,.13);
+    --att:rgba(202,138,4,.07); --attLine:rgba(202,138,4,.38); --attIco:rgba(202,138,4,.16); --attInk:#f5c451;
+    --crit:#ef4444; --high:#f97316; --mid:#eab308; --ok:#22c55e; --critSoft:rgba(239,68,68,.12);
+    --v-hr:#22e05a; --v-map:#ff5c5c; --v-spo:#ffe14a; --v-rr:#3fd8ff; --v-t:#e8eef7; --monbg:#040a14;
+    --band-al:rgba(239,68,68,.12); --band-n:rgba(34,184,214,.13); --grid:#1c2c45;
+    --shadow:0 12px 30px rgba(0,0,0,.45); --fs:1;
+  }
+  [data-theme="gun"] {
+    --page:#e9e6de; --app:#f6f4ef; --rail:#ffffff; --card:#ffffff; --card2:#f0ede6; --ink:#1b2a2f; --mute:#5f6d71; --line:#e4dfd4; --line2:#cfc8b8;
+    --pri:#0f6e67; --onpri:#ffffff; --priSoft:#e1efec;
+    --att:#fffaeb; --attLine:#f3dc9a; --attIco:#fdf0c8; --attInk:#9a6a00;
+    --crit:#dc2626; --high:#ea580c; --mid:#ca8a04; --ok:#16a34a; --critSoft:#fdecec;
+    --v-hr:#15803d; --v-map:#dc2626; --v-spo:#a16207; --v-rr:#0369a1; --v-t:#1b2a2f; --monbg:#0b1424;
+    --band-al:rgba(220,38,38,.08); --band-n:rgba(15,110,103,.10); --grid:#ebe6db;
+    --shadow:0 12px 30px rgba(40,40,20,.14);
+  }
+  [data-size="buyuk"] { --fs:1.12; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:15px/1.5 Figtree, system-ui, sans-serif; }
+  .wrap { max-width:1360px; margin:0 auto; padding:22px 16px 60px; }
+  h1 { font:700 26px/1.15 "Space Grotesk"; margin:0 0 6px; }
+  .lead { color:var(--mute); margin:0; max-width:980px; } .lead b { color:var(--ink); }
+  .ctrl { position:sticky; top:0; z-index:60; background:var(--page); padding:10px 0; margin:12px 0 10px; display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; border-bottom:1px solid var(--line); }
+  .grp { display:flex; align-items:center; gap:8px; } .grp > span { font:600 12px Figtree; color:var(--mute); text-transform:uppercase; letter-spacing:.08em; }
+  .seg { display:flex; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:3px; }
+  .seg button { font:600 13px Figtree; color:var(--mute); background:none; border:0; padding:7px 12px; border-radius:8px; cursor:pointer; }
+  .seg button.on { background:var(--pri); color:var(--onpri); }
+  .why { margin-left:auto; font:600 13px Figtree; background:var(--card); border:1px solid var(--line2); color:var(--ink); padding:7px 12px; border-radius:10px; cursor:pointer; }
+  svg text { font-family:"JetBrains Mono", monospace; }
+
+  /* ===== web kabuğu ===== */
+  .app { display:grid; grid-template-columns:84px 1fr; height:820px; background:var(--app); border:1px solid var(--line); border-radius:18px; overflow:hidden; box-shadow:var(--shadow); position:relative; font-size:calc(15px * var(--fs)); }
+  .rail { background:var(--rail); border-right:1px solid var(--line); display:flex; flex-direction:column; padding:10px 8px; gap:3px; z-index:20; }
+  .brand { display:flex; flex-direction:column; align-items:center; gap:5px; padding:4px 0 12px; margin-bottom:6px; border-bottom:1px solid var(--line); }
+  .mk { width:38px; height:38px; border-radius:11px; background:var(--ink); color:var(--app); display:grid; place-items:center; font:700 20px "Space Grotesk"; }
+  .brand small { font:700 9.5px "Space Grotesk"; color:var(--mute); }
+  .ri { display:flex; flex-direction:column; align-items:center; gap:4px; padding:9px 2px 8px; border-radius:12px; color:var(--mute); cursor:pointer; position:relative; font:600 10.5px/1.1 Figtree; text-align:center; }
+  .ri:hover { background:var(--card2); color:var(--ink); }
+  .ri.on { background:var(--pri); color:var(--onpri); }
+  .ri svg { width:21px; height:21px; }
+  .ri .b { position:absolute; top:4px; right:10px; min-width:17px; height:17px; padding:0 4px; border-radius:999px; background:var(--crit); color:#fff; font:700 10px/17px Figtree; }
+  .ri .b.y { background:var(--mid); color:#1b1400; }
+  .fly { display:none; position:absolute; left:74px; top:-6px; min-width:200px; background:var(--card); border:1px solid var(--line2); border-radius:14px; box-shadow:var(--shadow); padding:8px; text-align:left; z-index:50; }
+  .ri:hover .fly { display:block; }
+  .fly h6 { margin:4px 8px 6px; font:700 10px Figtree; letter-spacing:.1em; color:var(--mute); text-transform:uppercase; }
+  .fly a { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px; color:var(--ink); font:600 13px Figtree; text-decoration:none; }
+  .fly a:hover { background:var(--card2); }
+  .spacer { flex:1; }
+  .main { display:grid; grid-template-rows:58px 1fr; min-width:0; }
+  .top { display:flex; align-items:center; gap:12px; padding:0 18px; border-bottom:1px solid var(--line); background:var(--rail); min-width:0; }
+  .top .title { font:700 17px "Space Grotesk"; white-space:nowrap; }
+  .chip { display:flex; align-items:center; gap:8px; font:600 12.5px Figtree; background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:6px 10px; white-space:nowrap; }
+  .search { flex:1; max-width:340px; margin-left:auto; display:flex; align-items:center; gap:8px; background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:8px 10px; color:var(--mute); font-size:13px; }
+  .search kbd { margin-left:auto; font:600 10px "JetBrains Mono"; border:1px solid var(--line2); border-radius:5px; padding:2px 5px; }
+  .shift { font:600 12px Figtree; color:var(--mute); white-space:nowrap; } .shift b { color:var(--ink); }
+  .av { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,#1f6f94,#22b8d6); color:#fff; font:700 12px/34px Figtree; text-align:center; }
+  .content { overflow:auto; padding:18px 20px 30px; position:relative; }
+  .content.swap { animation:in .3s cubic-bezier(.2,.8,.2,1); }
+  @keyframes in { from { opacity:0; transform:translateY(6px); } }
+  .ph { display:flex; align-items:flex-end; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+  .ph h2 { font:700 calc(24px * var(--fs))/1.1 "Space Grotesk"; margin:0; }
+  .ph p { margin:4px 0 0; color:var(--mute); font-size:13px; }
+  .ph .r { margin-left:auto; display:flex; gap:8px; align-items:center; }
+  .btn { font:600 13px Figtree; border-radius:10px; padding:8px 13px; border:1px solid var(--line2); background:var(--card); color:var(--ink); display:inline-flex; align-items:center; gap:6px; white-space:nowrap; cursor:pointer; }
+  .btn.p { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .btn.d { background:var(--crit); color:#fff; border-color:transparent; }
+  .btn[disabled] { opacity:.45; cursor:not-allowed; }
+  .sec { font:700 14px "Space Grotesk"; margin:18px 0 10px; display:flex; align-items:baseline; gap:10px; }
+  .sec small { font:500 12px Figtree; color:var(--mute); margin-left:auto; }
+  .att { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .ac { background:var(--att); border:1px solid var(--attLine); border-radius:14px; padding:13px; display:grid; grid-template-columns:40px 1fr; gap:3px 12px; cursor:pointer; }
+  .ac .i { grid-row:span 2; width:40px; height:40px; border-radius:10px; background:var(--attIco); color:var(--attInk); display:grid; place-items:center; }
+  .ac .i svg { width:20px; height:20px; }
+  .ac b { font:700 24px/1 "Space Grotesk"; } .ac span { font-size:12.5px; color:var(--mute); }
+  .ac.crit { background:var(--critSoft); border-color:color-mix(in srgb, var(--crit) 45%, transparent); }
+  .ac.crit .i { background:color-mix(in srgb, var(--crit) 18%, transparent); color:var(--crit); }
+  .beds { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .bed { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 14px 12px; position:relative; overflow:hidden; cursor:pointer; transition:transform .15s, border-color .15s; }
+  .bed:hover { transform:translateY(-2px); border-color:var(--line2); }
+  .bed::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--r); }
+  .bed .h { display:flex; justify-content:space-between; gap:8px; }
+  .no { font:700 15px "JetBrains Mono"; color:var(--r); margin-right:6px; }
+  .nm { font:700 15px "Space Grotesk"; }
+  .mt { font-size:12px; color:var(--mute); }
+  .sv { display:inline-flex; align-items:center; gap:5px; font:700 10.5px Figtree; letter-spacing:.04em; padding:4px 8px; border-radius:999px; color:var(--r); background:color-mix(in srgb, var(--r) 14%, transparent); white-space:nowrap; height:fit-content; }
+  .sv svg { width:12px; height:12px; }
+  .vit { display:flex; gap:14px; margin:12px 0 6px; }
+  .vit div { font:700 calc(19px * var(--fs))/1 "JetBrains Mono"; }
+  .vit small { display:block; font:700 9.5px Figtree; margin-bottom:4px; }
+  .spark { width:100%; height:30px; display:block; }
+  .ft { display:flex; justify-content:space-between; font-size:11.5px; color:var(--mute); margin-top:6px; }
+  table.t { width:100%; border-collapse:collapse; font-size:13px; background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+  table.t th { text-align:left; font:700 10.5px Figtree; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); padding:10px 12px; border-bottom:1px solid var(--line); background:var(--card2); }
+  table.t td { padding:10px 12px; border-bottom:1px solid var(--line); }
+  table.t tr.row { cursor:pointer; } table.t tr.row:hover td { background:var(--card2); }
+  td.n { font:700 14px "JetBrains Mono"; }
+  .rl { display:inline-block; width:4px; height:26px; border-radius:2px; background:var(--r); vertical-align:middle; margin-right:8px; }
+
+  /* hasta */
+  .pt-h { display:flex; gap:14px; align-items:center; flex-wrap:wrap; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:10px 14px; }
+  .pt-h .bn { font:700 26px "JetBrains Mono"; color:var(--crit); }
+  .pt-h .nm { font-size:20px; }
+  .tag { font:600 11.5px Figtree; border:1px solid var(--line2); border-radius:8px; padding:4px 8px; color:var(--mute); white-space:nowrap; }
+  .tag.w { color:var(--attInk); border-color:var(--attLine); background:var(--att); }
+  .mon { display:grid; grid-template-columns:1fr 210px; background:var(--monbg); border-radius:14px; overflow:hidden; margin-top:10px; border:1px solid var(--line); position:relative; }
+  .mon .wv { padding:8px 10px; display:flex; flex-direction:column; gap:3px; position:relative; }
+  .mon .ch { position:relative; } .mon .ch span { position:absolute; left:6px; top:3px; font:700 10px Figtree; z-index:1; }
+  .mon canvas { width:100%; height:50px; display:block; }
+  .wm { position:absolute; right:12px; bottom:8px; font:800 10px Figtree; letter-spacing:.18em; color:#8fa1ba; border:1px solid #2a3f60; border-radius:6px; padding:3px 7px; background:#040a14cc; }
+  .mon .nums { display:grid; border-left:1px solid #1c2c45; }
+  .mon .nu { padding:5px 12px; border-bottom:1px solid #1c2c45; display:flex; flex-direction:column; justify-content:center; }
+  .mon .nu small { font:700 10.5px Figtree; display:flex; justify-content:space-between; }
+  .mon .nu b { font:700 28px/1 "JetBrains Mono"; margin-top:2px; }
+  .mon .nu b em { font:600 13px "JetBrains Mono"; font-style:normal; opacity:.8; }
+  .tabs { display:flex; gap:2px; border-bottom:1px solid var(--line); margin:12px 0; overflow-x:auto; }
+  .tabs span { font:600 13px Figtree; color:var(--mute); padding:9px 12px; border-bottom:2px solid transparent; cursor:pointer; white-space:nowrap; }
+  .tabs span.on { color:var(--ink); border-color:var(--pri); }
+  .tabs span em { font-style:normal; font:700 10px Figtree; background:var(--mid); color:#1b1400; border-radius:999px; padding:1px 6px; margin-left:4px; }
+  .g2 { display:grid; grid-template-columns:1.15fr 1fr; gap:12px; }
+  .box { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; }
+  .box h5 { margin:0 0 8px; font:700 11px Figtree; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); display:flex; gap:8px; align-items:center; }
+  .box h5 .r { margin-left:auto; text-transform:none; letter-spacing:0; font-weight:600; color:var(--pri); cursor:pointer; }
+  .reco { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--crit); border-radius:12px; padding:12px 14px; }
+  .reco h4 { margin:0 0 2px; font:700 16px "Space Grotesk"; }
+  .reco ul { margin:8px 0; padding-left:18px; color:var(--mute); font-size:13px; }
+  .reco .src { font-size:11.5px; color:var(--mute); margin-bottom:10px; }
+  .kv { display:flex; justify-content:space-between; font-size:13px; padding:5px 0; border-bottom:1px dashed var(--line); }
+  .kv:last-child { border:0; } .kv b { font-family:"JetBrains Mono"; }
+  .sm { display:grid; grid-template-columns:88px 1fr; gap:10px; align-items:center; padding:4px 0; border-bottom:1px solid var(--line); cursor:pointer; border-radius:8px; }
+  .sm:hover { background:var(--card2); }
+  .sm:last-child { border:0; }
+  .sm small { display:block; font:700 10.5px Figtree; }
+  .sm b { font:700 20px/1 "JetBrains Mono"; } .sm i { font:600 10px Figtree; font-style:normal; color:var(--mute); margin-left:3px; }
+  .sofa { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .so { background:var(--card2); border-radius:10px; padding:8px 10px; position:relative; font-size:12px; }
+  .so span { color:var(--mute); font-weight:600; display:block; }
+  .so b { display:block; font:700 13px "JetBrains Mono"; margin:3px 0 2px; }
+  .so small { color:var(--mute); font-size:10.5px; }
+  .so em { position:absolute; top:6px; right:8px; font:700 17px "Space Grotesk"; font-style:normal; color:var(--pri); }
+  .so.need { border:1.5px dashed var(--attLine); background:var(--att); } .so.need b { font-family:Figtree; color:var(--attInk); font-size:12px; }
+  .pick { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+  .pick i { font:700 11px Figtree; font-style:normal; padding:4px 6px; border-radius:6px; border:1px solid var(--line2); cursor:pointer; }
+  .pick i.on { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .vc { cursor:pointer; background:var(--card); border:1.5px solid var(--line); border-radius:12px; padding:7px 11px; min-width:104px; }
+  .vc.on { border-color:var(--c); box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); }
+  .vc small { display:block; font:700 10.5px Figtree; color:var(--c); } .vc b { font:700 20px/1.1 "JetBrains Mono"; } .vc i { font:600 11px Figtree; font-style:normal; margin-left:4px; color:var(--mute); }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--mute); margin-top:6px; }
+  .legend i { width:14px; height:8px; border-radius:2px; display:inline-block; margin-right:5px; vertical-align:middle; }
+  .modal { position:absolute; inset:0; background:rgba(0,0,0,.45); display:grid; place-items:center; z-index:70; animation:in .2s; }
+  .modal > div { width:min(880px, 92%); background:var(--app); border:1px solid var(--line2); border-radius:16px; padding:16px; box-shadow:var(--shadow); }
+
+  /* alarm B */
+  .filters { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+  .filters span { font:600 12px Figtree; border:1px solid var(--line2); border-radius:999px; padding:5px 11px; color:var(--mute); cursor:pointer; }
+  .filters span.on { background:var(--priSoft); color:var(--pri); border-color:transparent; }
+  .grpT { font:700 11px Figtree; letter-spacing:.08em; color:var(--mute); text-transform:uppercase; margin:14px 0 8px; }
+  .arow { display:grid; grid-template-columns:78px 4px 1fr auto; gap:12px; align-items:center; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-bottom:8px; transition:opacity .3s; }
+  .arow .bar { height:100%; min-height:34px; border-radius:2px; background:var(--r); }
+  .clock { font:700 15px "JetBrains Mono"; color:var(--r); }
+  .step { display:flex; gap:4px; margin-top:6px; }
+  .step span { font:700 10px Figtree; padding:2px 7px; border-radius:999px; background:var(--card2); color:var(--mute); }
+  .step span.done { background:color-mix(in srgb, var(--r) 20%, transparent); color:var(--r); }
+
+  /* devir */
+  .hv { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .hc { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin-bottom:10px; }
+  .hc .h { display:flex; align-items:center; gap:8px; }
+  .hc .sb { display:grid; grid-template-columns:22px 1fr; gap:3px 8px; font-size:12.5px; margin:10px 0; }
+  .hc .sb b { font:700 12px "Space Grotesk"; color:var(--pri); }
+  .lock { background:var(--critSoft); color:var(--crit); border-radius:10px; padding:8px 10px; font:600 12.5px Figtree; margin-bottom:8px; }
+  .signed { color:var(--ok); font:700 12.5px Figtree; }
+
+  /* yönetici */
+  .kpis { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; }
+  .kpi { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; }
+  .kpi b { font:700 24px/1 "Space Grotesk"; display:block; } .kpi span { font-size:12.5px; color:var(--mute); }
+  .bars { display:flex; align-items:flex-end; gap:6px; height:110px; margin:10px 0 6px; }
+  .bars i { flex:1; background:color-mix(in srgb, var(--pri) 25%, var(--card2)); border-radius:6px 6px 3px 3px; } .bars i.now { background:var(--pri); }
+  .meter { margin:10px 0 12px; } .meter .l { display:flex; justify-content:space-between; font-size:13px; } .meter .l b { font-family:"JetBrains Mono"; }
+  .meter .tr { height:7px; border-radius:4px; background:var(--card2); margin-top:6px; overflow:hidden; } .meter .tr i { display:block; height:100%; border-radius:4px; }
+
+  /* ayarlar */
+  .set { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .set .box p { color:var(--mute); font-size:13px; margin:4px 0 10px; }
+
+  /* ===== telefon ===== */
+  .phoneWrap { display:grid; grid-template-columns:320px 1fr; gap:28px; align-items:start; }
+  .phone { width:320px; height:660px; border-radius:42px; padding:11px; background:#02050b; border:1px solid #2a3f60; box-shadow:0 24px 60px rgba(0,0,0,.5); }
+  .ps { height:100%; border-radius:32px; overflow:hidden; background:var(--app); position:relative; font-size:calc(14px * var(--fs)); }
+  .sbar { height:30px; display:flex; justify-content:space-between; align-items:center; padding:0 22px; font:600 11.5px Figtree; color:var(--mute); }
+  .pv { position:absolute; top:30px; left:0; right:0; bottom:66px; overflow:auto; padding:8px 14px 14px; transition:transform .4s cubic-bezier(.2,.8,.2,1), opacity .3s; }
+  .pv.push { transform:translateX(100%); background:var(--app); z-index:4; } .pv.push.open { transform:none; }
+  .pv.dim { transform:translateX(-22%); opacity:.4; }
+  .critbar { background:linear-gradient(90deg,#3b0d10,#2a0b0e); border:1px solid #7f1d1d; color:#fecaca; border-radius:12px; padding:9px 11px; font:600 12px Figtree; margin-bottom:10px; display:flex; justify-content:space-between; cursor:pointer; }
+  .mh { font:700 20px "Space Grotesk"; margin:4px 0 10px; display:flex; align-items:center; gap:8px; }
+  .mh small { font:500 12px Figtree; color:var(--mute); margin-left:auto; }
+  .mc { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:10px 12px; margin-bottom:8px; position:relative; overflow:hidden; cursor:pointer; }
+  .mc::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--r); }
+  .mc .t { display:flex; justify-content:space-between; align-items:center; font:600 13.5px "Space Grotesk"; } .mc .t b { color:var(--r); margin-right:5px; font-family:"JetBrains Mono"; }
+  .mc .v { font:700 15px/1 "JetBrains Mono"; margin-top:8px; display:flex; gap:12px; } .mc .v i { font:600 8.5px Figtree; font-style:normal; color:var(--mute); margin-left:1px; }
+  .tabbar { position:absolute; left:0; right:0; bottom:0; height:66px; background:var(--rail); border-top:1px solid var(--line); display:flex; z-index:5; padding-bottom:8px; }
+  .tb { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; font:600 10.5px Figtree; color:var(--mute); cursor:pointer; position:relative; }
+  .tb svg { width:21px; height:21px; } .tb.on { color:var(--pri); }
+  .tb .b { position:absolute; top:6px; right:24%; background:var(--crit); color:#fff; font:700 9px/1 Figtree; padding:3px 5px; border-radius:999px; }
+  .mbig { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:8px; }
+  .mbig div { background:var(--monbg); border-radius:12px; padding:9px 10px; font:700 26px/1 "JetBrains Mono"; }
+  .mbig small { display:block; font:700 10px Figtree; margin-bottom:5px; }
+  .notes { font-size:14px; color:var(--mute); }
+  .notes h3 { font:700 18px "Space Grotesk"; color:var(--ink); margin:0 0 8px; }
+  .notes li { margin-bottom:8px; } .notes b { color:var(--ink); }
+
+  .choices { margin-top:30px; background:var(--card); border:1px solid var(--line2); border-radius:18px; padding:18px 20px; }
+  .choices h2 { font:700 20px "Space Grotesk"; margin:0 0 10px; }
+  .choices ol { margin:0; padding-left:20px; color:var(--mute); } .choices li { margin-bottom:7px; } .choices b { color:var(--ink); }
+  .choices code { display:block; margin-top:12px; background:#050b16; color:#9ff3ff; border-radius:10px; padding:12px 14px; font:600 14px "JetBrains Mono"; }
+  .hidden { display:none !important; }
+
+  @media (max-width:1100px) { .att, .kpis { grid-template-columns:repeat(2,1fr); } .beds { grid-template-columns:repeat(2,1fr); } .shift, .search { display:none; } .g2, .hv { grid-template-columns:1fr; } .set { grid-template-columns:1fr; } }
+  @media (max-width:760px) { .app { grid-template-columns:62px 1fr; height:auto; min-height:760px; } .ri { font-size:0; } .brand small { display:none; } .fly { left:54px; }
+    .beds, .att, .kpis { grid-template-columns:1fr; } .mon { grid-template-columns:1fr; } .mon .nums { grid-template-columns:1fr 1fr; border-left:0; } .phoneWrap { grid-template-columns:1fr; } .phone { margin:0 auto; } .top .chip { display:none; } .sofa { grid-template-columns:1fr 1fr; } table.t .hide { display:none; } }
+</style>
+</head>
+<body data-theme="gece">
+<div class="wrap">
+  <h1>Homunculus · benim önerim · Taslak 11</h1>
+  <p class="lead">Bu sefer kararları sen bana bıraktın. Aşağıda <b>tek bir çalışan uygulama</b> var: senin seçimlerin (menü, Yatak A, Hasta A, Alarm B, Yönetici A, iki tema, trend T1+T2), konseyin bulguları ve boş kalan her şey için benim tercihlerim bir arada. <b>Her yere tıklayabilirsin.</b> Neyi neden böyle yaptığımı sağ üstteki <b>"Neden böyle?"</b> düğmesinde anlattım. Logo geçici, marka ayrıca çalışılacak.</p>
+
+  <div class="ctrl">
+    <div class="grp"><span>Görünüm</span><div class="seg" data-set="view"><button data-v="web" class="on">Masaüstü</button><button data-v="mob">Telefon</button></div></div>
+    <div class="grp"><span>Tema</span><div class="seg" data-set="theme"><button data-v="gece" class="on">Gece</button><button data-v="gun">Gün Işığı</button></div></div>
+    <button class="why" data-why>Neden böyle? ↓</button>
+  </div>
+
+  <!-- ========== MASAÜSTÜ ========== -->
+  <div id="web">
+    <div class="app">
+      <nav class="rail" id="rail"></nav>
+      <div class="main">
+        <header class="top"><div class="title" id="title"></div><div class="chip">Homunculus Şehir Hastanesi ▾</div><div class="chip">Erişkin YBÜ ▾</div>
+          <div class="search"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Hasta, yatak, protokol ara<kbd>Ctrl K</kbd></div>
+          <div class="shift">Akşam nöbeti · <b>3 sa 12 dk</b></div><div class="av">AD</div></header>
+        <section class="content" id="content"></section>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== TELEFON ========== -->
+  <div id="mob" class="hidden">
+    <div class="phoneWrap">
+      <div class="phone"><div class="ps" id="ps"><div class="sbar"><span>21:42</span><span>Erişkin YBÜ</span></div>
+        <div class="pv" id="pvList"></div><div class="pv push" id="pvPush"></div>
+        <div class="tabbar" id="tabbar"></div></div></div>
+      <div class="notes"><h3>Telefonda benim tercihim</h3><ul>
+        <li><b>Alt menü (M1):</b> başparmağın rahatça ulaştığı yerde dört sekme var: Yataklar, Alarmlar, Devir, Ben. Herkesin alışık olduğu düzen, eğitim gerekmiyor.</li>
+        <li><b>Kritik şerit (M2'den):</b> kritik bir alarm varsa, hangi sekmede olursan ol en üstte kırmızı bir şerit durur. Dokununca doğrudan o hastaya gidersin.</li>
+        <li><b>Hasta ekranı sağdan kayar:</b> en üstte büyük rakamlar, altında trendler kaydırılarak görülür, SOFA'nın eksik maddesi dokunarak seçilir.</li>
+        <li><b>Devir telefondan imzalanır:</b> gelen hemşire karşı imzayı yatak başında, telefonundan atar.</li>
+        <li>Yatak yatak kaydırma (M3) vizit için güzel ama tek başına yetmiyor. Onu hasta ekranında "sonraki yatak" hareketi olarak ekledim.</li></ul></div>
+    </div>
+  </div>
+
+  <div class="choices" id="whybox">
+    <h2>Neden böyle yaptım</h2>
+    <ol>
+      <li><b>Menüde "Devir" ayrı bir düğme.</b> Konseyin en önemli bulgularından biri şuydu: motor iki imzalı, ekran tek imzalı. Gelen kişinin bir iş listesi yoksa ikinci imza hiç atılmaz. Rozet, bekleyen imza sayısını gösteriyor.</li>
+      <li><b>Hasta ekranı: monitör → öneri → trend → SOFA.</b> Hekim önce hastanın şu anki durumuna, sonra sistemin ne dediğine, sonra nasıl bu noktaya gelindiğine, en son yapması gereken imzaya bakar.</li>
+      <li><b>Monitördeki dalga "TEMSİLİ" etiketli.</b> Gerçek dalga cihazdan okunana kadar hiç kimse onu gerçek EKG sanmasın. Rakamlar gerçek ve canlı.</li>
+      <li><b>Trend: sabit ölçek, eşik bandı, hastanın normal bandı ve veri kaynağı.</b> Bir satıra tıklayınca büyük grafik açılır, üzerinde ilaçlar ve alarmlar işaretli.</li>
+      <li><b>İki ayrı SOFA etiketi.</b> Kartta "anlık" yazar. Formda "son 24 saatin en kötüsü, hekim onayı" yazar. Böylece aynı hastada iki farklı sayı kafa karıştırmaz.</li>
+      <li><b>Öneri dili:</b> "…kriterleri karşılanıyor, değerlendirme önerilir". Asla "sepsis var" denmez. Her önerinin altında dayanağı yazar.</li>
+      <li><b>Alarmda eskalasyon adımları görünüyor:</b> 3. dakikada sorumlu hemşire, 5. dakikada hekim, 10. dakikada hızlı yanıt ekibi (koddaki gerçek süreler). Hangi adımda olduğun her kartta yazıyor.</li>
+      <li><b>Ayarlar sade:</b> yalnız tema, kart/liste ve yazı boyu. Bunlar gerçekten çalışıyor, Ayarlar'dan deneyebilirsin.</li>
+    </ol>
+    <code>Genel: beğendim / şunu değiştir: …</code>
+  </div>
+</div>
+
+<script>
+/* ============ simgeler ============ */
+const P = {
+  grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>',
+  bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  clip:'<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+  user:'<circle cx="9" cy="7" r="4"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M19 8v6M22 11h-6"/>',
+  pill:'<path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/>',
+  cpu:'<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/>',
+  chart:'<path d="M3 3v18h18"/><path d="M7 16V9M12 16V5M17 16v-4"/>',
+  shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  tv:'<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  gear:'<circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+  alert:'<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>',
+  flask:'<path d="M9 3h6M10 3v6L4 20h16L14 9V3"/>', plug:'<path d="M12 22v-5M9 8V2M15 8V2M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>',
+  bed:'<path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9"/>', clock:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  me:'<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>', ok:'<path d="M20 6 9 17l-5-5"/>',
+};
+const I = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${P[k]}</svg>`;
+const cv = n => getComputedStyle(document.body).getPropertyValue(n).trim();
+
+/* ============ veri (sentetik) ============ */
+const BEDS = [
+  { no:105, n:"Zeynep Şahin", a:"61y K", dx:"Yatış tanısı: pnömoni", r:"var(--crit)", sv:"KRİTİK", ic:"alert", hr:131, map:51, spo:91, rr:30, t:"39.2", who:"Dr. Elif Y." },
+  { no:101, n:"Ahmet Yıldız", a:"67y E", dx:"Yatış tanısı: KOAH alevlenmesi", r:"var(--high)", sv:"YÜKSEK", ic:"alert", hr:119, map:66, spo:84, rr:27, t:"38.4", who:"Dr. Elif Y." },
+  { no:104, n:"Mehmet Demir", a:"72y E", dx:"Yatış tanısı: akut böbrek hasarı", r:"var(--mid)", sv:"ORTA", ic:"clock", hr:102, map:74, spo:96, rr:20, t:"37.1", who:"Dr. Can Ö." },
+  { no:102, n:"Fatma Kaya", a:"54y K", dx:"Postoperatif takip", r:"var(--ok)", sv:"STABİL", ic:"ok", hr:82, map:88, spo:97, rr:16, t:"36.8", who:"Dr. Can Ö." },
+  { no:401, n:"İbrahim Koç", a:"58y E", dx:"Yatış tanısı: NSTEMI", r:"var(--ok)", sv:"STABİL", ic:"ok", hr:88, map:82, spo:96, rr:18, t:"36.7", who:"Dr. Murat Ş." },
+];
+const H = 72, rnd = (s => () => (s = (s * 16807) % 2147483647) / 2147483647)(11);
+const ser = (fn, nz) => Array.from({ length: H * 4 + 1 }, (_, i) => { const t = i / 4; return { t, v: fn(t) + (rnd() - .5) * nz }; });
+const V = {
+  hr:  { n:"Kalp hızı", s:"HR", u:"/dk", c:"--v-hr", lo:40, hi:180, al:[50,120], nb:[72,96], d: ser(t => t < 60 ? 84 + Math.sin(t / 5) * 4 : 84 + (t - 60) * 3.9, 5) },
+  map: { n:"Ort. tansiyon", s:"MAP", u:"mmHg", c:"--v-map", lo:30, hi:130, al:[65,110], nb:[75,95], d: ser(t => t < 62 ? 82 + Math.sin(t / 7) * 3 : 82 - (t - 62) * 3.1, 3) },
+  spo: { n:"SpO₂", s:"SpO₂", u:"%", c:"--v-spo", lo:80, hi:100, al:[92,101], nb:[95,99], d: ser(t => t < 64 ? 97 : 97 - (t - 64) * .75, .8) },
+  rr:  { n:"Solunum", s:"RR", u:"/dk", c:"--v-rr", lo:5, hi:40, al:[10,24], nb:[14,20], d: ser(t => t < 58 ? 17 : 17 + (t - 58) * .9, 1.2) },
+  t:   { n:"Ateş", s:"Isı", u:"°C", c:"--v-t", lo:35, hi:41, al:[36,38.3], nb:[36.4,37.4], d: ser(t => t < 50 ? 37 : 37 + (t - 50) * .1, .12) },
+};
+["hr","spo"].forEach(k => V[k].d.forEach(p => { if (p.t > 40 && p.t < 42) p.v = null; }));
+const EV = [{ t:63, l:"Sıvı 500 mL", k:"tx" }, { t:66.5, l:"Noradrenalin başlandı", k:"tx" }, { t:68, l:"Seftriakson 2 g", k:"tx" }, { t:69.4, l:"Alarm: MAP 58", k:"al" }, { t:71.2, l:"Alarm: kötüleşme kriterleri", k:"al" }];
+const fmt = (k, v) => v == null ? "—" : (k === "t" ? v.toFixed(1) : Math.round(v));
+const valAt = (k, t) => V[k].d.reduce((a, b) => Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a).v;
+const clock = t => new Date(Date.UTC(2026, 8, 23, 21, 40) - (H - t) * 3600e3).toISOString().slice(11, 16);
+
+/* ============ durum ============ */
+const S = { view:"web", theme:"gece", page:"beds", bedView:"kart", size:"normal", tab:"ozet", big:null, bigH:24,
+  alarms:[{ id:1, no:105, n:"Zeynep Şahin", txt:"Kötüleşme kriterleri karşılanıyor · MAP 51 · laktat 4.1", sev:"crit", age:"7:40", step:2, state:"open" },
+          { id:2, no:101, n:"Ahmet Yıldız", txt:"SpO₂ 84 · 3 dakikadır", sev:"high", age:"2:40", step:0, state:"open" },
+          { id:3, no:104, n:"Mehmet Demir", txt:"Potasyum 5.8 · Ayşe D. gördü 21:30", sev:"mid", age:"12:10", step:0, state:"seen" }],
+  hand:[{ no:102, n:"Fatma Kaya", from:"Selin A. (gündüz)", signed:false }, { no:401, n:"İbrahim Koç", from:"Selin A. (gündüz)", signed:false }],
+  gcs:"10–12", sofaOk:false };
+const openA = () => S.alarms.filter(a => a.state === "open").length;
+const waitH = () => S.hand.filter(h => !h.signed).length;
+
+/* ============ menü ============ */
+const NAV = [["beds","grid","Yataklar"],["alarms","bell","Alarmlar","A"],["hand","clip","Devir","H"],["pt","user","Hasta",0,["Kabul / Transfer","Sonuçlar"]],["ph","pill","Eczane"],["dev","cpu","Cihazlar"],["admin","chart","Analiz",0,["Yönetici Özeti","Alarm Kalitesi","Isı Haritası"]],["mgmt","shield","Yönetim",0,["Kullanıcılar","Yetki","Hastane Yapısı","Denetim Kaydı"]]];
+const BOT = [["wall","tv","Duvar"],["set","gear","Ayarlar"]];
+const TITLE = { beds:"Yatak Paneli", alarms:"Alarmlar", hand:"Vardiya Devri", pt:"Hasta · 105 Zeynep Şahin", admin:"Yönetici Özeti", set:"Ayarlar", ph:"Eczane", dev:"Cihazlar", mgmt:"Yönetim", wall:"Duvar Ekranı" };
+function rail() {
+  const it = ([k, ic, l, b, fly]) => { const n = b === "A" ? openA() : b === "H" ? waitH() : 0;
+    return `<div class="ri ${S.page === k ? "on" : ""}" data-go="${k}">${I(ic)}${l}${n ? `<span class="b ${b === "H" ? "y" : ""}">${n}</span>` : ""}${fly ? `<div class="fly"><h6>${l}</h6>${fly.map(f => `<a href="#" data-go="${k}">${f}</a>`).join("")}</div>` : ""}</div>`; };
+  document.getElementById("rail").innerHTML = `<div class="brand"><div class="mk">h</div><small>homunculus</small></div>` + NAV.map(it).join("") + `<div class="spacer"></div>` + BOT.map(it).join("");
+}
+
+/* ============ grafik ============ */
+function chart(svg, { keys, hours, h, big, onHover }) {
+  const W = svg.clientWidth || 600, pl = 34, pr = 8, pt = 8, pb = big ? 22 : 4, t0 = H - hours, x = t => pl + (t - t0) / hours * (W - pl - pr);
+  let o = "";
+  keys.forEach((k, ki) => { const p = V[k], y = v => pt + (1 - (v - p.lo) / (p.hi - p.lo)) * (h - pt - pb);
+    if (!ki) { o += `<rect x="${pl}" y="${pt}" width="${W - pl - pr}" height="${Math.max(0, y(p.al[1]) - pt)}" fill="${cv("--band-al")}"/><rect x="${pl}" y="${y(p.al[0])}" width="${W - pl - pr}" height="${h - pb - y(p.al[0])}" fill="${cv("--band-al")}"/><rect x="${pl}" y="${y(p.nb[1])}" width="${W - pl - pr}" height="${y(p.nb[0]) - y(p.nb[1])}" fill="${cv("--band-n")}"/>`;
+      let last = -99; [p.hi, p.al[1] <= p.hi ? p.al[1] : null, p.al[0], p.lo].filter(v => v != null).forEach(v => { if (Math.abs(y(v) - last) < 11) return; last = y(v); o += `<text x="${pl - 5}" y="${y(v) + 3.5}" text-anchor="end" font-size="9.5" fill="${cv("--mute")}">${v}</text>`; }); }
+    const pts = p.d.filter(q => q.t >= t0); let d = "";
+    pts.forEach((q, i) => { if (q.v == null) return; const pv = pts[i - 1]; d += `${!pv || pv.v == null ? "M" : "L"}${x(q.t).toFixed(1)},${y(q.v).toFixed(1)}`; });
+    o += `<path d="${d}" fill="none" stroke="${cv(p.c)}" stroke-width="${big ? 2.3 : 1.7}" stroke-linejoin="round" opacity="${ki ? .7 : 1}"/>`; });
+  if (big) { const st = hours <= 6 ? 1 : hours <= 24 ? 4 : 12; for (let q = Math.ceil(t0 / st) * st; q <= H; q += st) o += `<text x="${x(q)}" y="${h - 6}" text-anchor="middle" font-size="10" fill="${cv("--mute")}">${q === H ? "şimdi" : "-" + (H - q) + " sa"}</text>`;
+    EV.filter(e => e.t >= t0).forEach(e => { const X = x(e.t), c = e.k === "al" ? cv("--crit") : "#8b7cff"; o += `<line x1="${X}" x2="${X}" y1="${pt}" y2="${h - pb}" stroke="${c}" stroke-dasharray="3 3" opacity=".7"/>` + (e.k === "al" ? `<path d="M${X - 6} ${pt + 12} L${X} ${pt + 2} L${X + 6} ${pt + 12}Z" fill="${c}"/>` : `<rect x="${X - 5}" y="${pt + 2}" width="10" height="10" transform="rotate(45 ${X} ${pt + 7})" fill="${c}"/>`); }); }
+  o += `<line class="cur" y1="${pt}" y2="${h - pb}" stroke="${cv("--ink")}" opacity="0"/>`;
+  svg.setAttribute("viewBox", `0 0 ${W} ${h}`); svg.setAttribute("height", h); svg.innerHTML = o;
+  svg.onmousemove = e => { const r = svg.getBoundingClientRect(), mx = e.clientX - r.left; if (mx < pl) return; const t = t0 + (mx - pl) / (W - pl - pr) * hours, c = svg.querySelector(".cur"); c.setAttribute("x1", x(t)); c.setAttribute("x2", x(t)); c.setAttribute("opacity", .5); onHover && onHover(t); };
+  svg.onmouseleave = () => { svg.querySelector(".cur").setAttribute("opacity", 0); onHover && onHover(null); };
+}
+const spark = (base, r) => { const a = Array.from({ length: 12 }, (_, i) => base + (r === "var(--crit)" ? i * 3 : r === "var(--high)" ? i * 1.5 : Math.sin(i) * 2));
+  const mn = Math.min(...a) - 3, mx = Math.max(...a) + 3; return `<svg class="spark" viewBox="0 0 200 30" preserveAspectRatio="none"><polyline points="${a.map((v, i) => `${i / 11 * 200},${30 - (v - mn) / (mx - mn) * 30}`).join(" ")}" fill="none" stroke="${r}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`; };
+
+/* ============ dalga (temsili) ============ */
+const G = (x, m, s) => Math.exp(-((x - m) ** 2) / (2 * s * s));
+const WF = { hr: (t, r) => { const p = (t * r / 60) % 1; return .12*G(p,.12,.025) - .12*G(p,.27,.008) + G(p,.3,.011) - .28*G(p,.33,.01) + .28*G(p,.55,.045); },
+  map: (t, r) => { const p = ((t * r / 60) + .8) % 1; return p < .12 ? Math.sin(p / .12 * Math.PI / 2) : .95 * Math.exp(-(p - .12) * 2.6) - .12 * G(p,.33,.02) + .1 * G(p,.38,.03); },
+  spo: (t, r) => { const p = ((t * r / 60) + .7) % 1; return p < .2 ? Math.sin(p / .2 * Math.PI / 2) ** 2 : .9 * Math.exp(-(p - .2) * 2.2); } };
+let SW = [];
+const wire = root => { SW = SW.filter(s => s.cv.isConnected).concat([...root.querySelectorAll("canvas[data-w]")].map(c => { const d = devicePixelRatio || 1; c.width = c.clientWidth * d; c.height = c.clientHeight * d; const x = c.getContext("2d"); x.scale(d, d); return { cv:c, x, k:c.dataset.w, r:+c.dataset.r, px:0, t:0, last:null }; })); };
+let prev = performance.now();
+(function fr(now) { const dt = Math.min(.05, (now - prev) / 1000); prev = now;
+  for (const s of SW) { const w = s.cv.clientWidth, h = s.cv.clientHeight; if (!w) continue; const col = { hr:"#22e05a", map:"#ff5c5c", spo:"#ffe14a" }[s.k];
+    for (let i = 0, n = Math.max(1, Math.round(85 * dt)); i < n; i++) { s.t += dt / n; const y = h - 5 - WF[s.k](s.t, s.r) * (h - 12) * .85 - (s.k === "hr" ? h * .12 : 0);
+      s.x.clearRect(s.px, 0, 14, h); if (s.last != null && s.px > 0) { s.x.strokeStyle = col; s.x.lineWidth = 1.7; s.x.beginPath(); s.x.moveTo(s.px - 1, s.last); s.x.lineTo(s.px, y); s.x.stroke(); }
+      s.last = y; s.px++; if (s.px > w) { s.px = 0; s.last = null; } } }
+  requestAnimationFrame(fr); })(prev);
+
+/* ============ web sayfaları ============ */
+const sv = b => `<span class="sv" style="--r:${b.r}">${I(b.ic)}${b.sv}</span>`;
+const vit = b => `<div class="vit"><div><small style="color:var(--v-hr)">HR</small>${b.hr}</div><div><small style="color:var(--v-map)">MAP</small>${b.map}</div><div><small style="color:var(--v-spo)">SpO₂</small>${b.spo}</div><div><small style="color:var(--v-rr)">RR</small>${b.rr}</div></div>`;
+const PG = {
+  beds: () => `<div class="ph"><div><h2>Yatak Paneli</h2><p>Erişkin YBÜ · 5 / 6 dolu · son veri 2 sn önce</p></div><div class="r"><div class="seg" data-bv><button data-v="kart" class="${S.bedView === "kart" ? "on" : ""}">Kart</button><button data-v="liste" class="${S.bedView === "liste" ? "on" : ""}">Liste</button></div><span class="btn p">+ Hasta kabul</span></div></div>
+    <div class="sec">Dikkat bekleyenler <small>Bu nöbette kimsenin bakmadığı işler</small></div>
+    <div class="att">
+      <div class="ac crit" data-go="alarms"><div class="i">${I("alert")}</div><b>${openA()}</b><span>alarm yanıt bekliyor, en eskisi 7 dk</span></div>
+      <div class="ac" data-go="hand"><div class="i">${I("clip")}</div><b>${waitH()}</b><span>devir karşı imzanızı bekliyor</span></div>
+      <div class="ac"><div class="i">${I("flask")}</div><b>3</b><span>sonuç görülmedi, laktat 4.1 dahil</span></div>
+      <div class="ac"><div class="i">${I("plug")}</div><b>1</b><span>cihaz sessiz, Yatak 104, 6 dk</span></div></div>
+    <div class="sec">Yataklar <small>Risk sırasına göre</small></div>
+    ${S.bedView === "kart" ? `<div class="beds">${BEDS.map(b => `<div class="bed" style="--r:${b.r}" data-open><div class="h"><div><span class="no">${b.no}</span><span class="nm">${b.n}</span><div class="mt">${b.a} · ${b.dx}</div></div>${sv(b)}</div>${vit(b)}${spark(b.hr, b.r)}<div class="ft"><span>HR · son 8 saat</span><span>${b.who}</span></div></div>`).join("")}
+      <div class="bed" style="--r:var(--line2);opacity:.6"><div><span class="no" style="color:var(--mute)">103</span><span class="nm" style="color:var(--mute)">Boş yatak</span><div class="mt">Temizlik tamamlandı · 21:10</div></div><div style="margin-top:28px"><span class="btn">+ Hasta ata</span></div></div></div>`
+    : `<table class="t"><tr><th>Yatak</th><th>Hasta</th><th>Durum</th><th>HR</th><th>MAP</th><th>SpO₂</th><th>RR</th><th class="hide">Isı</th><th class="hide">Sorumlu</th></tr>${BEDS.map(b => `<tr class="row" data-open><td class="n"><span class="rl" style="--r:${b.r}"></span>${b.no}</td><td><b>${b.n}</b><div class="mt">${b.a} · ${b.dx}</div></td><td>${sv(b)}</td><td class="n" style="color:var(--v-hr)">${b.hr}</td><td class="n" style="color:var(--v-map)">${b.map}</td><td class="n" style="color:var(--v-spo)">${b.spo}</td><td class="n" style="color:var(--v-rr)">${b.rr}</td><td class="n hide">${b.t}</td><td class="hide">${b.who}</td></tr>`).join("")}</table>`}`,
+
+  pt: () => `<div class="pt-h"><span class="bn">105</span><div><div class="nm">Zeynep Şahin</div><div class="mt">61y · Kadın · 68 kg · Yatış 6 sa önce · Dr. Elif Yılmaz · Hemşire Ayşe D.</div></div>
+      <span class="tag w">Alerji: Penisilin</span><span class="tag">Tam kod</span><span class="sv" style="margin-left:auto;--r:var(--crit)">${I("alert")}KRİTİK · NEWS2 14</span></div>
+    <div class="mon"><div class="wv"><div class="ch"><span style="color:#22e05a">EKG II</span><canvas data-w="hr" data-r="131"></canvas></div><div class="ch"><span style="color:#ff5c5c">ART</span><canvas data-w="map" data-r="131"></canvas></div><div class="ch"><span style="color:#ffe14a">SpO₂</span><canvas data-w="spo" data-r="131"></canvas></div><span class="wm">TEMSİLİ DALGA</span></div>
+      <div class="nums"><div class="nu"><small style="color:#22e05a"><span>HR</span><span>canlı</span></small><b style="color:#22e05a">131</b></div><div class="nu"><small style="color:#ff5c5c"><span>ART</span><span>mmHg</span></small><b style="color:#ff5c5c">78<em>/40</em> <em>(51)</em></b></div><div class="nu"><small style="color:#ffe14a"><span>SpO₂</span><span>%</span></small><b style="color:#ffe14a">91</b></div><div class="nu" style="border:0"><small style="color:#3fd8ff"><span>RESP</span><span>/dk</span></small><b style="color:#3fd8ff">30</b></div></div></div>
+    <div class="tabs">${[["ozet","Özet"],["trend","Trendler"],["sofa","SOFA formu", S.sofaOk ? "" : "1"],["tx","Tedavi & sıvı"],["res","Sonuçlar"],["dv","Devir notu"]].map(([k, l, e]) => `<span data-tab="${k}" class="${S.tab === k ? "on" : ""}">${l}${e ? `<em>${e}</em>` : ""}</span>`).join("")}</div>
+    ${PT[S.tab]()}`,
+
+  alarms: () => { const row = a => { const r = { crit:"var(--crit)", high:"var(--high)", mid:"var(--mid)" }[a.sev];
+      return `<div class="arow" style="--r:${r};${a.state === "done" ? "opacity:.5" : ""}"><span class="clock">${a.age}</span><span class="bar"></span><div><b>${a.no} · ${a.n}</b><div class="mt">${a.txt}</div>
+        ${a.state === "open" ? `<div class="step">${["3 dk · sorumlu hemşire","5 dk · hekim","10 dk · hızlı yanıt"].map((s, i) => `<span class="${i < a.step ? "done" : ""}">${s}</span>`).join("")}</div>` : ""}</div>
+        <div style="display:flex;gap:6px">${a.state === "open" ? `<span class="btn p" data-ack="${a.id}">Gördüm</span><span class="btn">Ertele</span><span class="btn d">Eskale</span>` : a.state === "seen" ? `<span class="btn" data-close="${a.id}">Kapat</span>` : `<span class="mt">kapandı</span>`}</div></div>`; };
+    return `<div class="ph"><div><h2>Alarmlar</h2><p>Zaman sırasına göre · en eski yanıtsız en üstte</p></div></div>
+    <div class="filters"><span class="on">Açık · ${openA()}</span><span>Kritik</span><span>Benim hastalarım</span><span>Eskale</span><span>Kapanan</span></div>
+    <div class="grpT">Yanıt bekliyor</div>${S.alarms.filter(a => a.state === "open").map(row).join("") || `<div class="mt">Yanıt bekleyen alarm yok.</div>`}
+    <div class="grpT">Değerlendiriliyor</div>${S.alarms.filter(a => a.state === "seen").map(row).join("") || `<div class="mt">—</div>`}
+    <div class="grpT">Son 1 saatte kapanan</div>${S.alarms.filter(a => a.state === "done").map(row).join("") || `<div class="mt">—</div>`}`; },
+
+  hand: () => `<div class="ph"><div><h2>Vardiya Devri</h2><p>Akşam → gece · 23:00 · devir iki imzalıdır: giden imzalar, gelen karşı imzalar</p></div></div>
+    <div class="hv"><div><div class="sec" style="margin-top:0">Karşı imzanızı bekleyenler <small>${waitH()} hasta</small></div>
+      ${S.hand.map((h, i) => `<div class="hc"><div class="h"><b class="nm">${h.no} · ${h.n}</b><span class="mt" style="margin-left:auto">${h.from}</span></div>
+        <div class="sb"><b>D</b><span>Stabil, postoperatif 2. gün</span><b>Ö</b><span>Batın cerrahisi, alerji yok</span><b>D</b><span>Vitaller normal bantta, 24 saatte alarm yok</span><b>Ö</b><span>Sabah mobilizasyon, dren takibi</span></div>
+        ${h.signed ? `<span class="signed">✓ Karşı imza atıldı · 23:02</span>` : `<span class="btn p" data-sign="${i}">Okudum, karşı imzala</span> <span class="btn">Soru sor</span>`}</div>`).join("")}
+      ${waitH() > 1 ? `<span class="btn" data-signall>Hepsini okudum, toplu imzala</span>` : ""}</div>
+    <div><div class="sec" style="margin-top:0">Benim devrettiklerim <small>giden imzası</small></div>
+      <div class="hc"><div class="h"><b class="nm">105 · Zeynep Şahin</b></div><div class="lock">🔒 İmzalanamaz: bu hastada yanıtlanmamış kritik alarm var. Önce alarmı yanıtlayın.</div><span class="btn" disabled>İmzala</span> <span class="btn" data-go="alarms">Alarma git →</span></div>
+      <div class="hc"><div class="h"><b class="nm">101 · Ahmet Yıldız</b><span class="signed" style="margin-left:auto">✓ İmzalandı · 22:48</span></div><div class="mt">Gelen: Murat K. · karşı imza bekleniyor</div></div></div></div>
+    <div class="mt" style="margin-top:10px">D-Ö-D-Ö: Durum · Öykü · Değerlendirme · Öneri. Özet sistem tarafından hazırlanır, hemşire düzeltebilir.</div>`,
+
+  admin: () => `<div class="ph"><div><h2>Yönetici Özeti</h2><p>İyi akşamlar · 23 Eylül 2026</p></div><div class="r"><div class="seg"><button>Bugün</button><button class="on">7 gün</button><button>30 gün</button></div><span class="btn">Rapor al</span></div></div>
+    <div class="sec">Unutulan işler</div><div class="att">
+      <div class="ac crit"><div class="i">${I("bell")}</div><b>3</b><span>alarm 10 dk'dan uzun yanıtsız kaldı, bu hafta</span></div>
+      <div class="ac"><div class="i">${I("clip")}</div><b>4</b><span>karşı imzası atılmamış devir, en eskisi 2 gün</span></div>
+      <div class="ac"><div class="i">${I("plug")}</div><b>2</b><span>cihaz 1 saatten uzun sessiz</span></div>
+      <div class="ac"><div class="i">${I("clock")}</div><b>1</b><span>süresi dolmuş kişisel eşik, Yatak 101</span></div></div>
+    <div class="g2" style="margin-top:14px"><div class="box"><h5>Nabız · günlük alarm</h5><div style="display:flex;gap:10px;align-items:baseline"><b style="font:700 30px 'Space Grotesk'">14</b><span class="mt">bugün · <b style="color:var(--ok)">▼ %22</b> geçen haftaya göre</span></div><div class="bars">${[40,52,38,60,72,55,48,64,58,44,50,36,42,30].map((h, i) => `<i class="${i === 13 ? "now" : ""}" style="height:${h}%"></i>`).join("")}</div><div class="mt">son 14 gün</div></div>
+      <div class="box"><h5>Alarm kalitesi · 7 gün</h5>${[["Yanıtlanan","186 · %92","var(--ok)",92],["3 dk içinde yanıt","148 · %73","var(--pri)",73],["Eskale edilen","21 · %10","var(--high)",10],["Hatalı olarak işaretlenen","34 · %17","var(--crit)",17]].map(([l, v, c, w]) => `<div class="meter"><div class="l"><span>${l}</span><b>${v}</b></div><div class="tr"><i style="width:${w}%;background:${c}"></i></div></div>`).join("")}</div></div>
+    <div class="kpis" style="margin-top:14px">${[["18 / 24","Dolu yatak"],["2:40","Ortalama yanıt süresi"],["31","Aktif kullanıcı"],["22 / 24","Bağlı cihaz"],["0","Kopan denetim zinciri"]].map(([b, s]) => `<div class="kpi"><b>${b}</b><span>${s}</span></div>`).join("")}</div>`,
+
+  set: () => `<div class="ph"><div><h2>Ayarlar</h2><p>Sadece sizin ekranınızı etkiler</p></div></div><div class="set">
+    <div class="box"><h5>Tema</h5><p>Karanlık odada Gece, gündüz Gün Işığı.</p><div class="seg" data-set="theme"><button data-v="gece" class="${S.theme === "gece" ? "on" : ""}">Gece</button><button data-v="gun" class="${S.theme === "gun" ? "on" : ""}">Gün Işığı</button></div></div>
+    <div class="box"><h5>Yatak paneli</h5><p>Büyük servislerde liste daha pratik.</p><div class="seg" data-bv><button data-v="kart" class="${S.bedView === "kart" ? "on" : ""}">Kart</button><button data-v="liste" class="${S.bedView === "liste" ? "on" : ""}">Liste</button></div></div>
+    <div class="box"><h5>Yazı boyu</h5><p>Duvar ekranı ya da gözlük için büyük.</p><div class="seg" data-size><button data-v="normal" class="${S.size === "normal" ? "on" : ""}">Normal</button><button data-v="buyuk" class="${S.size === "buyuk" ? "on" : ""}">Büyük</button></div></div></div>
+    <div class="mt" style="margin-top:12px">Başka hiçbir yerleşim ayarı yok. Vardiya devrinde herkes aynı ekranı görür.</div>`,
+};
+const PT = {
+  ozet: () => `<div class="g2"><div><div class="reco"><h4>Kötüleşme kriterleri karşılanıyor</h4><div class="mt">Değerlendirme önerilir. Tanı ve tedavi kararı hekimindir.</div>
+      <ul><li>MAP 65'in altında, 25 dakikadır</li><li>Laktat 4.1 mmol/L (21:30, önceki 2.2)</li><li>NEWS2 10 → 14, son 2 saatte</li></ul><div class="src">Dayanak: Sepsis-3 (2016), SSC 2021 · kanıt düzeyi yüksek</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="btn p">Değerlendirdim</span><span class="btn">Kanıtı gör</span><span class="btn d">Eskale et</span></div></div>
+      <div class="box" style="margin-top:12px"><h5>Anlık SOFA <span class="mt" style="text-transform:none;letter-spacing:0">son değerlerden</span><span class="r" data-tab="sofa">24 saatlik formu aç →</span></h5><div style="display:flex;gap:10px;align-items:baseline"><b style="font:700 30px 'Space Grotesk'">11</b><span class="mt">dünden +4 · form onayı ${S.sofaOk ? "<b style='color:var(--ok)'>atıldı ✓</b>" : "<b style='color:var(--attInk)'>bekliyor</b>"}</span></div></div></div>
+    <div class="box"><h5>Son 24 saat <span class="r" data-tab="trend">Trendler →</span></h5>${["hr","map","spo","rr","t"].map(k => `<div class="sm" data-big="${k}"><div><small style="color:var(${V[k].c})">${V[k].n}</small><b>${fmt(k, V[k].d.at(-1).v)}</b><i>${V[k].u}</i></div><svg data-mini="${k}" width="100%" height="46"></svg></div>`).join("")}
+      <div class="legend"><span><i style="background:var(--band-al)"></i>alarm eşiği dışı</span><span><i style="background:var(--band-n)"></i>hastanın normal aralığı</span><span>satıra tıkla → büyük grafik</span></div></div></div>`,
+  trend: () => `<div class="chips">${["hr","map","spo","rr","t"].map(k => `<div class="vc ${S.big === k || (!S.big && k === "hr") ? "on" : ""}" data-sel="${k}" style="--c:var(${V[k].c})"><small>${V[k].n}</small><b>${fmt(k, V[k].d.at(-1).v)}</b><i>${V[k].u}</i></div>`).join("")}</div>
+    <div class="seg" data-bh style="width:fit-content;margin-bottom:8px">${[6,24,72].map(h => `<button data-v="${h}" class="${S.bigH === h ? "on" : ""}">${h === 72 ? "3 gün" : h + " sa"}</button>`).join("")}</div>
+    <svg id="bigchart" width="100%" height="300"></svg><div class="legend"><span><i style="background:var(--band-al)"></i>eşik dışı</span><span><i style="background:var(--band-n)"></i>normal aralık</span><span>◆ ilaç / tedavi</span><span>▲ alarm</span><span>kaynak: cihaz · canlı (ateş: elle, 21:00)</span></div>`,
+  sofa: () => `<div class="box"><h5>Günlük SOFA formu · son 24 saatin en kötü değerleri <span class="r" style="color:var(--mute);cursor:default">anlık SOFA'dan farklı olabilir</span></h5>
+    <div class="mt" style="margin-bottom:10px">Sistem 5 / 6 maddeyi kaynaklı olarak doldurdu. <b style="color:var(--ink)">Kaynağı olmayan hiçbir değer kendiliğinden girilmez.</b></div>
+    <div class="sofa">${[["Solunum","PaO₂/FiO₂ 210","Kan gazı · 07:40",2],["Pıhtılaşma","Trombosit 96 bin","Laboratuvar · 06:10",2],["Karaciğer","Bilirubin 1.4","Laboratuvar · 06:10",1],["Dolaşım","Noradrenalin 0.08","Pompa · canlı",3],["Böbrek","Kreatinin 1.9","Laboratuvar · 06:10",1]].map(([o, v, s, p]) => `<div class="so"><span>${o}</span><b>${v}</b><small>${s}</small><em>${p}</em></div>`).join("")}
+      <div class="so need"><span>Nörolojik · GCS</span><b>Hekim seçimi gerekli</b><div class="pick">${["15","13–14","10–12","6–9","<6"].map(g => `<i class="${S.gcs === g ? "on" : ""}" data-gcs="${g}">${g}</i>`).join("")}</div></div></div>
+    <div style="display:flex;gap:8px;margin-top:12px;align-items:center">${S.sofaOk ? `<span class="signed">✓ Onaylandı · Dr. Elif Yılmaz · 21:44 · toplam 11</span>` : `<span class="btn p" data-sofaok>Onayla ve imzala</span><span class="btn">Bir değeri düzelt (gerekçe zorunlu)</span>`}</div></div>`,
+  tx: () => `<div class="box"><h5>Bu nöbet</h5>${[["21:30","Laktat 4.1 mmol/L"],["20:25","Noradrenalin 0.08 µg/kg/dk başlandı"],["20:10","Seftriakson 2 g IV"],["19:40","Sıvı 500 mL"]].map(([t, l]) => `<div class="kv"><span>${l}</span><b>${t}</b></div>`).join("")}<div class="kv"><span>Sıvı dengesi (6 sa)</span><b>+1 850 mL</b></div></div>`,
+  res: () => `<div class="box"><h5>Sonuçlar</h5><div class="kv"><span>Laktat <b style="color:var(--crit)">4.1</b> · yeni</span><b>21:30</b></div><div class="kv"><span>Kan kültürü · bekleniyor</span><b>20:05</b></div><div class="kv"><span>Akciğer grafisi · raporlandı</span><b>18:50</b></div></div>`,
+  dv: () => `<div class="box"><h5>Devir notu taslağı · sistem hazırladı, düzenleyebilirsiniz</h5><div class="mt">Durum: kötüleşme kriterleri karşılanıyor, noradrenalin altında MAP 51. Öykü: 6 sa önce pnömoni ile yatış. Değerlendirme: SOFA dünden +4. Öneri: hekim değerlendirmesi, laktat kontrolü.</div><div style="margin-top:10px"><span class="btn" disabled>İmzala (kritik alarm açık)</span></div></div>`,
+};
+
+function render(anim = true) {
+  document.body.dataset.theme = S.theme; document.body.dataset.size = S.size;
+  document.querySelectorAll('[data-set="theme"] button').forEach(b => b.classList.toggle("on", b.dataset.v === S.theme));
+  rail(); document.getElementById("title").textContent = TITLE[S.page];
+  const c = document.getElementById("content");
+  c.innerHTML = PG[S.page] ? PG[S.page]() : `<div style="display:grid;place-items:center;height:100%;color:var(--mute);text-align:center"><div><b style="font:700 20px 'Space Grotesk';color:var(--ink)">${TITLE[S.page]}</b><br>Bu panel bir sonraki turda gelecek.</div></div>`;
+  if (anim) { c.classList.remove("swap"); void c.offsetWidth; c.classList.add("swap"); }
+  wire(c);
+  c.querySelectorAll("svg[data-mini]").forEach(s => chart(s, { keys:[s.dataset.mini], hours:24, h:46 }));
+  const bc = c.querySelector("#bigchart"); if (bc) chart(bc, { keys:[S.big || "hr"], hours:S.bigH, h:300, big:true });
+  renderMob();
+}
+function bigModal(k) {
+  const m = document.createElement("div"); m.className = "modal";
+  m.innerHTML = `<div><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><b style="font:700 18px 'Space Grotesk';color:var(${V[k].c})">${V[k].n}</b><span class="mt">105 · Zeynep Şahin · son 24 saat</span><span class="btn" style="margin-left:auto" data-x>Kapat ✕</span></div><svg width="100%" height="300"></svg>
+    <div class="legend"><span><i style="background:var(--band-al)"></i>eşik dışı</span><span><i style="background:var(--band-n)"></i>normal aralık</span><span>◆ tedavi</span><span>▲ alarm</span><span id="hv"></span></div></div>`;
+  document.querySelector(".app").appendChild(m);
+  chart(m.querySelector("svg"), { keys:[k], hours:24, h:300, big:true, onHover: t => { m.querySelector("#hv").textContent = t == null ? "" : `${clock(t)} → ${fmt(k, valAt(k, t))} ${V[k].u}`; } });
+  m.addEventListener("click", e => { if (e.target === m || e.target.closest("[data-x]")) m.remove(); });
+}
+document.querySelector(".app").addEventListener("click", e => {
+  const g = e.target.closest("[data-go]"); if (g) { e.preventDefault(); S.page = g.dataset.go; S.tab = "ozet"; return render(); }
+  if (e.target.closest("[data-open]")) { S.page = "pt"; S.tab = "ozet"; return render(); }
+  const t = e.target.closest("[data-tab]"); if (t) { S.tab = t.dataset.tab; return render(false); }
+  const bg = e.target.closest("[data-big]"); if (bg) return bigModal(bg.dataset.big);
+  const sl = e.target.closest("[data-sel]"); if (sl) { S.big = sl.dataset.sel; return render(false); }
+  const bh = e.target.closest("[data-bh] button"); if (bh) { S.bigH = +bh.dataset.v; return render(false); }
+  const bv = e.target.closest("[data-bv] button"); if (bv) { S.bedView = bv.dataset.v; return render(false); }
+  const sz = e.target.closest("[data-size] button"); if (sz) { S.size = sz.dataset.v; return render(false); }
+  const th = e.target.closest('.content [data-set="theme"] button'); if (th) { S.theme = th.dataset.v; return render(false); }
+  const gc = e.target.closest("[data-gcs]"); if (gc) { S.gcs = gc.dataset.gcs; return render(false); }
+  if (e.target.closest("[data-sofaok]")) { S.sofaOk = true; return render(false); }
+  const ak = e.target.closest("[data-ack]"); if (ak) { S.alarms.find(a => a.id == ak.dataset.ack).state = "seen"; return render(false); }
+  const cl = e.target.closest("[data-close]"); if (cl) { S.alarms.find(a => a.id == cl.dataset.close).state = "done"; return render(false); }
+  const sg = e.target.closest("[data-sign]"); if (sg) { S.hand[+sg.dataset.sign].signed = true; return render(false); }
+  if (e.target.closest("[data-signall]")) { S.hand.forEach(h => h.signed = true); return render(false); }
+});
+
+/* ============ telefon ============ */
+const M = { tab:"beds", open:null };
+function renderMob() {
+  const crit = S.alarms.find(a => a.state === "open" && a.sev === "crit");
+  const bar = crit ? `<div class="critbar" data-mopen="105"><span>● ${crit.no} ${crit.n} · KRİTİK</span><span>${crit.age}</span></div>` : "";
+  const L = document.getElementById("pvList");
+  L.innerHTML = bar + (M.tab === "beds" ? `<div class="mh">Yataklar <small>5 hasta</small></div>${BEDS.map(b => `<div class="mc" style="--r:${b.r}" data-mopen="${b.no}"><div class="t"><span><b>${b.no}</b>${b.n}</span>${sv(b)}</div><div class="v">${b.hr}<i>HR</i> ${b.map}<i>MAP</i> ${b.spo}<i>SpO₂</i> ${b.rr}<i>RR</i></div></div>`).join("")}`
+    : M.tab === "alarms" ? `<div class="mh">Alarmlar <small>${openA()} açık</small></div>${S.alarms.filter(a => a.state !== "done").map(a => `<div class="mc" style="--r:${{ crit:"var(--crit)", high:"var(--high)", mid:"var(--mid)" }[a.sev]}"><div class="t"><span><b>${a.no}</b>${a.n}</span><span class="clock" style="font-size:12px;color:var(--r)">${a.age}</span></div><div class="mt" style="margin:4px 0 8px">${a.txt}</div>${a.state === "open" ? `<span class="btn p" data-mack="${a.id}" style="padding:6px 10px">Gördüm</span>` : `<span class="mt">Görüldü</span>`}</div>`).join("")}`
+    : M.tab === "hand" ? `<div class="mh">Devir <small>${waitH()} bekliyor</small></div>${S.hand.map((h, i) => `<div class="mc" style="--r:var(--mid)"><div class="t"><span><b>${h.no}</b>${h.n}</span></div><div class="mt" style="margin:4px 0 8px">${h.from} · stabil, 24 saatte alarm yok</div>${h.signed ? `<span class="signed">✓ Karşı imza atıldı</span>` : `<span class="btn p" data-msign="${i}" style="padding:6px 10px">Okudum, imzala</span>`}</div>`).join("")}`
+    : `<div class="mh">Ayşe Demir</div><div class="box"><div class="kv"><span>Nöbet</span><b>Akşam</b></div><div class="kv"><span>Tema</span><b>${S.theme === "gece" ? "Gece" : "Gün Işığı"}</b></div><div class="kv"><span>Dil</span><b>Türkçe</b></div></div>`);
+  document.getElementById("tabbar").innerHTML = [["beds","grid","Yataklar"],["alarms","bell","Alarmlar",openA()],["hand","clip","Devir",waitH()],["me","me","Ben"]].map(([k, ic, l, n]) => `<div class="tb ${M.tab === k ? "on" : ""}" data-mtab="${k}">${I(ic)}${l}${n ? `<span class="b">${n}</span>` : ""}</div>`).join("");
+  const Pp = document.getElementById("pvPush"), b = BEDS.find(x => x.no == M.open);
+  if (b) { Pp.innerHTML = `<div style="display:flex;justify-content:space-between;margin:2px 0 6px"><span class="btn" data-mback style="padding:5px 10px">← Geri</span><span class="btn" data-mnext style="padding:5px 10px">Sonraki yatak →</span></div>
+      <div class="mh" style="margin:6px 0 2px"><span style="color:${b.r};font-family:'JetBrains Mono'">${b.no}</span> ${b.n}</div><div class="mt">${b.a} · ${b.dx}</div><div style="margin-top:6px">${sv(b)}</div>
+      <div class="mbig"><div><small style="color:#22e05a">HR</small><span style="color:#22e05a">${b.hr}</span></div><div><small style="color:#ff5c5c">MAP</small><span style="color:#ff5c5c">${b.map}</span></div><div><small style="color:#ffe14a">SpO₂</small><span style="color:#ffe14a">${b.spo}</span></div><div><small style="color:#3fd8ff">RR</small><span style="color:#3fd8ff">${b.rr}</span></div></div>
+      <div style="position:relative;margin-top:6px"><canvas data-w="hr" data-r="${b.hr}" style="width:100%;height:46px;display:block;background:var(--monbg);border-radius:10px"></canvas><span class="wm" style="bottom:4px;right:6px;font-size:8.5px">TEMSİLİ</span></div>
+      ${b.no === 105 ? `<div class="reco" style="margin-top:10px;padding:10px 12px"><h4 style="font-size:14px">Kötüleşme kriterleri karşılanıyor</h4><div class="mt">Değerlendirme önerilir · karar hekimindir</div><div style="display:flex;gap:6px;margin-top:8px"><span class="btn p" style="padding:6px 10px">Değerlendirdim</span><span class="btn d" style="padding:6px 10px">Eskale</span></div></div>` : ""}
+      <div class="box" style="margin-top:10px;padding:10px"><h5>Son 24 saat</h5>${["hr","map","spo"].map(k => `<div class="sm" style="grid-template-columns:70px 1fr"><div><small style="color:var(${V[k].c})">${V[k].s}</small><b style="font-size:16px">${fmt(k, V[k].d.at(-1).v)}</b></div><svg data-mm="${k}" width="100%" height="38"></svg></div>`).join("")}</div>`;
+    Pp.classList.add("open"); L.classList.add("dim"); wire(Pp); Pp.querySelectorAll("svg[data-mm]").forEach(s => chart(s, { keys:[s.dataset.mm], hours:24, h:38 }));
+  } else { Pp.classList.remove("open"); L.classList.remove("dim"); }
+}
+document.getElementById("ps").addEventListener("click", e => {
+  const t = e.target.closest("[data-mtab]"); if (t) { M.tab = t.dataset.mtab; M.open = null; return renderMob(); }
+  const o = e.target.closest("[data-mopen]"); if (o) { M.open = +o.dataset.mopen; return renderMob(); }
+  if (e.target.closest("[data-mback]")) { M.open = null; return renderMob(); }
+  if (e.target.closest("[data-mnext]")) { const i = BEDS.findIndex(b => b.no === M.open); M.open = BEDS[(i + 1) % BEDS.length].no; return renderMob(); }
+  const a = e.target.closest("[data-mack]"); if (a) { S.alarms.find(x => x.id == a.dataset.mack).state = "seen"; return render(false); }
+  const s = e.target.closest("[data-msign]"); if (s) { S.hand[+s.dataset.msign].signed = true; return render(false); }
+});
+
+/* ============ üst kontroller ============ */
+document.querySelectorAll(".ctrl [data-set]").forEach(g => g.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return;
+  if (g.dataset.set === "view") { S.view = b.dataset.v; document.getElementById("web").classList.toggle("hidden", S.view !== "web"); document.getElementById("mob").classList.toggle("hidden", S.view !== "mob"); [...g.children].forEach(x => x.classList.toggle("on", x === b)); render(false); return; }
+  S.theme = b.dataset.v; render(false); }));
+document.querySelector("[data-why]").addEventListener("click", () => document.getElementById("whybox").scrollIntoView({ behavior:"smooth" }));
+addEventListener("resize", () => render(false));
+render(false);
+</script>
+</body>
+</html>

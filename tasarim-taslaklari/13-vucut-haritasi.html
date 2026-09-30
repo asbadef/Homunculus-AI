@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vücut Haritası</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root { --page:#0b0f16; --app:#07101f; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60; --pri:#22b8d6; --onpri:#03141c;
+          --crit:#ef4444; --high:#f97316; --mid:#eab308; --ok:#22c55e; --att:rgba(202,138,4,.08); --attLine:rgba(202,138,4,.38); --attInk:#f5c451;
+          --body:#1b2c45; --bodyLine:#34507a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:15px/1.5 Figtree, system-ui, sans-serif; }
+  .wrap { max-width:1240px; margin:0 auto; padding:28px 16px 70px; }
+  h1 { font:700 30px/1.1 "Space Grotesk"; margin:0 0 8px; }
+  .lead { color:var(--mute); max-width:900px; margin:0; } .lead b { color:var(--ink); }
+  .app { margin-top:18px; background:var(--app); border:1px solid var(--line); border-radius:18px; overflow:hidden; }
+  .hd { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:12px 16px; border-bottom:1px solid var(--line); background:#0a1628; }
+  .hd .bn { font:700 22px "JetBrains Mono"; color:var(--high); } .hd .nm { font:700 18px "Space Grotesk"; } .hd .mt { font-size:12.5px; color:var(--mute); }
+  .tabs { display:flex; gap:2px; padding:0 12px; border-bottom:1px solid var(--line); overflow-x:auto; }
+  .tabs span { font:600 13.5px Figtree; color:var(--mute); padding:11px 14px; border-bottom:2px solid transparent; cursor:pointer; white-space:nowrap; }
+  .tabs span.on { color:var(--ink); border-color:var(--pri); }
+  .tabs span em { font-style:normal; font:700 10px Figtree; background:var(--card2); border-radius:999px; padding:1px 7px; margin-left:5px; }
+  .grid { display:grid; grid-template-columns:minmax(260px, 380px) 1fr; gap:0; }
+  .map { padding:14px; border-right:1px solid var(--line); display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .seg { display:flex; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:3px; }
+  .seg button { font:600 13px Figtree; color:var(--mute); background:none; border:0; padding:7px 14px; border-radius:8px; cursor:pointer; }
+  .seg button.on { background:var(--pri); color:var(--onpri); }
+  svg.body { width:100%; max-width:380px; height:auto; touch-action:manipulation; }
+  svg.body .rg { fill:var(--body); stroke:var(--bodyLine); stroke-width:1.2; cursor:pointer; transition:fill .15s; }
+  svg.body .rg:hover { fill:#26406a; }
+  svg.body .rg.sel { stroke:var(--pri); stroke-width:2.5; }
+  svg.body .hot { fill:none; stroke:var(--attInk); stroke-width:1.4; stroke-dasharray:3 3; pointer-events:none; }
+  svg.body .pin circle { stroke:#07101f; stroke-width:2; }
+  svg.body .pin text { font:700 10px Figtree; fill:#07101f; text-anchor:middle; pointer-events:none; }
+  svg.body .side { font:700 11px Figtree; fill:var(--mute); }
+  .hint { font-size:12px; color:var(--mute); text-align:center; }
+  .hint b { color:var(--attInk); }
+  .panel { padding:16px 18px; min-width:0; }
+  .panel h3 { margin:0 0 4px; font:700 20px "Space Grotesk"; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .panel h3 small { font:500 13px Figtree; color:var(--mute); }
+  .box { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin-top:12px; }
+  .box h5 { margin:0 0 10px; font:700 11px Figtree; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); display:flex; gap:8px; align-items:center; }
+  .box h5 .r { margin-left:auto; text-transform:none; letter-spacing:0; font-weight:600; }
+  .fld { display:grid; grid-template-columns:130px 1fr; gap:8px 12px; align-items:center; margin-bottom:10px; font-size:13.5px; }
+  .fld > label { color:var(--mute); }
+  .opts { display:flex; gap:5px; flex-wrap:wrap; }
+  .opts i { font-style:normal; font:600 12.5px Figtree; padding:6px 10px; border-radius:8px; border:1px solid var(--line2); cursor:pointer; user-select:none; }
+  .opts i.on { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .nrs { display:grid; grid-template-columns:repeat(11,1fr); gap:3px; }
+  .nrs i { font-style:normal; text-align:center; font:700 13px "JetBrains Mono"; padding:8px 0; border-radius:7px; cursor:pointer; background:var(--card2); color:var(--mute); border:1.5px solid transparent; }
+  .nrs i.on { color:#07101f; border-color:#fff; }
+  .nrsl { display:flex; justify-content:space-between; font-size:11px; color:var(--mute); margin-top:4px; }
+  .num { display:flex; gap:6px; align-items:center; }
+  .num input { width:62px; background:var(--card2); border:1px solid var(--line2); border-radius:8px; padding:6px 8px; color:var(--ink); font:600 13px "JetBrains Mono"; }
+  .btn { font:600 13px Figtree; border-radius:10px; padding:8px 13px; border:1px solid var(--line2); background:var(--card); color:var(--ink); display:inline-flex; gap:6px; cursor:pointer; }
+  .btn.p { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .note { background:var(--att); border:1px solid var(--attLine); color:var(--attInk); border-radius:10px; padding:8px 10px; font:600 12.5px Figtree; margin-top:8px; }
+  .empty { color:var(--mute); font-size:14px; padding:30px 10px; text-align:center; border:1.5px dashed var(--line2); border-radius:14px; margin-top:12px; }
+  .list .it { display:grid; grid-template-columns:28px 1fr auto; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); font-size:13.5px; cursor:pointer; }
+  .list .it:last-child { border:0; }
+  .list .it .p { width:24px; height:24px; border-radius:50%; display:grid; place-items:center; font:700 11px Figtree; color:#07101f; }
+  .list .it small { display:block; color:var(--mute); font-size:12px; }
+  .photo { display:grid; grid-template-columns:90px 1fr; gap:12px; align-items:center; }
+  .photo .ph { height:70px; border-radius:10px; border:1.5px dashed var(--line2); display:grid; place-items:center; color:var(--mute); font-size:22px; cursor:pointer; }
+  .sizeTrend { display:flex; align-items:flex-end; gap:6px; height:60px; margin-top:6px; }
+  .sizeTrend div { flex:1; background:color-mix(in srgb, var(--high) 45%, var(--card2)); border-radius:5px 5px 2px 2px; position:relative; }
+  .sizeTrend div span { position:absolute; bottom:-18px; left:0; right:0; text-align:center; font-size:10px; color:var(--mute); }
+  .qs { margin-top:28px; background:var(--card); border:1px solid var(--line2); border-radius:18px; padding:18px 20px; }
+  .qs h2 { font:700 20px "Space Grotesk"; margin:0 0 10px; }
+  .qs ol { margin:0; padding-left:20px; color:var(--mute); } .qs li { margin-bottom:8px; } .qs b { color:var(--ink); }
+  .qs code { display:block; margin-top:12px; background:#050b16; color:#9ff3ff; border-radius:10px; padding:12px 14px; font:600 13.5px "JetBrains Mono"; white-space:pre-wrap; }
+  @media (max-width:820px) { .grid { grid-template-columns:1fr; } .map { border-right:0; border-bottom:1px solid var(--line); } .fld { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Vücut haritası · Taslak 13</h1>
+  <p class="lead">Ağrı, yara ve kateter kayıtları <b>vücudun üzerinde</b> yapılıyor. Hemşire bölgeye dokunuyor, sağda o bölgenin formu açılıyor. Kayıt, vücut üzerinde numaralı bir işaret olarak kalıyor. Arka görünümde <b style="color:var(--attInk)">kesik sarı halkalar</b> bası yarasının en sık görüldüğü yerleri gösteriyor. <b>Dene:</b> bir bölgeye tıkla, formu doldur, "Kaydet"e bas. <i>Hasta ve değerler örnektir.</i></p>
+
+  <div class="app">
+    <div class="hd"><span class="bn">101</span><div><div class="nm">Ahmet Yıldız</div><div class="mt">67y · Erkek · Erişkin YBÜ · Braden 14 (orta risk) · Morse 55 (yüksek risk)</div></div></div>
+    <div class="tabs" id="tabs"></div>
+    <div class="grid">
+      <div class="map">
+        <div class="seg" id="view"><button data-v="on" class="on">Ön</button><button data-v="arka">Arka</button></div>
+        <svg class="body" id="body" viewBox="0 0 200 430"></svg>
+        <div class="hint" id="hint"></div>
+      </div>
+      <div class="panel" id="panel"></div>
+    </div>
+  </div>
+
+  <div class="qs">
+    <h2>Senden istediğim</h2>
+    <ol>
+      <li><b>Vücut çizimi:</b> Bu parçalı, sade görünüm mü (dokunması kolay), yoksa daha gerçekçi, resim gibi bir çizim mi?</li>
+      <li><b>Konuşamayan hasta:</b> Yoğun bakımda hasta çoğu zaman konuşamaz. O zaman ağrı, davranışa bakılarak puanlanır (CPOT ölçeği). Bu seçenek form içinde kalsın mı?</li>
+      <li><b>Yara fotoğrafı:</b> Fotoğraf çok faydalı ama hassas bir kişisel veri. Çekilsin mi, çekilirse kimler görebilsin?</li>
+      <li><b>Başka nerede kullanılsın?</b> Kateter ve dren yerleri var. Bunun dışında: ödem, döküntü, sabitleme (kısıtlama) yerleri, ameliyat bölgesi…</li>
+    </ol>
+    <code>Çizim: sade
+CPOT: kalsın
+Fotoğraf: evet, sadece hekim ve hemşire
+Başka: ödem, kısıtlama</code>
+  </div>
+</div>
+
+<script>
+/* ---------- vücut bölgeleri (ön / arka aynı iskelet, farklı adlar) ---------- */
+// Hastanın sağı, ön görünümde izleyicinin solundadır.
+const SH = {
+  head:["e",100,36,22,26], neck:["r",90,61,20,14,4],
+  shR:["e",64,86,15,11], shL:["e",136,86,15,11],
+  chest:["r",74,76,52,58,12], abd:["r",76,136,48,46,9],
+  pelvR:["p","M76 184 H100 V214 H84 Q77 200 76 184Z"], pelvL:["p","M100 184 H124 Q123 200 116 214 H100Z"],
+  uaR:["r",48,96,18,56,9], uaL:["r",134,96,18,56,9],
+  elR:["e",55,158,15,14], elL:["e",145,158,15,14],
+  faR:["r",45,166,16,48,8], faL:["r",139,166,16,48,8],
+  haR:["e",51,226,9,13], haL:["e",149,226,9,13],
+  thR:["r",78,216,20,80,10], thL:["r",102,216,20,80,10],
+  knR:["e",88,304,13,13], knL:["e",112,304,13,13],
+  lgR:["r",80,314,17,74,8], lgL:["r",103,314,17,74,8],
+  ftR:["e",88,400,12,9], ftL:["e",112,400,12,9],
+};
+const NAMES = {
+  on:  { head:"Baş · yüz", neck:"Boyun", shR:"Sağ omuz", shL:"Sol omuz", chest:"Göğüs", abd:"Karın", pelvR:"Sağ kasık", pelvL:"Sol kasık", uaR:"Sağ kol", uaL:"Sol kol", elR:"Sağ dirsek içi", elL:"Sol dirsek içi", faR:"Sağ ön kol", faL:"Sol ön kol", haR:"Sağ el", haL:"Sol el", thR:"Sağ uyluk", thL:"Sol uyluk", knR:"Sağ diz", knL:"Sol diz", lgR:"Sağ bacak", lgL:"Sol bacak", ftR:"Sağ ayak", ftL:"Sol ayak" },
+  arka:{ head:"Başın arkası (oksiput)", neck:"Ense", shR:"Sağ omuz arkası", shL:"Sol omuz arkası", chest:"Sırt · kürek kemikleri", abd:"Bel", pelvR:"Sağ kalça", pelvL:"Sol kalça", uaR:"Sağ kol arkası", uaL:"Sol kol arkası", elR:"Sağ dirsek", elL:"Sol dirsek", faR:"Sağ ön kol arkası", faL:"Sol ön kol arkası", haR:"Sağ el sırtı", haL:"Sol el sırtı", thR:"Sağ uyluk arkası", thL:"Sol uyluk arkası", knR:"Sağ diz arkası", knL:"Sol diz arkası", lgR:"Sağ baldır", lgL:"Sol baldır", ftR:"Sağ topuk", ftL:"Sol topuk" },
+};
+// arka görünümde sağ-sol yer değiştirir (hastanın sağı izleyicinin sağındadır)
+const MIRROR = { shR:"shL", shL:"shR", pelvR:"pelvL", pelvL:"pelvR", uaR:"uaL", uaL:"uaR", elR:"elL", elL:"elR", faR:"faL", faL:"faR", haR:"haL", haL:"haR", thR:"thL", thL:"thR", knR:"knL", knL:"knR", lgR:"lgL", lgL:"lgR", ftR:"ftL", ftL:"ftR" };
+// bası yarası sık bölgeleri (arka) — halka merkezleri
+const HOT = [[100,40,12,"oksiput"],[84,96,10,"kürek"],[116,96,10,"kürek"],[55,158,11,"dirsek"],[145,158,11,"dirsek"],[100,190,12,"sakrum"],[88,404,11,"topuk"],[112,404,11,"topuk"]];
+const center = k => { const s = SH[k]; if (s[0] === "e") return [s[1], s[2]]; if (s[0] === "r") return [s[1] + s[3] / 2, s[2] + s[4] / 2]; return k === "pelvR" ? [88, 198] : [112, 198]; };
+
+/* ---------- durum ---------- */
+const S = { tab:"pain", view:"on", sel:null, verbal:true, draft:{},
+  entries:[
+    { tab:"pain", view:"on", k:"abd", n:"Karın", data:{ nrs:6, tip:"Künt", sure:"Sürekli" }, at:"20:40", who:"Ayşe D." },
+    { tab:"wound", view:"arka", k:"sakrum", n:"Sakrum", data:{ evre:"Evre 2", l:3, w:2, d:0.2 }, at:"08:10", who:"Selin A.", sakrum:true },
+    { tab:"line", view:"on", k:"elR", n:"Sağ dirsek içi", data:{ tur:"Periferik IV", gun:2 }, at:"dün 22:00", who:"Ayşe D." },
+    { tab:"line", view:"on", k:"neck", n:"Boyun", data:{ tur:"Santral kateter", gun:5 }, at:"5 gün önce", who:"Dr. Elif Y." },
+  ] };
+const TABS = [["pain","Ağrı"],["wound","Yara · bası yarası"],["line","Kateter · dren"]];
+const COL = { pain: v => v == null ? "#a78bfa" : v === 0 ? "#94a3b8" : v <= 3 ? "#38bdf8" : v <= 6 ? "#facc15" : "#ef4444", wound: () => "#fb923c", line: () => "#a78bfa" };
+
+/* ---------- çizim ---------- */
+function drawBody() {
+  const b = document.getElementById("body"), mine = S.entries.filter(e => e.tab === S.tab && e.view === S.view);
+  let o = "";
+  for (const k in SH) { const s = SH[k], logical = S.view === "arka" ? MIRROR[k] || k : k, cls = `rg ${S.sel === logical ? "sel" : ""}`;
+    const has = mine.find(e => e.k === logical), fill = has ? `style="fill:color-mix(in srgb, ${COL[S.tab](has.data.nrs)} 35%, #1b2c45)"` : "";
+    o += s[0] === "e" ? `<ellipse class="${cls}" ${fill} data-k="${logical}" cx="${s[1]}" cy="${s[2]}" rx="${s[3]}" ry="${s[4]}"/>`
+       : s[0] === "r" ? `<rect class="${cls}" ${fill} data-k="${logical}" x="${s[1]}" y="${s[2]}" width="${s[3]}" height="${s[4]}" rx="${s[5]}"/>`
+       : `<path class="${cls}" ${fill} data-k="${logical}" d="${s[1]}"/>`; }
+  if (S.view === "arka" && S.tab === "wound") o += HOT.map(([x, y, r]) => `<circle class="hot" cx="${x}" cy="${y}" r="${r}"/>`).join("") + `<ellipse class="rg ${S.sel === "sakrum" ? "sel" : ""}" data-k="sakrum" cx="100" cy="192" rx="16" ry="14" style="fill:#2a3f60"/>`;
+  const all = S.entries.filter(e => e.tab === S.tab);
+  mine.forEach(e => { const i = all.indexOf(e); const phys = S.view === "arka" ? (Object.keys(MIRROR).find(m => MIRROR[m] === e.k) || e.k) : e.k;
+    const [x, y] = e.sakrum ? [100, 190] : center(phys); o += `<g class="pin"><circle cx="${x}" cy="${y}" r="9" fill="${COL[S.tab](e.data.nrs)}"/><text x="${x}" y="${y + 3.5}">${i + 1}</text>${S.tab === "pain" ? `<text x="${x + 17}" y="${y + 4}" style="fill:${COL.pain(e.data.nrs)};font-size:11px">${e.data.cpot != null ? "CPOT " + e.data.cpot : e.data.nrs}</text>` : ""}</g>`; });
+  o += S.view === "on" ? `<text class="side" x="6" y="424">Hastanın SAĞI</text><text class="side" x="194" y="424" text-anchor="end">SOLU</text>` : `<text class="side" x="6" y="424">Hastanın SOLU</text><text class="side" x="194" y="424" text-anchor="end">SAĞI</text>`;
+  b.innerHTML = o;
+  document.getElementById("hint").innerHTML = S.view === "arka" && S.tab === "wound" ? `<b>Kesik sarı halkalar:</b> bası yarasının sık görüldüğü yerler. Kontrol edildi mi?` : `Bir bölgeye dokun. ${S.view === "on" ? "Arka yüz için üstten “Arka”yı seç." : ""}`;
+}
+
+/* ---------- formlar ---------- */
+const CPOT = [["c1","Yüz ifadesi",["Rahat (0)","Gergin (1)","Yüzünü buruşturuyor (2)"]],["c2","Vücut hareketleri",["Hareketsiz (0)","Korumaya çalışıyor (1)","Huzursuz (2)"]],["c3","Kas gerginliği",["Gevşek (0)","Gergin (1)","Çok gergin (2)"]],["c4","Ventilatör uyumu",["Uyumlu (0)","Öksürüyor (1)","Çatışıyor (2)"]]];
+const cpotTotal = () => CPOT.reduce((t, [k, , vals]) => t + +((S.draft[k] || vals[0]).match(/\((\d)\)/)[1]), 0);
+const CPOT_ESIK = 3; // örnek: hastanenin protokolünden gelecek
+const opt = (key, vals, def) => `<div class="opts" data-f="${key}">${vals.map(v => `<i class="${(S.draft[key] ?? def) === v ? "on" : ""}">${v}</i>`).join("")}</div>`;
+function form() {
+  const name = S.sel === "sakrum" ? "Sakrum" : NAMES[S.view][S.sel];
+  if (S.tab === "pain") {
+    const v = S.draft.nrs;
+    return `<h3>${name} <small>ağrı kaydı</small></h3>
+      <div class="box"><h5>Hasta konuşabiliyor mu?</h5><div class="opts" data-verbal><i class="${S.verbal ? "on" : ""}">Evet · kendisi puanlar</i><i class="${!S.verbal ? "on" : ""}">Hayır · davranışa bakılarak</i></div></div>
+      ${S.verbal ? `<div class="box"><h5>Ağrı şiddeti · 0–10 <span class="r" style="color:var(--mute)">sayısal ölçek</span></h5><div class="nrs" data-nrs>${Array.from({ length: 11 }, (_, i) => `<i class="${v === i ? "on" : ""}" style="${v === i ? `background:${COL.pain(i)}` : ""}">${i}</i>`).join("")}</div><div class="nrsl"><span>Ağrı yok</span><span>Olabilecek en kötü ağrı</span></div></div>`
+        : `<div class="box"><h5>Davranışsal ağrı puanı (CPOT) <span class="r" style="color:var(--mute)">her madde 0–2</span></h5>
+          ${CPOT.map(([k, l, vals]) => `<div class="fld"><label>${l}</label>${opt(k, vals, vals[0])}</div>`).join("")}
+          <div style="font-size:12.5px;color:var(--mute)">Toplam: <b style="color:var(--ink);font-family:'JetBrains Mono'">${cpotTotal()} / 8</b> · bildirim eşiği hastanenin protokolünden gelir.</div></div>`}
+      <div class="box"><h5>Ağrının niteliği</h5>
+        <div class="fld"><label>Tip</label>${opt("tip", ["Künt","Batıcı","Yanıcı","Zonklayıcı","Kramp"], "Künt")}</div>
+        <div class="fld"><label>Süre</label>${opt("sure", ["Sürekli","Aralıklı","Hareketle"], "Sürekli")}</div>
+        <div class="fld"><label>Yayılım</label>${opt("yay", ["Yok","Sırta","Kola","Bacağa"], "Yok")}</div></div>
+      ${(S.verbal && v >= 7) || (!S.verbal && cpotTotal() >= CPOT_ESIK) ? `<div class="note">${S.verbal ? "Şiddetli ağrı" : "Ağrı belirtileri"} kaydedildi. Hekime bildirim gidecek. Ağrı yönetimi kararı hekimindir.</div>` : ""}
+      <div style="margin-top:12px;display:flex;gap:8px"><span class="btn p" data-save>Kaydet</span><span class="btn" data-cancel>Vazgeç</span></div>`;
+  }
+  if (S.tab === "wound") return `<h3>${name} <small>yara kaydı</small></h3>
+      <div class="box"><h5>Yara türü</h5>${opt("tur", ["Bası yarası","Cerrahi","Travma","Nem ilişkili","Tıbbi cihaz ilişkili"], "Bası yarası")}</div>
+      <div class="box"><h5>Evre <span class="r" style="color:var(--mute)">bası yarası için</span></h5>${opt("evre", ["Evre 1","Evre 2","Evre 3","Evre 4","Evrelenemeyen","Derin doku hasarı"], "Evre 2")}</div>
+      <div class="box"><h5>Boyut (cm)</h5><div class="num">Uzunluk <input value="3"> Genişlik <input value="2"> Derinlik <input value="0.2"></div>
+        <div class="fld" style="margin-top:10px"><label>Akıntı</label>${opt("akinti", ["Yok","Az","Orta","Çok"], "Az")}</div>
+        <div class="fld"><label>Yara yatağı</label>${opt("yatak", ["Granülasyon","Fibrin","Nekroz","Epitelizasyon"], "Granülasyon")}</div></div>
+      <div class="box"><h5>Fotoğraf</h5><div class="photo"><div class="ph">📷</div><div style="font-size:12.5px;color:var(--mute)">Fotoğraf yalnızca hasta kaydında saklanır, telefonun galerisine düşmez. <b style="color:var(--ink)">Kimlerin göreceği hastanenin kararıdır.</b></div></div></div>
+      <div style="margin-top:12px;display:flex;gap:8px"><span class="btn p" data-save>Kaydet</span><span class="btn" data-cancel>Vazgeç</span></div>`;
+  return `<h3>${name} <small>kateter · dren</small></h3>
+      <div class="box"><h5>Tür</h5>${opt("tur", ["Periferik IV","Santral kateter","Arter kateteri","Dren","Üriner kateter","Nazogastrik"], "Periferik IV")}</div>
+      <div class="box"><h5>Durum</h5><div class="fld"><label>Takıldığı gün</label><div class="num"><input value="bugün" style="width:90px"></div></div>
+        <div class="fld"><label>Giriş yeri</label>${opt("gy", ["Temiz","Kızarık","Şiş","Akıntılı"], "Temiz")}</div>
+        <div class="fld"><label>Pansuman</label>${opt("pans", ["Yeni","Yenilenecek"], "Yeni")}</div></div>
+      <div style="margin-top:12px;display:flex;gap:8px"><span class="btn p" data-save>Kaydet</span><span class="btn" data-cancel>Vazgeç</span></div>`;
+}
+function list() {
+  const mine = S.entries.filter(e => e.tab === S.tab);
+  const title = { pain:"Ağrı kayıtları", wound:"Yaralar", line:"Kateter ve drenler" }[S.tab];
+  const line = e => S.tab === "pain" ? `${e.data.cpot != null ? "CPOT " + e.data.cpot + " / 8" : (e.data.nrs ?? "—") + " / 10"} · ${e.data.tip || ""} · ${e.data.sure || ""}` : S.tab === "wound" ? `${e.data.evre} · ${e.data.l} × ${e.data.w} cm (uzunluk × genişlik)` : `${e.data.tur} · ${e.data.gun ?? 0}. gün`;
+  let extra = "";
+  if (S.tab === "wound") extra = `<div class="box"><h5>Sakrum yarası · boyut değişimi <span class="r" style="color:var(--mute)">en uzun kenar, cm</span></h5><div class="sizeTrend">${[[4.2,"19.09"],[3.8,"20.09"],[3.5,"21.09"],[3.2,"22.09"],[3.0,"bugün"]].map(([v, d]) => `<div style="height:${v / 4.5 * 100}%"><span>${d}</span></div>`).join("")}</div><div style="font-size:12.5px;color:var(--mute);margin-top:24px">Küçülüyor: 4.2 → 3.0 cm. Bası yarası kontrol listesi: pozisyon 2 saatte bir, son pozisyon 20:00.</div></div>`;
+  if (S.tab === "line") extra = `<div class="note">Santral kateter 5. gününde. Kontrol ve devam kararı hastanenin protokolüne ve hekime aittir.</div>`;
+  return `<h3>${title} <small>${mine.length} kayıt · vücuttaki numaralarla aynı</small></h3>
+    <div class="box list">${mine.map((e, i) => `<div class="it" data-go="${S.entries.indexOf(e)}"><span class="p" style="background:${COL[S.tab](e.data.nrs)}">${i + 1}</span><div><b>${e.n}</b><small>${line(e)}</small></div><small style="text-align:right">${e.at}<br>${e.who}</small></div>`).join("") || `<div class="mt">Kayıt yok.</div>`}</div>
+    ${extra}<div class="empty">Yeni kayıt için soldaki vücutta bir bölgeye dokun.</div>`;
+}
+function render() {
+  document.getElementById("tabs").innerHTML = TABS.map(([k, l]) => `<span data-tab="${k}" class="${S.tab === k ? "on" : ""}">${l}<em>${S.entries.filter(e => e.tab === k).length}</em></span>`).join("");
+  document.querySelectorAll("#view button").forEach(b => b.classList.toggle("on", b.dataset.v === S.view));
+  drawBody(); document.getElementById("panel").innerHTML = S.sel ? form() : list();
+}
+
+/* ---------- etkileşim ---------- */
+document.getElementById("tabs").addEventListener("click", e => { const t = e.target.closest("[data-tab]"); if (!t) return; S.tab = t.dataset.tab; S.sel = null; S.draft = {}; if (S.tab === "wound") S.view = "arka"; render(); });
+document.getElementById("view").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; S.view = b.dataset.v; S.sel = null; render(); });
+document.getElementById("body").addEventListener("click", e => { const r = e.target.closest("[data-k]"); if (!r) return; S.sel = r.dataset.k; S.draft = {}; render(); });
+document.getElementById("panel").addEventListener("click", e => {
+  const o = e.target.closest("[data-f] i"); if (o) { S.draft[o.parentNode.dataset.f] = o.textContent; return render(); }
+  const n = e.target.closest("[data-nrs] i"); if (n) { S.draft.nrs = +n.textContent; return render(); }
+  const vb = e.target.closest("[data-verbal] i"); if (vb) { S.verbal = vb.textContent.startsWith("Evet"); return render(); }
+  if (e.target.closest("[data-cancel]")) { S.sel = null; return render(); }
+  if (e.target.closest("[data-save]")) { if (S.tab === "pain" && S.verbal && S.draft.nrs == null) { alert("Önce ağrı şiddetini (0–10) seçin."); return; } const name = S.sel === "sakrum" ? "Sakrum" : NAMES[S.view][S.sel];
+    S.entries.push({ tab:S.tab, view:S.view, k:S.sel, sakrum:S.sel === "sakrum", n:name, data:{ nrs:S.tab === "pain" && S.verbal ? (S.draft.nrs ?? null) : null, cpot:S.tab === "pain" && !S.verbal ? cpotTotal() : null, tip:S.draft.tip || "Künt", sure:S.draft.sure || "Sürekli", evre:S.draft.evre || "Evre 2", l:3, w:2, tur:S.draft.tur || (S.tab === "wound" ? "Bası yarası" : "Periferik IV"), gun:0 }, at:"şimdi", who:"Ayşe D." });
+    S.sel = null; S.draft = {}; return render(); }
+  const g = e.target.closest("[data-go]"); if (g) { const en = S.entries[+g.dataset.go]; S.view = en.view; render(); }
+});
+render();
+</script>
+</body>
+</html>

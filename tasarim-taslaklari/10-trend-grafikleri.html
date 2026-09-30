@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trend Grafikleri</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root { --page:#0b0f16; --app:#07101f; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60; --pri:#22b8d6;
+          --ecg:#22e05a; --art:#ff5c5c; --spo:#ffe14a; --rr:#3fd8ff; --tmp:#e8eef7; --crit:#ef4444; --high:#f97316; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:15px/1.5 Figtree, system-ui, sans-serif; }
+  .wrap { max-width:1200px; margin:0 auto; padding:28px 16px 70px; }
+  h1 { font:700 28px/1.15 "Space Grotesk"; margin:0 0 8px; }
+  .lead { color:var(--mute); max-width:860px; margin:0; } .lead b { color:var(--ink); }
+  .part { margin-top:40px; }
+  .part h2 { font:700 22px "Space Grotesk"; margin:0 0 4px; }
+  .part > p { color:var(--mute); margin:0 0 14px; max-width:860px; } .part > p b { color:var(--ink); }
+  .box { background:var(--app); border:1px solid var(--line); border-radius:18px; padding:16px; }
+  .bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .seg { display:flex; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:3px; }
+  .seg button { font:600 13px Figtree; color:var(--mute); background:none; border:0; padding:6px 11px; border-radius:8px; cursor:pointer; }
+  .seg button.on { background:var(--pri); color:#03141c; }
+  .lbl { font:600 12px Figtree; color:var(--mute); text-transform:uppercase; letter-spacing:.08em; }
+  .k { font:700 13px "Space Grotesk"; background:var(--pri); color:#03141c; border-radius:8px; padding:5px 9px; }
+  svg text { font-family:"JetBrains Mono", monospace; }
+
+  /* hata örneği */
+  .trap { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .trap .box h4 { margin:0 0 6px; font:700 15px "Space Grotesk"; }
+  .trap .box p { margin:6px 0 0; font-size:13px; color:var(--mute); }
+  .bad { border-color:#7f1d1d; } .good { border-color:#14532d; }
+
+  /* T1 */
+  .sm { display:grid; grid-template-columns:120px 1fr; gap:0 14px; align-items:center; border-bottom:1px solid var(--line); padding:8px 0; }
+  .sm:last-child { border:0; }
+  .sm .nm small { display:block; font:600 11px Figtree; color:var(--mute); }
+  .sm .nm b { font:700 26px/1 "JetBrains Mono"; }
+  .sm .nm em { font:600 11px Figtree; font-style:normal; margin-left:4px; }
+  .src { display:inline-block; font:700 9.5px Figtree; padding:2px 6px; border-radius:5px; margin-top:4px; }
+  .src.dev { background:rgba(34,184,214,.15); color:#7fe3f5; } .src.man { background:rgba(234,179,8,.15); color:#fcd34d; } .src.gap { background:rgba(148,163,184,.15); color:#cbd5e1; }
+
+  /* T2 */
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .chip { cursor:pointer; background:var(--card); border:1.5px solid var(--line); border-radius:12px; padding:8px 12px; min-width:110px; transition:border-color .15s, transform .15s; }
+  .chip:hover { transform:translateY(-1px); }
+  .chip.on { border-color:var(--c); box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); }
+  .chip small { display:block; font:700 10.5px Figtree; color:var(--c); }
+  .chip b { font:700 22px/1.1 "JetBrains Mono"; }
+  .chip i { font:600 11px Figtree; font-style:normal; margin-left:4px; }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--mute); margin-top:8px; }
+  .legend span { display:flex; gap:6px; align-items:center; }
+  .legend i { width:14px; height:8px; border-radius:2px; display:inline-block; }
+
+  .tip { position:fixed; pointer-events:none; background:#0d1a2d; border:1px solid var(--line2); border-radius:10px; padding:8px 10px; font:600 12px Figtree; box-shadow:0 10px 24px rgba(0,0,0,.5); display:none; z-index:10; }
+  .tip b { font:700 16px "JetBrains Mono"; }
+
+  .qs { margin-top:36px; background:var(--card); border:1px solid var(--line2); border-radius:18px; padding:18px 20px; }
+  .qs h2 { font:700 20px "Space Grotesk"; margin:0 0 8px; }
+  .qs ol { margin:0; padding-left:20px; color:var(--mute); } .qs li { margin-bottom:6px; } .qs li b { color:var(--ink); }
+  .qs code { display:block; margin-top:10px; background:#050b16; border:1px solid var(--line); color:#9ff3ff; border-radius:10px; padding:12px 14px; font:600 14px "JetBrains Mono"; }
+  @media (max-width:760px) { .trap { grid-template-columns:1fr; } .sm { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Trend grafikleri · Taslak 10</h1>
+  <p class="lead">İsteğin şuydu: <b>hekim kalp hızı gibi değerlerdeki değişimi ayrı bir grafikte görebilmeli.</b> Bu, konseyin de bir numaralı bulgusu çıktı. Önce bugünkü grafiğin neden yanıltıcı olduğunu, sonra iki çözümü gösteriyorum. Hepsinde fareyle grafiğin üzerinde gezinebilir, zaman aralığını değiştirebilirsin. <i>Veriler örnektir.</i></p>
+
+  <!-- ============ neden ============ -->
+  <div class="part">
+    <h2>Neden gerekli: bugünkü grafik yanıltıyor</h2>
+    <p>Bugünkü grafik her değeri kendi en küçük ve en büyük değerine göre yayıyor, ekseni ve birimi de yok. Aşağıdaki iki hastanın kalp hızı <b>eski grafikte aynı görünüyor</b>. Gerçekte biri önemsiz bir oynama, diğeri ciddi bir yükseliş.</p>
+    <div class="trap">
+      <div class="box bad"><h4>Bugünkü yöntem · iki hasta aynı görünüyor</h4><svg id="trapBad" width="100%" height="150"></svg><p>Hasta A: 80 → 88 · Hasta B: 80 → 150. Çizgiler neredeyse aynı.</p></div>
+      <div class="box good"><h4>Önerilen · sabit ölçek, eksen, eşik bandı</h4><svg id="trapGood" width="100%" height="150"></svg><p>Aynı veri. B'nin tehlikeli yükselişi hemen görünüyor, A sakin kalıyor.</p></div>
+    </div>
+  </div>
+
+  <!-- ============ T1 ============ -->
+  <div class="part">
+    <h2><span class="k">T1</span> Her değer ayrı satırda</h2>
+    <p>Kalp hızı, tansiyon, SpO₂, solunum ve ateş alt alta, <b>her biri kendi grafiğinde</b>. Hepsi aynı zaman çizgisini paylaşıyor. Fareyi bir noktaya getirince <b>bütün satırlarda aynı an</b> işaretleniyor, yani "kalp hızı yükselirken tansiyon ne yapıyordu?" sorusunun cevabı tek bakışta görünüyor.</p>
+    <div class="box">
+      <div class="bar"><span class="lbl">Zaman</span><div class="seg" data-range="t1"><button data-h="6">6 sa</button><button data-h="24" class="on">24 sa</button><button data-h="72">3 gün</button></div></div>
+      <div id="t1"></div>
+      <div class="legend"><span><i style="background:rgba(239,68,68,.18)"></i>alarm eşiği dışı</span><span><i style="background:rgba(34,184,214,.18)"></i>bu hastanın kendi normal aralığı</span><span><i style="background:#94a3b8;height:2px"></i>kesik çizgi = veri yok</span><span>◆ tedavi / olay</span></div>
+    </div>
+  </div>
+
+  <!-- ============ T2 ============ -->
+  <div class="part">
+    <h2><span class="k">T2</span> Bir değere dokun, büyük grafikte aç</h2>
+    <p>Üstte her değerin bir kutusu var. <b>Kalp hızına dokununca</b> altta onun büyük grafiği açılıyor. Grafikte o sırada verilen ilaçlar ve çalan alarmlar da işaretli. Tek bir değere derinlemesine bakmak için ideal.</p>
+    <div class="box">
+      <div class="chips" id="chips"></div>
+      <div class="bar"><span class="lbl">Zaman</span><div class="seg" data-range="t2"><button data-h="6">6 sa</button><button data-h="24" class="on">24 sa</button><button data-h="72">3 gün</button></div>
+        <span class="lbl" style="margin-left:10px">Karşılaştır</span><div class="seg" id="cmp"><button data-v="" class="on">Yok</button><button data-v="map">+ Tansiyon</button><button data-v="spo">+ SpO₂</button></div></div>
+      <svg id="t2" width="100%" height="300"></svg>
+      <div class="legend"><span><i style="background:rgba(239,68,68,.18)"></i>alarm eşiği dışı</span><span><i style="background:rgba(34,184,214,.18)"></i>hastanın normal aralığı</span><span>◆ ilaç / tedavi</span><span>▲ alarm</span></div>
+    </div>
+  </div>
+
+  <div class="qs">
+    <h2>Senden istediğim</h2>
+    <ol>
+      <li><b>T1 mi, T2 mi?</b> İkisi birlikte de olabilir: hasta ekranında T1, bir değere tıklayınca T2 açılır.</li>
+      <li><b>Varsayılan zaman aralığı:</b> 6 saat mi, 24 saat mi?</li>
+      <li><b>Hastanın kendi normal aralığı (mavi bant) görünsün mü?</b> Yararlı ama ekranı biraz kalabalıklaştırıyor.</li>
+    </ol>
+    <code>Trend: T1 + T2   Aralık: 24 sa   Normal bant: evet</code>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+/* ---------- örnek veri (sentetik) ---------- */
+const H = 72; // saat
+const rnd = (s => () => (s = (s * 16807) % 2147483647) / 2147483647)(7);
+const series = (fn, noise) => Array.from({ length: H * 4 + 1 }, (_, i) => { const t = i / 4; return { t, v: fn(t) + (rnd() - .5) * noise }; });
+const P = {
+  hr:  { n:"Kalp hızı", u:"/dk",   c:"var(--ecg)", lo:40, hi:180, al:[50,120], nb:[72,96],  d: series(t => t < 60 ? 84 + Math.sin(t / 5) * 4 : 84 + (t - 60) * 4.2, 5) },
+  map: { n:"Ort. tansiyon", u:"mmHg", c:"var(--art)", lo:30, hi:130, al:[65,110], nb:[75,95], d: series(t => t < 62 ? 82 + Math.sin(t / 7) * 3 : 82 - (t - 62) * 3.1, 3) },
+  spo: { n:"SpO₂", u:"%",        c:"var(--spo)", lo:80, hi:100, al:[92,101], nb:[95,99],   d: series(t => t < 64 ? 97 : 97 - (t - 64) * .75, .8) },
+  rr:  { n:"Solunum", u:"/dk",   c:"var(--rr)",  lo:5,  hi:40,  al:[10,24],  nb:[14,20],   d: series(t => t < 58 ? 17 : 17 + (t - 58) * .9, 1.2) },
+  tmp: { n:"Ateş", u:"°C",       c:"var(--tmp)", lo:35, hi:41,  al:[36,38.3],nb:[36.4,37.4],d: series(t => t < 50 ? 37 : 37 + (t - 50) * .1, .12) },
+};
+// veri boşluğu: 40–42. saatler (kablo çıktı) — kalp hızı ve SpO2
+["hr","spo"].forEach(k => P[k].d.forEach(p => { if (p.t > 40 && p.t < 42) p.v = null; }));
+const EVENTS = [{ t:63, l:"Sıvı 500 mL", k:"tx" }, { t:66.5, l:"Noradrenalin başlandı", k:"tx" }, { t:68, l:"Seftriakson 2 g", k:"tx" }, { t:69.4, l:"Alarm: MAP 58", k:"al" }, { t:71.2, l:"Alarm: kötüleşme kriterleri", k:"al" }];
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v.replace(/var\((.*)\)/, "$1")).trim() || v;
+
+/* ---------- çizim yardımcıları ---------- */
+function chart(svg, { keys, hours, height, big, onHover }) {
+  const W = svg.clientWidth, Hh = height, padL = 40, padR = 10, padT = 10, padB = 22;
+  const t0 = H - hours, x = t => padL + (t - t0) / hours * (W - padL - padR);
+  let out = "";
+  keys.forEach((k, ki) => {
+    const p = P[k], y = v => padT + (1 - (v - p.lo) / (p.hi - p.lo)) * (Hh - padT - padB);
+    if (ki === 0) {
+      out += `<rect x="${padL}" y="${padT}" width="${W - padL - padR}" height="${y(p.al[1]) - padT}" fill="rgba(239,68,68,.12)"/>`;
+      out += `<rect x="${padL}" y="${y(p.al[0])}" width="${W - padL - padR}" height="${Hh - padB - y(p.al[0])}" fill="rgba(239,68,68,.12)"/>`;
+      out += `<rect x="${padL}" y="${y(p.nb[1])}" width="${W - padL - padR}" height="${y(p.nb[0]) - y(p.nb[1])}" fill="rgba(34,184,214,.13)"/>`;
+      const ticks = [p.lo, p.al[0], p.al[1] > p.hi ? null : p.al[1], p.hi].filter(v => v != null);
+      let lastY = -99;
+      ticks.sort((a, b) => b - a).filter(v => { const ok = Math.abs(y(v) - lastY) > 11; if (ok) lastY = y(v); return ok; }).forEach(v => out += `<text x="${padL - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="#8fa1ba">${v}</text><line x1="${padL}" x2="${W - padR}" y1="${y(v)}" y2="${y(v)}" stroke="#1c2c45"/>`);
+    }
+    const pts = p.d.filter(q => q.t >= t0);
+    let path = "", gap = "";
+    pts.forEach((q, i) => { if (q.v == null) return; const prev = pts[i - 1]; path += `${!prev || prev.v == null ? "M" : "L"}${x(q.t).toFixed(1)},${y(q.v).toFixed(1)}`; });
+    const g0 = pts.find(q => q.v == null), g1 = [...pts].reverse().find(q => q.v == null);
+    if (g0) { const a = pts[pts.indexOf(g0) - 1], b = pts[pts.indexOf(g1) + 1]; if (a && b) gap = `<line x1="${x(a.t)}" y1="${y(a.v)}" x2="${x(b.t)}" y2="${y(b.v)}" stroke="#94a3b8" stroke-dasharray="4 4"/><text x="${(x(a.t) + x(b.t)) / 2}" y="${padT + 12}" text-anchor="middle" font-size="10" fill="#94a3b8">veri yok</text>`; }
+    out += gap + `<path d="${path}" fill="none" stroke="${css(p.c)}" stroke-width="${big ? 2.4 : 1.8}" stroke-linejoin="round" opacity="${ki ? .75 : 1}"/>`;
+  });
+  // saat ekseni
+  const step = hours <= 6 ? 1 : hours <= 24 ? 4 : 12;
+  for (let h = Math.ceil(t0 / step) * step; h <= H; h += step) { const lab = h === H ? "şimdi" : `-${H - h} sa`; out += `<text x="${x(h)}" y="${Hh - 6}" text-anchor="middle" font-size="10" fill="#8fa1ba">${lab}</text>`; }
+  // olaylar
+  if (big) EVENTS.filter(e => e.t >= t0).forEach(e => { const X = x(e.t);
+    out += `<line x1="${X}" x2="${X}" y1="${padT}" y2="${Hh - padB}" stroke="${e.k === "al" ? "#ef4444" : "#8b7cff"}" stroke-dasharray="3 3" opacity=".7"/>`;
+    out += e.k === "al" ? `<path d="M${X - 6} ${padT + 12} L${X} ${padT + 2} L${X + 6} ${padT + 12}Z" fill="#ef4444"/>` : `<rect x="${X - 5}" y="${padT + 2}" width="10" height="10" transform="rotate(45 ${X} ${padT + 7})" fill="#8b7cff"/>`; });
+  out += `<line class="cur" x1="0" x2="0" y1="${padT}" y2="${Hh - padB}" stroke="#e8eef7" stroke-width="1" opacity="0"/>`;
+  svg.setAttribute("height", Hh); svg.setAttribute("viewBox", `0 0 ${W} ${Hh}`); svg.innerHTML = out;
+  svg.onmousemove = e => { const r = svg.getBoundingClientRect(), mx = e.clientX - r.left; if (mx < padL) return;
+    const t = t0 + (mx - padL) / (W - padL - padR) * hours; onHover && onHover(t, e); };
+  svg.onmouseleave = () => { onHover && onHover(null); };
+  return { x, t0 };
+}
+const valAt = (k, t) => { const q = P[k].d.reduce((a, b) => Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a); return q.v; };
+const fmt = (k, v) => v == null ? "—" : (k === "tmp" ? v.toFixed(1) : Math.round(v));
+const tip = document.getElementById("tip");
+const showTip = (e, html) => { tip.innerHTML = html; tip.style.display = "block"; tip.style.left = Math.min(innerWidth - 220, e.clientX + 14) + "px"; tip.style.top = (e.clientY + 14) + "px"; };
+const hideTip = () => tip.style.display = "none";
+const clock = t => { const d = new Date(Date.UTC(2026, 8, 23, 21, 40) - (H - t) * 3600e3); return d.toISOString().slice(11, 16); };
+
+/* ---------- tuzak ---------- */
+function trap() {
+  const A = Array.from({ length: 25 }, (_, i) => 80 + i / 24 * 8 + Math.sin(i) * .6), B = Array.from({ length: 25 }, (_, i) => 80 + i / 24 * 70 + Math.sin(i) * 3);
+  const draw = (id, fixed) => { const s = document.getElementById(id), W = s.clientWidth, h = 150;
+    const scale = (arr) => { const lo = fixed ? 40 : Math.min(...arr), hi = fixed ? 180 : Math.max(...arr); return v => 10 + (1 - (v - lo) / (hi - lo)) * (h - 30); };
+    const line = (arr, c) => { const y = scale(arr); return `<path d="${arr.map((v, i) => `${i ? "L" : "M"}${(fixed ? 40 : 10) + i / 24 * (W - (fixed ? 50 : 20))},${y(v)}`).join("")}" fill="none" stroke="${c}" stroke-width="2.4"/>`; };
+    let o = "";
+    if (fixed) { const y = v => 10 + (1 - (v - 40) / 140) * (h - 30);
+      o += `<rect x="40" y="10" width="${W - 50}" height="${y(120) - 10}" fill="rgba(239,68,68,.14)"/>`;
+      [40, 60, 100, 120, 180].forEach(v => o += `<text x="34" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="#8fa1ba">${v}</text><line x1="40" x2="${W - 10}" y1="${y(v)}" y2="${y(v)}" stroke="#1c2c45"/>`); }
+    o += line(A, "#7fe3f5") + line(B, "#ff7a7a");
+    o += `<text x="${W - 14}" y="${h - 6}" text-anchor="end" font-size="11" fill="#7fe3f5">A</text><text x="${W - 30}" y="${h - 6}" text-anchor="end" font-size="11" fill="#ff7a7a">B</text>`;
+    s.setAttribute("viewBox", `0 0 ${W} ${h}`); s.innerHTML = o; };
+  draw("trapBad", false); draw("trapGood", true);
+}
+
+/* ---------- T1 ---------- */
+let r1 = 24;
+function t1() {
+  const host = document.getElementById("t1");
+  host.innerHTML = Object.keys(P).map(k => `<div class="sm"><div class="nm"><small style="color:${P[k].c}">${P[k].n}</small><b style="color:${P[k].c}" data-now="${k}">${fmt(k, P[k].d.at(-1).v)}</b><em>${P[k].u}</em><br>
+    <span class="src ${k === "tmp" ? "man" : "dev"}">${k === "tmp" ? "elle · 21:00" : "cihaz · canlı"}</span></div><svg data-k="${k}" width="100%" height="84"></svg></div>`).join("");
+  const svgs = [...host.querySelectorAll("svg")];
+  const geo = svgs.map(s => chart(s, { keys: [s.dataset.k], hours: r1, height: 84, onHover: (t, e) => {
+    svgs.forEach((o, i) => { const c = o.querySelector(".cur"); if (t == null) { c.setAttribute("opacity", 0); return; } const X = geo[i].x(t); c.setAttribute("x1", X); c.setAttribute("x2", X); c.setAttribute("opacity", .6); });
+    if (t == null) { hideTip(); host.querySelectorAll("[data-now]").forEach(b => b.textContent = fmt(b.dataset.now, P[b.dataset.now].d.at(-1).v)); return; }
+    host.querySelectorAll("[data-now]").forEach(b => b.textContent = fmt(b.dataset.now, valAt(b.dataset.now, t)));
+    showTip(e, `${clock(t)}<br>${Object.keys(P).map(k => `<span style="color:${css(P[k].c)}">${P[k].n}</span> <b>${fmt(k, valAt(k, t))}</b>`).join("<br>")}`); } }));
+}
+
+/* ---------- T2 ---------- */
+let r2 = 24, sel = "hr", cmpK = "";
+function t2() {
+  document.getElementById("chips").innerHTML = Object.keys(P).map(k => { const d = P[k].d, now = d.at(-1).v, ago = d[d.length - 1 - r2 * 4]?.v ?? d[0].v, df = now - ago;
+    return `<div class="chip ${k === sel ? "on" : ""}" data-k="${k}" style="--c:${P[k].c}"><small>${P[k].n}</small><b>${fmt(k, now)}</b><i style="color:${Math.abs(df) > (k === "tmp" ? .5 : 5) ? "#fca5a5" : "#8fa1ba"}">${df > 0 ? "▲" : "▼"} ${fmt(k, Math.abs(df))} · ${r2} sa</i></div>`; }).join("");
+  const keys = [sel]; if (cmpK && cmpK !== sel) keys.push(cmpK);
+  const s = document.getElementById("t2");
+  chart(s, { keys, hours: r2, height: 300, big: true, onHover: (t, e) => { const c = s.querySelector(".cur"); if (t == null) { c.setAttribute("opacity", 0); hideTip(); return; }
+    const g = { x: tt => 40 + (tt - (H - r2)) / r2 * (s.clientWidth - 50) }; c.setAttribute("x1", g.x(t)); c.setAttribute("x2", g.x(t)); c.setAttribute("opacity", .6);
+    const ev = EVENTS.find(v => Math.abs(v.t - t) < r2 / 80);
+    showTip(e, `${clock(t)}<br>${keys.map(k => `<span style="color:${css(P[k].c)}">${P[k].n}</span> <b>${fmt(k, valAt(k, t))}</b> ${P[k].u}`).join("<br>")}${ev ? `<br><span style="color:${ev.k === "al" ? "#fca5a5" : "#c4b5fd"}">${ev.l}</span>` : ""}`); } });
+}
+document.getElementById("chips").addEventListener("click", e => { const c = e.target.closest(".chip"); if (c) { sel = c.dataset.k; t2(); } });
+document.getElementById("cmp").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; cmpK = b.dataset.v; [...b.parentNode.children].forEach(x => x.classList.toggle("on", x === b)); t2(); });
+document.querySelectorAll("[data-range]").forEach(g => g.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return;
+  [...g.children].forEach(x => x.classList.toggle("on", x === b)); if (g.dataset.range === "t1") { r1 = +b.dataset.h; t1(); } else { r2 = +b.dataset.h; t2(); } }));
+
+const all = () => { trap(); t1(); t2(); };
+all(); addEventListener("resize", all);
+</script>
+</body>
+</html>

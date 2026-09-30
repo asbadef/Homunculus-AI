@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logo Fikirleri</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0b0f16; --ink:#e7ebf2; --mute:#8d97a8; --line:#1f2733; --card:#111722; --brand:#22b8d6; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55 Figtree, system-ui, sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:32px 16px 60px; }
+  h1 { font-size:26px; margin:0 0 6px; }
+  .lead { color:var(--mute); max-width:760px; margin:0 0 8px; }
+  .lead b { color:var(--ink); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:16px; margin-top:24px; }
+  .c { background:var(--card); border:1px solid var(--line); border-radius:22px; overflow:hidden; display:flex; flex-direction:column; }
+  .stage { display:grid; grid-template-columns:1fr 1fr; }
+  .stage > div { display:flex; align-items:center; justify-content:center; padding:22px 10px; }
+  .dark { background:#07101f; } .light { background:#f4f2ec; }
+  .big { width:150px; height:150px; }
+  .sizes { display:flex; gap:14px; align-items:center; padding:12px 18px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .sizes small { color:var(--mute); font-size:12px; margin-right:auto; }
+  .sizes .chip { display:flex; gap:10px; align-items:center; padding:6px 10px; border-radius:10px; }
+  .body { padding:16px 18px 18px; }
+  .no { color:var(--brand); font-weight:700; font-size:12px; letter-spacing:.1em; text-transform:uppercase; }
+  h2 { margin:4px 0 6px; font-size:20px; }
+  .body p { margin:0; color:var(--mute); font-size:14px; }
+  .body p b { color:var(--ink); font-weight:600; }
+  .pro { margin-top:10px; font-size:13px; color:var(--mute); }
+  .pro span { color:var(--ink); }
+  .lockup { display:flex; align-items:center; gap:10px; padding:10px 18px 16px; }
+  .lockup b { font-weight:800; font-size:18px; letter-spacing:-.01em; }
+  @media (max-width:420px) { .grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="gCy" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8ff1ff"/><stop offset="1" stop-color="#0e7fa3"/></linearGradient>
+    <radialGradient id="gOrb" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#1f6f94"/><stop offset=".6" stop-color="#0a2340"/><stop offset="1" stop-color="#050b16"/></radialGradient>
+    <radialGradient id="gHot" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#e6fdff"/><stop offset=".4" stop-color="#5fe3ff"/><stop offset="1" stop-color="#5fe3ff" stop-opacity="0"/></radialGradient>
+    <linearGradient id="gPill" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0e7fa3"/><stop offset=".5" stop-color="#7fe9ff"/><stop offset="1" stop-color="#0e7fa3"/></linearGradient>
+
+    <!-- 1 · Dikkat haritası: kortikal şerit, dilimler ilgiye göre büyür -->
+    <symbol id="l1" viewBox="0 0 200 200">
+      <circle cx="100" cy="100" r="94" fill="url(#gOrb)"/>
+      <g fill="url(#gCy)">
+        <path d="M40 140 A64 64 0 0 1 44 112 L60 118 A47 47 0 0 0 57 140 Z" opacity=".45"/>
+        <path d="M46 107 A64 64 0 0 1 58 86 L71 97 A47 47 0 0 0 62 113 Z" opacity=".55"/>
+        <path d="M62 81 A64 64 0 0 1 124 49 L118 66 A47 47 0 0 0 75 93 Z"/>
+        <path d="M129 51 A64 64 0 0 1 145 60 L134 74 A47 47 0 0 0 123 67 Z" opacity=".55"/>
+        <path d="M149 64 A64 64 0 0 1 160 118 L143 114 A47 47 0 0 0 137 78 Z" opacity=".8"/>
+      </g>
+      <circle cx="92" cy="66" r="22" fill="url(#gHot)"/>
+      <path d="M58 150 H86 L93 138 L101 160 L108 146 H142" fill="none" stroke="#9ff3ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+
+    <!-- 2 · Eşikten önce -->
+    <symbol id="l2" viewBox="0 0 200 200">
+      <circle cx="100" cy="100" r="94" fill="url(#gOrb)"/>
+      <line x1="30" y1="82" x2="170" y2="82" stroke="#9fb3c8" stroke-width="3" stroke-dasharray="7 7" opacity=".55"/>
+      <path d="M30 138 C62 138 72 134 88 122 C104 110 112 84 128 70 C140 60 156 58 170 58" fill="none" stroke="url(#gCy)" stroke-width="8" stroke-linecap="round"/>
+      <circle cx="96" cy="115" r="26" fill="url(#gHot)"/>
+      <circle cx="96" cy="115" r="8" fill="#eafdff"/>
+    </symbol>
+
+    <!-- 3 · Eller -->
+    <symbol id="l3" viewBox="0 0 200 200">
+      <circle cx="100" cy="100" r="94" fill="url(#gOrb)"/>
+      <path d="M36 96 C38 132 64 156 98 158 C84 146 70 128 64 104 C60 90 48 86 36 96 Z" fill="url(#gCy)"/>
+      <path d="M164 96 C162 132 136 156 102 158 C116 146 130 128 136 104 C140 90 152 86 164 96 Z" fill="url(#gCy)" opacity=".8"/>
+      <circle cx="100" cy="110" r="34" fill="url(#gHot)"/>
+      <path d="M72 112 H88 L94 100 L102 126 L108 108 L112 112 H128" fill="none" stroke="#eafdff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+
+    <!-- 4 · H köprüsü -->
+    <symbol id="l4" viewBox="0 0 200 200">
+      <circle cx="100" cy="100" r="94" fill="url(#gOrb)"/>
+      <rect x="50" y="46" width="26" height="108" rx="13" fill="url(#gPill)"/>
+      <rect x="124" y="46" width="26" height="108" rx="13" fill="url(#gPill)"/>
+      <path d="M76 100 H88 L95 84 L104 118 L111 96 L116 100 H124" fill="none" stroke="#eafdff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="104" cy="100" r="22" fill="url(#gHot)" opacity=".7"/>
+    </symbol>
+
+    <!-- 5 · Koğuş ızgarası -->
+    <symbol id="l5" viewBox="0 0 200 200">
+      <circle cx="100" cy="100" r="94" fill="url(#gOrb)"/>
+      <g fill="#1d4a6a">
+        <rect x="46" y="46" width="30" height="30" rx="8"/><rect x="85" y="46" width="30" height="30" rx="8"/><rect x="124" y="46" width="30" height="30" rx="8"/>
+        <rect x="46" y="85" width="30" height="30" rx="8"/><rect x="46" y="124" width="30" height="30" rx="8"/>
+        <rect x="85" y="124" width="30" height="30" rx="8"/><rect x="124" y="124" width="30" height="30" rx="8"/><rect x="124" y="85" width="30" height="30" rx="8"/>
+      </g>
+      <circle cx="100" cy="100" r="36" fill="url(#gHot)"/>
+      <rect x="85" y="85" width="30" height="30" rx="8" fill="url(#gCy)"/>
+      <path d="M89 101 H95 L98 94 L102 108 L105 99 H111" fill="none" stroke="#04202c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+
+    <!-- 6 · Takımyıldız -->
+    <symbol id="l6" viewBox="0 0 200 200">
+      <circle cx="100" cy="100" r="94" fill="url(#gOrb)"/>
+      <g stroke="#6fd8f0" stroke-width="1.6" opacity=".55" fill="none">
+        <path d="M58 118 L52 90 L68 62 L98 48 L130 54 L150 78 L148 110 L128 132 L100 140 L74 136 Z"/>
+        <path d="M68 62 L96 84 L130 54 M96 84 L100 140 M96 84 L148 110 M52 90 L96 84 L74 136"/>
+      </g>
+      <g fill="#bff4ff">
+        <circle cx="58" cy="118" r="4"/><circle cx="52" cy="90" r="4"/><circle cx="68" cy="62" r="4.5"/><circle cx="98" cy="48" r="4"/>
+        <circle cx="130" cy="54" r="4.5"/><circle cx="150" cy="78" r="4"/><circle cx="148" cy="110" r="4"/><circle cx="128" cy="132" r="4"/>
+        <circle cx="100" cy="140" r="4"/><circle cx="74" cy="136" r="4"/>
+      </g>
+      <circle cx="96" cy="84" r="24" fill="url(#gHot)"/>
+      <circle cx="96" cy="84" r="7" fill="#eafdff"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <h1>Logo fikirleri · Taslak 02</h1>
+  <p class="lead">Tek bir büyük insan figürünü bırakıyoruz. Ürün bir kişiye değil, <b>bir üniteye, çok sayıda yatağa ve bir ekibe</b> bakıyor. Aşağıdaki altı fikrin her biri ürünün bir yanını anlatıyor. Hepsi aynı renkle çizildi ki fark renkte değil fikirde görülsün. Renk, kimlik yönü seçilince oturacak.</p>
+  <p class="lead">Her kartta logo koyu ve açık zeminde, bir de <b>sekme ve uygulama simgesi boyutunda</b> (48, 32 ve 20 piksel) gösteriliyor. 20 pikselde de seçilebiliyorsa logo işini görüyor demektir.</p>
+
+  <div class="grid" id="g"></div>
+</div>
+
+<script>
+  const ideas = [
+    { id: "l1", name: "Dikkat Haritası",
+      story: "İsmin bilimsel kökenine sadık, ama insan çizmeden. Kortikal homunculus, beynin bedene <b>hassasiyetine göre</b> alan ayırdığı haritadır. Homunculus da her yatağa <b>riskine göre</b> dikkat ayırıyor. Logoda en çok dikkat isteyen dilim büyüyor ve parlıyor.",
+      pro: "Hikâyesi en güçlü olan. İsimle bağı da korunuyor." },
+    { id: "l2", name: "Eşikten Önce",
+      story: "Ürünün asıl vaadi şu: kötüleşmeyi <b>eşik aşılmadan</b> fark etmek. Kesik çizgi klasik alarm eşiği. Parlayan nokta, eğri daha eşiğe varmadan sistemin fark ettiği an.",
+      pro: "Ne yaptığını tek bakışta anlatıyor. Sunumda kendi kendini açıklar." },
+    { id: "l3", name: "Eller",
+      story: "Homunculus figüründe en büyük yer <b>ellere</b> ayrılır, çünkü dokunuş önemlidir. Bakım da ellerdedir. İki el bir nabzı tutuyor. Ekip vurgulanıyor, karar hep insanda kalıyor.",
+      pro: "En sıcak ve insani olan. \"Kararı hekim verir\" ilkesini görselleştiriyor." },
+    { id: "l4", name: "H Köprüsü",
+      story: "Bugünkü işaretin olgunlaşmış hâli. İki sütun cihazları ve ekibi, ya da hastayı ve klinisyeni temsil ediyor. Aralarındaki nabız çizgisi H harfinin yatay çizgisini oluşturuyor.",
+      pro: "Mevcut işarete en yakın olan. Küçük boyutta en iyi okunan." },
+    { id: "l5", name: "Koğuş",
+      story: "Bütün ünite tek bakışta görünüyor, çağıran yatak parlıyor. Hemşire istasyonundaki duvar ekranının ta kendisi.",
+      pro: "Ürünü en doğrudan anlatan. Ama bir yazılım panelinin simgesine fazla benzeyebilir." },
+    { id: "l6", name: "Takımyıldız",
+      story: "Her nokta bir yatak ya da bir cihaz. Birlikte tek bir zihin oluşturuyorlar, ortadaki nokta her şeyin birleştiği yer. Uzaktan bir baş ya da beyin silüetini andırıyor, ama bir insan figürü değil.",
+      pro: "Soyut ve \"yapay zekâ\" hissi veren. Küçük boyutta noktalar kaybolabilir." },
+  ];
+  const use = (id, s) => `<svg width="${s}" height="${s}" viewBox="0 0 200 200"><use href="#${id}"/></svg>`;
+  document.getElementById("g").innerHTML = ideas.map((x, i) => `
+    <article class="c">
+      <div class="stage"><div class="dark">${use(x.id,150)}</div><div class="light">${use(x.id,150)}</div></div>
+      <div class="sizes"><small>Simge boyutları</small>
+        <div class="chip dark">${use(x.id,48)}${use(x.id,32)}${use(x.id,20)}</div>
+        <div class="chip light">${use(x.id,32)}${use(x.id,20)}</div></div>
+      <div class="lockup">${use(x.id,34)}<b>Homunculus</b></div>
+      <div class="body"><span class="no">Fikir ${i+1}</span><h2>${x.name}</h2><p>${x.story}</p>
+        <div class="pro">Öne çıkan yanı: <span>${x.pro}</span></div></div>
+    </article>`).join("");
+</script>
+</body>
+</html>

@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sezi Kimliği</title>
+<link rel="icon" id="fav" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+/* Marka renkleri (öneri) — klinik durum renkleri ayrı ve sabit */
+:root{
+  --ink:#131a2c; --ink2:#1d2640; --lilac:#a99cff; --violet:#5a48d6; --mist:#ecebf8; --paper:#f7f5f0;
+  --page:var(--paper); --panel:#fff; --panel2:#efedf6; --text:#131a2c; --mute:#5d6477; --line:#e2e0ea;
+  --shadow:0 12px 32px rgba(19,26,44,.08);
+}
+:root[data-theme="dark"]{
+  --page:#0e1322; --panel:#151c30; --panel2:#1c2439; --text:#eceaf7; --mute:#a3a8bd; --line:#262f49;
+  --shadow:0 12px 32px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box} html,body{margin:0}
+body{background:var(--page);color:var(--text);font:15px/1.6 Inter,system-ui,sans-serif;overflow-x:hidden}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+a{color:inherit}
+.wrap{max-width:1160px;margin:0 auto;padding:0 16px}
+header.top{position:sticky;top:0;z-index:9;background:var(--page);border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;gap:12px;padding:12px 0;flex-wrap:wrap}
+.bar .sp{flex:1}
+.seg{display:inline-flex;background:var(--panel2);border-radius:12px;padding:3px}
+.seg button{padding:7px 12px;border-radius:9px;font-weight:700;font-size:13.5px;color:var(--mute)}
+.seg button[aria-pressed="true"]{background:var(--violet);color:#fff}
+.nav{display:flex;gap:14px;flex-wrap:wrap;font-size:13.5px;font-weight:600;color:var(--mute)}
+.nav a{text-decoration:none} .nav a:hover{color:var(--text)}
+h2{font:700 26px/1.2 Onest,sans-serif;margin:56px 0 6px;letter-spacing:-.01em}
+.lead{color:var(--mute);margin:0 0 18px;max-width:760px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:20px;box-shadow:var(--shadow)}
+.g2{display:grid;gap:16px} .g3{display:grid;gap:16px} .g4{display:grid;gap:12px}
+@media(min-width:860px){ .g2{grid-template-columns:1fr 1fr} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)} }
+.cap{font:600 12px "JetBrains Mono";color:var(--mute);margin-top:8px}
+/* kahraman */
+.hero{margin-top:18px;border-radius:28px;overflow:hidden;position:relative;min-height:440px;display:grid;place-items:center;background:#131a2c url('marka-evigo/c-zemin.jpg') center/cover}
+.hero::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(19,26,44,.35),rgba(19,26,44,.82) 70%)}
+.hero .in{position:relative;text-align:center;color:#fff;padding:40px 20px}
+.hero .tag{font:600 13px Inter;letter-spacing:.32em;opacity:.8;margin-top:22px}
+.hero .say{font:500 20px/1.4 Onest;opacity:.92;margin-top:26px}
+/* fikir */
+.idea{display:grid;gap:16px}
+@media(min-width:860px){ .idea{grid-template-columns:repeat(3,1fr)} }
+.idea h3{font:700 18px Onest;margin:10px 0 6px}
+.idea p{margin:0;color:var(--mute)}
+/* logo panelleri */
+.lp{border-radius:18px;min-height:170px;display:grid;place-items:center;position:relative}
+.lp small{position:absolute;left:14px;bottom:10px;font:600 11px "JetBrains Mono";opacity:.6}
+.sizes{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap}
+.sizes div{display:flex;flex-direction:column;align-items:center;gap:6px;font:600 11px "JetBrains Mono";color:var(--mute)}
+.clear{position:relative;display:inline-block;padding:34px 44px;border:1px dashed var(--violet);border-radius:8px}
+.clear span.x{position:absolute;font:600 11px "JetBrains Mono";color:var(--violet)}
+/* renk */
+.sw{border-radius:16px;overflow:hidden;border:1px solid var(--line);background:var(--panel)}
+.sw .c{height:110px;display:flex;align-items:flex-end;padding:12px;font:600 13px Onest}
+.sw .m{padding:10px 12px;font:500 12px "JetBrains Mono";color:var(--mute);display:flex;flex-direction:column;gap:2px}
+.pass{color:#17763a;font-weight:700} .fail{color:#b42318;font-weight:700}
+:root[data-theme="dark"] .pass{color:#6ad08f} :root[data-theme="dark"] .fail{color:#ff8a80}
+/* yazı */
+.spec{display:flex;flex-direction:column;gap:6px}
+.glyph{display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:14px}
+/* telefonlar */
+.phone{width:100%;max-width:290px;margin:0 auto;border-radius:36px;border:8px solid #0b0f1a;overflow:hidden;aspect-ratio:9/18.5;position:relative;background:#000}
+.scr{position:absolute;inset:0;display:flex;flex-direction:column}
+.home{padding:44px 16px;background:linear-gradient(170deg,#4a4f6b,#1a1d2b);display:grid;grid-template-columns:repeat(4,1fr);gap:18px 8px;align-content:start}
+.app{display:flex;flex-direction:column;align-items:center;gap:6px;color:#fff;font:500 10.5px Inter}
+.app i{width:50px;height:50px;border-radius:14px;background:rgba(255,255,255,.2);display:block}
+.login .top{flex:1;background:linear-gradient(180deg,rgba(19,26,44,.2),#131a2c 82%),url('marka-evigo/c-zemin.jpg') center/cover;color:#fff;padding:0 22px 20px;display:flex;flex-direction:column;justify-content:flex-end;gap:10px}
+.login .h{font:700 23px/1.2 Onest}
+.login .f{background:#fff;color:#131a2c;border-radius:24px 24px 0 0;padding:18px;display:flex;flex-direction:column;gap:9px}
+.login .inp{height:38px;border-radius:11px;border:1px solid #e2e0ea;padding:0 11px;display:flex;align-items:center;font-size:12.5px;color:#8a8fa3}
+.login .btn{height:42px;border-radius:12px;background:#5a48d6;color:#fff;display:grid;place-items:center;font:700 14px Onest}
+.inapp{background:#f7f5f0;color:#131a2c}
+.inapp .tb{padding:42px 14px 10px;display:flex;align-items:center;gap:8px;background:#fff;border-bottom:1px solid #e2e0ea}
+.inapp .tb b{font:700 19px Onest;flex:1}
+.inapp .b{padding:12px;display:flex;flex-direction:column;gap:9px}
+.crit{border-radius:16px;background:#b91c1c;color:#fff;padding:12px}
+.crit small{font:800 10.5px Inter;letter-spacing:.08em;opacity:.9}
+.task{background:#fff;border:1px solid #e2e0ea;border-radius:14px;padding:10px 12px;font-size:12.5px;display:flex;gap:9px;align-items:center}
+.task .bar{width:4px;align-self:stretch;border-radius:4px}
+.tabs{margin-top:auto;background:#fff;border-top:1px solid #e2e0ea;display:flex;justify-content:space-around;align-items:center;padding:8px 0 16px}
+.tabs span{width:30px;height:6px;border-radius:4px;background:#e2e0ea}
+/* web */
+.land{border-radius:22px;overflow:hidden;position:relative;min-height:360px;background:#131a2c url('marka-evigo/c-zemin.jpg') center/cover;color:#fff}
+.land::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(19,26,44,.94) 35%,rgba(19,26,44,.3))}
+.land .n{position:relative;display:flex;align-items:center;gap:16px;padding:18px 26px;font-size:13.5px}
+.land .n .sp{flex:1}
+.land .c{position:relative;padding:34px 26px 40px;max-width:560px;display:flex;flex-direction:column;gap:16px}
+.land h4{margin:0;font:700 40px/1.08 Onest;letter-spacing:-.02em}
+.land .b1{background:#a99cff;color:#131a2c;padding:11px 18px;border-radius:12px;font:700 14px Onest}
+.land .b2{border:1px solid rgba(255,255,255,.45);padding:11px 18px;border-radius:12px;font:600 14px Onest}
+.browser{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--panel2)}
+.browser .t{display:flex;gap:6px;padding:8px 8px 0}
+.browser .tab{display:flex;align-items:center;gap:8px;background:var(--panel);border-radius:10px 10px 0 0;padding:8px 12px;font:600 12.5px Inter}
+.browser .tab.o{background:transparent;color:var(--mute)}
+.browser .a{background:var(--panel);padding:9px 12px;font:500 12px "JetBrains Mono";color:var(--mute)}
+/* basılı */
+.bcard{aspect-ratio:85/55;max-width:440px;border-radius:10px;box-shadow:0 10px 26px rgba(0,0,0,.14);padding:22px;display:flex;flex-direction:column;justify-content:space-between}
+.a4{background:#fff;color:#131a2c;border-radius:10px;box-shadow:0 10px 26px rgba(0,0,0,.12);padding:18px 22px;font-size:12px}
+.a4 .hd{display:flex;align-items:center;gap:12px;border-bottom:2px solid #131a2c;padding-bottom:10px}
+.a4 .band{display:flex;gap:18px;flex-wrap:wrap;background:#ecebf8;border-radius:6px;padding:8px 10px;margin:10px 0;font:500 11.5px Inter}
+.voice{display:grid;gap:12px}
+@media(min-width:860px){ .voice{grid-template-columns:repeat(3,1fr)} }
+.v{border-radius:16px;padding:16px;border:1px solid var(--line);background:var(--panel)}
+.v .yes{font:600 15px Onest} .v .no{color:var(--mute);text-decoration:line-through;font-size:13.5px;margin-top:6px}
+footer.f{margin:60px 0 0;border-top:1px solid var(--line);padding:24px 0 60px;color:var(--mute);font-size:13px}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap bar">
+  <span id="logoTop"></span>
+  <nav class="nav"><a href="#fikir">Fikir</a><a href="#slogan">Slogan</a><a href="#logo">Logo</a><a href="#renk">Renk</a><a href="#yazi">Yazı</a><a href="#kullanim">Kullanım</a><a href="#ses">Dil</a></nav>
+  <span class="sp"></span>
+  <div class="seg" role="group" aria-label="Tema"><button data-theme="light" aria-pressed="true">Açık</button><button data-theme="dark" aria-pressed="false">Koyu</button></div>
+</div></header>
+
+<main class="wrap">
+  <section class="hero"><div class="in">
+    <div id="heroMark"></div>
+    <div class="tag">YOĞUN BAKIM · YENİDOĞAN · ERKEN UYARI</div>
+    <div class="say">İlk işareti sezer.</div>
+  </div></section>
+
+  <p class="lead" style="margin-top:14px">Bu sayfa yalnız öneridir: uygulamada ve tanıtım sayfasında <b>henüz hiçbir şey değişmedi</b>. Seçilirse ad, logo ve renkler web ile mobile birlikte uygulanır.</p>
+
+  <h2 id="fikir">Fikir</h2>
+  <p class="lead">Üç karar; her biri ürünün bir özelliğinden geliyor, süsten değil.</p>
+  <div class="idea">
+    <div class="card"><div id="ideaA"></div><h3>İsim: <span class="nm"></span></h3><p>Türkçe <i>sezmek</i>, Azerbaycanca <i>sezmək</i>: bir şeyi görünür hâle gelmeden önce hissetmek. Ürünün işi budur — kötüleşme belirginleşmeden önce fark etmek. "Sezmek" hüküm vermek değildir; teşhis koymaz, fark eder.</p></div>
+    <div class="card"><div id="ideaB"></div><h3>İşaret: "i", ünlem değil</h3><p>Logodaki "i"nin noktası harfin biraz <b>önünde</b> durur: işaret olaydan önce gelir. Simge olarak "i" evrensel <b>bilgi</b> işaretidir — ürün bilgi ve gerekçe verir, emir vermez. Ünlem (!) alarmın, "i" Sezi'nin.</p></div>
+    <div class="card"><div id="ideaC" style="display:flex;gap:6px"></div><h3>Renk: alacakaranlık</h3><p>Mürekkep laciverdi ve lila: gece vardiyasının başladığı saatin gökyüzü. Kırmızı, turuncu, sarı ve yeşil hastanın durumuna ayrılmış; marka bunların hiçbirine benzemez, alarmla asla karışmaz.</p></div>
+  </div>
+
+  <h2 id="slogan">Slogan</h2>
+  <p class="lead">Eski söz "Her yatak, her nöbet — tek bakışta" ekranı anlatıyordu. Yenisi ürünün işini ve ismin kendisini söylüyor: <i>sezmek</i> fiili sloganın içinde.</p>
+  <div class="g4">
+    <div class="card"><div class="cap" style="margin:0 0 6px">TR</div><div style="font:700 22px/1.25 Onest">İlk işareti sezer.</div></div>
+    <div class="card"><div class="cap" style="margin:0 0 6px">AZ</div><div style="font:700 22px/1.25 Onest">İlk əlaməti sezir.</div></div>
+    <div class="card"><div class="cap" style="margin:0 0 6px">RU</div><div style="font:700 22px/1.25 Onest">Замечает первый признак.</div></div>
+    <div class="card"><div class="cap" style="margin:0 0 6px">EN</div><div style="font:700 22px/1.25 Onest">Senses the first sign.</div></div>
+  </div>
+  <p class="lead" style="margin-top:12px">Açıklama satırı (sloganın altında): <b>Yoğun bakım ve yenidoğan için erken uyarı. Her yatağı izler, değişimi gerekçesiyle gösterir; kararı her zaman hekim verir.</b> — Azerbaycanca ve Rusça metinleri yayından önce yerel biri okumalı.</p>
+
+  <h2 id="logo">Logo</h2>
+  <p class="lead">Küçük harf: sakin, yakın, bağırmayan. Tek bir lila nokta dışında tamamen mürekkep; her yüzeyde tek renge düşebilir.</p>
+  <div class="g2">
+    <div class="lp" style="background:#f7f5f0;border:1px solid #e2e0ea"><div data-word="ink" data-size="96"></div><small style="color:#131a2c">ana · kâğıt üstünde</small></div>
+    <div class="lp" style="background:#131a2c"><div data-word="paper" data-size="96"></div><small style="color:#fff">ters · gece</small></div>
+    <div class="lp" style="background:#fff;border:1px solid #e2e0ea"><div data-word="black" data-size="72"></div><small style="color:#000">tek renk · faks, damga</small></div>
+    <div class="lp" style="background:#5a48d6"><div data-word="white" data-size="72"></div><small style="color:#fff">tek renk · marka zemin</small></div>
+  </div>
+  <div class="g2" style="margin-top:16px">
+    <div class="card"><b>Boyut testi</b><div class="sizes" style="margin-top:14px" id="sizes"></div><div class="cap">16 px tarayıcı sekmesi: nokta ve çubuk hâlâ ayrı okunmalı.</div></div>
+    <div class="card"><b>Boşluk alanı</b><div style="margin-top:14px"><div class="clear"><span class="x" style="top:8px;left:50%;transform:translateX(-50%)">x</span><span class="x" style="left:14px;top:50%;transform:translateY(-50%)">x</span><div data-word="ink" data-size="54"></div></div></div><div class="cap">x = "i" noktasının çapı × 3. Logonun etrafında bu kadar boşluk kalır.</div></div>
+  </div>
+
+  <h2 id="renk">Renk</h2>
+  <p class="lead">Beş marka rengi; kontrast değerleri tarayıcıda hesaplanıyor (WCAG: metin için 4.5 ve üstü geçer).</p>
+  <div class="g4" id="swatches"></div>
+  <div class="card" style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <b style="margin-right:6px">Klinik durum renkleri · markadan bağımsız, sabit:</b>
+    <span style="background:#b91c1c;color:#fff;padding:5px 10px;border-radius:999px;font:700 12px Inter">KRİTİK</span>
+    <span style="background:#c2410c;color:#fff;padding:5px 10px;border-radius:999px;font:700 12px Inter">YÜKSEK</span>
+    <span style="background:#a16207;color:#fff;padding:5px 10px;border-radius:999px;font:700 12px Inter">ORTA</span>
+    <span style="background:#15803d;color:#fff;padding:5px 10px;border-radius:999px;font:700 12px Inter">STABİL</span>
+  </div>
+
+  <h2 id="yazi">Yazı</h2>
+  <p class="lead">Başlık Onest, gövde Inter. İkisi de Azerbaycanca "ə"yi ve Kiril'i kendi çizer — ölçüm aşağıda, canlı.</p>
+  <div class="card spec">
+    <div style="font:700 44px/1.1 Onest;letter-spacing:-.02em">Növbə başlayır.</div>
+    <div style="font:600 26px/1.2 Onest">Смена под наблюдением · Nöbet başladı</div>
+    <div style="font:400 16px/1.6 Inter;max-width:720px">Xəstənin vəziyyəti dəyişmədən əvvəl — ilk əlamət. Состояние пациента, до того как изменения станут заметны. İlk işareti sezer.</div>
+    <div id="glyphs" style="margin-top:8px;display:flex;flex-direction:column;gap:6px"></div>
+  </div>
+
+  <h2 id="kullanim">Kullanıldığı yerde</h2>
+  <p class="lead">Aynı kimlik telefonda, masada ve kâğıtta. Uygulamanın içinde marka geri çekilir; kırmızı kritik kart her zaman ekranın en güçlü şeyi kalır.</p>
+  <div class="g3">
+    <div><div class="phone"><div class="scr home" id="home"></div></div><div class="cap" style="text-align:center">ana ekran</div></div>
+    <div><div class="phone"><div class="scr login"><div class="top"><div data-word="paper" data-size="30"></div><div class="h">İlk işareti sezer.</div><div style="font-size:12px;opacity:.8">Yoğun bakım · yenidoğan · erken uyarı</div></div><div class="f"><b style="font:700 16px Onest">Oturum açın</b><div class="inp">Kullanıcı adı</div><div class="inp">Şifrə · Пароль</div><div class="btn">Giriş yap</div></div></div></div><div class="cap" style="text-align:center">giriş</div></div>
+    <div><div class="phone"><div class="scr inapp"><div class="tb"><span data-icon="26"></span><b>İşlerim</b><span style="width:28px;height:28px;border-radius:50%;background:#131a2c;color:#fff;font:700 11px Inter;display:grid;place-items:center">SQ</span></div>
+      <div class="b"><div class="crit"><small>KRİTİK · REA01</small><div style="font:700 14px Onest;margin-top:3px">Kötüleşme kriterleri karşılanıyor</div><div style="font-size:12px;opacity:.9">MAP 51 · laktat 4.1</div></div>
+      <div class="task"><span class="bar" style="background:#b91c1c"></span>21:00 · Ağrı değerlendirmesi</div><div class="task"><span class="bar" style="background:#5a48d6"></span>22:00 · Pozisyon ver</div><div class="task"><span class="bar" style="background:#5a48d6"></span>22:00 · Seftriakson 2 g IV</div></div>
+      <div class="tabs"><span style="width:44px;height:24px;border-radius:12px;background:#131a2c"></span><span></span><span style="width:44px;height:44px;border-radius:50%;background:#5a48d6;margin-top:-20px"></span><span></span><span></span></div></div></div><div class="cap" style="text-align:center">uygulamanın içi · kritik kırmızının yanında</div></div>
+  </div>
+  <div class="land" style="margin-top:22px"><div class="n"><span data-word="paper" data-size="26"></span><span class="sp"></span><span>Ürün</span><span>Güvenlik</span><span>Kurumlar</span><span>İletişim</span></div>
+    <div class="c"><h4>İlk işareti<br>sezer.</h4><div style="opacity:.88">Yoğun bakım ve yenidoğan için erken uyarı. Her yatağı izler, değişimi gerekçesiyle gösterir; kararı her zaman hekim verir.</div><div style="display:flex;gap:10px;flex-wrap:wrap"><span class="b1">Tanıtım isteyin</span><span class="b2">Nasıl çalışır?</span></div></div></div>
+  <div class="browser" style="margin-top:16px"><div class="t"><div class="tab"><span data-icon="16"></span><span class="nm"></span> · İşlerim</div><div class="tab o">Yeni sekme</div></div><div class="a">https://<span class="nmL"></span>.… /app</div></div>
+  <div class="g2" style="margin-top:22px">
+    <div><div class="bcard" style="background:#131a2c;color:#fff"><div data-word="paper" data-size="34"></div><div style="font:500 12px Inter;line-height:1.6;opacity:.85"><b style="font:700 14px Onest;opacity:1;display:block">Dr. Kamran Rzayev</b>Yoğun bakım · Nöbet sorumlusu</div></div><div class="cap">kartvizit · ön / arka aynı sistem</div></div>
+    <div><div class="a4"><div class="hd"><span data-word="ink" data-size="24"></span><span style="flex:1"></span><span style="font:600 11px Inter;color:#5d6477">Hasta özeti · 24.09.2026 21:42</span></div>
+      <div class="band"><span><b>REA01</b></span><span>Örnek hasta</span><span>Protokol 000000</span><span>Kontrollü çıktı</span></div>
+      <div style="color:#5d6477">Yazdırılan belgede marka tek satırda, mürekkep renginde: siyah-beyaz yazıcıda da aynı durur.</div></div><div class="cap">A4 yazdırma başlığı (#101)</div></div>
+  </div>
+
+  <h2 id="ses">Dil ve ses</h2>
+  <p class="lead">Sezi'nin konuşması da markanın parçası: kısa, sakin, gerekçeli; asla emir kipinde değil.</p>
+  <div class="voice">
+    <div class="v"><div class="yes">"MAP 51 · laktat 4.1 — kötüleşme kriterleri karşılanıyor. Değerlendirme önerilir."</div><div class="no">"Hemen noradrenalin başlayın!"</div></div>
+    <div class="v"><div class="yes">"REA02'de son 2 saatte SpO₂ düşüyor. Gerekçe: 94 → 89."</div><div class="no">"Hasta kötüleşiyor!!!"</div></div>
+    <div class="v"><div class="yes">"Şu an size düşen acil iş yok."</div><div class="no">"Tebrikler, harika gidiyorsunuz! 🎉"</div></div>
+  </div>
+
+  <div class="card" style="margin-top:40px;border-color:#e9d8a6">
+    <b>İsim hakkında bilinen riskler (internet taraması, 28.09)</b>
+    <ul style="margin:8px 0 0;padding-left:20px;color:var(--mute)">
+      <li>Sağlık alanında aynı adlı ürün bulunmadı. En yakın ses: ABD'de hemşire yöneticileri için bir vizit platformu "Seyzo Health".</li>
+      <li>"Sezi" Türkçe sözlükte olan bir kelime (sezgi, sezme): anlamı açık ama tek başına tescili zorlaşabilir — logo ile birlikte (yazı + "i" işareti) tescil edilmeli.</li>
+      <li>İngilizce konuşan biri "SEE-zee" okursa <i>seizure</i> (nöbet geçirme) kelimesini hatırlatabilir. İlk pazarlar AZ/TR'de sorun yok; İngilizce pazara çıkmadan önce yerel kullanıcılarla denenmeli.</li>
+      <li>Marka tescili (TÜRKPATENT, Azerbaycan Fikri Mülkiyet Ajansı) ve alan adı (sezi.az, sezi.com.tr) kontrol edilmedi.</li>
+    </ul></div>
+  <footer class="f">Öneri · 28.09.2026 gece. Logo tarayıcıda çiziliyor; seçilirse son hâli vektör olarak (SVG, PDF, PNG seti) hazırlanır. İsim için marka tescili ve alan adı kontrolü ayrıca yapılmalı.</footer>
+</main>
+
+<script>
+const NAME = new URLSearchParams(location.search).get("ad") || "sezi";
+const lower = NAME.toLowerCase();
+const INK = "#131a2c", LILAC = "#a99cff", VIOLET = "#5a48d6", PAPER = "#f7f5f0";
+
+// Yazı logosu: küçük harf; "i"nin noktası lila ve harfin biraz önünde (sağ-yukarı). İsimde "i" yoksa nokta sona eklenir.
+function word(tone, px) {
+  const col = { ink: INK, paper: "#fff", black: "#000", white: "#fff" }[tone];
+  const dot = tone === "ink" || tone === "paper" ? (tone === "ink" ? VIOLET : LILAC) : col;
+  const i = lower.lastIndexOf("i");
+  const dotSpan = `<span style="position:absolute;width:.2em;height:.2em;border-radius:50%;background:${dot};left:62%;top:.02em;transform:translateX(-50%)"></span>`;
+  const body = i < 0 ? `${lower}<span style="position:relative;display:inline-block;width:.24em">${dotSpan}</span>`
+    : `${lower.slice(0, i)}<span style="position:relative;display:inline-block">ı${dotSpan}</span>${lower.slice(i + 1)}`;
+  return `<span style="font:700 ${px}px/1 Onest,sans-serif;letter-spacing:-.035em;color:${col};display:inline-block;padding-top:.14em">${body}</span>`;
+}
+// Uygulama simgesi: mürekkep kare içinde "i" — lila nokta, açık çubuk
+function icon(px) {
+  const r = Math.round(px * .26);
+  return `<span style="width:${px}px;height:${px}px;border-radius:${r}px;background:${INK};display:inline-grid;place-items:center;position:relative;vertical-align:middle;flex:none">
+    <span style="position:absolute;width:${px * .16}px;height:${px * .16}px;border-radius:50%;background:${LILAC};left:${px * .53}px;top:${px * .2}px;box-shadow:0 0 ${px * .12}px ${px * .02}px rgba(169,156,255,.45)"></span>
+    <span style="position:absolute;width:${px * .13}px;height:${px * .38}px;border-radius:${px * .07}px;background:${PAPER};left:${px * .435}px;top:${px * .43}px"></span></span>`;
+}
+function paint() {
+  document.querySelectorAll("[data-word]").forEach(el => { el.innerHTML = word(el.dataset.word, +el.dataset.size); });
+  document.querySelectorAll("[data-icon]").forEach(el => { el.innerHTML = icon(+el.dataset.icon); el.style.display = "inline-flex"; });
+  document.querySelectorAll(".nm").forEach(el => el.textContent = lower.charAt(0).toUpperCase() + lower.slice(1));
+  document.querySelectorAll(".nmL").forEach(el => el.textContent = lower);
+  document.getElementById("logoTop").innerHTML = document.documentElement.dataset.theme === "dark" ? word("paper", 26) : word("ink", 26);
+  document.getElementById("heroMark").innerHTML = word("paper", 132);
+  document.getElementById("ideaA").innerHTML = word("ink", 40);
+  document.getElementById("ideaB").innerHTML = icon(52);
+  document.getElementById("ideaC").innerHTML = [INK, VIOLET, LILAC, PAPER].map(c => `<span style="width:40px;height:40px;border-radius:12px;background:${c};border:1px solid #e2e0ea"></span>`).join("");
+  document.getElementById("sizes").innerHTML = [120, 76, 48, 32, 24, 16].map(s => `<div>${icon(s)}${s}px</div>`).join("") + `<div>${word("ink", 20)}20px</div>`;
+  document.getElementById("home").innerHTML = Array.from({ length: 12 }, (_, i) => i === 5 ? `<div class="app">${icon(50)}<span>${lower.charAt(0).toUpperCase() + lower.slice(1)}</span></div>` : `<div class="app"><i></i>&nbsp;</div>`).join("");
+  document.getElementById("fav").href = "data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="${INK}"/><circle cx="39" cy="18" r="6" fill="${LILAC}"/><rect x="27.5" y="27" width="9" height="25" rx="4.5" fill="${PAPER}"/></svg>`);
+  swatches(); glyphs();
+}
+// WCAG kontrastı
+function lum(h) { const c = h.match(/\w\w/g).map(x => parseInt(x, 16) / 255).map(v => v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4)); return .2126 * c[0] + .7152 * c[1] + .0722 * c[2]; }
+function ratio(a, b) { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + .05) / (y + .05); }
+function swatches() {
+  const S = [["Mürekkep", INK, "#ffffff", "zemin, metin"], ["Menekşe", VIOLET, "#ffffff", "düğme, bağlantı"], ["Lila", LILAC, INK, "vurgu, gece"], ["Sis", "#ecebf8", INK, "yüzey"], ["Kâğıt", PAPER, INK, "sayfa zemini"]];
+  document.getElementById("swatches").innerHTML = S.map(([n, bg, fg, use]) => { const r = ratio(bg, fg); return `<div class="sw"><div class="c" style="background:${bg};color:${fg}">${n}</div><div class="m"><span>${bg}</span><span>${use}</span><span>yazı ${r.toFixed(1)} : 1 <span class="${r >= 4.5 ? "pass" : "fail"}">${r >= 4.5 ? "geçer" : "kalmaz"}</span></span></div></div>`; }).join("");
+}
+function draws(font, ch) { const cv = draws.cv || (draws.cv = document.createElement("canvas")), x = cv.getContext("2d"); const w = f => { x.font = `64px ${f}`; return x.measureText(ch.repeat(6)).width; }; return w(`"${font}", monospace`) !== w("monospace") || w(`"${font}", serif`) !== w("serif"); }
+function glyphs() {
+  Promise.all(["Onest", "Inter"].flatMap(f => [document.fonts.load(`400 16px "${f}"`, "əЖşİı"), document.fonts.load(`700 16px "${f}"`, "əЖşİı")])).finally(() => {
+    document.getElementById("glyphs").innerHTML = ["Onest", "Inter"].map(f => `<div class="glyph"><b style="font-family:${f};min-width:60px">${f}</b>${["ə", "Ə", "Ж", "ж", "ş", "İ", "ı"].map(ch => { const y = draws(f, ch); return `<span><span style="font-family:'${f}';font-size:22px">${ch}</span> <span class="${y ? "pass" : "fail"}">${y ? "✓" : "✕"}</span></span>`; }).join("")}</div>`).join("");
+  });
+}
+document.querySelectorAll("[data-theme]").forEach(b => b.onclick = () => { document.documentElement.dataset.theme = b.dataset.theme; document.querySelectorAll("button[data-theme]").forEach(x => x.setAttribute("aria-pressed", x === b)); paint(); });
+document.fonts.ready.then(paint); paint();
+</script>
+</body>
+</html>
