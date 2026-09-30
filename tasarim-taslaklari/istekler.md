@@ -354,4 +354,6 @@
 | 304 | Hero'nun ara sürümü daha iyiydi (tek eğik telefon, "Mobil uygulama · yakında" çipi, menü Nasıl çalışır · Ekranlar · Mobil · Güven) → geri dön; yalnız telefonun çentiği/çerçevesi düzelsin | 🔧 | ana sayfa kolunda |
 | 305 | App Store / Play Store alanları geri gelsin | 🔧 | Mobil bölümü yeniden görünür, rozetler geri |
 | 306 | Push: ana sayfa bitince hepsi birlikte; başka alana dokunulmayacak | ⏳ | Mobil dal hazır (`deneme/expo-sdk57`, 16 commit, 377/377). Tasarım klasörünün gidişi ölçülüp onaylanacak |
+| 307 | Faz 1 kopuklukları | ✅ | 9/9 düzeltildi, 33/33 kontrol; ayrıntı `kontrol-2026-09-30.md` › Düzeltmeler 30.09. Konsey değişikliği geri alındı (konsültasyon bölümü yedekle bayt bayt aynı) |
+| 308 | Push hazırlığı | ✅ · ⏳ onay | `deneme/expo-sdk57` (16 commit, tsc 0, 377/377) + `tasarim/prototip` (d76db5a, 243 dosya ≈14 MB, yedek hariç). Sır taraması iki dalda temiz |
 | 288 | Evden çalışıyor → telefon denemesi | ✅ | `telefon.html`: Expo `exp://192.168.1.115:8083` (yeni sunucu, ev adresi) + PWA `http://192.168.1.115:5199/app/`, iki QR. 8082 hâlâ ofis adresini veriyor |
