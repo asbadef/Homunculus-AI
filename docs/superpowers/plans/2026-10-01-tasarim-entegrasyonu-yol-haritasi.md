@@ -66,7 +66,7 @@ RRT, ısı haritası, Sistem ayarları, kapsam atama) G1-02'de envanterlenir. Ka
 
 ## Grup 1 · iş listesi
 
-Puan ≈ yarım gün/3 puan. Toplam **77 puan ≈ 10–12 iş günü** (alt ajanlı yürütme, inceleme dahil).
+Puan ≈ yarım gün/3 puan. Toplam **82 puan ≈ 11–13 iş günü** (alt ajanlı yürütme, inceleme dahil).
 Her dalganın ayrıntılı planı, bir önceki dalga bitince birleşmiş koda bakılarak yazılır.
 Çalışma yeri: `feat/ldap-rbac`'tan açılan `feat/canli-tasarim` dalı, ayrı worktree
 (`C:/tmp/homunculus-g1`) — ana ağaçtaki commit'lenmemiş `main.jsx`/`vite.config.js` düzenlemelerine
@@ -75,7 +75,7 @@ dokunulmaz.
 | # | İş | Puan | Risk | Bağımlı | Durum |
 |---|---|---|---|---|---|
 | G1-01 | nginx: eksik API yolları + yapılandırma testi | 1 | Düşük | — | Bekliyor |
-| G1-02 | main → LDAP birleştirme: 9 çakışma, göç `0010`, kapsam izinlere, `infinity_research` `devices.manage` + bağlama, denetim zinciri + `via/actor`; bütün testler yeşil | 8 | **Yüksek** | G1-01 | Bekliyor |
+| G1-02 | main → LDAP birleştirme: 9 çakışma, göç `0010`, `clinical.chart` + `scores.sign` izinleri, kapsam izinlere, `infinity_research` `devices.manage`, demo kabuğu LDAP sürümü; bütün testler yeşil · plan: [dalga 0](2026-10-01-g1-dalga0-main-ldap-birlestirme.md) | 13 | **Yüksek** | G1-01 | Bekliyor |
 | G1-03 | LDAP arka ucu · dizin modülü + AD girişi + yenilemede dizin kontrolü (spec §7, §4) | 5 | Orta | G1-02 | Bekliyor |
 | G1-04 | LDAP arka ucu · `/admin/ldap/*` içe aktarma, grup eşlemesi, yerel yönetici koruması | 5 | Orta | G1-03 | Bekliyor |
 | G1-05 | Tasarım temeli: Gece/Gün renk değişkenleri, fontlar (yerel paket), ikonlar, temel bileşenler — `dashboard/src/live/` | 5 | Düşük | G1-02 | Bekliyor |
