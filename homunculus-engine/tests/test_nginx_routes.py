@@ -3,7 +3,10 @@
 A path nginx does not proxy falls through to `try_files … /index.html`: the browser receives the
 dashboard's HTML with a 200, the API client fails to parse it, and the screen shows a generic
 error. That is how the staff tab would have shipped broken (2026-10-01): `/admin` was missing
-from the location regex. This test reads the real config so a new router cannot be forgotten.
+from the location regex. These tests read the real config. `API_PATHS` is a hand-written list of
+representative paths (including ones from routers merged in later); the drift guard is
+`test_every_app_route_prefix_is_proxied`, which derives the prefixes from the real FastAPI app so
+a new router that nginx does not proxy fails here.
 """
 from __future__ import annotations
 
@@ -33,6 +36,34 @@ def _api_locations() -> list[re.Pattern[str]]:
         if "proxy_pass http://api:8000" in match.group(2):
             patterns.append(re.compile(match.group(1)))
     return patterns
+
+
+def _app_prefixes() -> set[str]:
+    from homunculus.api.app import create_app
+
+    app = create_app({"t": "h"}, run_escalation_loop=False)
+    skip = {"docs", "redoc", "openapi.json"}
+    out: set[str] = set()
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        first = path.split("/")[1] if path.startswith("/") else ""
+        if first and not first.startswith("{") and first not in skip:
+            out.add("/" + first)
+    return out
+
+
+def test_every_app_route_prefix_is_proxied() -> None:
+    missing = sorted(p for p in _app_prefixes() if not any(loc.search(p) for loc in _api_locations()))
+    assert not missing, f"routers not proxied by nginx: {missing}"
+
+
+def test_stream_ticket_is_served_by_the_sse_block() -> None:
+    text = CONF.read_text(encoding="utf-8")
+    sse = [
+        m for m in re.finditer(r"location\s+~\s+(\S+)\s*\{(.*?)\}", text, re.S)
+        if "proxy_buffering off" in m.group(2)
+    ]
+    assert len(sse) == 1 and re.search(sse[0].group(1), "/stream-ticket")
 
 
 def test_both_api_locations_are_found() -> None:
