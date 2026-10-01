@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Görsel Kimlik Yönleri</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Ortak ciddiyet ölçeği — üç yön de bunu kullanır. Bugün web'de 4 ayrı ölçek var
+       ("yüksek" bir yerde turuncu, bir yerde amber); öneri tek ölçek. */
+    --sev-stable: #16a34a; --sev-low: #0284c7; --sev-mid: #ca8a04; --sev-high: #ea580c; --sev-crit: #dc2626;
+    --page: #0e1116; --page-ink: #e6e9ee; --page-mute: #8b94a3; --page-line: #232a35;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--page-ink); font: 15px/1.5 Inter, system-ui, sans-serif; }
+  header.top { position: sticky; top: 0; z-index: 10; background: rgba(14,17,22,.92); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--page-line); padding: 14px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  header.top h1 { font-size: 16px; margin: 0 12px 0 0; font-weight: 700; }
+  header.top a { color: var(--page-mute); text-decoration: none; font-size: 14px; padding: 6px 12px; border: 1px solid var(--page-line); border-radius: 999px; }
+  header.top a:hover { color: var(--page-ink); border-color: #3a4454; }
+  .intro { max-width: 1180px; margin: 0 auto; padding: 32px 16px 8px; color: var(--page-mute); }
+  .intro strong { color: var(--page-ink); }
+  .intro ul { margin: 8px 0 0; padding-left: 18px; }
+
+  section.dir { max-width: 1180px; margin: 28px auto; padding: 0 16px; }
+  .frame { border-radius: 24px; overflow: hidden; background: var(--bg); color: var(--ink); border: 1px solid var(--line); font-family: var(--font-body); }
+  .frame-head { padding: 28px 28px 20px; display: grid; grid-template-columns: 180px 1fr; gap: 28px; align-items: center; border-bottom: 1px solid var(--line); }
+  .frame-head .logo { width: 180px; height: 180px; }
+  .tag { display: inline-block; font: 600 11px/1 var(--font-body); letter-spacing: .12em; text-transform: uppercase; color: var(--primary); margin-bottom: 8px; }
+  .frame-head h2 { font-family: var(--font-head); font-size: 34px; line-height: 1.1; margin: 0 0 8px; font-weight: 700; }
+  .frame-head p { margin: 0; color: var(--mute); max-width: 640px; }
+  .words { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .words span { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); color: var(--ink); }
+
+  .grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 0; }
+  .col { padding: 24px 28px; }
+  .col + .col { border-left: 1px solid var(--line); }
+  h3 { font: 600 12px/1 var(--font-body); letter-spacing: .1em; text-transform: uppercase; color: var(--mute); margin: 0 0 12px; }
+  .block + .block { margin-top: 26px; }
+
+  .swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .sw { border-radius: 12px; height: 56px; border: 1px solid var(--line); position: relative; }
+  .sw small { position: absolute; left: 0; right: 0; bottom: -20px; font: 500 11px/1 "JetBrains Mono", monospace; color: var(--mute); text-align: center; }
+  .swatches.sev { margin-top: 30px; }
+  .sev .sw { height: 32px; border: 0; }
+  .typo .h { font-family: var(--font-head); font-size: 28px; font-weight: 700; line-height: 1.15; }
+  .typo .b { color: var(--mute); margin-top: 4px; }
+  .typo .n { font-family: var(--font-num); font-size: 30px; font-weight: 700; margin-top: 8px; letter-spacing: -.01em; }
+  .typo .n span { font-size: 12px; color: var(--mute); font-weight: 500; margin: 0 14px 0 3px; }
+
+  /* Yatak kartı */
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .bed { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 14px 12px; position: relative; overflow: hidden; }
+  .bed::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--rail); }
+  .bed .r1 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .bed .no { font: 700 15px/1 var(--font-num); color: var(--rail); margin-right: 6px; }
+  .bed .nm { font: 700 15px/1.2 var(--font-head); }
+  .bed .meta { font-size: 12px; color: var(--mute); margin-top: 2px; }
+  .pill { font: 600 11px/1 var(--font-body); padding: 5px 8px; border-radius: 999px; white-space: nowrap; border: 1px solid currentColor; }
+  .vit { display: flex; gap: 12px; margin: 12px 0 10px; font: 700 18px/1 var(--font-num); flex-wrap: wrap; }
+  .vit span { font: 500 10px/1 var(--font-body); color: var(--mute); margin-left: 2px; }
+  .flag { font-size: 12px; font-weight: 600; padding: 7px 9px; border-radius: 8px; }
+  .dx { font-size: 12px; color: var(--mute); margin-top: 8px; }
+
+  /* Butonlar ve rozetler */
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .btn { font: 600 14px/1 var(--font-body); padding: 11px 16px; border-radius: var(--radius-sm); border: 1px solid transparent; cursor: default; }
+  .btn.p { background: var(--primary); color: var(--on-primary); }
+  .btn.s { background: transparent; color: var(--ink); border-color: var(--line-strong); }
+  .btn.d { background: var(--sev-crit); color: #fff; }
+
+  /* Telefon: alarm kartı */
+  .phone { width: 250px; border-radius: 30px; padding: 12px; background: var(--phone-bg); border: 1px solid var(--line-strong); margin: 0 auto; }
+  .phone .bar { font: 600 11px/1 var(--font-body); color: var(--mute); display: flex; justify-content: space-between; padding: 4px 8px 10px; }
+  .alert { background: var(--surface); border-radius: 18px; padding: 12px; border: 1px solid var(--line); }
+  .alert .t { font: 700 14px/1.25 var(--font-head); margin: 6px 0 4px; }
+  .alert .s { font-size: 12px; color: var(--mute); }
+  .alert .acts { display: flex; gap: 6px; margin-top: 10px; }
+  .alert .acts span { flex: 1; text-align: center; font: 600 12px/1 var(--font-body); padding: 9px 0; border-radius: 10px; }
+  .phone .mini { margin-top: 8px; background: var(--surface); border-radius: 14px; padding: 10px 12px; display: flex; justify-content: space-between; font-size: 12px; border: 1px solid var(--line); }
+
+  /* Giriş ekranı mini */
+  .login { border-radius: var(--radius); overflow: hidden; display: grid; grid-template-columns: 1.2fr 1fr; border: 1px solid var(--line); min-height: 190px; }
+  .login .hero { background: var(--hero); padding: 18px; color: var(--hero-ink); }
+  .login .hero b { font: 700 20px/1.15 var(--font-head); display: block; margin-top: 10px; }
+  .login .hero small { display: block; margin-top: 8px; opacity: .8; font-size: 11px; }
+  .login .form { background: var(--surface); padding: 18px; display: flex; flex-direction: column; gap: 8px; }
+  .login .inp { height: 30px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); }
+  .login .go { height: 32px; border-radius: 8px; background: var(--primary); margin-top: 4px; }
+
+  .why { margin-top: 18px; padding: 14px 16px; border-radius: 14px; background: var(--surface-2); font-size: 13px; }
+  .why b { color: var(--ink); }
+  .why ul { margin: 6px 0 0; padding-left: 18px; color: var(--mute); }
+
+  /* ---- YÖN A — Gece Nöbeti (mevcut tasarımın olgunlaşmış hâli) ---- */
+  .A { --bg:#07101f; --surface:#0f1b2e; --surface-2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line-strong:#2a3f60;
+       --primary:#22b8d6; --on-primary:#03141c; --hero:linear-gradient(145deg,#0a2540,#07101f 70%); --hero-ink:#e8eef7; --phone-bg:#050b16;
+       --font-head:"Figtree",sans-serif; --font-body:"Figtree",sans-serif; --font-num:"JetBrains Mono",monospace; --radius:16px; --radius-sm:10px; }
+  /* ---- YÖN B — Gün Işığı (açık, sakin klinik) ---- */
+  .B { --bg:#f6f4ef; --surface:#ffffff; --surface-2:#eeebe3; --ink:#1b2a2f; --mute:#5f6d71; --line:#e2ddd2; --line-strong:#cfc8b8;
+       --primary:#0f6e67; --on-primary:#ffffff; --hero:linear-gradient(160deg,#dcebe6,#f6f4ef 75%); --hero-ink:#12302c; --phone-bg:#e9e5dc;
+       --font-head:"Fraunces",serif; --font-body:"Inter",sans-serif; --font-num:"Inter",sans-serif; --radius:14px; --radius-sm:10px; }
+  .B .vit, .B .no { font-feature-settings: "tnum"; }
+  /* ---- YÖN C — Homunculus Figürü (ismin kendisinden doğan, karakterli) ---- */
+  .C { --bg:#0f0d17; --surface:#1a1726; --surface-2:#242036; --ink:#efeaf7; --mute:#a39bb8; --line:#2a2540; --line-strong:#3d3560;
+       --primary:#9d8cff; --on-primary:#140f2b; --hero:radial-gradient(120% 90% at 20% 0%,#3b2d7a,#0f0d17 65%); --hero-ink:#efeaf7; --phone-bg:#0a0911;
+       --font-head:"Space Grotesk",sans-serif; --font-body:"Inter",sans-serif; --font-num:"Space Grotesk",sans-serif; --radius:20px; --radius-sm:12px; }
+
+  .compare { max-width: 1180px; margin: 40px auto 60px; padding: 0 16px; }
+  .compare table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .compare th, .compare td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--page-line); vertical-align: top; }
+  .compare th { color: var(--page-mute); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+  .compare td:first-child { color: var(--page-mute); width: 170px; }
+
+  @media (max-width: 860px) {
+    .frame-head { grid-template-columns: 1fr; }
+    .grid { grid-template-columns: 1fr; }
+    .col + .col { border-left: 0; border-top: 1px solid var(--line); }
+    .cards { grid-template-columns: 1fr; }
+    .login { grid-template-columns: 1fr; }
+    .compare { overflow-x: auto; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>Homunculus · Görsel Kimlik Yönleri</h1>
+  <a href="#A">A · Gece Nöbeti</a>
+  <a href="#B">B · Gün Işığı</a>
+  <a href="#C">C · Homunculus Figürü</a>
+  <a href="#karsilastir">Karşılaştır</a>
+</header>
+
+<div class="intro">
+  <p><strong>Taslak 01 · 23.09.2026.</strong> Üç yön, aynı içerikle yan yana: logo konsepti, renkler, yazı, yatak kartı, giriş ekranı, telefon alarmı. Hastalar demo verisindeki sentetik isimlerdir.</p>
+  <ul>
+    <li><strong>Üçünde ortak olan:</strong> tek bir ciddiyet ölçeği (Stabil · Düşük · Orta · Yüksek · Kritik). Bugün web'de dört ayrı ölçek var ve "yüksek" bir yerde turuncu, bir yerde amber. Hangi yön seçilirse seçilsin bu düzelir.</li>
+    <li><strong>Marka rengi hiçbir yönde kırmızı, turuncu ya da sarı değil.</strong> O renkler alarma ayrıldı. Bir düğme alarmla karışmamalı.</li>
+    <li>Logolar <strong>konsept çizimi</strong>. Seçilen yönün son logosu ayrıca, resim kalitesinde üretilecek.</li>
+  </ul>
+</div>
+
+<!-- ================= A ================= -->
+<section class="dir A" id="A">
+<div class="frame">
+  <div class="frame-head">
+    <svg class="logo" viewBox="0 0 200 200" aria-label="A logo konsepti: nabız çizgisi geçen insan silüeti">
+      <defs>
+        <radialGradient id="aBg" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#1d6b8f"/><stop offset=".55" stop-color="#0b2744"/><stop offset="1" stop-color="#050c18"/></radialGradient>
+        <linearGradient id="aFig" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bff3ff"/><stop offset="1" stop-color="#2aa9c9" stop-opacity=".35"/></linearGradient>
+        <filter id="aGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      <circle cx="100" cy="100" r="94" fill="url(#aBg)"/>
+      <circle cx="100" cy="100" r="94" fill="none" stroke="#2fd0f0" stroke-opacity=".25"/>
+      <g fill="url(#aFig)" opacity=".9">
+        <circle cx="100" cy="52" r="15"/>
+        <path d="M72 80 Q100 68 128 80 L136 128 Q126 132 120 126 L118 100 L116 160 Q108 166 102 160 L100 120 L98 160 Q92 166 84 160 L82 100 L80 126 Q74 132 64 128 Z"/>
+      </g>
+      <path d="M22 108 H70 L80 90 L92 132 L104 74 L114 116 L122 104 H178" fill="none" stroke="#7ff0ff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#aGlow)"/>
+    </svg>
+    <div>
+      <span class="tag">Yön A</span>
+      <h2>Gece Nöbeti</h2>
+      <p>Bugünkü tasarımın olgunlaşmış hâli. Koyu lacivert ve camgöbeği korunuyor, ama tek bir ölçeğe, daha sakin bir yüzeye ve monitör gibi okunan sayılara oturtuluyor. En az riskli yol: kullanıcı farkı hisseder, yadırgamaz.</p>
+      <div class="words"><span>tanıdık</span><span>monitör hissi</span><span>karanlık oda dostu</span><span>teknik</span></div>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="col">
+      <div class="block"><h3>Renkler</h3>
+        <div class="swatches">
+          <div class="sw" style="background:#07101f"><small>#07101F</small></div>
+          <div class="sw" style="background:#0f1b2e"><small>#0F1B2E</small></div>
+          <div class="sw" style="background:#22b8d6"><small>#22B8D6</small></div>
+          <div class="sw" style="background:#e8eef7"><small>#E8EEF7</small></div>
+          <div class="sw" style="background:#8fa1ba"><small>#8FA1BA</small></div>
+        </div>
+        <div class="swatches sev">
+          <div class="sw" style="background:var(--sev-stable)"><small>Stabil</small></div>
+          <div class="sw" style="background:var(--sev-low)"><small>Düşük</small></div>
+          <div class="sw" style="background:var(--sev-mid)"><small>Orta</small></div>
+          <div class="sw" style="background:var(--sev-high)"><small>Yüksek</small></div>
+          <div class="sw" style="background:var(--sev-crit)"><small>Kritik</small></div>
+        </div>
+      </div>
+      <div class="block typo" style="margin-top:40px"><h3>Yazı · Figtree + JetBrains Mono</h3>
+        <div class="h">Yoğun bakımda her saniye önemlidir.</div>
+        <div class="b">Gövde metni Figtree, bugünküyle aynı. Sayılar eşit genişlikte mono yazıyla: değer değişince sütun kaymaz.</div>
+        <div class="n">119<span>HR</span>66<span>MAP</span>84<span>SpO₂</span></div>
+      </div>
+      <div class="block"><h3>Yatak kartları</h3>
+        <div class="cards">
+          <div class="bed" style="--rail:var(--sev-crit)">
+            <div class="r1"><div><span class="no">105</span><span class="nm">Zeynep Şahin</span><div class="meta">61y · Kadın · 6 sa</div></div><span class="pill" style="color:#ff6b6b">NEWS2 14</span></div>
+            <div class="vit">131<span>HR</span> 51<span>MAP</span> 91<span>SpO₂</span> 30<span>RR</span></div>
+            <div class="flag" style="background:rgba(220,38,38,.14);color:#ff8a8a">Kötüleşme kriterleri değerlendirilecek · 0:05</div>
+            <div class="dx">Sepsis şüphesi, hipotansiyon</div>
+          </div>
+          <div class="bed" style="--rail:var(--sev-stable)">
+            <div class="r1"><div><span class="no">102</span><span class="nm">Fatma Kaya</span><div class="meta">54y · Kadın · 20 sa</div></div><span class="pill" style="color:#4ade80">NEWS2 0</span></div>
+            <div class="vit">82<span>HR</span> 88<span>MAP</span> 97<span>SpO₂</span> 16<span>RR</span></div>
+            <div class="dx">Postoperatif takip</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="block"><h3>Giriş ekranı</h3>
+        <div class="login"><div class="hero"><span class="tag">Homunculus</span><b>Kötüleşmeyi eşik aşılmadan fark eder.</b><small>Kararı hekim verir.</small></div>
+          <div class="form"><div class="inp"></div><div class="inp"></div><div class="go"></div></div></div>
+      </div>
+      <div class="block"><h3>Düğmeler</h3>
+        <div class="row"><span class="btn p">Giriş Yap</span><span class="btn s">Daha sonra</span><span class="btn d">Eskale et</span></div>
+      </div>
+      <div class="block"><h3>Telefon · alarm</h3>
+        <div class="phone"><div class="bar"><span>21:42</span><span>Erişkin YBÜ</span></div>
+          <div class="alert"><span class="pill" style="color:#ff6b6b">KRİTİK · Yatak 105</span>
+            <div class="t">Kötüleşme kriterleri karşılanıyor</div><div class="s">MAP 51 · laktat bekleniyor · 3 dk önce</div>
+            <div class="acts"><span style="background:var(--primary);color:var(--on-primary)">Gördüm</span><span style="background:var(--surface-2)">Aç</span></div></div>
+          <div class="mini"><span>101 · Ahmet Yıldız</span><span style="color:#fb923c">NEWS2 10</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ================= B ================= -->
+<section class="dir B" id="B">
+<div class="frame">
+  <div class="frame-head">
+    <svg class="logo" viewBox="0 0 200 200" aria-label="B logo konsepti: gravür tarzı profil ve nabız">
+      <defs>
+        <clipPath id="bHead"><path d="M118 40 C86 34 62 56 62 86 C62 98 58 104 52 112 C50 116 54 118 58 119 L60 128 C60 136 66 140 74 139 L82 138 L84 160 L132 160 L130 132 C146 122 154 104 152 84 C150 58 138 44 118 40 Z"/></clipPath>
+        <pattern id="bHatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><line x1="0" y1="0" x2="0" y2="6" stroke="#0f6e67" stroke-width="1.1"/></pattern>
+      </defs>
+      <circle cx="100" cy="100" r="94" fill="#efe9dc"/>
+      <circle cx="100" cy="100" r="86" fill="none" stroke="#0f6e67" stroke-width="1" stroke-dasharray="2 4" opacity=".5"/>
+      <g clip-path="url(#bHead)"><rect x="40" y="30" width="130" height="140" fill="url(#bHatch)" opacity=".35"/>
+        <circle cx="116" cy="84" r="30" fill="#f6f4ef"/></g>
+      <path d="M118 40 C86 34 62 56 62 86 C62 98 58 104 52 112 C50 116 54 118 58 119 L60 128 C60 136 66 140 74 139 L82 138 L84 160 M132 160 L130 132 C146 122 154 104 152 84 C150 58 138 44 118 40 Z" fill="none" stroke="#12302c" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M90 86 H102 L108 72 L116 100 L122 80 L126 86 H140" fill="none" stroke="#0f6e67" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div>
+      <span class="tag">Yön B</span>
+      <h2>Gün Işığı</h2>
+      <p>Açık, sıcak kâğıt tonu ve derin petrol yeşili. Başlıklarda tırnaklı bir yazı tipi var; ürün "gösterge paneli" gibi değil, güvenilir bir klinik belge gibi durur. Gündüz vardiyası ve yönetici ekranları için güçlü. Gece için aynı dilin koyu modu ayrıca tasarlanır.</p>
+      <div class="words"><span>sakin</span><span>güven veren</span><span>akademik</span><span>alarm tek başına öne çıkar</span></div>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="col">
+      <div class="block"><h3>Renkler</h3>
+        <div class="swatches">
+          <div class="sw" style="background:#f6f4ef"><small>#F6F4EF</small></div>
+          <div class="sw" style="background:#ffffff"><small>#FFFFFF</small></div>
+          <div class="sw" style="background:#0f6e67"><small>#0F6E67</small></div>
+          <div class="sw" style="background:#1b2a2f"><small>#1B2A2F</small></div>
+          <div class="sw" style="background:#5f6d71"><small>#5F6D71</small></div>
+        </div>
+        <div class="swatches sev">
+          <div class="sw" style="background:var(--sev-stable)"><small>Stabil</small></div>
+          <div class="sw" style="background:var(--sev-low)"><small>Düşük</small></div>
+          <div class="sw" style="background:var(--sev-mid)"><small>Orta</small></div>
+          <div class="sw" style="background:var(--sev-high)"><small>Yüksek</small></div>
+          <div class="sw" style="background:var(--sev-crit)"><small>Kritik</small></div>
+        </div>
+      </div>
+      <div class="block typo" style="margin-top:40px"><h3>Yazı · Fraunces + Inter</h3>
+        <div class="h">Yoğun bakımda her saniye önemlidir.</div>
+        <div class="b">Başlık tırnaklı (Fraunces), gövde ve sayılar Inter. Sayılar eşit genişlikte gösterilir.</div>
+        <div class="n">119<span>HR</span>66<span>MAP</span>84<span>SpO₂</span></div>
+      </div>
+      <div class="block"><h3>Yatak kartları</h3>
+        <div class="cards">
+          <div class="bed" style="--rail:var(--sev-crit)">
+            <div class="r1"><div><span class="no">105</span><span class="nm">Zeynep Şahin</span><div class="meta">61y · Kadın · 6 sa</div></div><span class="pill" style="color:#b91c1c">NEWS2 14</span></div>
+            <div class="vit">131<span>HR</span> 51<span>MAP</span> 91<span>SpO₂</span> 30<span>RR</span></div>
+            <div class="flag" style="background:#fdecec;color:#991b1b">Kötüleşme kriterleri değerlendirilecek · 0:05</div>
+            <div class="dx">Sepsis şüphesi, hipotansiyon</div>
+          </div>
+          <div class="bed" style="--rail:var(--sev-stable)">
+            <div class="r1"><div><span class="no">102</span><span class="nm">Fatma Kaya</span><div class="meta">54y · Kadın · 20 sa</div></div><span class="pill" style="color:#15803d">NEWS2 0</span></div>
+            <div class="vit">82<span>HR</span> 88<span>MAP</span> 97<span>SpO₂</span> 16<span>RR</span></div>
+            <div class="dx">Postoperatif takip</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="block"><h3>Giriş ekranı</h3>
+        <div class="login"><div class="hero"><span class="tag">Homunculus</span><b>Kötüleşmeyi eşik aşılmadan fark eder.</b><small>Kararı hekim verir.</small></div>
+          <div class="form"><div class="inp"></div><div class="inp"></div><div class="go"></div></div></div>
+      </div>
+      <div class="block"><h3>Düğmeler</h3>
+        <div class="row"><span class="btn p">Giriş Yap</span><span class="btn s">Daha sonra</span><span class="btn d">Eskale et</span></div>
+      </div>
+      <div class="block"><h3>Telefon · alarm</h3>
+        <div class="phone"><div class="bar"><span>21:42</span><span>Erişkin YBÜ</span></div>
+          <div class="alert"><span class="pill" style="color:#b91c1c">KRİTİK · Yatak 105</span>
+            <div class="t">Kötüleşme kriterleri karşılanıyor</div><div class="s">MAP 51 · laktat bekleniyor · 3 dk önce</div>
+            <div class="acts"><span style="background:var(--primary);color:var(--on-primary)">Gördüm</span><span style="background:var(--surface-2)">Aç</span></div></div>
+          <div class="mini"><span>101 · Ahmet Yıldız</span><span style="color:#c2410c">NEWS2 10</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ================= C ================= -->
+<section class="dir C" id="C">
+<div class="frame">
+  <div class="frame-head">
+    <svg class="logo" viewBox="0 0 200 200" aria-label="C logo konsepti: kortikal homunculus figürü">
+      <defs>
+        <radialGradient id="cBg" cx="30%" cy="20%" r="90%"><stop offset="0" stop-color="#4b3a9c"/><stop offset=".6" stop-color="#1b1535"/><stop offset="1" stop-color="#0c0a14"/></radialGradient>
+        <radialGradient id="cClay" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#f3e9ff"/><stop offset=".45" stop-color="#b7a6ff"/><stop offset="1" stop-color="#5a47b8"/></radialGradient>
+        <filter id="cSoft"><feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000" flood-opacity=".45"/></filter>
+      </defs>
+      <circle cx="100" cy="100" r="94" fill="url(#cBg)"/>
+      <g fill="url(#cClay)" filter="url(#cSoft)">
+        <!-- büyük baş, büyük eller, küçük gövde: beyindeki beden haritası -->
+        <ellipse cx="100" cy="62" rx="30" ry="28"/>
+        <ellipse cx="86" cy="66" rx="5" ry="9" fill="#5a47b8" opacity=".25"/>
+        <path d="M88 88 Q100 94 112 88 L116 130 Q100 138 84 130 Z"/>
+        <path d="M88 96 Q70 104 58 118" stroke="url(#cClay)" stroke-width="9" fill="none" stroke-linecap="round"/>
+        <path d="M112 96 Q130 104 142 118" stroke="url(#cClay)" stroke-width="9" fill="none" stroke-linecap="round"/>
+        <ellipse cx="50" cy="126" rx="17" ry="20" transform="rotate(-20 50 126)"/>
+        <ellipse cx="150" cy="126" rx="17" ry="20" transform="rotate(20 150 126)"/>
+        <rect x="90" y="128" width="8" height="30" rx="4"/><rect x="102" y="128" width="8" height="30" rx="4"/>
+        <ellipse cx="92" cy="160" rx="8" ry="4"/><ellipse cx="108" cy="160" rx="8" ry="4"/>
+      </g>
+      <path d="M30 176 H80 L86 168 L92 182 L98 170 H170" fill="none" stroke="#c9bdff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>
+    </svg>
+    <div>
+      <span class="tag">Yön C</span>
+      <h2>Homunculus Figürü</h2>
+      <p>İsmin kendisinden doğuyor. Kortikal homunculus, beynin bedeni nasıl "gördüğünün" haritası: büyük eller, büyük baş. Logo kil heykel gibi, hacimli, resim tarzında bir figür. Mor–lavanta, sağlıkta alışılmamış bir renk. Hem akılda kalır hem de alarm renkleriyle hiç çakışmaz. En cesur yön.</p>
+      <div class="words"><span>akılda kalıcı</span><span>karakterli</span><span>bilimsel merak</span><span>farklılaşan</span></div>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="col">
+      <div class="block"><h3>Renkler</h3>
+        <div class="swatches">
+          <div class="sw" style="background:#0f0d17"><small>#0F0D17</small></div>
+          <div class="sw" style="background:#1a1726"><small>#1A1726</small></div>
+          <div class="sw" style="background:#9d8cff"><small>#9D8CFF</small></div>
+          <div class="sw" style="background:#efeaf7"><small>#EFEAF7</small></div>
+          <div class="sw" style="background:#a39bb8"><small>#A39BB8</small></div>
+        </div>
+        <div class="swatches sev">
+          <div class="sw" style="background:var(--sev-stable)"><small>Stabil</small></div>
+          <div class="sw" style="background:var(--sev-low)"><small>Düşük</small></div>
+          <div class="sw" style="background:var(--sev-mid)"><small>Orta</small></div>
+          <div class="sw" style="background:var(--sev-high)"><small>Yüksek</small></div>
+          <div class="sw" style="background:var(--sev-crit)"><small>Kritik</small></div>
+        </div>
+      </div>
+      <div class="block typo" style="margin-top:40px"><h3>Yazı · Space Grotesk + Inter</h3>
+        <div class="h">Yoğun bakımda her saniye önemlidir.</div>
+        <div class="b">Başlık ve sayılar Space Grotesk ile geometrik ve karakterli. Gövde metni Inter.</div>
+        <div class="n">119<span>HR</span>66<span>MAP</span>84<span>SpO₂</span></div>
+      </div>
+      <div class="block"><h3>Yatak kartları</h3>
+        <div class="cards">
+          <div class="bed" style="--rail:var(--sev-crit)">
+            <div class="r1"><div><span class="no">105</span><span class="nm">Zeynep Şahin</span><div class="meta">61y · Kadın · 6 sa</div></div><span class="pill" style="color:#ff7a7a">NEWS2 14</span></div>
+            <div class="vit">131<span>HR</span> 51<span>MAP</span> 91<span>SpO₂</span> 30<span>RR</span></div>
+            <div class="flag" style="background:rgba(220,38,38,.16);color:#ff9a9a">Kötüleşme kriterleri değerlendirilecek · 0:05</div>
+            <div class="dx">Sepsis şüphesi, hipotansiyon</div>
+          </div>
+          <div class="bed" style="--rail:var(--sev-stable)">
+            <div class="r1"><div><span class="no">102</span><span class="nm">Fatma Kaya</span><div class="meta">54y · Kadın · 20 sa</div></div><span class="pill" style="color:#4ade80">NEWS2 0</span></div>
+            <div class="vit">82<span>HR</span> 88<span>MAP</span> 97<span>SpO₂</span> 16<span>RR</span></div>
+            <div class="dx">Postoperatif takip</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="block"><h3>Giriş ekranı</h3>
+        <div class="login"><div class="hero"><span class="tag">Homunculus</span><b>Kötüleşmeyi eşik aşılmadan fark eder.</b><small>Kararı hekim verir.</small></div>
+          <div class="form"><div class="inp"></div><div class="inp"></div><div class="go"></div></div></div>
+      </div>
+      <div class="block"><h3>Düğmeler</h3>
+        <div class="row"><span class="btn p">Giriş Yap</span><span class="btn s">Daha sonra</span><span class="btn d">Eskale et</span></div>
+      </div>
+      <div class="block"><h3>Telefon · alarm</h3>
+        <div class="phone"><div class="bar"><span>21:42</span><span>Erişkin YBÜ</span></div>
+          <div class="alert"><span class="pill" style="color:#ff7a7a">KRİTİK · Yatak 105</span>
+            <div class="t">Kötüleşme kriterleri karşılanıyor</div><div class="s">MAP 51 · laktat bekleniyor · 3 dk önce</div>
+            <div class="acts"><span style="background:var(--primary);color:var(--on-primary)">Gördüm</span><span style="background:var(--surface-2)">Aç</span></div></div>
+          <div class="mini"><span>101 · Ahmet Yıldız</span><span style="color:#fb923c">NEWS2 10</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<section class="compare" id="karsilastir">
+  <h3 style="color:var(--page-mute)">Karşılaştırma</h3>
+  <table>
+    <tr><th></th><th>A · Gece Nöbeti</th><th>B · Gün Işığı</th><th>C · Homunculus Figürü</th></tr>
+    <tr><td>Mevcut tasarıma uzaklık</td><td>Yakın, evrim</td><td>Orta, zemin tersine döner</td><td>Uzak, yeni kimlik</td></tr>
+    <tr><td>Karanlık oda / gece</td><td>Çok iyi</td><td>Ayrıca koyu mod gerekir</td><td>Çok iyi</td></tr>
+    <tr><td>Yönetici / gündüz / sunum</td><td>İyi</td><td>Çok iyi</td><td>İyi, en akılda kalan</td></tr>
+    <tr><td>Rakiplerden ayrışma</td><td>Düşük, sektör genelde lacivert-camgöbeği</td><td>Orta</td><td>Yüksek</td></tr>
+    <tr><td>Kod işi</td><td>En az: tokenlar düzelir</td><td>Orta: ana tema değişir</td><td>Orta: ana tema ve logo değişir</td></tr>
+    <tr><td>Mobil ile birleşme</td><td>Mobil maviden camgöbeğine geçer</td><td>İkisi de yeni dile geçer</td><td>İkisi de yeni dile geçer</td></tr>
+  </table>
+  <p style="color:var(--page-mute);margin-top:16px">Yönler karıştırılabilir. Örneğin "C'nin logosu, A'nın renkleri" ya da "B gündüz, A gece" gibi. Hangisinden neyi sevdiğini söylemen yeterli.</p>
+</section>
+
+</body>
+</html>

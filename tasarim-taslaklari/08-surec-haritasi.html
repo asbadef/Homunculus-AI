@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Süreç Haritası</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --page:#0b0f16; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --card:#0f1b2e; --card2:#15243b; --pri:#22b8d6;
+          --a:#8b7cff; --b:#22b8d6; --c:#34d399; --ok:#22c55e; --part:#eab308; --no:#64748b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:15px/1.55 Figtree, system-ui, sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:30px 16px 70px; }
+  h1 { font:700 30px/1.1 "Space Grotesk"; margin:0 0 8px; }
+  .lead { color:var(--mute); max-width:860px; margin:0; }
+  .lead b { color:var(--ink); }
+
+  .legend { display:flex; flex-wrap:wrap; gap:14px; margin:18px 0 0; font-size:13px; color:var(--mute); }
+  .legend span { display:flex; align-items:center; gap:6px; }
+  .st { display:inline-flex; align-items:center; gap:5px; font:700 11px Figtree; padding:3px 8px; border-radius:999px; white-space:nowrap; }
+  .st.ok { background:rgba(34,197,94,.14); color:#4ade80; }
+  .st.part { background:rgba(234,179,8,.14); color:#facc15; }
+  .st.no { background:rgba(100,116,139,.18); color:#a3b1c6; }
+  .st.dev { background:rgba(139,124,255,.16); color:#b8adff; }
+
+  /* genel bakış şeridi */
+  .over { display:grid; grid-template-columns:repeat(3,1fr); gap:0; margin:26px 0 8px; border-radius:18px; overflow:hidden; border:1px solid var(--line); }
+  .over a { display:block; padding:16px 18px; text-decoration:none; color:var(--ink); position:relative; }
+  .over a:nth-child(1) { background:linear-gradient(135deg,rgba(139,124,255,.22),rgba(139,124,255,.06)); }
+  .over a:nth-child(2) { background:linear-gradient(135deg,rgba(34,184,214,.22),rgba(34,184,214,.06)); }
+  .over a:nth-child(3) { background:linear-gradient(135deg,rgba(52,211,153,.22),rgba(52,211,153,.06)); }
+  .over a + a { border-left:1px solid var(--line); }
+  .over small { font:700 11px Figtree; letter-spacing:.12em; text-transform:uppercase; opacity:.7; }
+  .over b { display:block; font:700 20px "Space Grotesk"; margin:2px 0 4px; }
+  .over span { font-size:13px; color:var(--mute); }
+
+  .ch { margin-top:46px; }
+  .chh { display:flex; align-items:center; gap:14px; margin-bottom:16px; flex-wrap:wrap; }
+  .chh .L { width:44px; height:44px; border-radius:12px; display:grid; place-items:center; font:700 20px "Space Grotesk"; color:#0b0f16; background:var(--col); }
+  .chh h2 { margin:0; font:700 24px "Space Grotesk"; }
+  .chh p { margin:0; color:var(--mute); font-size:14px; flex-basis:100%; padding-left:58px; margin-top:-8px; }
+
+  .steps { position:relative; padding-left:58px; }
+  .steps::before { content:""; position:absolute; left:21px; top:6px; bottom:6px; width:2px; background:linear-gradient(var(--col), transparent); opacity:.6; }
+  .step { position:relative; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; margin-bottom:12px; display:grid; grid-template-columns:1fr 250px; gap:6px 20px; }
+  .step::before { content:attr(data-n); position:absolute; left:-50px; top:12px; width:30px; height:30px; border-radius:50%; background:var(--page); border:2px solid var(--col); color:var(--col); display:grid; place-items:center; font:700 13px "Space Grotesk"; }
+  .step h3 { margin:0; font:700 17px "Space Grotesk"; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .step .what { color:var(--mute); font-size:14px; margin-top:4px; }
+  .step .what b { color:var(--ink); font-weight:600; }
+  .who { display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+  .who span { font:600 11.5px Figtree; padding:3px 8px; border-radius:7px; background:var(--card2); color:#cbd6e6; }
+  .side { border-left:1px solid var(--line); padding-left:16px; font-size:13px; color:var(--mute); }
+  .side b { color:var(--ink); display:block; font:700 11px Figtree; letter-spacing:.08em; text-transform:uppercase; margin:0 0 4px; opacity:.8; }
+  .side .scr { color:var(--pri); font-weight:600; }
+  .side div + b { margin-top:10px; }
+  .dur { font:600 12px Figtree; color:var(--mute); }
+
+  .journey { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin:6px 0 18px 58px; }
+  .jn { background:var(--card2); border-radius:12px; padding:10px; text-align:center; font-size:12px; color:var(--mute); position:relative; }
+  .jn b { display:block; color:var(--ink); font:700 13px "Space Grotesk"; }
+  .jn:not(:last-child)::after { content:"→"; position:absolute; right:-9px; top:50%; transform:translateY(-50%); color:var(--c); font-weight:700; }
+  .jn.ybu { background:rgba(239,68,68,.12); }
+
+  .az { margin-top:46px; background:linear-gradient(135deg,#0f2233,#0f1b2e); border:1px solid #1f4a66; border-radius:20px; padding:20px 22px; }
+  .az h2 { margin:0 0 6px; font:700 22px "Space Grotesk"; display:flex; align-items:center; gap:10px; }
+  .flag { width:30px; height:20px; border-radius:3px; background:linear-gradient(#00b5e2 33.3%, #ef3340 33.3% 66.6%, #509e2f 66.6%); position:relative; }
+  .az p { color:var(--mute); margin:0 0 12px; font-size:14px; }
+  .azg { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+  .azg div { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:10px 12px; font-size:13.5px; }
+  .azg b { display:block; font-size:14px; margin-bottom:2px; }
+  .q { color:#facc15; font-weight:700; }
+
+  .gaps { margin-top:40px; background:var(--card); border:1px solid var(--line); border-radius:20px; padding:18px 20px; }
+  .gaps h2 { margin:0 0 10px; font:700 20px "Space Grotesk"; }
+  .gaps ol { margin:0; padding-left:20px; color:var(--mute); font-size:14px; }
+  .gaps li { margin-bottom:6px; } .gaps li b { color:var(--ink); }
+  .answer code { display:block; margin-top:10px; background:#050b16; border:1px solid var(--line); color:#9ff3ff; border-radius:10px; padding:12px 14px; font:600 14px monospace; white-space:pre-wrap; }
+
+  @media (max-width:820px) {
+    .over { grid-template-columns:1fr; } .over a + a { border-left:0; border-top:1px solid var(--line); }
+    .step { grid-template-columns:1fr; } .side { border-left:0; border-top:1px solid var(--line); padding:10px 0 0; }
+    .journey { grid-template-columns:repeat(2,1fr); margin-left:0; } .jn::after { display:none; }
+    .azg { grid-template-columns:1fr; }
+    .steps { padding-left:44px; } .step::before { left:-40px; } .steps::before { left:14px; } .chh p { padding-left:0; margin-top:0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Tek harita · Taslak 08</h1>
+  <p class="lead">Satıştan kuruluma, kurulumdan hastanın yolculuğuna kadar <b>bütün süreç</b>. Her adımda şunlar yazıyor: <b>kim</b> yapıyor, <b>ne</b> oluyor, Homunculus'un <b>hangi ekranı</b> kullanılıyor ve o ekranın bugün <b>hazır olup olmadığı</b>. Hazır olup olmadığını kodu inceleyerek belirledim.</p>
+  <div class="legend">
+    <span><span class="st ok">✓ Hazır</span> kodda çalışıyor</span>
+    <span><span class="st part">◐ Kısmen</span> var ama eksik ya da sadece demoda</span>
+    <span><span class="st no">○ Yok</span> tasarlanacak</span>
+    <span><span class="st dev">⚙ Cihaz ekibi</span> bizim alanımız değil, sadece izliyoruz</span>
+  </div>
+
+  <div class="over">
+    <a href="#A"><small>Bölüm A · 1–4 ay (tahmini)</small><b>Satış</b><span>İlk görüşmeden sözleşmeye</span></a>
+    <a href="#B"><small>Bölüm B · ilk 30 gün (tahmini)</small><b>Kurulum</b><span>Hastane sistemi açtığı gün</span></a>
+    <a href="#C"><small>Bölüm C · her gün</small><b>Hastanın yolculuğu</b><span>Kabulden taburcuya</span></a>
+  </div>
+
+  <!-- ================= A ================= -->
+  <section class="ch" id="A" style="--col:var(--a)">
+    <div class="chh"><span class="L">A</span><h2>Satış</h2><p>Hastaneyi ikna etmek. Burada tasarımın işi, <b>demonun ve sunumun</b> kendini anlatması.</p></div>
+    <div class="steps" style="--col:var(--a)">
+      <div class="step" data-n="1"><div><h3>İlk görüşme</h3><div class="what">Başhekim ya da hastane yöneticisiyle 20 dakikalık tanışma. <b>Tek bir cümle ve tek bir ekran</b> yeterli: "Kötüleşmeyi alarm çalmadan önce görürsünüz."</div>
+        <div class="who"><span>Biz (satış)</span><span>Başhekim</span><span>Hastane müdürü</span></div></div>
+        <div class="side"><b>Kullanılan</b><div class="scr">Tanıtım sunumu · 1 sayfalık broşür (AZ/RU/TR)</div><b>Durum</b><span class="st no">○ Yok</span></div></div>
+      <div class="step" data-n="2"><div><h3>Canlı demo</h3><div class="what">Hastanenin kendi ekranında, <b>sentetik hastalarla</b> çalışan sistem gösterilir. Yatak paneli, bir hastanın kötüleşmesi, alarmın doğru kişiye gitmesi ve yönetici özeti.</div>
+        <div class="who"><span>Biz</span><span>Yoğun bakım sorumlusu</span><span>Başhemşire</span></div></div>
+        <div class="side"><b>Kullanılan</b><div class="scr">Demo modu (?demo=1) · senaryolar</div><b>Durum</b><span class="st ok">✓ Hazır</span> <span class="dur">· Azerbaycanca metinler var</span></div></div>
+      <div class="step" data-n="3"><div><h3>Teknik keşif</h3><div class="what">Hastane hangi <b>monitörleri ve ventilatörleri</b> kullanıyor, <b>HBYS'si</b> ne, sunucu nereye kurulacak? Verinin hastanenin içinde kaldığı burada anlatılır.</div>
+        <div class="who"><span>Biz (teknik)</span><span>Bilgi işlem</span><span>Biyomedikal</span></div></div>
+        <div class="side"><b>Kullanılan</b><div class="scr">Keşif formu · cihaz envanteri</div><b>Durum</b><span class="st dev">⚙ Cihaz ekibi</span> <span class="st no">○ Form yok</span></div></div>
+      <div class="step" data-n="4"><div><h3>Pilot (1 ünite, 30–90 gün)</h3><div class="what">Tek bir yoğun bakımda ya da serviste <b>gerçek cihazlarla</b> çalışır. Önce sessiz modda ölçülür, sonra ekibe açılır. Başarı rakamla gösterilir: alarm yanıt süresi, erken fark edilen vaka sayısı.</div>
+        <div class="who"><span>Biz</span><span>Pilot ünite ekibi</span><span>Bilgi işlem</span></div></div>
+        <div class="side"><b>Kullanılan</b><div class="scr">Canlı sistem · Alarm kalitesi raporu</div><b>Durum</b><span class="st part">◐ Kısmen</span> <span class="dur">· "sessiz mod" ekranı yok</span></div></div>
+      <div class="step" data-n="5"><div><h3>Sözleşme ve yaygınlaştırma</h3><div class="what">Pilot raporu karar vericiye sunulur, diğer ünitelere geçiş planlanır.</div>
+        <div class="who"><span>Biz</span><span>Başhekim</span><span>Satın alma</span><span>Hukuk</span></div></div>
+        <div class="side"><b>Kullanılan</b><div class="scr">Pilot sonuç raporu (PDF)</div><b>Durum</b><span class="st part">◐ Kısmen</span> <span class="dur">· rapor dışa aktarımı var, sunum şablonu yok</span></div></div>
+    </div>
+  </section>
+
+  <!-- ================= B ================= -->
+  <section class="ch" id="B" style="--col:var(--b)">
+    <div class="chh"><span class="L">B</span><h2>Kurulum</h2><p>Hastane sistemi ilk açtığı gün. Burada tasarımın işi, <b>bir bilgi işlem çalışanının yardım almadan</b> kurulumu bitirebilmesi.</p></div>
+    <div class="steps" style="--col:var(--b)">
+      <div class="step" data-n="6"><div><h3>Sunucu kurulumu</h3><div class="what">Sistem hastanenin kendi sunucusuna kurulur. Veri hastanenin dışına çıkmaz.</div><div class="who"><span>Biz (teknik)</span><span>Bilgi işlem</span></div></div>
+        <div class="side"><b>Kullanılan</b><div class="scr">Kurulum paketi</div><b>Durum</b><span class="st dev">⚙ Cihaz ekibi</span></div></div>
+      <div class="step" data-n="7"><div><h3>Hastane yapısı</h3><div class="what">Binalar, katlar, <b>servisler ve yoğun bakımlar</b>, yataklar tanımlanır. Her ünitenin kendi izleme kuralı olur: servis için NEWS2, yoğun bakım için SOFA ve sepsis.</div><div class="who"><span>Hastane yöneticisi</span><span>Bilgi işlem</span></div></div>
+        <div class="side"><b>Kullanılan</b><div class="scr">Kurulum sihirbazı · Hastane Yapısı</div><b>Durum</b><span class="st part">◐ Kısmen</span> <span class="dur">· sihirbaz sadece demoda</span></div></div>
+      <div class="step" data-n="8"><div><h3>Cihazları bağlama</h3><div class="what">Her monitör ve ventilatör bir yatakla eşleştirilir. Ekranda hangi yatağın veri gönderdiği, hangisinin sessiz olduğu görünür.</div><div class="who"><span>Biyomedikal</span><span>Cihaz ekibi</span></div></div>
+        <div class="side"><b>Kullanılan</b><div class="scr">Cihazlar paneli</div><b>Durum</b><span class="st dev">⚙ Cihaz ekibi</span> <span class="st part">◐ ekran tasarımı bizde</span></div></div>
+      <div class="step" data-n="9"><div><h3>Kullanıcılar ve yetkiler</h3><div class="what">Hekim, hemşire, hızlı yanıt ekibi, eczacı ve biyomedikal kullanıcıları açılır. Herkes sadece kendi ünitesini görür.</div><div class="who"><span>Hastane yöneticisi</span></div></div>
+        <div class="side"><b>Kullanılan</b><div class="scr">Yönetim → Kullanıcılar, Yetki</div><b>Durum</b><span class="st ok">✓ Hazır</span></div></div>
+      <div class="step" data-n="10"><div><h3>Eğitim (ünite başına 1 saat)</h3><div class="what">Hemşireye 3 şey öğretilir: yatak paneli, alarmı görme ve eskale etme, devir. <b>Ekranın kendini anlatması</b> burada eğitim süresini kısaltır.</div><div class="who"><span>Biz</span><span>Başhemşire</span><span>Hemşireler</span><span>Hekimler</span></div></div>
+        <div class="side"><b>Kullanılan</b><div class="scr">Uygulama içi ilk kullanım turu</div><b>Durum</b><span class="st no">○ Yok</span></div></div>
+    </div>
+  </section>
+
+  <!-- ================= C ================= -->
+  <section class="ch" id="C" style="--col:var(--c)">
+    <div class="chh"><span class="L">C</span><h2>Hastanın yolculuğu</h2><p>Her gün yaşanan iş. Burada tasarımın işi, <b>doğru kişinin doğru anda</b> doğru ekranı görmesi.</p></div>
+    <div class="journey"><div class="jn"><b>Kabul</b>HBYS'den</div><div class="jn"><b>Servis</b>izleme</div><div class="jn"><b>Kötüleşme</b>erken uyarı</div><div class="jn ybu"><b>Yoğun bakım</b>monitör</div><div class="jn"><b>Servise dönüş</b>devir</div><div class="jn"><b>Taburcu</b>özet</div></div>
+    <div class="steps" style="--col:var(--c)">
+      <div class="step" data-n="11"><div><h3>Kabul</h3><div class="what">Hasta HBYS'de kaydedilir ve Homunculus'a <b>kendiliğinden düşer</b>. Hemşire bir yatak atar, alerji ve kod durumu gibi bilgiler görünür.</div><div class="who"><span>Hemşire</span><span>Kabul hekimi</span></div></div>
+        <div class="side"><b>Ekran</b><div class="scr">Hasta → Kabul / Transfer</div><b>Durum</b><span class="st part">◐ Kısmen</span> <span class="dur">· kabul sadece tarayıcıda, motora gitmiyor</span></div></div>
+      <div class="step" data-n="12"><div><h3>Serviste izleme</h3><div class="what">Serviste monitör olan yataklarda veri kendiliğinden gelir, olmayanlarda hemşire vital bulguları <b>dokunarak</b> girer. Sistem NEWS2'yi hesaplar ve yatak kartının rengi değişir.</div><div class="who"><span>Servis hemşiresi</span></div></div>
+        <div class="side"><b>Ekran</b><div class="scr">Yatak Paneli · hızlı vital girişi</div><b>Durum</b><span class="st part">◐ Kısmen</span> <span class="dur">· elle vital girişi sade değil</span></div></div>
+      <div class="step" data-n="13"><div><h3>Kötüleşme ve erken uyarı</h3><div class="what">Değerler eşiğe varmadan yön bozulursa uyarı <b>önce hemşireye</b> gider. Yanıt gelmezse <b>3. dakikada sorumlu hemşireye, 5. dakikada hekime, 10. dakikada hızlı yanıt ekibine</b> gider. Her adım kayda geçer. <i>(Süreler koddan: escalation/service.py)</i></div><div class="who"><span>Hemşire</span><span>Hekim</span><span>Hızlı yanıt ekibi</span></div></div>
+        <div class="side"><b>Ekran</b><div class="scr">Alarmlar · Hızlı Yanıt · telefon bildirimi</div><b>Durum</b><span class="st ok">✓ Hazır</span></div></div>
+      <div class="step" data-n="14"><div><h3>Yoğun bakıma transfer</h3><div class="what">Hasta tek dokunuşla yoğun bakım yatağına aktarılır, bütün geçmişi yanında gelir. Monitör bağlandığı an ekranın <b>en üstünde dalgalar</b> görünür.</div><div class="who"><span>Hekim</span><span>Yoğun bakım hemşiresi</span></div></div>
+        <div class="side"><b>Ekran</b><div class="scr">Hasta paneli · monitör en üstte</div><b>Durum</b><span class="st part">◐ Kısmen</span> <span class="dur">· dalga çizgisi cihaz ekibini bekliyor</span></div></div>
+      <div class="step" data-n="15"><div><h3>Yoğun bakımda günlük iş</h3><div class="what">SOFA ve benzeri skorları <b>sistem kendisi doldurur</b>, eksik kalan kısmı hekim dokunarak tamamlar ve onaylar. Sepsis ve kötüleşme önerileri gerekçesiyle birlikte gelir, karar hekimde kalır.</div><div class="who"><span>Yoğun bakım hekimi</span><span>Hemşire</span><span>Eczacı</span></div></div>
+        <div class="side"><b>Ekran</b><div class="scr">Hasta → Skorlar · öneri kartı</div><b>Durum</b><span class="st part">◐ Kısmen</span> <span class="dur">· onay ekranı VAR (canlı sistemde), ama demoda görünmüyor. Satışta gösterilemiyor.</span></div></div>
+      <div class="step" data-n="16"><div><h3>Vardiya devri</h3><div class="what">Giden hemşire ya da hekim devri imzalar, gelen de karşı imzayı atar. <b>Açık kritik alarm varken devir imzalanamaz.</b></div><div class="who"><span>Giden ekip</span><span>Gelen ekip</span></div></div>
+        <div class="side"><b>Ekran</b><div class="scr">Hasta → Vardiya Devri</div><b>Durum</b><span class="st part">◐ Kısmen</span> <span class="dur">· motor iki imzalı; ekrandaki pencere tek imzalı ve motora bağlı değil. Eksik: "imzamı bekleyen devirler" listesi.</span></div></div>
+      <div class="step" data-n="17"><div><h3>Servise dönüş ve taburcu</h3><div class="what">Yoğun bakımdan servise dönüşte izleme kuralı SOFA'dan NEWS2'ye geçer. Taburcuda özet rapor çıkar.</div><div class="who"><span>Hekim</span><span>Hemşire</span></div></div>
+        <div class="side"><b>Ekran</b><div class="scr">Transfer · taburcu özeti</div><b>Durum</b><span class="st part">◐ Kısmen</span></div></div>
+      <div class="step" data-n="18"><div><h3>Yönetici ne görür</h3><div class="what">Doluluk, alarm yükü, yanıt süreleri ve imzasız devirler. Her ay otomatik bir kalite raporu, satışta referans olarak da kullanılır.</div><div class="who"><span>Başhekim</span><span>Kalite birimi</span></div></div>
+        <div class="side"><b>Ekran</b><div class="scr">Analiz → Yönetici Özeti</div><b>Durum</b><span class="st ok">✓ Hazır</span> <span class="dur">· eğilim grafikleri eksik</span></div></div>
+    </div>
+  </section>
+
+  <div class="az">
+    <h2><span class="flag"></span>Azerbaycan'a özel</h2>
+    <p>Aşağıdakilerin bir kısmını <b>kesin bilmiyorum</b>. Soru işaretli olanları yerel bir danışmana ya da ortağa doğrulatmak gerekiyor.</p>
+    <div class="azg">
+      <div><b>Dil</b>Uygulamada Azerbaycan Türkçesi (Latin harfli) var. Hekimlerin bir kısmı Rusça çalışıyor, o da mevcut. Metinleri <span class="q">yerel bir hekime okutmak</span> gerekiyor.</div>
+      <div><b>Karar verici</b>Devlet hastaneleri merkezi bir kurum üzerinden mi alım yapıyor, yoksa hastane kendisi mi karar veriyor? Özel hastaneler Bakü'de mi yoğunlaşıyor? <span class="q">Doğrulanacak.</span></div>
+      <div><b>Kişisel veri</b>Veri hastanenin içinde kaldığı için güçlü bir konumdayız. Ama Azerbaycan'ın kişisel veri ve sağlık verisi kurallarını <span class="q">bir hukukçu kontrol etmeli</span>.</div>
+      <div><b>Tıbbi yazılım kaydı</b>Karar destek yazılımı için bir ruhsat ya da kayıt gerekiyor mu? <span class="q">Doğrulanacak.</span> Satış takvimini doğrudan etkiliyor.</div>
+      <div><b>HBYS</b>Azerbaycan hastanelerinde hangi hastane bilgi sistemleri yaygın? Kabul ekranının otomatik çalışması buna bağlı. <span class="q">Senin bilgine ihtiyaç var.</span></div>
+      <div><b>Cihazlar</b>Pilot hastanede Dräger var. Hedef hastanelerde hangi marka monitörler kullanılıyor? <span class="q">Cihaz ekibine sorulacak.</span></div>
+    </div>
+  </div>
+
+  <div class="gaps">
+    <h2>Bu haritadan çıkan tasarım iş listesi (önerdiğim sıra)</h2>
+    <ol>
+      <li><b>Hasta paneli: monitör en üstte, SOFA "sistem doldurdu, hekim onayladı" kartı.</b> Demoda ve satışta en çok etkileyecek ekran.</li>
+      <li><b>Vardiya devri ekranı.</b> Motoru hazır, ekranı yok.</li>
+      <li><b>Servis için hızlı vital girişi</b> (dokunarak). Monitörü olmayan servis yataklarında gerekiyor.</li>
+      <li><b>Satış seti:</b> 1 sayfalık broşür ve 8 sayfalık sunum (AZ/RU/TR).</li>
+      <li><b>Kurulum sihirbazı ve ilk kullanım turu.</b> Hastane kendi başına kurabilsin.</li>
+      <li><b>Pilot "sessiz mod" ve pilot sonuç raporu.</b> Satışı kapatan belge bu.</li>
+    </ol>
+    <div class="answer">Sırayı onaylıyor musun? Satırı kopyala, istersen sırayı değiştir ve gönder:<code>Sıra: 1, 2, 3, 4, 5, 6</code></div>
+  </div>
+</div>
+</body>
+</html>

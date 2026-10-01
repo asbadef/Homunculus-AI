@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="tr" data-theme="gun">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mobil Giriş Seçimi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Taslak 23 · Mobil giriş + renk yoğunluğu + hızlı dönüş · 24.09.2026
+   Ozan (iPhone'da denedi): "tasarımda kaymalar var, kullanıcı giriş ekranı mobil app'e göre çok solgun, sönük;
+   verimi artırmak için farklı tasarımlarla seçim yapıp karar kılalım". Bu sayfa ÖNERİDİR: uygulamada değişen yok. */
+:root {
+  --page:#eef2f6; --card:#fff; --card2:#f1f4f8; --ink:#152231; --mute:#5c6b7d; --line:#e1e6ee; --line2:#cbd3de;
+  --pri:#0e7490; --onpri:#fff; --priSoft:#e0f2f7; --priInk:#0e7490; --crit:#dc2626; --critSoft:#fdecec; --high:#ea580c; --ok:#16a34a; --okSoft:#e7f6ec; --mid:#ca8a04; --midSoft:#fdf6e3;
+  --ph-frame:#0f172a; --shadow:0 20px 50px rgba(20,30,50,.12);
+}
+:root[data-theme="gece"] { --page:#050b16; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60; --priSoft:rgba(34,184,214,.13); --priInk:#7dd3e6; --ph-frame:#000; --midSoft:rgba(234,179,8,.12); --okSoft:rgba(34,197,94,.12); --shadow:0 24px 60px rgba(0,0,0,.5); }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--page); color:var(--ink); font:15px/1.5 Figtree, system-ui, sans-serif; }
+h1, h2, h3, h4 { font-family:"Space Grotesk", Figtree, sans-serif; margin:0; letter-spacing:-.01em; }
+button { font:inherit; color:inherit; cursor:pointer; }
+.mono { font-family:"JetBrains Mono", ui-monospace, monospace; }
+svg.i { width:18px; height:18px; flex:none; }
+.bar { position:sticky; top:0; z-index:30; background:var(--card); border-bottom:1px solid var(--line); }
+.bar-in { max-width:1400px; margin:0 auto; padding:12px clamp(16px,4vw,48px); display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+.bar h1 { font-size:17px; margin-right:auto; }
+.bar h1 small { display:block; font:500 12.5px Figtree; color:var(--mute); }
+.seg { display:flex; background:var(--card2); border:1px solid var(--line); border-radius:11px; padding:3px; }
+.seg button { border:0; background:none; padding:6px 12px; border-radius:8px; font-weight:600; font-size:13px; color:var(--mute); }
+.seg button.on { background:var(--card); color:var(--ink); box-shadow:0 2px 8px rgba(0,0,0,.08); }
+.wrap { max-width:1400px; margin:0 auto; padding:24px clamp(16px,4vw,48px) 140px; }
+.note { background:var(--midSoft); border:1px solid color-mix(in srgb, var(--mid) 35%, transparent); border-radius:12px; padding:10px 14px; font-size:13.5px; margin-bottom:10px; }
+.note b { color:var(--mid); }
+.found { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 16px; font-size:13.5px; color:var(--mute); display:grid; grid-template-columns:auto 1fr; gap:14px; align-items:center; }
+.found img { width:150px; border-radius:12px; border:1px solid var(--line); }
+.found b { color:var(--ink); }
+.q { margin:34px 0 0; }
+.q-h { display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
+.q-h .n { font:700 13px "JetBrains Mono"; color:var(--onpri); background:var(--pri); border-radius:8px; padding:2px 8px; }
+.q-h h2 { font-size:24px; }
+.q-h p { flex-basis:100%; margin:4px 0 0; color:var(--mute); }
+.opts { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:18px; margin-top:16px; }
+.opt { background:var(--card); border:1.5px solid var(--line); border-radius:20px; padding:16px 16px 14px; text-align:left; display:flex; flex-direction:column; gap:12px; }
+.opt:hover { border-color:var(--line2); }
+.opt.on { border-color:var(--pri); box-shadow:0 0 0 4px var(--priSoft); }
+.opt-h { display:flex; align-items:center; gap:8px; }
+.opt-h .k { width:26px; height:26px; border-radius:8px; display:grid; place-items:center; background:var(--card2); font:700 13px "Space Grotesk"; }
+.opt.on .opt-h .k { background:var(--pri); color:var(--onpri); }
+.opt-h b { font:700 16px "Space Grotesk"; }
+.opt-h .rec { margin-left:auto; font:700 10.5px Figtree; color:var(--ok); background:var(--okSoft); padding:2px 8px; border-radius:99px; }
+.opt > p { margin:0; color:var(--mute); font-size:13.5px; }
+.why { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 16px; margin-top:14px; font-size:13.5px; color:var(--mute); }
+.why b { color:var(--ink); }
+
+/* ---------- telefon ---------- */
+.ph { width:100%; max-width:292px; margin:0 auto; aspect-ratio:292/600; background:var(--ph-frame); border-radius:38px; padding:8px; box-shadow:var(--shadow); }
+.scr { position:relative; height:100%; border-radius:31px; overflow:hidden; display:flex; flex-direction:column; font-size:12px; color:#152231; background:#f5f8fb; }
+.sb { height:26px; flex:none; display:flex; justify-content:space-between; align-items:center; padding:0 20px 0 24px; font:700 11px Figtree; position:relative; z-index:3; }
+.sb i { width:70px; height:18px; background:#0b1220; border-radius:12px; }
+.scr.dk { color:#e8f3f7; }
+.logo { display:flex; align-items:center; gap:9px; }
+.logo i { width:38px; height:38px; border-radius:12px; background:#0e7490; color:#fff; display:grid; place-items:center; font:700 20px "Space Grotesk"; font-style:normal; }
+.logo b { font:700 18px "Space Grotesk"; display:block; line-height:1.1; }
+.logo small { font-size:10.5px; opacity:.7; }
+.fld { display:grid; gap:4px; }
+.fld span { font:800 9.5px Figtree; letter-spacing:.07em; text-transform:uppercase; opacity:.65; }
+.fld div { height:42px; border-radius:12px; border:1.5px solid #cbd3de; background:#fff; display:flex; align-items:center; padding:0 12px; color:#8a97a8; font-size:12.5px; }
+.bt { height:46px; border-radius:14px; display:flex; align-items:center; justify-content:center; gap:6px; font:800 14px Figtree; }
+.bt.p { background:#0e7490; color:#fff; box-shadow:0 8px 18px rgba(14,116,144,.35); }
+.bt.g { border:1.5px solid #cbd3de; background:#fff; color:#152231; }
+.chipf { display:inline-flex; align-items:center; gap:5px; border-radius:99px; padding:4px 9px; font:700 10.5px Figtree; }
+.flag { width:16px; height:11px; border-radius:2px; background:linear-gradient(#00b5e2 33%, #ef3340 33% 66%, #509e2f 66%); }
+.bedg { display:grid; grid-template-columns:repeat(4, 1fr); gap:5px; }
+.bedg span { border-radius:8px; padding:5px; background:#fff; border:1px solid #e1e6ee; font:700 9px "JetBrains Mono"; display:grid; gap:2px; }
+.bedg span b { font-size:12px; color:#a16207; text-align:right; }
+.bedg span.c { border-color:#dc2626; background:#fdecec; } .bedg span.c b { color:#dc2626; }
+.lnk { text-align:center; font:700 11.5px Figtree; color:#0e7490; }
+/* renk yoğunluğu (Bana ekranı) */
+.tb { flex:none; display:grid; grid-template-columns:repeat(5, 1fr); align-items:end; padding:7px 4px 13px; position:relative; }
+.tb a { display:flex; flex-direction:column; align-items:center; gap:2px; font:700 9px Figtree; }
+.tb a svg.i { width:18px; height:18px; padding:3px 11px; box-sizing:content-box; border-radius:11px; }
+.tb .fab { position:absolute; left:50%; top:-22px; transform:translateX(-50%); width:46px; height:46px; border-radius:50%; display:grid; place-items:center; }
+.tb .fab svg.i { width:21px; height:21px; }
+.srch { display:flex; align-items:center; gap:7px; height:36px; border-radius:11px; padding:0 10px; flex:1; font-size:11.5px; }
+.srch svg.i { width:14px; height:14px; }
+.ib { width:36px; height:36px; border-radius:11px; display:grid; place-items:center; flex:none; position:relative; }
+.ib svg.i { width:16px; height:16px; }
+.bd { position:absolute; top:-4px; right:-4px; min-width:15px; height:15px; border-radius:99px; background:#dc2626; color:#fff; font:800 9px Figtree; display:grid; place-items:center; padding:0 3px; }
+.hero { border-radius:16px; padding:11px 12px; }
+.hero .t { display:flex; justify-content:space-between; font:800 9.5px Figtree; letter-spacing:.07em; text-transform:uppercase; }
+.hero h4 { font-size:21px; margin:3px 0 1px; }
+.hero p { margin:0; font-size:11px; }
+.sw { margin-top:9px; height:40px; border-radius:20px; display:flex; align-items:center; position:relative; font:800 11px Figtree; justify-content:center; }
+.sw i { position:absolute; left:3px; top:3px; width:34px; height:34px; border-radius:50%; display:grid; place-items:center; }
+.sw i svg.i { width:16px; height:16px; }
+.rw { display:flex; align-items:center; gap:8px; border-radius:12px; padding:9px 10px; margin-top:6px; }
+.rw .tm { font:700 10px "JetBrains Mono"; width:32px; }
+.rw .br { width:3px; align-self:stretch; border-radius:3px; }
+.rw b { display:block; font-size:11.5px; }
+.rw small { display:block; font-size:10px; opacity:.7; }
+/* PIN */
+.pin { display:grid; grid-template-columns:repeat(3, 1fr); gap:9px; padding:0 20px; }
+.pin span { height:46px; border-radius:50%; display:grid; place-items:center; font:600 19px "Space Grotesk"; }
+.dots { display:flex; gap:12px; justify-content:center; margin:14px 0 18px; }
+.dots i { width:11px; height:11px; border-radius:50%; border:2px solid currentColor; }
+.dots i.f { background:currentColor; }
+
+.dock { position:fixed; left:0; right:0; bottom:0; z-index:40; background:var(--card); border-top:1px solid var(--line); box-shadow:0 -10px 30px rgba(0,0,0,.08); }
+.dock-in { max-width:1400px; margin:0 auto; padding:12px clamp(16px,4vw,48px); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.dock .ans { font:600 13.5px "JetBrains Mono"; background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:8px 12px; flex:1; min-width:240px; }
+.dock .btn { border:1px solid var(--pri); background:var(--pri); color:var(--onpri); border-radius:10px; padding:9px 14px; font:700 13px Figtree; }
+.dock small { color:var(--mute); font-size:12.5px; }
+@media (max-width:1000px) { .opts { grid-template-columns:1fr; } .found { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="bar"><div class="bar-in">
+  <h1>Taslak 23 · Mobil giriş ve görünüm<small>iPhone'daki denemenden sonra · 3 karar · birine tıkla</small></h1>
+  <div class="seg" data-seg><button class="on" data-v="gun" type="button">Açık</button><button data-v="gece" type="button">Koyu</button></div>
+</div></div>
+
+<div class="wrap">
+  <div class="note"><b>Bu bir öneri.</b> Uygulamada henüz değişen yok. Seçtiklerin telefon düzenine işlenecek.</div>
+  <div class="found"><img src="_ekler/giris-bugun.png" alt="Bugünkü giriş ekranı telefonda"><div><b>Bugün telefonda ne oluyor (ölçüldü):</b> masaüstünün iki bölmeli giriş ekranı telefonda üst üste biniyor. "Oturum aç" başlığı canlı kartın arkasında kalıyor, "Ana sayfaya dön" açıklamanın üstüne biniyor, yatak kartları yarıda kesiliyor. Gördüğün kayma bu. Açık tema da telefonda çok düşük renkli: zemin, kart ve vurgu birbirine yakın. Seçimden bağımsız olarak bu üst üste binme düzelecek.</div></div>
+  <div id="qs"></div>
+</div>
+
+<div class="dock"><div class="dock-in"><span class="ans" id="ans"></span><button class="btn" id="copy" type="button">Kopyala</button><small>Bu satırı bana yaz.</small></div></div>
+
+<script>
+(function () {
+  var P = {
+    user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>', lock:'<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    face:'<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 9v1M15 9v1M9.5 15a3.5 3.5 0 0 0 5 0M12 9v4h-1"/>',
+    chevR:'<path d="m9 18 6-6-6-6"/>', search:'<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>', bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+    list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>', bed:'<path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9"/>', act:'<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+    ok:'<path d="M20 6 9 17l-5-5"/>', moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>', del:'<path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m18 9-6 6M12 9l6 6"/>'
+  };
+  function I(n) { return '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + P[n] + "</svg>"; }
+  var SB = function (dark) { return '<div class="sb" style="color:' + (dark ? "#fff" : "#152231") + '"><span>21:42</span><i></i><span>5G ▮</span></div>'; };
+  var BEDS = '<div class="bedg"><span>REA01<b>96</b></span><span>REA02<b>94</b></span><span class="c">REA03<b>86</b></span><span>REA04<b>98</b></span></div>';
+
+  /* ---------- 1. giriş ekranı ---------- */
+  var LOG = {
+    A:{ n:"Koyu marka zemini", s:"Tam ekran koyu petrol zemin, büyük logo; form alttan açılan beyaz bir kartta. Güçlü, kurumsal; bankacılık uygulamalarının dili.", rec:1,
+      h:function () { return '<div class="scr dk" style="background:radial-gradient(120% 70% at 20% 0%, #0f5b70, #062530 55%, #04161e)">' + SB(1) +
+        '<div style="padding:22px 20px 0;flex:1"><div class="logo"><i>h</i><span><b>homunculus</b><small>Klinik Xəstəxana</small></span></div><h3 style="font-size:23px;margin:22px 0 6px;line-height:1.15">Yoğun bakım,<br><span style="color:#5eead4">tek bakışta.</span></h3><p style="margin:0;font-size:11.5px;opacity:.75">Karar hekimindir · veri hastanede kalır</p></div>' +
+        '<div style="background:#fff;color:#152231;border-radius:24px 24px 0 0;padding:16px 16px 18px;display:grid;gap:10px"><div style="display:flex;justify-content:space-between;align-items:center"><b style="font:700 17px Space Grotesk">Giriş</b><span class="chipf" style="border:1px solid #e1e6ee"><i class="flag"></i>AZ</span></div>' +
+        '<div class="fld"><span>Kullanıcı adı</span><div>' + I("user") + '&nbsp; hs.sevda</div></div><div class="fld"><span>Şifre</span><div>' + I("lock") + '&nbsp; ••••••••</div></div><div class="bt p">Giriş yap ' + I("chevR") + '</div><div class="bt g">' + I("face") + ' Face ID ile gir</div></div></div>'; } },
+    B:{ n:"Canlı birim önizlemesi", s:"Üstte ürünün kendisi: canlı yatak kartları, REA03 kötüleşiyor. Altında kısa form. Açan kişi ne kullanacağını ilk saniyede görür.",
+      h:function () { return '<div class="scr" style="background:linear-gradient(180deg,#dff3f8,#f5f8fb 45%)">' + SB() +
+        '<div style="padding:10px 16px 0;display:grid;gap:12px"><div style="display:flex;justify-content:space-between;align-items:center"><div class="logo"><i>h</i><span><b>homunculus</b><small>Klinik Xəstəxana</small></span></div><span class="chipf" style="background:#fff;border:1px solid #e1e6ee"><i class="flag"></i>AZ</span></div>' +
+        '<div style="background:#fff;border:1px solid #e1e6ee;border-radius:16px;padding:9px;box-shadow:0 10px 24px rgba(14,116,144,.12)"><div style="display:flex;justify-content:space-between;font:700 9.5px Figtree;color:#5c6b7d;margin-bottom:6px"><span>● Erişkin YB · canlı</span><span class="mono">21:42</span></div>' + BEDS + '<div style="margin-top:7px;font:800 10px Figtree;color:#dc2626">REA03 · 3 dk yanıt yok → sorumlu hemşire</div></div>' +
+        '<h3 style="font-size:20px;margin-top:4px">Tekrar hoş geldiniz</h3><div class="fld"><span>Kullanıcı adı</span><div>hs.sevda</div></div><div class="fld"><span>Şifre</span><div>••••••••</div></div><div class="bt p">Giriş yap ' + I("chevR") + '</div><div class="lnk">Hastane hesabıyla giriş (LDAP)</div></div></div>'; } },
+    C:{ n:"Renkli başlık bandı", s:"Üstte petrol rengi bir bant ve beyaz logo; altında büyük alanlı, sade form. Temiz ve hızlı; en az dikkat dağıtan.",
+      h:function () { return '<div class="scr" style="background:#fff"><div style="background:linear-gradient(135deg,#0e7490,#0b5c73);color:#fff;padding-bottom:26px;border-radius:0 0 26px 26px">' + SB(1) +
+        '<div style="padding:12px 20px 0;display:flex;justify-content:space-between;align-items:center"><div class="logo"><i style="background:#fff;color:#0e7490">h</i><span><b>homunculus</b><small>Klinik Xəstəxana</small></span></div><span class="chipf" style="background:rgba(255,255,255,.18)"><i class="flag"></i>AZ</span></div></div>' +
+        '<div style="padding:22px 18px;display:grid;gap:12px"><h3 style="font-size:24px">Giriş yap</h3><p style="margin:-6px 0 2px;color:#5c6b7d;font-size:11.5px">Kurumsal kullanıcı adınız ve şifrenizle</p><div class="fld"><span>Kullanıcı adı</span><div style="height:48px">hs.sevda</div></div><div class="fld"><span>Şifre</span><div style="height:48px">••••••••</div></div><div class="bt p" style="height:50px">Giriş yap ' + I("chevR") + '</div><div class="lnk">Hastane hesabıyla giriş (LDAP)</div></div></div>'; } }
+  };
+
+  /* ---------- 2. renk yoğunluğu (Bana ekranı) ---------- */
+  function bana(o) {
+    return '<div class="scr" style="background:' + o.bg + ';color:' + o.ink + '">' + SB(o.darkTop) +
+      '<div style="background:' + o.topBg + ';padding:4px 12px 9px;display:flex;gap:7px;align-items:center;' + (o.topLine || "") + '"><span class="srch" style="background:' + o.srchBg + ';color:' + o.srchFg + ';border:' + o.srchBd + '">' + I("search") + 'Hasta, yatak ara</span><span class="ib" style="background:' + o.srchBg + ';color:' + o.topFg + ';border:' + o.srchBd + '">' + I("bell") + '<span class="bd">4</span></span></div>' +
+      '<div style="flex:1;padding:10px 12px;overflow:hidden"><b style="font:700 17px Space Grotesk">Sevda</b>' +
+      '<div class="hero" style="margin-top:8px;background:' + o.heroBg + ';border:' + o.heroBd + ';color:' + o.heroFg + '"><div class="t" style="color:' + o.heroK + '"><span>Kritik · size düştü</span><span class="mono">7:42</span></div><h4>REA01</h4><p style="opacity:.85">MAP 51 · laktat 4.1</p>' +
+      '<div class="sw" style="background:' + o.swBg + ';color:' + o.swFg + '"><i style="background:' + o.knob + ';color:' + o.knobFg + '">' + I("ok") + '</i>Gördüm · sağa kaydırın</div></div>' +
+      '<div class="rw" style="background:' + o.card + ';border:' + o.cardBd + '"><span class="tm" style="opacity:.6">2:42</span><span class="br" style="background:#ea580c"></span><span><b>REA02 · SpO₂ 86</b><small>3 dakikadır</small></span></div>' +
+      '<div class="rw" style="background:' + o.card + ';border:' + o.cardBd + '"><span class="tm" style="opacity:.6">22:00</span><span class="br" style="background:#cbd3de"></span><span><b>Seftriakson 2 g IV</b><small>REA01</small></span></div></div>' +
+      '<div class="tb" style="background:' + o.tbBg + ';border-top:' + o.tbBd + '"><span class="fab" style="background:' + o.fab + ';color:#fff;box-shadow:0 0 0 5px ' + o.bg + ', 0 8px 18px rgba(0,0,0,.2)">' + I("act") + '</span>' +
+      '<a style="color:' + (o.onLbl || o.on) + '"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:' + o.on + ';background:' + o.onBg + '">' + P.list + '</svg>Bana</a><a style="color:' + o.off + '">' + I("bed") + 'Hastalar</a><a style="color:' + o.off + '"><span style="height:25px"></span>Ölç</a><a style="color:' + o.off + '">' + I("bell") + 'Bildirim</a><a style="color:' + o.off + '">' + I("user") + 'Ben</a></div></div>';
+  }
+  var COL = {
+    A:{ n:"Sakin (bugünkü)", s:"Gri zemin, soluk kartlar, ince vurgular. Uzun süre bakmaya uygun ama telefonda sönük kalıyor.",
+      h:function () { return bana({ bg:"#eef0f3", ink:"#152231", topBg:"#fff", topFg:"#152231", topLine:"border-bottom:1px solid #e1e6ee", srchBg:"#f1f4f8", srchFg:"#8a97a8", srchBd:"1px solid #e1e6ee", heroBg:"#fdecec", heroBd:"1px solid #f3b4b4", heroFg:"#152231", heroK:"#dc2626", swBg:"#e0f2f7", swFg:"#0e7490", knob:"#0e7490", knobFg:"#fff", card:"#fff", cardBd:"1px solid #e1e6ee", tbBg:"#fff", tbBd:"1px solid #e1e6ee", fab:"#0e7490", on:"#0e7490", onBg:"#e0f2f7", off:"#5c6b7d" }); } },
+    B:{ n:"Canlı petrol", s:"Üst çubuk marka renginde, kritik kart dolu kırmızı, seçili sekme koyu dolgu. Uzaktan bakınca durum rengiyle okunur.", rec:1,
+      h:function () { return bana({ bg:"#f3f7fa", ink:"#10202e", darkTop:1, topBg:"linear-gradient(135deg,#0e7490,#0b5c73)", topFg:"#fff", srchBg:"rgba(255,255,255,.16)", srchFg:"#d8eef4", srchBd:"1px solid rgba(255,255,255,.2)", heroBg:"linear-gradient(135deg,#dc2626,#b91c1c)", heroBd:"0", heroFg:"#fff", heroK:"#ffe1e1", swBg:"rgba(255,255,255,.2)", swFg:"#fff", knob:"#fff", knobFg:"#b91c1c", card:"#fff", cardBd:"1px solid #dbe4ec", tbBg:"#fff", tbBd:"1px solid #dbe4ec", fab:"#0e7490", on:"#fff", onLbl:"#0e7490", onBg:"#0e7490", off:"#44576a" }); } },
+    C:{ n:"Yüksek karşıtlık", s:"Koyu üst ve alt çubuk, bembeyaz içerik, kalın kenarlar. Güneşte ve eldivenle en okunur; en sert görünen.",
+      h:function () { return bana({ bg:"#ffffff", ink:"#0b1520", darkTop:1, topBg:"#0b1520", topFg:"#fff", srchBg:"#1b2735", srchFg:"#9fb0c2", srchBd:"1px solid #2a3a4d", heroBg:"#fff", heroBd:"2px solid #dc2626", heroFg:"#0b1520", heroK:"#dc2626", swBg:"#0b1520", swFg:"#fff", knob:"#22b8d6", knobFg:"#0b1520", card:"#fff", cardBd:"1.5px solid #0b1520", tbBg:"#0b1520", tbBd:"0", fab:"#22b8d6", on:"#0b1520", onLbl:"#22b8d6", onBg:"#22b8d6", off:"#9fb0c2" }); } }
+  };
+
+  /* ---------- 3. hızlı dönüş ---------- */
+  var BACK = {
+    A:{ n:"Face ID / parmak izi", s:"İlk girişten sonra \"Sevda olarak devam et\"; telefonun kendi yüz ya da parmak izi kilidiyle açılır. En hızlı; şifre yazılmaz.", rec:1,
+      h:function () { return '<div class="scr" style="background:radial-gradient(120% 70% at 20% 0%, #0f5b70, #062530 60%)">' + SB(1) + '<div style="flex:1;display:grid;place-items:center;text-align:center;color:#fff;padding:20px"><div><div style="width:78px;height:78px;border-radius:24px;background:rgba(255,255,255,.12);display:grid;place-items:center;margin:0 auto 16px">' + I("face").replace('class="i"', 'class="i" style="width:40px;height:40px"') + '</div><b style="font:700 19px Space Grotesk;display:block">Sevda olarak devam et</b><small style="opacity:.7">Sorumlu hemşire · Erişkin YB</small><div class="bt p" style="margin:22px 0 10px;background:#22b8d6;color:#03141c">Face ID ile aç</div><div style="font:700 11.5px Figtree;opacity:.8">Başka hesapla giriş</div></div></div></div>'; } },
+    B:{ n:"4 haneli PIN", s:"İlk girişten sonra kişi kendi PIN'ini seçer; her açılışta 4 rakam. Face ID olmayan ya da ortak kullanılan telefonlar için.",
+      h:function () { var k = "123456789 0".split(""); return '<div class="scr" style="background:#f5f8fb">' + SB() + '<div style="padding:26px 0 0;text-align:center"><div class="logo" style="justify-content:center"><i>h</i></div><b style="display:block;font:700 17px Space Grotesk;margin-top:10px">Sevda Q.</b><small style="color:#5c6b7d">PIN girin</small><div class="dots" style="color:#0e7490"><i class="f"></i><i class="f"></i><i></i><i></i></div></div><div class="pin">' + k.map(function (x) { return x === " " ? "<span></span>" : '<span style="background:#fff;border:1px solid #e1e6ee">' + x + "</span>"; }).join("") + '<span style="color:#5c6b7d">' + I("del") + "</span></div></div>"; } },
+    C:{ n:"Her seferinde şifre", s:"Hatırlama yok; her açılışta kullanıcı adı ve şifre. En sıkı, en yavaş. Nöbette telefonu günde onlarca kez açan hemşire için yorucu.",
+      h:function () { return '<div class="scr" style="background:#fff">' + SB() + '<div style="padding:40px 18px;display:grid;gap:12px"><div class="logo"><i>h</i><span><b>homunculus</b></span></div><h3 style="font-size:22px;margin-top:10px">Giriş yap</h3><div class="fld"><span>Kullanıcı adı</span><div></div></div><div class="fld"><span>Şifre</span><div></div></div><div class="bt p">Giriş yap</div><small style="color:#5c6b7d;text-align:center">Oturum 15 dk hareketsizlikte kapanır</small></div></div>'; } }
+  };
+
+  var st = { log:"A", col:"B", back:"A" };
+  try { var sv = JSON.parse(localStorage.getItem("hmc.mobilGiris") || "{}"); ["log", "col", "back"].forEach(function (k) { if (sv[k]) st[k] = sv[k]; }); } catch (e) {}
+  var QS = [
+    ["log", "Giriş ekranı (telefon)", "Uygulamayı açan herkesin ilk gördüğü ekran. Bugünkü: soluk ve üst üste biniyor.", LOG,
+      "<b>Önerim A.</b> Telefonda giriş ekranı tek iş yapar: hızlı ve güvenle içeri almak. Koyu marka zemini ilk saniyede \"ciddi bir klinik araç\" der ve beyaz kart formu öne çıkarır. B güzel ama canlı veri giriş öncesi görünmemeli: hasta verisi değil, yine de yanlış mesaj verebilir."],
+    ["col", "Renk yoğunluğu (bütün telefon ekranları)", "Aynı \"Bana\" ekranı, üç renk yoğunluğunda. Seçilen, uygulamanın tamamına uygulanır.", COL,
+      "<b>Önerim B.</b> Solgunluğun sebebi, zemin, kart ve vurgunun hep aynı açık tonda olması. B'de renk yalnız anlam taşıyan yerde yoğun: marka çubuğu, kritik kart, seçili sekme. Gerisi sade kalır. C güneşte en iyisi ama sürekli sert görünür."],
+    ["back", "Hızlı dönüş (ikinci açılıştan sonra)", "Verimin asıl kaynağı: nöbette telefon günde onlarca kez açılıyor.", BACK,
+      "<b>Önerim A, B ile yedekli.</b> Face ID ya da parmak izi olan telefonda tek bakış; olmayanda PIN. Web uygulamasında bu, telefonun kendi \"geçiş anahtarı\" (passkey) ile yapılır; iPhone Safari ve Android Chrome destekliyor. Gerçek üründe sunucu tarafı gerekir, prototipte canlandırma olur. Hastanenin güvenlik politikası C'yi zorunlu kılabilir: <b>bunu hastaneye sormak gerekiyor</b>."]
+  ];
+  function render() {
+    document.getElementById("qs").innerHTML = QS.map(function (q, qi) {
+      return '<section class="q"><div class="q-h"><span class="n">' + (qi + 1) + "</span><h2>" + q[1] + "</h2><p>" + q[2] + '</p></div><div class="opts">' +
+        Object.keys(q[3]).map(function (k) { var o = q[3][k]; return '<button type="button" class="opt' + (st[q[0]] === k ? " on" : "") + '" data-q="' + q[0] + '" data-k="' + k + '"><div class="opt-h"><span class="k">' + k + "</span><b>" + o.n + "</b>" + (o.rec ? '<span class="rec">önerim</span>' : "") + "</div><p>" + o.s + '</p><div class="ph">' + o.h() + "</div></button>"; }).join("") +
+        '</div><div class="why">' + q[4] + "</div></section>";
+    }).join("");
+    document.getElementById("ans").textContent = "Mobil giriş: " + st.log + " · renk " + st.col + " · dönüş " + st.back;
+  }
+  document.addEventListener("click", function (e) {
+    var o = e.target.closest(".opt"); if (o) { st[o.dataset.q] = o.dataset.k; try { localStorage.setItem("hmc.mobilGiris", JSON.stringify(st)); } catch (x) {} return render(); }
+    var b = e.target.closest("[data-seg] button"); if (b) { b.parentNode.querySelectorAll("button").forEach(function (x) { x.classList.toggle("on", x === b); }); document.documentElement.setAttribute("data-theme", b.dataset.v); return; }
+    if (e.target.closest("#copy")) { var c = e.target.closest("#copy"); try { navigator.clipboard.writeText(document.getElementById("ans").textContent); c.textContent = "Kopyalandı"; setTimeout(function () { c.textContent = "Kopyala"; }, 1400); } catch (x) {} }
+  });
+  render();
+})();
+</script>
+</body>
+</html>

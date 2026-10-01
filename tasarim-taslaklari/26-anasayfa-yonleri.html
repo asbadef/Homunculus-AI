@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ana sayfa ve yönetim · seçenekler</title>
+<!-- 30.09.2026 · Taslak 26 · istekler #266–#276 · plan: is-plani-2026-09-30.md
+     Bu sayfa yalnız ÖNERİ. anasayfa/index.html ve app/ içinde hiçbir şey değişmedi. -->
+<style>
+:root{
+  --bg:#f4f6f8; --card:#fff; --ink:#0f1c24; --mute:#5b6b76; --line:#e2e8ee; --line2:#cfd8e0;
+  --pri:#0e7490; --priSoft:#e0f2f6; --ok:#16a34a; --warn:#d97706; --crit:#dc2626; --vio:#7c3aed;
+  --shadow:0 10px 30px -12px rgba(15,28,36,.18);
+}
+:root[data-theme="dark"]{
+  --bg:#0b1419; --card:#111d24; --ink:#e6eef2; --mute:#93a4ae; --line:#1f2f38; --line2:#2b3e49;
+  --pri:#22b8d6; --priSoft:#0f2f38; --shadow:0 10px 30px -12px rgba(0,0,0,.6);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,Segoe UI,sans-serif}
+.mono{font-family:ui-monospace,Consolas,monospace}
+button{font:inherit;cursor:pointer}
+
+/* üst araç çubuğu */
+.bar{position:sticky;top:0;z-index:20;background:var(--card);border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;padding:10px 16px;flex-wrap:wrap}
+.bar h1{font-size:15px;margin:0 12px 0 0}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:10px;overflow:hidden}
+.seg button{border:0;background:transparent;color:var(--ink);padding:6px 12px}
+.seg button.on{background:var(--pri);color:#fff}
+.note-top{font-size:13px;color:var(--mute);margin-left:auto}
+
+.page{max-width:1340px;margin:0 auto;padding:20px 16px 120px}
+.block{margin:28px 0 44px}
+.block>h2{font-size:22px;margin:0 0 4px}
+.block>.ask{color:var(--mute);margin:0 0 14px}
+.opts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.opt{border:1px solid var(--line2);background:var(--card);color:var(--ink);border-radius:999px;padding:7px 14px}
+.opt.on{border-color:var(--pri);background:var(--priSoft);color:var(--pri);font-weight:600}
+.opt .rec{font-size:11px;background:var(--ok);color:#fff;border-radius:6px;padding:1px 6px;margin-left:6px}
+
+.why{border-left:3px solid var(--pri);background:var(--card);border-radius:0 10px 10px 0;padding:10px 14px;margin-top:12px;font-size:14px}
+.why b{color:var(--pri)}
+
+/* önizleme çerçevesi: masaüstü 1280 / telefon 390 */
+.frame{container-type:inline-size;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;margin:0 auto;position:relative;transition:max-width .25s}
+body[data-dev="desk"] .frame{max-width:1280px}
+body[data-dev="phone"] .frame{max-width:390px}
+.fold{position:absolute;left:0;right:0;border-top:2px dashed var(--crit);pointer-events:none}
+.fold span{position:absolute;right:8px;top:-22px;font-size:11px;color:var(--crit);background:var(--card);padding:0 6px;border-radius:4px}
+
+/* sahte site başlığı */
+.shdr{display:flex;align-items:center;gap:18px;padding:14px 32px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;font-weight:700}
+.mk{width:28px;height:28px;border-radius:8px;background:var(--pri);color:#fff;display:grid;place-items:center;font-weight:800}
+.snav{display:flex;gap:18px;color:var(--mute);font-size:14px}
+.stools{margin-left:auto;display:flex;gap:8px;align-items:center}
+.b{border:1px solid var(--line2);background:var(--card);color:var(--ink);border-radius:10px;padding:8px 14px;font-size:14px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.b.p{background:var(--pri);border-color:var(--pri);color:#fff}
+.b.lg{padding:12px 20px;font-size:15px;border-radius:12px}
+.flag{font-size:13px;color:var(--mute)}
+@container (max-width:600px){ .snav{display:none} .shdr{padding:12px 16px} .hideS{display:none} }
+
+/* kahraman seçenekleri */
+.hero{padding:40px 32px 32px}
+.pill{display:inline-flex;gap:8px;align-items:center;font-size:13px;color:var(--pri);background:var(--priSoft);border-radius:999px;padding:5px 12px}
+.pill i{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.hero h3{font-size:46px;line-height:1.08;letter-spacing:-.02em;margin:14px 0 12px}
+.hero .lead{font-size:18px;color:var(--mute);max-width:640px;margin:0}
+.ctas{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap}
+.chips{display:flex;gap:16px;margin-top:18px;font-size:13px;color:var(--mute);flex-wrap:wrap}
+.chips span::before{content:"✓ ";color:var(--ok);font-weight:700}
+.hA{text-align:center}
+.hA .lead{margin:0 auto}.hA .ctas,.hA .chips{justify-content:center}
+.hB{display:grid;grid-template-columns:1.05fr 1fr;gap:36px;align-items:center}
+.hC{background:#0b1419;color:#e6eef2;border-radius:0}
+.hC .lead{color:#93a4ae}.hC .pill{background:#0f2f38;color:#22b8d6}
+@container (max-width:600px){
+  .hero{padding:24px 16px}.hero h3{font-size:30px}.hero .lead{font-size:16px}
+  .hB{grid-template-columns:1fr}.ctas .b{flex:1;justify-content:center}
+}
+
+/* canlı birim sahnesi */
+.scene{border:1px solid var(--line);border-radius:16px;padding:14px;background:var(--bg);text-align:left}
+.hC .scene{background:#111d24;border-color:#1f2f38}
+.sc-h{display:flex;justify-content:space-between;font-size:12px;color:var(--mute);margin-bottom:10px}
+.beds{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.bed{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px;font-size:12px}
+.hC .bed{background:#0b1419;border-color:#1f2f38}
+.bed b{display:block;font-size:12px}.bed span{color:var(--mute)}
+.bed.crit{border-color:var(--crit);box-shadow:0 0 0 3px color-mix(in srgb,var(--crit) 18%,transparent)}
+.bed.crit span{color:var(--crit);font-weight:700}
+.bed.warn{border-color:var(--warn)}.bed.warn span{color:var(--warn);font-weight:600}
+.hA .scene{margin-top:28px}
+.hB .beds{grid-template-columns:repeat(3,1fr)}
+@container (max-width:600px){ .beds,.hB .beds{grid-template-columns:repeat(3,1fr)} .beds .bed:nth-child(n+7){display:none} }
+
+/* nasıl çalışır seçenekleri */
+.sec{padding:40px 32px}
+.sec .k{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--pri)}
+.sec h4{font-size:30px;margin:6px 0 8px;letter-spacing:-.01em}
+.sec .sub{color:var(--mute);margin:0 0 22px;max-width:640px}
+@container (max-width:600px){ .sec{padding:28px 16px} .sec h4{font-size:24px} }
+
+.tl{position:relative;display:grid;grid-template-columns:repeat(5,1fr);gap:0}
+.tl::before{content:"";position:absolute;left:4%;right:4%;top:22px;height:3px;background:var(--line2);border-radius:2px}
+.tl .run{position:absolute;left:4%;top:22px;height:3px;background:var(--pri);border-radius:2px;width:0;animation:run 7s linear infinite}
+@keyframes run{0%{width:0}85%,100%{width:92%}}
+.ev{position:relative;text-align:center;padding:0 6px}
+.ev .dot{width:46px;height:46px;border-radius:50%;margin:0 auto 10px;display:grid;place-items:center;background:var(--card);border:3px solid var(--line2);font-size:18px;position:relative;z-index:1}
+.ev.c .dot{border-color:var(--crit)}.ev.w .dot{border-color:var(--warn)}.ev.o .dot{border-color:var(--ok)}.ev.p .dot{border-color:var(--pri)}
+.ev time{font-weight:700;font-size:13px}
+.ev b{display:block;margin:2px 0}
+.ev small{color:var(--mute);font-size:13px}
+@container (max-width:700px){
+  .tl{grid-template-columns:1fr;gap:14px}.tl::before{left:22px;right:auto;top:10px;bottom:10px;width:3px;height:auto}
+  .tl .run{display:none}
+  .ev{display:grid;grid-template-columns:46px 1fr;gap:12px;text-align:left;align-items:center}.ev .dot{margin:0}
+}
+.roles3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.rc{border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--bg)}
+.rc h5{margin:0 0 8px;font-size:16px}
+.rc .ln{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-top:1px solid var(--line)}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+@container (max-width:700px){ .roles3{grid-template-columns:1fr} }
+.ba{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.ba>div{border-radius:14px;padding:18px;border:1px solid var(--line)}
+.ba .bef{background:var(--bg)}.ba .aft{background:var(--priSoft);border-color:var(--pri)}
+.ba h5{margin:0 0 10px}.ba li{margin:6px 0}
+@container (max-width:700px){ .ba{grid-template-columns:1fr} }
+
+/* güven */
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.gc{border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--card)}
+.gc .ic{width:36px;height:36px;border-radius:10px;background:var(--priSoft);color:var(--pri);display:grid;place-items:center;font-weight:800;margin-bottom:10px}
+.gc h5{margin:0 0 6px;font-size:15px}.gc p{margin:0;color:var(--mute);font-size:14px}
+.gc .no{margin-top:10px;font-size:13px;color:var(--crit)}
+@container (max-width:900px){ .g4{grid-template-columns:1fr 1fr} }
+@container (max-width:520px){ .g4{grid-template-columns:1fr} }
+.facts{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.facts>div{padding:18px;border-right:1px solid var(--line)}.facts>div:last-child{border:0}
+.facts small{color:var(--mute);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.facts b{display:block;font-size:17px;margin-top:4px}
+@container (max-width:700px){ .facts{grid-template-columns:1fr 1fr}.facts>div{border-bottom:1px solid var(--line)} }
+
+/* mobil yakında */
+.mob{display:grid;grid-template-columns:1.1fr .9fr;gap:30px;align-items:center}
+.mob ul{padding:0;list-style:none;margin:0 0 20px}
+.mob li{padding:8px 0;border-bottom:1px solid var(--line);display:flex;gap:10px}
+.mob li b{color:var(--pri)}
+.stores{display:flex;gap:10px;flex-wrap:wrap}
+.store{border:1px solid var(--line2);border-radius:10px;padding:8px 14px;font-size:13px;display:flex;flex-direction:column;line-height:1.2;opacity:.8}
+.store small{color:var(--mute);font-size:11px}
+.phone{width:230px;height:460px;border-radius:36px;border:8px solid #0f1c24;background:var(--bg);margin:0 auto;position:relative;overflow:hidden;box-shadow:var(--shadow)}
+.phone .isl{width:80px;height:20px;background:#0f1c24;border-radius:12px;margin:8px auto}
+.phone .push{margin:8px;background:var(--card);border-radius:14px;padding:10px;font-size:12px;box-shadow:var(--shadow)}
+.phone .push b{color:var(--crit)}
+.phone .hero2{margin:8px;border-radius:14px;padding:12px;background:#fee2e2;color:#7f1d1d;font-size:13px}
+.phone .row{margin:6px 8px;background:var(--card);border-radius:10px;padding:8px 10px;font-size:12px;display:flex;justify-content:space-between}
+.imgslot{font-size:12px;color:var(--mute);text-align:center;margin-top:8px}
+.mobB{background:#0b1419;color:#e6eef2;border-radius:18px;padding:30px;display:grid;grid-template-columns:1fr auto;gap:24px;align-items:center}
+.mobB p{color:#93a4ae}
+.mobB input{border:1px solid #2b3e49;background:#111d24;color:#e6eef2;border-radius:10px;padding:10px 12px;min-width:0;flex:1}
+.mobB .f{display:flex;gap:8px;max-width:420px}
+@container (max-width:700px){ .mob,.mobB{grid-template-columns:1fr} .phone{transform:scale(.85)} }
+
+/* yönetim */
+.adm{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.ac{border:1px solid var(--line);border-radius:14px;padding:14px;background:var(--card);position:relative}
+.ac h5{margin:0 0 4px;font-size:15px}.ac p{margin:0 0 10px;font-size:13px;color:var(--mute)}
+.ac label{position:absolute;top:12px;right:12px;font-size:12px;display:flex;gap:4px;align-items:center}
+.mini{border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:8px;font-size:12px}
+.mini .r{display:flex;justify-content:space-between;padding:3px 0;gap:8px}
+.st{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:6px}
+.ok{background:var(--ok)}.wa{background:var(--warn)}.cr{background:var(--crit)}
+.have{font-size:13px;color:var(--mute);margin:0 0 12px}
+
+/* cevap satırı */
+.answer{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--card);border-top:1px solid var(--line);padding:10px 16px;display:flex;gap:10px;align-items:center}
+.answer code{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;overflow:auto;white-space:nowrap}
+</style>
+</head>
+<body data-dev="desk">
+
+<div class="bar">
+  <h1>Ana sayfa + Yönetim · seçenekler</h1>
+  <span class="seg" data-g="dev"><button data-v="desk" class="on">Masaüstü</button><button data-v="phone">Telefon</button></span>
+  <span class="seg" data-g="theme"><button data-v="light" class="on">Açık</button><button data-v="dark">Koyu</button></span>
+  <span class="note-top">Bu sayfa yalnız öneri — ana sayfada ve uygulamada henüz hiçbir şey değişmedi.</span>
+</div>
+
+<div class="page">
+
+<!-- 1. İLK AÇILIŞ -->
+<section class="block" data-q="hero">
+  <h2>1 · İlk açılış (tek ekrana sığsın)</h2>
+  <p class="ask">Kırmızı kesikli çizgi = laptop ekranının altı (1280×720). Her şey çizginin üstünde kalmalı.</p>
+  <div class="opts">
+    <button class="opt on" data-v="H-A">H-A · Ortada başlık, altta canlı birim<span class="rec">önerim</span></button>
+    <button class="opt" data-v="H-B">H-B · Bugünkü düzen, sıkıştırılmış</button>
+    <button class="opt" data-v="H-C">H-C · Koyu, monitör duvarı havası</button>
+  </div>
+  <div class="frame" data-heroframe>
+    <div class="shdr">
+      <span class="brand"><span class="mk">h</span>homunculus</span>
+      <nav class="snav"><span>Nasıl çalışır</span><span>Ekranlar</span><span>Güven</span><span>Mobil</span></nav>
+      <span class="stools"><span class="flag hideS">AZ ▾</span><span class="hideS" data-pilotslot></span><span class="b p">Giriş</span></span>
+    </div>
+    <div data-hero></div>
+    <div class="fold" data-fold style="top:720px"><span>ekranın altı · 720 px</span></div>
+  </div>
+  <div class="why" data-why="hero"></div>
+
+  <h2 style="font-size:17px;margin:26px 0 4px">1b · Sağ üstteki "Pilot"</h2>
+  <p class="ask">Önizleme yukarıdaki başlıkta değişir.</p>
+  <div class="opts" data-q2="pilot">
+    <button class="opt on" data-v="P-A">P-A · "Tanışalım" (görüşme isteği)<span class="rec">önerim</span></button>
+    <button class="opt" data-v="P-B">P-B · Kaldır, yalnız "Giriş" kalsın</button>
+    <button class="opt" data-v="P-C">P-C · "İletişim"</button>
+  </div>
+  <div class="why" data-why="pilot"></div>
+
+  <h2 style="font-size:17px;margin:26px 0 4px">1c · Başlığın altındaki metin</h2>
+  <div class="opts" data-q2="lead">
+    <button class="opt on" data-v="L1">L1 · Ne yaptığını söyler<span class="rec">önerim</span></button>
+    <button class="opt" data-v="L2">L2 · Sorudan başlar</button>
+    <button class="opt" data-v="L3">L3 · Ekibi öne koyar</button>
+  </div>
+  <div class="why" data-why="lead"></div>
+</section>
+
+<!-- 2. NASIL ÇALIŞIR -->
+<section class="block" data-q="how">
+  <h2>2 · "Cihazdan doğru kişiye — üç adımda" yerine</h2>
+  <p class="ask">Bugünkü üç kart + küçük çizimler kalkıyor. Yerine:</p>
+  <div class="opts">
+    <button class="opt on" data-v="N-A">N-A · "Bir değer bozulduğunda ne olur?" canlı zaman çizelgesi<span class="rec">önerim</span></button>
+    <button class="opt" data-v="N-B">N-B · Kim ne görür (hemşire / hekim / yönetim)</button>
+    <button class="opt" data-v="N-C">N-C · Bugün / Homunculus ile</button>
+  </div>
+  <div class="frame"><div data-how></div></div>
+  <div class="why" data-why="how"></div>
+</section>
+
+<!-- 3. GÜVEN -->
+<section class="block" data-q="trust">
+  <h2>3 · "Güven, tasarımın içinde" yerine</h2>
+  <div class="opts">
+    <button class="opt on" data-v="G-A">G-A · Dört somut söz (yapar / yapmaz)<span class="rec">önerim</span></button>
+    <button class="opt" data-v="G-B">G-B · Tek satır bilgi şeridi</button>
+  </div>
+  <div class="frame"><div data-trust></div></div>
+  <div class="why" data-why="trust"></div>
+</section>
+
+<!-- 4. MOBİL YAKINDA -->
+<section class="block" data-q="mob">
+  <h2>4 · Yeni bölüm: Mobil uygulama yakında</h2>
+  <p class="ask">Telefon çizimi yer tutucu; yön seçilince yerine Higgsfield ile gerçek görsel üretilecek (≈0,25 kredi/görsel).</p>
+  <div class="opts">
+    <button class="opt on" data-v="M-A">M-A · Açık bölüm, telefon + 3 madde + mağaza rozetleri<span class="rec">önerim</span></button>
+    <button class="opt" data-v="M-B">M-B · Koyu şerit + "çıkınca haber ver"</button>
+  </div>
+  <div class="frame"><div data-mob></div></div>
+  <div class="why" data-why="mob"></div>
+</section>
+
+<!-- 5. YÖNETİM -->
+<section class="block">
+  <h2>5 · Yönetim paneline eklenecekler</h2>
+  <p class="have"><b>Bugün var:</b> Kullanıcılar · Roller · Hastane yapısı · Entegrasyonlar · Kamera · Bildirim kuralları · Bakım kataloğu · Telefon modülleri · Sistem ayarları · Denetim kaydı. Aşağıdakiler <b>yok</b> — istediklerini işaretle.</p>
+  <div class="adm" data-adm></div>
+  <div class="why"><b>Neden böyle?</b> "Tüm sistemlere rahat ulaşayım, loglayayım" iki ayrı ihtiyaç: <b>Y1 Sistem durumu</b> ne çalışıyor/ne durdu sorusunu, <b>Y2 Olay günlüğü</b> sistemin ne yaşadığını cevaplar. Bugünkü <i>Denetim kaydı</i> ise kimin ne yaptığını tutar — bu üçü karışırsa hiçbiri okunmaz. <b>Y3 Veri bütünlüğü</b>, bu turdaki "kaybolan veri var mı" sorusunu kalıcı bir ekrana çevirir: soruyu bir kez değil her gün sorar.</div>
+</section>
+
+</div>
+
+<div class="answer">
+  <b>Cevap satırı:</b><code data-ans></code><button class="b p" data-copy>Kopyala</button>
+</div>
+
+<script>
+const S = { hero:"H-A", pilot:"P-A", lead:"L1", how:"N-A", trust:"G-A", mob:"M-A", adm:new Set(["Y1","Y2","Y3"]) };
+
+const LEAD = {
+  L1:"Monitörden gelen ölçümü okur, kötüleşmeyi erken fark eder ve doğru kişiye haber verir. Karar hekimindir.",
+  L2:"Gece 03:00'te bir değer bozulduğunda kim, ne zaman, neden haberdar oldu? Homunculus bunu tek ekranda gösterir.",
+  L3:"Hemşire, sorumlu hemşire, hekim ve yönetim aynı hastaya aynı anda, aynı veriyle bakar."
+};
+const PILOT = { "P-A":'<span class="b">Tanışalım</span>', "P-B":"", "P-C":'<span class="b">İletişim</span>' };
+const CTA1 = { "P-A":"Tanışalım", "P-B":"Görüşme isteyin", "P-C":"Bize yazın" };
+
+function beds(n){
+  const d=[["REA01","stabil",""],["REA02","stabil",""],["REA03","SpO₂ 86","crit"],["REA04","stabil",""],["REA05","NEWS2 5","warn"],["REA06","stabil",""],
+           ["REA07","boş",""],["REA08","stabil",""],["REA09","stabil",""],["REA10","ateş 38,4","warn"],["REA11","stabil",""],["REA12","stabil",""]];
+  return d.slice(0,n).map(b=>`<div class="bed ${b[2]}"><b class="mono">${b[0]}</b><span>${b[1]}</span></div>`).join("");
+}
+function scene(n){ return `<div class="scene"><div class="sc-h"><span>● Reanimasyon · 12 yatak</span><span class="mono">21:40</span></div><div class="beds">${beds(n)}</div></div>`; }
+
+function heroHTML(){
+  const lead = LEAD[S.lead], c1 = CTA1[S.pilot];
+  const top = `<span class="pill"><i></i>Yoğun bakım için klinik karar desteği</span>`;
+  const btn = `<div class="ctas"><span class="b p lg">${c1} →</span><span class="b lg">Ekranları görün</span></div>`;
+  const chips = `<div class="chips"><span>Kararı hekim verir</span><span>Veri hastanede kalır</span><span>Şifreli bağlantı</span></div>`;
+  if (S.hero==="H-A") return `<div class="hero hA">${top}<h3>Kötüleşmeyi erken görür,<br>doğru kişiye haber verir.</h3><p class="lead">${lead}</p>${btn}${chips}${scene(12)}</div>`;
+  if (S.hero==="H-B") return `<div class="hero hB"><div>${top}<h3>Kötüleşmeyi erken görür, doğru kişiye haber verir.</h3><p class="lead">${lead}</p>${btn}${chips}</div>${scene(9)}</div>`;
+  return `<div class="hero hC hA">${top}<h3>Birim uyurken<br>izlemeye devam eder.</h3><p class="lead">${lead}</p>${btn}${chips}${scene(12)}</div>`;
+}
+const WHY = {
+  "H-A":"<b>Neden böyle?</b> Bugünkü sayfada sol yarıda 7 ayrı öğe var (hap, başlık, 2 paragraf, 2 düğme, 3 değer kartı, 3 güven çipi) ve sağda üst üste binen üç süsleme; ekrana sığmıyor ve göz nereye bakacağını bilmiyor. H-A'da sıra tek: <b>başlık → bir cümle → iki düğme → birim</b>. Kenar boşlukları daralır çünkü içerik tam genişliğe yayılır. Hero 3 değer kartı (Hekim/Hemşire/Yönetim) aşağıdaki \"Kim ne görür\"e taşınır.",
+  "H-B":"<b>Neden böyle?</b> Bugünkü düzeni sever ve yalnız sığdırmak istersen: sağdaki yüzen telefon + skor kartı kalkar, 3 değer kartı kalkar, sahne 9 yatağa iner. En az değişiklik; ama yan yana düzen geniş ekranda yine iki yanda boşluk bırakır.",
+  "H-C":"<b>Neden böyle?</b> Gece nöbetini anlatır, akılda kalır. Risk: hastane yöneticisi için fazla \"teknoloji ürünü\" durabilir ve koyu zemin, sayfanın geri kalanıyla kopukluk yaratır.",
+  "P-A":"<b>Neden böyle?</b> \"Pilot\" hastanenin dilinde \"deneme / henüz hazır değil\" demek; alıcıya risk duygusu verir. \"Tanışalım\" aynı yere (görüşme isteği) gider ama bir davet gibi okunur. Alttaki \"Bir birimle başlayalım\" bölümü de \"Tanışalım\" olur.",
+  "P-B":"<b>Neden böyle?</b> Sağ üst sadeleşir. Ama ana sayfanın tek amacı görüşme istemekse, o düğmeyi en görünür yerden kaldırmış oluruz — büyük düğme yalnız başlıkta kalır.",
+  "P-C":"<b>Neden böyle?</b> Herkesin bildiği kelime. Zayıf yanı: ne olacağını söylemez (form mu, e-posta mı, telefon mu).",
+  "L1":"<b>Neden böyle?</b> Üç fiil, üç adım: okur → fark eder → haber verir. Hemen ardından sınır: karar hekimin. Bugünkü metin \"klinik ve operasyonel sistem, birim yönetimi\" diyor — bu, ne yaptığını değil hangi kategoride olduğunu söylüyor.",
+  "L2":"<b>Neden böyle?</b> Başhekim ve başhemşirenin yaşadığı gerçek soruyla başlar. Daha uzun; telefonda 4 satır.",
+  "L3":"<b>Neden böyle?</b> Ekip ürünü olduğunu vurgular. Ama klinik değeri (erken fark etmek) söylemez.",
+  "N-A":"<b>Neden böyle?</b> Bugünkü üç kartın çizimleri soyut ve \"Cihaz / Homunculus / Doğru kişi\" başlıkları bir şey anlatmıyor. Zaman çizelgesi aynı şeyi <b>gerçek dakikalarla</b> gösterir: 21:40'ta ölçüm, aynı dakika hemşireye haber, 3 dk yanıt yoksa sorumlu hemşire, 5. dakikada hekim. Süreler koddaki eskalasyon kuralıyla aynı (3 dk / 5 dk). Telefonda dikey akar.",
+  "N-B":"<b>Neden böyle?</b> Satın alma kararına katılan üç kişinin (hekim, başhemşire, yönetim) her biri kendi satırını bulur. Ama \"nasıl çalışır\" sorusunu cevaplamaz; ikinci bölüm olarak daha iyi durur.",
+  "N-C":"<b>Neden böyle?</b> Farkı en hızlı anlatan yöntem. Risk: \"bugün\" sütunu hastanenin mevcut düzenini eleştiriyor gibi okunabilir.",
+  "G-A":"<b>Neden böyle?</b> \"Güven, tasarımın içinde\" soyut bir slogan; okuyan neye güveneceğini bilmiyor. Dört kart, dört <b>kontrol edilebilir</b> söz verir ve her birinin altında sistemin <b>yapmadığı</b> şey yazar. Hastane yönetimi ve hukuk birimi tam bunu arar. ⚠️ Canlıya almadan önce her söz kodda doğrulanacak — özellikle 2 (motor bugün bulutta da çalışıyor) ve 4.",
+  "G-B":"<b>Neden böyle?</b> Kısa ve teknik; BT müdürü için ideal. Hekim ve başhemşire için duygusu eksik kalır.",
+  "M-A":"<b>Neden böyle?</b> Telefonda yapılacak işler bilerek az (gör, Gördüm, Yapıldı, Eskale, Hekime ulaş — 28.09 kararı). Bölüm de bunu söyler: \"telefonda ne yaparsınız\". Mağaza rozetleri \"yakında\" yazar; bağlantı yok, yanlış beklenti yok.",
+  "M-B":"<b>Neden böyle?</b> Haber-ver kutusu ilgiyi ölçer. Ama bunun için e-posta toplayan bir arka uç ve aydınlatma metni gerekir — bugün yok."
+};
+
+function howHTML(){
+  const head = (h,s) => `<div class="k">Nasıl çalışır</div><h4>${h}</h4><p class="sub">${s}</p>`;
+  if (S.how==="N-A") return `<div class="sec">${head("Bir değer bozulduğunda ne olur?","Gerçek bir örnek: REA03, gece 21:40. Süreler sistemin eskalasyon kuralıdır.")}
+    <div class="tl"><i class="run"></i>
+      <div class="ev c"><div class="dot">♥</div><div><time class="mono">21:40</time><b>Monitör: SpO₂ 86</b><small>Ölçüm kaynağı ve saatiyle gelir</small></div></div>
+      <div class="ev p"><div class="dot">∑</div><div><time class="mono">21:40</time><b>NEWS2 7 hesaplandı</b><small>Gerekçesiyle, hekim onayına</small></div></div>
+      <div class="ev w"><div class="dot">🔔</div><div><time class="mono">21:40</time><b>Hemşireye haber</b><small>Telefonda ve ekranda</small></div></div>
+      <div class="ev w"><div class="dot">↑</div><div><time class="mono">21:43</time><b>Yanıt yok → sorumlu hemşire</b><small>Zincir kendiliğinden ilerler</small></div></div>
+      <div class="ev o"><div class="dot">✓</div><div><time class="mono">21:45</time><b>Hekim gördü, karar verdi</b><small>Hepsi denetim kaydında</small></div></div>
+    </div></div>`;
+  if (S.how==="N-B") return `<div class="sec">${head("Herkes kendi işini görür.","Aynı hasta, aynı veri — role göre farklı ekran.")}
+    <div class="roles3">
+      <div class="rc"><h5>Hemşire</h5><div class="ln"><span>İşlerim</span><b>6 bekleyen</b></div><div class="ln"><span>REA03 kritik</span><b style="color:var(--crit)">Gördüm</b></div><div class="ln"><span>Ağrı değerlendirmesi</span><b>22:00</b></div></div>
+      <div class="rc"><h5>Hekim</h5><div class="ln"><span>Onay bekleyen skor</span><b>NEWS2 7</b></div><div class="ln"><span>Yeni sonuç</span><b>Laktat 3,1</b></div><div class="ln"><span>Eskale edilen</span><b>1</b></div></div>
+      <div class="rc"><h5>Yönetim</h5><div class="ln"><span>Ortalama yanıt</span><b>2 dk 40 sn</b></div><div class="ln"><span>Doluluk</span><b>11 / 12</b></div><div class="ln"><span>Geciken iş</span><b>3</b></div></div>
+    </div></div>`;
+  return `<div class="sec">${head("Aynı gece, iki farklı sonuç.","")}
+    <div class="ba"><div class="bef"><h5>Bugün</h5><ul><li>Alarm çalar, kimin baktığı belli değil</li><li>Skor kâğıtta, vardiya sonunda</li><li>Hekime telefonla, tahminle ulaşılır</li></ul></div>
+    <div class="aft"><h5>Homunculus ile</h5><ul><li>Alarm önce hemşireye, yanıt yoksa bir üst basamağa</li><li>Skor sistemde hazır, hekim onaylar</li><li>Kim ne zaman gördü, kayıtta</li></ul></div></div></div>`;
+}
+
+function trustHTML(){
+  if (S.trust==="G-A") return `<div class="sec"><div class="k">Güven</div><h4>Sınırları baştan belli.</h4><p class="sub">Dört söz. Her biri kurulumda birlikte kontrol edilir.</p>
+    <div class="g4">
+      <div class="gc"><div class="ic">1</div><h5>Haber verir, emir vermez</h5><p>Her uyarının yanında gerekçesi ve kaynağı durur.</p><div class="no">✕ Tanı koymaz, tedavi önermez</div></div>
+      <div class="gc"><div class="ic">2</div><h5>Veri hastanede kalır</h5><p>Sistem hastanenin kendi sunucusunda çalışır.</p><div class="no">✕ Hasta verisi dışarı gönderilmez</div></div>
+      <div class="gc"><div class="ic">3</div><h5>Herkes yalnız işini görür</h5><p>Biyomedikal cihazı, kalite süreci görür — hasta adı görmez.</p><div class="no">✕ Yetkisiz ekran açılmaz</div></div>
+      <div class="gc"><div class="ic">4</div><h5>Her adım kayıtta</h5><p>Kim neyi ne zaman gördü, onayladı, eskale etti.</p><div class="no">✕ Kayıtsız işlem yok</div></div>
+    </div></div>`;
+  return `<div class="sec"><div class="k">Güven</div><h4>Kısaca.</h4><p class="sub"></p>
+    <div class="facts"><div><small>Karar</small><b>Hekimde</b></div><div><small>Veri</small><b>Hastanenin sunucusunda</b></div><div><small>Bağlantı</small><b>Şifreli</b></div><div><small>Kayıt</small><b>Her işlem denetimde</b></div></div></div>`;
+}
+
+function phone(){ return `<div class="phone"><div class="isl"></div>
+  <div class="push"><b>Kritik · REA03</b><br>SpO₂ 86 · 3 dk içinde</div>
+  <div class="hero2"><b>REA03</b> · SpO₂ 86<br>Kaydır → Gördüm</div>
+  <div class="row"><span class="mono">22:00</span><span>Ağrı değerlendirmesi</span></div>
+  <div class="row"><span class="mono">23:00</span><span>Pozisyon</span></div>
+  <div class="row"><span class="mono">23:30</span><span>Sıvı dengesi</span></div></div>`; }
+function mobHTML(){
+  if (S.mob==="M-A") return `<div class="sec"><div class="mob"><div><div class="k">Mobil uygulama · yakında</div><h4>Nöbet cebinizde.</h4><p class="sub">Telefonda yalnız hızlı işler. Formlar ve ayrıntı web panelinde kalır.</p>
+    <ul><li><b>1</b>Kritik uyarı tek dokunuşla: Gördüm, Eskale et</li><li><b>2</b>İşlerim: saati gelen bakım işleri, tamamlananlar</li><li><b>3</b>Hekime ve hasta yakınına tek dokunuşla ulaşın</li></ul>
+    <div class="stores"><span class="store"><small>Yakında</small>App Store</span><span class="store"><small>Yakında</small>Google Play</span></div></div>
+    <div>${phone()}<div class="imgslot">yer tutucu — seçilince gerçek görsel</div></div></div></div>`;
+  return `<div class="sec"><div class="mobB"><div><div class="k" style="color:#22b8d6">Mobil uygulama · yakında</div><h4>Nöbet cebinizde.</h4><p>Kritik uyarı, işleriniz ve ekibiniz — telefonunuzda.</p>
+    <div class="f"><input placeholder="E-posta adresiniz"><span class="b p">Haber ver</span></div></div>${phone()}</div></div>`;
+}
+
+const ADM = [
+  ["Y1","Sistem durumu","Sunucu, cihaz köprüleri, hastane kaydı bağlantısı, bildirim kuyruğu — tek bakışta.",
+    `<div class="r"><span><i class="st ok"></i>Sunucu</span><b>çalışıyor · 12 gün</b></div><div class="r"><span><i class="st ok"></i>Monitör köprüsü (Infinity)</span><b>10/10 yatak</b></div><div class="r"><span><i class="st wa"></i>Hastane kaydı</span><b>son veri 7 dk önce</b></div><div class="r"><span><i class="st ok"></i>Bildirim kuyruğu</span><b>0 bekleyen</b></div>`],
+  ["Y2","Olay günlüğü (log)","Sistemin yaşadıkları: hata, uyarı, bağlantı kopması. Filtre + dışa aktar.",
+    `<div class="r"><span class="mono">21:38</span><span><i class="st cr"></i>REA07 monitör bağlantısı koptu</span></div><div class="r"><span class="mono">21:39</span><span><i class="st ok"></i>REA07 yeniden bağlandı</span></div><div class="r"><span class="mono">21:52</span><span><i class="st wa"></i>Hastane kaydı yanıtı yavaş (4 sn)</span></div>`],
+  ["Y3","Veri bütünlüğü","Bugün modül modül girilen kayıt sayısı; yarım kalan ve eşleşmeyen kayıtlar.",
+    `<div class="r"><span>Ağrı değerlendirmesi</span><b>42 · yarım 1</b></div><div class="r"><span>Hemşire takip</span><b>118</b></div><div class="r"><span>Sıvı dengesi</span><b>36 · eşleşmeyen 2</b></div>`],
+  ["Y4","Açık oturumlar","Kim hangi cihazdan bağlı; kaybolan telefon için uzaktan çıkış.",
+    `<div class="r"><span>hs.sevda · iPhone</span><b>Çıkış yaptır</b></div><div class="r"><span>dr.kamran · Web</span><b>Çıkış yaptır</b></div>`],
+  ["Y5","Duyuru","Tüm kullanıcılara ya da bir birime kısa sistem duyurusu (bakım saati vb.).",
+    `<div class="r"><span>"Bu gece 02:00–02:15 bakım"</span><b>Reanimasyon</b></div>`],
+  ["Y6","Yedek ve geri yükleme","Son yedek ne zaman alındı, başarılı mı; geri yükleme denemesi.",
+    `<div class="r"><span><i class="st ok"></i>Son yedek</span><b>bugün 03:00</b></div><div class="r"><span>Son geri yükleme testi</span><b>14 gün önce</b></div>`],
+  ["Y7","Rol gözüyle bak","Bir rolün ekranını salt okunur önizle; denetim kaydına yazılır.",
+    `<div class="r"><span>Rol seç</span><b>Biyomedikal ▾</b></div><div class="r"><span>Hasta adı görünür mü?</span><b>Hayır ✓</b></div>`]
+];
+function admHTML(){ return ADM.map(a=>`<div class="ac"><label><input type="checkbox" data-y="${a[0]}" ${S.adm.has(a[0])?"checked":""}>istiyorum</label><h5>${a[0]} · ${a[1]}</h5><p>${a[2]}</p><div class="mini">${a[3]}</div></div>`).join(""); }
+
+function render(){
+  document.querySelector("[data-hero]").innerHTML = heroHTML();
+  document.querySelector("[data-pilotslot]").innerHTML = PILOT[S.pilot];
+  document.querySelector("[data-how]").innerHTML = howHTML();
+  document.querySelector("[data-trust]").innerHTML = trustHTML();
+  document.querySelector("[data-mob]").innerHTML = mobHTML();
+  const hf = document.querySelector("[data-heroframe]"); hf.querySelector(".shdr").style.background = S.hero==="H-C" ? "#0b1419" : ""; hf.querySelector(".shdr").style.color = S.hero==="H-C" ? "#e6eef2" : "";
+  for (const k of ["hero","pilot","lead","how","trust","mob"]) document.querySelector(`[data-why="${k}"]`).innerHTML = WHY[S[k]];
+  const phoneMode = document.body.dataset.dev==="phone";
+  const fold = document.querySelector("[data-fold]"); fold.style.top = (phoneMode?844:720)+"px"; fold.querySelector("span").textContent = phoneMode?"ekranın altı · 844 px (iPhone)":"ekranın altı · 720 px (laptop)";
+  document.querySelector("[data-ans]").textContent = `Seçimlerim: ${S.hero}, ${S.pilot}, ${S.lead}, ${S.how}, ${S.trust}, ${S.mob} · Yönetim: ${[...S.adm].sort().join(", ")||"hiçbiri"}`;
+}
+
+document.querySelectorAll("[data-q] > .opts, [data-q2]").forEach(box=>{
+  const key = box.dataset.q2 || box.closest("[data-q]").dataset.q;
+  box.addEventListener("click", e=>{ const b=e.target.closest(".opt"); if(!b) return;
+    box.querySelectorAll(".opt").forEach(x=>x.classList.toggle("on", x===b)); S[key]=b.dataset.v; render(); });
+});
+document.querySelector("[data-adm]").innerHTML = admHTML();
+document.querySelector("[data-adm]").addEventListener("change", e=>{ const y=e.target.dataset.y; if(!y) return; e.target.checked?S.adm.add(y):S.adm.delete(y); render(); });
+document.querySelectorAll(".seg").forEach(seg=>seg.addEventListener("click", e=>{ const b=e.target.closest("button"); if(!b) return;
+  seg.querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+  if (seg.dataset.g==="dev") document.body.dataset.dev=b.dataset.v; else document.documentElement.dataset.theme=b.dataset.v; render(); }));
+document.querySelector("[data-copy]").addEventListener("click", ()=>{ try{ navigator.clipboard.writeText(document.querySelector("[data-ans]").textContent); }catch{} });
+render();
+</script>
+</body>
+</html>

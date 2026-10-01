@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="tr" data-theme="gun">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mobil Tasarım Seçimi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Taslak 22 · Mobil (web PWA) tasarım seçimi · 24.09.2026
+   Ozan: "bana tasarım olarak seçimler yaptır, ben onun içinden ilerleyeyim".
+   Kararlar önceden verildi: 4 rol tam + diğerlerine özet · dar ekranda (≤760 px) kendiliğinden.
+   Bu sayfa ÖNERİDİR: uygulamada (app/) henüz hiçbir şey değişmedi. */
+:root {
+  --page:#eef2f6; --card:#ffffff; --card2:#f1f4f8; --ink:#152231; --mute:#5c6b7d; --line:#e1e6ee; --line2:#cbd3de;
+  --pri:#0e7490; --onpri:#fff; --priSoft:#e0f2f7; --priInk:#0e7490; --crit:#dc2626; --critSoft:#fdecec; --high:#ea580c; --highSoft:#fff1e8;
+  --mid:#ca8a04; --midSoft:#fdf6e3; --ok:#16a34a; --okSoft:#e7f6ec; --spo:#a16207; --hr:#15803d;
+  --ph-bg:#f5f8fb; --ph-frame:#0f172a; --shadow:0 20px 50px rgba(20,30,50,.12);
+}
+:root[data-theme="gece"] {
+  --page:#050b16; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60;
+  --pri:#22b8d6; --onpri:#03141c; --priSoft:rgba(34,184,214,.13); --priInk:#7dd3e6; --crit:#ef4444; --critSoft:rgba(239,68,68,.14);
+  --high:#fb923c; --highSoft:rgba(251,146,60,.14); --mid:#eab308; --midSoft:rgba(234,179,8,.12); --ok:#22c55e; --okSoft:rgba(34,197,94,.12);
+  --spo:#ffe14a; --hr:#22e05a; --ph-bg:#07101f; --ph-frame:#000; --shadow:0 24px 60px rgba(0,0,0,.5);
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--page); color:var(--ink); font:15px/1.5 Figtree, system-ui, sans-serif; }
+h1, h2, h3, h4 { font-family:"Space Grotesk", Figtree, sans-serif; margin:0; letter-spacing:-.01em; }
+button { font:inherit; color:inherit; cursor:pointer; }
+.mono { font-family:"JetBrains Mono", ui-monospace, monospace; }
+svg.i { width:18px; height:18px; flex:none; }
+
+/* ---------- sayfa ---------- */
+.bar { position:sticky; top:0; z-index:30; background:var(--card); border-bottom:1px solid var(--line); }
+.bar-in { max-width:1400px; margin:0 auto; padding:12px clamp(16px,4vw,48px); display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+.bar h1 { font-size:17px; margin-right:auto; }
+.bar h1 small { display:block; font:500 12.5px Figtree; color:var(--mute); }
+.seg { display:flex; background:var(--card2); border:1px solid var(--line); border-radius:11px; padding:3px; }
+.seg button { border:0; background:none; padding:6px 12px; border-radius:8px; font-weight:600; font-size:13px; color:var(--mute); }
+.seg button.on { background:var(--card); color:var(--ink); box-shadow:0 2px 8px rgba(0,0,0,.08); }
+.wrap { max-width:1400px; margin:0 auto; padding:24px clamp(16px,4vw,48px) 140px; }
+.note { background:var(--midSoft); border:1px solid color-mix(in srgb, var(--mid) 35%, transparent); color:var(--ink); border-radius:12px; padding:10px 14px; font-size:13.5px; margin-bottom:22px; }
+.note b { color:var(--mid); }
+.q { margin:34px 0 0; }
+.q-h { display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
+.q-h .n { font:700 13px "JetBrains Mono"; color:var(--onpri); background:var(--pri); border-radius:8px; padding:2px 8px; }
+.q-h h2 { font-size:24px; }
+.q-h p { flex-basis:100%; margin:4px 0 0; color:var(--mute); }
+.opts { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:18px; margin-top:16px; }
+.opt { background:var(--card); border:1.5px solid var(--line); border-radius:20px; padding:16px 16px 14px; text-align:left; display:flex; flex-direction:column; gap:12px; transition:border-color .15s, box-shadow .15s; }
+.opt:hover { border-color:var(--line2); }
+.opt.on { border-color:var(--pri); box-shadow:0 0 0 4px var(--priSoft); }
+.opt-h { display:flex; align-items:center; gap:8px; }
+.opt-h .k { width:26px; height:26px; border-radius:8px; display:grid; place-items:center; background:var(--card2); font:700 13px "Space Grotesk"; }
+.opt.on .opt-h .k { background:var(--pri); color:var(--onpri); }
+.opt-h b { font:700 16px "Space Grotesk"; }
+.opt-h .rec { margin-left:auto; font:700 10.5px Figtree; color:var(--ok); background:var(--okSoft); padding:2px 8px; border-radius:99px; }
+.opt > p { margin:0; color:var(--mute); font-size:13.5px; }
+.why { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 16px; margin-top:14px; font-size:13.5px; color:var(--mute); }
+.why b { color:var(--ink); }
+
+/* ---------- telefon ---------- */
+.ph { width:100%; max-width:300px; margin:0 auto; aspect-ratio:300/610; background:var(--ph-frame); border-radius:38px; padding:9px; box-shadow:var(--shadow); }
+.scr { position:relative; height:100%; background:var(--ph-bg); border-radius:30px; overflow:hidden; display:flex; flex-direction:column; font-size:12px; }
+.sb { height:26px; flex:none; display:flex; justify-content:space-between; align-items:center; padding:0 20px 0 24px; font:700 11px Figtree; }
+.sb i { width:70px; height:18px; background:var(--ph-frame); border-radius:12px; }
+.body { flex:1; overflow:hidden; padding:0 12px; }
+/* üst çubuk */
+.tp { flex:none; padding:4px 14px 8px; display:flex; align-items:center; gap:8px; }
+.tp .tt { font:700 16px "Space Grotesk"; }
+.tp .sp { margin-left:auto; }
+.ib { width:30px; height:30px; border-radius:10px; display:grid; place-items:center; background:var(--card); border:1px solid var(--line); position:relative; }
+.ib svg.i { width:15px; height:15px; }
+.ib .bd { position:absolute; top:-4px; right:-4px; min-width:15px; height:15px; border-radius:99px; background:var(--crit); color:#fff; font:700 9px Figtree; display:grid; place-items:center; padding:0 3px; }
+.av { width:30px; height:30px; border-radius:50%; background:var(--pri); color:var(--onpri); display:grid; place-items:center; font:700 11px Figtree; }
+.tp.big { flex-direction:column; align-items:stretch; gap:2px; padding-bottom:10px; }
+.tp.big .row { display:flex; align-items:center; gap:8px; }
+.tp.big small { color:var(--mute); font-size:11px; }
+.tp.big .tt { font-size:24px; }
+.unit { display:inline-flex; align-items:center; gap:4px; background:var(--card); border:1px solid var(--line); border-radius:99px; padding:3px 9px; font:600 11px Figtree; }
+.srch { display:flex; align-items:center; gap:6px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:7px 10px; color:var(--mute); flex:1; font-size:11.5px; }
+.srch svg.i { width:14px; height:14px; }
+/* alt menü */
+.tb { flex:none; display:grid; grid-template-columns:repeat(5, 1fr); align-items:end; background:var(--card); border-top:1px solid var(--line); padding:6px 4px 14px; }
+.tb a { display:flex; flex-direction:column; align-items:center; gap:2px; font:600 9.5px Figtree; color:var(--mute); position:relative; }
+.tb a svg.i { width:19px; height:19px; }
+.tb a.on { color:var(--priInk); }
+.tb a .bd { position:absolute; top:-3px; left:calc(50% + 4px); min-width:14px; height:14px; border-radius:99px; background:var(--crit); color:#fff; font:700 8.5px Figtree; display:grid; place-items:center; padding:0 3px; }
+.tb.pill { position:absolute; left:12px; right:12px; bottom:12px; border:1px solid var(--line); border-radius:22px; padding:8px 4px; box-shadow:0 10px 30px rgba(0,0,0,.15); }
+.tb.pill a.on { background:var(--priSoft); border-radius:14px; padding:4px 0; }
+.tb.pill + .spacer, .body.pad { padding-bottom:70px; }
+.tb .mid { transform:translateY(-12px); }
+.tb .mid span.c { width:48px; height:48px; border-radius:16px; background:var(--pri); color:var(--onpri); display:grid; place-items:center; box-shadow:0 8px 20px color-mix(in srgb, var(--pri) 45%, transparent); }
+.tb .mid span.c svg.i { width:22px; height:22px; }
+.tb .mid { color:var(--ink); }
+/* içerik parçaları */
+.h6 { font:700 10px Figtree; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); margin:10px 2px 6px; }
+.cnt { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.cnt div { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:9px 10px; }
+.cnt b { display:block; font:700 20px "Space Grotesk"; }
+.cnt small { color:var(--mute); font-size:10.5px; line-height:1.3; display:block; }
+.cnt .c b { color:var(--crit); } .cnt .h b { color:var(--high); }
+.li { display:flex; gap:9px; align-items:center; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:8px 10px; margin-bottom:6px; }
+.li .t { font:700 10.5px "JetBrains Mono"; color:var(--mute); width:34px; flex:none; }
+.li .bar2 { width:3px; align-self:stretch; border-radius:3px; background:var(--line2); flex:none; }
+.li .bar2.c { background:var(--crit); } .li .bar2.h { background:var(--high); } .li .bar2.m { background:var(--mid); }
+.li b { font-size:11.5px; display:block; line-height:1.25; }
+.li small { color:var(--mute); font-size:10.5px; line-height:1.3; display:block; }
+.li .go { margin-left:auto; color:var(--mute); }
+.li .go svg.i { width:14px; height:14px; }
+.hero { background:var(--critSoft); border:1px solid color-mix(in srgb, var(--crit) 40%, transparent); border-radius:16px; padding:11px 12px; margin-top:6px; }
+.hero .top2 { display:flex; justify-content:space-between; font:700 10px Figtree; color:var(--crit); letter-spacing:.06em; text-transform:uppercase; }
+.hero h4 { font-size:17px; margin:4px 0 2px; }
+.hero p { margin:0; font-size:11px; color:var(--mute); }
+.hero .acts { display:flex; gap:6px; margin-top:9px; }
+.btn { border:1px solid var(--line2); background:var(--card); border-radius:10px; padding:6px 10px; font:700 11px Figtree; }
+.btn.p { background:var(--pri); color:var(--onpri); border-color:var(--pri); }
+.btn.r { background:var(--crit); color:#fff; border-color:var(--crit); }
+.chip { display:inline-block; font:700 9.5px Figtree; padding:2px 7px; border-radius:99px; background:var(--card2); color:var(--mute); }
+.chip.c { background:var(--critSoft); color:var(--crit); } .chip.h { background:var(--highSoft); color:var(--high); } .chip.o { background:var(--okSoft); color:var(--ok); }
+.bedc { background:var(--card); border:1px solid var(--line); border-left:3px solid var(--ok); border-radius:12px; padding:8px 10px; margin-bottom:6px; }
+.bedc.c { border-left-color:var(--crit); } .bedc.h { border-left-color:var(--high); } .bedc.m { border-left-color:var(--mid); }
+.bedc .r1 { display:flex; align-items:center; gap:6px; }
+.bedc .r1 b { font:700 12px "JetBrains Mono"; }
+.bedc .r1 .chip { margin-left:auto; }
+.bedc .v { display:flex; gap:12px; margin-top:4px; }
+.bedc .v span small { display:block; font-size:9px; color:var(--mute); }
+.bedc .v span b { font:700 15px "JetBrains Mono"; }
+.row2 { display:flex; align-items:center; gap:8px; padding:9px 4px; border-bottom:1px solid var(--line); }
+.row2 i { width:8px; height:8px; border-radius:50%; background:var(--ok); flex:none; }
+.row2 i.c { background:var(--crit); } .row2 i.h { background:var(--high); } .row2 i.m { background:var(--mid); }
+.row2 b { font:700 12px "JetBrains Mono"; width:48px; }
+.row2 small { color:var(--mute); flex:1; font-size:10.5px; }
+.row2 .n { font:700 11px "JetBrains Mono"; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.mini { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:7px 8px; }
+.mini.c { border-color:var(--crit); background:var(--critSoft); }
+.mini .r1 { display:flex; justify-content:space-between; font:700 10.5px "JetBrains Mono"; }
+.mini .r1 i { width:6px; height:6px; border-radius:50%; background:var(--ok); } .mini.c .r1 i { background:var(--crit); } .mini.h .r1 i { background:var(--high); }
+.mini svg.w { width:100%; height:20px; display:block; margin:3px 0; }
+.mini svg.w polyline { fill:none; stroke:var(--pri); stroke-width:1.5; }
+.mini.c svg.w polyline { stroke:var(--crit); }
+.mini .r2 { display:flex; justify-content:space-between; align-items:baseline; font-size:9px; color:var(--mute); }
+.mini .r2 b { font:700 15px "JetBrains Mono"; color:var(--spo); }
+.greet { margin:2px 2px 6px; }
+.greet b { font:700 15px "Space Grotesk"; display:block; }
+.greet small { color:var(--mute); font-size:10.5px; }
+.seg2 { display:flex; gap:5px; margin:2px 0 8px; }
+.seg2 span { font:700 10px Figtree; padding:4px 9px; border-radius:99px; background:var(--card); border:1px solid var(--line); color:var(--mute); }
+.seg2 span.on { background:var(--ink); color:var(--page); border-color:var(--ink); }
+
+
+/* 2. tur (24.09): seçili sekme göstergesi (act-A/B/C) · orta düğme biçimi (mid-A/B/C) · basınca geri bildirim */
+.tb a { transition:transform .12s, color .15s; -webkit-tap-highlight-color:transparent; }
+.tb a:active, .tb a.press { transform:scale(.9); }
+.tb.act-A a.on::before { content:""; position:absolute; top:-7px; width:28px; height:3px; border-radius:0 0 4px 4px; background:var(--pri); }
+.tb.act-A a.on { font-weight:800; }
+.tb.act-B a.on { color:var(--priInk); font-weight:800; }
+.tb.act-B a.on > svg.i { background:var(--priSoft); border-radius:12px; padding:3px 13px; box-sizing:content-box; }
+.tb.act-C a.on { color:var(--ink); font-weight:800; }
+.tb.act-C a.on > svg.i { fill:currentColor; fill-opacity:.16; stroke-width:2.4; }
+.tb.act-C a.on::after { content:""; width:4px; height:4px; border-radius:50%; background:var(--pri); margin-top:1px; }
+.tb.pill.act-B a.on, .tb.pill.act-C a.on, .tb.pill.act-A a.on { background:none; padding:0; }
+/* orta düğme */
+.tb.mid-A { -webkit-mask:radial-gradient(circle 31px at 50% -4px, transparent 30px, #000 31px); mask:radial-gradient(circle 31px at 50% -4px, transparent 30px, #000 31px); }
+.tb.mid-A .mid { transform:translateY(-4px); }
+.tbw { position:relative; }
+.tbw .fab { position:absolute; left:50%; top:-26px; transform:translateX(-50%); width:50px; height:50px; border-radius:50%; background:var(--pri); color:var(--onpri); display:grid; place-items:center; box-shadow:0 0 0 5px var(--ph-bg), 0 10px 22px color-mix(in srgb, var(--pri) 45%, transparent); z-index:2; }
+.tbw .fab svg.i { width:22px; height:22px; }
+.tb.mid-A .mid span.c { visibility:hidden; height:26px; }
+.tb.mid-C .mid { transform:none; }
+.tb.mid-C .mid span.c { width:auto; height:34px; padding:0 13px; border-radius:17px; display:flex; align-items:center; gap:5px; font:800 11px Figtree; box-shadow:none; }
+.tb.mid-C .mid span.c svg.i { width:17px; height:17px; }
+.tb.mid-C .mid .ml { display:none; }
+/* yakın çekim şerit */
+.strip { background:var(--ph-bg); border-radius:18px; border:1px solid var(--line); overflow:hidden; zoom:1.35; }
+.strip .fake { height:62px; padding:10px 12px; display:grid; gap:6px; }
+.strip .fake i { display:block; height:9px; border-radius:6px; background:var(--card2); }
+.strip .fake i:nth-child(2) { width:70%; }
+.cap2 { font:600 12px Figtree; color:var(--mute); text-align:center; margin-top:-4px; }
+
+/* ---------- birleşik ---------- */
+.final { margin-top:40px; display:grid; grid-template-columns:320px minmax(0, 1fr); gap:28px; align-items:start; background:var(--card); border:1px solid var(--line); border-radius:24px; padding:26px; }
+.final .ph { max-width:320px; }
+.final h2 { font-size:24px; margin-bottom:6px; }
+.final p { color:var(--mute); margin:0 0 10px; }
+.final ul { margin:0 0 14px; padding-left:18px; color:var(--mute); font-size:14px; }
+.final li b { color:var(--ink); }
+.dock { position:fixed; left:0; right:0; bottom:0; z-index:40; background:var(--card); border-top:1px solid var(--line); box-shadow:0 -10px 30px rgba(0,0,0,.08); }
+.dock-in { max-width:1400px; margin:0 auto; padding:12px clamp(16px,4vw,48px); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.dock .ans { font:600 13.5px "JetBrains Mono"; background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:8px 12px; flex:1; min-width:240px; }
+.dock .btn { padding:9px 14px; font-size:13px; }
+.dock small { color:var(--mute); font-size:12.5px; }
+@media (max-width:1000px) { .opts { grid-template-columns:1fr; } .final { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+
+<div class="bar"><div class="bar-in">
+  <h1>Taslak 22 · Mobil uygulama seçimi<small>Web PWA'nın telefon görünümü · 4 karar · birine tıkla, en altta birleşik hâlini gör</small></h1>
+  <div class="seg" data-seg="th"><button class="on" data-v="gun" type="button">Açık</button><button data-v="gece" type="button">Koyu</button></div>
+</div></div>
+
+<div class="wrap">
+  <div class="note"><b>Bu bir öneri.</b> Uygulamada (http://localhost:5199/app/) henüz hiçbir şey değişmedi. Senin seçimlerinle telefon düzeni yazılacak. Verilen kararlar: <b>4 rol tam</b> (hemşire, hekim, hızlı yanıt, biyomedikal) + diğer rollere tek sayfa özet · <b>ekran 760 px'ten darsa kendiliğinden</b>. Çizimlerdeki kişi ve yatak bilgileri örnektir.</div>
+  <div id="qs"></div>
+
+  <section class="final">
+    <div class="ph" id="finalPh"></div>
+    <div>
+      <h2>Seçimlerinle birleşik görünüm</h2>
+      <p>Soldaki telefon canlı: alt menüye dokun, ekranlar değişir. Rolü de değiştirebilirsin.</p>
+      <div class="seg" data-seg="role" style="display:inline-flex;margin-bottom:14px"><button class="on" data-v="nurse" type="button">Hemşire</button><button data-v="doc" type="button">Hekim</button><button data-v="bio" type="button">Biyomedikal</button><button data-v="other" type="button">Diğer roller</button></div>
+      <ul id="finalList"></ul>
+      <div class="why"><b>Neden alt menü?</b> Telefonda başparmak ekranın alt yarısına rahat uzanır. Hem iOS hem Android'in kendi uygulamaları ana gezinmeyi altta tutar. Masaüstündeki sol şerit telefona sığmıyor: bugün prototip telefonda açılınca 62 piksellik şerit ekranın altıda birini yiyor.</div>
+      <div class="why"><b>Neden bu kadar az sekme?</b> "Çok özelliği olmasın" dedin. Telefon, masaüstünün küçüğü değil: nöbette cepte taşınan <b>haber alma ve hızlı işlem</b> aracı. Rapor, yönetim ve ayrıntılı ekranlar masaüstünde kalır.</div>
+    </div>
+  </section>
+</div>
+
+<div class="dock"><div class="dock-in">
+  <span class="ans" id="ans"></span>
+  <button class="btn p" id="copy" type="button">Kopyala</button>
+  <small>Bu satırı bana yaz; seçimlerine göre uygulamaya işlerim.</small>
+</div></div>
+
+<script>
+(function () {
+  var P = {
+    tray:'<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    bed:'<path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9"/>',
+    act:'<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+    bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+    user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    search:'<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+    chevR:'<path d="m9 18 6-6-6-6"/>', chevD:'<path d="m6 9 6 6 6-6"/>',
+    siren:'<path d="M7 18v-6a5 5 0 1 1 10 0v6"/><path d="M5 21a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1z"/><path d="M12 2v2M21 7l-1.5.8M3 7l1.5.8"/>',
+    wrench:'<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+    cpu:'<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/>',
+    plus:'<path d="M12 5v14M5 12h14"/>', chart:'<path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>',
+    list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>'
+  };
+  function I(n, cls) { return '<svg class="i ' + (cls || "") + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + P[n] + "</svg>"; }
+  function wave(k) { var p = []; for (var x = 0; x <= 10; x++) p.push((x * 10) + "," + (10 + Math.sin(x * 1.2 + k) * 4 + ((k * 3 + x) % 3) - 1).toFixed(1)); return '<svg class="w" viewBox="0 0 100 20" preserveAspectRatio="none"><polyline points="' + p.join(" ") + '"/></svg>'; }
+
+  /* örnek veri (Taslak 19 / prototiple aynı yataklar; kişiler uydurma) */
+  var BEDS = [["REA01", "c", "NEWS2 9", 118, 91, "MAP 51 · laktat 4.1"], ["REA02", "h", "NEWS2 7", 104, 86, "SpO₂ 86 · 3 dk"], ["REA03", "m", "NEWS2 5", 88, 97, "potasyum 5.8"], ["REA04", "o", "NEWS2 1", 76, 98, "stabil"], ["REA05", "o", "NEWS2 2", 92, 96, "stabil"], ["REA06", "m", "NEWS2 4", 110, 95, "ateş 38.4"]];
+  var chipOf = { c:"c", h:"h", m:"", o:"o" }, lvl = { c:"Kritik", h:"Yüksek", m:"Orta", o:"Stabil" };
+
+  /* ---------- üst çubuk seçenekleri ---------- */
+  var TOPS = {
+    A:{ n:"Büyük başlık", s:"iOS tarzı: sayfa adı büyük, birim altında. Kaydırınca küçülür.", rec:1,
+        h:function (title) { return '<div class="tp big"><div class="row"><span class="unit">Erişkin YB ' + I("chevD") + '</span><span class="sp"></span><span class="ib">' + I("bell") + '<span class="bd">3</span></span><span class="av">SQ</span></div><span class="tt">' + title + "</span><small>Per 24.09 · nöbet bitimine 10:18</small></div>"; } },
+    B:{ n:"Kompakt", s:"Tek satır: başlık, birim seçici, bildirim. Ekranın en çoğu içeriğe kalır.",
+        h:function (title) { return '<div class="tp"><span class="tt">' + title + '</span><span class="unit">Erişkin YB ' + I("chevD") + '</span><span class="sp"></span><span class="ib">' + I("bell") + '<span class="bd">3</span></span></div>'; } },
+    C:{ n:"Arama öncelikli", s:"Üstte her zaman hasta / yatak arama; başlık yok. Hızlı bulmak için.",
+        h:function () { return '<div class="tp"><span class="srch">' + I("search") + 'Hasta, yatak, protokol ara</span><span class="ib">' + I("bell") + '<span class="bd">3</span></span></div>'; } }
+  };
+  /* ---------- alt menü seçenekleri ---------- */
+  var TABSET = {
+    nurse:[["Bana", "tray", "home"], ["Hastalar", "bed", "pts"], ["Ölç", "act", "mid"], ["Bildirim", "bell", "not", 3], ["Ben", "user", "me"]],
+    doc:[["Bana", "tray", "home"], ["Hastalar", "bed", "pts"], ["Alarm", "siren", "mid", 4], ["Bildirim", "bell", "not", 3], ["Ben", "user", "me"]],
+    bio:[["İşler", "wrench", "home"], ["Cihazlar", "cpu", "pts"], ["Arıza", "plus", "mid"], ["Bildirim", "bell", "not", 2], ["Ben", "user", "me"]],
+    other:[["Özet", "chart", "home"], ["Bildirim", "bell", "not", 1], ["Ben", "user", "me"]]
+  };
+  function tabs(style, role, cur, press, act, midS) {
+    var T = TABSET[role || "nurse"], mid = style === "C"; act = act || st.act; midS = midS || st.mid;
+    var saved = st.mid; st.mid = midS;
+    var h = T.map(function (x) {
+      var isMid = mid && x[2] === "mid";
+      return '<a data-tab="' + x[2] + '" class="' + (x[2] === (cur || "home") ? "on " : "") + (isMid ? "mid" : "") + (press && x[2] === press ? " press" : "") + '">' + (isMid ? '<span class="c">' + I(x[1]) + (st.mid === "C" ? x[0] : "") + '</span><span class="ml">' + x[0] + "</span>" : I(x[1]) + x[0]) + (x[3] && !isMid ? '<span class="bd">' + x[3] + "</span>" : "") + "</a>";
+    }).join("");
+    var cols = ' style="grid-template-columns:repeat(' + T.length + ', 1fr)"';
+    var hasMid = mid && T.some(function (x) { return x[2] === "mid"; }), midT = T.filter(function (x) { return x[2] === "mid"; })[0];
+    var nav = '<nav class="tb' + (style === "B" ? " pill" : "") + " act-" + act + (hasMid ? " mid-" + midS : "") + '"' + cols + ">" + h + "</nav>";
+    st.mid = saved;
+    return hasMid && midS === "A" ? '<div class="tbw"><span class="fab" data-tab="mid">' + I(midT[1]) + "</span>" + nav + "</div>" : nav;
+  }
+  var TBS = {
+    A:{ n:"Klasik şerit", s:"Tam genişlik, 5 eşit sekme. İki platformun standardı; en tanıdık." },
+    B:{ n:"Yüzen hap", s:"Kenarlardan ayrık, yuvarlak menü. Bugünkü gerçek mobil uygulamadaki biçim (homunculus-mobile)." },
+    C:{ n:"Ortada eylem düğmesi", s:"Ortadaki sekme büyük düğme: hemşirede Ölç, hekimde Alarm, biyomedikalde Arıza. Taslak 19'da beğendiğin.", rec:1 }
+  };
+  /* ---------- "Bana" ekranı seçenekleri ---------- */
+  var HOMES = {
+    A:{ n:"Sayaç kartları", s:"Dört kutu: kritik alarm, geciken iş, devir, bildirim. Dokununca o listeye gider.",
+        h:function () { return '<div class="greet"><b>İyi nöbetler, Sevda</b><small>Erişkin YB · 6 hasta</small></div><div class="cnt"><div class="c"><b>1</b><small>kritik alarm yanıt bekliyor</small></div><div class="h"><b>6</b><small>geciken iş</small></div><div><b>3</b><small>devir karşı imza bekliyor</small></div><div><b>3</b><small>okunmamış bildirim</small></div></div><div class="h6">Sıradaki işler</div>' + tasks(3); } },
+    B:{ n:"Tek zaman akışı", s:"Hepsi tek listede, saat sırasıyla: alarm, iş, devir karışık. Düşünmeden yukarıdan aşağı.",
+        h:function () { return '<div class="greet"><b>Şimdi</b><small>zaman sırasıyla · 6 hasta</small></div>' +
+          li("21:42", "c", "REA01 · kritik alarm", "MAP 51 · laktat 4.1 · 7 dk yanıtsız") + li("21:39", "h", "REA02 · SpO₂ 86", "3 dakikadır · size düştü") + li("21:00", "h", "Vital bulgular · 4 hasta", "gecikti · 42 dk") + li("22:00", "", "Seftriakson 2 g IV", "REA01 · 18 dk sonra") + li("23:00", "", "Devir karşı imza", "3 hasta · Mələk A.") + li("23:00", "", "Ağrı değerlendirmesi", "REA03, REA06"); } },
+    C:{ n:"Öncelik kartı + liste", s:"En acil tek iş büyük kartta, düğmeleriyle. Altında geri kalanlar. Kritik anda tek dokunuş.", rec:1,
+        h:function () { return '<div class="hero"><div class="top2"><span>Kritik · size düştü</span><span class="mono">7:42</span></div><h4>REA01</h4><p>Kötüleşme kriterleri karşılanıyor · MAP 51 · laktat 4.1</p><div class="acts"><span class="btn p">Gördüm</span><span class="btn">Hastayı aç</span><span class="btn r">Eskale</span></div></div><div class="h6">Sonra</div>' +
+          li("21:39", "h", "REA02 · SpO₂ 86", "3 dakikadır") + li("21:00", "h", "Vital bulgular · 4 hasta", "gecikti · 42 dk") + li("22:00", "", "Seftriakson 2 g IV", "REA01 · 18 dk sonra") + li("23:00", "", "Devir karşı imza", "3 hasta"); } }
+  };
+  function li(t, c, b, s) { return '<div class="li"><span class="t">' + t + '</span><span class="bar2 ' + c + '"></span><span><b>' + b + "</b><small>" + s + '</small></span><span class="go">' + I("chevR") + "</span></div>"; }
+  function tasks(n) { return [li("21:00", "h", "Vital bulgular · 4 hasta", "gecikti · 42 dk"), li("22:00", "", "Seftriakson 2 g IV", "REA01 · 18 dk sonra"), li("23:00", "", "Ağrı değerlendirmesi", "REA03, REA06")].slice(0, n).join(""); }
+  /* ---------- hasta listesi seçenekleri ---------- */
+  var PTS = {
+    A:{ n:"Yatak kartları", s:"Her yatak bir kart: durum rengi, skor, nabız ve SpO₂. Masaüstü yatak panelinin telefon hâli.", rec:1,
+        h:function () { return '<div class="seg2"><span class="on">Hepsi 6</span><span>Dikkat 3</span><span>Stabil 3</span></div>' + BEDS.slice(0, 5).map(function (b) { return '<div class="bedc ' + b[1] + '"><div class="r1"><b>' + b[0] + '</b><small style="color:var(--mute)">' + b[5] + '</small><span class="chip ' + chipOf[b[1]] + '">' + b[2] + '</span></div><div class="v"><span><small>Nabız</small><b style="color:var(--hr)">' + b[3] + '</b></span><span><small>SpO₂</small><b style="color:var(--spo)">' + b[4] + "</b></span></div></div>"; }).join(""); } },
+    B:{ n:"Sade satırlar", s:"Tek satır: renk noktası, yatak, kısa neden, skor. Bir ekranda 10+ yatak.",
+        h:function () { return '<div class="seg2"><span class="on">Hepsi 6</span><span>Dikkat 3</span></div>' + BEDS.concat(BEDS.slice(0, 3).map(function (b) { return ["KVC0" + b[0].slice(4), "o", "NEWS2 1", 80, 97, "stabil"]; })).map(function (b) { return '<div class="row2"><i class="' + b[1] + '"></i><b>' + b[0] + "</b><small>" + b[5] + '</small><span class="n">' + b[2].replace("NEWS2 ", "") + "</span></div>"; }).join(""); } },
+    C:{ n:"Mini monitör ızgarası", s:"İki sütun, her yatakta akan çizgi ve SpO₂. Ana sayfadaki canlı kartın aynısı; bakınca tanıdık.",
+        h:function () { return '<div class="seg2"><span class="on">Hepsi 6</span><span>Dikkat 3</span></div><div class="grid2">' + BEDS.map(function (b, k) { return '<div class="mini ' + b[1] + '"><div class="r1"><span>' + b[0] + "</span><i></i></div>" + wave(k) + '<div class="r2"><span>SpO₂</span><b>' + b[4] + "</b></div></div>"; }).join("") + "</div>"; } }
+  };
+  var NOTIF = function () { return '<div class="h6">Bugün</div>' + li("21:39", "h", "Yeni alarm", "REA02 · SpO₂ 86, 3 dakikadır") + li("21:30", "", "İş zamanı geldi", "Vital bulgular · 22:00 turu") + li("20:55", "", "Devir imzası", "3 hastanın devri karşı imzanızı bekliyor"); };
+  var ME = function () { return '<div class="greet"><b>Sevda Quliyeva</b><small>Sorumlu hemşire · Erişkin YB, KVC YB</small></div>' + li("", "", "Dil · Tema", "Türkçe · Açık") + li("", "", "Telefona bildirim", "Yalnız kritik · hasta adı olmadan") + li("", "", "Yüz / parmak izi ile aç", "Açık") + li("", "", "Çıkış", ""); };
+  var MID = { nurse:function () { return '<div class="h6">Yatak başı ölçüm</div>' + li("", "", "1 · Hastayı tanımla", "Bileklik okut ya da yatak seç") + li("", "", "2 · Ölçüm kaynağı", "Portatif cihaz P-07 · bağlı") + li("", "", "3 · Kontrol", "Değerler cihazdan gelir, düzeltilebilir") + li("", "", "4 · Kaydet", "NEWS2 kendiliğinden hesaplanır"); },
+    doc:function () { return '<div class="h6">Açık alarmlar · 4</div>' + li("7:42", "c", "REA01 · kritik", "MAP 51 · laktat 4.1") + li("4:12", "h", "DAX01 · NEWS2 6", "değerlendirme zamanı") + li("2:42", "h", "REA02 · SpO₂ 86", "3 dakikadır"); },
+    bio:function () { return '<div class="h6">Arıza kaydı aç</div>' + li("", "", "Cihaz", "Seç ya da etiketi okut") + li("", "", "Sorun", "Veri göndermiyor · alarm · fiziksel hasar") + li("", "", "Fotoğraf ekle", "isteğe bağlı") + li("", "", "Gönder", "biyomedikal ekibe düşer"); } };
+  var BIO_HOME = function () { return '<div class="cnt"><div class="c"><b>17</b><small>bakım / kalibrasyon gecikmiş</small></div><div><b>6</b><small>açık arıza kaydı</small></div></div><div class="h6">Bugün</div>' + li("09:00", "h", "İnfüzyon pompası BM-0006", "kalibrasyon · 25 gün gecikti") + li("11:00", "", "Defibrilatör BM-0010", "periyodik bakım · acil arabası") + li("21:36", "c", "REA07 monitörü sessiz", "6 dakikadır veri yok"); };
+  var BIO_DEV = function () { return '<div class="seg2"><span class="on">Hepsi 141</span><span>Arızalı 1</span><span>Bakımda 2</span></div>' + ["Monitör MX-12 · REA07", "İnfüzyon pompası BM-0006", "Defibrilatör BM-0028", "Ventilatör V-03 · REA01", "Portatif monitör P-07"].map(function (d, i) { return '<div class="row2"><i class="' + ["c", "h", "m", "", ""][i] + '"></i><small style="color:var(--ink);font-weight:600">' + d + "</small></div>"; }).join(""); };
+  var OTHER_HOME = function () { return '<div class="greet"><b>Yönetici özeti</b><small>salt okunur · hasta adı yok</small></div><div class="cnt"><div class="c"><b>3</b><small>alarm 10 dk\'dan uzun yanıtsız</small></div><div><b>%92</b><small>alarm yanıtlandı · 7 gün</small></div><div><b>17</b><small>geciken hemşirelik değerlendirmesi</small></div><div><b>13/49</b><small>yatak dolu</small></div></div><div class="h6">Birimler</div>' + li("", "", "Erişkin Yoğun Bakım", "5 / 8 dolu · 2 kritik") + li("", "", "Dahiliye Servisi", "4 / 12 dolu"); };
+
+  function phone(o) {
+    var top = TOPS[o.top].h(o.title || "Bana"), style = o.tab;
+    return '<div class="scr"><div class="sb"><span>21:42</span><i></i><span>5G ▮</span></div>' + top + '<div class="body' + (style === "B" ? " pad" : "") + '">' + o.body + "</div>" + tabs(style, o.role, o.cur) + "</div>";
+  }
+
+  var ACTS = {
+    A:{ n:"Renk + üst çizgi", s:"Seçili sekmenin rengi değişir, üstünde kısa bir çizgi belirir. İnce ve sakin." },
+    B:{ n:"Dolgu hap", s:"Seçili ikonun arkasında renkli bir hap belirir, yazı kalınlaşır. Uzaktan ve eldivenle bile belli.", rec:1 },
+    C:{ n:"Dolu ikon + nokta", s:"Seçili ikon dolar, altında küçük bir nokta çıkar. iOS'un kendi dili." }
+  };
+  var MIDS = {
+    A:{ n:"Çentikli daire", s:"Şeritte yuvarlak bir oyuk, düğme oyuğun içinde yüzer. Düğme menünün parçası gibi durur.", rec:1 },
+    B:{ n:"Yükseltilmiş kare", s:"Köşeleri yuvarlak kare, şeridin üstüne taşar (şu anki çizim). Ayrı bir düğme gibi durur." },
+    C:{ n:"Şerit içi hap", s:"Taşma yok: ortadaki sekme renkli, yazılı bir hap. En sade, en az dikkat çeken." }
+  };
+  function strip(act, midS, press) { return '<div class="strip"><div class="fake"><i></i><i></i></div>' + tabs("C", "nurse", "pts", press, act, midS) + "</div>"; }
+  var st = { top:"A", tab:"C", home:"C", pts:"A", act:"B", mid:"A", th:"gun", role:"nurse", cur:"home" };
+  try { var sv = JSON.parse(localStorage.getItem("hmc.mobilSecim") || "{}"); ["top", "tab", "home", "pts", "act", "mid"].forEach(function (k) { if (sv[k]) st[k] = sv[k]; }); } catch (e) {}
+
+  var QS = [
+    ["tab", "Alt menü biçimi", "Ana gezinme. Seçenekler yalnız alt çubukta farklı; üst ve içerik aynı.", TBS, function (k) { return phone({ top:st.top, tab:k, body:HOMES[st.home].h(), role:"nurse" }); },
+      "<b>Önerim C.</b> Ortadaki düğme her rolün en sık işini tek dokunuşa indiriyor: hemşire ölçer, hekim alarma bakar, biyomedikal arıza açar. Taslak 19'da bunu beğenmiştin (\"daha sade olsun istemiyorum\")."],
+    ["top", "Üst çubuk", "Sayfanın başı. Bildirim zili her seçenekte var.", TOPS, function (k) { return phone({ top:k, tab:st.tab, body:HOMES[st.home].h(), role:"nurse" }); },
+      "<b>Önerim A.</b> Nöbette telefona hızlı bakılır; büyük başlık \"neredeyim\" sorusunu anında cevaplar. Arama (C) hekim için çekici ama hemşire çoğu işini yataktan başlatıyor; arama Hastalar ekranının içinde kalır."],
+    ["home", "\"Bana\" ekranı", "Uygulama açılınca ilk görülen: bana düşen işler.", HOMES, function (k) { return phone({ top:st.top, tab:st.tab, body:HOMES[k].h(), role:"nurse" }); },
+      "<b>Önerim C.</b> Telefonu kritik bir bildirimle açan kişi ilk saniyede ne yapacağını görmeli; öncelik kartında \"Gördüm / Hastayı aç / Eskale\" hazır. Kritik yokken kart en yakın işi gösterir."],
+    ["pts", "Hasta listesi", "\"Hastalar\" sekmesi. Dokununca hastanın özet ekranı açılır.", PTS, function (k) { return phone({ top:st.top, tab:st.tab, body:PTS[k].h(), role:"nurse", title:"Hastalar", cur:"pts" }); },
+      "<b>Önerim A.</b> Masaüstündeki yatak kartıyla aynı dil: hekim iki cihaz arasında yeniden öğrenmez. Satırlar (B) büyük servislerde daha çok yatak gösterir; istersen sonra \"sıkı görünüm\" anahtarı olarak eklenir."],
+    ["act", "Seçili sekme nasıl belli olsun", "2. tur · senin notun: \"butona basınca belli olsun, renk vs.\" Yakın çekim; seçili sekme Hastalar. Hepsinde basınca sekme bir an küçülür (dokunma hissi).", ACTS, function (k) { return strip(k, st.mid) + '<div class="cap2">seçili: Hastalar</div>'; },
+      "<b>Önerim B.</b> Nöbette telefona yarım saniye bakılır; renkli hap, hangi ekranda olduğunu rengi ayırt etmeden de gösterir (şekil + renk + kalın yazı, üç ipucu birden). Android'in yeni tasarım dili de bu."],
+    ["mid", "Orta düğmenin biçimi", "2. tur · senin notun: \"ortadaki iyi yerleşim lazım, biçimi önemli\". Hemşirede Ölç, hekimde Alarm, biyomedikalde Arıza.", MIDS, function (k) { return strip(st.act, k) + '<div class="cap2">orta: Ölç</div>'; },
+      "<b>Önerim A.</b> Çentik, düğmeyi şeridin bir parçası yapar ama ayrı olduğunu da söyler; göz önce ona gider. Başparmağın en rahat ulaştığı nokta ekranın alt ortası, en sık iş oraya düşüyor."]
+  ];
+
+  function renderQs() {
+    document.getElementById("qs").innerHTML = QS.map(function (q, qi) {
+      return '<section class="q"><div class="q-h"><span class="n">' + (qi + 1) + "</span><h2>" + q[1] + "</h2><p>" + q[2] + '</p></div><div class="opts">' +
+        Object.keys(q[3]).map(function (k) { var o = q[3][k];
+          return '<button type="button" class="opt' + (st[q[0]] === k ? " on" : "") + '" data-q="' + q[0] + '" data-k="' + k + '"><div class="opt-h"><span class="k">' + k + "</span><b>" + o.n + "</b>" + (o.rec ? '<span class="rec">önerim</span>' : "") + "</div><p>" + o.s + '</p>' + (q[0] === "act" || q[0] === "mid" ? q[4](k) : '<div class="ph">' + q[4](k) + "</div>") + "</button>"; }).join("") +
+        '</div><div class="why">' + q[5] + "</div></section>";
+    }).join("");
+  }
+  function renderFinal() {
+    var r = st.role, body, title;
+    if (st.cur === "home") { body = r === "bio" ? BIO_HOME() : r === "other" ? OTHER_HOME() : HOMES[st.home].h(); title = r === "bio" ? "İşler" : r === "other" ? "Özet" : "Bana"; }
+    else if (st.cur === "pts") { body = r === "bio" ? BIO_DEV() : PTS[st.pts].h(); title = r === "bio" ? "Cihazlar" : "Hastalar"; }
+    else if (st.cur === "mid") { body = MID[r](); title = { nurse:"Ölç", doc:"Alarmlar", bio:"Arıza" }[r]; }
+    else if (st.cur === "not") { body = NOTIF(); title = "Bildirimler"; }
+    else { body = ME(); title = "Ben"; }
+    document.getElementById("finalPh").innerHTML = phone({ top:st.top, tab:st.tab, body:body, role:r, cur:st.cur, title:title });
+    document.getElementById("finalList").innerHTML =
+      "<li>Alt menü: <b>" + st.tab + " · " + TBS[st.tab].n + "</b></li><li>Üst çubuk: <b>" + st.top + " · " + TOPS[st.top].n + "</b></li><li>Bana ekranı: <b>" + st.home + " · " + HOMES[st.home].n + "</b></li><li>Hasta listesi: <b>" + st.pts + " · " + PTS[st.pts].n + "</b></li><li>Seçili sekme: <b>" + st.act + " · " + ACTS[st.act].n + "</b></li><li>Orta düğme: <b>" + st.mid + " · " + MIDS[st.mid].n + "</b></li>";
+    document.getElementById("ans").textContent = "Mobil: alt " + st.tab + " · üst " + st.top + " · bana " + st.home + " · hastalar " + st.pts + " · seçili " + st.act + " · orta " + st.mid;
+  }
+  function all() { renderQs(); renderFinal(); document.documentElement.setAttribute("data-theme", st.th); }
+
+  document.addEventListener("click", function (e) {
+    var o = e.target.closest(".opt");
+    if (o) { st[o.dataset.q] = o.dataset.k; try { localStorage.setItem("hmc.mobilSecim", JSON.stringify({ top:st.top, tab:st.tab, home:st.home, pts:st.pts, act:st.act, mid:st.mid })); } catch (x) {} return all(); }
+    var tb = e.target.closest("#finalPh [data-tab]");
+    if (tb) { st.cur = tb.dataset.tab; return renderFinal(); }
+    var sb = e.target.closest("[data-seg] button");
+    if (sb) { var seg = sb.parentNode.dataset.seg; sb.parentNode.querySelectorAll("button").forEach(function (b) { b.classList.toggle("on", b === sb); });
+      if (seg === "th") { st.th = sb.dataset.v; return all(); }
+      if (seg === "role") { st.role = sb.dataset.v; st.cur = "home"; return renderFinal(); } }
+    if (e.target.closest("#copy")) { var b = e.target.closest("#copy"); try { navigator.clipboard.writeText(document.getElementById("ans").textContent); b.textContent = "Kopyalandı"; setTimeout(function () { b.textContent = "Kopyala"; }, 1400); } catch (x) {} }
+  });
+  all();
+})();
+</script>
+</body>
+</html>

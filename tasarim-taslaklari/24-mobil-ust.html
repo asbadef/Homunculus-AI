@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mobil Üst Çubuk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@500;600;700;800&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+/* Taslak 24 · Mobil üst çubuk ve genel görünüm · 25.09.2026
+   Ozan: "üst yerleşimi beğenmedim, renk olarak biçim olarak". Çizim değil: her çerçeve GERÇEK uygulamadır
+   (app/?stil=A|B|C), tıklanabilir. Seçilen biçim uygulamanın varsayılanı olur. */
+:root { --page:#eef2f6; --card:#fff; --ink:#152231; --mute:#5c6b7d; --line:#e1e6ee; --pri:#0e7490; --priSoft:#e0f2f7; --ok:#16a34a; --okSoft:#e7f6ec; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--page); color:var(--ink); font:15px/1.5 Figtree, system-ui, sans-serif; }
+.bar { position:sticky; top:0; z-index:5; background:var(--card); border-bottom:1px solid var(--line); }
+.bar-in { max-width:1400px; margin:0 auto; padding:12px 24px; display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; }
+h1 { font:700 17px "Space Grotesk"; margin:0 auto 0 0; } h1 small { display:block; font:500 12.5px Figtree; color:var(--mute); }
+.seg { display:flex; background:#f1f4f8; border:1px solid var(--line); border-radius:11px; padding:3px; flex-wrap:wrap; }
+.seg button { border:0; background:none; padding:6px 11px; border-radius:8px; font:700 13px Figtree; color:var(--mute); cursor:pointer; }
+.seg button.on { background:var(--card); color:var(--ink); box-shadow:0 2px 8px rgba(0,0,0,.08); }
+.wrap { max-width:1400px; margin:0 auto; padding:20px 24px 120px; }
+.note { background:#fdf6e3; border:1px solid #f0dca6; border-radius:12px; padding:10px 14px; font-size:13.5px; margin-bottom:18px; }
+.grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:20px; }
+.opt { background:var(--card); border:1.5px solid var(--line); border-radius:20px; padding:14px; display:flex; flex-direction:column; gap:10px; cursor:pointer; }
+.opt.on { border-color:var(--pri); box-shadow:0 0 0 4px var(--priSoft); }
+.oh { display:flex; align-items:center; gap:8px; } .oh .k { width:26px; height:26px; border-radius:8px; background:#f1f4f8; display:grid; place-items:center; font:700 13px "Space Grotesk"; }
+.opt.on .oh .k { background:var(--pri); color:#fff; } .oh b { font:700 16px "Space Grotesk"; }
+.oh .rec { margin-left:auto; font:700 10.5px Figtree; color:var(--ok); background:var(--okSoft); padding:2px 8px; border-radius:99px; }
+.opt p { margin:0; font-size:13.5px; color:var(--mute); min-height:40px; }
+.ph { width:393px; max-width:100%; height:760px; margin:0 auto; border-radius:40px; background:#0f172a; padding:9px; box-shadow:0 20px 50px rgba(20,30,50,.18); }
+.ph iframe { width:100%; height:100%; border:0; border-radius:32px; background:#fff; }
+.why { margin-top:18px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 16px; font-size:13.5px; color:var(--mute); }
+.why b { color:var(--ink); }
+.dock { position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line); }
+.dock-in { max-width:1400px; margin:0 auto; padding:12px 24px; display:flex; gap:12px; align-items:center; }
+.ans { flex:1; font:600 14px "JetBrains Mono"; background:#f1f4f8; border:1px solid var(--line); border-radius:10px; padding:8px 12px; }
+.cp { border:0; background:var(--pri); color:#fff; border-radius:10px; padding:9px 14px; font:700 13px Figtree; cursor:pointer; }
+@media (max-width:1300px) { .grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="bar"><div class="bar-in">
+  <h1>Taslak 24 · Mobil üst çubuk<small>Üç çerçeve de gerçek uygulama · içinde dokunup gezebilirsin</small></h1>
+  <div class="seg" data-g="sayfa"><button class="on" data-v="mhome">Bana</button><button data-v="mpts">Hastalar</button><button data-v="tasks">Görevler</button><button data-v="patient">Hasta</button><button data-v="settings">Ben</button></div>
+  <div class="seg" data-g="demo"><button class="on" data-v="hs.sevda">Hemşire</button><button data-v="dr.kamran">Hekim</button></div>
+  <div class="seg" data-g="tema"><button class="on" data-v="gun">Açık</button><button data-v="gece">Koyu</button></div>
+</div></div>
+<div class="wrap">
+  <div class="note"><b>Bu turda yapılanlar (her üç biçimde de):</b> giriş ekranı tek ekrana sığıyor · Ben'deki bildirim kurulum paneli kaldırıldı · alarm sesi ilk dokunuşta açılıyor (iPhone'da sessiz modda da, iOS 17+) · koyu temada çamurlu degrade kalktı. Aşağıda yalnız <b>üst çubuğun biçimi</b> seçiliyor.</div>
+  <div class="grid" id="g"></div>
+  <div class="why"><b>Neden böyle? · önerim A.</b> Bugünkü (C) üst çubuk iki satır ve renkli: arama kutusu ekranın en değerli yerini sürekli kaplıyor, sayfa adı küçük kalıyor ve koyu temada degrade çamurlu duruyordu. A'da renk yalnız anlam taşıyan yerde (kritik kart, seçili sekme, orta düğme) kalır; sayfa adı büyük ve net, altında birim ve nöbet bilgisi. Arama bir dokunuş uzakta. iOS ve Android'in kendi uygulamaları da bu dili kullanıyor. B, marka rengini isteyene: aynı düzen, düz petrol şerit.</div>
+</div>
+<div class="dock"><div class="dock-in"><span class="ans" id="ans"></span><button class="cp" id="cp">Kopyala</button><small style="color:var(--mute)">Bu satırı bana yaz.</small></div></div>
+<script>
+(function () {
+  var O = {
+    A:{ n:"Sade başlık", s:"Çubuk zeminle aynı renk; büyük sayfa adı, altında birim · nöbet. Arama, zil, kişi sağda küçük düğme.", rec:1 },
+    B:{ n:"Petrol şerit", s:"Aynı düzen, düz petrol renkli şerit (degrade yok). Koyu temada gece laciverti + ince turkuaz çizgi." },
+    C:{ n:"Arama öncelikli (bugünkü)", s:"Üstte her zaman açık arama kutusu, altında küçük sayfa adı. Karşılaştırma için." }
+  };
+  var st = { pick:"A", sayfa:"mhome", demo:"hs.sevda", tema:"gun" };
+  function src(k) { return "app/index.html?stil=" + k + "&demo=" + st.demo + "&sayfa=" + st.sayfa + "&tema=" + st.tema + "&t=" + Date.now(); }
+  function render() {
+    document.getElementById("g").innerHTML = Object.keys(O).map(function (k) { var o = O[k];
+      return '<div class="opt' + (st.pick === k ? " on" : "") + '" data-k="' + k + '"><div class="oh"><span class="k">' + k + "</span><b>" + o.n + "</b>" + (o.rec ? '<span class="rec">önerim</span>' : "") + "</div><p>" + o.s + '</p><div class="ph"><iframe title="' + o.n + '" src="' + src(k) + '"></iframe></div></div>'; }).join("");
+    ans();
+  }
+  function ans() { document.getElementById("ans").textContent = "Üst çubuk: " + st.pick; document.querySelectorAll(".opt").forEach(function (x) { x.classList.toggle("on", x.dataset.k === st.pick); }); }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-g] button");
+    if (b) { var g = b.parentNode.dataset.g; st[g] = b.dataset.v; b.parentNode.querySelectorAll("button").forEach(function (x) { x.classList.toggle("on", x === b); }); return render(); }
+    var o = e.target.closest(".oh, .opt > p"); if (o) { st.pick = o.closest(".opt").dataset.k; return ans(); }
+    if (e.target.closest("#cp")) { try { navigator.clipboard.writeText(document.getElementById("ans").textContent); e.target.textContent = "Kopyalandı"; } catch (x) {} }
+  });
+  render();
+})();
+</script>
+</body>
+</html>

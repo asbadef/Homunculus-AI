@@ -1,0 +1,1700 @@
+<!doctype html>
+<html lang="tr" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mobil Uygulama Taslağı</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ================= MARKA · tek yer =================
+   Renk ve yazı tipi ŞİMDİLİK NÖTR. Marka kimliği seçilince yalnız bu blok değişir.
+   Klinik önem renkleri (kritik/yüksek/orta/düşük) marka değildir; onlar ayrı durur. */
+:root {
+  --brand:#3B5B86;          /* açık temada ana renk */
+  --brand-hi:#9DB7DC;       /* koyu temada ana renk */
+  --brand-grad:linear-gradient(145deg, #5F7FA9 0%, #2E4A70 100%);
+  --brand-glow:rgba(76,110,160,.35);
+  --font-ui:Inter, system-ui, -apple-system, "Segoe UI", sans-serif;      /* sayfa ve iOS metni */
+  --font-display:Inter, system-ui, -apple-system, "Segoe UI", sans-serif; /* başlıklar, logo */
+  --font-ios:Inter, -apple-system, "SF Pro Text", system-ui, sans-serif;  /* iOS'ta gerçekte SF Pro */
+  --font-android:Roboto, system-ui, sans-serif;                           /* Android'de gerçekte Roboto */
+}
+/* ================= dış sayfa ================= */
+:root, html[data-theme="dark"] { --pg:#0b0f16; --pc:#111a28; --pc2:#16233a; --pi:#e8eef7; --pm:#8fa1ba; --pl:#1f2e47; --pp:var(--brand-hi); --pon:#03141c; --pw:#facc15; --pok:#4ade80; --pno:#f87171; }
+html[data-theme="light"] { --pg:#eef1f5; --pc:#ffffff; --pc2:#f3f6f9; --pi:#152231; --pm:#5c6b7d; --pl:#dde3ea; --pp:var(--brand); --pon:#ffffff; --pw:#a16207; --pok:#15803d; --pno:#b91c1c; }
+* { box-sizing:border-box; }
+html, body { margin:0; }
+body { background:var(--pg); color:var(--pi); font:15px/1.55 var(--font-ui); overflow-x:hidden; }
+.wrap { max-width:1240px; margin:0 auto; padding:24px 16px 80px; }
+h1 { font:700 30px/1.15 var(--font-display); margin:0 0 8px; }
+h2 { font:700 21px var(--font-display); margin:40px 0 12px; }
+.lead { color:var(--pm); margin:0 0 10px; max-width:900px; }
+.lead b { color:var(--pi); }
+.stamp { display:inline-flex; gap:8px; align-items:center; flex-wrap:wrap; font:700 12.5px var(--font-ui); padding:6px 12px; border-radius:999px; background:color-mix(in srgb, var(--pw) 16%, transparent); color:var(--pw); margin-bottom:12px; }
+.diff { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px; margin:14px 0 6px; }
+.diff div { background:var(--pc); border:1px solid var(--pl); border-radius:14px; padding:11px 13px; font-size:13.5px; color:var(--pm); }
+.diff b { color:var(--pi); display:block; font:700 14px var(--font-display); margin-bottom:2px; }
+
+.ctl { position:sticky; top:0; z-index:40; background:color-mix(in srgb, var(--pg) 88%, transparent); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-bottom:1px solid var(--pl); }
+.ctl .in { max-width:1240px; margin:0 auto; padding:10px 16px; display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; }
+.grp { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.grp > span { font:700 10.5px var(--font-ui); letter-spacing:.09em; text-transform:uppercase; color:var(--pm); }
+.pseg { display:inline-flex; background:var(--pc); border:1px solid var(--pl); border-radius:11px; padding:3px; flex-wrap:wrap; }
+.pseg button { border:0; background:transparent; color:var(--pm); font:600 13px var(--font-ui); padding:6px 11px; border-radius:8px; cursor:pointer; }
+.pseg button.on { background:var(--pp); color:var(--pon); }
+.pbtn { border:1px solid var(--pl); background:var(--pc); color:var(--pi); font:600 13px var(--font-ui); padding:7px 12px; border-radius:10px; cursor:pointer; }
+.pbtn:hover { border-color:var(--pp); }
+
+.stage { display:grid; grid-template-columns:430px 1fr; gap:28px; align-items:start; margin-top:22px; }
+.phCol { position:sticky; top:74px; }
+.fit { width:100%; }
+.side { display:grid; gap:14px; min-width:0; }
+.box { background:var(--pc); border:1px solid var(--pl); border-radius:16px; padding:14px 16px; min-width:0; }
+.box h3 { font:700 17px var(--font-display); margin:0 0 8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.box h3 small { font:600 12px var(--font-ui); color:var(--pm); }
+.box ul { margin:0; padding-left:18px; color:var(--pm); font-size:14px; }
+.box li { margin-bottom:6px; } .box li b { color:var(--pi); }
+.nav { display:flex; flex-wrap:wrap; gap:6px; }
+.nav button { border:1px solid var(--pl); background:var(--pc2); color:var(--pi); font:600 12.5px var(--font-ui); padding:6px 10px; border-radius:999px; cursor:pointer; }
+.nav button.on { border-color:var(--pp); background:color-mix(in srgb, var(--pp) 18%, transparent); }
+.nav button small { color:var(--pm); font-weight:600; }
+.real { display:flex; gap:10px; align-items:flex-start; }
+.badge { font:800 11px var(--font-ui); letter-spacing:.06em; padding:4px 9px; border-radius:999px; white-space:nowrap; }
+.badge.var { background:color-mix(in srgb, var(--pok) 18%, transparent); color:var(--pok); }
+.badge.kismen { background:color-mix(in srgb, var(--pw) 18%, transparent); color:var(--pw); }
+.badge.yok { background:color-mix(in srgb, var(--pno) 16%, transparent); color:var(--pno); }
+.real p { margin:0; font-size:14px; color:var(--pm); } .real p b { color:var(--pi); }
+.plat { font-size:13.5px; color:var(--pm); border-top:1px dashed var(--pl); margin-top:10px; padding-top:9px; }
+.plat b { color:var(--pi); }
+
+.cmp { display:grid; gap:8px; }
+.cr { display:grid; grid-template-columns:170px 1fr 1fr; gap:10px; background:var(--pc); border:1px solid var(--pl); border-radius:14px; padding:10px 14px; font-size:14px; }
+.cr > b { font:700 14px var(--font-display); }
+.cr span { color:var(--pm); } .cr span i { font-style:normal; font:700 10.5px var(--font-ui); letter-spacing:.08em; color:var(--pp); display:block; }
+.st { display:grid; gap:8px; }
+.sr { display:grid; grid-template-columns:180px 110px 1fr; gap:12px; align-items:start; background:var(--pc); border:1px solid var(--pl); border-radius:14px; padding:10px 14px; font-size:14px; }
+.sr > b { font:700 14px var(--font-display); } .sr p { margin:0; color:var(--pm); } .sr p b { color:var(--pi); }
+.gaps { background:var(--pc); border:1px solid var(--pl); border-radius:16px; padding:14px 18px 14px 34px; color:var(--pm); margin:0; }
+.gaps li { margin-bottom:6px; } .gaps b { color:var(--pi); }
+.choose { background:var(--pc); border:1px solid var(--pp); border-radius:18px; padding:16px 18px; }
+.choose .row { display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; margin-bottom:10px; }
+.choose label { font:600 13.5px var(--font-ui); color:var(--pm); display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.choose select, .choose input { font:600 14px var(--font-ui); color:var(--pi); background:var(--pc2); border:1px solid var(--pl); border-radius:9px; padding:7px 9px; max-width:100%; }
+.choose input { min-width:0; width:320px; }
+.line { display:block; background:#050b16; color:#9ff3ff; border-radius:10px; padding:12px 14px; font:600 14px/1.5 ui-monospace, Consolas, monospace; overflow-wrap:anywhere; }
+.muted { color:var(--pm); font-size:13px; }
+
+@media (max-width:1020px) { .stage { grid-template-columns:1fr; } .phCol { position:static; } }
+@media (max-width:760px) { .cr, .sr { grid-template-columns:1fr; gap:4px; } h1 { font-size:25px; } .choose input { width:100%; } }
+
+/* ================= telefon cihazı ================= */
+.devWrap { position:relative; margin:0 auto; }
+.dev { position:absolute; left:0; top:0; width:414px; height:868px; transform-origin:0 0; border-radius:58px; padding:12px; background:#05070b; box-shadow:0 0 0 2px #2b3342, 0 30px 70px rgba(0,0,0,.45); }
+.dev.and { border-radius:46px; background:#0a0c10; }
+.scr { position:relative; width:390px; height:844px; border-radius:46px; overflow:hidden; isolation:isolate; }
+.dev.and .scr { border-radius:34px; }
+
+/* platform + tema değişkenleri */
+.scr.ios.light { --bg:#F2F2F7; --card:#FFFFFF; --card2:#EFEFF4; --ink:#000000; --ink2:#5E5E63; --ink3:#8A8A8E; --line:#D1D1D6; --fill:rgba(118,118,128,.12); --tint:var(--brand); --onTint:#fff; --tintSoft:color-mix(in srgb, var(--brand) 13%, transparent); --onTintSoft:var(--brand); --bar:rgba(249,249,250,.84); --crit:#D70015; --high:#C93400; --mid:#9A5B00; --low:#0068A3; --ok:#248A3D; --hr:#248A3D; --map:#D70015; --spo:#9A5B00; --rr:#0068A3; --tmp:#3A3A3C; --scrim:rgba(0,0,0,.28); --inv:#1C1C1E; --onInv:#fff; --invPri:var(--brand-hi); }
+.scr.ios.dark  { --bg:#000000; --card:#1C1C1E; --card2:#2C2C2E; --ink:#FFFFFF; --ink2:#AEAEB2; --ink3:#8E8E93; --line:#38383A; --fill:rgba(118,118,128,.24); --tint:var(--brand-hi); --onTint:#0E1A2B; --tintSoft:color-mix(in srgb, var(--brand-hi) 18%, transparent); --onTintSoft:var(--brand-hi); --bar:rgba(22,22,24,.80); --crit:#FF453A; --high:#FF9F0A; --mid:#FFD60A; --low:#64D2FF; --ok:#30D158; --hr:#30D158; --map:#FF6961; --spo:#FFD60A; --rr:#64D2FF; --tmp:#E5E5EA; --scrim:rgba(0,0,0,.5); --inv:#F2F2F7; --onInv:#000; --invPri:var(--brand); }
+.scr.and.light { --bg:#F5FAFC; --card:#EAF0F2; --card2:#DEE4E6; --ink:#171D1E; --ink2:#3F484B; --ink3:#6F797B; --line:#BFC8CB; --fill:#DEE4E6; --tint:var(--brand); --onTint:#FFFFFF; --tintSoft:color-mix(in srgb, var(--brand) 20%, #fff); --onTintSoft:color-mix(in srgb, var(--brand) 70%, #000); --bar:#E3E9EB; --crit:#BA1A1A; --high:#A04100; --mid:#7A5900; --low:#00639B; --ok:#1B6D2F; --hr:#1B6D2F; --map:#BA1A1A; --spo:#7A5900; --rr:#00639B; --tmp:#2B3133; --scrim:rgba(0,0,0,.32); --inv:#2B3133; --onInv:#ECF2F3; --invPri:var(--brand-hi); }
+.scr.and.dark  { --bg:#0F1416; --card:#1B2122; --card2:#252B2D; --ink:#DEE3E5; --ink2:#BFC8CB; --ink3:#899295; --line:#3F484B; --fill:#252B2D; --tint:var(--brand-hi); --onTint:#0E1A2B; --tintSoft:color-mix(in srgb, var(--brand-hi) 30%, #0F1416); --onTintSoft:color-mix(in srgb, var(--brand-hi) 55%, #fff); --bar:#1B2122; --crit:#FFB4AB; --high:#FFB68E; --mid:#EBC248; --low:#97CBFF; --ok:#8BD89A; --hr:#30D158; --map:#FF6961; --spo:#FFD60A; --rr:#64D2FF; --tmp:#E5E5EA; --scrim:rgba(0,0,0,.5); --inv:#DEE3E5; --onInv:#2B3133; --invPri:var(--brand); }
+.scr { --fs:1; background:var(--bg); color:var(--ink); font-size:calc(16px * var(--fs)); font-variant-numeric:tabular-nums; cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Ccircle cx='14' cy='14' r='11' fill='rgba(140,140,150,.35)' stroke='rgba(255,255,255,.7)' stroke-width='1.5'/%3E%3C/svg%3E") 14 14, pointer; user-select:none; -webkit-user-select:none; }
+.scr.big { --fs:1.2; }
+.scr.ios { font-family:var(--font-ios); letter-spacing:-.01em; }
+.scr.and { font-family:var(--font-android); }
+:where(.scr) button { font:inherit; color:inherit; border:0; background:none; padding:0; cursor:inherit; text-align:inherit; }
+.scr input, .scr textarea { font:inherit; color:var(--ink); }
+.ic { width:22px; height:22px; flex:none; display:block; }
+
+/* kaydırma: çubuk yok, dokunmatik his */
+.scroll { position:absolute; inset:0; overflow-y:auto; overflow-x:hidden; scrollbar-width:none; -ms-overflow-style:none; overscroll-behavior:contain; touch-action:pan-y; }
+.scroll::-webkit-scrollbar { display:none; width:0; height:0; }
+.ios .scroll { padding:98px 0 100px; }
+.and .scroll { padding:100px 0 112px; }
+.view.modal .scroll, .view.notabs .scroll { padding-bottom:40px; }
+.pad { padding:0 16px; }
+
+/* durum çubuğu */
+#sb { position:absolute; left:0; right:0; top:0; z-index:60; pointer-events:none; }
+.ios #sb { height:54px; }
+.and #sb { height:38px; }
+.sbi { display:flex; justify-content:space-between; align-items:center; height:100%; color:var(--ink); }
+.sbi.lt { color:#fff; }
+.ios .sbi { padding:6px 30px 0 44px; font:600 calc(16px) var(--font-ios); }
+.and .sbi { padding:2px 22px 0; font:500 13.5px var(--font-android); }
+.sbi .icons { display:flex; gap:6px; align-items:center; }
+.sbi svg { display:block; }
+.island { position:absolute; top:11px; left:50%; width:124px; height:36px; transform:translateX(-50%); background:#000; border-radius:20px; transition:width .45s cubic-bezier(.3,1.3,.5,1), height .45s cubic-bezier(.3,1.3,.5,1), border-radius .4s; overflow:hidden; display:flex; align-items:center; gap:10px; padding:0 14px; color:#fff; font:600 14px var(--font-ios); white-space:nowrap; }
+.island .ii { opacity:0; transition:opacity .2s; display:flex; align-items:center; gap:10px; min-width:0; }
+.island .ii span { overflow:hidden; text-overflow:ellipsis; }
+.island.big { width:352px; height:60px; border-radius:30px; }
+.island.big .ii { opacity:1; transition-delay:.2s; }
+.island .ii i { width:30px; height:30px; border-radius:50%; background:#30D158; display:grid; place-items:center; flex:none; color:#000; }
+.punch { position:absolute; top:10px; left:50%; width:14px; height:14px; margin-left:-7px; border-radius:50%; background:#000; box-shadow:0 0 0 1.5px rgba(128,128,128,.25); }
+
+/* alt çubuklar */
+.hind { position:absolute; left:50%; bottom:8px; width:136px; height:5px; margin-left:-68px; border-radius:3px; background:var(--ink); opacity:.85; z-index:70; pointer-events:none; }
+.and .hind { width:108px; height:4px; margin-left:-54px; bottom:6px; opacity:.55; }
+.hind.lt { background:#fff; }
+
+/* iOS gezinme çubuğu */
+.inav { position:absolute; left:0; right:0; top:0; height:98px; padding-top:54px; z-index:20; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; transition:background .2s, border-color .2s; border-bottom:.5px solid transparent; }
+.inav.solid, .inav.scrolled { background:var(--bar); backdrop-filter:saturate(180%) blur(20px); -webkit-backdrop-filter:saturate(180%) blur(20px); border-bottom-color:var(--line); }
+.inav .nt { font-weight:600; font-size:calc(17px * var(--fs)); opacity:0; transition:opacity .15s; white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; }
+.inav.solid .nt, .inav.scrolled .nt { opacity:1; }
+.inav .nl { justify-self:start; padding-left:8px; display:flex; }
+.inav .nr { justify-self:end; padding-right:16px; display:flex; gap:14px; align-items:center; }
+.nb { display:flex; align-items:center; gap:0; color:var(--tint); font-size:calc(17px * var(--fs)); min-height:44px; }
+.nb .ic { width:26px; height:26px; margin-right:-2px; }
+.nlink { color:var(--tint); font-size:calc(17px * var(--fs)); min-height:44px; display:flex; align-items:center; gap:4px; }
+.nlink.b { font-weight:600; }
+.lt { font-size:calc(34px * var(--fs)); font-weight:700; letter-spacing:-.025em; line-height:1.15; margin:0 0 4px; padding:0 16px; }
+.ltsub { padding:0 16px; color:var(--ink2); font-size:calc(15px * var(--fs)); margin:0 0 14px; }
+
+/* Android üst uygulama çubuğu */
+.abar { position:absolute; left:0; right:0; top:0; height:100px; padding-top:38px; z-index:20; display:flex; align-items:center; gap:4px; padding-left:4px; padding-right:4px; background:var(--bg); transition:background .2s; }
+.abar.scrolled { background:var(--bar); }
+.abar .at { flex:1; font-size:calc(22px * var(--fs)); font-weight:400; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-left:12px; }
+.abar .al:not(:empty) + .at { padding-left:4px; }
+.abar .ar { display:flex; align-items:center; gap:2px; }
+.ib { width:48px; height:48px; display:grid; place-items:center; border-radius:50%; color:var(--ink2); position:relative; }
+.ib:active { background:var(--fill); }
+.avatar { width:32px; height:32px; border-radius:50%; background:var(--tintSoft); color:var(--onTintSoft); display:grid; place-items:center; font-weight:700; font-size:13px; }
+.asub { padding:0 16px; color:var(--ink2); font-size:calc(14px * var(--fs)); margin:0 0 12px; }
+
+/* iOS sekme çubuğu */
+.itabs { position:absolute; left:0; right:0; bottom:0; height:84px; padding-bottom:30px; display:flex; z-index:20; background:var(--bar); backdrop-filter:saturate(180%) blur(20px); -webkit-backdrop-filter:saturate(180%) blur(20px); border-top:.5px solid var(--line); }
+.itabs .tb { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; color:var(--ink3); font-size:10.5px; font-weight:500; position:relative; }
+.itabs .tb .ic { width:26px; height:26px; }
+.itabs .tb.on { color:var(--tint); }
+.itabs .tb.on .ic { stroke-width:2.4; }
+.itabs .bd { position:absolute; top:3px; left:calc(50% + 6px); min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:#FF3B30; color:#fff; font:600 12px/18px var(--font-ios); text-align:center; }
+
+/* Android navigation bar */
+.anav { position:absolute; left:0; right:0; bottom:0; height:96px; padding-bottom:16px; display:flex; z-index:20; background:var(--bar); }
+.anav .ni { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; color:var(--ink2); font-size:12px; font-weight:500; }
+.anav .ni .pl { width:64px; height:32px; border-radius:16px; display:grid; place-items:center; position:relative; transition:background .2s; }
+.anav .ni.on .pl { background:var(--tintSoft); color:var(--onTintSoft); }
+.anav .ni.on { color:var(--ink); font-weight:700; }
+.anav .bd { position:absolute; top:-2px; left:36px; min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--crit); color:#fff; font:500 11px/16px var(--font-android); text-align:center; }
+.and.dark .anav .bd { color:#690005; }
+.fab { position:absolute; right:16px; bottom:112px; z-index:21; height:56px; min-width:56px; border-radius:16px; background:var(--tintSoft); color:var(--onTintSoft); display:flex; align-items:center; gap:12px; padding:0 16px; font-weight:500; font-size:calc(15px * var(--fs)); box-shadow:0 3px 6px rgba(0,0,0,.22), 0 1px 3px rgba(0,0,0,.18); }
+.view.notabs .fab { bottom:30px; }
+
+/* görünüm geçişleri */
+.view { position:absolute; inset:0; background:var(--bg); transition:transform .38s cubic-bezier(.2,.8,.2,1), border-radius .38s, filter .38s; transform-origin:50% 0; }
+.ios .view.recede { transform:scale(.92) translateY(18px); border-radius:14px; overflow:hidden; filter:brightness(.8); }
+@keyframes iosPush { from { transform:translateX(100%); } to { transform:none; } }
+@keyframes iosPop { from { transform:translateX(-28%); opacity:.6; } to { transform:none; opacity:1; } }
+@keyframes iosUp { from { transform:translateY(100%); } to { transform:none; } }
+@keyframes andPush { from { transform:translateX(30px); opacity:0; } to { transform:none; opacity:1; } }
+@keyframes andPop { from { transform:translateX(-30px); opacity:0; } to { transform:none; opacity:1; } }
+@keyframes andUp { from { transform:translateY(40px); opacity:0; } to { transform:none; opacity:1; } }
+@keyframes fade { from { opacity:0; } to { opacity:1; } }
+.ios .view.a-push { animation:iosPush .42s cubic-bezier(.2,.9,.25,1); }
+.ios .view.a-pop { animation:iosPop .36s cubic-bezier(.2,.9,.25,1); }
+.ios .view.a-up { animation:iosUp .44s cubic-bezier(.2,.9,.25,1); }
+.and .view.a-push { animation:andPush .3s cubic-bezier(.2,0,0,1); }
+.and .view.a-pop { animation:andPop .3s cubic-bezier(.2,0,0,1); }
+.and .view.a-up { animation:andUp .32s cubic-bezier(.2,0,0,1); }
+.view.a-fade { animation:fade .25s ease; }
+
+/* ortak parçalar */
+.card { background:var(--card); border-radius:14px; margin:0 16px 10px; padding:12px 14px; position:relative; }
+.and .card { border-radius:16px; }
+.sec { margin:0 0 22px; }
+.sh { padding:0 32px 6px; font-size:calc(13px * var(--fs)); color:var(--ink2); text-transform:uppercase; letter-spacing:.02em; }
+.and .sh { padding:0 28px 8px; text-transform:none; letter-spacing:.01em; color:var(--tint); font-weight:500; font-size:calc(14px * var(--fs)); }
+.sf { padding:6px 32px 0; font-size:calc(13px * var(--fs)); color:var(--ink2); }
+.and .sf { padding:6px 28px 0; }
+.lg { background:var(--card); border-radius:12px; margin:0 16px; overflow:hidden; }
+.and .lg { border-radius:18px; }
+.rw { display:flex; align-items:center; gap:12px; padding:0 16px; min-height:48px; position:relative; width:100%; }
+.and .rw { min-height:56px; }
+.rw + .rw::before { content:""; position:absolute; top:0; left:16px; right:0; border-top:.5px solid var(--line); }
+.and .rw + .rw::before { left:16px; right:16px; border-top:1px solid color-mix(in srgb, var(--line) 50%, transparent); }
+.rw .rt { flex:1; min-width:0; padding:10px 0; }
+.rw .rt b { display:block; font-weight:500; font-size:calc(16px * var(--fs)); }
+.ios .rw .rt b { font-weight:400; font-size:calc(17px * var(--fs)); }
+.rw .rt span { display:block; color:var(--ink2); font-size:calc(13px * var(--fs)); }
+.rw .rv { color:var(--ink2); font-size:calc(15px * var(--fs)); display:flex; align-items:center; gap:4px; white-space:nowrap; }
+.rw .rv .ic { width:18px; height:18px; color:var(--ink3); }
+.rw .ri { width:30px; height:30px; border-radius:8px; display:grid; place-items:center; background:var(--c, var(--tint)); color:#fff; flex:none; }
+.rw .ri .ic { width:18px; height:18px; }
+.and .rw .ri { background:none; color:var(--ink2); width:24px; }
+.and .rw .ri .ic { width:24px; height:24px; }
+.rw.dis { opacity:.5; }
+
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:50px; padding:0 18px; border-radius:14px; font-weight:600; font-size:calc(17px * var(--fs)); background:var(--tint); color:var(--onTint); white-space:nowrap; }
+.and .btn { min-height:48px; border-radius:24px; font-weight:500; font-size:calc(15px * var(--fs)); letter-spacing:.01em; padding:0 22px; }
+.btn.sm { min-height:38px; padding:0 14px; font-size:calc(15px * var(--fs)); border-radius:10px; }
+.and .btn.sm { min-height:40px; border-radius:20px; font-size:calc(14px * var(--fs)); padding:0 16px; }
+.btn.ton { background:var(--tintSoft); color:var(--onTintSoft); }
+.btn.gry { background:var(--fill); color:var(--ink); }
+.and .btn.gry { background:transparent; box-shadow:inset 0 0 0 1px var(--line); color:var(--tint); }
+.btn.red { background:color-mix(in srgb, var(--crit) 15%, transparent); color:var(--crit); }
+.btn.redf { background:var(--crit); color:#fff; }
+.and.dark .btn.redf { color:#690005; }
+.btn.w { width:100%; }
+.btn .ic { width:20px; height:20px; }
+.btn[disabled] { opacity:.45; }
+.brow { display:flex; gap:8px; flex-wrap:wrap; }
+.brow > .btn { flex:1 1 0; }
+
+.seg { display:flex; background:var(--fill); border-radius:9px; padding:2px; margin:0 16px 14px; }
+.seg button { flex:1; min-height:32px; border-radius:7px; font-size:calc(13.5px * var(--fs)); font-weight:500; text-align:center; }
+.seg button.on { background:var(--card); box-shadow:0 1px 3px rgba(0,0,0,.18); font-weight:600; }
+.ios.dark .seg button.on { background:#636366; }
+.chips { display:flex; gap:8px; margin:0 16px 14px; flex-wrap:wrap; }
+.chips button { min-height:32px; padding:0 14px; border-radius:8px; box-shadow:inset 0 0 0 1px var(--line); font-size:calc(14px * var(--fs)); font-weight:500; display:flex; align-items:center; gap:6px; color:var(--ink2); }
+.chips button.on { background:var(--tintSoft); color:var(--onTintSoft); box-shadow:none; }
+.chips button .ic { width:16px; height:16px; }
+.ios .chips button { border-radius:999px; box-shadow:none; background:var(--fill); color:var(--ink); }
+.ios .chips button.on { background:var(--tint); color:var(--onTint); }
+
+.swt { width:51px; height:31px; border-radius:16px; background:var(--fill); position:relative; flex:none; transition:background .2s; }
+.swt i { position:absolute; top:2px; left:2px; width:27px; height:27px; border-radius:50%; background:#fff; box-shadow:0 2px 5px rgba(0,0,0,.25); transition:left .2s; }
+.swt.on { background:#34C759; } .swt.on i { left:22px; }
+.and .swt { width:52px; height:32px; background:var(--card2); box-shadow:inset 0 0 0 2px var(--ink3); }
+.and .swt i { top:8px; left:8px; width:16px; height:16px; background:var(--ink3); box-shadow:none; transition:all .2s; }
+.and .swt.on { background:var(--tint); box-shadow:none; } .and .swt.on i { top:4px; left:24px; width:24px; height:24px; background:var(--onTint); }
+.swt.dis { opacity:.4; }
+
+.pill { display:inline-flex; align-items:center; gap:5px; font-weight:700; font-size:calc(11.5px * var(--fs)); letter-spacing:.04em; padding:3px 8px; border-radius:6px; background:color-mix(in srgb, var(--c) 16%, transparent); color:var(--c); white-space:nowrap; }
+.and .pill { border-radius:8px; letter-spacing:.02em; font-weight:500; }
+.tag { display:inline-flex; align-items:center; gap:4px; font-size:calc(12px * var(--fs)); font-weight:600; padding:2px 8px; border-radius:6px; background:var(--fill); color:var(--ink2); }
+.tag.red { background:color-mix(in srgb, var(--crit) 14%, transparent); color:var(--crit); }
+.note { margin:0 16px 14px; padding:10px 12px; border-radius:12px; background:var(--tintSoft); color:var(--onTintSoft); font-size:calc(13.5px * var(--fs)); display:flex; gap:9px; align-items:flex-start; }
+.note .ic { width:18px; height:18px; margin-top:1px; }
+.note.w { background:color-mix(in srgb, var(--high) 13%, transparent); color:var(--ink); }
+.mut { color:var(--ink2); }
+.xs { font-size:calc(12.5px * var(--fs)); color:var(--ink2); }
+
+/* size düşenler */
+.it { border-left:0; overflow:hidden; }
+.it::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--c); }
+.ith { display:flex; align-items:center; gap:8px; font-size:calc(12.5px * var(--fs)); color:var(--ink2); margin-bottom:3px; }
+.ith .k { font-weight:700; color:var(--c); letter-spacing:.03em; text-transform:uppercase; font-size:calc(11.5px * var(--fs)); }
+.ith .age { margin-left:auto; font-weight:700; color:var(--c); font-size:calc(14px * var(--fs)); }
+.itt { font-weight:700; font-size:calc(17px * var(--fs)); line-height:1.25; }
+.and .itt { font-weight:500; }
+.its { color:var(--ink2); font-size:calc(14px * var(--fs)); margin-top:2px; }
+.ita { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+.ita .btn { flex:1 1 0; }
+.it.dim { opacity:.62; }
+.hero { margin:0 16px 14px; border-radius:22px; padding:16px; background:color-mix(in srgb, var(--c) 14%, var(--card)); position:relative; }
+.hero .k { font-weight:800; font-size:calc(12px * var(--fs)); letter-spacing:.06em; color:var(--c); text-transform:uppercase; display:flex; gap:8px; }
+.hero .k span:last-child { margin-left:auto; }
+.hero h3 { margin:6px 0 2px; font-size:calc(24px * var(--fs)); line-height:1.15; letter-spacing:-.02em; }
+.and .hero h3 { font-weight:400; }
+.hero p { margin:0 0 14px; color:var(--ink2); font-size:calc(14.5px * var(--fs)); }
+.cnt { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:0 16px 16px; }
+.cnt button { background:var(--card); border-radius:14px; padding:10px 12px; text-align:left; }
+.cnt b { display:block; font-size:calc(26px * var(--fs)); line-height:1.1; font-weight:700; color:var(--c, var(--ink)); }
+.cnt span { font-size:calc(12.5px * var(--fs)); color:var(--ink2); }
+
+/* hasta satırı + kaydırma eylemleri */
+.sw { position:relative; margin:0 16px 8px; border-radius:14px; overflow:hidden; background:var(--card2); touch-action:pan-y; }
+.and .sw { border-radius:16px; }
+.swa { position:absolute; right:0; top:0; bottom:0; display:flex; }
+.swa button { width:78px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; color:#fff; font-weight:600; font-size:calc(13px * var(--fs)); }
+.swa .b1 { background:#0A84FF; } .swa .b2 { background:#8E5CF7; } .swa .b3 { background:#34A853; } .swa .b4 { background:#8E8E93; }
+.swc { position:relative; background:var(--card); display:flex; gap:12px; align-items:center; padding:12px 12px 12px 14px; transition:transform .25s cubic-bezier(.2,.8,.2,1); will-change:transform; min-height:76px; }
+.swc.drag { transition:none; }
+.bt { width:58px; flex:none; text-align:center; border-radius:10px; padding:7px 0; font-weight:800; font-size:calc(14px * var(--fs)); background:color-mix(in srgb, var(--c) 16%, transparent); color:var(--c); letter-spacing:.01em; }
+.pm { flex:1; min-width:0; }
+.pm b { display:block; font-size:calc(16.5px * var(--fs)); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.and .pm b { font-weight:500; }
+.pm span { display:block; font-size:calc(13px * var(--fs)); color:var(--ink2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pm .vv { color:var(--ink); font-weight:600; margin-top:2px; }
+.pm .vv em { font-style:normal; color:var(--crit); }
+.pr { display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
+.pr .ic { color:var(--ink3); width:20px; height:20px; }
+.more { width:40px; height:40px; border-radius:50%; display:grid; place-items:center; color:var(--ink2); margin:-6px -6px -6px 0; }
+.uh { padding:14px 32px 6px; font-size:calc(13px * var(--fs)); color:var(--ink2); text-transform:uppercase; letter-spacing:.02em; }
+.and .uh { padding:14px 28px 8px; text-transform:none; color:var(--tint); font-weight:500; font-size:calc(14px * var(--fs)); }
+.search { margin:0 16px 12px; height:38px; border-radius:10px; background:var(--fill); display:flex; align-items:center; gap:6px; padding:0 10px; color:var(--ink3); font-size:calc(17px * var(--fs)); }
+.search .ic { width:18px; height:18px; }
+.and .search { height:56px; border-radius:28px; background:var(--card2); padding:0 16px; gap:14px; color:var(--ink2); font-size:calc(16px * var(--fs)); }
+.and .search .ic { width:24px; height:24px; }
+
+/* hasta özeti */
+.phd { padding:0 16px 12px; }
+.phd .row1 { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.phd .bn { font-weight:800; font-size:calc(15px * var(--fs)); color:var(--c); background:color-mix(in srgb, var(--c) 15%, transparent); padding:4px 9px; border-radius:8px; }
+.phd h2 { margin:6px 0 2px; font-size:calc(28px * var(--fs)); letter-spacing:-.02em; line-height:1.15; }
+.and .phd h2 { font-weight:400; }
+.phd p { margin:0; color:var(--ink2); font-size:calc(14.5px * var(--fs)); }
+.tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+.reco { margin:0 16px 12px; border-radius:16px; padding:12px 14px; background:color-mix(in srgb, var(--crit) 13%, var(--card)); }
+.reco b { display:block; color:var(--crit); font-size:calc(16.5px * var(--fs)); }
+.reco span { display:block; color:var(--ink2); font-size:calc(13.5px * var(--fs)); margin-top:2px; }
+.vg { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0 16px 12px; }
+.vt { background:var(--card); border-radius:16px; padding:10px 12px 8px; text-align:left; min-width:0; }
+.vt .l { display:flex; justify-content:space-between; font-size:calc(12.5px * var(--fs)); font-weight:700; color:var(--vc); letter-spacing:.03em; }
+.vt .l i { font-style:normal; color:var(--ink3); font-weight:500; letter-spacing:0; }
+.vt .n { font-size:calc(40px * var(--fs)); font-weight:700; line-height:1.05; letter-spacing:-.03em; color:var(--vc); margin:2px 0 2px; }
+.and .vt .n { font-weight:500; }
+.vt .n small { font-size:calc(15px * var(--fs)); font-weight:600; color:var(--ink2); margin-left:3px; letter-spacing:0; }
+.vt.out { box-shadow:inset 0 0 0 2px color-mix(in srgb, var(--crit) 55%, transparent); }
+.vt svg { width:100%; height:30px; display:block; }
+.vt.wide { grid-column:span 2; }
+.qa { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:0 16px 14px; }
+.qa button { background:var(--card); border-radius:16px; padding:12px 4px 10px; display:flex; flex-direction:column; align-items:center; gap:6px; font-size:calc(12.5px * var(--fs)); font-weight:600; text-align:center; line-height:1.2; }
+.qa button .ic { width:24px; height:24px; color:var(--tint); }
+.qa button.lk { opacity:.45; }
+.score { display:flex; align-items:center; gap:12px; }
+.score .sv { font-size:calc(30px * var(--fs)); font-weight:800; letter-spacing:-.02em; }
+.signed { color:var(--ok); font-weight:600; font-size:calc(14px * var(--fs)); display:flex; gap:6px; align-items:center; }
+.signed .ic { width:18px; height:18px; }
+
+/* alarm ekranı */
+.ahd { margin:0 16px 12px; border-radius:24px; padding:16px; background:color-mix(in srgb, var(--c) 16%, var(--card)); }
+.ahd .top { display:flex; align-items:center; gap:8px; }
+.ahd .tm { margin-left:auto; font-weight:800; font-size:calc(22px * var(--fs)); color:var(--c); }
+.ahd h2 { margin:10px 0 4px; font-size:calc(30px * var(--fs)); line-height:1.1; letter-spacing:-.02em; }
+.and .ahd h2 { font-weight:400; }
+.ahd .who { font-size:calc(15px * var(--fs)); color:var(--ink2); }
+.ahd .who b { color:var(--ink); }
+.ahd svg { width:100%; height:54px; display:block; margin-top:10px; }
+.lad { margin:0 16px 14px; background:var(--card); border-radius:16px; padding:12px 14px; }
+.lad h5 { margin:0 0 8px; font-size:calc(13px * var(--fs)); color:var(--ink2); font-weight:600; display:flex; justify-content:space-between; }
+.st4 { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+.st4 div { border-radius:10px; padding:7px 6px; background:var(--fill); font-size:calc(11.5px * var(--fs)); line-height:1.25; color:var(--ink2); }
+.st4 div b { display:block; font-size:calc(12.5px * var(--fs)); color:var(--ink); }
+.st4 div.done { background:color-mix(in srgb, var(--c) 18%, transparent); }
+.st4 div.done b { color:var(--c); }
+.st4 div.next { box-shadow:inset 0 0 0 2px var(--c); }
+.abtn { position:absolute; left:0; right:0; bottom:0; padding:12px 16px 34px; background:linear-gradient(to top, var(--bg) 78%, transparent); z-index:15; display:grid; gap:8px; }
+.abtn .btn.big { min-height:60px; font-size:calc(19px * var(--fs)); border-radius:18px; }
+.and .abtn .btn.big { border-radius:30px; }
+.view.modal .scroll.hasbtn { padding-bottom:230px; }
+.loc { margin:0 16px 12px; display:flex; gap:10px; align-items:center; background:var(--card); border-radius:16px; padding:12px 14px; }
+.loc .ic { color:var(--tint); width:26px; height:26px; }
+.loc b { display:block; font-size:calc(17px * var(--fs)); }
+.loc span { color:var(--ink2); font-size:calc(13.5px * var(--fs)); }
+
+/* vital giriş */
+.steps { display:flex; gap:6px; margin:0 16px 14px; }
+.steps div { flex:1; height:4px; border-radius:2px; background:var(--fill); }
+.steps div.on { background:var(--tint); }
+.big3 { display:grid; gap:10px; margin:0 16px 14px; }
+.opt { display:flex; gap:14px; align-items:center; background:var(--card); border-radius:18px; padding:16px; text-align:left; width:100%; }
+.opt .oi { width:48px; height:48px; border-radius:14px; background:var(--tintSoft); color:var(--onTintSoft); display:grid; place-items:center; flex:none; }
+.opt .oi .ic { width:26px; height:26px; }
+.opt b { display:block; font-size:calc(17px * var(--fs)); }
+.and .opt b { font-weight:500; }
+.opt span { display:block; color:var(--ink2); font-size:calc(13.5px * var(--fs)); }
+.opt.pri { background:var(--tint); color:var(--onTint); } .opt.pri span { color:inherit; opacity:.85; } .opt.pri .oi { background:rgba(255,255,255,.2); color:inherit; }
+.vrow { display:flex; align-items:center; gap:10px; background:var(--card); border-radius:16px; padding:10px 10px 10px 14px; margin:0 16px 8px; }
+.vrow .vl { flex:1; min-width:0; }
+.vrow .vl b { display:block; font-size:calc(15px * var(--fs)); }
+.vrow .vl span { display:block; font-size:calc(12px * var(--fs)); color:var(--ink2); }
+.vrow .vl .src { color:var(--tint); font-weight:600; }
+.stp { display:flex; align-items:center; gap:6px; }
+.stp button.pm2 { width:48px; height:48px; border-radius:14px; background:var(--fill); display:grid; place-items:center; font-size:26px; font-weight:500; line-height:1; }
+.and .stp button.pm2 { border-radius:24px; }
+.stp .num { min-width:74px; height:48px; border-radius:12px; background:var(--card2); display:grid; place-items:center; font-size:calc(24px * var(--fs)); font-weight:700; }
+.stp .num.e { color:var(--ink3); font-weight:500; }
+.vrow.out .num { box-shadow:inset 0 0 0 2px var(--high); color:var(--high); }
+.bp { display:flex; align-items:center; gap:4px; }
+.bp .num { min-width:62px; }
+.scan { margin:0 16px 14px; height:300px; border-radius:24px; background:#0b0d10; position:relative; overflow:hidden; display:grid; place-items:center; }
+.scan::before { content:""; position:absolute; inset:0; background:radial-gradient(ellipse at 30% 40%, #2a3a40 0, transparent 55%), radial-gradient(ellipse at 70% 70%, #3b2f2a 0, transparent 50%); filter:blur(8px); }
+.scan .fr { width:190px; height:190px; position:relative; border-radius:18px; box-shadow:0 0 0 999px rgba(0,0,0,.35); }
+.scan .fr::before, .scan .fr::after { content:""; position:absolute; inset:0; border:3px solid #fff; border-radius:18px; clip-path:polygon(0 0,30% 0,30% 6%,6% 6%,6% 30%,0 30%, 0 70%,6% 70%,6% 94%,30% 94%,30% 100%,0 100%, 100% 100%,70% 100%,70% 94%,94% 94%,94% 70%,100% 70%, 100% 30%,94% 30%,94% 6%,70% 6%,70% 0,100% 0); }
+.scan .ln { position:absolute; left:10px; right:10px; height:2px; background:var(--brand-hi); box-shadow:0 0 12px var(--brand-hi); animation:scanl 1.3s ease-in-out infinite alternate; }
+@keyframes scanl { from { top:12px; } to { top:176px; } }
+.scan .cap { position:absolute; bottom:14px; left:0; right:0; text-align:center; color:#fff; font-size:14px; font-weight:600; }
+
+/* sayfa / alt sayfa / diyalog */
+#ovl { position:absolute; inset:0; z-index:40; pointer-events:none; }
+#ovl.on { pointer-events:auto; }
+.scrim { position:absolute; inset:0; background:var(--scrim); animation:fade .25s; }
+.sheet { position:absolute; left:0; right:0; bottom:0; background:var(--bg); max-height:calc(100% - 62px); display:flex; flex-direction:column; animation:iosUp .38s cubic-bezier(.2,.9,.25,1); }
+.ios .sheet { border-radius:12px 12px 0 0; }
+.ios .sheet.full { top:62px; }
+.and .sheet { border-radius:28px 28px 0 0; background:var(--card); animation:andUp .3s cubic-bezier(.2,0,0,1); }
+.and .sheet.full { top:48px; }
+.grab { width:36px; height:5px; border-radius:3px; background:var(--ink3); opacity:.5; margin:6px auto 0; flex:none; }
+.and .grab { width:32px; height:4px; margin:16px auto 6px; opacity:.6; }
+.shh { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; padding:6px 8px 8px 16px; flex:none; }
+.shh .t { font-weight:600; font-size:calc(17px * var(--fs)); text-align:center; }
+.shh .x { justify-self:end; }
+.shh .l { justify-self:start; }
+.and .shh { grid-template-columns:1fr auto; padding:4px 12px 8px 24px; }
+.and .shh .t { text-align:left; font-weight:400; font-size:calc(22px * var(--fs)); grid-column:1; }
+.and .shh .l { display:none; }
+.shb { overflow-y:auto; scrollbar-width:none; padding:4px 0 34px; flex:1; overscroll-behavior:contain; }
+.shb::-webkit-scrollbar { display:none; }
+.xbtn { width:30px; height:30px; border-radius:50%; background:var(--fill); display:grid; place-items:center; color:var(--ink2); }
+.xbtn .ic { width:16px; height:16px; stroke-width:2.6; }
+.and .xbtn { width:40px; height:40px; background:none; }
+.and .xbtn .ic { width:24px; height:24px; stroke-width:2; }
+.asheet { position:absolute; left:8px; right:8px; bottom:30px; display:grid; gap:8px; animation:iosUp .34s cubic-bezier(.2,.9,.25,1); }
+.asheet .ag { background:var(--bar); backdrop-filter:blur(30px); -webkit-backdrop-filter:blur(30px); border-radius:14px; overflow:hidden; }
+.ios.light .asheet .ag { background:rgba(245,245,247,.92); }
+.asheet .ah { padding:14px 16px; text-align:center; font-size:13px; color:var(--ink2); border-bottom:.5px solid var(--line); }
+.asheet .ab { display:block; width:100%; min-height:57px; text-align:center; color:var(--tint); font-size:calc(20px * var(--fs)); border-top:.5px solid var(--line); }
+.asheet .ab:first-of-type { border-top:0; }
+.asheet .ab.r { color:#FF3B30; } .asheet .ab.c { font-weight:600; background:var(--card); border-radius:14px; }
+.mlist .mi { display:flex; align-items:center; gap:16px; min-height:56px; padding:0 24px; width:100%; font-size:calc(16px * var(--fs)); }
+.mlist .mi .ic { color:var(--ink2); }
+.alert { position:absolute; left:50%; top:50%; width:270px; transform:translate(-50%,-50%); border-radius:14px; overflow:hidden; background:var(--bar); backdrop-filter:blur(30px); -webkit-backdrop-filter:blur(30px); text-align:center; animation:fade .2s; }
+.ios.light .alert { background:rgba(242,242,247,.95); }
+.alert .ac { padding:18px 16px 16px; }
+.alert b { display:block; font-size:calc(17px * var(--fs)); font-weight:600; }
+.alert p { margin:4px 0 0; font-size:calc(13px * var(--fs)); }
+.alert .aa { display:grid; grid-template-columns:1fr 1fr; border-top:.5px solid var(--line); }
+.alert .aa button { min-height:44px; text-align:center; color:var(--tint); font-size:calc(17px * var(--fs)); }
+.alert .aa button + button { border-left:.5px solid var(--line); font-weight:600; }
+.alert .aa button.r { color:#FF3B30; }
+.mdlg { position:absolute; left:28px; right:28px; top:50%; transform:translateY(-50%); background:var(--card2); border-radius:28px; padding:24px; animation:fade .2s; }
+.mdlg .ic.h { width:24px; height:24px; color:var(--tint); margin:0 auto 14px; }
+.mdlg b { display:block; font-size:calc(24px * var(--fs)); font-weight:400; text-align:center; line-height:1.2; }
+.mdlg p { color:var(--ink2); font-size:calc(14px * var(--fs)); margin:14px 0 22px; }
+.mdlg .aa { display:flex; justify-content:flex-end; gap:8px; }
+.mdlg .aa button { color:var(--tint); font-weight:500; font-size:calc(14px * var(--fs)); padding:10px 12px; border-radius:20px; }
+
+/* biyometrik */
+.fid { position:absolute; left:50%; top:50%; width:170px; height:170px; margin:-85px 0 0 -85px; border-radius:30px; background:rgba(40,40,44,.72); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px); display:grid; place-items:center; color:#fff; animation:fade .2s; z-index:5; }
+.fid .ic { width:74px; height:74px; stroke-width:1.4; }
+.fid span { position:absolute; bottom:16px; font-size:14px; font-weight:600; }
+.fid.scan .ic { animation:pulse 1s ease-in-out infinite; }
+.fid.ok .ic { color:#30D158; }
+@keyframes pulse { 50% { transform:scale(.9); opacity:.7; } }
+.bprompt { text-align:center; padding:4px 24px 20px; }
+.bprompt h4 { margin:0 0 6px; font-weight:400; font-size:calc(22px * var(--fs)); }
+.bprompt p { margin:0 0 20px; color:var(--ink2); font-size:calc(14px * var(--fs)); }
+.fp { width:64px; height:64px; margin:0 auto 18px; border-radius:50%; background:var(--tintSoft); color:var(--onTintSoft); display:grid; place-items:center; }
+.fp .ic { width:36px; height:36px; }
+.fp.ok { background:var(--ok); color:#fff; }
+
+/* banner + snackbar */
+#bnr { position:absolute; left:8px; right:8px; top:0; z-index:55; pointer-events:none; }
+.bn { pointer-events:auto; margin-top:50px; border-radius:22px; padding:12px 14px; display:flex; gap:12px; align-items:flex-start; background:var(--bar); backdrop-filter:blur(30px) saturate(180%); -webkit-backdrop-filter:blur(30px) saturate(180%); box-shadow:0 10px 30px rgba(0,0,0,.25); animation:bdown .5s cubic-bezier(.2,1.1,.3,1); }
+.ios.light .bn { background:rgba(250,250,252,.9); }
+.and .bn { margin-top:42px; border-radius:24px; background:var(--card2); }
+@keyframes bdown { from { transform:translateY(-120%); } to { transform:none; } }
+.appi { width:38px; height:38px; border-radius:10px; background:var(--brand-grad); color:#fff; display:grid; place-items:center; font:700 20px var(--font-display); flex:none; }
+.and .appi { width:28px; height:28px; border-radius:50%; font-size:14px; }
+.bn .bt2 { flex:1; min-width:0; }
+.bn .bt2 small { display:flex; justify-content:space-between; font-size:12.5px; color:var(--ink2); }
+.bn .bt2 b { display:block; font-size:calc(15px * var(--fs)); }
+.bn .bt2 span { display:block; font-size:calc(14px * var(--fs)); color:var(--ink2); }
+.bn .bact { display:flex; gap:18px; margin-top:8px; color:var(--tint); font-weight:500; font-size:14px; }
+#snk { position:absolute; left:12px; right:12px; bottom:108px; z-index:55; pointer-events:none; }
+.snk { pointer-events:auto; background:var(--inv); color:var(--onInv); border-radius:4px; min-height:48px; padding:8px 8px 8px 16px; display:flex; align-items:center; gap:8px; font-size:calc(14px * var(--fs)); box-shadow:0 3px 8px rgba(0,0,0,.3); animation:andUp .25s; }
+.snk span { flex:1; } .snk button { color:var(--invPri); font-weight:500; padding:8px 10px; }
+
+/* kilit ekranı */
+.lock { position:absolute; inset:0; color:#fff; overflow:hidden; }
+.lock.ios { background:radial-gradient(ellipse 120% 70% at 20% 0%, #3d5270 0, transparent 60%), radial-gradient(ellipse 100% 60% at 90% 100%, #3b2a78 0, transparent 60%), linear-gradient(170deg, #081523, #16213f 60%, #1d1438); }
+.lock.and { background:radial-gradient(ellipse 110% 60% at 80% 10%, #3a4a60 0, transparent 60%), radial-gradient(ellipse 90% 60% at 10% 100%, #2c3e1f 0, transparent 60%), linear-gradient(180deg, #0c1519, #13201f); }
+.lock .date { text-align:center; margin-top:74px; font-size:21px; font-weight:600; opacity:.9; }
+.lock .clk { text-align:center; font-size:100px; font-weight:700; letter-spacing:-.03em; line-height:1; margin-top:2px; }
+.lock.and .date { text-align:left; margin:60px 0 0 28px; font-size:15px; font-weight:500; }
+.lock.and .clk { text-align:left; margin:6px 0 0 24px; font-size:108px; font-weight:400; line-height:.92; letter-spacing:-.02em; }
+.lock .ntf { position:absolute; left:10px; right:10px; bottom:150px; }
+.ln1 { display:flex; gap:10px; align-items:flex-start; border-radius:22px; padding:12px 14px; background:rgba(255,255,255,.2); backdrop-filter:blur(26px); -webkit-backdrop-filter:blur(26px); width:100%; text-align:left; color:#fff; position:relative; z-index:2; }
+.lock.and .ln1 { background:rgba(26,33,35,.92); border-radius:24px; }
+.ln1 .bt2 { flex:1; min-width:0; }
+.ln1 small { display:flex; justify-content:space-between; font-size:13px; opacity:.8; }
+.ln1 b { display:block; font-size:16px; }
+.ln1 span { display:block; font-size:15px; opacity:.9; }
+.lnb { height:12px; margin:-4px 12px 0; border-radius:0 0 18px 18px; background:rgba(255,255,255,.12); }
+.lock.and .lnb { display:none; }
+.lock .more2 { text-align:center; margin-top:10px; font-size:13px; opacity:.75; }
+.lock .hint { position:absolute; bottom:44px; left:0; right:0; text-align:center; font-size:13.5px; opacity:.8; }
+.lock .lbtn { position:absolute; bottom:44px; width:50px; height:50px; border-radius:50%; background:rgba(255,255,255,.18); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); display:grid; place-items:center; }
+.lock .lbtn .ic { width:22px; height:22px; }
+.lock .lk { position:absolute; top:44px; left:50%; margin-left:-9px; }
+.lock.and .fpi { position:absolute; bottom:78px; left:50%; margin-left:-24px; width:48px; height:48px; border-radius:50%; display:grid; place-items:center; box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.5); }
+
+/* giriş */
+.login { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; padding:110px 28px 40px; text-align:center; }
+.login .mark { width:78px; height:78px; border-radius:20px; background:var(--brand-grad); color:#fff; display:grid; place-items:center; font:700 42px var(--font-display); box-shadow:0 10px 30px var(--brand-glow); }
+.and .login .mark { border-radius:50%; }
+.login h2 { margin:14px 0 2px; font:700 26px var(--font-display); }
+.login .who { display:flex; gap:12px; align-items:center; background:var(--card); border-radius:18px; padding:12px 14px; width:100%; margin:26px 0 18px; text-align:left; }
+.login .who .avatar { width:44px; height:44px; font-size:16px; }
+.login .who b { display:block; font-size:calc(17px * var(--fs)); }
+.login .who span { color:var(--ink2); font-size:calc(13.5px * var(--fs)); }
+.login .spacer { flex:1; }
+.pin { display:flex; gap:14px; justify-content:center; margin:26px 0 22px; }
+.pin i { width:14px; height:14px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--ink2); }
+.pin i.f { background:var(--ink); box-shadow:none; }
+.kp { display:grid; grid-template-columns:repeat(3,78px); gap:14px 22px; justify-content:center; }
+.kp button { width:78px; height:78px; border-radius:50%; background:var(--fill); font-size:30px; font-weight:400; display:grid; place-items:center; line-height:1; }
+.kp button small { display:block; font-size:9.5px; letter-spacing:.18em; font-weight:600; margin-top:-2px; }
+.kp button.e { background:none; font-size:16px; color:var(--tint); }
+.and .kp button { border-radius:39px; background:var(--card2); }
+
+/* sayı tuş takımı (alt sayfa) */
+.kd { text-align:center; font-size:calc(52px * var(--fs)); font-weight:700; letter-spacing:-.02em; padding:6px 0 2px; }
+.kd small { font-size:calc(18px * var(--fs)); color:var(--ink2); font-weight:600; margin-left:6px; }
+.kpad { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; padding:10px 8px 0; }
+.kpad button { height:52px; border-radius:8px; background:var(--card); font-size:26px; font-weight:400; text-align:center; box-shadow:0 1px 0 rgba(0,0,0,.25); }
+.and .kpad button { border-radius:26px; background:var(--card2); box-shadow:none; height:56px; }
+
+/* ağrı */
+.nrs { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; padding:0 16px; }
+.nrs button { height:58px; border-radius:14px; font-size:calc(24px * var(--fs)); font-weight:700; text-align:center; background:color-mix(in srgb, var(--hc) 20%, var(--card)); color:var(--ink); }
+.nrs button.on { background:var(--hc); color:#fff; transform:scale(1.06); }
+.nrs .lbl { grid-column:1 / -1; display:flex; justify-content:space-between; font-size:calc(12.5px * var(--fs)); color:var(--ink2); }
+
+/* kamera */
+.cam { position:absolute; inset:0; background:#000; color:#fff; z-index:30; }
+.cam .vf { position:absolute; left:0; right:0; top:100px; bottom:190px; background:radial-gradient(ellipse at 45% 55%, #6d5147 0, #3c2d28 35%, #161113 75%); overflow:hidden; }
+.cam .vf::after { content:""; position:absolute; inset:0; background:linear-gradient(transparent 33.2%, rgba(255,255,255,.25) 33.3%, transparent 33.5%, transparent 66.5%, rgba(255,255,255,.25) 66.6%, transparent 66.8%), linear-gradient(90deg, transparent 33.2%, rgba(255,255,255,.25) 33.3%, transparent 33.5%, transparent 66.5%, rgba(255,255,255,.25) 66.6%, transparent 66.8%); }
+.cam .warn { position:absolute; top:14px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.6); padding:6px 12px; border-radius:8px; font-size:13px; font-weight:600; white-space:nowrap; z-index:2; }
+.cam .ctop { position:absolute; top:50px; left:0; right:0; height:50px; display:flex; align-items:center; justify-content:space-between; padding:0 16px; font-size:15px; }
+.cam .cbot { position:absolute; left:0; right:0; bottom:0; height:190px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; }
+.cam .mode { color:#FFD60A; font-size:13px; font-weight:600; letter-spacing:.08em; }
+.and .cam .mode { color:#fff; background:rgba(255,255,255,.18); padding:4px 12px; border-radius:12px; letter-spacing:0; }
+.shut { width:74px; height:74px; border-radius:50%; box-shadow:0 0 0 4px #fff; display:grid; place-items:center; }
+.shut i { width:60px; height:60px; border-radius:50%; background:#fff; }
+.flash { position:absolute; inset:0; background:#fff; animation:fl .35s forwards; z-index:3; pointer-events:none; }
+@keyframes fl { from { opacity:.9; } to { opacity:0; } }
+.prev { margin:0 16px 12px; height:190px; border-radius:18px; background:radial-gradient(ellipse at 45% 55%, #6d5147 0, #3c2d28 40%, #161113 80%); position:relative; display:grid; place-items:center; color:rgba(255,255,255,.85); font-size:13px; font-weight:600; text-align:center; padding:12px; }
+
+/* biyomedikal */
+.wo { display:flex; gap:12px; align-items:flex-start; }
+.wo .di { width:42px; height:42px; border-radius:12px; background:color-mix(in srgb, var(--c) 16%, transparent); color:var(--c); display:grid; place-items:center; flex:none; }
+.wo .dt { flex:1; min-width:0; }
+.wo .dt b { display:block; font-size:calc(15.5px * var(--fs)); line-height:1.3; }
+.and .wo .dt b { font-weight:500; }
+.wo .dt span { display:block; color:var(--ink2); font-size:calc(13px * var(--fs)); margin-top:2px; }
+.wo .dt span.bat, .bat { display:inline-flex; align-items:center; gap:4px; font-size:calc(12.5px * var(--fs)); font-weight:600; }
+.bat.low { color:var(--crit); }
+textarea.ta { width:calc(100% - 32px); margin:0 16px 14px; min-height:84px; border-radius:14px; background:var(--card); border:0; padding:12px 14px; resize:none; outline:none; font-size:calc(15px * var(--fs)); }
+.and textarea.ta { background:transparent; box-shadow:inset 0 0 0 1px var(--ink3); border-radius:4px; }
+.dvsel { margin:0 16px 14px; }
+
+/* bilgi bölmesi */
+.kv { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-top:.5px solid var(--line); font-size:calc(14.5px * var(--fs)); }
+.kv:first-child { border-top:0; }
+.kv span { color:var(--ink2); } .kv b { font-weight:600; text-align:right; }
+.spin { width:22px; height:22px; border-radius:50%; border:2.5px solid var(--fill); border-top-color:var(--tint); animation:rot .8s linear infinite; flex:none; }
+@keyframes rot { to { transform:rotate(360deg); } }
+.hold { position:relative; overflow:hidden; }
+.hold .fillb { position:absolute; left:0; top:0; bottom:0; width:0; background:rgba(255,255,255,.28); }
+.hold.on .fillb { width:100%; transition:width 1s linear; }
+.hold span { position:relative; }
+.tbx { margin:0 16px 12px; background:var(--card); border-radius:16px; padding:12px 14px; }
+.tbx svg { width:100%; display:block; }
+.lgd { display:flex; gap:14px; font-size:calc(12px * var(--fs)); color:var(--ink2); margin-top:6px; flex-wrap:wrap; }
+.lgd i { display:inline-block; width:12px; height:8px; border-radius:2px; margin-right:5px; vertical-align:middle; }
+/* ================= tablet (820 × 1180): liste + ayrıntı ================= */
+body.tabmode .stage { grid-template-columns:1fr; }
+body.tabmode .phCol { position:static; }
+.dev.tab { width:844px; height:1204px; border-radius:42px; }
+.dev.tab .scr { width:820px; height:1180px; border-radius:28px; }
+.paneL, .paneR { position:absolute; top:0; bottom:0; overflow:hidden; }
+.paneL { left:0; width:360px; z-index:1; box-shadow:.5px 0 0 var(--line); }
+.paneR { left:360px; right:0; }
+.tabm .island, .tabm .punch { display:none; }
+.tabm #sb { height:30px; }
+.tabm.ios .sbi { padding:6px 24px 0; font-size:14px; }
+.tabm.and .sbi { padding:6px 24px 0; }
+.tabm.ios .inav { height:80px; padding-top:30px; }
+.tabm.ios .scroll { padding-top:80px; }
+.tabm .abar { height:94px; padding-top:30px; }
+.tabm.and .scroll { padding-top:94px; }
+.tabm .sheet { left:50%; right:auto; width:540px; margin-left:-270px; top:110px; bottom:auto; max-height:960px; border-radius:16px; }
+.tabm .sheet.full { top:70px; bottom:40px; }
+.tabm.and .sheet { border-radius:28px; }
+.tabm .asheet { left:50%; right:auto; width:380px; margin-left:-190px; }
+.tabm #bnr { left:auto; right:16px; width:400px; }
+.tabm #snk { left:auto; right:24px; width:420px; bottom:40px; }
+.tabm .lock .ntf { left:50%; right:auto; width:440px; margin-left:-220px; bottom:260px; }
+.tabm .lock .date { margin-top:120px; }
+.tabm .login { padding:190px calc(50% - 210px) 60px; }
+.tabempty { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; color:var(--ink2); text-align:center; padding:40px; }
+.tabempty .ic { width:44px; height:44px; color:var(--ink3); }
+.tabempty b { color:var(--ink); font-size:calc(19px * var(--fs)); font-weight:600; }
+.tabhint { margin:0 16px 12px; font-size:calc(12.5px * var(--fs)); color:var(--ink2); display:flex; gap:6px; align-items:center; }
+.tabhint .ic { width:16px; height:16px; }
+
+
+/* ================= 24.09 geri bildirimi: merkez düğme, derinlik, mikro etkileşim ================= */
+/* basınca küçülme */
+.scr button, .scr .card[data-act], .scr .swc { transition:transform .16s cubic-bezier(.3,.7,.4,1), background-color .2s, box-shadow .2s; }
+.scr button:active:not([disabled]), .scr .card[data-act]:active { transform:scale(.965); }
+.scr .tb:active, .scr .ni:active { transform:scale(.9); }
+/* yaylı geçişler */
+.ios .sheet { animation:sheetUp .5s cubic-bezier(.18,1.15,.3,1); }
+.and .sheet { animation:sheetUp .42s cubic-bezier(.2,1.05,.3,1); }
+@keyframes sheetUp { from { transform:translateY(100%); } to { transform:none; } }
+.swc { transition:transform .42s cubic-bezier(.2,1.3,.35,1) !important; }
+.swc.drag { transition:none !important; }
+@keyframes pop { 0% { transform:scale(.7); } 60% { transform:scale(1.18); } 100% { transform:scale(1); } }
+.itabs .tb.pop .ic, .anav .ni.pop .pl { animation:pop .42s cubic-bezier(.3,1.5,.5,1); }
+.itabs .bd, .anav .bd { animation:pop .5s cubic-bezier(.3,1.6,.5,1); }
+
+/* alt çubuk: tek kelimelik etiketler, 360 px'te de sığar */
+.itabs .tb, .anav .ni { min-width:0; }
+.itabs .tb > span:not(.bd):not(.midb), .anav .ni > span:not(.pl):not(.midf) { white-space:nowrap; font-size:11px; letter-spacing:0; }
+.anav .ni > span:not(.pl):not(.midf) { font-size:12px; }
+.ios .scroll { padding-bottom:128px; }
+.and .scroll { padding-bottom:136px; }
+.view.modal .scroll, .view.notabs .scroll { padding-bottom:40px; }
+#snk { bottom:128px; }
+
+/* merkez düğme · iOS: büyük yuvarlak, yükseltilmiş */
+.itabs .tb.mid { justify-content:flex-end; padding-bottom:3px; color:var(--ink); }
+.itabs .tb.mid > span:last-child { font-weight:700; }
+.midb { position:relative; width:62px; height:62px; margin-top:-34px; margin-bottom:2px; border-radius:50%; background:var(--brand-grad); color:#fff; display:grid; place-items:center; flex:none;
+  box-shadow:0 10px 24px var(--brand-glow), 0 2px 6px rgba(0,0,0,.25), 0 0 0 5px var(--bg); transition:transform .3s cubic-bezier(.3,1.5,.5,1); }
+.midb .ic, .midf .ic { position:absolute; width:28px; height:28px; stroke-width:2.4; transition:transform .32s cubic-bezier(.3,1.4,.5,1), opacity .2s; }
+.midb .i2, .midf .i2 { opacity:0; transform:rotate(-90deg) scale(.6); }
+.qopen .midb .i1, .qopen .midf .i1 { opacity:0; transform:rotate(90deg) scale(.6); }
+.qopen .midb .i2, .qopen .midf .i2 { opacity:1; transform:none; }
+.qopen .midb { transform:scale(1.06); }
+/* merkez düğme · Android: navigation bar ortasında FAB */
+.anav .ni.mid { justify-content:flex-end; padding-bottom:4px; color:var(--ink); }
+.anav .ni.mid > span:last-child { font-weight:700; }
+.midf { position:relative; width:60px; height:60px; margin-top:-30px; margin-bottom:4px; border-radius:18px; background:var(--brand-grad); color:#fff; display:grid; place-items:center;
+  box-shadow:0 6px 14px var(--brand-glow), 0 1px 4px rgba(0,0,0,.3); transition:border-radius .3s, transform .3s cubic-bezier(.3,1.5,.5,1); }
+.qopen .midf { border-radius:30px; }
+.itabs, .anav { overflow:visible; }
+
+/* hızlı işler menüsü */
+.qwrap { position:absolute; inset:0; z-index:19; }
+.qscrim { position:absolute; inset:0; background:var(--scrim); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); animation:fade .2s; }
+.qpanel { position:absolute; left:50%; bottom:112px; width:312px; margin-left:-156px; display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.qpanel button { background:var(--card); border-radius:22px; padding:16px 14px 14px; display:flex; flex-direction:column; align-items:flex-start; gap:12px; font-weight:650; font-size:calc(16px * var(--fs)); text-align:left;
+  box-shadow:0 14px 34px rgba(0,0,0,.28); animation:qin .42s cubic-bezier(.2,1.35,.4,1) both; transform-origin:50% 140%; }
+.qpanel .qi { width:44px; height:44px; border-radius:14px; background:var(--brand-grad); color:#fff; display:grid; place-items:center; box-shadow:0 6px 14px var(--brand-glow); }
+.qpanel .qi .ic { width:24px; height:24px; }
+@keyframes qin { from { opacity:0; transform:translateY(34px) scale(.8); } to { opacity:1; transform:none; } }
+.and .qpanel { grid-template-columns:1fr; width:230px; margin-left:-115px; bottom:118px; gap:12px; }
+.and .qpanel button { flex-direction:row; align-items:center; border-radius:18px; padding:10px 16px 10px 10px; background:var(--card2); font-weight:500; }
+.and .qpanel .qi { width:40px; height:40px; border-radius:12px; }
+
+/* sesli not */
+.mic { display:flex; flex-direction:column; align-items:center; gap:14px; padding:18px 16px 16px; }
+.micb { width:92px; height:92px; border-radius:50%; background:var(--brand-grad); color:#fff; display:grid; place-items:center; box-shadow:0 12px 30px var(--brand-glow); position:relative; }
+.micb .ic { width:38px; height:38px; }
+.mic.rec .micb { background:var(--crit); box-shadow:0 0 0 0 color-mix(in srgb, var(--crit) 50%, transparent); animation:ringp 1.4s infinite; }
+@keyframes ringp { 0% { box-shadow:0 0 0 0 color-mix(in srgb, var(--crit) 45%, transparent); } 100% { box-shadow:0 0 0 26px transparent; } }
+.mic .bars { display:flex; gap:4px; align-items:center; height:34px; }
+.mic .bars i { width:4px; height:6px; border-radius:2px; background:var(--ink3); }
+.mic.rec .bars i { background:var(--crit); animation:bar .6s ease-in-out infinite alternate; }
+@keyframes bar { from { height:6px; } to { height:32px; } }
+.mic b { font-size:calc(15px * var(--fs)); font-weight:600; color:var(--ink2); }
+
+/* ana ekran: selam, büyük sayılı özet, yumuşak ışık */
+.scroll.glow { background:radial-gradient(130% 60% at 15% 0%, color-mix(in srgb, var(--tint) 26%, transparent) 0%, transparent 70%) no-repeat; background-size:100% 380px; background-attachment:local; }
+.hi { padding:0 16px 12px; }
+.hig { font-size:calc(15px * var(--fs)); font-weight:600; color:var(--ink); }
+.hid { font-size:calc(13px * var(--fs)); color:var(--ink2); margin-top:1px; }
+.sum { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; margin:0 16px 6px; }
+.sum button { border-radius:20px; padding:12px 12px 10px; text-align:left; background:linear-gradient(160deg, color-mix(in srgb, var(--c) 24%, var(--card)) 0%, var(--card) 75%);
+  box-shadow:0 1px 0 color-mix(in srgb, var(--c) 30%, transparent) inset, 0 10px 24px rgba(0,0,0,.10); min-width:0; }
+.sum b { display:block; font-size:calc(44px * var(--fs)); line-height:1; font-weight:800; letter-spacing:-.04em; color:var(--c); }
+.and .sum b { font-weight:600; }
+.sum span { display:block; margin-top:6px; font-size:calc(13px * var(--fs)); font-weight:600; color:var(--ink2); }
+.hb { position:relative; }
+.hbd { position:absolute; top:4px; right:0; min-width:17px; height:17px; padding:0 4px; border-radius:9px; background:var(--crit); color:#fff; font:700 11px/17px var(--font-ui); text-align:center; }
+.ios .hb { padding:0 12px 0 4px; }
+.ios .hb .hbd { top:6px; right:0; }
+
+/* kartlarda derinlik */
+.card { box-shadow:0 1px 2px rgba(0,0,0,.05), 0 6px 18px rgba(0,0,0,.06); }
+.dark .card { box-shadow:inset 0 0 0 .5px rgba(255,255,255,.07); }
+.it { background:linear-gradient(100deg, color-mix(in srgb, var(--c) 12%, var(--card)) 0%, var(--card) 60%); }
+.itt { font-size:calc(18px * var(--fs)); letter-spacing:-.01em; }
+.ith .age { font-size:calc(17px * var(--fs)); font-weight:800; }
+.vt .n { font-size:calc(46px * var(--fs)); font-weight:800; }
+.vt { background:linear-gradient(170deg, color-mix(in srgb, var(--vc) 10%, var(--card)) 0%, var(--card) 70%); }
+.ahd { background:linear-gradient(160deg, color-mix(in srgb, var(--c) 30%, var(--card)) 0%, color-mix(in srgb, var(--c) 8%, var(--card)) 100%); box-shadow:0 14px 34px color-mix(in srgb, var(--c) 22%, transparent); }
+.ahd .tm { font-size:calc(34px * var(--fs)); letter-spacing:-.03em; }
+
+/* düğme satırları sığmazsa alt satıra geçer; metin kesilmez */
+.brow > .btn, .ita .btn { flex:1 1 auto; min-width:0; }
+.btn { max-width:100%; }
+
+/* bildirim: telefonun İÇİNDE, üstte, tam genişlik, platforma özgü */
+#bnr { left:8px; right:8px; top:0; }
+.bn { width:100%; cursor:inherit; }
+.ios .bn { margin-top:56px; border-radius:26px; padding:12px 14px; box-shadow:0 18px 40px rgba(0,0,0,.35); }
+.and .bn { margin-top:44px; border-radius:24px; padding:14px 16px; flex-direction:column; gap:8px; background:var(--card2); box-shadow:0 8px 24px rgba(0,0,0,.35); }
+.and .bn .bhead { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink2); width:100%; }
+.and .bn .bhead .appi { width:22px; height:22px; font-size:12px; }
+.and .bn .bt2 b { font-size:calc(16px * var(--fs)); }
+.and .bn .bact { display:flex; gap:8px; margin:4px 0 0; }
+.and .bn .bact span { padding:8px 16px; border-radius:18px; background:var(--tintSoft); color:var(--onTintSoft); font-weight:500; font-size:14px; }
+.bn.crit { box-shadow:0 0 0 2px color-mix(in srgb, var(--crit) 60%, transparent), 0 18px 40px rgba(0,0,0,.35); }
+.tabm #bnr { left:50%; right:auto; width:460px; margin-left:-230px; }
+.tabm .qpanel { bottom:112px; }
+</style>
+</head>
+<body>
+
+<div class="ctl"><div class="in">
+  <div class="grp"><span>Cihaz</span><div class="pseg" data-g="dev"><button data-v="phone" class="on">Telefon</button><button data-v="tab">Tablet</button></div></div>
+  <div class="grp"><span>Platform</span><div class="pseg" data-g="plat"><button data-v="ios" class="on">iOS</button><button data-v="and">Android</button></div></div>
+  <div class="grp"><span>Tema</span><div class="pseg" data-g="theme"><button data-v="light">Açık</button><button data-v="dark" class="on">Koyu</button></div></div>
+  <div class="grp"><span>Yazı</span><div class="pseg" data-g="big"><button data-v="0" class="on">Normal</button><button data-v="1">Büyük</button></div></div>
+  <div class="grp"><span>Rol</span><div class="pseg" data-g="role"><button data-v="nurse" class="on">Hemşire</button><button data-v="doctor">Hekim</button><button data-v="rrt">Hızlı yanıt</button><button data-v="bio">Biyomedikal</button></div></div>
+  <button class="pbtn" id="simAlarm">▶ Yeni alarm gönder</button>
+</div></div>
+
+<div class="wrap">
+  <span class="stamp">✏️ ÇİZİLDİ · yalnız öneri · gerçek mobil uygulamada hiçbir şey değişmedi</span>
+  <span class="stamp" style="background:color-mix(in srgb, var(--pm) 16%, transparent);color:var(--pi)">🎨 Renk ve yazı tipi marka seçiminden sonra değişecek · şimdilik nötr, tek yerde (CSS'in başındaki MARKA bloğu)</span>
+  <h1>Taslak 19 · Mobil uygulama (iOS + Android)</h1>
+  <p class="lead">Telefon <b>hasta başında ve koridorda</b>, çoğu zaman <b>tek elle</b> ve <b>kısa</b> kullanılır. Bu yüzden web'in küçültülmüşü değil: önce <b>"bana ne düştü"</b> (alarm yanıtı), sonra <b>"benim hastalarım"</b>, sonra hasta başında hızlı işler. Telefonun her yeri tıklanabilir; yukarıdaki anahtarlarla <b>platformu, temayı, yazı boyunu ve rolü</b> değiştir. Sağdaki "Neden böyle?" her ekranla birlikte değişir ve <b>bugün gerçek uygulamada ne olduğunu</b> ayrıca yazar.</p>
+  <div class="diff">
+    <div><b>Taslak 11'den farkı · boyut</b>320 px'lik oyuncak çerçeve yerine gerçek iPhone ölçüsü: 390 × 844.</div>
+    <div><b>Platformun kendi dili</b>Web kartlarının küçüğü değil: iOS'ta büyük başlık ve sekme çubuğu, Android'de Material 3.</div>
+    <div><b>Kaydırma çubuğu yok</b>Çubuk gizli; fareyle sürükleyince parmakla kaydırır gibi kayar, bırakınca süzülür.</div>
+    <div><b>Dört rol</b>Hemşire, hekim, hızlı yanıt görevli hekim, biyomedikal. Rol değişince sekmeler de ana ekran da değişir.</div>
+  </div>
+
+  <div class="stage">
+    <div class="phCol"><div class="fit" id="fit"><div class="devWrap" id="devWrap"><div class="dev" id="dev"><div class="scr" id="scr">
+      <div id="view"></div><div id="ovl"></div><div id="bnr"></div><div id="snk"></div><div id="sb"></div><div class="hind" id="hind"></div>
+    </div></div></div></div>
+    <p class="muted" style="text-align:center;margin:10px 0 0">Fareyle sürükle = parmakla kaydır · hasta satırını sola çek = kaydırma eylemleri</p></div>
+
+    <div class="side">
+      <div class="box"><h3>Ekranlar <small>dokun, telefon oraya gitsin</small></h3><div class="nav" id="navl"></div></div>
+      <div class="box" id="whyBox"></div>
+      <div class="box" id="realBox"></div>
+    </div>
+  </div>
+
+  <h2>iOS ve Android: aynı ekran, iki dil</h2>
+  <div class="cmp" id="cmp"></div>
+
+  <h2>Bildirim kararları (Ozan, 24.09.2026)</h2>
+  <p class="lead">Taslak bu kararlara göre çizildi. <b>⏳ Hepsi karar; gerçek üründe telefona bildirim (push) henüz yok.</b> Kuralın motor tarafı kısmen var (kritik ertelenemez), mobil tarafı hiç yok.</p>
+  <div class="st">
+    <div class="sr"><b>Telefona push</b><span><span class="badge kismen">⏳ YAPILACAK</span></span><p><b>Yalnız kritik.</b> Yüksek ve orta uygulama içinde kalır. Kilit ekranı ekranında görebilirsin.</p></div>
+    <div class="sr"><b>Push içeriği</b><span><span class="badge kismen">⏳ YAPILACAK</span></span><p>Hasta adı yok: <b>"REA01 · kritik · uygulamayı açın"</b>. Ayrıntı ancak yüz / parmak izi / PIN sonrası.</p></div>
+    <div class="sr"><b>Gece sessiz saat</b><span><span class="badge kismen">⏳ YAPILACAK</span></span><p><b>Yok.</b> Ayarlar'da anahtar değil, bilgi satırı.</p></div>
+    <div class="sr"><b>Erteleme</b><span><span class="badge kismen">⏳ YAPILACAK</span></span><p>Kritik <b>ertelenemez</b> (düğme yok) · yüksek en çok <b>30 dk</b> · orta en çok <b>120 dk</b>. Motorda "kritik ertelenemez" bugün var; süre sınırları yok.</p></div>
+    <div class="sr"><b>Kritik laboratuvar</b><span><span class="badge kismen">⏳ YAPILACAK</span></span><p>Hemşire ve hekime <b>birlikte</b> gider; her biri diğerinin gördüğünü görür (Size düşenler ve Bildirimler).</p></div>
+    <div class="sr"><b>Vardiya değişimi</b><span><span class="badge kismen">⏳ YAPILACAK</span></span><p>Açık bildirimler gelen ekibe geçer; giden ekip <b>devir imzasına kadar</b> görmeye devam eder (Devir ekranı, alttaki bölüm).</p></div>
+  </div>
+
+  <h2>Gerçek mobil uygulama (homunculus-mobile) bugün</h2>
+  <p class="lead">Koddan okundu (Expo SDK 54, expo-router). Üç sekme var: <b>Hastalar (Koğuş)</b>, <b>Uyarılar</b>, <b>Ayarlar</b>; bir de yatak ayrıntı ekranı. Arayüz yalnız Türkçe. Açık tema "Gündüz Klinik" (mavi #2260FF, League Spartan yazı, yüzen hap şeklinde alt menü), koyu tema "Gece / Nöbet". Veri ya kayıtlı gösterim senaryosundan ya da sunucudan canlı akar.</p>
+  <div class="st" id="st"></div>
+
+  <h2>Bilinen eksikler</h2>
+  <ol class="gaps">
+    <li><b>Prototipteki hasta adları gerçek uygulamada yok.</b> Gerçek mobil kayıt yalnız yatak numarası taşıyor. Adlar core.js'teki uydurma adlar. Telefonda ad gösterilecekse önce veri yolu kararı gerekir.</li>
+    <li><b>Yüz tanıma, parmak izi, QR, Bluetooth ve kamera yalnız canlandırma.</b> Hiçbir cihaz özelliği çağrılmıyor; gerçek uygulamada bunların paketi de kurulu değil.</li>
+    <li><b>Kıvrımlar ve saatler örnek veri.</b> Alarm sayaçları sayfa açıldığında başlar; eskalasyon merdiveni (3 / 5 / 10. dk) web prototipinden alındı. Gerçek motorda tek eşik var: 5 dakika.</li>
+    <li><b>Eczacı, hasta kabul, başhekim, kalite ve BT rolleri telefonda çizilmedi.</b> Telefonda işleri olup olmadığı ayrı bir soru.</li>
+    <li><b>Tablet görünümü yalnız dikey ve yalnız iki bölme.</b> Yatay tablet, iPad kenar çubuğu (sidebar) ve AZ/RU/EN metinler yok. Gerçek mobil uygulama da yalnız Türkçe.</li>
+    <li><b>Push yalnız canlandırma.</b> "▶ Yeni alarm gönder" düğmesi kilit ekranında ya da uygulama açıkken bildirimi gösterir; hiçbir şey gerçekten telefona gitmez.</li>
+    <li><b>Ekran okuyucu etiketleri yok</b> (VoiceOver, TalkBack). Yazı büyütme tek kademe (%120).</li>
+    <li><b>Android sistem geri hareketi ve iOS kenardan geri kaydırma taklit edilmedi.</b> Sol üstteki geri düğmesi çalışıyor.</li>
+    <li><b>Puan tabloları ve eşikler örnek.</b> Ağrıda NRS 0–10 gösterildi. Vital girişteki turuncu çerçeve web prototipindeki örnek eşiklerden geliyor; ikisi için de hastanenin onayı gerekir.</li>
+  </ol>
+
+  <h2>Seçimin</h2>
+  <div class="choose">
+    <div class="row">
+      <label>Platform dili <b style="color:var(--pi)">ikisi ayrı ✓</b></label>
+      <label>Ana ekran <b style="color:var(--pi)">A ✓</b> <span class="muted">(B elendi)</span></label>
+      <label>Merkez düğme <select id="cMid"><option>beğendim</option><option>daha sade olsun</option><option>istemiyorum</option></select></label>
+      <label>Tablet <select id="cTab"><option>iki sütun iyi</option><option>tek sütun yeter</option></select></label>
+      <label>Beğenmediğim <input id="cBad" placeholder="ör. vital giriş, renkler…"></label>
+    </div>
+    <code class="line" id="cLine"></code>
+    <p class="muted" style="margin:10px 0 0">Satırı kopyalayıp bana gönder. <button class="pbtn" id="cCopy" style="margin-left:6px">Kopyala</button></p>
+  </div>
+</div>
+
+<script>
+(function () {
+"use strict";
+/* ================= simgeler ================= */
+const IP = {
+  tray:'<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  bed:'<path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/>',
+  pen:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  user:'<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  plusc:'<circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/>',
+  chevR:'<path d="m9 18 6-6-6-6"/>', chevL:'<path d="m15 18-6-6 6-6"/>', arrowL:'<path d="M19 12H5M12 19l-7-7 7-7"/>',
+  x:'<path d="M18 6 6 18M6 6l12 12"/>', check:'<path d="M20 6 9 17l-5-5"/>',
+  clock:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  alert:'<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  heart:'<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+  activity:'<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  drop:'<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>',
+  qr:'<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
+  bt:'<path d="m7 7 10 10-5 5V2l5 5L7 17"/>',
+  camera:'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
+  wrench:'<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  monitor:'<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M5 10h3l2-3 3 6 2-3h4"/>',
+  pin:'<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+  siren:'<path d="M7 18v-6a5 5 0 1 1 10 0v6"/><path d="M5 21a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1z"/><path d="M21 12h1M18.5 4.5 18 5M2 12h1M12 2v1M4.9 4.9l.7.7"/>',
+  nav:'<path d="M3 11l19-9-9 19-2-8-8-2z"/>',
+  moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  up:'<path d="M12 19V5M5 12l7-7 7 7"/>',
+  lock:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  more:'<circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>',
+  face:'<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M9 9v1M15 9v1M12 9v4h-1"/><path d="M9 16c1.5 1 4.5 1 6 0"/>',
+  finger:'<path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .13-5.35 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/>',
+  eye:'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+  task:'<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+  flash:'<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  text:'<path d="M4 7V4h16v3M9 20h6M12 4v16"/>',
+  globe:'<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/>',
+  info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  out:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  thermo:'<path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/>',
+  body:'<circle cx="12" cy="4.5" r="2.5"/><path d="M12 7v7M8 22l4-8 4 8M5 11h14"/>',
+  userplus:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',
+  battery:'<rect x="2" y="7" width="16" height="10" rx="2"/><path d="M22 11v2"/>',
+  mic:'<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4M8 22h8"/>',
+  file:'<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>'
+};
+const I = (n, c = "") => `<svg class="ic ${c}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${IP[n] || ""}</svg>`;
+
+/* ================= veri (core.js'teki uydurma adlar) ================= */
+const UN = { rea:["Erişkin YB", "4. kat"], kvc:["KVC YB", "4. kat"], dax:["Dahiliye", "2. kat"], cer:["Genel Cerrahi", "3. kat"], pic:["Çocuk YB", "2. Blok · 2. kat"] };
+const P = {
+  p1:{ bed:"REA01", room:"ICU-01", u:"rea", name:"Elvin Hüseynov", as:"61 · E", by:1965, dx:"Pnömoni, sepsis şüphesi", risk:"crit", news:14, sofa:11, v:{ hr:131, sbp:78, dbp:40, map:51, spo2:91, rr:30, temp:39.2 }, o2:"Ek oksijen", loc:"Ağrıya yanıt", alg:["Penisilin"], code:"Tam", abx:2, mon:true },
+  p2:{ bed:"REA02", room:"ICU-02", u:"rea", name:"Nərgiz Əliyeva", as:"67 · K", by:1959, dx:"KOAH alevlenmesi, solunum yetmezliği", risk:"high", news:10, sofa:6, v:{ hr:119, sbp:112, dbp:66, map:81, spo2:86, rr:27, temp:38.4 }, o2:"Ek oksijen", loc:"Uyanık", alg:[], code:"Tam", abx:4, mon:true },
+  p3:{ bed:"REA03", room:"ICU-03", u:"rea", name:"Rəşad Məmmədov", as:"72 · E", by:1954, dx:"Akut böbrek hasarı", risk:"mid", news:4, sofa:4, v:{ hr:102, sbp:128, dbp:72, map:91, spo2:96, rr:20, temp:37.1 }, o2:"Oda havası", loc:"Uyanık", alg:[], code:"Tam", mon:true },
+  p4:{ bed:"REA04", room:"ICU-04", u:"rea", name:"Səbinə Vəliyeva", as:"54 · K", by:1972, dx:"Postoperatif takip · kolektomi", risk:"stable", news:1, sofa:1, v:{ hr:82, sbp:124, dbp:70, map:88, spo2:97, rr:16, temp:36.8 }, o2:"Oda havası", loc:"Uyanık", alg:[], code:"Tam", mon:true },
+  p5:{ bed:"REA06", room:"ICU-06", u:"rea", name:"Kamal Səmədov", as:"58 · E", by:1968, dx:"NSTEMI", risk:"low", news:2, sofa:2, v:{ hr:88, sbp:118, dbp:70, map:86, spo2:96, rr:18, temp:36.7 }, o2:"Oda havası", loc:"Uyanık", alg:[], code:"Tam", mon:true },
+  p16:{ bed:"KVC01", room:"KVC-01", u:"kvc", name:"Səməd Allahverdiyev", as:"63 · E", by:1963, dx:"Koroner bypass sonrası 1. gün", risk:"mid", news:4, sofa:3, v:{ hr:96, sbp:108, dbp:62, map:77, spo2:95, rr:19, temp:37.4 }, o2:"Ek oksijen", loc:"Uyanık", alg:[], code:"Tam", mon:true },
+  p6:{ bed:"DAX01", room:"Oda 1", u:"dax", name:"Zərifə Həşimova", as:"79 · K", by:1947, dx:"İdrar yolu enfeksiyonu", risk:"high", news:6, v:{ hr:108, sbp:98, dbp:60, map:73, spo2:94, rr:23, temp:38.3 }, o2:"Oda havası", loc:"Konfüze", alg:[], code:"Tam" },
+  p7:{ bed:"DAX02", room:"Oda 1", u:"dax", name:"Tofiq Babaşov", as:"66 · E", by:1960, dx:"Kalp yetmezliği", risk:"mid", news:3, v:{ hr:96, sbp:142, dbp:84, map:103, spo2:93, rr:21, temp:36.9 }, o2:"Ek oksijen", loc:"Uyanık", alg:[], code:"Tam" },
+  p8:{ bed:"DAX04", room:"Oda 2", u:"dax", name:"Leyli Nağıyeva", as:"45 · K", by:1981, dx:"Diabetes mellitus, hiperglisemi", risk:"stable", news:0, v:{ hr:78, sbp:122, dbp:78, map:93, spo2:98, rr:15, temp:36.6 }, o2:"Oda havası", loc:"Uyanık", alg:[], code:"Tam" },
+  p9:{ bed:"DAX05", room:"Oda 3", u:"dax", name:"Fuad Orucov", as:"71 · E", by:1955, dx:"Pnömoni", risk:"mid", news:5, v:{ hr:101, sbp:116, dbp:70, map:85, spo2:93, rr:22, temp:38.0 }, o2:"Oda havası", loc:"Uyanık", alg:[], code:"Tam", iso:"Damlacık" },
+  p10:{ bed:"CER01", room:"Oda 1", u:"cer", name:"Aysu Rəhimova", as:"38 · K", by:1988, dx:"Laparoskopik kolesistektomi sonrası", risk:"stable", news:1, v:{ hr:84, sbp:118, dbp:74, map:89, spo2:98, rr:16, temp:37.2 }, o2:"Oda havası", loc:"Uyanık", alg:[], code:"Tam" },
+  p15:{ bed:"PIC01", room:"PICU-01", u:"pic", name:"Ayan Hümbətova", as:"4 · K", by:2022, dx:"Ağır pnömoni, yüksek akım oksijen", risk:"high", pews:6, v:{ hr:148, sbp:92, dbp:54, map:67, spo2:91, rr:42, temp:38.6 }, o2:"Yüksek akım", loc:"Huzursuz", alg:[], code:"Tam", mon:true }
+};
+const SCOPE = { nurse:["rea", "kvc"], doctor:["rea", "kvc", "dax", "cer"], rrt:["rea", "dax", "cer", "pic"], bio:[] };
+const SEV = { crit:"Kritik", high:"Yüksek", mid:"Orta", low:"Düşük", stable:"Stabil" };
+const sc = (r) => `var(--${r === "stable" ? "ok" : r})`;
+const VM = { hr:{ n:"Nabız", s:"HR", u:"/dk", c:"--hr", al:[50, 120], nb:[70, 95], lo:40, hi:180 }, map:{ n:"Ort. tansiyon", s:"MAP", u:"mmHg", c:"--map", al:[65, 110], nb:[75, 95], lo:30, hi:130 },
+  spo2:{ n:"SpO₂", s:"SpO₂", u:"%", c:"--spo", al:[92, 101], nb:[95, 99], lo:80, hi:100 }, rr:{ n:"Solunum", s:"RR", u:"/dk", c:"--rr", al:[10, 24], nb:[14, 20], lo:5, hi:45 }, temp:{ n:"Ateş", s:"Isı", u:"°C", c:"--tmp", al:[36, 38.3], nb:[36.4, 37.4], lo:35, hi:41 } };
+const fmt = (k, v) => v == null ? "—" : k === "temp" ? v.toFixed(1).replace(".", ",") : String(Math.round(v));
+const out = (k, v) => v != null && (v < VM[k].al[0] || v > VM[k].al[1]);
+const scoreText = (p) => p.pews != null ? `PEWS ${p.pews}` : (p.u === "rea" || p.u === "kvc") ? `NEWS2 ${p.news} · SOFA ${p.sofa}` : `NEWS2 ${p.news}`;
+
+// örnek zaman serisi (web prototipindeki H.series mantığı, sadeleştirildi)
+function ser(pid, key, n = 49) {
+  const p = P[pid]; let s = [...(pid + key)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 2147483647, 7) || 1;
+  const rnd = () => (s = s * 16807 % 2147483647) / 2147483647;
+  const now = p.v[key], f = { crit:.72, high:.84, mid:.95, low:1, stable:1 }[p.risk];
+  const base = key === "spo2" ? Math.min(98, now + (1 - f) * 40) : key === "map" ? now / Math.max(.55, f) * (p.risk === "crit" ? 1.2 : 1) : key === "temp" ? (f < 1 ? 37 : now) : now * f;
+  const noise = { hr:3, map:2.5, spo2:.7, rr:1.1, temp:.08 }[key];
+  return Array.from({ length:n }, (_, i) => { const t = i / (n - 1), tr = f >= 1 ? 0 : Math.max(0, (t - .55) / .45); return i === n - 1 ? now : base + (now - base) * tr + (rnd() - .5) * noise * 2; });
+}
+function spark(vals, col, lo, hi, band, w = 160, h = 30) {
+  const mn = lo ?? Math.min(...vals) - 1, mx = hi ?? Math.max(...vals) + 1, y = v => (h - 2) - (v - mn) / (mx - mn) * (h - 4);
+  const pts = vals.map((v, i) => `${(i / (vals.length - 1) * w).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const b = band ? `<rect x="0" y="${y(Math.min(mx, band[1]))}" width="${w}" height="${Math.max(0, y(Math.max(mn, band[0])) - y(Math.min(mx, band[1])))}" fill="${col}" opacity=".10"/>` : "";
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${b}<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+}
+function bigChart(pid, key) {
+  const m = VM[key], v = ser(pid, key, 97), W = 340, H = 170, pl = 30, pb = 18, lo = m.lo, hi = m.hi;
+  const x = i => pl + i / (v.length - 1) * (W - pl - 6), y = val => 6 + (1 - (val - lo) / (hi - lo)) * (H - 6 - pb);
+  let s = `<rect x="${pl}" y="${y(m.nb[1])}" width="${W - pl - 6}" height="${y(m.nb[0]) - y(m.nb[1])}" fill="var(${m.c})" opacity=".12"/>`;
+  [m.al[0], Math.min(m.al[1], hi)].forEach(a => { s += `<line x1="${pl}" x2="${W - 6}" y1="${y(a)}" y2="${y(a)}" stroke="var(--crit)" stroke-dasharray="4 4" opacity=".6"/><text x="${pl - 4}" y="${y(a) + 4}" text-anchor="end" font-size="10" fill="var(--ink2)">${a}</text>`; });
+  s += `<polyline points="${v.map((q, i) => `${x(i).toFixed(1)},${y(q).toFixed(1)}`).join(" ")}" fill="none" stroke="var(${m.c})" stroke-width="2.2" stroke-linejoin="round"/>`;
+  [["-24 sa", 0], ["-18", .25], ["-12", .5], ["-6", .75], ["şimdi", 1]].forEach(([l, f]) => s += `<text x="${pl + f * (W - pl - 6)}" y="${H - 4}" text-anchor="${f === 0 ? "start" : f === 1 ? "end" : "middle"}" font-size="10" fill="var(--ink2)">${l}</text>`);
+  s += `<circle cx="${x(v.length - 1)}" cy="${y(v[v.length - 1])}" r="4" fill="var(${m.c})"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}">${s}</svg>`;
+}
+
+const ROLES = {
+  nurse:{ name:"Sevda Quliyeva", short:"Sevda Q.", ini:"SQ", label:"Sorumlu hemşire", units:"Erişkin YB · KVC YB" },
+  doctor:{ name:"Dr. Kamran Rzayev", short:"Dr. Kamran R.", ini:"KR", label:"Hekim · anestezi ve reanimasyon", units:"Erişkin YB · KVC YB · Dahiliye · Genel Cerrahi" },
+  rrt:{ name:"Dr. Emil Nəsirov", short:"Dr. Emil N.", ini:"EN", label:"Hekim · bu nöbet hızlı yanıt", units:"Acil · Dahiliye · Genel Cerrahi · Çocuk · Kemik iliği" },
+  bio:{ name:"Orxan Kərimov", short:"Orxan K.", ini:"OK", label:"Biyomedikal", units:"Tüm hastane · hasta adı görmez" }
+};
+
+const T0 = Date.now();
+const AL = [
+  { id:1, pid:"p1", sev:"crit", t:"Kötüleşme kriterleri karşılanıyor", m:"MAP 51 · laktat 4,1", a0:624, st:"open" },
+  { id:2, pid:"p2", sev:"high", t:"SpO₂ 86", m:"Ek oksijende · düşüş sürüyor", a0:162, st:"open", key:"spo2" },
+  { id:3, pid:"p6", sev:"high", t:"NEWS2 6 · değerlendirme zamanı", m:"Nabız 108 · ateş 38,3", a0:252, st:"open" },
+  { id:5, pid:"p3", sev:"mid", t:"Potasyum 5,8", m:"Sevda Q. gördü · 24.09 · 21:30", a0:732, st:"seen", by:"Sevda Q. · 24.09 · 21:30" },
+  { id:6, pid:"p15", sev:"high", t:"PEWS 6 · değerlendirme zamanı", m:"Solunum 42 · SpO₂ 91", a0:204, st:"open" }
+];
+const LADDER = [["Birim hemşiresi", 0], ["Sorumlu hemşire", 180], ["Hekim", 300], ["Hızlı yanıt", 600]];
+const age = (a) => a.frozen != null ? a.frozen : a.a0 + Math.floor((Date.now() - T0) / 1000);
+const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+// saat her yerde günüyle: prototipin "şimdi"si 24.09.2026 · 21:42. Gece yarısını geçen saat 25.09 olarak yazılır.
+const NOW_MIN = 21 * 60 + 42;
+const clk = (secAgo) => { let m = NOW_MIN - Math.round(secAgo / 60), d = 24; while (m < 0) { m += 1440; d--; } while (m >= 1440) { m -= 1440; d++; }
+  return `${d}.09 · ${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; };
+const NOWS = "24.09 · 21:42", SAVED = "24.09 · 21:43", SHIFT = "24.09 · 20:00 → 25.09 · 08:00";
+const alScope = (role) => AL.filter(a => a.st !== "closed" && SCOPE[role].includes(P[a.pid].u));
+const HO = [
+  { id:1, pid:"p4", from:"Mələk A. · gündüz", st:"wait", jobs:["24.09 · 22:00 vital bulgular", "25.09 · 00:00 düşme riski değerlendirmesi", "25.09 · 02:00 pozisyon değişimi"], note:"Gündüz nöbetinde ek not girilmedi." },
+  { id:2, pid:"p5", from:"Mələk A. · gündüz", st:"wait", jobs:["24.09 · 22:00 vital bulgular"], note:"Gündüz nöbetinde ek not girilmedi." }
+];
+// vardiya değişiminde açık bildirimler gelen ekibe geçer; giden ekip devir imzasına kadar görmeye devam eder (karar 24.09)
+const CARRY = [
+  { bed:"REA03", t:"Potasyum 5,8 · orta", s:"Gündüzden açık · 24.09 · 19:10'da açıldı" },
+  { bed:"REA04", t:"Pansuman zamanı geçti · orta", s:"Gündüzden açık · 24.09 · 18:30" }
+];
+const NT = {
+  nurse:[ { id:4, at:"24.09 · 21:39", sev:"high", t:"Yeni alarm", b:"REA02 · SpO₂ 86, 3 dakikadır", go:["alarm", { aid:2 }] },
+    { id:9, at:"24.09 · 21:31", sev:"crit", t:"Kritik sonuç · size ve hekime birlikte", b:"REA01 · laktat 4,1 mmol/L · hekime de gitti, Dr. Kamran R. henüz görmedi", go:["patient", { pid:"p1" }] },
+    { id:5, at:"24.09 · 21:30", sev:"", t:"İş zamanı geldi", b:"Vital bulgular · 24.09 · 22:00 turu yaklaşıyor", go:["vitals", {}] },
+    { id:6, at:"24.09 · 21:12", sev:"", t:"Yeni yatış yolda", b:"Erişkin YB · yatak atanmadı (sorumlu hemşire)", go:null },
+    { id:7, at:"24.09 · 20:55", sev:"", t:"Devir imzası", b:"2 hastanın devri karşı imzanızı bekliyor · gündüzden 2 açık bildirim size geçti", go:["handover", {}] },
+    { id:31, at:"24.09 · 20:02", sev:"", t:"Nöbet başladı", b:"Akşam nöbeti · " + SHIFT, go:null, read:true } ],
+  doctor:[ { id:1, at:"24.09 · 21:35", sev:"crit", t:"Eskalasyon · 5. dakika", b:"REA01 · kötüleşme kriterleri karşılanıyor, hemşire yanıtı yok", go:["alarm", { aid:1 }] },
+    { id:2, at:"24.09 · 21:31", sev:"crit", t:"Kritik sonuç · size ve hemşireye birlikte", b:"REA01 · laktat 4,1 mmol/L", go:["patient", { pid:"p1" }] },
+    { id:3, at:"24.09 · 21:20", sev:"", t:"İmza bekliyor", b:"REA01 · SOFA 11 · sistem doldurdu, onayınız bekleniyor", go:["patient", { pid:"p1" }] },
+    { id:32, at:"24.09 · 20:02", sev:"", t:"Nöbet başladı", b:"Akşam nöbeti · " + SHIFT, go:null, read:true } ],
+  rrt:[ { id:8, at:"24.09 · 21:38", sev:"crit", t:"Size eskale edildi", b:"REA01 · 4. kat · Oda ICU-01", go:["alarm", { aid:1 }] },
+    { id:33, at:"24.09 · 20:00", sev:"", t:"Nöbet görevi başladı", b:"Hızlı yanıt · " + SHIFT, go:null, read:true } ],
+  bio:[ { id:10, at:"24.09 · 21:36", sev:"crit", t:"Monitör sessiz", b:"REA07 · 6 dakikadır veri yok", go:["wo", { id:"İE-0418" }] },
+    { id:11, at:"24.09 · 09:00", sev:"", t:"Bakım zamanı", b:"Bu hafta 4 cihazın periyodik bakımı var", go:["home", {}] } ]
+};
+const WO = [
+  { id:"İE-0418", kind:"Hasta başı monitör", ic:"monitor", where:"Erişkin YB · ICU-07", bed:"REA07", at:"24.09 · 21:36", by:"sistem", t:"Monitör merkeze veri göndermiyor (6 dk). Ağ kablosu ya da cihaz ağ kartı kontrol edilmeli.", pr:"yüksek", st:"acik" },
+  { id:"İE-0417", kind:"Hasta başı monitör", ic:"monitor", where:"Erişkin YB · ICU-02", bed:"REA02", at:"24.09 · 20:15", by:"Sevda Q.", t:"SpO₂ probu bağlantısı gevşek, sinyal ara ara kesiliyor.", pr:"yüksek", st:"acik" },
+  { id:"İE-0416", kind:"Aspiratör", ic:"drop", where:"Dahiliye · DAX08", bed:"DAX08", at:"24.09 · 14:02", by:"Gülnar İ.", t:"Duvar aspiratörü vakum oluşturmuyor. Yatak kullanıma kapatıldı.", pr:"yüksek", st:"atandi", to:"size" },
+  { id:"İE-0415", kind:"İnfüzyon pompası", ic:"drop", where:"Çocuk Servisi · Oda 2", bed:null, at:"23.09 · 22:40", by:"Nuray Ə.", t:"Hat açıkken de tıkanma alarmı veriyor.", pr:"orta", st:"acik" },
+  { id:"İE-0414", kind:"Portatif vital monitör", ic:"activity", where:"Genel Cerrahi · Oda 1", bed:null, at:"23.09 · 08:15", by:"Gülnar İ.", t:"Batarya yarım nöbet dayanmıyor.", pr:"düşük", st:"atandi", to:"Yetkili servis" }
+];
+const PRC = { "yüksek":"crit", orta:"mid", "düşük":"low" };
+const WST = { acik:"Açık", atandi:"Atandı", kapandi:"Kapandı" };
+const DEV = [
+  { id:"PV-0142", k:"port", n:"Portatif vital monitör", ic:"activity", where:"Dahiliye · Oda 1", seen:"24.09 · 21:32", bat:64, st:"Çalışıyor" },
+  { id:"PV-0143", k:"port", n:"Portatif vital monitör", ic:"activity", where:"Dahiliye · Oda 4", seen:"24.09 · 21:18", bat:81, st:"Çalışıyor" },
+  { id:"PV-0144", k:"port", n:"Portatif vital monitör", ic:"activity", where:"Dahiliye · Depo", seen:"23.09 · 16:20", bat:null, st:"Depoda" },
+  { id:"PV-0151", k:"port", n:"Portatif vital monitör", ic:"activity", where:"Genel Cerrahi · Oda 1", seen:"24.09 · 21:40", bat:12, st:"Çalışıyor · arıza kaydı var" },
+  { id:"PV-0160", k:"port", n:"Portatif vital monitör", ic:"activity", where:"Acil · Gözlem", seen:"24.09 · 21:41", bat:17, st:"Çalışıyor" },
+  { id:"IP-0212", k:"inf", n:"İnfüzyon pompası", ic:"drop", where:"Çocuk Servisi · Oda 2", seen:null, bat:null, st:"Arıza kaydı açık" },
+  { id:"IP-0230", k:"inf", n:"İnfüzyon pompası", ic:"drop", where:"Genel Cerrahi · Depo", seen:null, bat:null, st:"Kullanım dışı" },
+  { id:"DF-0031", k:"defib", n:"Defibrilatör", ic:"flash", where:"Acil · Resüsitasyon 1", seen:null, bat:92, st:"Çalışıyor" },
+  { id:"EK-0018", k:"ekg", n:"EKG cihazı", ic:"heart", where:"Dahiliye · hemşire istasyonu", seen:null, bat:null, st:"Çalışıyor" },
+  { id:"MN-0407", k:"mon", n:"Hasta başı monitör", ic:"monitor", where:"Erişkin YB · ICU-07", seen:"24.09 · 21:30", bat:null, st:"Veri yok · arıza kaydı açık" }
+];
+const DK = [["", "Tümü"], ["port", "Portatif monitör"], ["inf", "İnfüzyon"], ["defib", "Defibrilatör"], ["ekg", "EKG"], ["mon", "Monitör"]];
+
+/* ================= durum ================= */
+const S = { plat:"ios", theme:"dark", big:false, tab:false, role:"nurse", stack:[], ov:null, anim:"fade", f:{ pf:"all", nf:"all", dk:"", q:"" },
+  sofa:false, lab:{ nurse:false, doctor:false }, set:{ bio:true, app:true }, VF:null, WF:null, FF:null, pin:"", after:null, woSeq:419 };
+const ios = () => S.plat === "ios";
+const TABS = {
+  nurse:[["home", "Bana", "tray"], ["patients", "Hastalar", "bed"], ["mid", "Ölç", "activity"], ["notifs", "Bildirim", "bell"], ["settings", "Ben", "user"]],
+  doctor:[["home", "Bana", "tray"], ["patients", "Hastalar", "bed"], ["mid", "Ölç", "activity"], ["notifs", "Bildirim", "bell"], ["settings", "Ben", "user"]],
+  rrt:[["home", "Çağrı", "siren"], ["notifs", "Bildirim", "bell"], ["settings", "Ben", "user"]],
+  bio:[["home", "İşler", "wrench"], ["bioFind", "Cihazlar", "search"], ["mid", "Arıza", "plus"], ["notifs", "Bildirim", "bell"], ["settings", "Ben", "user"]]
+};
+const tabsFor = () => TABS[S.role];
+// merkez düğmenin hızlı işler menüsü (rol başına)
+const QUICK = {
+  nurse:[["Vital gir", "heart", "qvit", ""], ["Ağrı skoru", "body", "qpain", ""], ["Bileklik okut", "qr", "qscan", ""], ["Sesli not", "mic", "qnote", ""]],
+  doctor:[["Vital gir", "heart", "qvit", ""], ["Bileklik okut", "qr", "qscan", ""], ["Sesli not", "mic", "qnote", ""], ["Skor imzası", "pen", "qsign", ""]],
+  bio:[["Arıza aç", "plus", "qfault", ""], ["Etiket okut", "qr", "qfscan", ""], ["Cihaz bul", "search", "qfind", ""]]
+};
+const badge = (id) => { if (id === "home") return homeItems().filter(i => i.kind === "alarm" && i.open).length || 0;
+  if (id === "handover") return HO.filter(h => h.st === "wait").length; if (id === "notifs") return NT[S.role].filter(n => !n.read).length; return 0; };
+
+/* ================= yardımcılar ================= */
+const btn = (label, cls, act, arg = "", icon = "", extra = "") => `<button class="btn ${cls}" data-act="${act}" data-arg="${arg}" ${extra}>${icon ? I(icon) : ""}<span>${label}</span></button>`;
+const seg = (name, items, val) => ios() && items.length <= 4 && !items.some(([, l]) => l.length > 11)
+  ? `<div class="seg">${items.map(([v, l]) => `<button class="${v === val ? "on" : ""}" data-act="seg" data-arg="${name}:${v}">${l}</button>`).join("")}</div>`
+  : `<div class="chips">${items.map(([v, l]) => `<button class="${v === val ? "on" : ""}" data-act="seg" data-arg="${name}:${v}">${v === val ? I("check") : ""}${l}</button>`).join("")}</div>`;
+const sw = (key, on, dis) => `<button class="swt ${on ? "on" : ""} ${dis ? "dis" : ""}" data-act="${dis ? "nop" : "tog"}" data-arg="${key}" aria-pressed="${on}"><i></i></button>`;
+const row = (o) => `<button class="rw ${o.dis ? "dis" : ""}" data-act="${o.act || "nop"}" data-arg="${o.arg || ""}">${o.icon ? `<span class="ri" style="--c:${o.c || "var(--tint)"}">${I(o.icon)}</span>` : ""}<span class="rt"><b>${o.t}</b>${o.s ? `<span>${o.s}</span>` : ""}</span><span class="rv">${o.v || ""}${o.chev ? I("chevR") : ""}</span></button>`;
+const rowD = (o) => `<div class="rw ${o.dis ? "dis" : ""}">${o.icon ? `<span class="ri" style="--c:${o.c || "var(--tint)"}">${I(o.icon)}</span>` : ""}<span class="rt"><b>${o.t}</b>${o.s ? `<span>${o.s}</span>` : ""}</span><span class="rv">${o.v || ""}</span></div>`;
+const sec = (h, inner, foot) => `<div class="sec">${h ? `<div class="sh">${h}</div>` : ""}<div class="lg">${inner}</div>${foot ? `<div class="sf">${foot}</div>` : ""}</div>`;
+const pill = (r, txt) => `<span class="pill" style="--c:${sc(r)}">${txt || SEV[r].toUpperCase()}</span>`;
+const showName = () => S.role !== "bio";
+
+/* ================= size düşenler ================= */
+function homeItems() {
+  const r = S.role, it = [];
+  if (r === "bio") return it;
+  alScope(r).forEach(a => { const p = P[a.pid], esc = age(a) >= 600;
+    if (r === "rrt") return;
+    if (r === "doctor" && a.pid === "p2" && a.st === "open" && age(a) < 300) { it.push({ kind:"info", sev:"low", k:"Hemşirede", title:`${p.bed} · ${a.t}`, sub:`${p.name} · 5. dakikada size düşer`, open:["alarm", a.id], ord:5 }); return; }
+    it.push({ kind:"alarm", open:a.st === "open", aid:a.id, sev:a.sev, k:(a.st === "seen" ? "Görüldü" : a.st === "enroute" ? "Yoldasınız" : esc ? "Alarm · hızlı yanıt çağrıldı" : "Alarm") + " · " + clk(age(a)), title:`${p.bed} · ${a.t}`,
+      sub:`${p.name} · ${a.st === "seen" ? a.by || "görüldü" : a.m}`, actions:a.st === "open" ? [["Gördüm", "", "ack", a.id], ["Yoldayım", "ton", "enroute", a.id]] : a.st === "enroute" ? [["Hastayı aç", "ton", "openP", a.pid]] : [], openA:a.id, dim:a.st === "seen", ord:a.st === "open" ? 0 : a.st === "enroute" ? 1 : 9, age:a.st === "open" || a.st === "enroute" ? a.id : null });
+  });
+  if (r === "nurse") {
+    if (!S.painDone) it.push({ kind:"task", sev:"high", k:"Gecikti · 24.09 · 21:00", title:"Ağrı değerlendirmesi", sub:"REA01 · Elvin Hüseynov", actions:[["Ağrı gir", "ton", "pain", "p1"]], open:["patient", "p1"], ord:2 });
+    if (!S.lab.nurse) it.push({ kind:"result", sev:"crit", k:"Kritik sonuç · size ve hekime birlikte", title:"REA01 · laktat 4,1 mmol/L", sub:`Elvin Hüseynov · 24.09 · 21:31 · Dr. Kamran R. ${S.lab.doctor ? "gördü · " + SAVED : "henüz görmedi"}`, actions:[["Gördüm", "", "labseen", ""], ["Hastayı aç", "ton", "openP", "p1"]], ord:1 });
+    it.push({ kind:"task", sev:"low", k:"24.09 · 22:00 · 18 dk sonra", title:"Vital bulgular turu", sub:"6 hasta · Erişkin YB, KVC YB", actions:[["Başla", "ton", "vit", ""]], ord:6 });
+    it.push({ kind:"task", sev:"low", k:"25.09 · 02:00 · gece yarısından sonra", title:"Pozisyon değişimi", sub:"REA04 · Səbinə Vəliyeva · devirle size geçti", ord:8 });
+    const w = HO.filter(h => h.st === "wait");
+    if (w.length) it.push({ kind:"hand", sev:"mid", k:"Devir", title:`${w.length} devir karşı imzanızı bekliyor`, sub:`${w.map(h => P[h.pid].bed).join(", ")} · Mələk A. (gündüz)`, actions:[["Aç", "ton", "tab", "handover"]], ord:4 });
+    it.push({ kind:"info", sev:"low", k:"Sorumlu hemşire", title:"Yeni yatış yolda", sub:"Erişkin YB · yatak atanmadı · kabul ekranı web'de", ord:7 });
+  }
+  if (r === "doctor") {
+    if (!S.lab.doctor) it.push({ kind:"result", sev:"crit", k:"Kritik sonuç · size ve hemşireye birlikte", title:"REA01 · laktat 4,1 mmol/L", sub:`Elvin Hüseynov · 24.09 · 21:31 · hemşire Sevda Q. ${S.lab.nurse ? "gördü · " + SAVED : "henüz görmedi"}`, actions:[["Gördüm", "", "labseen", ""], ["Hastayı aç", "ton", "openP", "p1"]], ord:2 });
+    if (!S.sofa) it.push({ kind:"sign", sev:"mid", k:"İmza bekliyor", title:"REA01 · SOFA 11", sub:"Sistem doldurdu · onayınız bekleniyor", actions:[["İncele", "ton", "openP", "p1"]], ord:3 });
+  }
+  return it.sort((a, b) => a.ord - b.ord || (b.aid ? age(AL.find(x => x.id === b.aid)) : 0) - (a.aid ? age(AL.find(x => x.id === a.aid)) : 0));
+}
+function itemCard(i) {
+  const click = i.openA ? `data-act="openA" data-arg="${i.openA}"` : i.open ? `data-act="${i.open[0] === "patient" ? "openP" : "openA"}" data-arg="${i.open[1]}"` : "";
+  return `<div class="card it ${i.dim ? "dim" : ""}" style="--c:${sc(i.sev)}" ${click}>
+    <div class="ith"><span class="k">${i.k}</span>${i.age ? `<span class="age" data-age="${i.age}">${mmss(age(AL.find(a => a.id === i.age)))}</span>` : ""}</div>
+    <div class="itt">${i.title}</div><div class="its">${i.sub}</div>
+    ${i.actions && i.actions.length ? `<div class="ita">${i.actions.map(([l, c, a, g]) => btn(l, c + " sm", a, g)).join("")}</div>` : ""}</div>`;
+}
+function homeBody() {
+  const r = S.role, items = homeItems(), U = ROLES[r];
+  const nm = r === "doctor" ? "Dr. " + U.name.split(" ")[1] : U.name.split(" ")[0];
+  const nA = items.filter(i => i.kind === "alarm" && i.open).length;
+  const cnt = r === "nurse" ? [["Alarm", nA, "crit", "notifs"], ["İş", items.filter(i => i.kind === "task").length, "high", "home"], ["Devir", HO.filter(h => h.st === "wait").length, "mid", "handover"]]
+    : [["Alarm", nA, "crit", "notifs"], ["Sonuç", S.lab.doctor ? 0 : 1, "high", "home"], ["İmza", S.sofa ? 0 : 1, "mid", "home"]];
+  return `<div class="hi"><div class="hig">İyi akşamlar, ${nm}</div><div class="hid">Perşembe 24.09.2026 · 21:42 · ${U.units}</div></div>
+    <div class="sum">${cnt.map(([l, n, c, go]) => `<button data-act="tab" data-arg="${go}" style="--c:${n ? sc(c) : "var(--ink3)"}"><b>${n}</b><span>${l}</span></button>`).join("")}</div>
+    <div class="uh">Sırayla · en eski yanıtsız üstte</div>`
+    + (items.map(itemCard).join("") || `<div class="note">${I("check")}Size düşen bir şey yok.</div>`);
+}
+
+/* ================= ekranlar ================= */
+const SCR = {};
+SCR.lock = () => {
+  const bio = S.role === "bio";
+  const n1 = bio ? ["REA07 · cihaz · kritik", "Uygulamayı açın"] : ["REA01 · kritik", "Uygulamayı açın"];
+  const n2 = "Telefona yalnız kritik düşer · ⏳ karar verildi, yapılacak";
+  const body = ios()
+    ? `<div class="lock ios"><div class="lk">${I("lock")}</div><div class="date">Perşembe 24 Eylül</div><div class="clk">21:42</div>
+        <div class="ntf"><button class="ln1" data-act="lockopen"><span class="appi">H</span><span class="bt2"><small><span>HOMUNCULUS</span><span>şimdi</span></small><b>${n1[0]}</b><span>${n1[1]}</span></span></button><div class="lnb"></div><div class="lnb" style="margin:0 22px;height:8px;opacity:.7"></div><div class="more2">${n2}</div></div>
+        <button class="lbtn" style="left:46px">${I("flash")}</button><button class="lbtn" style="right:46px">${I("camera")}</button></div>`
+    : `<div class="lock and"><div class="lk">${I("lock")}</div><div class="date">Per 24 Eyl</div><div class="clk">21<br>42</div>
+        <div class="ntf"><button class="ln1" data-act="lockopen"><span class="appi">H</span><span class="bt2"><small><span>Homunculus · Kritik alarmlar</span><span>şimdi</span></small><b>${n1[0]}</b><span>${n1[1]}</span></span></button><div class="more2">${n2}</div></div>
+        <button class="fpi" data-act="lockopen">${I("finger")}</button><div class="hint">Kilidi açmak için dokunun</div></div>`;
+  return { raw:body, sbLight:true, hindLight:true };
+};
+SCR.login = () => {
+  const U = ROLES[S.role];
+  if (S.pinMode) return { raw:`<div class="login"><div class="mark">H</div><h2>PIN girin</h2><div class="xs">Demo: herhangi 6 rakam</div>
+      <div class="pin">${[0, 1, 2, 3, 4, 5].map(i => `<i class="${i < S.pin.length ? "f" : ""}"></i>`).join("")}</div>
+      <div class="kp">${[["1", ""], ["2", "ABC"], ["3", "DEF"], ["4", "GHI"], ["5", "JKL"], ["6", "MNO"], ["7", "PQRS"], ["8", "TUV"], ["9", "WXYZ"]].map(([d, l]) => `<button data-act="pin" data-arg="${d}">${d}<small>${l}</small></button>`).join("")}
+      <button class="e" data-act="pinoff">Vazgeç</button><button data-act="pin" data-arg="0">0</button><button class="e" data-act="pindel">Sil</button></div></div>` };
+  return { raw:`<div class="login"><div class="mark">H</div><h2>Homunculus</h2><div class="xs">Nümunə Klinik Xəstəxanası</div>
+      <div class="who"><span class="avatar">${U.ini}</span><span><b>${U.name}</b><span>${U.label}</span></span></div>
+      ${btn(ios() ? "Face ID ile aç" : "Parmak izi ile aç", "w", "auth", "", ios() ? "face" : "finger")}
+      <div style="height:10px"></div>${btn("PIN ile gir", "gry w", "pinon")}
+      <div class="spacer"></div><button class="nlink" style="justify-content:center;width:100%" data-act="otheracct">Başka hesapla giriş</button></div>` };
+};
+SCR.home = () => {
+  const r = S.role;
+  if (r === "rrt") return rrtHome();
+  if (r === "bio") return bioHome();
+  const nH = r === "nurse" ? HO.filter(h => h.st === "wait").length : 0;
+  const hand = r === "nurse" ? `<button class="${ios() ? "nlink" : "ib"} hb" data-act="tab" data-arg="handover" aria-label="Devir">${I("pen")}${nH ? `<span class="hbd">${nH}</span>` : ""}</button>` : "";
+  return { title:"Size düşenler", large:true, glow:true, body:homeBody(), right:ios() ? hand : `${hand}<button class="ib" data-act="tab" data-arg="settings"><span class="avatar">${ROLES[r].ini}</span></button>` };
+};
+function rrtHome() {
+  const escd = AL.filter(a => !["seen", "closed"].includes(a.st) && age(a) >= 600), inc = AL.filter(a => a.st === "open" && age(a) < 600);
+  const card = (a) => { const p = P[a.pid]; return `<div class="card it" style="--c:${sc(a.sev)}" data-act="openA" data-arg="${a.id}">
+      <div class="ith"><span class="k">${a.st === "enroute" ? "Yoldasınız" : a.st === "there" ? "Hasta başındasınız" : "Size eskale edildi"}</span><span class="age" data-age="${a.id}">${mmss(age(a))}</span></div>
+      <div class="itt">${p.bed} · ${a.t}</div><div class="its">${p.name} · ${p.as} · ${a.m}</div>
+      <div class="loc" style="margin:10px 0 0;padding:10px 12px;background:var(--card2)">${I("pin")}<div><b>${UN[p.u][1]} · Oda ${p.room}</b><span>${UN[p.u][0]}</span></div></div>
+      <div class="tags">${p.alg.length ? `<span class="tag red">Alerji: ${p.alg.join(", ")}</span>` : `<span class="tag">Alerji yok</span>`}<span class="tag">Kod durumu: ${p.code}</span></div>
+      <div class="ita">${btn("Yoldayım", a.st === "enroute" ? "ton sm" : "sm", "enroute", a.id)}${btn("Yanındayım", "ton sm", "there", a.id)}</div></div>`; };
+  return { title:"Çağrılar", large:true, body:`<p class="${ios() ? "ltsub" : "asub"}">Hızlı yanıt görevi · ${SHIFT}</p>
+      <div class="uh">Size eskale edilen</div>${escd.map(card).join("") || `<div class="note">${I("check")}Şu an size eskale edilmiş alarm yok.</div>`}
+      <div class="uh">Yaklaşan · henüz size düşmedi</div>${sec("", inc.map(a => { const p = P[a.pid]; return row({ icon:"clock", c:sc(a.sev), t:`${p.bed} · ${a.t}`, s:`${UN[p.u][0]} · en geç ${mmss(Math.max(0, 600 - age(a)))} dk içinde size düşebilir`, act:"openA", arg:a.id, chev:true }); }).join(""))}` };
+}
+function bioHome() {
+  const open = WO.filter(w => w.st !== "kapandi");
+  return { title:"İşler", large:true, right:ios() ? "" : `<button class="ib" data-act="tab" data-arg="bioFind">${I("search")}</button>`,
+    body:`<p class="${ios() ? "ltsub" : "asub"}">Tüm hastane · hasta adı gösterilmez</p>
+      <div class="cnt"><button data-act="nop" style="--c:var(--crit)"><b>${WO.filter(w => w.st === "acik").length}</b><span>Açık arıza</span></button><button data-act="nop" style="--c:var(--mid)"><b>${WO.filter(w => w.to === "size" && w.st !== "kapandi").length}</b><span>Size atanan</span></button><button data-act="nop" style="--c:var(--low)"><b>4</b><span>Bakım bu hafta</span></button></div>
+      <div class="uh">Arıza kayıtları · öncelik sırası</div>
+      ${open.sort((a, b) => ["yüksek", "orta", "düşük"].indexOf(a.pr) - ["yüksek", "orta", "düşük"].indexOf(b.pr)).map(w => `<div class="card" data-act="wo" data-arg="${w.id}"><div class="wo" style="--c:${sc(PRC[w.pr])}"><span class="di">${I(w.ic)}</span><span class="dt"><b>${w.t}</b><span>${w.kind} · ${w.where}</span><span>${w.id} · ${w.at} · ${w.by} açtı</span></span></div>
+        <div class="tags">${pill(PRC[w.pr], w.pr.toUpperCase())}<span class="tag">${WST[w.st]}${w.to ? " · " + w.to : ""}</span></div></div>`).join("")}
+      <div class="uh">Bu haftanın bakımları</div>${sec("", [["Defibrilatör · Acil", "Periyodik bakım · 25.09 Cuma"], ["Ventilatör · KVC YB", "Kalibrasyon · 26.09 Cumartesi"], ["İnfüzyon pompası · Dahiliye", "Periyodik bakım · 26.09 Cumartesi"], ["Küvöz · Yenidoğan YB", "Periyodik bakım · 27.09 Pazar"]].map(([t, s]) => rowD({ icon:"wrench", c:"var(--low)", t, s })).join(""), "Liste örnek; tam takvim web'de.")}` };
+}
+SCR.patients = () => {
+  const r = S.role, list = Object.entries(P).filter(([, p]) => SCOPE[r].includes(p.u) && p.u !== "pic");
+  const f = S.f.pf, sel = list.filter(([id, p]) => f === "all" || (f === "crit" ? ["crit", "high"].includes(p.risk) : true));
+  const units = [...new Set(sel.map(([, p]) => p.u))];
+  const swa = (id) => r === "nurse" ? `<button class="b1" data-act="vit" data-arg="${id}">${I("heart")}Vital</button><button class="b2" data-act="pain" data-arg="${id}">${I("body")}Ağrı</button>` : `<button class="b1" data-act="trend" data-arg="${id}:hr">${I("activity")}Trend</button><button class="b4" data-act="openP" data-arg="${id}">${I("chevR")}Aç</button>`;
+  const prow = ([id, p]) => `<div class="sw" data-sw><div class="swa">${swa(id)}</div>
+      <div class="swc" data-act="openP" data-arg="${id}"><span class="bt" style="--c:${sc(p.risk)}">${p.bed}</span><span class="pm"><b>${p.name}</b><span>${p.as} · ${p.dx}</span>
+      <span class="vv">HR ${out("hr", p.v.hr) ? `<em>${p.v.hr}</em>` : p.v.hr} · MAP ${out("map", p.v.map) ? `<em>${p.v.map}</em>` : p.v.map} · SpO₂ ${out("spo2", p.v.spo2) ? `<em>${p.v.spo2}</em>` : p.v.spo2}</span></span>
+      <span class="pr"><span class="pill" style="--c:${sc(p.risk)}">${p.pews != null ? "PEWS " + p.pews : "NEWS2 " + p.news}</span>${ios() ? I("chevR") : `<button class="more" data-act="more" data-arg="${id}">${I("more")}</button>`}</span></div></div>`;
+  return { title:"Hastalarım", large:true, right:ios() ? `<button class="nlink b" data-act="vit" data-arg="">${I("qr")}Vital</button>` : `<button class="ib">${I("search")}</button>`,
+    body:`<div class="search">${I("search")}<span>Ad, yatak, tanı</span></div>${seg("pf", [["all", "Tümü"], ["crit", "Riskli"], ["mine", "Benim"]], f)}
+      ${units.map(u => (units.length > 1 || r === "doctor" ? `<div class="uh">${UN[u][0]} · ${sel.filter(([, p]) => p.u === u).length}</div>` : "") + sel.filter(([, p]) => p.u === u).map(prow).join("")).join("")}
+      <p class="xs" style="text-align:center;margin:12px 16px">${ios() ? (r === "nurse" ? "Satırı sola çek: Vital · Ağrı" : "Satırı sola çek: Trend · Aç") : "⋮ ile hızlı işler · satırı sola çekmek de çalışır"}</p>` };
+};
+SCR.patient = ({ pid = "p1" }) => {
+  const p = P[pid], r = S.role, canSign = r === "doctor", nurse = r === "nurse";
+  const vt = (k, wide) => { const m = VM[k], v = p.v[k]; return `<button class="vt ${out(k, v) ? "out" : ""} ${wide ? "wide" : ""}" style="--vc:var(${m.c})" data-act="trend" data-arg="${pid}:${k}"><span class="l"><span>${m.s}</span><i>${m.u}</i></span><span class="n">${fmt(k, v)}${k === "map" ? `<small>${p.v.sbp}/${p.v.dbp}</small>` : ""}</span>${spark(ser(pid, k), `var(${m.c})`, null, null, null)}</button>`; };
+  const score = p.pews != null ? `<div class="score"><span class="sv">PEWS ${p.pews}</span><span class="xs">Sistem hesapladı · vital izlem birimi</span></div>`
+    : `<div class="score"><span class="sv">${p.u === "rea" || p.u === "kvc" ? "SOFA " + p.sofa : "NEWS2 " + p.news}</span><span class="xs">${p.u === "rea" || p.u === "kvc" ? `NEWS2 ${p.news} · ` : ""}sistem doldurdu<br>kaynak: monitör + hastane kaydı</span></div>
+      ${pid === "p1" ? (S.sofa ? `<div class="signed" style="margin-top:8px">${I("check")}Onaylandı · Dr. Kamran R. · ${SAVED}</div>` : canSign ? `<div style="margin-top:10px">${btn("Onayla", "w", "sofa", "", "pen")}</div>` : `<div class="xs" style="margin-top:8px">Hekim onayı bekleniyor · hemşire görür, onaylayamaz</div>`) : `<div class="signed" style="margin-top:8px">${I("check")}Onaylı</div>`}`;
+  const qa = [["Vital gir", "heart", "vit", pid, nurse], ["Ağrı skoru", "body", "pain", pid, nurse], ["Yara fotoğrafı", "camera", "wound", pid, nurse], ["Devir notu", "pen", "handnote", pid, nurse]];
+  return { title:p.bed, back:"Hastalarım", right:ios() ? `<button class="nlink" data-act="more" data-arg="${pid}">${I("more")}</button>` : `<button class="ib" data-act="more" data-arg="${pid}">${I("more")}</button>`,
+    body:`<div class="phd" style="--c:${sc(p.risk)}"><div class="row1"><span class="bn">${p.bed}</span>${pill(p.risk)}<span class="xs">${UN[p.u][0]} · Oda ${p.room}</span></div>
+      <h2>${p.name}</h2><p>${p.as} · ${p.dx}</p>
+      <div class="tags">${p.alg.length ? `<span class="tag red">Alerji: ${p.alg.join(", ")}</span>` : ""}${p.iso ? `<span class="tag">İzolasyon: ${p.iso}</span>` : ""}<span class="tag">${p.o2}</span>${p.abx ? `<span class="tag">Antibiyotik ${p.abx}. gün</span>` : ""}<span class="tag">Kod: ${p.code}</span></div></div>
+      ${pid === "p1" ? `<div class="reco"><b>Kötüleşme kriterleri karşılanıyor</b><span>MAP 51 · laktat 4,1 · değerlendirme önerilir · karar hekimindir</span><div style="margin-top:8px">${btn("Kaynak", "gry sm", "source", "", "info")}</div></div>` : ""}
+      <div class="vg">${vt("hr")}${vt("map")}${vt("spo2")}${vt("rr")}${vt("temp", true)}</div>
+      <p class="xs" style="margin:-4px 16px 12px">Kıvrımlar son 24 saat · örnek veri · dokun: büyük grafik</p>
+      <div class="qa">${qa.map(([l, ic, a, g, ok]) => `<button class="${ok ? "" : "lk"}" data-act="${ok ? a : "locked"}" data-arg="${g}">${I(ok ? ic : "lock")}${l}</button>`).join("")}</div>
+      ${sec("Skor", `<div style="padding:12px 16px">${score}</div>`)}
+      ${sec("Telefonda yok, bilerek", rowD({ icon:"info", c:"var(--ink3)", t:"İlaç, sıvı, sonuç ayrıntısı", s:S.tab ? "Web'de. Tablet için aday; bu taslakta çizilmedi." : "Web'de. Telefon hasta başı işi içindir." }))}` };
+};
+SCR.alarm = ({ aid = 2 }) => {
+  const a = AL.find(x => x.id === aid) || AL[0], p = P[a.pid], rrt = S.role === "rrt", s = age(a);
+  const step = LADDER.reduce((k, [, t], i) => s >= t ? i : k, 0);
+  const lad = `<div class="lad" style="--c:${sc(a.sev)}"><h5><span>Eskalasyon</span><span>${a.st === "open" ? (step < 3 ? `<span data-next="${a.id}">${LADDER[step + 1][0]}: ${mmss(Math.max(0, LADDER[step + 1][1] - s))}</span>` : "hızlı yanıt çağrıldı") : a.st === "seen" ? "durdu · " + (a.by || "görüldü") : "durdu · yoldasınız"}</span></h5>
+      <div class="st4">${LADDER.map(([n, t], i) => `<div class="${i <= step ? "done" : i === step + 1 && a.st === "open" ? "next" : ""}"><b>${n}</b>${t ? t / 60 + ". dk" : "hemen"}</div>`).join("")}</div></div>`;
+  const chart = a.key ? spark(ser(a.pid, a.key, 31).map((v, i, arr) => i < 20 ? v : v - (i - 20) * .25 + (arr.length - 1 === i ? 0 : 0)), `var(--c)`, 80, 100, [92, 100], 340, 54) : spark(ser(a.pid, "map", 31), `var(--c)`, null, null, null, 340, 54);
+  const acts = rrt ? `${btn(a.st === "enroute" ? "Yoldasınız ✓" : "Yoldayım", "big", "enroute", a.id, "nav")}<div class="brow">${btn("Yanındayım", "ton", "there", a.id)}${btn("Hastayı aç", "gry", "openP", a.pid)}</div>`
+    : a.st === "open" ? `${btn("Gördüm", "big", "ack", a.id, "eye")}<div class="brow">${btn("Yoldayım", "ton", "enroute", a.id, "nav")}${a.sev === "crit" ? "" : btn("Ertele", "gry", "snooze", a.id, "moon")}${btn("Eskale", "red", "esc", a.id, "up")}</div>${a.sev === "crit" ? `<div class="xs" style="text-align:center">Kritik alarm ertelenemez · gece de susmaz</div>` : ""}`
+    : `<div class="signed" style="justify-content:center">${I("check")}${{ seen:"Gördünüz · " + (a.by || ""), enroute:"Yolda olarak bildirildi", closed:"Kapandı", there:"Hasta başında" }[a.st] || ""}</div><div class="brow">${btn("Değerlendirildi", "", "closeA", a.id)}${btn("Hastayı aç", "gry", "openP", a.pid)}</div>`;
+  return { title:"Alarm", modal:true, btns:acts,
+    body:`<div class="ahd" style="--c:${sc(a.sev)}"><div class="top">${pill(a.sev)}<span class="xs">${a.id === 1 && !rrt ? "hızlı yanıt çağrıldı" : ""}</span><span class="tm" data-age="${a.id}">${mmss(s)}</span></div>
+      <h2>${a.t}</h2><div class="who"><b>${p.bed}</b> · ${showName() ? p.name + " · " : ""}${p.as}</div><div class="who">${a.m}</div><div class="who">Başladı: <b>${clk(s)}</b></div>${chart}<div class="xs" style="margin-top:4px">Son 30 dakika · örnek veri</div></div>
+      ${rrt ? `<div class="loc">${I("pin")}<div><b>${UN[p.u][1]} · Oda ${p.room}</b><span>${UN[p.u][0]} · ${p.alg.length ? "Alerji: " + p.alg.join(", ") : "alerji yok"} · kod durumu ${p.code}</span></div></div>` : ""}
+      ${lad}
+      <div class="note">${I("info")}<span>${a.id === 1 ? "Değerlendirme önerilir · karar hekimindir." : "Kriter karşılanıyor. Bu bir tanı değil; hasta başında değerlendirin."}</span></div>` };
+};
+SCR.vitals = ({ pid }) => {
+  const V = S.VF || (S.VF = { pid:pid || null, step:pid ? 1 : 0, src:null, vals:{ hr:null, sbp:null, dbp:null, spo2:null, rr:null, temp:null }, from:{}, avpu:"Uyanık", o2:null });
+  const p = V.pid ? P[V.pid] : null;
+  const steps = `<div class="steps">${[0, 1, 2, 3].map(i => `<div class="${i <= V.step ? "on" : ""}"></div>`).join("")}</div>`;
+  let body = "";
+  if (V.step === 0) body = V.scanning ? `<div class="scan"><div class="fr"><div class="ln"></div></div><div class="cap">Bileklikteki QR kodu çerçeveye alın</div></div><p class="xs" style="text-align:center">Kamera yalnız kodu okur, görüntü kaydedilmez.</p>`
+    : `<div class="big3"><button class="opt pri" data-act="scanwb"><span class="oi">${I("qr")}</span><span><b>Bilekliği okut</b><span>En güvenli yol: hasta kimliği bileklikten</span></span></button>
+       <button class="opt" data-act="tab" data-arg="patients"><span class="oi">${I("bed")}</span><span><b>Listeden seç</b><span>Hastalar → satırı sola çek → Vital</span></span></button></div>`;
+  if (V.step === 1) body = `<div class="card"><div class="xs">Kimlik doğrulama</div><div style="font-size:calc(22px * var(--fs));font-weight:700;margin:4px 0">${p.name}</div>
+      <div class="kv"><span>Doğum yılı</span><b>${p.by}</b></div><div class="kv"><span>Yatak</span><b>${p.bed} · ${UN[p.u][0]}</b></div>
+      <p style="font-weight:600;margin:10px 0">Ad soyad ve doğum yılı hastayla (ya da yakınıyla) eşleşiyor mu?</p><div class="brow">${btn("Eşleşiyor", "", "vid", "ok", "check")}${btn("Hayır", "gry", "vid", "no", "x")}</div></div>`;
+  if (V.step === 2) body = `<div class="uh">Ölçüm nereden gelsin?</div><div class="big3">
+      ${p.mon ? `<button class="opt pri" data-act="vsrc" data-arg="mon"><span class="oi">${I("monitor")}</span><span><b>Hasta başı monitörden al</b><span>Bağlı · son değer 24.09 · 21:41</span></span></button>` : ""}
+      <button class="opt ${p.mon ? "" : "pri"}" data-act="vsrc" data-arg="bt"><span class="oi">${I("bt")}</span><span><b>Portatif cihazdan al</b><span>Bluetooth ile yakındaki cihaz</span></span></button>
+      <button class="opt" data-act="vsrc" data-arg="man"><span class="oi">${I("text")}</span><span><b>Elle gir</b><span>Büyük düğmeler, sayı tuşları</span></span></button></div>`;
+  if (V.step === 3) {
+    const fr = (k) => V.from[k] ? `<span class="src">${V.from[k]}</span>` : `<span>son: ${fmt(k === "sbp" || k === "dbp" ? "hr" : k, k === "sbp" ? p.v.sbp : k === "dbp" ? p.v.dbp : p.v[k])}</span>`;
+    const one = (k, label, u) => `<div class="vrow ${k !== "sbp" && k !== "dbp" && out(k, V.vals[k]) ? "out" : ""}"><div class="vl"><b>${label}</b><span>${u} · ${fr(k)}</span></div><div class="stp"><button class="pm2" data-act="stp" data-arg="${k}:-1">−</button><button class="num ${V.vals[k] == null ? "e" : ""}" data-act="kp" data-arg="${k}">${V.vals[k] == null ? "—" : fmt(k === "temp" ? "temp" : "hr", V.vals[k])}</button><button class="pm2" data-act="stp" data-arg="${k}:1">+</button></div></div>`;
+    body = `${V.src === "bt" && V.btState !== "done" ? `<div class="note">${V.btState === "read" ? `<span class="spin"></span>Ölçüm cihazdan okunuyor…` : `${I("bt")}Cihaz bekleniyor`}</div>` : ""}
+      ${one("hr", "Nabız", "/dk")}
+      <div class="vrow"><div class="vl"><b>Tansiyon</b><span>mmHg · ${fr("sbp")}/${p.v.dbp}</span></div><div class="bp"><button class="num stp ${V.vals.sbp == null ? "e" : ""}" style="border-radius:12px;background:var(--card2);height:48px;display:grid;place-items:center;font-size:calc(22px * var(--fs));font-weight:700" data-act="kp" data-arg="sbp">${V.vals.sbp ?? "—"}</button><span class="mut">/</span><button class="num ${V.vals.dbp == null ? "e" : ""}" style="border-radius:12px;background:var(--card2);height:48px;display:grid;place-items:center;font-size:calc(22px * var(--fs));font-weight:700;min-width:62px" data-act="kp" data-arg="dbp">${V.vals.dbp ?? "—"}</button></div></div>
+      ${one("spo2", "SpO₂", "%")}${one("rr", "Solunum", "/dk")}${one("temp", "Ateş", "°C")}
+      <div class="uh">Bilinç</div>${seg("avpu", [["Uyanık", "Uyanık"], ["Sese", "Sese"], ["Ağrıya", "Ağrıya"], ["Yanıtsız", "Yanıtsız"]], V.avpu)}
+      <div class="uh">Oksijen</div>${seg("o2", [["Oda havası", "Oda havası"], ["Ek oksijen", "Ek oksijen"]], V.o2 || p.o2)}
+      <p class="xs" style="margin:0 16px 12px">Turuncu çerçeve: örnek eşik dışında · eşikler hastanenin onayıyla belirlenir. Skor kayıttan sonra sistemce yeniden hesaplanır.</p>
+      <div class="pad">${btn("Kaydet", "w", "vsave", "", "check")}</div>`;
+  }
+  return { title:"Vital giriş", back:"Geri", notabs:true, body:`${p && V.step >= 2 ? `<div class="card" style="display:flex;gap:10px;align-items:center"><span class="bt" style="--c:${sc(p.risk)}">${p.bed}</span><span class="pm"><b>${p.name}</b><span>Kimlik doğrulandı ✓ · ${p.by}</span></span></div>` : ""}${steps}${body}` };
+};
+SCR.wound = ({ pid = "p1" }) => {
+  const W = S.WF || (S.WF = { pid, step:"consent", reg:null }), p = P[W.pid];
+  if (W.step === "cam") return { raw:`<div class="cam"><div class="ctop"><button data-act="wstep" data-arg="region">Vazgeç</button><span>${p.bed} · ${W.reg}</span><span>${I("flash")}</span></div>
+      <div class="vf"><div class="warn">Yüz ve kimlik kadraja girmesin</div></div><div class="cbot"><span class="mode">${ios() ? "FOTOĞRAF" : "Fotoğraf"}</span><button class="shut" data-act="shoot"><i></i></button></div></div>`, sbLight:true, hindLight:true };
+  let b = "";
+  if (W.step === "consent") b = `<div class="card"><div class="xs">Önce onam</div><div style="font-size:calc(19px * var(--fs));font-weight:700;margin:4px 0 8px">Bu hastanın fotoğraf onamı kayıtlı mı?</div>
+      <div class="kv"><span>Hastane kaydında</span><b>Onam kayıtlı · 22.09.2026</b></div><div class="brow" style="margin-top:10px">${btn("Onam var", "", "wstep", "region", "check")}${btn("Onam yok", "gry", "wstep", "noconsent")}</div></div>
+      <div class="note">${I("lock")}<span>Kamera yalnız bu rolde ve yalnız yara kaydında açılır. Hekim fotoğrafı web'de görür; biyomedikal ve hızlı yanıt ekranında bu düğme yok.</span></div>`;
+  if (W.step === "noconsent") b = `<div class="note w">${I("alert")}<span>Onam olmadan fotoğraf alınamaz. Yara formunu fotoğrafsız doldurabilirsiniz; onam alınınca buraya dönün.</span></div><div class="pad">${btn("Formu doldur", "ton w", "toast", "Yara formu web prototipinde (hs.sevda → Görevlerim)")}</div>`;
+  if (W.step === "region") b = `<div class="uh">Yara nerede?</div>${seg("wreg", [["Sakrum", "Sakrum"], ["Sol topuk", "Sol topuk"], ["Sağ topuk", "Sağ topuk"], ["Diğer", "Diğer"]], W.reg)}<p class="xs" style="margin:0 16px 14px">Vücut haritası web ve tablette; telefonda kısa liste.</p><div class="pad">${btn("Kamerayı aç", "w", "wstep", "cam", "camera", W.reg ? "" : "disabled")}</div>`;
+  if (W.step === "review") b = `<div class="prev">Önizleme<br>(prototipte gerçek görüntü yok)</div>
+      <div class="vrow"><div class="vl"><b>Uzunluk</b><span>cm</span></div><div class="stp"><button class="pm2" data-act="wsz" data-arg="l:-1">−</button><span class="num">${(W.l ?? 30) / 10}</span><button class="pm2" data-act="wsz" data-arg="l:1">+</button></div></div>
+      <div class="vrow"><div class="vl"><b>Genişlik</b><span>cm</span></div><div class="stp"><button class="pm2" data-act="wsz" data-arg="w:-1">−</button><span class="num">${(W.w ?? 20) / 10}</span><button class="pm2" data-act="wsz" data-arg="w:1">+</button></div></div>
+      <div class="note">${I("lock")}<span>Fotoğraf telefonun galerisine düşmez; doğrudan hasta kaydına gider, telefonda kopya kalmaz.</span></div><div class="pad">${btn("Kayda ekle", "w", "wsave", "", "check")}</div>`;
+  return { title:"Yara fotoğrafı", back:"Geri", notabs:true, body:`<div class="card" style="display:flex;gap:10px;align-items:center"><span class="bt" style="--c:${sc(p.risk)}">${p.bed}</span><span class="pm"><b>${p.name}</b><span>${W.reg ? "Bölge: " + W.reg : "Bası yarası / yara"}</span></span></div>${b}` };
+};
+SCR.handover = () => {
+  const w = HO.filter(h => h.st === "wait"), d = HO.filter(h => h.st !== "wait");
+  const r = (h) => { const p = P[h.pid]; return row({ icon:h.st === "wait" ? "pen" : "check", c:h.st === "wait" ? "var(--mid)" : "var(--ok)", t:`${p.bed} · ${p.name}`, s:h.st === "wait" ? `${h.from} · ${SEV[p.risk].toLowerCase()}` : `Karşı imza · ${ROLES.nurse.short} · ${h.at}`, act:"hand", arg:h.id, chev:true }); };
+  return { title:"Devir", large:true, body:`<p class="${ios() ? "ltsub" : "asub"}">Gelen hemşire yatak başında karşı imza atar.</p>
+      ${sec(`Karşı imzanızı bekleyen · ${w.length}`, w.map(r).join("") || rowD({ t:"Bekleyen devir yok" }))}${d.length ? sec("İmzalananlar", d.map(r).join("")) : ""}
+      ${sec(`Devirle size geçen açık bildirimler · ${CARRY.length}`, CARRY.map(c => rowD({ icon:"bell", c:"var(--mid)", t:`${c.bed} · ${c.t}`, s:c.s })).join(""), w.length ? "Giden ekip (Mələk A.) devir imzası atılana kadar bunları görmeye devam eder." : "Devir imzalandı · giden ekip artık görmüyor.")}` };
+};
+SCR.hand = ({ id }) => {
+  const h = HO.find(x => x.id === +id), p = P[h.pid];
+  return { title:p.bed, back:"Devir", notabs:true, body:`<div class="phd" style="--c:${sc(p.risk)}"><div class="row1"><span class="bn">${p.bed}</span>${pill(p.risk)}</div><h2>${p.name}</h2><p>${p.as} · ${p.dx}</p></div>
+      ${sec("Devreden", rowD({ icon:"user", t:h.from, s:"Devir 24.09 · 19:55'te yazıldı" }))}
+      ${sec("Durum", rowD({ t:SEV[p.risk], s:`${scoreText(p)} · son 12 saatte açık alarm yok (örnek)` }))}
+      ${sec("Bekleyen işler", h.jobs.map(j => rowD({ icon:"clock", c:"var(--low)", t:j })).join(""))}
+      ${sec("Not", rowD({ t:h.note }))}
+      <div class="pad">${h.st === "wait" ? `<button class="btn w hold" data-hold="${h.id}"><i class="fillb"></i><span>Basılı tut · imzala</span></button><p class="xs" style="text-align:center">1 saniye basılı tutun; ardından ${ios() ? "Face ID" : "parmak izi"} ister.</p>`
+        : `<div class="signed" style="justify-content:center">${I("check")}Karşı imza · ${ROLES.nurse.name} · ${h.at}</div>`}</div>` };
+};
+SCR.notifs = () => {
+  const L = NT[S.role].filter(n => S.f.nf === "all" || !n.read);
+  const nrow = (n) => `<div class="sw" data-sw><div class="swa"><button class="b3" data-act="nread" data-arg="${n.id}">${I("check")}Okundu</button></div>
+      <div class="swc" data-act="nopen" data-arg="${n.id}" style="min-height:0;align-items:flex-start"><span class="ri" style="width:10px;height:10px;border-radius:50%;margin-top:7px;flex:none;background:${n.read ? "transparent" : n.sev ? sc(n.sev) : "var(--tint)"}"></span>
+      <span class="pm"><b style="white-space:normal">${n.t}</b><span style="white-space:normal">${n.b}</span></span><span class="xs" style="white-space:nowrap">${n.at}</span></div></div>`;
+  return { title:"Bildirimler", large:true, right:ios() ? `<button class="nlink" data-act="readall">Tümü okundu</button>` : `<button class="ib" data-act="readall">${I("check")}</button>`,
+    body:`${seg("nf", [["all", "Tümü"], ["unread", "Okunmamış"]], S.f.nf)}
+      <div class="note">${I("info")}<span><b>Kanal gerçeği:</b> uygulama içi ✓ · telefona bildirim: <b>yalnız kritik</b> (⏳ 24.09'da karar verildi, gerçek üründe henüz yok) · SMS ✕</span></div>
+      ${S.role === "nurse" ? `<div class="note w">${I("clock")}<span><b>Vardiya değişimi:</b> gündüzden açık kalan ${CARRY.length} bildirim size geçti. Mələk A. devir imzası atılana kadar bunları görmeye devam eder.</span></div>` : ""}
+      <div class="uh">Bu nöbet</div>${L.map(nrow).join("") || `<p class="xs" style="text-align:center">Okunmamış bildirim yok.</p>`}` };
+};
+SCR.settings = () => {
+  const U = ROLES[S.role];
+  return { title:"Ben", large:true, body:`<div class="card" style="display:flex;gap:14px;align-items:center"><span class="avatar" style="width:56px;height:56px;font-size:19px">${U.ini}</span><span><b style="font-size:calc(19px * var(--fs))">${U.name}</b><br><span class="xs">${U.label}</span><br><span class="xs">${U.units}</span></span></div>
+      ${sec("Nöbet", rowD({ icon:"clock", t:"Akşam nöbeti", s:SHIFT, v:"10 sa 18 dk kaldı" }) + rowD({ icon:"user", t:"Rol", v:U.label.split(" · ")[0], s:"Rolü yönetici belirler" }))}
+      ${sec("Görünüm", rowD({ icon:"moon", c:"#5856D6", t:"Tema", v:"" }) + `<div style="padding:4px 0 10px">${seg("theme", [["light", "Açık"], ["dark", "Koyu"]], S.theme)}</div>` + rowD({ icon:"text", c:"#FF9500", t:"Yazı boyu", v:S.big ? "Büyük" : "Normal" }) + `<div style="padding:4px 0 10px">${seg("size", [["0", "Normal"], ["1", "Büyük"]], S.big ? "1" : "0")}</div>`)}
+      ${sec("Güvenlik", rowD({ icon:ios() ? "face" : "finger", c:"#34C759", t:ios() ? "Face ID ile aç" : "Parmak izi ile aç", v:sw("bio", S.set.bio) }) + rowD({ icon:"lock", c:"#8E8E93", t:"Arka planda kilitle", v:"2 dk sonra" }) + row({ icon:"lock", c:"#8E8E93", t:"PIN'i değiştir", act:"toast", arg:"PIN değişimi · prototipte yok", chev:true }))}
+      ${sec("Bildirimler", rowD({ icon:"bell", c:"#FF3B30", t:"Uygulama içi uyarı ve titreşim", v:sw("app", S.set.app) }) + rowD({ icon:"bell", c:"#FF3B30", t:"Telefona bildirim", s:"Yalnız kritik · içerikte hasta adı yok · ⏳ karar 24.09, yapılacak", v:"Yalnız kritik" }) + rowD({ icon:"moon", c:"#5856D6", t:"Gece sessiz saat", s:"Yok · yoğun bakımın gecesi gündüzünden farklı değil (karar 24.09)", v:"Yok" }) + rowD({ icon:"clock", c:"#FF9500", t:"Erteleme sınırı", s:"Kritik ertelenemez · yüksek en çok 30 dk · orta en çok 120 dk", v:"" }) + rowD({ icon:"alert", c:"#8E8E93", t:"Sessiz modda kritik alarm sesi", s:ios() ? "Apple'ın ayrı izni (Critical Alerts) gerekir" : "'Kritik alarmlar' kanalı · kullanıcı izniyle", v:sw("crit", false, true), dis:true }), "Alarm eşikleri ve bu sınırlar kullanıcıda değil; hastane belirler.")}
+      ${sec("Dil", rowD({ icon:"globe", c:"#007AFF", t:"Türkçe", v:"AZ · RU · EN sonra" }))}
+      ${sec("", row({ icon:"out", c:"#FF3B30", t:"Çıkış yap", act:"logout" }))}
+      <p class="xs" style="text-align:center">Homunculus · Taslak 19 prototipi</p>` };
+};
+SCR.bioFind = () => {
+  const L = DEV.filter(d => !S.f.dk || d.k === S.f.dk);
+  return { title:"Cihaz bul", large:true, right:ios() ? `<button class="nlink" data-act="toast" data-arg="Cihaz etiketi okunuyor… (canlandırma)">${I("qr")}</button>` : `<button class="ib" data-act="toast" data-arg="Cihaz etiketi okunuyor… (canlandırma)">${I("qr")}</button>`,
+    body:`<div class="search">${I("search")}<span>Cihaz no, tür, oda</span></div>${seg("dk", DK, S.f.dk)}
+      <div class="note">${I("info")}<span>Konum = son bilinen oda. Gerçek zamanlı konum takibi yok; ağa bağlı cihazda son sinyal saati var.</span></div>
+      ${L.map(d => `<div class="card" data-act="dev" data-arg="${d.id}"><div class="wo" style="--c:${/arıza|Veri yok|Kullanım dışı/i.test(d.st) ? "var(--crit)" : d.st === "Depoda" ? "var(--low)" : "var(--ok)"}"><span class="di">${I(d.ic)}</span><span class="dt"><b>${d.n} · ${d.id}</b><span>${I("pin").replace('class="ic "', 'class="ic" style="width:13px;height:13px;display:inline;vertical-align:-2px"')} ${d.where}${d.seen ? " · son sinyal " + d.seen : ""}</span><span>${d.st}${d.bat != null ? ` · <span class="bat ${d.bat < 20 ? "low" : ""}">batarya %${d.bat}</span>` : ""}</span></span></div></div>`).join("")}
+      <p class="xs" style="text-align:center;margin:10px 16px">Cihaz numaraları örnek.</p>` };
+};
+SCR.bioFault = () => {
+  const F = S.FF || (S.FF = { dev:null, cat:null, pr:"orta", close:false, scanning:false });
+  const d = F.dev ? DEV.find(x => x.id === F.dev) : null;
+  return { title:"Arıza aç", large:!S.stack.some(x => x.id === "bioFault" && S.stack.indexOf(x) > 0), back:S.stack.length > 1 ? "Geri" : null, notabs:S.stack.length > 1,
+    body:`<div class="uh">1 · Cihaz</div>${F.scanning ? `<div class="scan" style="height:220px"><div class="fr" style="width:150px;height:150px"><div class="ln"></div></div><div class="cap">Cihazdaki etiketi çerçeveye alın</div></div>`
+      : d ? `<div class="card"><div class="wo" style="--c:var(--tint)"><span class="di">${I(d.ic)}</span><span class="dt"><b>${d.n} · ${d.id}</b><span>${d.where} · ${d.st}</span></span></div><div style="margin-top:8px">${btn("Değiştir", "gry sm", "fdev", "")}</div></div>`
+      : `<div class="big3"><button class="opt pri" data-act="fscan"><span class="oi">${I("qr")}</span><span><b>Cihaz etiketini okut</b><span>QR · kamera yalnız kodu okur</span></span></button><button class="opt" data-act="tab" data-arg="bioFind"><span class="oi">${I("search")}</span><span><b>Listeden seç</b><span>Cihaz bul</span></span></button></div>`}
+      <div class="uh">2 · Sorun</div>${seg("fcat", [["Güç / batarya", "Güç / batarya"], ["Ekran", "Ekran"], ["Alarm", "Alarm"], ["Bağlantı", "Bağlantı"], ["Prob / aksesuar", "Prob / aksesuar"], ["Diğer", "Diğer"]], F.cat)}
+      <textarea class="ta" placeholder="Kısa açıklama (ör. hat açıkken de tıkanma alarmı veriyor)"></textarea>
+      <div class="uh">3 · Öncelik</div>${seg("fpr", [["düşük", "Düşük"], ["orta", "Orta"], ["yüksek", "Yüksek"]], F.pr)}
+      ${sec("", rowD({ icon:"lock", c:"var(--crit)", t:"Cihaz kullanıma kapatılsın", s:"Bağlı yatak 'bloke · arıza' görünür", v:sw("fclose", F.close) }))}
+      <div class="pad">${btn("Kaydı aç", "w", "fsave", "", "check", d && F.cat ? "" : "disabled")}</div>
+      <p class="xs" style="text-align:center;margin:10px 16px">Fotoğraf yok: kamera yalnız yara kaydında ve yetkili rolde. Hemşire de arıza açabilir.</p>` };
+};
+
+/* ================= alt sayfalar (sheet), diyaloglar ================= */
+function sheet(title, body, o = {}) { S.ov = { type:"sheet", title, body, full:o.full, left:o.left, why:o.why }; drawOv(); }
+function aSheet(title, items) { // iOS eylem listesi / Android alttan menü
+  S.ov = { type:"asheet", title, items }; drawOv(); }
+function dialog(title, text, okLabel, onOk, danger) { S.ov = { type:"dialog", title, text, okLabel, danger }; S.ovOk = onOk; drawOv(); }
+function closeOv() { S.ov = null; S.ovOk = null; drawOv(); }
+function drawOv() {
+  const o = S.ov, el = document.getElementById("ovl"), view = document.querySelector("#view .view");
+  el.className = o ? "on" : ""; if (view) view.classList.toggle("recede", !!(o && o.type === "sheet" && o.full && ios() && !S.tab));
+  if (!o) { el.innerHTML = ""; updateWhy(); return; }
+  if (o.type === "sheet") el.innerHTML = `<div class="scrim" data-act="xov"></div><div class="sheet ${o.full ? "full" : ""}"><div class="grab"></div>
+      <div class="shh"><span class="l">${o.left || ""}</span><span class="t">${o.title}</span><span class="x"><button class="xbtn" data-act="xov">${I("x")}</button></span></div><div class="shb">${o.body}</div></div>`;
+  if (o.type === "asheet") el.innerHTML = ios()
+    ? `<div class="scrim" data-act="xov"></div><div class="asheet"><div class="ag">${o.title ? `<div class="ah">${o.title}</div>` : ""}${o.items.map(([l, a, g, r]) => `<button class="ab ${r ? "r" : ""}" data-act="${a}" data-arg="${g}">${l}</button>`).join("")}</div><button class="ab c" data-act="xov">Vazgeç</button></div>`
+    : `<div class="scrim" data-act="xov"></div><div class="sheet"><div class="grab"></div><div class="xs" style="padding:0 24px 6px">${o.title || ""}</div><div class="mlist">${o.items.map(([l, a, g, , ic]) => `<button class="mi" data-act="${a}" data-arg="${g}">${I(ic || "chevR")}${l}</button>`).join("")}</div><div style="height:24px"></div></div>`;
+  if (o.type === "dialog") el.innerHTML = ios()
+    ? `<div class="scrim"></div><div class="alert"><div class="ac"><b>${o.title}</b><p>${o.text}</p></div><div class="aa"><button data-act="xov">Vazgeç</button><button class="${o.danger ? "r" : ""}" data-act="ovok">${o.okLabel}</button></div></div>`
+    : `<div class="scrim"></div><div class="mdlg">${I("alert", "h")}<b>${o.title}</b><p>${o.text}</p><div class="aa"><button data-act="xov">Vazgeç</button><button data-act="ovok">${o.okLabel}</button></div></div>`;
+  if (o.type === "bio") el.innerHTML = ios()
+    ? `<div class="fid ${o.st}">${I(o.st === "ok" ? "check" : "face")}<span>${o.st === "ok" ? "" : "Face ID"}</span></div>`
+    : `<div class="scrim"></div><div class="sheet"><div class="grab"></div><div class="bprompt"><h4>${o.title || "Homunculus"}</h4><p>${o.st === "ok" ? "Doğrulandı" : "Parmak izi sensörüne dokunun"}</p><div class="fp ${o.st === "ok" ? "ok" : ""}">${I(o.st === "ok" ? "check" : "finger")}</div><button class="btn gry sm" data-act="xov">Vazgeç</button></div></div>`;
+  updateWhy();
+}
+function biometric(title, onOk) {
+  if (!S.set.bio) { onOk(); return; }
+  S.ov = { type:"bio", st:"scan", title }; drawOv();
+  setTimeout(() => { if (!S.ov || S.ov.type !== "bio") return; S.ov.st = "ok"; drawOv(); setTimeout(() => { if (!S.ov || S.ov.type !== "bio") return; S.ov = null; drawOv(); onOk(); }, 550); }, 1150);
+}
+function toast(msg, undo) {
+  if (ios() && !S.tab) { const is = document.querySelector(".island"); if (!is) return; is.querySelector(".ii span").textContent = msg; is.classList.add("big"); clearTimeout(toast.t); toast.t = setTimeout(() => is.classList.remove("big"), 2400); }
+  else { const s = document.getElementById("snk"); s.innerHTML = `<div class="snk"><span>${msg}</span>${undo ? `<button data-act="toast" data-arg="Geri alındı (prototip)">Geri al</button>` : ""}</div>`; clearTimeout(toast.t); toast.t = setTimeout(() => s.innerHTML = "", 3200); }
+}
+function banner(a) {
+  const p = P[a.pid] || {}, b = document.getElementById("bnr"), txt = a.bio ? ["Monitör sessiz", "REA07 · 6 dakikadır veri yok"] : [`${p.bed} · ${SEV[a.sev].toLowerCase()}`, a.t];
+  const act = `data-act="${a.bio ? "wo" : "openA"}" data-arg="${a.bio ? "İE-0418" : a.id}"`, crit = a.bio || a.sev === "crit" ? "crit" : "";
+  b.innerHTML = ios()
+    ? `<div class="bn ${crit}" role="button" ${act}><span class="appi">H</span><span class="bt2"><small><span>HOMUNCULUS</span><span>şimdi</span></small><b>${txt[0]}</b><span>${txt[1]}</span></span></div>`
+    : `<div class="bn ${crit}" role="button" ${act}><span class="bhead"><span class="appi">H</span><span>Homunculus · ${crit ? "Kritik alarmlar" : "Uyarılar"} · şimdi</span></span><span class="bt2"><b>${txt[0]}</b><span>${txt[1]}</span></span><span class="bact"><span>Aç</span></span></div>`;
+  clearTimeout(banner.t); banner.t = setTimeout(() => b.innerHTML = "", 6000);
+}
+
+/* ================= çizim ================= */
+const stat = () => { const lt = S.cur && S.cur.sbLight;
+  const ico = `<svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+    <svg width="16" height="12" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M1.5 4.2a9.5 9.5 0 0 1 13 0M4 7a6 6 0 0 1 8 0"/><circle cx="8" cy="10" r="1.2" fill="currentColor" stroke="none"/></svg>
+    <svg width="27" height="13" viewBox="0 0 27 13" fill="none"><rect x=".5" y=".5" width="23" height="12" rx="3.5" stroke="currentColor" opacity=".45"/><rect x="2" y="2" width="16" height="9" rx="2" fill="currentColor"/><path d="M25 4.5v4" stroke="currentColor" stroke-linecap="round" opacity=".5"/></svg>`;
+  const tm = S.tab ? `21:42&nbsp;&nbsp;Per 24 Eyl` : "21:42";
+  return ios() ? `<div class="sbi ${lt ? "lt" : ""}"><span>${tm}</span><span class="icons">${ico}</span></div><div class="island"><div class="ii"><i>${I("check")}</i><span></span></div></div>`
+    : `<div class="sbi ${lt ? "lt" : ""}"><span>${tm}</span><span class="punch"></span><span class="icons">${ico}</span></div>`; };
+
+function viewHtml(d, anim, o = {}) {
+  if (d.raw) return `<div class="view ${anim ? "a-" + anim : ""}">${d.raw}</div>`;
+  const back = o.noBack ? "" : d.modal ? (ios() ? `<button class="nlink" data-act="back">Kapat</button>` : `<button class="ib" data-act="back">${I("x")}</button>`)
+    : d.back ? (ios() ? `<button class="nb" data-act="back">${I("chevL")}<span>${d.back}</span></button>` : `<button class="ib" data-act="back">${I("arrowL")}</button>`) : "";
+  const header = ios() ? `<div class="inav ${d.large ? "" : "solid"}"><div class="nl">${back}</div><div class="nt">${d.title}</div><div class="nr">${d.right || ""}</div></div>`
+    : `<div class="abar"><div class="al">${back}</div><div class="at">${d.title}</div><div class="ar">${d.right || ""}</div></div>`;
+  const noTabs = d.modal || d.notabs || o.noTabs;
+  const pop = anim === "fade" ? "pop" : "";
+  const mid = (l, ic) => ios() ? `<button class="tb mid" data-act="mid" aria-label="${l}"><span class="midb">${I(ic, "i1")}${I("x", "i2")}</span><span>${l}</span></button>`
+    : `<button class="ni mid" data-act="mid" aria-label="${l}"><span class="midf">${I(ic, "i1")}${I("x", "i2")}</span><span>${l}</span></button>`;
+  const tabs = noTabs ? "" : ios()
+    ? `<div class="itabs">${tabsFor().map(([id, l, ic]) => { if (id === "mid") return mid(l, ic); const n = badge(id), on = S.stack[0].id === id; return `<button class="tb ${on ? "on " + pop : ""}" data-act="tab" data-arg="${id}">${I(ic)}<span>${l}</span>${n ? `<span class="bd">${n}</span>` : ""}</button>`; }).join("")}</div>`
+    : `<div class="anav">${tabsFor().map(([id, l, ic]) => { if (id === "mid") return mid(l, ic); const n = badge(id), on = S.stack[0].id === id; return `<button class="ni ${on ? "on " + pop : ""}" data-act="tab" data-arg="${id}"><span class="pl">${I(ic)}${n ? `<span class="bd">${n}</span>` : ""}</span><span>${l}</span></button>`; }).join("")}</div>`;
+  const quick = !noTabs && S.quick && QUICK[S.role] ? `<div class="qwrap"><div class="qscrim" data-act="midx"></div><div class="qpanel">${QUICK[S.role].map(([l, ic, a, g], i) => `<button data-act="${a}" data-arg="${g}" style="animation-delay:${i * 45}ms"><span class="qi">${I(ic)}</span><span>${l}</span></button>`).join("")}</div></div>` : "";
+  const fab = !ios() && d.fab && !o.noFab ? `<button class="fab" data-act="${d.fab[2]}" data-arg="${d.fab[3]}">${I(d.fab[1])}<span>${d.fab[0]}</span></button>` : "";
+  const content = (ios() && d.large ? `<h1 class="lt">${d.title}</h1>` : "") + (o.hint ? `<div class="tabhint">${I("info")}${o.hint}</div>` : "") + d.body;
+  return `<div class="view ${d.modal ? "modal" : ""} ${noTabs ? "notabs" : ""} ${S.quick && !noTabs ? "qopen" : ""} ${anim ? "a-" + anim : ""}">${header}<div class="scroll ${d.btns ? "hasbtn" : ""} ${d.glow ? "glow" : ""}">${content}</div>${d.btns ? `<div class="abtn">${d.btns}</div>` : ""}${fab}${quick}${tabs}</div>`;
+}
+// tablette sağ bölme boşken ne görünür
+function tabDefault() {
+  const r = S.role, root = S.stack[0].id;
+  if ((r === "nurse" || r === "doctor") && ["home", "patients"].includes(root)) return { d:SCR.patient({ pid:"p1" }), hint:"Soldan seçince burası değişir · şimdi en riskli hasta" };
+  if (r === "rrt" && root === "home") return { d:SCR.alarm({ aid:1 }), hint:"Size eskale edilen ilk çağrı" };
+  return { d:{ title:"", body:`<div class="tabempty">${I("tray")}<b>Soldan bir öğe seçin</b><span>Tablette liste solda kalır, ayrıntı sağda açılır; geri tuşuna gerek yok.</span></div>` } };
+}
+function render() {
+  const scr = document.getElementById("scr"), dev = document.getElementById("dev");
+  scr.className = `scr ${S.plat} ${S.theme} ${S.big ? "big" : ""} ${S.tab ? "tabm" : ""}`; dev.className = `dev ${S.plat} ${S.tab ? "tab" : ""}`;
+  const top = S.stack[S.stack.length - 1], d = SCR[top.id](top.p || {}); S.cur = d;
+  const keep = [...document.querySelectorAll("#view .scroll")].map(e => e.scrollTop);
+  let h = "";
+  const rootD = S.tab ? (S.stack.length === 1 ? d : SCR[S.stack[0].id](S.stack[0].p || {})) : null;
+  if (S.tab && !rootD.raw) {
+    const leftAnim = S.anim === "fade" ? "fade" : null, rightAnim = S.anim;
+    let right;
+    if (S.stack.length > 1) right = viewHtml(d, rightAnim, { noTabs:true, noFab:true, noBack:S.stack.length === 2 && !d.modal });
+    else { const t = tabDefault(); right = viewHtml(t.d, rightAnim, { noTabs:true, noFab:true, noBack:true, hint:t.hint }); }
+    h = `<div class="paneL">${viewHtml(rootD, leftAnim)}</div><div class="paneR">${right}</div>`;
+  } else h = viewHtml(d, S.anim);
+  const animated = !!S.anim;
+  document.getElementById("view").innerHTML = h;
+  document.getElementById("sb").innerHTML = stat();
+  document.getElementById("hind").className = `hind ${d.hindLight ? "lt" : ""}`;
+  document.querySelectorAll("#view .view").forEach((v, i) => { const sc2 = v.querySelector(".scroll"); if (!sc2) return;
+    if (!animated && keep[i] != null) sc2.scrollTop = keep[i];
+    const hd = v.querySelector(".inav, .abar"); const onS = () => hd && hd.classList.toggle("scrolled", sc2.scrollTop > (ios() ? 40 : 4)); sc2.addEventListener("scroll", onS, { passive:true }); onS(); });
+  S.anim = null; drawOv(); syncCtl();
+}
+function go(id, p = {}, anim = "push") { S.quick = false; if (S.tab && S.fromLeft) S.stack = [S.stack[0]]; S.fromLeft = false; S.stack.push({ id, p }); S.anim = anim; S.ov = null; render(); }
+function back() { S.quick = false; if (S.stack.length > 1) { const t = S.stack.pop(); if (t.id === "vitals") S.VF = null; if (t.id === "wound") S.WF = null; if (t.id === "bioFault") S.FF = null; S.anim = "pop"; S.ov = null; render(); } }
+function setRoot(id, anim = "fade") { S.quick = false; S.stack = [{ id, p:{} }]; S.anim = anim; S.ov = null; S.VF = null; S.WF = null; if (id !== "bioFault") S.FF = null; render(); }
+
+/* ================= eylemler ================= */
+const A = {
+  nop() {}, xov() { closeOv(); }, ovok() { const f = S.ovOk; closeOv(); f && f(); },
+  mid() { S.quick = !S.quick; S.ov = null; render(); },
+  midx() { S.quick = false; render(); },
+  qvit() { S.quick = false; A.vit(""); },
+  qscan() { S.quick = false; A.vit(""); A.scanwb(); },
+  qpain() { S.quick = false; render(); const L = Object.entries(P).filter(([, p]) => SCOPE[S.role].includes(p.u) && p.u !== "pic");
+    sheet("Ağrı skoru · hasta", sec("Hastalarım", L.map(([id, p]) => row({ icon:"body", c:sc(p.risk), t:`${p.bed} · ${p.name}`, s:p.dx, act:"pain", arg:id, chev:true })).join("")), { why:"pain" }); },
+  qnote() { S.quick = false; S.vn = { pid:"p1", st:"idle" }; render(); A.vnDraw(); },
+  vnDraw() { const V = S.vn, beds = Object.entries(P).filter(([, p]) => SCOPE[S.role].includes(p.u) && p.u !== "pic").slice(0, 4);
+    const body = `${seg("vnp", beds.map(([id, p]) => [id, p.bed]), V.pid)}
+      <div class="mic ${V.st}"><button class="micb" data-act="vnrec">${I(V.st === "rec" ? "x" : "mic")}</button>
+      <div class="bars">${Array.from({ length:18 }, (_, i) => `<i style="animation-delay:${(i * 67) % 600}ms"></i>`).join("")}</div>
+      <b>${V.st === "rec" ? "Dinleniyor… bitirmek için dokunun" : V.st === "done" ? "Kayıt bitti" : "Konuşmak için dokunun"}</b></div>
+      ${V.st === "done" ? `<div class="note">${I("info")}<span>Konuşma metne çevrilir ve burada görünür; kaydetmeden önce okunur ve düzeltilir. <b>Prototipte ses kaydı ve metin yok.</b></span></div>` : ""}
+      <div class="pad">${btn("Kayda ekle", "w", "vnok", "", "check", V.st === "done" ? "" : "disabled")}</div>`;
+    if (S.ov && S.ov.title === "Sesli not") { S.ov.body = body; drawOv(); } else sheet("Sesli not", body, { left:ios() ? `<button class="nlink" data-act="xov">Vazgeç</button>` : "", why:"quick" }); },
+  vnrec() { S.vn.st = S.vn.st === "rec" ? "done" : "rec"; A.vnDraw(); },
+  vnok() { const p = P[S.vn.pid]; closeOv(); toast(`Not eklendi · ${p.bed} · ${SAVED}`, true); },
+  qsign() { S.quick = false; A.openP("p1"); },
+  qfault() { S.quick = false; S.FF = null; go("bioFault", {}, "up"); },
+  qfscan() { S.quick = false; S.FF = null; go("bioFault", {}, "up"); A.fscan(); },
+  qfind() { S.quick = false; setRoot("bioFind"); },
+  tab(id) { if (id === "home" && S.stack[0].id === "home" && S.stack.length === 1) return; setRoot(id, "fade"); },
+  back() { back(); },
+  openA(id) { go("alarm", { aid:+id }, "up"); },
+  openP(pid) { if (S.role === "bio") return; go("patient", { pid }); },
+  ack(id) { const a = AL.find(x => x.id === +id); a.frozen = age(a); a.st = "seen"; a.by = ROLES[S.role].short + " · " + NOWS; toast("Gördüm · kaydedildi"); render(); },
+  enroute(id) { const a = AL.find(x => x.id === +id); if (a.st === "enroute") return; if (a.frozen == null && S.role !== "rrt") a.frozen = age(a); a.st = "enroute"; toast(S.role === "rrt" ? "Yolda · birim hemşiresi görecek" : "Yoldayım · ekip görecek"); render(); },
+  there(id) { const a = AL.find(x => x.id === +id); a.st = "there"; toast("Hasta başında olarak işaretlendi"); render(); },
+  closeA(id) { const a = AL.find(x => x.id === +id); a.st = "closed"; toast("Değerlendirildi · kapandı", true); back(); },
+  esc(id) { dialog("Hekime şimdi eskale edilsin mi?", "Merdiven beklemeden bir sonraki kişiye gider. Denetim kaydına yazılır.", "Eskale et", () => { const a = AL.find(x => x.id === +id); a.a0 += Math.max(0, 300 - age(a)); toast("Hekime eskale edildi"); render(); }, true); },
+  snooze(id) { const a = AL.find(x => x.id === +id); if (a.sev === "crit") { toast("Kritik alarm ertelenemez"); return; }
+    const hi = a.sev === "high", opts = hi ? [["10", "10 dk"], ["20", "20 dk"], ["30", "30 dk"]] : [["30", "30 dk"], ["60", "60 dk"], ["120", "120 dk"]];
+    S.sz = { id:+id, d:opts[0][0], w:"Hasta başındayım" };
+    const b = () => `<div class="uh">Süre</div>${seg("szd", opts, S.sz.d)}<div class="uh">Neden</div>${seg("szw", [["Hasta başındayım", "Hasta başındayım"], ["Artefakt / kablo", "Artefakt / kablo"], ["Hekim bilgili", "Hekim bilgili"]], S.sz.w)}
+      <p class="xs" style="margin:0 16px 14px">${hi ? "Yüksek önemli alarm en çok 30 dakika" : "Orta önemli alarm en çok 120 dakika"} ertelenebilir; kritik alarm hiç ertelenemez (karar 24.09.2026). Neden ve süre denetim kaydına yazılır. Süre dolunca alarm geri gelir: ${clk(-(+S.sz.d) * 60)}.</p><div class="pad">${btn("Ertele", "w", "szok", "", "moon")}</div>`;
+    S.szBody = b; sheet("Ertele", b(), { left:ios() ? `<button class="nlink" data-act="xov">Vazgeç</button>` : "" }); },
+  szok() { const a = AL.find(x => x.id === S.sz.id); a.frozen = age(a); a.st = "seen"; a.by = `ertelendi ${S.sz.d} dk · ${S.sz.w.toLowerCase()}`; closeOv(); toast(`${S.sz.d} dk ertelendi`, true); render(); },
+  labseen() { S.lab[S.role] = true; toast(S.role === "nurse" ? "Sonuç görüldü · hekim de bunu görecek" : "Sonuç görüldü · hemşire de bunu görecek"); render(); },
+  sofa() { sheet("SOFA 11 · onay", `<div class="card"><div class="kv"><span>Toplam</span><b>11</b></div><div class="kv"><span>Dolduran</span><b>Sistem · 24.09 · 21:20</b></div><div class="kv"><span>Kaynak</span><b>Monitör + hastane kaydı</b></div><div class="kv"><span>Kaynağı olmayan madde</span><b>Kendiliğinden girilmez</b></div></div>
+      <p class="xs" style="margin:0 16px 14px">Bileşen ayrıntısı web ekranında. Telefonda toplam, kaynak ve onay.</p><div class="pad">${btn("Onayla", "w", "sofaok", "", "pen")}</div>`, { full:true }); },
+  sofaok() { closeOv(); biometric("İmzanızı doğrulayın", () => { S.sofa = true; toast("SOFA onaylandı · Dr. Kamran R."); render(); }); },
+  source() { sheet("Gerekçe ve kaynak", `<div class="note">${I("info")}<span>Bu prototipte kaynak metni yok. Gerçek mobil uygulamada uyarı kartındaki <b>"Kılavuz"</b> düğmesi kaynağın adını ve kanıt gücünü gösterir (bugün var).</span></div>`); },
+  trend(arg) { const [pid, k] = arg.split(":"), m = VM[k], p = P[pid];
+    closeOv(); sheet(`${m.n} · son 24 saat`, `<div class="tbx">${bigChart(pid, k)}<div class="lgd"><span><i style="background:var(${m.c});opacity:.3"></i>hastanın normal bandı</span><span><i style="background:var(--crit);height:2px"></i>örnek alarm sınırı</span></div></div>
+      <div class="card"><div class="kv"><span>Şimdi</span><b>${fmt(k, p.v[k])} ${m.u}</b></div><div class="kv"><span>Veri</span><b>örnek · 15 dakikalık</b></div></div><p class="xs" style="margin:0 16px">Web kararı T2: dokununca büyük grafik, varsayılan 24 saat.</p>`, { full:true }); },
+  more(pid) { const p = P[pid], n = S.role === "nurse";
+    aSheet(`${p.bed} · ${p.name}`, [...(n ? [["Vital gir", "vit", pid, 0, "heart"], ["Ağrı skoru", "pain", pid, 0, "body"], ["Yara fotoğrafı", "wound", pid, 0, "camera"], ["Devir notu yaz", "handnote", pid, 0, "pen"]] : [["Nabız trendi", "trend", pid + ":hr", 0, "activity"]]), ["Hastayı aç", "openP", pid, 0, "chevR"]]); },
+  vit(pid) { S.VF = null; S.ov = null; go("vitals", pid ? { pid } : {}, ios() ? "up" : "push"); },
+  scanwb() { S.VF.scanning = true; render(); setTimeout(() => { if (!S.VF || !S.VF.scanning) return; S.VF.scanning = false; S.VF.pid = "p2"; S.VF.step = 1; toast("Bileklik okundu · REA02"); render(); }, 1500); },
+  vid(v) { if (v === "no") { S.VF.pid = null; S.VF.step = 0; toast("Seçim iptal edildi"); } else S.VF.step = 2; render(); },
+  vsrc(s) { const V = S.VF, p = P[V.pid]; V.src = s; V.step = 3;
+    if (s === "mon") { ["hr", "sbp", "dbp", "spo2", "rr", "temp"].forEach(k => { V.vals[k] = p.v[k]; V.from[k] = "monitör"; }); render(); return; }
+    if (s === "man") { render(); return; }
+    render();
+    sheet("Portatif cihaz", `<div id="btl"><div class="rw"><span class="spin"></span><span class="rt"><b>Yakındaki cihazlar aranıyor…</b><span>Bluetooth</span></span></div></div>`);
+    setTimeout(() => { const el = document.getElementById("btl"); if (!el) return; el.innerHTML = sec("Bulunan", row({ icon:"activity", t:"Portatif vital monitör · PV-0142", s:"Yakında · batarya %64", act:"btpick", chev:true }) + row({ icon:"activity", t:"Portatif vital monitör · PV-0143", s:"Uzakta · batarya %81", act:"btpick", chev:true }), "Cihaz numaraları örnek."); }, 1300); },
+  btpick() { closeOv(); const V = S.VF, p = P[V.pid]; V.btState = "read"; render();
+    setTimeout(() => { if (!S.VF) return; const q = { hr:p.v.hr - 2, sbp:p.v.sbp + 2, dbp:p.v.dbp, spo2:p.v.spo2, rr:null, temp:p.v.temp }; Object.entries(q).forEach(([k, v]) => { if (v != null) { V.vals[k] = v; V.from[k] = "PV-0142"; } }); V.btState = "done"; toast("Cihazdan alındı · solunumu elle girin"); render(); }, 1600); },
+  stp(arg) { const [k, d] = arg.split(":"), V = S.VF, p = P[V.pid], st = k === "temp" ? .1 : 1; if (V.vals[k] == null) V.vals[k] = p.v[k] ?? 0; V.vals[k] = Math.round((V.vals[k] + st * +d) * 10) / 10; delete V.from[k]; render(); },
+  kp(k) { S.kp = { k, s:"" }; const u = { hr:"/dk", sbp:"mmHg", dbp:"mmHg", spo2:"%", rr:"/dk", temp:"°C" }[k], n = { hr:"Nabız", sbp:"Sistolik", dbp:"Diyastolik", spo2:"SpO₂", rr:"Solunum", temp:"Ateş" }[k];
+    sheet(n, `<div class="kd"><span id="kdv">—</span><small>${u}</small></div><div class="kpad">${["1", "2", "3", "4", "5", "6", "7", "8", "9", ",", "0", "⌫"].map(x => `<button data-act="kpk" data-arg="${x}">${x}</button>`).join("")}</div><div class="pad" style="margin-top:12px">${btn("Tamam", "w", "kpok")}</div>`); },
+  kpk(x) { const K = S.kp; if (x === "⌫") K.s = K.s.slice(0, -1); else if (K.s.length < 5) K.s += x; const el = document.getElementById("kdv"); if (el) el.textContent = K.s || "—"; },
+  kpok() { const K = S.kp, v = parseFloat(K.s.replace(",", ".")); if (!isNaN(v)) { S.VF.vals[K.k] = v; delete S.VF.from[K.k]; } closeOv(); render(); },
+  vsave() { const p = P[S.VF.pid]; ["hr", "sbp", "dbp", "spo2", "rr", "temp"].forEach(k => { if (S.VF.vals[k] != null) p.v[k] = S.VF.vals[k]; }); p.v.map = Math.round((p.v.sbp + 2 * p.v.dbp) / 3); S.VF = null; back(); toast(`Vital kaydedildi · ${p.bed} · ${SAVED}`, true); },
+  pain(pid) { const p = P[pid]; S.pn = { pid, v:null };
+    const b = () => `<p class="xs" style="margin:0 16px 12px">${p.bed} · ${p.name} · "0 ağrı yok, 10 dayanılmaz"</p><div class="nrs">${Array.from({ length:11 }, (_, i) => `<button class="${S.pn.v === i ? "on" : ""}" style="--hc:hsl(${130 - i * 13} 70% 42%)" data-act="pnv" data-arg="${i}">${i}</button>`).join("")}<div class="lbl"><span>Ağrı yok</span><span>Dayanılmaz</span></div></div>
+      <p class="xs" style="margin:12px 16px">Puan tablosu: NRS 0–10 · hastanenin onayı gerekir. Çocuk ve yenidoğanda farklı ölçek gerekir (web'de var).</p><div class="pad">${btn("Kaydet", "w", "pnok", "", "check", S.pn.v == null ? "disabled" : "")}</div>`;
+    S.pnBody = b; sheet("Ağrı skoru", b(), { left:ios() ? `<button class="nlink" data-act="xov">Vazgeç</button>` : "", why:"pain" }); },
+  pnv(v) { S.pn.v = +v; S.ov.body = S.pnBody(); drawOv(); },
+  pnok() { const p = P[S.pn.pid]; closeOv(); if (S.pn.pid === "p1") S.painDone = true; toast(`Ağrı ${S.pn.v} · ${p.bed} · kaydedildi`, true); render(); },
+  wound(pid) { S.WF = null; S.ov = null; go("wound", { pid }); },
+  wstep(s) { if (s === "cam" && !S.WF.reg) return; S.WF.step = s; S.anim = s === "cam" ? "fade" : null; render(); },
+  shoot() { const v = document.querySelector(".cam"); if (v) v.insertAdjacentHTML("beforeend", '<div class="flash"></div>'); setTimeout(() => { S.WF.step = "review"; S.anim = "fade"; render(); }, 380); },
+  wsz(arg) { const [k, d] = arg.split(":"); S.WF[k] = Math.max(1, (S.WF[k] ?? (k === "l" ? 30 : 20)) + +d); render(); },
+  wsave() { S.WF = null; back(); toast("Yara fotoğrafı kayda eklendi · telefonda kopya yok"); },
+  handnote() { closeOv(); toast("Devir notu yazma · prototipte yok"); },
+  hand(id) { go("hand", { id }); },
+  locked() { toast(S.role === "doctor" ? "Bu iş hemşirede · hekim web'de görür" : "Bu rolde yok"); },
+  nread(id) { const n = NT[S.role].find(x => x.id === +id); n.read = true; render(); },
+  readall() { NT[S.role].forEach(n => n.read = true); toast("Tümü okundu"); render(); },
+  nopen(id) { const n = NT[S.role].find(x => x.id === +id); n.read = true; if (!n.go) { toast(n.t + " · ayrıntı web'de"); render(); return; }
+    const [s, p] = n.go; if (s === "alarm") return go("alarm", p, "up"); if (s === "patient") return go("patient", p); if (s === "wo") return A.wo(p.id); if (s === "vitals") return A.vit(""); setRoot(s); },
+  logout() { dialog("Çıkış yapılsın mı?", "Bir sonraki girişte parola ve doğrulama kodu istenir.", "Çıkış yap", () => { S.pinMode = false; S.pin = ""; setRoot("login", "fade"); }, true); },
+  otheracct() { toast("E-posta + parola + doğrulama kodu · ilk kurulumda"); },
+  auth() { biometric("Homunculus'a giriş", loginOk); },
+  pinon() { S.pinMode = true; S.pin = ""; render(); }, pinoff() { S.pinMode = false; S.pin = ""; render(); },
+  pin(d) { S.pin += d; if (S.pin.length >= 6) { S.pinMode = false; S.pin = ""; loginOk(); return; } render(); },
+  pindel() { S.pin = S.pin.slice(0, -1); render(); },
+  lockopen() { S.after = S.role === "bio" ? ["wo", "İE-0418"] : ["alarm", 1]; setRoot("login", "up"); },
+  wo(id) { const w = WO.find(x => x.id === id); if (!w) return;
+    if (S.stack[0].id !== "home" || S.role !== "bio") { setRoot("home"); }
+    sheet(w.id, `<div class="card"><div class="wo" style="--c:${sc(PRC[w.pr])}"><span class="di">${I(w.ic)}</span><span class="dt"><b>${w.t}</b><span>${w.kind} · ${w.where}</span></span></div></div>
+      <div class="card"><div class="kv"><span>Açan</span><b>${w.by} · ${w.at}</b></div><div class="kv"><span>Öncelik</span><b>${w.pr}</b></div><div class="kv"><span>Durum</span><b>${WST[w.st]}${w.to ? " · " + w.to : ""}</b></div>${w.bed ? `<div class="kv"><span>Yatak</span><b>${w.bed} · hasta adı gösterilmez</b></div>` : ""}</div>
+      <div class="pad brow">${w.to === "size" ? btn("Kapat", "", "woclose", w.id, "check") : btn("Üstlen", "", "take", w.id, "wrench")}${btn("Yoldayım", "ton", "toast", "Yolda · birim hemşiresi görecek", "nav")}</div>`); },
+  take(id) { const w = WO.find(x => x.id === id); w.st = "atandi"; w.to = "size"; closeOv(); toast(`${id} size atandı`); render(); },
+  woclose(id) { const w = WO.find(x => x.id === id); w.st = "kapandi"; closeOv(); toast(`${id} kapandı`, true); render(); },
+  dev(id) { const d = DEV.find(x => x.id === id);
+    sheet(d.id, `<div class="card"><div class="wo" style="--c:var(--tint)"><span class="di">${I(d.ic)}</span><span class="dt"><b>${d.n}</b><span>${d.id}</span></span></div></div>
+      <div class="card"><div class="kv"><span>Son bilinen yer</span><b>${d.where}</b></div>${d.seen ? `<div class="kv"><span>Son sinyal</span><b>${d.seen}</b></div>` : ""}<div class="kv"><span>Durum</span><b>${d.st}</b></div>${d.bat != null ? `<div class="kv"><span>Batarya</span><b>%${d.bat}</b></div>` : ""}<div class="kv"><span>Sonraki bakım</span><b>örnek · web takviminde</b></div></div>
+      <div class="pad brow">${btn("Buradaydı", "ton", "toast", "Konum doğrulandı · " + d.where, "pin")}${btn("Arıza aç", "", "fwith", d.id, "plus")}</div>`); },
+  fwith(id) { closeOv(); S.FF = { dev:id, cat:null, pr:"orta", close:false }; go("bioFault", {}, "up"); },
+  fscan() { S.FF.scanning = true; render(); setTimeout(() => { if (!S.FF || !S.FF.scanning) return; S.FF.scanning = false; S.FF.dev = "MN-0407"; toast("Etiket okundu · MN-0407"); render(); }, 1400); },
+  fdev() { S.FF.dev = null; render(); },
+  fsave() { const id = "İE-0" + S.woSeq++, d = DEV.find(x => x.id === S.FF.dev);
+    WO.unshift({ id, kind:d.n, ic:d.ic, where:d.where, bed:null, at:SAVED, by:ROLES[S.role].short, t:`${S.FF.cat} sorunu (yeni kayıt)`, pr:S.FF.pr, st:"acik" }); S.FF = null; setRoot("home"); toast(`${id} açıldı`, true); },
+  toast(m) { toast(m); },
+  fnew() { S.FF = null; if (ios()) setRoot("bioFault"); else go("bioFault", {}, "up"); },
+  seg(arg) { const i = arg.indexOf(":"), k = arg.slice(0, i), v = arg.slice(i + 1);
+    if (k === "pf" || k === "nf" || k === "dk") S.f[k] = v;
+    if (k === "theme") return setCtl("theme", v); if (k === "size") return setCtl("big", v);
+    if (k === "avpu") S.VF.avpu = v; if (k === "o2") S.VF.o2 = v; if (k === "wreg") S.WF.reg = v;
+    if (k === "fcat") S.FF.cat = v; if (k === "fpr") S.FF.pr = v;
+    if (k === "vnp") { S.vn.pid = v; return A.vnDraw(); }
+    if (k === "szd" || k === "szw") { S.sz[k === "szd" ? "d" : "w"] = v; S.ov.body = S.szBody(); drawOv(); return; }
+    render(); },
+  tog(k) { if (k === "fclose") { S.FF.close = !S.FF.close; } else S.set[k] = !S.set[k]; render(); }
+};
+function loginOk() { const a = S.after; S.after = null; S.stack = [{ id:"home", p:{} }]; S.anim = "fade";
+  if (a && a[0] === "alarm") { S.stack.push({ id:"alarm", p:{ aid:a[1] } }); render(); return; }
+  render(); if (a && a[0] === "wo") A.wo(a[1]); }
+
+/* ================= dokunma: tıklama, sürükle-kaydır, kaydırma eylemleri, basılı tut ================= */
+let SCALE = 1, drag = null, suppress = false;
+const scrEl = document.getElementById("scr");
+scrEl.addEventListener("click", e => {
+  if (suppress) { suppress = false; e.preventDefault(); e.stopPropagation(); return; }
+  const openRow = scrEl.querySelector(".swc.open"); if (openRow && !e.target.closest(".swa")) { openRow.classList.remove("open"); openRow.style.transform = ""; e.stopPropagation(); return; }
+  const t = e.target.closest("[data-act]"); if (!t || t.hasAttribute("disabled")) return;
+  const f = A[t.dataset.act]; if (f) { e.stopPropagation(); S.fromLeft = !!t.closest(".paneL"); f(t.dataset.arg ?? ""); S.fromLeft = false; }
+}, true);
+scrEl.addEventListener("pointerdown", e => {
+  if (e.button !== 0) return;
+  const hold = e.target.closest("[data-hold]");
+  if (hold) { hold.classList.add("on"); hold._t = setTimeout(() => { hold.classList.remove("on"); const h = HO.find(x => x.id === +hold.dataset.hold); biometric("Karşı imzanızı doğrulayın", () => { h.st = "done"; h.at = SAVED; toast("Karşı imza atıldı · " + P[h.pid].bed); render(); }); }, 1000);
+    const cancel = () => { clearTimeout(hold._t); hold.classList.remove("on"); }; hold.addEventListener("pointerup", cancel, { once:true }); hold.addEventListener("pointerleave", cancel, { once:true }); return; }
+  const row = e.target.closest(".sw"), sc3 = e.target.closest(".scroll, .shb");
+  drag = { x:e.clientX, y:e.clientY, row, swc:row && row.querySelector(".swc"), sc:sc3, st:sc3 ? sc3.scrollTop : 0, mode:null, base:0, last:e.clientY, lt:performance.now(), v:0, pt:e.pointerType };
+  if (drag.swc) { const m = /-?\d+/.exec(drag.swc.style.transform || ""); drag.base = m ? +m[0] : 0; }
+});
+window.addEventListener("pointermove", e => {
+  if (!drag) return; const dx = (e.clientX - drag.x) / SCALE, dy = (e.clientY - drag.y) / SCALE;
+  if (!drag.mode) { if (drag.swc && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) drag.mode = "swipe"; else if (drag.sc && drag.pt === "mouse" && Math.abs(dy) > 6) drag.mode = "scroll"; }
+  if (drag.mode === "swipe") { const w = drag.row.querySelector(".swa").offsetWidth; drag.swc.classList.add("drag"); drag.swc.style.transform = `translateX(${Math.max(-w - 30, Math.min(0, drag.base + dx))}px)`; }
+  if (drag.mode === "scroll") { drag.sc.scrollTop = drag.st - dy; const now = performance.now(); drag.v = (e.clientY - drag.last) / SCALE / Math.max(1, now - drag.lt); drag.last = e.clientY; drag.lt = now; }
+});
+window.addEventListener("pointerup", () => {
+  if (!drag) return; const d = drag; drag = null;
+  if (d.mode) suppress = true, setTimeout(() => suppress = false, 50);
+  if (d.mode === "swipe") { const w = d.row.querySelector(".swa").offsetWidth, m = /-?\d+/.exec(d.swc.style.transform), x = m ? +m[0] : 0; d.swc.classList.remove("drag");
+    scrEl.querySelectorAll(".swc.open").forEach(o => { if (o !== d.swc) { o.classList.remove("open"); o.style.transform = ""; } });
+    if (x < -w / 2) { d.swc.style.transform = `translateX(${-w}px)`; d.swc.classList.add("open"); } else { d.swc.style.transform = ""; d.swc.classList.remove("open"); } }
+  if (d.mode === "scroll") { let v = d.v * 16; const el = d.sc; (function glide() { if (Math.abs(v) < .4) return; el.scrollTop -= v; v *= .94; requestAnimationFrame(glide); })(); }
+});
+
+/* canlı sayaçlar */
+setInterval(() => {
+  document.querySelectorAll("[data-age]").forEach(el => { const a = AL.find(x => x.id === +el.dataset.age); if (a) el.textContent = mmss(age(a)); });
+  document.querySelectorAll("[data-next]").forEach(el => { const a = AL.find(x => x.id === +el.dataset.next); if (!a) return; const s = age(a), st = LADDER.reduce((k, [, t], i) => s >= t ? i : k, 0);
+    if (st < 3) el.textContent = `${LADDER[st + 1][0]}: ${mmss(Math.max(0, LADDER[st + 1][1] - s))}`; if (LADDER.some(([, t]) => t === s)) render(); });
+}, 1000);
+
+/* ================= dış kontroller ================= */
+function setCtl(g, v) {
+  if (g === "dev") { S.tab = v === "tab"; document.body.classList.toggle("tabmode", S.tab); S.ov = null; S.stack = [S.stack[0]]; S.anim = "fade"; }
+  if (g === "plat") { S.plat = v; S.ov = null; if (S.stack[0].id === "bioFault" && v === "and") setRoot("home"); }
+  if (g === "theme") { S.theme = v; document.documentElement.dataset.theme = v; }
+  if (g === "big") S.big = v === "1";
+  if (g === "role") { S.role = v; S.ov = null; S.after = null; const cur = S.stack[0].id; S.stack = [{ id:["lock", "login"].includes(cur) ? cur : "home", p:{} }]; S.VF = S.WF = S.FF = null; S.anim = "fade"; }
+  render(); if (g === "dev") fit();
+}
+function syncCtl() { document.querySelectorAll(".ctl [data-g]").forEach(g => { const cur = { dev:S.tab ? "tab" : "phone", plat:S.plat, theme:S.theme, big:S.big ? "1" : "0", role:S.role }[g.dataset.g]; g.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === cur)); }); updateNav(); updateWhy(); }
+document.querySelectorAll(".ctl [data-g]").forEach(g => g.addEventListener("click", e => { const b = e.target.closest("button"); if (b) setCtl(g.dataset.g, b.dataset.v); }));
+document.getElementById("simAlarm").addEventListener("click", () => {
+  if (["lock", "login"].includes(S.stack[S.stack.length - 1].id)) { setRoot("lock", "fade"); return; }
+  if (S.role === "bio") banner({ bio:true }); else { const a = AL.find(x => x.st === "open" && SCOPE[S.role].includes(P[x.pid].u)) || AL.find(x => x.st === "open") || AL[0]; banner(a); }
+});
+
+/* ekran listesi */
+const NAV = [
+  ["lock", "Kilit ekranı bildirimi"], ["login", "Giriş"], ["home", "Size düşenler"], ["alarm", "Alarm yanıtı"], ["patients", "Hastalarım"], ["patient", "Hasta özeti"],
+  ["vitals", "Vital giriş"], ["pain", "Ağrı skoru"], ["wound", "Yara fotoğrafı"], ["handover", "Devir imzası"], ["notifs", "Bildirim merkezi"], ["settings", "Ayarlar / profil"],
+  ["quick", "Orta düğme · hızlı işler"], ["rrt", "Hızlı yanıt çağrıları", "rrt"], ["bioHome", "Biyomedikal: işler", "bio"], ["bioFind", "Cihaz bul", "bio"], ["bioFault", "Arıza aç", "bio"]
+];
+function curKey() { const t = S.stack[S.stack.length - 1].id, o = S.ov;
+  if (o && o.why) return o.why; if (S.quick) return "quick";
+  if (t === "home") return S.role === "rrt" ? "rrt" : S.role === "bio" ? "bioHome" : "home";
+  if (t === "hand") return "handover"; return t; }
+function updateNav() { const k = curKey(); document.getElementById("navl").innerHTML = NAV.map(([id, l, r]) => `<button class="${id === k ? "on" : ""}" data-n="${id}">${l}${r ? ` <small>· ${r === "rrt" ? "hızlı yanıt" : "biyomedikal"}</small>` : ""}</button>`).join(""); }
+document.getElementById("navl").addEventListener("click", e => { const b = e.target.closest("[data-n]"); if (!b) return; const id = b.dataset.n;
+  const needNurse = ["vitals", "pain", "wound", "handover"], clin = ["patients", "patient"];
+  if (needNurse.includes(id) && S.role !== "nurse") S.role = "nurse";
+  if (clin.includes(id) && !["nurse", "doctor"].includes(S.role)) S.role = "nurse";
+  if (id === "alarm" && S.role === "bio") S.role = "nurse";
+  if (id === "rrt") S.role = "rrt"; if (id.startsWith("bio")) S.role = "bio";
+  S.VF = S.WF = S.FF = null; S.pinMode = false; S.ov = null;
+  if (id === "lock" || id === "login") return setRoot(id, "fade");
+  if (id === "rrt" || id === "bioHome") return setRoot("home", "fade");
+  if (id === "bioFind") return setRoot("bioFind", "fade");
+  if (id === "bioFault") { S.stack = [{ id:"home", p:{} }]; return go("bioFault", {}, "up"); }
+  if (id === "quick") { if (!["nurse", "doctor"].includes(S.role)) S.role = "nurse"; S.stack = [{ id:"home", p:{} }]; S.anim = "fade"; S.quick = true; return render(); }
+  if (["home", "patients", "handover", "notifs", "settings"].includes(id)) return setRoot(id, "fade");
+  if (id === "alarm") { S.stack = [{ id:"home", p:{} }]; return go("alarm", { aid:S.role === "nurse" ? 2 : 1 }, "up"); }
+  if (id === "patient") { S.stack = [{ id:"patients", p:{} }]; return go("patient", { pid:"p1" }); }
+  if (id === "vitals") { S.stack = [{ id:"patients", p:{} }]; return go("vitals", { pid:"p2" }, "up"); }
+  if (id === "wound") { S.stack = [{ id:"patients", p:{} }, { id:"patient", p:{ pid:"p1" } }]; return go("wound", { pid:"p1" }); }
+  if (id === "pain") { S.stack = [{ id:"patients", p:{} }, { id:"patient", p:{ pid:"p1" } }]; S.anim = "fade"; render(); return A.pain("p1"); }
+});
+
+/* ================= neden böyle + bugün gerçekte ================= */
+const WHY = {
+  lock:{ t:"Kilit ekranı bildirimi", w:["⏳ <b>Karar verildi (24.09), yapılacak:</b> telefona <b>yalnız kritik</b> düşer. Yüksek ve orta uygulama içinde kalır; bu yüzden kilit ekranında \"REA02 · yüksek\" yok.", "İçerikte <b>hasta adı, tanı ve değer yok</b>: \"REA01 · kritik · uygulamayı açın\". Kilit ekranını odadaki herkes görebilir, push servisi de hastane dışından geçer.", "<b>Gece sessiz saat yok.</b> Kritik alarm gece de çalar.", "Kilit ekranından \"Gördüm\" <b>verilemez</b>. Yanıt kimlik doğrulamadan sonra kaydedilir, böylece denetim kaydı kişiye bağlanır.", "Bildirime dokununca giriş, ardından doğrudan o alarm açılır (dene)."],
+    p:"<b>iOS:</b> bildirim yığını; sessiz modu delmek için Apple'ın ayrı izni (Critical Alerts) gerekir. <b>Android:</b> ayrı \"Kritik alarmlar\" kanalı; sesi ve \"Rahatsız etmeyin\"i aşmayı kullanıcı kanal bazında açar.",
+    r:["yok", "<b>Telefona bildirim yok.</b> Karar 24.09'da verildi, yapılacak; mobil uygulamada bildirim paketi (expo-notifications) bile kurulu değil. Uygulama <b>açıkken</b> üstten düşen uyarı ve titreşim var (AlertToast, useAlertHaptics)."] },
+  login:{ t:"Giriş", w:["Nöbette telefon onlarca kez açılır. Her seferinde parola yerine <b>yüz ya da parmak izi</b>; parola yalnız ilk kurulumda ve belli aralıklarla (öneri).", "<b>PIN yedek:</b> eldiven, maske, ıslak parmak.", "Gerçek uygulamada bu, açılır açılmaz kendiliğinden başlar; burada görebilmen için düğmeye bağlı."],
+    p:"<b>iOS:</b> Face ID ekranın ortasında kendi kutusunda. <b>Android:</b> BiometricPrompt alttan açılan sayfa.",
+    r:["kismen", "Giriş var ama <b>Ayarlar → Sunucu</b> altında, e-posta + parola ile. Ayrı giriş ekranı, yüz/parmak izi ve PIN <b>yok</b>. Doğrulama kodu (TOTP) isteyen hesap telefondan <b>giremiyor</b>. Oturum anahtarı güvenli kasada (secure store) duruyor."] },
+  home:{ t:"Size düşenler", w:["İlk soru <b>\"bana ne düştü?\"</b>: koğuşun tamamı değil, bu kişinin yanıtlaması gerekenler. En eski yanıtsız en üstte (web alarm kararıyla aynı).", "Eylem kartın üstünde: açmadan <b>Gördüm / Yoldayım</b>.", "Rol değişince içerik değişir: hemşirede iş ve devir, hekimde sonuç ve imza.", "<b>Seçildi: A</b> (Ozan, 24.09) · tek zaman akışı, üstte <b>büyük sayılı özet</b> (dokununca ilgili yere gider). B (en acil iş dev kartta) elendi.", "<b>Ortadaki büyük düğme = en sık iş:</b> hasta başı ölçüm. Başparmağın en kolay ulaştığı yerde.", "Devir imzası sağ üstte kalem simgesinde (bekleyen sayısıyla) ve listede kart olarak."],
+    p:"<b>iOS:</b> büyük başlık, kaydırınca küçülüp gezinme çubuğuna oturur. <b>Android:</b> üst uygulama çubuğunda bildirim ve profil simgesi, kaydırınca renk alır.",
+    r:["yok", "Bugünkü ana ekran <b>Koğuş</b>: yatak kartları ızgarası. \"Size düşenler\" diye bir ekran yok."] },
+  alarm:{ t:"Alarm yanıtı", w:["Büyük düğmeler <b>başparmak bölgesinde</b>, ekranın altında.", "<b>Eskalasyon merdiveni görünür:</b> kime, kaç dakikada gideceği; sayaç canlı. (Merdiven web prototipinden; gerçek motorda tek eşik var: 5 dakika.)", "<b>Ertele:</b> neden ve süre zorunlu. <b>Kritik alarmda Ertele düğmesi hiç yok</b>; yüksek en çok 30 dk, orta en çok 120 dk (karar 24.09; motor da kritiği ertelemiyor: service.py). REA02'yi (yüksek) açıp Ertele'ye bas, farkı gör.", "Başlangıç saati günüyle yazılır (\"24.09 · 21:31\"); sayaç ne kadar süredir yanıtsız olduğunu gösterir.", "Dil: \"kriterleri karşılanıyor · değerlendirme önerilir · karar hekimindir\"."],
+    p:"<b>iOS:</b> tam ekran, üstte \"Kapat\"; Ertele bir sayfa (sheet), arkadaki ekran küçülür; Eskale onayı ortada alert. <b>Android:</b> tam ekran diyalog, sol üstte ✕; Ertele alttan sayfa; onay Material 3 diyalog.",
+    r:["kismen", "<b>Uyarılar</b> sekmesi var (\"Eskale edilenler\" / \"Yeni uyarılar\"), <b>Onayla</b> düğmesi, klinik gerekçe ve <b>Kılavuz</b> kaynak çekmecesi var. Yoldayım, Ertele ve eskalasyon merdiveni <b>yok</b>."] },
+  patients:{ t:"Hastalarım", w:["Satır kısa: yatak, ad, tanı, skor, üç değer. Grafik yok, hasta açılınca var.", "Kapsam yalnız kendi birimlerim; hekimde birim başlıkları.", "Hasta başı işine iki hareketle: <b>satırı sola çek → Vital / Ağrı</b>."],
+    p:"<b>iOS:</b> kaydırma eylemleri, arama alanı, bölümlü seçici (segmented). <b>Android:</b> satır sonunda ⋮ ile alttan menü, yuvarlak arama çubuğu, filtre çipleri, ortadaki \"Ölç\" düğmesi (FAB) navigation bar'ın içinde.",
+    r:["kismen", "Koğuş ekranında yatak kartları var ama <b>hasta adı yok</b> (kayıt yalnız yatak numarası taşıyor). Kaydırma eylemi yok; filtre olarak \"Tümü\" çipi ve doluluk sayısı var."] },
+  patient:{ t:"Hasta özeti", w:["<b>Büyük rakamlar</b> kol boyu mesafeden okunur. Altında 24 saat kıvrımı; dokununca büyük grafik (web T2 kararı).", "<b>Skor:</b> sistem doldurur, hekim onaylar. Hemşire görür, onaylayamaz (rolü Hekim yap, farkı gör).", "Hasta başı işler tek dokunuşla. Rolde olmayan iş kilitli görünür.", "İlaç, sıvı, sonuç ayrıntısı <b>bilerek yok</b>: onlar tablet ve web işi."],
+    p:"<b>iOS:</b> geri düğmesinde önceki ekranın adı (\"‹ Hastalarım\"), ⋯ menüsü eylem listesi açar. <b>Android:</b> ← oku, ⋮ alttan menü.",
+    r:["kismen", "Yatak ayrıntısı var: vitaller, \"senaryo zamanı\" eğilim kıvrımları, aktif uyarılar, temsili dalga. Skor onayı ve hızlı işler <b>yok</b>."] },
+  vitals:{ t:"Vital giriş", w:["<b>Önce kimlik:</b> bileklik QR'ı, sonra ad + doğum yılı teyidi. Yanlış hastaya kayıt en pahalı hata.", "<b>Kaynak sırası:</b> monitör bağlıysa oradan; serviste portatif cihaz (Bluetooth); en son elle.", "Elle girişte <b>48 px −/+</b> ve büyük sayı tuşları; eldivenle basılır. Kaynağı belli olan değerin yanında \"monitör\" ya da cihaz no yazar.", "Eşik dışı değer turuncu çerçeve. Eşikler örnek, hastanenin onayı gerekir."],
+    p:"<b>iOS:</b> alttan tam ekran açılır, sayı tuşları iOS klavyesi gibi. <b>Android:</b> yeni ekran olarak açılır, tuşlar hap şeklinde; kayıt sonrası \"Geri al\"lı snackbar.",
+    r:["yok", "Uygulama <b>yalnız okur</b>; veri girişi, QR ve Bluetooth yok (paketleri de kurulu değil)."] },
+  pain:{ t:"Ağrı skoru", w:["0–10 tek sayfada, <b>tek dokunuş</b> ve Kaydet.", "Puan tablosu: <b>NRS 0–10 · hastanenin onayı gerekir.</b> Çocuk ve yenidoğanda farklı ölçek gerekir (web'de var); burada yalnız erişkin örneği.", "Ana ekrandaki \"Ağrı · gecikti\" işi buradan kapanır."],
+    p:"<b>iOS:</b> sayfa (sheet) solda \"Vazgeç\" ile. <b>Android:</b> alttan sayfa, tutamaçlı.",
+    r:["yok", "Ağrı girişi yok."] },
+  wound:{ t:"Yara fotoğrafı", w:["Kamera <b>yalnız yetkili rolde</b> (hemşire, form yetkisi). Hekim fotoğrafı web'de görür; hızlı yanıt ve biyomedikalde düğme hiç yok.", "<b>Önce onam</b> sorusu; onam yoksa kamera açılmaz.", "Fotoğraf <b>galeriye düşmez</b>, doğrudan kayda gider; telefonda kopya kalmaz. Kadrajda \"yüz girmesin\" uyarısı.", "⏳ Kamera politikası hastaneyle konuşulacak."],
+    p:"<b>iOS:</b> sarı \"FOTOĞRAF\" etiketi, iOS kamera düzeni. <b>Android:</b> hap şeklinde mod etiketi.",
+    r:["yok", "Kamera paketi kurulu değil; fotoğraf özelliği yok."] },
+  handover:{ t:"Devir imzası", w:["Gelen hemşire <b>yatak başında, telefonundan</b> karşı imza atar.", "<b>Basılı tut</b> (1 sn): cepte yanlışlıkla dokunma imza atmaz. Ardından yüz ya da parmak izi.", "İmzadan önce devredenin notu ve bekleyen işler okunur; imza \"okudum\" demektir.", "Gece yarısını geçen işler günüyle yazılır: \"25.09 · 02:00 pozisyon değişimi\".", "<b>Devirle geçen açık bildirimler</b> ayrı bölümde: giden ekip imza atılana kadar onları görmeye devam eder (karar 24.09)."],
+    p:"<b>iOS:</b> gruplu liste, Face ID kutusu. <b>Android:</b> kart listesi, alttan BiometricPrompt.",
+    r:["yok", "Devir ekranı yok."] },
+  notifs:{ t:"Bildirim merkezi", w:["Her şeyin geçmişi. \"Size düşenler\"den farkı: burada kapanmış olanlar da durur.", "<b>Kanal gerçeği</b> en üstte: uygulama içi var; telefona bildirim yalnız kritik olacak (karar verildi, yapılacak). Olmayan şey varmış gibi gösterilmez.", "<b>Kritik laboratuvar sonucu</b> hemşireye ve hekime <b>birlikte</b> gider; her biri diğerinin görüp görmediğini görür (hemşirede Gördüm'e bas, sonra rolü Hekim yap).", "<b>Vardiya değişimi:</b> açık bildirimler gelen ekibe geçer; giden ekip devir imzasına kadar görmeye devam eder.", "Satırı sola çek → Okundu."],
+    p:"<b>iOS:</b> sağ üstte \"Tümü okundu\" yazısı, bölümlü seçici. <b>Android:</b> ✓ simgesi, filtre çipleri.",
+    r:["kismen", "<b>Uyarı akışı</b> var (NotificationFeed). Role ve birime göre süzülen bildirim merkezi yok."] },
+  settings:{ t:"Ayarlar / profil", w:["Kullanıcı yalnız <b>görünümü ve kendi kilidini</b> ayarlar (web kararı: tema, yazı boyu). Alarm eşiği kullanıcıda değil.", "<b>Bildirim kuralları kullanıcıda değil:</b> telefona yalnız kritik, gece sessiz saat yok, erteleme sınırları sabit. Bunlar bilgi satırı, anahtar değil (karar 24.09).", "Nöbet süresi ve rol burada."],
+    p:"<b>iOS:</b> renkli kare simgeli gruplu liste, yeşil anahtar. <b>Android:</b> yalın simgeler, Material 3 anahtarı (içinde tutamaç).",
+    r:["kismen", "Tema (Gündüz Klinik / Gece), Rol (Hemşire/Hekim, yalnız onaylayanın adını değiştirir), titreşim, oynatma, eskalasyon eşiği (gösterim hızlandırması), Sunucu, Sürüm var. Yazı boyu, yüz/parmak izi kilidi, dil seçimi <b>yok</b> (yalnız Türkçe)."] },
+  quick:{ t:"Orta düğme · hızlı işler", w:["Telefonda en sık iş <b>hasta başı ölçüm</b>. Bu yüzden ortada, en büyük ve renkli düğme; başparmak oraya bakmadan ulaşır.", "Basınca dört iş: <b>Vital gir · Ağrı skoru · Bileklik okut · Sesli not</b>. Hekimde ağrı yerine skor imzası; biyomedikalde arıza aç · etiket okut · cihaz bul.", "Menü açıkken düğme × olur; dışarı dokunmak kapatır.", "<b>Sesli not önerisi:</b> konuşma metne çevrilir, kaydetmeden önce okunur. Ses nerede işlenecek (telefonda mı, hastane sunucusunda mı) ayrı karar; prototipte ses kaydı yok."],
+    p:"<b>iOS:</b> sekme çubuğunun ortasında büyük yuvarlak düğme; menü 2 × 2 kutucuk, yaylı açılır. Apple'ın standart bileşeni değil, bilinçli bir sapma. <b>Android:</b> navigation bar'ın ortasında köşeli FAB; menü yukarı doğru liste (speed dial).",
+    r:["yok", "Orta düğme, hızlı işler, sesli not ve veri girişi yok; uygulama yalnız okur."] },
+  rrt:{ t:"Hızlı yanıt çağrıları", w:["Hızlı yanıt bir <b>rol değil, nöbet görevi</b>: aynı hekim ertesi gün normal ana ekranı görür.", "Kartta <b>yol tarifi</b> (kat, oda), <b>alerji</b> ve <b>kod durumu</b> hemen görünür.", "Yoldayım / Yanındayım birim hemşiresine gider. \"Yaklaşan\" bölümü henüz düşmemiş alarmları gösterir."],
+    p:"<b>iOS:</b> 3 sekme, orta düğme yok: bu görevde en sık iş ölçüm değil, \"Yoldayım\". <b>Android:</b> 3 öğeli navigation bar.",
+    r:["yok", "Mobilde hızlı yanıt görevi yok. Motorda eskalasyon var; mobil bunu uyarı kartında \"ESKALE EDİLDİ\" etiketiyle gösteriyor."] },
+  bioHome:{ t:"Biyomedikal: işler", w:["<b>Hasta adı hiçbir ekranda yok</b>; yalnız yatak ya da oda kodu. Personel adı görünür.", "Açık arıza kayıtları öncelik sırasıyla, altında bu haftanın bakımları.", "Karta dokun: Üstlen / Yoldayım / Kapat."],
+    p:"<b>İki platformda da</b> en sık iş ortadaki düğmede: <b>Arıza</b> (arıza aç · etiket okut · cihaz bul). iOS'ta yuvarlak, Android'de köşeli FAB.",
+    r:["yok", "Biyomedikal rolü mobilde yok."] },
+  bioFind:{ t:"Cihaz bul", w:["Türe göre çipler; konum = <b>son bilinen oda</b>. Gerçek zamanlı konum takibi yok; ağa bağlı cihazda son sinyal saati var.", "Batarya düşükse kırmızı. \"Burada gördüm\" ile konum doğrulanır."],
+    p:"<b>iOS:</b> sağ üstte QR simgesi. <b>Android:</b> üst çubukta QR. Arıza açmak için ortadaki düğme.",
+    r:["yok", "Cihaz bulma yok."] },
+  bioFault:{ t:"Arıza aç", w:["Cihazdaki etiketi okut (QR) → cihaz seçilir; ya da listeden.", "Sorun türü, öncelik, \"cihaz kullanıma kapatılsın\" (bağlı yatak \"bloke · arıza\" görünür).", "<b>Fotoğraf yok:</b> kamera yalnız yara kaydında ve yetkili rolde. Hemşire de arıza açabilir (web'de Sevda açmış)."],
+    p:"<b>İki platformda da</b> ortadaki düğmeden alttan açılan ekran; iOS'ta \"Geri\", Android'de ← ile kapanır.",
+    r:["yok", "Arıza kaydı yok."] }
+};
+const WHY_TAB = ["<b>Tablet (820 × 1180) iki sütun:</b> solda liste ve sekmeler, sağda ayrıntı. Listeden seçince sağ değişir; geri tuşu gerekmez, liste kaybolmaz.", "Sağ bölme boşken en acil öğe açık durur (hemşire/hekimde en riskli hasta, hızlı yanıtta ilk çağrı).", "Alt sayfalar ortada form olarak açılır; iPad'de Dynamic Island olmadığı için kısa geri bildirim sağ altta.", "Tablet koğuşta ortak cihaz olabilir: kilit ve giriş telefondakiyle aynı, ad yine kimlik doğrulamasından sonra görünür."];
+function updateWhy() { const k = curKey(), w = WHY[k] || WHY.home, lbl = { var:"VAR", kismen:"KISMEN", yok:"YOK" };
+  document.getElementById("whyBox").innerHTML = `<h3>Neden böyle? <small>${w.t}${S.tab ? " · tablet" : ""}</small></h3><ul>${(S.tab ? WHY_TAB : []).concat(w.w).map(x => `<li>${x}</li>`).join("")}</ul><div class="plat">${w.p}</div>`;
+  document.getElementById("realBox").innerHTML = `<h3>Gerçek mobil uygulamada bugün</h3><div class="real"><span class="badge ${w.r[0]}">${lbl[w.r[0]]}</span><p>${w.r[1]}</p></div>`; }
+
+/* ================= alt bölümler ================= */
+document.getElementById("cmp").innerHTML = [
+  ["Başlık", "Büyük başlık; kaydırınca küçülüp buzlu çubuğa oturur", "Üst uygulama çubuğu; kaydırınca renk alır"],
+  ["Alt gezinme", "Sekme çubuğu, etkin simge renkli, kırmızı sayı rozeti", "Navigation bar, etkin simgenin arkasında hap"],
+  ["Ana eylem (orta düğme)", "Sekme çubuğunun ortasında büyük, yükseltilmiş yuvarlak düğme; basınca 2 × 2 kutucuk", "Navigation bar'ın ortasında köşeli FAB; basınca yukarı açılan hızlı işler listesi"],
+  ["Alt çubuk etiketi", "Tek kelime, en çok 8 harf: Bana · Hastalar · Ölç · Bildirim · Ben", "Aynı etiketler; etkin olanın simgesi hap içinde"],
+  ["Bildirim (uygulama açıkken)", "Üstte tam genişlik banner, Dynamic Island'ın altında", "Üstte heads-up kart; uygulama adı satırı ve \"Aç\" düğmesi"],
+  ["Satır eylemleri", "Sola kaydır → Vital · Ağrı", "⋮ → alttan menü (kaydırma da çalışır)"],
+  ["Seçim", "Bölümlü seçici (segmented)", "Filtre çipleri (seçilince ✓)"],
+  ["Sayfa / menü", "Sayfa açılınca arkadaki ekran küçülür; eylem listesi alttan", "Alttan sayfa, tutamaçlı, 28 px köşe"],
+  ["Onay", "Ortada küçük alert", "Material 3 diyalog"],
+  ["Kısa geri bildirim", "Dynamic Island genişler (\"Kaydedildi\")", "Snackbar, \"Geri al\" ile"],
+  ["Biyometrik", "Face ID kutusu ortada", "BiometricPrompt alttan"],
+  ["Kilit ekranı", "Bildirim yığını; yalnız kritik; sessiz modu delmek için Apple'ın Critical Alerts izni", "\"Kritik alarmlar\" kanalı; yalnız kritik"],
+  ["Tablet", "iPad: iki sütun, solda liste ve sekmeler, sağda ayrıntı; sayfalar ortada form olarak", "Android tablet: iki bölmeli liste-ayrıntı düzeni; alt sayfalar ortada"],
+  ["Yazı", "SF benzeri (Inter), sıkı harf aralığı", "Roboto, Material tip ölçeği"],
+  ["Geçiş", "Sağdan kayma; alarm alttan tam ekran", "Kısa kayma + solma; alarm tam ekran diyalog"]
+].map(([a, b, c]) => `<div class="cr"><b>${a}</b><span><i>iOS</i>${b}</span><span><i>ANDROID</i>${c}</span></div>`).join("");
+document.getElementById("st").innerHTML = [
+  ["Kilit ekranı bildirimi", "yok", "Telefona bildirim yok (paket de kurulu değil); açıkken üstten uyarı + titreşim var. Kararı verildi, yapılacak."],
+  ["Giriş", "kismen", "Ayarlar → Sunucu'da e-posta + parola; biyometrik/PIN yok; TOTP hesabı giremez."],
+  ["Size düşenler", "yok", "Ana ekran yatak kartları (Koğuş)."],
+  ["Alarm yanıtı", "kismen", "Uyarılar sekmesi + Onayla + Kılavuz çekmecesi; Yoldayım/Ertele/merdiven yok."],
+  ["Hastalarım", "kismen", "Yatak kartları; hasta adı yok, kaydırma eylemi yok."],
+  ["Hasta özeti", "kismen", "Vitaller, eğilim kıvrımı, uyarılar, temsili dalga; skor onayı yok."],
+  ["Vital giriş · ağrı · yara · devir", "yok", "Uygulama yalnız okur; kamera, QR, Bluetooth paketi yok."],
+  ["Bildirim merkezi", "kismen", "Uyarı akışı var; role göre merkez yok."],
+  ["Ayarlar", "kismen", "Tema, rol (hemşire/hekim), titreşim, sunucu; yazı boyu, kilit, dil yok."],
+  ["Hızlı yanıt · biyomedikal", "yok", "Bu roller mobilde yok."],
+  ["Tablet düzeni", "yok", "Kodda tablete özel düzen bulunmadı (ekran genişliğine bakan kod yok). Taslaktaki iki sütun öneri."]
+].map(([a, b, c]) => `<div class="sr"><b>${a}</b><span><span class="badge ${b}">${{ var:"VAR", kismen:"KISMEN", yok:"YOK" }[b]}</span></span><p>${c}</p></div>`).join("");
+
+const cl = () => { document.getElementById("cLine").textContent = `Platform dili: ikisi ayrı · Ana ekran: A · Merkez düğme: ${document.getElementById("cMid").value} · Tablet: ${document.getElementById("cTab").value} · Beğenmediğim: ${document.getElementById("cBad").value.trim() || "…"}`; };
+["cMid", "cTab", "cBad"].forEach(id => document.getElementById(id).addEventListener("input", cl)); cl();
+document.getElementById("cCopy").addEventListener("click", () => { const t = document.getElementById("cLine").textContent;
+  try { navigator.clipboard.writeText(t).then(() => document.getElementById("cCopy").textContent = "Kopyalandı ✓", () => {}); } catch (e) { /* elle seçilir */ } });
+
+/* ölçek: telefon her genişliğe sığar */
+function fit() { const W = S.tab ? 844 : 414, H = S.tab ? 1204 : 868, w = document.getElementById("fit").clientWidth;
+  SCALE = Math.min(1, w / W, S.tab ? Math.max(.5, (innerHeight - 100) / H) : 1);
+  document.getElementById("dev").style.transform = `scale(${SCALE})`; const dw = document.getElementById("devWrap"); dw.style.width = W * SCALE + "px"; dw.style.height = H * SCALE + "px"; }
+addEventListener("resize", fit);
+S.stack = [{ id:"home", p:{} }];
+try { const q = new URLSearchParams(location.search); if (q.get("plat")) S.plat = q.get("plat"); if (q.get("theme")) { S.theme = q.get("theme"); } if (q.get("dev") === "tab") { S.tab = true; document.body.classList.add("tabmode"); } if (q.get("role")) S.role = q.get("role"); } catch (e) {}
+document.documentElement.dataset.theme = S.theme;
+fit(); render();
+})();
+</script>
+</body>
+</html>
