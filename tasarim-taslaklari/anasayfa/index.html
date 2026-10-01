@@ -491,6 +491,7 @@ section.s.alt { background:var(--card); border-top:1px solid var(--line); border
 .ft .mk { background:#22b8d6; color:#03141c; box-shadow:none; }
 .ft-brand p { color:#9fbac6; font-size:14.5px; max-width:400px; margin:14px 0 18px; }
 .ft-prin { list-style:none; margin:0; padding:0; display:grid; gap:9px; }
+.ft-prin[hidden] { display:none; }
 .ft-prin li { display:flex; align-items:center; gap:10px; font-size:14px; color:#d7e7ee; }
 .ft-prin svg.i { width:16px; height:16px; color:#5eead4; }
 .ft-col h4 { font:700 12px Figtree, system-ui, sans-serif; letter-spacing:.12em; text-transform:uppercase; color:#6f95a4; margin:6px 0 16px; }
@@ -945,7 +946,8 @@ section[hidden], .anc[hidden] { display:none !important; }
       <div class="ft-brand">
         <a class="brand" href="#top" aria-label="homunculus"><span class="mk">h</span><b>homunculus</b></a>
         <p data-i="ft_desc"></p>
-        <ul class="ft-prin"><li><svg class="i" data-ic="shield"></svg><span data-i="t1"></span></li><li><svg class="i" data-ic="building"></svg><span data-i="t3"></span></li><li><svg class="i" data-ic="file"></svg><span data-i="tr3_t"></span></li></ul>
+        <!-- 01.10 (Ozan, #317): üç slogan ("Kararı hekim verir · Kurulum yerini hastane seçer · Her işlem kayıt altında") gizli; geri açmak için hidden'ı kaldır -->
+        <ul class="ft-prin" hidden><li><svg class="i" data-ic="shield"></svg><span data-i="t1"></span></li><li><svg class="i" data-ic="building"></svg><span data-i="t3"></span></li><li><svg class="i" data-ic="file"></svg><span data-i="tr3_t"></span></li></ul>
       </div>
       <!-- 29.09: Birimler gizli olduğu için bu sütun da gizli (bağlantıları boşa gidiyordu). Geri açmak için hidden'ı kaldır. -->
       <div class="ft-col" hidden><h4 data-i="nav_units"></h4><div class="ft-chips" data-fcol-units></div></div>
@@ -1078,7 +1080,8 @@ section[hidden], .anc[hidden] { display:none !important; }
     u3t:{ AZ:"Təcili yardım", TR:"Acil", RU:"Приёмное отделение", EN:"Emergency" }, u3s:{ AZ:"Gələn xəstə eyni çarpayı panelində izlənir.", TR:"Gelen hasta aynı yatak panelinde izlenir.", RU:"Поступивший пациент — на той же панели коек.", EN:"Arriving patients are followed on the same bed board." },
     u4t:{ AZ:"Portativ cihazla ölçülən otaqlar", TR:"Portatif cihazla ölçüm yapılan odalar", RU:"Палаты с портативными приборами", EN:"Rooms measured with portable devices" }, u4s:{ AZ:"Sabit monitor olmayan yerdə ölçmə birbaşa cihazdan gəlir, əllə yazılmır.", TR:"Sabit monitörün olmadığı yerde ölçüm doğrudan cihazdan gelir, elle yazılmaz.", RU:"Где нет стационарного монитора, измерение приходит прямо с прибора, без ручного ввода.", EN:"Where there is no fixed monitor, the reading comes straight from the device, not typed in." },
     src_mon:{ AZ:"Mərkəzi stansiya", TR:"Merkez istasyon", RU:"Центральная станция", EN:"Central station" }, src_port:{ AZ:"Portativ cihaz", TR:"Portatif cihaz", RU:"Портативный прибор", EN:"Portable device" },
-    ft_desc:{ AZ:"Reanimasiya və bölmələr üçün klinik qərar dəstəyi. Cihazdan doğru şəxsə — qərarı həkim verir.", TR:"Yoğun bakım ve servisler için klinik karar desteği. Cihazdan doğru kişiye — kararı hekim verir.", RU:"Поддержка клинических решений для реанимации и отделений. От прибора к нужному человеку — решение за врачом.", EN:"Clinical decision support for critical care and wards. From the device to the right person — the physician decides." },
+    // 01.10 (Ozan, #317): alt bilgi cümlesi bu metin; altındaki üç slogan gizlendi.
+    ft_desc:{ AZ:"Reanimasiya və bölmələr üçün klinik qərar dəstəyi və bölmə idarəetmə sistemi. Monitordan gələn göstəricini oxuyur, vəziyyəti pisləşən xəstəni önə çıxarır və həmin xəstəyə cavabdeh şəxsə xəbər verir.", TR:"Yoğun bakım ve servisler için klinik karar destek ve birim yönetim sistemi. Monitörden gelen değeri okur, kötüleşen hastayı öne çıkarır ve o hastadan sorumlu kişiye haber verir.", RU:"Система поддержки клинических решений и управления отделением для реанимации и отделений. Считывает показания монитора, выводит вперёд пациента, чьё состояние ухудшается, и сообщает сотруднику, ответственному за этого пациента.", EN:"Clinical decision support and unit management system for intensive care and wards. It reads values from the monitor, brings the deteriorating patient to the top and notifies the person responsible for that patient." },
     ft_cta_h:{ AZ:"Öz bölmənizdə görək.", TR:"Kendi biriminizde görelim.", RU:"Посмотрим в вашем отделении.", EN:"See it in your own unit." },
     ft_cta_p:{ AZ:"Cihazlarınızı, qaydalarınızı və rollarınızı danışaq; sonra bir bölmədə quraşdırıb birlikdə qiymətləndirək.", TR:"Cihazlarınızı, kurallarınızı ve rollerinizi konuşalım; sonra bir birimde kurup birlikte değerlendirelim.", RU:"Обсудим ваши приборы, правила и роли, затем установим систему в одном отделении и вместе оценим.", EN:"Let's talk through your devices, rules and roles, then set up in one unit and review it together." },
     ft_contact:{ AZ:"Bizimlə əlaqə", TR:"Bize ulaşın", RU:"Связаться с нами", EN:"Contact us" },
