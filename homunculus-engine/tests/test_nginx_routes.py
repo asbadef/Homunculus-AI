@@ -39,21 +39,19 @@ def _api_locations() -> list[re.Pattern[str]]:
 
 
 def _app_prefixes() -> set[str]:
+    # Read the public OpenAPI schema, not `app.routes`: included routers appear there as objects
+    # without a `.path`. Routes with include_in_schema=False are therefore not seen here.
     from homunculus.api.app import create_app
 
     app = create_app({"t": "h"}, run_escalation_loop=False)
-    skip = {"docs", "redoc", "openapi.json"}
-    out: set[str] = set()
-    for route in app.routes:
-        path = getattr(route, "path", "")
-        first = path.split("/")[1] if path.startswith("/") else ""
-        if first and not first.startswith("{") and first not in skip:
-            out.add("/" + first)
-    return out
+    return {"/" + path.split("/")[1] for path in app.openapi()["paths"]}
 
 
 def test_every_app_route_prefix_is_proxied() -> None:
-    missing = sorted(p for p in _app_prefixes() if not any(loc.search(p) for loc in _api_locations()))
+    prefixes = _app_prefixes()
+    # Guard against the introspection going vacuous (a schema change once hid every router).
+    assert {"/auth", "/admin", "/patients"} <= prefixes, prefixes
+    missing = sorted(p for p in prefixes if not any(loc.search(p) for loc in _api_locations()))
     assert not missing, f"routers not proxied by nginx: {missing}"
 
 
