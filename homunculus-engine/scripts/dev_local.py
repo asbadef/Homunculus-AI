@@ -87,22 +87,24 @@ async def _create_schema() -> int:
     return len(Base.metadata.tables)
 
 
+def _load(name: str):
+    """A sibling script as a module. `scripts/` is a plain directory, not a package, so it is
+    loaded by path rather than imported."""
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(f"{name}.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def main() -> int:
     _apply_defaults()
     tables = asyncio.run(_create_schema())
     print(f"[1/3] Şema kuruldu — {tables} tablo · {os.environ['DATABASE_URL']}")
 
     # Run the deployment's own seeders, so these are the same accounts a real install gets.
-    # `scripts/` is a plain directory, not a package, so it is loaded by path rather than imported.
-    import importlib.util
-    from pathlib import Path
-
-    def _load(name):
-        spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(f"{name}.py"))
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-
     seed_admin = _load("seed_admin")
     seed_test_users = _load("seed_test_users")
     print("[2/3] Yönetici hesabı:")
