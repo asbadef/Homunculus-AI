@@ -4,6 +4,7 @@ import {
   decodeJwtPayload, sessionFromToken, accessProblem, secretFromProvisioningUri,
   NO_PERMISSIONS, NO_BOARD_ACCESS,
 } from "./liveAuth.js";
+import { DEFAULT_GROUPS } from "./permissions.js";
 
 /** Build an unsigned JWT-shaped token (only the payload matters to the client).
  *  Encodes UTF-8 bytes before base64url, exactly as a real JWT library does — btoa() alone
@@ -95,5 +96,31 @@ describe("secretFromProvisioningUri", () => {
   it("returns null when there is none", () => {
     expect(secretFromProvisioningUri("otpauth://totp/x")).toBeNull();
     expect(secretFromProvisioningUri("nonsense")).toBeNull();
+  });
+});
+
+describe("the pharmacist and biomedical groups in the permission model", () => {
+  // On main these were two roles (PHARMACIST, BIOMEDICAL, engine migration 0007) the UI mapped
+  // from the token's `roles`. Here a token carries its groups' `perms`, and what opens the
+  // clinical UI is board.view (accessProblem), not the name of a role.
+  const permsOf = (slug) => [...DEFAULT_GROUPS.find((g) => g.slug === slug).permissions];
+  const sessionFor = (...slugs) => sessionFromToken(tokenWith({
+    tenant: "demo-hastanesi", groups: slugs, perms: [...new Set(slugs.flatMap(permsOf))],
+  }));
+
+  it("a pharmacist (board.view, admissions.view) opens a session", () => {
+    const session = sessionFor("pharmacist");
+    expect(session.perms).toEqual(expect.arrayContaining(["board.view", "admissions.view"]));
+    expect(accessProblem(session)).toBeNull();
+  });
+
+  it("a biomedical engineer (devices.manage, no board.view) is refused the clinical UI", () => {
+    const session = sessionFor("biomedical");
+    expect(session.perms).toEqual(["devices.manage"]);
+    expect(accessProblem(session)).toBe(NO_BOARD_ACCESS);
+  });
+
+  it("the biomedical group does not take the board from a nurse who also holds it", () => {
+    expect(accessProblem(sessionFor("biomedical", "nurse"))).toBeNull();
   });
 });

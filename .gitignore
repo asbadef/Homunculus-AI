@@ -25,6 +25,9 @@ deploy/bridge/site-mapping.json
 # Local on-prem deployment configuration (secrets, site mapping)
 deploy/local/.env
 deploy/local/site-mapping.json
+# Per-hospital HIS-bed -> our-bed table. Names the site's wards and room numbers, so it is site
+# detail rather than product. bed-mapping.example.json carries the shape.
+deploy/local/bed-mapping.json
 
 # Python bytecode. Never useful in a diff, and it pulled a compiled copy of a deleted module along
 # with it.
@@ -38,8 +41,10 @@ homunculus-mobile/dist/
 homunculus-mobile/web-build/
 
 # Site photos and any camera captures from the hospital: they can carry live patient traces,
-# ward backgrounds, service passwords and internal network detail. The repo is PUBLIC — these
-# must never be committed. Sanitised text captures of the same facts live in Homunculus/raw/.
+# ward backgrounds, service passwords and internal network detail. These must never be
+# committed — the repo is private today, but a photo that leaks a ward or a password is not
+# something a visibility setting should be the only thing standing in front of. Sanitised text
+# captures of the same facts live in Homunculus/raw/.
 site-photos/
 Homunculus/raw/dragger/
 

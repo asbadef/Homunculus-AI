@@ -104,7 +104,7 @@ class TenantMembership(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    # LEGACY: the pre-0006 role, kept as text. Migration 0006 turns the column from the `userrole`
+    # LEGACY: the pre-0010 role, kept as text. Migration 0010 turns the column from the `userrole`
     # enum into varchar(40), so the ORM's INSERT, which names it as NULL::VARCHAR, is accepted (on
     # the enum PostgreSQL refused it: deploy blocker B1). Never written; every new membership has
     # NULL. Dropped, with the `userrole` type, in a later cleanup migration.

@@ -13,10 +13,13 @@ export function DemoDataBanner() {
       className="w-full bg-amber-500 px-4 py-2 text-center text-sm font-medium text-amber-950"
     >
       <span className="font-bold tracking-wide">ÖRNEK VERİ</span>
-      <span className="ml-2">
+      {/* Telefonda uzun cümle dört satıra çıkıp ekranın altıda birini yiyordu. Uyarının kendisi
+          küçülmüyor — yalnız açıklaması, okunacak yer kalmadığında geri çekiliyor. */}
+      <span className="ml-2 hidden sm:inline">
         Bu ekrandaki hastalar, ölçümler ve alarmlar gösterim amaçlıdır — bu sunucunun canlı cihaz
         akışı değildir.
       </span>
+      <span className="ml-2 sm:hidden">Gerçek hasta verisi değildir.</span>
     </div>
   );
 }

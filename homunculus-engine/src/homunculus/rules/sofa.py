@@ -76,36 +76,21 @@ def stale_note(state: PatientState, now: datetime,
             f"~{hours:.0f} h old; interpret the score with that in mind.")
 
 
-def cardiovascular_points(state: PatientState) -> int:
-    norepi = _val(state, SignalCode.NOREPINEPHRINE_RATE) or 0.0
-    epi = _val(state, SignalCode.EPINEPHRINE_RATE) or 0.0
-    dopamine = _val(state, SignalCode.DOPAMINE_RATE) or 0.0
-    dobutamine = _val(state, SignalCode.DOBUTAMINE_RATE) or 0.0
-    map_val = _val(state, SignalCode.MAP)
-
-    # 4: dopamine >15 or epi >0.1 or norepi >0.1
-    if dopamine > 15 or epi > 0.1 or norepi > 0.1:
-        return 4
-    # 3: dopamine 5.1-15 or epi <=0.1 or norepi <=0.1  (any pressor at low dose)
-    if dopamine > 5 or epi > 0 or norepi > 0:
-        return 3
-    # 2: dopamine <5 or dobutamine any dose
-    if dopamine > 0 or dobutamine > 0:
-        return 2
-    # 1: MAP < 70
-    if map_val is not None and map_val < 70:
-        return 1
-    return 0
+# --- Band tables as pure functions of a value ----------------------------------------------------
+# Split out from the state-reading versions below so the same table can be applied to ANY value,
+# not only the latest one. The severity-scoring module needs exactly this: "worst value in the last
+# 24 hours" is undefined without the table, because worst does not mean highest or lowest — it
+# means *the value that scores most points*, and for a bidirectional parameter those are opposite
+# ends. The state-reading functions now delegate here, so there is one table per organ and it
+# cannot drift into two.
 
 
-def respiration_points(state: PatientState) -> int:
-    pf = _val(state, SignalCode.PAO2_FIO2)
+def respiration_points_of(pf: float | None, on_support: bool = False) -> int:
     if pf is None:
         return 0
-    support = (_val(state, SignalCode.ON_RESP_SUPPORT) or 0.0) >= 1.0
-    if pf < 100 and support:
+    if pf < 100 and on_support:
         return 4
-    if pf < 200 and support:
+    if pf < 200 and on_support:
         return 3
     if pf < 300:
         return 2
@@ -114,38 +99,35 @@ def respiration_points(state: PatientState) -> int:
     return 0
 
 
-def coagulation_points(state: PatientState) -> int:
-    plt = _val(state, SignalCode.PLATELETS)
-    if plt is None:
+def coagulation_points_of(platelets: float | None) -> int:
+    if platelets is None:
         return 0
-    if plt < 20:
+    if platelets < 20:
         return 4
-    if plt < 50:
+    if platelets < 50:
         return 3
-    if plt < 100:
+    if platelets < 100:
         return 2
-    if plt < 150:
+    if platelets < 150:
         return 1
     return 0
 
 
-def renal_points(state: PatientState) -> int:
-    cr = _val(state, SignalCode.CREATININE)
-    if cr is None:
+def renal_points_of(creatinine: float | None) -> int:
+    if creatinine is None:
         return 0
-    if cr > 5.0:
+    if creatinine > 5.0:
         return 4
-    if cr >= 3.5:
+    if creatinine >= 3.5:
         return 3
-    if cr >= 2.0:
+    if creatinine >= 2.0:
         return 2
-    if cr >= 1.2:
+    if creatinine >= 1.2:
         return 1
     return 0
 
 
-def cns_points(state: PatientState) -> int:
-    gcs = _val(state, SignalCode.GCS)
+def cns_points_of(gcs: float | None) -> int:
     if gcs is None:
         return 0
     if gcs < 6:
@@ -159,19 +141,75 @@ def cns_points(state: PatientState) -> int:
     return 0
 
 
-def liver_points(state: PatientState) -> int:
-    bili = _val(state, SignalCode.BILIRUBIN)
-    if bili is None:
+def liver_points_of(bilirubin: float | None) -> int:
+    if bilirubin is None:
         return 0
-    if bili > 12.0:
+    if bilirubin > 12.0:
         return 4
-    if bili >= 6.0:
+    if bilirubin >= 6.0:
         return 3
-    if bili >= 2.0:
+    if bilirubin >= 2.0:
         return 2
-    if bili >= 1.2:
+    if bilirubin >= 1.2:
         return 1
     return 0
+
+
+def cardiovascular_points_of(*, map_value: float | None = None, norepinephrine: float = 0.0,
+                             epinephrine: float = 0.0, dopamine: float = 0.0,
+                             dobutamine: float = 0.0) -> int:
+    """The one organ whose points are not a function of a single number.
+
+    Kept in the same shape as the others so the worst-value machinery can treat it uniformly, but
+    it takes the whole vasoactive picture because SOFA's cardiovascular row grades the SUPPORT a
+    patient needs, not a measurement taken from them.
+    """
+    # 4: dopamine >15 or epi >0.1 or norepi >0.1
+    if dopamine > 15 or epinephrine > 0.1 or norepinephrine > 0.1:
+        return 4
+    # 3: dopamine 5.1-15 or any low-dose epi/norepi
+    if dopamine > 5 or epinephrine > 0 or norepinephrine > 0:
+        return 3
+    # 2: dopamine <=5 or dobutamine at any dose
+    if dopamine > 0 or dobutamine > 0:
+        return 2
+    # 1: MAP < 70
+    if map_value is not None and map_value < 70:
+        return 1
+    return 0
+
+
+def cardiovascular_points(state: PatientState) -> int:
+    return cardiovascular_points_of(
+        map_value=_val(state, SignalCode.MAP),
+        norepinephrine=_val(state, SignalCode.NOREPINEPHRINE_RATE) or 0.0,
+        epinephrine=_val(state, SignalCode.EPINEPHRINE_RATE) or 0.0,
+        dopamine=_val(state, SignalCode.DOPAMINE_RATE) or 0.0,
+        dobutamine=_val(state, SignalCode.DOBUTAMINE_RATE) or 0.0,
+    )
+
+
+def respiration_points(state: PatientState) -> int:
+    return respiration_points_of(
+        _val(state, SignalCode.PAO2_FIO2),
+        (_val(state, SignalCode.ON_RESP_SUPPORT) or 0.0) >= 1.0,
+    )
+
+
+def coagulation_points(state: PatientState) -> int:
+    return coagulation_points_of(_val(state, SignalCode.PLATELETS))
+
+
+def renal_points(state: PatientState) -> int:
+    return renal_points_of(_val(state, SignalCode.CREATININE))
+
+
+def cns_points(state: PatientState) -> int:
+    return cns_points_of(_val(state, SignalCode.GCS))
+
+
+def liver_points(state: PatientState) -> int:
+    return liver_points_of(_val(state, SignalCode.BILIRUBIN))
 
 
 def total_sofa(state: PatientState) -> int:

@@ -38,9 +38,10 @@ function pickRoot(mode) {
     // Fire-and-forget: a page refresh must reopen the stored session instead of logging the
     // clinician out; failure quietly leaves the login screen, which renders meanwhile anyway.
     store.restoreSession();
+    // simulation stays false: this is the real ward. See the note on ClinicalDemo.
     return <ClinicalDemo store={store} />;
   }
-  if (mode === "demo") return <ClinicalDemo />;
+  if (mode === "demo") return <ClinicalDemo simulation />;
   if (mode === "replay") {
     return <DemoApp scenario={params.get("scenario") || "septic_shock"} />;
   }
@@ -59,9 +60,14 @@ const mode = window.location.hash.startsWith("#/demo") ? "demo" : chooseMode(par
 const el = document.getElementById("root");
 if (el) {
   createRoot(el).render(
-    <>
-      {mode === "demo" || mode === "replay" ? <DemoDataBanner /> : null}
-      {pickRoot(mode)}
-    </>,
+    // Örnek-veri bandı uygulamanın üstüne ekleniyor; sayfa yüksekliği bu yüzden ekranı
+    // aşıyordu ve giriş ekranı tek ekran olmasına rağmen kayıyordu. Kabuk ekranı
+    // paylaştırıyor: bant kendi yüksekliğini alır, uygulama kalanı.
+    <div className="flex h-[100dvh] flex-col overflow-hidden">
+      {mode === "demo" || mode === "replay" ? (
+        <div className="shrink-0"><DemoDataBanner /></div>
+      ) : null}
+      <div className="min-h-0 flex-1">{pickRoot(mode)}</div>
+    </div>,
   );
 }

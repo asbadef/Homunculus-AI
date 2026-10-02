@@ -22,6 +22,7 @@ import homunculus.auth.models  # noqa: F401
 import homunculus.tenant.models  # noqa: F401
 import homunculus.admission.models  # noqa: F401
 import homunculus.escalation.models  # noqa: F401
+import homunculus.scope.models  # noqa: F401
 
 config = context.config
 

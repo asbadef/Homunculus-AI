@@ -719,8 +719,14 @@ async def test_a_platform_operator_must_be_mfa_verified(world):
 # The routes that act outside any one tenant's objects, by design. Everything else in the app,
 # `/admin` included, must resolve the caller's tenant. `/auth/*` (sign-in, the caller's own
 # account) is exempt by prefix.
-UNSCOPED_BY_DESIGN = {
+NOT_THE_BOARD = {
     ("POST", "/tenant/tenants"),        # a platform operator creates a tenant
+    # The device-research window reads the ONE hub this deployment is configured with
+    # (INFINITY_HUB_*): no tenant's objects, no patient ids. Unscoped as it was on main; a
+    # deployment serving several hospitals from one API would have to bind the hub to a tenant.
+    ("GET", "/infinity-research/state"),
+}
+UNSCOPED_BY_DESIGN = NOT_THE_BOARD | {
     ("GET", "/health"),
     # api/app.py: the board and device routes. Tasks 8/9 scope them through the Caller.
     ("POST", "/ingest"),
@@ -732,6 +738,13 @@ UNSCOPED_BY_DESIGN = {
     ("GET", "/stream"),
     ("GET", "/notifications"),
     ("GET", "/audit"),
+    # ...and the ones that arrived from main, through the same Caller.
+    ("POST", "/clinical/{patient_id}"),
+    ("PUT", "/clinical/{patient_id}/profile"),
+    ("GET", "/scores/sofa/{patient_id}"),
+    ("POST", "/scores/sofa/{patient_id}"),
+    ("GET", "/alarm-quality"),
+    ("GET", "/audit/verify"),
 }
 
 
@@ -759,4 +772,4 @@ def test_every_route_resolves_the_callers_tenant_unless_unscoped_by_design():
     assert unscoped == UNSCOPED_BY_DESIGN
     board = {(m, r.path) for r in routes for m in r.methods
              if r.endpoint.__module__ == "homunculus.api.app"}
-    assert UNSCOPED_BY_DESIGN - {("POST", "/tenant/tenants")} == board
+    assert UNSCOPED_BY_DESIGN - NOT_THE_BOARD == board

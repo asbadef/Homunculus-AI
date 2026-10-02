@@ -1,10 +1,11 @@
 // src/liveStore.js — the seam that puts the real backend behind the clinical UI.
 //
 // The design (ClinicalDemo) drives a simulation store. This wraps that store and replaces the
-// actions the backend implements (authentication, the board, acknowledgements, administration)
-// with real API calls, overlaying the resulting state on top of the simulated state. The
-// simulation's other actions are REFUSED here (LIVE_UNAVAILABLE): in live mode nothing may write
-// to the simulation as if it were the ward, and the UI hides the controls that would call them.
+// actions the backend implements (authentication, the board, acknowledgements, administration,
+// clinical charting, the audit) with real API calls, overlaying the resulting state on top of
+// the simulated state. The simulation's other actions are REFUSED here (LIVE_UNAVAILABLE): in
+// live mode nothing may write to the simulation as if it were the ward, and the UI hides the
+// controls that would call them.
 // Only a few reads and a display preference pass through (LIVE_SAFE_SIMULATION).
 
 import {
@@ -57,6 +58,8 @@ export const SIMULATION_ONLY = Object.freeze([
   "setOnline", "queueOffline", "flushSyncQueue", "setAutoAlarm", "setSpeed", "setRunning", "reset",
   "recordTestPush", "createReportTemplate", "generateReport", "captureKpiSnapshot",
   "recordQualityMetric",
+  // institution policy (main's Sistem Ayarları): written to the simulation's settings only
+  "setEscalationTier", "setShiftPattern", "setPrivacyPolicy",
 ]);
 
 /** The simulation's functions the live store passes through unchanged: reads a hidden screen
@@ -329,6 +332,11 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
         beds: bedsFromPatients(patients),
         alerts: alertsFromPatients(patients),
         devices: [],
+        // Motorun uyguladığı kapsam, listeyle birlikte. Bu blok olmadan boş bir pano ile sakin
+        // bir koğuş aynı görünür — ve bu ikisini ayırt edemeyen bir hemşire, kapsam işinin
+        // önlemek için var olduğu tehlikenin ta kendisidir.
+        engineScope: board?.scope ?? null,
+        scopeNote: board?.scope_note ?? null,
         connection: nextConnection(overlay.connection, { type: "loaded" }),
       });
     } catch {
@@ -337,6 +345,10 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
         beds: [],
         alerts: [],
         devices: [],
+        // Başarısız bir istekte kapsam da düşer. Eski bir kapsam bloğu, boş bir panoyu
+        // "kapsamınız bu kadar" diye açıklardı — oysa sebep bağlantının kopmuş olması.
+        engineScope: null,
+        scopeNote: null,
         connection: nextConnection(overlay.connection, { type: "failed" }),
       });
     }
@@ -506,6 +518,66 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
   // Restores in flight (a newer one may start while an older one still waits for its answer).
   let restoresInFlight = 0;
 
+  /**
+   * One engine audit record in the shape the existing audit screen renders.
+   *
+   * The screen was already written, with filters and CSV export, reading the simulation's own
+   * `auditLog`. On a live ward that meant the audit page showed what had happened in THIS
+   * BROWSER while the real append-only record sat unreachable — which is worse than no page at
+   * all, because it implies the record is what you are looking at.
+   */
+  function auditRowFromRecord(record) {
+    const payload = record?.payload ?? {};
+    // Who did it, when the record names someone. `charted_by` is a clinician; `by` comes from
+    // an acknowledgement; ingest is a device and has neither.
+    const actor = payload.charted_by || payload.by || payload.device || "—";
+    const detail = Object.entries(payload)
+      .filter(([key]) => !["charted_by", "by", "device"].includes(key))
+      .map(([key, value]) => `${key}=${value}`)
+      .join(" · ");
+    return {
+      atMs: Date.parse(record?.ts) || 0,
+      action: record?.event_type || "—",
+      actor,
+      role: "",
+      target: [record?.patient_id, record?.subject].filter(Boolean).join(" · "),
+      detail,
+      id: record?.id,
+    };
+  }
+
+  /**
+   * Replace the audit view with the engine's record.
+   *
+   * Replaces rather than merges: mixing browser-local events into a legal record would make it
+   * impossible to say afterwards which rows the engine actually holds.
+   */
+  async function refreshAudit(filters = {}) {
+    if (typeof api.audit !== "function") return null;
+    const { records } = await tracked(() => api.audit(filters));
+    const rows = (records || []).map(auditRowFromRecord).sort((a, b) => a.atMs - b.atMs);
+    setOverlay({ auditLog: rows });
+    emit();
+    return rows;
+  }
+
+  /**
+   * Send a charted clinical fact to the engine, then refresh so the board shows what it did.
+   *
+   * The simulation's versions of these write to the local store and stop there — which is what
+   * they were for. On a live ward that silence was the bug: a physician charted noradrenaline,
+   * the engine never saw it, and the cardiovascular limb of SOFA stayed at zero on a patient
+   * who was on pressors. The board is reloaded afterwards, so the screen shows the engine's
+   * own view. The simulation's medication, fluid and admission actions stay refused here
+   * (SIMULATION_ONLY): they wrote to the simulated ward, and the new shell charts through this.
+   */
+  async function chart(patientId, entries) {
+    if (!patientId || !entries?.length) return null;
+    const result = await tracked(() => api.chart(patientId, entries));
+    await refreshBoard();
+    return result;
+  }
+
   return {
     ...base,
     ...Object.fromEntries(SIMULATION_ONLY.map((name) => [name, refusedInLive(name)])),
@@ -516,6 +588,54 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
     refreshBoard,
     acknowledgeAlert,
     startLive,
+    chart,
+    refreshAudit,
+
+    /** The severity form, filled from the engine's record. Unsigned. */
+    async severityForm(patientId, options) {
+      return tracked(() => api.severityForm(patientId, options));
+    },
+
+    /** Sign it. The engine refuses an unidentified signer and a correction with no reason. */
+    async signSeverityForm(patientId, options) {
+      return tracked(() => api.signSeverityForm(patientId, options));
+    },
+
+    /** Alarm fatigue, measured. Passed through unchanged — including `answered_rate: null`,
+     *  which means "nothing has settled yet" and must never be rendered as 0%. */
+    async alarmQuality(days = 7) {
+      return tracked(() => api.alarmQuality(days));
+    },
+
+    /** The integrity check an inspection actually asks for. Passes the engine's verdict through
+     *  untouched — a UI that softened "broken" into "warning" would be the wrong kind of help. */
+    async verifyAudit(limit = 10000) {
+      return tracked(() => api.verifyAudit(limit));
+    },
+
+    /** Kapsamı atanmamış kaç kullanıcı var — yöneticinin yapacak işi olduğunu söyleyen sayı. */
+    async unassignedScopes() {
+      return tracked(() => api.unassignedScopes());
+    },
+
+    /** The Infinity research window: every monitored bed's decoded parameter records, with
+     *  the device's own validity flag and alarm limits. Candidate values, never observations —
+     *  passed through untouched so the page can show "device reports invalid" as exactly that. */
+    async researchState() {
+      return tracked(() => api.request("/infinity-research/state"));
+    },
+
+    /** Charted by the physician: infection suspected, or no longer suspected. */
+    async setSuspectedInfection(patientId, suspected = true) {
+      return chart(patientId, [{ code: "suspected_infection", value: suspected ? 1 : 0 }]);
+    },
+
+    /** The patient's own normal — charted ranges and chronic conditions. */
+    async setProfile(patientId, profile) {
+      const result = await tracked(() => api.setProfile(patientId, profile));
+      await refreshBoard();
+      return result;
+    },
 
     loadAdmin,
     adminCreateUser: (body) => thenReload(() => api.adminCreateUser(body)),

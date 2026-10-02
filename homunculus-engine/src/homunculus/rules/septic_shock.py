@@ -9,13 +9,15 @@ from datetime import datetime, timedelta
 from homunculus.canonical import SignalCode
 from homunculus.rules.finding import Citation, Finding, Severity, Urgency
 from homunculus.rules.sofa import stale_input_labels, stale_note, total_sofa
+from homunculus.state.profile import PatientProfile
 from homunculus.state.timeline import PatientState
 
 LACTATE_SHOCK_THRESHOLD = 2.0     # mmol/L  (sepsis-3)
 MAP_TARGET = 65.0                 # mmHg    (sepsis-3 / SSC)
 FLUID_ML_PER_KG = 30.0            # mL/kg   (SSC 2026, within 3 h)
 FLUID_WINDOW = timedelta(hours=3)
-SOFA_SEPSIS_DELTA = 2             # sepsis-3
+SOFA_SEPSIS_DELTA = 2             # sepsis-3: a RISE of 2 points, not a total of 2
+MAX_SOFA = 24                     # 6 organ systems x 4 points
 
 
 def _val(state: PatientState, code: SignalCode) -> float | None:
@@ -40,7 +42,8 @@ def _fluid_adequate(state: PatientState, now: datetime) -> bool:
     return given >= FLUID_ML_PER_KG * weight
 
 
-def evaluate(state: PatientState, now: datetime) -> list[Finding]:
+def evaluate(state: PatientState, now: datetime,
+             profile: PatientProfile | None = None) -> list[Finding]:
     findings: list[Finding] = []
     if (_val(state, SignalCode.SUSPECTED_INFECTION) or 0.0) < 1.0:
         return findings  # no suspected infection -> not our call to make
@@ -89,19 +92,57 @@ def evaluate(state: PatientState, now: datetime) -> list[Finding]:
         ))
 
     # Sepsis (organ dysfunction), independent of the shock branch above.
-    if sofa >= SOFA_SEPSIS_DELTA:
+    #
+    # The criterion is a RISE of >= 2 SOFA points over the patient's own pre-infection baseline —
+    # not a total of 2. Comparing the absolute total was over-calling on exactly the patients an
+    # ICU has most of: someone on chronic dialysis carries 2 renal points every day of their life,
+    # so any suspected infection fired "sepsis" permanently, on a patient whose organs had not
+    # changed at all. Alarm fatigue is a clinical harm, and this was manufacturing it.
+    baseline, assumed = _baseline_sofa(profile)
+    rise = sofa - baseline
+    if rise >= SOFA_SEPSIS_DELTA:
+        if assumed:
+            # Baseline 0 is Sepsis-3's own stated default, so the numbers are unchanged from the
+            # population case — but the assumption is now visible, because the clinician at the
+            # bedside is the only one who knows whether it holds for this patient.
+            detail = (
+                f"Suspected infection with SOFA {sofa} (>= {SOFA_SEPSIS_DELTA}); "
+                f"acute organ dysfunction attributable to infection. No baseline SOFA is "
+                f"charted, so it is taken as 0 — Sepsis-3's stated assumption for a patient "
+                f"not known to have preexisting organ dysfunction. If this patient has chronic "
+                f"organ dysfunction, chart a baseline: part of this score may be their normal."
+            )
+            summary = f"Sepsis criteria met (SOFA {sofa})"
+            citations = [
+                Citation("sepsis-3-jama-2016", "sepsis = suspected infection + SOFA rise >= 2"),
+                Citation("sepsis-3-jama-2016",
+                         "baseline SOFA assumed 0 unless preexisting organ dysfunction is known"),
+            ]
+        else:
+            detail = (
+                f"Suspected infection with SOFA {sofa} against a charted baseline of {baseline} "
+                f"— a rise of {rise} (>= {SOFA_SEPSIS_DELTA}); acute organ dysfunction "
+                f"attributable to infection."
+            )
+            summary = f"Sepsis criteria met (SOFA {sofa}, baseline {baseline} → +{rise})"
+            citations = [
+                Citation("sepsis-3-jama-2016", "sepsis = suspected infection + SOFA rise >= 2"),
+            ]
         findings.append(Finding(
             kind="sepsis",
             severity=Severity.HIGH,
             urgency=Urgency.SOON,
-            summary=f"Sepsis criteria met (SOFA {sofa})",
-            reasoning=(
-                f"Suspected infection with SOFA {sofa} (>= {SOFA_SEPSIS_DELTA}); "
-                f"acute organ dysfunction attributable to infection."
-                f"{stale_note(state, now)}"
-            ),
-            citations=[Citation("sepsis-3-jama-2016", "sepsis = suspected infection + SOFA rise >= 2")],
+            summary=summary,
+            reasoning=f"{detail}{stale_note(state, now)}",
+            citations=citations,
             stale_inputs=stale_input_labels(state, now),
         ))
 
     return findings
+
+
+def _baseline_sofa(profile: PatientProfile | None) -> tuple[int, bool]:
+    """The patient's pre-infection SOFA and whether we assumed it. Returns (baseline, assumed)."""
+    if profile is None or profile.baseline_sofa is None:
+        return 0, True
+    return profile.baseline_sofa, False

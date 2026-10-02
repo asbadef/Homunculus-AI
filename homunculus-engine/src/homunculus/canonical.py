@@ -31,6 +31,15 @@ class SignalCode(Enum):
     PAO2_FIO2 = "pao2_fio2"
     FIO2 = "fio2"
     ON_RESP_SUPPORT = "on_resp_support"      # 1.0 = yes, 0.0 = no
+    # Chemistry / haematology. No rule scores these today; they are carried because the severity
+    # scores the wards already fill in by hand (APACHE II and its siblings) read exactly these,
+    # and a value the engine cannot carry is a field a clinician must go and look up by hand.
+    ARTERIAL_PH = "arterial_ph"
+    BICARBONATE = "bicarbonate"              # HCO3, mmol/L
+    SODIUM = "sodium"                        # mmol/L
+    POTASSIUM = "potassium"                  # mmol/L
+    HAEMATOCRIT = "haematocrit"              # %
+    WHITE_CELL_COUNT = "white_cell_count"    # x10^3/mm3
     # Infusions / interventions (from pumps / MAR)
     NOREPINEPHRINE_RATE = "norepinephrine_rate"   # ug/kg/min
     DOPAMINE_RATE = "dopamine_rate"               # ug/kg/min

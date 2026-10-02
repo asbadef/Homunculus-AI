@@ -1,10 +1,10 @@
-# homunculus-engine/tests/test_migration_0006_schema_parity.py
-"""Alembic (production) and Base.metadata (tests) must agree on the schema migration 0006 owns:
+# homunculus-engine/tests/test_migration_0010_schema_parity.py
+"""Alembic (production) and Base.metadata (tests) must agree on the schema migration 0010 owns:
 the RBAC tables, the `users` columns it adds or alters, and `tenant_memberships`, whose `role` it
 turns into a legacy `varchar(40)`. Scoped to those objects: older tables carry known, harmless
 differences (nullable timestamps, index names) that are not this migration's business.
 
-Column TYPES are compared for every table the models map, not only 0006's. An ORM insert names
+Column TYPES are compared for every table the models map, not only 0010's. An ORM insert names
 every mapped column, bound with the model's type, so a column the migrations type differently
 breaks every insert on a deployed database while the tests, built from the models with
 `create_all`, never see it. That was deploy blocker B1: `tenant_memberships.role` stayed the enum
@@ -34,7 +34,7 @@ pytestmark = [requires_db]
 
 OWNED_TABLES = {"groups", "group_permissions", "user_groups", "ldap_group_mappings", "users",
                 "tenant_memberships"}
-# In the older tables 0006 alters, only the columns it adds or alters are its business. The one
+# In the older tables 0010 alters, only the columns it adds or alters are its business. The one
 # column of `tenant_memberships` left out is `created_at`: nullable since 0001, NOT NULL in the
 # model (the known timestamp difference; the ORM always writes it). Its TYPE is still compared,
 # by the whole-schema type test below.

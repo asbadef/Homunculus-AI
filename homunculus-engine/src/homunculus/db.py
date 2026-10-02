@@ -6,6 +6,8 @@ from __future__ import annotations
 import logging
 import os
 import ssl
+from sqlalchemy import JSON
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -99,3 +101,15 @@ class Base(DeclarativeBase):
 async def get_db() -> AsyncSession:
     async with AsyncSessionLocal() as session:
         yield session
+
+
+# --- Types that only exist on PostgreSQL -------------------------------------------------------
+# Production is Postgres and stays Postgres. But SQLite shows up in two supported places — the
+# test suite, and the no-Docker local development path an operator uses to look at the product on
+# their own machine — and `JSONB` does not render there at all: `create_all` fails outright with
+# "can't render element of type JSONB".
+#
+# `with_variant` is SQLAlchemy's own answer: JSONB on Postgres, plain JSON on SQLite. It changes
+# nothing about the production column, and it is declared once here rather than repeated at every
+# use, so the two can never drift apart.
+JSON_COLUMN = JSONB().with_variant(JSON(), "sqlite")

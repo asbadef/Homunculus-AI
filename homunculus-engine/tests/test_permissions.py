@@ -19,11 +19,11 @@ SPEC_KEYS = {
     "admissions.discharge.confirm",
     "care_team.claim", "care_team.assign", "handover.sign", "shifts.manage",
     "break_glass.use", "audit.view", "users.manage", "groups.manage", "structure.manage",
-    "devices.manage",
+    "devices.manage", "clinical.chart", "scores.sign",
 }
 
 
-def test_the_catalogue_is_exactly_the_specified_nineteen_keys():
+def test_the_catalogue_is_exactly_the_specified_twenty_one_keys():
     assert set(PERMISSIONS) == SPEC_KEYS
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
 
@@ -83,7 +83,7 @@ def test_the_legacy_rights_are_preserved_group_by_group():
 def test_every_legacy_role_maps_to_a_default_group():
     legacy = {"ATTENDING", "ASSOCIATE_PHYSICIAN", "ONCALL_PHYSICIAN", "UNIT_PHYSICIAN",
               "CHARGE_NURSE", "NURSE", "RAPID_RESPONSE", "HOSPITAL_ADMIN", "AUDITOR",
-              "PLATFORM_SUPPORT"}
+              "PLATFORM_SUPPORT", "PHARMACIST", "BIOMEDICAL"}
     assert set(LEGACY_ROLE_TO_GROUP) == legacy
     slugs = {g["slug"] for g in DEFAULT_GROUPS}
     assert set(LEGACY_ROLE_TO_GROUP.values()) <= slugs
@@ -108,22 +108,24 @@ SPEC_GROUPS = {
     "attending": (True, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                                 "admissions.sign_off", "admissions.move.initiate",
                                 "care_team.claim", "care_team.assign", "handover.sign",
-                                "break_glass.use"}),
+                                "break_glass.use", "clinical.chart", "scores.sign"}),
     "unit_physician": (True, False, {"board.view", "alerts.ack", "alerts.escalate",
                                      "admissions.view", "admissions.sign_off",
                                      "admissions.move.initiate", "handover.sign",
-                                     "break_glass.use"}),
+                                     "break_glass.use", "clinical.chart", "scores.sign"}),
     "physician": (False, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
-                                 "handover.sign", "break_glass.use"}),
+                                 "handover.sign", "break_glass.use", "clinical.chart",
+                                 "scores.sign"}),
     "charge_nurse": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
                                     "admissions.view", "admissions.admit",
                                     "admissions.transfer.confirm", "admissions.discharge.confirm",
                                     "care_team.claim", "handover.sign", "shifts.manage",
-                                    "break_glass.use"}),
+                                    "break_glass.use", "clinical.chart"}),
     "nurse": (False, False, {"board.view", "alerts.ack", "admissions.view", "admissions.admit",
-                             "admissions.transfer.confirm", "handover.sign"}),
+                             "admissions.transfer.confirm", "handover.sign",
+                             "clinical.chart"}),
     "rapid_response": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
-                                      "admissions.view", "break_glass.use"}),
+                                      "admissions.view", "break_glass.use", "clinical.chart"}),
     "auditor": (False, False, {"board.view", "audit.view"}),
     "platform_support": (True, False, {"audit.view", "devices.manage"}),
     "pharmacist": (False, False, {"board.view", "admissions.view"}),
@@ -140,3 +142,26 @@ def test_every_default_group_matches_the_spec_table_exactly():
         assert g["is_system"] is system, slug
         assert set(g["permissions"]) == perms, slug
         assert len(g["permissions"]) == len(set(g["permissions"])), slug   # no duplicates
+
+
+def test_clinical_and_scoring_keys_exist_and_are_granted_as_designed():
+    from homunculus.auth.permissions import DEFAULT_GROUPS, PERMISSIONS
+
+    assert "clinical.chart" in PERMISSIONS
+    assert "scores.sign" in PERMISSIONS
+    by_slug = {g["slug"]: set(g["permissions"]) for g in DEFAULT_GROUPS}
+    for slug in ("attending", "unit_physician", "physician", "charge_nurse", "nurse",
+                 "rapid_response"):
+        assert "clinical.chart" in by_slug[slug], slug
+    for slug in ("attending", "unit_physician", "physician"):
+        assert "scores.sign" in by_slug[slug], slug
+    for slug in ("charge_nurse", "nurse", "rapid_response", "auditor", "pharmacist",
+                 "biomedical", "platform_support"):
+        assert "scores.sign" not in by_slug[slug], slug
+
+
+def test_legacy_pharmacist_and_biomedical_convert():
+    from homunculus.auth.permissions import LEGACY_ROLE_TO_GROUP
+
+    assert LEGACY_ROLE_TO_GROUP["PHARMACIST"] == "pharmacist"
+    assert LEGACY_ROLE_TO_GROUP["BIOMEDICAL"] == "biomedical"

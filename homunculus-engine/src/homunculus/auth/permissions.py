@@ -37,6 +37,9 @@ PERMISSIONS: dict[str, str] = {
     "groups.manage": "Groups and their permission sets",
     "structure.manage": "Tenant, site, unit, room and bed configuration",
     "devices.manage": "Device and research endpoints",
+    "clinical.chart": "Chart clinician-observed inputs (infection suspicion, pressor, fluids, "
+                      "GCS…) and the patient's own baseline",
+    "scores.sign": "Sign a severity-score form (SOFA) with corrections",
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)
@@ -78,7 +81,7 @@ def effective_permissions(permission_sets: Iterable[Iterable[str]]) -> frozenset
 _ATTENDING = (
     "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.sign_off",
     "admissions.move.initiate", "care_team.claim", "care_team.assign", "handover.sign",
-    "break_glass.use",
+    "break_glass.use", "clinical.chart", "scores.sign",
 )
 
 
@@ -109,24 +112,24 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
      "description": "Pano, alarm onayı ve eskalasyon, devir imzası, break-glass.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
-                     "handover.sign", "break_glass.use")},
+                     "handover.sign", "break_glass.use", "clinical.chart", "scores.sign")},
     {"slug": "charge_nurse", "name": "Sorumlu Hemşire",
      "description": "Hasta kabul, transfer/taburcu onayı, nöbet çizelgesi, bakım ekibi.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                      "admissions.admit", "admissions.transfer.confirm",
                      "admissions.discharge.confirm", "care_team.claim", "handover.sign",
-                     "shifts.manage", "break_glass.use")},
+                     "shifts.manage", "break_glass.use", "clinical.chart")},
     {"slug": "nurse", "name": "Hemşire",
      "description": "Pano, alarm onayı, hasta kabul, devir imzası.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "admissions.view", "admissions.admit",
-                     "admissions.transfer.confirm", "handover.sign")},
+                     "admissions.transfer.confirm", "handover.sign", "clinical.chart")},
     {"slug": "rapid_response", "name": "Hızlı Yanıt Ekibi",
      "description": "Pano, alarm onayı ve eskalasyon, break-glass.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
-                     "break_glass.use")},
+                     "break_glass.use", "clinical.chart")},
     {"slug": "auditor", "name": "Denetçi",
      "description": "Salt okunur: pano ve denetim kaydı.",
      "mfa_required": False, "is_system": False, "permissions": ("board.view", "audit.view")},
@@ -141,7 +144,7 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
      "mfa_required": False, "is_system": False, "permissions": ("devices.manage",)},
 )
 
-# Legacy `UserRole` value -> default group slug. Used once, by migration 0006.
+# Legacy `UserRole` value -> default group slug. Used once, by migration 0010.
 LEGACY_ROLE_TO_GROUP: dict[str, str] = {
     "HOSPITAL_ADMIN": "hospital_admin",
     "ATTENDING": "attending",
@@ -153,6 +156,8 @@ LEGACY_ROLE_TO_GROUP: dict[str, str] = {
     "RAPID_RESPONSE": "rapid_response",
     "AUDITOR": "auditor",
     "PLATFORM_SUPPORT": "platform_support",
+    "PHARMACIST": "pharmacist",
+    "BIOMEDICAL": "biomedical",
 }
 
 

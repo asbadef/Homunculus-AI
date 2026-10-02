@@ -1,0 +1,30 @@
+{
+  "_comment": "HIS'in yatak adlandirmasi ile bizim yatak kayitlarimizi baglayan tablo. Kopyalayip 'bed-mapping.json' olarak kaydedin; o dosya .gitignore'dadir cunku hastaneye ozeldir. ANAHTAR: ADT mesajinin PV1-3 alanindaki uc bilesen, '^' ile birlestirilmis: <unite>^<oda>^<yatak>. Buyuk/kucuk harf ve bosluk onemsizdir, ayrac onemlidir: 'YB^^2' ile 'YB^2^' AYRI yerlerdir. DEGER: bizim yatagimiz. bed_id zorunlu; unit_id ve label opsiyoneldir ama panelde is gorur.",
+
+  "_nasil_doldurulur": [
+    "1. Tabloyu TAHMIN ETMEYIN. Once besleme acilsin ve sistem calissin: eslesmeyen her konum sayilir ve kesif raporunda adiyla listelenir ('Eslenmemis yataklar: YB^999^9 (12), ...').",
+    "2. Rapordaki her anahtari buraya, karsiligi olan yatakla birlikte ekleyin.",
+    "3. Eslesmeyen bir hasta ASLA dusurulmez — karti yine acilir, sadece 'yatak eslesmedi' diye isaretlenir. Bos bir tablo ile sistem calisir; sadece hicbir hasta yataga oturmaz.",
+    "4. Yakin esleme yapilmaz: oda 305, oda 304 degildir. Yanlis yatak, eslesmemis yataktan tehlikelidir."
+  ],
+
+  "_ornek_pv1": "PV1|1|I|YB^304^2^MERKEZ||... -> anahtar: YB^304^2",
+
+  "beds": {
+    "YB^304^1": {
+      "bed_id": "BURAYA-BIZIM-YATAK-ID",
+      "unit_id": "BURAYA-BIZIM-UNITE-ID",
+      "label": "Oda 304 · Yatak 1"
+    },
+    "YB^304^2": {
+      "bed_id": "BURAYA-BIZIM-YATAK-ID",
+      "unit_id": "BURAYA-BIZIM-UNITE-ID",
+      "label": "Oda 304 · Yatak 2"
+    },
+    "YYB^12^A": {
+      "bed_id": "BURAYA-BIZIM-YATAK-ID",
+      "unit_id": "BURAYA-YENIDOGAN-UNITE-ID",
+      "label": "Yenidoğan 12-A"
+    }
+  }
+}

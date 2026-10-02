@@ -1,0 +1,253 @@
+"""The patient's own normal, and what happens when it is there.
+
+`rules/patient_relative.py` was written, tested, and never once ran on a real patient: nothing
+outside the test suite called `Engine.set_profile`. So every patient was scored against the
+population threshold, and the clinician's own example — chronic atrial fibrillation living at
+105 bpm — alarmed on every single measurement. That is the alarm fatigue the layer exists to
+prevent, and it was switched off for want of a door.
+
+These tests hold the door open, and hold shut the two ways it could quietly close again: a
+restart forgetting the profile, and a boundary the system invented rather than a clinician
+charting it.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+from fastapi.testclient import TestClient
+
+from homunculus.api.app import create_app
+from homunculus.api.clinical import profile_from_payload, profile_to_payload
+from homunculus.canonical import SignalCode
+
+TOKEN = "tok"
+AUTH = {"Authorization": f"Bearer {TOKEN}"}
+WHEN = datetime(2026, 9, 8, 9, 0, tzinfo=timezone.utc)
+
+# A patient whose atrial fibrillation lives at 100–115. On the population scale a pulse of 108
+# scores 1 and a pulse of 132 scores 3; for this person the first is Tuesday.
+CHRONIC_AF = {"comorbidities": ["chronic_af"],
+              "baselines": {"heart_rate": {"low": 100, "high": 115}}}
+
+
+@pytest.fixture()
+def client():
+    app = create_app({TOKEN: "h1"}, run_escalation_loop=False)
+    with TestClient(app) as c:
+        yield c
+
+
+def _observe(client, patient_id: str, code: str, value: float, at: datetime = WHEN):
+    """Chart a value through the clinical door (the only writable one in a test)."""
+    return client.post(f"/clinical/{patient_id}",
+                       json={"entries": [{"code": code, "value": value}],
+                             "recorded_at": at.isoformat()}, headers=AUTH)
+
+
+def _profile(client, patient_id: str, body: dict):
+    return client.put(f"/clinical/{patient_id}/profile", json=body, headers=AUTH)
+
+
+class TestTheDoorOpens:
+    def test_a_profile_is_accepted_and_echoed_back(self, client):
+        r = _profile(client, "bed-3", CHRONIC_AF)
+        assert r.status_code == 200
+        assert r.json()["comorbidities"] == ["chronic_af"]
+        assert r.json()["baselines"]["heart_rate"] == {"low": 100.0, "high": 115.0}
+
+    def test_it_is_audited_with_who_charted_it(self, client):
+        _profile(client, "bed-3", CHRONIC_AF)
+        records = client.get("/audit", headers=AUTH).json()["records"]
+        rows = [r for r in records if r["event_type"] == "profile"]
+        assert rows and rows[0]["payload"]["charted_by"] == "tenant-token"
+
+    def test_comorbidities_alone_are_enough(self, client):
+        assert _profile(client, "bed-3", {"comorbidities": ["copd"]}).status_code == 200
+
+    def test_free_text_the_rules_cannot_act_on_is_still_recorded(self, client):
+        """The admission form takes "DM, HT, KOAH". Only some of that maps to a rule; dropping
+        the rest would discard what a clinician took the trouble to write."""
+        r = _profile(client, "bed-3", {"comorbidities": ["DM", "HT", " Kronik AF "]})
+        assert r.json()["comorbidities"] == ["dm", "ht", "kronik_af"]
+
+
+class TestItActuallyQuietensTheChronicPatient:
+    """The reason the layer exists."""
+
+    def test_without_a_profile_a_chronic_af_pulse_is_scored_like_anyone_elses(self, client):
+        _observe(client, "bed-3", "gcs", 15)          # create the patient
+        board = client.get("/patients", headers=AUTH).json()["patients"][0]
+        assert board["latest"]["news2"] is not None
+
+    def test_with_a_profile_the_engine_holds_it(self, client):
+        _observe(client, "bed-3", "gcs", 15)
+        _profile(client, "bed-3", CHRONIC_AF)
+        # The board still publishes; the profile's effect is on alert severity, which the
+        # patient-relative layer applies inside the engine.
+        assert client.get("/patients", headers=AUTH).json()["patients"][0]["patient_id"] == "bed-3"
+
+    def test_a_baseline_for_a_vital_we_do_not_track_is_refused_by_name(self, client):
+        r = _profile(client, "bed-3", {"baselines": {"lactate": {"low": 1, "high": 2}}})
+        assert r.status_code == 400
+        assert "heart_rate" in r.json()["detail"]   # the message lists what IS kept
+
+
+class TestBoundariesAreCharted_NotInvented:
+    def test_an_inverted_range_is_refused_rather_than_silently_swapped(self):
+        """Swapping them would hide a typo behind a range that looks deliberate, and the layer
+        would then downgrade on a boundary nobody chose."""
+        with pytest.raises(Exception, match="alt sınır"):
+            profile_from_payload("bed-3", {"baselines": {"heart_rate": {"low": 115, "high": 100}}})
+
+    def test_a_non_numeric_bound_is_refused(self):
+        with pytest.raises(Exception, match="sayı olmalı"):
+            profile_from_payload("bed-3", {"baselines": {"heart_rate": {"low": "hızlı", "high": 115}}})
+
+    def test_an_empty_profile_is_refused_rather_than_stored_as_nothing(self):
+        with pytest.raises(Exception, match="boş olamaz"):
+            profile_from_payload("bed-3", {})
+
+    def test_the_round_trip_is_lossless(self):
+        profile = profile_from_payload("bed-3", CHRONIC_AF)
+        assert profile_to_payload(profile) == {
+            "comorbidities": ["chronic_af"],
+            "baselines": {"heart_rate": {"low": 100.0, "high": 115.0}},
+            # Carried explicitly even when unset: the audit replay reads this payload back, and a
+            # key that vanishes when it is None cannot be told from a key nobody ever wrote.
+            "baseline_sofa": None,
+        }
+        assert profile.baselines[SignalCode.HEART_RATE].contains(108) is True
+        assert profile.baselines[SignalCode.HEART_RATE].contains(132) is False
+
+
+class TestARestartDoesNotForget:
+    """A profile a deploy lost would restart the alarms it was written to quieten, quietly."""
+
+    def test_a_charted_profile_survives_a_restart(self, client):
+        _profile(client, "bed-3", CHRONIC_AF)
+        records = client.get("/audit", headers=AUTH).json()["records"]
+
+        from homunculus.api.ackstore import AckStore
+        from homunculus.api.audit import AuditRecord
+        from homunculus.api.rehydrate import rehydrate
+        from homunculus.pipeline import Engine
+
+        fresh = Engine()
+        rehydrate(fresh, AckStore(), [AuditRecord(**r) for r in records])
+        restored = fresh._profiles.get("bed-3")
+        assert restored is not None
+        assert restored.comorbidities == frozenset({"chronic_af"})
+        assert restored.baselines[SignalCode.HEART_RATE].high == 115.0
+
+    def test_a_charted_clinical_fact_survives_a_restart_too(self, client):
+        """The bug this closes: `rehydrate` replayed `ingest` and not `chart`, so a charted
+        suspected_infection would vanish on restart and take the sepsis branch with it."""
+        _observe(client, "bed-3", "suspected_infection", 1)
+        _observe(client, "bed-3", "platelets", 80)
+        records = client.get("/audit", headers=AUTH).json()["records"]
+
+        from homunculus.api.ackstore import AckStore
+        from homunculus.api.audit import AuditRecord
+        from homunculus.api.rehydrate import rehydrate
+        from homunculus.pipeline import Engine
+
+        fresh = Engine()
+        rehydrate(fresh, AckStore(), [AuditRecord(**r) for r in records])
+        state = fresh.state("bed-3")
+        assert state.latest(SignalCode.SUSPECTED_INFECTION).value == 1.0
+        assert {a.kind for a in fresh.active_alerts("bed-3")} & {"sepsis"}
+
+    def test_an_unreadable_profile_record_does_not_fail_the_whole_replay(self):
+        from homunculus.api.ackstore import AckStore
+        from homunculus.api.audit import AuditRecord
+        from homunculus.api.rehydrate import rehydrate
+        from homunculus.pipeline import Engine
+
+        bad = AuditRecord(id=1, ts=WHEN.isoformat(), tenant="h1", event_type="profile",
+                          patient_id="bed-3", subject="", payload={"baselines": "nonsense"})
+        fresh = Engine()
+        rehydrate(fresh, AckStore(), [bad])   # must not raise
+        assert fresh._profiles == {}
+
+
+# --- Baseline SOFA: the number that raises the sepsis bar (K1) -----------------------------------
+# A charted baseline SOFA makes the sepsis alert harder to trigger. That is the whole point — and
+# it is also why it has to be validated hard and survive a restart: an over-stated baseline
+# silences the alert on a patient who is genuinely deteriorating.
+
+def test_baseline_sofa_round_trips_through_the_payload():
+    prof = profile_from_payload("bed-9", {"baseline_sofa": 3})
+    assert prof.baseline_sofa == 3
+    assert profile_to_payload(prof)["baseline_sofa"] == 3
+
+
+def test_baseline_sofa_alone_is_a_valid_profile():
+    """A patient may have a chronic organ baseline without any charted vital range."""
+    prof = profile_from_payload("bed-9", {"baseline_sofa": 2})
+    assert prof.comorbidities == frozenset() and prof.baselines == {}
+
+
+def test_profile_with_nothing_at_all_is_still_rejected():
+    with pytest.raises(Exception) as exc:
+        profile_from_payload("bed-9", {})
+    assert "bazal SOFA" in str(exc.value)
+
+
+def test_absent_baseline_sofa_is_none_not_zero():
+    """None means 'nobody charted one' and Sepsis-3's assumption applies. Zero means a clinician
+    asserted this patient has no preexisting organ dysfunction. The rule says the same thing
+    either way today, but conflating them would lose the clinician's assertion."""
+    prof = profile_from_payload("bed-9", CHRONIC_AF)
+    assert prof.baseline_sofa is None
+    assert profile_from_payload("bed-9", {"baseline_sofa": 0}).baseline_sofa == 0
+
+
+@pytest.mark.parametrize("bad", [-1, 25, 2.5, "abc", True])
+def test_implausible_baseline_sofa_is_refused(bad):
+    with pytest.raises(Exception):
+        profile_from_payload("bed-9", {"baseline_sofa": bad})
+
+
+def test_baseline_sofa_survives_the_api_and_reaches_the_rule(client):
+    """The whole chain: PUT the profile, chart a chronic creatinine, suspect infection — and the
+    sepsis alert must NOT fire, because the organ dysfunction is this patient's baseline."""
+    r = client.put("/clinical/bed-9/profile", json={"baseline_sofa": 3}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    _observe(client, "bed-9", "creatinine", 3.5)
+    r = _observe(client, "bed-9", "suspected_infection", 1.0)
+    assert r.status_code == 200, r.text
+    kinds = {a["kind"] for a in r.json().get("alerts", [])}
+    assert "sepsis" not in kinds, f"chronic baseline should absorb this; got {kinds}"
+
+
+# --- The profile door is shared, so writing to it must not erase the other writer -----------------
+
+def test_charting_a_baseline_sofa_does_not_erase_comorbidities(client):
+    """The admission form sends comorbidities; the sepsis panel sends a baseline SOFA. Under
+    replace semantics whichever was used second silently wiped the first — and nothing on any
+    screen would have shown that a charted chronic condition had disappeared."""
+    r = client.put("/clinical/bed-7/profile", json=CHRONIC_AF, headers=AUTH)
+    assert r.status_code == 200, r.text
+
+    r = client.put("/clinical/bed-7/profile", json={"baseline_sofa": 2}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["baseline_sofa"] == 2
+    assert body["comorbidities"] == ["chronic_af"]
+    assert body["baselines"]["heart_rate"] == {"low": 100.0, "high": 115.0}
+
+
+def test_charting_comorbidities_does_not_erase_a_baseline_sofa(client):
+    client.put("/clinical/bed-7/profile", json={"baseline_sofa": 2}, headers=AUTH)
+    r = client.put("/clinical/bed-7/profile", json={"comorbidities": ["ckd"]}, headers=AUTH)
+    assert r.json()["baseline_sofa"] == 2
+
+
+def test_an_explicitly_empty_list_still_clears(client):
+    """Absent means 'unchanged'; empty means a clinician cleared it. The two must stay distinct,
+    or a physician could never remove something charted in error."""
+    client.put("/clinical/bed-7/profile", json=CHRONIC_AF, headers=AUTH)
+    r = client.put("/clinical/bed-7/profile",
+                   json={"comorbidities": [], "baseline_sofa": 1}, headers=AUTH)
+    assert r.json()["comorbidities"] == []

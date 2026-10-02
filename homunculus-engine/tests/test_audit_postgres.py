@@ -33,9 +33,12 @@ def audit_log():
         # Exercise the same migration used by the server, with its complete statements.
         from alembic.migration import MigrationContext
         from alembic.operations import Operations
-        migration, _ = _load_migration("0004")
-        with Operations.context(MigrationContext.configure(conn)):
-            migration.upgrade()
+        # 0008 as well: the log seals each row with the chain columns (prev_hash, hash) it adds.
+        # It touches only the audit table, so DROP TABLE ... CASCADE above cleans it up too.
+        for revision in ("0004", "0008"):
+            migration, _ = _load_migration(revision)
+            with Operations.context(MigrationContext.configure(conn)):
+                migration.upgrade()
     yield log
     with log._engine.begin() as conn:                      # noqa: SLF001
         conn.execute(text("DROP TABLE IF EXISTS audit CASCADE"))
@@ -262,4 +265,13 @@ def test_migration_chain_has_a_single_head():
     children = set(revisions.values())
     heads = [rev for rev in revisions if rev not in children]
 
-    assert heads == ["0006"], f"expected a single head '0006', found {heads}"
+    # Asserted as "exactly one", not as a specific number: naming the head meant editing this
+    # test on every migration, which trains people to change the assertion rather than read it.
+    # The invariant that matters is that `alembic upgrade head` is never ambiguous.
+    assert len(heads) == 1, f"expected a single head, found {sorted(heads)}"
+    # And the chain must be whole: every parent named actually exists.
+    missing = {parent for parent in children if parent is not None} - set(revisions)
+    assert not missing, f"these migrations name a parent that does not exist: {sorted(missing)}"
+    # Exactly one root, or the chain is two chains.
+    roots = [rev for rev, parent in revisions.items() if parent is None]
+    assert len(roots) == 1, f"expected a single root migration, found {sorted(roots)}"

@@ -7711,7 +7711,7 @@ Expected: all pass; DB-backed suites pass when `TEST_DATABASE_URL` is set, other
 Run: `cd dashboard && npx vitest run && npm run build`
 Expected: green, clean build.
 
-- [x] **Step 4: Manual end-to-end against a local stack (when a Postgres is available)** — *passed at the API level, 72/72, on the schema migration 0006 produces since the B1 fix; the two-browser UI walk was not run; see the outcome below*
+- [x] **Step 4: Manual end-to-end against a local stack (when a Postgres is available)** — *passed at the API level, 72/72, on the schema migration 0010 produces since the B1 fix; the two-browser UI walk was not run; see the outcome below*
 
 1. `cd homunculus-engine && alembic upgrade head && SEED_ADMIN_PASSWORD=… python scripts/seed_admin.py`
 2. Start the API (`uvicorn homunculus.api.prodserver:app --port 8000`) and the dashboard (`npm run dev`).
@@ -7726,16 +7726,18 @@ Expected: green, clean build.
 
 *Outcome (Task 20):* see the execution status at the top. Every step was walked at the API level,
 together with the rules added in review. The walk passed 72/72 once `tenant_memberships.role` was
-converted to `varchar(40)` in the throwaway database. Since the B1 fix, migration 0006 produces
-exactly that schema, and `tests/test_migration_0006_orm_writes.py` runs the seed and `POST
+converted to `varchar(40)` in the throwaway database. Since the B1 fix, migration 0010 produces
+exactly that schema, and `tests/test_migration_0010_orm_writes.py` runs the seed and `POST
 /admin/users` on it. Before the fix, on the schema exactly as migrated, the seed and `POST
 /admin/users` failed (B1). Item 7 now answers `Kendi hesabınızı pasifleştiremezsiniz`,
 because Task 10's self rule comes first. The two-browser UI walk was not run.
 
 **Deploy notes for the VM (record them in the handoff).** In order. None of this has been run.
 
+**A database that once ran this branch's pre-merge revision 0006** (stamped "0006" but holding the RBAC schema, e.g. a local test stack) must be recreated — `upgrade head` would read it as main's 0006 and fail at 0010. The VM never ran it.
+
 0. **B1 is fixed** (the commit that records this; see "B1 fixed" in the execution status). The fix
-   is in migration 0006: `alembic upgrade head` turns `tenant_memberships.role` into `varchar(40)`,
+   is in migration 0010: `alembic upgrade head` turns `tenant_memberships.role` into `varchar(40)`,
    so nothing extra runs at deploy time. The regression test runs the seed and `POST /admin/users`
    on a database built by the migrations. Deploy only a release that contains the fix: without it,
    the staff tab cannot add anyone (500), and a boot whose seed must create an account
@@ -7755,7 +7757,7 @@ because Task 10's self rule comes first. The two-browser UI walk was not run.
      `VITE_API_URL` to the VM's origin in the build's environment. A value in the process
      environment overrides `.env.production` (checked on this branch).
    - Either way, search the built `assets/index-*.js` for `onrender.com` before shipping.
-3. **Back up:** a `pg_dump` of the hub database, kept off the VM. The downgrade of 0006 is lossy by
+3. **Back up:** a `pg_dump` of the hub database, kept off the VM. The downgrade of 0010 is lossy by
    design, so the rollback is the dump plus the previous release.
 4. **Read-only checks before the upgrade.** Anything found is reported to the hospital, never fixed
    silently.
@@ -7770,8 +7772,8 @@ because Task 10's self rule comes first. The two-browser UI walk was not run.
      - handovers whose `admission_ids` name another tenant's admissions.
 
      Expect zero rows when the VM has one tenant (`SELECT slug FROM tenants`).
-   - **The pre-flight of migration 0006.** The API container runs `alembic upgrade head` at every
-     start. 0006 stops, changing nothing, in three cases: two accounts' e-mails fold to the same
+   - **The pre-flight of migration 0010.** The API container runs `alembic upgrade head` at every
+     start. 0010 stops, changing nothing, in three cases: two accounts' e-mails fold to the same
      login (case, and the Turkish `İ`/`ı`, folded as sign-in folds them); an e-mail longer than 128
      characters; a blank e-mail. The error names the e-mails. A stopped migration leaves the
      container restart-looping, so look first. `SELECT lower(email), count(*) FROM users GROUP BY 1
@@ -7795,7 +7797,7 @@ because Task 10's self rule comes first. The two-browser UI walk was not run.
      administrator it changes nothing, so a leftover value is harmless.
 6. **`up`, then check.**
    - `/health` answers.
-   - The existing administrator (converted to `hospital_admin` by 0006) signs in and enrols MFA
+   - The existing administrator (converted to `hospital_admin` by 0010) signs in and enrols MFA
      from the QR, or types the code if they enrolled before. The board opens.
    - `GET /audit?event_type=auth` shows the sign-in.
 7. **Right away, create a second local member of `hospital_admin`.** They sign in and enrol their

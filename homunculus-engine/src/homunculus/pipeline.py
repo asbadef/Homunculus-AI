@@ -29,6 +29,17 @@ class Engine:
         """Register a clinician-entered baseline/comorbidity profile for a patient."""
         self._profiles[profile.patient_id] = profile
 
+    def recognized_at(self, patient_id: str) -> datetime | None:
+        """When sepsis/shock was first recognised for this patient — the anchor the 1-hour
+        antibiotic clock runs from. Published so a pharmacist can see the clock rather than infer
+        it from an alert that has already fired."""
+        return self._recognized_at.get(patient_id)
+
+    def profile(self, patient_id: str) -> PatientProfile | None:
+        """The charted profile, or None if nobody charted one. Read by the board so the ward can
+        see what a score is being judged against, rather than only its result."""
+        return self._profiles.get(patient_id)
+
     def set_model(self, artifact: dict | None) -> None:
         """Load (or clear) the optional ML scoring artifact. No artifact => seam stays inert."""
         if artifact is None:
@@ -41,10 +52,14 @@ class Engine:
         state = self._repo.get_or_create(obs.patient_id)
         state.ingest(obs)
 
-        findings = list(septic_shock.evaluate(state, now))
+        profile = self._profiles.get(obs.patient_id)
+        # The profile reaches septic_shock directly, not through patient_relative: a charted
+        # baseline SOFA is part of the Sepsis-3 criterion itself, not a downgrade applied after
+        # the fact. Getting it there late would mean the alert had already been raised.
+        findings = list(septic_shock.evaluate(state, now, profile))
         findings += news2.evaluate(state, now)
         # Patient-relative layer: downgrade chronic-normal, surface acute deviation.
-        findings = patient_relative.apply(findings, state, self._profiles.get(obs.patient_id))
+        findings = patient_relative.apply(findings, state, profile)
 
         # Anchor the antibiotic clock the first time sepsis/shock is recognized.
         if obs.patient_id not in self._recognized_at:

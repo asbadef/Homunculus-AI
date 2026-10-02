@@ -74,8 +74,8 @@ dokunulmaz.
 
 | # | İş | Puan | Risk | Bağımlı | Durum |
 |---|---|---|---|---|---|
-| G1-01 | nginx: eksik API yolları + yapılandırma testi | 1 | Düşük | — | Bekliyor |
-| G1-02 | main → LDAP birleştirme: 9 çakışma, göç `0010`, `clinical.chart` + `scores.sign` izinleri, kapsam izinlere, `infinity_research` `devices.manage`, demo kabuğu LDAP sürümü; bütün testler yeşil · plan: [dalga 0](2026-10-01-g1-dalga0-main-ldap-birlestirme.md) | 13 | **Yüksek** | G1-01 | Bekliyor |
+| G1-01 | nginx: eksik API yolları + yapılandırma testi | 1 | Düşük | — | ✅ 01.10 · a638151 |
+| G1-02 | main → LDAP birleştirme: 9 çakışma, göç `0010`, `clinical.chart` + `scores.sign` izinleri, kapsam izinlere, `infinity_research` `devices.manage`, demo kabuğu LDAP sürümü; bütün testler yeşil · plan: [dalga 0](2026-10-01-g1-dalga0-main-ldap-birlestirme.md) | 13 | **Yüksek** | G1-01 | 🔧 |
 | G1-03 | LDAP arka ucu · dizin modülü + AD girişi + yenilemede dizin kontrolü (spec §7, §4) | 5 | Orta | G1-02 | Bekliyor |
 | G1-04 | LDAP arka ucu · `/admin/ldap/*` içe aktarma, grup eşlemesi, yerel yönetici koruması | 5 | Orta | G1-03 | Bekliyor |
 | G1-05 | Tasarım temeli: Gece/Gün renk değişkenleri, fontlar (yerel paket), ikonlar, temel bileşenler — `dashboard/src/live/` | 5 | Düşük | G1-02 | Bekliyor |
@@ -110,3 +110,56 @@ dokunulmaz.
 3. Arama kökü (base DN)
 4. Rol karşılığı AD grupları (ör. YB-Hekim, YB-Hemşire)
 5. VM'den etki alanı denetleyicisine 636 portu açık mı
+
+---
+
+## Main'den gelen ve yeni kabukta karşılanacak davranışlar
+
+Birleştirmede (G1-02) main'in `ClinicalDemo.jsx` yeniden yazımı alınmadı (D1); o ekranları
+render eden 12 test dosyası silindi. Her satır, silinen bir testin koruduğu davranıştır ve
+etiketlenen işin kabul ölçütüdür. Aynı birleştirmede canlı store'un simülasyona yazan
+üzerine-yazmaları (`admitPatient`, `addMedication`, `addFluid`, `assignStaffToBeds`,
+`toggleStaffBed`) da kaldırıldı — LDAP dalının kuralı: canlıda simülasyon eylemi
+`LIVE_UNAVAILABLE` ile reddedilir; bunların testleri de aşağıda. Silinen dosyalardaki saf
+adaptör sözleşmeleri (yaş, HBYS cinsiyet/tanıları, motorun NEWS2'si, ilaç bloğu, HBYS'den bekleyen
+hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e taşındı.
+
+- admissionFromHis · HBYS'nin kabul edip burada yatağa alınmamış hastası kabul ekranında "HBYS'den bekleyen" olarak sunulur, ad/doğum tarihi/cinsiyet/tanı yeniden yazdırılmaz; HBYS beslemesi yoksa panel hiç çizilmez. → Grup 2
+- admissionScreen · Hasta Kabul menüden açılır; Kabul / Transfer / Bakım ekibi sekmeleri vardır, bakım ekibi ayrı menü maddesi değildir. → Grup 2
+- admissionScreen · Daraltılmış sol menüde her madde kısa adıyla görünür, yalnız ikon kalmaz. → G1-07
+- admissionScreen · Kabul formu yaşı doğum tarihinden hesaplar ve elle değiştirtmez; zorunlu alan eksikken düğme kapalıdır ve eksiği adıyla söyler. → Grup 2
+- admissionScreen · Kabul onaylanınca doğum tarihi kayda düşer, protokol numarası ve yazdırılabilir barkodlu etiket çıkar; onaydan önce barkod uydurulmaz. → Grup 2
+- biomedicalAccess · "Cihaz & Veri Akışı" sayfasına biyomedikal ve hastane yöneticisi ulaşır, hekim ve hemşire ulaşmaz; yalnız `devices.manage` taşıyan kullanıcı bugün canlı arayüze hiç giremiyor (`NO_BOARD_ACCESS`), sayfa gelince giriş kuralı da değişmeli. → Grup 4
+- biomedicalAccess · Cihaz sayfası önce "veri geliyor mu" sorusunu yanıtlar (sessiz yatak, bayat kanal, veri akışı), sonra cihaz envanterini gösterir. → Grup 4
+- escalationClock · Canlıda alarm ve eskalasyon süresi gerçek zamanla ilerler; simülasyonun 60× hızı uygulanmaz. → G1-10
+- escalationClock · Süre biçimi: bir saatin altında `d:ss`, üstünde `s:dd:ss` (318:30 yazılmaz), negatif süre `0:00`. → G1-10
+- loginRemember · "Beni hatırla" yalnız kullanıcı adını/e-postayı saklar, şifre ya da PIN'i asla; işaret kaldırılınca silinir; hatırlanan ad oturum açmaz, giriş ekranı yine gelir. → G1-08
+- news2Honesty, news2Source · Kartta tek NEWS2 vardır, motorunki: motor göndermezse sayı yerine "—" ve nedeni (motor göndermedi) görünür; tarayıcı kendi NEWS2'sini (OAB'li yerel hesap) canlıda hiç göstermez. → G1-09
+- news2Honesty · Eksik vitalle hesaplanmış kısmi NEWS2 kartta işaretlenir (kısmi skor yalnız düşük gösterebilir). → G1-09
+- patientBaseline · Hastaya özel alarm aralığı motora gider (`PUT /clinical/{id}/profile` · `baselines`); girilmeyen parametre gönderilmez (boş ≠ sıfır), ters aralık gönderilmeden reddedilir, kutu bunun cihaz alarmı olmadığını söyler. → Grup 2
+- pharmacyView · Eczacının kendi sayfası vardır (antibiyotik saati, doz önermez, "kayıt yok"u "verilmedi" diye göstermez); eczacı ve sorumlu hekim görür, hemşire görmez. → Grup 3
+- rrtPage · RRT ekranı menüdedir: hızlı yanıt ekibi ve yönetici görür, hemşire görmez. → Grup 2
+- rrtPage · RRT ekranı kendisine eskale edilen alarmları (elle çağrıldıysa yazılı) ve yoldaki cevapsız alarmları ayrı gösterir; liste boşsa boş durumu, 3. kademe kapalıysa bunu açıkça yazar. → Grup 2
+- rrtPage · Menü rozeti cevapsız eskalasyon sayısını gösterir; cevaplanan alarm rozetten düşer. → Grup 2
+- setupWizardScope · Canlı kurulumda yönetici kurulum sihirbazına düşmez (kiracı deploy'da kurulur), doğrudan ürüne, Sistem Ayarları'na ve cihaz sayfasına ulaşır; diğer roller de doğrudan girer. → G1-07
+- simulationGating · Canlıda simülasyon denetimleri (alarm üret, saat hızı 30×/60×/120×, duraklat, "sonuç simüle et", DEMO etiketi) hiç çizilmez; mod belirtilmezse varsayılan canlıdır. → G1-16
+- simulationGating · Break-glass canlıda kalır: araç değil, gerçek klinik denetim. → Grup 2
+- simulationGating · Canlı Sonuçlar sayfası gerçek bekleyen sayısını ve elle yüklemeyi korur. → Grup 3
+- simulationGating · Dil otomatik algılanırken İngilizce yerel ayarlı tarayıcı İngilizceye düşmez (main'de TR'ye düşüyordu; D2 ile varsayılan AZ), Azerbaycanca cihaz Azerbaycanca açılır. → G1-06
+- clinicalCharting (silinen vakalar) · Vazopressör/inotrop dozu (noradrenalin, adrenalin, dopamin, dobutamin; yazım farkı önemsiz) motora hız kodu olarak gider; puanlanmayan ilaç sinyal diye uydurulmaz. → Grup 3
+- clinicalCharting (silinen vakalar) · Verilen sıvı (yalnız giriş) motora `crystalloid_bolus_ml` olarak gider; çıkış gönderilmez. → Grup 3
+- clinicalCharting (silinen vakalar) · Kabulde kilo `weight_kg` gözlemi, serbest metin eşlik eden hastalıklar ("DM, HT; KOAH") hasta profili olarak motora gider; boş kutu profil göndermez, yan kanal hatası kabulü geri almaz. → Grup 2
+- scopeAssignment (silinen vakalar) · Kapsam matrisi (birim + yatak) `PUT /scope/{user}` ile motora yazılır, tek hücre tıklaması da aynı yoldan gider; motor reddederse ekrandaki matris geri alınır. → G1-12
+
+## Dalga 0'dan açık kalanlar
+
+- Infinity araştırma ucu (`/infinity-research/state`) hastaneye bağlı değil: tek hastaneli pilotta sorun yok; bir API birden çok hastaneye hizmet edecekse önce kiracıya bağlanmalı. `devices.manage` platform_support grubunda da var. → Grup 4
+- Denetim kaydında kişi kimliği artık kullanıcı adı (main'de JWT `sub` = UUID'ydi); aynı zincirde iki biçim olacak. → G1-15 deploy notu
+- SSE bileti kapsamı bağlantı boyunca sabit; kapsamlı abonelere `removed` karesi gitmiyor (taburcu/transfer edilen kart ekranda bayatlar). → Grup 2
+- Dashboard `/stream-ticket` hatasında yeniden denemiyor (503/5xx sonrası akış açılmıyor). → G1-07/G1-09 (yeni store)
+- `/notifications` kapsam kontrolü hâlâ `patient_board` ile kart kuruyor (zararsız, tek yol değil). → Grup 2
+- `/ingest` hasta kimliği uzunluğunu sınırlamıyor; `/ack` ve `/view` 128 karakterle sınırlı. → Grup 2
+- `/audit`, `/alarm-quality`, `/audit/verify` `limit` parametreleri sınırsız. → Grup 4
+- Personel kapsamı yalnız pano uçlarında; kabul/eskalasyon/devir uçları kiracıya bağlı ama birime bağlı değil. → Grup 2
+- Yeni kabukta SOFA "İmzala" düğmesi `scores.sign` yoksa gizlenmeli. → G1-11
+- **Karar bekliyor (kullanıcı):** cihaz token'ı `/clinical` ile klinik kayıt ve hasta normali girebiliyor (main'deki gibi; profil alarmları düşürebilir). Repo'da bunu kullanan tek yer `scripts/dev_seed_ward.py`. Seçenek: cihazı reddet + betiği JWT'ye taşı.

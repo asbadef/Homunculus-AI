@@ -250,6 +250,15 @@ BOARD_EXPECTED = {
     ("GET", "/stream"): TICKET,
     ("GET", "/notifications"): TICKET,
     ("GET", "/health"): OPEN,
+    # Arrived from main; gated here like the rest.
+    ("POST", "/clinical/{patient_id}"): "clinical.chart",
+    ("PUT", "/clinical/{patient_id}/profile"): "clinical.chart",
+    ("GET", "/scores/sofa/{patient_id}"): "board.view",
+    # A device is additionally refused here: a signature names a person
+    # (test_a_device_cannot_sign_a_score, below).
+    ("POST", "/scores/sofa/{patient_id}"): "scores.sign",
+    ("GET", "/alarm-quality"): "audit.view",
+    ("GET", "/audit/verify"): "audit.view",
 }
 KINDS = {DEVICE_ONLY, TICKET, OPEN}
 PERMISSION_ROUTES = sorted(k for k, v in BOARD_EXPECTED.items() if v not in KINDS)
@@ -278,7 +287,9 @@ async def _call(method, path, credential, query=None):
     credential would stream forever, and it must fail this test, not hang it."""
     app = create_app({"tok": "HOSP1"}, run_escalation_loop=False, resolve_jwt=_resolve_any)
     url = path.replace("{patient_id}", "bed-3")
-    body = {"json": {}} if method == "POST" else {}
+    # A body for every route that takes one: a missing body is a 422 from validation, which runs
+    # before the route's own permission check and would hide it.
+    body = {"json": {}} if method in ("POST", "PUT") else {}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         return await asyncio.wait_for(
             ac.request(method, url, headers=_hdr(credential), params=query, **body), timeout=5)
@@ -315,3 +326,11 @@ async def test_the_device_token_opens_the_device_only_route():
         if guard == DEVICE_ONLY:
             res = await _call(method, path, "tok")
             assert res.status_code not in (401, 403), res.text
+
+
+async def test_a_device_cannot_sign_a_score():
+    """The one permission a device does not get by being a device: a signature must name a
+    person, and the bridge's token names nobody."""
+    res = await _call("POST", "/scores/sofa/{patient_id}", "tok")
+    assert res.status_code == 403
+    assert res.json()["detail"] == "skor formunu yalnız bir kişi imzalayabilir"

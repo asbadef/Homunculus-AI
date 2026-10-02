@@ -24,9 +24,9 @@ Aşağıdakiler gerçek Postgres'e karşı çalıştırılıp doğrulandı (dock
   (`hospital_admin` MFA ister: ilk girişte panel doğrulayıcı için QR gösterir)
 - Test paketi: **306 backend / 190 frontend** yeşil
 
-> ℹ️ **RBAC dalı (`feat/ldap-rbac`), B1 — düzeltildi (2026-09-26):** migration 0006 artık
+> ℹ️ **RBAC dalı (`feat/ldap-rbac`), B1 — düzeltildi (2026-09-26):** migration 0010 artık
 > `tenant_memberships.role` sütununu `varchar(40)` yapıyor; seed ve `POST /admin/users` gerçek
-> migration'dan geçmiş veritabanında çalışıyor (`tests/test_migration_0006_orm_writes.py`). Deploy
+> migration'dan geçmiş veritabanında çalışıyor (`tests/test_migration_0010_orm_writes.py`). Deploy
 > sırası ve kontroller: `docs/superpowers/plans/2026-09-23-rbac-groups-permissions.md`, Task 20
 > "Deploy notes for the VM".
 

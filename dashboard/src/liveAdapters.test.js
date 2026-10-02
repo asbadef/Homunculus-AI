@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   patientFromBoard, patientsFromBoard, bedsFromPatients, alertsFromPatients,
+  ageFromBirthDate, awaitingLocalAdmission,
 } from "./liveAdapters.js";
 
 const entry = {
@@ -11,14 +12,15 @@ const entry = {
       acknowledged: false, acknowledged_by: null, acknowledged_at: null,
       first_seen_at: "2026-08-27T10:00:00Z", escalated: false },
   ],
-  latest: { heart_rate: 123, map: 61, spo2: 89, temperature: 38.4, resp_rate: 28,
-            lactate: 3.1, sofa: 7 },
+  latest: { heart_rate: 123, map: 61, sbp: 96, spo2: 89, temperature: 38.4, resp_rate: 28,
+            lactate: 3.1, sofa: 7,
+            news2: { total: 9, partial: false, missing: [], red_param: true, breakdown: {} } },
 };
 
 describe("patientFromBoard", () => {
   it("carries the machine-measured vitals across", () => {
     expect(patientFromBoard(entry).vitals)
-      .toEqual({ hr: 123, map: 61, spo2: 89, temp: 38.4, rr: 28 });
+      .toEqual({ hr: 123, map: 61, sbp: 96, spo2: 89, temp: 38.4, rr: 28 });
   });
 
   it("keeps the patient id and the engine's risk", () => {
@@ -49,24 +51,24 @@ describe("patientFromBoard", () => {
 
   it("renders an unmeasured vital as null, not zero", () => {
     const sparse = { patient_id: "bed-9", risk: "stable", alerts: [],
-                     latest: { heart_rate: null, map: null, spo2: null,
+                     latest: { heart_rate: null, map: null, sbp: null, spo2: null,
                                temperature: null, resp_rate: null, lactate: null, sofa: null } };
     expect(patientFromBoard(sparse).vitals)
-      .toEqual({ hr: null, map: null, spo2: null, temp: null, rr: null });
+      .toEqual({ hr: null, map: null, sbp: null, spo2: null, temp: null, rr: null });
   });
 
   it("survives a payload with no latest block at all", () => {
     const p = patientFromBoard({ patient_id: "bed-1", risk: "stable", alerts: [] });
-    expect(p.vitals).toEqual({ hr: null, map: null, spo2: null, temp: null, rr: null });
+    expect(p.vitals).toEqual({ hr: null, map: null, sbp: null, spo2: null, temp: null, rr: null });
   });
 
   it("does not turn a real zero into null", () => {
     // A measured 0 is a clinical finding, not a missing value. `??` is correct here and `||`
     // would be a bug.
     const zeroed = { patient_id: "bed-2", risk: "critical", alerts: [],
-                     latest: { heart_rate: 0, map: 0, spo2: 0, temperature: 0, resp_rate: 0 } };
+                     latest: { heart_rate: 0, map: 0, sbp: 0, spo2: 0, temperature: 0, resp_rate: 0 } };
     expect(patientFromBoard(zeroed).vitals)
-      .toEqual({ hr: 0, map: 0, spo2: 0, temp: 0, rr: 0 });
+      .toEqual({ hr: 0, map: 0, sbp: 0, spo2: 0, temp: 0, rr: 0 });
   });
 });
 
@@ -251,5 +253,138 @@ describe("identity on a board entry", () => {
   it("does not treat a discharged patient as admitted", () => {
     const discharged = { ...withIdentity, identity: { ...withIdentity.identity, state: "discharged" } };
     expect(patientFromBoard(discharged).identityState).toBe("discharged");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Adapter contracts that came from main inside tests of main's ClinicalDemo screens
+// (admissionFromHis, news2Source, pharmacyView). Those screen tests were removed in the merge
+// (roadmap D1: the demo goes, the new shell is rebuilt); the adapter stays, so its contracts
+// stay tested here.
+
+describe("HIS admission data on the card (from admissionFromHis)", () => {
+  const hisEntry = (over = {}) => ({
+    patient_id: "20239121", risk: "none", alerts: [],
+    latest: { heart_rate: null, map: null, sbp: null, spo2: null, temperature: null,
+              resp_rate: null, lactate: null, sofa: null, news2: null },
+    identity: {
+      patient_id: "20239121", display_name: "AYSE YILMAZ", bed_label: "YB 304-2",
+      state: "admitted", source: "comed", updated_at: null,
+      bed_id: null, bed_matched: false, bed_key: "YB^304^2",
+      birth_date: "1967-04-17", sex: "female",
+      diagnoses: [{ code: "A41.9", text: "Sepsis, unspecified", system: "I10", kind: "A" }],
+      ...over,
+    },
+  });
+
+  it("age is computed from the date of birth", () => {
+    expect(ageFromBirthDate("1967-04-17", new Date("2026-09-08"))).toBe(59);
+    expect(ageFromBirthDate("1967-12-31", new Date("2026-09-08"))).toBe(58);   // birthday not yet
+  });
+
+  it("a missing, unreadable or future date of birth is null, not a confident number", () => {
+    // Zero would render as a newborn on a clinical card.
+    expect(ageFromBirthDate("")).toBeNull();
+    expect(ageFromBirthDate(null)).toBeNull();
+    expect(ageFromBirthDate("not-a-date")).toBeNull();
+    expect(ageFromBirthDate("2030-01-01", new Date("2026-09-08"))).toBeNull();
+  });
+
+  it("sex and date of birth travel; an unknown sex arrives as null", () => {
+    const p = patientFromBoard(hisEntry());
+    expect(p.sex).toBe("female");
+    expect(p.birthDate).toBe("1967-04-17");
+    expect(p.age).toBeGreaterThan(50);
+    expect(patientFromBoard(hisEntry({ sex: "unknown" })).sex).toBeNull();
+  });
+
+  it("the admitting diagnoses travel with their codes", () => {
+    expect(patientFromBoard(hisEntry()).hisDiagnoses[0].code).toBe("A41.9");
+  });
+
+  it("an empty diagnosis list stays empty; a card with no identity still answers with a list", () => {
+    expect(patientFromBoard(hisEntry({ diagnoses: [] })).hisDiagnoses).toEqual([]);
+    expect(patientFromBoard({ patient_id: "bed-1", risk: "none", alerts: [], latest: {} }).hisDiagnoses)
+      .toEqual([]);
+  });
+
+  describe("who is waiting to be taken onto a bed here", () => {
+    const fromHis = { patient_id: "1", source: "comed", bedId: null, identityState: "admitted" };
+
+    it("a HIS admission with no local bed is waiting", () => {
+      expect(awaitingLocalAdmission([fromHis])).toHaveLength(1);
+    });
+
+    it("one on a bed here, a discharged one, or one entered by hand is not offered", () => {
+      expect(awaitingLocalAdmission([{ ...fromHis, bedId: "bed-a1" }])).toEqual([]);
+      expect(awaitingLocalAdmission([{ ...fromHis, identityState: "discharged" }])).toEqual([]);
+      expect(awaitingLocalAdmission([{ ...fromHis, source: "manuel" }])).toEqual([]);
+    });
+
+    it("an empty board is not an error", () => {
+      expect(awaitingLocalAdmission()).toEqual([]);
+    });
+  });
+});
+
+describe("the engine's NEWS2 reaches the UI intact (from news2Source)", () => {
+  const latest = {
+    heart_rate: 118, map: 61, sbp: 96, spo2: 92, temperature: 38.6, resp_rate: 25,
+    lactate: 3.1, sofa: 7,
+    news2: { total: 13, partial: false, missing: [], red_param: true, breakdown: {} },
+  };
+
+  it("carries the engine's score and the systolic pressure the real NEWS2 needs", () => {
+    const p = patientFromBoard({ patient_id: "bed-3", risk: "critical", alerts: [], latest });
+    expect(p.news2).toEqual(latest.news2);
+    expect(p.vitals.sbp).toBe(96);
+  });
+
+  it("a card with no observation yet has no score at all, rather than a zero", () => {
+    const p = patientFromBoard({
+      patient_id: "bed-9", risk: "none", alerts: [],
+      latest: { ...latest, heart_rate: null, map: null, sbp: null, spo2: null, temperature: null,
+                resp_rate: null, lactate: null, sofa: null, news2: null },
+    });
+    expect(p.news2).toBeNull();
+  });
+
+  it("a partial score keeps its flag and what is missing, because it can only understate", () => {
+    const p = patientFromBoard({
+      patient_id: "bed-4", risk: "high", alerts: [],
+      latest: { ...latest, resp_rate: null,
+                news2: { total: 10, partial: true, missing: ["respiration_rate"],
+                         red_param: true, breakdown: {} } },
+    });
+    expect(p.news2.partial).toBe(true);
+    expect(p.news2.missing).toContain("respiration_rate");
+  });
+});
+
+describe("the medication block (from pharmacyView)", () => {
+  const clock = {
+    recognized_at: "2026-09-08T09:00:00+00:00", deadline: "2026-09-08T10:00:00+00:00",
+    remaining_sec: 1500, elapsed_sec: 2100, met: null,
+  };
+  const withMeds = (meds) => patientFromBoard({ patient_id: "bed-1", risk: "high", alerts: [], latest: {}, meds });
+
+  it("carries the antibiotic clock through the adapter rather than dropping it", () => {
+    const p = withMeds({ pressors: {}, on_pressor: false, antibiotic_given: null,
+                         antibiotic_clock: clock, creatinine: 2.4, weight_kg: 72 });
+    expect(p.meds.antibiotic_clock.remaining_sec).toBe(1500);
+    expect(p.meds.creatinine).toBe(2.4);
+  });
+
+  it("a board entry with no meds block leaves it null rather than an empty regimen", () => {
+    expect(patientFromBoard({ patient_id: "bed-1" }).meds).toBeNull();
+  });
+
+  it("keeps nothing charted, not given and given apart", () => {
+    expect(withMeds({ antibiotic_given: null, antibiotic_clock: clock, pressors: {} }).meds.antibiotic_given)
+      .toBeNull();
+    expect(withMeds({ antibiotic_given: false, antibiotic_clock: clock, pressors: {} }).meds.antibiotic_given)
+      .toBe(false);
+    expect(withMeds({ antibiotic_given: true, antibiotic_clock: { ...clock, met: true }, pressors: {} })
+      .meds.antibiotic_given).toBe(true);
   });
 });

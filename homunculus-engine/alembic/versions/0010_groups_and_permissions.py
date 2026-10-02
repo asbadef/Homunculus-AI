@@ -1,5 +1,7 @@
-# homunculus-engine/alembic/versions/0006_groups_and_permissions.py
+# homunculus-engine/alembic/versions/0010_groups_and_permissions.py
 """groups and permissions (RBAC); users columns for LDAP sign-in and token versioning
+
+Revision 0010, follows 0009 (renumbered from an undeployed 0006 when main's 0006–0009 were merged in).
 
 Creates `groups`, `group_permissions`, `user_groups`, `ldap_group_mappings`; adds `username`,
 `auth_source`, `external_id`, `ldap_dn`, `token_version`, `last_login_at`, `sessions_revoked_at`
@@ -27,13 +29,14 @@ and it fails if any user has no password (an AD account), or any membership has 
 (every membership written after the upgrade does) or a role that is not a `userrole` label (the
 ORM never writes one). Back the database up before `upgrade` (runbook: pg_dump). The
 downgrade also fails restoring `email SET NOT NULL` if an AD account was created with no e-mail
-in the meantime. An INACTIVE membership keeps its legacy `role` value but gets no `user_groups`
+in the meantime. The upgrade lower-cases every e-mail and the downgrade does not restore the
+original case. An INACTIVE membership keeps its legacy `role` value but gets no `user_groups`
 row; reactivating it later grants no rights until an administrator assigns a group — this is
 intended, not a bug. Offline generation (`alembic upgrade --sql`) is not supported: seeding the
 default groups reads the `tenants` table at migration time.
 
-Revision ID: 0006
-Revises: 0005
+Revision ID: 0010
+Revises: 0009
 Create Date: 2026-09-23
 """
 from __future__ import annotations
@@ -45,15 +48,15 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0006"
-down_revision: Union[str, None] = "0005"
+revision: str = "0010"
+down_revision: Union[str, None] = "0009"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 # ---------------------------------------------------------------------------------------------
-# FROZEN COPY of homunculus.auth.permissions.DEFAULT_GROUPS / LEGACY_ROLE_TO_GROUP as of 0006.
+# FROZEN COPY of homunculus.auth.permissions.DEFAULT_GROUPS / LEGACY_ROLE_TO_GROUP as of 0010.
 # Deliberately not imported: a migration must produce the same schema forever, while the live
-# defaults may change. tests/test_migration_0006_defaults.py pins the two together at authoring.
+# defaults may change. tests/test_migration_0010_defaults.py pins the two together at authoring.
 # ---------------------------------------------------------------------------------------------
 _ALL = (
     "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.admit",
@@ -61,12 +64,12 @@ _ALL = (
     "admissions.discharge.confirm",
     "care_team.claim", "care_team.assign", "handover.sign", "shifts.manage",
     "break_glass.use", "audit.view", "users.manage", "groups.manage", "structure.manage",
-    "devices.manage",
+    "devices.manage", "clinical.chart", "scores.sign",
 )
 _ATTENDING = (
     "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.sign_off",
     "admissions.move.initiate", "care_team.claim", "care_team.assign", "handover.sign",
-    "break_glass.use",
+    "break_glass.use", "clinical.chart", "scores.sign",
 )
 _DEFAULT_GROUPS = (
     {"slug": "hospital_admin", "name": "Sistem Yöneticisi",
@@ -83,24 +86,24 @@ _DEFAULT_GROUPS = (
      "description": "Pano, alarm onayı ve eskalasyon, devir imzası, break-glass.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
-                     "handover.sign", "break_glass.use")},
+                     "handover.sign", "break_glass.use", "clinical.chart", "scores.sign")},
     {"slug": "charge_nurse", "name": "Sorumlu Hemşire",
      "description": "Hasta kabul, transfer/taburcu onayı, nöbet çizelgesi, bakım ekibi.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                      "admissions.admit", "admissions.transfer.confirm",
                      "admissions.discharge.confirm", "care_team.claim", "handover.sign",
-                     "shifts.manage", "break_glass.use")},
+                     "shifts.manage", "break_glass.use", "clinical.chart")},
     {"slug": "nurse", "name": "Hemşire",
      "description": "Pano, alarm onayı, hasta kabul, devir imzası.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "admissions.view", "admissions.admit",
-                     "admissions.transfer.confirm", "handover.sign")},
+                     "admissions.transfer.confirm", "handover.sign", "clinical.chart")},
     {"slug": "rapid_response", "name": "Hızlı Yanıt Ekibi",
      "description": "Pano, alarm onayı ve eskalasyon, break-glass.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
-                     "break_glass.use")},
+                     "break_glass.use", "clinical.chart")},
     {"slug": "auditor", "name": "Denetçi",
      "description": "Salt okunur: pano ve denetim kaydı.",
      "mfa_required": False, "is_system": False, "permissions": ("board.view", "audit.view")},
@@ -125,11 +128,13 @@ _LEGACY = {
     "RAPID_RESPONSE": "rapid_response",
     "AUDITOR": "auditor",
     "PLATFORM_SUPPORT": "platform_support",
+    "PHARMACIST": "pharmacist",
+    "BIOMEDICAL": "biomedical",
 }
 
-# FROZEN COPY of homunculus.auth.service.normalize_login as of 0006: trimmed, the Turkish capital
+# FROZEN COPY of homunculus.auth.service.normalize_login as of 0010: trimmed, the Turkish capital
 # `İ` folded to `i`, lower-cased, the dotless `ı` folded to `i`. Deliberately not imported (a
-# migration must give the same result forever); tests/test_migration_0006_defaults.py pins it
+# migration must give the same result forever); tests/test_migration_0010_defaults.py pins it
 # to the live function at authoring.
 def _fold_login(value: str | None) -> str:
     return (value or "").strip().replace("İ", "i").lower().replace("ı", "i")
@@ -178,10 +183,10 @@ def upgrade() -> None:
     empty = sorted(repr(email) for _id, email in users if not _fold_login(email))
     if clashes or too_long or empty:
         raise RuntimeError(
-            "Migration 0006 cannot backfill usernames. E-mails that differ only by case or by "
+            "Migration 0010 cannot backfill usernames. E-mails that differ only by case or by "
             f"the Turkish İ/ı: {clashes or 'none'}; e-mails longer than {_MAX_LOGIN} characters: "
             f"{too_long or 'none'}; e-mails that are blank: {empty or 'none'}. "
-            "Merge or rename these accounts, then run the upgrade again. Nothing was changed."
+            "Merge or rename these accounts, then run the upgrade again. Migration 0010 changed nothing."
         )
 
     # ---- tables ----

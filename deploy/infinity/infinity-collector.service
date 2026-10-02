@@ -1,0 +1,25 @@
+[Unit]
+Description=Homunculus Infinity research collector (no clinical forwarding)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=homunculus-infinity
+Group=homunculus-infinity
+EnvironmentFile=/etc/homunculus-infinity/collector.env
+WorkingDirectory=/opt/homunculus/homunculus-engine
+ExecStart=/opt/homunculus/homunculus-engine/.venv/bin/python scripts/run_infinity_transport.py collector --inventory /etc/homunculus-infinity/inventory.json --database /var/lib/homunculus-infinity/outbox.sqlite --endpoint ${INFINITY_ENDPOINT} --ca-file /etc/homunculus-infinity/ca.pem
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+StateDirectory=homunculus-infinity
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

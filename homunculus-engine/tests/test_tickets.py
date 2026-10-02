@@ -12,7 +12,7 @@ from homunculus.api.tickets import TicketStore
 def test_a_ticket_resolves_to_the_hospital_it_was_issued_for():
     store = TicketStore(ttl_seconds=60)
     ticket = store.issue("demo-hastanesi", now=1000.0)
-    assert store.consume(ticket, now=1001.0) == "demo-hastanesi"
+    assert store.consume(ticket, now=1001.0) == ("demo-hastanesi", None)
 
 
 def test_a_ticket_works_once():
@@ -20,7 +20,7 @@ def test_a_ticket_works_once():
     store = TicketStore(ttl_seconds=60)
     ticket = store.issue("demo-hastanesi", now=1000.0)
 
-    assert store.consume(ticket, now=1001.0) == "demo-hastanesi"
+    assert store.consume(ticket, now=1001.0) == ("demo-hastanesi", None)
     assert store.consume(ticket, now=1002.0) is None
 
 
@@ -62,7 +62,7 @@ def test_the_endpoint_issues_a_ticket_that_opens_the_stream():
         ticket = issued.json()["ticket"]
 
         assert client.post("/stream-ticket").status_code == 401       # no credential, no ticket
-        assert app.state.tickets.consume(ticket, now=0.0) == "demo-hastanesi"
+        assert app.state.tickets.consume(ticket, now=0.0)[0] == "demo-hastanesi"
 
 
 def test_a_bad_ticket_is_refused_by_the_stream():
@@ -87,7 +87,7 @@ def test_a_ticket_issued_for_one_hospital_cannot_open_another_hospitals_stream()
         ticket = issued.json()["ticket"]
 
         # The ticket resolves to the hospital it was issued for, never the other tenant.
-        assert app.state.tickets.consume(ticket, now=0.0) == "HOSP1"
+        assert app.state.tickets.consume(ticket, now=0.0)[0] == "HOSP1"
 
 
 def test_stream_with_neither_token_nor_ticket_is_401_not_a_traceback():

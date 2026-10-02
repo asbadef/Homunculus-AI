@@ -1,10 +1,10 @@
-# homunculus-engine/tests/test_migration_0006_orm_writes.py
+# homunculus-engine/tests/test_migration_0010_orm_writes.py
 """The ORM writes a deployment depends on, on a database built by the real migrations
 (`alembic upgrade head`), never by `create_all`: the bootstrap seed creates its administrator and
 membership (a fresh install), and an administrator carried over by the upgrade creates a user
 through `POST /admin/users` (the VM's path).
 
-Deploy blocker B1: migration 0006 left `tenant_memberships.role` as the enum `userrole` while the
+Deploy blocker B1: migration 0010 left `tenant_memberships.role` as the enum `userrole` while the
 model maps it as `String(40)`. Every ORM insert of a membership sent `role = NULL::VARCHAR`, which
 PostgreSQL refuses, so the seed restart-looped the API container and the staff tab answered 500.
 `db_session` builds the schema from the models, so only a migrated database shows it.
@@ -106,10 +106,10 @@ def test_the_seed_creates_the_administrator_on_a_migrated_database(clean_db):
 
 
 def test_an_administrator_creates_a_user_on_a_migrated_database(clean_db):
-    """An administrator from before 0006 (a legacy HOSPITAL_ADMIN membership, which the upgrade
+    """An administrator from before 0010 (a legacy HOSPITAL_ADMIN membership, which the upgrade
     turns into `hospital_admin`) adds a nurse — the first thing the VM's administrator does."""
     engine, cfg = clean_db
-    command.upgrade(cfg, "0005")
+    command.upgrade(cfg, "0009")
     admin_id = uuid.uuid4()
     with engine.begin() as conn:
         conn.execute(text("INSERT INTO tenants (id, name, slug, country_code, timezone, is_active) "

@@ -250,9 +250,30 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       return authed("/auth/me");
     },
 
-    /** The clinical board for the caller's hospital. */
+    /** The clinical board for the caller's hospital, already narrowed to the caller's scope.
+     *  The response also carries `scope` and `scope_note`: a board's SIZE is not self-explaining,
+     *  and an empty one has to be able to say whether the ward is quiet or the scope is wrong. */
     boardPatients() {
       return authed("/patients");
+    },
+
+    /** What the caller may see, and why. */
+    myScope() {
+      return authed("/scope/me");
+    },
+
+    /** Replace one user's scope. `grants` is a list of `{unit_id}` / `{bed_id}` objects.
+     *  Replacement, not a diff: two administrators saving diffs concurrently would merge into
+     *  the union of both — the more permissive outcome, chosen by neither. */
+    setScope(userId, grants) {
+      return authed(`/scope/${encodeURIComponent(userId)}`, {
+        method: "PUT", body: { grants },
+      });
+    },
+
+    /** How many active users hold no scope at all — the administrator's to-do counter. */
+    unassignedScopes() {
+      return authed("/scope/unassigned");
     },
 
     /** A short-lived, single-use ticket for the SSE endpoints. */
@@ -302,6 +323,101 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       return authed(`/admin/users/${seg(id)}/reset-password`, { method: "POST", body: { password } });
     },
     adminResetMfa(id) { return authed(`/admin/users/${seg(id)}/reset-mfa`, { method: "POST" }); },
+
+    /**
+     * Record what a clinician observed — the inputs no device produces: suspected infection,
+     * weight, the pressor running, the fluid given, the antibiotic administered, a GCS.
+     *
+     * `entries` is `[{code, value}]`; the engine fixes the unit for each code, so a caller
+     * cannot chart a pressor in the wrong scale. All-or-nothing: one rejected entry rejects
+     * the request, because a half-applied chart leaves nobody able to say which half landed.
+     */
+    chart(patientId, entries, recordedAt = null) {
+      return authed(`/clinical/${encodeURIComponent(patientId)}`, {
+        method: "POST",
+        body: { entries, ...(recordedAt ? { recorded_at: recordedAt } : {}) },
+      });
+    },
+
+    /**
+     * The engine's append-only audit for this hospital.
+     *
+     * This is the record a KVKK or ministry inspection asks for, and it is deliberately
+     * PHI-free: names live in the encrypted identity store and never in an audit payload, so
+     * these rows can be displayed and exported without carrying a patient's identity out.
+     */
+    audit({ patientId = null, eventType = null, limit = 200 } = {}) {
+      const query = new URLSearchParams();
+      if (patientId) query.set("patient_id", patientId);
+      if (eventType) query.set("event_type", eventType);
+      if (limit) query.set("limit", String(limit));
+      const suffix = query.toString();
+      return authed(`/audit${suffix ? `?${suffix}` : ""}`);
+    },
+
+    /**
+     * Alarm quality: of the alarms we raised, how many did a human answer and how fast.
+     *
+     * Computed by the engine from the durable audit log, not from live state that a restart
+     * empties — a figure quoted to a hospital has to come from the record an inspection reads.
+     */
+    alarmQuality(days = 7) {
+      return authed(`/alarm-quality?days=${encodeURIComponent(days)}`);
+    },
+
+    /**
+     * The severity form, filled from the record: each organ row scored on the WORST value of the
+     * window, with the measurement and timestamp behind it.
+     *
+     * Not the SOFA the board shows. That one reads the latest values and asks whether the patient
+     * is deteriorating now; this one reads the worst and asks how sick they were over the day.
+     * The two are both correct and are not the same number.
+     */
+    severityForm(patientId, { score = "sofa", hours = 24 } = {}) {
+      return authed(`/scores/${score}/${encodeURIComponent(patientId)}?hours=${hours}`);
+    },
+
+    /**
+     * Sign the form, with the clinician's corrections.
+     *
+     * `overrides` is `[{code, value, reason}]`. A correction replaces the VALUE — the engine
+     * re-scores the row from the band table, because a typed point value would enter quality
+     * reporting unbanded. The reason is mandatory and the engine enforces its length.
+     */
+    signSeverityForm(patientId, { score = "sofa", hours = 24, overrides = [] } = {}) {
+      return authed(`/scores/${score}/${encodeURIComponent(patientId)}?hours=${hours}`, {
+        method: "POST", body: { overrides },
+      });
+    },
+
+    /**
+     * Has this hospital's audit log been altered? The engine recomputes every seal from the
+     * genesis hash forward and names the first record that fails.
+     *
+     * Unfiltered on purpose: a chain can only be verified as the complete run for one tenant,
+     * because a filtered slice is missing its own predecessors and would report a break that is
+     * not there.
+     */
+    verifyAudit(limit = 10000) {
+      return authed(`/audit/verify?limit=${encodeURIComponent(limit)}`);
+    },
+
+    /**
+     * The patient's own normal: charted comorbidities and baseline vital ranges.
+     *
+     * Without it every patient is judged against the population threshold, so someone whose
+     * atrial fibrillation lives at 105 bpm alarms on every measurement. The boundary is always
+     * the clinician's — the system never mints one.
+     */
+    setProfile(patientId, { comorbidities = [], baselines = {}, baselineSofa = null } = {}) {
+      return authed(`/clinical/${encodeURIComponent(patientId)}/profile`, {
+        method: "PUT",
+        // Sent only when charted. Omitting the key means "unchanged/not stated"; sending null
+        // would be indistinguishable from a physician clearing a baseline they had entered.
+        body: { comorbidities, baselines,
+                ...(baselineSofa === null || baselineSofa === "" ? {} : { baseline_sofa: baselineSofa }) },
+      });
+    },
 
     /** Escape hatch for endpoints not yet wrapped (admissions, alerts, tenant…). */
     request: authed,

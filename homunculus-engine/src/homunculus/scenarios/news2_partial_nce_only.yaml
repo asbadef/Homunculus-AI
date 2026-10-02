@@ -1,0 +1,61 @@
+# Synthetic. No patient data. The SAME patient as news2_deterioration.yaml, seen through the
+# only bridge that is actually connected at the pilot site today.
+#
+# WHY THIS FILE EXISTS
+# The Welch Allyn / NCE bridge sends sbp, map, spo2, heart_rate and temperature. It does not
+# send respiration rate — that arrives only when the Dräger MEDIBUS bridge is plugged into a
+# ventilator, which has not happened yet. Respiration is the most heavily weighted parameter in
+# NEWS2: <=8 or >=25 scores 3 on its own and trips the single-parameter rule.
+#
+# So every NEWS2 this site computes today is PARTIAL, and partial can only understate. This
+# scenario exists so that fact is exercised by a test rather than remembered by a person — and
+# so the gap between the two files is the measured argument for connecting the ventilator.
+#
+# MEASURED SHAPE — identical patient, respiration removed
+#   t=0    - / 98 / 124 / 72  / 36.8  -> 0   (full: 0)
+#   t=60   - / 96 / 112 / 92  / 37.4  -> 1   (full: 1)
+#   t=120  - / 94 / 104 / 106 / 38.2  -> 4   (full: 6)   <- below the band; NO ALERT
+#   t=180  - / 92 / 96  / 118 / 38.9  -> 7   (full: 10)
+#   t=240  - / 90 / 86  / 130 / 39.4  -> 10  (full: 13)
+#
+# TWO LOSSES, both measured:
+#
+# 1. The first alert arrives 60 MINUTES LATER. With respiration the score crosses into medium
+#    risk at t=120; without it the score reads 4 and nothing fires until t=180. On this
+#    trajectory, connecting the ventilator buys an hour.
+#
+# 2. The single-parameter rule stops working. At t=180 respiration is 25, which scores 3 on its
+#    own and trips "one parameter at maximum — urgent review" regardless of the total. Without
+#    respiration that rule cannot fire from this patient at all until t=240.
+patient_id: bed-2
+start: "2026-09-08T08:00:00+00:00"
+events:
+  - {at_min: 0,   code: spo2,        value: 98,   unit: "%",  device: nce}
+  - {at_min: 0,   code: sbp,         value: 124,  unit: mmHg, device: nce}
+  - {at_min: 0,   code: map,         value: 88,   unit: mmHg, device: nce}
+  - {at_min: 0,   code: heart_rate,  value: 72,   unit: /min, device: nce}
+  - {at_min: 0,   code: temperature, value: 36.8, unit: Cel,  device: nce}
+
+  - {at_min: 60,  code: spo2,        value: 96,   unit: "%",  device: nce}
+  - {at_min: 60,  code: sbp,         value: 112,  unit: mmHg, device: nce}
+  - {at_min: 60,  code: map,         value: 82,   unit: mmHg, device: nce}
+  - {at_min: 60,  code: heart_rate,  value: 92,   unit: /min, device: nce}
+  - {at_min: 60,  code: temperature, value: 37.4, unit: Cel,  device: nce}
+
+  - {at_min: 120, code: spo2,        value: 94,   unit: "%",  device: nce}
+  - {at_min: 120, code: sbp,         value: 104,  unit: mmHg, device: nce}
+  - {at_min: 120, code: map,         value: 74,   unit: mmHg, device: nce}
+  - {at_min: 120, code: heart_rate,  value: 106,  unit: /min, device: nce}
+  - {at_min: 120, code: temperature, value: 38.2, unit: Cel,  device: nce}
+
+  - {at_min: 180, code: spo2,        value: 92,   unit: "%",  device: nce}
+  - {at_min: 180, code: sbp,         value: 96,   unit: mmHg, device: nce}
+  - {at_min: 180, code: map,         value: 68,   unit: mmHg, device: nce}
+  - {at_min: 180, code: heart_rate,  value: 118,  unit: /min, device: nce}
+  - {at_min: 180, code: temperature, value: 38.9, unit: Cel,  device: nce}
+
+  - {at_min: 240, code: spo2,        value: 90,   unit: "%",  device: nce}
+  - {at_min: 240, code: sbp,         value: 86,   unit: mmHg, device: nce}
+  - {at_min: 240, code: map,         value: 62,   unit: mmHg, device: nce}
+  - {at_min: 240, code: heart_rate,  value: 130,  unit: /min, device: nce}
+  - {at_min: 240, code: temperature, value: 39.4, unit: Cel,  device: nce}

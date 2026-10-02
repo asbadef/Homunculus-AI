@@ -9,6 +9,35 @@
 // clinical board is worse than a blank one: a blank prompts someone to fill it in, a plausible
 // value gets trusted and acted on.
 
+/**
+ * Whole years from an ISO date of birth, or null.
+ *
+ * Derived rather than stored: an age is only true on the day it was written down, and a stored
+ * one silently ages wrong. Returns null for anything unparseable or in the future — a bad date
+ * of birth must not become a confident number on a clinical card.
+ */
+export function ageFromBirthDate(birthDate, today = new Date()) {
+  if (!birthDate) return null;
+  const born = new Date(birthDate);
+  if (Number.isNaN(born.getTime()) || born > today) return null;
+  let years = today.getFullYear() - born.getFullYear();
+  const monthDiff = today.getMonth() - born.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < born.getDate())) years -= 1;
+  return years >= 0 && years < 130 ? years : null;
+}
+
+/**
+ * A patient the HIS has admitted who has not been taken onto a bed here yet.
+ *
+ * These are the cards the admission form should offer to CONFIRM rather than make someone
+ * type from scratch: the hospital already said who they are, where they are and what they are
+ * being treated for.
+ */
+export function awaitingLocalAdmission(patients = []) {
+  return patients.filter((p) => p?.source === "comed" && !p?.bedId
+                                && p?.identityState !== "discharged");
+}
+
 /** One board entry -> one patient record. */
 export function patientFromBoard(entry) {
   const latest = entry?.latest ?? {};
@@ -21,16 +50,38 @@ export function patientFromBoard(entry) {
     vitals: {
       hr: latest.heart_rate ?? null,
       map: latest.map ?? null,
+      sbp: latest.sbp ?? null,
       spo2: latest.spo2 ?? null,
       temp: latest.temperature ?? null,
       rr: latest.resp_rate ?? null,
     },
     lactate: latest.lactate ?? null,
     sofa: latest.sofa ?? null,
+    // When each channel was last measured, ISO-8601 per signal. On an on-prem deployment nobody
+    // can look at the bridge from here, so this is how a screen tells a quiet ward from a feed
+    // that stopped an hour ago — the two look identical without it.
+    measuredAt: latest.at ?? {},
+    // The engine's NEWS2, carried through so the UI displays it rather than scoring again.
+    // {total, partial, missing[], red_param, breakdown{}} — or null on a card that has never
+    // had an observation, which must not read as "NEWS2 0".
+    news2: latest.news2 ?? null,
+    // What the Sepsis-3 criterion is being judged against on this patient:
+    // {suspected_infection, sofa, baseline_sofa, baseline_assumed, rise}.
+    // `suspected_infection: null` means nobody has charted either way — and until someone does,
+    // the engine evaluates no sepsis rule at all, so a quiet card is not a reassuring card.
+    sepsis: entry?.sepsis ?? null,
+    // Infusions, the 1-hour antibiotic clock, and the two numbers a pharmacist reads them
+    // against: {pressors, on_pressor, antibiotic_given, antibiotic_at, antibiotic_clock,
+    // creatinine, weight_kg}. `antibiotic_given: null` means nobody charted it either way.
+    meds: entry?.meds ?? null,
     // HIS demographics only; missing fields stay null.
     display_name: identity?.display_name || null,
-    sex: null,
-    age: null,
+    // Sex and date of birth come from the HIS when it sent them. They are here so the admission
+    // form can be confirmed rather than retyped — "unknown" is left as null so a missing value
+    // never renders as a stated one.
+    sex: identity?.sex && identity.sex !== "unknown" ? identity.sex : null,
+    birthDate: identity?.birth_date || null,
+    age: ageFromBirthDate(identity?.birth_date),
     ageDays: null,
     isNeonate: false,
     tc_no: null,
@@ -45,6 +96,9 @@ export function patientFromBoard(entry) {
     diagnosis: null,
     admittedBy: null,
     admittedAtMs: null,
+    // ICD-10 the HIS sent with the admission (ADT DG1). Empty means the feed said nothing —
+    // never that the patient has no diagnoses — so the card must not render "none".
+    hisDiagnoses: identity?.diagnoses ?? [],
     identityState: identity?.state ?? null,
     identityUpdatedAt: identity?.updated_at ?? null,
     source: identity?.source || "device",

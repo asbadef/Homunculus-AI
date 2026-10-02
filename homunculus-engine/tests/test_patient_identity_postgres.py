@@ -29,12 +29,17 @@ def test_postgres_identity_retention_is_encrypted_tenant_scoped_and_durable():
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
     path = Path(__file__).resolve().parents[1] / "alembic/versions/0005_patient_identity.py"
-    spec = importlib.util.spec_from_file_location("identity_migration", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # 0006 as well: the store writes `diagnoses`, a column 0006_identity_diagnoses adds.
+    modules = []
+    for name in ("0005_patient_identity", "0006_identity_diagnoses"):
+        spec = importlib.util.spec_from_file_location(f"identity_{name[:4]}", path.with_name(name + ".py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        modules.append(module)
     with store._engine.begin() as conn:
         with Operations.context(MigrationContext.configure(conn)):
-            module.upgrade()
+            for module in modules:
+                module.upgrade()
     try:
         store.apply(hospital, parse_fhir_patient(PATIENT))
         store.apply(hospital, parse_fhir_encounter(ENCOUNTER))

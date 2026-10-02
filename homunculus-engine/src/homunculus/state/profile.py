@@ -27,3 +27,11 @@ class PatientProfile:
     patient_id: str
     comorbidities: frozenset[str] = frozenset()
     baselines: dict[SignalCode, BaselineRange] = field(default_factory=dict)
+    # The patient's own pre-infection SOFA total (0-24), charted by a clinician.
+    #
+    # Sepsis-3 defines sepsis as a *rise* of >= 2 SOFA points, and says the baseline "can be
+    # assumed to be zero in patients not known to have preexisting organ dysfunction". `None`
+    # means nobody has charted one, so that assumption applies. It is deliberately not derived
+    # from the comorbidity list: mapping "chronic kidney disease" to a renal sub-score would be
+    # us inventing a number the source does not give, on the patient it matters most for.
+    baseline_sofa: int | None = None

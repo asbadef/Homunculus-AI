@@ -59,7 +59,16 @@ def record(scenario_path: str | Path, out_path: str | Path, step_seconds: float 
 
 
 REPO = Path(__file__).resolve().parents[2]
-WARD_SCENARIOS = ["septic_shock.yaml", "under_resuscitated.yaml", "stable_control.yaml"]
+# The ward a demo shows should be a ward that could exist here. The three sepsis scenarios are
+# driven by lactate, platelets, vasopressor rates and fluid volumes — none of which the site's
+# bridges send, so a demo built only from them shows a branch that cannot fire on the ward it
+# is being shown to. The NEWS2 pair runs on monitor vitals alone, which is what the devices
+# actually deliver; `news2_partial_nce_only` is the site as it stands today, respiration and
+# all its weight missing.
+WARD_SCENARIOS = [
+    "septic_shock.yaml", "under_resuscitated.yaml", "stable_control.yaml",
+    "news2_deterioration.yaml", "news2_partial_nce_only.yaml",
+]
 
 
 def main() -> None:

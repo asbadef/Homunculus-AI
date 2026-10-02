@@ -23,7 +23,7 @@ export const ROLE = {
 export const ROLE_ACCOUNTS = [
   { email: "dr.elif.yilmaz@homunculus.health", pin: "1111", full_name: "Dr. Elif Yılmaz", role: ROLE.ATTENDING },
   { email: "ayse.demir@homunculus.health",     pin: "2222", full_name: "Ayşe Demir",      role: ROLE.CHARGE_NURSE },
-  { email: "dijitalfabrikaaa@gmail.com",        pin: "9999", full_name: "Sistem Yöneticisi", role: ROLE.HOSPITAL_ADMIN },
+  { email: "sistem.yoneticisi@homunculus.health", pin: "9999", full_name: "Sistem Yöneticisi", role: ROLE.HOSPITAL_ADMIN },
   { email: "dr.can.ozturk@homunculus.health",  pin: "3333", full_name: "Dr. Can Öztürk",  role: ROLE.ATTENDING },
   { email: "selin.arslan@homunculus.health",   pin: "4444", full_name: "Selin Arslan",    role: ROLE.CHARGE_NURSE },
   { email: "dr.murat.sahin@homunculus.health", pin: "5555", full_name: "Dr. Murat Şahin", role: ROLE.RRT },
@@ -102,23 +102,89 @@ export const STEP_TARGET_ROLE = {
   TIER_3_RRT: ROLE.RRT,
 };
 
+/**
+ * Kurum politikası — "Sistem Ayarları" ekranının nihayet ayar tuttuğu yer.
+ *
+ * Bu ekran bugüne kadar adını taşımıyordu: on sekmesinin hepsi kayıt listesi (kullanıcı, cihaz,
+ * ünite, davet) veya rapordu; politika olan her şey ya koda gömülüydü ya kişisel tercihti.
+ * Aradaki fark klinik olarak önemli — **kişisel tercih vardiyayla değişir, kurum politikası
+ * değişmez.** Duvar ekranında hasta adının görünüp görünmeyeceği, cevapsız bir alarmın en son
+ * kime gideceği ve vardiyanın kaçta başladığı üç ayrı kişinin tercihi olamaz.
+ *
+ * Varsayılanlar bugünkü davranışın aynısıdır; tek istisna 3. kademe, ki o da pilot kararının
+ * gereği ([[Pilotta Eskalasyon İki Kademe]]).
+ */
+export function defaultSettings() {
+  return {
+    escalation: {
+      tiers: {
+        TIER_1_CHARGE_NURSE: { enabled: true, thresholdSec: 180 },
+        TIER_2_PHYSICIAN: { enabled: true, thresholdSec: 300 },
+        // Pilotta kapalı: hastanede fiilen hızlı yanıt ekibi yok. Kod silinmedi, kademe kapatıldı.
+        TIER_3_RRT: { enabled: false, thresholdSec: 600 },
+      },
+    },
+    // 8 saatlik üçlü vardiya (08/16/24) yaygın olan tek düzen değil; 12 saatlik ikili düzen
+    // (08–20 / 20–08) en az onun kadar yaygın ve vardiya devir raporu buna bağlı.
+    shift: { pattern: "8h", startHour: 8 },
+    privacy: {
+      // Duvar ekranı koridordan görünür: orada isim, kullanıcının tercihi değil kurumun sorumluluğu.
+      maskOnWall: true,
+    },
+  };
+}
+
+export const ESCALATION_ORDER = [ESCALATION_STEP.TIER_1_CHARGE_NURSE,
+                                 ESCALATION_STEP.TIER_2_PHYSICIAN,
+                                 ESCALATION_STEP.TIER_3_RRT];
+
+/**
+ * Bu kurulumun eskalasyon zinciri — kademeler artık koda gömülü değil, ayardan gelir.
+ *
+ * Gerekçe [[Pilotta Eskalasyon İki Kademe]] kararında: pilot hastanede fiilen bir hızlı yanıt
+ * ekibi yok, ve **gidecek yeri olmayan bir eskalasyon eskalasyon değil, sessiz bir arızadır** —
+ * alarm 10. dakikada "RRT'ye yükseltildi" damgası alır, zincir ekranda tamamlanmış görünür, ama
+ * kimseye ulaşmamıştır. Karar notunun üçüncü maddesi bunu açıkça istiyordu: *yapılandırma
+ * hastane bazında olmalı, sabit kodda değil.* Bugüne kadar sabit koddaydı.
+ *
+ * Kapalı kademe **atlanmaz, yok sayılır**: zincir bir öncekinde biter ve alarm açık kalır. Ayar
+ * verilmezse davranış eskisiyle birebir aynıdır (üç kademe, 3/5/10 dk).
+ */
+export function escalationChain(settings) {
+  const cfg = settings?.escalation?.tiers || {};
+  return ESCALATION_ORDER
+    .map((step) => ({
+      step,
+      targetRole: STEP_TARGET_ROLE[step],
+      thresholdSec: Number(cfg[step]?.thresholdSec ?? ESCALATION_THRESHOLDS_SEC[step]),
+      enabled: cfg[step]?.enabled !== false,
+    }))
+    .filter((t) => t.enabled && Number.isFinite(t.thresholdSec) && t.thresholdSec > 0)
+    .sort((a, b) => a.thresholdSec - b.thresholdSec);
+}
+
+/** Zincirin son durağı — "bu kurulumda cevapsız alarm en son kime gider". */
+export function lastChainStep(settings) {
+  const chain = escalationChain(settings);
+  return chain.length ? chain[chain.length - 1] : null;
+}
+
 // Only CRITICAL and HIGH alarms escalate (mirrors backend compute_escalation_step).
-export function computeEscalationStep(elapsedSeconds, tier) {
+export function computeEscalationStep(elapsedSeconds, tier, settings = null) {
   if (tier !== TIER.CRITICAL && tier !== TIER.HIGH) return ESCALATION_STEP.NONE;
-  if (elapsedSeconds >= ESCALATION_THRESHOLDS_SEC.TIER_3_RRT) return ESCALATION_STEP.TIER_3_RRT;
-  if (elapsedSeconds >= ESCALATION_THRESHOLDS_SEC.TIER_2_PHYSICIAN) return ESCALATION_STEP.TIER_2_PHYSICIAN;
-  if (elapsedSeconds >= ESCALATION_THRESHOLDS_SEC.TIER_1_CHARGE_NURSE) return ESCALATION_STEP.TIER_1_CHARGE_NURSE;
-  return ESCALATION_STEP.NONE;
+  const chain = escalationChain(settings);
+  let reached = ESCALATION_STEP.NONE;
+  for (const t of chain) if (elapsedSeconds >= t.thresholdSec) reached = t.step;
+  return reached;
 }
 export const stepOrder = (step) => STEP_ORDER[step] ?? 0;
 
-// Seconds until the next escalation step (or null once at tier-3). Used for the live countdown.
-export function secondsToNextStep(elapsedSeconds, tier) {
+// Seconds until the next escalation step (or null once the chain's last stop is reached).
+export function secondsToNextStep(elapsedSeconds, tier, settings = null) {
   if (tier !== TIER.CRITICAL && tier !== TIER.HIGH) return null;
-  const marks = [ESCALATION_THRESHOLDS_SEC.TIER_1_CHARGE_NURSE,
-                 ESCALATION_THRESHOLDS_SEC.TIER_2_PHYSICIAN,
-                 ESCALATION_THRESHOLDS_SEC.TIER_3_RRT];
-  for (const m of marks) if (elapsedSeconds < m) return m - elapsedSeconds;
+  for (const t of escalationChain(settings)) {
+    if (elapsedSeconds < t.thresholdSec) return t.thresholdSec - elapsedSeconds;
+  }
   return null;
 }
 
@@ -330,7 +396,11 @@ function seedState() {
     user: null,
     mfaPending: null,     // { userId, email } — MFA verification pending after password login
     clockSec: 0,          // simulated seconds since demo start
-    speed: 60,            // 60× → 1 simulated minute per real second (so 3 min escalates in 3 s)
+    // Gerçek zaman varsayılan. 60× hızlandırma demoyu izlerken eskalasyonu saniyelerde
+    // gösteriyordu, ama ekranda duran süreler de aynı oranda şişiyordu: yarım saat açık kalan
+    // bir demoda alarmlar "14:51:16" cevapsız görünüyordu ve o sayı kimseye bir şey söylemiyor.
+    // Hızlandırma artık kullanıcının seçimi (Zaman ölçeği), varsayılanı değil.
+    speed: 1,
     running: true,
     tenantSetup: false,   // multi-tenant setup wizard completed?
     tenants: [],          // [ { id, name, slug, countryCode, timezone, isActive, createdAt } ]
@@ -372,6 +442,7 @@ function seedState() {
     heatmapCache: null,   // Madde 19: { generatedAt, unitId, grid: [...] }
     results: [],          // #4: [ { id, patientId, type, title, summary, source, status, critical, atMs, orderedBy, fileName } ]
     hisIntegration: { connected: false, lastSyncMs: null }, // #4: HBYS (HL7/FHIR) otomatik akis durumu
+    settings: defaultSettings(),
   };
 }
 
@@ -401,7 +472,7 @@ export function buildRealisticState() {
   const users = [
     { id: "u-01", full_name: "Dr. Elif Yılmaz", email: "dr.elif.yilmaz@homunculus.health", role: ROLE.ATTENDING,     active: true, mfa: true,  mfaRequired: true,  pin: "1111", password: "Hekim.Elif2025!",   unitIds: ["unit-adult"] },
     { id: "u-02", full_name: "Ayşe Demir",      email: "ayse.demir@homunculus.health",     role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "2222", password: "Hemsire.Ayse2025!",  unitIds: ["unit-adult"] },
-    { id: "u-03", full_name: "Sistem Yöneticisi", email: "dijitalfabrikaaa@gmail.com",     role: ROLE.HOSPITAL_ADMIN, active: true, mfa: false, mfaRequired: false, pin: "9999", password: "Df123456!",           unitIds: ["unit-adult", "unit-nicu"] },
+    { id: "u-03", full_name: "Sistem Yöneticisi", email: "sistem.yoneticisi@homunculus.health",     role: ROLE.HOSPITAL_ADMIN, active: true, mfa: false, mfaRequired: false, pin: "9999", password: "Df123456!",           unitIds: ["unit-adult", "unit-nicu"] },
     { id: "u-04", full_name: "Dr. Can Öztürk",  email: "dr.can.ozturk@homunculus.health",  role: ROLE.ATTENDING,     active: true, mfa: false, mfaRequired: true,  pin: "3333", password: "Hekim.Can2025!",    unitIds: ["unit-nicu"] },
     { id: "u-05", full_name: "Selin Arslan",    email: "selin.arslan@homunculus.health",   role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "4444", password: "Hemsire.Selin2025!", unitIds: ["unit-adult", "unit-nicu"] },
     { id: "u-06", full_name: "Dr. Murat Şahin", email: "dr.murat.sahin@homunculus.health", role: ROLE.RRT,           active: true, mfa: false, mfaRequired: false, pin: "5555", password: "Rrt.Murat2025!",     unitIds: ["unit-adult", "unit-nicu"] },
@@ -622,7 +693,7 @@ export function buildRealisticState() {
   return {
     user: null,
     clockSec: 0,
-    speed: 60,
+    speed: 1,
     running: true,
     structure,
     users,
@@ -658,6 +729,7 @@ export function buildRealisticState() {
     heatmapCache: null,   // Madde 19: { generatedAt, unitId, grid: [...] }
     results: [],          // #4: [ { id, patientId, type, title, summary, source, status, critical, atMs, orderedBy, fileName } ]
     hisIntegration: { connected: false, lastSyncMs: null }, // #4: HBYS (HL7/FHIR) otomatik akis durumu
+    settings: defaultSettings(),
   };
 }
 
@@ -950,6 +1022,7 @@ export function createDemoStore(initial) {
   // board. Accepts optional production fields (age, source, risk, vitals…) — all default safely so
   // the minimal test-driven signature keeps working.
   function admitPatient({ displayName, sex, bedId, diagnosisText, age, isNeonate, ageDays,
+                          birthDate,
                           source, risk, vitals, tc_no, phone, address,
                           // #1: genişletilmiş kabul alanları
                           triage, allergies, comorbidities, codeStatus, isolation,
@@ -966,6 +1039,9 @@ export function createDemoStore(initial) {
       age: age ?? null,
       isNeonate: !!isNeonate,
       ageDays: ageDays ?? null,
+      // Doğum tarihi hastanın barkod etiketinde ve kimlik doğrulamasında kullanılır. Yaş bundan
+      // türetilir; ikisi ayrı ayrı saklanmaz ki biri eskiyip diğeriyle çelişmesin.
+      birthDate: birthDate || null,
       tc_no: tc_no || null,
       phone: phone || null,
       address: address || null,
@@ -1685,6 +1761,9 @@ export function createDemoStore(initial) {
       snooze: null,                  // { until, reason, note, atSec }
     };
     set({ alerts: [...state.alerts, alert], seq: state.seq + 1 });
+    // Alarmın doğduğu an kayda geçer: yoğunluk haritası ve alarm kalitesi ölçümü bu kayıttan
+    // besleniyor, ve "bu alarm ne zaman doğdu" sorusunun kalıcı cevabı başka yerde yok.
+    audit("ALERT_FIRE", alert.id, `${patient.bedLabel} · ${tier} · ${alert.kind}`);
     return alert;
   }
 
@@ -1753,7 +1832,8 @@ export function createDemoStore(initial) {
             events: [], ack: null, snooze: null,
           }];
           newAudit.push({ id: `AL-${seq}`, atMs: Date.now(), atSec: nowSec, actor: "Otomatik Alarm Motoru",
-            role: null, action: "ALERT_AUTO_FIRE", target: `A-${seq}`, detail: `${p.bedLabel} · ${tier} · ${metric}` });
+            role: null, action: "ALERT_AUTO_FIRE", target: `A-${seq}`, bedLabel: p.bedLabel,
+            detail: `${p.bedLabel} · ${tier} · ${metric}` });
           seq += 1;
           changed = true;
         }
@@ -1770,12 +1850,12 @@ export function createDemoStore(initial) {
       }
       if (alert.status !== "FIRED") return alert;
       const elapsed = nowSec - alert.firedAtSec;
-      const target = computeEscalationStep(elapsed, alert.tier);
+      const target = computeEscalationStep(elapsed, alert.tier, state.settings);
       if (stepOrder(target) > stepOrder(alert.currentStep)) {
-        // Emit an event for every step crossed between current and target.
+        // Emit an event for every step crossed between current and target. Kapalı kademe
+        // zincirde yoktur ve atlanır: kimseye gitmeyen bir adım denetime "gitti" diye yazılmaz.
         const events = [...alert.events];
-        for (const step of [ESCALATION_STEP.TIER_1_CHARGE_NURSE, ESCALATION_STEP.TIER_2_PHYSICIAN,
-                            ESCALATION_STEP.TIER_3_RRT]) {
+        for (const { step } of escalationChain(state.settings)) {
           if (stepOrder(step) > stepOrder(alert.currentStep) && stepOrder(step) <= stepOrder(target)) {
             events.push({ step, atSec: nowSec, targetRole: STEP_TARGET_ROLE[step] });
           }
@@ -1842,10 +1922,57 @@ export function createDemoStore(initial) {
     audit("ALERT_SNOOZE", alertId, `${minutes} dk · ${reason}`);
   }
 
+  // ------------------------------------------------------------- kurum politikası (Sistem Ayarları)
+  // Her değişiklik denetime düşer: bir alarmın kime gittiğini veya bir ismin duvarda görünüp
+  // görünmediğini değiştirmek, sonradan "kim değiştirdi" diye sorulacak bir karardır.
+  function updateSettings(patch) {
+    const next = { ...state.settings, ...patch };
+    set({ settings: next });
+    return next;
+  }
+
+  function setEscalationTier(step, patch) {
+    if (!ESCALATION_ORDER.includes(step)) throw new Error("Bilinmeyen eskalasyon kademesi.");
+    const tiers = state.settings?.escalation?.tiers || {};
+    const cur = tiers[step] || {};
+    const nextTier = { ...cur, ...patch };
+    if (nextTier.thresholdSec != null) {
+      const sec = Number(nextTier.thresholdSec);
+      if (!Number.isFinite(sec) || sec <= 0) throw new Error("Eşik süresi pozitif olmalıdır.");
+      nextTier.thresholdSec = Math.round(sec);
+    }
+    const next = updateSettings({
+      escalation: { ...state.settings?.escalation, tiers: { ...tiers, [step]: nextTier } },
+    });
+    const on = nextTier.enabled !== false;
+    audit("SETTINGS_ESCALATION", step, `${on ? "açık" : "kapalı"} · ${nextTier.thresholdSec} sn`);
+    return next;
+  }
+
+  function setShiftPattern(pattern, startHour) {
+    if (!["8h", "12h"].includes(pattern)) throw new Error("Vardiya düzeni 8h veya 12h olmalıdır.");
+    const h = Number(startHour ?? state.settings?.shift?.startHour ?? 8);
+    if (!Number.isInteger(h) || h < 0 || h > 23) throw new Error("Vardiya başlangıcı 0–23 arası olmalıdır.");
+    const next = updateSettings({ shift: { pattern, startHour: h } });
+    audit("SETTINGS_SHIFT", null, `${pattern} · ${String(h).padStart(2, "0")}:00`);
+    return next;
+  }
+
+  function setPrivacyPolicy(patch) {
+    const next = updateSettings({ privacy: { ...state.settings?.privacy, ...patch } });
+    audit("SETTINGS_PRIVACY", null, `duvarda maskeleme: ${next.privacy.maskOnWall ? "açık" : "kapalı"}`);
+    return next;
+  }
+
   // Manual escalation straight to RRT (S-06).
   function escalateToRRT(alertId) {
     const a = state.alerts.find((x) => x.id === alertId);
     if (!a) throw new Error("Alarm bulunamadı.");
+    // Kademe bu kurulumda kapalıysa çağrı yapılmaz. Kapalı bir kademeye "yükseltildi" damgası
+    // basmak, alarmı devredilmiş göstermek olurdu — kimseye ulaşmadığı hâlde.
+    if (state.settings?.escalation?.tiers?.TIER_3_RRT?.enabled === false) {
+      throw new Error("Bu kurulumda hızlı yanıt ekibi kademesi kapalı — çağrı gidecek yeri yok.");
+    }
     const events = [...a.events, { step: ESCALATION_STEP.TIER_3_RRT, atSec: state.clockSec,
                                    targetRole: ROLE.RRT, manual: true }];
     const alerts = state.alerts.map((x) => (x.id === alertId
@@ -2164,7 +2291,12 @@ export function createDemoStore(initial) {
       let risk = "LOW";
 
       if (patient) {
-        news2 = computeNews2(patient.vitals || {});
+        // Skoru motor verir. Burada yerel hesap kullanılıyordu; yatak kartı motorun skorunu,
+        // ısı haritası kendi hesabını gösterdiğinde aynı hasta iki ekranda iki farklı renkte
+        // görünür — ve hangisinin doğru olduğunu ekrana bakan kişi bilemez.
+        news2 = patient.news2 && typeof patient.news2.total === "number"
+          ? patient.news2.total
+          : computeNews2(patient.vitals || {});
         alertCount = state.alerts.filter(
           (a) => a.patientId === patient.patient_id && (a.status === "FIRED" || a.status === "SNOOZED")
         ).length;
@@ -2281,6 +2413,7 @@ export function createDemoStore(initial) {
     terminateSession, terminateAllUserSessions,
     fireAlert, reconcile,
     acknowledgeAlert, muteAlert, snoozeAlert, escalateToRRT, rrtHasAccess,
+    setEscalationTier, setShiftPattern, setPrivacyPolicy,
     activateBreakGlass, extendBreakGlass, breakGlassActive,
     setSpeed, setRunning, reset,
     // Faz E exports:

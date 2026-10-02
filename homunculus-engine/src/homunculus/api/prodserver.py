@@ -36,6 +36,7 @@ from homunculus.auth.groups import (
 )
 from homunculus.auth.jwt import jwt_secret_problem
 from homunculus.auth.models import User
+from homunculus.tenant.bedmap import BedMap
 
 logger = logging.getLogger(__name__)
 
@@ -367,10 +368,48 @@ _refuse_unsafe_start(_database_url())
 
 _tenants = _parse_tenants(os.getenv("TENANTS"))
 
+def _bedmap():
+    """This site's HIS-location → our-bed table.
+
+    A missing file is not a failure: BedMap.from_file returns an empty table, every location
+    then resolves as unmatched-and-counted, and every patient still gets a card. That is the
+    correct state for a deployment whose table has not been written yet — the discovery report
+    is what tells the operator to write it. Compare the device field tables, which are read the
+    same way and for the same reason.
+    """
+    return BedMap.from_file(os.getenv("BED_MAPPING_PATH", "/app/bed-mapping.json"))
+
+
+def _scope_resolver():
+    """Wire the staff-scope boundary to the real database.
+
+    Assembled here rather than inside `create_app` for the same reason the JWT resolver is: the
+    decision logic stays testable without Postgres, and an app built any other way — a test, a
+    local run against SQLite — keeps working without one.
+
+    `decode_access_credential` yields `(user_id, tenant_slug)` from the access token, and the
+    scope is read in that tenant — the same tenant the JWT resolver puts the caller's board in.
+
+    Nothing narrows until a `staff_scopes` row exists. With the table empty every user resolves
+    as unassigned and sees the whole hospital exactly as before, which is why this can ship to a
+    running pilot without a screen changing. Narrowing begins when an administrator assigns
+    somebody, and becomes deny-by-default only when `SCOPE_ENFORCE_UNASSIGNED` is set.
+    """
+    from homunculus.scope.resolver import (
+        break_glass_patient_ids, decode_access_credential, make_scope_resolver,
+        read_scope_for_user,
+    )
+
+    return make_scope_resolver(read_scope_for_user, decode=decode_access_credential,
+                               break_glass=break_glass_patient_ids)
+
+
 app = create_app(
     _tenants,
     audit=_audit(),
     identities=_identities(),
     resolve_jwt=make_jwt_caller_resolver(_read_user_auth),
+    bedmap=_bedmap(),
+    resolve_scope=_scope_resolver(),
     on_startup_check=make_startup_tenant_check(list(_tenants.values())),
 )

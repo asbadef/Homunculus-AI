@@ -30,5 +30,18 @@ class PatientState:
         obs = self.latest(code)
         return None if obs is None else now - obs.timestamp
 
+    def window(self, code: SignalCode, since: datetime,
+               until: datetime | None = None) -> list[Observation]:
+        """Every observation of `code` in [since, until], oldest first.
+
+        The severity scores are defined on the WORST value in the preceding 24 hours, not the
+        latest one — the hospital's own form says so in its footnote. `latest()` cannot answer
+        that question, and a score built from `latest()` silently reports a patient as better
+        than they were at their worst, which is the direction that matters.
+        """
+        series = self._history.get(code, [])
+        return [o for o in series
+                if o.timestamp >= since and (until is None or o.timestamp <= until)]
+
     def sum_since(self, code: SignalCode, since: datetime) -> float:
         return sum(o.value for o in self._history.get(code, []) if o.timestamp >= since)

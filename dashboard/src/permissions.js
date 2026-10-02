@@ -13,6 +13,7 @@ export const PERMISSION_KEYS = freeze([
   "care_team.claim", "care_team.assign", "handover.sign", "shifts.manage",
   "break_glass.use", "audit.view",
   "users.manage", "groups.manage", "structure.manage", "devices.manage",
+  "clinical.chart", "scores.sign",
 ]);
 
 // The backend's DEFAULT_GROUPS (spec §3), in its order. The system group (`isSystem`) holds the
@@ -22,22 +23,23 @@ export const DEFAULT_GROUPS = Object.freeze([
   { slug: "attending", mfaRequired: true, isSystem: false, permissions: [
     "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.sign_off",
     "admissions.move.initiate", "care_team.claim", "care_team.assign", "handover.sign",
-    "break_glass.use"] },
+    "break_glass.use", "clinical.chart", "scores.sign"] },
   { slug: "unit_physician", mfaRequired: true, isSystem: false, permissions: [
     "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.sign_off",
-    "admissions.move.initiate", "handover.sign", "break_glass.use"] },
+    "admissions.move.initiate", "handover.sign", "break_glass.use", "clinical.chart",
+    "scores.sign"] },
   { slug: "physician", mfaRequired: false, isSystem: false, permissions: [
     "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "handover.sign",
-    "break_glass.use"] },
+    "break_glass.use", "clinical.chart", "scores.sign"] },
   { slug: "charge_nurse", mfaRequired: false, isSystem: false, permissions: [
     "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.admit",
     "admissions.transfer.confirm", "admissions.discharge.confirm", "care_team.claim",
-    "handover.sign", "shifts.manage", "break_glass.use"] },
+    "handover.sign", "shifts.manage", "break_glass.use", "clinical.chart"] },
   { slug: "nurse", mfaRequired: false, isSystem: false, permissions: [
     "board.view", "alerts.ack", "admissions.view", "admissions.admit",
-    "admissions.transfer.confirm", "handover.sign"] },
+    "admissions.transfer.confirm", "handover.sign", "clinical.chart"] },
   { slug: "rapid_response", mfaRequired: false, isSystem: false, permissions: [
-    "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "break_glass.use"] },
+    "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "break_glass.use", "clinical.chart"] },
   { slug: "auditor", mfaRequired: false, isSystem: false, permissions: ["board.view", "audit.view"] },
   { slug: "platform_support", mfaRequired: true, isSystem: false, permissions: ["audit.view", "devices.manage"] },
   { slug: "pharmacist", mfaRequired: false, isSystem: false, permissions: ["board.view", "admissions.view"] },

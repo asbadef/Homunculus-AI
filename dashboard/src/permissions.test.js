@@ -10,8 +10,8 @@ import {
 import { createDemoStore, buildRealisticState, ROLE } from "./clinicalDemo.js";
 
 describe("permission keys", () => {
-  it("mirrors the backend catalogue (19 keys)", () => {
-    expect(PERMISSION_KEYS).toHaveLength(19);
+  it("mirrors the backend catalogue (21 keys)", () => {
+    expect(PERMISSION_KEYS).toHaveLength(21);
     expect(PERMISSION_KEYS).toContain("board.view");
     expect(PERMISSION_KEYS).toContain("devices.manage");
   });
