@@ -206,6 +206,89 @@ describe("live store data layer", () => {
     expect(store.getState().patients).toEqual([]);
   });
 
+  describe("a shared workstation", () => {
+    const BOARD = {
+      patients: [{ patient_id: "bed-3", risk: "high", latest: {},
+                   alerts: [{ kind: "sepsis", severity: "high", summary: "Sepsis şüphesi" }] }],
+      scope: { reason: "assigned", unrestricted: false, unit_ids: ["unit-a"], bed_ids: [] },
+      scope_note: "Kapsamınız: Ünite A",
+    };
+    const signedInApi = (overrides = {}) => fakeApi({
+      login: vi.fn(async () => ({ access_token: nurseToken, requires_mfa: false })),
+      me: vi.fn(async () => ({ id: "u-n", email: "n@example.com", full_name: "Hemşire" })),
+      boardPatients: vi.fn(async () => BOARD),
+      audit: vi.fn(async () => ({ records: [{ id: 1, ts: "2026-10-01T08:00:00Z", event_type: "ack",
+                                              patient_id: "bed-3", payload: { by: "n" } }] })),
+      ...overrides,
+    });
+    const expectNothingLeft = (state) => {
+      expect(state.patients).toEqual([]);
+      expect(state.beds).toEqual([]);
+      expect(state.alerts).toEqual([]);
+      expect(state.engineScope).toBeNull();
+      expect(state.scopeNote).toBeNull();
+      expect(state.auditLog).toEqual([]);
+    };
+
+    it("signing out leaves no patient, scope note or audit row for the next person", async () => {
+      const api = signedInApi();
+      const store = createLiveStore({ api, base: fakeBase() });
+      await store.attemptLogin("n@example.com", "pw");
+      await store.refreshBoard();
+      await store.refreshAudit();
+      expect(store.getState().patients).toHaveLength(1);
+      expect(store.getState().auditLog).toHaveLength(1);
+
+      store.logout();
+
+      expectNothingLeft(store.getState());
+    });
+
+    it("backing out of the MFA gate leaves nothing either", async () => {
+      const api = signedInApi();
+      const store = createLiveStore({ api, base: fakeBase() });
+      await store.refreshBoard();
+      await store.refreshAudit();
+
+      store.cancelMfaLogin();
+
+      expectNothingLeft(store.getState());
+    });
+
+    it("a board answer that arrives after sign-out is dropped", async () => {
+      let answer;
+      const api = signedInApi({ boardPatients: vi.fn(() => new Promise((resolve) => { answer = resolve; })) });
+      const store = createLiveStore({ api, base: fakeBase() });
+      await store.attemptLogin("n@example.com", "pw");
+      const loading = store.refreshBoard();
+
+      store.logout();
+      answer(BOARD);
+      await loading;
+
+      expectNothingLeft(store.getState());
+    });
+
+    it("…and does not overwrite the board of whoever signed in meanwhile", async () => {
+      const answers = [];
+      const api = signedInApi({ boardPatients: vi.fn(() => new Promise((resolve) => { answers.push(resolve); })) });
+      const store = createLiveStore({ api, base: fakeBase() });
+      await store.attemptLogin("n@example.com", "pw");
+      const oldLoad = store.refreshBoard();
+      store.logout();
+      await store.attemptLogin("n2@example.com", "pw");
+      const newLoad = store.refreshBoard();
+
+      answers[1]({ patients: [{ patient_id: "bed-7", risk: "none", alerts: [], latest: {} }] });
+      await newLoad;
+      answers[0](BOARD);                                   // the old session's answer, late
+      await oldLoad;
+
+      expect(store.getState().patients.map((p) => p.patient_id)).toEqual(["bed-7"]);
+      expect(store.getState().scopeNote).toBeNull();
+    });
+  });
+
   it("a server that does not answer never signs the clinician out", async () => {
     const timeout = () => Object.assign(new Error("Sunucu yanıt vermedi"), { code: "REQUEST_TIMEOUT" });
     const api = fakeApi({

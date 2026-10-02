@@ -95,6 +95,13 @@ const ADMIN_EMPTY = Object.freeze({
   adminUsers: [], adminGroups: [], adminPermissions: [], adminError: null,
 });
 
+// The clinical data a session loaded, emptied when it ends for the same reason: on a shared ward
+// workstation the next person to sign in — or the login screen in between — must not see the
+// previous session's patients, its scope note or the engine audit it read.
+const SESSION_DATA_EMPTY = Object.freeze({
+  patients: [], beds: [], alerts: [], devices: [], engineScope: null, scopeNote: null, auditLog: [],
+});
+
 /** True when an API failure means the server REFUSED the session: a refresh it turned down
  *  (backendApi marks the error `sessionEnded`), or a 401/403 on the call itself. Anything else —
  *  a 5xx, no network — means it did not answer, and the session may be perfectly good. */
@@ -214,12 +221,12 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
   let sessionEpoch = 0;
   const nextEpoch = () => { sessionEpoch += 1; return sessionEpoch; };
 
-  /** Sign out locally: tokens, the session, the administration data. */
+  /** Sign out locally: tokens, the session, the administration and clinical data. */
   function endSession() {
     nextEpoch();
     api.logout();
     clearAdmin();
-    setOverlay({ user: null, mfaPending: null, sessionError: null });
+    setOverlay({ user: null, mfaPending: null, sessionError: null, ...SESSION_DATA_EMPTY });
     emit();
     if (typeof base.logout === "function") base.logout();
   }
@@ -322,11 +329,20 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
    *  AlarmPage — written against the simulation's shapes — render real data unmodified. `devices`
    *  is forced empty: the simulated device inventory (MDI/HL7 status badges) has no live source
    *  yet, and showing it would be exactly the kind of fabricated-but-plausible data this store
-   *  exists to prevent. */
+   *  exists to prevent.
+   *
+   *  An answer that arrives after the session changed (signed out, or someone else signed in on
+   *  this workstation) belongs to the old session and is dropped, whatever it says. */
   async function refreshBoard() {
+    const epoch = sessionEpoch;
+    let board;
+    let patients = null;          // null: the load failed (the adapter included)
     try {
-      const board = await tracked(() => api.boardPatients());
-      const patients = patientsFromBoard(board);
+      board = await tracked(() => api.boardPatients());
+      patients = patientsFromBoard(board);
+    } catch { /* patients stays null */ }
+    if (epoch !== sessionEpoch) return;
+    if (patients) {
       setOverlay({
         patients,
         beds: bedsFromPatients(patients),
@@ -339,7 +355,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
         scopeNote: board?.scope_note ?? null,
         connection: nextConnection(overlay.connection, { type: "loaded" }),
       });
-    } catch {
+    } else {
       setOverlay({
         patients: [],
         beds: [],
@@ -568,7 +584,9 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
    */
   async function refreshAudit(filters = {}) {
     if (typeof api.audit !== "function") return null;
+    const epoch = sessionEpoch;
     const { records } = await tracked(() => api.audit(filters));
+    if (epoch !== sessionEpoch) return null;     // the old session's record: not shown to the next
     const rows = (records || []).map(auditRowFromRecord).sort((a, b) => a.atMs - b.atMs);
     setOverlay({ auditLog: rows });
     emit();
@@ -712,7 +730,7 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
       nextEpoch();
       api.logout();
       clearAdmin();
-      setOverlay({ user: null, mfaPending: null, sessionError: null });
+      setOverlay({ user: null, mfaPending: null, sessionError: null, ...SESSION_DATA_EMPTY });
       emit();
     },
 
