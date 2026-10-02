@@ -159,6 +159,36 @@ describe("live store data layer", () => {
     expect(api.logout).toHaveBeenCalled();
   });
 
+  // Main's calls (charting, the profile, the audit, the severity form, alarm quality, scope,
+  // Infinity research) go through the same tracked() path as the ones above.
+  it.each([
+    ["chart", "chart", (store) => store.chart("bed-3", [{ code: "gcs", value: 11 }])],
+    ["setProfile", "setProfile", (store) => store.setProfile("bed-3", { comorbidities: ["koah"] })],
+    ["refreshAudit", "audit", (store) => store.refreshAudit()],
+    ["severityForm", "severityForm", (store) => store.severityForm("bed-3")],
+    ["signSeverityForm", "signSeverityForm", (store) => store.signSeverityForm("bed-3", { overrides: [] })],
+    ["alarmQuality", "alarmQuality", (store) => store.alarmQuality(7)],
+    ["verifyAudit", "verifyAudit", (store) => store.verifyAudit()],
+    ["unassignedScopes", "unassignedScopes", (store) => store.unassignedScopes()],
+    ["researchState", "request", (store) => store.researchState()],
+  ])("%s ends the session when its refresh was refused", async (_name, apiMethod, call) => {
+    const api = fakeApi({
+      login: vi.fn(async () => ({ access_token: nurseToken, requires_mfa: false })),
+      me: vi.fn(async () => ({ id: "u-n", email: "n@example.com", full_name: "Hemşire" })),
+      [apiMethod]: vi.fn(async () => {
+        throw Object.assign(new Error("Invalid or expired refresh token"), { status: 401, sessionEnded: true });
+      }),
+    });
+    const store = createLiveStore({ api, base: fakeBase() });
+    await store.attemptLogin("n@example.com", "pw");
+
+    await expect(call(store)).rejects.toThrow("refresh token");
+
+    expect(api[apiMethod]).toHaveBeenCalled();
+    expect(store.getState().user).toBeNull();
+    expect(api.logout).toHaveBeenCalled();
+  });
+
   it("a board load that finds the session ended signs out too", async () => {
     const api = fakeApi({
       login: vi.fn(async () => ({ access_token: nurseToken, requires_mfa: false })),
