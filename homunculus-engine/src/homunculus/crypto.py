@@ -26,11 +26,23 @@ logger = logging.getLogger(__name__)
 _ENC_PREFIX = "enc::v1::"
 
 
+def _is_production() -> bool:
+    return os.getenv("ENVIRONMENT", "development").strip().lower() == "production"
+
+
+# Fail at startup (import time) rather than on first PHI write: production must never fall back
+# to the dev key derived from a default/known seed.
+if _is_production() and not os.getenv("PHI_ENCRYPTION_KEY"):
+    raise RuntimeError("PHI_ENCRYPTION_KEY must be set when ENVIRONMENT=production.")
+
+
 def _resolve_key() -> bytes:
     key = os.getenv("PHI_ENCRYPTION_KEY")
     if key:
         return key.encode() if isinstance(key, str) else key
     # DEV-ONLY deterministic fallback. Never rely on this in production.
+    if _is_production():
+        raise RuntimeError("PHI_ENCRYPTION_KEY must be set when ENVIRONMENT=production.")
     seed = os.getenv("JWT_SECRET", "dev-insecure-seed-change-me").encode()
     derived = base64.urlsafe_b64encode(hashlib.sha256(seed).digest())
     logger.warning(

@@ -10,6 +10,10 @@ from typing import Any
 
 from jose import JWTError, jwt
 
+# The fallback secret is for local development/tests only. In production the app refuses to start
+# without a real JWT_SECRET, so a publicly known default can never sign real tokens.
+if os.getenv("ENVIRONMENT", "development").strip().lower() == "production" and not os.getenv("JWT_SECRET"):
+    raise RuntimeError("JWT_SECRET must be set when ENVIRONMENT=production.")
 JWT_SECRET = os.getenv("JWT_SECRET", "CHANGE_ME_IN_PRODUCTION_USE_32_CHARS_MIN")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))

@@ -27,6 +27,7 @@ import {
   computeAnalytics, BED_STATES, BED_ADMIN_STATES, BED_STATE_LABEL,
   CLINICAL_PROFILES, profileForPatient, profileForUnitType, unitTypeForPatient,
   PERMISSION, roleCan, isSuperAdmin, currentTenantId, visibleUnits, visiblePatients, visibleBeds,
+  ROLE_ACCOUNTS, DEMO_PASSWORD,
 } from "./clinicalDemo.js";
 import { SCORE_DEFS, UNIT_SCORES, scoresForUnitType } from "./clinicalScoring.js";
 import {
@@ -335,6 +336,25 @@ function Login({ T, S, store, lang, setLang }) {
               <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
             </button>
           </form>
+
+          {/* Herkese açık demo: parolalar gizli değildir, bu yüzden açıkça yazılır. */}
+          <div data-testid="demo-login-note" className={`mt-4 rounded-lg border ${T.border} ${T.glassSubtle} px-3 py-2.5 text-xs`}>
+            <div className={`font-bold ${T.text}`}>Demo hesap — parola: {DEMO_PASSWORD}</div>
+            <div className={`mt-0.5 ${T.muted}`}>{S.pr9.demoHint}</div>
+            <ul className="mt-2 space-y-1">
+              {ROLE_ACCOUNTS.map((a) => (
+                <li key={a.email} className="flex items-center justify-between gap-2">
+                  <span className={`truncate ${T.muted}`} title={a.email}>
+                    {S.roleName?.[a.role] || a.role} · {a.email}
+                  </span>
+                  <button type="button" className={`shrink-0 font-semibold ${T.accent} hover:underline`}
+                    onClick={() => { setEmail(a.email); setCredential(DEMO_PASSWORD); setErr(""); }}>
+                    {S.pr9.fillIn}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
 
           <div className="mt-3 text-center">
             <button type="button" onClick={() => setShowForgot((v) => !v)}

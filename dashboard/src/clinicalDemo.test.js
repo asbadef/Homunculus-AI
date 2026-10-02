@@ -227,10 +227,10 @@ describe("admin actions", () => {
     const s = createDemoStore(buildRealisticState());
     expect(() => s.createUser({ full_name: "X", email: "bad", role: ROLE.ATTENDING }))
       .toThrow(/e-posta/);
-    const u = s.createUser({ full_name: "Dr. Yeni Hekim", email: "yeni@homunculus.health",
+    const u = s.createUser({ full_name: "Dr. Yeni Hekim", email: "yeni@demo.homunculus.example",
       role: ROLE.ATTENDING });
     expect(u.id).toMatch(/^u-/);
-    expect(s.getState().users.some((x) => x.email === "yeni@homunculus.health")).toBe(true);
+    expect(s.getState().users.some((x) => x.email === "yeni@demo.homunculus.example")).toBe(true);
   });
 
   it("adds a unit, room and bed", () => {
@@ -402,25 +402,25 @@ describe("PR#7 · fast PIN switch", () => {
   });
   it("logs in with a PIN as credential", () => {
     const s = createDemoStore(buildRealisticState());
-    const u = s.login("dijitalfabrikaaa@gmail.com", "9999");
+    const u = s.login("yonetici@demo.homunculus.example", "9999");
     expect(u.role).toBe(ROLE.HOSPITAL_ADMIN);
   });
   it("logs the super-admin in with email + password", () => {
     const s = createDemoStore(buildRealisticState());
-    const u = s.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    const u = s.login("yonetici@demo.homunculus.example", "demo");
     expect(u.role).toBe(ROLE.HOSPITAL_ADMIN);
     expect(u.full_name).toBe("Sistem Yöneticisi");
   });
   it("rejects a login for an email that is not a real account", () => {
     const s = createDemoStore(buildRealisticState());
-    expect(() => s.login("admin@homunculus.health", "9999")).toThrow();
+    expect(() => s.login("admin@demo.homunculus.example", "9999")).toThrow();
   });
 });
 
 describe("Faz B · super-admin seed + role authorization", () => {
   it("seeds the super-admin account as HOSPITAL_ADMIN", () => {
     const s = createDemoStore(buildRealisticState());
-    const admin = s.getState().users.find((u) => u.email === "dijitalfabrikaaa@gmail.com");
+    const admin = s.getState().users.find((u) => u.email === "yonetici@demo.homunculus.example");
     expect(admin).toBeTruthy();
     expect(admin.role).toBe(ROLE.HOSPITAL_ADMIN);
     expect(admin.active).toBe(true);
@@ -445,8 +445,8 @@ describe("Faz B · super-admin seed + role authorization", () => {
   it("creates a user with an initial password that can log in", () => {
     const s = createDemoStore(buildRealisticState());
     s.loginAs(ROLE.HOSPITAL_ADMIN);
-    s.createUser({ full_name: "Dr. Deneme", email: "deneme@homunculus.health", role: ROLE.ATTENDING, password: "Deneme.2025!" });
-    const u = s.login("deneme@homunculus.health", "Deneme.2025!");
+    s.createUser({ full_name: "Dr. Deneme", email: "deneme@demo.homunculus.example", role: ROLE.ATTENDING, password: "Deneme.2025!" });
+    const u = s.login("deneme@demo.homunculus.example", "Deneme.2025!");
     expect(u.role).toBe(ROLE.ATTENDING);
   });
   it("reveals a PHI field and audits it", () => {
@@ -486,11 +486,11 @@ describe("Faz B · super-admin seed + role authorization", () => {
   it("creates a session on login and terminates it", () => {
     const s = createDemoStore(buildRealisticState());
     const before = s.getState().activeSessions.length;
-    s.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    s.login("yonetici@demo.homunculus.example", "demo");
     const sessions = s.getState().activeSessions;
     expect(sessions.length).toBe(before + 1);
     const session = sessions[sessions.length - 1];
-    expect(session.email).toBe("dijitalfabrikaaa@gmail.com");
+    expect(session.email).toBe("yonetici@demo.homunculus.example");
     s.terminateSession({ sessionId: session.id });
     expect(s.getState().activeSessions.find((x) => x.id === session.id)).toBeFalsy();
   });
@@ -611,7 +611,7 @@ describe("PR#8 · user security management", () => {
     s.loginAs(ROLE.HOSPITAL_ADMIN);
     s.toggleUserActive("u-04");
     expect(s.getState().users.find((x) => x.id === "u-04").active).toBe(false);
-    expect(() => s.login("dr.can.ozturk@homunculus.health", "3333")).toThrow();
+    expect(() => s.login("dr.can.ozturk@demo.homunculus.example", "3333")).toThrow();
   });
   it("resets MFA enrolment and toggles MFA enforcement", () => {
     const s = createDemoStore(buildRealisticState());
@@ -710,17 +710,17 @@ describe("Faz A · login MFA gate (Madde 6)", () => {
   it("attemptLogin gates MFA-required role into mfaPending instead of opening session", () => {
     const s = createDemoStore(buildRealisticState());
     // dr.elif (u-01) mfaRequired:true, enrolled:true
-    const r = s.attemptLogin("dr.elif.yilmaz@homunculus.health", "1111");
+    const r = s.attemptLogin("dr.elif.yilmaz@demo.homunculus.example", "1111");
     expect(r.mfaRequired).toBe(true);
     expect(s.getState().user).toBe(null);
     expect(s.getState().mfaPending).toBeTruthy();
-    expect(s.getState().mfaPending.email).toBe("dr.elif.yilmaz@homunculus.health");
+    expect(s.getState().mfaPending.email).toBe("dr.elif.yilmaz@demo.homunculus.example");
   });
 
   it("attemptLogin opens session directly when role does not require MFA", () => {
     const s = createDemoStore(buildRealisticState());
     // ayse (u-02) mfaRequired:false
-    const r = s.attemptLogin("ayse.demir@homunculus.health", "2222");
+    const r = s.attemptLogin("ayse.demir@demo.homunculus.example", "2222");
     expect(r.mfaRequired).toBe(false);
     expect(s.getState().user).toBeTruthy();
     expect(s.getState().mfaPending).toBe(null);
@@ -728,16 +728,16 @@ describe("Faz A · login MFA gate (Madde 6)", () => {
 
   it("completeMfaLogin verifies code and opens the gated session", () => {
     const s = createDemoStore(buildRealisticState());
-    s.attemptLogin("dr.elif.yilmaz@homunculus.health", "1111");
+    s.attemptLogin("dr.elif.yilmaz@demo.homunculus.example", "1111");
     const u = s.completeMfaLogin("123456");
-    expect(u.email).toBe("dr.elif.yilmaz@homunculus.health");
+    expect(u.email).toBe("dr.elif.yilmaz@demo.homunculus.example");
     expect(s.getState().user).toBeTruthy();
     expect(s.getState().mfaPending).toBe(null);
   });
 
   it("cancelMfaLogin clears the pending challenge", () => {
     const s = createDemoStore(buildRealisticState());
-    s.attemptLogin("dr.elif.yilmaz@homunculus.health", "1111");
+    s.attemptLogin("dr.elif.yilmaz@demo.homunculus.example", "1111");
     s.cancelMfaLogin();
     expect(s.getState().mfaPending).toBe(null);
     expect(s.getState().user).toBe(null);
@@ -1176,26 +1176,26 @@ describe("PHARMACIST & BIOMEDICAL roles", () => {
     const pharmacist = state.users.find(u => u.role === ROLE.PHARMACIST);
     const biomedical = state.users.find(u => u.role === ROLE.BIOMEDICAL);
     expect(pharmacist).toBeTruthy();
-    expect(pharmacist.email).toBe("ecz.zeynep.kaya@homunculus.health");
+    expect(pharmacist.email).toBe("ecz.zeynep.kaya@demo.homunculus.example");
     expect(biomedical).toBeTruthy();
-    expect(biomedical.email).toBe("biyomed.ahmet.yildiz@homunculus.health");
+    expect(biomedical.email).toBe("biyomed.ahmet.yildiz@demo.homunculus.example");
   });
 
   it("allows pharmacist login", () => {
     const store = createDemoStore(buildRealisticState());
-    expect(() => store.login("ecz.zeynep.kaya@homunculus.health", "Eczaci.Zeynep2025!")).not.toThrow();
+    expect(() => store.login("ecz.zeynep.kaya@demo.homunculus.example", "demo")).not.toThrow();
     expect(store.getState().user.role).toBe(ROLE.PHARMACIST);
   });
 
   it("allows biomedical login", () => {
     const store = createDemoStore(buildRealisticState());
-    expect(() => store.login("biyomed.ahmet.yildiz@homunculus.health", "Biyomed.Ahmet2025!")).not.toThrow();
+    expect(() => store.login("biyomed.ahmet.yildiz@demo.homunculus.example", "demo")).not.toThrow();
     expect(store.getState().user.role).toBe(ROLE.BIOMEDICAL);
   });
 
   it("admin can change user role to PHARMACIST", () => {
     const store = createDemoStore(buildRealisticState());
-    store.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    store.login("yonetici@demo.homunculus.example", "demo");
     const users = store.getState().users;
     const targetUser = users.find(u => u.role === ROLE.ATTENDING);
     expect(() => store.setUserRole({ userId: targetUser.id, role: ROLE.PHARMACIST })).not.toThrow();
@@ -1225,10 +1225,10 @@ describe("Rol hiyerarşisi & yetki matrisi", () => {
   });
   it("yeni Hekim ve Hemşire hesapları giriş yapabilir", () => {
     const s = createDemoStore(buildRealisticState());
-    const dr = s.login("dr.deniz.aydin@homunculus.health", "Hekim.Deniz2025!");
+    const dr = s.login("dr.deniz.aydin@demo.homunculus.example", "demo");
     expect(dr.role).toBe(ROLE.PHYSICIAN);
     s.logout();
-    const n = s.login("merve.celik@homunculus.health", "Hemsire.Merve2025!");
+    const n = s.login("merve.celik@demo.homunculus.example", "demo");
     expect(n.role).toBe(ROLE.NURSE);
   });
 });
@@ -1237,19 +1237,19 @@ describe("Rol hiyerarşisi & yetki matrisi", () => {
 describe("Çok-hastane (multi-tenant) izolasyonu", () => {
   it("varsayılan kurum kullanıcısı tüm demo ünitelerini görür", () => {
     const s = createDemoStore(buildRealisticState());
-    s.login("dr.deniz.aydin@homunculus.health", "Hekim.Deniz2025!");
+    s.login("dr.deniz.aydin@demo.homunculus.example", "demo");
     const st = s.getState();
     expect(currentTenantId(st)).toBe("tenant-hmn");
     expect(visibleUnits(st).length).toBe(st.structure.units.length);
   });
   it("süper yönetici (admin) tüm kurumları görür", () => {
     const s = createDemoStore(buildRealisticState());
-    s.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    s.login("yonetici@demo.homunculus.example", "demo");
     expect(isSuperAdmin(s.getState().user)).toBe(true);
   });
   it("yeni hastane kullanıcısı YALNIZCA kendi kurumunun hasta/ünitelerini görür", () => {
     const s = createDemoStore(buildRealisticState());
-    s.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    s.login("yonetici@demo.homunculus.example", "demo");
     const res = s.createHospital({
       name: "Med Hospital", slug: "med", siteName: "Med Merkez",
       units: [{ name: "Med Erişkin YBÜ", type: "ADULT_ICU", beds: 3 }],
@@ -1275,7 +1275,7 @@ describe("Çok-hastane (multi-tenant) izolasyonu", () => {
   });
   it("createHospital yinelenen slug'ı reddeder", () => {
     const s = createDemoStore(buildRealisticState());
-    s.login("dijitalfabrikaaa@gmail.com", "Df123456!");
+    s.login("yonetici@demo.homunculus.example", "demo");
     expect(() => s.createHospital({ name: "X", slug: "homunculus" })).toThrow();
   });
 });
@@ -1284,7 +1284,7 @@ describe("Çok-hastane (multi-tenant) izolasyonu", () => {
 describe("Skorlama mağaza entegrasyonu", () => {
   it("hekim skoru kaydedebilir, geçmiş en yeni önce sıralanır", () => {
     const s = createDemoStore(buildRealisticState());
-    s.login("dr.deniz.aydin@homunculus.health", "Hekim.Deniz2025!");
+    s.login("dr.deniz.aydin@demo.homunculus.example", "demo");
     const e = s.saveScore({ patientId: "P-101", scoreType: "APACHE2",
       inputs: { temp: 39.5, map: 45, hr: 145, rr: 36, ph: 7.2, na: 155, k: 6.5,
         creatinine: 2.5, hct: 55, wbc: 25, gcs: 10, age: 70, chronicHealth: "emergency" } });
@@ -1300,16 +1300,37 @@ describe("Skorlama mağaza entegrasyonu", () => {
   });
   it("hemşire skor kaydedemez (yetki reddi)", () => {
     const s = createDemoStore(buildRealisticState());
-    s.login("merve.celik@homunculus.health", "Hemsire.Merve2025!");
+    s.login("merve.celik@demo.homunculus.example", "demo");
     expect(() => s.saveScore({ patientId: "P-101", scoreType: "SOFA", inputs: {} })).toThrow();
   });
   it("otomatik doldurma monitör vitallerini getirir", () => {
     const s = createDemoStore(buildRealisticState());
-    s.login("dr.deniz.aydin@homunculus.health", "Hekim.Deniz2025!");
+    s.login("dr.deniz.aydin@demo.homunculus.example", "demo");
     const af = s.autofillScoreInputs("P-101", "APACHE2");
     expect(af.inputs.hr).toBe(112);
     expect(af.inputs.map).toBe(68);
     expect(af.inputs.temp).toBe(38.4);
     expect(af.filled).toContain("hr");
+  });
+});
+
+describe("Güvenlik · herkese açık demo verisi", () => {
+  it("tüm başlangıç hesapları sahte demo e-postası ve 'demo' parolası kullanır", () => {
+    const s = createDemoStore(buildRealisticState());
+    const users = s.getState().users;
+    expect(users).toHaveLength(10);
+    for (const u of users) {
+      expect(u.email).toMatch(/@demo\.homunculus\.example$/);
+      expect(u.password).toBe("demo");
+    }
+    const admin = s.login("yonetici@demo.homunculus.example", "demo");
+    expect(admin.role).toBe(ROLE.HOSPITAL_ADMIN);
+  });
+  it("TC numaraları 0 ile başlar (algoritmaya göre geçersiz), telefonlar +90 555 000 00 0X biçimindedir", () => {
+    const s = createDemoStore(buildRealisticState());
+    for (const p of s.getState().patients) {
+      if (p.tc_no !== null) expect(p.tc_no).toMatch(/^0\d{10}$/);
+      expect(p.phone).toMatch(/^\+90 555 000 00 0\d$/);
+    }
   });
 });

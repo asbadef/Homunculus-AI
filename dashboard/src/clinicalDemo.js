@@ -53,17 +53,19 @@ export function roleCan(role, permission) {
 // user-facing "demo login": the interactive login form validates ONLY against real seeded accounts
 // (state.users). It carries the same identities as the seed so loginAs() opens a matching session,
 // and the 4-digit quick-PIN backs the 3-second Fast Switcher on shared tablet/nurse-station screens.
+// Herkese açık demo: tüm başlangıç hesaplarının parolası budur ve giriş ekranında açıkça yazılır.
+export const DEMO_PASSWORD = "demo";
 export const ROLE_ACCOUNTS = [
-  { email: "dr.elif.yilmaz@homunculus.health", pin: "1111", full_name: "Dr. Elif Yılmaz", role: ROLE.ATTENDING },
-  { email: "ayse.demir@homunculus.health",     pin: "2222", full_name: "Ayşe Demir",      role: ROLE.CHARGE_NURSE },
-  { email: "dijitalfabrikaaa@gmail.com",        pin: "9999", full_name: "Sistem Yöneticisi", role: ROLE.HOSPITAL_ADMIN },
-  { email: "dr.can.ozturk@homunculus.health",  pin: "3333", full_name: "Dr. Can Öztürk",  role: ROLE.ATTENDING },
-  { email: "selin.arslan@homunculus.health",   pin: "4444", full_name: "Selin Arslan",    role: ROLE.CHARGE_NURSE },
-  { email: "dr.murat.sahin@homunculus.health", pin: "5555", full_name: "Dr. Murat Şahin", role: ROLE.RRT },
-  { email: "ecz.zeynep.kaya@homunculus.health", pin: "6666", full_name: "Ecz. Zeynep Kaya", role: ROLE.PHARMACIST },
-  { email: "biyomed.ahmet.yildiz@homunculus.health", pin: "7777", full_name: "Ahmet Yıldız", role: ROLE.BIOMEDICAL },
-  { email: "dr.deniz.aydin@homunculus.health", pin: "1212", full_name: "Dr. Deniz Aydın", role: ROLE.PHYSICIAN },
-  { email: "merve.celik@homunculus.health", pin: "3434", full_name: "Merve Çelik", role: ROLE.NURSE },
+  { email: "dr.elif.yilmaz@demo.homunculus.example", pin: "1111", full_name: "Dr. Elif Yılmaz", role: ROLE.ATTENDING },
+  { email: "ayse.demir@demo.homunculus.example",     pin: "2222", full_name: "Ayşe Demir",      role: ROLE.CHARGE_NURSE },
+  { email: "yonetici@demo.homunculus.example",        pin: "9999", full_name: "Sistem Yöneticisi", role: ROLE.HOSPITAL_ADMIN },
+  { email: "dr.can.ozturk@demo.homunculus.example",  pin: "3333", full_name: "Dr. Can Öztürk",  role: ROLE.ATTENDING },
+  { email: "selin.arslan@demo.homunculus.example",   pin: "4444", full_name: "Selin Arslan",    role: ROLE.CHARGE_NURSE },
+  { email: "dr.murat.sahin@demo.homunculus.example", pin: "5555", full_name: "Dr. Murat Şahin", role: ROLE.RRT },
+  { email: "ecz.zeynep.kaya@demo.homunculus.example", pin: "6666", full_name: "Ecz. Zeynep Kaya", role: ROLE.PHARMACIST },
+  { email: "biyomed.ahmet.yildiz@demo.homunculus.example", pin: "7777", full_name: "Ahmet Yıldız", role: ROLE.BIOMEDICAL },
+  { email: "dr.deniz.aydin@demo.homunculus.example", pin: "1212", full_name: "Dr. Deniz Aydın", role: ROLE.PHYSICIAN },
+  { email: "merve.celik@demo.homunculus.example", pin: "3434", full_name: "Merve Çelik", role: ROLE.NURSE },
 ];
 // Geriye dönük uyumluluk (eski isimler bazı içe aktarımlarda kullanılabilir).
 export const DEMO_ACCOUNTS = ROLE_ACCOUNTS;
@@ -471,21 +473,21 @@ export function buildRealisticState() {
   const now = Date.now();
   const hrs = (h) => now - h * 3600 * 1000;
 
-  // GERÇEK başlangıç hesapları (canlı-benzeri). Her hesabın bireysel parolası vardır; paylaşımlı
-  // "demo parolası" kaldırıldı. Süper yönetici (u-03) diğer tüm rolleri yetkilendirebilir (setUserRole).
+  // DEMO başlangıç hesapları. Bu kod tarayıcıda çalışır ve herkese açıktır: buraya asla gerçek
+  // e-posta veya parola yazılmamalı. Tüm hesapların parolası "demo" (giriş ekranında yazılı). Süper yönetici (u-03) diğer tüm rolleri yetkilendirebilir (setUserRole).
   // PIN'ler ortak ekranlarda 3 saniyelik hızlı vardiya geçişi içindir. MFA gerektiren roller girişte
   // iki adımlı doğrulama ister (demo doğrulama kodu: 123456).
   const users = [
-    { id: "u-01", full_name: "Dr. Elif Yılmaz", email: "dr.elif.yilmaz@homunculus.health", role: ROLE.ATTENDING,     active: true, mfa: true,  mfaRequired: true,  pin: "1111", password: "Hekim.Elif2025!",   unitIds: ["unit-adult"], tenantId: "tenant-hmn" },
-    { id: "u-02", full_name: "Ayşe Demir",      email: "ayse.demir@homunculus.health",     role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "2222", password: "Hemsire.Ayse2025!",  unitIds: ["unit-adult"], tenantId: "tenant-hmn" },
-    { id: "u-03", full_name: "Sistem Yöneticisi", email: "dijitalfabrikaaa@gmail.com",     role: ROLE.HOSPITAL_ADMIN, active: true, mfa: false, mfaRequired: false, pin: "9999", password: "Df123456!",           unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn", isSuperAdmin: true },
-    { id: "u-04", full_name: "Dr. Can Öztürk",  email: "dr.can.ozturk@homunculus.health",  role: ROLE.ATTENDING,     active: true, mfa: false, mfaRequired: true,  pin: "3333", password: "Hekim.Can2025!",    unitIds: ["unit-nicu"], tenantId: "tenant-hmn" },
-    { id: "u-05", full_name: "Selin Arslan",    email: "selin.arslan@homunculus.health",   role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "4444", password: "Hemsire.Selin2025!", unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn" },
-    { id: "u-06", full_name: "Dr. Murat Şahin", email: "dr.murat.sahin@homunculus.health", role: ROLE.RRT,           active: true, mfa: false, mfaRequired: false, pin: "5555", password: "Rrt.Murat2025!",     unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn" },
-    { id: "u-07", full_name: "Ecz. Zeynep Kaya", email: "ecz.zeynep.kaya@homunculus.health", role: ROLE.PHARMACIST,  active: true, mfa: false, mfaRequired: false, pin: "6666", password: "Eczaci.Zeynep2025!", unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn" },
-    { id: "u-08", full_name: "Ahmet Yıldız",    email: "biyomed.ahmet.yildiz@homunculus.health", role: ROLE.BIOMEDICAL, active: true, mfa: false, mfaRequired: false, pin: "7777", password: "Biyomed.Ahmet2025!", unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn" },
-    { id: "u-09", full_name: "Dr. Deniz Aydın", email: "dr.deniz.aydin@homunculus.health", role: ROLE.PHYSICIAN,     active: true, mfa: false, mfaRequired: true,  pin: "1212", password: "Hekim.Deniz2025!",   unitIds: ["unit-adult"], tenantId: "tenant-hmn" },
-    { id: "u-10", full_name: "Merve Çelik",     email: "merve.celik@homunculus.health",    role: ROLE.NURSE,         active: true, mfa: false, mfaRequired: false, pin: "3434", password: "Hemsire.Merve2025!", unitIds: ["unit-adult"], tenantId: "tenant-hmn" },
+    { id: "u-01", full_name: "Dr. Elif Yılmaz", email: "dr.elif.yilmaz@demo.homunculus.example", role: ROLE.ATTENDING,     active: true, mfa: true,  mfaRequired: true,  pin: "1111", password: DEMO_PASSWORD,   unitIds: ["unit-adult"], tenantId: "tenant-hmn" },
+    { id: "u-02", full_name: "Ayşe Demir",      email: "ayse.demir@demo.homunculus.example",     role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "2222", password: DEMO_PASSWORD,  unitIds: ["unit-adult"], tenantId: "tenant-hmn" },
+    { id: "u-03", full_name: "Sistem Yöneticisi", email: "yonetici@demo.homunculus.example",     role: ROLE.HOSPITAL_ADMIN, active: true, mfa: false, mfaRequired: false, pin: "9999", password: DEMO_PASSWORD,           unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn", isSuperAdmin: true },
+    { id: "u-04", full_name: "Dr. Can Öztürk",  email: "dr.can.ozturk@demo.homunculus.example",  role: ROLE.ATTENDING,     active: true, mfa: false, mfaRequired: true,  pin: "3333", password: DEMO_PASSWORD,    unitIds: ["unit-nicu"], tenantId: "tenant-hmn" },
+    { id: "u-05", full_name: "Selin Arslan",    email: "selin.arslan@demo.homunculus.example",   role: ROLE.CHARGE_NURSE,  active: true, mfa: true,  mfaRequired: false, pin: "4444", password: DEMO_PASSWORD, unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn" },
+    { id: "u-06", full_name: "Dr. Murat Şahin", email: "dr.murat.sahin@demo.homunculus.example", role: ROLE.RRT,           active: true, mfa: false, mfaRequired: false, pin: "5555", password: DEMO_PASSWORD,     unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn" },
+    { id: "u-07", full_name: "Ecz. Zeynep Kaya", email: "ecz.zeynep.kaya@demo.homunculus.example", role: ROLE.PHARMACIST,  active: true, mfa: false, mfaRequired: false, pin: "6666", password: DEMO_PASSWORD, unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn" },
+    { id: "u-08", full_name: "Ahmet Yıldız",    email: "biyomed.ahmet.yildiz@demo.homunculus.example", role: ROLE.BIOMEDICAL, active: true, mfa: false, mfaRequired: false, pin: "7777", password: DEMO_PASSWORD, unitIds: ["unit-adult", "unit-nicu"], tenantId: "tenant-hmn" },
+    { id: "u-09", full_name: "Dr. Deniz Aydın", email: "dr.deniz.aydin@demo.homunculus.example", role: ROLE.PHYSICIAN,     active: true, mfa: false, mfaRequired: true,  pin: "1212", password: DEMO_PASSWORD,   unitIds: ["unit-adult"], tenantId: "tenant-hmn" },
+    { id: "u-10", full_name: "Merve Çelik",     email: "merve.celik@demo.homunculus.example",    role: ROLE.NURSE,         active: true, mfa: false, mfaRequired: false, pin: "3434", password: DEMO_PASSWORD, unitIds: ["unit-adult"], tenantId: "tenant-hmn" },
   ];
 
   const structure = {
@@ -526,64 +528,64 @@ export function buildRealisticState() {
 
   const patients = [
     { patient_id: "P-101", display_name: "Ahmet Yıldız", sex: "male", age: 67, isNeonate: false,
-      tc_no: "12345678934", phone: "0532 123 45 67", address: "Bahçelievler Mah. Çiçek Sok. No:12/4 Üsküdar/İstanbul",
-      tcMasked: "12*******34", mrn: "MRN-104821", protocolNo: "2025/0004821",
+      tc_no: "00000000001", phone: "+90 555 000 00 01", address: "Örnek Mah. Demo Sok. No:1 Örnek İlçe/Örnek İl",
+      tcMasked: "00*******01", mrn: "MRN-104821", protocolNo: "2025/0004821",
       bedId: "bed-a101", bedLabel: "101", unitId: "unit-adult", admittedAtMs: hrs(52), admittedBy: "Dr. Elif Yılmaz",
       admissionState: ADMISSION_STATE.ACTIVE,
       diagnosis: "Toplum kökenli pnömoni, akut solunum yetmezliği", risk: "high", source: "emergency",
       vitals: { hr: 112, map: 68, spo2: 89, temp: 38.4, rr: 28 } },
     { patient_id: "P-102", display_name: "Fatma Kaya", sex: "female", age: 54, isNeonate: false,
-      tc_no: "27654321006", phone: "0542 987 65 43", address: "Çamlıca Mah. Yeşil Cad. No:45/8 Kadıköy/İstanbul",
-      tcMasked: "27*******06", mrn: "MRN-104822", protocolNo: "2025/0004822",
+      tc_no: "00000000002", phone: "+90 555 000 00 02", address: "Örnek Mah. Demo Sok. No:2 Örnek İlçe/Örnek İl",
+      tcMasked: "00*******02", mrn: "MRN-104822", protocolNo: "2025/0004822",
       bedId: "bed-a102", bedLabel: "102", unitId: "unit-adult", admittedAtMs: hrs(20), admittedBy: "Dr. Can Öztürk",
       admissionState: ADMISSION_STATE.ACTIVE,
       diagnosis: "Postoperatif takip (majör abdominal cerrahi)", risk: "stable", source: "or",
       vitals: { hr: 82, map: 88, spo2: 97, temp: 36.8, rr: 16 } },
     { patient_id: "P-103", display_name: "Mehmet Demir", sex: "male", age: 72, isNeonate: false,
-      tc_no: "45678901219", phone: "0505 321 54 76", address: "Atatürk Bulvarı No:234/12 Çankaya/Ankara",
-      tcMasked: "45*******19", mrn: "MRN-104823", protocolNo: "2025/0004823",
+      tc_no: "00000000003", phone: "+90 555 000 00 03", address: "Örnek Mah. Demo Sok. No:3 Örnek İlçe/Örnek İl",
+      tcMasked: "00*******03", mrn: "MRN-104823", protocolNo: "2025/0004823",
       bedId: "bed-a104", bedLabel: "104", unitId: "unit-adult", admittedAtMs: hrs(76), admittedBy: "Dr. Elif Yılmaz",
       admissionState: ADMISSION_STATE.ACTIVE,
       diagnosis: "Akut böbrek hasarı, elektrolit dengesizliği", risk: "high", source: "ward",
       vitals: { hr: 96, map: 72, spo2: 94, temp: 37.1, rr: 20 } },
     { patient_id: "P-104", display_name: "Zeynep Şahin", sex: "female", age: 61, isNeonate: false,
-      tc_no: "63789012388", phone: "0533 654 32 10", address: "Kızılay Mah. Cumhuriyet Sok. No:7/3 Beylikdüzü/İstanbul",
-      tcMasked: "63*******88", mrn: "MRN-104824", protocolNo: "2025/0004824",
+      tc_no: "00000000004", phone: "+90 555 000 00 04", address: "Örnek Mah. Demo Sok. No:4 Örnek İlçe/Örnek İl",
+      tcMasked: "00*******04", mrn: "MRN-104824", protocolNo: "2025/0004824",
       bedId: "bed-a105", bedLabel: "105", unitId: "unit-adult", admittedAtMs: hrs(6), admittedBy: "Dr. Elif Yılmaz",
       admissionState: ADMISSION_STATE.ACTIVE,
       diagnosis: "Sepsis şüphesi, hipotansiyon", risk: "critical", source: "emergency",
       vitals: { hr: 128, map: 58, spo2: 91, temp: 39.2, rr: 32 } },
     { patient_id: "P-105", display_name: "Bebek Aydın", sex: "male", age: 0, isNeonate: true, ageDays: 3,
-      tc_no: null, phone: "0532 111 22 33", address: "Anne: Ayşe Aydın / Baba: Mehmet Aydın - Kadıköy/İstanbul",
+      tc_no: null, phone: "+90 555 000 00 05", address: "Veli: Örnek Veli (uydurma) - Örnek İlçe/Örnek İl",
       tcMasked: "—", mrn: "MRN-104825", protocolNo: "2025/0004825",
       bedId: "bed-n201", bedLabel: "201", unitId: "unit-nicu", admittedAtMs: hrs(70), admittedBy: "Dr. Can Öztürk",
       admissionState: ADMISSION_STATE.ACTIVE,
       diagnosis: "Prematürite (32 hafta), respiratuar destek", risk: "high", source: "delivery",
       vitals: { hr: 158, map: 42, spo2: 92, temp: 36.5, rr: 52 } },
     { patient_id: "P-106", display_name: "Bebek Çelik", sex: "female", age: 0, isNeonate: true, ageDays: 8,
-      tc_no: null, phone: "0505 444 55 66", address: "Anne: Zehra Çelik / Baba: Ali Çelik - Ümraniye/İstanbul",
+      tc_no: null, phone: "+90 555 000 00 06", address: "Veli: Örnek Veli (uydurma) - Örnek İlçe/Örnek İl",
       tcMasked: "—", mrn: "MRN-104826", protocolNo: "2025/0004826",
       bedId: "bed-n202", bedLabel: "202", unitId: "unit-nicu", admittedAtMs: hrs(30), admittedBy: "Dr. Can Öztürk",
       admissionState: ADMISSION_STATE.ACTIVE,
       diagnosis: "Yenidoğan sarılığı, fototerapi", risk: "low", source: "delivery",
       vitals: { hr: 140, map: 48, spo2: 97, temp: 36.9, rr: 44 } },
     { patient_id: "P-107", display_name: "Hasan Aksoy", sex: "male", age: 64, isNeonate: false,
-      tc_no: "71234567890", phone: "0532 777 88 99", address: "Fevzi Çakmak Mah. Lale Sok. No:9/2 Bakırköy/İstanbul",
-      tcMasked: "71*******90", mrn: "MRN-104827", protocolNo: "2025/0004827",
+      tc_no: "00000000005", phone: "+90 555 000 00 07", address: "Örnek Mah. Demo Sok. No:7 Örnek İlçe/Örnek İl",
+      tcMasked: "00*******05", mrn: "MRN-104827", protocolNo: "2025/0004827",
       bedId: "bed-c301", bedLabel: "301", unitId: "unit-cvicu", admittedAtMs: hrs(10), admittedBy: "Dr. Elif Yılmaz",
       admissionState: ADMISSION_STATE.ACTIVE,
       diagnosis: "Koroner arter baypas greft (KABG) sonrası erken postop takip", risk: "high", source: "or",
       vitals: { hr: 98, map: 74, spo2: 95, temp: 36.6, rr: 18 } },
     { patient_id: "P-108", display_name: "İbrahim Koç", sex: "male", age: 58, isNeonate: false,
-      tc_no: "89012345678", phone: "0505 222 33 44", address: "Yeşilyurt Mah. Deniz Cad. No:31/5 Konak/İzmir",
-      tcMasked: "89*******78", mrn: "MRN-104828", protocolNo: "2025/0004828",
+      tc_no: "00000000006", phone: "+90 555 000 00 08", address: "Örnek Mah. Demo Sok. No:8 Örnek İlçe/Örnek İl",
+      tcMasked: "00*******06", mrn: "MRN-104828", protocolNo: "2025/0004828",
       bedId: "bed-k401", bedLabel: "401", unitId: "unit-coronary", admittedAtMs: hrs(14), admittedBy: "Dr. Elif Yılmaz",
       admissionState: ADMISSION_STATE.ACTIVE,
       diagnosis: "Non-ST elevasyonlu miyokard enfarktüsü (NSTEMI)", risk: "high", source: "emergency",
       vitals: { hr: 88, map: 82, spo2: 96, temp: 36.7, rr: 18 } },
     { patient_id: "P-109", display_name: "Emine Yıldırım", sex: "female", age: 79, isNeonate: false,
-      tc_no: "34567890126", phone: "0533 555 66 77", address: "Gazi Mah. Menekşe Sok. No:18/3 Selçuklu/Konya",
-      tcMasked: "34*******26", mrn: "MRN-104829", protocolNo: "2025/0004829",
+      tc_no: "00000000007", phone: "+90 555 000 00 09", address: "Örnek Mah. Demo Sok. No:9 Örnek İlçe/Örnek İl",
+      tcMasked: "00*******07", mrn: "MRN-104829", protocolNo: "2025/0004829",
       bedId: "bed-p501", bedLabel: "501", unitId: "unit-palliative", admittedAtMs: hrs(96), admittedBy: "Dr. Can Öztürk",
       admissionState: ADMISSION_STATE.ACTIVE,
       diagnosis: "İleri evre malignite, palyatif konfor bakımı", risk: "stable", source: "ward",
@@ -936,8 +938,8 @@ export function createDemoStore(initial) {
 
   // Kurumsal e-posta + parola/PIN girişi. Rol DB'den (users listesi) gelir; UI paneli role göre
   // otomatik yönlendirir (dışarıdan self-servis kayıt yoktur; hesapları yönetici açar).
-  // Kimlik doğrulama — YALNIZCA gerçek hesaplara (state.users) karşı. Paylaşımlı demo parolası
-  // kaldırıldı: giriş, yöneticinin açtığı gerçek kullanıcının parolası / PIN'i / geçici PIN'i ile yapılır.
+  // Kimlik doğrulama — state.users listesine karşı, tarayıcıda (yalnızca demo; gerçek güvenlik değildir).
+  // Başlangıç hesaplarının parolası "demo"; PIN ve yöneticinin verdiği geçici PIN de kabul edilir.
   function _validateCredential(email, credential) {
     const clean = String(credential || "");
     const liveUser = (state.users || []).find((u) => u.email === email);
