@@ -413,3 +413,37 @@ describe("backendApi — a newer session's tokens are never another session's to
     expect(fetchMock.mock.calls.map(([url]) => url)).not.toContain("/auth/refresh");
   });
 });
+
+describe("backendApi — scope assignment (until G1-12 rebuilds the screen)", () => {
+  it("replaces one user's scope with PUT /scope/<id> and the grants as ScopeAssignment wants them", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(TOKENS))
+      .mockResolvedValueOnce(jsonResponse({ user_id: "u-1", unrestricted: false, reason: "assigned" }));
+    const api = createBackendApi({ baseUrl: "https://api.test", fetchImpl: fetchMock });
+    await api.login("admin", "gizli");
+
+    // scope/schemas.py: ScopeAssignment {grants: [ScopeGrantIn]}, each grant naming exactly one
+    // of unit_id / bed_id (the other defaults to "").
+    const grants = [{ unit_id: "unit-adult" }, { bed_id: "bed-a1" }];
+    await api.setScope("u 1/x", grants);
+
+    const [url, opts] = fetchMock.mock.calls[1];
+    expect(url).toBe("https://api.test/scope/u%201%2Fx");   // the id is one path segment
+    expect(opts.method).toBe("PUT");
+    expect(opts.headers.Authorization).toBe("Bearer acc-1");
+    expect(opts.headers["Content-Type"]).toBe("application/json");
+    expect(JSON.parse(opts.body)).toEqual({ grants: [{ unit_id: "unit-adult" }, { bed_id: "bed-a1" }] });
+  });
+
+  it("an empty list is sent as an empty scope, not left out", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(TOKENS))
+      .mockResolvedValueOnce(jsonResponse({}));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    await api.login("admin", "gizli");
+
+    await api.setScope("u-1", []);
+
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ grants: [] });
+  });
+});
