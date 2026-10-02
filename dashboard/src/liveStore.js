@@ -421,7 +421,9 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
       if (closed || reconnectTimer) return;
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
-        if (!closed) connect();
+        // connect() handles its own failures; the catch only keeps a surprise from becoming an
+        // unhandled rejection in a timer nobody awaits.
+        if (!closed) connect().catch(() => {});
       }, RECONNECT_DELAY_MS);
     }
 
@@ -430,12 +432,24 @@ export function createLiveStore({ api, base, openStream = defaultOpenStream }) {
       emit();
     }
 
+    /** Never rejects. A ticket that cannot be had (a 5xx; 503 when the server cannot read the
+     *  caller's scope; no network) means no stream: the board loaded a moment ago is about to
+     *  freeze, so it must not keep saying LIVE. It goes the dropped-stream way instead —
+     *  DEGRADED, and the single scheduled reconnect with a fresh ticket. Not when the stream was
+     *  closed meanwhile, or the session it was opened for has ended (tracked() signs out on a
+     *  refused refresh): there is nothing to reconnect for then. */
     async function connect() {
-      // A fresh ticket every time: the previous one (if any) is single-use and already spent.
-      const { ticket } = await tracked(() => api.streamTicket());
-      closeSource = openStream(`/stream?ticket=${encodeURIComponent(ticket)}`, {
-        onopen: handleOpen, onmessage: handleMessage, onerror: handleError,
-      });
+      try {
+        // A fresh ticket every time: the previous one (if any) is single-use and already spent.
+        const { ticket } = await tracked(() => api.streamTicket());
+        if (closed) return;          // closed while the ticket was on its way: open nothing
+        closeSource = openStream(`/stream?ticket=${encodeURIComponent(ticket)}`, {
+          onopen: handleOpen, onmessage: handleMessage, onerror: handleError,
+        });
+      } catch {
+        if (closed || epoch !== sessionEpoch) return;
+        handleError();
+      }
     }
 
     await connect();

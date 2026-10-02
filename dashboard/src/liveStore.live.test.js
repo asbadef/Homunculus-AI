@@ -470,6 +470,88 @@ describe("live store — SSE stream", () => {
     }
   });
 
+  it("a stream ticket the server cannot give leaves the board DEGRADED, not LIVE, and retries once", async () => {
+    // refreshBoard() has just set LIVE; without a ticket no stream opens and the board would
+    // freeze under a LIVE indicator. 503 is what /stream-ticket answers when the scope cannot be read.
+    vi.useFakeTimers();
+    try {
+      const unavailable = Object.assign(new Error("Kapsam okunamadı"), { status: 503 });
+      const api = fakeApi({
+        streamTicket: vi.fn()
+          .mockRejectedValueOnce(unavailable)
+          .mockResolvedValueOnce({ ticket: "t2", expires_in: 60 }),
+      });
+      const { openStream, calls } = fakeOpenStream();
+      const store = createLiveStore({ api, base: fakeBase(), openStream });
+
+      const close = await store.startLive();             // resolves: the failure is handled
+
+      expect(store.getState().connection).toBe(CONNECTION.DEGRADED);
+      expect(calls).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(1);                // exactly one reconnect scheduled
+
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(api.streamTicket).toHaveBeenCalledTimes(2);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].url).toContain("ticket=t2");
+      calls[0].handlers.onopen();
+      expect(store.getState().connection).toBe(CONNECTION.LIVE);
+      expect(vi.getTimerCount()).toBe(0);
+      close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a ticket refused because the session ended signs out and schedules no reconnect", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = fakeApi({
+        login: vi.fn(async () => ({ access_token: nurseToken, requires_mfa: false })),
+        me: vi.fn(async () => ({ id: "u-n", email: "n@example.com", full_name: "Hemşire" })),
+        streamTicket: vi.fn(async () => {
+          throw Object.assign(new Error("Oturum süresi doldu"), { status: 401, sessionEnded: true });
+        }),
+      });
+      const store = createLiveStore({ api, base: fakeBase(), openStream: () => () => {} });
+      await store.attemptLogin("n@example.com", "pw");
+
+      await store.startLive();
+
+      expect(store.getState().user).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a ticket failure after close() schedules nothing and opens nothing", async () => {
+    vi.useFakeTimers();
+    try {
+      let failTicket;
+      const api = fakeApi({
+        streamTicket: vi.fn()
+          .mockResolvedValueOnce({ ticket: "t1", expires_in: 60 })
+          .mockImplementationOnce(() => new Promise((_, reject) => { failTicket = reject; })),
+      });
+      const { openStream, calls } = fakeOpenStream();
+      const store = createLiveStore({ api, base: fakeBase(), openStream });
+      const close = await store.startLive();
+
+      calls[0].handlers.onerror();
+      await vi.advanceTimersByTimeAsync(5000);           // the reconnect asks for a ticket…
+      close();                                           // …and the screen goes away meanwhile
+      failTicket(Object.assign(new Error("down"), { status: 502 }));
+      await vi.advanceTimersByTimeAsync(10000);
+
+      expect(api.streamTicket).toHaveBeenCalledTimes(2);
+      expect(calls).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("closing what startLive() returns cancels a pending reconnect", async () => {
     vi.useFakeTimers();
     try {
