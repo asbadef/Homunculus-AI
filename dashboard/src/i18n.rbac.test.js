@@ -1,10 +1,11 @@
 // dashboard/src/i18n.rbac.test.js
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   cstrings, LANGS, apiErrorKey, translateApiError, permLabel, cannotGrantReason,
+  detectClang, storedClang,
 } from "./clinicalI18n.js";
 import { PERMISSION_KEYS } from "./permissions.js";
 import { NO_PERMISSIONS, NO_BOARD_ACCESS } from "./liveAuth.js";
@@ -394,5 +395,37 @@ describe("the greyed-out group", () => {
     }
     expect(cannotGrantReason(["users.manage"], "tr").toLowerCase())
       .toContain("yetkileriniz bu grubu vermeye yetmiyor");
+  });
+});
+
+describe("the UI language a ward opens in (from main's simulationGating)", () => {
+  // Current behaviour, pinned as shipped: auto-detection knows only TR and AZ and falls back to
+  // TR. The pilot's ward PCs run an English-locale Chrome over Turkish patient data, and detecting
+  // EN landed every clinician on an English UI. (Roadmap D2 makes AZ the default in the new shell,
+  // G1-06; these change with it, not before.)
+  const locale = (languages) => {
+    vi.spyOn(navigator, "languages", "get").mockReturnValue(languages);
+    vi.spyOn(navigator, "language", "get").mockReturnValue(languages[0]);
+  };
+  afterEach(() => { vi.restoreAllMocks(); localStorage.clear(); });
+
+  it("an English-locale browser still opens in Turkish", () => {
+    locale(["en-US", "en"]);
+    expect(detectClang()).toBe("tr");
+    localStorage.clear();
+    expect(storedClang()).toBe("tr");
+  });
+
+  it("an Azerbaijani device is greeted in Azerbaijani", () => {
+    locale(["az-AZ", "az"]);
+    expect(detectClang()).toBe("az");
+    localStorage.clear();
+    expect(storedClang()).toBe("az");
+  });
+
+  it("a language the user chose wins over the device's", () => {
+    locale(["az-AZ", "az"]);
+    localStorage.setItem("homunculus-clang", "en");
+    expect(storedClang()).toBe("en");
   });
 });
