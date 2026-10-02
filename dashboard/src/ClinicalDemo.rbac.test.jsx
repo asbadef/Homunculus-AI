@@ -687,3 +687,38 @@ describe("the patient drawer (simulation)", () => {
     expect(screen.queryByText(S.patientDetail)).toBeNull();
   });
 });
+
+// ------------------------------------------------------------------------------ NEWS2 on a live card
+describe("live mode: the NEWS2 on a bed card is the engine's", () => {
+  // Vitals whose browser stand-in sum is not 0 and not the engine's number: the card must show the
+  // engine's value, or "—", and never this one.
+  const VITALS = { heart_rate: 118, map: 61, sbp: 96, spo2: 92, temperature: 38.6, resp_rate: 25 };
+  const board = (news2) => ({ patients: [{ patient_id: "bed-3", risk: "high", alerts: [],
+                                           latest: { ...VITALS, news2 } }] });
+  const pills = () => screen.getAllByText(new RegExp(`${S.pr6.news2}:`));
+
+  it("shows the engine's total, and marks a partial one", async () => {
+    const { api, store } = await signedIn();
+    api.boardPatients.mockResolvedValue(board({ total: 13, partial: true, missing: ["respiration_rate"],
+                                                red_param: true, breakdown: {} }));
+    await renderLive(store, api);
+    await waitFor(() => expect(pills()[0].textContent).toMatch(/: 13/));
+    expect(screen.getByLabelText("kısmi skor")).toBeInTheDocument();
+    expect(pills()[0].getAttribute("title")).toMatch(/solunum hızı/);
+  });
+
+  it("without an engine score shows '—' and why — never a number the browser computed", async () => {
+    const { api, store } = await signedIn();
+    api.boardPatients.mockResolvedValue(board(null));
+    await renderLive(store, api);
+    await waitFor(() => expect(screen.getAllByText("bed-3").length).toBeGreaterThan(0));
+    const shown = pills();
+    expect(shown.length).toBeGreaterThan(0);
+    for (const el of shown) {
+      const value = el.textContent.split(":").pop();
+      expect(value).toMatch(/—/);
+      expect(value).not.toMatch(/\d/);
+      expect(el.getAttribute("title")).toBe(S.pr6.news2NoEngine);
+    }
+  });
+});

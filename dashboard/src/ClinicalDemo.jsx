@@ -1329,7 +1329,7 @@ function BedBoard({ T, S, state, onOpenPatient, lang }) {
                 </div>
               )}
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <News2Pill S={S} vitals={p.vitals} />
+                <News2Pill S={S} vitals={p.vitals} news2={p.news2} live={live} />
                 {/* Live: the unit profile is the simulation's, and the device inventory has no live
                     source — "not connected" on a card fed by the device itself would be false. */}
                 {!live && <BranchProfileBadge S={S} lang={lang} profile={profileForPatient(state, p)} size="sm" />}
@@ -3431,7 +3431,44 @@ function news2Level(score) {
   if (score >= 5) return { text: "text-amber-500", ring: "ring-amber-500/50" };
   return { text: "text-emerald-500", ring: "ring-emerald-500/40" };
 }
-function News2Pill({ S, vitals }) {
+// Short labels for the NEWS2 parameters the engine reports as unmeasured.
+const NEWS2_MISSING_LABEL = {
+  respiration_rate: "solunum hızı", spo2: "SpO2", systolic_bp: "sistolik TA",
+  pulse: "nabız", temperature: "ateş",
+};
+
+/** The NEWS2 badge.
+ *
+ *  Live (`live`): only the engine's score (`news2` = {total, partial, missing[]}), or "—" with the
+ *  reason when the engine sent none. The local `computeNews2(vitals)` substitutes mean arterial
+ *  pressure for systolic and has no oxygen or consciousness term; it exists for the simulation,
+ *  which has no engine behind it. 20.09.2026, pilot: the live cards fell through to it and showed
+ *  a calm green "NEWS2: 0" on patients nobody had scored (NEWS2 scores an unmeasured parameter as
+ *  0, and the ward's monitors send no respiratory rate). A blank prompts someone to look; a zero
+ *  tells them not to. A partial engine score is marked, not hidden: it can only understate.
+ *  Simulation: unchanged, the local sum. */
+function News2Pill({ S, vitals, news2 = null, live = false }) {
+  if (live) {
+    if (!news2 || typeof news2.total !== "number") {
+      return (
+        <span title={S.pr6.news2NoEngine}
+          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold text-slate-400 ring-1 ring-slate-400/40">
+          <TrendingUp size={13} /> {S.pr6.news2}: —
+        </span>
+      );
+    }
+    const partial = news2.partial === true;
+    const missing = (Array.isArray(news2.missing) ? news2.missing : [])
+      .map((m) => NEWS2_MISSING_LABEL[m] || m).join(", ");
+    const lv = news2Level(news2.total);
+    return (
+      <span title={partial ? `Kısmi skor — ${missing} ölçülmedi; gerçek toplam daha yüksek olabilir.` : undefined}
+        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${lv.ring} ${lv.text}`}>
+        <TrendingUp size={13} /> {S.pr6.news2}: {news2.total}
+        {partial && <span className="opacity-80" aria-label="kısmi skor">*</span>}
+      </span>
+    );
+  }
   if (!vitals) return null;
   const score = computeNews2(vitals);
   const lv = news2Level(score);
@@ -3766,7 +3803,7 @@ function PatientCockpit({ T, S, state, store, patientId, onClose, lang }) {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <News2Pill S={S} vitals={p.vitals} />
+            <News2Pill S={S} vitals={p.vitals} news2={p.news2} live={state.live === true} />
             <button onClick={onClose} className={`grid h-9 w-9 place-items-center rounded-lg ${T.ghost}`} title={S.close || "Kapat"}><X size={18} /></button>
           </div>
         </div>
@@ -3841,7 +3878,7 @@ function ClinicalModule({ T, S, store, state, patientId, lang }) {
     <div className="mt-4">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <div className={`text-xs font-semibold uppercase ${T.faint}`}>{S.pr6.clinicalModule}</div>
-        <News2Pill S={S} vitals={p?.vitals} />
+        <News2Pill S={S} vitals={p?.vitals} news2={p?.news2} live={state.live === true} />
         <div className="ml-auto flex gap-1.5">
           <button onClick={() => setThOpen(true)} className={`inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs ${T.ghost}`}>
             <Sliders size={13} /> {S.pr6.thresholds}
