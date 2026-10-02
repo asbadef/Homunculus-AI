@@ -113,6 +113,27 @@ dokunulmaz.
 
 ---
 
+## Bu dal VM'ye çıkmaz (G1-15'e kadar)
+
+Birleşmiş dalın canlı arayüzü LDAP `ClinicalDemo`'dur. VM'deki main derlemesine göre aşağıdaki
+modüller kodda tutuldu ama bu arayüze bağlı değil; dal bu hâliyle VM'ye çıkarsa klinisyen bugün
+kullandığı ekranları kaybeder. Bu yüzden G1-15'ten (yeni kabuk) önce VM'ye deploy edilmez.
+
+Tutulup bağlanmamış modüller → hedef:
+
+- SOFA şiddet formu doldur/imzala (`severityScore.jsx`; `scores.sign` yoksa "İmzala" gizli) → G1-11
+- Şüpheli enfeksiyon ve bazal SOFA girişi (`setSuspectedInfection`/`setProfile`; bunlar olmadan sepsis kuralı hiç çalışmaz) → G1-11
+- Alarm kalitesi paneli (`AlarmQualityPanel`, `clinicalAdmin.jsx`) → Grup 4
+- Denetim bütünlüğü + motor denetim sayfası (`refreshAudit`/`verifyAudit`) → Grup 2
+- InfinityBeds + cihaz sağlığı (`feedHealth`) → Grup 4
+- Duvar monitörü + ad maskeleme politikası (`wallBoard.jsx`, `policySettings`) → Grup 2
+- Arayüzde build SHA (`__BUILD_SHA__`) → G1-07
+- Motorun kapsam notu (`engineScope`/`scopeNote`) → G1-09
+- RRT kuyruğu (`rrtQueue`) → Grup 2
+- Isı haritası (`alarmDensity`) → Grup 2
+- Hasta etiketi (`patientLabel`) → G1-09
+- `patientScope.js` ekran kapsamı (rol yerine izin modeline uyarlanmalı) → G1-12
+
 ## Main'den gelen ve yeni kabukta karşılanacak davranışlar
 
 Birleştirmede (G1-02) main'in `ClinicalDemo.jsx` yeniden yazımı alınmadı (D1); o ekranları
@@ -122,7 +143,8 @@ etiketlenen işin kabul ölçütüdür. Aynı birleştirmede canlı store'un sim
 `toggleStaffBed`) da kaldırıldı — LDAP dalının kuralı: canlıda simülasyon eylemi
 `LIVE_UNAVAILABLE` ile reddedilir; bunların testleri de aşağıda. Silinen dosyalardaki saf
 adaptör sözleşmeleri (yaş, HBYS cinsiyet/tanıları, motorun NEWS2'si, ilaç bloğu, HBYS'den bekleyen
-hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e taşındı.
+hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakaları
+`i18n.rbac.test.js`'e taşındı.
 
 - admissionFromHis · HBYS'nin kabul edip burada yatağa alınmamış hastası kabul ekranında "HBYS'den bekleyen" olarak sunulur, ad/doğum tarihi/cinsiyet/tanı yeniden yazdırılmaz; HBYS beslemesi yoksa panel hiç çizilmez. → Grup 2
 - admissionScreen · Hasta Kabul menüden açılır; Kabul / Transfer / Bakım ekibi sekmeleri vardır, bakım ekibi ayrı menü maddesi değildir. → Grup 2
@@ -145,7 +167,7 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e taşındı.
 - simulationGating · Canlıda simülasyon denetimleri (alarm üret, saat hızı 30×/60×/120×, duraklat, "sonuç simüle et", DEMO etiketi) hiç çizilmez; mod belirtilmezse varsayılan canlıdır. → G1-16
 - simulationGating · Break-glass canlıda kalır: araç değil, gerçek klinik denetim. → Grup 2
 - simulationGating · Canlı Sonuçlar sayfası gerçek bekleyen sayısını ve elle yüklemeyi korur. → Grup 3
-- simulationGating · Dil otomatik algılanırken İngilizce yerel ayarlı tarayıcı İngilizceye düşmez (main'de TR'ye düşüyordu; D2 ile varsayılan AZ), Azerbaycanca cihaz Azerbaycanca açılır. → G1-06
+- simulationGating · Dil algılama bugün İngilizce yerel ayarda TR, Azerbaycanca cihazda AZ açar, seçilen dil kazanır (testleri `i18n.rbac.test.js`'te); D2 ile varsayılan AZ olunca bu testler birlikte değişir. → G1-06
 - clinicalCharting (silinen vakalar) · Vazopressör/inotrop dozu (noradrenalin, adrenalin, dopamin, dobutamin; yazım farkı önemsiz) motora hız kodu olarak gider; puanlanmayan ilaç sinyal diye uydurulmaz. → Grup 3
 - clinicalCharting (silinen vakalar) · Verilen sıvı (yalnız giriş) motora `crystalloid_bolus_ml` olarak gider; çıkış gönderilmez. → Grup 3
 - clinicalCharting (silinen vakalar) · Kabulde kilo `weight_kg` gözlemi, serbest metin eşlik eden hastalıklar ("DM, HT; KOAH") hasta profili olarak motora gider; boş kutu profil göndermez, yan kanal hatası kabulü geri almaz. → Grup 2
@@ -156,10 +178,14 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e taşındı.
 - Infinity araştırma ucu (`/infinity-research/state`) hastaneye bağlı değil: tek hastaneli pilotta sorun yok; bir API birden çok hastaneye hizmet edecekse önce kiracıya bağlanmalı. `devices.manage` platform_support grubunda da var. → Grup 4
 - Denetim kaydında kişi kimliği artık kullanıcı adı (main'de JWT `sub` = UUID'ydi); aynı zincirde iki biçim olacak. → G1-15 deploy notu
 - SSE bileti kapsamı bağlantı boyunca sabit; kapsamlı abonelere `removed` karesi gitmiyor (taburcu/transfer edilen kart ekranda bayatlar). → Grup 2
-- Dashboard `/stream-ticket` hatasında yeniden denemiyor (503/5xx sonrası akış açılmıyor). → G1-07/G1-09 (yeni store)
 - `/notifications` kapsam kontrolü hâlâ `patient_board` ile kart kuruyor (zararsız, tek yol değil). → Grup 2
 - `/ingest` hasta kimliği uzunluğunu sınırlamıyor; `/ack` ve `/view` 128 karakterle sınırlı. → Grup 2
 - `/audit`, `/alarm-quality`, `/audit/verify` `limit` parametreleri sınırsız. → Grup 4
 - Personel kapsamı yalnız pano uçlarında; kabul/eskalasyon/devir uçları kiracıya bağlı ama birime bağlı değil. → Grup 2
-- Yeni kabukta SOFA "İmzala" düğmesi `scores.sign` yoksa gizlenmeli. → G1-11
+- `patientFromBoard` `identity.bed_id`/`unit_id`'yi okumuyor: her HBYS hastası "yatak bekliyor" görünür; birim filtresi ve kapsam matrisi için gerekli. → G1-09
+- `auditRowFromRecord` kişi alanını `actor`'dan okumuyor (ack ve `scope_denied` satırları "—"); test fikstürü backend'in göndermediği `{by}` biçimini kullanıyor. → Grup 2
+- Vite dev proxy'de `/admin`, `/scope`, `/scores`, `/infinity-research` yok (`/clinical` ve `/alarm-quality` var; yalnız `npm run dev`'i etkiler). → G1-07
+- `main.jsx`'te ölü `simulation` prop'u; PWA manifest `start_url: "/?demo=1"`. → G1-16
+- `backendApi.myScope()` kullanılmıyor. → G1-12
+- `?infinityTest=1` yalnız ana çalışma ağacındaki commit'lenmemiş değişiklikte var. → kullanıcıya not
 - **Karar bekliyor (kullanıcı):** cihaz token'ı `/clinical` ile klinik kayıt ve hasta normali girebiliyor (main'deki gibi; profil alarmları düşürebilir). Repo'da bunu kullanan tek yer `scripts/dev_seed_ward.py`. Seçenek: cihazı reddet + betiği JWT'ye taşı.
