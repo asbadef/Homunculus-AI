@@ -54,20 +54,34 @@ function pickRoot(mode) {
 // #/demo is an older deep link into the simulation; honour it ahead of the query string.
 const mode = window.location.hash.startsWith("#/demo") ? "demo" : chooseMode(params);
 
-// The banner belongs only to the simulation: demo and replay both draw from fabricated data, so
-// both say so. Live and board talk to the real API — labelling them as demonstration data would
-// be false, and a notice that is sometimes wrong is worse than none, because people stop reading it.
-const el = document.getElementById("root");
-if (el) {
-  createRoot(el).render(
-    // Örnek-veri bandı uygulamanın üstüne ekleniyor; sayfa yüksekliği bu yüzden ekranı
-    // aşıyordu ve giriş ekranı tek ekran olmasına rağmen kayıyordu. Kabuk ekranı
-    // paylaştırıyor: bant kendi yüksekliğini alır, uygulama kalanı.
+/**
+ * The page frame. Exported so its layout contract is testable.
+ *
+ * Örnek-veri bandı uygulamanın üstüne ekleniyor; sayfa yüksekliği bu yüzden ekranı aşıyordu ve
+ * giriş ekranı tek ekran olmasına rağmen kayıyordu. Kabuk ekranı paylaştırıyor: bant kendi
+ * yüksekliğini alır, uygulama kalanı.
+ *
+ * The frame is exactly one screen tall and hides its own overflow, so the page itself never
+ * scrolls. The app's wrapper MUST therefore scroll (`overflow-y-auto`): the LDAP ClinicalDemo
+ * relies on page scroll, and without it everything below the first screen — a bed below the
+ * fold, i.e. a patient — is unreachable (measured 1366x768: 3032 px of content in 672 px).
+ *
+ * The banner belongs only to the simulation: demo and replay both draw from fabricated data, so
+ * both say so. Live and board talk to the real API — labelling them as demonstration data would
+ * be false, and a notice that is sometimes wrong is worse than none, because people stop reading it.
+ */
+export function AppShell({ mode, children }) {
+  return (
     <div className="flex h-[100dvh] flex-col overflow-hidden">
       {mode === "demo" || mode === "replay" ? (
         <div className="shrink-0"><DemoDataBanner /></div>
       ) : null}
-      <div className="min-h-0 flex-1">{pickRoot(mode)}</div>
-    </div>,
+      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+    </div>
   );
+}
+
+const el = document.getElementById("root");
+if (el) {
+  createRoot(el).render(<AppShell mode={mode}>{pickRoot(mode)}</AppShell>);
 }

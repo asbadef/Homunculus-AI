@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { chooseMode } from "./main.jsx";
+import { createElement } from "react";
+import { render, screen } from "@testing-library/react";
+import { chooseMode, AppShell } from "./main.jsx";
 
 describe("chooseMode", () => {
   it("defaults to live — the address a clinician types is the real system", () => {
@@ -30,5 +32,27 @@ describe("chooseMode", () => {
     // ?demo=1&live=1 is contradictory; live wins because showing simulated data by accident is
     // the worse failure. Document the decision either way with this assertion.
     expect(chooseMode(new URLSearchParams("demo=1&live=1"))).toBe("live");
+  });
+});
+
+describe("AppShell", () => {
+  // jsdom does no layout, so this pins the structure instead of measuring it. The frame is one
+  // screen tall with overflow hidden: if the app's wrapper did not scroll, everything below the
+  // first screen (a bed below the fold) would be unreachable. Measured in Chrome at 1366x768
+  // before the fix: 3032 px of board in a 672 px window, no scrollbar anywhere.
+  it("lets the app scroll inside the one-screen frame, in live mode", () => {
+    render(createElement(AppShell, { mode: "live" }, createElement("p", null, "uygulama")));
+    const wrapper = screen.getByText("uygulama").parentElement;
+    expect(wrapper.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["min-h-0", "flex-1", "overflow-y-auto"]));
+    expect(wrapper.parentElement.className).toContain("overflow-hidden");
+  });
+
+  it("shows the demo banner only for the simulation", () => {
+    const { container, unmount } = render(createElement(AppShell, { mode: "live" }, "x"));
+    expect(container.firstChild.children).toHaveLength(1);
+    unmount();
+    const demo = render(createElement(AppShell, { mode: "demo" }, "x"));
+    expect(demo.container.firstChild.children).toHaveLength(2);
   });
 });
