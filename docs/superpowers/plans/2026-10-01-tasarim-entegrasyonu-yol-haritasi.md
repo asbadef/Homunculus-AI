@@ -75,7 +75,7 @@ dokunulmaz.
 | # | İş | Puan | Risk | Bağımlı | Durum |
 |---|---|---|---|---|---|
 | G1-01 | nginx: eksik API yolları + yapılandırma testi | 1 | Düşük | — | ✅ 01.10 · a638151 |
-| G1-02 | main → LDAP birleştirme: 9 çakışma, göç `0010`, `clinical.chart` + `scores.sign` izinleri, kapsam izinlere, `infinity_research` `devices.manage`, demo kabuğu LDAP sürümü; bütün testler yeşil · plan: [dalga 0](2026-10-01-g1-dalga0-main-ldap-birlestirme.md) | 13 | **Yüksek** | G1-01 | 🔧 |
+| G1-02 | main → LDAP birleştirme: 9 çakışma, göç `0010`, `clinical.chart` + `scores.sign` izinleri, kapsam izinlere, `infinity_research` `devices.manage`, demo kabuğu LDAP sürümü; bütün testler yeşil · plan: [dalga 0](2026-10-01-g1-dalga0-main-ldap-birlestirme.md) | 13 | **Yüksek** | G1-01 | ✅ 02.10 · 61d257a…c094b64 |
 | G1-03 | LDAP arka ucu · dizin modülü + AD girişi + yenilemede dizin kontrolü (spec §7, §4) | 5 | Orta | G1-02 | Bekliyor |
 | G1-04 | LDAP arka ucu · `/admin/ldap/*` içe aktarma, grup eşlemesi, yerel yönetici koruması | 5 | Orta | G1-03 | Bekliyor |
 | G1-05 | Tasarım temeli: Gece/Gün renk değişkenleri, fontlar (yerel paket), ikonlar, temel bileşenler — `dashboard/src/live/` | 5 | Düşük | G1-02 | Bekliyor |
@@ -89,9 +89,14 @@ dokunulmaz.
 | G1-13 | Yönetim · Roller ve yetkiler (grup × izin matrisi) | 3 | Düşük | G1-12 | Bekliyor |
 | G1-14 | Yönetim · Sistem ayarları › Giriş kaynağı (AD durumu, bağlantı testi, ara + içe aktar, grup eşlemesi) | 5 | Orta | G1-04, G1-12 | Bekliyor |
 | G1-16 | Demo ve eski modları kaldır (`ClinicalDemo.jsx`, `clinicalDemo.js`, replay, legacy board, `?demo` PWA başlangıcı) | 3 | Orta | G1-09…G1-14 | Bekliyor |
-| G1-15 | Uçtan uca doğrulama (yerel yığın, 4 dil, 390 px/1440 px) + VM deploy notları | 3 | Orta | hepsi | Bekliyor |
+| G1-15 | Uçtan uca doğrulama (yerel yığın, 4 dil, 390 px/1440 px) + VM deploy notları · temel: [RBAC planı](2026-09-23-rbac-groups-permissions.md), "Deploy notes for the VM" (zorunlu MFA kaydı: Sistem Yöneticisi, Sorumlu Hekim, Ünite Hekimi, Üretici Destek ilk girişte TOTP kurar; `0010` ön kontrolü) | 3 | Orta | hepsi | Bekliyor |
 
-> G1-15'teki VM deploy kullanıcının kararıdır: yedek → göç `0010` → herkes bir kez yeniden girer.
+Dalga 0 sonu: backend 1665 geçti / 1 atlandı / 0 hata; dashboard 810 geçti (43 dosya); vite build tamam.
+Kapanış düzeltmeleriyle (`f5abde8` test hesabı tohumu, `1e7b11b` iki metin): backend 1670 geçti /
+1 atlandı / 0 hata; dashboard 810 geçti (43 dosya).
+
+> G1-15'teki VM deploy kullanıcının kararıdır (aşağıda "Kullanıcı kararları", 2–3):
+> yedek → `0010` ön kontrolü → göç `0008 → 0009 → 0010` → herkes bir kez yeniden girer.
 
 ### Dalgalar
 
@@ -111,13 +116,55 @@ dokunulmaz.
 4. Rol karşılığı AD grupları (ör. YB-Hekim, YB-Hemşire)
 5. VM'den etki alanı denetleyicisine 636 portu açık mı
 
+## Grup 1 kabul ölçütleri (Dalga 0 incelemesinden)
+
+**G1-09 Yataklar**
+
+- Motorun `risk` değerleri açıkça eşlenir: `moderate` amber; `none`/`info` nötr
+  ("bulgu yok / ölçülmedi"). Hiçbiri yeşil "stabil"e düşmez.
+- NEWS2 `red_param` kartı en az amber yapar.
+- Açık alarm kartın üstünde görünür.
+- Bağlantı durumu (DEGRADED/UNAVAILABLE) ekranda bir şeritle görünür;
+  boş pano "sakin servis" gibi görünmez.
+- Besleme sağlığı çipi ("N yatak sessiz").
+- Motorun kapsam notu görünür.
+
+**G1-11 Hasta özeti**
+
+- Her vitalin yaşı/bayatlığı görünür.
+- NEWS2 eski vitallerle "tam" görünmez. Motor tarafı da var: `api/board.py`
+  `news2.score()`'u tazelik uygulamadan çağırıyor → Grup 2 motor işi
+  (aşağıda "Dalga 0'dan açık kalanlar").
+
+**G1-12 Kullanıcılar + birimler**
+
+- `/scope/me` panoyla aynı kararı verir: `enforce_unassigned` ve break-glass dahil
+  (bugün `scope/router.py:66-71` ikisini de `build_scope`'a geçirmiyor).
+
 ---
 
 ## Bu dal VM'ye çıkmaz (G1-15'e kadar)
 
-Birleşmiş dalın canlı arayüzü LDAP `ClinicalDemo`'dur. VM'deki main derlemesine göre aşağıdaki
-modüller kodda tutuldu ama bu arayüze bağlı değil; dal bu hâliyle VM'ye çıkarsa klinisyen bugün
-kullandığı ekranları kaybeder. Bu yüzden G1-15'ten (yeni kabuk) önce VM'ye deploy edilmez.
+VM bugün main'i değil `origin/feat/infinity-production-integration`'ı (`538ba54`) çalıştırıyor:
+sunucu taraflı kapsam yok, göçler `0008`'de. Bu daldan deploy, göçleri `0008 → 0009 → 0010`
+yolundan yürütür.
+
+Birleşmiş dalın canlı arayüzü LDAP `ClinicalDemo`'dur. VM'deki derlemeye göre aşağıdaki modüller
+kodda tutuldu ama bu arayüze bağlı değil; dal bu hâliyle VM'ye çıkarsa klinisyen bugün kullandığı
+ekranları kaybeder. Bu yüzden G1-15'ten (yeni kabuk) önce VM'ye deploy edilmez.
+
+**G1-15 de hepsini geri getirmez.** G1-15 deploy'u, hedefi Grup 2–4 olan şu yetenekleri de
+VM'den kaldırır:
+
+- elle vazopressör/sıvı girişi (septik şok kuralı ve SOFA kardiyovasküler bileşeni bunları kullanır)
+- hasta normali (bazal değerler)
+- kabulde kilo/komorbidite profili
+- besleme sağlığı
+- duvar monitörü, RRT, ısı haritası
+- alarm kalitesi, denetim bütünlüğü
+- biyomedikal araştırma penceresi
+
+Bu yüzden G1-15 öncesi kullanıcı kararı gerekir (aşağıda "Kullanıcı kararları", 2).
 
 Tutulup bağlanmamış modüller → hedef:
 
@@ -176,16 +223,39 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 ## Dalga 0'dan açık kalanlar
 
 - Infinity araştırma ucu (`/infinity-research/state`) hastaneye bağlı değil: tek hastaneli pilotta sorun yok; bir API birden çok hastaneye hizmet edecekse önce kiracıya bağlanmalı. `devices.manage` platform_support grubunda da var. → Grup 4
+- `/infinity-research/state` `caller_tenant_id` kullanmıyor: pasif üyelik ancak sonraki token sürümünde yakalanır. → Grup 4
 - Denetim kaydında kişi kimliği artık kullanıcı adı (main'de JWT `sub` = UUID'ydi); aynı zincirde iki biçim olacak. → G1-15 deploy notu
+- Kapsam denetim satırları yöneticiyi UUID ile, klinik satırlar kullanıcı adıyla yazıyor. → G1-15 deploy notu
 - SSE bileti kapsamı bağlantı boyunca sabit; kapsamlı abonelere `removed` karesi gitmiyor (taburcu/transfer edilen kart ekranda bayatlar). → Grup 2
 - `/notifications` kapsam kontrolü hâlâ `patient_board` ile kart kuruyor (zararsız, tek yol değil). → Grup 2
 - `/ingest` hasta kimliği uzunluğunu sınırlamıyor; `/ack` ve `/view` 128 karakterle sınırlı. → Grup 2
-- `/audit`, `/alarm-quality`, `/audit/verify` `limit` parametreleri sınırsız. → Grup 4
-- Personel kapsamı yalnız pano uçlarında; kabul/eskalasyon/devir uçları kiracıya bağlı ama birime bağlı değil. → Grup 2
+- Denetim okumaları en ESKİ N satırı döndürüyor (`audit.py:255`, `audit_postgres.py:109`: `ORDER BY id ASC LIMIT n`): `/alarm-quality` (20 000) yoğun pilotta yeni epizotları kaçırır, `/audit` varsayılan 200 en eski olayları gösterir, `rehydrate` (1 000 000) sınırı aşınca en yeni ack/first_seen/kayıtları kaybeder; `limit`'lerin üst sınırı da yok. → Grup 2, alarm kalitesi paneli yeniden bağlanmadan ÖNCE
+- Kapsam okunamadığında (UNKNOWN) `/patients` 200 + yanlış not dönüyor, `_require_patient` 404 + `scope_denied` yazıyor; her yerde 503 olmalı. → Grup 2
+- Personel kapsamı yalnız pano uçlarında; kabul/eskalasyon/devir uçları kiracıya bağlı ama birime bağlı değil. → Grup 2 (karar 5)
+- `api/board.py` NEWS2'yi tazelik uygulamadan hesaplıyor (`news2.score()`; tazelik yalnız kuralın `evaluate()`'inde): eski vitallerle kart "tam" görünebilir. → Grup 2 motor işi (G1-11 kabul ölçütü)
+- Motor oda havası ve "Alert"i varsayıyor ama kısmi saymıyor (`rules/news2.py:140-143`). → klinik karar, kasaya dayanmalı (Grup 2; karar 7)
+- Tüm uygulamanın rotalarını sınıflandıran tek bir test yok (scope/infinity/auth router'ları tabloda değil). → G1-03 öncesi küçük iş
+- İzin açıklamaları güncel değil: `users.manage` kapsam atamayı, `devices.manage` canlı değerleri ve satıcı grubunu söylemiyor. → G1-13
+- Kısmi NEWS2 ipucu ve `NEWS2_MISSING_LABEL` yalnız Türkçe. → G1-06
 - `patientFromBoard` `identity.bed_id`/`unit_id`'yi okumuyor: her HBYS hastası "yatak bekliyor" görünür; birim filtresi ve kapsam matrisi için gerekli. → G1-09
 - `auditRowFromRecord` kişi alanını `actor`'dan okumuyor (ack ve `scope_denied` satırları "—"); test fikstürü backend'in göndermediği `{by}` biçimini kullanıyor. → Grup 2
 - Vite dev proxy'de `/admin`, `/scope`, `/scores`, `/infinity-research` yok (`/clinical` ve `/alarm-quality` var; yalnız `npm run dev`'i etkiler). → G1-07
 - `main.jsx`'te ölü `simulation` prop'u; PWA manifest `start_url: "/?demo=1"`. → G1-16
 - `backendApi.myScope()` kullanılmıyor. → G1-12
 - `?infinityTest=1` yalnız ana çalışma ağacındaki commit'lenmemiş değişiklikte var. → kullanıcıya not
-- **Karar bekliyor (kullanıcı):** cihaz token'ı `/clinical` ile klinik kayıt ve hasta normali girebiliyor (main'deki gibi; profil alarmları düşürebilir). Repo'da bunu kullanan tek yer `scripts/dev_seed_ward.py`. Seçenek: cihazı reddet + betiği JWT'ye taşı.
+- `clinicalDemo.js:475`'teki demo yönetici parolası git geçmişinde; gerçek bir yerde kullanıldıysa değiştirilmeli. → kullanıcıya not
+- `homunculus-ml/**/__pycache__/*.pyc` takipte (`324d2bd`'den beri). → ayrı temizlik
+- `scripts/dev_local.py` SQLite'ta hâlâ tamamlanmaz: `seed_bootstrap` Postgres'e özgü kilit alıyor (`pg_advisory_xact_lock`), varsayılan yönetici parolası `Demo1234!` 12 karakter kuralına takılıyor, venv'de `aiosqlite` yok. → ayrı küçük iş
+
+## Kullanıcı kararları (Dalga 0 sonrası)
+
+Öncelik sırasıyla:
+
+1. **VM bugün (bu daldan bağımsız):** risk eşlemesi hatası VM'de de var (orta risk yeşil görünüyor) — VM'ye hotfix mi, G1-09'u mu bekler? VM'nin nginx'i `/clinical`, `/scores`, `/alarm-quality`'yi iletiyor mu (iletmiyorsa VM'de klinik giriş/SOFA imzası motora hiç ulaşmamış olabilir)? Kontrol: `curl -sk -X POST https://<vm>/clinical/x -H 'Authorization: Bearer x'` → JSON 401 = iletiliyor, HTML/405 = iletilmiyor.
+2. **G1-15 deploy kapısı:** Grup 2–4'e kalan VM yetenekleri (özellikle vazopressör/sıvı girişi, hasta normali, kabul profili, besleme sağlığı) kaybedilsin mi, Grup 1'e mi alınsın, yoksa deploy beklesin mi?
+3. **Geçişte zorunlu MFA:** 4 grup (Sistem Yöneticisi, Sorumlu Hekim, Ünite Hekimi, Üretici Destek) ilk girişte TOTP kuracak (VM hiç zorlamadı) — kabul mü, pilot için gevşetilsin mi?
+4. **Cihaz token'ı:** `/clinical` ile klinik kayıt ve hasta normali yazabiliyor (main'deki gibi; profil alarmları düşürebilir) — reddedilsin mi (repo'da kullanan tek yer `scripts/dev_seed_ward.py`, JWT'ye taşınır), kalsın mı?
+5. **Kapsamın erimi:** kabul/eskalasyon/devir uçlarına da kapsam uygulansın mı; `SCOPE_ENFORCE_UNASSIGNED` altında denetçi tam ize erişsin mi?
+6. **Satıcı erişimi:** `platform_support` canlı araştırma penceresini ve tam denetim izini görsün mü, görmesin mi?
+7. **NEWS2 sunumu:** bayat vitallerle skor nasıl gösterilir; varsayılan oda havası/"Alert" kısmi sayılsın mı — klinik karar (kasa).
+8. **Test hesapları:** VM'de `seed_test_users` ile hesap açıldıysa `0010`'dan önce pasifleştirilmeli; aksi halde test yöneticisi `hospital_admin` olur ve ilk girişte TOTP'yi parolayı bilen kurar. Kontrol: `SELECT email, is_active FROM users WHERE email LIKE 'test.%';`
