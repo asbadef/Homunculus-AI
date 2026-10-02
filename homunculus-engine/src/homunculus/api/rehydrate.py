@@ -1,10 +1,12 @@
 # src/homunculus/api/rehydrate.py
 """Rehydrate engine + ack state from the audit log (event sourcing).
 
-The append-only audit is the event log: replaying its `ingest` and `ack` records in id order into a
-fresh Engine + AckStore reconstructs the runtime state a restart would otherwise lose. Replay calls
-the engine/store directly, so it writes NO new audit records. Deliberately NOT replayed: first_seen
-(escalation clock resets on restart), the derived `escalated` set, and transient notifications."""
+The append-only audit is the event log: replaying its `ingest`, `chart`, `profile`, `ack` and
+`first_seen` records in id order into a fresh Engine + AckStore reconstructs the runtime state a
+restart would otherwise lose. `first_seen` keeps the earliest stamp per (patient, kind), so an
+alert's escalation clock runs on across a restart instead of starting over. Replay calls the
+engine/store directly, so it writes NO new audit records. Deliberately NOT replayed: the derived
+`escalated` set and the `alert`, `escalation` and `notification` records (derived or transient)."""
 from __future__ import annotations
 
 from datetime import datetime
