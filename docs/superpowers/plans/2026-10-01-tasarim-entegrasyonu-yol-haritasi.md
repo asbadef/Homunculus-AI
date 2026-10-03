@@ -78,8 +78,8 @@ dokunulmaz.
 | G1-02 | main → LDAP birleştirme: 9 çakışma, göç `0010`, `clinical.chart` + `scores.sign` izinleri, kapsam izinlere, `infinity_research` `devices.manage`, demo kabuğu LDAP sürümü; bütün testler yeşil · plan: [dalga 0](2026-10-01-g1-dalga0-main-ldap-birlestirme.md) | 13 | **Yüksek** | G1-01 | ✅ 02.10 · 61d257a…c094b64 |
 | G1-03 | LDAP arka ucu · dizin modülü + AD girişi + yenilemede dizin kontrolü (spec §7, §4) | 5 | Orta | G1-02 | Bekliyor |
 | G1-04 | LDAP arka ucu · `/admin/ldap/*` içe aktarma, grup eşlemesi, yerel yönetici koruması | 5 | Orta | G1-03 | Bekliyor |
-| G1-05 | Tasarım temeli: Gece/Gün renk değişkenleri, fontlar (yerel paket), ikonlar, temel bileşenler — `dashboard/src/live/` · plan: [dalga 1B](2026-10-03-g1-dalga1b-tasarim-temeli.md) | 5 | Düşük | G1-02 | ✅ 03.10 · 9d130be…f426b54 |
-| G1-06 | Dört dil çatısı (anahtarlı sözlük, D2 varsayılanı) · plan: [dalga 1B](2026-10-03-g1-dalga1b-tasarim-temeli.md) | 3 | Düşük | G1-05 | ✅ 03.10 · 9d130be…f426b54 |
+| G1-05 | Tasarım temeli: Gece/Gün renk değişkenleri, fontlar (yerel paket), ikonlar, temel bileşenler — `dashboard/src/live/` · plan: [dalga 1B](2026-10-03-g1-dalga1b-tasarim-temeli.md) | 5 | Düşük | G1-02 | ✅ 03.10 · 9d130be…bec4d7d (`dashboard/src/live`; cila dahil, Dalga 1A commit'leri arada) |
+| G1-06 | Dört dil çatısı (anahtarlı sözlük, D2 varsayılanı) · plan: [dalga 1B](2026-10-03-g1-dalga1b-tasarim-temeli.md) | 3 | Düşük | G1-05 | ✅ 03.10 · 9d130be…bec4d7d (`dashboard/src/live`; cila dahil, Dalga 1A commit'leri arada) |
 | G1-07 | Kabuk: sol menü (izinle), üst çubuk (birim çipi, saat, nöbet bitimine, dil, tema, zil, kişi menüsü); canlı mod yeni kabuğa | 5 | Orta | G1-05, G1-06 | Bekliyor |
 | G1-08 | Giriş + 2FA + (D4'e göre) ilk girişte şifre, kilit ekranı | 5 | Orta | G1-07 | Bekliyor |
 | G1-09 | Yataklar: kart/liste, risk sırası, dikkat kartları, birim filtresi, kapsam açıklaması | 5 | Orta | G1-07 | Bekliyor |
@@ -264,6 +264,9 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - Prototip dışı yeni metinler (`risk.none/unmeasured/unknown/unreported`, `news2.*`, galerinin çoğu)
   ve AZ "düşük" etiketi `Aşağı` (prototipte cihaz önceliğiydi, risk düzeyi olarak okunmalı)
   AZ/RU/EN'de anadili konuşan bir klinisyenin okumasını bekliyor → pilot öncesi.
+  Listeye ek: `ui.toast.warn/error` (ekran okuyucu her uyarı/hata bildiriminden önce okur),
+  `ui.sample.*` (galeri) ve "motor/engine" sözcüğü — RU'da "Движок" araba motoru gibi okunduğu
+  için "Система" yapıldı; aynı sorun AZ `news2.noEngine` "Mühərrik" ve TR "Motor" için de geçerli.
 - Prototipin Gün temasında monitör paneli (`--monbg`) üzerindeki vital renkleri 1,2–3,8:1; `--monbg` taşınmadı → Grup 2 monitörü taşırken düzeltir.
 - Otomatik tema (20:00–08:00) yalnız mobil prototipte vardı; web için ertelendi → G1-07 ya da sonrası.
 - Gün'de iki dolgu card2/sayfa/app üzerinde 3:1'in altındaydı (G1-07/G1-09 nokta ve şeritleri oraya koyar).
@@ -288,7 +291,25 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - `ThemeProvider` sökülünce `<html>` özniteliklerini önceki değerlerine döndürmez,
   siler; `I18nProvider` `<html lang>`'ı bırakır → G1-07.
 - Tutarlılık notu: `StatusPill`/`Tag` bilinmeyen tonu nötre düşürür; `riskStyle` ise
-  bilinmeyen riski dikkat görünümüne çeker. Çağıranlar yalnız bilinen tonu geçer.
+  bilinmeyen riski dikkat görünümüne çeker. Çağıranlar yalnız bilinen tonu geçer. → G1-09
+- G1-07 başında küçük işler (Dalga 1B son incelemesi): `ui/index.js` `MODAL_EXEMPT`,
+  `MODAL_OPEN`, `TOAST_WARN_MS`, `TOAST_MAX`'i de dışa versin; `TabPanel` `id`'siz
+  `undefined-panel-0` üretiyor (koruma/uyarı); `riskStyle(risk, null)` atar (`opts ?? {}`);
+  kabuk `ToastProvider`'ı köke koymalı (`useToast` sağlayıcısız sessiz kalır); Gün temasında
+  `<body>` arka planı hâlâ koyu (`index.css`) — kabuk `bg-page` boyar; bileşen ton sözlükleri
+  (Tag/Note/StatusPill/Toast) `index.js` başlığında eşlensin. → G1-07
+- Giriş hatası için duyurulan satır içi uyarı gerekir (`Note` statik, `role="note"`). → G1-08
+- Pencere `busy` ile altbilgi Kaydet'in `busy`'si ayrı; çağıran ikisini eş tutar,
+  galeride örnek yok. → G1-10
+- `color-mix()` Chrome 111 / Safari 16.2, `inert` Chrome 102 ister; derleme hedefi Chrome 87.
+  Eski tarayıcıda hap renk tonu kaybolur (metin okunur kalır), pencerenin ekran okuyucu
+  yalıtımı kaybolur. Servis PC'lerindeki Chrome sürümü pilottan önce doğrulanmalı. → kullanıcıya not
+- Servis çalışanı galeri parçasını ve 10 font dosyasını da önbelleğe alıyor (19→29 kayıt,
+  940→1130 KiB); G1-07 fontları zaten kullanır, galeriyi `globIgnores` ile dışarıda bırakmak → G1-16.
+- Test boşlukları: `Table`'ın `ResizeObserver` yolu (jsdom'da yok, yalnız `resize` yedeği
+  test ediliyor) ve `Empty` testinin yalnız metni denetlemesi. → G1-07
+- Türkçe rehbere risk gösterim kuralları girsin (asla yeşil; "ölçülmedi" ≠ "bulgu yok";
+  bilinmeyen/bildirilmeyen → dikkat). → G1-09
 
 ## Kullanıcı kararları (Dalga 0 sonrası)
 
