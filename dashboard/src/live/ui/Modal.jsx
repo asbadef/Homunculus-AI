@@ -9,6 +9,10 @@ import { Button } from "./Button.jsx";
  *  heard, and an inert live region is dropped from the accessibility tree. */
 export const MODAL_EXEMPT = "data-modal-exempt";
 
+/** Set on <body> while any dialog is open: CSS keyed on it moves things out of a dialog's way
+ *  (the toast stack rises above its footer — Toast.jsx). */
+export const MODAL_OPEN = "data-modal-open";
+
 // Everything that can take keyboard focus; filtered below for disabled, hidden and tabindex="-1".
 const CANDIDATES = [
   "a[href]", "area[href]", "button", "input:not([type='hidden'])", "select", "textarea", "iframe", "summary",
@@ -111,6 +115,7 @@ function onDocumentKeyDown(event) {
 function pushModal(entry) {
   if (stack.length === 0) {
     lockScroll();
+    document.body.setAttribute(MODAL_OPEN, "");
     document.addEventListener("keydown", onDocumentKeyDown);
   }
   stack.push(entry);
@@ -123,6 +128,7 @@ function popModal(entry) {
   syncInert();
   if (stack.length === 0) {
     unlockScroll();
+    document.body.removeAttribute(MODAL_OPEN);
     document.removeEventListener("keydown", onDocumentKeyDown);
   }
 }

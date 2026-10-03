@@ -132,7 +132,14 @@ function createToasts(publish) {
  *    button is outside them, labelled in the current language and described by its message.
  *  - At most TOAST_MAX on screen; a new one pushes out the oldest that is not an error.
  *  - A toast closed while it has focus gives focus back to where it was (else <body>).
- *  - Stays usable while a Modal is open (MODAL_EXEMPT).
+ *  - Stays usable while a Modal is open (MODAL_EXEMPT), and then sits top right instead of
+ *    bottom right (<body> carries MODAL_OPEN). On a short screen (390 x 380) a dialog fills it
+ *    and its sticky footer — Save, Cancel — is exactly where the stack would be. A dialog is
+ *    centred, so its footer never reaches the top ~70 px; only the header of a dialog taller
+ *    than about two thirds of the screen does, and its ✕ has stand-ins (Escape, Cancel). Not a
+ *    raised bottom inset: that clears a full-height dialog's footer but lands on a short centred
+ *    dialog's one. A keyboard user cannot Tab into a toast while a dialog is open (the dialog
+ *    keeps Tab inside): recorded in the roadmap.
  *  Not for alarms: a clinical alarm never lives in a toast. */
 export function ToastProvider({ children }) {
   const { t } = useI18n();
@@ -170,7 +177,7 @@ export function ToastProvider({ children }) {
           onBlur={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget)) toasts.focus(false);
           }}
-          className="pointer-events-none fixed bottom-4 right-4 z-[120]"
+          className="pointer-events-none fixed bottom-4 right-4 z-[120] [body[data-modal-open]_&]:bottom-auto [body[data-modal-open]_&]:top-4"
         >
           <div aria-live="polite" className="sr-only">{items.filter((item) => item.tone !== "error").map(said)}</div>
           <div role="alert" aria-atomic="false" className="sr-only">{items.filter((item) => item.tone === "error").map(said)}</div>

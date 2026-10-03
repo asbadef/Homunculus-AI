@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { StrictMode, useLayoutEffect, useRef, useState } from "react";
 import { render, screen, fireEvent, within, act } from "@testing-library/react";
-import { Modal } from "./Modal.jsx";
+import { Modal, MODAL_OPEN } from "./Modal.jsx";
 import { ToastProvider, useToast } from "./Toast.jsx";
 
 afterEach(() => {
@@ -165,6 +165,19 @@ describe("Modal: the page behind it", () => {
     fireEvent.keyDown(document.body, { key: "Escape" });
     expect(container).not.toHaveAttribute("inert");
     expect(document.activeElement).toBe(opener);
+  });
+
+  it("marks <body> while any dialog is open, so the toast stack can move out of its footer", () => {
+    render(<Nested />);
+    expect(document.body).not.toHaveAttribute(MODAL_OPEN);
+    openIt();
+    expect(document.body).toHaveAttribute(MODAL_OPEN);
+    fireEvent.click(screen.getByRole("button", { name: "Daxili aç" }));
+    fireEvent.keyDown(document.activeElement, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Xarici" })).toBeInTheDocument();
+    expect(document.body).toHaveAttribute(MODAL_OPEN);
+    fireEvent.keyDown(document.activeElement, { key: "Escape" });
+    expect(document.body).not.toHaveAttribute(MODAL_OPEN);
   });
 
   it("leaves alone an element that was inert before", () => {

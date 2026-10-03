@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act, within } from "@testing-library/react";
 import { ToastProvider, useToast, TOAST_MS, TOAST_WARN_MS, TOAST_MAX } from "./Toast.jsx";
+import { MODAL_OPEN } from "./Modal.jsx";
 
 function Fire({ message, tone }) {
   const toast = useToast();
@@ -185,5 +186,17 @@ describe("the toast stack", () => {
     expect(cards()).toHaveLength(TOAST_MAX);
     expect(card("xəta 1")).toBeNull();
     expect(cards()[0]).toHaveTextContent("xəta 2");
+  });
+});
+
+describe("the toast stack over a dialog", () => {
+  // At 390 x 380 a dialog fills the screen and its sticky footer (Save, Cancel) sits where the
+  // stack does. While one is open the stack moves to the top — a rule keyed on <body>'s mark.
+  it("moves to the top while a dialog is open", () => {
+    mount();
+    expect(MODAL_OPEN).toBe("data-modal-open");
+    expect(region().className.split(/\s+/)).toEqual(expect.arrayContaining([
+      "bottom-4", "[body[data-modal-open]_&]:bottom-auto", "[body[data-modal-open]_&]:top-4",
+    ]));
   });
 });
