@@ -3,7 +3,10 @@ names a failure, its TLS settings — and (Task 3) the class itself over scripte
 from __future__ import annotations
 
 import logging
+import socket
 import ssl
+import struct
+import threading
 import time
 import uuid
 
@@ -347,6 +350,57 @@ async def test_a_hung_directory_is_cut_off_at_the_deadline():
     with pytest.raises(LdapUnavailable) as err:
         await directory.test_connection()
     assert err.value.reason == "timeout" and time.monotonic() - started < 0.4
+
+
+@pytest.fixture
+def silent_server():
+    """A TCP port that accepts connections and never answers: a hung domain controller."""
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(16)
+    held: list[socket.socket] = []
+
+    def accept_forever():
+        while True:
+            try:
+                held.append(srv.accept()[0])
+            except OSError:
+                return
+
+    threading.Thread(target=accept_forever, daemon=True).start()
+    yield srv.getsockname()[1]
+    srv.close()
+    for conn in held:
+        conn.close()
+
+
+async def test_on_linux_a_directory_that_never_answers_is_a_timeout(silent_server, monkeypatch):
+    """Regression: off Windows, ldap3 2.9.1 packs the receive timeout as struct 'LL' — a float
+    there raised struct.error, which escaped every directory call as a 500. The real
+    Ldap3Directory, ldap3's own socket code, its Linux branch."""
+    import ldap3.strategy.base
+    monkeypatch.setattr(ldap3.strategy.base, "system", lambda: "Linux")
+    config = load_ldap_config({**BASE, "LDAP_URL": f"ldap://127.0.0.1:{silent_server}",
+                               "LDAP_ALLOW_INSECURE": "1", "LDAP_TIMEOUT_S": "1"})
+    started = time.monotonic()
+    with pytest.raises(LdapUnavailable) as err:
+        await Ldap3Directory(config).test_connection()
+    assert err.value.reason == "timeout"
+    assert time.monotonic() - started < config.deadline_s + 0.5
+
+
+@pytest.mark.parametrize("error", [
+    struct.error("required argument is not an integer"),
+    KeyError(f"{USER_DN} {SVC_PW}"),
+])
+async def test_an_unexpected_library_failure_is_a_protocol_outage(error, caplog):
+    script = Script()
+    script.error = error
+    with caplog.at_level(logging.WARNING), pytest.raises(LdapUnavailable) as err:
+        await _directory(script).test_connection()
+    assert err.value.reason == "protocol"
+    assert type(error).__name__ in caplog.text
+    assert SVC_PW not in caplog.text and USER_DN not in caplog.text
 
 
 async def test_check_password_binds_once_as_the_given_dn():

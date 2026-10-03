@@ -8,8 +8,8 @@ Windows dev machines and in the python:3.12-slim image without libldap). Spec §
     objectGUID through `escape_guid` (each byte `\\xx`): a query cannot change a filter's shape.
   * `ldap3` is synchronous: each call runs on a worker thread (`asyncio.to_thread`), at most
     `SLOTS` at once, and is cut off after `LdapConfig.deadline_s` (2 × LDAP_TIMEOUT_S, at most
-    12 s — under the dashboard's 15 s request timeout). The socket connect and receive
-    timeouts are LDAP_TIMEOUT_S each.
+    12 s — under the dashboard's 15 s request timeout). The socket connect timeout is
+    LDAP_TIMEOUT_S, the receive timeout LDAP_TIMEOUT_S rounded up to whole seconds.
   * Results are capped: `size_limit` on the server, and the slice here.
   * A network or TLS failure becomes LdapUnavailable(reason); a wrong password is None.
   * The clinician's password goes to one bind. It is not kept, logged or put into an
@@ -185,9 +185,10 @@ def _is_guid(value: str) -> bool:
 
 
 def _guarded(fn: Callable[..., Any], *args: Any) -> Any:
-    """Run `fn` on the worker thread; an `ldap3` or socket failure becomes LdapUnavailable.
-    Only the exception's type and the reason are logged — never its arguments, which for a bind
-    could name the account."""
+    """Run `fn` on the worker thread; ANY failure becomes LdapUnavailable — an `ldap3` or socket
+    failure by its cause, anything else (a library bug, a reply it cannot parse) as `protocol`,
+    so a directory fault is a 503, never a 500. Only the exception's type and the reason are
+    logged — never its text, which for a bind could name the account or carry a password."""
     try:
         return fn(*args)
     except LdapUnavailable:
@@ -196,6 +197,9 @@ def _guarded(fn: Callable[..., Any], *args: Any) -> Any:
         reason = failure_reason(exc)
         logger.warning("directory call failed (%s): %s", reason, type(exc).__name__)
         raise LdapUnavailable(reason) from None
+    except Exception as exc:
+        logger.warning("directory call failed (protocol): unexpected %s", type(exc).__name__)
+        raise LdapUnavailable("protocol") from None
 
 
 class Ldap3Directory:
@@ -254,10 +258,13 @@ class Ldap3Directory:
         server = Server(self._config.host, port=self._config.port,
                         use_ssl=self._config.use_ssl, tls=tls_for(self._config),
                         get_info=NO_SERVER_INFO, connect_timeout=self._config.timeout_s)
+        # The receive timeout must be an int: off Windows, ldap3 2.9.1 packs it with
+        # struct.pack('LL', ...), which refuses a float. Rounded up, it stays under the deadline
+        # (ceil(t) <= 2t for t >= 1).
         return Connection(server, user=user, password=password, authentication=SIMPLE,
                           auto_bind=AUTO_BIND_NONE, read_only=True, raise_exceptions=False,
-                          receive_timeout=self._config.timeout_s, auto_referrals=False,
-                          check_names=False)
+                          receive_timeout=math.ceil(self._config.timeout_s),
+                          auto_referrals=False, check_names=False)
 
     def _service(self) -> Any:
         conn = self._connect(self._config.bind_dn, self._config.bind_password)
