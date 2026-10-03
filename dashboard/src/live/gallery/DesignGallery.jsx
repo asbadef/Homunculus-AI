@@ -175,6 +175,7 @@ function Components() {
   const [filter, setFilter] = useState("open");
   const [tab, setTab] = useState("users");
   const [dialog, setDialog] = useState(false);
+  const [nested, setNested] = useState(false);
   const tabs = [
     { value: "users", label: t("gallery.users") },
     { value: "roles", label: t("gallery.roles"), count: 2 },
@@ -192,6 +193,7 @@ function Components() {
         <Button variant="ghost" size="sm" icon="edit" label={t("gallery.edit")} />
         <Button variant="primary" size="lg">{t("common.save")}</Button>
         <Button disabled>{t("common.save")}</Button>
+        <Button variant="primary" busy>{t("common.save")}</Button>
       </Sub>
 
       <Sub title={t("gallery.boxes")}>
@@ -244,6 +246,9 @@ function Components() {
           <Field label={t("gallery.username")} hint={t("gallery.usernameHint")} required>
             <Input placeholder="hs.ornek" autoComplete="off" />
           </Field>
+          <Field label={t("gallery.username")} error={t("ui.sample.usernameTaken")}>
+            <Input defaultValue="hs.ornek" autoComplete="off" />
+          </Field>
           <Field label={t("prefs.lang")}>
             <Select defaultValue="az">
               {[["az", "Azərbaycan"], ["tr", "Türkçe"], ["ru", "Русский"], ["en", "English"]].map(([code, name]) => (
@@ -280,6 +285,10 @@ function Components() {
         >
           <Field label={t("gallery.username")}><Input placeholder="hs.ornek" /></Field>
           <Note tone="info">{t("gallery.auditNote")}</Note>
+          <Button className="mt-3" onClick={() => setNested(true)}>{t("gallery.openDialog")}</Button>
+          <Modal open={nested} title={t("ui.sample.nestedTitle")} onClose={() => setNested(false)}>
+            <Note icon="alert">{t("gallery.slowNote")}</Note>
+          </Modal>
         </Modal>
       </Sub>
     </Section>

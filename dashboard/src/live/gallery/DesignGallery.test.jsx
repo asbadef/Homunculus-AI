@@ -67,4 +67,32 @@ describe("design gallery", () => {
     const notices = screen.getByRole("region", { name: "Bildirişlər" });
     expect(notices.querySelector('[aria-live="polite"]')).toHaveTextContent("Yadda saxlanıldı");
   });
+
+  it("shows a field in error and a busy button", () => {
+    render(<DesignGallery />);
+    const invalid = screen.getAllByLabelText("İstifadəçi adı").find((el) => el.getAttribute("aria-invalid") === "true");
+    expect(invalid).toHaveAccessibleDescription(/Bu istifadəçi adı artıq mövcuddur/);
+    const busy = screen.getAllByRole("button", { name: "Yadda saxla" }).find((el) => el.getAttribute("aria-busy") === "true");
+    expect(busy).toBeDefined();
+  });
+
+  it("shows an error toast that waits to be dismissed", () => {
+    render(<DesignGallery />);
+    fireEvent.click(screen.getByRole("button", { name: "Yadda saxlanılmadı" }));
+    const notices = screen.getByRole("region", { name: "Bildirişlər" });
+    expect(within(notices).getByRole("alert")).toHaveTextContent("Xəta: Yadda saxlanılmadı");
+  });
+
+  it("opens a dialog from the dialog, and Escape closes the top one first", () => {
+    render(<DesignGallery />);
+    fireEvent.click(screen.getByRole("button", { name: "Pəncərəni aç" }));
+    const outer = screen.getByRole("dialog", { name: "Nümunə pəncərə" });
+    fireEvent.click(within(outer).getByRole("button", { name: "Pəncərəni aç" }));
+    expect(screen.getByRole("dialog", { name: "İkinci pəncərə" })).toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "İkinci pəncərə" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Nümunə pəncərə" })).toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });
