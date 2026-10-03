@@ -21,8 +21,10 @@ import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from homunculus.auth.groups import bump_user, count_admins, groups_of, lock_admin_guard
 from homunculus.auth.ldap import LdapIdentity
@@ -55,21 +57,48 @@ async def apply_directory_profile(db: AsyncSession, user: User,
     """Spec §7 step 4: the account's name, e-mail and DN as AD has them now. Returns the fields
     that changed. `username` never changes. An AD `mail` that another account already uses as
     its username or e-mail is not copied (the old e-mail stays): a sign-in must not fail on a
-    unique constraint. An account without `mail` in AD loses its e-mail here."""
+    unique constraint — not even when another sign-in takes the same mail at the same moment
+    (`_copy_email`). An account without `mail` in AD loses its e-mail here."""
     changed: list[str] = []
     name = (identity.display_name or "").strip()[:_NAME_MAX]
     if name and name != user.full_name:
         user.full_name = name
         changed.append("full_name")
     mail = normalize_login(identity.email) or None
-    if mail != user.email and (mail is None or (
-            len(mail) <= _EMAIL_MAX and not await login_in_use(db, mail, except_id=user.id))):
-        user.email = mail
+    if mail == user.email:
+        pass
+    elif mail is None:
+        user.email = None
+        changed.append("email")
+    elif (len(mail) <= _EMAIL_MAX and not await login_in_use(db, mail, except_id=user.id)
+          and await _copy_email(db, user, mail)):
         changed.append("email")
     if identity.dn and identity.dn != user.ldap_dn:
         user.ldap_dn = identity.dn
         changed.append("ldap_dn")
     return changed
+
+
+async def _copy_email(db: AsyncSession, user: User, mail: str) -> bool:
+    """Write `mail` as the account's e-mail inside a savepoint; True if it was written.
+
+    `login_in_use` and this write are not atomic: another account's sign-in carrying the same
+    AD mail can take it in between, and the unique constraint then refuses this write. The
+    refusal rolls back the savepoint only — the e-mail stays as it was and the sign-in goes on
+    (plan D11). A Core UPDATE, so the rollback leaves nothing stale in the session."""
+    await db.flush()                     # the rest of the profile stays outside the savepoint
+    savepoint = await db.begin_nested()
+    try:
+        await db.execute(update(User).where(User.id == user.id).values(email=mail)
+                         .execution_options(synchronize_session=False))
+    except IntegrityError:
+        await savepoint.rollback()
+        logger.warning("directory e-mail not copied to user %s: another account took the same "
+                       "address meanwhile", user.id)
+        return False
+    await savepoint.commit()
+    set_committed_value(user, "email", mail)
+    return True
 
 
 async def mapped_group_ids(db: AsyncSession, tenant_id: uuid.UUID,

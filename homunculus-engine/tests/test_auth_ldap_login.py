@@ -12,6 +12,7 @@ import pytest_asyncio
 from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from homunculus.auth import ldap_sync
 from homunculus.auth.groups import lock_admin_guard, set_manual_groups
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.ldap import LdapUnavailable
@@ -230,6 +231,38 @@ async def test_a_sign_in_queued_behind_an_admin_write_does_not_deadlock(client, 
     assert res.status_code == 200, res.text
     assert decode_token(res.json()["access_token"])["groups"] == ["nurse"]
     assert (await fresh_user(db_session, uid)).full_name == "Ayşe Yılmaz"   # AD's, written after
+
+
+async def test_an_ad_mail_taken_by_a_concurrent_sign_in_never_fails_this_one(client, world,
+                                                                             db_session,
+                                                                             monkeypatch):
+    """Plan D11: a sign-in never fails on the e-mail's unique constraint. The check that the
+    mail is free and the write are not atomic — two accounts sharing an AD mail can sign in for
+    the first time at once. Made deterministic: right after this sign-in's check, another
+    session commits the same mail on the other account."""
+    c, app = client
+    other = world["directory"].add(person("BYilmaz", email="Ayse.Yilmaz@hastane.az"))
+    other_account = await add_directory_account(db_session, world["tenant"].id, other)
+    await db_session.commit()
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    check = ldap_sync.login_in_use
+
+    async def taken_right_after_the_check(db, value, *, except_id=None):
+        in_use = await check(db, value, except_id=except_id)
+        async with maker() as concurrent:
+            await concurrent.execute(update(User).where(User.id == other_account.id)
+                                     .values(email=value))
+            await concurrent.commit()
+        return in_use
+
+    monkeypatch.setattr(ldap_sync, "login_in_use", taken_right_after_the_check)
+    res = await _login(c, "ayilmaz")
+    assert res.status_code == 200, res.text
+    ayse = await fresh_user(db_session, world["account"].id)
+    assert (ayse.email, ayse.full_name) == (None, "Ayşe Yılmaz")    # the rest of the profile
+    assert (await fresh_user(db_session, other_account.id)).email == "ayse.yilmaz@hastane.az"
+    [ok] = audit_events(app, "auth", "login.ok")
+    assert ok.payload["profile"] == ["full_name", "ldap_dn"]
 
 
 THROTTLED = "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin"
