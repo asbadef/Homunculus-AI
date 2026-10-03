@@ -121,7 +121,11 @@ Kapanış düzeltmeleriyle (`f5abde8` test hesabı tohumu, `1e7b11b` iki metin):
 **G1-09 Yataklar**
 
 - Motorun `risk` değerleri açıkça eşlenir: `moderate` amber; `none`/`info` nötr
-  ("bulgu yok / ölçülmedi"). Hiçbiri yeşil "stabil"e düşmez.
+  ("bulgu yok / ölçülmedi"; `info` bir alarmdır, hep "Bilgi"). Hiçbiri yeşil "stabil"e düşmez.
+- Kart `RiskPill`'e `measured`'ı açıkça geçirir (kartın zaman damgalarından).
+  Geçirmezse `none` "ölçülmedi" okunur, "bulgu yok" değil.
+- Renk şeridi/noktası hiçbir zaman tek ipucu değildir: yanında ikon ya da metin olur.
+  Gün'de `--mid`, `--high`, `--ok` dolgularının parlaklığı neredeyse aynı (1,01–1,04:1).
 - NEWS2 `red_param` kartı en az amber yapar. Motorla çatışıyor → aşağıda
   "Kullanıcı kararları", 9.
 - Açık alarm kartın üstünde görünür.
@@ -129,6 +133,11 @@ Kapanış düzeltmeleriyle (`f5abde8` test hesabı tohumu, `1e7b11b` iki metin):
   boş pano "sakin servis" gibi görünmez.
 - Besleme sağlığı çipi ("N yatak sessiz").
 - Motorun kapsam notu görünür.
+
+**G1-10 Alarmlar**
+
+- Alarm bandı `<body>`'nin doğrudan çocuğudur ve `MODAL_EXEMPT` taşır: açık bir pencere
+  `#root`'u `inert` yapar ve `inert` içindeki canlı bölge (live region) susar.
 
 **G1-11 Hasta özeti**
 
@@ -258,16 +267,28 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - Prototipin Gün temasında monitör paneli (`--monbg`) üzerindeki vital renkleri 1,2–3,8:1; `--monbg` taşınmadı → Grup 2 monitörü taşırken düzeltir.
 - Otomatik tema (20:00–08:00) yalnız mobil prototipte vardı; web için ertelendi → G1-07 ya da sonrası.
 - Gün'de iki dolgu card2/sayfa/app üzerinde 3:1'in altındaydı (G1-07/G1-09 nokta ve şeritleri oraya koyar).
-  En küçük değişiklik, ton korunarak (`tokens.css`; plan dosyasının Kontrast tablosu eski `#c28406`'yı gösterir): ✅
+  En küçük değişiklik, ton korunarak (`tokens.css`; plan dosyasının Kontrast tablosu,
+  `2026-10-03-g1-dalga1b-tasarim-temeli.md:45`, eski `#c28406`'yı gösterir): ✅
   - `--mid` `#c28406` → `#ba7f07`: kart 3,43 · card2 3,11 · sayfa 3,00 · app 3,17 (önce card2 2,89, sayfa 2,79).
   - `--ok` `#16a34a` → `#179f49`: kart 3,45 · card2 3,12 · sayfa 3,02 · app 3,18 (önce card2 2,99, sayfa 2,89).
 - Gün'de vital renkleri card2 üzerinde 4,5:1'in altında: `--v-map` 4,38, `--v-spo` 4,46
   (kartta geçer). Değer değişmedi → G1-09/G1-11 vitalleri nereye koyacağına karar verirken.
 - Button `busy` (işlem sürerken) durumu → G1-10, ilk kullanımda. ✅ Eklendi (`6ab73a0`):
   `aria-busy`, odakta kalır, tıklamayı ve form gönderimini yok sayar.
-- Dil seçimi sekmeler arası eşlenmiyor (`storage` olayı dinlenmiyor): bir sekmede dil
-  değişince öbürü eski dilde kalır → G1-07.
+- Dil, tema ve yazı boyutu sekmeler arası eşlenmiyor (`storage` olayı dinlenmiyor):
+  bir sekmede değişince öbürü eskisinde kalır → G1-07.
 - Ekran okuyucu risk hapında yalnız düzeyi okur ("Orta"); görünmez "Risk:" öneki → G1-09.
+- Pencere açıkken bildirime (toast) klavyeyle ulaşılamaz: pencere Tab'ı içinde tutar.
+  Fareyle kapanır; yığın o sırada sağ üste çıkar (sağ altta altbilgiyi örtüyordu,
+  390×380) → G1-10.
+- `Field` hatası canlı bölge değil: gönderimde çağıran ilk geçersiz alana odaklanır,
+  ekran okuyucu hatayı alanla birlikte okur → G1-08/G1-12 formları.
+- Meşgul `Button` ekran okuyucuda yalnız "kullanılamaz" okunur; görünmez bir
+  "kaydediliyor…" metni düşünülmeli → G1-10, ilk kullanımda.
+- `ThemeProvider` sökülünce `<html>` özniteliklerini önceki değerlerine döndürmez,
+  siler; `I18nProvider` `<html lang>`'ı bırakır → G1-07.
+- Tutarlılık notu: `StatusPill`/`Tag` bilinmeyen tonu nötre düşürür; `riskStyle` ise
+  bilinmeyen riski dikkat görünümüne çeker. Çağıranlar yalnız bilinen tonu geçer.
 
 ## Kullanıcı kararları (Dalga 0 sonrası)
 
@@ -283,10 +304,13 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 8. **Test hesapları:** VM'de `seed_test_users` ile hesap açıldıysa `0010`'dan önce pasifleştirilmeli; aksi halde test yöneticisi `hospital_admin` olur ve ilk girişte TOTP'yi parolayı bilen kurar. Kontrol: `SELECT email, is_active FROM users WHERE email LIKE 'test.%';`
 9. **NEWS2 kırmızı parametre ve hasta normali çatışması:** `rules/news2.py` bir parametre
    3 puan alınca (`red_param`) ORTA alarm üretir (`news2.py:155-156`); ama
-   `patient_relative._adjust_news2` (`patient_relative.py:80-110`) hekimin girdiği kronik
-   normalle açıklanan NEWS2'yi DÜŞÜK'e indirir. G1-09 kabul ölçütü "red_param kartı en az
-   amber yapar" bununla çelişir. Klinik karar: hekimin girdiği kronik normal red_param
-   tabanını geçersiz kılsın mı? (kasaya dayanmalı)
+   `patient_relative._adjust_news2` (`patient_relative.py:80-110`) her katkıyı açıklanmış
+   bulursa NEWS2'yi DÜŞÜK'e indirir. Açıklama iki yoldan gelir: hekimin girdiği kronik
+   normal (vital tabanı) ya da kayıtlı bir eşlik eden hastalık (`patient_relative.py:98`):
+   KOAH/kronik oksijen → oksijen, demans/kronik konfüzyon → bilinç. "Alert" dışı bilinç
+   3 puandır (`news2.py:87-89`), yani demans tek başına bir red_param'ı DÜŞÜK'e indirebilir. G1-09 kabul ölçütü
+   "red_param kartı en az amber yapar" bununla çelişir. Klinik karar: kronik normal ya da
+   eşlik eden hastalık red_param tabanını geçersiz kılsın mı? (kasaya dayanmalı)
 10. **Giriş kutusu kenarlık kontrastı:** `--line2` kart/card2 üzerinde 1,37–1,63:1
     (iki temada); WCAG 1.4.11 arayüz bileşeni için 3:1 ister. Odakta `--pri` geçer.
     Tüm form kenarlıkları koyulaştırılsın mı? (görünüm değişir)
