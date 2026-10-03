@@ -401,8 +401,9 @@ describe("the greyed-out group", () => {
 describe("the UI language a ward opens in (from main's simulationGating)", () => {
   // Current behaviour, pinned as shipped: auto-detection knows only TR and AZ and falls back to
   // TR. The pilot's ward PCs run an English-locale Chrome over Turkish patient data, and detecting
-  // EN landed every clinician on an English UI. (Roadmap D2 makes AZ the default in the new shell,
-  // G1-06; these change with it, not before.)
+  // EN landed every clinician on an English UI. This is the OLD workspace (ClinicalDemo, removed in
+  // G1-16). The new shell follows roadmap D2 — Azerbaijani by default, no locale detection, the
+  // stored choice wins — pinned in src/live/i18n/I18nProvider.test.jsx.
   const locale = (languages) => {
     vi.spyOn(navigator, "languages", "get").mockReturnValue(languages);
     vi.spyOn(navigator, "language", "get").mockReturnValue(languages[0]);
