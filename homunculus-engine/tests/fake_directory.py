@@ -3,9 +3,18 @@ in-memory list") and the helpers the LDAP tests share. Synthetic accounts only.
 
 FakeDirectory keeps Ldap3Directory's contract: `authenticate` finds the account by objectGUID,
 returns a disabled one as found WITHOUT checking the password, and answers None for an unknown
-account or an empty or wrong password. `unavailable = True` makes every call raise
-LdapUnavailable("unreachable"), as a domain controller that is down would. `calls` records which
-method was asked about what — never a password."""
+account or an empty or wrong password. As there, bad input never reaches the "server": an empty
+password or a malformed objectGUID is None and a blank query [] whether or not the directory is
+up, and is not recorded; a search returns at most 1–50 rows (`limit` clamped) and no group
+lists. `unavailable = True` makes every other call raise LdapUnavailable("unreachable"), as a
+domain controller that is down would; a string names another reason (`timeout`, `tls`, ...).
+`calls` records which method was asked about what — never a password.
+
+One difference to keep in mind: the fake returns a disabled account to `authenticate` and
+`find_by_external_id` as found. The real directory does that only under a custom
+LDAP_USER_FILTER — the default one excludes disabled accounts, so there a disabled account is
+NOT FOUND (sign-in: `bad_credentials`, refresh: `directory_not_found`), and `directory_disabled`
+is reached only with a filter that lets disabled accounts through."""
 from __future__ import annotations
 
 import uuid
@@ -56,12 +65,27 @@ def person(username: str, *, password: str = AD_PASSWORD, groups: tuple[str, ...
         password=password)
 
 
+RESULT_CAP = 50          # as Ldap3Directory caps a search
+
+
+def _is_guid(value: str) -> bool:
+    try:
+        uuid.UUID(str(value))
+    except (ValueError, TypeError, AttributeError):
+        return False
+    return True
+
+
+def _limit(limit: int) -> int:
+    return max(1, min(limit, RESULT_CAP))
+
+
 class FakeDirectory:
     def __init__(self, people: list[FakePerson] | tuple = (),
                  groups: list[LdapGroup] | tuple = ()) -> None:
         self.people: dict[str, FakePerson] = {p.identity.external_id: p for p in people}
         self.groups: list[LdapGroup] = list(groups)
-        self.unavailable = False
+        self.unavailable: bool | str = False
         self.calls: list[tuple[str, str]] = []
 
     def add(self, p: FakePerson) -> FakePerson:
@@ -76,37 +100,44 @@ class FakeDirectory:
     def _ask(self, method: str, about: str) -> None:
         self.calls.append((method, about))
         if self.unavailable:
-            raise LdapUnavailable("unreachable")
+            raise LdapUnavailable(self.unavailable if isinstance(self.unavailable, str)
+                                  else "unreachable")
 
     async def authenticate(self, external_id: str, password: str) -> LdapIdentity | None:
+        if not password or not _is_guid(external_id):
+            return None
         self._ask("authenticate", external_id)
         p = self.people.get(external_id)
         if p is None:
             return None
         if p.identity.disabled:
             return p.identity
-        return p.identity if password and password == p.password else None
+        return p.identity if password == p.password else None
 
     async def find_by_external_id(self, external_id: str) -> LdapIdentity | None:
+        if not _is_guid(external_id):
+            return None
         self._ask("find_by_external_id", external_id)
         p = self.people.get(external_id)
         return p.identity if p is not None else None
 
     async def search_users(self, query: str, limit: int = 50) -> list[LdapIdentity]:
-        self._ask("search_users", query)
         q = query.strip().lower()
         if not q:
             return []
-        hits = [p.identity for p in self.people.values()
+        self._ask("search_users", query)
+        hits = [replace(p.identity, group_dns=()) for p in self.people.values()
                 if any(q in (value or "").lower() for value in (
                     p.identity.username, p.identity.display_name, p.identity.upn,
                     p.identity.email))]
-        return sorted(hits, key=lambda i: i.username.lower())[:limit]
+        return sorted(hits, key=lambda i: i.username.lower())[:_limit(limit)]
 
     async def search_groups(self, query: str, limit: int = 50) -> list[LdapGroup]:
-        self._ask("search_groups", query)
         q = query.strip().lower()
-        return [g for g in self.groups if q and q in g.name.lower()][:limit]
+        if not q:
+            return []
+        self._ask("search_groups", query)
+        return [g for g in self.groups if q in g.name.lower()][:_limit(limit)]
 
     async def test_connection(self) -> None:
         self._ask("test_connection", "")

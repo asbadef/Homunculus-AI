@@ -7,8 +7,8 @@ import logging
 
 import pytest
 
-from homunculus.auth.ldap import LdapUnavailable, check_directory_at_startup
-from tests.fake_directory import AD_PASSWORD, FakeDirectory, person, runtime
+from homunculus.auth.ldap import LdapGroup, LdapUnavailable, check_directory_at_startup
+from tests.fake_directory import AD_PASSWORD, FakeDirectory, group_dn, person, runtime
 
 
 async def test_the_fake_signs_in_by_guid_and_password_only():
@@ -36,6 +36,45 @@ async def test_the_fake_can_be_down():
     with pytest.raises(LdapUnavailable) as err:
         await directory.search_users("ayse")
     assert err.value.reason == "unreachable"
+
+
+@pytest.mark.parametrize("reason", ["timeout", "tls", "service_bind_rejected", "protocol"])
+async def test_the_fake_can_be_down_for_any_reason_the_real_one_names(reason):
+    directory = FakeDirectory([person("AYilmaz")])
+    directory.unavailable = reason
+    with pytest.raises(LdapUnavailable) as err:
+        await directory.test_connection()
+    assert err.value.reason == reason
+
+
+async def test_like_the_real_one_the_fake_refuses_bad_input_before_the_server_is_asked():
+    """An empty password, a malformed objectGUID or a blank query never reaches the server:
+    the answer is the same whether or not the directory is up, and nothing is recorded."""
+    p = person("AYilmaz")
+    directory = FakeDirectory([p], groups=[LdapGroup(group_dn("YB-Hekim"), "YB-Hekim")])
+    directory.unavailable = True
+    assert await directory.authenticate(p.identity.external_id, "") is None
+    assert await directory.authenticate("not-a-guid", AD_PASSWORD) is None
+    assert await directory.find_by_external_id("not-a-guid") is None
+    assert await directory.search_users("   ") == []
+    assert await directory.search_groups("") == []
+    assert directory.calls == []
+
+
+async def test_like_the_real_one_a_fake_search_reads_no_group_lists():
+    p = person("AYilmaz", groups=(group_dn("YB-Hemsire"),))
+    [found] = await FakeDirectory([p]).search_users("yilmaz")
+    assert found.external_id == p.identity.external_id and found.group_dns == ()
+
+
+async def test_like_the_real_one_the_fake_caps_a_search_between_1_and_50():
+    directory = FakeDirectory([person(f"Kullanici{i:02d}") for i in range(60)],
+                              groups=[LdapGroup(group_dn(f"YB-{i:02d}"), f"YB-{i:02d}")
+                                      for i in range(60)])
+    assert len(await directory.search_users("kullanici", limit=500)) == 50
+    assert len(await directory.search_users("kullanici", limit=0)) == 1
+    assert len(await directory.search_groups("yb-", limit=500)) == 50
+    assert len(await directory.search_groups("yb-", limit=-3)) == 1
 
 
 async def test_a_connection_test_is_remembered():

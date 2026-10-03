@@ -97,7 +97,10 @@ class LdapDirectory(Protocol):
     async def authenticate(self, external_id: str, password: str) -> LdapIdentity | None:
         """The account with this objectGUID, checked with ONE bind as its DN. None: not found
         (as LDAP_USER_FILTER sees it), or an empty or wrong password. A DISABLED account is
-        returned as found, without a bind, so the caller can say why it refuses."""
+        returned as found, without a bind, so the caller can say why it refuses — when the
+        filter lets it through: the DEFAULT filter excludes disabled accounts, so under it a
+        disabled account is simply not found (sign-in `bad_credentials`, refresh
+        `directory_not_found`; `directory_disabled` needs a custom LDAP_USER_FILTER)."""
 
     async def find_by_external_id(self, external_id: str) -> LdapIdentity | None:
         """The account with this objectGUID, read with the service account; None if not found."""
