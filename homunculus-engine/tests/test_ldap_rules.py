@@ -10,6 +10,7 @@ from homunculus.auth.ldap import (
     filetime_to_unix, guid_from_bytes, guid_to_bytes, is_disabled, load_ldap_config,
     login_matches, password_changed_since,
 )
+from homunculus.auth.service import directory_login_alternative
 
 BASE = {
     "LDAP_URL": "ldaps://dc1.hastane.local",
@@ -193,3 +194,11 @@ def test_an_account_without_upn_or_mail_answers_to_its_name_only():
     bare = LdapIdentity(external_id=GUID, username="servis", dn="CN=servis,DC=hastane,DC=local")
     assert login_matches("servis", bare, LOGIN_ATTRS) is True
     assert login_matches("servis@hastane.local", bare, LOGIN_ATTRS) is False
+
+
+@pytest.mark.parametrize("key, name", [
+    ("hastane\\ayilmaz", "ayilmaz"), ("ayilmaz@hastane.local", "ayilmaz"), ("ayilmaz", None),
+    ("hastane\\", None), ("@hastane.local", None),
+])
+def test_the_bare_name_inside_a_directory_login(key, name):
+    assert directory_login_alternative(key) == name

@@ -1,7 +1,9 @@
 """
 Auth API routes.
 POST /auth/login        — username or e-mail + password; returns tokens (requires_mfa when a
-                          TOTP step is still pending, mfa_enrolled when the user has one)
+                          TOTP step is still pending, mfa_enrolled when the user has one). An
+                          Active Directory account is checked by the directory (spec §7): a
+                          wrong password is 401, a directory that does not answer is 503
 POST /auth/totp/setup   — generate TOTP secret + QR provisioning URI (allowed before MFA)
 POST /auth/totp/verify  — verify 6-digit code; re-issues tokens with mfa_verified=True
 POST /auth/refresh      — exchange refresh token for new tokens built from the CURRENT groups
@@ -25,6 +27,10 @@ from homunculus.auth.dependencies import (
 )
 from homunculus.auth.groups import tenant_of_user
 from homunculus.auth.jwt import decode_token
+from homunculus.auth.ldap import DIRECTORY_DOWN, LdapUnavailable, get_ldap, login_matches
+from homunculus.auth.ldap_sync import (
+    LDAP_SYNC_ACTOR, SyncOutcome, apply_directory_profile, sync_ldap_groups,
+)
 from homunculus.auth.limits import totp_failures
 from homunculus.auth.models import AUTH_LDAP, User
 from homunculus.auth.schemas import (
@@ -33,8 +39,8 @@ from homunculus.auth.schemas import (
 )
 from homunculus.auth.service import (
     PasswordError, build_context, change_password, credential_fingerprint, enable_totp,
-    find_user_by_login, get_user_by_id, issue_tokens, mark_login, normalize_login, run_bcrypt,
-    setup_totp, verify_local_password,
+    find_user_for_sign_in, get_user_by_id, issue_tokens, mark_login, run_bcrypt, setup_totp,
+    verify_local_password,
 )
 from homunculus.auth.totp import accepted_step
 from homunculus.db import get_db
@@ -51,15 +57,26 @@ _TOTP_REPLAYED = "Bu kod zaten kullanıldı; yeni kodu bekleyin."
 _NO_USER = uuid.UUID(int=0)
 
 
-async def _login_failed(request: Request, db: AsyncSession, user: User | None, key: str,
+def _bad_credentials() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+
+def _directory_down() -> HTTPException:
+    """Spec §4: a directory that does not answer is a fault to report (503), never the
+    clinician's own mistake (401)."""
+    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=DIRECTORY_DOWN)
+
+
+async def _login_failed(request: Request, db: AsyncSession, user_id: uuid.UUID | None, key: str,
                         reason: str) -> None:
     """Audit a failed sign-in. A known account's failure is filed under its hospital, so the
     hospital's own (tenant-scoped) audit shows attempts on its accounts; an unknown login has
     no hospital and is filed under "-".
 
     The tenant lookup runs for an unknown login too (with the nil UUID, which matches nothing):
-    a failure then costs the same queries whether or not the account exists."""
-    ref = await tenant_of_user(db, user.id if user is not None else _NO_USER)
+    a failure then costs the same queries whether or not the account exists. Takes the account's
+    id, not the row: after a directory call the row may be expired (see _directory_sign_in)."""
+    ref = await tenant_of_user(db, user_id if user_id is not None else _NO_USER)
     append_audit(request, tenant=ref.slug if ref is not None else None, event_type="auth",
                  subject="login.fail", payload={"login": key, "reason": reason})
 
@@ -67,26 +84,22 @@ async def _login_failed(request: Request, db: AsyncSession, user: User | None, k
 @router.post("/login", response_model=TokenResponse, summary="Sign in with username or e-mail")
 async def login(body: LoginRequest, request: Request,
                 db: AsyncSession = Depends(get_db)) -> TokenResponse:
-    key = normalize_login(body.identifier)
-    user = await find_user_by_login(db, key)
+    user, key = await find_user_for_sign_in(db, body.identifier)
 
     if user is not None and user.auth_source == AUTH_LDAP:
-        # Plan 2 wires the directory in here. Until then an AD account cannot sign in, and the
-        # reason is the directory — a 503 the clinician should report, never a 401.
-        await _login_failed(request, db, user, key, "directory_unavailable")
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                            detail="Dizin sunucusuna ulaşılamıyor")
+        return await _directory_sign_in(request, db, user, key, body.password)
 
     # bcrypt is ~0.2 s of CPU: off the event loop, or every sign-in stalls ingest and SSE. The
     # account's fields are read here, on the loop; the worker thread gets plain values.
     source = user.auth_source if user is not None else None
     hashed = user.hashed_password if user is not None else None
+    user_id = user.id if user is not None else None
     if not await run_bcrypt(verify_local_password, source, hashed, body.password):
-        await _login_failed(request, db, user, key, "bad_credentials")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        await _login_failed(request, db, user_id, key, "bad_credentials")
+        raise _bad_credentials()
     if not user.is_active:
-        await _login_failed(request, db, user, key, "inactive")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        await _login_failed(request, db, user_id, key, "inactive")
+        raise _bad_credentials()
 
     ctx = await build_context(db, user)
     mark_login(user)
@@ -95,6 +108,79 @@ async def login(body: LoginRequest, request: Request,
     append_audit(request, tenant=ctx.tenant, event_type="auth", subject="login.ok",
                  payload={"login": key, "user": user.username, "source": user.auth_source,
                           "mfa_pending": tokens["requires_mfa"]})
+    return TokenResponse(**tokens)
+
+
+def _audit_sync(request: Request, tenant: str, user_id: uuid.UUID,
+                outcome: SyncOutcome) -> None:
+    """The directory group sync's audit rows (spec §7 step 5), written after the commit, at
+    sign-in and at refresh alike: `admin/user.groups` when the set changed, and
+    `admin/ldap.sync.guarded` when the administrator guard kept a group. Actor `ldap-sync`."""
+    if outcome.changed:
+        append_audit(request, tenant=tenant, event_type="admin", subject="user.groups",
+                     payload={"actor": LDAP_SYNC_ACTOR, "target": str(user_id),
+                              "before": list(outcome.before), "after": list(outcome.after)})
+    if outcome.guarded:
+        append_audit(request, tenant=tenant, event_type="admin", subject="ldap.sync.guarded",
+                     payload={"actor": LDAP_SYNC_ACTOR, "target": str(user_id),
+                              "kept": list(outcome.guarded)})
+
+
+async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key: str,
+                             password: str) -> TokenResponse:
+    """Spec §7, "Sign-in for an AD user". The password goes to ONE bind, as the account's DN
+    found by objectGUID, and nowhere else: not stored, logged or audited. A wrong password, an
+    account disabled or gone in AD, or a login form LDAP_LOGIN_ATTRS does not allow: 401. A
+    directory that does not answer, or none configured: 503 — never conflated with 401.
+
+    A deactivated account is refused before the directory is asked (no bind, so no AD lockout
+    count for an account Homunculus has switched off). The database connection is released
+    while the directory answers, so a slow domain controller cannot pin the pool at shift
+    change; the account is re-read afterwards (plan decisions D7, D8)."""
+    user_id, external_id = user.id, user.external_id
+    if not user.is_active:
+        await _login_failed(request, db, user_id, key, "inactive")
+        raise _bad_credentials()
+    ldap = get_ldap(request)
+    if ldap is None:
+        await _login_failed(request, db, user_id, key, "directory_unavailable")
+        raise _directory_down()
+    if not password or not external_id:
+        await _login_failed(request, db, user_id, key, "bad_credentials")
+        raise _bad_credentials()
+    await db.rollback()                      # nothing written yet; frees the connection
+    try:
+        identity = await ldap.directory.authenticate(external_id, password)
+    except LdapUnavailable:
+        await _login_failed(request, db, user_id, key, "directory_unavailable")
+        raise _directory_down() from None
+    if identity is None:
+        await _login_failed(request, db, user_id, key, "bad_credentials")
+        raise _bad_credentials()
+    if identity.disabled:
+        await _login_failed(request, db, user_id, key, "directory_disabled")
+        raise _bad_credentials()
+    if not login_matches(key, identity, ldap.login_attrs):
+        await _login_failed(request, db, user_id, key, "bad_credentials")
+        raise _bad_credentials()
+    user = await get_user_by_id(db, user_id)
+    if user is None or not user.is_active:               # deactivated while AD answered
+        await _login_failed(request, db, user_id, key, "inactive")
+        raise _bad_credentials()
+    profile = await apply_directory_profile(db, user, identity)
+    ref = await tenant_of_user(db, user_id)
+    outcome = (await sync_ldap_groups(db, user=user, tenant_id=ref.id,
+                                      group_dns=identity.group_dns)
+               if ref is not None else None)
+    mark_login(user)
+    await db.commit()
+    if outcome is not None:
+        _audit_sync(request, ref.slug, user_id, outcome)
+    ctx = await build_context(db, user)
+    tokens = issue_tokens(user, ctx, mfa_verified=False)
+    append_audit(request, tenant=ctx.tenant, event_type="auth", subject="login.ok",
+                 payload={"login": key, "user": user.username, "source": user.auth_source,
+                          "mfa_pending": tokens["requires_mfa"], "profile": sorted(profile)})
     return TokenResponse(**tokens)
 
 

@@ -18,6 +18,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
 from fastapi import Body, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -51,6 +52,9 @@ from homunculus.scope import Scope, ScopeReason, apply_scope, scope_report, sees
 from homunculus.scope.resolver import UNKNOWN as UNKNOWN_SCOPE
 from homunculus.state.timeline import PatientState
 from homunculus.tenant.bedmap import BedMap
+
+if TYPE_CHECKING:
+    from homunculus.auth.ldap import LdapRuntime
 
 log = logging.getLogger(__name__)
 
@@ -120,6 +124,7 @@ def create_app(
     bedmap: BedMap | None = None,
     resolve_scope: Callable[[str], Awaitable[Scope]] | None = None,
     on_startup_check: Callable[[], Awaitable[None]] | None = None,
+    ldap: LdapRuntime | None = None,
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
     run_escalation_loop=False disables the background task so tests are deterministic.
@@ -135,7 +140,9 @@ def create_app(
     `on_startup_check`, if given, runs once during lifespan startup, before the app begins
     serving — for diagnostics (e.g. TENANTS vs. the database's tenant slugs) that must never
     block boot: a failure is logged and swallowed, because a service that will not start is
-    worse than one running with a fault an operator can read in the log."""
+    worse than one running with a fault an operator can read in the log.
+    `ldap`, if given, is the directory (LDAP / Active Directory, spec §7) and becomes
+    `app.state.ldap`; None leaves AD sign-in off — AD accounts get 503, /admin/ldap/* 409."""
     # A device token is a non-empty string. A missing token reads as "" further down, so an empty
     # key in this map would let a request with no credential at all in as that hospital's device.
     empty = [hospital for token, hospital in tenants.items()
@@ -296,6 +303,7 @@ def create_app(
     app.state.notification_hub = hub
     app.state.audit = audit
     app.state.tickets = tickets
+    app.state.ldap = ldap
 
     def _device_hospital(credential: str | None) -> str | None:
         """The hospital a static device token names, or None. An empty value is never a token."""

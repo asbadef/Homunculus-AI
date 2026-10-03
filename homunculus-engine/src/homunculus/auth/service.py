@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.auth.groups import bump_user, groups_of, summarize, tenant_of_user
 from homunculus.auth.jwt import JWT_SECRET, create_access_token, create_refresh_token
-from homunculus.auth.models import AUTH_LOCAL, User
+from homunculus.auth.models import AUTH_LDAP, AUTH_LOCAL, User
 from homunculus.auth.totp import generate_provisioning_uri, generate_totp_secret
 
 # bcrypt is used directly: passlib has been unmaintained since 2020 and is incompatible with
@@ -94,6 +94,36 @@ async def find_user_by_login(db: AsyncSession, login: str) -> User | None:
         .limit(1)
     )
     return result.scalars().first()
+
+
+def directory_login_alternative(key: str) -> str | None:
+    """The bare account name inside a directory-style login: `DOMAIN\\name` → `name`, a UPN
+    `name@suffix` → `name`; None when `key` has neither form (plan decision D2)."""
+    if "\\" in key:
+        name = key.rsplit("\\", 1)[1]
+    elif "@" in key:
+        name = key.split("@", 1)[0]
+    else:
+        return None
+    return name or None
+
+
+async def find_user_for_sign_in(db: AsyncSession, login: str) -> tuple[User | None, str]:
+    """The account a typed login names, and the normalised login. First as `find_user_by_login`
+    (username or e-mail, every account); then, for a DIRECTORY account only, the bare name of a
+    `DOMAIN\\name` or UPN-shaped login as its username — a local account is never reached that
+    way. Which forms the directory account accepts is decided after the bind
+    (`auth.ldap.login_matches`)."""
+    key = normalize_login(login)
+    user = await find_user_by_login(db, key)
+    if user is not None or not key:
+        return user, key
+    name = directory_login_alternative(key)
+    if name is None:
+        return None, key
+    result = await db.execute(
+        select(User).where(User.username == name, User.auth_source == AUTH_LDAP).limit(1))
+    return result.scalars().first(), key
 
 
 def verify_local_password(auth_source: str | None, hashed: str | None, password: str) -> bool:

@@ -1,0 +1,196 @@
+"""Sign-in of an Active Directory account (spec §7, the LDAP branch of §4) against a
+FakeDirectory and the test Postgres: the password goes to the directory once, a wrong one is
+401, a directory that does not answer is 503, the profile and the AD-mapped groups follow AD,
+and neither the audit trail nor the log ever holds a password. Synthetic accounts only."""
+from __future__ import annotations
+
+import logging
+
+import pytest
+import pytest_asyncio
+from sqlalchemy import update
+
+from homunculus.auth.groups import set_manual_groups
+from homunculus.auth.jwt import decode_token
+from homunculus.auth.models import User
+from tests.conftest import requires_db
+from tests.fake_directory import (
+    AD_PASSWORD, ADMIN_PASSWORD, ad_client, ad_world, audit_events, fresh_user, group_dn,
+    group_rows,
+)
+
+pytestmark = [pytest.mark.asyncio, requires_db]
+
+
+@pytest_asyncio.fixture
+async def world(db_session):
+    return await ad_world(db_session)
+
+
+@pytest_asyncio.fixture
+async def client(db_session, world):
+    async with ad_client(db_session, world["directory"]) as pair:
+        yield pair
+
+
+async def _login(c, login, password=AD_PASSWORD):
+    return await c.post("/auth/login", json={"login": login, "password": password})
+
+
+def _reasons(app):
+    return [r.payload["reason"] for r in audit_events(app, "auth", "login.fail")]
+
+
+async def test_an_ad_account_signs_in_with_its_directory_password(client, world, db_session):
+    c, app = client
+    res = await _login(c, "ayilmaz")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert decode_token(body["access_token"])["groups"] == ["nurse"]
+    assert body["requires_mfa"] is False
+    user = await fresh_user(db_session, world["account"].id)
+    assert (user.full_name, user.email, user.ldap_dn) == (
+        "Ayşe Yılmaz", "ayse.yilmaz@hastane.az", world["ayse"].identity.dn)
+    assert user.last_login_at is not None and user.hashed_password is None
+    [ok] = audit_events(app, "auth", "login.ok")
+    assert (ok.payload["source"], ok.payload["profile"]) == (
+        "ldap", ["email", "full_name", "ldap_dn"])
+
+
+@pytest.mark.parametrize("login", [
+    "ayilmaz", "AYILMAZ", "HASTANE\\ayilmaz", "ayilmaz@hastane.local",
+])
+async def test_every_directory_login_form_reaches_the_same_account(client, world, login):
+    c, _ = client
+    res = await _login(c, login)
+    assert res.status_code == 200, (login, res.text)
+    assert decode_token(res.json()["access_token"])["sub"] == str(world["account"].id)
+
+
+async def test_the_ad_mail_signs_in_once_the_account_carries_it(client, world):
+    c, _ = client
+    assert (await _login(c, "ayse.yilmaz@hastane.az")).status_code == 401
+    assert (await _login(c, "ayilmaz")).status_code == 200        # copies the mail from AD
+    assert (await _login(c, "Ayse.Yilmaz@hastane.az")).status_code == 200
+
+
+async def test_ldap_login_attrs_switch_a_login_form_off(client, world):
+    c, app = client
+    app.state.ldap.login_attrs = ("samaccountname",)
+    assert (await _login(c, "ayilmaz@hastane.local")).status_code == 401
+    assert (await _login(c, "ayilmaz")).status_code == 200
+    app.state.ldap.login_attrs = ("userprincipalname",)
+    assert (await _login(c, "ayilmaz")).status_code == 401
+    assert (await _login(c, "ayilmaz@hastane.local")).status_code == 200
+
+
+async def test_a_wrong_password_is_401_and_no_password_is_kept_anywhere(client, world, caplog):
+    c, app = client
+    with caplog.at_level(logging.DEBUG, logger="homunculus"):
+        wrong = await _login(c, "ayilmaz", "Yanlis-Parola-9")
+        right = await _login(c, "ayilmaz")
+    assert (wrong.status_code, right.status_code) == (401, 200)
+    assert _reasons(app) == ["bad_credentials"]
+    trail = str([r.payload for r in app.state.audit.records(limit=10_000)])
+    for secret in ("Yanlis-Parola-9", AD_PASSWORD):
+        assert secret not in trail and secret not in caplog.text
+
+
+async def test_a_directory_that_does_not_answer_is_503_never_401(client, world):
+    c, app = client
+    world["directory"].unavailable = True
+    res = await _login(c, "ayilmaz")
+    assert (res.status_code, res.json()["detail"]) == (503, "Dizin sunucusuna ulaşılamıyor")
+    assert [(r.payload["reason"], r.tenant) for r in audit_events(app, "auth", "login.fail")] \
+        == [("directory_unavailable", "demo-hastanesi")]
+
+
+async def test_without_a_directory_an_ad_account_gets_503(client, world):
+    c, app = client
+    app.state.ldap = None
+    assert (await _login(c, "ayilmaz")).status_code == 503
+    assert _reasons(app) == ["directory_unavailable"]
+
+
+async def test_an_account_disabled_in_ad_is_refused_and_stays_active_here(client, world,
+                                                                        db_session):
+    c, app = client
+    world["directory"].update(world["ayse"].identity.external_id, disabled=True)
+    assert (await _login(c, "ayilmaz")).status_code == 401
+    assert _reasons(app) == ["directory_disabled"]
+    assert (await fresh_user(db_session, world["account"].id)).is_active is True
+
+
+async def test_a_deactivated_account_never_reaches_the_directory(client, world, db_session):
+    c, app = client
+    await db_session.execute(update(User).where(User.id == world["account"].id)
+                             .values(is_active=False))
+    await db_session.commit()
+    assert (await _login(c, "ayilmaz")).status_code == 401
+    assert world["directory"].calls == [] and _reasons(app) == ["inactive"]
+
+
+async def test_an_account_deactivated_while_the_directory_answers_is_refused(client, world,
+                                                                           db_session):
+    c, app = client
+    directory = world["directory"]
+    answer = directory.authenticate
+
+    async def deactivate_then_answer(external_id, password):
+        await db_session.execute(update(User).where(User.id == world["account"].id)
+                                 .values(is_active=False))
+        await db_session.commit()
+        return await answer(external_id, password)
+
+    directory.authenticate = deactivate_then_answer
+    assert (await _login(c, "ayilmaz")).status_code == 401
+    assert _reasons(app) == ["inactive"]
+
+
+async def test_an_empty_password_never_reaches_the_directory(client, world):
+    c, app = client
+    assert (await _login(c, "ayilmaz", "")).status_code == 401
+    assert world["directory"].calls == [] and _reasons(app) == ["bad_credentials"]
+
+
+async def test_sign_in_applies_the_ad_group_mapping_and_audits_each_change(client, world,
+                                                                         db_session):
+    c, app = client
+    eid = world["ayse"].identity.external_id
+    assert (await _login(c, "ayilmaz")).status_code == 200
+    world["directory"].update(eid, group_dns=(group_dn("YB-Hekim"),))
+    user = await fresh_user(db_session, world["account"].id)
+    await set_manual_groups(db_session, user=user, tenant_id=world["tenant"].id,
+                            group_ids=[world["groups"]["charge_nurse"].id], granted_by_id=None)
+    await db_session.commit()
+    res = await _login(c, "ayilmaz")
+    assert decode_token(res.json()["access_token"])["groups"] == ["charge_nurse", "physician"]
+    assert await group_rows(db_session, user.id) == {
+        ("charge_nurse", "manual"), ("physician", "ldap")}
+    assert (await _login(c, "ayilmaz")).status_code == 200            # nothing changes now
+    changes = [(r.payload["actor"], r.payload["target"], r.payload["before"], r.payload["after"])
+               for r in audit_events(app, "admin", "user.groups")]
+    assert changes == [
+        ("ldap-sync", str(user.id), [], ["nurse"]),
+        ("ldap-sync", str(user.id), ["charge_nurse", "nurse"], ["charge_nurse", "physician"]),
+    ]
+
+
+async def test_an_unknown_directory_shaped_login_is_a_plain_401(client, world):
+    c, app = client
+    for login in ("kimse@hastane.local", "HASTANE\\kimse"):
+        assert (await _login(c, login)).status_code == 401
+    assert world["directory"].calls == []
+    assert {(r.payload["reason"], r.tenant) for r in audit_events(app, "auth", "login.fail")} \
+        == {("bad_credentials", "-")}
+
+
+async def test_a_local_account_never_reaches_the_directory(client, world):
+    c, _ = client
+    assert (await _login(c, "admin", ADMIN_PASSWORD)).status_code == 200
+    assert world["directory"].calls == []
+
+
+async def test_a_upn_shaped_login_never_falls_back_to_a_local_account(client, world):
+    c, _ = client
+    assert (await _login(c, "admin@baska.local", ADMIN_PASSWORD)).status_code == 401

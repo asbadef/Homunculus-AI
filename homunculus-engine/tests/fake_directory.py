@@ -9,17 +9,22 @@ method was asked about what — never a password."""
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from homunculus.api.app import create_app
 from homunculus.auth.groups import ensure_default_groups, set_manual_groups
 from homunculus.auth.ldap import LdapGroup, LdapIdentity, LdapRuntime, LdapUnavailable
 from homunculus.auth.models import (
     AUTH_LDAP, Group, LdapGroupMapping, TenantMembership, User, UserGroup,
 )
 from homunculus.auth.service import hash_password
+from homunculus.db import get_db
 from homunculus.tenant.models import Tenant
 
 DOMAIN_DN = "DC=hastane,DC=local"
@@ -183,3 +188,28 @@ async def ad_world(db: AsyncSession) -> dict:
     await db.commit()
     return {"tenant": tenant, "groups": groups, "admin": admin, "mappings": mappings,
             "ayse": ayse, "account": account, "directory": directory}
+
+
+# ---------------------------------------------------------------- the app
+@asynccontextmanager
+async def ad_client(db: AsyncSession, directory: FakeDirectory
+                    ) -> AsyncIterator[tuple[AsyncClient, object]]:
+    """The real app with `directory` as its LDAP directory. Every request gets its own session,
+    as `get_db` gives it in production: the sign-in route rolls its session back while the
+    directory answers (plan decision D7), which must not expire the test's objects."""
+    app = create_app({"bridge-token": TENANT_SLUG}, run_escalation_loop=False,
+                     ldap=runtime(directory))
+    maker = async_sessionmaker(db.bind, expire_on_commit=False)
+
+    async def _db():
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = _db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        yield client, app
+
+
+def audit_events(app, event_type: str, subject: str) -> list:
+    return [r for r in app.state.audit.records(event_type=event_type, limit=10_000)
+            if r.subject == subject]
