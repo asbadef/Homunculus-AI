@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { Table } from "./Table.jsx";
 
 const rows = (
@@ -48,6 +48,35 @@ describe("Table", () => {
     size.client = 390;
     fireEvent(window, new Event("resize"));
     expect(container.firstChild).toHaveAttribute("tabindex", "0");
+  });
+
+  // Dropping tabindex from the focused element would send a keyboard user's focus to <body>.
+  it("stays a focused region when it stops overflowing, and drops it on blur", () => {
+    widths(900, 390);
+    render(<><Table caption="İstifadəçilər">{rows}</Table><button type="button">sonra</button></>);
+    const region = screen.getByRole("region", { name: "İstifadəçilər" });
+    act(() => region.focus());
+    size.client = 900;
+    fireEvent(window, new Event("resize"));
+    expect(region).toHaveAttribute("tabindex", "0");
+    expect(region).toHaveAttribute("role", "region");
+    expect(document.activeElement).toBe(region);
+    act(() => screen.getByRole("button", { name: "sonra" }).focus());
+    expect(region).not.toHaveAttribute("tabindex");
+    expect(screen.queryByRole("region")).toBeNull();
+  });
+
+  it("keeps the region when focus moves from it to a control inside the table", () => {
+    widths(900, 390);
+    render(
+      <Table caption="İstifadəçilər">
+        <tbody><tr><td><button type="button">Düzəliş et</button></td></tr></tbody>
+      </Table>,
+    );
+    const region = screen.getByRole("region", { name: "İstifadəçilər" });
+    act(() => region.focus());
+    act(() => screen.getByRole("button", { name: "Düzəliş et" }).focus());
+    expect(region).toHaveAttribute("tabindex", "0");
   });
 
   it("renders the caller's rows and headers", () => {

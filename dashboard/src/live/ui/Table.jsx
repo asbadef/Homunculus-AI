@@ -41,12 +41,25 @@ function useOverflows(ref, watch) {
 export function Table({ caption, className = "", children }) {
   const frame = useRef(null);
   const overflows = useOverflows(frame, Boolean(caption));
+  // The frame itself has focus. While it does, it stays a region even if it stops overflowing (a
+  // wider window): taking tabindex from the focused element would drop focus to <body>. It goes
+  // on blur instead.
+  const [focused, setFocused] = useState(false);
   useEffect(() => {
     if (!caption && import.meta.env.DEV) console.warn("Table: no caption — the table has no accessible name");
   }, [caption]);
-  const region = caption && overflows ? { role: "region", "aria-label": caption, tabIndex: 0 } : {};
+  const region = caption && (overflows || focused) ? { role: "region", "aria-label": caption, tabIndex: 0 } : {};
+  const own = (on) => (event) => {
+    if (event.target === event.currentTarget) setFocused(on);
+  };
   return (
-    <div ref={frame} {...region} className={`overflow-x-auto rounded-box border border-line bg-card ${FOCUS_RING} ${className}`}>
+    <div
+      ref={frame}
+      {...region}
+      onFocus={own(true)}
+      onBlur={own(false)}
+      className={`overflow-x-auto rounded-box border border-line bg-card ${FOCUS_RING} ${className}`}
+    >
       <table className={TABLE}>
         {caption ? <caption className="sr-only">{caption}</caption> : null}
         {children}
