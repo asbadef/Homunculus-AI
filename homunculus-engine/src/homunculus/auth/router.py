@@ -3,7 +3,9 @@ Auth API routes.
 POST /auth/login        — username or e-mail + password; returns tokens (requires_mfa when a
                           TOTP step is still pending, mfa_enrolled when the user has one). An
                           Active Directory account is checked by the directory (spec §7): a
-                          wrong password is 401, a directory that does not answer is 503
+                          wrong password is 401, a directory that does not answer is 503, and
+                          after 3 failed binds in 15 minutes the account is refused with 429
+                          without asking the directory (the domain's own lockout counts them)
 POST /auth/totp/setup   — generate TOTP secret + QR provisioning URI (allowed before MFA)
 POST /auth/totp/verify  — verify 6-digit code; re-issues tokens with mfa_verified=True
 POST /auth/refresh      — exchange refresh token for new tokens built from the CURRENT groups; an
@@ -37,7 +39,7 @@ from homunculus.auth.ldap import (
 from homunculus.auth.ldap_sync import (
     LDAP_SYNC_ACTOR, SyncOutcome, apply_directory_profile, sync_ldap_groups,
 )
-from homunculus.auth.limits import totp_failures
+from homunculus.auth.limits import directory_binds, totp_failures
 from homunculus.auth.models import AUTH_LDAP, User
 from homunculus.auth.schemas import (
     GroupBrief, LoginRequest, PasswordChangeRequest, RefreshRequest, TOTPSetupResponse,
@@ -60,6 +62,12 @@ _last_step: dict[uuid.UUID, int] = {}
 
 _TOTP_LOCKED = "Çok fazla hatalı kod. 5 dakika sonra tekrar deneyin."
 _TOTP_REPLAYED = "Bu kod zaten kullanıldı; yeni kodu bekleyin."
+# The AD bind throttle's refusal; "15" is DIRECTORY_BIND_WINDOW_S (auth/limits.py).
+_DIRECTORY_THROTTLED = "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin"
+# Directory outages after which a bind as the account may still have been made, and failed: a
+# call cut off at its deadline (its thread runs on), or a reply that made no sense (it may have
+# answered the bind). Counted toward the throttle — fail closed for the hospital's AD.
+_BIND_MAY_HAVE_FAILED = frozenset({"timeout", "protocol"})
 _NO_USER = uuid.UUID(int=0)
 
 
@@ -140,7 +148,10 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     directory that does not answer, or none configured: 503 — never conflated with 401.
 
     A deactivated account is refused before the directory is asked (no bind, so no AD lockout
-    count for an account Homunculus has switched off). The database connection is released
+    count for an account Homunculus has switched off), and so is an account with 3 failed binds
+    in the last 15 minutes (429, `directory_binds`; reset by a successful sign-in) — Homunculus
+    must never be the way a clinician gets locked out of the hospital domain. The database
+    connection is released
     while the directory answers, so a slow domain controller cannot pin the pool at shift
     change; the account is re-read afterwards (plan decisions D7, D8)."""
     user_id, external_id = user.id, user.external_id
@@ -154,12 +165,25 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     if not password or not external_id:
         await _login_failed(request, db, user_id, key, "bad_credentials")
         raise _bad_credentials()
+    # Every failed bind also counts toward the hospital domain's lockout: past the limit the
+    # directory is not asked at all (auth/limits.py, directory_binds).
+    slot = str(user_id)
+    if not directory_binds.begin(slot):
+        await _login_failed(request, db, user_id, key, "throttled")
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                            detail=_DIRECTORY_THROTTLED)
     await db.rollback()                      # nothing written yet; frees the connection
     try:
         identity = await ldap.directory.authenticate(external_id, password)
-    except LdapUnavailable:
+    except LdapUnavailable as exc:
+        directory_binds.end(slot, failed=exc.reason in _BIND_MAY_HAVE_FAILED)
         await _login_failed(request, db, user_id, key, "directory_unavailable")
         raise _directory_down() from None
+    except BaseException:                    # cancelled: the bind may still be made
+        directory_binds.end(slot, failed=True)
+        raise
+    # None: a wrong password (or no such account, which made no bind — counted all the same).
+    directory_binds.end(slot, failed=identity is None)
     if identity is None:
         await _login_failed(request, db, user_id, key, "bad_credentials")
         raise _bad_credentials()
@@ -180,6 +204,7 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
                if ref is not None else None)
     mark_login(user)
     await db.commit()
+    directory_binds.succeeded(slot)
     if outcome is not None:
         _audit_sync(request, ref.slug, user_id, outcome)
     ctx = await build_context(db, user)

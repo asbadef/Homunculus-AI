@@ -1,9 +1,13 @@
-"""The TOTP guessing limit and the time-step check behind replay refusal, without a database."""
+"""The TOTP guessing limit, the AD password-bind throttle, and the time-step check behind replay
+refusal, without a database."""
 from __future__ import annotations
 
 import pyotp
 
-from homunculus.auth.limits import FailureLimiter
+from homunculus.auth.limits import (
+    DIRECTORY_BIND_MAX_FAILURES, DIRECTORY_BIND_WINDOW_S, AttemptWindow, FailureLimiter,
+    directory_binds,
+)
 from homunculus.auth.totp import accepted_step
 
 SECRET = "JBSWY3DPEHPK3PXP"
@@ -80,6 +84,91 @@ def test_keys_are_independent():
     for _ in range(5):
         lim.failed("a")
     assert lim.locked("a") is True and lim.locked("b") is False
+
+
+# --- AttemptWindow (AD password binds) --------------------------------------------------------
+
+def _window(clock: FakeClock) -> AttemptWindow:
+    return AttemptWindow(max_failures=3, window_seconds=900, clock=clock)
+
+
+def _fail(win: AttemptWindow, key: str = "u") -> None:
+    assert win.begin(key) is True
+    win.end(key, failed=True)
+
+
+def test_three_failures_within_the_window_refuse_the_next_attempt():
+    clock = FakeClock()
+    win = _window(clock)
+    for _ in range(3):
+        _fail(win)
+        clock.t += 60
+    assert win.begin("u") is False
+
+
+def test_the_refusal_lifts_when_the_oldest_failure_leaves_the_window():
+    clock = FakeClock()
+    win = _window(clock)
+    for _ in range(3):
+        _fail(win)
+        clock.t += 100                      # failures at 1000, 1100, 1200; now 1300
+    clock.t = 1000 + 899
+    assert win.begin("u") is False
+    clock.t = 1000 + 900                    # the first failure is 15 minutes old: one more try
+    assert win.begin("u") is True
+    win.end("u", failed=True)
+    assert win.begin("u") is False          # 1100, 1200, 1900: three within the window again
+
+
+def test_failures_spread_wider_than_the_window_never_refuse():
+    clock = FakeClock()
+    win = _window(clock)
+    for _ in range(10):
+        _fail(win)
+        clock.t += 301                      # never three within 900 s
+
+
+def test_attempts_in_flight_count_so_concurrent_requests_cannot_overshoot():
+    win = _window(FakeClock())
+    _fail(win)
+    assert win.begin("u") is True and win.begin("u") is True    # two running at once
+    assert win.begin("u") is False                               # 1 failure + 2 running = 3
+    win.end("u", failed=False)
+    assert win.begin("u") is True
+
+
+def test_an_attempt_that_did_not_fail_releases_its_place_without_counting():
+    win = _window(FakeClock())
+    for _ in range(5):
+        assert win.begin("u") is True
+        win.end("u", failed=False)
+    _fail(win)
+    _fail(win)
+    assert win.begin("u") is True
+
+
+def test_a_success_clears_the_failures():
+    win = _window(FakeClock())
+    _fail(win)
+    _fail(win)
+    win.succeeded("u")
+    _fail(win)
+    _fail(win)
+    assert win.begin("u") is True
+
+
+def test_window_keys_are_independent():
+    win = _window(FakeClock())
+    for _ in range(3):
+        _fail(win, "a")
+    assert win.begin("a") is False and win.begin("b") is True
+
+
+def test_the_directory_throttle_stays_below_a_typical_ad_lockout():
+    """3 within 15 minutes: under AD's common 5-10 threshold, the window at least the usual
+    15-minute observation window; the sign-in refusal says "15 dakika"."""
+    assert (directory_binds.max_failures, directory_binds.window_seconds) == (3, 15 * 60)
+    assert (DIRECTORY_BIND_MAX_FAILURES, DIRECTORY_BIND_WINDOW_S) == (3, 15 * 60)
 
 
 # --- accepted_step ----------------------------------------------------------------------------

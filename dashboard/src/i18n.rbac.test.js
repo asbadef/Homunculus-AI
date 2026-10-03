@@ -143,7 +143,8 @@ describe("server and client messages are mapped", () => {
     for (const m of [
       "Hesabınıza kurum tanımlanmamış", "mfa_required", "mfa_reset_required", "token_version", "tenant",
       "Invalid or missing authentication credentials", "Çok fazla hatalı kod. 5 dakika sonra tekrar deneyin.",
-      "Dizin sunucusuna ulaşılamıyor", "Invalid credentials", "Invalid or expired refresh token",
+      "Dizin sunucusuna ulaşılamıyor", "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin",
+      "Invalid credentials", "Invalid or expired refresh token",
       "Mevcut parola yanlış", "Son yönetici yetkisi kaldırılamaz", "Sistem grubu silinemez",
       "unknown group for this tenant", "login is required", "Giriş başarısız.",
       "Panoya erişim yetkiniz yok. Sistem yöneticinizle görüşün.",

@@ -4,6 +4,7 @@ FakeDirectory and the test Postgres: the password goes to the directory once, a 
 and neither the audit trail nor the log ever holds a password. Synthetic accounts only."""
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import pytest
@@ -12,11 +13,12 @@ from sqlalchemy import update
 
 from homunculus.auth.groups import set_manual_groups
 from homunculus.auth.jwt import decode_token
+from homunculus.auth.ldap import LdapUnavailable
 from homunculus.auth.models import User
 from tests.conftest import requires_db
 from tests.fake_directory import (
-    AD_PASSWORD, ADMIN_PASSWORD, ad_client, ad_world, audit_events, fresh_user, group_dn,
-    group_rows,
+    AD_PASSWORD, ADMIN_PASSWORD, ad_client, ad_world, add_directory_account, audit_events,
+    fresh_user, group_dn, group_rows, person,
 )
 
 pytestmark = [pytest.mark.asyncio, requires_db]
@@ -174,6 +176,90 @@ async def test_sign_in_applies_the_ad_group_mapping_and_audits_each_change(clien
         ("ldap-sync", str(user.id), [], ["nurse"]),
         ("ldap-sync", str(user.id), ["charge_nurse", "nurse"], ["charge_nurse", "physician"]),
     ]
+
+
+THROTTLED = "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin"
+
+
+def _binds(directory) -> int:
+    return sum(1 for method, _ in directory.calls if method == "authenticate")
+
+
+async def test_three_failed_binds_throttle_the_account_without_asking_the_directory(client,
+                                                                                    world):
+    """Each failed bind also counts toward the hospital DOMAIN's lockout: Homunculus must not be
+    a way to lock a nurse out of every hospital system."""
+    c, app = client
+    for _ in range(3):
+        assert (await _login(c, "ayilmaz", "Yanlis-Parola-9")).status_code == 401
+    asked = _binds(world["directory"])
+    for login in ("ayilmaz", "HASTANE\\ayilmaz"):        # the right password, any login form
+        res = await _login(c, login)
+        assert (res.status_code, res.json()["detail"]) == (429, THROTTLED)
+    assert _binds(world["directory"]) == asked == 3
+    assert _reasons(app) == ["bad_credentials"] * 3 + ["throttled"] * 2
+    trail = str([r.payload for r in app.state.audit.records(limit=10_000)])
+    assert "Yanlis-Parola-9" not in trail and AD_PASSWORD not in trail
+
+
+async def test_a_successful_sign_in_resets_the_throttle(client, world):
+    c, _ = client
+    for _ in range(2):
+        assert (await _login(c, "ayilmaz", "Yanlis-Parola-9")).status_code == 401
+    assert (await _login(c, "ayilmaz")).status_code == 200
+    for _ in range(2):
+        assert (await _login(c, "ayilmaz", "Yanlis-Parola-9")).status_code == 401
+    assert (await _login(c, "ayilmaz")).status_code == 200
+
+
+async def test_the_throttle_holds_against_concurrent_attempts(client, world):
+    c, _ = client
+    directory = world["directory"]
+    answer = directory.authenticate
+
+    async def slow(external_id, password):
+        await asyncio.sleep(0.05)
+        return await answer(external_id, password)
+
+    directory.authenticate = slow
+    codes = [r.status_code for r in await asyncio.gather(
+        *(_login(c, "ayilmaz", "Yanlis-Parola-9") for _ in range(8)))]
+    assert sorted(codes) == [401] * 3 + [429] * 5
+    assert _binds(directory) == 3
+
+
+@pytest.mark.parametrize("reason, counted", [("timeout", True), ("unreachable", False)])
+async def test_an_outage_counts_only_when_a_bind_may_have_been_made(client, world, reason,
+                                                                   counted):
+    """Cut off at the deadline, the call's thread may still bind — and fail: counted. A domain
+    controller that cannot be reached took no bind."""
+    c, _ = client
+
+    async def down(external_id, password):
+        raise LdapUnavailable(reason)
+
+    world["directory"].authenticate = down
+    codes = [(await _login(c, "ayilmaz")).status_code for _ in range(4)]
+    assert codes == [503, 503, 503, 429 if counted else 503]
+
+
+async def test_another_ad_account_is_not_throttled(client, world, db_session):
+    c, _ = client
+    other = world["directory"].add(person("BKaya"))
+    await add_directory_account(db_session, world["tenant"].id, other)
+    await db_session.commit()
+    for _ in range(3):
+        assert (await _login(c, "ayilmaz", "Yanlis-Parola-9")).status_code == 401
+    assert (await _login(c, "ayilmaz")).status_code == 429
+    assert (await _login(c, "bkaya")).status_code == 200
+
+
+async def test_a_local_account_has_no_throttle(client, world):
+    c, app = client
+    for _ in range(5):
+        assert (await _login(c, "admin", "Yanlis-Parola-9")).status_code == 401
+    assert (await _login(c, "admin", ADMIN_PASSWORD)).status_code == 200
+    assert "throttled" not in _reasons(app)
 
 
 async def test_an_unknown_directory_shaped_login_is_a_plain_401(client, world):
