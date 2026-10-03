@@ -52,4 +52,48 @@ describe("Button", () => {
     render(<Button ref={ref}>x</Button>);
     expect(ref.current.tagName).toBe("BUTTON");
   });
+
+  it("while busy says so, stays focusable and ignores clicks", () => {
+    const onClick = vi.fn();
+    render(<Button busy onClick={onClick}>Yadda saxla</Button>);
+    const button = screen.getByRole("button", { name: "Yadda saxla" });
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(button).not.toBeDisabled();
+    button.focus();
+    expect(document.activeElement).toBe(button);
+    fireEvent.click(button);
+    expect(onClick).not.toHaveBeenCalled();
+    expect(classes(button)).toEqual(expect.arrayContaining(["aria-disabled:opacity-45", "aria-busy:cursor-wait"]));
+  });
+
+  it("while busy does not submit its form", () => {
+    const onSubmit = vi.fn((event) => event.preventDefault());
+    render(<form onSubmit={onSubmit}><Button type="submit" busy>Göndər</Button></form>);
+    fireEvent.click(screen.getByRole("button", { name: "Göndər" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("clicks again once no longer busy", () => {
+    const onClick = vi.fn();
+    const { rerender } = render(<Button busy onClick={onClick}>x</Button>);
+    rerender(<Button onClick={onClick}>x</Button>);
+    fireEvent.click(screen.getByRole("button"));
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button")).not.toHaveAttribute("aria-busy");
+  });
+
+  it.each(["sm", "md", "lg"])("draws its icon at 16 px at size %s, as the prototype's .btn svg", (size) => {
+    render(<Button size={size} icon="plus">x</Button>);
+    const svg = screen.getByRole("button").querySelector("svg");
+    expect(svg).toHaveAttribute("width", "16");
+    expect(svg).toHaveAttribute("height", "16");
+  });
+
+  it("takes a 0 as content, not as an icon-only button", () => {
+    render(<Button icon="minus" label="Sayğac">{0}</Button>);
+    const button = screen.getByRole("button", { name: "0" });
+    expect(button).not.toHaveAttribute("aria-label");
+    expect(button).not.toHaveAttribute("title");
+  });
 });
