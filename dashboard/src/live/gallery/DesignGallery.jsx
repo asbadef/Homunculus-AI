@@ -175,6 +175,10 @@ function Components() {
   const [filter, setFilter] = useState("open");
   const [tab, setTab] = useState("users");
   const [dialog, setDialog] = useState(false);
+  const tabs = [
+    { value: "users", label: t("gallery.users") },
+    { value: "roles", label: t("gallery.roles"), count: 2 },
+  ];
   return (
     <Section id="g-components" title={t("gallery.components")}>
       <Sub title={t("gallery.buttons")}>
@@ -212,17 +216,8 @@ function Components() {
           ]}
         />
         <div className="w-full">
-          <Tabs
-            id="g-tabs"
-            label={t("gallery.choices")}
-            value={tab}
-            onChange={setTab}
-            tabs={[
-              { value: "users", label: t("gallery.users") },
-              { value: "roles", label: t("gallery.roles"), count: 2 },
-            ]}
-          />
-          <TabPanel id="g-tabs" value={tab}>
+          <Tabs id="g-tabs" label={t("gallery.choices")} value={tab} onChange={setTab} tabs={tabs} />
+          <TabPanel id="g-tabs" tabs={tabs} value={tab}>
             <p className="m-0 text-13 text-mute">{tab === "users" ? t("gallery.users") : t("gallery.roles")}</p>
           </TabPanel>
         </div>

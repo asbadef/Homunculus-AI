@@ -44,7 +44,7 @@ function Harness() {
   return (
     <>
       <Tabs id="adm" label="İdarə" tabs={TABS} value={tab} onChange={setTab} />
-      <TabPanel id="adm" value={tab}>{`panel:${tab}`}</TabPanel>
+      <TabPanel id="adm" tabs={TABS} value={tab}>{`panel:${tab}`}</TabPanel>
     </>
   );
 }
@@ -89,5 +89,63 @@ describe("Tabs", () => {
   it("shows a count badge", () => {
     render(<Harness />);
     expect(screen.getByRole("tab", { name: /Rollar/ })).toHaveTextContent("2");
+  });
+
+  it("points aria-controls only from the selected tab: the others' panels are not rendered", () => {
+    render(<Harness />);
+    const selected = screen.getByRole("tab", { name: "İstifadəçilər" });
+    expect(selected).toHaveAttribute("aria-controls", screen.getByRole("tabpanel").id);
+    expect(screen.getByRole("tab", { name: /Rollar/ })).not.toHaveAttribute("aria-controls");
+    expect(screen.getByRole("tab", { name: "Audit jurnalı" })).not.toHaveAttribute("aria-controls");
+  });
+
+  it("with a value that matches no tab, makes the first tab the Tab stop and selects none", () => {
+    const onChange = vi.fn();
+    render(<Tabs id="adm" label="İdarə" tabs={TABS} value="gone" onChange={onChange} />);
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((tab) => tab.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
+    expect(tabs.every((tab) => tab.getAttribute("aria-selected") === "false")).toBe(true);
+    tabs[0].focus();
+    fireEvent.keyDown(tabs[0], { key: "ArrowLeft" });
+    expect(onChange).toHaveBeenCalledWith("audit");
+  });
+
+  it("ignores the arrows and Home/End with Alt, Ctrl or Meta held", () => {
+    const onChange = vi.fn();
+    render(<Tabs id="adm" label="İdarə" tabs={TABS} value="users" onChange={onChange} />);
+    const first = screen.getByRole("tab", { name: "İstifadəçilər" });
+    for (const mod of ["altKey", "ctrlKey", "metaKey"]) {
+      fireEvent.keyDown(first, { key: "ArrowRight", [mod]: true });
+      fireEvent.keyDown(first, { key: "End", [mod]: true });
+    }
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("builds ids from the base and the position, never from the value", () => {
+    const quirky = 'c/d"e';
+    const odd = [{ value: "a b", label: "Bir" }, { value: quirky, label: "İki" }];
+    render(
+      <>
+        <Tabs id="x" label="Tək" tabs={odd} value={quirky} onChange={() => {}} />
+        <TabPanel id="x" tabs={odd} value={quirky}>iki</TabPanel>
+      </>,
+    );
+    expect(screen.getByRole("tab", { name: "Bir" }).id).toBe("x-tab-0");
+    expect(screen.getByRole("tab", { name: "İki" }).id).toBe("x-tab-1");
+    expect(screen.getByRole("tabpanel", { name: "İki" }).id).toBe("x-panel-1");
+  });
+
+  it("without an id, generates one and points at no panel", () => {
+    render(<Tabs label="İdarə" tabs={TABS} value="users" onChange={() => {}} />);
+    const tab = screen.getByRole("tab", { name: "İstifadəçilər" });
+    expect(tab.id).toMatch(/-tab-0$/);
+    expect(tab).not.toHaveAttribute("aria-controls");
+  });
+
+  it("reads a count label in place of the bare badge number", () => {
+    const tabs = [{ value: "users", label: "İstifadəçilər" }, { value: "roles", label: "Rollar", count: 2, countLabel: "2 gözləyən" }];
+    render(<Tabs id="adm" label="İdarə" tabs={tabs} value="users" onChange={() => {}} />);
+    const tab = screen.getByRole("tab", { name: "Rollar 2 gözləyən" });
+    expect(tab.querySelector("[aria-hidden='true']")).toHaveTextContent("2");
   });
 });
