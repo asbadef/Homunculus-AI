@@ -111,11 +111,17 @@ describe.each(["gece", "gun"])("%s theme: contrast", (theme) => {
     expect(ratio(s(v), s("card"))).toBeGreaterThanOrEqual(BODY);
   });
 
-  // Page and card are already held to 4.5:1 by the primary-text test above. The outline also lands
-  // on the rail (the G1-07 sidebar's links: no other pri pair covers it), card2 (input rows, table
-  // headers) and the app frame (dialogs).
-  it.each(["rail", "card2", "app"])("focus outline (pri) clears 3:1 against %s", (bg) => {
+  // The focus outline (ui/focus.js) sits 2 px outside a control, on whatever ground surrounds it:
+  // any surface — the rail holds the G1-07 sidebar's links, card2 input rows and table headers,
+  // the app frame dialogs — and the tinted grounds a control can sit in, measured over a card: a
+  // warning note or attention card (att), a critical tag's ground (critSoft), an info note
+  // (priSoft).
+  it.each(SURFACES)("focus outline (pri) clears 3:1 against %s", (bg) => {
     expect(ratio(s("pri"), s(bg))).toBeGreaterThanOrEqual(UI);
+  });
+
+  it.each(["att", "critSoft", "priSoft"])("focus outline (pri) clears 3:1 against %s over a card", (tinted) => {
+    expect(ratio(s("pri"), over(theme, tinted, "card"))).toBeGreaterThanOrEqual(UI);
   });
 
   // A bed card's stripe sits on the card, a dot or bar in a card2 row (G1-09), a stripe on the
