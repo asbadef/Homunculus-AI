@@ -13,14 +13,22 @@ import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
-from homunculus.admin.service import LOGIN_TAKEN, Actor, _flush, _grantable
-from homunculus.auth.groups import set_manual_groups
+from homunculus.admin.service import (
+    LAST_ADMIN, LOGIN_TAKEN, UNKNOWN_GROUP, Actor, AdminError, _flush, _grantable,
+    _rights_by_user, _union, _within, get_group, group_rights,
+)
+from homunculus.auth.groups import count_admins, lock_admin_guard, set_manual_groups
 from homunculus.auth.ldap import LdapIdentity, account_expired
-from homunculus.auth.ldap_sync import login_in_use, mapped_group_ids, sync_ldap_groups
-from homunculus.auth.models import AUTH_LDAP, TenantMembership, User
+from homunculus.auth.ldap_sync import (
+    login_in_use, mapped_group_ids, normalise_dn, sync_ldap_groups,
+)
+from homunculus.auth.models import (
+    AUTH_LDAP, SOURCE_LDAP, Group, LdapGroupMapping, TenantMembership, User, UserGroup,
+)
 from homunculus.auth.service import normalize_login
 
 RESULT_CAP = 50
@@ -118,3 +126,96 @@ async def import_users(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
         existing.add(external_id)
         report.imported.append(Imported(external_id=external_id, user_id=user.id))
     return report
+
+
+# ---------------------------------------------------------------- mappings (plan decision D13)
+MAPPING_EXISTS = "Bu AD grubu bu gruba zaten eşlenmiş"
+MAPPING_NOT_FOUND = "Mapping not found"
+
+
+async def list_mappings(db: AsyncSession,
+                        tenant_id: uuid.UUID) -> list[tuple[LdapGroupMapping, Group]]:
+    rows = await db.execute(
+        select(LdapGroupMapping, Group).join(Group, Group.id == LdapGroupMapping.group_id)
+        .where(LdapGroupMapping.tenant_id == tenant_id)
+        .order_by(LdapGroupMapping.ad_group_dn, Group.slug))
+    return [(mapping, group) for mapping, group in rows.all()]
+
+
+async def create_mapping(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor, *,
+                         ad_group_dn: str, group_id: uuid.UUID) -> tuple[LdapGroupMapping, Group]:
+    """AD group (DN, stored and compared lower-case) → this tenant's group. The group must be
+    this tenant's (422, as for any group named in a body) and within the caller's rights
+    (403). It changes nobody now: each account picks it up at its next sign-in or token
+    refresh, and at import."""
+    group = (await db.execute(select(Group).where(
+        Group.id == group_id, Group.tenant_id == tenant_id))).scalar_one_or_none()
+    if group is None:
+        raise AdminError(422, UNKNOWN_GROUP)
+    _within(actor, group_rights(group))
+    dn = normalise_dn(ad_group_dn)
+    taken = (await db.execute(select(LdapGroupMapping.id).where(
+        LdapGroupMapping.tenant_id == tenant_id, LdapGroupMapping.ad_group_dn == dn,
+        LdapGroupMapping.group_id == group.id))).first()
+    if taken is not None:
+        raise AdminError(409, MAPPING_EXISTS)
+    mapping = LdapGroupMapping(tenant_id=tenant_id, ad_group_dn=dn, group_id=group.id,
+                               created_by_id=actor.id)
+    db.add(mapping)
+    await _flush(db, MAPPING_EXISTS)                 # a concurrent create took the row
+    return mapping, group
+
+
+@dataclass(frozen=True)
+class RemovedMapping:
+    ad_group_dn: str
+    group_slug: str
+    removed_from: tuple[str, ...]
+
+
+async def delete_mapping(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
+                         mapping_id: uuid.UUID) -> RemovedMapping:
+    """Remove the row AND, now, every `ldap`-sourced membership of its group in this tenant,
+    retiring those users' tokens — also for users entitled to the group through another
+    mapping, who get it back at their next sign-in or refresh (fail closed). Needs the group and
+    every such member within the caller's rights (a deletion takes rights away from them, as a
+    group edit would), then the local-administrator guard.
+
+    The tenant's admin lock is taken FIRST, by this function itself (re-entrant: the router's
+    `serialise` already holds it), before anything is read or deleted. A sign-in or refresh
+    sync that read the mapping before this transaction commits, and decided to add its group,
+    must then wait for the lock and decide again (`sync_ldap_groups`) — it cannot insert a row
+    no mapping accounts for any more, which would linger until that user's next sync."""
+    await lock_admin_guard(db, tenant_id)
+    mapping = (await db.execute(select(LdapGroupMapping).where(
+        LdapGroupMapping.id == mapping_id, LdapGroupMapping.tenant_id == tenant_id)
+    )).scalar_one_or_none()
+    if mapping is None:
+        raise AdminError(404, MAPPING_NOT_FOUND)
+    group = await get_group(db, tenant_id, mapping.group_id, for_update=True)
+    _within(actor, group_rights(group))
+    link = aliased(UserGroup)
+    holders = select(link.user_id).where(link.group_id == group.id, link.source == SOURCE_LDAP)
+    for groups in (await _rights_by_user(db, tenant_id,
+                                         UserGroup.user_id.in_(holders))).values():
+        _within(actor, _union(groups))
+    dn = mapping.ad_group_dn
+    await db.delete(mapping)
+    removed = list((await db.execute(
+        delete(UserGroup)
+        .where(UserGroup.group_id == group.id, UserGroup.source == SOURCE_LDAP)
+        .returning(UserGroup.user_id)
+        .execution_options(synchronize_session=False))).scalars().all())
+    if removed:
+        await db.execute(
+            update(User).where(User.id.in_(removed))
+            .values(token_version=User.token_version + 1)
+            .execution_options(synchronize_session=False))
+    await db.flush()
+    if await count_admins(db, tenant_id) == 0:
+        raise AdminError(409, LAST_ADMIN)
+    names: list[str] = []
+    if removed:
+        names = list((await db.execute(select(User.username).where(User.id.in_(removed))
+                                       .order_by(User.username))).scalars().all())
+    return RemovedMapping(ad_group_dn=dn, group_slug=group.slug, removed_from=tuple(names))

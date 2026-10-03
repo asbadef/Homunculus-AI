@@ -7,6 +7,9 @@ mapping"). Every route needs `users.manage` and resolves the caller's tenant:
   GET    /admin/ldap/search?q=     AD accounts (at most 50), each flagged already_imported
   GET    /admin/ldap/groups?q=     AD groups (at most 50), for the mapping picker
   POST   /admin/ldap/import        create accounts from AD (idempotent; plan decision D12)
+  GET    /admin/ldap/group-mappings        this tenant's AD group → group table
+  POST   /admin/ldap/group-mappings        add a row (applies from each user's next sign-in or refresh)
+  DELETE /admin/ldap/group-mappings/{id}   remove a row and, now, the rights it gave
 
 With LDAP off (LDAP_URL unset) every route but `status` answers 409 `Dizin yapılandırılmamış`;
 `status` answers `configured: false`, so the panel can hide itself (plan decision D14). A
@@ -20,15 +23,15 @@ from __future__ import annotations
 import asyncio
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admin import ldap_service
 from homunculus.admin.router import _audit, _begin, _run
 from homunculus.admin.router import _user_out as _admin_user_out
 from homunculus.admin.schemas import (
-    LdapGroupOut, LdapImportedOut, LdapImportIn, LdapImportOut, LdapSkippedOut, LdapStatusOut,
-    LdapTestOut, LdapUserOut,
+    LdapGroupOut, LdapImportedOut, LdapImportIn, LdapImportOut, LdapMappingIn, LdapMappingOut,
+    LdapSkippedOut, LdapStatusOut, LdapTestOut, LdapUserOut,
 )
 from homunculus.admin.service import get_tenant_user
 from homunculus.auth.dependencies import (
@@ -37,6 +40,7 @@ from homunculus.auth.dependencies import (
 from homunculus.auth.ldap import (
     DIRECTORY_DOWN, NOT_CONFIGURED, LdapIdentity, LdapRuntime, LdapUnavailable, get_ldap,
 )
+from homunculus.auth.models import Group, LdapGroupMapping
 from homunculus.db import get_db
 
 router = APIRouter(prefix="/admin/ldap", tags=["admin"])
@@ -140,3 +144,47 @@ async def ldap_import(body: LdapImportIn, request: Request,
     return LdapImportOut(imported=imported,
                          skipped=[LdapSkippedOut(external_id=e, reason=r)
                                   for e, r in report.skipped])
+
+
+def _mapping_out(mapping: LdapGroupMapping, group: Group) -> LdapMappingOut:
+    return LdapMappingOut(id=mapping.id, ad_group_dn=mapping.ad_group_dn, group_id=group.id,
+                          group_slug=group.slug, group_name=group.name,
+                          created_at=mapping.created_at)
+
+
+@router.get("/group-mappings", response_model=list[LdapMappingOut],
+            dependencies=[*_users, Depends(configured_ldap)])
+async def list_group_mappings(tenant_id: uuid.UUID = Depends(caller_tenant_id),
+                              db: AsyncSession = Depends(get_db)) -> list[LdapMappingOut]:
+    return [_mapping_out(m, g) for m, g in await ldap_service.list_mappings(db, tenant_id)]
+
+
+@router.post("/group-mappings", response_model=LdapMappingOut,
+             status_code=status.HTTP_201_CREATED,
+             dependencies=[*_users, Depends(configured_ldap)])
+async def create_group_mapping(body: LdapMappingIn, request: Request,
+                               principal: Principal = Depends(get_principal),
+                               tenant_id: uuid.UUID = Depends(caller_tenant_id),
+                               db: AsyncSession = Depends(get_db)) -> LdapMappingOut:
+    actor = await _begin(db, tenant_id, principal)
+    mapping, group = await _run(db, ldap_service.create_mapping(
+        db, tenant_id, actor, ad_group_dn=body.ad_group_dn, group_id=body.group_id))
+    await db.commit()
+    _audit(request, principal, "ldap.mapping.create", str(mapping.id),
+           after={"ad_group_dn": mapping.ad_group_dn, "group": group.slug})
+    return _mapping_out(mapping, group)
+
+
+@router.delete("/group-mappings/{mapping_id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[*_users, Depends(configured_ldap)])
+async def delete_group_mapping(mapping_id: uuid.UUID, request: Request,
+                               principal: Principal = Depends(get_principal),
+                               tenant_id: uuid.UUID = Depends(caller_tenant_id),
+                               db: AsyncSession = Depends(get_db)) -> Response:
+    actor = await _begin(db, tenant_id, principal)
+    removed = await _run(db, ldap_service.delete_mapping(db, tenant_id, actor, mapping_id))
+    await db.commit()
+    _audit(request, principal, "ldap.mapping.delete", str(mapping_id),
+           before={"ad_group_dn": removed.ad_group_dn, "group": removed.group_slug},
+           after={"removed_from": list(removed.removed_from)})
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

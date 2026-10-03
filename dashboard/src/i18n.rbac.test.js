@@ -98,6 +98,7 @@ const ROUTER = py("auth/router.py");
 const AUTH_SERVICE = py("auth/service.py");
 const LDAP = py("auth/ldap.py");
 const ADMIN_SERVICE = py("admin/service.py");
+const LDAP_SERVICE = py("admin/ldap_service.py");
 const GROUPS = py("auth/groups.py");
 const PERMISSIONS = py("auth/permissions.py");
 const ADMIN_SCHEMAS = py("admin/schemas.py");
@@ -121,6 +122,8 @@ const PLAIN = [
   ...[...ADMIN_CONST.values()].map((m) => ["admin/service.py constant", m]),
   ...literals(ADMIN_SERVICE, String.raw`AdminError\(\d+, ${STR}\)`)
     .map((m) => ["admin/service.py literal", m]),
+  ...["MAPPING_EXISTS", "MAPPING_NOT_FOUND"]
+    .map((k) => ["admin/ldap_service.py constant", pyConstants(LDAP_SERVICE).get(k)]),
   ...literals(GROUPS, String.raw`GroupError\(${STR}\)`).map((m) => ["auth/groups.py", m]),
   ...literals(AUTH_SCHEMAS, String.raw`ValueError\(${STR}\)`).map((m) => ["auth/schemas.py", m]),
   ...literals(BACKEND_API, String.raw`failure\(\w+,\s*${STR}\)`).map((m) => ["backendApi.js", m]),
@@ -146,6 +149,7 @@ describe("server and client messages are mapped", () => {
       "Dizin sunucusuna ulaşılamıyor", "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin",
       "Invalid credentials", "Invalid or expired refresh token",
       "Mevcut parola yanlış", "Son yönetici yetkisi kaldırılamaz", "Sistem grubu silinemez",
+      "Bu AD grubu bu gruba zaten eşlenmiş",
       "unknown group for this tenant", "login is required", "Giriş başarısız.",
       "Panoya erişim yetkiniz yok. Sistem yöneticinizle görüşün.",
       "Sunucuya ulaşılamıyor; oturumunuz korunuyor. Biraz sonra tekrar deneyin.",
@@ -183,6 +187,12 @@ describe("server and client messages are mapped", () => {
     expect(apiErrorKey(ADMIN_CONST.get("SELF_CREDENTIALS")).key).toBe("selfCredentials");
     expect(apiErrorKey(ADMIN_CONST.get("SHARED_ACCOUNT")).key).toBe("sharedAccount");
     expect(apiErrorKey(ADMIN_CONST.get("PLATFORM_ACCOUNT")).key).toBe("platformAccount");
+  });
+
+  it("names the right entry for the AD group mapping refusals", () => {
+    const LDAP_CONST = pyConstants(LDAP_SERVICE);
+    expect(apiErrorKey(LDAP_CONST.get("MAPPING_EXISTS"))?.key).toBe("adMappingExists");
+    expect(apiErrorKey(LDAP_CONST.get("MAPPING_NOT_FOUND"))?.key).toBe("adMappingNotFound");
   });
 });
 
@@ -295,6 +305,7 @@ describe("field errors (422)", () => {
     [/^Kullanıcı adı 2-128 karakter/, ["username"], "usernameRule"],
     [/^e-mail: /, ["email"], "emailInvalid"],
     [/^slug: /, ["slug"], "slugInvalid"],
+    [/^ad_group_dn must be a distinguished name/, ["ad_group_dn"], "adGroupDnInvalid"],
     [/^must not be blank$/, ["name", "full_name"], null],
   ];
   const EXPECTED_FOR = { name: "groupNameRequired", full_name: "fullNameRequired" };
@@ -330,6 +341,17 @@ describe("field errors (422)", () => {
     }
     expect(translateApiError(err("password", "string_too_short", "String should have at least 8 characters"), "ru"))
       .toBe(cstrings("ru").rbac.err.passwordTooShort);
+  });
+
+  it("translates an AD group DN that is not one, the length refusals included", () => {
+    // admin/schemas.py LdapMappingIn: Field(min_length=3, max_length=2048) and the "=" check.
+    expect(ADMIN_SCHEMAS).toContain("ad_group_dn: str = Field(min_length=3, max_length=2048)");
+    for (const type of ["value_error", "string_too_short", "string_too_long"]) {
+      for (const lang of langs) {
+        expect(translateApiError(err("ad_group_dn", type, "String should have at least 3 characters"), lang),
+          `${lang} ${type}`).toBe(cstrings(lang).rbac.err.adGroupDnInvalid);
+      }
+    }
   });
 
   it("translates a password over the length limit, the user's own change included", () => {

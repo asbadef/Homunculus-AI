@@ -5,20 +5,27 @@ import and the mapping table under the same rights rules as the rest of /admin. 
 and the test Postgres; synthetic accounts only."""
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from homunculus.admin import ldap_service
+from homunculus.admin.service import Actor
 from homunculus.auth.groups import ensure_default_groups
+from homunculus.auth.jwt import decode_token
 from homunculus.auth.ldap import ACCOUNT_NEVER_EXPIRES, NOT_CONFIGURED
-from homunculus.auth.models import Group, GroupPermission, User
+from homunculus.auth.models import Group, GroupPermission, LdapGroupMapping, User
+from homunculus.auth.permissions import ALL_PERMISSIONS
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
 from tests.fake_directory import (
-    AD_PASSWORD, ad_client, ad_world, add_mapping, audit_events, group_dn, person,
+    AD_PASSWORD, ADMIN_PASSWORD, ad_client, ad_world, add_mapping, audit_events, group_dn,
+    group_rows, person,
 )
 from tests.signed_in import add_user, bearer
 
@@ -73,6 +80,10 @@ def _routes(w) -> list[tuple[str, str, dict | None]]:
         ("GET", "/admin/ldap/search?q=kaya", None),
         ("GET", "/admin/ldap/groups?q=yb", None),
         ("POST", "/admin/ldap/import", {"external_ids": [w["mkaya"].identity.external_id]}),
+        ("GET", "/admin/ldap/group-mappings", None),
+        ("POST", "/admin/ldap/group-mappings",
+         {"ad_group_dn": group_dn("YB-Eczaci"), "group_id": str(w["groups"]["pharmacist"].id)}),
+        ("DELETE", f"/admin/ldap/group-mappings/{w['mappings']['YB-Hekim'].id}", None),
     ]
 
 
@@ -275,3 +286,178 @@ async def test_the_import_body_is_bounded(client, world, db_session, body):
     c, _ = client
     admin = await bearer(db_session, world["admin"])
     assert (await c.post("/admin/ldap/import", headers=admin, json=body)).status_code == 422
+
+
+# ---------------------------------------------------------------- the mapping table
+async def test_the_mapping_table_shows_this_tenants_rows(client, world, db_session):
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    rows = (await c.get("/admin/ldap/group-mappings", headers=admin)).json()
+    assert [(r["ad_group_dn"], r["group_slug"]) for r in rows] == [
+        (group_dn("YB-Hekim").lower(), "physician"), (group_dn("YB-Hemsire").lower(), "nurse"),
+        (group_dn("YB-Sorumlu").lower(), "charge_nurse")]
+    assert str(world["foreign_mapping"].id) not in {r["id"] for r in rows}
+
+
+async def test_a_mapping_is_stored_once_with_its_dn_lowercased(client, world, db_session):
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    body = {"ad_group_dn": "  CN=YB-Eczaci,OU=Gruplar,DC=HASTANE,DC=LOCAL ",
+            "group_id": str(world["groups"]["pharmacist"].id)}
+    res = await c.post("/admin/ldap/group-mappings", headers=admin, json=body)
+    assert res.status_code == 201, res.text
+    assert (res.json()["ad_group_dn"], res.json()["group_slug"]) == (
+        "cn=yb-eczaci,ou=gruplar,dc=hastane,dc=local", "pharmacist")
+    again = await c.post("/admin/ldap/group-mappings", headers=admin, json={
+        **body, "ad_group_dn": "cn=yb-eczaci,ou=gruplar,dc=hastane,dc=local"})
+    assert (again.status_code, again.json()["detail"]) == (409, "Bu AD grubu bu gruba zaten eşlenmiş")
+    foreign = await c.post("/admin/ldap/group-mappings", headers=admin, json={
+        **body, "group_id": str(world["other_groups"]["nurse"].id)})
+    assert foreign.status_code == 422
+    short = await c.post("/admin/ldap/group-mappings", headers=admin,
+                         json={**body, "ad_group_dn": "yb"})
+    assert short.status_code == 422
+    assert [r.payload["after"] for r in audit_events(app, "admin", "ldap.mapping.create")] == [
+        {"ad_group_dn": "cn=yb-eczaci,ou=gruplar,dc=hastane,dc=local", "group": "pharmacist"}]
+
+
+async def test_deleting_a_mapping_takes_the_rights_it_gave_away_now(client, world, db_session):
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    ayse_id = world["account"].id
+    res = await c.put(f"/admin/users/{ayse_id}/groups", headers=admin,
+                      json={"group_ids": [str(world["groups"]["charge_nurse"].id)]})
+    assert res.status_code == 200
+    login = await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
+    ayse = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    assert (await c.get("/auth/me", headers=ayse)).status_code == 200
+    mapping = world["mappings"]["YB-Hemsire"]
+    res = await c.delete(f"/admin/ldap/group-mappings/{mapping.id}", headers=admin)
+    assert res.status_code == 204
+    assert (await c.get("/auth/me", headers=ayse)).status_code == 401      # tokens retired
+    assert await group_rows(db_session, ayse_id) == {("charge_nurse", "manual")}
+    [event] = audit_events(app, "admin", "ldap.mapping.delete")
+    assert event.payload["before"] == {"ad_group_dn": group_dn("YB-Hemsire").lower(),
+                                       "group": "nurse"}
+    assert event.payload["after"] == {"removed_from": ["ayilmaz"]}
+    assert (await c.delete(f"/admin/ldap/group-mappings/{mapping.id}",
+                           headers=admin)).status_code == 404
+    assert (await c.delete(f"/admin/ldap/group-mappings/{world['foreign_mapping'].id}",
+                           headers=admin)).status_code == 404
+
+
+async def test_a_user_desk_cannot_map_or_unmap_beyond_its_rights(client, world, db_session):
+    c, _ = client
+    desk = await bearer(db_session, world["desk"])
+    admin = await bearer(db_session, world["admin"])
+    res = await c.post("/admin/ldap/group-mappings", headers=desk, json={
+        "ad_group_dn": group_dn("YB-Yeni"), "group_id": str(world["groups"]["charge_nurse"].id)})
+    assert res.status_code == 403
+    res = await c.delete(f"/admin/ldap/group-mappings/{world['mappings']['YB-Sorumlu'].id}",
+                         headers=desk)
+    assert res.status_code == 403                    # the group is above the desk
+    assert (await c.post("/auth/login", json={"login": "ayilmaz",
+                                              "password": AD_PASSWORD})).status_code == 200
+    ayse_id = world["account"].id
+    res = await c.put(f"/admin/users/{ayse_id}/groups", headers=admin,
+                      json={"group_ids": [str(world["groups"]["physician"].id)]})
+    assert res.status_code == 200
+    hemsire = world["mappings"]["YB-Hemsire"].id
+    res = await c.delete(f"/admin/ldap/group-mappings/{hemsire}", headers=desk)
+    assert res.status_code == 403                    # a member it takes rights from is above it
+    res = await c.put(f"/admin/users/{ayse_id}/groups", headers=admin, json={"group_ids": []})
+    assert res.status_code == 200
+    assert (await c.delete(f"/admin/ldap/group-mappings/{hemsire}",
+                           headers=desk)).status_code == 204
+
+
+async def test_ldap_admin_changes_are_audited_without_a_secret(client, world, db_session):
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    await c.post("/admin/ldap/test", headers=admin)
+    await c.post("/admin/ldap/import", headers=admin,
+                 json={"external_ids": [world["bdemir"].identity.external_id]})
+    created = (await c.post("/admin/ldap/group-mappings", headers=admin, json={
+        "ad_group_dn": group_dn("YB-Eczaci"),
+        "group_id": str(world["groups"]["pharmacist"].id)})).json()
+    assert (await c.delete(f"/admin/ldap/group-mappings/{created['id']}",
+                           headers=admin)).status_code == 204
+    records = [r for r in app.state.audit.records(event_type="admin", limit=10_000)
+               if r.subject.startswith("ldap.")]
+    assert {r.subject for r in records} == {
+        "ldap.test", "ldap.import", "ldap.mapping.create", "ldap.mapping.delete"}
+    assert {r.payload["actor"] for r in records} == {"admin"}
+    trail = str([r.payload for r in records])
+    assert AD_PASSWORD not in trail and ADMIN_PASSWORD not in trail
+
+
+# ---------------------------------------------------------------- a delete racing a sync
+async def _until_the_sign_in_waits_for_the_admin_lock(db: AsyncSession, tenant_id: uuid.UUID,
+                                                      sign_in: asyncio.Task) -> None:
+    """Return once some session is queued on THIS tenant's admin lock (`lock_admin_guard`'s
+    bigint advisory key: high half in pg_locks.classid, low half in objid, objsubid 1) — not on
+    another test run's session lock. Fail if the sign-in finishes without queueing, or after
+    5 s."""
+    key = f"homunculus.admin-guard:{tenant_id}"
+    for _ in range(250):
+        if sign_in.done():
+            raise AssertionError("the sign-in finished without waiting for the admin lock")
+        waiting = (await db.execute(text(
+            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted"
+            " AND objsubid = 1"
+            " AND classid::bigint = ((hashtextextended(:key, 0) >> 32) & 4294967295)"
+            " AND objid::bigint = (hashtextextended(:key, 0) & 4294967295)"),
+            {"key": key})).scalar_one()
+        await db.rollback()
+        if waiting:
+            return
+        await asyncio.sleep(0.02)
+    raise AssertionError("the sign-in never queued on the tenant's admin lock")
+
+
+@pytest.mark.parametrize("via", ["api", "service"])
+async def test_a_mapping_delete_and_a_concurrent_sign_in_end_consistent(client, world,
+                                                                        db_session,
+                                                                        monkeypatch, via):
+    """Plan D13 with the tenant lock taken BEFORE the rows are deleted. Ayşe (YB-Hemsire, not
+    yet signed in) signs in while the YB-Hemsire → nurse mapping is being deleted: the delete
+    has removed the mapping and its `ldap` rows but not committed, so her sync still reads the
+    mapping and decides to add `nurse`. It must then wait for the tenant lock and decide again
+    once the delete has committed — not insert a `nurse` row no mapping accounts for. Made
+    deterministic: the sign-in starts inside the delete, just before its administrator guard,
+    and the delete commits only once the sign-in is queued on the lock. `service` calls
+    `delete_mapping` without the router's `serialise`: the function holds the lock itself.
+    (The other order — the sync commits first — is the delete's ordinary case, above.)"""
+    c, app = client
+    # Plain ids: the lock poll rolls the test's session back, which expires `world`'s objects.
+    tenant_id, ayse_id, admin_id = world["tenant"].id, world["account"].id, world["admin"].id
+    mapping_id = world["mappings"]["YB-Hemsire"].id
+    count_admins = ldap_service.count_admins
+    sign_in: list[asyncio.Task] = []
+
+    async def guard_while_ayse_signs_in(db, tid):
+        sign_in.append(asyncio.create_task(
+            c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})))
+        await _until_the_sign_in_waits_for_the_admin_lock(db_session, tenant_id, sign_in[0])
+        return await count_admins(db, tid)
+
+    monkeypatch.setattr(ldap_service, "count_admins", guard_while_ayse_signs_in)
+    if via == "api":
+        admin = await bearer(db_session, world["admin"])
+        res = await c.delete(f"/admin/ldap/group-mappings/{mapping_id}", headers=admin)
+        assert res.status_code == 204, res.text
+        [event] = audit_events(app, "admin", "ldap.mapping.delete")
+        assert event.payload["after"] == {"removed_from": []}
+    else:
+        maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+        async with maker() as session:
+            actor = Actor(id=admin_id, perms=ALL_PERMISSIONS, token_version=0)
+            removed = await ldap_service.delete_mapping(session, tenant_id, actor, mapping_id)
+            await session.commit()
+        assert removed.removed_from == ()
+    res = await sign_in[0]
+    assert res.status_code == 200, res.text
+    assert decode_token(res.json()["access_token"])["groups"] == []
+    assert await group_rows(db_session, ayse_id) == set()
+    assert (await db_session.execute(select(func.count()).select_from(LdapGroupMapping).where(
+        LdapGroupMapping.id == mapping_id))).scalar_one() == 0

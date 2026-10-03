@@ -223,3 +223,25 @@ class LdapSkippedOut(BaseModel):
 class LdapImportOut(BaseModel):
     imported: list[LdapImportedOut]
     skipped: list[LdapSkippedOut]
+
+
+class LdapMappingIn(BaseModel):
+    ad_group_dn: str = Field(min_length=3, max_length=2048)
+    group_id: uuid.UUID
+
+    @field_validator("ad_group_dn")
+    @classmethod
+    def _looks_like_a_dn(cls, value: str) -> str:
+        value = value.strip()
+        if "=" not in value:
+            raise ValueError("ad_group_dn must be a distinguished name (CN=…,DC=…)")
+        return value
+
+
+class LdapMappingOut(BaseModel):
+    id: uuid.UUID
+    ad_group_dn: str
+    group_id: uuid.UUID
+    group_slug: str
+    group_name: str
+    created_at: datetime
