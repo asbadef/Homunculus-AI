@@ -265,6 +265,86 @@ async def test_an_ad_mail_taken_by_a_concurrent_sign_in_never_fails_this_one(cli
     assert ok.payload["profile"] == ["full_name", "ldap_dn"]
 
 
+# ---------------------------------------------------------------- timing parity (spec §4)
+async def _arrange_failure(case, c, app, world, db):
+    """Put the world in the state `case` names; returns the (login, password) to send."""
+    directory, eid, uid = world["directory"], world["ayse"].identity.external_id, \
+        world["account"].id
+    if case == "unknown_login":
+        return "kimse", "Yanlis-Parola-9"
+    if case == "local_wrong_password":
+        return "admin", "Yanlis-Parola-9"
+    if case in ("ad_inactive", "ad_without_external_id"):
+        values = {"is_active": False} if case == "ad_inactive" else {"external_id": None}
+        await db.execute(update(User).where(User.id == uid).values(**values))
+        await db.commit()
+    elif case == "ad_empty_password":
+        return "ayilmaz", ""
+    elif case == "ad_wrong_password":
+        return "ayilmaz", "Yanlis-Parola-9"
+    elif case == "ad_disabled_in_directory":
+        directory.update(eid, disabled=True)
+    elif case == "ad_login_form_switched_off":
+        app.state.ldap.login_attrs = ("samaccountname",)
+        return "ayilmaz@hastane.local", AD_PASSWORD
+    elif case == "ad_deactivated_during_the_directory_call":
+        answer = directory.authenticate
+
+        async def deactivate_then_answer(external_id, password):
+            await db.execute(update(User).where(User.id == uid).values(is_active=False))
+            await db.commit()
+            return await answer(external_id, password)
+
+        directory.authenticate = deactivate_then_answer
+    elif case == "ad_throttled":
+        for _ in range(3):
+            assert (await _login(c, "ayilmaz", "Yanlis-Parola-9")).status_code == 401
+    elif case == "ad_directory_down":
+        directory.unavailable = True
+    return "ayilmaz", AD_PASSWORD
+
+
+@pytest.mark.parametrize("case, status, bcrypts", [
+    ("unknown_login", 401, 1),
+    ("local_wrong_password", 401, 1),
+    ("ad_inactive", 401, 1),
+    ("ad_without_external_id", 401, 1),
+    ("ad_empty_password", 401, 1),
+    ("ad_wrong_password", 401, 1),
+    ("ad_disabled_in_directory", 401, 1),
+    ("ad_login_form_switched_off", 401, 1),
+    ("ad_deactivated_during_the_directory_call", 401, 1),
+    # The status itself says what the timing would (429: an AD account, throttled; 503: an AD
+    # account, directory down): no dummy bcrypt there.
+    ("ad_throttled", 429, 0),
+    ("ad_directory_down", 503, 0),
+])
+async def test_every_401_costs_the_bcrypt_an_unknown_login_costs(client, world, db_session,
+                                                                  monkeypatch, case, status,
+                                                                  bcrypts):
+    """Spec §4: response time must not reveal whether the account exists. An AD failure that
+    skipped bcrypt answered in ~3 ms against ~200 ms for an unknown login or a local wrong
+    password — telling AD accounts, and deactivated ones, apart: a target list for lockout
+    attacks. Counted, not timed: each 401 runs exactly the unknown login's dummy comparison."""
+    import homunculus.auth.router as auth_router
+
+    c, app = client
+    login, password = await _arrange_failure(case, c, app, world, db_session)
+    real, ran = auth_router.run_bcrypt, []
+
+    async def counting(fn, *args):
+        ran.append((fn.__name__, args[:2]))
+        return await real(fn, *args)
+
+    monkeypatch.setattr(auth_router, "run_bcrypt", counting)
+    res = await _login(c, login, password)
+    assert res.status_code == status, res.text
+    dummy = ("verify_local_password", (None, None))
+    if case == "local_wrong_password":
+        dummy = ("verify_local_password", ("local", world["admin"].hashed_password))
+    assert ran == [dummy] * bcrypts
+
+
 THROTTLED = "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin"
 
 

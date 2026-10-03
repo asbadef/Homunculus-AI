@@ -95,6 +95,18 @@ async def _login_failed(request: Request, db: AsyncSession, user_id: uuid.UUID |
                  subject="login.fail", payload={"login": key, "reason": reason})
 
 
+async def _directory_sign_in_refused(request: Request, db: AsyncSession, user_id: uuid.UUID,
+                                     key: str, reason: str, password: str) -> HTTPException:
+    """An AD sign-in refused with 401: audited, after the SAME dummy bcrypt comparison an unknown
+    login pays (spec §4: response time must not reveal whether the account exists). Without it
+    an AD refusal answered in a few milliseconds against ~0.2 s for an unknown login or a local
+    wrong password — telling AD accounts, and deactivated ones, apart: a target list for
+    lockout attacks. The 429 and 503 refusals do not pay it: their status says it already."""
+    await run_bcrypt(verify_local_password, None, None, password)
+    await _login_failed(request, db, user_id, key, reason)
+    return _bad_credentials()
+
+
 @router.post("/login", response_model=TokenResponse, summary="Sign in with username or e-mail")
 async def login(body: LoginRequest, request: Request,
                 db: AsyncSession = Depends(get_db)) -> TokenResponse:
@@ -155,15 +167,14 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     the pool at shift change; the account is re-read afterwards (plan decisions D7, D8)."""
     user_id, external_id = user.id, user.external_id
     if not user.is_active:
-        await _login_failed(request, db, user_id, key, "inactive")
-        raise _bad_credentials()
+        raise await _directory_sign_in_refused(request, db, user_id, key, "inactive", password)
     ldap = get_ldap(request)
     if ldap is None:
         await _login_failed(request, db, user_id, key, "directory_unavailable")
         raise _directory_down()
     if not password or not external_id:
-        await _login_failed(request, db, user_id, key, "bad_credentials")
-        raise _bad_credentials()
+        raise await _directory_sign_in_refused(request, db, user_id, key, "bad_credentials",
+                                               password)
     await db.rollback()                      # nothing written yet; frees the connection
     # Every failed bind also counts toward the hospital domain's lockout: past the limit the
     # directory is not asked at all (auth/limits.py, directory_binds). Nothing may sit between
@@ -185,18 +196,18 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     # None: a wrong password (or no such account, which made no bind — counted all the same).
     directory_binds.end(slot, failed=identity is None)
     if identity is None:
-        await _login_failed(request, db, user_id, key, "bad_credentials")
-        raise _bad_credentials()
-    if identity.disabled:
-        await _login_failed(request, db, user_id, key, "directory_disabled")
-        raise _bad_credentials()
-    if not login_matches(key, identity, ldap.login_attrs):
-        await _login_failed(request, db, user_id, key, "bad_credentials")
-        raise _bad_credentials()
+        refusal = "bad_credentials"
+    elif identity.disabled:
+        refusal = "directory_disabled"
+    elif not login_matches(key, identity, ldap.login_attrs):
+        refusal = "bad_credentials"
+    else:
+        refusal = None
+    if refusal is not None:
+        raise await _directory_sign_in_refused(request, db, user_id, key, refusal, password)
     user = await get_user_by_id(db, user_id)
     if user is None or not user.is_active:               # deactivated while AD answered
-        await _login_failed(request, db, user_id, key, "inactive")
-        raise _bad_credentials()
+        raise await _directory_sign_in_refused(request, db, user_id, key, "inactive", password)
     # Lock order: every writer takes the tenant's admin lock BEFORE it updates an account's row
     # (the /admin API does). The group sync may take that lock, so it runs before anything here
     # writes the row (profile, last_login_at): a sign-in holding the row while it waited for
