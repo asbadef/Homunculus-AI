@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 import pytest
 import pytest_asyncio
@@ -123,6 +124,33 @@ async def test_an_account_disabled_in_ad_is_refused_and_stays_active_here(client
     assert (await _login(c, "ayilmaz")).status_code == 401
     assert _reasons(app) == ["directory_disabled"]
     assert (await fresh_user(db_session, world["account"].id)).is_active is True
+
+
+def _filetime(unix_seconds: float) -> int:
+    return int((unix_seconds + 11_644_473_600) * 10_000_000)
+
+
+async def test_an_account_past_its_ad_end_date_is_refused_and_stays_active_here(client, world,
+                                                                              db_session):
+    """accountExpires is how HR often off-boards: an end date, not a disabled flag — and the
+    default LDAP_USER_FILTER does not exclude it. Refused like a disabled account, the password
+    unchecked (Ldap3Directory makes no bind for it); the local flag is not changed."""
+    c, app = client
+    world["directory"].update(world["ayse"].identity.external_id,
+                              account_expires=_filetime(time.time() - 60))
+    assert (await _login(c, "ayilmaz")).status_code == 401
+    assert (await _login(c, "ayilmaz", "Yanlis-Parola-9")).status_code == 401
+    assert _reasons(app) == ["directory_expired"] * 2
+    assert (await fresh_user(db_session, world["account"].id)).is_active is True
+
+
+@pytest.mark.parametrize("ends", ["never (0)", "never (max)", "later"])
+async def test_an_account_whose_ad_end_date_has_not_come_signs_in(client, world, ends):
+    c, _ = client
+    value = {"never (0)": 0, "never (max)": 0x7FFF_FFFF_FFFF_FFFF,
+             "later": _filetime(time.time() + 3600)}[ends]
+    world["directory"].update(world["ayse"].identity.external_id, account_expires=value)
+    assert (await _login(c, "ayilmaz")).status_code == 200
 
 
 async def test_a_deactivated_account_never_reaches_the_directory(client, world, db_session):
@@ -284,6 +312,8 @@ async def _arrange_failure(case, c, app, world, db):
         return "ayilmaz", "Yanlis-Parola-9"
     elif case == "ad_disabled_in_directory":
         directory.update(eid, disabled=True)
+    elif case == "ad_expired_in_directory":
+        directory.update(eid, account_expires=_filetime(time.time() - 60))
     elif case == "ad_login_form_switched_off":
         app.state.ldap.login_attrs = ("samaccountname",)
         return "ayilmaz@hastane.local", AD_PASSWORD
@@ -312,6 +342,7 @@ async def _arrange_failure(case, c, app, world, db):
     ("ad_empty_password", 401, 1),
     ("ad_wrong_password", 401, 1),
     ("ad_disabled_in_directory", 401, 1),
+    ("ad_expired_in_directory", 401, 1),
     ("ad_login_form_switched_off", 401, 1),
     ("ad_deactivated_during_the_directory_call", 401, 1),
     # The status itself says what the timing would (429: an AD account, throttled; 503: an AD

@@ -10,8 +10,9 @@
                    host, the login forms it accepts, the outcome of the last connection test.
 
 The pure rules of a directory sign-in live here too: objectGUID's string form, the
-ACCOUNTDISABLE bit, pwdLastSet against a token's issue time, and which typed login forms an
-account answers to. Nothing here talks to the network or imports `ldap3`.
+ACCOUNTDISABLE bit, pwdLastSet against a token's issue time, accountExpires against the clock,
+and which typed login forms an account answers to. Nothing here talks to the network or
+imports `ldap3`.
 
 The AD password a clinician types goes to one bind and is dropped: never stored, logged,
 audited or cached (spec §7, Security). The service account's password comes from the
@@ -49,6 +50,7 @@ TIMEOUT_MIN_S, TIMEOUT_MAX_S = 1.0, 10.0
 DEADLINE_CAP_S = 12.0
 FILETIME_TICKS_PER_S = 10_000_000
 FILETIME_UNIX_OFFSET_S = 11_644_473_600   # 1601-01-01 to 1970-01-01, in seconds
+ACCOUNT_NEVER_EXPIRES = 0x7FFF_FFFF_FFFF_FFFF   # accountExpires: "never" (so is 0)
 _TRUE = frozenset({"1", "true", "yes", "on"})
 _FALSE = frozenset({"0", "false", "no", "off"})
 
@@ -72,7 +74,9 @@ class LdapIdentity:
     """One AD account. `external_id` is objectGUID in its string form (`guid_from_bytes`);
     `username` is sAMAccountName as AD spells it; `group_dns` are the DNs of its groups (nested
     ones included when LDAP_NESTED_GROUPS=1); `pwd_last_set` is pwdLastSet, a FILETIME — 0 when
-    the account must change its password at the next logon, None when it was not read."""
+    the account must change its password at the next logon, None when it was not read;
+    `account_expires` is accountExpires, a FILETIME (0 or ACCOUNT_NEVER_EXPIRES: never; None:
+    not read) — judged by `account_expired`."""
     external_id: str
     username: str
     dn: str
@@ -82,6 +86,7 @@ class LdapIdentity:
     group_dns: tuple[str, ...] = ()
     disabled: bool = False
     pwd_last_set: int | None = None
+    account_expires: int | None = None
 
 
 @dataclass(frozen=True)
@@ -100,7 +105,9 @@ class LdapDirectory(Protocol):
         returned as found, without a bind, so the caller can say why it refuses — when the
         filter lets it through: the DEFAULT filter excludes disabled accounts, so under it a
         disabled account is simply not found (sign-in `bad_credentials`, refresh
-        `directory_not_found`; `directory_disabled` needs a custom LDAP_USER_FILTER)."""
+        `directory_not_found`; `directory_disabled` needs a custom LDAP_USER_FILTER). An
+        EXPIRED account (`account_expired`) is returned as found without a bind too; the
+        default filter lets it through, so it is refused as `directory_expired`."""
 
     async def find_by_external_id(self, external_id: str) -> LdapIdentity | None:
         """The account with this objectGUID, read with the service account; None if not found."""
@@ -139,16 +146,32 @@ def is_disabled(user_account_control: int | None) -> bool:
     return bool((user_account_control or 0) & ACCOUNTDISABLE)
 
 
+def filetime_to_unix_s(filetime: int) -> int:
+    """A FILETIME (100 ns ticks since 1601-01-01 UTC) as whole Unix seconds, as `iat` is — the
+    one conversion, for pwdLastSet and accountExpires alike."""
+    return filetime // FILETIME_TICKS_PER_S - FILETIME_UNIX_OFFSET_S
+
+
 def password_changed_since(pwd_last_set: int | None, issued_at: int) -> bool:
     """Spec §7, refresh: was the AD password set after a token issued at `issued_at` (Unix
-    seconds)? pwdLastSet is a FILETIME (100 ns ticks since 1601-01-01 UTC), converted here —
-    the one place — to whole Unix seconds, as `iat` is. 0 means "must change at next logon" —
-    what an AD password reset usually sets — and counts as changed. None (not read): no."""
+    seconds)? 0 means "must change at next logon" — what an AD password reset usually sets —
+    and counts as changed. None (not read): no."""
     if pwd_last_set is None:
         return False
     if pwd_last_set <= 0:
         return True
-    return pwd_last_set // FILETIME_TICKS_PER_S - FILETIME_UNIX_OFFSET_S > issued_at
+    return filetime_to_unix_s(pwd_last_set) > issued_at
+
+
+def account_expired(account_expires: int | None, now: float) -> bool:
+    """Has the AD account reached its end date (accountExpires) at `now` (Unix seconds)? HR
+    often off-boards that way rather than by disabling, and the default LDAP_USER_FILTER does
+    not exclude it, so sign-in and refresh refuse it like a disabled account. 0 and
+    ACCOUNT_NEVER_EXPIRES mean never; None (not read): no opinion. A negative value, which AD
+    never writes, counts as expired (fail closed). Compared on this server's clock."""
+    if account_expires is None or account_expires in (0, ACCOUNT_NEVER_EXPIRES):
+        return False
+    return account_expires < 0 or filetime_to_unix_s(account_expires) <= now
 
 
 def login_matches(key: str, identity: LdapIdentity, attrs: Iterable[str]) -> bool:

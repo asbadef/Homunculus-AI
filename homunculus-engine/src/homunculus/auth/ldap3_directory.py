@@ -24,6 +24,7 @@ import logging
 import math
 import os
 import ssl
+import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -44,7 +45,7 @@ from ldap3.utils.conv import escape_filter_chars
 
 from homunculus.auth.ldap import (
     LdapConfig, LdapConfigError, LdapGroup, LdapIdentity, LdapRuntime, LdapUnavailable,
-    guid_from_bytes, guid_to_bytes, is_disabled, load_ldap_config,
+    account_expired, guid_from_bytes, guid_to_bytes, is_disabled, load_ldap_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ logger = logging.getLogger(__name__)
 Connect = Callable[[str, str], Any]
 
 USER_ATTRIBUTES = ("objectGUID", "sAMAccountName", "userPrincipalName", "mail", "displayName",
-                   "memberOf", "userAccountControl", "pwdLastSet")
+                   "memberOf", "userAccountControl", "pwdLastSet", "accountExpires")
 # A search lists accounts to pick from; their group lists are not shown, so not read.
 SEARCH_ATTRIBUTES = tuple(a for a in USER_ATTRIBUTES if a != "memberOf")
 GROUP_ATTRIBUTES = ("cn",)
@@ -129,6 +130,7 @@ def parse_user_entry(entry: Mapping[str, Any]) -> LdapIdentity | None:
         group_dns=tuple(_decode(v) for v in attrs.get("memberof", [])),
         disabled=is_disabled(_first_int(attrs.get("useraccountcontrol", []))),
         pwd_last_set=_first_int(attrs.get("pwdlastset", [])),
+        account_expires=_first_int(attrs.get("accountexpires", [])),
     )
 
 
@@ -352,7 +354,10 @@ class Ldap3Directory:
 
     def _authenticate(self, external_id: str, password: str) -> LdapIdentity | None:
         identity = self._find(external_id)
-        if identity is None or identity.disabled:
+        # Disabled or past its end date: returned without a bind — the caller refuses it, and
+        # no password goes to a domain controller for an account that cannot sign in anyway.
+        if (identity is None or identity.disabled
+                or account_expired(identity.account_expires, time.time())):
             return identity
         return identity if self._password_ok(identity.dn, password) else None
 

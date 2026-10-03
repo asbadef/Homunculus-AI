@@ -1,14 +1,15 @@
 """The LDAP configuration and the pure rules of a directory sign-in (spec §7): the LDAP_*
-environment, objectGUID's string form, the ACCOUNTDISABLE bit, pwdLastSet against a token, and
-which typed login forms name an account. No network, no database."""
+environment, objectGUID's string form, the ACCOUNTDISABLE bit, pwdLastSet against a token,
+accountExpires against the clock, and which typed login forms name an account. No network, no
+database."""
 from __future__ import annotations
 
 import pytest
 
 from homunculus.auth.ldap import (
-    DEFAULT_USER_FILTER, LOGIN_ATTRS, LdapConfigError, LdapIdentity, canonical_guid,
-    guid_from_bytes, guid_to_bytes, is_disabled, load_ldap_config, login_matches,
-    password_changed_since,
+    DEFAULT_USER_FILTER, LOGIN_ATTRS, LdapConfigError, LdapIdentity, account_expired,
+    canonical_guid, guid_from_bytes, guid_to_bytes, is_disabled, load_ldap_config,
+    login_matches, password_changed_since,
 )
 from homunculus.auth.service import directory_login_alternative
 
@@ -179,6 +180,24 @@ def test_a_password_set_after_the_token_ends_the_session():
     assert password_changed_since(_filetime(iat, 5_000_000), iat) is False   # the same second
     assert password_changed_since(None, iat) is False                         # not read
     assert password_changed_since(0, iat) is True                             # must change at next logon
+
+
+# ---------------------------------------------------------------- accountExpires
+NOW = 1_790_000_000
+
+
+@pytest.mark.parametrize("account_expires, expired", [
+    (None, False),                          # not read: no opinion
+    (0, False),                             # never expires
+    (0x7FFF_FFFF_FFFF_FFFF, False),         # never expires (AD's other spelling)
+    (_filetime(NOW + 3600), False),         # expires later
+    (_filetime(NOW), True),                 # expires now
+    (_filetime(NOW - 1), True),             # expired
+    (_filetime(NOW - 86_400 * 365), True),  # long ago
+    (-1, True),                             # nonsense AD never writes: fail closed
+])
+def test_account_expires_is_a_filetime_with_two_spellings_of_never(account_expires, expired):
+    assert account_expired(account_expires, NOW) is expired
 
 
 # ---------------------------------------------------------------- typed login forms

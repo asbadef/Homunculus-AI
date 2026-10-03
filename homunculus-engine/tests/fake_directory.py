@@ -2,8 +2,8 @@
 in-memory list") and the helpers the LDAP tests share. Synthetic accounts only.
 
 FakeDirectory keeps Ldap3Directory's contract: `authenticate` finds the account by objectGUID,
-returns a disabled one as found WITHOUT checking the password, and answers None for an unknown
-account or an empty or wrong password. As there, bad input never reaches the "server": an empty
+returns a disabled or expired one (accountExpires passed) as found WITHOUT checking the
+password, and answers None for an unknown account or an empty or wrong password. As there, bad input never reaches the "server": an empty
 password or a malformed objectGUID is None and a blank query [] whether or not the directory is
 up, and is not recorded; a search returns at most 1–50 rows (`limit` clamped) and no group
 lists. `unavailable = True` makes every other call raise LdapUnavailable("unreachable"), as a
@@ -17,6 +17,7 @@ NOT FOUND (sign-in: `bad_credentials`, refresh: `directory_not_found`), and `dir
 is reached only with a filter that lets disabled accounts through."""
 from __future__ import annotations
 
+import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -28,7 +29,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from homunculus.api.app import create_app
 from homunculus.auth.groups import ensure_default_groups, set_manual_groups
-from homunculus.auth.ldap import LdapGroup, LdapIdentity, LdapRuntime, LdapUnavailable
+from homunculus.auth.ldap import (
+    LdapGroup, LdapIdentity, LdapRuntime, LdapUnavailable, account_expired,
+)
 from homunculus.auth.models import (
     AUTH_LDAP, Group, LdapGroupMapping, TenantMembership, User, UserGroup,
 )
@@ -52,7 +55,8 @@ class FakePerson:
 
 def person(username: str, *, password: str = AD_PASSWORD, groups: tuple[str, ...] = (),
            disabled: bool = False, email: str | None = None, upn: str | None = None,
-           display_name: str | None = None, pwd_last_set: int | None = None) -> FakePerson:
+           display_name: str | None = None, pwd_last_set: int | None = None,
+           account_expires: int | None = None) -> FakePerson:
     """An AD account: sAMAccountName `username`; UPN `<username>@hastane.local` unless given;
     display name `username.title()` unless given; a fresh objectGUID."""
     name = display_name or username.title()
@@ -61,7 +65,8 @@ def person(username: str, *, password: str = AD_PASSWORD, groups: tuple[str, ...
             external_id=str(uuid.uuid4()), username=username,
             dn=f"CN={name},OU=Personel,{DOMAIN_DN}",
             upn=upn or f"{username.lower()}@hastane.local", email=email, display_name=name,
-            group_dns=tuple(groups), disabled=disabled, pwd_last_set=pwd_last_set),
+            group_dns=tuple(groups), disabled=disabled, pwd_last_set=pwd_last_set,
+            account_expires=account_expires),
         password=password)
 
 
@@ -110,7 +115,7 @@ class FakeDirectory:
         p = self.people.get(external_id)
         if p is None:
             return None
-        if p.identity.disabled:
+        if p.identity.disabled or account_expired(p.identity.account_expires, time.time()):
             return p.identity
         return p.identity if password == p.password else None
 

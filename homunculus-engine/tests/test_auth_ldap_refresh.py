@@ -6,6 +6,8 @@ already carries the current rights. A directory that does not answer, or none co
 session goes on unchanged, and the audit trail says so. Synthetic accounts only."""
 from __future__ import annotations
 
+import time
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import update
@@ -98,6 +100,30 @@ async def test_must_change_password_at_next_logon_ends_the_session(client, world
     world["directory"].update(world["ayse"].identity.external_id, pwd_last_set=0)
     assert (await _refresh(c, tokens)).status_code == 401
     assert _reasons(app, "refresh.fail") == ["directory_password_changed"]
+
+
+async def test_an_account_past_its_ad_end_date_loses_its_session_at_the_next_refresh(
+        client, world, db_session):
+    """accountExpires (off-boarding by an end date) passes the default LDAP_USER_FILTER; the
+    refresh must end the session as it does for a disabled account."""
+    c, app = client
+    tokens = await _signed_in(c, world)
+    world["directory"].update(world["ayse"].identity.external_id,
+                              account_expires=_filetime(int(time.time()) - 60))
+    assert (await _refresh(c, tokens)).status_code == 401
+    assert _reasons(app, "refresh.fail") == ["directory_expired"]
+    assert (await fresh_user(db_session, world["account"].id)).is_active is True
+
+
+@pytest.mark.parametrize("ends", ["never (0)", "never (max)", "later"])
+async def test_an_account_whose_ad_end_date_has_not_come_keeps_its_session(client, world, ends):
+    c, app = client
+    tokens = await _signed_in(c, world)
+    value = {"never (0)": 0, "never (max)": 0x7FFF_FFFF_FFFF_FFFF,
+             "later": _filetime(int(time.time()) + 3600)}[ends]
+    world["directory"].update(world["ayse"].identity.external_id, account_expires=value)
+    assert (await _refresh(c, tokens)).status_code == 200
+    assert _reasons(app, "refresh.fail") == []
 
 
 async def test_an_account_gone_from_the_directory_loses_its_session(client, world):

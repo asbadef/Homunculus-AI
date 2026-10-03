@@ -17,9 +17,9 @@ from ldap3.core.exceptions import LDAPException, LDAPResponseTimeoutError, LDAPS
 
 from homunculus.auth.ldap import DEFAULT_USER_FILTER, LdapGroup, LdapUnavailable, load_ldap_config
 from homunculus.auth.ldap3_directory import (
-    GROUP_LIMIT, SLOTS, Ldap3Directory, _wire_filter, escape_guid, failure_reason,
-    group_search_filter, guid_lookup_filter, ldap_from_env, nested_groups_filter,
-    parse_group_entry, parse_user_entry, tls_for, user_search_filter,
+    GROUP_LIMIT, SEARCH_ATTRIBUTES, SLOTS, USER_ATTRIBUTES, Ldap3Directory, _wire_filter,
+    escape_guid, failure_reason, group_search_filter, guid_lookup_filter, ldap_from_env,
+    nested_groups_filter, parse_group_entry, parse_user_entry, tls_for, user_search_filter,
 )
 
 GUID = "6b29fc40-ca47-1067-b31d-00dd010662da"
@@ -139,6 +139,18 @@ def test_attribute_names_are_matched_whatever_their_case():
 
 def test_the_accountdisable_bit_marks_the_account_disabled():
     assert parse_user_entry(_entry(userAccountControl=[b"514"])).disabled is True
+
+
+def test_account_expires_is_read_raw_and_left_out_when_absent():
+    assert parse_user_entry(_entry(accountExpires=[b"133000000000000000"])).account_expires \
+        == 133_000_000_000_000_000
+    assert parse_user_entry(_entry(accountExpires=[b"9223372036854775807"])).account_expires \
+        == 0x7FFF_FFFF_FFFF_FFFF
+    assert parse_user_entry(_entry()).account_expires is None
+
+
+def test_every_account_lookup_asks_for_account_expires():
+    assert "accountExpires" in USER_ATTRIBUTES and "accountExpires" in SEARCH_ATTRIBUTES
 
 
 @pytest.mark.parametrize("overrides", [
@@ -295,6 +307,28 @@ async def test_a_disabled_account_is_returned_without_a_bind_as_it():
     identity = await _directory(script).authenticate(GUID, "her-neyse")
     assert identity is not None and identity.disabled is True
     assert _bound_as(script) == [SVC_DN]
+
+
+def _filetime(unix_seconds: float) -> int:
+    return int((unix_seconds + 11_644_473_600) * 10_000_000)
+
+
+async def test_an_expired_account_is_returned_without_a_bind_as_it():
+    """Off-boarding by an end date: refused like a disabled account, and no password goes to a
+    domain controller for it (no lockout count either)."""
+    expired = str(_filetime(time.time() - 3600)).encode()
+    script = Script(([_entry(accountExpires=[expired])], 0))
+    identity = await _directory(script).authenticate(GUID, "her-neyse")
+    assert identity is not None and identity.account_expires == int(expired)
+    assert _bound_as(script) == [SVC_DN]
+
+
+@pytest.mark.parametrize("account_expires", [b"0", b"9223372036854775807", None])
+async def test_an_account_that_has_not_expired_still_binds(account_expires):
+    later = [str(_filetime(time.time() + 3600)).encode()]
+    script = Script(([_entry(accountExpires=[account_expires] if account_expires else later)], 0))
+    assert await _directory(script).authenticate(GUID, USER_PW) is not None
+    assert _bound_as(script) == [SVC_DN, USER_DN]
 
 
 async def test_a_refused_service_account_is_an_outage():

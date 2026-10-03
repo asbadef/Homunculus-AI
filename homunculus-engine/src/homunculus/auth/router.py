@@ -9,8 +9,8 @@ POST /auth/login        — username or e-mail + password; returns tokens (requi
 POST /auth/totp/setup   — generate TOTP secret + QR provisioning URI (allowed before MFA)
 POST /auth/totp/verify  — verify 6-digit code; re-issues tokens with mfa_verified=True
 POST /auth/refresh      — exchange refresh token for new tokens built from the CURRENT groups; an
-                          AD account is read back from the directory first (disabled, gone or
-                          password changed there: 401; otherwise its AD groups are applied, so
+                          AD account is read back from the directory first (disabled, expired,
+                          gone or password changed there: 401; otherwise its AD groups apply, so
                           the new token carries them; directory down: the session goes on)
 GET  /auth/me           — profile, tenant, groups, permissions (allowed before MFA)
 POST /auth/password     — change own password (local accounts)
@@ -19,6 +19,7 @@ Every sign-in, MFA and password event goes to the audit trail (never a password 
 """
 from __future__ import annotations
 import hmac
+import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -33,7 +34,7 @@ from homunculus.auth.dependencies import (
 from homunculus.auth.groups import tenant_of_user
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.ldap import (
-    DIRECTORY_DOWN, LdapIdentity, LdapUnavailable, get_ldap, login_matches,
+    DIRECTORY_DOWN, LdapIdentity, LdapUnavailable, account_expired, get_ldap, login_matches,
     password_changed_since,
 )
 from homunculus.auth.ldap_sync import (
@@ -156,8 +157,9 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
                              password: str) -> TokenResponse:
     """Spec §7, "Sign-in for an AD user". The password goes to ONE bind, as the account's DN
     found by objectGUID, and nowhere else: not stored, logged or audited. A wrong password, an
-    account disabled or gone in AD, or a login form LDAP_LOGIN_ATTRS does not allow: 401. A
-    directory that does not answer, or none configured: 503 — never conflated with 401.
+    account disabled, past its end date (accountExpires) or gone in AD, or a login form
+    LDAP_LOGIN_ATTRS does not allow: 401. A directory that does not answer, or none configured:
+    503 — never conflated with 401.
 
     A deactivated account is refused before the directory is asked (no bind, so no AD lockout
     count for an account Homunculus has switched off), and so is an account with 3 failed binds
@@ -199,6 +201,8 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
         refusal = "bad_credentials"
     elif identity.disabled:
         refusal = "directory_disabled"
+    elif account_expired(identity.account_expires, time.time()):
+        refusal = "directory_expired"
     elif not login_matches(key, identity, ldap.login_attrs):
         refusal = "bad_credentials"
     else:
@@ -356,8 +360,9 @@ async def _directory_at_refresh(request: Request, db: AsyncSession, user: User,
     """Spec §7, "Refresh for an AD account" (plan decisions D7, D9). Returns (refuse, identity).
 
     refuse is True when the session must end: the account is gone (deleted, moved out of
-    LDAP_BASE_DN, excluded by LDAP_USER_FILTER), disabled, or its password was set after the
-    refresh token was issued (pwdLastSet later than `iat`, or 0 — "must change at next logon").
+    LDAP_BASE_DN, excluded by LDAP_USER_FILTER), disabled, past its end date (accountExpires),
+    or its password was set after the refresh token was issued (pwdLastSet later than `iat`, or
+    0 — "must change at next logon").
     identity is the account as the directory reports it now, for the group sync; None when the
     directory does not answer or is not configured — the session goes on, unsynced (the spec §4
     outage rule), and the audit trail says so. Releases the database connection while the
@@ -387,6 +392,8 @@ async def _directory_at_refresh(request: Request, db: AsyncSession, user: User,
         reason = "directory_not_found"
     elif identity.disabled:
         reason = "directory_disabled"
+    elif account_expired(identity.account_expires, time.time()):
+        reason = "directory_expired"
     elif password_changed_since(identity.pwd_last_set, iat):
         reason = "directory_password_changed"
     else:
