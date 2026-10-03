@@ -65,11 +65,14 @@ export function Tabs({ id, label, tabs, value, onChange, className = "" }) {
   );
 }
 
-/** The selected tab's panel. Same `id` and `tabs` as its <Tabs>, and the selected `value`. */
+/** The selected tab's panel. Same `id` and `tabs` as its <Tabs>, and the selected `value`.
+ *  A `value` that matches no tab selects none in <Tabs>, so the panel then claims no tab either:
+ *  no id for an aria-controls, no aria-labelledby (the first tab is only the Tab stop). */
 export function TabPanel({ id, tabs, value, className = "", children }) {
-  const index = Math.max(0, tabs.findIndex((tab) => tab.value === value));
+  const index = tabs.findIndex((tab) => tab.value === value);
+  const link = index === -1 ? {} : { id: panelId(id, index), "aria-labelledby": tabId(id, index) };
   return (
-    <div role="tabpanel" id={panelId(id, index)} aria-labelledby={tabId(id, index)} tabIndex={0} className={`${FOCUS_RING} ${className}`}>
+    <div role="tabpanel" {...link} tabIndex={0} className={`${FOCUS_RING} ${className}`}>
       {children}
     </div>
   );

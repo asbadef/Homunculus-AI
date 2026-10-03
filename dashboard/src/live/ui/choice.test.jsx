@@ -118,6 +118,23 @@ describe("Tabs", () => {
     expect(onChange).toHaveBeenCalledWith("audit");
   });
 
+  // No tab is selected, so the panel is labelled by none — not by the first tab, which is only
+  // the Tab stop — and no tab's aria-controls points at it.
+  it("with a value that matches no tab, renders a panel that claims no tab", () => {
+    render(
+      <>
+        <Tabs id="adm" label="İdarə" tabs={TABS} value="gone" onChange={() => {}} />
+        <TabPanel id="adm" tabs={TABS} value="gone">boş</TabPanel>
+      </>,
+    );
+    const panel = screen.getByRole("tabpanel");
+    expect(panel).toHaveTextContent("boş");
+    expect(panel).not.toHaveAttribute("aria-labelledby");
+    expect(panel).not.toHaveAttribute("id");
+    expect(screen.queryByRole("tabpanel", { name: "İstifadəçilər" })).toBeNull();
+    for (const tab of screen.getAllByRole("tab")) expect(tab).not.toHaveAttribute("aria-controls");
+  });
+
   it("ignores the arrows and Home/End with Alt, Ctrl or Meta held", () => {
     const onChange = vi.fn();
     render(<Tabs id="adm" label="İdarə" tabs={TABS} value="users" onChange={onChange} />);
