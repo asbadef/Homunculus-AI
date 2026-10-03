@@ -34,7 +34,15 @@ describe("riskStyle", () => {
 
   it("says 'not measured' instead of 'no finding' when nothing was measured", () => {
     expect(riskStyle("none", { measured: false })).toMatchObject({ tone: "neutral", labelKey: "risk.unmeasured" });
-    expect(riskStyle("info", { measured: false })).toMatchObject({ labelKey: "risk.unmeasured" });
+  });
+
+  // "info" is an alert's severity: an info-level alert exists, so there is an observation behind
+  // it and "not measured" would be false.
+  it("reads 'info' as Info whatever `measured` says", () => {
+    for (const measured of [undefined, false, true, null, "true"]) {
+      expect(riskStyle("info", { measured }), String(measured)).toEqual({ tone: "neutral", icon: "eye", labelKey: "risk.info" });
+    }
+    expect(riskStyle("info")).toMatchObject({ labelKey: "risk.info" });
   });
 
   // Clinical safety: an identity-only card (admitted, never measured) gets risk "none" from the
@@ -42,7 +50,6 @@ describe("riskStyle", () => {
   it("claims 'no finding' only when told explicitly that the card was measured", () => {
     expect(riskStyle("none")).toMatchObject({ tone: "neutral", labelKey: "risk.unmeasured" });
     expect(riskStyle("none", {})).toMatchObject({ labelKey: "risk.unmeasured" });
-    expect(riskStyle("info")).toMatchObject({ labelKey: "risk.unmeasured" });
     for (const measured of [undefined, null, 1, "true", "yes", {}, []]) {
       expect(riskStyle("none", { measured }).labelKey, String(measured)).toBe("risk.unmeasured");
     }
@@ -79,6 +86,21 @@ describe("riskStyle", () => {
     });
     expect(riskStyle("severe", { measured: true })).toMatchObject({ tone: "att", labelVars: { value: "severe" } });
     expect(riskStyle(3)).toMatchObject({ tone: "att", labelVars: { value: "3" } });
+  });
+
+  // The engine sends a string. Anything else is shown as unknown — never coerced into a level
+  // (String(["high"]) is "high") and never by calling the value's own toString, which an object
+  // may lack (a null-prototype object makes String() throw) or override.
+  it("never coerces a value that is not a string into a level", () => {
+    const lying = { toString: () => "critical" };
+    for (const risk of [["high"], ["none"], [], {}, lying, Object.create(null), true, Symbol("high")]) {
+      const style = riskStyle(risk, { measured: true });
+      expect(style, String(typeof risk)).toMatchObject({ tone: "att", icon: "alert", labelKey: "risk.unknown" });
+      expect(typeof style.labelVars.value).toBe("string");
+    }
+    expect(riskStyle(["high"]).labelVars.value).toBe("[object Array]");
+    expect(riskStyle(Object.create(null)).labelVars.value).toBe("[object Object]");
+    expect(riskStyle(lying).labelVars.value).toBe("[object Object]");
   });
 
   it("does not take inherited names for engine levels", () => {
