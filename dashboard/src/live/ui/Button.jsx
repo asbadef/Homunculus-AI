@@ -14,10 +14,12 @@ const SIZE = {
   md: "px-[13px] py-2 text-13", //      .btn
   lg: "px-[18px] py-[11px] text-14.5", // .btn.lg
 };
+// Busy is aria-disabled too. Tailwind writes aria-busy: rules before aria-disabled: ones, so the
+// wait cursor is the stacked variant (both attributes, a more specific selector) to win.
 const BASE =
   "inline-flex items-center gap-1.5 whitespace-nowrap rounded-ctl border font-text font-semibold leading-[normal] "
   + "cursor-pointer disabled:cursor-not-allowed disabled:opacity-45 aria-disabled:cursor-not-allowed aria-disabled:opacity-45 "
-  + `aria-busy:cursor-wait ${FOCUS_RING}`;
+  + `aria-busy:aria-disabled:cursor-wait ${FOCUS_RING}`;
 
 // No content at all: an icon-only button. A 0 is content (a count), not nothing.
 const isEmpty = (children) => children === null || children === undefined || children === false || children === "";

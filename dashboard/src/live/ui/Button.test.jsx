@@ -64,7 +64,18 @@ describe("Button", () => {
     expect(document.activeElement).toBe(button);
     fireEvent.click(button);
     expect(onClick).not.toHaveBeenCalled();
-    expect(classes(button)).toEqual(expect.arrayContaining(["aria-disabled:opacity-45", "aria-busy:cursor-wait"]));
+    expect(classes(button)).toContain("aria-disabled:opacity-45");
+  });
+
+  // A busy button is aria-disabled too, and Tailwind emits its aria-busy rules before the
+  // aria-disabled ones, so a wait cursor under aria-busy alone loses to the not-allowed one. The
+  // stacked variant needs both attributes, which makes its selector the more specific one.
+  it("shows the wait cursor while busy, not the not-allowed one", () => {
+    render(<Button busy>Yadda saxla</Button>);
+    const list = classes(screen.getByRole("button"));
+    expect(list).toContain("aria-busy:aria-disabled:cursor-wait");
+    expect(list).toContain("aria-disabled:cursor-not-allowed");
+    expect(list.filter((c) => c.includes("wait"))).toEqual(["aria-busy:aria-disabled:cursor-wait"]);
   });
 
   it("while busy does not submit its form", () => {
