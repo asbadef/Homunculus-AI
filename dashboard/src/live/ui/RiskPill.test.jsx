@@ -35,8 +35,21 @@ describe("RiskPill", () => {
     expect(screen.getByText("Tapıntı yoxdur")).toHaveAttribute("data-tone", "neutral");
   });
 
-  it("shows an unrecognised value as it came, neutral", () => {
+  it("shows an unrecognised value as it came, in the attention look", () => {
     render(<RiskPill risk="stable" />);
-    expect(screen.getByText("Naməlum risk: stable")).toHaveAttribute("data-tone", "neutral");
+    expect(screen.getByText("Naməlum risk: stable")).toHaveAttribute("data-tone", "att");
+  });
+
+  it("says so, in the attention look, when the engine sent no risk", () => {
+    render(<><RiskPill risk={null} /><RiskPill /></>);
+    const pills = screen.getAllByText("Risk bildirilməyib");
+    expect(pills).toHaveLength(2);
+    for (const pill of pills) expect(pill).toHaveAttribute("data-tone", "att");
+  });
+
+  it("names the missing risk in every language", () => {
+    localStorage.setItem("hmc.lang", "ru");
+    render(<I18nProvider><RiskPill risk="" /></I18nProvider>);
+    expect(screen.getByText("Риск не передан")).toHaveAttribute("data-tone", "att");
   });
 });

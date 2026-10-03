@@ -53,14 +53,46 @@ describe("riskStyle", () => {
     }
   });
 
-  it("keeps an unrecognised value visible, with its raw text", () => {
+  it("reads the engine's value case- and space-insensitively", () => {
+    expect(riskStyle("CRITICAL")).toMatchObject({ tone: "crit", labelKey: "risk.critical" });
+    expect(riskStyle(" High ")).toMatchObject({ tone: "high", labelKey: "risk.high" });
+    expect(riskStyle("Moderate" + String.fromCharCode(10))).toMatchObject({ tone: "mid", labelKey: "risk.moderate" });
+    expect(riskStyle(" None", { measured: true })).toMatchObject({ labelKey: "risk.none" });
+    expect(riskStyle("NONE")).toMatchObject({ labelKey: "risk.unmeasured" });
+  });
+
+  it.each([null, undefined, "", "   "])(
+    "draws attention, never calm, when the engine sent no risk at all (%j)",
+    (risk) => {
+      for (const measured of [undefined, true, false]) {
+        expect(riskStyle(risk, { measured })).toEqual({ tone: "att", icon: "alert", labelKey: "risk.unreported" });
+      }
+    },
+  );
+
+  it("keeps an unrecognised value visible, with its raw text, in the attention look", () => {
     expect(riskStyle("stable")).toEqual({
-      tone: "neutral", icon: "alert", labelKey: "risk.unknown", labelVars: { value: "stable" },
+      tone: "att", icon: "alert", labelKey: "risk.unknown", labelVars: { value: "stable" },
     });
+    expect(riskStyle("severe", { measured: true })).toMatchObject({ tone: "att", labelVars: { value: "severe" } });
+    expect(riskStyle(3)).toMatchObject({ tone: "att", labelVars: { value: "3" } });
+  });
+
+  it("does not take inherited names for engine levels", () => {
+    for (const risk of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      expect(riskStyle(risk), risk).toMatchObject({ tone: "att", labelKey: "risk.unknown", labelVars: { value: risk } });
+    }
+  });
+
+  it("is never neutral grey for a value it cannot vouch for", () => {
+    for (const risk of [null, undefined, "", "stable", "ok", "green", "severe", 0, 3, "constructor"]) {
+      expect(riskStyle(risk).tone, String(risk)).toBe("att");
+      expect(riskStyle(risk, { measured: true }).tone, String(risk)).toBe("att");
+    }
   });
 
   it("names every label in all four languages", () => {
-    const keys = [...ENGINE_RISKS.map((r) => riskStyle(r).labelKey), "risk.unmeasured", "risk.unknown"];
+    const keys = [...ENGINE_RISKS.map((r) => riskStyle(r).labelKey), "risk.none", "risk.unmeasured", "risk.unknown", "risk.unreported"];
     for (const lang of LANG_CODES) for (const key of keys) expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
   });
 });

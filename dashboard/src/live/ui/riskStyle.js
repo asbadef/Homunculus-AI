@@ -14,8 +14,12 @@
 //   about observations, and an identity-only card has none — so the claim must be opted into by
 //   a caller that has them (G1-09 decides it from the card's timestamps), never be the default.
 //   It never hides a real finding.
-//   An unrecognised value stays neutral but shows its raw value, so a level the engine adds later
-//   is visible on the card instead of silently calm.
+//   The value is read trimmed and lower-cased. Anything the screen cannot vouch for takes the
+//   attention look (tone "att"), never neutral grey and never green: no value at all (null,
+//   undefined, blank) reads "risk not reported"; a value this build does not know — the engine
+//   added a level, a version skew — reads "unknown risk: <raw text>", so it is visible on the card
+//   instead of silently calm. riskStyle.test.js reads the engine's level list from its source, so
+//   a new level fails CI here before it reaches a ward.
 const RISK = {
   critical: { tone: "crit", icon: "alert", labelKey: "risk.critical" },
   high: { tone: "high", icon: "alert", labelKey: "risk.high" },
@@ -29,9 +33,11 @@ const NO_FINDING = ["none", "info"];
 export const ENGINE_RISKS = Object.keys(RISK);
 
 export function riskStyle(risk, { measured } = {}) {
-  if (measured !== true && NO_FINDING.includes(risk)) {
+  const key = risk === null || risk === undefined ? "" : String(risk).trim().toLowerCase();
+  if (key === "") return { tone: "att", icon: "alert", labelKey: "risk.unreported" };
+  if (measured !== true && NO_FINDING.includes(key)) {
     return { tone: "neutral", icon: "minus", labelKey: "risk.unmeasured" };
   }
-  if (Object.prototype.hasOwnProperty.call(RISK, risk)) return { ...RISK[risk] };
-  return { tone: "neutral", icon: "alert", labelKey: "risk.unknown", labelVars: { value: String(risk) } };
+  if (Object.prototype.hasOwnProperty.call(RISK, key)) return { ...RISK[key] };
+  return { tone: "att", icon: "alert", labelKey: "risk.unknown", labelVars: { value: String(risk) } };
 }
