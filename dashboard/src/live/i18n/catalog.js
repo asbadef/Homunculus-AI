@@ -8,8 +8,9 @@ import common from "./strings/common.js";
 import risk from "./strings/risk.js";
 import prefs from "./strings/prefs.js";
 import news2 from "./strings/news2.js";
+import gallery from "./strings/gallery.js";
 
-export const NAMESPACES = { common, risk, prefs, news2 };
+export const NAMESPACES = { common, risk, prefs, news2, gallery };
 
 function flattenInto(out, prefix, entries) {
   for (const [key, value] of Object.entries(entries)) {
