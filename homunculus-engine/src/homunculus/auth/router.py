@@ -6,7 +6,10 @@ POST /auth/login        — username or e-mail + password; returns tokens (requi
                           wrong password is 401, a directory that does not answer is 503
 POST /auth/totp/setup   — generate TOTP secret + QR provisioning URI (allowed before MFA)
 POST /auth/totp/verify  — verify 6-digit code; re-issues tokens with mfa_verified=True
-POST /auth/refresh      — exchange refresh token for new tokens built from the CURRENT groups
+POST /auth/refresh      — exchange refresh token for new tokens built from the CURRENT groups; an
+                          AD account is read back from the directory first (disabled, gone or
+                          password changed there: 401; otherwise its AD groups are applied, so
+                          the new token carries them; directory down: the session goes on)
 GET  /auth/me           — profile, tenant, groups, permissions (allowed before MFA)
 POST /auth/password     — change own password (local accounts)
 
@@ -27,7 +30,10 @@ from homunculus.auth.dependencies import (
 )
 from homunculus.auth.groups import tenant_of_user
 from homunculus.auth.jwt import decode_token
-from homunculus.auth.ldap import DIRECTORY_DOWN, LdapUnavailable, get_ldap, login_matches
+from homunculus.auth.ldap import (
+    DIRECTORY_DOWN, LdapIdentity, LdapUnavailable, get_ldap, login_matches,
+    password_changed_since,
+)
 from homunculus.auth.ldap_sync import (
     LDAP_SYNC_ACTOR, SyncOutcome, apply_directory_profile, sync_ldap_groups,
 )
@@ -250,7 +256,8 @@ async def totp_verify(
 
 @router.post("/refresh", response_model=TokenResponse,
              summary="Exchange refresh token for tokens built from the current groups")
-async def refresh_token(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+async def refresh_token(body: RefreshRequest, request: Request,
+                        db: AsyncSession = Depends(get_db)) -> TokenResponse:
     credentials_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token"
     )
@@ -263,6 +270,14 @@ async def refresh_token(body: RefreshRequest, db: AsyncSession = Depends(get_db)
         raise credentials_exc
 
     user = await get_user_by_id(db, user_id)
+    identity: LdapIdentity | None = None
+    if user is not None and user.is_active and user.auth_source == AUTH_LDAP:
+        # An AD account's credential fingerprint covers only its TOTP secret: a password changed
+        # or an account disabled in AD is seen only by asking AD (spec §7).
+        refuse, identity = await _directory_at_refresh(request, db, user, payload.get("iat"))
+        if refuse:
+            raise credentials_exc
+        user = await get_user_by_id(db, user_id)          # re-read: the check let the row go
     if not user or not user.is_active:
         raise credentials_exc
     revoked = user.sessions_revoked_at
@@ -279,11 +294,65 @@ async def refresh_token(body: RefreshRequest, db: AsyncSession = Depends(get_db)
         # The password or the authenticator changed since this session opened: sign in again.
         raise credentials_exc
 
+    if identity is not None:
+        # The directory answered: its group memberships apply now, so this refresh already
+        # carries the current rights — a removal is not left for the next sign-in (plan D9).
+        ref = await tenant_of_user(db, user.id)
+        if ref is not None:
+            outcome = await sync_ldap_groups(db, user=user, tenant_id=ref.id,
+                                             group_dns=identity.group_dns)
+            await db.commit()
+            _audit_sync(request, ref.slug, user.id, outcome)
+
     ctx = await build_context(db, user)
     # Verified only if the refresh token says so AND an authenticator still exists (an MFA reset
     # must send the user back through enrolment, not keep a stale "verified").
     verified = payload.get("mfa_verified") is True and user.totp_enabled
     return TokenResponse(**issue_tokens(user, ctx, mfa_verified=verified))
+
+
+async def _directory_at_refresh(request: Request, db: AsyncSession, user: User,
+                                iat: object) -> tuple[bool, LdapIdentity | None]:
+    """Spec §7, "Refresh for an AD account" (plan decisions D7, D9). Returns (refuse, identity).
+
+    refuse is True when the session must end: the account is gone (deleted, moved out of
+    LDAP_BASE_DN, excluded by LDAP_USER_FILTER), disabled, or its password was set after the
+    refresh token was issued (pwdLastSet later than `iat`, or 0 — "must change at next logon").
+    identity is the account as the directory reports it now, for the group sync; None when the
+    directory does not answer or is not configured — the session goes on, unsynced (the spec §4
+    outage rule), and the audit trail says so. Releases the database connection while the
+    directory answers; the caller re-reads the account."""
+    user_id, username, external_id = user.id, user.username, user.external_id
+    ref = await tenant_of_user(db, user_id)
+    tenant = ref.slug if ref is not None else None
+
+    def audit(subject: str, reason: str) -> None:
+        append_audit(request, tenant=tenant, event_type="auth", subject=subject,
+                     payload={"user": username, "reason": reason})
+
+    ldap = get_ldap(request)
+    if ldap is None:
+        audit("refresh.directory_unavailable", "not_configured")
+        return False, None
+    if not external_id or type(iat) is not int:
+        audit("refresh.fail", "directory_not_found" if not external_id else "bad_token")
+        return True, None
+    await db.rollback()                      # read-only so far; frees the connection
+    try:
+        identity = await ldap.directory.find_by_external_id(external_id)
+    except LdapUnavailable as exc:
+        audit("refresh.directory_unavailable", exc.reason)
+        return False, None
+    if identity is None:
+        reason = "directory_not_found"
+    elif identity.disabled:
+        reason = "directory_disabled"
+    elif password_changed_since(identity.pwd_last_set, iat):
+        reason = "directory_password_changed"
+    else:
+        return False, identity
+    audit("refresh.fail", reason)
+    return True, None
 
 
 @router.get("/me", response_model=UserMeResponse, summary="Current user profile")
