@@ -197,11 +197,15 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     if user is None or not user.is_active:               # deactivated while AD answered
         await _login_failed(request, db, user_id, key, "inactive")
         raise _bad_credentials()
-    profile = await apply_directory_profile(db, user, identity)
+    # Lock order: every writer takes the tenant's admin lock BEFORE it updates an account's row
+    # (the /admin API does). The group sync may take that lock, so it runs before anything here
+    # writes the row (profile, last_login_at): a sign-in holding the row while it waited for
+    # the lock would deadlock against an /admin write holding the lock and waiting for the row.
     ref = await tenant_of_user(db, user_id)
     outcome = (await sync_ldap_groups(db, user=user, tenant_id=ref.id,
                                       group_dns=identity.group_dns)
                if ref is not None else None)
+    profile = await apply_directory_profile(db, user, identity)
     mark_login(user)
     await db.commit()
     directory_binds.succeeded(slot)

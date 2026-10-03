@@ -8,8 +8,9 @@ profile as AD has it now, and its AD-mapped groups.
   login_in_use              whether a value is already some account's username or e-mail
 
 The sync keeps the §6 guard: a removal that would take the tenant from some active LOCAL
-administrators to none is rolled back in its savepoint and reported (`SyncOutcome.guarded`),
-and the profile update made before it stays. In a tenant that has no local administrator at
+administrators to none is rolled back in its savepoint and reported (`SyncOutcome.guarded`);
+the rest of the transaction (the profile update the sign-in makes after the sync) stands. The
+sync runs BEFORE the profile update: see the lock order in `sync_ldap_groups`. In a tenant that has no local administrator at
 all, removals apply (there is no one left to keep) and a WARNING says the tenant needs one. The
 caller writes the audit rows (actor LDAP_SYNC_ACTOR) after its commit.
 """
@@ -118,9 +119,14 @@ async def _difference(db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID
 async def sync_ldap_groups(db: AsyncSession, *, user: User, tenant_id: uuid.UUID,
                            group_dns: Iterable[str]) -> SyncOutcome:
     """Spec §7 step 5: the account's `ldap` rows in this tenant become the mapped set. Bumps
-    the token version when something changed. Does not commit."""
+    the token version when something changed. Does not commit.
+
+    Call it BEFORE changing the account's row in this transaction (the sign-in applies the
+    profile after it): it may take the tenant's admin lock, and every writer takes that lock
+    before the row. An UPDATE of `users` flushed first would hold the row while waiting for the
+    lock — a deadlock against an /admin write that holds the lock and waits for the row."""
     group_dns = list(group_dns)
-    await db.flush()          # the profile update (step 4) belongs to the outer transaction
+    await db.flush()          # anything pending stays outside the savepoint below
     user_id = user.id
     to_add, to_remove = await _difference(db, user_id, tenant_id, group_dns)
     if not to_add and not to_remove:

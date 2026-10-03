@@ -105,8 +105,8 @@ async def test_a_removal_that_would_leave_no_local_administrator_is_rolled_back(
     tenant, _groups, boss = await _sole_local_admin_through_ad(db_session)
     boss = await fresh_user(db_session, boss.id)
     tv = boss.token_version
-    boss.full_name = "Profil AD'den"                     # step 4, before the sync
     outcome = await sync_ldap_groups(db_session, user=boss, tenant_id=tenant.id, group_dns=[])
+    boss.full_name = "Profil AD'den"     # step 4, after the sync (lock order), same transaction
     await db_session.commit()
     assert outcome.guarded == ("hospital_admin",) and outcome.changed is False
     after = await fresh_user(db_session, boss.id)

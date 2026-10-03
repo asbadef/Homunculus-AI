@@ -9,10 +9,10 @@ import logging
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import update
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from homunculus.auth.groups import set_manual_groups
+from homunculus.auth.groups import lock_admin_guard, set_manual_groups
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.ldap import LdapUnavailable
 from homunculus.auth.models import User
@@ -195,6 +195,41 @@ async def test_without_a_local_administrator_an_ad_removal_still_applies_at_sign
     assert decode_token(res.json()["access_token"])["groups"] == []
     assert await group_rows(db_session, world["account"].id) == set()
     assert audit_events(app, "admin", "ldap.sync.guarded") == []
+
+
+async def _until_a_session_waits_for_an_advisory_lock(db: AsyncSession) -> None:
+    """Return once some database session is queued on an advisory lock (the tenant's admin
+    lock); fail after 5 s."""
+    for _ in range(250):
+        waiting = (await db.execute(text(
+            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted"
+        ))).scalar_one()
+        await db.rollback()
+        if waiting:
+            return
+        await asyncio.sleep(0.02)
+    raise AssertionError("no session ever waited for the tenant's admin lock")
+
+
+async def test_a_sign_in_queued_behind_an_admin_write_does_not_deadlock(client, world,
+                                                                        db_session):
+    """Every writer takes the tenant's admin lock BEFORE it updates an account's row: an /admin
+    write holds the lock, then updates the row. A first sign-in has groups to sync, so it waits
+    for that lock — and must not hold the account's row meanwhile (the profile update used to
+    be flushed first: a deadlock, and a 500 for the sign-in)."""
+    c, _ = client
+    uid, tid = world["account"].id, world["tenant"].id
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    async with maker() as admin:
+        await lock_admin_guard(admin, tid)
+        sign_in = asyncio.create_task(_login(c, "ayilmaz"))
+        await _until_a_session_waits_for_an_advisory_lock(db_session)
+        await admin.execute(update(User).where(User.id == uid).values(full_name="Elle yazıldı"))
+        await admin.commit()
+    res = await sign_in
+    assert res.status_code == 200, res.text
+    assert decode_token(res.json()["access_token"])["groups"] == ["nurse"]
+    assert (await fresh_user(db_session, uid)).full_name == "Ayşe Yılmaz"   # AD's, written after
 
 
 THROTTLED = "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin"
