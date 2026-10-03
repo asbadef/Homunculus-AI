@@ -7,13 +7,15 @@ profile as AD has it now, and its AD-mapped groups.
                             are never touched (plan decision D10)
   login_in_use              whether a value is already some account's username or e-mail
 
-The sync keeps the §6 guard: a removal that would leave the tenant without an active LOCAL
-administrator is rolled back in its savepoint and reported (`SyncOutcome.guarded`), and the
-profile update made before it stays. The caller writes the audit rows (actor
-LDAP_SYNC_ACTOR) after its commit.
+The sync keeps the §6 guard: a removal that would take the tenant from some active LOCAL
+administrators to none is rolled back in its savepoint and reported (`SyncOutcome.guarded`),
+and the profile update made before it stays. In a tenant that has no local administrator at
+all, removals apply (there is no one left to keep) and a WARNING says the tenant needs one. The
+caller writes the audit rows (actor LDAP_SYNC_ACTOR) after its commit.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -25,6 +27,8 @@ from homunculus.auth.groups import bump_user, count_admins, groups_of, lock_admi
 from homunculus.auth.ldap import LdapIdentity
 from homunculus.auth.models import SOURCE_LDAP, Group, LdapGroupMapping, User, UserGroup
 from homunculus.auth.service import normalize_login
+
+logger = logging.getLogger(__name__)
 
 LDAP_SYNC_ACTOR = "ldap-sync"
 _EMAIL_MAX = 254       # users.email
@@ -134,6 +138,12 @@ async def sync_ldap_groups(db: AsyncSession, *, user: User, tenant_id: uuid.UUID
     guarded: tuple[str, ...] = ()
     removed = False
     if to_remove:
+        # The guard refuses only a removal that takes the tenant from some active LOCAL
+        # administrators to none. `count_admins` counts local accounts only, so in a tenant
+        # that has none already (the last one deactivated outside the API) "after == 0" would
+        # hold for every removal, and every AD-side removal would be rolled back at every
+        # sign-in and refresh — rights nobody can trace to AD would linger. There it applies.
+        admins_before = await count_admins(db, tenant_id)
         savepoint = await db.begin_nested()
         # A Core DELETE: no ORM object changes inside the savepoint, so rolling it back leaves
         # nothing stale in the session.
@@ -142,13 +152,19 @@ async def sync_ldap_groups(db: AsyncSession, *, user: User, tenant_id: uuid.UUID
             .where(UserGroup.user_id == user_id, UserGroup.group_id.in_(to_remove),
                    UserGroup.source == SOURCE_LDAP)
             .execution_options(synchronize_session=False))
-        if await count_admins(db, tenant_id) == 0:
+        if admins_before > 0 and await count_admins(db, tenant_id) == 0:
             await savepoint.rollback()
             guarded = tuple(sorted((await db.execute(
                 select(Group.slug).where(Group.id.in_(to_remove)))).scalars().all()))
         else:
             await savepoint.commit()
             removed = True
+            if admins_before == 0:
+                logger.warning(
+                    "tenant %s has no active local administrator: AD group removals for user "
+                    "%s applied without the administrator guard. Restore a local "
+                    "hospital_admin account so an AD outage cannot lock administration out.",
+                    tenant_id, user_id)
     if to_add or removed:
         await bump_user(db, user)
     return SyncOutcome(before=before, after=await _slugs(db, user_id, tenant_id),

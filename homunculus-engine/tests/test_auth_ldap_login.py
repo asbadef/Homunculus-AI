@@ -179,6 +179,24 @@ async def test_sign_in_applies_the_ad_group_mapping_and_audits_each_change(clien
     ]
 
 
+async def test_without_a_local_administrator_an_ad_removal_still_applies_at_sign_in(
+        client, world, db_session):
+    """The administrator guard counts LOCAL administrators, which an AD account's sync can never
+    lower. A tenant that has none (the last one deactivated outside the API) must still see an
+    AD-side removal take effect, not have it rolled back at every sign-in."""
+    c, app = client
+    assert (await _login(c, "ayilmaz")).status_code == 200
+    await db_session.execute(update(User).where(User.id == world["admin"].id)
+                             .values(is_active=False))
+    await db_session.commit()
+    world["directory"].update(world["ayse"].identity.external_id, group_dns=())
+    res = await _login(c, "ayilmaz")
+    assert res.status_code == 200, res.text
+    assert decode_token(res.json()["access_token"])["groups"] == []
+    assert await group_rows(db_session, world["account"].id) == set()
+    assert audit_events(app, "admin", "ldap.sync.guarded") == []
+
+
 THROTTLED = "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin"
 
 

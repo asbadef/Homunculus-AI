@@ -4,10 +4,12 @@ manual rows untouched; a removal that would leave the tenant without a LOCAL adm
 rolled back in its savepoint while the profile update stays. Synthetic accounts only."""
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import update
 
 from homunculus.auth.groups import ensure_default_groups, set_manual_groups
 from homunculus.auth.ldap_sync import apply_directory_profile, mapped_group_ids, sync_ldap_groups
@@ -98,6 +100,8 @@ async def _sole_local_admin_through_ad(db):
 
 async def test_a_removal_that_would_leave_no_local_administrator_is_rolled_back(world,
                                                                                db_session):
+    """A unit test of the guard itself: the router never reaches it (it syncs AD accounts only,
+    and `count_admins` counts LOCAL ones), so the sync is called directly on hand-made data."""
     tenant, _groups, boss = await _sole_local_admin_through_ad(db_session)
     boss = await fresh_user(db_session, boss.id)
     tv = boss.token_version
@@ -126,6 +130,28 @@ async def test_the_same_removal_goes_through_when_another_local_administrator_re
     await db_session.commit()
     assert (outcome.before, outcome.after, outcome.guarded) == (("hospital_admin",), (), ())
     assert await group_rows(db_session, boss.id) == set()
+
+
+async def test_in_a_tenant_without_a_local_administrator_an_ad_removal_still_applies(
+        world, db_session, caplog):
+    """`count_admins` counts LOCAL administrators and the sync runs for AD accounts, so a sync
+    never lowers that count. A tenant that has none already (the last one deactivated outside
+    the API) must not freeze every AD account's rights: the removal applies — the guard refuses
+    only a change from some local administrators to none — and the log says what is missing."""
+    g, tid = world["groups"], world["tenant"].id
+    await db_session.execute(update(User).where(User.id == world["admin"].id)
+                             .values(is_active=False))
+    user = await fresh_user(db_session, world["account"].id)
+    db_session.add(UserGroup(user_id=user.id, group_id=g["nurse"].id, source=SOURCE_LDAP))
+    await db_session.commit()
+    tv = (await fresh_user(db_session, user.id)).token_version
+    with caplog.at_level(logging.WARNING, logger="homunculus"):
+        outcome = await sync_ldap_groups(db_session, user=user, tenant_id=tid, group_dns=[])
+    await db_session.commit()
+    assert (outcome.before, outcome.after, outcome.guarded) == (("nurse",), (), ())
+    assert await group_rows(db_session, user.id) == set()
+    assert (await fresh_user(db_session, user.id)).token_version == tv + 1
+    assert "no active local administrator" in caplog.text
 
 
 # ---------------------------------------------------------------- the profile

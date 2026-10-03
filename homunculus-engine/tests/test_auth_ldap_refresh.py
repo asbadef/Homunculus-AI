@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import update
 
 from homunculus.auth.jwt import decode_token
+from homunculus.auth.models import User
 from tests.conftest import requires_db
 from tests.fake_directory import (
     AD_PASSWORD, ADMIN_PASSWORD, ad_client, ad_world, audit_events, fresh_user, group_dn,
@@ -159,6 +161,23 @@ async def test_a_refresh_after_joining_a_mapped_ad_group_carries_the_new_right(c
     assert claims["groups"] == ["nurse", "physician"] and "alerts.escalate" in claims["perms"]
     assert await group_rows(db_session, world["account"].id) == {
         ("nurse", "ldap"), ("physician", "ldap")}
+
+
+async def test_without_a_local_administrator_an_ad_removal_still_applies_at_refresh(
+        client, world, db_session):
+    """As at sign-in: in a tenant with no active local administrator, the guard (which counts
+    local ones only) has nothing to keep, so an AD-side removal reaches the refreshed token."""
+    c, app = client
+    tokens = await _signed_in(c, world)
+    await db_session.execute(update(User).where(User.id == world["admin"].id)
+                             .values(is_active=False))
+    await db_session.commit()
+    world["directory"].update(world["ayse"].identity.external_id, group_dns=())
+    res = await _refresh(c, tokens)
+    assert res.status_code == 200, res.text
+    assert decode_token(res.json()["access_token"])["groups"] == []
+    assert await group_rows(db_session, world["account"].id) == set()
+    assert audit_events(app, "admin", "ldap.sync.guarded") == []
 
 
 async def test_a_directory_that_does_not_answer_changes_no_group_at_refresh(client, world,
