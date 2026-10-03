@@ -135,9 +135,10 @@ function popModal(entry) {
  *    control, else the dialog itself. Closing returns focus to whatever had it before — unless
  *    focus has already gone somewhere else (the caller moved it).
  *  - Tab and Shift+Tab stay inside, and Escape closes, for the topmost dialog wherever focus is
- *    (a click on the backdrop or a toast can leave it on <body>). Escape, the ✕ and a press on
- *    the backdrop call onClose — except while `busy`: a request is in flight and its answer must
- *    land in an open dialog (the old workspace's ActionOverlay rule).
+ *    (a click on the backdrop or a toast can leave it on <body>). Escape, the ✕ and a primary-
+ *    button press on the backdrop call onClose — except while `busy`: a request is in flight and
+ *    its answer must land in an open dialog (the old workspace's ActionOverlay rule). The ✕ is then
+ *    a busy Button: it says so and ignores clicks, but keeps focus.
  *  - Rendered in a portal under <body>, so it takes <html data-theme> like everything else.
  *  `actions` is the footer (the prototype's .mf), `wide` its 1180 px variant.
  *
@@ -209,7 +210,8 @@ function Dialog({ title, onClose, actions, wide = false, busy = false, children 
       >
         <div className="sticky top-0 z-[2] flex items-center gap-2.5 border-b border-line bg-app px-[18px] py-3.5">
           <h2 id={titleId} className="m-0 font-display text-17 font-bold leading-[normal]">{title}</h2>
-          <Button variant="ghost" size="sm" icon="x" label={t("common.close")} onClick={close} disabled={busy} className="ml-auto" />
+          {/* busy, not disabled: a disabled ✕ would drop the focus it has to <body> (Button). */}
+          <Button variant="ghost" size="sm" icon="x" label={t("common.close")} onClick={close} busy={busy} className="ml-auto" />
         </div>
         <div ref={bodyRef} className="px-[18px] py-4">{children}</div>
         {actions ? (

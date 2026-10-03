@@ -104,9 +104,29 @@ describe("Modal", () => {
     openIt();
     fireEvent.keyDown(document.activeElement, { key: "Escape" });
     fireEvent.mouseDown(screen.getByTestId("modal-backdrop"));
-    expect(screen.getByRole("button", { name: "Bağla" })).toBeDisabled();
+    const x = screen.getByRole("button", { name: "Bağla" });
+    expect(x).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(x);
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  // A natively disabled ✕ would drop a keyboard user's focus to <body> the moment busy began.
+  it("keeps focus on the ✕ when busy begins while it has it", () => {
+    const onClose = vi.fn();
+    const { rerender } = render(<Harness onClose={onClose} />);
+    openIt();
+    const x = screen.getByRole("button", { name: "Bağla" });
+    x.focus();
+    rerender(<Harness busy onClose={onClose} />);
+    expect(x).not.toBeDisabled();
+    expect(x).toHaveAttribute("aria-busy", "true");
+    expect(document.activeElement).toBe(x);
+    fireEvent.click(x);
+    expect(onClose).not.toHaveBeenCalled();
+    rerender(<Harness onClose={onClose} />);
+    fireEvent.click(x);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("draws its backdrop with the scrim token, not a colour of its own", () => {
@@ -204,8 +224,9 @@ describe("Modal: keyboard when focus has left the dialog", () => {
     last.focus();
     fireEvent.click(last);
     expect(last).toBeDisabled();
+    // Wraps to the dialog's first stop: the ✕, which stays focusable while busy.
     fireEvent.keyDown(document.activeElement, { key: "Tab" });
-    expect(document.activeElement).toBe(screen.getByLabelText("Birinci"));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Bağla" }));
     last.focus();
     fireEvent.keyDown(document.activeElement, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(screen.getByLabelText("Birinci"));
