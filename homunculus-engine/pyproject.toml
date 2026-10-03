@@ -17,6 +17,7 @@ dependencies = [
     "python-multipart>=0.0.9",          # Form data
     "email-validator>=2.1",             # Email validation
     "uvicorn[standard]>=0.30",          # ASGI server (production serving)
+    "ldap3>=2.9",                       # Active Directory sign-in (pure Python; spec §7)
 ]
 
 [project.optional-dependencies]
