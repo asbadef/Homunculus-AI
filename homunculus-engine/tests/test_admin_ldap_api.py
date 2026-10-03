@@ -5,16 +5,20 @@ import and the mapping table under the same rights rules as the rest of /admin. 
 and the test Postgres; synthetic accounts only."""
 from __future__ import annotations
 
+import time
+import uuid
+
 import pytest
 import pytest_asyncio
+from sqlalchemy import func, select
 
 from homunculus.auth.groups import ensure_default_groups
-from homunculus.auth.ldap import NOT_CONFIGURED
-from homunculus.auth.models import Group, GroupPermission
+from homunculus.auth.ldap import ACCOUNT_NEVER_EXPIRES, NOT_CONFIGURED
+from homunculus.auth.models import Group, GroupPermission, User
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
 from tests.fake_directory import (
-    ad_client, ad_world, add_mapping, audit_events, group_dn, person,
+    AD_PASSWORD, ad_client, ad_world, add_mapping, audit_events, group_dn, person,
 )
 from tests.signed_in import add_user, bearer
 
@@ -68,6 +72,7 @@ def _routes(w) -> list[tuple[str, str, dict | None]]:
         ("POST", "/admin/ldap/test", None),
         ("GET", "/admin/ldap/search?q=kaya", None),
         ("GET", "/admin/ldap/groups?q=yb", None),
+        ("POST", "/admin/ldap/import", {"external_ids": [w["mkaya"].identity.external_id]}),
     ]
 
 
@@ -157,3 +162,116 @@ async def test_a_user_desk_may_search(client, world, db_session):
     c, _ = client
     desk = await bearer(db_session, world["desk"])
     assert (await c.get("/admin/ldap/search?q=kaya", headers=desk)).status_code == 200
+
+
+# ---------------------------------------------------------------- import
+async def _imported(db, *external_ids) -> int:
+    return (await db.execute(select(func.count()).select_from(User)
+                             .where(User.external_id.in_(external_ids)))).scalar_one()
+
+
+async def test_import_creates_directory_accounts_with_mapped_and_extra_groups(client, world,
+                                                                            db_session):
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    mkaya = world["mkaya"].identity
+    res = await c.post("/admin/ldap/import", headers=admin, json={
+        "external_ids": [mkaya.external_id],
+        "extra_group_ids": [str(world["groups"]["physician"].id)]})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["skipped"] == []
+    [row] = body["imported"]
+    assert (row["external_id"], row["username"]) == (mkaya.external_id, "mkaya")
+    assert [(g["slug"], g["source"]) for g in row["groups"]] == [
+        ("charge_nurse", "ldap"), ("physician", "manual")]
+    user = (await db_session.execute(select(User).where(User.external_id == mkaya.external_id))
+            ).scalar_one()
+    assert (user.auth_source, user.hashed_password, user.email, user.full_name, user.ldap_dn) \
+        == ("ldap", None, None, "Mkaya", mkaya.dn)
+    signed_in = await c.post("/auth/login", json={"login": "mkaya", "password": AD_PASSWORD})
+    assert signed_in.status_code == 200
+    assert [r.payload["after"]["username"] for r in audit_events(app, "admin", "ldap.import")] \
+        == ["mkaya"]
+
+
+async def test_import_is_idempotent_and_says_what_it_skipped(client, world, db_session):
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    unknown = str(uuid.uuid4())
+    ids = [world["mkaya"].identity.external_id, world["ayse"].identity.external_id,
+           world["eski"].identity.external_id, world["clash"].identity.external_id, unknown]
+    body = (await c.post("/admin/ldap/import", headers=admin, json={"external_ids": ids})).json()
+    assert [r["username"] for r in body["imported"]] == ["mkaya"]
+    assert [(s["external_id"], s["reason"]) for s in body["skipped"]] == [
+        (ids[1], "exists"), (ids[2], "disabled"), (ids[3], "login_taken"), (unknown, "not_found")]
+    again = (await c.post("/admin/ldap/import", headers=admin,
+                          json={"external_ids": ids[:1]})).json()
+    assert again == {"imported": [], "skipped": [{"external_id": ids[0], "reason": "exists"}]}
+
+
+def _filetime(unix_seconds: float) -> int:
+    return int((unix_seconds + 11_644_473_600) * 10_000_000)
+
+
+async def test_an_account_past_its_ad_end_date_is_skipped_like_a_disabled_one(client, world,
+                                                                             db_session):
+    """accountExpires is how HR often off-boards — an end date, not the disabled flag — and the
+    default LDAP_USER_FILTER does not exclude it. Such an account could never sign in (it is
+    refused as `directory_expired`), so it is not imported: `skipped: expired`. An end date
+    still to come, or none, is no reason to skip."""
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    directory = world["directory"]
+    gone = directory.add(person("Gecmis", groups=(group_dn("YB-Hemsire"),),
+                                account_expires=_filetime(time.time() - 60))).identity
+    later = directory.add(person("Sonra", account_expires=_filetime(time.time() + 3600))).identity
+    never = directory.add(person("Daima", account_expires=ACCOUNT_NEVER_EXPIRES)).identity
+    ids = [gone.external_id, later.external_id, never.external_id]
+    res = await c.post("/admin/ldap/import", headers=admin, json={"external_ids": ids})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["skipped"] == [{"external_id": gone.external_id, "reason": "expired"}]
+    assert [r["username"] for r in body["imported"]] == ["sonra", "daima"]
+    assert await _imported(db_session, gone.external_id) == 0
+    assert [r.payload["after"]["username"] for r in audit_events(app, "admin", "ldap.import")] \
+        == ["sonra", "daima"]
+
+
+async def test_a_user_desk_imports_only_within_its_rights(client, world, db_session):
+    c, _ = client
+    desk = await bearer(db_session, world["desk"])
+    mkaya, bdemir = world["mkaya"].identity, world["bdemir"].identity
+    res = await c.post("/admin/ldap/import", headers=desk,
+                       json={"external_ids": [mkaya.external_id]})       # maps to charge_nurse
+    assert res.status_code == 403 and "Kendi yetkilerinizi aşan" in res.json()["detail"]
+    res = await c.post("/admin/ldap/import", headers=desk, json={
+        "external_ids": [bdemir.external_id],
+        "extra_group_ids": [str(world["groups"]["physician"].id)]})
+    assert res.status_code == 403
+    assert await _imported(db_session, mkaya.external_id, bdemir.external_id) == 0
+    res = await c.post("/admin/ldap/import", headers=desk,
+                       json={"external_ids": [bdemir.external_id]})      # maps to nurse
+    assert res.status_code == 200
+    assert [g["slug"] for g in res.json()["imported"][0]["groups"]] == ["nurse"]
+
+
+async def test_an_import_with_the_directory_down_is_503_and_writes_nothing(client, world,
+                                                                         db_session):
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    world["directory"].unavailable = True
+    res = await c.post("/admin/ldap/import", headers=admin,
+                       json={"external_ids": [world["mkaya"].identity.external_id]})
+    assert (res.status_code, res.json()["detail"]) == (503, "Dizin sunucusuna ulaşılamıyor")
+    assert await _imported(db_session, world["mkaya"].identity.external_id) == 0
+
+
+@pytest.mark.parametrize("body", [
+    {"external_ids": []}, {"external_ids": ["not-a-guid"]},
+    {"external_ids": [str(uuid.uuid4()) for _ in range(51)]},
+])
+async def test_the_import_body_is_bounded(client, world, db_session, body):
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    assert (await c.post("/admin/ldap/import", headers=admin, json=body)).status_code == 422

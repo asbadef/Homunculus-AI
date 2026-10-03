@@ -6,6 +6,7 @@ mapping"). Every route needs `users.manage` and resolves the caller's tenant:
   POST   /admin/ldap/test          bind with the service account now (200 {ok, reason})
   GET    /admin/ldap/search?q=     AD accounts (at most 50), each flagged already_imported
   GET    /admin/ldap/groups?q=     AD groups (at most 50), for the mapping picker
+  POST   /admin/ldap/import        create accounts from AD (idempotent; plan decision D12)
 
 With LDAP off (LDAP_URL unset) every route but `status` answers 409 `Dizin yapılandırılmamış`;
 `status` answers `configured: false`, so the panel can hide itself (plan decision D14). A
@@ -16,12 +17,20 @@ caller), AdminError → rollback, the audit row after the commit.
 """
 from __future__ import annotations
 
+import asyncio
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admin import ldap_service
-from homunculus.admin.router import _audit
-from homunculus.admin.schemas import LdapGroupOut, LdapStatusOut, LdapTestOut, LdapUserOut
+from homunculus.admin.router import _audit, _begin, _run
+from homunculus.admin.router import _user_out as _admin_user_out
+from homunculus.admin.schemas import (
+    LdapGroupOut, LdapImportedOut, LdapImportIn, LdapImportOut, LdapSkippedOut, LdapStatusOut,
+    LdapTestOut, LdapUserOut,
+)
+from homunculus.admin.service import get_tenant_user
 from homunculus.auth.dependencies import (
     Principal, caller_tenant_id, get_principal, require_permission,
 )
@@ -94,3 +103,40 @@ async def ldap_groups(q: str = Query(min_length=2, max_length=64),
     except LdapUnavailable:
         raise _directory_down() from None
     return [LdapGroupOut(dn=g.dn, name=g.name) for g in found[:ldap_service.RESULT_CAP]]
+
+
+@router.post("/import", response_model=LdapImportOut, dependencies=_users)
+async def ldap_import(body: LdapImportIn, request: Request,
+                      principal: Principal = Depends(get_principal),
+                      tenant_id: uuid.UUID = Depends(caller_tenant_id),
+                      ldap: LdapRuntime = Depends(configured_ldap),
+                      db: AsyncSession = Depends(get_db)) -> LdapImportOut:
+    """The directory is asked first, before the tenant lock — a slow directory must not hold up
+    every other /admin write — and only about ids that have no account yet. A directory that
+    does not answer is 503 with nothing written. Then the import, under the lock, in one
+    transaction; one `ldap.import` audit row per created account, after the commit."""
+    wanted = list(dict.fromkeys(str(i) for i in body.external_ids))
+    known = await ldap_service.imported_ids(db, wanted)
+    fresh = [eid for eid in wanted if eid not in known]
+    try:
+        answers = await asyncio.gather(
+            *(ldap.directory.find_by_external_id(eid) for eid in fresh))
+    except LdapUnavailable:
+        raise _directory_down() from None
+    actor = await _begin(db, tenant_id, principal)
+    report = await _run(db, ldap_service.import_users(
+        db, tenant_id, actor, wanted, dict(zip(fresh, answers)),
+        extra_group_ids=list(dict.fromkeys(body.extra_group_ids))))
+    await db.commit()
+    imported: list[LdapImportedOut] = []
+    for row in report.imported:
+        user = await get_tenant_user(db, tenant_id, row.user_id)
+        groups = _admin_user_out(user, tenant_id).groups
+        imported.append(LdapImportedOut(external_id=row.external_id, id=user.id,
+                                        username=user.username, groups=groups))
+        _audit(request, principal, "ldap.import", str(user.id),
+               after={"username": user.username, "external_id": row.external_id,
+                      "groups": [g.slug for g in groups]})
+    return LdapImportOut(imported=imported,
+                         skipped=[LdapSkippedOut(external_id=e, reason=r)
+                                  for e, r in report.skipped])

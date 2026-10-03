@@ -201,3 +201,25 @@ class LdapUserOut(BaseModel):
 class LdapGroupOut(BaseModel):
     dn: str
     name: str
+
+
+class LdapImportIn(BaseModel):
+    external_ids: list[uuid.UUID] = Field(min_length=1, max_length=50)
+    extra_group_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
+
+
+class LdapImportedOut(BaseModel):
+    external_id: str
+    id: uuid.UUID
+    username: str
+    groups: list[UserGroupOut]
+
+
+class LdapSkippedOut(BaseModel):
+    external_id: str
+    reason: str          # exists | not_found | disabled | expired | login_taken | no_username
+
+
+class LdapImportOut(BaseModel):
+    imported: list[LdapImportedOut]
+    skipped: list[LdapSkippedOut]
