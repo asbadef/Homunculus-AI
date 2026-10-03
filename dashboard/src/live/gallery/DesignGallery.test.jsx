@@ -64,6 +64,7 @@ describe("design gallery", () => {
     fireEvent.keyDown(document.activeElement, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Bildiriş göstər" }));
-    expect(within(screen.getByRole("region", { name: "Bildirişlər" })).getByText("Yadda saxlanıldı")).toBeInTheDocument();
+    const notices = screen.getByRole("region", { name: "Bildirişlər" });
+    expect(notices.querySelector('[aria-live="polite"]')).toHaveTextContent("Yadda saxlanıldı");
   });
 });
