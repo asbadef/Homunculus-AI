@@ -49,6 +49,26 @@ describe("the language the live UI opens in (roadmap D2)", () => {
     expect(screen.getByText("Close")).toBeInTheDocument();
   });
 
+  it.each(["AZ", "TR", "tr-TR", "russian", "", "constructor"])(
+    "is Azerbaijani when the stored language is one it does not have (%j: the prototype's spelling, junk)",
+    (stored) => {
+      localStorage.setItem("hmc.lang", stored);
+      render(<I18nProvider><Probe /></I18nProvider>);
+      expect(screen.getByTestId("lang")).toHaveTextContent("az");
+      expect(screen.getByText("Bağla")).toBeInTheDocument();
+      expect(document.documentElement.lang).toBe("az");
+    },
+  );
+
+  // The old workspace's choice (clinicalI18n, key homunculus-clang) is not the new shell's: a
+  // pilot PC where someone once picked Turkish in the old app still opens in Azerbaijani (D2).
+  it("is not changed by the old workspace's stored language", () => {
+    localStorage.setItem("homunculus-clang", "tr");
+    render(<I18nProvider><Probe /></I18nProvider>);
+    expect(screen.getByTestId("lang")).toHaveTextContent("az");
+    expect(screen.getByText("Bağla")).toBeInTheDocument();
+  });
+
   it("is Azerbaijani when storage cannot be read", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("SecurityError");
