@@ -304,6 +304,26 @@ kötüleşme, laboratuvar bunu yakalayana kadar saatler geçebilirken, sürekli 
   "Doktor harekete geçmeden kaç saat önce uyarırdı?" sorusunu güvenle (kimseye zarar vermeden)
   ölçmenin yolu. İleride kanıt için en değerli deney.
 
+**Tasarım değişkeni (design token)**
+- *Basit:* Ekrandaki her rengin, yazı boyunun ve yazı tipinin tek bir yerde adı konmuş hâli
+  (`--card`, `--crit`, `--font-text`). Bileşen "kırmızı" yazmaz, "kritik" der; Gece/Gün teması
+  yalnız bu değerleri değiştirir.
+- *Homunculus'ta:* Yeni arayüzün değişkenleri `dashboard/src/live/theme/tokens.css`'te,
+  prototipin adlarıyla. Tailwind sınıfı adın kendisidir (`bg-card`, `text-crit-ink`).
+
+**Kontrast oranı (WCAG AA)**
+- *Basit:* Yazının zemine göre ne kadar okunur olduğu: 1:1 (görünmez) ile 21:1 (beyaz üstünde
+  siyah) arası. Normal yazı en az 4,5:1, odak çerçevesi gibi arayüz işaretleri en az 3:1 olmalı.
+- *Homunculus'ta:* Bir test her renk çiftini hesaplar. Prototipin Gün temasındaki risk hapları
+  2,6–3,9:1'di; bu yüzden risk yazısı ayrı, koyu "mürekkep" renkleriyle yazılır. Gece nöbetinde
+  okunamayan bir "kritik" etiketi, hiç olmamasından kötüdür.
+
+**Tasarım galerisi (`?tasarim=1`)**
+- *Basit:* Yeni arayüzün bütün renk, yazı, simge ve parçalarını tek sayfada, iki temada ve dört
+  dilde gösteren inceleme sayfası. Uygulamadan bağlantı verilmez; adrese elle yazılır.
+- *Homunculus'ta:* Varsayılan dil Azerbaycanca'dır (yol haritası D2); seçilen dil, tema ve yazı
+  boyu tarayıcıda saklanır. Hasta verisi hiçbir zaman çevrilmez — yalnız arayüz metinleri.
+
 ---
 
 ### 3.5 Kimlik ve yetki terimleri
