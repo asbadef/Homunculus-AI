@@ -196,7 +196,8 @@ function Dialog({ title, onClose, actions, wide = false, busy = false, children 
       className="fixed inset-0 z-[100] grid place-items-center bg-scrim p-4"
       onMouseDown={(event) => {
         if (event.target !== event.currentTarget) return;
-        event.preventDefault(); // focus stays in the dialog, not on <body>
+        event.preventDefault(); // focus stays in the dialog, not on <body> — whichever button
+        if (event.button !== 0) return; // a right-click (context menu) or a middle one does not close
         close();
       }}
     >

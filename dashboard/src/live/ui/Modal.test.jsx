@@ -137,6 +137,18 @@ describe("Modal", () => {
     expect(backdrop.className).not.toMatch(/rgba|#[0-9a-f]{3}/i);
   });
 
+  it("closes only on a primary-button press on the backdrop; others keep focus too", () => {
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} />);
+    openIt();
+    const backdrop = screen.getByTestId("modal-backdrop");
+    expect(fireEvent.mouseDown(backdrop, { button: 2 })).toBe(false); // right: a context menu
+    expect(fireEvent.mouseDown(backdrop, { button: 1 })).toBe(false); // middle: autoscroll
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.mouseDown(backdrop, { button: 0 });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps a press on the backdrop from taking focus, busy or not", () => {
     render(<Harness busy />);
     openIt();
