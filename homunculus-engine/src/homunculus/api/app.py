@@ -112,6 +112,16 @@ async def sse_notification_frames(queue: asyncio.Queue, keepalive: float = 15.0,
         yield f"data: {json.dumps(note)}\n\n"
 
 
+async def _check_directory_at_startup(runtime: LdapRuntime) -> None:
+    """Spec §9: one service-account bind at start-up, logged; never raises."""
+    from homunculus.auth.ldap import check_directory_at_startup
+
+    try:
+        await check_directory_at_startup(runtime)
+    except Exception:          # a diagnostic must never take anything down
+        log.exception("the directory start-up check failed to run")
+
+
 def create_app(
     tenants: dict[str, str],
     *,
@@ -248,12 +258,19 @@ def create_app(
                 await on_startup_check()
             except Exception:      # a diagnostic must never stop the service from starting
                 logging.getLogger(__name__).exception("tenant configuration check failed to run")
+        # The directory's start-up bind (spec §9) runs in the background: a domain controller
+        # that hangs must not delay serving local sign-ins. Kept on app.state for the tests.
+        ldap_check = (asyncio.create_task(_check_directory_at_startup(ldap))
+                      if ldap is not None else None)
+        app.state.ldap_startup_check = ldap_check
         task = asyncio.create_task(_escalation_loop()) if run_escalation_loop else None
         try:
             yield
         finally:
             if task is not None:
                 task.cancel()
+            if ldap_check is not None and not ldap_check.done():
+                ldap_check.cancel()
 
     app = FastAPI(title="Homunculus", lifespan=lifespan)
 

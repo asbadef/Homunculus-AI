@@ -9,6 +9,8 @@ Env:
                    slug and the engine's hospital key)
     AUDIT_DB_PATH  path for the SQLite audit log (default /tmp; ephemeral on Render — synthetic only)
     DATABASE_URL / DATABASE_SSL / JWT_SECRET / CORS_ORIGINS  read by db.py / auth.jwt / app.py
+    LDAP_*         optional Active Directory sign-in, read by auth/ldap3_directory.py
+                   (`ldap_from_env`); unset or unusable = off, never a refusal to start
 
 Production means a Postgres DATABASE_URL (`_is_production`). There, before anything is built,
 `_refuse_unsafe_start` stops the process (SystemExit) on a missing PHI key, a weak signing key or
@@ -35,6 +37,7 @@ from homunculus.auth.groups import (
     TENANT_INACTIVE, TENANT_OK, TENANT_UNKNOWN, tenant_claim_query, tenant_claim_verdict,
 )
 from homunculus.auth.jwt import jwt_secret_problem
+from homunculus.auth.ldap3_directory import ldap_from_env
 from homunculus.auth.models import User
 from homunculus.tenant.bedmap import BedMap
 
@@ -412,4 +415,5 @@ app = create_app(
     bedmap=_bedmap(),
     resolve_scope=_scope_resolver(),
     on_startup_check=make_startup_tenant_check(list(_tenants.values())),
+    ldap=ldap_from_env(),
 )

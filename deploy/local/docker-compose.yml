@@ -69,6 +69,19 @@ services:
       INFINITY_HUB_URL: ${INFINITY_HUB_URL:-}
       INFINITY_VIEWER_TOKEN: ${INFINITY_VIEWER_TOKEN:-}
       INFINITY_HUB_CA_FILE: ${INFINITY_HUB_CA_FILE:-}
+      # Active Directory sign-in (optional; spec §7, docs/EDGE-BRIDGE-LOCAL.md). LDAP_URL unset =
+      # off. A value the API cannot use is logged and leaves AD sign-in off; it never stops the
+      # API. The service account's password stays in .env and never reaches a browser.
+      LDAP_URL: ${LDAP_URL:-}
+      LDAP_CA_CERT: ${LDAP_CA_CERT:-}
+      LDAP_ALLOW_INSECURE: ${LDAP_ALLOW_INSECURE:-}
+      LDAP_BIND_DN: ${LDAP_BIND_DN:-}
+      LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD:-}
+      LDAP_BASE_DN: ${LDAP_BASE_DN:-}
+      LDAP_USER_FILTER: ${LDAP_USER_FILTER:-}
+      LDAP_LOGIN_ATTRS: ${LDAP_LOGIN_ATTRS:-}
+      LDAP_NESTED_GROUPS: ${LDAP_NESTED_GROUPS:-}
+      LDAP_TIMEOUT_S: ${LDAP_TIMEOUT_S:-}
     volumes:
       # This site's HIS-location -> our-bed table. Copy bed-mapping.example.json to
       # bed-mapping.json before the first `up`: Docker leaves a DIRECTORY at a bind-mount target
@@ -79,6 +92,11 @@ services:
       # hub's config directory also holds the collector token and the TLS private key, and
       # neither belongs in a container that faces the ward network.
       - ${INFINITY_HUB_CA_HOST_PATH:-./infinity-ca.pem}:/etc/homunculus/infinity-ca.pem:ro
+      # The domain controller's CA certificate (public): deploy/local/ldap-ca/ca.pem, with
+      # LDAP_CA_CERT=/etc/homunculus/ldap-ca/ca.pem. A directory, not a file: Docker creates a
+      # missing source, and a missing directory is harmless where a missing file would become a
+      # directory named like a certificate.
+      - ./ldap-ca:/etc/homunculus/ldap-ca:ro
     depends_on:
       postgres:
         condition: service_healthy

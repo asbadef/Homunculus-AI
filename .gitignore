@@ -28,6 +28,8 @@ deploy/local/site-mapping.json
 # Per-hospital HIS-bed -> our-bed table. Names the site's wards and room numbers, so it is site
 # detail rather than product. bed-mapping.example.json carries the shape.
 deploy/local/bed-mapping.json
+# The domain controller's CA certificate: public, but site-specific.
+deploy/local/ldap-ca/
 
 # Python bytecode. Never useful in a diff, and it pulled a compiled copy of a deleted module along
 # with it.
