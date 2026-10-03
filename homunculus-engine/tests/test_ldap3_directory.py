@@ -2,6 +2,7 @@
 names a failure, its TLS settings — and (Task 3) the class itself over scripted connections."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import socket
 import ssl
@@ -16,7 +17,7 @@ from ldap3.core.exceptions import LDAPException, LDAPResponseTimeoutError, LDAPS
 
 from homunculus.auth.ldap import DEFAULT_USER_FILTER, LdapGroup, LdapUnavailable, load_ldap_config
 from homunculus.auth.ldap3_directory import (
-    GROUP_LIMIT, Ldap3Directory, escape_guid, failure_reason, group_search_filter,
+    GROUP_LIMIT, SLOTS, Ldap3Directory, escape_guid, failure_reason, group_search_filter,
     guid_lookup_filter, ldap_from_env, nested_groups_filter, parse_group_entry,
     parse_user_entry, tls_for, user_search_filter,
 )
@@ -350,6 +351,115 @@ async def test_a_hung_directory_is_cut_off_at_the_deadline():
     with pytest.raises(LdapUnavailable) as err:
         await directory.test_connection()
     assert err.value.reason == "timeout" and time.monotonic() - started < 0.4
+
+
+class Gauge:
+    """How many threads are inside directory I/O at once, and the most there ever were."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.inside = self.peak = 0
+
+    def __enter__(self):
+        with self._lock:
+            self.inside += 1
+            self.peak = max(self.peak, self.inside)
+
+    def __exit__(self, *exc):
+        with self._lock:
+            self.inside -= 1
+
+
+async def _drained(gauge: Gauge, within: float = 5.0) -> None:
+    """Wait until no thread is left inside directory I/O (calls cut off keep running)."""
+    end = time.monotonic() + within
+    while gauge.inside and time.monotonic() < end:
+        await asyncio.sleep(0.02)
+    assert gauge.inside == 0
+
+
+async def test_never_more_than_eight_threads_do_directory_io():
+    """D6: a call cut off at its deadline keeps its thread until the socket gives up; the cap
+    must hold for those threads too, not only for the calls still waited on."""
+    gauge = Gauge()
+
+    def slow(user, password):
+        with gauge:
+            time.sleep(0.3)
+        return Script().connect(user, password)
+
+    directory = Ldap3Directory(load_ldap_config(BASE), connect=slow, deadline_s=0.1)
+    results = await asyncio.gather(*(directory.test_connection() for _ in range(40)),
+                                   return_exceptions=True)
+    await _drained(gauge)
+    assert {r.reason for r in results if isinstance(r, LdapUnavailable)} == {"timeout"}
+    assert all(isinstance(r, LdapUnavailable) for r in results)
+    assert gauge.peak <= SLOTS
+
+
+async def test_a_call_queued_behind_eight_hung_ones_times_out_within_its_own_deadline():
+    release = threading.Event()
+
+    def hung(user, password):
+        release.wait(5)
+        return Script().connect(user, password)
+
+    directory = Ldap3Directory(load_ldap_config(BASE), connect=hung, deadline_s=0.5)
+    stuck = [asyncio.create_task(directory.test_connection()) for _ in range(SLOTS)]
+    await asyncio.sleep(0.1)                         # all eight threads are taken
+    started = time.monotonic()
+    try:
+        with pytest.raises(LdapUnavailable) as err:
+            await directory.test_connection()
+        waited = time.monotonic() - started
+    finally:
+        release.set()
+        await asyncio.gather(*stuck, return_exceptions=True)
+    assert err.value.reason == "timeout" and waited < 0.5 + 0.15
+
+
+async def test_directory_work_never_runs_on_the_event_loops_default_threads():
+    """asyncpg resolves the database host on asyncio's default executor: a slow directory must
+    not queue in front of it."""
+    names = []
+    script = Script()
+
+    def record(user, password):
+        names.append(threading.current_thread().name)
+        return script.connect(user, password)
+
+    await Ldap3Directory(load_ldap_config(BASE), connect=record).test_connection()
+    assert names and all(name.startswith("ldap") for name in names)
+
+
+async def test_after_close_a_call_is_an_outage_not_a_crash():
+    directory = _directory(Script())
+    directory.close()
+    with pytest.raises(LdapUnavailable) as err:
+        await directory.test_connection()
+    assert err.value.reason == "unreachable"
+
+
+async def test_close_cancels_a_queued_call_as_an_outage():
+    release = threading.Event()
+
+    def hung(user, password):
+        release.wait(5)
+        return Script().connect(user, password)
+
+    directory = Ldap3Directory(load_ldap_config(BASE), connect=hung, deadline_s=3)
+    stuck = [asyncio.create_task(directory.test_connection()) for _ in range(SLOTS)]
+    await asyncio.sleep(0.1)
+    queued = asyncio.create_task(directory.test_connection())
+    await asyncio.sleep(0.05)
+    directory.close()
+    try:
+        with pytest.raises(LdapUnavailable) as err:
+            await queued
+    finally:
+        release.set()
+        await asyncio.gather(*stuck, return_exceptions=True)
+    assert err.value.reason == "unreachable"
 
 
 @pytest.fixture

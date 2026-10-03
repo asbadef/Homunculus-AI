@@ -271,6 +271,8 @@ def create_app(
                 task.cancel()
             if ldap_check is not None and not ldap_check.done():
                 ldap_check.cancel()
+            if ldap is not None:
+                ldap.close()                 # the directory's own worker threads
 
     app = FastAPI(title="Homunculus", lifespan=lifespan)
 

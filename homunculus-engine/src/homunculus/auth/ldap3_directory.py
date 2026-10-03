@@ -6,9 +6,11 @@ Windows dev machines and in the python:3.12-slim image without libldap). Spec §
     `ldap_from_env` says so loudly at start-up.
   * Every typed value reaches a filter through `ldap3.utils.conv.escape_filter_chars`, the
     objectGUID through `escape_guid` (each byte `\\xx`): a query cannot change a filter's shape.
-  * `ldap3` is synchronous: each call runs on a worker thread (`asyncio.to_thread`), at most
-    `SLOTS` at once, and is cut off after `LdapConfig.deadline_s` (2 × LDAP_TIMEOUT_S, at most
-    12 s — under the dashboard's 15 s request timeout). The socket connect timeout is
+  * `ldap3` is synchronous: each call runs on the directory's OWN pool of `SLOTS` threads —
+    never asyncio's default executor, where asyncpg resolves the database host — and is cut off
+    after `LdapConfig.deadline_s` (2 × LDAP_TIMEOUT_S, at most 12 s — under the dashboard's 15 s
+    request timeout), waiting for a free thread included. A call cut off while it runs keeps
+    its thread until the socket timeouts end it, so the pool, not a semaphore, is the cap. The socket connect timeout is
     LDAP_TIMEOUT_S, the receive timeout LDAP_TIMEOUT_S rounded up to whole seconds.
   * Results are capped: `size_limit` on the server, and the slice here.
   * A network or TLS failure becomes LdapUnavailable(reason); a wrong password is None.
@@ -23,6 +25,7 @@ import math
 import os
 import ssl
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from typing import Any
 
@@ -54,7 +57,7 @@ GROUP_ATTRIBUTES = ("cn",)
 IN_CHAIN = "1.2.840.113556.1.4.1941"   # LDAP_MATCHING_RULE_IN_CHAIN: nested membership
 GROUP_LIMIT = 1000     # nested groups of one account; more is an error, never a truncation
 RESULT_CAP = 50
-SLOTS = 8              # directory calls at once, each on its own worker thread
+SLOTS = 8              # threads doing directory I/O at once, calls cut off included
 
 
 # ---------------------------------------------------------------- filters (pure)
@@ -211,7 +214,13 @@ class Ldap3Directory:
         self._config = config
         self._connect: Connect = connect or self._open
         self._deadline = config.deadline_s if deadline_s is None else deadline_s
-        self._slots = asyncio.Semaphore(SLOTS)
+        self._pool = ThreadPoolExecutor(max_workers=SLOTS, thread_name_prefix="ldap")
+
+    def close(self) -> None:
+        """App shutdown: calls still queued are cancelled (each caller gets LdapUnavailable);
+        running ones end on their own, bounded by the socket timeouts. Later calls are
+        LdapUnavailable("unreachable")."""
+        self._pool.shutdown(wait=False, cancel_futures=True)
 
     # ---- the protocol (event loop side)
     async def authenticate(self, external_id: str, password: str) -> LdapIdentity | None:
@@ -245,13 +254,23 @@ class Ldap3Directory:
         return await self._call(self._password_ok, dn, password)
 
     async def _call(self, fn: Callable[..., Any], *args: Any) -> Any:
-        async with self._slots:
-            try:
-                return await asyncio.wait_for(asyncio.to_thread(_guarded, fn, *args),
-                                              self._deadline)
-            except TimeoutError:
-                logger.warning("directory call cut off after %.1f s", self._deadline)
-                raise LdapUnavailable("timeout") from None
+        """`fn` on the pool, within the deadline — the wait for a free thread counts against
+        it, and a call cut off while still queued never runs."""
+        try:
+            work = asyncio.get_running_loop().run_in_executor(self._pool, _guarded, fn, *args)
+        except RuntimeError:                 # the pool is shut down: the app is stopping
+            raise LdapUnavailable("unreachable") from None
+        try:
+            return await asyncio.wait_for(work, self._deadline)
+        except TimeoutError:
+            logger.warning("directory call cut off after %.1f s", self._deadline)
+            raise LdapUnavailable("timeout") from None
+        except asyncio.CancelledError:
+            # Cancelled by `close` while queued, not by our own caller: an outage, not a crash.
+            task = asyncio.current_task()
+            if work.cancelled() and task is not None and not task.cancelling():
+                raise LdapUnavailable("unreachable") from None
+            raise
 
     # ---- the worker-thread side
     def _open(self, user: str, password: str) -> Any:

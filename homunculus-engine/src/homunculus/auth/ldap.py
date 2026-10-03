@@ -288,6 +288,12 @@ class LdapRuntime:
         self.last_test_ok, self.last_test_reason = ok, reason
         return ok, reason
 
+    def close(self) -> None:
+        """App shutdown: stop the directory's worker threads, if it has any (`close`)."""
+        close = getattr(self.directory, "close", None)
+        if callable(close):
+            close()
+
 
 def get_ldap(request: Request) -> LdapRuntime | None:
     """The app's directory, or None when LDAP is off. A FastAPI dependency and a plain call."""

@@ -52,6 +52,17 @@ async def test_a_hung_directory_does_not_hold_up_startup():
         await check                                  # shutdown cancelled it
 
 
+async def test_shutdown_stops_the_directory_threads():
+    rt = runtime(FakeDirectory())
+    closed = []
+    rt.directory.close = lambda: closed.append(True)
+    app = create_app({"t": "demo-hastanesi"}, run_escalation_loop=False, ldap=rt)
+    async with app.router.lifespan_context(app):
+        await app.state.ldap_startup_check
+        assert closed == []
+    assert closed == [True]
+
+
 async def test_without_a_directory_there_is_no_check():
     app = create_app({"t": "demo-hastanesi"}, run_escalation_loop=False)
     async with app.router.lifespan_context(app):
