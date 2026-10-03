@@ -17,9 +17,9 @@ from ldap3.core.exceptions import LDAPException, LDAPResponseTimeoutError, LDAPS
 
 from homunculus.auth.ldap import DEFAULT_USER_FILTER, LdapGroup, LdapUnavailable, load_ldap_config
 from homunculus.auth.ldap3_directory import (
-    GROUP_LIMIT, SLOTS, Ldap3Directory, escape_guid, failure_reason, group_search_filter,
-    guid_lookup_filter, ldap_from_env, nested_groups_filter, parse_group_entry,
-    parse_user_entry, tls_for, user_search_filter,
+    GROUP_LIMIT, SLOTS, Ldap3Directory, _wire_filter, escape_guid, failure_reason,
+    group_search_filter, guid_lookup_filter, ldap_from_env, nested_groups_filter,
+    parse_group_entry, parse_user_entry, tls_for, user_search_filter,
 )
 
 GUID = "6b29fc40-ca47-1067-b31d-00dd010662da"
@@ -57,6 +57,46 @@ def test_the_nested_membership_filter_escapes_the_dn():
     assert nested_groups_filter(dn) == (
         r"(&(objectClass=group)(member:1.2.840.113556.1.4.1941:="
         r"CN=Yılmaz\5c, Ayşe,OU=Personel,DC=hastane,DC=local))")
+
+
+ADVERSARIAL = ["*", ")(", "\\", "\x00", "Ayşe Yılmaz", "*)(objectClass=*", "a\\2a)(|(cn=*",
+               "\\00(\x00)*\\"]
+
+
+@pytest.mark.parametrize("query", ADVERSARIAL)
+def test_on_the_wire_a_search_value_is_exactly_what_was_typed(query):
+    """Compiled by ldap3 itself, as Connection.search sends it: the filter keeps its shape
+    (the user filter AND one OR of four substring matches) and each value decodes back to the
+    typed text — no character of it became filter syntax."""
+    compiled = _wire_filter(user_search_filter(DEFAULT_USER_FILTER, query))
+    outer = compiled["and"]
+    assert len(outer) == 2 and outer[1].getName() == "or"
+    matches = [f["substringFilter"] for f in outer[1]["or"]]
+    assert [str(m["type"]) for m in matches] == [
+        "sAMAccountName", "displayName", "userPrincipalName", "mail"]
+    for match in matches:
+        assert [(s.getName(), bytes(s.getComponent())) for s in match["substrings"]] == [
+            ("any", query.strip().encode("utf-8"))]
+
+
+@pytest.mark.parametrize("query", ADVERSARIAL)
+def test_on_the_wire_a_group_query_is_exactly_what_was_typed(query):
+    outer = _wire_filter(group_search_filter(query))["and"]
+    assert len(outer) == 2
+    match = outer[1]["substringFilter"]
+    assert str(match["type"]) == "cn"
+    assert [bytes(s.getComponent()) for s in match["substrings"]] == [
+        query.strip().encode("utf-8")]
+
+
+def test_on_the_wire_the_guid_and_a_dn_are_exact_bytes():
+    guid = _wire_filter(guid_lookup_filter(DEFAULT_USER_FILTER, GUID))["and"][1]["equalityMatch"]
+    assert (str(guid["attributeDesc"]), bytes(guid["assertionValue"])) == (
+        "objectGUID", uuid.UUID(GUID).bytes_le)
+    dn = r"CN=Yılmaz\, Ayşe (x)*,OU=Personel,DC=hastane,DC=local"
+    nested = _wire_filter(nested_groups_filter(dn))["and"][1]["extensibleMatch"]
+    assert (str(nested["matchingRule"]), str(nested["type"]), bytes(nested["matchValue"])) == (
+        "1.2.840.113556.1.4.1941", "member", dn.encode("utf-8"))
 
 
 def test_the_guid_reaches_the_filter_as_escaped_bytes():
@@ -263,6 +303,51 @@ async def test_a_refused_service_account_is_an_outage():
     with pytest.raises(LdapUnavailable) as err:
         await _directory(script).test_connection()
     assert err.value.reason == "service_bind_rejected"
+
+
+async def test_a_service_bind_refused_for_another_reason_is_a_protocol_outage():
+    script = Script()
+    script.passwords[SVC_DN] = "baska"
+    script.bind_codes[SVC_DN] = 53                        # unwillingToPerform
+    with pytest.raises(LdapUnavailable) as err:
+        await _directory(script).test_connection()
+    assert err.value.reason == "protocol"
+
+
+class RawSocket:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.mark.parametrize("error, reason", [
+    (ssl.SSLError("handshake"), "tls"),
+    (TimeoutError("handshake timed out"), "timeout"),
+])
+async def test_a_failed_handshake_closes_the_socket_ldap3_left_open(error, reason):
+    """After TCP connect, a failed TLS handshake leaves ldap3's connection "closed" (unbind does
+    nothing) with its socket still open."""
+    script = Script()
+    script.error = error
+
+    def connect(user, password):
+        conn = script.connect(user, password)
+        conn.socket = RawSocket()
+        return conn
+
+    with pytest.raises(LdapUnavailable) as err:
+        await Ldap3Directory(load_ldap_config(BASE), connect=connect).test_connection()
+    assert err.value.reason == reason
+    assert script.connections[0].socket.closed
+
+
+async def test_a_search_cut_off_by_the_servers_time_limit_is_a_timeout():
+    script = Script(([], 3))                              # 3 = timeLimitExceeded
+    with pytest.raises(LdapUnavailable) as err:
+        await _directory(script).find_by_external_id(GUID)
+    assert err.value.reason == "timeout"
 
 
 async def test_a_user_bind_refused_for_another_reason_is_an_outage():

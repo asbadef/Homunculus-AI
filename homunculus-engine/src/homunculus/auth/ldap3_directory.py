@@ -37,6 +37,7 @@ from ldap3.core.exceptions import (
 )
 from ldap3.core.results import (
     RESULT_INVALID_CREDENTIALS, RESULT_SIZE_LIMIT_EXCEEDED, RESULT_SUCCESS,
+    RESULT_TIME_LIMIT_EXCEEDED,
 )
 from ldap3.operation.search import compile_filter, parse_filter
 from ldap3.utils.conv import escape_filter_chars
@@ -174,10 +175,19 @@ def tls_for(config: LdapConfig) -> Tls | None:
 
 # ---------------------------------------------------------------- the directory
 def _close(conn: Any) -> None:
+    """Unbind, then close the raw socket too: after a TLS handshake that failed or timed out
+    once TCP had connected, `ldap3` counts the connection as closed (unbind does nothing) while
+    its socket is still open."""
     try:
         conn.unbind()
     except Exception:      # closing is best effort; the call's own outcome is what counts
         pass
+    sock = getattr(conn, "socket", None)
+    if sock is not None:
+        try:
+            sock.close()
+        except Exception:
+            pass
 
 
 def _is_guid(value: str) -> bool:
@@ -306,6 +316,8 @@ class Ldap3Directory:
                     search_scope=SUBTREE, attributes=list(attributes), size_limit=size_limit,
                     time_limit=max(1, math.ceil(self._config.timeout_s)))
         code = (conn.result or {}).get("result")
+        if code == RESULT_TIME_LIMIT_EXCEEDED:          # the server's own time_limit, above
+            raise LdapUnavailable("timeout")
         if code != RESULT_SUCCESS and not (truncated_ok and code == RESULT_SIZE_LIMIT_EXCEEDED):
             raise LdapUnavailable("protocol")
         entries = [e for e in (conn.response or []) if e.get("type") == "searchResEntry"]
