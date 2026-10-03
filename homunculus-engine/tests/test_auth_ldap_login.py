@@ -386,6 +386,63 @@ async def test_every_401_costs_the_bcrypt_an_unknown_login_costs(client, world, 
     assert ran == [dummy] * bcrypts
 
 
+def _held(monkeypatch, *readings: float) -> list[float]:
+    """Stand-ins for the sign-in route's clock (`readings`, then the last one again) and sleep;
+    returns the list each requested sleep is appended to."""
+    import homunculus.auth.router as auth_router
+
+    clock, slept = list(readings), []
+
+    async def sleep(seconds):
+        slept.append(seconds)
+
+    monkeypatch.setattr(auth_router, "_now", lambda: clock.pop(0) if len(clock) > 1 else clock[0])
+    monkeypatch.setattr(auth_router, "_sleep", sleep)
+    return slept
+
+
+@pytest.mark.parametrize("case, status", [
+    ("unknown_login", 401),
+    ("local_wrong_password", 401),
+    ("ad_inactive", 401),
+    ("ad_empty_password", 401),
+    ("ad_wrong_password", 401),
+    ("ad_disabled_in_directory", 401),
+    ("ad_deactivated_during_the_directory_call", 401),
+    ("ad_throttled", 429),
+    ("ad_directory_down", 503),
+    ("signs_in", 200),
+])
+async def test_every_401_is_held_to_the_floor_and_nothing_else_is(client, world, db_session,
+                                                                   monkeypatch, case, status):
+    """Spec §4: timing must not tell an AD account — round trips to the domain controller —
+    from an unknown or a local login. Every 401 answers no sooner than LOGIN_FAILURE_FLOOR_S
+    after the request reached the route, by a sleep (no CPU); a success, a 429 and a 503 are
+    never held. The clock stands still here, so a 401 asks for the whole floor."""
+    from homunculus.auth.router import LOGIN_FAILURE_FLOOR_S
+
+    c, app = client
+    login, password = await _arrange_failure(case, c, app, world, db_session)
+    slept = _held(monkeypatch, 100.0)
+    res = await _login(c, login, password)
+    assert res.status_code == status, res.text
+    assert slept == ([LOGIN_FAILURE_FLOOR_S] if status == 401 else [])
+
+
+@pytest.mark.parametrize("elapsed", [0.0, 0.2, 0.49, 0.5, 3.0])
+async def test_the_floor_counts_from_the_start_of_the_request(client, world, monkeypatch,
+                                                              elapsed):
+    from homunculus.auth.router import LOGIN_FAILURE_FLOOR_S
+
+    assert 0 < LOGIN_FAILURE_FLOOR_S <= 1          # far below the dashboard's 15 s timeout
+    c, _ = client
+    slept = _held(monkeypatch, 100.0, 100.0 + elapsed)
+    assert (await _login(c, "ayilmaz", "Yanlis-Parola-9")).status_code == 401
+    rest = LOGIN_FAILURE_FLOOR_S - elapsed
+    assert slept == ([pytest.approx(rest)] if rest > 0 else [])
+    assert elapsed + sum(slept) >= LOGIN_FAILURE_FLOOR_S - 1e-9
+
+
 THROTTLED = "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin"
 
 

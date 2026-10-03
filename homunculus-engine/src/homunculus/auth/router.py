@@ -5,7 +5,8 @@ POST /auth/login        — username or e-mail + password; returns tokens (requi
                           Active Directory account is checked by the directory (spec §7): a
                           wrong password is 401, a directory that does not answer is 503, and
                           after 3 failed binds in 15 minutes the account is refused with 429
-                          without asking the directory (the domain's own lockout counts them)
+                          without asking the directory (the domain's own lockout counts them).
+                          Every 401 takes at least LOGIN_FAILURE_FLOOR_S (0.5 s)
 POST /auth/totp/setup   — generate TOTP secret + QR provisioning URI (allowed before MFA)
 POST /auth/totp/verify  — verify 6-digit code; re-issues tokens with mfa_verified=True
 POST /auth/refresh      — exchange refresh token for new tokens built from the CURRENT groups; an
@@ -19,6 +20,7 @@ POST /auth/password     — change own password (local accounts)
 Every sign-in, MFA and password event goes to the audit trail (never a password or a code).
 """
 from __future__ import annotations
+import asyncio
 import hmac
 import time
 import uuid
@@ -74,6 +76,14 @@ _DIRECTORY_THROTTLED = "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyi
 # its refresh token and tries again.
 _REFRESH_OUTAGES = frozenset({"unreachable", "timeout", "tls", "service_bind_rejected"})
 _NO_USER = uuid.UUID(int=0)
+# Every refused sign-in (401) answers no sooner than this after the request reached the route.
+# It hides the domain controller's round trips, which an AD sign-in makes and an unknown or
+# local login does not (spec §4: timing must not say which logins are AD accounts). A sleep:
+# no CPU spent, the event loop free meanwhile. It must stay far below the dashboard's 15 s
+# request timeout. A success, a 429 and a 503 are not held: their status says it already.
+LOGIN_FAILURE_FLOOR_S = 0.5
+_now = time.monotonic             # the floor's clock and sleep, replaced by the tests
+_sleep = asyncio.sleep
 
 
 def _bad_credentials() -> HTTPException:
@@ -115,6 +125,18 @@ async def _directory_sign_in_refused(request: Request, db: AsyncSession, user_id
 @router.post("/login", response_model=TokenResponse, summary="Sign in with username or e-mail")
 async def login(body: LoginRequest, request: Request,
                 db: AsyncSession = Depends(get_db)) -> TokenResponse:
+    started = _now()
+    try:
+        return await _sign_in(body, request, db)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            rest = LOGIN_FAILURE_FLOOR_S - (_now() - started)
+            if rest > 0:
+                await _sleep(rest)
+        raise
+
+
+async def _sign_in(body: LoginRequest, request: Request, db: AsyncSession) -> TokenResponse:
     user, key = await find_user_for_sign_in(db, body.identifier)
 
     if user is not None and user.auth_source == AUTH_LDAP:
