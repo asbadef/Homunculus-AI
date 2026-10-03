@@ -4,8 +4,9 @@
 // Body text needs 4.5:1. Every text pair is held to 4.5:1, large or not: the pills and badges
 // that carry severity are 10–12 px.
 //
-// Not measured on purpose: --line/--line2 (borders; the input border is 1.5:1 in both themes —
-// recorded in the plan as an open design question), --attLine, the shadows.
+// Not measured on purpose: --line/--line2 (borders; the input border is ~1.4-1.6:1 on a card in
+// both themes — an open user decision in the roadmap's "Kullanıcı kararları"), --attLine, the
+// shadows, --scrim (a dimmed backdrop, not a ground for text).
 import { describe, it, expect } from "vitest";
 import { COLOR_TOKENS } from "./tokens.js";
 import { rule, THEMES } from "./tokensCss.testutil.js";
@@ -77,9 +78,12 @@ describe.each(["gece", "gun"])("%s theme: contrast", (theme) => {
     expect(ratio(s(fg), s(bg))).toBeGreaterThanOrEqual(BODY);
   });
 
-  it.each(["card", "page"])("warning note and tag: attInk on att over %s clears 4.5:1", (ground) => {
-    expect(ratio(s("attInk"), over(theme, "att", ground))).toBeGreaterThanOrEqual(BODY);
-  });
+  it.each(["card", "card2", "page", "app"])(
+    "warning note, tag and attention pill: attInk on att over %s clears 4.5:1",
+    (ground) => {
+      expect(ratio(s("attInk"), over(theme, "att", ground))).toBeGreaterThanOrEqual(BODY);
+    },
+  );
 
   it("critical tag: critInk on critSoft over a card clears 4.5:1", () => {
     expect(ratio(s("critInk"), over(theme, "critSoft", "card"))).toBeGreaterThanOrEqual(BODY);
@@ -92,18 +96,25 @@ describe.each(["gece", "gun"])("%s theme: contrast", (theme) => {
     },
   );
 
-  it.each(SEVERITY.flatMap((sev) => ["card", "card2"].map((bg) => [sev, bg])))(
+  // The tint is translucent, so the pill's ground counts: a card, a card2 row, and — in a page
+  // header or a dialog — the page or the app frame.
+  it.each(SEVERITY.flatMap((sev) => ["card", "card2", "page", "app"].map((bg) => [sev, bg])))(
     "%s status pill: ink on its 14%% tint over %s clears 4.5:1",
     (sev, bg) => {
       expect(ratio(s(`${sev}Ink`), tint(theme, sev, 0.14, bg))).toBeGreaterThanOrEqual(BODY);
     },
   );
 
+  // On a card only. On card2 Gun's v-map (4.38) and v-spo (4.46) fall under 4.5:1: recorded in the
+  // roadmap for G1-09/G1-11, which decide where vitals sit.
   it.each(["v-hr", "v-map", "v-spo", "v-rr", "v-t"])("vital %s clears 4.5:1 on a card", (v) => {
     expect(ratio(s(v), s("card"))).toBeGreaterThanOrEqual(BODY);
   });
 
-  it.each(["page", "card", "card2"])("focus outline (pri) clears 3:1 against %s", (bg) => {
+  // Page and card are already held to 4.5:1 by the primary-text test above. The outline also lands
+  // on the rail (the G1-07 sidebar's links: no other pri pair covers it), card2 (input rows, table
+  // headers) and the app frame (dialogs).
+  it.each(["rail", "card2", "app"])("focus outline (pri) clears 3:1 against %s", (bg) => {
     expect(ratio(s("pri"), s(bg))).toBeGreaterThanOrEqual(UI);
   });
 
