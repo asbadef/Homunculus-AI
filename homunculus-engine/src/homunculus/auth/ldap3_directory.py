@@ -12,6 +12,10 @@ Windows dev machines and in the python:3.12-slim image without libldap). Spec §
     request timeout), waiting for a free thread included. A call cut off while it runs keeps
     its thread until the socket timeouts end it, so the pool, not a semaphore, is the cap. The socket connect timeout is
     LDAP_TIMEOUT_S, the receive timeout LDAP_TIMEOUT_S rounded up to whole seconds.
+  * A call the caller stopped waiting for (its deadline, a cancellation) never binds as the
+    account afterwards, and its outage says whether that bind had started
+    (`LdapUnavailable.bind_attempted`, `_Attempt`): the sign-in throttle counts only a password
+    that reached the domain controller.
   * Results are capped: `size_limit` on the server, and the slice here.
   * A network or TLS failure becomes LdapUnavailable(reason); a wrong password is None.
   * The clinician's password goes to one bind. It is not kept, logged or put into an
@@ -24,6 +28,7 @@ import logging
 import math
 import os
 import ssl
+import threading
 import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -200,22 +205,56 @@ def _is_guid(value: str) -> bool:
     return True
 
 
-def _guarded(fn: Callable[..., Any], *args: Any) -> Any:
+class _Attempt:
+    """One directory call, shared by the event loop and the worker thread that runs it. The
+    caller stops waiting (`give_up`: the deadline, a cancellation) and the worker is about to
+    bind as the account with the typed password (`start_bind`) under one lock, so exactly one
+    of two things happens: that bind starts and the caller learns it did, or it never starts —
+    a call already cut off never spends one of the account's attempts in AD's lockout count."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._given_up = False
+        self._bind_started = False
+
+    def start_bind(self) -> None:
+        """Worker side, immediately before the bind as the account. LdapUnavailable (read by
+        nobody) when the caller has gone."""
+        with self._lock:
+            if self._given_up:
+                raise LdapUnavailable("timeout")
+            self._bind_started = True
+
+    def give_up(self) -> bool:
+        """Event-loop side, when the caller stops waiting: no bind as the account starts after
+        this. True when one already had."""
+        with self._lock:
+            self._given_up = True
+            return self._bind_started
+
+    @property
+    def bind_started(self) -> bool:
+        with self._lock:
+            return self._bind_started
+
+
+def _guarded(attempt: _Attempt, fn: Callable[..., Any], *args: Any) -> Any:
     """Run `fn` on the worker thread; ANY failure becomes LdapUnavailable — an `ldap3` or socket
     failure by its cause, anything else (a library bug, a reply it cannot parse) as `protocol`,
-    so a directory fault is a 503, never a 500. Only the exception's type and the reason are
-    logged — never its text, which for a bind could name the account or carry a password."""
+    so a directory fault is a 503, never a 500 — marked `bind_attempted` when it came after the
+    bind as the account had started. Only the exception's type and the reason are logged —
+    never its text, which for a bind could name the account or carry a password."""
     try:
         return fn(*args)
-    except LdapUnavailable:
-        raise
+    except LdapUnavailable as exc:
+        raise LdapUnavailable(exc.reason, bind_attempted=attempt.bind_started) from None
     except (LDAPException, OSError) as exc:
         reason = failure_reason(exc)
         logger.warning("directory call failed (%s): %s", reason, type(exc).__name__)
-        raise LdapUnavailable(reason) from None
+        raise LdapUnavailable(reason, bind_attempted=attempt.bind_started) from None
     except Exception as exc:
         logger.warning("directory call failed (protocol): unexpected %s", type(exc).__name__)
-        raise LdapUnavailable("protocol") from None
+        raise LdapUnavailable("protocol", bind_attempted=attempt.bind_started) from None
 
 
 class Ldap3Directory:
@@ -239,7 +278,9 @@ class Ldap3Directory:
     async def authenticate(self, external_id: str, password: str) -> LdapIdentity | None:
         if not password or not _is_guid(external_id):
             return None
-        return await self._call(self._authenticate, external_id, password)
+        attempt = _Attempt()
+        return await self._call(self._authenticate, attempt, external_id, password,
+                                attempt=attempt)
 
     async def find_by_external_id(self, external_id: str) -> LdapIdentity | None:
         if not _is_guid(external_id):
@@ -264,25 +305,35 @@ class Ldap3Directory:
         goes through `authenticate`; the read-only integration test uses this."""
         if not password:
             return False
-        return await self._call(self._password_ok, dn, password)
+        attempt = _Attempt()
+        return await self._call(self._password_ok, attempt, dn, password, attempt=attempt)
 
-    async def _call(self, fn: Callable[..., Any], *args: Any) -> Any:
+    async def _call(self, fn: Callable[..., Any], *args: Any,
+                    attempt: _Attempt | None = None) -> Any:
         """`fn` on the pool, within the deadline — the wait for a free thread counts against
-        it, and a call cut off while still queued never runs."""
+        it, and a call cut off while still queued never runs. When the caller stops waiting
+        (the deadline, a cancellation) `attempt` is given up: a bind as the account not started
+        yet never starts, and the outage — or the cancellation, as an attribute — carries
+        `bind_attempted`, for the sign-in throttle (auth/router.py)."""
+        attempt = _Attempt() if attempt is None else attempt
         try:
-            work = asyncio.get_running_loop().run_in_executor(self._pool, _guarded, fn, *args)
+            work = asyncio.get_running_loop().run_in_executor(self._pool, _guarded, attempt,
+                                                              fn, *args)
         except RuntimeError:                 # the pool is shut down: the app is stopping
             raise LdapUnavailable("unreachable") from None
         try:
             return await asyncio.wait_for(work, self._deadline)
         except TimeoutError:
+            sent = attempt.give_up()
             logger.warning("directory call cut off after %.1f s", self._deadline)
-            raise LdapUnavailable("timeout") from None
-        except asyncio.CancelledError:
+            raise LdapUnavailable("timeout", bind_attempted=sent) from None
+        except asyncio.CancelledError as exc:
+            sent = attempt.give_up()
             # Cancelled by `close` while queued, not by our own caller: an outage, not a crash.
             task = asyncio.current_task()
             if work.cancelled() and task is not None and not task.cancelling():
                 raise LdapUnavailable("unreachable") from None
+            exc.bind_attempted = sent
             raise
 
     # ---- the worker-thread side
@@ -341,7 +392,8 @@ class Ldap3Directory:
         finally:
             _close(conn)
 
-    def _password_ok(self, dn: str, password: str) -> bool:
+    def _password_ok(self, attempt: _Attempt, dn: str, password: str) -> bool:
+        attempt.start_bind()             # not once the caller has gone; from here AD may count it
         conn = self._connect(dn, password)
         try:
             if conn.bind():
@@ -352,14 +404,15 @@ class Ldap3Directory:
         finally:
             _close(conn)
 
-    def _authenticate(self, external_id: str, password: str) -> LdapIdentity | None:
+    def _authenticate(self, attempt: _Attempt, external_id: str,
+                      password: str) -> LdapIdentity | None:
         identity = self._find(external_id)
         # Disabled or past its end date: returned without a bind — the caller refuses it, and
         # no password goes to a domain controller for an account that cannot sign in anyway.
         if (identity is None or identity.disabled
                 or account_expired(identity.account_expires, time.time())):
             return identity
-        return identity if self._password_ok(identity.dn, password) else None
+        return identity if self._password_ok(attempt, identity.dn, password) else None
 
     def _search_users(self, query: str, limit: int) -> list[LdapIdentity]:
         conn = self._service()

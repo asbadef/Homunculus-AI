@@ -8,6 +8,10 @@ password or a malformed objectGUID is None and a blank query [] whether or not t
 up, and is not recorded; a search returns at most 1–50 rows (`limit` clamped) and no group
 lists. `unavailable = True` makes every other call raise LdapUnavailable("unreachable"), as a
 domain controller that is down would; a string names another reason (`timeout`, `tls`, ...).
+By default such an outage came before any password was sent (the service bind, a search, a
+call cut off while queued: `bind_attempted` False); `outage_after_bind = True` makes the outage
+`authenticate` raises one that came once the bind as the account had started (a user bind cut
+off at the deadline: `bind_attempted` True, counted by the sign-in throttle).
 `calls` records which method was asked about what — never a password.
 
 One difference to keep in mind: the fake returns a disabled account to `authenticate` and
@@ -91,6 +95,7 @@ class FakeDirectory:
         self.people: dict[str, FakePerson] = {p.identity.external_id: p for p in people}
         self.groups: list[LdapGroup] = list(groups)
         self.unavailable: bool | str = False
+        self.outage_after_bind = False
         self.calls: list[tuple[str, str]] = []
 
     def add(self, p: FakePerson) -> FakePerson:
@@ -102,16 +107,17 @@ class FakeDirectory:
         p = self.people[external_id]
         p.identity = replace(p.identity, **changes)
 
-    def _ask(self, method: str, about: str) -> None:
+    def _ask(self, method: str, about: str, *, binds: bool = False) -> None:
         self.calls.append((method, about))
         if self.unavailable:
             raise LdapUnavailable(self.unavailable if isinstance(self.unavailable, str)
-                                  else "unreachable")
+                                  else "unreachable",
+                                  bind_attempted=binds and self.outage_after_bind)
 
     async def authenticate(self, external_id: str, password: str) -> LdapIdentity | None:
         if not password or not _is_guid(external_id):
             return None
-        self._ask("authenticate", external_id)
+        self._ask("authenticate", external_id, binds=True)
         p = self.people.get(external_id)
         if p is None:
             return None

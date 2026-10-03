@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from homunculus.auth import ldap_sync
 from homunculus.auth.groups import lock_admin_guard, set_manual_groups
 from homunculus.auth.jwt import decode_token
-from homunculus.auth.ldap import LdapUnavailable
 from homunculus.auth.models import User
 from tests.conftest import requires_db
 from tests.fake_directory import (
@@ -455,19 +454,56 @@ async def test_a_failure_before_the_directory_call_never_holds_a_throttle_place(
     assert (await _login(c, "ayilmaz")).status_code == 200
 
 
-@pytest.mark.parametrize("reason, counted", [("timeout", True), ("unreachable", False)])
-async def test_an_outage_counts_only_when_a_bind_may_have_been_made(client, world, reason,
-                                                                   counted):
-    """Cut off at the deadline, the call's thread may still bind — and fail: counted. A domain
-    controller that cannot be reached took no bind."""
+@pytest.mark.parametrize("reason, after_bind", [
+    ("timeout", False),        # the service bind or the search cut off, or queued: none sent
+    ("protocol", False),       # a search reply that made no sense, a group list over the limit
+    ("unreachable", False),
+    ("timeout", True),         # the bind as the account cut off: AD may count it
+    ("protocol", True),        # the bind as the account answered with an unexpected code
+])
+async def test_an_outage_counts_only_when_the_password_was_sent(client, world, reason,
+                                                                after_bind):
+    """A clinician who retried through a domain controller blip, the password never sent, must
+    not be refused for 15 minutes; an outage once the bind as the account had started may have
+    cost an attempt in AD's lockout count, and is counted (fail closed)."""
     c, _ = client
-
-    async def down(external_id, password):
-        raise LdapUnavailable(reason)
-
-    world["directory"].authenticate = down
+    directory = world["directory"]
+    directory.unavailable, directory.outage_after_bind = reason, after_bind
     codes = [(await _login(c, "ayilmaz")).status_code for _ in range(4)]
-    assert codes == [503, 503, 503, 429 if counted else 503]
+    assert codes == [503, 503, 503, 429 if after_bind else 503]
+    directory.unavailable = False
+    assert (await _login(c, "ayilmaz")).status_code == (429 if after_bind else 200)
+
+
+@pytest.mark.parametrize("bind_attempted, counted", [(False, False), (True, True), (None, True)])
+async def test_a_cancelled_sign_in_counts_only_when_the_password_was_sent(client, world,
+                                                                         bind_attempted,
+                                                                         counted):
+    """The request cut off while the directory works: counted only when the directory says the
+    bind as the account had started (Ldap3Directory marks the cancellation); a cancellation it
+    did not mark is counted (None: fail closed)."""
+    c, _ = client
+    entered = asyncio.Event()
+
+    async def hang(external_id, password):
+        entered.set()
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError as exc:
+            if bind_attempted is not None:
+                exc.bind_attempted = bind_attempted
+            raise
+
+    world["directory"].authenticate = hang
+    for _ in range(3):
+        entered.clear()
+        task = asyncio.create_task(_login(c, "ayilmaz"))
+        await entered.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    del world["directory"].authenticate                   # the directory answers again
+    assert (await _login(c, "ayilmaz")).status_code == (429 if counted else 200)
 
 
 async def test_another_ad_account_is_not_throttled(client, world, db_session):

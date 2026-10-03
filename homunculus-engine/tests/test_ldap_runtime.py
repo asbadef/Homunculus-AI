@@ -47,6 +47,20 @@ async def test_the_fake_can_be_down_for_any_reason_the_real_one_names(reason):
     assert err.value.reason == reason
 
 
+@pytest.mark.parametrize("after_bind", [False, True])
+async def test_the_fake_says_whether_a_sign_in_outage_came_after_the_password_was_sent(
+        after_bind):
+    p = person("AYilmaz")
+    directory = FakeDirectory([p])
+    directory.unavailable, directory.outage_after_bind = "timeout", after_bind
+    with pytest.raises(LdapUnavailable) as err:
+        await directory.authenticate(p.identity.external_id, AD_PASSWORD)
+    assert (err.value.reason, err.value.bind_attempted) == ("timeout", after_bind)
+    with pytest.raises(LdapUnavailable) as err:
+        await directory.find_by_external_id(p.identity.external_id)
+    assert err.value.bind_attempted is False         # only a sign-in binds as the account
+
+
 async def test_like_the_real_one_the_fake_refuses_bad_input_before_the_server_is_asked():
     """An empty password, a malformed objectGUID or a blank query never reaches the server:
     the answer is the same whether or not the directory is up, and nothing is recorded."""

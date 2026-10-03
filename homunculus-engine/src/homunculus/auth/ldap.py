@@ -58,11 +58,17 @@ _FALSE = frozenset({"0", "false", "no", "off"})
 class LdapUnavailable(Exception):
     """The directory could not answer: unreachable, TLS refused, too slow, the service account
     refused, or a reply that makes no sense. `reason` is a fixed short code — `unreachable`,
-    `timeout`, `tls`, `service_bind_rejected`, `protocol` — and never carries a credential."""
+    `timeout`, `tls`, `service_bind_rejected`, `protocol` — and never carries a credential.
 
-    def __init__(self, reason: str) -> None:
+    `bind_attempted` is True when the outage came after the bind as the ACCOUNT (with the typed
+    password) had started — AD may have counted it toward the account's lockout, so the sign-in
+    throttle counts it too. False: the password was never sent (the service bind, a search, or
+    a call cut off before it got that far)."""
+
+    def __init__(self, reason: str, *, bind_attempted: bool = False) -> None:
         super().__init__(reason)
         self.reason = reason
+        self.bind_attempted = bind_attempted
 
 
 class LdapConfigError(ValueError):

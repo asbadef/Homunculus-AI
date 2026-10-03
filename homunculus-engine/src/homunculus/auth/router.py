@@ -66,10 +66,6 @@ _TOTP_LOCKED = "Çok fazla hatalı kod. 5 dakika sonra tekrar deneyin."
 _TOTP_REPLAYED = "Bu kod zaten kullanıldı; yeni kodu bekleyin."
 # The AD bind throttle's refusal; "15" is DIRECTORY_BIND_WINDOW_S (auth/limits.py).
 _DIRECTORY_THROTTLED = "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin"
-# Directory outages after which a bind as the account may still have been made, and failed: a
-# call cut off at its deadline (its thread runs on), or a reply that made no sense (it may have
-# answered the bind). Counted toward the throttle — fail closed for the hospital's AD.
-_BIND_MAY_HAVE_FAILED = frozenset({"timeout", "protocol"})
 # Directory failures after which a refresh goes on unsynced (the spec §4 outage rule): the
 # domain controller could not be reached, or would not let the service account in — nothing
 # about the account itself. Any other reason (`protocol` also covers a reply about THIS account
@@ -194,14 +190,18 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
         await _login_failed(request, db, user_id, key, "throttled")
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                             detail=_DIRECTORY_THROTTLED)
+    # An outage counts only when the password had reached the directory (`bind_attempted`):
+    # a clinician retrying through a domain controller blip — the service bind cut off, the call
+    # queued — must not be refused for 15 minutes. A cancellation counts unless the directory
+    # marked it as made before that bind (Ldap3Directory does); anything else fails closed.
     try:
         identity = await ldap.directory.authenticate(external_id, password)
     except LdapUnavailable as exc:
-        directory_binds.end(slot, failed=exc.reason in _BIND_MAY_HAVE_FAILED)
+        directory_binds.end(slot, failed=exc.bind_attempted)
         await _login_failed(request, db, user_id, key, "directory_unavailable")
         raise _directory_down() from None
-    except BaseException:                    # cancelled: the bind may still be made
-        directory_binds.end(slot, failed=True)
+    except BaseException as exc:             # cancelled, or a fault: the bind may have been made
+        directory_binds.end(slot, failed=getattr(exc, "bind_attempted", True))
         raise
     # None: a wrong password (or no such account, which made no bind — counted all the same).
     directory_binds.end(slot, failed=identity is None)

@@ -221,12 +221,14 @@ USER_PW = "Dogru-Parola-1"
 
 class Script:
     """What the fake server answers: a password per DN, a result code for a refused bind, an
-    error every bind raises, and one queued (entries, result code) reply per search."""
+    error every bind raises (or the bind as one DN only), and one queued (entries, result code)
+    reply per search."""
 
     def __init__(self, *replies):
         self.passwords = {SVC_DN: SVC_PW, USER_DN: USER_PW}
         self.bind_codes: dict[str, int] = {}
         self.error: BaseException | None = None
+        self.bind_errors: dict[str, BaseException] = {}
         self.replies = list(replies)
         self.connections: list[FakeConnection] = []
         self.searches: list[dict] = []
@@ -245,9 +247,10 @@ class FakeConnection:
         self.result, self.response, self.closed = {}, [], False
 
     def bind(self):
-        if self.script.error is not None:
-            raise self.script.error
-        ok = self.script.passwords.get(self.user) == self._password
+        error = self.script.bind_errors.get(self.user, self.script.error)
+        if error is not None:
+            raise error
+        ok =self.script.passwords.get(self.user) == self._password
         self.result = {"result": 0 if ok else self.script.bind_codes.get(self.user, 49)}
         return ok
 
@@ -578,7 +581,135 @@ async def test_close_cancels_a_queued_call_as_an_outage():
     finally:
         release.set()
         await asyncio.gather(*stuck, return_exceptions=True)
-    assert err.value.reason == "unreachable"
+    assert (err.value.reason, err.value.bind_attempted) == ("unreachable", False)
+
+
+# ---------------------------------------------------------------- was the password sent? (throttle)
+def _directory_over(connect, deadline_s: float) -> Ldap3Directory:
+    return Ldap3Directory(load_ldap_config({**BASE, "LDAP_NESTED_GROUPS": "0"}),
+                          connect=connect, deadline_s=deadline_s)
+
+
+def _slow_as(dn: str, script: Script, seconds: float,
+             entered: threading.Event | None = None):
+    """A connect that takes `seconds` to open a connection as `dn`, and only as `dn`."""
+    def connect(user, password):
+        if user == dn:
+            if entered is not None:
+                entered.set()
+            time.sleep(seconds)
+        return script.connect(user, password)
+    return connect
+
+
+async def _idle(directory: Ldap3Directory) -> None:
+    """Every worker thread finished, those of calls cut off included: only then can a test say
+    that a call never bound afterwards."""
+    await asyncio.to_thread(directory._pool.shutdown, wait=True)
+
+
+async def test_a_call_cut_off_before_the_bind_as_the_account_never_makes_it():
+    """A domain controller slow to let the service account in: the caller gets its outage at
+    the deadline, marked "no password sent" (the sign-in throttle does not count it), and the
+    thread, which runs on, stops before the bind as the account — a call already given up must
+    never spend one of the account's attempts in AD's lockout count afterwards."""
+    script = Script(([_entry()], 0))
+    directory = _directory_over(_slow_as(SVC_DN, script, 0.3), deadline_s=0.1)
+    with pytest.raises(LdapUnavailable) as err:
+        await directory.authenticate(GUID, USER_PW)
+    assert (err.value.reason, err.value.bind_attempted) == ("timeout", False)
+    await _idle(directory)
+    assert _bound_as(script) == [SVC_DN] and len(script.searches) == 1
+
+
+async def test_a_call_cut_off_while_queued_sent_no_password_and_never_runs():
+    release = threading.Event()
+    script = Script(([_entry()], 0))
+
+    def hung(user, password):
+        release.wait(5)
+        return script.connect(user, password)
+
+    directory = _directory_over(hung, deadline_s=0.3)
+    stuck = [asyncio.create_task(directory.test_connection()) for _ in range(SLOTS)]
+    await asyncio.sleep(0.1)                         # all eight threads are taken
+    try:
+        with pytest.raises(LdapUnavailable) as err:
+            await directory.authenticate(GUID, USER_PW)
+    finally:
+        release.set()
+        await asyncio.gather(*stuck, return_exceptions=True)
+    assert (err.value.reason, err.value.bind_attempted) == ("timeout", False)
+    await _idle(directory)
+    assert USER_DN not in _bound_as(script)
+
+
+async def test_a_call_cut_off_during_the_bind_as_the_account_says_the_password_was_sent():
+    """AD may count that bind toward the account's lockout whatever its outcome: so does the
+    sign-in throttle."""
+    script = Script(([_entry()], 0))
+    directory = _directory_over(_slow_as(USER_DN, script, 0.3), deadline_s=0.1)
+    with pytest.raises(LdapUnavailable) as err:
+        await directory.authenticate(GUID, USER_PW)
+    assert (err.value.reason, err.value.bind_attempted) == ("timeout", True)
+    await _idle(directory)
+
+
+@pytest.mark.parametrize("dn, sent", [(SVC_DN, False), (USER_DN, True)])
+@pytest.mark.parametrize("error, reason", [
+    (LDAPResponseTimeoutError("no answer"), "timeout"),
+    (LDAPSocketOpenError("socket connection error while opening: refused"), "unreachable"),
+    (KeyError("library bug"), "protocol"),
+])
+async def test_a_failure_says_whether_the_password_had_been_sent(dn, sent, error, reason):
+    script = Script(([_entry()], 0))
+    script.bind_errors[dn] = error
+    with pytest.raises(LdapUnavailable) as err:
+        await _directory(script).authenticate(GUID, USER_PW)
+    assert (err.value.reason, err.value.bind_attempted) == (reason, sent)
+
+
+async def test_a_user_bind_answered_with_an_unexpected_code_sent_the_password():
+    script = Script(([_entry()], 0))
+    script.bind_codes[USER_DN] = 53                       # unwillingToPerform
+    with pytest.raises(LdapUnavailable) as err:
+        await _directory(script).authenticate(GUID, "Yanlis-1")
+    assert (err.value.reason, err.value.bind_attempted) == ("protocol", True)
+
+
+async def test_a_search_failure_before_the_bind_sent_no_password():
+    script = Script(([_entry()], 0), ([], 4))             # the group list over the limit
+    with pytest.raises(LdapUnavailable) as err:
+        await _directory(script, LDAP_NESTED_GROUPS="1").authenticate(GUID, USER_PW)
+    assert (err.value.reason, err.value.bind_attempted) == ("protocol", False)
+    assert _bound_as(script) == [SVC_DN]
+
+
+@pytest.mark.parametrize("slow_dn, sent", [(SVC_DN, False), (USER_DN, True)])
+async def test_a_cancelled_sign_in_says_whether_the_password_had_been_sent(slow_dn, sent):
+    """The caller gone (the request cut off, the server stopping): the cancellation carries
+    `bind_attempted` as an outage does, and a call cancelled before the bind as the account
+    never makes it afterwards."""
+    script = Script(([_entry()], 0))
+    entered = threading.Event()
+    directory = _directory_over(_slow_as(slow_dn, script, 0.3, entered), deadline_s=5)
+    caught: list[BaseException] = []
+
+    async def sign_in():
+        try:
+            await directory.authenticate(GUID, USER_PW)
+        except asyncio.CancelledError as exc:
+            caught.append(exc)
+            raise
+
+    task = asyncio.create_task(sign_in())
+    assert await asyncio.to_thread(entered.wait, 5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await _idle(directory)
+    assert [exc.bind_attempted for exc in caught] == [sent]
+    assert (USER_DN in _bound_as(script)) is sent
 
 
 @pytest.fixture
