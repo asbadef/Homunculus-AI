@@ -253,6 +253,10 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - Prototip dışı yeni metinler (`risk.none/unmeasured/unknown`, `news2.*`, galerinin çoğu) AZ/RU/EN'de anadili konuşan bir klinisyenin okumasını bekliyor → pilot öncesi.
 - Prototipin Gün temasında monitör paneli (`--monbg`) üzerindeki vital renkleri 1,2–3,8:1; `--monbg` taşınmadı → Grup 2 monitörü taşırken düzeltir.
 - Otomatik tema (20:00–08:00) yalnız mobil prototipte vardı; web için ertelendi → G1-07 ya da sonrası.
+- Gün'de iki dolgu card2/sayfa/app üzerinde 3:1'in altındaydı (G1-07/G1-09 nokta ve şeritleri oraya koyar).
+  En küçük değişiklik, ton korunarak (`tokens.css`; plan dosyasının Kontrast tablosu eski `#c28406`'yı gösterir): ✅
+  - `--mid` `#c28406` → `#ba7f07`: kart 3,43 · card2 3,11 · sayfa 3,00 · app 3,17 (önce card2 2,89, sayfa 2,79).
+  - `--ok` `#16a34a` → `#179f49`: kart 3,45 · card2 3,12 · sayfa 3,02 · app 3,18 (önce card2 2,99, sayfa 2,89).
 
 ## Kullanıcı kararları (Dalga 0 sonrası)
 

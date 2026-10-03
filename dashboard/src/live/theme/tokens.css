@@ -7,11 +7,13 @@
  * Where this file departs from the prototype (WCAG AA, measured by tokens.test.js):
  *   Gece  --crit      ef4444 -> dc2626   white danger-button text was 3.76:1
  *   Gece  --critInk   new, f87171        critical pill/tag text on its tint was 4.05:1
- *   Gun   --mid       ca8a04 -> c28406   amber stripe against a white card was 2.94:1 (UI needs 3:1)
+ *   Gun   --mid       ca8a04 -> ba7f07   amber stripe was 2.94:1 on a white card, 2.57 on the page
+ *                                        (UI needs 3:1; c28406 still failed card2/page/app); hue kept
+ *   Gun   --ok        16a34a -> 179f49   green fill was 2.99:1 on card2, 2.89 on the page; hue kept
  *   Gun   --*Ink      new, 700/800 steps every severity pill on its tint was 2.56-3.88:1
  *   --oncrit / --onmid  name the text colours the prototype hard-coded (#fff, #1b1400)
- * Fills (--crit --high --mid --low --ok) paint stripes, bars, dots and solid buttons; the *Ink
- * tokens are for text. Not ported yet (YAGNI): --monbg (Group 2 monitor; its Gun vital colours
+ * Fills (--crit --high --mid --low --ok) paint stripes, bars, dots and solid buttons — held to 3:1
+ * on card, card2, page and app; the *Ink tokens are for text. Not ported yet (YAGNI): --monbg (Group 2 monitor; its Gun vital colours
  * fail on it), --band-*, --grid (charts), --body-* (body map).
  */
 
@@ -91,12 +93,12 @@
   --oncrit: #ffffff;
   --high: #ea580c;
   --highInk: #9a3412;
-  --mid: #c28406;
+  --mid: #ba7f07;
   --midInk: #854d0e;
   --onmid: #1b1400;
   --low: #0284c7;
   --lowInk: #075985;
-  --ok: #16a34a;
+  --ok: #179f49;
   --okInk: #166534;
   --v-hr: #15803d;
   --v-map: #dc2626;

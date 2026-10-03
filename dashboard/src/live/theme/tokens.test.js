@@ -107,9 +107,14 @@ describe.each(["gece", "gun"])("%s theme: contrast", (theme) => {
     expect(ratio(s("pri"), s(bg))).toBeGreaterThanOrEqual(UI);
   });
 
-  it.each(SEVERITY)("%s fill (stripe, bar, dot) clears 3:1 against a card", (sev) => {
-    expect(ratio(s(sev), s("card"))).toBeGreaterThanOrEqual(UI);
-  });
+  // A bed card's stripe sits on the card, a dot or bar in a card2 row (G1-09), a stripe on the
+  // page or the app frame (G1-07): each ground is held to 3:1.
+  it.each(SEVERITY.flatMap((sev) => ["card", "card2", "page", "app"].map((bg) => [sev, bg])))(
+    "%s fill (stripe, bar, dot) clears 3:1 against %s",
+    (sev, bg) => {
+      expect(ratio(s(sev), s(bg))).toBeGreaterThanOrEqual(UI);
+    },
+  );
 });
 
 describe("token registry", () => {
