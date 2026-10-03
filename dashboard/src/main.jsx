@@ -26,6 +26,8 @@ export function chooseMode(params) {
   if (params.get("demo") === "1") return "demo";
   if (params.get("mode") === "replay" || params.has("scenario")) return "replay";
   if (params.get("board") === "1") return "board";
+  // The new UI's design review page (G1-05): no API, no patient data, linked from nowhere.
+  if (params.get("tasarim") === "1") return "tasarim";
   return "live";
 }
 
@@ -45,11 +47,17 @@ function pickRoot(mode) {
   if (mode === "replay") {
     return <DemoApp scenario={params.get("scenario") || "septic_shock"} />;
   }
+  if (mode === "tasarim") {
+    return <React.Suspense fallback={null}><DesignGallery /></React.Suspense>;
+  }
   // ?board=1 → the legacy bearer-token board. It authenticates with a tenant token, so on any
   // real deployment every fetch 401s and the screen sits at "reconnecting" — which looks exactly
   // like a quiet ward. Pass ?board=1&token=<tenant-token> to use it deliberately.
   return <Board token={params.get("token") || "dev-token"} />;
 }
+
+// Lazy: the gallery and its fonts load only when ?tasarim=1 asks for them.
+const DesignGallery = React.lazy(() => import("./live/gallery/DesignGallery.jsx"));
 
 // #/demo is an older deep link into the simulation; honour it ahead of the query string.
 const mode = window.location.hash.startsWith("#/demo") ? "demo" : chooseMode(params);

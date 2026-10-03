@@ -56,3 +56,18 @@ describe("AppShell", () => {
     expect(demo.container.firstChild.children).toHaveLength(2);
   });
 });
+
+describe("design gallery (?tasarim=1)", () => {
+  it("opens the new UI's design gallery", () => {
+    expect(chooseMode(new URLSearchParams("tasarim=1"))).toBe("tasarim");
+  });
+
+  it("never wins over an explicit ?live=1", () => {
+    expect(chooseMode(new URLSearchParams("tasarim=1&live=1"))).toBe("live");
+  });
+
+  it("gets no demo banner: it shows no data", () => {
+    const { container } = render(createElement(AppShell, { mode: "tasarim" }, "x"));
+    expect(container.firstChild.children).toHaveLength(1);
+  });
+});
