@@ -30,6 +30,12 @@ export function ThemeProvider({ children }) {
   useLayoutEffect(() => {
     document.documentElement.dataset.size = size;
   }, [size]);
+  // On unmount, take them off again: G1-07 mounts the new shell beside the old app in one tab, and
+  // the old app's page must not keep the live UI's theme.
+  useLayoutEffect(() => () => {
+    delete document.documentElement.dataset.theme;
+    delete document.documentElement.dataset.size;
+  }, []);
 
   const setTheme = useCallback((value) => {
     if (!THEMES.includes(value)) return;

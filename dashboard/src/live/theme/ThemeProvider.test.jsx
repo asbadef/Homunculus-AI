@@ -22,6 +22,7 @@ afterEach(() => {
   localStorage.clear();
   delete html.dataset.theme;
   delete html.dataset.size;
+  html.removeAttribute("lang");
 });
 
 describe("ThemeProvider", () => {
@@ -56,6 +57,44 @@ describe("ThemeProvider", () => {
     fireEvent.click(screen.getByText("auto"));
     expect(html.dataset.theme).toBe("gece");
     expect(localStorage.getItem("hmc.theme")).toBeNull();
+  });
+
+  it.each([
+    ["AZ", "TR"], // the prototype's spelling style
+    ["GUN", "BUYUK"],
+    ["dark", "large"],
+    ["", ""],
+  ])("falls back to Gece at normal size for a stored value it does not have (%j, %j)", (theme, size) => {
+    localStorage.setItem("hmc.theme", theme);
+    localStorage.setItem("hmc.size", size);
+    render(<ThemeProvider><Probe /></ThemeProvider>);
+    expect(screen.getByTestId("theme")).toHaveTextContent("gece");
+    expect(screen.getByTestId("size")).toHaveTextContent("normal");
+    expect(html.dataset.theme).toBe("gece");
+    expect(html.dataset.size).toBe("normal");
+  });
+
+  it("still switches when storage refuses the write", () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
+    render(<ThemeProvider><Probe /></ThemeProvider>);
+    fireEvent.click(screen.getByText("gun"));
+    fireEvent.click(screen.getByText("buyuk"));
+    expect(screen.getByTestId("theme")).toHaveTextContent("gun");
+    expect(html.dataset.theme).toBe("gun");
+    expect(html.dataset.size).toBe("buyuk");
+  });
+
+  // G1-07 mounts the new shell beside the old app in one tab: leaving it must not leave its theme
+  // on <html> for the old app's page.
+  it("takes data-theme and data-size off <html> when it unmounts", () => {
+    const { unmount } = render(<ThemeProvider><Probe /></ThemeProvider>);
+    fireEvent.click(screen.getByText("gun"));
+    expect(html.dataset.theme).toBe("gun");
+    unmount();
+    expect(html.hasAttribute("data-theme")).toBe(false);
+    expect(html.hasAttribute("data-size")).toBe(false);
   });
 
   it("renders in Gece when storage cannot be read", () => {
