@@ -17,20 +17,34 @@ Windows dev machines and in the python:3.12-slim image without libldap). Spec §
 """
 from __future__ import annotations
 
+import asyncio
+import logging
+import math
+import os
 import ssl
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import replace
 from typing import Any
 
-from ldap3 import Tls
+from ldap3 import AUTO_BIND_NONE, SIMPLE, SUBTREE, Connection, Server, Tls
+from ldap3 import NONE as NO_SERVER_INFO
 from ldap3.core.exceptions import (
-    LDAPCertificateError, LDAPCommunicationError, LDAPResponseTimeoutError, LDAPSocketOpenError,
-    LDAPSSLConfigurationError, LDAPStartTLSError,
+    LDAPCertificateError, LDAPCommunicationError, LDAPException, LDAPResponseTimeoutError,
+    LDAPSocketOpenError, LDAPSSLConfigurationError, LDAPStartTLSError,
+)
+from ldap3.core.results import (
+    RESULT_INVALID_CREDENTIALS, RESULT_SIZE_LIMIT_EXCEEDED, RESULT_SUCCESS,
 )
 from ldap3.utils.conv import escape_filter_chars
 
 from homunculus.auth.ldap import (
-    LdapConfig, LdapGroup, LdapIdentity, guid_from_bytes, guid_to_bytes, is_disabled,
+    LdapConfig, LdapConfigError, LdapGroup, LdapIdentity, LdapRuntime, LdapUnavailable,
+    guid_from_bytes, guid_to_bytes, is_disabled, load_ldap_config,
 )
+
+logger = logging.getLogger(__name__)
+
+Connect = Callable[[str, str], Any]
 
 USER_ATTRIBUTES = ("objectGUID", "sAMAccountName", "userPrincipalName", "mail", "displayName",
                    "memberOf", "userAccountControl", "pwdLastSet")
@@ -152,3 +166,196 @@ def tls_for(config: LdapConfig) -> Tls | None:
     verify = not (config.allow_insecure and config.ca_cert is None)
     return Tls(validate=ssl.CERT_REQUIRED if verify else ssl.CERT_NONE,
                ca_certs_file=config.ca_cert)
+
+
+# ---------------------------------------------------------------- the directory
+def _close(conn: Any) -> None:
+    try:
+        conn.unbind()
+    except Exception:      # closing is best effort; the call's own outcome is what counts
+        pass
+
+
+def _is_guid(value: str) -> bool:
+    try:
+        guid_to_bytes(value)
+    except (ValueError, TypeError, AttributeError):
+        return False
+    return True
+
+
+def _guarded(fn: Callable[..., Any], *args: Any) -> Any:
+    """Run `fn` on the worker thread; an `ldap3` or socket failure becomes LdapUnavailable.
+    Only the exception's type and the reason are logged — never its arguments, which for a bind
+    could name the account."""
+    try:
+        return fn(*args)
+    except LdapUnavailable:
+        raise
+    except (LDAPException, OSError) as exc:
+        reason = failure_reason(exc)
+        logger.warning("directory call failed (%s): %s", reason, type(exc).__name__)
+        raise LdapUnavailable(reason) from None
+
+
+class Ldap3Directory:
+    """The protocol over `ldap3`. `connect(user_dn, password)` returns an unbound connection —
+    injected by tests; the default opens one per the configuration."""
+
+    def __init__(self, config: LdapConfig, *, connect: Connect | None = None,
+                 deadline_s: float | None = None) -> None:
+        self._config = config
+        self._connect: Connect = connect or self._open
+        self._deadline = config.deadline_s if deadline_s is None else deadline_s
+        self._slots = asyncio.Semaphore(SLOTS)
+
+    # ---- the protocol (event loop side)
+    async def authenticate(self, external_id: str, password: str) -> LdapIdentity | None:
+        if not password or not _is_guid(external_id):
+            return None
+        return await self._call(self._authenticate, external_id, password)
+
+    async def find_by_external_id(self, external_id: str) -> LdapIdentity | None:
+        if not _is_guid(external_id):
+            return None
+        return await self._call(self._find, external_id)
+
+    async def search_users(self, query: str, limit: int = RESULT_CAP) -> list[LdapIdentity]:
+        if not query.strip():
+            return []
+        return await self._call(self._search_users, query, max(1, min(limit, RESULT_CAP)))
+
+    async def search_groups(self, query: str, limit: int = RESULT_CAP) -> list[LdapGroup]:
+        if not query.strip():
+            return []
+        return await self._call(self._search_groups, query, max(1, min(limit, RESULT_CAP)))
+
+    async def test_connection(self) -> None:
+        await self._call(self._test)
+
+    async def check_password(self, dn: str, password: str) -> bool:
+        """One bind as `dn`: True if the password is right. Not part of the protocol — sign-in
+        goes through `authenticate`; the read-only integration test uses this."""
+        if not password:
+            return False
+        return await self._call(self._password_ok, dn, password)
+
+    async def _call(self, fn: Callable[..., Any], *args: Any) -> Any:
+        async with self._slots:
+            try:
+                return await asyncio.wait_for(asyncio.to_thread(_guarded, fn, *args),
+                                              self._deadline)
+            except TimeoutError:
+                logger.warning("directory call cut off after %.1f s", self._deadline)
+                raise LdapUnavailable("timeout") from None
+
+    # ---- the worker-thread side
+    def _open(self, user: str, password: str) -> Any:
+        server = Server(self._config.host, port=self._config.port,
+                        use_ssl=self._config.use_ssl, tls=tls_for(self._config),
+                        get_info=NO_SERVER_INFO, connect_timeout=self._config.timeout_s)
+        return Connection(server, user=user, password=password, authentication=SIMPLE,
+                          auto_bind=AUTO_BIND_NONE, read_only=True, raise_exceptions=False,
+                          receive_timeout=self._config.timeout_s, auto_referrals=False,
+                          check_names=False)
+
+    def _service(self) -> Any:
+        conn = self._connect(self._config.bind_dn, self._config.bind_password)
+        try:
+            bound = conn.bind()
+        except BaseException:
+            _close(conn)
+            raise
+        if bound:
+            return conn
+        code = (conn.result or {}).get("result")
+        _close(conn)
+        raise LdapUnavailable("service_bind_rejected" if code == RESULT_INVALID_CREDENTIALS
+                              else "protocol")
+
+    def _search(self, conn: Any, search_filter: str, attributes: tuple[str, ...],
+                size_limit: int, *, truncated_ok: bool = True) -> list[dict]:
+        conn.search(search_base=self._config.base_dn, search_filter=search_filter,
+                    search_scope=SUBTREE, attributes=list(attributes), size_limit=size_limit,
+                    time_limit=max(1, math.ceil(self._config.timeout_s)))
+        code = (conn.result or {}).get("result")
+        if code != RESULT_SUCCESS and not (truncated_ok and code == RESULT_SIZE_LIMIT_EXCEEDED):
+            raise LdapUnavailable("protocol")
+        entries = [e for e in (conn.response or []) if e.get("type") == "searchResEntry"]
+        return entries[:size_limit]
+
+    def _find(self, external_id: str) -> LdapIdentity | None:
+        conn = self._service()
+        try:
+            entries = self._search(
+                conn, guid_lookup_filter(self._config.user_filter, external_id),
+                USER_ATTRIBUTES, 2)
+            identity = parse_user_entry(entries[0]) if len(entries) == 1 else None
+            if identity is not None and self._config.nested_groups:
+                groups = self._search(conn, nested_groups_filter(identity.dn), GROUP_ATTRIBUTES,
+                                      GROUP_LIMIT, truncated_ok=False)
+                identity = replace(identity, group_dns=tuple(
+                    str(e["dn"]) for e in groups if e.get("dn")))
+            return identity
+        finally:
+            _close(conn)
+
+    def _password_ok(self, dn: str, password: str) -> bool:
+        conn = self._connect(dn, password)
+        try:
+            if conn.bind():
+                return True
+            if (conn.result or {}).get("result") == RESULT_INVALID_CREDENTIALS:
+                return False
+            raise LdapUnavailable("protocol")
+        finally:
+            _close(conn)
+
+    def _authenticate(self, external_id: str, password: str) -> LdapIdentity | None:
+        identity = self._find(external_id)
+        if identity is None or identity.disabled:
+            return identity
+        return identity if self._password_ok(identity.dn, password) else None
+
+    def _search_users(self, query: str, limit: int) -> list[LdapIdentity]:
+        conn = self._service()
+        try:
+            entries = self._search(conn, user_search_filter(self._config.user_filter, query),
+                                   SEARCH_ATTRIBUTES, limit)
+        finally:
+            _close(conn)
+        return [i for i in map(parse_user_entry, entries) if i is not None]
+
+    def _search_groups(self, query: str, limit: int) -> list[LdapGroup]:
+        conn = self._service()
+        try:
+            entries = self._search(conn, group_search_filter(query), GROUP_ATTRIBUTES, limit)
+        finally:
+            _close(conn)
+        return [g for g in map(parse_group_entry, entries) if g is not None]
+
+    def _test(self) -> None:
+        _close(self._service())
+
+
+def ldap_from_env(env: Mapping[str, str] | None = None) -> LdapRuntime | None:
+    """`app.state.ldap` for production (`api/prodserver.py`): None when LDAP_URL is unset, or —
+    logged as an ERROR — when the LDAP_* settings cannot be used. Never raises: an unusable
+    directory configuration must not stop the API (spec §9)."""
+    env = os.environ if env is None else env
+    try:
+        config = load_ldap_config(env)
+    except LdapConfigError as exc:
+        logger.error("LDAP is OFF: %s. Local accounts sign in as usual; directory accounts get "
+                     "503 until this is fixed.", exc)
+        return None
+    if config is None:
+        return None
+    if config.allow_insecure:
+        logger.warning(
+            "LDAP_ALLOW_INSECURE=1: %s. Never in a hospital: AD passwords cross this link.",
+            "plain ldap://, no encryption" if not config.use_ssl
+            else "the domain controller's certificate is NOT verified" if config.ca_cert is None
+            else "set, but LDAP_CA_CERT is given, so the certificate is still verified")
+    return LdapRuntime(directory=Ldap3Directory(config), url_host=config.host,
+                       login_attrs=config.login_attrs)

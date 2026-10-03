@@ -2,17 +2,20 @@
 names a failure, its TLS settings — and (Task 3) the class itself over scripted connections."""
 from __future__ import annotations
 
+import logging
 import ssl
+import time
 import uuid
 
 import pytest
 from ldap3 import Tls
 from ldap3.core.exceptions import LDAPException, LDAPResponseTimeoutError, LDAPSocketOpenError
 
-from homunculus.auth.ldap import DEFAULT_USER_FILTER, LdapGroup, load_ldap_config
+from homunculus.auth.ldap import DEFAULT_USER_FILTER, LdapGroup, LdapUnavailable, load_ldap_config
 from homunculus.auth.ldap3_directory import (
-    escape_guid, failure_reason, group_search_filter, guid_lookup_filter, nested_groups_filter,
-    parse_group_entry, parse_user_entry, tls_for, user_search_filter,
+    GROUP_LIMIT, Ldap3Directory, escape_guid, failure_reason, group_search_filter,
+    guid_lookup_filter, ldap_from_env, nested_groups_filter, parse_group_entry,
+    parse_user_entry, tls_for, user_search_filter,
 )
 
 GUID = "6b29fc40-ca47-1067-b31d-00dd010662da"
@@ -152,3 +155,230 @@ def test_plain_ldap_has_no_tls_at_all():
     config = load_ldap_config({**BASE, "LDAP_URL": "ldap://dc1.hastane.local",
                                "LDAP_ALLOW_INSECURE": "1"})
     assert tls_for(config) is None
+
+
+# ---------------------------------------------------------------- the class, over scripted connections
+SVC_DN = BASE["LDAP_BIND_DN"]
+SVC_PW = BASE["LDAP_BIND_PASSWORD"]
+USER_PW = "Dogru-Parola-1"
+
+
+class Script:
+    """What the fake server answers: a password per DN, a result code for a refused bind, an
+    error every bind raises, and one queued (entries, result code) reply per search."""
+
+    def __init__(self, *replies):
+        self.passwords = {SVC_DN: SVC_PW, USER_DN: USER_PW}
+        self.bind_codes: dict[str, int] = {}
+        self.error: BaseException | None = None
+        self.replies = list(replies)
+        self.connections: list[FakeConnection] = []
+        self.searches: list[dict] = []
+
+    def connect(self, user, password):
+        conn = FakeConnection(self, user, password)
+        self.connections.append(conn)
+        return conn
+
+
+class FakeConnection:
+    """The slice of `ldap3.Connection` that Ldap3Directory uses."""
+
+    def __init__(self, script, user, password):
+        self.script, self.user, self._password = script, user, password
+        self.result, self.response, self.closed = {}, [], False
+
+    def bind(self):
+        if self.script.error is not None:
+            raise self.script.error
+        ok = self.script.passwords.get(self.user) == self._password
+        self.result = {"result": 0 if ok else self.script.bind_codes.get(self.user, 49)}
+        return ok
+
+    def search(self, **request):
+        self.script.searches.append(request)
+        entries, code = self.script.replies.pop(0)
+        self.response, self.result = entries, {"result": code}
+        return bool(entries)
+
+    def unbind(self):
+        self.closed = True
+
+
+def _directory(script, **env):
+    config = load_ldap_config({**BASE, "LDAP_NESTED_GROUPS": "0", **env})
+    return Ldap3Directory(config, connect=script.connect)
+
+
+def _bound_as(script):
+    return [c.user for c in script.connections]
+
+
+async def test_sign_in_finds_the_account_by_guid_then_binds_as_its_dn():
+    script = Script(([_entry()], 0))
+    identity = await _directory(script).authenticate(GUID, USER_PW)
+    assert identity is not None and identity.username == "AYilmaz"
+    assert _bound_as(script) == [SVC_DN, USER_DN]
+    search = script.searches[0]
+    assert search["search_filter"] == guid_lookup_filter(DEFAULT_USER_FILTER, GUID)
+    assert search["search_base"] == BASE["LDAP_BASE_DN"] and search["size_limit"] == 2
+    assert all(c.closed for c in script.connections)
+
+
+async def test_a_wrong_password_is_none_not_an_outage():
+    script = Script(([_entry()], 0))
+    assert await _directory(script).authenticate(GUID, "Yanlis-1") is None
+    assert _bound_as(script) == [SVC_DN, USER_DN]
+
+
+async def test_an_empty_password_or_a_malformed_guid_never_reaches_the_server():
+    script = Script()
+    directory = _directory(script)
+    assert await directory.authenticate(GUID, "") is None
+    assert await directory.authenticate("not-a-guid", USER_PW) is None
+    assert await directory.find_by_external_id("not-a-guid") is None
+    assert script.connections == []
+
+
+async def test_an_unknown_account_is_none_after_one_service_search():
+    script = Script(([], 0))
+    assert await _directory(script).authenticate(GUID, USER_PW) is None
+    assert _bound_as(script) == [SVC_DN]
+
+
+async def test_a_disabled_account_is_returned_without_a_bind_as_it():
+    script = Script(([_entry(userAccountControl=[b"514"])], 0))
+    identity = await _directory(script).authenticate(GUID, "her-neyse")
+    assert identity is not None and identity.disabled is True
+    assert _bound_as(script) == [SVC_DN]
+
+
+async def test_a_refused_service_account_is_an_outage():
+    script = Script()
+    script.passwords[SVC_DN] = "baska"
+    with pytest.raises(LdapUnavailable) as err:
+        await _directory(script).test_connection()
+    assert err.value.reason == "service_bind_rejected"
+
+
+async def test_a_user_bind_refused_for_another_reason_is_an_outage():
+    script = Script(([_entry()], 0))
+    script.bind_codes[USER_DN] = 53                       # unwillingToPerform
+    with pytest.raises(LdapUnavailable) as err:
+        await _directory(script).authenticate(GUID, "Yanlis-1")
+    assert err.value.reason == "protocol"
+
+
+@pytest.mark.parametrize("error, reason", [
+    (LDAPSocketOpenError("socket connection error while opening: refused"), "unreachable"),
+    (LDAPSocketOpenError("unable to open socket", [
+        (ssl.SSLCertVerificationError("certificate verify failed"), ("10.0.0.5", 636))]), "tls"),
+])
+async def test_network_and_tls_failures_are_outages(error, reason, caplog):
+    script = Script()
+    script.error = error
+    with caplog.at_level(logging.WARNING), pytest.raises(LdapUnavailable) as err:
+        await _directory(script).authenticate(GUID, USER_PW)
+    assert err.value.reason == reason
+    assert script.connections[0].closed
+    assert USER_PW not in caplog.text and SVC_PW not in caplog.text
+
+
+async def test_nested_groups_come_from_the_in_chain_rule():
+    groups = [{"type": "searchResEntry", "dn": "CN=YB-Hemsire,OU=Gruplar,DC=hastane,DC=local",
+               "raw_attributes": {"cn": [b"YB-Hemsire"]}},
+              {"type": "searchResEntry", "dn": "CN=Tum-Personel,OU=Gruplar,DC=hastane,DC=local",
+               "raw_attributes": {"cn": [b"Tum-Personel"]}}]
+    script = Script(([_entry()], 0), (groups, 0))
+    identity = await _directory(script, LDAP_NESTED_GROUPS="1").find_by_external_id(GUID)
+    assert identity.group_dns == (groups[0]["dn"], groups[1]["dn"])
+    nested = script.searches[1]
+    assert nested["search_filter"] == nested_groups_filter(USER_DN)
+    assert nested["size_limit"] == GROUP_LIMIT
+
+
+async def test_a_nested_group_list_over_the_limit_is_refused_not_truncated():
+    script = Script(([_entry()], 0), ([], 4))             # 4 = sizeLimitExceeded
+    with pytest.raises(LdapUnavailable) as err:
+        await _directory(script, LDAP_NESTED_GROUPS="1").find_by_external_id(GUID)
+    assert err.value.reason == "protocol"
+
+
+async def test_a_search_is_capped_and_reads_no_group_lists():
+    second = _entry(objectGUID=[uuid.uuid4().bytes_le], sAMAccountName=[b"AYildiz"])
+    script = Script(([_entry(), second], 4))              # more exist: the first page is enough
+    found = await _directory(script).search_users("yil", limit=2)
+    assert [i.username for i in found] == ["AYilmaz", "AYildiz"]
+    request = script.searches[0]
+    assert request["size_limit"] == 2 and "memberOf" not in request["attributes"]
+    assert request["search_filter"] == user_search_filter(DEFAULT_USER_FILTER, "yil")
+
+
+async def test_a_blank_search_never_reaches_the_server():
+    script = Script()
+    assert await _directory(script).search_users("   ") == []
+    assert await _directory(script).search_groups("") == []
+    assert script.connections == []
+
+
+async def test_groups_for_the_mapping_picker():
+    entry = {"type": "searchResEntry", "dn": "CN=YB-Hekim,OU=Gruplar,DC=hastane,DC=local",
+             "raw_attributes": {"cn": [b"YB-Hekim"]}}
+    script = Script(([entry], 0))
+    assert await _directory(script).search_groups("hekim") == [LdapGroup(entry["dn"], "YB-Hekim")]
+    assert script.searches[0]["search_filter"] == group_search_filter("hekim")
+
+
+async def test_the_service_account_test_binds_and_closes():
+    script = Script()
+    await _directory(script).test_connection()
+    assert _bound_as(script) == [SVC_DN] and script.connections[0].closed
+
+
+async def test_a_hung_directory_is_cut_off_at_the_deadline():
+    script = Script()
+
+    def slow(user, password):
+        time.sleep(0.5)
+        return script.connect(user, password)
+
+    directory = Ldap3Directory(load_ldap_config(BASE), connect=slow, deadline_s=0.05)
+    started = time.monotonic()
+    with pytest.raises(LdapUnavailable) as err:
+        await directory.test_connection()
+    assert err.value.reason == "timeout" and time.monotonic() - started < 0.4
+
+
+async def test_check_password_binds_once_as_the_given_dn():
+    script = Script()
+    directory = _directory(script)
+    assert await directory.check_password(SVC_DN, "yanlis") is False
+    assert await directory.check_password(SVC_DN, SVC_PW) is True
+    assert await directory.check_password(SVC_DN, "") is False
+    assert _bound_as(script) == [SVC_DN, SVC_DN]
+
+
+# ---------------------------------------------------------------- the production wiring
+def test_no_url_no_directory():
+    assert ldap_from_env({}) is None
+
+
+def test_an_unusable_configuration_turns_ldap_off_and_says_why(caplog):
+    with caplog.at_level(logging.ERROR, logger="homunculus.auth.ldap3_directory"):
+        assert ldap_from_env({**BASE, "LDAP_BIND_DN": ""}) is None
+    assert "LDAP is OFF" in caplog.text and "LDAP_BIND_DN" in caplog.text
+
+
+def test_the_insecure_flag_is_announced(caplog):
+    with caplog.at_level(logging.WARNING, logger="homunculus.auth.ldap3_directory"):
+        runtime = ldap_from_env({**BASE, "LDAP_URL": "ldap://dc1.hastane.local",
+                                 "LDAP_ALLOW_INSECURE": "1"})
+    assert runtime is not None and "plain ldap://" in caplog.text
+
+
+def test_a_good_configuration_builds_the_runtime():
+    runtime = ldap_from_env({**BASE, "LDAP_LOGIN_ATTRS": "sAMAccountName"})
+    assert isinstance(runtime.directory, Ldap3Directory)
+    assert (runtime.url_host, runtime.login_attrs, runtime.last_test_ok) == (
+        "dc1.hastane.local", ("samaccountname",), None)
+    assert SVC_PW not in repr(runtime)
