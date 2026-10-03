@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { useState } from "react";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { StrictMode, useLayoutEffect, useRef, useState } from "react";
+import { render, screen, fireEvent, within, act } from "@testing-library/react";
 import { Modal } from "./Modal.jsx";
 import { ToastProvider, useToast } from "./Toast.jsx";
 
@@ -303,5 +303,99 @@ describe("Modal: nested dialogs", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(container).not.toHaveAttribute("inert");
     expect(document.documentElement.style.overflow).toBe("");
+  });
+});
+
+// Focus goes back to the opener one microtask after the dialog closes, when nothing else took it.
+const settle = () => act(async () => {});
+
+function Stacked({ closeParentOnly = false }) {
+  const [outer, setOuter] = useState(false);
+  const [inner, setInner] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOuter(true)}>Aç</button>
+      <Modal open={outer} title="Xarici" onClose={() => setOuter(false)}>
+        <button type="button" onClick={() => setInner(true)}>Daxili aç</button>
+        <Modal open={inner} title="Təsdiq" onClose={() => setInner(false)}>
+          <button
+            type="button"
+            onClick={() => {
+              if (!closeParentOnly) setInner(false);
+              setOuter(false);
+            }}
+          >
+            Hamısını bağla
+          </button>
+        </Modal>
+      </Modal>
+    </>
+  );
+}
+
+describe("Modal: focus on closing", () => {
+  it.each([
+    ["an inner \"close all\"", false],
+    ["a confirm that closes its parent", true],
+  ])("two dialogs closed at once (%s) give focus back to the outer opener", async (_, closeParentOnly) => {
+    render(<Stacked closeParentOnly={closeParentOnly} />);
+    const opener = openIt();
+    const innerOpener = screen.getByRole("button", { name: "Daxili aç" });
+    innerOpener.focus();
+    fireEvent.click(innerOpener);
+    const all = screen.getByRole("button", { name: "Hamısını bağla" });
+    all.focus();
+    fireEvent.click(all);
+    await settle();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("leaves focus where the caller put it on purpose", async () => {
+    function Moves() {
+      const [open, setOpen] = useState(false);
+      const next = useRef(null);
+      const was = useRef(false);
+      useLayoutEffect(() => {
+        if (was.current && !open) next.current.focus();
+        was.current = open;
+      }, [open]);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>Aç</button>
+          <button type="button" ref={next}>Növbəti</button>
+          <Modal open={open} title="Pəncərə" onClose={() => setOpen(false)}>
+            <input aria-label="Birinci" />
+          </Modal>
+        </>
+      );
+    }
+    render(<Moves />);
+    openIt();
+    fireEvent.keyDown(document.activeElement, { key: "Escape" });
+    await settle();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Növbəti" }));
+  });
+
+  it("keeps a child's autoFocus under StrictMode", async () => {
+    function Auto() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>Aç</button>
+          <Modal open={open} title="Axtarış" onClose={() => setOpen(false)}>
+            <input aria-label="Birinci" />
+            <input aria-label="İkinci" autoFocus />
+          </Modal>
+        </>
+      );
+    }
+    render(<StrictMode><Auto /></StrictMode>);
+    const opener = openIt();
+    await settle();
+    expect(document.activeElement).toBe(screen.getByLabelText("İkinci"));
+    fireEvent.keyDown(document.activeElement, { key: "Escape" });
+    await settle();
+    expect(document.activeElement).toBe(opener);
   });
 });

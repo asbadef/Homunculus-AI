@@ -132,7 +132,8 @@ function popModal(entry) {
  *    MODAL_EXEMPT — the toasts) and does not scroll. Dialogs stack: a dialog opened from a dialog
  *    makes the one below inert too, and closing it gives the one below back.
  *  - Opening moves focus into it — unless a child already took it (autoFocus): the body's first
- *    control, else the dialog itself. Closing returns focus to whatever had it before.
+ *    control, else the dialog itself. Closing returns focus to whatever had it before — unless
+ *    focus has already gone somewhere else (the caller moved it).
  *  - Tab and Shift+Tab stay inside, and Escape closes, for the topmost dialog wherever focus is
  *    (a click on the backdrop or a toast can leave it on <body>). Escape, the ✕ and a press on
  *    the backdrop call onClose — except while `busy`: a request is in flight and its answer must
@@ -171,8 +172,18 @@ function Dialog({ title, onClose, actions, wide = false, busy = false, children 
     if (!dialog.contains(document.activeElement)) (focusables(bodyRef.current)[0] || dialog).focus();
     return () => {
       popModal(entry);
-      const usable = opener && opener !== document.body && opener.isConnected && !opener.closest("[inert]");
-      if (usable && typeof opener.focus === "function") opener.focus();
+      // Only when focus is nowhere — the closed dialog took it along. Anything else is a choice
+      // this cleanup must not undo: a caller that moved focus on purpose, or StrictMode's rehearsal
+      // unmount, after which a child's autoFocus is still inside the dialog. Tried now, and again
+      // once the commit is over: when two stacked dialogs close together the outer one's cleanup
+      // runs first, while the inner one still holds the page inert and the opener in it.
+      const restore = () => {
+        const nowhere = !document.activeElement || document.activeElement === document.body;
+        const usable = opener && opener !== document.body && opener.isConnected && !opener.closest("[inert]");
+        if (nowhere && usable && typeof opener.focus === "function") opener.focus();
+      };
+      restore();
+      queueMicrotask(restore);
     };
     // `close` reads the latest busy/onClose through a ref: the stack entry lives as long as the dialog.
   }, [opener]);
