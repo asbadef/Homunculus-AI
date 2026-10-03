@@ -23,6 +23,8 @@ export const COLOR_TOKENS = [
   "ok", "okInk",
   // vital-sign channels
   "v-hr", "v-map", "v-spo", "v-rr", "v-t",
+  // the dimmed page behind a modal dialog (the prototype's .modalBg)
+  "scrim",
 ];
 
 export const kebab = (name) => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
