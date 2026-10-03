@@ -3,6 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { createPortal } from "react-dom";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { Button } from "./Button.jsx";
+import { MODAL_EXEMPT } from "./Modal.jsx";
 
 export const TOAST_MS = 3600; // the prototype's lifetime
 
@@ -47,7 +48,7 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={toast}>
       {children}
       {createPortal(
-        <div role="region" aria-label={t("common.notifications")} className="pointer-events-none fixed bottom-4 right-4 z-[120]">
+        <div role="region" aria-label={t("common.notifications")} {...{ [MODAL_EXEMPT]: "" }} className="pointer-events-none fixed bottom-4 right-4 z-[120]">
           <div aria-live="polite" className="flex flex-col gap-2">
             {items.map((item) => (
               <div
