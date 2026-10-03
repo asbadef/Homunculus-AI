@@ -33,6 +33,7 @@ from tests.signed_in import add_user, api_client, bearer
 
 GUARDED_MODULES = {
     "homunculus.admin.router",
+    "homunculus.admin.ldap_router",
     "homunculus.admission.router",
     "homunculus.escalation.router",
     "homunculus.tenant.router",
@@ -109,6 +110,11 @@ EXPECTED: dict[tuple[str, str], Guards] = {
     ("PUT", "/admin/users/{user_id}/groups"): ANY(_U),
     ("POST", "/admin/users/{user_id}/reset-password"): ANY(_U),
     ("POST", "/admin/users/{user_id}/reset-mfa"): ANY(_U),
+    # admin/ldap_router.py (spec §5: /admin/ldap/* users.manage)
+    ("GET", "/admin/ldap/status"): ANY(_U),
+    ("POST", "/admin/ldap/test"): ANY(_U),
+    ("GET", "/admin/ldap/search"): ANY(_U),
+    ("GET", "/admin/ldap/groups"): ANY(_U),
 }
 
 
@@ -193,8 +199,8 @@ def test_the_map_tells_one_either_guard_from_two_guards():
     assert got["/either"] != got["/both"]
 
 
-def test_the_table_covers_all_45_guarded_routes():
-    assert len(EXPECTED) == 45
+def test_the_table_covers_every_guarded_route():
+    assert len(EXPECTED) == 49
 
 
 def test_no_guarded_route_is_missing_from_the_table():

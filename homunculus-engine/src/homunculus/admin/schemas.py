@@ -170,3 +170,34 @@ class UserGroupsIn(BaseModel):
 
 class PasswordResetIn(BaseModel):
     password: str = Field(min_length=8, max_length=_PASSWORD_MAX)
+
+
+# ---------------------------------------------------------------- /admin/ldap (spec §7)
+class LdapStatusOut(BaseModel):
+    configured: bool
+    url_host: str | None = None
+    last_test_at: datetime | None = None
+    last_test_ok: bool | None = None
+
+
+class LdapTestOut(BaseModel):
+    ok: bool
+    reason: str | None          # unreachable | timeout | tls | service_bind_rejected | protocol
+    checked_at: datetime
+
+
+class LdapUserOut(BaseModel):
+    """An AD account as the search shows it — no group list (plan decision D17)."""
+    external_id: str
+    username: str
+    upn: str | None
+    email: str | None
+    display_name: str | None
+    dn: str
+    disabled: bool
+    already_imported: bool
+
+
+class LdapGroupOut(BaseModel):
+    dn: str
+    name: str

@@ -300,6 +300,7 @@ def create_app(
         break_glass_router,
     )
     from homunculus.admin.router import router as admin_router
+    from homunculus.admin.ldap_router import router as ldap_admin_router
     from homunculus.scope.router import router as scope_router
     # The device-research window: same origin, permission-gated (`devices.manage`), credential
     # held server-side. Off unless INFINITY_HUB_URL / _VIEWER_TOKEN / _HUB_CA_FILE are all set.
@@ -312,6 +313,7 @@ def create_app(
     app.include_router(alerts_router)
     app.include_router(break_glass_router)
     app.include_router(admin_router)
+    app.include_router(ldap_admin_router)
     app.include_router(scope_router)
     app.include_router(infinity_research_router)
 

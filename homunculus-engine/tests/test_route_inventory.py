@@ -48,4 +48,4 @@ def test_only_enrolment_and_profile_routes_skip_the_mfa_gate():
 def test_the_admin_router_is_mounted_and_walked():
     """The two tests above are vacuous for /admin unless the walker actually reaches it."""
     assert {r.path for r in _routes() if r.path.startswith("/admin/")} >= {
-        "/admin/permissions", "/admin/groups", "/admin/users"}
+        "/admin/permissions", "/admin/groups", "/admin/users", "/admin/ldap/status"}
