@@ -31,19 +31,22 @@ export function Pill({ icon, className = "", children }) {
 
 // Severity text sits on its own fill's 14 % tint (the prototype's .sv). Ink, not fill, for the
 // text: in daylight the fills are too light to read on their tint (tokens.test.js). Neutral uses
-// the .pill look, because mute on a mute tint is under 4.5:1 in daylight.
+// the .pill look, because mute on a mute tint is under 4.5:1 in daylight. att is the warning
+// tag's look (.tag.w; an inset ring, so the pill keeps its size) for a value the screen cannot
+// vouch for — an engine risk it does not know, or none at all (riskStyle.js).
 const STATUS = {
   crit: "text-crit-ink bg-[color:color-mix(in_srgb,var(--crit)_14%,transparent)]",
   high: "text-high-ink bg-[color:color-mix(in_srgb,var(--high)_14%,transparent)]",
   mid: "text-mid-ink bg-[color:color-mix(in_srgb,var(--mid)_14%,transparent)]",
   low: "text-low-ink bg-[color:color-mix(in_srgb,var(--low)_14%,transparent)]",
   ok: "text-ok-ink bg-[color:color-mix(in_srgb,var(--ok)_14%,transparent)]",
+  att: "text-att-ink bg-att ring-1 ring-inset ring-att-line",
   neutral: "text-mute bg-card2",
 };
 export const STATUS_TONES = Object.keys(STATUS);
 
 /** A coloured status pill, upper-cased by CSS (so <html lang> gets "İ" right in AZ/TR).
- *  tone: crit | high | mid | low | ok | neutral. Colour is never the only signal: the label is
+ *  tone: crit | high | mid | low | ok | att | neutral. Colour is never the only signal: the label is
  *  the children, and risk pills add an icon (RiskPill). ok is for states like "Active" — an
  *  engine risk never maps to it (riskStyle.js). */
 export function StatusPill({ tone = "neutral", icon, className = "", children }) {

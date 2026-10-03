@@ -30,8 +30,15 @@ describe("Pill", () => {
 });
 
 describe("StatusPill", () => {
-  it("knows the five severity tones and neutral", () => {
-    expect(STATUS_TONES).toEqual(["crit", "high", "mid", "low", "ok", "neutral"]);
+  it("knows the five severity tones, attention and neutral", () => {
+    expect(STATUS_TONES).toEqual(["crit", "high", "mid", "low", "ok", "att", "neutral"]);
+  });
+
+  it("att (a value the screen cannot vouch for) uses the warning tag's ink, tint and edge", () => {
+    render(<StatusPill tone="att">bilinmiyor</StatusPill>);
+    const pill = screen.getByText("bilinmiyor");
+    expect(pill).toHaveAttribute("data-tone", "att");
+    for (const cls of ["text-att-ink", "bg-att", "ring-att-line"]) expect(pill.className).toContain(cls);
   });
 
   it.each(["crit", "high", "mid", "low", "ok"])("%s writes its label in the tone's ink", (tone) => {
