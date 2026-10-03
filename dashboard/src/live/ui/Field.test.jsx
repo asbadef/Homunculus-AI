@@ -14,10 +14,37 @@ describe("Field", () => {
     expect(screen.getByLabelText("İstifadəçi adı")).toHaveAccessibleDescription("Kiçik hərf, rəqəm, nöqtə");
   });
 
-  it("marks a required field on the label and on the control", () => {
+  it("marks a required field on the label and, for assistive tech, on the control", () => {
     const { container } = render(<Field label="Rol" required><Select><option>Hekim</option></Select></Field>);
-    expect(screen.getByRole("combobox")).toBeRequired();
+    const control = screen.getByRole("combobox");
+    expect(control).toHaveAttribute("aria-required", "true");
+    expect(control).not.toHaveAttribute("required");
     expect(container.querySelector("label [aria-hidden='true']")).toHaveTextContent("*");
+  });
+
+  it("keeps the native required when the caller sets it on the control", () => {
+    render(<Field label="Rol" required><Select required><option>Hekim</option></Select></Field>);
+    expect(screen.getByRole("combobox")).toHaveAttribute("required");
+  });
+
+  it("shows an error: invalid control, the message read first, in critical ink with an icon", () => {
+    render(
+      <Field label="E-poçt" hint="korporativ ünvan" error="Ünvan yanlışdır">
+        <Input id="email" aria-describedby="elsewhere" />
+      </Field>,
+    );
+    const input = screen.getByLabelText("E-poçt");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input.getAttribute("aria-describedby")).toBe("email-error elsewhere email-hint");
+    const message = document.getElementById("email-error");
+    expect(message).toHaveTextContent("Ünvan yanlışdır");
+    expect(message.className).toContain("text-crit-ink");
+    expect(message.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("without an error leaves aria-invalid alone", () => {
+    render(<Field label="Ad"><Input /></Field>);
+    expect(screen.getByLabelText("Ad")).not.toHaveAttribute("aria-invalid");
   });
 
   it("keeps the control's own id and description", () => {
@@ -39,6 +66,12 @@ describe("Field", () => {
 });
 
 describe("Input and Select", () => {
+  it("draw a critical border when invalid", () => {
+    render(<><Input aria-label="a" /><Select aria-label="b" /></>);
+    expect(screen.getByLabelText("a").className).toContain("aria-[invalid=true]:border-crit");
+    expect(screen.getByLabelText("b").className).toContain("aria-[invalid=true]:border-crit");
+  });
+
   it("forward their refs and props", () => {
     const input = createRef();
     const select = createRef();
