@@ -39,10 +39,34 @@ describe("createTranslator", () => {
   it("leaves a placeholder it was not given visible", () => {
     expect(createTranslator("az", DICTS)("a.hello")).toBe("Salam, {name}");
   });
+
+  it.each(["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"])(
+    "treats %s as a missing key, never as an inherited value",
+    (key) => {
+      for (const lang of ["az", "tr", "ru"]) {
+        const onMissing = vi.fn();
+        expect(createTranslator(lang, DICTS, onMissing)(key, { name: "x" }), `${lang} ${key}`).toBe(key);
+        expect(onMissing).toHaveBeenCalledWith({ key, lang, found: null });
+      }
+    },
+  );
 });
 
 describe("interpolate", () => {
   it("writes numbers as text", () => {
     expect(interpolate("{n} yatak", { n: 3 })).toBe("3 yatak");
+  });
+
+  it("writes falsy values that are values: 0, false, the empty string", () => {
+    expect(interpolate("[{a}|{b}|{c}]", { a: 0, b: false, c: "" })).toBe("[0|false|]");
+  });
+
+  it("treats a null or undefined value as missing: the marker stays, never \"null\"/\"undefined\"", () => {
+    expect(interpolate("{n} yatak, {m}", { n: null, m: undefined })).toBe("{n} yatak, {m}");
+    expect(createTranslator("az", DICTS)("a.hello", { name: null })).toBe("Salam, {name}");
+  });
+
+  it("reads only the variables' own properties", () => {
+    expect(interpolate("{constructor} {toString}", {})).toBe("{constructor} {toString}");
   });
 });
