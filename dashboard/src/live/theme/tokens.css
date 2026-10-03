@@ -1,0 +1,106 @@
+/* Homunculus live UI · design tokens.
+ *
+ * Source: the clickable prototype's app.css (:root / [data-theme]), origin/tasarim/prototip 8bebc67.
+ * Names are the prototype's, so a prototype rule reading var(--card) means the same here.
+ * Tailwind reaches every colour as a class: tailwind.config.js, src/live/theme/tokens.js.
+ *
+ * Where this file departs from the prototype (WCAG AA, measured by tokens.test.js):
+ *   Gece  --crit      ef4444 -> dc2626   white danger-button text was 3.76:1
+ *   Gece  --critInk   new, f87171        critical pill/tag text on its tint was 4.05:1
+ *   Gun   --mid       ca8a04 -> c28406   amber stripe against a white card was 2.94:1 (UI needs 3:1)
+ *   Gun   --*Ink      new, 700/800 steps every severity pill on its tint was 2.56-3.88:1
+ *   --oncrit / --onmid  name the text colours the prototype hard-coded (#fff, #1b1400)
+ * Fills (--crit --high --mid --low --ok) paint stripes, bars, dots and solid buttons; the *Ink
+ * tokens are for text. Not ported yet (YAGNI): --monbg (Group 2 monitor; its Gun vital colours
+ * fail on it), --band-*, --grid (charts), --body-* (body map).
+ */
+
+:root {
+  --fs: 1;
+  --font-text: "Figtree Variable", "Segoe UI", Roboto, Arial, system-ui, sans-serif;
+  --font-display: "Space Grotesk Variable", "Segoe UI", Roboto, Arial, system-ui, sans-serif;
+  --font-data: "JetBrains Mono Variable", Consolas, "Courier New", ui-monospace, monospace;
+}
+
+[data-size="buyuk"] {
+  --fs: 1.12;
+}
+
+:root, [data-theme="gece"] {
+  color-scheme: dark;
+  --page: #07101f;
+  --app: #07101f;
+  --rail: #0a1628;
+  --card: #0f1b2e;
+  --card2: #15243b;
+  --ink: #e8eef7;
+  --mute: #8fa1ba;
+  --line: #1c2c45;
+  --line2: #2a3f60;
+  --pri: #22b8d6;
+  --onpri: #03141c;
+  --priSoft: rgba(34, 184, 214, .13);
+  --att: rgba(202, 138, 4, .07);
+  --attLine: rgba(202, 138, 4, .38);
+  --attIco: rgba(202, 138, 4, .16);
+  --attInk: #f5c451;
+  --crit: #dc2626;
+  --critInk: #f87171;
+  --critSoft: rgba(239, 68, 68, .12);
+  --oncrit: #ffffff;
+  --high: #f97316;
+  --highInk: #f97316;
+  --mid: #eab308;
+  --midInk: #eab308;
+  --onmid: #1b1400;
+  --low: #38bdf8;
+  --lowInk: #38bdf8;
+  --ok: #22c55e;
+  --okInk: #22c55e;
+  --v-hr: #22e05a;
+  --v-map: #ff5c5c;
+  --v-spo: #ffe14a;
+  --v-rr: #3fd8ff;
+  --v-t: #e8eef7;
+  --shadow: 0 12px 30px rgba(0, 0, 0, .45);
+}
+
+/* The second selector outranks index.css's ":root { color-scheme: dark }" whatever the order. */
+[data-theme="gun"], :root[data-theme="gun"] {
+  color-scheme: light;
+  --page: #eef0f3;
+  --app: #f4f6f9;
+  --rail: #ffffff;
+  --card: #ffffff;
+  --card2: #f1f4f8;
+  --ink: #152231;
+  --mute: #5c6b7d;
+  --line: #e1e6ee;
+  --line2: #cbd3de;
+  --pri: #0e7490;
+  --onpri: #ffffff;
+  --priSoft: #e0f2f7;
+  --att: #fffaeb;
+  --attLine: #f3dc9a;
+  --attIco: #fdf0c8;
+  --attInk: #9a6a00;
+  --crit: #dc2626;
+  --critInk: #b91c1c;
+  --critSoft: #fdecec;
+  --oncrit: #ffffff;
+  --high: #ea580c;
+  --highInk: #9a3412;
+  --mid: #c28406;
+  --midInk: #854d0e;
+  --onmid: #1b1400;
+  --low: #0284c7;
+  --lowInk: #075985;
+  --ok: #16a34a;
+  --okInk: #166534;
+  --v-hr: #15803d;
+  --v-map: #dc2626;
+  --v-spo: #a16207;
+  --v-rr: #0369a1;
+  --v-t: #152231;
+  --shadow: 0 12px 30px rgba(20, 30, 50, .12);
+}
