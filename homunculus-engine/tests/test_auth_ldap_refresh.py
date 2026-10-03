@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlparse
 
+import pyotp
 import pytest
 import pytest_asyncio
 from sqlalchemy import update
@@ -17,8 +19,8 @@ from homunculus.auth.jwt import decode_token
 from homunculus.auth.models import User
 from tests.conftest import requires_db
 from tests.fake_directory import (
-    AD_PASSWORD, ADMIN_PASSWORD, ad_client, ad_world, audit_events, fresh_user, group_dn,
-    group_rows,
+    AD_PASSWORD, ADMIN_PASSWORD, ad_client, ad_world, add_mapping, audit_events, fresh_user,
+    group_dn, group_rows,
 )
 
 pytestmark = [pytest.mark.asyncio, requires_db]
@@ -254,6 +256,65 @@ async def test_without_a_local_administrator_an_ad_removal_still_applies_at_refr
     assert decode_token(res.json()["access_token"])["groups"] == []
     assert await group_rows(db_session, world["account"].id) == set()
     assert audit_events(app, "admin", "ldap.sync.guarded") == []
+
+
+async def test_an_account_deactivated_while_the_directory_answers_is_refused_at_refresh(
+        client, world, db_session):
+    """Plan D7: the connection is released during the directory call and the account re-read
+    after it — a deactivation made meanwhile ends the session, and nothing is synced."""
+    c, _ = client
+    tokens = await _signed_in(c, world)
+    directory = world["directory"]
+    directory.update(world["ayse"].identity.external_id, group_dns=())
+    answer = directory.find_by_external_id
+
+    async def deactivate_then_answer(external_id):
+        await db_session.execute(update(User).where(User.id == world["account"].id)
+                                 .values(is_active=False))
+        await db_session.commit()
+        return await answer(external_id)
+
+    directory.find_by_external_id = deactivate_then_answer
+    assert (await _refresh(c, tokens)).status_code == 401
+    assert await group_rows(db_session, world["account"].id) == {("nurse", "ldap")}
+
+
+async def test_an_mfa_group_gained_in_ad_holds_the_session_at_the_totp_gate(client, world,
+                                                                            db_session):
+    """Spec §7, Security: the group MFA flag applies to an AD account as to a local one. A
+    refresh that brings an MFA group (YB-Sorumlu -> attending) returns a pending-MFA pair; a
+    protected route the group may use answers 403 `mfa_required`; enrolment and verification
+    work for an account with no local password; the next refresh stays verified."""
+    c, _ = client
+    await add_mapping(db_session, world["tenant"].id, group_dn("YB-Sorumlu"),
+                      world["groups"]["attending"])
+    await db_session.commit()
+    tokens = await _signed_in(c, world)
+    assert tokens["requires_mfa"] is False
+    world["directory"].update(world["ayse"].identity.external_id,
+                              group_dns=(group_dn("YB-Hemsire"), group_dn("YB-Sorumlu")))
+    res = await _refresh(c, tokens)
+    assert res.status_code == 200, res.text
+    pending = res.json()
+    claims = decode_token(pending["access_token"])
+    assert (pending["requires_mfa"], pending["mfa_enrolled"]) == (True, False)
+    assert claims["groups"] == ["attending", "nurse"] and claims["mfa_verified"] is False
+    held = {"Authorization": f"Bearer {pending['access_token']}"}
+    gated = await c.get("/admissions", headers=held)
+    assert (gated.status_code, gated.json()["detail"]) == (403, "mfa_required")
+    assert (await fresh_user(db_session, world["account"].id)).hashed_password is None
+    setup = await c.post("/auth/totp/setup", headers=held)
+    assert setup.status_code == 200, setup.text
+    secret = parse_qs(urlparse(setup.json()["provisioning_uri"]).query)["secret"][0]
+    verified = await c.post("/auth/totp/verify", headers=held,
+                            json={"code": pyotp.TOTP(secret).now()})
+    assert verified.status_code == 200, verified.text
+    assert decode_token(verified.json()["access_token"])["mfa_verified"] is True
+    through = {"Authorization": f"Bearer {verified.json()['access_token']}"}
+    assert (await c.get("/admissions", headers=through)).status_code == 200
+    again = await _refresh(c, verified.json())
+    assert again.status_code == 200, again.text
+    assert decode_token(again.json()["access_token"])["mfa_verified"] is True
 
 
 async def test_a_directory_that_does_not_answer_changes_no_group_at_refresh(client, world,

@@ -64,12 +64,23 @@ async def test_an_ad_account_signs_in_with_its_directory_password(client, world,
 
 @pytest.mark.parametrize("login", [
     "ayilmaz", "AYILMAZ", "HASTANE\\ayilmaz", "ayilmaz@hastane.local",
+    # A Turkish keyboard: `i` auto-capitalised to `İ`, or a dotless `ı` typed for `i` — in the
+    # bare name, and inside the DOMAIN\ and UPN forms (the lookup and login_matches both fold).
+    "AYİLMAZ", "ayılmaz", "HASTANE\\AYİLMAZ", "AYİLMAZ@HASTANE.LOCAL",
 ])
 async def test_every_directory_login_form_reaches_the_same_account(client, world, login):
     c, _ = client
     res = await _login(c, login)
     assert res.status_code == 200, (login, res.text)
     assert decode_token(res.json()["access_token"])["sub"] == str(world["account"].id)
+
+
+async def test_a_lookalike_letter_is_not_folded_into_a_login(client, world):
+    """Only the Turkish i's are folded: a fullwidth `Ａ` is another login, refused without asking
+    the directory."""
+    c, app = client
+    assert (await _login(c, "ＡYILMAZ")).status_code == 401
+    assert world["directory"].calls == [] and _reasons(app) == ["bad_credentials"]
 
 
 async def test_the_ad_mail_signs_in_once_the_account_carries_it(client, world):
