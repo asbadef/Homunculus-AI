@@ -7,6 +7,7 @@ session goes on unchanged, and the audit trail says so. Synthetic accounts only.
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
 
 import pytest
 import pytest_asyncio
@@ -148,6 +149,27 @@ async def test_no_directory_configured_lets_the_session_go_on(client, world):
     app.state.ldap = None
     assert (await _refresh(c, tokens)).status_code == 200
     assert _reasons(app, "refresh.directory_unavailable") == ["not_configured"]
+
+
+@pytest.mark.parametrize("dead_because", ["authenticator_reset", "sessions_revoked",
+                                          "deactivated"])
+async def test_a_refresh_token_already_dead_here_never_asks_the_directory(client, world,
+                                                                          db_session,
+                                                                          dead_because):
+    """The cheap local checks come first: a token the database already refuses (credential
+    fingerprint moved, sessions revoked at a deactivation, account inactive) costs no directory
+    round trip and leaves no directory audit row."""
+    c, app = client
+    tokens = await _signed_in(c, world)
+    values = {"authenticator_reset": {"totp_secret": "JBSWY3DPEHPK3PXP"},
+              "sessions_revoked": {"sessions_revoked_at": datetime.now(timezone.utc)},
+              "deactivated": {"is_active": False}}[dead_because]
+    await db_session.execute(update(User).where(User.id == world["account"].id).values(**values))
+    await db_session.commit()
+    assert (await _refresh(c, tokens)).status_code == 401
+    assert world["directory"].calls == []
+    assert _reasons(app, "refresh.fail") == []
+    assert _reasons(app, "refresh.directory_unavailable") == []
 
 
 async def test_a_local_accounts_refresh_never_asks_the_directory(client, world):

@@ -313,30 +313,20 @@ async def refresh_token(body: RefreshRequest, request: Request,
     except (JWTError, ValueError, KeyError):
         raise credentials_exc
 
+    # The database's own checks first: a token it already refuses costs no directory round trip.
     user = await get_user_by_id(db, user_id)
+    if not _session_still_valid(user, payload):
+        raise credentials_exc
     identity: LdapIdentity | None = None
-    if user is not None and user.is_active and user.auth_source == AUTH_LDAP:
+    if user.auth_source == AUTH_LDAP:
         # An AD account's credential fingerprint covers only its TOTP secret: a password changed
         # or an account disabled in AD is seen only by asking AD (spec §7).
         refuse, identity = await _directory_at_refresh(request, db, user, payload.get("iat"))
         if refuse:
             raise credentials_exc
         user = await get_user_by_id(db, user_id)          # re-read: the check let the row go
-    if not user or not user.is_active:
-        raise credentials_exc
-    revoked = user.sessions_revoked_at
-    iat = payload.get("iat")
-    if revoked is not None and (type(iat) is not int or iat <= revoked.timestamp()):
-        # Issued before the account's last deactivation: reactivating it must not revive the
-        # sessions it had ("phone stolen, deactivate, reactivate tomorrow").
-        raise credentials_exc
-    cv = payload.get("cv")
-    # Compared as bytes: `compare_digest` raises TypeError on a non-ASCII str, which a claim
-    # can hold — that must be a 401, not a 500.
-    if not isinstance(cv, str) or not hmac.compare_digest(
-            cv.encode(), credential_fingerprint(user).encode()):
-        # The password or the authenticator changed since this session opened: sign in again.
-        raise credentials_exc
+        if not _session_still_valid(user, payload):       # deactivated or reset meanwhile
+            raise credentials_exc
 
     if identity is not None:
         # The directory answered: its group memberships apply now, so this refresh already
@@ -353,6 +343,26 @@ async def refresh_token(body: RefreshRequest, request: Request,
     # must send the user back through enrolment, not keep a stale "verified").
     verified = payload.get("mfa_verified") is True and user.totp_enabled
     return TokenResponse(**issue_tokens(user, ctx, mfa_verified=verified))
+
+
+def _session_still_valid(user: User | None, payload: dict) -> bool:
+    """The refresh token's checks against the database: the account exists and is active, the
+    token was issued after the account's last deactivation, and the credentials the session
+    was opened with still hold."""
+    if user is None or not user.is_active:
+        return False
+    revoked = user.sessions_revoked_at
+    iat = payload.get("iat")
+    if revoked is not None and (type(iat) is not int or iat <= revoked.timestamp()):
+        # Issued before the account's last deactivation: reactivating it must not revive the
+        # sessions it had ("phone stolen, deactivate, reactivate tomorrow").
+        return False
+    cv = payload.get("cv")
+    # Compared as bytes: `compare_digest` raises TypeError on a non-ASCII str, which a claim
+    # can hold — that must be a 401, not a 500. A mismatch: the password or the authenticator
+    # changed since this session opened — sign in again.
+    return isinstance(cv, str) and hmac.compare_digest(
+        cv.encode(), credential_fingerprint(user).encode())
 
 
 async def _directory_at_refresh(request: Request, db: AsyncSession, user: User,
