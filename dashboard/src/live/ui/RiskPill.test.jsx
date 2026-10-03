@@ -17,7 +17,8 @@ describe("RiskPill", () => {
     localStorage.setItem("hmc.lang", "ru");
     render(<I18nProvider><RiskPill risk="moderate" /><RiskPill risk="none" measured /></I18nProvider>);
     expect(screen.getByText("Средний")).toBeInTheDocument();
-    expect(screen.getByText("Без отклонений")).toBeInTheDocument();
+    // Not "Без отклонений" ("within normal limits"): "none" means no alert, not a normal finding.
+    expect(screen.getByText("Отклонений не выявлено")).toBeInTheDocument();
   });
 
   it("says when nothing was measured", () => {

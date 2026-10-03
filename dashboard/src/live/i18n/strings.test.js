@@ -48,7 +48,11 @@ describe("live UI dictionaries", () => {
     for (const key of Object.keys(tr)) {
       if (az[key] === tr[key]) expect(AZ_SAME_AS_TR.has(key), `az ${key} = tr "${tr[key]}": review, then list it`).toBe(true);
     }
-    for (const key of AZ_SAME_AS_TR) expect(az[key], `${key} is listed but az differs from tr now`).toBe(tr[key]);
+    for (const key of AZ_SAME_AS_TR) {
+      // A deleted key would pass the next line (undefined === undefined): it must still exist.
+      expect(key in tr, `${key} is listed but no longer exists`).toBe(true);
+      expect(az[key], `${key} is listed but az differs from tr now`).toBe(tr[key]);
+    }
   });
 
   it("writes Azerbaijani in Latin script and Russian in Cyrillic", () => {
@@ -61,9 +65,15 @@ describe("live UI dictionaries", () => {
   });
 
   // "Движок" is developer jargon a Russian-speaking clinician reads as a car engine; the system
-  // speaks of itself as "Система" (Wave 1B review).
+  // speaks of itself as "Система" (Wave 1B review). Only the forms of "движок" are banned —
+  // "движение" (movement) and its kin are ordinary words a clinical text may need.
+  const ENGINE_WORD = /движ(?:ок|к)/i;
   it("calls the engine \"Система\" in Russian, never \"Движок\"", () => {
-    expect(Object.values(DICTIONARIES.ru).join(" ")).not.toMatch(/движ/i);
+    for (const form of ["Движок", "движка", "движку", "движком", "движке", "движки", "движков"]) {
+      expect(form, form).toMatch(ENGINE_WORD);
+    }
+    for (const word of ["движение", "Движения", "подвижность"]) expect(word, word).not.toMatch(ENGINE_WORD);
+    expect(Object.values(DICTIONARIES.ru).join(" ")).not.toMatch(ENGINE_WORD);
     expect(DICTIONARIES.ru["news2.noEngine"]).toMatch(/^Система /);
   });
 

@@ -3,6 +3,8 @@
 // devices.js dev_pri_dusuk, ceviri-sozluk "ORTA", mobil.js mt_info).
 // none/unmeasured/unknown/unreported are new (roadmap G1-09: "bulgu yok / ölçülmedi"; unreported:
 // the engine sent no risk at all); their AZ/RU/EN await review by a native-speaking clinician.
+// RU none says "no deviations found", not "Без отклонений" ("within normal limits"): "none" means
+// the engine raised no alert, which is not a claim that every value is normal.
 export default {
   tr: {
     critical: "Kritik", high: "Yüksek", moderate: "Orta", low: "Düşük", info: "Bilgi",
@@ -16,7 +18,7 @@ export default {
   },
   ru: {
     critical: "Критический", high: "Высокий", moderate: "Средний", low: "Низкий", info: "Инфо",
-    none: "Без отклонений", unmeasured: "Не измерено", unknown: "Неизвестный риск: {value}",
+    none: "Отклонений не выявлено", unmeasured: "Не измерено", unknown: "Неизвестный риск: {value}",
     unreported: "Риск не передан",
   },
   en: {
