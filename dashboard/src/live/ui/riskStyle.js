@@ -20,6 +20,14 @@
 //   added a level, a version skew — reads "unknown risk: <raw text>", so it is visible on the card
 //   instead of silently calm. riskStyle.test.js reads the engine's level list from its source, so
 //   a new level fails CI here before it reaches a ward.
+//
+// NOT handled here: the NEWS2 red_param floor (G1-09 acceptance: "a parameter scoring 3 makes the
+// card at least amber"). It needs patient.news2.red_param, which this function does not take —
+// G1-09 applies it on the card. Open conflict, recorded in the roadmap's "Kullanıcı kararları":
+// rules/news2.py raises a MODERATE alert for red_param, but rules/patient_relative.py
+// _adjust_news2 lowers a NEWS2 alert to LOW when a charted baseline or comorbidity explains every
+// contributor — so the engine can send risk "low" with red_param true. Whether the clinician's
+// chronic normal may override the red_param floor is a clinical decision, not a display one.
 const RISK = {
   critical: { tone: "crit", icon: "alert", labelKey: "risk.critical" },
   high: { tone: "high", icon: "alert", labelKey: "risk.high" },
