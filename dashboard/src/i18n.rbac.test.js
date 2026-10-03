@@ -96,6 +96,7 @@ function literals(src, pattern) {
 const DEPS = py("auth/dependencies.py");
 const ROUTER = py("auth/router.py");
 const AUTH_SERVICE = py("auth/service.py");
+const LDAP = py("auth/ldap.py");
 const ADMIN_SERVICE = py("admin/service.py");
 const GROUPS = py("auth/groups.py");
 const PERMISSIONS = py("auth/permissions.py");
@@ -116,6 +117,7 @@ const PLAIN = [
   ...[...pyConstants(ROUTER).values()].map((m) => ["auth/router.py constant", m]),
   ...literals(ROUTER, String.raw`detail=${STR}`).map((m) => ["auth/router.py detail", m]),
   ...literals(AUTH_SERVICE, String.raw`PasswordError\(${STR}`).map((m) => ["auth/service.py", m]),
+  ...["DIRECTORY_DOWN", "NOT_CONFIGURED"].map((k) => ["auth/ldap.py constant", pyConstants(LDAP).get(k)]),
   ...[...ADMIN_CONST.values()].map((m) => ["admin/service.py constant", m]),
   ...literals(ADMIN_SERVICE, String.raw`AdminError\(\d+, ${STR}\)`)
     .map((m) => ["admin/service.py literal", m]),
