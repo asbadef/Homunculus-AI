@@ -7,8 +7,8 @@ import pytest
 
 from homunculus.auth.ldap import (
     DEFAULT_USER_FILTER, LOGIN_ATTRS, LdapConfigError, LdapIdentity, canonical_guid,
-    filetime_to_unix, guid_from_bytes, guid_to_bytes, is_disabled, load_ldap_config,
-    login_matches, password_changed_since,
+    guid_from_bytes, guid_to_bytes, is_disabled, load_ldap_config, login_matches,
+    password_changed_since,
 )
 from homunculus.auth.service import directory_login_alternative
 
@@ -167,7 +167,9 @@ def _filetime(unix_seconds: int, ticks: int = 0) -> int:
 
 
 def test_filetime_counts_from_1601():
-    assert filetime_to_unix(116_444_736_000_000_000) == 0.0
+    unix_epoch = 116_444_736_000_000_000                # 1970-01-01 as a FILETIME
+    assert password_changed_since(unix_epoch + 10_000_000, 0) is True    # 1 s after
+    assert password_changed_since(unix_epoch, 0) is False
 
 
 def test_a_password_set_after_the_token_ends_the_session():
@@ -189,6 +191,8 @@ AYSE = LdapIdentity(external_id=GUID, username="AYilmaz",
     ("ayilmaz", True), ("hastane\\ayilmaz", True), ("ayilmaz@hastane.local", True),
     ("ayse.yilmaz@hastane.az", True), ("ayilmaz@baska.local", False), ("yilmaz", False),
     ("", False),
+    ("x\\ayse.yilmaz@hastane.az", False),       # DOMAIN\ goes with sAMAccountName only
+    ("x\\ayilmaz@hastane.local", False),
 ])
 def test_a_login_names_the_account_in_any_allowed_form(key, ok):
     assert login_matches(key, AYSE, LOGIN_ATTRS) is ok

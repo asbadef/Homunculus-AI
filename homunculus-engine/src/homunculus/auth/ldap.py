@@ -139,14 +139,10 @@ def is_disabled(user_account_control: int | None) -> bool:
     return bool((user_account_control or 0) & ACCOUNTDISABLE)
 
 
-def filetime_to_unix(filetime: int) -> float:
-    """A FILETIME (100 ns ticks since 1601-01-01 UTC) in Unix seconds."""
-    return filetime / FILETIME_TICKS_PER_S - FILETIME_UNIX_OFFSET_S
-
-
 def password_changed_since(pwd_last_set: int | None, issued_at: int) -> bool:
     """Spec §7, refresh: was the AD password set after a token issued at `issued_at` (Unix
-    seconds)? Compared in whole seconds, as `iat` is. 0 means "must change at next logon" —
+    seconds)? pwdLastSet is a FILETIME (100 ns ticks since 1601-01-01 UTC), converted here —
+    the one place — to whole Unix seconds, as `iat` is. 0 means "must change at next logon" —
     what an AD password reset usually sets — and counts as changed. None (not read): no."""
     if pwd_last_set is None:
         return False
