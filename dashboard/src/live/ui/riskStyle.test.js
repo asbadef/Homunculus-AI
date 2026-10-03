@@ -1,0 +1,51 @@
+// Roadmap G1-09 acceptance: the engine's risk values are mapped explicitly — moderate amber,
+// none/info neutral ("no finding / not measured") — and none of them falls back to green.
+import { describe, it, expect } from "vitest";
+import { riskStyle, ENGINE_RISKS } from "./riskStyle.js";
+import { DICTIONARIES } from "../i18n/catalog.js";
+import { LANG_CODES } from "../i18n/langs.js";
+
+describe("riskStyle", () => {
+  it.each([
+    ["critical", "crit", "risk.critical"],
+    ["high", "high", "risk.high"],
+    ["moderate", "mid", "risk.moderate"],
+    ["low", "low", "risk.low"],
+    ["info", "neutral", "risk.info"],
+    ["none", "neutral", "risk.none"],
+  ])("maps %s to the %s tone", (risk, tone, labelKey) => {
+    expect(riskStyle(risk)).toMatchObject({ tone, labelKey });
+  });
+
+  it("knows exactly the engine's six levels", () => {
+    expect([...ENGINE_RISKS].sort()).toEqual(["critical", "high", "info", "low", "moderate", "none"]);
+  });
+
+  it("never falls back to green", () => {
+    const anything = [...ENGINE_RISKS, "stable", "ok", "", null, undefined, "CRITICAL", 3];
+    for (const risk of anything) {
+      expect(riskStyle(risk).tone, String(risk)).not.toBe("ok");
+      expect(riskStyle(risk, { measured: false }).tone, String(risk)).not.toBe("ok");
+    }
+  });
+
+  it("says 'not measured' instead of 'no finding' when nothing was measured", () => {
+    expect(riskStyle("none", { measured: false })).toMatchObject({ tone: "neutral", labelKey: "risk.unmeasured" });
+    expect(riskStyle("info", { measured: false })).toMatchObject({ labelKey: "risk.unmeasured" });
+  });
+
+  it("never lets 'not measured' hide a real finding", () => {
+    expect(riskStyle("high", { measured: false })).toMatchObject({ tone: "high", labelKey: "risk.high" });
+  });
+
+  it("keeps an unrecognised value visible, with its raw text", () => {
+    expect(riskStyle("stable")).toEqual({
+      tone: "neutral", icon: "alert", labelKey: "risk.unknown", labelVars: { value: "stable" },
+    });
+  });
+
+  it("names every label in all four languages", () => {
+    const keys = [...ENGINE_RISKS.map((r) => riskStyle(r).labelKey), "risk.unmeasured", "risk.unknown"];
+    for (const lang of LANG_CODES) for (const key of keys) expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
+  });
+});
