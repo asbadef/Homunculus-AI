@@ -263,7 +263,8 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   - `--ok` `#16a34a` → `#179f49`: kart 3,45 · card2 3,12 · sayfa 3,02 · app 3,18 (önce card2 2,99, sayfa 2,89).
 - Gün'de vital renkleri card2 üzerinde 4,5:1'in altında: `--v-map` 4,38, `--v-spo` 4,46
   (kartta geçer). Değer değişmedi → G1-09/G1-11 vitalleri nereye koyacağına karar verirken.
-- Button `busy` (işlem sürerken) durumu yok → G1-10, ilk kullanımda.
+- Button `busy` (işlem sürerken) durumu → G1-10, ilk kullanımda. ✅ Eklendi (`6ab73a0`):
+  `aria-busy`, odakta kalır, tıklamayı ve form gönderimini yok sayar.
 - Dil seçimi sekmeler arası eşlenmiyor (`storage` olayı dinlenmiyor): bir sekmede dil
   değişince öbürü eski dilde kalır → G1-07.
 - Ekran okuyucu risk hapında yalnız düzeyi okur ("Orta"); görünmez "Risk:" öneki → G1-09.
