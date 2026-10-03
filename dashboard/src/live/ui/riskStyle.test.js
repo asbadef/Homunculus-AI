@@ -1,6 +1,9 @@
 // Roadmap G1-09 acceptance: the engine's risk values are mapped explicitly — moderate amber,
 // none/info neutral ("no finding / not measured") — and none of them falls back to green.
 import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { riskStyle, ENGINE_RISKS } from "./riskStyle.js";
 import { DICTIONARIES } from "../i18n/catalog.js";
 import { LANG_CODES } from "../i18n/langs.js";
@@ -94,5 +97,66 @@ describe("riskStyle", () => {
   it("names every label in all four languages", () => {
     const keys = [...ENGINE_RISKS.map((r) => riskStyle(r).labelKey), "risk.none", "risk.unmeasured", "risk.unknown", "risk.unreported"];
     for (const lang of LANG_CODES) for (const key of keys) expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
+  });
+});
+
+
+// ------------------------------------------------------------------ engine contract
+// The engine's levels, read from its sources as TEXT (never executed) — the permissions parity
+// test's pattern. Alert severities are reco/engine.py's _SEVERITY_NAME; the board's risk is the
+// highest of them by api/board.py's _SEVERITY_ORDER, or "none" (_risk). A level added there
+// fails here until riskStyle maps it, instead of reaching a ward as "unknown risk".
+// (node:path, not new URL(): under jsdom the global URL is jsdom's, which fileURLToPath refuses.)
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ENGINE = path.resolve(HERE, "../../../../homunculus-engine/src/homunculus");
+
+function py(rel) {
+  try {
+    return fs.readFileSync(path.join(ENGINE, rel), "utf8");
+  } catch (e) {
+    throw new Error(`cannot read ${rel} under ${ENGINE} (${e.code}); `
+      + "this test needs the whole repository, not dashboard/ alone");
+  }
+}
+
+const quoted = (text) => [...text.matchAll(/["'](\w+)["']/g)].map((m) => m[1]);
+
+/** The levels the engine can put on a board card, from the two modules' source text. */
+function engineLevels(recoSrc, boardSrc) {
+  const names = /^_SEVERITY_NAME\b[^=\n]*=\s*\{([^}]*)\}/m.exec(recoSrc);
+  if (!names) throw new Error("reco/engine.py has no module-level _SEVERITY_NAME = {…}");
+  const order = /^_SEVERITY_ORDER\b[^=\n]*=\s*\[([^\]]*)\]/m.exec(boardSrc);
+  if (!order) throw new Error("api/board.py has no module-level _SEVERITY_ORDER = […]");
+  const risk = /^def _risk\b[^\n]*\n((?:[ \t]+[^\n]*\n|[ \t]*\n)*)/m.exec(boardSrc);
+  if (!risk) throw new Error("api/board.py has no def _risk(…)");
+  return {
+    named: [...names[1].matchAll(/:\s*["'](\w+)["']/g)].map((m) => m[1]),
+    order: quoted(order[1]),
+    empty: [...risk[1].matchAll(/return\s+["'](\w+)["']/g)].map((m) => m[1]),
+  };
+}
+
+describe("engine contract", () => {
+  it("the reader sees a level added to the engine", () => {
+    const reco = '_SEVERITY_NAME = {\n    Severity.INFO: "info", Severity.URGENT: "urgent",\n}\n';
+    const board = '_SEVERITY_ORDER: list[str] = ["info", \'urgent\']\n\n\n'
+      + "def _risk(alerts: list[Alert]) -> str:\n"
+      + '    if not alerts:\n        return "none"\n\n    return max(alerts)\n\n\ndef other():\n    return "x"\n';
+    expect(engineLevels(reco, board)).toEqual({ named: ["info", "urgent"], order: ["info", "urgent"], empty: ["none"] });
+  });
+
+  const { named, order, empty } = engineLevels(py("reco/engine.py"), py("api/board.py"));
+
+  it("reads the engine's levels: _risk answers \"none\" when there is no alert", () => {
+    expect(named.length).toBeGreaterThan(0);
+    expect(empty).toEqual(["none"]);
+  });
+
+  it("the board orders exactly the severities the alert engine emits", () => {
+    expect([...order].sort()).toEqual([...named].sort());
+  });
+
+  it("riskStyle maps exactly \"none\" and the engine's severities", () => {
+    expect([...ENGINE_RISKS].sort()).toEqual([...new Set([...empty, ...order])].sort());
   });
 });
