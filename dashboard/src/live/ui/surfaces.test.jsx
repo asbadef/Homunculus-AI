@@ -18,6 +18,13 @@ describe("Box", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Başlıq" })).toBeInTheDocument();
   });
 
+  it.each([
+    ["x", 3], ["", 3], [true, 3], [undefined, 3], [null, 3], [Number.NaN, 3], [1, 2], [9, 6], ["4", 4], [2.6, 3],
+  ])("turns level %s into a real heading level, %i", (level, expected) => {
+    render(<Box title="Başlıq" level={level}>x</Box>);
+    expect(screen.getByRole("heading", { level: expected, name: "Başlıq" })).toBeInTheDocument();
+  });
+
   it("draws no header without a title", () => {
     const { container } = render(<Box>yalnız məzmun</Box>);
     expect(container.querySelector("h2, h3, h4, h5, h6")).toBeNull();

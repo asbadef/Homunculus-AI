@@ -2,11 +2,17 @@
 import React from "react";
 import { Icon } from "./Icon.jsx";
 
+// A heading level a page can use under its h1: 2..6, rounded; anything that is not a number is 3.
+function headingLevel(level) {
+  const n = typeof level === "number" || (typeof level === "string" && level.trim() !== "") ? Math.round(Number(level)) : NaN;
+  return Number.isFinite(n) ? Math.min(6, Math.max(2, n)) : 3;
+}
+
 /** A bordered surface, optionally with the prototype's small upper-case header (its h5). The
- *  header is a real heading — h3 unless `level` says otherwise — so screen-reader users can jump
- *  between boxes. `right` fills the header's right-hand side (the prototype's h5 .r). */
+ *  header is a real heading — h3 unless `level` (2..6) says otherwise — so screen-reader users can
+ *  jump between boxes. `right` fills the header's right-hand side (the prototype's h5 .r). */
 export function Box({ title, icon, right, level = 3, className = "", children }) {
-  const Heading = `h${Math.min(6, Math.max(2, level))}`;
+  const Heading = `h${headingLevel(level)}`;
   return (
     <div className={`rounded-box border border-line bg-card px-[14px] py-3 ${className}`}>
       {title ? (
