@@ -7,6 +7,21 @@ import { LANG_CODES, SOURCE_LANG } from "./langs.js";
 const placeholders = (s) => [...String(s).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
 // Language-neutral texts: clinical abbreviations written the same in every script.
 const NEUTRAL = new Set(["news2.missing.spo2"]);
+// Azerbaijani and Turkish share many words, so an AZ text may equal its TR source — but that is
+// also exactly what a forgotten translation looks like (the Turkish copied across). Each identity
+// is therefore reviewed and listed here, key by key; a new one fails until someone has checked it,
+// and an entry whose texts have since diverged fails until it is removed.
+const AZ_SAME_AS_TR = new Set([
+  "risk.critical", //        Kritik — the prototype's AZ dictionary (grafik.js gd_k_crit)
+  "risk.moderate", //        Orta — the prototype's AZ dictionary (ceviri-sozluk "ORTA")
+  "prefs.theme", //          Tema — the prototype's AZ dictionary
+  "prefs.sizeNormal", //     Normal — the prototype's AZ dictionary (mobil.js fs_1)
+  "prefs.lang", //           Dil — the prototype's AZ dictionary (legal.js lgl_lang)
+  "news2.missing.spo2", //   SpO2 — a clinical abbreviation, the same in every language
+  "gallery.seen", //         Gördüm — the prototype's AZ dictionary
+  "gallery.criticalOnly", // Yalnız kritik — the prototype's AZ dictionary
+  "gallery.lastLogin", //    Son giriş — the prototype's AZ dictionary
+]);
 
 describe("live UI dictionaries", () => {
   it("every namespace has the four languages, each with the Turkish source's keys", () => {
@@ -26,6 +41,14 @@ describe("live UI dictionaries", () => {
         expect(placeholders(value), `${lang} ${key}`).toEqual(placeholders(DICTIONARIES[SOURCE_LANG][key]));
       }
     }
+  });
+
+  it("an Azerbaijani text equals its Turkish source only where that was reviewed", () => {
+    const { tr, az } = DICTIONARIES;
+    for (const key of Object.keys(tr)) {
+      if (az[key] === tr[key]) expect(AZ_SAME_AS_TR.has(key), `az ${key} = tr "${tr[key]}": review, then list it`).toBe(true);
+    }
+    for (const key of AZ_SAME_AS_TR) expect(az[key], `${key} is listed but az differs from tr now`).toBe(tr[key]);
   });
 
   it("writes Azerbaijani in Latin script and Russian in Cyrillic", () => {
