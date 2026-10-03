@@ -10,6 +10,7 @@ import logging
 import pytest
 import pytest_asyncio
 from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.auth.groups import set_manual_groups
 from homunculus.auth.jwt import decode_token
@@ -226,6 +227,24 @@ async def test_the_throttle_holds_against_concurrent_attempts(client, world):
         *(_login(c, "ayilmaz", "Yanlis-Parola-9") for _ in range(8)))]
     assert sorted(codes) == [401] * 3 + [429] * 5
     assert _binds(directory) == 3
+
+
+async def test_a_failure_before_the_directory_call_never_holds_a_throttle_place(client, world,
+                                                                               monkeypatch):
+    """A reserved place is released on every path; one that leaked would throttle the account
+    until the next restart."""
+    c, _ = client
+    rollback = AsyncSession.rollback
+
+    async def broken(self):
+        raise RuntimeError("database gone")
+
+    monkeypatch.setattr(AsyncSession, "rollback", broken)
+    for _ in range(3):
+        with pytest.raises(RuntimeError):
+            await _login(c, "ayilmaz")
+    monkeypatch.setattr(AsyncSession, "rollback", rollback)
+    assert (await _login(c, "ayilmaz")).status_code == 200
 
 
 @pytest.mark.parametrize("reason, counted", [("timeout", True), ("unreachable", False)])

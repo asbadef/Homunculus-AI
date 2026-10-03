@@ -151,9 +151,8 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     count for an account Homunculus has switched off), and so is an account with 3 failed binds
     in the last 15 minutes (429, `directory_binds`; reset by a successful sign-in) — Homunculus
     must never be the way a clinician gets locked out of the hospital domain. The database
-    connection is released
-    while the directory answers, so a slow domain controller cannot pin the pool at shift
-    change; the account is re-read afterwards (plan decisions D7, D8)."""
+    connection is released while the directory answers, so a slow domain controller cannot pin
+    the pool at shift change; the account is re-read afterwards (plan decisions D7, D8)."""
     user_id, external_id = user.id, user.external_id
     if not user.is_active:
         await _login_failed(request, db, user_id, key, "inactive")
@@ -165,14 +164,15 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     if not password or not external_id:
         await _login_failed(request, db, user_id, key, "bad_credentials")
         raise _bad_credentials()
+    await db.rollback()                      # nothing written yet; frees the connection
     # Every failed bind also counts toward the hospital domain's lockout: past the limit the
-    # directory is not asked at all (auth/limits.py, directory_binds).
+    # directory is not asked at all (auth/limits.py, directory_binds). Nothing may sit between
+    # `begin` and the try below: the place it reserves must be released on every path.
     slot = str(user_id)
     if not directory_binds.begin(slot):
         await _login_failed(request, db, user_id, key, "throttled")
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                             detail=_DIRECTORY_THROTTLED)
-    await db.rollback()                      # nothing written yet; frees the connection
     try:
         identity = await ldap.directory.authenticate(external_id, password)
     except LdapUnavailable as exc:
