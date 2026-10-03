@@ -238,7 +238,7 @@ function Components() {
 
       <Sub title={t("gallery.risks")}>
         {ENGINE_RISKS.map((risk) => (
-          <RiskPill key={risk} risk={risk} />
+          <RiskPill key={risk} risk={risk} measured />
         ))}
         <RiskPill risk="none" measured={false} />
         <RiskPill risk="stable" />

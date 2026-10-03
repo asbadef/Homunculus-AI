@@ -13,8 +13,8 @@ describe("riskStyle", () => {
     ["low", "low", "risk.low"],
     ["info", "neutral", "risk.info"],
     ["none", "neutral", "risk.none"],
-  ])("maps %s to the %s tone", (risk, tone, labelKey) => {
-    expect(riskStyle(risk)).toMatchObject({ tone, labelKey });
+  ])("maps %s to the %s tone, on a measured card", (risk, tone, labelKey) => {
+    expect(riskStyle(risk, { measured: true })).toMatchObject({ tone, labelKey });
   });
 
   it("knows exactly the engine's six levels", () => {
@@ -34,8 +34,23 @@ describe("riskStyle", () => {
     expect(riskStyle("info", { measured: false })).toMatchObject({ labelKey: "risk.unmeasured" });
   });
 
+  // Clinical safety: an identity-only card (admitted, never measured) gets risk "none" from the
+  // engine. "No finding" is a claim about observations, so only a caller that has them may make it.
+  it("claims 'no finding' only when told explicitly that the card was measured", () => {
+    expect(riskStyle("none")).toMatchObject({ tone: "neutral", labelKey: "risk.unmeasured" });
+    expect(riskStyle("none", {})).toMatchObject({ labelKey: "risk.unmeasured" });
+    expect(riskStyle("info")).toMatchObject({ labelKey: "risk.unmeasured" });
+    for (const measured of [undefined, null, 1, "true", "yes", {}, []]) {
+      expect(riskStyle("none", { measured }).labelKey, String(measured)).toBe("risk.unmeasured");
+    }
+    expect(riskStyle("none", { measured: true }).labelKey).toBe("risk.none");
+  });
+
   it("never lets 'not measured' hide a real finding", () => {
     expect(riskStyle("high", { measured: false })).toMatchObject({ tone: "high", labelKey: "risk.high" });
+    for (const risk of ["critical", "high", "moderate", "low"]) {
+      expect(riskStyle(risk).labelKey, risk).toBe(`risk.${risk}`);
+    }
   });
 
   it("keeps an unrecognised value visible, with its raw text", () => {

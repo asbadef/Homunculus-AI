@@ -9,8 +9,11 @@
 //
 // riskStyle(risk, { measured }) -> { tone, icon, labelKey, labelVars? }
 //   tone: a StatusPill tone; labelKey: an i18n key (strings/risk.js).
-//   measured: false — the card has no observation at all — turns none/info into "not measured";
-//   the caller (G1-09) decides it from the card's timestamps. It never hides a real finding.
+//   measured: only an explicit `true` lets none/info read "no finding"; anything else (left out,
+//   false, a truthy non-boolean) reads "not measured". Clinical safety: "no finding" is a claim
+//   about observations, and an identity-only card has none — so the claim must be opted into by
+//   a caller that has them (G1-09 decides it from the card's timestamps), never be the default.
+//   It never hides a real finding.
 //   An unrecognised value stays neutral but shows its raw value, so a level the engine adds later
 //   is visible on the card instead of silently calm.
 const RISK = {
@@ -25,8 +28,8 @@ const NO_FINDING = ["none", "info"];
 
 export const ENGINE_RISKS = Object.keys(RISK);
 
-export function riskStyle(risk, { measured = true } = {}) {
-  if (!measured && NO_FINDING.includes(risk)) {
+export function riskStyle(risk, { measured } = {}) {
+  if (measured !== true && NO_FINDING.includes(risk)) {
     return { tone: "neutral", icon: "minus", labelKey: "risk.unmeasured" };
   }
   if (Object.prototype.hasOwnProperty.call(RISK, risk)) return { ...RISK[risk] };

@@ -24,6 +24,17 @@ describe("RiskPill", () => {
     expect(screen.getByText("Ölçülməyib")).toHaveAttribute("data-tone", "neutral");
   });
 
+  it("never claims 'no finding' for a card it was not told was measured (identity-only card)", () => {
+    render(<RiskPill risk="none" />);
+    expect(screen.getByText("Ölçülməyib")).toBeInTheDocument();
+    expect(screen.queryByText("Tapıntı yoxdur")).toBeNull();
+  });
+
+  it("says 'no finding' on a measured card", () => {
+    render(<RiskPill risk="none" measured />);
+    expect(screen.getByText("Tapıntı yoxdur")).toHaveAttribute("data-tone", "neutral");
+  });
+
   it("shows an unrecognised value as it came, neutral", () => {
     render(<RiskPill risk="stable" />);
     expect(screen.getByText("Naməlum risk: stable")).toHaveAttribute("data-tone", "neutral");
