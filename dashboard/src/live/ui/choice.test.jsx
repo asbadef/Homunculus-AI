@@ -27,6 +27,14 @@ describe("Seg", () => {
     expect(onChange).toHaveBeenCalledWith("mine");
   });
 
+  it("keeps the chosen one visible in Windows high-contrast, where its fill is dropped", () => {
+    render(<Seg label="Süzgəc" options={FILTERS} value="crit" onChange={() => {}} />);
+    const chosen = screen.getByRole("button", { name: "Yalnız kritik" }).className.split(/\s+/);
+    const other = screen.getByRole("button", { name: "Açıq · 3" }).className.split(/\s+/);
+    expect(chosen).toEqual(expect.arrayContaining(["forced-colors:border-2", "forced-colors:border-[Highlight]"]));
+    expect(other.some((c) => c.startsWith("forced-colors:border"))).toBe(false);
+  });
+
   it("marks an option written in another language", () => {
     render(<Seg label="Dil" options={[{ value: "ru", label: "Русский", lang: "ru" }]} value="az" onChange={() => {}} />);
     expect(screen.getByRole("button", { name: "Русский" })).toHaveAttribute("lang", "ru");
