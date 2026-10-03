@@ -15,8 +15,9 @@ describe("RiskPill", () => {
 
   it("follows the chosen language", () => {
     localStorage.setItem("hmc.lang", "ru");
-    render(<I18nProvider><RiskPill risk="moderate" /></I18nProvider>);
+    render(<I18nProvider><RiskPill risk="moderate" /><RiskPill risk="none" measured /></I18nProvider>);
     expect(screen.getByText("Средний")).toBeInTheDocument();
+    expect(screen.getByText("Без отклонений")).toBeInTheDocument();
   });
 
   it("says when nothing was measured", () => {

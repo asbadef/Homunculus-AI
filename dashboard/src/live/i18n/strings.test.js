@@ -37,6 +37,13 @@ describe("live UI dictionaries", () => {
     }
   });
 
+  // "Движок" is developer jargon a Russian-speaking clinician reads as a car engine; the system
+  // speaks of itself as "Система" (Wave 1B review).
+  it("calls the engine \"Система\" in Russian, never \"Движок\"", () => {
+    expect(Object.values(DICTIONARIES.ru).join(" ")).not.toMatch(/движ/i);
+    expect(DICTIONARIES.ru["news2.noEngine"]).toMatch(/^Система /);
+  });
+
   it("names keys <namespace>.<key>, nested keys joined with dots", () => {
     expect(DICTIONARIES.az["common.close"]).toBe("Bağla");
     expect(DICTIONARIES.tr["news2.missing.respiration_rate"]).toBe("solunum hızı");

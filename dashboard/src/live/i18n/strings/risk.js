@@ -16,7 +16,7 @@ export default {
   },
   ru: {
     critical: "Критический", high: "Высокий", moderate: "Средний", low: "Низкий", info: "Инфо",
-    none: "Нет находок", unmeasured: "Не измерено", unknown: "Неизвестный риск: {value}",
+    none: "Без отклонений", unmeasured: "Не измерено", unknown: "Неизвестный риск: {value}",
     unreported: "Риск не передан",
   },
   en: {

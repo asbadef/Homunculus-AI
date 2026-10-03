@@ -1,6 +1,7 @@
 // NEWS2 on the bed card (used from G1-09). TR is the old ClinicalDemo's wording (News2Pill and
 // NEWS2_MISSING_LABEL), which existed in Turkish only — roadmap "Dalga 0'dan açık kalanlar" -> G1-06.
-// noEngine's AZ/RU/EN extend clinicalI18n's pr6.news2NoEngine with the sentence they lacked; the
+// noEngine's AZ/RU/EN extend clinicalI18n's pr6.news2NoEngine with the sentence they lacked (RU
+// says "Система" where the old text said "Движок": jargon a clinician reads as a car engine); the
 // rest is new and awaits review by a native-speaking clinician. missing.* keys are the engine's
 // parameter names (news2.missing[]).
 export default {
@@ -17,7 +18,7 @@ export default {
     missing: { respiration_rate: "tənəffüs tezliyi", spo2: "SpO2", systolic_bp: "sistolik AT", pulse: "nəbz", temperature: "temperatur" },
   },
   ru: {
-    noEngine: "Движок не передаёт NEWS2 для этого пациента — экран не считает его сам. Балл, в котором неизмеренный параметр считается нулём, показывает пациента лучше, чем он есть.",
+    noEngine: "Система не передаёт NEWS2 для этого пациента — экран не считает его сам. Балл, в котором неизмеренный параметр считается нулём, показывает пациента лучше, чем он есть.",
     partialHint: "Неполный балл — не измерено: {missing}; истинная сумма может быть выше.",
     partialMark: "неполный балл",
     missing: { respiration_rate: "частота дыхания", spo2: "SpO2", systolic_bp: "систолическое АД", pulse: "пульс", temperature: "температура" },
