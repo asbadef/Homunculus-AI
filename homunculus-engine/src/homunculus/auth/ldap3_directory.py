@@ -38,6 +38,7 @@ from ldap3.core.exceptions import (
 from ldap3.core.results import (
     RESULT_INVALID_CREDENTIALS, RESULT_SIZE_LIMIT_EXCEEDED, RESULT_SUCCESS,
 )
+from ldap3.operation.search import compile_filter, parse_filter
 from ldap3.utils.conv import escape_filter_chars
 
 from homunculus.auth.ldap import (
@@ -364,18 +365,48 @@ class Ldap3Directory:
         _close(self._service())
 
 
+def _wire_filter(search_filter: str) -> Any:
+    """`search_filter` compiled as `Connection.search` compiles it with this module's
+    connections (no schema, auto_escape and auto_encode on, names unchecked)."""
+    root = parse_filter(search_filter, None, True, True, None, False)
+    return compile_filter(root.elements[0])
+
+
+_PROBE_GUID = "00000000-0000-0000-0000-000000000000"
+
+
+def check_user_filter(user_filter: str) -> None:
+    """LdapConfigError unless LDAP_USER_FILTER is ONE filter `ldap3` can compile, alone and
+    inside every filter built from it. Checked at start-up: a filter that cannot be sent would
+    otherwise turn every AD sign-in into a 503. Kept here, not in `auth/ldap.py`, which does
+    not import `ldap3`."""
+    try:
+        for search_filter in (user_filter, guid_lookup_filter(user_filter, _PROBE_GUID),
+                              user_search_filter(user_filter, "probe")):
+            _wire_filter(search_filter)
+    except Exception:          # ldap3 raises more than LDAPInvalidFilterError on a bad filter
+        raise LdapConfigError("LDAP_USER_FILTER is not one valid LDAP filter") from None
+
+
 def ldap_from_env(env: Mapping[str, str] | None = None) -> LdapRuntime | None:
     """`app.state.ldap` for production (`api/prodserver.py`): None when LDAP_URL is unset, or —
     logged as an ERROR — when the LDAP_* settings cannot be used. Never raises: an unusable
-    directory configuration must not stop the API (spec §9)."""
+    directory configuration must not stop the API (spec §9). The log names the variable at
+    fault, never its value, and carries no traceback (an exception's text can quote a setting,
+    a password included)."""
     env = os.environ if env is None else env
     try:
         config = load_ldap_config(env)
+        if config is None:
+            return None
+        check_user_filter(config.user_filter)
+        runtime = LdapRuntime(directory=Ldap3Directory(config), url_host=config.host,
+                              login_attrs=config.login_attrs)
     except LdapConfigError as exc:
-        logger.error("LDAP is OFF: %s. Local accounts sign in as usual; directory accounts get "
-                     "503 until this is fixed.", exc)
+        _ldap_off(str(exc))
         return None
-    if config is None:
+    except Exception as exc:
+        _ldap_off(f"the LDAP_* settings could not be used ({type(exc).__name__})")
         return None
     if config.allow_insecure:
         logger.warning(
@@ -383,5 +414,9 @@ def ldap_from_env(env: Mapping[str, str] | None = None) -> LdapRuntime | None:
             "plain ldap://, no encryption" if not config.use_ssl
             else "the domain controller's certificate is NOT verified" if config.ca_cert is None
             else "set, but LDAP_CA_CERT is given, so the certificate is still verified")
-    return LdapRuntime(directory=Ldap3Directory(config), url_host=config.host,
-                       login_attrs=config.login_attrs)
+    return runtime
+
+
+def _ldap_off(why: str) -> None:
+    logger.error("LDAP is OFF: %s. Local accounts sign in as usual; directory accounts get "
+                 "503 until this is fixed.", why)

@@ -225,7 +225,11 @@ def load_ldap_config(env: Mapping[str, str]) -> LdapConfig | None:
     if not url:
         return None
     allow_insecure = _flag(env, "LDAP_ALLOW_INSECURE", False)
-    parts = urlsplit(url)
+    try:
+        # urlsplit's own ValueError can quote the netloc — a password in it included.
+        parts = urlsplit(url)
+    except ValueError:
+        raise LdapConfigError("LDAP_URL must be ldaps://host[:port] and nothing else") from None
     scheme = parts.scheme.lower()
     if scheme not in ("ldaps", "ldap"):
         raise LdapConfigError("LDAP_URL must start with ldaps://")

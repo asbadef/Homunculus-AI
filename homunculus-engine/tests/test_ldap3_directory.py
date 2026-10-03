@@ -533,6 +533,49 @@ def test_an_unusable_configuration_turns_ldap_off_and_says_why(caplog):
     assert "LDAP is OFF" in caplog.text and "LDAP_BIND_DN" in caplog.text
 
 
+def _never_echoed(caplog, *secrets: str) -> None:
+    assert "LDAP is OFF" in caplog.text
+    assert all(r.exc_info is None for r in caplog.records)
+    for secret in secrets:
+        assert secret not in caplog.text
+
+
+@pytest.mark.parametrize("url", ["ldaps://[dc1", "ldaps://svc:Gizli／Url@dc1.hastane.local"])
+def test_a_url_that_cannot_be_split_turns_ldap_off_without_echoing_it(url, caplog):
+    with caplog.at_level(logging.DEBUG):
+        assert ldap_from_env({**BASE, "LDAP_URL": url}) is None
+    _never_echoed(caplog, "Gizli", "[dc1")
+    assert "LDAP_URL" in caplog.text
+
+
+def test_any_failure_reading_the_settings_turns_ldap_off_never_the_api(monkeypatch, caplog):
+    def broken(env):
+        raise RuntimeError(f"bind as {SVC_DN} with {SVC_PW}")
+
+    monkeypatch.setattr("homunculus.auth.ldap3_directory.load_ldap_config", broken)
+    with caplog.at_level(logging.DEBUG):
+        assert ldap_from_env(BASE) is None
+    _never_echoed(caplog, SVC_PW, SVC_DN)
+    assert "RuntimeError" in caplog.text
+
+
+@pytest.mark.parametrize("user_filter", [
+    "()", "(a=b))(|(c=d)", "(a=b)(c=d)", "(&(a=b)", "(!(a=b)(c=d))", "(&)",
+])
+def test_a_user_filter_ldap3_cannot_parse_turns_ldap_off(user_filter, caplog):
+    """Each passes the shallow parenthesis check, then made every AD sign-in a 503."""
+    with caplog.at_level(logging.DEBUG):
+        assert ldap_from_env({**BASE, "LDAP_USER_FILTER": user_filter}) is None
+    _never_echoed(caplog, user_filter)
+    assert "LDAP_USER_FILTER" in caplog.text
+
+
+def test_a_custom_user_filter_that_parses_is_kept():
+    custom = "(&(objectClass=user)(memberOf=CN=Homunculus,OU=Gruplar,DC=hastane,DC=local))"
+    runtime = ldap_from_env({**BASE, "LDAP_USER_FILTER": custom})
+    assert runtime is not None and runtime.directory._config.user_filter == custom
+
+
 def test_the_insecure_flag_is_announced(caplog):
     with caplog.at_level(logging.WARNING, logger="homunculus.auth.ldap3_directory"):
         runtime = ldap_from_env({**BASE, "LDAP_URL": "ldap://dc1.hastane.local",

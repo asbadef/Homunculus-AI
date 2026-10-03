@@ -79,6 +79,17 @@ def test_a_url_that_is_not_just_a_host_is_refused(url):
         load_ldap_config(_env(LDAP_URL=url))
 
 
+@pytest.mark.parametrize("url", [
+    "ldaps://[dc1",                                          # "Invalid IPv6 URL"
+    "ldaps://svc:Gizli／Url@dc1.hastane.local",         # NFKC: urlsplit echoes the netloc
+])
+def test_a_url_python_cannot_split_is_a_config_error_that_never_echoes_it(url):
+    with pytest.raises(LdapConfigError, match="LDAP_URL") as err:
+        load_ldap_config(_env(LDAP_URL=url))
+    assert "Gizli" not in str(err.value) and "[dc1" not in str(err.value)
+    assert err.value.__cause__ is None and err.value.__suppress_context__
+
+
 def test_credentials_in_the_url_are_refused_and_never_echoed():
     with pytest.raises(LdapConfigError) as err:
         load_ldap_config(_env(LDAP_URL="ldaps://svc:Gizli-Url-Parola@dc1.hastane.local"))
