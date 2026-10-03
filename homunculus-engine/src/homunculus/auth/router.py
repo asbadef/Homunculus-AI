@@ -11,7 +11,8 @@ POST /auth/totp/verify  — verify 6-digit code; re-issues tokens with mfa_verif
 POST /auth/refresh      — exchange refresh token for new tokens built from the CURRENT groups; an
                           AD account is read back from the directory first (disabled, expired,
                           gone or password changed there: 401; otherwise its AD groups apply, so
-                          the new token carries them; directory down: the session goes on)
+                          the new token carries them; directory down: the session goes on; an
+                          answer about the account that cannot be read: 503, nothing renewed)
 GET  /auth/me           — profile, tenant, groups, permissions (allowed before MFA)
 POST /auth/password     — change own password (local accounts)
 
@@ -69,6 +70,13 @@ _DIRECTORY_THROTTLED = "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyi
 # call cut off at its deadline (its thread runs on), or a reply that made no sense (it may have
 # answered the bind). Counted toward the throttle — fail closed for the hospital's AD.
 _BIND_MAY_HAVE_FAILED = frozenset({"timeout", "protocol"})
+# Directory failures after which a refresh goes on unsynced (the spec §4 outage rule): the
+# domain controller could not be reached, or would not let the service account in — nothing
+# about the account itself. Any other reason (`protocol` also covers a reply about THIS account
+# that could not be read: an unexpected library error, a group list over the limit) is a 503
+# with no new tokens, so rights AD may have removed are not carried forward; the client keeps
+# its refresh token and tries again.
+_REFRESH_OUTAGES = frozenset({"unreachable", "timeout", "tls", "service_bind_rejected"})
 _NO_USER = uuid.UUID(int=0)
 
 
@@ -374,9 +382,10 @@ async def _directory_at_refresh(request: Request, db: AsyncSession, user: User,
     or its password was set after the refresh token was issued (pwdLastSet later than `iat`, or
     0 — "must change at next logon").
     identity is the account as the directory reports it now, for the group sync; None when the
-    directory does not answer or is not configured — the session goes on, unsynced (the spec §4
-    outage rule), and the audit trail says so. Releases the database connection while the
-    directory answers; the caller re-reads the account."""
+    directory is down (`_REFRESH_OUTAGES`) or not configured — the session goes on, unsynced
+    (the spec §4 outage rule), and the audit trail says so. Any other directory failure raises
+    503 (`refresh.directory_error`): no tokens, the refresh token kept for a retry. Releases the
+    database connection while the directory answers; the caller re-reads the account."""
     user_id, username, external_id = user.id, user.username, user.external_id
     ref = await tenant_of_user(db, user_id)
     tenant = ref.slug if ref is not None else None
@@ -396,8 +405,11 @@ async def _directory_at_refresh(request: Request, db: AsyncSession, user: User,
     try:
         identity = await ldap.directory.find_by_external_id(external_id)
     except LdapUnavailable as exc:
-        audit("refresh.directory_unavailable", exc.reason)
-        return False, None
+        if exc.reason in _REFRESH_OUTAGES:
+            audit("refresh.directory_unavailable", exc.reason)
+            return False, None
+        audit("refresh.directory_error", exc.reason)
+        raise _directory_down() from None
     if identity is None:
         reason = "directory_not_found"
     elif identity.disabled:

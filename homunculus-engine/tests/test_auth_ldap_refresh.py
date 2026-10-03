@@ -143,6 +143,34 @@ async def test_a_directory_that_does_not_answer_lets_the_session_go_on(client, w
     assert _reasons(app, "refresh.directory_unavailable") == ["unreachable"]
 
 
+@pytest.mark.parametrize("reason", ["unreachable", "timeout", "tls", "service_bind_rejected"])
+async def test_every_kind_of_directory_outage_lets_the_session_go_on(client, world, reason):
+    c, app = client
+    tokens = await _signed_in(c, world)
+    world["directory"].unavailable = reason
+    assert (await _refresh(c, tokens)).status_code == 200
+    assert _reasons(app, "refresh.directory_unavailable") == [reason]
+    assert _reasons(app, "refresh.directory_error") == []
+
+
+@pytest.mark.parametrize("reason", ["protocol", "a-reason-added-later"])
+async def test_a_directory_error_that_is_not_an_outage_renews_nothing(client, world, reason):
+    """The outage rule covers a directory that cannot be reached or will not let the service
+    account in — nothing about the account. `protocol` also covers a reply about THIS account
+    that could not be read (an unexpected library error, a group list over the limit): going on
+    unsynced there would keep rights AD may have removed. 503, no tokens: the session neither
+    ends nor renews, and the client keeps its refresh token and tries again."""
+    c, app = client
+    tokens = await _signed_in(c, world)
+    world["directory"].unavailable = reason
+    res = await _refresh(c, tokens)
+    assert (res.status_code, res.json()) == (503, {"detail": "Dizin sunucusuna ulaşılamıyor"})
+    assert _reasons(app, "refresh.directory_error") == [reason]
+    assert _reasons(app, "refresh.directory_unavailable") == []
+    world["directory"].unavailable = False
+    assert (await _refresh(c, tokens)).status_code == 200      # the refresh token still holds
+
+
 async def test_no_directory_configured_lets_the_session_go_on(client, world):
     c, app = client
     tokens = await _signed_in(c, world)
