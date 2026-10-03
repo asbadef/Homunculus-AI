@@ -48,9 +48,14 @@ describe("RiskPill", () => {
     for (const pill of pills) expect(pill).toHaveAttribute("data-tone", "att");
   });
 
-  it("names the missing risk in every language", () => {
-    localStorage.setItem("hmc.lang", "ru");
+  it.each([
+    ["az", "Risk bildirilməyib"],
+    ["tr", "Risk bildirilmedi"],
+    ["ru", "Риск не передан"],
+    ["en", "Risk not reported"],
+  ])("names the missing risk in every language: %s", (lang, text) => {
+    localStorage.setItem("hmc.lang", lang);
     render(<I18nProvider><RiskPill risk="" /></I18nProvider>);
-    expect(screen.getByText("Риск не передан")).toHaveAttribute("data-tone", "att");
+    expect(screen.getByText(text)).toHaveAttribute("data-tone", "att");
   });
 });

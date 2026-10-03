@@ -126,8 +126,10 @@ describe("riskStyle", () => {
 // ------------------------------------------------------------------ engine contract
 // The engine's levels, read from its sources as TEXT (never executed) — the permissions parity
 // test's pattern. Alert severities are reco/engine.py's _SEVERITY_NAME; the board's risk is the
-// highest of them by api/board.py's _SEVERITY_ORDER, or "none" (_risk). A level added there
-// fails here until riskStyle maps it, instead of reaching a ward as "unknown risk".
+// highest of them by api/board.py's _SEVERITY_ORDER, or "none" (_risk); an admitted patient with
+// no reading gets a hard-coded "risk": "none" (identity_only_board). A level added in any of them
+// fails the dashboard test suite here until riskStyle maps it, instead of reaching a ward as
+// "unknown risk". (No CI job runs the dashboard suite today: run it before merging.)
 // (node:path, not new URL(): under jsdom the global URL is jsdom's, which fileURLToPath refuses.)
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ENGINE = path.resolve(HERE, "../../../../homunculus-engine/src/homunculus");
@@ -141,7 +143,16 @@ function py(rel) {
   }
 }
 
-const quoted = (text) => [...text.matchAll(/["'](\w+)["']/g)].map((m) => m[1]);
+// A level is any quoted text on one line — not just one \w+ word, which would skip "very-high".
+const LEVEL = String.raw`["']([^"'\n]+)["']`;
+const all = (text, pattern) => [...text.matchAll(new RegExp(pattern, "g"))].map((m) => m[1]);
+
+/** The indented body of a module-level `def name(…)`, its blank lines included (LF or CRLF). */
+function defBody(src, name) {
+  const def = new RegExp(String.raw`^def ${name}\b[^\n]*\n((?:[ \t]+[^\n]*\n|[ \t]*\r?\n)*)`, "m").exec(src);
+  if (!def) throw new Error(`api/board.py has no def ${name}(…)`);
+  return def[1];
+}
 
 /** The levels the engine can put on a board card, from the two modules' source text. */
 function engineLevels(recoSrc, boardSrc) {
@@ -149,12 +160,11 @@ function engineLevels(recoSrc, boardSrc) {
   if (!names) throw new Error("reco/engine.py has no module-level _SEVERITY_NAME = {…}");
   const order = /^_SEVERITY_ORDER\b[^=\n]*=\s*\[([^\]]*)\]/m.exec(boardSrc);
   if (!order) throw new Error("api/board.py has no module-level _SEVERITY_ORDER = […]");
-  const risk = /^def _risk\b[^\n]*\n((?:[ \t]+[^\n]*\n|[ \t]*\n)*)/m.exec(boardSrc);
-  if (!risk) throw new Error("api/board.py has no def _risk(…)");
   return {
-    named: [...names[1].matchAll(/:\s*["'](\w+)["']/g)].map((m) => m[1]),
-    order: quoted(order[1]),
-    empty: [...risk[1].matchAll(/return\s+["'](\w+)["']/g)].map((m) => m[1]),
+    named: all(names[1], String.raw`:\s*${LEVEL}`),
+    order: all(order[1], LEVEL),
+    empty: all(defBody(boardSrc, "_risk"), String.raw`return\s+${LEVEL}`),
+    identity: all(defBody(boardSrc, "identity_only_board"), String.raw`["']risk["']\s*:\s*${LEVEL}`),
   };
 }
 
@@ -163,15 +173,41 @@ describe("engine contract", () => {
     const reco = '_SEVERITY_NAME = {\n    Severity.INFO: "info", Severity.URGENT: "urgent",\n}\n';
     const board = '_SEVERITY_ORDER: list[str] = ["info", \'urgent\']\n\n\n'
       + "def _risk(alerts: list[Alert]) -> str:\n"
-      + '    if not alerts:\n        return "none"\n\n    return max(alerts)\n\n\ndef other():\n    return "x"\n';
-    expect(engineLevels(reco, board)).toEqual({ named: ["info", "urgent"], order: ["info", "urgent"], empty: ["none"] });
+      + '    if not alerts:\n        return "none"\n\n    return max(alerts)\n\n\n'
+      + 'def identity_only_board(record) -> dict:\n    return {\n        "patient_id": 1, "risk": "none",\n    }\n\n\n'
+      + 'def other():\n    return "x"\n';
+    expect(engineLevels(reco, board)).toEqual({
+      named: ["info", "urgent"], order: ["info", "urgent"], empty: ["none"], identity: ["none"],
+    });
   });
 
-  const { named, order, empty } = engineLevels(py("reco/engine.py"), py("api/board.py"));
+  // A level that is not one word, a blank CRLF line inside a function, a second hard-coded card
+  // risk: each would otherwise slip past the reader, and the contract would pass without it.
+  it("the reader sees levels that are not one word, through CRLF blank lines", () => {
+    const reco = '_SEVERITY_NAME = {\r\n    Severity.INFO: "info", Severity.URGENT: "very urgent",\r\n}\r\n';
+    const board = '_SEVERITY_ORDER = ["info", \'very urgent\']\r\n\r\n\r\n'
+      + "def _risk(alerts):\r\n"
+      + '    if not alerts:\r\n        return "none"\r\n\r\n    if stale(alerts):\r\n        return \'stale-data\'\r\n'
+      + "    return max(alerts)\r\n\r\n\r\n"
+      + 'def identity_only_board(record):\r\n    return {\r\n\r\n        "risk": "not-measured",\r\n    }\r\n\r\n\r\n'
+      + 'def other():\r\n    return "x"\r\n';
+    expect(engineLevels(reco, board)).toEqual({
+      named: ["info", "very urgent"],
+      order: ["info", "very urgent"],
+      empty: ["none", "stale-data"],
+      identity: ["not-measured"],
+    });
+  });
+
+  const { named, order, empty, identity } = engineLevels(py("reco/engine.py"), py("api/board.py"));
 
   it("reads the engine's levels: _risk answers \"none\" when there is no alert", () => {
     expect(named.length).toBeGreaterThan(0);
     expect(empty).toEqual(["none"]);
+  });
+
+  it("reads the identity-only card's hard-coded risk: \"none\"", () => {
+    expect(identity).toEqual(["none"]);
   });
 
   it("the board orders exactly the severities the alert engine emits", () => {
@@ -179,6 +215,6 @@ describe("engine contract", () => {
   });
 
   it("riskStyle maps exactly \"none\" and the engine's severities", () => {
-    expect([...ENGINE_RISKS].sort()).toEqual([...new Set([...empty, ...order])].sort());
+    expect([...ENGINE_RISKS].sort()).toEqual([...new Set([...empty, ...identity, ...order])].sort());
   });
 });

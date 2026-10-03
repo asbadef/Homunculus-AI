@@ -239,6 +239,7 @@ function Components() {
         ))}
         <RiskPill risk="none" measured={false} />
         <RiskPill risk="stable" />
+        <RiskPill risk={null} />
       </Sub>
 
       <Sub title={t("gallery.form")}>

@@ -50,7 +50,7 @@ describe("design gallery", () => {
   it("shows every engine risk, none of them green", () => {
     render(<DesignGallery />);
     const components = screen.getByRole("region", { name: "Komponentlər" });
-    for (const label of ["Kritik", "Yüksək", "Orta", "Aşağı", "Məlumat", "Tapıntı yoxdur", "Ölçülməyib", "Naməlum risk: stable"]) {
+    for (const label of ["Kritik", "Yüksək", "Orta", "Aşağı", "Məlumat", "Tapıntı yoxdur", "Ölçülməyib", "Naməlum risk: stable", "Risk bildirilməyib"]) {
       const pill = within(components).getAllByText(label).find((el) => el.hasAttribute("data-tone"));
       expect(pill, label).toBeDefined();
       expect(pill.getAttribute("data-tone"), label).not.toBe("ok");
