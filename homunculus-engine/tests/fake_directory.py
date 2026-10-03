@@ -11,7 +11,16 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, replace
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from homunculus.auth.groups import ensure_default_groups, set_manual_groups
 from homunculus.auth.ldap import LdapGroup, LdapIdentity, LdapRuntime, LdapUnavailable
+from homunculus.auth.models import (
+    AUTH_LDAP, Group, LdapGroupMapping, TenantMembership, User, UserGroup,
+)
+from homunculus.auth.service import hash_password
+from homunculus.tenant.models import Tenant
 
 DOMAIN_DN = "DC=hastane,DC=local"
 AD_PASSWORD = "Ad-Parola-1"
@@ -100,3 +109,77 @@ class FakeDirectory:
 
 def runtime(directory: FakeDirectory) -> LdapRuntime:
     return LdapRuntime(directory=directory, url_host="dc1.hastane.local")
+
+
+# ---------------------------------------------------------------- database helpers
+ADMIN_PASSWORD = "Gizli-123"
+TENANT_SLUG = "demo-hastanesi"
+
+
+async def add_mapping(db: AsyncSession, tenant_id: uuid.UUID, ad_group_dn: str,
+                      group: Group) -> LdapGroupMapping:
+    """A mapping row as the admin API writes it: the DN lower-cased."""
+    mapping = LdapGroupMapping(tenant_id=tenant_id, ad_group_dn=ad_group_dn.strip().lower(),
+                               group_id=group.id)
+    db.add(mapping)
+    await db.flush()
+    return mapping
+
+
+async def add_directory_account(db: AsyncSession, tenant_id: uuid.UUID, p: FakePerson, *,
+                                is_active: bool = True) -> User:
+    """The Homunculus row an import would have made for `p`, before its first sign-in: the
+    sAMAccountName lower-cased as username, no e-mail yet, an old name, no groups."""
+    user = User(username=p.identity.username.lower(), email=None, full_name="Eski Ad",
+                hashed_password=None, auth_source=AUTH_LDAP,
+                external_id=p.identity.external_id, is_active=is_active)
+    db.add(user)
+    await db.flush()
+    db.add(TenantMembership(user_id=user.id, tenant_id=tenant_id))
+    await db.flush()
+    return user
+
+
+async def fresh_user(db: AsyncSession, user_id: uuid.UUID) -> User:
+    """The committed row, not the session's cached copy."""
+    return (await db.execute(select(User).where(User.id == user_id)
+                             .execution_options(populate_existing=True))).scalar_one()
+
+
+async def group_rows(db: AsyncSession, user_id: uuid.UUID) -> set[tuple[str, str]]:
+    """(group slug, source) for every group link of the user."""
+    rows = await db.execute(select(Group.slug, UserGroup.source)
+                            .join(UserGroup, UserGroup.group_id == Group.id)
+                            .where(UserGroup.user_id == user_id))
+    return set(rows.all())
+
+
+async def ad_world(db: AsyncSession) -> dict:
+    """One tenant with its default groups; a LOCAL administrator `admin` (ADMIN_PASSWORD, in
+    hospital_admin); the AD mappings YB-Hemsire → nurse and YB-Hekim → physician; and `ayse`,
+    an AD account (sAMAccountName AYilmaz, in YB-Hemsire, mail Ayse.Yilmaz@hastane.az) already
+    imported as `ayilmaz`, before her first sign-in. Committed."""
+    tenant = Tenant(name="Demo", slug=TENANT_SLUG, country_code="TR")
+    db.add(tenant)
+    await db.flush()
+    groups = await ensure_default_groups(db, tenant.id)
+    admin = User(username="admin", email="admin@example.com", full_name="Yönetici",
+                 hashed_password=hash_password(ADMIN_PASSWORD))
+    db.add(admin)
+    await db.flush()
+    db.add(TenantMembership(user_id=admin.id, tenant_id=tenant.id))
+    await db.flush()
+    await set_manual_groups(db, user=admin, tenant_id=tenant.id,
+                            group_ids=[groups["hospital_admin"].id], granted_by_id=None)
+    mappings = {
+        "YB-Hemsire": await add_mapping(db, tenant.id, group_dn("YB-Hemsire"), groups["nurse"]),
+        "YB-Hekim": await add_mapping(db, tenant.id, group_dn("YB-Hekim"), groups["physician"]),
+    }
+    ayse = person("AYilmaz", groups=(group_dn("YB-Hemsire"),), email="Ayse.Yilmaz@hastane.az",
+                  display_name="Ayşe Yılmaz")
+    directory = FakeDirectory([ayse], groups=[LdapGroup(group_dn(cn), cn) for cn in
+                                              ("YB-Hemsire", "YB-Hekim", "YB-Sorumlu")])
+    account = await add_directory_account(db, tenant.id, ayse)
+    await db.commit()
+    return {"tenant": tenant, "groups": groups, "admin": admin, "mappings": mappings,
+            "ayse": ayse, "account": account, "directory": directory}
