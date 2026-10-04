@@ -333,7 +333,9 @@ kötüleşme, laboratuvar bunu yakalayana kadar saatler geçebilirken, sürekli 
   karşı koşar. (Liste gelmeden önce SQLAlchemy 2.1, veritabanı katmanının istediği `greenlet`'i
   getirmeden kuruldu ve API açılamadı.) Geliştirme ortamı Python 3.14'tür; arka uç testleri
   iki yorumlayıcıda da koşturulur, çünkü bazı davranışlar sürüme göre değişir (3.12'de bir
-  dizin kesintisi bu yüzden 503 yerine 500 veriyordu).
+  dizin kesintisi bu yüzden 503 yerine 500 veriyordu). 3.14 geliştirme ortamı bu listeyi
+  kendiliğinden kullanmaz, başka sürümler kurulu olabilir (ör. SQLAlchemy 2.0.51); listeye
+  hizalamak için `homunculus-engine/` içinde: `pip install -c constraints.txt -e ".[dev]"`.
 
 ---
 
@@ -465,7 +467,13 @@ maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te geli
   yenilenirken kapanır; Homunculus'taki "etkin" bayrağı kendiliğinden değişmez. Her kurumda en
   az bir **yerel** yönetici kalır; sistem sonuncusunun kaldırılmasına izin vermez, çünkü AD
   çöktüğünde yönetime girebilecek tek hesap odur. Reddedilen her giriş en az 0,5 saniye sürer:
-  yanıt süresi bir adın AD hesabı olup olmadığını ele vermesin diye.
+  yanıt süresi bir adın AD hesabı olup olmadığını ele vermesin diye. (Dizin kapalıyken AD
+  hesabı hemen 503 alır, öbürleri 401: o anda AD hesapları yine ayırt edilir — kullanıcı
+  kararı 11.) Kurulumdan sonra dizinin bağlanıp bağlanmadığı yönetici olarak
+  `GET /admin/ldap/status` ile görülür (`last_test_ok: true`). Parola hastanenin dizinine
+  yazıldığı gibi, değiştirilmeden gider: bölünmez boşluk ya da birleşik yazılmamış bir `ş`
+  içeren doğru parola da kabul edilir. Sunucu üretimde `LDAP_ALLOW_INSECURE=1` ile açılırsa
+  AD girişi kapalı kalır (şifresiz ya da doğrulanmamış bağlantıda AD parolaları ağda okunabilir).
 
 **AD grup eşlemesi**
 - *Basit:* "AD'de YB-Hemşire grubunda olan, Homunculus'ta Hemşire grubundadır" kuralı.
@@ -489,9 +497,18 @@ maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te geli
   Dizide 3 yanlış parola olunca sonraki giriş, dizine hiç sorulmadan, 429 ile reddedilir: "Çok
   fazla hatalı deneme; 15 dakika sonra tekrar deneyin" — son hatalı denemeden 15 dakika sonrasına
   dek; reddedilen deneme dizine gitmediği için diziyi uzatmaz. Doğru parolayla giriş diziyi
-  bitirir; sayaç bellekte tutulur, sunucu yeniden başlayınca da sıfırlanır. Yönetici, gerekçe
-  yazarak, kullanıcıya 3 deneme hakkı daha verebilir (`POST /admin/users/{id}/unlock-sign-in`):
-  **dizi başına bir kez** (ikincisi 409); hatalı denemesi olmayan bir hesapta (ya da yerel
+  bitirir — ama yalnız o giriş başlamadan önceki hatalar için: doğru parola denetlenirken
+  başarısız olan yanlış parolalar dizine ondan sonra ulaşmış olabilir, AD onları sayar; bu
+  yüzden yeni diziyi başlatırlar. Sayaç bellekte tutulur, sunucu yeniden başlayınca da
+  sıfırlanır — AD'ninki sıfırlanmaz: son hatalı denemeden sonraki 15 dakika içinde yapılan bir
+  yeniden başlatma ya da güncelleme, sınırı o sayım için ikiye katlayabilir (6 yerine 12);
+  güncellemeden önce son 15 dakikada hatalı AD girişi olmadığına bakılır (runbook). Yönetici,
+  gerekçe yazarak, kullanıcıya 3 deneme hakkı daha verebilir
+  (`POST /admin/users/{id}/unlock-sign-in`): **dizi başına bir kez** — ikincisi 409: "Bu
+  hesabın bu hatalı giriş dizisi için tek kilit açma hakkı kullanıldı; 15 dakika hatalı parola
+  girilmezse giriş kendiliğinden açılır". Denetim kaydı kilit açmanın öncesini ve sonrasını
+  (`failed`: dizideki hatalı deneme, `allowed`: 3 ya da 6) ve bir şey verip vermediğini
+  (`granted`) yazar. Hatalı denemesi olmayan bir hesapta (ya da yerel
   hesapta) kilit açma hiçbir şey vermez ve dizinin hakkını harcamaz; başka kurumda da etkin bir
   hesap ya da platform operatörü için olmaz. Gerekçe tek satır, en çok 200 karakter, en az bir
   harf ya da rakam içerir; görünmez biçim karakterleri (yön değiştiriciler, sıfır genişlikli
@@ -502,7 +519,10 @@ maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te geli
   başına dakikada 10 denemeyle (ve 10 ani denemeyle) sınırlar: "Çok fazla giriş denemesi; bir
   dakika sonra tekrar deneyin". Servis bilgisayarları tek bir adresin (NAT, terminal sunucusu)
   arkasındaysa bu sınırı bütün servis paylaşır. Denetim kaydında bir dizi, aynı hesap için
-  `login.fail` satırları ve ardından `throttled` olarak görünür.
+  `login.fail` satırları ve ardından `throttled` olarak görünür. Bedeli: bir klinisyenin giriş
+  adını bilen herkes, 15 dakikada 3 yanlış parolayla onun Homunculus girişini 429'da tutabilir
+  (Windows oturumunu kilitlemez); yönetici bunu dizi başına bir kez açabilir (kullanıcı kararı
+  11).
 
 **Yetkilerin yeniden okunması**
 - *Basit:* Panelin menüde gösterdiği haklar bir ipucudur; asıl kararı her istekte sunucu verir.
