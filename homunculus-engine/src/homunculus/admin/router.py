@@ -13,6 +13,7 @@
   PUT    /admin/users/{id}/groups         users.manage
   POST   /admin/users/{id}/reset-password users.manage
   POST   /admin/users/{id}/reset-mfa      users.manage
+  POST   /admin/users/{id}/unlock-sign-in users.manage (clears the AD sign-in throttle)
 
 Everything is scoped to the tenant in the caller's token (`caller_tenant_id`, which also checks
 the caller's active membership in an active tenant); a user or group of another tenant is a 404,
@@ -269,4 +270,18 @@ async def reset_mfa(user_id: uuid.UUID, request: Request,
     await db.commit()
     _audit(request, principal, "user.mfa_reset", str(user.id), before=before,
            after={"totp_enabled": False})
+    return {"ok": True}
+
+
+@router.post("/users/{user_id}/unlock-sign-in", dependencies=_users)
+async def unlock_sign_in(user_id: uuid.UUID, request: Request,
+                         principal: Principal = Depends(get_principal),
+                         tenant_id: uuid.UUID = Depends(caller_tenant_id),
+                         db: AsyncSession = Depends(get_db)) -> dict:
+    actor = await _begin(db, tenant_id, principal)
+    user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
+    cleared = await _run(db, service.unlock_sign_in(db, tenant_id, user, actor))
+    await db.commit()
+    _audit(request, principal, "user.sign_in_unlocked", str(user.id),
+           before={"failed_sign_ins": cleared}, after={"failed_sign_ins": 0})
     return {"ok": True}

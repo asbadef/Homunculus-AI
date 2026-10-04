@@ -8,9 +8,9 @@ predate a catalogue key). A group's rights are what a token minted from it would
 whole catalogue for a system group, else its catalogue keys (`group_rights`); a user's rights
 are the union over their groups in this tenant, manual and AD (`user_rights`, as `summarize`
 computes them).
-  * A write that targets a user (PATCH, PUT groups, password or MFA reset) needs the target's
-    current rights within the caller's: nobody edits, demotes or takes over an account that can
-    do more than they can.
+  * A write that targets a user (PATCH, PUT groups, password or MFA reset, sign-in unlock)
+    needs the target's current rights within the caller's: nobody edits, demotes or takes
+    over an account that can do more than they can.
   * A group given to a user (PUT groups, create) needs its rights within the caller's.
   * Creating a group needs its permissions within the caller's; editing or deleting one needs
     its rights before AND after within the caller's.
@@ -68,6 +68,7 @@ from homunculus.auth.groups import (
     GroupError, bump_group_members, bump_user, count_admins, lock_admin_guard, set_manual_groups,
     summarize,
 )
+from homunculus.auth.limits import directory_binds
 from homunculus.auth.models import (
     AUTH_LOCAL, Group, GroupPermission, LdapGroupMapping, TenantMembership, User, UserGroup,
 )
@@ -526,6 +527,16 @@ async def reset_password(db: AsyncSession, tenant_id: uuid.UUID, user: User, act
     user.hashed_password = await run_bcrypt(hash_password, password)
     await db.flush()
     await bump_user(db, user)
+
+
+async def unlock_sign_in(db: AsyncSession, tenant_id: uuid.UUID, user: User,
+                         actor: Actor) -> int:
+    """Clear the account's AD sign-in throttle (`auth.limits.directory_binds`: 3 failed binds
+    in 15 minutes): its next sign-in goes to the directory again. Within the caller's rights,
+    as every action on a user. Nothing in the database changes, and the domain's own lockout is
+    AD's business. Returns how many failed sign-ins were cleared (0 for a local account)."""
+    _within(actor, user_rights(user, tenant_id))
+    return directory_binds.clear(str(user.id))
 
 
 async def reset_mfa(db: AsyncSession, tenant_id: uuid.UUID, user: User, actor: Actor) -> None:

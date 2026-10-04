@@ -1,8 +1,9 @@
 """/admin/ldap end to end (spec §7, "Import and mapping"; plan decisions D12–D14): with LDAP off
 everything but the status is 409, the permission comes first (403), the status and the
 connection test, the account and group searches — and, in the sections Tasks 10 and 11 add, the
-import and the mapping table under the same rights rules as the rest of /admin. FakeDirectory
-and the test Postgres; synthetic accounts only."""
+import and the mapping table under the same rights rules as the rest of /admin — and the
+administrator's unlock of an AD account's sign-in throttle (/admin/users/{id}/unlock-sign-in),
+which needs this world. FakeDirectory and the test Postgres; synthetic accounts only."""
 from __future__ import annotations
 
 import asyncio
@@ -19,13 +20,14 @@ from homunculus.admin.service import Actor
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.ldap import ACCOUNT_NEVER_EXPIRES, NOT_CONFIGURED
+from homunculus.auth.limits import directory_binds
 from homunculus.auth.models import Group, GroupPermission, LdapGroupMapping, User
 from homunculus.auth.permissions import ALL_PERMISSIONS
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
 from tests.fake_directory import (
-    AD_PASSWORD, ADMIN_PASSWORD, ad_client, ad_world, add_mapping, audit_events, group_dn,
-    group_rows, person,
+    AD_PASSWORD, ADMIN_PASSWORD, TENANT_SLUG, ad_client, ad_world, add_mapping, audit_events,
+    group_dn, group_rows, person,
 )
 from tests.signed_in import add_user, bearer
 
@@ -389,6 +391,91 @@ async def test_ldap_admin_changes_are_audited_without_a_secret(client, world, db
     assert {r.payload["actor"] for r in records} == {"admin"}
     trail = str([r.payload for r in records])
     assert AD_PASSWORD not in trail and ADMIN_PASSWORD not in trail
+
+
+# ---------------------------------------------------------------- the sign-in unlock
+WRONG = "Yanlis-Parola-9"
+
+
+async def _throttle(c, login: str) -> None:
+    """Three wrong passwords: the account's next sign-in is refused without asking AD."""
+    for _ in range(3):
+        assert (await c.post("/auth/login", json={"login": login, "password": WRONG})
+                ).status_code == 401
+    assert (await c.post("/auth/login", json={"login": login, "password": AD_PASSWORD})
+            ).status_code == 429
+
+
+def _authenticates(directory) -> int:
+    return sum(1 for method, _ in directory.calls if method == "authenticate")
+
+
+async def test_an_administrator_unlocks_a_throttled_ad_account(client, world, db_session):
+    """The clinician who mistyped three times and is waiting at the ward PC: the administrator
+    clears the throttle, and the next sign-in goes to the directory at once."""
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    ayse_id = world["account"].id
+    await _throttle(c, "ayilmaz")
+    asked = _authenticates(world["directory"])
+    res = await c.post(f"/admin/users/{ayse_id}/unlock-sign-in", headers=admin)
+    assert (res.status_code, res.json()) == (200, {"ok": True})
+    assert (await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
+            ).status_code == 200
+    assert _authenticates(world["directory"]) == asked + 1
+    [event] = audit_events(app, "admin", "user.sign_in_unlocked")
+    assert event.payload == {"actor": "admin", "target": str(ayse_id),
+                             "before": {"failed_sign_ins": 3}, "after": {"failed_sign_ins": 0}}
+    assert event.tenant == TENANT_SLUG
+    assert WRONG not in str(event.payload) and AD_PASSWORD not in str(event.payload)
+
+
+async def test_a_user_desk_unlocks_only_accounts_within_its_rights(client, world, db_session):
+    """The rule of every action on a user: nothing on an account that can do more than you."""
+    c, _ = client
+    admin, desk = await bearer(db_session, world["admin"]), await bearer(db_session,
+                                                                          world["desk"])
+    res = await c.post("/admin/ldap/import", headers=admin,
+                       json={"external_ids": [world["mkaya"].identity.external_id]})
+    mkaya_id = res.json()["imported"][0]["id"]               # charge_nurse, through YB-Sorumlu
+    await _throttle(c, "mkaya")
+    res = await c.post(f"/admin/users/{mkaya_id}/unlock-sign-in", headers=desk)
+    assert res.status_code == 403 and "Kendi yetkilerinizi aşan" in res.json()["detail"]
+    assert (await c.post("/auth/login", json={"login": "mkaya", "password": AD_PASSWORD})
+            ).status_code == 429                             # still throttled
+    await _throttle(c, "ayilmaz")                            # no groups yet: within the desk's
+    res = await c.post(f"/admin/users/{world['account'].id}/unlock-sign-in", headers=desk)
+    assert res.status_code == 200
+    assert (await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
+            ).status_code == 200
+
+
+async def test_another_tenants_account_is_not_found_and_stays_throttled(client, world,
+                                                                        db_session):
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    other_tenant = world["other_groups"]["nurse"].tenant_id
+    stranger = await add_user(db_session, username="baska", tenant_id=other_tenant,
+                              group=world["other_groups"]["nurse"])
+    key = str(stranger.id)
+    for _ in range(3):
+        assert directory_binds.begin(key)
+        directory_binds.end(key, failed=True)
+    theirs = await c.post(f"/admin/users/{stranger.id}/unlock-sign-in", headers=admin)
+    missing = await c.post(f"/admin/users/{uuid.uuid4()}/unlock-sign-in", headers=admin)
+    assert theirs.status_code == 404
+    assert (theirs.status_code, theirs.json()) == (missing.status_code, missing.json())
+    assert directory_binds.begin(key) is False
+
+
+async def test_a_caller_without_users_manage_cannot_unlock(client, world, db_session):
+    c, _ = client
+    nurse = await bearer(db_session, world["nurse"])
+    await _throttle(c, "ayilmaz")
+    res = await c.post(f"/admin/users/{world['account'].id}/unlock-sign-in", headers=nurse)
+    assert res.status_code == 403
+    assert (await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
+            ).status_code == 429
 
 
 # ---------------------------------------------------------------- a delete racing a sync

@@ -164,6 +164,23 @@ def test_window_keys_are_independent():
     assert win.begin("a") is False and win.begin("b") is True
 
 
+def test_an_unlock_forgets_the_failures_and_says_how_many_were_in_the_window():
+    """The administrator's unlock (/admin/users/{id}/unlock-sign-in). A failure already out of
+    the window is not reported; an attempt in flight keeps its place."""
+    clock = FakeClock()
+    win = _window(clock)
+    _fail(win)
+    clock.t += 901
+    _fail(win)
+    _fail(win)
+    assert win.begin("u") is True                                # in flight
+    assert win.clear("u") == 2 and win.clear("u") == 0
+    _fail(win)
+    assert win.begin("u") is True                                # 1 failure + 1 in flight
+    assert win.begin("u") is False                               # + 1 more running = 3
+    assert win.clear("b") == 0
+
+
 def test_the_directory_throttle_stays_below_a_typical_ad_lockout():
     """3 within 15 minutes: under AD's common 5-10 threshold, the window at least the usual
     15-minute observation window; the sign-in refusal says "15 dakika"."""

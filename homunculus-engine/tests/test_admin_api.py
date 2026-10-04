@@ -431,6 +431,7 @@ async def test_every_user_route_answers_another_tenants_user_like_a_missing_one(
         ("PUT", "/groups", {"group_ids": [str(world["groups"]["hospital_admin"].id)]}),
         ("POST", "/reset-password", {"password": "Ele-Gecirildi-1"}),
         ("POST", "/reset-mfa", None),
+        ("POST", "/unlock-sign-in", None),
     ]
     for method, suffix, body in calls:
         theirs = await c.request(method, f"/admin/users/{world['stranger'].id}{suffix}",
@@ -478,6 +479,7 @@ async def test_a_nurse_is_refused_on_every_admin_route(client, world, db_session
         ("PUT", f"/admin/users/{uid}/groups", {"group_ids": []}),
         ("POST", f"/admin/users/{uid}/reset-password", {"password": "12345678"}),
         ("POST", f"/admin/users/{uid}/reset-mfa", None),
+        ("POST", f"/admin/users/{uid}/unlock-sign-in", None),
     ]
     for method, path, body in calls:
         res = await c.request(method, path, headers=nurse, json=body)
@@ -673,7 +675,7 @@ async def test_a_user_desk_cannot_take_over_the_administrator(client, world, db_
                 before.is_active, before.full_name)
 
     calls = [("POST", "/reset-password", {"password": "Ele-Gecirildi-1"}),
-             ("POST", "/reset-mfa", None),
+             ("POST", "/reset-mfa", None), ("POST", "/unlock-sign-in", None),
              ("PATCH", "", {"is_active": False}), ("PATCH", "", {"full_name": "x"}),
              ("PUT", "/groups", {"group_ids": []})]
     for method, suffix, body in calls:

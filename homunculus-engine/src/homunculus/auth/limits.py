@@ -102,6 +102,13 @@ class AttemptWindow:
     def succeeded(self, key: str) -> None:
         self._failures.pop(key, None)
 
+    def clear(self, key: str) -> int:
+        """An administrator's unlock: forget the key's failures; returns how many were still
+        inside the window. Attempts in flight keep their places (each releases its own)."""
+        recent = self._recent(key)
+        self._failures.pop(key, None)
+        return recent
+
 
 # Wrong TOTP codes, keyed by user id.
 totp_failures = FailureLimiter(max_failures=5, lock_seconds=300)
