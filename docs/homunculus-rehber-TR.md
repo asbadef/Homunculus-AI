@@ -330,7 +330,8 @@ kötüleşme, laboratuvar bunu yakalayana kadar saatler geçebilirken, sürekli 
 
 Bu bölüm, gerçek sistemde (`?live=1`) kimin neyi yapabildiğini anlatır. Kaynağı tasarım belgesi
 (`docs/superpowers/specs/2026-09-23-ldap-rbac-design.md`) ve kod (`homunculus-engine/src/homunculus/auth/`,
-`admin/`). Active Directory (LDAP) ile giriş ayrı bir iştir (Plan 2) ve henüz kurulmadı.
+`admin/`). Active Directory (LDAP) ile giriş için aşağıdaki "Active Directory ile giriş"
+maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te gelir.
 
 **İzin (permission)**
 - *Basit:* "Panoyu görebilir", "alarm onaylayabilir", "kullanıcı yönetebilir" gibi tek tek haklar.
@@ -400,6 +401,7 @@ Bu bölüm, gerçek sistemde (`?live=1`) kimin neyi yapabildiğini anlatır. Kay
   listeleyebilir, kullanıcı açabilir ve yukarıdaki kural içinde kalan grupları verebilir.
   Varsayılan gruplarda bu izin yalnızca Sistem Yöneticisi'nde vardır; bir yönetici onu yeni bir
   grupla başkasına verebilir. Panel, yönetici simgesini yalnızca bütün kataloğu taşıyana gösterir.
+  AD grup eşlemesini okuyabilir ama değiştiremez (aşağıda "AD grup eşlemesi").
 
 **Kiracı (tenant) ve kiracı yalıtımı**
 - *Basit:* Kiracı, sistemi kullanan bir kurumdur (hastane). Yalıtım: bir hastanenin kullanıcısı
@@ -436,6 +438,53 @@ Bu bölüm, gerçek sistemde (`?live=1`) kimin neyi yapabildiğini anlatır. Kay
   yeni bir token çiftiyle açık kalır. Yöneticinin verdiği parola geçicidir; kullanıcı onu ilk
   girişte buradan değiştirmelidir (sistem bunu henüz zorlamıyor). Active Directory hesabı "Parola
   Active Directory tarafından yönetiliyor" yanıtını alır.
+
+**Active Directory ile giriş**
+- *Basit:* Hastanedeki bilgisayar hesabıyla (kullanıcı adı ve Windows parolası) giriş.
+  Homunculus bu parolayı saklamaz; her girişte hastanenin dizin sunucusuna bir kez sorar.
+- *Homunculus'ta:* `LDAP_URL` ayarlanınca açılır (kurulum ve hastane BT'sinden istenecekler:
+  `docs/EDGE-BRIDGE-LOCAL.md`, "Active Directory sign-in"). Kimse kendiliğinden hesap açamaz:
+  yönetici kişiyi AD'de arar ve içe aktarır (istek başına en çok 50 kişi). AD'de kapatılmış ya
+  da süresi dolmuş hesap, adı yerel kullanıcı adı kuralına uymayan hesap (ör. `ş`, `ç`, `ğ`
+  içeren) ve adı başka bir hesapta kullanılan hesap aktarılmaz; yanıt her birini nedeniyle
+  söyler. Kişi kullanıcı adıyla, `ALAN\kullanıcı` biçimiyle, UPN'iyle (`ad@alan`) ya da
+  e-postasıyla girebilir. Dizin sunucusuna ulaşılamazsa AD hesapları "Dizin sunucusuna
+  ulaşılamıyor" (503) alır, açık oturumlar sürer, yerel hesaplar etkilenmez. AD'de kapatılan,
+  süresi dolan, silinen ya da parolası değişen hesabın oturumu en geç bir saat içinde, token
+  yenilenirken kapanır; Homunculus'taki "etkin" bayrağı kendiliğinden değişmez. Her kurumda en
+  az bir **yerel** yönetici kalır; sistem sonuncusunun kaldırılmasına izin vermez, çünkü AD
+  çöktüğünde yönetime girebilecek tek hesap odur. Reddedilen her giriş en az 0,5 saniye sürer:
+  yanıt süresi bir adın AD hesabı olup olmadığını ele vermesin diye.
+
+**AD grup eşlemesi**
+- *Basit:* "AD'de YB-Hemşire grubunda olan, Homunculus'ta Hemşire grubundadır" kuralı.
+- *Homunculus'ta:* Eşleme her girişte ve her token yenilemesinde yeniden uygulanır: AD'de bir
+  gruba eklenen ya da gruptan çıkarılan kişinin yetkisi en geç bir saat içinde değişir; dizine
+  ulaşılamıyorsa hiçbir şey değişmez. Yöneticinin elle verdiği gruplara dokunulmaz. Yeni bir
+  eşleme herkese bir sonraki giriş ya da yenilemede uygulanır; silinen eşlemenin verdiği yetki
+  hemen geri alınır. Eşlemeyi yalnız **bütün kataloğu taşıyan** yönetici ekleyip silebilir,
+  çünkü bir eşleme o AD grubundaki herkesi bir kerede yeniden gruplar; kullanıcı yöneticisi
+  tabloyu yalnız okur. AD grubu DN'iyle (ayırt edici adıyla) tanınır; DN tek bir yazımla
+  saklanır ve karşılaştırılır (boşluklar, kaçışlar ve İngilizce harflerin büyük/küçüklüğü fark
+  etmez, `Ş`/`ş` gibi harfler ise yazıldığı gibi karşılaştırılır — grubu elle yazmak yerine
+  seçiciden seçin). AD'de adı değişen ya da taşınan grubun eşlemesi sessizce kopar (açık iş,
+  Grup 4).
+
+**AD giriş sınırı ve kilit açma**
+- *Basit:* Homunculus'a yanlış girilen parola hastanenin hesap kilitleme sayacına da işler.
+  Homunculus kimsenin Windows hesabını kilitletmesin diye hatalı denemeleri sınırlar.
+- *Homunculus'ta:* Bir AD hesabıyla 15 dakikada 3 kez yanlış parola girilirse sonraki giriş,
+  dizine hiç sorulmadan, 429 ile reddedilir: "Çok fazla hatalı deneme; 15 dakika sonra tekrar
+  deneyin". Doğru parolayla giriş sayacı sıfırlar; sayaç bellekte tutulur, sunucu yeniden
+  başlayınca da sıfırlanır. Yönetici, gerekçe yazarak, kullanıcının giriş sınırını kaldırabilir
+  (`POST /admin/users/{id}/unlock-sign-in`): hesap başına 15 dakikada bir kez; başka kurumda da
+  etkin bir hesap ya da platform operatörü için olmaz. Bu, AD'deki kilidi açmaz — o, BT
+  biriminin işidir. Ayrıca nginx giriş adresini istemci adresi başına dakikada 10 denemeyle (ve
+  10 ani denemeyle) sınırlar: "Çok fazla giriş denemesi; bir dakika sonra tekrar deneyin".
+  Servis bilgisayarları tek bir adresin (NAT, terminal sunucusu) arkasındaysa bu sınırı bütün
+  servis paylaşır. Sınır ani denemeleri keser, yavaş denemeyi durdurmaz: beş dakikada bir
+  girilen yanlış parola hiç reddedilmez ve AD'nin sayacında birikebilir — denetim kaydındaki
+  `login.fail` satırları bunu gösterir.
 
 **Yetkilerin yeniden okunması**
 - *Basit:* Panelin menüde gösterdiği haklar bir ipucudur; asıl kararı her istekte sunucu verir.
