@@ -59,8 +59,12 @@ async def imported_ids(db: AsyncSession, external_ids: Iterable[str]) -> set[str
 
 # ---------------------------------------------------------------- import (plan decision D12)
 # Lookups one import has with the directory at once: one place fewer than the admin lane, so
-# however large an import, an administrator's search, group picker or connection test still
-# finds a lane place instead of queueing behind it.
+# beside ONE import, however large, an administrator's search, group picker or connection test
+# still finds a lane place instead of queueing behind it. Two imports at the same moment can
+# hold every place: a search then waits at most its deadline for one and answers 503 (bounded,
+# never a hang). Each lookup answers within 2 × the deadline, but an import as a whole does not:
+# n accounts can take about ceil(n / IMPORT_LOOKUPS) × 2 × the deadline against a slow domain
+# controller — the panel imports in parts (roadmap G1-14).
 IMPORT_LOOKUPS = max(1, ADMIN_LANE_SLOTS - 1)
 
 
@@ -293,8 +297,9 @@ async def create_mapping(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor, *
     (`canonical_dn`, what the sign-in compares AD's memberOf in; the body's validator has
     already refused a value that is not a DN), and
     another spelling of a DN already mapped to the group — a row stored before DNs were
-    canonicalised included — is the 409 duplicate. It changes nobody now: each account picks it
-    up at its next sign-in or token refresh, and at import."""
+    canonicalised included, unless its DN has a non-ASCII capital (`ldap_sync.mapped_group_ids`:
+    that row matches nothing and must be re-created) — is the 409 duplicate. It changes nobody
+    now: each account picks it up at its next sign-in or token refresh, and at import."""
     _full_administrator(actor)
     group = (await db.execute(select(Group).where(
         Group.id == group_id, Group.tenant_id == tenant_id))).scalar_one_or_none()

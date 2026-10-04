@@ -110,7 +110,8 @@ class LdapGroup:
 # Ldap3Directory has 8 threads (SLOTS); sign-ins and refreshes never take the lane, so they
 # always keep at least 5 of them, whatever the administrators are doing. One import takes at
 # most ADMIN_LANE_SLOTS - 1 of them (admin/ldap_service.py, IMPORT_LOOKUPS), so a search
-# finds a place beside it.
+# finds a place beside one import; two imports at once can take all of them, and a search then
+# waits at most its deadline and answers 503.
 ADMIN_LANE_SLOTS = 3
 
 

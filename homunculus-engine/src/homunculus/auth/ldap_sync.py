@@ -113,8 +113,12 @@ async def mapped_group_ids(db: AsyncSession, tenant_id: uuid.UUID,
                            group_dns: Iterable[str]) -> set[uuid.UUID]:
     """The tenant's groups that these AD group DNs map to. Both sides are compared in their
     canonical spelling (`dn_key`) — the stored DNs too, at read time, so a row written before
-    DNs were canonicalised (lower-cased only) still matches without a migration. The tenant's
-    rows are read first: with none, AD's list is not parsed at all."""
+    DNs were canonicalised (lower-cased whole) still matches without a migration when its DN is
+    ASCII. One whose DN has a non-ASCII capital does NOT match any more: it was lower-cased by
+    Unicode's rules (`Ç` → `ç`), and the canonical spelling keeps AD's own (`Ç`). Such a row
+    must be deleted and created again from the group picker. This branch has never been
+    deployed, so no deployment holds such a row; nothing is migrated. The tenant's rows are
+    read first: with none, AD's list is not parsed at all."""
     rows = (await db.execute(
         select(LdapGroupMapping.ad_group_dn, LdapGroupMapping.group_id)
         .where(LdapGroupMapping.tenant_id == tenant_id))).all()
