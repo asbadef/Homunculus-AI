@@ -320,9 +320,12 @@ def _is_guid(value: str) -> bool:
 class _Attempt:
     """One directory call, shared by the event loop and the worker thread that runs it. The
     caller stops waiting (`give_up`: the deadline, a cancellation) and the worker is about to
-    bind as the account with the typed password (`start_bind`) under one lock, so exactly one
-    of two things happens: that bind starts and the caller learns it did, or it never starts —
-    a call already cut off never spends one of the account's attempts in AD's lockout count."""
+    send the bind request as the account with the typed password (`start_bind`, once that
+    connection is open) under one lock, so exactly one of two things happens: that request is
+    sent and the caller learns it was, or it is never sent — a call already cut off never spends
+    one of the account's attempts in AD's lockout count. Since the connection (TCP, TLS) is
+    open by then, a request marked as sent has left before the caller gave up: the domain
+    controller has it within the network's own delay."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -543,9 +546,13 @@ class Ldap3Directory:
             _close(conn)
 
     def _password_ok(self, attempt: _Attempt, dn: str, password: str) -> bool:
-        attempt.start_bind()             # not once the caller has gone; from here AD may count it
         conn = self._connect(dn, password)
         try:
+            # TCP and TLS first: no password crosses yet, so a failure or a cut-off here costs
+            # nothing in AD. Then the bind request, unless the caller has gone; from here AD may
+            # count it. (`bind` sends at once on a connection already open.)
+            conn.open(read_server_info=False)
+            attempt.start_bind()
             if conn.bind():
                 return True
             if (conn.result or {}).get("result") == RESULT_INVALID_CREDENTIALS:

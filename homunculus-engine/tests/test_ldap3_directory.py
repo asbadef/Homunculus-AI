@@ -338,16 +338,22 @@ USER_PW = "Dogru-Parola-1"
 
 class Script:
     """What the fake server answers: a password per DN, a result code for a refused bind, an
-    error every bind raises (or the bind as one DN only), and one queued (entries, result code)
-    reply per search."""
+    error every bind raises (or the bind as one DN only), an error opening a connection as one
+    DN (TCP or TLS refused: nothing sent yet), how long a bind as one DN takes, and one queued
+    (entries, result code) reply per search. `bound` lists the DNs a bind was sent as, in
+    order; `bind_entered` is set when a slow bind begins."""
 
     def __init__(self, *replies):
         self.passwords = {SVC_DN: SVC_PW, USER_DN: USER_PW}
         self.bind_codes: dict[str, int] = {}
         self.error: BaseException | None = None
         self.bind_errors: dict[str, BaseException] = {}
+        self.open_errors: dict[str, BaseException] = {}
+        self.bind_delays: dict[str, float] = {}
+        self.bind_entered = threading.Event()
         self.replies = list(replies)
         self.connections: list[FakeConnection] = []
+        self.bound: list[str] = []
         self.searches: list[dict] = []
 
     def connect(self, user, password):
@@ -363,11 +369,21 @@ class FakeConnection:
         self.script, self.user, self._password = script, user, password
         self.result, self.response, self.closed = {}, [], False
 
+    def open(self, read_server_info=True):
+        error = self.script.open_errors.get(self.user)
+        if error is not None:
+            raise error
+
     def bind(self):
+        self.script.bound.append(self.user)
+        delay = self.script.bind_delays.get(self.user)
+        if delay:
+            self.script.bind_entered.set()
+            time.sleep(delay)
         error = self.script.bind_errors.get(self.user, self.script.error)
         if error is not None:
             raise error
-        ok =self.script.passwords.get(self.user) == self._password
+        ok = self.script.passwords.get(self.user) == self._password
         self.result = {"result": 0 if ok else self.script.bind_codes.get(self.user, 49)}
         return ok
 
@@ -387,7 +403,8 @@ def _directory(script, **env):
 
 
 def _bound_as(script):
-    return [c.user for c in script.connections]
+    """The DNs a bind was sent as, in order."""
+    return list(script.bound)
 
 
 async def test_sign_in_finds_the_account_by_guid_then_binds_as_its_dn():
@@ -865,17 +882,48 @@ async def test_a_call_cut_off_while_queued_sent_no_password_and_never_runs():
     assert USER_DN not in _bound_as(script)
 
 
-async def test_a_call_cut_off_during_the_bind_as_the_account_says_the_password_was_sent():
-    """AD may count that bind toward the account's lockout whatever its outcome: so does the
-    sign-in throttle — dated a deadline later (`bind_pending_s`), since the domain controller
-    has not answered and may count it then."""
+async def test_a_call_cut_off_while_opening_the_accounts_connection_sent_no_password():
+    """TCP and TLS to the domain controller as the account, slow: the deadline comes before the
+    bind request was sent, so nothing counts in AD — and once the connection is open the
+    worker does not send it any more."""
     script = Script(([_entry()], 0))
     directory = _directory_over(_slow_as(USER_DN, script, 0.3), deadline_s=0.1)
+    with pytest.raises(LdapUnavailable) as err:
+        await directory.authenticate(GUID, USER_PW)
+    assert (err.value.reason, err.value.bind_attempted, err.value.bind_pending_s) == (
+        "timeout", False, 0.0)
+    await _idle(directory)
+    assert _bound_as(script) == [SVC_DN]
+
+
+async def test_a_call_cut_off_during_the_bind_as_the_account_says_the_password_was_sent():
+    """The bind request had been sent, its answer slow: AD may count that bind toward the
+    account's lockout whatever its outcome, so the sign-in throttle does — dated a deadline
+    later (`bind_pending_s`), since the domain controller has not answered and may count it
+    then."""
+    script = Script(([_entry()], 0))
+    script.bind_delays[USER_DN] = 0.3
+    directory = _directory_over(script.connect, deadline_s=0.1)
     with pytest.raises(LdapUnavailable) as err:
         await directory.authenticate(GUID, USER_PW)
     assert (err.value.reason, err.value.bind_attempted) == ("timeout", True)
     assert err.value.bind_pending_s == 0.1
     await _idle(directory)
+
+
+@pytest.mark.parametrize("error, reason", [
+    (LDAPSocketOpenError("socket connection error while opening: refused"), "unreachable"),
+    (ssl.SSLCertVerificationError("certificate verify failed"), "tls"),
+])
+async def test_a_failure_opening_the_accounts_connection_sent_no_password(error, reason):
+    """The connection as the account is opened (TCP, TLS) before the bind request goes out:
+    failing there, the password never left Homunculus — no count in AD, none in the throttle."""
+    script = Script(([_entry()], 0))
+    script.open_errors[USER_DN] = error
+    with pytest.raises(LdapUnavailable) as err:
+        await _directory(script).authenticate(GUID, USER_PW)
+    assert (err.value.reason, err.value.bind_attempted) == (reason, False)
+    assert _bound_as(script) == [SVC_DN]
 
 
 @pytest.mark.parametrize("dn, sent", [(SVC_DN, False), (USER_DN, True)])
@@ -909,14 +957,23 @@ async def test_a_search_failure_before_the_bind_sent_no_password():
     assert _bound_as(script) == [SVC_DN]
 
 
-@pytest.mark.parametrize("slow_dn, sent", [(SVC_DN, False), (USER_DN, True)])
-async def test_a_cancelled_sign_in_says_whether_the_password_had_been_sent(slow_dn, sent):
+@pytest.mark.parametrize("slow, sent", [
+    ("service connection", False), ("account connection", False), ("account bind", True),
+])
+async def test_a_cancelled_sign_in_says_whether_the_password_had_been_sent(slow, sent):
     """The caller gone (the request cut off, the server stopping): the cancellation carries
-    `bind_attempted` as an outage does, and a call cancelled before the bind as the account
-    never makes it afterwards."""
+    `bind_attempted` as an outage does, and a call cancelled before the bind request as the
+    account was sent never sends it afterwards."""
     script = Script(([_entry()], 0))
     entered = threading.Event()
-    directory = _directory_over(_slow_as(slow_dn, script, 0.3, entered), deadline_s=5)
+    if slow == "account bind":
+        script.bind_delays[USER_DN] = 0.3
+        script.bind_entered = entered
+        connect = script.connect
+    else:
+        connect = _slow_as(SVC_DN if slow == "service connection" else USER_DN, script, 0.3,
+                           entered)
+    directory = _directory_over(connect, deadline_s=5)
     caught: list[BaseException] = []
 
     async def sign_in():
