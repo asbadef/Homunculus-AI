@@ -64,9 +64,17 @@ _RUN_LOCK = pytest.StashKey[object]()
 
 
 def _libpq_url(url: str) -> str:
-    """The sync (psycopg2) form of an async SQLAlchemy URL, password included."""
+    """The libpq form of an async SQLAlchemy URL, password included: for `psycopg2.connect`."""
     from sqlalchemy.engine import make_url
     return make_url(url).set(drivername="postgresql").render_as_string(hide_password=False)
+
+
+def _sync_engine_url(url: str) -> str:
+    """The sync SQLAlchemy URL, with its driver named: a bare `postgresql://` means psycopg2 to
+    SQLAlchemy 2.0 but psycopg (3) to 2.1, which this project does not install."""
+    from sqlalchemy.engine import make_url
+    return (make_url(url).set(drivername="postgresql+psycopg2")
+            .render_as_string(hide_password=False))
 
 
 def pytest_sessionstart(session):
@@ -139,7 +147,7 @@ def clean_db(monkeypatch):
     from sqlalchemy import create_engine
 
     monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)   # alembic/env.py reads this
-    engine = create_engine(_libpq_url(TEST_DATABASE_URL))
+    engine = create_engine(_sync_engine_url(TEST_DATABASE_URL))
     _reset_public_schema(engine)
     cfg = Config(str(ENGINE_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ENGINE_ROOT / "alembic"))
