@@ -1047,6 +1047,8 @@ async def test_a_second_unlock_within_the_window_is_refused(client, world, db_se
 @pytest.mark.parametrize("body", [
     None, {}, {"reason": ""}, {"reason": "   "}, {"reason": "x" * 201},
     {"reason": "iki\nsatır"}, {"reason": "boş\x00karakter"}, {"reason": "sekme\tile"},
+    {"reason": "satır\u2028ayırıcı"}, {"reason": "paragraf\u2029ayırıcı"},
+    {"reason": "sonraki\x85satır"},
 ])
 async def test_an_unlock_needs_a_one_line_reason(client, world, db_session, body):
     """The reason goes to the audit row: required, not blank, at most 200 characters, one line
