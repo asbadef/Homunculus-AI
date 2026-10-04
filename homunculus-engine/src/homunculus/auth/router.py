@@ -132,6 +132,10 @@ async def login(body: LoginRequest, request: Request,
         if exc.status_code == status.HTTP_401_UNAUTHORIZED:
             rest = LOGIN_FAILURE_FLOOR_S - (_now() - started)
             if rest > 0:
+                # No 401 path writes anything (lookups, the audit row is in memory): the
+                # connection goes back to the pool before the wait, or a burst of wrong
+                # passwords at shift change would pin the pool for the floor each.
+                await db.rollback()
                 await _sleep(rest)
         raise
 

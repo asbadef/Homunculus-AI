@@ -443,6 +443,33 @@ async def test_the_floor_counts_from_the_start_of_the_request(client, world, mon
     assert elapsed + sum(slept) >= LOGIN_FAILURE_FLOOR_S - 1e-9
 
 
+@pytest.mark.parametrize("case", [
+    "unknown_login", "local_wrong_password", "ad_inactive", "ad_wrong_password",
+    "ad_deactivated_during_the_directory_call",
+])
+async def test_the_floor_is_slept_without_a_database_connection(client, world, db_session,
+                                                                monkeypatch, case):
+    """A refused sign-in waits out the floor with its database connection back in the pool
+    (nothing is written on a 401 path): a burst of wrong passwords at shift change must not
+    pin the pool for LOGIN_FAILURE_FLOOR_S each. Counted in the pool itself, at the moment the
+    route sleeps."""
+    import homunculus.auth.router as auth_router
+
+    c, app = client
+    login, password = await _arrange_failure(case, c, app, world, db_session)
+    held: list[int] = []
+
+    async def sleep(seconds):
+        held.append(db_session.bind.pool.checkedout() - baseline)
+
+    monkeypatch.setattr(auth_router, "_now", lambda: 100.0)      # the clock stands still
+    monkeypatch.setattr(auth_router, "_sleep", sleep)
+    baseline = db_session.bind.pool.checkedout()
+    res = await _login(c, login, password)
+    assert res.status_code == 401, res.text
+    assert held == [0]
+
+
 THROTTLED = "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin"
 
 
