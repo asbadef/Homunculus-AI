@@ -152,6 +152,14 @@ def test_a_limited_sign_in_is_answered_in_json() -> None:
     assert text.count("@login_limited") == 2                 # declared once, used once
 
 
+def test_a_limited_sign_in_says_when_to_try_again() -> None:
+    """`Retry-After: 60` on nginx's 429 (`always`: add_header otherwise skips an error status):
+    the limit refills at 10 a minute, and a client — or an operator reading the response — knows
+    to wait a minute, as the JSON detail says."""
+    named = _named_location(CONF.read_text(encoding="utf-8"), "@login_limited")
+    assert _directives(named, "add_header") == {"add_header Retry-After 60 always"}
+
+
 @pytest.mark.parametrize("path", API_PATHS)
 def test_api_path_is_proxied(path: str) -> None:
     assert any(p.search(path) for p in _api_locations()), f"{path} falls through to the SPA"
