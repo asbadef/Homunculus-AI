@@ -76,8 +76,8 @@ dokunulmaz.
 |---|---|---|---|---|---|
 | G1-01 | nginx: eksik API yolları + yapılandırma testi | 1 | Düşük | — | ✅ 01.10 · a638151 |
 | G1-02 | main → LDAP birleştirme: 9 çakışma, göç `0010`, `clinical.chart` + `scores.sign` izinleri, kapsam izinlere, `infinity_research` `devices.manage`, demo kabuğu LDAP sürümü; bütün testler yeşil · plan: [dalga 0](2026-10-01-g1-dalga0-main-ldap-birlestirme.md) | 13 | **Yüksek** | G1-01 | ✅ 02.10 · 61d257a…c094b64 |
-| G1-03 | LDAP arka ucu · dizin modülü + AD girişi + yenilemede dizin kontrolü (spec §7, §4) | 5 | Orta | G1-02 | Bekliyor |
-| G1-04 | LDAP arka ucu · `/admin/ldap/*` içe aktarma, grup eşlemesi, yerel yönetici koruması | 5 | Orta | G1-03 | Bekliyor |
+| G1-03 | LDAP arka ucu · dizin modülü + AD girişi + yenilemede dizin kontrolü (spec §7, §4) · plan: [dalga 1A](2026-10-03-g1-dalga1a-ldap-arka-uc.md) | 5 | Orta | G1-02 | ✅ 03.10 · 14b6750…20d7409, inceleme düzeltmeleri F1–F2 08ee940…dabd690 |
+| G1-04 | LDAP arka ucu · `/admin/ldap/*` içe aktarma, grup eşlemesi, yerel yönetici koruması (zaten Plan 1'de: `count_admins` yalnız yerel yöneticileri sayar) · plan: [dalga 1A](2026-10-03-g1-dalga1a-ldap-arka-uc.md) | 5 | Orta | G1-03 | ✅ 04.10 · a551711…a8c4b81, inceleme düzeltmeleri F3–F5 4cdc8aa…a941bd9, gerçek dizin testi + belgeler 1fc6457… |
 | G1-05 | Tasarım temeli: Gece/Gün renk değişkenleri, fontlar (yerel paket), ikonlar, temel bileşenler — `dashboard/src/live/` · plan: [dalga 1B](2026-10-03-g1-dalga1b-tasarim-temeli.md) | 5 | Düşük | G1-02 | ✅ 03.10 · 9d130be…bec4d7d (`dashboard/src/live`; cila dahil, Dalga 1A commit'leri arada) |
 | G1-06 | Dört dil çatısı (anahtarlı sözlük, D2 varsayılanı) · plan: [dalga 1B](2026-10-03-g1-dalga1b-tasarim-temeli.md) | 3 | Düşük | G1-05 | ✅ 03.10 · 9d130be…bec4d7d (`dashboard/src/live`; cila dahil, Dalga 1A commit'leri arada) |
 | G1-07 | Kabuk: sol menü (izinle), üst çubuk (birim çipi, saat, nöbet bitimine, dil, tema, zil, kişi menüsü); canlı mod yeni kabuğa | 5 | Orta | G1-05, G1-06 | Bekliyor |
@@ -95,6 +95,12 @@ Dalga 0 sonu: backend 1665 geçti / 1 atlandı / 0 hata; dashboard 810 geçti (4
 Kapanış düzeltmeleriyle (`f5abde8` test hesabı tohumu, `1e7b11b` iki metin): backend 1670 geçti /
 1 atlandı / 0 hata; dashboard 810 geçti (43 dosya).
 
+Dalga 1A sonu (G1-03/G1-04, son kod commit'i `8eb6b1d`; sonrası yalnız belge): backend 2101 geçti /
+6 atlandı (eski 1 + gerçek dizin testinin 5'i, `LDAP_TEST_*` yok) / 0 hata, test veritabanıyla;
+dashboard 1316 geçti (63 dosya); vite build tamam; nginx `-t` (nginx:alpine) tamam;
+`docker compose --env-file deploy/local/.env.example config` tamam (örnek dosyada boş bırakılan
+dört zorunlu sır yer tutucuyla verildi).
+
 > G1-15'teki VM deploy kullanıcının kararıdır (aşağıda "Kullanıcı kararları", 2–3):
 > yedek → `0010` ön kontrolü → göç `0008 → 0009 → 0010` → herkes bir kez yeniden girer.
 
@@ -110,16 +116,20 @@ Kapanış düzeltmeleriyle (`f5abde8` test hesabı tohumu, `1e7b11b` iki metin):
 
 ### Hastaneden gerekenler (G1-03'ü bekletmez, G1-15'i bekletir)
 
-1. LDAPS adresi (`ldaps://…:636`) ve CA sertifikası
-2. Salt okunur servis hesabı (bind DN + şifre)
-3. Arama kökü (base DN)
+1. LDAPS adresi (`ldaps://…:636`, etki alanı denetleyicisinin sertifikadaki DNS adıyla, IP
+   değil) ve CA sertifikası
+2. Salt okunur servis hesabı (bind DN + şifre); `pwdLastSet`, `accountExpires`, `memberOf`
+   okuyabilmeli (okuyamazsa parola değişikliği/süre sonu sessizce görülmez)
+3. Arama kökü (base DN): kullanıcıları VE eşlenecek grupları kapsamalı
 4. Rol karşılığı AD grupları (ör. YB-Hekim, YB-Hemşire)
 5. VM'den etki alanı denetleyicisine 636 portu açık mı
 6. Servis PC'leri tek bir NAT/terminal sunucusu arkasında mı? (nginx giriş sınırı IP başına
    10/dk + 10 patlama; ortak IP'de vardiya değişiminde 429 olabilir)
-7. Etki alanı hesap kilitleme politikası (eşik ve sıfırlama süresi) — eşik en az 6 olmalı:
+7. Etki alanı hesap kilitleme politikası (eşik ve sıfırlama süresi) — eşik en az 7 olmalı
+   (3 + 3'ün üstünde; AD hesabı eşiğe ulaşan denemede kilitler, 6'da 6. deneme kilitlerdi):
    Homunculus hesap başına 15 dk'da en çok 3 hatalı bağlanma yapar, yöneticinin kilit açması
-   (hesap başına 15 dk'da bir) 3 tane daha getirir: 3 + 3
+   (hesap başına 15 dk'da bir) 3 tane daha getirir: 3 + 3. (Önceki metin "en az 6" diyordu;
+   `auth/limits.py` "eşik bunun üstünde kalmalı" der.)
 8. Etki alanındaki sAMAccountName'ler ASCII mi? (ş/ç/ğ/ö/ü içeren adlar `invalid_login` ile
    içe aktarılamaz)
 9. Adında `#` veya `=` geçen AD grupları var mı? (ldap3'ün DN çözümleyicisi kaçışsız `#`/`=`
@@ -309,6 +319,23 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   harfleri eşit sayar, Homunculus saymaz. Eşleme grup seçiciden yapıldığında AD'nin yazımı
   birebir gelir; elle yazılan bir DN'de ASCII dışı harflerin büyük/küçük yazımı AD'dekiyle aynı
   olmalı. → G1-14 (AD paneli bunu göz önünde tutmalı)
+- AD'de yeniden adlandırılan hesap izlenmiyor (plan "Spec gaps" 7): girişte ad, e-posta ve DN
+  güncelleniyor ama `username` değil, yönetimde yeniden adlandırma yolu da yok; AD'de adı
+  değişen kişi ne eski ne yeni sAMAccountName'iyle girebilir, yalnız Homunculus'taki
+  e-postasıyla girer. → Grup 4
+- **G1-14 notu:** `/admin/ldap` çağrıları 2 × süre sınırı (varsayılan ≈20 s, en çok 24 s)
+  sürebilir, dashboard'un 15 s zaman aşımını aşar — panel bu uçlar için daha uzun zaman aşımı
+  kullanmalı; içe aktarma 10'arlı parçalar. Eşleme ekleme/silme yalnız bütün kataloğu taşıyana
+  açık (403 `AD grup eşlemesini yalnız tüm yetkilere sahip bir yönetici değiştirebilir`): panel
+  bu düğmeleri ona göre gösterir. → G1-14
+- AD giriş sınırı kayan pencere: en eski hata 15 dakikayı doldurunca yeni deneme açılıyor, yani
+  beş dakikada bir girilen yanlış parola hiç reddedilmiyor. AD ise sayacını ancak "Reset account
+  lockout counter after" süresi hatasız geçince sıfırlar: yavaş bir deneme dizisi (yaklaşık
+  5 × eşik dakika) hesabı AD'de yine kilitleyebilir. `auth/limits.py`'deki "pencere en az AD'nin
+  sıfırlama süresi kadar" kuralı bunu kapatmıyor. Seçenek: sınırı AD'nin kendi mantığına
+  çevirmek (3 hatadan sonra, SON hatadan itibaren 15 dakika hatasız geçene dek ret) ve
+  hastaneden sıfırlama süresinin 15 dakikadan kısa olmasını istemek. Bugün: denetim kaydında
+  aynı hesap için birkaç dakikada bir `login.fail` görünür. → G1-15 öncesi karar (kod değişikliği)
 
 ## Dalga 1B'den açık kalanlar
 
