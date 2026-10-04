@@ -21,6 +21,13 @@ caller without `users.manage` gets 403 first, configured or not. A directory tha
 answer is 503 `Dizin sunucusuna ulaşılamıyor`. The service account's password never appears in
 a response. Writes follow `admin/router.py`: `_begin` (the tenant lock and a re-read of the
 caller), AdminError → rollback, the audit row after the commit.
+
+The four routes that ask the directory (test, search, groups, import) give the request's
+database connection back to the pool before they do (`_release_connection`, plan decision D7
+applied to administration): a directory call may wait its deadline for an admin-lane place and
+then take its deadline again, and a slow domain controller must not pin the pool meanwhile.
+What they read afterwards is read anew; the import's writes start with `_begin`, which
+re-reads the caller under the tenant lock.
 """
 from __future__ import annotations
 
@@ -71,6 +78,16 @@ def configured_ldap(ldap: LdapRuntime | None = Depends(get_ldap)) -> LdapRuntime
     return ldap
 
 
+async def _release_connection(db: AsyncSession) -> None:
+    """Give the request's database connection back before the directory is asked. Nothing has
+    been written yet, so the rollback loses nothing. The rows the guards read (the caller's)
+    are detached first, so the rollback does not expire them: the route can still name the
+    caller in its audit row without a query — anything that decides a write is re-read under
+    the tenant lock (`_begin`)."""
+    db.expunge_all()
+    await db.rollback()
+
+
 def _directory_down() -> HTTPException:
     return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=DIRECTORY_DOWN)
 
@@ -92,7 +109,9 @@ async def ldap_status(ldap: LdapRuntime | None = Depends(get_ldap)) -> LdapStatu
 
 @router.post("/test", response_model=LdapTestOut, dependencies=_users_here)
 async def ldap_test(request: Request, principal: Principal = Depends(get_principal),
-                    ldap: LdapRuntime = Depends(configured_ldap)) -> LdapTestOut:
+                    ldap: LdapRuntime = Depends(configured_ldap),
+                    db: AsyncSession = Depends(get_db)) -> LdapTestOut:
+    await _release_connection(db)
     ok, reason = await ldap.test()
     _audit(request, principal, "ldap.test", ldap.url_host, after={"ok": ok, "reason": reason})
     return LdapTestOut(ok=ok, reason=reason, checked_at=ldap.last_test_at)
@@ -102,6 +121,7 @@ async def ldap_test(request: Request, principal: Principal = Depends(get_princip
 async def ldap_search(q: SearchQuery,
                       ldap: LdapRuntime = Depends(configured_ldap),
                       db: AsyncSession = Depends(get_db)) -> list[LdapUserOut]:
+    await _release_connection(db)
     try:
         found = await ldap.directory.search_users(q, ldap_service.RESULT_CAP,
                                                   lane=ldap.admin_lane)
@@ -114,7 +134,9 @@ async def ldap_search(q: SearchQuery,
 
 @router.get("/groups", response_model=list[LdapGroupOut], dependencies=_users_here)
 async def ldap_groups(q: SearchQuery,
-                      ldap: LdapRuntime = Depends(configured_ldap)) -> list[LdapGroupOut]:
+                      ldap: LdapRuntime = Depends(configured_ldap),
+                      db: AsyncSession = Depends(get_db)) -> list[LdapGroupOut]:
+    await _release_connection(db)
     try:
         found = await ldap.directory.search_groups(q, ldap_service.RESULT_CAP,
                                                    lane=ldap.admin_lane)
@@ -131,14 +153,17 @@ async def ldap_import(body: LdapImportIn, request: Request,
                       db: AsyncSession = Depends(get_db)) -> LdapImportOut:
     """The directory is asked first, before the tenant lock — a slow directory must not hold up
     every other /admin write — and only about ids that have no account yet, through the admin
-    lane (`ldap_service.lookup_accounts`). A directory that does not answer is 503 with nothing
-    written. Then the import, under the lock, in one transaction; one `ldap.import` audit row
+    lane (`ldap_service.lookup_accounts`), with the request's database connection given back
+    meanwhile. A directory that does not answer is 503 with nothing written. Then the import,
+    under the lock — `_begin` re-reads the caller there, so rights lost while the directory
+    answered are caught — in one transaction; one `ldap.import` audit row
     per created account, after the commit. The response and those rows are built from what the
     import wrote, read before the commit (`ldap_service.Imported`): no lookup after it, which a
     concurrent change could turn into a 500 for a committed import."""
     wanted = list(dict.fromkeys(str(i) for i in body.external_ids))
     known = await ldap_service.imported_ids(db, wanted)
     fresh = [eid for eid in wanted if eid not in known]
+    await _release_connection(db)
     try:
         identities = await ldap_service.lookup_accounts(ldap, fresh)
     except LdapUnavailable:

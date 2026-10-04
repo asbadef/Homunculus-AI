@@ -7,6 +7,7 @@ which needs this world. FakeDirectory and the test Postgres; synthetic accounts 
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 import uuid
 
@@ -20,7 +21,10 @@ from homunculus.admin import service as admin_service
 from homunculus.admin.service import LAST_ADMIN, Actor, AdminError
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.jwt import decode_token
-from homunculus.auth.ldap import ACCOUNT_NEVER_EXPIRES, ADMIN_LANE_SLOTS, NOT_CONFIGURED
+from homunculus.auth.ldap import (
+    ACCOUNT_NEVER_EXPIRES, ADMIN_LANE_SLOTS, NOT_CONFIGURED, load_ldap_config,
+)
+from homunculus.auth.ldap3_directory import Ldap3Directory
 from homunculus.auth.limits import directory_binds
 from homunculus.auth.models import (
     SOURCE_LDAP, Group, GroupPermission, LdapGroupMapping, TenantMembership, User, UserGroup,
@@ -35,6 +39,15 @@ from tests.fake_directory import (
 from tests.signed_in import add_user, bearer
 
 pytestmark = [pytest.mark.asyncio, requires_db]
+
+# A directory configuration for the tests that run the real Ldap3Directory (over a scripted
+# connection: no server is ever contacted).
+LDAP_ENV = {
+    "LDAP_URL": "ldaps://dc1.hastane.local",
+    "LDAP_BIND_DN": "CN=svc-homunculus,OU=Servis,DC=hastane,DC=local",
+    "LDAP_BIND_PASSWORD": "Servis-Parolasi-7",
+    "LDAP_BASE_DN": "DC=hastane,DC=local",
+}
 
 
 @pytest_asyncio.fixture
@@ -431,6 +444,26 @@ async def test_two_large_imports_share_the_admin_lane_and_a_sign_in_is_not_held_
     assert took < 2.0                                   # no queue behind 100 lookups
 
 
+async def test_an_import_leaves_a_lane_place_for_a_search(client, world, db_session):
+    """One import asks at most ADMIN_LANE_SLOTS - 1 lookups at once: however large, it leaves
+    the administrator's interactive calls (a search, the group picker, the connection test) a
+    lane place, so they never queue behind it."""
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    directory, lane = world["directory"], app.state.ldap.admin_lane
+    ids = [directory.add(person(f"Toplu{i:03d}")).identity.external_id for i in range(20)]
+    directory.delay = 0.05
+    running = asyncio.create_task(c.post("/admin/ldap/import", headers=admin,
+                                         json={"external_ids": ids}))
+    while _lookups(directory) < ADMIN_LANE_SLOTS:
+        await asyncio.sleep(0.01)
+    assert not lane.locked()                             # a place is free while it runs
+    res = await c.get("/admin/ldap/search?q=kaya", headers=admin)
+    assert res.status_code == 200 and not running.done()
+    assert (await running).status_code == 200
+    assert directory.peak["find_by_external_id"] == ADMIN_LANE_SLOTS - 1
+
+
 async def test_the_first_directory_failure_stops_the_rest_of_the_import(client, world,
                                                                         db_session):
     """A domain controller that fails: the lookups not started yet are never made (no queue of
@@ -473,6 +506,102 @@ async def test_every_admin_directory_call_takes_the_lane_and_sign_in_never_does(
         for _ in range(ADMIN_LANE_SLOTS):
             lane.release()
     assert [r.status_code for r in await asyncio.gather(*pending)] == [200] * 4
+
+
+async def test_a_search_queued_behind_long_imports_is_503_within_its_deadline(world, db_session):
+    """The admin lane is full — two imports against a domain controller that never answers,
+    their lookups cut off at the deadline but their threads still running, each holding its
+    place — and an administrator searches: the search waits for a place at most its deadline
+    and answers 503, instead of hanging until the lane frees up. The real Ldap3Directory, over
+    a connection that never opens."""
+    release, connects = threading.Event(), []
+
+    def hung(user, password):
+        connects.append(user)
+        release.wait(5)
+        raise OSError("the domain controller never answered")
+
+    directory = Ldap3Directory(load_ldap_config(LDAP_ENV), connect=hung, deadline_s=0.3)
+    try:
+        async with ad_client(db_session, directory) as (c, app):
+            admin = await bearer(db_session, world["admin"])
+            ids = [str(uuid.uuid4()) for _ in range(4)]
+            imports = [asyncio.create_task(c.post("/admin/ldap/import", headers=admin,
+                                                  json={"external_ids": ids[k:k + 2]}))
+                       for k in (0, 2)]
+            while len(connects) < ADMIN_LANE_SLOTS:
+                await asyncio.sleep(0.01)
+            assert app.state.ldap.admin_lane.locked()
+            started = time.monotonic()
+            res = await asyncio.wait_for(c.get("/admin/ldap/search?q=kaya", headers=admin), 3)
+            waited = time.monotonic() - started
+            assert [r.status_code for r in await asyncio.gather(*imports)] == [503, 503]
+    finally:
+        release.set()
+        directory.close()
+    assert (res.status_code, res.json()["detail"]) == (503, "Dizin sunucusuna ulaşılamıyor")
+    assert waited < 0.3 + 0.5
+    assert len(connects) == ADMIN_LANE_SLOTS             # the search never reached the server
+
+
+def _checked_out(db_session) -> int:
+    """Connections of the test database's pool in use right now, the test's own included."""
+    return db_session.bind.pool.checkedout()
+
+
+@pytest.mark.parametrize("method, path, asks", [
+    ("POST", "/admin/ldap/test", "test_connection"),
+    ("GET", "/admin/ldap/search?q=kaya", "search_users"),
+    ("GET", "/admin/ldap/groups?q=yb", "search_groups"),
+    ("POST", "/admin/ldap/import", "find_by_external_id"),
+])
+async def test_no_database_connection_is_held_while_the_directory_answers(
+        client, world, db_session, method, path, asks):
+    """Plan D7, for administration too: the directory may take its deadline, after waiting as
+    long for an admin-lane place — the request's database connection goes back to the pool
+    first, so a slow domain controller cannot pin the pool (and with it the board). Counted
+    in the pool itself, at the moment the directory is asked."""
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    directory = world["directory"]
+    answer = getattr(directory, asks)
+    held: list[int] = []
+
+    async def observed(*args, **kwargs):
+        held.append(_checked_out(db_session) - baseline)
+        return await answer(*args, **kwargs)
+
+    setattr(directory, asks, observed)
+    body = ({"external_ids": [world["mkaya"].identity.external_id]}
+            if path.endswith("/import") else None)
+    baseline = _checked_out(db_session)
+    res = await c.request(method, path, headers=admin, json=body)
+    assert res.status_code == 200, res.text
+    assert held == [0]
+
+
+async def test_an_import_re_checks_the_callers_rights_after_the_directory_call(
+        client, world, db_session):
+    """The connection is released during the lookups, so nothing read before them is trusted
+    after: the import re-reads the caller under the tenant lock (`_begin`). Rights taken away
+    while the directory answered (the token version bumped): 401 `token_version`, nothing
+    written."""
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    directory = world["directory"]
+    answer = directory.find_by_external_id
+
+    async def demote_then_answer(external_id, **kwargs):
+        await db_session.execute(update(User).where(User.id == world["admin"].id)
+                                 .values(token_version=User.token_version + 1))
+        await db_session.commit()
+        return await answer(external_id, **kwargs)
+
+    directory.find_by_external_id = demote_then_answer
+    mkaya = world["mkaya"].identity.external_id
+    res = await c.post("/admin/ldap/import", headers=admin, json={"external_ids": [mkaya]})
+    assert (res.status_code, res.json()["detail"]) == (401, "token_version")
+    assert await _imported(db_session, mkaya) == 0
 
 
 @pytest.mark.parametrize("body", [

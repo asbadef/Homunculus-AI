@@ -116,6 +116,19 @@ async def test_the_runtime_has_one_admin_lane_and_its_connection_test_takes_a_pl
     assert await check == (True, None)
 
 
+async def test_like_the_real_one_the_fake_waits_its_deadline_for_a_lane_place():
+    directory = FakeDirectory([person("AYilmaz")])
+    directory.deadline = 0.05
+    lane = asyncio.Semaphore(1)
+    await lane.acquire()
+    with pytest.raises(LdapUnavailable) as err:
+        await directory.search_users("ayilmaz", lane=lane)
+    assert (err.value.reason, directory.calls) == ("timeout", [])
+    lane.release()
+    assert await directory.search_users("ayilmaz", lane=lane)
+    assert not lane.locked()
+
+
 async def test_the_fake_keeps_the_lane_while_it_answers():
     directory = FakeDirectory([person("AYilmaz")])
     directory.delay = 0.02

@@ -416,15 +416,23 @@ class Ldap3Directory:
                     lane: asyncio.Semaphore | None = None) -> Any:
         """`fn` on the pool, within the deadline — the wait for a free thread counts against
         it, and a call cut off while still queued never runs. A `lane` place is taken first,
-        before the deadline starts, and given back when the thread has finished (or the call
-        never ran). When the caller stops waiting (the deadline, a cancellation) `attempt` is
-        given up: a bind as the account not started yet never starts, and the outage — or the
-        cancellation, as an attribute — carries `bind_attempted`, for the sign-in throttle
-        (auth/router.py)."""
+        waiting for it at most the deadline too (then LdapUnavailable("timeout"): nothing was
+        sent), and only then does the call's own deadline start; the place is given back when
+        the thread has finished (or the call never ran). So an administration call answers
+        within 2 × the deadline, a sign-in or a refresh (no lane) within one. When the caller
+        stops waiting (the deadline, a cancellation) `attempt` is given up: a bind as the
+        account not started yet never starts, and the outage — or the cancellation, as an
+        attribute — carries `bind_attempted`, for the sign-in throttle (auth/router.py)."""
         attempt = _Attempt() if attempt is None else attempt
         loop = asyncio.get_running_loop()
         if lane is not None:
-            await lane.acquire()
+            try:
+                async with asyncio.timeout(self._deadline):
+                    await lane.acquire()
+            except TimeoutError:
+                logger.warning("directory call found no admin-lane place within %.1f s",
+                               self._deadline)
+                raise LdapUnavailable("timeout") from None
         try:
             done = self._pool.submit(_guarded, attempt, fn, *args)
         except RuntimeError:                 # the pool is shut down: the app is stopping

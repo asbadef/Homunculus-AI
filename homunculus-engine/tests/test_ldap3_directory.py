@@ -656,29 +656,74 @@ async def test_admin_calls_take_at_most_their_lane_and_a_sign_in_is_not_held_up(
     await _idle(directory)
 
 
-async def test_a_lane_place_is_held_until_the_thread_ends_and_waiting_for_it_is_no_deadline():
+async def test_a_lane_place_is_held_until_the_thread_ends_and_the_wait_has_its_own_bound():
     """A call cut off at its deadline keeps its thread until the socket gives up: its place in
-    the lane is kept as long, or the lane would not cap threads. The next call's deadline
-    starts once it has a place: the wait is the administration load, not the directory's."""
-    gauge, connects = Gauge(), []
+    the lane is kept as long, or the lane would not cap threads. The wait for a place is bounded
+    by the deadline on its own, and the call's deadline starts once it has a place: a call that
+    waited 0.2 s and then worked 0.2 s is answered, although together they pass 0.3 s."""
+    gauge, connects, gate = Gauge(), [], threading.Event()
 
     def slow(user, password):
         connects.append(user)
         with gauge:
-            time.sleep(0.5 if len(connects) == 1 else 0.2)
+            if len(connects) == 1:
+                gate.wait(5)                              # the first call's thread: held
+            else:
+                time.sleep(0.2)
         return Script().connect(user, password)
 
     directory = _directory_over(slow, deadline_s=0.3)
     lane = asyncio.Semaphore(1)
     first = asyncio.create_task(directory.test_connection(lane=lane))
-    await asyncio.sleep(0.05)
-    second = asyncio.create_task(directory.test_connection(lane=lane))
-    with pytest.raises(LdapUnavailable) as err:
-        await first                                       # cut off at 0.3 s; its thread: 0.5 s
-    assert err.value.reason == "timeout"
-    await second                       # ~0.65 s after it was asked, 0.2 s of it its own: no 503
+    try:
+        with pytest.raises(LdapUnavailable) as err:
+            await first                                   # cut off at 0.3 s; its thread: held
+        assert err.value.reason == "timeout"
+        asked = time.monotonic()
+        second = asyncio.create_task(directory.test_connection(lane=lane))
+        await asyncio.sleep(0.2)
+        assert not second.done() and len(connects) == 1  # no place while that thread runs
+    finally:
+        gate.set()
+    await second                                          # waited 0.2 s, then 0.2 s its own
+    assert time.monotonic() - asked > 0.3
     assert gauge.peak == 1
     await _idle(directory)
+
+
+async def test_a_call_that_waits_its_deadline_for_a_lane_place_is_a_timeout():
+    """The lane is full (a thread of a call cut off long ago still runs): an administration
+    call waits for a place at most its deadline, then gives up as a timeout — a 503, never an
+    unbounded wait — having sent nothing (`bind_attempted` False) and leaving the lane as it
+    found it."""
+    gate, connects = threading.Event(), []
+
+    def hung(user, password):
+        connects.append(user)
+        gate.wait(5)
+        return Script().connect(user, password)
+
+    directory = _directory_over(hung, deadline_s=0.3)
+    lane = asyncio.Semaphore(1)
+    first = asyncio.create_task(directory.test_connection(lane=lane))
+    try:
+        while not connects:
+            await asyncio.sleep(0.01)
+        started = time.monotonic()
+        with pytest.raises(LdapUnavailable) as err:
+            await directory.search_users("kaya", lane=lane)
+        waited = time.monotonic() - started
+    finally:
+        gate.set()
+    assert (err.value.reason, err.value.bind_attempted) == ("timeout", False)
+    assert 0.3 - 0.05 <= waited < 0.3 + 0.15
+    assert connects == [SVC_DN]                           # the search never reached the server
+    with pytest.raises(LdapUnavailable):
+        await first
+    await _idle(directory)
+    await asyncio.sleep(0)                                # the place is given back on the loop
+    await asyncio.wait_for(lane.acquire(), 1)             # it came back...
+    assert lane.locked()                                  # ...once
 
 
 # ---------------------------------------------------------------- was the password sent? (throttle)

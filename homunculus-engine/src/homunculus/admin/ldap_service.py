@@ -32,7 +32,9 @@ from homunculus.admin.service import (
     _rights_by_user, _union, _within, get_group, group_rights,
 )
 from homunculus.auth.groups import count_admins, lock_admin_guard, set_manual_groups
-from homunculus.auth.ldap import LdapIdentity, LdapRuntime, LdapUnavailable, account_expired
+from homunculus.auth.ldap import (
+    ADMIN_LANE_SLOTS, LdapIdentity, LdapRuntime, LdapUnavailable, account_expired,
+)
 from homunculus.auth.ldap3_directory import canonical_dn
 from homunculus.auth.ldap_sync import dn_key, login_in_use, mapped_group_ids, sync_ldap_groups
 from homunculus.auth.models import (
@@ -54,27 +56,37 @@ async def imported_ids(db: AsyncSession, external_ids: Iterable[str]) -> set[str
 
 
 # ---------------------------------------------------------------- import (plan decision D12)
+# Lookups one import has with the directory at once: one place fewer than the admin lane, so
+# however large an import, an administrator's search, group picker or connection test still
+# finds a lane place instead of queueing behind it.
+IMPORT_LOOKUPS = max(1, ADMIN_LANE_SLOTS - 1)
+
+
 async def lookup_accounts(ldap: LdapRuntime,
                           external_ids: list[str]) -> dict[str, LdapIdentity | None]:
     """Each objectGUID's account as the directory reports it, every lookup through the admin
     lane (`LdapRuntime.admin_lane`): at most ADMIN_LANE_SLOTS at once across every request, so
     an import of 50 accounts against a slow domain controller leaves the directory's other
-    threads to sign-ins. The first LdapUnavailable cancels the lookups still waiting or running
-    — no queue of doomed calls is left in front of sign-ins — and is raised once they have
-    stopped; the caller answers 503 with nothing written."""
+    threads to sign-ins — and at most IMPORT_LOOKUPS for this import, so the lane keeps a place
+    for the administrator's interactive calls. The first LdapUnavailable cancels the lookups
+    still waiting or running — no queue of doomed calls is left in front of sign-ins — and is
+    raised once they have stopped; the caller answers 503 with nothing written."""
     tasks: list[asyncio.Task] = []
+    room = asyncio.Semaphore(IMPORT_LOOKUPS)
 
     async def lookup(external_id: str) -> LdapIdentity | None:
-        try:
-            return await ldap.directory.find_by_external_id(external_id, lane=ldap.admin_lane)
-        except LdapUnavailable:
-            # The others are cancelled HERE, in the step that saw the failure: the TaskGroup
-            # would only do it a step later, after the lane place this lookup gave back had
-            # already let one more lookup start.
-            for task in tasks:
-                if task is not asyncio.current_task():
-                    task.cancel()
-            raise
+        async with room:
+            try:
+                return await ldap.directory.find_by_external_id(external_id,
+                                                                lane=ldap.admin_lane)
+            except LdapUnavailable:
+                # The others are cancelled HERE, in the step that saw the failure and before
+                # this lookup's `room` is given back: the TaskGroup would only do it a step
+                # later, after the place this lookup gave back had let one more lookup start.
+                for task in tasks:
+                    if task is not asyncio.current_task():
+                        task.cancel()
+                raise
 
     try:
         async with asyncio.TaskGroup() as group:

@@ -15,7 +15,8 @@ off at the deadline: `bind_attempted` True, counted by the sign-in throttle).
 `calls` records which method was asked about what — never a password.
 
 The admin lane is kept too: a call given a `lane` waits for a place in it before the "server"
-is asked (and is recorded in `calls` only then), and holds it while it is answered. `delay`
+is asked (and is recorded in `calls` only then) — at most `deadline` seconds, then
+LdapUnavailable("timeout"), as Ldap3Directory — and holds it while it is answered. `delay`
 makes every answer take that many seconds (asyncio.sleep); `inside` counts, per method, the
 calls being answered right now, and `peak` the most there ever were at once.
 
@@ -31,7 +32,7 @@ import time
 import uuid
 from collections import Counter
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 
 from httpx import ASGITransport, AsyncClient
@@ -41,7 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from homunculus.api.app import create_app
 from homunculus.auth.groups import ensure_default_groups, set_manual_groups
 from homunculus.auth.ldap import (
-    LdapGroup, LdapIdentity, LdapRuntime, LdapUnavailable, account_expired,
+    DEADLINE_CAP_S, LdapGroup, LdapIdentity, LdapRuntime, LdapUnavailable, account_expired,
 )
 from homunculus.auth.ldap3_directory import canonical_dn
 from homunculus.auth.models import (
@@ -106,6 +107,7 @@ class FakeDirectory:
         self.outage_after_bind = False
         self.calls: list[tuple[str, str]] = []
         self.delay = 0.0
+        self.deadline = DEADLINE_CAP_S
         self.inside: Counter[str] = Counter()
         self.peak: Counter[str] = Counter()
 
@@ -120,7 +122,13 @@ class FakeDirectory:
 
     async def _ask(self, method: str, about: str, *, binds: bool = False,
                    lane: asyncio.Semaphore | None = None) -> None:
-        async with lane if lane is not None else nullcontext():
+        if lane is not None:
+            try:
+                async with asyncio.timeout(self.deadline):
+                    await lane.acquire()
+            except TimeoutError:
+                raise LdapUnavailable("timeout") from None
+        try:
             self.calls.append((method, about))
             self.inside[method] += 1
             self.peak[method] = max(self.peak[method], self.inside[method])
@@ -129,6 +137,9 @@ class FakeDirectory:
                     await asyncio.sleep(self.delay)
             finally:
                 self.inside[method] -= 1
+        finally:
+            if lane is not None:
+                lane.release()
         if self.unavailable:
             raise LdapUnavailable(self.unavailable if isinstance(self.unavailable, str)
                                   else "unreachable",
