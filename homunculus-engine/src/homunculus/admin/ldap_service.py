@@ -4,6 +4,12 @@ beyond their own rights, and every change that can take administrator rights awa
 `count_admins`, which counts LOCAL administrators only. Errors are AdminError; the router turns
 them into HTTP and rolls back.
 
+The mapping table is tenant-wide policy: a row regroups every member of its AD group at their
+next sign-in or refresh. Writing it (create, delete) therefore needs the WHOLE catalogue — the
+system group — not `users.manage` alone (`_full_administrator`, 403 MAPPING_ADMIN_ONLY): a user
+desk that may not regroup a nurse directly must not regroup every nurse through a mapping, nor
+pool its rights with theirs. Reading it needs `users.manage`, as every /admin/ldap route.
+
 It borrows `admin/service.py`'s private helpers (`_within`, `_grantable`, `_rights_by_user`,
 `_union`, `_flush`) on purpose: one implementation of the rights rule, not two."""
 from __future__ import annotations
@@ -30,6 +36,7 @@ from homunculus.auth.ldap_sync import (
 from homunculus.auth.models import (
     AUTH_LDAP, SOURCE_LDAP, Group, LdapGroupMapping, TenantMembership, User, UserGroup,
 )
+from homunculus.auth.permissions import ALL_PERMISSIONS
 from homunculus.auth.service import normalize_login
 
 RESULT_CAP = 50
@@ -170,6 +177,15 @@ async def import_users(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
 # ---------------------------------------------------------------- mappings (plan decision D13)
 MAPPING_EXISTS = "Bu AD grubu bu gruba zaten eşlenmiş"
 MAPPING_NOT_FOUND = "Mapping not found"
+MAPPING_ADMIN_ONLY = "AD grup eşlemesini yalnız sistem yöneticisi değiştirebilir"
+
+
+def _full_administrator(actor: Actor) -> None:
+    """403 unless the caller holds the whole catalogue in this tenant (the system group; the
+    rights `serialise` read under the lock). Checked before anything is looked up, so a refused
+    caller learns nothing about the group or the mapping it named."""
+    if not ALL_PERMISSIONS <= actor.perms:
+        raise AdminError(403, MAPPING_ADMIN_ONLY)
 
 
 async def list_mappings(db: AsyncSession,
@@ -183,10 +199,11 @@ async def list_mappings(db: AsyncSession,
 
 async def create_mapping(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor, *,
                          ad_group_dn: str, group_id: uuid.UUID) -> tuple[LdapGroupMapping, Group]:
-    """AD group (DN, stored and compared lower-case) → this tenant's group. The group must be
-    this tenant's (422, as for any group named in a body) and within the caller's rights
-    (403). It changes nobody now: each account picks it up at its next sign-in or token
-    refresh, and at import."""
+    """AD group (DN, stored and compared lower-case) → this tenant's group. Only a full
+    administrator (403 otherwise). The group must be this tenant's (422, as for any group named
+    in a body) and within the caller's rights (403). It changes nobody now: each account picks
+    it up at its next sign-in or token refresh, and at import."""
+    _full_administrator(actor)
     group = (await db.execute(select(Group).where(
         Group.id == group_id, Group.tenant_id == tenant_id))).scalar_one_or_none()
     if group is None:
@@ -216,9 +233,10 @@ async def delete_mapping(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
                          mapping_id: uuid.UUID) -> RemovedMapping:
     """Remove the row AND, now, every `ldap`-sourced membership of its group in this tenant,
     retiring those users' tokens — also for users entitled to the group through another
-    mapping, who get it back at their next sign-in or refresh (fail closed). Needs the group and
-    every such member within the caller's rights (a deletion takes rights away from them, as a
-    group edit would), then the local-administrator guard.
+    mapping, who get it back at their next sign-in or refresh (fail closed). Only a full
+    administrator (403 otherwise, before the mapping is looked up); the group and every such
+    member within the caller's rights (a deletion takes rights away from them, as a group edit
+    would), then the local-administrator guard.
 
     The tenant's admin lock is taken FIRST, by this function itself (re-entrant: the router's
     `serialise` already holds it), before anything is read or deleted. A sign-in or refresh
@@ -226,6 +244,7 @@ async def delete_mapping(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
     must then wait for the lock and decide again (`sync_ldap_groups`) — it cannot insert a row
     no mapping accounts for any more, which would linger until that user's next sync."""
     await lock_admin_guard(db, tenant_id)
+    _full_administrator(actor)
     mapping = (await db.execute(select(LdapGroupMapping).where(
         LdapGroupMapping.id == mapping_id, LdapGroupMapping.tenant_id == tenant_id)
     )).scalar_one_or_none()

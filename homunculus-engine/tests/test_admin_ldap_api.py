@@ -422,29 +422,69 @@ async def test_deleting_a_mapping_takes_the_rights_it_gave_away_now(client, worl
                            headers=admin)).status_code == 404
 
 
-async def test_a_user_desk_cannot_map_or_unmap_beyond_its_rights(client, world, db_session):
+MAPPING_ADMIN_ONLY = "AD grup eşlemesini yalnız sistem yöneticisi değiştirebilir"
+
+
+async def _mapping_rows(db) -> set[tuple[str, uuid.UUID]]:
+    rows = await db.execute(select(LdapGroupMapping.ad_group_dn, LdapGroupMapping.group_id))
+    return set(rows.all())
+
+
+async def test_only_a_full_administrator_writes_the_mapping_table(client, world, db_session):
+    """A mapping is tenant-wide policy: it regroups every member of the AD group at their next
+    sign-in or refresh. Creating or deleting one therefore needs the whole catalogue (the system
+    group), not `users.manage` — a user desk is refused even a mapping wholly within its own
+    rights (YB-Yeni → nurse), and the deletion of one whose group and members are within them
+    (nobody holds `nurse` through YB-Hemsire yet). It learns nothing about ids either, and it may
+    still read the table."""
     c, _ = client
     desk = await bearer(db_session, world["desk"])
     admin = await bearer(db_session, world["admin"])
-    res = await c.post("/admin/ldap/group-mappings", headers=desk, json={
-        "ad_group_dn": group_dn("YB-Yeni"), "group_id": str(world["groups"]["charge_nurse"].id)})
-    assert res.status_code == 403
-    res = await c.delete(f"/admin/ldap/group-mappings/{world['mappings']['YB-Sorumlu'].id}",
-                         headers=desk)
-    assert res.status_code == 403                    # the group is above the desk
-    assert (await c.post("/auth/login", json={"login": "ayilmaz",
-                                              "password": AD_PASSWORD})).status_code == 200
+    before = await _mapping_rows(db_session)
+    body = {"ad_group_dn": group_dn("YB-Yeni"), "group_id": str(world["groups"]["nurse"].id)}
+    res = await c.post("/admin/ldap/group-mappings", headers=desk, json=body)
+    assert (res.status_code, res.json()["detail"]) == (403, MAPPING_ADMIN_ONLY)
+    for mapping_id in (world["mappings"]["YB-Hemsire"].id, uuid.uuid4()):
+        res = await c.delete(f"/admin/ldap/group-mappings/{mapping_id}", headers=desk)
+        assert (res.status_code, res.json()["detail"]) == (403, MAPPING_ADMIN_ONLY)
+    assert await _mapping_rows(db_session) == before
+    assert (await c.get("/admin/ldap/group-mappings", headers=desk)).status_code == 200
+    created = await c.post("/admin/ldap/group-mappings", headers=admin, json=body)
+    assert created.status_code == 201, created.text
+    assert (await c.delete(f"/admin/ldap/group-mappings/{created.json()['id']}",
+                           headers=admin)).status_code == 204
+    assert (await c.delete(f"/admin/ldap/group-mappings/{world['mappings']['YB-Hemsire'].id}",
+                           headers=admin)).status_code == 204
+
+
+async def test_a_user_desk_cannot_regroup_ad_members_through_a_mapping(client, world,
+                                                                       db_session):
+    """Review probe P1. A pharmacy desk (pharmacist + users.manage) may not move Ayşe — a nurse
+    through YB-Hemsire — into its own group: her rights are not within its own. Mapping her AD
+    group to that group would do the same to every YB-Hemsire member at their next sign-in, and
+    pool the desk's rights with the nurses' on them. It is refused, and her next sign-in is
+    unchanged."""
+    c, _ = client
+    pharmacy = Group(tenant_id=world["tenant"].id, slug="eczane_masasi", name="Eczane Masası")
+    pharmacy.permissions = [GroupPermission(permission=k) for k in sorted(
+        set(world["groups"]["pharmacist"].permission_keys) | {"users.manage"})]
+    db_session.add(pharmacy)
+    await db_session.commit()
+    deskb = await bearer(db_session, await add_user(db_session, username="eczmasa",
+                                                    tenant_id=world["tenant"].id,
+                                                    group=pharmacy))
     ayse_id = world["account"].id
-    res = await c.put(f"/admin/users/{ayse_id}/groups", headers=admin,
-                      json={"group_ids": [str(world["groups"]["physician"].id)]})
-    assert res.status_code == 200
-    hemsire = world["mappings"]["YB-Hemsire"].id
-    res = await c.delete(f"/admin/ldap/group-mappings/{hemsire}", headers=desk)
-    assert res.status_code == 403                    # a member it takes rights from is above it
-    res = await c.put(f"/admin/users/{ayse_id}/groups", headers=admin, json={"group_ids": []})
-    assert res.status_code == 200
-    assert (await c.delete(f"/admin/ldap/group-mappings/{hemsire}",
-                           headers=desk)).status_code == 204
+    login = {"login": "ayilmaz", "password": AD_PASSWORD}
+    assert (await c.post("/auth/login", json=login)).status_code == 200      # nurse, from AD
+    res = await c.put(f"/admin/users/{ayse_id}/groups", headers=deskb,
+                      json={"group_ids": [str(pharmacy.id)]})
+    assert res.status_code == 403 and "Kendi yetkilerinizi aşan" in res.json()["detail"]
+    res = await c.post("/admin/ldap/group-mappings", headers=deskb, json={
+        "ad_group_dn": group_dn("YB-Hemsire"), "group_id": str(pharmacy.id)})
+    assert (res.status_code, res.json()["detail"]) == (403, MAPPING_ADMIN_ONLY)
+    again = await c.post("/auth/login", json=login)
+    assert decode_token(again.json()["access_token"])["groups"] == ["nurse"]
+    assert await group_rows(db_session, ayse_id) == {("nurse", "ldap")}
 
 
 async def test_ldap_admin_changes_are_audited_without_a_secret(client, world, db_session):
