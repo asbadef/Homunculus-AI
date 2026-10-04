@@ -159,7 +159,7 @@ describe("server and client messages are mapped", () => {
       "Çok fazla giriş denemesi; bir dakika sonra tekrar deneyin",
       "Invalid credentials", "Invalid or expired refresh token",
       "Mevcut parola yanlış", "Son yönetici yetkisi kaldırılamaz", "Sistem grubu silinemez",
-      "Bu AD grubu bu gruba zaten eşlenmiş", "AD grup eşlemesini yalnız sistem yöneticisi değiştirebilir",
+      "Bu AD grubu bu gruba zaten eşlenmiş", "AD grup eşlemesini yalnız tüm yetkilere sahip bir yönetici değiştirebilir",
       "unknown group for this tenant", "login is required", "Giriş başarısız.",
       "Panoya erişim yetkiniz yok. Sistem yöneticinizle görüşün.",
       "Sunucuya ulaşılamıyor; oturumunuz korunuyor. Biraz sonra tekrar deneyin.",

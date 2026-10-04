@@ -765,7 +765,7 @@ async def test_deleting_a_mapping_takes_the_rights_it_gave_away_now(client, worl
                            headers=admin)).status_code == 404
 
 
-MAPPING_ADMIN_ONLY = "AD grup eşlemesini yalnız sistem yöneticisi değiştirebilir"
+MAPPING_ADMIN_ONLY = "AD grup eşlemesini yalnız tüm yetkilere sahip bir yönetici değiştirebilir"
 
 
 async def _mapping_rows(db) -> set[tuple[str, uuid.UUID]]:
@@ -798,6 +798,22 @@ async def test_only_a_full_administrator_writes_the_mapping_table(client, world,
                            headers=admin)).status_code == 204
     assert (await c.delete(f"/admin/ldap/group-mappings/{world['mappings']['YB-Hemsire'].id}",
                            headers=admin)).status_code == 204
+
+
+async def test_the_whole_catalogue_not_the_system_group_writes_the_mapping_table(
+        client, world, db_session):
+    """The rule is the whole catalogue, whatever group carries it — what the refusal says. (A
+    caller holding every key could give itself the system group anyway.)"""
+    c, _ = client
+    every = Group(tenant_id=world["tenant"].id, slug="tam_yetki", name="Tam Yetki")
+    every.permissions = [GroupPermission(permission=k) for k in sorted(ALL_PERMISSIONS)]
+    db_session.add(every)
+    await db_session.commit()
+    holder = await bearer(db_session, await add_user(db_session, username="tamyetki",
+                                                     tenant_id=world["tenant"].id, group=every))
+    res = await c.post("/admin/ldap/group-mappings", headers=holder, json={
+        "ad_group_dn": group_dn("YB-Yeni"), "group_id": str(world["groups"]["nurse"].id)})
+    assert res.status_code == 201, res.text
 
 
 async def test_a_user_desk_cannot_regroup_ad_members_through_a_mapping(client, world,

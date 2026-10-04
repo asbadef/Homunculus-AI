@@ -5,10 +5,12 @@ beyond their own rights, and every change that can take administrator rights awa
 them into HTTP and rolls back.
 
 The mapping table is tenant-wide policy: a row regroups every member of its AD group at their
-next sign-in or refresh. Writing it (create, delete) therefore needs the WHOLE catalogue — the
-system group — not `users.manage` alone (`_full_administrator`, 403 MAPPING_ADMIN_ONLY): a user
-desk that may not regroup a nurse directly must not regroup every nurse through a mapping, nor
-pool its rights with theirs. Reading it needs `users.manage`, as every /admin/ldap route.
+next sign-in or refresh. Writing it (create, delete) therefore needs the WHOLE catalogue —
+every permission key, through whatever groups — not `users.manage` alone (`_full_administrator`,
+403 MAPPING_ADMIN_ONLY): a user desk that may not regroup a nurse directly must not regroup every
+nurse through a mapping, nor pool its rights with theirs. (The system group carries the whole
+catalogue; a caller holding every key some other way could give itself that group anyway.)
+Reading it needs `users.manage`, as every /admin/ldap route.
 
 It borrows `admin/service.py`'s private helpers (`_within`, `_grantable`, `_rights_by_user`,
 `_union`, `_flush`) on purpose: one implementation of the rights rule, not two — and
@@ -254,13 +256,14 @@ async def _insert_account(db: AsyncSession, user: User) -> bool:
 # ---------------------------------------------------------------- mappings (plan decision D13)
 MAPPING_EXISTS = "Bu AD grubu bu gruba zaten eşlenmiş"
 MAPPING_NOT_FOUND = "Mapping not found"
-MAPPING_ADMIN_ONLY = "AD grup eşlemesini yalnız sistem yöneticisi değiştirebilir"
+MAPPING_ADMIN_ONLY = "AD grup eşlemesini yalnız tüm yetkilere sahip bir yönetici değiştirebilir"
 
 
 def _full_administrator(actor: Actor) -> None:
-    """403 unless the caller holds the whole catalogue in this tenant (the system group; the
-    rights `serialise` read under the lock). Checked before anything is looked up, so a refused
-    caller learns nothing about the group or the mapping it named."""
+    """403 unless the caller holds the whole catalogue in this tenant — every permission key,
+    through any of their groups (the rights `serialise` read under the lock). Checked before
+    anything is looked up, so a refused caller learns nothing about the group or the mapping
+    it named."""
     if not ALL_PERMISSIONS <= actor.perms:
         raise AdminError(403, MAPPING_ADMIN_ONLY)
 
@@ -276,10 +279,11 @@ async def list_mappings(db: AsyncSession,
 
 async def create_mapping(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor, *,
                          ad_group_dn: str, group_id: uuid.UUID) -> tuple[LdapGroupMapping, Group]:
-    """AD group (DN) → this tenant's group. Only a full administrator (403 otherwise). The group
-    must be this tenant's (422, as for any group named in a body) and within the caller's rights
-    (403). The DN is stored in its canonical spelling (`canonical_dn`, what the sign-in compares
-    AD's memberOf in; the body's validator has already refused a value that is not a DN), and
+    """AD group (DN) → this tenant's group. Only a caller holding the whole catalogue (403
+    otherwise). The group must be this tenant's (422, as for any group named in a body) and
+    within the caller's rights (403). The DN is stored in its canonical spelling
+    (`canonical_dn`, what the sign-in compares AD's memberOf in; the body's validator has
+    already refused a value that is not a DN), and
     another spelling of a DN already mapped to the group — a row stored before DNs were
     canonicalised included — is the 409 duplicate. It changes nobody now: each account picks it
     up at its next sign-in or token refresh, and at import."""

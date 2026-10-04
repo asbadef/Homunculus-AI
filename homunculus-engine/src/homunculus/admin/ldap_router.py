@@ -11,9 +11,10 @@ mapping"). Every route needs `users.manage` and resolves the caller's tenant:
   POST   /admin/ldap/group-mappings        add a row (applies from each user's next sign-in or refresh)
   DELETE /admin/ldap/group-mappings/{id}   remove a row and, now, the rights it gave
 
-Writing the mapping table (its POST and DELETE) needs more: the whole catalogue, i.e. the system
-group (403 `AD grup eşlemesini yalnız sistem yöneticisi değiştirebilir`) — a row regroups every
-member of its AD group, which a user desk may not do (`ldap_service._full_administrator`).
+Writing the mapping table (its POST and DELETE) needs more: the whole catalogue, every
+permission key (403 `AD grup eşlemesini yalnız tüm yetkilere sahip bir yönetici
+değiştirebilir`) — a row regroups every member of its AD group, which a user desk may not do
+(`ldap_service._full_administrator`).
 
 With LDAP off (LDAP_URL unset) every route but `status` answers 409 `Dizin yapılandırılmamış`;
 `status` answers `configured: false`, so the panel can hide itself (plan decision D14). A
