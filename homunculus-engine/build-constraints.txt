@@ -1,0 +1,8 @@
+# The build backend that pip installs into its isolated build environment when the API image builds
+# the engine (Dockerfile.api: PIP_CONSTRAINT=/app/build-constraints.txt). pyproject.toml's
+# [build-system] asks only `setuptools>=68`, so without a pin every rebuild takes the newest release.
+# `-c constraints.txt` on pip's command line does not reach that environment; PIP_CONSTRAINT does,
+# with the image's pip 25.0.1 (checked: a pin here is the version the build installs). constraints.txt
+# is a `pip freeze`, which never lists setuptools — hence a file of its own. Bump it on purpose, then
+# rebuild the image and run the suite inside it. tests/test_api_image_dependencies.py checks the pin.
+setuptools==84.0.0

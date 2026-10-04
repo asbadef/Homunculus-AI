@@ -60,3 +60,23 @@ def test_the_api_image_installs_from_the_constraints():
                  if line.startswith("RUN") and "pip install" in line]
     assert any("constraints.txt" in line for line in copies), copies
     assert len(pip_lines) == 1 and "-c constraints.txt" in pip_lines[0], pip_lines
+
+
+def test_the_build_backend_is_pinned_where_pip_build_isolation_sees_it():
+    """`pip install .` builds the engine in an isolated environment with whatever setuptools
+    satisfies [build-system] — the newest, unless PIP_CONSTRAINT pins it (`-c` does not reach
+    that environment). build-constraints.txt holds that pin, within pyproject.toml's range."""
+    build = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["build-system"]
+    [setuptools] = [r for r in map(Requirement, build["requires"])
+                    if _name(r.name) == "setuptools"]
+    lines = [line.split("#", 1)[0].strip() for line in
+             (_ROOT / "build-constraints.txt").read_text(encoding="utf-8").splitlines()]
+    [pin] = [line for line in lines if line]
+    name, _, version = pin.partition("==")
+    assert _name(name) == "setuptools" and setuptools.specifier.contains(version), pin
+    dockerfile = (_ROOT / "Dockerfile.api").read_text(encoding="utf-8")
+    [run] = [line for line in dockerfile.splitlines()
+             if line.startswith("RUN") and "pip install" in line]
+    assert "PIP_CONSTRAINT=/app/build-constraints.txt" in run
+    assert any(line.startswith("COPY") and "build-constraints.txt" in line
+               for line in dockerfile.splitlines())

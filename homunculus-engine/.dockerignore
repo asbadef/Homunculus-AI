@@ -4,12 +4,18 @@
 #
 # Beyond image size, this is a safety boundary: buffer databases hold real observations in transit and
 # must never end up in an image that gets pushed to a registry.
-*.db
-*.db-journal
-*.db-wal
+#
+# A pattern is matched from the root of the context: `*.db` would exclude only a database next to the
+# Dockerfile, and `scripts/run_bridge.py` / `scripts/run_nce_bridge.py` default `--db` to a relative
+# path — a buffer started from `scripts/` or `src/` would be copied into both images. Hence `**/`
+# (any depth, the root included). tests/test_docker_build_context.py keeps these lines here.
+**/*.db
+**/*.db-journal
+**/*.db-wal
+**/*.db-shm
 .venv/
-__pycache__/
-*.pyc
+**/__pycache__/
+**/*.pyc
 **/*.egg-info/
 .pytest_cache/
 tests/

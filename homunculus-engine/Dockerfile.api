@@ -18,9 +18,13 @@ WORKDIR /app
 
 # Copy pyproject and source; install dependencies before copying scripts and migrations.
 # This way, changes to scripts/alembic do not invalidate the pip layer.
-COPY pyproject.toml constraints.txt /app/
+# PIP_CONSTRAINT pins the build backend (setuptools) in pip's isolated build environment,
+# which `-c constraints.txt` does not reach (build-constraints.txt says why). The in-tree
+# build leaves /app/build behind: removed.
+COPY pyproject.toml constraints.txt build-constraints.txt /app/
 COPY src/ /app/src/
-RUN pip install --no-cache-dir -c constraints.txt . \
+RUN PIP_CONSTRAINT=/app/build-constraints.txt pip install --no-cache-dir -c constraints.txt . \
+    && rm -rf /app/build \
     && useradd --system --uid 10002 --home /app homunculus \
     && chown -R homunculus:homunculus /app
 
