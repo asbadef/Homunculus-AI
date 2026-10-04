@@ -360,7 +360,10 @@ another tenant is a 404.
   one letter or digit, no control or invisible formatting character — Unicode Cc, Cf, Zl, Zp)
   goes into the audit row. Within the caller's rights (a refused unlock uses nothing); not for an
   account shared with another tenant or a platform operator (409). Nothing in the database
-  changes.
+  changes. *As built (F7):* the audit row's `before` and `after` are `{"failed": n, "allowed":
+  3 or 6}`, with `granted` (false when there was nothing to clear); the second unlock's 409
+  says the run's one unlock is spent and that sign-in frees itself once 15 minutes pass
+  without a failed password.
 
 ### Guards
 
@@ -437,7 +440,10 @@ selects the imported account — plan decisions D1–D2). `LdapUnavailable` is r
 TLS and timeout failures and maps to the 503 in §4. *As built:* its `reason` is one fixed code
 (`unreachable`, `timeout`, `tls`, `service_bind_rejected`, `protocol`), and `bind_attempted` says
 whether the typed password had reached the directory (the throttle in §7 Security counts only
-those).
+those). *As built (F7):* the bind request as the account is sent only once its connection (TCP,
+TLS) is open, so `bind_attempted` means the password has left Homunculus; a call cut off at its
+deadline after that also carries `bind_pending_s` (that deadline) — the domain controller may
+still count the bind, so the throttle dates the failure that much later.
 
 `Ldap3Directory` implements it with `ldap3` (pure Python; runs on the Windows dev machines and in
 the `python:3.12-slim` image without libldap; *as built,* the image installs the exact versions
@@ -459,10 +465,14 @@ waits at most its deadline and answers 503. An import's total time is not bounde
 deadline: n accounts take up to about ⌈n/2⌉ × 2 × the deadline (G1-14 imports in parts). The
 lookups run under `asyncio.wait`, not a `TaskGroup`: on Python 3.12 — the image's — a TaskGroup
 leaves its parent task marked as cancelled after a child fails, and an outage could not be told
-from a cancelled request. Sign-in, refresh and the four `/admin/ldap` routes that ask the
-directory give their database connection back to the pool before they do, and re-read what
-they need afterwards (plan decision D7, extended to administration). `FakeDirectory` (in
-`tests/`) implements the same protocol from an in-memory list and is what the unit tests use.
+from a cancelled request. *As built (F7):* passwords — the clinician's and the service
+account's — reach `ldap3` as UTF-8 bytes: given a `str`, `ldap3` applies SASLprep (NFKC and its
+mappings, refusing some characters), while AD compares the raw UTF-8, so a right password with
+a no-break space, a soft hyphen or a decomposed `ş` failed. Sign-in, refresh and the four
+`/admin/ldap` routes that ask the directory give their database connection back to the pool
+before they do, and re-read what they need afterwards (plan decision D7, extended to
+administration). `FakeDirectory` (in `tests/`) implements the same protocol from an in-memory
+list and is what the unit tests use.
 
 ### Configuration (environment; secrets stay in `.env`)
 
@@ -470,7 +480,7 @@ they need afterwards (plan decision D7, extended to administration). `FakeDirect
 | --- | --- |
 | `LDAP_URL` | `ldaps://dc.example.local:636`. Unset = LDAP disabled: `/admin/ldap/*` returns 409 `Dizin yapılandırılmamış`, the UI hides the AD tab, and `auth_source = ldap` sign-ins return 503. *As built:* `GET /admin/ldap/status` still answers 200 `configured: false` (the panel needs it to hide itself); a setting the API cannot use is logged and leaves LDAP off, never stops the API. |
 | `LDAP_CA_CERT` | CA bundle path for certificate verification. |
-| `LDAP_ALLOW_INSECURE` | `1` permits `ldap://` or unverified TLS, with a loud startup warning. Never in the pilot `.env`. *As built:* with `LDAP_CA_CERT` given, `ldaps://` is still verified; only without one is verification off. |
+| `LDAP_ALLOW_INSECURE` | `1` permits `ldap://` or unverified TLS, with a loud startup warning. Never in the pilot `.env`. *As built:* with `LDAP_CA_CERT` given, `ldaps://` is still verified; only without one is verification off. *As built (F7):* in production (a Postgres `DATABASE_URL`, the signal the API's other start-up refusals use) it keeps LDAP off, logged as an ERROR at every start; the API still starts. |
 | `LDAP_BIND_DN`, `LDAP_BIND_PASSWORD` | Read-only service account used for searches. |
 | `LDAP_BASE_DN` | Search base. |
 | `LDAP_USER_FILTER` | Default `(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))` — people, not computers, not disabled. |
@@ -602,8 +612,17 @@ not carried forward.
   window. After 3 in the run an AD account's sign-in is refused with 429 `Çok fazla hatalı
   deneme; 15 dakika sonra tekrar deneyin` without asking the directory, until 15 minutes after
   the last failed bind; a refusal reaches no DC and does not extend the run. Only an attempt
-  whose password reached the directory counts; a successful sign-in ends the run. In memory
-  (one API process): a restart clears it. An administrator may let 3 more through with
+  whose password reached the directory counts; a successful sign-in ends the run. *As built
+  (F7):* a right password ends the run only for the failures recorded before that attempt
+  began (`FailureChain.begin` hands it a `Ticket`; `succeeded` is called right after its
+  `end`): failures recorded while it was being checked may have reached the domain controller
+  after its bind, AD counts them, and they start the next run — with the unlock spent if the
+  old run had spent it. A bind cut off at its deadline once the password had been sent is
+  dated one deadline later. In memory (one API process): a restart clears it — and a restart
+  within 15 minutes of failed binds clears Homunculus' runs but not AD's count, so across one
+  Homunculus can add 6 more (12 in one of AD's runs); the runbook says to deploy only when the
+  audit trail shows no failed sign-in in the last 15 minutes. An administrator may let 3 more
+  through with
   `POST /admin/users/{id}/unlock-sign-in {reason}` (§6), once per run and never for an account
   shared with another tenant or a platform operator. So one run holds at most 3 + 3 failed
   binds; with the domain's reset period at most 15 minutes, every run of AD's count made of
@@ -677,7 +696,10 @@ the API attempts one service-account bind at startup and logs the outcome — a 
 refusal to boot: local sign-in must keep working while the operator fixes the directory settings.
 *As built:* the bind runs in the background, so a hung domain controller never delays serving;
 an unusable `LDAP_*` setting (an `LDAP_USER_FILTER` that does not compile included) is logged as
-an ERROR naming the variable, never its value, and leaves LDAP off.
+an ERROR naming the variable, never its value, and leaves LDAP off. *As built (F7):* the
+production entry gives the `homunculus` logger an INFO handler on stderr (uvicorn configures
+only its own loggers, so the success line never reached the container log before);
+`GET /admin/ldap/status` (`last_test_ok`) is the check the runbook uses first.
 
 ## 10. Testing
 
