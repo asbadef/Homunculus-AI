@@ -32,8 +32,9 @@ PERMISSIONS: dict[str, str] = {
     "shifts.manage": "Create shift schedules",
     "break_glass.use": "Open, extend or close a break-glass session",
     "audit.view": "Read the audit trail",
-    "users.manage": "Users: create, edit, activate, reset password or MFA, set groups; "
-                    "LDAP import and group mapping",
+    "users.manage": "Users: create, edit, activate, reset password or MFA, unlock an AD "
+                    "sign-in, set groups; search and import AD accounts, read the AD group "
+                    "mapping (changing the mapping needs every permission)",
     "groups.manage": "Groups and their permission sets",
     "structure.manage": "Tenant, site, unit, room and bed configuration",
     "devices.manage": "Device and research endpoints",
