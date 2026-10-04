@@ -30,11 +30,14 @@ SPA_PATHS = ["/", "/index.html", "/assets/index-abc.js", "/administrator-guide"]
 
 
 def _api_locations() -> list[re.Pattern[str]]:
+    """Every location that proxies to the API, as a pattern: a regex location (`~`) as written,
+    an exact one (`=`) as that one path."""
     text = CONF.read_text(encoding="utf-8")
     patterns = []
-    for match in re.finditer(r"location\s+~\s+(\S+)\s*\{(.*?)\}", text, re.S):
-        if "proxy_pass http://api:8000" in match.group(2):
-            patterns.append(re.compile(match.group(1)))
+    for match in re.finditer(r"location\s+(~|=)\s+(\S+)\s*\{(.*?)\}", text, re.S):
+        if "proxy_pass http://api:8000" in match.group(3):
+            kind, target = match.group(1), match.group(2)
+            patterns.append(re.compile(target if kind == "~" else f"^{re.escape(target)}$"))
     return patterns
 
 
@@ -64,8 +67,42 @@ def test_stream_ticket_is_served_by_the_sse_block() -> None:
     assert len(sse) == 1 and re.search(sse[0].group(1), "/stream-ticket")
 
 
-def test_both_api_locations_are_found() -> None:
-    assert len(_api_locations()) == 2
+def test_every_api_location_is_found() -> None:
+    """Three: the SSE block, the prefix block — and the exact `/auth/login` block, which nginx
+    picks before any regex location so that sign-in alone carries the per-address limit."""
+    assert len(_api_locations()) == 3
+
+
+def _location(text: str, header: str) -> str:
+    """The body of the location block whose header (at the start of a line, not in a comment)
+    starts with `header`."""
+    match = re.search(r"^\s*" + re.escape(header) + r"[^{]*\{(.*?)\}", text, re.S | re.M)
+    assert match, header
+    return match.group(1)
+
+
+def _directives(body: str, *names: str) -> set[str]:
+    return {" ".join(d.split()) for d in re.findall(rf"^\s*((?:{'|'.join(names)})\s[^;]*);",
+                                                     body, re.M)}
+
+
+def test_sign_in_is_rate_limited_per_client_address() -> None:
+    """In front of the API's per-account AD throttle: one address trying passwords across many
+    accounts is slowed at the edge — 10 a minute, a burst of 10. The refusal is 429, a refusal
+    the client should not retry at once, not nginx's default 503, which reads as the server
+    being down. The zone is declared at the file's top level: the file is installed
+    as conf.d/default.conf, which nginx includes inside `http {}`."""
+    text = CONF.read_text(encoding="utf-8")
+    zone = re.search(r"^limit_req_zone\s+\$binary_remote_addr\s+zone=homunculus_login:\S+"
+                     r"\s+rate=10r/m;", text, re.M)
+    assert zone and zone.start() < text.index("server {")
+    body = _location(text, "location = /auth/login")
+    assert _directives(body, "limit_req", "limit_req_status") == {
+        "limit_req zone=homunculus_login burst=10 nodelay", "limit_req_status 429"}
+    api = _location(text, "location ~ ^/(auth|")
+    proxy = ("proxy_pass", "proxy_http_version", "proxy_set_header")
+    assert _directives(body, *proxy) == _directives(api, *proxy)
+    assert "limit_req" not in api                # nothing but sign-in is limited
 
 
 @pytest.mark.parametrize("path", API_PATHS)
