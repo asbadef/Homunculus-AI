@@ -3,7 +3,7 @@ Windows dev machines and in the python:3.12-slim image without libldap). Spec §
 
   * LDAPS, verified: CERT_REQUIRED against LDAP_CA_CERT (or the system store), host name
     checked by `ldap3`. `ldap://` or an unverified certificate needs LDAP_ALLOW_INSECURE=1, and
-    `ldap_from_env` says so loudly at start-up.
+    `ldap_from_env` says so loudly at start-up — in production it refuses it: LDAP stays off.
   * Every typed value reaches a filter through `ldap3.utils.conv.escape_filter_chars`, the
     objectGUID through `escape_guid` (each byte `\\xx`): a query cannot change a filter's shape.
   * `ldap3` is synchronous: each call runs on the directory's OWN pool of `SLOTS` threads —
@@ -635,17 +635,28 @@ def check_user_filter(user_filter: str) -> None:
         raise LdapConfigError("LDAP_USER_FILTER is not one valid LDAP filter") from None
 
 
-def ldap_from_env(env: Mapping[str, str] | None = None) -> LdapRuntime | None:
+def ldap_from_env(env: Mapping[str, str] | None = None, *,
+                  production: bool = False) -> LdapRuntime | None:
     """`app.state.ldap` for production (`api/prodserver.py`): None when LDAP_URL is unset, or —
     logged as an ERROR — when the LDAP_* settings cannot be used. Never raises: an unusable
     directory configuration must not stop the API (spec §9). The log names the variable at
     fault, never its value, and carries no traceback (an exception's text can quote a setting,
-    a password included)."""
+    a password included).
+
+    `production` (prodserver: a Postgres DATABASE_URL, the verdict its other start-up refusals
+    use): LDAP_ALLOW_INSECURE=1 is then one of those unusable settings — AD passwords must not
+    cross a link nobody verifies in a hospital — so LDAP stays off, with an ERROR at every start
+    until the flag is removed. Outside production it is allowed, with a WARNING."""
     env = os.environ if env is None else env
     try:
         config = load_ldap_config(env)
         if config is None:
             return None
+        if production and config.allow_insecure:
+            raise LdapConfigError(
+                "LDAP_ALLOW_INSECURE=1 is refused in production (a Postgres DATABASE_URL): AD "
+                "passwords would cross an unencrypted or unverified link. Remove it from .env; "
+                "use ldaps:// with LDAP_CA_CERT")
         check_user_filter(config.user_filter)
         runtime = LdapRuntime(directory=Ldap3Directory(config), url_host=config.host,
                               login_attrs=config.login_attrs)

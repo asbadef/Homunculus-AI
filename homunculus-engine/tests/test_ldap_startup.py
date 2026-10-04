@@ -75,3 +75,17 @@ def test_production_takes_the_directory_from_the_environment():
     from homunculus.api import prodserver
 
     assert prodserver.app.state.ldap is None
+
+
+def test_production_refuses_the_insecure_flag_and_development_allows_it():
+    """prodserver hands `ldap_from_env` the verdict its other start-up refusals use
+    (`_is_production`: a Postgres DATABASE_URL)."""
+    from homunculus.api import prodserver
+
+    env = {"LDAP_URL": "ldap://dc1.hastane.local", "LDAP_ALLOW_INSECURE": "1",
+           "LDAP_BIND_DN": "CN=svc,DC=hastane,DC=local", "LDAP_BIND_PASSWORD": "x",
+           "LDAP_BASE_DN": "DC=hastane,DC=local"}
+    assert prodserver._ldap("postgresql+asyncpg://homunculus@db/homunculus", env) is None
+    lab = prodserver._ldap("", env)
+    assert lab is not None
+    lab.close()

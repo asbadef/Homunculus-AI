@@ -10,7 +10,8 @@ Env:
     AUDIT_DB_PATH  path for the SQLite audit log (default /tmp; ephemeral on Render — synthetic only)
     DATABASE_URL / DATABASE_SSL / JWT_SECRET / CORS_ORIGINS  read by db.py / auth.jwt / app.py
     LDAP_*         optional Active Directory sign-in, read by auth/ldap3_directory.py
-                   (`ldap_from_env`); unset or unusable = off, never a refusal to start
+                   (`ldap_from_env`); unset or unusable = off, never a refusal to start — in
+                   production LDAP_ALLOW_INSECURE=1 is unusable too
 
 Production means a Postgres DATABASE_URL (`_is_production`). There, before anything is built,
 `_refuse_unsafe_start` stops the process (SystemExit) on a missing PHI key, a weak signing key or
@@ -347,6 +348,14 @@ def _refuse_unsafe_start(url: str) -> None:
     _refuse_bad_tenants(url, os.getenv("TENANTS"))
 
 
+def _ldap(url: str, env=None):
+    """The directory, read from LDAP_* (`ldap_from_env`) with this deployment's verdict on
+    production — the one `_is_production` gives every start-up refusal — so that
+    LDAP_ALLOW_INSECURE=1 keeps LDAP off in a hospital instead of only warning. LDAP never stops
+    the API: local sign-in must keep working while the directory settings are fixed."""
+    return ldap_from_env(env, production=_is_production(url))
+
+
 def _identities():
     """Use managed Postgres in production; SQLite persists local development identities.
 
@@ -415,5 +424,5 @@ app = create_app(
     bedmap=_bedmap(),
     resolve_scope=_scope_resolver(),
     on_startup_check=make_startup_tenant_check(list(_tenants.values())),
-    ldap=ldap_from_env(),
+    ldap=_ldap(_database_url()),
 )

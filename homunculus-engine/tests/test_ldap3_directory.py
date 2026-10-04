@@ -1136,10 +1136,40 @@ def test_a_custom_user_filter_that_parses_is_kept():
 
 
 def test_the_insecure_flag_is_announced(caplog):
+    """Outside production (a lab, a developer machine) it is allowed, with a WARNING."""
     with caplog.at_level(logging.WARNING, logger="homunculus.auth.ldap3_directory"):
         runtime = ldap_from_env({**BASE, "LDAP_URL": "ldap://dc1.hastane.local",
                                  "LDAP_ALLOW_INSECURE": "1"})
     assert runtime is not None and "plain ldap://" in caplog.text
+    assert {r.levelno for r in caplog.records} == {logging.WARNING}
+
+
+@pytest.mark.parametrize("url, with_ca", [
+    ("ldap://dc1.hastane.local", False),        # plain text
+    ("ldaps://dc1.hastane.local", False),       # the certificate not verified
+    ("ldaps://dc1.hastane.local", True),        # verified, but the flag is set all the same
+])
+def test_the_insecure_flag_keeps_ldap_off_in_production(url, with_ca, tmp_path, caplog):
+    """In production (prodserver passes a Postgres DATABASE_URL's verdict) LDAP_ALLOW_INSECURE=1
+    is refused, not warned about: LDAP stays off, the API still starts, and the ERROR says why
+    — every start, until the flag is gone."""
+    env = {**BASE, "LDAP_URL": url, "LDAP_ALLOW_INSECURE": "1"}
+    if with_ca:
+        ca = tmp_path / "ca.pem"
+        ca.write_text("-----BEGIN CERTIFICATE-----\n")
+        env["LDAP_CA_CERT"] = str(ca)
+    with caplog.at_level(logging.DEBUG, logger="homunculus.auth.ldap3_directory"):
+        assert ldap_from_env(env, production=True) is None
+    [record] = [r for r in caplog.records if "LDAP is OFF" in r.getMessage()]
+    assert record.levelno == logging.ERROR
+    assert "LDAP_ALLOW_INSECURE" in record.getMessage() and "production" in record.getMessage()
+    _never_echoed(caplog, SVC_PW)
+
+
+def test_production_without_the_insecure_flag_builds_the_runtime():
+    runtime = ldap_from_env({**BASE, "LDAP_ALLOW_INSECURE": "0"}, production=True)
+    assert isinstance(runtime.directory, Ldap3Directory)
+    runtime.close()
 
 
 def test_a_good_configuration_builds_the_runtime():
