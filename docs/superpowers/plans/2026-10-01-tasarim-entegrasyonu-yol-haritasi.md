@@ -115,6 +115,10 @@ Kapanış düzeltmeleriyle (`f5abde8` test hesabı tohumu, `1e7b11b` iki metin):
 3. Arama kökü (base DN)
 4. Rol karşılığı AD grupları (ör. YB-Hekim, YB-Hemşire)
 5. VM'den etki alanı denetleyicisine 636 portu açık mı
+6. Servis PC'leri tek bir NAT/terminal sunucusu arkasında mı? (nginx giriş sınırı IP başına
+   10/dk + 10 patlama; ortak IP'de vardiya değişiminde 429 olabilir)
+7. Etki alanı hesap kilitleme politikası (eşik ve sıfırlama süresi) — Homunculus sınırı
+   3 hata / 15 dk bunun altında kalmalı
 
 ## Grup 1 kabul ölçütleri (Dalga 0 incelemesinden)
 
@@ -270,14 +274,15 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   zaman aşımı dolana kadar (LDAP_TIMEOUT_S, en çok 10 s) süreci bekletebilir.
 - nginx giriş sınırı adres başına (dakikada 10, ani 10): servis PC'leri tek bir NAT ya da
   terminal sunucusu (Citrix vb.) arkasındaysa bütün servis aynı adresten gelir ve vardiya
-  değişiminde klinisyenler 429 alabilir → hastane BT'sine sorulmalı, G1-15 öncesi. nginx'in
-  429 gövdesi HTML; panel "Giriş başarısız." gösterir (anlamlı ileti için JSON gövde ve
-  dört dilde metin gerekir).
-- Yönetici şeridi (3 yer): yavaş bir DC'de (çağrı başına ~2 s) 50 hesaplık içe aktarım
-  ~35 s sürer, panelin 15 s zaman aşımını geçer (sunucu işi bitirir; içe aktarım tekrarlanabilir).
-  Şerit beklemesinin üst sınırı yok, yoğun içe aktarım sırasında bir arama da zaman aşımına
-  uğrayabilir. İçe aktarım dizini beklerken bir veritabanı bağlantısı tutuyor. → G1-08/G1-12
-  yönetim ekranında ilerleme gösterimiyle birlikte
+  değişiminde klinisyenler 429 alabilir → hastaneye soruluyor ("Hastaneden gerekenler" 6),
+  G1-15 öncesi. nginx'in 429'u artık JSON gövdeyle gelir; panel dört dilde "çok fazla giriş
+  denemesi" der.
+- 50 kişilik içe aktarma yavaş DC'de (çağrı başına ~2 s, 3 yerlik yönetici şeridi) ~35 s
+  sürebilir: panel 15 s'de keser; sunucu işi bitirir, tekrar güvenli (içe aktarma
+  idempotent) → G1-14 içe aktarmayı 10'arlı parçalar.
+- Yönetici şeridinde bekleme için üst sınır yok: yoğun bir içe aktarma sırasında bir arama da
+  zaman aşımına uğrayabilir → G1-14.
+- İçe aktarma dizini beklerken bir veritabanı bağlantısı tutuyor → izle.
 
 ## Dalga 1B'den açık kalanlar
 
