@@ -29,6 +29,16 @@ requires_db = pytest.mark.skipif(
     reason="TEST_DATABASE_URL not set; skipping DB-backed tests.",
 )
 
+# The read-only check against a real directory (tests/test_ldap_integration.py), run by hand on
+# the VM (docs/EDGE-BRIDGE-LOCAL.md, "Active Directory sign-in"): skipped unless all four
+# LDAP_TEST_* variables are set.
+LDAP_TEST_ENV = ("LDAP_TEST_URL", "LDAP_TEST_BIND_DN", "LDAP_TEST_BIND_PASSWORD",
+                 "LDAP_TEST_BASE_DN")
+requires_ldap = pytest.mark.skipif(
+    not all(os.getenv(name) for name in LDAP_TEST_ENV),
+    reason="LDAP_TEST_* not set; the directory integration test runs by hand on the VM.",
+)
+
 # SAFETY: the db_session fixture drops every table. Pointing TEST_DATABASE_URL at a real database
 # (a dev instance, or worse a managed one like Supabase) would destroy it. Require the database
 # name to say "test" so that can only ever happen deliberately.
