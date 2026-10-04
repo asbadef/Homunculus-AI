@@ -50,6 +50,21 @@
 
 **D17. Search.** `(&<LDAP_USER_FILTER>(|(sAMAccountName=*q*)(displayName=*q*)(userPrincipalName=*q*)(mail=*q*)))`, `q` 2–64 characters, at most 50 rows; a result row carries no group list.
 
+## Uygulamada değişenler / As built
+
+The task bodies below are left as written; five review fix batches (F1 `08ee940..33f226d`, F2 `a55a3d4..dabd690`, F3 `4cdc8aa..daa8fe2`, F4 `adeab76..f4d8647`, F5 `f10f362..a941bd9`) changed these decisions. The code, the spec (marked *As built*) and the runbook (`docs/EDGE-BRIDGE-LOCAL.md`) describe the result.
+
+- **D6** — no `asyncio.to_thread` and no semaphore: the directory's own 8-thread pool is the cap, and the deadline covers the wait for a thread (`386f4f9`); the receive timeout is an int, any library failure a 503 (`08ee940`). Administration shares one admin lane of 3 places, so sign-ins keep 5 threads (`67cf993`); a lane place is awaited at most the deadline, an admin call answers within 2 × the deadline, one import runs at most 2 lookups (`f10f362`); the lane is a `BoundedSemaphore` (`540cdfe`).
+- **D7** — extended to administration: test, search, groups and import release the database connection before asking the directory (`f10f362`); a refused sign-in waits out its floor without one (`3f9184f`).
+- **D9** — the refresh runs its database checks before the directory (`b624363`); it goes on unsynced only for `unreachable`, `timeout`, `tls`, `service_bind_rejected` (or LDAP off), any other directory error is 503 `refresh.directory_error` (`5c56cee`); an account past `accountExpires` is refused at sign-in and at refresh, `directory_expired` (`42547cd`).
+- **D10** — the guard refuses only a removal from some local administrators to none (`a55a3d4`); the sync runs before the profile is written (lock order, `969acb0`); DNs are stored and compared in one canonical spelling, `canonical_dn`, not lower-cased (`b2d48bf`; idempotent `d60e981`, ASCII-only case folding `fb0033b`, cached `dd7a0a4`).
+- **D11** — an AD mail taken by a concurrent sign-in is not copied, the sign-in still succeeds (savepoint, `eebd38a`).
+- **D12** — skip codes `expired` (`fa9d289`) and `invalid_login` (`be341a1`); each account inserted in its own savepoint, so an account another tenant imports at the same moment is skipped, not the whole batch (`8c16db3`, `c53cc96`); the answer and the audit rows come from what was written, before the commit (`34394ff`); lookups go through the admin lane, 2 at a time, without a database connection (`f10f362`); a cancelled import stays cancelled (`04669be`).
+- **D13** — creating or deleting a mapping needs the whole catalogue, 403 `MAPPING_ADMIN_ONLY` (`adeab76`, `36a73b8`); the DN is stored canonical and another spelling is the 409 duplicate (`b2d48bf`); deleting is refused only from some local administrators to none (`826fe26`).
+- **D17** — `q` is trimmed before its length is checked (`e0f3749`).
+- **Security rules (spec §7, Security; §4)** — per-account AD bind throttle, 3 failed binds in 15 minutes → 429 (`cf2e00c`, `33f226d`), counting only a password that reached the directory (`4cdc8aa`); every AD 401 pays the unknown login's dummy bcrypt (`bf57e2b`) and every 401 answers no sooner than 0.5 s (`0839bb9`); an administrator's unlock (`3c12c09`) with a reason, once per account per 15 minutes, not for shared or platform accounts (`a497561`, `a941bd9`); nginx limits `/auth/login` per address, 10/min + burst 10, JSON 429 with `Retry-After` (`cff32e4`, `a9c30f8`, `0c7476e`, `31bb5b5`); a bad `LDAP_*` setting never stops the API or echoes a secret, `LDAP_USER_FILTER` compiled at start-up (`962abdf`).
+- **Task 12** — the integration test has five checks (adds `pwdLastSet`/`accountExpires` readable and one canonical DN spelling in the picker and `memberOf`); the runbook, spec, guide and roadmap follow the code above, not the text of Task 12.
+
 ## Spec gaps and conflicts found while planning
 
 1. **Protocol vs flow (→ D1).** Spec §7 line 406 `authenticate(login, password)` conflicts with §7 sign-in step 1 (lines 438–439, search by objectGUID). The plan follows step 1; Task 12 amends the spec line.
