@@ -104,6 +104,26 @@ dört zorunlu sır yer tutucuyla verildi).
 > G1-15'teki VM deploy kullanıcının kararıdır (aşağıda "Kullanıcı kararları", 2–3):
 > yedek → `0010` ön kontrolü → göç `0008 → 0009 → 0010` → herkes bir kez yeniden girer.
 
+**G1-15 deploy kapısı — AD açılmadan önce (F7):**
+
+- VM'de salt okunur gerçek dizin denetimi `tests/test_ldap_integration.py` **5 geçti**
+  (runbook, "Check against the real directory") — `LDAP_URL` üretim `.env`'ine ancak bundan
+  sonra girer.
+- Dizin `GET /admin/ldap/status` ile doğrulandı: `configured: true`, `last_test_ok: true`
+  (günlükteki "succeeded" satırı ikinci işaret).
+- VM'nin saati etki alanı denetleyicisiyle eşzamanlı (runbook, "Clock"; `pwdLastSet` ve
+  `accountExpires` VM saatiyle karşılaştırılır).
+- AD açılmadan önce TOTP'si kurulmuş **en az 2 yerel `hospital_admin`** hesabı var (AD kesintisi
+  ya da eşleme hatası Homunculus'un içinden onarılabilsin).
+- VM `.env`'inde `LDAP_ALLOW_INSECURE` **yok** (üretimde artık LDAP'ı kapalı tutar ve her
+  açılışta ERROR yazar).
+- Arka uç test takımı inşa edilmiş API imajının **içinde** koşuldu (Python 3.12 +
+  `constraints.txt`, üretimdeki paket seti).
+- Karar 11 (aşağıda, F7 ekleriyle: AD hesaplarının 503'le ayırt edilmesi, bir klinisyenin
+  girişinin 429'da tutulabilmesi) kullanıcı tarafından verildi.
+- Deploy, son 15 dakikada hatalı AD girişi yokken yapılır: yeniden başlatma Homunculus'un
+  dizilerini siler, AD'nin sayacını silmez (runbook, "A slow run is bounded too").
+
 ### Dalgalar
 
 | Dalga | İşler | Paralel mi |
@@ -130,12 +150,17 @@ dört zorunlu sır yer tutucuyla verildi).
    Homunculus hesap başına bir hatalı deneme dizisinde (son hatadan sonra 15 dk hatasız
    geçince biter) en çok 3 hatalı bağlanma yapar, yöneticinin kilit açması (dizi başına bir
    kez) 3 tane daha getirir: 3 + 3. Sıfırlama süresi en çok 15 dk olmalı (daha uzunsa AD
-   önceki diziyi sayarken yenisi başlar). (Önceki metin "en az 6" diyordu; `auth/limits.py`
+   önceki diziyi sayarken yenisi başlar); 15 dakikanın kesinlikle altında olması tercih
+   edilir (saatler için pay kalır). (Önceki metin "en az 6" diyordu; `auth/limits.py`
    "eşik bunun üstünde kalmalı" der.)
 8. Etki alanındaki sAMAccountName'ler ASCII mi? (ş/ç/ğ/ö/ü içeren adlar `invalid_login` ile
    içe aktarılamaz)
 9. Adında `#` veya `=` geçen AD grupları var mı? (ldap3'ün DN çözümleyicisi kaçışsız `#`/`=`
    kabul etmez; eşleme 422 verir)
+10. Etki alanında birden çok denetleyici varsa: bir DC'de başarılı oturum açma, PDC
+    öykünücüsünün o hesap için tuttuğu hatalı parola sayacını sıfırlıyor mu? Homunculus hatalı
+    deneme dizisini başarılı girişte bitiriyor; sayaç sıfırlanmıyorsa bu iyimser kalır ve
+    sınırın yeniden düşünülmesi gerekir (F7).
 
 ## Grup 1 kabul ölçütleri (Dalga 0 incelemesinden)
 
@@ -284,7 +309,11 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   bağlanma, kilit açmayla 3 daha; dizi 15 dakika hatasız geçince biter) bellekte tutuluyor:
   yeniden başlatma sıfırlar ve yalnız tek süreçte geçerli (birden çok
   uvicorn işçisi olursa paylaşılan depoya taşınmalı). Yönetici kilidi
-  `POST /admin/users/{id}/unlock-sign-in` ile açabilir. → pilot için kabul
+  `POST /admin/users/{id}/unlock-sign-in` ile açabilir. Bir dizinin ortasında (son hatalı
+  bağlanmadan sonraki 15 dakika içinde) yeniden başlatma ya da deploy, Homunculus'un sayacını
+  siler ama AD'ninkini silmez: ardından 6 hatalı bağlanma daha gelebilir, AD'nin tek bir
+  sayımında 12'ye kadar — eşik 7 varsayımı ancak yeniden başlatma yoksa geçerli. Runbook deploy
+  öncesi son 15 dakikanın `login.fail` satırlarına bakmayı söyler (F7). → pilot için kabul
 - LDAP çalışma zamanının `close()`'u geri alınamaz (iş parçacığı havuzu kapanır): süreç
   başına tek lifespan. prodserver için sorun değil; aynı süreçte uygulamayı yeniden başlatan
   bir araç yeni bir çalışma zamanı kurmalı.
@@ -332,7 +361,16 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - AD'de yeniden adlandırılan hesap izlenmiyor (plan "Spec gaps" 7): girişte ad, e-posta ve DN
   güncelleniyor ama `username` değil, yönetimde yeniden adlandırma yolu da yok; AD'de adı
   değişen kişi ne eski ne yeni sAMAccountName'iyle girebilir, yalnız Homunculus'taki
-  e-postasıyla girer. → Grup 4
+  e-postasıyla girer. AD'de silinip aynı sAMAccountName'le yeniden oluşturulan hesap (yeni
+  objectGUID) da hiç içe aktarılamaz: ad Homunculus'taki eski hesapta kayıtlı (`login_taken`),
+  kullanıcı adı değiştirilemez, kullanıcı silinemez. İkisi birlikte çözülmeli. → Grup 4
+- Yenileme, dizine ulaşılamadığında (`unreachable`, `timeout`, `tls`,
+  `service_bind_rejected`; `auth/router.py`, `_REFRESH_OUTAGES`) oturumu dizine sormadan
+  sürdürür: VM ile DC arasındaki bağlantı kesik kaldıkça, AD'de devre dışı bırakılmış bir
+  hesabın çalınmış yenileme token'ı da yaşar. Başarılı bir dizin denetimi olmadan bir oturumun
+  ne kadar yenilenebileceğine üst sınır konmalı. → Grup 4
+- `tests/test_ldap_integration.py` yalnız gerçek dizine karşı, elle koşuyor: CI için Samba AD
+  (ya da benzeri) ile bir tarif yazılmalı. → Grup 4
 - **G1-14 notu:** `/admin/ldap` çağrıları 2 × süre sınırı (varsayılan ≈20 s, en çok 24 s)
   sürebilir, dashboard'un 15 s zaman aşımını aşar — panel bu uçlar için daha uzun zaman aşımı
   kullanmalı; içe aktarma 10'arlı parçalar. Eşleme ekleme/silme yalnız bütün kataloğu taşıyana
@@ -348,6 +386,22 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   15 dakikaysa Homunculus tek başına AD sayacına sıfırlanmadan en çok 6 ekler, eşik en az 7
   (hastaneden istenecekler 7). Gerçek sınıflarla 2 saatlik benzetim testi
   (`tests/test_auth_limits.py`).
+- Başarılı giriş, kendisi denetlenirken başarısız olan yanlış parolaları da unutuyordu: onların
+  bağlanması DC'ye başarılı olanınkinden sonra ulaşmışsa AD onları sayar; inceleme AD'de 9'a
+  (kilit açmalarla 12'ye) ulaştı → ✅ F7'de çözüldü: `begin` bir bilet (`Ticket`) verir;
+  başarılı giriş yalnız kendisi başlamadan önce kaydedilen hataları unutur, sonrakiler yeni
+  diziyi başlatır (dizinin kilit açma hakkı harcanmışsa harcanmış kalır). Süre sınırında kesilen
+  ve parolası gitmiş bir bağlanma bir süre sınırı sonrasıyla tarihlenir; kullanıcı bağlanması
+  isteği bağlantı (TCP, TLS) açıldıktan sonra gönderilir, `bind_attempted` "parola gitti"
+  demektir. Benzetim artık başarılı girişleri ve kesilen bağlanmaları da karıştırıyor; eski
+  davranışın sınırı aştığını da gösteriyor.
+- ✅ F7'de çözüldü (Dalga 1A son incelemesi): parolalar ldap3'e UTF-8 bayt olarak gider
+  (SASLprep yok: NBSP, yumuşak tire, ayrışık `ş` içeren doğru parola artık 401 almıyor);
+  üretimde `homunculus` günlüğü INFO düzeyinde yazılıyor (başlangıçtaki "succeeded" satırı
+  görünür) ve runbook önce `/admin/ldap/status`'a bakar; `LDAP_ALLOW_INSECURE=1` üretimde
+  LDAP'ı kapalı tutar; `.dockerignore` `.db`/`__pycache__`'i her derinlikte dışlar; kilit
+  açmanın denetim satırı doğru (`failed`, `allowed` 3/6, `granted`) ve ikinci kilit açmanın
+  metni dizi mantığını söyler; sertifika reddi gerçek bir TLS bağlantısında test edildi.
 - Geliştirme venv'i Python 3.14, üretim imajı 3.12 — testler artık iki yorumlayıcıda da
   koşuyor (F6: 3.12'de `TaskGroup` bir alt görev hata verince üst görevi iptal edilmiş
   bırakıyordu ve içe aktarmadaki her dizin kesintisi 503 yerine 500 oluyordu). CI'da 3.12
@@ -357,7 +411,9 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   `pip install -c constraints.txt .`, köprü imajı tek paketi `cryptography`'yi aynı dosyayla
   sabitler. `pip install .` SQLAlchemy 2.1'i `greenlet`'siz kuruyordu (API açılamıyordu);
   bağımlılık artık `sqlalchemy[asyncio]>=2.0,<2.2`. Dosya `pyproject.toml` değişince yeniden
-  üretilir ve test takımı 3.12'de ona karşı koşturulur. SQLAlchemy 2.1 çıplak `postgresql://`
+  üretilir ve test takımı 3.12'de ona karşı koşturulur. 3.14 geliştirme venv'i bu seti
+  kendiliğinden kullanmaz (F7'de görüldü: SQLAlchemy 2.0.51 vb.); hizalamak için
+  `homunculus-engine/` içinde `pip install -c constraints.txt -e ".[dev]"`. SQLAlchemy 2.1 çıplak `postgresql://`
   adresini psycopg2'ye değil psycopg 3'e (kurulu değil) çözer: üretim kodu sürücüyü zaten
   adıyla veriyordu (asyncpg, `to_sync_url` → psycopg2); test fikstürü `clean_db` de artık
   veriyor.
@@ -446,3 +502,10 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
     (yerel hesaba "kilitleme" gelir; spec bunu reddetmişti), (c) yalnız bilinmeyen adlara
     sahte sınır (yerel hâlâ ayırt edilir). nginx'in adres başına sınırı (dakikada 10) bu
     yoklamayı yavaşlatır, kapatmaz.
+    F7 ekleri, karar verilirken bilinmesi gerekenler: (a) Dizin kapalıyken ya da AD hesapları
+    varken `LDAP_URL` boşken, AD hesabının girişi hemen 503 alır (sahte bcrypt yok, 0,5 s alt
+    sınır yok), bilinmeyen ve yerel adlar 401 — AD hesapları bu yoldan da ayırt edilir.
+    (b) Bir klinisyenin giriş adını bilen herkes, 15 dakikada 3 yanlış parolayla onun
+    Homunculus girişini sürekli 429'da tutabilir (eşik en az 7 iken Windows oturumunu
+    kilitlemez); yönetici kilidi dizi başına yalnız bir kez açabilir. İkisi runbook'un AD
+    bölümünde de yazılı ("What the limits give away").
