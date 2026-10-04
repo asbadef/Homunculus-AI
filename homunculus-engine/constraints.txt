@@ -1,7 +1,11 @@
 # The exact versions the API image installs (Dockerfile.api: `pip install -c constraints.txt .`)
-# and the edge bridge's `cryptography` (Dockerfile) — and the set the test suite runs against, on
-# Python 3.12 (the images') as on the 3.14 dev venv. A `pip freeze` of a CLEAN python:3.12-slim
-# install of the project with its dev extras, the project itself left out. From homunculus-engine/:
+# and the edge bridge's `cryptography` (Dockerfile) — and the set the test suite must pass against
+# on Python 3.12 (the images'). The 3.14 dev venv does not follow this file by itself and may hold
+# other versions (SQLAlchemy 2.0.51 when this was written); align it from homunculus-engine/ with
+# `pip install -c constraints.txt -e ".[dev]"`.
+#
+# A `pip freeze` of a CLEAN python:3.12-slim install of the project with its dev extras, the
+# project itself left out. From homunculus-engine/:
 #
 #   docker run --rm -v "$PWD:/src:ro" python:3.12-slim sh -c "mkdir /b && cp /src/pyproject.toml /b/
 #     && cp -r /src/src /b/src && pip install -q '/b[dev]' && pip freeze --exclude homunculus-engine"
