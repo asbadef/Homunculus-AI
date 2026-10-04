@@ -474,7 +474,10 @@ async def test_known_and_unknown_login_failures_cost_the_same_tenant_lookup(
 
     monkeypatch.setattr(auth_router_module, "tenant_of_user", counting)
     c, app = client
+    # Read before signing in: this module's client shares the test's session, and a refused
+    # sign-in rolls the session back before its floor's sleep, which expires `world`'s rows.
+    nurse_id = world["nurse"].id
     assert (await _login(c, "kimse")).status_code == 401
     assert (await _login(c, "ayse", "yanlis")).status_code == 401
-    assert len(looked_up) == 2 and looked_up[1] == world["nurse"].id
+    assert len(looked_up) == 2 and looked_up[1] == nurse_id
     assert [r.tenant for r in _auth_events(app, "login.fail")] == ["-", "demo-hastanesi"]
