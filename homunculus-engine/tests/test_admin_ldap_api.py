@@ -12,16 +12,18 @@ import uuid
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from homunculus.admin import ldap_service
-from homunculus.admin.service import Actor
+from homunculus.admin.service import LAST_ADMIN, Actor, AdminError
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.ldap import ACCOUNT_NEVER_EXPIRES, ADMIN_LANE_SLOTS, NOT_CONFIGURED
 from homunculus.auth.limits import directory_binds
-from homunculus.auth.models import Group, GroupPermission, LdapGroupMapping, User
+from homunculus.auth.models import (
+    SOURCE_LDAP, Group, GroupPermission, LdapGroupMapping, User, UserGroup,
+)
 from homunculus.auth.permissions import ALL_PERMISSIONS
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
@@ -531,6 +533,52 @@ async def test_a_user_desk_cannot_regroup_ad_members_through_a_mapping(client, w
     assert await group_rows(db_session, ayse_id) == {("nurse", "ldap")}
 
 
+async def test_in_a_tenant_without_a_local_administrator_a_mapping_can_still_be_deleted(
+        client, world, db_session):
+    """The guard refuses only a deletion that takes the tenant from some active LOCAL
+    administrators to none — as the sign-in sync's does. A tenant that has none already (its
+    one local administrator deactivated; `admin2`, without a password, does not count) must not
+    have its mapping table frozen: deleting a row that removes nobody, or somebody, goes
+    through."""
+    c, _ = client
+    tenant_id, ayse_id = world["tenant"].id, world["account"].id
+    # Plain ids: rolling back the count below expires `world`'s objects.
+    mapping_ids = [world["mappings"][name].id for name in ("YB-Hekim", "YB-Hemsire")]
+    admin2 = await add_user(db_session, username="admin2", tenant_id=tenant_id,
+                            group=world["groups"]["hospital_admin"])
+    headers = await bearer(db_session, admin2)
+    assert (await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
+            ).status_code == 200                                 # nurse, through YB-Hemsire
+    await db_session.execute(update(User).where(User.id == world["admin"].id)
+                             .values(is_active=False))
+    await db_session.commit()
+    assert await ldap_service.count_admins(db_session, tenant_id) == 0
+    await db_session.rollback()                                  # the count took the lock
+    for mapping_id in mapping_ids:                               # removes nobody, then Ayşe
+        res = await c.delete(f"/admin/ldap/group-mappings/{mapping_id}", headers=headers)
+        assert res.status_code == 204, (mapping_id, res.text)
+    assert await group_rows(db_session, ayse_id) == set()
+
+
+async def test_a_mapping_deletion_that_leaves_no_local_administrator_is_refused(
+        world, db_session):
+    """The guard itself, from some local administrators to none — data the API never produces
+    (a LOCAL account holding hospital_admin through an `ldap` row, the tenant's only one), built
+    by hand to reach it: 409, and nothing is removed."""
+    tenant_id, admin_id = world["tenant"].id, world["admin"].id
+    system = world["groups"]["hospital_admin"]
+    await db_session.execute(delete(UserGroup).where(UserGroup.user_id == admin_id))
+    db_session.add(UserGroup(user_id=admin_id, group_id=system.id, source=SOURCE_LDAP))
+    mapping = await add_mapping(db_session, tenant_id, group_dn("YB-Yonetim"), system)
+    await db_session.commit()
+    actor = Actor(id=admin_id, perms=ALL_PERMISSIONS, token_version=0)
+    with pytest.raises(AdminError) as refused:
+        await ldap_service.delete_mapping(db_session, tenant_id, actor, mapping.id)
+    await db_session.rollback()
+    assert (refused.value.status_code, refused.value.detail) == (409, LAST_ADMIN)
+    assert await group_rows(db_session, admin_id) == {("hospital_admin", SOURCE_LDAP)}
+
+
 async def test_ldap_admin_changes_are_audited_without_a_secret(client, world, db_session):
     c, app = client
     admin = await bearer(db_session, world["admin"])
@@ -669,8 +717,9 @@ async def test_a_mapping_delete_and_a_concurrent_sign_in_end_consistent(client, 
     has removed the mapping and its `ldap` rows but not committed, so her sync still reads the
     mapping and decides to add `nurse`. It must then wait for the tenant lock and decide again
     once the delete has committed — not insert a `nurse` row no mapping accounts for. Made
-    deterministic: the sign-in starts inside the delete, just before its administrator guard,
-    and the delete commits only once the sign-in is queued on the lock. `service` calls
+    deterministic: the sign-in starts inside the delete, just before its administrator guard's
+    second count (the one after the rows are gone; the first is taken before them), and the
+    delete commits only once the sign-in is queued on the lock. `service` calls
     `delete_mapping` without the router's `serialise`: the function holds the lock itself.
     (The other order — the sync commits first — is the delete's ordinary case, above.)"""
     c, app = client
@@ -678,12 +727,16 @@ async def test_a_mapping_delete_and_a_concurrent_sign_in_end_consistent(client, 
     tenant_id, ayse_id, admin_id = world["tenant"].id, world["account"].id, world["admin"].id
     mapping_id = world["mappings"]["YB-Hemsire"].id
     count_admins = ldap_service.count_admins
+    counts: list[int] = []
     sign_in: list[asyncio.Task] = []
 
     async def guard_while_ayse_signs_in(db, tid):
-        sign_in.append(asyncio.create_task(
-            c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})))
-        await _until_the_sign_in_waits_for_the_admin_lock(db_session, tenant_id, sign_in[0])
+        counts.append(1)
+        if len(counts) == 2:                                   # after the rows are deleted
+            sign_in.append(asyncio.create_task(
+                c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})))
+            await _until_the_sign_in_waits_for_the_admin_lock(db_session, tenant_id,
+                                                              sign_in[0])
         return await count_admins(db, tid)
 
     monkeypatch.setattr(ldap_service, "count_admins", guard_while_ayse_signs_in)
@@ -700,6 +753,7 @@ async def test_a_mapping_delete_and_a_concurrent_sign_in_end_consistent(client, 
             removed = await ldap_service.delete_mapping(session, tenant_id, actor, mapping_id)
             await session.commit()
         assert removed.removed_from == ()
+    assert len(counts) == 2 and len(sign_in) == 1                # before and after the rows
     res = await sign_in[0]
     assert res.status_code == 200, res.text
     assert decode_token(res.json()["access_token"])["groups"] == []

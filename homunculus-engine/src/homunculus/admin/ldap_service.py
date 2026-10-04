@@ -238,7 +238,8 @@ async def delete_mapping(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
     mapping, who get it back at their next sign-in or refresh (fail closed). Only a full
     administrator (403 otherwise, before the mapping is looked up); the group and every such
     member within the caller's rights (a deletion takes rights away from them, as a group edit
-    would), then the local-administrator guard.
+    would), then the local-administrator guard (409 only from some local administrators to
+    none).
 
     The tenant's admin lock is taken FIRST, by this function itself (re-entrant: the router's
     `serialise` already holds it), before anything is read or deleted. A sign-in or refresh
@@ -260,6 +261,10 @@ async def delete_mapping(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
                                          UserGroup.user_id.in_(holders))).values():
         _within(actor, _union(groups))
     dn = mapping.ad_group_dn
+    # The guard refuses only a deletion that takes the tenant from some active LOCAL
+    # administrators to none, as the sign-in sync's does: in a tenant that has none already,
+    # "none after" would hold for every deletion and freeze the mapping table.
+    admins_before = await count_admins(db, tenant_id)
     await db.delete(mapping)
     removed = list((await db.execute(
         delete(UserGroup)
@@ -272,7 +277,7 @@ async def delete_mapping(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
             .values(token_version=User.token_version + 1)
             .execution_options(synchronize_session=False))
     await db.flush()
-    if await count_admins(db, tenant_id) == 0:
+    if admins_before > 0 and await count_admins(db, tenant_id) == 0:
         raise AdminError(409, LAST_ADMIN)
     names: list[str] = []
     if removed:
