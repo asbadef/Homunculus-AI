@@ -117,8 +117,9 @@ Kapanış düzeltmeleriyle (`f5abde8` test hesabı tohumu, `1e7b11b` iki metin):
 5. VM'den etki alanı denetleyicisine 636 portu açık mı
 6. Servis PC'leri tek bir NAT/terminal sunucusu arkasında mı? (nginx giriş sınırı IP başına
    10/dk + 10 patlama; ortak IP'de vardiya değişiminde 429 olabilir)
-7. Etki alanı hesap kilitleme politikası (eşik ve sıfırlama süresi) — Homunculus sınırı
-   3 hata / 15 dk bunun altında kalmalı
+7. Etki alanı hesap kilitleme politikası (eşik ve sıfırlama süresi) — eşik en az 6 olmalı:
+   Homunculus hesap başına 15 dk'da en çok 3 hatalı bağlanma yapar, yöneticinin kilit açması
+   (hesap başına 15 dk'da bir) 3 tane daha getirir: 3 + 3
 
 ## Grup 1 kabul ölçütleri (Dalga 0 incelemesinden)
 
@@ -274,15 +275,29 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   zaman aşımı dolana kadar (LDAP_TIMEOUT_S, en çok 10 s) süreci bekletebilir.
 - nginx giriş sınırı adres başına (dakikada 10, ani 10): servis PC'leri tek bir NAT ya da
   terminal sunucusu (Citrix vb.) arkasındaysa bütün servis aynı adresten gelir ve vardiya
-  değişiminde klinisyenler 429 alabilir → hastaneye soruluyor ("Hastaneden gerekenler" 6),
-  G1-15 öncesi. nginx'in 429'u artık JSON gövdeyle gelir; panel dört dilde "çok fazla giriş
-  denemesi" der.
-- 50 kişilik içe aktarma yavaş DC'de (çağrı başına ~2 s, 3 yerlik yönetici şeridi) ~35 s
-  sürebilir: panel 15 s'de keser; sunucu işi bitirir, tekrar güvenli (içe aktarma
-  idempotent) → G1-14 içe aktarmayı 10'arlı parçalar.
-- Yönetici şeridinde bekleme için üst sınır yok: yoğun bir içe aktarma sırasında bir arama da
-  zaman aşımına uğrayabilir → G1-14.
-- İçe aktarma dizini beklerken bir veritabanı bağlantısı tutuyor → izle.
+  değişiminde klinisyenler 429 alabilir; aynı adresin arkasındaki herhangi biri dakikadaki 10
+  hakkı harcayarak bütün servisi 429'da da tutabilir → hastaneye soruluyor ("Hastaneden
+  gerekenler" 6), G1-15 öncesi. nginx'in 429'u artık JSON gövdeyle gelir; panel dört dilde
+  "çok fazla giriş denemesi" der. Reddedilen giriş nginx günlüğüne `warn` düzeyinde yazılır.
+- Adres başına sınır, nginx'in istemcinin gerçek adresini görmesine bağlı: Docker köprüsü
+  adresleri ağ geçidi adresine çeviriyorsa bütün servis tek "adres" olur. VM'de nginx erişim
+  günlüğünde servis PC'lerinin IP'leri mi, köprünün ağ geçidi mi göründüğü kontrol edilmeli.
+  → G1-15
+- Başarısız girişin alt sınırı (0,5 s) büyük bir AD'de hata yolundan kısa kalabilir (servis
+  bağlanması + arama + iç içe grup araması + kullanıcı bağlanması): o zaman yanıt süresi
+  hesabın AD hesabı olduğunu yine belli eder. Siteye göre ayarlanmalı ya da iç içe grup
+  araması yalnız başarılı bağlanmadan sonra yapılmalı. → G1-15
+- 50 kişilik içe aktarma yavaş DC'de (çağrı başına ~2 s; bir içe aktarma şeridin 3 yerinden
+  en çok 2'sini kullanır) ~50 s sürebilir: panel 15 s'de keser; sunucu işi bitirir, tekrar
+  güvenli (içe aktarma idempotent) → G1-14 içe aktarmayı 10'arlı parçalar.
+- Yönetici şeridinde bekleme için üst sınır yok → ✅ F5'te çözüldü: yer beklemesi çağrının süre
+  sınırıyla sınırlı (aşılırsa 503), bir içe aktarma şeritte bir yeri her zaman boş bırakır
+  (arama, grup seçici, bağlantı testi içe aktarmanın arkasında beklemez). Bir yönetici
+  çağrısı en çok 2 × süre sınırı (varsayılan 20 s, en çok 24 s) sürer: şerit doluyken ve DC
+  yavaşken panelin 15 s'sini aşabilir.
+- İçe aktarma dizini beklerken bir veritabanı bağlantısı tutuyor → ✅ F5'te çözüldü: dizine
+  soran dört yönetici ucu (test, arama, gruplar, içe aktarma) bağlantıyı önce havuza geri
+  verir; başarısız girişin alt sınır beklemesi de bağlantısız yapılır.
 
 ## Dalga 1B'den açık kalanlar
 
