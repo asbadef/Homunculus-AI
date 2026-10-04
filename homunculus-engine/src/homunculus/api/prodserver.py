@@ -17,6 +17,9 @@ Production means a Postgres DATABASE_URL (`_is_production`). There, before anyth
 `_refuse_unsafe_start` stops the process (SystemExit) on a missing PHI key, a weak signing key or
 unusable device tokens: a deploy that fails loudly while an operator watches is safer than a
 service that looks healthy and is not.
+
+Logging: `configure_logging` gives the engine's own loggers (`homunculus.*`) an INFO handler on
+stderr, first thing — uvicorn configures only its own.
 """
 from __future__ import annotations
 
@@ -43,6 +46,37 @@ from homunculus.auth.models import User
 from homunculus.tenant.bedmap import BedMap
 
 logger = logging.getLogger(__name__)
+
+_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+
+
+def configure_logging() -> logging.Handler:
+    """The engine's own log lines (`homunculus.*`), INFO and up, on stderr — where uvicorn
+    writes its own and `docker compose logs api` reads them. uvicorn configures only its
+    `uvicorn.*` loggers: without this a `homunculus` record went to Python's last-resort handler,
+    WARNING and up only, and the INFO line the runbook points at — the start-up bind's
+    "succeeded" — never appeared.
+
+    One handler, added once (calling again returns it). The records still propagate to the
+    root logger, which uvicorn's configuration leaves without a handler, so each line is printed
+    once; a log configuration that gives the root a handler (`--log-config`) would print them
+    twice — configure `homunculus` there instead. Nothing here decides what is logged: the code
+    that logs keeps passwords, tokens and patient data out of its messages, and every INFO line
+    the API process has (the LDAP start-up bind) names a host, nothing more."""
+    engine = logging.getLogger("homunculus")
+    for handler in engine.handlers:
+        if getattr(handler, "homunculus_stderr", False):
+            return handler
+    handler = logging.StreamHandler()                   # sys.stderr
+    handler.homunculus_stderr = True
+    handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+    engine.addHandler(handler)
+    engine.setLevel(logging.INFO)
+    return handler
+
+
+# First: what the start-up below logs (the PHI key warning, LDAP's verdict) goes through it.
+configure_logging()
 
 
 _DEV_TENANTS = {"demo-token": "HOSP1"}
