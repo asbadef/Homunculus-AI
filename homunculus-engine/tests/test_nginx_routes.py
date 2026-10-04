@@ -106,6 +106,14 @@ def test_sign_in_is_rate_limited_per_client_address() -> None:
     assert "limit_req" not in api                # nothing but sign-in is limited
 
 
+def test_a_limited_sign_in_is_logged_as_a_warning() -> None:
+    """nginx logs each request it refuses under `limit_req` at `error` by default: one address
+    spending its 10 a minute — a ward PC's mistyping, a shared NAT at shift change — would read
+    as server errors. `warn` keeps the record and its level honest."""
+    body = _location(CONF.read_text(encoding="utf-8"), "location = /auth/login")
+    assert _directives(body, "limit_req_log_level") == {"limit_req_log_level warn"}
+
+
 LOGIN_LIMITED = "Çok fazla giriş denemesi; bir dakika sonra tekrar deneyin"
 
 
