@@ -204,6 +204,213 @@ emit frames rather than printing nothing and exiting:
 curl -N "http://172.100.101.72/stream?token=$TENANT_TOKEN"
 ```
 
+## Active Directory sign-in (optional)
+
+Clinicians can sign in with their hospital (Active Directory) account instead of a Homunculus
+password. It is off until `LDAP_URL` is set. Local accounts keep working either way, and the API
+refuses any change that would leave the hospital without an active **local** administrator, so
+a directory outage or a mapping mistake can always be repaired from inside Homunculus. Keep at
+least two local administrators.
+
+### What to get from hospital IT
+
+1. **The LDAPS address, by name:** `ldaps://<DC name>:636` with the domain controller's DNS
+   name exactly as it appears in its certificate — **not an IP address**: the name in the
+   certificate is checked, and an IP fails that check (`tls`). The VM must resolve the name.
+2. **The CA certificate** that signed the domain controller's certificate (PEM; public).
+3. **A read-only service account:** its bind DN (e.g.
+   `CN=svc-homunculus,OU=Service Accounts,DC=hastane,DC=local`) and password. It must be able
+   to read, on user objects, `objectGUID`, `sAMAccountName`, `userPrincipalName`, `mail`,
+   `displayName`, `memberOf`, `userAccountControl`, **`pwdLastSet` and `accountExpires`**, and
+   `cn` on groups. AD leaves out what an account may not read without any error, and then
+   Homunculus silently stops noticing a password changed or an account expired in AD — the
+   read-only check below fails loudly on exactly that. Ask for a password that does not
+   expire, or note when it does: an expired service password turns every AD sign-in into 503
+   (`service_bind_rejected`).
+4. **The search base** (`LDAP_BASE_DN`), covering the staff accounts **and** every group that
+   will be mapped: the mapping's group picker searches under it, and with
+   `LDAP_NESTED_GROUPS=1` (the default) sign-in finds a person's groups by searching under it,
+   so a group outside it is never seen. Usually the domain root (`DC=hastane,DC=local`).
+5. **The AD group for each role**, e.g. `YB-Hekim` → Hekim, `YB-Hemsire` → Hemşire,
+   `YB-Sorumlu-Hemsire` → Sorumlu Hemşire. Nested groups count. **Do any group names contain
+   `#` or `=`?** A DN with a bare `#` or `=` cannot be read: such a group cannot be mapped (422)
+   and never matches at sign-in.
+6. **Port 636 open from the VM to the domain controller.**
+7. **The domain's account lockout policy** — "Account lockout threshold" and "Reset account
+   lockout counter after". Homunculus makes at most 3 failed binds per account in 15 minutes,
+   and 3 more after an administrator's unlock (see *Sign-in limits*): the threshold must be
+   **at least 7**, above 3 + 3, or Homunculus alone could lock a clinician out of every
+   hospital system. The clinician's own mistyped Windows logons count toward the same
+   threshold.
+8. **Are the sAMAccountNames ASCII?** A name with `ş`, `ç`, `ğ`, `ö`, `ü`, `ı` (or letters of
+   another script) breaks the local username rule (`a-z 0-9 . _ @ -`) and is skipped at import
+   as `invalid_login`.
+9. **Do the ward PCs reach the VM through one shared address** (NAT, a terminal server,
+   Citrix)? Then the per-address sign-in limit is shared by the whole ward (see *Sign-in
+   limits*).
+
+### Configure
+
+From the VM, first check the network and the certificate:
+
+```bash
+getent hosts dc1.hastane.local
+openssl s_client -connect dc1.hastane.local:636 -CAfile /opt/homunculus/deploy/local/ldap-ca/ca.pem \
+  -verify_hostname dc1.hastane.local </dev/null 2>/dev/null | grep "Verify return code"
+```
+
+Expected: an address, then `Verify return code: 0 (ok)`. Then:
+
+```bash
+cd /opt/homunculus/deploy/local
+mkdir -p ldap-ca && cp /path/to/ca.pem ldap-ca/ca.pem && chmod 644 ldap-ca/ca.pem
+$EDITOR .env      # the LDAP_* block from .env.example; LDAP_CA_CERT=/etc/homunculus/ldap-ca/ca.pem
+docker compose up -d api
+docker compose logs api | grep "LDAP"
+```
+
+The service account's password goes into `.env` only (`chmod 600`); single-quote it if it
+contains a `$`. Expected: `LDAP: service-account bind to dc1.hastane.local succeeded`.
+Otherwise: `FAILED (tls)` — the certificate or the name in `LDAP_URL`; `FAILED (unreachable)` —
+DNS or the firewall; `FAILED (timeout)` — the DC does not answer in time; `FAILED
+(service_bind_rejected)` — the bind DN or its password; `LDAP is OFF: …` — a setting the API
+cannot use (the message names it, never its value). None of these stops the API, and local
+sign-in keeps working.
+
+- **`LDAP_ALLOW_INSECURE=1` is for a lab, never the hospital.** It permits `ldap://`, and when
+  no `LDAP_CA_CERT` is given it **switches certificate verification off** for `ldaps://`
+  (anyone on the path could read AD passwords). The API logs a WARNING at every start while it
+  is set.
+- **A `tls` failure seen only on a developer machine** may be Python, not the certificate:
+  Python 3.13 and newer verify strictly and refuse a CA certificate whose `basicConstraints`
+  is not marked critical. The API image runs Python 3.12, which accepts it.
+  `openssl x509 -in ldap-ca/ca.pem -noout -text | grep -A1 "Basic Constraints"` shows whether
+  it is `critical`.
+- **Clocks:** `pwdLastSet` (written on the DC's clock) is compared with the token's issue time
+  (the VM's clock), and `accountExpires` with the VM's clock. Keep both synchronised (see
+  *Clock* below): a VM running ahead of the DC can miss a password changed just after a
+  sign-in; one running behind can end a fresh session at its first refresh.
+
+### Check against the real directory (read-only)
+
+`tests/test_ldap_integration.py` makes five read-only checks with the API's own settings: the
+service account binds; a search finds people and the first reads back by objectGUID; one
+deliberately failed bind — as the **service account** with a wrong password, never as a
+clinician (a failed bind counts toward that account's lockout; one per run, so do not run it in
+a loop); `pwdLastSet` and `accountExpires` come back (item 3 above); and a member's group has
+the same canonical spelling in `memberOf` as in the group picker (else a mapping made in the
+panel never matches at sign-in). It writes nothing. It runs in a throwaway container built from
+the API image; the container installs pytest from PyPI, so the VM needs internet access (or a
+pip mirror, `PIP_INDEX_URL`) for that moment:
+
+```bash
+cd /opt/homunculus/deploy/local
+docker compose run --rm --no-deps --user root --entrypoint sh \
+  -v /opt/homunculus/homunculus-engine/tests:/app/tests:ro api -c '
+    pip install -q "pytest>=8.0" "pytest-asyncio>=0.23" "httpx>=0.27" &&
+    LDAP_TEST_URL="$LDAP_URL" LDAP_TEST_BIND_DN="$LDAP_BIND_DN" \
+    LDAP_TEST_BIND_PASSWORD="$LDAP_BIND_PASSWORD" LDAP_TEST_BASE_DN="$LDAP_BASE_DN" \
+    LDAP_TEST_CA_CERT="$LDAP_CA_CERT" LDAP_TEST_USER_FILTER="$LDAP_USER_FILTER" \
+    LDAP_TEST_NESTED_GROUPS="$LDAP_NESTED_GROUPS" LDAP_TEST_TIMEOUT_S="$LDAP_TIMEOUT_S" \
+    LDAP_TEST_ALLOW_INSECURE="$LDAP_ALLOW_INSECURE" \
+    python -m pytest -q -p no:cacheprovider -rs tests/test_ldap_integration.py'
+```
+
+The `$LDAP_*` values expand inside the container (the single quotes keep them off the VM's
+command line and shell history). Expected: `5 passed` (ldap3's deprecation warnings are
+harmless). A search for `a` that finds nobody fails; `1 skipped` on the last check means none
+of the people found has a group under `LDAP_BASE_DN` — in both cases add `LDAP_TEST_QUERY=<part
+of the name of someone in a group that will be mapped>` inside the quotes. A warning naming
+`memberOf` values Homunculus cannot read lists groups with a bare `#` or `=` (item 5): do not
+plan to map them. Every failure says what to ask IT for.
+
+### How it behaves
+
+- **Accounts come from an import.** An administrator searches AD (at most 50 rows) and imports
+  the people who need Homunculus (at most 50 per request); an AD account that was not imported
+  cannot sign in. An import is idempotent and reports what it skipped: `exists` (already has an
+  account), `not_found`, `disabled`, `expired` (accountExpires passed), `invalid_login` (item
+  8), `login_taken` (the name is already someone's username or e-mail), `no_username`. The AD
+  groups' mapped groups and any extra groups must each be within the importer's own rights
+  (403 otherwise). Until the AD panel ships (G1-14) the routes are `/admin/ldap/*`
+  (`homunculus-engine/src/homunculus/admin/ldap_router.py`); searching, importing and reading
+  the mapping need `users.manage`, **changing the mapping needs a full administrator** (every
+  permission): a mapping regroups everyone in its AD group.
+- **Sign-in forms:** the AD user name (`ayilmaz`), `DOMAIN\ayilmaz`, the UPN
+  (`ayilmaz@hastane.local`) or the mail — as `LDAP_LOGIN_ATTRS` allows. The AD password goes to
+  one bind and is never stored, logged or audited.
+- **AD down:** AD accounts get "Dizin sunucusuna ulaşılamıyor" (503) at sign-in; open sessions
+  continue — a token refresh while the DC is unreachable, too slow, refuses TLS or the service
+  account goes on without asking it (audited `refresh.directory_unavailable`); local accounts
+  are unaffected. Any other directory error at refresh (a reply about the account that cannot
+  be read) is a 503 (`refresh.directory_error`): nothing is renewed, and the refresh token is
+  kept for the next try.
+- **Disabled, expired, deleted, moved out of `LDAP_BASE_DN` or password changed or reset in
+  AD:** refused at the next sign-in, and the open session ends at its next token refresh
+  (within the hour). Homunculus's own "active" flag is not changed; deactivate the account in
+  Homunculus to stop it whatever AD says. (A locked-out or password-expired AD account fails
+  its bind at sign-in; an open session is not ended for it: reading AD's lockout state at
+  refresh would let anyone end a clinician's session by typing her name with wrong passwords.)
+- **AD group changes** apply at the user's next sign-in or token refresh, whichever comes first
+  (within the hour); groups an administrator gave by hand are never touched. While the
+  directory is down, nothing changes. A new mapping applies from each member's next sign-in or
+  refresh; deleting a mapping takes its rights away at once (someone who still holds the group
+  through another mapping gets it back at their next sign-in or refresh).
+- **A mapping is keyed by the group's DN,** stored and compared in one canonical spelling
+  (spacing, escapes and ASCII letter case do not matter; other letters, `Ş`/`ş`, compare as
+  written — pick groups from the picker rather than typing the DN). A group renamed or moved
+  in AD loses its mapping silently. An account renamed in AD keeps its old Homunculus user
+  name, and neither name signs in any more — only its e-mail address does (both are open
+  items, Grup 4).
+- **Time bounds:** one directory call takes at most `min(2 × LDAP_TIMEOUT_S, 12)` s (10 s at
+  the default 5) at sign-in or refresh. Administration shares 3 of the directory's 8 threads,
+  so sign-ins always keep 5; an administration call may wait as long again for its place (at
+  most 20 s at the default, more than the dashboard's 15 s — the server still finishes; an
+  import is safe to repeat), and an import looks up 2 accounts at a time. No database
+  connection is held while the directory answers.
+
+### Sign-in limits
+
+- **Per account (AD accounts):** after 3 failed binds in 15 minutes the sign-in is refused with
+  429 "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin" without asking AD. Only an
+  attempt whose password reached the DC counts (a DC outage before the bind does not); a
+  successful sign-in clears it. The count is in the API's memory: a restart clears it.
+- **Unlock:** `POST /admin/users/{id}/unlock-sign-in` with `{"reason": "…"}` (one line, at most
+  200 characters; audited as `user.sign_in_unlocked` with the reason) clears the count. It
+  needs `users.manage` and the account within the caller's rights; at most once per account per
+  15 minutes (409 "Bu hesabın girişi kısa süre önce açıldı; 15 dakika sonra tekrar deneyin");
+  not for an account active in another hospital or a platform operator's (409). It does not
+  unlock anything in AD — an AD lockout is IT's to clear.
+- **It slows a guessing run; it does not stop a slow one.** The window slides: once a failure
+  is 15 minutes old a new attempt is allowed, so one wrong password every 5 minutes is never
+  refused, while AD forgets failures only after its "Reset account lockout counter after"
+  period passes with none. Such a run can still reach the domain's threshold (after about
+  5 × threshold minutes). The audit trail shows it: `login.fail` rows for one account every few
+  minutes (`reason` `bad_credentials`, then `throttled`).
+- **Per address (nginx):** `/auth/login` takes 10 attempts a minute per client address, with a
+  burst of 10; beyond that nginx answers 429 `{"detail":"Çok fazla giriş denemesi; bir dakika
+  sonra tekrar deneyin"}` with `Retry-After: 60` and logs a warning. If the ward PCs share one
+  address (item 9), the whole ward shares those 10 a minute: clinicians can get 429 at shift
+  change, and anyone behind that address can keep the ward at 429. Docker may also hand nginx
+  its bridge gateway instead of the PCs' addresses: `docker compose logs web | tail` must show
+  the ward PCs' IPs, not a `172.x.0.1`. The rate and burst are in `deploy/local/web/nginx.conf`.
+- **Response-time floor:** every refused sign-in (401) answers no sooner than 0.5 s after it
+  arrived, and an AD refusal also pays the same dummy bcrypt an unknown login does, so timing
+  does not tell which logins are AD accounts. If this site's AD failure path (service bind,
+  search, nested-group search, user bind) takes longer than 0.5 s, AD refusals become slower
+  than the rest again. Measure with a test AD account IT provides, imported into Homunculus —
+  never a clinician's (every try counts toward the lockout, and the fourth within 15 minutes is
+  a 429, which is not timed):
+
+  ```bash
+  curl -sk -o /dev/null -w '%{time_total}\n' -X POST https://<vm>/auth/login \
+    -H 'Content-Type: application/json' -d '{"login":"<test account>","password":"<wrong>"}'
+  ```
+
+  then the same with a login that does not exist. If the first is clearly slower, raise
+  `LOGIN_FAILURE_FLOOR_S` in `homunculus-engine/src/homunculus/auth/router.py` (a code change;
+  keep it far below the dashboard's 15 s).
+
 ## Backups — your responsibility now
 
 No managed provider is doing this any more. The audit trail is a legal record, and an unbacked-up
