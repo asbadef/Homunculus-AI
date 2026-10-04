@@ -259,6 +259,20 @@ def test_a_canonical_dn_is_its_own_canonical_form_and_means_the_same_dn():
     assert checked > 1500
 
 
+def test_canonical_dn_remembers_what_it_has_computed():
+    """Sign-in and refresh canonicalise every memberOf value (up to 1 000) on the event loop,
+    and the same group DNs come back for every clinician: each is parsed once (`lru_cache`,
+    4 096 entries). A refused DN is not remembered — it raises every time."""
+    canonical_dn.cache_clear()
+    dn = "CN=YB-Hemsire,OU=Gruplar,DC=hastane,DC=local"
+    assert canonical_dn(dn) == canonical_dn(dn)
+    info = canonical_dn.cache_info()
+    assert (info.hits, info.misses, info.maxsize) == (1, 1, 4096)
+    for _ in range(2):
+        with pytest.raises(ValueError):
+            canonical_dn("yb")
+
+
 @pytest.mark.parametrize("dn", [
     "", "   ", "yb", "=x", "1CN=x", "CN=,DC=x", "CN=a,b", "CN=x,,DC=y", "CN=x,DC=y,",
     r"CN=a\zb,DC=x", "CN=a;b,DC=x", "<GUID=6b29fc40-ca47-1067-b31d-00dd010662da>",

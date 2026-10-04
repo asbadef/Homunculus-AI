@@ -37,6 +37,7 @@ Windows dev machines and in the python:3.12-slim image without libldap). Spec §
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import math
 import os
@@ -119,6 +120,7 @@ _DN_SPECIAL = frozenset('\\,+"<>;=#')
 _ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 
 
+@functools.lru_cache(maxsize=4096)
 def canonical_dn(dn: str) -> str:
     r"""The one spelling a distinguished name is stored and compared in (`ldap_group_mappings`
     against AD's memberOf): ldap3's parser splits and checks it (RFC 4514); spaces around `=`
@@ -128,7 +130,8 @@ def canonical_dn(dn: str) -> str:
     other scripts (no Unicode rule merges two groups), and the group picker and memberOf both
     give AD's exact spelling. Idempotent. ValueError when it is not a DN, or carries a control
     character (NUL included, raw or escaped) or an escape that is not UTF-8: nothing to store
-    or match."""
+    or match. Pure, so remembered (`lru_cache`): sign-in and refresh canonicalise up to 1 000
+    memberOf values on the event loop, the same group DNs for every clinician."""
     if _has_control(dn):
         raise ValueError("control character in a DN")
     try:
