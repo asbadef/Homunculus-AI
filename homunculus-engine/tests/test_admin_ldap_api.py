@@ -33,8 +33,8 @@ from homunculus.auth.permissions import ALL_PERMISSIONS
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
 from tests.fake_directory import (
-    AD_PASSWORD, ADMIN_PASSWORD, TENANT_SLUG, ad_client, ad_world, add_mapping, audit_events,
-    group_dn, group_rows, person, runtime,
+    AD_PASSWORD, ADMIN_PASSWORD, TENANT_SLUG, ad_client, ad_world, add_directory_account,
+    add_mapping, audit_events, group_dn, group_rows, person, runtime,
 )
 from tests.signed_in import add_user, bearer
 
@@ -694,6 +694,31 @@ async def test_a_mapping_dn_is_stored_in_its_canonical_spelling(client, world, d
     legacy = await c.post("/admin/ldap/group-mappings", headers=admin, json={
         "ad_group_dn": group_dn("YB-Eski"), "group_id": str(nurse)})
     assert (legacy.status_code, legacy.json()["detail"]) == (409, ldap_service.MAPPING_EXISTS)
+
+
+async def test_a_mapping_to_a_name_ending_in_backslash_space_grants_only_that_group(
+        client, world, db_session):
+    """`Eczane\\ ` (a backslash, then a space) and `Eczane\\` are two AD groups. The DN is
+    canonicalised by the validator, again by `create_mapping`, and AD's memberOf at every
+    sign-in: a second pass that dropped the escaped trailing space once stored the mapping as
+    the SIBLING's DN and granted its rights to the sibling's members."""
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    res = await c.post("/admin/ldap/group-mappings", headers=admin, json={
+        "ad_group_dn": r"CN=Eczane\5C\20,OU=Gruplar,DC=hastane,DC=local",
+        "group_id": str(world["groups"]["pharmacist"].id)})
+    assert res.status_code == 201, res.text
+    assert res.json()["ad_group_dn"] == r"cn=eczane\\\ ,ou=gruplar,dc=hastane,dc=local"
+    member = person("Eczaci", groups=(r"CN=Eczane\\\ ,OU=Gruplar,DC=hastane,DC=local",))
+    sibling = person("Komsu", groups=(r"CN=Eczane\\,OU=Gruplar,DC=hastane,DC=local",))
+    for p in (member, sibling):
+        world["directory"].add(p)
+        await add_directory_account(db_session, world["tenant"].id, p)
+    await db_session.commit()
+    for login, groups in (("eczaci", ["pharmacist"]), ("komsu", [])):
+        signed = await c.post("/auth/login", json={"login": login, "password": AD_PASSWORD})
+        assert signed.status_code == 200, signed.text
+        assert decode_token(signed.json()["access_token"])["groups"] == groups, login
 
 
 @pytest.mark.parametrize("dn", [

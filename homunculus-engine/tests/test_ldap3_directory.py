@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import socket
 import ssl
 import struct
@@ -14,13 +15,14 @@ import uuid
 import pytest
 from ldap3 import Tls
 from ldap3.core.exceptions import LDAPException, LDAPResponseTimeoutError, LDAPSocketOpenError
+from ldap3.utils.dn import parse_dn
 
 from homunculus.auth.ldap import (
     ADMIN_LANE_SLOTS, DEFAULT_USER_FILTER, LdapGroup, LdapUnavailable, load_ldap_config,
 )
 from homunculus.auth.ldap3_directory import (
-    GROUP_LIMIT, SEARCH_ATTRIBUTES, SLOTS, USER_ATTRIBUTES, Ldap3Directory, _wire_filter,
-    canonical_dn, escape_guid, failure_reason, group_search_filter, guid_lookup_filter,
+    GROUP_LIMIT, SEARCH_ATTRIBUTES, SLOTS, USER_ATTRIBUTES, Ldap3Directory,
+    _hex_escaped_spaces, _unescape_dn_value, _wire_filter, canonical_dn, escape_guid, failure_reason, group_search_filter, guid_lookup_filter,
     ldap_from_env,
     nested_groups_filter, parse_group_entry, parse_user_entry, tls_for, user_search_filter,
 )
@@ -186,6 +188,12 @@ def test_a_group_entry():
     ([r"CN=\#a,DC=x", r"CN=\23a,DC=x"], r"cn=\#a,dc=x"),
     ([r"CN=\ a\ ,DC=x", r"CN=\20a\20,DC=x", r"CN=\ a\20 ,DC=x"], r"cn=\ a\ ,dc=x"),
     (["CN=a+OU=b,DC=x"], "cn=a+ou=b,dc=x"),
+    # A value ending in a backslash and a space keeps both, however often it is canonicalised —
+    # it is not its sibling `a\` (a group of its own): the trailing space stays escaped.
+    ([r"CN=a\5C\20,DC=x", r"CN=a\\\ ,DC=x", r"CN=a\\\20,DC=x"], r"cn=a\\\ ,dc=x"),
+    ([r"CN=a\\,DC=x", r"CN=a\5C,DC=x", r"CN=a\\ ,DC=x"], r"cn=a\\,dc=x"),
+    ([r"CN=\ ,DC=x", r"CN=\20,DC=x"], r"cn=\ ,dc=x"),
+    ([r"CN=\20\20,DC=x", r"CN=\ \ ,DC=x"], r"cn=\ \ ,dc=x"),
 ])
 def test_a_dn_has_one_canonical_spelling(spellings, canonical):
     """How a mapping is stored and how AD's memberOf values are compared with it: spacing,
@@ -193,6 +201,41 @@ def test_a_dn_has_one_canonical_spelling(spellings, canonical):
     for spelling in spellings:
         assert canonical_dn(spelling) == canonical, spelling
     assert canonical_dn(canonical) == canonical
+
+
+# Pieces a generated DN value is made of: plain and special characters, bare and escaped (by
+# character and by hex pair), spaces, non-ASCII letters (Turkish, Greek, the Kelvin sign).
+_DN_PIECES = ["a", "B", "z", "0", "-", " ", "  ", ",", "+", "=", "#", ";", '"', "<", ">",
+              "\\\\", "\\ ", "\\20", "\\5C", "\\5c", "\\2C", "\\,", "\\+", "\\=", "\\#", "\\3D",
+              "\\23", "\\22", "\\;", "ş", "Ş", "İ", "ı", "é", "Σ", "ς", "K",
+              "\\C5\\9F", "\\c4\\b0"]
+
+
+def _values(dn: str) -> list[str]:
+    """The DN's attribute values as plain text, read by ldap3's parser (as canonical_dn reads
+    them): what the DN means, whatever its spelling."""
+    return [_unescape_dn_value(value) for _, value, _ in
+            parse_dn(_hex_escaped_spaces(dn.strip()), escape=False, strip=True)]
+
+
+def test_a_canonical_dn_is_its_own_canonical_form_and_means_the_same_dn():
+    """Generated DNs (fixed seed): canonicalising twice changes nothing — the API's validator,
+    `create_mapping` and the sign-in each canonicalise again, so a second pass that changed a
+    DN would store, or match, ANOTHER group — and the canonical form reads back as the same
+    values, lower-cased."""
+    rnd = random.Random(20261004)
+    checked = 0
+    for _ in range(6000):
+        value = "".join(rnd.choice(_DN_PIECES) for _ in range(rnd.randint(1, 8)))
+        dn = f"CN={value},OU=Gruplar,DC=hastane,DC=local"
+        try:
+            once = canonical_dn(dn)
+        except ValueError:
+            continue
+        checked += 1
+        assert canonical_dn(once) == once, (dn, once)
+        assert _values(once) == [v.lower() for v in _values(dn)], (dn, once)
+    assert checked > 1500
 
 
 @pytest.mark.parametrize("dn", [

@@ -181,10 +181,15 @@ def _unescape_dn_value(value: str) -> str:
 
 
 def _escape_dn_value(text: str) -> str:
+    r"""Plain text as a DN value: AD's special characters escaped, and a leading or trailing
+    space escaped (`\ `) so the parser does not strip it. Whether a space leads or trails is
+    read from the TEXT, not the escaped string: `a\` + space escapes to `a\\` + space, which
+    already ends in `\ ` and would otherwise keep its space unescaped — a second pass would then
+    strip it and name the sibling group `a\`. A one-space value is escaped once."""
     escaped = "".join(f"\\{ch}" if ch in _DN_SPECIAL else ch for ch in text)
-    if escaped.startswith(" "):
+    if text.startswith(" "):
         escaped = "\\" + escaped
-    if escaped.endswith(" ") and not escaped.endswith("\\ "):
+    if text.endswith(" ") and len(text) > 1:
         escaped = escaped[:-1] + "\\ "
     return escaped
 
