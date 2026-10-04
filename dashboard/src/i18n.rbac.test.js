@@ -115,6 +115,11 @@ function nginxLoginLimited(src) {
 }
 
 const ADMIN_CONST = pyConstants(ADMIN_SERVICE);
+const LDAP_CONST = pyConstants(LDAP_SERVICE);
+// admin/ldap_service.py's string constants are refusals, except the import's skip codes
+// (SKIP_*): outcome codes in the import's answer, not messages. Every other one is read here,
+// so a refusal added there fails below until it is translated.
+const LDAP_SKIP_CODES = [...LDAP_CONST.keys()].filter((name) => name.startsWith("SKIP_"));
 
 /** Every plain (unparameterised) message, with where it comes from. */
 const PLAIN = [
@@ -130,8 +135,10 @@ const PLAIN = [
   ...[...ADMIN_CONST.values()].map((m) => ["admin/service.py constant", m]),
   ...literals(ADMIN_SERVICE, String.raw`AdminError\(\d+, ${STR}\)`)
     .map((m) => ["admin/service.py literal", m]),
-  ...["MAPPING_EXISTS", "MAPPING_NOT_FOUND", "MAPPING_ADMIN_ONLY"]
-    .map((k) => ["admin/ldap_service.py constant", pyConstants(LDAP_SERVICE).get(k)]),
+  ...[...LDAP_CONST].filter(([name]) => !name.startsWith("SKIP_"))
+    .map(([, m]) => ["admin/ldap_service.py constant", m]),
+  ...literals(LDAP_SERVICE, String.raw`AdminError\(\d+, ${STR}\)`)
+    .map((m) => ["admin/ldap_service.py literal", m]),
   ...literals(GROUPS, String.raw`GroupError\(${STR}\)`).map((m) => ["auth/groups.py", m]),
   ...literals(AUTH_SCHEMAS, String.raw`ValueError\(${STR}\)`).map((m) => ["auth/schemas.py", m]),
   ...literals(BACKEND_API, String.raw`failure\(\w+,\s*${STR}\)`).map((m) => ["backendApi.js", m]),
@@ -170,6 +177,9 @@ describe("server and client messages are mapped", () => {
     expect(PLAIN.some(([where]) => where === "backendApi.js superseded"), "the superseded request").toBe(true);
     expect(ADMIN_CONST.get("SHARED_ACCOUNT")).toMatch(/^Bu hesap başka bir kurumda da etkin; .+ayarlanabilir$/);
     expect(ADMIN_CONST.get("SELF_CREDENTIALS")).toContain("MFA'nızı");
+    expect(PLAIN.filter(([where]) => where === "admin/ldap_service.py constant").length)
+      .toBeGreaterThanOrEqual(3);
+    expect(LDAP_SKIP_CODES).toContain("SKIP_LOGIN_TAKEN");    // the skip codes are still told apart
     expect(PLAIN.length).toBeGreaterThan(45);
   });
 
@@ -201,7 +211,6 @@ describe("server and client messages are mapped", () => {
   });
 
   it("names the right entry for the AD group mapping refusals", () => {
-    const LDAP_CONST = pyConstants(LDAP_SERVICE);
     expect(apiErrorKey(LDAP_CONST.get("MAPPING_EXISTS"))?.key).toBe("adMappingExists");
     expect(apiErrorKey(LDAP_CONST.get("MAPPING_NOT_FOUND"))?.key).toBe("adMappingNotFound");
     expect(apiErrorKey(LDAP_CONST.get("MAPPING_ADMIN_ONLY"))?.key).toBe("adMappingAdminOnly");
