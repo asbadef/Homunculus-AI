@@ -305,6 +305,8 @@ async def create_mapping(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor, *
         Group.id == group_id, Group.tenant_id == tenant_id))).scalar_one_or_none()
     if group is None:
         raise AdminError(422, UNKNOWN_GROUP)
+    # Defence in depth, not reachable today: `_full_administrator` above admits only the whole
+    # catalogue, within which every group's rights are. Kept (untested) for the day that changes.
     _within(actor, group_rights(group))
     dn = canonical_dn(ad_group_dn)
     mapped = (await db.execute(select(LdapGroupMapping.ad_group_dn).where(
@@ -349,6 +351,9 @@ async def delete_mapping(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
     if mapping is None:
         raise AdminError(404, MAPPING_NOT_FOUND)
     group = await get_group(db, tenant_id, mapping.group_id, for_update=True)
+    # Defence in depth, not reachable today: after `_full_administrator` the caller holds the
+    # whole catalogue, within which the group's and every member's rights are. Kept (untested)
+    # so a later loosening of that check still cannot take away rights the caller lacks.
     _within(actor, group_rights(group))
     link = aliased(UserGroup)
     holders = select(link.user_id).where(link.group_id == group.id, link.source == SOURCE_LDAP)
