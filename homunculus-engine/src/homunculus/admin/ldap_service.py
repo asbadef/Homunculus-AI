@@ -70,7 +70,8 @@ async def lookup_accounts(ldap: LdapRuntime,
     threads to sign-ins — and at most IMPORT_LOOKUPS for this import, so the lane keeps a place
     for the administrator's interactive calls. The first LdapUnavailable cancels the lookups
     still waiting or running — no queue of doomed calls is left in front of sign-ins — and is
-    raised once they have stopped; the caller answers 503 with nothing written."""
+    raised once they have stopped; the caller answers 503 with nothing written. A cancellation
+    of the request stays a cancellation, even when a lookup failed in the same step."""
     tasks: list[asyncio.Task] = []
     room = asyncio.Semaphore(IMPORT_LOOKUPS)
 
@@ -95,6 +96,12 @@ async def lookup_accounts(ldap: LdapRuntime,
         outages, others = failed.split(LdapUnavailable)
         if others is not None or outages is None:
             raise
+        task = asyncio.current_task()
+        if task is not None and task.cancelling():
+            # The request itself is being cancelled (the client went away, the server is
+            # stopping) in the step a lookup failed: the TaskGroup reports the failure and drops
+            # the cancellation. It is a cancellation, not an outage to answer 503 for.
+            raise asyncio.CancelledError() from None
         raise _first(outages) from None
     return {external_id: task.result() for external_id, task in zip(external_ids, tasks)}
 

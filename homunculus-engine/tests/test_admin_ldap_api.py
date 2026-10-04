@@ -22,7 +22,7 @@ from homunculus.admin.service import LAST_ADMIN, UNLOCK_COOLDOWN, Actor, AdminEr
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.ldap import (
-    ACCOUNT_NEVER_EXPIRES, ADMIN_LANE_SLOTS, NOT_CONFIGURED, load_ldap_config,
+    ACCOUNT_NEVER_EXPIRES, ADMIN_LANE_SLOTS, NOT_CONFIGURED, LdapUnavailable, load_ldap_config,
 )
 from homunculus.auth.ldap3_directory import Ldap3Directory
 from homunculus.auth.limits import directory_binds
@@ -34,7 +34,7 @@ from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
 from tests.fake_directory import (
     AD_PASSWORD, ADMIN_PASSWORD, TENANT_SLUG, ad_client, ad_world, add_mapping, audit_events,
-    group_dn, group_rows, person,
+    group_dn, group_rows, person, runtime,
 )
 from tests.signed_in import add_user, bearer
 
@@ -462,6 +462,30 @@ async def test_an_import_leaves_a_lane_place_for_a_search(client, world, db_sess
     assert res.status_code == 200 and not running.done()
     assert (await running).status_code == 200
     assert directory.peak["find_by_external_id"] == ADMIN_LANE_SLOTS - 1
+
+
+async def test_a_cancelled_import_stays_cancelled_and_is_not_an_outage():
+    """The request goes away (the client disconnected, the server is stopping) in the same step
+    as a lookup fails. The TaskGroup then reports the lookup's failure and drops the
+    cancellation; the import re-raises the cancellation instead of answering 503 for a request
+    nobody waits on (and that the server is cancelling)."""
+    gate = asyncio.Event()
+    failing, silent = str(uuid.uuid4()), str(uuid.uuid4())
+
+    class Directory:
+        async def find_by_external_id(self, external_id, *, lane=None):
+            if external_id == failing:
+                await gate.wait()
+                raise LdapUnavailable("timeout")
+            await asyncio.Event().wait()                  # never answers
+
+    importing = asyncio.create_task(
+        ldap_service.lookup_accounts(runtime(Directory()), [failing, silent]))
+    await asyncio.sleep(0.01)                             # both lookups are waiting
+    gate.set()                                            # the lookup fails...
+    importing.cancel()                                    # ...as the request is cancelled
+    with pytest.raises(asyncio.CancelledError):
+        await importing
 
 
 async def test_the_first_directory_failure_stops_the_rest_of_the_import(client, world,
