@@ -5,8 +5,8 @@ from __future__ import annotations
 import pyotp
 
 from homunculus.auth.limits import (
-    DIRECTORY_BIND_MAX_FAILURES, DIRECTORY_BIND_WINDOW_S, AttemptWindow, Cooldown,
-    FailureLimiter, directory_binds, sign_in_unlocks,
+    DIRECTORY_BIND_MAX_FAILURES, DIRECTORY_BIND_WINDOW_S, FailureChain, FailureLimiter,
+    directory_binds,
 )
 from homunculus.auth.totp import accepted_step
 
@@ -86,137 +86,240 @@ def test_keys_are_independent():
     assert lim.locked("a") is True and lim.locked("b") is False
 
 
-# --- AttemptWindow (AD password binds) --------------------------------------------------------
+# --- FailureChain (AD password binds) ---------------------------------------------------------
 
-def _window(clock: FakeClock) -> AttemptWindow:
-    return AttemptWindow(max_failures=3, window_seconds=900, clock=clock)
-
-
-def _fail(win: AttemptWindow, key: str = "u") -> None:
-    assert win.begin(key) is True
-    win.end(key, failed=True)
+def _chain(clock: FakeClock) -> FailureChain:
+    return FailureChain(max_failures=3, quiet_seconds=900, clock=clock)
 
 
-def test_three_failures_within_the_window_refuse_the_next_attempt():
+def _fail(chain: FailureChain, key: str = "u") -> None:
+    assert chain.begin(key) is True
+    chain.end(key, failed=True)
+
+
+def test_three_failures_in_a_chain_refuse_the_next_attempt():
     clock = FakeClock()
-    win = _window(clock)
+    chain = _chain(clock)
     for _ in range(3):
-        _fail(win)
+        _fail(chain)
         clock.t += 60
-    assert win.begin("u") is False
+    assert chain.begin("u") is False
 
 
-def test_the_refusal_lifts_when_the_oldest_failure_leaves_the_window():
+def test_the_refusal_lasts_until_the_quiet_period_after_the_last_failure():
+    """AD resets its count only when its reset period passes with NO bad password, measured
+    from the last one — not when the oldest leaves a sliding window. Neither does the chain:
+    failures at 1000, 1100, 1200 hold it until 15 minutes after 1200, and then it starts over."""
     clock = FakeClock()
-    win = _window(clock)
+    chain = _chain(clock)
     for _ in range(3):
-        _fail(win)
-        clock.t += 100                      # failures at 1000, 1100, 1200; now 1300
-    clock.t = 1000 + 899
-    assert win.begin("u") is False
-    clock.t = 1000 + 900                    # the first failure is 15 minutes old: one more try
-    assert win.begin("u") is True
-    win.end("u", failed=True)
-    assert win.begin("u") is False          # 1100, 1200, 1900: three within the window again
+        _fail(chain)
+        clock.t += 100                      # failures at 1000, 1100, 1200
+    clock.t = 1000 + 900                    # the first failure is 15 minutes old...
+    assert chain.begin("u") is False        # ...and the chain still holds
+    clock.t = 1200 + 900
+    assert chain.begin("u") is False        # exactly 15 minutes of quiet is not more
+    clock.t = 1200 + 901
+    for _ in range(3):                      # a new chain: three more
+        _fail(chain)
+    assert chain.begin("u") is False
 
 
-def test_failures_spread_wider_than_the_window_never_refuse():
+def test_a_refusal_is_not_a_failure_and_does_not_extend_the_chain():
+    """A refused sign-in never reached the directory, so it counts for nothing in AD either."""
     clock = FakeClock()
-    win = _window(clock)
+    chain = _chain(clock)
+    for _ in range(3):
+        _fail(chain)
+    for _ in range(9):
+        clock.t += 100
+        assert chain.begin("u") is False    # refused every 100 s for 900 s
+    clock.t += 1
+    assert chain.begin("u") is True
+
+
+def test_failures_further_apart_than_the_quiet_period_never_refuse():
+    clock = FakeClock()
+    chain = _chain(clock)
     for _ in range(10):
-        _fail(win)
-        clock.t += 301                      # never three within 900 s
+        _fail(chain)
+        clock.t += 901                      # each starts a chain of its own
 
 
 def test_attempts_in_flight_count_so_concurrent_requests_cannot_overshoot():
-    win = _window(FakeClock())
-    _fail(win)
-    assert win.begin("u") is True and win.begin("u") is True    # two running at once
-    assert win.begin("u") is False                               # 1 failure + 2 running = 3
-    win.end("u", failed=False)
-    assert win.begin("u") is True
+    chain = _chain(FakeClock())
+    _fail(chain)
+    assert chain.begin("u") is True and chain.begin("u") is True    # two running at once
+    assert chain.begin("u") is False                                 # 1 failure + 2 running
+    chain.end("u", failed=False)
+    assert chain.begin("u") is True
+
+
+def test_an_attempt_in_flight_keeps_its_chain_alive():
+    """A failure lands in the chain its attempt began in — AD saw that bad password when the
+    attempt began — however long the directory took to answer."""
+    clock = FakeClock()
+    chain = _chain(clock)
+    _fail(chain)
+    _fail(chain)
+    assert chain.begin("u") is True
+    clock.t += 2000                         # past the quiet period, the attempt still running
+    chain.end("u", failed=True)
+    assert chain.begin("u") is False        # three in one chain
 
 
 def test_an_attempt_that_did_not_fail_releases_its_place_without_counting():
-    win = _window(FakeClock())
+    chain = _chain(FakeClock())
     for _ in range(5):
-        assert win.begin("u") is True
-        win.end("u", failed=False)
-    _fail(win)
-    _fail(win)
-    assert win.begin("u") is True
+        assert chain.begin("u") is True
+        chain.end("u", failed=False)
+    _fail(chain)
+    _fail(chain)
+    assert chain.begin("u") is True
 
 
-def test_a_success_clears_the_failures():
-    win = _window(FakeClock())
-    _fail(win)
-    _fail(win)
-    win.succeeded("u")
-    _fail(win)
-    _fail(win)
-    assert win.begin("u") is True
+def test_a_success_ends_the_chain():
+    chain = _chain(FakeClock())
+    _fail(chain)
+    _fail(chain)
+    chain.succeeded("u")
+    _fail(chain)
+    _fail(chain)
+    assert chain.begin("u") is True
 
 
-def test_window_keys_are_independent():
-    win = _window(FakeClock())
+def test_chain_keys_are_independent():
+    chain = _chain(FakeClock())
     for _ in range(3):
-        _fail(win, "a")
-    assert win.begin("a") is False and win.begin("b") is True
+        _fail(chain, "a")
+    assert chain.begin("a") is False and chain.begin("b") is True
 
 
-def test_an_unlock_forgets_the_failures_and_says_how_many_were_in_the_window():
-    """The administrator's unlock (/admin/users/{id}/unlock-sign-in). A failure already out of
-    the window is not reported; an attempt in flight keeps its place."""
+def test_an_unlock_lets_three_more_through_once_per_chain():
+    """The administrator's unlock (/admin/users/{id}/unlock-sign-in): three more failed binds
+    in this chain, and that once — a second unlock in the same chain is refused (None) and
+    changes nothing. It returns the chain's failures (the audit row's "failed_sign_ins")."""
     clock = FakeClock()
-    win = _window(clock)
-    _fail(win)
+    chain = _chain(clock)
+    for _ in range(3):
+        _fail(chain)
+    assert chain.unlock("u") == 3
+    for _ in range(3):
+        _fail(chain)
+    assert chain.begin("u") is False
+    assert chain.unlock("u") is None
+    assert chain.begin("u") is False
+
+
+def test_an_unlock_does_not_end_the_chain():
+    """Only a quiet period (or a success) does: the unlocked chain still ends 15 minutes after
+    its last failure, and only then is there a new unlock to give."""
+    clock = FakeClock()
+    chain = _chain(clock)
+    for _ in range(3):
+        _fail(chain)
+        clock.t += 600
+    assert chain.unlock("u") == 3           # 600 s after the last failure
+    for _ in range(3):
+        _fail(chain)
+        clock.t += 600                      # gaps of 10 minutes: one chain throughout
+    assert chain.begin("u") is False and chain.unlock("u") is None
+    clock.t += 301                          # 901 s after the last failure
+    assert chain.begin("u") is True
+    chain.end("u", failed=True)
+    assert chain.unlock("u") == 1           # a new chain, a new unlock
+
+
+def test_an_unlock_with_nothing_to_clear_grants_nothing_and_uses_nothing():
+    """No failure in the current chain — none ever, an earlier chain gone quiet, a local account
+    — returns 0: no extra attempts, and the chain's one unlock is still there when it is needed."""
+    clock = FakeClock()
+    chain = _chain(clock)
+    assert chain.unlock("u") == 0
+    for _ in range(3):
+        _fail(chain)
+    assert chain.begin("u") is False        # the empty unlock granted nothing
+    assert chain.unlock("u") == 3           # and did not use the chain's unlock
     clock.t += 901
-    _fail(win)
-    _fail(win)
-    assert win.begin("u") is True                                # in flight
-    assert win.clear("u") == 2 and win.clear("u") == 0
-    _fail(win)
-    assert win.begin("u") is True                                # 1 failure + 1 in flight
-    assert win.begin("u") is False                               # + 1 more running = 3
-    assert win.clear("b") == 0
+    assert chain.unlock("u") == 0           # that chain has gone quiet
+    assert chain.unlock("never-failed") == 0
+
+
+def test_an_unlock_leaves_attempts_in_flight_their_places():
+    chain = _chain(FakeClock())
+    _fail(chain)
+    _fail(chain)
+    assert chain.begin("u") is True                              # in flight
+    assert chain.unlock("u") == 2
+    for _ in range(3):
+        assert chain.begin("u") is True                          # 2 + 1 running + 3 = 6
+    assert chain.begin("u") is False
+
+
+def _against_ad(*, every_s: float, ad_reset_s: float, unlock: bool,
+                hours: float = 2) -> tuple[int, int, int]:
+    """A wrong password for one account every `every_s`, as often as Homunculus lets it reach
+    the domain controller, for `hours` — and, with `unlock`, an administrator unlocking the
+    account whenever the throttle lets them (a hijacked session, or a careless one). The real
+    FailureChain at the production settings. The domain's counter as AD keeps it: reset when a
+    bad password comes more than `ad_reset_s` after the previous one. Returns the binds made,
+    AD's highest count and the longest run of binds no more than the quiet period apart."""
+    clock = FakeClock()
+    clock.t = 0.0
+    chain = FailureChain(max_failures=DIRECTORY_BIND_MAX_FAILURES,
+                         quiet_seconds=DIRECTORY_BIND_WINDOW_S, clock=clock)
+    binds: list[float] = []
+    count = peak = 0
+    while clock.t < hours * 3600:
+        if unlock:
+            chain.unlock("u")
+        if chain.begin("u"):
+            if binds and clock.t - binds[-1] > ad_reset_s:
+                count = 0
+            count += 1
+            peak = max(peak, count)
+            binds.append(clock.t)
+            chain.end("u", failed=True)
+        clock.t += every_s
+    run = longest = 0
+    for i, t in enumerate(binds):
+        run = run + 1 if i and t - binds[i - 1] <= DIRECTORY_BIND_WINDOW_S else 1
+        longest = max(longest, run)
+    return len(binds), peak, longest
+
+
+def test_a_trickle_of_wrong_passwords_never_brings_ad_past_six():
+    """One wrong password every 5 minutes for 2 hours. A sliding window let one through every
+    5 minutes once the first had aged out, and AD's count — never quiet for its reset period —
+    climbed until the account locked. The chain holds until 15 minutes pass with no failed
+    bind: 3 per chain, 3 + 3 with an unlock, and AD's count starts over with each chain. So the
+    domain's lockout threshold must be at least 7."""
+    binds, peak, longest = _against_ad(every_s=300, ad_reset_s=DIRECTORY_BIND_WINDOW_S,
+                                       unlock=False)
+    assert (peak, longest) == (3, 3) and binds == 12     # a quiet period resets: 4 chains
+    binds, peak, longest = _against_ad(every_s=300, ad_reset_s=DIRECTORY_BIND_WINDOW_S,
+                                       unlock=True)
+    assert (peak, longest) == (6, 6) and binds == 18
+
+
+def test_no_pace_of_wrong_passwords_brings_ad_past_six():
+    """Every second, every minute, every 4 minutes 59: never more than 3 + 3 in one chain, and
+    so in AD's count, for any domain reset period up to the quiet period."""
+    for every_s in (1, 60, 299, 450, 901):
+        for ad_reset_s in (60, 600, DIRECTORY_BIND_WINDOW_S):
+            for unlock in (False, True):
+                _, peak, longest = _against_ad(every_s=every_s, ad_reset_s=ad_reset_s,
+                                               unlock=unlock)
+                assert longest <= (6 if unlock else 3), (every_s, ad_reset_s, unlock)
+                assert peak <= longest, (every_s, ad_reset_s, unlock)
 
 
 def test_the_directory_throttle_stays_below_a_typical_ad_lockout():
-    """3 within 15 minutes: under AD's common 5-10 threshold, the window at least the usual
-    15-minute observation window; the sign-in refusal says "15 dakika"."""
-    assert (directory_binds.max_failures, directory_binds.window_seconds) == (3, 15 * 60)
+    """3 per chain (3 + 3 with an unlock), a chain ending after 15 minutes with no failed bind:
+    under AD's common 5-10 threshold (it must be at least 7), the quiet period at least the
+    usual 15-minute reset period; the sign-in refusal says "15 dakika"."""
+    assert (directory_binds.max_failures, directory_binds.quiet_seconds) == (3, 15 * 60)
     assert (DIRECTORY_BIND_MAX_FAILURES, DIRECTORY_BIND_WINDOW_S) == (3, 15 * 60)
-
-
-# --- Cooldown (the administrator's unlock) ----------------------------------------------------
-
-def test_a_cooldown_lets_one_action_per_key_through_per_window():
-    clock = FakeClock()
-    cool = Cooldown(seconds=900, clock=clock)
-    assert cool.take("u") is True
-    clock.t += 899
-    assert cool.take("u") is False                 # still inside the window: refused...
-    clock.t += 1
-    assert cool.take("u") is True                  # ...and a refusal does not restart it
-    assert cool.take("b") is True                  # keys are independent
-    assert cool.take("b") is False
-
-
-def test_a_cooldown_forgets_keys_whose_window_has_passed():
-    clock = FakeClock()
-    cool = Cooldown(seconds=900, clock=clock)
-    for key in ("a", "b", "c"):
-        cool.take(key)
-    clock.t += 900
-    cool.take("d")
-    assert cool.keys() == {"d"}                    # nothing grows without bound
-
-
-def test_one_unlock_per_account_per_bind_window():
-    """An unlock lets 3 more failed binds through: one per window keeps Homunculus at
-    3 + 3 failed binds per account in 15 minutes, which the domain's lockout threshold must
-    stay above. The refusal says "15 dakika" (admin/service.py UNLOCK_COOLDOWN)."""
-    assert sign_in_unlocks.seconds == DIRECTORY_BIND_WINDOW_S == 15 * 60
 
 
 # --- accepted_step ----------------------------------------------------------------------------

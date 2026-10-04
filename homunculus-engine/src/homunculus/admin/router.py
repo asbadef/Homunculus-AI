@@ -13,8 +13,8 @@
   PUT    /admin/users/{id}/groups         users.manage
   POST   /admin/users/{id}/reset-password users.manage
   POST   /admin/users/{id}/reset-mfa      users.manage
-  POST   /admin/users/{id}/unlock-sign-in users.manage (clears the AD sign-in throttle; a
-                                          `reason` in the body, once per account per 15 min)
+  POST   /admin/users/{id}/unlock-sign-in users.manage (3 more AD sign-in attempts; a `reason`
+                                          in the body; once per chain of failed sign-ins)
 
 Everything is scoped to the tenant in the caller's token (`caller_tenant_id`, which also checks
 the caller's active membership in an active tenant); a user or group of another tenant is a 404,

@@ -4,8 +4,9 @@ POST /auth/login        — username or e-mail + password; returns tokens (requi
                           TOTP step is still pending, mfa_enrolled when the user has one). An
                           Active Directory account is checked by the directory (spec §7): a
                           wrong password is 401, a directory that does not answer is 503, and
-                          after 3 failed binds in 15 minutes the account is refused with 429
-                          without asking the directory (the domain's own lockout counts them).
+                          after 3 failed binds in a chain (one that ends only when 15 minutes
+                          pass with none) the account is refused with 429 without asking the
+                          directory (the domain's own lockout counts them).
                           Every 401 takes at least LOGIN_FAILURE_FLOOR_S (0.5 s)
 POST /auth/totp/setup   — generate TOTP secret + QR provisioning URI (allowed before MFA)
 POST /auth/totp/verify  — verify 6-digit code; re-issues tokens with mfa_verified=True
@@ -192,9 +193,10 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     503 — never conflated with 401.
 
     A deactivated account is refused before the directory is asked (no bind, so no AD lockout
-    count for an account Homunculus has switched off), and so is an account with 3 failed binds
-    in the last 15 minutes (429, `directory_binds`; reset by a successful sign-in) — Homunculus
-    must never be the way a clinician gets locked out of the hospital domain. The database
+    count for an account Homunculus has switched off), and so is an account whose chain of
+    failed binds is full — 3, or 6 after an administrator's unlock — until 15 minutes pass with
+    no failed bind (429, `directory_binds`, counted as AD counts; ended by a successful sign-in)
+    — Homunculus must never be the way a clinician gets locked out of the hospital domain. The database
     connection is released while the directory answers, so a slow domain controller cannot pin
     the pool at shift change; the account is re-read afterwards (plan decisions D7, D8)."""
     user_id, external_id = user.id, user.external_id

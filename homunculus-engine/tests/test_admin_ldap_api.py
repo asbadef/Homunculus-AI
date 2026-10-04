@@ -1078,11 +1078,12 @@ async def test_an_administrator_unlocks_a_throttled_ad_account(client, world, db
     assert WRONG not in str(event.payload) and AD_PASSWORD not in str(event.payload)
 
 
-async def test_a_second_unlock_within_the_window_is_refused(client, world, db_session):
-    """One unlock per account per DIRECTORY_BIND_WINDOW_S: each unlock lets three more wrong
-    passwords reach the domain controller, so within 15 minutes Homunculus makes at most
-    3 + 3 failed binds for one account — the figure the hospital's AD lockout threshold must
-    stay above. A second unlock is 409 and clears nothing; the account stays throttled."""
+async def test_a_second_unlock_in_the_same_chain_is_refused(client, world, db_session):
+    """One unlock per chain of failed binds (auth/limits.py, FailureChain): it lets three more
+    wrong passwords reach the domain controller, so until 15 minutes pass with no failed bind
+    Homunculus makes at most 3 + 3 for one account — the figure the hospital's AD lockout
+    threshold must stay above. A second unlock is 409 and grants nothing; the account stays
+    throttled."""
     c, app = client
     admin = await bearer(db_session, world["admin"])
     ayse_id = world["account"].id
@@ -1179,6 +1180,40 @@ async def test_a_user_desk_unlocks_only_accounts_within_its_rights(client, world
     assert res.status_code == 200
     assert (await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
             ).status_code == 200
+
+
+async def test_a_refused_unlock_leaves_the_chains_unlock_to_one_that_may(client, world,
+                                                                        db_session):
+    """A user desk refused (403: the account can do more than the desk) has used nothing: the
+    administrator's unlock that follows is the chain's one unlock, and works."""
+    c, _ = client
+    admin, desk = await bearer(db_session, world["admin"]), await bearer(db_session,
+                                                                          world["desk"])
+    res = await c.post("/admin/ldap/import", headers=admin,
+                       json={"external_ids": [world["mkaya"].identity.external_id]})
+    mkaya_id = res.json()["imported"][0]["id"]
+    await _throttle(c, "mkaya")
+    assert (await _unlock(c, mkaya_id, desk)).status_code == 403
+    assert (await _unlock(c, mkaya_id, admin)).status_code == 200
+    assert (await c.post("/auth/login", json={"login": "mkaya", "password": AD_PASSWORD})
+            ).status_code == 200
+
+
+async def test_an_unlock_with_nothing_to_clear_does_not_use_the_chains_unlock(client, world,
+                                                                             db_session):
+    """An administrator unlocks an account with no failed sign-in in its current chain: 200,
+    nothing cleared (0 in the audit row) and nothing granted — three wrong passwords still
+    throttle it — and the unlock it then needs is still there."""
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    ayse_id = world["account"].id
+    assert (await _unlock(c, ayse_id, admin)).status_code == 200
+    await _throttle(c, "ayilmaz")                            # the 4th is 429: nothing granted
+    assert (await _unlock(c, ayse_id, admin)).status_code == 200
+    assert (await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
+            ).status_code == 200
+    events = audit_events(app, "admin", "user.sign_in_unlocked")
+    assert sorted(e.payload["before"]["failed_sign_ins"] for e in events) == [0, 3]
 
 
 async def test_another_tenants_account_is_not_found_and_stays_throttled(client, world,
