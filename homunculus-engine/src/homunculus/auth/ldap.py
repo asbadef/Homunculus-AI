@@ -316,11 +316,19 @@ def load_ldap_config(env: Mapping[str, str]) -> LdapConfig | None:
         raise LdapConfigError("LDAP_TIMEOUT_S must be a number of seconds") from None
     if not TIMEOUT_MIN_S <= timeout_s <= TIMEOUT_MAX_S:
         raise LdapConfigError("LDAP_TIMEOUT_S must be between 1 and 10 seconds")
+    bind_dn = _required(env, "LDAP_BIND_DN").strip()
+    bind_password = _required(env, "LDAP_BIND_PASSWORD")
+    try:
+        # Sent as its UTF-8 bytes (ldap3_directory, no SASLprep). An `.env` saved in another
+        # encoding leaves bytes Python keeps as lone surrogates: no UTF-8 form, no bind.
+        bind_password.encode("utf-8")
+    except UnicodeEncodeError:
+        raise LdapConfigError("LDAP_BIND_PASSWORD is not valid UTF-8 text (save .env as "
+                              "UTF-8)") from None
     return LdapConfig(
         host=parts.hostname, port=port or (636 if scheme == "ldaps" else 389),
         use_ssl=scheme == "ldaps", ca_cert=ca_cert, allow_insecure=allow_insecure,
-        bind_dn=_required(env, "LDAP_BIND_DN").strip(),
-        bind_password=_required(env, "LDAP_BIND_PASSWORD"),
+        bind_dn=bind_dn, bind_password=bind_password,
         base_dn=_required(env, "LDAP_BASE_DN").strip(), user_filter=user_filter,
         login_attrs=parse_login_attrs(env.get("LDAP_LOGIN_ATTRS")),
         nested_groups=_flag(env, "LDAP_NESTED_GROUPS", True), timeout_s=timeout_s,

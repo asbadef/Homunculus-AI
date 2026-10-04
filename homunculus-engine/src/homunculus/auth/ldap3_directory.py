@@ -35,6 +35,12 @@ Windows dev machines and in the python:3.12-slim image without libldap). Spec §
   * A network or TLS failure becomes LdapUnavailable(reason); a wrong password is None.
   * The clinician's password goes to one bind. It is not kept, logged or put into an
     exception; an empty one never reaches the server (an empty simple bind is anonymous).
+  * Passwords — the clinician's and the service account's — reach `ldap3` as their UTF-8
+    bytes, exactly as typed. Given a `str`, ldap3 runs a simple bind's password through
+    SASLprep (RFC 4013: a no-break space becomes a space, soft hyphens and zero-width characters
+    vanish, NFKC composes a decomposed `ş` and folds full-width forms, control characters are
+    refused); AD compares the raw UTF-8, so a right password with one of those failed. Bytes
+    go out unchanged (`ldap3.protocol.sasl.sasl.validate_simple_password`).
 """
 from __future__ import annotations
 
@@ -74,7 +80,7 @@ from homunculus.auth.ldap import (
 
 logger = logging.getLogger(__name__)
 
-Connect = Callable[[str, str], Any]
+Connect = Callable[[str, bytes], Any]           # (DN, password as UTF-8) -> unbound connection
 
 USER_ATTRIBUTES = ("objectGUID", "sAMAccountName", "userPrincipalName", "mail", "displayName",
                    "memberOf", "userAccountControl", "pwdLastSet", "accountExpires")
@@ -309,6 +315,18 @@ def _close(conn: Any) -> None:
             pass
 
 
+def _utf8(password: str) -> bytes | None:
+    """A password as the bytes AD compares: its UTF-8, exactly as typed. None when it is empty
+    (an empty simple bind is anonymous) or has no UTF-8 form (a lone surrogate, which JSON can
+    carry): no AD password is either, so nothing is sent."""
+    if not password:
+        return None
+    try:
+        return password.encode("utf-8")
+    except UnicodeEncodeError:
+        return None
+
+
 def _is_guid(value: str) -> bool:
     try:
         guid_to_bytes(value)
@@ -400,10 +418,11 @@ class Ldap3Directory:
 
     # ---- the protocol (event loop side)
     async def authenticate(self, external_id: str, password: str) -> LdapIdentity | None:
-        if not password or not _is_guid(external_id):
+        secret = _utf8(password)
+        if secret is None or not _is_guid(external_id):
             return None
         attempt = _Attempt()
-        return await self._call(self._authenticate, attempt, external_id, password,
+        return await self._call(self._authenticate, attempt, external_id, secret,
                                 attempt=attempt)
 
     async def find_by_external_id(self, external_id: str, *,
@@ -432,10 +451,11 @@ class Ldap3Directory:
     async def check_password(self, dn: str, password: str) -> bool:
         """One bind as `dn`: True if the password is right. Not part of the protocol — sign-in
         goes through `authenticate`; the read-only integration test uses this."""
-        if not password:
+        secret = _utf8(password)
+        if secret is None:
             return False
         attempt = _Attempt()
-        return await self._call(self._password_ok, attempt, dn, password, attempt=attempt)
+        return await self._call(self._password_ok, attempt, dn, secret, attempt=attempt)
 
     async def _call(self, fn: Callable[..., Any], *args: Any,
                     attempt: _Attempt | None = None,
@@ -490,7 +510,7 @@ class Ldap3Directory:
             raise
 
     # ---- the worker-thread side
-    def _open(self, user: str, password: str) -> Any:
+    def _open(self, user: str, password: bytes) -> Any:
         server = Server(self._config.host, port=self._config.port,
                         use_ssl=self._config.use_ssl, tls=tls_for(self._config),
                         get_info=NO_SERVER_INFO, connect_timeout=self._config.timeout_s)
@@ -503,7 +523,7 @@ class Ldap3Directory:
                           auto_referrals=False, check_names=False)
 
     def _service(self) -> Any:
-        conn = self._connect(self._config.bind_dn, self._config.bind_password)
+        conn = self._connect(self._config.bind_dn, self._config.bind_password.encode("utf-8"))
         try:
             bound = conn.bind()
         except BaseException:
@@ -545,7 +565,7 @@ class Ldap3Directory:
         finally:
             _close(conn)
 
-    def _password_ok(self, attempt: _Attempt, dn: str, password: str) -> bool:
+    def _password_ok(self, attempt: _Attempt, dn: str, password: bytes) -> bool:
         conn = self._connect(dn, password)
         try:
             # TCP and TLS first: no password crosses yet, so a failure or a cut-off here costs
@@ -562,7 +582,7 @@ class Ldap3Directory:
             _close(conn)
 
     def _authenticate(self, attempt: _Attempt, external_id: str,
-                      password: str) -> LdapIdentity | None:
+                      password: bytes) -> LdapIdentity | None:
         identity = self._find(external_id)
         # Disabled or past its end date: returned without a bind — the caller refuses it, and
         # no password goes to a domain controller for an account that cannot sign in anyway.

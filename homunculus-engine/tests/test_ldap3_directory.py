@@ -383,7 +383,8 @@ class FakeConnection:
         error = self.script.bind_errors.get(self.user, self.script.error)
         if error is not None:
             raise error
-        ok = self.script.passwords.get(self.user) == self._password
+        expected = self.script.passwords.get(self.user)
+        ok = expected is not None and expected.encode("utf-8") == self._password
         self.result = {"result": 0 if ok else self.script.bind_codes.get(self.user, 49)}
         return ok
 
@@ -416,6 +417,23 @@ async def test_sign_in_finds_the_account_by_guid_then_binds_as_its_dn():
     assert search["search_filter"] == guid_lookup_filter(DEFAULT_USER_FILTER, GUID)
     assert search["search_base"] == BASE["LDAP_BASE_DN"] and search["size_limit"] == 2
     assert all(c.closed for c in script.connections)
+
+
+async def test_passwords_reach_ldap3_as_utf8_bytes():
+    """Given a `str`, ldap3 runs a password through SASLprep before the bind; AD compares the
+    raw UTF-8. So both binds — the service account's and the clinician's — get bytes."""
+    script = Script(([_entry()], 0))
+    assert await _directory(script).authenticate(GUID, USER_PW) is not None
+    assert [(c.user, c._password) for c in script.connections] == [
+        (SVC_DN, SVC_PW.encode("utf-8")), (USER_DN, USER_PW.encode("utf-8"))]
+
+
+async def test_a_password_that_is_not_unicode_text_never_reaches_the_server():
+    """A lone surrogate (JSON lets a client send one) has no UTF-8 form, and no AD password
+    holds one: a wrong password, nothing sent."""
+    script = Script(([_entry()], 0))
+    assert await _directory(script).authenticate(GUID, "Parola-\ud800") is None
+    assert script.connections == []
 
 
 async def test_a_wrong_password_is_none_not_an_outage():
@@ -1100,6 +1118,15 @@ def test_a_user_filter_ldap3_cannot_parse_turns_ldap_off(user_filter, caplog):
         assert ldap_from_env({**BASE, "LDAP_USER_FILTER": user_filter}) is None
     _never_echoed(caplog, user_filter)
     assert "LDAP_USER_FILTER" in caplog.text
+
+
+def test_a_service_password_with_no_utf8_form_turns_ldap_off_without_echoing_it(caplog):
+    """An `.env` written in another encoding leaves undecodable bytes in the variable (Python
+    keeps them as lone surrogates): such a password cannot be sent as AD expects it."""
+    with caplog.at_level(logging.DEBUG):
+        assert ldap_from_env({**BASE, "LDAP_BIND_PASSWORD": "Servis-\udcfe-7"}) is None
+    _never_echoed(caplog, "Servis-")
+    assert "LDAP_BIND_PASSWORD" in caplog.text
 
 
 def test_a_custom_user_filter_that_parses_is_kept():
