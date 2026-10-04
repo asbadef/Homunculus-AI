@@ -324,6 +324,17 @@ kötüleşme, laboratuvar bunu yakalayana kadar saatler geçebilirken, sürekli 
 - *Homunculus'ta:* Varsayılan dil Azerbaycanca'dır (yol haritası D2); seçilen dil, tema ve yazı
   boyu tarayıcıda saklanır. Hasta verisi hiçbir zaman çevrilmez — yalnız arayüz metinleri.
 
+**Sabit paket sürümleri (`constraints.txt`)**
+- *Basit:* Sunucuya kurulan her yazılım paketinin tam sürümünün listesi. Liste olmadan her
+  yeniden kurulum o gün çıkmış en yeni sürümü alır; test edilmemiş bir sürüm sistemi
+  açılamaz hâle getirebilir.
+- *Homunculus'ta:* API imajı Python 3.12 üzerinde, `homunculus-engine/constraints.txt`'teki
+  sürümlerle kurulur; liste temiz bir Python 3.12 kurulumundan çıkarılır ve testler bu sürümlere
+  karşı koşar. (Liste gelmeden önce SQLAlchemy 2.1, veritabanı katmanının istediği `greenlet`'i
+  getirmeden kuruldu ve API açılamadı.) Geliştirme ortamı Python 3.14'tür; arka uç testleri
+  iki yorumlayıcıda da koşturulur, çünkü bazı davranışlar sürüme göre değişir (3.12'de bir
+  dizin kesintisi bu yüzden 503 yerine 500 veriyordu).
+
 ---
 
 ### 3.5 Kimlik ve yetki terimleri
@@ -473,18 +484,25 @@ maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te geli
 **AD giriş sınırı ve kilit açma**
 - *Basit:* Homunculus'a yanlış girilen parola hastanenin hesap kilitleme sayacına da işler.
   Homunculus kimsenin Windows hesabını kilitletmesin diye hatalı denemeleri sınırlar.
-- *Homunculus'ta:* Bir AD hesabıyla 15 dakikada 3 kez yanlış parola girilirse sonraki giriş,
-  dizine hiç sorulmadan, 429 ile reddedilir: "Çok fazla hatalı deneme; 15 dakika sonra tekrar
-  deneyin". Doğru parolayla giriş sayacı sıfırlar; sayaç bellekte tutulur, sunucu yeniden
-  başlayınca da sıfırlanır. Yönetici, gerekçe yazarak, kullanıcının giriş sınırını kaldırabilir
-  (`POST /admin/users/{id}/unlock-sign-in`): hesap başına 15 dakikada bir kez; başka kurumda da
-  etkin bir hesap ya da platform operatörü için olmaz. Bu, AD'deki kilidi açmaz — o, BT
-  biriminin işidir. Ayrıca nginx giriş adresini istemci adresi başına dakikada 10 denemeyle (ve
-  10 ani denemeyle) sınırlar: "Çok fazla giriş denemesi; bir dakika sonra tekrar deneyin".
-  Servis bilgisayarları tek bir adresin (NAT, terminal sunucusu) arkasındaysa bu sınırı bütün
-  servis paylaşır. Sınır ani denemeleri keser, yavaş denemeyi durdurmaz: beş dakikada bir
-  girilen yanlış parola hiç reddedilmez ve AD'nin sayacında birikebilir — denetim kaydındaki
-  `login.fail` satırları bunu gösterir.
+- *Homunculus'ta:* Hatalı denemeler AD'nin saydığı gibi sayılır: bir **hatalı deneme dizisi**,
+  son hatalı denemeden sonra 15 dakika hatasız geçince biter (eski hatalar tek tek düşmez).
+  Dizide 3 yanlış parola olunca sonraki giriş, dizine hiç sorulmadan, 429 ile reddedilir: "Çok
+  fazla hatalı deneme; 15 dakika sonra tekrar deneyin" — son hatalı denemeden 15 dakika sonrasına
+  dek; reddedilen deneme dizine gitmediği için diziyi uzatmaz. Doğru parolayla giriş diziyi
+  bitirir; sayaç bellekte tutulur, sunucu yeniden başlayınca da sıfırlanır. Yönetici, gerekçe
+  yazarak, kullanıcıya 3 deneme hakkı daha verebilir (`POST /admin/users/{id}/unlock-sign-in`):
+  **dizi başına bir kez** (ikincisi 409); hatalı denemesi olmayan bir hesapta (ya da yerel
+  hesapta) kilit açma hiçbir şey vermez ve dizinin hakkını harcamaz; başka kurumda da etkin bir
+  hesap ya da platform operatörü için olmaz. Gerekçe tek satır, en çok 200 karakter, en az bir
+  harf ya da rakam içerir; görünmez biçim karakterleri (yön değiştiriciler, sıfır genişlikli
+  karakterler) kabul edilmez. Böylece Homunculus bir hesap için AD'nin sayacına, sayaç
+  sıfırlanmadan, en çok 3 + 3 = 6 hatalı deneme ekler — beş dakikada bir girilen yanlış parola
+  dahil; hastanenin kilitleme eşiği en az 7, sıfırlama süresi en çok 15 dakika olmalıdır. Bu,
+  AD'deki kilidi açmaz — o, BT biriminin işidir. Ayrıca nginx giriş adresini istemci adresi
+  başına dakikada 10 denemeyle (ve 10 ani denemeyle) sınırlar: "Çok fazla giriş denemesi; bir
+  dakika sonra tekrar deneyin". Servis bilgisayarları tek bir adresin (NAT, terminal sunucusu)
+  arkasındaysa bu sınırı bütün servis paylaşır. Denetim kaydında bir dizi, aynı hesap için
+  `login.fail` satırları ve ardından `throttled` olarak görünür.
 
 **Yetkilerin yeniden okunması**
 - *Basit:* Panelin menüde gösterdiği haklar bir ipucudur; asıl kararı her istekte sunucu verir.

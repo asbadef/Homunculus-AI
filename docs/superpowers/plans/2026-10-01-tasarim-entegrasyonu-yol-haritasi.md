@@ -127,9 +127,11 @@ dört zorunlu sır yer tutucuyla verildi).
    10/dk + 10 patlama; ortak IP'de vardiya değişiminde 429 olabilir)
 7. Etki alanı hesap kilitleme politikası (eşik ve sıfırlama süresi) — eşik en az 7 olmalı
    (3 + 3'ün üstünde; AD hesabı eşiğe ulaşan denemede kilitler, 6'da 6. deneme kilitlerdi):
-   Homunculus hesap başına 15 dk'da en çok 3 hatalı bağlanma yapar, yöneticinin kilit açması
-   (hesap başına 15 dk'da bir) 3 tane daha getirir: 3 + 3. (Önceki metin "en az 6" diyordu;
-   `auth/limits.py` "eşik bunun üstünde kalmalı" der.)
+   Homunculus hesap başına bir hatalı deneme dizisinde (son hatadan sonra 15 dk hatasız
+   geçince biter) en çok 3 hatalı bağlanma yapar, yöneticinin kilit açması (dizi başına bir
+   kez) 3 tane daha getirir: 3 + 3. Sıfırlama süresi en çok 15 dk olmalı (daha uzunsa AD
+   önceki diziyi sayarken yenisi başlar). (Önceki metin "en az 6" diyordu; `auth/limits.py`
+   "eşik bunun üstünde kalmalı" der.)
 8. Etki alanındaki sAMAccountName'ler ASCII mi? (ş/ç/ğ/ö/ü içeren adlar `invalid_login` ile
    içe aktarılamaz)
 9. Adında `#` veya `=` geçen AD grupları var mı? (ldap3'ün DN çözümleyicisi kaçışsız `#`/`=`
@@ -278,8 +280,9 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 
 ## Dalga 1A'dan açık kalanlar
 
-- AD giriş sınırı (`auth/limits.py`, `directory_binds`: 15 dakikada 3 hatalı bağlanma)
-  bellekte tutuluyor: yeniden başlatma sıfırlar ve yalnız tek süreçte geçerli (birden çok
+- AD giriş sınırı (`auth/limits.py`, `directory_binds`: bir hatalı deneme dizisinde 3 hatalı
+  bağlanma, kilit açmayla 3 daha; dizi 15 dakika hatasız geçince biter) bellekte tutuluyor:
+  yeniden başlatma sıfırlar ve yalnız tek süreçte geçerli (birden çok
   uvicorn işçisi olursa paylaşılan depoya taşınmalı). Yönetici kilidi
   `POST /admin/users/{id}/unlock-sign-in` ile açabilir. → pilot için kabul
 - LDAP çalışma zamanının `close()`'u geri alınamaz (iş parçacığı havuzu kapanır): süreç
@@ -303,12 +306,15 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   araması yalnız başarılı bağlanmadan sonra yapılmalı. → G1-15
 - 50 kişilik içe aktarma yavaş DC'de (çağrı başına ~2 s; bir içe aktarma şeridin 3 yerinden
   en çok 2'sini kullanır) ~50 s sürebilir: panel 15 s'de keser; sunucu işi bitirir, tekrar
-  güvenli (içe aktarma idempotent) → G1-14 içe aktarmayı 10'arlı parçalar.
+  güvenli (içe aktarma idempotent) → G1-14 içe aktarmayı 10'arlı parçalar. İçe aktarmanın
+  toplam süresi 2 × süre sınırıyla sınırlı DEĞİL: n hesap en kötü ≈ ⌈n/2⌉ × 2 × süre sınırı
+  (50 hesap, varsayılan ayarla ≈ 25 × 20 s) sürebilir; sınırlı olan tek tek çağrılardır.
 - Yönetici şeridinde bekleme için üst sınır yok → ✅ F5'te çözüldü: yer beklemesi çağrının süre
-  sınırıyla sınırlı (aşılırsa 503), bir içe aktarma şeritte bir yeri her zaman boş bırakır
-  (arama, grup seçici, bağlantı testi içe aktarmanın arkasında beklemez). Bir yönetici
-  çağrısı en çok 2 × süre sınırı (varsayılan 20 s, en çok 24 s) sürer: şerit doluyken ve DC
-  yavaşken panelin 15 s'sini aşabilir.
+  sınırıyla sınırlı (aşılırsa 503); TEK bir içe aktarma şeritte bir yeri boş bırakır (arama,
+  grup seçici, bağlantı testi onun arkasında beklemez). Aynı anda iki içe aktarma şeridin 3
+  yerini doldurabilir: arama o zaman en çok süre sınırı kadar bekler ve 503 alır (sınırlı,
+  asılmaz). Bir yönetici çağrısı en çok 2 × süre sınırı (varsayılan 20 s, en çok 24 s) sürer:
+  şerit doluyken ve DC yavaşken panelin 15 s'sini aşabilir.
 - İçe aktarma dizini beklerken bir veritabanı bağlantısı tutuyor → ✅ F5'te çözüldü: dizine
   soran dört yönetici ucu (test, arama, gruplar, içe aktarma) bağlantıyı önce havuza geri
   verir; başarısız girişin alt sınır beklemesi de bağlantısız yapılır.
@@ -318,7 +324,11 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - DN'ler yalnız ASCII harfleri küçültülerek karşılaştırılıyor (F5): AD'nin kendisi `Ş`/`ş` gibi
   harfleri eşit sayar, Homunculus saymaz. Eşleme grup seçiciden yapıldığında AD'nin yazımı
   birebir gelir; elle yazılan bir DN'de ASCII dışı harflerin büyük/küçük yazımı AD'dekiyle aynı
-  olmalı. → G1-14 (AD paneli bunu göz önünde tutmalı)
+  olmalı. DN'ler kanonik yazıma geçmeden önce (bütünüyle küçültülerek) saklanan ve DN'inde
+  ASCII dışı büyük harf olan bir eşleme satırı artık eşleşmez (eski satır `Ç`'yi `ç` yaptı,
+  kanonik yazım AD'nin `Ç`'sini korur): böyle bir satır silinip seçiciden yeniden
+  oluşturulmalı. Bu dal hiç dağıtılmadı; dağıtımda böyle satır yok. → G1-14 (AD paneli bunu
+  göz önünde tutmalı)
 - AD'de yeniden adlandırılan hesap izlenmiyor (plan "Spec gaps" 7): girişte ad, e-posta ve DN
   güncelleniyor ama `username` değil, yönetimde yeniden adlandırma yolu da yok; AD'de adı
   değişen kişi ne eski ne yeni sAMAccountName'iyle girebilir, yalnız Homunculus'taki
@@ -329,13 +339,28 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   açık (403 `AD grup eşlemesini yalnız tüm yetkilere sahip bir yönetici değiştirebilir`): panel
   bu düğmeleri ona göre gösterir. → G1-14
 - AD giriş sınırı kayan pencere: en eski hata 15 dakikayı doldurunca yeni deneme açılıyor, yani
-  beş dakikada bir girilen yanlış parola hiç reddedilmiyor. AD ise sayacını ancak "Reset account
-  lockout counter after" süresi hatasız geçince sıfırlar: yavaş bir deneme dizisi (yaklaşık
-  5 × eşik dakika) hesabı AD'de yine kilitleyebilir. `auth/limits.py`'deki "pencere en az AD'nin
-  sıfırlama süresi kadar" kuralı bunu kapatmıyor. Seçenek: sınırı AD'nin kendi mantığına
-  çevirmek (3 hatadan sonra, SON hatadan itibaren 15 dakika hatasız geçene dek ret) ve
-  hastaneden sıfırlama süresinin 15 dakikadan kısa olmasını istemek. Bugün: denetim kaydında
-  aynı hesap için birkaç dakikada bir `login.fail` görünür. → G1-15 öncesi karar (kod değişikliği)
+  beş dakikada bir girilen yanlış parola hiç reddedilmiyordu; AD ise sayacını ancak "Reset
+  account lockout counter after" süresi hatasız geçince sıfırlar → ✅ F6'da çözüldü: sınır
+  AD'nin mantığıyla sayar (`FailureChain`): hatalı deneme dizisi SON hatadan sonra 15 dakika
+  hatasız geçince biter, dizide 3 hatadan sonra o ana dek ret (ret diziyi uzatmaz); yöneticinin
+  kilit açması dizi başına bir kez, 3 deneme daha (hatası olmayan hesapta hiçbir şey vermez,
+  hakkı harcamaz). Bir dizi en çok 3 + 3 = 6 hatalı bağlanma: AD'nin sıfırlama süresi en çok
+  15 dakikaysa Homunculus tek başına AD sayacına sıfırlanmadan en çok 6 ekler, eşik en az 7
+  (hastaneden istenecekler 7). Gerçek sınıflarla 2 saatlik benzetim testi
+  (`tests/test_auth_limits.py`).
+- Geliştirme venv'i Python 3.14, üretim imajı 3.12 — testler artık iki yorumlayıcıda da
+  koşuyor (F6: 3.12'de `TaskGroup` bir alt görev hata verince üst görevi iptal edilmiş
+  bırakıyordu ve içe aktarmadaki her dizin kesintisi 503 yerine 500 oluyordu). CI'da 3.12
+  koşusu yok → Grup 4
+- İmajlar sabit sürümlerle kurulur (F6): `homunculus-engine/constraints.txt`, temiz bir
+  python:3.12-slim kurulumunun `pip freeze`'i (`.[dev]`, proje hariç); `Dockerfile.api`
+  `pip install -c constraints.txt .`, köprü imajı tek paketi `cryptography`'yi aynı dosyayla
+  sabitler. `pip install .` SQLAlchemy 2.1'i `greenlet`'siz kuruyordu (API açılamıyordu);
+  bağımlılık artık `sqlalchemy[asyncio]>=2.0,<2.2`. Dosya `pyproject.toml` değişince yeniden
+  üretilir ve test takımı 3.12'de ona karşı koşturulur. SQLAlchemy 2.1 çıplak `postgresql://`
+  adresini psycopg2'ye değil psycopg 3'e (kurulu değil) çözer: üretim kodu sürücüyü zaten
+  adıyla veriyordu (asyncpg, `to_sync_url` → psycopg2); test fikstürü `clean_db` de artık
+  veriyor.
 
 ## Dalga 1B'den açık kalanlar
 

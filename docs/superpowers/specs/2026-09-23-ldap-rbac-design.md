@@ -353,10 +353,14 @@ another tenant is a 404.
   `ldap`-sourced rows are untouched.
 - `POST /admin/users/{id}/reset-password {password}` — local accounts only; 400 for AD users.
 - `POST /admin/users/{id}/reset-mfa` — clears the TOTP secret; the user re-enrols at next sign-in.
-- *As built:* `POST /admin/users/{id}/unlock-sign-in {reason}` — clears the account's AD sign-in
-  throttle (§7 Security). The reason (one line, at most 200 characters) goes into the audit row.
-  Within the caller's rights; at most once per account per 15 minutes (409); not for an account
-  shared with another tenant or a platform operator (409). Nothing in the database changes.
+- *As built:* `POST /admin/users/{id}/unlock-sign-in {reason}` — lets 3 more failed binds
+  through in the account's current run of failed AD sign-ins (§7 Security), once per run (a
+  second: 409); an account with no failed bind in its current run (or a local one) is granted
+  nothing and keeps the run's unlock. The reason (one line, at most 200 characters, at least
+  one letter or digit, no control or invisible formatting character — Unicode Cc, Cf, Zl, Zp)
+  goes into the audit row. Within the caller's rights (a refused unlock uses nothing); not for an
+  account shared with another tenant or a platform operator (409). Nothing in the database
+  changes.
 
 ### Guards
 
@@ -436,7 +440,9 @@ whether the typed password had reached the directory (the throttle in §7 Securi
 those).
 
 `Ldap3Directory` implements it with `ldap3` (pure Python; runs on the Windows dev machines and in
-the `python:3.12-slim` image without libldap). `ldap3` is synchronous. *As built,* instead of
+the `python:3.12-slim` image without libldap; *as built,* the image installs the exact versions
+in `homunculus-engine/constraints.txt`, and the suite runs on Python 3.12 as well as on the
+3.14 dev venv). `ldap3` is synchronous. *As built,* instead of
 `asyncio.to_thread`: every call runs on the directory's own pool of **8 threads** (never
 asyncio's default executor), and is cut off after its deadline, `min(2 × LDAP_TIMEOUT_S, 12)` s,
 the wait for a free thread included — so a sign-in or a refresh answers within the deadline
@@ -448,7 +454,12 @@ import's lookups, the connection test) first take a place in the process's **adm
 keep it until their thread is done: administration never holds more than 3 of the 8 threads,
 sign-ins and refreshes keep 5, and an administration call answers within 2 × the deadline
 (20 s at the default `LDAP_TIMEOUT_S`). One import runs at most 2 lookups at once, so a search
-finds a lane place beside it. Sign-in, refresh and the four `/admin/ldap` routes that ask the
+finds a lane place beside one import; two imports at once can fill the lane, and a search then
+waits at most its deadline and answers 503. An import's total time is not bounded by 2 × the
+deadline: n accounts take up to about ⌈n/2⌉ × 2 × the deadline (G1-14 imports in parts). The
+lookups run under `asyncio.wait`, not a `TaskGroup`: on Python 3.12 — the image's — a TaskGroup
+leaves its parent task marked as cancelled after a child fails, and an outage could not be told
+from a cancelled request. Sign-in, refresh and the four `/admin/ldap` routes that ask the
 directory give their database connection back to the pool before they do, and re-read what
 they need afterwards (plan decision D7, extended to administration). `FakeDirectory` (in
 `tests/`) implements the same protocol from an in-memory list and is what the unit tests use.
@@ -470,9 +481,9 @@ they need afterwards (plan decision D7, extended to administration). `FakeDirect
 ### Sign-in for an AD user
 
 *As built, before step 1:* a deactivated account (`inactive`) and an empty password are refused
-before the directory is asked, and so is an account with 3 failed binds in the last 15 minutes
-(429, §7 Security) — no bind, so no AD lockout count. The database connection is released
-while the directory answers, and the account is re-read afterwards (a deactivation made
+before the directory is asked, and so is an account whose current run of failed binds is full
+(3, or 6 after an unlock; 429, §7 Security) — no bind, so no AD lockout count. The database
+connection is released while the directory answers, and the account is re-read afterwards (a deactivation made
 meanwhile is a 401).
 
 1. The service account searches by `objectGUID = external_id`. (Not by name: an account renamed
@@ -585,17 +596,21 @@ not carried forward.
   can be repaired from inside Homunculus.
 - *As built — a per-account AD bind throttle.* Every failed bind also counts toward the hospital
   domain's lockout, so Homunculus must not be the way a clinician gets locked out of every
-  hospital system. After 3 failed binds in 15 minutes (a sliding window) an AD account's sign-in
-  is refused with 429 `Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin` without asking
-  the directory. Only an attempt whose password reached the directory counts; a successful
-  sign-in clears the count. In memory (one API process): a restart clears it. An administrator
-  may clear it with `POST /admin/users/{id}/unlock-sign-in {reason}` (§6), at most once per
-  account per 15 minutes and never for an account shared with another tenant or a platform
-  operator — so Homunculus makes at most 3 + 3 failed binds per account in 15 minutes, and the
-  domain's lockout threshold must be above that. This extends *Out of scope: login rate
-  limiting* for AD accounts only. A sliding window bounds a burst, not a slow run: one wrong
-  password every 5 minutes is never refused, while AD resets its count only after a quiet
-  "Reset account lockout counter after" period.
+  hospital system. Failed binds are counted per account in a *run* (`auth/limits.py`,
+  `FailureChain`) that ends only when 15 minutes pass with no failed bind — the way AD's
+  "Reset account lockout counter after" works, measured from the last failure, not a sliding
+  window. After 3 in the run an AD account's sign-in is refused with 429 `Çok fazla hatalı
+  deneme; 15 dakika sonra tekrar deneyin` without asking the directory, until 15 minutes after
+  the last failed bind; a refusal reaches no DC and does not extend the run. Only an attempt
+  whose password reached the directory counts; a successful sign-in ends the run. In memory
+  (one API process): a restart clears it. An administrator may let 3 more through with
+  `POST /admin/users/{id}/unlock-sign-in {reason}` (§6), once per run and never for an account
+  shared with another tenant or a platform operator. So one run holds at most 3 + 3 failed
+  binds; with the domain's reset period at most 15 minutes, every run of AD's count made of
+  Homunculus' failures lies inside one of Homunculus' runs, so Homunculus alone adds at most 6
+  to it — a slow trickle (one wrong password every 5 minutes) included — and the domain's
+  lockout threshold must be at least 7. This extends *Out of scope: login rate limiting* for AD
+  accounts only.
 - *As built — per address, at the edge.* nginx limits `POST /auth/login` to 10 a minute per
   client address with a burst of 10 (429 as JSON `{"detail": …}`, `Retry-After: 60`, logged as a
   warning), in front of the per-account throttle. Ward PCs behind one shared address (NAT,

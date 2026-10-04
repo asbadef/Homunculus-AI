@@ -238,12 +238,14 @@ least two local administrators.
    and never matches at sign-in.
 6. **Port 636 open from the VM to the domain controller.**
 7. **The domain's account lockout policy** — "Account lockout threshold" and "Reset account
-   lockout counter after". Homunculus makes at most 3 failed binds per account in 15 minutes,
-   and 3 more after an administrator's unlock (see *Sign-in limits*): the threshold must be
+   lockout counter after". Homunculus counts failed binds per account the way AD does — in a
+   run that ends only when 15 minutes pass with none — and makes at most 3 per run, 3 more
+   after an administrator's unlock (once per run; see *Sign-in limits*): the threshold must be
    **at least 7**, above 3 + 3, or Homunculus alone could lock a clinician out of every
    hospital system. The clinician's own mistyped Windows logons count toward the same
-   threshold. Note the reset period too: a slow run of wrong passwords is not stopped by
-   Homunculus (see *Sign-in limits*), and that period decides how long AD remembers it.
+   threshold. **The reset period must be 15 minutes or less:** Homunculus' run ends after 15
+   quiet minutes, and with a longer domain period AD would still be counting the previous
+   run when the next one starts — tell the developers if it is longer.
 8. **Are the sAMAccountNames ASCII?** A name with `ş`, `ç`, `ğ`, `ö`, `ü`, `ı` (or letters of
    another script) breaks the local username rule (`a-z 0-9 . _ @ -`) and is skipped at import
    as `invalid_login`.
@@ -309,7 +311,7 @@ pip mirror, `PIP_INDEX_URL`) for that moment:
 cd /opt/homunculus/deploy/local
 docker compose run --rm --no-deps --user root --entrypoint sh \
   -v /opt/homunculus/homunculus-engine/tests:/app/tests:ro api -c '
-    pip install -q "pytest>=8.0" "pytest-asyncio>=0.23" "httpx>=0.27" &&
+    pip install -q -c constraints.txt pytest pytest-asyncio httpx &&
     LDAP_TEST_URL="$LDAP_URL" LDAP_TEST_BIND_DN="$LDAP_BIND_DN" \
     LDAP_TEST_BIND_PASSWORD="$LDAP_BIND_PASSWORD" LDAP_TEST_BASE_DN="$LDAP_BASE_DN" \
     LDAP_TEST_CA_CERT="$LDAP_CA_CERT" LDAP_TEST_USER_FILTER="$LDAP_USER_FILTER" \
@@ -369,28 +371,40 @@ plan to map them. Every failure says what to ask IT for.
   the default 5) at sign-in or refresh. Administration shares 3 of the directory's 8 threads,
   so sign-ins always keep 5; an administration call may first wait as long again for its place,
   so it answers within twice that (20 s at the default, more than the dashboard's 15 s — the
-  server still finishes; an import is safe to repeat), and an import looks up 2 accounts at a
-  time. No database
-  connection is held while the directory answers.
+  server still finishes; an import is safe to repeat). An import looks up 2 accounts at a time,
+  so a search, the group picker or the connection test beside **one** import finds a place at
+  once; two imports at the same moment can hold all 3 places, and a search then waits at most
+  its deadline and answers 503. An import's total time is not bounded by twice the deadline:
+  n accounts can take up to about ⌈n/2⌉ × twice the deadline against a slow DC (the panel will
+  import in smaller parts, G1-14). No database connection is held while the directory answers.
 
 ### Sign-in limits
 
-- **Per account (AD accounts):** after 3 failed binds in 15 minutes the sign-in is refused with
-  429 "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin" without asking AD. Only an
-  attempt whose password reached the DC counts (a DC outage before the bind does not); a
-  successful sign-in clears it. The count is in the API's memory: a restart clears it.
-- **Unlock:** `POST /admin/users/{id}/unlock-sign-in` with `{"reason": "…"}` (one line, at most
-  200 characters; audited as `user.sign_in_unlocked` with the reason) clears the count. It
-  needs `users.manage` and the account within the caller's rights; at most once per account per
-  15 minutes (409 "Bu hesabın girişi kısa süre önce açıldı; 15 dakika sonra tekrar deneyin");
-  not for an account active in another hospital or a platform operator's (409). It does not
-  unlock anything in AD — an AD lockout is IT's to clear.
-- **It slows a guessing run; it does not stop a slow one.** The window slides: once a failure
-  is 15 minutes old a new attempt is allowed, so one wrong password every 5 minutes is never
-  refused, while AD forgets failures only after its "Reset account lockout counter after"
-  period passes with none. Such a run can still reach the domain's threshold (after about
-  5 × threshold minutes). The audit trail shows it: `login.fail` rows with `reason`
-  `bad_credentials` for one account every few minutes.
+- **Per account (AD accounts):** failed binds are counted in a run that ends only when 15
+  minutes pass with no failed bind — the way AD counts them, not a sliding window. After 3 in
+  the run the sign-in is refused with 429 "Çok fazla hatalı deneme; 15 dakika sonra tekrar
+  deneyin" without asking AD, until 15 minutes after the last failed bind; a refused attempt
+  reaches no DC and does not extend the run. Only an attempt whose password reached the DC
+  counts (a DC outage before the bind does not); a successful sign-in ends the run. The count
+  is in the API's memory: a restart clears it.
+- **Unlock:** `POST /admin/users/{id}/unlock-sign-in` with `{"reason": "…"}` lets 3 more failed
+  binds through in the current run, **once per run**: a second unlock in the same run is 409
+  "Bu hesabın girişi kısa süre önce açıldı; 15 dakika sonra tekrar deneyin" (the run, and the
+  throttle with it, ends 15 minutes after its last failed bind). An unlock of an account with
+  no failed bind in its current run — or a local account — grants nothing and does not use the
+  run's unlock. The reason is one line of at most 200 characters with at least one letter or
+  digit, no control character and no invisible formatting character (bidirectional overrides,
+  zero-width characters); it is audited as `user.sign_in_unlocked`. It needs `users.manage` and
+  the account within the caller's rights (a refused unlock uses nothing); not for an account
+  active in another hospital or a platform operator's (409). It does not unlock anything in AD
+  — an AD lockout is IT's to clear.
+- **A slow run is bounded too.** Failures do not age out one by one: one wrong password every
+  5 minutes keeps the run alive, and after the third it is refused, exactly as AD keeps
+  counting. So Homunculus adds at most 3 + 3 = 6 to the domain's count between two of its
+  resets, as long as the domain's reset period is 15 minutes or less (item 7). Wrong passwords
+  typed elsewhere for the same account (a ward PC) count in AD too, which is why the threshold
+  needs room above 6. The audit trail shows a run: `login.fail` rows for one account with
+  `reason` `bad_credentials`, then `throttled`.
 - **Per address (nginx):** `/auth/login` takes 10 attempts a minute per client address, with a
   burst of 10; beyond that nginx answers 429 `{"detail":"Çok fazla giriş denemesi; bir dakika
   sonra tekrar deneyin"}` with `Retry-After: 60` and logs a warning. If the ward PCs share one
@@ -403,8 +417,8 @@ plan to map them. Every failure says what to ask IT for.
   does not tell which logins are AD accounts. If this site's AD failure path (service bind,
   search, nested-group search, user bind) takes longer than 0.5 s, AD refusals become slower
   than the rest again. Measure with a test AD account IT provides, imported into Homunculus —
-  never a clinician's (every try counts toward the lockout, and after three within 15 minutes
-  the next is a 429, which is not held):
+  never a clinician's (every try counts toward the lockout, and after three in a run the next
+  is a 429, which is not held):
 
   ```bash
   curl -sk -o /dev/null -w '%{time_total}\n' -X POST https://<vm>/auth/login \
@@ -443,6 +457,12 @@ docker compose build          # rebuilds api and web
 docker compose pull bridge    # the bridge image comes from GHCR
 docker compose up -d
 ```
+
+The API image is built on Python 3.12 with the exact package versions in
+`homunculus-engine/constraints.txt` — a freeze of a clean Python 3.12 install, the set the test
+suite ran against — so `docker compose build` installs the same dependencies every time, and a
+dependency changes only when that file does. (Before it, a rebuild took whatever was newest:
+SQLAlchemy 2.1 arrived without `greenlet` and the API could not start.)
 
 This release adds `NCE_SHARE_PATH` to `.env` — without it, `docker compose up` fails on an invalid
 volume spec for the `nce` service and takes the unrelated services down with it. Add it (see
