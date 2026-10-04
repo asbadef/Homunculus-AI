@@ -216,7 +216,8 @@ least two local administrators.
 
 1. **The LDAPS address, by name:** `ldaps://<DC name>:636` with the domain controller's DNS
    name exactly as it appears in its certificate — **not an IP address**: the name in the
-   certificate is checked, and an IP fails that check (`tls`). The VM must resolve the name.
+   certificate is checked, and an IP almost always fails that check (`tls`). The VM must
+   resolve the name.
 2. **The CA certificate** that signed the domain controller's certificate (PEM; public).
 3. **A read-only service account:** its bind DN (e.g.
    `CN=svc-homunculus,OU=Service Accounts,DC=hastane,DC=local`) and password. It must be able
@@ -241,7 +242,8 @@ least two local administrators.
    and 3 more after an administrator's unlock (see *Sign-in limits*): the threshold must be
    **at least 7**, above 3 + 3, or Homunculus alone could lock a clinician out of every
    hospital system. The clinician's own mistyped Windows logons count toward the same
-   threshold.
+   threshold. Note the reset period too: a slow run of wrong passwords is not stopped by
+   Homunculus (see *Sign-in limits*), and that period decides how long AD remembers it.
 8. **Are the sAMAccountNames ASCII?** A name with `ş`, `ç`, `ğ`, `ö`, `ü`, `ı` (or letters of
    another script) breaks the local username rule (`a-z 0-9 . _ @ -`) and is skipped at import
    as `invalid_login`.
@@ -345,12 +347,13 @@ plan to map them. Every failure says what to ask IT for.
   are unaffected. Any other directory error at refresh (a reply about the account that cannot
   be read) is a 503 (`refresh.directory_error`): nothing is renewed, and the refresh token is
   kept for the next try.
-- **Disabled, expired, deleted, moved out of `LDAP_BASE_DN` or password changed or reset in
-  AD:** refused at the next sign-in, and the open session ends at its next token refresh
-  (within the hour). Homunculus's own "active" flag is not changed; deactivate the account in
-  Homunculus to stop it whatever AD says. (A locked-out or password-expired AD account fails
-  its bind at sign-in; an open session is not ended for it: reading AD's lockout state at
-  refresh would let anyone end a clinician's session by typing her name with wrong passwords.)
+- **Disabled, expired, deleted or moved out of `LDAP_BASE_DN` in AD:** refused at the next
+  sign-in. The open session of such an account — or of one whose password was changed or reset
+  in AD — ends at its next token refresh (within the hour). Homunculus's own "active" flag is
+  not changed; deactivate the account in Homunculus to stop it whatever AD says. (A locked-out
+  or password-expired AD account fails its bind at sign-in; an open session is not ended for
+  it: reading AD's lockout state at refresh would let anyone end a clinician's session by
+  typing her name with wrong passwords.)
 - **AD group changes** apply at the user's next sign-in or token refresh, whichever comes first
   (within the hour); groups an administrator gave by hand are never touched. While the
   directory is down, nothing changes. A new mapping applies from each member's next sign-in or
@@ -364,9 +367,10 @@ plan to map them. Every failure says what to ask IT for.
   items, Grup 4).
 - **Time bounds:** one directory call takes at most `min(2 × LDAP_TIMEOUT_S, 12)` s (10 s at
   the default 5) at sign-in or refresh. Administration shares 3 of the directory's 8 threads,
-  so sign-ins always keep 5; an administration call may wait as long again for its place (at
-  most 20 s at the default, more than the dashboard's 15 s — the server still finishes; an
-  import is safe to repeat), and an import looks up 2 accounts at a time. No database
+  so sign-ins always keep 5; an administration call may first wait as long again for its place,
+  so it answers within twice that (20 s at the default, more than the dashboard's 15 s — the
+  server still finishes; an import is safe to repeat), and an import looks up 2 accounts at a
+  time. No database
   connection is held while the directory answers.
 
 ### Sign-in limits
@@ -385,8 +389,8 @@ plan to map them. Every failure says what to ask IT for.
   is 15 minutes old a new attempt is allowed, so one wrong password every 5 minutes is never
   refused, while AD forgets failures only after its "Reset account lockout counter after"
   period passes with none. Such a run can still reach the domain's threshold (after about
-  5 × threshold minutes). The audit trail shows it: `login.fail` rows for one account every few
-  minutes (`reason` `bad_credentials`, then `throttled`).
+  5 × threshold minutes). The audit trail shows it: `login.fail` rows with `reason`
+  `bad_credentials` for one account every few minutes.
 - **Per address (nginx):** `/auth/login` takes 10 attempts a minute per client address, with a
   burst of 10; beyond that nginx answers 429 `{"detail":"Çok fazla giriş denemesi; bir dakika
   sonra tekrar deneyin"}` with `Retry-After: 60` and logs a warning. If the ward PCs share one
@@ -399,8 +403,8 @@ plan to map them. Every failure says what to ask IT for.
   does not tell which logins are AD accounts. If this site's AD failure path (service bind,
   search, nested-group search, user bind) takes longer than 0.5 s, AD refusals become slower
   than the rest again. Measure with a test AD account IT provides, imported into Homunculus —
-  never a clinician's (every try counts toward the lockout, and the fourth within 15 minutes is
-  a 429, which is not timed):
+  never a clinician's (every try counts toward the lockout, and after three within 15 minutes
+  the next is a 429, which is not held):
 
   ```bash
   curl -sk -o /dev/null -w '%{time_total}\n' -X POST https://<vm>/auth/login \
