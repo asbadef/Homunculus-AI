@@ -8,6 +8,7 @@ It borrows `admin/service.py`'s private helpers (`_within`, `_grantable`, `_righ
 `_union`, `_flush`) on purpose: one implementation of the rights rule, not two."""
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from collections.abc import Iterable, Mapping
@@ -22,7 +23,7 @@ from homunculus.admin.service import (
     _rights_by_user, _union, _within, get_group, group_rights,
 )
 from homunculus.auth.groups import count_admins, lock_admin_guard, set_manual_groups
-from homunculus.auth.ldap import LdapIdentity, account_expired
+from homunculus.auth.ldap import LdapIdentity, LdapRuntime, LdapUnavailable, account_expired
 from homunculus.auth.ldap_sync import (
     login_in_use, mapped_group_ids, normalise_dn, sync_ldap_groups,
 )
@@ -44,6 +45,44 @@ async def imported_ids(db: AsyncSession, external_ids: Iterable[str]) -> set[str
 
 
 # ---------------------------------------------------------------- import (plan decision D12)
+async def lookup_accounts(ldap: LdapRuntime,
+                          external_ids: list[str]) -> dict[str, LdapIdentity | None]:
+    """Each objectGUID's account as the directory reports it, every lookup through the admin
+    lane (`LdapRuntime.admin_lane`): at most ADMIN_LANE_SLOTS at once across every request, so
+    an import of 50 accounts against a slow domain controller leaves the directory's other
+    threads to sign-ins. The first LdapUnavailable cancels the lookups still waiting or running
+    — no queue of doomed calls is left in front of sign-ins — and is raised once they have
+    stopped; the caller answers 503 with nothing written."""
+    tasks: list[asyncio.Task] = []
+
+    async def lookup(external_id: str) -> LdapIdentity | None:
+        try:
+            return await ldap.directory.find_by_external_id(external_id, lane=ldap.admin_lane)
+        except LdapUnavailable:
+            # The others are cancelled HERE, in the step that saw the failure: the TaskGroup
+            # would only do it a step later, after the lane place this lookup gave back had
+            # already let one more lookup start.
+            for task in tasks:
+                if task is not asyncio.current_task():
+                    task.cancel()
+            raise
+
+    try:
+        async with asyncio.TaskGroup() as group:
+            tasks.extend(group.create_task(lookup(external_id)) for external_id in external_ids)
+    except BaseExceptionGroup as failed:
+        outages, others = failed.split(LdapUnavailable)
+        if others is not None or outages is None:
+            raise
+        raise _first(outages) from None
+    return {external_id: task.result() for external_id, task in zip(external_ids, tasks)}
+
+
+def _first(group: BaseExceptionGroup) -> BaseException:
+    first = group.exceptions[0]
+    return _first(first) if isinstance(first, BaseExceptionGroup) else first
+
+
 SKIP_EXISTS = "exists"
 SKIP_NOT_FOUND = "not_found"
 SKIP_DISABLED = "disabled"

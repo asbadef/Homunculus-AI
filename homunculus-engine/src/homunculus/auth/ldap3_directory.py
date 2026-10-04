@@ -12,6 +12,10 @@ Windows dev machines and in the python:3.12-slim image without libldap). Spec §
     request timeout), waiting for a free thread included. A call cut off while it runs keeps
     its thread until the socket timeouts end it, so the pool, not a semaphore, is the cap. The socket connect timeout is
     LDAP_TIMEOUT_S, the receive timeout LDAP_TIMEOUT_S rounded up to whole seconds.
+  * An administration call passes the admin lane (`LdapRuntime.admin_lane`, ADMIN_LANE_SLOTS
+    places): it waits for a place BEFORE its deadline starts, and the place is given back when
+    its thread has finished, a call cut off included — so administration never holds more than
+    ADMIN_LANE_SLOTS of the SLOTS threads, and sign-ins and refreshes keep the rest.
   * A call the caller stopped waiting for (its deadline, a cancellation) never binds as the
     account afterwards, and its outage says whether that bind had started
     (`LdapUnavailable.bind_attempted`, `_Attempt`): the sign-in throttle counts only a password
@@ -238,6 +242,15 @@ class _Attempt:
             return self._bind_started
 
 
+def _give_back(loop: asyncio.AbstractEventLoop, lane: asyncio.Semaphore) -> None:
+    """A lane place, given back on the event loop once a call's thread has finished (this runs
+    on that thread, or on the loop for a call cancelled while queued)."""
+    try:
+        loop.call_soon_threadsafe(lane.release)
+    except RuntimeError:                     # the loop is closed: the app has stopped
+        pass
+
+
 def _guarded(attempt: _Attempt, fn: Callable[..., Any], *args: Any) -> Any:
     """Run `fn` on the worker thread; ANY failure becomes LdapUnavailable — an `ldap3` or socket
     failure by its cause, anything else (a library bug, a reply it cannot parse) as `protocol`,
@@ -282,23 +295,28 @@ class Ldap3Directory:
         return await self._call(self._authenticate, attempt, external_id, password,
                                 attempt=attempt)
 
-    async def find_by_external_id(self, external_id: str) -> LdapIdentity | None:
+    async def find_by_external_id(self, external_id: str, *,
+                                  lane: asyncio.Semaphore | None = None) -> LdapIdentity | None:
         if not _is_guid(external_id):
             return None
-        return await self._call(self._find, external_id)
+        return await self._call(self._find, external_id, lane=lane)
 
-    async def search_users(self, query: str, limit: int = RESULT_CAP) -> list[LdapIdentity]:
+    async def search_users(self, query: str, limit: int = RESULT_CAP, *,
+                           lane: asyncio.Semaphore | None = None) -> list[LdapIdentity]:
         if not query.strip():
             return []
-        return await self._call(self._search_users, query, max(1, min(limit, RESULT_CAP)))
+        return await self._call(self._search_users, query, max(1, min(limit, RESULT_CAP)),
+                                lane=lane)
 
-    async def search_groups(self, query: str, limit: int = RESULT_CAP) -> list[LdapGroup]:
+    async def search_groups(self, query: str, limit: int = RESULT_CAP, *,
+                            lane: asyncio.Semaphore | None = None) -> list[LdapGroup]:
         if not query.strip():
             return []
-        return await self._call(self._search_groups, query, max(1, min(limit, RESULT_CAP)))
+        return await self._call(self._search_groups, query, max(1, min(limit, RESULT_CAP)),
+                                lane=lane)
 
-    async def test_connection(self) -> None:
-        await self._call(self._test)
+    async def test_connection(self, *, lane: asyncio.Semaphore | None = None) -> None:
+        await self._call(self._test, lane=lane)
 
     async def check_password(self, dn: str, password: str) -> bool:
         """One bind as `dn`: True if the password is right. Not part of the protocol — sign-in
@@ -309,18 +327,30 @@ class Ldap3Directory:
         return await self._call(self._password_ok, attempt, dn, password, attempt=attempt)
 
     async def _call(self, fn: Callable[..., Any], *args: Any,
-                    attempt: _Attempt | None = None) -> Any:
+                    attempt: _Attempt | None = None,
+                    lane: asyncio.Semaphore | None = None) -> Any:
         """`fn` on the pool, within the deadline — the wait for a free thread counts against
-        it, and a call cut off while still queued never runs. When the caller stops waiting
-        (the deadline, a cancellation) `attempt` is given up: a bind as the account not started
-        yet never starts, and the outage — or the cancellation, as an attribute — carries
-        `bind_attempted`, for the sign-in throttle (auth/router.py)."""
+        it, and a call cut off while still queued never runs. A `lane` place is taken first,
+        before the deadline starts, and given back when the thread has finished (or the call
+        never ran). When the caller stops waiting (the deadline, a cancellation) `attempt` is
+        given up: a bind as the account not started yet never starts, and the outage — or the
+        cancellation, as an attribute — carries `bind_attempted`, for the sign-in throttle
+        (auth/router.py)."""
         attempt = _Attempt() if attempt is None else attempt
+        loop = asyncio.get_running_loop()
+        if lane is not None:
+            await lane.acquire()
         try:
-            work = asyncio.get_running_loop().run_in_executor(self._pool, _guarded, attempt,
-                                                              fn, *args)
+            done = self._pool.submit(_guarded, attempt, fn, *args)
         except RuntimeError:                 # the pool is shut down: the app is stopping
+            if lane is not None:
+                lane.release()
             raise LdapUnavailable("unreachable") from None
+        work = asyncio.wrap_future(done, loop=loop)
+        if lane is not None:
+            # After wrap_future's own callback: the outcome reaches the caller before the place
+            # is given back (a failed import stops its other lookups before one more starts).
+            done.add_done_callback(lambda _: _give_back(loop, lane))
         try:
             return await asyncio.wait_for(work, self._deadline)
         except TimeoutError:

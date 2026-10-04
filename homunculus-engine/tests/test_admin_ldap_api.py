@@ -19,7 +19,7 @@ from homunculus.admin import ldap_service
 from homunculus.admin.service import Actor
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.jwt import decode_token
-from homunculus.auth.ldap import ACCOUNT_NEVER_EXPIRES, NOT_CONFIGURED
+from homunculus.auth.ldap import ACCOUNT_NEVER_EXPIRES, ADMIN_LANE_SLOTS, NOT_CONFIGURED
 from homunculus.auth.limits import directory_binds
 from homunculus.auth.models import Group, GroupPermission, LdapGroupMapping, User
 from homunculus.auth.permissions import ALL_PERMISSIONS
@@ -278,6 +278,80 @@ async def test_an_import_with_the_directory_down_is_503_and_writes_nothing(clien
                        json={"external_ids": [world["mkaya"].identity.external_id]})
     assert (res.status_code, res.json()["detail"]) == (503, "Dizin sunucusuna ulaşılamıyor")
     assert await _imported(db_session, world["mkaya"].identity.external_id) == 0
+
+
+def _lookups(directory) -> int:
+    return sum(1 for method, _ in directory.calls if method == "find_by_external_id")
+
+
+async def test_two_large_imports_share_the_admin_lane_and_a_sign_in_is_not_held_up(
+        client, world, db_session):
+    """Two administrators import 50 accounts each against a slow directory: at most
+    ADMIN_LANE_SLOTS lookups are with the directory at once, across both requests, and a
+    clinician signing in meanwhile is answered without waiting for them."""
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    directory = world["directory"]
+    ids = [directory.add(person(f"Toplu{i:03d}")).identity.external_id for i in range(100)]
+    directory.delay = 0.02
+    imports = [asyncio.create_task(c.post("/admin/ldap/import", headers=admin,
+                                          json={"external_ids": ids[k:k + 50]}))
+               for k in (0, 50)]
+    while _lookups(directory) < 2 * ADMIN_LANE_SLOTS:
+        await asyncio.sleep(0.01)
+    started = time.monotonic()
+    res = await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
+    took = time.monotonic() - started
+    assert res.status_code == 200, res.text
+    assert not all(task.done() for task in imports)
+    results = await asyncio.gather(*imports)
+    assert [len(r.json()["imported"]) for r in results] == [50, 50]
+    assert directory.peak["find_by_external_id"] == ADMIN_LANE_SLOTS
+    assert took < 2.0                                   # no queue behind 100 lookups
+
+
+async def test_the_first_directory_failure_stops_the_rest_of_the_import(client, world,
+                                                                        db_session):
+    """A domain controller that fails: the lookups not started yet are never made (no queue of
+    doomed calls in front of sign-ins), and the import is 503 with nothing written."""
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    directory = world["directory"]
+    ids = [directory.add(person(f"Toplu{i:03d}")).identity.external_id for i in range(50)]
+    directory.delay, directory.unavailable = 0.05, "timeout"
+    res = await c.post("/admin/ldap/import", headers=admin, json={"external_ids": ids})
+    assert (res.status_code, res.json()["detail"]) == (503, "Dizin sunucusuna ulaşılamıyor")
+    await asyncio.sleep(0.2)                             # nothing left running asks later
+    assert _lookups(directory) <= ADMIN_LANE_SLOTS
+    assert await _imported(db_session, *ids) == 0
+
+
+async def test_every_admin_directory_call_takes_the_lane_and_sign_in_never_does(client, world,
+                                                                               db_session):
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    directory, lane = world["directory"], app.state.ldap.admin_lane
+    tokens = (await c.post("/auth/login", json={"login": "ayilmaz",
+                                                 "password": AD_PASSWORD})).json()
+    for _ in range(ADMIN_LANE_SLOTS):                    # the lane is full
+        await lane.acquire()
+    directory.calls.clear()
+    pending = [asyncio.create_task(c.request(method, path, headers=admin, json=body))
+               for method, path, body in _routes(world)[1:5]]   # test, search, groups, import
+    try:
+        assert (await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
+                ).status_code == 200
+        assert (await c.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+                ).status_code == 200
+        await asyncio.sleep(0.1)
+        assert not any(task.done() for task in pending)
+        assert {method for method, _ in directory.calls} == {"authenticate",
+                                                             "find_by_external_id"}
+        assert len(directory.calls) == 2                 # the sign-in's and the refresh's
+    finally:
+        for _ in range(ADMIN_LANE_SLOTS):
+            lane.release()
+    assert [r.status_code for r in await asyncio.gather(*pending)] == [200] * 4
 
 
 @pytest.mark.parametrize("body", [

@@ -40,7 +40,7 @@ async def test_a_directory_that_does_not_answer_is_a_warning_not_a_refusal(caplo
 
 async def test_a_hung_directory_does_not_hold_up_startup():
     class Hung(FakeDirectory):
-        async def test_connection(self):
+        async def test_connection(self, *, lane=None):
             await asyncio.sleep(3600)
 
     app = create_app({"t": "demo-hastanesi"}, run_escalation_loop=False, ldap=runtime(Hung()))

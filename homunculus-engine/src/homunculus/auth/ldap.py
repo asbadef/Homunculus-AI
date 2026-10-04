@@ -7,7 +7,8 @@
   LdapUnavailable  the directory did not answer. Sign-in turns it into 503, never 401.
   LdapConfig       the LDAP_* environment, read and checked by `load_ldap_config`.
   LdapRuntime      what the app holds as `app.state.ldap` (None = LDAP off): the directory, its
-                   host, the login forms it accepts, the outcome of the last connection test.
+                   host, the login forms it accepts, the outcome of the last connection test,
+                   and the admin lane every administration call goes through.
 
 The pure rules of a directory sign-in live here too: objectGUID's string form, the
 ACCOUNTDISABLE bit, pwdLastSet against a token's issue time, accountExpires against the clock,
@@ -20,6 +21,7 @@ environment only and is kept out of every repr.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import uuid
@@ -101,9 +103,22 @@ class LdapGroup:
     name: str
 
 
+# Places for administration calls (/admin/ldap: the import's lookups, the searches, the
+# connection test) in the directory at once, across every request: `LdapRuntime.admin_lane`.
+# Ldap3Directory has 8 threads (SLOTS); sign-ins and refreshes never take the lane, so they
+# always keep at least 5 of them, whatever the administrators are doing.
+ADMIN_LANE_SLOTS = 3
+
+
 class LdapDirectory(Protocol):
     """What Homunculus asks of a directory. Every method raises LdapUnavailable when the
-    directory does not answer; "no such account" and "wrong password" are answers (None)."""
+    directory does not answer; "no such account" and "wrong password" are answers (None).
+
+    `lane` (the methods administration uses): the admin lane, `LdapRuntime.admin_lane`. The
+    call waits for a free place in it before the directory is asked — its deadline does not
+    run meanwhile — and keeps the place until the directory's work for it has ended (for
+    Ldap3Directory, its thread: a call cut off at its deadline included). Sign-in and refresh
+    never pass one."""
 
     async def authenticate(self, external_id: str, password: str) -> LdapIdentity | None:
         """The account with this objectGUID, checked with ONE bind as its DN. None: not found
@@ -115,16 +130,19 @@ class LdapDirectory(Protocol):
         EXPIRED account (`account_expired`) is returned as found without a bind too; the
         default filter lets it through, so it is refused as `directory_expired`."""
 
-    async def find_by_external_id(self, external_id: str) -> LdapIdentity | None:
+    async def find_by_external_id(self, external_id: str, *,
+                                  lane: asyncio.Semaphore | None = None) -> LdapIdentity | None:
         """The account with this objectGUID, read with the service account; None if not found."""
 
-    async def search_users(self, query: str, limit: int = 50) -> list[LdapIdentity]:
+    async def search_users(self, query: str, limit: int = 50, *,
+                           lane: asyncio.Semaphore | None = None) -> list[LdapIdentity]:
         """Accounts whose name, display name, UPN or mail contains `query`; at most `limit`."""
 
-    async def search_groups(self, query: str, limit: int = 50) -> list[LdapGroup]:
+    async def search_groups(self, query: str, limit: int = 50, *,
+                            lane: asyncio.Semaphore | None = None) -> list[LdapGroup]:
         """Groups whose cn contains `query`; at most `limit`."""
 
-    async def test_connection(self) -> None:
+    async def test_connection(self, *, lane: asyncio.Semaphore | None = None) -> None:
         """Bind with the service account; raise LdapUnavailable if that fails."""
 
 
@@ -300,18 +318,23 @@ def load_ldap_config(env: Mapping[str, str]) -> LdapConfig | None:
 @dataclass
 class LdapRuntime:
     """The directory as the running app holds it (`app.state.ldap`; None when LDAP is off).
-    The last connection test is kept here, in memory, for `GET /admin/ldap/status`."""
+    The last connection test is kept here, in memory, for `GET /admin/ldap/status`.
+    `admin_lane` is the one admin lane of the process (ADMIN_LANE_SLOTS places): every
+    administration call passes it to the directory (`LdapDirectory`, `lane`)."""
     directory: LdapDirectory
     url_host: str
     login_attrs: tuple[str, ...] = LOGIN_ATTRS
     last_test_at: datetime | None = None
     last_test_ok: bool | None = None
     last_test_reason: str | None = None
+    admin_lane: asyncio.Semaphore = field(
+        default_factory=lambda: asyncio.Semaphore(ADMIN_LANE_SLOTS), repr=False, compare=False)
 
     async def test(self) -> tuple[bool, str | None]:
-        """Bind with the service account now; remember and return (ok, reason)."""
+        """Bind with the service account now (through the admin lane: /admin/ldap/test and the
+        start-up check); remember and return (ok, reason)."""
         try:
-            await self.directory.test_connection()
+            await self.directory.test_connection(lane=self.admin_lane)
         except LdapUnavailable as exc:
             ok, reason = False, exc.reason
         else:

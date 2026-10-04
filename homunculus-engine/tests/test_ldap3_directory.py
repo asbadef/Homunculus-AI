@@ -15,7 +15,9 @@ import pytest
 from ldap3 import Tls
 from ldap3.core.exceptions import LDAPException, LDAPResponseTimeoutError, LDAPSocketOpenError
 
-from homunculus.auth.ldap import DEFAULT_USER_FILTER, LdapGroup, LdapUnavailable, load_ldap_config
+from homunculus.auth.ldap import (
+    ADMIN_LANE_SLOTS, DEFAULT_USER_FILTER, LdapGroup, LdapUnavailable, load_ldap_config,
+)
 from homunculus.auth.ldap3_directory import (
     GROUP_LIMIT, SEARCH_ATTRIBUTES, SLOTS, USER_ATTRIBUTES, Ldap3Directory, _wire_filter,
     escape_guid, failure_reason, group_search_filter, guid_lookup_filter, ldap_from_env,
@@ -582,6 +584,64 @@ async def test_close_cancels_a_queued_call_as_an_outage():
         release.set()
         await asyncio.gather(*stuck, return_exceptions=True)
     assert (err.value.reason, err.value.bind_attempted) == ("unreachable", False)
+
+
+# ---------------------------------------------------------------- the admin lane
+def test_the_admin_lane_leaves_most_threads_to_sign_ins():
+    assert ADMIN_LANE_SLOTS == 3 and SLOTS - ADMIN_LANE_SLOTS >= 5
+
+
+async def test_admin_calls_take_at_most_their_lane_and_a_sign_in_is_not_held_up():
+    """Two imports' lookups at once against a slow domain controller: never more than
+    ADMIN_LANE_SLOTS threads do administration work, so a clinician's sign-in finds a free
+    thread and is answered in its own time — not after the imports."""
+    gauge = Gauge()
+    script = Script(*[([_entry()], 0)] * 21)
+
+    def slow(user, password):
+        with gauge:
+            time.sleep(0.1)
+        return script.connect(user, password)
+
+    directory = _directory_over(slow, deadline_s=5)
+    lane = asyncio.Semaphore(ADMIN_LANE_SLOTS)
+    imports = [asyncio.create_task(directory.find_by_external_id(GUID, lane=lane))
+               for _ in range(20)]
+    await asyncio.sleep(0.25)
+    assert gauge.peak == ADMIN_LANE_SLOTS                 # the lane is full, and no more
+    started = time.monotonic()
+    assert await directory.authenticate(GUID, USER_PW) is not None
+    took = time.monotonic() - started
+    assert not all(task.done() for task in imports)
+    assert all(found is not None for found in await asyncio.gather(*imports))
+    assert took < 0.2 + 0.15                              # its two binds, no queue
+    assert gauge.peak <= ADMIN_LANE_SLOTS + 1
+    await _idle(directory)
+
+
+async def test_a_lane_place_is_held_until_the_thread_ends_and_waiting_for_it_is_no_deadline():
+    """A call cut off at its deadline keeps its thread until the socket gives up: its place in
+    the lane is kept as long, or the lane would not cap threads. The next call's deadline
+    starts once it has a place: the wait is the administration load, not the directory's."""
+    gauge, connects = Gauge(), []
+
+    def slow(user, password):
+        connects.append(user)
+        with gauge:
+            time.sleep(0.5 if len(connects) == 1 else 0.2)
+        return Script().connect(user, password)
+
+    directory = _directory_over(slow, deadline_s=0.3)
+    lane = asyncio.Semaphore(1)
+    first = asyncio.create_task(directory.test_connection(lane=lane))
+    await asyncio.sleep(0.05)
+    second = asyncio.create_task(directory.test_connection(lane=lane))
+    with pytest.raises(LdapUnavailable) as err:
+        await first                                       # cut off at 0.3 s; its thread: 0.5 s
+    assert err.value.reason == "timeout"
+    await second                       # ~0.65 s after it was asked, 0.2 s of it its own: no 503
+    assert gauge.peak == 1
+    await _idle(directory)
 
 
 # ---------------------------------------------------------------- was the password sent? (throttle)

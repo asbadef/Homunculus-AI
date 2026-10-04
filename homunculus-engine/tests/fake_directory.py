@@ -14,6 +14,11 @@ call cut off while queued: `bind_attempted` False); `outage_after_bind = True` m
 off at the deadline: `bind_attempted` True, counted by the sign-in throttle).
 `calls` records which method was asked about what — never a password.
 
+The admin lane is kept too: a call given a `lane` waits for a place in it before the "server"
+is asked (and is recorded in `calls` only then), and holds it while it is answered. `delay`
+makes every answer take that many seconds (asyncio.sleep); `inside` counts, per method, the
+calls being answered right now, and `peak` the most there ever were at once.
+
 One difference to keep in mind: the fake returns a disabled account to `authenticate` and
 `find_by_external_id` as found. The real directory does that only under a custom
 LDAP_USER_FILTER — the default one excludes disabled accounts, so there a disabled account is
@@ -21,10 +26,12 @@ NOT FOUND (sign-in: `bad_credentials`, refresh: `directory_not_found`), and `dir
 is reached only with a filter that lets disabled accounts through."""
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
+from collections import Counter
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass, replace
 
 from httpx import ASGITransport, AsyncClient
@@ -97,6 +104,9 @@ class FakeDirectory:
         self.unavailable: bool | str = False
         self.outage_after_bind = False
         self.calls: list[tuple[str, str]] = []
+        self.delay = 0.0
+        self.inside: Counter[str] = Counter()
+        self.peak: Counter[str] = Counter()
 
     def add(self, p: FakePerson) -> FakePerson:
         self.people[p.identity.external_id] = p
@@ -107,8 +117,17 @@ class FakeDirectory:
         p = self.people[external_id]
         p.identity = replace(p.identity, **changes)
 
-    def _ask(self, method: str, about: str, *, binds: bool = False) -> None:
-        self.calls.append((method, about))
+    async def _ask(self, method: str, about: str, *, binds: bool = False,
+                   lane: asyncio.Semaphore | None = None) -> None:
+        async with lane if lane is not None else nullcontext():
+            self.calls.append((method, about))
+            self.inside[method] += 1
+            self.peak[method] = max(self.peak[method], self.inside[method])
+            try:
+                if self.delay:
+                    await asyncio.sleep(self.delay)
+            finally:
+                self.inside[method] -= 1
         if self.unavailable:
             raise LdapUnavailable(self.unavailable if isinstance(self.unavailable, str)
                                   else "unreachable",
@@ -117,7 +136,7 @@ class FakeDirectory:
     async def authenticate(self, external_id: str, password: str) -> LdapIdentity | None:
         if not password or not _is_guid(external_id):
             return None
-        self._ask("authenticate", external_id, binds=True)
+        await self._ask("authenticate", external_id, binds=True)
         p = self.people.get(external_id)
         if p is None:
             return None
@@ -125,33 +144,36 @@ class FakeDirectory:
             return p.identity
         return p.identity if password == p.password else None
 
-    async def find_by_external_id(self, external_id: str) -> LdapIdentity | None:
+    async def find_by_external_id(self, external_id: str, *,
+                                  lane: asyncio.Semaphore | None = None) -> LdapIdentity | None:
         if not _is_guid(external_id):
             return None
-        self._ask("find_by_external_id", external_id)
+        await self._ask("find_by_external_id", external_id, lane=lane)
         p = self.people.get(external_id)
         return p.identity if p is not None else None
 
-    async def search_users(self, query: str, limit: int = 50) -> list[LdapIdentity]:
+    async def search_users(self, query: str, limit: int = 50, *,
+                           lane: asyncio.Semaphore | None = None) -> list[LdapIdentity]:
         q = query.strip().lower()
         if not q:
             return []
-        self._ask("search_users", query)
+        await self._ask("search_users", query, lane=lane)
         hits = [replace(p.identity, group_dns=()) for p in self.people.values()
                 if any(q in (value or "").lower() for value in (
                     p.identity.username, p.identity.display_name, p.identity.upn,
                     p.identity.email))]
         return sorted(hits, key=lambda i: i.username.lower())[:_limit(limit)]
 
-    async def search_groups(self, query: str, limit: int = 50) -> list[LdapGroup]:
+    async def search_groups(self, query: str, limit: int = 50, *,
+                            lane: asyncio.Semaphore | None = None) -> list[LdapGroup]:
         q = query.strip().lower()
         if not q:
             return []
-        self._ask("search_groups", query)
+        await self._ask("search_groups", query, lane=lane)
         return [g for g in self.groups if q in g.name.lower()][:_limit(limit)]
 
-    async def test_connection(self) -> None:
-        self._ask("test_connection", "")
+    async def test_connection(self, *, lane: asyncio.Semaphore | None = None) -> None:
+        await self._ask("test_connection", "", lane=lane)
 
 
 def runtime(directory: FakeDirectory) -> LdapRuntime:

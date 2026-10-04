@@ -3,11 +3,14 @@ FakeDirectory every LDAP route test stands on — held to the contract Ldap3Dire
 (tests/test_ldap3_directory.py)."""
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import pytest
 
-from homunculus.auth.ldap import LdapGroup, LdapUnavailable, check_directory_at_startup
+from homunculus.auth.ldap import (
+    ADMIN_LANE_SLOTS, LdapGroup, LdapUnavailable, check_directory_at_startup,
+)
 from tests.fake_directory import AD_PASSWORD, FakeDirectory, group_dn, person, runtime
 
 
@@ -99,6 +102,26 @@ async def test_a_connection_test_is_remembered():
     rt.directory.unavailable = True
     assert await rt.test() == (False, "unreachable")
     assert (rt.last_test_ok, rt.last_test_reason) == (False, "unreachable")
+
+
+async def test_the_runtime_has_one_admin_lane_and_its_connection_test_takes_a_place():
+    rt = runtime(FakeDirectory())
+    for _ in range(ADMIN_LANE_SLOTS):
+        await rt.admin_lane.acquire()
+    assert rt.admin_lane.locked()
+    check = asyncio.create_task(rt.test())
+    await asyncio.sleep(0.05)
+    assert not check.done() and rt.directory.calls == []
+    rt.admin_lane.release()
+    assert await check == (True, None)
+
+
+async def test_the_fake_keeps_the_lane_while_it_answers():
+    directory = FakeDirectory([person("AYilmaz")])
+    directory.delay = 0.02
+    lane = asyncio.Semaphore(2)
+    await asyncio.gather(*(directory.search_users("ayilmaz", lane=lane) for _ in range(6)))
+    assert (directory.peak["search_users"], len(directory.calls)) == (2, 6)
 
 
 async def test_the_startup_check_logs_success_and_failure_and_never_raises(caplog):

@@ -20,7 +20,6 @@ caller), AdminError → rollback, the audit row after the commit.
 """
 from __future__ import annotations
 
-import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -91,7 +90,8 @@ async def ldap_search(q: str = Query(min_length=2, max_length=64),
                       ldap: LdapRuntime = Depends(configured_ldap),
                       db: AsyncSession = Depends(get_db)) -> list[LdapUserOut]:
     try:
-        found = await ldap.directory.search_users(q, ldap_service.RESULT_CAP)
+        found = await ldap.directory.search_users(q, ldap_service.RESULT_CAP,
+                                                  lane=ldap.admin_lane)
     except LdapUnavailable:
         raise _directory_down() from None
     found = found[:ldap_service.RESULT_CAP]
@@ -103,7 +103,8 @@ async def ldap_search(q: str = Query(min_length=2, max_length=64),
 async def ldap_groups(q: str = Query(min_length=2, max_length=64),
                       ldap: LdapRuntime = Depends(configured_ldap)) -> list[LdapGroupOut]:
     try:
-        found = await ldap.directory.search_groups(q, ldap_service.RESULT_CAP)
+        found = await ldap.directory.search_groups(q, ldap_service.RESULT_CAP,
+                                                   lane=ldap.admin_lane)
     except LdapUnavailable:
         raise _directory_down() from None
     return [LdapGroupOut(dn=g.dn, name=g.name) for g in found[:ldap_service.RESULT_CAP]]
@@ -116,20 +117,20 @@ async def ldap_import(body: LdapImportIn, request: Request,
                       ldap: LdapRuntime = Depends(configured_ldap),
                       db: AsyncSession = Depends(get_db)) -> LdapImportOut:
     """The directory is asked first, before the tenant lock — a slow directory must not hold up
-    every other /admin write — and only about ids that have no account yet. A directory that
-    does not answer is 503 with nothing written. Then the import, under the lock, in one
-    transaction; one `ldap.import` audit row per created account, after the commit."""
+    every other /admin write — and only about ids that have no account yet, through the admin
+    lane (`ldap_service.lookup_accounts`). A directory that does not answer is 503 with nothing
+    written. Then the import, under the lock, in one transaction; one `ldap.import` audit row
+    per created account, after the commit."""
     wanted = list(dict.fromkeys(str(i) for i in body.external_ids))
     known = await ldap_service.imported_ids(db, wanted)
     fresh = [eid for eid in wanted if eid not in known]
     try:
-        answers = await asyncio.gather(
-            *(ldap.directory.find_by_external_id(eid) for eid in fresh))
+        identities = await ldap_service.lookup_accounts(ldap, fresh)
     except LdapUnavailable:
         raise _directory_down() from None
     actor = await _begin(db, tenant_id, principal)
     report = await _run(db, ldap_service.import_users(
-        db, tenant_id, actor, wanted, dict(zip(fresh, answers)),
+        db, tenant_id, actor, wanted, identities,
         extra_group_ids=list(dict.fromkeys(body.extra_group_ids))))
     await db.commit()
     imported: list[LdapImportedOut] = []
