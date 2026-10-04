@@ -10,6 +10,7 @@ a new router that nginx does not proxy fails here.
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -103,6 +104,44 @@ def test_sign_in_is_rate_limited_per_client_address() -> None:
     proxy = ("proxy_pass", "proxy_http_version", "proxy_set_header")
     assert _directives(body, *proxy) == _directives(api, *proxy)
     assert "limit_req" not in api                # nothing but sign-in is limited
+
+
+LOGIN_LIMITED = "Çok fazla giriş denemesi; bir dakika sonra tekrar deneyin"
+
+
+def _named_location(text: str, name: str) -> str:
+    """The body of `location <name> { … }`, read up to its own closing brace: a brace inside a
+    quoted string (a JSON answer) does not end it."""
+    match = re.search(r"^\s*location\s+" + re.escape(name) + r"\s*\{", text, re.M)
+    assert match, name
+    quote = None
+    for i in range(match.end(), len(text)):
+        ch = text[i]
+        if quote:
+            quote = None if ch == quote else quote
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "}":
+            return text[match.end():i]
+    raise AssertionError(f"location {name} is not closed")
+
+
+def test_a_limited_sign_in_is_answered_in_json() -> None:
+    """nginx's own 429 page is HTML, and the dashboard reads the reason from a JSON `detail`:
+    it would show a generic failure. The sign-in location hands its 429 to a named location
+    that answers in the API's shape — {"detail": "…"}, JSON in UTF-8 — which
+    dashboard/src/clinicalI18n.js maps (i18n.rbac.test.js reads it from this file). Only nginx's
+    own refusal: the API's 429s pass through as they are (no proxy_intercept_errors)."""
+    text = CONF.read_text(encoding="utf-8")
+    body = _location(text, "location = /auth/login")
+    assert _directives(body, "error_page") == {"error_page 429 = @login_limited"}
+    assert _directives(text, "proxy_intercept_errors") == set()
+    named = _named_location(text, "@login_limited")
+    assert re.findall(r"^\s*default_type\s+(.+?);\s*$", named, re.M) == [
+        '"application/json; charset=utf-8"']                # its own `;` is inside the quotes
+    answer = re.findall(r"^\s*return\s+429\s+'([^']*)';\s*$", named, re.M)
+    assert len(answer) == 1 and json.loads(answer[0]) == {"detail": LOGIN_LIMITED}
+    assert text.count("@login_limited") == 2                 # declared once, used once
 
 
 @pytest.mark.parametrize("path", API_PATHS)
