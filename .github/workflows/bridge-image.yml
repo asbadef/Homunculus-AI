@@ -16,6 +16,7 @@ on:
       - "homunculus-engine/src/**"
       - "homunculus-engine/scripts/**"
       - "homunculus-engine/Dockerfile"
+      - "homunculus-engine/constraints.txt"
       - ".github/workflows/bridge-image.yml"
   workflow_dispatch:
 

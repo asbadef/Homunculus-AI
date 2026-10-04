@@ -11,7 +11,11 @@
 
 FROM python:3.12-slim
 
-RUN pip install --no-cache-dir "cryptography>=42.0"
+# cryptography (and its cffi) at the version in constraints.txt — the one the test suite and the
+# API image use. The constraints only pin; they install nothing else.
+COPY constraints.txt /tmp/constraints.txt
+RUN pip install --no-cache-dir -c /tmp/constraints.txt "cryptography>=42.0" \
+    && rm /tmp/constraints.txt
 
 # PYTHONUNBUFFERED: without it Python buffers stdout when it is not a terminal, and `docker logs -f`
 # shows nothing for minutes — which reads as a dead bridge during exactly the moment someone is

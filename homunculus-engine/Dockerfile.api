@@ -1,7 +1,10 @@
 # Homunculus API — FastAPI, the clinical engine, the escalation loop and the audit trail.
 #
 # Unlike the edge bridge (standard library only, see Dockerfile), this image installs the project's
-# dependencies: FastAPI, SQLAlchemy, asyncpg, Alembic, bcrypt, pyotp.
+# dependencies: FastAPI, SQLAlchemy, asyncpg, Alembic, bcrypt, pyotp — at the exact versions in
+# constraints.txt, the set the test suite ran against on Python 3.12. Without them a rebuild takes
+# whatever was released since: SQLAlchemy 2.1 once arrived without greenlet, and the API could not
+# import its database layer.
 #
 # Build from the homunculus-engine directory:
 #   docker build -t homunculus-api -f Dockerfile.api .
@@ -15,9 +18,9 @@ WORKDIR /app
 
 # Copy pyproject and source; install dependencies before copying scripts and migrations.
 # This way, changes to scripts/alembic do not invalidate the pip layer.
-COPY pyproject.toml /app/
+COPY pyproject.toml constraints.txt /app/
 COPY src/ /app/src/
-RUN pip install --no-cache-dir . \
+RUN pip install --no-cache-dir -c constraints.txt . \
     && useradd --system --uid 10002 --home /app homunculus \
     && chown -R homunculus:homunculus /app
 

@@ -5,7 +5,10 @@ description = "Homunculus real-time clinical intelligence engine (adult sepsis v
 requires-python = ">=3.12"
 dependencies = [
     "pyyaml>=6.0",
-    "sqlalchemy>=2.0",
+    # [asyncio] pulls greenlet, which sqlalchemy.ext.asyncio needs: SQLAlchemy 2.1 no longer
+    # installs it by itself, and without it the API cannot start. Below 2.2: a new minor is a
+    # decision, not something a rebuild picks up (the image pins exact versions, constraints.txt).
+    "sqlalchemy[asyncio]>=2.0,<2.2",
     "fastapi>=0.110",
     "python-jose[cryptography]>=3.3",   # JWT
     "bcrypt>=4.1",                      # Password hashing (passlib dropped: unmaintained, breaks on bcrypt>=4.1)
