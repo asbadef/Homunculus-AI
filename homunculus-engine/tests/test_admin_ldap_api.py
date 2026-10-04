@@ -1072,8 +1072,9 @@ async def test_an_administrator_unlocks_a_throttled_ad_account(client, world, db
     assert _authenticates(world["directory"]) == asked + 1
     [event] = audit_events(app, "admin", "user.sign_in_unlocked")
     assert event.payload == {"actor": "admin", "target": str(ayse_id),
-                             "before": {"failed_sign_ins": 3}, "after": {"failed_sign_ins": 0},
-                             "reason": REASON}
+                             "before": {"failed": 3, "allowed": 3},
+                             "after": {"failed": 3, "allowed": 6},
+                             "granted": True, "reason": REASON}
     assert event.tenant == TENANT_SLUG
     assert WRONG not in str(event.payload) and AD_PASSWORD not in str(event.payload)
 
@@ -1209,8 +1210,8 @@ async def test_a_refused_unlock_leaves_the_chains_unlock_to_one_that_may(client,
 async def test_an_unlock_with_nothing_to_clear_does_not_use_the_chains_unlock(client, world,
                                                                              db_session):
     """An administrator unlocks an account with no failed sign-in in its current chain: 200,
-    nothing cleared (0 in the audit row) and nothing granted — three wrong passwords still
-    throttle it — and the unlock it then needs is still there."""
+    nothing granted — the audit row says so (`granted` false, 3 allowed before and after), and
+    three wrong passwords still throttle it — and the unlock it then needs is still there."""
     c, app = client
     admin = await bearer(db_session, world["admin"])
     ayse_id = world["account"].id
@@ -1219,8 +1220,11 @@ async def test_an_unlock_with_nothing_to_clear_does_not_use_the_chains_unlock(cl
     assert (await _unlock(c, ayse_id, admin)).status_code == 200
     assert (await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
             ).status_code == 200
-    events = audit_events(app, "admin", "user.sign_in_unlocked")
-    assert sorted(e.payload["before"]["failed_sign_ins"] for e in events) == [0, 3]
+    first, second = audit_events(app, "admin", "user.sign_in_unlocked")
+    assert (first.payload["before"], first.payload["after"], first.payload["granted"]) == (
+        {"failed": 0, "allowed": 3}, {"failed": 0, "allowed": 3}, False)
+    assert (second.payload["before"], second.payload["after"], second.payload["granted"]) == (
+        {"failed": 3, "allowed": 3}, {"failed": 3, "allowed": 6}, True)
 
 
 async def test_another_tenants_account_is_not_found_and_stays_throttled(client, world,

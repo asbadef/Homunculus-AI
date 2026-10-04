@@ -5,7 +5,7 @@ from __future__ import annotations
 import pyotp
 
 from homunculus.auth.limits import (
-    DIRECTORY_BIND_MAX_FAILURES, DIRECTORY_BIND_WINDOW_S, FailureChain, FailureLimiter,
+    DIRECTORY_BIND_MAX_FAILURES, DIRECTORY_BIND_WINDOW_S, FailureChain, FailureLimiter, Unlocked,
     directory_binds,
 )
 from homunculus.auth.totp import accepted_step
@@ -198,12 +198,14 @@ def test_chain_keys_are_independent():
 def test_an_unlock_lets_three_more_through_once_per_chain():
     """The administrator's unlock (/admin/users/{id}/unlock-sign-in): three more failed binds
     in this chain, and that once — a second unlock in the same chain is refused (None) and
-    changes nothing. It returns the chain's failures (the audit row's "failed_sign_ins")."""
+    changes nothing. It says what it found and did (the audit row's before and after)."""
     clock = FakeClock()
     chain = _chain(clock)
     for _ in range(3):
         _fail(chain)
-    assert chain.unlock("u") == 3
+    unlocked = chain.unlock("u")
+    assert unlocked == Unlocked(failed=3, allowed_before=3, allowed_after=6)
+    assert unlocked.granted is True
     for _ in range(3):
         _fail(chain)
     assert chain.begin("u") is False
@@ -219,7 +221,7 @@ def test_an_unlock_does_not_end_the_chain():
     for _ in range(3):
         _fail(chain)
         clock.t += 600
-    assert chain.unlock("u") == 3           # 600 s after the last failure
+    assert chain.unlock("u").failed == 3    # 600 s after the last failure
     for _ in range(3):
         _fail(chain)
         clock.t += 600                      # gaps of 10 minutes: one chain throughout
@@ -227,22 +229,24 @@ def test_an_unlock_does_not_end_the_chain():
     clock.t += 301                          # 901 s after the last failure
     assert chain.begin("u") is True
     chain.end("u", failed=True)
-    assert chain.unlock("u") == 1           # a new chain, a new unlock
+    assert chain.unlock("u").failed == 1    # a new chain, a new unlock
 
 
 def test_an_unlock_with_nothing_to_clear_grants_nothing_and_uses_nothing():
     """No failure in the current chain — none ever, an earlier chain gone quiet, a local account
-    — returns 0: no extra attempts, and the chain's one unlock is still there when it is needed."""
+    — grants nothing (`granted` False, 3 allowed before and after), and the chain's one unlock
+    is still there when it is needed."""
     clock = FakeClock()
     chain = _chain(clock)
-    assert chain.unlock("u") == 0
+    nothing = Unlocked(failed=0, allowed_before=3, allowed_after=3)
+    assert chain.unlock("u") == nothing and nothing.granted is False
     for _ in range(3):
         _fail(chain)
     assert chain.begin("u") is False        # the empty unlock granted nothing
-    assert chain.unlock("u") == 3           # and did not use the chain's unlock
+    assert chain.unlock("u").granted        # and did not use the chain's unlock
     clock.t += 901
-    assert chain.unlock("u") == 0           # that chain has gone quiet
-    assert chain.unlock("never-failed") == 0
+    assert chain.unlock("u") == nothing     # that chain has gone quiet
+    assert chain.unlock("never-failed") == nothing
 
 
 def test_an_unlock_leaves_attempts_in_flight_their_places():
@@ -250,7 +254,7 @@ def test_an_unlock_leaves_attempts_in_flight_their_places():
     _fail(chain)
     _fail(chain)
     assert chain.begin("u") is True                              # in flight
-    assert chain.unlock("u") == 2
+    assert chain.unlock("u").failed == 2
     for _ in range(3):
         assert chain.begin("u") is True                          # 2 + 1 running + 3 = 6
     assert chain.begin("u") is False

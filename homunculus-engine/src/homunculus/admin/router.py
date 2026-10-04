@@ -86,13 +86,15 @@ def _user_out(user: User, tenant_id: uuid.UUID) -> UserOut:
 
 
 def _audit(request: Request, principal: Principal, kind: str, target: str, *,
-           before=None, after=None, reason: str | None = None) -> None:
-    """Append the audit row — with the administrator's `reason`, when the action takes one. It
+           before=None, after=None, reason: str | None = None,
+           extra: dict | None = None) -> None:
+    """Append the audit row — with `extra` fields the action adds, and the administrator's
+    `reason` when the action takes one. It
     runs AFTER the commit: if the trail refuses the row, the change stands unaudited — say so
     loudly (no payload, no exception text: nothing that could carry account data) and let the
     error surface."""
     payload = {"actor": principal.user.username, "target": target,
-               "before": before, "after": after}
+               "before": before, "after": after, **(extra or {})}
     if reason is not None:
         payload["reason"] = reason
     try:
@@ -285,9 +287,12 @@ async def unlock_sign_in(user_id: uuid.UUID, body: SignInUnlockIn, request: Requ
                          db: AsyncSession = Depends(get_db)) -> dict:
     actor = await _begin(db, tenant_id, principal)
     user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
-    cleared = await _run(db, service.unlock_sign_in(db, tenant_id, user, actor))
+    unlocked = await _run(db, service.unlock_sign_in(db, tenant_id, user, actor))
     await db.commit()
+    # An unlock clears no failure: it raises what the chain lets through (3 → 6), or — with no
+    # failure to clear — grants nothing, and says so (`granted` false).
     _audit(request, principal, "user.sign_in_unlocked", str(user.id),
-           before={"failed_sign_ins": cleared}, after={"failed_sign_ins": 0},
-           reason=body.reason)
+           before={"failed": unlocked.failed, "allowed": unlocked.allowed_before},
+           after={"failed": unlocked.failed, "allowed": unlocked.allowed_after},
+           extra={"granted": unlocked.granted}, reason=body.reason)
     return {"ok": True}

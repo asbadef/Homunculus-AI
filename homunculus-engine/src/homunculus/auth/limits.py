@@ -77,6 +77,20 @@ class _Chain:
     running: int = 0              # attempts in flight
 
 
+@dataclass(frozen=True)
+class Unlocked:
+    """What an unlock found and did: the failures in the key's current chain, and the failures
+    that chain lets through before and after it. `granted` is False when there was nothing to
+    clear (no failure in the chain): nothing changed, and the chain's unlock is still there."""
+    failed: int
+    allowed_before: int
+    allowed_after: int
+
+    @property
+    def granted(self) -> bool:
+        return self.allowed_after > self.allowed_before
+
+
 class FailureChain:
     """Failed attempts per key, counted in chains, as AD counts bad passwords.
 
@@ -142,20 +156,23 @@ class FailureChain:
         if chain is not None and chain.running:
             self._chains[key] = _Chain(allowed=self.max_failures, running=chain.running)
 
-    def unlock(self, key: str) -> int | None:
+    def unlock(self, key: str) -> Unlocked | None:
         """An administrator's unlock: `max_failures` more failed attempts in the key's current
-        chain, once per chain. Returns the chain's failures — 0 when it holds none (no chain,
-        one gone quiet, a local account): then nothing is granted and the chain's unlock is not
-        used. None when this chain's unlock has been given already: refused, nothing changes.
-        The chain still ends only after a quiet period; attempts in flight keep their places."""
+        chain, once per chain. With no failure in the chain (no chain, one gone quiet, a local
+        account) nothing is granted and the chain's unlock is not used (`granted` False). None
+        when this chain's unlock has been given already: refused, nothing changes. The chain
+        still ends only after a quiet period; attempts in flight keep their places."""
         chain = self._current(key)
         if chain is None or chain.failures == 0:
-            return 0
+            allowed = chain.allowed if chain is not None else self.max_failures
+            return Unlocked(failed=0, allowed_before=allowed, allowed_after=allowed)
         if chain.unlocked:
             return None
+        before = chain.allowed
         chain.unlocked = True
         chain.allowed += self.max_failures
-        return chain.failures
+        return Unlocked(failed=chain.failures, allowed_before=before,
+                        allowed_after=chain.allowed)
 
 
 # Wrong TOTP codes, keyed by user id.

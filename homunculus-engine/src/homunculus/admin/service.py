@@ -68,7 +68,7 @@ from homunculus.auth.groups import (
     GroupError, bump_group_members, bump_user, count_admins, lock_admin_guard, set_manual_groups,
     summarize,
 )
-from homunculus.auth.limits import directory_binds
+from homunculus.auth.limits import Unlocked, directory_binds
 from homunculus.auth.models import (
     AUTH_LOCAL, Group, GroupPermission, LdapGroupMapping, TenantMembership, User, UserGroup,
 )
@@ -93,10 +93,12 @@ SHARED_ACCOUNT = ("Bu hesap başka bir kurumda da etkin; parola, MFA, e-posta, a
 SELF_CREDENTIALS = ("Kendi parolanızı veya MFA'nızı buradan sıfırlayamazsınız; parola için "
                     "Hesabım > Parola değiştir'i kullanın")
 SELF_DEACTIVATE = "Kendi hesabınızı pasifleştiremezsiniz"
-# A second unlock in the same chain of failed sign-ins (auth/limits.py, FailureChain.unlock).
-# The chain, and the throttle with it, ends DIRECTORY_BIND_WINDOW_S after its last failed bind:
-# "15". The dashboard translates by this exact text (clinicalI18n.js): change both together.
-UNLOCK_COOLDOWN = "Bu hesabın girişi kısa süre önce açıldı; 15 dakika sonra tekrar deneyin"
+# A second unlock in the same chain of failed sign-ins (auth/limits.py, FailureChain.unlock):
+# the chain's one unlock is spent, and the chain — the throttle with it — ends only once
+# DIRECTORY_BIND_WINDOW_S ("15") pass without a failed bind; waiting a fixed time from now is not
+# it. The dashboard translates by this exact text (clinicalI18n.js): change both together.
+UNLOCK_COOLDOWN = ("Bu hesabın bu hatalı giriş dizisi için tek kilit açma hakkı kullanıldı; "
+                   "15 dakika hatalı parola girilmezse giriş kendiliğinden açılır")
 NOT_AUTHENTICATED = "Invalid or missing authentication credentials"
 TOKEN_VERSION = "token_version"
 
@@ -534,7 +536,7 @@ async def reset_password(db: AsyncSession, tenant_id: uuid.UUID, user: User, act
 
 
 async def unlock_sign_in(db: AsyncSession, tenant_id: uuid.UUID, user: User,
-                         actor: Actor) -> int:
+                         actor: Actor) -> Unlocked:
     """Let 3 more failed AD binds through in the account's current chain (`auth.limits.
     directory_binds`, a FailureChain: after 3 failed binds the sign-in is refused until 15
     minutes pass with none): its next sign-in goes to the directory again. Within the caller's
@@ -545,14 +547,14 @@ async def unlock_sign_in(db: AsyncSession, tenant_id: uuid.UUID, user: User,
     binds. Every refusal comes before the chain is touched, so a refused unlock uses nothing;
     an unlock with nothing to clear (no failed bind in the current chain, a local account)
     grants nothing and leaves the chain's unlock for when it is needed. Nothing in the database
-    changes, and the domain's own lockout is AD's business. Returns the failed sign-ins in the
-    chain (0 when there were none)."""
+    changes, and the domain's own lockout is AD's business. Returns what the unlock found and
+    did (`Unlocked`: the chain's failed sign-ins, what it let through before and after)."""
     _within(actor, user_rights(user, tenant_id))
     await _refuse_global_account(db, tenant_id, user)
-    cleared = directory_binds.unlock(str(user.id))
-    if cleared is None:
+    unlocked = directory_binds.unlock(str(user.id))
+    if unlocked is None:
         raise AdminError(409, UNLOCK_COOLDOWN)
-    return cleared
+    return unlocked
 
 
 async def reset_mfa(db: AsyncSession, tenant_id: uuid.UUID, user: User, actor: Actor) -> None:
