@@ -534,13 +534,13 @@ async def test_a_mapping_dn_is_stored_in_its_canonical_spelling(client, world, d
     again = await c.post("/admin/ldap/group-mappings", headers=admin, json={
         "ad_group_dn": r"cn=ECZANE\, GÖĞÜS CERRAHISI,ou=Gruplar,dc=HASTANE,dc=LOCAL",
         "group_id": str(pharmacist)})
-    assert (again.status_code, again.json()["detail"]) == (409, "Bu AD grubu bu gruba zaten eşlenmiş")
+    assert (again.status_code, again.json()["detail"]) == (409, ldap_service.MAPPING_EXISTS)
     db_session.add(LdapGroupMapping(tenant_id=world["tenant"].id, group_id=nurse,
                                     ad_group_dn="cn=yb-eski, ou=gruplar, dc=hastane, dc=local"))
     await db_session.commit()
     legacy = await c.post("/admin/ldap/group-mappings", headers=admin, json={
         "ad_group_dn": group_dn("YB-Eski"), "group_id": str(nurse)})
-    assert (legacy.status_code, legacy.json()["detail"]) == (409, "Bu AD grubu bu gruba zaten eşlenmiş")
+    assert (legacy.status_code, legacy.json()["detail"]) == (409, ldap_service.MAPPING_EXISTS)
 
 
 @pytest.mark.parametrize("dn", [

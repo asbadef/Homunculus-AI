@@ -136,11 +136,11 @@ async def import_users(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
     when the request began (fetched before the lock); an id imported since is caught by the
     re-check here — or, imported by ANOTHER tenant at the same moment (a lock this one does not
     hold), by the INSERT, in its own savepoint (`_insert_account`): `skipped: exists` for that
-    id, the rest of the batch goes on. Each created account: auth_source ldap, no password, username = the
-    sAMAccountName lower-cased, email = mail (dropped when another account uses it),
-    full_name = displayName, a membership in this tenant, the mapped groups as `ldap` rows and
-    `extra_group_ids` as `manual` rows — every one of those groups within the caller's rights,
-    or 403 for the whole request.
+    id, the rest of the batch goes on. Each created account: auth_source ldap, no password,
+    username = the sAMAccountName lower-cased, email = mail (dropped when another account uses
+    it), full_name = displayName, a membership in this tenant, the mapped groups as `ldap` rows
+    and `extra_group_ids` as `manual` rows — every one of those groups within the caller's
+    rights, or 403 for the whole request.
 
     An account disabled in AD, or past its end date (accountExpires — how HR often off-boards,
     and the default LDAP_USER_FILTER lets it through), could never sign in: it is skipped
