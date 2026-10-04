@@ -104,9 +104,22 @@ _NAME_MAX = 200        # users.full_name
 
 
 @dataclass(frozen=True)
+class ImportedGroup:
+    id: uuid.UUID
+    slug: str
+    name: str
+    source: str
+
+
+@dataclass(frozen=True)
 class Imported:
+    """A created account as the import wrote it, its groups in this tenant by slug — read
+    before the commit, so the response and the audit rows need no lookup after it (one that a
+    concurrent change could turn into a 404 for a committed import)."""
     external_id: str
     user_id: uuid.UUID
+    username: str
+    groups: tuple[ImportedGroup, ...]
 
 
 @dataclass
@@ -189,8 +202,21 @@ async def import_users(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
             await set_manual_groups(db, user=user, tenant_id=tenant_id,
                                     group_ids=extra_group_ids, granted_by_id=actor.id)
         existing.add(external_id)
-        report.imported.append(Imported(external_id=external_id, user_id=user.id))
+        report.imported.append(Imported(external_id=external_id, user_id=user.id,
+                                        username=username,
+                                        groups=await _groups_here(db, user.id, tenant_id)))
     return report
+
+
+async def _groups_here(db: AsyncSession, user_id: uuid.UUID,
+                       tenant_id: uuid.UUID) -> tuple[ImportedGroup, ...]:
+    rows = await db.execute(
+        select(Group.id, Group.slug, Group.name, UserGroup.source)
+        .join(UserGroup, UserGroup.group_id == Group.id)
+        .where(UserGroup.user_id == user_id, Group.tenant_id == tenant_id)
+        .order_by(Group.slug))
+    return tuple(ImportedGroup(id=gid, slug=slug, name=name, source=source)
+                 for gid, slug, name, source in rows.all())
 
 
 async def _insert_account(db: AsyncSession, user: User) -> bool:

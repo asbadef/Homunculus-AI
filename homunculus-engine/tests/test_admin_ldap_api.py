@@ -15,7 +15,8 @@ import pytest_asyncio
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from homunculus.admin import ldap_service
+from homunculus.admin import ldap_router, ldap_service
+from homunculus.admin import service as admin_service
 from homunculus.admin.service import LAST_ADMIN, Actor, AdminError
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.jwt import decode_token
@@ -225,6 +226,40 @@ async def test_import_creates_directory_accounts_with_mapped_and_extra_groups(cl
     assert signed_in.status_code == 200
     assert [r.payload["after"]["username"] for r in audit_events(app, "admin", "ldap.import")] \
         == ["mkaya"]
+
+
+async def test_the_import_answers_and_audits_from_what_it_wrote(client, world, db_session,
+                                                                 monkeypatch):
+    """The response and the `ldap.import` audit rows come from what the import wrote, gathered
+    before its commit — never from a lookup after it, which a concurrent change (the new
+    account's membership deactivated a moment later) could turn into a 404, i.e. a 500 for a
+    committed import, with the audit rows of the accounts after it never written."""
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+
+    async def gone(*args, **kwargs):
+        raise AdminError(404, "User not found")
+
+    monkeypatch.setattr(admin_service, "get_tenant_user", gone)
+    monkeypatch.setattr(ldap_router, "get_tenant_user", gone, raising=False)
+    ids = [world["mkaya"].identity.external_id, world["bdemir"].identity.external_id]
+    res = await c.post("/admin/ldap/import", headers=admin, json={
+        "external_ids": ids, "extra_group_ids": [str(world["groups"]["physician"].id)]})
+    assert res.status_code == 200, res.text
+    rows = res.json()["imported"]
+    assert [(r["external_id"], r["username"], [(g["slug"], g["source"]) for g in r["groups"]])
+            for r in rows] == [
+        (ids[0], "mkaya", [("charge_nurse", "ldap"), ("physician", "manual")]),
+        (ids[1], "bdemir", [("nurse", "ldap"), ("physician", "manual")])]
+    assert rows[0]["groups"][0] == {"id": str(world["groups"]["charge_nurse"].id),
+                                    "slug": "charge_nurse", "name": "Sorumlu Hemşire",
+                                    "source": "ldap"}
+    assert [(e.payload["target"], e.payload["after"])
+            for e in audit_events(app, "admin", "ldap.import")] == [
+        (rows[0]["id"], {"username": "mkaya", "external_id": ids[0],
+                         "groups": ["charge_nurse", "physician"]}),
+        (rows[1]["id"], {"username": "bdemir", "external_id": ids[1],
+                         "groups": ["nurse", "physician"]})]
 
 
 async def test_import_is_idempotent_and_says_what_it_skipped(client, world, db_session):

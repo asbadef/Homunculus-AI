@@ -33,12 +33,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admin import ldap_service
 from homunculus.admin.router import _audit, _begin, _run
-from homunculus.admin.router import _user_out as _admin_user_out
 from homunculus.admin.schemas import (
     LdapGroupOut, LdapImportedOut, LdapImportIn, LdapImportOut, LdapMappingIn, LdapMappingOut,
-    LdapSkippedOut, LdapStatusOut, LdapTestOut, LdapUserOut,
+    LdapSkippedOut, LdapStatusOut, LdapTestOut, LdapUserOut, UserGroupOut,
 )
-from homunculus.admin.service import get_tenant_user
 from homunculus.auth.dependencies import (
     Principal, caller_tenant_id, get_principal, require_permission,
 )
@@ -135,7 +133,9 @@ async def ldap_import(body: LdapImportIn, request: Request,
     every other /admin write — and only about ids that have no account yet, through the admin
     lane (`ldap_service.lookup_accounts`). A directory that does not answer is 503 with nothing
     written. Then the import, under the lock, in one transaction; one `ldap.import` audit row
-    per created account, after the commit."""
+    per created account, after the commit. The response and those rows are built from what the
+    import wrote, read before the commit (`ldap_service.Imported`): no lookup after it, which a
+    concurrent change could turn into a 500 for a committed import."""
     wanted = list(dict.fromkeys(str(i) for i in body.external_ids))
     known = await ldap_service.imported_ids(db, wanted)
     fresh = [eid for eid in wanted if eid not in known]
@@ -149,14 +149,14 @@ async def ldap_import(body: LdapImportIn, request: Request,
         extra_group_ids=list(dict.fromkeys(body.extra_group_ids))))
     await db.commit()
     imported: list[LdapImportedOut] = []
-    for row in report.imported:
-        user = await get_tenant_user(db, tenant_id, row.user_id)
-        groups = _admin_user_out(user, tenant_id).groups
-        imported.append(LdapImportedOut(external_id=row.external_id, id=user.id,
-                                        username=user.username, groups=groups))
-        _audit(request, principal, "ldap.import", str(user.id),
-               after={"username": user.username, "external_id": row.external_id,
-                      "groups": [g.slug for g in groups]})
+    for row in report.imported:                     # as written, no lookup after the commit
+        imported.append(LdapImportedOut(
+            external_id=row.external_id, id=row.user_id, username=row.username,
+            groups=[UserGroupOut(id=g.id, slug=g.slug, name=g.name, source=g.source)
+                    for g in row.groups]))
+        _audit(request, principal, "ldap.import", str(row.user_id),
+               after={"username": row.username, "external_id": row.external_id,
+                      "groups": [g.slug for g in row.groups]})
     return LdapImportOut(imported=imported,
                          skipped=[LdapSkippedOut(external_id=e, reason=r)
                                   for e, r in report.skipped])
