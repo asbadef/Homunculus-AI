@@ -1,7 +1,9 @@
 # LDAP / Active Directory sign-in and group-based RBAC
 
 **Date:** 2026-09-23
-**Status:** design approved
+**Status:** design approved; amended as built 2026-10-04 (Plan 2 = roadmap G1-03/G1-04, plan
+`docs/superpowers/plans/2026-10-03-g1-dalga1a-ldap-arka-uc.md`). Amended passages are marked
+*As built*; where they differ from the original text, the code follows them.
 **Delivery:** one design, two implementation plans — Plan 1 (RBAC: groups, permissions, user
 management) ships and is usable on its own; Plan 2 (LDAP/AD) builds on it.
 
@@ -39,7 +41,7 @@ ward out of its own admin.
 | Group model | Custom groups per tenant + a fixed permission catalogue in code. Defaults seeded. |
 | How AD users arrive | Administrator searches AD from the admin UI and imports. No just-in-time creation: an AD account that was not imported cannot sign in. |
 | AD unreachable | Local (bcrypt) accounts keep working; AD users cannot sign in; open sessions last until their token expires. AD passwords are never cached. |
-| AD groups | Mapping table (AD group DN → Homunculus group) applied at import and on every sign-in, on top of manual assignments, which are preserved. |
+| AD groups | Mapping table (AD group DN → Homunculus group) applied at import and on every sign-in, on top of manual assignments, which are preserved. *As built:* and at every token refresh the directory answers (§7). |
 | Permission granularity | Feature-level (19 keys). Unit-scoped visibility is out of scope. |
 | MFA | Per group (`mfa_required` flag), applies to local and AD users alike; the TOTP secret lives in Homunculus. |
 | RBAC mechanism | Permissions in the JWT + per-user `token_version` so changes take effect immediately without a per-request permission query. |
@@ -55,7 +57,7 @@ New tables (Alembic revision `0006`):
 | `groups` | `id`, `tenant_id`, `slug`, `name`, `description`, `mfa_required`, `is_system`, `created_at`, `updated_at` | `slug` unique per tenant. `is_system` is true only for `hospital_admin`, which cannot be deleted. |
 | `group_permissions` | `group_id`, `permission` | PK `(group_id, permission)`. Writes are validated against the catalogue (§2). |
 | `user_groups` | `user_id`, `group_id`, `source` (`manual` \| `ldap`), `granted_by_id`, `created_at` | PK `(user_id, group_id)`. LDAP sync touches only `source = ldap` rows. |
-| `ldap_group_mappings` | `id`, `tenant_id`, `ad_group_dn`, `group_id`, `created_by_id`, `created_at` | DN comparison is case-insensitive. Unique `(tenant_id, lower(ad_group_dn), group_id)`. |
+| `ldap_group_mappings` | `id`, `tenant_id`, `ad_group_dn`, `group_id`, `created_by_id`, `created_at` | *As built:* the DN is stored and compared in one canonical spelling, `canonical_dn` (parsed per RFC 4514, spaces around separators dropped, escapes resolved and written back one way, ASCII letters lower-cased and no others), not `lower(...)`. Unique `(tenant_id, ad_group_dn, group_id)` on that form; another spelling of a mapped DN is the 409 duplicate. |
 
 Changes to `users`:
 
@@ -101,7 +103,7 @@ time, so a typo in a route guard fails at startup rather than silently denying e
 | `shifts.manage` | Create shift schedules. |
 | `break_glass.use` | Open, extend or close a break-glass session. |
 | `audit.view` | Read the audit trail. |
-| `users.manage` | Users: create, edit, activate, reset password/MFA, set groups. Includes LDAP import, search, connection test and the group-mapping table. |
+| `users.manage` | Users: create, edit, activate, reset password/MFA, set groups, unlock an AD sign-in. Includes LDAP search, import, connection test and reading the group-mapping table. *As built:* creating or deleting a mapping also needs the whole catalogue (§7). |
 | `groups.manage` | Groups and their permission sets. |
 | `structure.manage` | Tenant → site → unit → room → bed. |
 | `devices.manage` | Device and research endpoints (Infinity research router). |
@@ -177,7 +179,13 @@ the design. The care-team claim stays exactly as it is today: `attending`, `char
 - **`is_active = false`** → 401.
 - Success writes `last_login_at` and an `auth` audit event (`login.ok`). Failures write
   `login.fail` with the login string and the reason class (`bad_credentials`, `inactive`,
-  `directory_unavailable`) — never the password.
+  `directory_unavailable`) — never the password. *As built:* also `directory_disabled`,
+  `directory_expired` (§7) and `throttled` (429, §7 Security).
+- *As built — timing.* Every 401 of an AD sign-in runs the same dummy bcrypt comparison as an
+  unknown login, and every 401 of `POST /auth/login` answers no sooner than 0.5 s
+  (`LOGIN_FAILURE_FLOOR_S`) after the request reached the route, so the directory's round trips
+  do not mark a login as an AD account. The wait is a sleep, after the database connection has
+  gone back to the pool. A 429 and a 503 are not held: their status says it already.
 
 ### Token claims
 
@@ -266,6 +274,7 @@ succeeds if the token's `perms` contains **any** of the listed keys.
 | `POST /tenant/tenants` | platform operator (`users.is_platform_support`); no group permission |
 | Infinity research router | `devices.manage` (replaces the dangling `UserRole.BIOMEDICAL`) |
 | `/admin/users*`, `/admin/ldap/*` | `users.manage` |
+| `POST /admin/ldap/group-mappings`, `DELETE /admin/ldap/group-mappings/{id}` | *As built:* `users.manage` **and** the whole catalogue (every key, through any groups), else 403 |
 | `/admin/groups*` writes, `GET /admin/permissions` | `groups.manage` |
 | `GET /admin/groups` | `groups.manage` or `users.manage` (a user manager lists the groups it may grant) |
 
@@ -344,6 +353,10 @@ another tenant is a 404.
   `ldap`-sourced rows are untouched.
 - `POST /admin/users/{id}/reset-password {password}` — local accounts only; 400 for AD users.
 - `POST /admin/users/{id}/reset-mfa` — clears the TOTP secret; the user re-enrols at next sign-in.
+- *As built:* `POST /admin/users/{id}/unlock-sign-in {reason}` — clears the account's AD sign-in
+  throttle (§7 Security). The reason (one line, at most 200 characters) goes into the audit row.
+  Within the caller's rights; at most once per account per 15 minutes (409); not for an account
+  shared with another tenant or a platform operator (409). Nothing in the database changes.
 
 ### Guards
 
@@ -394,7 +407,9 @@ another tenant is a 404.
 `event_type = admin`, `kind` = one of `user.create`, `user.update`, `user.groups`,
 `user.password_reset`, `user.mfa_reset`, `group.create`, `group.update`, `group.delete`,
 `ldap.import`, `ldap.mapping.create`, `ldap.mapping.delete`, and a payload of
-`{actor, target, before, after}`. Sign-ins are audited as `event_type = auth` (§4).
+`{actor, target, before, after}`. Sign-ins are audited as `event_type = auth` (§4). *As built:*
+also `user.sign_in_unlocked` (with the reason), `ldap.test`, and `ldap.sync.guarded` (actor
+`ldap-sync`, §7 step 5).
 
 ## 7. LDAP directory
 
@@ -403,53 +418,99 @@ another tenant is a 404.
 `homunculus/auth/ldap.py` defines the `LdapDirectory` protocol:
 
 ```text
-authenticate(login, password)      -> LdapIdentity | None      # None = bad credentials
-find_by_external_id(guid)          -> LdapIdentity | None
-search_users(query, limit=50)      -> list[LdapIdentity]
-search_groups(query, limit=50)     -> list[LdapGroup]           # dn, name
-test_connection()                  -> None                      # raises on failure
+authenticate(external_id, password) -> LdapIdentity | None     # by objectGUID; None = bad credentials
+find_by_external_id(guid, *, lane=None)        -> LdapIdentity | None
+search_users(query, limit=50, *, lane=None)    -> list[LdapIdentity]
+search_groups(query, limit=50, *, lane=None)   -> list[LdapGroup]   # dn, name
+test_connection(*, lane=None)                  -> None              # raises on failure
 ```
 
 `LdapIdentity` carries `external_id` (objectGUID), `username` (sAMAccountName), `upn`, `email`,
-`display_name`, `dn`, `group_dns`, `disabled`. `LdapUnavailable` is raised for connection,
-TLS and timeout failures and maps to the 503 in §4.
+`display_name`, `dn`, `group_dns`, `disabled`, `pwd_last_set` (for the refresh re-check) and,
+*as built*, `account_expires` (accountExpires; sign-in and refresh refuse an account past it).
+`authenticate` takes the objectGUID, not the typed login (sign-in step 1; the typed login only
+selects the imported account — plan decisions D1–D2). `LdapUnavailable` is raised for connection,
+TLS and timeout failures and maps to the 503 in §4. *As built:* its `reason` is one fixed code
+(`unreachable`, `timeout`, `tls`, `service_bind_rejected`, `protocol`), and `bind_attempted` says
+whether the typed password had reached the directory (the throttle in §7 Security counts only
+those).
 
 `Ldap3Directory` implements it with `ldap3` (pure Python; runs on the Windows dev machines and in
-the `python:3.12-slim` image without libldap). `ldap3` is synchronous, so every call goes through
-`asyncio.to_thread`. `FakeDirectory` (in `tests/`) implements the same protocol from an in-memory
-list and is what the unit tests use.
+the `python:3.12-slim` image without libldap). `ldap3` is synchronous. *As built,* instead of
+`asyncio.to_thread`: every call runs on the directory's own pool of **8 threads** (never
+asyncio's default executor), and is cut off after its deadline, `min(2 × LDAP_TIMEOUT_S, 12)` s,
+the wait for a free thread included — so a sign-in or a refresh answers within the deadline
+(at most 12 s, under the dashboard's 15 s). A call cut off keeps its thread until the socket
+timeouts end it, so the pool, not a semaphore, is the cap; a call the caller stopped waiting for
+never binds as the account afterwards. Administration calls (`lane`: search, group search, the
+import's lookups, the connection test) first take a place in the process's **admin lane**, a
+`BoundedSemaphore(3)`, waiting for it at most the deadline (then `timeout`, nothing sent), and
+keep it until their thread is done: administration never holds more than 3 of the 8 threads,
+sign-ins and refreshes keep 5, and an administration call answers within 2 × the deadline
+(20 s at the default `LDAP_TIMEOUT_S`). One import runs at most 2 lookups at once, so a search
+finds a lane place beside it. Sign-in, refresh and the four `/admin/ldap` routes that ask the
+directory give their database connection back to the pool before they do, and re-read what
+they need afterwards (plan decision D7, extended to administration). `FakeDirectory` (in
+`tests/`) implements the same protocol from an in-memory list and is what the unit tests use.
 
 ### Configuration (environment; secrets stay in `.env`)
 
 | Variable | Meaning |
 | --- | --- |
-| `LDAP_URL` | `ldaps://dc.example.local:636`. Unset = LDAP disabled: `/admin/ldap/*` returns 409 `Dizin yapılandırılmamış`, the UI hides the AD tab, and `auth_source = ldap` sign-ins return 503. |
+| `LDAP_URL` | `ldaps://dc.example.local:636`. Unset = LDAP disabled: `/admin/ldap/*` returns 409 `Dizin yapılandırılmamış`, the UI hides the AD tab, and `auth_source = ldap` sign-ins return 503. *As built:* `GET /admin/ldap/status` still answers 200 `configured: false` (the panel needs it to hide itself); a setting the API cannot use is logged and leaves LDAP off, never stops the API. |
 | `LDAP_CA_CERT` | CA bundle path for certificate verification. |
-| `LDAP_ALLOW_INSECURE` | `1` permits `ldap://` or unverified TLS, with a loud startup warning. Never in the pilot `.env`. |
+| `LDAP_ALLOW_INSECURE` | `1` permits `ldap://` or unverified TLS, with a loud startup warning. Never in the pilot `.env`. *As built:* with `LDAP_CA_CERT` given, `ldaps://` is still verified; only without one is verification off. |
 | `LDAP_BIND_DN`, `LDAP_BIND_PASSWORD` | Read-only service account used for searches. |
 | `LDAP_BASE_DN` | Search base. |
 | `LDAP_USER_FILTER` | Default `(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))` — people, not computers, not disabled. |
 | `LDAP_LOGIN_ATTRS` | Default `sAMAccountName,userPrincipalName,mail` — attributes a typed login is matched against. |
 | `LDAP_NESTED_GROUPS` | Default `1`: resolve `memberOf` through AD's chain matching rule (`1.2.840.113556.1.4.1941`) so membership in a nested group counts. |
-| `LDAP_TIMEOUT_S` | Default `5`. A hung directory must not hang the login endpoint. |
+| `LDAP_TIMEOUT_S` | Default `5`. A hung directory must not hang the login endpoint. *As built:* 1–10 s; the socket timeouts of each operation, and one call's deadline is `min(2 × LDAP_TIMEOUT_S, 12)` s (see Module). |
 
 ### Sign-in for an AD user
 
+*As built, before step 1:* a deactivated account (`inactive`) and an empty password are refused
+before the directory is asked, and so is an account with 3 failed binds in the last 15 minutes
+(429, §7 Security) — no bind, so no AD lockout count. The database connection is released
+while the directory answers, and the account is re-read afterwards (a deactivation made
+meanwhile is a 401).
+
 1. The service account searches by `objectGUID = external_id`. (Not by name: an account renamed
    or moved in AD must still be the same Homunculus user.) Not found → 401 and an audit line.
+   *As built:* the search applies `LDAP_USER_FILTER` too, so what it excludes cannot sign in or
+   refresh; under the default filter a disabled account is "not found".
 2. Bind as the found DN with the supplied password. `invalidCredentials` → 401. Anything else
    (`LdapUnavailable`) → 503.
 3. Read `displayName`, `mail`, `userPrincipalName`, `memberOf`, `userAccountControl`. A disabled
    account (`ACCOUNTDISABLE`) → 401; the local `is_active` flag is **not** changed automatically
    (an automatic off-boarding sync is a separate, scheduled slice — see out of scope).
+   *As built:* also `pwdLastSet` and `accountExpires`. A disabled account (a custom filter that
+   lets it through) or one past its `accountExpires` date is returned without a bind and refused:
+   401 `directory_disabled` / `directory_expired`. The typed login must name the account in a form
+   `LDAP_LOGIN_ATTRS` allows, else 401. `msDS-User-Account-Control-Computed` is deliberately not
+   read: its lockout bit at refresh would let anyone end a clinician's session by typing her name
+   with wrong passwords; a locked-out or password-expired account already fails the bind here.
 
 **Refresh for an AD account.** The credential fingerprint of an AD account covers only its TOTP
 secret (there is no local password hash), so it cannot notice a password change or a disabled
 account in AD. `/auth/refresh` for an `auth_source = ldap` user therefore reads the account by
 `objectGUID` with the service account: disabled (`ACCOUNTDISABLE`) or `pwdLastSet` later than the
-refresh token's `iat` → 401. If the directory is unreachable the refresh proceeds — the §4 outage
-decision (open sessions continue) — and the audit records `refresh.directory_unavailable`.
-4. Update `full_name`, `email`, `ldap_dn`.
+refresh token's `iat` → 401. *As built:* also `pwdLastSet = 0` ("must change at next logon"),
+`accountExpires` passed, and not found (deleted, moved out of `LDAP_BASE_DN`, excluded by the
+filter) → 401. The database's own checks (active, `sessions_revoked_at`, credential fingerprint)
+run first, so a token they refuse costs no directory call, and again after the directory has
+answered. When the account passes, the group sync of step 5 runs too (same function, same guard
+and audit), and the refreshed token is minted from the result, so a change of AD groups takes
+effect within one access-token lifetime (amendment to Plan 2, closing its gap 5). If the
+directory is unreachable the refresh proceeds without a sync — the §4 outage decision (open
+sessions continue) — and the audit records `refresh.directory_unavailable`. *As built:* only for
+the reasons `unreachable`, `timeout`, `tls` and `service_bind_rejected` (and LDAP not
+configured); any other directory failure (`protocol`: a reply about the account that cannot be
+read) is 503 with `refresh.directory_error` and no new tokens, so rights AD may have removed are
+not carried forward.
+4. Update `full_name`, `email`, `ldap_dn`. *As built:* an AD `mail` another account already uses
+   (or takes at the same moment) is not copied, and the sign-in still succeeds; the profile is
+   written after step 5 (every writer takes the tenant lock before an account's row).
 5. **Group sync:** `memberOf` (case-insensitive) ∩ `ldap_group_mappings` for the tenant → the set
    of target groups. The sync runs the §6 administrator guard: a removal that would leave the
    tenant without an administrator is skipped and audited (`ldap.sync.guarded`), never applied.
@@ -457,20 +518,49 @@ decision (open sessions continue) — and the audit records `refresh.directory_u
    back, so the profile update from step 4 survives.) The user's `source = ldap` rows are made equal to that set (rows added and
    removed); `source = manual` rows are untouched. If the set changed, an `admin/user.groups`
    audit event is written with `actor = ldap-sync` and `token_version` is bumped.
+   *As built:* DNs are compared in their canonical spelling (`canonical_dn`, §1), not
+   case-insensitively. The guard refuses only a removal that takes the tenant from some active
+   local administrators to none: in a tenant that already has none, removals apply (a WARNING
+   says the tenant needs one). The sync runs in the account's tenant, under the tenant's admin
+   lock taken before the savepoint, and decides again under it.
 6. Issue tokens as in §4.
 
-### Import and mapping (`users.manage`)
+### Import and mapping (`users.manage`; *as built:* mapping writes need the whole catalogue)
 
-- `GET /admin/ldap/status` → `{configured, url_host, last_test_at, last_test_ok}`.
+- `GET /admin/ldap/status` → `{configured, url_host, last_test_at, last_test_ok}`. *As built:*
+  the one `/admin/ldap` route that answers while LDAP is off (`configured: false`); the others are
+  409. A caller without `users.manage` gets 403 first, configured or not.
 - `POST /admin/ldap/test` → binds with the service account; 200 or the failure reason.
+  *As built:* 200 `{ok, reason, checked_at}` either way, `reason` one of the fixed codes.
 - `GET /admin/ldap/search?q=` → up to 50 `LdapIdentity` rows, each flagged `already_imported`.
+  *As built:* `q` is trimmed, then 2–64 characters.
 - `POST /admin/ldap/import {external_ids[], extra_group_ids[]}` → for each id: fetch by GUID,
   create the user (`auth_source = ldap`, `hashed_password = NULL`, `username = sAMAccountName`,
   `email = mail or NULL`, `full_name = displayName`), add the tenant membership, apply the group
   mapping as `ldap` rows and `extra_group_ids` as `manual` rows. Already-imported ids are reported
   as `skipped: exists`; the call is idempotent.
+  *As built:* at most 50 ids. Ids without an account are looked up before the tenant lock is
+  taken (through the admin lane, 2 at a time; a directory failure is 503 with nothing written);
+  then, under the lock, in one transaction, each account is skipped with a code — `exists`,
+  `not_found`, `disabled`, `expired` (accountExpires passed), `no_username`, `invalid_login`
+  (the lower-cased sAMAccountName breaks the local username rule, `a-z 0-9 . _ @ -`),
+  `login_taken` (already someone's username or e-mail) — or created. `username` is the
+  sAMAccountName lower-cased; a `mail` already in use is dropped. Each account is inserted in
+  its own savepoint: one imported by another tenant at the same moment is `skipped: exists`, a
+  user name taken meanwhile `login_taken`, and the rest of the batch goes on (an e-mail taken
+  meanwhile is the 409 for the whole request). The response and the
+  `ldap.import` audit rows are built from what was written, before the commit.
 - `GET /admin/ldap/groups?q=` → AD groups for the mapping picker.
 - `GET /admin/ldap/group-mappings`, `POST {ad_group_dn, group_id}`, `DELETE /{id}`.
+  *As built:* `POST` and `DELETE` need the whole catalogue (every permission key, through any
+  groups; 403 `AD grup eşlemesini yalnız tüm yetkilere sahip bir yönetici değiştirebilir`):
+  a row regroups every member of its AD group, which a user manager (§6) may not do. The DN is stored in
+  its canonical spelling (a value that is not a DN is 422); another spelling of a DN already
+  mapped to the group is 409. Creating a row changes nobody now: it applies at each user's next
+  sign-in or token refresh, and at import. Deleting one removes, at once, every `ldap`-sourced
+  row of that group in the tenant and bumps those users' token versions (someone entitled to the
+  group through another mapping gets it back at their next sign-in or refresh); the guard
+  refuses it (409) only when it takes the tenant from some local administrators to none.
 - **The §6 rule applies here too.**
   - Creating a mapping to a group, or an import that grants groups (mapped or
     `extra_group_ids`), needs each group's rights within the caller's.
@@ -489,10 +579,28 @@ decision (open sessions continue) — and the audit records `refresh.directory_u
 - Result sets are capped; searches require `users.manage`.
 - The TOTP secret of an AD user is stored in Homunculus like a local user's; the group MFA flag
   applies identically.
-- In Plan 2 the §6 guard is tightened: a tenant must keep at least one active administrator whose
+- (Done in Plan 1 already: `count_admins` counts local administrators only.) The §6 guard is tightened: a tenant must keep at least one active administrator whose
   `auth_source` is `local`, so an AD outage can never leave it with only administrators who cannot
   sign in. A local `hospital_admin` account therefore always exists, so an AD outage or a mapping mistake
   can be repaired from inside Homunculus.
+- *As built — a per-account AD bind throttle.* Every failed bind also counts toward the hospital
+  domain's lockout, so Homunculus must not be the way a clinician gets locked out of every
+  hospital system. After 3 failed binds in 15 minutes (a sliding window) an AD account's sign-in
+  is refused with 429 `Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin` without asking
+  the directory. Only an attempt whose password reached the directory counts; a successful
+  sign-in clears the count. In memory (one API process): a restart clears it. An administrator
+  may clear it with `POST /admin/users/{id}/unlock-sign-in {reason}` (§6), at most once per
+  account per 15 minutes and never for an account shared with another tenant or a platform
+  operator — so Homunculus makes at most 3 + 3 failed binds per account in 15 minutes, and the
+  domain's lockout threshold must be above that. This extends *Out of scope: login rate
+  limiting* for AD accounts only. A sliding window bounds a burst, not a slow run: one wrong
+  password every 5 minutes is never refused, while AD resets its count only after a quiet
+  "Reset account lockout counter after" period.
+- *As built — per address, at the edge.* nginx limits `POST /auth/login` to 10 a minute per
+  client address with a burst of 10 (429 as JSON `{"detail": …}`, `Retry-After: 60`, logged as a
+  warning), in front of the per-account throttle. Ward PCs behind one shared address (NAT,
+  terminal server) share that limit.
+- *As built — timing parity:* see §4 (dummy bcrypt on every AD 401, 0.5 s floor on every 401).
 
 ## 8. Dashboard
 
@@ -552,6 +660,9 @@ the project). `deploy/local/.env.example` and `docker-compose.yml` gain the comm
 **Startup checks.** Unknown permission keys in route guards fail import. If `LDAP_URL` is set,
 the API attempts one service-account bind at startup and logs the outcome — a warning, not a
 refusal to boot: local sign-in must keep working while the operator fixes the directory settings.
+*As built:* the bind runs in the background, so a hung domain controller never delays serving;
+an unusable `LDAP_*` setting (an `LDAP_USER_FILTER` that does not compile included) is logged as
+an ERROR naming the variable, never its value, and leaves LDAP off.
 
 ## 10. Testing
 
@@ -576,6 +687,10 @@ refusal to boot: local sign-in must keep working while the operator fixes the di
 - `@requires_ldap` integration test (skipped unless `LDAP_TEST_URL`, `LDAP_TEST_BIND_DN`,
   `LDAP_TEST_BIND_PASSWORD`, `LDAP_TEST_BASE_DN` are set): service-account bind, a search, and a
   deliberately failed user bind against the hospital directory. Read-only; run by hand on the VM.
+  *As built:* the failed bind is made as the service account, never a clinician (plan D16), and
+  two more checks catch what fails silently: `pwdLastSet` and `accountExpires` are readable, and a
+  member's group has the same canonical spelling in `memberOf` as in the group picker
+  (`tests/test_ldap_integration.py`; recipe in `docs/EDGE-BRIDGE-LOCAL.md`).
 
 **Frontend (Vitest).**
 
@@ -605,7 +720,9 @@ the `LDAP_*` configuration in §9, and the LDAP tests in §10.
   would let anyone lock a nurse out by typing her username, so it needs its own design). TOTP
   verification IS limited in Plan 1: 5 wrong codes lock that user's verification for 5 minutes and
   a used code cannot be replayed — without it, the password alone reached the MFA-protected groups
-  in minutes.
+  in minutes. *As built (Plan 2):* AD accounts have a per-account bind throttle, and nginx a
+  per-address limit on sign-in (§7 Security); local accounts and unknown logins have no
+  per-account limit (roadmap, user decision 11).
 - A session-revocation UI beyond deactivation.
 - Dropping the PostgreSQL `userrole` enum type and the `tenant_memberships.role` column.
 - The Infinity branch's `UserRole.BIOMEDICAL` reference: on merge it becomes
