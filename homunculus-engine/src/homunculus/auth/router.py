@@ -38,8 +38,8 @@ from homunculus.auth.dependencies import (
 from homunculus.auth.groups import tenant_of_user
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.ldap import (
-    DIRECTORY_DOWN, LdapIdentity, LdapUnavailable, account_expired, get_ldap, login_matches,
-    password_changed_since,
+    DEADLINE_CAP_S, DIRECTORY_DOWN, LdapIdentity, LdapUnavailable, account_expired, get_ldap,
+    login_matches, password_changed_since,
 )
 from homunculus.auth.ldap_sync import (
     LDAP_SYNC_ACTOR, SyncOutcome, apply_directory_profile, sync_ldap_groups,
@@ -194,11 +194,12 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
 
     A deactivated account is refused before the directory is asked (no bind, so no AD lockout
     count for an account Homunculus has switched off), and so is an account whose chain of
-    failed binds is full — 3, or 6 after an administrator's unlock — until 15 minutes pass with
-    no failed bind (429, `directory_binds`, counted as AD counts; ended by a successful sign-in)
-    — Homunculus must never be the way a clinician gets locked out of the hospital domain. The database
-    connection is released while the directory answers, so a slow domain controller cannot pin
-    the pool at shift change; the account is re-read afterwards (plan decisions D7, D8)."""
+    failed binds is full — 3, or 6 after an administrator's unlock — until 15 minutes pass
+    with no failed bind (429, `directory_binds`, counted as AD counts; a right password ends it
+    for the failures recorded before it began) — Homunculus must never be the way a clinician
+    gets locked out of the hospital domain. The database connection is released while the
+    directory answers, so a slow domain controller cannot pin the pool at shift change; the
+    account is re-read afterwards (plan decisions D7, D8)."""
     user_id, external_id = user.id, user.external_id
     if not user.is_active:
         raise await _directory_sign_in_refused(request, db, user_id, key, "inactive", password)
@@ -214,35 +215,44 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     # directory is not asked at all (auth/limits.py, directory_binds). Nothing may sit between
     # `begin` and the try below: the place it reserves must be released on every path.
     slot = str(user_id)
-    if not directory_binds.begin(slot):
+    ticket = directory_binds.begin(slot)
+    if ticket is None:
         await _login_failed(request, db, user_id, key, "throttled")
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                             detail=_DIRECTORY_THROTTLED)
     # An outage counts only when the password had reached the directory (`bind_attempted`):
     # a clinician retrying through a domain controller blip — the service bind cut off, the call
-    # queued — must not be refused for 15 minutes. A cancellation counts unless the directory
-    # marked it as made before that bind (Ldap3Directory does); anything else fails closed.
+    # queued — must not be refused for 15 minutes. A bind cut off while under way is dated as
+    # late as the domain controller may still count it (`bind_pending_s`). A cancellation counts
+    # unless the directory marked it as made before that bind (Ldap3Directory does); anything
+    # else fails closed, dated as late as the longest deadline.
     try:
         identity = await ldap.directory.authenticate(external_id, password)
     except LdapUnavailable as exc:
-        directory_binds.end(slot, failed=exc.bind_attempted)
+        directory_binds.end(slot, failed=exc.bind_attempted, pending_s=exc.bind_pending_s)
         await _login_failed(request, db, user_id, key, "directory_unavailable")
         raise _directory_down() from None
     except BaseException as exc:             # cancelled, or a fault: the bind may have been made
-        directory_binds.end(slot, failed=getattr(exc, "bind_attempted", True))
+        directory_binds.end(slot, failed=getattr(exc, "bind_attempted", True),
+                            pending_s=getattr(exc, "bind_pending_s", DEADLINE_CAP_S))
         raise
-    # None: a wrong password (or no such account, which made no bind — counted all the same).
-    directory_binds.end(slot, failed=identity is None)
     if identity is None:
-        refusal = "bad_credentials"
-    elif identity.disabled:
-        refusal = "directory_disabled"
-    elif account_expired(identity.account_expires, time.time()):
-        refusal = "directory_expired"
-    elif not login_matches(key, identity, ldap.login_attrs):
+        # A wrong password (or no such account, which made no bind — counted all the same).
+        directory_binds.end(slot, failed=True)
         refusal = "bad_credentials"
     else:
-        refusal = None
+        directory_binds.end(slot, failed=False)
+        if identity.disabled:                # returned without a bind: nothing for AD to count
+            refusal = "directory_disabled"
+        elif account_expired(identity.account_expires, time.time()):
+            refusal = "directory_expired"
+        else:
+            # The bind as the account succeeded, and AD reset its count then. Right after `end`,
+            # nothing awaited in between: the failures recorded while this attempt ran, which
+            # AD may count after that reset, stay in the chain (auth/limits.py, `succeeded`).
+            directory_binds.succeeded(slot, ticket)
+            refusal = (None if login_matches(key, identity, ldap.login_attrs)
+                       else "bad_credentials")
     if refusal is not None:
         raise await _directory_sign_in_refused(request, db, user_id, key, refusal, password)
     user = await get_user_by_id(db, user_id)
@@ -259,7 +269,6 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     profile = await apply_directory_profile(db, user, identity)
     mark_login(user)
     await db.commit()
-    directory_binds.succeeded(slot)
     if outcome is not None:
         _audit_sync(request, ref.slug, user_id, outcome)
     ctx = await build_context(db, user)

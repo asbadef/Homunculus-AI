@@ -67,12 +67,19 @@ class LdapUnavailable(Exception):
     `bind_attempted` is True when the outage came after the bind as the ACCOUNT (with the typed
     password) had started — AD may have counted it toward the account's lockout, so the sign-in
     throttle counts it too. False: the password was never sent (the service bind, a search, or
-    a call cut off before it got that far)."""
+    a call cut off before it got that far).
 
-    def __init__(self, reason: str, *, bind_attempted: bool = False) -> None:
+    `bind_pending_s`: for a call the caller stopped waiting for (its deadline) while that bind
+    was under way, how long from now the domain controller may still count it — the throttle
+    dates the failure that much later (`FailureChain.end`). 0 when the directory had answered
+    or the password was never sent."""
+
+    def __init__(self, reason: str, *, bind_attempted: bool = False,
+                 bind_pending_s: float = 0.0) -> None:
         super().__init__(reason)
         self.reason = reason
         self.bind_attempted = bind_attempted
+        self.bind_pending_s = bind_pending_s if bind_attempted else 0.0
 
 
 class LdapConfigError(ValueError):

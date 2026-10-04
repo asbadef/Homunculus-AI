@@ -8,27 +8,39 @@ An Active Directory account's password is checked by a bind, and every failed bi
 toward the hospital domain's own lockout. AD keeps an account's count of bad passwords until its
 "Reset account lockout counter after" period passes with NONE, measured from the last one — it
 does not let old failures age out one by one, so one wrong password every 5 minutes keeps the
-count growing. `FailureChain` (`directory_binds`) counts Homunculus' failed binds for one account
-the same way: a chain of failures lasts until DIRECTORY_BIND_WINDOW_S pass with no failed bind;
-once it holds 3, the sign-in is refused without a bind until then. An administrator may let 3
-more through, once per chain (`FailureChain.unlock`).
+count growing — or until a logon with the right password resets it. `FailureChain`
+(`directory_binds`) counts Homunculus' failed binds for one account the same way: a chain of
+failures lasts until DIRECTORY_BIND_WINDOW_S pass with no failed bind, or a right password ends
+it; once it holds 3, the sign-in is refused without a bind until then. An administrator may let
+3 more through, once per chain (`FailureChain.unlock`).
 
-The invariant: one chain holds at most 3 + 3 = 6 failed binds. If DIRECTORY_BIND_WINDOW_S is at
-least the domain's reset period, Homunculus' failed binds that AD counts in one run also fall in
-one chain, so Homunculus alone adds at most 6 to AD's count before it resets: the domain's
-lockout threshold must be at least 7. Other bad passwords for the same account — the clinician
-mistyping on a ward PC — count toward AD's counter too, and can keep it from resetting between
-two chains.
+The invariant: one chain holds at most 3 + 3 = 6 failed binds, and it holds every failed bind AD
+may still be counting:
+  * a failure is dated no earlier than the domain controller can have counted it — when it
+    answered, or, for a bind the caller stopped waiting for while it was under way, as late as
+    that bind may still be counted (`end`, `pending_s`);
+  * a right password forgets only the failures recorded before its attempt began (and dated
+    before then): those reached the domain controller before its bind, which reset AD's count.
+    The ones recorded since may have reached it after that reset, and AD counts them: they start
+    the next chain (`succeeded`, `Ticket`).
+If DIRECTORY_BIND_WINDOW_S is at least the domain's reset period, Homunculus' failed binds that
+AD counts in one run also fall in one chain, so Homunculus alone adds at most 6 to AD's count
+before it resets: the domain's lockout threshold must be at least 7. Other bad passwords for the
+same account — the clinician mistyping on a ward PC — count toward AD's counter too, and can keep
+it from resetting between two chains.
 
 In memory on purpose: the engine runs as a single process (one uvicorn worker), and a restart
-clearing the counters costs an attacker a restart they cannot trigger. More than one worker
-would need this moved to shared storage.
+clearing the counters costs an attacker a restart they cannot trigger. A restart is not free,
+though: one within DIRECTORY_BIND_WINDOW_S of failed binds starts every account afresh while AD
+may still hold up to 6 of them, so across a restart Homunculus can add 6 more — up to 12 in one
+of AD's runs. Deploy away from a burst of failed AD sign-ins (the runbook says how to look). More
+than one worker would need this moved to shared storage.
 """
 from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 class FailureLimiter:
@@ -68,13 +80,32 @@ class FailureLimiter:
         self._locked_until.pop(key, None)
 
 
+@dataclass(frozen=True)
+class Ticket:
+    """An attempt's place, as `begin` hands it out: how many failures the FailureChain had
+    recorded by then (every key counted) and its clock at that moment. `succeeded` reads it to
+    tell the failures that came before this attempt from those that may have come after."""
+    seq: int
+    at: float
+
+
+@dataclass(frozen=True)
+class _Failure:
+    seq: int                      # its place in the order failures were recorded (1, 2, ...)
+    at: float                     # the latest the domain controller may have counted it
+
+
 @dataclass
 class _Chain:
     allowed: int                  # failures this chain lets through: max_failures, + one unlock
-    failures: int = 0
-    last: float = 0.0             # when the latest failure was recorded
-    unlocked: bool = False        # this chain's one unlock has been given
+    failures: list[_Failure] = field(default_factory=list)
+    unlocked: bool = False        # the unlock is spent: given in this chain, or in the one its
+                                  # failures were carried over from (`succeeded`)
     running: int = 0              # attempts in flight
+
+    @property
+    def last(self) -> float:
+        return max(f.at for f in self.failures)
 
 
 @dataclass(frozen=True)
@@ -98,16 +129,20 @@ class FailureChain:
     in flight; the next attempt then starts a new one. A refused attempt is no failure and does
     not extend it.
 
-    An attempt reserves its place first (`begin`) and counts as a possible failure while it
-    runs: `begin` refuses once the chain's failures plus its attempts in flight reach what the
-    chain allows — `max_failures`, `max_failures` more after an `unlock` — so concurrent
-    requests cannot overshoot it, and one chain never holds more than 2 × `max_failures`. `end`
-    releases the place and records whether the attempt failed, in the chain it began in (an
-    attempt in flight keeps its chain alive); `succeeded` ends the chain.
+    An attempt reserves its place first (`begin`, which hands it a Ticket) and counts as a
+    possible failure while it runs: `begin` refuses once the chain's failures plus its attempts
+    in flight reach what the chain allows — `max_failures`, `max_failures` more after an
+    `unlock` — so concurrent requests cannot overshoot it, and one chain never holds more than
+    2 × `max_failures`. `end` releases the place and records whether the attempt failed, in the
+    key's current chain (an attempt in flight keeps its chain alive). `succeeded`, called right
+    after `end` for a right password, ends the chain for the failures that came before that
+    attempt began; those recorded since start the next one.
 
-    Times are recorded when an attempt ends, after the directory answered: the gap Homunculus
-    measures between two failures is never longer than the one the domain controller saw, so a
-    chain never ends before AD's count (with a reset period up to `quiet_seconds`) would."""
+    A failure is dated when its attempt ends, after the directory answered — or `pending_s`
+    later, when the caller stopped waiting while the bind was under way and the domain
+    controller may still count it: the gap Homunculus measures between two failures is never
+    longer than the one the domain controller saw, so a chain never ends before AD's count
+    (with a reset period up to `quiet_seconds`) would."""
 
     def __init__(self, *, max_failures: int, quiet_seconds: float,
                  clock: Callable[[], float] = time.monotonic) -> None:
@@ -115,55 +150,70 @@ class FailureChain:
         self.quiet_seconds = quiet_seconds
         self._clock = clock
         self._chains: dict[str, _Chain] = {}
+        self._recorded = 0                   # failures recorded so far, every key: Ticket.seq
 
     def _current(self, key: str) -> _Chain | None:
         """The key's chain, or None when it has none: never one, or it has gone quiet (it is
         forgotten then, so the table holds only chains still alive or in use)."""
         chain = self._chains.get(key)
         if chain is not None and chain.running == 0 and (
-                chain.failures == 0 or self._clock() - chain.last > self.quiet_seconds):
+                not chain.failures or self._clock() - chain.last > self.quiet_seconds):
             del self._chains[key]
             return None
         return chain
 
-    def begin(self, key: str) -> bool:
-        """Reserve a place for one attempt; False (try nothing) when the chain is full."""
+    def begin(self, key: str) -> Ticket | None:
+        """Reserve a place for one attempt: its Ticket, or None (try nothing) when the chain is
+        full."""
         chain = self._current(key)
         if chain is None:
             chain = self._chains[key] = _Chain(allowed=self.max_failures)
-        if chain.failures + chain.running >= chain.allowed:
-            return False
+        if len(chain.failures) + chain.running >= chain.allowed:
+            return None
         chain.running += 1
-        return True
+        return Ticket(seq=self._recorded, at=self._clock())
 
-    def end(self, key: str, *, failed: bool) -> None:
-        """Release the place `begin` reserved; a failed attempt is counted in the chain, from
-        now."""
+    def end(self, key: str, *, failed: bool, pending_s: float = 0.0) -> None:
+        """Release the place `begin` reserved; a failed attempt is counted in the chain, dated
+        now — or `pending_s` from now, for a bind the caller stopped waiting for while it was
+        under way: the domain controller has not answered it and may still count it."""
         chain = self._chains.get(key)
         if chain is None:                    # no `begin` before it: count it all the same
             chain = self._chains[key] = _Chain(allowed=self.max_failures)
         chain.running = max(0, chain.running - 1)
         if failed:
-            chain.failures += 1
-            chain.last = self._clock()
-        elif chain.failures == 0 and chain.running == 0:
+            self._recorded += 1
+            chain.failures.append(_Failure(self._recorded, self._clock() + max(0.0, pending_s)))
+        elif not chain.failures and chain.running == 0:
             del self._chains[key]
 
-    def succeeded(self, key: str) -> None:
-        """End the key's chain: the password was right. Attempts in flight keep their places,
-        in a new chain."""
+    def succeeded(self, key: str, ticket: Ticket) -> None:
+        """The attempt holding `ticket` had the right password: AD reset its count when that
+        bind reached the domain controller. Call it right after the attempt's `end`, with
+        nothing awaited in between.
+
+        The failures recorded before the ticket, and dated before it, came before that bind:
+        forgotten. The others — recorded while it ran, or a cut-off bind dated later
+        (`pending_s`) — may have reached the domain controller after it, and AD counts them:
+        they start the new chain, with their dates, and with the unlock spent if the old chain
+        had spent it. Attempts in flight keep their places, in the new chain."""
         chain = self._chains.pop(key, None)
-        if chain is not None and chain.running:
-            self._chains[key] = _Chain(allowed=self.max_failures, running=chain.running)
+        if chain is None:
+            return
+        kept = [f for f in chain.failures if f.seq > ticket.seq or f.at > ticket.at]
+        if kept or chain.running:
+            self._chains[key] = _Chain(allowed=self.max_failures, failures=kept,
+                                       unlocked=chain.unlocked and bool(kept),
+                                       running=chain.running)
 
     def unlock(self, key: str) -> Unlocked | None:
         """An administrator's unlock: `max_failures` more failed attempts in the key's current
         chain, once per chain. With no failure in the chain (no chain, one gone quiet, a local
         account) nothing is granted and the chain's unlock is not used (`granted` False). None
-        when this chain's unlock has been given already: refused, nothing changes. The chain
-        still ends only after a quiet period; attempts in flight keep their places."""
+        when this chain's unlock is spent: refused, nothing changes. The chain still ends only
+        after a quiet period; attempts in flight keep their places."""
         chain = self._current(key)
-        if chain is None or chain.failures == 0:
+        if chain is None or not chain.failures:
             allowed = chain.allowed if chain is not None else self.max_failures
             return Unlocked(failed=0, allowed_before=allowed, allowed_after=allowed)
         if chain.unlocked:
@@ -171,7 +221,7 @@ class FailureChain:
         before = chain.allowed
         chain.unlocked = True
         chain.allowed += self.max_failures
-        return Unlocked(failed=chain.failures, allowed_before=before,
+        return Unlocked(failed=len(chain.failures), allowed_before=before,
                         allowed_after=chain.allowed)
 
 

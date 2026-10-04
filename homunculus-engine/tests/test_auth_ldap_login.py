@@ -16,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from homunculus.auth import ldap_sync
 from homunculus.auth.groups import lock_admin_guard, set_manual_groups
 from homunculus.auth.jwt import decode_token
+from homunculus.auth.ldap import DEADLINE_CAP_S
+from homunculus.auth.limits import directory_binds
 from homunculus.auth.models import User
 from tests.conftest import requires_db
 from tests.fake_directory import (
@@ -504,6 +506,35 @@ async def test_a_successful_sign_in_resets_the_throttle(client, world):
     assert (await _login(c, "ayilmaz")).status_code == 200
 
 
+async def test_wrong_passwords_failing_while_the_right_one_is_checked_stay_counted(client, world):
+    """The clinician signs in — the directory slow to answer her — while two wrong passwords
+    for her account fail. Their binds may have reached the domain controller after hers, and
+    AD counts them after the reset her bind made: her success does not forget them. One more
+    wrong password reaches the directory, then 429."""
+    c, app = client
+    directory = world["directory"]
+    answer = directory.authenticate
+    asked, gate = asyncio.Event(), asyncio.Event()
+
+    async def slow_for_the_right_one(external_id, password):
+        if password == AD_PASSWORD:
+            asked.set()
+            await gate.wait()
+        return await answer(external_id, password)
+
+    directory.authenticate = slow_for_the_right_one
+    right = asyncio.create_task(_login(c, "ayilmaz"))
+    await asyncio.wait_for(asked.wait(), 5)
+    for _ in range(2):
+        assert (await _login(c, "ayilmaz", "Yanlis-Parola-9")).status_code == 401
+    assert (await _login(c, "ayilmaz", "Yanlis-Parola-9")).status_code == 429   # hers runs
+    gate.set()
+    assert (await right).status_code == 200
+    assert (await _login(c, "ayilmaz", "Yanlis-Parola-9")).status_code == 401
+    assert (await _login(c, "ayilmaz", "Yanlis-Parola-9")).status_code == 429
+    assert _binds(directory) == 4                    # hers and three wrong ones
+
+
 async def test_the_throttle_holds_against_concurrent_attempts(client, world):
     c, _ = client
     directory = world["directory"]
@@ -588,6 +619,64 @@ async def test_a_cancelled_sign_in_counts_only_when_the_password_was_sent(client
             await task
     del world["directory"].authenticate                   # the directory answers again
     assert (await _login(c, "ayilmaz")).status_code == (429 if counted else 200)
+
+
+def _record_ends(monkeypatch) -> list[tuple[bool, float]]:
+    """Every `directory_binds.end` the route makes, as (failed, pending_s)."""
+    ends: list[tuple[bool, float]] = []
+    end = directory_binds.end
+
+    def recording(key, *, failed, pending_s=0.0):
+        ends.append((failed, pending_s))
+        end(key, failed=failed, pending_s=pending_s)
+
+    monkeypatch.setattr(directory_binds, "end", recording)
+    return ends
+
+
+@pytest.mark.parametrize("reason, pending", [("timeout", True), ("protocol", False)])
+async def test_a_bind_cut_off_under_way_is_dated_as_late_as_the_dc_may_count_it(
+        client, world, monkeypatch, reason, pending):
+    """The deadline cut the bind as the account off once the password had been sent: the
+    domain controller has not answered and may still count it, up to a deadline later — the
+    failure is dated then (`bind_pending_s`), so the run lasts 15 minutes from that. A bind the
+    directory answered (an unexpected code) is dated when it answered."""
+    c, _ = client
+    ends = _record_ends(monkeypatch)
+    directory = world["directory"]
+    directory.unavailable, directory.outage_after_bind = reason, True
+    assert (await _login(c, "ayilmaz")).status_code == 503
+    assert ends == [(True, directory.deadline if pending else 0.0)]
+
+
+@pytest.mark.parametrize("marks, recorded", [
+    ({"bind_attempted": True, "bind_pending_s": 7.5}, (True, 7.5)),
+    ({"bind_attempted": False, "bind_pending_s": 0.0}, (False, 0.0)),
+    ({}, (True, DEADLINE_CAP_S)),            # unmarked: counted, as late as any deadline
+])
+async def test_a_cancelled_sign_in_is_dated_as_its_directory_marked_it(client, world,
+                                                                      monkeypatch, marks,
+                                                                      recorded):
+    c, _ = client
+    ends = _record_ends(monkeypatch)
+    entered = asyncio.Event()
+
+    async def hang(external_id, password):
+        entered.set()
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError as exc:
+            for name, value in marks.items():
+                setattr(exc, name, value)
+            raise
+
+    world["directory"].authenticate = hang
+    task = asyncio.create_task(_login(c, "ayilmaz"))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert ends == [recorded]
 
 
 async def test_another_ad_account_is_not_throttled(client, world, db_session):

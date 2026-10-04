@@ -25,7 +25,9 @@ Windows dev machines and in the python:3.12-slim image without libldap). Spec §
   * A call the caller stopped waiting for (its deadline, a cancellation) never binds as the
     account afterwards, and its outage says whether that bind had started
     (`LdapUnavailable.bind_attempted`, `_Attempt`): the sign-in throttle counts only a password
-    that reached the domain controller.
+    that reached the domain controller. When it had, the domain controller has not answered and
+    may still count it: the outage (or the cancellation) carries `bind_pending_s`, the
+    deadline, and the throttle dates the failure that much later.
   * Results are capped: `size_limit` on the server, and the slice here.
   * A group DN has one spelling for comparing (`canonical_dn`): the stored mapping and AD's
     memberOf are compared in it, whatever spacing, escaping or ASCII case either was written
@@ -442,8 +444,10 @@ class Ldap3Directory:
         the thread has finished (or the call never ran). So an administration call answers
         within 2 × the deadline, a sign-in or a refresh (no lane) within one. When the caller
         stops waiting (the deadline, a cancellation) `attempt` is given up: a bind as the
-        account not started yet never starts, and the outage — or the cancellation, as an
-        attribute — carries `bind_attempted`, for the sign-in throttle (auth/router.py)."""
+        account not started yet never starts, and the outage — or the cancellation, as
+        attributes — carries `bind_attempted` and, when it had started, `bind_pending_s` (the
+        deadline: how much later the domain controller may still count it), for the sign-in
+        throttle (auth/router.py)."""
         attempt = _Attempt() if attempt is None else attempt
         loop = asyncio.get_running_loop()
         if lane is not None:
@@ -470,7 +474,8 @@ class Ldap3Directory:
         except TimeoutError:
             sent = attempt.give_up()
             logger.warning("directory call cut off after %.1f s", self._deadline)
-            raise LdapUnavailable("timeout", bind_attempted=sent) from None
+            raise LdapUnavailable("timeout", bind_attempted=sent,
+                                  bind_pending_s=self._deadline) from None
         except asyncio.CancelledError as exc:
             sent = attempt.give_up()
             # Cancelled by `close` while queued, not by our own caller: an outage, not a crash.
@@ -478,6 +483,7 @@ class Ldap3Directory:
             if work.cancelled() and task is not None and not task.cancelling():
                 raise LdapUnavailable("unreachable") from None
             exc.bind_attempted = sent
+            exc.bind_pending_s = self._deadline if sent else 0.0
             raise
 
     # ---- the worker-thread side

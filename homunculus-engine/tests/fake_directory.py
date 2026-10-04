@@ -11,7 +11,8 @@ domain controller that is down would; a string names another reason (`timeout`, 
 By default such an outage came before any password was sent (the service bind, a search, a
 call cut off while queued: `bind_attempted` False); `outage_after_bind = True` makes the outage
 `authenticate` raises one that came once the bind as the account had started (a user bind cut
-off at the deadline: `bind_attempted` True, counted by the sign-in throttle).
+off at the deadline: `bind_attempted` True, counted by the sign-in throttle — and, for
+`timeout`, `bind_pending_s` = `deadline`, as Ldap3Directory marks a cut-off).
 `calls` records which method was asked about what — never a password.
 
 The admin lane is kept too: a call given a `lane` waits for a place in it before the "server"
@@ -141,9 +142,12 @@ class FakeDirectory:
             if lane is not None:
                 lane.release()
         if self.unavailable:
-            raise LdapUnavailable(self.unavailable if isinstance(self.unavailable, str)
-                                  else "unreachable",
-                                  bind_attempted=binds and self.outage_after_bind)
+            reason = self.unavailable if isinstance(self.unavailable, str) else "unreachable"
+            sent = binds and self.outage_after_bind
+            # A `timeout` once the bind had started is the deadline cutting it off: the domain
+            # controller may still count it up to a deadline later, as Ldap3Directory says.
+            raise LdapUnavailable(reason, bind_attempted=sent,
+                                  bind_pending_s=self.deadline if reason == "timeout" else 0.0)
 
     async def authenticate(self, external_id: str, password: str) -> LdapIdentity | None:
         if not password or not _is_guid(external_id):

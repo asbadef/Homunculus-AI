@@ -1051,7 +1051,7 @@ def _throttle_directly(user_id) -> str:
     """Three failed binds recorded for the account, as three wrong passwords would leave them."""
     key = str(user_id)
     for _ in range(3):
-        assert directory_binds.begin(key)
+        assert directory_binds.begin(key) is not None
         directory_binds.end(key, failed=True)
     return key
 
@@ -1120,7 +1120,7 @@ async def test_an_unlock_needs_a_one_line_reason(client, world, db_session, body
     res = await c.post(f"/admin/users/{world['account'].id}/unlock-sign-in", headers=admin,
                        json=body)
     assert res.status_code == 422, res.text
-    assert directory_binds.begin(key) is False                      # still throttled
+    assert directory_binds.begin(key) is None                       # still throttled
     assert audit_events(app, "admin", "user.sign_in_unlocked") == []
 
 
@@ -1155,7 +1155,7 @@ async def test_a_platform_operator_or_a_shared_account_is_not_unlocked_here(clie
         key = _throttle_directly(account.id)
         res = await _unlock(c, account.id, admin)
         assert (res.status_code, res.json()["detail"]) == (409, detail), account.username
-        assert directory_binds.begin(key) is False                  # still throttled
+        assert directory_binds.begin(key) is None                   # still throttled
     assert audit_events(app, "admin", "user.sign_in_unlocked") == []
 
 
@@ -1166,7 +1166,7 @@ async def test_an_administrator_may_unlock_their_own_sign_in(client, world, db_s
     admin = await bearer(db_session, world["admin"])
     key = _throttle_directly(world["admin"].id)
     assert (await _unlock(c, world["admin"].id, admin)).status_code == 200
-    assert directory_binds.begin(key) is True
+    assert directory_binds.begin(key) is not None
     directory_binds.end(key, failed=False)
 
 
@@ -1239,7 +1239,7 @@ async def test_another_tenants_account_is_not_found_and_stays_throttled(client, 
     missing = await _unlock(c, uuid.uuid4(), admin)
     assert theirs.status_code == 404
     assert (theirs.status_code, theirs.json()) == (missing.status_code, missing.json())
-    assert directory_binds.begin(key) is False
+    assert directory_binds.begin(key) is None
 
 
 async def test_a_caller_without_users_manage_cannot_unlock(client, world, db_session):

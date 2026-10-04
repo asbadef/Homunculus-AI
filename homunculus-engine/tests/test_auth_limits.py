@@ -2,11 +2,15 @@
 refusal, without a database."""
 from __future__ import annotations
 
+import heapq
+import itertools
+import random
+
 import pyotp
 
 from homunculus.auth.limits import (
-    DIRECTORY_BIND_MAX_FAILURES, DIRECTORY_BIND_WINDOW_S, FailureChain, FailureLimiter, Unlocked,
-    directory_binds,
+    DIRECTORY_BIND_MAX_FAILURES, DIRECTORY_BIND_WINDOW_S, FailureChain, FailureLimiter, Ticket,
+    Unlocked, directory_binds,
 )
 from homunculus.auth.totp import accepted_step
 
@@ -93,7 +97,7 @@ def _chain(clock: FakeClock) -> FailureChain:
 
 
 def _fail(chain: FailureChain, key: str = "u") -> None:
-    assert chain.begin(key) is True
+    assert chain.begin(key) is not None
     chain.end(key, failed=True)
 
 
@@ -103,7 +107,7 @@ def test_three_failures_in_a_chain_refuse_the_next_attempt():
     for _ in range(3):
         _fail(chain)
         clock.t += 60
-    assert chain.begin("u") is False
+    assert chain.begin("u") is None
 
 
 def test_the_refusal_lasts_until_the_quiet_period_after_the_last_failure():
@@ -116,13 +120,13 @@ def test_the_refusal_lasts_until_the_quiet_period_after_the_last_failure():
         _fail(chain)
         clock.t += 100                      # failures at 1000, 1100, 1200
     clock.t = 1000 + 900                    # the first failure is 15 minutes old...
-    assert chain.begin("u") is False        # ...and the chain still holds
+    assert chain.begin("u") is None        # ...and the chain still holds
     clock.t = 1200 + 900
-    assert chain.begin("u") is False        # exactly 15 minutes of quiet is not more
+    assert chain.begin("u") is None        # exactly 15 minutes of quiet is not more
     clock.t = 1200 + 901
     for _ in range(3):                      # a new chain: three more
         _fail(chain)
-    assert chain.begin("u") is False
+    assert chain.begin("u") is None
 
 
 def test_a_refusal_is_not_a_failure_and_does_not_extend_the_chain():
@@ -133,9 +137,9 @@ def test_a_refusal_is_not_a_failure_and_does_not_extend_the_chain():
         _fail(chain)
     for _ in range(9):
         clock.t += 100
-        assert chain.begin("u") is False    # refused every 100 s for 900 s
+        assert chain.begin("u") is None    # refused every 100 s for 900 s
     clock.t += 1
-    assert chain.begin("u") is True
+    assert chain.begin("u") is not None
 
 
 def test_failures_further_apart_than_the_quiet_period_never_refuse():
@@ -149,10 +153,10 @@ def test_failures_further_apart_than_the_quiet_period_never_refuse():
 def test_attempts_in_flight_count_so_concurrent_requests_cannot_overshoot():
     chain = _chain(FakeClock())
     _fail(chain)
-    assert chain.begin("u") is True and chain.begin("u") is True    # two running at once
-    assert chain.begin("u") is False                                 # 1 failure + 2 running
+    assert chain.begin("u") is not None and chain.begin("u") is not None    # two running at once
+    assert chain.begin("u") is None                                 # 1 failure + 2 running
     chain.end("u", failed=False)
-    assert chain.begin("u") is True
+    assert chain.begin("u") is not None
 
 
 def test_an_attempt_in_flight_keeps_its_chain_alive():
@@ -162,37 +166,171 @@ def test_an_attempt_in_flight_keeps_its_chain_alive():
     chain = _chain(clock)
     _fail(chain)
     _fail(chain)
-    assert chain.begin("u") is True
+    assert chain.begin("u") is not None
     clock.t += 2000                         # past the quiet period, the attempt still running
     chain.end("u", failed=True)
-    assert chain.begin("u") is False        # three in one chain
+    assert chain.begin("u") is None        # three in one chain
 
 
 def test_an_attempt_that_did_not_fail_releases_its_place_without_counting():
     chain = _chain(FakeClock())
     for _ in range(5):
-        assert chain.begin("u") is True
+        assert chain.begin("u") is not None
         chain.end("u", failed=False)
     _fail(chain)
     _fail(chain)
-    assert chain.begin("u") is True
+    assert chain.begin("u") is not None
+
+
+def _succeed(chain: FailureChain, key: str = "u") -> None:
+    """A sign-in with the right password, as the route records it: `end`, then `succeeded`
+    with the attempt's own ticket, nothing in between."""
+    ticket = chain.begin(key)
+    assert ticket is not None
+    chain.end(key, failed=False)
+    chain.succeeded(key, ticket)
 
 
 def test_a_success_ends_the_chain():
-    chain = _chain(FakeClock())
+    clock = FakeClock()
+    chain = _chain(clock)
     _fail(chain)
     _fail(chain)
-    chain.succeeded("u")
+    clock.t += 1
+    _succeed(chain)
     _fail(chain)
     _fail(chain)
-    assert chain.begin("u") is True
+    assert chain.begin("u") is not None
+
+
+def test_failures_recorded_while_a_right_password_was_checked_stay_counted():
+    """B, the clinician with the right password, begins; while the directory checks it two
+    wrong passwords for her account (C, D) fail — their binds may reach the domain controller
+    after B's, and AD counts what comes after its reset — then B succeeds. Forgetting C and D
+    let three more through, and with an unlock three more again: 8 in AD's count since B. They
+    start the new chain instead: one more, then refused; with that chain's unlock three more —
+    6 since B's bind."""
+    clock = FakeClock()
+    chain = _chain(clock)
+    b = chain.begin("u")
+    clock.t += 0.1
+    assert chain.begin("u") is not None and chain.begin("u") is not None   # C, D in flight
+    assert chain.begin("u") is None                  # B holds a place: 0 + 3 running
+    clock.t += 0.1
+    chain.end("u", failed=True)                      # C
+    chain.end("u", failed=True)                      # D
+    clock.t += 0.1
+    chain.end("u", failed=False)                     # B: the right password
+    chain.succeeded("u", b)
+    _fail(chain)                                     # C, D + 1: AD's count since B is 3
+    assert chain.begin("u") is None
+    assert chain.unlock("u") == Unlocked(failed=3, allowed_before=3, allowed_after=6)
+    for _ in range(3):
+        _fail(chain)
+    assert chain.begin("u") is None                  # 6 since B's reset, and no more
+
+
+def test_failures_recorded_before_the_right_password_began_are_forgotten():
+    """They reached the domain controller before B's bind, which reset AD's count."""
+    clock = FakeClock()
+    chain = _chain(clock)
+    _fail(chain)
+    _fail(chain)
+    clock.t += 1
+    _succeed(chain)
+    for _ in range(3):
+        _fail(chain)
+    assert chain.begin("u") is None
+
+
+def test_a_success_keeps_a_spent_unlock_spent_for_the_failures_it_keeps():
+    """Three failures, the chain's unlock, then B begins and two more fail while it runs: the
+    new chain holds those two, and its unlock is already spent — no second 3 + 3 run on the
+    back of a sign-in."""
+    clock = FakeClock()
+    chain = _chain(clock)
+    for _ in range(3):
+        _fail(chain)
+    assert chain.unlock("u").granted
+    b = chain.begin("u")
+    clock.t += 0.1
+    _fail(chain)
+    _fail(chain)
+    clock.t += 0.1
+    chain.end("u", failed=False)
+    chain.succeeded("u", b)
+    _fail(chain)
+    assert chain.begin("u") is None
+    assert chain.unlock("u") is None
+
+
+def test_a_success_with_nothing_kept_starts_afresh_with_its_unlock():
+    clock = FakeClock()
+    chain = _chain(clock)
+    for _ in range(3):
+        _fail(chain)
+    assert chain.unlock("u").granted
+    clock.t += 1
+    _succeed(chain)
+    for _ in range(3):
+        _fail(chain)
+    assert chain.unlock("u").granted                 # a new chain, a new unlock
+
+
+def test_a_success_leaves_attempts_in_flight_their_places():
+    clock = FakeClock()
+    chain = _chain(clock)
+    b = chain.begin("u")
+    assert chain.begin("u") is not None              # C, still running when B succeeds
+    chain.end("u", failed=False)
+    chain.succeeded("u", b)
+    assert chain.begin("u") is not None and chain.begin("u") is not None
+    assert chain.begin("u") is None                  # C + 2 running
+    for _ in range(3):
+        chain.end("u", failed=True)                  # all three fail, in the new chain
+    assert chain.begin("u") is None
+
+
+def test_a_bind_cut_off_while_under_way_is_dated_as_late_as_it_can_arrive():
+    """The caller stopped waiting (its deadline) after the password had been sent: the domain
+    controller has not answered and may still count it. The chain dates it `pending_s` on, so
+    it ends no sooner than 15 minutes after that."""
+    clock = FakeClock()
+    chain = _chain(clock)
+    _fail(chain)
+    _fail(chain)
+    assert chain.begin("u") is not None
+    chain.end("u", failed=True, pending_s=10)        # cut off at 1000: dated 1010
+    clock.t = 1000 + 901
+    assert chain.begin("u") is None                  # 901 s after the cut-off: still held
+    clock.t = 1010 + 901
+    assert chain.begin("u") is not None
+
+
+def test_a_success_keeps_a_cut_off_bind_that_may_arrive_after_its_own():
+    """A bind cut off at 1000 may still reach the domain controller until 1010 — after the
+    right password that began at 1005 had reset AD's count: it stays counted. One that could
+    arrive only before that sign-in began is forgotten with the rest."""
+    for began, kept in ((1005, True), (1011, False)):
+        clock = FakeClock()
+        chain = _chain(clock)
+        assert chain.begin("u") is not None
+        chain.end("u", failed=True, pending_s=10)
+        clock.t = began
+        b = chain.begin("u")
+        clock.t += 0.5
+        chain.end("u", failed=False)
+        chain.succeeded("u", b)
+        _fail(chain)
+        _fail(chain)
+        assert (chain.begin("u") is None) is kept, began
 
 
 def test_chain_keys_are_independent():
     chain = _chain(FakeClock())
     for _ in range(3):
         _fail(chain, "a")
-    assert chain.begin("a") is False and chain.begin("b") is True
+    assert chain.begin("a") is None and chain.begin("b") is not None
 
 
 def test_an_unlock_lets_three_more_through_once_per_chain():
@@ -208,9 +346,9 @@ def test_an_unlock_lets_three_more_through_once_per_chain():
     assert unlocked.granted is True
     for _ in range(3):
         _fail(chain)
-    assert chain.begin("u") is False
+    assert chain.begin("u") is None
     assert chain.unlock("u") is None
-    assert chain.begin("u") is False
+    assert chain.begin("u") is None
 
 
 def test_an_unlock_does_not_end_the_chain():
@@ -225,9 +363,9 @@ def test_an_unlock_does_not_end_the_chain():
     for _ in range(3):
         _fail(chain)
         clock.t += 600                      # gaps of 10 minutes: one chain throughout
-    assert chain.begin("u") is False and chain.unlock("u") is None
+    assert chain.begin("u") is None and chain.unlock("u") is None
     clock.t += 301                          # 901 s after the last failure
-    assert chain.begin("u") is True
+    assert chain.begin("u") is not None
     chain.end("u", failed=True)
     assert chain.unlock("u").failed == 1    # a new chain, a new unlock
 
@@ -242,7 +380,7 @@ def test_an_unlock_with_nothing_to_clear_grants_nothing_and_uses_nothing():
     assert chain.unlock("u") == nothing and nothing.granted is False
     for _ in range(3):
         _fail(chain)
-    assert chain.begin("u") is False        # the empty unlock granted nothing
+    assert chain.begin("u") is None        # the empty unlock granted nothing
     assert chain.unlock("u").granted        # and did not use the chain's unlock
     clock.t += 901
     assert chain.unlock("u") == nothing     # that chain has gone quiet
@@ -253,11 +391,11 @@ def test_an_unlock_leaves_attempts_in_flight_their_places():
     chain = _chain(FakeClock())
     _fail(chain)
     _fail(chain)
-    assert chain.begin("u") is True                              # in flight
+    assert chain.begin("u") is not None                              # in flight
     assert chain.unlock("u").failed == 2
     for _ in range(3):
-        assert chain.begin("u") is True                          # 2 + 1 running + 3 = 6
-    assert chain.begin("u") is False
+        assert chain.begin("u") is not None                          # 2 + 1 running + 3 = 6
+    assert chain.begin("u") is None
 
 
 def _against_ad(*, every_s: float, ad_reset_s: float, unlock: bool,
@@ -316,6 +454,107 @@ def test_no_pace_of_wrong_passwords_brings_ad_past_six():
                                                unlock=unlock)
                 assert longest <= (6 if unlock else 3), (every_s, ad_reset_s, unlock)
                 assert peak <= longest, (every_s, ad_reset_s, unlock)
+
+
+# --- the right password racing wrong ones, against AD's own count ------------------------------
+
+class _Forgetful(FailureChain):
+    """The chain as it was before: a success forgot every failure, those recorded while the
+    right password was being checked included. Kept here to show the race below is real."""
+
+    def succeeded(self, key: str, ticket: Ticket) -> None:
+        super().succeeded(key, Ticket(seq=10**12, at=float("inf")))
+
+
+DEADLINE_S = 10.0
+
+
+def _race_against_ad(chain_type: type[FailureChain], *, seed: int, unlock: bool,
+                     ad_reset_s: float, hours: float = 3) -> int:
+    """Wrong passwords for one account every 2-30 s, the clinician's right one every 1-15
+    minutes and, with `unlock`, an administrator unlocking every minute — as often as the
+    throttle lets each through. Every bind reaches the domain controller after a random delay
+    and is answered after another (the right password's answer up to 8 s later: the route's
+    work after the bind); one wrong password in seven is cut off at the deadline while under
+    way, and reaches the DC up to one deadline after that. Events run in time order on one
+    clock, through the real route's calls. The domain's counter as AD keeps it: a bad password
+    counts when it reaches the DC — after a reset when the previous one is more than
+    `ad_reset_s` older — and a right one resets it then. Returns AD's highest count."""
+    rng = random.Random(seed)
+    clock = FakeClock()
+    clock.t = 0.0
+    chain = chain_type(max_failures=DIRECTORY_BIND_MAX_FAILURES,
+                       quiet_seconds=DIRECTORY_BIND_WINDOW_S, clock=clock)
+    events: list[tuple[float, int, tuple]] = []
+    order = itertools.count()
+
+    def at(t: float, *event) -> None:
+        heapq.heappush(events, (t, next(order), event))
+
+    end = hours * 3600
+    for kind, low, high in (("wrong", 2, 30), ("right", 60, 900), ("unlock", 60, 60)):
+        if kind == "unlock" and not unlock:
+            continue
+        t = rng.uniform(0, high)
+        while t < end:
+            at(t, kind)
+            t += rng.uniform(low, high)
+    count = peak = 0
+    last_bad: float | None = None
+    while events:
+        clock.t, _, event = heapq.heappop(events)
+        kind = event[0]
+        if kind == "wrong" and (ticket := chain.begin("u")) is not None:
+            if rng.random() < 1 / 7:                 # cut off at the deadline, bind under way
+                at(clock.t + rng.uniform(0.01, 2 * DEADLINE_S), "bad_reaches")
+                at(clock.t + DEADLINE_S, "failed", DEADLINE_S)
+            else:
+                reach = clock.t + rng.uniform(0.01, 3)
+                at(reach, "bad_reaches")
+                at(reach + rng.uniform(0.01, 3), "failed", 0.0)
+        elif kind == "right" and (ticket := chain.begin("u")) is not None:
+            reach = clock.t + rng.uniform(0.01, 3)
+            at(reach, "good_reaches")
+            at(reach + rng.uniform(0.01, 8), "succeeded", ticket)
+        elif kind == "unlock":
+            chain.unlock("u")
+        elif kind == "failed":
+            chain.end("u", failed=True, pending_s=event[1])
+        elif kind == "succeeded":
+            chain.end("u", failed=False)
+            chain.succeeded("u", event[1])
+        elif kind == "bad_reaches":
+            if last_bad is not None and clock.t - last_bad > ad_reset_s:
+                count = 0
+            count += 1
+            last_bad = clock.t
+            peak = max(peak, count)
+        elif kind == "good_reaches":
+            count = 0
+    return peak
+
+
+def test_a_right_password_racing_wrong_ones_never_brings_ad_past_six():
+    """With the clinician's own sign-ins in the mix, the bound holds as AD counts: 3 since its
+    last reset without an unlock, 3 + 3 with one, for any domain reset period up to the quiet
+    period — because the failures recorded while a right password was being checked (and a
+    cut-off bind dated as late as it can arrive) stay in the chain."""
+    for seed in range(12):
+        for ad_reset_s in (60, 600, DIRECTORY_BIND_WINDOW_S):
+            for unlock in (False, True):
+                peak = _race_against_ad(FailureChain, seed=seed, unlock=unlock,
+                                        ad_reset_s=ad_reset_s)
+                assert peak <= (6 if unlock else 3), (seed, ad_reset_s, unlock, peak)
+
+
+def test_the_race_is_real_a_success_that_forgot_everything_let_ad_past_six():
+    """The same runs against a chain that forgot every failure at a success: AD's count went
+    past the bound — the race the success ticket closes."""
+    peaks = {unlock: max(_race_against_ad(_Forgetful, seed=seed, unlock=unlock,
+                                          ad_reset_s=DIRECTORY_BIND_WINDOW_S)
+                         for seed in range(12))
+             for unlock in (False, True)}
+    assert peaks[False] > 3 and peaks[True] > 6, peaks
 
 
 def test_the_directory_throttle_stays_below_a_typical_ad_lockout():

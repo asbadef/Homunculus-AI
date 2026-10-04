@@ -838,6 +838,7 @@ async def test_a_call_cut_off_before_the_bind_as_the_account_never_makes_it():
     with pytest.raises(LdapUnavailable) as err:
         await directory.authenticate(GUID, USER_PW)
     assert (err.value.reason, err.value.bind_attempted) == ("timeout", False)
+    assert err.value.bind_pending_s == 0.0               # nothing for AD to count later
     await _idle(directory)
     assert _bound_as(script) == [SVC_DN] and len(script.searches) == 1
 
@@ -866,12 +867,14 @@ async def test_a_call_cut_off_while_queued_sent_no_password_and_never_runs():
 
 async def test_a_call_cut_off_during_the_bind_as_the_account_says_the_password_was_sent():
     """AD may count that bind toward the account's lockout whatever its outcome: so does the
-    sign-in throttle."""
+    sign-in throttle — dated a deadline later (`bind_pending_s`), since the domain controller
+    has not answered and may count it then."""
     script = Script(([_entry()], 0))
     directory = _directory_over(_slow_as(USER_DN, script, 0.3), deadline_s=0.1)
     with pytest.raises(LdapUnavailable) as err:
         await directory.authenticate(GUID, USER_PW)
     assert (err.value.reason, err.value.bind_attempted) == ("timeout", True)
+    assert err.value.bind_pending_s == 0.1
     await _idle(directory)
 
 
@@ -895,6 +898,7 @@ async def test_a_user_bind_answered_with_an_unexpected_code_sent_the_password():
     with pytest.raises(LdapUnavailable) as err:
         await _directory(script).authenticate(GUID, "Yanlis-1")
     assert (err.value.reason, err.value.bind_attempted) == ("protocol", True)
+    assert err.value.bind_pending_s == 0.0               # answered: dated when it ended
 
 
 async def test_a_search_failure_before_the_bind_sent_no_password():
@@ -928,7 +932,8 @@ async def test_a_cancelled_sign_in_says_whether_the_password_had_been_sent(slow_
     with pytest.raises(asyncio.CancelledError):
         await task
     await _idle(directory)
-    assert [exc.bind_attempted for exc in caught] == [sent]
+    assert [(exc.bind_attempted, exc.bind_pending_s) for exc in caught] == [
+        (sent, 5 if sent else 0.0)]
     assert (USER_DN in _bound_as(script)) is sent
 
 
