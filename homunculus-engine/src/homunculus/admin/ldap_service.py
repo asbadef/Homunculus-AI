@@ -11,7 +11,8 @@ desk that may not regroup a nurse directly must not regroup every nurse through 
 pool its rights with theirs. Reading it needs `users.manage`, as every /admin/ldap route.
 
 It borrows `admin/service.py`'s private helpers (`_within`, `_grantable`, `_rights_by_user`,
-`_union`, `_flush`) on purpose: one implementation of the rights rule, not two."""
+`_union`, `_flush`) on purpose: one implementation of the rights rule, not two — and
+`admin/schemas.py`'s `_USERNAME`, the one username rule."""
 from __future__ import annotations
 
 import asyncio
@@ -24,6 +25,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from homunculus.admin.schemas import _USERNAME
 from homunculus.admin.service import (
     LAST_ADMIN, LOGIN_TAKEN, UNKNOWN_GROUP, Actor, AdminError, _flush, _grantable,
     _rights_by_user, _union, _within, get_group, group_rights,
@@ -95,7 +97,7 @@ SKIP_DISABLED = "disabled"
 SKIP_EXPIRED = "expired"
 SKIP_LOGIN_TAKEN = "login_taken"
 SKIP_NO_USERNAME = "no_username"
-_USERNAME_MAX = 128    # users.username
+SKIP_INVALID_LOGIN = "invalid_login"
 _EMAIL_MAX = 254       # users.email
 _NAME_MAX = 200        # users.full_name
 
@@ -126,7 +128,10 @@ async def import_users(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
 
     An account disabled in AD, or past its end date (accountExpires — how HR often off-boards,
     and the default LDAP_USER_FILTER lets it through), could never sign in: it is skipped
-    (`disabled`, `expired`), not created."""
+    (`disabled`, `expired`), not created. So is one whose sAMAccountName, through
+    `normalize_login`, breaks the rule every local username follows (`admin/schemas.py`
+    `_USERNAME`: a-z 0-9 . _ @ -, 2-128) — a Turkish letter the fold leaves (`ş`), or a
+    look-alike from another script that would read as someone else's name: `invalid_login`."""
     await _grantable(db, tenant_id, actor, extra_group_ids)
     existing = await imported_ids(db, external_ids)
     now = time.time()
@@ -146,8 +151,11 @@ async def import_users(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
             report.skipped.append((external_id, SKIP_EXPIRED))
             continue
         username = normalize_login(identity.username)
-        if not username or len(username) > _USERNAME_MAX:
+        if not username:
             report.skipped.append((external_id, SKIP_NO_USERNAME))
+            continue
+        if not _USERNAME.fullmatch(username):
+            report.skipped.append((external_id, SKIP_INVALID_LOGIN))
             continue
         if await login_in_use(db, username):
             report.skipped.append((external_id, SKIP_LOGIN_TAKEN))

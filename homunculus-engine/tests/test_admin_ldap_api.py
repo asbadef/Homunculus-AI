@@ -253,6 +253,30 @@ async def test_an_account_past_its_ad_end_date_is_skipped_like_a_disabled_one(cl
         == ["sonra", "daima"]
 
 
+async def test_an_ad_name_outside_the_local_username_rule_is_skipped(client, world, db_session):
+    """The imported username is the sAMAccountName through `normalize_login`, and must then
+    follow the rule every local username does (a-z 0-9 . _ @ -, 2-128): `Yıldız` folds to
+    `yildiz` and is imported, as it signs in; `Işıl` keeps its `ş`; and `Аdmin`, whose first
+    letter is Cyrillic, would be an account that reads as `admin` — both are
+    `skipped: invalid_login`, with nothing written for them."""
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    directory = world["directory"]
+    folded = directory.add(person("Yıldız")).identity
+    turkish = directory.add(person("Işıl", groups=(group_dn("YB-Hemsire"),))).identity
+    homoglyph = directory.add(person("Аdmin")).identity
+    ids = [folded.external_id, turkish.external_id, homoglyph.external_id]
+    res = await c.post("/admin/ldap/import", headers=admin, json={"external_ids": ids})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert [r["username"] for r in body["imported"]] == ["yildiz"]
+    assert body["skipped"] == [{"external_id": turkish.external_id, "reason": "invalid_login"},
+                               {"external_id": homoglyph.external_id, "reason": "invalid_login"}]
+    assert await _imported(db_session, turkish.external_id, homoglyph.external_id) == 0
+    assert [r.payload["after"]["username"] for r in audit_events(app, "admin", "ldap.import")] \
+        == ["yildiz"]
+
+
 async def test_a_user_desk_imports_only_within_its_rights(client, world, db_session):
     c, _ = client
     desk = await bearer(db_session, world["desk"])

@@ -218,7 +218,8 @@ class LdapImportedOut(BaseModel):
 
 class LdapSkippedOut(BaseModel):
     external_id: str
-    reason: str          # exists | not_found | disabled | expired | login_taken | no_username
+    # exists | not_found | disabled | expired | login_taken | no_username | invalid_login
+    reason: str
 
 
 class LdapImportOut(BaseModel):
