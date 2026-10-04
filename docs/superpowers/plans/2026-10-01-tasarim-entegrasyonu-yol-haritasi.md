@@ -120,6 +120,10 @@ Kapanış düzeltmeleriyle (`f5abde8` test hesabı tohumu, `1e7b11b` iki metin):
 7. Etki alanı hesap kilitleme politikası (eşik ve sıfırlama süresi) — eşik en az 6 olmalı:
    Homunculus hesap başına 15 dk'da en çok 3 hatalı bağlanma yapar, yöneticinin kilit açması
    (hesap başına 15 dk'da bir) 3 tane daha getirir: 3 + 3
+8. Etki alanındaki sAMAccountName'ler ASCII mi? (ş/ç/ğ/ö/ü içeren adlar `invalid_login` ile
+   içe aktarılamaz)
+9. Adında `#` veya `=` geçen AD grupları var mı? (ldap3'ün DN çözümleyicisi kaçışsız `#`/`=`
+   kabul etmez; eşleme 422 verir)
 
 ## Grup 1 kabul ölçütleri (Dalga 0 incelemesinden)
 
@@ -298,6 +302,13 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - İçe aktarma dizini beklerken bir veritabanı bağlantısı tutuyor → ✅ F5'te çözüldü: dizine
   soran dört yönetici ucu (test, arama, gruplar, içe aktarma) bağlantıyı önce havuza geri
   verir; başarısız girişin alt sınır beklemesi de bağlantısız yapılır.
+- AD grup eşlemesi grubun DN'iyle anahtarlanıyor: grup AD'de yeniden adlandırılır ya da başka
+  bir OU'ya taşınırsa eşleme sessizce kopar (üyeler eşlenen grubu bir sonraki girişte ya da
+  yenilemede kaybeder). Eşlemeyi grubun objectGUID'i ya da SID'iyle anahtarlamak → Grup 4
+- DN'ler yalnız ASCII harfleri küçültülerek karşılaştırılıyor (F5): AD'nin kendisi `Ş`/`ş` gibi
+  harfleri eşit sayar, Homunculus saymaz. Eşleme grup seçiciden yapıldığında AD'nin yazımı
+  birebir gelir; elle yazılan bir DN'de ASCII dışı harflerin büyük/küçük yazımı AD'dekiyle aynı
+  olmalı. → G1-14 (AD paneli bunu göz önünde tutmalı)
 
 ## Dalga 1B'den açık kalanlar
 
