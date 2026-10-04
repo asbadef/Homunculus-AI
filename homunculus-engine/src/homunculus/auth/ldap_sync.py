@@ -2,7 +2,8 @@
 profile as AD has it now, and its AD-mapped groups.
 
   apply_directory_profile   full_name, email, ldap_dn from AD (plan decision D11)
-  mapped_group_ids          the tenant's groups these AD group DNs map to
+  mapped_group_ids          the tenant's groups these AD group DNs map to (DNs compared in
+                            their canonical spelling, `dn_key`)
   sync_ldap_groups          make the account's `ldap` rows equal to the mapping; `manual` rows
                             are never touched (plan decision D10)
   login_in_use              whether a value is already some account's username or e-mail
@@ -28,6 +29,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 
 from homunculus.auth.groups import bump_user, count_admins, groups_of, lock_admin_guard
 from homunculus.auth.ldap import LdapIdentity
+from homunculus.auth.ldap3_directory import canonical_dn
 from homunculus.auth.models import SOURCE_LDAP, Group, LdapGroupMapping, User, UserGroup
 from homunculus.auth.service import normalize_login
 
@@ -38,9 +40,15 @@ _EMAIL_MAX = 254       # users.email
 _NAME_MAX = 200        # users.full_name
 
 
-def normalise_dn(dn: str) -> str:
-    """How a DN is stored in `ldap_group_mappings` and compared: trimmed, lower-cased."""
-    return dn.strip().lower()
+def dn_key(dn: str | None) -> str | None:
+    """A group DN in the spelling mappings are stored and compared in (`canonical_dn`), or None
+    when it is not a DN: it maps to nothing (a mapping cannot be created for one)."""
+    if not dn:
+        return None
+    try:
+        return canonical_dn(dn)
+    except ValueError:
+        return None
 
 
 async def login_in_use(db: AsyncSession, value: str, *,
@@ -103,13 +111,17 @@ async def _copy_email(db: AsyncSession, user: User, mail: str) -> bool:
 
 async def mapped_group_ids(db: AsyncSession, tenant_id: uuid.UUID,
                            group_dns: Iterable[str]) -> set[uuid.UUID]:
-    """The tenant's groups that these AD group DNs map to (DNs compared lower-cased)."""
-    dns = {normalise_dn(dn) for dn in group_dns if dn and dn.strip()}
-    if not dns:
+    """The tenant's groups that these AD group DNs map to. Both sides are compared in their
+    canonical spelling (`dn_key`) — the stored DNs too, at read time, so a row written before
+    DNs were canonicalised (lower-cased only) still matches without a migration. The tenant's
+    rows are read first: with none, AD's list is not parsed at all."""
+    rows = (await db.execute(
+        select(LdapGroupMapping.ad_group_dn, LdapGroupMapping.group_id)
+        .where(LdapGroupMapping.tenant_id == tenant_id))).all()
+    if not rows:
         return set()
-    rows = await db.execute(select(LdapGroupMapping.group_id).where(
-        LdapGroupMapping.tenant_id == tenant_id, LdapGroupMapping.ad_group_dn.in_(dns)))
-    return set(rows.scalars().all())
+    held = {key for key in map(dn_key, group_dns) if key is not None}
+    return {group_id for dn, group_id in rows if dn_key(dn) in held}
 
 
 @dataclass(frozen=True)

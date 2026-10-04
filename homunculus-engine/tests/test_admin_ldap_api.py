@@ -397,6 +397,50 @@ async def test_a_mapping_is_stored_once_with_its_dn_lowercased(client, world, db
         {"ad_group_dn": "cn=yb-eczaci,ou=gruplar,dc=hastane,dc=local", "group": "pharmacist"}]
 
 
+async def test_a_mapping_dn_is_stored_in_its_canonical_spelling(client, world, db_session):
+    """Spacing, escaping and case never make one AD group two rows: the DN is stored canonical
+    (`canonical_dn`, as the sign-in compares AD's memberOf), and another spelling of a mapped DN
+    is the 409 duplicate — a row stored before canonicalisation included."""
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    pharmacist, nurse = world["groups"]["pharmacist"].id, world["groups"]["nurse"].id
+    res = await c.post("/admin/ldap/group-mappings", headers=admin, json={
+        "ad_group_dn": r"CN=Eczane\2C Göğüs Cerrahisi, OU=Gruplar, DC=hastane, DC=local",
+        "group_id": str(pharmacist)})
+    assert res.status_code == 201, res.text
+    assert res.json()["ad_group_dn"] == (
+        r"cn=eczane\, göğüs cerrahisi,ou=gruplar,dc=hastane,dc=local")
+    again = await c.post("/admin/ldap/group-mappings", headers=admin, json={
+        "ad_group_dn": r"cn=ECZANE\, GÖĞÜS CERRAHISI,ou=Gruplar,dc=HASTANE,dc=LOCAL",
+        "group_id": str(pharmacist)})
+    assert (again.status_code, again.json()["detail"]) == (409, "Bu AD grubu bu gruba zaten eşlenmiş")
+    db_session.add(LdapGroupMapping(tenant_id=world["tenant"].id, group_id=nurse,
+                                    ad_group_dn="cn=yb-eski, ou=gruplar, dc=hastane, dc=local"))
+    await db_session.commit()
+    legacy = await c.post("/admin/ldap/group-mappings", headers=admin, json={
+        "ad_group_dn": group_dn("YB-Eski"), "group_id": str(nurse)})
+    assert (legacy.status_code, legacy.json()["detail"]) == (409, "Bu AD grubu bu gruba zaten eşlenmiş")
+
+
+@pytest.mark.parametrize("dn", [
+    "CN=a\x00b,DC=x", r"CN=a\00b,DC=x", "CN=a\nb,DC=x", "CN=a,b", "CN=x,,DC=y", "CN=,DC=x",
+    r"CN=a\zb,DC=x", "CN=YB-Yeni;DC=x",
+])
+async def test_a_mapping_dn_that_is_not_one_is_a_422(client, world, db_session, dn):
+    """A malformed DN, or one carrying a control character (NUL included, raw or escaped — the
+    database would refuse it with a 500), is refused by the body's validator, field by field."""
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    before = await _mapping_rows(db_session)
+    res = await c.post("/admin/ldap/group-mappings", headers=admin, json={
+        "ad_group_dn": dn, "group_id": str(world["groups"]["pharmacist"].id)})
+    assert res.status_code == 422, res.text
+    [error] = res.json()["detail"]
+    assert (error["loc"][-1], error["type"]) == ("ad_group_dn", "value_error")
+    assert "ad_group_dn must be a distinguished name" in error["msg"]
+    assert await _mapping_rows(db_session) == before
+
+
 async def test_deleting_a_mapping_takes_the_rights_it_gave_away_now(client, world, db_session):
     c, app = client
     admin = await bearer(db_session, world["admin"])

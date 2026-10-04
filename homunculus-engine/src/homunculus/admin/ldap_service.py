@@ -30,9 +30,8 @@ from homunculus.admin.service import (
 )
 from homunculus.auth.groups import count_admins, lock_admin_guard, set_manual_groups
 from homunculus.auth.ldap import LdapIdentity, LdapRuntime, LdapUnavailable, account_expired
-from homunculus.auth.ldap_sync import (
-    login_in_use, mapped_group_ids, normalise_dn, sync_ldap_groups,
-)
+from homunculus.auth.ldap3_directory import canonical_dn
+from homunculus.auth.ldap_sync import dn_key, login_in_use, mapped_group_ids, sync_ldap_groups
 from homunculus.auth.models import (
     AUTH_LDAP, SOURCE_LDAP, Group, LdapGroupMapping, TenantMembership, User, UserGroup,
 )
@@ -199,21 +198,24 @@ async def list_mappings(db: AsyncSession,
 
 async def create_mapping(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor, *,
                          ad_group_dn: str, group_id: uuid.UUID) -> tuple[LdapGroupMapping, Group]:
-    """AD group (DN, stored and compared lower-case) → this tenant's group. Only a full
-    administrator (403 otherwise). The group must be this tenant's (422, as for any group named
-    in a body) and within the caller's rights (403). It changes nobody now: each account picks
-    it up at its next sign-in or token refresh, and at import."""
+    """AD group (DN) → this tenant's group. Only a full administrator (403 otherwise). The group
+    must be this tenant's (422, as for any group named in a body) and within the caller's rights
+    (403). The DN is stored in its canonical spelling (`canonical_dn`, what the sign-in compares
+    AD's memberOf in; the body's validator has already refused a value that is not a DN), and
+    another spelling of a DN already mapped to the group — a row stored before DNs were
+    canonicalised included — is the 409 duplicate. It changes nobody now: each account picks it
+    up at its next sign-in or token refresh, and at import."""
     _full_administrator(actor)
     group = (await db.execute(select(Group).where(
         Group.id == group_id, Group.tenant_id == tenant_id))).scalar_one_or_none()
     if group is None:
         raise AdminError(422, UNKNOWN_GROUP)
     _within(actor, group_rights(group))
-    dn = normalise_dn(ad_group_dn)
-    taken = (await db.execute(select(LdapGroupMapping.id).where(
-        LdapGroupMapping.tenant_id == tenant_id, LdapGroupMapping.ad_group_dn == dn,
-        LdapGroupMapping.group_id == group.id))).first()
-    if taken is not None:
+    dn = canonical_dn(ad_group_dn)
+    mapped = (await db.execute(select(LdapGroupMapping.ad_group_dn).where(
+        LdapGroupMapping.tenant_id == tenant_id, LdapGroupMapping.group_id == group.id)
+    )).scalars().all()
+    if any(dn_key(stored) == dn for stored in mapped):
         raise AdminError(409, MAPPING_EXISTS)
     mapping = LdapGroupMapping(tenant_id=tenant_id, ad_group_dn=dn, group_id=group.id,
                                created_by_id=actor.id)

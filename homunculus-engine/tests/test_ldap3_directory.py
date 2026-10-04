@@ -20,7 +20,8 @@ from homunculus.auth.ldap import (
 )
 from homunculus.auth.ldap3_directory import (
     GROUP_LIMIT, SEARCH_ATTRIBUTES, SLOTS, USER_ATTRIBUTES, Ldap3Directory, _wire_filter,
-    escape_guid, failure_reason, group_search_filter, guid_lookup_filter, ldap_from_env,
+    canonical_dn, escape_guid, failure_reason, group_search_filter, guid_lookup_filter,
+    ldap_from_env,
     nested_groups_filter, parse_group_entry, parse_user_entry, tls_for, user_search_filter,
 )
 
@@ -169,6 +170,42 @@ def test_a_group_entry():
     assert parse_group_entry(entry) == LdapGroup(entry["dn"], "YB-Hekim")
     assert parse_group_entry({"dn": "CN=X,DC=y", "raw_attributes": {}}).name == "CN=X,DC=y"
     assert parse_group_entry({"dn": "", "raw_attributes": {}}) is None
+
+
+# ---------------------------------------------------------------- DNs
+@pytest.mark.parametrize("spellings, canonical", [
+    (["CN=X, OU=Y", "cn=x,ou=y", " CN = X ,  OU = Y ", "cN=x,Ou=Y"], "cn=x,ou=y"),
+    # One comma, three spellings: `\,`, `\2C`, `\2c`.
+    ([r"CN=Yılmaz\, Ayşe,DC=x", r"CN=Yılmaz\2C Ayşe,DC=x", r"cn=YıLMAZ\2c AYŞE, dc=X"],
+     r"cn=yılmaz\, ayşe,dc=x"),
+    # Hex pairs are UTF-8; a character that needs no escape loses its backslash.
+    ([r"CN=Ay\C5\9Fe,DC=x", "CN=Ayşe,DC=x", r"CN=\41y\c5\9fe,DC=x"], "cn=ayşe,dc=x"),
+    # What must stay escaped, does — AD's special characters anywhere (ldap3 refuses them
+    # bare), a leading or trailing space.
+    ([r"CN=a\2Bb\3Dc\3B\22\3C\3E\5C\23,DC=x"], r"cn=a\+b\=c\;\"\<\>\\\#,dc=x"),
+    ([r"CN=\#a,DC=x", r"CN=\23a,DC=x"], r"cn=\#a,dc=x"),
+    ([r"CN=\ a\ ,DC=x", r"CN=\20a\20,DC=x", r"CN=\ a\20 ,DC=x"], r"cn=\ a\ ,dc=x"),
+    (["CN=a+OU=b,DC=x"], "cn=a+ou=b,dc=x"),
+])
+def test_a_dn_has_one_canonical_spelling(spellings, canonical):
+    """How a mapping is stored and how AD's memberOf values are compared with it: spacing,
+    escaping and case never make the same group two."""
+    for spelling in spellings:
+        assert canonical_dn(spelling) == canonical, spelling
+    assert canonical_dn(canonical) == canonical
+
+
+@pytest.mark.parametrize("dn", [
+    "", "   ", "yb", "=x", "1CN=x", "CN=,DC=x", "CN=a,b", "CN=x,,DC=y", "CN=x,DC=y,",
+    r"CN=a\zb,DC=x", "CN=a;b,DC=x", "<GUID=6b29fc40-ca47-1067-b31d-00dd010662da>",
+    "CN=a\x00b,DC=x", r"CN=a\00b,DC=x", "CN=a\nb,DC=x", r"CN=a\0Ab,DC=x", "CN=a\x7fb,DC=x",
+    r"CN=a\FF,DC=x", "CN=a\ud800,DC=x",
+])
+def test_what_is_not_a_dn_or_carries_a_control_character_is_refused(dn):
+    """Malformed (RFC 4514, as ldap3 parses it), or a control character — NUL included, raw or
+    escaped — or an escape that is not UTF-8: ValueError, never a value to store or compare."""
+    with pytest.raises(ValueError):
+        canonical_dn(dn)
 
 
 # ---------------------------------------------------------------- failures

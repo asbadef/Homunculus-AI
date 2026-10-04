@@ -43,6 +43,7 @@ from homunculus.auth.groups import ensure_default_groups, set_manual_groups
 from homunculus.auth.ldap import (
     LdapGroup, LdapIdentity, LdapRuntime, LdapUnavailable, account_expired,
 )
+from homunculus.auth.ldap3_directory import canonical_dn
 from homunculus.auth.models import (
     AUTH_LDAP, Group, LdapGroupMapping, TenantMembership, User, UserGroup,
 )
@@ -187,8 +188,8 @@ TENANT_SLUG = "demo-hastanesi"
 
 async def add_mapping(db: AsyncSession, tenant_id: uuid.UUID, ad_group_dn: str,
                       group: Group) -> LdapGroupMapping:
-    """A mapping row as the admin API writes it: the DN lower-cased."""
-    mapping = LdapGroupMapping(tenant_id=tenant_id, ad_group_dn=ad_group_dn.strip().lower(),
+    """A mapping row as the admin API writes it: the DN in its canonical spelling."""
+    mapping = LdapGroupMapping(tenant_id=tenant_id, ad_group_dn=canonical_dn(ad_group_dn),
                                group_id=group.id)
     db.add(mapping)
     await db.flush()

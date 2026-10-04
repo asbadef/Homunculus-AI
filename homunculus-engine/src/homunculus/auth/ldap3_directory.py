@@ -21,6 +21,8 @@ Windows dev machines and in the python:3.12-slim image without libldap). Spec §
     (`LdapUnavailable.bind_attempted`, `_Attempt`): the sign-in throttle counts only a password
     that reached the domain controller.
   * Results are capped: `size_limit` on the server, and the slice here.
+  * A group DN has one spelling for comparing (`canonical_dn`): the stored mapping and AD's
+    memberOf are compared in it, whatever spacing, escaping or case either was written in.
   * A network or TLS failure becomes LdapUnavailable(reason); a wrong password is None.
   * The clinician's password goes to one bind. It is not kept, logged or put into an
     exception; an empty one never reaches the server (an empty simple bind is anonymous).
@@ -32,8 +34,10 @@ import logging
 import math
 import os
 import ssl
+import string
 import threading
 import time
+import unicodedata
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -42,8 +46,8 @@ from typing import Any
 from ldap3 import AUTO_BIND_NONE, SIMPLE, SUBTREE, Connection, Server, Tls
 from ldap3 import NONE as NO_SERVER_INFO
 from ldap3.core.exceptions import (
-    LDAPCertificateError, LDAPCommunicationError, LDAPException, LDAPResponseTimeoutError,
-    LDAPSocketOpenError, LDAPSSLConfigurationError, LDAPStartTLSError,
+    LDAPCertificateError, LDAPCommunicationError, LDAPException, LDAPInvalidDnError,
+    LDAPResponseTimeoutError, LDAPSocketOpenError, LDAPSSLConfigurationError, LDAPStartTLSError,
 )
 from ldap3.core.results import (
     RESULT_INVALID_CREDENTIALS, RESULT_SIZE_LIMIT_EXCEEDED, RESULT_SUCCESS,
@@ -51,6 +55,7 @@ from ldap3.core.results import (
 )
 from ldap3.operation.search import compile_filter, parse_filter
 from ldap3.utils.conv import escape_filter_chars
+from ldap3.utils.dn import parse_dn
 
 from homunculus.auth.ldap import (
     LdapConfig, LdapConfigError, LdapGroup, LdapIdentity, LdapRuntime, LdapUnavailable,
@@ -96,6 +101,86 @@ def group_search_filter(query: str) -> str:
 
 def nested_groups_filter(user_dn: str) -> str:
     return f"(&(objectClass=group)(member:{IN_CHAIN}:={escape_filter_chars(user_dn)}))"
+
+
+# ---------------------------------------------------------------- DNs (pure)
+# AD's special characters in a DN value. ldap3's parser refuses each of them bare (AD writes
+# them escaped), so they are written escaped here too, wherever they stand.
+_DN_SPECIAL = frozenset('\\,+"<>;=#')
+
+
+def canonical_dn(dn: str) -> str:
+    r"""The one spelling a distinguished name is stored and compared in (`ldap_group_mappings`
+    against AD's memberOf): ldap3's parser splits and checks it (RFC 4514); spaces around `=`
+    and the separators go; every escape is resolved — `\,`, `\2C` and `\2c` are one comma, hex
+    pairs are UTF-8 — and written back the one way (`_escape_dn_value`); then lower-cased, as AD
+    compares DNs. Idempotent. ValueError when it is not a DN, or carries a control character
+    (NUL included, raw or escaped) or an escape that is not UTF-8: nothing to store or match."""
+    if _has_control(dn):
+        raise ValueError("control character in a DN")
+    try:
+        parts = parse_dn(_hex_escaped_spaces(dn.strip()), escape=False, strip=True)
+    except LDAPInvalidDnError:
+        raise ValueError("not a distinguished name") from None
+    out = []
+    for attribute_type, value, separator in parts:
+        text = _unescape_dn_value(value)
+        if _has_control(text):
+            raise ValueError("control character in a DN")
+        out.append(f"{attribute_type}={_escape_dn_value(text)}{separator}")
+    return "".join(out).lower()
+
+
+def _has_control(text: str) -> bool:
+    return any(unicodedata.category(ch) == "Cc" for ch in text)
+
+
+def _hex_escaped_spaces(dn: str) -> str:
+    r"""Every escaped space `\ ` written `\20`: ldap3 strips a value's outer spaces BEFORE it
+    reads the escapes, which would cut a trailing `\ ` in half. Escapes are read in pairs, so
+    `\\` followed by a bare space stays as it is."""
+    out: list[str] = []
+    i = 0
+    while i < len(dn):
+        pair = dn[i:i + 2]
+        if pair[0] == "\\" and len(pair) == 2:
+            out.append("\\20" if pair == "\\ " else pair)
+            i += 2
+        else:
+            out.append(dn[i])
+            i += 1
+    return "".join(out)
+
+
+def _unescape_dn_value(value: str) -> str:
+    r"""A value as ldap3's parser returns it (escapes still in, already checked) as plain text:
+    `\xx` is one byte, `\c` is `c`; the bytes are UTF-8 (UnicodeDecodeError is a ValueError)."""
+    raw = bytearray()
+    i = 0
+    while i < len(value):
+        ch = value[i]
+        if ch == "\\":
+            pair = value[i + 1:i + 3]
+            if len(pair) == 2 and all(c in string.hexdigits for c in pair):
+                raw.append(int(pair, 16))
+                i += 3
+                continue
+            if i + 1 >= len(value):
+                raise ValueError("a DN value ends in a bare backslash")
+            ch = value[i + 1]
+            i += 1
+        raw += ch.encode("utf-8")              # a lone surrogate: UnicodeEncodeError
+        i += 1
+    return raw.decode("utf-8")
+
+
+def _escape_dn_value(text: str) -> str:
+    escaped = "".join(f"\\{ch}" if ch in _DN_SPECIAL else ch for ch in text)
+    if escaped.startswith(" "):
+        escaped = "\\" + escaped
+    if escaped.endswith(" ") and not escaped.endswith("\\ "):
+        escaped = escaped[:-1] + "\\ "
+    return escaped
 
 
 # ---------------------------------------------------------------- entries (pure)

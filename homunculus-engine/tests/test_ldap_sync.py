@@ -13,7 +13,9 @@ from sqlalchemy import update
 
 from homunculus.auth.groups import ensure_default_groups, set_manual_groups
 from homunculus.auth.ldap_sync import apply_directory_profile, mapped_group_ids, sync_ldap_groups
-from homunculus.auth.models import SOURCE_LDAP, SOURCE_MANUAL, TenantMembership, User, UserGroup
+from homunculus.auth.models import (
+    SOURCE_LDAP, SOURCE_MANUAL, LdapGroupMapping, TenantMembership, User, UserGroup,
+)
 from homunculus.auth.service import hash_password
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
@@ -34,6 +36,26 @@ async def test_the_mapping_reads_dns_whatever_their_case(world, db_session):
         {world["groups"]["nurse"].id}
     assert await mapped_group_ids(db_session, tid, ["CN=Baska,DC=x"]) == set()
     assert await mapped_group_ids(db_session, tid, []) == set()
+
+
+async def test_the_mapping_reads_dns_whatever_their_spelling(world, db_session):
+    r"""AD's memberOf values and the stored mappings are compared in one canonical spelling
+    (`canonical_dn`): spacing after a comma, escapes (`\,` or `\2C`, `-` or `\2d`) and case make
+    no difference. A row stored before that (lower-cased only, spaces kept) still matches, and
+    a value that is not a DN maps to nothing without stopping the others."""
+    tid, g = world["tenant"].id, world["groups"]
+    for spelling in ("CN=YB-Hemsire, OU=Gruplar, DC=hastane, DC=local",
+                     r"cn=yb\2dhemsire,ou=gruplar,dc=hastane,dc=local",
+                     "  CN = YB-HEMSIRE ,OU=Gruplar,DC=HASTANE,DC=LOCAL "):
+        assert await mapped_group_ids(db_session, tid, [spelling]) == {g["nurse"].id}, spelling
+    db_session.add(LdapGroupMapping(
+        tenant_id=tid, ad_group_dn=r"cn=yılmaz\2c ekibi, ou=gruplar, dc=hastane, dc=local",
+        group_id=g["pharmacist"].id))
+    await db_session.flush()
+    assert await mapped_group_ids(db_session, tid, [
+        r"CN=Yılmaz\, Ekibi,OU=Gruplar,DC=hastane,DC=local"]) == {g["pharmacist"].id}
+    assert await mapped_group_ids(db_session, tid, [
+        "CN=a,b", "CN=a\x00b,DC=x", "", group_dn("YB-Hekim")]) == {g["physician"].id}
 
 
 async def test_mapped_groups_arrive_as_directory_rows_and_retire_old_tokens(world, db_session):

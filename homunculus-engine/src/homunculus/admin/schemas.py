@@ -15,6 +15,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from homunculus.auth.ldap3_directory import canonical_dn
 from homunculus.auth.service import normalize_login
 
 _SLUG = re.compile(r"[a-z0-9_]{2,64}")
@@ -232,10 +233,13 @@ class LdapMappingIn(BaseModel):
     @field_validator("ad_group_dn")
     @classmethod
     def _looks_like_a_dn(cls, value: str) -> str:
-        value = value.strip()
-        if "=" not in value:
-            raise ValueError("ad_group_dn must be a distinguished name (CN=…,DC=…)")
-        return value
+        """The DN in its canonical spelling (`canonical_dn`: how it is stored and compared).
+        Malformed, or carrying a control character (NUL included, which the database would
+        refuse with a 500), it is this 422."""
+        try:
+            return canonical_dn(value)
+        except ValueError:
+            raise ValueError("ad_group_dn must be a distinguished name (CN=…,DC=…)") from None
 
 
 class LdapMappingOut(BaseModel):
