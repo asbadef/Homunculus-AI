@@ -7,7 +7,9 @@ the password. `FailureLimiter` locks a key (the user id) after a run of consecut
 An Active Directory account's password is checked by a bind, and every failed bind also counts
 toward the hospital domain's own lockout. `AttemptWindow` caps the failed binds Homunculus makes
 for one account (`directory_binds`), so its sign-in page cannot be used to lock a clinician out
-of the domain — every hospital system at once.
+of the domain — every hospital system at once. An administrator may clear that cap, once per
+account per window (`Cooldown`, `sign_in_unlocks`): each unlock lets 3 more failed binds through,
+so the most Homunculus makes for one account in 15 minutes is 3 + 3.
 
 In memory on purpose: the engine runs as a single process (one uvicorn worker), and a restart
 clearing the counters costs an attacker a restart they cannot trigger. More than one worker
@@ -110,6 +112,29 @@ class AttemptWindow:
         return recent
 
 
+class Cooldown:
+    """At most one action per key within any `seconds`: `take` says whether one may happen now
+    and, if so, starts the key's window. A refusal does not restart it. Keys whose window has
+    passed are forgotten, so the table holds only the actions of the last `seconds`."""
+
+    def __init__(self, *, seconds: float, clock: Callable[[], float] = time.monotonic) -> None:
+        self.seconds = seconds
+        self._clock = clock
+        self._last: dict[str, float] = {}
+
+    def take(self, key: str) -> bool:
+        now = self._clock()
+        self._last = {k: t for k, t in self._last.items() if now - t < self.seconds}
+        if key in self._last:
+            return False
+        self._last[key] = now
+        return True
+
+    def keys(self) -> set[str]:
+        """The keys still cooling down (for tests)."""
+        return set(self._last)
+
+
 # Wrong TOTP codes, keyed by user id.
 totp_failures = FailureLimiter(max_failures=5, lock_seconds=300)
 
@@ -123,3 +148,11 @@ DIRECTORY_BIND_MAX_FAILURES = 3
 DIRECTORY_BIND_WINDOW_S = 15 * 60
 directory_binds = AttemptWindow(max_failures=DIRECTORY_BIND_MAX_FAILURES,
                                 window_seconds=DIRECTORY_BIND_WINDOW_S)
+
+# Administrators' unlocks of that throttle (POST /admin/users/{id}/unlock-sign-in), keyed by the
+# same user id: one per account per window, so an unlock — by mistake, by a hijacked
+# administrator session, or one per hospital for a shared account — cannot become a way round
+# the cap. With it Homunculus makes at most 3 + 3 failed binds per account in 15 minutes; the
+# domain's lockout threshold must stay above that. The refusal (admin/service.py,
+# UNLOCK_COOLDOWN) says "15 dakika": keep it in step.
+sign_in_unlocks = Cooldown(seconds=DIRECTORY_BIND_WINDOW_S)

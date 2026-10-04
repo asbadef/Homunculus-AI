@@ -68,7 +68,7 @@ from homunculus.auth.groups import (
     GroupError, bump_group_members, bump_user, count_admins, lock_admin_guard, set_manual_groups,
     summarize,
 )
-from homunculus.auth.limits import directory_binds
+from homunculus.auth.limits import directory_binds, sign_in_unlocks
 from homunculus.auth.models import (
     AUTH_LOCAL, Group, GroupPermission, LdapGroupMapping, TenantMembership, User, UserGroup,
 )
@@ -93,6 +93,8 @@ SHARED_ACCOUNT = ("Bu hesap başka bir kurumda da etkin; parola, MFA, e-posta, a
 SELF_CREDENTIALS = ("Kendi parolanızı veya MFA'nızı buradan sıfırlayamazsınız; parola için "
                     "Hesabım > Parola değiştir'i kullanın")
 SELF_DEACTIVATE = "Kendi hesabınızı pasifleştiremezsiniz"
+# One unlock per account per DIRECTORY_BIND_WINDOW_S (auth/limits.py, sign_in_unlocks): "15".
+UNLOCK_COOLDOWN = "Bu hesabın girişi kısa süre önce açıldı; 15 dakika sonra tekrar deneyin"
 NOT_AUTHENTICATED = "Invalid or missing authentication credentials"
 TOKEN_VERSION = "token_version"
 
@@ -533,10 +535,19 @@ async def unlock_sign_in(db: AsyncSession, tenant_id: uuid.UUID, user: User,
                          actor: Actor) -> int:
     """Clear the account's AD sign-in throttle (`auth.limits.directory_binds`: 3 failed binds
     in 15 minutes): its next sign-in goes to the directory again. Within the caller's rights,
-    as every action on a user. Nothing in the database changes, and the domain's own lockout is
-    AD's business. Returns how many failed sign-ins were cleared (0 for a local account)."""
+    as every action on a user. Not for a platform operator or an account shared with another
+    tenant (409, as a password or MFA reset): the throttle is the account's, not this
+    hospital's. Oneself is allowed — an unlock hands nothing over, the next sign-in still needs
+    the password. At most once per account per window (409 UNLOCK_COOLDOWN, `sign_in_unlocks`),
+    so Homunculus makes at most 3 + 3 failed binds per account in 15 minutes. Nothing in the
+    database changes, and the domain's own lockout is AD's business. Returns how many failed
+    sign-ins were cleared (0 for a local account)."""
     _within(actor, user_rights(user, tenant_id))
-    return directory_binds.clear(str(user.id))
+    await _refuse_global_account(db, tenant_id, user)
+    key = str(user.id)
+    if not sign_in_unlocks.take(key):
+        raise AdminError(409, UNLOCK_COOLDOWN)
+    return directory_binds.clear(key)
 
 
 async def reset_mfa(db: AsyncSession, tenant_id: uuid.UUID, user: User, actor: Actor) -> None:

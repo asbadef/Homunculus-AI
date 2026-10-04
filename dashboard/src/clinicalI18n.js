@@ -548,6 +548,8 @@ const STRINGS = {
         sharedAccount: "Bu hesap başka bir kurumda da etkin; parola, MFA, e-posta, ad ve etkinlik buradan değiştirilemez, yalnızca bu kurumdaki grupları ayarlanabilir.",
         selfCredentials: "Kendi parolanızı veya MFA'nızı buradan sıfırlayamazsınız; parola için Hesabım > Parola değiştir'i kullanın.",
         selfDeactivate: "Kendi hesabınızı pasifleştiremezsiniz.",
+        unlockCooldown: "Bu hesabın girişi kısa süre önce açıldı. Hastane hesabının kilitlenmemesi için 15 dakika sonra tekrar deneyin.",
+        unlockReason: "Girişi açma gerekçesini yazın: tek satır, en çok 200 karakter.",
         systemGroupRights: "Sistem grubunun izinleri ve MFA kuralı değiştirilemez.",
         systemGroupDelete: "Sistem grubu silinemez.",
         groupHasMembers: "Üyesi olan grup silinemez.",
@@ -1386,6 +1388,8 @@ const STRINGS = {
         sharedAccount: "Bu hesab başqa qurumda da aktivdir; parol, MFA, e-poçt, ad və aktivlik statusu burada dəyişdirilə bilməz, yalnız onun bu qurumdakı qrupları təyin edilə bilər.",
         selfCredentials: "Öz parolunuzu və ya MFA-nızı burada sıfırlaya bilməzsiniz; parolu dəyişmək üçün Hesabım > Parolu dəyiş bölməsindən istifadə edin.",
         selfDeactivate: "Öz hesabınızı passivləşdirə bilməzsiniz.",
+        unlockCooldown: "Bu hesabın girişi bu yaxınlarda açılıb. Xəstəxana hesabının bloklanmaması üçün 15 dəqiqədən sonra yenidən cəhd edin.",
+        unlockReason: "Girişin açılma səbəbini yazın: bir sətir, ən çox 200 simvol.",
         systemGroupRights: "Sistem qrupunun icazələri və MFA qaydası dəyişdirilə bilməz.",
         systemGroupDelete: "Sistem qrupu silinə bilməz.",
         groupHasMembers: "Üzvü olan qrup silinə bilməz.",
@@ -2214,6 +2218,8 @@ const STRINGS = {
         sharedAccount: "This account is also active in another organization; its password, MFA, email, name and active status cannot be changed here — only its groups in this organization can be set.",
         selfCredentials: "You cannot reset your own password or MFA here; to change your password, use My account > Change password.",
         selfDeactivate: "You cannot deactivate your own account.",
+        unlockCooldown: "This account's sign-in was unlocked a short while ago. So that the hospital account is not locked, try again in 15 minutes.",
+        unlockReason: "Give a reason for unlocking the sign-in: one line, at most 200 characters.",
         systemGroupRights: "The system group's permissions and MFA rule cannot be changed.",
         systemGroupDelete: "The system group cannot be deleted.",
         groupHasMembers: "A group that has members cannot be deleted.",
@@ -3042,6 +3048,8 @@ const STRINGS = {
         sharedAccount: "Эта учётная запись активна и в другой организации; пароль, MFA, эл. почту, имя и статус активности здесь изменить нельзя — можно настроить только её группы в этой организации.",
         selfCredentials: "Здесь нельзя сбросить собственный пароль или MFA; чтобы сменить пароль, используйте «Моя учётная запись > Сменить пароль».",
         selfDeactivate: "Нельзя деактивировать собственную учётную запись.",
+        unlockCooldown: "Вход для этой учётной записи недавно уже был разблокирован. Чтобы больничная учётная запись не была заблокирована, повторите попытку через 15 минут.",
+        unlockReason: "Укажите причину разблокировки входа: одна строка, не более 200 символов.",
         systemGroupRights: "Права и правило MFA системной группы изменить нельзя.",
         systemGroupDelete: "Системную группу удалить нельзя.",
         groupHasMembers: "Группу, в которой есть участники, удалить нельзя.",
@@ -3414,6 +3422,7 @@ const API_MESSAGES = new Map([
   ["Kendi parolanızı veya MFA'nızı buradan sıfırlayamazsınız; parola için Hesabım > Parola "
     + "değiştir'i kullanın", "selfCredentials"],
   ["Kendi hesabınızı pasifleştiremezsiniz", "selfDeactivate"],
+  ["Bu hesabın girişi kısa süre önce açıldı; 15 dakika sonra tekrar deneyin", "unlockCooldown"],
   ["Sistem grubunun izinleri ve MFA kuralı değiştirilemez", "systemGroupRights"],
   ["Sistem grubu silinemez", "systemGroupDelete"],
   ["Üyesi olan grup silinemez", "groupHasMembers"],
@@ -3480,6 +3489,9 @@ const FIELD_ERRORS = new Map([
   ["new_password", new Map([["string_too_long", "passwordTooLong"]])],
   ["full_name", new Map([["value_error", "fullNameRequired"], ["string_too_short", "fullNameRequired"]])],
   ["name", new Map([["value_error", "groupNameRequired"], ["string_too_short", "groupNameRequired"]])],
+  // admin/schemas.py SignInUnlockIn: 1–200 characters, not blank, one line (the audit row's reason)
+  ["reason", new Map([["missing", "unlockReason"], ["value_error", "unlockReason"],
+                      ["string_too_short", "unlockReason"], ["string_too_long", "unlockReason"]])],
 ]);
 
 function messageOf(err) {

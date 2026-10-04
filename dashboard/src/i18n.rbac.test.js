@@ -197,6 +197,7 @@ describe("server and client messages are mapped", () => {
     expect(apiErrorKey(ADMIN_CONST.get("SELF_CREDENTIALS")).key).toBe("selfCredentials");
     expect(apiErrorKey(ADMIN_CONST.get("SHARED_ACCOUNT")).key).toBe("sharedAccount");
     expect(apiErrorKey(ADMIN_CONST.get("PLATFORM_ACCOUNT")).key).toBe("platformAccount");
+    expect(apiErrorKey(ADMIN_CONST.get("UNLOCK_COOLDOWN")).key).toBe("unlockCooldown");
   });
 
   it("names the right entry for the AD group mapping refusals", () => {
@@ -317,9 +318,11 @@ describe("field errors (422)", () => {
     [/^e-mail: /, ["email"], "emailInvalid"],
     [/^slug: /, ["slug"], "slugInvalid"],
     [/^ad_group_dn must be a distinguished name/, ["ad_group_dn"], "adGroupDnInvalid"],
-    [/^must not be blank$/, ["name", "full_name"], null],
+    [/^must not be blank$/, ["name", "full_name", "reason"], null],
+    [/^reason: /, ["reason"], "unlockReason"],
   ];
-  const EXPECTED_FOR = { name: "groupNameRequired", full_name: "fullNameRequired" };
+  const EXPECTED_FOR = { name: "groupNameRequired", full_name: "fullNameRequired",
+                         reason: "unlockReason" };
   const messages = [USERNAME_RULE,
     ...literals(ADMIN_SCHEMAS, String.raw`raise ValueError\(${STR}\)`)];
   const err = (field, type, message) => {
@@ -361,6 +364,18 @@ describe("field errors (422)", () => {
       for (const lang of langs) {
         expect(translateApiError(err("ad_group_dn", type, "String should have at least 3 characters"), lang),
           `${lang} ${type}`).toBe(cstrings(lang).rbac.err.adGroupDnInvalid);
+      }
+    }
+  });
+
+  it("translates a sign-in unlock without a usable reason, whatever pydantic calls it", () => {
+    // admin/schemas.py SignInUnlockIn: required, 1–200 characters, one line.
+    expect(ADMIN_SCHEMAS).toContain("reason: str = Field(min_length=1, max_length=_REASON_MAX)");
+    expect(ADMIN_SCHEMAS).toContain("_REASON_MAX = 200");
+    for (const type of ["missing", "value_error", "string_too_short", "string_too_long"]) {
+      for (const lang of langs) {
+        expect(translateApiError(err("reason", type, "Field required"), lang), `${lang} ${type}`)
+          .toBe(cstrings(lang).rbac.err.unlockReason);
       }
     }
   });

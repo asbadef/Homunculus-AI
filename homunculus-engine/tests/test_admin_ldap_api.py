@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from homunculus.admin import ldap_router, ldap_service
 from homunculus.admin import service as admin_service
-from homunculus.admin.service import LAST_ADMIN, Actor, AdminError
+from homunculus.admin.service import LAST_ADMIN, UNLOCK_COOLDOWN, Actor, AdminError
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.ldap import (
@@ -864,24 +864,124 @@ def _authenticates(directory) -> int:
     return sum(1 for method, _ in directory.calls if method == "authenticate")
 
 
+REASON = "Vardiya başında parolasını üç kez yanlış yazdı; telefonla doğrulandı"
+
+
+async def _unlock(c, user_id, headers, reason: str | None = REASON):
+    return await c.post(f"/admin/users/{user_id}/unlock-sign-in", headers=headers,
+                        json=None if reason is None else {"reason": reason})
+
+
+def _throttle_directly(user_id) -> str:
+    """Three failed binds recorded for the account, as three wrong passwords would leave them."""
+    key = str(user_id)
+    for _ in range(3):
+        assert directory_binds.begin(key)
+        directory_binds.end(key, failed=True)
+    return key
+
+
 async def test_an_administrator_unlocks_a_throttled_ad_account(client, world, db_session):
     """The clinician who mistyped three times and is waiting at the ward PC: the administrator
-    clears the throttle, and the next sign-in goes to the directory at once."""
+    clears the throttle, and the next sign-in goes to the directory at once. The reason the
+    administrator gave is in the audit row."""
     c, app = client
     admin = await bearer(db_session, world["admin"])
     ayse_id = world["account"].id
     await _throttle(c, "ayilmaz")
     asked = _authenticates(world["directory"])
-    res = await c.post(f"/admin/users/{ayse_id}/unlock-sign-in", headers=admin)
+    res = await _unlock(c, ayse_id, admin)
     assert (res.status_code, res.json()) == (200, {"ok": True})
     assert (await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
             ).status_code == 200
     assert _authenticates(world["directory"]) == asked + 1
     [event] = audit_events(app, "admin", "user.sign_in_unlocked")
     assert event.payload == {"actor": "admin", "target": str(ayse_id),
-                             "before": {"failed_sign_ins": 3}, "after": {"failed_sign_ins": 0}}
+                             "before": {"failed_sign_ins": 3}, "after": {"failed_sign_ins": 0},
+                             "reason": REASON}
     assert event.tenant == TENANT_SLUG
     assert WRONG not in str(event.payload) and AD_PASSWORD not in str(event.payload)
+
+
+async def test_a_second_unlock_within_the_window_is_refused(client, world, db_session):
+    """One unlock per account per DIRECTORY_BIND_WINDOW_S: each unlock lets three more wrong
+    passwords reach the domain controller, so within 15 minutes Homunculus makes at most
+    3 + 3 failed binds for one account — the figure the hospital's AD lockout threshold must
+    stay above. A second unlock is 409 and clears nothing; the account stays throttled."""
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    ayse_id = world["account"].id
+    await _throttle(c, "ayilmaz")
+    assert (await _unlock(c, ayse_id, admin)).status_code == 200
+    await _throttle(c, "ayilmaz")
+    res = await _unlock(c, ayse_id, admin)
+    assert (res.status_code, res.json()["detail"]) == (409, UNLOCK_COOLDOWN)
+    assert (await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
+            ).status_code == 429
+    assert len(audit_events(app, "admin", "user.sign_in_unlocked")) == 1
+
+
+@pytest.mark.parametrize("body", [
+    None, {}, {"reason": ""}, {"reason": "   "}, {"reason": "x" * 201},
+    {"reason": "iki\nsatır"}, {"reason": "boş\x00karakter"}, {"reason": "sekme\tile"},
+])
+async def test_an_unlock_needs_a_one_line_reason(client, world, db_session, body):
+    """The reason goes to the audit row: required, not blank, at most 200 characters, one line
+    with no control character (nothing that could forge a line in an exported trail)."""
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    key = _throttle_directly(world["account"].id)
+    res = await c.post(f"/admin/users/{world['account'].id}/unlock-sign-in", headers=admin,
+                       json=body)
+    assert res.status_code == 422, res.text
+    assert directory_binds.begin(key) is False                      # still throttled
+    assert audit_events(app, "admin", "user.sign_in_unlocked") == []
+
+
+async def test_an_unlock_reason_is_stored_trimmed(client, world, db_session):
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    _throttle_directly(world["account"].id)
+    assert (await _unlock(c, world["account"].id, admin, "  " + "ş" * 200 + "  ")
+            ).status_code == 422                                    # 204 characters as sent
+    assert (await _unlock(c, world["account"].id, admin, "  Telefonla doğrulandı  ")
+            ).status_code == 200
+    [event] = audit_events(app, "admin", "user.sign_in_unlocked")
+    assert event.payload["reason"] == "Telefonla doğrulandı"
+
+
+async def test_a_platform_operator_or_a_shared_account_is_not_unlocked_here(client, world,
+                                                                           db_session):
+    """As for a password or MFA reset (`_refuse_global_account`): the throttle is one per
+    account, not per hospital, so one hospital must not lift it for an account another
+    hospital — or the vendor — relies on."""
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    operator = await add_user(db_session, username="vendor_op", tenant_id=world["tenant"].id,
+                              group=world["groups"]["nurse"], platform_support=True)
+    shared = await add_user(db_session, username="paylasilan", tenant_id=world["tenant"].id,
+                            group=world["groups"]["nurse"])
+    db_session.add(TenantMembership(user_id=shared.id,
+                                    tenant_id=world["other_groups"]["nurse"].tenant_id))
+    await db_session.commit()
+    for account, detail in ((operator, admin_service.PLATFORM_ACCOUNT),
+                            (shared, admin_service.SHARED_ACCOUNT)):
+        key = _throttle_directly(account.id)
+        res = await _unlock(c, account.id, admin)
+        assert (res.status_code, res.json()["detail"]) == (409, detail), account.username
+        assert directory_binds.begin(key) is False                  # still throttled
+    assert audit_events(app, "admin", "user.sign_in_unlocked") == []
+
+
+async def test_an_administrator_may_unlock_their_own_sign_in(client, world, db_session):
+    """Unlike a password or MFA reset, unlocking oneself hands nothing over: the next sign-in
+    still needs the password."""
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    key = _throttle_directly(world["admin"].id)
+    assert (await _unlock(c, world["admin"].id, admin)).status_code == 200
+    assert directory_binds.begin(key) is True
+    directory_binds.end(key, failed=False)
 
 
 async def test_a_user_desk_unlocks_only_accounts_within_its_rights(client, world, db_session):
@@ -893,12 +993,12 @@ async def test_a_user_desk_unlocks_only_accounts_within_its_rights(client, world
                        json={"external_ids": [world["mkaya"].identity.external_id]})
     mkaya_id = res.json()["imported"][0]["id"]               # charge_nurse, through YB-Sorumlu
     await _throttle(c, "mkaya")
-    res = await c.post(f"/admin/users/{mkaya_id}/unlock-sign-in", headers=desk)
+    res = await _unlock(c, mkaya_id, desk)
     assert res.status_code == 403 and "Kendi yetkilerinizi aşan" in res.json()["detail"]
     assert (await c.post("/auth/login", json={"login": "mkaya", "password": AD_PASSWORD})
             ).status_code == 429                             # still throttled
     await _throttle(c, "ayilmaz")                            # no groups yet: within the desk's
-    res = await c.post(f"/admin/users/{world['account'].id}/unlock-sign-in", headers=desk)
+    res = await _unlock(c, world["account"].id, desk)
     assert res.status_code == 200
     assert (await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
             ).status_code == 200
@@ -911,12 +1011,9 @@ async def test_another_tenants_account_is_not_found_and_stays_throttled(client, 
     other_tenant = world["other_groups"]["nurse"].tenant_id
     stranger = await add_user(db_session, username="baska", tenant_id=other_tenant,
                               group=world["other_groups"]["nurse"])
-    key = str(stranger.id)
-    for _ in range(3):
-        assert directory_binds.begin(key)
-        directory_binds.end(key, failed=True)
-    theirs = await c.post(f"/admin/users/{stranger.id}/unlock-sign-in", headers=admin)
-    missing = await c.post(f"/admin/users/{uuid.uuid4()}/unlock-sign-in", headers=admin)
+    key = _throttle_directly(stranger.id)
+    theirs = await _unlock(c, stranger.id, admin)
+    missing = await _unlock(c, uuid.uuid4(), admin)
     assert theirs.status_code == 404
     assert (theirs.status_code, theirs.json()) == (missing.status_code, missing.json())
     assert directory_binds.begin(key) is False
@@ -926,7 +1023,7 @@ async def test_a_caller_without_users_manage_cannot_unlock(client, world, db_ses
     c, _ = client
     nurse = await bearer(db_session, world["nurse"])
     await _throttle(c, "ayilmaz")
-    res = await c.post(f"/admin/users/{world['account'].id}/unlock-sign-in", headers=nurse)
+    res = await _unlock(c, world["account"].id, nurse)
     assert res.status_code == 403
     assert (await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
             ).status_code == 429

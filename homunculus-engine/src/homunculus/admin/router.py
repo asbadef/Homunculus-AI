@@ -13,7 +13,8 @@
   PUT    /admin/users/{id}/groups         users.manage
   POST   /admin/users/{id}/reset-password users.manage
   POST   /admin/users/{id}/reset-mfa      users.manage
-  POST   /admin/users/{id}/unlock-sign-in users.manage (clears the AD sign-in throttle)
+  POST   /admin/users/{id}/unlock-sign-in users.manage (clears the AD sign-in throttle; a
+                                          `reason` in the body, once per account per 15 min)
 
 Everything is scoped to the tenant in the caller's token (`caller_tenant_id`, which also checks
 the caller's active membership in an active tenant); a user or group of another tenant is a 404,
@@ -35,8 +36,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admin import service
 from homunculus.admin.schemas import (
-    GroupCreate, GroupOut, GroupPatch, PasswordResetIn, PermissionOut, UserCreate,
-    UserGroupOut, UserGroupsIn, UserOut, UserPatch,
+    GroupCreate, GroupOut, GroupPatch, PasswordResetIn, PermissionOut, SignInUnlockIn,
+    UserCreate, UserGroupOut, UserGroupsIn, UserOut, UserPatch,
 )
 from homunculus.admin.service import Actor, AdminError
 from homunculus.auth.audit import append_audit
@@ -85,14 +86,18 @@ def _user_out(user: User, tenant_id: uuid.UUID) -> UserOut:
 
 
 def _audit(request: Request, principal: Principal, kind: str, target: str, *,
-           before=None, after=None) -> None:
-    """Append the audit row. It runs AFTER the commit: if the trail refuses the row, the change
-    stands unaudited — say so loudly (no payload, no exception text: nothing that could carry
-    account data) and let the error surface."""
+           before=None, after=None, reason: str | None = None) -> None:
+    """Append the audit row — with the administrator's `reason`, when the action takes one. It
+    runs AFTER the commit: if the trail refuses the row, the change stands unaudited — say so
+    loudly (no payload, no exception text: nothing that could carry account data) and let the
+    error surface."""
+    payload = {"actor": principal.user.username, "target": target,
+               "before": before, "after": after}
+    if reason is not None:
+        payload["reason"] = reason
     try:
         append_audit(request, tenant=principal.tenant, event_type="admin", subject=kind,
-                     payload={"actor": principal.user.username, "target": target,
-                              "before": before, "after": after})
+                     payload=payload)
     except Exception as exc:
         logger.error(
             "admin change COMMITTED but NOT AUDITED: event=%s target=%s actor=%s tenant=%s "
@@ -274,7 +279,7 @@ async def reset_mfa(user_id: uuid.UUID, request: Request,
 
 
 @router.post("/users/{user_id}/unlock-sign-in", dependencies=_users)
-async def unlock_sign_in(user_id: uuid.UUID, request: Request,
+async def unlock_sign_in(user_id: uuid.UUID, body: SignInUnlockIn, request: Request,
                          principal: Principal = Depends(get_principal),
                          tenant_id: uuid.UUID = Depends(caller_tenant_id),
                          db: AsyncSession = Depends(get_db)) -> dict:
@@ -283,5 +288,6 @@ async def unlock_sign_in(user_id: uuid.UUID, request: Request,
     cleared = await _run(db, service.unlock_sign_in(db, tenant_id, user, actor))
     await db.commit()
     _audit(request, principal, "user.sign_in_unlocked", str(user.id),
-           before={"failed_sign_ins": cleared}, after={"failed_sign_ins": 0})
+           before={"failed_sign_ins": cleared}, after={"failed_sign_ins": 0},
+           reason=body.reason)
     return {"ok": True}

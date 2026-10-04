@@ -5,8 +5,8 @@ from __future__ import annotations
 import pyotp
 
 from homunculus.auth.limits import (
-    DIRECTORY_BIND_MAX_FAILURES, DIRECTORY_BIND_WINDOW_S, AttemptWindow, FailureLimiter,
-    directory_binds,
+    DIRECTORY_BIND_MAX_FAILURES, DIRECTORY_BIND_WINDOW_S, AttemptWindow, Cooldown,
+    FailureLimiter, directory_binds, sign_in_unlocks,
 )
 from homunculus.auth.totp import accepted_step
 
@@ -186,6 +186,37 @@ def test_the_directory_throttle_stays_below_a_typical_ad_lockout():
     15-minute observation window; the sign-in refusal says "15 dakika"."""
     assert (directory_binds.max_failures, directory_binds.window_seconds) == (3, 15 * 60)
     assert (DIRECTORY_BIND_MAX_FAILURES, DIRECTORY_BIND_WINDOW_S) == (3, 15 * 60)
+
+
+# --- Cooldown (the administrator's unlock) ----------------------------------------------------
+
+def test_a_cooldown_lets_one_action_per_key_through_per_window():
+    clock = FakeClock()
+    cool = Cooldown(seconds=900, clock=clock)
+    assert cool.take("u") is True
+    clock.t += 899
+    assert cool.take("u") is False                 # still inside the window: refused...
+    clock.t += 1
+    assert cool.take("u") is True                  # ...and a refusal does not restart it
+    assert cool.take("b") is True                  # keys are independent
+    assert cool.take("b") is False
+
+
+def test_a_cooldown_forgets_keys_whose_window_has_passed():
+    clock = FakeClock()
+    cool = Cooldown(seconds=900, clock=clock)
+    for key in ("a", "b", "c"):
+        cool.take(key)
+    clock.t += 900
+    cool.take("d")
+    assert cool.keys() == {"d"}                    # nothing grows without bound
+
+
+def test_one_unlock_per_account_per_bind_window():
+    """An unlock lets 3 more failed binds through: one per window keeps Homunculus at
+    3 + 3 failed binds per account in 15 minutes, which the domain's lockout threshold must
+    stay above. The refusal says "15 dakika" (admin/service.py UNLOCK_COOLDOWN)."""
+    assert sign_in_unlocks.seconds == DIRECTORY_BIND_WINDOW_S == 15 * 60
 
 
 # --- accepted_step ----------------------------------------------------------------------------

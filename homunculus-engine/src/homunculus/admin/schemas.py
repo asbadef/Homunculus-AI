@@ -10,6 +10,7 @@ whitespace or invisible characters. Upper bounds match the columns (so an oversi
 bytes, the cap bounds the input)."""
 from __future__ import annotations
 import re
+import unicodedata
 import uuid
 from datetime import datetime
 
@@ -23,6 +24,7 @@ _USERNAME = re.compile(r"[a-z0-9._@-]{2,128}")
 _EMAIL_MAX = 254
 _PASSWORD_MAX = 1024
 _DESCRIPTION_MAX = 500
+_REASON_MAX = 200
 
 
 def _name(value: str) -> str:
@@ -171,6 +173,21 @@ class UserGroupsIn(BaseModel):
 
 class PasswordResetIn(BaseModel):
     password: str = Field(min_length=8, max_length=_PASSWORD_MAX)
+
+
+class SignInUnlockIn(BaseModel):
+    """Why an administrator lifts an account's AD sign-in throttle; it goes into the audit row.
+    At most 200 characters as sent, trimmed, not blank, one line with no control character (a
+    line break or a NUL could forge or cut a line in an exported trail)."""
+    reason: str = Field(min_length=1, max_length=_REASON_MAX)
+
+    @field_validator("reason")
+    @classmethod
+    def _one_line(cls, value: str) -> str:
+        value = _name(value)
+        if any(unicodedata.category(ch) == "Cc" for ch in value):
+            raise ValueError("reason: one line of text, no control characters")
+        return value
 
 
 # ---------------------------------------------------------------- /admin/ldap (spec §7)
