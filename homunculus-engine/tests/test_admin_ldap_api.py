@@ -1102,10 +1102,17 @@ async def test_a_second_unlock_in_the_same_chain_is_refused(client, world, db_se
     {"reason": "iki\nsatır"}, {"reason": "boş\x00karakter"}, {"reason": "sekme\tile"},
     {"reason": "satır\u2028ayırıcı"}, {"reason": "paragraf\u2029ayırıcı"},
     {"reason": "sonraki\x85satır"},
+    {"reason": "tamam \u202egnp.exe"}, {"reason": "yalıtım \u2066içinde\u2069"},
+    {"reason": "yön\u200eişareti"}, {"reason": "yön\u200fişareti"}, {"reason": "arap\u061cişareti"},
+    {"reason": "sıfır\u200bgenişlik"}, {"reason": "birleş\u200dtirici"}, {"reason": "\ufeffBOM"},
+    {"reason": "..."}, {"reason": "— — —"}, {"reason": "\u0301\u0301"},
 ])
 async def test_an_unlock_needs_a_one_line_reason(client, world, db_session, body):
     """The reason goes to the audit row: required, not blank, at most 200 characters, one line
-    with no control character (nothing that could forge a line in an exported trail)."""
+    with no control character (nothing that could forge a line in an exported trail), no
+    invisible formatting character (Unicode category Cf: a bidirectional override or isolate
+    that shows the text in another order than it is stored, a zero-width character, a byte-order
+    mark), and at least one letter or digit."""
     c, app = client
     admin = await bearer(db_session, world["admin"])
     key = _throttle_directly(world["account"].id)

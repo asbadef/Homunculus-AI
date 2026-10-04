@@ -179,15 +179,20 @@ class SignInUnlockIn(BaseModel):
     """Why an administrator lifts an account's AD sign-in throttle; it goes into the audit row.
     At most 200 characters as sent, trimmed, not blank, one line with no control character (a
     line break or a NUL could forge or cut a line in an exported trail) — nor Unicode's line
-    and paragraph separators (U+2028, U+2029), which some viewers break a line on too."""
+    and paragraph separators (U+2028, U+2029), which some viewers break a line on too — and no
+    invisible formatting character (category Cf: a bidirectional override or isolate shows the
+    text in another order than it is stored; a zero-width character or a byte-order mark hides
+    in it). At least one letter or digit: a reason someone can read."""
     reason: str = Field(min_length=1, max_length=_REASON_MAX)
 
     @field_validator("reason")
     @classmethod
     def _one_line(cls, value: str) -> str:
         value = _name(value)
-        if any(unicodedata.category(ch) in ("Cc", "Zl", "Zp") for ch in value):
-            raise ValueError("reason: one line of text, no control characters")
+        if any(unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp") for ch in value):
+            raise ValueError("reason: one line of text, no control or formatting characters")
+        if not any(unicodedata.category(ch)[0] in "LN" for ch in value):
+            raise ValueError("reason: at least one letter or digit")
         return value
 
 
