@@ -155,6 +155,23 @@ async def test_a_search_needs_two_characters(client, world, db_session):
     assert world["directory"].calls == []
 
 
+async def test_a_search_is_trimmed_before_its_length_is_checked(client, world, db_session):
+    """Two characters of query, not two characters of padding: `" a"` is a 422 like `"a"`,
+    before the directory is asked; a padded query reaches it trimmed."""
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    for path in ("/admin/ldap/search", "/admin/ldap/groups"):
+        for q in (" a", "a ", "   "):
+            res = await c.get(path, params={"q": q}, headers=admin)
+            assert res.status_code == 422, (path, q)
+    assert world["directory"].calls == []
+    assert (await c.get("/admin/ldap/search", params={"q": "  kaya "}, headers=admin)
+            ).status_code == 200
+    assert (await c.get("/admin/ldap/groups", params={"q": " yb "}, headers=admin)
+            ).status_code == 200
+    assert world["directory"].calls == [("search_users", "kaya"), ("search_groups", "yb")]
+
+
 async def test_a_search_with_the_directory_down_is_503(client, world, db_session):
     c, _ = client
     admin = await bearer(db_session, world["admin"])

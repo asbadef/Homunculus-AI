@@ -25,8 +25,10 @@ caller), AdminError → rollback, the audit row after the commit.
 from __future__ import annotations
 
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pydantic import BeforeValidator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admin import ldap_service
@@ -52,6 +54,15 @@ _users = [Depends(require_permission("users.manage"))]
 # Every route resolves the caller's tenant (tests/test_tenant_isolation.py demands it), a
 # search included: the directory is one per deployment, the caller is not.
 _users_here = [*_users, Depends(caller_tenant_id)]
+
+
+def _trimmed(value: object) -> object:
+    return value.strip() if isinstance(value, str) else value
+
+
+# A search's `q` (plan D17: 2-64 characters), trimmed BEFORE its length is checked: two
+# characters of query, not of padding; the directory gets it trimmed.
+SearchQuery = Annotated[str, Query(min_length=2, max_length=64), BeforeValidator(_trimmed)]
 
 
 def configured_ldap(ldap: LdapRuntime | None = Depends(get_ldap)) -> LdapRuntime:
@@ -90,7 +101,7 @@ async def ldap_test(request: Request, principal: Principal = Depends(get_princip
 
 
 @router.get("/search", response_model=list[LdapUserOut], dependencies=_users_here)
-async def ldap_search(q: str = Query(min_length=2, max_length=64),
+async def ldap_search(q: SearchQuery,
                       ldap: LdapRuntime = Depends(configured_ldap),
                       db: AsyncSession = Depends(get_db)) -> list[LdapUserOut]:
     try:
@@ -104,7 +115,7 @@ async def ldap_search(q: str = Query(min_length=2, max_length=64),
 
 
 @router.get("/groups", response_model=list[LdapGroupOut], dependencies=_users_here)
-async def ldap_groups(q: str = Query(min_length=2, max_length=64),
+async def ldap_groups(q: SearchQuery,
                       ldap: LdapRuntime = Depends(configured_ldap)) -> list[LdapGroupOut]:
     try:
         found = await ldap.directory.search_groups(q, ldap_service.RESULT_CAP,
