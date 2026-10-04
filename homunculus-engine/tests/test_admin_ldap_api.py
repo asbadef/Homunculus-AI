@@ -385,6 +385,64 @@ async def test_an_account_another_tenant_imports_meanwhile_is_skipped_not_the_ba
     assert tenants == [other_tenant]                             # one account, theirs
 
 
+def _commit_right_after_the_check(monkeypatch, db_session, value: str, account: dict):
+    """Patch the import's `login_in_use` so that, right after it has checked `value` and found
+    it free, another session commits a local account `account` (a username/e-mail clash)."""
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    check = ldap_service.login_in_use
+    raced: list[str] = []
+
+    async def taken_right_after_the_check(db, checked, **kwargs):
+        in_use = await check(db, checked, **kwargs)
+        if checked == value and not raced:
+            raced.append(checked)
+            async with maker() as elsewhere:
+                elsewhere.add(User(hashed_password=None, **account))
+                await elsewhere.commit()
+        return in_use
+
+    monkeypatch.setattr(ldap_service, "login_in_use", taken_right_after_the_check)
+    return raced
+
+
+async def test_a_username_taken_meanwhile_is_skipped_not_the_batch(client, world, db_session,
+                                                                   monkeypatch):
+    """Between the name check and the INSERT someone else takes the username (a local account
+    created at that moment): the INSERT meets the unique username, the re-check finds the name
+    taken, and that account is `skipped: login_taken` — the rest of the batch is imported."""
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    mkaya, bdemir = world["mkaya"].identity, world["bdemir"].identity
+    raced = _commit_right_after_the_check(monkeypatch, db_session, "mkaya",
+                                          {"username": "mkaya", "full_name": "Yerel"})
+    res = await c.post("/admin/ldap/import", headers=admin,
+                       json={"external_ids": [mkaya.external_id, bdemir.external_id]})
+    assert res.status_code == 200, res.text
+    assert raced == ["mkaya"]
+    assert res.json()["skipped"] == [{"external_id": mkaya.external_id, "reason": "login_taken"}]
+    assert [r["username"] for r in res.json()["imported"]] == ["bdemir"]
+    assert await _imported(db_session, mkaya.external_id) == 0
+
+
+async def test_an_email_taken_meanwhile_refuses_the_whole_import(client, world, db_session,
+                                                                 monkeypatch):
+    """The account's e-mail is taken between its check and the INSERT: neither the objectGUID
+    nor the username explains the refusal, so it is the 409 it was — the whole request rolled
+    back, nothing imported (an account must not be created without the e-mail it was checked
+    to have)."""
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    mkaya, bdemir = world["mkaya"].identity, world["bdemir"].identity
+    raced = _commit_right_after_the_check(
+        monkeypatch, db_session, "b.demir@hastane.az",
+        {"username": "baska", "email": "b.demir@hastane.az", "full_name": "Başka"})
+    res = await c.post("/admin/ldap/import", headers=admin,
+                       json={"external_ids": [mkaya.external_id, bdemir.external_id]})
+    assert raced == ["b.demir@hastane.az"]
+    assert (res.status_code, res.json()["detail"]) == (409, admin_service.LOGIN_TAKEN)
+    assert await _imported(db_session, mkaya.external_id, bdemir.external_id) == 0
+
+
 async def test_a_user_desk_imports_only_within_its_rights(client, world, db_session):
     c, _ = client
     desk = await bearer(db_session, world["desk"])
