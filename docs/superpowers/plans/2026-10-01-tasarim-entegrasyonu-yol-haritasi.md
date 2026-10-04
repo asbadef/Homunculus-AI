@@ -257,6 +257,28 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - `homunculus-ml/**/__pycache__/*.pyc` takipte (`324d2bd`'den beri). → ayrı temizlik
 - `scripts/dev_local.py` SQLite'ta hâlâ tamamlanmaz: `seed_bootstrap` Postgres'e özgü kilit alıyor (`pg_advisory_xact_lock`), varsayılan yönetici parolası `Demo1234!` 12 karakter kuralına takılıyor, venv'de `aiosqlite` yok. → ayrı küçük iş
 
+## Dalga 1A'dan açık kalanlar
+
+- AD giriş sınırı (`auth/limits.py`, `directory_binds`: 15 dakikada 3 hatalı bağlanma)
+  bellekte tutuluyor: yeniden başlatma sıfırlar ve yalnız tek süreçte geçerli (birden çok
+  uvicorn işçisi olursa paylaşılan depoya taşınmalı). Yönetici kilidi
+  `POST /admin/users/{id}/unlock-sign-in` ile açabilir. → pilot için kabul
+- LDAP çalışma zamanının `close()`'u geri alınamaz (iş parçacığı havuzu kapanır): süreç
+  başına tek lifespan. prodserver için sorun değil; aynı süreçte uygulamayı yeniden başlatan
+  bir araç yeni bir çalışma zamanı kurmalı.
+- Dizin havuzunun iş parçacıkları daemon değil: kapanışta asılı bir dizin çağrısı, soket
+  zaman aşımı dolana kadar (LDAP_TIMEOUT_S, en çok 10 s) süreci bekletebilir.
+- nginx giriş sınırı adres başına (dakikada 10, ani 10): servis PC'leri tek bir NAT ya da
+  terminal sunucusu (Citrix vb.) arkasındaysa bütün servis aynı adresten gelir ve vardiya
+  değişiminde klinisyenler 429 alabilir → hastane BT'sine sorulmalı, G1-15 öncesi. nginx'in
+  429 gövdesi HTML; panel "Giriş başarısız." gösterir (anlamlı ileti için JSON gövde ve
+  dört dilde metin gerekir).
+- Yönetici şeridi (3 yer): yavaş bir DC'de (çağrı başına ~2 s) 50 hesaplık içe aktarım
+  ~35 s sürer, panelin 15 s zaman aşımını geçer (sunucu işi bitirir; içe aktarım tekrarlanabilir).
+  Şerit beklemesinin üst sınırı yok, yoğun içe aktarım sırasında bir arama da zaman aşımına
+  uğrayabilir. İçe aktarım dizini beklerken bir veritabanı bağlantısı tutuyor. → G1-08/G1-12
+  yönetim ekranında ilerleme gösterimiyle birlikte
+
 ## Dalga 1B'den açık kalanlar
 
 - Giriş kutusu kenarı (`--line2`) kart/card2'de 1,4–1,6:1 (WCAG 3:1); odakta `--pri` olur.
@@ -335,3 +357,9 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 10. **Giriş kutusu kenarlık kontrastı:** `--line2` kart/card2 üzerinde 1,37–1,63:1
     (iki temada); WCAG 1.4.11 arayüz bileşeni için 3:1 ister. Odakta `--pri` geçer.
     Tüm form kenarlıkları koyulaştırılsın mı? (görünüm değişir)
+11. **Giriş denemesi sınırı herkese mi?** Bugün yalnız AD hesapları 3 hatalı denemede 429
+    alıyor; bu, bir adın etkin AD hesabı olduğunu ele veriyor (bilinmeyen/yerel adlar hep
+    401). Seçenekler: (a) olduğu gibi kabul, (b) bilinmeyen ve yerel adlara da aynı sınır
+    (yerel hesaba "kilitleme" gelir; spec bunu reddetmişti), (c) yalnız bilinmeyen adlara
+    sahte sınır (yerel hâlâ ayırt edilir). nginx'in adres başına sınırı (dakikada 10) bu
+    yoklamayı yavaşlatır, kapatmaz.
