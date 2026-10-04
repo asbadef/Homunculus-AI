@@ -22,7 +22,7 @@ from homunculus.auth.jwt import decode_token
 from homunculus.auth.ldap import ACCOUNT_NEVER_EXPIRES, ADMIN_LANE_SLOTS, NOT_CONFIGURED
 from homunculus.auth.limits import directory_binds
 from homunculus.auth.models import (
-    SOURCE_LDAP, Group, GroupPermission, LdapGroupMapping, User, UserGroup,
+    SOURCE_LDAP, Group, GroupPermission, LdapGroupMapping, TenantMembership, User, UserGroup,
 )
 from homunculus.auth.permissions import ALL_PERMISSIONS
 from homunculus.tenant.models import Tenant
@@ -275,6 +275,49 @@ async def test_an_ad_name_outside_the_local_username_rule_is_skipped(client, wor
     assert await _imported(db_session, turkish.external_id, homoglyph.external_id) == 0
     assert [r.payload["after"]["username"] for r in audit_events(app, "admin", "ldap.import")] \
         == ["yildiz"]
+
+
+async def test_an_account_another_tenant_imports_meanwhile_is_skipped_not_the_batch(
+        client, world, db_session, monkeypatch):
+    """Two hospitals importing the same AD account at once hold different tenant locks, so both
+    pass the re-check, and the second INSERT meets the unique objectGUID and username. For the
+    tenant that lost, that account is `skipped: exists` — not a 409 for its whole batch: the
+    rest is imported. Made deterministic: right after this import has checked the name, another
+    session commits the same account in the other tenant."""
+    c, _ = client
+    admin = await bearer(db_session, world["admin"])
+    mkaya, bdemir = world["mkaya"].identity, world["bdemir"].identity
+    other_tenant = world["other_groups"]["nurse"].tenant_id
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    check = ldap_service.login_in_use
+    raced: list[str] = []
+
+    async def imported_elsewhere_right_after_the_check(db, value, **kwargs):
+        in_use = await check(db, value, **kwargs)
+        if value == "mkaya" and not raced:
+            raced.append(value)
+            async with maker() as elsewhere:
+                user = User(username="mkaya", email=None, full_name="Mkaya",
+                            hashed_password=None, auth_source="ldap",
+                            external_id=mkaya.external_id)
+                elsewhere.add(user)
+                await elsewhere.flush()
+                elsewhere.add(TenantMembership(user_id=user.id, tenant_id=other_tenant))
+                await elsewhere.commit()
+        return in_use
+
+    monkeypatch.setattr(ldap_service, "login_in_use", imported_elsewhere_right_after_the_check)
+    res = await c.post("/admin/ldap/import", headers=admin,
+                       json={"external_ids": [mkaya.external_id, bdemir.external_id]})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert raced == ["mkaya"]
+    assert body["skipped"] == [{"external_id": mkaya.external_id, "reason": "exists"}]
+    assert [r["username"] for r in body["imported"]] == ["bdemir"]
+    tenants = (await db_session.execute(
+        select(TenantMembership.tenant_id).join(User, User.id == TenantMembership.user_id)
+        .where(User.external_id == mkaya.external_id))).scalars().all()
+    assert tenants == [other_tenant]                             # one account, theirs
 
 
 async def test_a_user_desk_imports_only_within_its_rights(client, world, db_session):

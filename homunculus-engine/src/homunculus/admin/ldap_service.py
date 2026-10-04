@@ -22,6 +22,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -120,7 +121,9 @@ async def import_users(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
     """Spec §7 import, in the order given (ids already canonical). Call under the tenant lock
     (`serialise`). `identities` holds the directory's answer for every id that had no account
     when the request began (fetched before the lock); an id imported since is caught by the
-    re-check here. Each created account: auth_source ldap, no password, username = the
+    re-check here — or, imported by ANOTHER tenant at the same moment (a lock this one does not
+    hold), by the INSERT, in its own savepoint (`_insert_account`): `skipped: exists` for that
+    id, the rest of the batch goes on. Each created account: auth_source ldap, no password, username = the
     sAMAccountName lower-cased, email = mail (dropped when another account uses it),
     full_name = displayName, a membership in this tenant, the mapped groups as `ldap` rows and
     `extra_group_ids` as `manual` rows — every one of those groups within the caller's rights,
@@ -168,8 +171,17 @@ async def import_users(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
         name = ((identity.display_name or "").strip() or identity.username)[:_NAME_MAX]
         user = User(username=username, email=mail, full_name=name, hashed_password=None,
                     auth_source=AUTH_LDAP, external_id=external_id, ldap_dn=identity.dn)
-        db.add(user)
-        await _flush(db, LOGIN_TAKEN)              # a concurrent create took the name
+        if not await _insert_account(db, user):
+            # Taken between the checks above and the INSERT: another tenant imported the same
+            # account (its lock is not ours), or someone took the name — skipped as either
+            # would have been a moment later. The e-mail taken meanwhile is the 409 it was.
+            if external_id in await imported_ids(db, [external_id]):
+                report.skipped.append((external_id, SKIP_EXISTS))
+                continue
+            if await login_in_use(db, username):
+                report.skipped.append((external_id, SKIP_LOGIN_TAKEN))
+                continue
+            raise AdminError(409, LOGIN_TAKEN)
         db.add(TenantMembership(user_id=user.id, tenant_id=tenant_id, granted_by_id=actor.id))
         await db.flush()
         await sync_ldap_groups(db, user=user, tenant_id=tenant_id, group_dns=identity.group_dns)
@@ -179,6 +191,19 @@ async def import_users(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor,
         existing.add(external_id)
         report.imported.append(Imported(external_id=external_id, user_id=user.id))
     return report
+
+
+async def _insert_account(db: AsyncSession, user: User) -> bool:
+    """INSERT the account inside a savepoint; False when a unique constraint refused it. Only
+    the savepoint is rolled back (the account is dropped from the session with it): the
+    accounts imported before it in this batch, and the batch itself, go on."""
+    try:
+        async with db.begin_nested():
+            db.add(user)
+            await db.flush()
+    except IntegrityError:
+        return False
+    return True
 
 
 # ---------------------------------------------------------------- mappings (plan decision D13)
