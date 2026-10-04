@@ -47,8 +47,10 @@ DEFAULT_USER_FILTER = ("(&(objectCategory=person)(objectClass=user)"
 LOGIN_ATTRS: tuple[str, ...] = ("samaccountname", "userprincipalname", "mail")
 DEFAULT_TIMEOUT_S = 5.0
 TIMEOUT_MIN_S, TIMEOUT_MAX_S = 1.0, 10.0
-# One directory call never takes longer than this: under the dashboard's 15 s request timeout,
-# with room for the database work around it.
+# The most `LdapConfig.deadline_s` may be: the longest one directory call's work may take. A
+# sign-in or a refresh (no admin lane) answers within it — under the dashboard's 15 s request
+# timeout, with room for the database work around it. An administration call may first wait as
+# long again for an admin-lane place, so it answers within 2 × the deadline (at most 24 s).
 DEADLINE_CAP_S = 12.0
 FILETIME_TICKS_PER_S = 10_000_000
 FILETIME_UNIX_OFFSET_S = 11_644_473_600   # 1601-01-01 to 1970-01-01, in seconds
@@ -106,7 +108,9 @@ class LdapGroup:
 # Places for administration calls (/admin/ldap: the import's lookups, the searches, the
 # connection test) in the directory at once, across every request: `LdapRuntime.admin_lane`.
 # Ldap3Directory has 8 threads (SLOTS); sign-ins and refreshes never take the lane, so they
-# always keep at least 5 of them, whatever the administrators are doing.
+# always keep at least 5 of them, whatever the administrators are doing. One import takes at
+# most ADMIN_LANE_SLOTS - 1 of them (admin/ldap_service.py, IMPORT_LOOKUPS), so a search
+# finds a place beside it.
 ADMIN_LANE_SLOTS = 3
 
 
@@ -115,8 +119,9 @@ class LdapDirectory(Protocol):
     directory does not answer; "no such account" and "wrong password" are answers (None).
 
     `lane` (the methods administration uses): the admin lane, `LdapRuntime.admin_lane`. The
-    call waits for a free place in it before the directory is asked — its deadline does not
-    run meanwhile — and keeps the place until the directory's work for it has ended (for
+    call waits for a free place in it before the directory is asked — at most its deadline,
+    then LdapUnavailable("timeout") with nothing sent; its own deadline starts once it has the
+    place — and keeps the place until the directory's work for it has ended (for
     Ldap3Directory, its thread: a call cut off at its deadline included). Sign-in and refresh
     never pass one."""
 
@@ -320,7 +325,8 @@ class LdapRuntime:
     """The directory as the running app holds it (`app.state.ldap`; None when LDAP is off).
     The last connection test is kept here, in memory, for `GET /admin/ldap/status`.
     `admin_lane` is the one admin lane of the process (ADMIN_LANE_SLOTS places): every
-    administration call passes it to the directory (`LdapDirectory`, `lane`)."""
+    administration call passes it to the directory (`LdapDirectory`, `lane`). Bounded: a place
+    given back twice — a bug — raises, instead of silently widening the lane."""
     directory: LdapDirectory
     url_host: str
     login_attrs: tuple[str, ...] = LOGIN_ATTRS
@@ -328,7 +334,8 @@ class LdapRuntime:
     last_test_ok: bool | None = None
     last_test_reason: str | None = None
     admin_lane: asyncio.Semaphore = field(
-        default_factory=lambda: asyncio.Semaphore(ADMIN_LANE_SLOTS), repr=False, compare=False)
+        default_factory=lambda: asyncio.BoundedSemaphore(ADMIN_LANE_SLOTS), repr=False,
+        compare=False)
 
     async def test(self) -> tuple[bool, str | None]:
         """Bind with the service account now (through the admin lane: /admin/ldap/test and the

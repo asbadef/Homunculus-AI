@@ -116,6 +116,17 @@ async def test_the_runtime_has_one_admin_lane_and_its_connection_test_takes_a_pl
     assert await check == (True, None)
 
 
+async def test_the_admin_lane_refuses_a_place_it_never_gave():
+    """A BoundedSemaphore: a place given back twice — a bug — raises instead of silently
+    widening the lane past ADMIN_LANE_SLOTS (and with it the threads administration takes)."""
+    rt = runtime(FakeDirectory())
+    assert isinstance(rt.admin_lane, asyncio.BoundedSemaphore)
+    await rt.admin_lane.acquire()
+    rt.admin_lane.release()
+    with pytest.raises(ValueError):
+        rt.admin_lane.release()
+
+
 async def test_like_the_real_one_the_fake_waits_its_deadline_for_a_lane_place():
     directory = FakeDirectory([person("AYilmaz")])
     directory.deadline = 0.05

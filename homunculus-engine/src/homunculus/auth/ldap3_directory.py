@@ -8,14 +8,20 @@ Windows dev machines and in the python:3.12-slim image without libldap). Spec §
     objectGUID through `escape_guid` (each byte `\\xx`): a query cannot change a filter's shape.
   * `ldap3` is synchronous: each call runs on the directory's OWN pool of `SLOTS` threads —
     never asyncio's default executor, where asyncpg resolves the database host — and is cut off
-    after `LdapConfig.deadline_s` (2 × LDAP_TIMEOUT_S, at most 12 s — under the dashboard's 15 s
-    request timeout), waiting for a free thread included. A call cut off while it runs keeps
-    its thread until the socket timeouts end it, so the pool, not a semaphore, is the cap. The socket connect timeout is
-    LDAP_TIMEOUT_S, the receive timeout LDAP_TIMEOUT_S rounded up to whole seconds.
+    after `LdapConfig.deadline_s` (2 × LDAP_TIMEOUT_S, at most 12 s), waiting for a free thread
+    included. A call cut off while it runs keeps its thread until the socket timeouts end it,
+    so the pool, not a semaphore, is the cap. The socket connect timeout is LDAP_TIMEOUT_S, the
+    receive timeout LDAP_TIMEOUT_S rounded up to whole seconds.
   * An administration call passes the admin lane (`LdapRuntime.admin_lane`, ADMIN_LANE_SLOTS
-    places): it waits for a place BEFORE its deadline starts, and the place is given back when
+    places) first: it waits for a place at most `deadline_s` (then LdapUnavailable("timeout"),
+    nothing sent), and its own deadline starts once it has one. The place is given back when
     its thread has finished, a call cut off included — so administration never holds more than
     ADMIN_LANE_SLOTS of the SLOTS threads, and sign-ins and refreshes keep the rest.
+  * The bounds, then: a sign-in or a refresh (no lane) answers within `deadline_s` — at most
+    12 s, under the dashboard's 15 s request timeout. An administration call answers within
+    2 × `deadline_s` (the lane wait, then the call) — at most 24 s, 20 s at the default
+    LDAP_TIMEOUT_S of 5: past the dashboard's 15 s when the lane is full and the directory
+    slow, in which case the panel gives up first and the server's 503 comes later.
   * A call the caller stopped waiting for (its deadline, a cancellation) never binds as the
     account afterwards, and its outage says whether that bind had started
     (`LdapUnavailable.bind_attempted`, `_Attempt`): the sign-in throttle counts only a password
