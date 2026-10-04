@@ -245,7 +245,11 @@ least two local administrators.
    hospital system. The clinician's own mistyped Windows logons count toward the same
    threshold. **The reset period must be 15 minutes or less:** Homunculus' run ends after 15
    quiet minutes, and with a longer domain period AD would still be counting the previous
-   run when the next one starts — tell the developers if it is longer.
+   run when the next one starts — tell the developers if it is longer. Strictly under 15
+   minutes is better: it leaves a margin. **With several domain controllers,** ask whether a
+   successful logon on one DC resets the bad-password count the PDC emulator keeps for the
+   account: Homunculus ends a run at a successful sign-in as if it did — if it does not, tell
+   the developers. A restart of the API inside a run is covered under *Sign-in limits*.
 8. **Are the sAMAccountNames ASCII?** A name with `ş`, `ç`, `ğ`, `ö`, `ü`, `ı` (or letters of
    another script) breaks the local username rule (`a-z 0-9 . _ @ -`) and is skipped at import
    as `invalid_login`.
@@ -270,21 +274,47 @@ cd /opt/homunculus/deploy/local
 mkdir -p ldap-ca && cp /path/to/ca.pem ldap-ca/ca.pem && chmod 644 ldap-ca/ca.pem
 $EDITOR .env      # the LDAP_* block from .env.example; LDAP_CA_CERT=/etc/homunculus/ldap-ca/ca.pem
 docker compose up -d api
-docker compose logs api | grep "LDAP"
 ```
 
 The service account's password goes into `.env` only (`chmod 600`); single-quote it if it
-contains a `$`. Expected: `LDAP: service-account bind to dc1.hastane.local succeeded`.
-Otherwise: `FAILED (tls)` — the certificate or the name in `LDAP_URL`; `FAILED (unreachable)` —
-DNS or the firewall; `FAILED (timeout)` — the DC does not answer in time; `FAILED
-(service_bind_rejected)` — the bind DN or its password; `LDAP is OFF: …` — a setting the API
-cannot use (the message names it, never its value). None of these stops the API, and local
-sign-in keeps working.
+contains a `$`, and save `.env` as UTF-8 (a password that is not valid UTF-8 there turns LDAP
+off: `LDAP is OFF: LDAP_BIND_PASSWORD is not valid UTF-8 …`). The API binds once with the
+service account at start-up. **Check the outcome
+with `GET /admin/ldap/status`,** signed in as a local administrator: expected `"configured":
+true` and `"last_test_ok": true` (`null` for the first seconds, while the check runs). From the
+VM — it asks for the login, the password and the authenticator code, and keeps the password off
+the command line:
+
+```bash
+read -rp 'Login: ' HU; read -rsp 'Password: ' HP; echo; read -rp 'Code: ' HC
+token() { python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'; }
+T=$(HU="$HU" HP="$HP" python3 -c 'import json,os; print(json.dumps({"login": os.environ["HU"], "password": os.environ["HP"]}))' \
+  | curl -sk https://localhost/auth/login -H 'Content-Type: application/json' -d @- | token)
+T=$(curl -sk https://localhost/auth/totp/verify -H "Authorization: Bearer $T" \
+  -H 'Content-Type: application/json' -d "{\"code\":\"$HC\"}" | token)
+curl -sk https://localhost/admin/ldap/status -H "Authorization: Bearer $T"; echo
+unset HU HP HC T
+```
+
+(An administrator whose groups do not require MFA: leave out the second `T=` line.)
+
+`"configured": false` means `LDAP_URL` did not reach the container, or a setting turned LDAP off.
+The log says why, second: `docker compose logs api | grep "LDAP"` shows `LDAP: service-account
+bind to dc1.hastane.local succeeded` (the API prints its own INFO lines; an image built before
+F7 printed only failures, so a missing success line there meant nothing). Otherwise: `FAILED
+(tls)` — the certificate or the name in `LDAP_URL`; `FAILED (unreachable)` — DNS or the
+firewall; `FAILED (timeout)` — the DC does not answer in time; `FAILED (service_bind_rejected)`
+— the bind DN or its password; `LDAP is OFF: …` — a setting the API cannot use (the message
+names it, never its value). None of these stops the API, and local sign-in keeps working.
+`POST /admin/ldap/test` (same token) binds again once it is fixed.
 
 - **`LDAP_ALLOW_INSECURE=1` is for a lab, never the hospital.** It permits `ldap://`, and when
   no `LDAP_CA_CERT` is given it **switches certificate verification off** for `ldaps://`
-  (anyone on the path could read AD passwords). The API logs a WARNING at every start while it
-  is set.
+  (anyone on the path could read AD passwords). In production — a Postgres `DATABASE_URL`,
+  which every hospital deploy has — the API refuses it: LDAP stays **off** (AD accounts get
+  503) and every start logs the ERROR `LDAP is OFF: LDAP_ALLOW_INSECURE=1 is refused in
+  production …` until the line is removed from `.env`; the API itself still starts. Outside
+  production (a lab, a developer machine) it is allowed, with a WARNING at every start.
 - **A `tls` failure seen only on a developer machine** may be Python, not the certificate:
   Python 3.13 and newer verify strictly and refuse a CA certificate whose `basicConstraints`
   is not marked critical. The API image runs Python 3.12, which accepts it.
@@ -342,7 +372,9 @@ plan to map them. Every failure says what to ask IT for.
   permission): a mapping regroups everyone in its AD group.
 - **Sign-in forms:** the AD user name (`ayilmaz`), `DOMAIN\ayilmaz`, the UPN
   (`ayilmaz@hastane.local`) or the mail — as `LDAP_LOGIN_ATTRS` allows. The AD password goes to
-  one bind and is never stored, logged or audited.
+  one bind exactly as typed — its UTF-8 bytes, nothing normalised: AD compares the password as
+  it was set, so a no-break space or a combining accent in it must arrive unchanged — and is
+  never stored, logged or audited.
 - **AD down:** AD accounts get "Dizin sunucusuna ulaşılamıyor" (503) at sign-in; open sessions
   continue — a token refresh while the DC is unreachable, too slow, refuses TLS or the service
   account goes on without asking it (audited `refresh.directory_unavailable`); local accounts
@@ -385,26 +417,55 @@ plan to map them. Every failure says what to ask IT for.
   the run the sign-in is refused with 429 "Çok fazla hatalı deneme; 15 dakika sonra tekrar
   deneyin" without asking AD, until 15 minutes after the last failed bind; a refused attempt
   reaches no DC and does not extend the run. Only an attempt whose password reached the DC
-  counts (a DC outage before the bind does not); a successful sign-in ends the run. The count
-  is in the API's memory: a restart clears it.
+  counts (a DC outage before the bind does not). A bind the API stopped waiting for at its
+  deadline once the password had been sent is counted as of one deadline later — the DC may
+  still count it until then — so its run lasts 15 minutes from that. A right password ends
+  the run, as AD resets its count at a successful logon — but only for the failures recorded
+  before that sign-in began: wrong passwords that failed while it was being checked may have
+  reached the DC after it, so they stay counted and start the next run (with that run's unlock
+  already spent if the old run had spent it). The count is in the API's memory: a restart
+  clears it (see *A slow run is bounded too*).
 - **Unlock:** `POST /admin/users/{id}/unlock-sign-in` with `{"reason": "…"}` lets 3 more failed
   binds through in the current run, **once per run**: a second unlock in the same run is 409
-  "Bu hesabın girişi kısa süre önce açıldı; 15 dakika sonra tekrar deneyin" (the run, and the
-  throttle with it, ends 15 minutes after its last failed bind). An unlock of an account with
-  no failed bind in its current run — or a local account — grants nothing and does not use the
-  run's unlock. The reason is one line of at most 200 characters with at least one letter or
-  digit, no control character and no invisible formatting character (bidirectional overrides,
-  zero-width characters); it is audited as `user.sign_in_unlocked`. It needs `users.manage` and
+  "Bu hesabın bu hatalı giriş dizisi için tek kilit açma hakkı kullanıldı; 15 dakika hatalı
+  parola girilmezse giriş kendiliğinden açılır" (the run, and the throttle with it, ends once
+  15 minutes pass without a failed bind). An unlock of an account with no failed bind in its
+  current run — or a local account — grants nothing and does not use the run's unlock. The
+  reason is one line of at most 200 characters with at least one letter or digit, no control
+  character and no invisible formatting character (bidirectional overrides, zero-width
+  characters); it is audited as `user.sign_in_unlocked`, with `before` and `after` as
+  `{"failed": <failed binds in the run>, "allowed": 3 or 6}` and `granted` (`false` for an
+  unlock that had nothing to clear). It needs `users.manage` and
   the account within the caller's rights (a refused unlock uses nothing); not for an account
   active in another hospital or a platform operator's (409). It does not unlock anything in AD
   — an AD lockout is IT's to clear.
 - **A slow run is bounded too.** Failures do not age out one by one: one wrong password every
   5 minutes keeps the run alive, and after the third it is refused, exactly as AD keeps
   counting. So Homunculus adds at most 3 + 3 = 6 to the domain's count between two of its
-  resets, as long as the domain's reset period is 15 minutes or less (item 7). Wrong passwords
-  typed elsewhere for the same account (a ward PC) count in AD too, which is why the threshold
-  needs room above 6. The audit trail shows a run: `login.fail` rows for one account with
-  `reason` `bad_credentials`, then `throttled`.
+  resets, as long as the domain's reset period is 15 minutes or less (item 7) **and the API is
+  not restarted inside a run.** A restart or a deploy within 15 minutes of failed AD binds
+  clears Homunculus' runs but not AD's count, so up to 6 more can follow — 12 in one of AD's
+  runs, past a threshold of 7. Before restarting the API, look for failed sign-ins in the last
+  15 minutes and wait until there are none:
+
+  ```bash
+  docker compose exec postgres psql -U homunculus -d homunculus -c "SELECT payload->>'login'
+    AS login, count(*) FROM audit WHERE event_type = 'auth' AND subject = 'login.fail' AND
+    payload->>'reason' IN ('bad_credentials', 'directory_unavailable') AND ts::timestamptz >
+    now() - interval '15 minutes' GROUP BY 1;"
+  ```
+
+  Wrong passwords typed elsewhere for the same account (a ward PC) count in AD too, which is
+  why the threshold needs room above 6. The audit trail shows a run: `login.fail` rows for one
+  account with `reason` `bad_credentials`, then `throttled`.
+- **What the limits give away** (roadmap, user decision 11). *AD accounts can be told apart:*
+  when the directory is down, or `LDAP_URL` is unset while AD accounts exist, an AD login gets
+  an immediate 503 "Dizin sunucusuna ulaşılamıyor" — no dummy bcrypt, no 0.5 s floor — while
+  an unknown or local login gets 401; and only an AD account ever gets the 429 above. *A
+  clinician's Homunculus sign-in can be held at 429:* anyone who knows her login can keep it
+  there with 3 wrong passwords every 15 minutes (her Windows logon is not locked by it, with
+  the threshold at least 7); an administrator can lift it once per run. The audit trail shows
+  both. Accepted for the pilot; the roadmap tracks it.
 - **Per address (nginx):** `/auth/login` takes 10 attempts a minute per client address, with a
   burst of 10; beyond that nginx answers 429 `{"detail":"Çok fazla giriş denemesi; bir dakika
   sonra tekrar deneyin"}` with `Retry-After: 60` and logs a warning. If the ward PCs share one
