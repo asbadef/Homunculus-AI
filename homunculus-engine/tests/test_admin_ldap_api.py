@@ -685,7 +685,7 @@ async def test_a_mapping_dn_is_stored_in_its_canonical_spelling(client, world, d
     assert res.json()["ad_group_dn"] == (
         r"cn=eczane\, göğüs cerrahisi,ou=gruplar,dc=hastane,dc=local")
     again = await c.post("/admin/ldap/group-mappings", headers=admin, json={
-        "ad_group_dn": r"cn=ECZANE\, GÖĞÜS CERRAHISI,ou=Gruplar,dc=HASTANE,dc=LOCAL",
+        "ad_group_dn": r"cn=ECZANE\, GöğüS CERRAHISI,ou=Gruplar,dc=HASTANE,dc=LOCAL",
         "group_id": str(pharmacist)})
     assert (again.status_code, again.json()["detail"]) == (409, ldap_service.MAPPING_EXISTS)
     db_session.add(LdapGroupMapping(tenant_id=world["tenant"].id, group_id=nurse,

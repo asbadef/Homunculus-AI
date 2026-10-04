@@ -7,6 +7,7 @@ import logging
 import random
 import socket
 import ssl
+import string
 import struct
 import threading
 import time
@@ -178,7 +179,7 @@ def test_a_group_entry():
 @pytest.mark.parametrize("spellings, canonical", [
     (["CN=X, OU=Y", "cn=x,ou=y", " CN = X ,  OU = Y ", "cN=x,Ou=Y"], "cn=x,ou=y"),
     # One comma, three spellings: `\,`, `\2C`, `\2c`.
-    ([r"CN=Yılmaz\, Ayşe,DC=x", r"CN=Yılmaz\2C Ayşe,DC=x", r"cn=YıLMAZ\2c AYŞE, dc=X"],
+    ([r"CN=Yılmaz\, Ayşe,DC=x", r"CN=Yılmaz\2C Ayşe,DC=x", r"cn=YıLMAZ\2c AYşE, dc=X"],
      r"cn=yılmaz\, ayşe,dc=x"),
     # Hex pairs are UTF-8; a character that needs no escape loses its backslash.
     ([r"CN=Ay\C5\9Fe,DC=x", "CN=Ayşe,DC=x", r"CN=\41y\c5\9fe,DC=x"], "cn=ayşe,dc=x"),
@@ -218,11 +219,31 @@ def _values(dn: str) -> list[str]:
             parse_dn(_hex_escaped_spaces(dn.strip()), escape=False, strip=True)]
 
 
+def _ascii_lower(text: str) -> str:
+    return text.translate(str.maketrans(string.ascii_uppercase, string.ascii_lowercase))
+
+
+@pytest.mark.parametrize("one, other", [
+    ("CN=K,DC=x", "CN=K,DC=x"),              # the Kelvin sign; Unicode lower-cases it to k
+    ("CN=İK,DC=x", "CN=i̇k,DC=x"),           # İ; Unicode lower-cases it to i + a dot above
+    ("CN=ΑΣ,DC=x", "CN=ασ,DC=x"),                 # Greek capitals
+    ("CN=ΑΣ,DC=x", "CN=ας,DC=x"),
+    ("CN=YB-HEMŞIRE,DC=x", "CN=YB-Hemşire,DC=x"),
+])
+def test_only_ascii_letters_are_case_folded(one, other):
+    """Distinct AD groups must stay distinct: only A-Z are folded, so no Unicode case rule can
+    merge two names (a group spelled with the Kelvin sign is not group `k`). The group picker
+    and memberOf both give AD's exact spelling, so a mapping made from the picker still
+    matches; ASCII case and spacing are still folded."""
+    assert canonical_dn(one) != canonical_dn(other)
+    assert canonical_dn(one) == canonical_dn(one.replace("CN=", "cn=").replace("DC=x", "dc=X"))
+
+
 def test_a_canonical_dn_is_its_own_canonical_form_and_means_the_same_dn():
     """Generated DNs (fixed seed): canonicalising twice changes nothing — the API's validator,
     `create_mapping` and the sign-in each canonicalise again, so a second pass that changed a
     DN would store, or match, ANOTHER group — and the canonical form reads back as the same
-    values, lower-cased."""
+    values, ASCII letters lower-cased (and nothing else)."""
     rnd = random.Random(20261004)
     checked = 0
     for _ in range(6000):
@@ -234,7 +255,7 @@ def test_a_canonical_dn_is_its_own_canonical_form_and_means_the_same_dn():
             continue
         checked += 1
         assert canonical_dn(once) == once, (dn, once)
-        assert _values(once) == [v.lower() for v in _values(dn)], (dn, once)
+        assert _values(once) == [_ascii_lower(v) for v in _values(dn)], (dn, once)
     assert checked > 1500
 
 

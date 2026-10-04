@@ -28,7 +28,8 @@ Windows dev machines and in the python:3.12-slim image without libldap). Spec §
     that reached the domain controller.
   * Results are capped: `size_limit` on the server, and the slice here.
   * A group DN has one spelling for comparing (`canonical_dn`): the stored mapping and AD's
-    memberOf are compared in it, whatever spacing, escaping or case either was written in.
+    memberOf are compared in it, whatever spacing, escaping or ASCII case either was written
+    in (other letters compare as AD spells them).
   * A network or TLS failure becomes LdapUnavailable(reason); a wrong password is None.
   * The clinician's password goes to one bind. It is not kept, logged or put into an
     exception; an empty one never reaches the server (an empty simple bind is anonymous).
@@ -113,15 +114,21 @@ def nested_groups_filter(user_dn: str) -> str:
 # AD's special characters in a DN value. ldap3's parser refuses each of them bare (AD writes
 # them escaped), so they are written escaped here too, wherever they stand.
 _DN_SPECIAL = frozenset('\\,+"<>;=#')
+# Case folding for DNs: A-Z only. A Unicode rule (str.lower) would merge distinct AD groups —
+# the Kelvin sign with K, `İ` with `i` + a dot above, Greek capitals with their final forms.
+_ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 
 
 def canonical_dn(dn: str) -> str:
     r"""The one spelling a distinguished name is stored and compared in (`ldap_group_mappings`
     against AD's memberOf): ldap3's parser splits and checks it (RFC 4514); spaces around `=`
     and the separators go; every escape is resolved — `\,`, `\2C` and `\2c` are one comma, hex
-    pairs are UTF-8 — and written back the one way (`_escape_dn_value`); then lower-cased, as AD
-    compares DNs. Idempotent. ValueError when it is not a DN, or carries a control character
-    (NUL included, raw or escaped) or an escape that is not UTF-8: nothing to store or match."""
+    pairs are UTF-8 — and written back the one way (`_escape_dn_value`); then its ASCII letters
+    are lower-cased, and only those: AD's own case-insensitive comparison is not reproduced for
+    other scripts (no Unicode rule merges two groups), and the group picker and memberOf both
+    give AD's exact spelling. Idempotent. ValueError when it is not a DN, or carries a control
+    character (NUL included, raw or escaped) or an escape that is not UTF-8: nothing to store
+    or match."""
     if _has_control(dn):
         raise ValueError("control character in a DN")
     try:
@@ -134,7 +141,7 @@ def canonical_dn(dn: str) -> str:
         if _has_control(text):
             raise ValueError("control character in a DN")
         out.append(f"{attribute_type}={_escape_dn_value(text)}{separator}")
-    return "".join(out).lower()
+    return "".join(out).translate(_ASCII_LOWER)
 
 
 def _has_control(text: str) -> bool:
