@@ -33,8 +33,8 @@ from homunculus.auth.permissions import ALL_PERMISSIONS
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
 from tests.fake_directory import (
-    AD_PASSWORD, ADMIN_PASSWORD, TENANT_SLUG, ad_client, ad_world, add_directory_account,
-    add_mapping, audit_events, group_dn, group_rows, person, runtime,
+    AD_PASSWORD, ADMIN_PASSWORD, TENANT_SLUG, FakeDirectory, ad_client, ad_world,
+    add_directory_account, add_mapping, audit_events, group_dn, group_rows, person, runtime,
 )
 from tests.signed_in import add_user, bearer
 
@@ -524,9 +524,9 @@ async def test_an_import_leaves_a_lane_place_for_a_search(client, world, db_sess
 
 async def test_a_cancelled_import_stays_cancelled_and_is_not_an_outage():
     """The request goes away (the client disconnected, the server is stopping) in the same step
-    as a lookup fails. The TaskGroup then reports the lookup's failure and drops the
-    cancellation; the import re-raises the cancellation instead of answering 503 for a request
-    nobody waits on (and that the server is cancelling)."""
+    as a lookup fails: the import stays cancelled instead of answering 503 for a request nobody
+    waits on (and that the server is cancelling). A TaskGroup would report the lookup's failure
+    and drop the cancellation; `lookup_accounts` does not use one."""
     gate = asyncio.Event()
     failing, silent = str(uuid.uuid4()), str(uuid.uuid4())
 
@@ -544,6 +544,58 @@ async def test_a_cancelled_import_stays_cancelled_and_is_not_an_outage():
     importing.cancel()                                    # ...as the request is cancelled
     with pytest.raises(asyncio.CancelledError):
         await importing
+
+
+async def test_a_lookup_that_fails_is_an_outage_and_not_a_cancellation():
+    """The directory fails one lookup while another is still with it, and nobody cancels the
+    request: LdapUnavailable — the route's 503 — on every interpreter. On Python 3.12 (the
+    production image) a TaskGroup cancels its parent task when a child fails and never takes
+    that back (fixed in 3.13), so a look at the task's `cancelling()` afterwards turned every
+    outage during an import into a CancelledError: an HTTP 500. The lookup still running is
+    stopped, not left with the directory."""
+    gate = asyncio.Event()
+    failing, silent = str(uuid.uuid4()), str(uuid.uuid4())
+    stopped: list[str] = []
+
+    class Directory:
+        async def find_by_external_id(self, external_id, *, lane=None):
+            if external_id == failing:
+                await gate.wait()
+                raise LdapUnavailable("timeout")
+            try:
+                await asyncio.Event().wait()              # never answers
+            except asyncio.CancelledError:
+                stopped.append(external_id)
+                raise
+
+    importing = asyncio.create_task(
+        ldap_service.lookup_accounts(runtime(Directory()), [silent, failing]))
+    await asyncio.sleep(0.01)                             # both lookups are waiting
+    gate.set()                                            # the lookup fails
+    with pytest.raises(LdapUnavailable) as raised:
+        await importing
+    assert raised.value.reason == "timeout"
+    assert stopped == [silent]
+
+
+async def test_a_fault_in_a_lookup_is_not_reported_as_an_outage():
+    """A lookup that fails with anything but LdapUnavailable — a bug — is raised as itself, a
+    500 someone looks into, not a 503 that reads as the directory's fault: also when another
+    lookup met an outage in the same step."""
+    class Directory:
+        async def find_by_external_id(self, external_id, *, lane=None):
+            await asyncio.sleep(0)
+            if external_id == "fault":
+                raise KeyError(external_id)
+            raise LdapUnavailable("unreachable")
+
+    with pytest.raises(KeyError):
+        await ldap_service.lookup_accounts(runtime(Directory()), ["fault", "outage"])
+
+
+async def test_an_import_with_nothing_to_look_up_asks_nothing():
+    """Every id already has an account: no lookup, an empty answer (not an error)."""
+    assert await ldap_service.lookup_accounts(runtime(FakeDirectory([])), []) == {}
 
 
 async def test_the_first_directory_failure_stops_the_rest_of_the_import(client, world,

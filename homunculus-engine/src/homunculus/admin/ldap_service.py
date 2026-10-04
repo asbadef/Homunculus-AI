@@ -72,8 +72,18 @@ async def lookup_accounts(ldap: LdapRuntime,
     threads to sign-ins — and at most IMPORT_LOOKUPS for this import, so the lane keeps a place
     for the administrator's interactive calls. The first LdapUnavailable cancels the lookups
     still waiting or running — no queue of doomed calls is left in front of sign-ins — and is
-    raised once they have stopped; the caller answers 503 with nothing written. A cancellation
-    of the request stays a cancellation, even when a lookup failed in the same step."""
+    raised once they have stopped; the caller answers 503 with nothing written. Any other
+    failure of a lookup (a fault) is raised as itself, before an outage. A cancellation of the
+    request stays a cancellation, even when a lookup failed in the same step.
+
+    `asyncio.wait`, not a TaskGroup: the behaviour must be the same on the production image's
+    Python 3.12 as on 3.13+. On 3.12 a TaskGroup cancels its parent task when a child fails and
+    never takes that back (`cancelling()` stays raised), so an outage could not be told from a
+    cancellation of the request — every outage during an import became a 500. Here the
+    request's cancellation simply arrives in `asyncio.wait` (or in the `gather` that stops the
+    lookups) and propagates; nothing has to tell the two apart afterwards."""
+    if not external_ids:
+        return {}
     tasks: list[asyncio.Task] = []
     room = asyncio.Semaphore(IMPORT_LOOKUPS)
 
@@ -84,33 +94,31 @@ async def lookup_accounts(ldap: LdapRuntime,
                                                                 lane=ldap.admin_lane)
             except LdapUnavailable:
                 # The others are cancelled HERE, in the step that saw the failure and before
-                # this lookup's `room` is given back: the TaskGroup would only do it a step
-                # later, after the place this lookup gave back had let one more lookup start.
+                # this lookup's `room` is given back: `asyncio.wait` returns only a step later,
+                # after the place this lookup gave back had let one more lookup start.
                 for task in tasks:
                     if task is not asyncio.current_task():
                         task.cancel()
                 raise
 
+    tasks.extend(asyncio.create_task(lookup(external_id)) for external_id in external_ids)
     try:
-        async with asyncio.TaskGroup() as group:
-            tasks.extend(group.create_task(lookup(external_id)) for external_id in external_ids)
-    except BaseExceptionGroup as failed:
-        outages, others = failed.split(LdapUnavailable)
-        if others is not None or outages is None:
-            raise
-        task = asyncio.current_task()
-        if task is not None and task.cancelling():
-            # The request itself is being cancelled (the client went away, the server is
-            # stopping) in the step a lookup failed: the TaskGroup reports the failure and drops
-            # the cancellation. It is a cancellation, not an outage to answer 503 for.
-            raise asyncio.CancelledError() from None
-        raise _first(outages) from None
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+    finally:
+        # Normally a no-op: every lookup has finished or was cancelled by the first failure.
+        # When the request is cancelled, or a lookup failed with something else, the rest are
+        # stopped here — and awaited, so none is left asking the directory for nobody.
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    failures = [task.exception() for task in tasks if not task.cancelled()]
+    outages = [exc for exc in failures if isinstance(exc, LdapUnavailable)]
+    faults = [exc for exc in failures if exc is not None and not isinstance(exc, LdapUnavailable)]
+    if faults:
+        raise faults[0]
+    if outages:
+        raise outages[0]
     return {external_id: task.result() for external_id, task in zip(external_ids, tasks)}
-
-
-def _first(group: BaseExceptionGroup) -> BaseException:
-    first = group.exceptions[0]
-    return _first(first) if isinstance(first, BaseExceptionGroup) else first
 
 
 SKIP_EXISTS = "exists"
