@@ -593,6 +593,31 @@ async def test_a_fault_in_a_lookup_is_not_reported_as_an_outage():
         await ldap_service.lookup_accounts(runtime(Directory()), ["fault", "outage"])
 
 
+async def test_a_fault_in_a_lookup_starts_no_further_lookup():
+    """A lookup that fails with a fault (a bug) stops the import's other lookups in the step
+    that saw it — as an outage does — before its place is given back: no further lookup asks
+    the directory for an import that is already failing."""
+    gate = asyncio.Event()
+    asked: list[str] = []
+
+    class Directory:
+        async def find_by_external_id(self, external_id, *, lane=None):
+            asked.append(external_id)
+            if external_id == "fault":
+                await gate.wait()
+                raise KeyError(external_id)
+            await asyncio.Event().wait()                  # never answers
+
+    importing = asyncio.create_task(ldap_service.lookup_accounts(
+        runtime(Directory()), ["fault", "waiting", "queued-1", "queued-2"]))
+    await asyncio.sleep(0.01)                             # two lookups at once (IMPORT_LOOKUPS)
+    assert asked == ["fault", "waiting"]
+    gate.set()
+    with pytest.raises(KeyError):
+        await importing
+    assert asked == ["fault", "waiting"]                  # nothing started after the fault
+
+
 async def test_an_import_with_nothing_to_look_up_asks_nothing():
     """Every id already has an account: no lookup, an empty answer (not an error)."""
     assert await ldap_service.lookup_accounts(runtime(FakeDirectory([])), []) == {}

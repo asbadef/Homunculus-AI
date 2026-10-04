@@ -74,11 +74,11 @@ async def lookup_accounts(ldap: LdapRuntime,
     lane (`LdapRuntime.admin_lane`): at most ADMIN_LANE_SLOTS at once across every request, so
     an import of 50 accounts against a slow domain controller leaves the directory's other
     threads to sign-ins — and at most IMPORT_LOOKUPS for this import, so the lane keeps a place
-    for the administrator's interactive calls. The first LdapUnavailable cancels the lookups
+    for the administrator's interactive calls. The first failure of a lookup cancels the lookups
     still waiting or running — no queue of doomed calls is left in front of sign-ins — and is
-    raised once they have stopped; the caller answers 503 with nothing written. Any other
-    failure of a lookup (a fault) is raised as itself, before an outage. A cancellation of the
-    request stays a cancellation, even when a lookup failed in the same step.
+    raised once they have stopped: an LdapUnavailable, and the caller answers 503 with nothing
+    written; any other failure (a fault) is raised as itself, before an outage. A cancellation
+    of the request stays a cancellation, even when a lookup failed in the same step.
 
     `asyncio.wait`, not a TaskGroup: the behaviour must be the same on the production image's
     Python 3.12 as on 3.13+. On 3.12 a TaskGroup cancels its parent task when a child fails and
@@ -96,7 +96,7 @@ async def lookup_accounts(ldap: LdapRuntime,
             try:
                 return await ldap.directory.find_by_external_id(external_id,
                                                                 lane=ldap.admin_lane)
-            except LdapUnavailable:
+            except Exception:                # an outage or a fault; a cancellation passes through
                 # The others are cancelled HERE, in the step that saw the failure and before
                 # this lookup's `room` is given back: `asyncio.wait` returns only a step later,
                 # after the place this lookup gave back had let one more lookup start.
