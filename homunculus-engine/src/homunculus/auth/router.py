@@ -15,8 +15,14 @@ POST /auth/refresh      — exchange refresh token for new tokens built from the
                           gone or password changed there: 401; otherwise its AD groups apply, so
                           the new token carries them; directory down: the session goes on; an
                           answer about the account that cannot be read: 503, nothing renewed)
-GET  /auth/me           — profile, tenant, groups, permissions (allowed before MFA)
-POST /auth/password     — change own password (local accounts)
+GET  /auth/me           — profile, tenant, groups, permissions, the screen-lock time (allowed
+                          before MFA and before a temporary password is replaced)
+POST /auth/password     — change own password (local accounts); the one route a session whose
+                          temporary password must be replaced reaches (after MFA)
+POST /auth/reauth       — unlock a locked screen: the session's own password once more. Local:
+                          bcrypt; AD: one bind, counted with the sign-ins in the same chain. A
+                          wrong password is 403 (never 401: the dashboard refreshes and RETRIES
+                          a 401, which would send the password to the directory twice)
 
 Every sign-in, MFA and password event goes to the audit trail (never a password or a code).
 """
@@ -25,6 +31,7 @@ import asyncio
 import hmac
 import time
 import uuid
+import weakref
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from jose import JWTError
@@ -33,8 +40,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.auth.audit import append_audit
 from homunculus.auth.dependencies import (
-    Principal, get_current_user_pre_mfa, get_principal_pre_mfa, get_principal_pre_password,
-    get_user_for_enrolment,
+    Principal, get_current_user_pre_mfa, get_principal, get_principal_pre_mfa,
+    get_principal_pre_password, get_user_for_enrolment,
 )
 from homunculus.auth.groups import TenantRef, tenant_of_user
 from homunculus.auth.jwt import decode_token
@@ -45,11 +52,11 @@ from homunculus.auth.ldap import (
 from homunculus.auth.ldap_sync import (
     LDAP_SYNC_ACTOR, SyncOutcome, apply_directory_profile, sync_ldap_groups,
 )
-from homunculus.auth.limits import directory_binds, totp_failures
+from homunculus.auth.limits import directory_binds, reauth_failures, totp_failures
 from homunculus.auth.models import AUTH_LDAP, User
 from homunculus.auth.schemas import (
-    GroupBrief, LoginRequest, PasswordChangeRequest, RefreshRequest, TOTPSetupResponse,
-    TOTPVerifyRequest, TokenResponse, UserMeResponse,
+    GroupBrief, LoginRequest, PasswordChangeRequest, ReauthRequest, RefreshRequest,
+    TOTPSetupResponse, TOTPVerifyRequest, TokenResponse, UserMeResponse,
 )
 from homunculus.auth.service import (
     PasswordError, StaleSession, build_context, change_password, credential_fingerprint,
@@ -70,8 +77,25 @@ _last_step: dict[uuid.UUID, int] = {}
 
 _TOTP_LOCKED = "Çok fazla hatalı kod. 5 dakika sonra tekrar deneyin."
 _TOTP_REPLAYED = "Bu kod zaten kullanıldı; yeni kodu bekleyin."
-# The AD bind throttle's refusal; "15" is DIRECTORY_BIND_WINDOW_S (auth/limits.py).
+# The AD bind throttle's refusal; "15" is DIRECTORY_BIND_WINDOW_S (auth/limits.py). The same
+# words refuse a local account's unlock and its own password change once `reauth_failures` has
+# locked them (also 15 minutes).
 _DIRECTORY_THROTTLED = "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin"
+# A wrong password at a locked screen (POST /auth/reauth). 403, not 401: see the module docstring.
+_REAUTH_REFUSED = "Parola hatalı"
+# One check of a local account's password at a time, per account, at /auth/reauth and
+# /auth/password: `reauth_failures` counts a wrong password only once bcrypt has answered, so
+# requests sent all at once would every one pass its `locked` gate before the first answer came
+# back, and test more passwords than the limit allows. Held across the gate, the check and the
+# count. Weak values: an account's lock lives only while a request holds or awaits it.
+_password_checks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
+
+
+def _password_check(key: str) -> asyncio.Lock:
+    lock = _password_checks.get(key)
+    if lock is None:
+        lock = _password_checks[key] = asyncio.Lock()
+    return lock
 # Directory failures after which a refresh goes on unsynced (the spec §4 outage rule): the
 # domain controller could not be reached, or would not let the service account in — nothing
 # about the account itself. Any other reason (`protocol` also covers a reply about THIS account
@@ -518,25 +542,161 @@ async def password(body: PasswordChangeRequest, request: Request,
                    db: AsyncSession = Depends(get_db)) -> TokenResponse:
     """The change retires every existing session (token version and credential fingerprint
     both move), so the caller receives a fresh pair and keeps working. It is also how a
-    temporary password is replaced: the one route such a session reaches (after MFA)."""
+    temporary password is replaced: the one route such a session reaches (after MFA).
+
+    A wrong current password counts in `reauth_failures`, with the wrong passwords at a locked
+    screen (/auth/reauth): these are the two places a held token can test the account's
+    password, and 5 wrong in a row lock both for 15 minutes (429, before any check). One audit
+    row marks the lock engaging; the requests it refuses meanwhile write none. One account's
+    checks run one at a time (`_password_check`), so a burst tests no more than the limit. A
+    change refused as stale (`StaleSession`) neither counts nor clears the count: the current
+    password was right, but nothing was changed."""
     current_user = principal.user
-    try:
-        await change_password(db, current_user, body.current_password, body.new_password)
-    except PasswordError as exc:
-        append_audit(request, tenant=principal.tenant, event_type="auth",
-                     subject="password.change.fail",
-                     payload={"user": current_user.username, "reason": exc.reason})
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    except StaleSession:
-        # A reset (or another bump) landed after this token was checked: answered as the stale
-        # token itself would be, so the reset stands (auth.service.change_password).
-        append_audit(request, tenant=principal.tenant, event_type="auth",
-                     subject="password.change.fail",
-                     payload={"user": current_user.username, "reason": "stale_session"})
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="token_version",
-                            headers={"WWW-Authenticate": "Bearer"}) from None
+    key = str(current_user.id)
+    async with _password_check(key):
+        if reauth_failures.locked(key):
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                                detail=_DIRECTORY_THROTTLED)
+        try:
+            await change_password(db, current_user, body.current_password, body.new_password)
+        except PasswordError as exc:
+            append_audit(request, tenant=principal.tenant, event_type="auth",
+                         subject="password.change.fail",
+                         payload={"user": current_user.username, "reason": exc.reason})
+            if exc.reason == "wrong_current" and reauth_failures.failed(key):
+                append_audit(request, tenant=principal.tenant, event_type="auth",
+                             subject="password.change.locked",
+                             payload={"user": current_user.username,
+                                      "lock_seconds": reauth_failures.lock_seconds})
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        except StaleSession:
+            # A reset (or another bump) landed after this token was checked: answered as the
+            # stale token itself would be, so the reset stands (auth.service.change_password).
+            append_audit(request, tenant=principal.tenant, event_type="auth",
+                         subject="password.change.fail",
+                         payload={"user": current_user.username, "reason": "stale_session"})
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="token_version",
+                                headers={"WWW-Authenticate": "Bearer"}) from None
+        reauth_failures.succeeded(key)
     append_audit(request, tenant=principal.tenant, event_type="auth", subject="password.change",
                  payload={"user": current_user.username})
     ctx = await build_context(db, current_user)
     verified = principal.mfa_verified and current_user.totp_enabled
     return TokenResponse(**issue_tokens(current_user, ctx, mfa_verified=verified))
+
+
+@router.post("/reauth", summary="Unlock a locked screen with the session's own password")
+async def reauth(body: ReauthRequest, request: Request,
+                 principal: Principal = Depends(get_principal),
+                 db: AsyncSession = Depends(get_db)) -> dict:
+    """The dashboard's lock screen: is the person at the workstation the one whose session this
+    is? Nothing is issued — the session goes on as it was; MFA is not asked again (the session
+    passed it at sign-in, and this is a presence check, not a sign-in).
+
+    200 {"ok": true}: the password is right. 403 `_REAUTH_REFUSED`: it is wrong (counted). 429:
+    too many wrong ones. 503: the directory does not answer. 401: the session itself is over
+    (the token, or an AD account disabled or expired in AD) — the dashboard's refresh then ends
+    it. Every answer but the 401 leaves the session untouched; signing out instead is always the
+    dashboard's to do, with no password.
+
+    A LOCAL account is checked with bcrypt; `reauth_failures` locks its unlock for 15 minutes
+    after 5 wrong passwords in a row — counted with the wrong current passwords at
+    /auth/password. One audit row marks the lock engaging; the unlocks it refuses meanwhile write
+    none. An AD account's password is one bind, and that bind counts in `directory_binds` — the
+    same chain as the account's sign-ins, so a locked screen adds no capacity to lock the
+    account out of the hospital domain: 3 failed binds (3 more after an administrator's unlock)
+    per chain, whatever mix of sign-ins and unlocks made them, and once the chain is full the
+    directory is not asked (429). The flip side, as at sign-in: whoever knows the account's
+    login can fill its chain with wrong passwords, and its locked screen then cannot be
+    unlocked for at least 15 minutes (sign out, or wait). The database connection is released
+    while the directory answers (plan decision D7 of Wave 1A)."""
+    user = principal.user
+    user_id, username, source = user.id, user.username, user.auth_source
+    external_id, hashed = user.external_id, user.hashed_password
+
+    def audit(subject: str, **payload) -> None:
+        append_audit(request, tenant=principal.tenant, event_type="auth", subject=subject,
+                     payload={"user": username, **payload})
+
+    if source == AUTH_LDAP:
+        await _directory_reauth(request, db, user_id, external_id, body.password, audit)
+        audit("reauth.ok")
+        return {"ok": True}
+
+    key = str(user_id)
+    async with _password_check(key):         # one check at a time: a burst tests no more
+        if reauth_failures.locked(key):
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                                detail=_DIRECTORY_THROTTLED)
+        if not await run_bcrypt(verify_local_password, source, hashed, body.password):
+            audit("reauth.fail", reason="bad_credentials")
+            if reauth_failures.failed(key):
+                audit("reauth.locked", lock_seconds=reauth_failures.lock_seconds)
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_REAUTH_REFUSED)
+        reauth_failures.succeeded(key)
+    audit("reauth.ok")
+    return {"ok": True}
+
+
+async def _directory_reauth(request: Request, db: AsyncSession, user_id: uuid.UUID,
+                            external_id: str | None, password: str, audit) -> None:
+    """An AD account's unlock: one bind as the account (found by objectGUID), under the same
+    throttle as its sign-ins and counted exactly as `_directory_sign_in` counts its bind.
+    Returns when the password is right; raises otherwise.
+
+    Every failed bind the throttle counts is audited (`reauth.fail`) the moment it is counted,
+    with nothing awaited in between — `audit` is a plain call, and the hospital is the
+    session's —: a wrong password, an outage once the password was sent, and an unlock
+    cancelled (`cancelled`) or failing on a fault (`directory_error`) once it may have been, as
+    a sign-in's `login.fail`. The runbook reads these rows before a restart."""
+    ldap = get_ldap(request)
+    if ldap is None:
+        audit("reauth.fail", reason="directory_unavailable")
+        raise _directory_down()
+    if not external_id:
+        audit("reauth.fail", reason="directory_not_found")
+        raise _bad_credentials()                 # 401: the refresh will not keep it either
+    await db.rollback()                          # nothing written; frees the connection
+    slot = str(user_id)
+    ticket = directory_binds.begin(slot)
+    if ticket is None:
+        audit("reauth.fail", reason="throttled")
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                            detail=_DIRECTORY_THROTTLED)
+    # As at sign-in: nothing between `begin` and the try, and every path releases the place
+    # (`end` with this attempt's ticket). An outage counts only when the password had reached
+    # the directory (`bind_attempted`), dated as late as the domain controller may still count a
+    # bind it has not answered (`bind_pending_s`); anything else fails closed, dated as late as
+    # the longest deadline.
+    try:
+        identity = await ldap.directory.authenticate(external_id, password)
+    except LdapUnavailable as exc:
+        directory_binds.end(slot, ticket, failed=exc.bind_attempted,
+                            pending_s=exc.bind_pending_s)
+        audit("reauth.fail", reason="directory_unavailable")
+        raise _directory_down() from None
+    except BaseException as exc:             # cancelled, or a fault: the bind may have been made
+        counted = getattr(exc, "bind_attempted", True)
+        directory_binds.end(slot, ticket, failed=counted,
+                            pending_s=getattr(exc, "bind_pending_s", DEADLINE_CAP_S))
+        if counted:
+            audit("reauth.fail", reason="cancelled" if isinstance(exc, asyncio.CancelledError)
+                  else "directory_error")
+        raise
+    if identity is None:
+        directory_binds.end(slot, ticket, failed=True)
+        audit("reauth.fail", reason="bad_credentials")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_REAUTH_REFUSED)
+    directory_binds.end(slot, ticket, failed=False)
+    if identity.bound:
+        # The bind as the account succeeded, and AD reset its count then — the directory says
+        # so (`LdapIdentity.bound`), the clock is not asked. Right after `end`, nothing awaited
+        # in between: failures recorded while this one ran stay (auth/limits.py, `succeeded`).
+        directory_binds.succeeded(slot, ticket)
+    if identity.disabled or not identity.bound:
+        # Returned without a bind: switched off in AD, or past its end date as the directory
+        # judged it. The session is over in AD: 401, and the dashboard's refresh ends it.
+        audit("reauth.fail",
+              reason="directory_disabled" if identity.disabled else "directory_expired")
+        raise _bad_credentials()

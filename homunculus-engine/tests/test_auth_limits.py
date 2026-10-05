@@ -675,3 +675,23 @@ def test_garbage_is_refused_not_an_error():
 def test_the_step_matches_pyotps_own_verification():
     code = pyotp.TOTP(SECRET).now()
     assert accepted_step(SECRET, code) is not None
+
+
+def test_a_ticket_of_another_chain_is_refused_and_changes_nothing():
+    """Attempt numbers are counted per chain: two chains both hand out attempt 1. A ticket is
+    its own chain's — another chain's is refused (ValueError), never taken for the place of the
+    same number there, which `end` would free (plan G1 Wave 2, Task 5)."""
+    a, b = (FailureChain(max_failures=DIRECTORY_BIND_MAX_FAILURES,
+                         quiet_seconds=DIRECTORY_BIND_WINDOW_S) for _ in range(2))
+    a_ticket, b_ticket = a.begin("u"), b.begin("u")
+    assert a_ticket.attempt == b_ticket.attempt
+    with pytest.raises(ValueError, match="another FailureChain"):
+        b.end("u", a_ticket, failed=False)
+    with pytest.raises(ValueError, match="another FailureChain"):
+        b.succeeded("u", a_ticket)
+    assert b._chains["u"].in_flight == {b_ticket.attempt}       # b's place is still held
+    assert b._chains["u"].failures == [] and b._recorded == 0
+    b.end("u", b_ticket, failed=True)                           # and only its own ticket ends it
+    assert len(b._chains["u"].failures) == 1
+    a.end("u", a_ticket, failed=False)                          # a's ticket still ends a's place
+    assert "u" not in a._chains

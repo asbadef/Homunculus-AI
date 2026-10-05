@@ -89,12 +89,16 @@ class Ticket:
     `begin`, unique in its FailureChain): `end` releases exactly this place, once. `seq` is how
     many failures the FailureChain had recorded by then (every key counted) and `at` its clock
     at that moment: `succeeded` reads them to tell the failures that came before this attempt
-    from those that may have come after. A ticket is good for its own key only — `end` and
-    `succeeded` refuse another key's (ValueError)."""
+    from those that may have come after. A ticket is good for its own key and its own
+    FailureChain only — `end` and `succeeded` refuse another key's and another chain's
+    (ValueError): attempt numbers are counted per chain, so another chain's ticket could
+    otherwise name a place here and free it."""
     key: str
     attempt: int
     seq: int
     at: float
+    # The FailureChain that handed it out (its `_owner`); left out of repr and comparison.
+    owner: object = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -147,10 +151,11 @@ class FailureChain:
     for the failures that came before that attempt began; those recorded since start the next
     one.
 
-    Misuse is refused, never absorbed: a ticket used for another key, an `end` for a place
-    that is not held (ended already, or never handed out by this chain) and a `succeeded`
-    before its attempt's `end` raise ValueError and change nothing. A silent `end` would free
-    another attempt's place and let one more bind through than the chain allows.
+    Misuse is refused, never absorbed: a ticket used for another key or handed out by another
+    FailureChain, an `end` for a place that is not held (ended already, or never handed out)
+    and a `succeeded` before its attempt's `end` raise ValueError and change nothing. A silent
+    `end` would free another attempt's place and let one more bind through than the chain
+    allows.
 
     A failure is dated when its attempt ends, after the directory answered — or `pending_s`
     later, when the bind was sent and the domain controller has not answered it (cut off, or
@@ -166,6 +171,7 @@ class FailureChain:
         self._chains: dict[str, _Chain] = {}
         self._recorded = 0                   # failures recorded so far, every key: Ticket.seq
         self._attempts = 0                   # places handed out so far, every key: .attempt
+        self._owner = object()               # stamped on every Ticket this chain hands out
 
     def _current(self, key: str) -> _Chain | None:
         """The key's chain, or None when it has none: never one, or it has gone quiet (it is
@@ -177,8 +183,9 @@ class FailureChain:
             return None
         return chain
 
-    @staticmethod
-    def _own(key: str, ticket: Ticket) -> None:
+    def _own(self, key: str, ticket: Ticket) -> None:
+        if ticket.owner is not self._owner:
+            raise ValueError("this ticket was handed out by another FailureChain")
         if ticket.key != key:
             raise ValueError("this ticket was handed out for another key")
 
@@ -192,7 +199,8 @@ class FailureChain:
             return None
         self._attempts += 1
         chain.in_flight.add(self._attempts)
-        return Ticket(key=key, attempt=self._attempts, seq=self._recorded, at=self._clock())
+        return Ticket(key=key, attempt=self._attempts, seq=self._recorded, at=self._clock(),
+                      owner=self._owner)
 
     def end(self, key: str, ticket: Ticket, *, failed: bool, pending_s: float = 0.0) -> None:
         """Release the place `begin` reserved for `ticket`; a failed attempt is counted in the
@@ -257,6 +265,14 @@ class FailureChain:
 
 # Wrong TOTP codes, keyed by user id.
 totp_failures = FailureLimiter(max_failures=5, lock_seconds=300)
+
+# Wrong passwords at a locked screen (POST /auth/reauth) and wrong current passwords at
+# POST /auth/password, for a LOCAL account, keyed by user id: the two places a held token can
+# test the account's password, counted together. An AD account's unlock is a bind and counts
+# in `directory_binds` below, with its sign-ins. The dashboard itself signs out after 3 wrong
+# unlocks; this bounds a caller holding the token.
+REAUTH_MAX_FAILURES = 5
+reauth_failures = FailureLimiter(max_failures=REAUTH_MAX_FAILURES, lock_seconds=15 * 60)
 
 # Failed AD password binds, keyed by the Homunculus user id (whatever login form was typed).
 # These MUST stay inside the hospital domain's lockout policy: 3 + 3 (with an unlock) below its
