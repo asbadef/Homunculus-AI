@@ -143,5 +143,6 @@ export const tr = {
   "server.sessionNotice": "Oturum sona erdi; gösterime dönüldü.",
 
   "login.mfaUnsupported": "Bu hesap doğrulama kodu istiyor; şimdilik panodan giriş yapın.",
+  "login.passwordChangeRequired": "Bu hesabın geçici parolası değiştirilmeli; önce panodan giriş yapıp kendi parolanızı belirleyin.",
   "login.failed": "Giriş başarısız: {detail}",
 } as const;

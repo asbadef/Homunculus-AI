@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { t } from "../../src/i18n";
 import { useBoard } from "../../src/store/BoardProvider";
-import { MfaRequiredError } from "../../src/transport/authClient";
+import { MfaRequiredError, PasswordChangeRequiredError } from "../../src/transport/authClient";
 import { DemoBanner } from "../../src/ui/DemoBanner";
 import { ServerSection } from "../../src/ui/ServerSection";
 import { SettingsPanel } from "../../src/ui/SettingsPanel";
@@ -83,6 +83,8 @@ export default function SettingsScreen() {
           } catch (err) {
             if (err instanceof MfaRequiredError) {
               setLoginError(t("login.mfaUnsupported"));
+            } else if (err instanceof PasswordChangeRequiredError) {
+              setLoginError(t("login.passwordChangeRequired"));
             } else if (err instanceof Error) {
               setLoginError(t("login.failed", { detail: err.message }));
             } else {

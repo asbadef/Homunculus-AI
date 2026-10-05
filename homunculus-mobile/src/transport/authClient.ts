@@ -9,7 +9,10 @@
 // access token it ships alongside that flag has mfa_verified=False and cannot be used for
 // anything beyond MFA verification. Since the mobile app has no TOTP step yet, a `requires_mfa:
 // true` response throws MfaRequiredError and stores nothing — the UI sends the clinician to the
-// dashboard instead of holding a token it can't legally use.
+// dashboard instead of holding a token it can't legally use. Likewise `password_change_required:
+// true` (a temporary password an administrator gave, migration 0011): every route but the
+// password change answers 403 until it is replaced, and the app has no such form — it throws
+// PasswordChangeRequiredError, stores nothing, and the clinician changes it on the dashboard.
 import type { TokenPair } from "../store/secureTokens";
 import * as secureTokens from "../store/secureTokens";
 
@@ -17,6 +20,13 @@ export class MfaRequiredError extends Error {
   constructor(message = "This account requires an authenticator code. Use the dashboard for now.") {
     super(message);
     this.name = "MfaRequiredError";
+  }
+}
+
+export class PasswordChangeRequiredError extends Error {
+  constructor(message = "This account's temporary password must be changed first. Use the dashboard for now.") {
+    super(message);
+    this.name = "PasswordChangeRequiredError";
   }
 }
 
@@ -33,6 +43,8 @@ interface TokenResponseBody {
   refresh_token: string;
   token_type: string;
   requires_mfa: boolean;
+  /** Absent from an API older than migration 0011. */
+  password_change_required?: boolean;
 }
 
 /** The slice of secureTokens.ts that the client depends on — injected so tests never touch
@@ -101,6 +113,9 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     const body = (await res.json()) as TokenResponseBody;
     if (body.requires_mfa) {
       throw new MfaRequiredError();
+    }
+    if (body.password_change_required) {
+      throw new PasswordChangeRequiredError();
     }
     await tokenStore.setTokens({ access: body.access_token, refresh: body.refresh_token });
   }

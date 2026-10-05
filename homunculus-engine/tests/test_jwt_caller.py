@@ -42,7 +42,7 @@ from homunculus.auth.groups import (
     TENANT_INACTIVE, TENANT_OK, TENANT_UNKNOWN, bump_user, ensure_default_groups,
 )
 from homunculus.auth.jwt import create_access_token, create_refresh_token
-from homunculus.auth.models import TenantMembership, User
+from homunculus.auth.models import AUTH_LDAP, TenantMembership, User
 from homunculus.auth.service import build_context, issue_tokens
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
@@ -138,6 +138,16 @@ async def test_a_pending_mfa_step_blocks_the_board():
     assert await resolve(_token(mfa_required=True, mfa_verified=True)) is not None
 
 
+async def test_a_temporary_password_not_yet_replaced_blocks_the_board():
+    """403 `password_change_required`, after the MFA gate — as get_principal answers on the
+    routers (plan G1 Wave 2, decision 1)."""
+    load = _Loader(_row(password_change_due=True))
+    exc = await _refused(make_jwt_caller_resolver(load), _token())
+    assert exc.status_code == 403 and exc.detail == "password_change_required"
+    exc = await _refused(make_jwt_caller_resolver(load), _token(mfa_required=True))
+    assert exc.detail == "mfa_required"                  # the MFA step comes first
+
+
 async def test_a_slug_unknown_to_the_user_is_a_401_so_the_client_refreshes():
     """No tenant has the slug, or the user has no membership in it (a renamed slug, perhaps
     reused by another tenant): the refresh mints a token with the current slug."""
@@ -221,6 +231,7 @@ def test_the_one_read_embeds_the_routers_tenant_condition():
     claim = str(tenant_claim_query(uid, SLUG).compile(dialect=postgresql.dialect()))
     assert sql.count("SELECT") == claim.count("SELECT") + 1
     for part in ("users.username", "users.is_active", "users.token_version",
+                 "users.must_change_password", "users.auth_source",
                  "LEFT OUTER JOIN", "bool_or(tenant_memberships.is_active)",
                  "tenants.is_active", "tenants.slug", "WHERE users.id"):
         assert part in sql, part
@@ -294,6 +305,16 @@ async def test_the_read_reports_the_account_and_the_tenant_verdict(ward):
     assert await _read_user_auth(str(uuid.uuid4()), "hastane-a") is None
     no_slug = await _read_user_auth(str(nurse.id), None)
     assert no_slug.username == nurse.username and no_slug.tenant_verdict == TENANT_UNKNOWN
+
+
+@requires_db
+async def test_the_read_says_whether_a_local_account_must_change_its_password(ward):
+    db, nurse = ward["db"], ward["nurse"]
+    assert (await _read_user_auth(str(nurse.id), "hastane-a")).password_change_due is False
+    await _set(db, User, User.id == nurse.id, must_change_password=True)
+    assert (await _read_user_auth(str(nurse.id), "hastane-a")).password_change_due is True
+    await _set(db, User, User.id == nurse.id, auth_source=AUTH_LDAP)   # never an AD account
+    assert (await _read_user_auth(str(nurse.id), "hastane-a")).password_change_due is False
 
 
 @requires_db
@@ -382,6 +403,15 @@ async def test_an_account_change_is_a_401(ward):
     assert (await _patients(auth)).status_code == 200
     await _set(db, User, User.id == nurse.id, is_active=False)
     assert (await _patients(auth)).status_code == 401
+
+
+@requires_db
+async def test_a_temporary_password_is_a_403_on_the_board(ward):
+    db, nurse = ward["db"], ward["nurse"]
+    auth = await bearer(db, nurse)
+    await _set(db, User, User.id == nurse.id, must_change_password=True)
+    r = await _patients(auth)
+    assert r.status_code == 403 and r.json()["detail"] == "password_change_required"
 
 
 @requires_db

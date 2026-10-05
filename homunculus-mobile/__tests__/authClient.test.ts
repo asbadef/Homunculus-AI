@@ -2,6 +2,7 @@
 import {
   createAuthClient,
   MfaRequiredError,
+  PasswordChangeRequiredError,
   SessionExpiredError,
   type TokenStore,
 } from "../src/transport/authClient";
@@ -72,6 +73,44 @@ describe("createAuthClient", () => {
     const client = createAuthClient({ baseUrl: BASE_URL, fetchImpl, tokenStore });
 
     await expect(client.login("doctor@example.test", "hunter2")).rejects.toBeInstanceOf(
+      MfaRequiredError
+    );
+    expect(tokenStore.setTokens).not.toHaveBeenCalled();
+  });
+
+  it("throws PasswordChangeRequiredError and stores nothing while a temporary password is in use", async () => {
+    const tokenStore = fakeTokenStore();
+    const fetchImpl = jest.fn(async () =>
+      jsonResponse(200, {
+        access_token: "access-1",
+        refresh_token: "refresh-1",
+        token_type: "bearer",
+        requires_mfa: false,
+        password_change_required: true,
+      })
+    );
+    const client = createAuthClient({ baseUrl: BASE_URL, fetchImpl, tokenStore });
+
+    await expect(client.login("nurse@example.test", "Gecici-1")).rejects.toBeInstanceOf(
+      PasswordChangeRequiredError
+    );
+    expect(tokenStore.setTokens).not.toHaveBeenCalled();
+  });
+
+  it("asks for the authenticator first when both are due", async () => {
+    const tokenStore = fakeTokenStore();
+    const fetchImpl = jest.fn(async () =>
+      jsonResponse(200, {
+        access_token: "access-1",
+        refresh_token: "refresh-1",
+        token_type: "bearer",
+        requires_mfa: true,
+        password_change_required: true,
+      })
+    );
+    const client = createAuthClient({ baseUrl: BASE_URL, fetchImpl, tokenStore });
+
+    await expect(client.login("doctor@example.test", "Gecici-1")).rejects.toBeInstanceOf(
       MfaRequiredError
     );
     expect(tokenStore.setTokens).not.toHaveBeenCalled();

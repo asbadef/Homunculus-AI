@@ -5,7 +5,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 
 import { useBoard } from "../src/store/BoardProvider";
-import { MfaRequiredError } from "../src/transport/authClient";
+import { MfaRequiredError, PasswordChangeRequiredError } from "../src/transport/authClient";
 import SettingsScreen from "../app/(tabs)/settings";
 
 jest.mock("../src/store/BoardProvider", () => ({
@@ -59,6 +59,20 @@ describe("SettingsScreen — login error mapping", () => {
     await submitLogin();
     expect(
       screen.getByText("Bu hesap doğrulama kodu istiyor; şimdilik panodan giriş yapın."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Giriş başarısız/)).toBeNull();
+  });
+
+  it("maps PasswordChangeRequiredError to the change-it-on-the-dashboard line", async () => {
+    const value = boardValue();
+    (value.auth.login as jest.Mock).mockRejectedValue(new PasswordChangeRequiredError("temp"));
+    mockUseBoard.mockReturnValue(value);
+    await render(<SettingsScreen />);
+    await submitLogin();
+    expect(
+      screen.getByText(
+        "Bu hesabın geçici parolası değiştirilmeli; önce panodan giriş yapıp kendi parolanızı belirleyin.",
+      ),
     ).toBeTruthy();
     expect(screen.queryByText(/Giriş başarısız/)).toBeNull();
   });

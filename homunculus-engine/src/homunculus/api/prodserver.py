@@ -36,13 +36,15 @@ from homunculus.api.app import create_app
 from homunculus.api.audit import SqliteAuditLog
 from homunculus.api.identity import Caller, unmatched_hospital_keys
 from homunculus.auth import jwt as auth_jwt
-from homunculus.auth.dependencies import MEMBERSHIP_INACTIVE, NO_TENANT
+from homunculus.auth.dependencies import (
+    MEMBERSHIP_INACTIVE, NO_TENANT, PASSWORD_CHANGE_REQUIRED,
+)
 from homunculus.auth.groups import (
     TENANT_INACTIVE, TENANT_OK, TENANT_UNKNOWN, tenant_claim_query, tenant_claim_verdict,
 )
 from homunculus.auth.jwt import jwt_secret_problem
 from homunculus.auth.ldap3_directory import ldap_from_env
-from homunculus.auth.models import User
+from homunculus.auth.models import AUTH_LOCAL, User
 from homunculus.tenant.bedmap import BedMap
 
 logger = logging.getLogger(__name__)
@@ -207,11 +209,14 @@ def make_startup_tenant_check(configured_hospitals: list[str]) -> Callable[[], A
 @dataclass(frozen=True)
 class UserAuthRow:
     """What the board resolver's one read returns: the account, and `tenant_claim_verdict` for
-    the token's `tenant` slug (TENANT_OK, TENANT_UNKNOWN or TENANT_INACTIVE)."""
+    the token's `tenant` slug (TENANT_OK, TENANT_UNKNOWN or TENANT_INACTIVE).
+    `password_change_due`: a LOCAL account still holding an administrator's temporary password
+    (auth.service.password_change_due)."""
     username: str
     is_active: bool
     token_version: int
     tenant_verdict: str
+    password_change_due: bool = False
 
 
 def _decode_access_claims(token: str) -> dict | None:
@@ -252,6 +257,7 @@ def make_jwt_caller_resolver(
                                                  inactive user; a stale `tv`; a slug unknown to
                                                  the user (renamed, perhaps reused)
       403 "mfa_required"                         a pending MFA step
+      403 "password_change_required"             a temporary password not yet replaced
       403 NO_TENANT                              a token naming no tenant
       403 MEMBERSHIP_INACTIVE                    a deactivated tenant or membership
 
@@ -273,6 +279,8 @@ def make_jwt_caller_resolver(
             return None
         if claims.get("mfa_required") is True and claims.get("mfa_verified") is not True:
             raise HTTPException(status_code=403, detail="mfa_required")
+        if row.password_change_due:
+            raise HTTPException(status_code=403, detail=PASSWORD_CHANGE_REQUIRED)
         if slug is None:
             raise HTTPException(status_code=403, detail=NO_TENANT)
         if row.tenant_verdict == TENANT_INACTIVE:
@@ -293,7 +301,8 @@ def _user_auth_query(user_id: uuid.UUID, slug: str | None) -> Select:
     LEFT JOINed to `tenant_claim_query(user_id, slug)`, the statement `caller_tenant_id` runs on
     the routers, embedded rather than copied. At most one row (the subquery has at most one);
     none when there is no such user. Without a slug only the account is read."""
-    account = (User.username, User.is_active, User.token_version)
+    account = (User.username, User.is_active, User.token_version, User.must_change_password,
+               User.auth_source)
     if slug is None:
         return select(*account).where(User.id == user_id)
     claim = tenant_claim_query(user_id, slug).subquery("tenant_claim")
@@ -320,7 +329,9 @@ async def _read_user_auth(user_id: str, slug: str | None) -> UserAuthRow | None:
         return None
     verdict = tenant_claim_verdict(row)[1] if slug is not None else TENANT_UNKNOWN
     return UserAuthRow(username=row.username, is_active=row.is_active,
-                       token_version=row.token_version, tenant_verdict=verdict)
+                       token_version=row.token_version, tenant_verdict=verdict,
+                       password_change_due=bool(row.must_change_password)
+                       and row.auth_source == AUTH_LOCAL)
 
 
 def _database_url() -> str:
