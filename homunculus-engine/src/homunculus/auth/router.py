@@ -191,6 +191,9 @@ async def _sign_in(body: LoginRequest, request: Request, db: AsyncSession) -> To
     if not user.is_active:
         await _login_failed(request, db, user_id, key, "inactive")
         raise _bad_credentials()
+    # The right password: the wrong ones counted at the lock screen and at /auth/password start
+    # again from none (a lock they engaged lifts). Only a local account is ever counted there.
+    reauth_failures.succeeded(str(user_id))
 
     ctx = await build_context(db, user)
     mark_login(user)

@@ -268,9 +268,11 @@ totp_failures = FailureLimiter(max_failures=5, lock_seconds=300)
 
 # Wrong passwords at a locked screen (POST /auth/reauth) and wrong current passwords at
 # POST /auth/password, for a LOCAL account, keyed by user id: the two places a held token can
-# test the account's password, counted together. An AD account's unlock is a bind and counts
-# in `directory_binds` below, with its sign-ins. The dashboard itself signs out after 3 wrong
-# unlocks; this bounds a caller holding the token.
+# test the account's password, counted together. A sign-in with the right password and an
+# administrator's password reset start the count again (and lift a lock). An AD account is never
+# counted here: its unlock is a bind and counts in `directory_binds` below, with its sign-ins,
+# and /auth/password refuses it before reading a password. The dashboard itself signs out after
+# 3 wrong unlocks; this bounds a caller holding the token.
 REAUTH_MAX_FAILURES = 5
 reauth_failures = FailureLimiter(max_failures=REAUTH_MAX_FAILURES, lock_seconds=15 * 60)
 

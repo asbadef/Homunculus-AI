@@ -68,7 +68,7 @@ from homunculus.auth.groups import (
     GroupError, bump_group_members, bump_user, count_admins, lock_admin_guard, set_manual_groups,
     summarize,
 )
-from homunculus.auth.limits import Unlocked, directory_binds
+from homunculus.auth.limits import Unlocked, directory_binds, reauth_failures
 from homunculus.auth.models import (
     AUTH_LOCAL, Group, GroupPermission, LdapGroupMapping, TenantMembership, User, UserGroup,
 )
@@ -535,7 +535,11 @@ async def reset_password(db: AsyncSession, tenant_id: uuid.UUID, user: User, act
     The account's row is locked and its credential columns re-read just before they are written
     (`lock_credentials`, held to the route's commit): a password change of the user's own that
     committed meanwhile would otherwise leave this temporary password in place with the flag
-    cleared."""
+    cleared.
+
+    The wrong passwords counted against the old one at the lock screen and at /auth/password
+    (`auth.limits.reauth_failures`) start again from none: otherwise the user's first step with
+    the temporary password — the forced change, the one route open to her — could meet a 429."""
     await _may_reset(db, tenant_id, user, actor)
     if user.auth_source != AUTH_LOCAL:
         raise AdminError(400, DIRECTORY_PASSWORD)
@@ -545,6 +549,7 @@ async def reset_password(db: AsyncSession, tenant_id: uuid.UUID, user: User, act
     user.must_change_password = True
     await db.flush()
     await bump_user(db, user)
+    reauth_failures.succeeded(str(user.id))
 
 
 async def unlock_sign_in(db: AsyncSession, tenant_id: uuid.UUID, user: User,

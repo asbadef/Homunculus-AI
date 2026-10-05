@@ -24,7 +24,7 @@ from homunculus.api.app import create_app
 from homunculus.auth.groups import ensure_default_groups, set_manual_groups
 from homunculus.auth.ldap import DIRECTORY_DOWN
 from homunculus.auth.limits import (
-    DIRECTORY_BIND_MAX_FAILURES, REAUTH_MAX_FAILURES, Ticket, directory_binds,
+    DIRECTORY_BIND_MAX_FAILURES, REAUTH_MAX_FAILURES, Ticket, directory_binds, reauth_failures,
 )
 from homunculus.auth.models import TenantMembership, User
 from homunculus.auth.router import _DIRECTORY_THROTTLED, _REAUTH_REFUSED
@@ -40,6 +40,7 @@ pytestmark = [pytest.mark.asyncio, requires_db]
 
 PASSWORD = "Gizli-123"
 CHOSEN = "Kendi-Parolam-9"
+TEMPORARY = "Gecici-Parola-1"
 REFUSED = _REAUTH_REFUSED
 THROTTLED = _DIRECTORY_THROTTLED
 
@@ -75,6 +76,7 @@ async def local(db_session):
     nurse = await make("ayse", "nurse")
     attending = await make("dr.kaya", "attending")
     fresh = await make("yeni", "nurse", must_change_password=True)
+    admin = await make("yonetici", "hospital_admin")
     await db_session.commit()
     app = create_app({"bridge-token": "demo-hastanesi"}, run_escalation_loop=False)
     maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
@@ -85,7 +87,8 @@ async def local(db_session):
 
     app.dependency_overrides[get_db] = _db
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        yield {"c": c, "app": app, "nurse": nurse, "attending": attending, "fresh": fresh}
+        yield {"c": c, "app": app, "nurse": nurse, "attending": attending, "fresh": fresh,
+               "admin": admin}
 
 
 async def test_the_right_password_unlocks_and_nothing_else_changes(local, db_session):
@@ -206,6 +209,50 @@ async def test_a_changed_password_clears_the_count(local, db_session):
     for _ in range(REAUTH_MAX_FAILURES - 1):
         assert (await c.post("/auth/reauth", headers=fresh,
                              json={"password": "yanlis"})).status_code == 403
+
+
+async def test_a_sign_in_clears_the_count_and_lifts_the_lock(local, db_session):
+    """A sign-in with the right password proves what an unlock asks, so the wrong passwords
+    counted at the lock screen and at /auth/password start again from none, and a lock they
+    engaged lifts: otherwise they would pile up across days, and a clinician who has just
+    signed in would still meet a 429 at her own lock screen. A wrong sign-in clears nothing."""
+    c, nurse = local["c"], local["nurse"]
+    headers = await _headers(db_session, nurse)
+    for _ in range(REAUTH_MAX_FAILURES):
+        await c.post("/auth/reauth", headers=headers, json={"password": "yanlis"})
+    assert (await c.post("/auth/login", json={"login": "ayse",
+                                              "password": "yanlis"})).status_code == 401
+    res = await c.post("/auth/reauth", headers=headers, json={"password": PASSWORD})
+    assert (res.status_code, res.json()["detail"]) == (429, THROTTLED)
+    assert (await c.post("/auth/login", json={"login": "ayse",
+                                              "password": PASSWORD})).status_code == 200
+    assert (await c.post("/auth/reauth", headers=headers,
+                         json={"password": PASSWORD})).status_code == 200
+
+
+async def test_after_a_reset_the_forced_change_is_not_held_by_earlier_failures(local, db_session):
+    """Five wrong unlocks — a stolen token guessing, or the nurse herself — then an
+    administrator resets her password. Her sign-in with the temporary one must reach the forced
+    change, the one route open to her, not a 429 for 15 minutes while every other route
+    answers password_change_required. The reset itself starts the count again."""
+    c, nurse = local["c"], local["nurse"]
+    thief = await _headers(db_session, nurse)
+    for _ in range(REAUTH_MAX_FAILURES):
+        assert (await c.post("/auth/reauth", headers=thief,
+                             json={"password": "yanlis"})).status_code == 403
+    assert reauth_failures.locked(str(nurse.id))
+    res = await c.post(f"/admin/users/{nurse.id}/reset-password",
+                       headers=await _headers(db_session, local["admin"]),
+                       json={"password": TEMPORARY})
+    assert res.status_code == 200
+    assert not reauth_failures.locked(str(nurse.id))
+    tokens = (await c.post("/auth/login", json={"login": "ayse",
+                                                "password": TEMPORARY})).json()
+    assert tokens["password_change_required"] is True
+    res = await c.post("/auth/password", headers={"Authorization":
+                                                  f"Bearer {tokens['access_token']}"},
+                       json={"current_password": TEMPORARY, "new_password": CHOSEN})
+    assert res.status_code == 200
 
 
 async def test_an_empty_password_never_reaches_a_check(local, db_session):
