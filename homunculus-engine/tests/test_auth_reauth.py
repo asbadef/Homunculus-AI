@@ -306,6 +306,15 @@ async def test_after_a_reset_the_forced_change_is_not_held_by_earlier_failures(l
     assert res.status_code == 200
 
 
+async def test_the_unlock_declares_its_answer():
+    """Like every /auth route, the unlock's 200 has a schema in the API's description."""
+    schema = create_app({"t": "h"}, run_escalation_loop=False).openapi()
+    ok = schema["paths"]["/auth/reauth"]["post"]["responses"]["200"]["content"]
+    assert ok["application/json"]["schema"] == {"$ref": "#/components/schemas/ReauthResponse"}
+    assert schema["components"]["schemas"]["ReauthResponse"]["properties"]["ok"]["type"] == \
+        "boolean"
+
+
 async def test_an_empty_password_never_reaches_a_check(local, db_session):
     res = await local["c"].post("/auth/reauth", headers=await _headers(db_session, local["nurse"]),
                                 json={"password": ""})

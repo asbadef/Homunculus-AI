@@ -87,3 +87,8 @@ class ReauthRequest(BaseModel):
     """Unlocking a locked screen: the session's own password once more. Empty is a 422 before
     any check (an empty LDAP simple bind is an anonymous bind, never a password check)."""
     password: str = Field(min_length=1, max_length=_PASSWORD_MAX)
+
+
+class ReauthResponse(BaseModel):
+    """The unlock's answer: the password was right. Nothing is issued; the session goes on."""
+    ok: bool = True

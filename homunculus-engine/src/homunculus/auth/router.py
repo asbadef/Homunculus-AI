@@ -31,6 +31,7 @@ import asyncio
 import hmac
 import time
 import uuid
+from collections.abc import Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from jose import JWTError
@@ -54,8 +55,8 @@ from homunculus.auth.ldap_sync import (
 from homunculus.auth.limits import directory_binds, reauth_failures, totp_failures
 from homunculus.auth.models import AUTH_LDAP, User
 from homunculus.auth.schemas import (
-    GroupBrief, LoginRequest, PasswordChangeRequest, ReauthRequest, RefreshRequest,
-    TOTPSetupResponse, TOTPVerifyRequest, TokenResponse, UserMeResponse,
+    GroupBrief, LoginRequest, PasswordChangeRequest, ReauthRequest, ReauthResponse,
+    RefreshRequest, TOTPSetupResponse, TOTPVerifyRequest, TokenResponse, UserMeResponse,
 )
 from homunculus.auth.service import (
     PasswordError, StaleSession, build_context, change_password, credential_fingerprint,
@@ -76,10 +77,12 @@ _last_step: dict[uuid.UUID, int] = {}
 
 _TOTP_LOCKED = "Çok fazla hatalı kod. 5 dakika sonra tekrar deneyin."
 _TOTP_REPLAYED = "Bu kod zaten kullanıldı; yeni kodu bekleyin."
-# The AD bind throttle's refusal; "15" is DIRECTORY_BIND_WINDOW_S (auth/limits.py). The same
-# words refuse a local account's unlock and its own password change once `reauth_failures` has
-# locked them (also 15 minutes).
+# The AD bind throttle's refusal; "15" is DIRECTORY_BIND_WINDOW_S (auth/limits.py).
 _DIRECTORY_THROTTLED = "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin"
+# A local account's unlock and own password change refused by `reauth_failures` (locked, or no
+# place left for one more check): the same words — its lock lasts 15 minutes as well — so the
+# clients translate one message.
+_PASSWORD_CHECKS_THROTTLED = _DIRECTORY_THROTTLED
 # A wrong password at a locked screen (POST /auth/reauth). 403, not 401: see the module docstring.
 _REAUTH_REFUSED = "Parola hatalı"
 # Directory failures after which a refresh goes on unsynced (the spec §4 outage rule): the
@@ -545,7 +548,7 @@ async def password(body: PasswordChangeRequest, request: Request,
     key = str(current_user.id)
     if not reauth_failures.begin(key):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                            detail=_DIRECTORY_THROTTLED)
+                            detail=_PASSWORD_CHECKS_THROTTLED)
     try:
         await change_password(db, current_user, body.current_password, body.new_password)
     except PasswordError as exc:
@@ -579,10 +582,11 @@ async def password(body: PasswordChangeRequest, request: Request,
     return TokenResponse(**issue_tokens(current_user, ctx, mfa_verified=verified))
 
 
-@router.post("/reauth", summary="Unlock a locked screen with the session's own password")
+@router.post("/reauth", response_model=ReauthResponse,
+             summary="Unlock a locked screen with the session's own password")
 async def reauth(body: ReauthRequest, request: Request,
                  principal: Principal = Depends(get_principal),
-                 db: AsyncSession = Depends(get_db)) -> dict:
+                 db: AsyncSession = Depends(get_db)) -> ReauthResponse:
     """The dashboard's lock screen: is the person at the workstation the one whose session this
     is? Nothing is issued — the session goes on as it was; MFA is not asked again (the session
     passed it at sign-in, and this is a presence check, not a sign-in).
@@ -621,14 +625,14 @@ async def reauth(body: ReauthRequest, request: Request,
     if source == AUTH_LDAP:
         await _directory_reauth(request, db, user_id, external_id, body.password, audit)
         audit("reauth.ok")
-        return {"ok": True}
+        return ReauthResponse()
 
     key = str(user_id)
     # A place in the limit while bcrypt runs: a burst checks no more passwords than the limit
     # allows, and the rest are refused at once (429), never queued.
     if not reauth_failures.begin(key):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                            detail=_DIRECTORY_THROTTLED)
+                            detail=_PASSWORD_CHECKS_THROTTLED)
     try:
         right = await run_bcrypt(verify_local_password, source, hashed, body.password)
     finally:
@@ -641,11 +645,12 @@ async def reauth(body: ReauthRequest, request: Request,
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_REAUTH_REFUSED)
     reauth_failures.succeeded(key)
     audit("reauth.ok")
-    return {"ok": True}
+    return ReauthResponse()
 
 
 async def _directory_reauth(request: Request, db: AsyncSession, user_id: uuid.UUID,
-                            external_id: str | None, password: str, audit) -> None:
+                            external_id: str | None, password: str,
+                            audit: Callable[..., None]) -> None:
     """An AD account's unlock: one bind as the account (found by objectGUID), under the same
     throttle as its sign-ins and counted exactly as `_directory_sign_in` counts its bind.
     Returns when the password is right; raises otherwise.
