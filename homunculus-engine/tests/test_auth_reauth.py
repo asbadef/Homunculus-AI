@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from homunculus.api.app import create_app
+from homunculus.auth import service as auth_service
 from homunculus.auth.groups import ensure_default_groups, set_manual_groups
 from homunculus.auth.ldap import DIRECTORY_DOWN
 from homunculus.auth.limits import (
@@ -162,11 +163,11 @@ async def test_wrong_current_passwords_count_with_the_unlocks(local, db_session)
 
 
 async def test_a_burst_sent_at_once_tests_no_more_passwords_than_the_limit(local, db_session):
-    """A wrong password is counted once bcrypt has answered, so one account's unlocks and
-    password changes are checked one at a time: requests sent all at once — at both routes —
-    test at most REAUTH_MAX_FAILURES passwords; the rest are refused at the gate (429), their
-    passwords never checked. Without that, every request of a burst passed the gate before the
-    first answer came back (a review of plan G1 Wave 2, Task 5)."""
+    """A wrong password is counted once bcrypt has answered, so a check holds a place while it
+    runs (failures plus checks in flight stay within the limit): requests sent all at once — at
+    both routes — test at most REAUTH_MAX_FAILURES passwords; the rest are refused at the gate
+    (429) at once, their passwords never checked. Without that, every request of a burst passed
+    the gate before the first answer came back (a review of plan G1 Wave 2, Task 5)."""
     c, nurse = local["c"], local["nurse"]
     headers = await _headers(db_session, nurse)
     half = 2 * REAUTH_MAX_FAILURES
@@ -184,6 +185,56 @@ async def test_a_burst_sent_at_once_tests_no_more_passwords_than_the_limit(local
     assert len(_reasons(local["app"])) + len(wrong_current) == REAUTH_MAX_FAILURES
     assert len(audit_events(local["app"], "auth", "reauth.locked")
                + audit_events(local["app"], "auth", "password.change.locked")) == 1
+
+
+async def test_a_check_beyond_the_places_is_refused_at_once_and_a_cancelled_one_counts_nothing(
+        local, db_session, monkeypatch):
+    """Checks in flight hold places, at both routes together: while REAUTH_MAX_FAILURES of them
+    run, one more is refused (429) at once — it waits for nothing, so a burst pins no database
+    connection. A check cut off (the request cancelled) gives its place back and counts
+    nothing: no answer about the password left the server."""
+    c, nurse = local["c"], local["nurse"]
+    headers = await _headers(db_session, nurse)
+    key = str(nurse.id)
+    real = auth_service.run_bcrypt
+    running, all_running, never = [], asyncio.Event(), asyncio.Event()
+
+    async def held(fn, *args):
+        if args[-1] == "beklet":                     # the password checked: held until cancelled
+            running.append(fn)
+            if len(running) == REAUTH_MAX_FAILURES:
+                all_running.set()
+            await never.wait()
+        return await real(fn, *args)
+
+    monkeypatch.setattr("homunculus.auth.router.run_bcrypt", held)
+    monkeypatch.setattr("homunculus.auth.service.run_bcrypt", held)
+    tasks = [asyncio.create_task(c.post("/auth/reauth", headers=headers,
+                                        json={"password": "beklet"})) for _ in range(3)]
+    tasks += [asyncio.create_task(c.post("/auth/password", headers=headers,
+                                         json={"current_password": "beklet",
+                                               "new_password": CHOSEN}))
+              for _ in range(REAUTH_MAX_FAILURES - 3)]
+    try:
+        await asyncio.wait_for(all_running.wait(), 10)
+        assert reauth_failures._in_flight[key] == REAUTH_MAX_FAILURES
+        res = await asyncio.wait_for(c.post("/auth/reauth", headers=headers,
+                                            json={"password": PASSWORD}), 5)
+        assert (res.status_code, res.json()["detail"]) == (429, THROTTLED)
+        res = await asyncio.wait_for(c.post("/auth/password", headers=headers,
+                                            json={"current_password": PASSWORD,
+                                                  "new_password": CHOSEN}), 5)
+        assert (res.status_code, res.json()["detail"]) == (429, THROTTLED)
+    finally:
+        for task in tasks:
+            task.cancel()
+        outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+    assert all(isinstance(o, asyncio.CancelledError) for o in outcomes)
+    assert key not in reauth_failures._in_flight and key not in reauth_failures._failures
+    assert _reasons(local["app"]) == []
+    assert audit_events(local["app"], "auth", "password.change.fail") == []
+    assert (await c.post("/auth/reauth", headers=headers,
+                         json={"password": PASSWORD})).status_code == 200
 
 
 async def test_a_rule_the_new_password_breaks_is_not_a_wrong_password(local, db_session):

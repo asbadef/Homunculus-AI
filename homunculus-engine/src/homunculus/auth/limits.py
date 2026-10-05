@@ -48,7 +48,16 @@ from dataclasses import dataclass, field
 
 class FailureLimiter:
     """After `max_failures` consecutive failures a key is locked for `lock_seconds`; a success
-    clears it. When a lock lifts the count starts again from zero."""
+    clears it. When a lock lifts the count starts again from zero.
+
+    A check that awaits before its outcome is known (bcrypt on a worker thread) reserves a place
+    first (`begin`) and gives it back when it ends (`end`) — on every path, a cancellation's
+    too —, its outcome recorded apart with nothing awaited in between. `begin` refuses while the
+    key is locked, or once its failures plus its checks in flight reach `max_failures`: requests
+    sent all at once then check no more passwords than the limit allows, where each would
+    otherwise pass `locked` before the first answer came back. Nobody waits for a place, so a
+    burst holds nothing (a database connection) while it is refused. A check whose outcome is
+    known with no await in between (the TOTP code) needs no place."""
 
     def __init__(self, *, max_failures: int = 5, lock_seconds: float = 300,
                  clock: Callable[[], float] = time.monotonic) -> None:
@@ -57,6 +66,32 @@ class FailureLimiter:
         self._clock = clock
         self._failures: dict[str, int] = {}
         self._locked_until: dict[str, float] = {}
+        self._in_flight: dict[str, int] = {}     # checks between `begin` and `end`, per key
+
+    def begin(self, key: str) -> bool:
+        """Reserve a place for one check of `key`: False — check nothing — while it is locked,
+        or while its failures plus its checks in flight reach `max_failures`. Every True is
+        matched by exactly one `end`."""
+        if self.locked(key):
+            return False
+        running = self._in_flight.get(key, 0)
+        if self._failures.get(key, 0) + running >= self.max_failures:
+            return False
+        self._in_flight[key] = running + 1
+        return True
+
+    def end(self, key: str) -> None:
+        """Give back the place `begin` reserved. The outcome is recorded apart: `failed` for a
+        wrong password, `succeeded` for a right one, neither for a check that said nothing
+        (cancelled, or refused for another reason). ValueError, and nothing changes, when `key`
+        holds no place."""
+        running = self._in_flight.get(key, 0)
+        if running < 1:
+            raise ValueError("end() without a begin()")
+        if running == 1:
+            del self._in_flight[key]
+        else:
+            self._in_flight[key] = running - 1
 
     def locked(self, key: str) -> bool:
         until = self._locked_until.get(key)

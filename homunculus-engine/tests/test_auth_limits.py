@@ -92,6 +92,51 @@ def test_keys_are_independent():
     assert lim.locked("a") is True and lim.locked("b") is False
 
 
+def test_a_check_in_flight_holds_a_place_until_it_ends():
+    """A check that awaits before its outcome is known (bcrypt on a worker thread) reserves a
+    place first: failures plus checks in flight never pass `max_failures`, so requests sent all
+    at once check no more passwords than the limit allows. `end` gives the place back; the
+    outcome is recorded apart (`failed`, `succeeded`, or nothing for a check that said
+    nothing)."""
+    lim = _limiter(FakeClock())
+    assert all(lim.begin("u") for _ in range(5))
+    assert lim.begin("u") is False                  # five in flight: no sixth
+    assert lim.begin("v") is True                   # another key's places are its own
+    lim.end("u")
+    lim.failed("u")                                 # one wrong: 1 failure + 4 in flight
+    assert lim.begin("u") is False
+    lim.end("u")                                    # one said nothing (cancelled)
+    assert lim.begin("u") is True                   # 1 failure + 4 in flight again
+    engaged = []
+    for _ in range(4):
+        lim.end("u")
+        engaged.append(lim.failed("u"))
+    assert engaged == [False, False, False, True]   # the fifth failure engages the lock
+    assert lim.locked("u") and lim.begin("u") is False
+    assert "u" not in lim._in_flight                # every place given back
+
+
+def test_a_success_keeps_the_places_of_checks_still_in_flight():
+    lim = _limiter(FakeClock())
+    for _ in range(3):
+        lim.failed("u")
+    assert lim.begin("u") and lim.begin("u")
+    assert lim.begin("u") is False                  # 3 failures + 2 in flight
+    lim.end("u")
+    lim.succeeded("u")                              # 0 failures + 1 in flight
+    assert all(lim.begin("u") for _ in range(4)) and lim.begin("u") is False
+
+
+def test_an_end_without_its_begin_is_refused():
+    lim = _limiter(FakeClock())
+    with pytest.raises(ValueError):
+        lim.end("u")
+    assert lim.begin("u")
+    lim.end("u")
+    with pytest.raises(ValueError):
+        lim.end("u")
+
+
 # --- FailureChain (AD password binds) ---------------------------------------------------------
 
 def _chain(clock: FakeClock) -> FailureChain:

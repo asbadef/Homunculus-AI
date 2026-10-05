@@ -31,7 +31,6 @@ import asyncio
 import hmac
 import time
 import uuid
-import weakref
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from jose import JWTError
@@ -83,19 +82,6 @@ _TOTP_REPLAYED = "Bu kod zaten kullanıldı; yeni kodu bekleyin."
 _DIRECTORY_THROTTLED = "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin"
 # A wrong password at a locked screen (POST /auth/reauth). 403, not 401: see the module docstring.
 _REAUTH_REFUSED = "Parola hatalı"
-# One check of a local account's password at a time, per account, at /auth/reauth and
-# /auth/password: `reauth_failures` counts a wrong password only once bcrypt has answered, so
-# requests sent all at once would every one pass its `locked` gate before the first answer came
-# back, and test more passwords than the limit allows. Held across the gate, the check and the
-# count. Weak values: an account's lock lives only while a request holds or awaits it.
-_password_checks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
-
-
-def _password_check(key: str) -> asyncio.Lock:
-    lock = _password_checks.get(key)
-    if lock is None:
-        lock = _password_checks[key] = asyncio.Lock()
-    return lock
 # Directory failures after which a refresh goes on unsynced (the spec §4 outage rule): the
 # domain controller could not be reached, or would not let the service account in — nothing
 # about the account itself. Any other reason (`protocol` also covers a reply about THIS account
@@ -550,38 +536,42 @@ async def password(body: PasswordChangeRequest, request: Request,
     A wrong current password counts in `reauth_failures`, with the wrong passwords at a locked
     screen (/auth/reauth): these are the two places a held token can test the account's
     password, and 5 wrong in a row lock both for 15 minutes (429, before any check). One audit
-    row marks the lock engaging; the requests it refuses meanwhile write none. One account's
-    checks run one at a time (`_password_check`), so a burst tests no more than the limit. A
-    change refused as stale (`StaleSession`) neither counts nor clears the count: the current
-    password was right, but nothing was changed."""
+    row marks the lock engaging; the requests it refuses meanwhile write none. A change holds a
+    place in the limit while it runs (`begin` / `end`), so a burst tests no more passwords than
+    the limit allows and is refused at once, never queued. A change refused as stale
+    (`StaleSession`) or cut off neither counts nor clears the count: nothing was changed, and
+    no answer about the current password left the server."""
     current_user = principal.user
     key = str(current_user.id)
-    async with _password_check(key):
-        if reauth_failures.locked(key):
-            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                                detail=_DIRECTORY_THROTTLED)
-        try:
-            await change_password(db, current_user, body.current_password, body.new_password)
-        except PasswordError as exc:
+    if not reauth_failures.begin(key):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                            detail=_DIRECTORY_THROTTLED)
+    try:
+        await change_password(db, current_user, body.current_password, body.new_password)
+    except PasswordError as exc:
+        append_audit(request, tenant=principal.tenant, event_type="auth",
+                     subject="password.change.fail",
+                     payload={"user": current_user.username, "reason": exc.reason})
+        if exc.reason == "wrong_current" and reauth_failures.failed(key):
             append_audit(request, tenant=principal.tenant, event_type="auth",
-                         subject="password.change.fail",
-                         payload={"user": current_user.username, "reason": exc.reason})
-            if exc.reason == "wrong_current" and reauth_failures.failed(key):
-                append_audit(request, tenant=principal.tenant, event_type="auth",
-                             subject="password.change.locked",
-                             payload={"user": current_user.username,
-                                      "lock_seconds": reauth_failures.lock_seconds})
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-        except StaleSession:
-            # A reset (or another bump) landed after this token was checked: answered as the
-            # stale token itself would be, so the reset stands (auth.service.change_password).
-            append_audit(request, tenant=principal.tenant, event_type="auth",
-                         subject="password.change.fail",
-                         payload={"user": current_user.username, "reason": "stale_session"})
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                                detail="token_version",
-                                headers={"WWW-Authenticate": "Bearer"}) from None
+                         subject="password.change.locked",
+                         payload={"user": current_user.username,
+                                  "lock_seconds": reauth_failures.lock_seconds})
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except StaleSession:
+        # A reset (or another bump) landed after this token was checked: answered as the stale
+        # token itself would be, so the reset stands (auth.service.change_password).
+        append_audit(request, tenant=principal.tenant, event_type="auth",
+                     subject="password.change.fail",
+                     payload={"user": current_user.username, "reason": "stale_session"})
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="token_version",
+                            headers={"WWW-Authenticate": "Bearer"}) from None
+    else:
         reauth_failures.succeeded(key)
+    finally:
+        # The place goes back on every path, a cancellation's too; the outcome was recorded
+        # above with nothing awaited in between.
+        reauth_failures.end(key)
     append_audit(request, tenant=principal.tenant, event_type="auth", subject="password.change",
                  payload={"user": current_user.username})
     ctx = await build_context(db, current_user)
@@ -628,16 +618,22 @@ async def reauth(body: ReauthRequest, request: Request,
         return {"ok": True}
 
     key = str(user_id)
-    async with _password_check(key):         # one check at a time: a burst tests no more
-        if reauth_failures.locked(key):
-            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                                detail=_DIRECTORY_THROTTLED)
-        if not await run_bcrypt(verify_local_password, source, hashed, body.password):
-            audit("reauth.fail", reason="bad_credentials")
-            if reauth_failures.failed(key):
-                audit("reauth.locked", lock_seconds=reauth_failures.lock_seconds)
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_REAUTH_REFUSED)
-        reauth_failures.succeeded(key)
+    # A place in the limit while bcrypt runs: a burst checks no more passwords than the limit
+    # allows, and the rest are refused at once (429), never queued.
+    if not reauth_failures.begin(key):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                            detail=_DIRECTORY_THROTTLED)
+    try:
+        right = await run_bcrypt(verify_local_password, source, hashed, body.password)
+    finally:
+        reauth_failures.end(key)             # on every path; a cut-off check counts nothing
+    # Nothing awaited since `end`: the outcome is counted before any other check can begin.
+    if not right:
+        audit("reauth.fail", reason="bad_credentials")
+        if reauth_failures.failed(key):
+            audit("reauth.locked", lock_seconds=reauth_failures.lock_seconds)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_REAUTH_REFUSED)
+    reauth_failures.succeeded(key)
     audit("reauth.ok")
     return {"ok": True}
 
