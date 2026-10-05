@@ -313,7 +313,9 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   bağlanmadan sonraki 15 dakika içinde) yeniden başlatma ya da deploy, Homunculus'un sayacını
   siler ama AD'ninkini silmez: ardından 6 hatalı bağlanma daha gelebilir, AD'nin tek bir
   sayımında 12'ye kadar — eşik 7 varsayımı ancak yeniden başlatma yoksa geçerli. Runbook deploy
-  öncesi son 15 dakikanın `login.fail` satırlarına bakmayı söyler (F7). → pilot için kabul
+  öncesi son 15 dakikanın `login.fail` satırlarına bakmayı söyler (F7); F8'den beri yarıda
+  kesilen ve parolası gitmiş girişler de satır bırakır (`cancelled`), sorgu onları da sayar.
+  → pilot için kabul
 - LDAP çalışma zamanının `close()`'u geri alınamaz (iş parçacığı havuzu kapanır): süreç
   başına tek lifespan. prodserver için sorun değil; aynı süreçte uygulamayı yeniden başlatan
   bir araç yeni bir çalışma zamanı kurmalı.
@@ -402,6 +404,22 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   LDAP'ı kapalı tutar; `.dockerignore` `.db`/`__pycache__`'i her derinlikte dışlar; kilit
   açmanın denetim satırı doğru (`failed`, `allowed` 3/6, `granted`) ve ikinci kilit açmanın
   metni dizi mantığını söyler; sertifika reddi gerçek bir TLS bağlantısında test edildi.
+- F7 yalnız süre sınırında (2 × `LDAP_TIMEOUT_S`) kesilen bağlanmayı bir süre sınırı sonrasıyla
+  tarihliyordu; ama ldap3'ün alma zaman aşımı (`LDAP_TIMEOUT_S`, yukarı yuvarlanır) ondan önce
+  dolar ve takılan bağlanmaların çoğu oradan bitiyordu: parola gitmiş, DC yanıt vermemiş, hata
+  "şimdi" tarihleniyordu — AD onu Homunculus'un kapattığı bir diziden sonra da sayabiliyordu
+  (inceleme senaryosunda AD 7'ye, modelinde 14'e ulaştı) → ✅ F8'de çözüldü: parolası gidip DC'den
+  yanıt alamayan her bağlanma, beklemeyi ne bitirmiş olursa olsun (alma zaman aşımı, kopan
+  bağlantı, okunamayan yanıt, süre sınırı, iptal), bir süre sınırı sonrasıyla tarihlenir; yalnız
+  DC'nin yanıtladığı bağlanma (bir sonuç kodu) yanıt anıyla. Tohumlu 4 000 senaryoluk model
+  testi (`tests/test_directory_bind_invariant.py`, gerçek `FailureChain`, alma zaman aşımı yolu
+  dahil) AD sayacının en çok 6'ya çıktığını denetler (eski tarihlemeyle 9). İsteği gönderildikten
+  bir süre sınırından daha geç işleyen bir DC güvencenin dışındadır (runbook'ta yazılı). Aynı
+  turda: sınırın saydığı her hata o anda denetime yazılır — yarıda kesilen ve parolası gitmiş
+  giriş `login.fail` `cancelled`, bir hata `directory_error`; giriş, hesabın bağlanıp
+  bağlanmadığını saatten değil dizinden öğrenir (`LdapIdentity.bound`: saat `accountExpires`'ın
+  gerisine kayınca süresi dolmuş hesap parolasız giriyordu); `FailureChain` yanlış kullanımda
+  (başka hesabın bileti, iki kez `end`, `end`'den önce `succeeded`) hata verir.
 - Geliştirme venv'i Python 3.14, üretim imajı 3.12 — testler artık iki yorumlayıcıda da
   koşuyor (F6: 3.12'de `TaskGroup` bir alt görev hata verince üst görevi iptal edilmiş
   bırakıyordu ve içe aktarmadaki her dizin kesintisi 503 yerine 500 oluyordu). CI'da 3.12

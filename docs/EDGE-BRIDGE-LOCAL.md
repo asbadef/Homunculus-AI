@@ -417,9 +417,13 @@ plan to map them. Every failure says what to ask IT for.
   the run the sign-in is refused with 429 "Çok fazla hatalı deneme; 15 dakika sonra tekrar
   deneyin" without asking AD, until 15 minutes after the last failed bind; a refused attempt
   reaches no DC and does not extend the run. Only an attempt whose password reached the DC
-  counts (a DC outage before the bind does not). A bind the API stopped waiting for at its
-  deadline once the password had been sent is counted as of one deadline later — the DC may
-  still count it until then — so its run lasts 15 minutes from that. A right password ends
+  counts (a DC outage before the bind does not). A bind whose password had been sent but that
+  the DC did not answer — the API's deadline cut it off, the LDAP receive timeout
+  (`LDAP_TIMEOUT_S`, which usually comes first) gave up on it, the connection dropped — is
+  counted as of one deadline later (`min(2 × LDAP_TIMEOUT_S, 12)` s): the DC may still count it
+  until then, so its run lasts 15 minutes from that. A DC that processes a request more than
+  one deadline after it was sent is outside this guarantee — a DC that slow is an outage to
+  fix first. A right password ends
   the run, as AD resets its count at a successful logon — but only for the failures recorded
   before that sign-in began: wrong passwords that failed while it was being checked may have
   reached the DC after it, so they stay counted and start the next run (with that run's unlock
@@ -451,13 +455,17 @@ plan to map them. Every failure says what to ask IT for.
   ```bash
   docker compose exec postgres psql -U homunculus -d homunculus -c "SELECT payload->>'login'
     AS login, count(*) FROM audit WHERE event_type = 'auth' AND subject = 'login.fail' AND
-    payload->>'reason' IN ('bad_credentials', 'directory_unavailable') AND ts::timestamptz >
-    now() - interval '15 minutes' GROUP BY 1;"
+    payload->>'reason' IN ('bad_credentials', 'directory_unavailable', 'cancelled',
+    'directory_error') AND ts::timestamptz > now() - interval '15 minutes' GROUP BY 1;"
   ```
 
   Wrong passwords typed elsewhere for the same account (a ward PC) count in AD too, which is
   why the threshold needs room above 6. The audit trail shows a run: `login.fail` rows for one
-  account with `reason` `bad_credentials`, then `throttled`.
+  account with `reason` `bad_credentials`, then `throttled`. Every failed bind the run counts
+  has its row, written the moment it is counted: a sign-in cut off once its password had
+  reached the DC (the request cancelled — the API stopping mid-request, for one) is a
+  `cancelled` row, a fault at that point a `directory_error` row — both counted, so the query
+  above includes them.
 - **What the limits give away** (roadmap, user decision 11). *AD accounts can be told apart:*
   when the directory is down, or `LDAP_URL` is unset while AD accounts exist, an AD login gets
   an immediate 503 "Dizin sunucusuna ulaşılamıyor" — no dummy bcrypt, no 0.5 s floor — while

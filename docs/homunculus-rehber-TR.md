@@ -519,7 +519,9 @@ maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te geli
   başına dakikada 10 denemeyle (ve 10 ani denemeyle) sınırlar: "Çok fazla giriş denemesi; bir
   dakika sonra tekrar deneyin". Servis bilgisayarları tek bir adresin (NAT, terminal sunucusu)
   arkasındaysa bu sınırı bütün servis paylaşır. Denetim kaydında bir dizi, aynı hesap için
-  `login.fail` satırları ve ardından `throttled` olarak görünür. Bedeli: bir klinisyenin giriş
+  `login.fail` satırları ve ardından `throttled` olarak görünür; dizinin saydığı her hatalı
+  deneme bir satır bırakır — parolası dizine gittikten sonra yarıda kesilen bir giriş de
+  (örneğin sunucu istek sürerken kapanıyordu) `cancelled` nedeniyle. Bedeli: bir klinisyenin giriş
   adını bilen herkes, 15 dakikada 3 yanlış parolayla onun Homunculus girişini 429'da tutabilir
   (Windows oturumunu kilitlemez); yönetici bunu dizi başına bir kez açabilir (kullanıcı kararı
   11).

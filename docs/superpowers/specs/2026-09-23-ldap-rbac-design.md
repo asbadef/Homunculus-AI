@@ -180,7 +180,11 @@ the design. The care-team claim stays exactly as it is today: `attending`, `char
 - Success writes `last_login_at` and an `auth` audit event (`login.ok`). Failures write
   `login.fail` with the login string and the reason class (`bad_credentials`, `inactive`,
   `directory_unavailable`) — never the password. *As built:* also `directory_disabled`,
-  `directory_expired` (§7) and `throttled` (429, §7 Security).
+  `directory_expired` (§7) and `throttled` (429, §7 Security). *As built (F8):* also
+  `cancelled` (the request was cut off once the password had reached the directory, or the
+  directory did not say whether it had) and `directory_error` (a fault, not an outage, at that
+  point); every failure the AD throttle counts is audited the moment it is counted, with
+  nothing awaited in between, so a cancelled request still leaves its row.
 - *As built — timing.* Every 401 of an AD sign-in runs the same dummy bcrypt comparison as an
   unknown login, and every 401 of `POST /auth/login` answers no sooner than 0.5 s
   (`LOGIN_FAILURE_FLOOR_S`) after the request reached the route, so the directory's round trips
@@ -435,6 +439,10 @@ test_connection(*, lane=None)                  -> None              # raises on 
 `LdapIdentity` carries `external_id` (objectGUID), `username` (sAMAccountName), `upn`, `email`,
 `display_name`, `dn`, `group_dns`, `disabled`, `pwd_last_set` (for the refresh re-check) and,
 *as built*, `account_expires` (accountExpires; sign-in and refresh refuse an account past it).
+*As built (F8):* `bound` — True only on the identity `authenticate` returns after the account's
+own bind succeeded (the logon that resets AD's count); False on a lookup, a search, and a
+disabled or expired account returned without a bind. The sign-in route ends a throttle run on
+it, never on its own reading of the clock.
 `authenticate` takes the objectGUID, not the typed login (sign-in step 1; the typed login only
 selects the imported account — plan decisions D1–D2). `LdapUnavailable` is raised for connection,
 TLS and timeout failures and maps to the 503 in §4. *As built:* its `reason` is one fixed code
@@ -620,7 +628,10 @@ not carried forward.
   whose password reached the directory counts; a successful sign-in ends the run. *As built
   (F7):* a right password ends the run only for the failures recorded before that attempt
   began (`FailureChain.begin` hands it a `Ticket`; `succeeded` is called right after its
-  `end`): failures recorded while it was being checked may have reached the domain controller
+  `end`, and *as built (F8)* only for an identity the directory returns `bound`; the ticket
+  names its key and its place, `end(key, ticket, …)` releases only that place, and a ticket of
+  another key, a second `end` or a `succeeded` before `end` raises): failures recorded while it
+  was being checked may have reached the domain controller
   after its bind, AD counts them, and they start the next run — with the unlock spent if the
   old run had spent it. A bind cut off at its deadline once the password had been sent is
   dated one deadline later; *as built (F8),* so is any bind sent that the domain controller did
