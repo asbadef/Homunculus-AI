@@ -3,7 +3,8 @@ in-memory list") and the helpers the LDAP tests share. Synthetic accounts only.
 
 FakeDirectory keeps Ldap3Directory's contract: `authenticate` finds the account by objectGUID,
 returns a disabled or expired one (accountExpires passed) as found WITHOUT checking the
-password, and answers None for an unknown account or an empty or wrong password. As there, bad input never reaches the "server": an empty
+password (`bound` False), the account `bound` when the password is right, and answers None for
+an unknown account or an empty or wrong password. As there, bad input never reaches the "server": an empty
 password or a malformed objectGUID is None and a blank query [] whether or not the directory is
 up, and is not recorded; a search returns at most 1–50 rows (`limit` clamped) and no group
 lists. `unavailable = True` makes every other call raise LdapUnavailable("unreachable"), as a
@@ -161,7 +162,7 @@ class FakeDirectory:
             return None
         if p.identity.disabled or account_expired(p.identity.account_expires, time.time()):
             return p.identity
-        return p.identity if password == p.password else None
+        return replace(p.identity, bound=True) if password == p.password else None
 
     async def find_by_external_id(self, external_id: str, *,
                                   lane: asyncio.Semaphore | None = None) -> LdapIdentity | None:

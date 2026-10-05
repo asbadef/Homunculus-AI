@@ -412,6 +412,7 @@ async def test_sign_in_finds_the_account_by_guid_then_binds_as_its_dn():
     script = Script(([_entry()], 0))
     identity = await _directory(script).authenticate(GUID, USER_PW)
     assert identity is not None and identity.username == "AYilmaz"
+    assert identity.bound is True                          # her own bind succeeded
     assert _bound_as(script) == [SVC_DN, USER_DN]
     search = script.searches[0]
     assert search["search_filter"] == guid_lookup_filter(DEFAULT_USER_FILTER, GUID)
@@ -461,6 +462,7 @@ async def test_a_disabled_account_is_returned_without_a_bind_as_it():
     script = Script(([_entry(userAccountControl=[b"514"])], 0))
     identity = await _directory(script).authenticate(GUID, "her-neyse")
     assert identity is not None and identity.disabled is True
+    assert identity.bound is False                         # no bind: nothing reset in AD
     assert _bound_as(script) == [SVC_DN]
 
 
@@ -475,6 +477,7 @@ async def test_an_expired_account_is_returned_without_a_bind_as_it():
     script = Script(([_entry(accountExpires=[expired])], 0))
     identity = await _directory(script).authenticate(GUID, "her-neyse")
     assert identity is not None and identity.account_expires == int(expired)
+    assert identity.bound is False
     assert _bound_as(script) == [SVC_DN]
 
 
@@ -482,8 +485,18 @@ async def test_an_expired_account_is_returned_without_a_bind_as_it():
 async def test_an_account_that_has_not_expired_still_binds(account_expires):
     later = [str(_filetime(time.time() + 3600)).encode()]
     script = Script(([_entry(accountExpires=[account_expires] if account_expires else later)], 0))
-    assert await _directory(script).authenticate(GUID, USER_PW) is not None
+    identity = await _directory(script).authenticate(GUID, USER_PW)
+    assert identity is not None and identity.bound is True
     assert _bound_as(script) == [SVC_DN, USER_DN]
+
+
+async def test_an_account_read_with_the_service_account_is_not_bound():
+    """`bound` says the account's OWN bind succeeded; a lookup or a search makes none."""
+    script = Script(([_entry()], 0), ([_entry()], 0))
+    directory = _directory(script)
+    assert (await directory.find_by_external_id(GUID)).bound is False
+    assert [i.bound for i in await directory.search_users("yil")] == [False]
+    assert parse_user_entry(_entry()).bound is False
 
 
 async def test_a_refused_service_account_is_an_outage():

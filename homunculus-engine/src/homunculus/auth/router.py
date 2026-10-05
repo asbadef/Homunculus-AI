@@ -195,9 +195,10 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     A deactivated account is refused before the directory is asked (no bind, so no AD lockout
     count for an account Homunculus has switched off), and so is an account whose chain of
     failed binds is full — 3, or 6 after an administrator's unlock — until 15 minutes pass
-    with no failed bind (429, `directory_binds`, counted as AD counts; a right password ends it
-    for the failures recorded before it began) — Homunculus must never be the way a clinician
-    gets locked out of the hospital domain. The database connection is released while the
+    with no failed bind (429, `directory_binds`, counted as AD counts; a right password — an
+    identity the directory returns `bound` — ends it for the failures recorded before it
+    began) — Homunculus must never be the way a clinician gets locked out of the hospital
+    domain. The database connection is released while the
     directory answers, so a slow domain controller cannot pin the pool at shift change; the
     account is re-read afterwards (plan decisions D7, D8)."""
     user_id, external_id = user.id, user.external_id
@@ -243,15 +244,19 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
         refusal = "bad_credentials"
     else:
         directory_binds.end(slot, ticket, failed=False)
+        if identity.bound:
+            # The bind as the account succeeded, and AD reset its count then — the directory
+            # says so (`LdapIdentity.bound`); this route does not guess it from the clock. Right
+            # after `end`, nothing awaited in between: the failures recorded while this attempt
+            # ran, which AD may count after that reset, stay in the chain (auth/limits.py).
+            directory_binds.succeeded(slot, ticket)
         if identity.disabled:                # returned without a bind: nothing for AD to count
             refusal = "directory_disabled"
-        elif account_expired(identity.account_expires, time.time()):
+        elif not identity.bound:
+            # Returned without a bind and not disabled: past its end date, as the directory
+            # judged it (accountExpires). Refused whatever this server's clock says now.
             refusal = "directory_expired"
         else:
-            # The bind as the account succeeded, and AD reset its count then. Right after `end`,
-            # nothing awaited in between: the failures recorded while this attempt ran, which
-            # AD may count after that reset, stay in the chain (auth/limits.py, `succeeded`).
-            directory_binds.succeeded(slot, ticket)
             refusal = (None if login_matches(key, identity, ldap.login_attrs)
                        else "bad_credentials")
     if refusal is not None:

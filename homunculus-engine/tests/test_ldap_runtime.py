@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 
 import pytest
 
@@ -18,7 +19,7 @@ async def test_the_fake_signs_in_by_guid_and_password_only():
     p = person("AYilmaz")
     directory = FakeDirectory([p])
     eid = p.identity.external_id
-    assert await directory.authenticate(eid, AD_PASSWORD) == p.identity
+    assert await directory.authenticate(eid, AD_PASSWORD) == replace(p.identity, bound=True)
     assert await directory.authenticate(eid, "yanlis") is None
     assert await directory.authenticate(eid, "") is None
     assert await directory.authenticate("00000000-0000-0000-0000-000000000000",
@@ -31,6 +32,7 @@ async def test_the_fake_returns_a_disabled_account_without_checking_its_password
     p = person("Eski", disabled=True)
     found = await FakeDirectory([p]).authenticate(p.identity.external_id, "her-neyse")
     assert found is not None and found.disabled is True
+    assert found.bound is False                          # no bind made
 
 
 async def test_the_fake_can_be_down():

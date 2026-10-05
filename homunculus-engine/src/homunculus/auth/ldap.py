@@ -96,7 +96,12 @@ class LdapIdentity:
     ones included when LDAP_NESTED_GROUPS=1); `pwd_last_set` is pwdLastSet, a FILETIME — 0 when
     the account must change its password at the next logon, None when it was not read;
     `account_expires` is accountExpires, a FILETIME (0 or ACCOUNT_NEVER_EXPIRES: never; None:
-    not read) — judged by `account_expired`."""
+    not read) — judged by `account_expired`.
+
+    `bound` is True only on an identity `authenticate` returns after the account's OWN bind
+    succeeded — the logon that resets AD's bad-password count. False everywhere else: a lookup,
+    a search, and a disabled or expired account `authenticate` returns without a bind. The
+    sign-in route reads it, not the clock, to know whether a bind was made."""
     external_id: str
     username: str
     dn: str
@@ -107,6 +112,7 @@ class LdapIdentity:
     disabled: bool = False
     pwd_last_set: int | None = None
     account_expires: int | None = None
+    bound: bool = False
 
 
 @dataclass(frozen=True)
@@ -143,8 +149,10 @@ class LdapDirectory(Protocol):
         filter lets it through: the DEFAULT filter excludes disabled accounts, so under it a
         disabled account is simply not found (sign-in `bad_credentials`, refresh
         `directory_not_found`; `directory_disabled` needs a custom LDAP_USER_FILTER). An
-        EXPIRED account (`account_expired`) is returned as found without a bind too; the
-        default filter lets it through, so it is refused as `directory_expired`."""
+        EXPIRED account (`account_expired`, on the directory's reading of the clock) is
+        returned as found without a bind too; the default filter lets it through, so it is
+        refused as `directory_expired`. The identity is `bound` exactly when the bind was made
+        and succeeded."""
 
     async def find_by_external_id(self, external_id: str, *,
                                   lane: asyncio.Semaphore | None = None) -> LdapIdentity | None:

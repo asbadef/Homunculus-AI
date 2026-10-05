@@ -159,6 +159,40 @@ async def test_an_account_past_its_ad_end_date_is_refused_and_stays_active_here(
     assert (await fresh_user(db_session, world["account"].id)).is_active is True
 
 
+async def test_a_clock_stepping_back_across_the_end_date_never_ends_a_run_without_a_bind(
+        client, world, monkeypatch):
+    """The directory finds her account past its end date and returns it WITHOUT a bind; then
+    the server's clock steps back across that date (an NTP correction) before the route reads
+    the answer. Only the directory knows whether her bind was made (`LdapIdentity.bound`): the
+    route does not end her run of failed binds — no bind reset AD's count — and does not sign
+    her in."""
+    c, app = client
+    expires = time.time() - 60
+    world["directory"].update(world["ayse"].identity.external_id,
+                              account_expires=_filetime(expires))
+    key = str(world["account"].id)
+    for _ in range(2):                                   # two wrong passwords, earlier
+        ticket = directory_binds.begin(key)
+        directory_binds.end(key, ticket, failed=True)
+    ended: list[str] = []
+    succeeded = directory_binds.succeeded
+
+    def recording(slot, ticket):
+        ended.append(slot)
+        succeeded(slot, ticket)
+
+    monkeypatch.setattr(directory_binds, "succeeded", recording)
+    stepped_back = type("Clock", (), {"time": staticmethod(lambda: expires - 3600),
+                                      "monotonic": staticmethod(time.monotonic)})
+    import homunculus.auth.router as auth_router
+    monkeypatch.setattr(auth_router, "time", stepped_back)
+    res = await _login(c, "ayilmaz")                     # her right password, never sent
+    assert res.status_code == 401, res.text
+    assert _reasons(app) == ["directory_expired"]
+    assert ended == []
+    assert len(directory_binds._chains[key].failures) == 2
+
+
 @pytest.mark.parametrize("ends", ["never (0)", "never (max)", "later"])
 async def test_an_account_whose_ad_end_date_has_not_come_signs_in(client, world, ends):
     c, _ = client

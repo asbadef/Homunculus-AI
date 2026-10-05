@@ -624,7 +624,9 @@ class Ldap3Directory:
         if (identity is None or identity.disabled
                 or account_expired(identity.account_expires, time.time())):
             return identity
-        return identity if self._password_ok(attempt, identity.dn, password) else None
+        if not self._password_ok(attempt, identity.dn, password):
+            return None
+        return replace(identity, bound=True)            # her own bind succeeded
 
     def _search_users(self, query: str, limit: int) -> list[LdapIdentity]:
         conn = self._service()
