@@ -382,6 +382,28 @@ async def test_unlocks_and_sign_ins_share_one_chain_of_failed_binds(ad):
     assert _reasons(ad["app"]) == ["bad_credentials", "bad_credentials", "throttled"]
 
 
+async def test_a_full_chain_audits_the_first_refused_unlock_only(ad):
+    """Every 429 would otherwise be an audit row, written as fast as /auth/reauth is asked: the
+    first unlock a full chain refuses writes `reauth.fail` `throttled`, the ones after it none —
+    until the chain ends, or an administrator's unlock lets more through and it fills again."""
+    headers = await _signed_in(ad)
+    c = ad["c"]
+
+    async def unlocks(n, password, expected):
+        for _ in range(n):
+            res = await c.post("/auth/reauth", headers=headers, json={"password": password})
+            assert res.status_code == expected
+
+    await unlocks(DIRECTORY_BIND_MAX_FAILURES, "yanlis", 403)
+    await unlocks(4, AD_PASSWORD, 429)
+    once = ["bad_credentials"] * DIRECTORY_BIND_MAX_FAILURES + ["throttled"]
+    assert _reasons(ad["app"]) == once
+    assert directory_binds.unlock(str(ad["account"].id)).granted
+    await unlocks(DIRECTORY_BIND_MAX_FAILURES, "yanlis", 403)
+    await unlocks(3, AD_PASSWORD, 429)
+    assert _reasons(ad["app"]) == once * 2
+
+
 async def test_a_directory_that_does_not_answer_is_503_and_counts_no_failure(ad):
     headers = await _signed_in(ad)
     ad["directory"].unavailable = True

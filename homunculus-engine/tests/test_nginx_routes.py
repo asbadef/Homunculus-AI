@@ -20,7 +20,7 @@ CONF = Path(__file__).resolve().parents[2] / "deploy" / "local" / "web" / "nginx
 
 # One representative path per API prefix the dashboard or the bridge calls.
 API_PATHS = [
-    "/auth/login", "/admin/users", "/tenant/tenants", "/admissions", "/shift-schedule",
+    "/auth/login", "/auth/reauth", "/auth/password", "/auth/me", "/admin/users", "/tenant/tenants", "/admissions", "/shift-schedule",
     "/handovers", "/alerts/x", "/break-glass", "/scope/me", "/clinical/p1",
     "/scores/sofa/p1", "/alarm-quality", "/infinity-research/state", "/patients", "/ack",
     "/ingest", "/view", "/audit", "/audit/verify", "/health", "/stream", "/stream-ticket",
@@ -69,9 +69,10 @@ def test_stream_ticket_is_served_by_the_sse_block() -> None:
 
 
 def test_every_api_location_is_found() -> None:
-    """Three: the SSE block, the prefix block — and the exact `/auth/login` block, which nginx
-    picks before any regex location so that sign-in alone carries the per-address limit."""
-    assert len(_api_locations()) == 3
+    """Five: the SSE block, the prefix block — and the exact `/auth/login`, `/auth/reauth` and
+    `/auth/password` blocks, which nginx picks before any regex location so that the routes
+    that check a password carry a per-address limit."""
+    assert len(_api_locations()) == 5
 
 
 def _location(text: str, header: str) -> str:
@@ -103,7 +104,29 @@ def test_sign_in_is_rate_limited_per_client_address() -> None:
     api = _location(text, "location ~ ^/(auth|")
     proxy = ("proxy_pass", "proxy_http_version", "proxy_set_header")
     assert _directives(body, *proxy) == _directives(api, *proxy)
-    assert "limit_req" not in api                # nothing but sign-in is limited
+    assert "limit_req" not in api                # the prefix block itself is never limited
+
+
+@pytest.mark.parametrize("path", ["/auth/reauth", "/auth/password"])
+def test_unlock_and_password_change_are_rate_limited_per_client_address(path: str) -> None:
+    """The two routes where a held token can test the account's password: the API counts the
+    wrong ones per account (5 for a local account, the AD chain for an AD one), and nothing
+    else stood in front of them — every refusal was a request the API answered and audited.
+    Per address, in their own zone (a ward's unlocks must not spend its sign-ins), and
+    generous — 30 a minute, a burst of 30 — because a ward's PCs share one address behind
+    NAT. Refused as a limited sign-in is: 429, a warning in the log, the same JSON answer."""
+    text = CONF.read_text(encoding="utf-8")
+    zone = re.search(r"^limit_req_zone\s+\$binary_remote_addr\s+zone=homunculus_reauth:\S+"
+                     r"\s+rate=30r/m;", text, re.M)
+    assert zone and zone.start() < text.index("server {")
+    body = _location(text, f"location = {path}")
+    assert _directives(body, "limit_req", "limit_req_status", "limit_req_log_level",
+                       "error_page") == {
+        "limit_req zone=homunculus_reauth burst=30 nodelay", "limit_req_status 429",
+        "limit_req_log_level warn", "error_page 429 = @login_limited"}
+    api = _location(text, "location ~ ^/(auth|")
+    proxy = ("proxy_pass", "proxy_http_version", "proxy_set_header")
+    assert _directives(body, *proxy) == _directives(api, *proxy)
 
 
 def test_a_limited_sign_in_is_logged_as_a_warning() -> None:
@@ -149,7 +172,9 @@ def test_a_limited_sign_in_is_answered_in_json() -> None:
         '"application/json; charset=utf-8"']                # its own `;` is inside the quotes
     answer = re.findall(r"^\s*return\s+429\s+'([^']*)';\s*$", named, re.M)
     assert len(answer) == 1 and json.loads(answer[0]) == {"detail": LOGIN_LIMITED}
-    assert text.count("@login_limited") == 2                 # declared once, used once
+    # Declared once, used by the three limited locations (sign-in, unlock, password change):
+    # one answer, so the dashboard maps one message.
+    assert text.count("@login_limited") == 4
 
 
 def test_a_limited_sign_in_says_when_to_try_again() -> None:

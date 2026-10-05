@@ -149,6 +149,8 @@ class _Chain:
     unlocked: bool = False        # the unlock is spent: given in this chain, or in the one its
                                   # failures were carried over from (`succeeded`)
     in_flight: set[int] = field(default_factory=set)   # the attempts (Ticket.attempt) running
+    refusal_noted: bool = False   # a refusal of this chain was noted (`note_refusal`); an
+                                  # unlock that lets more through clears it
 
     @property
     def last(self) -> float:
@@ -279,6 +281,17 @@ class FailureChain:
                                        unlocked=chain.unlocked and bool(kept),
                                        in_flight=chain.in_flight)
 
+    def note_refusal(self, key: str) -> bool:
+        """Asked after `begin` refused `key`: True the first time for the key's current chain —
+        the refusal worth recording — and False for the ones after it, until the chain ends or
+        an `unlock` lets more through. False when the key has no chain. Changes nothing the
+        chain counts: it is bookkeeping for the caller's audit trail."""
+        chain = self._chains.get(key)
+        if chain is None or chain.refusal_noted:
+            return False
+        chain.refusal_noted = True
+        return True
+
     def unlock(self, key: str) -> Unlocked | None:
         """An administrator's unlock: `max_failures` more failed attempts in the key's current
         chain, once per chain. With no failure in the chain (no chain, one gone quiet, a local
@@ -294,6 +307,7 @@ class FailureChain:
         before = chain.allowed
         chain.unlocked = True
         chain.allowed += self.max_failures
+        chain.refusal_noted = False          # once it fills again, its next refusal is new
         return Unlocked(failed=len(chain.failures), allowed_before=before,
                         allowed_after=chain.allowed)
 

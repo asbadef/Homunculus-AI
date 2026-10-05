@@ -660,7 +660,12 @@ async def _directory_reauth(request: Request, db: AsyncSession, user_id: uuid.UU
     slot = str(user_id)
     ticket = directory_binds.begin(slot)
     if ticket is None:
-        audit("reauth.fail", reason="throttled")
+        # One row per full chain — its first refused unlock, again after an administrator's
+        # unlock lets more through and it fills — not one per 429: nothing in front of this
+        # route slows a caller holding the token, and each row is written as it asks. (A sign-in
+        # writes one per refusal; nginx limits it per address.)
+        if directory_binds.note_refusal(slot):
+            audit("reauth.fail", reason="throttled")
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                             detail=_DIRECTORY_THROTTLED)
     # As at sign-in: nothing between `begin` and the try, and every path releases the place

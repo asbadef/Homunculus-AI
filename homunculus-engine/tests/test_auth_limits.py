@@ -149,6 +149,30 @@ def _fail(chain: FailureChain, key: str = "u") -> None:
     chain.end(key, ticket, failed=True)
 
 
+def test_a_refusal_is_noted_once_per_full_chain():
+    """`note_refusal`, asked after `begin` refused: True the first time for the key's current
+    chain — the refusal worth one audit row — and False after it, until the chain ends, or an
+    administrator's unlock lets more through and the chain fills again. Nothing to note for a
+    key with no chain."""
+    clock = FakeClock()
+    chain = _chain(clock)
+    assert chain.note_refusal("u") is False
+    for _ in range(3):
+        _fail(chain)
+    assert chain.begin("u") is None
+    assert [chain.note_refusal("u"), chain.note_refusal("u")] == [True, False]
+    assert chain.unlock("u").granted
+    for _ in range(3):
+        _fail(chain)
+    assert chain.begin("u") is None
+    assert [chain.note_refusal("u"), chain.note_refusal("u")] == [True, False]
+    clock.t += 901                                   # quiet: the chain ends
+    for _ in range(3):
+        _fail(chain)
+    assert chain.begin("u") is None
+    assert [chain.note_refusal("u"), chain.note_refusal("u")] == [True, False]
+
+
 def test_three_failures_in_a_chain_refuse_the_next_attempt():
     clock = FakeClock()
     chain = _chain(clock)
