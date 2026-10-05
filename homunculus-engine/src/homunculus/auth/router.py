@@ -35,7 +35,7 @@ from homunculus.auth.dependencies import (
     Principal, get_current_user_pre_mfa, get_principal, get_principal_pre_mfa,
     get_user_for_enrolment,
 )
-from homunculus.auth.groups import tenant_of_user
+from homunculus.auth.groups import TenantRef, tenant_of_user
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.ldap import (
     DEADLINE_CAP_S, DIRECTORY_DOWN, LdapIdentity, LdapUnavailable, account_expired, get_ldap,
@@ -97,6 +97,13 @@ def _directory_down() -> HTTPException:
     return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=DIRECTORY_DOWN)
 
 
+def _audit_login_fail(request: Request, ref: TenantRef | None, key: str, reason: str) -> None:
+    """The `login.fail` row, filed under the account's hospital (`ref`), or "-" for none. A
+    plain call (the audit append is synchronous): nothing in it can be cancelled."""
+    append_audit(request, tenant=ref.slug if ref is not None else None, event_type="auth",
+                 subject="login.fail", payload={"login": key, "reason": reason})
+
+
 async def _login_failed(request: Request, db: AsyncSession, user_id: uuid.UUID | None, key: str,
                         reason: str) -> None:
     """Audit a failed sign-in. A known account's failure is filed under its hospital, so the
@@ -107,8 +114,7 @@ async def _login_failed(request: Request, db: AsyncSession, user_id: uuid.UUID |
     a failure then costs the same queries whether or not the account exists. Takes the account's
     id, not the row: after a directory call the row may be expired (see _directory_sign_in)."""
     ref = await tenant_of_user(db, user_id if user_id is not None else _NO_USER)
-    append_audit(request, tenant=ref.slug if ref is not None else None, event_type="auth",
-                 subject="login.fail", payload={"login": key, "reason": reason})
+    _audit_login_fail(request, ref, key, reason)
 
 
 async def _directory_sign_in_refused(request: Request, db: AsyncSession, user_id: uuid.UUID,
@@ -198,9 +204,16 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     with no failed bind (429, `directory_binds`, counted as AD counts; a right password — an
     identity the directory returns `bound` — ends it for the failures recorded before it
     began) — Homunculus must never be the way a clinician gets locked out of the hospital
-    domain. The database connection is released while the
-    directory answers, so a slow domain controller cannot pin the pool at shift change; the
-    account is re-read afterwards (plan decisions D7, D8)."""
+    domain. The database connection is released while the directory answers, so a slow domain
+    controller cannot pin the pool at shift change; the account is re-read afterwards (plan
+    decisions D7, D8).
+
+    Every failed bind the throttle counts is audited (`login.fail`) the moment it is counted,
+    with nothing awaited in between — a wrong password, an outage once the password was sent,
+    and a sign-in cancelled (`cancelled`) or failing on a fault (`directory_error`) once it may
+    have been: the row exists even for a request cut off right then, and the runbook reads
+    these rows before a restart. The hospital they are filed under is read before the
+    directory is asked."""
     user_id, external_id = user.id, user.external_id
     if not user.is_active:
         raise await _directory_sign_in_refused(request, db, user_id, key, "inactive", password)
@@ -211,6 +224,9 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     if not password or not external_id:
         raise await _directory_sign_in_refused(request, db, user_id, key, "bad_credentials",
                                                password)
+    # The hospital a failure is filed under, read while the connection is held: once the
+    # directory is asked, a failure is audited without awaiting anything (see above).
+    audit_ref = await tenant_of_user(db, user_id)
     await db.rollback()                      # nothing written yet; frees the connection
     # Every failed bind also counts toward the hospital domain's lockout: past the limit the
     # directory is not asked at all (auth/limits.py, directory_binds). Nothing may sit between
@@ -232,33 +248,41 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     except LdapUnavailable as exc:
         directory_binds.end(slot, ticket, failed=exc.bind_attempted,
                             pending_s=exc.bind_pending_s)
-        await _login_failed(request, db, user_id, key, "directory_unavailable")
+        _audit_login_fail(request, audit_ref, key, "directory_unavailable")
         raise _directory_down() from None
     except BaseException as exc:             # cancelled, or a fault: the bind may have been made
-        directory_binds.end(slot, ticket, failed=getattr(exc, "bind_attempted", True),
+        counted = getattr(exc, "bind_attempted", True)
+        directory_binds.end(slot, ticket, failed=counted,
                             pending_s=getattr(exc, "bind_pending_s", DEADLINE_CAP_S))
+        if counted:
+            # No await here: a cancelled request can be cancelled again at its next one (anyio's
+            # cancel scopes do), and this failure must reach the audit trail all the same.
+            _audit_login_fail(request, audit_ref, key,
+                              "cancelled" if isinstance(exc, asyncio.CancelledError)
+                              else "directory_error")
         raise
     if identity is None:
-        # A wrong password (or no such account, which made no bind — counted all the same).
+        # A wrong password (or no such account, which made no bind — counted all the same):
+        # audited at once, then the dummy bcrypt every AD 401 pays (_directory_sign_in_refused).
         directory_binds.end(slot, ticket, failed=True)
-        refusal = "bad_credentials"
+        _audit_login_fail(request, audit_ref, key, "bad_credentials")
+        await run_bcrypt(verify_local_password, None, None, password)
+        raise _bad_credentials()
+    directory_binds.end(slot, ticket, failed=False)
+    if identity.bound:
+        # The bind as the account succeeded, and AD reset its count then — the directory says
+        # so (`LdapIdentity.bound`); this route does not guess it from the clock. Right after
+        # `end`, nothing awaited in between: the failures recorded while this attempt ran, which
+        # AD may count after that reset, stay in the chain (auth/limits.py, `succeeded`).
+        directory_binds.succeeded(slot, ticket)
+    if identity.disabled:                    # returned without a bind: nothing for AD to count
+        refusal = "directory_disabled"
+    elif not identity.bound:
+        # Returned without a bind and not disabled: past its end date, as the directory judged
+        # it (accountExpires). Refused whatever this server's clock says now.
+        refusal = "directory_expired"
     else:
-        directory_binds.end(slot, ticket, failed=False)
-        if identity.bound:
-            # The bind as the account succeeded, and AD reset its count then — the directory
-            # says so (`LdapIdentity.bound`); this route does not guess it from the clock. Right
-            # after `end`, nothing awaited in between: the failures recorded while this attempt
-            # ran, which AD may count after that reset, stay in the chain (auth/limits.py).
-            directory_binds.succeeded(slot, ticket)
-        if identity.disabled:                # returned without a bind: nothing for AD to count
-            refusal = "directory_disabled"
-        elif not identity.bound:
-            # Returned without a bind and not disabled: past its end date, as the directory
-            # judged it (accountExpires). Refused whatever this server's clock says now.
-            refusal = "directory_expired"
-        else:
-            refusal = (None if login_matches(key, identity, ldap.login_attrs)
-                       else "bad_credentials")
+        refusal = None if login_matches(key, identity, ldap.login_attrs) else "bad_credentials"
     if refusal is not None:
         raise await _directory_sign_in_refused(request, db, user_id, key, refusal, password)
     user = await get_user_by_id(db, user_id)

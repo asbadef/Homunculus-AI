@@ -658,6 +658,84 @@ async def test_a_cancelled_sign_in_counts_only_when_the_password_was_sent(client
     assert (await _login(c, "ayilmaz")).status_code == (429 if counted else 200)
 
 
+@pytest.mark.parametrize("bind_attempted, audited", [(True, True), (None, True), (False, False)])
+async def test_a_cancelled_sign_in_whose_password_was_sent_is_audited(client, world, monkeypatch,
+                                                                     bind_attempted, audited):
+    """A sign-in cut off (the request cancelled) once her password had reached the directory —
+    or without the directory saying (counted, fail closed) — is a failed bind AD may count. It
+    gets its `login.fail` row like any other, `reason` "cancelled", under her hospital, so the
+    runbook's look at the last 15 minutes before a restart sees it. The row is written with
+    nothing awaited: it is there even when every await after the cancellation is cancelled
+    again (as anyio's cancel scopes do). One cut off before the bind counts for nothing in AD
+    or the throttle, and has no row."""
+    import homunculus.auth.router as auth_router
+
+    c, app = client
+    entered = asyncio.Event()
+    cancelled = False
+    lookup = auth_router.tenant_of_user
+
+    async def cancelled_again_after_the_cancellation(db, user_id):
+        if cancelled:
+            raise asyncio.CancelledError
+        return await lookup(db, user_id)
+
+    monkeypatch.setattr(auth_router, "tenant_of_user", cancelled_again_after_the_cancellation)
+
+    async def hang(external_id, password):
+        nonlocal cancelled
+        entered.set()
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError as exc:
+            cancelled = True
+            if bind_attempted is not None:
+                exc.bind_attempted = bind_attempted
+            raise
+
+    world["directory"].authenticate = hang
+    task = asyncio.create_task(_login(c, "ayilmaz", "Yanlis-Parola-9"))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    rows = [(r.payload, r.tenant) for r in audit_events(app, "auth", "login.fail")]
+    assert rows == ([({"login": "ayilmaz", "reason": "cancelled"}, "demo-hastanesi")]
+                    if audited else [])
+    assert "Yanlis-Parola-9" not in str([r.payload for r in app.state.audit.records()])
+
+
+async def test_a_directory_fault_that_may_have_sent_the_password_is_audited(client, world):
+    """Not an outage the directory reported but a fault (a bug): the bind may have been made, so
+    the throttle counts it (fail closed) and the audit trail has its row, `directory_error`."""
+    c, app = client
+
+    async def broken(external_id, password):
+        raise RuntimeError("library bug")
+
+    world["directory"].authenticate = broken
+    with pytest.raises(RuntimeError):
+        await _login(c, "ayilmaz")
+    assert _reasons(app) == ["directory_error"]
+
+
+async def test_a_wrong_password_is_audited_before_anything_is_awaited(client, world,
+                                                                    monkeypatch):
+    """Every failed bind the throttle counts is audited at once: a sign-in cancelled during the
+    dummy bcrypt that follows a wrong password still leaves its `bad_credentials` row."""
+    import homunculus.auth.router as auth_router
+
+    c, app = client
+
+    async def cancelled(fn, *args):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(auth_router, "run_bcrypt", cancelled)
+    with pytest.raises(asyncio.CancelledError):
+        await _login(c, "ayilmaz", "Yanlis-Parola-9")
+    assert _reasons(app) == ["bad_credentials"]
+
+
 def _record_ends(monkeypatch) -> list[tuple[bool, float]]:
     """Every `directory_binds.end` the route makes, as (failed, pending_s)."""
     ends: list[tuple[bool, float]] = []
