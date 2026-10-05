@@ -1076,8 +1076,9 @@ def _throttle_directly(user_id) -> str:
     """Three failed binds recorded for the account, as three wrong passwords would leave them."""
     key = str(user_id)
     for _ in range(3):
-        assert directory_binds.begin(key) is not None
-        directory_binds.end(key, failed=True)
+        ticket = directory_binds.begin(key)
+        assert ticket is not None
+        directory_binds.end(key, ticket, failed=True)
     return key
 
 
@@ -1191,8 +1192,9 @@ async def test_an_administrator_may_unlock_their_own_sign_in(client, world, db_s
     admin = await bearer(db_session, world["admin"])
     key = _throttle_directly(world["admin"].id)
     assert (await _unlock(c, world["admin"].id, admin)).status_code == 200
-    assert directory_binds.begin(key) is not None
-    directory_binds.end(key, failed=False)
+    ticket = directory_binds.begin(key)
+    assert ticket is not None
+    directory_binds.end(key, ticket, failed=False)
 
 
 async def test_a_user_desk_unlocks_only_accounts_within_its_rights(client, world, db_session):

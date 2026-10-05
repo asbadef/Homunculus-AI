@@ -82,9 +82,14 @@ class FailureLimiter:
 
 @dataclass(frozen=True)
 class Ticket:
-    """An attempt's place, as `begin` hands it out: how many failures the FailureChain had
-    recorded by then (every key counted) and its clock at that moment. `succeeded` reads it to
-    tell the failures that came before this attempt from those that may have come after."""
+    """An attempt's place, as `begin` hands it out for `key`. `attempt` numbers it (one per
+    `begin`, unique in its FailureChain): `end` releases exactly this place, once. `seq` is how
+    many failures the FailureChain had recorded by then (every key counted) and `at` its clock
+    at that moment: `succeeded` reads them to tell the failures that came before this attempt
+    from those that may have come after. A ticket is good for its own key only — `end` and
+    `succeeded` refuse another key's (ValueError)."""
+    key: str
+    attempt: int
     seq: int
     at: float
 
@@ -101,7 +106,7 @@ class _Chain:
     failures: list[_Failure] = field(default_factory=list)
     unlocked: bool = False        # the unlock is spent: given in this chain, or in the one its
                                   # failures were carried over from (`succeeded`)
-    running: int = 0              # attempts in flight
+    in_flight: set[int] = field(default_factory=set)   # the attempts (Ticket.attempt) running
 
     @property
     def last(self) -> float:
@@ -133,10 +138,16 @@ class FailureChain:
     possible failure while it runs: `begin` refuses once the chain's failures plus its attempts
     in flight reach what the chain allows — `max_failures`, `max_failures` more after an
     `unlock` — so concurrent requests cannot overshoot it, and one chain never holds more than
-    2 × `max_failures`. `end` releases the place and records whether the attempt failed, in the
-    key's current chain (an attempt in flight keeps its chain alive). `succeeded`, called right
-    after `end` for a right password, ends the chain for the failures that came before that
-    attempt began; those recorded since start the next one.
+    2 × `max_failures`. `end`, with the attempt's ticket, releases that place and records
+    whether the attempt failed, in the key's current chain (an attempt in flight keeps its
+    chain alive). `succeeded`, called right after `end` for a right password, ends the chain
+    for the failures that came before that attempt began; those recorded since start the next
+    one.
+
+    Misuse is refused, never absorbed: a ticket used for another key, an `end` for a place
+    that is not held (ended already, or never handed out by this chain) and a `succeeded`
+    before its attempt's `end` raise ValueError and change nothing. A silent `end` would free
+    another attempt's place and let one more bind through than the chain allows.
 
     A failure is dated when its attempt ends, after the directory answered — or `pending_s`
     later, when the caller stopped waiting while the bind was under way and the domain
@@ -151,16 +162,22 @@ class FailureChain:
         self._clock = clock
         self._chains: dict[str, _Chain] = {}
         self._recorded = 0                   # failures recorded so far, every key: Ticket.seq
+        self._attempts = 0                   # places handed out so far, every key: .attempt
 
     def _current(self, key: str) -> _Chain | None:
         """The key's chain, or None when it has none: never one, or it has gone quiet (it is
         forgotten then, so the table holds only chains still alive or in use)."""
         chain = self._chains.get(key)
-        if chain is not None and chain.running == 0 and (
+        if chain is not None and not chain.in_flight and (
                 not chain.failures or self._clock() - chain.last > self.quiet_seconds):
             del self._chains[key]
             return None
         return chain
+
+    @staticmethod
+    def _own(key: str, ticket: Ticket) -> None:
+        if ticket.key != key:
+            raise ValueError("this ticket was handed out for another key")
 
     def begin(self, key: str) -> Ticket | None:
         """Reserve a place for one attempt: its Ticket, or None (try nothing) when the chain is
@@ -168,43 +185,53 @@ class FailureChain:
         chain = self._current(key)
         if chain is None:
             chain = self._chains[key] = _Chain(allowed=self.max_failures)
-        if len(chain.failures) + chain.running >= chain.allowed:
+        if len(chain.failures) + len(chain.in_flight) >= chain.allowed:
             return None
-        chain.running += 1
-        return Ticket(seq=self._recorded, at=self._clock())
+        self._attempts += 1
+        chain.in_flight.add(self._attempts)
+        return Ticket(key=key, attempt=self._attempts, seq=self._recorded, at=self._clock())
 
-    def end(self, key: str, *, failed: bool, pending_s: float = 0.0) -> None:
-        """Release the place `begin` reserved; a failed attempt is counted in the chain, dated
-        now — or `pending_s` from now, for a bind the caller stopped waiting for while it was
-        under way: the domain controller has not answered it and may still count it."""
+    def end(self, key: str, ticket: Ticket, *, failed: bool, pending_s: float = 0.0) -> None:
+        """Release the place `begin` reserved for `ticket`; a failed attempt is counted in the
+        chain, dated now — or `pending_s` from now, for a bind the caller stopped waiting for
+        while it was under way: the domain controller has not answered it and may still count
+        it. ValueError, and nothing changes, when `ticket` holds no place here: another key's,
+        ended already, or not handed out by this chain."""
+        self._own(key, ticket)
         chain = self._chains.get(key)
-        if chain is None:                    # no `begin` before it: count it all the same
-            chain = self._chains[key] = _Chain(allowed=self.max_failures)
-        chain.running = max(0, chain.running - 1)
+        if chain is None or ticket.attempt not in chain.in_flight:
+            raise ValueError("end() for an attempt that holds no place: ended already, or "
+                             "never begun here")
+        chain.in_flight.discard(ticket.attempt)
         if failed:
             self._recorded += 1
             chain.failures.append(_Failure(self._recorded, self._clock() + max(0.0, pending_s)))
-        elif not chain.failures and chain.running == 0:
+        elif not chain.failures and not chain.in_flight:
             del self._chains[key]
 
     def succeeded(self, key: str, ticket: Ticket) -> None:
         """The attempt holding `ticket` had the right password: AD reset its count when that
         bind reached the domain controller. Call it right after the attempt's `end`, with
-        nothing awaited in between.
+        nothing awaited in between — before it (the attempt still in flight), or with another
+        key's ticket, it raises ValueError and changes nothing.
 
         The failures recorded before the ticket, and dated before it, came before that bind:
         forgotten. The others — recorded while it ran, or a cut-off bind dated later
         (`pending_s`) — may have reached the domain controller after it, and AD counts them:
         they start the new chain, with their dates, and with the unlock spent if the old chain
         had spent it. Attempts in flight keep their places, in the new chain."""
-        chain = self._chains.pop(key, None)
+        self._own(key, ticket)
+        chain = self._chains.get(key)
         if chain is None:
             return
+        if ticket.attempt in chain.in_flight:
+            raise ValueError("succeeded() before the attempt's end()")
+        del self._chains[key]
         kept = [f for f in chain.failures if f.seq > ticket.seq or f.at > ticket.at]
-        if kept or chain.running:
+        if kept or chain.in_flight:
             self._chains[key] = _Chain(allowed=self.max_failures, failures=kept,
                                        unlocked=chain.unlocked and bool(kept),
-                                       running=chain.running)
+                                       in_flight=chain.in_flight)
 
     def unlock(self, key: str) -> Unlocked | None:
         """An administrator's unlock: `max_failures` more failed attempts in the key's current

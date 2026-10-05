@@ -5,8 +5,10 @@ from __future__ import annotations
 import heapq
 import itertools
 import random
+from dataclasses import replace
 
 import pyotp
+import pytest
 
 from homunculus.auth.limits import (
     DIRECTORY_BIND_MAX_FAILURES, DIRECTORY_BIND_WINDOW_S, FailureChain, FailureLimiter, Ticket,
@@ -97,8 +99,9 @@ def _chain(clock: FakeClock) -> FailureChain:
 
 
 def _fail(chain: FailureChain, key: str = "u") -> None:
-    assert chain.begin(key) is not None
-    chain.end(key, failed=True)
+    ticket = chain.begin(key)
+    assert ticket is not None
+    chain.end(key, ticket, failed=True)
 
 
 def test_three_failures_in_a_chain_refuse_the_next_attempt():
@@ -153,9 +156,10 @@ def test_failures_further_apart_than_the_quiet_period_never_refuse():
 def test_attempts_in_flight_count_so_concurrent_requests_cannot_overshoot():
     chain = _chain(FakeClock())
     _fail(chain)
-    assert chain.begin("u") is not None and chain.begin("u") is not None    # two running at once
+    first, second = chain.begin("u"), chain.begin("u")              # two running at once
+    assert first is not None and second is not None
     assert chain.begin("u") is None                                 # 1 failure + 2 running
-    chain.end("u", failed=False)
+    chain.end("u", first, failed=False)
     assert chain.begin("u") is not None
 
 
@@ -166,17 +170,19 @@ def test_an_attempt_in_flight_keeps_its_chain_alive():
     chain = _chain(clock)
     _fail(chain)
     _fail(chain)
-    assert chain.begin("u") is not None
+    ticket = chain.begin("u")
+    assert ticket is not None
     clock.t += 2000                         # past the quiet period, the attempt still running
-    chain.end("u", failed=True)
+    chain.end("u", ticket, failed=True)
     assert chain.begin("u") is None        # three in one chain
 
 
 def test_an_attempt_that_did_not_fail_releases_its_place_without_counting():
     chain = _chain(FakeClock())
     for _ in range(5):
-        assert chain.begin("u") is not None
-        chain.end("u", failed=False)
+        ticket = chain.begin("u")
+        assert ticket is not None
+        chain.end("u", ticket, failed=False)
     _fail(chain)
     _fail(chain)
     assert chain.begin("u") is not None
@@ -187,7 +193,7 @@ def _succeed(chain: FailureChain, key: str = "u") -> None:
     with the attempt's own ticket, nothing in between."""
     ticket = chain.begin(key)
     assert ticket is not None
-    chain.end(key, failed=False)
+    chain.end(key, ticket, failed=False)
     chain.succeeded(key, ticket)
 
 
@@ -214,13 +220,14 @@ def test_failures_recorded_while_a_right_password_was_checked_stay_counted():
     chain = _chain(clock)
     b = chain.begin("u")
     clock.t += 0.1
-    assert chain.begin("u") is not None and chain.begin("u") is not None   # C, D in flight
+    c, d = chain.begin("u"), chain.begin("u")       # C, D in flight
+    assert c is not None and d is not None
     assert chain.begin("u") is None                  # B holds a place: 0 + 3 running
     clock.t += 0.1
-    chain.end("u", failed=True)                      # C
-    chain.end("u", failed=True)                      # D
+    chain.end("u", c, failed=True)
+    chain.end("u", d, failed=True)
     clock.t += 0.1
-    chain.end("u", failed=False)                     # B: the right password
+    chain.end("u", b, failed=False)                  # B: the right password
     chain.succeeded("u", b)
     _fail(chain)                                     # C, D + 1: AD's count since B is 3
     assert chain.begin("u") is None
@@ -257,7 +264,7 @@ def test_a_success_keeps_a_spent_unlock_spent_for_the_failures_it_keeps():
     _fail(chain)
     _fail(chain)
     clock.t += 0.1
-    chain.end("u", failed=False)
+    chain.end("u", b, failed=False)
     chain.succeeded("u", b)
     _fail(chain)
     assert chain.begin("u") is None
@@ -281,13 +288,15 @@ def test_a_success_leaves_attempts_in_flight_their_places():
     clock = FakeClock()
     chain = _chain(clock)
     b = chain.begin("u")
-    assert chain.begin("u") is not None              # C, still running when B succeeds
-    chain.end("u", failed=False)
+    c = chain.begin("u")                             # C, still running when B succeeds
+    assert c is not None
+    chain.end("u", b, failed=False)
     chain.succeeded("u", b)
-    assert chain.begin("u") is not None and chain.begin("u") is not None
+    d, e = chain.begin("u"), chain.begin("u")
+    assert d is not None and e is not None
     assert chain.begin("u") is None                  # C + 2 running
-    for _ in range(3):
-        chain.end("u", failed=True)                  # all three fail, in the new chain
+    for ticket in (c, d, e):
+        chain.end("u", ticket, failed=True)          # all three fail, in the new chain
     assert chain.begin("u") is None
 
 
@@ -299,8 +308,9 @@ def test_a_bind_cut_off_while_under_way_is_dated_as_late_as_it_can_arrive():
     chain = _chain(clock)
     _fail(chain)
     _fail(chain)
-    assert chain.begin("u") is not None
-    chain.end("u", failed=True, pending_s=10)        # cut off at 1000: dated 1010
+    ticket = chain.begin("u")
+    assert ticket is not None
+    chain.end("u", ticket, failed=True, pending_s=10)    # cut off at 1000: dated 1010
     clock.t = 1000 + 901
     assert chain.begin("u") is None                  # 901 s after the cut-off: still held
     clock.t = 1010 + 901
@@ -314,12 +324,13 @@ def test_a_success_keeps_a_cut_off_bind_that_may_arrive_after_its_own():
     for began, kept in ((1005, True), (1011, False)):
         clock = FakeClock()
         chain = _chain(clock)
-        assert chain.begin("u") is not None
-        chain.end("u", failed=True, pending_s=10)
+        cut = chain.begin("u")
+        assert cut is not None
+        chain.end("u", cut, failed=True, pending_s=10)
         clock.t = began
         b = chain.begin("u")
         clock.t += 0.5
-        chain.end("u", failed=False)
+        chain.end("u", b, failed=False)
         chain.succeeded("u", b)
         _fail(chain)
         _fail(chain)
@@ -331,6 +342,74 @@ def test_chain_keys_are_independent():
     for _ in range(3):
         _fail(chain, "a")
     assert chain.begin("a") is None and chain.begin("b") is not None
+
+
+def _state(chain: FailureChain) -> dict:
+    return {key: (c.allowed, list(c.failures), c.unlocked, set(c.in_flight))
+            for key, c in chain._chains.items()}
+
+
+def test_a_ticket_is_for_its_own_key_and_another_keys_is_refused():
+    """A Ticket names the key `begin` gave it for. `end` or `succeeded` with another key's
+    ticket is a bug — it would release, or end the chain of, an attempt that is not this one —
+    and is refused (ValueError) before anything changes."""
+    clock = FakeClock()
+    chain = _chain(clock)
+    _fail(chain, "a")
+    _fail(chain, "b")
+    a, b = chain.begin("a"), chain.begin("b")
+    assert (a.key, b.key) == ("a", "b")
+    before = _state(chain)
+    with pytest.raises(ValueError):
+        chain.end("b", a, failed=False)
+    with pytest.raises(ValueError):
+        chain.succeeded("b", a)
+    assert _state(chain) == before
+    chain.end("a", a, failed=False)
+    chain.end("b", b, failed=False)
+    with pytest.raises(ValueError):
+        chain.succeeded("a", b)              # b's ended, but it is still b's
+    assert len(chain._chains["a"].failures) == 1
+
+
+def test_an_end_without_its_begin_frees_no_other_attempts_place():
+    """`end` releases the place of the attempt its ticket names, once. Ending one twice — or
+    one whose place is gone — is refused (ValueError) and changes nothing: it must not free the
+    place of another attempt still in flight, which would let a fourth bind through."""
+    chain = _chain(FakeClock())
+    first, second, third = chain.begin("u"), chain.begin("u"), chain.begin("u")
+    assert chain.begin("u") is None                  # three in flight: the chain is full
+    chain.end("u", first, failed=True)
+    before = _state(chain)
+    with pytest.raises(ValueError):
+        chain.end("u", first, failed=False)          # a second end for the same attempt
+    assert _state(chain) == before
+    assert chain.begin("u") is None                  # 1 failure + 2 in flight: still full
+    chain.end("u", second, failed=False)
+    chain.end("u", third, failed=False)
+    with pytest.raises(ValueError):
+        chain.end("u", third, failed=True)
+    other = _chain(FakeClock())
+    with pytest.raises(ValueError):                  # a ticket another chain handed out
+        other.end("u", first, failed=True)
+    assert other._chains == {}
+
+
+def test_succeeded_comes_after_its_attempts_end():
+    """`succeeded` is called right after the attempt's own `end`; called while that attempt is
+    still in flight it is refused (ValueError) and changes nothing."""
+    clock = FakeClock()
+    chain = _chain(clock)
+    _fail(chain)
+    b = chain.begin("u")
+    before = _state(chain)
+    with pytest.raises(ValueError):
+        chain.succeeded("u", b)
+    assert _state(chain) == before
+    clock.t += 1
+    chain.end("u", b, failed=False)
+    chain.succeeded("u", b)
+    assert chain._chains == {}
 
 
 def test_an_unlock_lets_three_more_through_once_per_chain():
@@ -365,8 +444,7 @@ def test_an_unlock_does_not_end_the_chain():
         clock.t += 600                      # gaps of 10 minutes: one chain throughout
     assert chain.begin("u") is None and chain.unlock("u") is None
     clock.t += 301                          # 901 s after the last failure
-    assert chain.begin("u") is not None
-    chain.end("u", failed=True)
+    _fail(chain)
     assert chain.unlock("u").failed == 1    # a new chain, a new unlock
 
 
@@ -415,13 +493,13 @@ def _against_ad(*, every_s: float, ad_reset_s: float, unlock: bool,
     while clock.t < hours * 3600:
         if unlock:
             chain.unlock("u")
-        if chain.begin("u"):
+        if (ticket := chain.begin("u")) is not None:
             if binds and clock.t - binds[-1] > ad_reset_s:
                 count = 0
             count += 1
             peak = max(peak, count)
             binds.append(clock.t)
-            chain.end("u", failed=True)
+            chain.end("u", ticket, failed=True)
         clock.t += every_s
     run = longest = 0
     for i, t in enumerate(binds):
@@ -463,7 +541,7 @@ class _Forgetful(FailureChain):
     right password was being checked included. Kept here to show the race below is real."""
 
     def succeeded(self, key: str, ticket: Ticket) -> None:
-        super().succeeded(key, Ticket(seq=10**12, at=float("inf")))
+        super().succeeded(key, replace(ticket, seq=10**12, at=float("inf")))
 
 
 DEADLINE_S = 10.0
@@ -507,11 +585,11 @@ def _race_against_ad(chain_type: type[FailureChain], *, seed: int, unlock: bool,
         if kind == "wrong" and (ticket := chain.begin("u")) is not None:
             if rng.random() < 1 / 7:                 # cut off at the deadline, bind under way
                 at(clock.t + rng.uniform(0.01, 2 * DEADLINE_S), "bad_reaches")
-                at(clock.t + DEADLINE_S, "failed", DEADLINE_S)
+                at(clock.t + DEADLINE_S, "failed", ticket, DEADLINE_S)
             else:
                 reach = clock.t + rng.uniform(0.01, 3)
                 at(reach, "bad_reaches")
-                at(reach + rng.uniform(0.01, 3), "failed", 0.0)
+                at(reach + rng.uniform(0.01, 3), "failed", ticket, 0.0)
         elif kind == "right" and (ticket := chain.begin("u")) is not None:
             reach = clock.t + rng.uniform(0.01, 3)
             at(reach, "good_reaches")
@@ -519,9 +597,9 @@ def _race_against_ad(chain_type: type[FailureChain], *, seed: int, unlock: bool,
         elif kind == "unlock":
             chain.unlock("u")
         elif kind == "failed":
-            chain.end("u", failed=True, pending_s=event[1])
+            chain.end("u", event[1], failed=True, pending_s=event[2])
         elif kind == "succeeded":
-            chain.end("u", failed=False)
+            chain.end("u", event[1], failed=False)
             chain.succeeded("u", event[1])
         elif kind == "bad_reaches":
             if last_bad is not None and clock.t - last_bad > ad_reset_s:

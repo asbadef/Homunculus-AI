@@ -229,19 +229,20 @@ async def _directory_sign_in(request: Request, db: AsyncSession, user: User, key
     try:
         identity = await ldap.directory.authenticate(external_id, password)
     except LdapUnavailable as exc:
-        directory_binds.end(slot, failed=exc.bind_attempted, pending_s=exc.bind_pending_s)
+        directory_binds.end(slot, ticket, failed=exc.bind_attempted,
+                            pending_s=exc.bind_pending_s)
         await _login_failed(request, db, user_id, key, "directory_unavailable")
         raise _directory_down() from None
     except BaseException as exc:             # cancelled, or a fault: the bind may have been made
-        directory_binds.end(slot, failed=getattr(exc, "bind_attempted", True),
+        directory_binds.end(slot, ticket, failed=getattr(exc, "bind_attempted", True),
                             pending_s=getattr(exc, "bind_pending_s", DEADLINE_CAP_S))
         raise
     if identity is None:
         # A wrong password (or no such account, which made no bind — counted all the same).
-        directory_binds.end(slot, failed=True)
+        directory_binds.end(slot, ticket, failed=True)
         refusal = "bad_credentials"
     else:
-        directory_binds.end(slot, failed=False)
+        directory_binds.end(slot, ticket, failed=False)
         if identity.disabled:                # returned without a bind: nothing for AD to count
             refusal = "directory_disabled"
         elif account_expired(identity.account_expires, time.time()):

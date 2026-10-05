@@ -626,9 +626,9 @@ def _record_ends(monkeypatch) -> list[tuple[bool, float]]:
     ends: list[tuple[bool, float]] = []
     end = directory_binds.end
 
-    def recording(key, *, failed, pending_s=0.0):
+    def recording(key, ticket, *, failed, pending_s=0.0):
         ends.append((failed, pending_s))
-        end(key, failed=failed, pending_s=pending_s)
+        end(key, ticket, failed=failed, pending_s=pending_s)
 
     monkeypatch.setattr(directory_binds, "end", recording)
     return ends
