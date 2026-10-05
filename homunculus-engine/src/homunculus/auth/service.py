@@ -172,6 +172,13 @@ async def build_context(db: AsyncSession, user: User) -> AuthContext:
                        mfa_required=summary.mfa_required or operator)
 
 
+def password_change_due(user: User) -> bool:
+    """The account still holds a temporary password an administrator gave it, and must replace it
+    before anything else (users.must_change_password). Only ever a LOCAL account: an AD account's
+    password lives in AD, and the flag is not set for one — this is the second line."""
+    return bool(user.must_change_password) and user.auth_source == AUTH_LOCAL
+
+
 def credential_fingerprint(user: User) -> str:
     """A short keyed digest of the credentials a session was opened with (password hash + TOTP
     secret). The refresh token carries it; `/auth/refresh` refuses a token whose fingerprint no
@@ -183,7 +190,9 @@ def credential_fingerprint(user: User) -> str:
 
 
 def issue_tokens(user: User, ctx: AuthContext, *, mfa_verified: bool) -> dict:
-    """Access + refresh tokens. `requires_mfa` means "a TOTP step is still pending"."""
+    """Access + refresh tokens. `requires_mfa` means "a TOTP step is still pending";
+    `password_change_required`, that the account must replace its temporary password next (after
+    the TOTP step, when both are due: /auth/password is behind the MFA gate)."""
     access = create_access_token(
         subject=str(user.id),
         extra={
@@ -204,6 +213,7 @@ def issue_tokens(user: User, ctx: AuthContext, *, mfa_verified: bool) -> dict:
         "token_type": "bearer",
         "requires_mfa": bool(ctx.mfa_required and not mfa_verified),
         "mfa_enrolled": bool(user.totp_enabled),
+        "password_change_required": password_change_due(user),
     }
 
 
@@ -233,6 +243,11 @@ async def enable_totp(db: AsyncSession, user: User) -> None:
     await db.commit()
 
 
+# The shortest password a person may choose; the admin schemas' `min_length=8` for a temporary
+# one is the same rule. The "8" in the message below is this number.
+PASSWORD_MIN_LENGTH = 8
+
+
 class PasswordError(ValueError):
     """A password change that cannot be made. The message is shown to the user; `reason` is a
     short code for the audit trail."""
@@ -243,16 +258,22 @@ class PasswordError(ValueError):
 
 
 async def change_password(db: AsyncSession, user: User, current: str, new: str) -> None:
-    """The new password's length is checked BEFORE the current password: the other order would
+    """The new password's rules are checked BEFORE the current password: the other order would
     let a stolen session test guesses at the current password by sending a too-short new one —
-    "too short" would mean "right guess", and nothing would change or look unusual."""
+    "too short" would mean "right guess", and nothing would change or look unusual. The same
+    holds for "unchanged", which compares the two typed values and says nothing about the stored
+    one. A temporary password (`must_change_password`) is replaced here, and the flag goes with
+    it."""
     if user.auth_source != AUTH_LOCAL:
         raise PasswordError("Parola Active Directory tarafından yönetiliyor", "directory_account")
-    if len(new) < 8:
+    if len(new) < PASSWORD_MIN_LENGTH:
         raise PasswordError("Yeni parola en az 8 karakter olmalı", "too_short")
+    if new == current:
+        raise PasswordError("Yeni parola mevcut paroladan farklı olmalı", "unchanged")
     if not await run_bcrypt(verify_local_password, user.auth_source, user.hashed_password,
                             current):
         raise PasswordError("Mevcut parola yanlış", "wrong_current")
     user.hashed_password = await run_bcrypt(hash_password, new)
+    user.must_change_password = False
     await bump_user(db, user)
     await db.commit()

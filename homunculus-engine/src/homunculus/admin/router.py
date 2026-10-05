@@ -46,6 +46,7 @@ from homunculus.auth.dependencies import (
 )
 from homunculus.auth.models import Group, User
 from homunculus.auth.permissions import ALL_PERMISSIONS, PERMISSIONS
+from homunculus.auth.service import password_change_due
 from homunculus.db import get_db
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ def _user_out(user: User, tenant_id: uuid.UUID) -> UserOut:
     return UserOut(
         id=user.id, username=user.username, email=user.email, full_name=user.full_name,
         auth_source=user.auth_source, is_active=user.is_active, totp_enabled=user.totp_enabled,
-        last_login_at=user.last_login_at,
+        last_login_at=user.last_login_at, must_change_password=password_change_due(user),
         groups=[UserGroupOut(id=l.group.id, slug=l.group.slug, name=l.group.name,
                              source=l.source) for l in links],
     )

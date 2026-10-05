@@ -44,6 +44,9 @@ class TokenResponse(BaseModel):
     token_type: str
     requires_mfa: bool           # a TOTP step is still pending for this session
     mfa_enrolled: bool = False   # the user already has a verified authenticator
+    # The account holds a temporary password: POST /auth/password is the only way on (after the
+    # TOTP step, when that is pending too). Never true for an AD account.
+    password_change_required: bool = False
 
 
 class RefreshRequest(BaseModel):
@@ -67,6 +70,7 @@ class UserMeResponse(BaseModel):
     tenant: str | None
     groups: list[GroupBrief]
     perms: list[str]
+    must_change_password: bool = False   # as TokenResponse.password_change_required
 
 
 class PasswordChangeRequest(BaseModel):

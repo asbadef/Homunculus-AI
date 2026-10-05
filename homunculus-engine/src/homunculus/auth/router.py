@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.auth.audit import append_audit
 from homunculus.auth.dependencies import (
-    Principal, get_current_user_pre_mfa, get_principal, get_principal_pre_mfa,
+    Principal, get_current_user_pre_mfa, get_principal_pre_mfa, get_principal_pre_password,
     get_user_for_enrolment,
 )
 from homunculus.auth.groups import TenantRef, tenant_of_user
@@ -52,8 +52,8 @@ from homunculus.auth.schemas import (
 )
 from homunculus.auth.service import (
     PasswordError, build_context, change_password, credential_fingerprint, enable_totp,
-    find_user_for_sign_in, get_user_by_id, issue_tokens, mark_login, run_bcrypt, setup_totp,
-    verify_local_password,
+    find_user_for_sign_in, get_user_by_id, issue_tokens, mark_login, password_change_due,
+    run_bcrypt, setup_totp, verify_local_password,
 )
 from homunculus.auth.totp import accepted_step
 from homunculus.db import get_db
@@ -501,17 +501,18 @@ async def me(current_user: User = Depends(get_current_user_pre_mfa),
         totp_enabled=current_user.totp_enabled, is_active=current_user.is_active,
         created_at=current_user.created_at, tenant=ctx.tenant,
         groups=[GroupBrief(slug=s, name=n) for s, n in zip(ctx.groups, ctx.group_names)],
-        perms=sorted(ctx.perms),
+        perms=sorted(ctx.perms), must_change_password=password_change_due(current_user),
     )
 
 
 @router.post("/password", response_model=TokenResponse,
              summary="Change own password (local accounts); returns fresh tokens")
 async def password(body: PasswordChangeRequest, request: Request,
-                   principal: Principal = Depends(get_principal),
+                   principal: Principal = Depends(get_principal_pre_password),
                    db: AsyncSession = Depends(get_db)) -> TokenResponse:
     """The change retires every existing session (token version and credential fingerprint
-    both move), so the caller receives a fresh pair and keeps working."""
+    both move), so the caller receives a fresh pair and keeps working. It is also how a
+    temporary password is replaced: the one route such a session reaches (after MFA)."""
     current_user = principal.user
     try:
         await change_password(db, current_user, body.current_password, body.new_password)

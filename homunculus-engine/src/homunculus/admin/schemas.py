@@ -125,6 +125,8 @@ class UserOut(BaseModel):
     totp_enabled: bool
     last_login_at: datetime | None
     groups: list[UserGroupOut]
+    # A temporary password from an administrator that the user has not replaced yet.
+    must_change_password: bool = False
 
 
 class UserCreate(BaseModel):

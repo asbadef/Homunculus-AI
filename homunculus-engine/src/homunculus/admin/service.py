@@ -455,8 +455,9 @@ async def create_local_user(db: AsyncSession, tenant_id: uuid.UUID, actor: Actor
     await _grantable(db, tenant_id, actor, group_ids)
     await _refuse_duplicate_login(db, username=key, email=mail)
     hashed = await run_bcrypt(hash_password, password)   # bcrypt off the event loop, bounded
+    # A temporary password: the user replaces it at the first sign-in (D4, auth/dependencies.py).
     user = User(username=key, email=mail, full_name=full_name.strip(),
-                hashed_password=hashed, auth_source=AUTH_LOCAL)
+                hashed_password=hashed, auth_source=AUTH_LOCAL, must_change_password=True)
     db.add(user)
     await _flush(db, LOGIN_TAKEN)                        # a concurrent create took the name
     db.add(TenantMembership(user_id=user.id, tenant_id=tenant_id, granted_by_id=actor.id))
@@ -526,11 +527,13 @@ async def reset_password(db: AsyncSession, tenant_id: uuid.UUID, user: User, act
                          password: str) -> None:
     """A temporary password for a LOCAL account. The hash changes, so the credential
     fingerprint in every refresh token no longer matches (all sessions end), and the token
-    version moves (every access token ends)."""
+    version moves (every access token ends). The user replaces it at the next sign-in
+    (`must_change_password`, D4)."""
     await _may_reset(db, tenant_id, user, actor)
     if user.auth_source != AUTH_LOCAL:
         raise AdminError(400, DIRECTORY_PASSWORD)
     user.hashed_password = await run_bcrypt(hash_password, password)
+    user.must_change_password = True
     await db.flush()
     await bump_user(db, user)
 

@@ -3,7 +3,10 @@ FastAPI dependencies for authentication and authorisation.
 
     get_principal_pre_mfa   decode the access token, load the user, check is_active and the
                             token version -> Principal (401 on any failure)
-    get_principal           + the MFA gate: 403 `mfa_required` while a TOTP step is pending
+    get_principal_pre_password  + the MFA gate: 403 `mfa_required` while a TOTP step is pending —
+                            ONLY for POST /auth/password
+    get_principal           + the password gate: 403 `password_change_required` while the account
+                            holds a temporary password (users.must_change_password, local only)
     get_current_user        the User behind get_principal
     get_current_user_pre_mfa the User behind get_principal_pre_mfa — ONLY for /auth/me
                             (/auth/totp/verify takes get_principal_pre_mfa itself, for the tenant)
@@ -38,7 +41,7 @@ from homunculus.auth.groups import TENANT_UNKNOWN, resolve_tenant_claim
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.models import User
 from homunculus.auth.permissions import validate_permissions
-from homunculus.auth.service import get_user_by_id
+from homunculus.auth.service import get_user_by_id, password_change_due
 from homunculus.db import get_db
 
 _bearer = HTTPBearer(auto_error=False)
@@ -46,6 +49,8 @@ _bearer = HTTPBearer(auto_error=False)
 NO_TENANT = "Hesabınıza kurum tanımlanmamış"
 MEMBERSHIP_INACTIVE = "Bu kurumdaki üyeliğiniz etkin değil"
 PLATFORM_ONLY = "Platform operatörü yetkisi gerekli"
+# A temporary password an administrator gave the account must be replaced first (POST /auth/password).
+PASSWORD_CHANGE_REQUIRED = "password_change_required"
 
 
 @dataclass(frozen=True)
@@ -117,9 +122,24 @@ async def get_principal_pre_mfa(
     )
 
 
-async def get_principal(principal: Principal = Depends(get_principal_pre_mfa)) -> Principal:
+async def get_principal_pre_password(
+    principal: Principal = Depends(get_principal_pre_mfa),
+) -> Principal:
+    """The MFA gate. POST /auth/password alone stops here: a session whose account must replace
+    its temporary password reaches the change and nothing else. MFA comes first, so a password
+    reset by an administrator never lets the temporary password alone choose the next one for an
+    account that has an authenticator."""
     if principal.mfa_required and not principal.mfa_verified:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="mfa_required")
+    return principal
+
+
+async def get_principal(principal: Principal = Depends(get_principal_pre_password)) -> Principal:
+    """Every route's principal: MFA done, and no temporary password left to replace. The flag is
+    read from the user row get_principal_pre_mfa loaded anyway, so it takes effect at once — no
+    token claim to go stale, no extra query."""
+    if password_change_due(principal.user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=PASSWORD_CHANGE_REQUIRED)
     return principal
 
 
