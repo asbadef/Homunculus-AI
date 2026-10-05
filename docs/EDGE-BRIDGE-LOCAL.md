@@ -387,7 +387,10 @@ plan to map them. Every failure says what to ask IT for.
   not changed; deactivate the account in Homunculus to stop it whatever AD says. (A locked-out
   or password-expired AD account fails its bind at sign-in; an open session is not ended for
   it: reading AD's lockout state at refresh would let anyone end a clinician's session by
-  typing her name with wrong passwords.)
+  typing her name with wrong passwords.) With the default `LDAP_USER_FILTER` (disabled accounts
+  left out), a disabled account's locked screen answers its password as wrong ("Parola
+  hatalı", counted in its run of failed binds though no bind is made) until the refresh ends
+  the session.
 - **AD group changes** apply at the user's next sign-in or token refresh, whichever comes first
   (within the hour); groups an administrator gave by hand are never touched. While the
   directory is down, nothing changes. A new mapping applies from each member's next sign-in or

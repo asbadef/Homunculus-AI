@@ -603,7 +603,13 @@ async def reauth(body: ReauthRequest, request: Request,
     directory is not asked (429). The flip side, as at sign-in: whoever knows the account's
     login can fill its chain with wrong passwords, and its locked screen then cannot be
     unlocked for at least 15 minutes (sign out, or wait). The database connection is released
-    while the directory answers (plan decision D7 of Wave 1A)."""
+    while the directory answers (plan decision D7 of Wave 1A).
+
+    A disabled AD account under the default LDAP_USER_FILTER, which leaves disabled accounts
+    out: the directory does not find it, so its unlock is answered as a wrong password (403,
+    counted in the chain though no bind was made — it fails closed), and the session ends at
+    its next refresh (`directory_not_found`, 401). Under a filter that lets disabled accounts
+    through, the unlock itself is the 401 (`directory_disabled`)."""
     user = principal.user
     user_id, username, source = user.id, user.username, user.auth_source
     external_id, hashed = user.external_id, user.hashed_password

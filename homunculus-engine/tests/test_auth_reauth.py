@@ -568,6 +568,26 @@ async def test_an_unlock_drives_the_chain_and_the_audit_as_a_sign_in_does(ad, mo
     assert (signed, unlocked) == expected
 
 
+async def test_under_the_default_filter_a_disabled_account_unlocks_as_a_wrong_password(ad):
+    """The default LDAP_USER_FILTER leaves disabled accounts out, so the directory does not find
+    one (modelled here by taking her out of the fake directory, which otherwise returns a
+    disabled account as found). Her unlock is then answered as a wrong password — 403, counted
+    in the chain though no bind was made: it fails closed — and her session ends at its next
+    refresh (`directory_not_found`, 401)."""
+    tokens = (await ad["c"].post("/auth/login", json={"login": "ayilmaz",
+                                                      "password": AD_PASSWORD})).json()
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    ad["directory"].people.pop(ad["ayse"].identity.external_id)
+    res = await ad["c"].post("/auth/reauth", headers=headers, json={"password": AD_PASSWORD})
+    assert (res.status_code, res.json()["detail"]) == (403, REFUSED)
+    assert _reasons(ad["app"]) == ["bad_credentials"]
+    assert len(directory_binds._chains[str(ad["account"].id)].failures) == 1
+    res = await ad["c"].post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+    assert res.status_code == 401
+    [fail] = audit_events(ad["app"], "auth", "refresh.fail")
+    assert fail.payload["reason"] == "directory_not_found"
+
+
 async def test_an_account_disabled_in_ad_ends_the_session(ad):
     headers = await _signed_in(ad)
     ad["directory"].update(ad["ayse"].identity.external_id, disabled=True)
