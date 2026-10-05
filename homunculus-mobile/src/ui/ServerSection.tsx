@@ -3,6 +3,7 @@ import { Text, TextInput, View } from "react-native";
 
 import { t } from "../i18n";
 import type { MessageKey } from "../i18n";
+import type { SessionEndReason } from "../transport/sseTransport";
 import { useTheme } from "../theme/ThemeContext";
 import { Chip, Row } from "./SettingsPanel";
 
@@ -26,7 +27,7 @@ export function ServerSection({
   serverUrl: string | null;
   mode: "replay" | "live";
   connection: Connection;
-  sessionNotice: boolean;
+  sessionNotice: SessionEndReason | null;
   hasSession: boolean;
   onSaveUrl: (url: string) => void;
   onLogin: (email: string, password: string) => Promise<void>;
@@ -116,7 +117,9 @@ export function ServerSection({
 
       {sessionNotice ? (
         <Text className="mt-2 text-xs" style={{ color: toneColor("warning") }}>
-          {t("server.sessionNotice")}
+          {t(sessionNotice === "passwordChangeRequired"
+            ? "login.passwordChangeRequired"
+            : "server.sessionNotice")}
         </Text>
       ) : null}
 

@@ -13,16 +13,27 @@
 // reason about and the resnapshot already covers whatever gap either stream left — there is no
 // benefit to keeping the other stream's now-stale connection alive while its sibling recovers.
 import { createSseParser } from "./sse";
-import { readDetail, SessionExpiredError } from "./authClient";
+import { PasswordChangeRequiredError, readDetail, SessionExpiredError } from "./authClient";
 import type { BoardNotification, PatientBoard, Role, Transport, TransportListener } from "./types";
 
 export type ConnectionState = "connecting" | "open" | "reconnecting";
+
+/** Why a live session ended: the refresh was refused, or the account must replace a temporary
+ * password first (the dashboard does that; this app has no password form). */
+export type SessionEndReason = "expired" | "passwordChangeRequired";
+
+/** The errors from authedFetch that end the session for good — no reconnect can repair them. */
+function sessionEndReason(err: unknown): SessionEndReason | null {
+  if (err instanceof SessionExpiredError) return "expired";
+  if (err instanceof PasswordChangeRequiredError) return "passwordChangeRequired";
+  return null;
+}
 
 export interface SseTransportOptions {
   authedFetch: (path: string, init?: RequestInit) => Promise<Response>;
   /** Read at call time (not cached) so a Settings change takes effect on the next connect. */
   role: () => Role;
-  onSessionExpired: () => void;
+  onSessionExpired: (reason: SessionEndReason) => void;
   onConnectionChange?: (state: ConnectionState) => void;
   /** Injected so tests drive reconnect backoff with a fake clock instead of real time. */
   setTimer?: (fn: () => void, ms: number) => number;
@@ -81,7 +92,7 @@ export function createSseTransport(
     controllers = [];
   }
 
-  function handleSessionExpired(): void {
+  function handleSessionExpired(reason: SessionEndReason): void {
     if (sessionExpiredFired) return;
     sessionExpiredFired = true;
     stopped = true;
@@ -90,17 +101,19 @@ export function createSseTransport(
       reconnectTimer = null;
     }
     abortAll();
-    onSessionExpired();
+    onSessionExpired(reason);
   }
 
-  /** Wraps authedFetch so a SessionExpiredError anywhere routes to the single-fire handler above.
-   * Always rethrows: callers distinguish "already handled" (SessionExpiredError) from a plain
-   * failure that should instead trigger a reconnect. */
+  /** Wraps authedFetch so a session-ending error (SessionExpiredError, PasswordChangeRequiredError)
+   * anywhere routes to the single-fire handler above. Always rethrows: callers distinguish
+   * "already handled" (`sessionEndReason(err)` is set) from a plain failure that should instead
+   * trigger a reconnect. */
   async function guardedFetch(path: string, init?: RequestInit): Promise<Response> {
     try {
       return await authedFetch(path, init);
     } catch (err) {
-      if (err instanceof SessionExpiredError) handleSessionExpired();
+      const reason = sessionEndReason(err);
+      if (reason) handleSessionExpired(reason);
       throw err;
     }
   }
@@ -188,7 +201,7 @@ export function createSseTransport(
         signal: controller.signal,
       });
     } catch (err) {
-      if (err instanceof SessionExpiredError) return; // already handled
+      if (sessionEndReason(err)) return; // already handled
       if ((err as { name?: string } | null)?.name === "AbortError") return; // intentional teardown
       scheduleReconnect(gen);
       return;
@@ -210,7 +223,7 @@ export function createSseTransport(
     try {
       res = await guardedFetch("/patients");
     } catch (err) {
-      if (err instanceof SessionExpiredError) return;
+      if (sessionEndReason(err)) return; // already handled
       scheduleReconnect(gen);
       return;
     }

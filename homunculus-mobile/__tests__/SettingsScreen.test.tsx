@@ -24,7 +24,7 @@ function boardValue(overrides: Record<string, unknown> = {}) {
     setSpeed: jest.fn(),
     mode: "replay",
     connection: "demo",
-    sessionNotice: false,
+    sessionNotice: null,
     goLive: jest.fn(),
     goReplay: jest.fn(),
     serverUrl: "http://10.0.0.5",

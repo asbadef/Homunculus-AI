@@ -6,7 +6,7 @@ import { createAuthClient } from "../transport/authClient";
 import { createReplayTransport } from "../transport/replayTransport";
 import type { ReplayControls, ReplayTransport } from "../transport/replayTransport";
 import { createSseTransport } from "../transport/sseTransport";
-import type { ConnectionState } from "../transport/sseTransport";
+import type { ConnectionState, SessionEndReason } from "../transport/sseTransport";
 import type { BoardNotification, Recording, Role, Transport, TransportListener } from "../transport/types";
 import * as secureTokens from "./secureTokens";
 import { boardReducer, initialBoardState, selectPatient, selectWard } from "./boardStore";
@@ -44,9 +44,10 @@ export interface BoardContextValue {
   setSpeed(speed: number): void;
   mode: Mode;
   connection: Connection;
-  /** True once a live session has died and the app fell back to replay. Cleared on the next
-   * successful goLive(). */
-  sessionNotice: boolean;
+  /** Why the last live session died and the app fell back to replay ("expired", or
+   * "passwordChangeRequired": a temporary password to replace on the dashboard first); null
+   * while there is nothing to say. Cleared on the next successful goLive(). */
+  sessionNotice: SessionEndReason | null;
   /** Requires a stored server address and an existing session; throws otherwise. Swaps the
    * active transport to the live stream and clears the ward first, so recorded and live beds
    * never coexist on screen. */
@@ -89,7 +90,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   const [mode, setMode] = useState<Mode>("replay");
   const [connection, setConnection] = useState<Connection>("demo");
-  const [sessionNotice, setSessionNotice] = useState(false);
+  const [sessionNotice, setSessionNotice] = useState<SessionEndReason | null>(null);
   const [serverUrl, setServerUrlState] = useState<string | null>(null);
   // Bumped whenever goReplay() rebuilds the replay transport, so the `controls` field in the
   // memoized context value below is guaranteed to pick up the fresh instance even on the
@@ -164,9 +165,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     setReplayGeneration((g) => g + 1);
   }
 
-  function handleSessionExpired(): void {
+  function handleSessionExpired(reason: SessionEndReason = "expired"): void {
     goReplay();
-    setSessionNotice(true);
+    setSessionNotice(reason);
   }
 
   async function goLive(): Promise<void> {
@@ -192,7 +193,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "loop" });
     attach(live);
     setMode("live");
-    setSessionNotice(false);
+    setSessionNotice(null);
   }
 
   // `now` ticks every second, so the memo below recomputes selectWard at 1Hz — sort plus

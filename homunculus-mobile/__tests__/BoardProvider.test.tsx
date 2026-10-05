@@ -24,7 +24,7 @@ interface MockSseTransport {
   opts: {
     authedFetch: unknown;
     role: () => string;
-    onSessionExpired: () => void;
+    onSessionExpired: (reason?: string) => void;
     onConnectionChange?: (state: string) => void;
   };
   start: jest.Mock;
@@ -234,7 +234,7 @@ describe("BoardProvider", () => {
       await probe.current().goLive();
     });
     expect(screen.getByLabelText("mode").props.children).toBe("live");
-    expect(screen.getByLabelText("sessionNotice").props.children).toBe("false");
+    expect(screen.getByLabelText("sessionNotice").props.children).toBe("null");
 
     const live = mockSseInstances[0];
     await act(() => {
@@ -242,7 +242,7 @@ describe("BoardProvider", () => {
     });
 
     expect(screen.getByLabelText("mode").props.children).toBe("replay");
-    expect(screen.getByLabelText("sessionNotice").props.children).toBe("true");
+    expect(screen.getByLabelText("sessionNotice").props.children).toBe("expired");
     expect(live.stop).toHaveBeenCalled();
 
     // The replay transport was rebuilt and restarted — advancing the fake clock should refill
@@ -265,12 +265,31 @@ describe("BoardProvider", () => {
     await act(() => {
       mockSseInstances[0].opts.onSessionExpired();
     });
-    expect(screen.getByLabelText("sessionNotice").props.children).toBe("true");
+    expect(screen.getByLabelText("sessionNotice").props.children).toBe("expired");
 
     await act(async () => {
       await probe.current().goLive();
     });
-    expect(screen.getByLabelText("sessionNotice").props.children).toBe("false");
+    expect(screen.getByLabelText("sessionNotice").props.children).toBe("null");
+  });
+
+  it("falls back to replay with the password-change notice when the account must change it", async () => {
+    const probe = await renderProbe();
+    await act(async () => {
+      await probe.current().setServerUrl("http://10.0.0.5");
+    });
+    mockAuthBehavior.hasSession.mockResolvedValue(true);
+    await act(async () => {
+      await probe.current().goLive();
+    });
+    const live = mockSseInstances[0];
+    await act(() => {
+      live.opts.onSessionExpired("passwordChangeRequired");
+    });
+
+    expect(screen.getByLabelText("mode").props.children).toBe("replay");
+    expect(screen.getByLabelText("sessionNotice").props.children).toBe("passwordChangeRequired");
+    expect(live.stop).toHaveBeenCalled();
   });
 
   it("goReplay from live mode stops the live transport and returns to replay", async () => {

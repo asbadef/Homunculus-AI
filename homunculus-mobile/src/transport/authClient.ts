@@ -13,6 +13,11 @@
 // true` (a temporary password an administrator gave, migration 0011): every route but the
 // password change answers 403 until it is replaced, and the app has no such form — it throws
 // PasswordChangeRequiredError, stores nothing, and the clinician changes it on the dashboard.
+// A session that is already open meets the same rule later (migration 0011 flags accounts whose
+// phones are signed in; an administrator resets a password): a 403 `password_change_required`
+// from any call, or a refresh that says `password_change_required: true`, clears the stored
+// tokens and throws PasswordChangeRequiredError — final, like SessionExpiredError. No retry can
+// repair it, and retrying would only keep a ward phone polling a server that will never answer.
 import type { TokenPair } from "../store/secureTokens";
 import * as secureTokens from "../store/secureTokens";
 
@@ -36,6 +41,10 @@ export class SessionExpiredError extends Error {
     this.name = "SessionExpiredError";
   }
 }
+
+/** auth/dependencies.py's PASSWORD_CHANGE_REQUIRED: the 403 detail while a temporary password
+ * is still in place (the board's resolver in api/prodserver.py answers the same). */
+export const PASSWORD_CHANGE_REQUIRED = "password_change_required";
 
 /** Matches auth/schemas.py's TokenResponse. */
 interface TokenResponseBody {
@@ -84,6 +93,16 @@ export async function readDetail(res: Response, fallback: string): Promise<strin
   return fallback;
 }
 
+/** The string `detail` of a FastAPI error body, or null. */
+function detailOf(text: string): string | null {
+  try {
+    const detail = (JSON.parse(text) as { detail?: unknown } | null)?.detail;
+    return typeof detail === "string" ? detail : null;
+  } catch {
+    return null;
+  }
+}
+
 function defaultFetch(...args: Parameters<typeof fetch>): ReturnType<typeof fetch> {
   // Imported lazily: pulling in "expo/fetch" at module load time drags in its native streaming
   // polyfill, which has no Jest-safe implementation and breaks the test module graph. Tests
@@ -121,7 +140,8 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
   }
 
   /** Exchanges the stored refresh token for a new pair. Clears the session and throws
-   * SessionExpiredError if the backend rejects it. */
+   * SessionExpiredError if the backend rejects it, PasswordChangeRequiredError if the account
+   * must replace its temporary password first (the new pair would only meet 403s). */
   async function refresh(): Promise<TokenPair> {
     const current = await tokenStore.getTokens();
     if (!current) throw new SessionExpiredError();
@@ -136,6 +156,10 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       throw new SessionExpiredError();
     }
     const body = (await res.json()) as TokenResponseBody;
+    if (body.password_change_required) {
+      await tokenStore.clearTokens();
+      throw new PasswordChangeRequiredError();
+    }
     const pair: TokenPair = { access: body.access_token, refresh: body.refresh_token };
     await tokenStore.setTokens(pair);
     return pair;
@@ -155,6 +179,16 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
       // else), that response goes straight back to the caller — there is no third attempt.
       const pair = await refresh();
       res = await send(pair.access);
+    }
+    if (res.status === 403) {
+      // The body is read here to tell this 403 from the others; expo/fetch has no
+      // Response.clone(), so any other 403 goes back as a rebuilt Response with the same body.
+      const text = await res.text();
+      if (detailOf(text) === PASSWORD_CHANGE_REQUIRED) {
+        await tokenStore.clearTokens();
+        throw new PasswordChangeRequiredError();
+      }
+      return new Response(text, { status: res.status, statusText: res.statusText, headers: res.headers });
     }
     return res;
   }

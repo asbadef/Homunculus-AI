@@ -10,7 +10,7 @@ async function section(overrides: Partial<React.ComponentProps<typeof ServerSect
     serverUrl: "http://10.0.0.5",
     mode: "replay" as const,
     connection: "demo" as const,
-    sessionNotice: false,
+    sessionNotice: null,
     hasSession: false,
     onSaveUrl: jest.fn(),
     onLogin: jest.fn(async () => {}),
@@ -105,12 +105,19 @@ describe("ServerSection — status line", () => {
 
 describe("ServerSection — session notice", () => {
   it("renders the notice when a live session just expired", async () => {
-    await section({ sessionNotice: true });
+    await section({ sessionNotice: "expired" });
     expect(screen.getByText(t("server.sessionNotice"))).toBeTruthy();
   });
 
-  it("renders nothing extra when there is no notice", async () => {
-    await section({ sessionNotice: false });
+  it("says the temporary password must be changed when that ended the session", async () => {
+    await section({ sessionNotice: "passwordChangeRequired" });
+    expect(screen.getByText(t("login.passwordChangeRequired"))).toBeTruthy();
     expect(screen.queryByText(t("server.sessionNotice"))).toBeNull();
+  });
+
+  it("renders nothing extra when there is no notice", async () => {
+    await section({ sessionNotice: null });
+    expect(screen.queryByText(t("server.sessionNotice"))).toBeNull();
+    expect(screen.queryByText(t("login.passwordChangeRequired"))).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 /// <reference types="jest" />
 import { createSseTransport, type ConnectionState } from "../src/transport/sseTransport";
-import { SessionExpiredError } from "../src/transport/authClient";
+import { PasswordChangeRequiredError, SessionExpiredError } from "../src/transport/authClient";
 import type { BoardNotification, PatientBoard, Role } from "../src/transport/types";
 
 function board(id: string, sofa: number): PatientBoard {
@@ -520,5 +520,49 @@ describe("createSseTransport", () => {
     await flush();
     expect(api.calls.length).toBe(callsBefore);
     expect(onSessionExpired).toHaveBeenCalledTimes(1);
+  });
+
+  // A phone signed in before its account was flagged (migration 0011, or an administrator's
+  // reset): /patients answers 403 password_change_required on every attempt. That must end the
+  // session, not climb the backoff forever.
+  it("a PasswordChangeRequiredError ends the session once, with its reason, and never reconnects", async () => {
+    const clock = fakeClock();
+    const api = fakeAuthedFetch();
+    api.on("/patients", () => {
+      throw new PasswordChangeRequiredError();
+    });
+    api.on("/stream-ticket", () => jsonResponse(200, { ticket: "t1", expires_in: 60 }));
+
+    const onSessionExpired = jest.fn();
+    const transport = createSseTransport({
+      authedFetch: api.authedFetch,
+      role: nurse,
+      onSessionExpired,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    transport.start();
+    await flush();
+
+    expect(onSessionExpired).toHaveBeenCalledTimes(1);
+    expect(onSessionExpired).toHaveBeenCalledWith("passwordChangeRequired");
+    expect(clock.pendingDelays()).toEqual([]);             // no reconnect scheduled
+    const callsBefore = api.calls.length;
+    clock.advance(60_000);
+    await flush();
+    expect(api.calls.length).toBe(callsBefore);
+    expect(onSessionExpired).toHaveBeenCalledTimes(1);
+  });
+
+  it("a SessionExpiredError reports its own reason", async () => {
+    const api = fakeAuthedFetch();
+    api.on("/patients", () => {
+      throw new SessionExpiredError();
+    });
+    const onSessionExpired = jest.fn();
+    const transport = createSseTransport({ authedFetch: api.authedFetch, role: nurse, onSessionExpired });
+    transport.start();
+    await flush();
+    expect(onSessionExpired).toHaveBeenCalledWith("expired");
   });
 });

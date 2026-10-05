@@ -3,6 +3,7 @@ import {
   createAuthClient,
   MfaRequiredError,
   PasswordChangeRequiredError,
+  readDetail,
   SessionExpiredError,
   type TokenStore,
 } from "../src/transport/authClient";
@@ -29,7 +30,10 @@ function jsonResponse(status: number, body: unknown): Response {
   return {
     ok: status >= 200 && status < 300,
     status,
+    statusText: "",
+    headers: new Headers({ "Content-Type": "application/json" }),
     json: async () => body,
+    text: async () => JSON.stringify(body),
   } as unknown as Response;
 }
 
@@ -223,6 +227,59 @@ describe("createAuthClient", () => {
     await expect(client.authedFetch("/patients")).rejects.toBeInstanceOf(SessionExpiredError);
     expect(tokenStore.clearTokens).toHaveBeenCalled();
     expect(await tokenStore.getTokens()).toBeNull();
+  });
+
+  // A phone signed in before migration 0011 flagged its account keeps a token whose `tv` still
+  // matches: every route answers 403 password_change_required, which no retry can repair.
+  it("a 403 password_change_required clears both tokens and throws PasswordChangeRequiredError", async () => {
+    const tokenStore = fakeTokenStore({ access: "access-1", refresh: "refresh-1" });
+    const fetchImpl = jest.fn(async () => jsonResponse(403, { detail: "password_change_required" }));
+    const client = createAuthClient({ baseUrl: BASE_URL, fetchImpl, tokenStore });
+
+    await expect(client.authedFetch("/patients")).rejects.toBeInstanceOf(PasswordChangeRequiredError);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);           // no refresh: it cannot repair this
+    expect(tokenStore.clearTokens).toHaveBeenCalled();
+    expect(await tokenStore.getTokens()).toBeNull();
+  });
+
+  it("a refresh that says password_change_required clears both tokens and throws, without a retry", async () => {
+    const tokenStore = fakeTokenStore({ access: "stale-access", refresh: "refresh-1" });
+    const calls: string[] = [];
+    const fetchImpl = jest.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      calls.push(path);
+      if (path === `${BASE_URL}/auth/refresh`) {
+        return jsonResponse(200, {
+          access_token: "fresh-access",
+          refresh_token: "fresh-refresh",
+          token_type: "bearer",
+          requires_mfa: false,
+          password_change_required: true,
+        });
+      }
+      return jsonResponse(401, { detail: "token_version" });
+    });
+    const client = createAuthClient({ baseUrl: BASE_URL, fetchImpl, tokenStore });
+
+    await expect(client.authedFetch("/patients")).rejects.toBeInstanceOf(PasswordChangeRequiredError);
+    expect(calls).toEqual([`${BASE_URL}/patients`, `${BASE_URL}/auth/refresh`]);
+    expect(tokenStore.setTokens).not.toHaveBeenCalled();
+    expect(await tokenStore.getTokens()).toBeNull();
+  });
+
+  it("any other 403 goes back to the caller with its detail readable and the session kept", async () => {
+    const tokenStore = fakeTokenStore({ access: "access-1", refresh: "refresh-1" });
+    const fetchImpl = jest.fn(async () =>
+      jsonResponse(403, { detail: "permission required: board.view" })
+    );
+    const client = createAuthClient({ baseUrl: BASE_URL, fetchImpl, tokenStore });
+
+    const res = await client.authedFetch("/patients");
+
+    expect(res.status).toBe(403);
+    expect(res.ok).toBe(false);
+    expect(await readDetail(res, "fallback")).toBe("permission required: board.view");
+    expect(tokenStore.clearTokens).not.toHaveBeenCalled();
   });
 
   it("hasSession is true after login and false after logout", async () => {
