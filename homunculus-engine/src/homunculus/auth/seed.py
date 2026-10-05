@@ -12,8 +12,9 @@ It runs on every boot, so it is careful about what it finds:
     active local account with no membership in another tenant — anything else raises
     `SeedRefused` rather than hand `hospital_admin` to the wrong account;
   * a NEW account is created only with a password that is at least 12 characters long and not
-    a known placeholder (`change-me`, `password`, ...) — otherwise `SeedRefused`. An existing
-    account's password is never checked, and never changed.
+    a known placeholder (`change-me`, `password`, ...) — otherwise `SeedRefused` — and must
+    replace it at its first sign-in (`must_change_password`: it was typed into an env file). An
+    existing account's password is never checked, and never changed, and neither is its flag.
 
 Credentials come from the caller (CLI reads them from the environment) — never hardcoded.
 """
@@ -146,9 +147,14 @@ async def seed_bootstrap(
 
     newly_linked = False
     if user is None:
+        # The password was typed into the deployment's env file: the administrator replaces it
+        # at the first sign-in (must_change_password, as every local account that existed
+        # before migration 0011). Set on creation only — a later boot finds the account and
+        # never touches the flag, either way.
         user = User(
             username=key, email=key, full_name=full_name,
             hashed_password=await run_bcrypt(hash_password, password), is_active=True,
+            must_change_password=True,
         )
         db.add(user)
         await db.flush()

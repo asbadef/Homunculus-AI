@@ -8,14 +8,15 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from homunculus.auth.groups import groups_of
 from homunculus.auth.models import Group, TenantMembership, User
 from homunculus.auth.seed import SeedRefused, seed_bootstrap
 from homunculus.auth.service import (
-    find_user_by_login, normalize_login, verify_local_password, verify_password,
+    change_password, find_user_by_login, hash_password, normalize_login, password_change_due,
+    verify_local_password, verify_password,
 )
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
@@ -205,6 +206,42 @@ async def test_an_existing_admins_password_is_never_checked_or_changed(db_sessio
     _, user = await seed_bootstrap(db_session, **{**ARGS, "password": "change-me"})
     assert verify_password("Str0ng-Pass-123", user.hashed_password)
     assert not verify_password("change-me", user.hashed_password)
+
+
+async def test_a_new_seed_admin_must_replace_the_password_from_the_env_file(db_session):
+    """The password was typed into the deployment's env file: the account chooses its own at the
+    first sign-in (plan G1 Wave 2, decision 1 — the reason every pre-0011 local account is
+    flagged too)."""
+    _, user = await seed_bootstrap(db_session, **ARGS)
+    assert user.must_change_password is True
+    assert password_change_due(user) is True
+
+
+async def test_a_later_boot_never_touches_the_flag(db_session):
+    """The seed runs on every boot: it neither re-flags an administrator who already chose a
+    password nor clears the flag of one who has not."""
+    _, user = await seed_bootstrap(db_session, **ARGS)
+    await change_password(db_session, user, "Str0ng-Pass-123", "Kendi-Parolam-9")
+    _, user = await seed_bootstrap(db_session, **ARGS)                   # the next boot
+    await db_session.refresh(user)
+    assert user.must_change_password is False
+
+    await db_session.execute(update(User).where(User.id == user.id)
+                             .values(must_change_password=True))
+    await db_session.commit()
+    _, user = await seed_bootstrap(db_session, **ARGS)                   # and the one after
+    await db_session.refresh(user)
+    assert user.must_change_password is True
+
+
+async def test_an_existing_account_the_seed_links_is_not_flagged(db_session):
+    """Only an account the seed CREATES got its password from the env file; an existing local
+    account it links to the seed tenant keeps its own password, and so its flag."""
+    db_session.add(User(username="admin@example.com", email="admin@example.com",
+                        full_name="Var Olan", hashed_password=hash_password("Kendi-Parolam-9")))
+    await db_session.commit()
+    _, user = await seed_bootstrap(db_session, **ARGS)
+    assert user.must_change_password is False
 
 
 async def test_the_weak_password_rule():
