@@ -68,9 +68,14 @@ class UserMeResponse(BaseModel):
     is_active: bool
     created_at: datetime
     tenant: str | None
+    tenant_name: str | None = None   # the hospital's name, for the dashboard's top bar
     groups: list[GroupBrief]
     perms: list[str]
     must_change_password: bool = False   # as TokenResponse.password_change_required
+    # Minutes without input after which the dashboard locks its screen, and hours a browser may
+    # stay locked before it signs itself out (auth/session_policy.py).
+    lock_idle_minutes: int
+    lock_signout_hours: int
 
 
 class PasswordChangeRequest(BaseModel):

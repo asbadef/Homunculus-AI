@@ -28,6 +28,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from jose import JWTError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.auth.audit import append_audit
@@ -55,8 +56,10 @@ from homunculus.auth.service import (
     enable_totp, find_user_for_sign_in, get_user_by_id, issue_tokens, mark_login,
     password_change_due, run_bcrypt, setup_totp, verify_local_password,
 )
+from homunculus.auth.session_policy import SCREEN_LOCK_IDLE_MINUTES, SCREEN_LOCK_SIGNOUT_HOURS
 from homunculus.auth.totp import accepted_step
 from homunculus.db import get_db
+from homunculus.tenant.models import Tenant
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -495,13 +498,16 @@ async def _directory_at_refresh(request: Request, db: AsyncSession, user: User,
 async def me(current_user: User = Depends(get_current_user_pre_mfa),
              db: AsyncSession = Depends(get_db)) -> UserMeResponse:
     ctx = await build_context(db, current_user)
+    tenant_name = (await db.scalar(select(Tenant.name).where(Tenant.id == ctx.tenant_id))
+                   if ctx.tenant_id is not None else None)
     return UserMeResponse(
         id=current_user.id, username=current_user.username, email=current_user.email,
         full_name=current_user.full_name, auth_source=current_user.auth_source,
         totp_enabled=current_user.totp_enabled, is_active=current_user.is_active,
-        created_at=current_user.created_at, tenant=ctx.tenant,
+        created_at=current_user.created_at, tenant=ctx.tenant, tenant_name=tenant_name,
         groups=[GroupBrief(slug=s, name=n) for s, n in zip(ctx.groups, ctx.group_names)],
         perms=sorted(ctx.perms), must_change_password=password_change_due(current_user),
+        lock_idle_minutes=SCREEN_LOCK_IDLE_MINUTES, lock_signout_hours=SCREEN_LOCK_SIGNOUT_HOURS,
     )
 
 

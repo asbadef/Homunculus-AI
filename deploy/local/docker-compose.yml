@@ -82,6 +82,11 @@ services:
       LDAP_LOGIN_ATTRS: ${LDAP_LOGIN_ATTRS:-}
       LDAP_NESTED_GROUPS: ${LDAP_NESTED_GROUPS:-}
       LDAP_TIMEOUT_S: ${LDAP_TIMEOUT_S:-}
+      # Minutes without input after which the dashboard locks its screen (1-60; unset = 10). The
+      # dashboard reads it from /auth/me; a value the API cannot use is logged and 10 applies.
+      SCREEN_LOCK_IDLE_MINUTES: ${SCREEN_LOCK_IDLE_MINUTES:-}
+      # Hours a browser may stay locked before it signs itself out (1-72; unset = 12).
+      SCREEN_LOCK_SIGNOUT_HOURS: ${SCREEN_LOCK_SIGNOUT_HOURS:-}
     volumes:
       # This site's HIS-location -> our-bed table. Copy bed-mapping.example.json to
       # bed-mapping.json before the first `up`: Docker leaves a DIRECTORY at a bind-mount target

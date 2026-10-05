@@ -25,6 +25,7 @@ from homunculus.auth.service import (
     PasswordError, build_context, change_password, get_user_by_id, hash_password, issue_tokens,
     password_change_due, verify_password,
 )
+from homunculus.auth.session_policy import SCREEN_LOCK_IDLE_MINUTES, SCREEN_LOCK_SIGNOUT_HOURS
 from homunculus.db import get_db
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
@@ -420,3 +421,15 @@ async def test_a_stale_change_is_a_401_so_the_client_refreshes_or_signs_out(
     res = await client.post("/auth/password", headers=_bearer(tokens),
                             json={"current_password": PASSWORD, "new_password": CHOSEN})
     assert (res.status_code, res.json()["detail"]) == (401, "token_version")
+
+
+@pytest.mark.asyncio
+@requires_db
+async def test_the_profile_carries_the_lock_time_and_the_hospital_name(client, world, db_session):
+    c = client
+    admin = await _admin_headers(db_session, world["admin"])
+    me = (await c.get("/auth/me", headers=admin)).json()
+    assert me["lock_idle_minutes"] == SCREEN_LOCK_IDLE_MINUTES
+    assert me["lock_signout_hours"] == SCREEN_LOCK_SIGNOUT_HOURS
+    assert (me["tenant"], me["tenant_name"]) == ("demo-hastanesi", "Sentetik Hastane")
+    assert me["must_change_password"] is False
