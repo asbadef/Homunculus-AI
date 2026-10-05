@@ -17,7 +17,8 @@ from homunculus.api.app import create_app
 from homunculus.auth.groups import ensure_default_groups, set_manual_groups
 from homunculus.auth.models import AUTH_LDAP, AUTH_LOCAL, TenantMembership, User
 from homunculus.auth.service import (
-    build_context, hash_password, issue_tokens, password_change_due,
+    PasswordError, build_context, change_password, hash_password, issue_tokens,
+    password_change_due,
 )
 from homunculus.db import get_db
 from homunculus.tenant.models import Tenant
@@ -36,6 +37,23 @@ CHOSEN = "Kendi-Parolam-9"
 def test_only_a_flagged_local_account_must_change_its_password(source, flag, due):
     user = User(username="u", full_name="U", auth_source=source, must_change_password=flag)
     assert password_change_due(user) is due
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("temporary", [
+    "x" * 72 + "-gecici",                 # 72 ASCII bytes, then more
+    "Ş" * 36 + "-gecici",                 # 36 two-byte characters = 72 bytes, then more
+], ids=["ascii", "two-byte"])
+async def test_a_new_password_bcrypt_cannot_tell_from_the_current_one_is_unchanged(temporary):
+    """bcrypt hashes the first 72 bytes only: a suffix after them would pass a plain `new ==
+    current` and leave the temporary password signing in, with the flag gone. Refused before
+    the database is touched (hence db=None) and before the current password is checked."""
+    user = User(username="u", full_name="U", auth_source=AUTH_LOCAL, must_change_password=True,
+                hashed_password=hash_password(temporary))
+    with pytest.raises(PasswordError) as exc:
+        await change_password(None, user, temporary, temporary + "X")
+    assert exc.value.reason == "unchanged"
+    assert user.must_change_password is True
 
 
 def test_the_token_response_says_so():

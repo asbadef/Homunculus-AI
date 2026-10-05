@@ -268,7 +268,9 @@ async def change_password(db: AsyncSession, user: User, current: str, new: str) 
         raise PasswordError("Parola Active Directory tarafından yönetiliyor", "directory_account")
     if len(new) < PASSWORD_MIN_LENGTH:
         raise PasswordError("Yeni parola en az 8 karakter olmalı", "too_short")
-    if new == current:
+    # Compared as bcrypt sees them: it hashes the first 72 bytes only, so a suffix after them
+    # would otherwise "change" the password while the temporary one still signs in.
+    if _secret(new) == _secret(current):
         raise PasswordError("Yeni parola mevcut paroladan farklı olmalı", "unchanged")
     if not await run_bcrypt(verify_local_password, user.auth_source, user.hashed_password,
                             current):
