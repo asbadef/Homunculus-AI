@@ -61,6 +61,22 @@ async def test_a_new_password_bcrypt_cannot_tell_from_the_current_one_is_unchang
     assert user.must_change_password is True
 
 
+def test_a_temporary_password_follows_the_same_minimum_as_a_chosen_one():
+    """The administrator's temporary password (create, reset) and the user's own share one
+    rule, auth.service.PASSWORD_MIN_LENGTH."""
+    from pydantic import ValidationError
+
+    from homunculus.admin.schemas import PasswordResetIn, UserCreate
+    from homunculus.auth.service import PASSWORD_MIN_LENGTH
+
+    short, enough = "x" * (PASSWORD_MIN_LENGTH - 1), "x" * PASSWORD_MIN_LENGTH
+    for build in (lambda pw: PasswordResetIn(password=pw),
+                  lambda pw: UserCreate(username="sentetik", full_name="S", password=pw)):
+        with pytest.raises(ValidationError):
+            build(short)
+        assert build(enough).password == enough
+
+
 def test_the_token_response_says_so():
     from homunculus.auth.service import EMPTY_CONTEXT
     user = User(username="u", full_name="U", auth_source=AUTH_LOCAL, must_change_password=True,
@@ -194,6 +210,31 @@ async def test_an_ad_account_with_the_flag_set_by_hand_is_not_held(client, world
     assert tokens["password_change_required"] is False
     assert (await c.get("/scope/me", headers=_bearer(tokens))).status_code == 200
     assert (await c.get("/auth/me", headers=_bearer(tokens))).json()["must_change_password"] is False
+
+
+@pytest.mark.asyncio
+@requires_db
+async def test_a_refresh_while_flagged_says_so_and_its_tokens_are_held_too(client, world,
+                                                                          db_session):
+    """A session opened before its account was flagged — migration 0011 moves neither the token
+    version nor the hash — is held at once, and its refresh still mints tokens: they say
+    password_change_required, and they meet the same 403."""
+    c = client
+    nurse = await world["make"]("melek", "nurse")
+    await db_session.commit()
+    tokens = (await c.post("/auth/login", json={"login": "melek", "password": PASSWORD})).json()
+    assert tokens["password_change_required"] is False
+    await db_session.execute(update(User).where(User.id == nurse.id)
+                             .values(must_change_password=True))
+    await db_session.commit()
+    res = await c.get("/scope/me", headers=_bearer(tokens))
+    assert (res.status_code, res.json()["detail"]) == (403, "password_change_required")
+
+    refreshed = await c.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+    assert refreshed.status_code == 200, refreshed.text
+    assert refreshed.json()["password_change_required"] is True
+    res = await c.get("/scope/me", headers=_bearer(refreshed.json()))
+    assert (res.status_code, res.json()["detail"]) == (403, "password_change_required")
 
 
 @pytest.mark.asyncio

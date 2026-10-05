@@ -255,8 +255,8 @@ async def enable_totp(db: AsyncSession, user: User) -> None:
     await db.commit()
 
 
-# The shortest password a person may choose; the admin schemas' `min_length=8` for a temporary
-# one is the same rule. The "8" in the message below is this number.
+# The shortest password a person may choose, and the shortest temporary one an administrator may
+# give (admin/schemas.py reads it). The "8" in the message below is this number.
 PASSWORD_MIN_LENGTH = 8
 
 

@@ -17,7 +17,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
 
 from homunculus.auth.ldap3_directory import canonical_dn
-from homunculus.auth.service import normalize_login
+from homunculus.auth.service import PASSWORD_MIN_LENGTH, normalize_login
 
 _SLUG = re.compile(r"[a-z0-9_]{2,64}")
 _USERNAME = re.compile(r"[a-z0-9._@-]{2,128}")
@@ -133,7 +133,7 @@ class UserCreate(BaseModel):
     username: str = Field(min_length=2, max_length=128)
     email: str | None = Field(default=None, max_length=_EMAIL_MAX)
     full_name: str = Field(min_length=1, max_length=200)
-    password: str = Field(min_length=8, max_length=_PASSWORD_MAX)
+    password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=_PASSWORD_MAX)
     group_ids: list[uuid.UUID] = []
 
     @field_validator("username")
@@ -174,7 +174,7 @@ class UserGroupsIn(BaseModel):
 
 
 class PasswordResetIn(BaseModel):
-    password: str = Field(min_length=8, max_length=_PASSWORD_MAX)
+    password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=_PASSWORD_MAX)
 
 
 class SignInUnlockIn(BaseModel):
