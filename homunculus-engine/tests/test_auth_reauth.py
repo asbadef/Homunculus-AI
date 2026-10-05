@@ -187,6 +187,37 @@ async def test_a_burst_sent_at_once_tests_no_more_passwords_than_the_limit(local
                + audit_events(local["app"], "auth", "password.change.locked")) == 1
 
 
+async def test_a_wrong_password_is_counted_even_when_its_audit_row_fails(
+        local, db_session, monkeypatch):
+    """The count comes before the audit row, at both routes: while the audit store fails, each
+    wrong password is a server error — and still counted, so a held token cannot guess without
+    limit while the trail is down. The attempt after the fifth is refused (429) unchecked."""
+    c, nurse = local["c"], local["nurse"]
+    headers = await _headers(db_session, nurse)
+    audit = local["app"].state.audit
+    real = audit.append
+
+    def broken(event):
+        if event.subject in ("reauth.fail", "password.change.fail"):
+            raise RuntimeError("audit store down")
+        return real(event)
+
+    monkeypatch.setattr(audit, "append", broken)
+    for _ in range(3):
+        with pytest.raises(RuntimeError):
+            await c.post("/auth/reauth", headers=headers, json={"password": "yanlis"})
+    for _ in range(REAUTH_MAX_FAILURES - 3):
+        with pytest.raises(RuntimeError):
+            await c.post("/auth/password", headers=headers,
+                         json={"current_password": "yanlis", "new_password": CHOSEN})
+    assert reauth_failures.locked(str(nurse.id))
+    res = await c.post("/auth/reauth", headers=headers, json={"password": PASSWORD})
+    assert (res.status_code, res.json()["detail"]) == (429, THROTTLED)
+    res = await c.post("/auth/password", headers=headers,
+                       json={"current_password": PASSWORD, "new_password": CHOSEN})
+    assert (res.status_code, res.json()["detail"]) == (429, THROTTLED)
+
+
 async def test_a_check_beyond_the_places_is_refused_at_once_and_a_cancelled_one_counts_nothing(
         local, db_session, monkeypatch):
     """Checks in flight hold places, at both routes together: while REAUTH_MAX_FAILURES of them

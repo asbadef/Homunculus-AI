@@ -552,10 +552,13 @@ async def password(body: PasswordChangeRequest, request: Request,
     try:
         await change_password(db, current_user, body.current_password, body.new_password)
     except PasswordError as exc:
+        # Counted before anything is written: an audit store that fails must not leave a wrong
+        # password uncounted (a held token would then guess without limit).
+        engaged = exc.reason == "wrong_current" and reauth_failures.failed(key)
         append_audit(request, tenant=principal.tenant, event_type="auth",
                      subject="password.change.fail",
                      payload={"user": current_user.username, "reason": exc.reason})
-        if exc.reason == "wrong_current" and reauth_failures.failed(key):
+        if engaged:
             append_audit(request, tenant=principal.tenant, event_type="auth",
                          subject="password.change.locked",
                          payload={"user": current_user.username,
@@ -639,8 +642,9 @@ async def reauth(body: ReauthRequest, request: Request,
         reauth_failures.end(key)             # on every path; a cut-off check counts nothing
     # Nothing awaited since `end`: the outcome is counted before any other check can begin.
     if not right:
+        engaged = reauth_failures.failed(key)    # counted before the audit row, which may fail
         audit("reauth.fail", reason="bad_credentials")
-        if reauth_failures.failed(key):
+        if engaged:
             audit("reauth.locked", lock_seconds=reauth_failures.lock_seconds)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_REAUTH_REFUSED)
     reauth_failures.succeeded(key)
