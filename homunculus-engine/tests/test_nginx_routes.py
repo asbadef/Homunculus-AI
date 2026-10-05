@@ -114,7 +114,8 @@ def test_unlock_and_password_change_are_rate_limited_per_client_address(path: st
     else stood in front of them — every refusal was a request the API answered and audited.
     Per address, in their own zone (a ward's unlocks must not spend its sign-ins), and
     generous — 30 a minute, a burst of 30 — because a ward's PCs share one address behind
-    NAT. Refused as a limited sign-in is: 429, a warning in the log, the same JSON answer."""
+    NAT. Refused as a limited sign-in is — 429, a warning in the log — with an answer of its
+    own (`@reauth_limited`): this is no sign-in."""
     text = CONF.read_text(encoding="utf-8")
     zone = re.search(r"^limit_req_zone\s+\$binary_remote_addr\s+zone=homunculus_reauth:\S+"
                      r"\s+rate=30r/m;", text, re.M)
@@ -123,7 +124,7 @@ def test_unlock_and_password_change_are_rate_limited_per_client_address(path: st
     assert _directives(body, "limit_req", "limit_req_status", "limit_req_log_level",
                        "error_page") == {
         "limit_req zone=homunculus_reauth burst=30 nodelay", "limit_req_status 429",
-        "limit_req_log_level warn", "error_page 429 = @login_limited"}
+        "limit_req_log_level warn", "error_page 429 = @reauth_limited"}
     api = _location(text, "location ~ ^/(auth|")
     proxy = ("proxy_pass", "proxy_http_version", "proxy_set_header")
     assert _directives(body, *proxy) == _directives(api, *proxy)
@@ -172,9 +173,7 @@ def test_a_limited_sign_in_is_answered_in_json() -> None:
         '"application/json; charset=utf-8"']                # its own `;` is inside the quotes
     answer = re.findall(r"^\s*return\s+429\s+'([^']*)';\s*$", named, re.M)
     assert len(answer) == 1 and json.loads(answer[0]) == {"detail": LOGIN_LIMITED}
-    # Declared once, used by the three limited locations (sign-in, unlock, password change):
-    # one answer, so the dashboard maps one message.
-    assert text.count("@login_limited") == 4
+    assert text.count("@login_limited") == 2                 # declared once, used once
 
 
 def test_a_limited_sign_in_says_when_to_try_again() -> None:
@@ -183,6 +182,25 @@ def test_a_limited_sign_in_says_when_to_try_again() -> None:
     to wait a minute, as the JSON detail says."""
     named = _named_location(CONF.read_text(encoding="utf-8"), "@login_limited")
     assert _directives(named, "add_header") == {"add_header Retry-After 60 always"}
+
+
+REAUTH_LIMITED = "Çok fazla deneme. Bir dakika sonra yeniden deneyin."
+
+
+def test_a_limited_unlock_or_password_change_is_answered_in_json_and_says_when() -> None:
+    """The unlock and the password change are no sign-in: their 429 says "too many attempts",
+    not "too many sign-in attempts" — in the API's shape ({"detail": "…"}, JSON in UTF-8, which
+    dashboard/src/clinicalI18n.js maps; i18n.rbac.test.js reads it from this file), with
+    `Retry-After: 60` as the sign-in's. Declared once, used by the two locations."""
+    text = CONF.read_text(encoding="utf-8")
+    named = _named_location(text, "@reauth_limited")
+    assert re.findall(r"^\s*default_type\s+(.+?);\s*$", named, re.M) == [
+        '"application/json; charset=utf-8"']
+    answer = re.findall(r"^\s*return\s+429\s+'([^']*)';\s*$", named, re.M)
+    assert len(answer) == 1 and json.loads(answer[0]) == {"detail": REAUTH_LIMITED}
+    assert _directives(named, "add_header") == {"add_header Retry-After 60 always"}
+    assert len(re.findall(r"^\s*location\s+@reauth_limited\s*\{", text, re.M)) == 1
+    assert len(re.findall(r"^\s*error_page\s+429\s*=\s*@reauth_limited;", text, re.M)) == 2
 
 
 @pytest.mark.parametrize("path", API_PATHS)

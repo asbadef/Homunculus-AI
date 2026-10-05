@@ -108,9 +108,10 @@ const LIVE_STORE = js("liveStore.js");
 // The panel's nginx answers a sign-in over its per-address limit itself, in the API's shape.
 const NGINX = fs.readFileSync(path.resolve(HERE, "../../deploy/local/web/nginx.conf"), "utf8");
 
-/** The `detail` of nginx's JSON answer to a limited sign-in (`location @login_limited`). */
-function nginxLoginLimited(src) {
-  const m = /^\s*location @login_limited \{[^]*?^\s*return 429 '([^']*)';/m.exec(src);
+/** The `detail` of nginx's JSON answer in `location <name>`: a limited sign-in
+ *  (`@login_limited`), a limited unlock or password change (`@reauth_limited`). */
+function nginxLimited(src, name) {
+  const m = new RegExp(String.raw`^\s*location ${name} \{[^]*?^\s*return 429 '([^']*)';`, "m").exec(src);
   return m ? JSON.parse(m[1]).detail : undefined;
 }
 
@@ -149,7 +150,8 @@ const PLAIN = [
   ...literals(LIVE_STORE, String.raw`LIVE_UNAVAILABLE_MESSAGE = ${STR}`).map((m) => ["liveStore.js live mode", m]),
   ...literals(LIVE_STORE, String.raw`code: SESSION_UNREACHABLE,\s*message: ${STR}`)
     .map((m) => ["liveStore.js sessionError", m]),
-  ["deploy/local/web/nginx.conf 429", nginxLoginLimited(NGINX)],
+  ["deploy/local/web/nginx.conf 429", nginxLimited(NGINX, "@login_limited")],
+  ["deploy/local/web/nginx.conf 429 (unlock, password change)", nginxLimited(NGINX, "@reauth_limited")],
   ["browser (Chrome, Edge)", "Failed to fetch"],
   ["browser (Firefox)", "NetworkError when attempting to fetch resource."],
   ["browser (Safari)", "Load failed"],
@@ -164,6 +166,7 @@ describe("server and client messages are mapped", () => {
       "Invalid or missing authentication credentials", "Çok fazla hatalı kod. 5 dakika sonra tekrar deneyin.",
       "Dizin sunucusuna ulaşılamıyor", "Çok fazla hatalı deneme; 15 dakika sonra tekrar deneyin",
       "Çok fazla giriş denemesi; bir dakika sonra tekrar deneyin",
+      "Çok fazla deneme. Bir dakika sonra yeniden deneyin.",
       "Invalid credentials", "Invalid or expired refresh token",
       "Mevcut parola yanlış", "Son yönetici yetkisi kaldırılamaz", "Sistem grubu silinemez",
       "Bu AD grubu bu gruba zaten eşlenmiş", "AD grup eşlemesini yalnız tüm yetkilere sahip bir yönetici değiştirebilir",
