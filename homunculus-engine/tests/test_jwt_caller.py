@@ -318,6 +318,22 @@ async def test_the_read_says_whether_a_local_account_must_change_its_password(wa
 
 
 @requires_db
+async def test_the_read_applies_the_routers_rule_not_a_copy_of_it(ward, monkeypatch):
+    """One rule, one place: the board's read asks auth.service.password_change_due — the
+    function get_principal asks — with the row it selected, so the two gates cannot drift."""
+    seen = []
+
+    def rule(state):
+        seen.append((state.must_change_password, state.auth_source))
+        return True
+
+    monkeypatch.setattr(prodserver, "password_change_due", rule)
+    row = await _read_user_auth(str(ward["nurse"].id), "hastane-a")
+    assert row.password_change_due is True
+    assert seen == [(False, "local")]
+
+
+@requires_db
 async def test_an_unknown_slug_or_a_missing_membership_is_unknown(ward):
     nurse = str(ward["nurse"].id)
     assert (await _read_user_auth(nurse, "yok-boyle-hastane")).tenant_verdict == TENANT_UNKNOWN

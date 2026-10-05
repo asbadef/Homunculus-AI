@@ -44,7 +44,8 @@ from homunculus.auth.groups import (
 )
 from homunculus.auth.jwt import jwt_secret_problem
 from homunculus.auth.ldap3_directory import ldap_from_env
-from homunculus.auth.models import AUTH_LOCAL, User
+from homunculus.auth.models import User
+from homunculus.auth.service import password_change_due
 from homunculus.tenant.bedmap import BedMap
 
 logger = logging.getLogger(__name__)
@@ -330,8 +331,7 @@ async def _read_user_auth(user_id: str, slug: str | None) -> UserAuthRow | None:
     verdict = tenant_claim_verdict(row)[1] if slug is not None else TENANT_UNKNOWN
     return UserAuthRow(username=row.username, is_active=row.is_active,
                        token_version=row.token_version, tenant_verdict=verdict,
-                       password_change_due=bool(row.must_change_password)
-                       and row.auth_source == AUTH_LOCAL)
+                       password_change_due=password_change_due(row))
 
 
 def _database_url() -> str:

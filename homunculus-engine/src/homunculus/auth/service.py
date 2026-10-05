@@ -16,7 +16,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Any, TypeVar
+from typing import Any, Protocol, TypeVar
 
 import anyio
 import anyio.to_thread
@@ -172,10 +172,22 @@ async def build_context(db: AsyncSession, user: User) -> AuthContext:
                        mfa_required=summary.mfa_required or operator)
 
 
-def password_change_due(user: User) -> bool:
+class PasswordState(Protocol):
+    """What `password_change_due` reads: a User, or a row that selected these two columns (the
+    board's resolver, api/prodserver.py, which reads no full User)."""
+
+    @property
+    def must_change_password(self) -> bool | None: ...
+
+    @property
+    def auth_source(self) -> str | None: ...
+
+
+def password_change_due(user: PasswordState) -> bool:
     """The account still holds a temporary password an administrator gave it, and must replace it
     before anything else (users.must_change_password). Only ever a LOCAL account: an AD account's
-    password lives in AD, and the flag is not set for one — this is the second line."""
+    password lives in AD, and the flag is not set for one — this is the second line. The one
+    statement of the rule: get_principal and the board's resolver both ask it."""
     return bool(user.must_change_password) and user.auth_source == AUTH_LOCAL
 
 
