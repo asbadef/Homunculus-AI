@@ -17,8 +17,11 @@ it; once it holds 3, the sign-in is refused without a bind until then. An admini
 The invariant: one chain holds at most 3 + 3 = 6 failed binds, and it holds every failed bind AD
 may still be counting:
   * a failure is dated no earlier than the domain controller can have counted it — when it
-    answered, or, for a bind the caller stopped waiting for while it was under way, as late as
-    that bind may still be counted (`end`, `pending_s`);
+    answered, or, for a bind sent that it has not answered (the deadline cut it off, ldap3's
+    receive timeout gave up on it, the connection went), one deadline later: as late as that
+    bind may still be counted (`end`, `pending_s`, `LdapUnavailable.bind_pending_s`). A domain
+    controller that processes a request more than one deadline after it left Homunculus is
+    outside this guarantee;
   * a right password forgets only the failures recorded before its attempt began (and dated
     before then): those reached the domain controller before its bind, which reset AD's count.
     The ones recorded since may have reached it after that reset, and AD counts them: they start
@@ -150,10 +153,10 @@ class FailureChain:
     another attempt's place and let one more bind through than the chain allows.
 
     A failure is dated when its attempt ends, after the directory answered — or `pending_s`
-    later, when the caller stopped waiting while the bind was under way and the domain
-    controller may still count it: the gap Homunculus measures between two failures is never
-    longer than the one the domain controller saw, so a chain never ends before AD's count
-    (with a reset period up to `quiet_seconds`) would."""
+    later, when the bind was sent and the domain controller has not answered it (cut off, or
+    its answer given up on) and may still count it: the gap Homunculus measures between two
+    failures is never longer than the one the domain controller saw, so a chain never ends
+    before AD's count (with a reset period up to `quiet_seconds`) would."""
 
     def __init__(self, *, max_failures: int, quiet_seconds: float,
                  clock: Callable[[], float] = time.monotonic) -> None:

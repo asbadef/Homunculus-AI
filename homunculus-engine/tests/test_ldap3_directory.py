@@ -951,11 +951,18 @@ async def test_a_failure_opening_the_accounts_connection_sent_no_password(error,
     (KeyError("library bug"), "protocol"),
 ])
 async def test_a_failure_says_whether_the_password_had_been_sent(dn, sent, error, reason):
+    """And, once it had been sent, that the domain controller gave no answer to it — ldap3's
+    receive timeout, a connection gone, a reply ldap3 could not read: the DC may still count
+    that bind, so the outage is dated one deadline later (`bind_pending_s`), as a bind the
+    deadline cut off is."""
     script = Script(([_entry()], 0))
     script.bind_errors[dn] = error
+    directory = _directory(script)
     with pytest.raises(LdapUnavailable) as err:
-        await _directory(script).authenticate(GUID, USER_PW)
+        await directory.authenticate(GUID, USER_PW)
     assert (err.value.reason, err.value.bind_attempted) == (reason, sent)
+    assert err.value.bind_pending_s == (directory._deadline if sent else 0.0)
+    assert directory._deadline == 10.0                    # 2 × the default LDAP_TIMEOUT_S
 
 
 async def test_a_user_bind_answered_with_an_unexpected_code_sent_the_password():
@@ -965,6 +972,18 @@ async def test_a_user_bind_answered_with_an_unexpected_code_sent_the_password():
         await _directory(script).authenticate(GUID, "Yanlis-1")
     assert (err.value.reason, err.value.bind_attempted) == ("protocol", True)
     assert err.value.bind_pending_s == 0.0               # answered: dated when it ended
+
+
+async def test_a_user_bind_refused_without_a_result_code_is_dated_a_deadline_later():
+    """ldap3 says the bind failed but carries no result code: nothing shows the domain
+    controller answered it, so it is dated as an unanswered bind is (the safe side)."""
+    script = Script(([_entry()], 0))
+    script.bind_codes[USER_DN] = None
+    directory = _directory(script)
+    with pytest.raises(LdapUnavailable) as err:
+        await directory.authenticate(GUID, "Yanlis-1")
+    assert (err.value.reason, err.value.bind_attempted) == ("protocol", True)
+    assert err.value.bind_pending_s == directory._deadline
 
 
 async def test_a_search_failure_before_the_bind_sent_no_password():

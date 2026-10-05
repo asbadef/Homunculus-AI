@@ -69,10 +69,13 @@ class LdapUnavailable(Exception):
     throttle counts it too. False: the password was never sent (the service bind, a search, or
     a call cut off before it got that far).
 
-    `bind_pending_s`: for a call the caller stopped waiting for (its deadline) while that bind
-    was under way, how long from now the domain controller may still count it — the throttle
-    dates the failure that much later (`FailureChain.end`). 0 when the directory had answered
-    or the password was never sent."""
+    `bind_pending_s`: once that bind was sent, and the domain controller gave no answer to it —
+    the caller stopped waiting (its deadline), ldap3's receive timeout gave up, the connection
+    went, a reply could not be read — how long from now the domain controller may still count
+    it: the call's deadline. The throttle dates the failure that much later
+    (`FailureChain.end`). 0 when the domain controller had answered that bind (a result code)
+    or the password was never sent. A domain controller that processes a request more than
+    one deadline after it left Homunculus is outside what the throttle guarantees."""
 
     def __init__(self, reason: str, *, bind_attempted: bool = False,
                  bind_pending_s: float = 0.0) -> None:

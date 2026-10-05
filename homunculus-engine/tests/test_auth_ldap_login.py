@@ -7,22 +7,25 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 
 import pytest
 import pytest_asyncio
+from ldap3.core.exceptions import LDAPResponseTimeoutError
 from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from homunculus.auth import ldap_sync
 from homunculus.auth.groups import lock_admin_guard, set_manual_groups
 from homunculus.auth.jwt import decode_token
-from homunculus.auth.ldap import DEADLINE_CAP_S
+from homunculus.auth.ldap import DEADLINE_CAP_S, load_ldap_config
+from homunculus.auth.ldap3_directory import Ldap3Directory
 from homunculus.auth.limits import directory_binds
 from homunculus.auth.models import User
 from tests.conftest import requires_db
 from tests.fake_directory import (
-    AD_PASSWORD, ADMIN_PASSWORD, ad_client, ad_world, add_directory_account, audit_events,
-    fresh_user, group_dn, group_rows, person,
+    AD_PASSWORD, ADMIN_PASSWORD, DOMAIN_DN, ad_client, ad_world, add_directory_account,
+    audit_events, fresh_user, group_dn, group_rows, person,
 )
 
 pytestmark = [pytest.mark.asyncio, requires_db]
@@ -634,7 +637,9 @@ def _record_ends(monkeypatch) -> list[tuple[bool, float]]:
     return ends
 
 
-@pytest.mark.parametrize("reason, pending", [("timeout", True), ("protocol", False)])
+@pytest.mark.parametrize("reason, pending", [
+    ("timeout", True), ("unreachable", True), ("protocol", False),
+])
 async def test_a_bind_cut_off_under_way_is_dated_as_late_as_the_dc_may_count_it(
         client, world, monkeypatch, reason, pending):
     """The deadline cut the bind as the account off once the password had been sent: the
@@ -647,6 +652,63 @@ async def test_a_bind_cut_off_under_way_is_dated_as_late_as_the_dc_may_count_it(
     directory.unavailable, directory.outage_after_bind = reason, True
     assert (await _login(c, "ayilmaz")).status_code == 503
     assert ends == [(True, directory.deadline if pending else 0.0)]
+
+
+class _HerBindGoesUnanswered:
+    """ldap3's connection as Ldap3Directory uses it, scripted: the service account binds and
+    finds `whom` by objectGUID; `whom`'s own bind goes out and ldap3's receive timeout gives up
+    on its answer — the domain controller has the request and has not answered."""
+    socket = None
+
+    def __init__(self, whom, user: str) -> None:
+        self.whom, self.user = whom.identity, user
+        self.result: dict = {}
+        self.response: list = []
+
+    def open(self, read_server_info=True):
+        pass
+
+    def bind(self):
+        if self.user == self.whom.dn:
+            raise LDAPResponseTimeoutError("no answer")
+        self.result = {"result": 0}
+        return True
+
+    def search(self, **request):
+        self.response = [{"type": "searchResEntry", "dn": self.whom.dn, "raw_attributes": {
+            "objectGUID": [uuid.UUID(self.whom.external_id).bytes_le],
+            "sAMAccountName": [self.whom.username.encode("utf-8")]}}]
+        self.result = {"result": 0}
+        return True
+
+    def unbind(self):
+        pass
+
+
+async def test_a_bind_whose_answer_ldap3_stopped_waiting_for_is_dated_a_deadline_later(
+        db_session, world):
+    """The real Ldap3Directory: her bind reached the domain controller, which did not answer
+    before ldap3's receive timeout. The DC may still count it — up to a deadline later — so
+    the route records the failure dated then (her run lasts 15 minutes from that, not from
+    now), and the 503 goes to the audit trail as a sign-in failure."""
+    config = load_ldap_config({
+        "LDAP_URL": "ldaps://dc1.hastane.local", "LDAP_BIND_DN": f"CN=svc,{DOMAIN_DN}",
+        "LDAP_BIND_PASSWORD": "Servis-1", "LDAP_BASE_DN": DOMAIN_DN,
+        "LDAP_NESTED_GROUPS": "0"})
+    directory = Ldap3Directory(config, connect=lambda user, password: _HerBindGoesUnanswered(
+        world["ayse"], user))
+    try:
+        async with ad_client(db_session, directory) as (c, app):
+            before = time.monotonic()
+            res = await _login(c, "ayilmaz", "Yanlis-Parola-9")
+            after = time.monotonic()
+    finally:
+        directory.close()
+    assert res.status_code == 503
+    assert _reasons(app) == ["directory_unavailable"]
+    chain = directory_binds._chains[str(world["account"].id)]
+    assert len(chain.failures) == 1
+    assert before + config.deadline_s <= chain.last <= after + config.deadline_s
 
 
 @pytest.mark.parametrize("marks, recorded", [

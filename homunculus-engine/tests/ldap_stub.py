@@ -2,12 +2,15 @@
 bind carries, and whether a password was sent at all. It speaks simple binds and unbinds only —
 plain, or LDAPS with a certificate the test made — and records each bind's DN and the password
 BYTES it carried. A bind succeeds when those bytes are exactly the DN's in `passwords`; anything
-else is invalidCredentials (49). Synthetic credentials only; it listens on loopback alone."""
+else is invalidCredentials (49). `answer_after` makes it a busy domain controller: it receives
+the bind (and records it) at once, and answers that many seconds later. Synthetic credentials
+only; it listens on loopback alone."""
 from __future__ import annotations
 
 import socket
 import ssl
 import threading
+import time
 from dataclasses import dataclass
 
 LDAP_MESSAGE, INTEGER, OCTET_STRING, ENUMERATED = 0x30, 0x02, 0x04, 0x0A
@@ -83,9 +86,10 @@ class LdapStub:
     (None: plain LDAP). `binds` lists every bind request received, in order."""
 
     def __init__(self, passwords: dict[str, bytes], *,
-                 context: ssl.SSLContext | None = None) -> None:
+                 context: ssl.SSLContext | None = None, answer_after: float = 0.0) -> None:
         self.passwords = dict(passwords)
         self.binds: list[Bind] = []
+        self.answer_after = answer_after
         self._context = context
         self._lock = threading.Lock()
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -123,6 +127,8 @@ class LdapStub:
                 bind = Bind(name.decode("utf-8"), password)
                 with self._lock:
                     self.binds.append(bind)
+                if self.answer_after:
+                    time.sleep(self.answer_after)
                 code = (SUCCESS if self.passwords.get(bind.dn) == bind.password
                         else INVALID_CREDENTIALS)
                 conn.sendall(tlv(LDAP_MESSAGE, tlv(INTEGER, message_id) + tlv(

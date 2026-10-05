@@ -10,9 +10,11 @@ lists. `unavailable = True` makes every other call raise LdapUnavailable("unreac
 domain controller that is down would; a string names another reason (`timeout`, `tls`, ...).
 By default such an outage came before any password was sent (the service bind, a search, a
 call cut off while queued: `bind_attempted` False); `outage_after_bind = True` makes the outage
-`authenticate` raises one that came once the bind as the account had started (a user bind cut
-off at the deadline: `bind_attempted` True, counted by the sign-in throttle — and, for
-`timeout`, `bind_pending_s` = `deadline`, as Ldap3Directory marks a cut-off).
+`authenticate` raises one that came once the bind as the account had started (`bind_attempted`
+True, counted by the sign-in throttle). Such an outage carries `bind_pending_s` = `deadline` —
+the domain controller gave no answer to that bind (cut off at the deadline, ldap3's receive
+timeout, a connection gone) and may still count it, as Ldap3Directory marks it — except
+`protocol`, which here is a bind the domain controller answered with an unexpected code: 0.
 `calls` records which method was asked about what — never a password.
 
 The admin lane is kept too: a call given a `lane` waits for a place in it before the "server"
@@ -144,10 +146,11 @@ class FakeDirectory:
         if self.unavailable:
             reason = self.unavailable if isinstance(self.unavailable, str) else "unreachable"
             sent = binds and self.outage_after_bind
-            # A `timeout` once the bind had started is the deadline cutting it off: the domain
-            # controller may still count it up to a deadline later, as Ldap3Directory says.
+            # Once the bind had started, an outage the domain controller did not answer may
+            # still be counted by it up to a deadline later, as Ldap3Directory says; `protocol`
+            # stands for a bind it answered (an unexpected code), dated when it ended.
             raise LdapUnavailable(reason, bind_attempted=sent,
-                                  bind_pending_s=self.deadline if reason == "timeout" else 0.0)
+                                  bind_pending_s=0.0 if reason == "protocol" else self.deadline)
 
     async def authenticate(self, external_id: str, password: str) -> LdapIdentity | None:
         if not password or not _is_guid(external_id):

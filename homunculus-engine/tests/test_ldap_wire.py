@@ -4,9 +4,11 @@ LDAP_ALLOW_INSECURE=1 permits outside production — the TLS side is `test_ldap_
 Synthetic credentials only."""
 from __future__ import annotations
 
+import time
+
 import pytest
 
-from homunculus.auth.ldap import load_ldap_config
+from homunculus.auth.ldap import LdapUnavailable, load_ldap_config
 from homunculus.auth.ldap3_directory import Ldap3Directory
 from tests.ldap_stub import Bind, LdapStub
 
@@ -19,8 +21,8 @@ USER_DN = "CN=Ayşe Yılmaz,OU=Personel,DC=hastane,DC=test"
 def stub():
     servers: list[LdapStub] = []
 
-    def start(passwords: dict[str, str]) -> LdapStub:
-        server = LdapStub({dn: pw.encode("utf-8") for dn, pw in passwords.items()})
+    def start(passwords: dict[str, str], **options) -> LdapStub:
+        server = LdapStub({dn: pw.encode("utf-8") for dn, pw in passwords.items()}, **options)
         servers.append(server)
         return server
 
@@ -29,11 +31,12 @@ def stub():
         server.close()
 
 
-def _directory(port: int, *, bind_password: str = SVC_PW) -> Ldap3Directory:
+def _directory(port: int, *, bind_password: str = SVC_PW,
+               timeout_s: str = "2") -> Ldap3Directory:
     return Ldap3Directory(load_ldap_config({
         "LDAP_URL": f"ldap://127.0.0.1:{port}", "LDAP_ALLOW_INSECURE": "1",
         "LDAP_BIND_DN": SVC_DN, "LDAP_BIND_PASSWORD": bind_password,
-        "LDAP_BASE_DN": "DC=hastane,DC=test", "LDAP_TIMEOUT_S": "2",
+        "LDAP_BASE_DN": "DC=hastane,DC=test", "LDAP_TIMEOUT_S": timeout_s,
     }))
 
 
@@ -45,6 +48,30 @@ async def test_a_password_check_opens_the_connection_then_sends_one_bind(stub):
     assert await directory.check_password(USER_DN, "Dogru-Parola-1") is True
     assert await directory.check_password(USER_DN, "Yanlis-Parola-1") is False
     assert server.binds == [Bind(USER_DN, b"Dogru-Parola-1"), Bind(USER_DN, b"Yanlis-Parola-1")]
+
+
+async def test_a_bind_the_dc_received_and_answers_late_is_dated_a_deadline_later(stub):
+    """A busy domain controller: it has the account's bind and answers after ldap3's receive
+    timeout (LDAP_TIMEOUT_S rounded up, 1 s) but before the call's deadline (2 × that) — so
+    ldap3's own socket gives up first, not the deadline. The DC may count that bind until it
+    answers: the outage says the password was sent and carries `bind_pending_s` = the deadline,
+    as a bind the deadline cut off does, and the throttle dates the failure that much later.
+    Before F8 it was dated when the outage reached the route — and AD could count it after a
+    run Homunculus had already closed."""
+    server = stub({USER_DN: "Dogru-Parola-1"}, answer_after=3.0)
+    directory = _directory(server.port, timeout_s="1")
+    started = time.monotonic()
+    try:
+        with pytest.raises(LdapUnavailable) as err:
+            await directory.check_password(USER_DN, "Yanlis-Parola-1")
+        elapsed = time.monotonic() - started
+    finally:
+        directory.close()
+    assert directory._deadline == 2.0
+    assert (err.value.reason, err.value.bind_attempted) == ("timeout", True)
+    assert err.value.bind_pending_s == directory._deadline
+    assert elapsed < directory._deadline          # the receive timeout ended it, not the deadline
+    assert server.binds == [Bind(USER_DN, b"Yanlis-Parola-1")]          # the DC has it
 
 
 # Each right password below failed against AD while ldap3 was given a `str`: ldap3 runs it

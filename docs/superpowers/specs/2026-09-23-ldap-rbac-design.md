@@ -443,7 +443,12 @@ whether the typed password had reached the directory (the throttle in §7 Securi
 those). *As built (F7):* the bind request as the account is sent only once its connection (TCP,
 TLS) is open, so `bind_attempted` means the password has left Homunculus; a call cut off at its
 deadline after that also carries `bind_pending_s` (that deadline) — the domain controller may
-still count the bind, so the throttle dates the failure that much later.
+still count the bind, so the throttle dates the failure that much later. *As built (F8):* so
+does every outage after the bind was sent that the domain controller did not answer — above all
+ldap3's receive timeout (`LDAP_TIMEOUT_S` rounded up), which usually ends a stalled bind before
+the deadline does, but also a connection gone or a reply ldap3 could not read; only a bind it
+answered (a result code) is dated when the answer came. A domain controller that processes a
+request more than one deadline after it left Homunculus is outside the guarantee.
 
 `Ldap3Directory` implements it with `ldap3` (pure Python; runs on the Windows dev machines and in
 the `python:3.12-slim` image without libldap; *as built,* the image installs the exact versions
@@ -618,7 +623,10 @@ not carried forward.
   `end`): failures recorded while it was being checked may have reached the domain controller
   after its bind, AD counts them, and they start the next run — with the unlock spent if the
   old run had spent it. A bind cut off at its deadline once the password had been sent is
-  dated one deadline later. In memory (one API process): a restart clears it — and a restart
+  dated one deadline later; *as built (F8),* so is any bind sent that the domain controller did
+  not answer (ldap3's receive timeout, which usually comes first, included), and a domain
+  controller that processes a request more than one deadline after it left is outside the
+  bound below. In memory (one API process): a restart clears it — and a restart
   within 15 minutes of failed binds clears Homunculus' runs but not AD's count, so across one
   Homunculus can add 6 more (12 in one of AD's runs); the runbook says to deploy only when the
   audit trail shows no failed sign-in in the last 15 minutes. An administrator may let 3 more

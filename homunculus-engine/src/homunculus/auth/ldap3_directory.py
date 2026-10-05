@@ -25,9 +25,13 @@ Windows dev machines and in the python:3.12-slim image without libldap). Spec §
   * A call the caller stopped waiting for (its deadline, a cancellation) never binds as the
     account afterwards, and its outage says whether that bind had started
     (`LdapUnavailable.bind_attempted`, `_Attempt`): the sign-in throttle counts only a password
-    that reached the domain controller. When it had, the domain controller has not answered and
-    may still count it: the outage (or the cancellation) carries `bind_pending_s`, the
-    deadline, and the throttle dates the failure that much later.
+    that reached the domain controller. Every outage after that bind was sent that the domain
+    controller did not answer — the deadline or a cancellation cut it off, ldap3's receive
+    timeout gave up on it (the usual end of a stalled bind: it comes before the deadline), the
+    connection went, a reply ldap3 could not read — carries `bind_pending_s`, the deadline: the
+    domain controller may still count that bind, and the throttle dates the failure that much
+    later. Only a bind it answered (a result code: a wrong password, an unexpected refusal) is
+    dated when the answer came.
   * Results are capped: `size_limit` on the server, and the slice here.
   * A group DN has one spelling for comparing (`canonical_dn`): the stored mapping and AD's
     memberOf are compared in it, whatever spacing, escaping or ASCII case either was written
@@ -343,12 +347,15 @@ class _Attempt:
     sent and the caller learns it was, or it is never sent — a call already cut off never spends
     one of the account's attempts in AD's lockout count. Since the connection (TCP, TLS) is
     open by then, a request marked as sent has left before the caller gave up: the domain
-    controller has it within the network's own delay."""
+    controller has it within the network's own delay. The worker marks the domain
+    controller's answer to it (`answered`: a result code came back); until then the domain
+    controller may still count that bind (`pending_s`)."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._given_up = False
         self._bind_started = False
+        self._bind_answered = False
 
     def start_bind(self) -> None:
         """Worker side, immediately before the bind as the account. LdapUnavailable (read by
@@ -365,10 +372,25 @@ class _Attempt:
             self._given_up = True
             return self._bind_started
 
+    def answered(self) -> None:
+        """Worker side: the domain controller answered the bind as the account (a result code
+        came back, whatever it says) — it has counted that bind, if it counts it, by now."""
+        with self._lock:
+            self._bind_answered = True
+
     @property
     def bind_started(self) -> bool:
         with self._lock:
             return self._bind_started
+
+    def pending_s(self, deadline: float) -> float:
+        """For an outage now: how much later the domain controller may still count the bind as
+        the account. 0 when none was sent, or the domain controller answered it; otherwise the
+        deadline — it may be processing a request it received, and Homunculus cannot tell
+        (`LdapUnavailable.bind_pending_s`). Late is the safe side: the throttle's run only
+        lasts longer."""
+        with self._lock:
+            return deadline if self._bind_started and not self._bind_answered else 0.0
 
 
 def _give_back(loop: asyncio.AbstractEventLoop, lane: asyncio.Semaphore) -> None:
@@ -380,23 +402,29 @@ def _give_back(loop: asyncio.AbstractEventLoop, lane: asyncio.Semaphore) -> None
         pass
 
 
-def _guarded(attempt: _Attempt, fn: Callable[..., Any], *args: Any) -> Any:
+def _guarded(attempt: _Attempt, deadline: float, fn: Callable[..., Any], *args: Any) -> Any:
     """Run `fn` on the worker thread; ANY failure becomes LdapUnavailable — an `ldap3` or socket
     failure by its cause, anything else (a library bug, a reply it cannot parse) as `protocol`,
     so a directory fault is a 503, never a 500 — marked `bind_attempted` when it came after the
-    bind as the account had started. Only the exception's type and the reason are logged —
-    never its text, which for a bind could name the account or carry a password."""
+    bind as the account had started, and dated `deadline` later (`bind_pending_s`) unless the
+    domain controller had answered that bind (`_Attempt.pending_s`). Only the exception's type
+    and the reason are logged — never its text, which for a bind could name the account or
+    carry a password."""
+    def outage(reason: str) -> LdapUnavailable:
+        return LdapUnavailable(reason, bind_attempted=attempt.bind_started,
+                               bind_pending_s=attempt.pending_s(deadline))
+
     try:
         return fn(*args)
     except LdapUnavailable as exc:
-        raise LdapUnavailable(exc.reason, bind_attempted=attempt.bind_started) from None
+        raise outage(exc.reason) from None
     except (LDAPException, OSError) as exc:
         reason = failure_reason(exc)
         logger.warning("directory call failed (%s): %s", reason, type(exc).__name__)
-        raise LdapUnavailable(reason, bind_attempted=attempt.bind_started) from None
+        raise outage(reason) from None
     except Exception as exc:
         logger.warning("directory call failed (protocol): unexpected %s", type(exc).__name__)
-        raise LdapUnavailable("protocol", bind_attempted=attempt.bind_started) from None
+        raise outage("protocol") from None
 
 
 class Ldap3Directory:
@@ -468,9 +496,10 @@ class Ldap3Directory:
         within 2 × the deadline, a sign-in or a refresh (no lane) within one. When the caller
         stops waiting (the deadline, a cancellation) `attempt` is given up: a bind as the
         account not started yet never starts, and the outage — or the cancellation, as
-        attributes — carries `bind_attempted` and, when it had started, `bind_pending_s` (the
-        deadline: how much later the domain controller may still count it), for the sign-in
-        throttle (auth/router.py)."""
+        attributes — carries `bind_attempted` and, when it had started and had no answer yet,
+        `bind_pending_s` (the deadline: how much later the domain controller may still count
+        it), for the sign-in throttle (auth/router.py). An outage the worker itself raises is
+        marked the same way (`_guarded`)."""
         attempt = _Attempt() if attempt is None else attempt
         loop = asyncio.get_running_loop()
         if lane is not None:
@@ -482,7 +511,7 @@ class Ldap3Directory:
                                self._deadline)
                 raise LdapUnavailable("timeout") from None
         try:
-            done = self._pool.submit(_guarded, attempt, fn, *args)
+            done = self._pool.submit(_guarded, attempt, self._deadline, fn, *args)
         except RuntimeError:                 # the pool is shut down: the app is stopping
             if lane is not None:
                 lane.release()
@@ -498,7 +527,7 @@ class Ldap3Directory:
             sent = attempt.give_up()
             logger.warning("directory call cut off after %.1f s", self._deadline)
             raise LdapUnavailable("timeout", bind_attempted=sent,
-                                  bind_pending_s=self._deadline) from None
+                                  bind_pending_s=attempt.pending_s(self._deadline)) from None
         except asyncio.CancelledError as exc:
             sent = attempt.give_up()
             # Cancelled by `close` while queued, not by our own caller: an outage, not a crash.
@@ -506,7 +535,7 @@ class Ldap3Directory:
             if work.cancelled() and task is not None and not task.cancelling():
                 raise LdapUnavailable("unreachable") from None
             exc.bind_attempted = sent
-            exc.bind_pending_s = self._deadline if sent else 0.0
+            exc.bind_pending_s = attempt.pending_s(self._deadline)
             raise
 
     # ---- the worker-thread side
@@ -570,12 +599,18 @@ class Ldap3Directory:
         try:
             # TCP and TLS first: no password crosses yet, so a failure or a cut-off here costs
             # nothing in AD. Then the bind request, unless the caller has gone; from here AD may
-            # count it. (`bind` sends at once on a connection already open.)
+            # count it. (`bind` sends at once on a connection already open.) An exception from
+            # `bind` — ldap3's receive timeout, the connection gone, a reply it could not read —
+            # is no answer: the domain controller may still count the bind (`_guarded`).
             conn.open(read_server_info=False)
             attempt.start_bind()
-            if conn.bind():
+            bound = conn.bind()
+            code = (conn.result or {}).get("result")
+            if bound or isinstance(code, int):
+                attempt.answered()
+            if bound:
                 return True
-            if (conn.result or {}).get("result") == RESULT_INVALID_CREDENTIALS:
+            if code == RESULT_INVALID_CREDENTIALS:
                 return False
             raise LdapUnavailable("protocol")
         finally:
