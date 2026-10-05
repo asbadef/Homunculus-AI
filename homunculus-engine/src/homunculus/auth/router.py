@@ -51,9 +51,9 @@ from homunculus.auth.schemas import (
     TOTPVerifyRequest, TokenResponse, UserMeResponse,
 )
 from homunculus.auth.service import (
-    PasswordError, build_context, change_password, credential_fingerprint, enable_totp,
-    find_user_for_sign_in, get_user_by_id, issue_tokens, mark_login, password_change_due,
-    run_bcrypt, setup_totp, verify_local_password,
+    PasswordError, StaleSession, build_context, change_password, credential_fingerprint,
+    enable_totp, find_user_for_sign_in, get_user_by_id, issue_tokens, mark_login,
+    password_change_due, run_bcrypt, setup_totp, verify_local_password,
 )
 from homunculus.auth.totp import accepted_step
 from homunculus.db import get_db
@@ -521,6 +521,14 @@ async def password(body: PasswordChangeRequest, request: Request,
                      subject="password.change.fail",
                      payload={"user": current_user.username, "reason": exc.reason})
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except StaleSession:
+        # A reset (or another bump) landed after this token was checked: answered as the stale
+        # token itself would be, so the reset stands (auth.service.change_password).
+        append_audit(request, tenant=principal.tenant, event_type="auth",
+                     subject="password.change.fail",
+                     payload={"user": current_user.username, "reason": "stale_session"})
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="token_version",
+                            headers={"WWW-Authenticate": "Bearer"}) from None
     append_audit(request, tenant=principal.tenant, event_type="auth", subject="password.change",
                  payload={"user": current_user.username})
     ctx = await build_context(db, current_user)

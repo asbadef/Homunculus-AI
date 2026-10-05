@@ -5,20 +5,25 @@ session reaches only /auth/password, /auth/me, /auth/refresh and /auth/totp/*; t
 the flag. MFA comes first. An AD account is never flagged. Synthetic accounts only."""
 from __future__ import annotations
 
+import asyncio
+
 import pyotp
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import homunculus.scope.models  # noqa: F401  (staff_scopes, read by /scope/me, before create_all)
+from homunculus.admin import service as admin_service
 from homunculus.api.app import create_app
+from homunculus.auth import service as auth_service
 from homunculus.auth.groups import ensure_default_groups, set_manual_groups
 from homunculus.auth.models import AUTH_LDAP, AUTH_LOCAL, TenantMembership, User
+from homunculus.auth.permissions import ALL_PERMISSIONS
 from homunculus.auth.service import (
-    PasswordError, build_context, change_password, hash_password, issue_tokens,
-    password_change_due,
+    PasswordError, build_context, change_password, get_user_by_id, hash_password, issue_tokens,
+    password_change_due, verify_password,
 )
 from homunculus.db import get_db
 from homunculus.tenant.models import Tenant
@@ -231,3 +236,146 @@ async def test_the_temporary_password_cannot_be_kept(client, world, db_session):
     assert (res.status_code, res.json()["detail"]) == (
         400, "Yeni parola mevcut paroladan farklı olmalı")
     assert await _flag(db_session, created["id"]) is True
+
+
+# ---------------------------------------------------------------- a reset and a change, together
+# The user's own change and an administrator's reset write the same row. Each session loads it
+# before it writes; without the row lock an interleaving loses the reset: the temporary password
+# signs in with the flag cleared, or a change already in flight puts the old session's password
+# back. Two sessions, driven step by step (no sleeps, no timing).
+
+
+def _actor(admin) -> admin_service.Actor:
+    return admin_service.Actor(id=admin.id, perms=ALL_PERMISSIONS,
+                               token_version=admin.token_version)
+
+
+async def _row(db, user_id) -> User:
+    return (await db.execute(select(User).where(User.id == user_id)
+                             .execution_options(populate_existing=True))).scalar_one()
+
+
+async def _a_flagged_nurse(world, db_session):
+    nurse = await world["make"]("ayse", "nurse", must_change_password=True)
+    await db_session.commit()
+    return nurse
+
+
+@pytest.mark.asyncio
+@requires_db
+async def test_a_reset_that_loaded_the_row_before_a_change_still_flags_it(world, db_session):
+    """The reviewer's interleaving: both load the flagged row; the change commits (flag False);
+    the reset then sets flag True — equal to what its session loaded, so without re-reading the
+    row under the lock only the hash was written."""
+    nurse, tenant_id = await _a_flagged_nurse(world, db_session), world["tenant"].id
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    async with maker() as change, maker() as reset:
+        own = await get_user_by_id(change, nurse.id)
+        target = await admin_service.get_tenant_user(reset, tenant_id, nurse.id)
+        await change_password(change, own, PASSWORD, CHOSEN)                 # commits
+        await admin_service.reset_password(reset, tenant_id, target, _actor(world["admin"]),
+                                           TEMPORARY)
+        await reset.commit()
+    row = await _row(db_session, nurse.id)
+    assert verify_password(TEMPORARY, row.hashed_password)
+    assert row.must_change_password is True
+
+
+@pytest.mark.asyncio
+@requires_db
+async def test_a_change_whose_session_predates_a_reset_cannot_undo_it(world, db_session):
+    """The reverse: the reset commits after the change's session loaded the row. The change is
+    refused (its session's token version is gone) instead of writing its password over the
+    temporary one and clearing the flag."""
+    nurse, tenant_id = await _a_flagged_nurse(world, db_session), world["tenant"].id
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    refused = None
+    async with maker() as change, maker() as reset:
+        own = await get_user_by_id(change, nurse.id)
+        target = await admin_service.get_tenant_user(reset, tenant_id, nurse.id)
+        await admin_service.reset_password(reset, tenant_id, target, _actor(world["admin"]),
+                                           TEMPORARY)
+        await reset.commit()
+        try:
+            await change_password(change, own, PASSWORD, CHOSEN)
+        except Exception as exc:                       # noqa: BLE001  (checked below)
+            refused = exc
+            await change.rollback()
+    row = await _row(db_session, nurse.id)
+    assert verify_password(TEMPORARY, row.hashed_password)                     # the reset stands
+    assert row.must_change_password is True
+    assert isinstance(refused, auth_service.StaleSession)
+
+
+async def _until_a_session_waits_on_a_lock(db) -> None:
+    """Poll pg_stat_activity until some backend of this database waits on a lock. Each poll ends
+    its transaction: the view is a per-transaction snapshot."""
+    for _ in range(400):
+        waiting = (await db.execute(text(
+            "SELECT count(*) FROM pg_stat_activity "
+            "WHERE datname = current_database() AND wait_event_type = 'Lock'"))).scalar_one()
+        await db.rollback()
+        if waiting:
+            return
+        await asyncio.sleep(0.025)
+    raise AssertionError("the reset never waited on the account's row lock")
+
+
+@pytest.mark.asyncio
+@requires_db
+async def test_a_reset_waits_for_a_change_in_flight_and_then_flags_the_row(
+        world, db_session, monkeypatch):
+    """Truly concurrent: the change is held at its token-version bump, after it took the row
+    lock; the reset arriving then waits for that lock (seen in pg_stat_activity, not timed) and
+    writes only once the change has committed — over it, flag included."""
+    nurse, tenant_id = await _a_flagged_nurse(world, db_session), world["tenant"].id
+    entered, release = asyncio.Event(), asyncio.Event()
+    real_bump = auth_service.bump_user
+
+    async def held_bump(db, user):
+        entered.set()
+        await release.wait()
+        return await real_bump(db, user)
+
+    monkeypatch.setattr(auth_service, "bump_user", held_bump)   # the change's, not the reset's
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    async with maker() as change, maker() as reset, maker() as watch:
+        own = await get_user_by_id(change, nurse.id)
+        target = await admin_service.get_tenant_user(reset, tenant_id, nurse.id)
+        changing = asyncio.create_task(change_password(change, own, PASSWORD, CHOSEN))
+        resetting = None
+        try:
+            await asyncio.wait_for(entered.wait(), 30)
+            resetting = asyncio.create_task(admin_service.reset_password(
+                reset, tenant_id, target, _actor(world["admin"]), TEMPORARY))
+            await _until_a_session_waits_on_a_lock(watch)
+            assert not resetting.done()
+        finally:
+            release.set()
+            await asyncio.wait_for(asyncio.gather(
+                changing, *([resetting] if resetting else []), return_exceptions=True), 30)
+        assert changing.exception() is None and resetting.exception() is None
+        await reset.commit()
+    row = await _row(db_session, nurse.id)
+    assert verify_password(TEMPORARY, row.hashed_password)
+    assert row.must_change_password is True
+
+
+@pytest.mark.asyncio
+@requires_db
+async def test_a_stale_change_is_a_401_so_the_client_refreshes_or_signs_out(
+        client, world, db_session, monkeypatch):
+    """The route answers a change refused as stale the way the dependency answers a stale token:
+    401 `token_version`. After a reset the refresh fails too (the hash moved) and the client
+    signs out; after any other bump it refreshes and resends the change."""
+    async def stale(*_args):
+        raise auth_service.StaleSession()
+
+    monkeypatch.setattr("homunculus.auth.router.change_password", stale)
+    await world["make"]("zeynep", "nurse")
+    await db_session.commit()
+    tokens = (await client.post("/auth/login", json={"login": "zeynep",
+                                                     "password": PASSWORD})).json()
+    res = await client.post("/auth/password", headers=_bearer(tokens),
+                            json={"current_password": PASSWORD, "new_password": CHOSEN})
+    assert (res.status_code, res.json()["detail"]) == (401, "token_version")

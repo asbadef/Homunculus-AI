@@ -257,13 +257,46 @@ class PasswordError(ValueError):
         self.reason = reason
 
 
+class StaleSession(Exception):
+    """The account's token version moved after the caller's token was checked against it — an
+    administrator's password reset, a rights change or a deactivation committed meanwhile. The
+    change is refused as the stale token itself would be (401 `token_version`, auth/router.py):
+    after a reset the client's refresh fails too and it signs out; otherwise it refreshes and
+    sends the change again."""
+
+
+# The columns a password change and an administrator's reset overwrite, and the version that
+# says whether anything wrote them since a session loaded the row.
+_CREDENTIAL_COLUMNS = ("hashed_password", "must_change_password", "token_version")
+
+
+async def lock_credentials(db: AsyncSession, user: User) -> None:
+    """`SELECT ... FOR UPDATE` on the account's row, re-reading its credential columns into
+    `user`; held until the transaction ends. A password change and an administrator's reset each
+    take it right before they write these columns. Without it two sessions that both loaded
+    the row interleave badly: a change committing between a reset's read and its write leaves
+    the temporary password in place with the flag cleared (the ORM writes only what differs from
+    what its session loaded, and the reset's `True` equalled the stale `True`), and a reset
+    committing during a change is overwritten by the change. Only these columns are refreshed —
+    relationships an admin route already loaded (`group_links` is lazy="raise") stay as they
+    are, which a full `populate_existing` re-select would not guarantee."""
+    await db.refresh(user, attribute_names=list(_CREDENTIAL_COLUMNS), with_for_update=True)
+
+
 async def change_password(db: AsyncSession, user: User, current: str, new: str) -> None:
     """The new password's rules are checked BEFORE the current password: the other order would
     let a stolen session test guesses at the current password by sending a too-short new one —
     "too short" would mean "right guess", and nothing would change or look unusual. The same
     holds for "unchanged", which compares the two typed values and says nothing about the stored
     one. A temporary password (`must_change_password`) is replaced here, and the flag goes with
-    it."""
+    it.
+
+    Before writing, the row is locked (`lock_credentials`, held to the commit) and the change is
+    refused (`StaleSession`) when the token version is no longer the one the caller's token was
+    checked against: an administrator's reset that landed meanwhile stands. That check also
+    vouches for the current-password check made before the lock, on the hash this request
+    loaded: every write of the hash or the flag (this change, a reset) moves the version. So
+    neither bcrypt runs under the lock, and every refusal above comes before any database work."""
     if user.auth_source != AUTH_LOCAL:
         raise PasswordError("Parola Active Directory tarafından yönetiliyor", "directory_account")
     if len(new) < PASSWORD_MIN_LENGTH:
@@ -272,10 +305,15 @@ async def change_password(db: AsyncSession, user: User, current: str, new: str) 
     # would otherwise "change" the password while the temporary one still signs in.
     if _secret(new) == _secret(current):
         raise PasswordError("Yeni parola mevcut paroladan farklı olmalı", "unchanged")
+    checked = user.token_version          # the value the caller's token was checked against
     if not await run_bcrypt(verify_local_password, user.auth_source, user.hashed_password,
                             current):
         raise PasswordError("Mevcut parola yanlış", "wrong_current")
-    user.hashed_password = await run_bcrypt(hash_password, new)
+    hashed = await run_bcrypt(hash_password, new)
+    await lock_credentials(db, user)
+    if user.token_version != checked:
+        raise StaleSession()
+    user.hashed_password = hashed
     user.must_change_password = False
     await bump_user(db, user)
     await db.commit()

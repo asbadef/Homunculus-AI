@@ -73,7 +73,9 @@ from homunculus.auth.models import (
     AUTH_LOCAL, Group, GroupPermission, LdapGroupMapping, TenantMembership, User, UserGroup,
 )
 from homunculus.auth.permissions import ALL_PERMISSIONS, UnknownPermission, validate_permissions
-from homunculus.auth.service import hash_password, normalize_login, run_bcrypt
+from homunculus.auth.service import (
+    hash_password, lock_credentials, normalize_login, run_bcrypt,
+)
 from homunculus.tenant.models import Tenant
 
 LAST_ADMIN = "Son yönetici yetkisi kaldırılamaz"
@@ -528,11 +530,18 @@ async def reset_password(db: AsyncSession, tenant_id: uuid.UUID, user: User, act
     """A temporary password for a LOCAL account. The hash changes, so the credential
     fingerprint in every refresh token no longer matches (all sessions end), and the token
     version moves (every access token ends). The user replaces it at the next sign-in
-    (`must_change_password`, D4)."""
+    (`must_change_password`, D4).
+
+    The account's row is locked and its credential columns re-read just before they are written
+    (`lock_credentials`, held to the route's commit): a password change of the user's own that
+    committed meanwhile would otherwise leave this temporary password in place with the flag
+    cleared."""
     await _may_reset(db, tenant_id, user, actor)
     if user.auth_source != AUTH_LOCAL:
         raise AdminError(400, DIRECTORY_PASSWORD)
-    user.hashed_password = await run_bcrypt(hash_password, password)
+    hashed = await run_bcrypt(hash_password, password)
+    await lock_credentials(db, user)
+    user.hashed_password = hashed
     user.must_change_password = True
     await db.flush()
     await bump_user(db, user)
