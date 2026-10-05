@@ -64,6 +64,13 @@ class User(Base):
     sessions_revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Set when an administrator gives this LOCAL account a temporary password (POST /admin/users,
+    # reset-password); cleared by the user's own change (POST /auth/password). While it is set
+    # the session reaches only the password change and the session routes (auth/dependencies.py).
+    # Never set for an AD account, whose password lives in AD (auth.service.password_change_due).
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default=false()
+    )
     # TOTP secret (Base32)
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

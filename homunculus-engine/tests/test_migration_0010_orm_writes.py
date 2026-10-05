@@ -123,6 +123,14 @@ def test_an_administrator_creates_a_user_on_a_migrated_database(clean_db):
                           "true)"),
                      {"id": uuid.uuid4(), "uid": admin_id, "tid": DEMO})
     command.upgrade(cfg, "head")
+    # 0011 flagged this local administrator: it chooses its own password at its first sign-in
+    # after the deploy (plan G1 Wave 2, decision 1), and until then every route but the
+    # password change answers 403. That change, done here:
+    with engine.begin() as conn:
+        assert conn.execute(text("SELECT must_change_password FROM users WHERE id = :id"),
+                            {"id": admin_id}).scalar_one() is True
+        conn.execute(text("UPDATE users SET must_change_password = false WHERE id = :id"),
+                     {"id": admin_id})
 
     status, body = asyncio.run(_create_a_nurse(admin_id))
 
