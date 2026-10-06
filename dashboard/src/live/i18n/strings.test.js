@@ -21,6 +21,8 @@ const AZ_SAME_AS_TR = new Set([
   "gallery.seen", //         Gördüm — the prototype's AZ dictionary
   "gallery.criticalOnly", // Yalnız kritik — the prototype's AZ dictionary
   "gallery.lastLogin", //    Son giriş — the prototype's AZ dictionary
+  "shell.fullscreen", //     Tam ekran — the prototype's AZ dictionary (shell.js tb_full)
+  "shell.keyFull", //        Tam ekran — the same (shell.js tb_k_full)
 ]);
 
 describe("live UI dictionaries", () => {
