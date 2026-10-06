@@ -1,42 +1,61 @@
 // src/live/ui/Alert.jsx — a message that appears because of what the user just did, next to it:
 // a refused sign-in, a wrong code, "you were signed out". The prototype's errBox (shell.js).
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon.jsx";
 
 const TONE = {
-  crit: { role: "alert", icon: "alert",
+  crit: { icon: "alert",
     cls: "border-[color:color-mix(in_srgb,var(--crit)_45%,transparent)] bg-crit-soft text-crit-ink" },
-  info: { role: "status", icon: "ok",
+  info: { icon: "ok",
     cls: "border-[color:color-mix(in_srgb,var(--pri)_40%,transparent)] bg-pri-soft text-pri" },
 };
 
-/** Announced, unlike Note (a static aside): `crit` is role="alert" — read at once, for a refusal —
- *  and `info` role="status" — read politely, for a confirmation. Render it only while there is
- *  something to say: a screen reader announces it when it appears. tone: crit (default) | info.
+/** How long a notice's text waits before it is handed to the screen reader. React runs passive
+ *  effects before the next frame, so a fill "right after mount" reaches the browser's
+ *  accessibility tree together with the region and is not announced; a real delay is. */
+export const ANNOUNCE_DELAY_MS = 150;
+
+/** Announced, unlike Note (a static aside). tone: crit (default) | info.
  *
- *  A status region that is inserted with its text already in it is often not announced (NVDA/JAWS
- *  with Chrome): so `info` keeps its region on the page EMPTY at first and fills it right after
- *  mount, which is a change the reader does announce. A refusal (role="alert") is announced as
- *  inserted and renders at once. The same text is read once: to have it read again — a second
- *  failed attempt — unmount the Alert between attempts (give it a new `key`, or stop rendering it
- *  while the next request runs); re-rendering it with the same text says nothing. */
+ *  `crit` is one `role="alert"` box, read at once: a refusal.
+ *
+ *  `info` is a confirmation, read politely, and is two things: the box everyone sees, shown at
+ *  once and hidden from assistive technology (`aria-hidden`), and a visually hidden
+ *  `role="status"` region that stays mounted EMPTY and receives the same text ANNOUNCE_DELAY_MS
+ *  later — the only way a live region reliably speaks (NVDA/JAWS with Chrome). Nothing is spoken
+ *  twice, and an unmount before the delay says nothing and leaves no timer.
+ *
+ *  Render it only while there is something to say. The same text is read once: to have it read
+ *  again — a second failed attempt — unmount the Alert between attempts (a new `key`, or stop
+ *  rendering it while the next request runs); re-rendering it with the same text says nothing. */
 export function Alert({ tone = "crit", icon, className = "", children }) {
   const t = TONE[tone] ? tone : "crit";
-  const polite = TONE[t].role === "status";
-  const [filled, setFilled] = useState(!polite);
+  const box = (
+    `flex items-start gap-2 rounded-ctl border px-3 py-2.5 font-text text-13 font-semibold leading-snug ${TONE[t].cls} ${className}`
+  );
+  const body = (
+    <>
+      <Icon name={icon || TONE[t].icon} size={16} className="mt-px shrink-0" />
+      <div className="min-w-0">{children}</div>
+    </>
+  );
+  if (t === "crit") {
+    return <div role="alert" data-tone={t} className={box}>{body}</div>;
+  }
+  return <PoliteAlert tone={t} className={box}>{body}</PoliteAlert>;
+}
+
+function PoliteAlert({ tone, className, children }) {
+  const visible = useRef(null);
+  const [said, setSaid] = useState("");
   useEffect(() => {
-    setFilled(true);
-  }, []);
+    const timer = setTimeout(() => setSaid(visible.current?.textContent ?? ""), ANNOUNCE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [children]);
   return (
-    <div
-      role={TONE[t].role}
-      data-tone={t}
-      className={filled
-        ? `flex items-start gap-2 rounded-ctl border px-3 py-2.5 font-text text-13 font-semibold leading-snug ${TONE[t].cls} ${className}`
-        : undefined}
-    >
-      {filled && <Icon name={icon || TONE[t].icon} size={16} className="mt-px shrink-0" />}
-      {filled && <div className="min-w-0">{children}</div>}
-    </div>
+    <>
+      <div ref={visible} aria-hidden="true" data-tone={tone} className={className}>{children}</div>
+      <div role="status" className="sr-only">{said}</div>
+    </>
   );
 }
