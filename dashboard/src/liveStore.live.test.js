@@ -683,4 +683,36 @@ describe("live store — SSE stream", () => {
       vi.useRealTimers();
     }
   });
+
+  it("ignores the stream's named heartbeat event: it is no frame, and no patient", async () => {
+    // The server now sends `event: heartbeat` / `data: {}` on idle (api/app.py). EventSource, as
+    // the HTML spec has it, dispatches a named event under its own type, never to `onmessage`; and
+    // should a proxy deliver its `{}` unnamed, no patient id means no patient.
+    const sources = [];
+    class FakeEventSource extends EventTarget {
+      constructor(url) { super(); this.url = url; sources.push(this); }
+      close() { this.closed = true; }
+      emit(type, data) {
+        const event = new MessageEvent(type, { data });
+        this.dispatchEvent(event);
+        if (type === "message") this.onmessage?.(event);
+        if (type === "open") this.onopen?.(event);
+      }
+    }
+    vi.stubGlobal("EventSource", FakeEventSource);
+    try {
+      const api = fakeApi({ boardPatients: vi.fn(async () => ({ patients: [boardOf("bed-3")] })) });
+      const store = createLiveStore({ api, base: fakeBase() });     // the real EventSource opener
+      const stop = await store.startLive();
+      sources[0].emit("open");
+      const before = store.getState();
+      sources[0].emit("heartbeat", "{}");
+      sources[0].emit("message", "{}");
+      expect(store.getState().patients).toEqual(before.patients);
+      expect(store.getState().connection).toBe(CONNECTION.LIVE);
+      stop();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

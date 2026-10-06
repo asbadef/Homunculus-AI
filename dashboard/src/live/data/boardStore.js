@@ -16,10 +16,23 @@
 // makes it LIVE. Until then a board that has data is DEGRADED (shown, possibly out of date), one
 // whose load failed stays UNAVAILABLE. The shell treats only LIVE as known (the bell, the lock
 // screen's counts): "no alarms" is never said of a board that is not.
+//
+// An open stream must also still be ALIVE. The server's keep-alives are SSE comments, which
+// EventSource never hands to the page, so a half-open connection (a Wi-Fi drop without a reset)
+// would otherwise read LIVE for ever. The server sends a named `heartbeat` event every
+// HEARTBEAT_MS of silence (api/app.py `sse_board_frames`); a stream that says nothing — no frame,
+// no heartbeat — for STREAM_SILENCE_MS is dropped like a failed one: DEGRADED, a reconnect, and
+// LIVE again only through its open and that open's reload.
 import { patientFromBoard, patientsFromBoard, alertsFromPatients } from "../../liveAdapters.js";
 import { CONNECTION } from "../../liveConnection.js";
 
 export const RECONNECT_DELAY_MS = 5000;
+/** The server's heartbeat cadence (api/app.py `sse_board_frames`, keepalive=15.0). */
+export const HEARTBEAT_MS = 15_000;
+/** Silence after which an open stream is taken for dead: three heartbeats missed. */
+export const STREAM_SILENCE_MS = 3 * HEARTBEAT_MS;
+/** The heartbeat's event name; the board's frames are unnamed (`message`). */
+export const HEARTBEAT_EVENT = "heartbeat";
 
 const EMPTY = Object.freeze({
   patients: [], alerts: [], connection: CONNECTION.CONNECTING, scope: null, scopeNote: null,
@@ -33,6 +46,7 @@ function defaultOpenStream(url, handlers) {
   source.onopen = handlers.onopen;
   source.onmessage = handlers.onmessage;
   source.onerror = handlers.onerror;
+  source.addEventListener(HEARTBEAT_EVENT, handlers.onheartbeat);
   return () => source.close();
 }
 
@@ -168,6 +182,7 @@ export function createBoardStore({
     closeSource();                                // or the browser retries with the spent ticket
     if (mine !== generation) return;
     streamOpen = false;
+    quiet();
     cancelReloadRetry();                          // the reconnect's open reloads instead
     // A board whose load failed stays UNAVAILABLE (empty, and says so); any other is DEGRADED.
     if (state.connection !== CONNECTION.UNAVAILABLE) set({ connection: CONNECTION.DEGRADED });
@@ -178,15 +193,31 @@ export function createBoardStore({
     }, RECONNECT_DELAY_MS);
   }
 
+  /** Anything heard from the stream (its open, a frame, a heartbeat) starts its silence over. */
+  let silence = null;
+  function quiet() {
+    if (silence) clearTimer(silence);
+    silence = null;
+  }
+  function heard(mine) {
+    quiet();
+    silence = setTimer(() => {
+      silence = null;
+      if (mine === generation) onError(mine);    // taken for dead: closed, DEGRADED, reconnected
+    }, STREAM_SILENCE_MS);
+  }
+
   async function connect(mine) {
     try {
       const { ticket } = await track(() => api.streamTicket());
       if (mine !== generation) return;
       closeSource = openStream(`/stream?ticket=${encodeURIComponent(ticket)}`, {
-        onopen: () => { if (mine === generation) onOpen(); },
-        onmessage: (event) => { if (mine === generation) onMessage(event); },
+        onopen: () => { if (mine === generation) { heard(mine); onOpen(); } },
+        onmessage: (event) => { if (mine === generation) { heard(mine); onMessage(event); } },
+        onheartbeat: () => { if (mine === generation) heard(mine); },
         onerror: () => onError(mine),
       });
+      heard(mine);                                // watched from here: one that never opens is dead too
     } catch {
       if (mine === generation) onError(mine);
     }
@@ -195,6 +226,7 @@ export function createBoardStore({
   function stopStream() {
     if (reconnect) clearTimer(reconnect);
     reconnect = null;
+    quiet();
     cancelReloadRetry();
     closeSource();
     closeSource = () => {};

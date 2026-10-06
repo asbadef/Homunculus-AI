@@ -1,5 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
-import { RECONNECT_DELAY_MS, alarmCounts, createBoardStore, scopeUnits, waitingAlarms } from "./boardStore.js";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import {
+  HEARTBEAT_MS, RECONNECT_DELAY_MS, STREAM_SILENCE_MS, alarmCounts, createBoardStore, scopeUnits, waitingAlarms,
+} from "./boardStore.js";
 import { CONNECTION } from "../../liveConnection.js";
 
 // Synthetic board entries, in the API's /patients shape (api/board.py). No real data.
@@ -218,6 +220,103 @@ describe("the board store", () => {
     await started;
     expect(state()).toMatchObject({ patients: [], alerts: [], scope: null, connection: CONNECTION.CONNECTING });
     expect(api.streamTicket).not.toHaveBeenCalled();
+  });
+});
+
+// The server's keep-alives are SSE comments, which EventSource never hands to the page: a
+// half-open connection (a Wi-Fi drop without a reset) would read LIVE for ever. The server sends a
+// named `heartbeat` event on the same cadence; a stream that says nothing — no frame, no heartbeat
+// — for three of them is taken for dead, and LIVE comes back only through a reopen and its reload.
+describe("a stream that has gone silent", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("is dropped after three heartbeats' silence, and LIVE again only after the reopen's reload", async () => {
+    const { store, handlers, closes, due, fire, state } = setup();
+    expect(STREAM_SILENCE_MS).toBe(3 * HEARTBEAT_MS);
+    await store.start();
+    handlers[0].onopen();
+    await vi.waitFor(() => expect(state().connection).toBe(CONNECTION.LIVE));
+    expect(due(STREAM_SILENCE_MS)).toHaveLength(1);
+    fire(STREAM_SILENCE_MS);
+    expect(closes[0]).toHaveBeenCalled();
+    expect(state().connection).toBe(CONNECTION.DEGRADED);
+    expect(state().patients).toHaveLength(2);                          // shown, flagged as maybe old
+    await fire(RECONNECT_DELAY_MS);
+    expect(state().connection).toBe(CONNECTION.DEGRADED);
+    handlers[1].onopen();
+    await vi.waitFor(() => expect(state().connection).toBe(CONNECTION.LIVE));
+  });
+
+  it("is kept by a heartbeat or a frame, which each start the silence over", async () => {
+    const { store, handlers, due, state } = setup();
+    await store.start();
+    handlers[0].onopen();
+    await vi.waitFor(() => expect(state().connection).toBe(CONNECTION.LIVE));
+    const before = due(STREAM_SILENCE_MS)[0];
+    handlers[0].onheartbeat();
+    expect(before.cleared).toBe(true);
+    expect(due(STREAM_SILENCE_MS)).toHaveLength(1);
+    const afterHeartbeat = due(STREAM_SILENCE_MS)[0];
+    handlers[0].onmessage({ data: JSON.stringify(entry("P-003")) });
+    expect(afterHeartbeat.cleared).toBe(true);
+    expect(due(STREAM_SILENCE_MS)).toHaveLength(1);
+    expect(state()).toMatchObject({ connection: CONNECTION.LIVE });
+    expect(state().patients).toHaveLength(3);                          // a heartbeat is no frame
+  });
+
+  it("is watched from the moment it is opened: one that never answers is dropped too", async () => {
+    const { store, due, fire, state } = setup();
+    await store.start();
+    expect(due(STREAM_SILENCE_MS)).toHaveLength(1);
+    fire(STREAM_SILENCE_MS);
+    expect(state().connection).toBe(CONNECTION.DEGRADED);
+    expect(due(RECONNECT_DELAY_MS)).toHaveLength(1);
+  });
+
+  it("stops being watched when the board is cleared", async () => {
+    const { store, handlers, due } = setup();
+    await store.start();
+    handlers[0].onopen();
+    store.clear();
+    expect(due(STREAM_SILENCE_MS)).toHaveLength(0);
+  });
+
+  it("hears the server's named heartbeat through a real EventSource, and never takes it for a patient", async () => {
+    // EventSource as the HTML spec has it: a named event is dispatched under its own type and
+    // never reaches `onmessage`, which hears only unnamed (`message`) events.
+    const sources = [];
+    class FakeEventSource extends EventTarget {
+      constructor(url) { super(); this.url = url; sources.push(this); }
+      close() { this.closed = true; }
+      emit(type, data) {
+        const event = new MessageEvent(type, { data });
+        this.dispatchEvent(event);
+        if (type === "message") this.onmessage?.(event);
+        if (type === "open") this.onopen?.(event);
+      }
+    }
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const timers = [];
+    const api = { boardPatients: vi.fn().mockResolvedValue(BOARD), streamTicket: vi.fn().mockResolvedValue({ ticket: "t-1" }) };
+    const store = createBoardStore({
+      api,
+      setTimer: (fn, ms) => { timers.push({ fn, ms, cleared: false }); return timers.length; },
+      clearTimer: (id) => { timers[id - 1].cleared = true; },
+    });
+    await store.start();
+    expect(sources[0].url).toBe("/stream?ticket=t-1");
+    sources[0].emit("open");
+    await vi.waitFor(() => expect(store.getState().connection).toBe(CONNECTION.LIVE));
+    const watching = () => timers.filter((t) => t.ms === STREAM_SILENCE_MS && !t.cleared);
+    const before = watching()[0];
+    sources[0].emit("heartbeat", "{}");
+    expect(before.cleared).toBe(true);
+    expect(watching()).toHaveLength(1);
+    expect(store.getState().patients.map((p) => p.patient_id)).toEqual(["P-001", "P-002"]);
+    sources[0].emit("message", "{}");                                  // a heartbeat's data mis-delivered
+    expect(store.getState().patients).toHaveLength(2);
+    store.clear();
+    expect(sources[0].closed).toBe(true);
   });
 });
 
