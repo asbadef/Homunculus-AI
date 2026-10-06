@@ -74,6 +74,48 @@ async def test_sse_frames_emits_keepalive_when_idle():
 
 
 @pytest.mark.anyio
+async def test_sse_frames_follow_the_keepalive_with_a_named_heartbeat_event():
+    # EventSource never hands a comment to the page: a named event is what lets a client tell a
+    # quiet stream from a dead (half-open) one. Named, so `onmessage` readers never see it.
+    q: asyncio.Queue = asyncio.Queue()
+    frames = sse_board_frames(q, keepalive=0.05)
+    assert (await frames.__anext__()).strip() == ": keep-alive"
+    assert await frames.__anext__() == "event: heartbeat\ndata: {}\n\n"
+    assert (await frames.__anext__()).strip() == ": keep-alive"     # and again, on the same cadence
+
+
+@pytest.mark.anyio
+async def test_sse_frames_heartbeat_a_subscriber_whose_boards_are_all_out_of_scope():
+    # A busy hospital publishes a board every few milliseconds; a nurse scoped to a quiet unit is
+    # sent none of them. The keep-alive used to wait for an idle QUEUE, so she was sent nothing at
+    # all — no heartbeat either, and her stream would look dead to the client's watchdog.
+    q: asyncio.Queue = asyncio.Queue()
+
+    async def busy_ward():
+        while True:
+            await q.put({"patient_id": "elsewhere"})
+            await asyncio.sleep(0.005)
+
+    publisher = asyncio.create_task(busy_ward())
+    try:
+        frames = sse_board_frames(q, keepalive=0.05, allow=lambda board: False)
+        assert (await asyncio.wait_for(frames.__anext__(), timeout=1.0)).strip() == ": keep-alive"
+        assert await asyncio.wait_for(frames.__anext__(), timeout=1.0) == "event: heartbeat\ndata: {}\n\n"
+    finally:
+        publisher.cancel()
+
+
+@pytest.mark.anyio
+async def test_sse_frames_send_no_heartbeat_while_boards_are_being_sent():
+    q: asyncio.Queue = asyncio.Queue()
+    for i in range(3):
+        await q.put({"patient_id": f"bed-{i}"})
+    frames = sse_board_frames(q, keepalive=0.05)
+    sent = [await frames.__anext__() for _ in range(3)]
+    assert all(frame.startswith("data: ") for frame in sent)
+
+
+@pytest.mark.anyio
 async def test_stream_rejects_unknown_token():
     app = create_app({"tok": "HOSP1"})
     transport = ASGITransport(app=app)

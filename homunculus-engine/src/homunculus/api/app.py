@@ -75,27 +75,47 @@ def _device_role(value: object) -> str:
     return bounded_role(value, DEVICE_ROLE_MAX)
 
 
+#: The board stream's heartbeat: a NAMED event, sent with the keep-alive comment. EventSource never
+#: hands a comment to the page, so without an event the client cannot tell a quiet ward from a
+#: half-open connection that will never deliver again (and would read LIVE for ever). Named, so a
+#: reader of unnamed `message` events only — the old workspace, the mobile app — never sees it.
+HEARTBEAT_FRAME = "event: heartbeat\ndata: {}\n\n"
+
+
 async def sse_board_frames(queue: asyncio.Queue, keepalive: float = 15.0,
                            allow: Callable[[dict], bool] | None = None):
-    """Yield SSE frames for boards arriving on `queue`; keep-alive comment on idle. Tested directly
-    (httpx ASGITransport cannot read an unbounded stream). Cancellation (client disconnect, via
-    Starlette) interrupts the wait; the caller's finally unsubscribes. Do NOT read request.receive.
+    """Yield SSE frames for boards arriving on `queue`; on idle, a keep-alive comment and then
+    HEARTBEAT_FRAME. Tested directly (httpx ASGITransport cannot read an unbounded stream).
+    Cancellation (client disconnect, via Starlette) interrupts the wait; the caller's finally
+    unsubscribes. Do NOT read request.receive.
 
     `allow` is the subscriber's scope. The broadcaster publishes one board per tenant to every
     subscriber of that tenant, so without a per-subscriber filter here the live feed would carry
     every patient in the hospital to a nurse whose `/patients` response was filtered a second
     earlier. A board that does not pass is dropped silently rather than replaced by a placeholder:
     the fact that a patient exists elsewhere in the ward is itself the thing being withheld.
+
+    Idle means nothing SENT to this subscriber for `keepalive` seconds — not an empty queue: a
+    nurse scoped to a quiet unit of a busy hospital is sent none of the boards the queue keeps
+    bringing, and still gets her heartbeat (the dashboard drops a stream silent for three of them).
     """
+    loop = asyncio.get_running_loop()
+    last_sent = loop.time()
     while True:
-        try:
-            board = await asyncio.wait_for(queue.get(), timeout=keepalive)
-        except asyncio.TimeoutError:
+        wait = keepalive - (loop.time() - last_sent)
+        if wait <= 0:
             yield ": keep-alive\n\n"
+            yield HEARTBEAT_FRAME
+            last_sent = loop.time()
+            continue
+        try:
+            board = await asyncio.wait_for(queue.get(), timeout=wait)
+        except asyncio.TimeoutError:
             continue
         if allow is not None and not allow(board):
             continue
         yield f"data: {json.dumps(board)}\n\n"
+        last_sent = loop.time()
 
 
 async def sse_notification_frames(queue: asyncio.Queue, keepalive: float = 15.0,
