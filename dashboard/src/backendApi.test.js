@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createBackendApi, REQUEST_TIMEOUT } from "./backendApi.js";
+import { createBackendApi, REQUEST_TIMEOUT, retryAfterSeconds } from "./backendApi.js";
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
   return { ok, status, json: async () => body, text: async () => JSON.stringify(body) };
@@ -636,5 +636,131 @@ describe("backendApi — another tab, a lock screen's 401, Retry-After, storage 
     expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe("Bearer acc-9");
     expect(() => api.logout()).not.toThrow();
     expect(api.accessToken()).toBeNull();
+  });
+});
+
+describe("backendApi — another tab replaced the pair while this tab's refresh was on its way", () => {
+  const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  function setup(refreshAnswer) {
+    let release;
+    const fetchMock = vi.fn(async (url, init = {}) => {
+      if (url === "/auth/refresh") {
+        await new Promise((resolve) => { release = resolve; });
+        return refreshAnswer;
+      }
+      return init.headers?.Authorization === "Bearer tab-acc" ? json(200, { id: "me" }) : json(401, { detail: "x" });
+    });
+    store.set("homunculus-access-token", "old-acc");
+    store.set("homunculus-refresh-token", "old-ref");
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    const otherTabSignsIn = () => {
+      store.set("homunculus-access-token", "tab-acc");
+      store.set("homunculus-refresh-token", "tab-ref");
+    };
+    return { api, fetchMock, release: () => release(), otherTabSignsIn };
+  }
+
+  it("a refusal of the old refresh token (the password was changed elsewhere) does not sign this browser out", async () => {
+    const { api, fetchMock, release, otherTabSignsIn } = setup(json(401, { detail: "Invalid or expired refresh token" }));
+    const pending = api.me();
+    await settle();
+    otherTabSignsIn();
+    release();
+    await expect(pending).resolves.toEqual({ id: "me" });
+    expect(store.get("homunculus-access-token")).toBe("tab-acc");
+    expect(store.get("homunculus-refresh-token")).toBe("tab-ref");
+    expect(fetchMock.mock.calls.at(-1)[1].headers.Authorization).toBe("Bearer tab-acc");
+  });
+
+  it("a granted refresh of the old pair (MFA verified elsewhere) does not overwrite the newer pair", async () => {
+    const { api, release, otherTabSignsIn } = setup(json(200, { access_token: "unverified-acc", refresh_token: "unverified-ref" }));
+    const pending = api.me();
+    await settle();
+    otherTabSignsIn();
+    release();
+    await expect(pending).resolves.toEqual({ id: "me" });
+    expect(store.get("homunculus-access-token")).toBe("tab-acc");
+    expect(store.get("homunculus-refresh-token")).toBe("tab-ref");
+    expect(api.accessToken()).toBe("tab-acc");
+  });
+
+  it("with no other tab involved a refused refresh still ends the session", async () => {
+    const { api, release } = setup(json(401, { detail: "Invalid or expired refresh token" }));
+    const pending = api.me().catch((e) => e);
+    await settle();
+    release();
+    expect((await pending).sessionEnded).toBe(true);
+    expect(store.has("homunculus-refresh-token")).toBe(false);
+  });
+
+  it("retries the original request only once", async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/auth/refresh") {
+        store.set("homunculus-access-token", "tab-acc");     // the other tab signs in meanwhile
+        store.set("homunculus-refresh-token", "tab-ref");
+        return json(401, { detail: "x" });
+      }
+      return json(401, { detail: "still no" });
+    });
+    store.set("homunculus-access-token", "old-acc");
+    store.set("homunculus-refresh-token", "old-ref");
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    expect((await api.me().catch((e) => e)).status).toBe(401);
+    expect(fetchMock.mock.calls.filter(([u]) => u === "/auth/me")).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([u]) => u === "/auth/refresh")).toHaveLength(1);
+  });
+});
+
+describe("backendApi — Retry-After's date form is the strict IMF-fixdate", () => {
+  it.each([
+    "Later, 2030", "Sun Oct  4 12:00:30 2026", "Sunday, 04-Oct-26 12:00:30 GMT", "Sun, 4 Oct 2026 12:00:30 GMT",
+    "Sun, 04 Oct 2026 12:00:30", "Sun, 04 Oct 2026 12:00:30 UTC", "Soon, 04 Oct 2026 12:00:30 GMT",
+  ])("reads %j as no wait", (value) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-04T11:00:00Z"));
+    try {
+      expect(retryAfterSeconds(value)).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reads the IMF-fixdate as seconds until then", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-04T12:00:00Z"));
+    try {
+      expect(retryAfterSeconds("Sun, 04 Oct 2026 12:00:30 GMT")).toBe(30);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("backendApi — an unlock refused with a final 401 ends the session here too", () => {
+  it("drops the tokens, as every other sessionEnded path does", async () => {
+    const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+    const fetchMock = vi.fn(async (url) => (url === "/auth/refresh"
+      ? json(200, { access_token: "fresh", refresh_token: "ref-2" })
+      : json(401, { detail: "Invalid credentials" })));
+    store.set("homunculus-access-token", "old");
+    store.set("homunculus-refresh-token", "ref-1");
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    const err = await api.reauth("x").catch((e) => e);
+    expect(err.sessionEnded).toBe(true);
+    expect(api.accessToken()).toBeNull();
+    expect(store.has("homunculus-access-token")).toBe(false);
+    expect(store.has("homunculus-refresh-token")).toBe(false);
+  });
+
+  it("a wrong password (403) leaves the session alone", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false, status: 403, json: async () => ({ detail: "Parola hatalı" }),
+    });
+    store.set("homunculus-access-token", "acc");
+    store.set("homunculus-refresh-token", "ref");
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    await api.reauth("x").catch(() => {});
+    expect(store.get("homunculus-access-token")).toBe("acc");
   });
 });

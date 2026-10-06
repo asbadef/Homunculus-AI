@@ -35,6 +35,9 @@ const SUPERSEDED_MESSAGE = "Bu istek önceki oturuma aitti; sonucu uygulanmadı.
  *  the API itself sets). */
 export const RETRY_AFTER_MAX_S = 900;
 
+// The one date shape HTTP servers send (RFC 9110 IMF-fixdate); Date.parse alone takes far too much.
+const IMF_FIXDATE = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/;
+
 /** `Retry-After` as seconds: whole digits, or an HTTP-date (seconds until then). Capped at
  *  RETRY_AFTER_MAX_S; anything else, and a date already past, is `undefined`. */
 export function retryAfterSeconds(raw) {
@@ -42,7 +45,7 @@ export function retryAfterSeconds(raw) {
   const value = raw.trim();
   let seconds;
   if (/^\d+$/.test(value)) seconds = Number(value);
-  else if (/^[A-Za-z]{3,9}[, ]/.test(value)) seconds = Math.ceil((Date.parse(value) - Date.now()) / 1000);
+  else if (IMF_FIXDATE.test(value)) seconds = Math.ceil((Date.parse(value) - Date.now()) / 1000);
   return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, RETRY_AFTER_MAX_S) : undefined;
 }
 
@@ -210,6 +213,17 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     return timed((doFetch) => authedOnce(doFetch, path, options));
   }
 
+  /** Does storage now hold a refresh token other than `sent`? (Not the memory copy: that is this
+   *  tab's own, and is what the other tab's `storage` event has not reached yet.) */
+  function storedRefreshChanged(sent) {
+    try {
+      const stored = storage()?.getItem(REFRESH_KEY) ?? null;
+      return stored !== null && stored !== sent;
+    } catch {
+      return false;
+    }
+  }
+
   async function authedOnce(doFetch, path, { method = "GET", body } = {}) {
     const gen = generation;
     const send = () => {
@@ -233,10 +247,21 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       throw ended;
     }
     if (res.status === 401) {
+      const sentRefresh = refreshToken();
       const refreshed = await doFetch(url("/auth/refresh"), {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refreshToken() }),
+        body: JSON.stringify({ refresh_token: sentRefresh }),
       });
+      // Another tab of this browser replaced the pair while the refresh was on its way (a password
+      // change, a verified TOTP step, a new sign-in): the answer — a refusal of the retired refresh
+      // token, or a grant of an older pair — is about the pair that is gone. Neither drop the newer
+      // pair nor write the older one over it: take what storage holds and send the request once more.
+      if (refreshed.status < 500 && gen === generation && storedRefreshChanged(sentRefresh)) {
+        forget();
+        res = await send();
+        if (!res.ok) throw await failure(res, `İstek başarısız (${res.status})`);
+        return res.status === 204 ? null : res.json();
+      }
       if (refreshed.status >= 500) {
         throw await failure(refreshed,
           "Sunucuya şu an ulaşılamıyor; oturumunuz açık, biraz sonra tekrar deneyin.");
@@ -307,12 +332,16 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      *  wrong password is a 403 and is never retried. A 401 that survives that one refresh-and-retry
      *  (a superseded request aside, which carries `superseded`) means the session itself is over —
      *  an AD account disabled, expired or without an external id (Decision 4): the error carries
-     *  `sessionEnded = true`, and is not a wrong password. Resolves to {ok: true}. */
+     *  `sessionEnded = true` and the tokens are dropped (as on every other sessionEnded path); it
+     *  is not a wrong password. Resolves to {ok: true}. */
     async reauth(password) {
       try {
         return await authed("/auth/reauth", { method: "POST", body: { password } });
       } catch (err) {
-        if (err?.status === 401 && !err.superseded) err.sessionEnded = true;
+        if (err?.status === 401 && !err.superseded) {
+          if (!err.sessionEnded) logout();   // the other sessionEnded paths have dropped the tokens already
+          err.sessionEnded = true;
+        }
         throw err;
       }
     },
