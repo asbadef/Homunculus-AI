@@ -69,6 +69,8 @@ export const API_CODE_KEYS = new Map([
   ["SESSION_SUPERSEDED", "sessionSuperseded"],
 ]);
 
+/** What a 5xx may say that is more exact than "the server cannot be reached". */
+const SERVER_ANSWERS = new Set(["errors.directoryUnreachable", "errors.directoryNotConfigured", "errors.sessionUnreachable"]);
 const REQUEST_FAILED = /^İstek başarısız \((\d{3})\)$/; // backendApi.js
 const PASSWORD_FIELDS = new Set(["password", "current_password", "new_password"]);
 
@@ -95,10 +97,22 @@ export function apiErrorKey(err) {
     if (hit) return hit;
   }
   const text = messageOf(err).trim();
-  if (API_MESSAGE_KEYS.has(text)) return { key: `errors.${API_MESSAGE_KEYS.get(text)}`, vars: {} };
-  const failed = REQUEST_FAILED.exec(text);
-  if (failed) return { key: "errors.requestFailed", vars: { status: failed[1] } };
-  return null;
+  let hit = null;
+  if (API_MESSAGE_KEYS.has(text)) hit = { key: `errors.${API_MESSAGE_KEYS.get(text)}`, vars: {} };
+  else {
+    const failed = REQUEST_FAILED.exec(text);
+    if (failed) hit = { key: "errors.requestFailed", vars: { status: failed[1] } };
+  }
+  // A 401 that ended the session (an unlock refused because the account is gone) is not a wrong
+  // username or password, whatever the server's words for it.
+  if (err?.sessionEnded && hit?.key === "errors.invalidCredentials") return { key: "errors.sessionExpired", vars: {} };
+  // A server that could not answer (a 5xx, an HTML error page behind the proxy during a restart)
+  // is not a refusal of the credentials, whatever fallback text the client put on it. Its own
+  // specific answers stay.
+  if (typeof err?.status === "number" && err.status >= 500 && !(hit && SERVER_ANSWERS.has(hit.key))) {
+    return { key: "errors.serverUnreachable", vars: {} };
+  }
+  return hit;
 }
 
 /** The failure as the user reads it: a known message translated; anything else as the server
