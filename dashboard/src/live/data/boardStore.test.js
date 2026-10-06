@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
-  HEARTBEAT_MS, RECONNECT_DELAY_MS, STREAM_SILENCE_MS, alarmCounts, createBoardStore, scopeUnits, waitingAlarms,
+  HEARTBEAT_MS, RECONNECT_DELAY_MS, STREAM_SILENCE_MS, alarmCounts, createBoardStore, lockSummary, scopeUnits, waitingAlarms,
 } from "./boardStore.js";
 import { CONNECTION } from "../../liveConnection.js";
+import { alertsFromPatients, patientsFromBoard } from "../../liveAdapters.js";
 
 // Synthetic board entries, in the API's /patients shape (api/board.py). No real data.
 const entry = (id, alerts = [], extra = {}) => ({
@@ -329,15 +330,51 @@ describe("alarm counts and lists", () => {
     { id: "e", severity: "high", ack: null, firstSeenAtMs: 50 },
   ];
 
-  it("counts every open alarm by severity, and the ones nobody acknowledged", () => {
-    expect(alarmCounts(alerts)).toEqual({
-      open: { total: 5, critical: 1, high: 3, moderate: 0, low: 0, info: 1 }, waiting: 4,
+  const NONE = { total: 0, unknown: 0, critical: 0, high: 0, moderate: 0, low: 0, info: 0 };
+
+  it("counts every open alarm by severity, and the ones nobody acknowledged — known, from a LIVE board", () => {
+    expect(alarmCounts({ alerts, connection: CONNECTION.LIVE })).toEqual({
+      known: true, stale: false,
+      open: { ...NONE, total: 5, critical: 1, high: 3, info: 1 }, waiting: 4,
     });
-    expect(alarmCounts([])).toEqual({ open: { total: 0, critical: 0, high: 0, moderate: 0, low: 0, info: 0 }, waiting: 0 });
+    expect(alarmCounts({ alerts: [], connection: CONNECTION.LIVE })).toEqual({ known: true, stale: false, open: NONE, waiting: 0 });
   });
 
   it("lists the unacknowledged ones, most severe first, oldest first within a severity", () => {
-    expect(waitingAlarms(alerts).map((a) => a.id)).toEqual(["a", "e", "c", "d"]);
+    expect(waitingAlarms({ alerts, connection: CONNECTION.LIVE })).toEqual({
+      known: true, stale: false, items: [alerts[0], alerts[4], alerts[2], alerts[3]],
+    });
+  });
+
+  it("puts a severity it does not know first, and counts it apart — it may be the worst", () => {
+    const odd = [...alerts, { id: "x", severity: "extreme", ack: null, firstSeenAtMs: 900 },
+      { id: "y", severity: null, ack: null, firstSeenAtMs: 800 }];
+    expect(waitingAlarms({ alerts: odd, connection: CONNECTION.LIVE }).items.map((a) => a.id))
+      .toEqual(["y", "x", "a", "e", "c", "d"]);
+    expect(alarmCounts({ alerts: odd, connection: CONNECTION.LIVE }).open).toMatchObject({ total: 7, unknown: 2 });
+  });
+
+  // Decision 18, said by the store so that no screen has to remember it: only a LIVE board knows
+  // (and may say "none"); a DEGRADED one shows what it last had, stale; any other cannot know —
+  // no number, no list, so nothing can show a 0 or an empty bell for it.
+  it("is stale from a DEGRADED board, and nothing at all from one connecting or unavailable", () => {
+    expect(alarmCounts({ alerts, connection: CONNECTION.DEGRADED })).toMatchObject({ known: false, stale: true, waiting: 4 });
+    expect(waitingAlarms({ alerts, connection: CONNECTION.DEGRADED })).toMatchObject({ known: false, stale: true });
+    for (const connection of [CONNECTION.CONNECTING, CONNECTION.UNAVAILABLE, undefined]) {
+      expect(alarmCounts({ alerts, connection })).toEqual({ known: false, stale: false, open: null, waiting: null });
+      expect(waitingAlarms({ alerts, connection })).toEqual({ known: false, stale: false, items: null });
+    }
+  });
+
+  it("gives the lock screen numbers and nothing else of the ward", () => {
+    const named = alertsFromPatients(patientsFromBoard({
+      patients: [entry("P-001", [alert("sepsis", "critical")], { identity: { bed_label: "REA-01", display_name: "Sentetik Hasta" } })],
+    }));
+    const summary = lockSummary({ alerts: named, connection: CONNECTION.LIVE, patients: [{ patient_id: "P-001" }] });
+    expect(summary).toEqual({ known: true, stale: false, open: { ...NONE, total: 1, critical: 1 }, waiting: 1 });
+    expect(JSON.stringify(summary)).not.toMatch(/P-001|REA-01|Sentetik|sepsis/);
+    expect(Object.isFrozen(summary) && Object.isFrozen(summary.open)).toBe(true);
+    expect(lockSummary({ alerts: named, connection: CONNECTION.UNAVAILABLE })).toEqual({ known: false, stale: false, open: null, waiting: null });
   });
 });
 

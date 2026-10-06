@@ -261,30 +261,52 @@ export function createBoardStore({
   };
 }
 
-/** Open alarms in the board, counted. `open` is every alarm the engine still holds (seen or not),
- *  by severity; `waiting` those nobody has acknowledged yet. Numbers only: the lock screen shows
- *  these and nothing else of the ward. */
+// ---------------------------------------------------------------- what the shell may say of it
+// Each takes the board's state ({alerts, connection}: useBoard()) and answers with Decision 18
+// already applied, so no screen has to remember it: `known` only from a LIVE board — the only one
+// that may say "none"; `stale` from a DEGRADED one — what it last had, to be marked "may be out of
+// date" with the dot; neither (connecting, unavailable) — it cannot know, and the numbers and the
+// list are null, so nothing can show a 0 or an empty bell for it. Nothing here computes anything
+// clinical: these are the engine's alarms, counted and ordered by the engine's own severity.
 const SEVERITY_ORDER = ["critical", "high", "moderate", "low", "info"];
 
-export function alarmCounts(alerts) {
-  const open = { total: 0, critical: 0, high: 0, moderate: 0, low: 0, info: 0 };
+function knowing(connection) {
+  return { known: connection === CONNECTION.LIVE, stale: connection === CONNECTION.DEGRADED };
+}
+
+/** Open alarms counted: `open` is every alarm the engine still holds (seen or not), by severity
+ *  (`unknown`: a severity this build does not know); `waiting` those nobody has acknowledged. */
+export function alarmCounts({ alerts = [], connection } = {}) {
+  const { known, stale } = knowing(connection);
+  if (!known && !stale) return { known, stale, open: null, waiting: null };
+  const open = { total: 0, unknown: 0, critical: 0, high: 0, moderate: 0, low: 0, info: 0 };
   let waiting = 0;
   for (const a of alerts) {
     open.total += 1;
-    if (SEVERITY_ORDER.includes(a.severity)) open[a.severity] += 1;
+    open[SEVERITY_ORDER.includes(a.severity) ? a.severity : "unknown"] += 1;
     if (!a.ack) waiting += 1;
   }
-  return { open, waiting };
+  return { known, stale, open, waiting };
 }
 
-/** The alarms nobody has acknowledged, most severe first, then the oldest first. */
-export function waitingAlarms(alerts) {
-  const rank = (a) => {
-    const at = SEVERITY_ORDER.indexOf(a.severity);
-    return at === -1 ? SEVERITY_ORDER.length : at;
-  };
-  return alerts.filter((a) => !a.ack).sort((a, b) => rank(a) - rank(b)
+/** The alarms nobody has acknowledged (`items`, for the bell): a severity this build does not know
+ *  first — it may be the worst —, then the most severe, then the oldest first. */
+export function waitingAlarms({ alerts = [], connection } = {}) {
+  const { known, stale } = knowing(connection);
+  if (!known && !stale) return { known, stale, items: null };
+  const rank = (a) => SEVERITY_ORDER.indexOf(a.severity);   // -1: unknown, first
+  const items = alerts.filter((a) => !a.ack).sort((a, b) => rank(a) - rank(b)
     || (a.firstSeenAtMs ?? Infinity) - (b.firstSeenAtMs ?? Infinity));
+  return { known, stale, items };
+}
+
+/** All the lock screen may show of the ward (Decision 3): the open alarms in the session's units,
+ *  counted by severity, and how many nobody has acknowledged — with `known` / `stale` as above.
+ *  Numbers and flags only: no name, bed, patient or summary can reach a locked screen through it.
+ *  The lock screen reads the board through this and nothing else. */
+export function lockSummary(board) {
+  const { known, stale, open, waiting } = alarmCounts(board);
+  return Object.freeze({ known, stale, open: open && Object.freeze({ ...open }), waiting });
 }
 
 /** The units the chip may offer: the engine's own scope, when it is restricted to two or more. */
