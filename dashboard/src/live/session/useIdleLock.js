@@ -42,7 +42,11 @@ export function useIdleLock({ minutes, onIdle, enabled = true }) {
     for (const type of ACTIVITY_EVENTS) document.addEventListener(type, touch, options);
     const limit = minutes * 60_000;
     const tick = () => {
-      const latest = Math.max(last.current, readActiveAt() ?? 0);
+      // Another tab's activity counts only up to now: a time still to come (a clock stepped back,
+      // a value typed into storage) is no activity at all. Capped at now instead, it would read as
+      // "active this very second" at every tick, and the screen would never lock.
+      const others = readActiveAt();
+      const latest = Math.max(last.current, others !== null && others <= Date.now() ? others : 0);
       const left = Math.ceil((limit - (Date.now() - latest)) / 1000);
       if (left <= 0) {
         setSecondsLeft(null);

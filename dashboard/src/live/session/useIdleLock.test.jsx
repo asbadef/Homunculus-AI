@@ -81,6 +81,27 @@ describe("the idle lock", () => {
     expect(onIdle).not.toHaveBeenCalled();
   });
 
+  it("is not held off by a time in the future in hmc.activeAt (a clock stepped back, a tampered value)", () => {
+    const onIdle = vi.fn();
+    writeActiveAt(Date.now() + 3_600_000);
+    render(<Probe minutes={1} onIdle={onIdle} />);
+    advance(60_000);
+    expect(onIdle).toHaveBeenCalledTimes(1);
+  });
+
+  it("shares activity with the other tabs at most every 5 s", () => {
+    const start = Date.now();
+    render(<Probe minutes={1} onIdle={vi.fn()} />);
+    fireEvent.keyDown(document, { key: "a" });
+    expect(readActiveAt()).toBe(start);
+    advance(4_999);
+    fireEvent.keyDown(document, { key: "b" });
+    expect(readActiveAt()).toBe(start);                // not written again yet
+    advance(1);
+    fireEvent.pointerDown(document);
+    expect(readActiveAt()).toBe(start + 5_000);
+  });
+
   it("does nothing while disabled", () => {
     const onIdle = vi.fn();
     render(<Probe minutes={1} onIdle={onIdle} enabled={false} />);
