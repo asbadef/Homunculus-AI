@@ -134,6 +134,23 @@ describe.each(["gece", "gun"])("%s theme: contrast", (theme) => {
   );
 });
 
+// The sign-in hero and the lock screen are always dark (data-theme="gece" on their roots) and lie
+// on a radial gradient from color-mix(in srgb, var(--pri) 25%, var(--page)) to the page colour:
+// their text is held to 4.5:1 at the gradient's lightest point, and the primary icons to 3:1.
+describe("the dark gradient of the sign-in hero and the lock screen (Gece)", () => {
+  const glow = tint("gece", "pri", 0.25, "page");
+  it.each(["ink", "mute"])("%s clears 4.5:1 on the gradient's lightest point", (name) => {
+    expect(ratio(solid("gece", name), glow)).toBeGreaterThanOrEqual(BODY);
+  });
+  // The hero's pill is ink on priSoft: pri text there would be 4.09:1.
+  it("pri (icons) clears 3:1 there, and the pill's ink 4.5:1 on priSoft over it", () => {
+    expect(ratio(solid("gece", "pri"), glow)).toBeGreaterThanOrEqual(UI);
+    const pill = parse(THEMES.gece.priSoft);
+    const ground = pill.rgb.map((v, i) => v * pill.a + glow[i] * (1 - pill.a));
+    expect(ratio(solid("gece", "ink"), ground)).toBeGreaterThanOrEqual(BODY);
+  });
+});
+
 describe("token registry", () => {
   it.each(["gece", "gun"])("%s declares every named colour, and only those", (theme) => {
     const declared = Object.keys(THEMES[theme]).filter((name) => name !== "shadow").sort();

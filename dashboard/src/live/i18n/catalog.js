@@ -13,9 +13,10 @@ import ui from "./strings/ui.js";
 import errors from "./strings/errors.js";
 import dates from "./strings/dates.js";
 import shell from "./strings/shell.js";
+import auth from "./strings/auth.js";
 
 export const NAMESPACES = {
-  common, risk, prefs, news2, gallery, ui, errors, dates, shell,
+  common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth,
 };
 
 function flattenInto(out, prefix, entries) {

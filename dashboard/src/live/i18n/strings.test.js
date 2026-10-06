@@ -23,6 +23,8 @@ const AZ_SAME_AS_TR = new Set([
   "gallery.lastLogin", //    Son giriş — the prototype's AZ dictionary
   "shell.fullscreen", //     Tam ekran — the prototype's AZ dictionary (shell.js tb_full)
   "shell.keyFull", //        Tam ekran — the same (shell.js tb_k_full)
+  "auth.copy", //            Kopyala — Azerbaijani imperative of "kopyalamaq"
+  "auth.copied", //          Kopyalandı — its passive past
 ]);
 
 describe("live UI dictionaries", () => {
