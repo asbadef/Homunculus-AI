@@ -429,6 +429,29 @@ async def test_five_wrong_codes_lock_the_verify_step(client, world, db_session):
     assert len(app.state.audit.records(limit=10_000)) == rows_before   # no row per refusal
 
 
+async def test_a_wrong_code_is_counted_even_when_its_audit_row_fails(
+        client, world, db_session, monkeypatch):
+    """The count comes before the `mfa.fail` row: while the audit store fails, each wrong code
+    is a server error — and still counted, so a pending-MFA session cannot guess codes without
+    limit while the trail is down. After the fifth the step is locked (429), the right code too."""
+    c, app = client
+    await _enrolled_admin(world, db_session)
+    pending = (await _login(c, "admin")).json()
+    real = app.state.audit.append
+
+    def broken(event):
+        if event.subject in ("mfa.fail", "mfa.locked"):
+            raise RuntimeError("audit store down")
+        return real(event)
+
+    monkeypatch.setattr(app.state.audit, "append", broken)
+    for _ in range(5):
+        with pytest.raises(RuntimeError):
+            await _verify(c, pending["access_token"], "xxxxxx")
+    res = await _verify(c, pending["access_token"], pyotp.TOTP(SECRET).now())
+    assert res.status_code == 429 and "5 dakika" in res.json()["detail"]
+
+
 async def test_a_totp_code_cannot_be_used_twice(client, world, db_session):
     c, app = client
     await _enrolled_admin(world, db_session)

@@ -371,8 +371,11 @@ async def totp_verify(
     # same code cannot both pass.
     step = accepted_step(user.totp_secret, body.code)
     if step is None:
+        # Counted before the audit row: an audit store that fails must not leave a wrong code
+        # uncounted (a pending-MFA session would then guess codes without limit).
+        engaged = totp_failures.failed(key)
         audit("mfa.fail", reason="bad_code")
-        if totp_failures.failed(key):
+        if engaged:
             audit("mfa.locked", lock_seconds=totp_failures.lock_seconds)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
     if step <= _last_step.get(user.id, -1):
