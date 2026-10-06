@@ -14,6 +14,7 @@ export { FOCUS_RING } from "./focus.js";
 export { Button } from "./Button.jsx";
 export { Box } from "./Box.jsx";
 export { Note } from "./Note.jsx";
+export { Alert } from "./Alert.jsx";
 export { Empty } from "./Empty.jsx";
 export { KV, KVList } from "./KV.jsx";
 export { Tag, Pill, StatusPill, STATUS_TONES } from "./Tag.jsx";
