@@ -338,8 +338,17 @@ export function createSessionStore({
   }
 
   /** The password step. Resolves when the session has moved on (state.phase says where);
-   *  rejects with the API's error, the form staying where it is. */
-  async function signIn(login, password, { remember = false } = {}) {
+   *  rejects with the API's error, the form staying where it is. One sign-in at a time: a second
+   *  call while one is on its way is that one (a double submit would be answered twice — the
+   *  first pair written, the second refused as superseded: an error over a valid pair). The page
+   *  coming back meanwhile does not re-read storage (`resync`): the sign-in itself settles it. */
+  function signIn(login, password, options) {
+    if (!signingIn) signingIn = trySignIn(login, password, options).finally(() => { signingIn = null; });
+    return signingIn;
+  }
+  let signingIn = null;
+
+  async function trySignIn(login, password, { remember = false } = {}) {
     epoch += 1;
     const mine = epoch;
     state = { ...state, steps: NO_STEPS };
@@ -531,10 +540,11 @@ export function createSessionStore({
 
   /** The page came back (shown again, restored from the back-forward cache, focused): a page that
    *  was frozen or asleep missed its storage events and its lock timer. Read the tokens and the
-   *  lock again, as those events would have. Not while a stored session is being checked: that
-   *  check reads them itself. */
+   *  lock again, as those events would have. Not while a stored session is being checked, nor
+   *  while a sign-in is on its way: each reads them itself, and a re-read in between would take
+   *  the pair the sign-in has just stored for another tab's and check it twice. */
   function resync() {
-    if (state.phase === PHASE.RESTORING) return;
+    if (state.phase === PHASE.RESTORING || signingIn) return;
     const before = epoch;
     followTokens();
     if (before === epoch) syncLock(readLock());

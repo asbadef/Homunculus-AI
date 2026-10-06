@@ -282,6 +282,44 @@ describe("signing in", () => {
     expect(state().phase).toBe(PHASE.SIGNED_OUT);
     expect(state().user).toBeNull();
   });
+
+  it("a second submit while one is on its way is that one: the password is sent once", async () => {
+    // Two sign-ins sent at once would each be answered with a pair: the first written, the second
+    // refused as superseded — an error on the form over a valid pair in storage.
+    const { api, store, state } = setup();
+    let answer;
+    api.login.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+    api.me.mockResolvedValue(profile());
+    const first = store.signIn("ayse", "Gizli-Sifre-1");
+    const second = store.signIn("ayse", "Gizli-Sifre-1");
+    expect(second).toBe(first);
+    api.store(NURSE);
+    answer({ access_token: NURSE });
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+    expect(api.login).toHaveBeenCalledTimes(1);
+    expect(state().phase).toBe(PHASE.READY);
+  });
+
+  it("the page coming back during a sign-in neither checks the session twice nor flashes the check", async () => {
+    const { api, store, events, state } = setup();
+    await store.restore();                                             // the listeners attach here
+    api.login.mockImplementation(async () => { api.store(NURSE); return { access_token: NURSE }; });
+    const answers = [];
+    api.me.mockImplementation(() => new Promise((resolve) => { answers.push(resolve); }));
+    const seen = [];
+    store.subscribe(() => seen.push(state().phase));
+    const signingIn = store.signIn("ayse", "Gizli-Sifre-1");
+    await vi.waitFor(() => expect(api.me).toHaveBeenCalled());
+    events.dispatchEvent(new Event("focus"));
+    events.dispatchEvent(new Event("visibilitychange"));
+    for (const answer of answers) answer(profile());
+    await signingIn;
+    expect(state().phase).toBe(PHASE.READY);
+    expect(api.me).toHaveBeenCalledTimes(1);
+    expect(api.supersede).not.toHaveBeenCalled();
+    expect(seen).not.toContain(PHASE.RESTORING);
+    store.dispose();
+  });
 });
 
 describe("signing out", () => {
