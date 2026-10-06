@@ -83,3 +83,40 @@ describe("Alert as a polite notice", () => {
     expect(region).toHaveTextContent("iki");
   });
 });
+
+describe("Alert notices stay text, and their announcement is not postponed by re-renders", () => {
+  it("warns once, in development, when the aria-hidden box holds something focusable", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { rerender } = render(<Alert tone="info">Bax: <a href="#x">link</a></Alert>);
+    rerender(<Alert tone="info">Bax: <a href="#x">link</a></Alert>);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Alert"));
+    warn.mockRestore();
+  });
+
+  it("does not warn for plain text, nor for a refusal (which is not hidden)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    render(<Alert tone="info">yalnız mətn <b>qalın</b></Alert>);
+    render(<Alert>Bax: <a href="#x">link</a></Alert>);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("re-renders with the same text, every 100 ms, still announce at 150 ms; a changed text announces again", () => {
+    vi.useFakeTimers();
+    const view = (text) => <Alert tone="info">{text}</Alert>;
+    const { rerender } = render(view("bir"));
+    const region = screen.getByRole("status");
+    for (let i = 0; i < 3; i += 1) {
+      act(() => vi.advanceTimersByTime(100));
+      rerender(view("bir"));
+    }
+    // 300 ms in, with a new element handed in every 100 ms: it was said at 150 ms.
+    expect(region).toHaveTextContent("bir");
+    act(() => vi.advanceTimersByTime(50));
+    rerender(view("iki"));
+    expect(region).toHaveTextContent("bir");          // not yet: the new text has its own delay
+    act(() => vi.advanceTimersByTime(ANNOUNCE_DELAY_MS));
+    expect(region).toHaveTextContent("iki");
+  });
+});
