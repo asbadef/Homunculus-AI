@@ -19,6 +19,7 @@ function widths(scroll, client) {
 }
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   delete HTMLElement.prototype.scrollWidth;
   delete HTMLElement.prototype.clientWidth;
   vi.restoreAllMocks();
@@ -104,7 +105,6 @@ describe("Table", () => {
     expect(screen.getByRole("region", { name: "İstifadəçilər" })).toBeInTheDocument();
     unmount();
     expect(observer.disconnected).toBe(true);
-    vi.unstubAllGlobals();
   });
 
   it("without a caption is no region, takes no focus, and warns in development", () => {

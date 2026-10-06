@@ -22,6 +22,22 @@ export function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState(() => readPref("theme", THEMES, DEFAULT_THEME));
   const [size, setSizeState] = useState(() => readPref("size", SIZES, DEFAULT_SIZE));
 
+  // Record what <html> had before (usually nothing) and put it back on unmount: the old app may run
+  // in the same tab (?eski=1, until G1-16) and must not keep the live UI's theme, and a page that
+  // had set its own value keeps it. A layout effect declared BEFORE the ones that write: it runs
+  // first when mounting, and when an instance is replaced in one commit (a key change, hot reload)
+  // the old one's cleanup has already restored the page's value before this one reads it.
+  useLayoutEffect(() => {
+    const before = {
+      theme: document.documentElement.getAttribute("data-theme"),
+      size: document.documentElement.getAttribute("data-size"),
+    };
+    return () => {
+      restoreAttribute("data-theme", before.theme);
+      restoreAttribute("data-size", before.size);
+    };
+  }, []);
+
   // On <html>, not on a wrapper: dialogs and toasts render in a portal under <body> and must take
   // the same theme. A layout effect, so the first paint already has the right colours.
   useLayoutEffect(() => {
@@ -30,17 +46,6 @@ export function ThemeProvider({ children }) {
   useLayoutEffect(() => {
     document.documentElement.dataset.size = size;
   }, [size]);
-  // On unmount, put back what <html> had before (usually nothing): the old app may run in the
-  // same tab (?eski=1, until G1-16) and must not keep the live UI's theme, and a page that had set
-  // its own value keeps it. Read in the first render, before the effects above write.
-  const [before] = useState(() => ({
-    theme: document.documentElement.getAttribute("data-theme"),
-    size: document.documentElement.getAttribute("data-size"),
-  }));
-  useLayoutEffect(() => () => {
-    restoreAttribute("data-theme", before.theme);
-    restoreAttribute("data-size", before.size);
-  }, [before]);
 
   // Another tab of this browser changed it: follow, without writing it back.
   useEffect(() => {

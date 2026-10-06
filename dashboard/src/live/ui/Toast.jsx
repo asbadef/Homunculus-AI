@@ -1,5 +1,5 @@
 // src/live/ui/Toast.jsx — the prototype's H.toast: short confirmations, bottom right.
-import React, { createContext, useContext, useEffect, useId, useState } from "react";
+import React, { createContext, useContext, useEffect, useId, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { Button } from "./Button.jsx";
@@ -154,8 +154,9 @@ export function ToastProvider({ resetKey, children }) {
   const sayId = (id) => `${base}-toast-${id}`;
 
   // A new `resetKey` empties the stack: the live shell changes it when a session locks or ends,
-  // so a toast that named a bed or a person does not outlive the screen it belonged to.
-  useEffect(() => {
+  // so a toast that named a bed or a person does not outlive the screen it belonged to. A layout
+  // effect: the old toasts are gone before the next paint, never shown over the lock screen.
+  useLayoutEffect(() => {
     toasts.clear();
   }, [toasts, resetKey]);
 

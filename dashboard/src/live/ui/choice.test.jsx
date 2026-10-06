@@ -177,6 +177,15 @@ describe("Tabs", () => {
     warn.mockRestore();
   });
 
+  it("warns once per panel, not on every render", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { rerender } = render(<TabPanel tabs={TABS} value="users">bir</TabPanel>);
+    rerender(<TabPanel tabs={TABS} value="users">iki</TabPanel>);
+    rerender(<TabPanel tabs={TABS} value="users">üç</TabPanel>);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
   it("reads a count label in place of the bare badge number", () => {
     const tabs = [{ value: "users", label: "İstifadəçilər" }, { value: "roles", label: "Rollar", count: 2, countLabel: "2 gözləyən" }];
     render(<Tabs id="adm" label="İdarə" tabs={tabs} value="users" onChange={() => {}} />);

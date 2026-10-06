@@ -118,6 +118,15 @@ describe("beside another page and other tabs", () => {
     expect(document.documentElement.hasAttribute("lang")).toBe(false);
   });
 
+  it("gives <html lang> back as the page had it after a remount in one commit (a key change)", () => {
+    document.documentElement.setAttribute("lang", "tr");
+    const { rerender, unmount } = render(<I18nProvider key="a"><Probe /></I18nProvider>);
+    rerender(<I18nProvider key="b"><Probe /></I18nProvider>);
+    expect(document.documentElement.lang).toBe("az");
+    unmount();
+    expect(document.documentElement.lang).toBe("tr");
+  });
+
   it("follows a language chosen in another tab, and ignores one it does not have", () => {
     render(<I18nProvider><Probe /></I18nProvider>);
     act(() => window.dispatchEvent(new StorageEvent("storage", { key: "hmc.lang", newValue: "en" })));

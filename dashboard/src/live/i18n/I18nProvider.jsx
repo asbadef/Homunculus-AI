@@ -7,6 +7,7 @@
 // Outside a provider useI18n() speaks Azerbaijani and cannot switch.
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { PREF_PREFIX, readPref, writePref } from "../prefs.js";
+import { restoreAttribute } from "../theme/ThemeProvider.jsx";
 import { DEFAULT_LANG, LANGS, LANG_CODES } from "./langs.js";
 import { DICTIONARIES } from "./catalog.js";
 import { createTranslator } from "./translate.js";
@@ -30,15 +31,15 @@ const I18nContext = createContext({
 export function I18nProvider({ children }) {
   const [lang, setLangState] = useState(() => readPref("lang", LANG_CODES, DEFAULT_LANG));
 
+  // Record <html lang> and give it back as it was on unmount (the old app sets its own). Declared
+  // before the effect that writes it; see ThemeProvider for why that order matters.
+  useLayoutEffect(() => {
+    const before = document.documentElement.getAttribute("lang");
+    return () => restoreAttribute("lang", before);
+  }, []);
   useLayoutEffect(() => {
     document.documentElement.lang = lang;
   }, [lang]);
-  // On unmount, give <html lang> back as it was (the old app sets its own).
-  const [before] = useState(() => document.documentElement.getAttribute("lang"));
-  useLayoutEffect(() => () => {
-    if (before === null) document.documentElement.removeAttribute("lang");
-    else document.documentElement.setAttribute("lang", before);
-  }, [before]);
   // Another tab of this browser switched language: follow, without writing it back.
   useEffect(() => {
     const onStorage = (event) => {

@@ -27,7 +27,26 @@ describe("the lock this browser keeps", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("SecurityError"); });
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("SecurityError"); });
     expect(() => writeLock({ user: "u", at: 1, why: "manual" })).not.toThrow();
+    expect(() => writeActiveAt(5)).not.toThrow();
+    expect(() => rememberUser("ayse")).not.toThrow();
+    expect(() => clearLock()).not.toThrow();
     expect(readLock()).toBeNull();
+    expect(readActiveAt()).toBeNull();
+    expect(readRememberedUser()).toBe("");
+    vi.restoreAllMocks();
+    expect(localStorage.length).toBe(0);   // nothing was written behind the refusal
+  });
+
+  it("answers nothing, and does not throw, when reaching window.localStorage itself throws", () => {
+    vi.spyOn(window, "localStorage", "get").mockImplementation(() => { throw new Error("SecurityError"); });
+    expect(() => writeLock({ user: "u", at: 1, why: "idle" })).not.toThrow();
+    expect(() => writeActiveAt(7)).not.toThrow();
+    expect(() => forgetUser()).not.toThrow();
+    expect(readLock()).toBeNull();
+    expect(readActiveAt()).toBeNull();
+    expect(readRememberedUser()).toBe("");
+    vi.restoreAllMocks();
+    expect(localStorage.length).toBe(0);
   });
 });
 

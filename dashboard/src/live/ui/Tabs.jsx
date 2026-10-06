@@ -69,7 +69,11 @@ export function Tabs({ id, label, tabs, value, onChange, className = "" }) {
  *  A `value` that matches no tab selects none in <Tabs>, so the panel then claims no tab either:
  *  no id for an aria-controls, no aria-labelledby (the first tab is only the Tab stop). */
 export function TabPanel({ id, tabs, value, className = "", children }) {
-  if (!id && import.meta.env.DEV) console.warn("TabPanel: no id — it cannot name its tab (give <Tabs> and <TabPanel> the same id)");
+  const warned = useRef(false);
+  if (!id && import.meta.env.DEV && !warned.current) {
+    warned.current = true;   // once per panel, not on every render
+    console.warn("TabPanel: no id — it cannot name its tab (give <Tabs> and <TabPanel> the same id)");
+  }
   const index = id ? tabs.findIndex((tab) => tab.value === value) : -1;
   const link = index === -1 ? {} : { id: panelId(id, index), "aria-labelledby": tabId(id, index) };
   return (

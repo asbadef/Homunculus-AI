@@ -107,6 +107,17 @@ describe("ThemeProvider", () => {
     expect(html.dataset.size).toBe("kucuk");
   });
 
+  it("gives back the page's own values after a remount in one commit (a key change)", () => {
+    html.dataset.theme = "eski";
+    html.dataset.size = "kucuk";
+    const { rerender, unmount } = render(<ThemeProvider key="a"><Probe /></ThemeProvider>);
+    rerender(<ThemeProvider key="b"><Probe /></ThemeProvider>);
+    expect(html.dataset.theme).toBe("gece");
+    unmount();
+    expect(html.dataset.theme).toBe("eski");
+    expect(html.dataset.size).toBe("kucuk");
+  });
+
   it("follows a theme or size chosen in another tab, without writing it back", () => {
     render(<ThemeProvider><Probe /></ThemeProvider>);
     const write = vi.spyOn(Storage.prototype, "setItem");
