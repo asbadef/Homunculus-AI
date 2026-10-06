@@ -50,7 +50,8 @@ function rawText(value) {
   return Object.prototype.toString.call(value); // "[object Array]", "[object Object]"
 }
 
-export function riskStyle(risk, { measured } = {}) {
+export function riskStyle(risk, opts) {
+  const { measured } = opts ?? {};
   if (risk === null || risk === undefined) return { ...UNREPORTED };
   if (typeof risk !== "string") return unknown(rawText(risk));
   const key = risk.trim().toLowerCase();

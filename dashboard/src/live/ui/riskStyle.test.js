@@ -4,8 +4,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { riskStyle, ENGINE_RISKS } from "./riskStyle.js";
-import { DICTIONARIES } from "../i18n/catalog.js";
+import { riskStyle, ENGINE_RISKS } from "./riskStyle.js";import { DICTIONARIES } from "../i18n/catalog.js";
 import { LANG_CODES } from "../i18n/langs.js";
 
 describe("riskStyle", () => {
@@ -216,5 +215,13 @@ describe("engine contract", () => {
 
   it("riskStyle maps exactly \"none\" and the engine's severities", () => {
     expect([...ENGINE_RISKS].sort()).toEqual([...new Set([...empty, ...identity, ...order])].sort());
+  });
+});
+
+describe("riskStyle options", () => {
+  it("takes null for the options as it takes nothing", () => {
+    expect(() => riskStyle("none", null)).not.toThrow();
+    expect(riskStyle("none", null)).toEqual(riskStyle("none"));
+    expect(riskStyle("high", null).tone).toBe("high");
   });
 });

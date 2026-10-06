@@ -100,6 +100,10 @@ function createToasts(publish) {
   return {
     add,
     remove,
+    /** Every toast goes at once (the session they spoke for ended or locked). */
+    clear() {
+      if (items.length) remove(items.map((item) => item.id));
+    },
     hover(id, on) {
       const was = paused();
       if (on) hovered.add(id);
@@ -140,13 +144,20 @@ function createToasts(publish) {
  *    raised bottom inset: that clears a full-height dialog's footer but lands on a short centred
  *    dialog's one. A keyboard user cannot Tab into a toast while a dialog is open (the dialog
  *    keeps Tab inside): recorded in the roadmap.
+ *  `resetKey`: when it changes, every toast goes (the live shell: a session locked or ended).
  *  Not for alarms: a clinical alarm never lives in a toast. */
-export function ToastProvider({ children }) {
+export function ToastProvider({ resetKey, children }) {
   const { t } = useI18n();
   const base = useId();
   const [items, setItems] = useState([]);
   const [toasts] = useState(() => createToasts(setItems));
   const sayId = (id) => `${base}-toast-${id}`;
+
+  // A new `resetKey` empties the stack: the live shell changes it when a session locks or ends,
+  // so a toast that named a bed or a person does not outlive the screen it belonged to.
+  useEffect(() => {
+    toasts.clear();
+  }, [toasts, resetKey]);
 
   useEffect(() => {
     const note = (event) => toasts.noteFocus(event.target);

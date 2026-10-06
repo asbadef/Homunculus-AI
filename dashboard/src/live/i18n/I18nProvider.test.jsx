@@ -2,7 +2,7 @@
 // ("the UI language a ward opens in"): those stay as they are until the old workspace is removed
 // (G1-16); the new shell opens in Azerbaijani.
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { I18nProvider, useI18n } from "./I18nProvider.jsx";
 
 function Probe() {
@@ -102,6 +102,28 @@ describe("switching language", () => {
     render(<I18nProvider><Probe /></I18nProvider>);
     fireEvent.click(screen.getByText("ru"));
     expect(screen.getByText("Закрыть")).toBeInTheDocument();
+  });
+});
+
+describe("beside another page and other tabs", () => {
+  it("gives <html lang> back as it was when it unmounts", () => {
+    document.documentElement.setAttribute("lang", "tr");
+    const { unmount } = render(<I18nProvider><Probe /></I18nProvider>);
+    expect(document.documentElement.lang).toBe("az");
+    unmount();
+    expect(document.documentElement.lang).toBe("tr");
+    document.documentElement.removeAttribute("lang");
+    const again = render(<I18nProvider><Probe /></I18nProvider>);
+    again.unmount();
+    expect(document.documentElement.hasAttribute("lang")).toBe(false);
+  });
+
+  it("follows a language chosen in another tab, and ignores one it does not have", () => {
+    render(<I18nProvider><Probe /></I18nProvider>);
+    act(() => window.dispatchEvent(new StorageEvent("storage", { key: "hmc.lang", newValue: "en" })));
+    expect(screen.getByText("Close")).toBeInTheDocument();
+    act(() => window.dispatchEvent(new StorageEvent("storage", { key: "hmc.lang", newValue: "de" })));
+    expect(screen.getByText("Close")).toBeInTheDocument();
   });
 });
 

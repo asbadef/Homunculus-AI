@@ -5,8 +5,8 @@
 // the choice (prefs.js: storage may be refused, the UI still switches) and sets <html lang>, which
 // screen readers use to pick a voice and CSS text-transform uses for İ/ı when upper-casing.
 // Outside a provider useI18n() speaks Azerbaijani and cannot switch.
-import React, { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState } from "react";
-import { readPref, writePref } from "../prefs.js";
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { PREF_PREFIX, readPref, writePref } from "../prefs.js";
 import { DEFAULT_LANG, LANGS, LANG_CODES } from "./langs.js";
 import { DICTIONARIES } from "./catalog.js";
 import { createTranslator } from "./translate.js";
@@ -33,6 +33,20 @@ export function I18nProvider({ children }) {
   useLayoutEffect(() => {
     document.documentElement.lang = lang;
   }, [lang]);
+  // On unmount, give <html lang> back as it was (the old app sets its own).
+  const [before] = useState(() => document.documentElement.getAttribute("lang"));
+  useLayoutEffect(() => () => {
+    if (before === null) document.documentElement.removeAttribute("lang");
+    else document.documentElement.setAttribute("lang", before);
+  }, [before]);
+  // Another tab of this browser switched language: follow, without writing it back.
+  useEffect(() => {
+    const onStorage = (event) => {
+      if (event.key === `${PREF_PREFIX}lang` && LANG_CODES.includes(event.newValue)) setLangState(event.newValue);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   const setLang = useCallback((code) => {
     if (!LANG_CODES.includes(code)) return;

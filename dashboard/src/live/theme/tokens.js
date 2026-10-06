@@ -37,7 +37,9 @@ export function tailwindColors() {
 // so data-size="buyuk" enlarges every text at once. No line-height here: like the prototype,
 // text inherits the page's 1.5; components whose prototype rule used the `font` shorthand (which
 // resets it) set leading-[normal] themselves.
-export const TYPE_SIZES = ["10", "10.5", "11", "11.5", "12", "12.5", "13", "13.5", "14", "14.5", "17", "23"];
+// 15/20/28/40 came with the shell (G1-07/G1-08): the lock card, the brand and step headings, the
+// sign-in title (the prototype's .lg2 h2) and the hero headline.
+export const TYPE_SIZES = ["10", "10.5", "11", "11.5", "12", "12.5", "13", "13.5", "14", "14.5", "15", "17", "20", "23", "28", "40"];
 
 export function tailwindFontSizes() {
   return Object.fromEntries(TYPE_SIZES.map((px) => [px, `calc(${px}px * var(--fs))`]));

@@ -4,7 +4,8 @@
 // with site data blocked or a full quota must still render the UI — on the default. So every
 // read and write is wrapped, and a stored value outside the allowed list is ignored rather than
 // trusted (an older build, or the prototype, which spells languages "AZ"/"TR", may have left one).
-const PREFIX = "hmc.";
+export const PREF_PREFIX = "hmc.";
+const PREFIX = PREF_PREFIX;
 
 export function readPref(name, allowed, fallback) {
   try {

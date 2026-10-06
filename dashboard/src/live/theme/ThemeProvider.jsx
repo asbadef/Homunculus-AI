@@ -3,8 +3,8 @@
 // Two themes, as in the prototype: "gece" (dark, the default — an ICU at night) and "gun"
 // (daylight). The prototype's mobile "automatic" theme (20:00–08:00 dark) is not built: the web
 // prototype's own settings offer only these two. Size "buyuk" scales all text by 1.12 (--fs).
-import React, { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState } from "react";
-import { readPref, writePref } from "../prefs.js";
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { PREF_PREFIX, readPref, writePref } from "../prefs.js";
 
 export const THEMES = ["gece", "gun"];
 export const SIZES = ["normal", "buyuk"];
@@ -30,11 +30,26 @@ export function ThemeProvider({ children }) {
   useLayoutEffect(() => {
     document.documentElement.dataset.size = size;
   }, [size]);
-  // On unmount, take them off again: G1-07 mounts the new shell beside the old app in one tab, and
-  // the old app's page must not keep the live UI's theme.
+  // On unmount, put back what <html> had before (usually nothing): the old app may run in the
+  // same tab (?eski=1, until G1-16) and must not keep the live UI's theme, and a page that had set
+  // its own value keeps it. Read in the first render, before the effects above write.
+  const [before] = useState(() => ({
+    theme: document.documentElement.getAttribute("data-theme"),
+    size: document.documentElement.getAttribute("data-size"),
+  }));
   useLayoutEffect(() => () => {
-    delete document.documentElement.dataset.theme;
-    delete document.documentElement.dataset.size;
+    restoreAttribute("data-theme", before.theme);
+    restoreAttribute("data-size", before.size);
+  }, [before]);
+
+  // Another tab of this browser changed it: follow, without writing it back.
+  useEffect(() => {
+    const onStorage = (event) => {
+      if (event.key === `${PREF_PREFIX}theme` && THEMES.includes(event.newValue)) setThemeState(event.newValue);
+      if (event.key === `${PREF_PREFIX}size` && SIZES.includes(event.newValue)) setSizeState(event.newValue);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const setTheme = useCallback((value) => {
@@ -54,4 +69,10 @@ export function ThemeProvider({ children }) {
 
 export function useTheme() {
   return useContext(ThemeContext);
+}
+
+/** Put an attribute of <html> back to `value`, or remove it when it had none. */
+export function restoreAttribute(name, value) {
+  if (value === null || value === undefined) document.documentElement.removeAttribute(name);
+  else document.documentElement.setAttribute(name, value);
 }

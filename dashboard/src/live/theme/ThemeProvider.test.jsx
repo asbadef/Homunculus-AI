@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { ThemeProvider, useTheme } from "./ThemeProvider.jsx";
 
 function Probe() {
@@ -86,8 +86,8 @@ describe("ThemeProvider", () => {
     expect(html.dataset.size).toBe("buyuk");
   });
 
-  // G1-07 mounts the new shell beside the old app in one tab: leaving it must not leave its theme
-  // on <html> for the old app's page.
+  // The old app may run in the same tab (?eski=1, until G1-16): leaving the live UI must not
+  // leave its theme on <html> — and a value the page had before is given back, not deleted.
   it("takes data-theme and data-size off <html> when it unmounts", () => {
     const { unmount } = render(<ThemeProvider><Probe /></ThemeProvider>);
     fireEvent.click(screen.getByText("gun"));
@@ -95,6 +95,30 @@ describe("ThemeProvider", () => {
     unmount();
     expect(html.hasAttribute("data-theme")).toBe(false);
     expect(html.hasAttribute("data-size")).toBe(false);
+  });
+
+  it("gives back the values <html> had before it mounted", () => {
+    html.dataset.theme = "eski";
+    html.dataset.size = "kucuk";
+    const { unmount } = render(<ThemeProvider><Probe /></ThemeProvider>);
+    expect(html.dataset.theme).toBe("gece");
+    unmount();
+    expect(html.dataset.theme).toBe("eski");
+    expect(html.dataset.size).toBe("kucuk");
+  });
+
+  it("follows a theme or size chosen in another tab, without writing it back", () => {
+    render(<ThemeProvider><Probe /></ThemeProvider>);
+    const write = vi.spyOn(Storage.prototype, "setItem");
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: "hmc.theme", newValue: "gun" }));
+      window.dispatchEvent(new StorageEvent("storage", { key: "hmc.size", newValue: "buyuk" }));
+    });
+    expect(screen.getByTestId("theme")).toHaveTextContent("gun");
+    expect(html.dataset.size).toBe("buyuk");
+    act(() => window.dispatchEvent(new StorageEvent("storage", { key: "hmc.theme", newValue: "auto" })));
+    expect(screen.getByTestId("theme")).toHaveTextContent("gun");
+    expect(write).not.toHaveBeenCalled();
   });
 
   it("renders in Gece when storage cannot be read", () => {

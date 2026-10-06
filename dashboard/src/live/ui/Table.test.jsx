@@ -85,6 +85,28 @@ describe("Table", () => {
     expect(screen.getByRole("cell", { name: "dr.ornek" })).toBeInTheDocument();
   });
 
+  // Browsers have ResizeObserver (jsdom does not): the frame and the table are both watched, and
+  // the observer goes away with the table.
+  it("watches the frame and the table with a ResizeObserver where the browser has one", () => {
+    const observers = [];
+    class FakeObserver {
+      constructor(callback) { this.callback = callback; this.targets = []; this.disconnected = false; observers.push(this); }
+      observe(target) { this.targets.push(target); }
+      disconnect() { this.disconnected = true; }
+    }
+    vi.stubGlobal("ResizeObserver", FakeObserver);
+    widths(600, 600);
+    const { container, unmount } = render(<Table caption="İstifadəçilər">{rows}</Table>);
+    const [observer] = observers;
+    expect(observer.targets).toEqual([container.firstChild, container.firstChild.firstElementChild]);
+    size.client = 390;
+    act(() => observer.callback());
+    expect(screen.getByRole("region", { name: "İstifadəçilər" })).toBeInTheDocument();
+    unmount();
+    expect(observer.disconnected).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
   it("without a caption is no region, takes no focus, and warns in development", () => {
     widths(900, 390);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

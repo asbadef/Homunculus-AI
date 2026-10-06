@@ -28,6 +28,17 @@ const polite = () => region().querySelector('[aria-live="polite"]');
 const alerts = () => within(region()).getByRole("alert");
 
 describe("toasts", () => {
+  it("all go when the provider's resetKey changes, and not before", () => {
+    const { rerender } = render(<ToastProvider resetKey="a"><Grab /></ToastProvider>);
+    show("Yadda saxlanıldı");
+    show("Xəta baş verdi", "error");
+    rerender(<ToastProvider resetKey="a"><Grab /></ToastProvider>);
+    expect(cards()).toHaveLength(2);
+    rerender(<ToastProvider resetKey="b"><Grab /></ToastProvider>);
+    expect(cards()).toHaveLength(0);
+    expect(alerts()).toBeEmptyDOMElement();
+  });
+
   it("have a named live region before the first toast", () => {
     render(<ToastProvider><Fire message="Yadda saxlanıldı" /></ToastProvider>);
     expect(region().firstChild).toHaveAttribute("aria-live", "polite");

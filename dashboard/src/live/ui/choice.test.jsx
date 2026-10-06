@@ -167,6 +167,16 @@ describe("Tabs", () => {
     expect(tab).not.toHaveAttribute("aria-controls");
   });
 
+  it("a panel without an id claims no tab and says so in development", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    render(<TabPanel tabs={TABS} value="users">bir</TabPanel>);
+    const panel = screen.getByRole("tabpanel");
+    expect(panel).not.toHaveAttribute("id");
+    expect(panel).not.toHaveAttribute("aria-labelledby");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("TabPanel: no id"));
+    warn.mockRestore();
+  });
+
   it("reads a count label in place of the bare badge number", () => {
     const tabs = [{ value: "users", label: "İstifadəçilər" }, { value: "roles", label: "Rollar", count: 2, countLabel: "2 gözləyən" }];
     render(<Tabs id="adm" label="İdarə" tabs={tabs} value="users" onChange={() => {}} />);

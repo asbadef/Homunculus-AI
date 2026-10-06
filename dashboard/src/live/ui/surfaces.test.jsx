@@ -46,6 +46,15 @@ describe("Empty", () => {
     render(<Empty icon="search">Uyğun qeyd yoxdur.</Empty>);
     expect(screen.getByText("Uyğun qeyd yoxdur.")).toBeInTheDocument();
   });
+
+  it("draws its icon as decoration, and none when not given one", () => {
+    const { container, rerender } = render(<Empty icon="search">Uyğun qeyd yoxdur.</Empty>);
+    const svg = container.querySelector("svg");
+    expect(svg).not.toBeNull();
+    expect(svg).toHaveAttribute("aria-hidden", "true");
+    rerender(<Empty>Uyğun qeyd yoxdur.</Empty>);
+    expect(container.querySelector("svg")).toBeNull();
+  });
 });
 
 describe("KV", () => {
