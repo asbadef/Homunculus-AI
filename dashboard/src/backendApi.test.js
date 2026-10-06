@@ -20,6 +20,62 @@ const TOKENS = {
   access_token: "acc-1", refresh_token: "ref-1", token_type: "bearer", requires_mfa: false,
 };
 
+describe("backendApi — locked screen and other tabs", () => {
+  it("unlocks with the session's password through /auth/reauth", async () => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    expect(await api.reauth("gizli")).toEqual({ ok: true });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/auth/reauth");
+    expect(init.method).toBe("POST");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+    expect(JSON.parse(init.body)).toEqual({ password: "gizli" });
+  });
+
+  it("never sends a refused unlock again: a wrong password is a 403", async () => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ detail: "Parola hatalı" }, { ok: false, status: 403 }));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    await expect(api.reauth("yanlis")).rejects.toMatchObject({ status: 403, message: "Parola hatalı" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a 429's Retry-After, in seconds", async () => {
+    const res = {
+      ...jsonResponse({ detail: "Çok fazla giriş denemesi; bir dakika sonra tekrar deneyin" },
+        { ok: false, status: 429 }),
+      headers: new Headers({ "Retry-After": "60" }),
+    };
+    const api = createBackendApi({ baseUrl: "", fetchImpl: vi.fn().mockResolvedValue(res) });
+    await expect(api.login("ayse", "x")).rejects.toMatchObject({ status: 429, retryAfter: 60 });
+  });
+
+  it("sets no retryAfter without a usable Retry-After", async () => {
+    for (const headers of [undefined, new Headers(), new Headers({ "Retry-After": "soon" })]) {
+      const res = { ...jsonResponse({ detail: "x" }, { ok: false, status: 429 }), headers };
+      const api = createBackendApi({ baseUrl: "", fetchImpl: vi.fn().mockResolvedValue(res) });
+      const err = await api.login("ayse", "x").catch((e) => e);
+      expect(err.retryAfter).toBeUndefined();
+    }
+  });
+
+  it("forgets the pair it holds when another tab changed storage, and reads storage again", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    store.set("homunculus-access-token", "acc-1");
+    expect(api.accessToken()).toBe("acc-1");
+    store.set("homunculus-access-token", "acc-other-tab");
+    expect(api.accessToken()).toBe("acc-1");          // the copy in memory
+    api.forget();
+    expect(api.accessToken()).toBe("acc-other-tab");
+    expect(store.get("homunculus-access-token")).toBe("acc-other-tab");   // storage untouched
+  });
+});
+
 describe("backendApi — auth", () => {
   it("logs in against /auth/login and keeps the tokens", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(TOKENS));

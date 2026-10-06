@@ -16,6 +16,8 @@
 
 const ACCESS_KEY = "homunculus-access-token";
 const REFRESH_KEY = "homunculus-refresh-token";
+/** Where the pair is stored: another tab's change to either is a `storage` event on that key. */
+export const TOKEN_KEYS = Object.freeze({ access: ACCESS_KEY, refresh: REFRESH_KEY });
 
 /** `err.code` of a request the server did not answer in time. */
 export const REQUEST_TIMEOUT = "REQUEST_TIMEOUT";
@@ -113,6 +115,16 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     setTokens(null);
   }
 
+  /** Another tab of this browser replaced or removed the stored pair: drop the copy held in
+   *  memory, so the next request reads storage again, and treat it as a new session (a refresh
+   *  on its way for the old pair is superseded). Storage itself is not touched — it belongs to
+   *  the other tab's session now. */
+  function forget() {
+    generation += 1;
+    mem.access = null;
+    mem.refresh = null;
+  }
+
   async function failure(res, fallback) {
     // FastAPI reports problems as {"detail": ...}; surface it so the UI can show the real reason.
     let detail = fallback;
@@ -136,6 +148,10 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     const err = new Error(detail);
     err.status = res.status;
     if (fieldErrors) err.fieldErrors = fieldErrors;
+    // A 429 says how long to wait (nginx's sign-in limit sends Retry-After: 60): whole seconds,
+    // kept so a screen can hold its button that long instead of letting it be pressed again.
+    const retryAfter = Number.parseInt(res.headers?.get?.("Retry-After") ?? "", 10);
+    if (Number.isFinite(retryAfter) && retryAfter > 0) err.retryAfter = retryAfter;
     return err;
   }
 
@@ -218,6 +234,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
   return {
     accessToken,
     logout,
+    forget,
 
     /** `login` is a username or an e-mail (the API's `email` field is a legacy alias). */
     login(login, password) {
@@ -248,6 +265,14 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
 
     me() {
       return authed("/auth/me");
+    },
+
+    /** Unlock a locked screen with the session's own password. Through the refresh-and-retry
+     *  path on purpose: a 401 here is the access token's (it expired while the screen was
+     *  locked), answered before the password is looked at, so the retry is the first check. A
+     *  wrong password is a 403 and is never retried. Resolves to {ok: true}. */
+    reauth(password) {
+      return authed("/auth/reauth", { method: "POST", body: { password } });
     },
 
     /** The clinical board for the caller's hospital, already narrowed to the caller's scope.
