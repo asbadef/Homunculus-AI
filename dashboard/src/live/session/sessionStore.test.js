@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { FALLBACK_LOCK_SIGNOUT_HOURS, NOTICE, PHASE, UNLOCK_ATTEMPTS, createSessionStore } from "./sessionStore.js";
 import { LOCK_KEY, readLock, writeLock } from "./browserState.js";
 import { fakeApi, profile, token } from "./testTokens.testutil.js";
+import { createBackendApi } from "../../backendApi.js";
 
 const NURSE = token();
 const PENDING = token({ sub: "u-kaya", groups: ["attending"], perms: ["board.view"], mfaRequired: true });
@@ -523,5 +524,108 @@ describe("a request another tab superseded", () => {
     expect(s.api.logout).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(s.state()).toMatchObject({ phase: PHASE.READY, unlockFailures: 0, user: { username: "murad" } }));
     s.store.dispose();
+  });
+});
+
+// The same endings on the real API client (a fake fetch, jsdom's localStorage): a pair that the
+// server hands out after the session it was asked for has ended never reaches storage, so a
+// reload — or another tab's storage event — does not bring the ended session back.
+describe("with the real backendApi: a late pair never outlives the session's end", () => {
+  const json = (status, body) => ({ status, ok: status >= 200 && status < 300, json: async () => body, headers: { get: () => null } });
+  const ACCESS = "homunculus-access-token";
+  const REFRESH = "homunculus-refresh-token";
+
+  /** `path` answers wait for the returned `release`; /auth/me answers `me`. */
+  function slowApi(path, answer, me = profile()) {
+    const gate = {};
+    const fetchImpl = vi.fn(async (url) => {
+      if (url.endsWith("/auth/me")) return json(200, me);
+      if (url.endsWith(path)) {
+        await new Promise((resolve) => { gate.release = resolve; });
+        return answer;
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    return { fetchImpl, gate };
+  }
+
+  it("backing out of the TOTP step while the code is checked: the verified pair is not written", async () => {
+    localStorage.setItem(ACCESS, PENDING);
+    localStorage.setItem(REFRESH, "r1");
+    const { fetchImpl, gate } = slowApi("/auth/totp/verify", json(200, { access_token: VERIFIED, refresh_token: "r2" }),
+      profile({ id: "u-kaya" }));
+    const store = createSessionStore({ api: createBackendApi({ baseUrl: "", fetchImpl }), events: new EventTarget() });
+    await store.restore();
+    expect(store.getState().phase).toBe(PHASE.MFA);
+    const verifying = store.verifyMfa("123456");
+    await vi.waitFor(() => expect(gate.release).toBeTypeOf("function"));
+    store.cancel();
+    gate.release();
+    await verifying;
+    expect(store.getState()).toMatchObject({ phase: PHASE.SIGNED_OUT, user: null });
+    expect(localStorage.getItem(ACCESS)).toBeNull();
+    expect(localStorage.getItem(REFRESH)).toBeNull();
+    const reload = createSessionStore({ api: createBackendApi({ baseUrl: "", fetchImpl }), events: new EventTarget() });
+    await reload.restore();
+    expect(reload.getState().phase).toBe(PHASE.SIGNED_OUT);
+    store.dispose();
+    reload.dispose();
+  });
+
+  it("signing out while a password change is on its way: the new pair is not written", async () => {
+    localStorage.setItem(ACCESS, NURSE);
+    localStorage.setItem(REFRESH, "r1");
+    const { fetchImpl, gate } = slowApi("/auth/password", json(200, { access_token: token({ tv: 1 }), refresh_token: "r2" }));
+    const store = createSessionStore({ api: createBackendApi({ baseUrl: "", fetchImpl }), events: new EventTarget() });
+    await store.restore();
+    const changing = store.changePassword("Eski-Sifre-1", "Kendi-Sifrem-9");
+    await vi.waitFor(() => expect(gate.release).toBeTypeOf("function"));
+    store.signOut();
+    gate.release();
+    await changing;
+    expect(store.getState()).toMatchObject({ phase: PHASE.SIGNED_OUT, notice: { code: NOTICE.SIGNED_OUT } });
+    expect(localStorage.getItem(ACCESS)).toBeNull();
+    expect(localStorage.getItem(REFRESH)).toBeNull();
+    store.dispose();
+  });
+
+  it("one tab signs out while another's refresh is on its way: the refreshed pair is not written back", async () => {
+    localStorage.setItem(ACCESS, NURSE);
+    localStorage.setItem(REFRESH, "r1");
+    const gate = {};
+    let expired = true;
+    const fetchB = vi.fn(async (url) => {
+      if (url.endsWith("/auth/me")) return json(200, profile());
+      if (url.endsWith("/patients")) {
+        if (expired) { expired = false; return json(401, { detail: "expired" }); }
+        return json(200, { patients: [] });
+      }
+      if (url.endsWith("/auth/refresh")) {
+        await new Promise((resolve) => { gate.release = resolve; });
+        return json(200, { access_token: token({ tv: 1 }), refresh_token: "r2" });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    const apiA = createBackendApi({ baseUrl: "", fetchImpl: async () => json(200, profile()) });
+    const apiB = createBackendApi({ baseUrl: "", fetchImpl: fetchB });
+    const eventsA = new EventTarget();
+    const eventsB = new EventTarget();
+    const A = createSessionStore({ api: apiA, events: eventsA });
+    const B = createSessionStore({ api: apiB, events: eventsB });
+    await A.restore();
+    await B.restore();
+    const loading = B.track(() => apiB.boardPatients()).catch((err) => err);
+    await vi.waitFor(() => expect(gate.release).toBeTypeOf("function"));
+    A.signOut();
+    gate.release();
+    expect((await loading).superseded).toBe(true);
+    expect(B.getState().phase).toBe(PHASE.READY);                      // the storage event ends it here
+    expect(localStorage.getItem(ACCESS)).toBeNull();
+    expect(localStorage.getItem(REFRESH)).toBeNull();
+    storageEvent(eventsB, ACCESS, null);
+    expect(B.getState()).toMatchObject({ phase: PHASE.SIGNED_OUT, notice: { code: NOTICE.ELSEWHERE } });
+    expect(A.getState().phase).toBe(PHASE.SIGNED_OUT);
+    A.dispose();
+    B.dispose();
   });
 });

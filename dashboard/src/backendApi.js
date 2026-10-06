@@ -105,6 +105,11 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
 
   // Storage may refuse (a private window, blocked site data, a full quota): the pair then lives in
   // memory, so the session still works in this tab, and is lost with it.
+  //
+  // `refreshStored`: the refresh token this tab holds is the one in storage (read from it, or
+  // written to it). Only then does an empty key mean that another tab removed it — signed out —
+  // rather than that this browser never kept it.
+  let refreshStored = false;
   const readToken = (key, field) => {
     if (mem[field] !== null) return mem[field];
     try {
@@ -113,6 +118,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     } catch {
       mem[field] = null;
     }
+    if (field === "refresh") refreshStored = mem.refresh !== null;
     return mem[field];
   };
   const accessToken = () => readToken(ACCESS_KEY, "access");
@@ -142,15 +148,29 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
   function setTokens(tokens) {
     mem.access = tokens?.access_token ?? null;
     mem.refresh = tokens?.refresh_token ?? null;
+    refreshStored = false;
     const s = storage();
     if (!s) return;
     const put = (key, value) => {
       try {
         if (value) s.setItem(key, value); else s.removeItem(key);
-      } catch { /* refused: the memory copy above is what this tab goes on with */ }
+        return true;
+      } catch {
+        return false;   // refused: the memory copy above is what this tab goes on with
+      }
     };
     put(ACCESS_KEY, mem.access);
-    put(REFRESH_KEY, mem.refresh);
+    refreshStored = put(REFRESH_KEY, mem.refresh) && mem.refresh !== null;
+  }
+
+  /** The new pair of a sign-in, a TOTP step or a password change sent under generation `gen` —
+   *  unless the session it was sent for ended (or was replaced) while it was on its way: a sign-out,
+   *  a step backed out of, another tab's sign-out or account (`logout`, `supersede`). Such a pair
+   *  belongs to nobody now; written, a reload or another tab's storage event would open it again. */
+  function acceptTokens(gen, tokens) {
+    if (gen !== generation) throw superseded();
+    replaceTokens(tokens);
+    return tokens;
   }
 
   function logout() {
@@ -238,6 +258,18 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     }
   }
 
+  /** Has another tab removed the refresh token this tab holds from storage (signed out there)?
+   *  Never for a browser that did not keep it in storage in the first place. */
+  function storedRefreshGone() {
+    if (!refreshStored) return false;
+    try {
+      const s = storage();
+      return s !== null && s.getItem(REFRESH_KEY) === null;
+    } catch {
+      return false;
+    }
+  }
+
   /** Does storage hold an access token of the account `sent` belongs to? Both must be readable
    *  JWTs with the same `sub`: a token that cannot be read is never assumed to be the same account. */
   function storedAccessIsSameAccount(sent) {
@@ -281,6 +313,11 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: sentRefresh }),
       });
+      // Another tab signed out while the refresh was on its way: whatever the answer — a granted
+      // pair, a refusal — it is about a session that is over. Nothing is written back (a reload or
+      // that tab's storage event would open the session again) and nothing is dropped twice; the
+      // `storage` event ends the session here.
+      if (storedRefreshGone()) throw superseded();
       // Another tab of this browser replaced the pair while the refresh was on its way (a password
       // change, a verified TOTP step, a new sign-in): the answer — a refusal of the retired refresh
       // token, or a grant of an older pair — is about the pair that is gone. Neither drop the newer
@@ -332,22 +369,20 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     /** `login` is a username or an e-mail (the API's `email` field is a legacy alias). */
     login(login, password) {
       return timed(async (doFetch) => {
+        const gen = generation;
         const res = await post(doFetch, "/auth/login", { login, password });
         if (!res.ok) throw await failure(res, "Giriş başarısız.");
-        const tokens = await res.json();
-        replaceTokens(tokens);
-        return tokens;
+        return acceptTokens(gen, await res.json());
       });
     },
 
     /** Exchange the 6-digit authenticator code for MFA-verified tokens. */
     verifyTotp(code) {
       return timed(async (doFetch) => {
+        const gen = generation;
         const res = await post(doFetch, "/auth/totp/verify", { code }, { auth: true });
         if (!res.ok) throw await failure(res, "Doğrulama kodu geçersiz.");
-        const tokens = await res.json();
-        replaceTokens(tokens);
-        return tokens;
+        return acceptTokens(gen, await res.json());
       });
     },
 
@@ -418,14 +453,15 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
 
     /** The change retires every existing session; the API answers with a fresh pair. */
     async changePassword(currentPassword, newPassword) {
+      const gen = generation;
       const tokens = await authed("/auth/password", {
         method: "POST", body: { current_password: currentPassword, new_password: newPassword },
         credential: true,
       });
       // Every older session (the old refresh token included) is retired by the change: a refresh
-      // still on its way with it must not undo this pair.
-      replaceTokens(tokens);
-      return tokens;
+      // still on its way with it must not undo this pair (replaceTokens). And a session that ended
+      // while the change was on its way does not get this pair back (acceptTokens).
+      return acceptTokens(gen, tokens);
     },
 
     // ---- administration (/admin, see homunculus-engine admin/router.py) ----

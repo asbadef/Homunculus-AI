@@ -854,3 +854,110 @@ describe("backendApi — another ACCOUNT signed in elsewhere while this tab's re
     expect((await pending).superseded).toBe(true);
   });
 });
+
+describe("backendApi — a pair answered after its session ended is never written", () => {
+  // A sign-out, a step backed out of, another tab's sign-out or sign-in: whatever ended the session
+  // a sign-in, a TOTP step, a password change or a refresh was sent for, its answer arrives later
+  // and must not put a pair back into a browser that has just been emptied.
+  const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  /** Every `path` answer waits for release(); everything else answers `ok`. */
+  function waiting(path, answer) {
+    let release;
+    const fetchMock = vi.fn(async (url) => {
+      if (url === path) {
+        await new Promise((resolve) => { release = resolve; });
+        return answer;
+      }
+      return json(200, { ok: true });
+    });
+    return { fetchMock, release: () => release() };
+  }
+
+  it("a sign-in answered after a sign-out", async () => {
+    const { fetchMock, release } = waiting("/auth/login", json(200, { access_token: "late-acc", refresh_token: "late-ref" }));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    const pending = api.login("ayse", "x").catch((e) => e);
+    await settle();
+    api.logout();
+    release();
+    const err = await pending;
+    expect(err.superseded).toBe(true);
+    expect(store.size).toBe(0);
+    expect(api.accessToken()).toBeNull();
+  });
+
+  it("a TOTP step answered after it was backed out of", async () => {
+    store.set("homunculus-access-token", jwt("u1", "pending"));
+    store.set("homunculus-refresh-token", "pending-ref");
+    const { fetchMock, release } = waiting("/auth/totp/verify", json(200, { access_token: "verified-acc", refresh_token: "verified-ref" }));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    const pending = api.verifyTotp("123456").catch((e) => e);
+    await settle();
+    api.logout();
+    release();
+    expect((await pending).superseded).toBe(true);
+    expect(store.size).toBe(0);
+  });
+
+  it("a password change answered after another tab's account took over (supersede)", async () => {
+    store.set("homunculus-access-token", OLD_ACC);
+    store.set("homunculus-refresh-token", "old-ref");
+    const { fetchMock, release } = waiting("/auth/password", json(200, { access_token: "changed-acc", refresh_token: "changed-ref" }));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    const pending = api.changePassword("Gecici-1", "Kendi-Sifrem-9").catch((e) => e);
+    await settle();
+    store.set("homunculus-access-token", TAB_ACC);       // another account signed in in another tab
+    store.set("homunculus-refresh-token", "tab-ref");
+    api.supersede();
+    release();
+    expect((await pending).superseded).toBe(true);
+    expect(store.get("homunculus-access-token")).toBe(TAB_ACC);
+    expect(store.get("homunculus-refresh-token")).toBe("tab-ref");
+  });
+
+  it.each([
+    ["granted", json(200, { access_token: "fresh-acc", refresh_token: "fresh-ref" })],
+    ["refused", json(401, { detail: "Invalid or expired refresh token" })],
+  ])("a refresh %s after another tab signed out writes nothing back and ends nothing here", async (_, answer) => {
+    store.set("homunculus-access-token", OLD_ACC);
+    store.set("homunculus-refresh-token", "old-ref");
+    let release;
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/auth/refresh") {
+        await new Promise((resolve) => { release = resolve; });
+        return answer;
+      }
+      return json(401, { detail: "x" });
+    });
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    const pending = api.boardPatients().catch((e) => e);
+    await settle();
+    store.delete("homunculus-access-token");             // the other tab signed out
+    store.delete("homunculus-refresh-token");
+    release();
+    const err = await pending;
+    expect(err.superseded).toBe(true);
+    expect(err.sessionEnded).toBeUndefined();
+    expect(store.size).toBe(0);
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/patients")).toHaveLength(1);
+  });
+
+  it("a browser whose storage refused the pair is not taken for one signed out elsewhere", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => null, setItem: () => { throw new Error("QuotaExceededError"); }, removeItem: () => {},
+    });
+    let refreshed = false;
+    const fetchMock = vi.fn(async (url, init = {}) => {
+      if (url === "/auth/login") return json(200, { access_token: "mem-acc", refresh_token: "mem-ref" });
+      if (url === "/auth/refresh") { refreshed = true; return json(200, { access_token: "mem-acc-2", refresh_token: "mem-ref-2" }); }
+      return init.headers?.Authorization === "Bearer mem-acc-2" ? json(200, { id: "me" }) : json(401, { detail: "x" });
+    });
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    await api.login("ayse", "x");
+    await expect(api.me()).resolves.toEqual({ id: "me" });
+    expect(refreshed).toBe(true);
+    expect(api.accessToken()).toBe("mem-acc-2");
+  });
+});

@@ -16,7 +16,11 @@
 //
 // Ending a session — any way it ends — empties everything it loaded (main's behaviour on a
 // shared ward workstation, liveStore.js `endSession`), and an answer that arrives after it
-// ended, or after another began, is dropped (`epoch`).
+// ended, or after another began, is dropped: by this store (`epoch`), and — for an answer that
+// carries a new pair (a sign-in, the TOTP step, a password change, a refresh) — by backendApi,
+// which never writes a pair asked for under a session that has since ended. Every ending moves
+// backendApi's generation for that: `end` calls `api.logout()`, or `api.supersede()` when another
+// tab has emptied storage already.
 //
 // The tabs of one browser share one pair of tokens. Another tab renewing the SAME account's pair (a
 // refresh, a new password, a passed TOTP step) keeps this tab's session: only the copy held in
@@ -265,7 +269,13 @@ export function createSessionStore({
     epoch += 1;
     const mine = epoch;
     state = { ...state, steps: NO_STEPS };
-    const tokens = await api.login(login, password);
+    let tokens;
+    try {
+      tokens = await api.login(login, password);
+    } catch (err) {
+      if (mine !== epoch) return;               // this tab moved on meanwhile: nobody waits for it
+      throw err;
+    }
     if (mine !== epoch) return;
     // Only a sign-in the server accepted changes this browser: a refused one (a stranger's guess,
     // a typo) neither replaces the remembered name nor lifts a lock.
@@ -298,7 +308,12 @@ export function createSessionStore({
    *  not go through refresh-and-retry. Rejects with the API's error; the step stays open. */
   async function verifyMfa(code) {
     const mine = epoch;
-    await api.verifyTotp(String(code).trim());
+    try {
+      await api.verifyTotp(String(code).trim());
+    } catch (err) {
+      if (mine !== epoch) return;               // backed out of meanwhile: its answer is nobody's
+      throw err;
+    }
     if (mine !== epoch) return;
     await openWithProfile(mine);
   }
@@ -307,7 +322,12 @@ export function createSessionStore({
    *  pair (every older session ends). Rejects with the API's error. */
   async function changePassword(current, next) {
     const mine = epoch;
-    await track(() => api.changePassword(current, next));
+    try {
+      await track(() => api.changePassword(current, next));
+    } catch (err) {
+      if (mine !== epoch) return;               // the session ended meanwhile
+      throw err;
+    }
     if (mine !== epoch) return;
     await openWithProfile(mine);
   }
