@@ -63,4 +63,20 @@ describe("createSseParser", () => {
     expect(p.push(":1}")).toEqual([]);
     expect(p.push("\n\n")).toEqual([{ a: 1 }]);
   });
+
+  // The board stream's heartbeat (`event: heartbeat`, `data: {}`) is a NAMED event, as the
+  // dashboard's EventSource sees it: only unnamed (`message`) events are payloads. Handed on, its
+  // `{}` would reach the board as a patient frame.
+  it("ignores a named event such as the server's heartbeat, and the events after it are payloads again", () => {
+    const p = createSseParser();
+    expect(p.push(": keep-alive\n\nevent: heartbeat\ndata: {}\n\n")).toEqual([]);
+    expect(p.push('data: {"a":1}\n\n')).toEqual([{ a: 1 }]);
+    expect(p.push('event: heartbeat\r\ndata: {}\r\n\r\ndata: {"b":2}\r\n\r\n')).toEqual([{ b: 2 }]);
+  });
+
+  it("takes an event named `message` as a payload, as the SSE spec's default name", () => {
+    const p = createSseParser();
+    expect(p.push('event: message\ndata: {"a":1}\n\n')).toEqual([{ a: 1 }]);
+    expect(p.push('event:heartbeat\ndata: {}\n\n')).toEqual([]);
+  });
 });

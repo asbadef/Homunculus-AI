@@ -1,10 +1,13 @@
 /**
  * Incremental SSE (Server-Sent Events) parser.
  *
- * The server emits two kinds of frames (see `homunculus-engine/src/homunculus/api/app.py`,
+ * The server emits these frames (see `homunculus-engine/src/homunculus/api/app.py`,
  * `sse_board_frames` / `sse_notification_frames`):
- *   - `data: {json}\n\n`   — a payload event
+ *   - `data: {json}\n\n`   — a payload event (unnamed: the SSE spec's `message`)
  *   - `: keep-alive\n\n`   — a comment, sent to keep the connection alive while idle
+ *   - `event: heartbeat\ndata: {}\n\n` — a NAMED event (the board stream, while idle), by which a
+ *     browser's EventSource tells a quiet stream from a dead one. Not a payload: like
+ *     EventSource's `onmessage`, this parser yields only unnamed (or `message`) events.
  *
  * A streamed fetch delivers these as raw decoded text chunks that can split anywhere — mid
  * line, mid `\n\n` terminator, even mid-JSON. This module owns reassembling that byte stream
@@ -32,11 +35,17 @@ export function createSseParser(options: SseParserOptions = {}): SseParser {
   let buffer = "";
   // Lines accumulated for the event currently being assembled.
   let dataLines: string[] = [];
+  // The `event:` field of the event being assembled; "" is the spec's default, `message`.
+  let eventName = "";
 
   function finishEvent(results: unknown[]): void {
+    const name = eventName;
+    eventName = "";
     if (dataLines.length === 0) return;
     const raw = dataLines.join("\n");
     dataLines = [];
+    // A named event (the board stream's heartbeat) is not a payload.
+    if (name !== "" && name !== "message") return;
     try {
       results.push(JSON.parse(raw));
     } catch {
@@ -68,8 +77,12 @@ export function createSseParser(options: SseParserOptions = {}): SseParser {
           // Per the SSE spec, strip at most one leading space after the colon.
           if (value.startsWith(" ")) value = value.slice(1);
           dataLines.push(value);
+        } else if (line.startsWith("event:")) {
+          let value = line.slice("event:".length);
+          if (value.startsWith(" ")) value = value.slice(1);
+          eventName = value;
         }
-        // Other fields (event:, id:, retry:) are ignored — the server never sends them.
+        // Other fields (id:, retry:) are ignored — the server never sends them.
       }
 
       return results;
