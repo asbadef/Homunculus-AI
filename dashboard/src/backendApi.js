@@ -31,6 +31,21 @@ const TIMEOUT_MESSAGE = "Sunucu yanıt vermedi. İşlem gerçekleşmiş olabilir
 export const SESSION_SUPERSEDED = "SESSION_SUPERSEDED";
 const SUPERSEDED_MESSAGE = "Bu istek önceki oturuma aitti; sonucu uygulanmadı.";
 
+/** The longest wait a `Retry-After` can make a screen hold its button (15 minutes: the longest lock
+ *  the API itself sets). */
+export const RETRY_AFTER_MAX_S = 900;
+
+/** `Retry-After` as seconds: whole digits, or an HTTP-date (seconds until then). Capped at
+ *  RETRY_AFTER_MAX_S; anything else, and a date already past, is `undefined`. */
+export function retryAfterSeconds(raw) {
+  if (typeof raw !== "string") return undefined;
+  const value = raw.trim();
+  let seconds;
+  if (/^\d+$/.test(value)) seconds = Number(value);
+  else if (/^[A-Za-z]{3,9}[, ]/.test(value)) seconds = Math.ceil((Date.parse(value) - Date.now()) / 1000);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, RETRY_AFTER_MAX_S) : undefined;
+}
+
 function defaultBaseUrl() {
   try {
     return import.meta.env?.VITE_API_URL || "";
@@ -71,10 +86,16 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       .finally(() => clearTimeout(timer));
   }
 
+  // Storage may refuse (a private window, blocked site data, a full quota): the pair then lives in
+  // memory, so the session still works in this tab, and is lost with it.
   const readToken = (key, field) => {
     if (mem[field] !== null) return mem[field];
-    const s = storage();
-    mem[field] = s ? s.getItem(key) : null;
+    try {
+      const s = storage();
+      mem[field] = s ? s.getItem(key) : null;
+    } catch {
+      mem[field] = null;
+    }
     return mem[field];
   };
   const accessToken = () => readToken(ACCESS_KEY, "access");
@@ -106,8 +127,13 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     mem.refresh = tokens?.refresh_token ?? null;
     const s = storage();
     if (!s) return;
-    if (mem.access) s.setItem(ACCESS_KEY, mem.access); else s.removeItem(ACCESS_KEY);
-    if (mem.refresh) s.setItem(REFRESH_KEY, mem.refresh); else s.removeItem(REFRESH_KEY);
+    const put = (key, value) => {
+      try {
+        if (value) s.setItem(key, value); else s.removeItem(key);
+      } catch { /* refused: the memory copy above is what this tab goes on with */ }
+    };
+    put(ACCESS_KEY, mem.access);
+    put(REFRESH_KEY, mem.refresh);
   }
 
   function logout() {
@@ -115,14 +141,21 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     setTokens(null);
   }
 
-  /** Another tab of this browser replaced or removed the stored pair: drop the copy held in
-   *  memory, so the next request reads storage again, and treat it as a new session (a refresh
-   *  on its way for the old pair is superseded). Storage itself is not touched — it belongs to
-   *  the other tab's session now. */
+  /** Drop the copy of the pair held in memory, so the next request reads storage again. For a
+   *  `storage` event on TOKEN_KEYS whose pair is the SAME session's (another tab refreshed it):
+   *  requests in flight go on and are not rejected. Storage itself is not touched. */
   function forget() {
-    generation += 1;
     mem.access = null;
     mem.refresh = null;
+  }
+
+  /** `forget()`, and the requests in flight are over: each rejects with `err.superseded === true`
+   *  (and `code` SESSION_SUPERSEDED, `status` 401) — their answer belongs to a session that is gone.
+   *  For when another tab signed in as someone else (the token's `sub` changed) or the tokens are
+   *  gone. Callers checking an error test `err.superseded` BEFORE `err.status`. */
+  function supersede() {
+    generation += 1;
+    forget();
   }
 
   async function failure(res, fallback) {
@@ -150,8 +183,8 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     if (fieldErrors) err.fieldErrors = fieldErrors;
     // A 429 says how long to wait (nginx's sign-in limit sends Retry-After: 60): whole seconds,
     // kept so a screen can hold its button that long instead of letting it be pressed again.
-    const retryAfter = Number.parseInt(res.headers?.get?.("Retry-After") ?? "", 10);
-    if (Number.isFinite(retryAfter) && retryAfter > 0) err.retryAfter = retryAfter;
+    const retryAfter = retryAfterSeconds(res.headers?.get?.("Retry-After"));
+    if (retryAfter !== undefined) err.retryAfter = retryAfter;
     return err;
   }
 
@@ -235,6 +268,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     accessToken,
     logout,
     forget,
+    supersede,
 
     /** `login` is a username or an e-mail (the API's `email` field is a legacy alias). */
     login(login, password) {
@@ -270,9 +304,17 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     /** Unlock a locked screen with the session's own password. Through the refresh-and-retry
      *  path on purpose: a 401 here is the access token's (it expired while the screen was
      *  locked), answered before the password is looked at, so the retry is the first check. A
-     *  wrong password is a 403 and is never retried. Resolves to {ok: true}. */
-    reauth(password) {
-      return authed("/auth/reauth", { method: "POST", body: { password } });
+     *  wrong password is a 403 and is never retried. A 401 that survives that one refresh-and-retry
+     *  (a superseded request aside, which carries `superseded`) means the session itself is over —
+     *  an AD account disabled, expired or without an external id (Decision 4): the error carries
+     *  `sessionEnded = true`, and is not a wrong password. Resolves to {ok: true}. */
+    async reauth(password) {
+      try {
+        return await authed("/auth/reauth", { method: "POST", body: { password } });
+      } catch (err) {
+        if (err?.status === 401 && !err.superseded) err.sessionEnded = true;
+        throw err;
+      }
     },
 
     /** The clinical board for the caller's hospital, already narrowed to the caller's scope.

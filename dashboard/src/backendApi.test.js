@@ -503,3 +503,138 @@ describe("backendApi — scope assignment (until G1-12 rebuilds the screen)", ()
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ grants: [] });
   });
 });
+
+describe("backendApi — another tab, a lock screen's 401, Retry-After, storage that refuses", () => {
+  const json = (status, body, headers) => ({
+    ok: status >= 200 && status < 300, status, json: async () => body, headers,
+  });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  /** /auth/me answers 401 to the first token and 200 to the second; the refresh waits for release(). */
+  function waitingRefresh() {
+    let release;
+    const fetchMock = vi.fn(async (url, init = {}) => {
+      const auth = init.headers?.Authorization || "";
+      if (url === "/auth/refresh") {
+        await new Promise((resolve) => { release = resolve; });
+        return json(200, { access_token: "own-fresh", refresh_token: "own-ref-2" });
+      }
+      return auth === "Bearer old-acc" ? json(401, { detail: "x" }) : json(200, { id: "me" });
+    });
+    store.set("homunculus-access-token", "old-acc");
+    store.set("homunculus-refresh-token", "old-ref");
+    return { api: createBackendApi({ baseUrl: "", fetchImpl: fetchMock }), release: () => release() };
+  }
+
+  it("forget() after another tab's refresh does not end a request waiting on its own refresh", async () => {
+    const { api, release } = waitingRefresh();
+    const pending = api.me();
+    await settle();
+    store.set("homunculus-access-token", "tab-acc");     // the other tab refreshed the same session
+    store.set("homunculus-refresh-token", "tab-ref");
+    api.forget();
+    release();
+    await expect(pending).resolves.toEqual({ id: "me" });
+  });
+
+  it("supersede() ends the requests in flight: their answer belongs to a session that is gone", async () => {
+    const { api, release } = waitingRefresh();
+    const pending = api.me().catch((err) => err);
+    await settle();
+    api.supersede();
+    release();
+    const err = await pending;
+    expect(err.superseded).toBe(true);
+    expect(err.status).toBe(401);
+  });
+
+  it("supersede() also drops the copy in memory and leaves storage alone", () => {
+    store.set("homunculus-access-token", "acc-1");
+    const api = createBackendApi({ baseUrl: "", fetchImpl: vi.fn() });
+    expect(api.accessToken()).toBe("acc-1");
+    store.set("homunculus-access-token", "acc-other");
+    api.supersede();
+    expect(api.accessToken()).toBe("acc-other");
+    expect(store.get("homunculus-access-token")).toBe("acc-other");
+  });
+
+  const retryAfterOf = async (header) => {
+    const res = json(429, { detail: "x" }, header === undefined ? undefined : new Headers({ "Retry-After": header }));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: vi.fn().mockResolvedValue(res) });
+    return (await api.login("a", "b").catch((e) => e)).retryAfter;
+  };
+
+  it("takes Retry-After as whole seconds, capped at 15 minutes", async () => {
+    expect(await retryAfterOf("60")).toBe(60);
+    expect(await retryAfterOf("86400")).toBe(900);
+  });
+
+  it("takes an HTTP-date as the seconds until then: capped, never negative", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-04T12:00:00Z"));
+    try {
+      expect(await retryAfterOf("Sun, 04 Oct 2026 12:00:30 GMT")).toBe(30);
+      expect(await retryAfterOf("Sun, 04 Oct 2026 20:00:00 GMT")).toBe(900);
+      expect(await retryAfterOf("Sun, 04 Oct 2026 11:00:00 GMT")).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["", "soon", "-5", "0", "1.5", "12abc", "1e3"])("reads Retry-After %j as no wait", async (header) => {
+    expect(await retryAfterOf(header)).toBeUndefined();
+  });
+
+  it("a 401 from the unlock after the one refresh-and-retry means the session is over", async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/auth/refresh") return json(200, { access_token: "fresh", refresh_token: "ref-2" });
+      return json(401, { detail: "Invalid credentials" });
+    });
+    store.set("homunculus-access-token", "old");
+    store.set("homunculus-refresh-token", "ref-1");
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    const err = await api.reauth("x").catch((e) => e);
+    expect(err.status).toBe(401);
+    expect(err.sessionEnded).toBe(true);
+    expect(fetchMock.mock.calls.filter(([u]) => u === "/auth/reauth")).toHaveLength(2);
+  });
+
+  it("an expired token is refreshed and the unlock retried once, then answered", async () => {
+    const fetchMock = vi.fn(async (url, init = {}) => {
+      if (url === "/auth/refresh") return json(200, { access_token: "fresh", refresh_token: "ref-2" });
+      return init.headers.Authorization === "Bearer old" ? json(401, { detail: "x" }) : json(200, { ok: true });
+    });
+    store.set("homunculus-access-token", "old");
+    store.set("homunculus-refresh-token", "ref-1");
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    await expect(api.reauth("gizli")).resolves.toEqual({ ok: true });
+    expect(fetchMock.mock.calls.map(([u]) => u)).toEqual(["/auth/reauth", "/auth/refresh", "/auth/reauth"]);
+  });
+
+  it("a wrong password (403), a timeout and a superseded unlock are not 'session ended'", async () => {
+    const api = createBackendApi({
+      baseUrl: "", fetchImpl: vi.fn().mockResolvedValue(json(403, { detail: "Parola hatalı" })),
+    });
+    store.set("homunculus-access-token", "acc");
+    store.set("homunculus-refresh-token", "ref");
+    expect((await api.reauth("x").catch((e) => e)).sessionEnded).toBeUndefined();
+  });
+
+  it("signs in when storage refuses writes, and keeps the pair in memory for this tab", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => { throw new Error("SecurityError"); },
+      setItem: () => { throw new Error("QuotaExceeded"); },
+      removeItem: () => { throw new Error("SecurityError"); },
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json(200, { access_token: "acc-9", refresh_token: "ref-9" }))
+      .mockResolvedValueOnce(json(200, { id: "me" }));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    await expect(api.login("a", "b")).resolves.toMatchObject({ access_token: "acc-9" });
+    expect(api.accessToken()).toBe("acc-9");
+    await expect(api.me()).resolves.toEqual({ id: "me" });
+    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe("Bearer acc-9");
+    expect(() => api.logout()).not.toThrow();
+    expect(api.accessToken()).toBeNull();
+  });
+});
