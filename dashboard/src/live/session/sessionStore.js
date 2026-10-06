@@ -50,6 +50,7 @@ export const NOTICE = Object.freeze({
   ELSEWHERE: "signedOutElsewhere",  // another tab of this browser signed out
   LOCKED_OUT: "lockedOut",          // too many wrong passwords at the lock screen
   LOCK_EXPIRED: "lockExpired",      // locked longer than the hospital allows (SCREEN_LOCK_SIGNOUT_HOURS)
+  PASSWORD_RESET: "passwordReset",  // an administrator reset the password behind the lock screen
   NO_PERMISSIONS: "noPermissions",  // no tenant, or no permission at all
   NO_SCREEN: "noScreen",            // permissions, but no screen of the live UI uses them
 });
@@ -106,8 +107,10 @@ function userFrom(me, session) {
  * api: backendApi (login, verifyTotp, setupTotp, me, changePassword, reauth, accessToken, logout,
  *      forget, supersede).
  * canEnter(perms): whether the live UI has a screen for these rights (shell/routes.js).
- * events: where `storage` events arrive (window); now: the clock; setTimer/clearTimer: the end
- * of a lock that lasts too long.
+ * events: where `storage` events arrive (window), and `visibilitychange` / `pageshow` / `focus` —
+ * a page coming back, which reads the lock and the tokens again (a frozen or bfcache page missed
+ * its storage events and its timer); now: the clock; setTimer/clearTimer: the end of a lock that
+ * lasts too long.
  */
 export function createSessionStore({
   api, canEnter = () => true, events = window, now = () => Date.now(),
@@ -132,21 +135,33 @@ export function createSessionStore({
     set({ ...INITIAL, notice: notice ? { code: notice } : null });
   }
 
-  // ---------------------------------------------------------------- how long a lock may last
+  // ---------------------------------------------------------------- the lock, kept by the browser
+  // The lock lives in `hmc.lock` (browserState.js), shared by every tab and every reload: when it
+  // began, why, and the wrong unlock passwords it has taken (3 per lock, Decision 4).
+  //
   // A browser locked longer than the hospital's SCREEN_LOCK_SIGNOUT_HOURS signs itself out: a ward
-  // PC locked overnight does not keep yesterday's session behind its lock. Checked when the lock
-  // is shown (a reload, a new tab, another tab's lock) and by a timer while it stays.
+  // PC locked overnight does not keep yesterday's session behind its lock (Decision 17). Checked
+  // when the lock is shown (a reload, a new tab, another tab's lock), by a timer while it stays,
+  // when a page comes back (`resync`: a sleeping or frozen page never ran its timer), and before
+  // an unlock is sent — the right password never reopens a lock past its hours.
   let expiry = null;
   function disarm() {
     if (expiry !== null) clearTimer(expiry);
     expiry = null;
   }
 
-  /** Show the lock screen for `user`, locked since `at` — or end the session if that is too long ago. */
-  function showLock(user, { at, why }) {
-    const left = user.lockSignoutHours * HOUR_MS - (now() - at);
+  const lockLeft = (user, at) => user.lockSignoutHours * HOUR_MS - (now() - at);
+
+  /** Show the lock screen for `user`, locked since `at` with `failures` wrong passwords taken — or
+   *  end the session if that is too long ago, or the tries are spent. */
+  function showLock(user, { at, why, failures = 0 }) {
+    const left = lockLeft(user, at);
     if (left <= 0) {
       end(NOTICE.LOCK_EXPIRED);
+      return;
+    }
+    if (failures >= UNLOCK_ATTEMPTS) {
+      end(NOTICE.LOCKED_OUT);
       return;
     }
     disarm();
@@ -155,7 +170,23 @@ export function createSessionStore({
       expiry = null;
       if (mine === epoch && state.phase === PHASE.LOCKED) end(NOTICE.LOCK_EXPIRED);
     }, left);
-    set({ phase: PHASE.LOCKED, user, mfa: null, notice: null, error: null, lock: { at, why }, unlockFailures: 0 });
+    set({ phase: PHASE.LOCKED, user, mfa: null, notice: null, error: null, lock: { at, why }, unlockFailures: failures });
+  }
+
+  /** This session's lock as storage holds it now (another tab's lock, its count, or its unlock):
+   *  follow it. Another account's lock is not this session's. */
+  function syncLock(stored) {
+    if (!state.user || (state.phase !== PHASE.READY && state.phase !== PHASE.LOCKED)) return;
+    const mine = stored && stored.user === state.user.id ? stored : null;
+    if (mine) {
+      // The same lock keeps the higher count (a write of this tab's may not be there yet).
+      const same = state.phase === PHASE.LOCKED && state.lock?.at === mine.at;
+      const failures = Math.max(mine.failures ?? 0, same ? state.unlockFailures : 0);
+      showLock(state.user, { ...mine, failures });
+    } else if (!stored && state.phase === PHASE.LOCKED && api.accessToken()) {
+      disarm();
+      set({ phase: PHASE.READY, lock: null, unlockFailures: 0 });     // unlocked in another tab
+    }
   }
 
   /** Why these rights cannot open the live UI, or null. */
@@ -223,16 +254,21 @@ export function createSessionStore({
     if (mfaPending) {
       set({ phase: PHASE.MFA, user, notice: null, error: null,
             mfa: { enrolled: me.totp_enabled === true } });
-    } else if (me.must_change_password === true) {
+      return;
+    }
+    // The lock before the password step: a locked browser whose password an administrator has
+    // just reset proves no presence by reaching the step — it signs out, as its unlock would.
+    const lock = readLock();
+    if (lock && lock.user === user.id) {
+      if (me.must_change_password === true) end(NOTICE.PASSWORD_RESET);
+      else showLock(user, lock);
+      return;
+    }
+    if (lock) clearLock();                     // another account's lock: not this session's
+    if (me.must_change_password === true) {
       set({ phase: PHASE.PASSWORD, user, mfa: null, notice: null, error: null });
     } else {
-      const lock = readLock();
-      if (lock && lock.user === user.id) {
-        showLock(user, lock);
-      } else {
-        if (lock) clearLock();                 // another account's lock: not this session's
-        set({ phase: PHASE.READY, user, mfa: null, notice: null, error: null, lock: null });
-      }
+      set({ phase: PHASE.READY, user, mfa: null, notice: null, error: null, lock: null });
     }
   }
 
@@ -341,33 +377,61 @@ export function createSessionStore({
   }
 
   /** The session's own password. Rejects with the API's error, the lock staying; the
-   *  UNLOCK_ATTEMPTS-th wrong one (403) signs out instead. Any other refusal (a 401 — reauth()
-   *  says `sessionEnded`, the tokens already gone —, or a 403 such as an inactive membership) means
-   *  the session itself is over; a server that did not answer (429, 503, no network) changes
-   *  nothing. A superseded request is neither: the pair changed under it in another tab, and this
-   *  tab follows storage as the storage event does. */
-  async function unlock(password) {
-    if (state.phase !== PHASE.LOCKED) return;
+   *  UNLOCK_ATTEMPTS-th wrong one (403) of this lock — in any tab, before any reload — signs out
+   *  instead. A 403 password_change_required (an administrator reset the password behind the lock)
+   *  signs out with its own notice: presence is not proven, so not the password step. Any other
+   *  refusal (a 401 — reauth() says `sessionEnded`, the tokens already gone —, or a 403 such as an
+   *  inactive membership) means the session itself is over; a server that did not answer (429,
+   *  503, no network) changes nothing. A superseded request is neither: the pair changed under it
+   *  in another tab, and this tab follows storage as the storage event does. A lock past the
+   *  hospital's hours signs out before anything is sent. One unlock at a time: a second call
+   *  while one is on its way is that one (the password is sent once). */
+  function unlock(password) {
+    if (state.phase !== PHASE.LOCKED) return Promise.resolve();
+    if (!unlocking) unlocking = tryUnlock(password).finally(() => { unlocking = null; });
+    return unlocking;
+  }
+  let unlocking = null;
+
+  async function tryUnlock(password) {
+    if (lockLeft(state.user, state.lock.at) <= 0) {
+      end(NOTICE.LOCK_EXPIRED);
+      return;
+    }
     const mine = epoch;
+    // An answer for a lock that is no longer on screen (unlocked or ended in another tab, or
+    // meanwhile) changes nothing: a late wrong password must not sign out an unlocked session.
+    const current = () => mine === epoch && state.phase === PHASE.LOCKED;
     try {
       await track(() => api.reauth(password));
     } catch (err) {
-      if (mine !== epoch) throw err;
-      if (supersededBy(err)) {
-        followTokens();
-      } else if (apiErrorKey(err)?.key === "errors.reauthRefused") {
-        const failures = state.unlockFailures + 1;
-        if (failures >= UNLOCK_ATTEMPTS) end(NOTICE.LOCKED_OUT);
-        else set({ unlockFailures: failures });
-      } else if ((err?.status === 401 || err?.status === 403) && state.phase === PHASE.LOCKED) {
-        end(NOTICE.SESSION_ENDED);
-      }
+      if (!current()) throw err;
+      if (supersededBy(err)) followTokens();
+      else if (apiErrorKey(err)?.key === "errors.reauthRefused") countWrongPassword();
+      else if (err?.status === 403 && apiErrorKey(err)?.key === "errors.passwordChangeRequired") end(NOTICE.PASSWORD_RESET);
+      else if (err?.status === 401 || err?.status === 403) end(NOTICE.SESSION_ENDED);
       throw err;
     }
-    if (mine !== epoch) return;
+    if (!current()) return;
     disarm();
     clearLock();
     set({ phase: PHASE.READY, lock: null, unlockFailures: 0 });
+  }
+
+  /** One more wrong password for this lock, counted where every tab and reload reads it. */
+  function countWrongPassword() {
+    const { user, lock: shown } = state;
+    const stored = readLock();
+    const same = stored && stored.user === user.id && stored.at === shown.at ? stored : null;
+    const failures = Math.max(state.unlockFailures, same?.failures ?? 0) + 1;
+    if (failures >= UNLOCK_ATTEMPTS) {
+      end(NOTICE.LOCKED_OUT);
+      return;
+    }
+    // Only over this lock: one gone from storage was unlocked or ended elsewhere, and its storage
+    // event is on its way — writing it back would lock that tab again.
+    if (same) writeLock({ user: user.id, at: shown.at, why: shown.why, failures });
+    set({ unlockFailures: failures });
   }
 
   // ---------------------------------------------------------------- other tabs of this browser
@@ -378,8 +442,12 @@ export function createSessionStore({
     api.forget();                                // read storage again on the next request
     const token = api.accessToken();
     if (!token) {
-      api.supersede();
-      if (state.phase !== PHASE.SIGNED_OUT) end(NOTICE.ELSEWHERE, { keepStorage: true });
+      // Only a session ends: on the sign-in form there is none, and a sign-in on its way here is
+      // a new presence that another tab's sign-out says nothing about.
+      if (state.phase !== PHASE.SIGNED_OUT) {
+        api.supersede();
+        end(NOTICE.ELSEWHERE, { keepStorage: true });
+      }
       return;
     }
     const sub = decodeJwtPayload(token)?.sub;
@@ -408,17 +476,23 @@ export function createSessionStore({
       followTokens();
       return;
     }
-    if (event.key === LOCK_KEY) {
-      const other = parseLock(event.newValue);
-      if (other && state.phase === PHASE.READY && state.user && other.user === state.user.id) {
-        showLock(state.user, other);
-      } else if (!other && state.phase === PHASE.LOCKED && api.accessToken()) {
-        disarm();
-        set({ phase: PHASE.READY, lock: null, unlockFailures: 0 });   // unlocked in another tab
-      }
-    }
+    if (event.key === LOCK_KEY) syncLock(parseLock(event.newValue));
   }
+
+  /** The page came back (shown again, restored from the back-forward cache, focused): a page that
+   *  was frozen or asleep missed its storage events and its lock timer. Read the tokens and the
+   *  lock again, as those events would have. Not while a stored session is being checked: that
+   *  check reads them itself. */
+  function resync() {
+    if (state.phase === PHASE.RESTORING) return;
+    const before = epoch;
+    followTokens();
+    if (before === epoch) syncLock(readLock());
+  }
+
+  const RESYNC_EVENTS = ["visibilitychange", "pageshow", "focus"];
   events?.addEventListener?.("storage", onStorage);
+  for (const type of RESYNC_EVENTS) events?.addEventListener?.(type, resync);
 
   return {
     getState: () => state,
@@ -442,6 +516,7 @@ export function createSessionStore({
     signOut: () => end(NOTICE.SIGNED_OUT),
     dispose() {
       events?.removeEventListener?.("storage", onStorage);
+      for (const type of RESYNC_EVENTS) events?.removeEventListener?.(type, resync);
       disarm();
       listeners.clear();
     },

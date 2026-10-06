@@ -366,6 +366,154 @@ describe("the lock", () => {
     });
 });
 
+// Decision 4: 3 wrong passwords per LOCK — not per page load, not per tab. Decision 17: a lock
+// lasts at most the hospital's hours, whether or not the page was awake to run its timer.
+describe("the lock belongs to the browser, not to the page", () => {
+  async function lockedAt(at = NOW, { now = () => NOW, me = profile() } = {}) {
+    const s = setup({ access: NURSE, now });
+    s.api.me.mockResolvedValue(me);
+    await s.store.restore();
+    writeLock({ user: "u-ayse", at, why: "idle" });
+    storageEvent(s.events, LOCK_KEY, JSON.stringify({ user: "u-ayse", at, why: "idle" }));
+    expect(s.state().phase).toBe(PHASE.LOCKED);
+    return s;
+  }
+
+  it("a reload keeps the wrong passwords already taken", async () => {
+    const a = await lockedAt();
+    a.api.reauth.mockRejectedValue(refusal(403, "Parola hatalı"));
+    await expect(a.store.unlock("yanlis-1")).rejects.toThrow();
+    await expect(a.store.unlock("yanlis-2")).rejects.toThrow();
+    a.store.dispose();
+    const reload = setup({ access: NURSE });
+    reload.api.me.mockResolvedValue(profile());
+    await reload.store.restore();
+    expect(reload.state()).toMatchObject({ phase: PHASE.LOCKED, unlockFailures: 2 });
+    reload.api.reauth.mockRejectedValue(refusal(403, "Parola hatalı"));
+    await expect(reload.store.unlock("yanlis-3")).rejects.toThrow();
+    expect(reload.state()).toMatchObject({ phase: PHASE.SIGNED_OUT, notice: { code: NOTICE.LOCKED_OUT } });
+    reload.store.dispose();
+  });
+
+  it("every tab counts toward the same three", async () => {
+    const a = await lockedAt();
+    const b = await lockedAt();
+    const relay = (to) => storageEvent(to.events, LOCK_KEY, localStorage.getItem(LOCK_KEY));
+    a.api.reauth.mockRejectedValue(refusal(403, "Parola hatalı"));
+    b.api.reauth.mockRejectedValue(refusal(403, "Parola hatalı"));
+    await expect(a.store.unlock("yanlis-1")).rejects.toThrow();
+    relay(b);
+    expect(b.state().unlockFailures).toBe(1);
+    await expect(b.store.unlock("yanlis-2")).rejects.toThrow();
+    relay(a);
+    expect(a.state().unlockFailures).toBe(2);
+    await expect(a.store.unlock("yanlis-3")).rejects.toThrow();
+    expect(a.state()).toMatchObject({ phase: PHASE.SIGNED_OUT, notice: { code: NOTICE.LOCKED_OUT } });
+    a.store.dispose();
+    b.store.dispose();
+  });
+
+  it("a new lock starts a new count", async () => {
+    const s = await lockedAt();
+    s.api.reauth.mockRejectedValueOnce(refusal(403, "Parola hatalı")).mockResolvedValueOnce({ ok: true });
+    await expect(s.store.unlock("yanlis")).rejects.toThrow();
+    await s.store.unlock("Gizli-Sifre-1");
+    s.store.lock("manual");
+    expect(s.state().unlockFailures).toBe(0);
+    expect(readLock()).toEqual({ user: "u-ayse", at: NOW, why: "manual" });
+    s.store.dispose();
+  });
+
+  it("a lock past the hospital's hours does not open for the right password, timer or not", async () => {
+    let t = NOW;
+    const s = await lockedAt(NOW, { now: () => t });
+    t = NOW + 13 * HOUR;                                               // the page slept through its timer
+    s.api.reauth.mockResolvedValue({ ok: true });
+    await s.store.unlock("Gizli-Sifre-1");
+    expect(s.api.reauth).not.toHaveBeenCalled();
+    expect(s.state()).toMatchObject({ phase: PHASE.SIGNED_OUT, user: null, notice: { code: NOTICE.LOCK_EXPIRED } });
+    expect(readLock()).toBeNull();
+    s.store.dispose();
+  });
+
+  it.each(["visibilitychange", "pageshow", "focus"])(
+    "back on a page that slept past the lock's hours (%s): signed out", async (type) => {
+      let t = NOW;
+      const s = await lockedAt(NOW, { now: () => t });
+      t = NOW + 12 * HOUR;
+      s.events.dispatchEvent(new Event(type));
+      expect(s.state()).toMatchObject({ phase: PHASE.SIGNED_OUT, notice: { code: NOTICE.LOCK_EXPIRED } });
+      s.store.dispose();
+    });
+
+  it("back on a page that missed the storage events: it locks, unlocks and signs out with the others", async () => {
+    const s = setup({ access: NURSE });
+    s.api.me.mockResolvedValue(profile());
+    await s.store.restore();
+    writeLock({ user: "u-ayse", at: NOW - 5, why: "manual", failures: 1 });   // locked elsewhere, no event
+    s.events.dispatchEvent(new Event("visibilitychange"));
+    expect(s.state()).toMatchObject({ phase: PHASE.LOCKED, lock: { at: NOW - 5, why: "manual" }, unlockFailures: 1 });
+    localStorage.removeItem(LOCK_KEY);                                       // unlocked elsewhere
+    s.events.dispatchEvent(new Event("focus"));
+    expect(s.state().phase).toBe(PHASE.READY);
+    s.api.store(null);                                                     // signed out elsewhere
+    s.events.dispatchEvent(new Event("pageshow"));
+    expect(s.state()).toMatchObject({ phase: PHASE.SIGNED_OUT, notice: { code: NOTICE.ELSEWHERE } });
+    expect(s.api.logout).not.toHaveBeenCalled();
+    s.store.dispose();
+  });
+
+  it("a second unlock while one is on its way is that one: the password is sent once", async () => {
+    const s = await lockedAt();
+    let answer;
+    s.api.reauth.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+    const first = s.store.unlock("Gizli-Sifre-1");
+    const second = s.store.unlock("Gizli-Sifre-1");
+    expect(second).toBe(first);
+    answer({ ok: true });
+    await first;
+    expect(s.api.reauth).toHaveBeenCalledTimes(1);
+    expect(s.state().phase).toBe(PHASE.READY);
+    s.store.dispose();
+  });
+
+  it("a wrong password answered after another tab unlocked changes nothing", async () => {
+    const s = await lockedAt();
+    let refuse;
+    s.api.reauth.mockImplementation(() => new Promise((_, reject) => { refuse = reject; }));
+    const pending = s.store.unlock("yanlis");
+    localStorage.removeItem(LOCK_KEY);
+    storageEvent(s.events, LOCK_KEY, null);                                // unlocked in another tab
+    expect(s.state().phase).toBe(PHASE.READY);
+    refuse(refusal(403, "Parola hatalı"));
+    await expect(pending).rejects.toThrow();
+    expect(s.state()).toMatchObject({ phase: PHASE.READY, unlockFailures: 0, notice: null });
+    expect(readLock()).toBeNull();
+    expect(s.api.logout).not.toHaveBeenCalled();
+    s.store.dispose();
+  });
+
+  it("an administrator's password reset behind the lock signs out — presence is not proven", async () => {
+    const s = await lockedAt();
+    s.api.reauth.mockRejectedValue(refusal(403, "password_change_required"));
+    await expect(s.store.unlock("Gizli-Sifre-1")).rejects.toThrow();
+    expect(s.state()).toMatchObject({ phase: PHASE.SIGNED_OUT, notice: { code: NOTICE.PASSWORD_RESET } });
+    expect(s.api.logout).toHaveBeenCalled();
+    expect(readLock()).toBeNull();
+    s.store.dispose();
+  });
+
+  it("…and so does a reload of that locked browser: the lock comes before the password step", async () => {
+    writeLock({ user: "u-ayse", at: NOW - 1000, why: "idle" });
+    const s = setup({ access: NURSE });
+    s.api.me.mockResolvedValue(profile({ must_change_password: true }));
+    await s.store.restore();
+    expect(s.state()).toMatchObject({ phase: PHASE.SIGNED_OUT, notice: { code: NOTICE.PASSWORD_RESET } });
+    expect(readLock()).toBeNull();
+    s.store.dispose();
+  });
+});
+
 describe("rights follow the token", () => {
   it("re-reads the rights after a call that brought a refreshed token", async () => {
     const { api, store, state } = setup({ access: NURSE });
@@ -570,6 +718,22 @@ describe("with the real backendApi: a late pair never outlives the session's end
     expect(reload.getState().phase).toBe(PHASE.SIGNED_OUT);
     store.dispose();
     reload.dispose();
+  });
+
+  it("a sign-in on its way survives the page coming back, and another tab's sign-out", async () => {
+    const { fetchImpl, gate } = slowApi("/auth/login", json(200, { access_token: NURSE, refresh_token: "r1" }));
+    const events = new EventTarget();
+    const store = createSessionStore({ api: createBackendApi({ baseUrl: "", fetchImpl }), events });
+    await store.restore();
+    const signingIn = store.signIn("ayse", "Gizli-Sifre-1");
+    await vi.waitFor(() => expect(gate.release).toBeTypeOf("function"));
+    events.dispatchEvent(new Event("focus"));
+    storageEvent(events, ACCESS, null);
+    gate.release();
+    await signingIn;
+    expect(store.getState().phase).toBe(PHASE.READY);
+    expect(localStorage.getItem(ACCESS)).toBe(NURSE);
+    store.dispose();
   });
 
   it("signing out while a password change is on its way: the new pair is not written", async () => {

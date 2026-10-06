@@ -23,6 +23,14 @@ describe("the lock this browser keeps", () => {
     expect(parseLock(raw)).toBeNull();
   });
 
+  it("keeps the wrong unlock passwords it has taken, shared by every tab and reload", () => {
+    writeLock({ user: "u-1", at: 5, why: "idle", failures: 2 });
+    expect(readLock()).toEqual({ user: "u-1", at: 5, why: "idle", failures: 2 });
+    for (const failures of [0, -1, 1.5, "2", null]) {
+      expect(parseLock(JSON.stringify({ user: "u-1", at: 5, why: "idle", failures }))).toEqual({ user: "u-1", at: 5, why: "idle" });
+    }
+  });
+
   it("answers no lock, and writes nothing, when storage refuses", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("SecurityError"); });
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("SecurityError"); });
