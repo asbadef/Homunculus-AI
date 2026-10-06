@@ -53,6 +53,36 @@ describe("restoring a stored session (a page load)", () => {
     expect(api.me).not.toHaveBeenCalled();
   });
 
+  it("with nothing stored, nothing of a session stays: a lock left behind goes, the epoch moves", async () => {
+    writeLock({ user: "u-ayse", at: NOW, why: "idle" });
+    const { api, store, state } = setup();
+    const before = store.epoch();
+    await store.restore();
+    expect(readLock()).toBeNull();
+    expect(store.epoch()).toBeGreaterThan(before);
+    expect(state()).toMatchObject({ phase: PHASE.SIGNED_OUT, user: null, lock: null });
+    expect(api.logout).not.toHaveBeenCalled();                         // nothing to drop, nothing written
+  });
+
+  it("listens to other tabs from restore() to dispose(), and again after a restart (StrictMode)", async () => {
+    const { api, store, events, state } = setup({ access: NURSE });
+    api.me.mockResolvedValue(profile());
+    const seen = vi.fn();
+    store.subscribe(seen);
+    await store.restore();
+    store.dispose();
+    storageEvent(events, LOCK_KEY, JSON.stringify({ user: "u-ayse", at: NOW, why: "manual" }));
+    expect(state().phase).toBe(PHASE.READY);                            // disposed: deaf
+    await store.restore();                                              // the effect runs again
+    await store.restore();
+    storageEvent(events, "homunculus-refresh-token", "r-2");
+    expect(api.forget).toHaveBeenCalledTimes(1);                        // attached once, not twice
+    storageEvent(events, LOCK_KEY, JSON.stringify({ user: "u-ayse", at: NOW, why: "manual" }));
+    expect(state().phase).toBe(PHASE.LOCKED);
+    expect(seen).toHaveBeenCalled();                                    // subscribers survive dispose
+    store.dispose();
+  });
+
   it("opens the shell with the profile and the token's rights", async () => {
     const { api, store, state } = setup({ access: NURSE });
     api.me.mockResolvedValue(profile());
@@ -604,6 +634,43 @@ describe("other tabs of this browser", () => {
     s.store.dispose();
   });
 
+  it("stays on the TOTP step, mounted, when another tab only refreshed the same account's tokens", async () => {
+    const s = setup({ access: PENDING });
+    s.api.me.mockResolvedValue(profile({ id: "u-kaya", totp_enabled: false }));
+    await s.store.restore();
+    const seen = [];
+    s.store.subscribe(() => seen.push(s.state().phase));
+    const refreshed = token({ sub: "u-kaya", groups: ["attending"], perms: ["board.view"], mfaRequired: true });
+    s.api.store(refreshed);
+    storageEvent(s.events, "homunculus-access-token", refreshed);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(s.state()).toMatchObject({ phase: PHASE.MFA, mfa: { enrolled: false } });
+    expect(seen).not.toContain(PHASE.RESTORING);                       // the step (its QR) is never remounted
+    expect(s.api.me).toHaveBeenCalledTimes(1);
+    expect(s.api.forget).toHaveBeenCalled();
+    s.store.dispose();
+  });
+
+  it("moves on from the password step when the same account changed its password in another tab", async () => {
+    const s = setup({ access: NURSE });
+    s.api.me.mockResolvedValueOnce(profile({ must_change_password: true })).mockResolvedValueOnce(profile());
+    await s.store.restore();
+    expect(s.state().phase).toBe(PHASE.PASSWORD);
+    const seen = [];
+    s.store.subscribe(() => seen.push(s.state().phase));
+    const refreshed = token();                                         // a plain refresh: the step stays
+    s.api.store(refreshed);
+    storageEvent(s.events, "homunculus-access-token", refreshed);
+    expect(s.state().phase).toBe(PHASE.PASSWORD);
+    expect(s.api.me).toHaveBeenCalledTimes(1);
+    const changed = token({ tv: 1 });                                  // the change retires the old pair
+    s.api.store(changed);
+    storageEvent(s.events, "homunculus-access-token", changed);
+    await vi.waitFor(() => expect(s.state().phase).toBe(PHASE.READY));
+    expect(seen).not.toContain(PHASE.RESTORING);
+    s.store.dispose();
+  });
+
   it("does not lock for another account's lock", async () => {
     const { events, state } = await ready();
     storageEvent(events, LOCK_KEY, JSON.stringify({ user: "u-baskasi", at: 5, why: "manual" }));
@@ -614,18 +681,25 @@ describe("other tabs of this browser", () => {
 // A request backendApi rejects with `superseded` belongs to a session another tab replaced: it
 // says nothing about this session being over. The storage event settles where this tab goes.
 describe("a request another tab superseded", () => {
-  it("does not end a session being restored; the storage event settles it", async () => {
-    const { api, store, events, state } = setup({ access: NURSE });
-    api.me.mockRejectedValueOnce(superseded());
-    await store.restore();
-    expect(state().phase).not.toBe(PHASE.SIGNED_OUT);
-    expect(state().phase).not.toBe(PHASE.UNREACHABLE);
-    expect(api.logout).not.toHaveBeenCalled();
+  it("during a check of the stored session: checks what storage holds now — never stuck checking", async () => {
+    const { api, store, state } = setup({ access: NURSE });
     const other = token({ sub: "u-murad" });
-    api.store(other);
-    api.me.mockResolvedValue(profile({ id: "u-murad", username: "murad" }));
-    storageEvent(events, "homunculus-access-token", other);
+    api.me.mockImplementationOnce(async () => { api.store(other); throw superseded(); })
+      .mockResolvedValue(profile({ id: "u-murad", username: "murad" }));
+    await store.restore();
     await vi.waitFor(() => expect(state()).toMatchObject({ phase: PHASE.READY, user: { username: "murad" } }));
+    expect(api.forget).toHaveBeenCalled();
+    expect(api.logout).not.toHaveBeenCalled();
+    store.dispose();
+  });
+
+  it("during a check of the stored session, with nothing stored any more: signed out elsewhere", async () => {
+    const { api, store, state } = setup({ access: NURSE });
+    api.me.mockImplementationOnce(async () => { api.store(null); throw superseded(); });
+    await store.restore();
+    expect(state()).toMatchObject({ phase: PHASE.SIGNED_OUT, notice: { code: NOTICE.ELSEWHERE } });
+    expect(api.supersede).toHaveBeenCalled();
+    expect(api.logout).not.toHaveBeenCalled();
     store.dispose();
   });
 

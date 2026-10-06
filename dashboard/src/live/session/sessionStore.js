@@ -124,14 +124,15 @@ export function createSessionStore({
 
   // ---------------------------------------------------------------- endings
   /** Everything this session loaded goes; the next screen starts from nothing. `keepStorage`:
-   *  another tab has emptied storage already, and this tab's copy of the pair went with its
-   *  requests in flight (`followTokens`): storage is not written again. */
+   *  storage holds no pair of this session — another tab emptied it, and this tab's copy went with
+   *  its requests in flight (`api.supersede()`), or there was none — and is not written again. */
   function end(notice, { keepStorage = false } = {}) {
     epoch += 1;
     disarm();
     if (!keepStorage) api.logout();
     clearLock();
     rightsToken = null;
+    stepClaims = null;
     set({ ...INITIAL, notice: notice ? { code: notice } : null });
   }
 
@@ -246,6 +247,7 @@ export function createSessionStore({
     }
     const user = userFrom(me, session);
     rightsToken = api.accessToken();
+    stepClaims = claimsOf(rightsToken);
     const mfaPending = session.mfaRequired && !session.mfaVerified;
     // The steps this sign-in takes after the password, for the "Step 2/3" line: once known, kept
     // until the session is open, so the password step after the TOTP one still counts it.
@@ -279,9 +281,15 @@ export function createSessionStore({
     settle(me);
   }
 
+  /** Check the session this browser holds (a page load, a retry) and open it. Also starts the
+   *  store: it listens to other tabs and to the page coming back from here until `dispose()` —
+   *  attached once however often it runs (StrictMode runs the effect that calls it twice). */
   async function restore() {
+    attach();
     if (!api.accessToken()) {
-      if (state.phase !== PHASE.SIGNED_OUT) set({ ...INITIAL });
+      // Nothing stored: nothing of a session may stay either — a lock left behind, a timer. The
+      // reason the form shows, if any, stays; storage holds no pair to drop.
+      end(state.notice?.code ?? null, { keepStorage: true });
       return;
     }
     epoch += 1;
@@ -291,11 +299,41 @@ export function createSessionStore({
       await openWithProfile(mine);
     } catch (err) {
       if (mine !== epoch) return;
-      // Another tab replaced the session under this check: no verdict on it. The storage event
-      // that follows opens what this browser holds now.
-      if (supersededBy(err)) return;
-      if (refused(err)) end(null);              // "you were not signed in": a state, not a fault
+      // Another tab replaced the session under this check: no verdict on it. Check what storage
+      // holds now instead of waiting on a storage event.
+      if (supersededBy(err)) recheck();
+      else if (refused(err)) end(null);         // "you were not signed in": a state, not a fault
       else set({ phase: PHASE.UNREACHABLE, error: err });
+    }
+  }
+
+  /** A check overtaken by another tab's change: none stored now — signed out elsewhere; a pair —
+   *  check that one. Never left waiting in RESTORING. */
+  function recheck() {
+    api.forget();
+    if (api.accessToken()) {
+      restore();
+      return;
+    }
+    api.supersede();
+    end(NOTICE.ELSEWHERE, { keepStorage: true });
+  }
+
+  /** The same session, settled again where it stands — no RESTORING in between, so a step on screen
+   *  (the TOTP enrolment's QR) is not remounted. For another tab's change that moves this session
+   *  on: a passed TOTP step, a new password. A profile that cannot be read leaves the step as it is. */
+  let settling = 0;
+  async function resettle() {
+    const mine = epoch;
+    settling += 1;
+    const seq = settling;
+    try {
+      const me = await api.me();
+      if (mine === epoch && seq === settling) settle(me);
+    } catch (err) {
+      if (mine !== epoch || seq !== settling) return;
+      if (supersededBy(err)) recheck();
+      else if (err?.sessionEnded === true) end(NOTICE.SESSION_ENDED);
     }
   }
 
@@ -460,11 +498,23 @@ export function createSessionStore({
       rightsToken = null;
       set({ ...INITIAL });
       restore();
-    } else if (state.phase === PHASE.MFA || state.phase === PHASE.PASSWORD) {
-      // The same account passed this step in another tab (a verified code, a new password):
-      // its new token is here now — settle again instead of asking for it twice.
-      restore();
+    } else if ((state.phase === PHASE.MFA || state.phase === PHASE.PASSWORD) && stepPassedIn(token)) {
+      // The same account passed this step in another tab (a verified code; a new password, which
+      // retires the old pair: `tv`): its new token is here now — settle again instead of asking
+      // for it twice. A plain refresh changes neither, and the step stays as it is.
+      resettle();
     }
+  }
+
+  /** The claims that tell a step was passed, as the token this session last settled on had them. */
+  let stepClaims = null;
+  const claimsOf = (token) => {
+    const claims = decodeJwtPayload(token);
+    return { mfaVerified: claims?.mfa_verified === true, tv: claims?.tv ?? null };
+  };
+  function stepPassedIn(token) {
+    const next = claimsOf(token);
+    return !stepClaims || next.mfaVerified !== stepClaims.mfaVerified || next.tv !== stepClaims.tv;
   }
 
   function onStorage(event) {
@@ -490,9 +540,23 @@ export function createSessionStore({
     if (before === epoch) syncLock(readLock());
   }
 
+  // Listening starts with restore() and stops with dispose(), each undoing the other: React's
+  // StrictMode runs LiveApp's effect (restore … dispose) twice, and the store must hear other tabs
+  // after the second run as after the first.
   const RESYNC_EVENTS = ["visibilitychange", "pageshow", "focus"];
-  events?.addEventListener?.("storage", onStorage);
-  for (const type of RESYNC_EVENTS) events?.addEventListener?.(type, resync);
+  let attached = false;
+  function attach() {
+    if (attached || !events?.addEventListener) return;
+    attached = true;
+    events.addEventListener("storage", onStorage);
+    for (const type of RESYNC_EVENTS) events.addEventListener(type, resync);
+  }
+  function detach() {
+    if (!attached) return;
+    attached = false;
+    events.removeEventListener("storage", onStorage);
+    for (const type of RESYNC_EVENTS) events.removeEventListener(type, resync);
+  }
 
   return {
     getState: () => state,
@@ -514,11 +578,11 @@ export function createSessionStore({
     /** Back out of a step (MFA, a forced password change): the session ends, nothing kept. */
     cancel: () => end(null),
     signOut: () => end(NOTICE.SIGNED_OUT),
+    /** Stop what restore() started: other tabs, the page coming back, the lock's timer. The
+     *  subscribers are React's own to remove (useSyncExternalStore unsubscribes on unmount). */
     dispose() {
-      events?.removeEventListener?.("storage", onStorage);
-      for (const type of RESYNC_EVENTS) events?.removeEventListener?.(type, resync);
+      detach();
       disarm();
-      listeners.clear();
     },
   };
 }
