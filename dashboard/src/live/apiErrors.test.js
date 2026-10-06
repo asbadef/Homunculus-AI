@@ -15,6 +15,8 @@ import { createTranslator } from "./i18n/translate.js";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ENGINE = path.resolve(HERE, "../../../homunculus-engine/src/homunculus");
 const py = (rel) => fs.readFileSync(path.join(ENGINE, rel), "utf8");
+/** Every module of the auth package, by glob: a new one is scanned without anyone remembering to add it. */
+const AUTH_MODULES = fs.readdirSync(path.join(ENGINE, "auth")).filter((f) => f.endsWith(".py")).sort();
 const js = (rel) => fs.readFileSync(path.resolve(HERE, "..", rel), "utf8");
 
 const STR = String.raw`"((?:[^"\\\n]|\\.)*)"`;
@@ -66,6 +68,9 @@ const nginxLimit = (name) => new RegExp(String.raw`^\s*location @${name} \{[^}]*
 const nginxLimited = nginxLimit("login_limited");
 const nginxReauthLimited = nginxLimit("reauth_limited");
 
+/** ldap.py's string constants that are not messages (an LDAP search filter); every other one is. */
+const LDAP_NOT_MESSAGES = new Set(["DEFAULT_USER_FILTER"]);
+
 /** Every message the auth surface can answer with, and where it comes from. */
 const SOURCES = [
   ...[...pyConstants(DEPS).values()].map((m) => ["auth/dependencies.py constant", m]),
@@ -76,8 +81,7 @@ const SOURCES = [
   ...literals(ROUTER, String.raw`detail=\s*${STR}`).map((m) => ["auth/router.py detail", m]),
   ...literals(SERVICE, String.raw`PasswordError\(\s*${STR}`).map((m) => ["auth/service.py", m]),
   ...literals(SCHEMAS, String.raw`ValueError\(\s*${STR}\s*\)`).map((m) => ["auth/schemas.py", m]),
-  ["auth/ldap.py DIRECTORY_DOWN", LDAP.get("DIRECTORY_DOWN")],
-  ["auth/ldap.py NOT_CONFIGURED", LDAP.get("NOT_CONFIGURED")],
+  ...[...LDAP].filter(([name]) => !LDAP_NOT_MESSAGES.has(name)).map(([name, text]) => [`auth/ldap.py ${name}`, text]),
   ["nginx.conf 429", nginxLimited ? JSON.parse(nginxLimited[1]).detail : undefined],
   ["nginx.conf reauth 429", nginxReauthLimited ? JSON.parse(nginxReauthLimited[1]).detail : undefined],
   ...literals(BACKEND_API, String.raw`failure\(\w+,\s*${STR}\)`).map((m) => ["backendApi.js", m]),
@@ -116,10 +120,11 @@ describe("the auth surface's messages are translated", () => {
 describe("no message site escapes the readers", () => {
   const CONSTANTS = new Set([...pyConstants(DEPS).keys(), ...pyConstants(ROUTER).keys(), ...LDAP.keys()]);
   const DYNAMIC = [
-    ["auth/dependencies.py", /^detail,/, "_unauthorized's own parameter: every call's literal is read above"],
-    ["auth/dependencies.py", /^\)/, "_unauthorized() with no argument: its default literal is read above"],
-    ["auth/dependencies.py", /^f"permission required:/, "a permission key of the route, not a sign-in message; shown as the server wrote it"],
-    ["auth/router.py", /^str\(exc\)/, "PasswordError's message: its literals are read from service.py"],
+    // [file, the first argument, how many sites, why]
+    ["auth/dependencies.py", /^detail,/, 1, "_unauthorized's own parameter: every call's literal is read above"],
+    ["auth/dependencies.py", /^\)/, 5, "_unauthorized() with no argument: its default literal is read above"],
+    ["auth/dependencies.py", /^f"permission required:/, 1, "a permission key of the route, not a sign-in message; shown as the server wrote it"],
+    ["auth/router.py", /^str\(exc\)/, 1, "PasswordError's message: its literals are read from service.py"],
   ];
   const DETAIL = String.raw`\bdetail=`;
   const UNAUTHORIZED = String.raw`(?<!def )\b_unauthorized\(`;
@@ -143,6 +148,23 @@ describe("no message site escapes the readers", () => {
     expect(unaccounted, `${file}: a message the readers cannot see`).toEqual([]);
   });
 
+  it.each(DYNAMIC.map(([file, pattern, count]) => [file, String(pattern), pattern, count]))(
+    "%s: the listed dynamic sites %s are exactly as many as expected", (file, _label, pattern, count) => {
+      const [, src, openers] = FILES.find(([name]) => name === file);
+      const found = openers.flatMap((opener) => sites(src, opener)).filter((site) => pattern.test(site));
+      expect(found.length, `${file}: ${pattern}`).toBe(count);
+    });
+
+  it("every module of the auth package that sets a message is scanned", () => {
+    const scanned = new Set(FILES.map(([name]) => name.replace("auth/", "")));
+    const setters = AUTH_MODULES.filter((f) => /\bHTTPException\(|\bdetail=|\bPasswordError\(|\b_unauthorized\(/.test(py(`auth/${f}`)));
+    expect(setters.filter((f) => !scanned.has(f)), "a module that sets a message but is not in FILES").toEqual([]);
+  });
+
+  it("every string constant of ldap.py is a message read above, or listed as not one", () => {
+    expect([...LDAP.keys()].sort()).toEqual(["DEFAULT_USER_FILTER", "DIRECTORY_DOWN", "NOT_CONFIGURED"]);
+  });
+
   it("the literal sites are as many as the literals the readers captured", () => {
     expect(literalSites(DEPS, FILES[0][2])).toBe(
       literals(DEPS, String.raw`detail=\s*${STR}`).length + literals(DEPS, String.raw`_unauthorized\(\s*${STR}\s*\)`).length);
@@ -152,7 +174,7 @@ describe("no message site escapes the readers", () => {
   });
 
   it("every HTTPException states its detail", () => {
-    for (const [file, src] of [["auth/dependencies.py", DEPS], ["auth/router.py", ROUTER]]) {
+    for (const [file, src] of AUTH_MODULES.map((f) => [`auth/${f}`, py(`auth/${f}`)])) {
       for (const m of src.matchAll(/\bHTTPException\(/g)) {
         expect(callBody(src, m.index + m[0].length - 1), `${file}: HTTPException with no detail`).toMatch(/\bdetail=/);
       }
