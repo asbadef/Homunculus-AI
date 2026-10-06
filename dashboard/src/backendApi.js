@@ -49,6 +49,20 @@ export function retryAfterSeconds(raw) {
   return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, RETRY_AFTER_MAX_S) : undefined;
 }
 
+/** The `sub` claim of a JWT access token, or null. Read for comparison only — never trusted: the
+ *  server checks the signature. */
+function subOf(token) {
+  try {
+    const part = String(token).split(".")[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4)));
+    return typeof claims?.sub === "string" && claims.sub ? claims.sub : null;
+  } catch {
+    return null;
+  }
+}
+
 function defaultBaseUrl() {
   try {
     return import.meta.env?.VITE_API_URL || "";
@@ -224,10 +238,25 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     }
   }
 
-  async function authedOnce(doFetch, path, { method = "GET", body } = {}) {
+  /** Does storage hold an access token of the account `sent` belongs to? Both must be readable
+   *  JWTs with the same `sub`: a token that cannot be read is never assumed to be the same account. */
+  function storedAccessIsSameAccount(sent) {
+    let stored = null;
+    try {
+      stored = storage()?.getItem(ACCESS_KEY) ?? null;
+    } catch {
+      return false;
+    }
+    const a = subOf(sent);
+    return a !== null && a === subOf(stored);
+  }
+
+  async function authedOnce(doFetch, path, { method = "GET", body, credential = false } = {}) {
     const gen = generation;
+    let sentAccess = null;
     const send = () => {
-      const headers = { Authorization: `Bearer ${accessToken()}` };
+      sentAccess = accessToken();
+      const headers = { Authorization: `Bearer ${sentAccess}` };
       const init = { method, headers };
       if (body !== undefined) {
         headers["Content-Type"] = "application/json";
@@ -257,6 +286,11 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       // token, or a grant of an older pair — is about the pair that is gone. Neither drop the newer
       // pair nor write the older one over it: take what storage holds and send the request once more.
       if (refreshed.status < 500 && gen === generation && storedRefreshChanged(sentRefresh)) {
+        // Only for the SAME account, and never for a request that carries a credential: a retry
+        // under another account's token would put this account's password to that account (for a
+        // directory account, a failed bind in its chain), and a refusal would drop its pair. The
+        // `storage` event that follows ends this session here; storage is left as it is.
+        if (credential || !storedAccessIsSameAccount(sentAccess)) throw superseded();
         forget();
         res = await send();
         if (!res.ok) throw await failure(res, `İstek başarısız (${res.status})`);
@@ -336,7 +370,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      *  is not a wrong password. Resolves to {ok: true}. */
     async reauth(password) {
       try {
-        return await authed("/auth/reauth", { method: "POST", body: { password } });
+        return await authed("/auth/reauth", { method: "POST", body: { password }, credential: true });
       } catch (err) {
         if (err?.status === 401 && !err.superseded) {
           if (!err.sessionEnded) logout();   // the other sessionEnded paths have dropped the tokens already
@@ -386,6 +420,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     async changePassword(currentPassword, newPassword) {
       const tokens = await authed("/auth/password", {
         method: "POST", body: { current_password: currentPassword, new_password: newPassword },
+        credential: true,
       });
       // Every older session (the old refresh token included) is retired by the change: a refresh
       // still on its way with it must not undo this pair.

@@ -16,6 +16,11 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+/** A JWT-shaped token (unsigned): the client reads only its `sub`. */
+const jwt = (sub, n = "") => ["h", btoa(JSON.stringify({ sub, n })).replace(/=/g, "").replace(/[+]/g, "-").replace(/[/]/g, "_"), "s"].join(".");
+const OLD_ACC = jwt("u1", "old");
+const TAB_ACC = jwt("u1", "tab");
+
 const TOKENS = {
   access_token: "acc-1", refresh_token: "ref-1", token_type: "bearer", requires_mfa: false,
 };
@@ -519,9 +524,9 @@ describe("backendApi — another tab, a lock screen's 401, Retry-After, storage 
         await new Promise((resolve) => { release = resolve; });
         return json(200, { access_token: "own-fresh", refresh_token: "own-ref-2" });
       }
-      return auth === "Bearer old-acc" ? json(401, { detail: "x" }) : json(200, { id: "me" });
+      return auth === `Bearer ${OLD_ACC}` ? json(401, { detail: "x" }) : json(200, { id: "me" });
     });
-    store.set("homunculus-access-token", "old-acc");
+    store.set("homunculus-access-token", OLD_ACC);
     store.set("homunculus-refresh-token", "old-ref");
     return { api: createBackendApi({ baseUrl: "", fetchImpl: fetchMock }), release: () => release() };
   }
@@ -530,7 +535,7 @@ describe("backendApi — another tab, a lock screen's 401, Retry-After, storage 
     const { api, release } = waitingRefresh();
     const pending = api.me();
     await settle();
-    store.set("homunculus-access-token", "tab-acc");     // the other tab refreshed the same session
+    store.set("homunculus-access-token", TAB_ACC);     // the other tab refreshed the same session
     store.set("homunculus-refresh-token", "tab-ref");
     api.forget();
     release();
@@ -649,13 +654,13 @@ describe("backendApi — another tab replaced the pair while this tab's refresh 
         await new Promise((resolve) => { release = resolve; });
         return refreshAnswer;
       }
-      return init.headers?.Authorization === "Bearer tab-acc" ? json(200, { id: "me" }) : json(401, { detail: "x" });
+      return init.headers?.Authorization === `Bearer ${TAB_ACC}` ? json(200, { id: "me" }) : json(401, { detail: "x" });
     });
-    store.set("homunculus-access-token", "old-acc");
+    store.set("homunculus-access-token", OLD_ACC);
     store.set("homunculus-refresh-token", "old-ref");
     const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
     const otherTabSignsIn = () => {
-      store.set("homunculus-access-token", "tab-acc");
+      store.set("homunculus-access-token", TAB_ACC);
       store.set("homunculus-refresh-token", "tab-ref");
     };
     return { api, fetchMock, release: () => release(), otherTabSignsIn };
@@ -668,9 +673,9 @@ describe("backendApi — another tab replaced the pair while this tab's refresh 
     otherTabSignsIn();
     release();
     await expect(pending).resolves.toEqual({ id: "me" });
-    expect(store.get("homunculus-access-token")).toBe("tab-acc");
+    expect(store.get("homunculus-access-token")).toBe(TAB_ACC);
     expect(store.get("homunculus-refresh-token")).toBe("tab-ref");
-    expect(fetchMock.mock.calls.at(-1)[1].headers.Authorization).toBe("Bearer tab-acc");
+    expect(fetchMock.mock.calls.at(-1)[1].headers.Authorization).toBe(`Bearer ${TAB_ACC}`);
   });
 
   it("a granted refresh of the old pair (MFA verified elsewhere) does not overwrite the newer pair", async () => {
@@ -680,9 +685,9 @@ describe("backendApi — another tab replaced the pair while this tab's refresh 
     otherTabSignsIn();
     release();
     await expect(pending).resolves.toEqual({ id: "me" });
-    expect(store.get("homunculus-access-token")).toBe("tab-acc");
+    expect(store.get("homunculus-access-token")).toBe(TAB_ACC);
     expect(store.get("homunculus-refresh-token")).toBe("tab-ref");
-    expect(api.accessToken()).toBe("tab-acc");
+    expect(api.accessToken()).toBe(TAB_ACC);
   });
 
   it("with no other tab involved a refused refresh still ends the session", async () => {
@@ -697,13 +702,13 @@ describe("backendApi — another tab replaced the pair while this tab's refresh 
   it("retries the original request only once", async () => {
     const fetchMock = vi.fn(async (url) => {
       if (url === "/auth/refresh") {
-        store.set("homunculus-access-token", "tab-acc");     // the other tab signs in meanwhile
+        store.set("homunculus-access-token", TAB_ACC);     // the other tab signs in meanwhile
         store.set("homunculus-refresh-token", "tab-ref");
         return json(401, { detail: "x" });
       }
       return json(401, { detail: "still no" });
     });
-    store.set("homunculus-access-token", "old-acc");
+    store.set("homunculus-access-token", OLD_ACC);
     store.set("homunculus-refresh-token", "old-ref");
     const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
     expect((await api.me().catch((e) => e)).status).toBe(401);
@@ -762,5 +767,90 @@ describe("backendApi — an unlock refused with a final 401 ends the session her
     const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
     await api.reauth("x").catch(() => {});
     expect(store.get("homunculus-access-token")).toBe("acc");
+  });
+});
+
+describe("backendApi — another ACCOUNT signed in elsewhere while this tab's refresh was on its way", () => {
+  const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const X_ACC = jwt("user-x", "1");
+  const Y_ACC = jwt("user-y", "1");
+
+  function setup({ refreshAnswer = json(401, { detail: "Invalid or expired refresh token" }), sameAccount = false, access = X_ACC } = {}) {
+    let release;
+    const sent = [];
+    const fetchMock = vi.fn(async (url, init = {}) => {
+      sent.push([url, init.headers?.Authorization ?? null]);
+      if (url === "/auth/refresh") {
+        await new Promise((resolve) => { release = resolve; });
+        return refreshAnswer;
+      }
+      return init.headers?.Authorization === `Bearer ${access}` ? json(401, { detail: "x" }) : json(200, { ok: true, id: "me" });
+    });
+    store.set("homunculus-access-token", access);
+    store.set("homunculus-refresh-token", "x-ref");
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    const otherTab = () => {
+      store.set("homunculus-access-token", sameAccount ? jwt("user-x", "2") : Y_ACC);
+      store.set("homunculus-refresh-token", sameAccount ? "x-ref-2" : "y-ref");
+    };
+    return { api, sent, release: () => release(), otherTab };
+  }
+
+  it("a read request is rejected as superseded: nothing is sent with the other account's token, storage keeps its pair", async () => {
+    const { api, sent, release, otherTab } = setup();
+    const pending = api.me().catch((e) => e);
+    await settle();
+    otherTab();
+    release();
+    const err = await pending;
+    expect(err.superseded).toBe(true);
+    expect(sent.some(([, auth]) => auth === `Bearer ${Y_ACC}`)).toBe(false);
+    expect(store.get("homunculus-access-token")).toBe(Y_ACC);
+    expect(store.get("homunculus-refresh-token")).toBe("y-ref");
+  });
+
+  it("a granted refresh of the old pair is not written over the other account's pair either", async () => {
+    const { api, sent, release, otherTab } = setup({ refreshAnswer: json(200, { access_token: "x-fresh", refresh_token: "x-ref-9" }) });
+    const pending = api.me().catch((e) => e);
+    await settle();
+    otherTab();
+    release();
+    expect((await pending).superseded).toBe(true);
+    expect(sent.some(([, auth]) => auth === `Bearer ${Y_ACC}`)).toBe(false);
+    expect(store.get("homunculus-refresh-token")).toBe("y-ref");
+  });
+
+  it("an unlock never takes the discard-and-retry path, even for the same account: the password is sent once", async () => {
+    const { api, sent, release, otherTab } = setup({ sameAccount: true });
+    const pending = api.reauth("secret").catch((e) => e);
+    await settle();
+    otherTab();
+    release();
+    const err = await pending;
+    expect(err.superseded).toBe(true);
+    expect(err.sessionEnded).toBeUndefined();
+    expect(sent.filter(([url]) => url === "/auth/reauth")).toHaveLength(1);
+    expect(store.get("homunculus-refresh-token")).toBe("x-ref-2");     // not logged out
+  });
+
+  it("neither does a password change", async () => {
+    const { api, sent, release, otherTab } = setup({ sameAccount: true });
+    const pending = api.changePassword("old", "newnewnew").catch((e) => e);
+    await settle();
+    otherTab();
+    release();
+    expect((await pending).superseded).toBe(true);
+    expect(sent.filter(([url]) => url === "/auth/password")).toHaveLength(1);
+    expect(store.get("homunculus-refresh-token")).toBe("x-ref-2");
+  });
+
+  it("a token that cannot be read is not assumed to be the same account", async () => {
+    const { api, release, otherTab } = setup({ access: "opaque-token", sameAccount: true });
+    const pending = api.me().catch((e) => e);
+    await settle();
+    otherTab();
+    release();
+    expect((await pending).superseded).toBe(true);
   });
 });
