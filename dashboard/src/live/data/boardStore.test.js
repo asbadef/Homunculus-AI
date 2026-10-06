@@ -31,11 +31,22 @@ function setup({ board = BOARD } = {}) {
   });
   const store = createBoardStore({
     api, openStream,
-    setTimer: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
-    clearTimer: vi.fn(),
+    setTimer: (fn, ms) => { timers.push({ fn, ms, cleared: false }); return timers.length; },
+    clearTimer: (id) => { if (timers[id - 1]) timers[id - 1].cleared = true; },
   });
-  return { api, store, handlers, closes, timers, openStream, state: () => store.getState() };
+  /** The timers of this length still pending. */
+  const due = (ms) => timers.filter((t) => t.ms === ms && !t.cleared);
+  /** Run the last pending timer of this length, as the clock would. */
+  const fire = (ms) => {
+    const timer = due(ms).at(-1);
+    timer.cleared = true;
+    return timer.fn();
+  };
+  return { api, store, handlers, closes, timers, due, fire, openStream, state: () => store.getState() };
 }
+
+/** Let every answer already given land. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("the board store", () => {
   it("loads the board, then streams with a ticket — never a token in the URL", async () => {
@@ -67,7 +78,7 @@ describe("the board store", () => {
   });
 
   it("reloads at every reopen, and is LIVE again only once that load has landed", async () => {
-    const { api, store, handlers, timers, state } = setup();
+    const { api, store, handlers, fire, state } = setup();
     await store.start();
     handlers[0].onopen();
     await vi.waitFor(() => expect(state().connection).toBe(CONNECTION.LIVE));
@@ -76,7 +87,7 @@ describe("the board store", () => {
     expect(state().patients).toHaveLength(2);                          // shown, flagged as maybe old
     let answer;
     api.boardPatients.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
-    await timers[0].fn();
+    await fire(RECONNECT_DELAY_MS);
     handlers[1].onopen();
     expect(api.boardPatients).toHaveBeenCalledTimes(3);
     expect(state().connection).toBe(CONNECTION.DEGRADED);              // open, not reloaded yet
@@ -121,17 +132,80 @@ describe("the board store", () => {
   });
 
   it("closes a dropped stream and reconnects ONCE, with a fresh ticket", async () => {
-    const { api, store, handlers, closes, timers, state } = setup();
+    const { api, store, handlers, closes, due, fire, state } = setup();
     await store.start();
     handlers[0].onerror();
     handlers[0].onerror();
     expect(closes[0]).toHaveBeenCalled();
     expect(state().connection).toBe(CONNECTION.DEGRADED);
-    expect(timers).toHaveLength(1);
-    expect(timers[0].ms).toBe(RECONNECT_DELAY_MS);
+    expect(due(RECONNECT_DELAY_MS)).toHaveLength(1);
     api.streamTicket.mockResolvedValue({ ticket: "t-2" });
-    await timers[0].fn();
+    await fire(RECONNECT_DELAY_MS);
     expect(api.streamTicket).toHaveBeenCalledTimes(2);
+  });
+
+  it("tries again a reload that failed under an open stream — a healthy stream does not leave it UNAVAILABLE", async () => {
+    const { api, store, handlers, due, fire, state } = setup();
+    await store.start();
+    api.boardPatients.mockRejectedValueOnce(Object.assign(new Error("upstream"), { status: 503 }));
+    handlers[0].onopen();
+    await settle();
+    expect(state()).toMatchObject({ patients: [], alerts: [], connection: CONNECTION.UNAVAILABLE });
+    handlers[0].onmessage({ data: JSON.stringify(entry("P-001", [alert("sepsis", "critical")])) });
+    expect(state()).toMatchObject({ patients: [], connection: CONNECTION.UNAVAILABLE });   // frames alone are no ward
+    expect(due(RECONNECT_DELAY_MS)).toHaveLength(1);
+    await fire(RECONNECT_DELAY_MS);
+    await vi.waitFor(() => expect(state().connection).toBe(CONNECTION.LIVE));
+    expect(api.boardPatients).toHaveBeenCalledTimes(3);
+    expect(state().patients.map((p) => p.patient_id)).toEqual(["P-001", "P-002"]);
+  });
+
+  it("keeps trying while the reload keeps failing, and stops when the stream drops or the board is cleared", async () => {
+    const { api, store, handlers, due, fire, state } = setup();
+    await store.start();
+    api.boardPatients.mockRejectedValue(new Error("Failed to fetch"));
+    handlers[0].onopen();
+    await settle();
+    await fire(RECONNECT_DELAY_MS);
+    await settle();
+    expect(due(RECONNECT_DELAY_MS)).toHaveLength(1);                  // tried, failed, scheduled again
+    expect(state().connection).toBe(CONNECTION.UNAVAILABLE);
+    handlers[0].onerror();                                             // the stream's reconnect takes over
+    expect(due(RECONNECT_DELAY_MS)).toHaveLength(1);
+    store.clear();
+    expect(due(RECONNECT_DELAY_MS)).toHaveLength(0);
+  });
+
+  it("a frame that arrives while a reload is on its way outlives the older snapshot", async () => {
+    const { api, store, handlers, state } = setup();
+    await store.start();
+    let answer;
+    api.boardPatients.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    handlers[0].onopen();                                              // the reload: its snapshot is taken now
+    handlers[0].onmessage({ data: JSON.stringify(entry("P-001", [alert("sepsis", "critical")])) });
+    handlers[0].onmessage({ data: JSON.stringify({ ...entry("P-002"), removed: true }) });
+    expect(state().alerts).toHaveLength(1);
+    answer(BOARD);                                                     // older than both frames
+    await vi.waitFor(() => expect(state().connection).toBe(CONNECTION.LIVE));
+    expect(state().patients.map((p) => p.patient_id)).toEqual(["P-001"]);
+    expect(state().alerts).toEqual([expect.objectContaining({ patientId: "P-001", kind: "sepsis", severity: "critical" })]);
+  });
+
+  it("frames that came while a failed board reloaded land on its snapshot", async () => {
+    const { api, store, handlers, fire, state } = setup();
+    await store.start();
+    api.boardPatients.mockRejectedValueOnce(new Error("Failed to fetch"));
+    handlers[0].onopen();
+    await settle();
+    expect(state().connection).toBe(CONNECTION.UNAVAILABLE);
+    let answer;
+    api.boardPatients.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    await fire(RECONNECT_DELAY_MS);
+    handlers[0].onmessage({ data: JSON.stringify(entry("P-003", [alert("news2", "high")])) });
+    expect(state().patients).toEqual([]);                               // still no ward shown
+    answer(BOARD);
+    await vi.waitFor(() => expect(state().connection).toBe(CONNECTION.LIVE));
+    expect(state().patients.map((p) => p.patient_id)).toEqual(["P-001", "P-002", "P-003"]);
   });
 
   it("forgets everything on clear(), and drops an answer that arrives afterwards", async () => {

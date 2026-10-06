@@ -56,22 +56,48 @@ export function createBoardStore({
   let generation = 0;               // bumped by start() and clear(): a stale answer is dropped
   let closeSource = () => {};
   let reconnect = null;
+  let reloadRetry = null;           // a reload that failed under an open stream, tried again
   let opened = 0;                   // the stream's opens so far: a load counts for the one it began in
   let streamOpen = false;
   let loadsBegun = 0;               // a load overtaken by a later one that landed first is dropped
   let loadLanded = 0;
+  // A load's snapshot is taken by the server when the request arrives; a frame that comes while
+  // the load is on its way may be newer than it. Such frames are kept (`frames`, numbered by
+  // `framesSeen`) and played again over the snapshot when it lands, so a newer alarm is never
+  // undone by an older whole board that then reads LIVE. `loading`: load -> frames seen when sent.
+  let framesSeen = 0;
+  let frames = [];
+  const loading = new Map();
   const listeners = new Set();
   const set = (patch) => {
     state = { ...state, ...patch };
     for (const fn of listeners) fn();
   };
   const withPatients = (patients, patch = {}) => set({ patients, alerts: alertsFromPatients(patients), ...patch });
+  const applyFrame = (patients, frame) => (frame.removed
+    ? patients.filter((p) => p.patient_id !== frame.patient.patient_id)
+    : upsert(patients, frame.patient));
+
+  /** Frames no load on its way still needs are let go. */
+  function trimFrames() {
+    if (loading.size === 0) frames = [];
+    else {
+      const oldest = Math.min(...loading.values());
+      frames = frames.filter((f) => f.seq > oldest);
+    }
+  }
+
+  function cancelReloadRetry() {
+    if (reloadRetry) clearTimer(reloadRetry);
+    reloadRetry = null;
+  }
 
   async function refresh() {
     const mine = generation;
     loadsBegun += 1;
     const seq = loadsBegun;
     const during = streamOpen ? opened : -1;     // began while the stream was open: which open
+    loading.set(seq, framesSeen);
     let board = null;
     let patients = null;
     try {
@@ -80,19 +106,34 @@ export function createBoardStore({
     } catch {
       // patients stays null: the load failed
     }
-    if (mine !== generation || seq < loadLanded) return;
+    const sentAt = loading.get(seq);
+    loading.delete(seq);
+    if (mine !== generation) return;
+    const newer = frames.filter((f) => f.seq > sentAt);
+    trimFrames();
+    if (seq < loadLanded) return;
     loadLanded = seq;
     if (patients) {
+      cancelReloadRetry();
       // LIVE only for a load that began after the stream (still) open had opened; otherwise the
       // data is shown but not vouched for: still connecting at the start, DEGRADED after.
       const live = streamOpen && during === opened;
       const connection = live ? CONNECTION.LIVE
         : state.connection === CONNECTION.CONNECTING ? CONNECTION.CONNECTING : CONNECTION.DEGRADED;
-      withPatients(patients, { scope: board?.scope ?? null, scopeNote: board?.scope_note ?? null, connection });
+      withPatients(newer.reduce(applyFrame, patients),
+        { scope: board?.scope ?? null, scopeNote: board?.scope_note ?? null, connection });
     } else {
       // An empty list with the reason, never the last one: a board that stopped updating must
       // not look like a ward that is calm.
       withPatients([], { scope: null, scopeNote: null, connection: CONNECTION.UNAVAILABLE });
+      // Under an open stream nothing else would load it again (the open's reload was this one,
+      // and frames alone are no ward): try again after a pause, for as long as it fails.
+      if (streamOpen && !reloadRetry) {
+        reloadRetry = setTimer(() => {
+          reloadRetry = null;
+          if (mine === generation && streamOpen) refresh();
+        }, RECONNECT_DELAY_MS);
+      }
     }
   }
 
@@ -100,6 +141,7 @@ export function createBoardStore({
   function onOpen() {
     streamOpen = true;
     opened += 1;
+    cancelReloadRetry();
     refresh();
   }
 
@@ -114,16 +156,19 @@ export function createBoardStore({
       return;                                     // a malformed frame touches nothing
     }
     if (patient.patient_id == null) return;
+    framesSeen += 1;
+    const frame = { seq: framesSeen, patient, removed };
+    if (loading.size > 0) frames.push(frame);    // for the snapshot on its way
     // A board whose load failed stays empty: frames alone are not a ward, only the next whole load is.
     if (state.connection === CONNECTION.UNAVAILABLE) return;
-    withPatients(removed ? state.patients.filter((p) => p.patient_id !== patient.patient_id)
-      : upsert(state.patients, patient));
+    withPatients(applyFrame(state.patients, frame));
   }
 
   function onError(mine) {
     closeSource();                                // or the browser retries with the spent ticket
     if (mine !== generation) return;
     streamOpen = false;
+    cancelReloadRetry();                          // the reconnect's open reloads instead
     // A board whose load failed stays UNAVAILABLE (empty, and says so); any other is DEGRADED.
     if (state.connection !== CONNECTION.UNAVAILABLE) set({ connection: CONNECTION.DEGRADED });
     if (reconnect) return;
@@ -150,9 +195,12 @@ export function createBoardStore({
   function stopStream() {
     if (reconnect) clearTimer(reconnect);
     reconnect = null;
+    cancelReloadRetry();
     closeSource();
     closeSource = () => {};
     streamOpen = false;
+    loading.clear();
+    frames = [];
   }
 
   return {
