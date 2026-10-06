@@ -1,7 +1,7 @@
 // What an API refusal says, by key (live/apiErrors.js maps the server's texts onto these). TR is
 // the source. The wording follows the old workspace's reviewed rbac.err texts (clinicalI18n.js),
 // with the prototype's word for password ("şifre"/"şifrə") instead of the old "parola"/"parol".
-// New here: passwordRequired, passwordTooLong. AZ/RU/EN need a native speaker's review before the pilot.
+// New here: passwordRequired. AZ/RU/EN need a native speaker's review before the pilot.
 export default {
   tr: {
     noTenant: "Hesabınıza kurum tanımlanmamış. Sistem yöneticinizle görüşün.",

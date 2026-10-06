@@ -4,7 +4,8 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { riskStyle, ENGINE_RISKS } from "./riskStyle.js";import { DICTIONARIES } from "../i18n/catalog.js";
+import { riskStyle, ENGINE_RISKS } from "./riskStyle.js";
+import { DICTIONARIES } from "../i18n/catalog.js";
 import { LANG_CODES } from "../i18n/langs.js";
 
 describe("riskStyle", () => {
