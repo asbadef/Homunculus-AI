@@ -11,9 +11,10 @@ import news2 from "./strings/news2.js";
 import gallery from "./strings/gallery.js";
 import ui from "./strings/ui.js";
 import errors from "./strings/errors.js";
+import dates from "./strings/dates.js";
 
 export const NAMESPACES = {
-  common, risk, prefs, news2, gallery, ui, errors,
+  common, risk, prefs, news2, gallery, ui, errors, dates,
 };
 
 function flattenInto(out, prefix, entries) {
