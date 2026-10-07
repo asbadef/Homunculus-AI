@@ -13,14 +13,15 @@ board contexts never include patient identity here.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admission import service
 from homunculus.admission.models import (
-    Admission, CareTeamMember, Handover, Patient,
+    Admission, CareTeamMember, Handover, NurseBedAssignment, Patient,
 )
 from homunculus.admission.schemas import (
     AdmissionCreate, AdmissionResponse, CareTeamAdd, CareTeamMemberResponse,
@@ -30,9 +31,11 @@ from homunculus.admission.schemas import (
 )
 from homunculus.admission.service import WorkflowError
 from homunculus.escalation import service as escalation_service
+from homunculus.auth.access import ensure_member, member_tenant_ids, roles_in_tenant
 from homunculus.auth.dependencies import get_current_active_user, require_roles
 from homunculus.auth.models import User, UserRole
 from homunculus.db import get_db
+from homunculus.escalation.models import BreakGlassSession
 from homunculus.tenant.models import Site, Unit
 
 router = APIRouter(prefix="/admissions", tags=["admissions"])
@@ -61,6 +64,55 @@ async def _get_admission_or_404(db: AsyncSession, admission_id: uuid.UUID) -> Ad
     if admission is None:
         raise HTTPException(status_code=404, detail="Admission not found.")
     return admission
+
+
+async def _visible_admission_or_404(
+    db: AsyncSession, admission_id: uuid.UUID, user: User,
+) -> Admission:
+    """K1: an admission is visible only to members of its hospital (others get 404)."""
+    admission = await _get_admission_or_404(db, admission_id)
+    await ensure_member(db, user, admission.tenant_id)
+    return admission
+
+
+async def _may_see_identity(db: AsyncSession, user: User, admission: Admission) -> bool:
+    """Patient identity: care team, the nurse assigned to the bed this shift, the hospital's charge
+    nurse, or the user's own live break-glass session for this patient."""
+    now = datetime.now(timezone.utc)
+    roles = await roles_in_tenant(db, user, admission.tenant_id)
+    if UserRole.CHARGE_NURSE in roles:
+        return True
+    team = await db.execute(
+        select(CareTeamMember.id).where(
+            CareTeamMember.admission_id == admission.id,
+            CareTeamMember.user_id == user.id,
+            CareTeamMember.is_active == True,  # noqa: E712
+            or_(CareTeamMember.window_start.is_(None), CareTeamMember.window_start <= now),
+            or_(CareTeamMember.window_end.is_(None), CareTeamMember.window_end >= now),
+        ).limit(1)
+    )
+    if team.first() is not None:
+        return True
+    shift = await db.execute(
+        select(NurseBedAssignment.id).where(
+            NurseBedAssignment.bed_id == admission.bed_id,
+            NurseBedAssignment.nurse_id == user.id,
+            NurseBedAssignment.is_active == True,  # noqa: E712
+            NurseBedAssignment.shift_start <= now,
+            NurseBedAssignment.shift_end >= now,
+        ).limit(1)
+    )
+    if shift.first() is not None:
+        return True
+    bg = await db.execute(
+        select(BreakGlassSession.id).where(
+            BreakGlassSession.user_id == user.id,
+            BreakGlassSession.patient_id == admission.patient_id,
+            BreakGlassSession.closed_at.is_(None),
+            BreakGlassSession.expires_at > now,
+        ).limit(1)
+    )
+    return bg.first() is not None
 
 
 # ---------------------------------------------------------------------------
@@ -99,29 +151,36 @@ async def create_admission(payload: AdmissionCreate, db: AsyncSession = Depends(
 # ---------------------------------------------------------------------------
 # List / detail
 # ---------------------------------------------------------------------------
-@router.get("", response_model=list[AdmissionResponse],
-            dependencies=[Depends(get_current_active_user)])
+@router.get("", response_model=list[AdmissionResponse])
 async def list_admissions(
-    unit_id: uuid.UUID | None = None, db: AsyncSession = Depends(get_db)
+    unit_id: uuid.UUID | None = None, db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_active_user),
 ):
-    stmt = select(Admission)
+    # K1: server-side hospital filter; a foreign unit_id simply matches nothing.
+    stmt = select(Admission).where(Admission.tenant_id.in_(await member_tenant_ids(db, user)))
     if unit_id is not None:
         stmt = stmt.where(Admission.admitting_unit_id == unit_id)
     result = await db.execute(stmt.order_by(Admission.created_at.desc()))
     return list(result.scalars().all())
 
 
-@router.get("/{admission_id}", response_model=AdmissionResponse,
-            dependencies=[Depends(get_current_active_user)])
-async def get_admission(admission_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    return await _get_admission_or_404(db, admission_id)
+@router.get("/{admission_id}", response_model=AdmissionResponse)
+async def get_admission(
+    admission_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+):
+    return await _visible_admission_or_404(db, admission_id, user)
 
 
-@router.get("/{admission_id}/patient", response_model=PatientResponse,
-            dependencies=[Depends(get_current_active_user)])
-async def get_admission_patient(admission_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    """PHI detail — returned only to authenticated care-team members."""
-    admission = await _get_admission_or_404(db, admission_id)
+@router.get("/{admission_id}/patient", response_model=PatientResponse)
+async def get_admission_patient(
+    admission_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+):
+    """PHI detail — returned only to the care team / assigned nurse / charge nurse / break-glass."""
+    admission = await _visible_admission_or_404(db, admission_id, user)
+    if not await _may_see_identity(db, user, admission):
+        raise HTTPException(status_code=403, detail="Not on this patient's care team.")
     patient = await db.get(Patient, admission.patient_id)
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found.")
@@ -188,9 +247,12 @@ async def add_care_team_member(
     return member
 
 
-@router.get("/{admission_id}/care-team", response_model=list[CareTeamMemberResponse],
-            dependencies=[Depends(get_current_active_user)])
-async def list_care_team(admission_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+@router.get("/{admission_id}/care-team", response_model=list[CareTeamMemberResponse])
+async def list_care_team(
+    admission_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+):
+    await _visible_admission_or_404(db, admission_id, user)
     result = await db.execute(
         select(CareTeamMember).where(CareTeamMember.admission_id == admission_id)
     )
