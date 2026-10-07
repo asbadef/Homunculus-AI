@@ -138,4 +138,14 @@ describe("the path inside an address's hash", () => {
     expect(matchRoute(hashPath("#/patients/P-1?tab=vitals"))).toMatchObject({ params: { id: "P-1" } });
     expect(matchRoute(hashPath("#/beds?unit=NICU"))).toMatchObject({ route: { id: "beds" } });
   });
+
+  // Defence in depth for a caller that strips the "#" by hand: no address in the table carries a
+  // query or a fragment, so one that does is no page rather than a patient id with a query glued
+  // to it. A patient id that really contains one arrives percent-encoded and still matches.
+  it("refuses a path the router would never have handed it", () => {
+    expect(matchRoute("/patients/P-1?tab=vitals")).toBeNull();
+    expect(matchRoute("/beds?unit=NICU")).toBeNull();
+    expect(matchRoute("/beds#top")).toBeNull();
+    expect(matchRoute("/patients/P%3F1")).toMatchObject({ params: { id: "P?1" } });
+  });
 });

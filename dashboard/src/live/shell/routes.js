@@ -100,11 +100,18 @@ export function hashPath(hash) {
 }
 
 /** The route a path names, with its parameters — or null. `/patients/P-1` -> {route, params: {id}}.
- *  Empty segments are dropped, so a doubled or trailing slash is the same route. The addresses
- *  are matched exactly: another spelling ("/BEDS") is no page rather than this one, while a
- *  parameter keeps the case it was given — a patient id is the engine's data, not our vocabulary. */
+ *  It takes a path as `hashPath` returns one. Empty segments are dropped, so a doubled or
+ *  trailing slash is the same route. The addresses are matched exactly: another spelling
+ *  ("/BEDS") is no page rather than this one, while a parameter keeps the case it was given — a
+ *  patient id is the engine's data, not our vocabulary.
+ *
+ *  A path still carrying a "?" or a "#" is no page either: no address in the table has one, so a
+ *  caller that did not go through `hashPath` gets "no such page" rather than a patient whose id
+ *  is "P-1?tab=vitals". An id that really contains one arrives percent-encoded and is unharmed. */
 export function matchRoute(path) {
-  const parts = String(path || "").split("/").filter(Boolean);
+  const text = String(path || "");
+  if (text.includes("?") || text.includes("#")) return null;
+  const parts = text.split("/").filter(Boolean);
   for (const route_ of ROUTES) {
     const pattern = route_.path.split("/").filter(Boolean);
     if (pattern.length !== parts.length) continue;
