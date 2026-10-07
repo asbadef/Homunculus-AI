@@ -19,9 +19,10 @@ import { PHASE, UNLOCK_ATTEMPTS } from "../session/sessionStore.js";
 import { useBoard } from "../data/BoardProvider.jsx";
 import { lockSummary } from "../data/boardStore.js";
 import { apiErrorKey, apiErrorText } from "../apiErrors.js";
-import { Alert, Button, CapsWarning, Icon, StatusPill, useCapsLock } from "../ui/index.js";
+import { Alert, Announce, Button, CapsWarning, Icon, StatusPill, useCapsLock } from "../ui/index.js";
 import { FOCUS_RING } from "../ui/focus.js";
 import { Brand } from "../shell/Prefs.jsx";
+import { useRetryHold } from "./useRetryHold.js";
 import { ddmmyyyy, hhmm, weekdayKey } from "../i18n/dates.js";
 
 function useNow(stepMs = 15_000) {
@@ -73,6 +74,7 @@ export function LockScreen() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const caps = useCapsLock();
+  const { wait, holding, hold, current: holdNow } = useRetryHold();
   const [failure, setFailure] = useState(null);
   const input = useRef(null);
   const mounted = useRef(false);
@@ -85,9 +87,13 @@ export function LockScreen() {
 
   useEffect(() => { input.current?.focus(); }, []);
 
+  // Said once per hold: the text is the hold's OWN length, which does not change while it runs,
+  // and it is emptied when the hold ends, so the next hold says it again (ui/Alert.jsx Announce).
+  const heldFor = holding && holdNow ? t("auth.retryIn", { seconds: holdNow.seconds }) : "";
+
   const submit = async (event) => {
     event.preventDefault();
-    if (busy) return;
+    if (busy || holding) return;
     if (!password) {
       setFailure(t("errors.passwordRequired"));
       input.current?.focus();
@@ -106,6 +112,10 @@ export function LockScreen() {
         setFailure(t("lock.attemptsLeft", { count: left }));
       } else {
         setFailure(apiErrorText(t, err));
+        // /auth/reauth is in nginx's own zone (homunculus_reauth) and answers a ward over its
+        // budget with Retry-After. Hold the button that long, as the sign-in and password forms
+        // do: pressing again before then only spends the ward's shared budget.
+        if (Number.isInteger(err?.retryAfter)) hold(err.retryAfter);
       }
       input.current?.focus();
     } finally {
@@ -164,9 +174,11 @@ export function LockScreen() {
               />
             </div>
             <CapsWarning shown={caps.shown} className="mt-2" />
-            <Button type="submit" variant="primary" size="lg" icon="lock" busy={busy} className="mt-3 w-full justify-center">
+            <Button type="submit" variant="primary" size="lg" icon="lock" busy={busy} disabled={holding} className="mt-3 w-full justify-center">
               {t("lock.unlock")}
             </Button>
+            {holding ? <p aria-hidden="true" className="mt-2 text-12.5 text-mute">{t("auth.retryIn", { seconds: wait })}</p> : null}
+            <Announce text={heldFor} />
           </form>
           <button
             type="button"

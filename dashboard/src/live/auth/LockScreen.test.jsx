@@ -3,10 +3,12 @@ import { act, screen, fireEvent } from "@testing-library/react";
 import { mount, refusal } from "../session/mount.testutil.jsx";
 import { NOTICE, PHASE } from "../session/sessionStore.js";
 import { token } from "../session/testTokens.testutil.js";
+import { ANNOUNCE_DELAY_MS } from "../ui/Alert.jsx";
 import { LockScreen } from "./LockScreen.jsx";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
   localStorage.clear();
 });
 
@@ -65,6 +67,39 @@ describe("LockScreen", () => {
     await act(async () => { unlock(); await settle(); });
     expect(store.getState().phase).toBe(PHASE.READY);
     expect(password()).toHaveValue("");
+  });
+
+  // /auth/reauth sits in nginx's own rate-limit zone (homunculus_reauth) and answers a ward over
+  // its budget with Retry-After: 60. The sign-in form and the password form hold their button for
+  // that long and say it once; this screen used to send the next press straight into the limiter.
+  it("holds the button as long as a 429 says, and says the wait once", async () => {
+    const realSetTimeout = globalThis.setTimeout;
+    const flush = () => act(() => new Promise((resolve) => { realSetTimeout(resolve, 0); }));
+    const tick = (ms) => act(() => { vi.advanceTimersByTime(ms); });
+    const said = () => screen.getAllByRole("status").map((region) => region.textContent).join("");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    const { api, store } = await mount(<LockScreen />);
+    await act(async () => { store.lock(); });
+    api.reauth.mockRejectedValue(refusal(429, "Çok fazla deneme. Bir dakika sonra yeniden deneyin.",
+      { retryAfter: 3 }));
+    fireEvent.change(password(), { target: { value: "Gizli-Sifre-1" } });
+    unlock();
+    await flush();
+    const button = screen.getByRole("button", { name: "Kilidi aç" });
+    expect(button).toBeDisabled();
+    expect(screen.getByText("3 saniyədən sonra yenidən cəhd edə bilərsiniz."))
+      .toHaveAttribute("aria-hidden", "true");          // the ticking count is not read
+    expect(said()).toBe("");                            // the region is mounted empty
+    tick(ANNOUNCE_DELAY_MS);
+    expect(said()).toContain("3 saniyədən sonra yenidən cəhd edə bilərsiniz.");
+    tick(1000);
+    expect(said()).toContain("3 saniyədən sonra");       // said once per hold, not every second
+    unlock();                                            // pressed meanwhile: nothing is sent
+    expect(api.reauth).toHaveBeenCalledTimes(1);
+    expect(store.getState().unlockFailures).toBe(0);     // a 429 is not a wrong password
+    tick(2000);
+    expect(button).not.toBeDisabled();                   // released at 0
+    expect(said()).toBe("");
   });
 
   it("says how many tries are left, and the third wrong password signs out", async () => {

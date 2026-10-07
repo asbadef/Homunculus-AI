@@ -3,6 +3,7 @@ import "./index.css";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { DemoDataBanner } from "./DemoDataBanner.jsx";
+import { LoadBoundary } from "./LoadFailed.jsx";
 
 const params = new URLSearchParams(window.location.search);
 
@@ -81,5 +82,10 @@ export function AppShell({ mode, children }) {
 
 const el = document.getElementById("root");
 if (el) {
-  createRoot(el).render(<AppShell mode={mode}>{pickRoot(mode)}</AppShell>);
+  // Every root but the first is fetched on demand, and a fetch that fails throws during render:
+  // without the boundary a ward PC with no network — or a tablet still holding a service worker
+  // from before a deploy — showed a blank white page (LoadFailed.jsx).
+  createRoot(el).render(
+    <AppShell mode={mode}><LoadBoundary>{pickRoot(mode)}</LoadBoundary></AppShell>,
+  );
 }
