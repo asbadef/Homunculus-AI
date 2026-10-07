@@ -1,13 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { act, render, screen, fireEvent } from "@testing-library/react";
-import { I18nProvider } from "../i18n/I18nProvider.jsx";
-import { ToastProvider } from "../ui/index.js";
+import { act, screen, fireEvent } from "@testing-library/react";
 import { mount, refusal } from "../session/mount.testutil.jsx";
-import { SessionProvider } from "../session/SessionProvider.jsx";
-import { NOTICE, PHASE, createSessionStore } from "../session/sessionStore.js";
-import { fakeApi, profile, token } from "../session/testTokens.testutil.js";
-import { BoardProvider } from "../data/BoardProvider.jsx";
-import { createBoardStore } from "../data/boardStore.js";
+import { NOTICE, PHASE } from "../session/sessionStore.js";
+import { token } from "../session/testTokens.testutil.js";
 import { LockScreen } from "./LockScreen.jsx";
 
 afterEach(() => {
@@ -30,25 +25,16 @@ const alarm = (severity, acknowledged = false) => ({
 });
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 
-/** A board whose stream this test opens by hand: jsdom has no EventSource, so the board of the
- *  shared mount() can never reach LIVE — the only state that may say "no alarms" (Decision 18). */
+/** A locked screen over a LIVE board: the stream is opened by hand (mount's `stream`), because
+ *  only a LIVE board may say "no alarms" (Decision 18) and jsdom has no EventSource of its own. */
 async function mountLive(patients) {
-  const api = fakeApi(vi, { access: token() });
-  api.me.mockResolvedValue(profile());
-  api.boardPatients.mockResolvedValue({ patients, scope: { unrestricted: true, unit_ids: [] } });
-  api.streamTicket.mockResolvedValue({ ticket: "t-1" });
-  let stream = null;
-  const store = createSessionStore({ api, events: new EventTarget() });
-  await store.restore();
-  const board = createBoardStore({ api, openStream: (url, handlers) => { stream = handlers; return () => {}; } });
-  render(
-    <I18nProvider><ToastProvider>
-      <SessionProvider store={store}><BoardProvider store={board}><LockScreen /></BoardProvider></SessionProvider>
-    </ToastProvider></I18nProvider>,
-  );
-  await act(async () => { store.lock(); await board.start(); });
-  await act(async () => { stream.onopen(); await settle(); });   // the open reloads: LIVE once it lands
-  return { api, store, board };
+  const view = await mount(<LockScreen />, { setup: (api) => {
+    api.boardPatients.mockResolvedValue({ patients, scope: { unrestricted: true, unit_ids: [] } });
+    api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+  } });
+  await act(async () => { view.store.lock(); await view.board.start(); });
+  await act(async () => { view.stream.open(); await settle(); });   // the open reloads: LIVE once it lands
+  return view;
 }
 
 describe("LockScreen", () => {
@@ -137,9 +123,24 @@ describe("LockScreen", () => {
   });
 
   it("says 'none' only from a LIVE board", async () => {
-    const { board } = await mountLive([entry("S-001"), entry("S-002")]);
+    const { board, stream } = await mountLive([entry("S-001"), entry("S-002")]);
+    expect(stream.url).toMatch(/^\/stream\?ticket=/);          // a ticket, never a token
     expect(counts()).toHaveTextContent("Bölmələrinizdə açıq siqnal yoxdur");
     expect(counts()).not.toHaveTextContent("Köhnə ola bilər");
+    act(() => { board.clear(); });
+  });
+
+  // The board store keeps running while the screen is locked (Decision 3), so what the nurse
+  // glances at is the ward now, not the ward as it was when she walked away.
+  it("follows the ward while it stays locked: a frame changes the count", async () => {
+    const { board, stream } = await mountLive([entry("S-001")]);
+    expect(counts()).toHaveTextContent("Bölmələrinizdə açıq siqnal yoxdur");
+    act(() => { stream.frame(entry("S-001", [alarm("critical")])); });
+    expect(counts()).toHaveTextContent("Bölmələrinizdəki açıq siqnal: 1");
+    expect(counts()).toHaveTextContent("Təsdiqlənməmiş: 1");
+    expect(counts()).toHaveTextContent("kritik: 1");
+    expect(counts()).not.toHaveTextContent("yoxdur");
+    expect(counts()).not.toHaveTextContent("S-001");           // still no bed, name or value
     act(() => { board.clear(); });
   });
 
