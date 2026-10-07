@@ -355,7 +355,7 @@ async def rrt_has_access(
 # ---------------------------------------------------------------------------
 async def count_unacknowledged_critical(
     db: AsyncSession, *, admission_id: uuid.UUID | None = None,
-    admission_ids: list[uuid.UUID] | None = None,
+    admission_ids: list[uuid.UUID] | None = None, tenant_id: uuid.UUID | None = None,
 ) -> int:
     """
     Count CRITICAL alerts that are still open (FIRED or ESCALATED — i.e. not
@@ -372,13 +372,14 @@ async def count_unacknowledged_critical(
         ids.extend(admission_ids)
     if not ids:
         return 0
-    result = await db.execute(
-        select(Alert).where(
-            Alert.admission_id.in_(ids),
-            Alert.tier == AlertTier.CRITICAL,
-            Alert.status.in_(OPEN_ALERT_STATUSES),
-        )
+    stmt = select(Alert).where(
+        Alert.admission_id.in_(ids),
+        Alert.tier == AlertTier.CRITICAL,
+        Alert.status.in_(OPEN_ALERT_STATUSES),
     )
+    if tenant_id is not None:  # K1: only alerts of the caller's hospital are counted
+        stmt = stmt.where(Alert.tenant_id == tenant_id)
+    result = await db.execute(stmt)
     return len(result.scalars().all())
 
 

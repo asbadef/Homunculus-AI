@@ -68,6 +68,13 @@ async def _get_admission_or_404(db: AsyncSession, admission_id: uuid.UUID) -> Ad
     return admission
 
 
+async def _user_or_404(db: AsyncSession, user_id: uuid.UUID) -> User:
+    other = await db.get(User, user_id)
+    if other is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return other
+
+
 async def _visible_admission_or_404(
     db: AsyncSession, admission_id: uuid.UUID, user: User,
 ) -> Admission:
@@ -342,7 +349,7 @@ async def discharge_initiate(
     admission: Admission = Depends(_admission_as(UserRole.ATTENDING, UserRole.UNIT_PHYSICIAN)),
 ):
     unacked = await escalation_service.count_unacknowledged_critical(
-        db, admission_id=admission.id
+        db, admission_id=admission.id, tenant_id=admission.tenant_id
     )
     try:
         await service.initiate_discharge(
@@ -407,6 +414,20 @@ async def create_shift_schedule(
 handover_router = APIRouter(prefix="/handovers", tags=["handovers"])
 
 
+async def _handover_or_404(db: AsyncSession, handover_id: uuid.UUID, user: User) -> tuple[Handover, uuid.UUID]:
+    """K1: a handover is visible only to members of its unit's hospital; others get the same 404
+    as for a missing record."""
+    handover = await db.get(Handover, handover_id)
+    if handover is None:
+        raise HTTPException(status_code=404, detail="Handover not found.")
+    try:
+        tenant_id = await _resolve_tenant_id(db, handover.unit_id)
+        await ensure_member(db, user, tenant_id)
+    except HTTPException:
+        raise HTTPException(status_code=404, detail="Handover not found.")
+    return handover, tenant_id
+
+
 @handover_router.post("", response_model=HandoverResponse, status_code=201)
 async def open_handover(
     payload: HandoverOpen,
@@ -415,6 +436,12 @@ async def open_handover(
 ):
     tenant_id = await _resolve_tenant_id(db, payload.unit_id)
     await ensure_member(db, user, tenant_id)
+    # Incoming clinician and every admission must belong to the same hospital as the unit.
+    await ensure_member(db, await _user_or_404(db, payload.incoming_user_id), tenant_id)
+    for admission_id in payload.admission_ids:
+        admission = await _get_admission_or_404(db, admission_id)
+        if admission.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Admission not found.")
     handover = await service.open_handover(
         db, unit_id=payload.unit_id, outgoing_user_id=user.id,
         incoming_user_id=payload.incoming_user_id, admission_ids=payload.admission_ids,
@@ -431,12 +458,10 @@ async def sign_outgoing(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ):
-    handover = await db.get(Handover, handover_id)
-    if handover is None:
-        raise HTTPException(status_code=404, detail="Handover not found.")
+    handover, tenant_id = await _handover_or_404(db, handover_id, user)
     admission_ids = [uuid.UUID(a) for a in (handover.admission_ids or [])]
     unacked = await escalation_service.count_unacknowledged_critical(
-        db, admission_ids=admission_ids
+        db, admission_ids=admission_ids, tenant_id=tenant_id
     )
     try:
         await service.sign_handover_outgoing(
@@ -456,9 +481,7 @@ async def countersign(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ):
-    handover = await db.get(Handover, handover_id)
-    if handover is None:
-        raise HTTPException(status_code=404, detail="Handover not found.")
+    handover, _ = await _handover_or_404(db, handover_id, user)
     try:
         await service.countersign_handover_incoming(db, handover, user_id=user.id)
     except WorkflowError as exc:
