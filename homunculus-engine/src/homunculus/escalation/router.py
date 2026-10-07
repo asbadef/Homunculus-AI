@@ -16,6 +16,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from homunculus import security_audit
+from homunculus.auth.access import CLINICAL_ROLES, roles_in_tenant
 from homunculus.auth.dependencies import get_current_active_user
 from homunculus.auth.models import User
 from homunculus.db import get_db
@@ -35,11 +37,58 @@ def _err(exc: EscalationError) -> HTTPException:
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
 
-async def _get_alert_or_404(db: AsyncSession, alert_id: uuid.UUID) -> Alert:
+async def _deny(db: AsyncSession, *, action: str, user: User, tenant_id: uuid.UUID | None,
+                resource_type: str, resource_id: object, status_code: int, detail: str) -> HTTPException:
+    """Record the refused attempt (committed now, the request is about to fail) and build the error."""
+    await security_audit.record(
+        db, action=action, user_id=user.id, tenant_id=tenant_id, resource_type=resource_type,
+        resource_id=resource_id, outcome="denied", commit=True,
+    )
+    return HTTPException(status_code=status_code, detail=detail)
+
+
+async def _require_clinician(db: AsyncSession, user: User, tenant_id: uuid.UUID, *, action: str,
+                             resource_type: str, resource_id: object) -> None:
+    """Caller must hold a clinical role IN the hospital that owns the record.
+    Not a member of that hospital -> 404 (existence not leaked); member without clinical role -> 403."""
+    roles = await roles_in_tenant(db, user, tenant_id)
+    if not roles:
+        raise await _deny(db, action=action, user=user, tenant_id=tenant_id, resource_type=resource_type,
+                          resource_id=resource_id, status_code=404, detail="Not found.")
+    if not roles & CLINICAL_ROLES:
+        raise await _deny(db, action=action, user=user, tenant_id=tenant_id, resource_type=resource_type,
+                          resource_id=resource_id, status_code=403,
+                          detail="A clinical role in this hospital is required.")
+
+
+async def _alert_for(db: AsyncSession, user: User, alert_id: uuid.UUID, action: str) -> Alert:
     alert = await db.get(Alert, alert_id)
     if alert is None:
-        raise HTTPException(status_code=404, detail="Alert not found.")
+        raise HTTPException(status_code=404, detail="Not found.")
+    await _require_clinician(db, user, alert.tenant_id, action=action, resource_type="alert",
+                             resource_id=alert.id)
     return alert
+
+
+async def _session_for(db: AsyncSession, user: User, session_id: uuid.UUID, action: str) -> BreakGlassSession:
+    """A break-glass session is its owner's: hospital check first (404), then ownership (403)."""
+    session = await db.get(BreakGlassSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Not found.")
+    await _require_clinician(db, user, session.tenant_id, action=action, resource_type="break_glass",
+                             resource_id=session.id)
+    if session.user_id != user.id:
+        raise await _deny(db, action=action, user=user, tenant_id=session.tenant_id,
+                          resource_type="break_glass", resource_id=session.id, status_code=403,
+                          detail="Only the session owner may do this.")
+    return session
+
+
+async def _allow(db: AsyncSession, *, action: str, user: User, tenant_id: uuid.UUID,
+                 resource_type: str, resource_id: object, detail: dict | None = None) -> None:
+    await security_audit.record(db, action=action, user_id=user.id, tenant_id=tenant_id,
+                                resource_type=resource_type, resource_id=resource_id,
+                                outcome="allowed", detail=detail)
 
 
 # ---------------------------------------------------------------------------
@@ -56,12 +105,16 @@ async def create_alert(
     endpoint exists for integration and manual clinical flagging.
     """
     tenant_id = await _resolve_tenant_id(db, payload)
+    await _require_clinician(db, user, tenant_id, action="alert.create", resource_type="alert",
+                             resource_id=payload.patient_id or payload.admission_id)
     alert = await service.create_alert(
         db, tenant_id=tenant_id, kind=payload.kind, tier=payload.tier,
         admission_id=payload.admission_id, patient_id=payload.patient_id,
         unit_id=payload.unit_id, summary=payload.summary,
         source_signal=payload.source_signal,
     )
+    await _allow(db, action="alert.create", user=user, tenant_id=tenant_id, resource_type="alert",
+                 resource_id=alert.id, detail={"kind": payload.kind, "tier": payload.tier.value})
     await db.commit()
     await db.refresh(alert)
     return alert
@@ -74,13 +127,15 @@ async def acknowledge_alert(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ):
-    alert = await _get_alert_or_404(db, alert_id)
+    alert = await _alert_for(db, user, alert_id, "alert.acknowledge")
     try:
         await service.acknowledge_alert(
             db, alert, user_id=user.id, reason=payload.reason, note=payload.note,
         )
     except EscalationError as exc:
         raise _err(exc)
+    await _allow(db, action="alert.acknowledge", user=user, tenant_id=alert.tenant_id, resource_type="alert",
+                 resource_id=alert.id)
     await db.commit()
     await db.refresh(alert)
     return alert
@@ -93,7 +148,7 @@ async def snooze_alert(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ):
-    alert = await _get_alert_or_404(db, alert_id)
+    alert = await _alert_for(db, user, alert_id, "alert.snooze")
     try:
         await service.snooze_alert(
             db, alert, user_id=user.id, reason=payload.reason,
@@ -101,6 +156,8 @@ async def snooze_alert(
         )
     except EscalationError as exc:
         raise _err(exc)
+    await _allow(db, action="alert.snooze", user=user, tenant_id=alert.tenant_id, resource_type="alert",
+                 resource_id=alert.id)
     await db.commit()
     await db.refresh(alert)
     return alert
@@ -114,11 +171,13 @@ async def manual_escalate(
     user: User = Depends(get_current_active_user),
 ):
     """§6.3 step 4 — manual escalation jumps straight to the RRT tier."""
-    alert = await _get_alert_or_404(db, alert_id)
+    alert = await _alert_for(db, user, alert_id, "alert.escalate")
     try:
         await service.manual_escalate(db, alert, user_id=user.id, reason=payload.reason)
     except EscalationError as exc:
         raise _err(exc)
+    await _allow(db, action="alert.escalate", user=user, tenant_id=alert.tenant_id, resource_type="alert",
+                 resource_id=alert.id)
     await db.commit()
     await db.refresh(alert)
     return alert
@@ -134,6 +193,8 @@ async def activate_break_glass(
     user: User = Depends(get_current_active_user),
 ):
     tenant_id = await _tenant_of_patient(db, payload.patient_id)
+    await _require_clinician(db, user, tenant_id, action="break_glass.activate",
+                             resource_type="break_glass", resource_id=payload.patient_id)
     try:
         session = await service.activate_break_glass(
             db, tenant_id=tenant_id, user_id=user.id, patient_id=payload.patient_id,
@@ -141,6 +202,9 @@ async def activate_break_glass(
         )
     except EscalationError as exc:
         raise _err(exc)
+    await _allow(db, action="break_glass.activate", user=user, tenant_id=tenant_id,
+                 resource_type="break_glass", resource_id=session.id,
+                 detail={"patient_id": str(payload.patient_id), "reason": payload.reason.value})
     await db.commit()
     await db.refresh(session)
     return session
@@ -152,13 +216,13 @@ async def extend_break_glass(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ):
-    session = await db.get(BreakGlassSession, session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Break-glass session not found.")
+    session = await _session_for(db, user, session_id, "break_glass.extend")
     try:
         await service.extend_break_glass(db, session)
     except EscalationError as exc:
         raise _err(exc)
+    await _allow(db, action="break_glass.extend", user=user, tenant_id=session.tenant_id,
+                 resource_type="break_glass", resource_id=session.id)
     await db.commit()
     await db.refresh(session)
     return session
@@ -170,10 +234,10 @@ async def close_break_glass(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ):
-    session = await db.get(BreakGlassSession, session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Break-glass session not found.")
+    session = await _session_for(db, user, session_id, "break_glass.close")
     await service.close_break_glass(db, session)
+    await _allow(db, action="break_glass.close", user=user, tenant_id=session.tenant_id,
+                 resource_type="break_glass", resource_id=session.id)
     await db.commit()
     await db.refresh(session)
     return session
