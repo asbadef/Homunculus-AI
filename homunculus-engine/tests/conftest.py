@@ -13,6 +13,9 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+# Fixed SYNTHETIC test secret (not a real credential); the app refuses to start without one.
+os.environ.setdefault("JWT_SECRET", "sentetik-test-sirri-yalnizca-testler-icin-0123456789")
+
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
 # Import all model modules so their tables register on Base.metadata.

@@ -36,6 +36,26 @@ def test_production_starts_with_real_secrets():
     assert r.returncode == 0, r.stderr
 
 
-def test_development_keeps_working_without_secrets():
-    r = _import("homunculus.crypto, homunculus.auth.jwt", ENVIRONMENT="development")
+def test_jwt_refuses_to_start_without_secret_in_any_environment():
+    for env in ("development", "production", ""):
+        r = _import("homunculus.auth.jwt", **({"ENVIRONMENT": env} if env else {}))
+        assert r.returncode != 0, env
+        assert "JWT_SECRET" in r.stderr
+
+
+def test_jwt_refuses_known_placeholder_secret():
+    r = _import("homunculus.auth.jwt", JWT_SECRET="CHANGE_ME_IN_PRODUCTION_USE_32_CHARS_MIN")
+    assert r.returncode != 0
+    assert "JWT_SECRET" in r.stderr
+
+
+def test_jwt_refuses_short_secret():
+    r = _import("homunculus.auth.jwt", JWT_SECRET="kisa-sir")
+    assert r.returncode != 0
+    assert "JWT_SECRET" in r.stderr
+
+
+def test_development_works_with_a_proper_secret():
+    r = _import("homunculus.crypto, homunculus.auth.jwt", ENVIRONMENT="development",
+                JWT_SECRET="sentetik-test-sirri-" + "0123456789abcdef")
     assert r.returncode == 0, r.stderr

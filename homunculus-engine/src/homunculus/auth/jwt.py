@@ -10,11 +10,14 @@ from typing import Any
 
 from jose import JWTError, jwt
 
-# The fallback secret is for local development/tests only. In production the app refuses to start
-# without a real JWT_SECRET, so a publicly known default can never sign real tokens.
-if os.getenv("ENVIRONMENT", "development").strip().lower() == "production" and not os.getenv("JWT_SECRET"):
-    raise RuntimeError("JWT_SECRET must be set when ENVIRONMENT=production.")
-JWT_SECRET = os.getenv("JWT_SECRET", "CHANGE_ME_IN_PRODUCTION_USE_32_CHARS_MIN")
+# Y1/Y4: there is NO fallback secret. A publicly known or short secret would let anyone mint tokens
+# (including mfa_verified=true), so the app refuses to start in every environment without a real one.
+_KNOWN_PLACEHOLDERS = {"CHANGE_ME_IN_PRODUCTION_USE_32_CHARS_MIN", "dev-insecure-seed-change-me"}
+JWT_SECRET = os.getenv("JWT_SECRET", "")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET must be set (generate with: openssl rand -hex 32).")
+if JWT_SECRET in _KNOWN_PLACEHOLDERS or len(JWT_SECRET) < 32:
+    raise RuntimeError("JWT_SECRET is a known placeholder or shorter than 32 characters.")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
