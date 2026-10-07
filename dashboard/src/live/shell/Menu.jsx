@@ -147,10 +147,12 @@ export function MenuButton({ label, button, buttonClassName = TOOL_BUTTON, heade
         {button}
       </button>
       {open ? (
-        // Focusable (not in the Tab order), so a press on the header keeps focus inside the menu.
-        <div tabIndex={-1} className={`${PANEL} ${panelClassName}`}>
+        // Focusable (not in the Tab order), so a press on the header keeps focus inside the menu —
+        // and the keys are handled HERE, not on the list: with focus on the panel itself a handler
+        // on its child list would never see them. An item's keydown bubbles through unchanged.
+        <div tabIndex={-1} onKeyDown={move} className={`${PANEL} ${panelClassName}`}>
           {header}
-          <ul ref={listRef} id={menuId} role="menu" aria-label={label} onKeyDown={move} className="m-0 list-none p-0">
+          <ul ref={listRef} id={menuId} role="menu" aria-label={label} className="m-0 list-none p-0">
             {items.map((item, i) => (item === "separator" ? (
               <li key={`sep-${i}`} role="separator" className="my-1.5 border-t border-line" />
             ) : (

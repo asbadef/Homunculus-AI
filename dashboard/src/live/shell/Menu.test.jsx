@@ -108,6 +108,20 @@ describe("MenuButton", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "kənarda" }));
   });
 
+  it("answers Escape and the arrows with focus on the panel itself (a press on its header)", () => {
+    render(<Account />);
+    const button = screen.getByRole("button", { name: "Hesab menyusu" });
+    fireEvent.click(button);
+    const panel = screen.getByText("Ayşe Sentetik").closest("[tabindex]");
+    act(() => panel.focus());
+    fireEvent.keyDown(panel, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(screen.getAllByRole("menuitem")[0]);
+    act(() => panel.focus());
+    fireEvent.keyDown(panel, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(button);
+  });
+
   it("ArrowDown on the open button enters the menu at its first item; ArrowUp on the closed button opens it at the last", () => {
     render(<Account />);
     const button = screen.getByRole("button", { name: "Hesab menyusu" });

@@ -164,6 +164,41 @@ describe("PasswordForm", () => {
     expect(vi.getTimerCount()).toBe(0);                                 // nothing left running
   });
 
+  // The clock is the hospital's PC clock: NTP may step it backwards mid-hold. The count must not
+  // grow past the hold the server asked for, or a 60-second refusal would hold the button minutes.
+  it("never counts past the hold's own seconds when the clock is stepped backwards", async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { api } = await mount(<PasswordForm submitLabel="Saxla" />);
+    api.changePassword.mockRejectedValue(refusal(429, TOO_MANY, { retryAfter: 60 }));
+    fill("Gizli-Sifre-1", "Yeni-Sifre-22", "Yeni-Sifre-22");
+    await flush();
+    expect(screen.getByText(retryIn(60))).toBeInTheDocument();
+    vi.setSystemTime(Date.now() - 300_000);                             // NTP steps back 5 minutes
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(screen.getByText(retryIn(60))).toBeInTheDocument();          // not 360
+    expect(screen.getByRole("button", { name: "Saxla" })).toBeDisabled();
+    // Stepped back to the right time (the hold's 60 s are not yet up: 20 s left of them).
+    vi.setSystemTime(Date.now() + 340_000);
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(screen.getByText(retryIn(20))).toBeInTheDocument();
+    vi.setSystemTime(Date.now() + 20_000);                              // and past the deadline
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(screen.getByRole("button", { name: "Saxla" })).not.toBeDisabled();
+  });
+
+  it("starts no hold for a Retry-After of zero or less: nothing is held, nothing is said", async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { api } = await mount(<PasswordForm submitLabel="Saxla" />);
+    api.changePassword.mockRejectedValue(refusal(429, TOO_MANY, { retryAfter: 0 }));
+    fill("Gizli-Sifre-1", "Yeni-Sifre-22", "Yeni-Sifre-22");
+    await flush();
+    expect(screen.getByText(TOO_MANY_AZ)).toBeInTheDocument();          // the refusal is still said
+    expect(screen.getByRole("button", { name: "Saxla" })).not.toBeDisabled();
+    expect(screen.queryByText(/saniyədən sonra/)).toBeNull();
+    tick(ANNOUNCE_DELAY_MS);
+    expect(screen.getByRole("status")).toHaveTextContent("");
+  });
+
   it("drops a hold's timer with the form: a request held and unmounted leaves nothing ticking", async () => {
     vi.useFakeTimers(FAKE_TIMERS);
     const { api } = await mount(<PasswordForm submitLabel="Saxla" />);

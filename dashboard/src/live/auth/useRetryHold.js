@@ -2,7 +2,8 @@
 // (`err.retryAfter`, backendApi.js: nginx's Retry-After, at most RETRY_AFTER_MAX_S).
 //
 //   const { wait, holding, hold, current } = useRetryHold();
-//   hold(err.retryAfter)   begins (or restarts) a hold of that many seconds, from now
+//   hold(err.retryAfter)   begins (or restarts) a hold of that many seconds, from now; a number
+//                          that is not above zero (0, a negative, undefined) starts no hold at all
 //   wait                   whole seconds left (ceil), 0 when there is no hold
 //   holding                wait > 0: the submit button is disabled meanwhile
 //   current                { since, seconds, deadline } of the hold, a new object per hold — the key
@@ -29,7 +30,9 @@ export function useRetryHold() {
     let timer = null;
     const tick = () => {
       timer = null;
-      const left = secondsLeft(current.deadline);
+      // Never more than the hold the server asked for: a PC clock stepped backwards (NTP) must not
+      // stretch a 60-second refusal into minutes of a disabled button.
+      const left = Math.min(current.seconds, secondsLeft(current.deadline));
       setWait(left);
       if (left === 0) return;
       // To the next second boundary (never 0 ms: a deadline exactly on one waits a full second).
@@ -48,6 +51,7 @@ export function useRetryHold() {
   }, [current]);
 
   const hold = useCallback((seconds) => {
+    if (!(seconds > 0)) return;              // nothing to wait for: no hold, and nothing to announce
     const since = Date.now();
     setCurrent({ since, seconds, deadline: since + seconds * 1000 });
     setWait(seconds);                        // held from this render on, before the effect's first tick
