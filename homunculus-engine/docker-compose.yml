@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: homunculus
       POSTGRES_DB: homunculus
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"  # D2: yalnızca bu bilgisayar
     volumes:
       - pgdata:/var/lib/postgresql/data
 volumes:
