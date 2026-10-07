@@ -10,6 +10,7 @@ import { mount } from "../session/mount.testutil.jsx";
 import { profile, token } from "../session/testTokens.testutil.js";
 import { ANNOUNCE_DELAY_MS } from "../ui/index.js";
 import { stubScreens } from "./routes.js";
+import { BELL_LIST_MAX } from "./TopBar.jsx";
 import { IDLE_SPOKEN_AGAIN_AT, Shell } from "./Shell.jsx";
 import { useShell } from "./ShellContext.jsx";
 
@@ -42,14 +43,14 @@ const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
  *  to be: `start: false` leaves the stream alone, which a fake-timer test wants. */
 async function renderShell({
   perms = NURSE_PERMS, scope = { unrestricted: true, unit_ids: [] }, minutes = 10,
-  hash = "#/settings", start = true,
+  hash = "#/settings", start = true, patients = [],
 } = {}) {
   window.location.hash = hash;
   const { api, store, board, stream } = await mount(<ThemeProvider><Shell /></ThemeProvider>, {
     access: token({ perms }),
     me: profile({ perms, lock_idle_minutes: minutes }),
     setup: (fake) => {
-      fake.boardPatients.mockResolvedValue({ patients: [], scope });
+      fake.boardPatients.mockResolvedValue({ patients, scope });
       fake.streamTicket.mockResolvedValue({ ticket: "t" });
     },
   });
@@ -271,6 +272,95 @@ describe("the top bar", () => {
     act(() => { stream.drop(); });
     const bell = screen.getByRole("button", { name: /Cavab gözləyən siqnallar · Cavab gözləyən: 0 — köhnə ola bilər/ });
     expect(bell).not.toHaveAccessibleName(/yoxdur/);
+  });
+
+  // The name is honest in all three states; the glance was not. A board that stopped updating
+  // with nothing waiting looked exactly like a calm ward: no badge, and the only marker was a
+  // grey dot that also meant "connecting" and "no connection".
+  it("tells its three states apart on screen, not only in its name", async () => {
+    const { stream } = await renderShell();
+    const bell = () => screen.getByRole("button", { name: /Cavab gözləyən siqnallar/ });
+    const mark = () => bell().querySelector('[data-bell="stale"], [data-bell="unknown"]')
+      ?.getAttribute("data-bell") ?? null;
+    expect(mark()).toBe("unknown");                              // it cannot know
+    await act(async () => { stream.open(); await settle(); });
+    expect(mark()).toBeNull();                                   // LIVE: nothing to warn about
+    act(() => { stream.drop(); });
+    expect(mark()).toBe("stale");                                // its own mark, not the grey dot
+  });
+
+  it("lists the worst alarms and says how many more are waiting", async () => {
+    const patients = Array.from({ length: BELL_LIST_MAX + 2 }, (_, i) => ({
+      patient_id: `P-${i}`, risk: "high", vitals: {},
+      alerts: [{ kind: "news2", severity: "high", summary: `NEWS2 ${i}`, acknowledged: false }],
+    }));
+    const { stream } = await renderShell({ patients });
+    await act(async () => { stream.open(); await settle(); });
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(`${BELL_LIST_MAX + 2} siqnal cavab gözləyir`) }));
+    const panel = screen.getByRole("region", { name: /Cavab gözləyən siqnallar/ });
+    expect(within(panel).getAllByRole("listitem")).toHaveLength(BELL_LIST_MAX);
+    expect(panel).toHaveTextContent("və daha 2 siqnal");
+  });
+
+  // Clinical safety: "none" is a PATIENT's risk, never an alarm's severity. Shown as one it would
+  // read "Tapıntı yoxdur" — "no finding" — beside an alarm nobody has answered.
+  it("never shows an alarm as a finding-free one, whatever severity the engine sent", async () => {
+    const patients = [{ patient_id: "P-9", risk: "none", vitals: {},
+      alerts: [{ kind: "x", severity: "none", summary: "Mənbə naməlum", acknowledged: false }] }];
+    const { stream } = await renderShell({ patients });
+    await act(async () => { stream.open(); await settle(); });
+    fireEvent.click(screen.getByRole("button", { name: /1 siqnal cavab gözləyir/ }));
+    const panel = screen.getByRole("region", { name: /Cavab gözləyən siqnallar/ });
+    expect(panel).toHaveTextContent("Mənbə naməlum");
+    expect(panel).not.toHaveTextContent("Tapıntı yoxdur");
+    expect(panel).toHaveTextContent("Risk bildirilməyib");
+  });
+
+  it("moves the clock on at the minute, not every 15 seconds", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
+      now: new Date(2026, 9, 7, 8, 30, 20) });
+    await renderShell({ start: false });
+    expect(screen.getByText("08:30")).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(39_000); });                 // 08:30:59 — the same minute
+    expect(screen.getByText("08:30")).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(1_100); });                  // past the boundary
+    expect(screen.getByText("08:31")).toBeInTheDocument();
+  });
+
+  it("has no full-screen button where the browser has no full screen", async () => {
+    await renderShell({ start: false });
+    expect(screen.queryByRole("button", { name: "Tam ekran" })).toBeNull();
+  });
+
+  it("asks the browser for full screen, and survives one that answers with no promise", async () => {
+    const request = vi.fn(() => undefined);                         // an older browser
+    document.documentElement.requestFullscreen = request;
+    const failures = [];
+    const onError = (event) => { failures.push(event.error ?? event.message); event.preventDefault(); };
+    window.addEventListener("error", onError);
+    try {
+      await renderShell({ start: false });
+      const button = screen.getByRole("button", { name: "Tam ekran" });
+      expect(button).toHaveAttribute("aria-pressed", "false");
+      fireEvent.click(button);
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(failures).toEqual([]);
+    } finally {
+      window.removeEventListener("error", onError);
+      delete document.documentElement.requestFullscreen;
+    }
+  });
+
+  it("shows the keyboard shortcuts, and Escape gives the button its focus back", async () => {
+    await renderShell({ start: false });
+    const keys = screen.getByRole("button", { name: "Klaviatura qısayolları" });
+    fireEvent.click(keys);
+    const panel = screen.getByRole("region", { name: "Klaviatura qısayolları" });
+    expect(panel).toHaveTextContent("Alt L");
+    expect(panel).toHaveTextContent("Ekranı kilidlə");
+    fireEvent.keyDown(panel, { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "Klaviatura qısayolları" })).toBeNull();
+    expect(document.activeElement).toBe(keys);
   });
 
   it("names the language menu by what it shows first", async () => {

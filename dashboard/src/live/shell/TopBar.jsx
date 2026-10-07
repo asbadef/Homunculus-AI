@@ -24,9 +24,20 @@ const BUILD_SHA = typeof __BUILD_SHA__ === "string" ? __BUILD_SHA__ : "";
 function Clock() {
   const { t } = useI18n();
   const [now, setNow] = useState(() => Date.now());
+  // Re-armed to the next minute (useRetryHold.js's way), not an interval: on a 15-second one the
+  // minute on screen could be a quarter of a minute behind the wall clock a nurse is charting
+  // against, and a ward PC left open all night woke four times a minute to repaint the same
+  // digits. A minute boundary is a whole number of minutes from the epoch in every timezone the
+  // wards use, so the wait is simply what is left of this minute.
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 15_000);
-    return () => clearInterval(timer);
+    let timer = 0;
+    const tick = () => {
+      const at = Date.now();
+      setNow(at);
+      timer = setTimeout(tick, 60_000 - (at % 60_000));
+    };
+    timer = setTimeout(tick, 60_000 - (Date.now() % 60_000));
+    return () => clearTimeout(timer);
   }, []);
   const day = `${t(weekdayKey(now))} ${ddmm(now)}`;
   return (
@@ -72,13 +83,24 @@ function FullscreenButton() {
   }, []);
   if (typeof document.documentElement.requestFullscreen !== "function") return null;
   const label = t(on ? "shell.exitFullscreen" : "shell.fullscreen");
+  // A browser that refuses — or an older one that answers with nothing instead of a promise —
+  // must not throw out of a click handler. Nothing clinical depends on full screen: if it does
+  // not happen, the page carries on exactly as it was.
+  const toggle = () => {
+    try {
+      Promise.resolve(on ? document.exitFullscreen() : document.documentElement.requestFullscreen())
+        .catch(() => {});
+    } catch {
+      // refused outright (no user gesture, a policy, no exitFullscreen): nothing to do
+    }
+  };
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
       aria-pressed={on}
-      onClick={() => (on ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {})}
+      onClick={toggle}
       className={`${TOOL_BUTTON} max-[1100px]:hidden`}
     >
       <Icon name="fullscreen" size={19} />
@@ -105,11 +127,23 @@ function Keys() {
   );
 }
 
+/** An alarm's severity as the pill may show it. "none" is a PATIENT's risk — "no alarm at all" —
+ *  and never an alarm's own severity; shown as one, `measured` would make the pill read "no
+ *  finding" beside an alarm nobody has answered. It is handed over as an unreported risk instead:
+ *  riskStyle's attention look, never calm. A severity this build does not know keeps its text
+ *  ("unknown risk: <it>"), and a missing one is already null here (liveAdapters). */
+const pillRisk = (severity) => (severity === "none" ? null : severity);
+
 /** The alarms nobody has acknowledged yet, in this session's scope. The board store answers with
  *  Decision 18 already applied (`waitingAlarms`): `known` — a LIVE board, the only one that may
- *  say "none"; `stale` — a DEGRADED one, what it last had, marked as possibly out of date, with
- *  the dot; neither — `items` is null, and it says it cannot know (still loading, or no
- *  connection), never a 0 and never an empty bell. */
+ *  say "none"; `stale` — a DEGRADED one, what it last had, marked as possibly out of date;
+ *  neither — `items` is null, and it says it cannot know (still loading, or no connection), never
+ *  a 0 and never an empty bell.
+ *
+ *  The three states are told apart on the button itself, not only in its name: a board that
+ *  stopped updating wears its own ring and amber dot, and the grey dot is kept for "cannot know".
+ *  Without that, a DEGRADED bell with nothing waiting — no badge, one grey dot — looked at a
+ *  glance exactly like a calm ward. */
 function Bell() {
   const { t } = useI18n();
   const board = useBoard();
@@ -129,9 +163,17 @@ function Bell() {
         <>
           <Icon name="bell" size={19} />
           {waiting.length ? (
-            <span aria-hidden="true" className="absolute -right-1 -top-1 min-w-[16px] rounded-full border-2 border-rail bg-crit px-1 font-text text-10 font-bold leading-[14px] text-oncrit">{waiting.length}</span>
+            <span aria-hidden="true" data-bell="count" className="absolute -right-1 -top-1 min-w-[16px] rounded-full border-2 border-rail bg-crit px-1 font-text text-10 font-bold leading-[14px] text-oncrit">{waiting.length}</span>
           ) : null}
-          {!known ? <span aria-hidden="true" className="absolute bottom-1 right-1 h-2 w-2 rounded-full border-2 border-rail bg-mid" /> : null}
+          {stale ? (
+            <>
+              <span aria-hidden="true" data-bell="stale" className="absolute inset-0 rounded-ctl ring-2 ring-mid" />
+              <span aria-hidden="true" className="absolute bottom-1 right-1 h-2 w-2 rounded-full border-2 border-rail bg-mid" />
+            </>
+          ) : null}
+          {!known && !stale ? (
+            <span aria-hidden="true" data-bell="unknown" className="absolute bottom-1 right-1 h-2 w-2 rounded-full border-2 border-rail bg-mute" />
+          ) : null}
         </>
       )}
     >
@@ -145,7 +187,7 @@ function Bell() {
             <ul className="m-0 max-h-[min(460px,60vh)] list-none overflow-auto p-0">
               {waiting.slice(0, BELL_LIST_MAX).map((a) => (
                 <li key={a.id} className="grid grid-cols-[auto_1fr_auto] items-start gap-2.5 border-t border-line px-3.5 py-2.5">
-                  <RiskPill risk={a.severity} measured />
+                  <RiskPill risk={pillRisk(a.severity)} measured />
                   <div className="min-w-0">
                     <b className="block font-data text-13">{a.bedLabel}</b>
                     <span className="block text-12 text-mute">{a.summary ?? a.kind}</span>
