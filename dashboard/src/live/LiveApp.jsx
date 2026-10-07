@@ -13,7 +13,9 @@ import { ThemeProvider } from "./theme/ThemeProvider.jsx";
 import { I18nProvider } from "./i18n/I18nProvider.jsx";
 import { ToastProvider } from "./ui/index.js";
 import { SessionProvider, useSession } from "./session/SessionProvider.jsx";
-import { PHASE, createSessionStore } from "./session/sessionStore.js";
+import { FALLBACK_LOCK_MINUTES, PHASE, createSessionStore } from "./session/sessionStore.js";
+import { useIdleLock } from "./session/useIdleLock.js";
+import { IdleWarning } from "./session/IdleWarning.jsx";
 import { BoardProvider } from "./data/BoardProvider.jsx";
 import { createBoardStore } from "./data/boardStore.js";
 import { hasWorkRoute, hashPath, resumePath } from "./shell/routes.js";
@@ -79,6 +81,20 @@ function Phases({ board }) {
   const remembered = back.current?.epoch === store.epoch() ? back.current.path
     : opened.current ? "" : entry.current;
 
+  // A personal session always locks — the user's standing decision, and there is no "never". The
+  // step screens have no shell to lock behind, since nothing of the session is open yet, so an
+  // idle one ENDS the session instead and its warning says so (session/IdleWarning.jsx).
+  // Without it, "Yeni şifrə təyin edin" stood on a ward keyboard for as long as nobody touched
+  // it — and migration 0011 sends every local account to it at its first sign-in. The shell keeps
+  // its own lock (Shell.jsx), the lock screen its own hours, and the sign-in form needs neither:
+  // there is no session on it to take away.
+  const inStep = phase === PHASE.MFA || phase === PHASE.PASSWORD || phase === PHASE.UNREACHABLE;
+  const { secondsLeft, stay } = useIdleLock({
+    minutes: user?.lockIdleMinutes ?? FALLBACK_LOCK_MINUTES,
+    enabled: inStep,
+    onIdle: () => store.cancel(),
+  });
+
   let screen;
   if (phase === PHASE.READY) screen = <Shell resume={resumePath(remembered, user.perms)} />;
   else if (phase === PHASE.LOCKED) screen = <LockScreen />;
@@ -90,6 +106,9 @@ function Phases({ board }) {
   return (
     <ToastProvider resetKey={`${phase === PHASE.READY ? "open" : phase}:${store.epoch()}`}>
       <div className="h-full bg-page">{screen}</div>
+      {inStep && secondsLeft !== null ? (
+        <IdleWarning seconds={secondsLeft} onStay={stay} titleKey="auth.idleEnd" spokenKey="auth.idleEndSpoken" />
+      ) : null}
     </ToastProvider>
   );
 }

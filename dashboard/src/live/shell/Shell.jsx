@@ -10,10 +10,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useSession } from "../session/SessionProvider.jsx";
 import { useIdleLock } from "../session/useIdleLock.js";
+// The warning the shell and the step screens share (session/IdleWarning.jsx). Re-exported: the
+// shell is where a reader of this file looks for it.
+import { IDLE_SPOKEN_AGAIN_AT, IdleWarning } from "../session/IdleWarning.jsx";
 import { useBoard } from "../data/BoardProvider.jsx";
 import { scopeUnits } from "../data/boardStore.js";
 import { CONNECTION } from "../../liveConnection.js";
-import { Announce, Button, Icon } from "../ui/index.js";
+import { Icon } from "../ui/index.js";
 import { FOCUS_RING } from "../ui/focus.js";
 import { canReach, hashPath, homePath, matchRoute, screenOf } from "./routes.js";
 import { ShellProvider } from "./ShellContext.jsx";
@@ -27,8 +30,7 @@ export const PRODUCT = "Homunculus";
 const pathOf = () => hashPath(window.location.hash);
 const isEmptyPath = (path) => path === "" || path === "/";
 
-/** Seconds before the lock at which the warning is said once more (it is said when it opens). */
-export const IDLE_SPOKEN_AGAIN_AT = 10;
+export { IDLE_SPOKEN_AGAIN_AT };
 
 function useHashPath() {
   const [path, setPath] = useState(pathOf);
@@ -59,29 +61,7 @@ function Blocked({ icon, title, help, home }) {
   );
 }
 
-/** The last minute before the idle lock. The count on screen moves every second; what a screen
- *  reader hears does not — it is said when the warning opens and once more IDLE_SPOKEN_AGAIN_AT
- *  seconds before the lock, not sixty times (ui/Alert.jsx `Announce`: one region that stays and
- *  takes its text afterwards, so the same text twice over is not said twice). */
-function IdleWarning({ seconds, onStay }) {
-  const { t } = useI18n();
-  const opened = useRef(seconds);
-  const spoken = seconds <= IDLE_SPOKEN_AGAIN_AT ? Math.min(opened.current, IDLE_SPOKEN_AGAIN_AT) : opened.current;
-  return (
-    <div className="fixed bottom-[22px] left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-box border border-mid bg-card px-3.5 py-3 font-text text-13 text-ink shadow-pop">
-      <Announce text={t("shell.idleSpoken", { seconds: spoken })} />
-      <Icon name="lock" size={20} className="text-mid-ink" />
-      <div aria-hidden="true">
-        <b className="block">{t("shell.idle")}</b>
-        <small className="text-mute">{t("shell.idleWhy", { seconds })}</small>
-      </div>
-      <Button variant="primary" size="sm" onClick={onStay}>{t("shell.idleStay")}</Button>
-    </div>
-  );
-}
 
-/** `resume`: the screen this session was on when its shell last went (LiveApp keeps it outside the
- *  URL). Used once, and only while the address is empty — a reload or a deep link wins over it. */
 export function Shell({ resume = "" }) {
   const { t } = useI18n();
   const { user, store } = useSession();
@@ -179,7 +159,7 @@ export function Shell({ resume = "" }) {
             {content}
           </main>
         </div>
-        {secondsLeft !== null ? <IdleWarning seconds={secondsLeft} onStay={stay} /> : null}
+        {secondsLeft !== null ? <IdleWarning seconds={secondsLeft} onStay={stay} titleKey="shell.idle" spokenKey="shell.idleSpoken" /> : null}
       </div>
     </ShellProvider>
   );

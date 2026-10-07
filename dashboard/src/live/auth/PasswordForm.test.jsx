@@ -133,6 +133,9 @@ describe("PasswordForm", () => {
     expect(button).not.toBeDisabled();                                  // released at 0
     expect(screen.queryByText(/saniyədən sonra/)).toBeNull();
     expect(said()).toBe("");                                            // empty again for the next hold
+    // The refusal emptied the current-password field — it never survives an attempt — so the next
+    // attempt types it again, as the clinician would.
+    fireEvent.change(screen.getByLabelText(/^Cari şifrə/), { target: { value: "Gizli-Sifre-1" } });
     fireEvent.submit(button.closest("form"));
     await flush();
     expect(api.changePassword).toHaveBeenCalledTimes(2);
@@ -212,6 +215,25 @@ describe("PasswordForm", () => {
     cleanup();
     vi.advanceTimersByTime(0);           // jsdom's own 0 ms selectionchange timer, from the focus move
     expect(vi.getTimerCount()).toBe(0);  // the tick (1000 ms) and the announcement (150 ms) are gone
+  });
+
+  // Migration 0011 sends every local account to this step at its first sign-in. A nurse who types
+  // her temporary password, is refused for a new password that is too short — nothing is sent —
+  // and walks off used to leave that password sitting in the field on a ward keyboard: the next
+  // person had only to type a new one twice to own the account.
+  it("never leaves the current password in the field after a refused attempt", async () => {
+    const { api } = await mount(<PasswordForm submitLabel="Saxla" />);
+    const current = () => screen.getByLabelText(/^Cari şifrə/);
+    fill("Gizli-Sifre-1", "kisa", "kisa");                         // refused here, nothing sent
+    expect(api.changePassword).not.toHaveBeenCalled();
+    expect(current()).toHaveValue("");
+    // What she still has to correct stays, so a mistyped repeat is not three fields to type again.
+    expect(screen.getByLabelText(/^Yeni şifrə \*/)).toHaveValue("kisa");
+
+    api.changePassword.mockRejectedValue(refusal(400, "Mevcut parola yanlış"));
+    fill("yanlis-1", "Yeni-Sifre-22", "Yeni-Sifre-22");
+    await waitFor(() => expect(current()).toHaveAccessibleDescription("Cari şifrə səhvdir."));
+    expect(current()).toHaveValue("");
   });
 
   it("shows a refusal that belongs to no field as an alert, the fields kept", async () => {

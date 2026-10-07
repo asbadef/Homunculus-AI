@@ -5,7 +5,8 @@
 // "← Girişe dön", "Şifreyi kaydet ve devam et"). Written for this plan, AZ/RU/EN to be reviewed
 // by a native speaker before the pilot: usernameHint, show, forgotHelp (roadmap D4: no SMS
 // or e-mail), retryIn, enrol*, qr*, manualKey, copy*, loading, retry, current*, rule, notice.*,
-// restoring, unreachable*.
+// restoring, unreachable*, idleEnd* (from the review of G1-07: a step screen has no shell to lock
+// behind, so an idle one ends the session and says so).
 export default {
   tr: {
     pill: "Yoğun bakım için klinik karar desteği",
@@ -50,6 +51,8 @@ export default {
     mismatch: "İki şifre aynı değil.",
     saveAndContinue: "Şifreyi kaydet ve devam et",
     leave: "Çıkış yap",
+    idleEnd: "Oturum kapanacak",
+    idleEndSpoken: "Oturum {seconds} saniye içinde kapanacak. Devam etmek için Devam et düğmesine basın.",
     restoring: "Oturum kontrol ediliyor…",
     unreachableTitle: "Sunucuya ulaşılamıyor",
     unreachableBody: "Oturumunuz korunuyor; bağlantı gelince kaldığınız yerden devam edersiniz.",
@@ -107,6 +110,8 @@ export default {
     mismatch: "İki şifrə eyni deyil.",
     saveAndContinue: "Şifrəni yadda saxla və davam et",
     leave: "Çıxış et",
+    idleEnd: "Sessiya bağlanacaq",
+    idleEndSpoken: "Sessiya {seconds} saniyə ərzində bağlanacaq. Davam etmək üçün Davam et düyməsini basın.",
     restoring: "Sessiya yoxlanılır…",
     unreachableTitle: "Serverə qoşulmaq mümkün deyil",
     unreachableBody: "Sessiyanız qorunur; əlaqə bərpa olunanda qaldığınız yerdən davam edəcəksiniz.",
@@ -164,6 +169,8 @@ export default {
     mismatch: "Пароли не совпадают.",
     saveAndContinue: "Сохранить пароль и продолжить",
     leave: "Выйти",
+    idleEnd: "Сеанс будет завершён",
+    idleEndSpoken: "Сеанс будет завершён через {seconds} с. Чтобы продолжить, нажмите «Продолжить».",
     restoring: "Проверка сеанса…",
     unreachableTitle: "Сервер недоступен",
     unreachableBody: "Ваш сеанс сохранён; когда связь восстановится, вы продолжите с того же места.",
@@ -221,6 +228,8 @@ export default {
     mismatch: "The two passwords do not match.",
     saveAndContinue: "Save password and continue",
     leave: "Sign out",
+    idleEnd: "Session will end",
+    idleEndSpoken: "The session will end in {seconds} s. Press Stay signed in to continue.",
     restoring: "Checking your session…",
     unreachableTitle: "The server cannot be reached",
     unreachableBody: "Your session is kept; when the connection is back you continue where you were.",

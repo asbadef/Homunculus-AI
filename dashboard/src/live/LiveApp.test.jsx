@@ -8,6 +8,7 @@ import { fakeApi, profile, token } from "./session/testTokens.testutil.js";
 import { writeLock } from "./session/browserState.js";
 import { resetScreens, stubScreens } from "./shell/routes.js";
 import { PRODUCT } from "./shell/Shell.jsx";
+import { ANNOUNCE_DELAY_MS } from "./ui/index.js";
 
 vi.mock("qrcode", () => ({ default: { toDataURL: vi.fn(async () => "data:image/png;base64,QR") } }));
 
@@ -86,6 +87,7 @@ beforeEach(() => {
 afterEach(() => {
   resetScreens();
   vi.restoreAllMocks();
+  vi.useRealTimers();
   localStorage.clear();
   document.title = "";
 });
@@ -213,6 +215,10 @@ describe("the TOTP step and the forced password change", () => {
     fireEvent.click(screen.getByRole("button", { name: "Şifrəni yadda saxla və davam et" }));
     expect(screen.getByLabelText(/^Yeni şifrə \*/)).toHaveAccessibleDescription(/Yeni şifrə cari şifrədən fərqli olmalıdır/);
     expect(api.changePassword).not.toHaveBeenCalled();
+    // The refused attempt emptied the temporary password's field — it never survives one — so it
+    // is typed again, as the clinician would from the slip of paper she was given.
+    expect(screen.getByLabelText(/Sizə verilən müvəqqəti şifrə/)).toHaveValue("");
+    fireEvent.change(screen.getByLabelText(/Sizə verilən müvəqqəti şifrə/), { target: { value: "Gecici-1" } });
     fireEvent.change(screen.getByLabelText(/^Yeni şifrə \*/), { target: { value: "Kendi-Sifrem-9" } });
     fireEvent.change(screen.getByLabelText(/Yeni şifrə \(təkrar\)/), { target: { value: "Kendi-Sifrem-9" } });
     api.changePassword.mockResolvedValue({ access_token: NURSE });
@@ -466,6 +472,74 @@ describe("coming back to the screen she left", () => {
     fireEvent.click(screen.getByRole("button", { name: "Yenidən cəhd et" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Siqnal ekranı" })).toBeInTheDocument();
     await waitFor(() => expect(window.location.hash).toBe("#/alarms"));
+  });
+});
+
+// A personal session always locks (the user's standing decision; there is no "never"). The step
+// screens have no shell to lock behind — nothing of a session is open yet — so an idle one ENDS,
+// and the warning says so. Without it, the forced password change sat on a ward keyboard for as
+// long as nobody touched it: migration 0011 sends every local account to it at its first sign-in.
+describe("a step screen nobody touches", () => {
+  // The fake-timer recipe: installed BEFORE mount, nothing advancing on its own, and `flush` —
+  // one turn of the REAL event loop inside act() — in place of waitFor, which would wait on the
+  // fake clock and never return.
+  const realSetTimeout = globalThis.setTimeout;
+  const FAKE = { toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] };
+  const flush = () => act(() => new Promise((resolve) => { realSetTimeout(resolve, 0); }));
+
+  /** Sign in with fake timers running: the same keys as `signIn`, without any findBy. */
+  async function stepIn(api, tokens, me) {
+    api.login.mockImplementation(async () => { api.store(tokens.access_token); return tokens; });
+    api.me.mockResolvedValue(me);
+    await flush();
+    fireEvent.change(screen.getByLabelText(/^İstifadəçi adı \*$/), { target: { value: "ayse" } });
+    fireEvent.change(screen.getByLabelText(/^Şifrə \*$/), { target: { value: "Gizli-Sifre-1" } });
+    fireEvent.click(screen.getByRole("button", { name: /Daxil ol/ }));
+    await flush();
+  }
+
+  it("warns that the session will end — not that the screen will lock — and then ends it", async () => {
+    vi.useFakeTimers(FAKE);
+    const api = app();
+    await stepIn(api, { access_token: NURSE, password_change_required: true },
+      profile({ must_change_password: true, lock_idle_minutes: 2 }));
+    expect(screen.getByRole("heading", { level: 1, name: "Yeni şifrə təyin edin" })).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(61_000); });
+    expect(screen.getByText("Sessiya bağlanacaq")).toBeInTheDocument();
+    expect(screen.queryByText("Ekran kilidlənəcək")).toBeNull();
+    act(() => { vi.advanceTimersByTime(ANNOUNCE_DELAY_MS); });
+    expect(screen.getAllByRole("status").map((el) => el.textContent).filter(Boolean)[0])
+      .toMatch(/Sessiya \d+ saniyə ərzində bağlanacaq/);
+    // "Davam et" keeps her there, as it does in the shell.
+    fireEvent.click(screen.getByRole("button", { name: "Davam et" }));
+    expect(screen.queryByText("Sessiya bağlanacaq")).toBeNull();
+    expect(screen.getByRole("heading", { level: 1, name: "Yeni şifrə təyin edin" })).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(121_000); });
+    await flush();
+    expect(screen.getByRole("heading", { level: 1, name: "Daxil olun" })).toBeInTheDocument();
+    expect(api.logout).toHaveBeenCalled();
+  });
+
+  it("ends an idle TOTP step too", async () => {
+    vi.useFakeTimers(FAKE);
+    const api = app();
+    await stepIn(api, { access_token: PENDING, requires_mfa: true, mfa_enrolled: true },
+      profile({ id: "u-kaya", totp_enabled: true, lock_idle_minutes: 2 }));
+    expect(screen.getByRole("heading", { level: 1, name: "İki addımlı doğrulama" })).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(121_000); });
+    await flush();
+    expect(screen.getByRole("heading", { level: 1, name: "Daxil olun" })).toBeInTheDocument();
+  });
+
+  // The sign-in form holds no session to end, and the shell locks instead (Shell.jsx).
+  it("leaves the sign-in form alone, however long nobody touches it", async () => {
+    vi.useFakeTimers(FAKE);
+    const api = app();
+    await flush();
+    act(() => { vi.advanceTimersByTime(600_000); });
+    await flush();
+    expect(screen.getByRole("heading", { level: 1, name: "Daxil olun" })).toBeInTheDocument();
+    expect(api.logout).not.toHaveBeenCalled();
   });
 });
 

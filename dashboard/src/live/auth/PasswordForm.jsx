@@ -54,6 +54,14 @@ export function PasswordForm({ temporary = false, submitLabel, onDone }) {
     setErrors((e) => ({ ...e, [field]: undefined }));
   };
 
+  /** The current password does not survive an attempt — refused by the server, or refused here
+   *  before anything was sent. This form stands on a ward keyboard (migration 0011 sends every
+   *  local account to it at its first sign-in), and that one field holds the credential that would
+   *  let whoever sits down next change the password and own the account: the sign-in form and the
+   *  lock screen empty theirs the same way. What the clinician still has to correct — the new
+   *  password and its repeat — stays, so a mistyped repeat is not three fields to type again. */
+  const forgetCurrent = () => setForm((f) => (f.current ? { ...f, current: "" } : f));
+
   const submit = async (event) => {
     event.preventDefault();
     if (busy || holding) return;
@@ -61,6 +69,7 @@ export function PasswordForm({ temporary = false, submitLabel, onDone }) {
     const problem = passwordProblem(form);
     if (problem) {
       setErrors({ [problem.field]: t(problem.key) });
+      forgetCurrent();
       refs[problem.field].current?.focus();     // the error is read with the field (Field)
       return;
     }
@@ -85,7 +94,10 @@ export function PasswordForm({ temporary = false, submitLabel, onDone }) {
         refs.current.current?.focus();
       }
     } finally {
-      if (mounted.current) setBusy(false);
+      if (mounted.current) {
+        setBusy(false);
+        forgetCurrent();
+      }
     }
   };
 
