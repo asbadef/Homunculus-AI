@@ -12,6 +12,7 @@ import { useSession } from "../session/SessionProvider.jsx";
 import { useIdleLock } from "../session/useIdleLock.js";
 import { useBoard } from "../data/BoardProvider.jsx";
 import { scopeUnits } from "../data/boardStore.js";
+import { CONNECTION } from "../../liveConnection.js";
 import { Announce, Button, Icon } from "../ui/index.js";
 import { FOCUS_RING } from "../ui/focus.js";
 import { canReach, hashPath, homePath, matchRoute, screenOf } from "./routes.js";
@@ -84,12 +85,14 @@ function IdleWarning({ seconds, onStay }) {
 export function Shell({ resume = "" }) {
   const { t } = useI18n();
   const { user, store } = useSession();
-  const { scope } = useBoard();
-  // `scope` is null while no load has landed and after one that failed: the session's units are
-  // then UNKNOWN, not empty, and the chip and the clinician's choice must survive it
-  // (ShellContext.jsx).
+  const { scope, connection } = useBoard();
+  // `scope` is null both while nothing has been loaded and after a load that FAILED, and the two
+  // are not the same thing (ShellContext.jsx): a failed load leaves the session's units unknown,
+  // so the chip and the clinician's choice survive it, marked out of date — while a board that
+  // was never loaded, or one emptied because this session may not see it, has no units at all.
   const units = useMemo(() => scopeUnits(scope), [scope]);
-  const scopeKnown = scope !== null;
+  const scopeState = scope !== null ? "known"
+    : connection === CONNECTION.CONNECTING ? "none" : "stale";
   const path = useHashPath();
   const home = homePath(user.perms);
   const main = useRef(null);
@@ -147,7 +150,7 @@ export function Shell({ resume = "" }) {
   }, [title]);
 
   return (
-    <ShellProvider units={units} known={scopeKnown}>
+    <ShellProvider units={units} scope={scopeState}>
       <div className="grid h-full grid-cols-[86px_minmax(0,1fr)] bg-page font-text text-14.5 text-ink max-[640px]:grid-cols-[62px_minmax(0,1fr)]">
         <a
           href="#main"

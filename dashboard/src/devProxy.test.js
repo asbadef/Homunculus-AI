@@ -39,6 +39,18 @@ describe("the dev server's proxy", () => {
   });
 });
 
+describe("what the service worker keeps offline", () => {
+  // The simulation is not part of the product, and the service worker precached it: the
+  // legacyRoots chunk and the five replay scenarios made a first visit to the REAL system cost
+  // half a megabyte of a demonstration it never shows (31 entries / 1245 KiB, now 22 / 556 KiB).
+  // They are still served when ?eski=1, ?demo=1 or ?mode=replay asks for them — just not kept.
+  it("leaves the simulation's chunk and the replay scenarios out of the precache", () => {
+    expect(VITE).toMatch(/globIgnores:\s*\[[^\]]*"\*\*\/legacyRoots-\*\.js"/);
+    expect(VITE).toMatch(/globIgnores:\s*\[[^\]]*"demo\/\*\*"/);
+    expect(VITE).not.toMatch(/includeAssets:\s*\[[^\]]*demo/);
+  });
+});
+
 describe("the manifest of the installed app", () => {
   // An icon added to the home screen of a ward tablet opened the SIMULATION: start_url was
   // "/?demo=1", left over from before the bare URL became the live system. The description called

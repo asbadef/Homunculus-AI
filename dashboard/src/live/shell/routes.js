@@ -11,10 +11,12 @@
 // another screen: a patient is opened from the beds — and while such a screen is open no rail
 // entry reads as current, see Sidebar.jsx).
 //
-// HOW A WAVE ADDS ITS SCREEN: its own import line below, and its own line in BUILT — two lines
-// nobody else touches, so the parallel branches of Wave 3 do not meet. ROUTES itself is frozen,
-// entries and permission lists included: a route's id, address and permissions are the same for
-// every session and every test, and nothing can widen them at run time.
+// HOW A WAVE ADDS ITS SCREEN: its own import line below, and its own line in SCREENS — two lines
+// nobody else touches, so the parallel branches of Wave 3 do not meet. That is the ONLY way the
+// app gains a screen; `stubScreens` is a test seam and refuses to run outside the test build.
+// ROUTES itself is frozen, entries and permission lists included: a route's id, address and
+// permissions are the same for every session and every test, and nothing can widen them at run
+// time.
 import { SettingsScreen } from "../screens/settings/SettingsScreen.jsx";
 // G1-09: import { BedsScreen } from "../screens/beds/BedsScreen.jsx";
 
@@ -24,14 +26,19 @@ import { SettingsScreen } from "../screens/settings/SettingsScreen.jsx";
 
 // G1-12: import { AdminScreen } from "../screens/admin/AdminScreen.jsx";
 
-/** The screen each route shows in THIS build, by route id — `null` until its wave sets it. */
-const BUILT = {
+/** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
+ *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
+ *  `resetScreens` puts it back whatever a test stood in for. */
+const SCREENS = Object.freeze({
   beds: null,      // G1-09
   alarms: null,    // G1-10
   patient: null,   // G1-11
   admin: null,     // G1-12 (users), G1-13 (roles), G1-14 (login source) — tabs inside one screen
   settings: SettingsScreen,
-};
+});
+
+/** What `screenOf` reads: this build's own screens, until a test stands in for one. */
+const BUILT = { ...SCREENS };
 
 const route = (entry) => Object.freeze({ ...entry, perms: Object.freeze(entry.perms) });
 
@@ -57,14 +64,29 @@ export function screenOf(route_) {
   return (route_ && BUILT[route_.id]) || null;
 }
 
-/** TEST ONLY — stand in for the screens a later wave will build ({routeId: Component}) and get
- *  back the call that puts this build's own screens there again. Nothing in the app calls it.
- *  A test MUST restore (afterEach): the registry is shared by every test in its file. Only
- *  screens can be stood in for — permissions and addresses are frozen. */
+/** A seam only the test build has: outside it, the screens of a build are the ones it was built
+ *  with, and nothing may add one at run time. */
+function testOnly(what) {
+  if (import.meta.env?.MODE !== "test") {
+    throw new Error(`${what} is a test seam: a build's screens are the ones it was built with`);
+  }
+}
+
+/** TEST ONLY — stand in for the screens a later wave will build ({routeId: Component}), and get
+ *  back `resetScreens`. A test MUST restore in `afterEach`: the registry is shared by every test
+ *  in its file. Only screens can be stood in for — permissions and addresses are frozen.
+ *  Wave 3 does NOT call this: it edits its own line in SCREENS above. */
 export function stubScreens(screens) {
-  const before = { ...BUILT };
+  testOnly("stubScreens");
   Object.assign(BUILT, screens);
-  return () => Object.assign(BUILT, before);
+  return resetScreens;
+}
+
+/** TEST ONLY — every route back to the screen this build actually has, whatever was stood in for
+ *  (nested stubs included). This is what an `afterEach` should call. */
+export function resetScreens() {
+  testOnly("resetScreens");
+  Object.assign(BUILT, SCREENS);
 }
 
 const has = (perms, keys) => keys.length === 0 || keys.some((k) => perms.includes(k));

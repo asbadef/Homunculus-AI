@@ -29,7 +29,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["icon.svg", "demo/*.json"],
+      includeAssets: ["icon.svg"],
       // What a ward gets when it adds this to a tablet's home screen. start_url was "/?demo=1",
       // left over from before the bare URL became the live system: the installed icon opened the
       // SIMULATION, and the description said so while the app itself is the real one. The language
@@ -47,7 +47,15 @@ export default defineConfig({
           { src: "icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" },
         ],
       },
-      workbox: { globPatterns: ["**/*.{js,css,html,json,woff2,svg}"] },
+      // What a ward PC downloads on its first visit. The simulation is not part of the product:
+      // its chunk (legacyRoots-*, ~529 kB) and the replay scenarios (demo/*.json) were precached
+      // too, so opening the real system cost half a megabyte of a demonstration it never shows.
+      // Both are still reachable — ?eski=1, ?demo=1 and ?mode=replay fetch them from the network
+      // when someone deliberately asks — they are simply not kept offline.
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,json,woff2,svg}"],
+        globIgnores: ["**/legacyRoots-*.js", "demo/**"],
+      },
     }),
   ],
   preview: {

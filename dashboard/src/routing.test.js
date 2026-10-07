@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { importsOf, staticImportsOf } from "./live/imports.testutil.js";
 import { chooseMode, AppShell } from "./main.jsx";
 
 describe("chooseMode", () => {
@@ -97,16 +98,21 @@ describe("the new live shell (G1-07) and the previous workspace (?eski=1, until 
 
 describe("what the live page downloads", () => {
   const MAIN = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "main.jsx"), "utf8");
-  const statics = [...MAIN.matchAll(/^import\s[^;]*?from\s+"([^"]+)"/gm)].map((m) => m[1]);
+  // The same reader boundaries.test.js uses, so a multi-line import, a re-export or a bare
+  // `import "x"` cannot slip past this check either.
+  const all = importsOf(MAIN);
+  const statics = staticImportsOf(MAIN);
+  const lazily = all.specs.filter((spec) => !statics.includes(spec));
 
   // The simulation, its data builder and the previous workspace are the bulk of the bundle, and
   // the live page renders none of them: a ward PC opening the real system was fetching every byte
   // of a simulation it never shows (710 kB in one chunk). They are reachable only lazily.
   it("reaches the simulation and the previous workspace through a dynamic import only", () => {
-    for (const heavy of ["./ClinicalDemo.jsx", "./clinicalDemo.js", "./liveStore.js", "./Board.jsx", "./demo.jsx"]) {
+    expect(all.unreadable).toEqual([]);                  // nothing this check cannot follow
+    for (const heavy of ["./ClinicalDemo.jsx", "./clinicalDemo.js", "./liveStore.js", "./Board.jsx",
+      "./demo.jsx", "./legacyRoots.jsx", "./live/LiveApp.jsx", "./live/gallery/DesignGallery.jsx"]) {
       expect(statics, heavy).not.toContain(heavy);
     }
-    expect(MAIN).toContain('import("./legacyRoots.jsx")');
-    expect(MAIN).toContain('import("./live/LiveApp.jsx")');
+    expect(lazily).toEqual(expect.arrayContaining(["./legacyRoots.jsx", "./live/LiveApp.jsx"]));
   });
 });

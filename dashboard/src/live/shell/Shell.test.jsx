@@ -9,7 +9,7 @@ import { PHASE } from "../session/sessionStore.js";
 import { mount } from "../session/mount.testutil.jsx";
 import { profile, token } from "../session/testTokens.testutil.js";
 import { ANNOUNCE_DELAY_MS } from "../ui/index.js";
-import { stubScreens } from "./routes.js";
+import { resetScreens, stubScreens } from "./routes.js";
 import { BELL_LIST_MAX } from "./TopBar.jsx";
 import { IDLE_SPOKEN_AGAIN_AT, Shell } from "./Shell.jsx";
 import { useShell } from "./ShellContext.jsx";
@@ -28,8 +28,7 @@ function BedsProbe() {
 function PatientProbe({ params }) {
   return <h1>Xəstə {params.id}</h1>;
 }
-let unstub = null;
-const built = (screens) => { unstub = stubScreens(screens); };
+const built = (screens) => stubScreens(screens);
 
 // The board store of the test on screen: emptied afterwards, so no stream timer of a finished test
 // reconnects during the next one.
@@ -65,8 +64,7 @@ beforeEach(() => {
 afterEach(() => {
   if (running) act(() => running.clear());      // still mounted here: React's own cleanup is next
   running = null;
-  unstub?.();
-  unstub = null;
+  resetScreens();
   vi.useRealTimers();
   localStorage.clear();
 });
@@ -267,7 +265,32 @@ describe("the top bar", () => {
     api.boardPatients.mockRejectedValue(Object.assign(new Error("boom"), { status: 503 }));
     await act(async () => { await board.refresh(); });
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Çarpayı ekranı · NICU");
-    expect(screen.getByRole("button", { name: "Göstərilən bölmə" })).toHaveTextContent("NICU");
+    expect(screen.getByRole("button", { name: /Göstərilən bölmə/ })).toHaveTextContent("NICU");
+  });
+
+  // Keeping it is only honest if the chip says the list may be out of date: under repeated
+  // failures a unit the engine has since revoked must not stand there with nothing said.
+  it("marks the chip while the scope is unknown, as the bell marks a stale board", async () => {
+    built({ beds: BedsProbe });
+    const { api, board } = await renderShell({ hash: "#/beds", scope: TWO_UNITS });
+    chooseUnit("NICU");
+    const chip = () => screen.getByRole("button", { name: /Göstərilən bölmə/ });
+    expect(chip().querySelector('[data-unit="stale"]')).toBeNull();
+    api.boardPatients.mockRejectedValue(Object.assign(new Error("boom"), { status: 503 }));
+    await act(async () => { await board.refresh(); });
+    expect(chip()).toHaveAccessibleName(/Bölmə siyahısı köhnə ola bilər/);
+    expect(chip().querySelector('[data-unit="stale"]')).not.toBeNull();
+  });
+
+  // A session that may not see the board at all has its board emptied under the open shell: the
+  // old scope's units must not go on being offered.
+  it("offers nothing once the board has been emptied under it", async () => {
+    built({ beds: BedsProbe });
+    const { board } = await renderShell({ hash: "#/beds", scope: TWO_UNITS });
+    chooseUnit("NICU");
+    await act(async () => { board.clear(); });
+    expect(screen.queryByRole("button", { name: /Göstərilən bölmə/ })).toBeNull();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Çarpayı ekranı · hamısı");
   });
 
   it("drops it only when a scope the engine did send no longer lists it", async () => {

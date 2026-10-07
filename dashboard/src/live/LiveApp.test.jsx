@@ -6,7 +6,7 @@ import React from "react";
 import LiveApp from "./LiveApp.jsx";
 import { fakeApi, profile, token } from "./session/testTokens.testutil.js";
 import { writeLock } from "./session/browserState.js";
-import { stubScreens } from "./shell/routes.js";
+import { resetScreens, stubScreens } from "./shell/routes.js";
 import { PRODUCT } from "./shell/Shell.jsx";
 
 vi.mock("qrcode", () => ({ default: { toDataURL: vi.fn(async () => "data:image/png;base64,QR") } }));
@@ -75,15 +75,13 @@ function BedsProbe() {
 function AlarmsProbe() {
   return <h1>Siqnal ekranı</h1>;
 }
-let unstub = null;
-const built = (screens) => { unstub = stubScreens(screens); };
+const built = (screens) => stubScreens(screens);
 
 beforeEach(() => {
   window.location.hash = "";
 });
 afterEach(() => {
-  unstub?.();
-  unstub = null;
+  resetScreens();
   vi.restoreAllMocks();
   localStorage.clear();
   document.title = "";

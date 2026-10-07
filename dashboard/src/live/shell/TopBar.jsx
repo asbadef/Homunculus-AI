@@ -49,19 +49,26 @@ function Clock() {
   );
 }
 
+/** The unit the board is shown for. Its list is the engine's own scope; while a load keeps failing
+ *  the last list stands, and the chip wears the bell's "may be out of date" ring and says so in
+ *  its name — otherwise a unit the engine has since revoked could stand there indefinitely with
+ *  nothing said. A board with no scope at all offers nothing (ShellContext.jsx). */
 function UnitChip() {
   const { t } = useI18n();
-  const { unit, setUnit, units } = useShell();
+  const { unit, setUnit, units, stale } = useShell();
   if (units.length < 2) return null;
   return (
     <MenuButton
-      label={t("shell.unitChoice")}
-      buttonClassName={`hidden h-9 shrink-0 items-center gap-2 rounded-ctl border border-line bg-card2 px-2.5 text-12.5 font-semibold text-ink min-[641px]:inline-flex ${FOCUS_RING}`}
+      label={stale ? `${t("shell.unitChoice")} · ${t("shell.unitsStale")}` : t("shell.unitChoice")}
+      buttonClassName={`relative hidden h-9 shrink-0 items-center gap-2 rounded-ctl border border-line bg-card2 px-2.5 text-12.5 font-semibold text-ink min-[641px]:inline-flex ${FOCUS_RING}`}
       button={(
         <>
           <Icon name="building" size={16} />
           <span className="max-w-[160px] truncate">{unit ?? t("shell.units", { count: units.length })}</span>
           <Icon name="chevD" size={14} className="text-mute" />
+          {stale ? (
+            <span aria-hidden="true" data-unit="stale" className="absolute inset-0 rounded-ctl ring-2 ring-inset ring-mid" />
+          ) : null}
         </>
       )}
       items={[
@@ -167,7 +174,10 @@ function Bell() {
           ) : null}
           {stale ? (
             <>
-              <span aria-hidden="true" data-bell="stale" className="absolute inset-0 rounded-ctl ring-2 ring-mid" />
+              {/* `ring-inset`: a ring is drawn OUTSIDE its box by default, and this one lies over
+                  the whole button in a tool row with a 2 px gap — it touched the neighbouring
+                  tool and the count badge. */}
+              <span aria-hidden="true" data-bell="stale" className="absolute inset-0 rounded-ctl ring-2 ring-inset ring-mid" />
               <span aria-hidden="true" className="absolute bottom-1 right-1 h-2 w-2 rounded-full border-2 border-rail bg-mid" />
             </>
           ) : null}

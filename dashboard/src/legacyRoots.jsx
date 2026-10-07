@@ -16,13 +16,15 @@ import { backendApi } from "./backendApi.js";
 
 /** The previous live workspace: the real API under the old ClinicalDemo screens. */
 function Eski() {
-  const [store] = React.useState(() => {
-    const live = createLiveStore({ api: backendApi, base: createDemoStore(buildRealisticState()) });
-    // Fire-and-forget: a page refresh must reopen the stored session instead of logging the
-    // clinician out; failure quietly leaves the login screen, which renders meanwhile anyway.
-    live.restoreSession();
-    return live;
-  });
+  const [store] = React.useState(() => createLiveStore({
+    api: backendApi,
+    base: createDemoStore(buildRealisticState()),
+  }));
+  // In an effect, not while rendering: reading the stored session is a request, and a render may
+  // be thrown away or run twice. Fire-and-forget — a page refresh must reopen the stored session
+  // instead of signing the clinician out, and a failure quietly leaves the login screen, which
+  // renders meanwhile anyway.
+  React.useEffect(() => { store.restoreSession(); }, [store]);
   // simulation stays false: this is the real ward. See the note on ClinicalDemo.
   return <ClinicalDemo store={store} />;
 }

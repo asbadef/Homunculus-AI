@@ -4,14 +4,16 @@
 // from outside is the framework-free client of the real API: listed below, nothing else.
 // (Tests may read more — permissions.js for the catalogue — so test files are not checked.)
 //
-// Every way a module can pull another in is read: `import … from`, `export … from`, a bare
-// `import "x"` (side effects only), each over several lines, and `import("x")`. What cannot be
-// followed by reading — `import(` with anything but a quoted path, `import.meta.glob` — fails
-// here outright: an import this test cannot see is an import it cannot check.
+// Every way a module can pull another in is read (imports.testutil.js, shared with
+// routing.test.js): `import … from`, `export … from`, a bare `import "x"` (side effects only),
+// each over several lines, and `import("x")`. What cannot be followed by reading — `import(` with
+// anything but a quoted path, `import.meta.glob` — fails here outright: an import this test
+// cannot see is an import it cannot check.
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { importsOf } from "./imports.testutil.js";
 
 const LIVE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = path.dirname(LIVE);
@@ -23,21 +25,6 @@ function sources(dir) {
     if (entry.isDirectory()) return sources(full);
     return /\.(js|jsx)$/.test(entry.name) && !/\.test\.|\.testutil\./.test(entry.name) ? [full] : [];
   });
-}
-
-const STATIC = /(?:^|[;}\s])(?:import|export)(?:\s+[^;'"`]*?\bfrom\s*|\s*)["']([^"']+)["']/g;
-const DYNAMIC = /\bimport\s*\(\s*(?:["']([^"']+)["']\s*\))?/g;
-
-/** What a source imports ({specs}), and what it pulls in that reading cannot follow ({unreadable}). */
-export function importsOf(text) {
-  const specs = [...text.matchAll(STATIC)].map((m) => m[1]);
-  const unreadable = [];
-  for (const m of text.matchAll(DYNAMIC)) {
-    if (m[1]) specs.push(m[1]);
-    else unreadable.push(m[0].trim());
-  }
-  if (/\bimport\.meta\.glob/.test(text)) unreadable.push("import.meta.glob");
-  return { specs, unreadable };
 }
 
 describe("reading a module's imports", () => {

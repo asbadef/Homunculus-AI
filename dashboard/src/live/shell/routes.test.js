@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { ROUTES, canReach, hasWorkRoute, hashPath, homePath, matchRoute, navRoutes, resumePath, screenOf, stubScreens } from "./routes.js";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { ROUTES, canReach, hasWorkRoute, hashPath, homePath, matchRoute, navRoutes, resetScreens, resumePath, screenOf, stubScreens } from "./routes.js";
 import { PERMISSION_KEYS } from "../../permissions.js";
 import { DICTIONARIES } from "../i18n/catalog.js";
 import { LANG_CODES } from "../i18n/langs.js";
@@ -63,6 +63,25 @@ describe("the route table", () => {
     restore = null;
     expect(screenOf(ROUTES.find((r) => r.id === "beds"))).toBeNull();
     expect(homePath(["board.view"])).toBe("/settings");
+  });
+
+  it("puts every screen back at once, however many a test stood in for", () => {
+    stubScreens({ beds: () => null });
+    stubScreens({ alarms: () => null, admin: () => null });
+    resetScreens();
+    expect(ROUTES.filter((r) => screenOf(r)).map((r) => r.id)).toEqual(["settings"]);
+  });
+
+  // The app gains a screen by being built with one. Nothing may add one at run time.
+  it("refuses the seam outside the test build", () => {
+    vi.stubEnv("MODE", "production");
+    try {
+      expect(() => stubScreens({ beds: () => null })).toThrow(/test seam/);
+      expect(() => resetScreens()).toThrow(/test seam/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(screenOf(ROUTES.find((r) => r.id === "beds"))).toBeNull();
   });
 });
 

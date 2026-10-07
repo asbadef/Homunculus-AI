@@ -124,6 +124,14 @@ describe.each(["gece", "gun"])("%s theme: contrast", (theme) => {
     expect(ratio(s("pri"), over(theme, tinted, "card"))).toBeGreaterThanOrEqual(UI);
   });
 
+  // The top bar's "may be out of date" marks (G1-07): the bell's and the unit chip's amber ring
+  // and dot (mid), and the grey dot that means "cannot know" (mute). They sit on the RAIL, which
+  // the severity fills below are not measured against — and they are the only thing that says, at
+  // a glance, that what the bell shows may be stale.
+  it.each(["mid", "mute"])("the top bar's %s ring and dot clear 3:1 against the rail", (name) => {
+    expect(ratio(s(name), s("rail"))).toBeGreaterThanOrEqual(UI);
+  });
+
   // A bed card's stripe sits on the card, a dot or bar in a card2 row (G1-09), a stripe on the
   // page or the app frame (G1-07): each ground is held to 3:1.
   it.each(SEVERITY.flatMap((sev) => ["card", "card2", "page", "app"].map((bg) => [sev, bg])))(
