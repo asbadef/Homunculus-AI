@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
@@ -143,7 +144,10 @@ def create_app(
             if task is not None:
                 task.cancel()
 
-    app = FastAPI(title="Homunculus", lifespan=lifespan)
+    # D4: the endpoint catalogue (/docs, /redoc, /openapi.json) is not published in production.
+    docs = {} if os.getenv("ENVIRONMENT", "development").strip().lower() != "production" else {
+        "docs_url": None, "redoc_url": None, "openapi_url": None}
+    app = FastAPI(title="Homunculus", lifespan=lifespan, **docs)
 
     # New auth + tenant subsystems (JWT/TOTP identity, physical hierarchy).
     # These live alongside the existing bearer-token → hospital_id tenancy, which
