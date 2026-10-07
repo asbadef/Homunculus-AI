@@ -41,7 +41,9 @@ def _jsonb_as_json(_type, compiler, **kw):  # pragma: no cover - trivial
 @dataclass
 class Hospital:
     tenant_id: uuid.UUID
+    site_id: uuid.UUID
     unit_id: uuid.UUID
+    room_id: uuid.UUID
     bed_id: uuid.UUID
     patient_id: uuid.UUID
     admission_id: uuid.UUID
@@ -106,7 +108,7 @@ class World:
                           unit_id=unit.id, kind="septic_shock", tier=AlertTier.CRITICAL,
                           summary=f"{label}-01 sentetik bulgu")
             s.add(alert); await s.commit()
-            return Hospital(tenant.id, unit.id, bed.id, patient.id, admission.id, alert.id)
+            return Hospital(tenant.id, site.id, unit.id, room.id, bed.id, patient.id, admission.id, alert.id)
 
 
 @pytest_asyncio.fixture

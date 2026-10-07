@@ -11,12 +11,13 @@ PHI RULE: infrastructure only — no patient data.
 from __future__ import annotations
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from homunculus.auth.dependencies import require_roles
-from homunculus.auth.models import UserRole
+from homunculus.auth.access import ensure_role_in_tenant
+from homunculus.auth.dependencies import get_current_active_user, require_roles
+from homunculus.auth.models import User, UserRole
 from homunculus.db import get_db
 from homunculus.tenant.models import Bed, Room, Site, Tenant, Unit
 from homunculus.tenant.schemas import (
@@ -27,8 +28,46 @@ from homunculus.tenant.schemas import (
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 
-# Only HOSPITAL_ADMIN may configure the physical hierarchy (§2).
-_admin = Depends(require_roles(UserRole.HOSPITAL_ADMIN))
+# K2: only the HOSPITAL_ADMIN OF THAT HOSPITAL may configure its physical hierarchy (§2). The
+# hospital is derived from the record in the URL; being an admin elsewhere grants nothing.
+# Creating / listing hospitals themselves is a platform (vendor staff) operation.
+
+
+async def _tenant_of_path(db: AsyncSession, params: dict) -> uuid.UUID:
+    if "tenant_id" in params:
+        await _get_or_404(db, Tenant, uuid.UUID(params["tenant_id"]), "Tenant")
+        return uuid.UUID(params["tenant_id"])
+    if "bed_id" in params:
+        bed = await _get_or_404(db, Bed, uuid.UUID(params["bed_id"]), "Bed")
+        params = {"room_id": str(bed.room_id)}
+    if "room_id" in params:
+        room = await _get_or_404(db, Room, uuid.UUID(params["room_id"]), "Room")
+        params = {"unit_id": str(room.unit_id)}
+    if "unit_id" in params:
+        unit = await _get_or_404(db, Unit, uuid.UUID(params["unit_id"]), "Unit")
+        params = {"site_id": str(unit.site_id)}
+    site = await _get_or_404(db, Site, uuid.UUID(params["site_id"]), "Site")
+    return site.tenant_id
+
+
+async def _hospital_admin(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.HOSPITAL_ADMIN)),
+) -> User:
+    tenant_id = await _tenant_of_path(db, request.path_params)
+    await ensure_role_in_tenant(db, user, tenant_id, UserRole.HOSPITAL_ADMIN)
+    return user
+
+
+async def _platform_admin(user: User = Depends(get_current_active_user)) -> User:
+    if not user.is_platform_support:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform staff only.")
+    return user
+
+
+_admin = Depends(_hospital_admin)
+_platform = Depends(_platform_admin)
 
 
 async def _get_or_404(db: AsyncSession, model, obj_id: uuid.UUID, name: str):
@@ -42,7 +81,7 @@ async def _get_or_404(db: AsyncSession, model, obj_id: uuid.UUID, name: str):
 @router.post("/tenants", response_model=TenantResponse, status_code=status.HTTP_201_CREATED,
              summary="Create a tenant (hospital)")
 async def create_tenant(
-    body: TenantCreate, db: AsyncSession = Depends(get_db), _user=_admin,
+    body: TenantCreate, db: AsyncSession = Depends(get_db), _user=_platform,
 ) -> TenantResponse:
     tenant = Tenant(
         name=body.name, slug=body.slug,
@@ -55,7 +94,7 @@ async def create_tenant(
 
 
 @router.get("/tenants", response_model=list[TenantResponse], summary="List tenants")
-async def list_tenants(db: AsyncSession = Depends(get_db), _user=_admin) -> list[TenantResponse]:
+async def list_tenants(db: AsyncSession = Depends(get_db), _user=_platform) -> list[TenantResponse]:
     result = await db.execute(select(Tenant))
     return [TenantResponse.model_validate(t) for t in result.scalars().all()]
 

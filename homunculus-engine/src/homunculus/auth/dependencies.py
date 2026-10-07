@@ -54,7 +54,11 @@ async def get_current_active_user(
 
 
 def require_roles(*roles: UserRole):
-    """Dependency factory: enforce that the current user holds one of the given roles in the request's tenant context."""
+    """Dependency factory: COARSE gate — the user holds one of the roles in SOME hospital.
+
+    This alone is not authorisation for a record: callers must also check the role in the hospital
+    that owns the record (homunculus.auth.access.ensure_role_in_tenant). K2.
+    """
     async def _check(
         credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
         db: AsyncSession = Depends(get_db),
@@ -66,7 +70,7 @@ def require_roles(*roles: UserRole):
         except JWTError:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
-        # Check if user holds any of the required roles in ANY tenant
+        # Coarse check only: any hospital. The per-record hospital check is done by the caller.
         user_role_values = set(user_roles.values())
         required_role_values = {r.value for r in roles}
         if not user_role_values.intersection(required_role_values):

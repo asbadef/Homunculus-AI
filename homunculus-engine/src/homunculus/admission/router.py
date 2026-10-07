@@ -31,7 +31,9 @@ from homunculus.admission.schemas import (
 )
 from homunculus.admission.service import WorkflowError
 from homunculus.escalation import service as escalation_service
-from homunculus.auth.access import ensure_member, member_tenant_ids, roles_in_tenant
+from homunculus.auth.access import (
+    ensure_member, ensure_role_in_tenant, member_tenant_ids, roles_in_tenant,
+)
 from homunculus.auth.dependencies import get_current_active_user, require_roles
 from homunculus.auth.models import User, UserRole
 from homunculus.db import get_db
@@ -73,6 +75,28 @@ async def _visible_admission_or_404(
     admission = await _get_admission_or_404(db, admission_id)
     await ensure_member(db, user, admission.tenant_id)
     return admission
+
+
+def _admission_as(*roles: UserRole):
+    """K2: load the admission and require one of `roles` IN THAT ADMISSION'S HOSPITAL (a role held
+    in some other hospital counts for nothing)."""
+    async def _dep(
+        admission_id: uuid.UUID,
+        db: AsyncSession = Depends(get_db),
+        user: User = Depends(require_roles(*roles)),
+    ) -> Admission:
+        admission = await _get_admission_or_404(db, admission_id)
+        await ensure_role_in_tenant(db, user, admission.tenant_id, *roles)
+        return admission
+    return _dep
+
+
+async def _require_role_in_unit_hospital(
+    db: AsyncSession, user: User, unit_id: uuid.UUID, *roles: UserRole,
+) -> uuid.UUID:
+    tenant_id = await _resolve_tenant_id(db, unit_id)
+    await ensure_role_in_tenant(db, user, tenant_id, *roles)
+    return tenant_id
 
 
 async def _may_see_identity(db: AsyncSession, user: User, admission: Admission) -> bool:
@@ -120,8 +144,13 @@ async def _may_see_identity(db: AsyncSession, user: User, admission: Admission) 
 # ---------------------------------------------------------------------------
 @router.post("", response_model=AdmissionResponse, status_code=201,
              dependencies=[Depends(require_roles(UserRole.NURSE, UserRole.CHARGE_NURSE))])
-async def create_admission(payload: AdmissionCreate, db: AsyncSession = Depends(get_db)):
-    tenant_id = await _resolve_tenant_id(db, payload.note.admitting_unit_id)
+async def create_admission(
+    payload: AdmissionCreate, db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+):
+    # K2: NURSE / CHARGE_NURSE role must be held in the hospital that owns the unit.
+    tenant_id = await _require_role_in_unit_hospital(
+        db, user, payload.note.admitting_unit_id, UserRole.NURSE, UserRole.CHARGE_NURSE)
 
     patient = Patient(
         tenant_id=tenant_id,
@@ -194,9 +223,9 @@ async def get_admission_patient(
 async def sign_off(
     admission_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.ATTENDING, UserRole.UNIT_PHYSICIAN)),
+    user: User = Depends(get_current_active_user),
+    admission: Admission = Depends(_admission_as(UserRole.ATTENDING, UserRole.UNIT_PHYSICIAN)),
 ):
-    admission = await _get_admission_or_404(db, admission_id)
     try:
         await service.sign_off_admission(db, admission, signing_user_id=user.id)
     except WorkflowError as exc:
@@ -213,10 +242,9 @@ async def sign_off(
 async def claim_attending(
     admission_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(
-        UserRole.ATTENDING, UserRole.CHARGE_NURSE, UserRole.HOSPITAL_ADMIN)),
+    user: User = Depends(get_current_active_user),
+    admission: Admission = Depends(_admission_as(UserRole.ATTENDING, UserRole.CHARGE_NURSE, UserRole.HOSPITAL_ADMIN)),
 ):
-    admission = await _get_admission_or_404(db, admission_id)
     # Attending claims themselves; charge nurse / admin assign on behalf via body-less default.
     member = await service.claim_attending(
         db, admission, attending_id=user.id, granted_by_id=user.id,
@@ -231,9 +259,9 @@ async def add_care_team_member(
     admission_id: uuid.UUID,
     payload: CareTeamAdd,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.ATTENDING)),
+    user: User = Depends(get_current_active_user),
+    admission: Admission = Depends(_admission_as(UserRole.ATTENDING)),
 ):
-    admission = await _get_admission_or_404(db, admission_id)
     try:
         member = await service.add_care_team_member(
             db, admission, user_id=payload.user_id, role=payload.role,
@@ -267,9 +295,9 @@ async def transfer_initiate(
     admission_id: uuid.UUID,
     payload: TransferInitiate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.ATTENDING, UserRole.UNIT_PHYSICIAN)),
+    user: User = Depends(get_current_active_user),
+    admission: Admission = Depends(_admission_as(UserRole.ATTENDING, UserRole.UNIT_PHYSICIAN)),
 ):
-    admission = await _get_admission_or_404(db, admission_id)
     try:
         await service.initiate_transfer(
             db, admission, target_bed_id=payload.target_bed_id,
@@ -287,9 +315,9 @@ async def transfer_confirm(
     admission_id: uuid.UUID,
     payload: TransferInitiate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.NURSE, UserRole.CHARGE_NURSE)),
+    user: User = Depends(get_current_active_user),
+    admission: Admission = Depends(_admission_as(UserRole.NURSE, UserRole.CHARGE_NURSE)),
 ):
-    admission = await _get_admission_or_404(db, admission_id)
     try:
         new_admission = await service.confirm_transfer_arrival(
             db, admission, target_bed_id=payload.target_bed_id,
@@ -310,9 +338,9 @@ async def discharge_initiate(
     admission_id: uuid.UUID,
     payload: DischargeInitiate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.ATTENDING, UserRole.UNIT_PHYSICIAN)),
+    user: User = Depends(get_current_active_user),
+    admission: Admission = Depends(_admission_as(UserRole.ATTENDING, UserRole.UNIT_PHYSICIAN)),
 ):
-    admission = await _get_admission_or_404(db, admission_id)
     unacked = await escalation_service.count_unacknowledged_critical(
         db, admission_id=admission.id
     )
@@ -332,9 +360,9 @@ async def discharge_initiate(
 async def discharge_confirm(
     admission_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.CHARGE_NURSE)),
+    user: User = Depends(get_current_active_user),
+    admission: Admission = Depends(_admission_as(UserRole.CHARGE_NURSE)),
 ):
-    admission = await _get_admission_or_404(db, admission_id)
     try:
         await service.confirm_discharge(db, admission)
     except WorkflowError as exc:
@@ -356,6 +384,7 @@ async def create_shift_schedule(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_roles(UserRole.CHARGE_NURSE)),
 ):
+    await _require_role_in_unit_hospital(db, user, payload.unit_id, UserRole.CHARGE_NURSE)
     assignments = [a.model_dump() for a in payload.assignments]
     try:
         created, warnings = await service.create_shift_schedule(
@@ -384,6 +413,8 @@ async def open_handover(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ):
+    tenant_id = await _resolve_tenant_id(db, payload.unit_id)
+    await ensure_member(db, user, tenant_id)
     handover = await service.open_handover(
         db, unit_id=payload.unit_id, outgoing_user_id=user.id,
         incoming_user_id=payload.incoming_user_id, admission_ids=payload.admission_ids,
