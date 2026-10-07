@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import { MenuButton, Popover } from "./Menu.jsx";
 
 function Account({ onLock = vi.fn(), onOut = vi.fn() }) {
@@ -72,7 +72,7 @@ describe("MenuButton", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("closes on Escape pressed on the button itself while open (focus came back by Shift+Tab)", () => {
+  it("closes on Escape pressed on the button itself while open (focus put back there by a script)", () => {
     render(<Account />);
     const button = screen.getByRole("button", { name: "Hesab menyusu" });
     fireEvent.click(button);
@@ -81,6 +81,47 @@ describe("MenuButton", () => {
     expect(screen.queryByRole("menu")).toBeNull();
     expect(button).toHaveAttribute("aria-expanded", "false");
     expect(document.activeElement).toBe(button);
+  });
+
+  it("a press outside closes it and leaves focus where the press landed", () => {
+    render(<Account />);
+    fireEvent.click(screen.getByRole("button", { name: "Hesab menyusu" }));
+    const outside = screen.getByRole("button", { name: "kənarda" });
+    act(() => outside.focus());            // what the browser does on the press
+    fireEvent.pointerDown(outside);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(outside);
+  });
+
+  it("closes when focus leaves it by any means, and stays open while focus moves inside it", () => {
+    render(<Account />);
+    const button = screen.getByRole("button", { name: "Hesab menyusu" });
+    fireEvent.click(button);
+    const [lock] = screen.getAllByRole("menuitem");
+    expect(document.activeElement).toBe(lock);
+    act(() => screen.getByText("Ayşe Sentetik").closest("[tabindex]").focus());   // a press on its own header
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    act(() => lock.focus());
+    act(() => screen.getByRole("button", { name: "kənarda" }).focus());           // a script, a virtual cursor
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "kənarda" }));
+  });
+
+  it("ArrowDown on the open button enters the menu at its first item; ArrowUp on the closed button opens it at the last", () => {
+    render(<Account />);
+    const button = screen.getByRole("button", { name: "Hesab menyusu" });
+    fireEvent.click(button);
+    const [lock, out] = screen.getAllByRole("menuitem");
+    button.focus();
+    fireEvent.keyDown(button, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(lock);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.keyDown(button, { key: "ArrowUp" });
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getAllByRole("menuitem")[1]);
+    expect(document.activeElement).toHaveTextContent(out.textContent);
   });
 
   it("opens from the keyboard with ArrowDown, and marks the chosen radio item", () => {
@@ -107,5 +148,24 @@ describe("Popover", () => {
     fireEvent.keyDown(panel, { key: "Escape" });
     expect(screen.queryByRole("region")).toBeNull();
     expect(document.activeElement).toBe(button);
+  });
+
+  it("closes when Tab leaves the panel, so Escape never has a panel it cannot reach", () => {
+    render(
+      <>
+        <Popover label="Zəng" button="B">{() => <button type="button">Hamısını gör</button>}</Popover>
+        <button type="button">sonrakı</button>
+      </>,
+    );
+    const button = screen.getByRole("button", { name: "Zəng" });
+    fireEvent.click(button);
+    const inner = screen.getByRole("button", { name: "Hamısını gör" });
+    act(() => inner.focus());               // Tab from the panel to its button: still inside
+    expect(screen.getByRole("region")).toBeInTheDocument();
+    fireEvent.keyDown(inner, { key: "Tab" });
+    act(() => screen.getByRole("button", { name: "sonrakı" }).focus());   // the browser's default for that Tab
+    expect(screen.queryByRole("region")).toBeNull();
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "sonrakı" }));
   });
 });
