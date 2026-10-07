@@ -1,14 +1,19 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { act, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { I18nProvider } from "../i18n/I18nProvider.jsx";
+import { ToastProvider } from "../ui/index.js";
 import { mount, refusal } from "../session/mount.testutil.jsx";
-import { profile } from "../session/testTokens.testutil.js";
-import { PHASE } from "../session/sessionStore.js";
+import { SessionProvider } from "../session/SessionProvider.jsx";
+import { fakeApi, profile, token } from "../session/testTokens.testutil.js";
+import { PHASE, createSessionStore } from "../session/sessionStore.js";
+import { ANNOUNCE_DELAY_MS } from "../ui/Alert.jsx";
 import { PasswordForm } from "./PasswordForm.jsx";
 import { PasswordStep } from "./PasswordStep.jsx";
 import { SessionWait } from "./SessionWait.jsx";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
   localStorage.clear();
 });
 
@@ -18,6 +23,18 @@ const fill = (current, next, repeat) => {
   fireEvent.change(screen.getByLabelText(/Yeni şifrə \(təkrar\)/), { target: { value: repeat } });
   fireEvent.click(screen.getByRole("button", { name: "Saxla" }));
 };
+
+// Fake timers installed BEFORE mount, so the hold's timers are the fake ones and its clock (Date)
+// can be moved; nothing advances on its own, so no timer fires outside act(). The promise chain of
+// a refused request needs no timer: `flush` yields one turn of the real event loop inside act(),
+// after which every pending promise has settled (waitFor would wait on the fake clock).
+const realSetTimeout = globalThis.setTimeout;
+const FAKE_TIMERS = { toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] };
+const tick = (ms) => act(() => { vi.advanceTimersByTime(ms); });
+const flush = () => act(() => new Promise((resolve) => { realSetTimeout(resolve, 0); }));
+const TOO_MANY = "Çok fazla deneme. Bir dakika sonra yeniden deneyin.";
+const TOO_MANY_AZ = "Həddindən artıq cəhd edildi. Bir dəqiqədən sonra yenidən cəhd edin.";
+const retryIn = (s) => `${s} saniyədən sonra yenidən cəhd edə bilərsiniz.`;
 
 describe("PasswordForm", () => {
   it("checks the server's rules before sending, and points at the field", async () => {
@@ -36,6 +53,17 @@ describe("PasswordForm", () => {
     api.changePassword.mockRejectedValue(refusal(400, "Mevcut parola yanlış"));
     fill("yanlis-1", "Yeni-Sifre-22", "Yeni-Sifre-22");
     await waitFor(() => expect(screen.getByLabelText(/^Cari şifrə/)).toHaveAccessibleDescription("Cari şifrə səhvdir."));
+    expect(document.activeElement).toBe(screen.getByLabelText(/^Cari şifrə/));
+  });
+
+  it("puts a 422 on the field it names: a too-long CURRENT password is the current field's", async () => {
+    const { api } = await mount(<PasswordForm submitLabel="Saxla" />);
+    api.changePassword.mockRejectedValue(refusal(422, "İstek başarısız (422)", {
+      fieldErrors: [{ field: "current_password", type: "string_too_long", message: "…" }],
+    }));
+    fill("Gizli-Sifre-1", "Yeni-Sifre-22", "Yeni-Sifre-22");
+    await waitFor(() => expect(screen.getByLabelText(/^Cari şifrə/)).toHaveAccessibleDescription("Şifrə ən çoxu 1024 simvol ola bilər."));
+    expect(screen.getByLabelText(/^Yeni şifrə \*/)).not.toHaveAttribute("aria-invalid");
     expect(document.activeElement).toBe(screen.getByLabelText(/^Cari şifrə/));
   });
 
@@ -60,19 +88,92 @@ describe("PasswordForm", () => {
     expect(screen.getByLabelText(/^Cari şifrə/)).toHaveValue("");
   });
 
-  it("holds the button for Retry-After after a 429, says for how long, and sends nothing meanwhile", async () => {
-    const { api } = await mount(<PasswordForm submitLabel="Saxla" />);
-    api.changePassword.mockRejectedValue(
-      refusal(429, "Çok fazla deneme. Bir dakika sonra yeniden deneyin.", { retryAfter: 60 }),
-    );
+  it("never calls onDone for an answer that arrives after the form is gone", async () => {
+    const onDone = vi.fn();
+    let settle;
+    const { api } = await mount(<PasswordForm submitLabel="Saxla" onDone={onDone} />);
+    api.changePassword.mockReturnValue(new Promise((resolve) => { settle = resolve; }));
     fill("Gizli-Sifre-1", "Yeni-Sifre-22", "Yeni-Sifre-22");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Saxla" })).toHaveAttribute("aria-busy", "true"));
+    cleanup();                                           // the screen moved on
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    await act(async () => { settle({}); });
+    await waitFor(() => expect(api.me).toHaveBeenCalledTimes(2));   // the store still settled the session
+    expect(onDone).not.toHaveBeenCalled();
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it("holds the button for Retry-After after a 429: the count moves each second, is said once after the refusal, and releases at 0", async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { api } = await mount(<PasswordForm submitLabel="Saxla" />);
+    api.changePassword.mockRejectedValue(refusal(429, TOO_MANY, { retryAfter: 3 }));
+    fill("Gizli-Sifre-1", "Yeni-Sifre-22", "Yeni-Sifre-22");
+    await flush();
     const button = screen.getByRole("button", { name: "Saxla" });
-    await waitFor(() => expect(button).toBeDisabled());
-    expect(screen.getByText("Həddindən artıq cəhd edildi. Bir dəqiqədən sonra yenidən cəhd edin.")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("60 saniyədən sonra yenidən cəhd edə bilərsiniz.");
+    expect(button).toBeDisabled();
+    expect(screen.getByText(TOO_MANY_AZ)).toBeInTheDocument();          // the refusal, role="alert", at once
     expect(document.activeElement).toBe(screen.getByLabelText(/^Cari şifrə/));
-    fireEvent.submit(button.closest("form"));
+    const counter = screen.getByText(retryIn(3));
+    expect(counter).toHaveAttribute("aria-hidden", "true");             // the ticking number is not read
+    const status = screen.getByRole("status");                          // one region, mounted empty
+    expect(status).toHaveTextContent("");
+    tick(ANNOUNCE_DELAY_MS);
+    expect(status).toHaveTextContent(retryIn(3));                       // said once, after the alert
+    tick(1000 - ANNOUNCE_DELAY_MS);                                     // the first second is up
+    expect(screen.getByText(retryIn(2))).toHaveAttribute("aria-hidden", "true");
+    expect(status).toHaveTextContent(retryIn(3));                       // not again
+    fireEvent.submit(button.closest("form"));                           // Enter in a field meanwhile
     expect(api.changePassword).toHaveBeenCalledTimes(1);
+    tick(1000);
+    expect(screen.getByText(retryIn(1))).toBeInTheDocument();
+    tick(1000);
+    expect(button).not.toBeDisabled();                                  // released at 0
+    expect(screen.queryByText(/saniyədən sonra/)).toBeNull();
+    expect(status).toHaveTextContent("");                               // empty again for the next hold
+    fireEvent.submit(button.closest("form"));
+    await flush();
+    expect(api.changePassword).toHaveBeenCalledTimes(2);
+    expect(button).toBeDisabled();                                      // refused again: a new hold
+    expect(status).toHaveTextContent("");
+    tick(ANNOUNCE_DELAY_MS);
+    expect(status).toHaveTextContent(retryIn(3));                       // said again, as a change
+  });
+
+  it("counts the clock, not its ticks: a throttled or sleeping tab catches up when it wakes", async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { api } = await mount(<PasswordForm submitLabel="Saxla" />);
+    api.changePassword.mockRejectedValue(refusal(429, TOO_MANY, { retryAfter: 60 }));
+    fill("Gizli-Sifre-1", "Yeni-Sifre-22", "Yeni-Sifre-22");
+    await flush();
+    expect(screen.getByText(retryIn(60))).toBeInTheDocument();
+    tick(ANNOUNCE_DELAY_MS);                                            // the announcement; the count's tick is next
+    // 10 s of wall clock pass with no timer at all (a sleeping tab); the page becomes visible again.
+    vi.setSystemTime(Date.now() + 10_000);
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(screen.getByText(retryIn(50))).toBeInTheDocument();          // the clock's 10 s, not a tick's 1
+    // The one pending tick fires, due a second on (the fake clock moves to it): one more second.
+    act(() => { vi.advanceTimersToNextTimer(); });
+    expect(screen.getByText(retryIn(49))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Saxla" })).toBeDisabled();
+    // Past the deadline while asleep: released on waking, no tick needed.
+    vi.setSystemTime(Date.now() + 60_000);
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(screen.getByRole("button", { name: "Saxla" })).not.toBeDisabled();
+    expect(screen.queryByText(/saniyədən sonra/)).toBeNull();
+    cleanup();
+    expect(vi.getTimerCount()).toBe(0);                                 // nothing left running
+  });
+
+  it("drops a hold's timer with the form: a request held and unmounted leaves nothing ticking", async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { api } = await mount(<PasswordForm submitLabel="Saxla" />);
+    api.changePassword.mockRejectedValue(refusal(429, TOO_MANY, { retryAfter: 60 }));
+    fill("Gizli-Sifre-1", "Yeni-Sifre-22", "Yeni-Sifre-22");
+    await flush();
+    expect(vi.getTimerCount()).toBeGreaterThan(0);                      // the count's tick (and the announcement)
+    cleanup();
+    vi.advanceTimersByTime(0);           // jsdom's own 0 ms selectionchange timer, from the focus move
+    expect(vi.getTimerCount()).toBe(0);  // the tick (1000 ms) and the announcement (150 ms) are gone
   });
 
   it("shows a refusal that belongs to no field as an alert, the fields kept", async () => {
@@ -112,5 +213,26 @@ describe("SessionWait", () => {
     fireEvent.click(screen.getByRole("button", { name: "Yenidən cəhd et" }));
     await waitFor(() => expect(store.getState().phase).toBe(PHASE.READY));
     expect(api.me).toHaveBeenCalledTimes(2);
+  });
+
+  it("says a stored session is being checked politely, as a notice, not a region born with its text", async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    // Not mount(): it awaits restore(), and this is the screen shown while that check is on its way.
+    const api = fakeApi(vi, { access: token() });
+    let answer;
+    api.me.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    const store = createSessionStore({ api, events: new EventTarget() });
+    const checking = store.restore();
+    render(
+      <I18nProvider><ToastProvider><SessionProvider store={store}><SessionWait /></SessionProvider></ToastProvider></I18nProvider>,
+    );
+    expect(store.getState().phase).toBe(PHASE.RESTORING);
+    expect(screen.getByText("Sessiya yoxlanılır…")).toBeInTheDocument();
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("");
+    tick(ANNOUNCE_DELAY_MS);
+    expect(status).toHaveTextContent("Sessiya yoxlanılır…");
+    await act(async () => { answer(profile()); await checking; });
+    expect(store.getState().phase).toBe(PHASE.READY);
   });
 });
