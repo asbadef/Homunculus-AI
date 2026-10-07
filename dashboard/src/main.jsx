@@ -28,11 +28,18 @@ export function chooseMode(params) {
   if (params.get("board") === "1") return "board";
   // The new UI's design review page (G1-05): no API, no patient data, linked from nowhere.
   if (params.get("tasarim") === "1") return "tasarim";
+  // The previous live workspace (LDAP ClinicalDemo on the real API), kept reachable as the
+  // reference Wave 3 ports from; removed with the demo in G1-16.
+  if (params.get("eski") === "1") return "eski";
   return "live";
 }
 
 function pickRoot(mode) {
+  // The live system: the new shell (G1-07/G1-08), on the real API and nothing simulated.
   if (mode === "live") {
+    return <React.Suspense fallback={null}><LiveApp /></React.Suspense>;
+  }
+  if (mode === "eski") {
     const store = createLiveStore({
       api: backendApi,
       base: createDemoStore(buildRealisticState()),
@@ -58,6 +65,8 @@ function pickRoot(mode) {
 
 // Lazy: the gallery and its fonts load only when ?tasarim=1 asks for them.
 const DesignGallery = React.lazy(() => import("./live/gallery/DesignGallery.jsx"));
+// Lazy too: the new live UI, its fonts and tokens load only in live mode.
+const LiveApp = React.lazy(() => import("./live/LiveApp.jsx"));
 
 // #/demo is an older deep link into the simulation; honour it ahead of the query string.
 const mode = window.location.hash.startsWith("#/demo") ? "demo" : chooseMode(params);

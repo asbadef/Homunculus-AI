@@ -71,3 +71,23 @@ describe("design gallery (?tasarim=1)", () => {
     expect(container.firstChild.children).toHaveLength(1);
   });
 });
+
+describe("the new live shell (G1-07) and the previous workspace (?eski=1, until G1-16)", () => {
+  it("opens the new shell on the bare URL and on ?live=1", () => {
+    expect(chooseMode(new URLSearchParams(""))).toBe("live");
+    expect(chooseMode(new URLSearchParams("live=1"))).toBe("live");
+  });
+
+  it("keeps the previous live workspace on ?eski=1", () => {
+    expect(chooseMode(new URLSearchParams("eski=1"))).toBe("eski");
+  });
+
+  it("lets an explicit ?live=1 win over ?eski=1", () => {
+    expect(chooseMode(new URLSearchParams("eski=1&live=1"))).toBe("live");
+  });
+
+  it("gives the previous workspace no demo banner: it talks to the real API", () => {
+    const { container } = render(createElement(AppShell, { mode: "eski" }, "x"));
+    expect(container.firstChild.children).toHaveLength(1);
+  });
+});

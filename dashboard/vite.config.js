@@ -75,6 +75,11 @@ export default defineConfig({
       "/break-glass",
       "/health",
       "/view",
+      // Behind nginx in production too (deploy/local/web/nginx.conf); missing here until G1-07.
+      "/admin",
+      "/scope",
+      "/scores",
+      "/infinity-research",
     ].map((path) => [path, "http://localhost:8000"])),
   },
   test: {
