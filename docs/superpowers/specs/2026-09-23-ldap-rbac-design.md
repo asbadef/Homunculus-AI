@@ -72,6 +72,7 @@ Changes to `users`:
 | `token_version` | new, `INTEGER NOT NULL DEFAULT 0` | See §3. |
 | `last_login_at` | new, nullable | Shown in the admin list. |
 | `sessions_revoked_at` | new, nullable | Set on deactivation; `/auth/refresh` refuses a refresh token issued at or before it, so reactivating an account never revives its old sessions. |
+| `must_change_password` | *As built* (migration `0011`): `BOOLEAN NOT NULL DEFAULT false` | Set when an administrator gives a LOCAL account a temporary password (`POST /admin/users`, `reset-password`), and on the bootstrap administrator a fresh install seeds (`auth/seed.py` — that password was typed into an env file). Cleared by `POST /auth/password`. While set, every route but `/auth/password`, `/auth/me`, `/auth/refresh` and `/auth/totp/*` answers 403 `password_change_required` (§4). Never for an AD account. `0011` sets it on every local account that exists before it (the user's decision: each chooses its own password once after the deploy). |
 
 `tenant_memberships` keeps its job as the user ↔ tenant link. Its `role` column becomes nullable
 and is no longer written. `UserRole`, `MFA_REQUIRED_ROLES` and `require_roles` are **deleted** from
@@ -245,11 +246,55 @@ is an administrator's MFA reset. Replacing an authenticator from a verified sess
 account enrolled throughout (it never drops back to "not enrolled"); abandoning the replacement
 fails closed.
 
+*As built (plan G1 Wave 2) — the temporary password.* After the MFA gate comes a second one:
+while `users.must_change_password` is set on a local account, `get_principal` (every router route)
+and the board's JWT resolver answer 403 `password_change_required`; only `/auth/password` (behind
+the MFA gate alone, `get_principal_pre_password`), `/auth/me`, `/auth/refresh` and `/auth/totp/*`
+answer. MFA comes first, so a password reset never lets the temporary password alone choose the
+next one for an account that has an authenticator. `TokenResponse.password_change_required` and
+`/auth/me`'s `must_change_password` tell the client. `/auth/me` also carries `tenant_name`,
+`lock_idle_minutes` (`SCREEN_LOCK_IDLE_MINUTES`, default 10, 1–60: the dashboard's idle lock) and
+`lock_signout_hours` (`SCREEN_LOCK_SIGNOUT_HOURS`, default 12, 1–72: a browser locked longer
+signs itself out). A personal session always locks; there is no "never" — a wall or central
+display that must stay on is Group 2's kiosk mode, which has no personal session. A value the API
+cannot use for either variable is logged as a WARNING and the default applies: a typo must
+neither stop the API nor leave a ward PC that never locks.
+
+*As built — unlocking a locked screen.* `POST /auth/reauth {password}` takes a whole session and
+checks the session's own account: bcrypt for a local one (5 wrong in a row — counted with the
+wrong current passwords at `/auth/password` — lock both for 15 minutes, 429; one audit row when
+the lock engages, and a successful local sign-in or an administrator's password reset clears the
+count; a place in the limit is reserved before bcrypt runs and released on every path, so a burst
+checks no more passwords than the limit allows and the rest are refused at once rather than
+queued), one bind for an AD one, counted in the same failure chain as its sign-ins and exactly as
+a sign-in's bind is (§7 Security). A wrong password is 403 `Parola hatalı` — never
+401, which the dashboard answers by refreshing and retrying; a 401 from this route means the
+session itself is over. Nothing is issued and MFA is not asked again. A full AD chain is refused
+without a bind (429) and writes one `reauth.fail` `throttled` audit row per full chain — not one
+per refused unlock, and re-armed when an administrator's unlock lets three more through. Under
+the default `LDAP_USER_FILTER`, which leaves disabled accounts out of the directory's answers, a
+disabled AD account's unlock is answered as a wrong password (403, counted although no bind was
+made — it fails closed) and the session ends at its next refresh (401 `directory_not_found`);
+under a filter that lets disabled accounts through, the unlock itself is the 401
+(`directory_disabled`). While the directory does not answer, an AD account's locked screen cannot
+be unlocked at all (503; fail closed — the user's decision 13): the clinician signs out and uses
+a local account if the ward must keep working.
+
 ### Password change
 
 `POST /auth/password {current_password, new_password}` for local accounts (an administrator sets
 a temporary password; the user must be able to replace it). For an AD user it returns 400
-`Parola Active Directory tarafından yönetiliyor`.
+`Parola Active Directory tarafından yönetiliyor`. *As built:* a new password equal to the current
+one is 400 `Yeni parola mevcut paroladan farklı olmalı`; a successful change clears
+`must_change_password`. The new password's rules are checked **before** the current password, so a
+stolen session cannot read "too short" as "right guess". Before writing, the account's credential
+columns are locked (`SELECT ... FOR UPDATE`) and the change is refused 401 `token_version` when
+the version is no longer the one the caller's token was checked against — an administrator's reset
+that landed meanwhile stands, and a double-submitted form's second request gets this answer, so
+the client holds its submit button while one is in flight. A wrong current password counts in the
+same 5-per-15-minutes chain as a wrong password at `/auth/reauth` (429 for both while it holds);
+it is counted **before** its audit row is written, as a wrong TOTP code is, because an audit store
+that fails must not leave a held session guessing at the password without limit.
 
 ## 5. Enforcement
 
@@ -351,7 +396,9 @@ another tenant is a 404.
 - `GET /admin/users` — `id, username, email, full_name, auth_source, is_active, totp_enabled,
   last_login_at, groups[]` (each group with its `source`).
 - `POST /admin/users {username, email?, full_name, password, group_ids[]}` — a local account with
-  a temporary password.
+  a temporary password. *As built:* it sets `must_change_password`, as `reset-password` does; the
+  user list reports it. A reset also clears the account's unlock/password-check failure count, so
+  the user's first step with the new password is never refused by a lock the old one engaged.
 - `PATCH /admin/users/{id} {full_name?, email?, is_active?}`
 - `PUT /admin/users/{id}/groups {group_ids[]}` — replaces the **manual** memberships only;
   `ldap`-sourced rows are untouched.
@@ -648,11 +695,25 @@ not carried forward.
   Homunculus' failures lies inside one of Homunculus' runs, so Homunculus alone adds at most 6
   to it — a slow trickle (one wrong password every 5 minutes) included — and the domain's
   lockout threshold must be at least 7. This extends *Out of scope: login rate limiting* for AD
-  accounts only.
+  accounts only. *As built (Wave 2):* an AD account's unlock of a locked screen
+  (`POST /auth/reauth`) is a bind in the same chain, refused (429) without a bind when it is full:
+  sign-ins and unlocks together stay within 3 + 3 per run. The price is the sign-in's (user
+  decision 11 (b)): whoever knows the login can hold the clinician's locked screen at 429 too.
+  A refused unlock writes one `reauth.fail` `throttled` row per full chain (re-armed by an
+  administrator's unlock), not one per attempt: nothing in front of that route slows a caller who
+  already holds the token.
 - *As built — per address, at the edge.* nginx limits `POST /auth/login` to 10 a minute per
   client address with a burst of 10 (429 as JSON `{"detail": …}`, `Retry-After: 60`, logged as a
   warning), in front of the per-account throttle. Ward PCs behind one shared address (NAT,
   terminal server) share that limit.
+- *As built (Wave 2) — the unlock's own zone.* `POST /auth/reauth` and `POST /auth/password` sit
+  in a second nginx zone, `homunculus_reauth`: 30 a minute per client address, burst 30, and its
+  own 429 body — `{"detail":"Çok fazla deneme. Bir dakika sonra yeniden deneyin."}` with
+  `Retry-After: 60`, worded as "too many attempts", not "too many sign-in attempts": neither
+  route is a sign-in. A separate zone so a ward's unlocks never spend the sign-in budget at shift
+  change, and an unlock loop never locks the ward out of signing in. A ward behind one shared
+  address shares those 30 a minute, which matters on the day migration `0011` sends every local
+  account to `/auth/password` at its first sign-in.
 - *As built — timing parity:* see §4 (dummy bcrypt on every AD 401, 0.5 s floor on every 401).
 
 ## 8. Dashboard
@@ -684,10 +745,38 @@ not carried forward.
   claim. It already treats `requires_mfa = true` as "cannot proceed" and has no TOTP step, so a
   user in an MFA-required group cannot use the mobile app until that step exists — the same
   limitation it has today for enrolled users, now decided by the group instead of by enrolment.
+  *As built (Wave 2):* an account holding a temporary password cannot use it either. The sign-in
+  answers "Bu hesabın geçici parolası değiştirilmeli; önce panodan giriş yapıp kendi parolanızı
+  belirleyin", and a 403 `password_change_required` on a live request stops the board and its
+  stream and shows the reason on the Settings screen. A build older than this one has no such
+  message and shows a bare 403 on every request, so the phones are updated before the deploy
+  (a G1-15 gate item) — or their users change their password in the web dashboard first.
+- *As built (Wave 2) — the lock screen.* The dashboard locks after `lock_idle_minutes` without a
+  key, click, touch or wheel in any tab, with a minute's counted-down warning first. The lock
+  *replaces* the shell — every screen, menu, dialog and toast of the session unmounts — and is
+  kept per browser (`localStorage`), so a reload or a new tab opens on it instead of walking past
+  it with the tokens the browser holds, and every tab locks and unlocks together. It shows the
+  clock, the user, and **numbers only**: how many alarms are open in the session's units, by
+  severity, and how many nobody has acknowledged — no name, bed or value. Only a LIVE board says
+  "none"; a DEGRADED one shows what it has, marked "may be out of date"; with nothing to show it
+  says it cannot know. Three wrong unlock passwords per lock — the count shared by every tab —
+  sign the session out, and "sign in as someone else" signs out with no password at all. An
+  administrator who resets the password while a screen is locked ends that session at its next
+  unlock or reload: the 403 `password_change_required` signs it out with a notice saying the
+  password was reset, rather than leaving the clinician at a lock screen her password no longer
+  opens.
+  Unlocking returns the clinician to the screen she locked, **except a patient page, which
+  returns home** (the user's decision of 07.10.2026: a locked screen is a station someone else
+  may wake, and the page that names a patient is not the one to reopen unasked). A browser locked
+  longer than `lock_signout_hours` signs itself out. The board keeps running while locked, so the
+  counts stay current and unlocking is instant: the stream sends a named `heartbeat` event every
+  15 s of silence, and a stream silent for three of them (45 s) is dropped like a failed one —
+  DEGRADED, then a reconnect — so a half-open connection can never read as a calm ward.
 
 ## 9. Migration, seeding, deployment
 
-**Alembic `0006_groups_and_permissions`** (one revision, transactional):
+**Alembic `0010_groups_and_permissions`** (one revision, transactional; written here as `0006`
+and renumbered when this branch met main's `0008`/`0009`):
 
 1. Create `groups`, `group_permissions`, `user_groups`, `ldap_group_mappings`.
 2. Alter `users`: add `username` (backfill `= lower(email)`, then `NOT NULL` + unique index on
@@ -700,6 +789,16 @@ not carried forward.
 6. Downgrade drops the new tables and columns and restores `role NOT NULL` — it cannot rebuild
    roles from groups and says so in its docstring; the pilot database is backed up before upgrade
    (the runbook's existing `pg_dump` step).
+
+*As built — Alembic `0011_users_must_change_password`* (a revision of its own, after the RBAC
+conversion `0010`, so each is reviewed and rolled back as one piece): adds the column, then
+`UPDATE users SET must_change_password = true WHERE auth_source = 'local'`. Nothing recorded which
+local passwords had been an administrator's temporary ones — the bootstrap administrator's
+included — so every local account that exists at the upgrade chooses its own password once, at its
+first sign-in after it, with the password it has now as the "current" one. AD rows are never
+touched (their password lives in AD). Accounts made afterwards take the column's default, `false`,
+unless an administrator gives the password. The downgrade drops the column. The users are told
+before the deploy: a G1-15 deploy-gate item, and the runbook's *Updating* section says it.
 
 The default-group seeding is a service function (`auth/groups.py: ensure_default_groups`) shared
 by the migration, `POST /tenant/tenants` and `seed_bootstrap`, so a tenant created after the
@@ -778,7 +877,11 @@ the `LDAP_*` configuration in §9, and the LDAP tests in §10.
   a used code cannot be replayed — without it, the password alone reached the MFA-protected groups
   in minutes. *As built (Plan 2):* AD accounts have a per-account bind throttle, and nginx a
   per-address limit on sign-in (§7 Security); local accounts and unknown logins have no
-  per-account limit (roadmap, user decision 11).
+  per-account limit (roadmap, user decision 11). *As built (Wave 2):* a local account's **sign-in**
+  still has none, but the two places a session already signed in can test the account's password
+  do — `/auth/reauth` and the current password at `/auth/password` — 5 wrong in one chain lock both
+  for 15 minutes, cleared by a successful local sign-in or an administrator's reset. That is not a
+  sign-in lockout: it cannot be reached without the account's own token.
 - A session-revocation UI beyond deactivation.
 - Dropping the PostgreSQL `userrole` enum type and the `tenant_memberships.role` column.
 - The Infinity branch's `UserRole.BIOMEDICAL` reference: on merge it becomes

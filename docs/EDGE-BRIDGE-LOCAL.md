@@ -308,6 +308,12 @@ firewall; `FAILED (timeout)` — the DC does not answer in time; `FAILED (servic
 names it, never its value). None of these stops the API, and local sign-in keeps working.
 `POST /admin/ldap/test` (same token) binds again once it is fixed.
 
+One hygiene note on authenticator enrolment, while you are at the console: the setup screen offers
+to copy the authenticator's key to the clipboard, and a key copied there **stays in the operating
+system's clipboard** until something else replaces it — on a shared ward PC that is a second
+factor left lying on the desk. Prefer scanning the QR code; if the key was copied, copy anything
+else afterwards.
+
 - **`LDAP_ALLOW_INSECURE=1` is for a lab, never the hospital.** It permits `ldap://`, and when
   no `LDAP_CA_CERT` is given it **switches certificate verification off** for `ldaps://`
   (anyone on the path could read AD passwords). In production — a Postgres `DATABASE_URL`,
@@ -446,6 +452,28 @@ plan to map them. Every failure says what to ask IT for.
   the account within the caller's rights (a refused unlock uses nothing); not for an account
   active in another hospital or a platform operator's (409). It does not unlock anything in AD
   — an AD lockout is IT's to clear.
+- **A locked screen counts too.** The dashboard locks after `SCREEN_LOCK_IDLE_MINUTES` without
+  input (default 10, `.env`; there is no "never" — a wall display is Group 2's kiosk mode), and a
+  browser that stays locked `SCREEN_LOCK_SIGNOUT_HOURS` (default 12) signs itself out. Unlocking
+  an AD account's screen is a bind in the same run as its sign-ins: three wrong passwords at the
+  lock screen and the account's next sign-in is the 429 above — and the other way round: anyone
+  who knows a clinician's login can hold her **locked screen** at 429 as well, for at least 15
+  minutes after the last wrong password (user decision 11 (b); she waits, an administrator unlocks
+  the run once, or a colleague signs in on the station). The dashboard itself signs out after
+  three wrong unlocks, and "Başqa istifadəçi ilə giriş" signs out at once. While the domain
+  controller does not answer, an AD user whose screen locked cannot unlock it (503) — accepted
+  (user decision 13): sign out, and use a local account if the ward must keep working. An AD
+  account **disabled in AD** is a case of its own: under the default `LDAP_USER_FILTER` the
+  directory no longer returns it, so its unlock is answered as a wrong password (403, counted
+  in the run) and the session ends at its next token refresh, within the hour. For a
+  local account, five wrong passwords at the lock screen or as the "current password" of a
+  password change lock both for 15 minutes (429; one `reauth.locked` or `password.change.locked`
+  audit row), cleared by a successful sign-in or by an administrator's password reset. A failed
+  unlock bind leaves a `reauth.fail` row (with `user`, not `login`), as a
+  sign-in leaves `login.fail` — `cancelled` and `directory_error` included —; the query before a
+  restart (*A slow run is bounded too*) reads both. An unlock refused because the run is already
+  full writes **one** `reauth.fail` `throttled` row per full run, not one per attempt, so a client
+  hammering a locked screen cannot flood the audit table; an administrator's unlock re-arms it.
 - **A slow run is bounded too.** Failures do not age out one by one: one wrong password every
   5 minutes keeps the run alive, and after the third it is refused, exactly as AD keeps
   counting. So Homunculus adds at most 3 + 3 = 6 to the domain's count between two of its
@@ -456,10 +484,11 @@ plan to map them. Every failure says what to ask IT for.
   15 minutes and wait until there are none:
 
   ```bash
-  docker compose exec postgres psql -U homunculus -d homunculus -c "SELECT payload->>'login'
-    AS login, count(*) FROM audit WHERE event_type = 'auth' AND subject = 'login.fail' AND
-    payload->>'reason' IN ('bad_credentials', 'directory_unavailable', 'cancelled',
-    'directory_error') AND ts::timestamptz > now() - interval '15 minutes' GROUP BY 1;"
+  docker compose exec postgres psql -U homunculus -d homunculus -c "SELECT
+    coalesce(payload->>'login', payload->>'user') AS login, count(*) FROM audit WHERE
+    event_type = 'auth' AND subject IN ('login.fail', 'reauth.fail') AND payload->>'reason' IN
+    ('bad_credentials', 'directory_unavailable', 'cancelled', 'directory_error') AND
+    ts::timestamptz > now() - interval '15 minutes' GROUP BY 1;"
   ```
 
   Wrong passwords typed elsewhere for the same account (a ward PC) count in AD too, which is
@@ -484,6 +513,15 @@ plan to map them. Every failure says what to ask IT for.
   change, and anyone behind that address can keep the ward at 429. Docker may also hand nginx
   its bridge gateway instead of the PCs' addresses: `docker compose logs web | tail` must show
   the ward PCs' IPs, not a `172.x.0.1`. The rate and burst are in `deploy/local/web/nginx.conf`.
+- **Per address, unlocks and password changes (nginx):** `/auth/reauth` and `/auth/password` have
+  a zone of their own, `homunculus_reauth` — 30 a minute per client address, burst 30, and its own
+  429 body, "Çok fazla deneme. Bir dakika sonra yeniden deneyin." with `Retry-After: 60` (neither
+  route is a sign-in, so it does not say "sign-in attempts"). Separate from the sign-in zone on
+  purpose: a ward unlocking screens at shift change must not spend the budget people need to sign
+  in, and an unlock loop must not lock the ward out of signing in. A ward behind one shared address
+  shares those 30 a minute — which is the first shift after the deploy that runs migration `0011`,
+  when every local account is sent to the password form (see *Updating*): someone may wait a
+  minute and try again. Both rates are in the same `nginx.conf`.
 - **Response-time floor:** every refused sign-in (401) answers no sooner than 0.5 s after it
   arrived, and an AD refusal also pays the same dummy bcrypt an unknown login does, so timing
   does not tell which logins are AD accounts. If this site's AD failure path (service bind,
@@ -541,6 +579,25 @@ volume spec for the `nce` service and takes the unrelated services down with it.
 `.env.example`) before pulling.
 
 Data survives: it lives in the `pgdata` volume, not in the containers.
+
+Migration `0011` (with this branch) adds `users.must_change_password`. From then on a password an
+administrator sets — a new local account, or a reset — must be replaced at the next sign-in
+before anything else opens (403 `password_change_required` meanwhile; the mobile app says to
+change it on the dashboard). **`0011` flags every local account that exists before it** — the
+seed administrator included; AD accounts are not touched: **tell the users before the deploy**
+that everyone with a local account chooses a new password once, at the first sign-in after it,
+with the password they have now as the "current" one. Two consequences for the first shift:
+
+- All those password changes go through the `homunculus_reauth` zone (*Sign-in limits*, 30 a
+  minute per client address, burst 30). A ward behind one shared address (NAT, terminal server)
+  shares them with its screen unlocks, so someone may be told to wait a minute and try again.
+  Not a fault — say so beforehand rather than taking the call during handover.
+- A phone or tablet still running a build older than this one has no message for a flagged
+  account: every request answers a bare 403 and the app looks broken. Update the mobile app
+  before the deploy, or have those users change their password in the web dashboard first.
+
+The dashboard's lock reads `SCREEN_LOCK_IDLE_MINUTES` and `SCREEN_LOCK_SIGNOUT_HOURS` (both
+optional, see `.env.example`).
 
 ## PHI
 

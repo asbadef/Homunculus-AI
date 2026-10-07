@@ -445,12 +445,75 @@ maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te geli
   ikinci kez geçmez. Telefonunu kaybeden kullanıcının MFA'sını bir yönetici sıfırlar. Mobil
   uygulamada henüz kod adımı yok, bu yüzden MFA isteyen bir gruptaki kişi mobili şimdilik kullanamaz.
 
-**"Parolamı değiştir"**
-- *Homunculus'ta:* Canlı modda kullanıcı menüsündedir. Mevcut parola, yeni parola ve tekrarı
-  istenir; sunucu en az 8 karakter ister. Değişiklik diğer bütün oturumları kapatır, bu oturum
-  yeni bir token çiftiyle açık kalır. Yöneticinin verdiği parola geçicidir; kullanıcı onu ilk
-  girişte buradan değiştirmelidir (sistem bunu henüz zorlamıyor). Active Directory hesabı "Parola
-  Active Directory tarafından yönetiliyor" yanıtını alır.
+**"Parolamı değiştir" ve geçici şifre**
+- *Basit:* Yöneticinin verdiği şifre geçicidir; kişi ilk girişte kendi şifresini belirler.
+- *Homunculus'ta:* Yeni arayüzde Ayarlar › Güvenlik'tedir. Mevcut şifre, yeni şifre ve tekrarı
+  istenir; sunucu en az 8 karakter ister ve yeni şifrenin mevcut şifreden farklı olmasını ister.
+  Değişiklik diğer bütün oturumları kapatır, bu oturum yeni bir token çiftiyle açık kalır.
+  Yönetici yeni bir yerel hesap açtığında ya da şifreyi sıfırladığında sistem bunu **zorlar**
+  (`users.must_change_password`): kişi giriş yapınca (MFA'sı varsa önce doğrulama kodunu girer)
+  "Yeni şifrə təyin edin" ekranına düşer; şifresini değiştirene kadar API bütün diğer isteklere
+  403 `password_change_required` der. Mobil uygulama böyle bir hesabı içeri almaz, "önce panodan
+  girip şifrenizi belirleyin" der. **Güncellemeyle gelen göç (`0011`), o gün var olan bütün yerel
+  hesapları işaretler** (tohum yönetici dahil): yerel hesabı olan herkes güncellemeden sonraki ilk
+  girişte bir kez kendi şifresini belirler — "mevcut şifre" bugünkü şifresidir; kullanıcılara
+  önceden duyurulur. Yanlış "mevcut şifre" de kilit ekranındaki yanlış şifreyle birlikte sayılır:
+  beşinde ikisi de 15 dakika kapanır (doğru bir giriş ya da yöneticinin şifre sıfırlaması sayacı
+  sıfırlar). Aynı formu iki kez göndermek ikinci isteğe "oturum eskidi" yanıtı getirir; düğme
+  istek sürerken kapalı kalır. Güncellemeden sonraki ilk vardiyada, aynı ağ adresinin arkasındaki
+  bir serviste şifre değiştirme ve kilit açma istekleri dakikada 30 ile sınırlıdır: "çok fazla
+  deneme, bir dakika sonra" yanıtı arıza değil, bir dakika beklenip yeniden denenir. Active
+  Directory hesabı hiç zorlanmaz: şifresi AD'dedir, değiştirmesi hastanenin olağan yoludur.
+
+**Kilit ekranı**
+- *Basit:* Servisteki ortak bilgisayar bir süre kullanılmayınca ekran kilitlenir; hasta bilgisi
+  ekrandan kalkar, oturum kapanmaz. Kilidi şifreyle açarsınız.
+- *Homunculus'ta:* Süreyi hastane belirler (`SCREEN_LOCK_IDLE_MINUTES`, varsayılan 10 dakika);
+  kişisel oturum her zaman kilitlenir, "hiç kilitlenmesin" seçeneği yoktur (sürekli açık kalması
+  gereken duvar ekranı Grup 2'nin kiosk modudur). Kilitlenmeden bir dakika önce geri sayımlı
+  uyarı çıkar. Tuş, tıklama, dokunma ve kaydırma hareket sayılır; yalnız oynayan fare sayılmaz.
+  Hesap menüsünden ya da Alt+L ile (klavye düzeni ne olursa olsun) elle de kilitlenir. Kilit
+  **tarayıcı başınadır**: sayfayı yenilemek ya da yeni sekme açmak kilidi geçmez; 12 saatten
+  uzun kilitli kalan tarayıcı kendiliğinden çıkış yapar (`SCREEN_LOCK_SIGNOUT_HOURS`) — gece
+  kilitli kalan bir servis bilgisayarı sabaha dünün oturumunu taşımaz.
+  Kilitliyken ekranda yalnız kişinin birimlerindeki açık alarmların ve onaylanmamış olanların
+  **sayısı** görünür (ad, yatak, değer yok). "Alarm yok" yalnız canlı bağlantı varken ve pano
+  bağlantıdan sonra yeniden yüklendiyse denir; akış koptuysa sayılar "güncel olmayabilir" işaretiyle
+  görünür, hiçbir şey alınamadıysa "alarm bilgisi alınamıyor — bu, alarm olmadığı anlamına gelmez"
+  der. Şifre üç kez yanlış girilirse oturum kapanır (sayaç bütün sekmelerde ortaktır: üç deneme
+  kilit başınadır, sekme başına değil); "Başka kullanıcıyla giriş" şifresiz çıkış yapar. Kilit
+  açılınca kişi **bıraktığı ekrana** döner; tek istisna hasta sayfasıdır: oradan kilitlenmişse
+  kilit açılınca ana ekrana düşer (kullanıcı kararı, 07.10.2026 — kilitli ekranı başka biri de
+  uyandırabilir, bir hastanın adını taşıyan sayfa sorulmadan yeniden açılmaz). AD hesabında her
+  yanlış şifre AD giriş sınırına sayılır (aşağıdaki madde): giriş adını bilen biri, girişi gibi
+  kilitli ekranı da en az 15 dakika 429'da tutabilir (kullanıcı kararı 11). Dizin sunucusuna
+  ulaşılamıyorsa AD hesabının kilidi açılamaz (kabul edildi, karar 13): çıkış yapılır, servis
+  çalışmaya devam etmeliyse yerel bir hesapla girilir. Ekran kilitliyken yönetici o hesabın
+  şifresini sıfırlarsa oturum kapanır ve "şifreniz sıfırlandı" denir — kişi artık açamayacağı bir
+  kilit ekranının önünde bırakılmaz. AD'de kapatılmış bir hesabın kilidi de açılmaz — dizin o
+  hesabı artık
+  döndürmediği için yanlış şifre gibi yanıtlanır, oturum da en geç bir saat içinde kapanır.
+
+**Yeni canlı arayüz (kabuk)**
+- *Basit:* "Kabuk", her ekranın içinde durduğu çerçevedir: soldaki menü ve üstteki çubuk. Hangi
+  ekranı açarsanız açın aynı kalır, bu yüzden bir kez öğrenilir.
+- *Homunculus'ta:* Adres çubuğuna yalnız sunucunun adresi yazılınca yeni arayüz açılır (G1-07):
+  solda kişinin yetkisinin açtığı ekranlar (telefonda kısa adlarıyla), üstte hastane adı, birim
+  seçimi (kapsamı iki ya da daha çok birimle sınırlıysa; motor o an birim listesini göndermiyorsa
+  çip kendini "güncel olmayabilir" diye işaretler, eski liste atılmaz), saat, dil, tema, tam
+  ekran, kısayollar, yanıt bekleyen alarmların zili ve hesap menüsü (sürüm numarası dahil).
+  Ekranlar Grup 1'in sonraki dalgalarında gelir; o zamana kadar herkes Ayarlar'a düşer.
+  Yetkisi olmayan bir sayfa
+  "Bu səhifəyə icazəniz yoxdur", olmayan bir sayfa "Belə səhifə yoxdur" der. Önceki arayüz G1-16'ya
+  dek `?eski=1` ile açılır; o kilit ekranını bilmez.
+- *Bağlantı canlı mı:* Sunucu, pano akışında hiçbir şey olmasa da 15 saniyede bir "yaşıyorum"
+  işareti gönderir; 45 saniye hiç ses gelmezse tarayıcı bağlantıyı kopmuş sayar, yeniden bağlanır
+  ve o sırada sayıları "güncel olmayabilir" diye işaretler. Böylece yarı kopmuş bir bağlantı
+  "sakin servis" gibi okunmaz.
+- *Ana ekrana eklenen uygulama:* Tablete/telefona kurulan uygulama artık **gerçek sistemi** açar
+  (eskiden simülasyonla açılıyordu). Buna karşılık eski arayüz, demo, replay ve eski pano
+  (`?eski=1`, `?demo=1`, `?mode=replay`, `?board=1`) **ağ yokken açılmaz**: bilerek çevrimdışı
+  önbelleğin dışında bırakıldılar, böylece servis bilgisayarı yalnız gerçek sistemi indirir.
 
 **Active Directory ile giriş**
 - *Basit:* Hastanedeki bilgisayar hesabıyla (kullanıcı adı ve Windows parolası) giriş.
