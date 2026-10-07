@@ -36,6 +36,9 @@ async function spoken(text) {
   await waitFor(() => expect(screen.getAllByRole("status").map((el) => el.textContent)).toContain(text));
 }
 
+/** Everything already queued — including the history move jsdom reports asynchronously. */
+const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
+
 function refusal(status, message, extra = {}) {
   return Object.assign(new Error(message), { status, ...extra });
 }
@@ -391,6 +394,44 @@ describe("coming back to the screen she left", () => {
     await signIn(api);
     expect(await screen.findByRole("heading", { level: 1, name: "Çarpayı ekranı" })).toBeInTheDocument();
     await waitFor(() => expect(window.location.hash).toBe("#/beds"));
+  });
+
+  // A shell's rail links PUSH history entries, and a sign-out replaces only the entry the page is
+  // on: the previous session's screens stay in the browser's history. One press of Back at the
+  // sign-in screen puts the last person's screen back into the address bar — and a shell that
+  // honoured the bar would open there. With G1-11 built, two presses reach her patient.
+  it("ignores the address bar when a Back press has filled it with the last session's screen", async () => {
+    const api = app();
+    built({ beds: BedsProbe, alarms: AlarmsProbe, patient: PatientProbe });
+    await signIn(api);
+    await screen.findByRole("heading", { level: 1, name: "Çarpayı ekranı" });
+    // As her rail links would, two screens deep.
+    for (const to of ["#/alarms", "#/patients/P-001"]) {
+      await act(async () => {
+        window.history.pushState(null, "", to);
+        window.dispatchEvent(new HashChangeEvent("hashchange"));
+      });
+    }
+    await screen.findByRole("heading", { level: 1, name: "Xəstə P-001" });
+    const depth = window.history.length;
+    fireEvent.click(screen.getByRole("button", { name: "Hesab menyusu" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Çıxış" }));
+    await screen.findByRole("heading", { level: 1, name: "Daxil olun" });
+    expect(window.location.hash).toBe("");
+    // The entries her rail links pushed are still in the history: a sign-out replaces only the
+    // entry the page is on, so Back at the sign-in screen does reach her screens.
+    expect(window.history.length).toBe(depth);
+    // What such a press leaves behind — the previous session's address, in the bar, with the
+    // sign-in screen up. Set here rather than traversed: jsdom needs two back() calls to move one
+    // entry past a hash-less replaceState, which would test jsdom and not this shell.
+    await act(async () => {
+      window.location.hash = "#/alarms";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    await signIn(api, { me: profile({ id: "u-bahar", username: "bahar", full_name: "Bahar Sentetik" }) });
+    expect(await screen.findByRole("heading", { level: 1, name: "Çarpayı ekranı" })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe("#/beds"));
+    expect(screen.queryByText(/P-001/)).toBeNull();
   });
 
   it("opens a bookmarked address after the sign-in it asked for", async () => {

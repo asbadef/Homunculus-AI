@@ -9,7 +9,7 @@ import { PHASE } from "../session/sessionStore.js";
 import { mount } from "../session/mount.testutil.jsx";
 import { profile, token } from "../session/testTokens.testutil.js";
 import { ANNOUNCE_DELAY_MS } from "../ui/index.js";
-import { resetScreens, stubScreens } from "./routes.js";
+import { hashPath, resetScreens, stubScreens } from "./routes.js";
 import { BELL_LIST_MAX } from "./TopBar.jsx";
 import { IDLE_SPOKEN_AGAIN_AT, Shell } from "./Shell.jsx";
 import { useShell } from "./ShellContext.jsx";
@@ -45,7 +45,10 @@ async function renderShell({
   hash = "#/settings", start = true, patients = [],
 } = {}) {
   window.location.hash = hash;
-  const { api, store, board, stream } = await mount(<ThemeProvider><Shell /></ThemeProvider>, {
+  // `resume` as LiveApp hands it over: the shell settles its own first screen and does not read
+  // the address bar at mount (Shell.jsx), so a test that opens on an address says so here.
+  const { api, store, board, stream } = await mount(
+    <ThemeProvider><Shell resume={hashPath(hash)} /></ThemeProvider>, {
     access: token({ perms }),
     me: profile({ perms, lock_idle_minutes: minutes }),
     setup: (fake) => {

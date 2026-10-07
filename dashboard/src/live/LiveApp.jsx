@@ -54,7 +54,11 @@ function Phases({ board }) {
   // patient (#/patients/P-001) and the window's title says who is on screen. When the shell goes
   // — a lock, a sign-out, a session the server ended, a step before one opens — both go with it,
   // or the next person signing in here is taken straight to the last one's patient. replaceState
-  // rather than a new entry: the id must not be left one Back press away either.
+  // rather than a new entry, so the bar itself is clean at once.
+  // It cleans only the entry the page is ON: the ones a rail link pushed stay in the history, and
+  // Back at the sign-in screen still reaches them. That is why a new shell settles its own first
+  // screen instead of reading the bar (Shell.jsx) — the address bar cannot be trusted across a
+  // session, only emptied.
   // The one address that stays is that of a session being CHECKED (a page load): it is still this
   // clinician's own, so a reload leaves her on the screen she was on.
   useEffect(() => {

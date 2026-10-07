@@ -98,12 +98,25 @@ export function Shell({ resume = "" }) {
   const main = useRef(null);
   const shownPath = useRef(path);
 
-  // The screen to open while the address names none. Taken as this shell was mounted, and left
-  // alone afterwards: an effect that consumed it would send the second of two identical runs
-  // (React's StrictMode runs each one twice) to the home screen instead.
-  const resumeTo = useRef(resume);
+  // Where this shell opens. Settled ONCE, at mount, whatever the address bar says — because the
+  // bar is not to be trusted at that moment: the entries a previous session's rail links pushed
+  // outlive it (a sign-out replaces only the entry the page is on), so one press of Back at the
+  // sign-in screen can put the last person's screen — with G1-11, her patient — back into the
+  // bar, and a shell that honoured it would open there. `resume` is this session's own screen, or
+  // the bookmark the page was opened with, or its home (LiveApp, routes.js resumePath).
+  // Idempotent: the same write however often the effect runs (StrictMode runs each one twice).
+  // In-session Back and forward are untouched — they happen after this.
+  const firstPath = useRef(resume || home);
   useEffect(() => {
-    if (isEmptyPath(path)) window.location.replace(`#${resumeTo.current || home}`);
+    window.location.replace(`#${firstPath.current}`);
+  }, []);
+  // And if the address is emptied later — by hand, or by a link that names nothing — home rather
+  // than "no such page". Read from the live hash, not from `path`, which still holds the value
+  // the effect above has just replaced.
+  useEffect(() => {
+    if (isEmptyPath(path) && isEmptyPath(hashPath(window.location.hash))) {
+      window.location.replace(`#${home}`);
+    }
   }, [path, home]);
 
   // Focus the new screen after every move — back to the first one too — but not when the page
