@@ -154,8 +154,23 @@ geçti / 8 atlandı / 0 hata; dashboard 1741 geçti (86 dosya) — bunun 851'i y
   girişinin 429'da tutulabilmesi) kullanıcı tarafından verildi.
 - Deploy, son 15 dakikada hatalı AD girişi yokken yapılır: yeniden başlatma Homunculus'un
   dizilerini siler, AD'nin sayacını silmez (runbook, "A slow run is bounded too"). Yeniden
-  başlatma öncesi sorgusu artık `login.fail` **ve** `reauth.fail` satırlarını birlikte okur
-  (kilit ekranındaki hatalı denemeler de AD'nin sayacına işler).
+  başlatma öncesi sorgusu `login.fail` **ve** `reauth.fail` satırlarını birlikte okur (kilit
+  ekranındaki hatalı denemeler de AD'nin sayacına işler), ama yalnızca AD'ye özgü gerekçeleri
+  sayar — `directory_unavailable`, `cancelled`, `directory_error`. `bad_credentials` listede
+  **değil**: yerel bir hesabın hatalı şifresi de bu gerekçeyi yazıyor ve AD'ye hiç gitmiyor, yani
+  yerel satırlar "son 15 dakikada AD'ye bind gitti mi?" sorusunun yanlış pozitifleriydi (runbook,
+  "Before restarting the API").
+- **(Dalga 2 incelemesi)** Tabletlerde ana ekrana eklenmiş uygulama **yeniden eklenir ya da yeniden
+  kurulur.** PWA manifestinin `start_url`'ü Dalga 2'de `/?demo=1`'den `/`'ye çekildi, ama kurulu
+  bir kısayol tarayıcı manifesti yeniden okuyana kadar eski adresi açmaya devam eder — yani
+  simülasyonu. `?demo=1` G1-16'da silindiğinde o kısayol hiçbir şey açmaz (artık boş sayfa değil,
+  "sayfa yüklenemedi" der — `src/LoadFailed.jsx`). Deploy'dan sonra her tablet tek tek gözden
+  geçirilir.
+- **(Dalga 2 incelemesi)** VM'nin kendi nginx yapılandırmasında `location = /auth/reauth` ve
+  `location = /auth/password` tam eşleşmeleri ile `homunculus_reauth` bölgesi **var mı** diye
+  bakılır (`deploy/local/web/nginx.conf` ile karşılaştır). Yoksa istekler yine de vekillenir —
+  önek bloğu yakalar — ama sınırsız ve JSON 429'suz: kilit açma ile şifre değiştirmede hız sınırı
+  olmaz. Tek satırlık kontrol, deploy'dan önce.
 - **(Dalga 2)** `?eski=1` (önceki canlı arayüz) G1-16 ile kaldırıldı: kilit ekranını bilmez, kilitli
   bir tarayıcıda açık oturumu gösterir.
 - **(Dalga 2)** Mobil uygulama: geçici şifreli hesap girişte "önce panodan şifrenizi belirleyin"
@@ -340,7 +355,7 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - `patientFromBoard` `identity.bed_id`/`unit_id`'yi okumuyor: her HBYS hastası "yatak bekliyor" görünür; birim filtresi ve kapsam matrisi için gerekli. → G1-09
 - `auditRowFromRecord` kişi alanını `actor`'dan okumuyor (ack ve `scope_denied` satırları "—"); test fikstürü backend'in göndermediği `{by}` biçimini kullanıyor. → Grup 2
 - Vite dev proxy'de `/admin`, `/scope`, `/scores`, `/infinity-research` yok (`/clinical` ve `/alarm-quality` var; yalnız `npm run dev`'i etkiler). → G1-07 ✅ `devProxy.test.js` nginx'in her API yolunu arar.
-- `main.jsx`'te ölü `simulation` prop'u; PWA manifest `start_url: "/?demo=1"`. → G1-16 ✅ ikisi de Dalga 2'de düzeltildi: ölü prop gitti, manifest `start_url: "/"` ve `lang: "az"` — ana ekrana eklenen uygulama artık gerçek sistemi açıyor.
+- `main.jsx`'te ölü `simulation` prop'u; PWA manifest `start_url: "/?demo=1"`. → G1-16 ✅ ikisi de Dalga 2'de düzeltildi: ölü prop gitti, manifest `start_url: "/"` ve `lang: "az"`. Yalnız **yeni** kurulumlar için geçerli: ana ekrana zaten eklenmiş bir kısayol, tarayıcı manifesti yeniden okuyana kadar `/?demo=1`'i — yani simülasyonu — açmayı sürdürür. Her tablette yeniden eklenmesi G1-15 deploy kapısında.
 - `backendApi.myScope()` kullanılmıyor. → G1-12
 - `?infinityTest=1` yalnız ana çalışma ağacındaki commit'lenmemiş değişiklikte var. → kullanıcıya not
 - `clinicalDemo.js:475`'teki demo yönetici parolası git geçmişinde; gerçek bir yerde kullanıldıysa değiştirilmeli. → kullanıcıya not

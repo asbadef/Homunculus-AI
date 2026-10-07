@@ -487,9 +487,19 @@ plan to map them. Every failure says what to ask IT for.
   docker compose exec postgres psql -U homunculus -d homunculus -c "SELECT
     coalesce(payload->>'login', payload->>'user') AS login, count(*) FROM audit WHERE
     event_type = 'auth' AND subject IN ('login.fail', 'reauth.fail') AND payload->>'reason' IN
-    ('bad_credentials', 'directory_unavailable', 'cancelled', 'directory_error') AND
+    ('directory_unavailable', 'cancelled', 'directory_error') AND
     ts::timestamptz > now() - interval '15 minutes' GROUP BY 1;"
   ```
+
+  The question this query answers is "did Homunculus send any binds to the domain in the last 15
+  minutes?", so it lists only the reasons that mean a bind was or may have been made. It does NOT
+  list `bad_credentials`: a LOCAL account's wrong password — at the sign-in form or at the lock
+  screen — writes that reason too, and those rows never touched AD. Counting them would hold a
+  restart back for a nurse who mistyped her local password. The rows carry no `auth_source`, so
+  `bad_credentials` cannot be narrowed to AD by query — both paths write exactly that reason
+  (`auth/router.py`, the local check and the directory check). The three reasons above are AD-only
+  by construction, which is why they are the ones to wait on; if you also need to know whether a
+  named account's wrong passwords were AD's, read that account's `auth_source` from `users`.
 
   Wrong passwords typed elsewhere for the same account (a ward PC) count in AD too, which is
   why the threshold needs room above 6. The audit trail shows a run: `login.fail` rows for one

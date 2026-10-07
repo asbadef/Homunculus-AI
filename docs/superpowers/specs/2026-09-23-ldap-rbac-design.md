@@ -752,7 +752,17 @@ not carried forward.
   message and shows a bare 403 on every request, so the phones are updated before the deploy
   (a G1-15 gate item) — or their users change their password in the web dashboard first.
 - *As built (Wave 2) — the lock screen.* The dashboard locks after `lock_idle_minutes` without a
-  key, click, touch or wheel in any tab, with a minute's counted-down warning first. The lock
+  key, click, touch or wheel in any tab, with a minute's counted-down warning first. **Which
+  screens, and what "locking" means on each:** the signed-in shell locks, and its session lives on
+  behind the lock screen. The screens *before* a session is open — the TOTP step, the forced
+  password change and "server unreachable" — have no shell to lock behind, so the same idle time
+  **ends the session** there and the warning says so ("Sessiya bağlanacaq" rather than "the screen
+  will lock"); the clinician is returned to the sign-in form. That matters because migration `0011`
+  sends every local account to the forced password change at its first sign-in: without it the step
+  would stand on a ward keyboard indefinitely. (The current-password field is also emptied after
+  every refused attempt, so the credential is not left in it either.) The sign-in form itself has
+  no timer: there is no session on it to take away. A browser that is already locked is bounded by
+  `lock_signout_hours`, not by idle time. The lock
   *replaces* the shell — every screen, menu, dialog and toast of the session unmounts — and is
   kept per browser (`localStorage`), so a reload or a new tab opens on it instead of walking past
   it with the tokens the browser holds, and every tab locks and unlocks together. It shows the

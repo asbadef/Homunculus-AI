@@ -472,7 +472,17 @@ maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te geli
   kişisel oturum her zaman kilitlenir, "hiç kilitlenmesin" seçeneği yoktur (sürekli açık kalması
   gereken duvar ekranı Grup 2'nin kiosk modudur). Kilitlenmeden bir dakika önce geri sayımlı
   uyarı çıkar. Tuş, tıklama, dokunma ve kaydırma hareket sayılır; yalnız oynayan fare sayılmaz.
-  Hesap menüsünden ya da Alt+L ile (klavye düzeni ne olursa olsun) elle de kilitlenir. Kilit
+  Hesap menüsünden ya da Alt+L ile (klavye düzeni ne olursa olsun) elle de kilitlenir.
+  *Hangi ekranda ne olur:* oturum açıkken **kabuk kilitlenir** ve oturum kilit ekranının arkasında
+  yaşamaya devam eder. Oturum henüz açılmamışsa — iki adımlı doğrulama, zorunlu şifre değişikliği,
+  "sunucuya ulaşılamıyor" ekranı — kilitlenecek bir kabuk yoktur, o yüzden aynı süre dolduğunda
+  **oturum biter** ve uyarı bunu söyler ("Sessiya bağlanacaq" / "Oturum kapanacak"); kişi giriş
+  ekranına döner. Bu özellikle göç `0011` için önemli: bütün yerel hesaplar ilk girişte zorunlu
+  şifre değişikliği ekranına düşüyor, ve o ekran eskiden hiç zaman aşımı olmadan servis klavyesinde
+  kalabiliyordu. Aynı nedenle, denemesi reddedilen her seferde **cari şifre alanı boşaltılır** —
+  kişinin doğru şifresi alanda bırakılmaz (yeni şifre ve tekrarı kalır, tekrarı yanlış yazınca üç
+  alanı baştan yazmak gerekmesin diye). Giriş ekranının kendisinde sayaç yoktur: orada alınacak bir
+  oturum yok. Kilit
   **tarayıcı başınadır**: sayfayı yenilemek ya da yeni sekme açmak kilidi geçmez; 12 saatten
   uzun kilitli kalan tarayıcı kendiliğinden çıkış yapar (`SCREEN_LOCK_SIGNOUT_HOURS`) — gece
   kilitli kalan bir servis bilgisayarı sabaha dünün oturumunu taşımaz.
@@ -486,7 +496,10 @@ maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te geli
   kilit açılınca ana ekrana düşer (kullanıcı kararı, 07.10.2026 — kilitli ekranı başka biri de
   uyandırabilir, bir hastanın adını taşıyan sayfa sorulmadan yeniden açılmaz). AD hesabında her
   yanlış şifre AD giriş sınırına sayılır (aşağıdaki madde): giriş adını bilen biri, girişi gibi
-  kilitli ekranı da en az 15 dakika 429'da tutabilir (kullanıcı kararı 11). Dizin sunucusuna
+  kilitli ekranı da en az 15 dakika 429'da tutabilir (kullanıcı kararı 11). Sunucu "bir dakika
+  sonra" derse (nginx'in `homunculus_reauth` bölgesi, `Retry-After`) kilit ekranı düğmeyi o süre
+  boyunca kapatır ve kalan saniyeyi gösterir — giriş ve şifre değiştirme ekranları gibi; böylece
+  arka arkaya basmak servisin ortak bütçesini boşa harcamaz. Dizin sunucusuna
   ulaşılamıyorsa AD hesabının kilidi açılamaz (kabul edildi, karar 13): çıkış yapılır, servis
   çalışmaya devam etmeliyse yerel bir hesapla girilir. Ekran kilitliyken yönetici o hesabın
   şifresini sıfırlarsa oturum kapanır ve "şifreniz sıfırlandı" denir — kişi artık açamayacağı bir
@@ -510,10 +523,18 @@ maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te geli
   işareti gönderir; 45 saniye hiç ses gelmezse tarayıcı bağlantıyı kopmuş sayar, yeniden bağlanır
   ve o sırada sayıları "güncel olmayabilir" diye işaretler. Böylece yarı kopmuş bir bağlantı
   "sakin servis" gibi okunmaz.
-- *Ana ekrana eklenen uygulama:* Tablete/telefona kurulan uygulama artık **gerçek sistemi** açar
-  (eskiden simülasyonla açılıyordu). Buna karşılık eski arayüz, demo, replay ve eski pano
+- *Ana ekrana eklenen uygulama:* Uygulama artık **gerçek sistemle** kurulur — eskiden kısayol
+  simülasyonu (`?demo=1`) açıyordu. Bu yalnız **yeni** kurulumlar için geçerli: ana ekranda zaten
+  duran bir kısayol, tarayıcı uygulama tanımını yeniden okuyana kadar eski adresi açmayı sürdürür.
+  Bu yüzden deploy'dan sonra her tablette uygulamanın yeniden eklenmesi gerekir (G1-15 deploy
+  kapısında bir madde). Buna karşılık eski arayüz, demo, replay ve eski pano
   (`?eski=1`, `?demo=1`, `?mode=replay`, `?board=1`) **ağ yokken açılmaz**: bilerek çevrimdışı
   önbelleğin dışında bırakıldılar, böylece servis bilgisayarı yalnız gerçek sistemi indirir.
+- *Sayfa yüklenemezse:* Arayüzün parçaları gerektiğinde indirilir. Ağ yoksa — ya da kurulu
+  uygulama deploy öncesinden kalma bir önbellek taşıyorsa — bu indirme başarısız olabilir. O
+  durumda ekran boş kalmaz: kişinin kendi dilinde "Səhifə yüklənə bilmədi — bağlantınızı yoxlayıb
+  yenidən yükləyin" der ve bir "Yenidən yüklə" düğmesi verir; hata ayrıntısı tarayıcı günlüğüne
+  yazılır (destek çağrısı oradan başlar).
 
 **Active Directory ile giriş**
 - *Basit:* Hastanedeki bilgisayar hesabıyla (kullanıcı adı ve Windows parolası) giriş.
