@@ -25,6 +25,9 @@ const AZ_SAME_AS_TR = new Set([
   "shell.keyFull", //        Tam ekran — the same (shell.js tb_k_full)
   "auth.copy", //            Kopyala — Azerbaijani imperative of "kopyalamaq"
   "auth.copied", //          Kopyalandı — its passive past
+  "lock.unlock", //          Kilidi aç — the prototype's AZ dictionary (shell.js lk_open)
+  "lock.critical", //        kritik — the prototype's AZ dictionary (shell.js lk_crit)
+  "lock.moderate", //        orta — the prototype's AZ dictionary (shell.js lk_mid)
 ]);
 
 describe("live UI dictionaries", () => {
