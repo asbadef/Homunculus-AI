@@ -83,7 +83,11 @@ export function Shell() {
   const { t } = useI18n();
   const { user, store } = useSession();
   const { scope } = useBoard();
+  // `scope` is null while no load has landed and after one that failed: the session's units are
+  // then UNKNOWN, not empty, and the chip and the clinician's choice must survive it
+  // (ShellContext.jsx).
   const units = useMemo(() => scopeUnits(scope), [scope]);
+  const scopeKnown = scope !== null;
   const path = useHashPath();
   const home = homePath(user.perms);
   const main = useRef(null);
@@ -137,7 +141,7 @@ export function Shell() {
   }, [title]);
 
   return (
-    <ShellProvider units={units}>
+    <ShellProvider units={units} known={scopeKnown}>
       <div className="grid h-full grid-cols-[86px_minmax(0,1fr)] bg-page font-text text-14.5 text-ink max-[640px]:grid-cols-[62px_minmax(0,1fr)]">
         <a
           href="#main"

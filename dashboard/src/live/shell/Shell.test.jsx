@@ -216,20 +216,50 @@ describe("locking", () => {
   });
 });
 
+const TWO_UNITS = { unrestricted: false, unit_ids: ["NICU", "REA"] };
+
+/** Pick a unit from the top bar's chip. */
+function chooseUnit(name) {
+  fireEvent.click(screen.getByRole("button", { name: "Göstərilən bölmə" }));
+  fireEvent.click(screen.getByRole("menuitemradio", { name }));
+}
+
 describe("the top bar", () => {
   it("offers the units of a restricted scope, and the screen reads the choice", async () => {
     built({ beds: BedsProbe });
-    await renderShell({ hash: "#/beds", scope: { unrestricted: false, unit_ids: ["NICU", "REA"] } });
-    const chip = screen.getByRole("button", { name: "Göstərilən bölmə" });
-    expect(chip).toHaveTextContent("Bölmələrim · 2");
-    fireEvent.click(chip);
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "NICU" }));
+    await renderShell({ hash: "#/beds", scope: TWO_UNITS });
+    expect(screen.getByRole("button", { name: "Göstərilən bölmə" })).toHaveTextContent("Bölmələrim · 2");
+    chooseUnit("NICU");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Çarpayı ekranı · NICU");
   });
 
   it("has no unit chip for an unrestricted scope", async () => {
     await renderShell();
     expect(screen.queryByRole("button", { name: "Göstərilən bölmə" })).toBeNull();
+  });
+
+  // A /patients load that fails leaves the engine's scope UNKNOWN — it says nothing about which
+  // units this session has. Read as "no units", it emptied the chip and took the choice away:
+  // in Wave 3 a five-second hiccup would silently widen a one-unit bed board to the whole scope.
+  it("keeps the chosen unit while the scope is merely unknown", async () => {
+    built({ beds: BedsProbe });
+    const { api, board } = await renderShell({ hash: "#/beds", scope: TWO_UNITS });
+    chooseUnit("NICU");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Çarpayı ekranı · NICU");
+    api.boardPatients.mockRejectedValue(Object.assign(new Error("boom"), { status: 503 }));
+    await act(async () => { await board.refresh(); });
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Çarpayı ekranı · NICU");
+    expect(screen.getByRole("button", { name: "Göstərilən bölmə" })).toHaveTextContent("NICU");
+  });
+
+  it("drops it only when a scope the engine did send no longer lists it", async () => {
+    built({ beds: BedsProbe });
+    const { api, board } = await renderShell({ hash: "#/beds", scope: TWO_UNITS });
+    chooseUnit("NICU");
+    api.boardPatients.mockResolvedValue({ patients: [], scope: { unrestricted: false, unit_ids: ["REA", "CCU"] } });
+    await act(async () => { await board.refresh(); });
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Çarpayı ekranı · hamısı");
+    expect(screen.getByRole("button", { name: "Göstərilən bölmə" })).toHaveTextContent("Bölmələrim · 2");
   });
 
   it("never says 'none' for a board that stopped updating: it shows what it had, marked", async () => {
