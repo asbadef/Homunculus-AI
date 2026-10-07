@@ -70,6 +70,17 @@ describe("LockScreen", () => {
     expect(api.reauth).not.toHaveBeenCalled();
   });
 
+  // The shell replaces this screen on the next render; nothing of the password may wait in it.
+  it("keeps no password once the request settled, right one or wrong", async () => {
+    const { api, store } = await mount(<LockScreen />);
+    await act(async () => { store.lock(); });
+    api.reauth.mockResolvedValue({});
+    fireEvent.change(password(), { target: { value: "Gizli-Sifre-1" } });
+    await act(async () => { unlock(); await settle(); });
+    expect(store.getState().phase).toBe(PHASE.READY);
+    expect(password()).toHaveValue("");
+  });
+
   it("says how many tries are left, and the third wrong password signs out", async () => {
     const { api, store } = await mount(<LockScreen />);
     await act(async () => { store.lock(); });

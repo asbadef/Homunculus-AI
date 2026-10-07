@@ -116,6 +116,20 @@ describe("SignIn", () => {
     expect(api.login).toHaveBeenCalledWith("ayse", "Gizli-Sifre-1");
   });
 
+  // A sign-in the API accepted can still be refused entry (Decision 8: a devices-only account):
+  // the form stays on screen at a ward keyboard, and the show-password toggle is one press away.
+  it("empties the password when the call settles, even when nothing threw", async () => {
+    const { api } = await mount(<SignIn />, { access: null });
+    api.login.mockResolvedValue({ access_token: token({ perms: [] }), refresh_token: "r" });
+    fill("ayse", "Gizli-Sifre-1");
+    await act(async () => { send(); });
+    expect(screen.getByText(/heç bir səlahiyyət təyin edilməyib/)).toBeInTheDocument();
+    expect(passwordField()).toHaveValue("");
+    fireEvent.click(screen.getByRole("button", { name: "Şifrəni göstər" }));
+    expect(passwordField()).toHaveValue("");                 // nothing left to reveal
+    expect(loginField()).toHaveValue("ayse");                // the name is not a secret
+  });
+
   it("shows a refusal as an alert, empties the password and goes back to the field", async () => {
     const { api } = await mount(<SignIn />, { access: null });
     api.login.mockRejectedValue(refusal(401, "Invalid credentials"));

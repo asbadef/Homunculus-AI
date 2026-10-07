@@ -73,7 +73,13 @@ export function LockScreen() {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState(null);
   const input = useRef(null);
+  const mounted = useRef(false);
   const seesBoard = user?.perms?.includes("board.view");
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   useEffect(() => { input.current?.focus(); }, []);
 
@@ -92,17 +98,21 @@ export function LockScreen() {
     } catch (err) {
       // The lock is gone: the session ended (the tries are spent, an administrator reset the
       // password, the account is over) and the sign-in form says why. Nothing to add here.
-      if (store.getState().phase !== PHASE.LOCKED) return;
+      if (!mounted.current || store.getState().phase !== PHASE.LOCKED) return;
       if (apiErrorKey(err)?.key === "errors.reauthRefused") {
         const left = UNLOCK_ATTEMPTS - store.getState().unlockFailures;
         setFailure(t("lock.attemptsLeft", { count: left }));
       } else {
         setFailure(apiErrorText(t, err));
       }
-      setPassword("");
       input.current?.focus();
     } finally {
-      setBusy(false);
+      // The password goes when the request settles, whatever it answered: a right one opens the
+      // shell, and nothing of it stays in this screen's state or in the field behind it.
+      if (mounted.current) {
+        setBusy(false);
+        setPassword("");
+      }
     }
   };
 

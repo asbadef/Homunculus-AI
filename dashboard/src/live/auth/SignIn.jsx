@@ -96,12 +96,19 @@ export function SignIn() {
       if (!mounted.current) return;
       setFailure(apiErrorText(t, err));
       if (Number.isInteger(err?.retryAfter)) hold(err.retryAfter);
-      setPassword("");
       // The alert says what happened; focus goes back to the field the next attempt starts in,
       // and never stays on a submit button a hold is about to disable.
       passwordRef.current?.focus();
     } finally {
-      if (mounted.current) setBusy(false);
+      if (mounted.current) {
+        setBusy(false);
+        // The password goes when the request settles, however it settled — not only on a failure.
+        // A sign-in the API ACCEPTED can still be refused entry (no rights, no screen: Decision 8
+        // and `noPermissions` / `noScreen`), and that leaves this form on screen at a ward
+        // keyboard with the plaintext in it, one press of the show-password toggle from the next
+        // person's eyes.
+        setPassword("");
+      }
     }
   };
 
