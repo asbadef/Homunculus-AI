@@ -8,7 +8,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError as JWTError  # noqa: F401  (re-exported for callers)
 
 # Y1/Y4: there is NO fallback secret. A publicly known or short secret would let anyone mint tokens
 # (including mfa_verified=true), so the app refuses to start in every environment without a real one.
@@ -52,5 +53,5 @@ def create_refresh_token(subject: str, extra: dict[str, Any] | None = None) -> s
 
 
 def decode_token(token: str) -> dict[str, Any]:
-    """Raises JWTError on invalid/expired token."""
+    """Raises JWTError (PyJWTError) on invalid/expired token."""
     return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])

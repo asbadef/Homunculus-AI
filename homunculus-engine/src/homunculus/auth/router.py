@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from jose import JWTError
+from homunculus.auth.jwt import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.auth import throttle

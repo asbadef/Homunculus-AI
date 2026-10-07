@@ -7,7 +7,7 @@ import uuid
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError
+from homunculus.auth.jwt import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.auth.jwt import decode_token

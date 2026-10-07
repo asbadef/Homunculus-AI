@@ -5,7 +5,7 @@ Password hashing, token generation, MFA setup.
 from __future__ import annotations
 import uuid
 
-from passlib.context import CryptContext
+import bcrypt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,15 +13,24 @@ from homunculus.auth.jwt import create_access_token, create_refresh_token
 from homunculus.auth.models import MFA_REQUIRED_ROLES, TenantMembership, User, UserRole
 from homunculus.auth.totp import generate_provisioning_uri, generate_totp_secret, verify_totp
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt only looks at the first 72 bytes; bcrypt>=5 raises on longer input, so cut explicitly
+# (same result as before, existing hashes keep verifying).
+_BCRYPT_MAX_BYTES = 72
+
+
+def _pw_bytes(plain: str) -> bytes:
+    return plain.encode("utf-8")[:_BCRYPT_MAX_BYTES]
 
 
 def hash_password(plain: str) -> str:
-    return _pwd_context.hash(plain)
+    return bcrypt.hashpw(_pw_bytes(plain), bcrypt.gensalt()).decode("ascii")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_context.verify(plain, hashed)
+    try:
+        return bcrypt.checkpw(_pw_bytes(plain), hashed.encode("utf-8"))
+    except ValueError:  # malformed stored hash: treat as a failed login
+        return False
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
