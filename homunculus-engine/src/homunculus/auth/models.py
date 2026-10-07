@@ -41,6 +41,12 @@ MFA_REQUIRED_ROLES = {
     UserRole.ATTENDING,
     UserRole.UNIT_PHYSICIAN,
     UserRole.PLATFORM_SUPPORT,
+    # Y1: clinical roles see patient identity and act on alerts -> MFA too.
+    UserRole.ASSOCIATE_PHYSICIAN,
+    UserRole.ONCALL_PHYSICIAN,
+    UserRole.CHARGE_NURSE,
+    UserRole.NURSE,
+    UserRole.RAPID_RESPONSE,
 }
 
 

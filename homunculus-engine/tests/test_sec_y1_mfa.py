@@ -40,14 +40,31 @@ async def test_mfa_role_without_enrolment_is_still_blocked(world):
     assert r.status_code == 403
 
 
-async def test_nurse_without_mfa_can_work_but_enrolled_nurse_is_gated(world):
-    plain = await world.add_user(world.a, "hemsire-a", UserRole.NURSE)
-    enrolled = await world.add_user(world.a, "hemsire-a2", UserRole.NURSE, totp=True)
+import pytest
+
+
+@pytest.mark.parametrize("role", [
+    UserRole.NURSE, UserRole.CHARGE_NURSE, UserRole.ASSOCIATE_PHYSICIAN,
+    UserRole.ONCALL_PHYSICIAN, UserRole.RAPID_RESPONSE,
+])
+async def test_every_clinical_role_is_blocked_without_mfa(world, role):
+    user = await world.add_user(world.a, "klinik-a", role)  # TOTP kurulu değil
     async with world.client() as c:
-        ok = await c.get("/admissions", headers=await world.token(plain, mfa=False))
-        gated = await c.get("/admissions", headers=await world.token(enrolled, mfa=False))
-    assert ok.status_code == 200
-    assert gated.status_code == 403
+        r = await c.get("/admissions", headers=await world.token(user, mfa=False))
+    assert r.status_code == 403
+    assert "MFA" in r.json()["detail"]
+
+
+async def test_platform_support_flag_without_membership_does_not_escape_mfa(world):
+    async with world.maker() as s:
+        from homunculus.auth.service import hash_password
+        u = User(email="destek@example.com", full_name="destek",
+                 hashed_password=hash_password(PASSWORD), is_platform_support=True)
+        s.add(u)
+        await s.commit()
+    async with world.client() as c:
+        tokens = await _login(c, u)
+    assert tokens["requires_mfa"] is True
 
 
 async def test_login_then_totp_verify_unlocks_access(world):

@@ -62,7 +62,7 @@ def requires_mfa(role: UserRole) -> bool:
 async def user_needs_mfa(db: AsyncSession, user: User) -> bool:
     """MFA applies to anyone holding an MFA role in ANY hospital (read from the DB, not the token)
     and to anyone who has enrolled TOTP (an enrolled factor cannot be bypassed)."""
-    if user.totp_enabled:
+    if user.totp_enabled or user.is_platform_support:
         return True
     return any(requires_mfa(m.role) for m in await get_user_memberships(db, user.id))
 
@@ -109,7 +109,7 @@ def issue_tokens(user: User, memberships: list[TenantMembership]) -> dict:
         "access_token": access,
         "refresh_token": refresh,
         "token_type": "bearer",
-        "requires_mfa": user.totp_enabled or any(requires_mfa(m.role) for m in memberships),
+        "requires_mfa": user.totp_enabled or user.is_platform_support or any(requires_mfa(m.role) for m in memberships),
     }
 
 
