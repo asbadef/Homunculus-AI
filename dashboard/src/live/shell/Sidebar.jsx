@@ -2,6 +2,12 @@
 // open, built ones only (routes.js), each a link with its icon AND its name — on a phone (62 px)
 // its short name, never an icon alone (roadmap: "Daraltılmış sol menüde her madde kısa adıyla
 // görünür"). The current screen is aria-current="page".
+//
+// A screen the rail does not list (routes.js `nav: false` — a patient, opened from the beds) is
+// open with NO entry current: saying "you are here" of a page the entry does not lead to would be
+// false. Whether the beds entry should read as current while one of its patients is open is a
+// question for the screen that opens them (G1-11), and the test pins today's answer so the next
+// wave changes it on purpose.
 import React from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { Icon } from "../ui/Icon.jsx";

@@ -14,12 +14,16 @@ import { useBoard } from "../data/BoardProvider.jsx";
 import { scopeUnits } from "../data/boardStore.js";
 import { Announce, Button, Icon } from "../ui/index.js";
 import { FOCUS_RING } from "../ui/focus.js";
-import { canReach, homePath, matchRoute } from "./routes.js";
+import { canReach, hashPath, homePath, matchRoute, screenOf } from "./routes.js";
 import { ShellProvider } from "./ShellContext.jsx";
 import { Sidebar } from "./Sidebar.jsx";
 import { TopBar } from "./TopBar.jsx";
 
-const pathOf = () => window.location.hash.replace(/^#/, "");
+/** The page's title when a screen is on it, and on its own when none is (LiveApp, on a lock or a
+ *  sign-out: a shared workstation must not keep naming the last person's page). */
+export const PRODUCT = "Homunculus";
+
+const pathOf = () => hashPath(window.location.hash);
 const isEmptyPath = (path) => path === "" || path === "/";
 
 /** Seconds before the lock at which the warning is said once more (it is said when it opens). */
@@ -35,12 +39,15 @@ function useHashPath() {
   return path;
 }
 
-function Blocked({ title, help, home }) {
+/** The router's two refusals. `icon`: a shield for a page this session may not open, a sheet of
+ *  paper for one that does not exist — the same picture for both would read every mistyped
+ *  address as "you are not allowed in here". */
+function Blocked({ icon, title, help, home }) {
   const { t } = useI18n();
   return (
     <div className="mx-auto my-[10vh] max-w-[460px] rounded-dlg border border-line bg-card px-6 py-7 text-center">
       <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-pri-soft text-pri">
-        <Icon name="shield" size={26} />
+        <Icon name={icon} size={26} />
       </div>
       <h1 className="m-0 mb-1.5 font-display text-20 font-bold">{title}</h1>
       {help ? <p className="m-0 mb-4 text-mute">{help}</p> : null}
@@ -111,22 +118,22 @@ export function Shell() {
   }, [store]);
 
   const match = matchRoute(path);
+  const Screen = screenOf(match?.route);
   let content;
   let title;
-  if (!match || !match.route.screen) {
+  if (!Screen) {
     title = t("shell.notFound");
-    content = isEmptyPath(path) ? null : <Blocked title={title} home={home} />;
+    content = isEmptyPath(path) ? null : <Blocked icon="file" title={title} home={home} />;
   } else if (!canReach(match.route, user.perms)) {
     title = t("shell.deny");
-    content = <Blocked title={title} help={t("shell.denyHelp")} home={home} />;
+    content = <Blocked icon="shield" title={title} help={t("shell.denyHelp")} home={home} />;
   } else {
     title = t(match.route.labelKey);
-    const Screen = match.route.screen;
     content = <Screen params={match.params} />;
   }
 
   useEffect(() => {
-    document.title = `${title} · Homunculus`;
+    document.title = `${title} · ${PRODUCT}`;
   }, [title]);
 
   return (

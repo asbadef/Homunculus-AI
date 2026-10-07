@@ -9,13 +9,14 @@ import { PHASE } from "../session/sessionStore.js";
 import { mount } from "../session/mount.testutil.jsx";
 import { profile, token } from "../session/testTokens.testutil.js";
 import { ANNOUNCE_DELAY_MS } from "../ui/index.js";
-import { ROUTES } from "./routes.js";
+import { stubScreens } from "./routes.js";
 import { IDLE_SPOKEN_AGAIN_AT, Shell } from "./Shell.jsx";
 import { useShell } from "./ShellContext.jsx";
 
 const NURSE_PERMS = ["board.view", "alerts.ack"];
 
-// What Wave 3 will do: give a route its screen. Undone after each test.
+// What Wave 3 will do: give a route its screen. The table itself is frozen, so a test stands in
+// through the registry's own seam (routes.js stubScreens) and puts the build's screens back.
 function AdminProbe() {
   return <h1>İdarə ekranı</h1>;
 }
@@ -23,7 +24,11 @@ function BedsProbe() {
   const { unit } = useShell();
   return <h1>Çarpayı ekranı · {unit ?? "hamısı"}</h1>;
 }
-const built = (id, screen2) => { ROUTES.find((r) => r.id === id).screen = screen2; };
+function PatientProbe({ params }) {
+  return <h1>Xəstə {params.id}</h1>;
+}
+let unstub = null;
+const built = (screens) => { unstub = stubScreens(screens); };
 
 // The board store of the test on screen: emptied afterwards, so no stream timer of a finished test
 // reconnects during the next one.
@@ -59,15 +64,15 @@ beforeEach(() => {
 afterEach(() => {
   if (running) act(() => running.clear());      // still mounted here: React's own cleanup is next
   running = null;
-  built("admin", null);
-  built("beds", null);
+  unstub?.();
+  unstub = null;
   vi.useRealTimers();
   localStorage.clear();
 });
 
 describe("the rail", () => {
   it("lists the built screens this session may open, each with its name — not an icon alone", async () => {
-    built("admin", AdminProbe);
+    built({ admin: AdminProbe });
     await renderShell();
     const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
     const links = within(rail).getAllByRole("link");
@@ -79,7 +84,7 @@ describe("the rail", () => {
   });
 
   it("shows an administrator the built admin screen", async () => {
-    built("admin", AdminProbe);
+    built({ admin: AdminProbe });
     await renderShell({ perms: ["users.manage"] });
     const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
     expect(within(rail).getByRole("link", { name: /İdarə/ })).toHaveAttribute("href", "#/admin");
@@ -102,10 +107,40 @@ describe("the router", () => {
   });
 
   it("answers a screen the session may not open with 'no access'", async () => {
-    built("admin", AdminProbe);
+    built({ admin: AdminProbe });
     await renderShell({ hash: "#/admin" });
     expect(screen.getByRole("heading", { level: 1, name: "Bu səhifəyə icazəniz yoxdur" })).toBeInTheDocument();
     expect(screen.queryByText("İdarə ekranı")).toBeNull();
+  });
+
+  // The same picture for both would read a mistyped address as "you are not allowed in here".
+  it("draws its two refusals differently", async () => {
+    built({ admin: AdminProbe });
+    const { session } = await renderShell({ hash: "#/yok" });
+    const iconOf = () => screen.getByRole("main").querySelector("svg")?.getAttribute("data-icon");
+    expect(iconOf()).toBe("file");
+    act(() => { window.location.hash = "#/admin"; window.dispatchEvent(new HashChangeEvent("hashchange")); });
+    await screen.findByRole("heading", { level: 1, name: "Bu səhifəyə icazəniz yoxdur" });
+    expect(iconOf()).toBe("shield");
+    expect(session.getState().phase).toBe(PHASE.READY);
+  });
+
+  // A query or an anchor inside the hash belongs to the screen, not to the route.
+  it("opens the route named before a query or a second hash, and hands the screen the id whole", async () => {
+    built({ beds: BedsProbe, patient: PatientProbe });
+    await renderShell({ hash: "#/patients/P-001?tab=vitals" });
+    expect(await screen.findByRole("heading", { level: 1, name: "Xəstə P-001" })).toBeInTheDocument();
+    act(() => { window.location.hash = "#/beds?unit=NICU"; window.dispatchEvent(new HashChangeEvent("hashchange")); });
+    expect(await screen.findByRole("heading", { level: 1, name: /Çarpayı ekranı/ })).toBeInTheDocument();
+  });
+
+  // Pinned on purpose (Sidebar.jsx): no entry says "you are here" of a page it does not lead to.
+  it("marks no rail entry current while a screen the rail does not list is open", async () => {
+    built({ beds: BedsProbe, patient: PatientProbe });
+    await renderShell({ hash: "#/patients/P-001" });
+    await screen.findByRole("heading", { level: 1, name: "Xəstə P-001" });
+    const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
+    expect(within(rail).getAllByRole("link").filter((a) => a.getAttribute("aria-current"))).toEqual([]);
   });
 
   it("names the screen in the page's title", async () => {
@@ -114,7 +149,7 @@ describe("the router", () => {
   });
 
   it("moves focus to the new screen after a move, and the skip link goes there too", async () => {
-    built("beds", BedsProbe);
+    built({ beds: BedsProbe });
     await renderShell();
     act(() => { window.location.hash = "#/beds"; window.dispatchEvent(new HashChangeEvent("hashchange")); });
     await screen.findByRole("heading", { level: 1, name: /Çarpayı ekranı/ });
@@ -183,7 +218,7 @@ describe("locking", () => {
 
 describe("the top bar", () => {
   it("offers the units of a restricted scope, and the screen reads the choice", async () => {
-    built("beds", BedsProbe);
+    built({ beds: BedsProbe });
     await renderShell({ hash: "#/beds", scope: { unrestricted: false, unit_ids: ["NICU", "REA"] } });
     const chip = screen.getByRole("button", { name: "Göstərilən bölmə" });
     expect(chip).toHaveTextContent("Bölmələrim · 2");
