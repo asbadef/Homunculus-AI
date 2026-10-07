@@ -9,10 +9,11 @@ GET  /auth/me           — return current user profile
 from __future__ import annotations
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from homunculus.auth import throttle
 from homunculus.auth.dependencies import get_current_active_user, get_password_user
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.models import User
@@ -31,10 +32,19 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=TokenResponse, summary="Password login")
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+async def login(
+    body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    acct, ip = throttle.account_key(body.email), throttle.ip_key(request)
+    wait = throttle.limiter.retry_after(acct, ip)
+    if wait:
+        raise throttle.too_many(wait)
     user = await authenticate_user(db, body.email, body.password)
     if not user:
+        throttle.limiter.record_failure(acct, throttle.limiter.account_max)
+        throttle.limiter.record_failure(ip, throttle.limiter.ip_max)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    throttle.limiter.clear(acct)
     memberships = await get_user_memberships(db, user.id)
     tokens = issue_tokens(user, memberships)
     return TokenResponse(**tokens)
@@ -70,14 +80,19 @@ async def totp_verify(
     if not current_user.totp_secret:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not set up")
 
+    key = throttle.totp_key(current_user.id)
+    wait = throttle.limiter.retry_after(key)
+    if wait:
+        raise throttle.too_many(wait)
     # If not yet enabled, this is the first-time activation
     if not current_user.totp_enabled:
         ok = await enable_totp(db, current_user, body.code)
-        if not ok:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
     else:
-        if not verify_totp(current_user.totp_secret, body.code):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
+        ok = verify_totp(current_user.totp_secret, body.code)
+    if not ok:
+        throttle.limiter.record_failure(key, throttle.limiter.account_max)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
+    throttle.limiter.clear(key)
 
     memberships = await get_user_memberships(db, current_user.id)
     tokens = issue_mfa_verified_tokens(current_user, memberships)

@@ -127,6 +127,8 @@ async def world():
             yield session
 
     app.dependency_overrides[get_db] = _get_db
+    from homunculus.auth import throttle
+    throttle.limiter.reset()  # sayaçlar testler arasında sızmasın
     w = World(maker, app)
     w.a = await w._seed_hospital("A")
     w.b = await w._seed_hospital("B")
