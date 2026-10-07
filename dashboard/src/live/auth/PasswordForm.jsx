@@ -13,13 +13,13 @@
 // else (Decision 14: the idle warning speaks twice, not sixty times). One sr-only role="status"
 // region is always mounted, empty, and is filled ONCE per hold with the hold's length — after
 // ANNOUNCE_DELAY_MS, so it follows the alert instead of racing it — and emptied when the hold
-// ends, so the next hold's text is a change the region announces again.
+// ends, so the next hold's text is a change the region announces again. That region is `Announce`
+// (ui/Alert.jsx), which every polite notice of the live UI now shares.
 import React, { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useSession } from "../session/SessionProvider.jsx";
 import { apiErrorKey, apiErrorText } from "../apiErrors.js";
-import { Alert, Button, Field, Input } from "../ui/index.js";
-import { ANNOUNCE_DELAY_MS } from "../ui/Alert.jsx";
+import { Alert, Announce, Button, CapsWarning, Field, Input, useCapsLock } from "../ui/index.js";
 import { PASSWORD_MIN, fieldOfRefusal, passwordProblem } from "./passwordRules.js";
 import { useRetryHold } from "./useRetryHold.js";
 
@@ -36,7 +36,7 @@ export function PasswordForm({ temporary = false, submitLabel, onDone }) {
   const [failure, setFailure] = useState(null);
   const [busy, setBusy] = useState(false);
   const { wait, holding, hold, current: holdNow } = useRetryHold();
-  const [said, setSaid] = useState("");
+  const caps = useCapsLock();
   const refs = { current: useRef(null), next: useRef(null), repeat: useRef(null) };
   const mounted = useRef(false);
 
@@ -45,15 +45,9 @@ export function PasswordForm({ temporary = false, submitLabel, onDone }) {
     return () => { mounted.current = false; };
   }, []);
 
-  // Said once per hold, after the alert; emptied when the hold ends (see the header).
-  useEffect(() => {
-    if (!holdNow) return undefined;
-    const timer = setTimeout(() => setSaid(t("auth.retryIn", { seconds: holdNow.seconds })), ANNOUNCE_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [holdNow, t]);
-  useEffect(() => {
-    if (!holding) setSaid("");
-  }, [holding]);
+  // Said once per hold, after the alert; emptied when the hold ends (see the header). The text is
+  // the hold's OWN length, so it does not change while the visible count ticks.
+  const heldFor = holding && holdNow ? t("auth.retryIn", { seconds: holdNow.seconds }) : "";
 
   const edit = (field) => (event) => {
     setForm((f) => ({ ...f, [field]: event.target.value }));
@@ -99,19 +93,21 @@ export function PasswordForm({ temporary = false, submitLabel, onDone }) {
     <form noValidate onSubmit={submit}>
       {failure ? <Alert className="mb-3">{failure}</Alert> : null}
       <Field layout="col" required label={t(temporary ? "auth.currentTemporary" : "auth.current")} error={errors.current}>
-        <Input ref={refs.current} type="password" autoComplete="current-password" value={form.current} onChange={edit("current")} />
+        <Input ref={refs.current} type="password" autoComplete="current-password" value={form.current} onChange={edit("current")} {...caps.keys} />
       </Field>
       <Field layout="col" required label={t("auth.newPassword")} hint={t("auth.rule", { min: PASSWORD_MIN })} error={errors.next}>
-        <Input ref={refs.next} type="password" autoComplete="new-password" value={form.next} onChange={edit("next")} />
+        <Input ref={refs.next} type="password" autoComplete="new-password" value={form.next} onChange={edit("next")} {...caps.keys} />
       </Field>
       <Field layout="col" required label={t("auth.repeat")} error={errors.repeat}>
-        <Input ref={refs.repeat} type="password" autoComplete="new-password" value={form.repeat} onChange={edit("repeat")} />
+        <Input ref={refs.repeat} type="password" autoComplete="new-password" value={form.repeat} onChange={edit("repeat")} {...caps.keys} />
       </Field>
+      {/* The commonest reason three passwords in a row are refused (ui/CapsLock.jsx). */}
+      <CapsWarning shown={caps.shown} className="mb-2" />
       <Button type="submit" variant="primary" size="lg" busy={busy} disabled={holding} className="mt-2 w-full justify-center">
         {submitLabel}
       </Button>
       {holding ? <p aria-hidden="true" className="mt-2 text-12.5 text-mute">{t("auth.retryIn", { seconds: wait })}</p> : null}
-      <div role="status" className="sr-only">{said}</div>
+      <Announce text={heldFor} />
     </form>
   );
 }

@@ -15,6 +15,33 @@ const TONE = {
  *  accessibility tree together with the region and is not announced; a real delay is. */
 export const ANNOUNCE_DELAY_MS = 150;
 
+/** The text a polite live region should hold: "" to begin with, then `text` once the delay above
+ *  has passed — the only way a live region reliably speaks (NVDA/JAWS with Chrome). Keyed on the
+ *  text, so re-renders with the same text neither postpone nor repeat it, and an empty `text`
+ *  empties the region at once, which makes the SAME text later a change the region says again.
+ *  Nothing is left running on unmount. */
+export function useAnnounced(text) {
+  const [said, setSaid] = useState("");
+  useEffect(() => {
+    if (!text) {
+      setSaid("");
+      return undefined;
+    }
+    const timer = setTimeout(() => setSaid(text), ANNOUNCE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [text]);
+  return said;
+}
+
+/** A visually hidden polite live region, always on the page and empty until there is something to
+ *  say (useAnnounced). This is how anything OUTSIDE an Alert speaks politely: a Caps Lock warning,
+ *  "copied", the seconds a 429 asks for. A region mounted together with its text is not announced
+ *  — hence one region that stays and takes the text afterwards. */
+export function Announce({ text = "" }) {
+  const said = useAnnounced(text);
+  return <div role="status" className="sr-only">{said}</div>;
+}
+
 /** Announced, unlike Note (a static aside). tone: crit (default) | info.
  *
  *  `crit` is one `role="alert"` box, read at once: a refusal.
@@ -55,10 +82,9 @@ function PoliteAlert({ tone, className, children }) {
   const visible = useRef(null);
   const warned = useRef(false);
   const [text, setText] = useState("");
-  const [said, setSaid] = useState("");
   // The text the box shows, read after every render: a parent re-rendering with the same text hands
-  // in a new `children` element each time, and must not postpone the announcement (the timer below
-  // is keyed on the text, not on the element).
+  // in a new `children` element each time, and must not postpone the announcement (Announce is
+  // keyed on the text, not on the element).
   useLayoutEffect(() => {
     setText(visible.current?.textContent ?? "");
     if (import.meta.env.DEV && !warned.current && visible.current?.querySelector(FOCUSABLE)) {
@@ -66,15 +92,10 @@ function PoliteAlert({ tone, className, children }) {
       console.warn("Alert: an info notice is text only — its box is aria-hidden, so a focusable element in it is unnamed");
     }
   });
-  useEffect(() => {
-    if (!text) return undefined;
-    const timer = setTimeout(() => setSaid(text), ANNOUNCE_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [text]);
   return (
     <>
       <div ref={visible} aria-hidden="true" data-tone={tone} className={className}>{children}</div>
-      <div role="status" className="sr-only">{said}</div>
+      <Announce text={text} />
     </>
   );
 }

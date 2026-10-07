@@ -19,7 +19,7 @@ import { PHASE, UNLOCK_ATTEMPTS } from "../session/sessionStore.js";
 import { useBoard } from "../data/BoardProvider.jsx";
 import { lockSummary } from "../data/boardStore.js";
 import { apiErrorKey, apiErrorText } from "../apiErrors.js";
-import { Alert, Button, Icon, StatusPill } from "../ui/index.js";
+import { Alert, Button, CapsWarning, Icon, StatusPill, useCapsLock } from "../ui/index.js";
 import { FOCUS_RING } from "../ui/focus.js";
 import { Brand } from "../shell/Prefs.jsx";
 import { ddmmyyyy, hhmm, weekdayKey } from "../i18n/dates.js";
@@ -71,8 +71,8 @@ export function LockScreen() {
   const { store, user, lock } = useSession();
   const now = useNow();
   const [password, setPassword] = useState("");
-  const [caps, setCaps] = useState(false);
   const [busy, setBusy] = useState(false);
+  const caps = useCapsLock();
   const [failure, setFailure] = useState(null);
   const input = useRef(null);
   const mounted = useRef(false);
@@ -118,7 +118,6 @@ export function LockScreen() {
     }
   };
 
-  const capsFrom = (event) => setCaps(Boolean(event.getModifierState?.("CapsLock")));
   const date = `${t(weekdayKey(now))} ${ddmmyyyy(now)}`;
   const initials = (user?.fullName || "?").split(/\s+/).filter(Boolean).map((s) => s[0]).slice(0, 2).join("");
 
@@ -160,12 +159,11 @@ export function LockScreen() {
                 placeholder={t("lock.password")}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={capsFrom}
-                onKeyUp={capsFrom}
+                {...caps.keys}
                 className="h-full min-w-0 flex-1 border-0 bg-transparent text-15 text-ink outline-none placeholder:text-mute"
               />
             </div>
-            {caps ? <p role="status" className="mb-0 mt-2 text-12.5 font-bold text-mid-ink">{t("lock.caps")}</p> : null}
+            <CapsWarning shown={caps.shown} className="mt-2" />
             <Button type="submit" variant="primary" size="lg" icon="lock" busy={busy} className="mt-3 w-full justify-center">
               {t("lock.unlock")}
             </Button>

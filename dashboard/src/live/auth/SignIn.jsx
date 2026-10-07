@@ -17,8 +17,7 @@ import { useSession } from "../session/SessionProvider.jsx";
 import { NOTICE } from "../session/sessionStore.js";
 import { readRememberedUser } from "../session/browserState.js";
 import { apiErrorText } from "../apiErrors.js";
-import { Alert, Button, Field, Icon, Input, Note } from "../ui/index.js";
-import { ANNOUNCE_DELAY_MS } from "../ui/Alert.jsx";
+import { Alert, Announce, Button, CapsWarning, Field, Icon, Input, Note, useCapsLock } from "../ui/index.js";
 import { FOCUS_RING } from "../ui/focus.js";
 import { AuthLayout } from "./AuthLayout.jsx";
 import { useRetryHold } from "./useRetryHold.js";
@@ -43,12 +42,11 @@ export function SignIn() {
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(Boolean(remembered));
   const [show, setShow] = useState(false);
-  const [caps, setCaps] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState({});
   const [failure, setFailure] = useState(null);
-  const [said, setSaid] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
+  const caps = useCapsLock();
   const { wait, holding, hold, current: holdNow } = useRetryHold();
   const loginRef = useRef(null);
   const passwordRef = useRef(null);
@@ -63,16 +61,9 @@ export function SignIn() {
     (remembered ? passwordRef : loginRef).current?.focus();
   }, [remembered]);
 
-  // Said once per hold, after the alert; emptied when the hold ends, so the next hold's text is a
-  // change the region announces again (PasswordForm.jsx).
-  useEffect(() => {
-    if (!holdNow) return undefined;
-    const timer = setTimeout(() => setSaid(t("auth.retryIn", { seconds: holdNow.seconds })), ANNOUNCE_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [holdNow, t]);
-  useEffect(() => {
-    if (!holding) setSaid("");
-  }, [holding]);
+  // Said once per hold: the text is the hold's OWN length, which does not change while it runs,
+  // and it is emptied when the hold ends, so the next hold says it again (ui/Alert.jsx Announce).
+  const heldFor = holding && holdNow ? t("auth.retryIn", { seconds: holdNow.seconds }) : "";
 
   const submit = async (event) => {
     event.preventDefault();
@@ -112,8 +103,6 @@ export function SignIn() {
     }
   };
 
-  const capsFrom = (event) => setCaps(Boolean(event.getModifierState?.("CapsLock")));
-
   return (
     <AuthLayout>
       <h1 className="m-0 mb-1 font-display text-28 font-bold">{t("auth.title")}</h1>
@@ -143,8 +132,7 @@ export function SignIn() {
             autoComplete="current-password"
             value={password}
             onChange={(e) => { setPassword(e.target.value); setErrors({}); }}
-            onKeyDown={capsFrom}
-            onKeyUp={capsFrom}
+            {...caps.keys}
             className="h-[46px]"
           />
         </Field>
@@ -160,11 +148,7 @@ export function SignIn() {
             <Icon name="eye" size={15} />
             {t("auth.show")}
           </button>
-          {caps ? (
-            <span role="status" className="flex items-center gap-1.5 text-12 font-semibold text-mid-ink">
-              <Icon name="alert" size={14} />{t("auth.caps")}
-            </span>
-          ) : null}
+          <CapsWarning shown={caps.shown} />
         </div>
         <label className="mb-[18px] mt-1.5 flex cursor-pointer select-none items-center gap-2.5 text-13">
           <input
@@ -187,7 +171,7 @@ export function SignIn() {
           {busy ? null : <Icon name="chevR" size={16} />}
         </Button>
         {holding ? <p aria-hidden="true" className="mt-2 text-12.5 text-mute">{t("auth.retryIn", { seconds: wait })}</p> : null}
-        <div role="status" className="sr-only">{said}</div>
+        <Announce text={heldFor} />
       </form>
       <div className="mt-4">
         <button

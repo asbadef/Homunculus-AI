@@ -35,6 +35,10 @@ const flush = () => act(() => new Promise((resolve) => { realSetTimeout(resolve,
 const TOO_MANY = "Çok fazla deneme. Bir dakika sonra yeniden deneyin.";
 const TOO_MANY_AZ = "Həddindən artıq cəhd edildi. Bir dəqiqədən sonra yenidən cəhd edin.";
 const retryIn = (s) => `${s} saniyədən sonra yenidən cəhd edə bilərsiniz.`;
+// What the polite regions of the form hold. There is more than one now: every Announce region is
+// mounted empty and always there (the hold's, the Caps Lock warning's — ui/Alert.jsx), so what is
+// being said is the text across them, not "the" status region.
+const said = () => screen.getAllByRole("status").map((region) => region.textContent).join("");
 
 describe("PasswordForm", () => {
   it("checks the server's rules before sending, and points at the field", async () => {
@@ -115,13 +119,12 @@ describe("PasswordForm", () => {
     expect(document.activeElement).toBe(screen.getByLabelText(/^Cari şifrə/));
     const counter = screen.getByText(retryIn(3));
     expect(counter).toHaveAttribute("aria-hidden", "true");             // the ticking number is not read
-    const status = screen.getByRole("status");                          // one region, mounted empty
-    expect(status).toHaveTextContent("");
+    expect(said()).toBe("");                                            // the regions are mounted empty
     tick(ANNOUNCE_DELAY_MS);
-    expect(status).toHaveTextContent(retryIn(3));                       // said once, after the alert
+    expect(said()).toBe(retryIn(3));                                    // said once, after the alert
     tick(1000 - ANNOUNCE_DELAY_MS);                                     // the first second is up
     expect(screen.getByText(retryIn(2))).toHaveAttribute("aria-hidden", "true");
-    expect(status).toHaveTextContent(retryIn(3));                       // not again
+    expect(said()).toBe(retryIn(3));                                    // not again
     fireEvent.submit(button.closest("form"));                           // Enter in a field meanwhile
     expect(api.changePassword).toHaveBeenCalledTimes(1);
     tick(1000);
@@ -129,14 +132,14 @@ describe("PasswordForm", () => {
     tick(1000);
     expect(button).not.toBeDisabled();                                  // released at 0
     expect(screen.queryByText(/saniyədən sonra/)).toBeNull();
-    expect(status).toHaveTextContent("");                               // empty again for the next hold
+    expect(said()).toBe("");                                            // empty again for the next hold
     fireEvent.submit(button.closest("form"));
     await flush();
     expect(api.changePassword).toHaveBeenCalledTimes(2);
     expect(button).toBeDisabled();                                      // refused again: a new hold
-    expect(status).toHaveTextContent("");
+    expect(said()).toBe("");
     tick(ANNOUNCE_DELAY_MS);
-    expect(status).toHaveTextContent(retryIn(3));                       // said again, as a change
+    expect(said()).toBe(retryIn(3));                                    // said again, as a change
   });
 
   it("counts the clock, not its ticks: a throttled or sleeping tab catches up when it wakes", async () => {
@@ -196,7 +199,7 @@ describe("PasswordForm", () => {
     expect(screen.getByRole("button", { name: "Saxla" })).not.toBeDisabled();
     expect(screen.queryByText(/saniyədən sonra/)).toBeNull();
     tick(ANNOUNCE_DELAY_MS);
-    expect(screen.getByRole("status")).toHaveTextContent("");
+    expect(said()).toBe("");
   });
 
   it("drops a hold's timer with the form: a request held and unmounted leaves nothing ticking", async () => {

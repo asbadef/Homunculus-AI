@@ -86,6 +86,12 @@ describe("MfaStep", () => {
       expect(screen.queryByText("Kopyalandı")).toBeNull();        // the write was refused
       fireEvent.click(copy);
       expect(await screen.findByText("Kopyalandı")).toBeInTheDocument();
+      // The control keeps its name — it is still the copy action — and the confirmation is said
+      // in a region of its own instead of renaming the focused button.
+      expect(screen.getByRole("button", { name: "Kopyala" })).toBe(copy);
+      expect(screen.getByText("Kopyalandı")).toHaveAttribute("aria-hidden", "true");
+      await waitFor(() => expect(screen.getAllByRole("status").map((r) => r.textContent).join(""))
+        .toContain("Kopyalandı"));
     } finally {
       delete window.navigator.clipboard;
     }

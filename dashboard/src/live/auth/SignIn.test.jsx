@@ -23,6 +23,10 @@ const flush = () => act(() => new Promise((resolve) => { realSetTimeout(resolve,
 const TOO_MANY = "Çok fazla giriş denemesi; bir dakika sonra tekrar deneyin";
 const TOO_MANY_AZ = "Həddindən artıq giriş cəhdi edildi. Bir dəqiqədən sonra yenidən cəhd edin.";
 const retryIn = (s) => `${s} saniyədən sonra yenidən cəhd edə bilərsiniz.`;
+// What the form's polite regions hold. Each Announce region (the hold's, the Caps Lock warning's)
+// is always mounted and empty until there is something to say, so what is being said is the text
+// across them (ui/Alert.jsx).
+const said = () => screen.getAllByRole("status").map((region) => region.textContent).join("");
 
 const loginField = () => screen.getByLabelText(/^İstifadəçi adı \*$/);
 const passwordField = () => screen.getByLabelText(/^Şifrə \*$/);
@@ -34,6 +38,7 @@ const send = () => fireEvent.submit(screen.getByRole("button", { name: /Daxil ol
 
 describe("SignIn", () => {
   it("shows a password on request and warns about Caps Lock", async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
     await mount(<SignIn />, { access: null });
     const password = passwordField();
     expect(password).toHaveAttribute("type", "password");
@@ -43,10 +48,13 @@ describe("SignIn", () => {
     expect(password).toHaveAttribute("type", "text");
     expect(toggle).toHaveAttribute("aria-pressed", "true");               // the state; the name stays
     expect(toggle).toHaveAccessibleName("Şifrəni göstər");
-    fireEvent.keyDown(password, { key: "A", modifierCapsLock: true });
-    // Said when it appears. Asked for by its text, not by its role: the form keeps one more
-    // role="status" region mounted for the hold's announcement (amendments, Task 19).
-    expect(screen.getByText("Caps Lock açıqdır")).toHaveAttribute("role", "status");
+    // The shared warning (ui/CapsLock.jsx): the line everyone sees is hidden from assistive
+    // technology, and a region that was already on the page says it a moment later.
+    act(() => { fireEvent.keyDown(password, { key: "A", modifierCapsLock: true }); });
+    expect(screen.getByText("Caps Lock açıqdır")).toHaveAttribute("aria-hidden", "true");
+    expect(said()).toBe("");
+    tick(ANNOUNCE_DELAY_MS);
+    expect(said()).toBe("Caps Lock açıqdır");
   });
 
   it("fills in a remembered username and starts at the password", async () => {
@@ -155,18 +163,17 @@ describe("SignIn", () => {
     expect(screen.getByText(TOO_MANY_AZ).closest("[role]")).toHaveAttribute("role", "alert");
     expect(document.activeElement).toBe(passwordField());
     expect(screen.getByText(retryIn(3))).toHaveAttribute("aria-hidden", "true");
-    const status = screen.getByText(retryIn(3)).parentElement.querySelector("[role=status]");
-    expect(status).toHaveTextContent("");
+    expect(said()).toBe("");
     tick(ANNOUNCE_DELAY_MS);
-    expect(status).toHaveTextContent(retryIn(3));
+    expect(said()).toBe(retryIn(3));
     tick(1000 - ANNOUNCE_DELAY_MS);
     expect(screen.getByText(retryIn(2))).toHaveAttribute("aria-hidden", "true");
-    expect(status).toHaveTextContent(retryIn(3));                      // not again, every second
+    expect(said()).toBe(retryIn(3));                                   // not again, every second
     send();
     expect(api.login).toHaveBeenCalledTimes(1);                        // held: nothing sent
     tick(2000);
     expect(button).not.toBeDisabled();
     expect(screen.queryByText(/saniyədən sonra/)).toBeNull();
-    expect(status).toHaveTextContent("");                              // empty again for the next hold
+    expect(said()).toBe("");                                           // empty again for the next hold
   });
 });

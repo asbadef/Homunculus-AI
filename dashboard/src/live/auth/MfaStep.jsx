@@ -15,7 +15,7 @@ import QRCode from "qrcode";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useSession } from "../session/SessionProvider.jsx";
 import { apiErrorText } from "../apiErrors.js";
-import { Alert, Button, Field, Input } from "../ui/index.js";
+import { Alert, Announce, Button, Field, Input } from "../ui/index.js";
 import { FOCUS_RING } from "../ui/focus.js";
 import { AuthLayout, stepOf } from "./AuthLayout.jsx";
 
@@ -76,7 +76,9 @@ function Enrolment() {
       </div>
     );
   }
-  if (!setup) return <p role="status" className="mb-4 text-13 text-mute">{t("auth.loading")}</p>;
+  // A notice, not a region born with its text: ui/Alert's polite path is the only one a screen
+  // reader hears (the same wait SessionWait shows for a session being checked).
+  if (!setup) return <Alert tone="info" icon="clock" className="mb-4">{t("auth.loading")}</Alert>;
   return (
     <div className="mb-4 rounded-box border border-line bg-card2 p-4 text-center">
       {/* White behind the QR in both themes: a scanner needs a light quiet zone around it. */}
@@ -89,9 +91,17 @@ function Enrolment() {
       <div className="mt-1 flex items-center justify-center gap-2">
         <code className="font-data text-14 tracking-widest">{(setup.secret || "").replace(/(.{4})/g, "$1 ").trim()}</code>
         {canCopy() ? (
-          <button type="button" onClick={copy} className={`rounded-lg px-2 py-1 text-12 font-semibold text-pri hover:bg-card ${FOCUS_RING}`}>
-            {t(copied ? "auth.copied" : "auth.copy")}
-          </button>
+          <>
+            {/* The button keeps its name: a control that renames itself to "Copied" tells the
+                screen reader its focus has a new label, not that anything happened — and for a
+                moment its name is not an action. The confirmation stands beside it and is said
+                in its own region. */}
+            <button type="button" onClick={copy} className={`rounded-lg px-2 py-1 text-12 font-semibold text-pri hover:bg-card ${FOCUS_RING}`}>
+              {t("auth.copy")}
+            </button>
+            {copied ? <span aria-hidden="true" className="text-12 font-semibold text-ok-ink">{t("auth.copied")}</span> : null}
+            <Announce text={copied ? t("auth.copied") : ""} />
+          </>
         ) : null}
       </div>
     </div>
