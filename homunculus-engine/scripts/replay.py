@@ -16,13 +16,14 @@ from homunculus.scenarios.loader import load_scenario
 
 SCEN = Path(homunculus.scenarios.__file__).parent
 name = sys.argv[1] if len(sys.argv) > 1 else "septic_shock.yaml"
+TOKEN = os.environ.get("HOMUNCULUS_API_TOKEN") or sys.exit("Set HOMUNCULUS_API_TOKEN to the dev server token.")
 delay = float(sys.argv[2]) if len(sys.argv) > 2 else 1.0
 
 for _ts, fhir in load_scenario(SCEN / name):
     req = urllib.request.Request(
         "http://localhost:8000/ingest",
         data=json.dumps(fhir).encode(),
-        headers={"Content-Type": "application/json", "Authorization": "Bearer dev-token"},
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {TOKEN}"},
     )
     urllib.request.urlopen(req).read()
     print("sent", fhir["code"]["coding"][0]["code"], fhir["valueQuantity"]["value"])

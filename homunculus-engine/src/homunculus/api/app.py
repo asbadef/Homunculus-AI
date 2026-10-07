@@ -53,6 +53,18 @@ async def sse_notification_frames(queue: asyncio.Queue, keepalive: float = 15.0)
         yield f"data: {json.dumps(note)}\n\n"
 
 
+# Placeholder credentials that must never authenticate anything (Y4).
+_FORBIDDEN_TOKENS = frozenset({"demo-token", "dev-token", "changeme", "change-me", "password", "token"})
+
+
+def _check_tokens(tenants: dict[str, str]) -> None:
+    if not tenants:
+        raise RuntimeError("create_app needs at least one API token; refusing to start without one.")
+    for tok in tenants:
+        if not tok.strip() or tok.strip().lower() in _FORBIDDEN_TOKENS:
+            raise RuntimeError("Refusing to start: an API token is empty or a well-known default.")
+
+
 def create_app(
     tenants: dict[str, str],
     *,
@@ -63,6 +75,7 @@ def create_app(
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
     run_escalation_loop=False disables the background task so tests are deterministic."""
+    _check_tokens(tenants)
     engines: dict[str, Engine] = {}
     stores: dict[str, AckStore] = {}
     broadcaster = Broadcaster()

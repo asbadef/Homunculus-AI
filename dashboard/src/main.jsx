@@ -16,7 +16,10 @@ function pickRoot() {
   if (isDemo && isReplay) {
     return <DemoApp scenario={params.get("scenario") || "septic_shock"} />;
   }
-  return <Board token="dev-token" />;
+  // Varsayılan token yok: VITE_BOARD_TOKEN tanımlı değilse pano açılmaz (Y4).
+  const token = import.meta.env.VITE_BOARD_TOKEN;
+  if (!token) throw new Error("VITE_BOARD_TOKEN tanımlı değil; pano varsayılan token ile açılmaz.");
+  return <Board token={token} />;
 }
 
 createRoot(document.getElementById("root")).render(pickRoot());
