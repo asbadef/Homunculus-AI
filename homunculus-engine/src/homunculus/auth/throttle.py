@@ -43,6 +43,7 @@ class AttemptLimiter:
             self._failures: dict[str, deque[float]] = defaultdict(deque)
             self._locked_until: dict[str, float] = {}
             self._offset = 0.0
+            self._last_sweep = float("-inf")
 
     def advance_clock(self, seconds: float) -> None:
         """Test hook only."""
@@ -58,9 +59,21 @@ class AttemptLimiter:
             waits = [self._locked_until[k] - now for k in keys if self._locked_until.get(k, 0) > now]
         return int(max(waits)) + 1 if waits else 0
 
+    def _sweep(self, now: float) -> None:
+        """Drop expired records so unique-key spraying cannot grow memory without bound.
+        Caller holds the lock. Runs at most once a minute."""
+        if now - self._last_sweep < 60:
+            return
+        self._last_sweep = now
+        for k in [k for k, q in self._failures.items() if not q or q[-1] <= now - self.window_seconds]:
+            del self._failures[k]
+        for k in [k for k, t in self._locked_until.items() if t <= now]:
+            del self._locked_until[k]
+
     def record_failure(self, key: str, limit: int) -> None:
         now = self._now()
         with self._lock:
+            self._sweep(now)
             q = self._failures[key]
             while q and q[0] <= now - self.window_seconds:
                 q.popleft()

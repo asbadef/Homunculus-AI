@@ -65,8 +65,14 @@ async def totp_setup(
         if not body or not body.current_code:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                                 detail="current_code is required to reset TOTP.")
+        key = throttle.totp_key(current_user.id)
+        wait = throttle.limiter.retry_after(key)
+        if wait:
+            raise throttle.too_many(wait)
         if not verify_totp(current_user.totp_secret or "", body.current_code):
+            throttle.limiter.record_failure(key, throttle.limiter.account_max)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
+        throttle.limiter.clear(key)
     _secret, uri = await setup_totp(db, current_user)
     return TOTPSetupResponse(provisioning_uri=uri)
 
