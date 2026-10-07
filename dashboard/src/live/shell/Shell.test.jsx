@@ -167,6 +167,23 @@ describe("the router", () => {
   });
 });
 
+// The rights come from the token, and a refreshed one carries the CURRENT groups: an
+// administrator's change reaches an open session through the next call it makes (the board's
+// included, now that mount.testutil wires `track` as LiveApp does).
+describe("rights that change under a session", () => {
+  it("re-filters the rail and re-checks the screen on display when a permission goes", async () => {
+    built({ admin: AdminProbe, beds: BedsProbe });
+    const { api, board } = await renderShell({ perms: ["board.view", "users.manage"], hash: "#/admin" });
+    await screen.findByRole("heading", { level: 1, name: "İdarə ekranı" });
+    api.store(token({ perms: ["board.view"] }));
+    await act(async () => { await board.refresh(); });
+    expect(await screen.findByRole("heading", { level: 1, name: "Bu səhifəyə icazəniz yoxdur" })).toBeInTheDocument();
+    const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
+    expect(within(rail).queryByRole("link", { name: /İdarə/ })).toBeNull();
+    expect(within(rail).getByRole("link", { name: /Çarpayı/ })).toBeInTheDocument();
+  });
+});
+
 describe("locking", () => {
   it.each([["l"], ["д"], ["¬"]])("locks on Alt+L, whatever the layout writes (%s)", async (key) => {
     const { session } = await renderShell({ start: false });

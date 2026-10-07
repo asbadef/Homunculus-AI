@@ -56,7 +56,10 @@ export async function mount(ui, { access = token(), me = profile(), setup } = {}
   const store = createSessionStore({ api, events });
   await store.restore();
   const stream = streamStub();
-  const board = createBoardStore({ api, openStream: stream.openStream });
+  // `track` as LiveApp wires it: the board's own calls run inside the session, so a refused
+  // refresh ends it here too and a 403 password_change_required moves the shell on — the paths a
+  // board-driven test would otherwise never reach.
+  const board = createBoardStore({ api, track: store.track, openStream: stream.openStream });
   render(
     <I18nProvider><ToastProvider>
       <SessionProvider store={store}><BoardProvider store={board}>{ui}</BoardProvider></SessionProvider>
