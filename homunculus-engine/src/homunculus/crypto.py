@@ -30,6 +30,12 @@ def _is_production() -> bool:
     return os.getenv("ENVIRONMENT", "development").strip().lower() == "production"
 
 
+def _plaintext_forbidden() -> bool:
+    if os.getenv("PHI_REQUIRE_ENCRYPTED", "").strip() == "1":
+        return True
+    return _is_production() and os.getenv("PHI_ALLOW_PLAINTEXT_LEGACY", "").strip() != "1"
+
+
 # Fail at startup (import time) rather than on first PHI write: production must never fall back
 # to the dev key derived from a default/known seed.
 if _is_production() and not os.getenv("PHI_ENCRYPTION_KEY"):
@@ -75,7 +81,14 @@ def decrypt_phi(ciphertext: str | None) -> str | None:
     if ciphertext is None:
         return None
     if not ciphertext.startswith(ENC_PREFIX):
-        # Legacy/plaintext value (e.g. imported before encryption enabled).
+        # O6: an unencrypted value in an encrypted column is a data-protection defect. Never log the
+        # value itself. Production refuses it unless PHI_ALLOW_PLAINTEXT_LEGACY=1 (temporary escape
+        # hatch while scripts/encrypt_legacy_phi.py has not been run yet).
+        if _plaintext_forbidden():
+            raise ValueError("Unencrypted value found in an encrypted column — run "
+                             "scripts/encrypt_legacy_phi.py.")
+        logger.warning("Unencrypted value found in an encrypted column (legacy row); "
+                       "run scripts/encrypt_legacy_phi.py to encrypt existing records.")
         return ciphertext
     token = ciphertext[len(ENC_PREFIX):]
     try:
