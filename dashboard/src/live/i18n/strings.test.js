@@ -28,6 +28,11 @@ const AZ_SAME_AS_TR = new Set([
   "lock.unlock", //          Kilidi aç — the prototype's AZ dictionary (shell.js lk_open)
   "lock.critical", //        kritik — the prototype's AZ dictionary (shell.js lk_crit)
   "lock.moderate", //        orta — the prototype's AZ dictionary (shell.js lk_mid)
+  "account.profile", //      Profil — the prototype's AZ dictionary (ayarlar.js st_profile)
+  "account.source", //       Giriş — "sign-in" in Azerbaijani too (core.js signin: "Daxil ol" is the verb)
+  "account.lock", //         Ekran kilidi — "screen lock" in Azerbaijani too (shell.js lk_title "Ekran kilidlənib")
+  "nav.settings", //         Ayarlar — the prototype's AZ dictionary (core.js m_settings)
+  "nav.settingsShort", //    Ayarlar — the same word
 ]);
 
 describe("live UI dictionaries", () => {
