@@ -79,7 +79,9 @@ function IdleWarning({ seconds, onStay }) {
   );
 }
 
-export function Shell() {
+/** `resume`: the screen this session was on when its shell last went (LiveApp keeps it outside the
+ *  URL). Used once, and only while the address is empty — a reload or a deep link wins over it. */
+export function Shell({ resume = "" }) {
   const { t } = useI18n();
   const { user, store } = useSession();
   const { scope } = useBoard();
@@ -93,8 +95,12 @@ export function Shell() {
   const main = useRef(null);
   const shownPath = useRef(path);
 
+  // The screen to open while the address names none. Taken as this shell was mounted, and left
+  // alone afterwards: an effect that consumed it would send the second of two identical runs
+  // (React's StrictMode runs each one twice) to the home screen instead.
+  const resumeTo = useRef(resume);
   useEffect(() => {
-    if (isEmptyPath(path)) window.location.replace(`#${home}`);
+    if (isEmptyPath(path)) window.location.replace(`#${resumeTo.current || home}`);
   }, [path, home]);
 
   // Focus the new screen after every move — back to the first one too — but not when the page

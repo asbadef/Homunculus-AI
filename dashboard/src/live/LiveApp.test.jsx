@@ -40,7 +40,7 @@ function refusal(status, message, extra = {}) {
   return Object.assign(new Error(message), { status, ...extra });
 }
 
-function app({ access = null, board = BOARD, me = null, setup } = {}) {
+function app({ access = null, board = BOARD, me = null, setup, strict = false } = {}) {
   const api = fakeApi(vi, { access });
   if (me) api.me.mockResolvedValue(me);
   setup?.(api);
@@ -52,7 +52,8 @@ function app({ access = null, board = BOARD, me = null, setup } = {}) {
     Promise.resolve().then(() => handlers.onopen());
     return () => {};
   });
-  render(<LiveApp api={api} openStream={openStream} />);
+  const app_ = <LiveApp api={api} openStream={openStream} />;
+  render(strict ? <React.StrictMode>{app_}</React.StrictMode> : app_);
   return api;
 }
 
@@ -70,6 +71,9 @@ function PatientProbe({ params }) {
 }
 function BedsProbe() {
   return <h1>Çarpayı ekranı</h1>;
+}
+function AlarmsProbe() {
+  return <h1>Siqnal ekranı</h1>;
 }
 let unstub = null;
 const built = (screens) => { unstub = stubScreens(screens); };
@@ -327,6 +331,102 @@ describe("what the next person at the workstation finds", () => {
     app({ access: NURSE, me: profile() });
     expect(await screen.findByRole("heading", { level: 1, name: "Çarpayı ekranı" })).toBeInTheDocument();
     expect(window.location.hash).toBe("#/beds");
+  });
+});
+
+// The address is cleared while the shell is gone, but the clinician's place is not lost: the same
+// session comes back to the screen it left. Kept outside the URL, so neither a reload nor the next
+// person at the keyboard can reach it, and never across a session.
+describe("coming back to the screen she left", () => {
+  async function lockedOn(path, screens) {
+    const api = app();
+    built(screens);
+    await signIn(api);
+    await screen.findByRole("heading", { level: 1, name: "Çarpayı ekranı" });   // home: /beds
+    await act(async () => {
+      window.location.hash = `#${path}`;
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    act(() => { fireEvent.keyDown(document, { key: "l", code: "KeyL", altKey: true }); });
+    await screen.findByRole("heading", { level: 1, name: "Ekran kilidlənib" });
+    expect(window.location.hash).toBe("");                                      // throughout the lock
+    return api;
+  }
+
+  async function unlock(api) {
+    api.reauth.mockResolvedValueOnce({ ok: true });
+    fireEvent.change(screen.getByLabelText("Şifrə"), { target: { value: "Gizli-Sifre-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Kilidi aç" }));
+  }
+
+  it("unlocks onto the screen that was locked", async () => {
+    const api = await lockedOn("/alarms", { beds: BedsProbe, alarms: AlarmsProbe });
+    await unlock(api);
+    expect(await screen.findByRole("heading", { level: 1, name: "Siqnal ekranı" })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe("#/alarms"));
+  });
+
+  // A patient is the one screen it does not reopen: the lock exists so that what was on it is
+  // gone, and nobody unlocking at a shared station should be handed a patient back.
+  it("unlocks onto the home screen when a patient was open", async () => {
+    const api = await lockedOn("/patients/P-001", { beds: BedsProbe, patient: PatientProbe });
+    await unlock(api);
+    expect(await screen.findByRole("heading", { level: 1, name: "Çarpayı ekranı" })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe("#/beds"));
+    expect(screen.queryByText(/P-001/)).toBeNull();
+  });
+
+  it("forgets it at a sign-out: the next session starts at its own home", async () => {
+    const api = app();
+    built({ beds: BedsProbe, alarms: AlarmsProbe });
+    await signIn(api);
+    await screen.findByRole("heading", { level: 1, name: "Çarpayı ekranı" });
+    await act(async () => {
+      window.location.hash = "#/alarms";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    await screen.findByRole("heading", { level: 1, name: "Siqnal ekranı" });
+    fireEvent.click(screen.getByRole("button", { name: "Hesab menyusu" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Çıxış" }));
+    await screen.findByRole("heading", { level: 1, name: "Daxil olun" });
+    expect(window.location.hash).toBe("");
+    await signIn(api);
+    expect(await screen.findByRole("heading", { level: 1, name: "Çarpayı ekranı" })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe("#/beds"));
+  });
+
+  it("opens a bookmarked address after the sign-in it asked for", async () => {
+    built({ beds: BedsProbe, alarms: AlarmsProbe });
+    window.location.hash = "#/alarms";
+    const api = app();
+    await screen.findByRole("heading", { level: 1, name: "Daxil olun" });
+    expect(window.location.hash).toBe("");                     // not left in the address meanwhile
+    await signIn(api);
+    expect(await screen.findByRole("heading", { level: 1, name: "Siqnal ekranı" })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe("#/alarms"));
+  });
+
+  // StrictMode mounts, unmounts and mounts again; the entry address must not be read away by the
+  // rehearsal and then be gone for the real one.
+  it("opens a bookmarked address under StrictMode's rehearsal mount too", async () => {
+    built({ beds: BedsProbe, alarms: AlarmsProbe });
+    window.location.hash = "#/alarms";
+    const api = app({ strict: true });
+    await screen.findByRole("heading", { level: 1, name: "Daxil olun" });
+    await signIn(api);
+    expect(await screen.findByRole("heading", { level: 1, name: "Siqnal ekranı" })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe("#/alarms"));
+  });
+
+  it("keeps her place across an outage she retries", async () => {
+    built({ beds: BedsProbe, alarms: AlarmsProbe });
+    window.location.hash = "#/alarms";
+    app({ access: NURSE,
+      setup: (a) => a.me.mockRejectedValueOnce(refusal(503, "upstream")).mockResolvedValue(profile()) });
+    await screen.findByRole("heading", { level: 1, name: "Serverə qoşulmaq mümkün deyil" });
+    fireEvent.click(screen.getByRole("button", { name: "Yenidən cəhd et" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Siqnal ekranı" })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe("#/alarms"));
   });
 });
 

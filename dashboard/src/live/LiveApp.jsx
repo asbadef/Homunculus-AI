@@ -7,7 +7,7 @@
 // ends; the toasts are emptied when it locks or ends. Every per-user thing the page held goes with
 // the session (sessionStore.js `end`).
 import "./theme/assets.js";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { backendApi } from "../backendApi.js";
 import { ThemeProvider } from "./theme/ThemeProvider.jsx";
 import { I18nProvider } from "./i18n/I18nProvider.jsx";
@@ -16,7 +16,7 @@ import { SessionProvider, useSession } from "./session/SessionProvider.jsx";
 import { PHASE, createSessionStore } from "./session/sessionStore.js";
 import { BoardProvider } from "./data/BoardProvider.jsx";
 import { createBoardStore } from "./data/boardStore.js";
-import { hasWorkRoute } from "./shell/routes.js";
+import { hasWorkRoute, hashPath, resumePath } from "./shell/routes.js";
 import { PRODUCT, Shell } from "./shell/Shell.jsx";
 import { SignIn } from "./auth/SignIn.jsx";
 import { MfaStep } from "./auth/MfaStep.jsx";
@@ -35,6 +35,21 @@ function Phases({ board }) {
     else board.clear();
   }, [owner, board]);
 
+  // Where the shell was when it went, so the SAME session can come back to it: an unlock, a
+  // forced password change, a retry after an outage. Held here and never in the URL — the address
+  // is cleared while the shell is gone, so neither a reload nor the next person at the keyboard
+  // can reach it — and tagged with the session's `epoch`, which moves whenever a session begins
+  // or ends. A sign-out, another account taking over and a superseded request all move it, so a
+  // path from an older session is dropped unused: only the session that left a screen returns to
+  // it. `resumePath` then refuses a patient (routes.js).
+  const back = useRef(null);
+  // And the address this page was OPENED with, before any session had a shell here: a bookmarked
+  // #/alarms survives the sign-in it asks for, and an outage retried at a page load keeps its
+  // place. Used once, by the first shell this page opens, whoever signs in — it is the address
+  // this browser was pointed at, not a session's own screen, and a patient is refused all the same.
+  const entry = useRef(hashPath(window.location.hash));
+  const opened = useRef(false);
+
   // A ward workstation is shared, and the address bar is not part of the shell: the hash names a
   // patient (#/patients/P-001) and the window's title says who is on screen. When the shell goes
   // — a lock, a sign-out, a session the server ended, a step before one opens — both go with it,
@@ -43,14 +58,25 @@ function Phases({ board }) {
   // The one address that stays is that of a session being CHECKED (a page load): it is still this
   // clinician's own, so a reload leaves her on the screen she was on.
   useEffect(() => {
-    if (phase === PHASE.READY) return;
+    if (phase === PHASE.READY) {
+      back.current = null;                   // the shell has its screen; nothing left to come back to
+      entry.current = "";
+      opened.current = true;
+      return;
+    }
+    const was = hashPath(window.location.hash);
+    if (opened.current && was) back.current = { epoch: store.epoch(), path: was };
     document.title = PRODUCT;
     if (phase === PHASE.RESTORING || !window.location.hash) return;
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
-  }, [phase]);
+  }, [phase, store]);
+
+  // Read, not consumed: the effect above clears it once the shell has it.
+  const remembered = back.current?.epoch === store.epoch() ? back.current.path
+    : opened.current ? "" : entry.current;
 
   let screen;
-  if (phase === PHASE.READY) screen = <Shell />;
+  if (phase === PHASE.READY) screen = <Shell resume={resumePath(remembered, user.perms)} />;
   else if (phase === PHASE.LOCKED) screen = <LockScreen />;
   else if (phase === PHASE.MFA) screen = <MfaStep />;
   else if (phase === PHASE.PASSWORD) screen = <PasswordStep />;

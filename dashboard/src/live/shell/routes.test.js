@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { ROUTES, canReach, hasWorkRoute, hashPath, homePath, matchRoute, navRoutes, screenOf, stubScreens } from "./routes.js";
+import { ROUTES, canReach, hasWorkRoute, hashPath, homePath, matchRoute, navRoutes, resumePath, screenOf, stubScreens } from "./routes.js";
 import { PERMISSION_KEYS } from "../../permissions.js";
 import { DICTIONARIES } from "../i18n/catalog.js";
 import { LANG_CODES } from "../i18n/langs.js";
@@ -116,6 +116,29 @@ describe("matching an address", () => {
     expect(matchRoute("/BEDS")).toBeNull();
     expect(matchRoute("/Settings")).toBeNull();
     expect(matchRoute("/patients/p-1")).toMatchObject({ route: { id: "patient" }, params: { id: "p-1" } });
+  });
+});
+
+describe("coming back to the screen a session left", () => {
+  it("gives back the screen itself when this session may open it", () => {
+    restore = stubScreens({ beds: () => null, alarms: () => null });
+    expect(resumePath("/alarms", ["board.view"])).toBe("/alarms");
+    expect(resumePath("/settings", ["board.view"])).toBe("/settings");
+  });
+
+  // The lock exists so that what was on the screen is gone; a patient is not handed back.
+  it("refuses a screen the rail does not list and that names something", () => {
+    restore = stubScreens({ beds: () => null, patient: () => null });
+    expect(resumePath("/patients/P-1", ["board.view"])).toBe("/beds");
+  });
+
+  it("falls back to home for an address this session cannot open, or this build has not built", () => {
+    restore = stubScreens({ beds: () => null });
+    expect(resumePath("/admin", ["board.view"])).toBe("/beds");        // not this session's
+    expect(resumePath("/alarms", ["board.view"])).toBe("/beds");       // no screen behind it yet
+    expect(resumePath("/yok", ["board.view"])).toBe("/beds");
+    expect(resumePath("", ["board.view"])).toBe("/beds");
+    expect(resumePath(null, [])).toBe("/settings");
   });
 });
 

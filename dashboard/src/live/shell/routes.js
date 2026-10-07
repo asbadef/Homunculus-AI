@@ -91,6 +91,24 @@ export function homePath(perms) {
   return (main[0] ?? ROUTES.find((r) => r.id === "settings")).path;
 }
 
+/** Where a session whose shell went should come back to, having been on `path` — its own screen,
+ *  or its home.
+ *
+ *  A screen the rail does not list and that NAMES something — a patient — is not reopened: the
+ *  lock exists so that what was on the screen is gone, and a clinician unlocking at a shared
+ *  station must not be handed a patient back (her own included: she may have left it for a
+ *  reason). Nor is a screen this session can no longer open, or one this build does not have —
+ *  coming back to "no access" or "no such page" is worse than coming back to the ward. */
+export function resumePath(path, perms) {
+  const home = homePath(perms);
+  const match = matchRoute(path || "");
+  if (!match) return home;
+  const { route, params } = match;
+  if (!route.nav && Object.keys(params).length > 0) return home;
+  if (!canReach(route, perms) || !screenOf(route)) return home;
+  return path;
+}
+
 /** The route path inside an address's hash: "#/patients/P-1?tab=vitals" -> "/patients/P-1".
  *  A query string or a second "#" inside the hash belongs to the SCREEN — a tab, an anchor — not
  *  to the route. Read whole, "#/beds?unit=NICU" was "no such page" and "#/patients/P-1?tab=vitals"
