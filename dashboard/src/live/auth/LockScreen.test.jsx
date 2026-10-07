@@ -158,6 +158,15 @@ describe("LockScreen", () => {
     act(() => { board.clear(); });
   });
 
+  // Decision 14: the lock screen is always dark, whatever the browser's theme, and its text on
+  // that gradient is contrast-tested in the Gece tokens (tokens.test.js).
+  it("is always dark: its root carries the night theme", async () => {
+    const { store } = await mount(<LockScreen />);
+    await act(async () => { store.lock(); });
+    const root = screen.getByRole("heading", { level: 1, name: "Ekran kilidlənib" }).closest("[data-theme]");
+    expect(root).toHaveAttribute("data-theme", "gece");
+  });
+
   it("shows no alarm counts to an account that cannot see the board", async () => {
     const { store } = await mount(<LockScreen />, { access: token({ perms: ["users.manage"] }) });
     await act(async () => { store.lock(); });

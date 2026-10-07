@@ -147,6 +147,11 @@ export function MfaStep() {
     }
   };
 
+  // No step to show: the session has moved on or ended (leaving, another tab). Until the shell
+  // swaps this screen out, showing the enrolment again would mint a secret — POST /auth/totp/setup
+  // ROTATES it and retires the refresh tokens issued before it — for a session that is over.
+  if (!mfa) return null;
+
   return (
     <AuthLayout step={stepOf("mfa", steps)}>
       <h1 className="m-0 mb-1 font-display text-28 font-bold">{t(enrolled ? "auth.mfaTitle" : "auth.enrolTitle")}</h1>

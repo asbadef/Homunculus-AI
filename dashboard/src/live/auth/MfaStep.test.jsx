@@ -132,10 +132,12 @@ describe("MfaStep", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("İki addımlı doğrulama");
     expect(api.setupTotp).not.toHaveBeenCalled();
     expect(screen.queryByText("Əl ilə daxil etmə açarı")).toBeNull();
-    // In act(): the session ends here, and the step — which in the app is replaced at once by the
-    // sign-in form — is still mounted, so it starts an enrolment for the session that just ended.
+    // Leaving ends the session. This step stays mounted until the shell swaps it, and must mint
+    // nothing for a session that is over: /auth/totp/setup rotates the secret.
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Girişə qayıt/ })); });
     expect(store.getState().user).toBeNull();
     expect(api.logout).toHaveBeenCalled();
+    expect(api.setupTotp).not.toHaveBeenCalled();
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();   // nothing of the step is left
   });
 });

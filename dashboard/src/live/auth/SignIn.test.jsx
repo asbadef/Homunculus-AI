@@ -98,6 +98,20 @@ describe("SignIn", () => {
     expect(said.closest("[role]")).toHaveAttribute("role", "alert");
   });
 
+  // Roadmap D4: no SMS and no e-mail reset — IT give a temporary password.
+  it("says whom to ask for a forgotten password, and names a panel that is on the page", async () => {
+    await mount(<SignIn />, { access: null });
+    const button = screen.getByRole("button", { name: "Şifrəni unutmusunuz?" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    const panel = document.getElementById(button.getAttribute("aria-controls"));
+    expect(panel).not.toBeNull();
+    expect(panel).toHaveAttribute("hidden");
+    expect(screen.queryByRole("note")).toBeNull();            // closed: not in the accessibility tree
+    fireEvent.click(button);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("note")).toHaveTextContent(/İT şöbəsinə müraciət edin/);
+  });
+
   it("says a missing field on the field, focuses it, and sends nothing", async () => {
     const { api } = await mount(<SignIn />, { access: null });
     send();

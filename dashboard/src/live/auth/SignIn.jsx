@@ -183,11 +183,11 @@ export function SignIn() {
         >
           {t("auth.forgot")}
         </button>
-        {helpOpen ? (
-          <div id="sign-in-help" className="mt-2">
-            <Note tone="info" icon="key">{t("auth.forgotHelp")}</Note>
-          </div>
-        ) : null}
+        {/* On the page while it is closed, `hidden`: a button's aria-controls must name an element
+            that is there, and a disclosure that appears from nowhere names nothing. */}
+        <div id="sign-in-help" hidden={!helpOpen} className="mt-2">
+          <Note tone="info" icon="key">{t("auth.forgotHelp")}</Note>
+        </div>
       </div>
     </AuthLayout>
   );
