@@ -32,20 +32,23 @@ const TEXTS = {
     again: "Reload" },
 };
 
+// It wears NO design token: `--page`, `--ink`, `--pri` and the rest are defined in the live UI's
+// own stylesheet, which ships with the chunk that has just failed to load, so `bg-page` and
+// `text-onpri` would resolve to nothing — a white label on a colourless button, unreadable
+// exactly when it is needed. Everything here is laid out with the classes that need no variable
+// and coloured with `currentColor`, so it is legible against the page's default and still right
+// when the tokens did load (only another root failed).
 function Message() {
   const t = TEXTS[readPref("lang", LANG_CODES, DEFAULT_LANG)] ?? TEXTS[DEFAULT_LANG];
   return (
-    <div
-      role="alert"
-      data-theme="gece"
-      className="flex h-full flex-col items-center justify-center gap-3 bg-page px-6 py-10 text-center font-text text-ink"
-    >
-      <h1 className="m-0 font-display text-20 font-bold">{t.title}</h1>
-      <p className="m-0 max-w-[420px] text-14 text-mute">{t.body}</p>
+    <div role="alert" className="flex h-full flex-col items-center justify-center gap-3 px-6 py-10 text-center">
+      <h1 className="m-0 text-20 font-bold">{t.title}</h1>
+      <p className="m-0 max-w-[420px] text-14">{t.body}</p>
       <button
         type="button"
         onClick={() => window.location.reload()}
-        className="rounded-ctl bg-pri px-[13px] py-2 text-13 font-semibold text-onpri"
+        style={{ border: "1px solid currentColor", borderRadius: "10px", background: "transparent", color: "inherit" }}
+        className="px-[13px] py-2 text-13 font-semibold"
       >
         {t.again}
       </button>
