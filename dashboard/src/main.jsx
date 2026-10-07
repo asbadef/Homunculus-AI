@@ -2,13 +2,7 @@ import "@fontsource-variable/figtree";
 import "./index.css";
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { Board } from "./Board.jsx";
-import { DemoApp } from "./demo.jsx";
-import { ClinicalDemo } from "./ClinicalDemo.jsx";
 import { DemoDataBanner } from "./DemoDataBanner.jsx";
-import { createDemoStore, buildRealisticState } from "./clinicalDemo.js";
-import { createLiveStore } from "./liveStore.js";
-import { backendApi } from "./backendApi.js";
 
 const params = new URLSearchParams(window.location.search);
 
@@ -39,34 +33,21 @@ function pickRoot(mode) {
   if (mode === "live") {
     return <React.Suspense fallback={null}><LiveApp /></React.Suspense>;
   }
-  if (mode === "eski") {
-    const store = createLiveStore({
-      api: backendApi,
-      base: createDemoStore(buildRealisticState()),
-    });
-    // Fire-and-forget: a page refresh must reopen the stored session instead of logging the
-    // clinician out; failure quietly leaves the login screen, which renders meanwhile anyway.
-    store.restoreSession();
-    // simulation stays false: this is the real ward. See the note on ClinicalDemo.
-    return <ClinicalDemo store={store} />;
-  }
-  if (mode === "demo") return <ClinicalDemo simulation />;
-  if (mode === "replay") {
-    return <DemoApp scenario={params.get("scenario") || "septic_shock"} />;
-  }
   if (mode === "tasarim") {
     return <React.Suspense fallback={null}><DesignGallery /></React.Suspense>;
   }
-  // ?board=1 → the legacy bearer-token board. It authenticates with a tenant token, so on any
-  // real deployment every fetch 401s and the screen sits at "reconnecting" — which looks exactly
-  // like a quiet ward. Pass ?board=1&token=<tenant-token> to use it deliberately.
-  return <Board token={params.get("token") || "dev-token"} />;
+  // Everything else — the previous live workspace (?eski=1), the simulation (?demo=1), the replay
+  // demonstration and the legacy bearer-token board — is one lazy chunk of its own, so the live
+  // page never downloads a simulation it does not render (legacyRoots.jsx).
+  return <React.Suspense fallback={null}><LegacyRoot mode={mode} params={params} /></React.Suspense>;
 }
 
 // Lazy: the gallery and its fonts load only when ?tasarim=1 asks for them.
 const DesignGallery = React.lazy(() => import("./live/gallery/DesignGallery.jsx"));
 // Lazy too: the new live UI, its fonts and tokens load only in live mode.
 const LiveApp = React.lazy(() => import("./live/LiveApp.jsx"));
+// And the roots that are not the live system, which are the bulk of the bundle.
+const LegacyRoot = React.lazy(() => import("./legacyRoots.jsx"));
 
 // #/demo is an older deep link into the simulation; honour it ahead of the query string.
 const mode = window.location.hash.startsWith("#/demo") ? "demo" : chooseMode(params);

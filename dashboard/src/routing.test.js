@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { render, screen } from "@testing-library/react";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { chooseMode, AppShell } from "./main.jsx";
 
 describe("chooseMode", () => {
@@ -89,5 +92,21 @@ describe("the new live shell (G1-07) and the previous workspace (?eski=1, until 
   it("gives the previous workspace no demo banner: it talks to the real API", () => {
     const { container } = render(createElement(AppShell, { mode: "eski" }, "x"));
     expect(container.firstChild.children).toHaveLength(1);
+  });
+});
+
+describe("what the live page downloads", () => {
+  const MAIN = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "main.jsx"), "utf8");
+  const statics = [...MAIN.matchAll(/^import\s[^;]*?from\s+"([^"]+)"/gm)].map((m) => m[1]);
+
+  // The simulation, its data builder and the previous workspace are the bulk of the bundle, and
+  // the live page renders none of them: a ward PC opening the real system was fetching every byte
+  // of a simulation it never shows (710 kB in one chunk). They are reachable only lazily.
+  it("reaches the simulation and the previous workspace through a dynamic import only", () => {
+    for (const heavy of ["./ClinicalDemo.jsx", "./clinicalDemo.js", "./liveStore.js", "./Board.jsx", "./demo.jsx"]) {
+      expect(statics, heavy).not.toContain(heavy);
+    }
+    expect(MAIN).toContain('import("./legacyRoots.jsx")');
+    expect(MAIN).toContain('import("./live/LiveApp.jsx")');
   });
 });

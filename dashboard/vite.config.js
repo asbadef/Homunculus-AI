@@ -30,15 +30,19 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["icon.svg", "demo/*.json"],
+      // What a ward gets when it adds this to a tablet's home screen. start_url was "/?demo=1",
+      // left over from before the bare URL became the live system: the installed icon opened the
+      // SIMULATION, and the description said so while the app itself is the real one. The language
+      // is the one the UI opens in (live/i18n/langs.js DEFAULT_LANG), not Turkish.
       manifest: {
         name: "Homunculus",
         short_name: "Homunculus",
-        description: "ICU/NICU klinik erken-uyarı — demo (sentetik veri)",
+        description: "Reanimasiya və yenidoğan bölmələri üçün klinik qərar dəstəyi",
         theme_color: "#0891b2",
         background_color: "#020617",
         display: "standalone",
-        start_url: "/?demo=1",
-        lang: "tr",
+        start_url: "/",
+        lang: "az",
         icons: [
           { src: "icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" },
         ],
