@@ -150,7 +150,8 @@ describe("LockScreen", () => {
     ]);
     expect(counts()).toHaveTextContent("Bölmələrinizdəki açıq siqnal: 3");
     expect(counts()).toHaveTextContent("Təsdiqlənməmiş: 2");
-    expect(counts().textContent).toMatch(/1 bilinməyən.*1 kritik.*1 orta/);
+    // The count stands after the label everywhere (Decision 13), and the unknown severity first.
+    expect(counts().textContent).toMatch(/bilinməyən: 1.*kritik: 1.*orta: 1/);
     expect(counts()).not.toHaveTextContent("S-001");          // no bed, no name, no value
     expect(counts()).not.toHaveTextContent("sintetik ölçüt");
     act(() => { board.clear(); });

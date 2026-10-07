@@ -50,8 +50,10 @@ function OpenAlarms() {
         <>
           <b>{t("lock.open")}: <span className="font-data">{open.total}</span></b>
           <span>{t("lock.waiting")}: <span className="font-data font-bold">{waiting}</span></span>
+          {/* The count after the label, as everywhere else (Decision 13): a number before a word
+              would need the word fitted to it, which Russian ("2 средние") cannot be. */}
           {PILLS.filter(([sev]) => open[sev] > 0).map(([sev, tone]) => (
-            <StatusPill key={sev} tone={tone}>{open[sev]} {t(`lock.${sev}`)}</StatusPill>
+            <StatusPill key={sev} tone={tone}>{t(`lock.${sev}`)}: <span className="font-data">{open[sev]}</span></StatusPill>
           ))}
           {stale ? (
             <small className="flex items-center gap-1.5 font-semibold text-mid-ink">

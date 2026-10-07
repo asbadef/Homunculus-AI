@@ -1,9 +1,11 @@
 // The lock screen. The prototype's dictionary (shell.js lk_*); its "open alarms in the UNIT" says
 // "in your units" here — the counts are the session's scope, which may be several units. Times
 // and counts stand after a label ("Since: 21:05", "Attempts left: 2"), never inside a word that
-// would need a suffix or a plural fitted to the number. Written for this plan (AZ/RU/EN to be
-// reviewed by a native speaker before the pilot): low, info, unknown, unavailable, waiting, stale,
-// attemptsLeft, region.
+// would need a suffix or a plural fitted to the number. The severity words are the pills' LABELS
+// and the count stands after them too ("kritik: 2"): "2 средние" would need the adjective agreed
+// with the number, which no dictionary of fixed texts can do. Written for this plan (AZ/RU/EN to
+// be reviewed by a native speaker before the pilot): low, info, unknown, unavailable, waiting,
+// stale, attemptsLeft, region.
 export default {
   tr: {
     title: "Ekran kilitlendi",
@@ -60,7 +62,7 @@ export default {
     seeing: "Подробности — после разблокировки",
     stale: "Могут быть устаревшими: поток прервался",
     unavailable: "Нет данных о тревогах. Это не значит, что тревог нет.",
-    critical: "критич.", high: "высокие", moderate: "средние", low: "низкие", info: "инфо",
+    critical: "критические", high: "высокие", moderate: "средние", low: "низкие", info: "инфо",
     unknown: "неизвестные",
     attemptsLeft: "Неверный пароль. Осталось попыток: {count}; затем сеанс закроется.",
     region: "Число открытых тревог в ваших отделениях",
