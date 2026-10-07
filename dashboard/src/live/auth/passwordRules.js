@@ -16,8 +16,19 @@ export function passwordProblem({ current, next, repeat }) {
   return null;
 }
 
-/** Which field a refusal from the server belongs to, by its errors.* key; null: the whole form. */
-export function fieldOfRefusal(key) {
+// A 422's detail names the body field (backendApi.js `fieldErrors`); apiErrors.js reads only its
+// kind, and the kinds it reads are these — the same here, so the field found is the one it mapped.
+const FIELD_OF_422 = { current_password: "current", new_password: "next" };
+const KINDS_OF_422 = new Set(["string_too_long", "string_too_short", "missing"]);
+const KEYS_OF_422 = new Set(["errors.passwordTooLong", "errors.passwordRequired"]);
+
+/** Which field a refusal from the server belongs to, by its errors.* key — and, for the keys a
+ *  422 produces, by the field the 422's detail names (`err.fieldErrors`); null: the whole form. */
+export function fieldOfRefusal(key, fieldErrors) {
+  if (KEYS_OF_422.has(key) && Array.isArray(fieldErrors)) {
+    const item = fieldErrors.find((e) => e && FIELD_OF_422[e.field] && KINDS_OF_422.has(e.type));
+    if (item) return FIELD_OF_422[item.field];
+  }
   if (key === "errors.wrongCurrentPassword") return "current";
   if (key === "errors.passwordTooShort" || key === "errors.passwordUnchanged" || key === "errors.passwordTooLong") return "next";
   return null;

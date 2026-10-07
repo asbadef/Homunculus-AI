@@ -16,7 +16,8 @@ export function SessionWait() {
     return (
       <AuthLayout>
         <h1 className="sr-only">{t("auth.title")}</h1>
-        <p role="status" className="text-14 text-mute">{t("auth.restoring")}</p>
+        {/* A notice: read politely once it is there (ui/Alert), not a live region born with its text. */}
+        <Alert tone="info">{t("auth.restoring")}</Alert>
       </AuthLayout>
     );
   }

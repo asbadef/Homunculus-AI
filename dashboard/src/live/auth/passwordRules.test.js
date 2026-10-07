@@ -30,4 +30,15 @@ describe("the new-password rules", () => {
     expect(fieldOfRefusal("errors.passwordUnchanged")).toBe("next");
     expect(fieldOfRefusal("errors.network")).toBeNull();
   });
+
+  it("puts a 422 on the field its detail names, else where the key says", () => {
+    const tooLong = (field) => [{ field, type: "string_too_long", message: "…" }];
+    expect(fieldOfRefusal("errors.passwordTooLong", tooLong("current_password"))).toBe("current");
+    expect(fieldOfRefusal("errors.passwordTooLong", tooLong("new_password"))).toBe("next");
+    expect(fieldOfRefusal("errors.passwordRequired", [{ field: "current_password", type: "missing", message: "…" }])).toBe("current");
+    expect(fieldOfRefusal("errors.passwordRequired", [{ field: "new_password", type: "string_too_short", message: "…" }])).toBe("next");
+    expect(fieldOfRefusal("errors.passwordTooLong")).toBe("next");           // no detail: the new one, as before
+    expect(fieldOfRefusal("errors.passwordRequired")).toBeNull();            // no detail: the whole form
+    expect(fieldOfRefusal("errors.wrongCurrentPassword", tooLong("new_password"))).toBe("current"); // the key's, not a stray detail's
+  });
 });
