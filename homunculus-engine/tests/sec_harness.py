@@ -63,7 +63,7 @@ class World:
     async def add_user(self, hospital: Hospital, name: str, role: UserRole,
                        *, totp: bool = False) -> User:
         async with self.maker() as s:
-            user = User(email=f"{name}@{hospital.tenant_id.hex[:6]}.example.test", full_name=name,
+            user = User(email=f"{name}@{hospital.tenant_id.hex[:6]}.example.com", full_name=name,
                         hashed_password=hash_password(PASSWORD))
             if totp:
                 user.totp_secret, user.totp_enabled = pyotp.random_base32(), True

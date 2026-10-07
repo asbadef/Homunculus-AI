@@ -12,17 +12,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.auth.jwt import decode_token
 from homunculus.auth.models import User, UserRole
-from homunculus.auth.service import get_user_by_id
+from homunculus.auth.service import get_user_by_id, user_needs_mfa
 from homunculus.db import get_db
 
 _bearer = HTTPBearer(auto_error=False)
 
 
-async def get_current_user(
+async def get_password_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Extract and validate JWT; return the User object."""
+    """Valid access token -> User, WITHOUT the MFA gate.
+
+    Only for the MFA endpoints themselves (/auth/totp/*), which a password-only token must reach.
+    Everything else goes through get_current_user.
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or missing authentication credentials",
@@ -36,12 +40,27 @@ async def get_current_user(
         token_type: str | None = payload.get("type")
         if not user_id_str or token_type != "access":
             raise credentials_exception
-    except JWTError:
+        user_id = uuid.UUID(user_id_str)
+    except (JWTError, ValueError):
         raise credentials_exception
 
-    user = await get_user_by_id(db, uuid.UUID(user_id_str))
+    user = await get_user_by_id(db, user_id)
     if not user or not user.is_active:
         raise credentials_exception
+    user._mfa_verified = payload.get("mfa_verified") is True  # request-scoped, not persisted
+    return user
+
+
+async def get_current_user(
+    user: User = Depends(get_password_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Valid access token AND, for MFA roles / enrolled users, a completed TOTP step (Y1)."""
+    if not user._mfa_verified and await user_needs_mfa(db, user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="MFA required: complete the TOTP step (/auth/totp/verify) first.",
+        )
     return user
 
 
@@ -63,7 +82,7 @@ def require_roles(*roles: UserRole):
         credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
         db: AsyncSession = Depends(get_db),
     ) -> User:
-        user = await get_current_user(credentials, db)
+        user = await get_current_user(await get_password_user(credentials, db), db)
         try:
             payload = decode_token(credentials.credentials)
             user_roles: dict = payload.get("roles", {})

@@ -17,6 +17,10 @@ class TOTPSetupResponse(BaseModel):
     message: str = "Scan this URI with Google or Microsoft Authenticator"
 
 
+class TOTPSetupRequest(BaseModel):
+    current_code: str | None = None  # required to re-enrol when TOTP is already enabled
+
+
 class TOTPVerifyRequest(BaseModel):
     code: str  # 6-digit TOTP code
 

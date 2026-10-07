@@ -59,6 +59,14 @@ def requires_mfa(role: UserRole) -> bool:
     return role in MFA_REQUIRED_ROLES
 
 
+async def user_needs_mfa(db: AsyncSession, user: User) -> bool:
+    """MFA applies to anyone holding an MFA role in ANY hospital (read from the DB, not the token)
+    and to anyone who has enrolled TOTP (an enrolled factor cannot be bypassed)."""
+    if user.totp_enabled:
+        return True
+    return any(requires_mfa(m.role) for m in await get_user_memberships(db, user.id))
+
+
 async def setup_totp(db: AsyncSession, user: User) -> tuple[str, str]:
     """
     Generate and store a new TOTP secret for the user.
@@ -96,12 +104,12 @@ def issue_tokens(user: User, memberships: list[TenantMembership]) -> dict:
         subject=str(user.id),
         extra={"roles": tenant_roles, "mfa_verified": False},
     )
-    refresh = create_refresh_token(subject=str(user.id))
+    refresh = create_refresh_token(subject=str(user.id), extra={"mfa_verified": False})
     return {
         "access_token": access,
         "refresh_token": refresh,
         "token_type": "bearer",
-        "requires_mfa": user.totp_enabled,
+        "requires_mfa": user.totp_enabled or any(requires_mfa(m.role) for m in memberships),
     }
 
 
@@ -112,7 +120,7 @@ def issue_mfa_verified_tokens(user: User, memberships: list[TenantMembership]) -
         subject=str(user.id),
         extra={"roles": tenant_roles, "mfa_verified": True},
     )
-    refresh = create_refresh_token(subject=str(user.id))
+    refresh = create_refresh_token(subject=str(user.id), extra={"mfa_verified": True})
     return {
         "access_token": access,
         "refresh_token": refresh,

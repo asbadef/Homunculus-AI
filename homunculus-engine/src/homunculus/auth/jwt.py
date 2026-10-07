@@ -36,13 +36,14 @@ def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> st
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-def create_refresh_token(subject: str) -> str:
+def create_refresh_token(subject: str, extra: dict[str, Any] | None = None) -> str:
     payload = {
         "sub": subject,
         "iat": _now(),
         "exp": _now() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
         "jti": str(uuid.uuid4()),
         "type": "refresh",
+        **(extra or {}),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
