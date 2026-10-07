@@ -23,6 +23,7 @@ import homunculus.admission.models  # noqa: F401  (register tables)
 import homunculus.auth.models  # noqa: F401
 import homunculus.escalation.models  # noqa: F401
 import homunculus.tenant.models  # noqa: F401
+import homunculus.security_audit  # noqa: F401
 from homunculus.admission.models import Admission, AdmissionState, Patient
 from homunculus.auth.models import TenantMembership, User, UserRole
 from homunculus.auth.service import hash_password, issue_mfa_verified_tokens, issue_tokens

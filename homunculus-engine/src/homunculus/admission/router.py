@@ -38,7 +38,7 @@ from homunculus.auth.dependencies import get_current_active_user, require_roles
 from homunculus.auth.models import User, UserRole
 from homunculus.db import get_db
 from homunculus.escalation.models import BreakGlassSession
-from homunculus.tenant.models import Site, Unit
+from homunculus.tenant.models import Bed, Room, Site, Unit
 
 router = APIRouter(prefix="/admissions", tags=["admissions"])
 
@@ -61,6 +61,42 @@ async def _resolve_tenant_id(db: AsyncSession, unit_id: uuid.UUID) -> uuid.UUID:
     return tenant_id
 
 
+def _nf(what: str) -> HTTPException:
+    return HTTPException(status_code=404, detail=f"{what} not found.")
+
+
+async def _require_unit_in_tenant(db: AsyncSession, unit_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
+    """K1: a unit named in a request body must belong to `tenant_id`, else 404."""
+    owner = (await db.execute(
+        select(Site.tenant_id).join(Unit, Unit.site_id == Site.id).where(Unit.id == unit_id)
+    )).scalar_one_or_none()
+    if owner != tenant_id:
+        raise _nf("Unit")
+
+
+async def _require_bed_in_tenant(db: AsyncSession, bed_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
+    owner = (await db.execute(
+        select(Site.tenant_id).join(Unit, Unit.site_id == Site.id)
+        .join(Room, Room.unit_id == Unit.id).join(Bed, Bed.room_id == Room.id).where(Bed.id == bed_id)
+    )).scalar_one_or_none()
+    if owner != tenant_id:
+        raise _nf("Bed")
+
+
+async def _require_member_user(db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
+    """The user named in a request body must be a member of `tenant_id`, else 404."""
+    other = await db.get(User, user_id)
+    if other is None or tenant_id not in await member_tenant_ids(db, other):
+        raise _nf("User")
+
+
+async def _ensure_member_or_nf(db: AsyncSession, user: User, tenant_id: uuid.UUID) -> None:
+    try:
+        await ensure_member(db, user, tenant_id)
+    except HTTPException:
+        raise _nf("Admission")
+
+
 async def _get_admission_or_404(db: AsyncSession, admission_id: uuid.UUID) -> Admission:
     admission = await db.get(Admission, admission_id)
     if admission is None:
@@ -68,19 +104,12 @@ async def _get_admission_or_404(db: AsyncSession, admission_id: uuid.UUID) -> Ad
     return admission
 
 
-async def _user_or_404(db: AsyncSession, user_id: uuid.UUID) -> User:
-    other = await db.get(User, user_id)
-    if other is None:
-        raise HTTPException(status_code=404, detail="User not found.")
-    return other
-
-
 async def _visible_admission_or_404(
     db: AsyncSession, admission_id: uuid.UUID, user: User,
 ) -> Admission:
     """K1: an admission is visible only to members of its hospital (others get 404)."""
     admission = await _get_admission_or_404(db, admission_id)
-    await ensure_member(db, user, admission.tenant_id)
+    await _ensure_member_or_nf(db, user, admission.tenant_id)
     return admission
 
 
@@ -93,6 +122,7 @@ def _admission_as(*roles: UserRole):
         user: User = Depends(require_roles(*roles)),
     ) -> Admission:
         admission = await _get_admission_or_404(db, admission_id)
+        await _ensure_member_or_nf(db, user, admission.tenant_id)  # foreign hospital: same 404 as missing
         await ensure_role_in_tenant(db, user, admission.tenant_id, *roles)
         return admission
     return _dep
@@ -269,6 +299,7 @@ async def add_care_team_member(
     user: User = Depends(get_current_active_user),
     admission: Admission = Depends(_admission_as(UserRole.ATTENDING)),
 ):
+    await _require_member_user(db, payload.user_id, admission.tenant_id)
     try:
         member = await service.add_care_team_member(
             db, admission, user_id=payload.user_id, role=payload.role,
@@ -305,6 +336,8 @@ async def transfer_initiate(
     user: User = Depends(get_current_active_user),
     admission: Admission = Depends(_admission_as(UserRole.ATTENDING, UserRole.UNIT_PHYSICIAN)),
 ):
+    await _require_unit_in_tenant(db, payload.target_unit_id, admission.tenant_id)
+    await _require_bed_in_tenant(db, payload.target_bed_id, admission.tenant_id)
     try:
         await service.initiate_transfer(
             db, admission, target_bed_id=payload.target_bed_id,
@@ -325,6 +358,8 @@ async def transfer_confirm(
     user: User = Depends(get_current_active_user),
     admission: Admission = Depends(_admission_as(UserRole.NURSE, UserRole.CHARGE_NURSE)),
 ):
+    await _require_unit_in_tenant(db, payload.target_unit_id, admission.tenant_id)
+    await _require_bed_in_tenant(db, payload.target_bed_id, admission.tenant_id)
     try:
         new_admission = await service.confirm_transfer_arrival(
             db, admission, target_bed_id=payload.target_bed_id,
@@ -391,7 +426,10 @@ async def create_shift_schedule(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_roles(UserRole.CHARGE_NURSE)),
 ):
-    await _require_role_in_unit_hospital(db, user, payload.unit_id, UserRole.CHARGE_NURSE)
+    tenant_id = await _require_role_in_unit_hospital(db, user, payload.unit_id, UserRole.CHARGE_NURSE)
+    for a in payload.assignments:
+        await _require_bed_in_tenant(db, a.bed_id, tenant_id)
+        await _require_member_user(db, a.nurse_id, tenant_id)
     assignments = [a.model_dump() for a in payload.assignments]
     try:
         created, warnings = await service.create_shift_schedule(
@@ -437,7 +475,7 @@ async def open_handover(
     tenant_id = await _resolve_tenant_id(db, payload.unit_id)
     await ensure_member(db, user, tenant_id)
     # Incoming clinician and every admission must belong to the same hospital as the unit.
-    await ensure_member(db, await _user_or_404(db, payload.incoming_user_id), tenant_id)
+    await _require_member_user(db, payload.incoming_user_id, tenant_id)
     for admission_id in payload.admission_ids:
         admission = await _get_admission_or_404(db, admission_id)
         if admission.tenant_id != tenant_id:

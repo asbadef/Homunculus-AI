@@ -82,7 +82,7 @@ async def test_attending_of_a_cannot_sign_off_or_discharge_in_b(world):
         discharge = await c.post(f"/admissions/{world.b.admission_id}/discharge/initiate",
                                  json={"discharge_summary": "sentetik"}, headers=h)
         team = await c.post(f"/admissions/{world.b.admission_id}/care-team/claim", headers=h)
-    assert [sign.status_code, discharge.status_code, team.status_code] == [403, 403, 403]
+    assert [sign.status_code, discharge.status_code, team.status_code] == [404, 404, 404]  # yabancı hastane: varlık sızmaz
 
 
 async def test_role_held_in_another_hospital_does_not_count(world):

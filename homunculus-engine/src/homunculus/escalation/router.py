@@ -14,6 +14,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus import security_audit
@@ -107,6 +108,7 @@ async def create_alert(
     tenant_id = await _resolve_tenant_id(db, payload)
     await _require_clinician(db, user, tenant_id, action="alert.create", resource_type="alert",
                              resource_id=payload.patient_id or payload.admission_id)
+    await _require_same_hospital(db, user, payload, tenant_id)
     alert = await service.create_alert(
         db, tenant_id=tenant_id, kind=payload.kind, tier=payload.tier,
         admission_id=payload.admission_id, patient_id=payload.patient_id,
@@ -252,6 +254,28 @@ async def _tenant_of_patient(db: AsyncSession, patient_id: uuid.UUID) -> uuid.UU
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found.")
     return patient.tenant_id
+
+
+async def _require_same_hospital(db: AsyncSession, user: User, payload: AlertCreate,
+                                 tenant_id: uuid.UUID) -> None:
+    """K1/O2: admission and unit named in the body must belong to the patient's hospital
+    (and the admission to the named patient); otherwise 404 + denied audit record."""
+    from homunculus.admission.models import Admission as AdmissionModel
+    from homunculus.tenant.models import Site, Unit
+    bad = False
+    if payload.admission_id is not None:
+        admission = await db.get(AdmissionModel, payload.admission_id)
+        bad = (admission is None or admission.tenant_id != tenant_id
+               or (payload.patient_id is not None and admission.patient_id != payload.patient_id))
+    if not bad and payload.unit_id is not None:
+        owner = (await db.execute(
+            select(Site.tenant_id).join(Unit, Unit.site_id == Site.id).where(Unit.id == payload.unit_id)
+        )).scalar_one_or_none()
+        bad = owner != tenant_id
+    if bad:
+        raise await _deny(db, action="alert.create", user=user, tenant_id=tenant_id,
+                          resource_type="alert", resource_id=payload.admission_id or payload.unit_id,
+                          status_code=404, detail="Not found.")
 
 
 async def _resolve_tenant_id(db: AsyncSession, payload: AlertCreate) -> uuid.UUID:
