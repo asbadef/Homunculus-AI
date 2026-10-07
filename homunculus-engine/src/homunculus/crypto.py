@@ -23,7 +23,7 @@ from sqlalchemy.types import String, TypeDecorator
 
 logger = logging.getLogger(__name__)
 
-_ENC_PREFIX = "enc::v1::"
+ENC_PREFIX = "enc::v1::"
 
 
 def _is_production() -> bool:
@@ -67,17 +67,17 @@ def encrypt_phi(plaintext: str | None) -> str | None:
     if plaintext is None:
         return None
     token = _fernet_instance().encrypt(plaintext.encode("utf-8")).decode("ascii")
-    return _ENC_PREFIX + token
+    return ENC_PREFIX + token
 
 
 def decrypt_phi(ciphertext: str | None) -> str | None:
     """Decrypt a stored PHI string. Returns None for None input."""
     if ciphertext is None:
         return None
-    if not ciphertext.startswith(_ENC_PREFIX):
+    if not ciphertext.startswith(ENC_PREFIX):
         # Legacy/plaintext value (e.g. imported before encryption enabled).
         return ciphertext
-    token = ciphertext[len(_ENC_PREFIX):]
+    token = ciphertext[len(ENC_PREFIX):]
     try:
         return _fernet_instance().decrypt(token.encode("ascii")).decode("utf-8")
     except InvalidToken:

@@ -71,7 +71,7 @@ async def setup_totp(db: AsyncSession, user: User) -> tuple[str, str]:
     """
     Generate and store a new TOTP secret for the user.
     Returns (secret, provisioning_uri).
-    NOTE: Secret is stored in plaintext here for MVP; in production encrypt with Fernet.
+    The secret is encrypted at rest by the column type (O3).
     """
     secret = generate_totp_secret()
     user.totp_secret = secret

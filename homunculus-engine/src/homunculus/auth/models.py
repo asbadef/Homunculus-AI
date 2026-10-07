@@ -13,6 +13,7 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from homunculus.crypto import EncryptedString
 from homunculus.db import Base
 
 
@@ -60,8 +61,8 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(200), nullable=False)
     # Bcrypt hash — never store plaintext
     hashed_password: Mapped[str] = mapped_column(String(72), nullable=False)
-    # TOTP secret (Base32, stored encrypted at rest via column-level Fernet in service layer)
-    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # TOTP secret (Base32), encrypted at rest with column-level Fernet (O3)
+    totp_secret: Mapped[str | None] = mapped_column(EncryptedString(512), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # Vendor-side staff flag — extra audit controls
