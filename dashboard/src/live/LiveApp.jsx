@@ -17,7 +17,7 @@ import { PHASE, createSessionStore } from "./session/sessionStore.js";
 import { BoardProvider } from "./data/BoardProvider.jsx";
 import { createBoardStore } from "./data/boardStore.js";
 import { hasWorkRoute } from "./shell/routes.js";
-import { Shell } from "./shell/Shell.jsx";
+import { PRODUCT, Shell } from "./shell/Shell.jsx";
 import { SignIn } from "./auth/SignIn.jsx";
 import { MfaStep } from "./auth/MfaStep.jsx";
 import { PasswordStep } from "./auth/PasswordStep.jsx";
@@ -34,6 +34,20 @@ function Phases({ board }) {
     if (owner) board.start();
     else board.clear();
   }, [owner, board]);
+
+  // A ward workstation is shared, and the address bar is not part of the shell: the hash names a
+  // patient (#/patients/P-001) and the window's title says who is on screen. When the shell goes
+  // — a lock, a sign-out, a session the server ended, a step before one opens — both go with it,
+  // or the next person signing in here is taken straight to the last one's patient. replaceState
+  // rather than a new entry: the id must not be left one Back press away either.
+  // The one address that stays is that of a session being CHECKED (a page load): it is still this
+  // clinician's own, so a reload leaves her on the screen she was on.
+  useEffect(() => {
+    if (phase === PHASE.READY) return;
+    document.title = PRODUCT;
+    if (phase === PHASE.RESTORING || !window.location.hash) return;
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  }, [phase]);
 
   let screen;
   if (phase === PHASE.READY) screen = <Shell />;

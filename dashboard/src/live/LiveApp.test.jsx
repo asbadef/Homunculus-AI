@@ -2,9 +2,12 @@
 // shell, the lock, sign-out. Azerbaijani by default (roadmap D2). Synthetic accounts only.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
+import React from "react";
 import LiveApp from "./LiveApp.jsx";
 import { fakeApi, profile, token } from "./session/testTokens.testutil.js";
 import { writeLock } from "./session/browserState.js";
+import { stubScreens } from "./shell/routes.js";
+import { PRODUCT } from "./shell/Shell.jsx";
 
 vi.mock("qrcode", () => ({ default: { toDataURL: vi.fn(async () => "data:image/png;base64,QR") } }));
 
@@ -61,10 +64,22 @@ async function signIn(api, { tokens = { access_token: NURSE }, me = profile(), l
   fireEvent.click(screen.getByRole("button", { name: /Daxil ol/ }));
 }
 
+/** A screen of a later wave, while a test needs one (routes.js: the table itself is frozen). */
+function PatientProbe({ params }) {
+  return <h1>Xəstə {params.id}</h1>;
+}
+function BedsProbe() {
+  return <h1>Çarpayı ekranı</h1>;
+}
+let unstub = null;
+const built = (screens) => { unstub = stubScreens(screens); };
+
 beforeEach(() => {
   window.location.hash = "";
 });
 afterEach(() => {
+  unstub?.();
+  unstub = null;
   vi.restoreAllMocks();
   localStorage.clear();
   document.title = "";
@@ -259,6 +274,59 @@ describe("the lock", () => {
     await waitFor(() => expect(api.boardPatients).toHaveBeenCalledTimes(2));        // the stream opened: reloaded
     expect(counts).toHaveTextContent("Siqnal məlumatı alına bilmir");               // and still cannot know
     expect(counts).not.toHaveTextContent("yoxdur");
+  });
+});
+
+// A ward PC is shared. The hash names a patient, and the browser keeps it in its history and in
+// the window's title: both must go with the session, or the next person who signs in is taken
+// straight to the last one's patient.
+describe("what the next person at the workstation finds", () => {
+  async function onPatient() {
+    const api = app();
+    built({ patient: PatientProbe });
+    await signIn(api);
+    await screen.findByRole("heading", { level: 1, name: "Ayarlar" });
+    await act(async () => {
+      window.location.hash = "#/patients/P-001";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    await screen.findByRole("heading", { level: 1, name: "Xəstə P-001" });
+    expect(document.title).toBe(`Xəstə · ${PRODUCT}`);
+    return api;
+  }
+
+  it("neither the address nor the title, after a sign-out", async () => {
+    const api = await onPatient();
+    fireEvent.click(screen.getByRole("button", { name: "Hesab menyusu" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Çıxış" }));
+    await screen.findByRole("heading", { level: 1, name: "Daxil olun" });
+    expect(window.location.hash).toBe("");
+    expect(document.title).toBe(PRODUCT);
+    expect(api.logout).toHaveBeenCalled();
+  });
+
+  it("neither after a lock — and unlocking opens the home screen, not the patient", async () => {
+    const api = await onPatient();
+    act(() => { fireEvent.keyDown(document, { key: "l", code: "KeyL", altKey: true }); });
+    await screen.findByRole("heading", { level: 1, name: "Ekran kilidlənib" });
+    expect(window.location.hash).toBe("");
+    expect(document.title).toBe(PRODUCT);
+    expect(document.body).not.toHaveTextContent("P-001");
+    api.reauth.mockResolvedValueOnce({ ok: true });
+    fireEvent.change(screen.getByLabelText("Şifrə"), { target: { value: "Gizli-Sifre-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Kilidi aç" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Ayarlar" })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe("#/settings"));
+  });
+
+  // The one address that stays: a session being CHECKED is still this clinician's, so a reload
+  // (F5 on a ward PC) leaves her where she was.
+  it("but a reload keeps the screen the clinician was on", async () => {
+    built({ beds: BedsProbe });
+    window.location.hash = "#/beds";
+    app({ access: NURSE, me: profile() });
+    expect(await screen.findByRole("heading", { level: 1, name: "Çarpayı ekranı" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#/beds");
   });
 });
 
