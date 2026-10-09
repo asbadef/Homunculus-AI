@@ -268,9 +268,16 @@ export function createBoardStore({
     },
     refresh,
     /** Put a board entry the API answered with onto the board (`/ack` answers with the patient's
-     *  own entry). The same path a stream frame takes, so the two cannot disagree: the server's
-     *  own publish of that same board will arrive as a frame too and apply the identical card.
-     *  A screen never has to guess what an acknowledgement did — it shows what came back. */
+     *  own entry). The same path a stream frame takes, so an answer is replayed over a snapshot
+     *  still in flight exactly as a frame is, and a screen never has to guess what an
+     *  acknowledgement did — it shows what came back.
+     *
+     *  What this does NOT promise is an order. The server's own publish of that board arrives as a
+     *  frame as well, and the two carry no sequence number, so which of the two lands last is
+     *  whatever the network decides. They agree in practice because they describe the same board
+     *  state a moment apart; they are not *guaranteed* to, and the per-entry sequence number that
+     *  would guarantee it is Group 2's (deferred.md). An earlier draft of this comment claimed they
+     *  "cannot disagree", which is a stronger claim than the data supports. */
     applyEntry: ingest,
     /**
      * Acknowledge one alarm (`POST /ack {patient_id, kind}`, permission `alerts.ack`) and put the
@@ -315,11 +322,21 @@ export function createBoardStore({
      * first line without it), so the card that comes back can carry alarms that did not exist a
      * moment ago. The server publishes that same board as a frame, which a LIVE session would
      * receive anyway; the reload is what makes the screen correct for a session that is DEGRADED
-     * or still connecting, and the frame and the reload cannot disagree because both go through
-     * `ingest` / `withPatients`.
+     * or still connecting, and the frame and the reload go through the same `ingest` /
+     * `withPatients` path.
      *
      * Rejects with the API's own error, having written nothing locally: a clinical screen must
      * never show a charted observation that the server may have refused.
+     *
+     * If the WRITE succeeded and the reload then failed, this still resolves, with the answer —
+     * deliberately. The observation is in the engine's record and the clinician must be told so;
+     * reporting it as a failure would invite them to chart it twice. `refresh()` does not reject,
+     * it empties the board and sets UNAVAILABLE, so what the screen then shows is `BoardStrip`
+     * saying the list is not shown because the load failed, which is true. One limit worth
+     * knowing: `refresh()` arms its own retry only under an OPEN stream, so after a failed reload
+     * with the stream closed the board waits for the next thing that loads it. Widening that
+     * retry is a change to Wave 2's connection policy and belongs with the screen that charts
+     * (G1-11) rather than in the shared store, where no screen can yet verify it.
      */
     async chart(patientId, entries) {
       const mine = generation;

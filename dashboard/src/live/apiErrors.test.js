@@ -58,6 +58,7 @@ function callBody(src, open) {
 }
 
 const APP = py("api/app.py");
+const ADMIN_ROUTER = py("admin/router.py");
 const ADMIN_SERVICE = py("admin/service.py");
 const ADMIN_SCHEMAS = py("admin/schemas.py");
 const LDAP_SERVICE = py("admin/ldap_service.py");
@@ -156,6 +157,7 @@ describe("no message site escapes the readers", () => {
     ["admin/service.py", /^f"\{BEYOND_OWN_RIGHTS\}/, 1, "the constant plus the keys it lacks; matched by shape (BEYOND_OWN_RIGHTS in apiErrors.js)"],
     ["admin/service.py", /^detail\) from None/, 1, "_flush's own parameter: every caller passes a constant read above"],
     ["admin/service.py", /^str\(exc\)\)/, 2, "the ORM's own message for a bad id or a group of another tenant, shown as it arrived"],
+    ["admin/router.py", /^exc\.detail,/, 1, "AdminError's own detail: its literals are read from service.py"],
   ];
   const DETAIL = String.raw`\bdetail=`;
   const UNAUTHORIZED = String.raw`(?<!def )\b_unauthorized\(`;
@@ -170,6 +172,7 @@ describe("no message site escapes the readers", () => {
     ["auth/schemas.py", SCHEMAS, [String.raw`\bValueError\(`]],
     // Wave 3's screens: the board (/patients, /ack, /view), /admin, /admin/ldap and /scope.
     ["api/app.py", APP, [DETAIL]],
+    ["admin/router.py", ADMIN_ROUTER, [DETAIL]],
     ["admin/service.py", ADMIN_SERVICE, [String.raw`(?<!class )\bAdminError\(\d+, `]],
     ["admin/schemas.py", ADMIN_SCHEMAS, [String.raw`\bValueError\(`]],
     ["admin/ldap_router.py", LDAP_ROUTER, [DETAIL]],
@@ -202,6 +205,18 @@ describe("no message site escapes the readers", () => {
     const scanned = new Set(FILES.map(([name]) => name.replace("auth/", "")));
     const setters = AUTH_MODULES.filter((f) => /\bHTTPException\(|\bdetail=|\bPasswordError\(|\b_unauthorized\(/.test(py(`auth/${f}`)));
     expect(setters.filter((f) => !scanned.has(f)), "a module that sets a message but is not in FILES").toEqual([]);
+  });
+
+  // The same completeness check for the packages Wave 3's screens talk to. Without it the readers
+  // cover the files somebody remembered to name: a `detail=` added to `admin/router.py` — which
+  // sets none today — would reach a ward untranslated and nothing here would notice, which is the
+  // one thing this whole file exists to prevent.
+  it.each(["admin", "scope"])("every module of the %s package that sets a message is scanned", (pkg) => {
+    const scanned = new Set(FILES.map(([name]) => name));
+    const modules = fs.readdirSync(path.join(ENGINE, pkg)).filter((f) => f.endsWith(".py")).sort();
+    const setters = modules.filter((f) => /\bHTTPException\(|\bdetail=|\bAdminError\(|\bValueError\(/.test(py(`${pkg}/${f}`)));
+    expect(setters.filter((f) => !scanned.has(`${pkg}/${f}`)),
+      `a ${pkg} module that sets a message but is not in FILES`).toEqual([]);
   });
 
   it("every string constant of ldap.py is a message read above, or listed as not one", () => {

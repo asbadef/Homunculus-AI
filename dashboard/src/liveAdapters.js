@@ -206,6 +206,12 @@ export function alertsFromPatients(patients) {
         chronicContext: a.chronic_context || null,
         staleInputs: Array.isArray(a.stale_inputs) ? a.stale_inputs : [],
         status: a.acknowledged ? "ACKNOWLEDGED" : "FIRED",
+        // WHO and WHEN, for a Wave-3 alarms row. **These two are the pair a new screen reads**;
+        // `ack` below is the old workspace's own shape and carries the same instant in SECONDS.
+        // Both are derived from the one value here so they cannot drift, but the units differ, and
+        // `elapsed(ack.atSec)` would hand a clinician an age of about 56 years without erroring —
+        // the instant is simply in the wrong unit, and nothing in a number's type says so. Prefer
+        // `ackAtMs` everywhere new; `ack` goes with the workspace G1-16 deletes.
         ackBy: a.acknowledged ? (a.acknowledged_by ?? null) : null,
         ackAtMs: a.acknowledged ? msFromTimestamp(a.acknowledged_at) : null,
         escalated: !!a.escalated,
@@ -216,6 +222,12 @@ export function alertsFromPatients(patients) {
         // Only `by` and `atSec` are known: the backend does not persist a reason/note yet (Slice
         // 1's AckStore keeps only {by, at}). Inventing them would look like a clinician's own
         // words when they are not.
+        //
+        // The OLD workspace's shape, in SECONDS, kept because `clinicalDemo.js` computes its
+        // time-to-acknowledge as `ack.atSec - firedAtSec` in three places and that code is live
+        // until G1-16 deletes it. `atSec` is derived from the same instant as `ackAtMs` above
+        // rather than parsed again, so the two can never state different times — only the same
+        // time in two units. A new screen uses `ackBy` / `ackAtMs`.
         ack: a.acknowledged
           ? { by: a.acknowledged_by ?? null, reason: null, note: null,
               atSec: secondsFromTimestamp(a.acknowledged_at) }

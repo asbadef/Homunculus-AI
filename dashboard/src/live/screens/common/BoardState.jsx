@@ -95,7 +95,11 @@ export function ScopeNote({ scope, scopeNote, className = "" }) {
   );
 }
 
-/** What to print as a finding's headline: the engine's own summary, or its `kind` if there is none.
+/** What to print as a finding's headline: the engine's own summary, or its `kind` if there is none,
+ *  or `null` if it sent neither — in which case the CALLER must print `t("board.findingUnnamed")`
+ *  and never an empty string. A finding with a blank headline is a row in a clinical list that
+ *  says nothing at all, which reads as a rendering fault and invites a clinician to ignore the
+ *  row; "a finding the engine did not name" is at least true and is something to report.
  *
  *  Every screen that shows a finding goes through this, so there is ONE place to improve it. The
  *  `kind` is a raw slug (`news2_red_param`, `sepsis_antibiotic_overdue`) and reads like a database
@@ -104,8 +108,8 @@ export function ScopeNote({ scope, scopeNote, className = "" }) {
  *  a finding IS. Those names belong in the vault with a source behind each, and then in the
  *  engine's own payload — not invented in a dictionary file by the screen that displays them.
  *  Task 23 records it as a server-side gap. In practice the engine always sends a summary
- *  (reco/engine.py), so this is the seam, not the usual path. */
-export const summaryOf = (alarm) => alarm?.summary || alarm?.kind || "";
+ *  (reco/engine.py), so both of these are the seam, not the usual path. */
+export const summaryOf = (alarm) => alarm?.summary || alarm?.kind || null;
 
 /** A risk tone's accent colour, as a fill (the bed card's left rail) and as a left border (the
  *  patient screen's finding). One table for both, because the two screens draw the same thing in
