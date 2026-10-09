@@ -174,6 +174,15 @@ export function createBoardStore({
    *  of both (it looks like a board, and it is one patient). */
   function ingest(entry) {
     const removed = entry?.removed === true;
+    // It must actually BE a board entry. `applyEntry` is public, and the chart answer
+    // (`{patient_id, charted, alerts}`, api/clinical.py) looks enough like one to be handed to it
+    // by mistake — whereupon `patientFromBoard` reads a card with no risk and no readings, that
+    // card REPLACES the real one, and the patient's open alarm leaves `state.alerts`. The bell,
+    // the rail's badge and the alarms screen are then wrong until the next whole reload. No write
+    // may make an open alarm disappear, so an object that states neither a verdict (`risk`) nor
+    // the readings behind one (`latest`) is not applied. A `removed` frame is the one entry that
+    // legitimately carries neither.
+    if (!removed && !isBoardEntry(entry)) return;
     const patient = patientFromBoard(entry);
     if (patient.patient_id == null) return;
     framesSeen += 1;
@@ -347,6 +356,14 @@ export function createBoardStore({
 // clinical: these are the engine's alarms, counted and ordered by the engine's own severity.
 const SEVERITY_ORDER = ["critical", "high", "moderate", "low", "info"];
 
+/** Is this object a board card (api/board.py `patient_board` / `identity_only_board`)? It states
+ *  the engine's verdict, or the readings behind one — an identity-only card has a `risk` and empty
+ *  readings, a device-only card has `latest` and no identity, and every real card has both. What it
+ *  is NOT is any other answer that happens to carry a `patient_id`: the chart answer is the one
+ *  that bites (see `ingest`), and `/ack`'s answer, which IS a board entry, passes. */
+const isBoardEntry = (entry) => entry !== null && typeof entry === "object"
+  && ("risk" in entry || "latest" in entry);
+
 function knowing(connection) {
   return { known: connection === CONNECTION.LIVE, stale: connection === CONNECTION.DEGRADED };
 }
@@ -365,8 +382,18 @@ function knowing(connection) {
  * chronic-expected with the engine's own explanation. What it leaves is only the arithmetic that
  * means "this needs a person": the bell, the rail's badge, the board's attention line and the lock
  * screen's counts.
+ *
+ * `NEVER_SUPPRESSED` is the floor under that, and it changes nothing the engine can do today:
+ * `rules/patient_relative.py` sets `downgraded=True` only in the branch that also sets
+ * `severity=Severity.LOW`, so a downgraded critical cannot arrive. Nothing asserted that, and if
+ * the rule ever downgraded without lowering, a CRITICAL alarm would silently never reach the bell,
+ * the rail or the lock screen — the quietest failure this interface has available. The
+ * chronic-expected rule exists for a chronic patient's low findings; it is not a licence to
+ * suppress a critical one, whatever flags arrive beside it. So the flag is honoured for the
+ * severities it was written about and ignored for the two it was not.
  */
-const needsAnswer = (a) => !a.ack && a.downgraded !== true;
+const NEVER_SUPPRESSED = new Set(["critical", "high"]);
+const needsAnswer = (a) => !a.ack && (a.downgraded !== true || NEVER_SUPPRESSED.has(a.severity));
 
 /** Open alarms counted: `open` is every alarm the engine still holds (seen or not, downgraded or
  *  not), by severity (`unknown`: a severity this build does not know); `waiting` those nobody has

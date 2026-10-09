@@ -432,6 +432,42 @@ describe("an answer the API gave, put onto the board", () => {
     store.applyEntry(null);
     expect(state().patients).toEqual([]);
   });
+
+  // The hazard of a PUBLIC `applyEntry`: it took anything carrying a patient_id, and the chart
+  // answer (`{patient_id, charted, alerts}`, api/clinical.py) looks enough like a board entry to
+  // be passed to it by mistake. It is not one — it has no `risk` and no `latest` — and applying it
+  // replaced the whole card, so the patient's open alarm left `state.alerts` and the bell, the
+  // rail's badge and the alarms screen were all wrong until the next reload. A write must never be
+  // able to make an open alarm disappear.
+  it("refuses an answer that is not a board entry, and the open alarm survives", async () => {
+    const { store, state } = setup();
+    await store.start();
+    expect(state().alerts).toHaveLength(1);
+
+    store.applyEntry({ patient_id: "P-001", charted: [{ code: "suspected_infection", value: 1 }], alerts: [] });
+
+    expect(state().alerts).toHaveLength(1);
+    expect(state().alerts[0].kind).toBe("news2");
+    expect(state().patients.map((p) => p.patient_id)).toEqual(["P-001", "P-002"]);
+  });
+
+  it("takes an entry that states a risk, or one that states its readings", () => {
+    // What makes something a board entry: the engine's own verdict, or the readings behind one.
+    // Both shapes really occur — `identity_only_board` carries a risk and empty readings.
+    const { store, state } = setup();
+    store.applyEntry({ patient_id: "P-009", risk: "none", alerts: [] });
+    expect(state().patients.map((p) => p.patient_id)).toEqual(["P-009"]);
+    store.applyEntry({ patient_id: "P-010", latest: { heart_rate: 88, at: {} }, alerts: [] });
+    expect(state().patients.map((p) => p.patient_id)).toEqual(["P-009", "P-010"]);
+  });
+
+  it("still takes a removal, which carries neither", () => {
+    // A `removed` frame is the one entry with no risk and no readings by design.
+    const { store, state } = setup();
+    store.applyEntry({ patient_id: "P-011", risk: "none", alerts: [] });
+    store.applyEntry({ patient_id: "P-011", removed: true });
+    expect(state().patients).toEqual([]);
+  });
 });
 
 describe("a chronic-expected finding is visible but answers to nobody", () => {
@@ -465,6 +501,23 @@ describe("a chronic-expected finding is visible but answers to nobody", () => {
     expect(state().alerts).toHaveLength(1);
     expect(state().alerts[0].downgraded).toBe(true);
     expect(state().alerts[0].chronicContext).toBe("Chronic oxygen therapy explains the SpO2.");
+  });
+
+  it("but a downgraded CRITICAL or HIGH still reaches the bell", async () => {
+    // The engine cannot produce this today: `rules/patient_relative.py` sets `downgraded=True`
+    // only in the branch that also sets `severity=Severity.LOW` (every contributor explained).
+    // Nothing asserted that, so if the rule ever downgraded without lowering, a critical alarm
+    // would silently never reach the bell, the rail's badge or the lock screen — the quietest
+    // possible failure of this interface. The chronic-expected rule is about a chronic patient's
+    // LOW findings; it is not a licence to suppress a critical one, whatever flags arrive with it.
+    for (const severity of ["critical", "high"]) {
+      const bad = alert("news2", severity, { downgraded: true, chronic_context: "explained" });
+      const { store, state } = setup({ board: { patients: [entry("P-001", [bad])], scope: null, scope_note: null } });
+      await store.start();
+      const live = { ...state(), connection: CONNECTION.LIVE };
+      expect(waitingAlarms(live).items.map((a) => a.severity), severity).toEqual([severity]);
+      expect(alarmCounts(live).waiting, severity).toBe(1);
+    }
   });
 
   it("an acknowledged one is not waiting either, and a plain one still is", async () => {
