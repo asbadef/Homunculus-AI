@@ -91,9 +91,10 @@ describe("ScopeNote", () => {
 
 describe("FeedHealth", () => {
   const measured = { heart_rate: ago(30), spo2: ago(30), sbp: ago(30), map: ago(30), temperature: ago(30), resp_rate: ago(30) };
+  const LIVE = CONNECTION.LIVE;
 
   it("says how many beds have gone quiet, and when the quietest one last spoke", () => {
-    show(<FeedHealth nowMs={NOW} patients={[
+    show(<FeedHealth connection={LIVE} nowMs={NOW} patients={[
       { patient_id: "S-001", measuredAt: measured },
       { patient_id: "S-002", measuredAt: { heart_rate: ago(4_000) } },
     ]} />);
@@ -102,23 +103,62 @@ describe("FeedHealth", () => {
   });
 
   it("says so when every bed is reporting — but only a LIVE board should show it at all", () => {
-    show(<FeedHealth nowMs={NOW} patients={[{ patient_id: "S-001", measuredAt: measured }]} />);
+    show(<FeedHealth connection={LIVE} nowMs={NOW} patients={[{ patient_id: "S-001", measuredAt: measured }]} />);
     expect(screen.getByText(/Bütün çarpayılardan məlumat gəlir/)).toBeInTheDocument();
   });
 
+  // The failure this gate exists for. On a board that is not LIVE the snapshot is never reloaded
+  // (only the stream's `onOpen` reloads it), so these timestamps go on ageing against a clock that
+  // is still moving: for the first minutes of an outage the chip says "data is arriving from every
+  // bed", and a quarter of an hour later it says every bed has gone quiet — blaming the ward's
+  // monitors for our own lost connection. Neither sentence is knowable, so neither is said.
+  it("says nothing about the feed on a board it cannot know", () => {
+    for (const connection of [CONNECTION.DEGRADED, CONNECTION.UNAVAILABLE, CONNECTION.CONNECTING, undefined]) {
+      const { container } = show(<FeedHealth connection={connection} nowMs={NOW} patients={[
+        { patient_id: "S-001", measuredAt: measured },
+      ]} />);
+      expect(container, String(connection)).toBeEmptyDOMElement();
+    }
+  });
+
+  it("never blames the monitors for our own outage, however long it lasts", () => {
+    // The same cards, aged a quarter of an hour past every bed-alive window: LIVE this is a real
+    // "silent beds" count, and DEGRADED it is our connection and must not be reported as theirs.
+    const stale = [{ patient_id: "S-001", measuredAt: measured }];
+    const later = NOW + 15 * 60 * 1000;
+    show(<FeedHealth connection={LIVE} nowMs={later} patients={stale} />);
+    expect(screen.getByText(/Səssiz çarpayı: 1/)).toBeInTheDocument();
+    const degraded = show(<FeedHealth connection={CONNECTION.DEGRADED} nowMs={later} patients={stale} />);
+    expect(degraded.container).toBeEmptyDOMElement();
+  });
+
   it("names itself before it names a number", () => {
-    show(<FeedHealth nowMs={NOW} patients={[{ patient_id: "S-001", measuredAt: measured }]} />);
+    show(<FeedHealth connection={LIVE} nowMs={NOW} patients={[{ patient_id: "S-001", measuredAt: measured }]} />);
     expect(screen.getByText("Cihaz və məlumat axını:")).toBeInTheDocument();
   });
 
   it("an empty board has no feed to report on", () => {
-    const { container } = show(<FeedHealth nowMs={NOW} patients={[]} />);
+    const { container } = show(<FeedHealth connection={LIVE} nowMs={NOW} patients={[]} />);
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("a bed that has never been measured has no oldest instant to name", () => {
-    show(<FeedHealth nowMs={NOW} patients={[{ patient_id: "S-002", measuredAt: {} }]} />);
+  it("counts a bed that was never wired apart from one that has stopped", () => {
+    // Two different problems needing two different people (feedHealth.js, `absent` vs `stale`): a
+    // bed the bridge never connected has sent nothing ever, and a bed that stopped sending was
+    // working an hour ago. Counting them in one number told a biomedical engineer to go and look
+    // at a monitor that is not plugged in to anything.
+    show(<FeedHealth connection={LIVE} nowMs={NOW} patients={[
+      { patient_id: "S-001", measuredAt: measured },
+      { patient_id: "S-002", measuredAt: { heart_rate: ago(4_000) } },
+      { patient_id: "S-003", measuredAt: {} },
+    ]} />);
     expect(screen.getByText(/Səssiz çarpayı: 1/)).toBeInTheDocument();
+    expect(screen.getByText(/Heç ölçülməmiş çarpayı: 1/)).toBeInTheDocument();
+  });
+
+  it("a bed that has never been measured has no oldest instant to name", () => {
+    show(<FeedHealth connection={LIVE} nowMs={NOW} patients={[{ patient_id: "S-002", measuredAt: {} }]} />);
+    expect(screen.getByText(/Heç ölçülməmiş çarpayı: 1/)).toBeInTheDocument();
     expect(screen.queryByText(/Ən köhnə ölçmə:/)).toBeNull();
   });
 });

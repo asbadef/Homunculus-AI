@@ -25,7 +25,7 @@ import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { CONNECTION } from "../../../liveConnection.js";
 import { Alert, Note, Pill, StatusPill } from "../../ui/index.js";
 import { hhmm } from "../../i18n/dates.js";
-import { oldestMeasurement } from "./freshness.js";
+import { neverMeasured, oldestMeasurement } from "./freshness.js";
 import { wardFeedHealth } from "./feedHealth.js";
 import { useNow } from "./useNow.js";
 import { useBoard } from "../../data/BoardProvider.jsx";
@@ -158,24 +158,49 @@ export function ChronicExpected({ alarm }) {
   );
 }
 
-/** Is data arriving? `silentCount` beds whose continuous channels have all gone quiet, and when the
- *  quietest card that HAS been measured last spoke. The chip is the whole statement a browser is
- *  entitled to make about the feed: it names beds, not values, and nothing here decides that a
- *  number is too old to act on (feedHealth.js, the header). The device page that would answer the
- *  next question is Group 4's. */
-export function FeedHealth({ patients, nowMs, className = "" }) {
+/** Is data arriving? `silentCount` beds whose bed-alive channels have all gone quiet, how many have
+ *  never been measured at all, and when the quietest card that HAS been measured last spoke. The
+ *  chip is the whole statement a browser is entitled to make about the feed: it names beds, not
+ *  values, and nothing here decides that a number is too old to act on (feedHealth.js, the header).
+ *  The device page that would answer the next question is Group 4's.
+ *
+ *  IT SAYS NOTHING UNLESS THE BOARD IS LIVE, and that is the point of the `connection` argument
+ *  rather than a nicety. Every sentence here is computed by ageing the snapshot's timestamps
+ *  against a clock that keeps moving — but on a board that is not LIVE the snapshot is never
+ *  reloaded (only the stream's `onOpen` reloads it). So through an outage this chip first says
+ *  "data is arriving from every bed", which is reassurance nobody can vouch for, and then, once
+ *  the windows pass, says every bed has gone silent — reporting OUR lost connection as the ward's
+ *  dead monitors, which is the one way a feed-health indicator can do harm. `BoardStrip` is what
+ *  speaks about the connection; this is only ever about the beds, so when the beds are unknowable
+ *  it is absent. Same rule and same shape as `alarmCounts`/`lockSummary`: a number only from a
+ *  board that is `known`. */
+export function FeedHealth({ patients, connection, nowMs, className = "" }) {
   const { t } = useI18n();
   const list = Array.isArray(patients) ? patients : [];
-  if (list.length === 0) return null;
+  if (!boardKnown(connection) || list.length === 0) return null;
   const { silentCount } = wardFeedHealth(list, nowMs);
+  // "Never wired" and "stopped reporting" are two problems needing two different people
+  // (feedHealth.js: `absent` vs `stale`), so they are two numbers. A bed the bridge never
+  // connected is not a monitor that failed, and counting them together sent a biomedical engineer
+  // to look at a device that was never plugged in to anything.
+  const never = neverMeasured(list);
+  const stopped = silentCount - never;
   const oldest = oldestMeasurement(list);
+  // The headline is what is WRONG, or `feedOk` when nothing is; the oldest instant is an addendum
+  // to either, never a replacement for the headline (a chip that said only "oldest: 09:58" left
+  // the reader to work out for themselves whether that was good news).
+  const wrong = [
+    stopped > 0 ? t("board.silent", { count: stopped }) : null,
+    never > 0 ? t("board.neverMeasured", { count: never }) : null,
+  ].filter(Boolean);
+  const parts = [...(wrong.length > 0 ? wrong : [t("board.feedOk")])];
+  if (oldest !== null) parts.push(t("board.oldest", { time: hhmm(oldest) }));
   return (
     <Pill icon="wifi" className={className}>
       {/* The chip's name says what it is about before it says the number: on its own, "2" beside a
           wireless icon is not a sentence. `Pill` takes no title, so the words are sr-only. */}
       <span className="sr-only">{`${t("board.feedTitle")}: `}</span>
-      {silentCount > 0 ? t("board.silent", { count: silentCount }) : t("board.feedOk")}
-      {oldest !== null ? ` · ${t("board.oldest", { time: hhmm(oldest) })}` : ""}
+      {parts.join(" · ")}
     </Pill>
   );
 }

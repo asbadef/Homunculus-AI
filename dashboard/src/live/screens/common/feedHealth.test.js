@@ -84,6 +84,31 @@ describe("patientFeedHealth", () => {
     expect(patientFeedHealth({ patient_id: "S-005", measuredAt: {} }, NOW).silent).toBe(true);
     expect(patientFeedHealth(null, NOW).silent).toBe(true);
   });
+
+  it("an hour-old temperature does not vouch for a bed whose monitors all stopped", () => {
+    // The hole the `continuous` flag was added to close for lactate, re-opened by temperature's
+    // one-hour window: every bed-alive channel 67 minutes dead, one half-hour-old temperature,
+    // and the ward chip said "data is arriving from every bed". A temperature is a spot
+    // measurement on this fleet, so it says nothing about whether the bed is still reporting.
+    const dead = {
+      patient_id: "S-006",
+      measuredAt: {
+        heart_rate: ago(4_020), spo2: ago(4_020), resp_rate: ago(4_020),
+        sbp: ago(4_020), map: ago(4_020), temperature: ago(1_800),
+      },
+    };
+    const health = patientFeedHealth(dead, NOW);
+    expect(health.live.map((c) => c.key)).toEqual(["temperature"]);
+    expect(health.silent).toBe(true);
+  });
+
+  it("no channel whose own window exceeds an hour is treated as bed-alive", () => {
+    // The rule behind the line above, stated so a future window change cannot re-open the hole:
+    // a channel a bed can legitimately be quiet on for an hour cannot answer "is it reporting".
+    for (const channel of CHANNELS) {
+      if (channel.continuous) expect(channel.freshSec, channel.key).toBeLessThanOrEqual(900);
+    }
+  });
 });
 
 describe("wardFeedHealth", () => {
@@ -112,8 +137,20 @@ describe("ageParts — the number and the unit, kept apart", () => {
     expect(ageParts(89)).toEqual({ unit: "s", value: 89 });
     expect(ageParts(90)).toEqual({ unit: "m", value: 2 });
     expect(ageParts(3_000)).toEqual({ unit: "m", value: 50 });
-    expect(ageParts(5_400)).toEqual({ unit: "h", value: 2 });
     expect(ageParts(7_200)).toEqual({ unit: "h", value: 2 });
+  });
+
+  it("says ninety minutes in minutes, where that is the more precise statement", () => {
+    // "2 h" for a ninety-minute-old reading threw away half an hour of precision at the boundary.
+    expect(ageParts(5_400)).toEqual({ unit: "m", value: 90 });
+    expect(ageParts(5_399)).toEqual({ unit: "m", value: 90 });
+  });
+
+  it("rounds an age up rather than down, so a reading never looks fresher than it is", () => {
+    // The one direction that matters: of the two ways to be wrong about an age, rounding DOWN
+    // makes a reading look newer, which is the failure this module exists to prevent.
+    expect(ageParts(5_401)).toEqual({ unit: "h", value: 2 });
+    expect(ageParts(9_000)).toEqual({ unit: "h", value: 3 });   // 2 h 30 m, never "2 h"
   });
 
   it("no age has no parts — the caller writes the dash", () => {

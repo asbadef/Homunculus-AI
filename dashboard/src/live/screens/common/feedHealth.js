@@ -39,8 +39,18 @@ export const CHANNELS = Object.freeze([
   { key: "spo2", labelKey: "board.chSpo2", sourceKey: "board.srcMonitor", freshSec: 300, continuous: true },
   { key: "sbp", labelKey: "board.chSbp", sourceKey: "board.srcMonitor", freshSec: 900, continuous: true },
   { key: "map", labelKey: "board.chMap", sourceKey: "board.srcMonitor", freshSec: 900, continuous: true },
-  { key: "temperature", labelKey: "board.chTemp", sourceKey: "board.srcMonitor", freshSec: 3600, continuous: true },
-  { key: "resp_rate", labelKey: "board.chRr", sourceKey: "board.srcVent", freshSec: 600, continuous: true },
+  // `continuous: false`, although a monitor does report it: a temperature on this fleet is a spot
+  // measurement, so an hour-old one is legitimately fresh and says NOTHING about whether the bed
+  // is still reporting. Left `true` with its one-hour window it re-opened exactly the hole the
+  // flag exists to close for lactate — every bed-alive channel 67 minutes dead plus a half-hour-old
+  // temperature gave `silent: false`, and the ward chip said "data is arriving from every bed".
+  // The rule, asserted in the test: no channel a bed may legitimately be quiet on for an hour can
+  // answer "is it reporting".
+  { key: "temperature", labelKey: "board.chTemp", sourceKey: "board.srcMonitor", freshSec: 3600, continuous: false },
+  // The source is the monitor on a bed with no ventilator (a Kappa reports respiration from the
+  // ECG impedance channel), so this names both rather than sending a biomedical engineer to a box
+  // that is not there.
+  { key: "resp_rate", labelKey: "board.chRr", sourceKey: "board.srcRr", freshSec: 600, continuous: true },
   { key: "lactate", labelKey: "board.chLac", sourceKey: "board.srcLab", freshSec: 6 * 3600, continuous: false },
 ]);
 
@@ -116,6 +126,13 @@ export function wardFeedHealth(patients, nowMs = Date.now()) {
 export function ageParts(seconds) {
   if (seconds === null || seconds === undefined) return null;
   if (seconds < 90) return { unit: "s", value: Math.round(seconds) };
-  if (seconds < 5400) return { unit: "m", value: Math.round(seconds / 60) };
+  // `<= 5400`, so ninety minutes reads "90 dəq" and not "2 h": at the boundary the minutes are the
+  // more precise statement, and the hour form threw away half an hour of it.
+  //
+  // The hours branch keeps Math.round rather than flooring, and the direction is deliberate: of
+  // the two ways to be wrong about an AGE, rounding DOWN makes a reading look fresher than it is,
+  // which is the one failure this whole module exists to prevent (and the reason useBoardNow
+  // corrects the clock at all). Rounding up only ever prompts a clinician to re-measure.
+  if (seconds <= 5400) return { unit: "m", value: Math.round(seconds / 60) };
   return { unit: "h", value: Math.round(seconds / 3600) };
 }
