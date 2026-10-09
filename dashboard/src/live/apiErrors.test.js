@@ -57,6 +57,13 @@ function callBody(src, open) {
   return src.slice(open);
 }
 
+const APP = py("api/app.py");
+const ADMIN_SERVICE = py("admin/service.py");
+const ADMIN_SCHEMAS = py("admin/schemas.py");
+const LDAP_SERVICE = py("admin/ldap_service.py");
+const LDAP_ROUTER = py("admin/ldap_router.py");
+const SCOPE_ROUTER = py("scope/router.py");
+const SCOPE_SCHEMAS = py("scope/schemas.py");
 const DEPS = py("auth/dependencies.py");
 const ROUTER = py("auth/router.py");
 const SERVICE = py("auth/service.py");
@@ -70,6 +77,10 @@ const nginxReauthLimited = nginxLimit("reauth_limited");
 
 /** ldap.py's string constants that are not messages (an LDAP search filter); every other one is. */
 const LDAP_NOT_MESSAGES = new Set(["DEFAULT_USER_FILTER"]);
+/** admin/ldap_service.py constants that are not messages: the SKIP_* values are the reason an
+ *  import gives per account (`LdapSkippedOut.reason`), which the login-source screen translates
+ *  itself, and the rest are column or attribute names. */
+const LDAP_SERVICE_NOT_MESSAGES = (name) => name.startsWith("SKIP_");
 
 /** Every message the auth surface can answer with, and where it comes from. */
 const SOURCES = [
@@ -87,6 +98,18 @@ const SOURCES = [
   ...literals(BACKEND_API, String.raw`failure\(\w+,\s*${STR}\)`).map((m) => ["backendApi.js", m]),
   ...literals(BACKEND_API, String.raw`TIMEOUT_MESSAGE = ${STR}`).map((m) => ["backendApi.js timeout", m]),
   ...literals(BACKEND_API, String.raw`SUPERSEDED_MESSAGE = ${STR}`).map((m) => ["backendApi.js superseded", m]),
+  // Wave 3's screens (the beds, the alarms, the patient, and the three administration tabs) talk
+  // to the board, /admin, /scope and /admin/ldap, so those refusals have to be translated too.
+  ...literals(APP, String.raw`detail=\s*${STR}`).map((m) => ["api/app.py detail", m]),
+  ...[...pyConstants(ADMIN_SERVICE).values()].map((m) => ["admin/service.py constant", m]),
+  ...literals(ADMIN_SERVICE, String.raw`AdminError\(\d+,\s*${STR}`).map((m) => ["admin/service.py AdminError", m]),
+  ...[...pyConstants(ADMIN_SCHEMAS).values()].map((m) => ["admin/schemas.py constant", m]),
+  ...literals(ADMIN_SCHEMAS, String.raw`ValueError\(\s*${STR}`).map((m) => ["admin/schemas.py", m]),
+  ...[...pyConstants(LDAP_SERVICE)].filter(([name]) => !LDAP_SERVICE_NOT_MESSAGES(name))
+    .map(([name, text]) => [`admin/ldap_service.py ${name}`, text]),
+  ...literals(LDAP_ROUTER, String.raw`detail=\s*${STR}`).map((m) => ["admin/ldap_router.py detail", m]),
+  ...literals(SCOPE_ROUTER, String.raw`detail=\s*${STR}`).map((m) => ["scope/router.py detail", m]),
+  ...literals(SCOPE_SCHEMAS, String.raw`ValueError\(\s*${STR}`).map((m) => ["scope/schemas.py", m]),
 ];
 
 describe("the auth surface's messages are translated", () => {
@@ -118,21 +141,41 @@ describe("the auth surface's messages are translated", () => {
 // them unseen, so every site that sets a message is accounted for: a literal (captured, and counted
 // against the readers), a named constant (read above), or a dynamic one listed here with its reason.
 describe("no message site escapes the readers", () => {
-  const CONSTANTS = new Set([...pyConstants(DEPS).keys(), ...pyConstants(ROUTER).keys(), ...LDAP.keys()]);
+  const CONSTANTS = new Set([...pyConstants(DEPS).keys(), ...pyConstants(ROUTER).keys(), ...LDAP.keys(),
+    ...pyConstants(ADMIN_SERVICE).keys(), ...pyConstants(ADMIN_SCHEMAS).keys(),
+    ...pyConstants(LDAP_SERVICE).keys()]);
   const DYNAMIC = [
     // [file, the first argument, how many sites, why]
     ["auth/dependencies.py", /^detail,/, 1, "_unauthorized's own parameter: every call's literal is read above"],
     ["auth/dependencies.py", /^\)/, 5, "_unauthorized() with no argument: its default literal is read above"],
     ["auth/dependencies.py", /^f"permission required:/, 1, "a permission key of the route, not a sign-in message; shown as the server wrote it"],
     ["auth/router.py", /^str\(exc\)/, 1, "PasswordError's message: its literals are read from service.py"],
+    // Wave 3's files.
+    ["api/app.py", /^f"permission required:/, 1, "a permission key of the route; the key is not translated, the sentence around it is"],
+    ["api/app.py", /^str\(exc\)/, 6, "ClinicalEntryError / GatewayError / ScoreError: the engine's own validation text, shown as the engine wrote it"],
+    ["admin/service.py", /^f"\{BEYOND_OWN_RIGHTS\}/, 1, "the constant plus the keys it lacks; matched by shape (BEYOND_OWN_RIGHTS in apiErrors.js)"],
+    ["admin/service.py", /^detail\) from None/, 1, "_flush's own parameter: every caller passes a constant read above"],
+    ["admin/service.py", /^str\(exc\)\)/, 2, "the ORM's own message for a bad id or a group of another tenant, shown as it arrived"],
   ];
   const DETAIL = String.raw`\bdetail=`;
   const UNAUTHORIZED = String.raw`(?<!def )\b_unauthorized\(`;
+  // scope/router.py raises with the status positionally: `HTTPException(status.HTTP_404…, "…")`.
+  // `(?!\s*detail=)` sits right after the comma: a lookahead placed after `\s*` is defeated by
+  // backtracking (the engine simply consumes less whitespace).
+  const POSITIONAL = String.raw`HTTPException\(status\.HTTP_\w+,(?!\s*detail=)\s*`;
   const FILES = [
     ["auth/dependencies.py", DEPS, [DETAIL, UNAUTHORIZED]],
     ["auth/router.py", ROUTER, [DETAIL]],
     ["auth/service.py", SERVICE, [String.raw`(?<!class )\bPasswordError\(`]],
     ["auth/schemas.py", SCHEMAS, [String.raw`\bValueError\(`]],
+    // Wave 3's screens: the board (/patients, /ack, /view), /admin, /admin/ldap and /scope.
+    ["api/app.py", APP, [DETAIL]],
+    ["admin/service.py", ADMIN_SERVICE, [String.raw`(?<!class )\bAdminError\(\d+, `]],
+    ["admin/schemas.py", ADMIN_SCHEMAS, [String.raw`\bValueError\(`]],
+    ["admin/ldap_router.py", LDAP_ROUTER, [DETAIL]],
+    ["admin/ldap_service.py", LDAP_SERVICE, [String.raw`\bAdminError\(\d+, `]],
+    ["scope/router.py", SCOPE_ROUTER, [DETAIL, POSITIONAL]],
+    ["scope/schemas.py", SCOPE_SCHEMAS, [String.raw`\bValueError\(`]],
   ];
   const literalSites = (src, openers) => openers.flatMap((o) => sites(src, o)).filter((s) => s.startsWith('"')).length;
 
