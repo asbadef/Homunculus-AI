@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, cleanup, screen, fireEvent, waitFor } from "@testing-library/react";
 import QRCode from "qrcode";
+import { ANNOUNCE_DELAY_MS } from "../ui/Alert.jsx";
 import { mount, refusal } from "../session/mount.testutil.jsx";
 import { profile, token } from "../session/testTokens.testutil.js";
 import { MfaStep } from "./MfaStep.jsx";
@@ -29,6 +30,14 @@ describe("MfaStep", () => {
     const qr = await screen.findByAltText("Autentifikator tətbiqi üçün QR kod");
     expect(qr.getAttribute("src")).toMatch(/^data:image\//);        // drawn here, never fetched
     // Every /auth/totp/setup ROTATES the secret: a second call would make the key on screen stale.
+    //
+    // If this file ever fails under a full-suite run, the message tells you which failure it is,
+    // and they need opposite fixes. **"expected 1, received 2" is a real double enrolment** and a
+    // bug worth chasing. **A `findBy*` timeout is contention** — this test awaits the QR being
+    // drawn to a data URL within `waitFor`'s 1 s default — and means the budget, not the code. A
+    // double enrolment is believed unreachable: the enrolment ref is keyed `user.id|attempt`, and
+    // `sessionStore.js` sets `phase` and `user` in ONE `set()`, so StrictMode's second effect pass
+    // finds the same key.
     expect(api.setupTotp).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Autentifikatoru quraşdırın");
     expect(screen.getByText("Addım 2/2")).toBeInTheDocument();
@@ -75,24 +84,39 @@ describe("MfaStep", () => {
     expect(screen.queryByRole("button", { name: "Kopyala" })).toBeNull();
     cleanup();
 
+    // The house fake-timer recipe (LockScreen.test.jsx, PasswordForm.test.jsx, the amendments):
+    // timers installed BEFORE the mount, `Date` faked with them, no `shouldAdvanceTime`, and a
+    // `flush()` that yields one REAL event-loop turn inside `act` instead of a `waitFor`. The last
+    // assertion here waited on `Announce`'s real ANNOUNCE_DELAY_MS timer inside `waitFor`'s 1 s
+    // budget, which is a race decided by how loaded the machine is: the three arms will run this
+    // suite many times over. Advancing the clock by hand makes the delay the test's own.
     const writeText = vi.fn().mockRejectedValueOnce(new Error("denied")).mockResolvedValueOnce(undefined);
     Object.defineProperty(window.navigator, "clipboard", { configurable: true, value: { writeText } });
+    const realSetTimeout = globalThis.setTimeout;
+    const flush = () => act(() => new Promise((resolve) => { realSetTimeout(resolve, 0); }));
+    const tick = (ms) => act(() => { vi.advanceTimersByTime(ms); });
+    const said = () => screen.getAllByRole("status").map((r) => r.textContent).join("");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
     try {
       await mount(<MfaStep />, { access: PENDING, me: NEW_ACCOUNT, setup: enrolling });
-      const copy = await screen.findByRole("button", { name: "Kopyala" });
+      await flush();
+      const copy = screen.getByRole("button", { name: "Kopyala" });
       fireEvent.click(copy);
-      await waitFor(() => expect(writeText).toHaveBeenCalledWith(SECRET));
-      await act(async () => {});
+      await flush();
+      expect(writeText).toHaveBeenCalledWith(SECRET);
       expect(screen.queryByText("Kopyalandı")).toBeNull();        // the write was refused
       fireEvent.click(copy);
-      expect(await screen.findByText("Kopyalandı")).toBeInTheDocument();
+      await flush();
+      expect(screen.getByText("Kopyalandı")).toBeInTheDocument();
       // The control keeps its name — it is still the copy action — and the confirmation is said
       // in a region of its own instead of renaming the focused button.
       expect(screen.getByRole("button", { name: "Kopyala" })).toBe(copy);
       expect(screen.getByText("Kopyalandı")).toHaveAttribute("aria-hidden", "true");
-      await waitFor(() => expect(screen.getAllByRole("status").map((r) => r.textContent).join(""))
-        .toContain("Kopyalandı"));
+      expect(said()).toBe("");                                    // the region is mounted empty
+      tick(ANNOUNCE_DELAY_MS);
+      expect(said()).toContain("Kopyalandı");
     } finally {
+      vi.useRealTimers();
       delete window.navigator.clipboard;
     }
   });
