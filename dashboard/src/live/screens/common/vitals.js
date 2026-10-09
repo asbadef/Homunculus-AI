@@ -20,14 +20,20 @@
 // to the design system from a screen, which is backwards. They are told apart the way every value
 // on this screen is told apart: by its label and its unit. Colour is never the only carrier of a
 // distinction here — it cannot be, for the colour-blind clinician or the printed handover.
+// Both keys are in the SHARED `board` namespace, not in any one screen's. The unit words were in
+// `beds.*`, which is the bed arm's own dictionary file and does not exist until that arm merges —
+// so the alarms and patient screens, built on their own branches, would have rendered the raw key
+// "beds.unitBpm" beside every number, and their own isolated tests would have asserted against
+// it. A channel's name and its unit are facts about the channel, shared by every screen that
+// prints one, and they belong where the table that names them lives.
 export const VITALS = Object.freeze([
-  { at: "heart_rate", get: (p) => p?.vitals?.hr, labelKey: "board.chHr", unitKey: "beds.unitBpm", color: "text-v-hr" },
-  { at: "resp_rate", get: (p) => p?.vitals?.rr, labelKey: "board.chRr", unitKey: "beds.unitBpm", color: "text-v-rr" },
-  { at: "spo2", get: (p) => p?.vitals?.spo2, labelKey: "board.chSpo2", unitKey: "beds.unitPct", color: "text-v-spo" },
-  { at: "sbp", get: (p) => p?.vitals?.sbp, labelKey: "board.chSbp", unitKey: "beds.unitMmhg", color: "text-v-map" },
-  { at: "map", get: (p) => p?.vitals?.map, labelKey: "board.chMap", unitKey: "beds.unitMmhg", color: "text-v-map" },
-  { at: "temperature", get: (p) => p?.vitals?.temp, labelKey: "board.chTemp", unitKey: "beds.unitC", color: "text-v-t" },
-  { at: "lactate", get: (p) => p?.lactate, labelKey: "board.chLac", unitKey: "beds.unitMmol", color: "text-ink" },
+  { at: "heart_rate", get: (p) => p?.vitals?.hr, labelKey: "board.chHr", unitKey: "board.unitBpm", color: "text-v-hr" },
+  { at: "resp_rate", get: (p) => p?.vitals?.rr, labelKey: "board.chRr", unitKey: "board.unitBpm", color: "text-v-rr" },
+  { at: "spo2", get: (p) => p?.vitals?.spo2, labelKey: "board.chSpo2", unitKey: "board.unitPct", color: "text-v-spo" },
+  { at: "sbp", get: (p) => p?.vitals?.sbp, labelKey: "board.chSbp", unitKey: "board.unitMmhg", color: "text-v-map" },
+  { at: "map", get: (p) => p?.vitals?.map, labelKey: "board.chMap", unitKey: "board.unitMmhg", color: "text-v-map" },
+  { at: "temperature", get: (p) => p?.vitals?.temp, labelKey: "board.chTemp", unitKey: "board.unitC", color: "text-v-t" },
+  { at: "lactate", get: (p) => p?.lactate, labelKey: "board.chLac", unitKey: "board.unitMmol", color: "text-ink" },
 ]);
 
 /** The channels this card HAS a value for, with the value and the instant it was measured.

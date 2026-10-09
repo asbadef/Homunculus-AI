@@ -3,6 +3,8 @@ import { elapsed, msOf } from "./elapsed.js";
 import {
   SIGNAL_KEYS, ageOf, hasMeasurement, lastMeasuredAt, neverMeasured, oldestMeasurement,
 } from "./freshness.js";
+import { CHANNELS } from "./feedHealth.js";
+import { VITALS } from "./vitals.js";
 
 const NOW = Date.parse("2026-10-08T10:00:00Z");
 const ago = (seconds) => new Date(NOW - seconds * 1000).toISOString();
@@ -47,6 +49,15 @@ describe("freshness — the age of a reading, and never a verdict on it", () => 
     expect(SIGNAL_KEYS).toContain("heart_rate");
     expect(SIGNAL_KEYS).toContain("spo2");
     expect(Object.isFrozen(SIGNAL_KEYS)).toBe(true);
+  });
+
+  it("is the one list the feed table and the channel table are both built from", () => {
+    // Three modules name the server's seven published signals: this list, `feedHealth.CHANNELS`
+    // and `vitals.VITALS`. Nothing made them agree, so a newly published signal needed three
+    // edits in three files and two of them could silently be forgotten — the channel would then
+    // appear on a card while counting for nothing in the feed chip, or the reverse.
+    expect([...CHANNELS].map((c) => c.key).sort()).toEqual([...SIGNAL_KEYS].sort());
+    expect([...VITALS].map((v) => v.at).sort()).toEqual([...SIGNAL_KEYS].sort());
   });
 
   it("says whether a card has ever been measured", () => {

@@ -14,6 +14,10 @@ const NEUTRAL = new Set([
   // heading unique in this file — AZ_SAME_AS_TR below carries the same seven, suffixed `· az = tr`.
   // board (shared by the clinical screens, added with the first of them) · neutral
   "board.chSpo2", //              SpO2 again, on the board
+  "board.unitPct", //             %       — the units of measurement are written the same
+  "board.unitMmhg", //            mmHg      in every script this product speaks; only the
+  "board.unitC", //               °C        per-minute one has a word in it (board.unitBpm)
+  "board.unitMmol", //            mmol/L
 
   // G1-09 (beds) · neutral
 
@@ -62,6 +66,10 @@ const AZ_SAME_AS_TR = new Set([
   "board.chSpo2", //         SpO2 — a clinical abbreviation
   "board.chMap", //          MAP — likewise (mean arterial pressure, written the same in AZ)
   "board.chLac", //          Laktat — the same word in Azerbaijani
+  "board.unitPct", //        %      — a unit symbol, not a word (board.unitBpm is "/dəq" in AZ)
+  "board.unitMmhg", //       mmHg
+  "board.unitC", //          °C
+  "board.unitMmol", //       mmol/L
 
   // G1-09 (beds) · az = tr
 
