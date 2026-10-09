@@ -24,18 +24,36 @@ export const REQUEST_TIMEOUT = "REQUEST_TIMEOUT";
 /** How long a request waits for an answer by default. A Wi-Fi drop without a TCP reset can
  *  otherwise leave a request, and the dialog waiting on it, hanging for minutes. */
 export const DEFAULT_TIMEOUT_MS = 15_000;
-/** How long a call that waits on the domain controller waits (`/admin/ldap/*`). The API gives such
- *  a call up to two LDAP deadlines — about 20 s with its defaults, 24 s at its cap — and one 15 s
- *  earlier would be cut off while the server was still working, leaving an administrator told
- *  "no answer" about an import that then landed. 30 s: past the server's own cap, so the answer a
- *  screen shows is the server's. */
+/** How long a call that waits on the domain controller waits (`/admin/ldap/*`). One LOOKUP answers
+ *  within two LDAP deadlines — about 20 s with the API's defaults, 24 s at its cap (`DEADLINE_CAP_S`
+ *  = 12) — and the client's usual 15 s would cut it off while the server was still working, leaving
+ *  an administrator told "no answer" about work that then landed. 30 s: past the server's own cap
+ *  for one wave of lookups, so the answer a screen shows is the server's.
+ *
+ *  It is NOT the bound on a whole import, which is why `LDAP_IMPORT_CHUNK` is what it is. */
 export const ADMIN_LDAP_TIMEOUT_MS = 30_000;
 /** The most accounts one `/admin/ldap/import` call takes (the API's own cap). */
 export const LDAP_IMPORT_MAX = 50;
-/** How many a screen sends per call. A slow controller spends about 2 s per account, so 50 in one
- *  call can outlast any sane limit; in tens, one chunk's failure costs that chunk and the import is
- *  idempotent, so the rest can simply be sent again. */
-export const LDAP_IMPORT_CHUNK = 10;
+/**
+ * How many accounts a screen sends per import call.
+ *
+ * An import is NOT bounded by one lookup's deadline: the server runs `IMPORT_LOOKUPS` of them at a
+ * time (`ADMIN_LANE_SLOTS - 1` = 2, deliberately one fewer than the admin lane so an
+ * administrator's search still finds a place), so n accounts take about
+ * `ceil(n / 2) x 2 x the deadline` against a slow domain controller — up to 24 s per wave.
+ *
+ * Two is therefore one wave, ~24 s worst case, inside both this client's 30 s and — the limit that
+ * actually binds — nginx's 60 s `proxy_read_timeout` default, which the `/admin` location does not
+ * override and which no client setting can lengthen. A chunk of ten would be five waves and about
+ * 120 s: nginx would answer 504 first, and the screen would report "no answer" for accounts the
+ * server then created. The chunk is sized to the server's work rather than the limits raised to
+ * match the chunk, because only one of the three limits is ours.
+ *
+ * The cost is more round trips, which is the right trade: the import is idempotent (an account
+ * already here comes back under `skipped`), so a failed chunk costs only that chunk and can simply
+ * be sent again, and the panel can show progress per chunk instead of one long wait.
+ */
+export const LDAP_IMPORT_CHUNK = 2;
 const TIMEOUT_MESSAGE = "Sunucu yanıt vermedi. İşlem gerçekleşmiş olabilir; listeyi kontrol edip gerekirse tekrar deneyin.";
 
 /** `err.code` (and `err.superseded`) of a request whose session was replaced or ended while it
@@ -110,13 +128,26 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
    *  This is not a time service. It exists so an age is off by the server's view instead of the
    *  browser's, and so Group 2 can warn about a badly-set device; a few hundred milliseconds of
    *  network is noise beside the minutes that would matter. `null` until an answer has been seen —
-   *  which is not 0: "we do not know the skew" and "there is no skew" are different statements. */
+   *  which is not 0: "we do not know the skew" and "there is no skew" are different statements.
+   *
+   *  Hence the noise floor and the rounding, which the sentence above promises and which are not
+   *  cosmetic. `Date` is second-granular, so a correctly-set device measures roughly minus the
+   *  latency and minus up to a second of the header's own truncation — a non-zero reading from a
+   *  clock that is right. Injected raw into `useBoardNow`, that jitter changes the instant every
+   *  screen subtracts from on every answer, so a visible `m:ss` counter repeats or skips a second
+   *  while nothing is wrong. Below SKEW_NOISE_MS the honest answer is 0, and above it the figure is
+   *  rounded to the second it was actually measured in, because the header states no more than
+   *  that. The large-skew behaviour — the case this exists for — is unchanged. */
+  const SKEW_NOISE_MS = 2_000;
   let clockSkewMs = null;
   function noteServerDate(res) {
     const header = res?.headers?.get?.("Date");
     if (header) {
       const server = Date.parse(header);
-      if (Number.isFinite(server)) clockSkewMs = server - Date.now();
+      if (Number.isFinite(server)) {
+        const raw = server - Date.now();
+        clockSkewMs = Math.abs(raw) < SKEW_NOISE_MS ? 0 : Math.round(raw / 1000) * 1000;
+      }
     }
     return res;
   }

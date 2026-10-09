@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createBackendApi, REQUEST_TIMEOUT, retryAfterSeconds } from "./backendApi.js";
+import {
+  ADMIN_LDAP_TIMEOUT_MS, LDAP_IMPORT_CHUNK, LDAP_IMPORT_MAX, REQUEST_TIMEOUT,
+  createBackendApi, retryAfterSeconds,
+} from "./backendApi.js";
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
   return { ok, status, json: async () => body, text: async () => JSON.stringify(body) };
@@ -475,6 +478,23 @@ describe("backendApi — what the work screens call", () => {
     await api.ldapCreateMapping("CN=YB-Hekim,OU=Qruplar,DC=xh,DC=local", "g-2");
     expect(JSON.parse(fetchMock.mock.calls[1][1].body))
       .toEqual({ ad_group_dn: "CN=YB-Hekim,OU=Qruplar,DC=xh,DC=local", group_id: "g-2" });
+  });
+
+  it("imports in chunks small enough that the server finishes inside every limit", () => {
+    // The arithmetic the limits have to satisfy, from the server's own bound
+    // (admin/ldap_service.py: about ceil(n / IMPORT_LOOKUPS) x 2 x the LDAP deadline, with
+    // IMPORT_LOOKUPS = ADMIN_LANE_SLOTS - 1 = 2 and the deadline capped at 12 s):
+    //   a chunk of 10 -> 5 waves x 24 s = 120 s, four times our own limit;
+    //   a chunk of  2 -> 1 wave  x 24 s =  24 s.
+    // The binding limit is not ours. nginx's /admin location sets no `proxy_read_timeout`, so its
+    // 60 s default answers 504 first, and no client setting can lengthen that — which is why the
+    // chunk is sized to the server's work rather than the limit raised to match the chunk.
+    const WAVE_S = 24;                         // 2 x the deadline cap, one wave of IMPORT_LOOKUPS
+    const NGINX_DEFAULT_S = 60;
+    const worstCase = Math.ceil(LDAP_IMPORT_CHUNK / 2) * WAVE_S;
+    expect(worstCase * 1000).toBeLessThanOrEqual(ADMIN_LDAP_TIMEOUT_MS);
+    expect(worstCase).toBeLessThan(NGINX_DEFAULT_S);
+    expect(LDAP_IMPORT_CHUNK).toBeLessThanOrEqual(LDAP_IMPORT_MAX);
   });
 
   it("a deleted mapping answers 204, so it resolves to null", async () => {
@@ -1097,6 +1117,42 @@ describe("backendApi — the server's clock", () => {
       const fetchMock = vi.fn().mockResolvedValue(dated({ ok: true }, "Thu, 08 Oct 2026 10:08:00 GMT"));
       const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
       await api.reauth("gizli");
+      expect(api.serverClockSkewMs()).toBe(8 * 60 * 1000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reads a skew smaller than a couple of seconds as none at all", async () => {
+    // `Date` is second-granular, so a correctly-set device measures roughly minus the latency and
+    // minus up to a second of truncation. Injected raw, that jitter makes a visible m:ss counter
+    // repeat or skip a second. Below the noise floor the honest answer is 0.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    vi.setSystemTime(Date.parse("2026-10-08T10:00:00Z"));
+    try {
+      signedIn();
+      const api = createBackendApi({ baseUrl: "", fetchImpl: vi.fn()
+        .mockResolvedValueOnce(dated({ ok: true }, "Thu, 08 Oct 2026 09:59:59 GMT"))
+        .mockResolvedValueOnce(dated({ ok: true }, "Thu, 08 Oct 2026 10:00:01 GMT")) });
+      await api.reauth("gizli");
+      expect(api.serverClockSkewMs()).toBe(0);
+      await api.reauth("gizli");
+      expect(api.serverClockSkewMs()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rounds a real skew to the whole second it was measured in", async () => {
+    // The header states seconds; reporting milliseconds off it would be precision we do not have.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    vi.setSystemTime(Date.parse("2026-10-08T10:00:00.400Z"));
+    try {
+      signedIn();
+      const api = createBackendApi({ baseUrl: "", fetchImpl: vi.fn()
+        .mockResolvedValue(dated({ ok: true }, "Thu, 08 Oct 2026 10:08:00 GMT")) });
+      await api.reauth("gizli");
+      expect(api.serverClockSkewMs() % 1000).toBe(0);
       expect(api.serverClockSkewMs()).toBe(8 * 60 * 1000);
     } finally {
       vi.useRealTimers();
