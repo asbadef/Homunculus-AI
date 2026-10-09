@@ -4,19 +4,18 @@ import {
 } from "./boardStore.js";
 import { CONNECTION } from "../../liveConnection.js";
 import { alertsFromPatients, patientsFromBoard } from "../../liveAdapters.js";
+import { alarm, board, entry } from "./board.testutil.js";
 
-// Synthetic board entries, in the API's /patients shape (api/board.py). No real data.
-const entry = (id, alerts = [], extra = {}) => ({
-  patient_id: id, risk: "moderate", vitals: {}, alerts, last_update: "2026-10-04T08:00:00Z", ...extra,
-});
-const alert = (kind, severity, extra = {}) => ({
-  kind, severity, summary: `${kind} ölçütü karşılandı`, first_seen_at: "2026-10-04T07:58:00Z",
-  acknowledged: false, ...extra,
-});
-const BOARD = {
-  patients: [entry("P-001", [alert("news2", "high")]), entry("P-002")],
-  scope: { unrestricted: false, unit_ids: ["REA", "NICU"] }, scope_note: "2 birim",
-};
+// Synthetic board entries, from the SHARED fixtures (data/board.testutil.js) — one convention for
+// the whole wave. This file used to carry its own `entry(id, alerts, extra)` and
+// `alert(kind, severity, extra)`, which differed from the shared builders' signatures, so whichever
+// of the two examples a later test copied, half the time it built a card that did not hold its own
+// alarm. `alert` is kept as a local alias of `alarm` only because this file names it forty times.
+const alert = alarm;
+const BOARD = board(
+  [entry("P-001", [alert("news2", "high")]), entry("P-002")],
+  { scope: { unrestricted: false, unit_ids: ["REA", "NICU"] }, scope_note: "2 birim" },
+);
 
 function setup({ board = BOARD } = {}) {
   const handlers = [];

@@ -10,18 +10,46 @@
 // The builders are deliberately explicit about absence: `entry()` gives a card whose channels have
 // never been measured and whose identity the HIS has not sent, because that is the card every
 // honesty rule turns on — a blank must not read as a finding. A test that wants a measured card
-// says so (`measured()`), and one that wants a name says so (`identity()`).
+// says so (`reading()`), and one that wants a name says so (`identity()`).
+//
+// THE CONVENTION, because three parallel arms will copy the nearest example. The two arguments a
+// fixture almost always varies are POSITIONAL, and everything else goes in a trailing override
+// object:
+//
+//     entry("S-001", [alarm("news2", "critical")], { identity: identity() })
+//     board([entry("S-001"), entry("S-002")], { scope: scopedTo(["REA-01"]) })
+//
+// Both builders REFUSE the other shape loudly rather than accept it, which is the whole reason the
+// guards are here: `entry("S-001", { alerts: [...] })` used to spread an object where an array was
+// expected and leave the card with `alerts: []` and a junk `"0"` key — a fixture that silently did
+// not hold the alarm the test was about. A test-only helper may throw; a silent wrong fixture
+// cannot be allowed to pass.
 
 /** When the fixtures are "now". A fixed instant, so an age in a test is the age the test wrote. */
 export const NOW = Date.parse("2026-10-08T10:00:00Z");
 /** An ISO instant this many seconds before NOW. */
 export const ago = (seconds) => new Date(NOW - seconds * 1000).toISOString();
 
-/** `latest.at` with every continuous channel measured `seconds` ago (freshness.js SIGNAL_KEYS). */
+/** `latest.at` with every bed-alive channel measured `seconds` ago — TIMESTAMPS ONLY, for a test
+ *  whose subject is the feed (is this bed reporting?) and not the numbers. A card built from this
+ *  has been measured and has no values, which is a real state (`hasMeasurement` true,
+ *  `measuredVitals` empty) but rarely the one a screen test means: for a card that shows numbers
+ *  use `reading()`, which cannot let the two disagree. */
 export const measured = (seconds = 30) => ({
   heart_rate: ago(seconds), resp_rate: ago(seconds), spo2: ago(seconds),
   sbp: ago(seconds), map: ago(seconds), temperature: ago(seconds),
 });
+
+/** A card's readings and their instants together: `reading({ heart_rate: 96, spo2: 91 }, 30)` gives
+ *  `{ vitals, at }` to spread into `entry`'s override, with a timestamp for exactly the channels
+ *  that have a value. Built as one thing because built as two it diverged — a "measured" fixture
+ *  with timestamps and no numbers, or numbers with no age — and a screen whose job is to print a
+ *  value beside its age cannot be tested by a card that holds only one of them. */
+export function reading(values, seconds = 30) {
+  const at = {};
+  for (const key of Object.keys(values)) at[key] = ago(seconds);
+  return { vitals: { ...values }, at };
+}
 
 /** The identity block the HIS sends, resolved onto one of our beds (api/board.py
  *  `_bed_resolution`). `bed_matched: false` with a `bed_key` is the honest unmatched case: the
@@ -34,15 +62,35 @@ export const identity = (over = {}) => ({
 });
 
 /** One alarm as the board carries it: the engine's own severity, summary and reasoning, merged
- *  with the acknowledgement store (`_merge_alert`). */
-export const alarm = (kind = "news2", over = {}) => ({
-  kind, severity: "high", urgency: "immediate",
-  summary: `${kind} ölçütü karşılandı`,
-  clinical_reasoning: null, supporting_evidence: [], recommended_actions: [], confidence: null,
-  downgraded: false, chronic_context: "", stale_inputs: [],
-  acknowledged: false, acknowledged_by: null, acknowledged_at: null,
-  first_seen_at: ago(247), escalated: false, ...over,
-});
+ *  with the acknowledgement store (`_merge_alert`). `kind` and `severity` are positional — they
+ *  are what a test varies — and everything else goes in the override. */
+export function alarm(kind = "news2", severity = "high", over = {}) {
+  if (typeof severity !== "string") {
+    throw new TypeError("alarm(kind, severity, over): severity is a string — alarm('news2', 'high', {ack: true})");
+  }
+  return {
+    kind, severity, urgency: "immediate",
+    summary: `${kind} ölçütü karşılandı`,
+    clinical_reasoning: null, supporting_evidence: [], recommended_actions: [], confidence: null,
+    downgraded: false, chronic_context: "", stale_inputs: [],
+    acknowledged: false, acknowledged_by: null, acknowledged_at: null,
+    first_seen_at: ago(247), escalated: false, ...over,
+  };
+}
+
+/** The engine's own `risk` for a card: the highest severity among its active alarms, "none" when
+ *  there is none (api/board.py `_risk`). `entry` derives the card's risk this way instead of
+ *  defaulting it, because a fixture with a HIGH alarm and `risk: "none"` would have rendered "no
+ *  finding" beside a high alarm — a screen state the engine cannot produce, and exactly the kind
+ *  of card a test must not be able to assert against by accident. A test that wants the
+ *  contradiction on purpose still passes `{ risk: … }` and says so. */
+const SEVERITY_RANK = ["info", "low", "moderate", "high", "critical"];
+export function riskOf(alarms) {
+  const ranked = (Array.isArray(alarms) ? alarms : [])
+    .map((a) => SEVERITY_RANK.indexOf(a?.severity))
+    .filter((i) => i >= 0);
+  return ranked.length === 0 ? "none" : SEVERITY_RANK[Math.max(...ranked)];
+}
 
 /** The engine's NEWS2, in the shape the board carries it (`_news2`). `total` is always a number —
  *  NEWS2 scores a missing parameter as 0 — so `partial` and `missing` are what say whether that
@@ -52,14 +100,20 @@ export const news2 = (over = {}) => ({
 });
 
 /** One board card. By default: measured by nothing, named by nobody, no alarm, risk "none" — the
- *  card that every "a blank is not a finding" rule is about. */
-export function entry(id = "S-001", over = {}) {
+ *  card that every "a blank is not a finding" rule is about.
+ *
+ *  `alarms` is the second argument because it is what a test varies most, and the card's `risk`
+ *  is DERIVED from it (`riskOf`) unless the override states one. */
+export function entry(id = "S-001", alarms = [], over = {}) {
+  if (!Array.isArray(alarms)) {
+    throw new TypeError("entry(id, alarms, over): the second argument is the alarm ARRAY — entry('S-001', [alarm()], {identity: identity()})");
+  }
   const { vitals = {}, at = {}, score = null, sofa = null, lactate = null, ...rest } = over;
   return {
     patient_id: id,
     identity: null,
-    risk: "none",
-    alerts: [],
+    risk: riskOf(alarms),
+    alerts: alarms,
     latest: {
       heart_rate: null, resp_rate: null, spo2: null, sbp: null, map: null, temperature: null,
       lactate, sofa, at, news2: score, ...vitals,
