@@ -379,6 +379,112 @@ describe("backendApi — a server that does not answer", () => {
     await expect(api.me()).resolves.toEqual({ id: "u" });
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  // A route that waits on the domain controller is given longer: the API allows itself two LDAP
+  // deadlines (about 20 s, 24 s at its cap), and cutting it off at 15 s would tell an administrator
+  // "no answer" about an import the server then completed.
+  it("a directory call waits 30 s, not 15", async () => {
+    const fetchMock = vi.fn();
+    const api = await signedIn(fetchMock);
+    fetchMock.mockImplementationOnce(hanging);
+
+    const outcome = api.ldapImport(["e-1"]).then(() => "answered", (err) => err);
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(await Promise.race([outcome, Promise.resolve("pending")])).toBe("pending");
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await outcome).code).toBe(REQUEST_TIMEOUT);
+  });
+
+  it("a caller may make a call more patient, never less", async () => {
+    // The client's limit is the floor: a screen cannot shorten a route's wait, only lengthen it.
+    const fetchMock = vi.fn();
+    const api = await signedIn(fetchMock, { timeoutMs: 15_000 });
+    fetchMock.mockImplementationOnce(hanging);
+
+    const outcome = api.request("/slow", { timeoutMs: 1 }).then(() => "answered", (err) => err);
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(await Promise.race([outcome, Promise.resolve("pending")])).toBe("pending");
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await outcome).code).toBe(REQUEST_TIMEOUT);
+  });
+});
+
+describe("backendApi — what the work screens call", () => {
+  const signedIn = (fetchMock) => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    return createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+  };
+
+  it("acknowledges an alarm by patient and kind, and gets the patient's new board entry", async () => {
+    const entry = { patient_id: "S-001", risk: "high", alerts: [{ kind: "sepsis", acknowledged: true }] };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(entry));
+    const api = signedIn(fetchMock);
+    expect(await api.acknowledge("S-001", "sepsis")).toEqual(entry);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/ack");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001", kind: "sepsis" });
+  });
+
+  it("records that a patient was opened", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const api = signedIn(fetchMock);
+    expect(await api.view("S-001")).toEqual({ ok: true });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/view");
+    expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001" });
+  });
+
+  it("lifts an account's directory sign-in throttle with the administrator's reason", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const api = signedIn(fetchMock);
+    await api.adminUnlockSignIn("11111111-2222-3333-4444-555555555555", "Telefonla doğrulandı");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/admin/users/11111111-2222-3333-4444-555555555555/unlock-sign-in");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ reason: "Telefonla doğrulandı" });
+  });
+
+  it("asks the directory routes the questions the login-source screen asks", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]));
+    const api = signedIn(fetchMock);
+    await api.ldapStatus();
+    await api.ldapTest();
+    await api.ldapSearch("ayşe", 10);
+    await api.ldapGroups("YB");
+    await api.ldapGroups();
+    await api.ldapMappings();
+    expect(fetchMock.mock.calls.map(([url, init]) => `${init.method || "GET"} ${url}`)).toEqual([
+      "GET /admin/ldap/status",
+      "POST /admin/ldap/test",
+      "GET /admin/ldap/search?q=ay%C5%9Fe&limit=10",
+      "GET /admin/ldap/groups?q=YB",
+      "GET /admin/ldap/groups",
+      "GET /admin/ldap/group-mappings",
+    ]);
+  });
+
+  it("imports the accounts it was given, with the extra groups, and maps a group to ours", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ imported: [], skipped: [] }));
+    const api = signedIn(fetchMock);
+    await api.ldapImport(["e-1", "e-2"], ["g-1"]);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body))
+      .toEqual({ external_ids: ["e-1", "e-2"], extra_group_ids: ["g-1"] });
+
+    await api.ldapCreateMapping("CN=YB-Hekim,OU=Qruplar,DC=xh,DC=local", "g-2");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body))
+      .toEqual({ ad_group_dn: "CN=YB-Hekim,OU=Qruplar,DC=xh,DC=local", group_id: "g-2" });
+  });
+
+  it("a deleted mapping answers 204, so it resolves to null", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204, json: async () => null });
+    const api = signedIn(fetchMock);
+    expect(await api.ldapDeleteMapping("m-1")).toBeNull();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/admin/ldap/group-mappings/m-1");
+    expect(init.method).toBe("DELETE");
+  });
 });
 
 describe("backendApi — a newer session's tokens are never another session's to drop", () => {
@@ -959,5 +1065,62 @@ describe("backendApi — a pair answered after its session ended is never writte
     await expect(api.me()).resolves.toEqual({ id: "me" });
     expect(refreshed).toBe(true);
     expect(api.accessToken()).toBe("mem-acc-2");
+  });
+});
+
+// Every answer states the server's clock in its `Date` header (RFC 9110 requires it of an origin
+// server), so the client can tell how far the browser's clock is out without a new endpoint and
+// without a field in the board payload. It matters because the screens age the engine's timestamps:
+// a tablet eight minutes behind draws every reading eight minutes fresher than it is.
+describe("backendApi — the server's clock", () => {
+  const dated = (body, date) => ({
+    ...jsonResponse(body),
+    headers: { get: (k) => (k === "Date" ? date : null) },
+  });
+  const signedIn = () => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+  };
+
+  it("is unknown before any answer — null, not 0", () => {
+    // "We have not measured the skew" and "there is no skew" are different statements, and only
+    // one of them licenses correcting an age by 0.
+    const api = createBackendApi({ baseUrl: "", fetchImpl: vi.fn() });
+    expect(api.serverClockSkewMs()).toBeNull();
+  });
+
+  it("reads the Date header, as server minus browser", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    vi.setSystemTime(Date.parse("2026-10-08T10:00:00Z"));
+    try {
+      signedIn();
+      const fetchMock = vi.fn().mockResolvedValue(dated({ ok: true }, "Thu, 08 Oct 2026 10:08:00 GMT"));
+      const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+      await api.reauth("gizli");
+      expect(api.serverClockSkewMs()).toBe(8 * 60 * 1000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps what it knew when a header is missing or unreadable — a proxy may strip it", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    vi.setSystemTime(Date.parse("2026-10-08T10:00:00Z"));
+    try {
+      signedIn();
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(dated({ ok: true }, "Thu, 08 Oct 2026 09:55:00 GMT"))
+        .mockResolvedValueOnce(jsonResponse({ ok: true }))
+        .mockResolvedValueOnce(dated({ ok: true }, "not a date"));
+      const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+      await api.reauth("gizli");
+      expect(api.serverClockSkewMs()).toBe(-5 * 60 * 1000);
+      await api.reauth("gizli");
+      expect(api.serverClockSkewMs()).toBe(-5 * 60 * 1000);
+      await api.reauth("gizli");
+      expect(api.serverClockSkewMs()).toBe(-5 * 60 * 1000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

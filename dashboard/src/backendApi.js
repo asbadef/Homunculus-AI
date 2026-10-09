@@ -24,6 +24,18 @@ export const REQUEST_TIMEOUT = "REQUEST_TIMEOUT";
 /** How long a request waits for an answer by default. A Wi-Fi drop without a TCP reset can
  *  otherwise leave a request, and the dialog waiting on it, hanging for minutes. */
 export const DEFAULT_TIMEOUT_MS = 15_000;
+/** How long a call that waits on the domain controller waits (`/admin/ldap/*`). The API gives such
+ *  a call up to two LDAP deadlines — about 20 s with its defaults, 24 s at its cap — and one 15 s
+ *  earlier would be cut off while the server was still working, leaving an administrator told
+ *  "no answer" about an import that then landed. 30 s: past the server's own cap, so the answer a
+ *  screen shows is the server's. */
+export const ADMIN_LDAP_TIMEOUT_MS = 30_000;
+/** The most accounts one `/admin/ldap/import` call takes (the API's own cap). */
+export const LDAP_IMPORT_MAX = 50;
+/** How many a screen sends per call. A slow controller spends about 2 s per account, so 50 in one
+ *  call can outlast any sane limit; in tens, one chunk's failure costs that chunk and the import is
+ *  idempotent, so the rest can simply be sent again. */
+export const LDAP_IMPORT_CHUNK = 10;
 const TIMEOUT_MESSAGE = "Sunucu yanıt vermedi. İşlem gerçekleşmiş olabilir; listeyi kontrol edip gerekirse tekrar deneyin.";
 
 /** `err.code` (and `err.superseded`) of a request whose session was replaced or ended while it
@@ -83,11 +95,44 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
   const fetchNow = fetchImpl || ((...args) => fetch(...args));
   const mem = { access: null, refresh: null };
 
+  /** How far this browser's clock is from the server's, in milliseconds (server minus browser),
+   *  read from the `Date` header of the last answer: positive when the browser is behind.
+   *
+   *  It is captured here, in the one place every request passes through, because every HTTP
+   *  response already states the server's clock — RFC 9110 requires an origin server to send
+   *  `Date` — so no new endpoint and no new field in the board payload is needed to know it. And
+   *  it has to be known: the screens age the engine's timestamps against the BROWSER's clock, and
+   *  a ward tablet whose clock is eight minutes slow draws every reading eight minutes fresher
+   *  than it is. "Measured 1 min ago" is the most reassuring sentence this interface can print,
+   *  and it must not be a tablet's wrong clock saying it.
+   *
+   *  Deliberately crude: half the round trip is not subtracted and the readings are not smoothed.
+   *  This is not a time service. It exists so an age is off by the server's view instead of the
+   *  browser's, and so Group 2 can warn about a badly-set device; a few hundred milliseconds of
+   *  network is noise beside the minutes that would matter. `null` until an answer has been seen —
+   *  which is not 0: "we do not know the skew" and "there is no skew" are different statements. */
+  let clockSkewMs = null;
+  function noteServerDate(res) {
+    const header = res?.headers?.get?.("Date");
+    if (header) {
+      const server = Date.parse(header);
+      if (Number.isFinite(server)) clockSkewMs = server - Date.now();
+    }
+    return res;
+  }
+
   /** Run one request (its fetches and the reading of its answer) against the clock: past
    *  `timeoutMs` it is aborted and rejects with REQUEST_TIMEOUT — no `status`, never
    *  `sessionEnded`, so no caller mistakes it for a refusal and signs the clinician out. The
-   *  SSE stream is an EventSource, not a request made here, and has no such limit. */
-  function timed(run) {
+   *  SSE stream is an EventSource, not a request made here, and has no such limit.
+   *
+   *  `ms` overrides the client's own limit for ONE call. A route that waits on something outside
+   *  this system needs it: the directory routes (`/admin/ldap/*`) may take two LDAP deadlines —
+   *  about 20 s with the API's defaults, 24 s at most — so the 15 s that is right for every other
+   *  route would cut them off while the server was still working. Only longer than the client's
+   *  limit is honoured: a caller cannot make a route impatient, only patient. */
+  function timed(run, ms) {
+    const limit = Number.isFinite(ms) && ms > timeoutMs ? ms : timeoutMs;
     const ctrl = typeof AbortController === "function" ? new AbortController() : null;
     let timer;
     const expired = new Promise((_, reject) => {
@@ -96,9 +141,10 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         const err = new Error(TIMEOUT_MESSAGE);
         err.code = REQUEST_TIMEOUT;
         reject(err);
-      }, timeoutMs);
+      }, limit);
     });
-    const doFetch = (input, init = {}) => fetchNow(input, ctrl ? { ...init, signal: ctrl.signal } : init);
+    const doFetch = (input, init = {}) =>
+      Promise.resolve(fetchNow(input, ctrl ? { ...init, signal: ctrl.signal } : init)).then(noteServerDate);
     return Promise.race([Promise.resolve().then(() => run(doFetch)), expired])
       .finally(() => clearTimeout(timer));
   }
@@ -244,7 +290,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
    *  it: an outage never signs a clinician out, and the next request tries again. Every HTTP
    *  error carries its `status`. The whole exchange, refresh included, is one timed request. */
   function authed(path, options = {}) {
-    return timed((doFetch) => authedOnce(doFetch, path, options));
+    return timed((doFetch) => authedOnce(doFetch, path, options), options.timeoutMs);
   }
 
   /** Does storage now hold a refresh token other than `sent`? (Not the memory copy: that is this
@@ -366,6 +412,10 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     forget,
     supersede,
 
+    /** Server clock minus browser clock, in ms, from the last answer's `Date` header; `null` until
+     *  one has been seen. A screen that ages a timestamp reads it through the board store. */
+    serverClockSkewMs: () => clockSkewMs,
+
     /** `login` is a username or an e-mail (the API's `email` field is a legacy alias). */
     login(login, password) {
       return timed(async (doFetch) => {
@@ -446,9 +496,21 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       return authed("/stream-ticket", { method: "POST" });
     },
 
-    /** The actor is attributed by the API from the token; nothing about who is sent. */
+    /** The actor is attributed by the API from the token; nothing about who is sent.
+     *  Resolves to the patient's own board entry as it is AFTER the acknowledgement, so a screen
+     *  shows the server's answer rather than its own guess at it. 404 means the alarm is no longer
+     *  open (it cleared, or somebody else answered it and it resolved). */
     acknowledge(patientId, kind) {
       return authed("/ack", { method: "POST", body: { patient_id: patientId, kind } });
+    },
+
+    /** Record that a clinician opened this patient — the audit line an inspection asks for.
+     *  Sent for a patient the screen actually shows: the server answers 404 for one outside the
+     *  caller's scope AND for one that does not exist (deliberately the same answer), and logs
+     *  the refusal as `scope_denied`, so sending it for a stale bookmark would fill the trail with
+     *  refusals for views that never happened. */
+    view(patientId) {
+      return authed("/view", { method: "POST", body: { patient_id: patientId } });
     },
 
     /** The change retires every existing session; the API answers with a fresh pair. */
@@ -490,6 +552,60 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       return authed(`/admin/users/${seg(id)}/reset-password`, { method: "POST", body: { password } });
     },
     adminResetMfa(id) { return authed(`/admin/users/${seg(id)}/reset-mfa`, { method: "POST" }); },
+    /** Three more failed directory binds for this account's current run of failures. `reason` goes
+     *  into the audit row and the API requires it: one line, at least one letter or digit, at most
+     *  200 characters. Once per run — a second call grants nothing and says so. */
+    adminUnlockSignIn(id, reason) {
+      return authed(`/admin/users/${seg(id)}/unlock-sign-in`, { method: "POST", body: { reason } });
+    },
+
+    // ---- the directory (/admin/ldap, see homunculus-engine admin/ldap_router.py) ----
+    // Every one of these waits on the domain controller, so they all carry ADMIN_LDAP_TIMEOUT_MS
+    // instead of the client's usual limit (see `timed`). `status` and `test`, the search and the
+    // group list need users.manage; importing needs users.manage; CHANGING the group mapping needs
+    // the whole catalogue (the API answers 403 otherwise), so a screen shows those controls only to
+    // an administrator who has it.
+    /** {configured, url_host, last_test_at, last_test_ok} — never a bind DN or a password. */
+    ldapStatus() { return authed("/admin/ldap/status", { timeoutMs: ADMIN_LDAP_TIMEOUT_MS }); },
+    /** One service bind now: {ok, reason, checked_at}; `reason` is unreachable | timeout | tls |
+     *  service_bind_rejected | protocol. */
+    ldapTest() {
+      return authed("/admin/ldap/test", { method: "POST", timeoutMs: ADMIN_LDAP_TIMEOUT_MS });
+    },
+    /** [LdapUserOut] for a name fragment — each says whether it is already imported. */
+    ldapSearch(query, limit = 25) {
+      return authed(`/admin/ldap/search?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`,
+        { timeoutMs: ADMIN_LDAP_TIMEOUT_MS });
+    },
+    /** [{dn, name}] — the directory's groups, for the mapping's picker. */
+    ldapGroups(query = "") {
+      const q = query ? `?q=${encodeURIComponent(query)}` : "";
+      return authed(`/admin/ldap/groups${q}`, { timeoutMs: ADMIN_LDAP_TIMEOUT_MS });
+    },
+    /** Import up to LDAP_IMPORT_MAX accounts: {imported, skipped}. Idempotent — an account already
+     *  here comes back under `skipped` with the reason "exists", so a retry after a timeout is
+     *  safe. A slow controller makes this the longest call in the product: the caller sends it in
+     *  chunks of LDAP_IMPORT_CHUNK so one chunk's failure costs only that chunk. */
+    ldapImport(externalIds, extraGroupIds = []) {
+      return authed("/admin/ldap/import", {
+        method: "POST", timeoutMs: ADMIN_LDAP_TIMEOUT_MS,
+        body: { external_ids: externalIds, extra_group_ids: extraGroupIds },
+      });
+    },
+    /** [LdapMappingOut] — which AD group grants which of our groups. Reading needs users.manage. */
+    ldapMappings() { return authed("/admin/ldap/group-mappings", { timeoutMs: ADMIN_LDAP_TIMEOUT_MS }); },
+    /** Needs EVERY permission (403 otherwise). `adGroupDn` is stored in its canonical spelling. */
+    ldapCreateMapping(adGroupDn, groupId) {
+      return authed("/admin/ldap/group-mappings", {
+        method: "POST", timeoutMs: ADMIN_LDAP_TIMEOUT_MS,
+        body: { ad_group_dn: adGroupDn, group_id: groupId },
+      });
+    },
+    /** 204: resolves to null. Needs every permission. */
+    ldapDeleteMapping(id) {
+      return authed(`/admin/ldap/group-mappings/${seg(id)}`,
+        { method: "DELETE", timeoutMs: ADMIN_LDAP_TIMEOUT_MS });
+    },
 
     /**
      * Record what a clinician observed — the inputs no device produces: suspected infection,
