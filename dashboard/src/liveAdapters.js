@@ -90,9 +90,19 @@ export function patientFromBoard(entry) {
     address: null,
     mrn: null,
     protocolNo: identity?.patient_id ?? null,
-    bedId: null,
+    // The bed and unit the BOARD resolved this card onto (api/board.py `_bed_resolution`): our own
+    // ids from the site's HIS-location table, not the HIS's words — these are exactly the keys the
+    // server's scope filter matches against (`sees_patient`), so a screen that filters or explains
+    // by unit must read the same ones. Null when the table does not cover the location: that card
+    // belongs to no unit, which is why a scoped session cannot see it at all.
+    bedId: identity?.bed_id || null,
     bedLabel: identity?.bed_label || null,
-    unitId: null,
+    unitId: identity?.unit_id || null,
+    // Whether the table covered it (false also when there is no table), and the normalised HIS
+    // location that was looked up — the line an operator adds to the table. A screen can turn
+    // "this patient is on no bed" into a fixable instruction instead of a blank.
+    bedMatched: identity?.bed_matched === true,
+    bedKey: identity?.bed_key || null,
     diagnosis: null,
     admittedBy: null,
     admittedAtMs: null,
@@ -182,7 +192,22 @@ export function alertsFromPatients(patients) {
         severity: a.severity ?? null,
         urgency: a.urgency ?? null,
         summary: a.summary ?? null,
+        // WHY the engine raised it, and what it rests on (reco/engine.py Alert): the reasoning,
+        // the vault sources behind it, what it suggests considering, how certain that is, whether
+        // the patient's own charted normal lowered it and which inputs were already stale. The
+        // patient screen shows these; nothing here is translated or rewritten — it is the engine's
+        // own text, and a screen that paraphrased clinical reasoning would be writing its own.
+        // Absent fields stay null / empty: an alert carries no reasoning rather than a made-up one.
+        clinicalReasoning: a.clinical_reasoning ?? null,
+        evidence: Array.isArray(a.supporting_evidence) ? a.supporting_evidence : [],
+        actions: Array.isArray(a.recommended_actions) ? a.recommended_actions : [],
+        confidence: a.confidence ?? null,
+        downgraded: a.downgraded === true,
+        chronicContext: a.chronic_context || null,
+        staleInputs: Array.isArray(a.stale_inputs) ? a.stale_inputs : [],
         status: a.acknowledged ? "ACKNOWLEDGED" : "FIRED",
+        ackBy: a.acknowledged ? (a.acknowledged_by ?? null) : null,
+        ackAtMs: a.acknowledged ? msFromTimestamp(a.acknowledged_at) : null,
         escalated: !!a.escalated,
         firstSeenAtMs: msFromTimestamp(a.first_seen_at),
         firedAtSec: null,

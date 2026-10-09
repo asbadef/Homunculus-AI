@@ -159,6 +159,58 @@ describe("alertsFromPatients", () => {
     expect(alert.ack.note).toBeNull();
   });
 
+  // The engine's own reasoning travels with the alarm (reco/engine.py Alert): the patient screen
+  // shows it, and nothing here rewrites it.
+  describe("why the engine raised it", () => {
+    const reasoned = { ...entry, alerts: [{ ...entry.alerts[0],
+      clinical_reasoning: "SOFA rose by 3 over the charted baseline.",
+      supporting_evidence: ["sepsis-3-jama-2016", "surviving-sepsis-campaign-2021"],
+      recommended_actions: ["Review the patient and the supporting evidence."],
+      confidence: "Sepsis-3 organ-dysfunction criterion (consensus definition).",
+      downgraded: false, chronic_context: "", stale_inputs: ["lactate"] }] };
+
+    it("carries the reasoning, the sources, the actions and the certainty", () => {
+      const alert = alertsFromPatients([patientFromBoard(reasoned)])[0];
+      expect(alert.clinicalReasoning).toBe("SOFA rose by 3 over the charted baseline.");
+      expect(alert.evidence).toEqual(["sepsis-3-jama-2016", "surviving-sepsis-campaign-2021"]);
+      expect(alert.actions).toEqual(["Review the patient and the supporting evidence."]);
+      expect(alert.confidence).toBe("Sepsis-3 organ-dysfunction criterion (consensus definition).");
+      expect(alert.staleInputs).toEqual(["lactate"]);
+    });
+
+    it("says when the patient's own charted normal lowered it, and why", () => {
+      const lowered = { ...entry, alerts: [{ ...entry.alerts[0], severity: "low",
+        downgraded: true, chronic_context: "Chronic oxygen therapy explains the SpO2." }] };
+      const alert = alertsFromPatients([patientFromBoard(lowered)])[0];
+      expect(alert.downgraded).toBe(true);
+      expect(alert.chronicContext).toBe("Chronic oxygen therapy explains the SpO2.");
+    });
+
+    it("carries no reasoning rather than an invented one", () => {
+      const alert = alertsFromPatients([patientFromBoard(entry)])[0];
+      expect(alert.clinicalReasoning).toBeNull();
+      expect(alert.confidence).toBeNull();
+      expect(alert.chronicContext).toBeNull();
+      expect(alert.evidence).toEqual([]);
+      expect(alert.actions).toEqual([]);
+      expect(alert.staleInputs).toEqual([]);
+      expect(alert.downgraded).toBe(false);
+    });
+
+    it("carries the acknowledgement as a bare name and instant too", () => {
+      // What a list row shows: who, and when on the wall clock. `ack` keeps the shape the old
+      // workspace's AlertCard reads; these two are what a new screen needs.
+      const acked = { ...entry, alerts: [{ ...entry.alerts[0], acknowledged: true,
+        acknowledged_by: "ayse", acknowledged_at: "2026-08-27T10:05:00Z" }] };
+      const alert = alertsFromPatients([patientFromBoard(acked)])[0];
+      expect(alert.ackBy).toBe("ayse");
+      expect(alert.ackAtMs).toBe(Date.parse("2026-08-27T10:05:00Z"));
+      const open = alertsFromPatients([patientFromBoard(entry)])[0];
+      expect(open.ackBy).toBeNull();
+      expect(open.ackAtMs).toBeNull();
+    });
+  });
+
   // A real alarm's age is WALL-CLOCK time since the backend first saw it. It used to be placed on
   // the simulation's clock, which runs at 60x: a real alarm first seen 10 s ago read "elapsed
   // 310 s" five seconds later, and its escalation stages lit within seconds. The alert now carries
@@ -253,6 +305,46 @@ describe("identity on a board entry", () => {
   it("does not treat a discharged patient as admitted", () => {
     const discharged = { ...withIdentity, identity: { ...withIdentity.identity, state: "discharged" } };
     expect(patientFromBoard(discharged).identityState).toBe("discharged");
+  });
+
+  // The bed and unit the SERVER resolved the card onto (api/board.py `_bed_resolution`). These are
+  // the keys the server's own scope filter matches (`sees_patient`), so a screen that filters by
+  // unit, or explains why a board is the size it is, has to read the same ones.
+  const resolved = {
+    ...withIdentity,
+    identity: { ...withIdentity.identity, bed_id: "REA-01-2", unit_id: "REA-01",
+                bed_matched: true, bed_key: "YB^304^2" },
+  };
+
+  it("carries the bed and unit the board resolved, and that it matched", () => {
+    const patient = patientFromBoard(resolved);
+    expect(patient.bedId).toBe("REA-01-2");
+    expect(patient.unitId).toBe("REA-01");
+    expect(patient.bedMatched).toBe(true);
+    expect(patient.bedKey).toBe("YB^304^2");
+  });
+
+  it("keeps the unmatched location's key, and says it did not match", () => {
+    // A location the site's table does not cover: the patient still has a card (never dropped),
+    // but belongs to no unit — which is why a scoped session cannot see it at all. The key is
+    // what an operator adds to the table, so it is kept verbatim.
+    const patient = patientFromBoard({
+      ...withIdentity,
+      identity: { ...withIdentity.identity, bed_id: null, unit_id: null,
+                  bed_matched: false, bed_key: "YB^999^9" },
+    });
+    expect(patient.bedId).toBeNull();
+    expect(patient.unitId).toBeNull();
+    expect(patient.bedMatched).toBe(false);
+    expect(patient.bedKey).toBe("YB^999^9");
+  });
+
+  it("a card with no identity at all is on no bed and no unit, and says so", () => {
+    const patient = patientFromBoard({ patient_id: "S-001", risk: "none", alerts: [] });
+    expect(patient.bedId).toBeNull();
+    expect(patient.unitId).toBeNull();
+    expect(patient.bedMatched).toBe(false);
+    expect(patient.bedKey).toBeNull();
   });
 });
 
