@@ -30,10 +30,18 @@ import { SettingsScreen } from "../screens/settings/SettingsScreen.jsx";
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
  *  `resetScreens` puts it back whatever a test stood in for. */
 const SCREENS = Object.freeze({
+  // One entry per wave, each on its own with a blank line either side. The blank lines are the
+  // point: git merges line ranges, and four arms editing four ADJACENT lines of the same object
+  // conflict every time, while four arms editing lines with untouched context between them do
+  // not. Do not close up the gaps.
   beds: null,      // G1-09
+
   alarms: null,    // G1-10
+
   patient: null,   // G1-11
+
   admin: null,     // G1-12 (users), G1-13 (roles), G1-14 (login source) — tabs inside one screen
+
   settings: SettingsScreen,
 });
 

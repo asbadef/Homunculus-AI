@@ -9,7 +9,8 @@ import { PHASE } from "../session/sessionStore.js";
 import { mount } from "../session/mount.testutil.jsx";
 import { profile, token } from "../session/testTokens.testutil.js";
 import { ANNOUNCE_DELAY_MS } from "../ui/index.js";
-import { hashPath, resetScreens, stubScreens } from "./routes.js";
+import { hashPath, homePath, resetScreens, stubScreens } from "./routes.js";
+import { onlyScreens } from "./screens.testutil.js";
 import { BELL_LIST_MAX } from "./TopBar.jsx";
 import { IDLE_SPOKEN_AGAIN_AT, Shell } from "./Shell.jsx";
 import { useShell } from "./ShellContext.jsx";
@@ -28,7 +29,12 @@ function BedsProbe() {
 function PatientProbe({ params }) {
   return <h1>Xəstə {params.id}</h1>;
 }
+// `built` adds a screen to whatever this build has; `only` pins the registry to a known set, for
+// a test whose subject IS which screens exist (the rail's list, where an empty address lands,
+// "no such page"). Without `only`, those tests assert a property of the build and break in this
+// file every time a Wave-3 branch builds a screen (screens.testutil.js).
 const built = (screens) => stubScreens(screens);
+const only = (screens) => onlyScreens(screens);
 
 // The board store of the test on screen: emptied afterwards, so no stream timer of a finished test
 // reconnects during the next one.
@@ -74,7 +80,7 @@ afterEach(() => {
 
 describe("the rail", () => {
   it("lists the built screens this session may open, each with its name — not an icon alone", async () => {
-    built({ admin: AdminProbe });
+    only({ admin: AdminProbe });
     await renderShell();
     const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
     const links = within(rail).getAllByRole("link");
@@ -95,12 +101,15 @@ describe("the rail", () => {
 
 describe("the router", () => {
   it("lands an empty address on the session's home", async () => {
+    only({});                                     // nothing built: a nurse's home is her settings
     await renderShell({ hash: "" });
     await waitFor(() => expect(window.location.hash).toBe("#/settings"));
+    expect(homePath(NURSE_PERMS)).toBe("/settings");
     expect(await screen.findByRole("heading", { level: 1, name: "Ayarlar" })).toBeInTheDocument();
   });
 
   it("answers an unknown address, or a screen not built yet, with 'no such page' — never a blank", async () => {
+    only({});                                     // the beds route has no screen in this test
     await renderShell({ hash: "#/yok" });
     expect(screen.getByRole("heading", { level: 1, name: "Belə səhifə yoxdur." })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Ana səhifəyə qayıt" })).toHaveAttribute("href", "#/settings");

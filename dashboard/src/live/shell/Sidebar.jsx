@@ -3,11 +3,13 @@
 // its short name, never an icon alone (roadmap: "Daraltılmış sol menüde her madde kısa adıyla
 // görünür"). The current screen is aria-current="page".
 //
-// A screen the rail does not list (routes.js `nav: false` — a patient, opened from the beds) is
-// open with NO entry current: saying "you are here" of a page the entry does not lead to would be
-// false. Whether the beds entry should read as current while one of its patients is open is a
-// question for the screen that opens them (G1-11), and the test pins today's answer so the next
-// wave changes it on purpose.
+// A screen the rail does not list (routes.js `nav: false`) is open under the entry it was reached
+// FROM: the patient screen is opened from the beds board, so the beds entry reads as current while
+// a patient is on screen (`under` in routes.js; the Shell passes it). Wave 2 left this open and
+// showed no entry as current, on the ground that the entry does not lead to that page — but a
+// clinician spends most of her time on a patient, and a rail with nothing current says "you are
+// nowhere" for the whole of it. The patient screen also carries a visible way back to the board,
+// so the claim is not only implied (G1-11's decision; the deferred note of Wave 2).
 import React from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { Icon } from "../ui/Icon.jsx";

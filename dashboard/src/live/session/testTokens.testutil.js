@@ -25,7 +25,13 @@ export function profile(over = {}) {
   };
 }
 
-/** A backendApi stand-in: one stored access token, every call a vi.fn the test sets up. */
+/** A backendApi stand-in: one stored access token, every call a vi.fn the test sets up.
+ *
+ *  Every call the live UI makes is listed, whether or not the test under way uses it — a screen
+ *  that reaches for a call this object does not have fails with "not a function" instead of with
+ *  the thing the test was about, and a `vi.fn()` that nobody set up resolves to `undefined`, which
+ *  is what a screen must survive anyway. Wave 3's calls are grouped by the screen that makes them.
+ */
 export function fakeApi(vi, { access = null } = {}) {
   let stored = access;
   const api = {
@@ -41,6 +47,35 @@ export function fakeApi(vi, { access = null } = {}) {
     reauth: vi.fn(),
     boardPatients: vi.fn(),
     streamTicket: vi.fn(),
+    // the beds, alarms and patient screens (G1-09 … G1-11)
+    acknowledge: vi.fn(),
+    view: vi.fn(),
+    // the users and units screen (G1-12)
+    adminUsers: vi.fn(),
+    adminCreateUser: vi.fn(),
+    adminUpdateUser: vi.fn(),
+    adminSetUserGroups: vi.fn(),
+    adminResetPassword: vi.fn(),
+    adminResetMfa: vi.fn(),
+    adminUnlockSignIn: vi.fn(),
+    myScope: vi.fn(),
+    setScope: vi.fn(),
+    unassignedScopes: vi.fn(),
+    // the roles and permissions screen (G1-13)
+    adminPermissions: vi.fn(),
+    adminGroups: vi.fn(),
+    adminCreateGroup: vi.fn(),
+    adminUpdateGroup: vi.fn(),
+    adminDeleteGroup: vi.fn(),
+    // the login-source screen (G1-14)
+    ldapStatus: vi.fn(),
+    ldapTest: vi.fn(),
+    ldapSearch: vi.fn(),
+    ldapGroups: vi.fn(),
+    ldapImport: vi.fn(),
+    ldapMappings: vi.fn(),
+    ldapCreateMapping: vi.fn(),
+    ldapDeleteMapping: vi.fn(),
     /** What the API's own token handling would do: store a new pair. */
     store(next) { stored = next; },
   };

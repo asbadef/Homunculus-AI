@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { ROUTES, canReach, hasWorkRoute, hashPath, homePath, matchRoute, navRoutes, resetScreens, resumePath, screenOf, stubScreens } from "./routes.js";
+import { onlyScreens } from "./screens.testutil.js";
 import { PERMISSION_KEYS } from "../../permissions.js";
 import { DICTIONARIES } from "../i18n/catalog.js";
 import { LANG_CODES } from "../i18n/langs.js";
@@ -37,6 +38,9 @@ describe("the route table", () => {
     const { main, bottom } = navRoutes(ADMIN);
     expect(main.every((r) => screenOf(r))).toBe(true);
     expect(bottom.map((r) => r.id)).toEqual(["settings"]);
+    // And a build with none of them shows none of them: no dead links, ever.
+    restore = onlyScreens({}, { keep: [] });
+    expect(navRoutes(ADMIN)).toEqual({ main: [], bottom: [] });
   });
 
   // The table is one shared object: a screen, or a test, that could edit it would change what
@@ -49,31 +53,50 @@ describe("the route table", () => {
     expect(() => { admin.perms.push("board.view"); }).toThrow(TypeError);
     expect(() => { admin.perms = []; }).toThrow(TypeError);
     expect(canReach(admin, [])).toBe(false);
+    // No rights opens no main screen, whatever this build has built: its home is its settings.
     expect(homePath([])).toBe("/settings");
   });
 
   // How a wave gives a route its screen, and the only way a test may stand in for one.
   it("takes a screen from the registry, and puts the build's own back", () => {
+    // Build-independent: it asserts the round trip, not which screens this build has. Written
+    // against a literal ("after the restore, beds has no screen") it would break in a file no
+    // Wave-3 branch owns, the moment one of them built that screen.
     const Probe = () => null;
+    const beds = ROUTES.find((r) => r.id === "beds");
+    const own = screenOf(beds);
     restore = stubScreens({ beds: Probe });
-    expect(screenOf(ROUTES.find((r) => r.id === "beds"))).toBe(Probe);
-    expect(navRoutes(["board.view"]).main.map((r) => r.id)).toEqual(["beds"]);
-    expect(homePath(["board.view"])).toBe("/beds");
+    expect(screenOf(beds)).toBe(Probe);
+    expect(navRoutes(["board.view"]).main.map((r) => r.id)).toContain("beds");
+    expect(homePath(["board.view"])).toBe("/beds");           // the first main route in the table
     restore();
     restore = null;
-    expect(screenOf(ROUTES.find((r) => r.id === "beds"))).toBeNull();
-    expect(homePath(["board.view"])).toBe("/settings");
+    expect(screenOf(beds)).toBe(own);
   });
 
   it("puts every screen back at once, however many a test stood in for", () => {
+    const own = ROUTES.filter((r) => screenOf(r)).map((r) => r.id);
     stubScreens({ beds: () => null });
     stubScreens({ alarms: () => null, admin: () => null });
     resetScreens();
-    expect(ROUTES.filter((r) => screenOf(r)).map((r) => r.id)).toEqual(["settings"]);
+    expect(ROUTES.filter((r) => screenOf(r)).map((r) => r.id)).toEqual(own);
+  });
+
+  // What a test that cares WHICH screens exist uses, so it does not depend on the build.
+  it("pins the registry to a known set, and gives it back", () => {
+    const Probe = () => null;
+    const own = ROUTES.filter((r) => screenOf(r)).map((r) => r.id);
+    restore = onlyScreens({ alarms: Probe }, { keep: [] });
+    expect(ROUTES.filter((r) => screenOf(r)).map((r) => r.id)).toEqual(["alarms"]);
+    expect(homePath(["board.view"])).toBe("/alarms");
+    restore();
+    restore = null;
+    expect(ROUTES.filter((r) => screenOf(r)).map((r) => r.id)).toEqual(own);
   });
 
   // The app gains a screen by being built with one. Nothing may add one at run time.
   it("refuses the seam outside the test build", () => {
+    const before = screenOf(ROUTES.find((r) => r.id === "beds"));
     vi.stubEnv("MODE", "production");
     try {
       expect(() => stubScreens({ beds: () => null })).toThrow(/test seam/);
@@ -81,7 +104,7 @@ describe("the route table", () => {
     } finally {
       vi.unstubAllEnvs();
     }
-    expect(screenOf(ROUTES.find((r) => r.id === "beds"))).toBeNull();
+    expect(screenOf(ROUTES.find((r) => r.id === "beds"))).toBe(before);
   });
 });
 
@@ -152,7 +175,9 @@ describe("coming back to the screen a session left", () => {
   });
 
   it("falls back to home for an address this session cannot open, or this build has not built", () => {
-    restore = stubScreens({ beds: () => null });
+    // `onlyScreens`: the beds screen exists and NOTHING else does, whatever this build has built,
+    // so "no screen behind it yet" is this test's own state and not a property of the build.
+    restore = onlyScreens({ beds: () => null });
     expect(resumePath("/admin", ["board.view"])).toBe("/beds");        // not this session's
     expect(resumePath("/alarms", ["board.view"])).toBe("/beds");       // no screen behind it yet
     expect(resumePath("/yok", ["board.view"])).toBe("/beds");

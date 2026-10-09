@@ -7,6 +7,7 @@ import LiveApp from "./LiveApp.jsx";
 import { fakeApi, profile, token } from "./session/testTokens.testutil.js";
 import { writeLock } from "./session/browserState.js";
 import { resetScreens, stubScreens } from "./shell/routes.js";
+import { onlyScreens } from "./shell/screens.testutil.js";
 import { PRODUCT } from "./shell/Shell.jsx";
 import { ANNOUNCE_DELAY_MS } from "./ui/index.js";
 
@@ -83,6 +84,12 @@ const built = (screens) => stubScreens(screens);
 
 beforeEach(() => {
   window.location.hash = "";
+  // This file's subject is the session's life — sign-in, the steps, the lock, sign-out — not which
+  // work screens exist, and several of its tests name the screen a session lands on. So the
+  // registry is pinned to the settings screen alone, and a test that needs another one stands it in
+  // itself (`built`). Written against the build instead, every one of those tests would break here
+  // the moment a Wave-3 branch built a screen — in a file none of them owns.
+  onlyScreens({});
 });
 afterEach(() => {
   resetScreens();
