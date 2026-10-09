@@ -17,9 +17,41 @@ import auth from "./strings/auth.js";
 import lock from "./strings/lock.js";
 import account from "./strings/account.js";
 import nav from "./strings/nav.js";
+// Wave 3's screens. `board` is shared by the three clinical ones (the connection, the engine's
+// scope, the feed) and is added with the first of them; the other six are one import and one entry
+// per screen — the same seam `shell/routes.js` has, so the parallel branches of Wave 3 touch
+// different lines. Each branch uncomments ITS OWN two lines and nobody else's.
+import board from "./strings/board.js";
+// G1-09: import beds from "./strings/beds.js";
+
+// G1-10: import alarms from "./strings/alarms.js";
+
+// G1-11: import patient from "./strings/patient.js";
+
+// G1-12: import admin from "./strings/admin.js";
+
+// G1-13: import roles from "./strings/roles.js";
+
+// G1-14: import source from "./strings/source.js";
 
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
+  board,
+
+  // One entry per arm, each with a blank line either side, for the same reason as the import
+  // block above and `shell/routes.js`'s SCREENS: adjacent lines conflict on merge, lines with
+  // untouched context between them do not. Do not tidy the gaps away.
+  // G1-09: beds,
+
+  // G1-10: alarms,
+
+  // G1-11: patient,
+
+  // G1-12: admin,
+
+  // G1-13: roles,
+
+  // G1-14: source,
 };
 
 function flattenInto(out, prefix, entries) {

@@ -6,13 +6,34 @@ import { LANG_CODES, SOURCE_LANG } from "./langs.js";
 
 const placeholders = (s) => [...String(s).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
 // Language-neutral texts: clinical abbreviations written the same in every script.
-const NEUTRAL = new Set(["news2.missing.spo2"]);
+const NEUTRAL = new Set([
+  "news2.missing.spo2", //        SpO2 — a clinical abbreviation, the same in every script
+  // Wave 3's screens, one block per arm with a blank line either side: four parallel branches
+  // adding to one Set conflict on every merge if their lines are adjacent. Each arm writes under
+  // ITS OWN heading and leaves the blank lines alone. The `· neutral` suffix is what makes each
+  // heading unique in this file — AZ_SAME_AS_TR below carries the same seven, suffixed `· az = tr`.
+  // board (shared by the clinical screens, added with the first of them) · neutral
+  "board.chSpo2", //              SpO2 again, on the board
+
+  // G1-09 (beds) · neutral
+
+  // G1-10 (alarms) · neutral
+
+  // G1-11 (patient) · neutral
+
+  // G1-12 (admin · users) · neutral
+
+  // G1-13 (admin · roles) · neutral
+
+  // G1-14 (admin · login source) · neutral
+]);
 // Azerbaijani and Turkish share many words, so an AZ text may equal its TR source — but that is
 // also exactly what a forgotten translation looks like (the Turkish copied across). Each identity
 // is therefore reviewed and listed here, key by key; a new one fails until someone has checked it,
 // and an entry whose texts have since diverged fails until it is removed.
 const AZ_SAME_AS_TR = new Set([
   "risk.critical", //        Kritik — the prototype's AZ dictionary (grafik.js gd_k_crit)
+  "risk.prefix", //          Risk — the same word in Azerbaijani, Turkish and English
   "risk.moderate", //        Orta — the prototype's AZ dictionary (ceviri-sozluk "ORTA")
   "prefs.theme", //          Tema — the prototype's AZ dictionary
   "prefs.sizeNormal", //     Normal — the prototype's AZ dictionary (mobil.js fs_1)
@@ -33,6 +54,26 @@ const AZ_SAME_AS_TR = new Set([
   "account.lock", //         Ekran kilidi — "screen lock" in Azerbaijani too (shell.js lk_title "Ekran kilidlənib")
   "nav.settings", //         Ayarlar — the prototype's AZ dictionary (core.js m_settings)
   "nav.settingsShort", //    Ayarlar — the same word
+  // Wave 3's screens. Each branch adds ITS OWN lines under its own heading, so the three parallel
+  // branches do not meet in the middle of this list. `· az = tr` distinguishes these headings from
+  // NEUTRAL's identical seven, so each arm's anchor is unique in the file.
+
+  // board (shared by the clinical screens) · az = tr
+  "board.chSpo2", //         SpO2 — a clinical abbreviation
+  "board.chMap", //          MAP — likewise (mean arterial pressure, written the same in AZ)
+  "board.chLac", //          Laktat — the same word in Azerbaijani
+
+  // G1-09 (beds) · az = tr
+
+  // G1-10 (alarms) · az = tr
+
+  // G1-11 (patient) · az = tr
+
+  // G1-12 (admin · users) · az = tr
+
+  // G1-13 (admin · roles) · az = tr
+
+  // G1-14 (admin · login source) · az = tr
 ]);
 
 describe("live UI dictionaries", () => {

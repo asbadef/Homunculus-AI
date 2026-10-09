@@ -7,21 +7,25 @@
 // the engine raised no alert, which is not a claim that every value is normal.
 export default {
   tr: {
+    prefix: "Risk",
     critical: "Kritik", high: "Yüksek", moderate: "Orta", low: "Düşük", info: "Bilgi",
     none: "Bulgu yok", unmeasured: "Ölçülmedi", unknown: "Tanımsız risk: {value}",
     unreported: "Risk bildirilmedi",
   },
   az: {
+    prefix: "Risk",
     critical: "Kritik", high: "Yüksək", moderate: "Orta", low: "Aşağı", info: "Məlumat",
     none: "Tapıntı yoxdur", unmeasured: "Ölçülməyib", unknown: "Naməlum risk: {value}",
     unreported: "Risk bildirilməyib",
   },
   ru: {
+    prefix: "Риск",
     critical: "Критический", high: "Высокий", moderate: "Средний", low: "Низкий", info: "Инфо",
     none: "Отклонений не выявлено", unmeasured: "Не измерено", unknown: "Неизвестный риск: {value}",
     unreported: "Риск не передан",
   },
   en: {
+    prefix: "Risk",
     critical: "Critical", high: "High", moderate: "Moderate", low: "Low", info: "Info",
     none: "No finding", unmeasured: "Not measured", unknown: "Unknown risk: {value}",
     unreported: "Risk not reported",
