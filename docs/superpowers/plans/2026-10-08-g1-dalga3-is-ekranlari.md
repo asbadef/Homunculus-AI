@@ -286,7 +286,7 @@ An arm may be built on its own branch. That holds only if the files two arms bot
 | `shell/TopBar.jsx` | **the alarms arm** (Task 13), outright | — |
 | `shell/Shell.jsx` | **the patient arm** (Task 15), one line | — |
 | `shell/routes.js` | one `SCREENS` line each (pre-placed, Task 7) **plus** `under: "beds"` on the `patient` route, which is **the patient arm's** (Task 15) — a third change that earlier drafts of this plan did not list | — |
-| `shell/Shell.test.jsx` | **two arms: the alarms arm (Task 13) and the patient arm (Task 15).** This is the one shared file with no single owner | They edit different `describe` blocks — the bell's and the rail's — with the whole of the shell's other tests between them, so git merges them cleanly in either order. The counts, each measured with `npx vitest run` on that one file and not by grepping for `it(` (nested `describe`s indent differently and a grep undercounts): **33** at the base, **34** after Task 7, **40** after Task 13 — and **40** after Task 15, which rewrites two of the rail's tests without changing how many there are. **So the number to expect once both arms have merged is 40.** An arm that merges second and finds 39 or 41 has lost or duplicated a test: compare the `it(` names against this plan before touching the number. |
+| `shell/Shell.test.jsx` | **two arms: the alarms arm (Task 13) and the patient arm (Task 15).** This is the one shared file with no single owner | They edit different `describe` blocks — the bell's and the rail's — with the whole of the shell's other tests between them, so git merges them cleanly in either order. The counts, each measured with `npx vitest run` on that one file and not by grepping for `it(` (nested `describe`s indent differently and a grep undercounts): **33** at the base and **still 33 after Task 7** — corrected 2026-10-09, see below — then **39** after Task 13, and **40** after Task 15, which rewrites two of the rail's tests and turns one into two. **So the number to expect once both arms have merged is 40.** An arm that merges second and finds 39 or 41 has lost or duplicated a test: compare the `it(` names against this plan before touching the number.<br><br>**Correction (2026-10-09, after Tasks 0–8 were built).** This row and Task 7's Step 7 both said **34** after Task 7, and that was arithmetic rather than measurement: Task 7 Step 5 rewrites four of this file's tests and **adds none** (`git show` of the Task 7 commit adds exactly one `it()`, and it is in `routes.test.js`). So Task 7's Step 7 and Step 8 print **100**, not 101, and the alarms arm's Task 13 lands on **39**, not 40. The final 40 after both arms is unchanged, because Task 15's "one becomes two" supplies the test this row had already counted. |
 | `screens/common/BoardState.jsx` | **nobody: it is Task 6's, and sequential.** Anything two arms both render goes here | `ChronicExpected`, `summaryOf`, `RAIL`/`RAIL_LEFT`/`railOf`, `useBoardNow` are all in it for that reason, and each of them was first written inside one arm's file and moved. The rule is worth stating because breaking it does not fail a test: it produces two screens that say slightly different things about the same finding, which is exactly the defect the `info` tone had. |
 | `ui/RiskPill.jsx`, `strings/risk.js` | **Task 6**, sequential | Three screens render the pill. |
 
@@ -3326,7 +3326,7 @@ Expected: `91 passed (91)` files, `1820 passed (1820)` tests; the build succeeds
 - [ ] **Step 11: Commit**
 
 ```bash
-git add dashboard/src/live/i18n/strings/board.js dashboard/src/live/i18n/catalog.js dashboard/src/live/i18n/strings.test.js dashboard/src/live/screens/common/vitals.js dashboard/src/live/screens/common/BoardState.jsx dashboard/src/live/screens/common/BoardState.test.jsx
+git add dashboard/src/live/i18n/strings/board.js dashboard/src/live/i18n/catalog.js dashboard/src/live/i18n/strings.test.js dashboard/src/live/screens/common/vitals.js dashboard/src/live/screens/common/BoardState.jsx dashboard/src/live/screens/common/BoardState.test.jsx dashboard/src/live/i18n/strings/risk.js dashboard/src/live/ui/RiskPill.jsx dashboard/src/live/ui/RiskPill.test.jsx
 git commit -m "$(cat <<'EOF'
 feat(dashboard): what a screen must say about its own board before it says anything else
 
@@ -3926,7 +3926,7 @@ The behaviour does not change yet — `ROUTES` has no `under` until Task 15 — 
 ```bash
 npx vitest run src/live/shell/ src/live/LiveApp.test.jsx 2>&1 | grep -E "Tests "
 ```
-Expected: `Tests  101 passed (101)` — `routes.test.js` 22 (was 21), `Menu.test.jsx` 12, `Shell.test.jsx` 34 (was 33), `LiveApp.test.jsx` 33.
+Expected: `Tests  100 passed (100)` — `routes.test.js` 22 (was 21), `Menu.test.jsx` 12, `Shell.test.jsx` **33 (unchanged: Step 5 rewrites four of its tests and adds none)**, `LiveApp.test.jsx` 33. (Corrected 2026-10-09 from 101/34, which was arithmetic rather than measurement.)
 
 - [ ] **Step 8: Prove the repair** — temporarily build a screen and watch the three files stay green. This is the whole point of the task; do not skip it.
 
@@ -3942,7 +3942,9 @@ PY
 npx vitest run src/live/shell/ src/live/LiveApp.test.jsx 2>&1 | grep -E "Tests "
 git checkout -- src/live/shell/routes.js
 ```
-Expected: `Tests  101 passed (101)` — the same number, with a screen built. Before this task the same experiment fails 16 tests in three files.
+Expected: `Tests  100 passed (100)` — the same number, with a screen built. Before this task the same experiment fails tests in three files.
+
+Do the stand-in and the revert with the **Edit tool**, not the `python` heredoc above: the ground rules forbid scripted edits to the working tree, and `git checkout -- src/live/shell/routes.js` would also discard Step 6a's still-uncommitted gaps.
 
 - [ ] **Step 9: Gate**
 
@@ -3955,7 +3957,7 @@ Expected: `91 passed (91)` files, `1822 passed (1822)` tests; the build succeeds
 - [ ] **Step 10: Commit**
 
 ```bash
-git add dashboard/src/live/shell/screens.testutil.js dashboard/src/live/data/board.testutil.js dashboard/src/live/session/testTokens.testutil.js dashboard/src/live/shell/routes.test.js dashboard/src/live/shell/Shell.test.jsx dashboard/src/live/LiveApp.test.jsx
+git add dashboard/src/live/shell/screens.testutil.js dashboard/src/live/data/board.testutil.js dashboard/src/live/session/testTokens.testutil.js dashboard/src/live/shell/routes.test.js dashboard/src/live/shell/Shell.test.jsx dashboard/src/live/LiveApp.test.jsx dashboard/src/live/shell/routes.js dashboard/src/live/shell/Sidebar.jsx
 git commit -m "$(cat <<'EOF'
 test(dashboard): the seams Wave 3's three arms need, and the repair they need first
 
@@ -3971,7 +3973,7 @@ EOF
 )"
 ```
 
-**Gate:** 2 new tests (`routes.test.js` 21 → 22, `Shell.test.jsx` 33 → 34); the three repaired files green **both** with and without a screen built (Step 8); whole suite green; build clean.
+**Gate:** 1 new test (`routes.test.js` 21 → 22; `Shell.test.jsx` stays at **33**); the three repaired files green **both** with and without a screen built (Step 8); whole suite green; build clean.
 
 ---
 
