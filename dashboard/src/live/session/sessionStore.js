@@ -585,6 +585,13 @@ export function createSessionStore({
     lock,
     unlock,
     track,
+    /** The API client this session speaks through, for a screen that calls routes neither store
+     *  wraps — the three administration tabs (`/admin`, `/admin/ldap`, `/scope`). A screen must
+     *  still put every such call inside `track`, so a refused refresh ends the session there too:
+     *  `store.track(() => store.api.adminUsers())`. It is exposed rather than threaded through a
+     *  context of its own because the session store is what owns the credential, and a screen that
+     *  can reach the API without `track` is the mistake worth making hard. */
+    api,
     /** Back out of a step (MFA, a forced password change): the session ends, nothing kept. */
     cancel: () => end(null),
     signOut: () => end(NOTICE.SIGNED_OUT),

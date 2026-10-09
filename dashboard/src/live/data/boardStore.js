@@ -36,6 +36,7 @@ export const HEARTBEAT_EVENT = "heartbeat";
 
 const EMPTY = Object.freeze({
   patients: [], alerts: [], connection: CONNECTION.CONNECTING, scope: null, scopeNote: null,
+  clockSkewMs: null,
 });
 
 /** Real SSE. `ticket` is short-lived and single-use: EventSource sends no headers, and a bearer
@@ -87,7 +88,13 @@ export function createBoardStore({
     state = { ...state, ...patch };
     for (const fn of listeners) fn();
   };
-  const withPatients = (patients, patch = {}) => set({ patients, alerts: alertsFromPatients(patients), ...patch });
+  // The server's clock, as of the last answer (backendApi `serverClockSkewMs`), carried with the
+  // ward it came with. A screen ages a timestamp against this and not against `Date.now()` alone:
+  // the engine timestamps a reading by ITS clock, so an age measured by a ward tablet's clock is
+  // wrong by however wrong that tablet is — and wrong in the reassuring direction half the time.
+  const skewNow = () => (typeof api?.serverClockSkewMs === "function" ? api.serverClockSkewMs() : null);
+  const withPatients = (patients, patch = {}) =>
+    set({ patients, alerts: alertsFromPatients(patients), clockSkewMs: skewNow(), ...patch });
   const applyFrame = (patients, frame) => (frame.removed
     ? patients.filter((p) => p.patient_id !== frame.patient.patient_id)
     : upsert(patients, frame.patient));
@@ -159,16 +166,15 @@ export function createBoardStore({
     refresh();
   }
 
-  function onMessage(event) {
-    let patient;
-    let removed;
-    try {
-      const entry = JSON.parse(event.data);
-      removed = entry.removed === true;
-      patient = patientFromBoard(entry);
-    } catch {
-      return;                                     // a malformed frame touches nothing
-    }
+  /** One board entry, from wherever it came: a stream frame, or the answer a write gave (`/ack`
+   *  replies with the patient's board entry as it is AFTER the acknowledgement). Treated exactly
+   *  alike, so an answer applied here is also replayed over a snapshot still on its way and
+   *  cannot be undone by it — and so a board whose load failed stays empty either way: one card is
+   *  not a ward, and a screen showing only the bed somebody just acknowledged would be the worst
+   *  of both (it looks like a board, and it is one patient). */
+  function ingest(entry) {
+    const removed = entry?.removed === true;
+    const patient = patientFromBoard(entry);
     if (patient.patient_id == null) return;
     framesSeen += 1;
     const frame = { seq: framesSeen, patient, removed };
@@ -176,6 +182,16 @@ export function createBoardStore({
     // A board whose load failed stays empty: frames alone are not a ward, only the next whole load is.
     if (state.connection === CONNECTION.UNAVAILABLE) return;
     withPatients(applyFrame(state.patients, frame));
+  }
+
+  function onMessage(event) {
+    let entry;
+    try {
+      entry = JSON.parse(event.data);
+    } catch {
+      return;                                     // a malformed frame touches nothing
+    }
+    ingest(entry);
   }
 
   function onError(mine) {
@@ -242,6 +258,67 @@ export function createBoardStore({
       return () => listeners.delete(fn);
     },
     refresh,
+    /** Put a board entry the API answered with onto the board (`/ack` answers with the patient's
+     *  own entry). The same path a stream frame takes, so the two cannot disagree: the server's
+     *  own publish of that same board will arrive as a frame too and apply the identical card.
+     *  A screen never has to guess what an acknowledgement did — it shows what came back. */
+    applyEntry: ingest,
+    /**
+     * Acknowledge one alarm (`POST /ack {patient_id, kind}`, permission `alerts.ack`) and put the
+     * board entry it answers with onto the board. Resolves with that entry; REJECTS with the API's
+     * own error, having changed nothing — there is no optimistic update to roll back, because
+     * nothing is written before the server has taken it. A clinical screen must not show an
+     * acknowledgement that may not have happened: "seen by" is a claim about a person.
+     *
+     * Through `track`, like every other call the board makes, so a refused refresh ends the
+     * session here too and a 403 `password_change_required` moves the shell on. An answer that
+     * arrives after `clear()` (the session ended) is dropped by `ingest`'s own generation check.
+     */
+    async acknowledge(patientId, kind) {
+      const mine = generation;
+      const entry = await track(() => api.acknowledge(patientId, kind));
+      if (mine !== generation) return null;
+      ingest(entry);
+      return entry;
+    },
+    /**
+     * Record that a clinician opened this patient (`POST /view`, permission `board.view`) — the
+     * audit line an inspection asks for. It writes a log row and nothing else, so it changes no
+     * state here. The CALLER decides when: only for a patient the screen actually shows, because
+     * the server logs a refusal as `scope_denied` and a stale bookmark must not fill the trail
+     * with refusals for views that never happened.
+     *
+     * Rejects with the API's error; a screen may ignore it (a missing audit row is not something
+     * a clinician at the bedside can act on, and the board request is already in the trail).
+     */
+    view(patientId) {
+      return track(() => api.view(patientId));
+    },
+    /**
+     * Chart what a clinician observed (`POST /clinical/{id}`, permission `clinical.chart`).
+     * `entries` is `[{code, value}]` and the engine fixes the unit for each code, so a screen
+     * cannot chart a value in the wrong scale (api/clinical.py `CHARTABLE`).
+     *
+     * It reloads the board afterwards instead of applying what came back. Two reasons. The answer
+     * is not a board entry — it is `{patient_id, charted, alerts}` — and more importantly the
+     * charted value may change the ENGINE's conclusion about this patient: charting a suspected
+     * infection is what lets the sepsis branch run at all (`septic_shock.evaluate` returns at its
+     * first line without it), so the card that comes back can carry alarms that did not exist a
+     * moment ago. The server publishes that same board as a frame, which a LIVE session would
+     * receive anyway; the reload is what makes the screen correct for a session that is DEGRADED
+     * or still connecting, and the frame and the reload cannot disagree because both go through
+     * `ingest` / `withPatients`.
+     *
+     * Rejects with the API's own error, having written nothing locally: a clinical screen must
+     * never show a charted observation that the server may have refused.
+     */
+    async chart(patientId, entries) {
+      const mine = generation;
+      const answer = await track(() => api.chart(patientId, entries));
+      if (mine !== generation) return null;
+      await refresh();
+      return answer;
+    },
     /** Load, then stream (LIVE once the stream has opened and its reload landed). Resolves once
      *  the first load and the first ticket are done. */
     async start() {
@@ -274,8 +351,26 @@ function knowing(connection) {
   return { known: connection === CONNECTION.LIVE, stale: connection === CONNECTION.DEGRADED };
 }
 
-/** Open alarms counted: `open` is every alarm the engine still holds (seen or not), by severity
- *  (`unknown`: a severity this build does not know); `waiting` those nobody has acknowledged. */
+/**
+ * Whether this alarm is one somebody must answer.
+ *
+ * An alarm the engine marked `downgraded` is NOT. The engine's own contract says so
+ * (rules/patient_relative.py, the header): a finding every contributor of which the patient's
+ * charted chronic normal or a recorded comorbidity explains "stays visible but does NOT alarm or
+ * escalate". A patient with dementia or chronic oxygen therapy would otherwise keep a red badge on
+ * the rail and a line in the bell for the whole of their stay — and a count that never goes down
+ * is a count nobody reads, which is how a real one gets missed.
+ *
+ * It stays VISIBLE: the bed card shows it, the alarms screen lists it, and both mark it
+ * chronic-expected with the engine's own explanation. What it leaves is only the arithmetic that
+ * means "this needs a person": the bell, the rail's badge, the board's attention line and the lock
+ * screen's counts.
+ */
+const needsAnswer = (a) => !a.ack && a.downgraded !== true;
+
+/** Open alarms counted: `open` is every alarm the engine still holds (seen or not, downgraded or
+ *  not), by severity (`unknown`: a severity this build does not know); `waiting` those nobody has
+ *  acknowledged AND that the engine has not marked chronic-expected (`needsAnswer`). */
 export function alarmCounts({ alerts = [], connection } = {}) {
   const { known, stale } = knowing(connection);
   if (!known && !stale) return { known, stale, open: null, waiting: null };
@@ -284,18 +379,20 @@ export function alarmCounts({ alerts = [], connection } = {}) {
   for (const a of alerts) {
     open.total += 1;
     open[SEVERITY_ORDER.includes(a.severity) ? a.severity : "unknown"] += 1;
-    if (!a.ack) waiting += 1;
+    if (needsAnswer(a)) waiting += 1;
   }
   return { known, stale, open, waiting };
 }
 
-/** The alarms nobody has acknowledged (`items`, for the bell): a severity this build does not know
- *  first — it may be the worst —, then the most severe, then the oldest first. */
+/** The alarms somebody must answer (`items`, for the bell and the rail's count): a severity this
+ *  build does not know first — it may be the worst —, then the most severe, then the oldest first.
+ *  A chronic-expected finding is not among them (`needsAnswer`); it is still on the card and in
+ *  the alarms list. */
 export function waitingAlarms({ alerts = [], connection } = {}) {
   const { known, stale } = knowing(connection);
   if (!known && !stale) return { known, stale, items: null };
   const rank = (a) => SEVERITY_ORDER.indexOf(a.severity);   // -1: unknown, first
-  const items = alerts.filter((a) => !a.ack).sort((a, b) => rank(a) - rank(b)
+  const items = alerts.filter(needsAnswer).sort((a, b) => rank(a) - rank(b)
     || (a.firstSeenAtMs ?? Infinity) - (b.firstSeenAtMs ?? Infinity));
   return { known, stale, items };
 }

@@ -387,3 +387,122 @@ describe("the units the chip offers", () => {
     expect(scopeUnits({ unrestricted: false, unit_ids: ["REA", " ", 3] })).toEqual([]);
   });
 });
+
+describe("an answer the API gave, put onto the board", () => {
+  it("applies the entry /ack answered with, as a frame would", async () => {
+    const { store, state } = setup();
+    await store.start();
+    expect(state().alerts[0].status).toBe("FIRED");
+
+    store.applyEntry(entry("P-001", [alert("news2", "high", { acknowledged: true, acknowledged_by: "ayse" })]));
+
+    expect(state().alerts[0].status).toBe("ACKNOWLEDGED");
+    expect(state().patients.map((p) => p.patient_id)).toEqual(["P-001", "P-002"]);
+  });
+
+  it("is replayed over a snapshot still on its way, so a reload cannot undo it", async () => {
+    // The same guarantee a stream frame has: the load's snapshot was taken by the server before
+    // the acknowledgement, and must not come back and un-acknowledge it.
+    let release;
+    const { api, store, state } = setup();
+    await store.start();
+    api.boardPatients.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const loading = store.refresh();
+    store.applyEntry(entry("P-001", [alert("news2", "high", { acknowledged: true })]));
+    release(BOARD);
+    await loading;
+    expect(state().alerts[0].status).toBe("ACKNOWLEDGED");
+  });
+
+  it("does not make a board whose load FAILED look like a ward of one bed", async () => {
+    const { api, store, state } = setup();
+    api.boardPatients.mockRejectedValue(new Error("down"));
+    await store.start();
+    expect(state().connection).toBe(CONNECTION.UNAVAILABLE);
+
+    store.applyEntry(entry("P-001", [alert("news2", "high", { acknowledged: true })]));
+
+    expect(state().patients).toEqual([]);
+    expect(state().connection).toBe(CONNECTION.UNAVAILABLE);
+  });
+
+  it("ignores an answer with no patient id", () => {
+    const { store, state } = setup();
+    store.applyEntry({ risk: "high" });
+    store.applyEntry(null);
+    expect(state().patients).toEqual([]);
+  });
+});
+
+describe("a chronic-expected finding is visible but answers to nobody", () => {
+  // The engine's own contract (rules/patient_relative.py): a finding the patient's charted chronic
+  // normal explains "stays visible but does NOT alarm or escalate". A dementia or COPD patient
+  // would otherwise keep a red badge on the rail for the whole of their stay.
+  const chronic = alert("news2", "low", { downgraded: true, chronic_context: "Chronic oxygen therapy explains the SpO2." });
+  const board = { patients: [entry("P-001", [chronic])], scope: null, scope_note: null };
+
+  it("is not in the bell's list, and the bell may still say nothing is waiting", async () => {
+    const { api, store, state } = setup({ board });
+    await store.start();
+    const { known, items } = waitingAlarms({ ...state(), connection: CONNECTION.LIVE });
+    expect(api.boardPatients).toHaveBeenCalled();
+    expect(known).toBe(true);
+    expect(items).toEqual([]);
+  });
+
+  it("is not counted as waiting, but is still counted as open", async () => {
+    const { store, state } = setup({ board });
+    await store.start();
+    const counts = alarmCounts({ ...state(), connection: CONNECTION.LIVE });
+    expect(counts.open.total).toBe(1);
+    expect(counts.open.low).toBe(1);
+    expect(counts.waiting).toBe(0);
+  });
+
+  it("is still on the board, with the engine's explanation", async () => {
+    const { store, state } = setup({ board });
+    await store.start();
+    expect(state().alerts).toHaveLength(1);
+    expect(state().alerts[0].downgraded).toBe(true);
+    expect(state().alerts[0].chronicContext).toBe("Chronic oxygen therapy explains the SpO2.");
+  });
+
+  it("an acknowledged one is not waiting either, and a plain one still is", async () => {
+    const plain = alert("acute_change", "high");
+    const acked = alert("sepsis", "critical", { acknowledged: true });
+    const mixed = { patients: [entry("P-001", [chronic, plain, acked])], scope: null, scope_note: null };
+    const { store, state } = setup({ board: mixed });
+    await store.start();
+    const { items } = waitingAlarms({ ...state(), connection: CONNECTION.LIVE });
+    expect(items.map((a) => a.kind)).toEqual(["acute_change"]);
+    expect(lockSummary({ ...state(), connection: CONNECTION.LIVE }).waiting).toBe(1);
+  });
+});
+
+describe("the server's clock, carried with the ward", () => {
+  it("says it does not know the skew when the api cannot state one", async () => {
+    // An api built before this existed, or one whose answers carried no `Date` header: the field is
+    // null, and `useBoardNow` corrects by 0 — never by a number nobody measured.
+    const { store, state } = setup();
+    expect(state().clockSkewMs).toBeNull();
+    await store.start();
+    expect(state().clockSkewMs).toBeNull();
+  });
+
+  it("reads it from the api on every load, and a cleared store knows nothing again", async () => {
+    const handlers = [];
+    const api = {
+      boardPatients: vi.fn().mockResolvedValue(BOARD),
+      streamTicket: vi.fn().mockResolvedValue({ ticket: "t-1" }),
+      serverClockSkewMs: vi.fn().mockReturnValue(-8 * 60 * 1000),
+    };
+    const store = createBoardStore({ api, openStream: (url, h) => { handlers.push(h); return vi.fn(); } });
+    await store.start();
+    expect(store.getState().clockSkewMs).toBe(-8 * 60 * 1000);
+    api.serverClockSkewMs.mockReturnValue(1500);
+    handlers[0].onopen();
+    await vi.waitFor(() => expect(store.getState().clockSkewMs).toBe(1500));
+    store.clear();
+    expect(store.getState().clockSkewMs).toBeNull();
+  });
+});
