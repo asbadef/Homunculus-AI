@@ -332,6 +332,29 @@ describe("charting a suspected infection", () => {
     expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "suspected_infection", value: 1 }]);
   });
 
+  it("a chart the server took shows the confirmation and nothing that reads as a refusal", async () => {
+    // The assertion the other success tests were missing. They checked the CALLS — `api.chart`
+    // once, the board reloaded — and a call count cannot tell a chart that landed from one the
+    // screen then told the clinician had failed.
+    //
+    // `useToast()` returns a FUNCTION (ui/Toast.jsx `value={toasts.add}`), so `toast.show(...)`
+    // threw a TypeError INSIDE the chart's own `try`. Its `catch` set that TypeError as
+    // `chartError`, and `apiErrorText` fell back to the error's message — so a chart the server
+    // had taken, on a board that had already reloaded with the engine's re-evaluation, rendered
+    // "toast.show is not a function" as a crit Alert. The clinician reads a refusal for the one
+    // write this screen has and charts the same judgement again.
+    await openChartable();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Var kimi işarələ" }));
+      await settle();
+    });
+    // `getAllByText`, not `getByText`: the toast says it once visibly and once in its sr-only
+    // polite region (ui/Toast.jsx), and how many times is that component's business, not this
+    // screen's.
+    expect(screen.getAllByText("İşarələndi; mühərrik bu xəstəni yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ").trim()).toBe("");
+  });
+
   it("charts a \"no\" as 0, not as nothing at all", async () => {
     // A charted "no" is a fact about this patient; sending nothing would leave the engine in the
     // state where it evaluates no sepsis rule, which is a different thing entirely.
