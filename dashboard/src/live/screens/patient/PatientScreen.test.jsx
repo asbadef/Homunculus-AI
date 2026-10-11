@@ -453,6 +453,23 @@ describe("charting a suspected infection", () => {
     await act(async () => { release({ patient_id: "S-001", charted: 1, alerts: [] }); await settle(); });
   });
 
+  it("names the patient a refused charting was for", async () => {
+    // A refusal that says only "you do not have permission" tells a clinician that something
+    // failed and not WHICH patient still has no suspected infection charted — so she charts the
+    // wrong one, or neither. Read on another patient's screen, which it now outlives, it is
+    // attributed by nothing at all. The bed label when the board has one, the id when it does
+    // not — never a name we are not sure of.
+    await openChartable({ setup: (api) => api.chart.mockRejectedValue(refusal(403, "permission required: clinical.chart")) });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Var kimi işarələ" }));
+      await settle();
+    });
+    const said = within(screen.getByRole("region", { name: "Bildirişlər" })).getAllByText(/REA-01 · 2/);
+    expect(said.length).toBeGreaterThan(0);
+    // The reason survives in front of nothing: the subject goes before it, not instead of it.
+    expect(said.map((n) => n.textContent).join(" ")).toContain("səlahiyyətiniz yoxdur");
+  });
+
   it("a refusal survives the clinician walking away from the patient", async () => {
     // A refusal shown only by the screen that made it VANISHES when the clinician leaves
     // mid-write: she saw no error, assumes the judgement is charted, and the engine's sepsis

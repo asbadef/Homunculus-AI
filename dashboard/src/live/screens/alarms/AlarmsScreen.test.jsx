@@ -208,6 +208,23 @@ describe("the alarms screen", () => {
         .toContain("Bu siqnal artıq açıq deyil");
     });
 
+    it("names the alarm a refused acknowledgement was for", async () => {
+      // Same rule as the charting's refusal, and for the same reason: a nurse who reads only
+      // "you do not have permission" cannot tell which alarm is still unanswered. The bed and
+      // the kind, in the vocabulary the row itself uses.
+      await open({
+        payload: withAlarms(alarm("news2")),
+        setup: (fake) => fake.acknowledge.mockRejectedValue(refusal(403, "permission required: alerts.ack")),
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Gördüm" }));
+        await settle();
+      });
+      const said = within(screen.getByRole("region", { name: "Bildirişlər" })).getAllByText(/REA-01 · 2 · news2/);
+      expect(said.length).toBeGreaterThan(0);
+      expect(said.map((n) => n.textContent).join(" ")).toContain("səlahiyyətiniz yoxdur");
+    });
+
     it("a refusal survives the clinician leaving the screen", async () => {
       // The same rule as the patient screen's charting, and the consistency is the point: the two
       // clinical writes this build has must behave alike when the server says no. A refusal held

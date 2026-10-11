@@ -37,6 +37,7 @@ export default {
     noElapsed: "Motor ilk görülme zamanını göndermedi; süre gösterilmiyor.",
     openPatient: "{bed} hastasını aç",
     ackDone: "Alarm görüldü olarak işaretlendi.",
+    ackRefused: "{subject}: alarm onaylanmadı — {reason}",
   },
   az: {
     closedTitle: "Bağlanan siqnallar",
@@ -63,6 +64,7 @@ export default {
     noElapsed: "Mühərrik ilk görülmə vaxtını göndərməyib; müddət göstərilmir.",
     openPatient: "{bed} xəstəsini aç",
     ackDone: "Siqnal görüldü kimi işarələndi.",
+    ackRefused: "{subject}: siqnal təsdiqlənmədi — {reason}",
   },
   ru: {
     closedTitle: "Закрытые тревоги",
@@ -89,6 +91,7 @@ export default {
     noElapsed: "Система не передала время первого обнаружения; длительность не показывается.",
     openPatient: "Открыть пациента койки {bed}",
     ackDone: "Тревога отмечена как принятая.",
+    ackRefused: "{subject}: тревога не подтверждена — {reason}",
   },
   en: {
     closedTitle: "Closed alarms",
@@ -115,5 +118,6 @@ export default {
     noElapsed: "The engine sent no first-seen time, so no duration is shown.",
     openPatient: "Open the patient in bed {bed}",
     ackDone: "The alarm was marked as seen.",
+    ackRefused: "{subject}: the alarm was not acknowledged — {reason}",
   },
 };

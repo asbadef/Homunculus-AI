@@ -293,8 +293,14 @@ export function PatientScreen({ params }) {
     board.store.view(id).catch(() => {});
   }, [patient, id, board.store]);
 
+  const measured = hasMeasurement(patient?.measuredAt);
+  // What this screen is allowed to call the patient: the bed the SERVER resolved, or the id. Never
+  // `display_name` — a refusal naming a person is a claim we may not be sure of (Decision 14).
+  // Declared above `chart` because its refusal names it.
+  const bed = patient?.bedLabel || id;
+
   // Charting the suspected infection. `busy` while it is in flight (one at a time: the answer
-  // reloads the board), the API's own refusal on screen if it is refused, and nothing written
+  // reloads the board), the API's own refusal on the toast if it is refused, and nothing written
   // locally either way — a charted observation this screen showed and the server did not take
   // would be a lie with a clinician's name on it.
   // `charting` holds the ANSWER in flight (`true`/`false`) or `null`, so the screen can say which
@@ -321,14 +327,18 @@ export function PatientScreen({ params }) {
       // patient. The toast's provider sits above the router, so the refusal outlives the move and
       // stays until it is dismissed. It is also the reason there is no longer any per-patient
       // error state to show on the wrong patient.
-      toast(apiErrorText(t, err), "error");
+      //
+      // AND IT NAMES THE PATIENT. Because it outlives the move, a refusal saying only "you do not
+      // have permission" is read on someone else's screen attributed to nobody: it tells a
+      // clinician that something failed and not which patient still has no suspected infection
+      // charted, so she charts the wrong one or neither. The bed label when the board has one and
+      // the id when it does not — never the patient's NAME, which is a claim about a person this
+      // screen may not be sure of.
+      toast(t("patient.chartRefused", { subject: bed, reason: apiErrorText(t, err) }), "error");
     } finally {
       setCharting(null);
     }
   }
-
-  const measured = hasMeasurement(patient?.measuredAt);
-  const bed = patient?.bedLabel || id;
 
   return (
     <div className="flex min-h-0 max-w-[1000px] flex-col gap-3">

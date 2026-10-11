@@ -191,7 +191,13 @@ export function AlarmsScreen() {
       // answered when nobody had answered it. The toast's provider is above the router, so it
       // outlives the move; and because each refusal is a new toast item, two identical refusals
       // are two announcements without the remount trick the inline Alert needed.
-      toast(apiErrorText(t, err), "error");
+      //
+      // AND IT NAMES THE ALARM — the bed and the kind, in the vocabulary the row itself uses
+      // (`bedLabel || patientId`, never a name). Outliving the screen is what makes attribution
+      // necessary: "you do not have permission", read anywhere else, says that something failed
+      // and not which alarm is still unanswered.
+      const bed = alarm.bedLabel || alarm.patientId;
+      toast(t("alarms.ackRefused", { subject: `${bed} · ${alarm.kind}`, reason: apiErrorText(t, err) }), "error");
     } finally {
       setBusyId(null);
     }
