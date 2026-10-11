@@ -117,9 +117,12 @@ export default {
     ageH: "{count} ч",
     unitBpm: "/мин",
     unitPct: "%",
-    unitMmhg: "mmHg",
+    // Russian writes these two out rather than keeping the Latin symbol, which is what the beds
+    // arm's own dictionary had before the units moved here — worth carrying over: a Russian-reading
+    // clinician meets the unit they would write on a chart.
+    unitMmhg: "мм рт. ст.",
     unitC: "°C",
-    unitMmol: "mmol/L",
+    unitMmol: "ммоль/л",
     chHr: "Пульс",
     chSpo2: "SpO2",
     chSbp: "Систолическое АД",

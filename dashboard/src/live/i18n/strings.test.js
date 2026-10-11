@@ -14,10 +14,9 @@ const NEUTRAL = new Set([
   // heading unique in this file — AZ_SAME_AS_TR below carries the same seven, suffixed `· az = tr`.
   // board (shared by the clinical screens, added with the first of them) · neutral
   "board.chSpo2", //              SpO2 again, on the board
-  "board.unitPct", //             %       — the units of measurement are written the same
-  "board.unitMmhg", //            mmHg      in every script this product speaks; only the
-  "board.unitC", //               °C        per-minute one has a word in it (board.unitBpm)
-  "board.unitMmol", //            mmol/L
+  "board.unitPct", //             %   — a symbol, not a word, in every script this product speaks.
+  "board.unitC", //               °C    (Russian writes mmHg and mmol/L out — "мм рт. ст.",
+  //                                     "ммоль/л" — so those two are not here.)
 
   // G1-09 (beds) · neutral
 

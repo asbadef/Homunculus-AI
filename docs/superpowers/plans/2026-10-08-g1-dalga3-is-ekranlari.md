@@ -2362,6 +2362,8 @@ This is the most important component of Wave 3, and it exists for one failure mo
 
 The task also pre-places the i18n seam for the six screens: one commented import and one commented entry each, so the parallel arms touch two lines nobody else does.
 
+> **This task is DONE, and the code moved after it.** The blocks below are the record of what was asked, not the current source; the review of Tasks 0–8 changed three things in them, and `amendments.md` is authoritative. `FeedHealth` now takes **`connection`** and renders nothing unless `boardKnown(connection)` — on a board that is not LIVE the snapshot is never reloaded, so the chip first said "data is arriving from every bed" and then blamed the ward's monitors for our own outage. It also reports beds that were never wired separately from beds that have stopped. `summaryOf` returns **`null`** rather than `""`, and the caller prints `t("board.findingUnnamed")`. And `vitals.js`'s `unitKey`s point at **`board.unit*`**, not `beds.unit*`, which does not exist until the beds arm merges.
+
 - [ ] **Step 1: Write the strings** — `board.js`. Note the trap in its header: the prototype's dictionary resolves "Isı" (temperature) to the heat-map screen's title in all three target languages, so the channel names are written out here instead of reused.
 
 ```javascript
@@ -2786,7 +2788,7 @@ describe("FeedHealth", () => {
   const measured = { heart_rate: ago(30), spo2: ago(30), sbp: ago(30), map: ago(30), temperature: ago(30), resp_rate: ago(30) };
 
   it("says how many beds have gone quiet, and when the quietest one last spoke", () => {
-    show(<FeedHealth nowMs={NOW} patients={[
+    show(<FeedHealth connection={connection} nowMs={NOW} patients={[
       { patient_id: "S-001", measuredAt: measured },
       { patient_id: "S-002", measuredAt: { heart_rate: ago(4_000) } },
     ]} />);
@@ -2795,22 +2797,22 @@ describe("FeedHealth", () => {
   });
 
   it("says so when every bed is reporting — but only a LIVE board should show it at all", () => {
-    show(<FeedHealth nowMs={NOW} patients={[{ patient_id: "S-001", measuredAt: measured }]} />);
+    show(<FeedHealth connection={connection} nowMs={NOW} patients={[{ patient_id: "S-001", measuredAt: measured }]} />);
     expect(screen.getByText(/Bütün çarpayılardan məlumat gəlir/)).toBeInTheDocument();
   });
 
   it("names itself before it names a number", () => {
-    show(<FeedHealth nowMs={NOW} patients={[{ patient_id: "S-001", measuredAt: measured }]} />);
+    show(<FeedHealth connection={connection} nowMs={NOW} patients={[{ patient_id: "S-001", measuredAt: measured }]} />);
     expect(screen.getByText("Cihaz və məlumat axını:")).toBeInTheDocument();
   });
 
   it("an empty board has no feed to report on", () => {
-    const { container } = show(<FeedHealth nowMs={NOW} patients={[]} />);
+    const { container } = show(<FeedHealth connection={connection} nowMs={NOW} patients={[]} />);
     expect(container).toBeEmptyDOMElement();
   });
 
   it("a bed that has never been measured has no oldest instant to name", () => {
-    show(<FeedHealth nowMs={NOW} patients={[{ patient_id: "S-002", measuredAt: {} }]} />);
+    show(<FeedHealth connection={connection} nowMs={NOW} patients={[{ patient_id: "S-002", measuredAt: {} }]} />);
     expect(screen.getByText(/Səssiz çarpayı: 1/)).toBeInTheDocument();
     expect(screen.queryByText(/Ən köhnə ölçmə:/)).toBeNull();
   });
@@ -2947,13 +2949,13 @@ Create `dashboard/src/live/screens/common/vitals.js`:
 // on this screen is told apart: by its label and its unit. Colour is never the only carrier of a
 // distinction here — it cannot be, for the colour-blind clinician or the printed handover.
 export const VITALS = Object.freeze([
-  { at: "heart_rate", get: (p) => p?.vitals?.hr, labelKey: "board.chHr", unitKey: "beds.unitBpm", color: "text-v-hr" },
-  { at: "resp_rate", get: (p) => p?.vitals?.rr, labelKey: "board.chRr", unitKey: "beds.unitBpm", color: "text-v-rr" },
-  { at: "spo2", get: (p) => p?.vitals?.spo2, labelKey: "board.chSpo2", unitKey: "beds.unitPct", color: "text-v-spo" },
-  { at: "sbp", get: (p) => p?.vitals?.sbp, labelKey: "board.chSbp", unitKey: "beds.unitMmhg", color: "text-v-map" },
-  { at: "map", get: (p) => p?.vitals?.map, labelKey: "board.chMap", unitKey: "beds.unitMmhg", color: "text-v-map" },
-  { at: "temperature", get: (p) => p?.vitals?.temp, labelKey: "board.chTemp", unitKey: "beds.unitC", color: "text-v-t" },
-  { at: "lactate", get: (p) => p?.lactate, labelKey: "board.chLac", unitKey: "beds.unitMmol", color: "text-ink" },
+  { at: "heart_rate", get: (p) => p?.vitals?.hr, labelKey: "board.chHr", unitKey: "board.unitBpm", color: "text-v-hr" },
+  { at: "resp_rate", get: (p) => p?.vitals?.rr, labelKey: "board.chRr", unitKey: "board.unitBpm", color: "text-v-rr" },
+  { at: "spo2", get: (p) => p?.vitals?.spo2, labelKey: "board.chSpo2", unitKey: "board.unitPct", color: "text-v-spo" },
+  { at: "sbp", get: (p) => p?.vitals?.sbp, labelKey: "board.chSbp", unitKey: "board.unitMmhg", color: "text-v-map" },
+  { at: "map", get: (p) => p?.vitals?.map, labelKey: "board.chMap", unitKey: "board.unitMmhg", color: "text-v-map" },
+  { at: "temperature", get: (p) => p?.vitals?.temp, labelKey: "board.chTemp", unitKey: "board.unitC", color: "text-v-t" },
+  { at: "lactate", get: (p) => p?.lactate, labelKey: "board.chLac", unitKey: "board.unitMmol", color: "text-ink" },
 ]);
 
 /** The channels this card HAS a value for, with the value and the instant it was measured.
@@ -4675,6 +4677,8 @@ EOF
 
 Read the component's header before writing it. Five honesty rules meet on this card, and each one is there because the old board or the prototype got it wrong: `measured` comes from the card's own timestamps, a never-measured channel is left out instead of printed as a dash, the name is the HIS's or it is *stated as missing* (the device's number is not a person's name), NEWS2 is the engine's or it is "—" with the reason, and `red_param` is a fact that does not change the engine's level.
 
+> **Migrated to the as-built fixtures, 2026-10-09.** Every `entry(…)` and `alarm(…)` below is in the shipped positional form — `entry(id, alarms, over)`, `alarm(kind, severity, over)` — because both builders now **throw** on the old object-second shape. The units of measurement are **not** declared in `beds.js`: they moved to the shared `board` namespace (`board.unitBpm` … `board.unitMmol`, with Russian writing mmHg and mmol/L out), so the five declarations and their parity entries are gone from this task. Four blocks still say `at: measured(30)` beside a partial `vitals`, and that is deliberate: `measured()` timestamps all six monitor channels, so a channel with **no** value still has an age — which is exactly what "Gecikmiş kanal: N" counts. Use `reading({…}, s)` when you want a card whose numbers and ages are the same channels, and keep `measured()` where the test is about an overdue channel. `riskOf` derives the card's risk from its alarms, so an explicit `risk:` in an override is now a deliberate statement rather than scaffolding — the blocks that carry one mean it.
+
 - [ ] **Step 1: Write the strings**
 
 Create `dashboard/src/live/i18n/strings/beds.js`:
@@ -4734,11 +4738,6 @@ export default {
     colAlarms: "Uyarılar",
     colMeasured: "Son ölçüm",
     caption: "Yataklar ve son ölçülen değerleri",
-    unitBpm: "/dk",
-    unitMmhg: "mmHg",
-    unitPct: "%",
-    unitC: "°C",
-    unitMmol: "mmol/L",
   },
   az: {
     sub: "{count} çarpayı",
@@ -4782,11 +4781,6 @@ export default {
     colAlarms: "Xəbərdarlıqlar",
     colMeasured: "Son ölçmə",
     caption: "Çarpayılar və son ölçülən dəyərləri",
-    unitBpm: "/dəq",
-    unitMmhg: "mmHg",
-    unitPct: "%",
-    unitC: "°C",
-    unitMmol: "mmol/L",
   },
   ru: {
     sub: "Коек: {count}",
@@ -4830,11 +4824,6 @@ export default {
     colAlarms: "Предупреждения",
     colMeasured: "Последнее измерение",
     caption: "Койки и последние измеренные значения",
-    unitBpm: "/мин",
-    unitMmhg: "мм рт. ст.",
-    unitPct: "%",
-    unitC: "°C",
-    unitMmol: "ммоль/л",
   },
   en: {
     sub: "{count} beds",
@@ -4878,11 +4867,6 @@ export default {
     colAlarms: "Alerts",
     colMeasured: "Last measured",
     caption: "Beds and their last measured values",
-    unitBpm: "/min",
-    unitMmhg: "mmHg",
-    unitPct: "%",
-    unitC: "°C",
-    unitMmol: "mmol/L",
   },
 };
 ```
@@ -4934,10 +4918,6 @@ with
   "beds.orderRisk", //       Risk sırası — the prototype's AZ section line ("risk sırasına görə")
   "beds.staleChannels", //   Gecikmiş kanal — "overdue channel" reads the same in Azerbaijani
   "beds.news2", //           NEWS2 — the score's own name
-  "beds.unitMmhg", //        mmHg — the unit's symbol
-  "beds.unitPct", //         % — the same
-  "beds.unitC", //           °C — the same
-  "beds.unitMmol", //        mmol/L — the same
 
   // G1-10 (alarms) · az = tr
 ```
@@ -4955,7 +4935,6 @@ with
 ```javascript
   // G1-09 (beds) · neutral
   "beds.news2", //                NEWS2 — the score's own name, not translated anywhere
-  "beds.unitPct", "beds.unitC", //  % and °C — symbols
 
   // G1-10 (alarms) · neutral
 ```
@@ -4992,7 +4971,7 @@ function card(raw) {
 
 describe("the bed card — what it says, and what it refuses to", () => {
   it("names the bed and the patient, and links to the patient", () => {
-    card(entry("S-001", { identity: identity(), at: measured(30) }));
+    card(entry("S-001", [], { identity: identity(), at: measured(30) }));
     const link = screen.getByRole("link", { name: "REA-01 · 2 xəstəsini aç" });
     expect(link).toHaveAttribute("href", "#/patients/S-001");
     expect(screen.getByText("REA-01 · 2")).toBeInTheDocument();
@@ -5000,44 +4979,44 @@ describe("the bed card — what it says, and what it refuses to", () => {
   });
 
   it("a card with no HIS name says what is missing — it does not print the device's id as a name", () => {
-    card(entry("S-002", { at: measured(30) }));
+    card(entry("S-002", [], { at: measured(30) }));
     expect(screen.getByText("kimlik gözlənilir")).toBeInTheDocument();
     // The id is the bed slot's business, and appears there once.
     expect(screen.getAllByText("S-002")).toHaveLength(1);
   });
 
   it("an escaped id reaches the link intact", () => {
-    card(entry("S 001/A", { at: measured(30) }));
+    card(entry("S 001/A", [], { at: measured(30) }));
     expect(screen.getByRole("link")).toHaveAttribute("href", "#/patients/S%20001%2FA");
   });
 
   describe("risk", () => {
     it("risk none on a MEASURED card reads \"no finding\"", () => {
-      card(entry("S-001", { risk: "none", at: measured(30), vitals: { heart_rate: 78 } }));
+      card(entry("S-001", [], { risk: "none", at: measured(30), vitals: { heart_rate: 78 } }));
       expect(screen.getByText("Tapıntı yoxdur")).toBeInTheDocument();
     });
 
     it("risk none on a card with NO observation reads \"not measured\"", () => {
       // The claim "no finding" is about observations, and this card has none.
-      card(entry("S-002", { risk: "none" }));
+      card(entry("S-002", [], { risk: "none" }));
       expect(screen.getByText("Ölçülməyib")).toBeInTheDocument();
     });
 
     it("moderate is amber, never a green \"stable\"", () => {
-      const { container } = card(entry("S-001", { risk: "moderate", at: measured(30) }));
+      const { container } = card(entry("S-001", [], { risk: "moderate", at: measured(30) }));
       expect(screen.getByText("Orta")).toBeInTheDocument();
       expect(container.querySelector("[data-rail]")).toHaveAttribute("data-rail", "mid");
       expect(container.querySelector("[data-tone='ok']")).toBeNull();
     });
 
     it("a risk the engine did not send takes the attention look, not a quiet one", () => {
-      const { container } = card(entry("S-001", { risk: null, at: measured(30) }));
+      const { container } = card(entry("S-001", [], { risk: null, at: measured(30) }));
       expect(screen.getByText("Risk bildirilməyib")).toBeInTheDocument();
       expect(container.querySelector("[data-rail]")).toHaveAttribute("data-rail", "att");
     });
 
     it("the stripe's colour is never the only signal: the pill's word is beside it", () => {
-      const { container } = card(entry("S-001", { risk: "critical", at: measured(30) }));
+      const { container } = card(entry("S-001", [], { risk: "critical", at: measured(30) }));
       expect(container.querySelector("[data-rail='crit']")).toBeInTheDocument();
       expect(screen.getByText("Kritik")).toBeInTheDocument();
     });
@@ -5045,10 +5024,7 @@ describe("the bed card — what it says, and what it refuses to", () => {
 
   describe("the measured channels", () => {
     it("shows the channels that have a value, with their units", () => {
-      card(entry("S-001", {
-        at: measured(30),
-        vitals: { heart_rate: 118, spo2: 91, resp_rate: 26, map: 58, sbp: 92, temperature: 38.4 },
-      }));
+      card(entry("S-001", [], { ...reading({ heart_rate: 118, spo2: 91, resp_rate: 26, map: 58, sbp: 92, temperature: 38.4 }, 30) }));
       expect(screen.getByText("118")).toBeInTheDocument();
       expect(screen.getByText("91")).toBeInTheDocument();
       expect(screen.getByText("Nəbz")).toBeInTheDocument();
@@ -5056,12 +5032,12 @@ describe("the bed card — what it says, and what it refuses to", () => {
     });
 
     it("a measured 0 is a finding, not a missing value", () => {
-      card(entry("S-001", { at: measured(30), vitals: { resp_rate: 0 } }));
+      card(entry("S-001", [], { at: measured(30), vitals: { resp_rate: 0 } }));
       expect(screen.getByText("0")).toBeInTheDocument();
     });
 
     it("a channel with no value is left out rather than printed as a dash", () => {
-      const { container } = card(entry("S-001", { at: measured(30), vitals: { heart_rate: 78 } }));
+      const { container } = card(entry("S-001", [], { at: measured(30), vitals: { heart_rate: 78 } }));
       expect(container.querySelectorAll("dl dt")).toHaveLength(1);
       expect(screen.queryByText("SpO2")).toBeNull();
     });
@@ -5072,7 +5048,7 @@ describe("the bed card — what it says, and what it refuses to", () => {
     });
 
     it("says when the card was last measured, and how many channels are overdue", () => {
-      card(entry("S-001", {
+      card(entry("S-001", [], {
         at: { heart_rate: ago(30), spo2: ago(4_000) },
         vitals: { heart_rate: 78, spo2: 96 },
       }));
@@ -5083,19 +5059,19 @@ describe("the bed card — what it says, and what it refuses to", () => {
 
   describe("NEWS2", () => {
     it("shows the engine's total", () => {
-      card(entry("S-001", { at: measured(30), score: news2({ total: 7 }) }));
+      card(entry("S-001", [], { at: measured(30), score: news2({ total: 7 }) }));
       expect(screen.getByText("NEWS2:")).toBeInTheDocument();
       expect(screen.getByText("7")).toBeInTheDocument();
     });
 
     it("no engine score is a dash with the reason — never a score of the screen's own", () => {
-      card(entry("S-001", { at: measured(30), vitals: { heart_rate: 78, spo2: 96 } }));
+      card(entry("S-001", [], { at: measured(30), vitals: { heart_rate: 78, spo2: 96 } }));
       expect(screen.getByText("NEWS2: —")).toBeInTheDocument();
       expect(screen.getByText(/ekran öz hesabını aparmır/)).toBeInTheDocument();
     });
 
     it("a partial score is marked, with the unmeasured parameters read out", () => {
-      card(entry("S-001", {
+      card(entry("S-001", [], {
         at: measured(30),
         score: news2({ total: 4, partial: true, missing: ["respiration_rate", "temperature"] }),
       }));
@@ -5106,7 +5082,7 @@ describe("the bed card — what it says, and what it refuses to", () => {
     it("a red parameter is stated as a fact and does NOT change the engine's level", () => {
       // The engine may legitimately send "low" with red_param true (patient_relative lowers a
       // NEWS2 alert the patient's charted chronic normal explains). The screen reports both.
-      const { container } = card(entry("S-001", {
+      const { container } = card(entry("S-001", [], {
         risk: "low", at: measured(30), score: news2({ total: 5, red_param: true }),
       }));
       expect(screen.getByText("Bir parametr 3 bal alıb")).toBeInTheDocument();
@@ -5117,27 +5093,18 @@ describe("the bed card — what it says, and what it refuses to", () => {
 
   describe("the open alarms", () => {
     it("puts the open alarms on the card, with the engine's own summary", () => {
-      card(entry("S-001", {
-        at: measured(30), risk: "high",
-        alerts: [alarm("news2", { severity: "high", summary: "NEWS2 7" })],
-      }));
+      card(entry("S-001", [alarm("news2", "high", { summary: "NEWS2 7" })], { at: measured(30), risk: "high" }));
       expect(screen.getByText("NEWS2 7")).toBeInTheDocument();
     });
 
     it("an acknowledged alarm leaves the card's own list", () => {
-      card(entry("S-001", {
-        at: measured(30),
-        alerts: [alarm("news2", { summary: "NEWS2 7", acknowledged: true, acknowledged_by: "ayse" })],
-      }));
+      card(entry("S-001", [alarm("news2", "high", { summary: "NEWS2 7", acknowledged: true, acknowledged_by: "ayse" })], { at: measured(30) }));
       expect(screen.queryByText("NEWS2 7")).toBeNull();
     });
 
     it("an alarm with severity \"none\" can never read \"no finding\"", () => {
       // "none" is a PATIENT's risk — "no alarm at all" — and never an alarm's own severity.
-      card(entry("S-001", {
-        risk: "info", at: measured(30),
-        alerts: [alarm("other", { severity: "none", summary: "ölçüt" })],
-      }));
+      card(entry("S-001", [alarm("other", "none", { summary: "ölçüt" })], { risk: "info", at: measured(30) }));
       expect(screen.queryByText("Tapıntı yoxdur")).toBeNull();
       expect(screen.getByText("Risk bildirilməyib")).toBeInTheDocument();
       expect(screen.getByText("Məlumat")).toBeInTheDocument();
@@ -5146,22 +5113,22 @@ describe("the bed card — what it says, and what it refuses to", () => {
 
   describe("where the identity came from", () => {
     it("says the HIS sent it, and when", () => {
-      card(entry("S-001", { identity: identity({ updated_at: ago(600) }), at: measured(30) }));
+      card(entry("S-001", [], { identity: identity({ updated_at: ago(600) }), at: measured(30) }));
       expect(screen.getByText("XMİS")).toBeInTheDocument();
     });
 
     it("says there is no identity record for a device-only card", () => {
-      card(entry("S-002", { at: measured(30) }));
+      card(entry("S-002", [], { at: measured(30) }));
       expect(screen.getByText("Kimlik qeydi yoxdur")).toBeInTheDocument();
     });
 
     it("says a discharged patient is discharged", () => {
-      card(entry("S-001", { identity: identity({ state: "discharged" }), at: measured(30) }));
+      card(entry("S-001", [], { identity: identity({ state: "discharged" }), at: measured(30) }));
       expect(screen.getByText(/Evə yazılıb/)).toBeInTheDocument();
     });
 
     it("names the HIS location a bed table does not cover — the line an operator must add", () => {
-      card(entry("S-001", {
+      card(entry("S-001", [], {
         identity: identity({ bed_id: null, unit_id: null, bed_matched: false, bed_key: "REA^999^9" }),
         at: measured(30),
       }));
@@ -5169,7 +5136,7 @@ describe("the bed card — what it says, and what it refuses to", () => {
     });
 
     it("a matched bed says nothing about matching", () => {
-      card(entry("S-001", { identity: identity(), at: measured(30) }));
+      card(entry("S-001", [], { identity: identity(), at: measured(30) }));
       expect(screen.queryByText(/uyğunlaşmadı/)).toBeNull();
     });
   });
@@ -5182,11 +5149,8 @@ describe("the bed card reconciles a downgraded level at a glance", () => {
   // reconciling them, so a clinician had to open the patient to tell a justified low from an
   // engine fault.
   it("marks a downgraded finding chronic-expected, with the engine's reason in its name", () => {
-    card(entry("S-001", {
-      risk: "low", at: measured(30), score: news2({ total: 5, red_param: true }),
-      alerts: [alarm("news2", { severity: "low", downgraded: true,
-        chronic_context: "Chronic oxygen therapy explains the SpO2." })],
-    }));
+    card(entry("S-001", [alarm("news2", "low", { downgraded: true,
+        chronic_context: "Chronic oxygen therapy explains the SpO2." })], { risk: "low", at: measured(30), score: news2({ total: 5, red_param: true }) }));
     expect(screen.getByText("Xəstənin öz normasına görə gözlənilən")).toBeInTheDocument();
     expect(screen.getByText(/Chronic oxygen therapy explains the SpO2/)).toBeInTheDocument();
     // Both facts still stand, and neither is overridden. (Two pills read "Aşağı": the patient's
@@ -5196,28 +5160,25 @@ describe("the bed card reconciles a downgraded level at a glance", () => {
   });
 
   it("the pill is NEUTRAL, not the attention look — it is an explanation, not a warning", () => {
-    const { container } = card(entry("S-001", {
-      risk: "low", at: measured(30),
-      alerts: [alarm("news2", { severity: "low", downgraded: true, chronic_context: "Chronic AF." })],
-    }));
+    const { container } = card(entry("S-001", [alarm("news2", "low", { downgraded: true, chronic_context: "Chronic AF." })], { risk: "low", at: measured(30) }));
     const pill = screen.getByText("Xəstənin öz normasına görə gözlənilən").closest("[data-tone]");
     expect(pill).toHaveAttribute("data-tone", "neutral");
     expect(container.querySelector("[data-tone='att']")).toBeNull();
   });
 
   it("an ordinary finding carries no such pill", () => {
-    card(entry("S-001", { risk: "high", at: measured(30), alerts: [alarm("news2")] }));
+    card(entry("S-001", [alarm("news2")], { risk: "high", at: measured(30) }));
     expect(screen.queryByText("Xəstənin öz normasına görə gözlənilən")).toBeNull();
   });
 
   it("marks the engine's summary as English, and says so once", () => {
-    card(entry("S-001", { risk: "high", at: measured(30), alerts: [alarm("news2", { summary: "NEWS2 7" })] }));
+    card(entry("S-001", [alarm("news2", "high", { summary: "NEWS2 7" })], { risk: "high", at: measured(30) }));
     expect(screen.getByText("NEWS2 7")).toHaveAttribute("lang", "en");
     expect(screen.getByText("Mühərrikin mətnləri İngiliscədir; tərcümə olunmayıb.")).toBeInTheDocument();
   });
 
   it("a card with no alarm says nothing about English", () => {
-    card(entry("S-001", { at: measured(30) }));
+    card(entry("S-001", [], { at: measured(30) }));
     expect(screen.queryByText(/İngiliscədir/)).toBeNull();
   });
 });
@@ -5386,7 +5347,7 @@ export function BedCard({ patient, alerts = [], nowMs }) {
                 {/* The engine writes its summaries in English (reco/engine.py); marked so a
                     screen reader pronounces them as English rather than with Azerbaijani
                     phonetics. The card says once, at its foot, that they are English. */}
-                <span lang="en" className="min-w-0 flex-1 text-12.5 text-ink">{summaryOf(a)}</span>
+                <span lang="en" className="min-w-0 flex-1 text-12.5 text-ink">{summaryOf(a) ?? t("board.findingUnnamed")}</span>
                 <ChronicExpected alarm={a} />
               </li>
             ))}
@@ -5803,7 +5764,7 @@ const CARD = { identity: identity(), at: measured(30), vitals: { heart_rate: 96,
 
 describe("the bed board", () => {
   it("names itself and counts the beds it shows", async () => {
-    await open({ payload: board([entry("S-001", CARD), entry("S-002", { at: measured(30) })]) });
+    await open({ payload: board([entry("S-001", CARD), entry("S-002", [], { at: measured(30) })]) });
     expect(screen.getByRole("heading", { level: 1, name: "Çarpayılar" })).toBeInTheDocument();
     // One h1 and no more: the shell moves focus to <main> after every move, and the screen's own
     // heading is what a reader lands on.
@@ -5846,8 +5807,8 @@ describe("the bed board", () => {
     it("counts the unanswered alarms and how long the oldest has been open", async () => {
       await open({
         payload: board([
-          entry("S-001", { ...CARD, risk: "high", alerts: [alarm("news2", { first_seen_at: ago(247) })] }),
-          entry("S-002", { at: measured(30), risk: "moderate", alerts: [alarm("acute_change", { severity: "moderate" })] }),
+          entry("S-001", [alarm("news2", "high", { first_seen_at: ago(247) })], { ...CARD, risk: "high" }),
+          entry("S-002", [alarm("acute_change", "moderate")], { at: measured(30), risk: "moderate" }),
         ]),
       });
       expect(screen.getByText("Cavab gözləyən siqnal: 2")).toBeInTheDocument();
@@ -5896,7 +5857,7 @@ describe("the bed board", () => {
     await open({
       payload: board([
         entry("S-001", CARD),
-        entry("S-002", { at: { heart_rate: ago(4_000) }, vitals: { heart_rate: 70 } }),
+        entry("S-002", [], { at: { heart_rate: ago(4_000) }, vitals: { heart_rate: 70 } }),
       ]),
     });
     expect(screen.getByText(/Səssiz çarpayı: 1/)).toBeInTheDocument();
@@ -5912,7 +5873,7 @@ describe("the bed board", () => {
     });
 
     it("the list prints an unmeasured channel as a dash a screen reader can read", async () => {
-      await open({ payload: board([entry("S-001", { ...CARD, vitals: { heart_rate: 96 } })]) });
+      await open({ payload: board([entry("S-001", [], { ...CARD, vitals: { heart_rate: 96 } })]) });
       fireEvent.click(screen.getByRole("button", { name: "Siyahı" }));
       expect(screen.getAllByText("Ölçülməyib").length).toBeGreaterThan(0);
     });
@@ -5932,8 +5893,8 @@ describe("the bed board", () => {
     it("risk order puts the worst first, and the note goes away", async () => {
       await open({
         payload: board([
-          entry("REA-1", { identity: identity({ bed_label: "REA-1" }), at: measured(30), risk: "low" }),
-          entry("REA-2", { identity: identity({ bed_label: "REA-2" }), at: measured(30), risk: "critical" }),
+          entry("REA-1", [], { identity: identity({ bed_label: "REA-1" }), at: measured(30), risk: "low" }),
+          entry("REA-2", [], { identity: identity({ bed_label: "REA-2" }), at: measured(30), risk: "critical" }),
         ]),
       });
       fireEvent.click(screen.getByRole("button", { name: "Risk sırası" }));
@@ -5950,7 +5911,7 @@ describe("the bed board", () => {
         units: ["NICU-01", "REA-01"],
         payload: board([
           entry("S-001", CARD),
-          entry("S-002", { identity: identity({ unit_id: "NICU-01", bed_label: "NICU-01 · 1" }), at: measured(30) }),
+          entry("S-002", [], { identity: identity({ unit_id: "NICU-01", bed_label: "NICU-01 · 1" }), at: measured(30) }),
         ]),
       });
       const select = screen.getByRole("combobox");
@@ -5965,7 +5926,7 @@ describe("the bed board", () => {
         units: ["NICU-01", "REA-01"],
         payload: board([
           entry("S-001", CARD),
-          entry("S-002", { identity: identity({ unit_id: "NICU-01", bed_label: "NICU-01 · 1" }), at: measured(30) }),
+          entry("S-002", [], { identity: identity({ unit_id: "NICU-01", bed_label: "NICU-01 · 1" }), at: measured(30) }),
         ]),
       });
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "NICU-01" } });
@@ -5981,7 +5942,7 @@ describe("the bed board", () => {
       await open({
         payload: board([
           entry("S-001", CARD),
-          entry("S-002", { identity: identity({ display_name: "Kamran Sentetik", bed_label: "REA-01 · 3" }), at: measured(30) }),
+          entry("S-002", [], { identity: identity({ display_name: "Kamran Sentetik", bed_label: "REA-01 · 3" }), at: measured(30) }),
         ]),
       });
       fireEvent.change(screen.getByLabelText("Çarpayı və ya xəstə axtar"), { target: { value: "kamran" } });
@@ -6144,7 +6105,7 @@ function BedList({ patients, alertsOf, nowMs }) {
               </th>
               <td className={p.display_name ? "" : "italic text-mute"}>
                 {nameOf(p, t)}
-                {open.length ? <small lang="en" className="block text-11 text-mute">{summaryOf(open[0])}</small> : null}
+                {open.length ? <small lang="en" className="block text-11 text-mute">{summaryOf(open[0]) ?? t("board.findingUnnamed")}</small> : null}
               </td>
               <td><RiskPill risk={p.risk} measured={measured} /></td>
               <td>{cell("heart_rate")}</td>
@@ -6217,7 +6178,7 @@ export function BedsScreen() {
       <div className="grid gap-2 min-[861px]:grid-cols-2">
         <Waiting nowMs={nowMs} />
         <div className="flex items-center gap-2 rounded-box border border-line bg-card px-3 py-2.5">
-          <FeedHealth patients={all} nowMs={nowMs} />
+          <FeedHealth connection={connection} patients={all} nowMs={nowMs} />
         </div>
       </div>
 
@@ -6569,7 +6530,7 @@ async function open({ payload = board(), connection = "live", perms = ["board.vi
 }
 
 const CARD = { identity: identity(), at: measured(30) };
-const withAlarms = (...alarms) => board([entry("S-001", { ...CARD, risk: "high", alerts: alarms })]);
+const withAlarms = (...alarms) => board([entry("S-001", alarms, { ...CARD, risk: "high" })]);
 
 beforeEach(() => vi.setSystemTime(NOW));
 afterEach(() => {
@@ -6579,7 +6540,7 @@ afterEach(() => {
 
 describe("the alarms screen", () => {
   it("names itself and shows the two sections the board can answer for", async () => {
-    await open({ payload: withAlarms(alarm("news2", { summary: "NEWS2 7" })) });
+    await open({ payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })) });
     expect(screen.getByRole("heading", { level: 1, name: "Siqnallar" })).toBeInTheDocument();
     // One h1 and no more: the shell moves focus to <main> after every move, and the screen's own
     // heading is what a reader lands on.
@@ -6596,7 +6557,7 @@ describe("the alarms screen", () => {
   });
 
   it("says whose business escalation is, and shows only the flag the engine sent", async () => {
-    await open({ payload: withAlarms(alarm("news2", { escalated: true })) });
+    await open({ payload: withAlarms(alarm("news2", "high", { escalated: true })) });
     expect(screen.getByText("Eskalasiya edilib")).toBeInTheDocument();
     expect(screen.getByText(/Eskalasiyanı mühərrik yürüdür/)).toBeInTheDocument();
     // No 3 / 5 / 10-minute ladder: nothing behind the live API has that shape.
@@ -6605,29 +6566,29 @@ describe("the alarms screen", () => {
 
   describe("how long an alarm has been open", () => {
     it("writes minutes and seconds under an hour", async () => {
-      await open({ payload: withAlarms(alarm("news2", { first_seen_at: ago(247) })) });
+      await open({ payload: withAlarms(alarm("news2", "high", { first_seen_at: ago(247) })) });
       expect(screen.getByText("4:07")).toBeInTheDocument();
     });
 
     it("opens the hour field past an hour — never \"318:30\"", async () => {
-      await open({ payload: withAlarms(alarm("news2", { first_seen_at: ago(19_110) })) });
+      await open({ payload: withAlarms(alarm("news2", "high", { first_seen_at: ago(19_110) })) });
       expect(screen.getByText("5:18:30")).toBeInTheDocument();
       expect(screen.queryByText("318:30")).toBeNull();
     });
 
     it("shows NO duration when the engine sent no first-seen time", async () => {
-      await open({ payload: withAlarms(alarm("news2", { first_seen_at: null })) });
+      await open({ payload: withAlarms(alarm("news2", "high", { first_seen_at: null })) });
       expect(screen.getByText("Mühərrik ilk görülmə vaxtını göndərməyib; müddət göstərilmir.")).toBeInTheDocument();
     });
 
     it("counts from the server's instant against this browser's clock", async () => {
       // How often it is re-read is useNow's business (screens/common/useNow.test.jsx).
-      await open({ payload: withAlarms(alarm("news2", { first_seen_at: ago(60) })) });
+      await open({ payload: withAlarms(alarm("news2", "high", { first_seen_at: ago(60) })) });
       expect(screen.getByText("1:00")).toBeInTheDocument();
     });
 
     it("an instant that has not arrived yet reads 0:00, not a negative age", async () => {
-      await open({ payload: withAlarms(alarm("news2", { first_seen_at: ago(-90) })) });
+      await open({ payload: withAlarms(alarm("news2", "high", { first_seen_at: ago(-90) })) });
       expect(screen.getByText("0:00")).toBeInTheDocument();
     });
   });
@@ -6636,9 +6597,9 @@ describe("the alarms screen", () => {
     it("worst first, then oldest, among the alarms awaiting a response", async () => {
       await open({
         payload: board([
-          entry("S-001", { ...CARD, alerts: [alarm("a", { severity: "moderate", first_seen_at: ago(900) })] }),
-          entry("S-002", { ...CARD, alerts: [alarm("b", { severity: "critical", first_seen_at: ago(60) })] }),
-          entry("S-003", { ...CARD, alerts: [alarm("c", { severity: "critical", first_seen_at: ago(600) })] }),
+          entry("S-001", [alarm("a", "moderate", { first_seen_at: ago(900) })], { ...CARD }),
+          entry("S-002", [alarm("b", "critical", { first_seen_at: ago(60) })], { ...CARD }),
+          entry("S-003", [alarm("c", "critical", { first_seen_at: ago(600) })], { ...CARD }),
         ]),
       });
       const waiting = screen.getByRole("heading", { level: 2, name: /Cavab gözləyir/ }).parentElement;
@@ -6651,8 +6612,8 @@ describe("the alarms screen", () => {
     it("the critical filter narrows both sections", async () => {
       await open({
         payload: board([
-          entry("S-001", { ...CARD, alerts: [alarm("a", { severity: "moderate" })] }),
-          entry("S-002", { ...CARD, alerts: [alarm("b", { severity: "critical" })] }),
+          entry("S-001", [alarm("a", "moderate")], { ...CARD }),
+          entry("S-002", [alarm("b", "critical")], { ...CARD }),
         ]),
       });
       fireEvent.click(screen.getByRole("button", { name: "Yalnız kritik" }));
@@ -6663,12 +6624,9 @@ describe("the alarms screen", () => {
 
   describe("acknowledging", () => {
     it("sends patient and kind, and shows the board the server answered with", async () => {
-      const acked = entry("S-001", {
-        ...CARD, risk: "high",
-        alerts: [alarm("news2", { summary: "NEWS2 7", acknowledged: true, acknowledged_by: "ayse", acknowledged_at: ago(1) })],
-      });
+      const acked = entry("S-001", [alarm("news2", "high", { summary: "NEWS2 7", acknowledged: true, acknowledged_by: "ayse", acknowledged_at: ago(1) })], { ...CARD, risk: "high" });
       const { api } = await open({
-        payload: withAlarms(alarm("news2", { summary: "NEWS2 7" })),
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
         setup: (fake) => fake.acknowledge.mockResolvedValue(acked),
       });
       await act(async () => {
@@ -6683,7 +6641,7 @@ describe("the alarms screen", () => {
 
     it("a refusal is shown and the list is NOT changed — nothing was acknowledged", async () => {
       const { api } = await open({
-        payload: withAlarms(alarm("news2", { summary: "NEWS2 7" })),
+        payload: withAlarms(alarm("news2", "high", { summary: "NEWS2 7" })),
         setup: (fake) => fake.acknowledge.mockRejectedValue(refusal(403, "permission required: alerts.ack")),
       });
       await act(async () => {
@@ -6755,7 +6713,7 @@ describe("the alarms screen", () => {
     });
 
     it("an alarm whose severity is \"none\" can never read \"no finding\"", async () => {
-      await open({ payload: withAlarms(alarm("other", { severity: "none" })) });
+      await open({ payload: withAlarms(alarm("other", "none")) });
       expect(screen.queryByText("Tapıntı yoxdur")).toBeNull();
       expect(screen.getByText("Risk bildirilməyib")).toBeInTheDocument();
     });
@@ -6845,7 +6803,7 @@ function Row({ alarm, nowMs, canAck, onAck, busy }) {
         </a>
         {/* The engine writes its summaries in English (reco/engine.py); marked so a screen reader
             pronounces them as English. The screen says once, below, that they are. */}
-        <p lang="en" className="m-0 text-13 text-ink">{summaryOf(alarm)}</p>
+        <p lang="en" className="m-0 text-13 text-ink">{summaryOf(alarm) ?? t("board.findingUnnamed")}</p>
         <p className="m-0 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-11.5 text-mute">
           {age === null ? (
             <span>{t("alarms.noElapsed")}</span>
@@ -7425,7 +7383,7 @@ and replace
 with
 
 ```jsx
-                      <span lang="en" className="block text-12 text-mute">{summaryOf(a)}</span>
+                      <span lang="en" className="block text-12 text-mute">{summaryOf(a) ?? t("board.findingUnnamed")}</span>
 ```
 
 The shell importing from `screens/common/` is deliberate and worth a sentence: the bell IS a board-reading surface, it already reads the board through `waitingAlarms`, and the alternative — a second copy of two lines in the shell — is how the `info` tone came to be two different colours. `boundaries.test.js` is unaffected: the rule it enforces is about `src/live/` not reaching into the old workspace, not about which folder inside `src/live/` imports which.
@@ -7821,7 +7779,7 @@ describe("the patient screen", () => {
   });
 
   it("a patient the HIS has not named says what is missing", async () => {
-    await open({ payload: board([entry("S-001", { at: measured(30) })]) });
+    await open({ payload: board([entry("S-001", [], { at: measured(30) })]) });
     expect(screen.getByRole("heading", { level: 1, name: "kimlik gözlənilir" })).toBeInTheDocument();
   });
 
@@ -7835,7 +7793,7 @@ describe("the patient screen", () => {
     });
 
     it("a channel with no value is left out, and a card with none says so once", async () => {
-      await open({ payload: board([entry("S-001", { identity: identity() })]) });
+      await open({ payload: board([entry("S-001", [], { identity: identity() })]) });
       expect(screen.getByText("Bu çarpayıdan heç bir ölçmə gəlməyib.")).toBeInTheDocument();
       expect(screen.queryByText("Nəbz")).toBeNull();
     });
@@ -7848,17 +7806,15 @@ describe("the patient screen", () => {
   });
 
   describe("what the engine found", () => {
-    const reasoned = alarm("septic_shock", {
-      severity: "critical", summary: "Septik şok ölçütleri karşılandı",
+    const reasoned = alarm("septic_shock", "critical", { summary: "Septik şok ölçütleri karşılandı",
       clinical_reasoning: "MAP 58 on a vasopressor with lactate 4.1 mmol/L after fluids.",
       supporting_evidence: ["sepsis-3-jama-2016", "surviving-sepsis-campaign-2021"],
       recommended_actions: ["Review the patient and the supporting evidence."],
       confidence: "Criteria are deterministic (Sepsis-3).",
-      stale_inputs: ["lactate"],
-    });
+      stale_inputs: ["lactate"] });
 
     it("shows the engine's reasoning, its sources, its suggestions and its certainty", async () => {
-      await open({ payload: board([entry("S-001", { ...FULL, alerts: [reasoned] })]) });
+      await open({ payload: board([entry("S-001", [reasoned], { ...FULL })]) });
       const card = screen.getByRole("heading", { level: 3, name: "Septik şok ölçütleri karşılandı" }).closest("li");
       expect(card).toHaveTextContent("MAP 58 on a vasopressor");
       expect(card).toHaveTextContent("sepsis-3-jama-2016, surviving-sepsis-campaign-2021");
@@ -7867,27 +7823,24 @@ describe("the patient screen", () => {
     });
 
     it("keeps the product's register: a review is suggested, the decision is the physician's", async () => {
-      await open({ payload: board([entry("S-001", { ...FULL, alerts: [reasoned] })]) });
+      await open({ payload: board([entry("S-001", [reasoned], { ...FULL })]) });
       expect(screen.getByText("Qiymətləndirmə tövsiyə olunur · qərar həkimindir.")).toBeInTheDocument();
     });
 
     it("marks the engine's own prose as English, since it is not translated", async () => {
-      await open({ payload: board([entry("S-001", { ...FULL, alerts: [reasoned] })]) });
+      await open({ payload: board([entry("S-001", [reasoned], { ...FULL })]) });
       const card = screen.getByRole("heading", { level: 3, name: /Septik şok/ }).closest("li");
       expect(card.querySelector('[lang="en"]')).toBeInTheDocument();
       expect(screen.getByText(/İngiliscədir; tərcümə olunmayıb/)).toBeInTheDocument();
     });
 
     it("says which inputs the engine already judged stale", async () => {
-      await open({ payload: board([entry("S-001", { ...FULL, alerts: [reasoned] })]) });
+      await open({ payload: board([entry("S-001", [reasoned], { ...FULL })]) });
       expect(screen.getByText("Köhnə giriş: lactate")).toBeInTheDocument();
     });
 
     it("says when the patient's own charted normal lowered a finding, and why", async () => {
-      await open({ payload: board([entry("S-001", {
-        ...FULL, risk: "low",
-        alerts: [alarm("news2", { severity: "low", downgraded: true, chronic_context: "Chronic oxygen therapy explains the SpO2." })],
-      })]) });
+      await open({ payload: board([entry("S-001", [alarm("news2", "low", { downgraded: true, chronic_context: "Chronic oxygen therapy explains the SpO2." })], { ...FULL, risk: "low" })]) });
       expect(screen.getByText("Xəstənin öz normasına görə aşağı salınıb")).toBeInTheDocument();
       expect(screen.getByText("Chronic oxygen therapy explains the SpO2.")).toBeInTheDocument();
     });
@@ -7904,7 +7857,7 @@ describe("the patient screen", () => {
     });
 
     it("a finding whose severity is \"none\" can never read \"no finding\"", async () => {
-      await open({ payload: board([entry("S-001", { ...FULL, alerts: [alarm("x", { severity: "none" })] })]) });
+      await open({ payload: board([entry("S-001", [alarm("x", "none")], { ...FULL })]) });
       expect(screen.queryByText("Tapıntı yoxdur")).toBeNull();
     });
   });
@@ -7922,7 +7875,7 @@ describe("the patient screen", () => {
     });
 
     it("tells a charted \"no\" from an unanswered one", async () => {
-      await open({ payload: board([entry("S-001", {
+      await open({ payload: board([entry("S-001", [], {
         ...FULL, sepsis: { suspected_infection: false, sofa: 7, baseline_sofa: 2, baseline_assumed: false, rise: 5 },
       })]) });
       expect(screen.getByText("Şübhəli infeksiya: yoxdur (həkim işarələyib).")).toBeInTheDocument();
@@ -7935,7 +7888,7 @@ describe("the patient screen", () => {
       // as the baseline, or the baseline as the rise, is a clinical misreading and not a layout
       // nit. Asserting the <dd> that belongs to each <dt> is the only way to catch it: a test that
       // only looked for the text "5" would pass with all three numbers in one row.
-      await open({ payload: board([entry("S-001", {
+      await open({ payload: board([entry("S-001", [], {
         ...FULL, sepsis: { suspected_infection: true, sofa: 7, baseline_sofa: 2, baseline_assumed: false, rise: 5 },
       })]) });
       const valueFor = (label) => {
@@ -7950,7 +7903,7 @@ describe("the patient screen", () => {
     it("prints a rise the engine did not send as \"—\", never as sofa minus baseline", async () => {
       // The browser does no clinical arithmetic (Decision 2): 7 − 2 would be the screen's claim,
       // not the engine's, and it would look exactly like the engine's.
-      await open({ payload: board([entry("S-001", {
+      await open({ payload: board([entry("S-001", [], {
         ...FULL, sepsis: { suspected_infection: true, sofa: 7, baseline_sofa: 2, baseline_assumed: false, rise: null },
       })]) });
       const dt = screen.getByText("Artım");
@@ -7966,14 +7919,14 @@ describe("the patient screen", () => {
 
   describe("medication and the antibiotic clock", () => {
     it("an unrecorded antibiotic is not shown as one that was not given", async () => {
-      await open({ payload: board([entry("S-001", {
+      await open({ payload: board([entry("S-001", [], {
         ...FULL, meds: { pressors: {}, antibiotic_given: null, antibiotic_at: null, antibiotic_clock: null, weight_kg: null, creatinine: null },
       })]) });
       expect(screen.getByText(/verilmədiyi anlamına gəlmir/)).toBeInTheDocument();
     });
 
     it("shows when it was given", async () => {
-      await open({ payload: board([entry("S-001", {
+      await open({ payload: board([entry("S-001", [], {
         ...FULL,
         meds: { pressors: { norepinephrine: 0.08 }, antibiotic_given: true, antibiotic_at: ago(600), antibiotic_clock: null, weight_kg: 72, creatinine: 1.9 },
       })]) });
@@ -7982,7 +7935,7 @@ describe("the patient screen", () => {
     });
 
     it("says so when the engine sent no medication block at all", async () => {
-      await open({ payload: board([entry("S-001", { ...FULL, meds: null })]) });
+      await open({ payload: board([entry("S-001", [], { ...FULL, meds: null })]) });
       expect(screen.getByText("Mühərrik bu xəstə üçün dərman məlumatı göndərməyib.")).toBeInTheDocument();
     });
   });
@@ -8141,7 +8094,7 @@ function Finding({ alarm }) {
     <li className={`rounded-box border border-line bg-card px-3.5 py-3 border-l-4 ${railOf(style.tone, RAIL_LEFT)}`}>
       <div className="flex flex-wrap items-start gap-2">
         <RiskPill risk={alarm.severity === "none" ? null : alarm.severity} measured />
-        <h3 lang="en" className="m-0 min-w-0 flex-1 font-display text-15 font-bold">{summaryOf(alarm)}</h3>
+        <h3 lang="en" className="m-0 min-w-0 flex-1 font-display text-15 font-bold">{summaryOf(alarm) ?? t("board.findingUnnamed")}</h3>
         {alarm.escalated ? <StatusPill tone="att" icon="alert">{t("alarms.escalated")}</StatusPill> : null}
         {alarm.downgraded ? <StatusPill tone="neutral" icon="minus">{t("patient.recoDowngraded")}</StatusPill> : null}
       </div>
