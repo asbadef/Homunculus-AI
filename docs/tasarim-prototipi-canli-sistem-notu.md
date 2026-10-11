@@ -75,8 +75,26 @@ olmayan. Ama **üçü ürün kararı gibi duruyor** ve öyleyse kaynağıyla bir
    Bir kılavuzdan geldiyse kaynağını alıp motora koyabiliriz; grafikler Grup 2'de gelecek ve
    o bantlar oraya ait.
 
+## İki soru daha: yönetim ekranlarından
+
+Yönetim ekranlarının planı yazılırken prototipin o bölümünde iki şey daha çıktı. İkisi de
+yukarıdaki 11. ve 14. maddenin kapsamında ama ayrıca sormaya değer, çünkü ikisi de
+"böyle olsun" diye konmuş olabilir:
+
+4. **Tarayıcının ürettiği açık şifre.** Prototipte yeni kullanıcı formu şifreyi kendisi
+   üretip ekranda gösteriyor. Canlı sistemde geçici şifreyi yönetici giriyor ve kullanıcı
+   ilk girişte değiştirmek zorunda (göç `0011`). Soru: şifreyi sistemin üretmesi istenen bir
+   davranış mıydı? İstenen buysa sunucu tarafında üretilip tek kullanımlık gösterilmesi
+   gerekir — tarayıcıda üretilen bir şifre denetim kaydına girmez ve kimin gördüğü bilinmez.
+5. **"Bu rolün gözüyle bak" anahtarı.** Yönetim sekmesinde bir rolü seçip arayüzü o rolün
+   gördüğü gibi görme özelliği var. Canlı sistemde bu, denetim kaydında kimin ne gördüğünü
+   belirsizleştirir. Soru: amaç yetki denetimini sınamak mıydı? Öyleyse doğru yeri ayrı bir
+   "yetki önizleme" ekranı olur — gerçek oturumu değiştirmeden, hangi rolün hangi ekranı
+   açabildiğini listeleyen, salt okunur bir görünüm.
+
 ## Not
 
-Bu üç sorunun cevabı Grup 2'yi şekillendiriyor (vital grafikleri, yükseltme politikası,
-alarm kalitesi). Geri kalan on bir madde için bir şey yapılması gerekmiyor — bilgi olarak
-yazıldı ki aradaki fark bir kod karşılaştırmasından değil buradan öğrenilsin.
+İlk üç sorunun cevabı Grup 2'yi şekillendiriyor (vital grafikleri, yükseltme politikası,
+alarm kalitesi); son ikisi yönetim ekranlarını. Geri kalan maddeler için bir şey yapılması
+gerekmiyor — bilgi olarak yazıldı ki aradaki fark bir kod karşılaştırmasından değil buradan
+öğrenilsin.
