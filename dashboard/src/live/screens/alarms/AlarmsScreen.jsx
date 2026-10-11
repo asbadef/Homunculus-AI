@@ -23,6 +23,7 @@
 import React, { useMemo, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
+import { SEVERITY_ORDER } from "../../data/boardStore.js";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { apiErrorText } from "../../apiErrors.js";
 import { Alert, Announce, Box, Button, Empty, Note, RiskPill, Seg, StatusPill, useToast } from "../../ui/index.js";
@@ -44,13 +45,22 @@ const TICK_MS = 1_000;
 const pillRisk = (severity) => (severity === "none" ? null : severity);
 
 /** Oldest first, and a severity this build does not know first of all — it may be the worst (the
- *  rule `waitingAlarms` follows for the bell). */
-const RANK = ["critical", "high", "moderate", "low", "info"];
+ *  rule `waitingAlarms` follows for the bell).
+ *
+ *  The order is `SEVERITY_ORDER`, imported from `data/boardStore.js` where the bell and the rail
+ *  badge read it (`waitingAlarms`), rather than a second copy written out here — a level the
+ *  engine gained would have been missing from the copy and this screen would have ordered the
+ *  ward differently from the bell beside it.
+ *
+ *  It is deliberately NOT `ENGINE_RISKS`. That list is the PATIENT RISK vocabulary and includes
+ *  `none`; an alarm severity has no `none` (see `pillRisk`), so ranking by it would put an alarm
+ *  carrying the string "none" LAST — the calmest place on the screen — where the whole point is
+ *  that a severity this build cannot account for sorts first, because it may be the worst. */
 function oldestFirst(a, b) {
   return (a.firstSeenAtMs ?? Infinity) - (b.firstSeenAtMs ?? Infinity);
 }
 function worstFirst(a, b) {
-  return RANK.indexOf(a.severity) - RANK.indexOf(b.severity) || oldestFirst(a, b);
+  return SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity) || oldestFirst(a, b);
 }
 
 function Row({ alarm, nowMs, canAck, onAck, busy }) {
@@ -134,7 +144,9 @@ export function AlarmsScreen() {
   const [only, setOnly] = useState("all");
   const [busyId, setBusyId] = useState(null);
   const [failure, setFailure] = useState(null);
-  const canAck = user.perms.includes("alerts.ack");
+  // Which attempt a refusal belongs to, so two identical refusals are two announcements.
+  const [attempt, setAttempt] = useState(0);
+  const canAck = user?.perms?.includes("alerts.ack") ?? false;
   const known = boardKnown(board.connection);
   const stale = boardStale(board.connection);
   // WHAT AN EMPTY SECTION IS ALLOWED TO SAY. "No alarm is awaiting a response" is a claim about
@@ -147,11 +159,20 @@ export function AlarmsScreen() {
     return stale ? "alarms.unknown" : "alarms.unavailable";
   };
 
-  const { waiting, reviewing } = useMemo(() => {
+  const { waiting, reviewing, hidden, openTotal } = useMemo(() => {
     const picked = only === "crit" ? board.alerts.filter((a) => a.severity === "critical") : board.alerts;
     return {
       waiting: picked.filter((a) => a.status !== "ACKNOWLEDGED").sort(worstFirst),
       reviewing: picked.filter((a) => a.status === "ACKNOWLEDGED").sort(oldestFirst),
+      // How many the filter is keeping off the screen. A silent filter is the bed board's own
+      // lesson (`beds.unitHidden`/`searchHidden`): a list narrowed by a control you cannot see
+      // the effect of is a list you cannot trust to be the ward.
+      hidden: board.alerts.length - picked.length,
+      // THE COUNT SPEAKS FOR THE WARD, NOT FOR THE FILTER. Computed from `board.alerts`, so the
+      // group's accessible name agrees with the rail's badge and the bell, which read the same
+      // board: it was taken from the filtered list, and one page contradicting itself about how
+      // many alarms are open is worse than either number alone.
+      openTotal: board.alerts.filter((a) => a.status !== "ACKNOWLEDGED").length,
     };
   }, [board.alerts, only]);
 
@@ -159,6 +180,7 @@ export function AlarmsScreen() {
     if (busyId) return;                       // one at a time: the answer rewrites the board
     setBusyId(alarm.id);
     setFailure(null);
+    setAttempt((n) => n + 1);
     try {
       // The store makes the call and puts the answer on the board; nothing is written before the
       // server has taken it, so there is nothing to roll back if it refuses.
@@ -180,7 +202,10 @@ export function AlarmsScreen() {
           <h1 className="m-0 font-display text-23 font-bold">{t("nav.alarms")}</h1>
           <p className="m-0 text-13 text-mute">{t("alarms.sub")}</p>
         </div>
-        <Seg label={t("alarms.openCount", { count: waiting.length })} value={only} onChange={setOnly} options={[
+        {/* No number unless the board is LIVE. This was the one count on the screen with no
+            `known` guard: it read "Açıq · 0" beside the crit alert saying the board could not be
+            read at all — and zero is the most reassuring thing this screen can print. */}
+        <Seg label={known ? t("alarms.openCount", { count: openTotal }) : t("alarms.openUnknown")} value={only} onChange={setOnly} options={[
           { value: "all", label: t("alarms.all") },
           { value: "crit", label: t("alarms.criticalOnly"), icon: "alert" },
         ]} />
@@ -193,8 +218,14 @@ export function AlarmsScreen() {
       {!known && !stale ? <Alert tone="crit">{t("alarms.unavailable")}</Alert> : null}
       {stale ? <Note tone="warn" icon="alert">{t("alarms.unknown")}</Note> : null}
       {!canAck ? <Note tone="info" icon="shield">{t("alarms.noAckPerm")}</Note> : null}
+      {hidden > 0 ? <p className="m-0 text-12.5 text-mute">{t("alarms.critHidden", { count: hidden })}</p> : null}
       {canAck && stale ? <Note tone="warn" icon="clock">{t("alarms.notLive")}</Note> : null}
-      {failure ? <Alert tone="crit" key={String(busyId)}>{apiErrorText(t, failure)}</Alert> : null}
+      {/* Keyed on the ATTEMPT, not on `busyId`. React batches the `catch` and the `finally`, so
+          `busyId` was already back to null by the time this rendered and the key was the constant
+          string "null" — meaning a second failure with the same text was the same element with
+          the same content, and `Alert` re-announces only when it is remounted (ui/Alert.jsx). A
+          nurse pressing "Gördüm" twice against a dead link heard the refusal once. */}
+      {failure ? <Alert tone="crit" key={attempt}>{apiErrorText(t, failure)}</Alert> : null}
 
       <Section
         titleKey="alarms.waiting" emptyKey={emptyKey("alarms.emptyWaiting")}

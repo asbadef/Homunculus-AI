@@ -6880,11 +6880,15 @@ export function AlarmsScreen() {
     return stale ? "alarms.unknown" : "alarms.unavailable";
   };
 
-  const { waiting, reviewing } = useMemo(() => {
+  const { waiting, reviewing, hidden, openTotal } = useMemo(() => {
     const picked = only === "crit" ? board.alerts.filter((a) => a.severity === "critical") : board.alerts;
     return {
       waiting: picked.filter((a) => a.status !== "ACKNOWLEDGED").sort(worstFirst),
       reviewing: picked.filter((a) => a.status === "ACKNOWLEDGED").sort(oldestFirst),
+      // ADDED 2026-10-11 (clinical-screens review): how much the filter hides, and a count that
+      // speaks for the WARD rather than for the filter. See the Seg block below.
+      hidden: board.alerts.length - picked.length,
+      openTotal: board.alerts.filter((a) => a.status !== "ACKNOWLEDGED").length,
     };
   }, [board.alerts, only]);
 
@@ -6913,7 +6917,16 @@ export function AlarmsScreen() {
           <h1 className="m-0 font-display text-23 font-bold">{t("nav.alarms")}</h1>
           <p className="m-0 text-13 text-mute">{t("alarms.sub")}</p>
         </div>
-        <Seg label={t("alarms.openCount", { count: waiting.length })} value={only} onChange={setOnly} options={[
+        {/* CORRECTED 2026-10-11 (clinical-screens review). This block used to read
+            `t("alarms.openCount", { count: waiting.length })`, which was wrong twice over and is
+            the one count on this screen that had no `known` guard: it printed "Açıq · 0" on a
+            board that could not be read at all, beside the crit alert saying so, and zero is the
+            most reassuring thing this screen can print. And `waiting` is the FILTERED list, so
+            turning the critical-only filter on made the group's accessible name understate the
+            ward while the rail badge and the bell went on reporting the truth from the same
+            board. The count comes from `board.alerts` and only when the board is LIVE; the filter
+            says how much it hides (`alarms.critHidden`), as the bed board does. */}
+        <Seg label={known ? t("alarms.openCount", { count: openTotal }) : t("alarms.openUnknown")} value={only} onChange={setOnly} options={[
           { value: "all", label: t("alarms.all") },
           { value: "crit", label: t("alarms.criticalOnly"), icon: "alert" },
         ]} />

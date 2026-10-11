@@ -122,6 +122,33 @@ describe("the alarms screen", () => {
       expect(screen.getByText("b ölçütü karşılandı")).toBeInTheDocument();
       expect(screen.queryByText("a ölçütü karşılandı")).toBeNull();
     });
+
+    it("the filter says how much it is hiding, and the count still speaks for the ward", async () => {
+      // The count was computed from the FILTERED list, so turning the filter on made the group's
+      // accessible name understate the ward — while the rail badge and the bell went on reporting
+      // the truth from the same board. One page contradicting itself about how many alarms are
+      // open is worse than either number alone. And a silent filter is the bed board's own
+      // lesson: it says how many cards it hides, every time.
+      await open({
+        payload: board([
+          entry("S-001", [alarm("a", "moderate")], { ...CARD }),
+          entry("S-002", [alarm("b", "critical")], { ...CARD }),
+        ]),
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Yalnız kritik" }));
+      expect(screen.getByText("Süzgəc 1 siqnalı gizlədir.")).toBeInTheDocument();
+      expect(screen.getByRole("group", { name: "Açıq · 2" })).toBeInTheDocument();
+    });
+
+    it("a board that cannot be read offers no number at all", async () => {
+      // The one count on this screen that was not behind a `known` guard: it read "Açıq · 0" on a
+      // board that could not be loaded, directly beside the crit alert saying so. Zero is the most
+      // reassuring thing this screen can print, and it was printing it for a ward it knew nothing
+      // about. Plan-verbatim, which is why it survived three arms and two reviews.
+      await open({ connection: "unavailable" });
+      expect(screen.queryByRole("group", { name: /Açıq · 0/ })).toBeNull();
+      expect(screen.getByRole("group", { name: "Açıq · bilinmir" })).toBeInTheDocument();
+    });
   });
 
   describe("acknowledging", () => {

@@ -388,7 +388,15 @@ export function createBoardStore({
 // date" with the dot; neither (connecting, unavailable) — it cannot know, and the numbers and the
 // list are null, so nothing can show a 0 or an empty bell for it. Nothing here computes anything
 // clinical: these are the engine's alarms, counted and ordered by the engine's own severity.
-const SEVERITY_ORDER = ["critical", "high", "moderate", "low", "info"];
+/** The alarm-severity vocabulary, worst first, and the ONE list every surface that orders or
+ *  counts alarms reads: the bell and the rail badge through `waitingAlarms`/`alarmCounts`, and the
+ *  alarms screen's own `worstFirst`. A severity not in it ranks -1 and so sorts FIRST, because the
+ *  UI reads one it cannot account for as possibly-the-worst.
+ *
+ *  It is not `ENGINE_RISKS` (ui/riskStyle.js) and must not be replaced by it: that is the PATIENT
+ *  RISK vocabulary and carries `none`, which is "no alarm at all" and is never an alarm's own
+ *  severity — ranking by it would sort an alarm carrying "none" to the calmest end of the list. */
+export const SEVERITY_ORDER = Object.freeze(["critical", "high", "moderate", "low", "info"]);
 
 /** Is this object a board card (api/board.py `patient_board` / `identity_only_board`)? It states
  *  the engine's verdict, or the readings behind one — an identity-only card has a `risk` and empty
