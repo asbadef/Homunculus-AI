@@ -24,6 +24,7 @@ const NEUTRAL = new Set([
   // G1-10 (alarms) · neutral
 
   // G1-11 (patient) · neutral
+  "patient.sofa", //              SOFA — the same
 
   // G1-12 (admin · users) · neutral
 
@@ -84,6 +85,9 @@ const AZ_SAME_AS_TR = new Set([
   "alarms.seenBy", //        Gördü — the same verb, third person, in Azerbaijani too
 
   // G1-11 (patient) · az = tr
+  "patient.sofa", //         SOFA — the score's own name
+  "patient.baseline", //     Bazal SOFA — "baseline SOFA" reads the same in Azerbaijani
+  "patient.seenBy", //       Gördü — the same verb as alarms.seenBy
 
   // G1-12 (admin · users) · az = tr
 
