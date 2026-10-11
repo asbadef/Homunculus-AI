@@ -300,20 +300,14 @@ export function PatientScreen({ params }) {
   // `charting` holds the ANSWER in flight (`true`/`false`) or `null`, so the screen can say which
   // judgement is being charted rather than only that something is.
   const [charting, setCharting] = useState(null);
-  const [chartError, setChartError] = useState(null);
   const canChart = user?.perms?.includes("clinical.chart") ?? false;
   // The shell renders <Screen params/> with no `key` (shell/Shell.jsx), so moving from one patient
-  // to another keeps this component mounted and only changes `id`. Without this, the previous
-  // patient's refusal stayed on the next patient's screen — a refusal attributed to the wrong
-  // person — and a chart left in flight across the move reported on the wrong one.
-  useEffect(() => {
-    setChartError(null);
-    setCharting(null);
-  }, [id]);
+  // to another keeps this component mounted and only changes `id` — a chart left in flight across
+  // the move would otherwise leave the next patient's buttons reading as busy.
+  useEffect(() => { setCharting(null); }, [id]);
   async function chart(suspected) {
     if (charting !== null) return;      // `false` is an answer, so never a truthiness test
     setCharting(suspected);
-    setChartError(null);
     try {
       await board.store.chart(id, [{ code: "suspected_infection", value: suspected ? 1 : 0 }]);
       // `useToast()` IS the function (ui/Toast.jsx `value={toasts.add}`) — there is no `.show`.
@@ -321,7 +315,13 @@ export function PatientScreen({ params }) {
       // message as a refusal for a chart the server had already taken.
       toast(t("patient.chartSaved"));
     } catch (err) {
-      setChartError(err);
+      // ON THE TOAST, not in this screen's state. A refusal the screen owns dies with the screen,
+      // so a clinician who walked away mid-write saw no error at all and would reasonably assume
+      // her judgement was charted — while the engine's sepsis branch still never runs for this
+      // patient. The toast's provider sits above the router, so the refusal outlives the move and
+      // stays until it is dismissed. It is also the reason there is no longer any per-patient
+      // error state to show on the wrong patient.
+      toast(apiErrorText(t, err), "error");
     } finally {
       setCharting(null);
     }
@@ -385,11 +385,6 @@ export function PatientScreen({ params }) {
               </>
             )}
           </section>
-
-          {/* Above the grid, not inside it: as a grid child the refusal became a CELL, so a
-              failed chart reflowed both boxes under the clinician's eyes at the moment she was
-              reading why it failed. */}
-          {chartError ? <Alert tone="crit">{apiErrorText(t, chartError)}</Alert> : null}
 
           <div className="grid gap-2 min-[861px]:grid-cols-2">
             <Sepsis sepsis={patient.sepsis} canChart={canChart} onChart={chart} pending={charting} />

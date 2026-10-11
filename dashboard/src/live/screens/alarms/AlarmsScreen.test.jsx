@@ -208,6 +208,39 @@ describe("the alarms screen", () => {
         .toContain("Bu siqnal artıq açıq deyil");
     });
 
+    it("a refusal survives the clinician leaving the screen", async () => {
+      // The same rule as the patient screen's charting, and the consistency is the point: the two
+      // clinical writes this build has must behave alike when the server says no. A refusal held
+      // in the screen's own state is lost the moment she moves, and a nurse who saw no error
+      // believes the alarm is answered when nobody has answered it.
+      let leave;
+      function Away() {
+        const [here, setHere] = React.useState(true);
+        leave = () => setHere(false);
+        return here ? <AlarmsScreen /> : null;
+      }
+      const mounted = await mount(<Away />, {
+        access: token({ perms: ["board.view", "alerts.ack"] }),
+        me: profile({ perms: ["board.view", "alerts.ack"] }),
+        setup: (fake) => {
+          fake.boardPatients.mockResolvedValue(withAlarms(alarm("news2")));
+          fake.streamTicket.mockResolvedValue({ ticket: "t-1" });
+          fake.acknowledge.mockRejectedValue(refusal(403, "permission required: alerts.ack"));
+        },
+      });
+      await act(async () => { await mounted.board.start(); });
+      await act(async () => { mounted.stream.open(); await settle(); });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Gördüm" }));
+        await settle();
+      });
+      const said = () => within(screen.getByRole("region", { name: "Bildirişlər" })).queryAllByText(/səlahiyyətiniz yoxdur/);
+      expect(said().length).toBeGreaterThan(0);
+      await act(async () => { leave(); await settle(); });
+      expect(screen.queryByRole("button", { name: "Gördüm" })).toBeNull();   // the screen is gone
+      expect(said().length).toBeGreaterThan(0);                              // the refusal is not
+    });
+
     it("says it is saving, in words a screen reader hears", async () => {
       let release;
       await open({

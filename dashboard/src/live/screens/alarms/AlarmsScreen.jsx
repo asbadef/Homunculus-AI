@@ -142,9 +142,6 @@ export function AlarmsScreen() {
   const nowMs = useBoardNow(TICK_MS);
   const [only, setOnly] = useState("all");
   const [busyId, setBusyId] = useState(null);
-  const [failure, setFailure] = useState(null);
-  // Which attempt a refusal belongs to, so two identical refusals are two announcements.
-  const [attempt, setAttempt] = useState(0);
   const canAck = user?.perms?.includes("alerts.ack") ?? false;
   const known = boardKnown(board.connection);
   const stale = boardStale(board.connection);
@@ -178,8 +175,6 @@ export function AlarmsScreen() {
   async function acknowledge(alarm) {
     if (busyId) return;                       // one at a time: the answer rewrites the board
     setBusyId(alarm.id);
-    setFailure(null);
-    setAttempt((n) => n + 1);
     try {
       // The store makes the call and puts the answer on the board; nothing is written before the
       // server has taken it, so there is nothing to roll back if it refuses.
@@ -188,7 +183,15 @@ export function AlarmsScreen() {
     } catch (err) {
       // Shown, not swallowed, and the list is NOT changed: nothing was acknowledged. A 404 means
       // the alarm is no longer open — somebody else answered it, or it cleared.
-      setFailure(err);
+      //
+      // ON THE TOAST, the same carrier the patient screen's charting uses, and the consistency is
+      // the point rather than a side effect: the two clinical writes this build has must behave
+      // alike when the server says no. A refusal held in this screen's state died with the
+      // screen, so a nurse who moved on mid-write saw no error and would believe the alarm was
+      // answered when nobody had answered it. The toast's provider is above the router, so it
+      // outlives the move; and because each refusal is a new toast item, two identical refusals
+      // are two announcements without the remount trick the inline Alert needed.
+      toast(apiErrorText(t, err), "error");
     } finally {
       setBusyId(null);
     }
@@ -219,13 +222,6 @@ export function AlarmsScreen() {
       {!canAck ? <Note tone="info" icon="shield">{t("alarms.noAckPerm")}</Note> : null}
       {hidden > 0 ? <p className="m-0 text-12.5 text-mute">{t("alarms.critHidden", { count: hidden })}</p> : null}
       {canAck && stale ? <Note tone="warn" icon="clock">{t("alarms.notLive")}</Note> : null}
-      {/* Keyed on the ATTEMPT, not on `busyId`. React batches the `catch` and the `finally`, so
-          `busyId` was already back to null by the time this rendered and the key was the constant
-          string "null" — meaning a second failure with the same text was the same element with
-          the same content, and `Alert` re-announces only when it is remounted (ui/Alert.jsx). A
-          nurse pressing "Gördüm" twice against a dead link heard the refusal once. */}
-      {failure ? <Alert tone="crit" key={attempt}>{apiErrorText(t, failure)}</Alert> : null}
-
       <Section
         titleKey="alarms.waiting" emptyKey={emptyKey("alarms.emptyWaiting")}
         alarms={waiting} nowMs={nowMs} canAck={canAck} onAck={acknowledge} busyId={busyId}

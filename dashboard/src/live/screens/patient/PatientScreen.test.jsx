@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import React from "react";
-import { act, fireEvent, screen } from "@testing-library/react";
-import { mount } from "../../session/mount.testutil.jsx";
+import { act, fireEvent, screen, within } from "@testing-library/react";
+import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { resetScreens } from "../../shell/routes.js";
 import { onlyScreens } from "../../shell/screens.testutil.js";
@@ -252,6 +252,27 @@ describe("the patient screen", () => {
       expect(screen.getByText("Vazopressor/inotrop: norepinephrine 0.08")).toBeInTheDocument();
     });
 
+    // The two branches of the four-valued antibiotic that nothing asserted and the raw-key sweep
+    // cannot reach — its fixture takes the "given" arm — even though these are the two that make
+    // a claim about a DEADLINE: one says there is still time, the other that it has passed. A key
+    // that stopped resolving in either would have printed itself onto a clinical screen.
+    const clocked = (clock) => board([entry("S-001", [], {
+      ...FULL,
+      meds: { pressors: {}, antibiotic_given: false, antibiotic_at: null, antibiotic_clock: clock, weight_kg: null, creatinine: null },
+    })]);
+
+    it("says when the antibiotic window is still open", async () => {
+      await open({ payload: clocked({ deadline: ago(-900), remaining_sec: 900 }) });
+      expect(screen.getByText(/müddət .* tarixində bitir/)).toBeInTheDocument();
+      expect(screen.queryByText(/müddəti bitib/)).toBeNull();
+    });
+
+    it("says when the antibiotic window has closed", async () => {
+      await open({ payload: clocked({ deadline: ago(300), remaining_sec: -300 }) });
+      expect(screen.getByText(/Antibiotik müddəti bitib:/)).toBeInTheDocument();
+      expect(screen.queryByText(/tarixində bitir/)).toBeNull();
+    });
+
     it("says so when the engine sent no medication block at all", async () => {
       await open({ payload: board([entry("S-001", [], { ...FULL, meds: null })]) });
       expect(screen.getByText("Mühərrik bu xəstə üçün dərman məlumatı göndərməyib.")).toBeInTheDocument();
@@ -432,12 +453,17 @@ describe("charting a suspected infection", () => {
     await act(async () => { release({ patient_id: "S-001", charted: 1, alerts: [] }); await settle(); });
   });
 
-  it("a refusal does not follow the clinician to the next patient", async () => {
+  it("a refusal survives the clinician walking away from the patient", async () => {
+    // A refusal shown only by the screen that made it VANISHES when the clinician leaves
+    // mid-write: she saw no error, assumes the judgement is charted, and the engine's sepsis
+    // branch still never runs. That is the Critical from the other side, and this project does
+    // not let a clinician believe something happened when it did not. So the refusal is carried
+    // on the toast, whose provider sits above the router and which lives until dismissed — not in
+    // this screen's own state, which the move throws away.
+    //
     // Shell renders <Screen params/> with NO `key` (shell/Shell.jsx), so moving
     // /patients/S-001 -> /patients/S-002 keeps this component mounted and only changes its props.
-    // S-001's refusal therefore stayed on S-002's screen — a refusal attributed to the wrong
-    // patient — and a chart still in flight across the move would have confirmed or refused there
-    // too. This mounts the screen the way the shell does: same element, no key, new params.
+    // This mounts it the way the shell does: same element, no key, new params.
     onlyScreens({ beds: () => null }, { keep: [] });
     let move;
     function Mover() {
@@ -452,7 +478,7 @@ describe("charting a suspected infection", () => {
         api.boardPatients.mockResolvedValue(board([entry("S-001", [], SEPSIS), entry("S-002", [], SEPSIS)]));
         api.streamTicket.mockResolvedValue({ ticket: "t-1" });
         api.view.mockResolvedValue({ ok: true });
-        api.chart.mockRejectedValue(Object.assign(new Error("no"), { status: 403, code: "permission_required" }));
+        api.chart.mockRejectedValue(refusal(403, "permission required: clinical.chart"));
       },
     });
     await act(async () => { await mounted.board.start(); });
@@ -461,9 +487,16 @@ describe("charting a suspected infection", () => {
       fireEvent.click(screen.getByRole("button", { name: "Var kimi işarələ" }));
       await settle();
     });
-    expect(screen.getAllByRole("alert").map((a) => a.textContent).join(" ").trim()).not.toBe("");
+    const said = () => within(screen.getByRole("region", { name: "Bildirişlər" })).queryAllByText(/səlahiyyətiniz yoxdur/);
+    expect(said().length).toBeGreaterThan(0);
     await act(async () => { move("S-002"); await settle(); });
-    expect(screen.getAllByRole("alert").map((a) => a.textContent).join(" ").trim()).toBe("");
+    // Still there on the next patient's screen, because the clinician still has to know her
+    // charting on S-001 did not land.
+    expect(said().length).toBeGreaterThan(0);
+    // And it is the TOAST saying it, not a leftover of the previous patient's screen state: with
+    // the refusal held above the router there is no per-patient error left to show on the wrong
+    // patient, which is the whole class of fault rather than one frame of it.
+    expect(screen.queryAllByRole("alert").filter((el) => !el.closest('[role="region"]'))).toEqual([]);
   });
 
   it("says it is charting, in words a screen reader hears", async () => {
