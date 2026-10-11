@@ -406,6 +406,17 @@ describe("charting a suspected infection", () => {
     await act(async () => { release({ patient_id: "S-001", charted: 1, alerts: [] }); await settle(); });
   });
 
+  it("a card the engine sent no Sepsis-3 context for still offers the charting", async () => {
+    // `identity_only_board` (api/board.py) omits `sepsis` altogether — its comment claims "same
+    // keys as patient_board" and that is wrong. So an admitted patient whose monitor has sent
+    // nothing has no block at all, and the box used to return null for that card: no sentence
+    // saying the sepsis rule never ran, and NO CHART BUTTON, on exactly the card a clinician
+    // opens first. Decision 27's write has to be reachable there most of all.
+    await openChartable({ payload: board([entry("S-001", [], { ...SEPSIS, sepsis: null })]) });
+    expect(screen.getByText(/Sepsis-3 konteksti göndərməyib/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Var kimi işarələ" })).toBeEnabled();
+  });
+
   it("no button at all without clinical.chart, and the reason is on the screen", async () => {
     await open({ payload: board([entry("S-001", [], SEPSIS)]) });
     expect(screen.queryByRole("button", { name: "Var kimi işarələ" })).toBeNull();

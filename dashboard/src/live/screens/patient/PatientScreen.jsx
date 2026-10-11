@@ -183,14 +183,24 @@ function Chart({ canChart, onChart, busy }) {
  *  the engine evaluates no sepsis rule at all (api/board.py `_sepsis_context`). */
 function Sepsis({ sepsis, canChart, onChart, busy }) {
   const { t } = useI18n();
-  if (!sepsis) return null;
-  const suspected = sepsis.suspected_infection;
+  // NOT `if (!sepsis) return null`. `identity_only_board` (api/board.py) omits the block
+  // altogether — its comment claims "same keys as patient_board" and that is wrong — so an
+  // admitted patient whose monitor has sent nothing has no context at all. Returning null there
+  // took away the sentence saying the sepsis rule never ran AND the only control this screen has,
+  // on exactly the card a clinician opens first. `POST /clinical/{id}` needs no sepsis block to
+  // work, so the charting does not depend on one being present.
+  const suspected = sepsis ? sepsis.suspected_infection : null;
   return (
     <Box title={t("patient.sepsis")} icon="flask" level={2}>
-      <Note tone={suspected === null ? "warn" : "info"} icon={suspected === null ? "alert" : "ok"}>
-        {t(suspected === null ? "patient.suspectedUnknown" : suspected ? "patient.suspectedYes" : "patient.suspectedNo")}
-      </Note>
+      {sepsis ? (
+        <Note tone={suspected === null ? "warn" : "info"} icon={suspected === null ? "alert" : "ok"}>
+          {t(suspected === null ? "patient.suspectedUnknown" : suspected ? "patient.suspectedYes" : "patient.suspectedNo")}
+        </Note>
+      ) : (
+        <Note tone="warn" icon="alert">{t("patient.sepsisNone")}</Note>
+      )}
       <Chart canChart={canChart} onChart={onChart} busy={busy} />
+      {sepsis ? (
       <KVList className="mt-2">
         {/* Three numbers, three labels, one value under each. The rise is the one the criterion
             turns on — Sepsis-3 is an acute rise of ≥2 SOFA points over the patient's baseline, and
@@ -204,7 +214,8 @@ function Sepsis({ sepsis, canChart, onChart, busy }) {
         <KV label={t("patient.baseline")}>{sepsis.baseline_sofa ?? "—"}</KV>
         <KV label={t("patient.rise")}>{sepsis.rise ?? "—"}</KV>
       </KVList>
-      {sepsis.baseline_assumed ? <p className="m-0 mt-1 text-12 text-att-ink">{t("patient.baselineAssumed")}</p> : null}
+      ) : null}
+      {sepsis?.baseline_assumed ? <p className="m-0 mt-1 text-12 text-att-ink">{t("patient.baselineAssumed")}</p> : null}
     </Box>
   );
 }
