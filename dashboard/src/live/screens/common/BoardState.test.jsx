@@ -185,6 +185,24 @@ describe("ChronicExpected", () => {
       expect(container, JSON.stringify(alarm)).toBeEmptyDOMElement();
     }
   });
+
+  it("never labels an alarm 'expected' that the bell is still counting", () => {
+    // The pill and the waiting queue read ONE predicate (`isChronicExpected`, boardStore.js) and
+    // draw opposite conclusions from it, so they must not each decide for themselves. A downgraded
+    // CRITICAL reaches the bell by the floor in `needsAnswer`; a screen that also called it
+    // "expected for this patient's own normal" would be contradicting its own alarm count.
+    // Unreachable today — the engine downgrades only to LOW — and the shared predicate is what
+    // keeps it unreachable.
+    for (const severity of ["critical", "high"]) {
+      const { container } = show(
+        <ChronicExpected alarm={{ downgraded: true, severity, chronicContext: "explained" }} />,
+      );
+      expect(container, severity).toBeEmptyDOMElement();
+    }
+    // A LOW one — what the rule was actually written for — still gets its pill.
+    show(<ChronicExpected alarm={{ downgraded: true, severity: "low", chronicContext: "explained" }} />);
+    expect(screen.getByText(/Xəstənin öz normasına görə gözlənilən/)).toBeInTheDocument();
+  });
 });
 
 describe("useBoardNow", () => {

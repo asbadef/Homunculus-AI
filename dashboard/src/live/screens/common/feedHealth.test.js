@@ -148,9 +148,14 @@ describe("ageParts — the number and the unit, kept apart", () => {
 
   it("rounds an age up rather than down, so a reading never looks fresher than it is", () => {
     // The one direction that matters: of the two ways to be wrong about an age, rounding DOWN
-    // makes a reading look newer, which is the failure this module exists to prevent.
+    // makes a reading look newer, which is the failure this module exists to prevent. `Math.round`
+    // did not keep this promise — 2 h 20 m came out "2 h" — so these are the cases that pin it.
     expect(ageParts(5_401)).toEqual({ unit: "h", value: 2 });
-    expect(ageParts(9_000)).toEqual({ unit: "h", value: 3 });   // 2 h 30 m, never "2 h"
+    expect(ageParts(8_400)).toEqual({ unit: "h", value: 3 });   // 2 h 20 m, never "2 h"
+    expect(ageParts(9_000)).toEqual({ unit: "h", value: 3 });   // 2 h 30 m
+    expect(ageParts(3_601)).toEqual({ unit: "m", value: 61 });  // just past the hour, in minutes
+    expect(ageParts(91)).toEqual({ unit: "m", value: 2 });      // 1 m 31 s, never "1 m"
+    expect(ageParts(12.3)).toEqual({ unit: "s", value: 13 });
   });
 
   it("no age has no parts — the caller writes the dash", () => {

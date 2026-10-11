@@ -125,14 +125,16 @@ export function wardFeedHealth(patients, nowMs = Date.now()) {
  *  never ends up inside a word that would need a suffix fitted to it. */
 export function ageParts(seconds) {
   if (seconds === null || seconds === undefined) return null;
-  if (seconds < 90) return { unit: "s", value: Math.round(seconds) };
+  if (seconds < 90) return { unit: "s", value: Math.ceil(seconds) };
   // `<= 5400`, so ninety minutes reads "90 dəq" and not "2 h": at the boundary the minutes are the
   // more precise statement, and the hour form threw away half an hour of it.
   //
-  // The hours branch keeps Math.round rather than flooring, and the direction is deliberate: of
-  // the two ways to be wrong about an AGE, rounding DOWN makes a reading look fresher than it is,
-  // which is the one failure this whole module exists to prevent (and the reason useBoardNow
-  // corrects the clock at all). Rounding up only ever prompts a clinician to re-measure.
-  if (seconds <= 5400) return { unit: "m", value: Math.round(seconds / 60) };
-  return { unit: "h", value: Math.round(seconds / 3600) };
+  // Every branch CEILS, and the direction is the point rather than a detail. Of the two ways to be
+  // wrong about an AGE, rounding DOWN makes a reading look fresher than it is, which is the one
+  // failure this module exists to prevent (and the reason `useBoardNow` corrects the clock at
+  // all); rounding up only ever prompts a clinician to re-measure. `Math.round` did not keep that
+  // promise — 2 h 20 m came out "2 h", twenty minutes fresher than the truth — so the rule the
+  // comment claimed is now the rule the code follows.
+  if (seconds <= 5400) return { unit: "m", value: Math.ceil(seconds / 60) };
+  return { unit: "h", value: Math.ceil(seconds / 3600) };
 }

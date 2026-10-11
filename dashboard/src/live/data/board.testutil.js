@@ -30,11 +30,16 @@ export const NOW = Date.parse("2026-10-08T10:00:00Z");
 /** An ISO instant this many seconds before NOW. */
 export const ago = (seconds) => new Date(NOW - seconds * 1000).toISOString();
 
-/** `latest.at` with every bed-alive channel measured `seconds` ago — TIMESTAMPS ONLY, for a test
- *  whose subject is the feed (is this bed reporting?) and not the numbers. A card built from this
- *  has been measured and has no values, which is a real state (`hasMeasurement` true,
+/** `latest.at` with each of the six monitor channels measured `seconds` ago — TIMESTAMPS ONLY, for
+ *  a test whose subject is the feed (is this bed reporting?) and not the numbers. A card built from
+ *  this has been measured and has no values, which is a real state (`hasMeasurement` true,
  *  `measuredVitals` empty) but rarely the one a screen test means: for a card that shows numbers
- *  use `reading()`, which cannot let the two disagree. */
+ *  use `reading()`, which cannot let the two disagree.
+ *
+ *  Note it is not "every bed-alive channel": `temperature` is in here and is deliberately NOT one
+ *  (`feedHealth.CHANNELS`, `continuous: false` — a spot measurement vouches for no feed), and
+ *  `lactate` is in neither. The five that answer "is this bed reporting" are heart rate, SpO2,
+ *  systolic, mean and respiration. */
 export const measured = (seconds = 30) => ({
   heart_rate: ago(seconds), resp_rate: ago(seconds), spo2: ago(seconds),
   sbp: ago(seconds), map: ago(seconds), temperature: ago(seconds),
@@ -66,7 +71,11 @@ export const identity = (over = {}) => ({
  *  are what a test varies — and everything else goes in the override. */
 export function alarm(kind = "news2", severity = "high", over = {}) {
   if (typeof severity !== "string") {
-    throw new TypeError("alarm(kind, severity, over): severity is a string — alarm('news2', 'high', {ack: true})");
+    // The example names the PAYLOAD's field. `acknowledged` is what `/patients` carries and what
+    // `alertsFromPatients` reads; `ack` is the adapter's OUTPUT shape, so `{ack: true}` here would
+    // be a stray key that leaves the alarm FIRED — and this message is where three arms will learn
+    // the convention, so it has to teach the right field.
+    throw new TypeError("alarm(kind, severity, over): severity is a string — alarm('news2', 'high', {acknowledged: true})");
   }
   return {
     kind, severity, urgency: "immediate",
@@ -86,9 +95,18 @@ export function alarm(kind = "news2", severity = "high", over = {}) {
  *  contradiction on purpose still passes `{ risk: … }` and says so. */
 const SEVERITY_RANK = ["info", "low", "moderate", "high", "critical"];
 export function riskOf(alarms) {
-  const ranked = (Array.isArray(alarms) ? alarms : [])
-    .map((a) => SEVERITY_RANK.indexOf(a?.severity))
-    .filter((i) => i >= 0);
+  const list = Array.isArray(alarms) ? alarms : [];
+  // A severity this build does not know comes FIRST, not last, and is passed through raw. The UI
+  // treats an unknown severity as possibly-the-worst — `waitingAlarms` sorts it ahead of critical,
+  // and `riskStyle` gives it the attention look and "Naməlum risk: x" — so a fixture must not
+  // quietly turn it into something calmer. Filtering it out (what this did) derived `risk: "none"`
+  // for a card holding one, and `RiskPill` then read "Tapıntı yoxdur" beside an alarm the bell was
+  // counting under `unknown`: the exact contradiction `riskOf` exists to prevent, reintroduced for
+  // the one severity where it matters most. And the arms will build this card deliberately, to
+  // test that an unknown severity sorts first.
+  const unknown = list.find((a) => !SEVERITY_RANK.includes(a?.severity));
+  if (unknown) return unknown.severity ?? null;
+  const ranked = list.map((a) => SEVERITY_RANK.indexOf(a.severity));
   return ranked.length === 0 ? "none" : SEVERITY_RANK[Math.max(...ranked)];
 }
 

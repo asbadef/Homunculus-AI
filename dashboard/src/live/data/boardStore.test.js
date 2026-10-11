@@ -443,7 +443,10 @@ describe("an answer the API gave, put onto the board", () => {
     await store.start();
     expect(state().alerts).toHaveLength(1);
 
-    store.applyEntry({ patient_id: "P-001", charted: [{ code: "suspected_infection", value: 1 }], alerts: [] });
+    // Loud, so an arm that writes this gets an error rather than a screen that never updates. The
+    // refusal is what protects the alarm; the throw is what protects the afternoon.
+    const chartAnswer = { patient_id: "P-001", charted: [{ code: "suspected_infection", value: 1 }], alerts: [] };
+    expect(() => store.applyEntry(chartAnswer)).toThrow(/not a board entry/);
 
     expect(state().alerts).toHaveLength(1);
     expect(state().alerts[0].kind).toBe("news2");

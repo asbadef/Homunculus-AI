@@ -277,8 +277,25 @@ export function createBoardStore({
      *  whatever the network decides. They agree in practice because they describe the same board
      *  state a moment apart; they are not *guaranteed* to, and the per-entry sequence number that
      *  would guarantee it is Group 2's (deferred.md). An earlier draft of this comment claimed they
-     *  "cannot disagree", which is a stronger claim than the data supports. */
-    applyEntry: ingest,
+     *  "cannot disagree", which is a stronger claim than the data supports.
+     *
+     *  Handing it something that is NOT a board entry THROWS in the test build. The refusal itself
+     *  is right either way, but as a bare `return` it was also silent to the developer who caused
+     *  it: an arm writing `applyEntry(await api.chart(...))` would get a screen that simply never
+     *  updates, with no clue why. The stream's own path stays silent — a `heartbeat` frame is not
+     *  an entry and never was one — so the loud check lives here, on the public call, where the
+     *  only way to arrive is for somebody to have written it. `null` is tolerated: a caller may
+     *  pass the result of a call that resolved to nothing, and there is simply nothing to apply. */
+    applyEntry(entry) {
+      if (entry !== null && entry !== undefined && !isBoardEntry(entry) && entry?.removed !== true
+          && isTestBuild()) {
+        throw new TypeError(
+          "applyEntry: not a board entry (no `risk`, no `latest`). The /clinical answer is "
+          + "`{patient_id, charted, alerts}` and is NOT one — `store.chart()` reloads the board itself.",
+        );
+      }
+      return ingest(entry);
+    },
     /**
      * Acknowledge one alarm (`POST /ack {patient_id, kind}`, permission `alerts.ack`) and put the
      * board entry it answers with onto the board. Resolves with that entry; REJECTS with the API's
@@ -381,6 +398,16 @@ const SEVERITY_ORDER = ["critical", "high", "moderate", "low", "info"];
 const isBoardEntry = (entry) => entry !== null && typeof entry === "object"
   && ("risk" in entry || "latest" in entry);
 
+/** Same guard `routes.js`'s `testOnly` uses, and read the same way: in the test build a mistake
+ *  should stop the test that made it. */
+const isTestBuild = () => {
+  try {
+    return import.meta.env?.MODE === "test";
+  } catch {
+    return false;
+  }
+};
+
 function knowing(connection) {
   return { known: connection === CONNECTION.LIVE, stale: connection === CONNECTION.DEGRADED };
 }
@@ -410,7 +437,21 @@ function knowing(connection) {
  * severities it was written about and ignored for the two it was not.
  */
 const NEVER_SUPPRESSED = new Set(["critical", "high"]);
-const needsAnswer = (a) => !a.ack && (a.downgraded !== true || NEVER_SUPPRESSED.has(a.severity));
+
+/**
+ * Is this finding one the patient's own charted normal explains — chronic-expected?
+ *
+ * Exported because it must be asked in exactly ONE place. Two consequences follow from the answer
+ * and they have to agree: the finding does not drive the waiting queue (`needsAnswer`, below), and
+ * it wears the neutral "expected for this patient's own normal" pill (`ChronicExpected`,
+ * screens/common/BoardState.jsx). When each decided for itself, a downgraded CRITICAL would both
+ * reach the bell — correctly, by the floor above — and be labelled as expected, which is the
+ * screen contradicting its own alarm count. Unreachable today (the engine downgrades only to LOW);
+ * one predicate is what keeps it unreachable.
+ */
+export const isChronicExpected = (a) => a?.downgraded === true && !NEVER_SUPPRESSED.has(a?.severity);
+
+const needsAnswer = (a) => !a.ack && !isChronicExpected(a);
 
 /** Open alarms counted: `open` is every alarm the engine still holds (seen or not, downgraded or
  *  not), by severity (`unknown`: a severity this build does not know); `waiting` those nobody has

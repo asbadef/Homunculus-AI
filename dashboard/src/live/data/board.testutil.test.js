@@ -27,7 +27,18 @@ describe("the convention, so copying the nearest example cannot go quietly wrong
     expect(entry("S-001", [alarm("news2", "low"), alarm("sepsis", "critical")]).risk).toBe("critical");
     expect(riskOf([])).toBe("none");
     expect(riskOf(null)).toBe("none");
-    expect(riskOf([{ severity: "not-a-severity" }])).toBe("none");
+  });
+
+  it("passes an unknown severity through, because the UI reads it as possibly-the-worst", () => {
+    // `waitingAlarms` sorts an unknown severity ahead of critical and `riskStyle` gives it the
+    // attention look: a fixture that turned it into "none" would put "Tapıntı yoxdur" on a card
+    // whose alarm the bell was counting under `unknown`. The arms build this card on purpose.
+    expect(riskOf([{ severity: "catastrophic" }])).toBe("catastrophic");
+    expect(entry("S-001", [alarm("x", "catastrophic")]).risk).toBe("catastrophic");
+    // It wins over a known one, the same way the bell orders them.
+    expect(riskOf([{ severity: "low" }, { severity: "catastrophic" }])).toBe("catastrophic");
+    // An alarm with no severity at all is not "none" either: `risk: null` reads "Risk bildirilməyib".
+    expect(riskOf([{}])).toBeNull();
   });
 
   it("still lets a test state a risk the alarms do not imply, on purpose", () => {

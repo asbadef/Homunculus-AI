@@ -52,6 +52,14 @@ export const LDAP_IMPORT_MAX = 50;
  * The cost is more round trips, which is the right trade: the import is idempotent (an account
  * already here comes back under `skipped`), so a failed chunk costs only that chunk and can simply
  * be sent again, and the panel can show progress per chunk instead of one long wait.
+ *
+ * **The chunks must be sent STRICTLY SEQUENTIALLY — never `Promise.all`.** `IMPORT_LOOKUPS` is
+ * `ADMIN_LANE_SLOTS - 1` precisely so that one import, however large, leaves a place in the
+ * directory's admin lane for an administrator's own search, group picker or connection test
+ * (admin/ldap_service.py: "beside ONE import, however large"). Two imports in flight together hold
+ * every place, and the administrator's next search then waits a deadline and answers 503 — so
+ * parallelising the chunks would trade a slow import for an administration screen that refuses to
+ * answer the person running it. For the login-source screen (G1-14) and its own plan.
  */
 export const LDAP_IMPORT_CHUNK = 2;
 const TIMEOUT_MESSAGE = "Sunucu yanıt vermedi. İşlem gerçekleşmiş olabilir; listeyi kontrol edip gerekirse tekrar deneyin.";

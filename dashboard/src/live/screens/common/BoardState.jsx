@@ -29,6 +29,7 @@ import { neverMeasured, oldestMeasurement } from "./freshness.js";
 import { wardFeedHealth } from "./feedHealth.js";
 import { useNow } from "./useNow.js";
 import { useBoard } from "../../data/BoardProvider.jsx";
+import { isChronicExpected } from "../../data/boardStore.js";
 
 /** Whether this board may be spoken of as current — the only state in which a screen may say that
  *  nothing is waiting. DEGRADED has data but no open stream (or no reload since it opened), so what
@@ -151,7 +152,13 @@ export const railOf = (tone, table = RAIL) => table[tone] ?? table.att;
  *  accessible name with the right language on it. */
 export function ChronicExpected({ alarm }) {
   const { t } = useI18n();
-  if (alarm?.downgraded !== true) return null;
+  // ONE predicate, shared with the waiting queue (`isChronicExpected`, data/boardStore.js). The
+  // pill and the bell draw opposite conclusions from the same answer — this finding needs nobody /
+  // this finding needs somebody — so they must not each decide for themselves: a downgraded
+  // CRITICAL reaches the bell by the floor in `needsAnswer`, and if this component still read the
+  // raw flag it would label that same alarm "expected for this patient's own normal". A screen
+  // that contradicts its own alarm count is worse than either reading alone.
+  if (!isChronicExpected(alarm)) return null;
   return (
     <StatusPill tone="neutral" icon="minus">
       {t("board.chronicExpected")}
