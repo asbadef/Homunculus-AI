@@ -18,7 +18,7 @@
 // permissions are the same for every session and every test, and nothing can widen them at run
 // time.
 import { SettingsScreen } from "../screens/settings/SettingsScreen.jsx";
-// G1-09: import { BedsScreen } from "../screens/beds/BedsScreen.jsx";
+import { BedsScreen } from "../screens/beds/BedsScreen.jsx";
 
 // G1-10: import { AlarmsScreen } from "../screens/alarms/AlarmsScreen.jsx";
 
@@ -34,7 +34,7 @@ const SCREENS = Object.freeze({
   // point: git merges line ranges, and four arms editing four ADJACENT lines of the same object
   // conflict every time, while four arms editing lines with untouched context between them do
   // not. Do not close up the gaps.
-  beds: null,      // G1-09
+  beds: BedsScreen, // G1-09
 
   alarms: null,    // G1-10
 
