@@ -44,7 +44,8 @@ import { Alert, Announce, Box, Button, Icon, KV, KVList, Note, RiskPill, StatusP
 import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import {
-  BoardStrip, News2, RAIL_LEFT, ScopeNote, boardKnown, nameOf, railOf, summaryOf, useBoardNow,
+  BoardStrip, News2, RAIL_LEFT, ScopeNote, boardKnown, nameOf, pillRisk, railOf, summaryOf,
+  useBoardNow,
 } from "../common/BoardState.jsx";
 import { ageOf, hasMeasurement } from "../common/freshness.js";
 import { ageParts } from "../common/feedHealth.js";
@@ -95,11 +96,12 @@ function Vitals({ patient, nowMs }) {
  *  should pronounce it as English rather than read English words with Azerbaijani phonetics. */
 function Finding({ alarm }) {
   const { t } = useI18n();
-  const style = riskStyle(alarm.severity === "none" ? null : alarm.severity, { measured: true });
+  const severity = pillRisk(alarm.severity);
+  const style = riskStyle(severity, { measured: true });
   return (
     <li className={`rounded-box border border-line bg-card px-3.5 py-3 border-l-4 ${railOf(style.tone, RAIL_LEFT)}`}>
       <div className="flex flex-wrap items-start gap-2">
-        <RiskPill risk={alarm.severity === "none" ? null : alarm.severity} measured />
+        <RiskPill risk={severity} measured />
         <h3 lang="en" className="m-0 min-w-0 flex-1 font-display text-15 font-bold">{summaryOf(alarm) ?? t("board.findingUnnamed")}</h3>
         {alarm.escalated ? <StatusPill tone="att" icon="alert">{t("board.escalated")}</StatusPill> : null}
         {alarm.downgraded ? <StatusPill tone="neutral" icon="minus">{t("patient.recoDowngraded")}</StatusPill> : null}
@@ -250,10 +252,16 @@ function Meds({ meds }) {
       <p className="m-0 mt-1 text-13 text-mute">
         {pressors.length ? t("patient.pressors", { list: pressors.map(([k, v]) => `${k} ${v}`).join(", ") }) : t("patient.noPressors")}
       </p>
-      <KVList className="mt-2">
-        {meds.weight_kg !== null && meds.weight_kg !== undefined ? <KV label={t("patient.weight", { value: meds.weight_kg })}>{""}</KV> : null}
-        {meds.creatinine !== null && meds.creatinine !== undefined ? <KV label={t("patient.creatinine", { value: meds.creatinine })}>{""}</KV> : null}
-      </KVList>
+      {/* Plain lines, like the two above them, and NOT <KV> rows. `patient.weight` and
+          `patient.creatinine` already carry their own number and unit inside one sentence, so as
+          KV rows they were a <dt> with an empty <dd> — a definition list whose terms define
+          nothing, which a screen reader reads as a label whose value is missing. */}
+      {meds.weight_kg !== null && meds.weight_kg !== undefined ? (
+        <p className="m-0 mt-1 text-13 text-mute">{t("patient.weight", { value: meds.weight_kg })}</p>
+      ) : null}
+      {meds.creatinine !== null && meds.creatinine !== undefined ? (
+        <p className="m-0 mt-1 text-13 text-mute">{t("patient.creatinine", { value: meds.creatinine })}</p>
+      ) : null}
     </Box>
   );
 }

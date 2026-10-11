@@ -30,19 +30,13 @@ import { Alert, Announce, Box, Button, Empty, Note, RiskPill, Seg, StatusPill, u
 import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import {
-  BoardStrip, ChronicExpected, ScopeNote, boardKnown, boardStale, summaryOf, useBoardNow,
+  BoardStrip, ChronicExpected, ScopeNote, boardKnown, boardStale, pillRisk, summaryOf, useBoardNow,
 } from "../common/BoardState.jsx";
 import { elapsed } from "../common/elapsed.js";
 
 /** The ages on this screen tick every second: how long an alarm nobody has answered has been open
  *  is the number this screen exists to show. `useNow` skips the tick while the tab is hidden. */
 const TICK_MS = 1_000;
-
-/** An alarm's severity as a pill may show it. "none" is a PATIENT's risk — "no alarm at all" — and
- *  never an alarm's own severity; shown as one it would read "no finding" beside an alarm nobody
- *  has answered. Handed over as an unreported risk instead: the attention look, never calm.
- *  (The same mapping the bell uses, shell/TopBar.jsx.) */
-const pillRisk = (severity) => (severity === "none" ? null : severity);
 
 /** Oldest first, and a severity this build does not know first of all — it may be the worst (the
  *  rule `waitingAlarms` follows for the bell).

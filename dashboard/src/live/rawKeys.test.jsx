@@ -33,10 +33,15 @@ import { profile, token } from "./session/testTokens.testutil.js";
 import { NAMESPACES } from "./i18n/catalog.js";
 import { ROUTES, hashPath, resetScreens, screenOf } from "./shell/routes.js";
 import { Shell } from "./shell/Shell.jsx";
-import { NOW, alarm, board, entry, identity, news2, reading } from "./data/board.testutil.js";
+import { NOW, ago, alarm, board, entry, identity, news2, reading } from "./data/board.testutil.js";
 
-/** Every right Group 1 knows, so the sweep is not stopped at a screen by a missing permission. */
-const PERMS = ["board.view", "alerts.ack", "users.manage", "groups.manage"];
+/** Every right Group 1 knows, so the sweep is not stopped at a screen by a missing permission —
+ *  and so no CONTROL a right unlocks is left outside the net. `clinical.chart` was missing, so the
+ *  patient screen rendered only the "you may not chart this" sentence and the five strings of the
+ *  charting control itself (`patient.chartTitle|chartNote|chartYes|chartNo|chartSaving`) were
+ *  never swept: a permission omitted here is a whole region of the UI this file silently does not
+ *  cover, which is the opposite of what it exists for. */
+const PERMS = ["board.view", "alerts.ack", "clinical.chart", "users.manage", "groups.manage"];
 /** The card a parameterised address is opened on. */
 const FIXTURE_ID = "S-001";
 
@@ -90,12 +95,23 @@ const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 
 /** One card with a name, a measured channel, the engine's NEWS2 at its loudest (partial, with a
  *  red parameter) and an escalated alarm; one card the HIS has not named. Between them they reach
- *  every string the three clinical screens share. */
+ *  every string the three clinical screens share.
+ *
+ *  The first card carries a MEDS block on purpose. With `meds: null` — `entry`'s default — the
+ *  patient screen drew only `patient.noMeds`, so the four antibiotic strings and the two
+ *  pressor/weight/creatinine ones were outside the sweep. A fixture that does not reach a branch
+ *  makes this file quietly smaller than it reads, and the branches it was not reaching were the
+ *  three-valued antibiotic: the one place on that screen where a missing record must not be
+ *  rendered as a deadline the ward missed. */
 const PAYLOAD = board([
   entry(FIXTURE_ID, [alarm("news2", "high", { escalated: true })], {
     identity: identity(),
     score: news2({ partial: true, missing: ["spo2"], red_param: true }),
     ...reading({ heart_rate: 96, spo2: 91 }, 30),
+    meds: {
+      pressors: { norepinephrine: 0.08 }, antibiotic_given: true, antibiotic_at: ago(600),
+      antibiotic_clock: null, weight_kg: 72, creatinine: 1.9,
+    },
   }),
   entry("S-002", [], reading({ heart_rate: 88 }, 30)),
 ]);

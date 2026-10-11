@@ -112,6 +112,22 @@ export function ScopeNote({ scope, scopeNote, className = "" }) {
  *  (reco/engine.py), so both of these are the seam, not the usual path. */
 export const summaryOf = (alarm) => alarm?.summary || alarm?.kind || null;
 
+/** An ALARM's severity as a risk pill may show it, and the one copy of a SAFETY mapping.
+ *
+ *  `"none"` is a PATIENT's risk — "no alarm at all" — and is never an alarm's own severity. Passed
+ *  to `RiskPill`/`riskStyle` as a severity it resolves to `risk.none`, so with `measured` it reads
+ *  "Tapıntı yoxdur" — "no finding" — beside an alarm nobody has answered. Handed over as null it
+ *  becomes an unreported risk instead: riskStyle's attention look, never calm. A severity this
+ *  build does not know keeps its own text ("unknown risk: <it>"), and a missing one is already
+ *  null by the time it gets here (liveAdapters).
+ *
+ *  It lived in four places — the alarms row, the bell, the bed card and the patient screen's
+ *  finding, each written out inline — and it is here because of what forgetting it does rather
+ *  than to save three lines: a fifth surface that renders an alarm severity and does not know
+ *  about this prints "no finding" on an unanswered alarm, and nothing fails. There is no
+ *  defensible second copy of a mapping whose whole purpose is that a blank never reads as calm. */
+export const pillRisk = (severity) => (severity === "none" ? null : severity);
+
 /** The patient's name, or what is missing instead of it. A device's raw patient number does not
  *  stand in for a person's name — the bed label already carries that identifier, so this says what
  *  is missing instead (the wall board's rule; the old bed card printed the id twice).

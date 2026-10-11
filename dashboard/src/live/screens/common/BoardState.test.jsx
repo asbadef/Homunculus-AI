@@ -6,7 +6,8 @@ import { CONNECTION } from "../../../liveConnection.js";
 import { ENGINE_RISKS, riskStyle } from "../../ui/index.js";
 import { BoardProvider } from "../../data/BoardProvider.jsx";
 import {
-  BoardStrip, ChronicExpected, FeedHealth, RAIL, RAIL_LEFT, ScopeNote, boardKnown, boardStale, railOf, useBoardNow,
+  BoardStrip, ChronicExpected, FeedHealth, RAIL, RAIL_LEFT, ScopeNote, boardKnown, boardStale,
+  pillRisk, railOf, useBoardNow,
 } from "./BoardState.jsx";
 
 const NOW = Date.parse("2026-10-08T10:00:00Z");
@@ -21,6 +22,23 @@ describe("what a screen may say about its own board", () => {
     }
     expect(boardStale(CONNECTION.DEGRADED)).toBe(true);
     expect(boardStale(CONNECTION.LIVE)).toBe(false);
+  });
+
+  // The mapping lived inline in four places — the alarms row, the bell, the bed card and the
+  // patient screen's finding. It is one function here because forgetting it is silent: a fifth
+  // surface that renders an alarm severity and does not know about it prints "no finding" on an
+  // alarm nobody has answered, and nothing fails.
+  it("an alarm severity of \"none\" is never shown as a risk, and nothing else is touched", () => {
+    expect(pillRisk("none")).toBeNull();
+    // Proof that "none" is the one that has to go: passed through, it reads as a finding's
+    // ABSENCE on a finding that exists.
+    expect(riskStyle("none", { measured: true }).labelKey).toBe("risk.none");
+    // Everything else is handed over unchanged, an unknown severity included — the UI reads one
+    // it cannot account for as possibly-the-worst and must still see the raw text.
+    for (const risk of ENGINE_RISKS.filter((r) => r !== "none")) expect(pillRisk(risk)).toBe(risk);
+    expect(pillRisk("catastrophic")).toBe("catastrophic");
+    expect(pillRisk(null)).toBeNull();
+    expect(pillRisk(undefined)).toBeUndefined();
   });
 });
 

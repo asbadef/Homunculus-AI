@@ -17,7 +17,7 @@ import { LanguageMenu, ThemeToggle } from "./Prefs.jsx";
 import { useShell } from "./ShellContext.jsx";
 import { ROUTES, canReach, screenOf } from "./routes.js";
 import { ddmm, hhmm, weekdayKey } from "../i18n/dates.js";
-import { summaryOf } from "../screens/common/BoardState.jsx";
+import { pillRisk, summaryOf } from "../screens/common/BoardState.jsx";
 
 export const BELL_LIST_MAX = 8;
 /** The build this page came from (vite.config.js define; "" when the image was built without git). */
@@ -136,13 +136,6 @@ function Keys() {
   );
 }
 
-/** An alarm's severity as the pill may show it. "none" is a PATIENT's risk — "no alarm at all" —
- *  and never an alarm's own severity; shown as one, `measured` would make the pill read "no
- *  finding" beside an alarm nobody has answered. It is handed over as an unreported risk instead:
- *  riskStyle's attention look, never calm. A severity this build does not know keeps its text
- *  ("unknown risk: <it>"), and a missing one is already null here (liveAdapters). */
-const pillRisk = (severity) => (severity === "none" ? null : severity);
-
 /** The alarms nobody has acknowledged yet, in this session's scope. The board store answers with
  *  Decision 18 already applied (`waitingAlarms`): `known` — a LIVE board, the only one that may
  *  say "none"; `stale` — a DEGRADED one, what it last had, marked as possibly out of date;
@@ -159,7 +152,7 @@ function BellFoot() {
   const { t } = useI18n();
   const { user } = useSession();
   const route = ROUTES.find((r) => r.id === "alarms");
-  if (!route || !screenOf(route) || !canReach(route, user.perms)) return null;
+  if (!route || !screenOf(route) || !canReach(route, user?.perms ?? [])) return null;
   return (
     <p className="m-0 border-t border-line px-3.5 py-2.5">
       <a href={`#${route.path}`} className={`inline-flex items-center gap-1.5 rounded-md text-12.5 font-semibold text-pri ${FOCUS_RING}`}>
@@ -277,7 +270,7 @@ function AccountMenu() {
 /** `title`: the page's name, for the breadcrumb after the hospital's. */
 export function TopBar({ title }) {
   const { user } = useSession();
-  const seesBoard = user.perms.includes("board.view");
+  const seesBoard = user?.perms?.includes("board.view") ?? false;
   return (
     <header className="flex h-[58px] min-w-0 items-center gap-2.5 border-b border-line bg-rail px-4 max-[640px]:gap-1.5 max-[640px]:px-2">
       <p className="m-0 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap font-display text-17 font-bold">

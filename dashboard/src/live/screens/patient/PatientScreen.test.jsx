@@ -86,6 +86,25 @@ describe("the patient screen", () => {
       expect(screen.queryByText("Nəbz")).toBeNull();
     });
 
+    it("ages a reading against the SERVER's clock, not this browser's", async () => {
+      // The screen must call `useBoardNow`, never `useNow` (Decision 10): the engine timestamps a
+      // reading by its own clock, so a ward tablet with a wrong one ages every reading wrongly —
+      // and for half of all wrong clocks it ages them DOWNWARDS, drawing a four-hour-old pressure
+      // as "6 dəq". Nothing failed if the two were swapped, which left a safety property resting
+      // on the import line being right.
+      //
+      // Here the server is ten minutes ahead of the browser, so a reading taken 90 s before the
+      // BROWSER's now is 11.5 minutes old by the SERVER's, and `ageParts` ceils to 12.
+      await open({
+        payload: board([entry("S-001", [], FULL)]),
+        setup: (api) => api.serverClockSkewMs.mockReturnValue(10 * 60_000),
+      });
+      expect(screen.getAllByText(/12 dəq əvvəl/).length).toBeGreaterThan(0);
+      // `\b`, because an unanchored /2 dəq/ matches inside "12 dəq" and the negative assertion
+      // would have passed for the very state it is meant to rule out.
+      expect(screen.queryByText(/\b2 dəq əvvəl/)).toBeNull();
+    });
+
     it("a lactate is shown with the monitor channels — septic shock turns on it", async () => {
       await open({ payload: board([entry("S-001", [], FULL)]) });
       expect(screen.getByText("4.1")).toBeInTheDocument();

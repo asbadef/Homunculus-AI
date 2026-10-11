@@ -29,8 +29,11 @@ import { homePath, navRoutes } from "./routes.js";
 function AlarmBadge({ routeId }) {
   const { t } = useI18n();
   const board = useBoard();
-  const { known, stale, items } = waitingAlarms(board);
+  // The hooks above run for every rail entry — they must, unconditionally — but `waitingAlarms`
+  // filters and sorts the whole alert list, and only the alarms entry has any use for the answer.
+  // It was being computed once per entry on every render of the rail.
   if (routeId !== "alarms") return null;
+  const { known, stale, items } = waitingAlarms(board);
   const count = items?.length ?? 0;
   if (known && count > 0) {
     return (

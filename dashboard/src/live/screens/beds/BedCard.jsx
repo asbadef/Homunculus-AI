@@ -32,7 +32,7 @@ import { hhmm } from "../../i18n/dates.js";
 import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
 import { patientFeedHealth } from "../common/feedHealth.js";
 import { measuredVitals } from "../common/vitals.js";
-import { ChronicExpected, News2, boardKnown, nameOf, railOf, summaryOf } from "../common/BoardState.jsx";
+import { ChronicExpected, News2, boardKnown, nameOf, pillRisk, railOf, summaryOf } from "../common/BoardState.jsx";
 
 /** Where this card's identity came from, and what state the HIS says it is in. */
 function Provenance({ patient }) {
@@ -119,7 +119,7 @@ export function BedCard({ patient, alerts = [], nowMs, connection }) {
           <ul className="m-0 mt-2.5 flex list-none flex-col gap-1 p-0">
             {open.map((a) => (
               <li key={a.id} className="flex flex-wrap items-start gap-x-2 gap-y-1">
-                <RiskPill risk={a.severity === "none" ? null : a.severity} measured />
+                <RiskPill risk={pillRisk(a.severity)} measured />
                 {/* The engine writes its summaries in English (reco/engine.py); marked so a
                     screen reader pronounces them as English rather than with Azerbaijani
                     phonetics. The card says once, at its foot, that they are English. */}
