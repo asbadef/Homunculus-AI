@@ -19,6 +19,7 @@ const NEUTRAL = new Set([
   //                                     "ммоль/л" — so those two are not here.)
 
   // G1-09 (beds) · neutral
+  "beds.news2", //                NEWS2 — the score's own name, not translated anywhere
 
   // G1-10 (alarms) · neutral
 
@@ -71,6 +72,11 @@ const AZ_SAME_AS_TR = new Set([
   "board.unitMmol", //       mmol/L
 
   // G1-09 (beds) · az = tr
+  "beds.viewCards", //       Kart — the prototype's AZ dictionary (screens.js, `Kart` / `Liste`)
+  "beds.order", //           Sıralama — "ordering" in Azerbaijani too (sıralamaq)
+  "beds.orderRisk", //       Risk sırası — the prototype's AZ section line ("risk sırasına görə")
+  "beds.staleChannels", //   Gecikmiş kanal — "overdue channel" reads the same in Azerbaijani
+  "beds.news2", //           NEWS2 — the score's own name
 
   // G1-10 (alarms) · az = tr
 

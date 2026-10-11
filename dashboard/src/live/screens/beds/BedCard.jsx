@@ -1,0 +1,182 @@
+// src/live/screens/beds/BedCard.jsx — one bed, as the board shows it (the prototype's `.bed`).
+//
+// Everything on this card is the engine's or the hospital's. The card computes nothing clinical:
+// no score, no band, no colour that depends on a value, no risk of its own. What it does do is
+// state absence out loud, which is where every honesty rule on it comes from:
+//
+//   * The risk pill is given `measured` from the card's OWN timestamps, so risk "none" reads "no
+//     finding" on a card that has observations and "not measured" on one that has none
+//     (ui/riskStyle.js's rule, and the reason it refuses to assume it).
+//   * A channel that was never measured is NOT printed as a dash. The old wall board learned this:
+//     "on a live ward three of the five channels are empty, so half the row became '—'. Show what
+//     was measured; if nothing was, say that once." So the row carries the measured channels only,
+//     and a card with none says so in a sentence.
+//   * The name is the HIS's or it is missing. A device's raw patient number does not stand in for
+//     a person's name — the bed label already carries that identifier, so this slot says what is
+//     missing instead (the wall board's rule; the old bed card did the opposite and printed the id
+//     twice).
+//   * NEWS2 is the engine's or it is "—" with the reason. A browser-side NEWS2 scores an
+//     unmeasured parameter as 0 and showed a calm green "0" on patients nobody had scored.
+//   * `red_param` is shown as the FACT the engine sent, and does not change the level. The engine
+//     can legitimately send "low" with `red_param` true — `rules/patient_relative.py` lowers a
+//     NEWS2 alert when the patient's charted chronic normal explains every contributor. Whether a
+//     charted baseline may override the red-parameter floor is a clinical decision (roadmap "User
+//     decisions", 9), so the screen reports both and overrides neither.
+//   * Colour is never the only signal: the left rail's tone always travels with the pill's icon
+//     and word.
+import React from "react";
+import { useI18n } from "../../i18n/I18nProvider.jsx";
+import { Icon, RiskPill, StatusPill, riskStyle } from "../../ui/index.js";
+import { FOCUS_RING } from "../../ui/focus.js";
+import { hhmm } from "../../i18n/dates.js";
+import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
+import { patientFeedHealth } from "../common/feedHealth.js";
+import { measuredVitals } from "../common/vitals.js";
+import { ChronicExpected, railOf, summaryOf } from "../common/BoardState.jsx";
+
+/** The patient's name, or what is missing instead of it. */
+export function nameOf(patient, t) {
+  return patient?.display_name || t("beds.identityPending");
+}
+
+/** Where this card's identity came from, and what state the HIS says it is in. */
+function Provenance({ patient }) {
+  const { t } = useI18n();
+  const source = patient?.source;
+  const key = source === "comed" ? "beds.sourceComed"
+    : source === "device" || !source ? "beds.sourceDevice" : "beds.sourceManual";
+  // A card with no identity block at all has nothing to say but that: the engine never sent one,
+  // so there is no instant and no state either.
+  const stamp = patient?.identityUpdatedAt ? Date.parse(patient.identityUpdatedAt) : NaN;
+  return (
+    <>
+      <span>{t(key)}</span>
+      {Number.isNaN(stamp) ? null : <span>{` · ${hhmm(stamp)}`}</span>}
+      {patient?.identityState === "discharged" ? <span>{` · ${t("beds.discharged")}`}</span> : null}
+    </>
+  );
+}
+
+/** The engine's NEWS2, or "—" and why not. Never a score of this screen's own. */
+export function News2({ news2, className = "" }) {
+  const { t } = useI18n();
+  const missing = Array.isArray(news2?.missing) ? news2.missing : [];
+  if (!news2 || typeof news2.total !== "number") {
+    return (
+      <span className={`inline-flex items-center gap-1.5 text-11.5 font-semibold text-mute ${className}`}>
+        <span>{`${t("beds.news2")}: —`}</span>
+        <span className="sr-only">{t("news2.noEngine")}</span>
+      </span>
+    );
+  }
+  const names = missing.map((m) => t(`news2.missing.${m}`)).join(", ");
+  return (
+    <span className={`inline-flex flex-wrap items-center gap-1.5 text-11.5 font-semibold ${className}`}>
+      <span className="text-mute">{t("beds.news2")}:</span>
+      <b className="font-data text-13 text-ink">{news2.total}</b>
+      {news2.partial ? (
+        <StatusPill tone="att" icon="alert">
+          {t("beds.news2Partial")}
+          {names ? <span className="sr-only">{` · ${t("news2.partialHint", { missing: names })}`}</span> : null}
+        </StatusPill>
+      ) : null}
+      {news2.red_param ? <StatusPill tone="att" icon="alert">{t("beds.news2Red")}</StatusPill> : null}
+    </span>
+  );
+}
+
+/** The channels this bed HAS values for. A card with none says so once, instead of a row of
+ *  dashes that repeats the same absence five times. */
+function Vitals({ patient }) {
+  const { t } = useI18n();
+  const shown = measuredVitals(patient);
+  if (shown.length === 0) {
+    return <p className="m-0 mt-2 text-12.5 text-mute">{t("beds.noVitals")}</p>;
+  }
+  return (
+    <dl className="m-0 mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+      {shown.map((v) => (
+        <div key={v.at} className="min-w-[62px]">
+          <dt className={`text-10 font-bold uppercase leading-[normal] tracking-[.06em] ${v.color}`}>{t(v.labelKey)}</dt>
+          <dd className="m-0 font-data text-14.5 font-bold text-ink">
+            {v.value}
+            <small className="ml-0.5 font-text text-10.5 font-semibold text-mute">{t(v.unitKey)}</small>
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * `patient`: one record from `liveAdapters.patientsFromBoard`.
+ * `alerts`: that patient's alarms from `boardStore`'s `alerts` (already flattened).
+ * `nowMs`: the instant the board was last painted — passed in so one clock serves every card and
+ *   a test can fix it.
+ */
+export function BedCard({ patient, alerts = [], nowMs }) {
+  const { t } = useI18n();
+  const measured = hasMeasurement(patient?.measuredAt);
+  const style = riskStyle(patient?.risk, { measured });
+  const bed = patient?.bedLabel || patient?.patient_id || "—";
+  const last = lastMeasuredAt(patient?.measuredAt);
+  const stale = patientFeedHealth(patient, nowMs).stale.length;
+  const open = alerts.filter((a) => a.status !== "ACKNOWLEDGED");
+  return (
+    <li className="relative overflow-hidden rounded-box border border-line bg-card">
+      {/* The rail is the pill's tone again as a 4 px stripe — never the only signal. */}
+      <span aria-hidden="true" data-rail={style.tone} className={`absolute inset-y-0 left-0 w-1 ${railOf(style.tone)}`} />
+      <a
+        href={`#/patients/${encodeURIComponent(patient?.patient_id ?? "")}`}
+        aria-label={t("beds.openPatient", { bed })}
+        className={`block pb-3 pl-[18px] pr-3.5 pt-3 ${FOCUS_RING}`}
+      >
+        <div className="flex items-start gap-2.5">
+          <div className="min-w-0 flex-1">
+            <b className="block font-data text-15 font-bold text-ink">{bed}</b>
+            <span className={`block truncate font-display text-14.5 font-bold ${patient?.display_name ? "text-ink" : "italic text-mute"}`}>
+              {nameOf(patient, t)}
+            </span>
+          </div>
+          <RiskPill risk={patient?.risk} measured={measured} />
+        </div>
+
+        {open.length > 0 ? (
+          <ul className="m-0 mt-2.5 flex list-none flex-col gap-1 p-0">
+            {open.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-start gap-x-2 gap-y-1">
+                <RiskPill risk={a.severity === "none" ? null : a.severity} measured />
+                {/* The engine writes its summaries in English (reco/engine.py); marked so a
+                    screen reader pronounces them as English rather than with Azerbaijani
+                    phonetics. The card says once, at its foot, that they are English. */}
+                <span lang="en" className="min-w-0 flex-1 text-12.5 text-ink">{summaryOf(a) ?? t("board.findingUnnamed")}</span>
+                <ChronicExpected alarm={a} />
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        {open.length > 0 ? (
+          <p className="m-0 mt-1 text-10.5 text-mute">{t("board.engineEnglish")}</p>
+        ) : null}
+
+        <Vitals patient={patient} />
+
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line pt-2 text-11 text-mute">
+          <News2 news2={patient?.news2} />
+          {last !== null ? <span>{t("board.measuredAt", { time: hhmm(last) })}</span> : null}
+          {stale > 0 ? <span className="text-att-ink">{t("beds.staleChannels", { count: stale })}</span> : null}
+          <span className="ml-auto flex items-center gap-1">
+            <Icon name="user" size={12} />
+            <Provenance patient={patient} />
+          </span>
+        </div>
+        {patient?.bedKey && !patient?.bedMatched ? (
+          <p className="m-0 mt-1.5 text-11 font-semibold text-att-ink">
+            {t("beds.unmatchedBed", { key: patient.bedKey })}
+          </p>
+        ) : null}
+      </a>
+    </li>
+  );
+}

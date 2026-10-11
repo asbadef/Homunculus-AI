@@ -22,7 +22,7 @@ import nav from "./strings/nav.js";
 // per screen — the same seam `shell/routes.js` has, so the parallel branches of Wave 3 touch
 // different lines. Each branch uncomments ITS OWN two lines and nobody else's.
 import board from "./strings/board.js";
-// G1-09: import beds from "./strings/beds.js";
+import beds from "./strings/beds.js";
 
 // G1-10: import alarms from "./strings/alarms.js";
 
@@ -41,7 +41,7 @@ export const NAMESPACES = {
   // One entry per arm, each with a blank line either side, for the same reason as the import
   // block above and `shell/routes.js`'s SCREENS: adjacent lines conflict on merge, lines with
   // untouched context between them do not. Do not tidy the gaps away.
-  // G1-09: beds,
+  beds,
 
   // G1-10: alarms,
 
