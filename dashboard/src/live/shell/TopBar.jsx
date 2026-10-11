@@ -15,7 +15,9 @@ import { FOCUS_RING } from "../ui/focus.js";
 import { MenuButton, Popover, TOOL_BUTTON } from "./Menu.jsx";
 import { LanguageMenu, ThemeToggle } from "./Prefs.jsx";
 import { useShell } from "./ShellContext.jsx";
+import { ROUTES, canReach, screenOf } from "./routes.js";
 import { ddmm, hhmm, weekdayKey } from "../i18n/dates.js";
+import { summaryOf } from "../screens/common/BoardState.jsx";
 
 export const BELL_LIST_MAX = 8;
 /** The build this page came from (vite.config.js define; "" when the image was built without git). */
@@ -151,6 +153,23 @@ const pillRisk = (severity) => (severity === "none" ? null : severity);
  *  stopped updating wears its own ring and amber dot, and the grey dot is kept for "cannot know".
  *  Without that, a DEGRADED bell with nothing waiting — no badge, one grey dot — looked at a
  *  glance exactly like a calm ward. */
+/** The way to the whole list, when this build has the alarms screen and this session may open it
+ *  — never a dead link (the rail's own entry follows the same rule, routes.js `navRoutes`). */
+function BellFoot() {
+  const { t } = useI18n();
+  const { user } = useSession();
+  const route = ROUTES.find((r) => r.id === "alarms");
+  if (!route || !screenOf(route) || !canReach(route, user.perms)) return null;
+  return (
+    <p className="m-0 border-t border-line px-3.5 py-2.5">
+      <a href={`#${route.path}`} className={`inline-flex items-center gap-1.5 rounded-md text-12.5 font-semibold text-pri ${FOCUS_RING}`}>
+        {t("nav.alarms")}
+        <Icon name="chevR" size={14} />
+      </a>
+    </p>
+  );
+}
+
 function Bell() {
   const { t } = useI18n();
   const board = useBoard();
@@ -195,16 +214,24 @@ function Bell() {
           <p className="m-0 px-3.5 py-2.5 text-12.5 text-mute">{status}</p>
           {waiting.length ? (
             <ul className="m-0 max-h-[min(460px,60vh)] list-none overflow-auto p-0">
+              {/* Each row is a link to the patient it is about (deferred from Wave 2 to G1-10): a
+                  list of alarms nobody can reach from is a list nobody can act on. The alarms
+                  screen is linked from the panel's foot when this build has it. */}
               {waiting.slice(0, BELL_LIST_MAX).map((a) => (
-                <li key={a.id} className="grid grid-cols-[auto_1fr_auto] items-start gap-2.5 border-t border-line px-3.5 py-2.5">
-                  <RiskPill risk={pillRisk(a.severity)} measured />
-                  <div className="min-w-0">
-                    <b className="block font-data text-13">{a.bedLabel}</b>
-                    <span className="block text-12 text-mute">{a.summary ?? a.kind}</span>
-                  </div>
-                  <span className="whitespace-nowrap font-data text-11 font-semibold text-mute">
-                    {a.firstSeenAtMs ? t("shell.bellSince", { time: hhmm(a.firstSeenAtMs) }) : "—"}
-                  </span>
+                <li key={a.id} className="border-t border-line">
+                  <a
+                    href={`#/patients/${encodeURIComponent(a.patientId ?? "")}`}
+                    className={`grid grid-cols-[auto_1fr_auto] items-start gap-2.5 px-3.5 py-2.5 hover:bg-card2 ${FOCUS_RING}`}
+                  >
+                    <RiskPill risk={pillRisk(a.severity)} measured />
+                    <span className="min-w-0">
+                      <b className="block font-data text-13">{a.bedLabel}</b>
+                      <span lang="en" className="block text-12 text-mute">{summaryOf(a) ?? t("board.findingUnnamed")}</span>
+                    </span>
+                    <span className="whitespace-nowrap font-data text-11 font-semibold text-mute">
+                      {a.firstSeenAtMs ? t("shell.bellSince", { time: hhmm(a.firstSeenAtMs) }) : "—"}
+                    </span>
+                  </a>
                 </li>
               ))}
             </ul>
@@ -212,6 +239,7 @@ function Bell() {
           {waiting.length > BELL_LIST_MAX ? (
             <p className="m-0 border-t border-line bg-card2 px-3.5 py-2.5 text-12 text-mute">{t("shell.bellMore", { count: waiting.length - BELL_LIST_MAX })}</p>
           ) : null}
+          <BellFoot />
         </div>
       )}
     </Popover>

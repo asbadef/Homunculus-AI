@@ -79,6 +79,9 @@ const AZ_SAME_AS_TR = new Set([
   "beds.news2", //           NEWS2 — the score's own name
 
   // G1-10 (alarms) · az = tr
+  "alarms.criticalOnly", //  Yalnız kritik — the prototype's AZ dictionary (screens.js)
+  "alarms.seen", //          Gördüm — the prototype's AZ dictionary (the acknowledge button)
+  "alarms.seenBy", //        Gördü — the same verb, third person, in Azerbaijani too
 
   // G1-11 (patient) · az = tr
 

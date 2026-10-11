@@ -20,7 +20,7 @@
 import { SettingsScreen } from "../screens/settings/SettingsScreen.jsx";
 import { BedsScreen } from "../screens/beds/BedsScreen.jsx";
 
-// G1-10: import { AlarmsScreen } from "../screens/alarms/AlarmsScreen.jsx";
+import { AlarmsScreen } from "../screens/alarms/AlarmsScreen.jsx";
 
 // G1-11: import { PatientScreen } from "../screens/patient/PatientScreen.jsx";
 
@@ -36,7 +36,7 @@ const SCREENS = Object.freeze({
   // not. Do not close up the gaps.
   beds: BedsScreen, // G1-09
 
-  alarms: null,    // G1-10
+  alarms: AlarmsScreen, // G1-10
 
   patient: null,   // G1-11
 

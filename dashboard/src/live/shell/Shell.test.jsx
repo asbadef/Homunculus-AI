@@ -29,6 +29,9 @@ function BedsProbe() {
 function PatientProbe({ params }) {
   return <h1>Xəstə {params.id}</h1>;
 }
+function AlarmsProbe() {
+  return <h1>Siqnal ekranı</h1>;
+}
 // `built` adds a screen to whatever this build has; `only` pins the registry to a known set, for
 // a test whose subject IS which screens exist (the rail's list, where an empty address lands,
 // "no such page"). Without `only`, those tests assert a property of the build and break in this
@@ -89,6 +92,50 @@ describe("the rail", () => {
     expect(settings).toHaveAttribute("aria-current", "page");
     expect(within(settings).getAllByText("Ayarlar")).toHaveLength(2);                          // full + short (phone)
     expect(within(rail).queryByText("İdarə")).toBeNull();                                       // not the nurse's
+  });
+
+  // The count of unanswered alarms on the rail's own entry (deferred from Wave 2 to G1-10), under
+  // the bell's rule: a number only from a LIVE board.
+  describe("the alarms entry's count", () => {
+    const waitingPatients = (n) => Array.from({ length: n }, (_, i) => ({
+      patient_id: `P-${i}`, risk: "high", vitals: {},
+      alerts: [{ kind: "news2", severity: "high", summary: `NEWS2 ${i}`, acknowledged: false }],
+    }));
+
+    it("counts what is waiting on a LIVE board, in a badge AND in the entry's name", async () => {
+      only({ beds: BedsProbe, alarms: AlarmsProbe });
+      const { stream } = await renderShell({ patients: waitingPatients(3) });
+      await act(async () => { stream.open(); await settle(); });
+      const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
+      const entry = within(rail).getByRole("link", { name: /Siqnallar/ });
+      expect(entry).toHaveTextContent("3");
+      expect(entry).toHaveAccessibleName(/3 siqnal cavab gözləyir/);
+    });
+
+    it("a board that may be out of date shows a dot, never a number", async () => {
+      only({ beds: BedsProbe, alarms: AlarmsProbe });
+      const { stream } = await renderShell({ patients: waitingPatients(3) });
+      await act(async () => { stream.open(); await settle(); });
+      act(() => { stream.drop(); });
+      const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
+      expect(within(rail).queryByText("3")).toBeNull();
+      expect(rail.querySelector("[data-rail-badge='stale']")).toBeInTheDocument();
+    });
+
+    it("a board that cannot know shows nothing", async () => {
+      only({ beds: BedsProbe, alarms: AlarmsProbe });
+      const rail = (await renderShell({ patients: waitingPatients(3), start: false }),
+        screen.getByRole("navigation", { name: "Əsas menyu" }));
+      expect(rail.querySelector("[data-rail-badge]")).toBeNull();
+    });
+
+    it("a LIVE board with nothing waiting shows no badge either", async () => {
+      only({ beds: BedsProbe, alarms: AlarmsProbe });
+      const { stream } = await renderShell({ patients: [] });
+      await act(async () => { stream.open(); await settle(); });
+      const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
+      expect(rail.querySelector("[data-rail-badge]")).toBeNull();
+    });
   });
 
   it("shows an administrator the built admin screen", async () => {
@@ -339,6 +386,32 @@ describe("the top bar", () => {
     expect(mark()).toBeNull();                                   // LIVE: nothing to warn about
     act(() => { stream.drop(); });
     expect(mark()).toBe("stale");                                // its own mark, not the grey dot
+  });
+
+  // Deferred from Wave 2 to G1-10: a list of alarms nobody can reach from is a list nobody can
+  // act on.
+  it("links each row to the patient it is about, and the panel to the alarms screen", async () => {
+    only({ beds: BedsProbe, alarms: AlarmsProbe, patient: PatientProbe });
+    const patients = [{ patient_id: "P-001", risk: "high", vitals: {},
+      alerts: [{ kind: "news2", severity: "high", summary: "NEWS2 7", acknowledged: false }],
+      identity: { bed_label: "REA-01" } }];
+    const { stream } = await renderShell({ patients });
+    await act(async () => { stream.open(); await settle(); });
+    fireEvent.click(screen.getByRole("button", { name: /1 siqnal cavab gözləyir/ }));
+    const panel = screen.getByRole("region", { name: /Cavab gözləyən siqnallar/ });
+    expect(within(panel).getByRole("link", { name: /REA-01/ })).toHaveAttribute("href", "#/patients/P-001");
+    expect(within(panel).getByRole("link", { name: /Siqnallar/ })).toHaveAttribute("href", "#/alarms");
+  });
+
+  it("does not offer a way to a screen this build has not built", async () => {
+    only({ beds: BedsProbe });
+    const patients = [{ patient_id: "P-001", risk: "high", vitals: {},
+      alerts: [{ kind: "news2", severity: "high", summary: "NEWS2 7", acknowledged: false }] }];
+    const { stream } = await renderShell({ patients });
+    await act(async () => { stream.open(); await settle(); });
+    fireEvent.click(screen.getByRole("button", { name: /1 siqnal cavab gözləyir/ }));
+    const panel = screen.getByRole("region", { name: /Cavab gözləyən siqnallar/ });
+    expect(within(panel).queryByRole("link", { name: /^Siqnallar/ })).toBeNull();
   });
 
   it("lists the worst alarms and says how many more are waiting", async () => {
