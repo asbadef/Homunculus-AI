@@ -32,7 +32,7 @@ import { hhmm } from "../../i18n/dates.js";
 import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
 import { patientFeedHealth } from "../common/feedHealth.js";
 import { measuredVitals } from "../common/vitals.js";
-import { ChronicExpected, News2, nameOf, railOf, summaryOf } from "../common/BoardState.jsx";
+import { ChronicExpected, News2, boardKnown, nameOf, railOf, summaryOf } from "../common/BoardState.jsx";
 
 /** Where this card's identity came from, and what state the HIS says it is in. */
 function Provenance({ patient }) {
@@ -80,14 +80,21 @@ function Vitals({ patient }) {
  * `alerts`: that patient's alarms from `boardStore`'s `alerts` (already flattened).
  * `nowMs`: the instant the board was last painted — passed in so one clock serves every card and
  *   a test can fix it.
+ * `connection`: the board's own state, and NOT a nicety. The overdue-channel count below is the
+ *   snapshot's timestamps aged against a clock that keeps moving, while off LIVE the snapshot is
+ *   never reloaded — so through an outage every card would grow an amber "N overdue channels" and
+ *   go on growing it, reporting OUR lost connection as the ward's dead monitors. `FeedHealth`
+ *   suppresses the ward chip off LIVE for exactly this reason (screens/common/BoardState.jsx);
+ *   this is the same rule per card. `BoardStrip` is what speaks about the connection.
  */
-export function BedCard({ patient, alerts = [], nowMs }) {
+export function BedCard({ patient, alerts = [], nowMs, connection }) {
   const { t } = useI18n();
   const measured = hasMeasurement(patient?.measuredAt);
   const style = riskStyle(patient?.risk, { measured });
   const bed = patient?.bedLabel || patient?.patient_id || "—";
   const last = lastMeasuredAt(patient?.measuredAt);
-  const stale = patientFeedHealth(patient, nowMs).stale.length;
+  // Only a LIVE board may be aged: same rule and same reason as `FeedHealth`'s own `connection`.
+  const stale = boardKnown(connection) ? patientFeedHealth(patient, nowMs).stale.length : 0;
   const open = alerts.filter((a) => a.status !== "ACKNOWLEDGED");
   return (
     <li className="relative overflow-hidden rounded-box border border-line bg-card">

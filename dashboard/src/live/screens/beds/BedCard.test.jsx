@@ -2,16 +2,21 @@ import { describe, it, expect } from "vitest";
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import { I18nProvider } from "../../i18n/I18nProvider.jsx";
+import { CONNECTION } from "../../../liveConnection.js";
 import { patientFromBoard, alertsFromPatients } from "../../../liveAdapters.js";
 import { NOW, ago, alarm, entry, identity, measured, news2, reading } from "../../data/board.testutil.js";
 import { BedCard } from "./BedCard.jsx";
 
-/** The card as the screen builds it: the adapter's record, and that patient's flattened alarms. */
-function card(raw) {
+/** The card as the screen builds it: the adapter's record, and that patient's flattened alarms.
+ *  `connection` defaults to LIVE because that is the state nearly every one of these tests is
+ *  about; the one test that is about the others passes its own. */
+function card(raw, connection = CONNECTION.LIVE) {
   const patient = patientFromBoard(raw);
   return render(
     <I18nProvider>
-      <ul><BedCard patient={patient} alerts={alertsFromPatients([patient])} nowMs={NOW} /></ul>
+      <ul>
+        <BedCard patient={patient} alerts={alertsFromPatients([patient])} nowMs={NOW} connection={connection} />
+      </ul>
     </I18nProvider>,
   );
 }
@@ -101,6 +106,25 @@ describe("the bed card — what it says, and what it refuses to", () => {
       }));
       expect(screen.getByText(/Son ölçmə: /)).toBeInTheDocument();
       expect(screen.getByText("Gecikmiş kanal: 1")).toBeInTheDocument();
+    });
+
+    it("counts no overdue channel on a board that is not LIVE", () => {
+      // The count is the snapshot's timestamps aged against a clock that keeps moving, and off
+      // LIVE the snapshot is never reloaded (only the stream's onOpen reloads it). So through an
+      // outage every card would grow an amber "Gecikmiş kanal: N" and go on growing it —
+      // reporting OUR lost connection as the ward's dead monitors, which is the one way a
+      // feed-health indicator can do harm. `FeedHealth` suppresses the ward chip off LIVE for
+      // exactly this reason (screens/common/BoardState.jsx); the per-card count was not gated at
+      // all. `BoardStrip` is what speaks about the connection.
+      const raw = entry("S-001", [], {
+        at: { heart_rate: ago(30), spo2: ago(4_000) },
+        vitals: { heart_rate: 78, spo2: 96 },
+      });
+      card(raw, CONNECTION.DEGRADED);
+      expect(screen.queryByText(/Gecikmiş kanal/)).toBeNull();
+      // The last-measured instant is a fact the server sent and stays: it is not aged against
+      // anything, so an outage cannot make it drift.
+      expect(screen.getByText(/Son ölçmə: /)).toBeInTheDocument();
     });
   });
 

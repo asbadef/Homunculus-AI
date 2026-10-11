@@ -26,6 +26,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
+import { CONNECTION } from "../../../liveConnection.js";
 import { waitingAlarms } from "../../data/boardStore.js";
 import { useShell } from "../../shell/ShellContext.jsx";
 import { ROUTES, canReach, screenOf } from "../../shell/routes.js";
@@ -154,7 +155,7 @@ function BedList({ patients, alertsOf }) {
 export function BedsScreen() {
   const { t } = useI18n();
   const board = useBoard();
-  const { unit, setUnit, units } = useShell();
+  const { unit, setUnit, units, stale: unitsStale } = useShell();
   const nowMs = useBoardNow(TICK_MS);
   const [view, setView] = useState(() => readPref("bedView", VIEWS, "kart"));
   const [order, setOrder] = useState(() => readPref("bedOrder", ORDERS, "yatak"));
@@ -217,7 +218,10 @@ export function BedsScreen() {
           {units.length >= 2 ? (
             <label className="flex items-center gap-2 text-12.5 font-semibold text-mute">
               <Icon name="building" size={15} />
-              <span>{t("beds.unit")}</span>
+              {/* The top bar's chip carries `shell.unitsStale` in its accessible name, and the
+                  chip is hidden at 640 px and below — so on a phone the only unit control left
+                  was the only one that could not say its list may be out of date. */}
+              <span>{unitsStale ? `${t("beds.unit")} · ${t("shell.unitsStale")}` : t("beds.unit")}</span>
               <select
                 value={unit ?? ""}
                 onChange={(e) => setUnit(e.target.value || null)}
@@ -239,16 +243,22 @@ export function BedsScreen() {
 
       {shown.length === 0 ? (
         <Empty icon="bed">
+          {/* UNAVAILABLE is not CONNECTING. The last branch said "the board is loading" for
+              both, directly under a crit strip saying there is no connection to the server and
+              the list is not shown — one of the two had to be wrong, and the reassuring one was.
+              Each state now says its own sentence. */}
           {query && inUnits.length > 0 ? t("beds.searchNone", { query })
             : boardKnown(board.connection) ? t("beds.emptyLive")
-              : boardStale(board.connection) ? t("board.degraded") : t("board.connecting")}
+              : boardStale(board.connection) ? t("board.degraded")
+                : board.connection === CONNECTION.UNAVAILABLE ? t("board.unavailable")
+                  : t("board.connecting")}
         </Empty>
       ) : view === "liste" ? (
         <BedList patients={shown} alertsOf={alertsOf} />
       ) : (
         <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-2.5 p-0 max-[640px]:grid-cols-1">
           {shown.map((p) => (
-            <BedCard key={p.patient_id} patient={p} alerts={alertsOf(p.patient_id)} nowMs={nowMs} />
+            <BedCard key={p.patient_id} patient={p} alerts={alertsOf(p.patient_id)} nowMs={nowMs} connection={board.connection} />
           ))}
         </ul>
       )}
