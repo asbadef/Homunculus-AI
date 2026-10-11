@@ -140,6 +140,18 @@ describe("the alarms screen", () => {
       expect(screen.getByRole("group", { name: "Açıq · 2" })).toBeInTheDocument();
     });
 
+    it("the section headings carry no number the board cannot know either", async () => {
+      // The same defect one level down, on the two LARGEST numbers on the screen. The group
+      // label was gated and these were not, so an unreadable board — where refresh() has
+      // emptied it — printed a bold 0 beside "Cavab gözləyir" and "Qiymətləndirilir", inches
+      // from a group label correctly saying "Açıq · bilinmir". A stale number is defensible, as
+      // the bell already shows one; a zero the board cannot know is not.
+      await open({ connection: "unavailable" });
+      for (const name of [/Cavab gözləyir/, /Qiymətləndirilir/]) {
+        expect(screen.getByRole("heading", { name })).toHaveTextContent(/^[^0-9]*$/);
+      }
+    });
+
     it("a board that cannot be read offers no number at all", async () => {
       // The one count on this screen that was not behind a `known` guard: it read "Açıq · 0" on a
       // board that could not be loaded, directly beside the crit alert saying so. Zero is the most

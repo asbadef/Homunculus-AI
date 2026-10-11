@@ -107,14 +107,19 @@ function Row({ alarm, nowMs, canAck, onAck, busy }) {
   );
 }
 
-function Section({ titleKey, emptyKey, alarms, nowMs, canAck, onAck, busyId, level = 2 }) {
+function Section({ titleKey, emptyKey, alarms, nowMs, canAck, onAck, busyId, counted, level = 2 }) {
   const { t } = useI18n();
   const Heading = `h${level}`;
   return (
     <section className="grid gap-2">
       <Heading className="m-0 flex items-center gap-2 font-text text-11 font-bold uppercase leading-[normal] tracking-[.08em] text-mute">
         {t(titleKey)}
-        <span className="font-data text-12 text-ink">{alarms.length}</span>
+        {/* `counted` is `known || stale`, and these are the two largest numbers on the screen. On
+            an unreadable board `refresh()` has emptied it, so an ungated `alarms.length` printed
+            a bold 0 beside "waiting for a response" — inches from a group label that correctly
+            said it could not know. A STALE number is defensible and the bell already shows one;
+            a zero the board cannot know is not. */}
+        {counted ? <span className="font-data text-12 text-ink">{alarms.length}</span> : null}
       </Heading>
       {alarms.length === 0 ? (
         <Empty icon="bell">{t(emptyKey)}</Empty>
@@ -224,10 +229,12 @@ export function AlarmsScreen() {
       <Section
         titleKey="alarms.waiting" emptyKey={emptyKey("alarms.emptyWaiting")}
         alarms={waiting} nowMs={nowMs} canAck={canAck} onAck={acknowledge} busyId={busyId}
+        counted={known || stale}
       />
       <Section
         titleKey="alarms.reviewing" emptyKey={emptyKey("alarms.emptyReviewing")}
         alarms={reviewing} nowMs={nowMs} canAck={false} onAck={acknowledge} busyId={busyId}
+        counted={known || stale}
       />
 
       {/* Its own heading: this box is about CLOSED alarms, and titling it "Under review" put a
