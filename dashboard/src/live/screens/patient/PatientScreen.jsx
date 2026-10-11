@@ -34,10 +34,12 @@
 // four `beds.*` / two `alarms.*` strings they read moved with them, to `board.*`. The two screens
 // still have ONE NEWS2 and one "the HIS's name or the statement that there is none" between them,
 // which is the point: a second copy of either is a second chance to get one of them wrong.
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
-import { Alert, Box, Icon, KV, KVList, Note, RiskPill, StatusPill, riskStyle } from "../../ui/index.js";
+import { useSession } from "../../session/SessionProvider.jsx";
+import { apiErrorText } from "../../apiErrors.js";
+import { Alert, Announce, Box, Button, Icon, KV, KVList, Note, RiskPill, StatusPill, riskStyle, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import {
@@ -131,10 +133,55 @@ function Finding({ alarm }) {
   );
 }
 
+/** The one thing this screen writes, and the smallest write the system has: whether an infection
+ *  is suspected (`POST /clinical/{id}`, one entry, permission `clinical.chart`).
+ *
+ *  It is here and not in Group 2 with the SOFA form because of what its absence does. Nothing in
+ *  the engine's sepsis branch runs until something charts this — `septic_shock.evaluate` returns at
+ *  its first line — so a septic patient on a ward where nobody can chart it is a patient the engine
+ *  is silent about, and the screen that says "the sepsis rule does not run at all for this patient"
+ *  would be stating a problem it was built unable to fix. One button closes that.
+ *
+ *  Three rules it keeps. The screen offers the clinician's judgement and never forms one: there is
+ *  no default, no pre-selected answer and no suggestion of which to press, because Homunculus does
+ *  not diagnose. Both answers are offered even once one has been charted — a judgement can change,
+ *  and "no" after "yes" is a real clinical event, not an undo. And it says out loud, before it is
+ *  pressed, that this goes into the audit trail under the clinician's own name and cannot be
+ *  withdrawn: the engine keeps the latest charted value, so a correction supersedes rather than
+ *  erases. Nothing here computes: the ENGINE decides what a charted "yes" means for this patient,
+ *  and the board that comes back is what the screen then shows.
+ *
+ *  The current answer is not a disabled button or a tick: `Note` above already states it in a
+ *  sentence, and a pressed-looking button would read as "this is what is true" rather than "this is
+ *  what was charted, by a person, at a time". */
+function Chart({ canChart, onChart, busy }) {
+  const { t } = useI18n();
+  if (!canChart) {
+    // Why there is no button, rather than a screen that silently has fewer controls on it.
+    return <p className="m-0 mt-2 text-12 text-mute">{t("patient.chartNoRight")}</p>;
+  }
+  return (
+    <div className="mt-2.5 border-t border-line pt-2.5">
+      <p className="m-0 text-12.5 font-semibold">{t("patient.chartTitle")}</p>
+      <p className="m-0 mt-0.5 text-11.5 text-mute">{t("patient.chartNote")}</p>
+      <div className="mt-1.5 flex flex-wrap gap-2">
+        <Button size="sm" icon="alert" busy={busy} disabled={busy} onClick={() => onChart(true)}>
+          {t("patient.chartYes")}
+        </Button>
+        <Button size="sm" icon="ok" busy={busy} disabled={busy} onClick={() => onChart(false)}>
+          {t("patient.chartNo")}
+        </Button>
+      </div>
+      {/* A busy Button reads only "unavailable" to a screen reader; the words come from here. */}
+      <Announce text={busy ? t("patient.chartSaving") : ""} />
+    </div>
+  );
+}
+
 /** What the Sepsis-3 criterion is being judged against. `suspected_infection` is THREE-valued and
  *  the difference is clinical: `null` means nobody has charted either way, and until somebody does
  *  the engine evaluates no sepsis rule at all (api/board.py `_sepsis_context`). */
-function Sepsis({ sepsis }) {
+function Sepsis({ sepsis, canChart, onChart, busy }) {
   const { t } = useI18n();
   if (!sepsis) return null;
   const suspected = sepsis.suspected_infection;
@@ -143,6 +190,7 @@ function Sepsis({ sepsis }) {
       <Note tone={suspected === null ? "warn" : "info"} icon={suspected === null ? "alert" : "ok"}>
         {t(suspected === null ? "patient.suspectedUnknown" : suspected ? "patient.suspectedYes" : "patient.suspectedNo")}
       </Note>
+      <Chart canChart={canChart} onChart={onChart} busy={busy} />
       <KVList className="mt-2">
         {/* Three numbers, three labels, one value under each. The rise is the one the criterion
             turns on — Sepsis-3 is an acute rise of ≥2 SOFA points over the patient's baseline, and
@@ -198,6 +246,8 @@ function Meds({ meds }) {
 export function PatientScreen({ params }) {
   const { t } = useI18n();
   const board = useBoard();
+  const { user } = useSession();
+  const toast = useToast();
   const nowMs = useBoardNow(TICK_MS);
   const id = params?.id ?? "";
   const patient = useMemo(() => board.patients.find((p) => p.patient_id === id) ?? null, [board.patients, id]);
@@ -215,6 +265,27 @@ export function PatientScreen({ params }) {
     recorded.current = id;
     board.store.view(id).catch(() => {});
   }, [patient, id, board.store]);
+
+  // Charting the suspected infection. `busy` while it is in flight (one at a time: the answer
+  // reloads the board), the API's own refusal on screen if it is refused, and nothing written
+  // locally either way — a charted observation this screen showed and the server did not take
+  // would be a lie with a clinician's name on it.
+  const [charting, setCharting] = useState(false);
+  const [chartError, setChartError] = useState(null);
+  const canChart = user.perms.includes("clinical.chart");
+  async function chart(suspected) {
+    if (charting) return;
+    setCharting(true);
+    setChartError(null);
+    try {
+      await board.store.chart(id, [{ code: "suspected_infection", value: suspected ? 1 : 0 }]);
+      toast.show(t("patient.chartSaved"), "ok");
+    } catch (err) {
+      setChartError(err);
+    } finally {
+      setCharting(false);
+    }
+  }
 
   const measured = hasMeasurement(patient?.measuredAt);
   const bed = patient?.bedLabel || id;
@@ -253,7 +324,7 @@ export function PatientScreen({ params }) {
               <News2 news2={patient.news2} />
             </div>
           </header>
-          <Note tone="info" icon="eye">{t("patient.readOnly")}</Note>
+          <Note tone="info" icon="eye">{t("patient.onlyWrite")}</Note>
 
           <Box title={t("patient.vitals")} icon="activity" level={2}>
             <Vitals patient={patient} nowMs={nowMs} />
@@ -276,7 +347,8 @@ export function PatientScreen({ params }) {
           </section>
 
           <div className="grid gap-2 min-[861px]:grid-cols-2">
-            <Sepsis sepsis={patient.sepsis} />
+            {chartError ? <Alert tone="crit">{apiErrorText(t, chartError)}</Alert> : null}
+            <Sepsis sepsis={patient.sepsis} canChart={canChart} onChart={chart} busy={charting} />
             <Meds meds={patient.meds} />
           </div>
 

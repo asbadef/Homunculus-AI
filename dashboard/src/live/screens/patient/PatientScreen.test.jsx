@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import React from "react";
-import { act, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { mount } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { resetScreens } from "../../shell/routes.js";
@@ -10,9 +10,9 @@ import { PatientScreen } from "./PatientScreen.jsx";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-async function open({ payload = board(), id = "S-001", connection = "live", setup } = {}) {
+async function open({ payload = board(), id = "S-001", connection = "live", setup,
+                      perms = ["board.view", "alerts.ack"] } = {}) {
   onlyScreens({ beds: () => null }, { keep: [] });
-  const perms = ["board.view", "alerts.ack"];
   const mounted = await mount(<PatientScreen params={{ id }} />, {
     access: token({ perms }),
     me: profile({ perms }),
@@ -284,5 +284,108 @@ describe("the patient screen", () => {
       });
       expect(screen.getByRole("heading", { level: 1, name: "Ayşe Sentetik" })).toBeInTheDocument();
     });
+  });
+});
+
+// The one write this screen makes. It exists because of what its absence does: nothing in the
+// engine's sepsis branch runs until something charts `suspected_infection` (septic_shock.evaluate
+// returns at its first line), so a ward where nobody can chart it is a ward the engine is silent
+// about for sepsis.
+describe("charting a suspected infection", () => {
+  const CHARTABLE = ["board.view", "alerts.ack", "clinical.chart"];
+  const SEPSIS = { ...FULL, sepsis: { suspected_infection: null, sofa: 7, baseline_sofa: 2, baseline_assumed: false, rise: 5 } };
+  const openChartable = ({ setup, ...over } = {}) => open({
+    payload: board([entry("S-001", [], SEPSIS)]), perms: CHARTABLE,
+    ...over,
+    setup: (api) => {
+      api.chart.mockResolvedValue({ patient_id: "S-001", charted: 1, alerts: [] });
+      setup?.(api);                                   // a test's own mock wins over that default
+    },
+  });
+
+  it("offers both answers, with neither chosen for the clinician", async () => {
+    // No default, no pre-selection, no hint which to press: the screen takes a judgement and never
+    // forms one. Both stay offered after one has been charted — "no" after "yes" is a clinical
+    // event, not an undo.
+    await openChartable();
+    const yes = screen.getByRole("button", { name: "Var kimi işarələ" });
+    const no = screen.getByRole("button", { name: "Yoxdur kimi işarələ" });
+    for (const b of [yes, no]) {
+      expect(b).toBeEnabled();
+      expect(b.getAttribute("aria-pressed")).toBeNull();
+    }
+  });
+
+  it("says, before anything is pressed, that this goes into the audit trail and cannot be withdrawn", async () => {
+    await openChartable();
+    expect(screen.getByText(/audit qeydinə yazılır/)).toBeInTheDocument();
+    expect(screen.getByText(/Geri alınmır/)).toBeInTheDocument();
+  });
+
+  it("charts one entry, in the engine's own code and value", async () => {
+    const { api } = await openChartable();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Var kimi işarələ" }));
+      await settle();
+    });
+    expect(api.chart).toHaveBeenCalledTimes(1);
+    expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "suspected_infection", value: 1 }]);
+  });
+
+  it("charts a \"no\" as 0, not as nothing at all", async () => {
+    // A charted "no" is a fact about this patient; sending nothing would leave the engine in the
+    // state where it evaluates no sepsis rule, which is a different thing entirely.
+    const { api } = await openChartable();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Yoxdur kimi işarələ" }));
+      await settle();
+    });
+    expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "suspected_infection", value: 0 }]);
+  });
+
+  it("reloads the board afterwards: the engine may now have a finding it did not have", async () => {
+    const { api } = await openChartable();
+    const before = api.boardPatients.mock.calls.length;
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Var kimi işarələ" }));
+      await settle();
+    });
+    expect(api.boardPatients.mock.calls.length).toBeGreaterThan(before);
+  });
+
+  it("shows a refusal and claims nothing was charted", async () => {
+    const { api } = await openChartable({
+      setup: (api) => api.chart.mockRejectedValue(Object.assign(new Error("no"), { status: 403, code: "permission_required" })),
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Var kimi işarələ" }));
+      await settle();
+    });
+    expect(screen.getAllByRole("alert").map((a) => a.textContent).join(" ").trim()).not.toBe("");
+    // Nothing says it was charted, and the board was not reloaded: the load and the stream's
+    // reload are the only two calls. The button comes back, so the clinician can try again.
+    expect(screen.queryByText(/İşarələndi/)).toBeNull();
+    expect(api.boardPatients).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Var kimi işarələ" })).toBeEnabled();
+  });
+
+  it("says it is charting, in words a screen reader hears", async () => {
+    let release;
+    await openChartable({ setup: (api) => api.chart.mockImplementation(() => new Promise((r) => { release = r; })) });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Var kimi işarələ" }));
+      await settle();
+    });
+    await vi.waitFor(
+      () => expect(screen.getAllByRole("status").map((s) => s.textContent)).toContain("İşarələnir…"),
+      { timeout: 4000 },      // 150 ms of real time, under a suite running 99 files in parallel
+    );
+    await act(async () => { release({ patient_id: "S-001", charted: 1, alerts: [] }); await settle(); });
+  });
+
+  it("no button at all without clinical.chart, and the reason is on the screen", async () => {
+    await open({ payload: board([entry("S-001", [], SEPSIS)]) });
+    expect(screen.queryByRole("button", { name: "Var kimi işarələ" })).toBeNull();
+    expect(screen.getByText(/səlahiyyətiniz yoxdur \(clinical.chart\)/)).toBeInTheDocument();
   });
 });

@@ -50,6 +50,8 @@ export function fakeApi(vi, { access = null } = {}) {
     // the beds, alarms and patient screens (G1-09 … G1-11)
     acknowledge: vi.fn(),
     view: vi.fn(),
+    chart: vi.fn(),
+    serverClockSkewMs: vi.fn(() => null),
     // the users and units screen (G1-12)
     adminUsers: vi.fn(),
     adminCreateUser: vi.fn(),
