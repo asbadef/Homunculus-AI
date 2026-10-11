@@ -57,8 +57,11 @@ export const ROUTES = Object.freeze([
   route({ id: "alarms", path: "/alarms", icon: "bell", labelKey: "nav.alarms", shortKey: "nav.alarmsShort",
     perms: ["board.view"], work: true, nav: "main" }),
 
+  // `under`: the rail entry this screen sits beneath. A patient is opened from the beds board, so
+  // the beds entry reads as current while one is on screen (Sidebar.jsx) — otherwise the rail says
+  // "you are nowhere" for the screen a clinician spends most of her time on.
   route({ id: "patient", path: "/patients/:id", icon: "user", labelKey: "nav.patient", shortKey: "nav.patient",
-    perms: ["board.view"], work: false, nav: false }),
+    perms: ["board.view"], work: false, nav: false, under: "beds" }),
 
   route({ id: "admin", path: "/admin", icon: "shield", labelKey: "nav.admin", shortKey: "nav.adminShort",
     perms: ["users.manage", "groups.manage"], work: true, nav: "main" }),

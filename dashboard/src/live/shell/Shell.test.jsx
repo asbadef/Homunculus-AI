@@ -192,9 +192,23 @@ describe("the router", () => {
     expect(await screen.findByRole("heading", { level: 1, name: /Çarpayı ekranı/ })).toBeInTheDocument();
   });
 
-  // Pinned on purpose (Sidebar.jsx): no entry says "you are here" of a page it does not lead to.
-  it("marks no rail entry current while a screen the rail does not list is open", async () => {
-    built({ beds: BedsProbe, patient: PatientProbe });
+  // Wave 2 left no entry current here and said the next wave should change it on purpose. G1-11
+  // did: a screen the rail does not list is open UNDER the entry it was reached from
+  // (routes.js `under`), because a clinician spends most of her time on a patient and a rail with
+  // nothing current says "you are nowhere" for all of it.
+  it("marks the entry a screen sits under while that screen is open", async () => {
+    only({ beds: BedsProbe, patient: PatientProbe });
+    await renderShell({ hash: "#/patients/P-001" });
+    await screen.findByRole("heading", { level: 1, name: "Xəstə P-001" });
+    const rail = screen.getByRole("navigation", { name: "Əsas menyu" });
+    const current = within(rail).getAllByRole("link").filter((a) => a.getAttribute("aria-current"));
+    expect(current.map((a) => a.getAttribute("href"))).toEqual(["#/beds"]);
+  });
+
+  it("marks nothing current when the entry it sits under is not in the rail", async () => {
+    // A session that may open a patient but whose beds screen this build has not built: saying
+    // "you are here" of an entry that is not there would be false.
+    only({ patient: PatientProbe });
     await renderShell({ hash: "#/patients/P-001" });
     await screen.findByRole("heading", { level: 1, name: "Xəstə P-001" });
     const rail = screen.getByRole("navigation", { name: "Əsas menyu" });

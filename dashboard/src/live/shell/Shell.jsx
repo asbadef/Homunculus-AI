@@ -152,7 +152,7 @@ export function Shell({ resume = "" }) {
         >
           {t("shell.skip")}
         </a>
-        <Sidebar perms={user.perms} current={match?.route.id ?? null} />
+        <Sidebar perms={user.perms} current={match?.route.under ?? match?.route.id ?? null} />
         <div className="grid min-h-0 min-w-0 grid-rows-[58px_minmax(0,1fr)]">
           <TopBar title={title} />
           <main ref={main} id="main" tabIndex={-1} className="min-h-0 overflow-auto px-5 pb-10 pt-[18px] outline-none max-[640px]:px-3 max-[640px]:pt-3.5">
