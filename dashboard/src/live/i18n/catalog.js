@@ -24,7 +24,7 @@ import nav from "./strings/nav.js";
 import board from "./strings/board.js";
 // G1-09: import beds from "./strings/beds.js";
 
-// G1-10: import alarms from "./strings/alarms.js";
+import alarms from "./strings/alarms.js";
 
 // G1-11: import patient from "./strings/patient.js";
 
@@ -43,7 +43,7 @@ export const NAMESPACES = {
   // untouched context between them do not. Do not tidy the gaps away.
   // G1-09: beds,
 
-  // G1-10: alarms,
+  alarms,
 
   // G1-11: patient,
 
