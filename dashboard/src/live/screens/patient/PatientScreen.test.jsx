@@ -392,6 +392,61 @@ describe("charting a suspected infection", () => {
     expect(screen.getByRole("button", { name: "Var kimi işarələ" })).toBeEnabled();
   });
 
+  it("says which answer is in flight, and disables neither button natively", async () => {
+    // Both buttons used to go busy together, so neither said which answer was being charted. And
+    // both carried `disabled={busy}` on top of `busy`: ui/Button ignores clicks while busy and
+    // stays FOCUSABLE on purpose — "a natively disabled button would drop the keyboard user's
+    // focus to <body> the moment it was pressed" — but `disabled` reaches the native attribute
+    // through `...rest`, so a keyboard user charting was dumped to <body> mid-write.
+    let release;
+    await openChartable({ setup: (api) => api.chart.mockImplementation(() => new Promise((r) => { release = r; })) });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Var kimi işarələ" }));
+      await settle();
+    });
+    const yes = screen.getByRole("button", { name: "Var kimi işarələ" });
+    const no = screen.getByRole("button", { name: "Yoxdur kimi işarələ" });
+    expect(yes).toHaveAttribute("aria-busy", "true");
+    expect(no).not.toHaveAttribute("aria-busy", "true");
+    expect(yes).not.toBeDisabled();
+    expect(no).not.toBeDisabled();
+    await act(async () => { release({ patient_id: "S-001", charted: 1, alerts: [] }); await settle(); });
+  });
+
+  it("a refusal does not follow the clinician to the next patient", async () => {
+    // Shell renders <Screen params/> with NO `key` (shell/Shell.jsx), so moving
+    // /patients/S-001 -> /patients/S-002 keeps this component mounted and only changes its props.
+    // S-001's refusal therefore stayed on S-002's screen — a refusal attributed to the wrong
+    // patient — and a chart still in flight across the move would have confirmed or refused there
+    // too. This mounts the screen the way the shell does: same element, no key, new params.
+    onlyScreens({ beds: () => null }, { keep: [] });
+    let move;
+    function Mover() {
+      const [id, setId] = React.useState("S-001");
+      move = setId;
+      return <PatientScreen params={{ id }} />;
+    }
+    const mounted = await mount(<Mover />, {
+      access: token({ perms: CHARTABLE }),
+      me: profile({ perms: CHARTABLE }),
+      setup: (api) => {
+        api.boardPatients.mockResolvedValue(board([entry("S-001", [], SEPSIS), entry("S-002", [], SEPSIS)]));
+        api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+        api.view.mockResolvedValue({ ok: true });
+        api.chart.mockRejectedValue(Object.assign(new Error("no"), { status: 403, code: "permission_required" }));
+      },
+    });
+    await act(async () => { await mounted.board.start(); });
+    await act(async () => { mounted.stream.open(); await settle(); });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Var kimi işarələ" }));
+      await settle();
+    });
+    expect(screen.getAllByRole("alert").map((a) => a.textContent).join(" ").trim()).not.toBe("");
+    await act(async () => { move("S-002"); await settle(); });
+    expect(screen.getAllByRole("alert").map((a) => a.textContent).join(" ").trim()).toBe("");
+  });
+
   it("says it is charting, in words a screen reader hears", async () => {
     let release;
     await openChartable({ setup: (api) => api.chart.mockImplementation(() => new Promise((r) => { release = r; })) });

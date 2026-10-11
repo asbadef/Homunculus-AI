@@ -1,5 +1,6 @@
 // src/live/screens/patient/PatientScreen.jsx — one patient, as the engine describes them (G1-11).
-// READ-ONLY: in Group 1 nothing here writes to the record, and the screen says so.
+// It writes EXACTLY ONE thing (Task 15B, Decision 27): whether an infection is suspected. Nothing
+// else here reaches the record, and the screen says so in as many words (`patient.onlyWrite`).
 //
 // Four things it shows, and one it refuses to:
 //
@@ -154,26 +155,33 @@ function Finding({ alarm }) {
  *  The current answer is not a disabled button or a tick: `Note` above already states it in a
  *  sentence, and a pressed-looking button would read as "this is what is true" rather than "this is
  *  what was charted, by a person, at a time". */
-function Chart({ canChart, onChart, busy }) {
+function Chart({ canChart, onChart, pending }) {
   const { t } = useI18n();
   if (!canChart) {
     // Why there is no button, rather than a screen that silently has fewer controls on it.
     return <p className="m-0 mt-2 text-12 text-mute">{t("patient.chartNoRight")}</p>;
   }
+  // `pending` is the ANSWER in flight (`true`, `false`) or `null` — so only the button that was
+  // pressed says it is working. Both going busy together told a clinician that something was
+  // being charted without saying which judgement, which is the one thing that matters here.
+  //
+  // No `disabled`: `Button` already ignores clicks while busy and stays focusable deliberately,
+  // because a natively disabled button drops the keyboard user's focus to <body> the moment it is
+  // pressed — mid-write, on the only write this screen has. A second press is refused in `chart`.
   return (
     <div className="mt-2.5 border-t border-line pt-2.5">
       <p className="m-0 text-12.5 font-semibold">{t("patient.chartTitle")}</p>
       <p className="m-0 mt-0.5 text-11.5 text-mute">{t("patient.chartNote")}</p>
       <div className="mt-1.5 flex flex-wrap gap-2">
-        <Button size="sm" icon="alert" busy={busy} disabled={busy} onClick={() => onChart(true)}>
+        <Button size="sm" icon="alert" busy={pending === true} onClick={() => onChart(true)}>
           {t("patient.chartYes")}
         </Button>
-        <Button size="sm" icon="ok" busy={busy} disabled={busy} onClick={() => onChart(false)}>
+        <Button size="sm" icon="ok" busy={pending === false} onClick={() => onChart(false)}>
           {t("patient.chartNo")}
         </Button>
       </div>
       {/* A busy Button reads only "unavailable" to a screen reader; the words come from here. */}
-      <Announce text={busy ? t("patient.chartSaving") : ""} />
+      <Announce text={pending === null ? "" : t("patient.chartSaving")} />
     </div>
   );
 }
@@ -181,7 +189,7 @@ function Chart({ canChart, onChart, busy }) {
 /** What the Sepsis-3 criterion is being judged against. `suspected_infection` is THREE-valued and
  *  the difference is clinical: `null` means nobody has charted either way, and until somebody does
  *  the engine evaluates no sepsis rule at all (api/board.py `_sepsis_context`). */
-function Sepsis({ sepsis, canChart, onChart, busy }) {
+function Sepsis({ sepsis, canChart, onChart, pending }) {
   const { t } = useI18n();
   // NOT `if (!sepsis) return null`. `identity_only_board` (api/board.py) omits the block
   // altogether — its comment claims "same keys as patient_board" and that is wrong — so an
@@ -199,7 +207,7 @@ function Sepsis({ sepsis, canChart, onChart, busy }) {
       ) : (
         <Note tone="warn" icon="alert">{t("patient.sepsisNone")}</Note>
       )}
-      <Chart canChart={canChart} onChart={onChart} busy={busy} />
+      <Chart canChart={canChart} onChart={onChart} pending={pending} />
       {sepsis ? (
       <KVList className="mt-2">
         {/* Three numbers, three labels, one value under each. The rise is the one the criterion
@@ -281,12 +289,22 @@ export function PatientScreen({ params }) {
   // reloads the board), the API's own refusal on screen if it is refused, and nothing written
   // locally either way — a charted observation this screen showed and the server did not take
   // would be a lie with a clinician's name on it.
-  const [charting, setCharting] = useState(false);
+  // `charting` holds the ANSWER in flight (`true`/`false`) or `null`, so the screen can say which
+  // judgement is being charted rather than only that something is.
+  const [charting, setCharting] = useState(null);
   const [chartError, setChartError] = useState(null);
-  const canChart = user.perms.includes("clinical.chart");
+  const canChart = user?.perms?.includes("clinical.chart") ?? false;
+  // The shell renders <Screen params/> with no `key` (shell/Shell.jsx), so moving from one patient
+  // to another keeps this component mounted and only changes `id`. Without this, the previous
+  // patient's refusal stayed on the next patient's screen — a refusal attributed to the wrong
+  // person — and a chart left in flight across the move reported on the wrong one.
+  useEffect(() => {
+    setChartError(null);
+    setCharting(null);
+  }, [id]);
   async function chart(suspected) {
-    if (charting) return;
-    setCharting(true);
+    if (charting !== null) return;      // `false` is an answer, so never a truthiness test
+    setCharting(suspected);
     setChartError(null);
     try {
       await board.store.chart(id, [{ code: "suspected_infection", value: suspected ? 1 : 0 }]);
@@ -297,7 +315,7 @@ export function PatientScreen({ params }) {
     } catch (err) {
       setChartError(err);
     } finally {
-      setCharting(false);
+      setCharting(null);
     }
   }
 
@@ -360,9 +378,13 @@ export function PatientScreen({ params }) {
             )}
           </section>
 
+          {/* Above the grid, not inside it: as a grid child the refusal became a CELL, so a
+              failed chart reflowed both boxes under the clinician's eyes at the moment she was
+              reading why it failed. */}
+          {chartError ? <Alert tone="crit">{apiErrorText(t, chartError)}</Alert> : null}
+
           <div className="grid gap-2 min-[861px]:grid-cols-2">
-            {chartError ? <Alert tone="crit">{apiErrorText(t, chartError)}</Alert> : null}
-            <Sepsis sepsis={patient.sepsis} canChart={canChart} onChart={chart} busy={charting} />
+            <Sepsis sepsis={patient.sepsis} canChart={canChart} onChart={chart} pending={charting} />
             <Meds meds={patient.meds} />
           </div>
 
