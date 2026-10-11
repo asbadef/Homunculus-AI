@@ -22,7 +22,7 @@ import { BedsScreen } from "../screens/beds/BedsScreen.jsx";
 
 import { AlarmsScreen } from "../screens/alarms/AlarmsScreen.jsx";
 
-// G1-11: import { PatientScreen } from "../screens/patient/PatientScreen.jsx";
+import { PatientScreen } from "../screens/patient/PatientScreen.jsx";
 
 // G1-12: import { AdminScreen } from "../screens/admin/AdminScreen.jsx";
 
@@ -38,7 +38,7 @@ const SCREENS = Object.freeze({
 
   alarms: AlarmsScreen, // G1-10
 
-  patient: null,   // G1-11
+  patient: PatientScreen, // G1-11
 
   admin: null,     // G1-12 (users), G1-13 (roles), G1-14 (login source) — tabs inside one screen
 

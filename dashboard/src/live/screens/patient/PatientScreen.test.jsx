@@ -1,0 +1,288 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import React from "react";
+import { act, screen, within } from "@testing-library/react";
+import { mount } from "../../session/mount.testutil.jsx";
+import { profile, token } from "../../session/testTokens.testutil.js";
+import { resetScreens } from "../../shell/routes.js";
+import { onlyScreens } from "../../shell/screens.testutil.js";
+import { NOW, ago, alarm, board, entry, identity, measured, news2 } from "../../data/board.testutil.js";
+import { PatientScreen } from "./PatientScreen.jsx";
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+async function open({ payload = board(), id = "S-001", connection = "live", setup } = {}) {
+  onlyScreens({ beds: () => null }, { keep: [] });
+  const perms = ["board.view", "alerts.ack"];
+  const mounted = await mount(<PatientScreen params={{ id }} />, {
+    access: token({ perms }),
+    me: profile({ perms }),
+    setup: (api) => {
+      if (connection === "unavailable") api.boardPatients.mockRejectedValue(new Error("down"));
+      else api.boardPatients.mockResolvedValue(payload);
+      api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+      api.view.mockResolvedValue({ ok: true });
+      setup?.(api);
+    },
+  });
+  const { board: store, stream } = mounted;
+  await act(async () => { await store.start(); });
+  if (connection !== "unavailable") {
+    await act(async () => { stream.open(); await settle(); });
+    if (connection === "degraded") act(() => { stream.drop(); });
+  }
+  await act(async () => { await settle(); });
+  return mounted;
+}
+
+const FULL = {
+  identity: identity(),
+  at: measured(90),
+  vitals: { heart_rate: 118, spo2: 91, resp_rate: 26, sbp: 92, map: 58, temperature: 38.4 },
+  lactate: 4.1,
+  sofa: 7,
+  score: news2({ total: 9, red_param: true }),
+  risk: "critical",
+};
+
+beforeEach(() => vi.setSystemTime(NOW));
+afterEach(() => {
+  resetScreens();
+  vi.useRealTimers();
+});
+
+describe("the patient screen", () => {
+  it("names the bed and the patient, and says the one thing it writes", async () => {
+    await open({ payload: board([entry("S-001", [], FULL)]) });
+    expect(screen.getByRole("heading", { level: 1, name: "Ayşe Sentetik" })).toBeInTheDocument();
+    // One h1 and no more: the shell moves focus to <main> after every move, and the screen's own
+    // heading is what a reader lands on.
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByText("REA-01 · 2")).toBeInTheDocument();
+    expect(screen.getByText(/heç nə yazılmır/)).toBeInTheDocument();
+  });
+
+  it("offers the way back to the board it was opened from", async () => {
+    await open({ payload: board([entry("S-001", [], FULL)]) });
+    expect(screen.getByRole("link", { name: /Çarpayılara qayıt/ })).toHaveAttribute("href", "#/beds");
+  });
+
+  it("a patient the HIS has not named says what is missing", async () => {
+    await open({ payload: board([entry("S-001", [], { at: measured(30) })]) });
+    expect(screen.getByRole("heading", { level: 1, name: "kimlik gözlənilir" })).toBeInTheDocument();
+  });
+
+  describe("the measured values", () => {
+    it("shows each channel with its value, its unit, its clock time and its age", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(screen.getByText("118")).toBeInTheDocument();
+      expect(screen.getByText("Nəbz")).toBeInTheDocument();
+      // Every vital's age is visible — the gap the old workspace never closed.
+      expect(screen.getAllByText(/2 dəq əvvəl/).length).toBeGreaterThan(0);
+    });
+
+    it("a channel with no value is left out, and a card with none says so once", async () => {
+      await open({ payload: board([entry("S-001", [], { identity: identity() })]) });
+      expect(screen.getByText("Bu çarpayıdan heç bir ölçmə gəlməyib.")).toBeInTheDocument();
+      expect(screen.queryByText("Nəbz")).toBeNull();
+    });
+
+    it("a lactate is shown with the monitor channels — septic shock turns on it", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(screen.getByText("4.1")).toBeInTheDocument();
+      expect(screen.getByText("Laktat")).toBeInTheDocument();
+    });
+  });
+
+  describe("what the engine found", () => {
+    const reasoned = alarm("septic_shock", "critical", { summary: "Septik şok ölçütleri karşılandı",
+      clinical_reasoning: "MAP 58 on a vasopressor with lactate 4.1 mmol/L after fluids.",
+      supporting_evidence: ["sepsis-3-jama-2016", "surviving-sepsis-campaign-2021"],
+      recommended_actions: ["Review the patient and the supporting evidence."],
+      confidence: "Criteria are deterministic (Sepsis-3).",
+      stale_inputs: ["lactate"] });
+
+    it("shows the engine's reasoning, its sources, its suggestions and its certainty", async () => {
+      await open({ payload: board([entry("S-001", [reasoned], { ...FULL })]) });
+      const card = screen.getByRole("heading", { level: 3, name: "Septik şok ölçütleri karşılandı" }).closest("li");
+      expect(card).toHaveTextContent("MAP 58 on a vasopressor");
+      expect(card).toHaveTextContent("sepsis-3-jama-2016, surviving-sepsis-campaign-2021");
+      expect(card).toHaveTextContent("Review the patient and the supporting evidence.");
+      expect(card).toHaveTextContent("Criteria are deterministic (Sepsis-3).");
+    });
+
+    it("keeps the product's register: a review is suggested, the decision is the physician's", async () => {
+      await open({ payload: board([entry("S-001", [reasoned], { ...FULL })]) });
+      expect(screen.getByText("Qiymətləndirmə tövsiyə olunur · qərar həkimindir.")).toBeInTheDocument();
+    });
+
+    it("marks the engine's own prose as English, since it is not translated", async () => {
+      await open({ payload: board([entry("S-001", [reasoned], { ...FULL })]) });
+      const card = screen.getByRole("heading", { level: 3, name: /Septik şok/ }).closest("li");
+      expect(card.querySelector('[lang="en"]')).toBeInTheDocument();
+      expect(screen.getByText(/İngiliscədir; tərcümə olunmayıb/)).toBeInTheDocument();
+    });
+
+    it("says which inputs the engine already judged stale", async () => {
+      await open({ payload: board([entry("S-001", [reasoned], { ...FULL })]) });
+      expect(screen.getByText("Köhnə giriş: lactate")).toBeInTheDocument();
+    });
+
+    // The escalation pill's TEXT, not merely its presence. `board.escalated` was covered by no test
+    // on any branch (../w3-fixup.md): while it lived in the alarms arm's namespace this screen
+    // printed the literal key "alarms.escalated" on a branch without that arm, and every suite
+    // stayed green — `t()` returns the key when it is missing, which throws and logs nothing. The
+    // systemic sweep is `src/live/rawKeys.test.jsx`; this is the one assertion that pins the pill a
+    // reader actually meets here.
+    it("says a finding was escalated, in words rather than in a key", async () => {
+      await open({ payload: board([entry("S-001", [alarm("news2", "high", { escalated: true })], { ...FULL })]) });
+      expect(screen.getByText("Eskalasiya edilib")).toBeInTheDocument();
+    });
+
+    it("says when the patient's own charted normal lowered a finding, and why", async () => {
+      await open({ payload: board([entry("S-001", [alarm("news2", "low", { downgraded: true, chronic_context: "Chronic oxygen therapy explains the SpO2." })], { ...FULL, risk: "low" })]) });
+      expect(screen.getByText("Xəstənin öz normasına görə aşağı salınıb")).toBeInTheDocument();
+      expect(screen.getByText("Chronic oxygen therapy explains the SpO2.")).toBeInTheDocument();
+    });
+
+    it("only a LIVE board says the engine found nothing", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(screen.getByText("Mühərrik bu xəstə üçün açıq tapıntı bildirmir.")).toBeInTheDocument();
+    });
+
+    it("a board that may be out of date does NOT say the engine found nothing", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]), connection: "degraded" });
+      expect(screen.queryByText("Mühərrik bu xəstə üçün açıq tapıntı bildirmir.")).toBeNull();
+      expect(screen.getByText("Panel güncəl deyil; mühərrikin tapıntıları natamam ola bilər.")).toBeInTheDocument();
+    });
+
+    it("a finding whose severity is \"none\" can never read \"no finding\"", async () => {
+      await open({ payload: board([entry("S-001", [alarm("x", "none")], { ...FULL })]) });
+      expect(screen.queryByText("Tapıntı yoxdur")).toBeNull();
+    });
+  });
+
+  describe("NEWS2 and the Sepsis-3 context", () => {
+    it("shows the engine's NEWS2 and states a red parameter as a fact", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(screen.getByText("9")).toBeInTheDocument();
+      expect(screen.getByText("Bir parametr 3 bal alıb")).toBeInTheDocument();
+    });
+
+    it("says nobody has charted a suspected infection — the sepsis rule then never runs", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(screen.getByText(/heç kim işarələməyib/)).toBeInTheDocument();
+    });
+
+    it("tells a charted \"no\" from an unanswered one", async () => {
+      await open({ payload: board([entry("S-001", [], {
+        ...FULL, sepsis: { suspected_infection: false, sofa: 7, baseline_sofa: 2, baseline_assumed: false, rise: 5 },
+      })]) });
+      expect(screen.getByText("Şübhəli infeksiya: yoxdur (həkim işarələyib).")).toBeInTheDocument();
+      expect(screen.queryByText(/heç kim işarələməyib/)).toBeNull();
+      expect(screen.queryByText(/mühərrik 0 fərz edir/)).toBeNull();
+    });
+
+    it("puts the SOFA, the baseline and the RISE each under its own label", async () => {
+      // The rise is what the Sepsis-3 criterion turns on (≥2 points over baseline), so reading it
+      // as the baseline, or the baseline as the rise, is a clinical misreading and not a layout
+      // nit. Asserting the <dd> that belongs to each <dt> is the only way to catch it: a test that
+      // only looked for the text "5" would pass with all three numbers in one row.
+      await open({ payload: board([entry("S-001", [], {
+        ...FULL, sepsis: { suspected_infection: true, sofa: 7, baseline_sofa: 2, baseline_assumed: false, rise: 5 },
+      })]) });
+      const valueFor = (label) => {
+        const dt = screen.getByText(label);
+        return dt.parentElement.querySelector("dd").textContent;
+      };
+      expect(valueFor("SOFA")).toBe("7");
+      expect(valueFor("Bazal SOFA")).toBe("2");
+      expect(valueFor("Artım")).toBe("5");
+    });
+
+    it("prints a rise the engine did not send as \"—\", never as sofa minus baseline", async () => {
+      // The browser does no clinical arithmetic (Decision 2): 7 − 2 would be the screen's claim,
+      // not the engine's, and it would look exactly like the engine's.
+      await open({ payload: board([entry("S-001", [], {
+        ...FULL, sepsis: { suspected_infection: true, sofa: 7, baseline_sofa: 2, baseline_assumed: false, rise: null },
+      })]) });
+      const dt = screen.getByText("Artım");
+      expect(dt.parentElement.querySelector("dd").textContent).toBe("—");
+      expect(screen.queryByText("5")).toBeNull();
+    });
+
+    it("says when the baseline SOFA is an assumption rather than a charted number", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(screen.getByText(/mühərrik 0 fərz edir/)).toBeInTheDocument();
+    });
+  });
+
+  describe("medication and the antibiotic clock", () => {
+    it("an unrecorded antibiotic is not shown as one that was not given", async () => {
+      await open({ payload: board([entry("S-001", [], {
+        ...FULL, meds: { pressors: {}, antibiotic_given: null, antibiotic_at: null, antibiotic_clock: null, weight_kg: null, creatinine: null },
+      })]) });
+      expect(screen.getByText(/verilmədiyi anlamına gəlmir/)).toBeInTheDocument();
+    });
+
+    it("shows when it was given", async () => {
+      await open({ payload: board([entry("S-001", [], {
+        ...FULL,
+        meds: { pressors: { norepinephrine: 0.08 }, antibiotic_given: true, antibiotic_at: ago(600), antibiotic_clock: null, weight_kg: 72, creatinine: 1.9 },
+      })]) });
+      expect(screen.getByText(/Antibiotik verilib:/)).toBeInTheDocument();
+      expect(screen.getByText("Vazopressor/inotrop: norepinephrine 0.08")).toBeInTheDocument();
+    });
+
+    it("says so when the engine sent no medication block at all", async () => {
+      await open({ payload: board([entry("S-001", [], { ...FULL, meds: null })]) });
+      expect(screen.getByText("Mühərrik bu xəstə üçün dərman məlumatı göndərməyib.")).toBeInTheDocument();
+    });
+  });
+
+  describe("the seams Group 2 fills", () => {
+    it("draws no trend, and says the engine has no history endpoint", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(screen.getByText(/Brauzer öz qrafikini uydurmur/)).toBeInTheDocument();
+      expect(screen.getByText(/növbəti qrupda əlavə olunacaq/)).toBeInTheDocument();
+    });
+  });
+
+  describe("a patient this board does not hold", () => {
+    it("says it cannot tell a missing record from one outside the scope", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]), id: "S-999" });
+      expect(screen.getByRole("heading", { level: 1, name: "Bu xəstə göstərilə bilmir" })).toBeInTheDocument();
+      expect(screen.getAllByRole("alert").map((a) => a.textContent).join(" "))
+        .toContain("server ikisinə də eyni cavabı verir");
+      expect(screen.getByText("S-999")).toBeInTheDocument();
+    });
+
+    it("a board that could not be read says THAT instead", async () => {
+      await open({ connection: "unavailable", id: "S-001" });
+      expect(screen.getAllByRole("alert").map((a) => a.textContent).join(" "))
+        .toContain("panelinizdə olub-olmadığını deyə bilmirik");
+    });
+  });
+
+  describe("recording that the patient was opened", () => {
+    it("records it once for a patient the screen shows", async () => {
+      const { api } = await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(api.view).toHaveBeenCalledTimes(1);
+      expect(api.view).toHaveBeenCalledWith("S-001");
+    });
+
+    it("records NOTHING for a patient the board does not hold", async () => {
+      // The server logs a refusal as `scope_denied`; a stale bookmark must not fill the audit
+      // trail with refusals for views that never happened.
+      const { api } = await open({ payload: board([entry("S-001", [], FULL)]), id: "S-999" });
+      expect(api.view).not.toHaveBeenCalled();
+    });
+
+    it("a failed record does not stop the screen", async () => {
+      await open({
+        payload: board([entry("S-001", [], FULL)]),
+        setup: (api) => api.view.mockRejectedValue(Object.assign(new Error("down"), { status: 503 })),
+      });
+      expect(screen.getByRole("heading", { level: 1, name: "Ayşe Sentetik" })).toBeInTheDocument();
+    });
+  });
+});
