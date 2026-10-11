@@ -20,6 +20,18 @@
 // `ch*` are the names of the engine's own signals; `Isı` is deliberately NOT the word the
 // prototype's dictionary carries for temperature (that entry resolves to "heat map" — an
 // unrelated screen's title), so this file writes it out.
+//
+// The last six keys came here for the same reason the unit names did, and were missed when the
+// units moved: `identityPending` and `news2*` were `beds.*` and `escalated`/`escalatedHelp` were
+// `alarms.*`, yet the patient screen — built on its own branch — names a patient, draws the score
+// and shows the escalation flag too, so on that branch each of them would have rendered the raw
+// key with nothing failing (`escalated` had no test on any branch at all). `identityPending` is
+// the wall board's rule ("kimlik bekleniyor", clinicalI18n.pr14): say what is missing rather than
+// print the device's raw patient number as a name. `news2*` are the label of the score and the two
+// facts the engine can send about it; they extend `strings/news2.js`, which is a SEPARATE
+// top-level namespace (`news2.noEngine`, `news2.partialHint`, `news2.missing.*`) — see the note on
+// `News2` in screens/common/BoardState.jsx. `escalatedHelp` says what the prototype pretended:
+// there is no 3 / 5 / 10-minute ladder behind the live API, only the engine's own flag.
 // AZ/RU/EN await a native-speaking clinician's review before the pilot, except where a line is
 // quoted from a four-language source above.
 export default {
@@ -59,6 +71,12 @@ export default {
     srcLab: "laboratuvar",
     chronicExpected: "Hastanın kendi normaline göre beklenen",
     engineEnglish: "Motorun metinleri İngilizcedir; çevrilmemiştir.",
+    identityPending: "kimlik bekleniyor",
+    news2: "NEWS2",
+    news2Partial: "kısmi",
+    news2Red: "Bir parametre 3 puan aldı",
+    escalated: "Eskale edildi",
+    escalatedHelp: "Eskalasyonu motor yürütür; ekran yalnız motorun bildirdiği durumu gösterir.",
   },
   az: {
     connecting: "Panel yüklənir…",
@@ -96,6 +114,12 @@ export default {
     srcLab: "laboratoriya",
     chronicExpected: "Xəstənin öz normasına görə gözlənilən",
     engineEnglish: "Mühərrikin mətnləri İngiliscədir; tərcümə olunmayıb.",
+    identityPending: "kimlik gözlənilir",
+    news2: "NEWS2",
+    news2Partial: "qismən",
+    news2Red: "Bir parametr 3 bal alıb",
+    escalated: "Eskalasiya edilib",
+    escalatedHelp: "Eskalasiyanı mühərrik yürüdür; ekran yalnız mühərrikin bildirdiyi vəziyyəti göstərir.",
   },
   ru: {
     connecting: "Панель загружается…",
@@ -136,6 +160,12 @@ export default {
     srcLab: "лаборатория",
     chronicExpected: "Ожидаемо для собственной нормы пациента",
     engineEnglish: "Тексты системы — на английском; они не переведены.",
+    identityPending: "ожидается идентификация",
+    news2: "NEWS2",
+    news2Partial: "неполный",
+    news2Red: "Один параметр получил 3 балла",
+    escalated: "Эскалировано",
+    escalatedHelp: "Эскалацию ведёт система; экран показывает только то состояние, о котором она сообщила.",
   },
   en: {
     connecting: "Loading the board…",
@@ -173,5 +203,11 @@ export default {
     srcLab: "laboratory",
     chronicExpected: "Expected for this patient's own normal",
     engineEnglish: "The engine's texts are in English; they are not translated.",
+    identityPending: "identity pending",
+    news2: "NEWS2",
+    news2Partial: "partial",
+    news2Red: "One parameter scored 3",
+    escalated: "Escalated",
+    escalatedHelp: "The engine runs the escalation; this screen shows only the state the engine reported.",
   },
 };

@@ -3,9 +3,11 @@
 //
 // Sources: `Yanıt bekliyor` / `Değerlendiriliyor` / `Gördüm` / `Yalnız kritik` /
 // `Benim hastalarım` / `Açık · {#}` / `Yanıt bekleyen alarm yok.` are the prototype's own
-// four-language dictionary entries. `closedGone` and `escalatedHelp` are new and say what the
-// prototype pretended: it shows a "closed in the last hour" section and a 3 / 5 / 10-minute
-// escalation ladder, neither of which exists behind the live API.
+// four-language dictionary entries. `closedGone` is new and says what the prototype pretended: it
+// shows a "closed in the last hour" section that nothing behind the live API can fill.
+// The escalation flag is NOT here: `escalated` and `escalatedHelp` are `board.*` (see board.js),
+// because the patient screen shows the same flag on the same finding and is built on its own
+// branch — a string one screen owns and another reads is a raw key waiting to be rendered.
 // AZ/RU/EN await a native-speaking clinician's review before the pilot.
 export default {
   tr: {
@@ -21,10 +23,9 @@ export default {
     emptyFiltered: "Süzgece uyan alarm yok.",
     unknown: "Pano güncel değil — açık alarmların tamamı gösterilmiyor olabilir.",
     unavailable: "Alarmlar okunamıyor; bu ekran alarm olmadığı anlamına GELMEZ.",
-    // The two things the prototype showed and the live system cannot.
+    // One of the two things the prototype showed and the live system cannot (the other, its
+    // escalation ladder, is answered by `board.escalatedHelp`).
     closedGone: "Kapanan bir alarm panodan düşer: motor yalnız açık alarmları gönderiyor, geçmiş için henüz bir uç nokta yok. Kapanma kayıtları denetim kaydında.",
-    escalated: "Eskale edildi",
-    escalatedHelp: "Eskalasyonu motor yürütür; ekran yalnız motorun bildirdiği durumu gösterir.",
     seen: "Gördüm",
     seeing: "Kaydediliyor…",
     seenBy: "Gördü: {who}",
@@ -49,8 +50,6 @@ export default {
     unknown: "Panel güncəl deyil — açıq siqnalların hamısı göstərilməyə bilər.",
     unavailable: "Siqnallar oxunmur; bu ekran siqnal olmadığı anlamına GƏLMİR.",
     closedGone: "Bağlanan siqnal paneldən düşür: mühərrik yalnız açıq siqnalları göndərir, tarix üçün hələ uç nöqtə yoxdur. Bağlanma qeydləri audit jurnalındadır.",
-    escalated: "Eskalasiya edilib",
-    escalatedHelp: "Eskalasiyanı mühərrik yürüdür; ekran yalnız mühərrikin bildirdiyi vəziyyəti göstərir.",
     seen: "Gördüm",
     seeing: "Yadda saxlanılır…",
     seenBy: "Gördü: {who}",
@@ -75,8 +74,6 @@ export default {
     unknown: "Панель неактуальна — показаны могут быть не все открытые тревоги.",
     unavailable: "Тревоги не читаются; этот экран НЕ ЗНАЧИТ, что тревог нет.",
     closedGone: "Закрытая тревога уходит с панели: система передаёт только открытые, конечной точки для истории пока нет. Записи о закрытии — в журнале аудита.",
-    escalated: "Эскалировано",
-    escalatedHelp: "Эскалацию ведёт система; экран показывает только то состояние, о котором она сообщила.",
     seen: "Принято",
     seeing: "Сохраняется…",
     seenBy: "Принял: {who}",
@@ -101,8 +98,6 @@ export default {
     unknown: "The board is out of date — not every open alarm may be shown.",
     unavailable: "The alarms cannot be read; this screen DOES NOT MEAN there are no alarms.",
     closedGone: "A closed alarm leaves the board: the engine sends the open ones only, and there is no endpoint for the history yet. The closures are in the audit trail.",
-    escalated: "Escalated",
-    escalatedHelp: "The engine runs the escalation; this screen shows only the state the engine reported.",
     seen: "Seen",
     seeing: "Saving…",
     seenBy: "Seen by {who}",

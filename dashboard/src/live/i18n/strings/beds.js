@@ -4,13 +4,15 @@
 //
 // Sources for the copy: `Kart` / `Liste` / `Yatak` / `Hasta` / `Durum` / `Skor` / `Uyarılar` /
 // `Hepsi` and the section line "{#} / {#} dolu · risk sırasına göre" come from the prototype's
-// four-language dictionary (`ceviri-sozluk.js`). `identityPending` is the wall board's rule
-// ("kimlik bekleniyor", clinicalI18n.pr14), which said what was missing instead of printing the
-// device's raw patient number as a name. `news2*` extend `strings/news2.js` on the card.
+// four-language dictionary (`ceviri-sozluk.js`).
 // `emptyLive` is `liveConnection.boardView()`'s LIVE-and-empty sentence.
 // The units of measurement are NOT here: they are facts about a channel, shared by every screen
 // that prints one, and live in the `board` namespace (`board.unitBpm` … `board.unitMmol`) with the
 // channel names. `beds.unit*` below is this screen's own unit FILTER, which is a different thing.
+// `identityPending` and `news2`/`news2Partial`/`news2Red` are not here either, for the same
+// reason: a patient's missing name and the engine's score are said by every screen that shows a
+// patient, so they are `board.identityPending` / `board.news2*` (see board.js). This file holds
+// only what the BED BOARD itself says.
 // AZ/RU/EN await a native-speaking clinician's review before the pilot.
 export default {
   tr: {
@@ -36,7 +38,6 @@ export default {
     waitingNone: "Yanıt bekleyen alarm yok",
     waitingUnknown: "Yanıt bekleyen alarm bilinmiyor — pano güncel değil",
     openAlarms: "Açık alarmlar",
-    identityPending: "kimlik bekleniyor",
     noVitals: "Bu yataktan hiç ölçüm gelmedi.",
     staleChannels: "Gecikmiş kanal: {count}",
     unmatchedBed: "Yatak eşleşmedi · {key}",
@@ -45,9 +46,6 @@ export default {
     sourceDevice: "Kimlik kaydı yok",
     discharged: "Taburcu",
     openPatient: "{bed} hastasını aç",
-    news2: "NEWS2",
-    news2Partial: "kısmi",
-    news2Red: "Bir parametre 3 puan aldı",
     colBed: "Yatak",
     colPatient: "Hasta",
     colRisk: "Durum",
@@ -79,7 +77,6 @@ export default {
     waitingNone: "Cavab gözləyən siqnal yoxdur",
     waitingUnknown: "Cavab gözləyən siqnal bilinmir — panel güncəl deyil",
     openAlarms: "Açıq siqnallar",
-    identityPending: "kimlik gözlənilir",
     noVitals: "Bu çarpayıdan heç bir ölçmə gəlməyib.",
     staleChannels: "Gecikmiş kanal: {count}",
     unmatchedBed: "Çarpayı uyğunlaşmadı · {key}",
@@ -88,9 +85,6 @@ export default {
     sourceDevice: "Kimlik qeydi yoxdur",
     discharged: "Evə yazılıb",
     openPatient: "{bed} xəstəsini aç",
-    news2: "NEWS2",
-    news2Partial: "qismən",
-    news2Red: "Bir parametr 3 bal alıb",
     colBed: "Çarpayı",
     colPatient: "Xəstə",
     colRisk: "Vəziyyət",
@@ -122,7 +116,6 @@ export default {
     waitingNone: "Тревог без ответа нет",
     waitingUnknown: "Неизвестно, есть ли тревоги без ответа — панель неактуальна",
     openAlarms: "Открытые тревоги",
-    identityPending: "ожидается идентификация",
     noVitals: "С этой койки измерений не поступало.",
     staleChannels: "Запаздывающих каналов: {count}",
     unmatchedBed: "Койка не сопоставлена · {key}",
@@ -131,9 +124,6 @@ export default {
     sourceDevice: "Нет записи идентификации",
     discharged: "Выписан",
     openPatient: "Открыть пациента койки {bed}",
-    news2: "NEWS2",
-    news2Partial: "неполный",
-    news2Red: "Один параметр получил 3 балла",
     colBed: "Койка",
     colPatient: "Пациент",
     colRisk: "Состояние",
@@ -165,7 +155,6 @@ export default {
     waitingNone: "No alarm is awaiting a response",
     waitingUnknown: "Whether any alarm is awaiting a response is unknown — the board is out of date",
     openAlarms: "Open alarms",
-    identityPending: "identity pending",
     noVitals: "No measurement has arrived from this bed.",
     staleChannels: "Channels overdue: {count}",
     unmatchedBed: "Bed not matched · {key}",
@@ -174,9 +163,6 @@ export default {
     sourceDevice: "No identity record",
     discharged: "Discharged",
     openPatient: "Open the patient in bed {bed}",
-    news2: "NEWS2",
-    news2Partial: "partial",
-    news2Red: "One parameter scored 3",
     colBed: "Bed",
     colPatient: "Patient",
     colRisk: "Status",

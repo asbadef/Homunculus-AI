@@ -35,13 +35,13 @@ import { Box, Empty, Field, Icon, Input, RiskPill, Seg, Table } from "../../ui/i
 import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import {
-  BoardStrip, FeedHealth, ScopeNote, boardKnown, boardStale, summaryOf, useBoardNow,
+  BoardStrip, FeedHealth, News2, ScopeNote, boardKnown, boardStale, nameOf, summaryOf, useBoardNow,
 } from "../common/BoardState.jsx";
 import { elapsed } from "../common/elapsed.js";
 import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
 import { measuredVitals } from "../common/vitals.js";
 import { ORDERS, VIEWS, bedNameOf, inUnit, matching, orderBeds } from "./order.js";
-import { BedCard, News2, nameOf } from "./BedCard.jsx";
+import { BedCard } from "./BedCard.jsx";
 
 /** How often the ages on this screen are re-read. A bed card shows a measurement's clock time and
  *  a channel's overdue count, neither of which changes faster than this. */

@@ -81,7 +81,7 @@ function Row({ alarm, nowMs, canAck, onAck, busy }) {
             </span>
           )}
           {Number.isFinite(alarm.firstSeenAtMs) ? <span className="font-data">{hhmm(alarm.firstSeenAtMs)}</span> : null}
-          {alarm.escalated ? <StatusPill tone="att" icon="alert">{t("alarms.escalated")}</StatusPill> : null}
+          {alarm.escalated ? <StatusPill tone="att" icon="alert">{t("board.escalated")}</StatusPill> : null}
           {/* Visible, and marked as the engine's own explanation — but NOT in the counts that mean
               "someone must answer this" (boardStore `needsAnswer`). */}
           <ChronicExpected alarm={alarm} />
@@ -209,7 +209,7 @@ export function AlarmsScreen() {
           second identical <h2> on the page. */}
       <Box title={t("alarms.closedTitle")} icon="clip" level={2} className="!border-dashed">
         <p className="m-0 text-12.5 text-mute">{t("alarms.closedGone")}</p>
-        <p className="m-0 mt-1.5 text-12.5 text-mute">{t("alarms.escalatedHelp")}</p>
+        <p className="m-0 mt-1.5 text-12.5 text-mute">{t("board.escalatedHelp")}</p>
         <p className="m-0 mt-1.5 text-12.5 text-mute">{t("board.engineEnglish")}</p>
       </Box>
     </div>

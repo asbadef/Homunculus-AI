@@ -112,6 +112,55 @@ export function ScopeNote({ scope, scopeNote, className = "" }) {
  *  (reco/engine.py), so both of these are the seam, not the usual path. */
 export const summaryOf = (alarm) => alarm?.summary || alarm?.kind || null;
 
+/** The patient's name, or what is missing instead of it. A device's raw patient number does not
+ *  stand in for a person's name — the bed label already carries that identifier, so this says what
+ *  is missing instead (the wall board's rule; the old bed card printed the id twice).
+ *
+ *  Here rather than on the bed card, where it was first written, because the card, the list row and
+ *  the patient screen's own heading all name a patient, and those are built on separate branches. */
+export function nameOf(patient, t) {
+  return patient?.display_name || t("board.identityPending");
+}
+
+/** The engine's NEWS2, or "—" and why not. Never a score of this screen's own: a browser-side
+ *  NEWS2 scores an unmeasured parameter as 0 and showed a calm green "0" on patients nobody had
+ *  scored. `red_param` is the FACT the engine sent and does not change the level.
+ *
+ *  NOTE on the two NEWS2 lookup roots, which read alike and are not the same thing: `board.news2`
+ *  is this label — the word "NEWS2" — while `news2.*` is a separate TOP-LEVEL namespace
+ *  (`strings/news2.js`: `noEngine`, `partialHint`, `missing.*`), the score's own vocabulary. Both
+ *  are used three lines apart below. Different lookup roots, so there is no collision, but a reader
+ *  meeting `t("board.news2")` beside `t("news2.noEngine")` should not have to wonder.
+ *
+ *  It lives here, with the shared board components, because the bed card, the list row and the
+ *  patient screen all draw it, and those are built on separate branches. */
+export function News2({ news2, className = "" }) {
+  const { t } = useI18n();
+  const missing = Array.isArray(news2?.missing) ? news2.missing : [];
+  if (!news2 || typeof news2.total !== "number") {
+    return (
+      <span className={`inline-flex items-center gap-1.5 text-11.5 font-semibold text-mute ${className}`}>
+        <span>{`${t("board.news2")}: —`}</span>
+        <span className="sr-only">{t("news2.noEngine")}</span>
+      </span>
+    );
+  }
+  const names = missing.map((m) => t(`news2.missing.${m}`)).join(", ");
+  return (
+    <span className={`inline-flex flex-wrap items-center gap-1.5 text-11.5 font-semibold ${className}`}>
+      <span className="text-mute">{t("board.news2")}:</span>
+      <b className="font-data text-13 text-ink">{news2.total}</b>
+      {news2.partial ? (
+        <StatusPill tone="att" icon="alert">
+          {t("board.news2Partial")}
+          {names ? <span className="sr-only">{` · ${t("news2.partialHint", { missing: names })}`}</span> : null}
+        </StatusPill>
+      ) : null}
+      {news2.red_param ? <StatusPill tone="att" icon="alert">{t("board.news2Red")}</StatusPill> : null}
+    </span>
+  );
+}
+
 /** A risk tone's accent colour, as a fill (the bed card's left rail) and as a left border (the
  *  patient screen's finding). One table for both, because the two screens draw the same thing in
  *  two places and are built on two branches: the bed card had this map and the patient screen had

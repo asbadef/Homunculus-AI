@@ -287,7 +287,7 @@ An arm may be built on its own branch. That holds only if the files two arms bot
 | `shell/Shell.jsx` | **the patient arm** (Task 15), one line | — |
 | `shell/routes.js` | one `SCREENS` line each (pre-placed, Task 7) **plus** `under: "beds"` on the `patient` route, which is **the patient arm's** (Task 15) — a third change that earlier drafts of this plan did not list | — |
 | `shell/Shell.test.jsx` | **two arms: the alarms arm (Task 13) and the patient arm (Task 15).** This is the one shared file with no single owner | They edit different `describe` blocks — the bell's and the rail's — with the whole of the shell's other tests between them, so git merges them cleanly in either order. The counts, each measured with `npx vitest run` on that one file and not by grepping for `it(` (nested `describe`s indent differently and a grep undercounts): **33** at the base and **still 33 after Task 7** — corrected 2026-10-09, see below — then **39** after Task 13, and **40** after Task 15, which rewrites two of the rail's tests and turns one into two. **So the number to expect once both arms have merged is 40.** An arm that merges second and finds 39 or 41 has lost or duplicated a test: compare the `it(` names against this plan before touching the number.<br><br>**Correction (2026-10-09, after Tasks 0–8 were built).** This row and Task 7's Step 7 both said **34** after Task 7, and that was arithmetic rather than measurement: Task 7 Step 5 rewrites four of this file's tests and **adds none** (`git show` of the Task 7 commit adds exactly one `it()`, and it is in `routes.test.js`). So Task 7's Step 7 and Step 8 print **100**, not 101, and the alarms arm's Task 13 lands on **39**, not 40. The final 40 after both arms is unchanged, because Task 15's "one becomes two" supplies the test this row had already counted. |
-| `screens/common/BoardState.jsx` | **nobody: it is Task 6's, and sequential.** Anything two arms both render goes here | `ChronicExpected`, `summaryOf`, `RAIL`/`RAIL_LEFT`/`railOf`, `useBoardNow` are all in it for that reason, and each of them was first written inside one arm's file and moved. The rule is worth stating because breaking it does not fail a test: it produces two screens that say slightly different things about the same finding, which is exactly the defect the `info` tone had. |
+| `screens/common/BoardState.jsx` | **nobody: it is Task 6's, and sequential.** Anything two arms both render goes here | `ChronicExpected`, `summaryOf`, `RAIL`/`RAIL_LEFT`/`railOf`, `useBoardNow` are all in it for that reason, and each of them was first written inside one arm's file and moved. **`News2` and `nameOf` joined them in the Wave 3 fix-up**, with the six strings they read (`board.identityPending`, `board.news2*`, `board.escalated*`): the rule was stated here and then missed for the two symbols and six keys the patient screen needed, which is how it was found. The rule is worth stating because breaking it does not fail a test: it produces two screens that say slightly different things about the same finding, which is exactly the defect the `info` tone had. |
 | `ui/RiskPill.jsx`, `strings/risk.js` | **Task 6**, sequential | Three screens render the pill. |
 
 ---
@@ -7764,7 +7764,7 @@ afterEach(() => {
 
 describe("the patient screen", () => {
   it("names the bed and the patient, and says the one thing it writes", async () => {
-    await open({ payload: board([entry("S-001", FULL)]) });
+    await open({ payload: board([entry("S-001", [], FULL)]) });
     expect(screen.getByRole("heading", { level: 1, name: "Ayşe Sentetik" })).toBeInTheDocument();
     // One h1 and no more: the shell moves focus to <main> after every move, and the screen's own
     // heading is what a reader lands on.
@@ -7774,7 +7774,7 @@ describe("the patient screen", () => {
   });
 
   it("offers the way back to the board it was opened from", async () => {
-    await open({ payload: board([entry("S-001", FULL)]) });
+    await open({ payload: board([entry("S-001", [], FULL)]) });
     expect(screen.getByRole("link", { name: /Çarpayılara qayıt/ })).toHaveAttribute("href", "#/beds");
   });
 
@@ -7785,7 +7785,7 @@ describe("the patient screen", () => {
 
   describe("the measured values", () => {
     it("shows each channel with its value, its unit, its clock time and its age", async () => {
-      await open({ payload: board([entry("S-001", FULL)]) });
+      await open({ payload: board([entry("S-001", [], FULL)]) });
       expect(screen.getByText("118")).toBeInTheDocument();
       expect(screen.getByText("Nəbz")).toBeInTheDocument();
       // Every vital's age is visible — the gap the old workspace never closed.
@@ -7799,7 +7799,7 @@ describe("the patient screen", () => {
     });
 
     it("a lactate is shown with the monitor channels — septic shock turns on it", async () => {
-      await open({ payload: board([entry("S-001", FULL)]) });
+      await open({ payload: board([entry("S-001", [], FULL)]) });
       expect(screen.getByText("4.1")).toBeInTheDocument();
       expect(screen.getByText("Laktat")).toBeInTheDocument();
     });
@@ -7846,12 +7846,12 @@ describe("the patient screen", () => {
     });
 
     it("only a LIVE board says the engine found nothing", async () => {
-      await open({ payload: board([entry("S-001", FULL)]) });
+      await open({ payload: board([entry("S-001", [], FULL)]) });
       expect(screen.getByText("Mühərrik bu xəstə üçün açıq tapıntı bildirmir.")).toBeInTheDocument();
     });
 
     it("a board that may be out of date does NOT say the engine found nothing", async () => {
-      await open({ payload: board([entry("S-001", FULL)]), connection: "degraded" });
+      await open({ payload: board([entry("S-001", [], FULL)]), connection: "degraded" });
       expect(screen.queryByText("Mühərrik bu xəstə üçün açıq tapıntı bildirmir.")).toBeNull();
       expect(screen.getByText("Panel güncəl deyil; mühərrikin tapıntıları natamam ola bilər.")).toBeInTheDocument();
     });
@@ -7864,13 +7864,13 @@ describe("the patient screen", () => {
 
   describe("NEWS2 and the Sepsis-3 context", () => {
     it("shows the engine's NEWS2 and states a red parameter as a fact", async () => {
-      await open({ payload: board([entry("S-001", FULL)]) });
+      await open({ payload: board([entry("S-001", [], FULL)]) });
       expect(screen.getByText("9")).toBeInTheDocument();
       expect(screen.getByText("Bir parametr 3 bal alıb")).toBeInTheDocument();
     });
 
     it("says nobody has charted a suspected infection — the sepsis rule then never runs", async () => {
-      await open({ payload: board([entry("S-001", FULL)]) });
+      await open({ payload: board([entry("S-001", [], FULL)]) });
       expect(screen.getByText(/heç kim işarələməyib/)).toBeInTheDocument();
     });
 
@@ -7912,7 +7912,7 @@ describe("the patient screen", () => {
     });
 
     it("says when the baseline SOFA is an assumption rather than a charted number", async () => {
-      await open({ payload: board([entry("S-001", FULL)]) });
+      await open({ payload: board([entry("S-001", [], FULL)]) });
       expect(screen.getByText(/mühərrik 0 fərz edir/)).toBeInTheDocument();
     });
   });
@@ -7942,7 +7942,7 @@ describe("the patient screen", () => {
 
   describe("the seams Group 2 fills", () => {
     it("draws no trend, and says the engine has no history endpoint", async () => {
-      await open({ payload: board([entry("S-001", FULL)]) });
+      await open({ payload: board([entry("S-001", [], FULL)]) });
       expect(screen.getByText(/Brauzer öz qrafikini uydurmur/)).toBeInTheDocument();
       expect(screen.getByText(/növbəti qrupda əlavə olunacaq/)).toBeInTheDocument();
     });
@@ -7950,7 +7950,7 @@ describe("the patient screen", () => {
 
   describe("a patient this board does not hold", () => {
     it("says it cannot tell a missing record from one outside the scope", async () => {
-      await open({ payload: board([entry("S-001", FULL)]), id: "S-999" });
+      await open({ payload: board([entry("S-001", [], FULL)]), id: "S-999" });
       expect(screen.getByRole("heading", { level: 1, name: "Bu xəstə göstərilə bilmir" })).toBeInTheDocument();
       expect(screen.getAllByRole("alert").map((a) => a.textContent).join(" "))
         .toContain("server ikisinə də eyni cavabı verir");
@@ -7966,7 +7966,7 @@ describe("the patient screen", () => {
 
   describe("recording that the patient was opened", () => {
     it("records it once for a patient the screen shows", async () => {
-      const { api } = await open({ payload: board([entry("S-001", FULL)]) });
+      const { api } = await open({ payload: board([entry("S-001", [], FULL)]) });
       expect(api.view).toHaveBeenCalledTimes(1);
       expect(api.view).toHaveBeenCalledWith("S-001");
     });
@@ -7974,13 +7974,13 @@ describe("the patient screen", () => {
     it("records NOTHING for a patient the board does not hold", async () => {
       // The server logs a refusal as `scope_denied`; a stale bookmark must not fill the audit
       // trail with refusals for views that never happened.
-      const { api } = await open({ payload: board([entry("S-001", FULL)]), id: "S-999" });
+      const { api } = await open({ payload: board([entry("S-001", [], FULL)]), id: "S-999" });
       expect(api.view).not.toHaveBeenCalled();
     });
 
     it("a failed record does not stop the screen", async () => {
       await open({
-        payload: board([entry("S-001", FULL)]),
+        payload: board([entry("S-001", [], FULL)]),
         setup: (api) => api.view.mockRejectedValue(Object.assign(new Error("down"), { status: 503 })),
       });
       expect(screen.getByRole("heading", { level: 1, name: "Ayşe Sentetik" })).toBeInTheDocument();
@@ -7998,7 +7998,7 @@ Expected: `Failed to resolve import "./PatientScreen.jsx"`.
 
 - [ ] **Step 7: Write the screen** — `dashboard/src/live/screens/patient/PatientScreen.jsx`, whole file, **as this task leaves it**: read-only. Task 15B adds the one control that writes.
 
-It imports `News2` and `nameOf` from `../beds/BedCard.jsx`, which is the beds arm's file: **this arm depends on Task 9.** Build it off the beds arm's branch, or off Task 8 with Task 9 cherry-picked. The two have one NEWS2 and one "the HIS's name or the statement that there is none" between them, and a second copy of either is a second chance to get one of them wrong.
+It imports `News2` and `nameOf` from `../common/BoardState.jsx`, with the rest of the shared board components. They were written on the bed card and **moved to `BoardState.jsx` by the Wave 3 fix-up** (on the merged branch), because an import from `../beds/BedCard.jsx` is this arm reaching into another arm's file — and because the four `beds.*` / two `alarms.*` strings they read moved with them, to `board.*`. The two screens still have one NEWS2 and one "the HIS's name or the statement that there is none" between them, which is the point: a second copy of either is a second chance to get one of them wrong. Build this off the merged branch (`feat/canli-tasarim`, both arms in), not off Task 8.
 
 ```jsx
 // src/live/screens/patient/PatientScreen.jsx — one patient, as the engine describes them (G1-11).
@@ -8037,12 +8037,12 @@ import { Alert, Box, Icon, KV, KVList, Note, RiskPill, StatusPill, riskStyle } f
 import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import {
-  BoardStrip, RAIL_LEFT, ScopeNote, boardKnown, boardStale, railOf, summaryOf, useBoardNow,
+  BoardStrip, News2, RAIL_LEFT, ScopeNote, boardKnown, boardStale, nameOf, railOf, summaryOf,
+  useBoardNow,
 } from "../common/BoardState.jsx";
 import { ageOf, hasMeasurement } from "../common/freshness.js";
 import { ageParts } from "../common/feedHealth.js";
 import { measuredVitals } from "../common/vitals.js";
-import { News2, nameOf } from "../beds/BedCard.jsx";
 
 const TICK_MS = 30_000;
 
@@ -8095,7 +8095,7 @@ function Finding({ alarm }) {
       <div className="flex flex-wrap items-start gap-2">
         <RiskPill risk={alarm.severity === "none" ? null : alarm.severity} measured />
         <h3 lang="en" className="m-0 min-w-0 flex-1 font-display text-15 font-bold">{summaryOf(alarm) ?? t("board.findingUnnamed")}</h3>
-        {alarm.escalated ? <StatusPill tone="att" icon="alert">{t("alarms.escalated")}</StatusPill> : null}
+        {alarm.escalated ? <StatusPill tone="att" icon="alert">{t("board.escalated")}</StatusPill> : null}
         {alarm.downgraded ? <StatusPill tone="neutral" icon="minus">{t("patient.recoDowngraded")}</StatusPill> : null}
       </div>
       <p className="m-0 mt-1 text-12.5 text-mute">{t("patient.recoDecision")}</p>
@@ -8295,7 +8295,7 @@ export function PatientScreen({ params }) {
 ```bash
 npx vitest run src/live/screens/patient/ 2>&1 | grep -E "Tests "
 ```
-Expected: `Tests  27 passed (27)`.
+Expected: `Tests  29 passed (29)` — the test block above holds 29 `it()`s. **30** once this arm adds the escalation test the Wave 3 fix-up requires (see the Gate): earlier drafts of this step said 27, which was a miscount, and the Gate's 29 was right.
 
 - [ ] **Step 9: Take this arm's two lines in the registry**
 
@@ -8335,7 +8335,7 @@ Check, at 1440 px and at 390 px, in both themes: no horizontal page scroll; the 
 npx vitest run 2>&1 | tail -4
 npx vite build 2>&1 | grep -E "built in|error"
 ```
-Expected: 27 tests more than the branch started with; the build succeeds.
+Expected: 29 tests more than the branch started with (30 with the escalation test below); the build succeeds.
 
 - [ ] **Step 11: Commit**
 
@@ -8357,7 +8357,9 @@ EOF
 )"
 ```
 
-**Gate:** **29** tests in the new `PatientScreen.test.jsx` (Task 15B takes it to 37); whole suite green; build clean; looked at 390/1440 px in both themes.
+**Gate:** **29** tests in the new `PatientScreen.test.jsx` as this task's block writes it (Task 15B takes it to 37) — **30 and 38** with the one test this arm adds on top: `alarm("news2", "high", {escalated: true})` asserting the escalation pill's text, which the Wave 3 fix-up requires because `escalated` was covered by no test on any branch and a raw key could therefore print unnoticed. **A reviewer who counts 30 here has not found a miscount.** Whole suite green; build clean; looked at 390/1440 px in both themes.
+
+The suite also gained a cross-cutting `src/live/rawKeys.test.jsx` in the fix-up (3 tests, not this arm's): it sweeps every screen the build has, so the patient screen enters it the moment Task 15 lands the registry line — and its `/patients/:id` address is opened on the fixture's own card. A key this screen fails to resolve fails there as well as here, named with its screen.
 
 ---
 
@@ -8498,7 +8500,7 @@ EOF
 )"
 ```
 
-**Gate:** `Shell.test.jsx` stays at **40** — two of its rail tests are rewritten to the new answer and one becomes two, and Task 7's own addition is one of the two rewritten, so the count does not move; `routes.test.js` unchanged at 22; `Sidebar.jsx` not touched; whole suite green; build clean.
+**Gate:** `Shell.test.jsx` goes from **39 to 40** — two of its rail tests are rewritten to the new answer and one of them becomes two, so the count rises by exactly one. **40 is the figure on the MERGED branch** (`feat/canli-tasarim`, where Task 13 took the file to 39), which is where this arm now builds; an earlier draft of this line read "stays at 40" and was quoting the post-merge total as though it were the branch's starting point. A lone branch off Task 8 would see 33 → 34. `routes.test.js` unchanged at 22; `Sidebar.jsx` not touched; whole suite green; build clean.
 
 ---
 
@@ -8755,7 +8757,7 @@ describe("charting a suspected infection", () => {
   const CHARTABLE = ["board.view", "alerts.ack", "clinical.chart"];
   const SEPSIS = { ...FULL, sepsis: { suspected_infection: null, sofa: 7, baseline_sofa: 2, baseline_assumed: false, rise: 5 } };
   const openChartable = ({ setup, ...over } = {}) => open({
-    payload: board([entry("S-001", SEPSIS)]), perms: CHARTABLE,
+    payload: board([entry("S-001", [], SEPSIS)]), perms: CHARTABLE,
     ...over,
     setup: (api) => {
       api.chart.mockResolvedValue({ patient_id: "S-001", charted: 1, alerts: [] });
@@ -8844,7 +8846,7 @@ describe("charting a suspected infection", () => {
   });
 
   it("no button at all without clinical.chart, and the reason is on the screen", async () => {
-    await open({ payload: board([entry("S-001", SEPSIS)]) });
+    await open({ payload: board([entry("S-001", [], SEPSIS)]) });
     expect(screen.queryByRole("button", { name: "Var kimi işarələ" })).toBeNull();
     expect(screen.getByText(/səlahiyyətiniz yoxdur \(clinical.chart\)/)).toBeInTheDocument();
   });

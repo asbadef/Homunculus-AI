@@ -13,13 +13,13 @@ const NEUTRAL = new Set([
   // ITS OWN heading and leaves the blank lines alone. The `· neutral` suffix is what makes each
   // heading unique in this file — AZ_SAME_AS_TR below carries the same seven, suffixed `· az = tr`.
   // board (shared by the clinical screens, added with the first of them) · neutral
+  "board.news2", //               NEWS2 — the score's own name, not translated anywhere
   "board.chSpo2", //              SpO2 again, on the board
   "board.unitPct", //             %   — a symbol, not a word, in every script this product speaks.
   "board.unitC", //               °C    (Russian writes mmHg and mmol/L out — "мм рт. ст.",
   //                                     "ммоль/л" — so those two are not here.)
 
   // G1-09 (beds) · neutral
-  "beds.news2", //                NEWS2 — the score's own name, not translated anywhere
 
   // G1-10 (alarms) · neutral
 
@@ -63,6 +63,7 @@ const AZ_SAME_AS_TR = new Set([
   // NEUTRAL's identical seven, so each arm's anchor is unique in the file.
 
   // board (shared by the clinical screens) · az = tr
+  "board.news2", //          NEWS2 — the score's own name
   "board.chSpo2", //         SpO2 — a clinical abbreviation
   "board.chMap", //          MAP — likewise (mean arterial pressure, written the same in AZ)
   "board.chLac", //          Laktat — the same word in Azerbaijani
@@ -76,7 +77,6 @@ const AZ_SAME_AS_TR = new Set([
   "beds.order", //           Sıralama — "ordering" in Azerbaijani too (sıralamaq)
   "beds.orderRisk", //       Risk sırası — the prototype's AZ section line ("risk sırasına görə")
   "beds.staleChannels", //   Gecikmiş kanal — "overdue channel" reads the same in Azerbaijani
-  "beds.news2", //           NEWS2 — the score's own name
 
   // G1-10 (alarms) · az = tr
   "alarms.criticalOnly", //  Yalnız kritik — the prototype's AZ dictionary (screens.js)

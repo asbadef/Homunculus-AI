@@ -26,18 +26,13 @@
 //     and word.
 import React from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
-import { Icon, RiskPill, StatusPill, riskStyle } from "../../ui/index.js";
+import { Icon, RiskPill, riskStyle } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
 import { patientFeedHealth } from "../common/feedHealth.js";
 import { measuredVitals } from "../common/vitals.js";
-import { ChronicExpected, railOf, summaryOf } from "../common/BoardState.jsx";
-
-/** The patient's name, or what is missing instead of it. */
-export function nameOf(patient, t) {
-  return patient?.display_name || t("beds.identityPending");
-}
+import { ChronicExpected, News2, nameOf, railOf, summaryOf } from "../common/BoardState.jsx";
 
 /** Where this card's identity came from, and what state the HIS says it is in. */
 function Provenance({ patient }) {
@@ -54,34 +49,6 @@ function Provenance({ patient }) {
       {Number.isNaN(stamp) ? null : <span>{` · ${hhmm(stamp)}`}</span>}
       {patient?.identityState === "discharged" ? <span>{` · ${t("beds.discharged")}`}</span> : null}
     </>
-  );
-}
-
-/** The engine's NEWS2, or "—" and why not. Never a score of this screen's own. */
-export function News2({ news2, className = "" }) {
-  const { t } = useI18n();
-  const missing = Array.isArray(news2?.missing) ? news2.missing : [];
-  if (!news2 || typeof news2.total !== "number") {
-    return (
-      <span className={`inline-flex items-center gap-1.5 text-11.5 font-semibold text-mute ${className}`}>
-        <span>{`${t("beds.news2")}: —`}</span>
-        <span className="sr-only">{t("news2.noEngine")}</span>
-      </span>
-    );
-  }
-  const names = missing.map((m) => t(`news2.missing.${m}`)).join(", ");
-  return (
-    <span className={`inline-flex flex-wrap items-center gap-1.5 text-11.5 font-semibold ${className}`}>
-      <span className="text-mute">{t("beds.news2")}:</span>
-      <b className="font-data text-13 text-ink">{news2.total}</b>
-      {news2.partial ? (
-        <StatusPill tone="att" icon="alert">
-          {t("beds.news2Partial")}
-          {names ? <span className="sr-only">{` · ${t("news2.partialHint", { missing: names })}`}</span> : null}
-        </StatusPill>
-      ) : null}
-      {news2.red_param ? <StatusPill tone="att" icon="alert">{t("beds.news2Red")}</StatusPill> : null}
-    </span>
   );
 }
 
