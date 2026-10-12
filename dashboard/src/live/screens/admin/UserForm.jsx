@@ -52,6 +52,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
+import { useSession } from "../../session/SessionProvider.jsx";
 import { fieldRefusals } from "../../apiErrors.js";
 import { Announce, Button, Field, Input, Modal, Select } from "../../ui/index.js";
 import { PASSWORD_MIN } from "../../auth/passwordRules.js";
@@ -119,7 +120,9 @@ function GroupChoice({ group, checked, grantable, busy, onToggle }) {
  * `{ details, groupIds, expectedGroupIds }`: `details` is the `UserPatch` body with only the
  * fields that changed (possibly none); `groupIds` is the new manual membership list, or null when
  * it did not change; `expectedGroupIds` is the manual list the form opened with, sorted. An edit
- * that changed nothing sends nothing and closes. `onSaved(subject)` names the account.
+ * that changed nothing sends nothing and closes. `onSaved(subject)` names the account. A failure
+ * may say which half of an edit landed — `detailsLanded`, `detailsUnknown` — and `stale` when
+ * another desk changed the account since this form read it: the form then closes.
  *
  * `self`: the account being edited is the session's own — its active state is not offered (the
  * server refuses it, and the row already says why).
@@ -128,10 +131,22 @@ export function UserForm({
   user = null, self = false, groups = [], catalogue = [], perms = [], submit, onSaved, onRefused, onClose,
 }) {
   const { t } = useI18n();
+  const { store } = useSession();
   const isNew = user === null;
   const drawn = DRAWN[isNew ? "create" : "edit"];
   const { roles, extras, others } = useMemo(() => splitGroups(groups), [groups]);
+  /** The manual memberships the form READ. Never moved, whatever lands: it is the `expected` of the
+   *  memberships' compare-and-swap, and only a fresh read (reopening the account) may change it. */
   const held = new Set(isNew ? [] : user.manualGroupIds);
+  /** The account's details as the server holds them, as far as this form knows — what is compared
+   *  to decide what an edit sends. It opens as the list read them, and MOVES when a details write
+   *  lands although the groups after it were refused: comparing against the opening copy then hid
+   *  a change made and undone (deactivate, groups refused, re-activate — "nothing changed", while
+   *  the server held the deactivation). A field a details write carried WITHOUT an answer is
+   *  unknown (`undefined`), so it is sent again whatever it shows. */
+  const baseline = useRef(isNew ? {} : {
+    full_name: (user.fullName || "").trim(), email: (user.email || "").trim(), is_active: user.active,
+  });
   const [fullName, setFullName] = useState(isNew ? "" : user.fullName || "");
   const [username, setUsername] = useState(isNew ? "" : user.username || "");
   const [email, setEmail] = useState(isNew ? "" : user.email || "");
@@ -157,7 +172,11 @@ export function UserForm({
   }, []);
 
   const grantable = (group) => canGrant(perms, group, catalogue);
-  const directoryGroups = isNew ? [] : user.groups.filter((g) => g.source === "directory");
+  // Every membership that is not MANUAL is the directory's: the server spells it "ldap"
+  // (`SOURCE_LDAP`), and a filter on any one spelling of "not ours" is a filter the next spelling
+  // slips past — which is how an AD nurse's groups went unlisted here, beside a role select that
+  // (rightly: it offers the MANUAL memberships) read "no role".
+  const directoryGroups = isNew ? [] : user.groups.filter((g) => g.source !== "manual");
 
   const toggle = (id, on) => setChosen((was) => {
     const next = new Set(was);
@@ -195,13 +214,14 @@ export function UserForm({
     if (isNew) {
       body = { username: username.trim(), email: email.trim() || null, full_name: fullName.trim(), password, group_ids: groupIds };
     } else {
-      // Only what differs from what the form opened with: the rest may have changed on the server
-      // since, and re-sending the copy this form read would undo that change.
+      // Only what differs from the server's copy as this form knows it (`baseline`): the rest may
+      // have changed on the server since, and re-sending the copy this form read would undo that.
+      const known = baseline.current;
       const details = {};
-      if (fullName.trim() !== (user.fullName || "").trim()) details.full_name = fullName.trim();
+      if (fullName.trim() !== known.full_name) details.full_name = fullName.trim();
       // "" clears the e-mail (`UserPatch`), which is what an emptied field means.
-      if (email.trim() !== (user.email || "").trim()) details.email = email.trim();
-      if (!self && active !== user.active) details.is_active = active;
+      if (email.trim() !== known.email) details.email = email.trim();
+      if (!self && active !== known.is_active) details.is_active = active;
       const groupsChanged = !sameIds(groupIds, held);
       if (Object.keys(details).length === 0 && !groupsChanged) {
         // Nothing to send, and nothing is claimed: the dialog closes as a Cancel does.
@@ -215,13 +235,27 @@ export function UserForm({
       };
     }
     setBusy(true);
+    // The session this write belongs to: an answer that arrives after it ended says nothing — not
+    // a confirmation, not a refusal — into the screen that replaced it.
+    const epoch = store.epoch();
+    const ours = () => store.epoch() === epoch;
     try {
       await submit(body);
       // Nothing is kept: the password leaves this component's state in the same turn the dialog
       // closes, and `onSaved` unmounts it.
       setPassword("");
-      if (mounted.current) onSaved(subject);
+      if (mounted.current && ours()) onSaved(subject);
     } catch (err) {
+      if (!ours()) {
+        setPassword("");
+        return;
+      }
+      // What the server now holds of the details, whatever the groups did (`baseline`).
+      if (err?.detailsLanded) baseline.current = { ...baseline.current, ...body.details };
+      if (err?.detailsUnknown) {
+        baseline.current = { ...baseline.current };
+        for (const key of Object.keys(body.details)) baseline.current[key] = undefined;
+      }
       // Split between the controls this form draws and everything else (`fieldRefusals`); what no
       // control shows still reaches the administrator, once, on the toast.
       const { fields: named, others } = fieldRefusals(t, err, drawn);
@@ -229,6 +263,14 @@ export function UserForm({
         // The form is gone (its tab was left mid-write): the toast, which outlives it, is the only
         // place left to say the refusal at all — the whole of it, fields included.
         onRefused(err, subject);
+        return;
+      }
+      if (err?.stale) {
+        // Another desk changed the account since this form read it: saving again from here would
+        // be refused again. Said, and the form closes — reopened, it reads the account as it is.
+        setPassword("");
+        onRefused(err, subject);
+        onClose();
         return;
       }
       if (Object.keys(named).length > 0) {

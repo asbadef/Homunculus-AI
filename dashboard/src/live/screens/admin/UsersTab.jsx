@@ -139,19 +139,34 @@ export function UsersTab({ admin }) {
     return users.filter((u) => matches(u, q) && (role === "" || u.groups.some((g) => g.id === role)));
   }, [users, query, role]);
 
+  /** The session a request started in, as a test: "is it still this one?" (the source tab's
+   *  `sessionNow`). An answer that arrives after that session ended — signed out, or another
+   *  administrator's begun in this browser — is nobody's: nothing more is SENT on its behalf (the
+   *  second half of an edit would go out under whatever token storage holds by then), nothing is
+   *  re-read, and nothing is said into the screen that replaced it. `store.epoch()` moves when a
+   *  session begins or ends; a screen lock does not move it — the shell holds a locked screen's
+   *  toasts — so a write that lands behind a lock is still reported when it is unlocked. */
+  const sessionNow = () => {
+    const epoch = store.epoch();
+    return () => store.epoch() === epoch;
+  };
+
   /** Every write goes through this: the session's `track` (so a refused refresh ends the session
    *  here too), the toast named after the account, and a reload — the screen then shows what the
-   *  server holds rather than what it hoped. */
+   *  server holds rather than what it hoped. All of it only while the session that asked lasts. */
   const write = useCallback(async (user, run, doneText) => {
     if (busyId) return false;
     setBusyId(user.id);
+    const ours = sessionNow();
     try {
       await store.track(run);
+      // Its session is over: no reload, and no confirmation into another session's screen.
+      if (!ours()) return false;
       toast(doneFor(t, user.fullName || user.username, doneText));
       await admin.reload();
       return true;
     } catch (err) {
-      toast(refusedFor(t, user.fullName || user.username, err), "error");
+      if (ours()) toast(refusedFor(t, user.fullName || user.username, err), "error");
       return false;
     } finally {
       setBusyId(null);
@@ -170,13 +185,17 @@ export function UsersTab({ admin }) {
     if (busyId) return;
     setBusyId(user.id);
     setReading(true);
+    // Two reads in sequence: the second is not asked for a session that ended during the first.
+    const ours = sessionNow();
     try {
       let mine = myScope;
       if (!mine) {
         try {
           mine = scopeFromApi(await store.track(() => api.myScope()));
+          if (!ours()) return;
           setMyScope(mine);
         } catch (err) {
+          if (!ours()) return;
           toast(t("admin.readFailed", { read: t("admin.readMyScope"), reason: readErrorText(t, err) }), "error");
         }
       }
@@ -184,11 +203,14 @@ export function UsersTab({ admin }) {
       try {
         read = scopeFromApi(await store.track(() => api.userScope(user.id)));
       } catch (err) {
-        toast(t("admin.readFailed", {
-          read: t("admin.readScopeOf", { name: user.fullName || user.username }), reason: readErrorText(t, err),
-        }), "error");
+        if (ours()) {
+          toast(t("admin.readFailed", {
+            read: t("admin.readScopeOf", { name: user.fullName || user.username }), reason: readErrorText(t, err),
+          }), "error");
+        }
         return;
       }
+      if (!ours()) return;
       setScopes((was) => ({ ...was, [user.id]: read }));
       // Only if nothing else was opened while the read ran (the "new user" form stays live): a late
       // answer that REPLACED that dialog unmounted a form with its write in flight, and the write's
@@ -221,13 +243,24 @@ export function UsersTab({ admin }) {
    *  details were refused, and when the details LANDED and the groups were refused, the account on
    *  the server has changed — so the list is reloaded, and the refusal says which half landed. A
    *  write that got no answer may have landed (`mayHaveLanded`): the list is reloaded then too,
-   *  and the sentence says "may not have been saved", never "was not". And a 409 on the groups is
-   *  another desk's change since this form read them: the list behind the form is read again. */
+   *  and the sentence says "may not have been saved", never "was not".
+   *
+   *  A 409 on the groups is another desk's change since this form read them (Task 14e's
+   *  compare-and-swap): saving again from this form would be refused again, for ever — its
+   *  `expected` is the list it read — so the list is read again, the form CLOSES, and the refusal
+   *  says why and to reopen the account (`stale`). And nothing goes out for a session that ended
+   *  while the details were in flight: the groups are not sent under whoever's token is stored by
+   *  then (`sessionNow`).
+   *
+   *  The form is told which half landed, to keep its own baseline true: `detailsLanded` (the
+   *  details are now the server's) and `detailsUnknown` (a details write with no answer). */
   const saveUser = async (body) => {
     if (open.kind !== "edit") return store.track(() => api.adminCreateUser(body));
+    const ours = sessionNow();
     const id = open.user.id;
     const { details, groupIds, expectedGroupIds } = body;
     const refresh = async () => {
+      if (!ours()) return;
       forgetScope(id);
       await admin.reload();
     };
@@ -236,19 +269,28 @@ export function UsersTab({ admin }) {
       try {
         await store.track(() => api.adminUpdateUser(id, details));
       } catch (err) {
-        if (mayHaveLanded(err)) await refresh();
-        throw err;
+        if (!mayHaveLanded(err)) throw err;
+        await refresh();
+        throw Object.assign(err, { detailsUnknown: true });
       }
       landed = true;
     }
-    if (!groupIds) return undefined;
+    if (!groupIds || !ours()) return undefined;
     try {
       return await store.track(() => api.adminSetUserGroups(id, groupIds, expectedGroupIds));
     } catch (err) {
       const unknown = mayHaveLanded(err);
-      if (landed || unknown || apiErrorKey(err)?.key === "errors.concurrentChange") await refresh();
+      const stale = apiErrorKey(err)?.key === "errors.concurrentChange";
+      if (landed || unknown || stale) await refresh();
+      if (stale) {
+        const why = t("admin.changedElsewhere");
+        throw Object.assign(new Error(landed ? t("admin.groupsNotSaved", { reason: why }) : why), { stale: true });
+      }
       if (!landed) throw err;
-      throw new Error(t(unknown ? "admin.groupsMaybeNotSaved" : "admin.groupsNotSaved", { reason: apiErrorText(t, err) }));
+      throw Object.assign(
+        new Error(t(unknown ? "admin.groupsMaybeNotSaved" : "admin.groupsNotSaved", { reason: apiErrorText(t, err) })),
+        { detailsLanded: true },
+      );
     }
   };
 

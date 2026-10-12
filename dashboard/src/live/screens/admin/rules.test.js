@@ -40,7 +40,7 @@ describe("userFromApi", () => {
   it("leaves out a membership the directory holds when listing what may be replaced", () => {
     // `PUT /users/{id}/groups` replaces the MANUAL memberships; a directory-held one is AD's.
     const user = userFromApi({ groups: [
-      { id: "a", slug: "nurse", source: "manual" }, { id: "b", slug: "physician", source: "directory" },
+      { id: "a", slug: "nurse", source: "manual" }, { id: "b", slug: "physician", source: "ldap" },
     ] });
     expect(user.manualGroupIds).toEqual(["a"]);
     expect(user.groups).toHaveLength(2);
@@ -131,7 +131,7 @@ describe("groupRights", () => {
 describe("userRights", () => {
   it("is the union of the user's groups, manual and directory alike", () => {
     const groups = [group(), group({ id: "g-rrt", slug: "rapid_response", permissions: ["alerts.escalate"] })];
-    const user = userFromApi({ groups: [{ id: "g-nurse", source: "manual" }, { id: "g-rrt", source: "directory" }] });
+    const user = userFromApi({ groups: [{ id: "g-nurse", source: "manual" }, { id: "g-rrt", source: "ldap" }] });
     expect(userRights(user, groups, CATALOGUE)).toEqual(["alerts.ack", "alerts.escalate", "board.view"]);
   });
 

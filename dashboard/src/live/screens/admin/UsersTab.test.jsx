@@ -19,6 +19,7 @@ import {
 import { FIELD_MAX } from "./limits.js";
 import { groupFromApi, userFromApi } from "./rules.js";
 import { AdminScreen, onlyTabs, resetTabs } from "./AdminScreen.jsx";
+import { useSession } from "../../session/SessionProvider.jsx";
 import ADMIN_STRINGS from "../../i18n/strings/admin.js";
 import { UsersTab, mfaState } from "./UsersTab.jsx";
 
@@ -96,7 +97,7 @@ function rememberingServer(api) {
       throw refusal(409, "Kayıt aynı anda değiştirildi; lütfen tekrar deneyin");
     }
     const byId = new Map(GROUPS.map((g) => [g.id, g]));
-    row.groups = [...row.groups.filter((g) => g.source === "directory"), ...ids.map((g) => member(byId.get(g)))];
+    row.groups = [...row.groups.filter((g) => g.source !== "manual"), ...ids.map((g) => member(byId.get(g)))];
     return copy(row);
   });
   return state;
@@ -120,6 +121,28 @@ async function openFrame({ tabs = { users: UsersTab }, setup } = {}) {
   });
   await act(async () => { await settle(); });
   return { ...mounted, server };
+}
+
+/** As the live shell has it: the tab exists only while a session does — signing out unmounts it. */
+function Gate({ admin }) {
+  const { user: me } = useSession();
+  return me ? <UsersTab admin={admin} /> : <p>signed-out screen</p>;
+}
+
+/** The tab behind `Gate`, so a test can end the session under a write in flight. */
+async function openGated({ setup } = {}) {
+  const admin = adminProp();
+  const mounted = await mount(<Gate admin={admin} />, {
+    access: token({ sub: "u-admin", perms: DESK }),
+    me: profile({ id: "u-admin", perms: DESK }),
+    setup: (api) => {
+      ADMIN_READS(api);
+      api.boardPatients.mockResolvedValue(board([]));
+      api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+      setup?.(api);
+    },
+  });
+  return { ...mounted, admin };
 }
 
 /** Every polite region's text, joined: what a screen reader has been told. */
@@ -771,22 +794,34 @@ describe("the review round", () => {
     expectConfirmed(/Ayşe Sentetik-Aygün · Yadda saxlanıldı\./);
   });
 
-  it("C1: memberships another desk changed since the read are not undone — the PUT says what it believed, the refusal is shown, the list is read again", async () => {
+  it("C1: memberships another desk changed since the read are not undone — refused, said, the form closes, and reopened it can land", async () => {
     const { api, server } = await openFrame();
+    const nurse = () => server.users.find((u) => u.id === "u-nurse");
     // Another desk puts her on the night team after this screen's read.
-    server.users.find((u) => u.id === "u-nurse").groups.push(member(WARD_GROUP));
-    const form = await editOf("hs\\.aygun");
+    nurse().groups.push(member(WARD_GROUP));
+    let form = await editOf("hs\\.aygun");
     fireEvent.change(form.getByLabelText(/^Rol/), { target: { value: SYSTEM_GROUP.id } });
     await saveForm();
     expect(api.adminUpdateUser).not.toHaveBeenCalled();
     expect(api.adminSetUserGroups).toHaveBeenCalledWith("u-nurse", [SYSTEM_GROUP.id], [NURSE_GROUP.id]);
     // Nothing of the other desk's was overwritten, and nothing of ours claimed.
-    expect(server.users.find((u) => u.id === "u-nurse").groups.map((g) => g.id).sort())
-      .toEqual([NURSE_GROUP.id, WARD_GROUP.id].sort());
-    expect(alerts()).toContain("Ayşe Sentetik");
-    expect(alerts()).toContain("Qeyd eyni anda dəyişdirildi");
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(nurse().groups.map((g) => g.id).sort()).toEqual([NURSE_GROUP.id, WARD_GROUP.id].sort());
+    // A 409 here is a dead end from THIS form — its `expected` is the list it read, so "try again"
+    // would be refused for ever (R2-3). It says why, and closes; the list was read again.
+    expect(alerts()).toContain("Ayşe Sentetik: Bu hesab bu arada başqa masada dəyişdirilib; indiki vəziyyətini görmək üçün hesabı yenidən açın.");
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(within(rowOf("hs\\.aygun")).getByText(/Gece ekibi/)).toBeInTheDocument();
+    // Reopened, the form reads the account as it is now, and the same change lands.
+    form = await editOf("hs\\.aygun");
+    expect(form.getByLabelText("Gece ekibi")).toBeChecked();
+    fireEvent.change(form.getByLabelText(/^Rol/), { target: { value: SYSTEM_GROUP.id } });
+    await saveForm();
+    expect(api.adminSetUserGroups).toHaveBeenLastCalledWith("u-nurse", [SYSTEM_GROUP.id, WARD_GROUP.id],
+      [NURSE_GROUP.id, WARD_GROUP.id].sort());
+    expect(nurse().groups.map((g) => g.id).sort()).toEqual([SYSTEM_GROUP.id, WARD_GROUP.id].sort());
+    // The confirmation — the first attempt's refusal is still, rightly, on its toast beside it, so
+    // this is not `expectConfirmed`'s "no alert at all".
+    expect(screen.getAllByText(/Ayşe Sentetik · Yadda saxlanıldı\./).length).toBeGreaterThan(0);
   });
 
   it("an edit that changes nothing sends nothing and claims nothing", async () => {
@@ -1052,6 +1087,108 @@ describe("the review round", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     await act(async () => { reject(refusal(403, "kapsam atamak için kapsamı sınırsız bir yönetici olmalısınız")); await settle(); });
     expect(alerts()).toContain("Ayşe Sentetik");
+  });
+
+  // ---- the second pass (re-review of 9f49cb3, probes N1–N5) ----
+
+  it("N1: after the details LANDED and the groups were refused, a detail changed back is still sent", async () => {
+    // The form compared against the copy it opened with, which never moved: deactivate, groups
+    // refused (the deactivation landed), re-activate — "nothing changed", and nothing was sent,
+    // while the server held the deactivation. The details baseline moves with what landed; the
+    // memberships' `held` does not (the compare-and-swap needs the list the form read).
+    const { api, server } = await openFrame();
+    api.adminSetUserGroups.mockRejectedValueOnce(refusal(403, "Kendi yetkilerinizi aşan bir işlem yapılamaz: audit.view"));
+    const form = await editOf("hs\\.aygun");
+    fireEvent.click(form.getByRole("checkbox", { name: /Hesab aktivdir/ }));          // deactivate…
+    fireEvent.click(form.getByLabelText("Gece ekibi"));                                 // …and add a group
+    await saveForm();
+    expect(server.users.find((u) => u.id === "u-nurse").is_active).toBe(false);         // the PATCH landed
+    expect(alerts()).toMatch(/qruplar saxlanılmadı/);
+    // She changes her mind about the deactivation, and saves again from the same form.
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("checkbox", { name: /Hesab aktivdir/ }));
+    await saveForm();
+    expect(api.adminUpdateUser.mock.calls.map((c) => c[1])).toEqual([{ is_active: false }, { is_active: true }]);
+    expect(server.users.find((u) => u.id === "u-nurse").is_active).toBe(true);
+    // And the groups were sent again WITH the list the form read — the server's set had not moved.
+    expect(api.adminSetUserGroups).toHaveBeenLastCalledWith("u-nurse", [NURSE_GROUP.id, WARD_GROUP.id], [NURSE_GROUP.id]);
+  });
+
+  it("N3a: nothing more is SENT for a session that ended mid-edit — not the groups after the details", async () => {
+    const { api, store } = await openGated();
+    let releasePatch;
+    api.adminUpdateUser.mockImplementation(() => new Promise((resolve) => { releasePatch = resolve; }));
+    api.adminSetUserGroups.mockResolvedValue(USERS[0]);
+    const form = await editOf("hs\\.aygun");
+    fireEvent.change(form.getByLabelText(/Ad soyad/), { target: { value: "Ayşe Yeni" } });
+    fireEvent.click(form.getByLabelText("Gece ekibi"));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yadda saxla" })); await settle(); });
+    await act(async () => { store.signOut(); await settle(); });
+    await act(async () => { releasePatch(USERS[0]); await settle(); });
+    expect(api.adminSetUserGroups).not.toHaveBeenCalled();
+    expect(api.adminUsers).not.toHaveBeenCalled();                                     // nor a reload
+  });
+
+  it("N3b: a confirmed write that lands after its session ended says nothing into the screen that followed", async () => {
+    const { api, admin, store } = await openGated();
+    let release;
+    api.adminResetMfa.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /2FA sıfırla: hs\.aygun/ })[0]); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "2FA sıfırla" })); await settle(); });
+    await act(async () => { store.signOut(); await settle(); });
+    await act(async () => { release({ ok: true }); await settle(); });
+    await new Promise((resolve) => { setTimeout(resolve, 250); });                       // past ANNOUNCE_DELAY_MS
+    expect(document.body.textContent).not.toMatch(/İki addımlı doğrulama sıfırlandı/);
+    expect(admin.reload).not.toHaveBeenCalled();
+  });
+
+  it("N3c: a form's refusal that arrives after sign-out is not toasted onto the signed-out screen", async () => {
+    const { api, store } = await openGated();
+    let rejectCreate;
+    api.adminCreateUser.mockImplementation(() => new Promise((_, rej) => { rejectCreate = rej; }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni istifadəçi" })); });
+    fireEvent.change(screen.getByLabelText(/Ad soyad/), { target: { value: "Yeni Sintetik" } });
+    fireEvent.change(screen.getByLabelText(/İstifadəçi adı/), { target: { value: "hs.yeni" } });
+    fireEvent.change(screen.getByLabelText(/Müvəqqəti şifrə/), { target: { value: "gecici-1234" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "İstifadəçini yarat" })); await settle(); });
+    await act(async () => { store.signOut(); await settle(); });
+    expect(screen.getByText("signed-out screen")).toBeInTheDocument();
+    await act(async () => { rejectCreate(refusal(409, "Bu kullanıcı adı veya e-posta zaten kullanılıyor")); await settle(); });
+    expect(alerts()).not.toContain("Yeni Sintetik");
+  });
+
+  it("N4: a scope save whose connection dropped (no answer at all) is not called refused — read back, and said so", async () => {
+    const twoUnits = scopeView({ user_id: "u-nurse", grants: [{ unit_id: "REA-01" }, { unit_id: "REA-02" }] });
+    const { api } = await open({ setup: (a) => a.userScope.mockResolvedValue(twoUnits) });
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Şöbələr: hs\.aygun/ })[0]); await settle(); });
+    api.setScope.mockRejectedValue(new TypeError("Failed to fetch"));
+    fireEvent.click(screen.getByRole("checkbox", { name: "REA-02" }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Əhatəni yadda saxla" })); await settle(); });
+    expect(screen.queryByText("Mühərrik qəbul etmədi; ekrandakı əhatə geri alındı.")).toBeNull();
+    expect(api.userScope).toHaveBeenCalledTimes(2);                                       // read back
+    expect(screen.getByText(/saxlanılmış da ola bilər, saxlanılmamış da\. Yenidən oxundu/)).toBeInTheDocument();
+  });
+
+  it("N4: groups whose connection dropped after the details landed 'may not have been saved'", async () => {
+    const { api, reload } = await open();
+    api.adminUpdateUser.mockResolvedValue(USERS[0]);
+    api.adminSetUserGroups.mockRejectedValue(new TypeError("Failed to fetch"));
+    const form = await editOf("hs\\.aygun");
+    fireEvent.change(form.getByLabelText(/Ad soyad/), { target: { value: "Ayşe Yeni" } });
+    fireEvent.click(form.getByLabelText("Gece ekibi"));
+    await saveForm();
+    expect(alerts()).toMatch(/qruplar saxlanılmamış ola bilər: Serverə qoşulmaq mümkün olmadı/);
+    expect(alerts()).not.toMatch(/qruplar saxlanılmadı/);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("N5: an AD-held membership as the SERVER spells it (source \"ldap\") is named read-only in the form", async () => {
+    const ad = user("u-ad", {
+      username: "dr.kamran", full_name: "Kamran Sintetik", email: null, auth_source: "ldap",
+      groups: [member(NURSE_GROUP, "ldap")],
+    });
+    await open({ users: [ad] });
+    await editOf("dr\\.kamran");
+    expect(screen.getByText(/AD-dən gələn qruplar burada dəyişdirilə bilməz: Hemşire/)).toBeInTheDocument();
   });
 
   it("a count is never set against a word that must agree with it: in ru and en the label comes first, then the number", () => {

@@ -49,6 +49,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { apiErrorKey } from "../../apiErrors.js";
+import { useSession } from "../../session/SessionProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { Announce, Button, Field, Input, Modal, Note, Table } from "../../ui/index.js";
 import { boardKnown } from "../common/BoardState.jsx";
@@ -63,13 +64,15 @@ const unassignedNoteKey = (scope) => (scope.unrestricted === true
   : "admin.scopeUnassignedClosed");
 
 /** Did a WRITE fail without an answer — so that it may have landed? Recognised by its key, never
- *  by an HTTP status: a timeout (`errors.requestTimeout`, which itself says "may have happened")
- *  and a server that could not answer (`errors.serverUnreachable`: a 502 from the proxy can come
- *  after the engine committed). Every other failure is the server's refusal, and nothing landed.
- *  The users tab reads it too, for the half of an edit that sends the groups. */
+ *  by an HTTP status: a timeout (`errors.requestTimeout`, which itself says "may have happened"),
+ *  a server that could not answer (`errors.serverUnreachable`: a 502 from the proxy can come after
+ *  the engine committed), and a connection that dropped (`errors.network`: fetch rejected with no
+ *  response at all — the request may have reached the engine before the line went). Every other
+ *  failure is the server's refusal, and nothing landed. The users tab reads it too, for both
+ *  halves of an edit. */
+const NO_ANSWER = new Set(["errors.requestTimeout", "errors.serverUnreachable", "errors.network"]);
 export function mayHaveLanded(err) {
-  const key = apiErrorKey(err)?.key;
-  return key === "errors.requestTimeout" || key === "errors.serverUnreachable";
+  return NO_ANSWER.has(apiErrorKey(err)?.key);
 }
 
 /** A grant as this editor holds it: exactly one of the two keys, trimmed. */
@@ -111,6 +114,7 @@ const OUTCOME_NOTE = {
  */
 export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onRefused, onClose }) {
   const { t } = useI18n();
+  const { store } = useSession();
   const board = useBoard();
   /** What the engine last told this editor: the opening read, or the read-back after a save that
    *  got no answer. A refusal puts THIS back — never an older list. */
@@ -150,10 +154,15 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
     const previous = grants;
     setBusy(true);
     setOutcome(null);
+    // The session this save belongs to: after it ends, nothing is re-read and nothing is said —
+    // a read-back would go out under whoever's token is stored by then.
+    const epoch = store.epoch();
+    const ours = () => store.epoch() === epoch;
     try {
       await save(previous.map((g) => (g.bedId ? { bed_id: g.bedId } : { unit_id: g.unitId })));
-      if (mounted.current) onSaved();
+      if (mounted.current && ours()) onSaved();
     } catch (err) {
+      if (!ours()) return;
       // The toast first, whether or not this editor is still on screen: the toast outlives it,
       // and a refusal that waited for a mounted editor was a refusal nobody read.
       onRefused(err);
@@ -162,7 +171,7 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
         // No answer: the new list may be in force. Not rolled back — read back, and said so.
         setOutcome("maybe");
         const fresh = await reread();
-        if (mounted.current && fresh) {
+        if (mounted.current && ours() && fresh) {
           setBase(fresh);
           setGrants(fresh.grants.map((g) => asGrant(g.unitId, g.bedId)));
           setOutcome("maybeRead");
