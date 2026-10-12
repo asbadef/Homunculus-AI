@@ -497,6 +497,54 @@ describe("the import", () => {
     expect(api.adminUsers.mock.calls.length).toBe(usersRead);        // no reload into the next session
   });
 
+  // The two below hold the OUTCOME guards. The test above signs out during chunk 1, so the
+  // per-chunk check returns first and neither guard is reached: removing either left it green.
+  it("a session that ends during the FINAL chunk hears no outcome once it answers, and nothing is reloaded", async () => {
+    let releaseLast;
+    const { api, store, reload } = await open({ setup: (a) => {
+      a.ldapSearch.mockResolvedValue([1, 2, 3, 4].map((n) => ldapUser(n)));
+      a.ldapImport.mockResolvedValueOnce(answer([importedRow(1), importedRow(2)]))
+        .mockImplementationOnce(() => new Promise((resolve) => { releaseLast = resolve; }));
+    } });
+    await searchFor();
+    for (const n of [1, 2, 3, 4]) fireEvent.click(screen.getByRole("checkbox", { name: `hs.sintetik${n}` }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Seçilənləri idxal et (4)" })); await settle(); });
+    expect(api.ldapImport).toHaveBeenCalledTimes(2);                 // the last chunk is out
+    await act(async () => { store.signOut(); await settle(); });
+    expect(screen.getByText("signed-out")).toBeInTheDocument();
+    await act(async () => { releaseLast(answer([importedRow(3), importedRow(4)])); await settle(); await settle(); });
+    expect(api.ldapImport).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/hesab idxal olundu/)).toBeNull();     // the success toast's guard
+    expect(alerts().trim()).toBe("");
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("a chunk in flight that is refused after the session ended raises no alert, no toast and no reload", async () => {
+    // Chunk 1 landed, so a reload WOULD be due in the session that chose it — not in this one.
+    let rejectLast;
+    const { api, store, reload } = await open({ setup: (a) => {
+      a.ldapSearch.mockResolvedValue([1, 2, 3, 4].map((n) => ldapUser(n)));
+      a.ldapImport.mockResolvedValueOnce(answer([importedRow(1), importedRow(2)]))
+        .mockImplementationOnce(() => new Promise((_, no) => { rejectLast = no; }));
+    } });
+    await searchFor();
+    for (const n of [1, 2, 3, 4]) fireEvent.click(screen.getByRole("checkbox", { name: `hs.sintetik${n}` }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Seçilənləri idxal et (4)" })); await settle(); });
+    expect(api.ldapImport).toHaveBeenCalledTimes(2);
+    await act(async () => { store.signOut(); await settle(); });
+    expect(screen.getByText("signed-out")).toBeInTheDocument();
+    // What a chunk sent under a session that has since ended gets: a 401.
+    await act(async () => {
+      rejectLast(refusal(401, "Invalid or missing authentication credentials"));
+      await settle();
+      await settle();
+    });
+    expect(alerts().trim()).toBe("");                                // the refusal toast's guard
+    expect(screen.queryByText(/hs\.sintetik3, hs\.sintetik4/)).toBeNull();
+    expect(screen.queryByText(/hesab idxal olundu/)).toBeNull();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
   it("lists every group as the extra group — one this desk may not grant is shown disabled, with its reason, never hidden", async () => {
     // front.md Decision 11 (X2): hidden, an administrator cannot tell "this hospital has no such
     // group" from "I may not give it". A group beyond her rights would 403 the WHOLE import, so it
