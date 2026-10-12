@@ -254,10 +254,117 @@ describe("no screen shows a reader a translation key", () => {
 // — which is why the live code does not build them), and it says nothing about whether the text is
 // RIGHT; it catches the whole class of "this key was renamed, moved or never written", which is
 // what printed `beds.identityPending` into a clinical card twice in Wave 3.
+//
+// WHICH LITERALS. The first version read only a key written straight into `t("…")` or after
+// `labelKey:` / `textKey:`, and it missed 80 of the 386 key literals the live sources held
+// (measured by the review): every `t(open ? "x.a" : "x.b")`, and every lookup table or
+// `{ key: "x.y" }` object — exactly where the administration tabs keep their dialogs' titles and
+// their reason maps. So now EVERY string literal outside a comment whose first word is one of this
+// build's namespaces is a key, and must exist in all four languages — the permission keys excepted
+// (`board.view` is a permission that happens to be namespace-shaped; the roles table prints it on
+// purpose) and file names excepted. And a literal in KEY POSITION — anywhere in `t(…)`'s first
+// argument, ternary branches included, or after `labelKey:` / `textKey:` — whose first word is
+// NOT a namespace fails as well: that is a mistyped namespace, which the first version skipped as
+// "not one of ours". Outside key position an unknown first word is not a key — `hmc.lock` is a
+// storage key, `hs.ornek` an example login — and is left alone. A key built at run time, or one
+// inside a template literal's `${…}`, is still out of reach; the live code does not build them.
+const NAMESPACE = new Set(Object.keys(NAMESPACES));
+/** A whole string literal that is key-shaped: `"ns.key"`, `'ns.key'` or `` `ns.key` ``. */
+const KEY_LITERAL = /(["'`])([a-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9_]*)+)\1/g;
+/** The characters after which a `/` starts a regular expression rather than a division. */
+const REGEX_AFTER = new Set(["", "(", ",", "=", ":", "[", "!", "&", "|", "?", ";", "{", "+", "-", "*", "%", "~", "^"]);
+
+/** The source with its comments taken out and every string kept whole. A small scanner, not a
+ *  parser: it knows the three quotes, both comment forms and a regular-expression literal — which
+ *  can hold a quote (`/["']/`) that would otherwise open a "string" swallowing the code after it. */
+export function codeOf(text) {
+  let out = "";
+  let at = 0;
+  while (at < text.length) {
+    const c = text[at];
+    const next = text[at + 1];
+    if (c === "/" && next === "/") {
+      while (at < text.length && text[at] !== "\n") at += 1;
+    } else if (c === "/" && next === "*") {
+      const end = text.indexOf("*/", at + 2);
+      at = end === -1 ? text.length : end + 2;
+      out += " ";
+    } else if (c === "/" && (REGEX_AFTER.has(out.trimEnd().slice(-1)) || /(?:=>|\breturn)$/.test(out.trimEnd()))) {
+      let inClass = false;
+      at += 1;
+      while (at < text.length && text[at] !== "\n" && (inClass || text[at] !== "/")) {
+        if (text[at] === "\\") at += 1;
+        else if (text[at] === "[") inClass = true;
+        else if (text[at] === "]") inClass = false;
+        at += 1;
+      }
+      at += 1;
+      while (at < text.length && /[a-z]/i.test(text[at])) at += 1;
+      out += " ";
+    } else if (c === "\"" || c === "'" || c === "`") {
+      let literal = c;
+      at += 1;
+      while (at < text.length && text[at] !== c) {
+        literal += text[at] === "\\" ? text.slice(at, at + 2) : text[at];
+        at += text[at] === "\\" ? 2 : 1;
+      }
+      out += `${literal}${c}`;
+      at += 1;
+    } else {
+      out += c;
+      at += 1;
+    }
+  }
+  return out;
+}
+
+/** The text of every key position in `code`: each `t(` call's first argument, read to its
+ *  top-level `,` or `)` with strings skipped, and the literal after each `labelKey:` / `textKey:`. */
+function keyPositions(code) {
+  const out = [];
+  for (const call of code.matchAll(/(?<![\w$.])t\(/g)) {
+    let depth = 0;
+    let at = call.index + call[0].length;
+    const start = at;
+    for (; at < code.length; at += 1) {
+      const ch = code[at];
+      if (ch === "\"" || ch === "'" || ch === "`") {
+        at = code.indexOf(ch, at + 1);
+        if (at === -1) break;
+      } else if ("([{".includes(ch)) depth += 1;
+      else if (")]}".includes(ch)) {
+        if (depth === 0) break;
+        depth -= 1;
+      } else if (ch === "," && depth === 0) break;
+    }
+    out.push(code.slice(start, at === -1 ? code.length : at));
+  }
+  for (const named of code.matchAll(/\b(?:labelKey|textKey):\s*(["'`][^"'`]*["'`])/g)) out.push(named[1]);
+  return out;
+}
+
+/** Every problem with the keys one source names, as `"<file> → <key> …"` lines. */
+export function keyProblems(text, file) {
+  const code = codeOf(text);
+  const problems = [];
+  for (const [, , key] of code.matchAll(KEY_LITERAL)) {
+    if (!NAMESPACE.has(key.split(".")[0]) || PERMISSION_KEY.has(key) || A_FILE.test(key)) continue;
+    const missing = LANG_CODES.filter((lang) => !(key in DICTIONARIES[lang]));
+    if (missing.length > 0) problems.push(`${file} → ${key} (${missing.join(", ")})`);
+  }
+  for (const position of keyPositions(code)) {
+    for (const [, , key] of position.matchAll(KEY_LITERAL)) {
+      if (!NAMESPACE.has(key.split(".")[0]) && !A_FILE.test(key)) problems.push(`${file} → ${key}: not a namespace`);
+    }
+  }
+  return problems;
+}
+
 describe("every key the live sources name exists in all four languages", () => {
   const LIVE = path.join(HERE, "live");
-  /** Every `.js`/`.jsx` under src/live/ that ships — tests and test utilities excluded: a test may
-   *  legitimately name a key that does not exist (this file's own detector fixture does). */
+  /** Every `.js`/`.jsx` under src/live/ that ships — tests and test utilities excluded (a test may
+   *  name a key that does not exist; this file's own detector fixtures do), and the dictionaries
+   *  themselves, which DEFINE keys and whose values are prose. */
   function sources(dir) {
     const out = [];
     for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -267,27 +374,31 @@ describe("every key the live sources name exists in all four languages", () => {
     }
     return out;
   }
-  const FILES = sources(LIVE);
-  /** `t("ns.key"` and `labelKey: "ns.key"` — the two ways this UI names a text. */
-  const NAMED = /(?:\bt\(\s*|labelKey:\s*|textKey:\s*)"([a-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9_.]*)"/g;
+  const FILES = sources(LIVE).filter((file) => !file.includes(path.join("i18n", "strings")));
+  const ALL = LANG_CODES.join(", ");
 
-  it("found sources to read, and the reader recognises both ways a key is named", () => {
+  it("found sources to read, and reads every way a key is named — and nothing a comment says", () => {
     expect(FILES.length).toBeGreaterThan(40);
-    const sample = 'const a = t("admin.title"); const b = { labelKey: "admin.tabUsers" };';
-    expect([...sample.matchAll(NAMED)].map((m) => m[1])).toEqual(["admin.title", "admin.tabUsers"]);
+    const sample = [
+      'const a = t(open ? "admin.title" : "admin.nopeOne");',                  // a ternary
+      'const LABEL = { users: "admin.readUsers", other: "admin.nopeTwo" };',   // a lookup table
+      'const b = { labelKey: "admin.tabUsers" }; const c = t("adimn.title");', // a mistyped namespace
+      '// t("admin.nopeInAComment") is prose, and so is /* labelKey: "admin.nopeInABlock" */',
+      "{/* t(\"admin.nopeInJsx\") */}",
+      'const re = /["\']/g; const d = t("admin.nopeAfterARegex");',             // a quote in a regex
+      'const store = "hmc.lock"; const perm = "board.view"; const file = "api/board.py";',
+      "const built = `admin.${kind}`;",                                         // run time: out of reach
+    ].join("\n");
+    expect(keyProblems(sample, "sample.jsx").sort()).toEqual([
+      "sample.jsx → adimn.title: not a namespace",
+      `sample.jsx → admin.nopeAfterARegex (${ALL})`,
+      `sample.jsx → admin.nopeOne (${ALL})`,
+      `sample.jsx → admin.nopeTwo (${ALL})`,
+    ]);
   });
 
-  it("names no key the dictionaries do not have", () => {
-    const missing = [];
-    for (const file of FILES) {
-      const text = fs.readFileSync(file, "utf8");
-      for (const [, key] of text.matchAll(NAMED)) {
-        if (!Object.keys(NAMESPACES).includes(key.split(".")[0])) continue;  // not one of ours
-        for (const lang of LANG_CODES) {
-          if (!(key in DICTIONARIES[lang])) missing.push(`${path.relative(LIVE, file)} → ${lang} ${key}`);
-        }
-      }
-    }
-    expect(missing, `a live source names a key no dictionary has:\n${missing.join("\n")}`).toEqual([]);
+  it("names no key the dictionaries do not have, and no namespace this build does not have", () => {
+    const problems = FILES.flatMap((file) => keyProblems(fs.readFileSync(file, "utf8"), path.relative(LIVE, file)));
+    expect(problems, `a live source names a key no dictionary has:\n${problems.join("\n")}`).toEqual([]);
   });
 });
