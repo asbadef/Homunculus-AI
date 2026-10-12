@@ -13,7 +13,10 @@
 // Shapes are the API's, snake_case: these go through `rules.userFromApi` / `groupFromApi` /
 // `scopeFromApi` exactly as an answer does. A builder that took the ADAPTED shape would let a tab
 // pass its tests against a payload the server cannot send.
+import { vi } from "vitest";
 import { PERMISSION_KEYS } from "./catalogue.js";
+import { groupFromApi, userFromApi } from "./rules.js";
+import { READS } from "./useAdminData.js";
 
 /** A synthetic objectGUID: the directory's own id, which `POST /admin/ldap/import` parses as a
  *  UUID (`LdapImportIn.external_ids: list[uuid.UUID]`), so a fixture may not use "e-1". */
@@ -174,6 +177,56 @@ export const USERS = [
   }),
 ];
 export const GROUPS = [SYSTEM_GROUP, NURSE_GROUP, WARD_GROUP];
+
+/** What each read state carries: "known" and "stale" an answer, the other three none. */
+const CARRIES_AN_ANSWER = { known: true, stale: true, unasked: false, loading: false, failed: false };
+
+/**
+ * The `admin` prop the frame hands a tab (`AdminScreen` → `useAdminData`), for a test that mounts
+ * one tab on its own. ONE builder for the three arms, for the reason the payload builders are one:
+ * three hand-built copies of this object drift, and a tab passes against a shape the loader cannot
+ * produce.
+ *
+ *   adminProp()                                      every read known, the desk above
+ *   adminProp({ users: [user("u-1")] })              API-shaped, adapted as an answer is
+ *   adminProp({ unassigned: null })                  a read with no answer: null and "failed"
+ *   adminProp({ catalogue: null, reads: { catalogue: "unasked" } })   one the session may not make
+ *   adminProp({ reads: { users: "stale" } })         the last answer, kept through a failed re-read
+ *
+ * `users` / `groups` / `catalogue` are the API's own shapes and go through `userFromApi` /
+ * `groupFromApi` exactly as an answer does. A state the loader cannot produce — "known" with no
+ * answer, "failed" with one, a state that does not exist — THROWS, so no tab is tested against it.
+ * `reload` is a spy that resolves; pass your own to hold it.
+ */
+export function adminProp(over = {}) {
+  const pick = (name, fallback) => (name in over ? over[name] : fallback);
+  const users = pick("users", USERS);
+  const groups = pick("groups", GROUPS);
+  const catalogue = pick("catalogue", CATALOGUE);
+  const data = {
+    users: users === null ? null : users.map(userFromApi),
+    groups: groups === null ? null : groups.map(groupFromApi),
+    catalogue: catalogue === null ? null : [...catalogue],
+    unassigned: pick("unassigned", 2),
+  };
+  const reads = {};
+  for (const read of READS) {
+    const state = over.reads?.[read] ?? (data[read] === null ? "failed" : "known");
+    if (!(state in CARRIES_AN_ANSWER) || CARRIES_AN_ANSWER[state] !== (data[read] !== null)) {
+      throw new TypeError(
+        `adminProp: ${read} is "${state}" with ${data[read] === null ? "no answer" : "an answer"} — a state the loader cannot produce`,
+      );
+    }
+    reads[read] = state;
+  }
+  return {
+    data,
+    reads,
+    failures: over.failures ?? [],
+    loading: over.loading ?? false,
+    reload: over.reload ?? vi.fn(async () => {}),
+  };
+}
 
 /**
  * Stub every READ the three tabs make, with the fixtures above. `over` replaces any of them:

@@ -5,8 +5,11 @@ import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { resetScreens } from "../../shell/routes.js";
 import { AdminScreen, TABS, onlyTabs, openTabs, resetTabs, tabScreenOf } from "./AdminScreen.jsx";
+import { READS } from "./useAdminData.js";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** A list's length, or "null" for a read that has no answer — never 0 for "no answer". */
+const len = (list) => (Array.isArray(list) ? list.length : "null");
 
 const USERS = [
   { id: "u-1", username: "ayse", email: "ayse@example.com", full_name: "Ayşe Sentetik",
@@ -28,7 +31,7 @@ const CATALOGUE = [{ key: "board.view", description: "See the live board" }];
 function tabsBuilt(ids) {
   const stubs = {};
   for (const id of ids) {
-    stubs[id] = ({ admin }) => <p>{`${id}: ${admin.data.users.length} / ${admin.data.groups.length}`}</p>;
+    stubs[id] = ({ admin }) => <p>{`${id}: ${len(admin.data.users)} / ${len(admin.data.groups)}`}</p>;
   }
   return onlyTabs(stubs);
 }
@@ -227,5 +230,110 @@ describe("what it asks the API for", () => {
     );
     await act(async () => { release(USERS); await settle(); });
     expect(mounted.api.adminUsers).toHaveBeenCalled();
+  });
+});
+
+describe("what the frame knows about each read", () => {
+  /** A tab that prints what the frame handed it, read by read, and can reload as a write does. */
+  function Reads({ admin }) {
+    return (
+      <>
+        <p data-testid="reads">{READS.map((read) => `${read}=${admin.reads[read]}`).join(" ")}</p>
+        <p data-testid="data">
+          {`users=${len(admin.data.users)} groups=${len(admin.data.groups)} catalogue=${len(admin.data.catalogue)} unassigned=${admin.data.unassigned}`}
+        </p>
+        <button type="button" onClick={() => admin.reload()}>after-a-write</button>
+      </>
+    );
+  }
+
+  async function openReads({ perms = ["users.manage", "groups.manage"], setup, wrap = (ui) => ui } = {}) {
+    onlyTabs({ users: Reads, roles: Reads, source: Reads });
+    const mounted = await mount(wrap(<AdminScreen />), {
+      access: token({ perms }),
+      me: profile({ perms }),
+      setup: (api) => {
+        api.adminUsers.mockResolvedValue(USERS);
+        api.adminGroups.mockResolvedValue(GROUPS);
+        api.adminPermissions.mockResolvedValue(CATALOGUE);
+        api.unassignedScopes.mockResolvedValue({ tenant: "demo", unassigned_users: 2 });
+        setup?.(api);
+      },
+    });
+    await act(async () => { await settle(); });
+    return mounted;
+  }
+  const reads = () => screen.getByTestId("reads").textContent;
+  const data = () => screen.getByTestId("data").textContent;
+  const alerts = () => screen.getAllByRole("alert").map((a) => a.textContent).join(" ");
+
+  it("an answered read is known; one the session may not make is unasked and null — never an empty list", async () => {
+    await openReads({ perms: ["groups.manage"] });
+    expect(reads()).toBe("users=unasked groups=known catalogue=known unassigned=unasked");
+    expect(data()).toBe("users=null groups=1 catalogue=1 unassigned=null");
+  });
+
+  it("a read that never answered is FAILED and null, and the Alert names it", async () => {
+    // `[]` for a failed read was the same value as "the hospital has no users", and the users tab
+    // then said "no user matches" under an Alert that did not say which read had failed.
+    await openReads({ setup: (api) => api.adminUsers.mockRejectedValue(refusal(503, "down")) });
+    expect(reads()).toBe("users=failed groups=known catalogue=known unassigned=known");
+    expect(data()).toBe("users=null groups=1 catalogue=1 unassigned=2");
+    expect(alerts()).toContain("İstifadəçi siyahısı oxunmadı: Server hazırda əlçatan deyil.");
+  });
+
+  it("a reload after a write that fails to re-read keeps the last answer, marks it stale, and says what is shown", async () => {
+    // Measured by the review: users went 3 → 0 under an Alert that named no read, and the tab
+    // read "no matching users" about a hospital whose list had been on screen a second earlier.
+    const { api } = await openReads();
+    expect(data()).toBe("users=1 groups=1 catalogue=1 unassigned=2");
+    api.adminUsers.mockRejectedValue(refusal(503, "down"));
+    await act(async () => { fireEvent.click(screen.getByText("after-a-write")); await settle(); });
+    expect(data()).toBe("users=1 groups=1 catalogue=1 unassigned=2");
+    expect(reads()).toBe("users=stale groups=known catalogue=known unassigned=known");
+    expect(alerts()).toContain(
+      "İstifadəçi siyahısı yenidən oxunmadı: Server hazırda əlçatan deyil. Bir az sonra yenidən cəhd edin. Göstərilən son alınmış cavabdır.",
+    );
+    // And the next answer that lands makes it known again, and the Alert goes.
+    api.adminUsers.mockResolvedValue([...USERS, { ...USERS[0], id: "u-2", username: "kamran" }]);
+    await act(async () => { fireEvent.click(screen.getByText("after-a-write")); await settle(); });
+    expect(reads()).toBe("users=known groups=known catalogue=known unassigned=known");
+    expect(data()).toBe("users=2 groups=1 catalogue=1 unassigned=2");
+    expect(alerts().trim()).toBe("");
+  });
+
+  it("a read that timed out says nothing was read — not that the operation may have happened", async () => {
+    // errors.requestTimeout is a WRITE's warning ("it may have happened; check before repeating").
+    // Nothing happens when a list is not read.
+    await openReads({ setup: (api) => api.adminGroups.mockRejectedValue(Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" })) });
+    expect(alerts()).toContain("Qrup siyahısı oxunmadı: Server vaxtında cavab vermədi; heç nə oxunmadı.");
+    expect(alerts()).not.toMatch(/yerinə yetirilmiş ola bilər/);
+  });
+
+  it("Retry keeps its button and its focus while it runs, and hands the focus to the heading when the Alert goes", async () => {
+    // The button used to unmount itself on the click (the Alert was cleared before the reload),
+    // and a keyboard user's focus fell to <body> with nothing said.
+    let release;
+    const { api } = await openReads({ setup: (fake) => fake.adminGroups.mockRejectedValue(refusal(503, "down")) });
+    const retry = screen.getByRole("button", { name: "Yenidən cəhd et" });
+    retry.focus();
+    api.adminGroups.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    await act(async () => { fireEvent.click(retry); await settle(); });
+    expect(document.body.contains(retry)).toBe(true);
+    expect(retry).toHaveAttribute("aria-busy", "true");
+    expect(retry).not.toBeDisabled();                        // busy, never disabled
+    expect(document.activeElement).toBe(retry);
+    await act(async () => { release(GROUPS); await settle(); });
+    await act(async () => { await settle(); });
+    expect(document.body.contains(retry)).toBe(false);
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 }));
+  });
+
+  it("lands its answers under StrictMode, whose rehearsal unmounts and remounts every effect", async () => {
+    // A `mounted` ref set true only at creation was set false by the rehearsal's cleanup and never
+    // back: every answer after it was dropped as "unmounted", and the screen said "loading" forever.
+    await openReads({ wrap: (ui) => <React.StrictMode>{ui}</React.StrictMode> });
+    expect(reads()).toBe("users=known groups=known catalogue=known unassigned=known");
+    expect(data()).toBe("users=1 groups=1 catalogue=1 unassigned=2");
   });
 });

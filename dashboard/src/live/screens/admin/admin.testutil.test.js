@@ -6,7 +6,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PERMISSION_KEYS } from "./catalogue.js";
-import { CATALOGUE, PERMISSION_TEXTS, group, guid, ldapStatus, user } from "./admin.testutil.js";
+import {
+  CATALOGUE, GROUPS, PERMISSION_TEXTS, USERS, adminProp, group, guid, ldapStatus, user,
+} from "./admin.testutil.js";
+import { groupFromApi, userFromApi } from "./rules.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PY = fs.readFileSync(
@@ -51,5 +54,35 @@ describe("the administration fixtures are the API's own shapes", () => {
   it("an external id is a UUID, as POST /admin/ldap/import requires", () => {
     expect(guid(7)).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(guid(7)).not.toBe(guid(8));
+  });
+});
+
+describe("adminProp — the prop the frame hands a tab, for a tab mounted on its own", () => {
+  it("goes through the loader's own adapters, says every answered read is known, and reloads", async () => {
+    const admin = adminProp();
+    expect(admin.data.users).toEqual(USERS.map(userFromApi));
+    expect(admin.data.groups).toEqual(GROUPS.map(groupFromApi));
+    expect(admin.data.catalogue).toEqual(CATALOGUE);
+    expect(admin.data.unassigned).toBe(2);
+    expect(admin.reads).toEqual({ users: "known", groups: "known", catalogue: "known", unassigned: "known" });
+    expect(admin.failures).toEqual([]);
+    expect(admin.loading).toBe(false);
+    await expect(admin.reload()).resolves.toBeUndefined();
+    expect(admin.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("a read with no answer is null and failed unless the test says unasked; a stale one keeps its answer", () => {
+    expect(adminProp({ unassigned: null }).reads.unassigned).toBe("failed");
+    const narrow = adminProp({ users: null, unassigned: null, reads: { users: "unasked", unassigned: "unasked" } });
+    expect(narrow.data.users).toBeNull();
+    expect(narrow.reads).toMatchObject({ users: "unasked", unassigned: "unasked", groups: "known" });
+    expect(adminProp({ reads: { users: "stale" } }).data.users).toHaveLength(USERS.length);
+  });
+
+  it("refuses a state the loader cannot produce, so no tab is tested against one", () => {
+    // "known" and "stale" carry an answer; "unasked", "loading" and "failed" carry none.
+    expect(() => adminProp({ users: null, reads: { users: "known" } })).toThrow(/the loader cannot produce/);
+    expect(() => adminProp({ reads: { catalogue: "failed" } })).toThrow(/the loader cannot produce/);
+    expect(() => adminProp({ reads: { groups: "maybe" } })).toThrow(/the loader cannot produce/);
   });
 });

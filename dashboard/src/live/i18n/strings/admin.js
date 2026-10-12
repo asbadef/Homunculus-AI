@@ -25,6 +25,14 @@ export default {
     // A busy control reads only "unavailable" to a screen reader; the words that say WHICH
     // account, group or row is in flight come from an Announce region, named after its subject.
     savingFor: "{subject} · kaydediliyor…",
+    // The frame's Alert names the READ that failed (useAdminData `failures`). A read that had
+    // answered before keeps that answer, and the second sentence says that is what is shown.
+    readFailed: "{read} okunamadı: {reason}",
+    readStale: "{read} yeniden okunamadı: {reason} Gösterilen, son alınan yanıttır.",
+    readUsers: "Kullanıcı listesi",
+    readGroups: "Grup listesi",
+    readCatalogue: "Yetki kataloğu",
+    readUnassigned: "Ataması olmayan kullanıcı sayısı",
     // the list
     search: "Ad ya da kullanıcı adı ara",
     filterRole: "Rol",
@@ -146,6 +154,12 @@ export default {
     // A busy control reads only "unavailable" to a screen reader; the words that say WHICH
     // account, group or row is in flight come from an Announce region, named after its subject.
     savingFor: "{subject} · yadda saxlanılır…",
+    readFailed: "{read} oxunmadı: {reason}",
+    readStale: "{read} yenidən oxunmadı: {reason} Göstərilən son alınmış cavabdır.",
+    readUsers: "İstifadəçi siyahısı",
+    readGroups: "Qrup siyahısı",
+    readCatalogue: "Səlahiyyət kataloqu",
+    readUnassigned: "Təyinatı olmayan istifadəçilərin sayı",
     search: "Ad və ya istifadəçi adı axtar",
     filterRole: "Rol",
     filterAll: "Bütün rollar",
@@ -259,6 +273,12 @@ export default {
     // A busy control reads only "unavailable" to a screen reader; the words that say WHICH
     // account, group or row is in flight come from an Announce region, named after its subject.
     savingFor: "{subject} · сохраняется…",
+    readFailed: "{read}: не удалось прочитать — {reason}",
+    readStale: "{read}: не удалось перечитать — {reason} Показан последний полученный ответ.",
+    readUsers: "Список пользователей",
+    readGroups: "Список групп",
+    readCatalogue: "Каталог прав",
+    readUnassigned: "Число пользователей без назначений",
     search: "Поиск по имени или логину",
     filterRole: "Роль",
     filterAll: "Все роли",
@@ -372,6 +392,12 @@ export default {
     // A busy control reads only "unavailable" to a screen reader; the words that say WHICH
     // account, group or row is in flight come from an Announce region, named after its subject.
     savingFor: "{subject} · saving…",
+    readFailed: "{read} could not be read: {reason}",
+    readStale: "{read} could not be read again: {reason} What is shown is the last answer received.",
+    readUsers: "The user list",
+    readGroups: "The group list",
+    readCatalogue: "The permission catalogue",
+    readUnassigned: "The number of users with no assignment",
     search: "Search name or username",
     filterRole: "Role",
     filterAll: "All roles",

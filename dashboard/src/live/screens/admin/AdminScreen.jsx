@@ -21,13 +21,13 @@
 // nobody else touches, the same seam `shell/routes.js` and `i18n/catalog.js` have, so G1-12, G1-13
 // and G1-14 can be built on parallel branches. A tab with no component shows "not built yet" and
 // is NOT offered: never a dead tab.
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
-import { apiErrorText } from "../../apiErrors.js";
+import { readErrorText } from "../../apiErrors.js";
 import { Alert, Announce, Box, Button, Empty, TabPanel, Tabs } from "../../ui/index.js";
 import { hasPerm } from "./catalogue.js";
-import { useAdminData } from "./useAdminData.js";
+import { READS, useAdminData } from "./useAdminData.js";
 // G1-12: import { UsersTab } from "./UsersTab.jsx";
 
 // G1-13: import { RolesTab } from "./RolesTab.jsx";
@@ -35,6 +35,15 @@ import { useAdminData } from "./useAdminData.js";
 // G1-14: import { SourceTab } from "./SourceTab.jsx";
 
 const TAB_ID = "admin";
+
+/** Each read's name, for the Alert that says which one failed. Written out, never built from the
+ *  read's id: a key assembled at run time is one no check can see. */
+const READ_LABEL = Object.freeze({
+  users: "admin.readUsers",
+  groups: "admin.readGroups",
+  catalogue: "admin.readCatalogue",
+  unassigned: "admin.readUnassigned",
+});
 
 /** The three tabs, in order: the id, the right that opens it and its label. Frozen, like the route
  *  table it is modelled on (`shell/routes.js`): which right opens which tab is the same for every
@@ -127,13 +136,33 @@ export function AdminScreen() {
   const shown = tabs.map((x) => ({ value: x.id, label: t(x.labelKey) }));
   const Shown = tabScreenOf(current);
   // The first load only — a reload with rows already on screen leaves them there, and announcing
-  // "loading" over a table a clinician is reading would be noise, not information.
-  const firstLoad = admin.loading && admin.data.users.length === 0 && admin.data.groups.length === 0;
+  // "loading" over a table a clinician is reading would be noise, not information. Nothing has
+  // answered yet exactly when every read's data is still null.
+  const firstLoad = admin.loading && READS.every((read) => admin.data[read] === null);
+
+  // RETRY KEEPS ITS FOCUS. The failures stay while the reload runs (`useAdminData`), so the button
+  // is still there, busy, holding a keyboard user's focus. When the reload answers, the Alert goes
+  // and its button with it — and focus would fall to <body>, saying nothing. So a Retry pressed
+  // from inside the Alert hands the focus to the screen's own heading once the Alert has gone; a
+  // Retry that failed again keeps its button, and the focus on it.
+  const heading = useRef(null);
+  const alertBox = useRef(null);
+  const [refocus, setRefocus] = useState(false);
+  async function retry() {
+    const held = Boolean(alertBox.current?.contains(document.activeElement));
+    await admin.reload();
+    if (held) setRefocus(true);
+  }
+  useEffect(() => {
+    if (!refocus) return;
+    setRefocus(false);
+    if (!alertBox.current) heading.current?.focus();
+  }, [refocus]);
 
   return (
     <div className="flex min-h-0 max-w-[1100px] flex-col gap-3">
       <div>
-        <h1 className="m-0 font-display text-23 font-bold">{t("admin.title")}</h1>
+        <h1 ref={heading} tabIndex={-1} className="m-0 font-display text-23 font-bold outline-none">{t("admin.title")}</h1>
         <p className="m-0 text-13 text-mute">{t("admin.sub", { hospital: user.tenantName || user.tenant })}</p>
       </div>
 
@@ -143,14 +172,22 @@ export function AdminScreen() {
           The visible sentence below is therefore an ordinary paragraph, and this says it. */}
       <Announce text={firstLoad ? t("admin.loading") : ""} />
 
-      {/* A refusal on ONE call does not empty the screen: it is shown, and whatever the other
-          calls answered stands. */}
-      {admin.error ? (
-        <Alert tone="crit">
-          {apiErrorText(t, admin.error)}
-          {" "}
-          <Button size="sm" onClick={admin.reload}>{t("admin.retry")}</Button>
-        </Alert>
+      {/* A refusal on ONE call does not empty the screen: it is shown, NAMED AFTER THE READ that
+          failed, and whatever the other calls answered stands. A read that had answered before
+          keeps that answer ("stale") and the sentence says it is the last one received. */}
+      {admin.failures.length > 0 ? (
+        <div ref={alertBox}>
+          <Alert tone="crit">
+            {admin.failures.map(({ read, error }) => (
+              <p key={read} className="m-0">
+                {t(admin.reads[read] === "stale" ? "admin.readStale" : "admin.readFailed", {
+                  read: t(READ_LABEL[read]), reason: readErrorText(t, error),
+                })}
+              </p>
+            ))}
+            <Button size="sm" busy={admin.loading} onClick={retry}>{t("admin.retry")}</Button>
+          </Alert>
+        </div>
       ) : null}
 
       {tabs.length === 0 ? (

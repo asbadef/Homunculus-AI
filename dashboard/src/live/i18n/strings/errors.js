@@ -33,6 +33,9 @@ export default {
     sessionUnreachable: "Sunucuya şu an ulaşılamıyor; oturumunuz açık. Biraz sonra tekrar deneyin.",
     loginFailed: "Giriş başarısız.",
     requestTimeout: "Sunucu yanıt vermedi. İşlem gerçekleşmiş olabilir; kontrol edip gerekirse tekrar deneyin.",
+    // A READ that timed out (apiErrors.readErrorText). requestTimeout's "it may have happened" is a
+    // write's warning; nothing happens when a list is not read.
+    readTimeout: "Sunucu zamanında yanıt vermedi; hiçbir şey okunmadı. Biraz sonra yeniden deneyin.",
     sessionSuperseded: "Bu istek önceki oturuma aitti; sonucu uygulanmadı.",
     requestFailed: "İstek başarısız ({status}).",
     serverUnreachable: "Sunucuya şu an ulaşılamıyor. Biraz sonra tekrar deneyin.",
@@ -120,6 +123,7 @@ export default {
     sessionUnreachable: "Server hazırda əlçatan deyil; sessiyanız açıq qalır. Bir az sonra yenidən cəhd edin.",
     loginFailed: "Giriş alınmadı.",
     requestTimeout: "Server cavab vermədi. Əməliyyat yerinə yetirilmiş ola bilər; yoxlayın və lazım olsa yenidən cəhd edin.",
+    readTimeout: "Server vaxtında cavab vermədi; heç nə oxunmadı. Bir az sonra yenidən cəhd edin.",
     sessionSuperseded: "Bu sorğu əvvəlki sessiyaya aid idi; nəticəsi tətbiq edilmədi.",
     requestFailed: "Sorğu uğursuz oldu ({status}).",
     serverUnreachable: "Server hazırda əlçatan deyil. Bir az sonra yenidən cəhd edin.",
@@ -203,6 +207,7 @@ export default {
     sessionUnreachable: "Сервер сейчас недоступен; ваш сеанс сохранён. Повторите попытку позже.",
     loginFailed: "Не удалось войти.",
     requestTimeout: "Сервер не ответил. Действие могло быть выполнено: проверьте и при необходимости повторите.",
+    readTimeout: "Сервер не ответил вовремя; ничего не прочитано. Повторите попытку чуть позже.",
     sessionSuperseded: "Этот запрос относился к предыдущему сеансу; его результат не применён.",
     requestFailed: "Запрос не выполнен ({status}).",
     serverUnreachable: "Сервер сейчас недоступен. Повторите попытку позже.",
@@ -286,6 +291,7 @@ export default {
     sessionUnreachable: "The server cannot be reached right now; your session is kept. Try again shortly.",
     loginFailed: "Sign-in failed.",
     requestTimeout: "The server did not answer. The action may have gone through: check, and try again if needed.",
+    readTimeout: "The server did not answer in time; nothing was read. Try again shortly.",
     sessionSuperseded: "This request belonged to an earlier session; its answer was not applied.",
     requestFailed: "The request failed ({status}).",
     serverUnreachable: "The server cannot be reached right now. Try again shortly.",

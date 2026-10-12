@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { API_MESSAGE_KEYS, apiErrorKey, apiErrorText } from "./apiErrors.js";
+import { API_MESSAGE_KEYS, apiErrorKey, apiErrorText, readErrorText } from "./apiErrors.js";
 import { DICTIONARIES } from "./i18n/catalog.js";
 import { LANG_CODES } from "./i18n/langs.js";
 import { createTranslator } from "./i18n/translate.js";
@@ -300,5 +300,22 @@ describe("apiErrorText", () => {
     expect(apiErrorText(en, new Error("Beklenmeyen bir durum"))).toBe("Beklenmeyen bir durum");
     expect(apiErrorText(en, new Error(""))).toBe("The action could not be completed.");
     expect(apiErrorText(en, null)).toBe("The action could not be completed.");
+  });
+});
+
+describe("readErrorText", () => {
+  const en = createTranslator("en", DICTIONARIES);
+
+  it("a READ that timed out says nothing was read — never a write's \"it may have happened\"", () => {
+    const timedOut = Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" });
+    expect(readErrorText(en, timedOut)).toBe("The server did not answer in time; nothing was read. Try again shortly.");
+    expect(readErrorText(en, timedOut)).not.toMatch(/may have gone through/);
+    for (const lang of LANG_CODES) expect(DICTIONARIES[lang]["errors.readTimeout"], lang).toBeTruthy();
+  });
+
+  it("anything else reads exactly as apiErrorText says it", () => {
+    for (const err of [new Error("Parola hatalı"), Object.assign(new Error("x"), { status: 503 }), new Error("Beklenmeyen")]) {
+      expect(readErrorText(en, err)).toBe(apiErrorText(en, err));
+    }
   });
 });

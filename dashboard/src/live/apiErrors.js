@@ -228,3 +228,11 @@ export function apiErrorText(t, err) {
   if (hit) return t(hit.key, hit.vars);
   return messageOf(err).trim() || t("errors.unknown");
 }
+
+/** A failed READ as the user reads it: `apiErrorText`, except a timeout. `errors.requestTimeout`
+ *  says the operation "may have happened; check before repeating it", which is the right warning
+ *  for a write and false for a read — nothing happens when a list is not read — so a read's
+ *  timeout says that nothing was read. */
+export function readErrorText(t, err) {
+  return apiErrorKey(err)?.key === "errors.requestTimeout" ? t("errors.readTimeout") : apiErrorText(t, err);
+}
