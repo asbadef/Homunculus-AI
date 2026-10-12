@@ -18,6 +18,13 @@ export default {
     loading: "Yükleniyor…",
     noAccess: "Bu bölüme erişim yetkiniz yok.",
     retry: "Yeniden dene",
+    // Every administration write's refusal and confirmation names its subject first
+    // (screens/admin/refusal.js). Punctuation only: the words come from the two halves.
+    refusedFor: "{subject}: {reason}",
+    doneFor: "{subject} · {text}",
+    // A busy control reads only "unavailable" to a screen reader; the words that say WHICH
+    // account, group or row is in flight come from an Announce region, named after its subject.
+    savingFor: "{subject} · kaydediliyor…",
     // the list
     search: "Ad ya da kullanıcı adı ara",
     filterRole: "Rol",
@@ -127,6 +134,13 @@ export default {
     loading: "Yüklənir…",
     noAccess: "Bu bölməyə giriş səlahiyyətiniz yoxdur.",
     retry: "Yenidən cəhd et",
+    // Every administration write's refusal and confirmation names its subject first
+    // (screens/admin/refusal.js). Punctuation only: the words come from the two halves.
+    refusedFor: "{subject}: {reason}",
+    doneFor: "{subject} · {text}",
+    // A busy control reads only "unavailable" to a screen reader; the words that say WHICH
+    // account, group or row is in flight come from an Announce region, named after its subject.
+    savingFor: "{subject} · yadda saxlanılır…",
     search: "Ad və ya istifadəçi adı axtar",
     filterRole: "Rol",
     filterAll: "Bütün rollar",
@@ -231,6 +245,13 @@ export default {
     loading: "Загрузка…",
     noAccess: "У вас нет доступа к этому разделу.",
     retry: "Повторить",
+    // Every administration write's refusal and confirmation names its subject first
+    // (screens/admin/refusal.js). Punctuation only: the words come from the two halves.
+    refusedFor: "{subject}: {reason}",
+    doneFor: "{subject} · {text}",
+    // A busy control reads only "unavailable" to a screen reader; the words that say WHICH
+    // account, group or row is in flight come from an Announce region, named after its subject.
+    savingFor: "{subject} · сохраняется…",
     search: "Поиск по имени или логину",
     filterRole: "Роль",
     filterAll: "Все роли",
@@ -335,6 +356,13 @@ export default {
     loading: "Loading…",
     noAccess: "You do not have access to this section.",
     retry: "Try again",
+    // Every administration write's refusal and confirmation names its subject first
+    // (screens/admin/refusal.js). Punctuation only: the words come from the two halves.
+    refusedFor: "{subject}: {reason}",
+    doneFor: "{subject} · {text}",
+    // A busy control reads only "unavailable" to a screen reader; the words that say WHICH
+    // account, group or row is in flight come from an Announce region, named after its subject.
+    savingFor: "{subject} · saving…",
     search: "Search name or username",
     filterRole: "Role",
     filterAll: "All roles",

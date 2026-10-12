@@ -26,6 +26,10 @@ const NEUTRAL = new Set([
   // G1-11 (patient) · neutral
   "patient.sofa", //              SOFA — the same
 
+  // admin (the frame, shared by the three tabs) · neutral
+  "admin.refusedFor", //          "{subject}: {reason}"  — punctuation; the words are the halves'
+  "admin.doneFor", //             "{subject} · {text}"   — the same
+
   // G1-12 (admin · users) · neutral
   "admin.colMfa", //              2FA — an abbreviation
   "admin.sourceLdap", //          AD — an abbreviation
@@ -90,6 +94,10 @@ const AZ_SAME_AS_TR = new Set([
   "patient.sofa", //         SOFA — the score's own name
   "patient.baseline", //     Bazal SOFA — "baseline SOFA" reads the same in Azerbaijani
   "patient.seenBy", //       Gördü — the same verb as alarms.seenBy
+
+  // admin (the frame, shared by the three tabs) · az = tr
+  "admin.refusedFor", //     "{subject}: {reason}" — punctuation, no words of its own
+  "admin.doneFor", //        "{subject} · {text}" — the same
 
   // G1-12 (admin · users) · az = tr
   "admin.filterRole", //     Rol — the prototype's AZ dictionary (admin.js)
