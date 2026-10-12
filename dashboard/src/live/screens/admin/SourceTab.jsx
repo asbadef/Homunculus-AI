@@ -67,7 +67,10 @@
 //   * The import OUTLIVES the tab. She chose those accounts; leaving for another tab mid-run must
 //     not silently stop the later chunks or swallow a refusal. The run goes on, its outcome goes
 //     to the toast (which sits above the router), and only this component's own state waits
-//     behind the `mounted` guard.
+//     behind the `mounted` guard. It does NOT outlive the session: after a sign-out (or another
+//     administrator's sign-in in this browser) it sends no further chunk and says nothing, and the
+//     test and the mapping writes say nothing into a session that is not theirs (`sessionNow`).
+//     A run a later chunk failed still reloads the frame: the accounts that landed exist.
 //   * An import and a search hold each other, both ways: a search answering under an import
 //     redraws the rows the import is marking, and an import started under a search has its marks
 //     overwritten by an answer the server gave before the import. The held button says busy.
@@ -197,6 +200,18 @@ export function SourceTab({ admin }) {
   /** A new operation starts: the live region stops repeating the last test's result. */
   const begin = () => setTestSaid(false);
 
+  /** The session an operation started in, as a test: "is it still this one?". An answer that
+   *  arrives after that session ended — or after another administrator's began in this browser —
+   *  is nobody's: nothing more is SENT on its behalf (the import's next chunk would go out under
+   *  whatever token storage holds by then: a 401 that ends the next sign-in, or accounts created
+   *  in another hospital and audited under another name), and nothing is SAID (a toast, a reload)
+   *  into the session that replaced it. `store.epoch()` moves whenever a session begins or ends; a
+   *  screen lock does not move it, so a locked screen's import carries on. */
+  const sessionNow = () => {
+    const epoch = store.epoch();
+    return () => store.epoch() === epoch;
+  };
+
   /** The mapping table, read on its own: a read, with its own failure and its own retry. The
    *  failure STAYS while a re-read runs, so a Retry pressed from it keeps its button (busy) and
    *  its focus; it goes only when a read answers. */
@@ -258,13 +273,15 @@ export function SourceTab({ admin }) {
     setTesting(true);
     setTest(null);
     setTestSaid(false);
+    const ours = sessionNow();
     try {
       const answer = await store.track(() => api.ldapTest());
-      if (!mounted.current) return;
+      if (!mounted.current || !ours()) return;
       setTest(answer);
       setTestSaid(true);
       setStatus((was) => (was ? { ...was, last_test_at: answer?.checked_at, last_test_ok: answer?.ok } : was));
     } catch (err) {
+      if (!ours()) return;
       // No stale result beside a refusal: the previous answer was cleared when the test began.
       toast(refusedFor(t, status?.url_host ?? "", err), "error");
     } finally {
@@ -280,13 +297,14 @@ export function SourceTab({ admin }) {
     setSearching(true);
     setReport(null);
     setChunkFailed(null);
+    const ours = sessionNow();
     try {
       const rows = await store.track(() => api.ldapSearch(query.trim()));
-      if (!mounted.current) return;
+      if (!mounted.current || !ours()) return;
       setFound(Array.isArray(rows) ? rows : []);
       setChosen(new Set());
     } catch (err) {
-      if (!mounted.current) return;
+      if (!mounted.current || !ours()) return;
       // The old query's rows do not stay under the new query's text.
       setFound(null);
       setChosen(new Set());
@@ -303,7 +321,11 @@ export function SourceTab({ admin }) {
    *
    *  It OUTLIVES the tab: an administrator who moves to another tab mid-run chose those accounts,
    *  so the later chunks are still sent and the outcome — success or refusal — still reaches the
-   *  toast, which sits above the router. Only this component's own state waits on `mounted`. */
+   *  toast, which sits above the router. Only this component's own state waits on `mounted`.
+   *
+   *  It does NOT outlive the SESSION (`sessionNow`): a run whose session ended sends no further
+   *  chunk and says nothing — not its outcome, not a refusal, no reload — because the session it
+   *  belonged to is gone and the one in its place did not ask for it. */
   async function runImport() {
     const ids = [...chosen];
     // Held while a search is out: its answer, given before this import, would overwrite the rows
@@ -313,6 +335,7 @@ export function SourceTab({ admin }) {
     setImporting(true);
     setChunkFailed(null);
     // Everything the run needs after this point is taken now: the tab may be gone by its end.
+    const ours = sessionNow();
     const usernames = new Map((found ?? []).map((row) => [row.external_id, row.username]));
     const host = status?.url_host ?? "";
     const extra = extraGroup ? [extraGroup] : [];
@@ -321,9 +344,9 @@ export function SourceTab({ admin }) {
     const skipped = [];
     let done = 0;
     let out = null;                      // the chunk in flight, so a failure can name its accounts
-    let landed = false;
     try {
       for (const chunk of chunks) {
+        if (!ours()) return;             // never sent under a session that is not the one that chose it
         if (mounted.current) setProgress({ done, total: ids.length });
         out = chunk;
         // eslint-disable-next-line no-await-in-loop
@@ -337,10 +360,11 @@ export function SourceTab({ admin }) {
           setFound((was) => markImported(was, answer));
         }
       }
-      landed = true;
+      if (!ours()) return;
       if (mounted.current) setReport({ imported, skipped });
       toast(doneFor(t, host, t("source.importDone", { imported: imported.length, skipped: skipped.length })));
     } catch (err) {
+      if (!ours()) return;
       const names = (out ?? []).map((id) => usernames.get(id) ?? id).join(", ");
       // A timeout may have landed: the note must not say "could not be sent" beside a toast that
       // says the operation may have happened. Recognised by its key, never by a status.
@@ -356,8 +380,9 @@ export function SourceTab({ admin }) {
         setImporting(false);
       }
     }
-    // The accounts exist now: the frame's lists are read again (it guards its own unmount).
-    if (landed) await admin.reload();
+    // Whatever accounts landed exist now — a run a later chunk failed included — so the frame's
+    // lists are read again (it guards its own unmount). Not into a session that is not this one.
+    if (imported.length > 0 && ours()) await admin.reload();
   }
 
   async function searchAdGroups(event) {
@@ -368,13 +393,14 @@ export function SourceTab({ admin }) {
     // A choice from the previous answer is forgotten as soon as a new search starts — and again
     // when it answers: the picker must never hold a DN it is not showing.
     setAdDn("");
+    const ours = sessionNow();
     try {
       const rows = await store.track(() => api.ldapGroups(adQuery.trim()));
-      if (!mounted.current) return;
+      if (!mounted.current || !ours()) return;
       setAdGroups(Array.isArray(rows) ? rows : []);
       setAdDn("");
     } catch (err) {
-      if (!mounted.current) return;
+      if (!mounted.current || !ours()) return;
       setAdGroups(null);
       setAdDn("");
       toast(refusedFor(t, adQuery.trim(), readErrorText(t, err)), "error");
@@ -390,14 +416,17 @@ export function SourceTab({ admin }) {
     begin();
     const name = shown.name || shown.dn;
     setAdding(name);
+    const ours = sessionNow();
     try {
       await store.track(() => api.ldapCreateMapping(shown.dn, ourGroup));
+      if (!ours()) return;
       toast(doneFor(t, name, t("source.mapAdded")));
       if (mounted.current) {
         setAdDn("");
         setOurGroup("");
       }
     } catch (err) {
+      if (!ours()) return;
       toast(refusedFor(t, name, err), "error");
     } finally {
       if (mounted.current) setAdding(null);
@@ -405,22 +434,25 @@ export function SourceTab({ admin }) {
     // After the write's own try, and whatever it answered: a re-read that fails is a READ
     // failure, shown on the table with its retry — never a refusal of a row that now exists — and
     // a refusal (a 409 for a row someone else added, a 404) is news about the table too.
-    if (mounted.current) await readMappings();
+    if (mounted.current && ours()) await readMappings();
   }
 
   async function removeMapping(row) {
     if (removingId) return;
     begin();
     setRemovingId(row.id);
+    const ours = sessionNow();
     try {
       await store.track(() => api.ldapDeleteMapping(row.id));
+      if (!ours()) return;
       toast(doneFor(t, row.ad_group_dn, t("source.mapRemoved")));
     } catch (err) {
+      if (!ours()) return;
       toast(refusedFor(t, row.ad_group_dn, err), "error");
     } finally {
       if (mounted.current) setRemovingId(null);
     }
-    if (mounted.current) await readMappings();
+    if (mounted.current && ours()) await readMappings();
   }
 
   /** May this desk give `g` as the import's extra group? A group it may not grant is still SHOWN,

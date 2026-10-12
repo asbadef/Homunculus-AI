@@ -17,7 +17,15 @@ import {
 import { FIELD_MAX } from "./limits.js";
 import { SourceTab, chunksOf, markImported, skipReasonKey, testReasonKey } from "./SourceTab.jsx";
 import { AdminScreen, onlyTabs, resetTabs } from "./AdminScreen.jsx";
+import { useSession } from "../../session/SessionProvider.jsx";
 import SOURCE from "../../i18n/strings/source.js";
+
+/** What the shell does when a session ends (LiveApp's phases): the screen goes with it. Without
+ *  this a test that signs out would render the tab with no user, which the app never does. */
+function WhileSignedIn({ children }) {
+  const { user } = useSession();
+  return user ? children : <p>signed-out</p>;
+}
 
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 /** Longer than the live region's announcement delay (`ANNOUNCE_DELAY_MS`). */
@@ -71,7 +79,7 @@ const MAPPED_DN = "CN=YB-Hemsire,OU=Gruplar,DC=sentetik,DC=local";
 async function open({ perms = DESK, groups = GROUPS, catalogue = CATALOGUE, reads, strict = false, setup } = {}) {
   const admin = adminProp({ users: [], groups, catalogue, unassigned: 0, reads });
   const { reload } = admin;
-  const tab = <SourceTab admin={admin} />;
+  const tab = <WhileSignedIn><SourceTab admin={admin} /></WhileSignedIn>;
   const mounted = await mount(strict ? <React.StrictMode>{tab}</React.StrictMode> : tab, {
     access: token({ sub: "u-admin", perms }),
     me: profile({ id: "u-admin", perms }),
@@ -115,7 +123,7 @@ afterEach(() => {
  *  leaving the tab is then what it really is — the frame unmounting it for another. */
 async function openFrame({ setup } = {}) {
   onlyTabs({ users: () => <p>users-tab</p>, source: SourceTab });
-  const mounted = await mount(<AdminScreen />, {
+  const mounted = await mount(<WhileSignedIn><AdminScreen /></WhileSignedIn>, {
     access: token({ sub: "u-admin", perms: DESK }),
     me: profile({ id: "u-admin", perms: DESK }),
     setup: (api) => { ADMIN_READS(api); setup?.(api); },
@@ -435,7 +443,7 @@ describe("the import", () => {
     const { api, reload } = await open();
     api.ldapImport
       .mockImplementationOnce(() => new Promise((resolve) => { releaseFirst = resolve; }))
-      .mockResolvedValue(answer());
+      .mockResolvedValue(answer([importedRow(3)]));
     // The extra-group choice only exists once there are results to import, so it is set inside
     // the helper's flow rather than before the search.
     await chooseAndImport(api, 3, (count) => {
@@ -444,11 +452,49 @@ describe("the import", () => {
     });
     expect(api.ldapImport).toHaveBeenCalledTimes(1);                 // the second waits for the first
     expect(api.ldapImport.mock.calls[0]).toEqual([[guid(1), guid(2)], [NURSE_GROUP.id]]);
-    await act(async () => { releaseFirst(answer()); await settle(); });
+    await act(async () => { releaseFirst(answer([importedRow(1), importedRow(2)])); await settle(); });
     expect(api.ldapImport).toHaveBeenCalledTimes(2);                 // 3 accounts, chunks of 2
     expect(api.ldapImport.mock.calls[1]).toEqual([[guid(3)], [NURSE_GROUP.id]]);
-    expectConfirmed(new RegExp(`${HOST} · 0 hesab idxal olundu, 0 hesab buraxıldı\\.`));
-    expect(reload).toHaveBeenCalled();
+    expectConfirmed(new RegExp(`${HOST} · 3 hesab idxal olundu, 0 hesab buraxıldı\\.`));
+    expect(reload).toHaveBeenCalled();                               // the accounts exist now
+  });
+
+  it("a run a later chunk failed still reads the frame's lists again — the accounts that landed exist", async () => {
+    // Review N2: chunk 1 landed, chunk 2 was refused, and the users list was never re-read, so the
+    // users tab did not show two accounts that now exist.
+    const { api, reload } = await open();
+    api.ldapImport
+      .mockResolvedValueOnce(answer([importedRow(1), importedRow(2)]))
+      .mockRejectedValueOnce(refusal(503, "Dizin sunucusuna ulaşılamıyor"));
+    await chooseAndImport(api, 4);
+    expect(alerts()).toMatch(/hs\.sintetik3, hs\.sintetik4: /);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("a run whose session ended sends no further chunk and says nothing into the next one", async () => {
+    // Review N1: after a sign-out the chunk in flight still answered 200 (`authedOnce` checks the
+    // session only on a 401), and the loop sent the next chunk with whatever token storage held —
+    // a 401 that ends the next sign-in, or accounts created in another hospital under another name.
+    let release;
+    const { api, store } = await openFrame({ setup: (a) => {
+      a.ldapSearch.mockResolvedValue([1, 2, 3, 4].map((n) => ldapUser(n)));
+      a.ldapImport.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }))
+        .mockResolvedValue(answer([importedRow(3), importedRow(4)]));
+    } });
+    await searchFor();
+    for (const n of [1, 2, 3, 4]) fireEvent.click(screen.getByRole("checkbox", { name: `hs.sintetik${n}` }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Seçilənləri idxal et (4)" })); });
+    // The session ends; the shell takes the screen with it.
+    const epoch = store.epoch();
+    await act(async () => { store.signOut(); await settle(); });
+    expect(store.epoch()).not.toBe(epoch);
+    expect(screen.getByText("signed-out")).toBeInTheDocument();
+    const usersRead = api.adminUsers.mock.calls.length;
+    await act(async () => { release(answer([importedRow(1), importedRow(2)])); await settle(); await settle(); });
+    expect(api.ldapImport).toHaveBeenCalledTimes(1);                 // chunk 2 never goes out
+    expect(screen.queryByText(/hesab idxal olundu/)).toBeNull();     // no outcome said
+    expect(alerts().trim()).toBe("");                                // and no refusal either
+    expect(api.adminUsers.mock.calls.length).toBe(usersRead);        // no reload into the next session
   });
 
   it("lists every group as the extra group — one this desk may not grant is shown disabled, with its reason, never hidden", async () => {
@@ -795,6 +841,22 @@ describe("the group mapping", () => {
     const table = screen.getByRole("table", { name: "AD qrupu və qarşılığı" });
     expect(within(table).queryByRole("rowheader", { name: /CN=YB-Hemsire/ })).toBeNull();
     expect(within(table).getByRole("rowheader", { name: /CN=YB-Hekim/ })).toBeInTheDocument();
+  });
+
+  it("a mapping write that answers after the session ended says nothing and reads nothing into the next one", async () => {
+    // The import's guard, on the other write that toasts after an await (review N1's sibling).
+    let release;
+    const { api, store } = await open({ setup: (a) => {
+      a.ldapDeleteMapping.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Uyğunlaşdırmanı sil: CN=YB-Hemsire/ })); });
+    const reads = api.ldapMappings.mock.calls.length;
+    await act(async () => { store.signOut(); await settle(); });
+    expect(screen.getByText("signed-out")).toBeInTheDocument();
+    await act(async () => { release(null); await settle(); await settle(); });
+    expect(screen.queryByText(/Uyğunlaşdırma silindi/)).toBeNull();
+    expect(alerts().trim()).toBe("");
+    expect(api.ldapMappings.mock.calls.length).toBe(reads);
   });
 
   it("while one row's delete is out, every delete says busy and a second press sends nothing", async () => {
