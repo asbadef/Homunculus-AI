@@ -647,6 +647,41 @@ describe("creating and deleting a group", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(reload).toHaveBeenCalled();
   });
+
+  // A dropped connection (fetch() rejecting with no response) is no answer, not a refusal: the
+  // request may have reached the engine before the line went (refusal.js `mayHaveLanded`).
+  const DROPPED = "Serverə qoşulmaq mümkün olmadı. Şəbəkə bağlantınızı yoxlayın.";
+  const MAY_HAVE = "Dəyişiklik yenə də tətbiq olunmuş ola bilər: yenidən cəhd etməzdən əvvəl yoxlayın.";
+
+  it("a delete whose connection dropped is not called refused: it may have gone through, the dialog closes, and the groups are read again", async () => {
+    // A dialog left open over a group the engine may already have deleted asks to delete it again;
+    // the re-read decides whether its column is still there.
+    const { api, reload } = await open({ groups: EMPTY });
+    api.adminDeleteGroup.mockRejectedValue(new TypeError("Failed to fetch"));
+    await act(async () => { fireEvent.click(within(column(/Gece ekibi/)).getByRole("button", { name: "Qrupu sil: Gece ekibi" })); });
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Qrupu sil" }));
+      await settle();
+    });
+    expect(alerts()).toContain(`Gece ekibi: ${DROPPED} ${MAY_HAVE}`);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("a new group whose connection dropped may have been created: it says so, and the groups are read again behind the form", async () => {
+    const { api, reload } = await open();
+    api.adminCreateGroup.mockRejectedValue(new TypeError("Failed to fetch"));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni qrup" })); });
+    const form = within(screen.getByRole("dialog"));
+    fireEvent.change(form.getByLabelText(/Qısa ad/), { target: { value: "gece_ekibi" } });
+    fireEvent.change(form.getByLabelText(/Görünən ad/), { target: { value: "Gecə ekibi" } });
+    await act(async () => { fireEvent.click(form.getByRole("button", { name: "Qrupu yarat" })); await settle(); });
+    expect(alerts()).toContain(`Gecə ekibi: ${DROPPED} ${MAY_HAVE}`);
+    expect(reload).toHaveBeenCalledTimes(1);
+    // The form stays, with what she typed: if the first press landed, a second one is answered
+    // "this short name is taken", on the field — which is the check the toast asks for.
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
 });
 
 describe("accessibility", () => {

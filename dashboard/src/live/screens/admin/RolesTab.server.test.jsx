@@ -217,6 +217,47 @@ describe("against a server with state", () => {
     expect(within(column(/Gece ekibi/)).getByText(`1 ${PENDING}`)).toBeInTheDocument();
   });
 
+  // A dropped connection (fetch() rejecting with no response) is no answer, not a refusal: the
+  // PATCH may have reached the engine before the line went (refusal.js `mayHaveLanded`).
+  const DROPPED = "Serverə qoşulmaq mümkün olmadı. Şəbəkə bağlantınızı yoxlayın.";
+  const MAY_HAVE = "Dəyişiklik yenə də tətbiq olunmuş ola bilər: yenidən cəhd etməzdən əvvəl yoxlayın.";
+
+  it("a Save whose connection dropped AFTER the server took it says it may have gone through, re-reads the column, and shows what the server holds", async () => {
+    const { api, held } = await openLive();
+    const server = api.adminUpdateGroup.getMockImplementation();
+    api.adminUpdateGroup.mockImplementation(async (id, body) => {
+      await server(id, body);                                            // it lands…
+      throw new TypeError("Failed to fetch");                            // …and the answer is lost
+    });
+    fireEvent.click(cell("Hemşire", AZ.users.manage));
+    const reads = api.adminGroups.mock.calls.length;
+    await saveIn(/Hemşire/);
+    expect(held(NURSE_GROUP.id)).toEqual(["alerts.ack", "board.view", "users.manage"]);
+    expect(alerts()).toContain(`Hemşire: ${DROPPED} ${MAY_HAVE}`);
+    // Re-read, not assumed either way: the column is the server's, the tick is what it holds now,
+    // and there is nothing left to save — never "1 change pending" about a right already granted.
+    expect(api.adminGroups.mock.calls.length).toBeGreaterThan(reads);
+    expect(cell("Hemşire", AZ.users.manage)).toBeChecked();
+    expect(screen.queryByText(`1 ${PENDING}`)).toBeNull();
+    expect(within(column(/Hemşire/)).queryByRole("button", { name: "Yadda saxla" })).toBeNull();
+    // Not a 409's sentence: nobody else changed the group.
+    expect(notes()).not.toMatch(/başqası tərəfindən dəyişdirildi/);
+  });
+
+  it("a Save whose connection dropped BEFORE the server took it re-reads the column too, and keeps the ticks to save again", async () => {
+    const { api, held } = await openLive();
+    api.adminUpdateGroup.mockRejectedValue(new TypeError("Failed to fetch"));
+    fireEvent.click(cell("Hemşire", AZ.users.manage));
+    const reads = api.adminGroups.mock.calls.length;
+    await saveIn(/Hemşire/);
+    expect(sorted(held(NURSE_GROUP.id))).toEqual(["alerts.ack", "board.view"]);       // nothing taken
+    expect(alerts()).toContain(`Hemşire: ${DROPPED} ${MAY_HAVE}`);
+    expect(api.adminGroups.mock.calls.length).toBeGreaterThan(reads);
+    expect(cell("Hemşire", AZ.users.manage)).toBeChecked();
+    expect(within(column(/Hemşire/)).getByText(`1 ${PENDING}`)).toBeInTheDocument();
+    expect(within(column(/Hemşire/)).getByRole("button", { name: "Yadda saxla" })).not.toHaveAttribute("aria-busy");
+  });
+
   it("P3 a cell granting a right this desk does not hold is not offered as editable", async () => {
     await openLive({ desk: ["groups.manage", "board.view"], groups: [WARD_GROUP] });
     expect(cell("Gece ekibi", AZ.users.manage)).toHaveAttribute("aria-disabled", "true");

@@ -61,7 +61,15 @@
 //
 // A READ THAT TIMED OUT SAYS NOTHING WAS READ. The status, the mapping table and the two searches
 // are reads, and their failures go through `readErrorText`: `errors.requestTimeout`'s "it may have
-// happened" is the right warning for a write (the import, a mapping) and false for a read.
+// happened" is the right warning for a write (the import, a mapping) and false for a read. The
+// connection TEST is worded as a read too: it changes nothing anyone must check before repeating
+// it, and repeating it is the remedy.
+//
+// A WRITE WITH NO ANSWER IS NOT A REFUSAL (`refusal.mayHaveLanded`, the one rule of all three
+// tabs): a timeout, a dropped connection or a server that could not answer may come after the
+// engine committed. The toast says it may have gone through (`refusedFor`), and what the write
+// touched is read again — the mapping table after every mapping write, the frame's lists after an
+// import chunk that may have landed.
 //
 // THE REVIEW ROUND (G1-14 quality review, P1–P7), each held by a test in SourceTab.test.jsx:
 //   * The import OUTLIVES the tab. She chose those accounts; leaving for another tab mid-run must
@@ -74,8 +82,9 @@
 //   * An import and a search hold each other, both ways: a search answering under an import
 //     redraws the rows the import is marking, and an import started under a search has its marks
 //     overwritten by an answer the server gave before the import. The held button says busy.
-//   * A chunk that TIMED OUT may have landed, so its note says so (`source.importChunkUnknown`)
-//     and agrees with the toast's "may have happened" — never "could not be sent".
+//   * A chunk with NO ANSWER (`mayHaveLanded`: timed out, connection dropped, server could not
+//     answer) may have landed, so its note says so (`source.importChunkUnknown`) and agrees with
+//     the toast's "may have gone through" — never "could not be sent".
 //   * The DN picker forgets its choice whenever a group search starts or answers, and the add
 //     maps only a DN the picker is SHOWING: a choice from an earlier answer, invisible behind "—",
 //     was mapped by the first version.
@@ -90,7 +99,7 @@
 //     (a natively disabled field drops focus to <body>), and a Retry keeps its button, busy, until
 //     the read answers, then hands focus to its section once the failure has gone.
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { apiErrorKey, readErrorText } from "../../apiErrors.js";
+import { readErrorText } from "../../apiErrors.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { LDAP_IMPORT_CHUNK, LDAP_IMPORT_MAX, LDAP_SEARCH_CAP } from "../../../backendApi.js";
@@ -98,7 +107,7 @@ import { Announce, Box, Button, Empty, Field, Input, KV, KVList, Note, Pill, Sel
 import { ddmmyyyy, hhmm } from "../../i18n/dates.js";
 import { FIELD_MAX, FIELD_MIN, lengthOf } from "./limits.js";
 import { canGrant, canMapGroups } from "./rules.js";
-import { doneFor, refusedFor } from "./refusal.js";
+import { doneFor, mayHaveLanded, refusedFor } from "./refusal.js";
 
 /** The five reasons `POST /admin/ldap/test` can give, each as a sentence that says what to check. */
 const TEST_REASON = {
@@ -283,7 +292,10 @@ export function SourceTab({ admin }) {
     } catch (err) {
       if (!ours()) return;
       // No stale result beside a refusal: the previous answer was cleared when the test began.
-      toast(refusedFor(t, status?.url_host ?? "", err), "error");
+      // Worded as a READ's failure (`readErrorText`): the test is a probe, it changes nothing an
+      // administrator must check before repeating it, and repeating it is the remedy — a write's
+      // "it may have gone through, check first" would send her looking for a change that is not.
+      toast(refusedFor(t, status?.url_host ?? "", readErrorText(t, err)), "error");
     } finally {
       if (mounted.current) setTesting(false);
     }
@@ -344,6 +356,7 @@ export function SourceTab({ admin }) {
     const skipped = [];
     let done = 0;
     let out = null;                      // the chunk in flight, so a failure can name its accounts
+    let unknown = false;                 // whether the chunk that failed may have landed
     try {
       for (const chunk of chunks) {
         if (!ours()) return;             // never sent under a session that is not the one that chose it
@@ -366,9 +379,10 @@ export function SourceTab({ admin }) {
     } catch (err) {
       if (!ours()) return;
       const names = (out ?? []).map((id) => usernames.get(id) ?? id).join(", ");
-      // A timeout may have landed: the note must not say "could not be sent" beside a toast that
-      // says the operation may have happened. Recognised by its key, never by a status.
-      const unknown = apiErrorKey(err)?.key === "errors.requestTimeout";
+      // A chunk with no answer — a timeout, a dropped connection, a proxy's 502/504 — may have
+      // landed: the note must not say "could not be sent" beside a toast that says the operation
+      // may have gone through. `mayHaveLanded` decides, by key, as it does for every tab.
+      unknown = mayHaveLanded(err);
       if (mounted.current) {
         setReport({ imported, skipped });
         setChunkFailed({ names, unknown });
@@ -380,9 +394,10 @@ export function SourceTab({ admin }) {
         setImporting(false);
       }
     }
-    // Whatever accounts landed exist now — a run a later chunk failed included — so the frame's
-    // lists are read again (it guards its own unmount). Not into a session that is not this one.
-    if (imported.length > 0 && ours()) await admin.reload();
+    // Whatever accounts landed exist now — a run a later chunk failed included, and a chunk that
+    // may have landed — so the frame's lists are read again (it guards its own unmount). Not into
+    // a session that is not this one.
+    if ((imported.length > 0 || unknown) && ours()) await admin.reload();
   }
 
   async function searchAdGroups(event) {
@@ -602,7 +617,7 @@ export function SourceTab({ admin }) {
               ) : null}
               {/* A Note, not an Alert: the chunk's refusal was announced once, on the toast, named
                   by its accounts; this is the visible explanation of what stays chosen and why a
-                  retry is safe — or, for a chunk that timed out, that it may have landed. */}
+                  retry is safe — or, for a chunk with no answer, that it may have landed. */}
               {chunkFailed ? (
                 <Note tone="warn" icon="swap" className="mt-2">
                   {t(chunkFailed.unknown ? "source.importChunkUnknown" : "source.importChunkFailed", { names: chunkFailed.names })}

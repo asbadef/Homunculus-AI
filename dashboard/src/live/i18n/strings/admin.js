@@ -22,6 +22,10 @@ export default {
     // (screens/admin/refusal.js). Punctuation only: the words come from the two halves.
     refusedFor: "{subject}: {reason}",
     doneFor: "{subject} · {text}",
+    // Added after the reason of a WRITE that got no answer — a dropped connection, a server that
+    // could not answer (refusal.js `mayHaveLanded`). Not after a timeout: errors.requestTimeout
+    // says it already. Never after a read's failure: nothing lands when a list is not read.
+    mayHaveLanded: "Değişiklik yine de uygulanmış olabilir: yeniden denemeden önce kontrol edin.",
     // A busy control reads only "unavailable" to a screen reader; the words that say WHICH
     // account, group or row is in flight come from an Announce region, named after its subject.
     savingFor: "{subject} · kaydediliyor…",
@@ -173,6 +177,7 @@ export default {
     // (screens/admin/refusal.js). Punctuation only: the words come from the two halves.
     refusedFor: "{subject}: {reason}",
     doneFor: "{subject} · {text}",
+    mayHaveLanded: "Dəyişiklik yenə də tətbiq olunmuş ola bilər: yenidən cəhd etməzdən əvvəl yoxlayın.",
     // A busy control reads only "unavailable" to a screen reader; the words that say WHICH
     // account, group or row is in flight come from an Announce region, named after its subject.
     savingFor: "{subject} · yadda saxlanılır…",
@@ -312,6 +317,7 @@ export default {
     // (screens/admin/refusal.js). Punctuation only: the words come from the two halves.
     refusedFor: "{subject}: {reason}",
     doneFor: "{subject} · {text}",
+    mayHaveLanded: "Изменение всё же могло быть применено: проверьте, прежде чем повторять.",
     // A busy control reads only "unavailable" to a screen reader; the words that say WHICH
     // account, group or row is in flight come from an Announce region, named after its subject.
     savingFor: "{subject} · сохраняется…",
@@ -451,6 +457,7 @@ export default {
     // (screens/admin/refusal.js). Punctuation only: the words come from the two halves.
     refusedFor: "{subject}: {reason}",
     doneFor: "{subject} · {text}",
+    mayHaveLanded: "The change may still have gone through: check before trying again.",
     // A busy control reads only "unavailable" to a screen reader; the words that say WHICH
     // account, group or row is in flight come from an Announce region, named after its subject.
     savingFor: "{subject} · saving…",

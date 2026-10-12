@@ -107,6 +107,11 @@ const addMapping = async () => {
 const alerts = () => screen.getAllByRole("alert").map((a) => a.textContent).join(" ");
 const notes = () => screen.queryAllByRole("note").map((n) => n.textContent).join(" ");
 const statuses = () => screen.getAllByRole("status").map((s) => s.textContent).join(" ");
+/** fetch() rejecting with no response — no answer, not a refusal: a WRITE sent that way may have
+ *  reached the engine before the line went (refusal.js `mayHaveLanded`). */
+const dropped = () => new TypeError("Failed to fetch");
+const DROPPED = "Serverə qoşulmaq mümkün olmadı. Şəbəkə bağlantınızı yoxlayın.";
+const MAY_HAVE = "Dəyişiklik yenə də tətbiq olunmuş ola bilər: yenidən cəhd etməzdən əvvəl yoxlayın.";
 
 /** What a write that LANDED must look like to the administrator: the confirmation, and no alert. */
 function expectConfirmed(text) {
@@ -275,6 +280,16 @@ describe("the status", () => {
     expect(notes()).not.toMatch(/xidmət hesabı doğrulandı/);
     expect(alerts()).toContain(HOST);                              // the refusal names the host
     expect(alerts()).toMatch(/kataloq serverinə/);
+  });
+
+  it("a test with no answer is a probe that returned nothing — never \"the operation may have happened, check first\"", async () => {
+    // The test changes nothing an administrator must check before repeating it; repeating it is
+    // the remedy. So its failure is worded as a read's (`readErrorText`), not as a write's.
+    const { api } = await open();
+    api.ldapTest.mockRejectedValue(Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" }));
+    await runTest();
+    expect(alerts()).toContain(`${HOST}: Server vaxtında cavab vermədi; heç nə oxunmadı.`);
+    expect(alerts()).not.toMatch(/yerinə yetirilmiş ola bilər|tətbiq olunmuş ola bilər/);
   });
 
   it("announces the test's result only until the next operation starts — never again after a refused search", async () => {
@@ -668,8 +683,22 @@ describe("the import", () => {
     await chooseAndImport(api, 2);
     expect(alerts()).toMatch(/hs\.sintetik1, hs\.sintetik2: Server cavab vermədi\. Əməliyyat yerinə yetirilmiş ola bilər/);
     // Review P5: the chunk may have landed, so the note may not claim it was not sent.
-    expect(notes()).toMatch(/hs\.sintetik1, hs\.sintetik2: server vaxtında cavab vermədi; bu hesablar idxal olunmuş da ola bilər/);
+    expect(notes()).toMatch(/hs\.sintetik1, hs\.sintetik2: serverdən cavab alınmadı; bu hesablar idxal olunmuş da ola bilər/);
     expect(notes()).not.toMatch(/göndərilə bilmədi/);
+  });
+
+  it("a chunk whose connection DROPPED may have landed too: the toast and the note agree, and the frame's lists are read again", async () => {
+    // Not only a timeout: fetch() rejecting with no response, or a proxy's 502/504, can come after
+    // the engine created the accounts. "Could not connect" alone, beside "could not be sent", told
+    // her nothing had happened.
+    const { api, reload } = await open();
+    api.ldapImport.mockRejectedValue(dropped());
+    await chooseAndImport(api, 2);
+    expect(alerts()).toContain(`hs.sintetik1, hs.sintetik2: ${DROPPED} ${MAY_HAVE}`);
+    expect(notes()).toMatch(/hs\.sintetik1, hs\.sintetik2: serverdən cavab alınmadı; bu hesablar idxal olunmuş da ola bilər/);
+    expect(notes()).not.toMatch(/göndərilə bilmədi/);
+    // The accounts may exist now, so the users list is read again — as after a chunk that landed.
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it("a run the administrator leaves mid-way still sends every chunk, and its outcome reaches the toast", async () => {
@@ -833,6 +862,32 @@ describe("the group mapping", () => {
     await addMapping();
     expect(alerts()).toContain("YB-Hemsire");
     expect(alerts()).toMatch(/Bu AD qrupu bu qrupa artıq uyğunlaşdırılıb/);
+  });
+
+  it("a mapping whose connection dropped is not called refused: it may have gone through, and the table read back shows what the server took", async () => {
+    const { api } = await open({ setup: (a) => { mappingServer(a, []); } });
+    const take = api.ldapCreateMapping.getMockImplementation();
+    api.ldapCreateMapping.mockImplementation(async (dn, groupId) => {
+      await take(dn, groupId);                                       // it lands…
+      throw dropped();                                               // …and the answer is lost
+    });
+    await addMapping();
+    expect(alerts()).toContain(`YB-Hemsire: ${DROPPED} ${MAY_HAVE}`);
+    const table = screen.getByRole("table", { name: "AD qrupu və qarşılığı" });
+    expect(within(table).getByRole("rowheader", { name: /CN=YB-Hemsire/ })).toBeInTheDocument();
+  });
+
+  it("a mapping delete whose connection dropped says it may have gone through, and the table read back decides", async () => {
+    const { api } = await open({ setup: (a) => { mappingServer(a, [mapping()]); } });
+    const drop = api.ldapDeleteMapping.getMockImplementation();
+    api.ldapDeleteMapping.mockImplementation(async (id) => { await drop(id); throw dropped(); });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Uyğunlaşdırmanı sil: CN=YB-Hemsire/ }));
+      await settle();
+    });
+    expect(alerts()).toContain(`${MAPPED_DN}: ${DROPPED} ${MAY_HAVE}`);
+    expect(screen.queryByRole("table", { name: "AD qrupu və qarşılığı" })).toBeNull();
+    expect(screen.getByText("Hələ uyğunlaşdırma yoxdur.")).toBeInTheDocument();
   });
 
   it("a refused mapping write is followed by a re-read: the table shows what the server holds", async () => {

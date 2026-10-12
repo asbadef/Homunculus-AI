@@ -30,6 +30,11 @@
 // so she reviews them against the new state before saving again — and, when the re-read itself
 // failed, says THAT instead, never that the column was re-read.
 //
+// A WRITE WITH NO ANSWER IS NOT A REFUSAL (`refusal.mayHaveLanded`: a timeout, a dropped
+// connection, a server that could not answer). The toast says it may have gone through, and the
+// groups are READ AGAIN — a Save keeps its ticks and its column shows what the server holds, so a
+// Save that landed has nothing left to save; a delete's dialog closes; a new group's form stays.
+//
 // A COLUMN IN FLIGHT IS NOT EDITABLE. While a column's PATCH is out its cells are `aria-disabled`,
 // pointing at the words that name the group being saved: a tick made then could not be in the body
 // already sent, and on success only what was sent is cleared. And a Save is offered only when the
@@ -83,7 +88,7 @@ import { apiErrorKey, fieldRefusals } from "../../apiErrors.js";
 import { hasPerm } from "./catalogue.js";
 import { FIELD_MAX } from "./limits.js";
 import { canGrant, groupFromApi } from "./rules.js";
-import { doneFor, refusedFor } from "./refusal.js";
+import { doneFor, mayHaveLanded, refusedFor } from "./refusal.js";
 
 /** The key of a pending change. */
 const cellKey = (groupId, permission) => `${groupId}|${permission}`;
@@ -244,7 +249,8 @@ export function RolesTab({ admin }) {
     const sent = Object.fromEntries(Object.entries(pending).filter(([key]) => key.split("|")[0] === group.id));
     const permissions = listToSend(group, catalogue, pending);
     let reload = false;
-    let conflict = false;
+    // After a 409, or a Save that got no answer, the column is busy until its re-read answers.
+    let reread = false;
     flying(group, "save");
     try {
       const answer = await store.track(() => api.adminUpdateGroup(group.id, {
@@ -280,37 +286,53 @@ export function RolesTab({ admin }) {
         // say so. The Note is not an Alert: the refusal was announced once already, on the toast.
         setReread((was) => new Map(was).set(group.id, lastRead.current));
         reload = true;
-        conflict = true;
+        reread = true;
+      } else if (mayHaveLanded(err)) {
+        // No answer — a timeout, a dropped connection, a server that could not answer — so the
+        // PATCH may have landed, and the toast says it may have gone through. The column is READ
+        // AGAIN, as the users tab does: if it landed, the re-read column holds the ticks and has
+        // nothing left to save; if it did not, the ticks stay pending, to be saved against what
+        // the server holds. Never the 409's Note: nobody else changed the group.
+        reload = true;
+        reread = true;
       }
     } finally {
-      // After a 409 the column stays busy until its re-read answers: until then the only list it
-      // could send as `expected_permissions` is the one the server has just refused.
-      flying(group, conflict ? "reread" : null);
+      // Until the re-read answers the column stays busy: the only list it could send as
+      // `expected_permissions` is the one the server refused, or may no longer hold.
+      flying(group, reread ? "reread" : null);
     }
     // A READ, after the write's own try: its failure is the frame's to show, never this write's.
     if (reload) await admin.reload();
-    if (conflict) flying(group, null);
+    if (reread) flying(group, null);
   }
 
   async function remove(group) {
     if (inFlight.has(group.id)) return;
-    let landed = false;
+    // Whether the groups are read again: after a delete that landed, or one that may have.
+    let reread = false;
     flying(group, "save");
     try {
       await store.track(() => api.adminDeleteGroup(group.id));
       toast(doneFor(t, group.name, t("roles.removed")));
       setRemoving(null);
-      landed = true;
+      reread = true;
     } catch (err) {
       toast(refusedFor(t, group.name, err), "error");
+      // No answer: the group may be gone. The dialog closes rather than offer to delete a group
+      // the engine may no longer hold, and the re-read below decides whether its column stays.
+      if (mayHaveLanded(err)) {
+        setRemoving(null);
+        reread = true;
+      }
     } finally {
       flying(group, null);
     }
-    if (!landed) return;
+    if (!reread) return;
     // A READ, after the write's own try (as in `save`).
     await admin.reload();
     // The column went with the group — its trash button too, which is where the dialog handed the
-    // focus back. The tab's heading takes it rather than <body>.
+    // focus back. The tab's heading takes it rather than <body> (and only then: a column still
+    // there got its trash button's focus back from the dialog).
     setRefocus(TAB);
   }
 
@@ -512,7 +534,13 @@ export function RolesTab({ admin }) {
             setNewGroup(false);
             await admin.reload();
           }}
-          onRefused={(err, name) => toast(refusedFor(t, name, err), "error")}
+          onRefused={(err, name) => {
+            toast(refusedFor(t, name, err), "error");
+            // No answer: the group may exist now, so the columns are read again behind the form.
+            // The form stays: a second press on a group that did land is refused as a taken slug,
+            // on its field — which is the check the toast asks for.
+            if (mayHaveLanded(err)) admin.reload();
+          }}
           onClose={() => setNewGroup(false)}
         />
       ) : null}

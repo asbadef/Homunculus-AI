@@ -3,11 +3,57 @@
 import { describe, it, expect } from "vitest";
 import { DICTIONARIES } from "../../i18n/catalog.js";
 import { createTranslator } from "../../i18n/translate.js";
-import { doneFor, refusedFor } from "./refusal.js";
+import { doneFor, mayHaveLanded, refusedFor } from "./refusal.js";
 
 const az = createTranslator("az", DICTIONARIES);
 const en = createTranslator("en", DICTIONARIES);
 const refusal = (status, message, extra = {}) => Object.assign(new Error(message), { status, ...extra });
+/** The three ways a write gets no answer, as backendApi rejects them: its own timeout (a `code`),
+ *  a 5xx from the proxy in front of the engine, and fetch() rejecting with no response at all. */
+const timedOut = () => Object.assign(new Error("Sunucu yanıt vermedi. İşlem gerçekleşmiş olabilir; listeyi kontrol edip gerekirse tekrar deneyin."), { code: "REQUEST_TIMEOUT" });
+const badGateway = () => refusal(502, "İstek başarısız (502)");
+const dropped = () => new TypeError("Failed to fetch");
+
+describe("mayHaveLanded", () => {
+  it("is true for the three answers that are no answer: a timeout, a server that could not answer, a dropped connection", () => {
+    expect(mayHaveLanded(timedOut())).toBe(true);
+    expect(mayHaveLanded(badGateway())).toBe(true);
+    expect(mayHaveLanded(refusal(504, "<html>Gateway Time-out</html>"))).toBe(true);
+    expect(mayHaveLanded(dropped())).toBe(true);
+    expect(mayHaveLanded(new TypeError("NetworkError when attempting to fetch resource."))).toBe(true);
+    expect(mayHaveLanded(new TypeError("Load failed"))).toBe(true);
+  });
+
+  it("is false for the server's own refusal: it answered, and nothing landed", () => {
+    expect(mayHaveLanded(refusal(403, "Kendi yetkilerinizi aşan bir işlem yapılamaz"))).toBe(false);
+    expect(mayHaveLanded(refusal(422, "username: must not be blank", {
+      fieldErrors: [{ field: "username", type: "value_error", message: "must not be blank" }],
+    }))).toBe(false);
+    expect(mayHaveLanded(refusal(409, "Kayıt aynı anda değiştirildi; lütfen tekrar deneyin"))).toBe(false);
+    // A 5xx that says exactly what went wrong is the engine's answer, not a missing one.
+    expect(mayHaveLanded(refusal(503, "Dizin sunucusuna ulaşılamıyor"))).toBe(false);
+  });
+
+  it("is false for text already in the reader's words — even text that names a dropped connection", () => {
+    // Callers pass a 422's `others`, or a read's `readErrorText`, as a string: words, not a failure.
+    expect(mayHaveLanded("Failed to fetch")).toBe(false);
+    expect(mayHaveLanded(en("errors.network"))).toBe(false);
+    expect(mayHaveLanded(en("errors.requestTimeout"))).toBe(false);
+  });
+
+  it("is false for a superseded request, read BEFORE anything else: its session is gone, and nobody is told", () => {
+    const superseded = (err) => Object.assign(err, { superseded: true, code: "SESSION_SUPERSEDED" });
+    expect(mayHaveLanded(superseded(refusal(401, "Bu istek önceki oturuma aitti; sonucu uygulanmadı.")))).toBe(false);
+    // The flag wins over a status or a message that would otherwise read as "no answer".
+    expect(mayHaveLanded(Object.assign(badGateway(), { superseded: true }))).toBe(false);
+    expect(mayHaveLanded(Object.assign(dropped(), { superseded: true }))).toBe(false);
+  });
+
+  it("is false for nothing at all", () => {
+    expect(mayHaveLanded(null)).toBe(false);
+    expect(mayHaveLanded(undefined)).toBe(false);
+  });
+});
 
 describe("refusedFor", () => {
   it("names the account in front of the server's own reason", () => {
@@ -44,6 +90,31 @@ describe("refusedFor", () => {
     // translated. They go to the toast through here, named, rather than nowhere.
     expect(refusedFor(az, "Ayşe Sentetik", "Bir dəfəyə ən çoxu 50 ədəd."))
       .toBe(az("admin.refusedFor", { subject: "Ayşe Sentetik", reason: "Bir dəfəyə ən çoxu 50 ədəd." }));
+  });
+
+  it("a write with no answer says it may have gone through — a dropped connection and a server that could not answer are not refusals", () => {
+    // "Could not connect to the server" alone reads as "nothing happened"; the request may have
+    // reached the engine before the line went, and a proxy's 502 may sit in front of a commit.
+    for (const [err, key] of [[dropped(), "errors.network"], [badGateway(), "errors.serverUnreachable"]]) {
+      expect(refusedFor(en, "Night team", err)).toBe(en("admin.refusedFor", {
+        subject: "Night team", reason: `${en(key)} ${en("admin.mayHaveLanded")}`,
+      }));
+    }
+    expect(refusedFor(az, "", dropped())).toBe(`${az("errors.network")} ${az("admin.mayHaveLanded")}`);
+  });
+
+  it("a timeout says it once: its own sentence already says the operation may have happened", () => {
+    expect(refusedFor(en, "Night team", timedOut()))
+      .toBe(en("admin.refusedFor", { subject: "Night team", reason: en("errors.requestTimeout") }));
+  });
+
+  it("a refusal, and words already said, never claim the write may have gone through", () => {
+    expect(refusedFor(en, "Night team", refusal(403, "Kendi yetkilerinizi aşan bir işlem yapılamaz")))
+      .not.toContain(en("admin.mayHaveLanded"));
+    // A READ's failure reaches here as `readErrorText`'s words: a read never "may have gone through".
+    expect(refusedFor(en, "sintetik", en("errors.network"))).toBe(en("admin.refusedFor", {
+      subject: "sintetik", reason: en("errors.network"),
+    }));
   });
 });
 

@@ -67,9 +67,10 @@ export default {
     importProgress: "{done} / {total} hesap gönderildi…",
     importDone: "{imported} hesap aktarıldı, {skipped} hesap atlandı.",
     importChunkFailed: "{names}: gönderilemedi; bu hesaplar hâlâ seçili. İçe aktarma yinelenebilir, tekrar denemek zararsızdır.",
-    // A chunk that TIMED OUT may have landed: "could not be sent" would be a claim the screen
-    // cannot make, beside a toast that says the operation may have happened.
-    importChunkUnknown: "{names}: sunucu zamanında yanıt vermedi; bu hesaplar aktarılmış da olabilir, aktarılmamış da. Görmek için yeniden arayın; tekrar denemek zararsızdır, zaten aktarılmış bir hesap atlanır.",
+    // A chunk that got NO ANSWER — timed out, connection dropped, server could not answer
+    // (refusal.js `mayHaveLanded`) — may have landed: "could not be sent" would be a claim the
+    // screen cannot make, beside a toast that says the operation may have gone through.
+    importChunkUnknown: "{names}: sunucudan yanıt alınamadı; bu hesaplar aktarılmış da olabilir, aktarılmamış da. Görmek için yeniden arayın; tekrar denemek zararsızdır, zaten aktarılmış bir hesap atlanır.",
     importedTitle: "Aktarılanlar",
     skippedTitle: "Atlananlar",
     // the seven skip reasons (ldap_service SKIP_*)
@@ -151,7 +152,7 @@ export default {
     importProgress: "{done} / {total} hesab göndərildi…",
     importDone: "{imported} hesab idxal olundu, {skipped} hesab buraxıldı.",
     importChunkFailed: "{names}: göndərilə bilmədi; bu hesablar hələ seçilidir. İdxal təkrarlana bilər, yenidən cəhd zərərsizdir.",
-    importChunkUnknown: "{names}: server vaxtında cavab vermədi; bu hesablar idxal olunmuş da ola bilər, olunmamış da. Görmək üçün yenidən axtarın; yenidən cəhd zərərsizdir, artıq idxal olunmuş hesab buraxılır.",
+    importChunkUnknown: "{names}: serverdən cavab alınmadı; bu hesablar idxal olunmuş da ola bilər, olunmamış da. Görmək üçün yenidən axtarın; yenidən cəhd zərərsizdir, artıq idxal olunmuş hesab buraxılır.",
     importedTitle: "İdxal olunanlar",
     skippedTitle: "Buraxılanlar",
     skipExists: "bu kataloq hesabı üçün artıq hesab var (başqa təşkilatda da ola bilər)",
@@ -229,7 +230,7 @@ export default {
     importProgress: "Отправлено {done} из {total} записей…",
     importDone: "Импортировано записей: {imported}; пропущено: {skipped}.",
     importChunkFailed: "{names}: отправить не удалось; эти записи по-прежнему выбраны. Импорт идемпотентен, повтор безопасен.",
-    importChunkUnknown: "{names}: сервер не ответил вовремя; эти записи могли быть импортированы, а могли и нет. Чтобы проверить, повторите поиск; повтор безопасен — уже импортированная запись будет пропущена.",
+    importChunkUnknown: "{names}: ответ от сервера не получен; эти записи могли быть импортированы, а могли и нет. Чтобы проверить, повторите поиск; повтор безопасен — уже импортированная запись будет пропущена.",
     importedTitle: "Импортированные",
     skippedTitle: "Пропущенные",
     skipExists: "для этой записи каталога уже есть учётная запись (возможно, в другой организации)",
@@ -307,7 +308,7 @@ export default {
     importProgress: "{done} of {total} accounts sent…",
     importDone: "{imported} accounts imported, {skipped} skipped.",
     importChunkFailed: "{names}: could not be sent; these accounts are still chosen. The import is idempotent, so trying again costs nothing.",
-    importChunkUnknown: "{names}: the server did not answer in time; these accounts may or may not have been imported. Search again to see; trying again is harmless, an account already imported is skipped.",
+    importChunkUnknown: "{names}: no answer came back from the server; these accounts may or may not have been imported. Search again to see; trying again is harmless, an account already imported is skipped.",
     importedTitle: "Imported",
     skippedTitle: "Skipped",
     skipExists: "an account for this directory user already exists (possibly in another hospital)",

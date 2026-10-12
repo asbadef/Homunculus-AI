@@ -49,9 +49,9 @@ import { PASSWORD_MIN } from "../../auth/passwordRules.js";
 import { norm } from "../beds/order.js";
 import { FIELD_MAX, lengthOf } from "./limits.js";
 import { canAssignScope, canManageUser, scopeFromApi, scopeKind } from "./rules.js";
-import { doneFor, refusedFor } from "./refusal.js";
+import { doneFor, mayHaveLanded, refusedFor } from "./refusal.js";
 import { UserForm } from "./UserForm.jsx";
-import { ScopeEditor, mayHaveLanded } from "./ScopeEditor.jsx";
+import { ScopeEditor } from "./ScopeEditor.jsx";
 
 /** How many rows are rendered before "show more". Not a page of data — the whole list is already
  *  here — only a bound on one commit's DOM. */
@@ -153,7 +153,9 @@ export function UsersTab({ admin }) {
 
   /** Every write goes through this: the session's `track` (so a refused refresh ends the session
    *  here too), the toast named after the account, and a reload — the screen then shows what the
-   *  server holds rather than what it hoped. All of it only while the session that asked lasts. */
+   *  server holds rather than what it hoped. A write with no answer may have landed
+   *  (`mayHaveLanded`): the toast says so, and the list is reloaded then too. All of it only while
+   *  the session that asked lasts. */
   const write = useCallback(async (user, run, doneText) => {
     if (busyId) return false;
     setBusyId(user.id);
@@ -166,7 +168,9 @@ export function UsersTab({ admin }) {
       await admin.reload();
       return true;
     } catch (err) {
-      if (ours()) toast(refusedFor(t, user.fullName || user.username, err), "error");
+      if (!ours()) return false;
+      toast(refusedFor(t, user.fullName || user.username, err), "error");
+      if (mayHaveLanded(err)) await admin.reload();
       return false;
     } finally {
       setBusyId(null);
@@ -235,10 +239,11 @@ export function UsersTab({ admin }) {
     });
   }, []);
 
-  /** The form's write. A NEW account is one call. An EDIT is at most two, and each is sent only
-   *  when it changes something (`UserForm`: the details that differ from what the form opened
-   *  with; the memberships only when they differ, with the ones it opened with as
-   *  `expected_group_ids`) — `PATCH /admin/users/{id}` and `PUT /admin/users/{id}/groups`. No
+  /** The form's write. A NEW account is one call — and one that got no answer may have created the
+   *  account (`mayHaveLanded`), so the list behind the form is read again. An EDIT is at most two,
+   *  and each is sent only when it changes something (`UserForm`: the details that differ from
+   *  what the form opened with; the memberships only when they differ, with the ones it opened
+   *  with as `expected_group_ids`) — `PATCH /admin/users/{id}` and `PUT /admin/users/{id}/groups`. No
    *  endpoint takes both, so they go IN SEQUENCE, never at once: the groups are not sent when the
    *  details were refused, and when the details LANDED and the groups were refused, the account on
    *  the server has changed — so the list is reloaded, and the refusal says which half landed. A
@@ -255,8 +260,16 @@ export function UsersTab({ admin }) {
    *  The form is told which half landed, to keep its own baseline true: `detailsLanded` (the
    *  details are now the server's) and `detailsUnknown` (a details write with no answer). */
   const saveUser = async (body) => {
-    if (open.kind !== "edit") return store.track(() => api.adminCreateUser(body));
     const ours = sessionNow();
+    if (open.kind !== "edit") {
+      try {
+        return await store.track(() => api.adminCreateUser(body));
+      } catch (err) {
+        // No answer: the account may exist now, so the list behind the form is read again.
+        if (mayHaveLanded(err) && ours()) await admin.reload();
+        throw err;
+      }
+    }
     const id = open.user.id;
     const { details, groupIds, expectedGroupIds } = body;
     const refresh = async () => {

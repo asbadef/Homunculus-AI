@@ -45,15 +45,15 @@
 // show the old list as her access when the new one may be in force — the same over-claim the
 // rollback exists to prevent, the other way round. So that case is not rolled back: the scope is
 // READ BACK, the list becomes what the engine holds, and the screen says the save may or may not
-// have landed (`mayHaveLanded`).
+// have landed (`mayHaveLanded`, the one copy all three tabs read: `refusal.js`).
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
-import { apiErrorKey } from "../../apiErrors.js";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { Announce, Button, Field, Input, Modal, Note, Table } from "../../ui/index.js";
 import { boardKnown } from "../common/BoardState.jsx";
 import { FIELD_MAX } from "./limits.js";
+import { mayHaveLanded } from "./refusal.js";
 import { scopeKind } from "./rules.js";
 
 /** What an UNASSIGNED account sees until this editor is used — asked only of a scope `scopeKind`
@@ -62,18 +62,6 @@ import { scopeKind } from "./rules.js";
 const unassignedNoteKey = (scope) => (scope.unrestricted === true
   ? "admin.scopeUnassignedOpen"
   : "admin.scopeUnassignedClosed");
-
-/** Did a WRITE fail without an answer — so that it may have landed? Recognised by its key, never
- *  by an HTTP status: a timeout (`errors.requestTimeout`, which itself says "may have happened"),
- *  a server that could not answer (`errors.serverUnreachable`: a 502 from the proxy can come after
- *  the engine committed), and a connection that dropped (`errors.network`: fetch rejected with no
- *  response at all — the request may have reached the engine before the line went). Every other
- *  failure is the server's refusal, and nothing landed. The users tab reads it too, for both
- *  halves of an edit. */
-const NO_ANSWER = new Set(["errors.requestTimeout", "errors.serverUnreachable", "errors.network"]);
-export function mayHaveLanded(err) {
-  return NO_ANSWER.has(apiErrorKey(err)?.key);
-}
 
 /** A grant as this editor holds it: exactly one of the two keys, trimmed. */
 const asGrant = (unitId, bedId) => ({ unitId: unitId || "", bedId: bedId || "" });

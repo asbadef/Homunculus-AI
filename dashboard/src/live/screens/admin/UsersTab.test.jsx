@@ -466,6 +466,22 @@ describe("the form", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
+  it("a new account whose connection dropped may have been created: it says so, and the list is read again behind the form", async () => {
+    // fetch() rejected with no response: the POST may have reached the engine before the line went
+    // (refusal.js `mayHaveLanded`). If it did, a second press is refused as a login already taken,
+    // on its field — the check the toast asks for — and the list behind the form already shows her.
+    const { api, reload } = await openForm();
+    api.adminCreateUser.mockRejectedValue(new TypeError("Failed to fetch"));
+    fireEvent.change(screen.getByLabelText(/Ad soyad/), { target: { value: "Ayşe Sentetik" } });
+    fireEvent.change(screen.getByLabelText(/İstifadəçi adı/), { target: { value: "hs.yeni" } });
+    fireEvent.change(screen.getByLabelText(/Müvəqqəti şifrə/), { target: { value: "gecici-1234" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "İstifadəçini yarat" })); await settle(); });
+    expect(alerts()).toContain("Ayşe Sentetik: Serverə qoşulmaq mümkün olmadı. Şəbəkə bağlantınızı yoxlayın. "
+      + "Dəyişiklik yenə də tətbiq olunmuş ola bilər: yenidən cəhd etməzdən əvvəl yoxlayın.");
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
   it("an edit sends the details and THEN the groups — never both at once — each only as changed, and reads as done", async () => {
     // PATCH (name, e-mail, active) and PUT groups are two writes, and no endpoint takes both. In
     // sequence, so the groups are never sent beside details the server is about to refuse. And each
@@ -593,6 +609,18 @@ describe("the three confirmations and the unlock", () => {
     expect(alerts).toContain("Öz şifrənizi");
     expect(screen.getByRole("dialog")).toBeInTheDocument();      // not dismissed on a refusal
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("a deactivation whose connection dropped is not called refused: it may have gone through, and the list is read again", async () => {
+    // fetch() rejected with no response: the PATCH may have reached the engine before the line went
+    // (refusal.js `mayHaveLanded`), so the row is read again rather than left as it was.
+    const { api, reload } = await open();
+    api.adminUpdateUser.mockRejectedValue(new TypeError("Failed to fetch"));
+    await press(/Passivləşdir: hs\.aygun/);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Passivləşdir" })); await settle(); });
+    expect(alerts()).toContain("Ayşe Sentetik: Serverə qoşulmaq mümkün olmadı. Şəbəkə bağlantınızı yoxlayın. "
+      + "Dəyişiklik yenə də tətbiq olunmuş ola bilər: yenidən cəhd etməzdən əvvəl yoxlayın.");
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 });
 
