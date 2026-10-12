@@ -38,6 +38,17 @@
 //
 // THE USERNAME CANNOT BE EDITED. `UserPatch` has no `username` and the API has no rename; the
 // field is `disabled` on an edit and says so. The roadmap routes renaming to Group 4.
+//
+// AN EDIT SENDS WHAT THE ADMINISTRATOR CHANGED, AND NOTHING ELSE. The form opens on the list as
+// it was last READ, and another desk may have changed the account since. Re-sending every field
+// re-sent that stale copy: fixing a typo in a nurse's name re-activated an account another
+// administrator had just deactivated, and undid groups changed elsewhere — and said "saved". So
+// the details carry only the fields that differ from what the form opened with, and the groups
+// are sent only when the role or the groups differ from the memberships it opened with — and then
+// WITH those memberships (`expected`), so the server can refuse a replacement built on a list
+// that is no longer the one it holds (Task 14e; today's server ignores the field). An account
+// holding more than one role keeps every one of them: the role `<select>` shows the first and the
+// rest are listed, ticked, under it — a second role is not dropped because a select holds one.
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
@@ -64,6 +75,13 @@ export function splitGroups(groups) {
   const of = (kind) => groups.filter((g) => groupKind(g.slug) === kind);
   return { roles: of("role"), extras: of("extra"), others: of("other") };
 }
+
+/** The same set of ids, whatever the order. */
+const sameIds = (a, b) => {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every((id) => right.has(id));
+};
 
 /** One checkbox for a group, disabled with its reason when this desk may not give it. */
 function GroupChoice({ group, checked, grantable, busy, onToggle }) {
@@ -96,9 +114,18 @@ function GroupChoice({ group, checked, grantable, busy, onToggle }) {
  * `onRefused(reason, subject)`, which puts it on the toast named after this account
  * (`refusal.js`). `reason` is the failure itself, or the `others` already in the reader's words;
  * `subject` is the name typed into this form, the only name a NEW account has.
+ *
+ * A NEW account's `submit` gets the `UserCreate` body. An EDIT's gets
+ * `{ details, groupIds, expectedGroupIds }`: `details` is the `UserPatch` body with only the
+ * fields that changed (possibly none); `groupIds` is the new manual membership list, or null when
+ * it did not change; `expectedGroupIds` is the manual list the form opened with, sorted. An edit
+ * that changed nothing sends nothing and closes. `onSaved(subject)` names the account.
+ *
+ * `self`: the account being edited is the session's own — its active state is not offered (the
+ * server refuses it, and the row already says why).
  */
 export function UserForm({
-  user = null, groups = [], catalogue = [], perms = [], submit, onSaved, onRefused, onClose,
+  user = null, self = false, groups = [], catalogue = [], perms = [], submit, onSaved, onRefused, onClose,
 }) {
   const { t } = useI18n();
   const isNew = user === null;
@@ -110,7 +137,12 @@ export function UserForm({
   const [email, setEmail] = useState(isNew ? "" : user.email || "");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState(() => roles.find((g) => held.has(g.id))?.id ?? "");
-  const [chosen, setChosen] = useState(() => new Set([...extras, ...others].filter((g) => held.has(g.id)).map((g) => g.id)));
+  /** Every role the account holds beyond the one the select shows. Fixed at opening: they are
+   *  listed, ticked, so that saving keeps them unless the administrator unticks one. */
+  const [moreRoles] = useState(() => roles.filter((g) => held.has(g.id)).slice(1));
+  const [chosen, setChosen] = useState(() => new Set(
+    [...moreRoles, ...extras, ...others].filter((g) => held.has(g.id)).map((g) => g.id),
+  ));
   const [active, setActive] = useState(isNew ? true : user.active);
   const [refusals, setRefusals] = useState({});
   const [busy, setBusy] = useState(false);
@@ -157,29 +189,53 @@ export function UserForm({
       return;
     }
     setRefusals({});
+    const groupIds = [...new Set([...(role ? [role] : []), ...chosen])];
+    const subject = fullName.trim() || username.trim();
+    let body;
+    if (isNew) {
+      body = { username: username.trim(), email: email.trim() || null, full_name: fullName.trim(), password, group_ids: groupIds };
+    } else {
+      // Only what differs from what the form opened with: the rest may have changed on the server
+      // since, and re-sending the copy this form read would undo that change.
+      const details = {};
+      if (fullName.trim() !== (user.fullName || "").trim()) details.full_name = fullName.trim();
+      // "" clears the e-mail (`UserPatch`), which is what an emptied field means.
+      if (email.trim() !== (user.email || "").trim()) details.email = email.trim();
+      if (!self && active !== user.active) details.is_active = active;
+      const groupsChanged = !sameIds(groupIds, held);
+      if (Object.keys(details).length === 0 && !groupsChanged) {
+        // Nothing to send, and nothing is claimed: the dialog closes as a Cancel does.
+        onClose();
+        return;
+      }
+      body = {
+        details,
+        groupIds: groupsChanged ? groupIds : null,
+        expectedGroupIds: [...held].sort(),
+      };
+    }
     setBusy(true);
-    const groupIds = [...(role ? [role] : []), ...chosen];
-    const body = isNew
-      ? { username: username.trim(), email: email.trim() || null, full_name: fullName.trim(), password, group_ids: groupIds }
-      : { full_name: fullName.trim(), email: email.trim(), is_active: active, group_ids: groupIds };
     try {
       await submit(body);
       // Nothing is kept: the password leaves this component's state in the same turn the dialog
       // closes, and `onSaved` unmounts it.
       setPassword("");
-      if (mounted.current) onSaved();
+      if (mounted.current) onSaved(subject);
     } catch (err) {
-      if (!mounted.current) return;
       // Split between the controls this form draws and everything else (`fieldRefusals`); what no
       // control shows still reaches the administrator, once, on the toast.
       const { fields: named, others } = fieldRefusals(t, err, drawn);
-      const subject = fullName.trim() || username.trim();
+      if (!mounted.current) {
+        // The form is gone (its tab was left mid-write): the toast, which outlives it, is the only
+        // place left to say the refusal at all — the whole of it, fields included.
+        onRefused(err, subject);
+        return;
+      }
       if (Object.keys(named).length > 0) {
-        // The field has to be ENABLED before it can take focus: the controls are `disabled`
-        // while busy, and `focus()` on a disabled element is a no-op in a browser (jsdom is more
-        // lenient, which is how a test could pass while the screen did not). `flushSync` lands
-        // the two state updates in the DOM before the focus call, instead of after this
-        // handler returns.
+        // `flushSync` lands the refusal under its field — and the form out of its busy state —
+        // in the DOM before the focus call, instead of after this handler returns, so the field
+        // the focus reaches already says what is wrong with it (its error is first in its
+        // aria-describedby, which is what a screen reader reads on arrival).
         flushSync(() => {
           setBusy(false);
           setPassword("");
@@ -197,10 +253,12 @@ export function UserForm({
   }
 
   // Every field carries the server's own limit (`limits.FIELD_MAX`, held to admin/schemas.py by its
-  // test): a limit met at the keyboard is a refusal the administrator never has to read.
+  // test): a limit met at the keyboard is a refusal the administrator never has to read. While the
+  // write is out a field is READ-ONLY, not disabled: Enter in a field sends the form, and disabling
+  // the field that has the focus drops it to <body> — the keyboard user's place, lost mid-write.
   const bind = (key) => ({
     ref: (el) => { fields.current[FIELD[key]] = el; },
-    disabled: busy,
+    readOnly: busy,
     maxLength: FIELD_MAX[FIELD[key]],
   });
 
@@ -220,7 +278,9 @@ export function UserForm({
       )}
     >
       <form noValidate onSubmit={onSubmit}>
-        <Announce text={busy ? t("admin.saving") : ""} />
+        {/* Inside the dialog, naming the account: everything outside an open dialog is inert, and
+            an inert live region is dropped from the accessibility tree. */}
+        <Announce text={busy ? t("admin.savingFor", { subject: isNew ? username.trim() : user.username }) : ""} />
         <Field layout="col" required label={t("admin.fieldFullName")} error={refusals.full_name}>
           <Input {...bind("fullName")} value={fullName} onChange={(e) => setFullName(e.target.value)} autoFocus />
         </Field>
@@ -234,7 +294,7 @@ export function UserForm({
           <Input
             {...bind("username")}
             value={username}
-            disabled={busy || !isNew}
+            disabled={!isNew}
             autoComplete="off"
             onChange={(e) => setUsername(e.target.value)}
           />
@@ -270,6 +330,23 @@ export function UserForm({
             ))}
           </Select>
         </Field>
+
+        {moreRoles.length > 0 ? (
+          <fieldset className="mb-2.5 border-0 p-0">
+            <legend className="mb-1 font-text text-13.5 font-semibold text-mute">{t("admin.fieldMoreRoles")}</legend>
+            {moreRoles.map((group) => (
+              <GroupChoice
+                key={group.id}
+                group={group}
+                checked={chosen.has(group.id)}
+                grantable={grantable(group)}
+                busy={busy}
+                onToggle={toggle}
+              />
+            ))}
+            <p className="m-0 text-12 text-mute">{t("admin.fieldMoreRolesHint")}</p>
+          </fieldset>
+        ) : null}
 
         {extras.length > 0 ? (
           <fieldset className="mb-2.5 border-0 p-0">
@@ -311,7 +388,11 @@ export function UserForm({
           </p>
         ) : null}
 
-        {isNew ? null : (
+        {/* Your own account's active state is not offered: the server refuses it, and the row
+            already says so in the same words. A checkbox here would be a control that cannot work. */}
+        {isNew ? null : self ? (
+          <p className="m-0 text-12.5 text-mute">{t("admin.selfNote")}</p>
+        ) : (
           <label className="flex items-center gap-2 font-text text-13.5">
             <input type="checkbox" checked={active} disabled={busy} onChange={(e) => setActive(e.target.checked)} />
             {t("admin.fieldActive")}

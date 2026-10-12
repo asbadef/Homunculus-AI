@@ -14,10 +14,12 @@ import { profile, token } from "../../session/testTokens.testutil.js";
 import { board, entry, identity } from "../../data/board.testutil.js";
 import { PERMISSION_KEYS } from "./catalogue.js";
 import {
-  ADMIN_READS, CATALOGUE, GROUPS, NURSE_GROUP, SYSTEM_GROUP, USERS, adminProp, group, member, scopeView, user,
+  ADMIN_READS, CATALOGUE, GROUPS, NURSE_GROUP, SYSTEM_GROUP, USERS, WARD_GROUP, adminProp, group, member, scopeView, user,
 } from "./admin.testutil.js";
 import { FIELD_MAX } from "./limits.js";
 import { groupFromApi, userFromApi } from "./rules.js";
+import { AdminScreen, onlyTabs, resetTabs } from "./AdminScreen.jsx";
+import ADMIN_STRINGS from "../../i18n/strings/admin.js";
 import { UsersTab, mfaState } from "./UsersTab.jsx";
 
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
@@ -67,7 +69,64 @@ function expectConfirmed(text) {
   expect(screen.getAllByRole("alert").map((a) => a.textContent).join("").trim()).toBe("");
 }
 
+/** A deep copy: what the server holds is never the object the screen was handed. */
+const copy = (value) => JSON.parse(JSON.stringify(value));
+
+/** A server that REMEMBERS (the review round's harness): every read answers what the writes left
+ *  behind, and "another desk" can change it between this screen's read and its write — which a
+ *  `reload` spy cannot show, because the defect was what a stale write did TO THE SERVER. The
+ *  memberships write follows Task 14e's contract (X1): a PUT carrying `expected_group_ids` that
+ *  differ from the manual memberships it would replace is refused, 409 concurrentChange, and
+ *  nothing is written. */
+function rememberingServer(api) {
+  const state = { users: copy(USERS) };
+  const find = (id) => state.users.find((u) => u.id === id);
+  const manual = (u) => u.groups.filter((g) => g.source === "manual").map((g) => g.id).sort();
+  api.adminUsers.mockImplementation(async () => copy(state.users));
+  api.adminUpdateUser.mockImplementation(async (id, patch) => {
+    const row = find(id);
+    if ("full_name" in patch) row.full_name = patch.full_name;
+    if ("email" in patch) row.email = patch.email || null;
+    if ("is_active" in patch) row.is_active = patch.is_active;
+    return copy(row);
+  });
+  api.adminSetUserGroups.mockImplementation(async (id, ids, expected) => {
+    const row = find(id);
+    if (Array.isArray(expected) && [...expected].sort().join() !== manual(row).join()) {
+      throw refusal(409, "Kayıt aynı anda değiştirildi; lütfen tekrar deneyin");
+    }
+    const byId = new Map(GROUPS.map((g) => [g.id, g]));
+    row.groups = [...row.groups.filter((g) => g.source === "directory"), ...ids.map((g) => member(byId.get(g)))];
+    return copy(row);
+  });
+  return state;
+}
+
+/** The tab inside its FRAME — `AdminScreen` and its loader, so a write's reload really re-reads —
+ *  against `rememberingServer`. `tabs` pins this build's tabs (`onlyTabs`). */
+async function openFrame({ tabs = { users: UsersTab }, setup } = {}) {
+  onlyTabs(tabs);
+  let server;
+  const mounted = await mount(<AdminScreen />, {
+    access: token({ sub: "u-admin", perms: DESK }),
+    me: profile({ id: "u-admin", perms: DESK }),
+    setup: (api) => {
+      ADMIN_READS(api);
+      api.boardPatients.mockResolvedValue(board([]));
+      api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+      server = rememberingServer(api);
+      setup?.(api);
+    },
+  });
+  await act(async () => { await settle(); });
+  return { ...mounted, server };
+}
+
+/** Every polite region's text, joined: what a screen reader has been told. */
+const spoken = () => screen.getAllByRole("status").map((s) => s.textContent).join(" ");
+
 afterEach(() => {
+  resetTabs();
   vi.restoreAllMocks();
 });
 
@@ -187,7 +246,8 @@ describe("the list", () => {
   it("says out loud that it loaded the whole hospital once the list is large", async () => {
     const many = Array.from({ length: 200 }, (_, i) => user(`u-${i}`, { username: `hs.s${i}`, full_name: `Sintetik ${i}` }));
     await open({ users: many });
-    expect(screen.getByText(/200 hesabın hamısını bir sorğuda yükləyir/)).toBeInTheDocument();
+    // "xəstəxanadakı", Azerbaijani — not the Turkish "-daki" the first version carried.
+    expect(screen.getByText(/xəstəxanadakı 200 hesabın hamısını bir sorğuda yükləyir/)).toBeInTheDocument();
     // 50 rows at a time, not 200: the slow commit is the first symptom of an unpaginated list.
     expect(screen.getAllByRole("rowheader")).toHaveLength(50);
     fireEvent.click(screen.getByRole("button", { name: "150 sətir daha göstər" }));
@@ -257,7 +317,9 @@ describe("the form", () => {
       username: "hs.yeni", email: "hs.yeni@sentetik.local", full_name: "Ayşe Sentetik",
       password: "gecici-1234", group_ids: [NURSE_GROUP.id, WARD_ID],
     });
-    expectConfirmed(/İstifadəçi yaradıldı\./);
+    // Named, as a refusal is: a confirmation that does not say which account it is about cannot
+    // be told from the one before it.
+    expectConfirmed(/Ayşe Sentetik · İstifadəçi yaradıldı\./);
     expect(reload).toHaveBeenCalled();
   });
 
@@ -326,7 +388,7 @@ describe("the form", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     await act(async () => { release(user("u-new")); await settle(); });
     expect(screen.queryByRole("dialog")).toBeNull();
-    expectConfirmed(/İstifadəçi yaradıldı\./);
+    expectConfirmed(/Ayşe Sentetik · İstifadəçi yaradıldı\./);
     // A PASSWORD IS NEVER IN THE DOM AFTER ITS DIALOG CLOSES — not in a value, not in a title.
     expect(document.body.innerHTML).not.toContain("gecici-1234");
   });
@@ -381,32 +443,39 @@ describe("the form", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
-  it("an edit sends the details and THEN the groups — never both at once — and reads as done", async () => {
+  it("an edit sends the details and THEN the groups — never both at once — each only as changed, and reads as done", async () => {
     // PATCH (name, e-mail, active) and PUT groups are two writes, and no endpoint takes both. In
-    // sequence, so the groups are never sent beside details the server is about to refuse.
+    // sequence, so the groups are never sent beside details the server is about to refuse. And each
+    // carries only what the administrator CHANGED (the review round's C1): the name and not the
+    // untouched e-mail and active flag; the memberships WITH the ones the form opened with, so the
+    // server can refuse a replacement built on a list it no longer holds (Task 14e).
     const { api, reload } = await open();
     let releasePatch;
     api.adminUpdateUser.mockImplementation(() => new Promise((resolve) => { releasePatch = resolve; }));
     api.adminSetUserGroups.mockResolvedValue({ ok: true });
     await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Redaktə et: hs\.aygun/ })[0]); });
     fireEvent.change(screen.getByLabelText(/Ad soyad/), { target: { value: "Ayşe Sentetik-Aygün" } });
+    fireEvent.click(within(screen.getByRole("dialog")).getByLabelText("Gece ekibi"));
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yadda saxla" })); await settle(); });
-    expect(api.adminUpdateUser).toHaveBeenCalledWith("u-nurse", {
-      full_name: "Ayşe Sentetik-Aygün", email: "hs.aygun@sentetik.local", is_active: true,
-    });
+    expect(api.adminUpdateUser).toHaveBeenCalledWith("u-nurse", { full_name: "Ayşe Sentetik-Aygün" });
     expect(api.adminSetUserGroups).not.toHaveBeenCalled();           // not while the details are in flight
     await act(async () => { releasePatch(user("u-nurse", { full_name: "Ayşe Sentetik-Aygün" })); await settle(); });
-    expect(api.adminSetUserGroups).toHaveBeenCalledWith("u-nurse", [NURSE_GROUP.id]);
-    expectConfirmed(/Yadda saxlanıldı\./);
+    expect(api.adminSetUserGroups).toHaveBeenCalledWith("u-nurse", [NURSE_GROUP.id, WARD_ID], [NURSE_GROUP.id]);
+    expectConfirmed(/Ayşe Sentetik-Aygün · Yadda saxlanıldı\./);
     expect(reload).toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("a refused edit sends no groups; groups refused after the details LANDED say which half landed, and reload", async () => {
+    const edit = async () => {
+      await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Redaktə et: hs\.aygun/ })[0]); });
+      fireEvent.change(screen.getByLabelText(/Ad soyad/), { target: { value: "Ayşe Sentetik-Aygün" } });
+      fireEvent.click(within(screen.getByRole("dialog")).getByLabelText("Gece ekibi"));
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yadda saxla" })); await settle(); });
+    };
     const { api, reload } = await open();
     api.adminUpdateUser.mockRejectedValue(refusal(403, "Kendi yetkilerinizi aşan bir işlem yapılamaz: audit.view"));
-    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Redaktə et: hs\.aygun/ })[0]); });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yadda saxla" })); await settle(); });
+    await edit();
     expect(api.adminSetUserGroups).not.toHaveBeenCalled();
     expect(alerts()).toContain("Ayşe Sentetik");
     expect(alerts()).not.toMatch(/yadda saxlanıldı/);                  // nothing landed, and none is claimed
@@ -418,11 +487,10 @@ describe("the form", () => {
     const second = await open();
     second.api.adminUpdateUser.mockResolvedValue(user("u-nurse", { full_name: "Ayşe Sentetik-Aygün" }));
     second.api.adminSetUserGroups.mockRejectedValue(refusal(403, "Kendi yetkilerinizi aşan bir işlem yapılamaz: audit.view"));
-    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Redaktə et: hs\.aygun/ })[0]); });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yadda saxla" })); await settle(); });
+    await edit();
     expect(second.api.adminSetUserGroups).toHaveBeenCalledTimes(1);
     expect(alerts()).toContain("Ayşe Sentetik");
-    expect(alerts()).toMatch(/Ad, e-poçt və aktivlik yadda saxlanıldı; qruplar saxlanılmadı: Öz səlahiyyətlərinizi aşan/);
+    expect(alerts()).toMatch(/Dəyişdirilən məlumatlar yadda saxlanıldı; qruplar saxlanılmadı: Öz səlahiyyətlərinizi aşan/);
     expect(second.reload).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("dialog")).toBeInTheDocument();         // the groups can be sent again from here
   });
@@ -669,5 +737,333 @@ describe("accessibility", () => {
       .toContain("hs.aygun"), { timeout: 4000 });
     await act(async () => { release({ ok: true }); await settle(); });
     expectConfirmed(/Ayşe Sentetik · İki addımlı doğrulama sıfırlandı\./);
+  });
+});
+
+// The review round (quality review of 95adfa6, proofs P1–P14). Each of these failed on that
+// commit; the C1 pair runs through the FRAME against a server that remembers, because the defect
+// was what a stale write did to the server, which a reload spy cannot show.
+describe("the review round", () => {
+  const editOf = async (login) => {
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: new RegExp(`Redaktə et: ${login}`) })[0]); });
+    return within(screen.getByRole("dialog"));
+  };
+  const saveForm = async () => {
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yadda saxla" })); await settle(); });
+  };
+  const rowOf = (login) => screen.getByRole("rowheader", { name: new RegExp(login) }).closest("tr");
+
+  it("C1: fixing a name does not re-activate an account another desk deactivated since the list was read", async () => {
+    const { api, server } = await openFrame();
+    // Another administrator deactivates her AFTER this screen read the list.
+    server.users.find((u) => u.id === "u-nurse").is_active = false;
+    const form = await editOf("hs\\.aygun");
+    fireEvent.change(form.getByLabelText(/Ad soyad/), { target: { value: "Ayşe Sentetik-Aygün" } });
+    await saveForm();
+    // Only the name: not the e-mail, not the active flag, not the memberships the form merely read.
+    expect(api.adminUpdateUser).toHaveBeenCalledWith("u-nurse", { full_name: "Ayşe Sentetik-Aygün" });
+    expect(api.adminSetUserGroups).not.toHaveBeenCalled();
+    expect(server.users.find((u) => u.id === "u-nurse").is_active).toBe(false);
+    // The list was read again, and shows the server's account: renamed, and still deactivated.
+    const row = rowOf("hs\\.aygun");
+    expect(within(row).getByText("Ayşe Sentetik-Aygün")).toBeInTheDocument();
+    expect(within(row).getByText("Passiv")).toBeInTheDocument();
+    expectConfirmed(/Ayşe Sentetik-Aygün · Yadda saxlanıldı\./);
+  });
+
+  it("C1: memberships another desk changed since the read are not undone — the PUT says what it believed, the refusal is shown, the list is read again", async () => {
+    const { api, server } = await openFrame();
+    // Another desk puts her on the night team after this screen's read.
+    server.users.find((u) => u.id === "u-nurse").groups.push(member(WARD_GROUP));
+    const form = await editOf("hs\\.aygun");
+    fireEvent.change(form.getByLabelText(/^Rol/), { target: { value: SYSTEM_GROUP.id } });
+    await saveForm();
+    expect(api.adminUpdateUser).not.toHaveBeenCalled();
+    expect(api.adminSetUserGroups).toHaveBeenCalledWith("u-nurse", [SYSTEM_GROUP.id], [NURSE_GROUP.id]);
+    // Nothing of the other desk's was overwritten, and nothing of ours claimed.
+    expect(server.users.find((u) => u.id === "u-nurse").groups.map((g) => g.id).sort())
+      .toEqual([NURSE_GROUP.id, WARD_GROUP.id].sort());
+    expect(alerts()).toContain("Ayşe Sentetik");
+    expect(alerts()).toContain("Qeyd eyni anda dəyişdirildi");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(within(rowOf("hs\\.aygun")).getByText(/Gece ekibi/)).toBeInTheDocument();
+  });
+
+  it("an edit that changes nothing sends nothing and claims nothing", async () => {
+    const { api, reload } = await open();
+    await editOf("hs\\.aygun");
+    await saveForm();
+    expect(api.adminUpdateUser).not.toHaveBeenCalled();
+    expect(api.adminSetUserGroups).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByText(/Yadda saxlanıldı\./)).toBeNull();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("P1: a scope read that lands after a form was opened does not replace it, and the form's refusal is read", async () => {
+    let releaseScope;
+    const { api } = await open({
+      setup: (a) => a.userScope.mockImplementation(() => new Promise((r) => { releaseScope = r; })),
+    });
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Şöbələr: hs\.aygun/ })[0]); await settle(); });
+    expect(screen.queryByRole("dialog")).toBeNull();                    // the read is in flight, no dialog
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni istifadəçi" })); });
+    let rejectCreate;
+    api.adminCreateUser.mockImplementation(() => new Promise((_, rej) => { rejectCreate = rej; }));
+    fireEvent.change(screen.getByLabelText(/Ad soyad/), { target: { value: "Yeni Sintetik" } });
+    fireEvent.change(screen.getByLabelText(/İstifadəçi adı/), { target: { value: "hs.yeni" } });
+    fireEvent.change(screen.getByLabelText(/Müvəqqəti şifrə/), { target: { value: "gecici-1234" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "İstifadəçini yarat" })); await settle(); });
+    expect(api.adminCreateUser).toHaveBeenCalledTimes(1);               // the create is in flight
+    await act(async () => { releaseScope(scopeView({ grants: [] })); await settle(); });
+    // The form is still the open dialog: the late read did not unmount it mid-write.
+    expect(within(screen.getByRole("dialog")).getByRole("button", { name: "İstifadəçini yarat" })).toBeInTheDocument();
+    await act(async () => { rejectCreate(refusal(409, "Bu kullanıcı adı veya e-posta zaten kullanılıyor")); await settle(); });
+    expect(alerts()).toContain("Yeni Sintetik");
+  });
+
+  it("P1: while a scope read is out, every row's actions are busy and the tab names the account in flight; a press sends nothing", async () => {
+    let releaseScope;
+    const second = user("u-ad2", { username: "hs.ikinci", full_name: "İkinci Sintetik", groups: [member(NURSE_GROUP)] });
+    const { api } = await open({
+      users: [...USERS, second],
+      setup: (a) => a.userScope.mockImplementation(() => new Promise((r) => { releaseScope = r; })),
+    });
+    api.adminResetMfa.mockResolvedValue({ ok: true });
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Şöbələr: hs\.aygun/ })[0]); await settle(); });
+    const other = screen.getAllByRole("button", { name: /2FA sıfırla: hs\.ikinci/ })[0];
+    expect(other).toHaveAttribute("aria-busy", "true");
+    await act(async () => { fireEvent.click(other); });
+    expect(screen.queryByRole("dialog")).toBeNull();                    // a busy control opens nothing
+    await waitFor(() => expect(spoken()).toContain("hs.aygun"), { timeout: 4000 });
+    await act(async () => { releaseScope(scopeView({ grants: [] })); await settle(); });
+    expect(api.adminResetMfa).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("button", { name: /2FA sıfırla: hs\.ikinci/ })[0]).not.toHaveAttribute("aria-busy");
+  });
+
+  it("P2: the ACTIVATE confirmation says the account will be activated — not deactivated — and reads as done", async () => {
+    const off = user("u-off", { username: "hs.passiv", full_name: "Passiv Sintetik", is_active: false, groups: [member(NURSE_GROUP)] });
+    const { api } = await open({ users: [...USERS, off] });
+    api.adminUpdateUser.mockResolvedValue(user("u-off", { is_active: true }));
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Aktivləşdir: hs\.passiv/ })[0]); });
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toMatch(/Passiv Sintetik aktivləşdiriləcək; yenidən giriş edə biləcək\./);
+    expect(dialog.textContent).not.toMatch(/passivləşdiriləcək/);
+    await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "Aktivləşdir" })); await settle(); });
+    expect(api.adminUpdateUser).toHaveBeenCalledWith("u-off", { is_active: true });
+    expectConfirmed(/Passiv Sintetik · Hesab aktivləşdirildi\./);
+  });
+
+  it("P3: an account holding two roles keeps both — the row lists both, the form keeps the second and says so, and a change sends both", async () => {
+    const PHYS = group("physician", { name: "Hekim", permissions: ["board.view", "alerts.ack"] });
+    const both = user("u-both", { username: "dr.iki", full_name: "İki Rol Sintetik", groups: [member(NURSE_GROUP), member(PHYS)] });
+    const { api } = await open({ users: [both], groups: [SYSTEM_GROUP, NURSE_GROUP, PHYS, WARD_GROUP] });
+    expect(within(rowOf("dr\\.iki")).getByText("Hemşire, Hekim")).toBeInTheDocument();
+    api.adminSetUserGroups.mockResolvedValue(both);
+    const form = await editOf("dr\\.iki");
+    expect(form.getByText(/Bu hesabın birdən çox rolu var/)).toBeInTheDocument();
+    expect(form.getByLabelText("Hekim")).toBeChecked();
+    fireEvent.click(form.getByLabelText("Gece ekibi"));
+    await saveForm();
+    expect(api.adminUpdateUser).not.toHaveBeenCalled();
+    const [id, sent, expected] = api.adminSetUserGroups.mock.calls[0];
+    expect(id).toBe("u-both");
+    expect([...sent].sort()).toEqual([NURSE_GROUP.id, PHYS.id, WARD_GROUP.id].sort());
+    expect(expected).toEqual([NURSE_GROUP.id, PHYS.id].sort());
+  });
+
+  it("P5: the region that names the account during a write is inside its dialog, never in an inert subtree — for every dialog", async () => {
+    // jsdom does not implement `inert`, so a region the browser would silence still "speaks" here;
+    // the attribute is what says it would not. Each dialog names the account in its OWN region.
+    const naming = () => screen.getAllByRole("status").filter((s) => s.textContent.includes("hs.aygun"));
+    const heard = async () => {
+      await waitFor(() => expect(naming().length).toBeGreaterThan(0), { timeout: 4000 });
+      expect(naming().every((s) => s.closest("[inert]") === null)).toBe(true);
+    };
+
+    let release;
+    const first = await open();
+    first.api.adminResetMfa.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /2FA sıfırla: hs\.aygun/ })[0]); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "2FA sıfırla" })); await settle(); });
+    await heard();
+    await act(async () => { release({ ok: true }); await settle(); });
+
+    cleanup();
+    const second = await open();
+    second.api.adminUpdateUser.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    const form = await editOf("hs\\.aygun");
+    fireEvent.change(form.getByLabelText(/Ad soyad/), { target: { value: "Ayşe Sentetik-Aygün" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yadda saxla" })); await settle(); });
+    await heard();
+    await act(async () => { release(USERS[0]); await settle(); });
+
+    cleanup();
+    const third = await open();
+    third.api.setScope.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Şöbələr: hs\.aygun/ })[0]); await settle(); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Əhatəni yadda saxla" })); await settle(); });
+    await heard();
+    await act(async () => { release(scopeView({ grants: [] })); await settle(); });
+  });
+
+  it("P6: while only READING a scope, the tab says it is reading that account's scope — never that something is being saved", async () => {
+    let releaseScope;
+    await open({ setup: (a) => a.userScope.mockImplementation(() => new Promise((r) => { releaseScope = r; })) });
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Şöbələr: hs\.aygun/ })[0]); await settle(); });
+    await waitFor(() => expect(spoken()).toContain("hs.aygun · əhatə oxunur…"), { timeout: 4000 });
+    expect(spoken()).not.toMatch(/yadda saxlanılır/);
+    await act(async () => { releaseScope(scopeView({ grants: [] })); await settle(); });
+  });
+
+  it("P8: your own account's form does not offer the active flag, says why, and a name fix sends no active state", async () => {
+    const self = user("u-admin", { username: "mudur", full_name: "Müdür Sintetik", groups: [member(NURSE_GROUP)] });
+    const { api } = await open({ users: [self], selfId: "u-admin" });
+    api.adminUpdateUser.mockResolvedValue(self);
+    const form = await editOf("mudur");
+    expect(form.queryByRole("checkbox", { name: /Hesab aktivdir/ })).toBeNull();
+    expect(form.getByText(/aktivliyini buradan dəyişə bilmərsiniz/)).toBeInTheDocument();
+    fireEvent.change(form.getByLabelText(/Ad soyad/), { target: { value: "Müdür Sintetik-Yeni" } });
+    await saveForm();
+    expect(api.adminUpdateUser).toHaveBeenCalledWith("u-admin", { full_name: "Müdür Sintetik-Yeni" });
+  });
+
+  it("P9: a confirmation's own refusal takes the focus to its field, where the refusal is written", async () => {
+    const { api } = await open();
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Girişi aç: dr\.kamran/ })[0]); });
+    fireEvent.change(screen.getByLabelText(/Səbəb/), { target: { value: "   " } });
+    const unlock = screen.getByRole("button", { name: "Girişi aç" });
+    unlock.focus();
+    await act(async () => { fireEvent.click(unlock); await settle(); });
+    expect(screen.getByLabelText(/Səbəb/)).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText(/Səbəb/)).toHaveFocus();
+    expect(api.adminUnlockSignIn).not.toHaveBeenCalled();
+
+    cleanup();
+    const second = await open();
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Şifrəni sıfırla: hs\.aygun/ })[0]); });
+    fireEvent.change(screen.getByLabelText(/Müvəqqəti şifrə/), { target: { value: "qisa" } });
+    const reset = screen.getByRole("button", { name: "Şifrəni sıfırla" });
+    reset.focus();
+    await act(async () => { fireEvent.click(reset); await settle(); });
+    expect(screen.getByLabelText(/Müvəqqəti şifrə/)).toHaveFocus();
+    expect(second.api.adminResetPassword).not.toHaveBeenCalled();
+  });
+
+  it("P10: after an edit, the units cell no longer states the scope read before it", async () => {
+    const { api } = await open({
+      setup: (a) => a.userScope.mockResolvedValue(scopeView({ user_id: "u-nurse", unrestricted: true, reason: "unassigned" })),
+    });
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Şöbələr: hs\.aygun/ })[0]); await settle(); });
+    fireEvent.click(screen.getByRole("button", { name: "İmtina" }));
+    const row = rowOf("hs\\.aygun");
+    expect(within(row).getByText("Şöbə təyin edilməyib")).toBeInTheDocument();
+    api.adminSetUserGroups.mockResolvedValue(USERS[0]);
+    const form = await editOf("hs\\.aygun");
+    fireEvent.change(form.getByLabelText(/^Rol/), { target: { value: SYSTEM_GROUP.id } });
+    await saveForm();
+    expect(api.adminSetUserGroups).toHaveBeenCalledWith("u-nurse", [SYSTEM_GROUP.id], [NURSE_GROUP.id]);
+    // She is the system group's now — scope reason "role" — so "no unit assigned" is no longer
+    // what the server would say. The cell claims nothing until it is read again.
+    expect(within(row).queryByText("Şöbə təyin edilməyib")).toBeNull();
+    expect(within(row).getByText("Oxunmayıb")).toBeInTheDocument();
+  });
+
+  it("P12: a scope save with no answer is not called refused — nothing is put back, the scope is read back, and the editor says it may or may not have landed", async () => {
+    const twoUnits = scopeView({ user_id: "u-nurse", grants: [{ unit_id: "REA-01" }, { unit_id: "REA-02" }] });
+    const { api } = await open({ setup: (a) => a.userScope.mockResolvedValue(twoUnits) });
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Şöbələr: hs\.aygun/ })[0]); await settle(); });
+    api.setScope.mockRejectedValue(Object.assign(new Error("Sunucu yanıt vermedi"), { code: "REQUEST_TIMEOUT" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "REA-02" }));                 // remove REA-02
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Əhatəni yadda saxla" })); await settle(); });
+    expect(alerts()).toMatch(/Ayşe Sentetik: .*yerinə yetirilmiş ola bilər/);
+    expect(screen.queryByText("Mühərrik qəbul etmədi; ekrandakı əhatə geri alındı.")).toBeNull();
+    expect(api.userScope).toHaveBeenCalledTimes(2);                                       // read back
+    expect(screen.getByText(/Mühərrik cavab vermədi; əhatə yadda saxlanılmış da ola bilər, saxlanılmamış da\. Yenidən oxundu/))
+      .toBeInTheDocument();
+    // The list is what the engine holds now (here: the save never reached it), not what was sent.
+    expect(screen.getByRole("checkbox", { name: "REA-02" })).toBeChecked();
+
+    cleanup();
+    // And when even the read-back fails, it says that too, and the row claims nothing.
+    const second = await open({ setup: (a) => a.userScope.mockResolvedValueOnce(twoUnits) });
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Şöbələr: hs\.aygun/ })[0]); await settle(); });
+    second.api.setScope.mockRejectedValue(Object.assign(new Error("Sunucu yanıt vermedi"), { code: "REQUEST_TIMEOUT" }));
+    second.api.userScope.mockRejectedValue(refusal(503, "upstream"));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Əhatəni yadda saxla" })); await settle(); });
+    expect(screen.getByText(/yenidən oxunmadı/)).toBeInTheDocument();
+    expect(screen.queryByText("Mühərrik qəbul etmədi; ekrandakı əhatə geri alındı.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "İmtina" }));
+    expect(within(rowOf("hs\\.aygun")).getByText("Oxunmayıb")).toBeInTheDocument();
+  });
+
+  it("P14: groups with no answer after the details landed are said as 'may not have been saved', and the list is read again", async () => {
+    const { api, reload } = await open();
+    api.adminUpdateUser.mockResolvedValue(USERS[0]);
+    api.adminSetUserGroups.mockRejectedValue(Object.assign(new Error("timeout"), { code: "REQUEST_TIMEOUT" }));
+    const form = await editOf("hs\\.aygun");
+    fireEvent.change(form.getByLabelText(/Ad soyad/), { target: { value: "Ayşe Sentetik-Aygün" } });
+    fireEvent.click(form.getByLabelText("Gece ekibi"));
+    await saveForm();
+    expect(alerts()).toMatch(/Dəyişdirilən məlumatlar yadda saxlanıldı; qruplar saxlanılmamış ola bilər: .*yerinə yetirilmiş ola bilər/);
+    expect(alerts()).not.toMatch(/qruplar saxlanılmadı/);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("note (b): while a write is out, the field Enter was pressed in keeps the focus — read-only, never disabled", async () => {
+    const { api } = await open();
+    let reject;
+    api.adminCreateUser.mockImplementation(() => new Promise((_, rej) => { reject = rej; }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni istifadəçi" })); });
+    fireEvent.change(screen.getByLabelText(/Ad soyad/), { target: { value: "Yeni Sintetik" } });
+    fireEvent.change(screen.getByLabelText(/İstifadəçi adı/), { target: { value: "hs.yeni" } });
+    const pw = screen.getByLabelText(/Müvəqqəti şifrə/);
+    fireEvent.change(pw, { target: { value: "gecici-1234" } });
+    pw.focus();
+    await act(async () => { fireEvent.submit(pw.closest("form")); await settle(); });
+    expect(pw).not.toBeDisabled();
+    expect(pw).toHaveAttribute("readonly");
+    expect(pw).toHaveFocus();
+    await act(async () => { reject(refusal(409, "Bu kullanıcı adı veya e-posta zaten kullanılıyor")); await settle(); });
+  });
+
+  it("a form's refusal that arrives after its tab was left still reaches the toast, named", async () => {
+    let reject;
+    const { api } = await openFrame({ tabs: { users: UsersTab, roles: () => <p>roles</p> } });
+    api.adminCreateUser.mockImplementation(() => new Promise((_, rej) => { reject = rej; }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni istifadəçi" })); });
+    fireEvent.change(screen.getByLabelText(/Ad soyad/), { target: { value: "Yeni Sintetik" } });
+    fireEvent.change(screen.getByLabelText(/İstifadəçi adı/), { target: { value: "hs.yeni" } });
+    fireEvent.change(screen.getByLabelText(/Müvəqqəti şifrə/), { target: { value: "gecici-1234" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "İstifadəçini yarat" })); await settle(); });
+    await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "Rollar və səlahiyyətlər" })); });
+    expect(screen.queryByRole("dialog")).toBeNull();                    // the tab, and its form, are gone
+    await act(async () => { reject(refusal(409, "Bu kullanıcı adı veya e-posta zaten kullanılıyor")); await settle(); });
+    expect(alerts()).toContain("Yeni Sintetik");
+  });
+
+  it("a scope refusal that arrives after its tab was left still reaches the toast, named", async () => {
+    let reject;
+    const { api } = await openFrame({ tabs: { users: UsersTab, roles: () => <p>roles</p> } });
+    api.setScope.mockImplementation(() => new Promise((_, rej) => { reject = rej; }));
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Şöbələr: hs\.aygun/ })[0]); await settle(); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Əhatəni yadda saxla" })); await settle(); });
+    await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "Rollar və səlahiyyətlər" })); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await act(async () => { reject(refusal(403, "kapsam atamak için kapsamı sınırsız bir yönetici olmalısınız")); await settle(); });
+    expect(alerts()).toContain("Ayşe Sentetik");
+  });
+
+  it("a count is never set against a word that must agree with it: in ru and en the label comes first, then the number", () => {
+    // "Показать ещё 1 строк", "Show 1 more rows": the number decides the noun's form in Russian and
+    // English. Azerbaijani and Turkish keep a singular noun after any numeral, so theirs stand.
+    for (const lang of ["ru", "en"]) {
+      const s = ADMIN_STRINGS[lang];
+      expect(s.showMore, `${lang}.showMore`).toMatch(/: \{count\}$/);
+      expect(s.filtered, `${lang}.filtered`).toMatch(/: \{shown\} /);
+      expect(s.wholeList, `${lang}.wholeList`).toMatch(/: \{count\}\)/);
+      expect(s.unitCount, `${lang}.unitCount`).toMatch(/^[^{]+: \{count\}$/);
+      expect(s.bedCount, `${lang}.bedCount`).toMatch(/^[^{]+: \{count\}$/);
+    }
   });
 });

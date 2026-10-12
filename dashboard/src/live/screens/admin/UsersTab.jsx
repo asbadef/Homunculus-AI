@@ -38,19 +38,20 @@
 // matches" — and the frame's Alert above names it; a list is drawn when it is known or stale; a
 // COUNT (the unassigned users) only when its read is known, because a stale number is a claim
 // about now that nobody has made.
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { Announce, Box, Button, Empty, Field, Input, Modal, Note, Pill, Select, StatusPill, Table, Tag, useToast } from "../../ui/index.js";
 import { ddmmyyyy, hhmm } from "../../i18n/dates.js";
-import { apiErrorText, readErrorText } from "../../apiErrors.js";
+import { apiErrorKey, apiErrorText, readErrorText } from "../../apiErrors.js";
 import { PASSWORD_MIN } from "../../auth/passwordRules.js";
 import { norm } from "../beds/order.js";
 import { FIELD_MAX, lengthOf } from "./limits.js";
 import { canAssignScope, canManageUser, scopeFromApi, scopeKind } from "./rules.js";
 import { doneFor, refusedFor } from "./refusal.js";
 import { UserForm } from "./UserForm.jsx";
-import { ScopeEditor } from "./ScopeEditor.jsx";
+import { ScopeEditor, mayHaveLanded } from "./ScopeEditor.jsx";
 
 /** How many rows are rendered before "show more". Not a page of data — the whole list is already
  *  here — only a bound on one commit's DOM. */
@@ -58,11 +59,11 @@ export const PAGE = 50;
 /** At or above this many accounts the tab says out loud that it loaded the whole hospital. */
 export const MANY = 200;
 
-/** The role this account's groups give it, and everything else it holds, split as the form does. */
+/** The roles this account's groups give it — EVERY one: an account can hold two, and a cell that
+ *  showed the first would hide the second — and everything else it holds, split as the form does. */
 export function membershipOf(user) {
-  const role = user.groups.find((g) => g.kind === "role") ?? null;
   return {
-    role,
+    roles: user.groups.filter((g) => g.kind === "role"),
     extras: user.groups.filter((g) => g.kind === "extra"),
     others: user.groups.filter((g) => g.kind === "other"),
   };
@@ -119,7 +120,14 @@ export function UsersTab({ admin }) {
    *  not in here. */
   const [scopes, setScopes] = useState({});
   const [myScope, setMyScope] = useState(null);
+  /** The account a request is in flight for — a confirmed write or a scope READ. While it is set,
+   *  EVERY row's actions are busy, not only its own: the tab runs one request at a time, and a
+   *  control that looked live and then did nothing (`write` declines while another is out) was a
+   *  press the administrator was never told about. */
   const [busyId, setBusyId] = useState(null);
+  /** Whether the request in flight is a scope READ (`openScope`), which the tab's own region names;
+   *  a write is named by its dialog, the only region an open dialog leaves audible. */
+  const [reading, setReading] = useState(false);
 
   // `kind` is the ADAPTED group's: the API's own answer when it sends one (`GroupOut.kind`), the
   // mirror's otherwise (`rules.groupFromApi`) — never the mirror directly, which would ignore
@@ -161,6 +169,7 @@ export function UsersTab({ admin }) {
   const openScope = useCallback(async (user) => {
     if (busyId) return;
     setBusyId(user.id);
+    setReading(true);
     try {
       let mine = myScope;
       if (!mine) {
@@ -181,48 +190,82 @@ export function UsersTab({ admin }) {
         return;
       }
       setScopes((was) => ({ ...was, [user.id]: read }));
-      setOpen({ kind: "scope", user, scope: read });
+      // Only if nothing else was opened while the read ran (the "new user" form stays live): a late
+      // answer that REPLACED that dialog unmounted a form with its write in flight, and the write's
+      // refusal then had nowhere to land. The read is still remembered for the row.
+      setOpen((was) => was ?? { kind: "scope", user, scope: read });
     } finally {
       setBusyId(null);
+      setReading(false);
     }
   }, [api, busyId, myScope, store, t, toast]);
 
-  /** The form's write. A NEW account is one call. An EDIT is two — `PATCH /admin/users/{id}` (name,
-   *  e-mail, active) and `PUT /admin/users/{id}/groups` — and no endpoint takes both, so they go IN
-   *  SEQUENCE, never at once: the groups are not sent when the details were refused, and when the
-   *  details LANDED and the groups were refused, the account on the server has changed — so the
-   *  list is reloaded, and the refusal says which half landed. Sending the two together had
-   *  neither property: a refused PATCH could land a PUT beside it, and a half-landed edit read as
-   *  wholly refused, with no reload, so the list went on showing the old name. */
+  /** Forget what this session read of one user's scope: the row's cell goes back to "not read".
+   *  After an edit — a role is what makes a scope unrestricted, so the last read may no longer be
+   *  the server's — and after a read-back that failed: "we did not look" is not "nothing is
+   *  assigned", and neither is "we looked before she changed". */
+  const forgetScope = useCallback((id) => {
+    setScopes((was) => {
+      if (!(id in was)) return was;
+      const next = { ...was };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  /** The form's write. A NEW account is one call. An EDIT is at most two, and each is sent only
+   *  when it changes something (`UserForm`: the details that differ from what the form opened
+   *  with; the memberships only when they differ, with the ones it opened with as
+   *  `expected_group_ids`) — `PATCH /admin/users/{id}` and `PUT /admin/users/{id}/groups`. No
+   *  endpoint takes both, so they go IN SEQUENCE, never at once: the groups are not sent when the
+   *  details were refused, and when the details LANDED and the groups were refused, the account on
+   *  the server has changed — so the list is reloaded, and the refusal says which half landed. A
+   *  write that got no answer may have landed (`mayHaveLanded`): the list is reloaded then too,
+   *  and the sentence says "may not have been saved", never "was not". And a 409 on the groups is
+   *  another desk's change since this form read them: the list behind the form is read again. */
   const saveUser = async (body) => {
     if (open.kind !== "edit") return store.track(() => api.adminCreateUser(body));
     const id = open.user.id;
-    await store.track(() => api.adminUpdateUser(id, {
-      full_name: body.full_name, email: body.email, is_active: body.is_active,
-    }));
-    try {
-      return await store.track(() => api.adminSetUserGroups(id, body.group_ids));
-    } catch (err) {
+    const { details, groupIds, expectedGroupIds } = body;
+    const refresh = async () => {
+      forgetScope(id);
       await admin.reload();
-      throw new Error(t("admin.groupsNotSaved", { reason: apiErrorText(t, err) }));
+    };
+    let landed = false;
+    if (Object.keys(details).length > 0) {
+      try {
+        await store.track(() => api.adminUpdateUser(id, details));
+      } catch (err) {
+        if (mayHaveLanded(err)) await refresh();
+        throw err;
+      }
+      landed = true;
+    }
+    if (!groupIds) return undefined;
+    try {
+      return await store.track(() => api.adminSetUserGroups(id, groupIds, expectedGroupIds));
+    } catch (err) {
+      const unknown = mayHaveLanded(err);
+      if (landed || unknown || apiErrorKey(err)?.key === "errors.concurrentChange") await refresh();
+      if (!landed) throw err;
+      throw new Error(t(unknown ? "admin.groupsMaybeNotSaved" : "admin.groupsNotSaved", { reason: apiErrorText(t, err) }));
     }
   };
 
   /** After a save, read the scope back rather than keeping the list we sent: the server's answer is
    *  the scope, and it normalises the keys it stores. A failed re-read leaves the row UNREAD
-   *  (`undefined`), never an empty scope — "we did not look" is not "nothing is assigned". */
+   *  (`undefined`), never an empty scope — "we did not look" is not "nothing is assigned".
+   *  Resolves with the scope read, or null — the editor uses it after a save with no answer. */
   const rereadScope = useCallback(async (user) => {
     try {
-      const theirs = await store.track(() => api.userScope(user.id));
-      setScopes((was) => ({ ...was, [user.id]: scopeFromApi(theirs) }));
+      const theirs = scopeFromApi(await store.track(() => api.userScope(user.id)));
+      setScopes((was) => ({ ...was, [user.id]: theirs }));
+      return theirs;
     } catch {
-      setScopes((was) => {
-        const next = { ...was };
-        delete next[user.id];
-        return next;
-      });
+      forgetScope(user.id);
+      return null;
     }
-  }, [api, store]);
+  }, [api, forgetScope, store]);
 
   /** The units cell, by `rules.scopeKind` — the rule the editor follows too, so the two cannot
    *  disagree. "Scope unrestricted" ONLY for a scope unrestricted by role: an account unrestricted
@@ -297,9 +340,11 @@ export function UsersTab({ admin }) {
               const verdict = canManageUser(me.perms, user, groups, me.id, catalogue);
               const isSelf = user.id === me.id;
               const refused = refusalKey(verdict, isSelf);
-              const { role: ownRole, extras, others } = membershipOf(user);
+              const { roles: ownRoles, extras, others } = membershipOf(user);
               const mfa = mfaState(user, groups);
-              const busy = busyId === user.id;
+              // Busy while ANY request is out, not only this row's: one at a time, said as that
+              // (the region below names the account in flight), never a live-looking no-op.
+              const busy = busyId !== null;
               return (
                 <tr key={user.id}>
                   {/* The row's own header is the USERNAME, not the display name: it is the
@@ -316,7 +361,9 @@ export function UsersTab({ admin }) {
                     </div>
                   </th>
                   <td>
-                    {ownRole ? ownRole.name : <span className="text-mute">{t("admin.noRole")}</span>}
+                    {ownRoles.length > 0
+                      ? ownRoles.map((g) => g.name).join(", ")
+                      : <span className="text-mute">{t("admin.noRole")}</span>}
                     {extras.length > 0 ? (
                       <div className="text-11.5 text-mute">{t("admin.extras", { list: extras.map((g) => g.name).join(", ") })}</div>
                     ) : null}
@@ -392,18 +439,25 @@ export function UsersTab({ admin }) {
 
       {/* A busy row's Button reads only "unavailable" to a screen reader: the words come from here,
           and they name the account, so an administrator moving down a list of twelve knows which
-          row is in flight. */}
-      <Announce text={busyId ? t("admin.savingFor", { subject: users.find((u) => u.id === busyId)?.username ?? "" }) : ""} />
+          row is in flight. Only for a scope READ, and said as a read — "saving" while nothing is
+          written is a claim. A WRITE is named by its own dialog: an open dialog makes everything
+          outside it inert, this region included, and an inert live region says nothing. */}
+      <Announce text={busyId && reading ? t("admin.readingScopeFor", { subject: users.find((u) => u.id === busyId)?.username ?? "" }) : ""} />
 
       {open?.kind === "new" || open?.kind === "edit" ? (
         <UserForm
           user={open.kind === "edit" ? open.user : null}
+          self={open.kind === "edit" && open.user.id === me.id}
           groups={groups}
           catalogue={catalogue}
           perms={me.perms}
           submit={saveUser}
-          onSaved={async () => {
-            toast(t(open.kind === "edit" ? "admin.saved" : "admin.created"));
+          // `subject` is the account's name as the form saved it: a confirmation names what it is
+          // about, as a refusal does. After an edit, the row's scope read is no longer claimed — a
+          // role is what makes a scope unrestricted, and the role may just have changed.
+          onSaved={async (subject) => {
+            toast(doneFor(t, subject, t(open.kind === "edit" ? "admin.saved" : "admin.created")));
+            if (open.kind === "edit") forgetScope(open.user.id);
             setOpen(null);
             await admin.reload();
           }}
@@ -421,6 +475,7 @@ export function UsersTab({ admin }) {
           scope={open.scope}
           mayAssign={canAssignScope(myScope)}
           save={(grants) => store.track(() => api.setScope(open.user.id, grants))}
+          reread={() => rereadScope(open.user)}
           onSaved={async () => {
             toast(doneFor(t, open.user.fullName || open.user.username, t("admin.scopeSaved")));
             setOpen(null);
@@ -466,7 +521,7 @@ const CONFIRMATIONS = {
     run: (api, user) => () => api.adminUpdateUser(user.id, { is_active: false }),
   },
   activate: {
-    title: "admin.activate", body: "admin.confirmDeactivate", done: "admin.activated",
+    title: "admin.activate", body: "admin.confirmActivate", done: "admin.activated",
     run: (api, user) => () => api.adminUpdateUser(user.id, { is_active: true }),
   },
   unlock: {
@@ -479,24 +534,35 @@ const CONFIRMATIONS = {
 /** One confirmation. While the request is in flight the dialog CANNOT be dismissed (`Modal busy`):
  *  a refusal must land in an open form, or an administrator is told nothing about a write that did
  *  not happen. The unlock's reason is checked for the one thing the server will certainly refuse
- *  (nothing readable in it) before a request is sent, and the sentence says it is audited. */
+ *  (nothing readable in it) before a request is sent, and the sentence says it is audited.
+ *
+ *  A field this dialog refuses itself TAKES THE FOCUS: the refusal is written under it, first in
+ *  its aria-describedby, so arriving on the field is what says it — a screen-reader user left on
+ *  the confirm button heard nothing, and pressed it again. */
 function Confirm({ user, kind, busy, onConfirm, onClose }) {
   const { t } = useI18n();
   const spec = CONFIRMATIONS[kind];
   const [reason, setReason] = useState("");
   const [password, setPassword] = useState("");
   const [problem, setProblem] = useState(null);
+  const field = useRef(null);
   const name = user.fullName || user.username;
+
+  const refuse = (text) => {
+    // Landed in the DOM before the focus moves, so the field the focus reaches already says it.
+    flushSync(() => setProblem(text));
+    field.current?.focus();
+  };
 
   const confirm = () => {
     if (spec.reason && !/[\p{L}\p{N}]/u.test(reason)) {
-      setProblem(t("errors.reasonNeedsText"));
+      refuse(t("errors.reasonNeedsText"));
       return;
     }
     // In code points, as the server counts (`limits.lengthOf`): `.length` passed four emoji as eight
     // characters, and the server then refused them as four.
     if (spec.password && lengthOf(password) < PASSWORD_MIN) {
-      setProblem(t("errors.passwordTooShort"));
+      refuse(t("errors.passwordTooShort"));
       return;
     }
     setProblem(null);
@@ -521,17 +587,19 @@ function Confirm({ user, kind, busy, onConfirm, onClose }) {
       <p className="m-0 mb-3 text-14">{t(spec.body, { name })}</p>
       {spec.password ? (
         <Field layout="col" required label={t("admin.fieldPassword")} hint={t("admin.fieldPasswordHint")} error={problem}>
-          <Input type="password" autoComplete="new-password" value={password} maxLength={FIELD_MAX.password}
-            disabled={busy} onChange={(e) => { setPassword(e.target.value); setProblem(null); }} />
+          {/* Read-only, not disabled, while the write is out: disabling a field drops its focus. */}
+          <Input ref={field} type="password" autoComplete="new-password" value={password} maxLength={FIELD_MAX.password}
+            readOnly={busy} onChange={(e) => { setPassword(e.target.value); setProblem(null); }} />
         </Field>
       ) : null}
       {spec.reason ? (
         <Field layout="col" required label={t("admin.reasonLabel")} hint={t("admin.reasonHint")} error={problem}>
-          <Input value={reason} maxLength={FIELD_MAX.reason} disabled={busy}
+          <Input ref={field} value={reason} maxLength={FIELD_MAX.reason} readOnly={busy}
             onChange={(e) => { setReason(e.target.value); setProblem(null); }} />
         </Field>
       ) : null}
-      <Announce text={busy ? t("admin.saving") : ""} />
+      {/* Inside the dialog and naming the account: the tab's own region is inert while this is open. */}
+      <Announce text={busy ? t("admin.savingFor", { subject: user.username }) : ""} />
     </Modal>
   );
 }

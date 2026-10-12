@@ -39,8 +39,16 @@
 // and one sentence saying what she sees until it is used — every patient while enforcement is off,
 // only her own while it is on — and that sentence is the one place the flag is read, after
 // `scopeKind` has said "unassigned". An "unknown" scope is editable too: the server decides the write.
+//
+// A WRITE WITH NO ANSWER IS NOT A REFUSAL. A save that timed out, or met a server that could not
+// answer, may have landed. Putting the previous list back and saying "the engine refused" would
+// show the old list as her access when the new one may be in force — the same over-claim the
+// rollback exists to prevent, the other way round. So that case is not rolled back: the scope is
+// READ BACK, the list becomes what the engine holds, and the screen says the save may or may not
+// have landed (`mayHaveLanded`).
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
+import { apiErrorKey } from "../../apiErrors.js";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { Announce, Button, Field, Input, Modal, Note, Table } from "../../ui/index.js";
 import { boardKnown } from "../common/BoardState.jsx";
@@ -53,6 +61,16 @@ import { scopeKind } from "./rules.js";
 const unassignedNoteKey = (scope) => (scope.unrestricted === true
   ? "admin.scopeUnassignedOpen"
   : "admin.scopeUnassignedClosed");
+
+/** Did a WRITE fail without an answer — so that it may have landed? Recognised by its key, never
+ *  by an HTTP status: a timeout (`errors.requestTimeout`, which itself says "may have happened")
+ *  and a server that could not answer (`errors.serverUnreachable`: a 502 from the proxy can come
+ *  after the engine committed). Every other failure is the server's refusal, and nothing landed.
+ *  The users tab reads it too, for the half of an edit that sends the groups. */
+export function mayHaveLanded(err) {
+  const key = apiErrorKey(err)?.key;
+  return key === "errors.requestTimeout" || key === "errors.serverUnreachable";
+}
 
 /** A grant as this editor holds it: exactly one of the two keys, trimmed. */
 const asGrant = (unitId, bedId) => ({ unitId: unitId || "", bedId: bedId || "" });
@@ -76,32 +94,46 @@ export function offeredKeys(patients, grants) {
   return { units: [...units].sort(order), beds: [...beds].sort(order) };
 }
 
+/** What the editor says about its last save, when it says anything: refused and put back, or no
+ *  answer — read back, or not even that. */
+const OUTCOME_NOTE = {
+  reverted: "admin.scopeRevert",
+  maybe: "admin.scopeMaybe",
+  maybeRead: "admin.scopeMaybeRead",
+};
+
 /**
  * `scope` is `rules.scopeFromApi(GET /scope/{id})`; `mayAssign` is `canAssignScope(myScope)` —
  * true, false, or null while the caller's own scope is still unknown. `save(grants)` sends
  * `PUT /scope/{id}` with the WHOLE list and resolves with the scope the server answered.
+ * `reread()` reads this user's scope again and resolves with it (adapted), or with null when that
+ * read failed — asked only after a save that got no answer.
  */
-export function ScopeEditor({ user, scope, mayAssign, save, onSaved, onRefused, onClose }) {
+export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onRefused, onClose }) {
   const { t } = useI18n();
   const board = useBoard();
+  /** What the engine last told this editor: the opening read, or the read-back after a save that
+   *  got no answer. A refusal puts THIS back — never an older list. */
+  const [base, setBase] = useState(scope);
   const [grants, setGrants] = useState(() => scope.grants.map((g) => asGrant(g.unitId, g.bedId)));
   const [manual, setManual] = useState("");
   const [busy, setBusy] = useState(false);
-  const [reverted, setReverted] = useState(false);
+  /** null, or a key of `OUTCOME_NOTE`. */
+  const [outcome, setOutcome] = useState(null);
   // True inside the effect (the house pattern), so StrictMode's rehearsal does not leave it false.
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
-  const kind = scopeKind(scope);
+  const kind = scopeKind(base);
 
   const offered = useMemo(() => offeredKeys(board.patients, grants), [board.patients, grants]);
   const has = (grant) => grants.some((g) => sameGrant(g, grant));
   const known = boardKnown(board.connection);
 
   const toggle = (grant, on) => {
-    setReverted(false);
+    setOutcome(null);
     setGrants((was) => (on ? [...was, grant] : was.filter((g) => !sameGrant(g, grant))));
   };
 
@@ -117,17 +149,30 @@ export function ScopeEditor({ user, scope, mayAssign, save, onSaved, onRefused, 
     if (busy) return;
     const previous = grants;
     setBusy(true);
-    setReverted(false);
+    setOutcome(null);
     try {
       await save(previous.map((g) => (g.bedId ? { bed_id: g.bedId } : { unit_id: g.unitId })));
       if (mounted.current) onSaved();
     } catch (err) {
-      if (!mounted.current) return;
-      // Back to what the server last told us, and said out loud: a list left on screen that the
-      // engine refused is a list an administrator would read as the user's access.
-      setGrants(scope.grants.map((g) => asGrant(g.unitId, g.bedId)));
-      setReverted(true);
+      // The toast first, whether or not this editor is still on screen: the toast outlives it,
+      // and a refusal that waited for a mounted editor was a refusal nobody read.
       onRefused(err);
+      if (!mounted.current) return;
+      if (mayHaveLanded(err)) {
+        // No answer: the new list may be in force. Not rolled back — read back, and said so.
+        setOutcome("maybe");
+        const fresh = await reread();
+        if (mounted.current && fresh) {
+          setBase(fresh);
+          setGrants(fresh.grants.map((g) => asGrant(g.unitId, g.bedId)));
+          setOutcome("maybeRead");
+        }
+      } else {
+        // Back to what the server last told us, and said out loud: a list left on screen that the
+        // engine refused is a list an administrator would read as the user's access.
+        setGrants(base.grants.map((g) => asGrant(g.unitId, g.bedId)));
+        setOutcome("reverted");
+      }
     } finally {
       if (mounted.current) setBusy(false);
     }
@@ -179,7 +224,7 @@ export function ScopeEditor({ user, scope, mayAssign, save, onSaved, onRefused, 
     >
       {mayAssign === false ? <Note tone="warn" icon="shield">{t("errors.scopeAdminOnly")}</Note> : null}
       {mayAssign === null ? <Note tone="warn" icon="shield">{t("admin.scopeMayUnknown")}</Note> : null}
-      {kind === "unassigned" ? <Note tone="info" icon="shield">{t(unassignedNoteKey(scope))}</Note> : null}
+      {kind === "unassigned" ? <Note tone="info" icon="shield">{t(unassignedNoteKey(base))}</Note> : null}
 
       {/* Where the list comes from, and what is not in it. Not optional: an administrator who
           cannot find an empty unit in a list that looks complete concludes it does not exist. */}
@@ -198,7 +243,9 @@ export function ScopeEditor({ user, scope, mayAssign, save, onSaved, onRefused, 
       <Field layout="col" label={t("admin.scopeManual")} hint={t("admin.scopeManualHint")}>
         <Input
           value={manual}
-          disabled={busy}
+          // Read-only, not disabled, while the save is out: a disabled field drops the focus it has
+          // to <body>, which is where a keyboard user who pressed Enter in it would be left.
+          readOnly={busy}
           // The column's own limit: `ScopeGrantIn` states none, and a longer key is a database
           // error rather than a refusal anyone can read (`limits.FIELD_MAX.scope_key`).
           maxLength={FIELD_MAX.scope_key}
@@ -240,11 +287,14 @@ export function ScopeEditor({ user, scope, mayAssign, save, onSaved, onRefused, 
 
       {/* A `Note`, not an `Alert`: the refusal itself is already announced once, on the toast, and
           `Alert` tone `crit` is a `role="alert"` of its own — the two together would read one
-          refusal twice. This sentence is the VISIBLE explanation of why the list changed back
-          under the reader's hands, which is a thing to see rather than a second thing to hear. */}
-      {reverted ? <Note tone="warn" icon="swap" className="mt-3">{t("admin.scopeRevert")}</Note> : null}
-      {/* A busy Button reads only "unavailable" to a screen reader; the words come from here. */}
-      <Announce text={busy ? t("admin.saving") : ""} />
+          refusal twice. This sentence is the VISIBLE explanation of why the list changed (back,
+          or to what the engine holds) under the reader's hands, which is a thing to see rather
+          than a second thing to hear. */}
+      {outcome ? <Note tone="warn" icon="swap" className="mt-3">{t(OUTCOME_NOTE[outcome])}</Note> : null}
+      {/* A busy Button reads only "unavailable" to a screen reader; the words come from here — and
+          from HERE, inside the dialog: everything outside an open dialog is inert, and an inert
+          live region is dropped from the accessibility tree, so the tab's own region cannot say it. */}
+      <Announce text={busy ? t("admin.savingFor", { subject: user.username }) : ""} />
     </Modal>
   );
 }
