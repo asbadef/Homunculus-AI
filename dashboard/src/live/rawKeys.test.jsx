@@ -354,7 +354,11 @@ export function keyProblems(text, file) {
   }
   for (const position of keyPositions(code)) {
     for (const [, , key] of position.matchAll(KEY_LITERAL)) {
-      if (!NAMESPACE.has(key.split(".")[0]) && !A_FILE.test(key)) problems.push(`${file} → ${key}: not a namespace`);
+      // A permission key can sit in `t()`'s argument without being a text — the roles tab asks
+      // `t(hasPerm(perms, "groups.manage") ? … : …)` — and is exempt there too.
+      if (!NAMESPACE.has(key.split(".")[0]) && !PERMISSION_KEY.has(key) && !A_FILE.test(key)) {
+        problems.push(`${file} → ${key}: not a namespace`);
+      }
     }
   }
   return problems;
@@ -387,6 +391,7 @@ describe("every key the live sources name exists in all four languages", () => {
       "{/* t(\"admin.nopeInJsx\") */}",
       'const re = /["\']/g; const d = t("admin.nopeAfterARegex");',             // a quote in a regex
       'const store = "hmc.lock"; const perm = "board.view"; const file = "api/board.py";',
+      'const e = t(hasPerm(perms, "groups.manage") ? "admin.title" : "admin.loading");', // a permission, asked inside t()
       "const built = `admin.${kind}`;",                                         // run time: out of reach
     ].join("\n");
     expect(keyProblems(sample, "sample.jsx").sort()).toEqual([
