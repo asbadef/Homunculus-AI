@@ -769,17 +769,25 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
   };
 }
 
-/** The items of a FastAPI validation error as {field, type, message}: the field is the `loc`
- *  path without "body", the message without pydantic's "Value error, " prefix. `input` and
- *  `ctx` are dropped. */
+/** The items of a FastAPI validation error as {field, type, message[, ctx]}: the field is the `loc`
+ *  path without "body", the message without pydantic's "Value error, " prefix. `input` is dropped
+ *  — for a password field it IS the password. Of `ctx`, only the two numbers pydantic's own length
+ *  checks state (`min_length`, `max_length`) are kept, so a refusal can say "at least 8 characters"
+ *  rather than pydantic's English; an item that carries neither has no `ctx` at all. */
 function validationErrors(detail) {
   return detail.filter((e) => e && typeof e === "object").map((e) => {
     const loc = Array.isArray(e.loc) ? e.loc.filter((p) => p !== "body") : [];
-    return {
+    const item = {
       field: loc.length ? loc.join(".") : null,
       type: typeof e.type === "string" ? e.type : null,
       message: typeof e.msg === "string" ? e.msg.replace(/^Value error, /, "") : "",
     };
+    const ctx = {};
+    for (const name of ["min_length", "max_length"]) {
+      if (Number.isInteger(e.ctx?.[name])) ctx[name] = e.ctx[name];
+    }
+    if (Object.keys(ctx).length > 0) item.ctx = ctx;
+    return item;
   });
 }
 

@@ -38,6 +38,13 @@ describe("refusedFor", () => {
   it("an unknown refusal keeps the server's words rather than inventing one", () => {
     expect(refusedFor(az, "Gecə ekibi", refusal(400, "something new"))).toContain("something new");
   });
+
+  it("a reason already in the reader's words — a 422's `others`, which no control shows — is used as it is", () => {
+    // fieldRefusals(t, err, rendered).others: refusals about fields the form does not draw, already
+    // translated. They go to the toast through here, named, rather than nowhere.
+    expect(refusedFor(az, "Ayşe Sentetik", "Bir dəfəyə ən çoxu 50 ədəd."))
+      .toBe(az("admin.refusedFor", { subject: "Ayşe Sentetik", reason: "Bir dəfəyə ən çoxu 50 ədəd." }));
+  });
 });
 
 describe("doneFor", () => {

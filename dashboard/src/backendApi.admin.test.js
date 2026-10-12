@@ -168,9 +168,12 @@ describe("backendApi — admin refusals reach the caller as the API wrote them",
       "username: Kullanıcı adı 2-128 karakter olmalı; yalnızca a-z, 0-9 ve . _ @ - kullanılabilir. " +
       "Türkçe/Azerbaycanca harfleri Latin karşılığıyla yazın: ş→s, ç→c, ğ→g, ö→o, ü→u, ı→i, ə→e.; " +
       "password: String should have at least 8 characters");
+    // Of `ctx`, the two numbers pydantic's own length checks state are kept — a refusal can then
+    // say "at least 8 characters" in the reader's language instead of pydantic's English — and
+    // nothing else of it: the value_error's `ctx.error` is gone, and so is every `input`.
     expect(err.fieldErrors).toEqual([
       { field: "username", type: "value_error", message: detail[0].msg.replace("Value error, ", "") },
-      { field: "password", type: "string_too_short", message: "String should have at least 8 characters" },
+      { field: "password", type: "string_too_short", message: "String should have at least 8 characters", ctx: { min_length: 8 } },
     ]);
     expect(JSON.stringify({ m: err.message, f: err.fieldErrors })).not.toContain("kisa-pw");
     expect(err.detail).toBeUndefined();

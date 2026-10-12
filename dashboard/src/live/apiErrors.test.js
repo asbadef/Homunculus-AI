@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { API_MESSAGE_KEYS, apiErrorKey, apiErrorText, readErrorText } from "./apiErrors.js";
+import { API_MESSAGE_KEYS, apiErrorKey, apiErrorText, fieldRefusals, readErrorText } from "./apiErrors.js";
 import { DICTIONARIES } from "./i18n/catalog.js";
 import { LANG_CODES } from "./i18n/langs.js";
 import { createTranslator } from "./i18n/translate.js";
@@ -300,6 +300,113 @@ describe("apiErrorText", () => {
     expect(apiErrorText(en, new Error("Beklenmeyen bir durum"))).toBe("Beklenmeyen bir durum");
     expect(apiErrorText(en, new Error(""))).toBe("The action could not be completed.");
     expect(apiErrorText(en, null)).toBe("The action could not be completed.");
+  });
+});
+
+describe("a 422 from pydantic's own length checks", () => {
+  const en = createTranslator("en", DICTIONARIES);
+  const az = createTranslator("az", DICTIONARIES);
+  /** What backendApi.failure() builds from a FastAPI 422: field, type, message — and since this
+   *  fix, the two lengths of `ctx`. */
+  const e422 = (...items) => Object.assign(
+    new Error(items.map((i) => `${i.field}: ${i.message}`).join("; ")), { status: 422, fieldErrors: items },
+  );
+  const short = (field, min) => ({
+    field, type: "string_too_short", message: `String should have at least ${min} character${min === 1 ? "" : "s"}`, ctx: { min_length: min },
+  });
+  const long = (field, max) => ({
+    field, type: "string_too_long", message: `String should have at most ${max} characters`, ctx: { max_length: max },
+  });
+
+  it("say the server's own number, in the reader's language — never pydantic's English", () => {
+    // Measured by the review on every limit the administration forms carry: each reached the
+    // administrator as "String should have at most 128 characters", in all four languages.
+    const CASES = [
+      [long("username", 128), "At most 128 characters."],
+      [long("email", 254), "At most 254 characters."],
+      [long("full_name", 200), "At most 200 characters."],
+      [long("name", 120), "At most 120 characters."],
+      [long("description", 500), "At most 500 characters."],
+      [long("reason", 200), "At most 200 characters."],
+      [short("ad_group_dn", 3), "At least 3 characters."],
+      [short("query.q", 2), "At least 2 characters."],
+    ];
+    for (const [item, text] of CASES) {
+      expect(apiErrorText(en, e422(item)), item.field).toBe(text);
+      expect(fieldRefusals(en, e422(item), [item.field]).fields[item.field], item.field).toBe(text);
+    }
+    expect(apiErrorText(az, e422(long("username", 128)))).toBe("Ən çoxu 128 simvol ola bilər.");
+  });
+
+  it("an empty field is a blank one, not \"at least 1 characters\"", () => {
+    expect(apiErrorText(en, e422(short("full_name", 1)))).toBe(en("errors.mustNotBeBlank"));
+    expect(apiErrorText(en, e422(short("reason", 1)))).toBe(en("errors.mustNotBeBlank"));
+  });
+
+  it("a password below its minimum says the minimum — \"enter your password\" only when the minimum is one", () => {
+    // Reachable with a password the screen counted as long enough: four emoji are eight UTF-16
+    // units to JavaScript's `.length` and four characters to Python's `len`.
+    expect(apiErrorText(en, e422(short("password", 8)))).toBe("At least 8 characters.");
+    expect(apiErrorText(en, e422(short("password", 1)))).toBe(en("errors.passwordRequired"));
+    expect(apiErrorText(en, e422({ field: "current_password", type: "missing", message: "Field required" })))
+      .toBe(en("errors.passwordRequired"));
+    // A password that is too long keeps its own sentence, which already names the server's 1024.
+    expect(apiErrorText(en, e422(long("new_password", 1024)))).toBe("The password can be at most 1024 characters.");
+  });
+
+  it("reads the number from pydantic's own sentence when ctx did not come with it", () => {
+    const bare = { field: "username", type: "string_too_long", message: "String should have at most 128 characters" };
+    expect(apiErrorText(en, e422(bare))).toBe("At most 128 characters.");
+  });
+
+  it("a list over its cap says how many at a time", () => {
+    const item = { field: "external_ids", type: "too_long", message: "List should have at most 50 items after validation, not 51", ctx: { max_length: 50 } };
+    expect(apiErrorText(en, e422(item))).toBe("At most 50 at a time.");
+  });
+
+  it("every length sentence exists in the four languages with its number", () => {
+    for (const lang of LANG_CODES) {
+      expect(DICTIONARIES[lang]["errors.fieldTooShort"], lang).toContain("{min}");
+      expect(DICTIONARIES[lang]["errors.fieldTooLong"], lang).toContain("{max}");
+      expect(DICTIONARIES[lang]["errors.listTooShort"], lang).toContain("{min}");
+      expect(DICTIONARIES[lang]["errors.listTooLong"], lang).toContain("{max}");
+    }
+  });
+});
+
+describe("fieldRefusals", () => {
+  const en = createTranslator("en", DICTIONARIES);
+  const e422 = (...items) => Object.assign(new Error("…"), { status: 422, fieldErrors: items });
+
+  it("puts each refusal under the control the form draws for it, and everything else in `others`", () => {
+    // A 422 about a field the form does not render — `group_ids.0`, a scope's `grants.0`, a
+    // model-level item with no field — used to come back keyed by its API path, the form found
+    // "some field" was named, and the refusal went under no control and onto no toast.
+    const err = e422(
+      { field: "username", type: "string_too_long", message: "String should have at most 128 characters", ctx: { max_length: 128 } },
+      { field: "group_ids.0", type: "uuid_parsing", message: "Input should be a valid UUID" },
+      { field: "grants.0", type: "value_error", message: "bir atama ya bir ünite ya bir yatak belirtir, ikisi birden değil" },
+      { field: null, type: "value_error", message: "something about the whole body" },
+    );
+    const split = fieldRefusals(en, err, ["username", "email", "full_name", "password"]);
+    expect(split.fields).toEqual({ username: "At most 128 characters." });
+    expect(split.others).toEqual([
+      "Input should be a valid UUID",
+      "One grant names either a unit or a bed, never both.",
+      "something about the whole body",
+    ]);
+  });
+
+  it("with no rendered field named, everything is `others` — the toast's", () => {
+    const err = e422({ field: "reason", type: "value_error", message: "reason: at least one letter or digit" });
+    expect(fieldRefusals(en, err, [])).toEqual({ fields: {}, others: [en("errors.reasonNeedsText")] });
+    expect(fieldRefusals(en, err)).toEqual({ fields: {}, others: [en("errors.reasonNeedsText")] });
+  });
+
+  it("anything that is not a 422 with items is neither", () => {
+    expect(fieldRefusals(en, Object.assign(new Error("Bu kısa ad zaten kullanılıyor"), { status: 409 }), ["slug"]))
+      .toEqual({ fields: {}, others: [] });
+    expect(fieldRefusals(en, null, ["slug"])).toEqual({ fields: {}, others: [] });
   });
 });
 

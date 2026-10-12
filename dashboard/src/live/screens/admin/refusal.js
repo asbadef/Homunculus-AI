@@ -30,7 +30,9 @@ import { apiErrorText } from "../../apiErrors.js";
  * @param subject  what the write was about, already in words a reader knows — a user's full name,
  *                 a group's name, an AD group's own name. Never an id, never a key; an id is not
  *                 what an administrator was looking at.
- * @param err      the failure from the API client.
+ * @param err      the failure from the API client — or a reason already in the reader's words,
+ *                 which is used as it is: a 422's `others` (`apiErrors.fieldRefusals`), the
+ *                 refusals about fields the form does not draw, joined.
  */
 export function refusedFor(t, subject, err) {
   const reason = apiErrorText(t, err);

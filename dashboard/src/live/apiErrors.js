@@ -145,12 +145,51 @@ const PASSWORD_FIELDS = new Set(["password", "current_password", "new_password"]
 
 const messageOf = (err) => (typeof err === "string" ? err : typeof err?.message === "string" ? err.message : "");
 
-/** One 422 item ({field, type, message}, backendApi.js) as {key, vars}, or null. Only the password
- *  fields of the auth forms: the screens' own checks catch the rest before a request is sent. */
+/** The number a length check states: `ctx` first (backendApi keeps `min_length` / `max_length`),
+ *  else pydantic's own sentence ("String should have at least 8 characters", "List should have at
+ *  most 50 items after validation"). null when neither says. */
+function lengthOf(item, name) {
+  const stated = item?.ctx?.[name];
+  if (Number.isInteger(stated)) return stated;
+  const said = new RegExp(`\\bat ${name === "min_length" ? "least" : "most"} (\\d+) `).exec(String(item?.message ?? ""));
+  return said ? Number(said[1]) : null;
+}
+
+/** One 422 item ({field, type, message[, ctx]}, backendApi.js) as {key, vars}, or null: pydantic's
+ *  OWN checks, recognised by their type rather than by their English, with the server's number.
+ *
+ *  WHY ALL FIELDS, AND THE NUMBER. This used to recognise only the password fields of the auth
+ *  forms, on the theory that a screen's own checks catch the rest first. The administration forms
+ *  showed the theory false: every `min_length` / `max_length` on a Field (a username over 128, an
+ *  e-mail over 254, a name over 200, a group name over 120, a description over 500, an empty
+ *  reason, a DN under 3, a directory query under 2) reached the administrator as pydantic's English,
+ *  in all four languages. And a password under its minimum of eight read "Enter your password" —
+ *  reachable with a password the screen had counted as long enough (four emoji are eight UTF-16
+ *  units to JavaScript and four characters to Python). "Enter your password" is now said only when
+ *  the minimum is one; an empty required field is "cannot be blank", never "at least 1 characters". */
 function fieldErrorKey(item) {
-  if (!item || !PASSWORD_FIELDS.has(item.field)) return null;
-  if (item.type === "string_too_long") return { key: "errors.passwordTooLong", vars: {} };
-  if (item.type === "string_too_short" || item.type === "missing") return { key: "errors.passwordRequired", vars: {} };
+  if (!item) return null;
+  const password = PASSWORD_FIELDS.has(item.field);
+  const blank = { key: password ? "errors.passwordRequired" : "errors.mustNotBeBlank", vars: {} };
+  if (item.type === "missing") return blank;
+  if (item.type === "string_too_short") {
+    const min = lengthOf(item, "min_length");
+    return min === null || min <= 1 ? blank : { key: "errors.fieldTooShort", vars: { min } };
+  }
+  if (item.type === "string_too_long") {
+    // A password's own sentence already names the server's limit (1024, auth/schemas.py).
+    if (password) return { key: "errors.passwordTooLong", vars: {} };
+    const max = lengthOf(item, "max_length");
+    return max === null ? null : { key: "errors.fieldTooLong", vars: { max } };
+  }
+  if (item.type === "too_short") {
+    const min = lengthOf(item, "min_length");
+    return min === null ? null : { key: "errors.listTooShort", vars: { min } };
+  }
+  if (item.type === "too_long") {
+    const max = lengthOf(item, "max_length");
+    return max === null ? null : { key: "errors.listTooLong", vars: { max } };
+  }
   return null;
 }
 
@@ -169,20 +208,34 @@ function fieldMessageKey(item) {
   return key ? { key: `errors.${key}`, vars: {} } : null;
 }
 
-/** Which of a form's fields a 422 is about, and what to print under it — `{field: text}`, in the
- *  reader's language. The field names are the API's (`username`, `email`, `full_name`, `password`,
- *  `slug`, `name`, `reason`, `ad_group_dn`); a form maps them to its own controls. An item whose
- *  message is not a known one keeps the server's words, which is still better under the field it is
- *  about than nowhere. Empty when the failure is not a 422 with fields. */
-export function fieldRefusals(t, err) {
-  const out = {};
+/** A 422 split between the controls a form DRAWS and everything else, in the reader's language:
+ *  `{ fields: {field: text}, others: [text] }`.
+ *
+ *  `rendered` is the list of API field names the form has a control for (`username`, `email`,
+ *  `full_name`, `password`, `slug`, `name`, `description`, `reason`, `ad_group_dn`…); a form maps
+ *  them to its own controls. `fields` goes under those controls. `others` is every refusal about
+ *  something the form does not draw — an API path (`group_ids.0`, a scope's `grants.0`), a
+ *  model-level item with no field, a field the server added — and it goes to the TOAST, named after
+ *  the write's subject. The first version returned every item keyed by its API path, a form saw
+ *  that "some field" was named and showed nothing under any control and nothing on the toast: the
+ *  refusal was swallowed. An item whose message is not a known one keeps the server's words, which
+ *  is still better than nothing. Both empty when the failure is not a 422 with items. */
+export function fieldRefusals(t, err, rendered = []) {
+  const drawn = new Set(Array.isArray(rendered) ? rendered : []);
+  const fields = {};
+  const others = [];
   for (const item of Array.isArray(err?.fieldErrors) ? err.fieldErrors : []) {
-    if (!item || typeof item.field !== "string" || item.field === "" || out[item.field]) continue;
+    if (!item) continue;
     const hit = fieldErrorKey(item) || fieldMessageKey(item);
     const text = hit ? t(hit.key, hit.vars) : String(item.message ?? "").trim();
-    if (text) out[item.field] = text;
+    if (!text) continue;
+    if (typeof item.field === "string" && drawn.has(item.field)) {
+      if (!fields[item.field]) fields[item.field] = text;
+    } else if (!others.includes(text)) {
+      others.push(text);
+    }
   }
-  return out;
+  return { fields, others };
 }
 
 /** Which `errors.*` text an API failure is — {key, vars} — or null when it is not a known one.
