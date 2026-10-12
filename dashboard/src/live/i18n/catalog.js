@@ -30,7 +30,8 @@ import patient from "./strings/patient.js";
 
 import admin from "./strings/admin.js";
 
-// G1-13: import roles from "./strings/roles.js";
+import roles from "./strings/roles.js";
+import perms from "./strings/perms.js";
 
 // G1-14: import source from "./strings/source.js";
 
@@ -49,7 +50,7 @@ export const NAMESPACES = {
 
   admin,
 
-  // G1-13: roles,
+  roles, perms,
 
   // G1-14: source,
 };
