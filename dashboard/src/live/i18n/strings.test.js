@@ -115,6 +115,8 @@ const AZ_SAME_AS_TR = new Set([
   // G1-13 (admin · roles) · az = tr
 
   // G1-14 (admin · login source) · az = tr
+  "source.colName", //       Ad — "name" in Azerbaijani too (as admin.colName)
+  "source.colChoose", //     Seç — the same imperative in Azerbaijani
 
 ]);
 
