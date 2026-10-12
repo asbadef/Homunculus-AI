@@ -4,7 +4,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { resetScreens } from "../../shell/routes.js";
-import { AdminScreen, TABS, openTabs, resetTabs, stubTabs, tabScreenOf } from "./AdminScreen.jsx";
+import { AdminScreen, TABS, onlyTabs, openTabs, resetTabs, tabScreenOf } from "./AdminScreen.jsx";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -20,15 +20,17 @@ const GROUPS = [
 ];
 const CATALOGUE = [{ key: "board.view", description: "See the live board" }];
 
-/** Stand-ins for the tabs, which are built on their own branches. The registry's own seam
- *  (`stubTabs`, as `shell/routes.js` has `stubScreens`): `ids` names which of the three this
- *  test's build has. */
+/** Stand-ins for the tabs, which are built on their own branches. `onlyTabs` — not `stubTabs` —
+ *  because the subject of these tests is WHICH tabs exist: `ids` names the tabs this test's build
+ *  has, and every other tab has none, whatever the real build built. With `stubTabs`, which only
+ *  assigns, three of the tests below passed for a build with no tabs and broke the day the first
+ *  one landed, in a file none of the three parallel branches owns. */
 function tabsBuilt(ids) {
   const stubs = {};
   for (const id of ids) {
     stubs[id] = ({ admin }) => <p>{`${id}: ${admin.data.users.length} / ${admin.data.groups.length}`}</p>;
   }
-  return stubTabs(stubs);
+  return onlyTabs(stubs);
 }
 
 afterEach(() => {
@@ -82,13 +84,20 @@ describe("which tabs a session sees", () => {
   });
 
   it("the seam refuses outside the test build, and gives the build's tabs back", () => {
-    tabsBuilt(["users"]);
-    expect(tabScreenOf(TABS[0])).toBeTypeOf("function");
-    resetTabs();
+    // `onlyTabs` takes every tab away but the one it names; `resetTabs` hands the BUILD's tabs
+    // back — whatever this build has, which is the point: the seam is not a second source of
+    // truth about what was built.
+    // Read, never pinned: which tabs THIS build has is the build's business, and a branch that
+    // lands one must not have to edit this file.
+    const asBuilt = TABS.map(tabScreenOf);
+    onlyTabs({ roles: () => null });
+    expect(tabScreenOf(TABS[1])).toBeTypeOf("function");
     expect(tabScreenOf(TABS[0])).toBeNull();
+    resetTabs();
+    expect(TABS.map(tabScreenOf)).toEqual(asBuilt);
     vi.stubEnv("MODE", "production");
     try {
-      expect(() => stubTabs({ users: () => null })).toThrow(/test seam/);
+      expect(() => onlyTabs({ users: () => null })).toThrow(/test seam/);
       expect(() => resetTabs()).toThrow(/test seam/);
     } finally {
       vi.unstubAllEnvs();

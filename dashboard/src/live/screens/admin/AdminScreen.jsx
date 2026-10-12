@@ -46,11 +46,18 @@ export const TABS = Object.freeze([
 ]);
 
 /** The component each tab shows in THIS build — `null` until its wave sets it. THIS is the line a
- *  wave edits, and only its own; `resetTabs` puts it back whatever a test stood in for. */
+ *  wave edits, and only its own; `resetTabs` puts it back whatever a test stood in for.
+ *
+ *  Each line has a BLANK LINE on either side, like the import block above, `i18n/catalog.js` and
+ *  `shell/routes.js`'s `SCREENS`. The gaps are the whole mechanism: git merges line ranges, so
+ *  three arms editing three ADJACENT lines of one object conflict on the second merge every time —
+ *  which this block did until it was measured with `git merge` itself. Do not tidy them away. */
 const TAB_SCREENS = Object.freeze({
-  users: null,    // G1-12
-  roles: null,    // G1-13
-  source: null,   // G1-14
+  users: null, //    G1-12
+
+  roles: null, //    G1-13
+
+  source: null, //   G1-14
 });
 
 /** What `tabScreenOf` reads: this build's own tabs, until a test stands in for one. */
@@ -69,11 +76,31 @@ function testOnly(what) {
 
 /** TEST ONLY — stand in for the tabs a later branch will build ({tabId: Component}); returns
  *  `resetTabs`, which an `afterEach` MUST call. The parallel branches of Wave 3 do NOT call this:
- *  each edits its own line in TAB_SCREENS above. */
+ *  each edits its own line in TAB_SCREENS above.
+ *
+ *  It ASSIGNS, so a tab it does not name keeps whatever this build has. A test whose subject is
+ *  WHICH tabs exist must use `onlyTabs` instead — see there. */
 export function stubTabs(screens) {
   testOnly("stubTabs");
   Object.assign(BUILT, screens);
   return resetTabs;
+}
+
+/** TEST ONLY — the tab table reduced to `screens`: every tab this call does not name has NO
+ *  component, whatever this build built.
+ *
+ *  Why it exists, and it is the same lesson `shell/screens.testutil.js` carries for the routes.
+ *  `stubTabs` only assigns, so "this build has nothing to show" and "this build has only the roles
+ *  tab" could not be SAID — they could only be true by accident, of a build with no tabs. Three of
+ *  the frame's own tests were written that way, and all three broke the moment the first tab was
+ *  built, in a file none of the three parallel branches owns: exactly the collision the two-line
+ *  seam exists to prevent, reintroduced in the tests. A test that cares which tabs exist states it;
+ *  one that does not uses the build and asserts through `openTabs` / `tabScreenOf`. */
+export function onlyTabs(screens = {}) {
+  testOnly("onlyTabs");
+  const table = {};
+  for (const tab of TABS) table[tab.id] = null;
+  return stubTabs({ ...table, ...screens });
 }
 
 /** TEST ONLY — every tab back to the component this build actually has. */

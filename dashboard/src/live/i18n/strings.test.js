@@ -37,6 +37,7 @@ const NEUTRAL = new Set([
   // G1-13 (admin · roles) · neutral
 
   // G1-14 (admin · login source) · neutral
+
 ]);
 // Azerbaijani and Turkish share many words, so an AZ text may equal its TR source — but that is
 // also exactly what a forgotten translation looks like (the Turkish copied across). Each identity
@@ -114,6 +115,7 @@ const AZ_SAME_AS_TR = new Set([
   // G1-13 (admin · roles) · az = tr
 
   // G1-14 (admin · login source) · az = tr
+
 ]);
 
 describe("live UI dictionaries", () => {

@@ -25,23 +25,40 @@
 //
 // Synthetic accounts and synthetic cards only (board.testutil.js).
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import React from "react";
-import { act, cleanup, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { ThemeProvider } from "./theme/ThemeProvider.jsx";
 import { mount } from "./session/mount.testutil.jsx";
 import { profile, token } from "./session/testTokens.testutil.js";
-import { NAMESPACES } from "./i18n/catalog.js";
+import { DICTIONARIES, NAMESPACES } from "./i18n/catalog.js";
+import { LANG_CODES } from "./i18n/langs.js";
 import { ROUTES, hashPath, resetScreens, screenOf } from "./shell/routes.js";
 import { Shell } from "./shell/Shell.jsx";
+import { PERMISSION_KEYS } from "./screens/admin/catalogue.js";
 import { NOW, ago, alarm, board, entry, identity, news2, reading } from "./data/board.testutil.js";
+import { ADMIN_READS } from "./screens/admin/admin.testutil.js";
 
-/** Every right Group 1 knows, so the sweep is not stopped at a screen by a missing permission —
- *  and so no CONTROL a right unlocks is left outside the net. `clinical.chart` was missing, so the
- *  patient screen rendered only the "you may not chart this" sentence and the five strings of the
- *  charting control itself (`patient.chartTitle|chartNote|chartYes|chartNo|chartSaving`) were
- *  never swept: a permission omitted here is a whole region of the UI this file silently does not
- *  cover, which is the opposite of what it exists for. */
-const PERMS = ["board.view", "alerts.ack", "clinical.chart", "users.manage", "groups.manage"];
+/** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
+ *  fileURLToPath refuses — the note apiErrors.test.js carries.) */
+const HERE = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+/** Every right Group 1 knows — the mirrored catalogue itself, not a list written out here — so the
+ *  sweep is not stopped at a screen by a missing permission, and so no CONTROL a right unlocks is
+ *  left outside the net. `clinical.chart` was missing once, and the patient screen then rendered
+ *  only the "you may not chart this" sentence while the five strings of the charting control
+ *  (`patient.chartTitle|chartNote|chartYes|chartNo|chartSaving`) were never swept: a permission
+ *  omitted here is a whole region of the UI this file silently does not cover, which is the
+ *  opposite of what it exists for.
+ *
+ *  The administration surface made the list itself the only safe answer. Its group-mapping
+ *  controls are drawn only for a desk that holds the WHOLE catalogue (the server's own rule,
+ *  `admin/ldap_service._full_administrator`, 403 otherwise) — so `users.manage` and
+ *  `groups.manage` are not enough, and no fixed list of three or five rights ever would be: a
+ *  right added to `auth/permissions.py` would silently close the mapping panel to this sweep. */
+const PERMS = [...PERMISSION_KEYS];
 /** The card a parameterised address is opened on. */
 const FIXTURE_ID = "S-001";
 
@@ -65,6 +82,14 @@ const LABELS = ["aria-label", "aria-description", "title", "placeholder", "alt"]
 const NOT_TEXT = new Set(["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"]);
 /** A file this interface names is not a key, whatever its first word is (`api/board.py`). */
 const A_FILE = /\.(?:js|jsx|ts|tsx|py|json|md|css|html)$/i;
+/** A PERMISSION key is not a translation key, and two of them are namespace-shaped: `board.view`
+ *  and `board.py` share a first word with the `board` namespace. The roles table prints every key
+ *  of the catalogue on purpose, under the server's own description — it is what an administrator
+ *  searches that table by and what a support call quotes, which is why `apiErrors.js` leaves them
+ *  untranslated inside `errors.permissionRequired` and `admin.beyond` too. Only the EXACT keys of
+ *  the catalogue are exempt, so a real `board.news2` left raw is still caught. Found by this
+ *  file's own tab-walking sweep the first time the roles tab was built. */
+const PERMISSION_KEY = new Set(PERMISSION_KEYS);
 
 /** Every key-shaped string this subtree shows a reader, text and accessible names alike.
  *
@@ -86,7 +111,9 @@ export function rawKeys(root) {
   }
   const found = new Set();
   for (const text of texts) {
-    for (const match of text.matchAll(KEY_SHAPE)) if (!A_FILE.test(match[0])) found.add(match[0]);
+    for (const match of text.matchAll(KEY_SHAPE)) {
+      if (!A_FILE.test(match[0]) && !PERMISSION_KEY.has(match[0])) found.add(match[0]);
+    }
   }
   return [...found];
 }
@@ -125,6 +152,10 @@ async function openAt(path) {
     setup: (api) => {
       api.boardPatients.mockResolvedValue(PAYLOAD);
       api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+      // The administration screen reads four more routes before it draws a row. Unstubbed they
+      // resolve `undefined`, every list comes out empty, and the sweep walks three tabs that each
+      // say only "nothing matches" — green, and covering none of the strings this file exists for.
+      ADMIN_READS(api);
     },
   });
   await act(async () => { await mounted.board.start(); });
@@ -152,9 +183,14 @@ describe("no screen shows a reader a translation key", () => {
       "<p>beds.identityPending</p>",
       "<p>news2.missing.spo2</p>",
       "<p lang=\"ru\">«alerts.ack» · 4.07 · 09:58 · мм рт. ст. · board.py</p>",
+      // The roles table's own cells: the catalogue's keys, printed on purpose. `board.view` is
+      // namespace-shaped and still not a translation key; `board.news2` is one and is caught.
+      "<span>board.view</span><span>clinical.chart</span><span>board.news2</span>",
       "<button aria-label=\"board.escalated\">·</button>",
     ].join("");
-    expect(rawKeys(root).sort()).toEqual(["beds.identityPending", "board.escalated", "news2.missing.spo2"]);
+    expect(rawKeys(root).sort()).toEqual([
+      "beds.identityPending", "board.escalated", "board.news2", "news2.missing.spo2",
+    ]);
   });
 
   it("every screen this build has renders its texts, on every address the rail can reach", async () => {
@@ -167,6 +203,19 @@ describe("no screen shows a reader a translation key", () => {
       // h1 of their own and no screen's text at all, and would have made this sweep vacuous.
       expect(document.querySelectorAll("h1"), `${route.id} (${path})`).toHaveLength(1);
       for (const key of rawKeys(document.body)) offenders.push(`${route.id} (${path}) → ${key}`);
+      // A TABBED screen shows one panel at a time, so arriving at it sweeps the FIRST tab and
+      // nothing else: the administration screen's roles and login-source tabs — two whole
+      // namespaces, built on their own branches — would have sat outside this net while it
+      // reported the screen covered. Every tab is clicked and its panel swept. `role="tab"` is
+      // read again after each click: the list may be rebuilt.
+      for (let at = 0; at < screen.queryAllByRole("tab").length; at += 1) {
+        const tab = screen.queryAllByRole("tab")[at];
+        const name = tab.textContent;
+        // eslint-disable-next-line no-await-in-loop
+        await act(async () => { fireEvent.click(tab); await settle(); });
+        for (const key of rawKeys(document.body)) offenders.push(`${route.id} (${path}) · ${name} → ${key}`);
+        visited.push(`${route.id}:${at}`);
+      }
       visited.push(route.id);
       act(() => { mounted.board.clear(); });
       cleanup();
@@ -192,5 +241,53 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByText("Eskalasiya edilib")).toBeInTheDocument();      // board.escalated
     expect(screen.getByText(/Eskalasiyanı mühərrik yürüdür/)).toBeInTheDocument(); // board.escalatedHelp
     act(() => { mounted.board.clear(); });
+  });
+});
+
+// ── The same guarantee for the text the sweep above cannot reach ───────────────────────────────
+//
+// The sweep renders; it therefore covers only what a payload and a few clicks reach. A dialog's
+// title, a confirmation's sentence, the words under a refused field — the administration tabs put
+// a great deal of their copy exactly there, and no fixture opens every dialog of every tab. So the
+// keys are checked WITHOUT rendering: every `t("ns.key")` a live source names as a plain string
+// literal must exist in all four languages. It cannot see a key built at run time (`t(\`x.${y}\`)`
+// — which is why the live code does not build them), and it says nothing about whether the text is
+// RIGHT; it catches the whole class of "this key was renamed, moved or never written", which is
+// what printed `beds.identityPending` into a clinical card twice in Wave 3.
+describe("every key the live sources name exists in all four languages", () => {
+  const LIVE = path.join(HERE, "live");
+  /** Every `.js`/`.jsx` under src/live/ that ships — tests and test utilities excluded: a test may
+   *  legitimately name a key that does not exist (this file's own detector fixture does). */
+  function sources(dir) {
+    const out = [];
+    for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, item.name);
+      if (item.isDirectory()) out.push(...sources(full));
+      else if (/\.jsx?$/.test(item.name) && !/\.test\.jsx?$/.test(item.name) && !/\.testutil\.jsx?$/.test(item.name)) out.push(full);
+    }
+    return out;
+  }
+  const FILES = sources(LIVE);
+  /** `t("ns.key"` and `labelKey: "ns.key"` — the two ways this UI names a text. */
+  const NAMED = /(?:\bt\(\s*|labelKey:\s*|textKey:\s*)"([a-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9_.]*)"/g;
+
+  it("found sources to read, and the reader recognises both ways a key is named", () => {
+    expect(FILES.length).toBeGreaterThan(40);
+    const sample = 'const a = t("admin.title"); const b = { labelKey: "admin.tabUsers" };';
+    expect([...sample.matchAll(NAMED)].map((m) => m[1])).toEqual(["admin.title", "admin.tabUsers"]);
+  });
+
+  it("names no key the dictionaries do not have", () => {
+    const missing = [];
+    for (const file of FILES) {
+      const text = fs.readFileSync(file, "utf8");
+      for (const [, key] of text.matchAll(NAMED)) {
+        if (!Object.keys(NAMESPACES).includes(key.split(".")[0])) continue;  // not one of ours
+        for (const lang of LANG_CODES) {
+          if (!(key in DICTIONARIES[lang])) missing.push(`${path.relative(LIVE, file)} → ${lang} ${key}`);
+        }
+      }
+    }
+    expect(missing, `a live source names a key no dictionary has:\n${missing.join("\n")}`).toEqual([]);
   });
 });
