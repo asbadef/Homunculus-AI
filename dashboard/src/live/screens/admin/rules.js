@@ -179,6 +179,36 @@ export function canManageUser(sessionPerms, user, groups, selfId, catalogue = []
   };
 }
 
+/** What one user's scope MEANS for the screen — the one rule the scope editor and the units cell
+ *  both follow, so the two cannot disagree. `scope` is `scopeFromApi(GET /scope/{id})`, or
+ *  null/undefined when that user's scope has not been read.
+ *
+ *    "unread"     — nothing was read: claim nothing (the cell says "not read").
+ *    "role"       — unrestricted BY ROLE (`SCOPE_UNRESTRICTED_ROLES`: the hospital administrator,
+ *                   platform support). The ONLY kind with nothing to assign: a grant would change
+ *                   nothing, and the editor says so and offers no Save.
+ *    "unassigned" — no grant at all (`reason` "unassigned", or "break_glass" for a clinician with no
+ *                   grant who broke glass). EDITABLE: this is how the first assignment is made. At
+ *                   the pilot it is every non-administrator's state, and it is `unrestricted: true`
+ *                   — `SCOPE_ENFORCE_UNASSIGNED` is off by default, so the engine shows such an
+ *                   account every patient until someone assigns it a unit. Reading that flag as
+ *                   "nothing to assign here" made the first assignment impossible from this screen
+ *                   and printed "scope unrestricted" in the units cell — the conflation with "she is
+ *                   an administrator" the cell exists to prevent. The cell reads "no unit assigned".
+ *    "assigned"   — restricted to its grants.
+ *    "unknown"    — anything else the engine answered (`reason` "unknown", a machine credential's
+ *                   "tenant_token", or "role" WITHOUT the unrestricted flag, which is a
+ *                   contradiction): not trusted for either decision, so the editor stays editable —
+ *                   the server decides the write — and the cell does not invent a summary.
+ */
+export function scopeKind(scope) {
+  if (!scope || typeof scope !== "object") return "unread";
+  if (scope.reason === "role") return scope.unrestricted === true ? "role" : "unknown";
+  if (scope.reason === "unassigned" || scope.reason === "break_glass") return "unassigned";
+  if (scope.reason === "assigned") return "assigned";
+  return "unknown";
+}
+
 /** May the session ASSIGN a scope at all? `PUT /scope/{user_id}` is refused with 403
  *  `kapsam atamak için kapsamı sınırsız bir yönetici olmalısınız` unless the CALLER's own scope is
  *  unrestricted BY ROLE (`scope/router.py put_scope`, `SCOPE_UNRESTRICTED_ROLES` =

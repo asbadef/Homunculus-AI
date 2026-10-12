@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 import { PERMISSION_KEYS } from "./catalogue.js";
 import {
   canAssignScope, canGrant, canManageUser, canMapGroups, groupFromApi, groupRights, rightsBeyond,
-  scopeFromApi, userFromApi, userRights,
+  scopeFromApi, scopeKind, userFromApi, userRights,
 } from "./rules.js";
 
 const CATALOGUE = PERMISSION_KEYS.map((key) => ({ key, description: key }));
@@ -228,6 +228,47 @@ describe("canManageUser", () => {
   it("a desk without users.manage may do nothing at all", () => {
     expect(canManageUser(["groups.manage"], nurse, groups, "u-1", CATALOGUE))
       .toMatchObject({ within: false, edit: false, setGroups: false });
+  });
+});
+
+describe("scopeKind", () => {
+  const read = (over) => scopeFromApi({ user_id: "u-2", grants: [], ...over });
+
+  it("only a scope unrestricted BY ROLE has nothing to assign", () => {
+    expect(scopeKind(read({ unrestricted: true, reason: "role" }))).toBe("role");
+  });
+
+  it("a scope that is unrestricted only because nothing is assigned is UNASSIGNED, not \"nothing to assign\"", () => {
+    // The pilot's normal state for every non-administrator: SCOPE_ENFORCE_UNASSIGNED is off by
+    // default and `/scope/{id}` answers `unrestricted: true, reason: "unassigned"`. Reading that as
+    // "unrestricted, nothing to assign here" would make the FIRST assignment impossible to make
+    // from this screen, and the units cell would print "scope unrestricted" — the very conflation
+    // with "she is an administrator" that the cell exists to avoid.
+    expect(scopeKind(read({ unrestricted: true, reason: "unassigned" }))).toBe("unassigned");
+    // And once enforcement is on, the same account is restricted and still unassigned.
+    expect(scopeKind(read({ unrestricted: false, reason: "unassigned" }))).toBe("unassigned");
+  });
+
+  it("a clinician with no grant who broke glass has nothing assigned either", () => {
+    expect(scopeKind(read({ unrestricted: false, reason: "break_glass" }))).toBe("unassigned");
+  });
+
+  it("a scope with grants is assigned", () => {
+    expect(scopeKind(read({
+      unrestricted: false, reason: "assigned", grants: [{ unit_id: "REA-01", bed_id: "", is_active: true }],
+    }))).toBe("assigned");
+  });
+
+  it("a scope nobody has read is UNREAD — never a claim about the user", () => {
+    expect(scopeKind(null)).toBe("unread");
+    expect(scopeKind(undefined)).toBe("unread");
+  });
+
+  it("anything it cannot place is unknown, and \"role\" without the unrestricted flag is not trusted", () => {
+    expect(scopeKind(read({ unrestricted: false, reason: "unknown" }))).toBe("unknown");
+    expect(scopeKind(read({ unrestricted: true, reason: "tenant_token" }))).toBe("unknown");
+    expect(scopeKind(read({ unrestricted: false, reason: "role" }))).toBe("unknown");
+    expect(scopeKind(scopeFromApi({}))).toBe("unknown");
   });
 });
 
