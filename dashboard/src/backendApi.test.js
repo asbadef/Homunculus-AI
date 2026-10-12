@@ -645,6 +645,100 @@ describe("backendApi — scope assignment (until G1-12 rebuilds the screen)", ()
   });
 });
 
+// The two whole-set writes of the administration screens. Each REPLACES a set on the server, so
+// each also says what the screen believed the set WAS (the plan's decision X1; Task 14e makes the
+// server refuse a stale one with 409 concurrentChange). These pin the bodies the server's
+// `UserGroupsIn` / `GroupPatch` read: a key renamed or a list re-ordered here is a compare-and-swap
+// that silently compares nothing.
+describe("backendApi — the administration's whole-set writes", () => {
+  const signedIn = (fetchMock) => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    return createBackendApi({ baseUrl: "https://api.test", fetchImpl: fetchMock });
+  };
+  const sent = (fetchMock) => {
+    const [url, init] = fetchMock.mock.calls[0];
+    return { url, method: init.method, body: JSON.parse(init.body), init };
+  };
+
+  it("sets a user's groups with PUT /admin/users/<id>/groups, the id one escaped path segment", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: "u 1/x" }));
+    const api = signedIn(fetchMock);
+    await api.adminSetUserGroups("u 1/x", ["g-nurse"], ["g-ward"]);
+    const { url, method, init } = sent(fetchMock);
+    expect(url).toBe("https://api.test/admin/users/u%201%2Fx/groups");
+    expect(method).toBe("PUT");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+    expect(init.headers["Content-Type"]).toBe("application/json");
+  });
+
+  it("carries the groups the screen read as `expected_group_ids`, beside the new `group_ids`, both as given", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    await api.adminSetUserGroups("u-1", ["g-ward", "g-nurse"], ["g-nurse", "g-icu"]);
+    expect(sent(fetchMock).body).toEqual({
+      group_ids: ["g-ward", "g-nurse"], expected_group_ids: ["g-nurse", "g-icu"],
+    });
+  });
+
+  it("without an expected list the key is ABSENT — not null, not [] — so a server reads the old body", async () => {
+    // `null` would be a value the server has to interpret; `[]` would claim "she holds no manual
+    // group" and be refused as stale for anyone who holds one.
+    for (const missing of [undefined, null]) {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+      const api = signedIn(fetchMock);
+      // eslint-disable-next-line no-await-in-loop
+      await api.adminSetUserGroups("u-1", ["g-nurse"], missing);
+      const { body } = sent(fetchMock);
+      expect(body, String(missing)).toEqual({ group_ids: ["g-nurse"] });
+      expect("expected_group_ids" in body, String(missing)).toBe(false);
+    }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    await signedIn(fetchMock).adminSetUserGroups("u-1", ["g-nurse"]);
+    expect("expected_group_ids" in sent(fetchMock).body).toBe(false);
+  });
+
+  it("an EMPTY expected list is sent as [] — a real expectation: \"she holds no manual group\"", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    await api.adminSetUserGroups("u-1", ["g-nurse"], []);
+    const { body } = sent(fetchMock);
+    expect(body).toEqual({ group_ids: ["g-nurse"], expected_group_ids: [] });
+    expect(Array.isArray(body.expected_group_ids)).toBe(true);
+  });
+
+  it("an empty NEW list is sent as [] too: removing every manual group is a write, not an omission", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    await signedIn(fetchMock).adminSetUserGroups("u-1", [], ["g-nurse"]);
+    expect(sent(fetchMock).body).toEqual({ group_ids: [], expected_group_ids: ["g-nurse"] });
+  });
+
+  it("updates a group with PATCH /admin/groups/<id>, carrying `permissions` and `expected_permissions` exactly as given", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: "g 1/x", permissions: ["board.view"] }));
+    const api = signedIn(fetchMock);
+    const body = {
+      permissions: ["board.view", "alerts.ack", "users.manage"],
+      expected_permissions: ["alerts.ack", "board.view"],
+    };
+    await api.adminUpdateGroup("g 1/x", body);
+    const sentNow = sent(fetchMock);
+    expect(sentNow.url).toBe("https://api.test/admin/groups/g%201%2Fx");
+    expect(sentNow.method).toBe("PATCH");
+    // Order kept, nothing added, nothing dropped: the screen sorts its expectation, the client
+    // passes it through.
+    expect(sentNow.body).toEqual({
+      permissions: ["board.view", "alerts.ack", "users.manage"],
+      expected_permissions: ["alerts.ack", "board.view"],
+    });
+  });
+
+  it("passes an EMPTY expected permission list through as [] — \"this group holds nothing\"", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    await signedIn(fetchMock).adminUpdateGroup("g-1", { permissions: ["board.view"], expected_permissions: [] });
+    expect(sent(fetchMock).body).toEqual({ permissions: ["board.view"], expected_permissions: [] });
+  });
+});
+
 describe("backendApi — another tab, a lock screen's 401, Retry-After, storage that refuses", () => {
   const json = (status, body, headers) => ({
     ok: status >= 200 && status < 300, status, json: async () => body, headers,
