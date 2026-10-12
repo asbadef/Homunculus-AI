@@ -35,6 +35,7 @@ const NEUTRAL = new Set([
   "admin.sourceLdap", //          AD — an abbreviation
 
   // G1-13 (admin · roles) · neutral
+  "roles.cell", //                "{group} · {permission}" — punctuation; the two names are the words
 
   // G1-14 (admin · login source) · neutral
 
@@ -113,6 +114,8 @@ const AZ_SAME_AS_TR = new Set([
   "admin.fieldFullName", //  Ad soyad — the prototype's AZ dictionary (admin.js userModal)
 
   // G1-13 (admin · roles) · az = tr
+  "roles.cell", //           "{group} · {permission}" — punctuation, no words of its own
+  "roles.removed", //        "silindi." — the same past passive in Azerbaijani (the subject is doneFor's)
 
   // G1-14 (admin · login source) · az = tr
 
