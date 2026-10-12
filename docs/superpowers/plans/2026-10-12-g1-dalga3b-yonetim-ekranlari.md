@@ -4,7 +4,7 @@
 
 **Goal:** The shell gets its administration screen. One screen, three tabs, each gated on its own right. **Users:** every account in the hospital with its role, its extra duties, the groups the directory holds for it, whether it must still change its password, whether a group it is in requires two-step verification it has not set up, and when it last signed in — searchable, with a form that creates a LOCAL account and edits a name, an e-mail and a membership list; the three writes that end a person's open sessions, each confirmed and each naming the consequence; a one-off lift of the directory sign-in throttle with a written reason that goes into the audit trail; and a unit/bed scope editor that really reaches the engine, offers the keys the board actually shows, and puts the previous list back when the server refuses. **Roles:** the permission catalogue down the side — each right described in the reader's own language, with its key under it — the groups across the top with their member counts (absent, never zero, where the API did not count), a checkbox that collects a change and a Save that sends one `PATCH` per group — never an apply-on-the-click — plus creating and deleting a group with the server's three refusals shown as they arrive. **Login source:** the directory's status with the host and nothing else, a connection test whose five refusals each say what to check, a search and an import sent in chunks of two with a progress line, all seven skip reasons translated, and the AD group mapping behind a picker, read-only for any desk that does not hold every right. Nothing is enforced in the browser; no password survives its dialog; and no count, total or member number appears unless the read that produced it answered.
 
-**Architecture:** Three components under `dashboard/src/live/screens/admin/`, mounted by the frame Wave 3's Task 19 built (`AdminScreen.jsx`, `TAB_SCREENS`). They read what the frame's loader read (`useAdminData` → `{data: {users, groups, catalogue, unassigned}, loading, error, reload}`) and reach everything else through `useSession().store.api` inside `store.track`, so a refused refresh ends the session here too. The rules are the ones already written and tested: `screens/admin/catalogue.js` (the permission keys and the default groups, mirrored from `auth/permissions.py`) and `screens/admin/rules.js` (the `/admin` payloads as the screens render them, plus the hints that decide what is offered and never what is allowed). This wave adds three shared pieces and nothing else shared: `screens/admin/refusal.js` (one copy of "a refusal names its subject, on the toast"), `screens/admin/admin.testutil.js` + `.test.js` (the synthetic `/admin`, `/admin/ldap` and `/scope` payloads the three arms' tests share, with a test that holds its permission texts to the backend's own) and `rules.canAssignScope` (the one rule the API has and no permission key reports).
+**Architecture:** Three components under `dashboard/src/live/screens/admin/`, mounted by the frame Wave 3's Task 19 built (`AdminScreen.jsx`, `TAB_SCREENS`). They read what the frame's loader read (`useAdminData` → `{data: {users, groups, catalogue, unassigned}, reads, failures, loading, reload}`, each read its last answer or `null`, its state in `reads`) and reach everything else through `useSession().store.api` inside `store.track`, so a refused refresh ends the session here too. The rules are the ones already written and tested: `screens/admin/catalogue.js` (the permission keys and the default groups, mirrored from `auth/permissions.py`) and `screens/admin/rules.js` (the `/admin` payloads as the screens render them, plus the hints that decide what is offered and never what is allowed). This wave adds three shared pieces and nothing else shared: `screens/admin/refusal.js` (one copy of "a refusal names its subject, on the toast"), `screens/admin/admin.testutil.js` + `.test.js` (the synthetic `/admin`, `/admin/ldap` and `/scope` payloads the three arms' tests share, with a test that holds its permission texts to the backend's own) and `rules.canAssignScope` (the one rule the API has and no permission key reports).
 
 **Tech Stack:** React 18.3, Vite 5.4, Tailwind 3.4, Vitest 2.1 + Testing Library on jsdom 24. **No new package** — in particular no `@testing-library/user-event` (the suite drives the DOM with `fireEvent`). Backend: Python 3.12 (the image) and 3.14 (development), FastAPI, SQLAlchemy 2.1, pytest against the test Postgres. **Tasks 0–13 change no API**; **Task 14 does, and only in four places where a screen could not otherwise tell the truth** — the rest of what those tasks found is recorded, not patched. Python otherwise appears as the sources two tests read as text (`auth/permissions.py`, and the refusal messages of `admin/*` and `scope/*`).
 
@@ -22,6 +22,18 @@ It does land cleanly: the four files and the three seam edits were copied onto t
 
 **Running it then found five defects in it, and the review of the first draft a sixth**, which is why Tasks 2–4 exist and why they are sequential, before the three arms branch. Two of the five would have broken a file no arm owns, on the day the first arm merged.
 
+### The foundation review moved the ground under the arms — read this before Task 5
+
+Tasks 0–4 are done and committed (`5fdc5cd..0d45b96`), and a review of that foundation then changed shared code (`9571f65..fed2e27`, plus `34494a8`). **Tasks 5–14 below are already migrated to it**: every arm's code and tests were replayed from this document onto `34494a8`, run, and their Expected lines re-measured there; the three arms were merged in three orders with no conflict. What changed, and what every arm does about it:
+
+- **`rules.scopeKind(scope)`** — "unread" | "role" | "unassigned" | "assigned" | "unknown" — is the one rule for every scope decision. Only "role" has nothing to assign. At the pilot every non-administrator's `/scope/{id}` reads `unrestricted: true, reason: "unassigned"` (`SCOPE_ENFORCE_UNASSIGNED` is off), and the first draft's editor, branching on the flag, made a first assignment impossible. Never branch on `unrestricted` alone.
+- **`useAdminData` has read states.** Each read is its last answer or `null`, with `reads[read]` = "unasked" | "loading" | "known" | "stale" | "failed"; a failed read is never `[]`. A list is drawn when known or stale; a COUNT only when known. The `admin` prop is `{data, reads, failures, loading, reload}` — there is no `error` — and a test builds it with **`adminProp(over)`** (`admin.testutil.js`), never by hand.
+- **`ADMIN_READS` makes every write a test did not stub REJECT**, naming itself, so a write test that forgets to answer fails rather than passing on a success nobody chose.
+- **`fieldRefusals(t, err, rendered)`** returns `{fields, others}`: the caller passes the API fields it DRAWS, `fields` goes under them, and `others` goes to the toast named after the subject. The first draft's forms read the old `{field: text}` shape — one test passed while the screen showed nothing.
+- **`limits.js`** mirrors the server's field limits (`FIELD_MAX`, `FIELD_MIN`, `lengthOf`); every input takes its `maxLength` from it, and a minimum is counted in code points (`[...s].length`), as the server counts — four emoji are eight to `.length`.
+- **The static key net** reads every `"ns.key"` literal — ternaries and lookup tables included — and fails on an unknown namespace; **`admin.mustChange`** says "next sign-in"; a `mounted` ref is set true INSIDE its effect, or StrictMode's rehearsal leaves it false.
+- **Nothing branches on a failure's HTTP status**: a refusal is recognised by its key (`apiErrorKey`, e.g. `errors.concurrentChange`, `errors.slugTaken`), never by its number.
+
 ---
 
 ## Size, and where a seam would be
@@ -32,11 +44,11 @@ It does land cleanly: the four files and the three seam edits were copied onto t
 |---|---|---|
 | Task 1 — the foundation lands | 1 | Code that exists; copy, run, commit. |
 | Tasks 2–4 — the corrections and the seam | 5 | **Not in the estimate.** Running the foundation and reviewing it found six defects in it, two of them in files no arm owns. The seam also has to carry the shared fixtures, their test and the sweep, because three arms cannot each add to one test file. |
-| Tasks 5–7 — the users arm (G1-12) | 9 | Three components, 36 tests, six dialogs, a scope editor whose keys come from the board. The largest screen in the product after the patient screen. |
-| Tasks 8–9 — the roles arm (G1-13) | 6 | One table, 32 tests, and two new four-language namespaces (the copy and the twenty-one permission descriptions). |
-| Tasks 10–11 — the source arm (G1-14) | 8 | Four sections, 37 tests, a new four-language namespace with seven skip reasons and five test reasons, a chunked sequential import, and six operations each with its own in-flight state. |
+| Tasks 5–7 — the users arm (G1-12) | 9 | Three components, 44 tests, six dialogs, a scope editor whose keys come from the board. The largest screen in the product after the patient screen. |
+| Tasks 8–9 — the roles arm (G1-13) | 6 | One table, 36 tests, and two new four-language namespaces (the copy and the twenty-one permission descriptions). |
+| Tasks 10–11 — the source arm (G1-14) | 8 | Four sections, 39 tests, a new four-language namespace with seven skip reasons and five test reasons, a chunked sequential import, and six operations each with its own in-flight state. |
 | Tasks 12–13 — the merge and the documents | 3 | |
-| Task 14 — the backend half | 4 | **Added after the first draft, on the user's decision**, and grown by one on the review's. Four API changes, each of which stops a screen claiming something untrue, with eleven Python tests; the Python suite is about 12 minutes per interpreter, run in thirds, on two. |
+| Task 14 — the backend half | 4 | **Added after the first draft, on the user's decision**, and grown by one on the review's. Four API changes, each of which stops a screen claiming something untrue, with twelve Python tests; the Python suite is about 12 minutes per interpreter, run in thirds, on two. |
 
 **Where a seam would be, if this has to be split.** After Task 4. Tasks 0–4 are sequential and leave the branch with the foundation, its corrections, the shared helper, the shared fixtures and a seam proved by `git merge` — a tree on which the three arms can be built on three branches, in three worktrees, in any order, by three agents who never meet. The three arms are 23 hours of the 36 and they are genuinely independent: each writes its own component, its own test file and its own namespace(s), and touches **two lines** of `AdminScreen.jsx`, **two** of `i18n/catalog.js` and **two blocks** of `i18n/strings.test.js`, all six pre-placed with a blank line on either side. That is the seam the whole of Task 4 exists to make true, and it was measured with git's own merge machinery rather than argued (Task 4, Step 10a).
 
@@ -51,17 +63,20 @@ The arithmetic:
 | Task 2 (corrections) | 101 | 2152 | +5 | `rules.test.js` 30 → **34**, `backendApi.test.js` 92 → **93** |
 | Task 3 (the refusal helper) | 102 | 2157 | +5 | `refusal.test.js` **5** |
 | Task 4 (the seam) | 103 | 2163 | +6 | `rawKeys.test.jsx` 3 → **5**, `admin.testutil.test.js` **4** |
-| Task 7 (users) | 104 | 2199 | +36 | `UsersTab.test.jsx` **36** |
-| Task 9 (roles) | 105 | 2231 | +32 | `RolesTab.test.jsx` **32** |
-| Task 11 (source) | 106 | 2268 | +37 | `SourceTab.test.jsx` **37** |
-| Task 12 (merged) | 106 | 2268 | — | the three arms together: 2163 + 36 + 32 + 37 |
-| Task 14 (the backend half) | 106 | **2271** | +2 | `catalogue.test.js` 9 → **10**, `rules.test.js` 34 → **35**, `UsersTab.test.jsx` 36 → **37** |
+| the foundation review (`0d45b96..fed2e27`, `34494a8`) | 104 | 2198 | +35 | `rules` 34 → **40** (`scopeKind`), `AdminScreen` 19 → **25** (read states, Retry's focus, StrictMode), `admin.testutil.test.js` 4 → **8** (`adminProp`, writes that reject), `refusal` 5 → **6**, `limits.test.js` **7**, `apiErrors.test.js` **+11** (the lengths, `fieldRefusals`); the key net was widened inside its existing five |
+| Task 7 (users) | 105 | 2242 | +44 | `UsersTab.test.jsx` **44** |
+| Task 9 (roles) | 106 | 2278 | +36 | `RolesTab.test.jsx` **36** |
+| Task 11 (source) | 107 | 2317 | +39 | `SourceTab.test.jsx` **39** |
+| Task 12 (merged) | 107 | 2317 | — | the three arms together: 2198 + 44 + 36 + 39 |
+| Task 14 (the backend half) | 107 | **2320** | +3 | `catalogue.test.js` 9 → **10**, `rules.test.js` 40 → **41**, `UsersTab.test.jsx` 44 → **45** |
+
+Tasks 0–4 and the review are history — they are committed (`5fdc5cd..34494a8`) and their rows are what was measured then. **The arms branch off the reviewed foundation, `34494a8`, at 104 / 2198**, and every arm count from Task 5 on was re-measured there, by replaying the migrated tasks onto it (see "The foundation review moved the ground" below).
 
 `i18n/strings.test.js` stays at **6** throughout: the three arms add entries to its two Sets, not tests, and so does Task 14 (neither of its two new texts needs a parity entry).
 
-**Task 14 also runs the Python suite**, which no other task does, on both interpreters; its Step 18 carries the measured absolutes — **2272 → 2283 passed, 8 skipped**, on 3.12.13 and on 3.14.5, with `test_infinity_vm_pilot.py` left out of every full run (it can hang under contention) — and the delta is **+11 passed, skipped unchanged**. It needs `PYTHONPATH` set as well as `TEST_DATABASE_URL` — without the first, two tests that spawn a subprocess fail with `ModuleNotFoundError`; without the second, every database test silently **skips** — and Task 14 repeats both exports in every Python block because shell state does not survive between Bash calls.
+**Task 14 also runs the Python suite**, which no other task does, on both interpreters; its Step 18 carries the measured absolutes — **2272 → 2284 passed, 8 skipped**, on 3.12.13 and on 3.14.5, with `test_infinity_vm_pilot.py` left out of every full run (it can hang under contention) — and the delta is **+12 passed, skipped unchanged**. It needs `PYTHONPATH` set as well as `TEST_DATABASE_URL` — without the first, two tests that spawn a subprocess fail with `ModuleNotFoundError`; without the second, every database test silently **skips** — and Task 14 repeats both exports in every Python block because shell state does not survive between Bash calls.
 
-An arm built on its own branch sees only its own file's additions, so the users arm's gate reads **104 / 2199**, the roles arm's **104 / 2195** (103 + 2163 + 32) and the source arm's **104 / 2200** — each measured on a tree replayed from this document with only that arm's tasks applied. **The number to expect on the merged branch is 106 / 2268**, and an arm that merges second or third must add its own file's count to what it finds rather than to the number printed in its own task.
+An arm built on its own branch sees only its own file's additions, so the users arm's gate reads **105 / 2242**, the roles arm's **105 / 2234** (2198 + 36) and the source arm's **105 / 2237** — each measured on a tree replayed from this document with only that arm's tasks applied, off `34494a8`. **The number to expect on the merged branch is 107 / 2317**, and an arm that merges second or third must add its own file's count to what it finds rather than to the number printed in its own task.
 
 ## How this plan was checked, so you know what to trust
 
@@ -99,13 +114,13 @@ Each one carries the alternative it rejected. The first four are about the API's
 
 2. **A refusal goes on the toast, names its subject, and is never also an inline `Alert`.** The patient arm's finding, applied to every administration write: `refusedFor(t, subject, err)` in `screens/admin/refusal.js`, one copy with a test. (The clinical half landed independently in `f4d6449` while this plan was written — the alarms and patient screens now name their refusal's subject too, so the two surfaces agree by construction rather than by coincidence.) The subject is the account's full name, the group's name, the AD group's own name or the search text — never an id. The reason is `apiErrorText`. `useToast()` **is** the function; there is no `.show` (calling one was Wave 3's Critical: a chart the server had taken told the clinician it had failed, in the literal text "toast.show is not a function"). *Rejected:* a refusal in the tab's own state (it dies with the tab, so an administrator who clicked to another tab mid-write sees no error at all and reasonably concludes the write landed); a refusal in both a toast and an `Alert` tone `crit` (both are `role="alert"`, so one refusal is announced twice); an unattributed refusal (read after moving, it says that *something* failed and not what, so she repeats the wrong action or none).
 
-3. **A 422's field message is translated, and that needed a change to `apiErrors.js`.** `backendApi.failure()` builds a 422's `Error.message` as `"<field>: <message>"`, so the whole string matches nothing in `API_MESSAGE_KEYS` — and **every** validator refusal the administration forms can earn (`usernameRule`, `badEmail`, `mustNotBeBlank`, `badSlug`, `reasonOneLine`, `reasonNeedsText`, `badGroupDn`) was reaching the administrator as the server's raw Turkish, in all four languages, although all seven are translated. Measured, not reasoned: `apiErrorText` on a real username 422 printed `username: Kullanıcı adı 2-128 karakter olmalı; …`. Task 2 adds `fieldMessageKey` to `apiErrorKey` and exports `fieldRefusals(t, err)` → `{field: text}`, which the two forms read to put each refusal under the control it is about. *Rejected:* each form matching the messages itself (three copies of a safety mapping, which is the defect `pillRisk` was extracted to prevent); leaving `apiErrorText` alone and showing the raw text (it is Turkish, and the acceptance criterion says "in the user's language").
+3. **A 422's field message is translated, and that needed a change to `apiErrors.js`.** `backendApi.failure()` builds a 422's `Error.message` as `"<field>: <message>"`, so the whole string matches nothing in `API_MESSAGE_KEYS` — and **every** validator refusal the administration forms can earn (`usernameRule`, `badEmail`, `mustNotBeBlank`, `badSlug`, `reasonOneLine`, `reasonNeedsText`, `badGroupDn`) was reaching the administrator as the server's raw Turkish, in all four languages, although all seven are translated. Measured, not reasoned: `apiErrorText` on a real username 422 printed `username: Kullanıcı adı 2-128 karakter olmalı; …`. Task 2 adds `fieldMessageKey` to `apiErrorKey` and exports `fieldRefusals`, which the two forms read to put each refusal under the control it is about — since the foundation review `fieldRefusals(t, err, rendered)` → `{fields, others}`: `rendered` names the API fields the form draws, and `others` (everything else) goes to the toast rather than being swallowed. *Rejected:* each form matching the messages itself (three copies of a safety mapping, which is the defect `pillRisk` was extracted to prevent); leaving `apiErrorText` alone and showing the raw text (it is Turkish, and the acceptance criterion says "in the user's language").
 
-4. **A 422 goes on the field and NOT on the toast; everything else goes on the toast.** A form inspects the failure: if `fieldRefusals` names any field, the texts go under those controls and focus moves to the first of them — which is where an administrator can act — and nothing is toasted. Otherwise the toast carries it, named. So one refusal is announced once, and the announcement is the one that can be acted on. *Rejected:* both (two announcements of one refusal); only the toast (a 422 about the username read on a toast leaves the administrator hunting for which field it meant).
+4. **A 422 goes on the field and NOT on the toast; everything else goes on the toast.** A form inspects the failure: `fieldRefusals(t, err, rendered)` is told which fields the form draws; the texts about those go under their controls and focus moves to the first of them — which is where an administrator can act — and those are not toasted. Everything else — a refusal that is not a 422, and a 422's `others`, about a field no control shows — is toasted, named. (The first draft passed no `rendered`, and a 422 about `group_ids.0` went under no control and onto no toast.) So one refusal is announced once, and the announcement is the one that can be acted on. *Rejected:* both (two announcements of one refusal); only the toast (a 422 about the username read on a toast leaves the administrator hunting for which field it meant).
 
 5. **The users tab loads the whole hospital, filters in the browser, renders fifty rows at a time, and says so out loud once the list is large.** `GET /admin/users` is unbounded by design for the pilot (the user's decision). Three consequences are built in rather than hoped for: the search and the role filter say **how many of how many** they are showing whenever they hide anything; the table renders `PAGE = 50` rows with a "show N more", because an AD import of several hundred accounts otherwise puts six hundred rows and five thousand cells into one commit and the slow screen arrives long before the slow request; and at `MANY = 200` accounts the tab prints one sentence saying it loaded them all and that server-side pagination will be needed. That sentence is the handover note to whoever adds it, **visible to the person who will ask for it**. *Rejected:* rendering every row (the first symptom of an unpaginated list is a screen that takes seconds to answer a keystroke, and it is the symptom an administrator reports as "the system is broken"); a client-side page control that looks like pagination (it would make the tab's search quietly wrong the day real pagination arrives, which is exactly what Wave 3's own note warned against); asking the backend for `limit`/`offset` now (the user decided otherwise, and a plan does not overrule that).
 
-6. **The units column claims nothing it has not read.** There is **no bulk scope read**: `GET /scope/{user_id}` is per user and `GET /scope/unassigned` answers a count. So the cell reads `admin.unitsNotRead` ("Oxunmayıb") until that user's scope has actually been read, and opening the scope editor fills that row for the rest of the session. `admin.noUnits` ("no unit assigned") and `admin.allUnits` ("scope unrestricted") are shown only from a real answer, and they stay two different statements — the prototype conflated them, and they are the difference between "nobody has assigned her anything" and "she is an administrator". *Rejected:* one `GET /scope/{id}` per row (a dozen requests at a pilot, several hundred after an AD import, every one of them through the admin lane the directory calls share — the tab would deny the administrator her own next search); a dash or a zero (both read as "no units", which is a claim); hiding the column (it is one of the eight the brief and the prototype both ask for, and its absence would hide the only route to the editor).
+6. **The units column claims nothing it has not read.** There is **no bulk scope read**: `GET /scope/{user_id}` is per user and `GET /scope/unassigned` answers a count. So the cell reads `admin.unitsNotRead` ("Oxunmayıb") until that user's scope has actually been read, and opening the scope editor fills that row for the rest of the session. `admin.noUnits` ("no unit assigned") and `admin.allUnits` ("scope unrestricted") are shown only from a real answer, and they stay two different statements — the prototype conflated them, and they are the difference between "nobody has assigned her anything" and "she is an administrator". **Which one is `rules.scopeKind`'s to say, not the `unrestricted` flag's** (the foundation review, `9571f65`): at the pilot an unassigned nurse is `unrestricted: true` too, and the first draft printed "scope unrestricted" for her and offered her no editor; "role" alone is unrestricted-with-nothing-to-assign, "unassigned" is editable and reads "no unit assigned", and "unknown" reads `admin.unitsUnknown`. *Rejected:* one `GET /scope/{id}` per row (a dozen requests at a pilot, several hundred after an AD import, every one of them through the admin lane the directory calls share — the tab would deny the administrator her own next search); a dash or a zero (both read as "no units", which is a claim); hiding the column (it is one of the eight the brief and the prototype both ask for, and its absence would hide the only route to the editor).
 
 7. **The scope editor's keys come from the board, from the user's own grants, and from a field — and it says so.** There is no endpoint that lists the units and beds a scope may name: they are the values in the site's `bed-mapping.json`, and `/tenant/*` — which does carry a tree — needs `structure.manage`, which `users.manage` does not imply, and its ids are database UUIDs that nothing forces the mapping file to use. So: the `unitId` / `bedId` of the cards on the board this session already has, plus the grants `GET /scope/{id}` reports, plus a free-text field for a key with no patient on it right now; and one line saying where the list came from and that an empty unit does not appear in it. *Rejected:* a unit × bed matrix from `/tenant/*` (wrong permission, and half of it would grant nothing — a matrix that looks complete and is wrong is worse than a list that says what it knows); free text alone (an administrator cannot be asked to remember the mapping file's spelling).
 
@@ -147,7 +162,7 @@ Each one carries the alternative it rejected. The first four are about the API's
 
 26. **Every count on these screens is absent unless the read that produced it answered.** `admin.data.unassigned` is `null` when `/scope/unassigned` was not asked or refused, and the tab then prints `admin.scopeUnassignedUnknown` rather than `0` — the difference between "nobody is unassigned" and "we do not know", on the one number that tells an administrator whether the scope matrix has ever been filled in. A group's `member_count` is the same: the roles table prints `roles.membersUnknown` rather than a zero when the API described a group without one — **and this was false in the first draft**: `groupFromApi` turned a missing count into `0`, the sentence was unreachable, and no test could tell. Task 2 makes the count `null` when it was not sent and the roles test holds the sentence. The 2FA cell is the same rule once more: for a user one of whose groups is not in the list it says "unknown", never "off". *Rejected:* zero as the fallback (two defects of exactly this shape survived three arms and two reviews on the alarms screen alone, one of them plan-verbatim).
 
-27. **A password is never in the DOM after its dialog closes.** The temporary password is a `type="password"` field, it is cleared in the same turn the dialog closes, it is never put in a `title`, never toasted and never logged; the tab's test asserts `document.body.innerHTML` does not contain it after the write. The only rule stated to the administrator is the server's own — at least `PASSWORD_MIN` characters — and the server's 422 lands on the field. *Rejected:* the prototype's generated plaintext password with a "regenerate" button and its three mutually inconsistent policies (the design note's item 11); showing the password once after a reset "so it can be passed on" (it is then in a screenshot, a scrollback and a support ticket).
+27. **A password is never in the DOM after its dialog closes.** The temporary password is a `type="password"` field, it is cleared in the same turn the dialog closes, it is never put in a `title`, never toasted and never logged; the tab's test asserts `document.body.innerHTML` does not contain it after the write. The only rule stated to the administrator is the server's own — at least `PASSWORD_MIN` characters, counted in code points as the server counts (`limits.lengthOf`; four emoji are eight to `.length`) — the field carries the server's `maxLength`, and the server's 422 lands on the field. *Rejected:* the prototype's generated plaintext password with a "regenerate" button and its three mutually inconsistent policies (the design note's item 11); showing the password once after a reset "so it can be passed on" (it is then in a screenshot, a scrollback and a support ticket).
 
 28. **While a write is in flight its dialog cannot be dismissed.** `Modal busy` already does it — Escape, the backdrop and the ✕ are inert and the ✕ keeps focus — and the three confirmations and the two forms all pass it. A refusal must land in an open form, or the administrator is told nothing about a write that did not happen. *Rejected:* closing optimistically and toasting the result (the refusal then arrives about a form she can no longer correct).
 
@@ -271,7 +286,7 @@ The most valuable thing the Wave 3 plan found was the list of things its screens
 |---|---|---|
 | `src/backendApi.js` | `userScope(id)`; `ldapSearch(query)` loses the `limit` FastAPI ignored; `ldapGroups(query)` requires its `q`; `LDAP_SEARCH_CAP`, `LDAP_QUERY_MIN`, `LDAP_QUERY_MAX`. | 2 |
 | `src/backendApi.test.js` | One new test for `userScope`; the directory-calls test rewritten. | 2 |
-| `src/live/apiErrors.js` | `fieldMessageKey` inside `apiErrorKey`, and the exported `fieldRefusals(t, err)`. | 2 |
+| `src/live/apiErrors.js` | `fieldMessageKey` inside `apiErrorKey`, and the exported `fieldRefusals(t, err, rendered)` → `{fields, others}` (its third argument and its shape from the foundation review). | 2 |
 | `src/live/screens/admin/rules.js` + `.test.js` | `canAssignScope`; `unlockSignIn` allows oneself; `memberCount` is `null` when the API did not send one. **Then** `kind` from the API, the mirror as the fallback. | 2, **14** |
 | `src/live/session/testTokens.testutil.js` | `fakeApi` gains `userScope`. | 2 |
 | `src/live/i18n/strings/admin.js` | `refusedFor` / `doneFor` / `savingFor` (Task 3, pre-seam: all three arms read them); eight keys for the users tab (Task 5); `unlocked` with the server's number and `unlockedNothing` (Task 14). | 3, 5, **14** |
@@ -2229,12 +2244,12 @@ Each gets the `node_modules` junction the way Task 0 made it (`cmd //c "mklink /
 
 # G1-12 · the users arm (Tasks 5–7, branch `feat/w3b-users`)
 
-### Task 5: The eight strings the users tab needs and the frame did not have
+### Task 5: The thirteen strings the users tab needs and the frame did not have
 
 **Files:**
 - Modify: `dashboard/src/live/i18n/strings/admin.js`
 
-Task 1 brought the `admin.*` namespace with the frame, written from the prototype's dictionary. Building the tab against the real API needed eight more, and seven of the eight exist because of Decisions 5, 6, 8 and 26 — they are the sentences that say what the screen does **not** know. (`admin.savingFor`, which every arm reads, was minted in Task 3.)
+Task 1 brought the `admin.*` namespace with the frame, written from the prototype's dictionary. Building the tab against the real API needed eight more, and seven of the eight exist because of Decisions 5, 6, 8 and 26 — they are the sentences that say what the screen does **not** know. Running the tab against the reviewed foundation (`0d45b96..fed2e27`: `scopeKind`, the read states, the sequenced edit) needed five more, and four of those five are the same kind of sentence. (`admin.savingFor`, which every arm reads, was minted in Task 3; `admin.scopeUnassignedOpen` / `scopeUnassignedClosed`, which the scope editor shows an unassigned account, by the review in `9571f65`.)
 
 - [ ] **Step 1: Add them.** Each language's block goes immediately **before** that language's `remove:` line, which is the last key in its block. In `dashboard/src/live/i18n/strings/admin.js`, replace
 
@@ -2252,6 +2267,11 @@ with
     showMore: "{count} satır daha göster",
     scopeMayUnknown: "Kapsam atama yetkiniz henüz okunamadı; kaydetme sunulmuyor.",
     scopeBoardUnknown: "Pano şu anda okunamıyor; seçenekler yalnız kullanıcının mevcut atamalarından geliyor.",
+    unitsUnknown: "Bilinmiyor",
+    usersUnread: "Kullanıcı listesi okunamadı; nedeni yukarıda yazıyor.",
+    readMyScope: "Kendi kapsamınız",
+    readScopeOf: "{name} kullanıcısının kapsamı",
+    groupsNotSaved: "Ad, e-posta ve etkinlik kaydedildi; gruplar kaydedilmedi: {reason}",
     remove: "Kaldır",
 ```
 
@@ -2271,6 +2291,11 @@ with
     showMore: "{count} sətir daha göstər",
     scopeMayUnknown: "Əhatə təyin etmək səlahiyyətiniz hələ oxunmadı; yadda saxlama təklif edilmir.",
     scopeBoardUnknown: "Panel hazırda oxunmur; seçimlər yalnız istifadəçinin mövcud təyinatlarından gəlir.",
+    unitsUnknown: "Məlum deyil",
+    usersUnread: "İstifadəçi siyahısı oxunmadı; səbəbi yuxarıda yazılıb.",
+    readMyScope: "Öz əhatəniz",
+    readScopeOf: "{name} istifadəçisinin əhatəsi",
+    groupsNotSaved: "Ad, e-poçt və aktivlik yadda saxlanıldı; qruplar saxlanılmadı: {reason}",
     remove: "Götür",
 ```
 
@@ -2290,6 +2315,11 @@ with
     showMore: "Показать ещё {count} строк",
     scopeMayUnknown: "Право назначать область пока не прочитано; сохранение не предлагается.",
     scopeBoardUnknown: "Панель сейчас недоступна; варианты взяты только из текущих назначений пользователя.",
+    unitsUnknown: "Неизвестно",
+    usersUnread: "Список пользователей прочитать не удалось; причина указана выше.",
+    readMyScope: "Ваша собственная область",
+    readScopeOf: "Область пользователя {name}",
+    groupsNotSaved: "Имя, почта и активность сохранены; группы не сохранены: {reason}",
     remove: "Убрать",
 ```
 
@@ -2309,6 +2339,11 @@ with
     showMore: "Show {count} more rows",
     scopeMayUnknown: "Whether you may assign a scope has not been read yet; saving is not offered.",
     scopeBoardUnknown: "The board cannot be read just now; the options come only from this user's existing assignments.",
+    unitsUnknown: "Unknown",
+    usersUnread: "The user list could not be read; the reason is above.",
+    readMyScope: "Your own scope",
+    readScopeOf: "{name}'s scope",
+    groupsNotSaved: "The name, e-mail and active state were saved; the groups were not: {reason}",
     remove: "Remove",
 ```
 
@@ -2364,14 +2399,14 @@ with
     mfaUnknown: "Unknown · its group is not in the list",
 ```
 
-Note what each one is for, because a reviewer will ask: `unitsNotRead` is Decision 6 (a cell that has read nothing claims nothing); `scopeUnassignedUnknown` is Decision 26 on the one number that says whether the scope matrix was ever filled in; `wholeList` is Decision 5's visible handover note; `filtered` is the search saying how much it hides; `showMore` is the 50-row bound; `scopeMayUnknown` is Decision 8's third state; `scopeBoardUnknown` is the scope editor admitting its options are short because the board could not be read; `mfaUnknown` is Decision 26 again, on the 2FA cell.
+Note what each one is for, because a reviewer will ask: `unitsNotRead` is Decision 6 (a cell that has read nothing claims nothing); `scopeUnassignedUnknown` is Decision 26 on the one number that says whether the scope matrix was ever filled in; `wholeList` is Decision 5's visible handover note; `filtered` is the search saying how much it hides; `showMore` is the 50-row bound; `scopeMayUnknown` is Decision 8's third state; `scopeBoardUnknown` is the scope editor admitting its options are short because the board could not be read; `mfaUnknown` is Decision 26 again, on the 2FA cell. And the five the reviewed foundation needed: `unitsUnknown` is the cell for a scope `rules.scopeKind` calls "unknown" — read, and not trusted for a summary; `usersUnread` is a users read that FAILED, which is not "no user matches" (`useAdminData`: a failed read is never `[]`); `readMyScope` and `readScopeOf` NAME the read that failed when the scope editor is opened — the desk's own `/scope/me` is not the user it was opened for, and a toast that named the user for it blamed the wrong record; `groupsNotSaved` is an edit that landed by half — the details saved and the groups refused — said as exactly that.
 
 - [ ] **Step 2: Check the parity and the scripts**
 
 ```bash
 npx vitest run src/live/i18n/strings.test.js 2>&1 | grep -E "Tests "
 ```
-Expected: `Tests  6 passed (6)`. None of the eight needs a `NEUTRAL` or `AZ_SAME_AS_TR` entry: each differs between Azerbaijani and Turkish, and each Russian text carries Cyrillic.
+Expected: `Tests  6 passed (6)`. None of the thirteen needs a `NEUTRAL` or `AZ_SAME_AS_TR` entry: each differs between Azerbaijani and Turkish, and each Russian text carries Cyrillic.
 
 - [ ] **Step 3: Gate**
 
@@ -2379,7 +2414,7 @@ Expected: `Tests  6 passed (6)`. None of the eight needs a `NEUTRAL` or `AZ_SAME
 npx vitest run 2>&1 | tail -4
 npx vite build 2>&1 | grep -E "built in|error"
 ```
-Expected: unchanged — `Test Files  103 passed (103)`, `Tests  2163 passed (2163)`, build clean. Nothing reads the new keys yet.
+Expected: unchanged — `Test Files  104 passed (104)`, `Tests  2198 passed (2198)`, build clean. Nothing reads the new keys yet. (The base is the reviewed foundation, `34494a8`: Task 4's 103 / 2163 plus the review's thirty-five tests, one new file — `limits.test.js` — among them.)
 
 - [ ] **Step 4: Commit**
 
@@ -2387,21 +2422,24 @@ Expected: unchanged — `Test Files  103 passed (103)`, `Tests  2163 passed (216
 git status --short
 git add dashboard/src/live/i18n/strings/admin.js
 git commit -m "$(cat <<'EOF'
-feat(dashboard): the eight sentences the users tab needs to say what it does not know
+feat(dashboard): the sentences the users tab needs to say what it does not know
 
-Seven of the eight exist because the screen cannot know something: there is no
-bulk scope read, so a units cell that has read nothing says so; /scope/unassigned
-may not have answered, and a zero there would be a claim; a user whose group is
-not in the list has a 2FA rule the screen cannot see, so the cell says unknown
-and never "off"; GET /admin/users is unbounded, so the tab says out loud that it
-loaded the whole hospital.
+Most of the thirteen exist because the screen cannot know something: there is
+no bulk scope read, so a units cell that has read nothing says so;
+/scope/unassigned may not have answered, and a zero there would be a claim; a
+user whose group is not in the list has a 2FA rule the screen cannot see, so
+the cell says unknown and never "off"; GET /admin/users is unbounded, so the
+tab says out loud that it loaded the whole hospital. A users read that failed
+is not "no user matches"; a failed /scope/me is named as that read, not as the
+user the editor was opened for; and an edit whose details landed and whose
+groups were refused says which half landed.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
 )"
 ```
 
-**Gate:** `103 / 2163` unchanged, `strings.test.js` green at 6.
+**Gate:** `104 / 2198` unchanged, `strings.test.js` green at 6.
 
 ---
 
@@ -2410,7 +2448,7 @@ EOF
 **Files:**
 - Create: `dashboard/src/live/screens/admin/UserForm.jsx`, `dashboard/src/live/screens/admin/ScopeEditor.jsx`
 
-No test files of their own: neither is reachable except through the tab, and a test of one in isolation would need a host component that is the tab. Task 7's test covers every branch of both — the form's five fields, its three group kinds, its disabled-and-named groups, its 422 handling and the password that must not survive; the editor's unrestricted case, its three sources of keys, its manual field, its replacement write, its rollback and its three-valued Save. They are written first because the tab imports them.
+No test files of their own: neither is reachable except through the tab, and a test of one in isolation would need a host component that is the tab. Task 7's test covers every branch of both — the form's five fields and their server limits, its three group kinds, its disabled-and-named groups, its 422 handling (on a drawn field, and on one it does not draw), the password counted in code points and the password that must not survive; the editor's by-role case, its unassigned case (a first assignment), its three sources of keys, its manual field, its replacement write, its rollback and its three-valued Save. They are written first because the tab imports them.
 
 - [ ] **Step 1: Write the form.** Create `dashboard/src/live/screens/admin/UserForm.jsx`:
 
@@ -2424,16 +2462,25 @@ No test files of their own: neither is reachable except through the tab, and a t
 //   * IT DOES NOT MAKE UP A PASSWORD. The prototype shows a plaintext one it generated
 //     (`H.genPassword`) with a "regenerate" button, and keeps three mutually inconsistent password
 //     policies in the browser. Here the administrator types the temporary password, the only rule
-//     stated is the server's own (at least `PASSWORD_MIN` characters, `admin/schemas.py`), the
-//     field is `type="password"` and it is cleared the moment the dialog closes. A password is
-//     never in a title, never in a toast, never logged, and never in the DOM after the dialog has
-//     gone — `UsersTab.test.jsx` asserts the last one, because it is the claim worth testing.
+//     stated is the server's own (at least `PASSWORD_MIN` characters, `admin/schemas.py`) COUNTED
+//     AS THE SERVER COUNTS — in code points (`limits.lengthOf`, `[...s].length`): four emoji are
+//     eight to JavaScript's `.length` and four to Python's `len`, and a form that counted `.length`
+//     sent them as long enough for the server to refuse. The field is `type="password"` and it is
+//     cleared the moment the dialog closes. A password is never in a title, never in a toast, never
+//     logged, and never in the DOM after the dialog has gone — `UsersTab.test.jsx` asserts the last
+//     one, because it is the claim worth testing.
 //
 //   * IT DOES NOT POLICE THE USERNAME. The prototype enforces `^[a-z0-9._]{3,32}$` in the
 //     browser, which is not the server's rule (`a-z 0-9 . _ @ -`, 2-128, after folding `İ`/`ı`):
 //     it refuses addresses the API accepts. The only check here is for characters that can never
 //     pass whatever the server thinks, and the server's own 422 lands on the field it is about
-//     (`fieldRefusals`) in the reader's own language.
+//     (`fieldRefusals`) in the reader's own language. Every field carries the server's own
+//     `maxLength` (`limits.FIELD_MAX`), so a limit is met at the keyboard rather than refused after.
+//
+//   * IT DOES NOT SWALLOW A REFUSAL IT HAS NO FIELD FOR. `fieldRefusals` is told which fields this
+//     form DRAWS; a 422 about anything else (`group_ids.0`, the body as a whole) comes back as its
+//     `others` and goes to the toast, named after the account — never "a field was named, so show
+//     nothing", which is how the first version lost it.
 //
 //   * IT DOES NOT HIDE A GROUP THE DESK MAY NOT GIVE. A group outside the session's own rights
 //     (`canGrant`) is drawn, disabled, with `admin.cannotGrant` beside it. Hiding it would leave
@@ -2446,17 +2493,25 @@ No test files of their own: neither is reachable except through the tab, and a t
 //
 // THE USERNAME CANNOT BE EDITED. `UserPatch` has no `username` and the API has no rename; the
 // field is `disabled` on an edit and says so. The roadmap routes renaming to Group 4.
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { fieldRefusals } from "../../apiErrors.js";
 import { Announce, Button, Field, Input, Modal, Select } from "../../ui/index.js";
 import { PASSWORD_MIN } from "../../auth/passwordRules.js";
 import { groupKind } from "./catalogue.js";
+import { FIELD_MAX, FIELD_MIN, lengthOf } from "./limits.js";
 import { canGrant } from "./rules.js";
 
 /** Which of the API's field names each control shows a refusal for. */
 const FIELD = { fullName: "full_name", username: "username", email: "email", password: "password" };
+/** The API fields this form DRAWS an editable control for, per mode — what `fieldRefusals` puts
+ *  under a control. An edit sends no username and no password (`UserPatch`), so a refusal naming
+ *  either cannot be about this write's controls and goes to the toast with everything else. */
+const DRAWN = {
+  create: ["full_name", "username", "email", "password"],
+  edit: ["full_name", "email"],
+};
 
 /** The groups a desk may choose from, split the way the form offers them (catalogue.groupKind):
  *  one role, any number of extra duties, any number of the hospital's own groups. */
@@ -2489,16 +2544,20 @@ function GroupChoice({ group, checked, grantable, busy, onToggle }) {
  * `user` null: create. Otherwise edit that account.
  *
  * `submit(body)` sends the write and resolves when the server has taken it; it throws the API's
- * failure. A 422 that names fields is shown UNDER those fields and focus moves to the first of
- * them — that is where an administrator can act on it — and `onRefused` is NOT called, so one
- * refusal is announced once. Anything else goes to `onRefused`, which puts it on the toast named
- * after this account (`refusal.js`).
+ * failure. A 422 about a field this form DRAWS is shown under that field and focus moves to the
+ * first of them — that is where an administrator can act on it — and that text is not ALSO toasted,
+ * so one refusal is announced once. Everything else — a refusal that is not a 422, and a 422's
+ * `others` (`fieldRefusals`: about something no control here shows) — goes to
+ * `onRefused(reason, subject)`, which puts it on the toast named after this account
+ * (`refusal.js`). `reason` is the failure itself, or the `others` already in the reader's words;
+ * `subject` is the name typed into this form, the only name a NEW account has.
  */
 export function UserForm({
   user = null, groups = [], catalogue = [], perms = [], submit, onSaved, onRefused, onClose,
 }) {
   const { t } = useI18n();
   const isNew = user === null;
+  const drawn = DRAWN[isNew ? "create" : "edit"];
   const { roles, extras, others } = useMemo(() => splitGroups(groups), [groups]);
   const held = new Set(isNew ? [] : user.manualGroupIds);
   const [fullName, setFullName] = useState(isNew ? "" : user.fullName || "");
@@ -2511,8 +2570,14 @@ export function UserForm({
   const [refusals, setRefusals] = useState({});
   const [busy, setBusy] = useState(false);
   const fields = useRef({});
-  const mounted = useRef(true);
-  React.useEffect(() => () => { mounted.current = false; }, []);
+  // Set true INSIDE the effect (the house pattern, `useAdminData`): StrictMode's rehearsal runs the
+  // cleanup and then the effect again, and a ref set true only at creation stayed false after it —
+  // every answer was then dropped as "unmounted".
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const grantable = (group) => canGrant(perms, group, catalogue);
   const directoryGroups = isNew ? [] : user.groups.filter((g) => g.source === "directory");
@@ -2524,12 +2589,13 @@ export function UserForm({
     return next;
   });
 
-  /** Only what can never pass, whatever the server's rule is. Everything else is the server's. */
+  /** Only what can never pass, whatever the server's rule is. Everything else is the server's. Both
+   *  lengths are counted in code points, as the server counts them (`lengthOf`). */
   function problems() {
     const out = {};
     if (!fullName.trim()) out.full_name = t("errors.mustNotBeBlank");
-    if (isNew && username.trim().length < 2) out.username = t("errors.usernameRule");
-    if (isNew && password.length < PASSWORD_MIN) out.password = t("errors.passwordTooShort");
+    if (isNew && lengthOf(username.trim()) < FIELD_MIN.username) out.username = t("errors.usernameRule");
+    if (isNew && lengthOf(password) < PASSWORD_MIN) out.password = t("errors.passwordTooShort");
     return out;
   }
 
@@ -2558,8 +2624,11 @@ export function UserForm({
       setPassword("");
       if (mounted.current) onSaved();
     } catch (err) {
-      const named = fieldRefusals(t, err);
       if (!mounted.current) return;
+      // Split between the controls this form draws and everything else (`fieldRefusals`); what no
+      // control shows still reaches the administrator, once, on the toast.
+      const { fields: named, others } = fieldRefusals(t, err, drawn);
+      const subject = fullName.trim() || username.trim();
       if (Object.keys(named).length > 0) {
         // The field has to be ENABLED before it can take focus: the controls are `disabled`
         // while busy, and `focus()` on a disabled element is a no-op in a browser (jsdom is more
@@ -2572,18 +2641,22 @@ export function UserForm({
           setRefusals(named);
         });
         fields.current[Object.keys(named)[0]]?.focus();
+        if (others.length > 0) onRefused(others.join(" "), subject);
       } else {
         setPassword("");
-        onRefused(err);
+        onRefused(others.length > 0 ? others.join(" ") : err, subject);
       }
     } finally {
       if (mounted.current) setBusy(false);
     }
   }
 
+  // Every field carries the server's own limit (`limits.FIELD_MAX`, held to admin/schemas.py by its
+  // test): a limit met at the keyboard is a refusal the administrator never has to read.
   const bind = (key) => ({
     ref: (el) => { fields.current[FIELD[key]] = el; },
     disabled: busy,
+    maxLength: FIELD_MAX[FIELD[key]],
   });
 
   return (
@@ -2740,21 +2813,29 @@ export function UserForm({
 // is not enough and nothing in the token says otherwise: the only honest source is the caller's own
 // `/scope/me` (`canAssignScope`). Until that answer arrives the Save is not offered and the screen
 // says the right is unknown — never a button that cannot work.
+//
+// ONLY A SCOPE UNRESTRICTED BY ROLE HAS NOTHING TO ASSIGN (`rules.scopeKind`, the one rule this
+// editor and the units cell both follow). The first version read ANY `unrestricted: true` as
+// "nothing to assign here" — and at the pilot every non-administrator's `/scope/{id}` answers
+// `unrestricted: true, reason: "unassigned"`, because `SCOPE_ENFORCE_UNASSIGNED` is off by default.
+// No first assignment could have been made from this screen. An UNASSIGNED account gets the editor
+// and one sentence saying what she sees until it is used — every patient while enforcement is off,
+// only her own while it is on — and that sentence is the one place the flag is read, after
+// `scopeKind` has said "unassigned". An "unknown" scope is editable too: the server decides the write.
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { Announce, Button, Field, Input, Modal, Note, Table } from "../../ui/index.js";
 import { boardKnown } from "../common/BoardState.jsx";
-import { canAssignScope } from "./rules.js";
+import { FIELD_MAX } from "./limits.js";
+import { scopeKind } from "./rules.js";
 
-/** The reason `/scope/{id}` gives for an UNRESTRICTED scope, as a sentence. The two the server can
- *  actually answer with here are `role` and `unassigned`; anything else (including `rules.js`'s own
- *  "we were told nothing" fallback) says the engine could not resolve it. */
-const REASON_KEY = {
-  role: "admin.scopeReasonRole",
-  unassigned: "admin.scopeReasonUnassigned",
-};
-const reasonKey = (reason) => REASON_KEY[reason] || "admin.scopeReasonUnknown";
+/** What an UNASSIGNED account sees until this editor is used — asked only of a scope `scopeKind`
+ *  has already called "unassigned". With enforcement off (the pilot) the engine shows her every
+ *  patient; with it on, only those whose care team names her or that she opened by break-glass. */
+const unassignedNoteKey = (scope) => (scope.unrestricted === true
+  ? "admin.scopeUnassignedOpen"
+  : "admin.scopeUnassignedClosed");
 
 /** A grant as this editor holds it: exactly one of the two keys, trimmed. */
 const asGrant = (unitId, bedId) => ({ unitId: unitId || "", bedId: bedId || "" });
@@ -2790,8 +2871,13 @@ export function ScopeEditor({ user, scope, mayAssign, save, onSaved, onRefused, 
   const [manual, setManual] = useState("");
   const [busy, setBusy] = useState(false);
   const [reverted, setReverted] = useState(false);
-  const mounted = useRef(true);
-  useEffect(() => () => { mounted.current = false; }, []);
+  // True inside the effect (the house pattern), so StrictMode's rehearsal does not leave it false.
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const kind = scopeKind(scope);
 
   const offered = useMemo(() => offeredKeys(board.patients, grants), [board.patients, grants]);
   const has = (grant) => grants.some((g) => sameGrant(g, grant));
@@ -2832,12 +2918,13 @@ export function ScopeEditor({ user, scope, mayAssign, save, onSaved, onRefused, 
 
   const title = t("admin.scopeTitle", { name: user.fullName || user.username });
 
-  // Unrestricted: there is nothing to assign, and the reason is the whole answer.
-  if (scope.unrestricted) {
+  // Unrestricted BY ROLE, and only that: there is nothing to assign, and the reason is the whole
+  // answer. An account unrestricted only because nothing is assigned yet is NOT this case.
+  if (kind === "role") {
     return (
       <Modal open title={title} onClose={onClose} actions={<Button onClick={onClose}>{t("admin.cancel")}</Button>}>
         <Note tone="info" icon="shield">
-          {t("admin.scopeUnrestricted", { reason: t(reasonKey(scope.reason)) })}
+          {t("admin.scopeUnrestricted", { reason: t("admin.scopeReasonRole") })}
         </Note>
       </Modal>
     );
@@ -2875,6 +2962,7 @@ export function ScopeEditor({ user, scope, mayAssign, save, onSaved, onRefused, 
     >
       {mayAssign === false ? <Note tone="warn" icon="shield">{t("errors.scopeAdminOnly")}</Note> : null}
       {mayAssign === null ? <Note tone="warn" icon="shield">{t("admin.scopeMayUnknown")}</Note> : null}
+      {kind === "unassigned" ? <Note tone="info" icon="shield">{t(unassignedNoteKey(scope))}</Note> : null}
 
       {/* Where the list comes from, and what is not in it. Not optional: an administrator who
           cannot find an empty unit in a list that looks complete concludes it does not exist. */}
@@ -2894,6 +2982,9 @@ export function ScopeEditor({ user, scope, mayAssign, save, onSaved, onRefused, 
         <Input
           value={manual}
           disabled={busy}
+          // The column's own limit: `ScopeGrantIn` states none, and a longer key is a database
+          // error rather than a refusal anyone can read (`limits.FIELD_MAX.scope_key`).
+          maxLength={FIELD_MAX.scope_key}
           onChange={(e) => setManual(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addManual(); } }}
         />
@@ -2950,7 +3041,10 @@ npx vite build 2>&1 | grep -E "built in|error"
 ```
 Expected: unchanged counts (nothing imports them yet) and a clean build.
 
-**Three things a reviewer should check here rather than in Task 7**, because they are decisions and not behaviour the test can name:
+**Five things a reviewer should check here rather than in Task 7**, because they are decisions and not behaviour the test can name:
+
+- **Every scope decision goes through `rules.scopeKind`**, never the bare flag: only "role" gets the no-editor sentence, and the flag is read in exactly one place — `unassignedNoteKey`, for a scope already called "unassigned". The foundation review (`9571f65`) found the first version branching on the flag alone, which made the pilot's every first assignment impossible.
+- **Both components set `mounted` true inside the effect**, not when the ref is created: under StrictMode's rehearsal (mount, cleanup, mount) the old pattern left it `false` and dropped every answer — the defect the review fixed in `useAdminData` (`b976c6c`), and the same shape here.
 
 - `UserForm` imports `groupKind` from **`./catalogue.js`** and `canGrant` from **`./rules.js`**. They are two modules and `groupKind` lives in the first; importing it from `rules.js` throws `groupKind is not a function` at render time — found by running, and the only failure in this wave that a type checker would have caught.
 - `ScopeEditor` shows its rollback as a **`Note`**, not an `Alert`: the refusal is already announced once on the toast, and `Alert tone="crit"` is a `role="alert"` of its own (Decision 9).
@@ -2968,20 +3062,25 @@ The form refuses three things the prototype does: it does not invent a
 password, it does not police the username beyond what can never pass, and it
 does not hide a group this desk may not grant -- it shows it disabled, with
 the reason, because "this hospital has no such group" and "I may not give it"
-are the two answers an administrator is choosing between.
+are the two answers an administrator is choosing between. It counts a password
+in code points as the server does, every field carries the server's own
+maxLength, and a 422 about something it draws no field for goes to the toast.
 
 The editor's unit and bed keys come from the board's own cards plus the user's
 existing grants plus a field, because no endpoint lists them; the write is a
 replacement, not a diff, and a refusal puts the previous list back and says so.
 The Save is not drawn at all unless the caller's own scope is unrestricted by
-role, which is the server's rule and which no permission key reports.
+role, which is the server's rule and which no permission key reports. Only a
+scope unrestricted BY ROLE has nothing to assign (rules.scopeKind): an
+unassigned account -- every non-administrator at the pilot -- gets the editor,
+and the sentence saying what she sees until it is used.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
 )"
 ```
 
-**Gate:** `103 / 2163` unchanged, build clean.
+**Gate:** `104 / 2198` unchanged, build clean.
 
 ---
 
@@ -3012,12 +3111,14 @@ import { profile, token } from "../../session/testTokens.testutil.js";
 import { board, entry, identity } from "../../data/board.testutil.js";
 import { PERMISSION_KEYS } from "./catalogue.js";
 import {
-  ADMIN_READS, CATALOGUE, GROUPS, NURSE_GROUP, SYSTEM_GROUP, USERS, group, member, scopeView, user,
+  ADMIN_READS, CATALOGUE, GROUPS, NURSE_GROUP, SYSTEM_GROUP, USERS, adminProp, group, member, scopeView, user,
 } from "./admin.testutil.js";
+import { FIELD_MAX } from "./limits.js";
 import { groupFromApi, userFromApi } from "./rules.js";
 import { UsersTab, mfaState } from "./UsersTab.jsx";
 
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
+const alerts = () => screen.getAllByRole("alert").map((a) => a.textContent).join(" ");
 /** A full administrator. It has to be the WHOLE catalogue by default, not a plausible three keys:
  *  `canManageUser` refuses a user whose own rights exceed the desk's, so a desk holding
  *  `users.manage` and `board.view` may not act on a nurse — the nurse holds `alerts.ack` — and
@@ -3025,20 +3126,19 @@ const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
  *  passed explicitly by the tests that are about a refusal. */
 const DESK = [...PERMISSION_KEYS];
 
-/** The tab on its own, with the loader's answers already in `admin` — the same object
- *  `AdminScreen` hands it, in the shapes `useAdminData` produces (`userFromApi`/`groupFromApi`),
- *  so a test cannot pass this tab a payload the loader could not. `reload` is a spy: every write
- *  must call it, because the screen then shows what the server holds rather than what it hoped.
+/** The tab on its own, with the loader's answers already in `admin` — built by `adminProp`, the
+ *  one builder of the object `AdminScreen` hands a tab, in the shapes AND the read states
+ *  `useAdminData` produces, so a test cannot pass this tab a payload or a state the loader could
+ *  not (`users: null` is a read that failed; `reads: { users: "stale" }` the last answer, kept).
+ *  `reload` is a spy: every write must call it, because the screen then shows what the server
+ *  holds rather than what it hoped.
  *
  *  `patients` puts cards on the BOARD (`board.testutil.js`), which is where the scope editor's unit
  *  and bed keys come from — there is no endpoint that lists them. */
 async function open({ perms = DESK, users = USERS, groups = GROUPS, catalogue = CATALOGUE,
-  unassigned = 2, selfId = "u-admin", setup, patients = [] } = {}) {
-  const reload = vi.fn(async () => {});
-  const admin = {
-    data: { users: users.map(userFromApi), groups: groups.map(groupFromApi), catalogue, unassigned },
-    loading: false, error: null, reload,
-  };
+  unassigned = 2, reads, selfId = "u-admin", setup, patients = [] } = {}) {
+  const admin = adminProp({ users, groups, catalogue, unassigned, reads });
+  const { reload } = admin;
   const mounted = await mount(<UsersTab admin={admin} />, {
     access: token({ sub: selfId, perms }),
     me: profile({ id: selfId, perms }),
@@ -3084,7 +3184,7 @@ describe("the list", () => {
   it("a temporary password is a tag, not a silence; \"required · not set up\" is not \"off\"", async () => {
     await open({ groups: [SYSTEM_GROUP, group("nurse", { mfa_required: true, member_count: 4 })] });
     const nurse = screen.getByRole("rowheader", { name: /hs\.aygun/ }).closest("tr");
-    expect(within(nurse).getByText("ilk girişdə şifrə")).toBeInTheDocument();
+    expect(within(nurse).getByText("növbəti girişdə şifrə")).toBeInTheDocument();
     expect(within(nurse).getByText("Məcburi · qurulmayıb")).toBeInTheDocument();
     expect(within(nurse).queryByText("Bağlı")).toBeNull();
   });
@@ -3121,6 +3221,9 @@ describe("the list", () => {
 
   it("searches name and username, folding diacritics, and says how much it is hiding", async () => {
     await open();
+    // Never sent: its limit is the longest "<name> <username>" a row can hold, from the server's two.
+    expect(screen.getByLabelText("Ad və ya istifadəçi adı axtar"))
+      .toHaveAttribute("maxlength", String(FIELD_MAX.full_name + 1 + FIELD_MAX.username));
     fireEvent.change(screen.getByLabelText("Ad və ya istifadəçi adı axtar"), { target: { value: "ayse" } });
     // The row header carries the login and, under it, where the account comes from.
     expect(screen.getAllByRole("rowheader").map((h) => h.textContent)).toEqual(["hs.aygunLokal"]);
@@ -3149,13 +3252,33 @@ describe("the list", () => {
     expect(screen.queryByRole("table")).toBeNull();
   });
 
-  it("shows the count of users with no assignment, and says so when it could not be read", async () => {
+  it("shows the count of users with no assignment only when its read answered — never a failed or a stale one", async () => {
     await open();
     expect(screen.getByText("Heç bir təyinatı olmayan istifadəçi: 2")).toBeInTheDocument();
     cleanup();
     await open({ unassigned: null });
     expect(screen.getByText("Heç bir təyinatı olmayan istifadəçilərin sayı oxunmadı.")).toBeInTheDocument();
     expect(screen.queryByText(/istifadəçi: 0/)).toBeNull();
+    cleanup();
+    // The last answer, kept through a failed re-read (`useAdminData` "stale"): a LIST may be drawn
+    // from it, a COUNT may not — "2 right now" is a claim about now that nobody has made.
+    await open({ reads: { unassigned: "stale" } });
+    expect(screen.getByText("Heç bir təyinatı olmayan istifadəçilərin sayı oxunmadı.")).toBeInTheDocument();
+    expect(screen.queryByText(/istifadəçi: 2/)).toBeNull();
+  });
+
+  it("a user list that could not be read says so — never \"no user matches\" over an empty table", async () => {
+    // A failed read is null, never `[]` (`useAdminData`): `[]` is what "this hospital has no users"
+    // looks like. The frame's Alert names the read and the reason; the tab says what it cannot show.
+    await open({ users: null });
+    expect(screen.getByText("İstifadəçi siyahısı oxunmadı; səbəbi yuxarıda yazılıb.")).toBeInTheDocument();
+    expect(screen.queryByText("Uyğun gələn istifadəçi yoxdur.")).toBeNull();
+    expect(screen.queryByRole("table")).toBeNull();
+    cleanup();
+    // A STALE list — the last answer, kept through a failed re-read — is drawn; the frame's Alert
+    // says it is the last one received.
+    await open({ reads: { users: "stale" } });
+    expect(screen.getAllByRole("rowheader")).toHaveLength(USERS.length);
   });
 
   it("says out loud that it loaded the whole hospital once the list is large", async () => {
@@ -3303,6 +3426,102 @@ describe("the form", () => {
     // A PASSWORD IS NEVER IN THE DOM AFTER ITS DIALOG CLOSES — not in a value, not in a title.
     expect(document.body.innerHTML).not.toContain("gecici-1234");
   });
+
+  it("every field carries the server's own limit, so a limit is met at the keyboard", async () => {
+    await openForm();
+    const form = within(screen.getByRole("dialog"));
+    expect(form.getByLabelText(/Ad soyad/)).toHaveAttribute("maxlength", String(FIELD_MAX.full_name));
+    expect(form.getByLabelText(/İstifadəçi adı/)).toHaveAttribute("maxlength", String(FIELD_MAX.username));
+    expect(form.getByLabelText(/E-poçt/)).toHaveAttribute("maxlength", String(FIELD_MAX.email));
+    expect(form.getByLabelText(/Müvəqqəti şifrə/)).toHaveAttribute("maxlength", String(FIELD_MAX.password));
+  });
+
+  it("counts a password as the server counts it: four emoji are four characters, not eight", async () => {
+    // `.length` counts UTF-16 units and the server's `len` code points, so "😀😀😀😀" is eight to the
+    // first and four to the second: a dialog that counted `.length` sent it, and the server refused
+    // it as shorter than eight. Both dialogs that take a password count as the server does.
+    const { api } = await openForm();
+    fireEvent.change(screen.getByLabelText(/Ad soyad/), { target: { value: "Ayşe Sentetik" } });
+    fireEvent.change(screen.getByLabelText(/İstifadəçi adı/), { target: { value: "hs.yeni" } });
+    fireEvent.change(screen.getByLabelText(/Müvəqqəti şifrə/), { target: { value: "😀😀😀😀" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "İstifadəçini yarat" })); await settle(); });
+    expect(api.adminCreateUser).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/Müvəqqəti şifrə/)).toHaveAttribute("aria-invalid", "true");
+
+    cleanup();
+    const second = await open();
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Şifrəni sıfırla: hs\.aygun/ })[0]); });
+    fireEvent.change(screen.getByLabelText(/Müvəqqəti şifrə/), { target: { value: "😀😀😀😀" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Şifrəni sıfırla" })); await settle(); });
+    expect(second.api.adminResetPassword).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/Müvəqqəti şifrə/)).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("a 422 about something no field shows goes to the toast, named after the account — never swallowed", async () => {
+    // `fieldRefusals` is told which fields this dialog draws. A refusal on `group_ids.0` used to
+    // come back keyed by its API path: the dialog saw "a field was named", put it under no control
+    // and toasted nothing — a refusal the administrator never read.
+    const { api } = await openForm();
+    api.adminCreateUser.mockRejectedValue(refusal(422, "group_ids.0: Input should be a valid UUID", {
+      fieldErrors: [{ field: "group_ids.0", type: "uuid_parsing", message: "Input should be a valid UUID" }],
+    }));
+    fireEvent.change(screen.getByLabelText(/Ad soyad/), { target: { value: "Ayşe Sentetik" } });
+    fireEvent.change(screen.getByLabelText(/İstifadəçi adı/), { target: { value: "hs.yeni" } });
+    fireEvent.change(screen.getByLabelText(/Müvəqqəti şifrə/), { target: { value: "gecici-1234" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "İstifadəçini yarat" })); await settle(); });
+    expect(alerts()).toContain("Ayşe Sentetik");
+    expect(alerts()).toContain("Input should be a valid UUID");
+    for (const box of within(screen.getByRole("dialog")).getAllByRole("textbox")) {
+      expect(box).not.toHaveAttribute("aria-invalid", "true");
+    }
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("an edit sends the details and THEN the groups — never both at once — and reads as done", async () => {
+    // PATCH (name, e-mail, active) and PUT groups are two writes, and no endpoint takes both. In
+    // sequence, so the groups are never sent beside details the server is about to refuse.
+    const { api, reload } = await open();
+    let releasePatch;
+    api.adminUpdateUser.mockImplementation(() => new Promise((resolve) => { releasePatch = resolve; }));
+    api.adminSetUserGroups.mockResolvedValue({ ok: true });
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Redaktə et: hs\.aygun/ })[0]); });
+    fireEvent.change(screen.getByLabelText(/Ad soyad/), { target: { value: "Ayşe Sentetik-Aygün" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yadda saxla" })); await settle(); });
+    expect(api.adminUpdateUser).toHaveBeenCalledWith("u-nurse", {
+      full_name: "Ayşe Sentetik-Aygün", email: "hs.aygun@sentetik.local", is_active: true,
+    });
+    expect(api.adminSetUserGroups).not.toHaveBeenCalled();           // not while the details are in flight
+    await act(async () => { releasePatch(user("u-nurse", { full_name: "Ayşe Sentetik-Aygün" })); await settle(); });
+    expect(api.adminSetUserGroups).toHaveBeenCalledWith("u-nurse", [NURSE_GROUP.id]);
+    expectConfirmed(/Yadda saxlanıldı\./);
+    expect(reload).toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a refused edit sends no groups; groups refused after the details LANDED say which half landed, and reload", async () => {
+    const { api, reload } = await open();
+    api.adminUpdateUser.mockRejectedValue(refusal(403, "Kendi yetkilerinizi aşan bir işlem yapılamaz: audit.view"));
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Redaktə et: hs\.aygun/ })[0]); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yadda saxla" })); await settle(); });
+    expect(api.adminSetUserGroups).not.toHaveBeenCalled();
+    expect(alerts()).toContain("Ayşe Sentetik");
+    expect(alerts()).not.toMatch(/yadda saxlanıldı/);                  // nothing landed, and none is claimed
+    expect(reload).not.toHaveBeenCalled();
+
+    cleanup();
+    // The details land, the groups do not: the account on the server HAS changed. A half-landed
+    // edit reported as wholly refused, with no reload, left the list showing the old name.
+    const second = await open();
+    second.api.adminUpdateUser.mockResolvedValue(user("u-nurse", { full_name: "Ayşe Sentetik-Aygün" }));
+    second.api.adminSetUserGroups.mockRejectedValue(refusal(403, "Kendi yetkilerinizi aşan bir işlem yapılamaz: audit.view"));
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Redaktə et: hs\.aygun/ })[0]); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yadda saxla" })); await settle(); });
+    expect(second.api.adminSetUserGroups).toHaveBeenCalledTimes(1);
+    expect(alerts()).toContain("Ayşe Sentetik");
+    expect(alerts()).toMatch(/Ad, e-poçt və aktivlik yadda saxlanıldı; qruplar saxlanılmadı: Öz səlahiyyətlərinizi aşan/);
+    expect(second.reload).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();         // the groups can be sent again from here
+  });
 });
 
 const WARD_ID = "g-gece_ekibi";
@@ -3318,6 +3537,7 @@ describe("the three confirmations and the unlock", () => {
     await press(/Şifrəni sıfırla: hs\.aygun/);
     expect(screen.getByText(/Ayşe Sentetik üçün yeni müvəqqəti şifrə təyin edin\. İstifadəçinin açıq sessiyaları bağlanır/))
       .toBeInTheDocument();
+    expect(screen.getByLabelText(/Müvəqqəti şifrə/)).toHaveAttribute("maxlength", String(FIELD_MAX.password));
     fireEvent.change(screen.getByLabelText(/Müvəqqəti şifrə/), { target: { value: "yeni-sifre-99" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Şifrəni sıfırla" })); await settle(); });
     expect(api.adminResetPassword).toHaveBeenCalledWith("u-nurse", "yeni-sifre-99");
@@ -3351,6 +3571,7 @@ describe("the three confirmations and the unlock", () => {
     api.adminUnlockSignIn.mockResolvedValue({ ok: true });
     await press(/Girişi aç: dr\.kamran/);
     expect(screen.getByText(/Səbəb audit jurnalına yazılır/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Səbəb/)).toHaveAttribute("maxlength", String(FIELD_MAX.reason));
     fireEvent.change(screen.getByLabelText(/Səbəb/), { target: { value: "   " } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Girişi aç" })); await settle(); });
     expect(api.adminUnlockSignIn).not.toHaveBeenCalled();
@@ -3388,10 +3609,49 @@ describe("the scope editor", () => {
     return mounted;
   };
 
-  it("an unrestricted user gets no editor and the reason why", async () => {
+  it("a user unrestricted BY ROLE gets no editor and the reason why", async () => {
     await openScope({ setup: (api) => api.userScope.mockResolvedValue(scopeView({ unrestricted: true, reason: "role" })) });
-    expect(screen.getByText(/Bu istifadəçinin əhatəsi məhdud deyil: administrator və ya platforma operatoru/))
+    expect(screen.getByText(/Bu istifadəçi rolu gərəyi bütün xəstələri görür \(administrator və ya platforma operatoru\)/))
       .toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Əhatəni yadda saxla" })).toBeNull();
+  });
+
+  it("an UNASSIGNED user gets the editor, is told she sees every patient until it is used, and receives her first unit", async () => {
+    // The pilot's normal state for every non-administrator: SCOPE_ENFORCE_UNASSIGNED is off, so
+    // /scope/{id} answers `unrestricted: true, reason: "unassigned"`. The first version read that
+    // flag as "nothing to assign": no first assignment could be made from this screen, and the row
+    // said "scope unrestricted" about a nurse nobody had assigned (`rules.scopeKind`).
+    const { api } = await openScope({
+      patients: [entry("S-001", [], { identity: identity({ unit_id: "REA-01" }) })],
+      setup: (api2) => api2.userScope.mockResolvedValue(scopeView({ user_id: "u-nurse", unrestricted: true, reason: "unassigned" })),
+    });
+    expect(screen.getByText(/bu istifadəçi hazırda bütün xəstələri görür/)).toBeInTheDocument();
+    expect(screen.queryByText(/rolu gərəyi bütün xəstələri görür/)).toBeNull();
+    const row = screen.getByRole("rowheader", { name: /hs\.aygun/ }).closest("tr");
+    expect(within(row).getByText("Şöbə təyin edilməyib")).toBeInTheDocument();
+    expect(within(row).queryByText("Əhatə məhdud deyil")).toBeNull();
+    api.setScope.mockResolvedValue(scopeView({ user_id: "u-nurse", grants: [{ unit_id: "REA-01" }] }));
+    api.userScope.mockResolvedValue(scopeView({ user_id: "u-nurse", grants: [{ unit_id: "REA-01" }] }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "REA-01" }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Əhatəni yadda saxla" })); await settle(); });
+    expect(api.setScope).toHaveBeenCalledWith("u-nurse", [{ unit_id: "REA-01" }]);
+    expectConfirmed(/Ayşe Sentetik · Əhatə yadda saxlanıldı\./);
+    expect(within(row).getByText("1 şöbə")).toBeInTheDocument();
+  });
+
+  it("when the desk's OWN scope cannot be read, the toast names that read — not the user — and offers no Save", async () => {
+    // /scope/me is the only source for "may this desk assign a scope at all" (`canAssignScope`).
+    // Its failure is about the desk, not about the nurse the editor was opened for: a toast that
+    // named her blamed the wrong record. Her scope WAS read, so the editor opens, and says the
+    // right is unknown instead of offering a Save that may not work.
+    await openScope({ setup: (api) => {
+      api.myScope.mockRejectedValue(refusal(403, "permission required: users.manage"));
+      api.userScope.mockResolvedValue(scopeView({ grants: [{ unit_id: "REA-01" }] }));
+    } });
+    expect(alerts()).toContain("Öz əhatəniz oxunmadı");
+    expect(alerts()).not.toContain("Ayşe Sentetik");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText(/Əhatə təyin etmək səlahiyyətiniz hələ oxunmadı/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Əhatəni yadda saxla" })).toBeNull();
   });
 
@@ -3414,6 +3674,8 @@ describe("the scope editor", () => {
   it("a key with no card on the board can be added by hand, and the screen says what that means", async () => {
     await openScope({ setup: (api) => api.userScope.mockResolvedValue(scopeView({ grants: [] })) });
     expect(screen.getByText(/Mühərrikdə bu açarla uyğun kart yoxdursa əhatə heç nə açmır/)).toBeInTheDocument();
+    // The column's own limit: ScopeGrantIn states none, and a longer key is a database error.
+    expect(screen.getByLabelText(/Şöbə və ya çarpayı açarı/)).toHaveAttribute("maxlength", String(FIELD_MAX.scope_key));
     fireEvent.change(screen.getByLabelText(/Şöbə və ya çarpayı açarı/), { target: { value: "REA-77" } });
     fireEvent.click(screen.getByRole("button", { name: "Əlavə et" }));
     expect(screen.getByRole("rowheader", { name: "REA-77" })).toBeInTheDocument();
@@ -3544,14 +3806,26 @@ Expected: `Failed to resolve import "./UsersTab.jsx"`.
 // is per user and `GET /scope/unassigned` answers a COUNT. So the cell does not claim anything it
 // has not read — `admin.unitsNotRead`, not a dash and not a zero — and reading one user's scope
 // (opening the editor) fills that row. Decision 6 in this wave's plan, with the fan-out of one
-// request per account as the rejected alternative.
+// request per account as the rejected alternative. What the cell says once it HAS read is
+// `rules.scopeKind`'s, the rule the editor follows too: "scope unrestricted" only for a scope
+// unrestricted by ROLE, "no unit assigned" for an account nobody has assigned — which at the pilot
+// is `unrestricted: true` as well, and is a different statement about a different person.
+//
+// WHAT THE FRAME READ IS READ BY ITS STATE (`useAdminData`). Each read is its last answer or null,
+// and a failed read is never `[]`: a users read that failed is said as that — not as "no user
+// matches" — and the frame's Alert above names it; a list is drawn when it is known or stale; a
+// COUNT (the unassigned users) only when its read is known, because a stale number is a claim
+// about now that nobody has made.
 import React, { useCallback, useMemo, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { Announce, Box, Button, Empty, Field, Input, Modal, Note, Pill, Select, StatusPill, Table, Tag, useToast } from "../../ui/index.js";
 import { ddmmyyyy, hhmm } from "../../i18n/dates.js";
+import { apiErrorText, readErrorText } from "../../apiErrors.js";
+import { PASSWORD_MIN } from "../../auth/passwordRules.js";
 import { norm } from "../beds/order.js";
-import { canAssignScope, canManageUser, scopeFromApi } from "./rules.js";
+import { FIELD_MAX, lengthOf } from "./limits.js";
+import { canAssignScope, canManageUser, scopeFromApi, scopeKind } from "./rules.js";
 import { doneFor, refusedFor } from "./refusal.js";
 import { UserForm } from "./UserForm.jsx";
 import { ScopeEditor } from "./ScopeEditor.jsx";
@@ -3606,7 +3880,13 @@ export function UsersTab({ admin }) {
   const { user: me, store } = useSession();
   const toast = useToast();
   const api = store.api;
-  const { users, groups, catalogue, unassigned } = admin.data;
+  const users = admin.data.users ?? [];
+  const groups = admin.data.groups ?? [];
+  const catalogue = admin.data.catalogue ?? [];
+  const usersUnread = admin.data.users === null;
+  const unassigned = admin.reads.unassigned === "known" && Number.isFinite(admin.data.unassigned)
+    ? admin.data.unassigned
+    : null;
 
   const [query, setQuery] = useState("");
   const [role, setRole] = useState("");
@@ -3648,25 +3928,63 @@ export function UsersTab({ admin }) {
     }
   }, [admin, busyId, store, t, toast]);
 
-  /** One user's scope, read when it is needed and remembered for the row. */
+  /** One user's scope, read when it is needed and remembered for the row — and, the first time, the
+   *  desk's OWN scope, which is the only way to know whether it may assign one at all
+   *  (`canAssignScope`). Two READS, one after the other, each failing on its own terms and each
+   *  NAMED AFTER ITSELF: the desk's own scope failing is "your own scope could not be read" — the
+   *  first version named the user for it, which blamed the wrong record — and the editor still
+   *  opens, with no Save and the sentence that the right is unknown; the user's scope failing is a
+   *  read about THAT user, and there is then nothing to edit. Neither is a refused write, so neither
+   *  says a write's "it may have happened" (`readErrorText`). */
   const openScope = useCallback(async (user) => {
     if (busyId) return;
     setBusyId(user.id);
     try {
-      const [mine, theirs] = await Promise.all([
-        myScope ? Promise.resolve(myScope) : store.track(() => api.myScope()),
-        store.track(() => api.userScope(user.id)),
-      ]);
-      const read = scopeFromApi(theirs);
-      setMyScope(scopeFromApi(mine));
+      let mine = myScope;
+      if (!mine) {
+        try {
+          mine = scopeFromApi(await store.track(() => api.myScope()));
+          setMyScope(mine);
+        } catch (err) {
+          toast(t("admin.readFailed", { read: t("admin.readMyScope"), reason: readErrorText(t, err) }), "error");
+        }
+      }
+      let read;
+      try {
+        read = scopeFromApi(await store.track(() => api.userScope(user.id)));
+      } catch (err) {
+        toast(t("admin.readFailed", {
+          read: t("admin.readScopeOf", { name: user.fullName || user.username }), reason: readErrorText(t, err),
+        }), "error");
+        return;
+      }
       setScopes((was) => ({ ...was, [user.id]: read }));
       setOpen({ kind: "scope", user, scope: read });
-    } catch (err) {
-      toast(refusedFor(t, user.fullName || user.username, err), "error");
     } finally {
       setBusyId(null);
     }
   }, [api, busyId, myScope, store, t, toast]);
+
+  /** The form's write. A NEW account is one call. An EDIT is two — `PATCH /admin/users/{id}` (name,
+   *  e-mail, active) and `PUT /admin/users/{id}/groups` — and no endpoint takes both, so they go IN
+   *  SEQUENCE, never at once: the groups are not sent when the details were refused, and when the
+   *  details LANDED and the groups were refused, the account on the server has changed — so the
+   *  list is reloaded, and the refusal says which half landed. Sending the two together had
+   *  neither property: a refused PATCH could land a PUT beside it, and a half-landed edit read as
+   *  wholly refused, with no reload, so the list went on showing the old name. */
+  const saveUser = async (body) => {
+    if (open.kind !== "edit") return store.track(() => api.adminCreateUser(body));
+    const id = open.user.id;
+    await store.track(() => api.adminUpdateUser(id, {
+      full_name: body.full_name, email: body.email, is_active: body.is_active,
+    }));
+    try {
+      return await store.track(() => api.adminSetUserGroups(id, body.group_ids));
+    } catch (err) {
+      await admin.reload();
+      throw new Error(t("admin.groupsNotSaved", { reason: apiErrorText(t, err) }));
+    }
+  };
 
   /** After a save, read the scope back rather than keeping the list we sent: the server's answer is
    *  the scope, and it normalises the keys it stores. A failed re-read leaves the row UNREAD
@@ -3684,10 +4002,18 @@ export function UsersTab({ admin }) {
     }
   }, [api, store]);
 
+  /** The units cell, by `rules.scopeKind` — the rule the editor follows too, so the two cannot
+   *  disagree. "Scope unrestricted" ONLY for a scope unrestricted by role: an account unrestricted
+   *  because nobody has assigned it anything — the pilot's normal state — has "no unit assigned",
+   *  which is the different and true statement Decision 6 keeps apart; and a scope the engine
+   *  could not place gets no invented summary. */
   const unitsCell = (user) => {
     const scope = scopes[user.id];
-    if (!scope) return <span className="text-mute">{t("admin.unitsNotRead")}</span>;
-    if (scope.unrestricted) return t("admin.allUnits");
+    const kind = scopeKind(scope);
+    if (kind === "unread") return <span className="text-mute">{t("admin.unitsNotRead")}</span>;
+    if (kind === "role") return t("admin.allUnits");
+    if (kind === "unknown") return <span className="text-mute">{t("admin.unitsUnknown")}</span>;
+    if (kind === "unassigned") return t("admin.noUnits");
     const units = scope.grants.filter((g) => g.unitId).length;
     const beds = scope.grants.filter((g) => g.bedId).length;
     if (units === 0 && beds === 0) return t("admin.noUnits");
@@ -3710,7 +4036,10 @@ export function UsersTab({ admin }) {
 
       <div className="flex flex-wrap items-end gap-2">
         <Field layout="col" label={t("admin.search")} className="mb-0 min-w-[220px] flex-1">
-          <Input type="search" value={query} onChange={(e) => { setQuery(e.target.value); setShown(PAGE); }} />
+          {/* Never sent anywhere: it filters `"<name> <username>"` here (`matches`), so its limit is
+              the longest text a row can hold, from the server's own two limits. */}
+          <Input type="search" value={query} maxLength={FIELD_MAX.full_name + 1 + FIELD_MAX.username}
+            onChange={(e) => { setQuery(e.target.value); setShown(PAGE); }} />
         </Field>
         <Field layout="col" label={t("admin.filterRole")} className="mb-0">
           <Select value={role} onChange={(e) => { setRole(e.target.value); setShown(PAGE); }}>
@@ -3727,7 +4056,7 @@ export function UsersTab({ admin }) {
         <p className="m-0 text-12.5 text-mute">{t("admin.filtered", { shown: picked.length, total: users.length })}</p>
       ) : null}
 
-      {picked.length === 0 ? <Empty icon="users">{t("admin.none")}</Empty> : (
+      {usersUnread ? <Empty icon="users">{t("admin.usersUnread")}</Empty> : picked.length === 0 ? <Empty icon="users">{t("admin.none")}</Empty> : (
         <Table caption={t("admin.caption")}>
           <thead>
             <tr>
@@ -3850,18 +4179,16 @@ export function UsersTab({ admin }) {
           groups={groups}
           catalogue={catalogue}
           perms={me.perms}
-          submit={(body) => store.track(() => (open.kind === "edit"
-            ? Promise.all([
-              api.adminUpdateUser(open.user.id, { full_name: body.full_name, email: body.email, is_active: body.is_active }),
-              api.adminSetUserGroups(open.user.id, body.group_ids),
-            ])
-            : api.adminCreateUser(body)))}
+          submit={saveUser}
           onSaved={async () => {
             toast(t(open.kind === "edit" ? "admin.saved" : "admin.created"));
             setOpen(null);
             await admin.reload();
           }}
-          onRefused={(err) => toast(refusedFor(t, open.user?.fullName || open.user?.username || "", err), "error")}
+          // `reason` is the failure, or a 422's `others` already in words; `subject` is the name typed
+          // into the form, which is the only name a NEW account has.
+          onRefused={(reason, subject) => toast(refusedFor(t,
+            open.user ? open.user.fullName || open.user.username : subject, reason), "error")}
           onClose={() => setOpen(null)}
         />
       ) : null}
@@ -3944,7 +4271,9 @@ function Confirm({ user, kind, busy, onConfirm, onClose }) {
       setProblem(t("errors.reasonNeedsText"));
       return;
     }
-    if (spec.password && password.length < 8) {
+    // In code points, as the server counts (`limits.lengthOf`): `.length` passed four emoji as eight
+    // characters, and the server then refused them as four.
+    if (spec.password && lengthOf(password) < PASSWORD_MIN) {
       setProblem(t("errors.passwordTooShort"));
       return;
     }
@@ -3970,13 +4299,13 @@ function Confirm({ user, kind, busy, onConfirm, onClose }) {
       <p className="m-0 mb-3 text-14">{t(spec.body, { name })}</p>
       {spec.password ? (
         <Field layout="col" required label={t("admin.fieldPassword")} hint={t("admin.fieldPasswordHint")} error={problem}>
-          <Input type="password" autoComplete="new-password" value={password} disabled={busy}
-            onChange={(e) => { setPassword(e.target.value); setProblem(null); }} />
+          <Input type="password" autoComplete="new-password" value={password} maxLength={FIELD_MAX.password}
+            disabled={busy} onChange={(e) => { setPassword(e.target.value); setProblem(null); }} />
         </Field>
       ) : null}
       {spec.reason ? (
         <Field layout="col" required label={t("admin.reasonLabel")} hint={t("admin.reasonHint")} error={problem}>
-          <Input value={reason} maxLength={200} disabled={busy}
+          <Input value={reason} maxLength={FIELD_MAX.reason} disabled={busy}
             onChange={(e) => { setReason(e.target.value); setProblem(null); }} />
         </Field>
       ) : null}
@@ -3998,16 +4327,18 @@ npx vitest run src/live/screens/admin/UsersTab.test.jsx 2>&1 | grep -E "Tests "
 ```
 Expected, in order:
 ```
-Tests  11 passed | 25 skipped (36)
-Tests  4 passed | 32 skipped (36)
-Tests  6 passed | 30 skipped (36)
-Tests  5 passed | 31 skipped (36)
-Tests  7 passed | 29 skipped (36)
-Tests  36 passed (36)
+Tests  12 passed | 32 skipped (44)
+Tests  4 passed | 40 skipped (44)
+Tests  11 passed | 33 skipped (44)
+Tests  5 passed | 39 skipped (44)
+Tests  9 passed | 35 skipped (44)
+Tests  44 passed (44)
 ```
-(10 + 4 + 6 + 5 + 7 = 32, plus four under `accessibility`; `-t "the list"` also matches `accessibility`'s "the list is a table with a caption…", which is why its line says 11.)
+(11 + 4 + 11 + 5 + 9 = 40, plus four under `accessibility`; `-t "the list"` also matches `accessibility`'s "the list is a table with a caption…", which is why its line says 12. Measured on the reviewed foundation, `34494a8`.)
 
-**Six things that will bite, all six met while this was written.**
+**Run against the components the first draft of this plan wrote, this file fails 13 of its 44** — the search's limit, the stale and the failed reads, the 422 on a drawn field (the `fieldRefusals` shape changed under it, and that test was the one that passed while the screen showed nothing), the form's limits, the emoji password, the 422 nobody drew, the two edit tests, the reset dialog's limit, the unassigned user's first unit, the `/scope/me` that named the wrong record, and the manual key's limit. That is the measure of what the foundation review moved; if a change of yours turns one of them green against the old shape, the test has stopped testing.
+
+**Seven things that will bite, all seven met while this was written.**
 
 1. **`DESK` has to be the whole catalogue.** `canManageUser` refuses a user whose own rights exceed the desk's, and a nurse holds `alerts.ack` — so a desk of `["users.manage", "groups.manage", "board.view"]` may not act on a nurse, and **every** action test silently asserts the refusal instead of the action. The narrow desks are passed by name, by the tests that are about a refusal.
 2. **jsdom does not implement `inert`.** `Modal` sets it on every other `<body>` child, so in a browser the tab's own role filter is unreachable behind an open form — but in jsdom it is still queryable, and `admin.filterRole` and `admin.fieldRole` are both "Rol". Queries inside a dialog go through `within(screen.getByRole("dialog"))`.
@@ -4015,6 +4346,7 @@ Tests  36 passed (36)
 4. **`cleanup()`, never `document.body.innerHTML = ""`.** The dialogs and the toast stack are React portals under `<body>`; blanking the body leaves React unmounting nodes that are no longer its children ("The node to be removed is not a child of this node").
 5. **"No alert" is "every alert region is empty", never `toHaveLength(0)`.** The toast's error region is a `role="alert"` div mounted before the first toast (`ui/Toast.jsx`), so `queryAllByRole("alert")` is never empty; `expectConfirmed` joins the regions' text and asserts it is blank. A success test written with `toHaveLength(0)` fails on every success.
 6. **A confirmation is found by its text, twice.** It goes to the polite region, which is an `aria-live` div with no `role`, and to the visible toast — so `getAllByText(/…/)` with a regex, never `getByText` with a string.
+7. **The `admin` prop comes from `adminProp`, and a write nobody stubbed REJECTS.** Never a hand-built `{data, loading, error, reload}`: that shape is gone (`useAdminData` has `reads` and `failures`, and a failed read is `null`), and `adminProp` throws on a state the loader cannot produce. And `ADMIN_READS` makes every write the test did not answer reject with its own name — so a write test that forgets `mockResolvedValue` fails loudly instead of passing on a success nobody chose (`c1f6705`).
 
 - [ ] **Step 5: Take this arm's two lines.** In `dashboard/src/live/screens/admin/AdminScreen.jsx`, replace
 
@@ -4047,7 +4379,7 @@ Leave the blank lines on either side alone (Decision 20).
 ```bash
 npx vitest run src/live/screens/admin/ src/live/rawKeys.test.jsx 2>&1 | grep -E "Tests "
 ```
-Expected: `Tests  112 passed (112)` — `catalogue` 9, `rules` 34, `refusal` 5, `AdminScreen` 19, `admin.testutil` 4, `UsersTab` 36; plus `rawKeys` 5, which now opens `#/admin`, clicks the one tab there is and sweeps it.
+Expected: `Tests  144 passed (144)` — `catalogue` 9, `rules` 40, `limits` 7, `refusal` 6, `AdminScreen` 25, `admin.testutil` 8, `UsersTab` 44; plus `rawKeys` 5, which now opens `#/admin`, clicks the one tab there is and sweeps it.
 
 - [ ] **Step 7: Look at it** — the one check no test makes.
 
@@ -4058,8 +4390,8 @@ Check, at **1440 px** and at **390 px**, in **both themes**:
 - the search field, the role filter and "Yeni istifadəçi" wrap onto separate lines rather than squeezing;
 - every row's action buttons are reachable with a thumb and none of them is cut off at the right edge;
 - open the form: no field is clipped, the password field is a password field (dots, not letters), and the footer's two buttons stay visible while the body scrolls;
-- open the scope editor on a user with no grants and on one with several; the unit and bed check lists and the manual field all fit;
-- the status colours (`AKTİV`, `Passiv`, `ilk girişdə şifrə`, `Məcburi · qurulmayıb`) still clear 3:1 against `card` in daylight;
+- open the scope editor on a user with no grants and on one with several; the unit and bed check lists and the manual field all fit — and on a nurse nobody has assigned (the pilot's every nurse): the editor is there, with the sentence that she sees every patient until it is used, and the Save;
+- the status colours (`AKTİV`, `Passiv`, `növbəti girişdə şifrə`, `Məcburi · qurulmayıb`) still clear 3:1 against `card` in daylight;
 - press a destructive action and then `Escape` **while it is in flight**: the dialog must not close.
 
 Then sign in with only `users.manage` and confirm the roles tab is absent rather than present-and-refusing.
@@ -4070,7 +4402,7 @@ Then sign in with only `users.manage` and confirm the roles tab is absent rather
 npx vitest run 2>&1 | tail -4
 npx vite build 2>&1 | grep -E "built in|error"
 ```
-Expected: `Test Files  104 passed (104)`, `Tests  2199 passed (2199)` (+36 on Task 4's 2163), build clean. **This task's own number is 36, in `UsersTab.test.jsx`.**
+Expected: `Test Files  105 passed (105)`, `Tests  2242 passed (2242)` (+44 on the reviewed foundation's 2198), build clean. **This task's own number is 44, in `UsersTab.test.jsx`.**
 
 - [ ] **Step 9: Commit**
 
@@ -4088,18 +4420,26 @@ rather than quietly depending on having them all.
 A refused action is not drawn and its reason is in the row once: the keys this
 desk lacks, or that the user's rights are unknown, or that it is your own
 account. The units column claims nothing it has not read, because there is no
-bulk scope read. Every refusal is on the toast, named after the account, and
-every write reloads from the server rather than trusting what it hoped.
+bulk scope read, and what it says once it has is rules.scopeKind's: "scope
+unrestricted" only by role, "no unit assigned" for the unassigned nurse who is
+unrestricted at the pilot too -- and who can be given her first unit here. A
+users read that failed is not "no user matches", and a count is shown only
+when its read answered. Every refusal is on the toast, named after the account
+(or after the read, when the desk's own /scope/me is what failed), and every
+write reloads from the server rather than trusting what it hoped. An edit sends
+the details and then the groups, never both at once, and a half that landed is
+said as that, with a reload.
 
-A password is never in the DOM after its dialog closes, and a dialog cannot be
-dismissed while its write is in flight.
+A password is counted in code points, as the server counts it, and is never in
+the DOM after its dialog closes; every field carries the server's maxLength;
+and a dialog cannot be dismissed while its write is in flight.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
 )"
 ```
 
-**Gate:** **36** tests in the new `UsersTab.test.jsx`; `104 / 2199`; build clean; looked at 390/1440 px in both themes, with the in-flight Escape tried.
+**Gate:** **44** tests in the new `UsersTab.test.jsx`; `105 / 2242`; build clean; looked at 390/1440 px in both themes, with the in-flight Escape tried.
 
 ---
 
@@ -4505,7 +4845,7 @@ Expected: `Tests  6 passed (6)`. If it reports `az roles.<key> = tr "…": revie
 npx vitest run 2>&1 | tail -4
 npx vite build 2>&1 | grep -E "built in|error"
 ```
-Expected: `Test Files  103 passed (103)`, `Tests  2163 passed (2163)`, build clean — the two namespaces are loaded and nothing reads them yet.
+Expected: `Test Files  104 passed (104)`, `Tests  2198 passed (2198)` — the reviewed foundation's numbers, unchanged — build clean: the two namespaces are loaded and nothing reads them yet.
 
 - [ ] **Step 6: Commit**
 
@@ -4532,7 +4872,7 @@ EOF
 )"
 ```
 
-**Gate:** `103 / 2163` unchanged, `strings.test.js` green at 6.
+**Gate:** `104 / 2198` unchanged, `strings.test.js` green at 6.
 
 ---
 
@@ -4562,7 +4902,10 @@ import { LANG_CODES } from "../../i18n/langs.js";
 import { createTranslator } from "../../i18n/translate.js";
 import perms from "../../i18n/strings/perms.js";
 import { PERMISSION_KEYS } from "./catalogue.js";
-import { ADMIN_READS, CATALOGUE, GROUPS, NURSE_GROUP, SYSTEM_GROUP, WARD_GROUP, group } from "./admin.testutil.js";
+import {
+  ADMIN_READS, CATALOGUE, GROUPS, NURSE_GROUP, SYSTEM_GROUP, WARD_GROUP, adminProp, group,
+} from "./admin.testutil.js";
+import { FIELD_MAX } from "./limits.js";
 import { groupFromApi } from "./rules.js";
 import {
   RolesTab, descriptionOf, isOn, listToSend, lockedBecause, pendingFor, undescribedKeys,
@@ -4580,12 +4923,13 @@ const D = { boardView: AZ.board.view, alertsAck: AZ.alerts.ack, usersManage: AZ.
 const PENDING = "dəyişiklik gözləyir";
 const rx = (text) => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 
-async function open({ perms: desk = DESK, groups = GROUPS, catalogue = FOUR, setup } = {}) {
-  const reload = vi.fn(async () => {});
-  const admin = {
-    data: { users: [], groups: groups.map(groupFromApi), catalogue, unassigned: 0 },
-    loading: false, error: null, reload,
-  };
+/** The tab on its own. `admin` comes from `adminProp` — the one builder of what the frame hands a
+ *  tab, in the shapes and the read states `useAdminData` produces: `catalogue: null` is a read that
+ *  failed, `reads: { catalogue: "unasked" }` one this desk's rights do not allow, `reads: { groups:
+ *  "stale" }` the last answer kept through a failed re-read. */
+async function open({ perms: desk = DESK, groups = GROUPS, catalogue = FOUR, reads, setup } = {}) {
+  const admin = adminProp({ users: [], groups, catalogue, unassigned: 0, reads });
+  const { reload } = admin;
   const mounted = await mount(<RolesTab admin={admin} />, {
     access: token({ sub: "u-admin", perms: desk }),
     me: profile({ id: "u-admin", perms: desk }),
@@ -4691,7 +5035,7 @@ describe("the table", () => {
     expect(screen.getAllByText("2FA məcburi deyil").length).toBeGreaterThan(0);
   });
 
-  it("a member count the API did not send is \"not read\", never a zero", async () => {
+  it("a member count the API did not send is \"not read\", never a zero — and so is one from a stale read", async () => {
     // `member_count` absent is a different statement from `member_count: 0` — "nobody is in this
     // group" is a claim, and it would be false for a group the API simply did not count.
     await open({ groups: [SYSTEM_GROUP, group("nurse", { member_count: undefined }), WARD_GROUP] });
@@ -4699,6 +5043,19 @@ describe("the table", () => {
     expect(within(nurse).getByText("Üzv sayı oxunmadı")).toBeInTheDocument();
     expect(within(nurse).queryByText(/nəfər/)).toBeNull();
     expect(within(column(/Gece ekibi/)).getByText("2 nəfər")).toBeInTheDocument();
+    cleanup();
+    // The last answer, kept through a failed re-read (`useAdminData` "stale"): the columns are
+    // drawn from it, the COUNTS are not — "4 people" now is a claim nobody has just made.
+    await open({ reads: { groups: "stale" } });
+    expect(screen.queryByText(/nəfər/)).toBeNull();
+    expect(screen.getAllByText("Üzv sayı oxunmadı")).toHaveLength(GROUPS.length);
+  });
+
+  it("a group list that could not be read says so — never a table with no columns", async () => {
+    // A failed read is null, never `[]` (`useAdminData`); the frame's Alert carries the reason.
+    await open({ groups: null });
+    expect(screen.getByText("Heç bir qrup oxunmadı.")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).toBeNull();
   });
 
   it("a cell reads as \"<group> · <permission>\" to a screen reader", async () => {
@@ -4718,15 +5075,17 @@ describe("the table", () => {
     expect(frame.className).toMatch(/\[&_td:first-child\]:sticky/);
   });
 
-  it("without a catalogue says the read failed — and blames a missing right only on a desk that lacks it", async () => {
-    // A desk WITH groups.manage reaches an empty catalogue only when the read failed: the frame's
-    // own Alert carries the server's reason, and this sentence must not invent a different one.
-    await open({ catalogue: [] });
+  it("without a catalogue says the read failed — and blames a missing right only on a read that was never asked", async () => {
+    // A desk WITH groups.manage is without the catalogue only when the read failed: the frame's own
+    // Alert carries the server's reason, and this sentence must not invent a different one. The
+    // read's own state says which (`useAdminData`): "failed", or "unasked" for a desk whose rights
+    // do not allow the call.
+    await open({ catalogue: null });
     expect(screen.getByText("Səlahiyyət kataloqu oxunmadı; cədvəl çəkilə bilmir.")).toBeInTheDocument();
     expect(screen.queryByText(/groups\.manage/)).toBeNull();
     expect(screen.queryByRole("table")).toBeNull();
     cleanup();
-    await open({ catalogue: [], perms: ["board.view"] });
+    await open({ catalogue: null, reads: { catalogue: "unasked" }, perms: ["board.view"] });
     expect(screen.getByText(/«groups\.manage» səlahiyyəti lazımdır/)).toBeInTheDocument();
   });
 });
@@ -4781,6 +5140,23 @@ describe("collect and save", () => {
     expect(screen.getByText("1 dəyişiklik gözləyir")).toBeInTheDocument();
     expect(reload).not.toHaveBeenCalled();
     expect(notes()).not.toMatch(/yenidən oxundu/);
+  });
+
+  it("a refusal canGrant could not foresee — a MEMBER holds more than this desk — keeps the ticks and names the group", async () => {
+    // PATCH /admin/groups/{id} checks every current MEMBER's rights, before the change and after it
+    // (`admin/service._members_within`). The screen has the group's rights and not its members', so
+    // `canGrant` rightly offers this column to a desk whose rights cover the group — and the
+    // server's 403 is the answer. It reads like any other refusal: named, ticks kept, nothing re-read.
+    const { api, reload } = await open({ perms: ["groups.manage", "board.view", "alerts.ack"] });
+    expect(within(column(/Hemşire/)).getByRole("button", { name: "Yadda saxla" })).toBeInTheDocument();
+    api.adminUpdateGroup.mockRejectedValue(refusal(403, "Kendi yetkilerinizi aşan bir işlem yapılamaz: audit.view, users.manage"));
+    fireEvent.click(cell("Hemşire", D.alertsAck));                 // taking a right AWAY is checked too
+    await saveIn(column(/Hemşire/));
+    expect(alerts()).toContain("Hemşire");
+    expect(alerts()).toMatch(/audit\.view, users\.manage/);
+    expect(cell("Hemşire", D.alertsAck)).not.toBeChecked();
+    expect(screen.getByText("1 dəyişiklik gözləyir")).toBeInTheDocument();
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it("a 409 re-reads the column, keeps the ticks, and says so in a Note — the refusal itself is announced once", async () => {
@@ -4936,6 +5312,34 @@ describe("creating and deleting a group", () => {
     expect(form.getByLabelText(/Qısa ad/)).toHaveFocus();
   });
 
+  it("a 422 about something the form draws no field for goes to the toast, named after the group — never swallowed", async () => {
+    // `fieldRefusals` is told which fields this form draws (slug, name, description). Anything else
+    // — a permission entry, the body as a whole — used to come back keyed by its API path, under no
+    // control and on no toast.
+    const { api } = await open();
+    api.adminCreateGroup.mockRejectedValue(refusal(422, "permissions.0: Input should be a valid string", {
+      fieldErrors: [{ field: "permissions.0", type: "string_type", message: "Input should be a valid string" }],
+    }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni qrup" })); });
+    const form = within(screen.getByRole("dialog"));
+    fireEvent.change(form.getByLabelText(/Qısa ad/), { target: { value: "gece_ekibi" } });
+    fireEvent.change(form.getByLabelText(/Görünən ad/), { target: { value: "Gecə ekibi" } });
+    await act(async () => { fireEvent.click(form.getByRole("button", { name: "Qrupu yarat" })); await settle(); });
+    expect(alerts()).toContain("Gecə ekibi");
+    expect(alerts()).toContain("Input should be a valid string");
+    expect(form.getByLabelText(/Qısa ad/)).not.toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("every field of the new-group form carries the server's own limit", async () => {
+    await open();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni qrup" })); });
+    const form = within(screen.getByRole("dialog"));
+    expect(form.getByLabelText(/Qısa ad/)).toHaveAttribute("maxlength", String(FIELD_MAX.slug));
+    expect(form.getByLabelText(/Görünən ad/)).toHaveAttribute("maxlength", String(FIELD_MAX.group_name));
+    expect(form.getByLabelText(/Təsvir/)).toHaveAttribute("maxlength", String(FIELD_MAX.description));
+  });
+
   it("deleting confirms first, then shows the server's own refusal for each of its three cases", async () => {
     const CASES = [
       ["Sistem grubu silinemez", /Sistem qrupu silinə bilməz/],
@@ -5084,13 +5488,26 @@ Expected: `Failed to resolve import "./RolesTab.jsx"`.
 // A CELL READS AS "<group> · <permission>" to a screen reader, and "· change pending" while it
 // holds a tick the server has not taken: the only visible marker is a tint on the cell, and a tint
 // is not something a reader is told.
-import React, { useMemo, useRef, useState } from "react";
+//
+// A SAVE `canGrant` ALLOWED CAN STILL BE REFUSED, AND READS LIKE ANY OTHER REFUSAL. The server checks
+// every current MEMBER's rights, before and after the change (`admin/service._members_within`):
+// a desk whose rights cover the group's may still not change it if one of its members holds more
+// than the desk does. The screen has the group's rights, not its members', so it cannot foresee
+// that — it offers the Save, and the 403 is the answer: on the toast, named after the group, with
+// the ticks kept, because they are still what the administrator decided.
+//
+// WHAT THE FRAME READ IS READ BY ITS STATE (`useAdminData`). A missing catalogue is "unasked" for a
+// desk whose rights do not allow the read and "failed" for one whose read was refused — two
+// sentences, decided by the read's own state, never guessed from the rights. A group list that
+// failed is said as that. A member COUNT is shown only when the groups read answered THIS time: a
+// stale read still draws its columns, but "4 people" from it is a claim about now nobody has made.
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { Announce, Button, Empty, Field, Input, Modal, Note, Pill, Table, Tag, useToast } from "../../ui/index.js";
 import { apiErrorKey, fieldRefusals } from "../../apiErrors.js";
-import { hasPerm } from "./catalogue.js";
+import { FIELD_MAX } from "./limits.js";
 import { canGrant } from "./rules.js";
 import { doneFor, refusedFor } from "./refusal.js";
 
@@ -5152,7 +5569,9 @@ export function RolesTab({ admin }) {
   const { user: me, store } = useSession();
   const toast = useToast();
   const api = store.api;
-  const { groups, catalogue } = admin.data;
+  const groups = admin.data.groups ?? [];
+  const catalogue = admin.data.catalogue ?? [];
+  const countsKnown = admin.reads.groups === "known";
 
   /** `{"<groupId>|<permission>": boolean}` — what a Save would change, and nothing else. */
   const [pending, setPending] = useState({});
@@ -5196,7 +5615,9 @@ export function RolesTab({ admin }) {
       await admin.reload();
     } catch (err) {
       // The pending changes STAY: they are what the administrator decided, the server did not take
-      // them, and throwing them away would make her reconstruct the decision from memory.
+      // them, and throwing them away would make her reconstruct the decision from memory. That
+      // holds for a refusal no hint here could foresee too — a MEMBER of the group holding more
+      // than this desk (`_members_within`).
       toast(refusedFor(t, group.name, err), "error");
       if (apiErrorKey(err)?.key === "errors.concurrentChange") {
         // Somebody else saved this group meanwhile. Re-read, so the next Save is computed against
@@ -5228,14 +5649,15 @@ export function RolesTab({ admin }) {
   const inFlightNames = groups.filter((g) => inFlight.has(g.id)).map((g) => g.name).join(", ");
 
   // Without the catalogue there is no table to draw: its rows ARE the catalogue. Which sentence
-  // depends on WHY it is empty — a desk without `groups.manage` is never asked for it (the frame
-  // asks only what the rights allow), and a desk with it reaches this line only when the read
-  // failed, where the frame's own Alert already carries the server's reason.
+  // depends on WHY it is missing, and the read's own state says why: "unasked" — a desk without
+  // `groups.manage` is never asked for it (the frame asks only what the rights allow) — or
+  // anything else, which for a desk with the right means the read failed, where the frame's own
+  // Alert already carries the server's reason.
   if (catalogue.length === 0) {
     return (
       <div className="flex flex-col gap-3">
         <h2 className="m-0 font-display text-17 font-bold">{t("roles.title")}</h2>
-        <Empty icon="shield">{t(hasPerm(me.perms, "groups.manage") ? "roles.catalogueUnread" : "roles.noCatalogue")}</Empty>
+        <Empty icon="shield">{t(admin.reads.catalogue === "unasked" ? "roles.noCatalogue" : "roles.catalogueUnread")}</Empty>
       </div>
     );
   }
@@ -5267,11 +5689,14 @@ export function RolesTab({ admin }) {
                   <th key={group.id} scope="col">
                     <div className="normal-case tracking-normal">
                       <div className="text-12 font-bold text-ink">{group.name}</div>
-                      {/* A member count only when the read that produced it answered: `memberCount`
-                          is null for a group the API described without one, and a zero would read
-                          as "nobody is in this group" — a different and possibly false statement. */}
+                      {/* A member count only when the read that produced it answered, this time:
+                          `memberCount` is null for a group the API described without one, a zero
+                          would read as "nobody is in this group" — a different and possibly false
+                          statement — and a stale read's count is a claim about now. */}
                       <div className="text-10.5 font-semibold text-mute">
-                        {group.memberCount === null ? t("roles.membersUnknown") : t("roles.members", { count: group.memberCount })}
+                        {group.memberCount === null || !countsKnown
+                          ? t("roles.membersUnknown")
+                          : t("roles.members", { count: group.memberCount })}
                       </div>
                       <div className="mt-1">
                         {group.mfaRequired ? <Tag tone="warn">{t("roles.mfaOn")}</Tag> : <Pill>{t("roles.mfaOff")}</Pill>}
@@ -5387,9 +5812,15 @@ export function RolesTab({ admin }) {
   );
 }
 
+/** The API fields the new-group form DRAWS a control for — what `fieldRefusals` puts under a
+ *  control. A 422 about anything else (a permission entry, the body as a whole) is its `others`,
+ *  and goes to the toast named after the group: never "a field was named, so show nothing". */
+const GROUP_FIELDS = ["slug", "name", "description"];
+
 /** A new group: slug, name, description, the MFA rule and its starting permissions. The slug cannot
  *  be changed afterwards (`GroupPatch` has no `slug`), which the hint says; a duplicate answers 409
- *  `slugTaken` and a malformed one 422 `badSlug`, and both land on the slug field. */
+ *  `slugTaken` and a malformed one 422 `badSlug`, and both land on the slug field. Every field
+ *  carries the server's own limit (`limits.FIELD_MAX`). */
 function GroupForm({ catalogue, submit, onSaved, onRefused, onClose }) {
   const { t } = useI18n();
   const [slug, setSlug] = useState("");
@@ -5400,8 +5831,12 @@ function GroupForm({ catalogue, submit, onSaved, onRefused, onClose }) {
   const [refusals, setRefusals] = useState({});
   const [busy, setBusy] = useState(false);
   const fields = useRef({});
-  const mounted = useRef(true);
-  React.useEffect(() => () => { mounted.current = false; }, []);
+  // True inside the effect (the house pattern), so StrictMode's rehearsal does not leave it false.
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   async function onSubmit(event) {
     event?.preventDefault?.();
@@ -5424,7 +5859,7 @@ function GroupForm({ catalogue, submit, onSaved, onRefused, onClose }) {
       if (mounted.current) onSaved(name.trim());
     } catch (err) {
       if (!mounted.current) return;
-      const named = fieldRefusals(t, err);
+      const { fields: named, others } = fieldRefusals(t, err, GROUP_FIELDS);
       // A 409 on the slug has no `fieldErrors` — it is a message, not a validator — so it is put
       // on the slug field by its KEY, which is where an administrator can act on it.
       const slugTaken = apiErrorKey(err)?.key === "errors.slugTaken";
@@ -5437,8 +5872,10 @@ function GroupForm({ catalogue, submit, onSaved, onRefused, onClose }) {
           setRefusals(shown);
         });
         fields.current[Object.keys(shown)[0]]?.focus();
+        // What no field of this form shows still reaches the administrator, once.
+        if (others.length > 0) onRefused(others.join(" "), name.trim());
       } else {
-        onRefused(err, name.trim());
+        onRefused(others.length > 0 ? others.join(" ") : err, name.trim());
       }
     } finally {
       if (mounted.current) setBusy(false);
@@ -5461,15 +5898,16 @@ function GroupForm({ catalogue, submit, onSaved, onRefused, onClose }) {
       <form noValidate onSubmit={onSubmit}>
         <Announce text={busy ? t("roles.saving") : ""} />
         <Field layout="col" required label={t("roles.fieldSlug")} hint={t("roles.fieldSlugHint")} error={refusals.slug}>
-          <Input ref={(el) => { fields.current.slug = el; }} value={slug} disabled={busy} autoFocus
-            onChange={(e) => setSlug(e.target.value)} />
+          <Input ref={(el) => { fields.current.slug = el; }} value={slug} maxLength={FIELD_MAX.slug}
+            disabled={busy} autoFocus onChange={(e) => setSlug(e.target.value)} />
         </Field>
         <Field layout="col" required label={t("roles.fieldName")} error={refusals.name}>
-          <Input ref={(el) => { fields.current.name = el; }} value={name} disabled={busy}
-            onChange={(e) => setName(e.target.value)} />
+          <Input ref={(el) => { fields.current.name = el; }} value={name} maxLength={FIELD_MAX.group_name}
+            disabled={busy} onChange={(e) => setName(e.target.value)} />
         </Field>
         <Field layout="col" label={t("roles.fieldDescription")} error={refusals.description}>
-          <Input value={description} disabled={busy} onChange={(e) => setDescription(e.target.value)} />
+          <Input ref={(el) => { fields.current.description = el; }} value={description}
+            maxLength={FIELD_MAX.description} disabled={busy} onChange={(e) => setDescription(e.target.value)} />
         </Field>
         <label className="mb-2.5 flex items-center gap-2 font-text text-13.5">
           <input type="checkbox" checked={mfa} disabled={busy} onChange={(e) => setMfa(e.target.checked)} />
@@ -5512,9 +5950,11 @@ function GroupForm({ catalogue, submit, onSaved, onRefused, onClose }) {
 ```bash
 npx vitest run src/live/screens/admin/RolesTab.test.jsx 2>&1 | grep -E "Tests "
 ```
-Expected: `Tests  32 passed (32)`. One line on stderr is expected and is not a failure: `[i18n] "perms.ghost.key" has no az text — showing the key.` — the test that proves the English fallback asks for a key no dictionary has, and the provider says so.
+Expected: `Tests  36 passed (36)`. One line on stderr is expected and is not a failure: `[i18n] "perms.ghost.key" has no az text — showing the key.` — the test that proves the English fallback asks for a key no dictionary has, and the provider says so.
 
-**Six things that will bite.**
+**Run against the component the first draft of this plan wrote, this file fails 6 of its 36**: the stale member count, the group list that failed, the catalogue's two sentences (a failed read crashed it: `null.length`), the malformed slug's 422 (the `fieldRefusals` shape moved under it) and the 422 it draws no field for, and the form's limits. The `_members_within` test passes against the old component too, and is meant to: it pins a behaviour the first draft had for the 403 it could see, against a 403 it could not.
+
+**Seven things that will bite.**
 
 1. **The sticky classes go on the FRAME, not the `<table>`.** `ui/Table.jsx` passes `className` to the scrolling `<div>`, which is where a `position: sticky` rule has to live — sticky is relative to the nearest scroll container. The test asserts it on `…getByRole("table").closest("div")`.
 2. **A confirmation goes to the toast's POLITE region**, which is an `aria-live` div with **no `role`**: it is found by its text, not by `getAllByRole("status")`. Errors are the `role="alert"` region and are found by role. And a toast's text appears **twice** — the visible stack and the sr-only region — so use `getAllByText`.
@@ -5522,6 +5962,7 @@ Expected: `Tests  32 passed (32)`. One line on stderr is expected and is not a f
 4. **A changed cell's accessible name grows.** It reads `<group> · <permission> · dəyişiklik gözləyir` while it holds a tick the server has not taken, so the test's `cell()` helper matches the name with or without that suffix — a string match on the bare name fails right after the click that is being tested.
 5. **`describe` cannot be exported.** The function that gives a row its description is `descriptionOf`, because `describe` is the test runner's own word and a module that exports one collides with it in every test that imports both.
 6. **A locked cell is controlled with a no-op `onChange`, not `preventDefault` on the click.** A browser reverts a cancelled checkbox click AFTER React has restored the prop, and jsdom reverts by toggling again — so with `preventDefault` the cell ended up flipped in the test and not in the field. The controlled pattern leaves it as the server reported it in both.
+7. **A missing catalogue is `null`, and its state says why.** `adminProp({ catalogue: null })` is a read that FAILED; add `reads: { catalogue: "unasked" }` for a desk whose rights never allowed it. The tab chooses its sentence from that state — never from `hasPerm`, which answers a different question — and never treats `null` as `[]` (`useAdminData`, `b976c6c`).
 
 - [ ] **Step 5: Take this arm's two lines.** In `dashboard/src/live/screens/admin/AdminScreen.jsx`, replace
 
@@ -5576,7 +6017,7 @@ At **1440 px** and **390 px**, both themes:
 npx vitest run 2>&1 | tail -4
 npx vite build 2>&1 | grep -E "built in|error"
 ```
-Expected, **on this arm's own branch**: `Test Files  104 passed (104)`, `Tests  2195 passed (2195)` (2163 + 32). On a branch where the users arm has already merged it is `105 / 2231`; **add your own file's 32 to what you find**, do not expect this number.
+Expected, **on this arm's own branch**: `Test Files  105 passed (105)`, `Tests  2234 passed (2234)` (the reviewed foundation's 2198 + 36). On a branch where the users arm has already merged it is `106 / 2278`; **add your own file's 36 to what you find**, do not expect this number.
 
 - [ ] **Step 9: Commit**
 
@@ -5604,12 +6045,20 @@ key under them, because the key is what an administrator searches the table by.
 And the table says out loud that permissions are checked on the server, because
 the matrix it replaces did the opposite.
 
+A refusal the hints could not foresee -- a MEMBER of the group holding more
+than this desk, which the server checks and the screen cannot see -- reads like
+any other: named, the ticks kept. What the frame read is read by its state: a
+catalogue never asked and one that failed are two sentences, a failed group
+list is not an empty table, and a member count is shown only from a read that
+answered this time. The new-group form carries the server's limits and toasts
+a 422 it draws no field for.
+
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
 )"
 ```
 
-**Gate:** **32** tests in the new `RolesTab.test.jsx`; the suite green; build clean; looked at 390/1440 px in both themes with the sticky column checked.
+**Gate:** **36** tests in the new `RolesTab.test.jsx`; the suite green; build clean; looked at 390/1440 px in both themes with the sticky column checked.
 
 ---
 
@@ -6018,7 +6467,7 @@ If it names a key you did not expect, read the message rather than adding the ke
 npx vitest run 2>&1 | tail -4
 npx vite build 2>&1 | grep -E "built in|error"
 ```
-Expected: `Test Files  103 passed (103)`, `Tests  2163 passed (2163)`, build clean.
+Expected: `Test Files  104 passed (104)`, `Tests  2198 passed (2198)` — the reviewed foundation's numbers, unchanged — build clean.
 
 - [ ] **Step 6: Commit**
 
@@ -6041,7 +6490,7 @@ EOF
 )"
 ```
 
-**Gate:** `103 / 2163` unchanged, `strings.test.js` green at 6.
+**Gate:** `104 / 2198` unchanged, `strings.test.js` green at 6.
 
 ---
 
@@ -6070,12 +6519,20 @@ import { profile, token } from "../../session/testTokens.testutil.js";
 import { LDAP_IMPORT_CHUNK, LDAP_QUERY_MAX, LDAP_SEARCH_CAP } from "../../../backendApi.js";
 import { PERMISSION_KEYS } from "./catalogue.js";
 import {
-  ADMIN_READS, CATALOGUE, GROUPS, NURSE_GROUP, guid, ldapGroup, ldapStatus, ldapUser, mapping,
+  ADMIN_READS, CATALOGUE, GROUPS, NURSE_GROUP, adminProp, guid, ldapGroup, ldapStatus, ldapUser, mapping,
 } from "./admin.testutil.js";
-import { groupFromApi } from "./rules.js";
+import { FIELD_MAX } from "./limits.js";
 import { SourceTab, chunksOf, markImported, skipReasonKey, testReasonKey } from "./SourceTab.jsx";
 
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
+
+/** `LdapTestOut` and `LdapImportOut` (admin/schemas.py), built HERE and not in admin.testutil.js:
+ *  only this tab reads them, and the shared file belongs to no arm — an arm that adds to it meets
+ *  the other two arms, and Task 14, in a file none of them owns. The shapes are the API's. */
+const tested = (over = {}) => ({ ok: true, reason: null, checked_at: "2026-10-11T09:00:00Z", ...over });
+const importedRow = (n) => ({ external_id: guid(n), id: guid(1000 + n), username: `hs.sintetik${n}`, groups: [] });
+const skippedRow = (n, reason) => ({ external_id: guid(n), reason });
+const answer = (imported = [], skipped = []) => ({ imported, skipped });
 /** A full administrator: writing the AD group mapping needs EVERY permission key (the server's own
  *  rule, 403 `mappingAdminOnly`), so a narrower desk is the read-only case and is passed by name. */
 const DESK = [...PERMISSION_KEYS];
@@ -6083,13 +6540,14 @@ const DESK = [...PERMISSION_KEYS];
 const HOST = "dc01.sentetik.local";
 const MAPPED_DN = "CN=YB-Hemsire,OU=Gruplar,DC=sentetik,DC=local";
 
-async function open({ perms = DESK, groups = GROUPS, catalogue = CATALOGUE, setup } = {}) {
-  const reload = vi.fn(async () => {});
-  const admin = {
-    data: { users: [], groups: groups.map(groupFromApi), catalogue, unassigned: 0 },
-    loading: false, error: null, reload,
-  };
-  const mounted = await mount(<SourceTab admin={admin} />, {
+/** The tab on its own. `admin` comes from `adminProp` — the one builder of what the frame hands a
+ *  tab, in the shapes and the read states `useAdminData` produces (`groups: null` is a read that
+ *  failed; `reads: { catalogue: "unasked" }` one a `users.manage` desk is never asked for). */
+async function open({ perms = DESK, groups = GROUPS, catalogue = CATALOGUE, reads, strict = false, setup } = {}) {
+  const admin = adminProp({ users: [], groups, catalogue, unassigned: 0, reads });
+  const { reload } = admin;
+  const tab = <SourceTab admin={admin} />;
+  const mounted = await mount(strict ? <React.StrictMode>{tab}</React.StrictMode> : tab, {
     access: token({ sub: "u-admin", perms }),
     me: profile({ id: "u-admin", perms }),
     setup: (api) => { ADMIN_READS(api); setup?.(api); },
@@ -6156,13 +6614,10 @@ describe("the pure parts", () => {
 
   it("marks as imported what the server imported — and what it skipped because it was already here", () => {
     const found = [ldapUser(1), ldapUser(2), ldapUser(3)];
-    const after = markImported(found, {
-      imported: [{ external_id: guid(1), id: "u-1", username: "hs.sintetik1", groups: [] }],
-      skipped: [{ external_id: guid(2), reason: "exists" }, { external_id: guid(3), reason: "login_taken" }],
-    });
+    const after = markImported(found, answer([importedRow(1)], [skippedRow(2, "exists"), skippedRow(3, "login_taken")]));
     expect(after.map((row) => row.already_imported)).toEqual([true, true, false]);
     expect(found.map((row) => row.already_imported)).toEqual([false, false, false]);   // not in place
-    expect(markImported(null, { imported: [], skipped: [] })).toEqual([]);
+    expect(markImported(null, answer())).toEqual([]);
     expect(markImported(found, null).map((row) => row.already_imported)).toEqual([false, false, false]);
   });
 });
@@ -6217,7 +6672,7 @@ describe("the status", () => {
 
   it("a test that succeeds says the service account was accepted, with no alert, and the result is announced", async () => {
     const { api } = await open();
-    api.ldapTest.mockResolvedValue({ ok: true, reason: null, checked_at: "2026-10-11T09:00:00Z" });
+    api.ldapTest.mockResolvedValue(tested());
     await runTest();
     expect(notes()).toMatch(/xidmət hesabı doğrulandı/);
     expect(alerts().trim()).toBe("");
@@ -6238,7 +6693,7 @@ describe("the status", () => {
     for (const [reason, shown] of CASES) {
       // eslint-disable-next-line no-await-in-loop
       const { api } = await open();
-      api.ldapTest.mockResolvedValue({ ok: false, reason, checked_at: "2026-10-11T09:00:00Z" });
+      api.ldapTest.mockResolvedValue(tested({ ok: false, reason }));
       // eslint-disable-next-line no-await-in-loop
       await runTest();
       expect(notes(), reason).toMatch(shown);
@@ -6249,7 +6704,7 @@ describe("the status", () => {
   it("a test the server refuses clears the previous result: no stale green beside a fresh refusal", async () => {
     const { api } = await open();
     api.ldapTest
-      .mockResolvedValueOnce({ ok: true, reason: null, checked_at: "2026-10-11T09:00:00Z" })
+      .mockResolvedValueOnce(tested())
       .mockRejectedValueOnce(refusal(503, "Dizin sunucusuna ulaşılamıyor"));
     await runTest();
     expect(notes()).toMatch(/xidmət hesabı doğrulandı/);
@@ -6262,6 +6717,15 @@ describe("the status", () => {
   it("says directory operations can take up to thirty seconds", async () => {
     await open();
     expect(screen.getByText(/30 saniyəyə qədər/)).toBeInTheDocument();
+  });
+
+  it("lands its reads under StrictMode, whose rehearsal unmounts and remounts every effect", async () => {
+    // A `mounted` ref set true only at creation is set false by the rehearsal's cleanup and never
+    // back: the status read's answer was dropped as "unmounted" and the tab said "loading" for ever
+    // — the defect `useAdminData` had (`b976c6c`), in the one tab that reads on mount.
+    await open({ strict: true });
+    expect(screen.getByText("Kataloq konfiqurasiya olunub")).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "AD qrupu və qarşılığı" })).toBeInTheDocument();
   });
 });
 
@@ -6290,6 +6754,9 @@ describe("the search", () => {
     expect(api.ldapSearch).toHaveBeenCalledWith("sintetik");
     expect(screen.getByText(new RegExp(`ən çox ${LDAP_SEARCH_CAP} sətirdir`))).toBeInTheDocument();
     expect(screen.getByLabelText(/Ad və ya istifadəçi adı/)).toHaveAttribute("maxlength", String(LDAP_QUERY_MAX));
+    // From limits.js, where every administration field's limit lives; its test holds it to
+    // ldap_router.SearchQuery and to backendApi's copy.
+    expect(FIELD_MAX.ldap_query).toBe(LDAP_QUERY_MAX);
   });
 
   it("holds the search until the query is long enough to be accepted", async () => {
@@ -6342,7 +6809,7 @@ describe("the import", () => {
 
   it("is sent in chunks of two, strictly sequentially, with the extra group on every call — and reads as done", async () => {
     const { api, reload } = await open();
-    api.ldapImport.mockResolvedValue({ imported: [], skipped: [] });
+    api.ldapImport.mockResolvedValue(answer());
     // The extra-group choice only exists once there are results to import, so it is set inside
     // the helper's flow rather than before the search.
     await chooseAndImport(api, 3, (count) => {
@@ -6387,7 +6854,7 @@ describe("the import", () => {
     // look live while silently doing nothing.
     expect(screen.getByRole("button", { name: /Uyğunlaşdırmanı sil/ })).not.toHaveAttribute("aria-busy");
     expect(screen.getByRole("button", { name: "Qoşulmanı yoxla" })).not.toHaveAttribute("aria-busy");
-    await act(async () => { release({ imported: [], skipped: [] }); await settle(); });
+    await act(async () => { release(answer()); await settle(); });
   });
 
   it("reports both halves of the answer, translates every skip reason, and marks the imported rows in the results", async () => {
@@ -6395,11 +6862,8 @@ describe("the import", () => {
     // One answer per chunk: `mockResolvedValue` would answer every chunk with the same body, and
     // the screen would correctly add two identical answers together.
     api.ldapImport
-      .mockResolvedValueOnce({
-        imported: [{ external_id: guid(1), id: "u-1", username: "hs.sintetik1", groups: [] }],
-        skipped: [{ external_id: guid(2), reason: "login_taken" }],
-      })
-      .mockResolvedValueOnce({ imported: [], skipped: [{ external_id: guid(3), reason: "invalid_login" }] });
+      .mockResolvedValueOnce(answer([importedRow(1)], [skippedRow(2, "login_taken")]))
+      .mockResolvedValueOnce(answer([], [skippedRow(3, "invalid_login")]));
     await chooseAndImport(api, 3);
     expectConfirmed(new RegExp(`${HOST} · 1 hesab idxal olundu, 2 hesab buraxıldı\\.`));
     expect(screen.getByText("İdxal olunanlar")).toBeInTheDocument();
@@ -6422,7 +6886,7 @@ describe("the import", () => {
   it("a failed chunk is named by its accounts, the rest stay chosen, and the accounts already sent keep their answer", async () => {
     const { api } = await open();
     api.ldapImport
-      .mockResolvedValueOnce({ imported: [{ external_id: guid(1), id: "u-1", username: "hs.sintetik1", groups: [] }], skipped: [] })
+      .mockResolvedValueOnce(answer([importedRow(1)]))
       .mockRejectedValueOnce(refusal(503, "Dizin sunucusuna ulaşılamıyor"));
     await chooseAndImport(api, 4);
     expect(api.ldapImport).toHaveBeenCalledTimes(2);                 // it stopped, it did not carry on
@@ -6447,6 +6911,17 @@ describe("the import", () => {
     api.ldapImport.mockRejectedValue(Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" }));
     await chooseAndImport(api, 2);
     expect(alerts()).toMatch(/Server cavab vermədi\. Əməliyyat yerinə yetirilmiş ola bilər/);
+  });
+
+  it("a group list that could not be read leaves the tab standing, with no extra group offered", async () => {
+    // A failed read is null, never `[]` (`useAdminData`), and the frame's Alert names it. The
+    // directory is still tested, searched and imported from; there is only no group to offer beside
+    // an import — and none is invented.
+    await open({ groups: null });
+    expect(screen.getByText("Kataloq konfiqurasiya olunub")).toBeInTheDocument();
+    await searchFor();
+    const options = [...screen.getByLabelText(/Əlavə qrup/).querySelectorAll("option")].map((o) => o.textContent);
+    expect(options).toEqual(["Əlavə qrup verilməsin"]);
   });
 });
 
@@ -6476,7 +6951,8 @@ describe("the group mapping", () => {
   });
 
   it("is read-only without every permission, with the server's own reason", async () => {
-    await open({ perms: ["users.manage", "board.view"] });
+    // As the frame really hands it to a users.manage desk: the catalogue is never asked for.
+    await open({ perms: ["users.manage", "board.view"], catalogue: null, reads: { catalogue: "unasked" } });
     expect(screen.getByText(/AD qrup uyğunlaşdırmasını yalnız bütün səlahiyyətlərə sahib/)).toBeInTheDocument();
     expect(screen.getByText("Uyğunlaşdırma cədvəli yalnız oxunur.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Uyğunlaşdırmanı sil/ })).toBeNull();
@@ -6487,6 +6963,7 @@ describe("the group mapping", () => {
     const { api } = await open();
     api.ldapCreateMapping.mockResolvedValue(mapping({ id: "m-2" }));
     expect(screen.getByText(/əl ilə yazılan DN-in Türk\/Azərbaycan hərfləri/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/AD qrupunu axtar/)).toHaveAttribute("maxlength", String(FIELD_MAX.ldap_query));
     await addMapping();
     expect(api.ldapGroups).toHaveBeenCalledWith("YB");
     // The DN is a <select> option, never an <input> the DN can be typed into.
@@ -6558,7 +7035,7 @@ describe("accessibility", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Qoşulmanı yoxla" })); });
     await waitFor(() => expect(statuses()).toContain("Yoxlanılır…"), { timeout: 4000 });
     expect(screen.getAllByRole("status")).toHaveLength(1);
-    await act(async () => { release({ ok: true, reason: null, checked_at: "2026-10-11T09:00:00Z" }); await settle(); });
+    await act(async () => { release(tested()); await settle(); });
 
     let releaseDelete;
     api.ldapDeleteMapping.mockImplementation(() => new Promise((resolve) => { releaseDelete = resolve; }));
@@ -6635,14 +7112,23 @@ Expected: `Failed to resolve import "./SourceTab.jsx"`.
 // EVERY OPERATION HAS ITS OWN "IN FLIGHT", AND THE ANNOUNCEMENT NAMES IT. One shared flag made the
 // search, the add and the delete LOOK live during an import while silently doing nothing — a
 // control that is offered and does nothing is rejected on the clinical screens in as many words.
+//
+// WHAT THE FRAME READ IS READ BY ITS STATE (`useAdminData`): each read is its last answer or
+// null, and a failed read is never `[]`. A group list that failed leaves this tab standing — the
+// directory is still tested, searched and imported from — with no group offered beside an import
+// rather than an invented empty list; the frame's Alert names the read. The catalogue a
+// `users.manage` desk is never asked for is null, and `canMapGroups` / `canGrant` then fall back
+// to the mirrored keys, which only ever make a write look harder, never easier.
+//
+// BOTH SEARCH FIELDS CARRY THE SERVER'S OWN LIMITS (`limits.FIELD_MAX.ldap_query`, held to
+// `ldap_router.SearchQuery` by its test) and count the minimum as the server does, in code points.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
-import {
-  LDAP_IMPORT_CHUNK, LDAP_IMPORT_MAX, LDAP_QUERY_MAX, LDAP_QUERY_MIN, LDAP_SEARCH_CAP,
-} from "../../../backendApi.js";
+import { LDAP_IMPORT_CHUNK, LDAP_IMPORT_MAX, LDAP_SEARCH_CAP } from "../../../backendApi.js";
 import { Announce, Box, Button, Empty, Field, Input, KV, KVList, Note, Pill, Select, Table, Tag, useToast } from "../../ui/index.js";
 import { ddmmyyyy, hhmm } from "../../i18n/dates.js";
+import { FIELD_MAX, FIELD_MIN, lengthOf } from "./limits.js";
 import { canGrant, canMapGroups } from "./rules.js";
 import { doneFor, refusedFor } from "./refusal.js";
 
@@ -6693,7 +7179,8 @@ export function SourceTab({ admin }) {
   const { user: me, store } = useSession();
   const toast = useToast();
   const api = store.api;
-  const { groups, catalogue } = admin.data;
+  const groups = admin.data.groups ?? [];
+  const catalogue = admin.data.catalogue ?? [];
   const mayMap = canMapGroups(me.perms, catalogue);
 
   const [status, setStatus] = useState(null);
@@ -6721,8 +7208,14 @@ export function SourceTab({ admin }) {
   const [ourGroup, setOurGroup] = useState("");
   const [adding, setAdding] = useState(false);
   const [removingId, setRemovingId] = useState(null);
-  const mounted = useRef(true);
-  useEffect(() => () => { mounted.current = false; }, []);
+  // Set true INSIDE the effect (the house pattern, `useAdminData`), and declared before the effect
+  // that reads: StrictMode's rehearsal runs the cleanup and then the effects again, and a ref set
+  // true only at creation stayed false after it — every answer dropped as "unmounted".
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   /** The mapping table, read on its own: a read, with its own failure and its own retry. */
   const readMappings = useCallback(async () => {
@@ -6772,7 +7265,7 @@ export function SourceTab({ admin }) {
   async function runSearch(event) {
     event?.preventDefault?.();
     // Held during an import: a new answer would drop the chosen rows out from under it.
-    if (searching || importing || query.trim().length < LDAP_QUERY_MIN) return;
+    if (searching || importing || lengthOf(query.trim()) < FIELD_MIN.ldap_query) return;
     setSearching(true);
     setReport(null);
     setChunkFailed(null);
@@ -6836,7 +7329,7 @@ export function SourceTab({ admin }) {
 
   async function searchAdGroups(event) {
     event?.preventDefault?.();
-    if (groupSearching || adQuery.trim().length < LDAP_QUERY_MIN) return;
+    if (groupSearching || lengthOf(adQuery.trim()) < FIELD_MIN.ldap_query) return;
     setGroupSearching(true);
     try {
       const rows = await store.track(() => api.ldapGroups(adQuery.trim()));
@@ -6956,7 +7449,7 @@ export function SourceTab({ admin }) {
           <form noValidate onSubmit={runSearch} className="flex flex-wrap items-end gap-2">
             <Field layout="col" label={t("source.searchLabel")} hint={t("source.searchHint", { cap: LDAP_SEARCH_CAP })}
               className="mb-0 min-w-[220px] flex-1">
-              <Input value={query} maxLength={LDAP_QUERY_MAX} disabled={searching} onChange={(e) => setQuery(e.target.value)} />
+              <Input value={query} maxLength={FIELD_MAX.ldap_query} disabled={searching} onChange={(e) => setQuery(e.target.value)} />
             </Field>
             {/* Busy while an import runs too: the search is held then (see runSearch), and a button
                 that looks live and does nothing is the thing the clinical screens refuse. */}
@@ -7107,7 +7600,7 @@ export function SourceTab({ admin }) {
               <form noValidate onSubmit={searchAdGroups} className="mt-2 flex flex-wrap items-end gap-2">
                 <Field layout="col" label={t("source.mapPickGroup")} hint={t("source.mapPickHint")}
                   className="mb-0 min-w-[220px] flex-1">
-                  <Input value={adQuery} maxLength={LDAP_QUERY_MAX} disabled={groupSearching} onChange={(e) => setAdQuery(e.target.value)} />
+                  <Input value={adQuery} maxLength={FIELD_MAX.ldap_query} disabled={groupSearching} onChange={(e) => setAdQuery(e.target.value)} />
                 </Field>
                 {/* Its own words, not "Search": two buttons named identically on one panel are two
                     buttons a screen-reader user cannot tell apart, and this panel has two
@@ -7157,17 +7650,19 @@ npx vitest run src/live/screens/admin/SourceTab.test.jsx 2>&1 | grep -E "Tests "
 ```
 Expected, in order:
 ```
-Tests  4 passed | 33 skipped (37)
-Tests  2 passed | 35 skipped (37)
-Tests  6 passed | 31 skipped (37)
-Tests  10 passed | 27 skipped (37)
-Tests  8 passed | 29 skipped (37)
-Tests  8 passed | 29 skipped (37)
-Tests  37 passed (37)
+Tests  4 passed | 35 skipped (39)
+Tests  2 passed | 37 skipped (39)
+Tests  7 passed | 32 skipped (39)
+Tests  10 passed | 29 skipped (39)
+Tests  9 passed | 30 skipped (39)
+Tests  8 passed | 31 skipped (39)
+Tests  39 passed (39)
 ```
-(`-t` matches every test whose full name contains the phrase, so the lines overlap — "the search" also catches tests in the import and accessibility groups that name the search. The groups themselves hold 4 + 2 + 6 + 7 + 6 + 8, and `accessibility` 4: 37.)
+(`-t` matches every test whose full name contains the phrase, so the lines overlap — "the search" also catches tests in the import and accessibility groups that name the search. The groups themselves hold 4 + 2 + 7 + 7 + 7 + 8, and `accessibility` 4: 39. Measured on the reviewed foundation, `34494a8`.)
 
-**Eight things that will bite, all eight met while this was written.**
+**Run against the component the first draft of this plan wrote, this file fails 2 of its 39**: the read under StrictMode (the old `mounted` ref was left `false` by the rehearsal and the status answer was dropped — "loading" for ever) and the group list that failed (`null.filter`). The limits assertions pass against the old component too, because `FIELD_MAX.ldap_query` is the same 64 as `LDAP_QUERY_MAX`; what moved is where the number comes from, which `limits.test.js` now holds to the router.
+
+**Nine things that will bite, all nine met while this was written.**
 
 1. **Two buttons must not both be called "Search".** This panel has two searches — one over accounts, one over the directory's groups — and two identically-named buttons are two buttons a screen-reader user cannot tell apart. Hence `source.searchGroups` ("Qrupu axtar"). The test finds each by its own name; if it has to use `getAllByRole(...)[1]`, the strings are wrong, not the test.
 2. **The status panel contains the word "şifrə".** In its own sentence saying the bind account and its password are in no response. The test therefore asserts no `CN=` / `DC=` / `ou=` **value** in that panel — in the status panel such a string could only be the service account's — and separately asserts the sentence is there. A word-based check fails on our own honesty.
@@ -7177,6 +7672,7 @@ Tests  37 passed (37)
 6. **The test's result and the chunk's explanation are `Note`s (`role="note"`), not alerts.** Assert them through `queryAllByRole("note")`; the refusal itself is in the alert region, once.
 7. **A `mockResolvedValueOnce` per chunk** when the answers must differ, and the mock queue is consumed by the read on mount: a mapping-table failure for the re-read after a write is `mockResolvedValueOnce([mapping()]).mockRejectedValueOnce(…)` set up in `open()`'s `setup`, because the first call has already happened by the time the test body runs.
 8. **"No alert" is the alert regions' text being blank**, as in Task 7's fifth point: the error region exists before the first toast.
+9. **The `admin` prop comes from `adminProp`, and this tab's own answers are built in its own file.** Never a hand-built `{data, loading, error, reload}` — `useAdminData` has `reads` and `failures`, and a failed read is `null`. The test result and the import answer (`tested`, `importedRow`, `skippedRow`, `answer`) are built at the top of `SourceTab.test.jsx`, NOT added to `admin.testutil.js`: only this tab reads them, and the shared file is one no arm owns. And a write the test did not stub REJECTS (`ADMIN_READS`, `c1f6705`).
 
 - [ ] **Step 5: Take this arm's two lines.** In `dashboard/src/live/screens/admin/AdminScreen.jsx`, replace
 
@@ -7232,7 +7728,7 @@ At **1440 px** and **390 px**, both themes:
 npx vitest run 2>&1 | tail -4
 npx vite build 2>&1 | grep -E "built in|error"
 ```
-Expected, **on this arm's own branch**: `Test Files  104 passed (104)`, `Tests  2200 passed (2200)` (2163 + 37). On a branch where another arm has merged, add your own 37 to what you find.
+Expected, **on this arm's own branch**: `Test Files  105 passed (105)`, `Tests  2237 passed (2237)` (the reviewed foundation's 2198 + 39). On a branch where another arm has merged, add your own 39 to what you find.
 
 - [ ] **Step 9: Commit**
 
@@ -7267,12 +7763,16 @@ a write that landed is never reported refused -- the mapping table's re-read is
 a read, with its own failure and its own retry; and a refused connection test
 clears the previous result rather than leaving a green "connected" beside it.
 
+Its reads land under StrictMode's rehearsal, a groups read that failed leaves
+the tab standing with no group invented, and both search fields take the
+server's limits from limits.js.
+
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
 )"
 ```
 
-**Gate:** **37** tests in the new `SourceTab.test.jsx`; the suite green; build clean; looked at 390/1440 px in both themes, with an unconfigured directory tried.
+**Gate:** **39** tests in the new `SourceTab.test.jsx`; the suite green; build clean; looked at 390/1440 px in both themes, with an unconfigured directory tried.
 
 ---
 
@@ -7301,7 +7801,7 @@ cd dashboard
 npx vitest run 2>&1 | tail -4
 npx vite build 2>&1 | grep -E "built in|error"
 ```
-Expected: `Test Files  106 passed (106)`, `Tests  2268 passed (2268)` — **+8 files / +179 tests** on the base — build clean. (Task 14 then takes it to **2271**, +182.)
+Expected: `Test Files  107 passed (107)`, `Tests  2317 passed (2317)` — **+3 files / +119 tests** on the reviewed foundation's 104 / 2198 (44 + 36 + 39), **+9 / +228** on the wave's measured base of 98 / 2089 — build clean. (Task 14 then takes it to **2320**, +3.) Measured by merging the three migrated arms in three orders — users·roles·source, source·roles·users, roles·users·source — each with no conflict, an empty `git status`, and the same tree.
 
 ```bash
 npx vitest run src/live/screens/admin/ 2>&1 | grep -E "✓ src|Tests "
@@ -7309,14 +7809,15 @@ npx vitest run src/live/screens/admin/ 2>&1 | grep -E "✓ src|Tests "
 Expected, each file by name (Vitest prints them in finishing order, so the order will differ):
 ```
 ✓ src/live/screens/admin/catalogue.test.js (9 tests)
-✓ src/live/screens/admin/rules.test.js (34 tests)
-✓ src/live/screens/admin/refusal.test.js (5 tests)
-✓ src/live/screens/admin/admin.testutil.test.js (4 tests)
-✓ src/live/screens/admin/AdminScreen.test.jsx (19 tests)
-✓ src/live/screens/admin/RolesTab.test.jsx (32 tests)
-✓ src/live/screens/admin/SourceTab.test.jsx (37 tests)
-✓ src/live/screens/admin/UsersTab.test.jsx (36 tests)
-      Tests  176 passed (176)
+✓ src/live/screens/admin/rules.test.js (40 tests)
+✓ src/live/screens/admin/limits.test.js (7 tests)
+✓ src/live/screens/admin/refusal.test.js (6 tests)
+✓ src/live/screens/admin/admin.testutil.test.js (8 tests)
+✓ src/live/screens/admin/AdminScreen.test.jsx (25 tests)
+✓ src/live/screens/admin/RolesTab.test.jsx (36 tests)
+✓ src/live/screens/admin/SourceTab.test.jsx (39 tests)
+✓ src/live/screens/admin/UsersTab.test.jsx (44 tests)
+      Tests  214 passed (214)
 ```
 A file that is one or two out has lost or gained a test in the merge: compare its `it()` names against this plan before touching the number.
 
@@ -7358,7 +7859,7 @@ git log --oneline feat/canli-tasarim..feat/w3b-yonetim | cat
 ```
 Expected: the thirteen task commits plus up to three merge commits.
 
-**Gate:** `106 / 2268`, build clean, three tabs proved swept, the registry-pinned run green, and the screen looked at.
+**Gate:** `107 / 2317`, build clean, three tabs proved swept, the registry-pinned run green (`132 passed` on the merged tree), and the screen looked at.
 
 ---
 
@@ -7370,7 +7871,7 @@ Expected: the thirteen task commits plus up to three merge commits.
 It comes after the verification on purpose: a document written from a verification that has not happened is a document that records intentions.
 
 - [ ] **Step 1: The roadmap.** Mark G1-12, G1-13 and G1-14 done, each with the task that met it, and write the two criteria that were **not** met with the reason:
-- **G1-12 · `/scope/me` must decide as the board does** — **met, by Task 14.** `scope/router._view` now passes `enforce_unassigned` and the break-glass patients, as the board's own resolver does, and `tests/test_scope_me_agrees_with_board.py` holds the two sides to each other under all four scope reasons. The row must no longer point at Group 2: delete the deferral and name Task 14.
+- **G1-12 · `/scope/me` must decide as the board does** — **met, by Task 14.** `scope/router._view` now passes `enforce_unassigned` and the break-glass patients, as the board's own resolver does, and `tests/test_scope_me_agrees_with_board.py` holds the two sides to each other under all four scope reasons and the resolver's UNKNOWN (a deactivated account, which the administrator's route used to report as unrestricted). The row must no longer point at Group 2: delete the deferral and name Task 14.
 - **G1-12 · the scope "matrix"** — met as a list, with Decision 7's reason (no endpoint lists the units and beds a scope may name).
 
 Add the two items the roadmap's "Dalga 3B'den açık kalanlar" still needs: **server-side pagination for `/admin/users`** before a second hospital, and **a bulk scope read** so the users tab's units column can be real. The other three that were on that list — `{granted, allowed_before, allowed_after}` on the unlock response, `kind` on `GroupOut`, and `/scope/unassigned` counting administrators — **are done in Task 14**, so they go in the "what this wave closed" column instead.
@@ -7386,13 +7887,13 @@ Add the two items the roadmap's "Dalga 3B'den açık kalanlar" still needs: **se
 - `POST /admin/users/{id}/unlock-sign-in` answers `{"ok": true, "granted": …, "allowed_before": …, "allowed_after": …}` **as of Task 14**; it used to answer `{"ok": true}` alone, and the screen could then not tell "three more tries" from "there was nothing to clear" — and the number of tries is the server's difference, never the screen's;
 - `GET /scope/unassigned` counts only members who WOULD need a grant **as of Task 14**: the tenant's system group and platform operators are left out;
 - `PUT /scope/{user_id}` needs the caller's own scope to be unrestricted **by role**, which no permission key reports — and `unrestricted: true` with `reason: "unassigned"` is still refused;
-- `GET /scope/me` and `GET /scope/{user_id}` decide as the board does **as of Task 14** (`enforce_unassigned`, break-glass), and `ScopeView` carries `own_patients` — a count, never an identifier; §3 gains `GroupSpec.kind` / `GroupOut.kind` with its null case, and a note that `PERMISSIONS`' descriptions are developer English which the dashboard translates by key.
+- `GET /scope/me` and `GET /scope/{user_id}` decide as the board does **as of Task 14** (`enforce_unassigned`, break-glass, and a role of None — no active account or membership — as `unknown`, sees nothing), and `ScopeView` carries `own_patients` — a count, never an identifier; §3 gains `GroupSpec.kind` / `GroupOut.kind` with its null case, and a note that `PERMISSIONS`' descriptions are developer English which the dashboard translates by key.
 
 - [ ] **Step 4: The design note** (`docs/tasarim-prototipi-canli-sistem-notu.md`). Items 11, 12, 13 and 14 gain one line each saying what the live screen does instead, and where. The three questions in "Sorumuz: üçü ürün müydü?" are unchanged — none of them is this surface's. **Two questions about this surface were added to that file in `91dbd05` and have already been sent to the designer** (the browser-generated plaintext password, and the "view as this role" switch — `## Needs the user`, 7): do not add them again, and do not re-ask them; add only the four "what the live screen does instead" lines.
 
 - [ ] **Step 5: `amendments.md`** — a "From Wave 3B (as built)" section, for whoever builds on this:
 - the administration foundation was **unmerged** until Wave 3B Task 1; Wave 3's Tasks 16–19 are where its code lives;
-- `apiErrors.fieldRefusals(t, err)` is how a form puts a 422 under the control it is about, and `apiErrorKey` now looks a 422 item's own message up as a message;
+- `apiErrors.fieldRefusals(t, err, rendered)` → `{fields, others}` is how a form puts a 422 under the control it is about and the rest on the toast, and `apiErrorKey` now looks a 422 item's own message up as a message;
 - `refusedFor(t, subject, err)` / `doneFor(t, subject, text)` — every administration write's toast goes through them, and a success test asserts the confirmation text **and** blank alert regions (the toast's error region is mounted before the first toast);
 - `rules.canAssignScope(myScope)` is three-valued, `canManageUser(...).unlockSignIn` allows oneself, and `groupFromApi(...).memberCount` is `null` for a count the API did not send — never `0`;
 - the permission descriptions are `strings/perms.js`, keyed by permission key; `RolesTab.descriptionOf(t, row)` returns `{text, foreign}` and a foreign one is printed with `lang="en"`;
@@ -7512,7 +8013,11 @@ These tests are written as an AGREEMENT between the two, not as assertions about
 output: each one resolves the scope through the board's resolver and through HTTP and compares
 them. That is the property that was broken, and a future change to either side that re-breaks it
 fails here rather than in a hospital. Four reasons, one test each: `role`, `assigned`,
-`unassigned` (both with enforcement and without) and `break_glass`.
+`unassigned` (both with enforcement and without) and `break_glass` — and the fifth answer the
+resolver gives, `unknown`, for an account with no active membership or no active account here:
+`read_role` answers None for it, the resolver turns None into UNKNOWN (sees nothing), and the
+route passed the None to `build_scope`, which read it as "unassigned" and, with enforcement off,
+UNRESTRICTED — a deactivated nurse reported to her administrator as seeing every patient.
 
 Synthetic staff and one synthetic patient only.
 """
@@ -7535,7 +8040,7 @@ from homunculus.db import get_db
 from homunculus.escalation.models import BreakGlassReason, BreakGlassSession
 from homunculus.scope import service
 from homunculus.scope.models import StaffScope  # noqa: F401  (staff_scopes, before create_all)
-from homunculus.scope.resolver import break_glass_in_tenant
+from homunculus.scope.resolver import UNKNOWN, break_glass_in_tenant
 from homunculus.scope.rules import ScopeReason, build_scope
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
@@ -7595,10 +8100,14 @@ async def _headers(db, user):
 
 async def _as_the_board_sees_it(db, user, tenant, *, enforce_unassigned):
     """The scope the BOARD's resolver would build for this user, from the same four reads plus the
-    two arguments the route used to omit (`scope/resolver.make_scope_resolver`)."""
+    two arguments the route used to omit (`scope/resolver.make_scope_resolver`) — and, as the
+    resolver does, UNKNOWN for a role of None: no active account or membership here sees nothing."""
+    role = await service.read_role(db, user.id, tenant.id)
+    if role is None:
+        return UNKNOWN
     grants = await service.read_grants(db, user.id, tenant.id)
     return build_scope(
-        await service.read_role(db, user.id, tenant.id),
+        role,
         unit_ids=[g.unit_id for g in grants if g.unit_id],
         bed_ids=[g.bed_id for g in grants if g.bed_id],
         own_patient_ids=await service.read_own_patient_ids(db, user.id, tenant.id),
@@ -7755,6 +8264,23 @@ async def test_the_administrator_route_decides_the_same_way(db_session, world, c
         db_session, world["nurse"], world["tenant"], enforce_unassigned=True))
 
 
+async def test_a_deactivated_account_sees_nothing_here_as_on_the_board(db_session, world, client, monkeypatch):
+    """`read_role` answers None for an account that is not active, and the board's resolver turns
+    None into UNKNOWN: it sees nothing. `_view` handed the None to `build_scope`, which read it as
+    "no assignment" — and, with enforcement off, as UNRESTRICTED. The administrator's own route told
+    her a deactivated nurse "sees every patient". The membership stays active, so the route still
+    answers rather than 404ing; what it answers is now the board's."""
+    monkeypatch.delenv("SCOPE_ENFORCE_UNASSIGNED", raising=False)
+    world["nurse"].is_active = False
+    await db_session.commit()
+    res = await client.get(f"/scope/{world['nurse'].id}",
+                           headers=await _headers(db_session, world["admin"]))
+    assert res.status_code == 200, res.text
+    assert (res.json()["unrestricted"], res.json()["reason"]) == (False, "unknown")
+    _agree(res.json(), await _as_the_board_sees_it(
+        db_session, world["nurse"], world["tenant"], enforce_unassigned=False))
+
+
 async def test_an_unknown_user_is_still_not_found(db_session, world, client):
     res = await client.get(f"/scope/{uuid.uuid4()}",
                            headers=await _headers(db_session, world["admin"]))
@@ -7770,7 +8296,7 @@ export PYTHONPATH="$PWD/src"
 export TEST_DATABASE_URL="postgresql+asyncpg://homunculus:homunculus@localhost:55432/homunculus_test_w3b"
 $PY312 -m pytest -q tests/test_scope_me_agrees_with_board.py 2>&1 | grep -E "^FAILED|KeyError|passed|failed"
 ```
-Expected: `8 failed, 1 passed` — four of the eight on `KeyError: 'own_patients'` (`ScopeView` carries no such field, so the agreement **cannot even be compared** — the route had no way to show whether a break-glass patient was in the scope at all, which is half of the defect), three on the defect itself (`assert (True, 'unassigned') == (False, 'unassigned')` twice and `== (False, 'break_glass')` once), and one on the administrator's counter (`assert 2 == 1` — 14d, held by this same file). The one that passes is the unknown user's 404. **Confirm you saw failures**: a version of this step that showed everything passing was an edit that had not landed — the file is CRLF and a `python`-scripted replacement against an `\n` pattern matches nothing and reports nothing (the Ground rules' own warning, met again here).
+Expected: `9 failed, 1 passed` — four of the nine on `KeyError: 'own_patients'` (`ScopeView` carries no such field, so the agreement **cannot even be compared** — the route had no way to show whether a break-glass patient was in the scope at all, which is half of the defect), four on the defect itself (`assert (True, 'unassigned') == (False, 'unassigned')` twice, `== (False, 'break_glass')` once, and `== (False, 'unknown')` once — the deactivated account reported as unrestricted), and one on the administrator's counter (`assert 2 == 1` — 14d, held by this same file). The one that passes is the unknown user's 404. **Confirm you saw failures**: a version of this step that showed everything passing was an edit that had not landed — the file is CRLF and a `python`-scripted replacement against an `\n` pattern matches nothing and reports nothing (the Ground rules' own warning, met again here).
 
 - [ ] **Step 3: Give the view the one field the agreement needs — a count, never an identifier.** In `homunculus-engine/src/homunculus/scope/schemas.py`, replace
 
@@ -7822,9 +8348,10 @@ FAILED tests/test_scope_me_agrees_with_board.py::test_an_unassigned_nurse_agrees
 FAILED tests/test_scope_me_agrees_with_board.py::test_break_glass_is_the_reason_and_both_say_so
 FAILED tests/test_scope_me_agrees_with_board.py::test_the_unassigned_count_leaves_out_those_who_need_no_grant
 FAILED tests/test_scope_me_agrees_with_board.py::test_the_administrator_route_decides_the_same_way
-4 failed, 5 passed
+FAILED tests/test_scope_me_agrees_with_board.py::test_a_deactivated_account_sees_nothing_here_as_on_the_board
+5 failed, 5 passed
 ```
-Those are the route's two missing arguments (the unassigned-with-enforcement case, the break-glass case, and the administrator's route which shares `_view`) plus 14d's counter; the five that pass are the cases the defect never touched.
+Those are the route's two missing arguments (the unassigned-with-enforcement case, the break-glass case, and the administrator's route which shares `_view`), the role of None the route handed to `build_scope` (the deactivated account), plus 14d's counter; the five that pass are the cases the defect never touched.
 
 - [ ] **Step 5: Fix it.** In `homunculus-engine/src/homunculus/scope/router.py`, replace
 
@@ -7837,7 +8364,7 @@ with
 
 ```python
 from homunculus.scope import service
-from homunculus.scope.resolver import break_glass_in_tenant, enforce_unassigned_default
+from homunculus.scope.resolver import UNKNOWN, break_glass_in_tenant, enforce_unassigned_default
 from homunculus.scope.rules import SCOPE_UNRESTRICTED_ROLES, build_scope
 ```
 
@@ -7876,6 +8403,11 @@ async def _view(db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID) -> S
         thing that is reason-bound and audited was invisible to the route that exists to explain
         why a board is the size it is.
 
+    And a role of None — no active account or no active membership here; a DEACTIVATED account,
+    whose membership `/scope/{id}` still finds — is UNKNOWN, as the resolver decides it: sees
+    nothing. Handed to `build_scope` it read as "no assignment" and, with enforcement off, as
+    unrestricted: the administrator was told a deactivated nurse saw every patient.
+
     Nothing else about the route changes: the same four reads, the same `ScopeView`. Both
     arguments are read from the same places the board reads them, so there is one answer to
     "what may this user see" and not two.
@@ -7884,7 +8416,7 @@ async def _view(db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID) -> S
     role = await service.read_role(db, user_id, tenant_id)
     own = await service.read_own_patient_ids(db, user_id, tenant_id)
     emergency = await break_glass_in_tenant(db, user_id, tenant_id)
-    scope = build_scope(
+    scope = UNKNOWN if role is None else build_scope(
         role,
         unit_ids=[g.unit_id for g in grants if g.unit_id],
         bed_ids=[g.bed_id for g in grants if g.bed_id],
@@ -7903,11 +8435,11 @@ export PYTHONPATH="$PWD/src"
 export TEST_DATABASE_URL="postgresql+asyncpg://homunculus:homunculus@localhost:55432/homunculus_test_w3b"
 $PY312 -m pytest -q tests/test_scope_me_agrees_with_board.py 2>&1 | grep -E "^FAILED|^[0-9]+ (passed|failed)"
 ```
-Expected: `1 failed, 8 passed` — the one left is the administrator's counter, which 14d fixes.
+Expected: `1 failed, 9 passed` — the one left is the administrator's counter, which 14d fixes.
 
-**No dashboard change follows from 14a, and that is the point.** `canAssignScope` already answers `false` for `reason: "unassigned"` whether or not the flag is on (Decision 8), so the scope editor's Save behaves identically. What changes is what the editor's *unrestricted* branch is shown for: with enforcement on, an unassigned user now arrives as `unrestricted: false, reason: "unassigned"` and gets the editing UI instead of "this user's scope is unrestricted: no assignment yet" — which is the correct screen and is why the fix matters. `admin.scopeReasonUnassigned` stays reachable (enforcement off is the pilot's state) and `admin.testutil.js`'s `SCOPE_UNASSIGNED` is still a payload the server can send, so no fixture and no assertion moves. (`scopeView()` in the fixtures does not carry `own_patients`, and `scopeFromApi` does not read it: the editor shows grants, and a count of named patients is the board's business.)
+**No dashboard change follows from 14a, and that is the point.** `canAssignScope` already answers `false` for `reason: "unassigned"` whether or not the flag is on (Decision 8), so the scope editor's Save behaves identically. And since the foundation review every scope decision on the users tab goes through `rules.scopeKind` (`9571f65`), which never read `unrestricted` alone: an unassigned user gets the editor whether the flag is on or off. What 14a changes is the TRUTH of the one sentence that reads the flag — `ScopeEditor.unassignedNoteKey`, asked only of a scope already called "unassigned": with enforcement on, the route used to answer `unrestricted: true` and the editor told the administrator the nurse "sees every patient now" (`admin.scopeUnassignedOpen`) about a nurse whose board was empty; it now answers `unrestricted: false` and the editor says she sees only her own (`admin.scopeUnassignedClosed`). A deactivated account now reads `reason: "unknown"`, which `scopeKind` already calls "unknown" — the editor stays editable (the server decides the write) and the units cell says `admin.unitsUnknown` instead of "no unit assigned". `admin.testutil.js`'s `SCOPE_UNASSIGNED` is still a payload the server can send, so no fixture and no assertion moves. (`scopeView()` in the fixtures does not carry `own_patients`, and `scopeFromApi` does not read it: the editor shows grants, and a count of named patients is the board's business.)
 
-**Four reasons, not five.** `ScopeReason` has a fifth value, `tenant_token`, for a device or bridge token that carries a tenant and no user; `/scope/me` and `/scope/{id}` are user routes behind `get_current_user`, so no request to them can resolve to it, and the agreement does not test a case that cannot occur.
+**Four reasons, and the resolver's UNKNOWN.** `ScopeReason` has a fifth value, `tenant_token`, for a device or bridge token that carries a tenant and no user; `/scope/me` and `/scope/{id}` are user routes behind `get_current_user`, so no request to them can resolve to it, and the agreement does not test a case that cannot occur. `"unknown"` CAN occur, on the administrator's route: a deactivated account keeps its membership, so `_slug_of_member` finds it and `read_role` answers None — and that is the case the review of the first draft found (M6) and this step closes, with its own test.
 
 ---
 
@@ -8208,7 +8740,7 @@ with
 cd /c/tmp/w3b-impl/dashboard
 npx vitest run src/live/screens/admin/UsersTab.test.jsx src/live/i18n/strings.test.js 2>&1 | grep -E "Tests "
 ```
-Expected: `Tests  43 passed (43)` — `UsersTab` **37**, one more than Task 7 left, and `strings` still 6: both new texts differ in all four languages and carry Cyrillic in Russian, so neither needs a parity entry.
+Expected: `Tests  51 passed (51)` — `UsersTab` **45**, one more than Task 7 left, and `strings` still 6: both new texts differ in all four languages and carry Cyrillic in Russian, so neither needs a parity entry.
 
 ---
 
@@ -8716,7 +9248,7 @@ with
 cd /c/tmp/w3b-impl/dashboard
 npx vitest run src/live/screens/admin/ 2>&1 | grep -E "Tests "
 ```
-Expected: `Tests  179 passed (179)` — `catalogue` **10**, `rules` **35**, `refusal` 5, `admin.testutil` 4, `AdminScreen` 19, `UsersTab` **37**, `RolesTab` 32, `SourceTab` 37.
+Expected: `Tests  217 passed (217)` — `catalogue` **10**, `rules` **41**, `limits` 7, `refusal` 6, `admin.testutil` 8, `AdminScreen` 25, `UsersTab` **45**, `RolesTab` 36, `SourceTab` 39.
 
 ---
 
@@ -8803,7 +9335,7 @@ export PYTHONPATH="$PWD/src"
 export TEST_DATABASE_URL="postgresql+asyncpg://homunculus:homunculus@localhost:55432/homunculus_test_w3b"
 $PY312 -m pytest -q tests/test_scope_me_agrees_with_board.py 2>&1 | grep -E "^FAILED|^[0-9]+ (passed|failed)"
 ```
-Expected: `9 passed`.
+Expected: `10 passed`.
 
 **No dashboard change follows from 14d.** The users tab prints whatever `/scope/unassigned` answers and says so when it did not answer; what changes is that the number is now about the people it was meant to be about.
 
@@ -8842,15 +9374,15 @@ $PY -m pytest -q tests/test_[m-z]*.py 2>&1 | tail -1
 ```
 Each third is its own command — the first alone is about 8½ minutes — and the second interpreter starts only when the first has finished.
 
-Expected, measured at `91dbd05` (base **98 / 2089** JS; Python **2272 passed, 8 skipped** on both interpreters, with `test_infinity_vm_pilot.py` left out as above):
+Expected, measured at `91dbd05` (base **98 / 2089** JS; Python **2272 passed, 8 skipped** on both interpreters, with `test_infinity_vm_pilot.py` left out as above), and re-measured after the migration onto the reviewed foundation (`34494a8`, 104 / 2198 JS; no engine change since `91dbd05`):
 
 | | Files | Tests |
 |---|---|---|
-| dashboard | **106** (+8) | **2271** (+182) |
-| Python, 3.12.13 (the image's version) | — | `990 passed` · `868 passed, 6 skipped` · `425 passed, 2 skipped` = **2283 passed, 8 skipped** (+11) |
-| Python, 3.14.5 (the development version) | — | the same three lines: **2283 passed, 8 skipped** (+11) |
+| dashboard | **107** (+9) | **2320** (+231; +122 on the reviewed foundation's 2198) |
+| Python, 3.12.13 (the image's version) | — | `990 passed` · `868 passed, 6 skipped` · `426 passed, 2 skipped` = **2284 passed, 8 skipped** (+12) |
+| Python, 3.14.5 (the development version) | — | the same three lines: **2284 passed, 8 skipped** (+12) |
 
-Eleven new Python tests — 9 in `test_scope_me_agrees_with_board.py` (the last third), 1 for the unlock's second outcome and 1 for `kind` (both in the first) — one rewritten assertion (the unlock's answer), and three new dashboard tests. Collected: 2291 → 2302 on both interpreters, 13 of them `test_infinity_vm_pilot.py`'s.
+Twelve new Python tests — 10 in `test_scope_me_agrees_with_board.py` (the last third), 1 for the unlock's second outcome and 1 for `kind` (both in the first) — one rewritten assertion (the unlock's answer), and three new dashboard tests. Collected: 2291 → 2303 on both interpreters, 13 of them `test_infinity_vm_pilot.py`'s. (The migration re-measured the dashboard line in full, and the last third on 3.12 — `426 passed, 2 skipped` in 3 min 50 s; the first two thirds hold no test it moved, and 3.14 is the same code under the second interpreter.)
 
 **One flake to know about rather than chase.** `LiveApp.test.jsx > "lands an account straight in the product, on its home — no setup wizard"` failed **twice**, both times on a run that had `npx vite build` queued behind it in the same command, and passed every time the suite ran alone — including on consecutive full runs and on the replayed tree. It is timing-sensitive under CPU contention, it is not this wave's test and this wave does not touch it. **Run the suite and the build as two commands**, and if you see this one fail, re-run before investigating.
 
@@ -8875,10 +9407,14 @@ break-glass patients, while the board's own resolver passes both. With
 enforcement on it answered "your scope is unrestricted" about a clinician whose
 board was empty -- the opposite of what she was looking at, on exactly the
 configuration a hospital turns on when it starts restricting access -- and it
-omitted the one grant that is reason-bound and audited. The new tests are
-written as an AGREEMENT between the route and the resolver under each of the
-four reasons a user route can produce, and ScopeView carries own_patients (a
-count, never an identifier) so the break-glass half is checkable. G1-12's one
+omitted the one grant that is reason-bound and audited. And it handed a role of
+None -- a deactivated account, whose membership the administrator's route still
+finds -- to build_scope, which read it as unassigned and, with enforcement off,
+unrestricted; the resolver answers UNKNOWN, sees nothing, and so does the route
+now. The new tests are written as an AGREEMENT between the route and the
+resolver under each of the four reasons a user route can produce and under the
+resolver's UNKNOWN, and ScopeView carries own_patients (a count, never an
+identifier) so the break-glass half is checkable. G1-12's one
 otherwise-unmeetable acceptance criterion.
 
 POST /unlock-sign-in put Unlocked.granted in the audit row and threw it away in
@@ -8904,7 +9440,7 @@ EOF
 )"
 ```
 
-**Gate:** dashboard `106 / 2271` (+182), build clean; Python **2283 passed, 8 skipped** (+11, skipped unchanged) on 3.12 **and** on 3.14, `test_infinity_vm_pilot.py` left out; `homunculus_test_w3b` dropped.
+**Gate:** dashboard `107 / 2320` (+231), build clean; Python **2284 passed, 8 skipped** (+12, skipped unchanged) on 3.12 **and** on 3.14, `test_infinity_vm_pilot.py` left out; `homunculus_test_w3b` dropped.
 
 ### Which screen assertions move once this lands
 
@@ -8913,13 +9449,15 @@ Four files, and nothing an arm wrote is invalidated — each is a count going up
 | File | Was | Becomes | Why |
 |---|---|---|---|
 | `screens/admin/catalogue.test.js` | 9 | **10** | the mirror is now checked against `GroupSpec.kind` as well as against the slugs and the flags |
-| `screens/admin/rules.test.js` | 34 | **35** | `groupFromApi` prefers `GroupOut.kind` and falls back to the mirror |
-| `screens/admin/UsersTab.test.jsx` | 36 | **37** | the unlock's outcomes, with the server's number |
-| `screens/admin/admin.testutil.js` + `.test.js` | 4 | 4 | `group()` gains `kind`, derived; its builders' test asserts the two kinds — two assertions, no new test |
+| `screens/admin/rules.test.js` | 40 | **41** | `groupFromApi` prefers `GroupOut.kind` and falls back to the mirror |
+| `screens/admin/UsersTab.test.jsx` | 44 | **45** | the unlock's outcomes, with the server's number |
+| `screens/admin/admin.testutil.js` + `.test.js` | 8 | 8 | `group()` gains `kind`, derived; its builders' test asserts the two kinds — two assertions, no new test |
 | `i18n/strings.test.js` | 6 | **6** | two new texts, both differing in all four languages: no parity entry |
-| whole suite | 2268 | **2271** | |
+| whole suite | 2317 | **2320** | |
 
-**And one behaviour changes without any assertion moving**, which is worth knowing before the first VM deploy: with `SCOPE_ENFORCE_UNASSIGNED` on, the scope editor stops showing "this user's scope is unrestricted — nothing to assign here" for an unassigned user and shows the editor instead. That is the correct screen and it is the whole point of 14a; the pilot runs with the flag off, so nothing changes until the hospital decides to turn it on, which is exactly the decision the flag exists to make deliberate.
+Every anchor this task replaces in `UsersTab.jsx` and `UsersTab.test.jsx` — `write`, `onConfirm`, `CONFIRMATIONS.unlock`, the unlock test's first three lines — was kept byte-for-byte by the migration onto the reviewed foundation, and the replay of this task onto the three merged arms reported no missing or ambiguous anchor.
+
+**And one behaviour changes without any assertion moving**, which is worth knowing before the first VM deploy: with `SCOPE_ENFORCE_UNASSIGNED` on, the scope editor stops telling the administrator that an unassigned nurse "sees every patient now" (`admin.scopeUnassignedOpen`) and says she sees only her own (`admin.scopeUnassignedClosed`) — the editor itself is offered either way (`rules.scopeKind`). And a deactivated account's units cell reads "unknown" rather than "no unit assigned". Both are the correct screen and the whole point of 14a; the pilot runs with the flag off, so the first changes nothing until the hospital decides to turn it on, which is exactly the decision the flag exists to make deliberate.
 
 ---
 
@@ -8935,7 +9473,7 @@ Run against the brief — Tasks 20, 21 and 22 of the Wave 3 plan — with fresh 
 |---|---|---|
 | lists the users with every column, and the username under the name | T7, "lists the users with every column…" | ✓ |
 | a temporary password is a tag, not a silence; "required · not set up" is not "off"; a user who has never signed in says so | T7, two tests | ✓ |
-| tells "no unit assigned" from "scope unrestricted" | T7, "claims nothing about a user's units until that user's scope has been read" + "fills the row's units cell once that user's scope has been read" | ✓ **changed**: the list cannot say either until it has read that user's scope (Decision 6, no bulk read). The two statements stay distinct in the editor and in the filled cell. |
+| tells "no unit assigned" from "scope unrestricted" | T7, "claims nothing about a user's units until that user's scope has been read" + "fills the row's units cell once that user's scope has been read" | ✓ **changed**: the list cannot say either until it has read that user's scope (Decision 6, no bulk read). The two statements stay distinct in the editor and in the filled cell — by `rules.scopeKind`, never by the flag (the foundation review). |
 | searches name and username, folding diacritics; filters by role | T7, two tests | ✓ |
 | draws no action the session may not take, and says why once per row | T7, three tests | ✓ |
 | creates a local user: full name, username, e-mail, password, group ids of role + duties + others | T7, "creates a local user…" | ✓ |
@@ -8948,7 +9486,7 @@ Run against the brief — Tasks 20, 21 and 22 of the Wave 3 plan — with fresh 
 | while a write is in flight its dialog cannot be dismissed, and a refusal is shown in the still-open dialog | T7, two tests | ✓ |
 | a password is never in the DOM after the dialog closes | T7, two tests | ✓ |
 | after every write the list is reloaded from the server | T7 (`reload` is a spy in every write test) | ✓ |
-| an unrestricted user gets no scope editor and the reason why | T7 | ✓ |
+| an unrestricted user gets no scope editor and the reason why | T7, "a user unrestricted BY ROLE gets no editor…" | ✓ **narrowed by the foundation review**: only a scope unrestricted BY ROLE; an unassigned user, `unrestricted: true` at the pilot, gets the editor and her first unit — its own T7 test |
 | the scope options come from the board's cards and the user's own grants, and the screen says so | T7 | ✓ |
 | a key with no card on the board can be added by hand, and the screen says what that means | T7 | ✓ |
 | the list is a `<table>` with a caption, `<th scope="col">` per column and `<th scope="row">` on the username; at 390 px it scrolls inside a named region and the page does not | T7, "accessibility" + Step 7 | ✓ (the 390 px half is the browser step) |
@@ -8969,11 +9507,11 @@ Run against the brief — Tasks 20, 21 and 22 of the Wave 3 plan — with fresh 
 
 **2. Placeholder scan.** No "TBD", no "add appropriate error handling", no "similar to Task N", no step that describes a change without showing it. Every code step carries the code, and every code block in this document was taken from a tree where it ran. Two steps deliberately point at another document instead of repeating it — Task 1, at Wave 3's Tasks 16–19 — and that is an execution instruction for committed code, with the four skips named.
 
-**3. Type consistency.** Checked across the tasks: `refusedFor(t, subject, err)` and `doneFor(t, subject, text)` (T3) are called with exactly those arguments in T7, T9 and T11; `fieldRefusals(t, err)` (T2) returns `{field: text}` keyed by the **API's** field names, which `UserForm`'s `FIELD` map and `GroupForm`'s own keys both use; `canAssignScope(myScope)` (T2) is three-valued and `ScopeEditor`'s `mayAssign` prop handles all three; `scopeFromApi(...).grants` is `[{unitId, bedId}]` (camelCase, adapted) while `setScope(id, grants)` sends `[{unit_id} | {bed_id}]` (snake_case, the API's) — the editor converts at the call and its test asserts the sent shape; `admin.testutil.js`'s builders are the **API's** shapes and every test passes them through `userFromApi` / `groupFromApi` / `scopeFromApi`; `onlyTabs(screens)` returns `resetTabs`, as `stubTabs` does; `chunksOf(ids, size)` and `testReasonKey` / `skipReasonKey` are exported from `SourceTab.jsx` and tested there; `isOn` / `listToSend` / `pendingFor` / `undescribedKeys` / `lockedBecause` (→ `{key, vars}` or `null`) / `descriptionOf` (→ `{text, foreign}`) are exported from `RolesTab.jsx` and tested there; `markImported(found, answer)` from `SourceTab.jsx`; `membershipOf` / `mfaState` / `PAGE` / `MANY` from `UsersTab.jsx`; `offeredKeys` from `ScopeEditor.jsx`; `splitGroups` from `UserForm.jsx`.
+**3. Type consistency.** Checked across the tasks: `refusedFor(t, subject, err)` and `doneFor(t, subject, text)` (T3) are called with exactly those arguments in T7, T9 and T11; `fieldRefusals(t, err, rendered)` (T2, as the foundation review left it) returns `{fields, others}`, `fields` keyed by the **API's** field names, which `UserForm`'s `FIELD` / `DRAWN` and `GroupForm`'s `GROUP_FIELDS` both use, and `others` toasted by both; the `admin` prop is `adminProp(over)`'s in every tab test, never hand-built; `canAssignScope(myScope)` (T2) is three-valued and `ScopeEditor`'s `mayAssign` prop handles all three; `scopeFromApi(...).grants` is `[{unitId, bedId}]` (camelCase, adapted) while `setScope(id, grants)` sends `[{unit_id} | {bed_id}]` (snake_case, the API's) — the editor converts at the call and its test asserts the sent shape; `admin.testutil.js`'s builders are the **API's** shapes and every test passes them through `userFromApi` / `groupFromApi` / `scopeFromApi`; `onlyTabs(screens)` returns `resetTabs`, as `stubTabs` does; `chunksOf(ids, size)` and `testReasonKey` / `skipReasonKey` are exported from `SourceTab.jsx` and tested there; `isOn` / `listToSend` / `pendingFor` / `undescribedKeys` / `lockedBecause` (→ `{key, vars}` or `null`) / `descriptionOf` (→ `{text, foreign}`) are exported from `RolesTab.jsx` and tested there; `markImported(found, answer)` from `SourceTab.jsx`; `membershipOf` / `mfaState` / `PAGE` / `MANY` from `UsersTab.jsx`; `offeredKeys` from `ScopeEditor.jsx`; `splitGroups` from `UserForm.jsx`.
 
-**4. The counts add up.** 2089 + 58 (T1) + 5 (T2) + 5 (T3) + 6 (T4) + 36 (T7) + 32 (T9) + 37 (T11) = **2268** (+179), and 98 + 3 + 1 + 1 + 1 + 1 + 1 = **106** files. Both were measured on the finished tree, and the per-task figures on trees replayed from this document up to each task. **Task 14** then adds 3 dashboard tests (**2271**, +182) and 11 Python tests, taking the Python suite from **2272** to **2283 passed, 8 skipped** on both interpreters (+11; `test_infinity_vm_pilot.py` left out) — measured on each, in thirds.
+**4. The counts add up.** 2089 + 58 (T1) + 5 (T2) + 5 (T3) + 6 (T4) + 35 (the foundation review, `0d45b96..34494a8`) + 44 (T7) + 36 (T9) + 39 (T11) = **2317** (+228), and 98 + 3 + 1 + 1 + 1 + 1 + 1 + 1 = **107** files. The arms' figures were re-measured on trees replayed from this document onto `34494a8`, and the merged figure by merging the three in three orders. **Task 14** then adds 3 dashboard tests (**2320**, +231) and 12 Python tests, taking the Python suite from **2272** to **2284 passed, 8 skipped** on both interpreters (+12; `test_infinity_vm_pilot.py` left out) — measured on each, in thirds, before the migration; the migration re-measured the third its added test sits in, on 3.12.
 
-**5. Task 14's own coverage.** Four changes, four groups of tests, and each was watched failing first: 14a's nine, of which four failed before the fix (three on the route's two missing arguments, one — the unassigned counter — on 14d, which the same file holds; the other five are the cases the defect never touched); 14b's two, which failed on `{"ok": True}` and on `KeyError: 'granted'`; 14c's one, which failed at collection on `cannot import name 'GROUP_KINDS'`; 14d's one, which failed on `2 == 1`. The dashboard's three were run after each. The one negative check that initially *passed* — 14a's, when a scripted edit silently failed to land against a CRLF file — is called out in Task 14 Step 2, because a worker who sees every test pass there has not tested anything.
+**5. Task 14's own coverage.** Four changes, four groups of tests, and each was watched failing first: 14a's ten, of which five failed before the fix (three on the route's two missing arguments, one on the role of None it handed `build_scope` — a deactivated account read as unrestricted — and one — the unassigned counter — on 14d, which the same file holds; the other five are the cases the defect never touched); 14b's two, which failed on `{"ok": True}` and on `KeyError: 'granted'`; 14c's one, which failed at collection on `cannot import name 'GROUP_KINDS'`; 14d's one, which failed on `2 == 1`. The dashboard's three were run after each. The one negative check that initially *passed* — 14a's, when a scripted edit silently failed to land against a CRLF file — is called out in Task 14 Step 2, because a worker who sees every test pass there has not tested anything.
 
 ---
 
@@ -8981,7 +9519,7 @@ Run against the brief — Tasks 20, 21 and 22 of the Wave 3 plan — with fresh 
 
 **Three of the seven were answered while this plan was being written, and the answers are Task 14.** They are kept here, closed, because a reader of the roadmap will come looking for them.
 
-**1. `/scope/me` deciding differently from the board — ANSWERED and DONE (Task 14a).** The route called `build_scope` without `enforce_unassigned` and without the break-glass patients, while the board's own resolver passes both: with enforcement on it answered "your scope is unrestricted" about a clinician whose board was empty, and it omitted the one grant that is reason-bound and audited. The user chose option (a) — fix it in this wave's backend half — and it is fixed, with eight tests written as an **agreement** between the route and the resolver under each of the four scope reasons, so a future change to either side fails here rather than in a hospital. G1-12's one otherwise-unmeetable acceptance criterion is met, and Task 13 takes the roadmap row off Group 2.
+**1. `/scope/me` deciding differently from the board — ANSWERED and DONE (Task 14a).** The route called `build_scope` without `enforce_unassigned` and without the break-glass patients, while the board's own resolver passes both: with enforcement on it answered "your scope is unrestricted" about a clinician whose board was empty, and it omitted the one grant that is reason-bound and audited. The user chose option (a) — fix it in this wave's backend half — and it is fixed, with nine tests written as an **agreement** between the route and the resolver under each of the four scope reasons and the resolver's UNKNOWN, so a future change to either side fails here rather than in a hospital. G1-12's one otherwise-unmeetable acceptance criterion is met, and Task 13 takes the roadmap row off Group 2.
 
 **2. `GroupOut` saying what kind of group it is — ANSWERED and DONE (Task 14c).** `GroupSpec.kind` and `GroupOut.kind`: `"role"` / `"extra"` for the eleven groups this product defines, `null` for a group a hospital created. **No migration** — it is a property of the group this product defines, not of a tenant's copy of it. The dashboard's mirror is kept as the fallback for a server that does not have the field, and its test now reads the backend's own `kind`, so the fallback cannot disagree with the thing it falls back from. `null` is handled as an answer ("neither") and not as a missing field.
 
