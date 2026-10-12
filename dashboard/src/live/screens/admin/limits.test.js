@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { LDAP_QUERY_MAX, LDAP_QUERY_MIN } from "../../../backendApi.js";
 import { PASSWORD_MIN } from "../../auth/passwordRules.js";
 import { FIELD_MAX, FIELD_MIN, lengthOf } from "./limits.js";
 
@@ -12,6 +13,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ENGINE = path.resolve(HERE, "../../../../../homunculus-engine/src/homunculus");
 const SCHEMAS = fs.readFileSync(path.join(ENGINE, "admin/schemas.py"), "utf8");
 const SCOPE_MODELS = fs.readFileSync(path.join(ENGINE, "scope/models.py"), "utf8");
+const LDAP_ROUTER = fs.readFileSync(path.join(ENGINE, "admin/ldap_router.py"), "utf8");
 
 /** `NAME = 123` at module level. */
 const constant = (name) => Number(new RegExp(`^${name} = (\\d+)$`, "m").exec(SCHEMAS)?.[1]);
@@ -64,6 +66,15 @@ describe("the administration forms' limits are the server's", () => {
       expect(new RegExp(`${column}: Mapped\\[str\\] = mapped_column\\(String\\((\\d+)\\)`).exec(SCOPE_MODELS)?.[1], column)
         .toBe(String(FIELD_MAX.scope_key));
     }
+  });
+
+  it("a directory search's query: the router's own bounds, and the client's copy of them", () => {
+    // `SearchQuery` is a `Query(...)` on the LDAP router, not a schema field, which is how the two
+    // search boxes of the login-source tab were left out of this file the first time.
+    const query = /^SearchQuery = Annotated\[str, Query\(min_length=(\d+), max_length=(\d+)\)/m.exec(LDAP_ROUTER);
+    expect(query, "SearchQuery").not.toBeNull();
+    expect([FIELD_MIN.ldap_query, FIELD_MAX.ldap_query]).toEqual([Number(query[1]), Number(query[2])]);
+    expect([FIELD_MIN.ldap_query, FIELD_MAX.ldap_query]).toEqual([LDAP_QUERY_MIN, LDAP_QUERY_MAX]);
   });
 
   it("is frozen", () => {

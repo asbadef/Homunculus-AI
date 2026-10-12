@@ -1,7 +1,7 @@
 // src/live/screens/admin/limits.js — the server's own length limits for every field the
-// administration forms draw, mirrored from homunculus-engine (`admin/schemas.py`, and
-// `scope/models.py` for a scope key). `limits.test.js` reads those files and fails when the two
-// drift: change both sides together.
+// administration forms draw, mirrored from homunculus-engine (`admin/schemas.py`, `scope/models.py`
+// for a scope key, `admin/ldap_router.py` for a directory search). `limits.test.js` reads those
+// files and fails when the two drift: change both sides together.
 //
 // WHY A MIRROR. A control whose `maxLength` is the server's own never invites a refusal it could
 // have prevented, and a refusal it could not prevent (a username already taken) is the server's to
@@ -29,6 +29,10 @@ export const FIELD_MAX = Object.freeze({
   // ScopeGrantIn states no length at all: the only limit is the column, String(100), past which a
   // key is a database error rather than a 422. The field holds to the column.
   scope_key: 100,
+  // A directory search's `q`, accounts and AD groups alike (ldap_router.SearchQuery, trimmed
+  // first). backendApi.js states the same pair as LDAP_QUERY_MIN / LDAP_QUERY_MAX for the client;
+  // this is the copy the forms draw from, so every administration field has its limit in one place.
+  ldap_query: 64,
 });
 
 /** The fewest characters a field takes, where the server states more than "not empty". */
@@ -37,6 +41,7 @@ export const FIELD_MIN = Object.freeze({
   password: 8, //        PASSWORD_MIN_LENGTH (auth/service.py; auth/passwordRules.js PASSWORD_MIN)
   slug: 2, //            _SLUG
   ad_group_dn: 3, //     LdapMappingIn.ad_group_dn
+  ldap_query: 2, //      ldap_router.SearchQuery
 });
 
 /** A length as the server counts it: code points, not UTF-16 units. */
