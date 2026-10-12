@@ -154,6 +154,37 @@ function fieldErrorKey(item) {
   return null;
 }
 
+/** One 422 item's own message, looked up as a message in its own right.
+ *
+ *  WHY THIS EXISTS. `backendApi.failure()` builds a 422's `Error.message` by joining its items as
+ *  `"<field>: <message>"`, so the whole string no longer equals anything in `API_MESSAGE_KEYS` —
+ *  and every validator text the administration forms can earn (`usernameRule`, `badEmail`,
+ *  `mustNotBeBlank`, `badSlug`, `reasonOneLine`, `reasonNeedsText`, `badGroupDn`) was reaching the
+ *  administrator as the server's raw Turkish, in all four languages, although all seven are
+ *  translated. Measured, not reasoned: `apiErrorText` on a real username 422 printed
+ *  `username: Kullanıcı adı 2-128 karakter olmalı; …`. The item's own `message` has no prefix, so
+ *  it matches. */
+function fieldMessageKey(item) {
+  const key = API_MESSAGE_KEYS.get(String(item?.message ?? "").trim());
+  return key ? { key: `errors.${key}`, vars: {} } : null;
+}
+
+/** Which of a form's fields a 422 is about, and what to print under it — `{field: text}`, in the
+ *  reader's language. The field names are the API's (`username`, `email`, `full_name`, `password`,
+ *  `slug`, `name`, `reason`, `ad_group_dn`); a form maps them to its own controls. An item whose
+ *  message is not a known one keeps the server's words, which is still better under the field it is
+ *  about than nowhere. Empty when the failure is not a 422 with fields. */
+export function fieldRefusals(t, err) {
+  const out = {};
+  for (const item of Array.isArray(err?.fieldErrors) ? err.fieldErrors : []) {
+    if (!item || typeof item.field !== "string" || item.field === "" || out[item.field]) continue;
+    const hit = fieldErrorKey(item) || fieldMessageKey(item);
+    const text = hit ? t(hit.key, hit.vars) : String(item.message ?? "").trim();
+    if (text) out[item.field] = text;
+  }
+  return out;
+}
+
 /** Which `errors.*` text an API failure is — {key, vars} — or null when it is not a known one.
  *  Takes an Error from backendApi (its `code` first, then its 422 items, then its message), or
  *  the message itself. */
@@ -162,7 +193,8 @@ export function apiErrorKey(err) {
     return { key: `errors.${API_CODE_KEYS.get(err.code)}`, vars: {} };
   }
   if (err && Array.isArray(err.fieldErrors)) {
-    const hit = err.fieldErrors.map(fieldErrorKey).find(Boolean);
+    const hit = err.fieldErrors.map(fieldErrorKey).find(Boolean)
+      || err.fieldErrors.map(fieldMessageKey).find(Boolean);
     if (hit) return hit;
   }
   const text = messageOf(err).trim();

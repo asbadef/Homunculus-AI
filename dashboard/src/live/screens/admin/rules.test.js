@@ -3,8 +3,8 @@
 import { describe, it, expect } from "vitest";
 import { PERMISSION_KEYS } from "./catalogue.js";
 import {
-  canGrant, canManageUser, canMapGroups, groupFromApi, groupRights, rightsBeyond, scopeFromApi,
-  userFromApi, userRights,
+  canAssignScope, canGrant, canManageUser, canMapGroups, groupFromApi, groupRights, rightsBeyond,
+  scopeFromApi, userFromApi, userRights,
 } from "./rules.js";
 
 const CATALOGUE = PERMISSION_KEYS.map((key) => ({ key, description: key }));
@@ -68,9 +68,15 @@ describe("groupFromApi", () => {
     expect(group().permissions).toEqual(["board.view", "alerts.ack"]);
   });
 
-  it("a member count the API did not send is none", () => {
-    expect(group({ member_count: null }).memberCount).toBe(0);
-    expect(groupFromApi(null).memberCount).toBe(0);
+  it("a member count the API did not send is unknown, never zero", () => {
+    // "0 people" is a claim about the group; "not known" is the truth of an absent field. The old
+    // `Number(x) || 0` made them the same, and the roles table's own "member count unknown"
+    // sentence was unreachable for it.
+    expect(group({ member_count: null }).memberCount).toBeNull();
+    expect(group({ member_count: undefined }).memberCount).toBeNull();
+    expect(group({ member_count: "4" }).memberCount).toBeNull();
+    expect(group({ member_count: 0 }).memberCount).toBe(0);           // a real zero stays a zero
+    expect(groupFromApi(null).memberCount).toBeNull();
   });
 });
 
@@ -197,7 +203,15 @@ describe("canManageUser", () => {
     expect(verdict.resetPassword).toBe(false);
     expect(verdict.resetMfa).toBe(false);
     expect(verdict.deactivate).toBe(false);
-    expect(verdict.unlockSignIn).toBe(false);
+  });
+
+  it("lifting your OWN directory throttle is allowed, as the server allows it", () => {
+    // admin/service.unlock_sign_in: "Oneself is allowed — an unlock hands nothing over, the next
+    // sign-in still needs the password." An AD administrator whose own bind chain is throttled is
+    // signed in already and is the person who needs it; this hint used to hide the one action the
+    // server would have taken.
+    expect(canManageUser(DESK, { ...ad, id: "u-1" }, groups, "u-1", CATALOGUE).unlockSignIn).toBe(true);
+    expect(canManageUser(DESK, { ...nurse, id: "u-1" }, groups, "u-1", CATALOGUE).unlockSignIn).toBe(false);
   });
 
   it("without an id for the session, the user might be yourself: refuse", () => {
@@ -214,6 +228,26 @@ describe("canManageUser", () => {
   it("a desk without users.manage may do nothing at all", () => {
     expect(canManageUser(["groups.manage"], nurse, groups, "u-1", CATALOGUE))
       .toMatchObject({ within: false, edit: false, setGroups: false });
+  });
+});
+
+describe("canAssignScope", () => {
+  it("only a desk whose own scope is unrestricted BY ROLE — the server's own rule", () => {
+    // scope/router.py put_scope: 403 unless read_role(caller) is in SCOPE_UNRESTRICTED_ROLES.
+    // No permission key reports it, so the only source is the caller's own /scope/me.
+    expect(canAssignScope(scopeFromApi({ unrestricted: true, reason: "role" }))).toBe(true);
+    expect(canAssignScope(scopeFromApi({ unrestricted: false, reason: "assigned" }))).toBe(false);
+  });
+
+  it("a desk unrestricted only because nobody has been assigned yet may NOT assign", () => {
+    // build_scope returns unrestricted: true with reason "unassigned" until the deployment flips
+    // enforce_unassigned — the pilot's normal state, and the server still refuses the write.
+    expect(canAssignScope(scopeFromApi({ unrestricted: true, reason: "unassigned" }))).toBe(false);
+  });
+
+  it("an answer that has not arrived is unknown, not permission", () => {
+    expect(canAssignScope(null)).toBeNull();
+    expect(canAssignScope(undefined)).toBeNull();
   });
 });
 

@@ -61,6 +61,7 @@ export function fakeApi(vi, { access = null } = {}) {
     adminResetMfa: vi.fn(),
     adminUnlockSignIn: vi.fn(),
     myScope: vi.fn(),
+    userScope: vi.fn(),
     setScope: vi.fn(),
     unassignedScopes: vi.fn(),
     // the roles and permissions screen (G1-13)

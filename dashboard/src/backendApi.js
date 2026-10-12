@@ -34,6 +34,14 @@ export const DEFAULT_TIMEOUT_MS = 15_000;
 export const ADMIN_LDAP_TIMEOUT_MS = 30_000;
 /** The most accounts one `/admin/ldap/import` call takes (the API's own cap). */
 export const LDAP_IMPORT_MAX = 50;
+/** The most rows a directory search or a group search answers with, whatever is asked
+ *  (`admin/ldap_service.RESULT_CAP`). The caller cannot ask for fewer; it can only narrow the
+ *  query. A screen that shows the results says so when it has this many. */
+export const LDAP_SEARCH_CAP = 50;
+/** The shortest directory query the API accepts, trimmed (`ldap_router.SearchQuery`, 2-64). A
+ *  screen holds its search button below this rather than earning a 422 that says it in Turkish. */
+export const LDAP_QUERY_MIN = 2;
+export const LDAP_QUERY_MAX = 64;
 /**
  * How many accounts a screen sends per import call.
  *
@@ -511,9 +519,19 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       return authed("/patients");
     },
 
-    /** What the caller may see, and why. */
+    /** What the caller may see, and why. The administration screen reads it for one thing it
+     *  cannot ask any other way: `PUT /scope/{id}` is refused (403) unless the CALLER's own scope
+     *  is unrestricted by role (`scope/router.py put_scope`, `SCOPE_UNRESTRICTED_ROLES`), which no
+     *  permission key reports — `users.manage` alone is not enough. */
     myScope() {
       return authed("/scope/me");
+    },
+
+    /** One user's scope as the administrator sees it (`GET /scope/{id}`, needs `users.manage`):
+     *  `{user_id, role, unrestricted, reason, unit_ids, bed_ids, grants}`. 404 for an id that is
+     *  not an active member of this hospital — the same answer as for one that does not exist. */
+    userScope(userId) {
+      return authed(`/scope/${encodeURIComponent(userId)}`);
     },
 
     /** Replace one user's scope. `grants` is a list of `{unit_id}` / `{bed_id}` objects.
@@ -611,15 +629,20 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     ldapTest() {
       return authed("/admin/ldap/test", { method: "POST", timeoutMs: ADMIN_LDAP_TIMEOUT_MS });
     },
-    /** [LdapUserOut] for a name fragment — each says whether it is already imported. */
-    ldapSearch(query, limit = 25) {
-      return authed(`/admin/ldap/search?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`,
+    /** [LdapUserOut] for a name fragment — each says whether it is already imported. `query` is
+     *  REQUIRED and 2-64 characters after trimming (`ldap_router.SearchQuery`): the directory is
+     *  not listed, it is searched. The server caps the answer at `LDAP_SEARCH_CAP` and takes no
+     *  limit of its own — an earlier `&limit=` here was simply ignored by FastAPI, so a screen
+     *  that believed it had asked for ten could be handed fifty. */
+    ldapSearch(query) {
+      return authed(`/admin/ldap/search?q=${encodeURIComponent(query)}`,
         { timeoutMs: ADMIN_LDAP_TIMEOUT_MS });
     },
-    /** [{dn, name}] — the directory's groups, for the mapping's picker. */
-    ldapGroups(query = "") {
-      const q = query ? `?q=${encodeURIComponent(query)}` : "";
-      return authed(`/admin/ldap/groups${q}`, { timeoutMs: ADMIN_LDAP_TIMEOUT_MS });
+    /** [{dn, name}] — the directory's groups, for the mapping's picker. `query` is REQUIRED on the
+     *  same terms as the user search: calling it with nothing answered 422, not "every group". */
+    ldapGroups(query) {
+      return authed(`/admin/ldap/groups?q=${encodeURIComponent(query)}`,
+        { timeoutMs: ADMIN_LDAP_TIMEOUT_MS });
     },
     /** Import up to LDAP_IMPORT_MAX accounts: {imported, skipped}. Idempotent — an account already
      *  here comes back under `skipped` with the reason "exists", so a retry after a timeout is

@@ -56,7 +56,15 @@ export function groupFromApi(g) {
     isSystem: row.is_system === true,
     kind: groupKind(row.slug),
     permissions: Array.isArray(row.permissions) ? [...row.permissions] : [],
-    memberCount: Number(row.member_count) || 0,
+    // A count the API did not send is NOT ZERO. `Number(x) || 0` turned null, undefined and a
+    // string alike into 0 — which a screen then printed as "0 people", a statement about the
+    // group's membership that nobody had made — and the roles table's "member count unknown"
+    // sentence, guarded on `Number.isFinite`, could never be reached. Measured on the finished
+    // tree, where that four-language string was dead and no test could tell. The one safety rule
+    // these screens share: no count unless the read that produced it answered.
+    memberCount: typeof row.member_count === "number" && Number.isFinite(row.member_count)
+      ? row.member_count
+      : null,
   };
 }
 
@@ -142,8 +150,15 @@ export function canGrant(sessionPerms, group, catalogue = []) {
  *    resetPassword  — never on yourself, and only for a LOCAL account (an AD password is AD's);
  *    resetMfa       — never on yourself;
  *    deactivate     — never on yourself;
- *    unlockSignIn   — never on yourself, and only for a DIRECTORY account: the throttle it lifts
- *                     is the AD bind chain (`directory_binds`), which a local account has none of.
+ *    unlockSignIn   — only for a DIRECTORY account: the throttle it lifts is the AD bind chain
+ *                     (`directory_binds`), which a local account has none of. ON YOURSELF TOO,
+ *                     unlike the three above, because the server allows it and says why
+ *                     (`admin/service.unlock_sign_in`: "Oneself is allowed — an unlock hands
+ *                     nothing over, the next sign-in still needs the password"). An AD
+ *                     administrator whose own bind chain is throttled is signed in already and is
+ *                     exactly the person who needs it; refusing her here hid a working action,
+ *                     and `admin.selfNote` does not claim otherwise — it names the password, the
+ *                     authenticator and the account's active state, which ARE refused.
  *  What the UI cannot see is left to the server's 409: an account shared with another tenant or a
  *  platform operator's, and the last administrator. */
 export function canManageUser(sessionPerms, user, groups, selfId, catalogue = []) {
@@ -160,8 +175,25 @@ export function canManageUser(sessionPerms, user, groups, selfId, catalogue = []
     resetPassword: notSelf && user.authSource === "local",
     resetMfa: notSelf,
     deactivate: notSelf,
-    unlockSignIn: notSelf && user.authSource === "ldap",
+    unlockSignIn: within && user.authSource === "ldap",
   };
+}
+
+/** May the session ASSIGN a scope at all? `PUT /scope/{user_id}` is refused with 403
+ *  `kapsam atamak için kapsamı sınırsız bir yönetici olmalısınız` unless the CALLER's own scope is
+ *  unrestricted BY ROLE (`scope/router.py put_scope`, `SCOPE_UNRESTRICTED_ROLES` =
+ *  hospital_admin / platform_support). No permission key reports that — `users.manage` alone is
+ *  not enough — so the only honest source is the caller's own `/scope/me`, whose `reason` says
+ *  WHY it is unrestricted.
+ *
+ *  `reason === "role"` and nothing else: a desk that is unrestricted only because nobody has been
+ *  assigned anything yet (`reason: "unassigned"`, which is `unrestricted: true` until the
+ *  deployment flips `enforce_unassigned`) would be refused by the server, and that is the common
+ *  case at a pilot. `null` means the answer has not arrived — the screen then says so rather than
+ *  offering a Save that may not work, because unknown rights are never taken to be large either. */
+export function canAssignScope(myScope) {
+  if (!myScope || typeof myScope !== "object") return null;
+  return myScope.unrestricted === true && myScope.reason === "role";
 }
 
 /** May the session change the AD group mapping? The server allows it only to an administrator who

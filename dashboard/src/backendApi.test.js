@@ -454,18 +454,28 @@ describe("backendApi — what the work screens call", () => {
     const api = signedIn(fetchMock);
     await api.ldapStatus();
     await api.ldapTest();
-    await api.ldapSearch("ayşe", 10);
+    await api.ldapSearch("ayşe");
     await api.ldapGroups("YB");
-    await api.ldapGroups();
     await api.ldapMappings();
     expect(fetchMock.mock.calls.map(([url, init]) => `${init.method || "GET"} ${url}`)).toEqual([
       "GET /admin/ldap/status",
       "POST /admin/ldap/test",
-      "GET /admin/ldap/search?q=ay%C5%9Fe&limit=10",
+      // No `limit`: the route has no such parameter and FastAPI ignored the one that used to be
+      // sent, so a screen could believe it had asked for ten and be handed LDAP_SEARCH_CAP.
+      "GET /admin/ldap/search?q=ay%C5%9Fe",
+      // `q` is REQUIRED on both searches (2-64 characters, trimmed). The group picker used to be
+      // callable with nothing, which answered 422 rather than "every group".
       "GET /admin/ldap/groups?q=YB",
-      "GET /admin/ldap/groups",
       "GET /admin/ldap/group-mappings",
     ]);
+  });
+
+  it("reads one user's scope, which the scope editor needs and /scope/me cannot answer", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ user_id: "u-1", grants: [] }));
+    const api = signedIn(fetchMock);
+    await api.userScope("u 1/x");
+    expect(fetchMock.mock.calls[0][0]).toBe("/scope/u%201%2Fx");
+    expect(fetchMock.mock.calls[0][1].method ?? "GET").toBe("GET");
   });
 
   it("imports the accounts it was given, with the extra groups, and maps a group to ours", async () => {
