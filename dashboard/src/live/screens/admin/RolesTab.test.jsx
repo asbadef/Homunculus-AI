@@ -35,6 +35,11 @@ const AZ = perms.az;
 const D = { boardView: AZ.board.view, alertsAck: AZ.alerts.ack, usersManage: AZ.users.manage, groupsManage: AZ.groups.manage };
 const PENDING = "dəyişiklik gözləyir";
 const rx = (text) => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+/** The same desk with no member in either ordinary group: a group with a KNOWN member count above
+ *  zero offers no delete at all, so the delete tests use these. */
+const EMPTY = [SYSTEM_GROUP, { ...NURSE_GROUP, member_count: 0 }, { ...WARD_GROUP, member_count: 0 }];
+/** What `PATCH /admin/groups/{id}` answers: the group as the server now holds it (`GroupOut`). */
+const answered = (id, body) => ({ ...GROUPS.find((g) => g.id === id), permissions: [...body.permissions].sort() });
 
 /** The tab on its own. `admin` comes from `adminProp` — the one builder of what the frame hands a
  *  tab, in the shapes and the read states `useAdminData` produces: `catalogue: null` is a read that
@@ -116,6 +121,13 @@ describe("the pure parts", () => {
       expect(descriptionOf(t, { key: "ghost.key", description: "A right this build does not know" }))
         .toEqual({ text: "A right this build does not know", foreign: true });
     }
+  });
+
+  it("the pending count is a label, so it reads right for any number — in English and in Russian too", () => {
+    // "1 pending changes" was the English for one; the Russian said the CELLS were awaiting a change.
+    expect(createTranslator("en", DICTIONARIES)("roles.pending", { count: 1 })).toBe("Pending changes: 1");
+    expect(createTranslator("ru", DICTIONARIES)("roles.pending", { count: 1 })).toBe("Несохранённые изменения: 1");
+    expect(createTranslator("ru", DICTIONARIES)("roles.cellPending")).toBe("изменение не сохранено");
   });
 });
 
@@ -216,28 +228,51 @@ describe("collect and save", () => {
     expect(api.adminUpdateGroup).not.toHaveBeenCalled();
   });
 
-  it("Save sends ONE PATCH with the whole list for that group, reloads, and reads as done", async () => {
+  it("Save sends ONE PATCH with the whole list AND the list it believed the group held, reloads, and reads as done", async () => {
     const { api, reload } = await open();
-    api.adminUpdateGroup.mockResolvedValue(NURSE_GROUP);
+    api.adminUpdateGroup.mockImplementation(async (id, body) => answered(id, body));
     fireEvent.click(cell("Hemşire", D.usersManage));
     await saveIn(column(/Hemşire/));
     expect(api.adminUpdateGroup).toHaveBeenCalledTimes(1);
+    // `expected_permissions` is the column's last-read list, sorted: the server compares it with
+    // what it holds, so a Save on a stale column is refused rather than undoing another change.
     expect(api.adminUpdateGroup).toHaveBeenCalledWith(NURSE_GROUP.id, {
       permissions: ["board.view", "alerts.ack", "users.manage"],
+      expected_permissions: ["alerts.ack", "board.view"],
     });
     expectConfirmed(/Hemşire · səlahiyyətlər yadda saxlanıldı\./);
     expect(screen.queryByText("1 dəyişiklik gözləyir")).toBeNull();
+    // The column shows what the PATCH answered — even though this reload is a spy that reads nothing.
+    expect(cell("Hemşire", D.usersManage)).toBeChecked();
+    expect(cell("Hemşire", D.usersManage)).toHaveAccessibleName(`Hemşire · ${D.usersManage}`);
     expect(reload).toHaveBeenCalled();
   });
 
-  it("each group has its own Save: there is no transaction across groups and none is implied", async () => {
+  it("each group has its own Save, offered only when that column has something to save", async () => {
     // PATCH /admin/groups/{id} is atomic for ONE group and the API has no multi-group write, so a
     // single "save everything" button would promise atomicity the server cannot keep.
     await open();
-    const saves = screen.getAllByRole("button", { name: "Yadda saxla" });
+    expect(screen.queryAllByRole("button", { name: "Yadda saxla" })).toHaveLength(0);
+    fireEvent.click(cell("Hemşire", D.usersManage));
+    fireEvent.click(cell("Gece ekibi", D.usersManage));
     // Every group but the system one (locked) has a Save of its own.
-    expect(saves).toHaveLength(GROUPS.length - 1);
+    expect(screen.getAllByRole("button", { name: "Yadda saxla" })).toHaveLength(GROUPS.length - 1);
+    expect(within(column(/Hemşire/)).getByRole("button", { name: "Yadda saxla" })).toBeInTheDocument();
+    expect(within(column(/Gece ekibi/)).getByRole("button", { name: "Yadda saxla" })).toBeInTheDocument();
     expect(screen.getByText(/Qruplar ayrı-ayrı yadda saxlanılır/)).toBeInTheDocument();
+  });
+
+  it("a save that lands hands the focus to the column's heading, not to <body>, when its buttons go", async () => {
+    const { api } = await open();
+    api.adminUpdateGroup.mockImplementation(async (id, body) => answered(id, body));
+    fireEvent.click(cell("Hemşire", D.usersManage));
+    const save = within(column(/Hemşire/)).getByRole("button", { name: "Yadda saxla" });
+    save.focus();
+    await act(async () => { fireEvent.click(save); await settle(); });
+    expectConfirmed(/Hemşire · səlahiyyətlər yadda saxlanıldı\./);
+    expect(within(column(/Hemşire/)).queryByRole("button", { name: "Yadda saxla" })).toBeNull();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toHaveTextContent(/^Hemşire$/);
   });
 
   it("a 403 keeps the pending changes, names the group on the toast, and does not re-read", async () => {
@@ -261,9 +296,9 @@ describe("collect and save", () => {
     // `canGrant` rightly offers this column to a desk whose rights cover the group — and the
     // server's 403 is the answer. It reads like any other refusal: named, ticks kept, nothing re-read.
     const { api, reload } = await open({ perms: ["groups.manage", "board.view", "alerts.ack"] });
-    expect(within(column(/Hemşire/)).getByRole("button", { name: "Yadda saxla" })).toBeInTheDocument();
     api.adminUpdateGroup.mockRejectedValue(refusal(403, "Kendi yetkilerinizi aşan bir işlem yapılamaz: audit.view, users.manage"));
     fireEvent.click(cell("Hemşire", D.alertsAck));                 // taking a right AWAY is checked too
+    expect(within(column(/Hemşire/)).getByRole("button", { name: "Yadda saxla" })).toBeInTheDocument();
     await saveIn(column(/Hemşire/));
     expect(alerts()).toContain("Hemşire");
     expect(alerts()).toMatch(/audit\.view, users\.manage/);
@@ -272,25 +307,9 @@ describe("collect and save", () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
-  it("a 409 re-reads the column, keeps the ticks, and says so in a Note — the refusal itself is announced once", async () => {
-    // Another administrator saved this group between our read and our write. The PATCH body is
-    // the whole list computed from a stale read and the server carries no client version: Save
-    // again on the stale base would silently overwrite what she just saved.
-    const { api, reload } = await open();
-    api.adminUpdateGroup.mockRejectedValue(refusal(409, "Kayıt aynı anda değiştirildi; lütfen tekrar deneyin"));
-    fireEvent.click(cell("Hemşire", D.usersManage));
-    await saveIn(column(/Hemşire/));
-    expect(alerts()).toContain("Hemşire");
-    expect(alerts()).toContain("Qeyd eyni anda dəyişdirildi");
-    expect(reload).toHaveBeenCalledTimes(1);
-    expect(cell("Hemşire", D.usersManage)).toBeChecked();
-    expect(screen.getByText("1 dəyişiklik gözləyir")).toBeInTheDocument();
-    expect(notes()).toMatch(/Hemşire: qeyd bu arada başqası tərəfindən dəyişdirildi; sütun serverdən yenidən oxundu/);
-    expect(alerts()).not.toMatch(/yenidən oxundu/);
-    // Discarding the ticks also closes the Note: there is nothing left to review.
-    fireEvent.click(screen.getByRole("button", { name: "Dəyişiklikləri geri al: Hemşire" }));
-    expect(notes()).not.toMatch(/yenidən oxundu/);
-  });
+  // The 409 — a Save on a column another administrator changed meanwhile — is in
+  // RolesTab.server.test.jsx: what it must be held to is what the RE-READ column shows, and that
+  // needs a server whose state the re-read actually reads.
 
   it("the changes can be discarded without sending anything", async () => {
     const { api } = await open();
@@ -306,7 +325,11 @@ describe("collect and save", () => {
     // press that silently did nothing would be an offered control that does nothing.
     const releases = [];
     const { api } = await open();
-    api.adminUpdateGroup.mockImplementation(() => new Promise((resolve) => { releases.push(resolve); }));
+    api.adminUpdateGroup.mockImplementation((id, body) => new Promise((resolve) => {
+      releases.push(() => resolve(answered(id, body)));
+    }));
+    fireEvent.click(cell("Hemşire", D.usersManage));
+    fireEvent.click(cell("Gece ekibi", D.usersManage));
     await saveIn(column(/Hemşire/));
     await saveIn(column(/Gece ekibi/));
     expect(api.adminUpdateGroup).toHaveBeenCalledTimes(2);
@@ -315,7 +338,43 @@ describe("collect and save", () => {
       expect(said).toContain("Hemşire");
       expect(said).toContain("Gece ekibi");
     }, { timeout: 4000 });
-    await act(async () => { releases.forEach((release) => release(NURSE_GROUP)); await settle(); });
+    await act(async () => { releases.forEach((release) => release()); await settle(); });
+    // Both landed, and both read as done — with no alert.
+    expectConfirmed(/Hemşire · səlahiyyətlər yadda saxlanıldı\./);
+    expectConfirmed(/Gece ekibi · səlahiyyətlər yadda saxlanıldı\./);
+    expect(cell("Hemşire", D.usersManage)).toBeChecked();
+    expect(cell("Gece ekibi", D.usersManage)).toBeChecked();
+  });
+
+  it("while a column's Save is in flight its cells are not editable — they say which group is being saved — and a success clears only what was sent", async () => {
+    // A tick made during the flight could not be in the body already sent, and the success used to
+    // clear it with the rest: the administrator's decision vanished, and the server never had it.
+    let release;
+    const { api } = await open();
+    api.adminUpdateGroup.mockImplementation((id, body) => new Promise((resolve) => {
+      release = () => resolve(answered(id, body));
+    }));
+    fireEvent.click(cell("Hemşire", D.usersManage));
+    fireEvent.click(cell("Gece ekibi", D.alertsAck));               // another column's tick
+    await saveIn(column(/Hemşire/));
+    const box = cell("Hemşire", D.alertsAck);
+    expect(box).toHaveAttribute("aria-disabled", "true");
+    expect(box).not.toBeDisabled();
+    expect(document.getElementById(box.getAttribute("aria-describedby"))).toHaveTextContent("Hemşire · yadda saxlanılır…");
+    fireEvent.click(box);
+    expect(box).toBeChecked();                                      // nothing collected in flight
+    // The other column is not in flight, and stays editable.
+    expect(cell("Gece ekibi", D.boardView)).not.toHaveAttribute("aria-disabled");
+    await act(async () => { release(); await settle(); });
+    expectConfirmed(/Hemşire · səlahiyyətlər yadda saxlanıldı\./);
+    expect(api.adminUpdateGroup).toHaveBeenCalledWith(NURSE_GROUP.id, expect.objectContaining({
+      permissions: ["board.view", "alerts.ack", "users.manage"],
+    }));
+    expect(cell("Hemşire", D.alertsAck)).not.toHaveAttribute("aria-disabled");
+    expect(within(column(/Hemşire/)).queryByText(/dəyişiklik gözləyir/)).toBeNull();
+    // The other column's tick was not sent, and is still there.
+    expect(cell("Gece ekibi", D.alertsAck)).toBeChecked();
+    expect(within(column(/Gece ekibi/)).getByText("1 dəyişiklik gözləyir")).toBeInTheDocument();
   });
 });
 
@@ -365,7 +424,60 @@ describe("what cannot be edited", () => {
     expect(cell("Gece ekibi", D.boardView)).toHaveAttribute("aria-disabled", "true");
     expect(cell("Gece ekibi", D.boardView)).toBeChecked();
     // The other column is untouched by it.
+    expect(cell("Hemşire", D.usersManage)).not.toHaveAttribute("aria-disabled");
+    fireEvent.click(cell("Hemşire", D.usersManage));
     expect(within(column(/Hemşire/)).getByRole("button", { name: "Yadda saxla" })).toBeInTheDocument();
+  });
+
+  it("an unticked cell for a right this desk does not hold is not offered, and says why", async () => {
+    // `update_group` checks the NEW list against the caller's rights (`_within(actor, new)`): the
+    // tick is a certain 403. Shown, not offered, with its reason (Decision 11).
+    await open({ perms: ["groups.manage", "board.view"], groups: [WARD_GROUP] });
+    const box = cell("Gece ekibi", D.usersManage);
+    expect(box).toHaveAttribute("aria-disabled", "true");
+    expect(box).not.toBeDisabled();
+    expect(document.getElementById(box.getAttribute("aria-describedby")))
+      .toHaveTextContent("Bu səlahiyyət sizdə yoxdur; ona görə onu başqasına verə bilməzsiniz.");
+    fireEvent.click(box);
+    expect(box).not.toBeChecked();
+    expect(screen.queryByText(/dəyişiklik gözləyir/)).toBeNull();
+    // What the desk holds stays offered — ticked or not — and so does taking a right away.
+    expect(cell("Gece ekibi", D.groupsManage)).not.toHaveAttribute("aria-disabled");
+    expect(cell("Gece ekibi", D.boardView)).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("the new-group form does not offer a right this desk does not hold either", async () => {
+    const { api } = await open({ perms: ["groups.manage", "board.view"] });
+    api.adminCreateGroup.mockResolvedValue(WARD_GROUP);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni qrup" })); });
+    const form = within(screen.getByRole("dialog"));
+    const box = form.getByRole("checkbox", { name: rx(D.usersManage) });
+    expect(box).toHaveAttribute("aria-disabled", "true");
+    expect(document.getElementById(box.getAttribute("aria-describedby")))
+      .toHaveTextContent("Bu səlahiyyət sizdə yoxdur");
+    fireEvent.click(box);
+    expect(box).not.toBeChecked();
+    expect(form.getByRole("checkbox", { name: rx(D.boardView) })).not.toHaveAttribute("aria-disabled");
+    fireEvent.change(form.getByLabelText(/Qısa ad/), { target: { value: "gece_ekibi" } });
+    fireEvent.change(form.getByLabelText(/Görünən ad/), { target: { value: "Gecə ekibi" } });
+    fireEvent.click(form.getByRole("checkbox", { name: rx(D.boardView) }));
+    await act(async () => { fireEvent.click(form.getByRole("button", { name: "Qrupu yarat" })); await settle(); });
+    expect(api.adminCreateGroup).toHaveBeenCalledWith(expect.objectContaining({ permissions: ["board.view"] }));
+    expectConfirmed(/Gecə ekibi · yaradıldı\./);
+  });
+
+  it("a group whose known member count is above zero offers no delete, and says why; an unknown count leaves it to the server", async () => {
+    await open();
+    const trash = within(column(/Hemşire/)).getByRole("button", { name: "Qrupu sil: Hemşire" });
+    expect(trash).toHaveAttribute("aria-disabled", "true");
+    expect(trash).not.toBeDisabled();
+    expect(document.getElementById(trash.getAttribute("aria-describedby"))).toHaveTextContent("Üzvü olan qrup silinə bilməz.");
+    await act(async () => { fireEvent.click(trash); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    cleanup();
+    // A stale read's count is not known now: the delete is offered, and the server decides.
+    await open({ reads: { groups: "stale" } });
+    expect(within(column(/Hemşire/)).getByRole("button", { name: "Qrupu sil: Hemşire" })).not.toHaveAttribute("aria-disabled");
   });
 });
 
@@ -444,6 +556,22 @@ describe("creating and deleting a group", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
+  it("while the new group is being created, the busy words name it", async () => {
+    // Decision 25: a busy control reads only "unavailable"; the words name the subject in flight.
+    let release;
+    const { api } = await open();
+    api.adminCreateGroup.mockImplementation(() => new Promise((resolve) => { release = () => resolve(WARD_GROUP); }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni qrup" })); });
+    const form = within(screen.getByRole("dialog"));
+    fireEvent.change(form.getByLabelText(/Qısa ad/), { target: { value: "gece_ekibi" } });
+    fireEvent.change(form.getByLabelText(/Görünən ad/), { target: { value: "Gecə ekibi" } });
+    await act(async () => { fireEvent.click(form.getByRole("button", { name: "Qrupu yarat" })); await settle(); });
+    await waitFor(() => expect(screen.getAllByRole("status").map((s) => s.textContent).join(" "))
+      .toContain("Gecə ekibi · yadda saxlanılır…"), { timeout: 4000 });
+    await act(async () => { release(); await settle(); });
+    expectConfirmed(/Gecə ekibi · yaradıldı\./);
+  });
+
   it("every field of the new-group form carries the server's own limit", async () => {
     await open();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni qrup" })); });
@@ -460,8 +588,9 @@ describe("creating and deleting a group", () => {
       ["AD eşlemesi olan grup silinemez", /AD uyğunlaşdırması olan qrup silinə bilməz/],
     ];
     for (const [message, shown] of CASES) {
+      // A count of zero when it was read: somebody may have joined since, and the server says so.
       // eslint-disable-next-line no-await-in-loop
-      const { api } = await open();
+      const { api } = await open({ groups: EMPTY });
       api.adminDeleteGroup.mockRejectedValue(refusal(409, message));
       const col = column(/Hemşire/);
       // eslint-disable-next-line no-await-in-loop
@@ -483,7 +612,7 @@ describe("creating and deleting a group", () => {
   });
 
   it("a delete that lands says so, naming the group, closes the dialog and reloads", async () => {
-    const { api, reload } = await open();
+    const { api, reload } = await open({ groups: EMPTY });
     api.adminDeleteGroup.mockResolvedValue(null);
     const col = column(/Gece ekibi/);
     await act(async () => { fireEvent.click(within(col).getByRole("button", { name: "Qrupu sil: Gece ekibi" })); });
@@ -523,12 +652,15 @@ describe("accessibility", () => {
   it("says which group a save is in flight for", async () => {
     let release;
     const { api } = await open();
-    api.adminUpdateGroup.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    api.adminUpdateGroup.mockImplementation((id, body) => new Promise((resolve) => {
+      release = () => resolve(answered(id, body));
+    }));
     fireEvent.click(cell("Hemşire", D.usersManage));
     await saveIn(column(/Hemşire/));
     await waitFor(() => expect(screen.getAllByRole("status").map((s) => s.textContent).join(" "))
       .toContain("Hemşire"), { timeout: 4000 });
-    await act(async () => { release(NURSE_GROUP); await settle(); });
+    await act(async () => { release(); await settle(); });
+    expectConfirmed(/Hemşire · səlahiyyətlər yadda saxlanıldı\./);
   });
 
   it("says what the table is and is not", async () => {

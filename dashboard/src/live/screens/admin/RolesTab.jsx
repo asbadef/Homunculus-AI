@@ -16,13 +16,24 @@
 // cannot keep — three PATCHes of which the second is refused would leave the hospital's permission
 // table in a state no administrator chose, with one toast to explain it.
 //
-// A 409 RE-READS THE COLUMN AND KEEPS THE TICKS. `concurrentChange` means another administrator
-// saved this group between our read and our write. The PATCH body is the whole list, computed from
-// what this screen last read, and the server carries no client-supplied version — so pressing Save
-// again on the stale base would silently overwrite what the other administrator just saved, and the
-// refusal's own text says "refresh the list and try again". The screen does the refresh itself, keeps
-// the administrator's ticks (they are what she decided), and says in a Note that the column was
-// re-read so she reviews them against the new state before saving again.
+// EVERY SAVE SAYS WHAT IT BELIEVED THE LIST WAS (`expected_permissions`). The PATCH body is the
+// whole list, computed from what this screen last read, and `update_group` REPLACES the set — so a
+// Save from an out-of-date column would silently undo what another administrator saved since. The
+// body therefore carries the column's last-read list, sorted, and the server compares it with what
+// it holds under the row lock and answers 409 `concurrentChange` when they differ (the plan's
+// Task 14e; a server without it ignores the field). The column's "last read" is the GroupOut the
+// last successful PATCH RETURNED until a newer read lands: a re-read that fails after a save must
+// not put the pre-save list back on screen, or the next Save would revoke what was just "saved".
+//
+// A 409 RE-READS THE COLUMN AND KEEPS THE TICKS. The screen does the refresh itself, keeps the
+// administrator's ticks (they are what she decided), and says in a Note that the column was re-read
+// so she reviews them against the new state before saving again — and, when the re-read itself
+// failed, says THAT instead, never that the column was re-read.
+//
+// A COLUMN IN FLIGHT IS NOT EDITABLE. While a column's PATCH is out its cells are `aria-disabled`,
+// pointing at the words that name the group being saved: a tick made then could not be in the body
+// already sent, and on success only what was sent is cleared. And a Save is offered only when the
+// column has something to save.
 //
 // WHAT IS READ-ONLY, AND WHY IT SAYS SO IN THE SERVER'S OWN WORDS.
 //   * The SYSTEM group: the server refuses it (409 `Sistem grubunun izinleri ve MFA kuralı
@@ -33,8 +44,13 @@
 //     would drop that key — revoke a right the screen never showed, silently — so the column is
 //     read-only and names the keys. It cannot happen while `/admin/permissions` serves the whole
 //     catalogue, and nothing enforces that it always will.
+//   * In an editable column, an UNTICKED cell for a right the session does not hold: the server
+//     checks the new list against the caller's rights (`_within(actor, new)`), so the tick is a
+//     certain 403 (Decision 11: shown, not offered, with its reason). The new-group form likewise.
+//   * Deleting a group whose KNOWN member count is above zero (`errors.groupHasMembers`). A count
+//     that is not known leaves the delete offered, and the server decides.
 //   A locked cell is `aria-disabled`, not `disabled`: a keyboard user can still land on it and hear
-//   the column's reason, which a natively disabled control would skip.
+//   the reason, which a natively disabled control would skip.
 //
 // THE DESCRIPTIONS ARE TRANSLATED BY KEY (`strings/perms.js`), with the server's own English as
 // the `lang="en"` fallback for a key this build does not know. The server's descriptions are
@@ -64,8 +80,9 @@ import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { Announce, Button, Empty, Field, Input, Modal, Note, Pill, Table, Tag, useToast } from "../../ui/index.js";
 import { apiErrorKey, fieldRefusals } from "../../apiErrors.js";
+import { hasPerm } from "./catalogue.js";
 import { FIELD_MAX } from "./limits.js";
-import { canGrant } from "./rules.js";
+import { canGrant, groupFromApi } from "./rules.js";
 import { doneFor, refusedFor } from "./refusal.js";
 
 /** The key of a pending change. */
@@ -121,12 +138,18 @@ export function descriptionOf(t, row) {
   return own === key ? { text: row.description, foreign: true } : { text: own, foreign: false };
 }
 
+/** The id of the one sentence an unticked cell for a right the session does not hold points at. */
+const PERM_LOCK_ID = "roles-perm-lock";
+
 export function RolesTab({ admin }) {
   const { t } = useI18n();
   const { user: me, store } = useSession();
   const toast = useToast();
   const api = store.api;
-  const groups = admin.data.groups ?? [];
+  /** The groups read's last answer, or null. A NEW answer is a new array (`useAdminData` adapts
+   *  each answer afresh) and a failed re-read keeps the old one, so "has a newer read landed" is
+   *  "is this a different array". */
+  const read = admin.data.groups;
   const catalogue = admin.data.catalogue ?? [];
   const countsKnown = admin.reads.groups === "known";
 
@@ -137,22 +160,66 @@ export function RolesTab({ admin }) {
    *  — so a second column's Save during the first's flight is a real request, not a press that
    *  silently does nothing. */
   const [inFlight, setInFlight] = useState(() => new Set());
-  /** The groups whose column was re-read after a 409, with the administrator's ticks kept. */
-  const [reread, setReread] = useState(() => new Set());
+  /** The groups whose Save met a 409, each with the read that was on screen when it did: the
+   *  column was re-read once `read` is a different answer, and the re-read failed while it is not. */
+  const [reread, setReread] = useState(() => new Map());
+  /** groupId → `{group, basis}`: the GroupOut a successful PATCH RETURNED, shown in place of the
+   *  read's copy while `basis` — the read on screen when the PATCH answered — is still the read.
+   *  A newer read replaces it; a failed re-read does not put the pre-save list back. */
+  const [saved, setSaved] = useState(() => new Map());
   const [newGroup, setNewGroup] = useState(false);
   const [removing, setRemoving] = useState(null);
+  /** A column whose buttons a write or a discard just removed: its heading takes the focus, if the
+   *  focus fell to <body> with them (the house pattern, `AdminScreen`'s Retry). */
+  const [refocus, setRefocus] = useState(null);
+  const heads = useRef({});
+
+  /** The read on screen, for a write that answers later. Kept from the last COMMITTED render. */
+  const lastRead = useRef(read);
+  useEffect(() => { lastRead.current = read; }, [read]);
+  // A newer read makes every saved copy taken against an older one obsolete.
+  useEffect(() => {
+    setSaved((was) => {
+      const kept = [...was].filter(([, entry]) => entry.basis === read);
+      return kept.length === was.size ? was : new Map(kept);
+    });
+  }, [read]);
+  useEffect(() => {
+    if (refocus === null) return;
+    setRefocus(null);
+    const active = document.activeElement;
+    if (!active || active === document.body) heads.current[refocus]?.focus();
+  }, [refocus]);
+
+  /** The columns as this screen believes the server holds them. */
+  const groups = useMemo(() => (read ?? []).map((g) => {
+    const mine = saved.get(g.id);
+    return mine && mine.basis === read ? mine.group : g;
+  }), [read, saved]);
 
   const locks = useMemo(
     () => new Map(groups.map((g) => [g.id, lockedBecause(g, me.perms, catalogue)])),
     [groups, me.perms, catalogue],
   );
   const lockId = (group) => `roles-lock-${group.id}`;
+  const busyId = (group) => `roles-busy-${group.id}`;
+  const membersId = (group) => `roles-members-${group.id}`;
+  /** An unticked cell for a right this session does not hold: ticking it is a certain 403. */
+  const cannotGive = (group, key) => !group.permissions.includes(key) && !hasPerm(me.perms, key);
 
   const toggle = (group, permission, on) => setPending((was) => ({ ...was, [cellKey(group.id, permission)]: on }));
 
+  const forgetReread = (group) => setReread((was) => {
+    if (!was.has(group.id)) return was;
+    const next = new Map(was);
+    next.delete(group.id);
+    return next;
+  });
+
   const dropPending = (group) => {
     setPending((was) => Object.fromEntries(Object.entries(was).filter(([key]) => key.split("|")[0] !== group.id)));
-    setReread((was) => { const next = new Set(was); next.delete(group.id); return next; });
+    forgetReread(group);
+    setRefocus(group.id);
   };
 
   const flying = (group, on) => setInFlight((was) => {
@@ -164,12 +231,34 @@ export function RolesTab({ admin }) {
 
   async function save(group) {
     if (inFlight.has(group.id)) return;
+    // What this Save sends: the ticks as they stand now. The column's cells are locked until it
+    // answers, and on success exactly these are cleared — nothing ticked later can be lost.
+    const sent = Object.fromEntries(Object.entries(pending).filter(([key]) => key.split("|")[0] === group.id));
+    const permissions = listToSend(group, catalogue, pending);
+    let reload = false;
     flying(group, true);
     try {
-      await store.track(() => api.adminUpdateGroup(group.id, { permissions: listToSend(group, catalogue, pending) }));
+      const answer = await store.track(() => api.adminUpdateGroup(group.id, {
+        permissions,
+        // What this screen believed the list WAS (the plan's decision X1). `update_group` replaces
+        // the set, so without it a Save on a stale column silently undoes another administrator's
+        // change; with it the server answers 409 `concurrentChange` instead.
+        expected_permissions: [...group.permissions].sort(),
+      }));
+      // The column now shows what the server says it took — or, for an answer that is not this
+      // group's, the list it was sent — until a newer read lands.
+      const took = groupFromApi(answer);
+      setSaved((was) => new Map(was).set(group.id, {
+        group: took.id === group.id ? took : { ...group, permissions },
+        basis: lastRead.current,
+      }));
+      setPending((was) => Object.fromEntries(
+        Object.entries(was).filter(([key, on]) => !(key in sent && sent[key] === on)),
+      ));
+      forgetReread(group);
+      setRefocus(group.id);
       toast(doneFor(t, group.name, t("roles.saved")));
-      dropPending(group);
-      await admin.reload();
+      reload = true;
     } catch (err) {
       // The pending changes STAY: they are what the administrator decided, the server did not take
       // them, and throwing them away would make her reconstruct the decision from memory. That
@@ -180,12 +269,14 @@ export function RolesTab({ admin }) {
         // Somebody else saved this group meanwhile. Re-read, so the next Save is computed against
         // what the server holds now rather than silently overwriting their change; keep the ticks;
         // say so. The Note is not an Alert: the refusal was announced once already, on the toast.
-        setReread((was) => new Set(was).add(group.id));
-        await admin.reload();
+        setReread((was) => new Map(was).set(group.id, lastRead.current));
+        reload = true;
       }
     } finally {
       flying(group, false);
     }
+    // A READ, after the write's own try: its failure is the frame's to show, never this write's.
+    if (reload) await admin.reload();
   }
 
   async function remove(group) {
@@ -229,9 +320,18 @@ export function RolesTab({ admin }) {
         <Button icon="plus" variant="primary" onClick={() => setNewGroup(true)}>{t("roles.newGroup")}</Button>
       </div>
 
-      {groups.filter((g) => reread.has(g.id)).map((g) => (
-        <Note key={g.id} tone="warn" icon="swap">{t("roles.reread", { group: g.name })}</Note>
-      ))}
+      {/* After a 409: "re-read" only once a newer read has actually landed; "could not be re-read"
+          once the re-read has failed; nothing while it is in flight. And only while the group
+          still has ticks to review — the sentence is about them. */}
+      {groups.filter((g) => reread.has(g.id) && pendingFor(g, pending) > 0).map((g) => {
+        if (read !== reread.get(g.id)) {
+          return <Note key={g.id} tone="warn" icon="swap">{t("roles.reread", { group: g.name })}</Note>;
+        }
+        if (!admin.loading && admin.reads.groups !== "known") {
+          return <Note key={g.id} tone="warn" icon="swap">{t("roles.rereadFailed", { group: g.name })}</Note>;
+        }
+        return null;
+      })}
 
       {groups.length === 0 ? <Empty icon="users">{t("roles.noGroups")}</Empty> : (
         <Table caption={t("roles.caption")} className="[&_td:first-child]:sticky [&_td:first-child]:left-0 [&_td:first-child]:bg-card [&_th:first-child]:sticky [&_th:first-child]:left-0 [&_th:first-child]:z-[1] [&_th:first-child]:bg-card2">
@@ -242,10 +342,13 @@ export function RolesTab({ admin }) {
                 const locked = locks.get(group.id);
                 const count = pendingFor(group, pending);
                 const busy = inFlight.has(group.id);
+                // A delete the server will refuse, by a count it answered this time.
+                const hasMembers = countsKnown && group.memberCount !== null && group.memberCount > 0;
                 return (
                   <th key={group.id} scope="col">
                     <div className="normal-case tracking-normal">
-                      <div className="text-12 font-bold text-ink">{group.name}</div>
+                      <div ref={(el) => { heads.current[group.id] = el; }} tabIndex={-1}
+                        className="text-12 font-bold text-ink outline-none">{group.name}</div>
                       {/* A member count only when the read that produced it answered, this time:
                           `memberCount` is null for a group the API described without one, a zero
                           would read as "nobody is in this group" — a different and possibly false
@@ -264,15 +367,25 @@ export function RolesTab({ admin }) {
                         </p>
                       ) : (
                         <div className="mt-1 flex flex-wrap items-center gap-1">
-                          {count > 0 ? <Tag tone="warn">{t("roles.pending", { count })}</Tag> : null}
-                          <Button size="sm" variant={count > 0 ? "primary" : "default"} busy={busy}
-                            onClick={() => save(group)}>{t("roles.save")}</Button>
+                          {/* Save and Discard only when there is something to save: a Save on a
+                              column with nothing pending sends the list back unchanged, at best. */}
                           {count > 0 ? (
-                            <Button size="sm" variant="ghost" icon="swap" busy={busy}
-                              label={`${t("roles.discard")}: ${group.name}`} onClick={() => dropPending(group)} />
+                            <>
+                              <Tag tone="warn">{t("roles.pending", { count })}</Tag>
+                              <Button size="sm" variant="primary" busy={busy}
+                                onClick={() => save(group)}>{t("roles.save")}</Button>
+                              <Button size="sm" variant="ghost" icon="swap" busy={busy}
+                                label={`${t("roles.discard")}: ${group.name}`} onClick={() => dropPending(group)} />
+                            </>
                           ) : null}
                           <Button size="sm" variant="ghost" icon="trash" busy={busy}
-                            label={`${t("roles.remove")}: ${group.name}`} onClick={() => setRemoving(group)} />
+                            label={`${t("roles.remove")}: ${group.name}`}
+                            aria-disabled={hasMembers ? "true" : undefined}
+                            aria-describedby={hasMembers ? membersId(group) : undefined}
+                            onClick={hasMembers ? () => {} : () => setRemoving(group)} />
+                          {hasMembers ? <span id={membersId(group)} className="sr-only">{t("errors.groupHasMembers")}</span> : null}
+                          {/* What a cell of this column points at while its Save is in flight. */}
+                          {busy ? <span id={busyId(group)} className="sr-only">{t("admin.savingFor", { subject: group.name })}</span> : null}
                         </div>
                       )}
                     </div>
@@ -300,22 +413,29 @@ export function RolesTab({ admin }) {
                     const on = locked ? group.permissions.includes(row.key) || group.isSystem : isOn(group, row.key, pending);
                     const changed = !locked && on !== group.permissions.includes(row.key);
                     const name = `${t("roles.cell", { group: group.name, permission: text })}${changed ? ` · ${t("roles.cellPending")}` : ""}`;
+                    // Why this cell cannot be changed, as the id of the sentence that says so: the
+                    // column's own reason, its Save in flight, or a right this desk does not hold.
+                    const reason = locked ? lockId(group)
+                      : inFlight.has(group.id) ? busyId(group)
+                        : cannotGive(group, row.key) ? PERM_LOCK_ID
+                          : null;
                     return (
                       <td key={group.id} className={changed ? "bg-card2" : ""}>
                         <input
                           type="checkbox"
                           checked={on}
                           aria-label={name}
-                          // A locked cell is reachable, says it is locked, and points at the column's
-                          // reason — never `disabled`, which would skip it in the Tab order and tell a
+                          className="aria-disabled:cursor-not-allowed aria-disabled:opacity-45"
+                          // A locked cell is reachable, says it is locked, and points at its reason
+                          // — never `disabled`, which would skip it in the Tab order and tell a
                           // keyboard user nothing. It is controlled with a no-op onChange, so a click
-                          // leaves it as the server reported it: React puts the prop back after the
-                          // event. Not `preventDefault` on the click — a browser reverts a cancelled
-                          // checkbox click AFTER React's restore, and jsdom reverts by toggling
-                          // again, which would leave the cell flipped in the test and not in the field.
-                          aria-disabled={locked ? "true" : undefined}
-                          aria-describedby={locked ? lockId(group) : undefined}
-                          onChange={locked ? () => {} : (event) => toggle(group, row.key, event.target.checked)}
+                          // leaves it as it was: React puts the prop back after the event. Not
+                          // `preventDefault` on the click — a browser reverts a cancelled checkbox
+                          // click AFTER React's restore, and jsdom reverts by toggling again, which
+                          // would leave the cell flipped in the test and not in the field.
+                          aria-disabled={reason ? "true" : undefined}
+                          aria-describedby={reason || undefined}
+                          onChange={reason ? () => {} : (event) => toggle(group, row.key, event.target.checked)}
                         />
                       </td>
                     );
@@ -327,6 +447,12 @@ export function RolesTab({ admin }) {
         </Table>
       )}
 
+      {/* The one sentence every unticked cell for a right this desk does not hold points at — drawn
+          only when such a cell exists. */}
+      {groups.some((g) => !locks.get(g.id) && catalogue.some((row) => cannotGive(g, row.key))) ? (
+        <p id={PERM_LOCK_ID} className="m-0 text-12 text-mute">{t("roles.cannotGrantPerm")}</p>
+      ) : null}
+
       <Note tone="info" icon="shield">{t("roles.note")}</Note>
 
       {/* A busy Button reads only "unavailable" to a screen reader; the words come from here, and
@@ -336,6 +462,7 @@ export function RolesTab({ admin }) {
       {newGroup ? (
         <GroupForm
           catalogue={catalogue}
+          perms={me.perms}
           submit={(body) => store.track(() => api.adminCreateGroup(body))}
           onSaved={async (name) => {
             toast(doneFor(t, name, t("roles.created")));
@@ -374,12 +501,17 @@ export function RolesTab({ admin }) {
  *  and goes to the toast named after the group: never "a field was named, so show nothing". */
 const GROUP_FIELDS = ["slug", "name", "description"];
 
+/** The id of the form's one sentence for a right the session does not hold. */
+const FORM_PERM_LOCK_ID = "roles-form-perm-lock";
+
 /** A new group: slug, name, description, the MFA rule and its starting permissions. The slug cannot
  *  be changed afterwards (`GroupPatch` has no `slug`), which the hint says; a duplicate answers 409
  *  `slugTaken` and a malformed one 422 `badSlug`, and both land on the slug field. Every field
- *  carries the server's own limit (`limits.FIELD_MAX`). */
-function GroupForm({ catalogue, submit, onSaved, onRefused, onClose }) {
+ *  carries the server's own limit (`limits.FIELD_MAX`). A right the session does not hold is shown
+ *  and not offered, with its reason: `create_group` checks the list against the caller's rights. */
+function GroupForm({ catalogue, perms, submit, onSaved, onRefused, onClose }) {
   const { t } = useI18n();
+  const mayGive = (key) => hasPerm(perms, key);
   const [slug, setSlug] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -453,7 +585,8 @@ function GroupForm({ catalogue, submit, onSaved, onRefused, onClose }) {
       )}
     >
       <form noValidate onSubmit={onSubmit}>
-        <Announce text={busy ? t("roles.saving") : ""} />
+        {/* A busy control's words name their subject (Decision 25): the group being created. */}
+        <Announce text={busy ? t("admin.savingFor", { subject: name.trim() }) : ""} />
         <Field layout="col" required label={t("roles.fieldSlug")} hint={t("roles.fieldSlugHint")} error={refusals.slug}>
           <Input ref={(el) => { fields.current.slug = el; }} value={slug} maxLength={FIELD_MAX.slug}
             disabled={busy} autoFocus onChange={(e) => setSlug(e.target.value)} />
@@ -472,21 +605,27 @@ function GroupForm({ catalogue, submit, onSaved, onRefused, onClose }) {
         </label>
         <fieldset className="border-0 p-0">
           <legend className="mb-1 font-text text-13.5 font-semibold text-mute">{t("roles.colPermission")}</legend>
+          {catalogue.some((row) => !mayGive(row.key)) ? (
+            <p id={FORM_PERM_LOCK_ID} className="m-0 mb-1 text-12 text-mute">{t("roles.cannotGrantPerm")}</p>
+          ) : null}
           {catalogue.map((row) => {
             const { text, foreign } = descriptionOf(t, row);
+            const given = mayGive(row.key);
             return (
               <label key={row.key} className="flex items-start gap-2 py-0.5 font-text text-13">
                 <input
                   type="checkbox"
-                  className="mt-0.5"
+                  className="mt-0.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-45"
                   checked={chosen.has(row.key)}
                   disabled={busy}
-                  onChange={(e) => setChosen((was) => {
+                  aria-disabled={given ? undefined : "true"}
+                  aria-describedby={given ? undefined : FORM_PERM_LOCK_ID}
+                  onChange={given ? (e) => setChosen((was) => {
                     const next = new Set(was);
                     if (e.target.checked) next.add(row.key);
                     else next.delete(row.key);
                     return next;
-                  })}
+                  }) : () => {}}
                 />
                 <span>
                   <span lang={foreign ? "en" : undefined}>{text}</span>
