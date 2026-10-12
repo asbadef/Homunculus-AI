@@ -377,7 +377,7 @@ describe("charting a suspected infection", () => {
     // once, the board reloaded — and a call count cannot tell a chart that landed from one the
     // screen then told the clinician had failed.
     //
-    // `useToast()` returns a FUNCTION (ui/Toast.jsx `value={toasts.add}`), so `toast.show(...)`
+    // `useToast()` returns a FUNCTION (ui/Toast.jsx `value={raise}`), so `toast.show(...)`
     // threw a TypeError INSIDE the chart's own `try`. Its `catch` set that TypeError as
     // `chartError`, and `apiErrorText` fell back to the error's message — so a chart the server
     // had taken, on a board that had already reloaded with the engine's re-evaluation, rendered

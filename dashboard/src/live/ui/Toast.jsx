@@ -204,6 +204,9 @@ function createToasts(publish, { open: openAtFirst, session: sessionAtFirst }) {
  *    it was rendered in, so a write of an ended session that answers later — even after the next
  *    sign-in — raises nothing. A toast never crosses sessions. Stopping the WRITE is not the
  *    toast's job: a screen still has to decide what a write that outlived its session may do.
+ *  Raise a toast from an event handler or a passive effect, never from a layout effect: one raised
+ *  in a child's useLayoutEffect in the commit that moves `session` is dropped as another session's,
+ *  since children's layout effects run before the provider's `gate`. Nothing does so today.
  *  Not for alarms: a clinical alarm never lives in a toast. */
 export function ToastProvider({ open = true, session, children }) {
   const { t } = useI18n();

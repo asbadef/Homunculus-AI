@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act, within } from "@testing-library/react";
+import React from "react";
 import { ToastProvider, useToast, TOAST_MS, TOAST_WARN_MS, TOAST_MAX } from "./Toast.jsx";
 import { MODAL_OPEN } from "./Modal.jsx";
 
@@ -22,11 +23,22 @@ const show = (message, tone) => act(() => {
 beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] }));
 afterEach(() => vi.useRealTimers());
 
+/** The lock screen's stand-in. It takes focus in a PASSIVE effect, as LockScreen.jsx does: so at
+ *  a lock the provider's layout effect runs while focus is still where it was — in a toast, maybe. */
+function Locked() {
+  const input = React.useRef(null);
+  React.useEffect(() => { input.current.focus(); }, []);
+  return <input ref={input} aria-label="kilid" />;
+}
+
 /** A provider behind the live shell's two facts (LiveApp): open, and whose session. Returns the
- *  function that moves them, as a lock, an unlock, a sign-out or a sign-in does. */
+ *  function that moves them, as a lock, an unlock, a sign-out or a sign-in does. Closed, the
+ *  screen under it is the lock screen's stand-in. */
 function gated() {
   const at = (props) => (
-    <ToastProvider open={props.open ?? true} session={props.session ?? "s1"}><Grab /></ToastProvider>
+    <ToastProvider open={props.open ?? true} session={props.session ?? "s1"}>
+      {props.open ?? true ? <Grab /> : <Locked />}
+    </ToastProvider>
   );
   const view = render(at({}));
   return (props) => view.rerender(at(props));
@@ -273,6 +285,44 @@ describe("toasts behind a closed shell", () => {
     nothingDrawn();
     gate({ open: true });
     act(() => vi.advanceTimersByTime(TOAST_MS - 2000 - 1));
+    expect(card("Yadda saxlanıldı")).not.toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    expect(card("Yadda saxlanıldı")).toBeNull();
+  });
+
+  // Focus in a toast pauses it. The lock moves focus out of it while it is being held — first the
+  // provider's own blur, then the lock screen's passive effect — and that blur must not restart
+  // the clock behind the lock: it would run out there, and the toast come back with none.
+  it("keep the time of one that had focus at the lock, and close it on time after the unlock", () => {
+    const gate = gated();
+    show("Yadda saxlanıldı");
+    act(() => vi.advanceTimersByTime(1000));
+    within(card("Yadda saxlanıldı")).getByRole("button", { name: "Bağla" }).focus();
+    act(() => vi.advanceTimersByTime(5000));                // paused: focus is in it
+    gate({ open: false });
+    expect(document.activeElement).toBe(screen.getByLabelText("kilid"));
+    act(() => vi.advanceTimersByTime(60000));
+    nothingDrawn();
+    gate({ open: true });
+    act(() => vi.advanceTimersByTime(TOAST_MS - 1000 - 1));
+    expect(card("Yadda saxlanıldı")).not.toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    expect(card("Yadda saxlanıldı")).toBeNull();
+  });
+
+  // The pointer on a toast pauses it too, and no mouseleave ever comes for a card the lock took
+  // away: letting go of it must not restart the clock of a toast that is now held.
+  it("keep the time of one under the pointer at the lock, and close it on time after the unlock", () => {
+    const gate = gated();
+    show("Yadda saxlanıldı");
+    act(() => vi.advanceTimersByTime(1000));
+    fireEvent.mouseEnter(card("Yadda saxlanıldı"));
+    act(() => vi.advanceTimersByTime(5000));                // paused: the pointer is on it
+    gate({ open: false });
+    act(() => vi.advanceTimersByTime(60000));
+    nothingDrawn();
+    gate({ open: true });
+    act(() => vi.advanceTimersByTime(TOAST_MS - 1000 - 1));
     expect(card("Yadda saxlanıldı")).not.toBeNull();
     act(() => vi.advanceTimersByTime(1));
     expect(card("Yadda saxlanıldı")).toBeNull();

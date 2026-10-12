@@ -18,7 +18,7 @@
 //     it: the account, the group, the mapping row, the directory host — whatever the write was
 //     earned on.
 //
-// `useToast()` IS the function (`ui/Toast.jsx` `value={toasts.add}`): there is no `.show`. Calling
+// `useToast()` IS the function (`ui/Toast.jsx` `value={raise}`): there is no `.show`. Calling
 // one on the clinical side was a Critical — a chart the server had taken told the clinician it had
 // failed, in the literal text "toast.show is not a function".
 import { apiErrorText } from "../../apiErrors.js";

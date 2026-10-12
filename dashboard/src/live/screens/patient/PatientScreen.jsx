@@ -316,7 +316,7 @@ export function PatientScreen({ params }) {
     setCharting(suspected);
     try {
       await board.store.chart(id, [{ code: "suspected_infection", value: suspected ? 1 : 0 }]);
-      // `useToast()` IS the function (ui/Toast.jsx `value={toasts.add}`) — there is no `.show`.
+      // `useToast()` IS the function (ui/Toast.jsx `value={raise}`) — there is no `.show`.
       // Calling one threw inside this `try`, and the `catch` below then showed the TypeError's
       // message as a refusal for a chart the server had already taken.
       toast(t("patient.chartSaved"));
