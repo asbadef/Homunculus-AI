@@ -18,8 +18,19 @@ const show = (message, tone) => act(() => {
   api(message, tone);
 });
 
-beforeEach(() => vi.useFakeTimers());
+// The project's fake-timer recipe: installed before mount, these five only, nothing advancing alone.
+beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] }));
 afterEach(() => vi.useRealTimers());
+
+/** A provider behind the live shell's two facts (LiveApp): open, and whose session. Returns the
+ *  function that moves them, as a lock, an unlock, a sign-out or a sign-in does. */
+function gated() {
+  const at = (props) => (
+    <ToastProvider open={props.open ?? true} session={props.session ?? "s1"}><Grab /></ToastProvider>
+  );
+  const view = render(at({}));
+  return (props) => view.rerender(at(props));
+}
 
 const region = () => screen.getByRole("region", { name: "Bildirişlər" });
 const cards = () => [...region().querySelectorAll("[data-toast]")];
@@ -28,17 +39,6 @@ const polite = () => region().querySelector('[aria-live="polite"]');
 const alerts = () => within(region()).getByRole("alert");
 
 describe("toasts", () => {
-  it("all go when the provider's resetKey changes, and not before", () => {
-    const { rerender } = render(<ToastProvider resetKey="a"><Grab /></ToastProvider>);
-    show("Yadda saxlanıldı");
-    show("Xəta baş verdi", "error");
-    rerender(<ToastProvider resetKey="a"><Grab /></ToastProvider>);
-    expect(cards()).toHaveLength(2);
-    rerender(<ToastProvider resetKey="b"><Grab /></ToastProvider>);
-    expect(cards()).toHaveLength(0);
-    expect(alerts()).toBeEmptyDOMElement();
-  });
-
   it("have a named live region before the first toast", () => {
     render(<ToastProvider><Fire message="Yadda saxlanıldı" /></ToastProvider>);
     expect(region().firstChild).toHaveAttribute("aria-live", "polite");
@@ -209,5 +209,112 @@ describe("the toast stack over a dialog", () => {
     expect(region().className.split(/\s+/)).toEqual(expect.arrayContaining([
       "bottom-4", "[body[data-modal-open]_&]:bottom-auto", "[body[data-modal-open]_&]:top-4",
     ]));
+  });
+});
+
+// The live shell closes the provider while the screen is locked (and on every step screen), and
+// moves its session at every sign-out and sign-in. A write that began before the lock answers
+// whenever the server does — and its refusal names a bed or an account.
+describe("toasts behind a closed shell", () => {
+  /** Nothing of any toast anywhere in the region: the stack and both live regions. */
+  const nothingDrawn = () => {
+    expect(cards()).toHaveLength(0);
+    expect(polite()).toBeEmptyDOMElement();
+    expect(alerts()).toBeEmptyDOMElement();
+  };
+
+  it("draw nothing raised while closed — not even in a live region — and show it on reopening the same session", () => {
+    const gate = gated();
+    const spoken = polite();
+    const alarm = alerts();
+    gate({ open: false });
+    show("Çarpayı 4 · news2: icazə yoxdur", "error");
+    show("Yadda saxlanıldı");
+    nothingDrawn();
+    expect(document.body).not.toHaveTextContent("Çarpayı 4");
+    gate({ open: true });
+    expect(card("Çarpayı 4 · news2: icazə yoxdur")).not.toBeNull();
+    expect(card("Yadda saxlanıldı")).not.toBeNull();
+    // Announced from the regions that stood empty through the lock — never one born with its text.
+    expect(polite()).toBe(spoken);
+    expect(alerts()).toBe(alarm);
+    expect(alerts()).toHaveTextContent(/^Xəta: Çarpayı 4 · news2: icazə yoxdur$/);
+    expect(polite()).toHaveTextContent(/^Yadda saxlanıldı$/);
+  });
+
+  it("take the ones on screen at closing out of sight, and bring them back on reopening", () => {
+    const gate = gated();
+    show("Yadda saxlanıldı");
+    show("Bağlantı yavaşdır", "warn");
+    gate({ open: false });
+    nothingDrawn();
+    gate({ open: true });
+    expect(cards().map((el) => el.textContent)).toEqual(["Yadda saxlanıldı", "Bağlantı yavaşdır"]);
+  });
+
+  it("keep an error through a lock and an unlock, however long the lock", () => {
+    const gate = gated();
+    show("Saxlanılmadı", "error");
+    gate({ open: false });
+    nothingDrawn();
+    act(() => vi.advanceTimersByTime(60 * 60 * 1000));
+    gate({ open: true });
+    expect(alerts()).toHaveTextContent(/^Xəta: Saxlanılmadı$/);
+    fireEvent.click(within(card("Saxlanılmadı")).getByRole("button", { name: "Bağla" }));
+    expect(card("Saxlanılmadı")).toBeNull();
+  });
+
+  it("do not spend a confirmation's time while closed: it resumes with what it had left", () => {
+    const gate = gated();
+    show("Yadda saxlanıldı");
+    act(() => vi.advanceTimersByTime(2000));
+    gate({ open: false });
+    act(() => vi.advanceTimersByTime(60000));
+    nothingDrawn();
+    gate({ open: true });
+    act(() => vi.advanceTimersByTime(TOAST_MS - 2000 - 1));
+    expect(card("Yadda saxlanıldı")).not.toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    expect(card("Yadda saxlanıldı")).toBeNull();
+  });
+
+  it("drop every toast at a new session, on screen and held alike", () => {
+    const gate = gated();
+    show("birinci");
+    gate({ open: true, session: "s2" });                 // another account, straight in
+    nothingDrawn();
+    show("ikinci", "error");
+    gate({ open: false, session: "s2" });                // locked: held
+    show("üçüncü", "error");                             // answered behind the lock: held
+    gate({ open: false, session: "s3" });                // signed out from the lock screen
+    gate({ open: true, session: "s3" });                 // the next session opens
+    nothingDrawn();
+  });
+
+  it("never show one raised through an earlier session's useToast()", () => {
+    const gate = gated();
+    const earlier = api;                                 // a screen's toast, captured mid-write
+    gate({ open: false, session: "s2" });                // signed out and back in...
+    gate({ open: true, session: "s2" });
+    act(() => { earlier("Çarpayı 4 · news2: icazə yoxdur", "error"); }); // ...then it answers
+    nothingDrawn();
+    gate({ open: false, session: "s2" });
+    gate({ open: true, session: "s2" });
+    nothingDrawn();
+  });
+
+  it(`keep at most ${TOAST_MAX} when held ones come back, errors outliving confirmations`, () => {
+    const gate = gated();
+    show("xəta 1", "error");
+    show("qeyd 1");
+    show("qeyd 2");
+    gate({ open: false });
+    for (let i = 3; i <= TOAST_MAX + 1; i += 1) show(`qeyd ${i}`);
+    nothingDrawn();
+    gate({ open: true });
+    // TOAST_MAX + 2 raised, so two go: the two oldest confirmations, never the error.
+    const kept = ["xəta 1"];
+    for (let i = 3; i <= TOAST_MAX + 1; i += 1) kept.push(`qeyd ${i}`);
+    expect(cards().map((el) => el.textContent)).toEqual(kept);
   });
 });

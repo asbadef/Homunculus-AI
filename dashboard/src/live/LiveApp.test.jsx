@@ -9,7 +9,7 @@ import { writeLock } from "./session/browserState.js";
 import { resetScreens, stubScreens } from "./shell/routes.js";
 import { onlyScreens } from "./shell/screens.testutil.js";
 import { PRODUCT } from "./shell/Shell.jsx";
-import { ANNOUNCE_DELAY_MS } from "./ui/index.js";
+import { ANNOUNCE_DELAY_MS, useToast } from "./ui/index.js";
 
 vi.mock("qrcode", () => ({ default: { toDataURL: vi.fn(async () => "data:image/png;base64,QR") } }));
 
@@ -81,6 +81,27 @@ function AlarmsProbe() {
   return <h1>Siqnal ekranı</h1>;
 }
 const built = (screens) => stubScreens(screens);
+
+/** A screen with a write in flight, as the alarm acknowledgement and the patient chart have: each
+ *  press starts one, its answer comes whenever the test sends it (`answers[i](text)`), and the
+ *  refusal goes on the toast — from the closure the screen had, mounted or not by then. */
+function writer() {
+  const answers = [];
+  function WriteProbe() {
+    const toast = useToast();
+    async function write() {
+      const refusal = await new Promise((resolve) => { answers.push(resolve); });
+      toast(refusal, "error");
+    }
+    return (
+      <>
+        <h1>Siqnal ekranı</h1>
+        <button type="button" onClick={write}>Yaz</button>
+      </>
+    );
+  }
+  return { WriteProbe, answers };
+}
 
 beforeEach(() => {
   window.location.hash = "";
@@ -560,6 +581,61 @@ describe("signing out", () => {
     await spoken("Təhlükəsiz çıxış edildi.");
     expect(api.logout).toHaveBeenCalled();
     expect(screen.queryByRole("navigation")).toBeNull();
+  });
+});
+
+// A write that began before a lock or a sign-out answers whenever the server does, and its refusal
+// names a bed or an account. The lock screen names no one; but the clinician who unlocks must still
+// learn the outcome — a refusal is never swallowed — and nobody else ever may.
+describe("a write that answers while the shell is gone", () => {
+  const notes = () => screen.getByRole("region", { name: "Bildirişlər" });
+
+  async function onWriter() {
+    const probe = writer();
+    const api = app();
+    built({ beds: BedsProbe, alarms: probe.WriteProbe });
+    await signIn(api);
+    await screen.findByRole("heading", { level: 1, name: "Çarpayı ekranı" });
+    await act(async () => {
+      window.location.hash = "#/alarms";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    await screen.findByRole("heading", { level: 1, name: "Siqnal ekranı" });
+    return { api, answers: probe.answers };
+  }
+
+  it("is held off the lock screen and shown at the unlock", async () => {
+    const { api, answers } = await onWriter();
+    fireEvent.click(screen.getByRole("button", { name: "Yaz" }));
+    act(() => { fireEvent.keyDown(document, { key: "l", code: "KeyL", altKey: true }); });
+    await screen.findByRole("heading", { level: 1, name: "Ekran kilidlənib" });
+    await act(async () => { answers[0]("Çarpayı 4 · news2: icazə yoxdur"); });
+    await act(settle);
+    expect(document.body).not.toHaveTextContent("Çarpayı 4");
+    api.reauth.mockResolvedValueOnce({ ok: true });
+    fireEvent.change(screen.getByLabelText("Şifrə"), { target: { value: "Gizli-Sifre-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Kilidi aç" }));
+    await screen.findByRole("heading", { level: 1, name: "Siqnal ekranı" });
+    expect(within(notes()).getByRole("alert")).toHaveTextContent(/^Xəta: Çarpayı 4 · news2: icazə yoxdur$/);
+  });
+
+  it("never appears once its session has ended — not held for the next one, not after its sign-in", async () => {
+    const { api, answers } = await onWriter();
+    fireEvent.click(screen.getByRole("button", { name: "Yaz" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yaz" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hesab menyusu" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Çıxış" }));
+    await screen.findByRole("heading", { level: 1, name: "Daxil olun" });
+    await act(async () => { answers[0]("Çarpayı 4 · birinci"); });
+    await act(settle);
+    expect(document.body).not.toHaveTextContent("Çarpayı 4");
+    await signIn(api);
+    await screen.findByRole("heading", { level: 1, name: "Çarpayı ekranı" });
+    expect(document.body).not.toHaveTextContent("Çarpayı 4");
+    await act(async () => { answers[1]("Çarpayı 4 · ikinci"); });
+    await act(settle);
+    expect(document.body).not.toHaveTextContent("Çarpayı 4");
+    expect(within(notes()).getByRole("alert")).toBeEmptyDOMElement();
   });
 });
 

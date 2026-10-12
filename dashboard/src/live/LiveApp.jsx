@@ -4,8 +4,9 @@
 // under them). The phase picks the screen: the session check, sign-in, the TOTP step, the forced
 // password change, the shell, or the lock screen. The board runs while a session that may see it
 // is open or locked (the lock screen counts its open alarms) and is emptied the moment the session
-// ends; the toasts are emptied when it locks or ends. Every per-user thing the page held goes with
-// the session (sessionStore.js `end`).
+// ends; the toasts are held out of sight while the shell is gone (a lock, a step screen) and come
+// back with it, and are dropped when the session ends (ui/Toast.jsx). Every per-user thing the page
+// held goes with the session (sessionStore.js `end`).
 import "./theme/assets.js";
 import React, { useEffect, useRef, useState } from "react";
 import { backendApi } from "../backendApi.js";
@@ -104,7 +105,7 @@ function Phases({ board }) {
   else screen = <SignIn />;
 
   return (
-    <ToastProvider resetKey={`${phase === PHASE.READY ? "open" : phase}:${store.epoch()}`}>
+    <ToastProvider open={phase === PHASE.READY} session={store.epoch()}>
       <div className="h-full bg-page">{screen}</div>
       {inStep && secondsLeft !== null ? (
         <IdleWarning seconds={secondsLeft} onStay={stay} titleKey="auth.idleEnd" spokenKey="auth.idleEndSpoken" />

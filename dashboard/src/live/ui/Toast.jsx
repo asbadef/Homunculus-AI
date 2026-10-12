@@ -1,5 +1,5 @@
 // src/live/ui/Toast.jsx — the prototype's H.toast: short confirmations, bottom right.
-import React, { createContext, useContext, useEffect, useId, useLayoutEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useId, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { Button } from "./Button.jsx";
@@ -22,12 +22,28 @@ const ToastContext = createContext(() => {
   if (import.meta.env.DEV) console.warn("useToast: no <ToastProvider> above this component");
 });
 
+/** The ids that must go from `list` to make room for one more: the oldest toast that is not an
+ *  error, else the oldest error. */
+function crowded(list) {
+  const pool = [...list];
+  const victims = [];
+  while (pool.length >= TOAST_MAX) {
+    const at = pool.findIndex((item) => item.tone !== "error");
+    victims.push(pool.splice(at === -1 ? 0 : at, 1)[0].id);
+  }
+  return victims;
+}
+
 /** The provider's state outside React: timers, pause reasons and focus bookkeeping, which event
- *  handlers and timeouts both reach. `publish` hands the visible list to React. */
-function createToasts(publish) {
-  let items = [];
+ *  handlers and timeouts both reach. `publish` hands the visible list to React. `open` and
+ *  `session` start as the provider's props and follow them through `gate`. */
+function createToasts(publish, { open: openAtFirst, session: sessionAtFirst }) {
+  let items = []; //            on screen, oldest first
+  let held = []; //             kept out of sight while the provider is closed, oldest first
+  let open = openAtFirst;
+  let session = sessionAtFirst;
   let seq = 0;
-  const timers = new Map(); //  id -> { left, since, handle }; an error has none
+  const timers = new Map(); //  id -> { left, since, handle }; an error has none; a held one's never runs
   const hovered = new Set(); // ids of the toasts under the pointer (a removed one stops counting)
   let focusInside = false;
   let region = null;
@@ -50,59 +66,91 @@ function createToasts(publish) {
     timer.left = Math.max(0, timer.left - (Date.now() - timer.since));
   }
 
+  // Only a toast on screen has a running clock: a held one keeps the time it had.
   function sync(wasPaused) {
     const now = paused();
-    if (now !== wasPaused) for (const id of timers.keys()) (now ? stop : start)(id);
+    if (now !== wasPaused) for (const item of items) (now ? stop : start)(item.id);
   }
 
-  function remove(ids) {
+  /** `ids` leave the screen: the pointer on them stops counting, and focus on one of them goes
+   *  back to where it came from, else to <body>. Their timers are the caller's business. */
+  function leave(ids) {
     const gone = new Set(ids);
-    for (const id of gone) {
-      clearTimeout(timers.get(id)?.handle);
-      timers.delete(id);
-    }
     const was = paused();
     for (const id of gone) hovered.delete(id);
-    sync(was);
-    // Focus on a toast that is going away goes back to where it came from, else to <body>.
+    // Out of the list BEFORE focus moves: the blur below re-enters `sync` at once, and must not
+    // restart the clock of a toast that is being held.
+    items = items.filter((item) => !gone.has(item.id));
     const active = document.activeElement;
     const holder = region && active && region.contains(active) ? active.closest("[data-toast]") : null;
     if (holder && gone.has(Number(holder.dataset.toast))) {
       if (returnTo && returnTo.isConnected && !returnTo.closest("[inert]")) returnTo.focus();
       if (region.contains(document.activeElement)) document.activeElement.blur();
     }
-    items = items.filter((item) => !gone.has(item.id));
+    sync(was);
     publish(items);
   }
 
-  function add(message, tone = "ok") {
-    const kind = TONES[tone] ? tone : "ok";
-    // Room for the new one: the oldest toast that is not an error goes, else the oldest error.
-    const pool = [...items];
-    const victims = [];
-    while (pool.length >= TOAST_MAX) {
-      const at = pool.findIndex((item) => item.tone !== "error");
-      victims.push(pool.splice(at === -1 ? 0 : at, 1)[0].id);
+  function remove(ids) {
+    for (const id of ids) {
+      clearTimeout(timers.get(id)?.handle);
+      timers.delete(id);
     }
+    leave(ids);
+  }
+
+  function show(item) {
+    const victims = crowded(items);
     if (victims.length) remove(victims);
+    items = [...items, item];
+    publish(items);
+    if (!paused()) start(item.id);
+  }
+
+  // The same room rule as on screen, so what comes back at reopening is what would be on screen
+  // had the toasts arrived with it open.
+  function hold(item) {
+    const victims = new Set(crowded(held));
+    for (const id of victims) timers.delete(id);
+    held = [...held.filter((h) => !victims.has(h.id)), item];
+  }
+
+  /** `from`: the session of the useToast() that raised it. A toast raised for another session —
+   *  a write that answered after its session ended — is dropped. */
+  function add(message, tone = "ok", from = session) {
+    if (from !== session) return null;
+    const kind = TONES[tone] ? tone : "ok";
     seq += 1;
     const id = seq;
-    items = [...items, { id, message, tone: kind }];
-    publish(items);
     const lifetime = TONES[kind].lifetime;
-    if (lifetime) {
-      timers.set(id, { left: lifetime, since: 0, handle: null });
-      if (!paused()) start(id);
-    }
+    if (lifetime) timers.set(id, { left: lifetime, since: 0, handle: null });
+    (open ? show : hold)({ id, message, tone: kind });
     return id;
   }
 
   return {
     add,
     remove,
-    /** Every toast goes at once (the session they spoke for ended or locked). */
-    clear() {
-      if (items.length) remove(items.map((item) => item.id));
+    /** The provider's props moved. A new session drops every toast, on screen and held; closing
+     *  holds the ones on screen with their clocks stopped; opening shows the held ones in order. */
+    gate(nextOpen, nextSession) {
+      if (nextSession !== session) {
+        session = nextSession;
+        remove(items.map((item) => item.id));
+        for (const item of held) timers.delete(item.id);
+        held = [];
+      }
+      if (nextOpen === open) return;
+      open = nextOpen;
+      if (!open) {
+        for (const item of items) stop(item.id);
+        held = items;
+        leave(items.map((item) => item.id));
+      } else {
+        const back = held;
+        held = [];
+        for (const item of back) show(item);
+      }
     },
     hover(id, on) {
       const was = paused();
@@ -144,21 +192,33 @@ function createToasts(publish) {
  *    raised bottom inset: that clears a full-height dialog's footer but lands on a short centred
  *    dialog's one. A keyboard user cannot Tab into a toast while a dialog is open (the dialog
  *    keeps Tab inside): recorded in the roadmap.
- *  `resetKey`: when it changes, every toast goes (the live shell: a session locked or ended).
+ *  `open` and `session`: the live shell's two facts (LiveApp — its screens are on the page; the
+ *  session's epoch). Without them the provider is always open, in one session.
+ *  - While not open (the lock screen, a step screen) nothing is drawn: not in the stack, not in
+ *    the live regions. A toast raised meanwhile — a write that began before the lock and answered
+ *    behind it — is HELD, and so are the ones on screen at closing, their timers stopped.
+ *  - Opening again in the same session shows the held ones, in order and under TOAST_MAX, and
+ *    their timers resume with the time they had. The live regions stayed on the page, empty,
+ *    throughout, so the text arrives in regions that were already there and is announced.
+ *  - A new session drops every toast, on screen and held; and useToast() is bound to the session
+ *    it was rendered in, so a write of an ended session that answers later — even after the next
+ *    sign-in — raises nothing. A toast never crosses sessions. Stopping the WRITE is not the
+ *    toast's job: a screen still has to decide what a write that outlived its session may do.
  *  Not for alarms: a clinical alarm never lives in a toast. */
-export function ToastProvider({ resetKey, children }) {
+export function ToastProvider({ open = true, session, children }) {
   const { t } = useI18n();
   const base = useId();
   const [items, setItems] = useState([]);
-  const [toasts] = useState(() => createToasts(setItems));
+  const [toasts] = useState(() => createToasts(setItems, { open, session }));
   const sayId = (id) => `${base}-toast-${id}`;
 
-  // A new `resetKey` empties the stack: the live shell changes it when a session locks or ends,
-  // so a toast that named a bed or a person does not outlive the screen it belonged to. A layout
-  // effect: the old toasts are gone before the next paint, never shown over the lock screen.
+  // A layout effect: the toasts go out of sight before the lock screen is first painted, so a
+  // refusal naming a bed or an account is never shown over it.
   useLayoutEffect(() => {
-    toasts.clear();
-  }, [toasts, resetKey]);
+    toasts.gate(open, session);
+  }, [toasts, open, session]);
+
+  const raise = useMemo(() => (message, tone) => toasts.add(message, tone, session), [toasts, session]);
 
   useEffect(() => {
     const note = (event) => toasts.noteFocus(event.target);
@@ -177,7 +237,7 @@ export function ToastProvider({ resetKey, children }) {
   );
 
   return (
-    <ToastContext.Provider value={toasts.add}>
+    <ToastContext.Provider value={raise}>
       {children}
       {createPortal(
         <div
