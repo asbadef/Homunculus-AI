@@ -24,7 +24,7 @@ import { AlarmsScreen } from "../screens/alarms/AlarmsScreen.jsx";
 
 import { PatientScreen } from "../screens/patient/PatientScreen.jsx";
 
-// G1-12: import { AdminScreen } from "../screens/admin/AdminScreen.jsx";
+import { AdminScreen } from "../screens/admin/AdminScreen.jsx";
 
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
@@ -40,7 +40,7 @@ const SCREENS = Object.freeze({
 
   patient: PatientScreen, // G1-11
 
-  admin: null,     // G1-12 (users), G1-13 (roles), G1-14 (login source) — tabs inside one screen
+  admin: AdminScreen, // G1-12 (users), G1-13 (roles), G1-14 (login source) — tabs inside one screen
 
   settings: SettingsScreen,
 });

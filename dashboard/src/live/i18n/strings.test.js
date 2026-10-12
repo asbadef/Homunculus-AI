@@ -27,6 +27,8 @@ const NEUTRAL = new Set([
   "patient.sofa", //              SOFA — the same
 
   // G1-12 (admin · users) · neutral
+  "admin.colMfa", //              2FA — an abbreviation
+  "admin.sourceLdap", //          AD — an abbreviation
 
   // G1-13 (admin · roles) · neutral
 
@@ -90,6 +92,16 @@ const AZ_SAME_AS_TR = new Set([
   "patient.seenBy", //       Gördü — the same verb as alarms.seenBy
 
   // G1-12 (admin · users) · az = tr
+  "admin.filterRole", //     Rol — the prototype's AZ dictionary (admin.js)
+  "admin.fieldRole", //      Rol — the same word
+  "admin.colRole", //        Rol — the same word
+  "admin.colName", //        Ad — "name" in Azerbaijani too
+  "admin.colLastLogin", //   Son giriş — the prototype's AZ dictionary ("Son giriş")
+  "admin.colMfa", //         2FA — an abbreviation
+  "admin.sourceLdap", //     AD — an abbreviation
+  "admin.resetMfa", //       2FA sıfırla — the abbreviation plus the same verb
+  "admin.unlockSignIn", //   Girişi aç — the prototype's AZ dictionary ("Kilidi aç" family)
+  "admin.fieldFullName", //  Ad soyad — the prototype's AZ dictionary (admin.js userModal)
 
   // G1-13 (admin · roles) · az = tr
 
