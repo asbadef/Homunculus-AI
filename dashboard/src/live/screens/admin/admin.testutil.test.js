@@ -1,15 +1,16 @@
 // The fixtures are only worth having if they are the API's shapes: this holds them to the backend
 // the way `catalogue.test.js` holds the permission mirror. (A test may read outside `src/live/` —
 // boundaries.test.js checks the sources, not the tests.)
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PERMISSION_KEYS } from "./catalogue.js";
 import {
-  CATALOGUE, GROUPS, PERMISSION_TEXTS, USERS, adminProp, group, guid, ldapStatus, user,
+  ADMIN_READS, ADMIN_WRITES, CATALOGUE, GROUPS, PERMISSION_TEXTS, USERS, adminProp, group, guid, ldapStatus, user,
 } from "./admin.testutil.js";
 import { groupFromApi, userFromApi } from "./rules.js";
+import { fakeApi } from "../../session/testTokens.testutil.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PY = fs.readFileSync(
@@ -54,6 +55,24 @@ describe("the administration fixtures are the API's own shapes", () => {
   it("an external id is a UUID, as POST /admin/ldap/import requires", () => {
     expect(guid(7)).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(guid(7)).not.toBe(guid(8));
+  });
+});
+
+describe("ADMIN_READS", () => {
+  it("answers every read, and makes every write the test did not state REJECT — silence is not success", async () => {
+    // An unstubbed `vi.fn()` resolves `undefined`, which a tab reads as "the server took it": a
+    // write test that forgot to say what the server answers would pass on a success nobody chose.
+    const api = ADMIN_READS(fakeApi(vi));
+    await expect(api.adminUsers()).resolves.toEqual(USERS);
+    expect(ADMIN_WRITES.length).toBeGreaterThan(10);
+    for (const write of ADMIN_WRITES) {
+      expect(api[write], write).toBeTypeOf("function");
+      // eslint-disable-next-line no-await-in-loop
+      await expect(api[write](), write).rejects.toThrow(/was not stubbed/);
+    }
+    // A test that states the answer gets it.
+    api.adminResetMfa.mockResolvedValue({ ok: true });
+    await expect(api.adminResetMfa("u-1")).resolves.toEqual({ ok: true });
   });
 });
 

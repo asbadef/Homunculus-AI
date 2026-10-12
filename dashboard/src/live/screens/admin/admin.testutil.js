@@ -228,15 +228,31 @@ export function adminProp(over = {}) {
   };
 }
 
+/** Every call the three tabs make that CHANGES something (or, for the directory test, acts), by
+ *  its `backendApi` name. */
+export const ADMIN_WRITES = Object.freeze([
+  "adminCreateUser", "adminUpdateUser", "adminSetUserGroups", "adminResetPassword", "adminResetMfa",
+  "adminUnlockSignIn", "setScope",
+  "adminCreateGroup", "adminUpdateGroup", "adminDeleteGroup",
+  "ldapTest", "ldapImport", "ldapCreateMapping", "ldapDeleteMapping",
+]);
+
 /**
  * Stub every READ the three tabs make, with the fixtures above. `over` replaces any of them:
  *
  *   ADMIN_READS(api, { ldapStatus: { configured: false } })
  *
- * Writes are not stubbed: a test that expects a write states what the server answers, because what
- * a write answers is the thing it is testing.
+ * Writes are not ANSWERED: a test that expects a write states what the server answers, because
+ * what a write answers is the thing it is testing. But a write the test did not state REJECTS —
+ * an unstubbed `vi.fn()` resolves `undefined`, which a tab reads as "the server took it", so a
+ * test that forgot to say would pass on a success nobody chose. The rejection names the call.
  */
 export function ADMIN_READS(api, over = {}) {
+  for (const write of ADMIN_WRITES) {
+    api[write].mockRejectedValue(
+      new Error(`ADMIN_READS: ${write} was not stubbed — a test that writes states what the server answers`),
+    );
+  }
   const value = (name, fallback) => (name in over ? over[name] : fallback);
   api.adminUsers.mockResolvedValue(value("adminUsers", USERS));
   api.adminGroups.mockResolvedValue(value("adminGroups", GROUPS));
