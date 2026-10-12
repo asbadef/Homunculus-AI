@@ -1,0 +1,502 @@
+// src/live/screens/admin/RolesTab.jsx — the group × permission table (G1-13).
+//
+// COLLECT AND SAVE, NOT APPLY ON THE CLICK. The prototype's matrix writes each checkbox to
+// `localStorage` the moment it is pressed (`admin.js:874-882`), which in a live system would mean
+// one mis-click grants a right and the audit trail records it as a decision somebody made. Here a
+// checkbox collects a pending change, the group's column says how many are pending, and Save sends
+// ONE `PATCH /admin/groups/{id}` with the WHOLE permission list.
+//
+// THE API OFFERS NO TRANSACTION ACROSS GROUPS, AND THIS SCREEN DOES NOT PRETEND OTHERWISE.
+// `PATCH /admin/groups/{id}` is atomic for ONE group — the service takes the tenant's lock, checks
+// the caller's rights against the group's new rights, and writes under a row version that answers
+// 409 `concurrentChange` if somebody else moved it meanwhile. There is no endpoint that changes two
+// groups at once. So the unit of saving here is the GROUP, not the table: each column has its own
+// Save, each save is one request, and a column that fails leaves the others as they were and says
+// which one failed. A single "Save everything" button would be a promise of atomicity the server
+// cannot keep — three PATCHes of which the second is refused would leave the hospital's permission
+// table in a state no administrator chose, with one toast to explain it.
+//
+// A 409 RE-READS THE COLUMN AND KEEPS THE TICKS. `concurrentChange` means another administrator
+// saved this group between our read and our write. The PATCH body is the whole list, computed from
+// what this screen last read, and the server carries no client-supplied version — so pressing Save
+// again on the stale base would silently overwrite what the other administrator just saved, and the
+// refusal's own text says "refresh the list and try again". The screen does the refresh itself, keeps
+// the administrator's ticks (they are what she decided), and says in a Note that the column was
+// re-read so she reviews them against the new state before saving again.
+//
+// WHAT IS READ-ONLY, AND WHY IT SAYS SO IN THE SERVER'S OWN WORDS.
+//   * The SYSTEM group: the server refuses it (409 `Sistem grubunun izinleri ve MFA kuralı
+//     değiştirilemez`) and reports its permissions as the whole catalogue whatever is stored.
+//   * A group whose rights exceed the session's (`canGrant`): the server's rule is "no grant beyond
+//     your own rights" (403), and the column says so rather than offering checkboxes that 403.
+//   * A group holding a key this catalogue does not describe: a Save computed from the catalogue
+//     would drop that key — revoke a right the screen never showed, silently — so the column is
+//     read-only and names the keys. It cannot happen while `/admin/permissions` serves the whole
+//     catalogue, and nothing enforces that it always will.
+//   A locked cell is `aria-disabled`, not `disabled`: a keyboard user can still land on it and hear
+//   the column's reason, which a natively disabled control would skip.
+//
+// THE DESCRIPTIONS ARE TRANSLATED BY KEY (`strings/perms.js`), with the server's own English as
+// the `lang="en"` fallback for a key this build does not know. The server's descriptions are
+// developer prose, not the hospital's words, and this is the screen on which an administrator
+// decides what a nurse may do: a mis-read permission is a misconfiguration. The KEY is printed under
+// the description untranslated — it is what a support call quotes and what the table is searched by.
+//
+// A CELL READS AS "<group> · <permission>" to a screen reader, and "· change pending" while it
+// holds a tick the server has not taken: the only visible marker is a tint on the cell, and a tint
+// is not something a reader is told.
+//
+// A SAVE `canGrant` ALLOWED CAN STILL BE REFUSED, AND READS LIKE ANY OTHER REFUSAL. The server checks
+// every current MEMBER's rights, before and after the change (`admin/service._members_within`):
+// a desk whose rights cover the group's may still not change it if one of its members holds more
+// than the desk does. The screen has the group's rights, not its members', so it cannot foresee
+// that — it offers the Save, and the 403 is the answer: on the toast, named after the group, with
+// the ticks kept, because they are still what the administrator decided.
+//
+// WHAT THE FRAME READ IS READ BY ITS STATE (`useAdminData`). A missing catalogue is "unasked" for a
+// desk whose rights do not allow the read and "failed" for one whose read was refused — two
+// sentences, decided by the read's own state, never guessed from the rights. A group list that
+// failed is said as that. A member COUNT is shown only when the groups read answered THIS time: a
+// stale read still draws its columns, but "4 people" from it is a claim about now nobody has made.
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { useI18n } from "../../i18n/I18nProvider.jsx";
+import { useSession } from "../../session/SessionProvider.jsx";
+import { Announce, Button, Empty, Field, Input, Modal, Note, Pill, Table, Tag, useToast } from "../../ui/index.js";
+import { apiErrorKey, fieldRefusals } from "../../apiErrors.js";
+import { FIELD_MAX } from "./limits.js";
+import { canGrant } from "./rules.js";
+import { doneFor, refusedFor } from "./refusal.js";
+
+/** The key of a pending change. */
+const cellKey = (groupId, permission) => `${groupId}|${permission}`;
+
+/** Is this permission on for this group, taking any pending change into account? */
+export function isOn(group, permission, pending) {
+  const key = cellKey(group.id, permission);
+  if (key in pending) return pending[key];
+  return group.permissions.includes(permission);
+}
+
+/** The keys a group holds that `catalogue` does not describe. A Save built from the catalogue would
+ *  drop them — revoke them silently — so a group with any is not saved from this screen. */
+export function undescribedKeys(group, catalogue) {
+  const described = new Set(catalogue.map((row) => row.key));
+  return group.permissions.filter((key) => !described.has(key));
+}
+
+/** The permission list a Save would send for this group: its own, with the pending changes applied,
+ *  in the catalogue's order — so the body is reproducible and a diff of two saves is readable.
+ *  Only for a group every one of whose keys the catalogue describes (`undescribedKeys` empty). */
+export function listToSend(group, catalogue, pending) {
+  return catalogue.map((row) => row.key).filter((key) => isOn(group, key, pending));
+}
+
+/** How many of this group's cells are pending AND actually differ from what the server holds. A
+ *  checkbox clicked twice is not a change, and a column that said "1 pending" for it would be
+ *  asking an administrator to save nothing. */
+export function pendingFor(group, pending) {
+  return Object.entries(pending).filter(([key, on]) => {
+    const [groupId, permission] = key.split("|");
+    return groupId === group.id && on !== group.permissions.includes(permission);
+  }).length;
+}
+
+/** Why a group's column cannot be edited — `{key, vars}` for `t()` — or null. The system group
+ *  first: it is the stronger statement and the server's refusal for it is the more specific one. */
+export function lockedBecause(group, perms, catalogue) {
+  if (group.isSystem) return { key: "errors.systemGroupLocked", vars: {} };
+  if (!canGrant(perms, group, catalogue)) return { key: "roles.cannotGrant", vars: {} };
+  const missing = undescribedKeys(group, catalogue);
+  if (missing.length > 0) return { key: "roles.undescribed", vars: { keys: missing.join(", ") } };
+  return null;
+}
+
+/** A permission's description in the reader's language, or the server's own English when this
+ *  build has no text for the key. Returns `{text, foreign}`; a caller that prints it marks a
+ *  foreign one `lang="en"`. */
+export function descriptionOf(t, row) {
+  const key = `perms.${row.key}`;
+  const own = t(key);
+  return own === key ? { text: row.description, foreign: true } : { text: own, foreign: false };
+}
+
+export function RolesTab({ admin }) {
+  const { t } = useI18n();
+  const { user: me, store } = useSession();
+  const toast = useToast();
+  const api = store.api;
+  const groups = admin.data.groups ?? [];
+  const catalogue = admin.data.catalogue ?? [];
+  const countsKnown = admin.reads.groups === "known";
+
+  /** `{"<groupId>|<permission>": boolean}` — what a Save would change, and nothing else. */
+  const [pending, setPending] = useState({});
+  /** The groups whose PATCH or DELETE is in flight. A Set, not one id: every column has its own
+   *  Save, each PATCH is atomic for its group, and the server serialises them on the tenant lock
+   *  — so a second column's Save during the first's flight is a real request, not a press that
+   *  silently does nothing. */
+  const [inFlight, setInFlight] = useState(() => new Set());
+  /** The groups whose column was re-read after a 409, with the administrator's ticks kept. */
+  const [reread, setReread] = useState(() => new Set());
+  const [newGroup, setNewGroup] = useState(false);
+  const [removing, setRemoving] = useState(null);
+
+  const locks = useMemo(
+    () => new Map(groups.map((g) => [g.id, lockedBecause(g, me.perms, catalogue)])),
+    [groups, me.perms, catalogue],
+  );
+  const lockId = (group) => `roles-lock-${group.id}`;
+
+  const toggle = (group, permission, on) => setPending((was) => ({ ...was, [cellKey(group.id, permission)]: on }));
+
+  const dropPending = (group) => {
+    setPending((was) => Object.fromEntries(Object.entries(was).filter(([key]) => key.split("|")[0] !== group.id)));
+    setReread((was) => { const next = new Set(was); next.delete(group.id); return next; });
+  };
+
+  const flying = (group, on) => setInFlight((was) => {
+    const next = new Set(was);
+    if (on) next.add(group.id);
+    else next.delete(group.id);
+    return next;
+  });
+
+  async function save(group) {
+    if (inFlight.has(group.id)) return;
+    flying(group, true);
+    try {
+      await store.track(() => api.adminUpdateGroup(group.id, { permissions: listToSend(group, catalogue, pending) }));
+      toast(doneFor(t, group.name, t("roles.saved")));
+      dropPending(group);
+      await admin.reload();
+    } catch (err) {
+      // The pending changes STAY: they are what the administrator decided, the server did not take
+      // them, and throwing them away would make her reconstruct the decision from memory. That
+      // holds for a refusal no hint here could foresee too — a MEMBER of the group holding more
+      // than this desk (`_members_within`).
+      toast(refusedFor(t, group.name, err), "error");
+      if (apiErrorKey(err)?.key === "errors.concurrentChange") {
+        // Somebody else saved this group meanwhile. Re-read, so the next Save is computed against
+        // what the server holds now rather than silently overwriting their change; keep the ticks;
+        // say so. The Note is not an Alert: the refusal was announced once already, on the toast.
+        setReread((was) => new Set(was).add(group.id));
+        await admin.reload();
+      }
+    } finally {
+      flying(group, false);
+    }
+  }
+
+  async function remove(group) {
+    if (inFlight.has(group.id)) return;
+    flying(group, true);
+    try {
+      await store.track(() => api.adminDeleteGroup(group.id));
+      toast(doneFor(t, group.name, t("roles.removed")));
+      setRemoving(null);
+      await admin.reload();
+    } catch (err) {
+      toast(refusedFor(t, group.name, err), "error");
+    } finally {
+      flying(group, false);
+    }
+  }
+
+  const inFlightNames = groups.filter((g) => inFlight.has(g.id)).map((g) => g.name).join(", ");
+
+  // Without the catalogue there is no table to draw: its rows ARE the catalogue. Which sentence
+  // depends on WHY it is missing, and the read's own state says why: "unasked" — a desk without
+  // `groups.manage` is never asked for it (the frame asks only what the rights allow) — or
+  // anything else, which for a desk with the right means the read failed, where the frame's own
+  // Alert already carries the server's reason.
+  if (catalogue.length === 0) {
+    return (
+      <div className="flex flex-col gap-3">
+        <h2 className="m-0 font-display text-17 font-bold">{t("roles.title")}</h2>
+        <Empty icon="shield">{t(admin.reads.catalogue === "unasked" ? "roles.noCatalogue" : "roles.catalogueUnread")}</Empty>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-0 flex-1">
+          <h2 className="m-0 font-display text-17 font-bold">{t("roles.title")}</h2>
+          <p className="m-0 text-13 text-mute">{t("roles.sub")}</p>
+        </div>
+        <Button icon="plus" variant="primary" onClick={() => setNewGroup(true)}>{t("roles.newGroup")}</Button>
+      </div>
+
+      {groups.filter((g) => reread.has(g.id)).map((g) => (
+        <Note key={g.id} tone="warn" icon="swap">{t("roles.reread", { group: g.name })}</Note>
+      ))}
+
+      {groups.length === 0 ? <Empty icon="users">{t("roles.noGroups")}</Empty> : (
+        <Table caption={t("roles.caption")} className="[&_td:first-child]:sticky [&_td:first-child]:left-0 [&_td:first-child]:bg-card [&_th:first-child]:sticky [&_th:first-child]:left-0 [&_th:first-child]:z-[1] [&_th:first-child]:bg-card2">
+          <thead>
+            <tr>
+              <th scope="col">{t("roles.colPermission")}</th>
+              {groups.map((group) => {
+                const locked = locks.get(group.id);
+                const count = pendingFor(group, pending);
+                const busy = inFlight.has(group.id);
+                return (
+                  <th key={group.id} scope="col">
+                    <div className="normal-case tracking-normal">
+                      <div className="text-12 font-bold text-ink">{group.name}</div>
+                      {/* A member count only when the read that produced it answered, this time:
+                          `memberCount` is null for a group the API described without one, a zero
+                          would read as "nobody is in this group" — a different and possibly false
+                          statement — and a stale read's count is a claim about now. */}
+                      <div className="text-10.5 font-semibold text-mute">
+                        {group.memberCount === null || !countsKnown
+                          ? t("roles.membersUnknown")
+                          : t("roles.members", { count: group.memberCount })}
+                      </div>
+                      <div className="mt-1">
+                        {group.mfaRequired ? <Tag tone="warn">{t("roles.mfaOn")}</Tag> : <Pill>{t("roles.mfaOff")}</Pill>}
+                      </div>
+                      {locked ? (
+                        <p id={lockId(group)} className="m-0 mt-1 max-w-[190px] whitespace-normal text-10.5 font-normal text-mute">
+                          {t(locked.key, locked.vars)}
+                        </p>
+                      ) : (
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          {count > 0 ? <Tag tone="warn">{t("roles.pending", { count })}</Tag> : null}
+                          <Button size="sm" variant={count > 0 ? "primary" : "default"} busy={busy}
+                            onClick={() => save(group)}>{t("roles.save")}</Button>
+                          {count > 0 ? (
+                            <Button size="sm" variant="ghost" icon="swap" busy={busy}
+                              label={`${t("roles.discard")}: ${group.name}`} onClick={() => dropPending(group)} />
+                          ) : null}
+                          <Button size="sm" variant="ghost" icon="trash" busy={busy}
+                            label={`${t("roles.remove")}: ${group.name}`} onClick={() => setRemoving(group)} />
+                        </div>
+                      )}
+                    </div>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {catalogue.map((row) => {
+              const { text, foreign } = descriptionOf(t, row);
+              return (
+                <tr key={row.key}>
+                  {/* The description in the reader's language — or the server's English, marked as
+                      such — and the permission's own key under it: the key is what a support call
+                      quotes and what this table is searched by. */}
+                  <th scope="row">
+                    <div className="normal-case tracking-normal">
+                      <div className="text-12.5 font-semibold text-ink" lang={foreign ? "en" : undefined}>{text}</div>
+                      <div className="font-data text-10.5 font-normal text-mute">{row.key}</div>
+                    </div>
+                  </th>
+                  {groups.map((group) => {
+                    const locked = locks.get(group.id);
+                    const on = locked ? group.permissions.includes(row.key) || group.isSystem : isOn(group, row.key, pending);
+                    const changed = !locked && on !== group.permissions.includes(row.key);
+                    const name = `${t("roles.cell", { group: group.name, permission: text })}${changed ? ` · ${t("roles.cellPending")}` : ""}`;
+                    return (
+                      <td key={group.id} className={changed ? "bg-card2" : ""}>
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          aria-label={name}
+                          // A locked cell is reachable, says it is locked, and points at the column's
+                          // reason — never `disabled`, which would skip it in the Tab order and tell a
+                          // keyboard user nothing. It is controlled with a no-op onChange, so a click
+                          // leaves it as the server reported it: React puts the prop back after the
+                          // event. Not `preventDefault` on the click — a browser reverts a cancelled
+                          // checkbox click AFTER React's restore, and jsdom reverts by toggling
+                          // again, which would leave the cell flipped in the test and not in the field.
+                          aria-disabled={locked ? "true" : undefined}
+                          aria-describedby={locked ? lockId(group) : undefined}
+                          onChange={locked ? () => {} : (event) => toggle(group, row.key, event.target.checked)}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </Table>
+      )}
+
+      <Note tone="info" icon="shield">{t("roles.note")}</Note>
+
+      {/* A busy Button reads only "unavailable" to a screen reader; the words come from here, and
+          they name the group(s) whose column is in flight. */}
+      <Announce text={inFlightNames ? t("admin.savingFor", { subject: inFlightNames }) : ""} />
+
+      {newGroup ? (
+        <GroupForm
+          catalogue={catalogue}
+          submit={(body) => store.track(() => api.adminCreateGroup(body))}
+          onSaved={async (name) => {
+            toast(doneFor(t, name, t("roles.created")));
+            setNewGroup(false);
+            await admin.reload();
+          }}
+          onRefused={(err, name) => toast(refusedFor(t, name, err), "error")}
+          onClose={() => setNewGroup(false)}
+        />
+      ) : null}
+
+      {removing ? (
+        <Modal
+          open
+          title={t("roles.remove")}
+          busy={inFlight.has(removing.id)}
+          onClose={() => setRemoving(null)}
+          actions={(
+            <>
+              <Button onClick={() => setRemoving(null)} busy={inFlight.has(removing.id)}>{t("roles.cancel")}</Button>
+              <Button variant="danger" busy={inFlight.has(removing.id)} onClick={() => remove(removing)}>
+                {t("roles.remove")}
+              </Button>
+            </>
+          )}
+        >
+          <p className="m-0 text-14">{t("roles.confirmRemove", { group: removing.name })}</p>
+        </Modal>
+      ) : null}
+    </div>
+  );
+}
+
+/** The API fields the new-group form DRAWS a control for — what `fieldRefusals` puts under a
+ *  control. A 422 about anything else (a permission entry, the body as a whole) is its `others`,
+ *  and goes to the toast named after the group: never "a field was named, so show nothing". */
+const GROUP_FIELDS = ["slug", "name", "description"];
+
+/** A new group: slug, name, description, the MFA rule and its starting permissions. The slug cannot
+ *  be changed afterwards (`GroupPatch` has no `slug`), which the hint says; a duplicate answers 409
+ *  `slugTaken` and a malformed one 422 `badSlug`, and both land on the slug field. Every field
+ *  carries the server's own limit (`limits.FIELD_MAX`). */
+function GroupForm({ catalogue, submit, onSaved, onRefused, onClose }) {
+  const { t } = useI18n();
+  const [slug, setSlug] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [mfa, setMfa] = useState(false);
+  const [chosen, setChosen] = useState(() => new Set());
+  const [refusals, setRefusals] = useState({});
+  const [busy, setBusy] = useState(false);
+  const fields = useRef({});
+  // True inside the effect (the house pattern), so StrictMode's rehearsal does not leave it false.
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  async function onSubmit(event) {
+    event?.preventDefault?.();
+    if (busy) return;
+    const mine = {};
+    if (!slug.trim()) mine.slug = t("errors.badSlug");
+    if (!name.trim()) mine.name = t("errors.mustNotBeBlank");
+    if (Object.keys(mine).length > 0) {
+      setRefusals(mine);
+      fields.current[Object.keys(mine)[0]]?.focus();
+      return;
+    }
+    setRefusals({});
+    setBusy(true);
+    try {
+      await submit({
+        slug: slug.trim(), name: name.trim(), description: description.trim() || null,
+        mfa_required: mfa, permissions: catalogue.map((row) => row.key).filter((key) => chosen.has(key)),
+      });
+      if (mounted.current) onSaved(name.trim());
+    } catch (err) {
+      if (!mounted.current) return;
+      const { fields: named, others } = fieldRefusals(t, err, GROUP_FIELDS);
+      // A 409 on the slug has no `fieldErrors` — it is a message, not a validator — so it is put
+      // on the slug field by its KEY, which is where an administrator can act on it.
+      const slugTaken = apiErrorKey(err)?.key === "errors.slugTaken";
+      if (Object.keys(named).length > 0 || slugTaken) {
+        const shown = slugTaken ? { slug: t("errors.slugTaken"), ...named } : named;
+        // Enabled before focused: the fields are `disabled` while busy, and `focus()` on a
+        // disabled element is a no-op in a browser. `flushSync` lands both updates first.
+        flushSync(() => {
+          setBusy(false);
+          setRefusals(shown);
+        });
+        fields.current[Object.keys(shown)[0]]?.focus();
+        // What no field of this form shows still reaches the administrator, once.
+        if (others.length > 0) onRefused(others.join(" "), name.trim());
+      } else {
+        onRefused(others.length > 0 ? others.join(" ") : err, name.trim());
+      }
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      title={t("roles.formNew")}
+      busy={busy}
+      onClose={onClose}
+      actions={(
+        <>
+          <Button onClick={onClose} busy={busy}>{t("roles.cancel")}</Button>
+          <Button variant="primary" busy={busy} onClick={onSubmit}>{t("roles.create")}</Button>
+        </>
+      )}
+    >
+      <form noValidate onSubmit={onSubmit}>
+        <Announce text={busy ? t("roles.saving") : ""} />
+        <Field layout="col" required label={t("roles.fieldSlug")} hint={t("roles.fieldSlugHint")} error={refusals.slug}>
+          <Input ref={(el) => { fields.current.slug = el; }} value={slug} maxLength={FIELD_MAX.slug}
+            disabled={busy} autoFocus onChange={(e) => setSlug(e.target.value)} />
+        </Field>
+        <Field layout="col" required label={t("roles.fieldName")} error={refusals.name}>
+          <Input ref={(el) => { fields.current.name = el; }} value={name} maxLength={FIELD_MAX.group_name}
+            disabled={busy} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field layout="col" label={t("roles.fieldDescription")} error={refusals.description}>
+          <Input ref={(el) => { fields.current.description = el; }} value={description}
+            maxLength={FIELD_MAX.description} disabled={busy} onChange={(e) => setDescription(e.target.value)} />
+        </Field>
+        <label className="mb-2.5 flex items-center gap-2 font-text text-13.5">
+          <input type="checkbox" checked={mfa} disabled={busy} onChange={(e) => setMfa(e.target.checked)} />
+          {t("roles.fieldMfa")}
+        </label>
+        <fieldset className="border-0 p-0">
+          <legend className="mb-1 font-text text-13.5 font-semibold text-mute">{t("roles.colPermission")}</legend>
+          {catalogue.map((row) => {
+            const { text, foreign } = descriptionOf(t, row);
+            return (
+              <label key={row.key} className="flex items-start gap-2 py-0.5 font-text text-13">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={chosen.has(row.key)}
+                  disabled={busy}
+                  onChange={(e) => setChosen((was) => {
+                    const next = new Set(was);
+                    if (e.target.checked) next.add(row.key);
+                    else next.delete(row.key);
+                    return next;
+                  })}
+                />
+                <span>
+                  <span lang={foreign ? "en" : undefined}>{text}</span>
+                  <span className="block font-data text-10.5 text-mute">{row.key}</span>
+                </span>
+              </label>
+            );
+          })}
+        </fieldset>
+      </form>
+    </Modal>
+  );
+}

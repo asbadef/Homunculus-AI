@@ -30,7 +30,7 @@ import { hasPerm } from "./catalogue.js";
 import { READS, useAdminData } from "./useAdminData.js";
 // G1-12: import { UsersTab } from "./UsersTab.jsx";
 
-// G1-13: import { RolesTab } from "./RolesTab.jsx";
+import { RolesTab } from "./RolesTab.jsx";
 
 // G1-14: import { SourceTab } from "./SourceTab.jsx";
 
@@ -64,7 +64,7 @@ export const TABS = Object.freeze([
 const TAB_SCREENS = Object.freeze({
   users: null, //    G1-12
 
-  roles: null, //    G1-13
+  roles: RolesTab, //    G1-13
 
   source: null, //   G1-14
 });
