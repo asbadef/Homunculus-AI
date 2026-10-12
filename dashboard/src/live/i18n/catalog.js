@@ -33,7 +33,7 @@ import admin from "./strings/admin.js";
 import roles from "./strings/roles.js";
 import perms from "./strings/perms.js";
 
-// G1-14: import source from "./strings/source.js";
+import source from "./strings/source.js";
 
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
@@ -52,7 +52,7 @@ export const NAMESPACES = {
 
   roles, perms,
 
-  // G1-14: source,
+  source,
 };
 
 function flattenInto(out, prefix, entries) {

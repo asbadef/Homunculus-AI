@@ -118,6 +118,8 @@ const AZ_SAME_AS_TR = new Set([
   "roles.removed", //        "silindi." — the same past passive in Azerbaijani (the subject is doneFor's)
 
   // G1-14 (admin · login source) · az = tr
+  "source.colName", //       Ad — "name" in Azerbaijani too (as admin.colName)
+  "source.colChoose", //     Seç — the same imperative in Azerbaijani
 
 ]);
 
