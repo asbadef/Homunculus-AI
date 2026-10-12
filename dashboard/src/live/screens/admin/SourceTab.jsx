@@ -62,8 +62,32 @@
 // A READ THAT TIMED OUT SAYS NOTHING WAS READ. The status, the mapping table and the two searches
 // are reads, and their failures go through `readErrorText`: `errors.requestTimeout`'s "it may have
 // happened" is the right warning for a write (the import, a mapping) and false for a read.
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { readErrorText } from "../../apiErrors.js";
+//
+// THE REVIEW ROUND (G1-14 quality review, P1–P7), each held by a test in SourceTab.test.jsx:
+//   * The import OUTLIVES the tab. She chose those accounts; leaving for another tab mid-run must
+//     not silently stop the later chunks or swallow a refusal. The run goes on, its outcome goes
+//     to the toast (which sits above the router), and only this component's own state waits
+//     behind the `mounted` guard.
+//   * An import and a search hold each other, both ways: a search answering under an import
+//     redraws the rows the import is marking, and an import started under a search has its marks
+//     overwritten by an answer the server gave before the import. The held button says busy.
+//   * A chunk that TIMED OUT may have landed, so its note says so (`source.importChunkUnknown`)
+//     and agrees with the toast's "may have happened" — never "could not be sent".
+//   * The DN picker forgets its choice whenever a group search starts or answers, and the add
+//     maps only a DN the picker is SHOWING: a choice from an earlier answer, invisible behind "—",
+//     was mapped by the first version.
+//   * The mapping table's reads are numbered: a re-read that answers after a newer one is dropped,
+//     or a slow re-read issued before a delete puts the deleted row back. Every mapping write —
+//     landed or refused — is followed by a re-read, because a 404 or 409 is news about the table.
+//   * The test's result is announced only until the next operation starts: a stale "connected"
+//     said again after a refused search is a second, false answer.
+//   * A group this desk may not grant is SHOWN in the extra-group list, disabled, with
+//     `admin.cannotGrant` (front.md Decision 11, X2) — never hidden.
+//   * Focus stays where the administrator was: a search field is `readOnly` while it searches
+//     (a natively disabled field drops focus to <body>), and a Retry keeps its button, busy, until
+//     the read answers, then hands focus to its section once the failure has gone.
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { apiErrorKey, readErrorText } from "../../apiErrors.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { LDAP_IMPORT_CHUNK, LDAP_IMPORT_MAX, LDAP_SEARCH_CAP } from "../../../backendApi.js";
@@ -126,8 +150,11 @@ export function SourceTab({ admin }) {
 
   const [status, setStatus] = useState(null);
   const [statusError, setStatusError] = useState(null);
+  const [statusLoading, setStatusLoading] = useState(false);
   const [test, setTest] = useState(null);
   const [testing, setTesting] = useState(false);
+  // Whether the live region may still say the test's result: only until the next operation starts.
+  const [testSaid, setTestSaid] = useState(false);
 
   const [query, setQuery] = useState("");
   const [found, setFound] = useState(null);
@@ -147,7 +174,8 @@ export function SourceTab({ admin }) {
   const [groupSearching, setGroupSearching] = useState(false);
   const [adDn, setAdDn] = useState("");
   const [ourGroup, setOurGroup] = useState("");
-  const [adding, setAdding] = useState(false);
+  // The AD group's name while its mapping is being added (what the live region names), else null.
+  const [adding, setAdding] = useState(null);
   const [removingId, setRemovingId] = useState(null);
   // Set true INSIDE the effect (the house pattern, `useAdminData`), and declared before the effect
   // that reads: StrictMode's rehearsal runs the cleanup and then the effects again, and a ref set
@@ -157,43 +185,84 @@ export function SourceTab({ admin }) {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
+  // The mapping table's reads, numbered: only the latest one's answer is drawn.
+  const mapSeq = useRef(0);
+  // Where a Retry hands the focus once the failure it sat in has gone (see `refocusAfter`).
+  const heading = useRef(null);
+  const mapIntro = useRef(null);
+  const statusRetryBox = useRef(null);
+  const mapRetryBox = useRef(null);
+  const [refocus, setRefocus] = useState(null);
 
-  /** The mapping table, read on its own: a read, with its own failure and its own retry. */
+  /** A new operation starts: the live region stops repeating the last test's result. */
+  const begin = () => setTestSaid(false);
+
+  /** The mapping table, read on its own: a read, with its own failure and its own retry. The
+   *  failure STAYS while a re-read runs, so a Retry pressed from it keeps its button (busy) and
+   *  its focus; it goes only when a read answers. */
   const readMappings = useCallback(async () => {
+    const mine = mapSeq.current + 1;
+    mapSeq.current = mine;
+    const latest = () => mounted.current && mapSeq.current === mine;
     setMappingsLoading(true);
-    setMappingsError(null);
     try {
       const rows = await store.track(() => api.ldapMappings());
-      if (mounted.current) setMappings(Array.isArray(rows) ? rows : []);
+      if (!latest()) return;
+      setMappings(Array.isArray(rows) ? rows : []);
+      setMappingsError(null);
     } catch (err) {
-      if (mounted.current) setMappingsError(err);
+      if (latest()) setMappingsError(err);
     } finally {
-      if (mounted.current) setMappingsLoading(false);
+      if (latest()) setMappingsLoading(false);
     }
   }, [api, store]);
 
   const read = useCallback(async () => {
+    setStatusLoading(true);
+    let answer;
     try {
-      const answer = await store.track(() => api.ldapStatus());
+      answer = await store.track(() => api.ldapStatus());
       if (!mounted.current) return;
       setStatus(answer);
       setStatusError(null);
-      if (answer?.configured) await readMappings();
     } catch (err) {
       if (mounted.current) setStatusError(err);
+      return;
+    } finally {
+      if (mounted.current) setStatusLoading(false);
     }
+    if (answer?.configured && mounted.current) await readMappings();
   }, [api, store, readMappings]);
 
   useEffect(() => { read(); }, [read]);
+
+  /** A Retry pressed from inside `box`: once the read has answered, if the failure (and the
+   *  button with it) has gone, the focus goes to `target` rather than falling to <body>. A Retry
+   *  that failed again keeps its button, and the focus on it. (AdminScreen's Retry, the same.) */
+  async function refocusAfter(box, target, run) {
+    const held = Boolean(box.current?.contains(document.activeElement));
+    await run();
+    if (held && mounted.current) setRefocus({ box, target });
+  }
+  useEffect(() => {
+    if (!refocus) return;
+    setRefocus(null);
+    if (!refocus.box.current) refocus.target.current?.focus();
+  }, [refocus]);
+
+  const retryStatus = () => { begin(); return refocusAfter(statusRetryBox, heading, read); };
+  const retryMappings = () => { begin(); return refocusAfter(mapRetryBox, mapIntro, readMappings); };
 
   async function runTest() {
     if (testing) return;
     setTesting(true);
     setTest(null);
+    setTestSaid(false);
     try {
       const answer = await store.track(() => api.ldapTest());
       if (!mounted.current) return;
       setTest(answer);
+      setTestSaid(true);
       setStatus((was) => (was ? { ...was, last_test_at: answer?.checked_at, last_test_ok: answer?.ok } : was));
     } catch (err) {
       // No stale result beside a refusal: the previous answer was cleared when the test began.
@@ -207,6 +276,7 @@ export function SourceTab({ admin }) {
     event?.preventDefault?.();
     // Held during an import: a new answer would drop the chosen rows out from under it.
     if (searching || importing || lengthOf(query.trim()) < FIELD_MIN.ldap_query) return;
+    begin();
     setSearching(true);
     setReport(null);
     setChunkFailed(null);
@@ -229,36 +299,56 @@ export function SourceTab({ admin }) {
   const nameOf = (id) => found?.find((row) => row.external_id === id)?.username ?? id;
 
   /** Strictly sequential, chunk by chunk. A failed chunk stops the run, is named by its accounts,
-   *  and leaves them chosen; the chunks already sent keep their answers. */
+   *  and leaves them chosen; the chunks already sent keep their answers.
+   *
+   *  It OUTLIVES the tab: an administrator who moves to another tab mid-run chose those accounts,
+   *  so the later chunks are still sent and the outcome — success or refusal — still reaches the
+   *  toast, which sits above the router. Only this component's own state waits on `mounted`. */
   async function runImport() {
     const ids = [...chosen];
-    if (importing || ids.length === 0) return;
+    // Held while a search is out: its answer, given before this import, would overwrite the rows
+    // the import marks — and the search is held while this runs, the other way round.
+    if (importing || searching || ids.length === 0) return;
+    begin();
     setImporting(true);
     setChunkFailed(null);
+    // Everything the run needs after this point is taken now: the tab may be gone by its end.
+    const usernames = new Map((found ?? []).map((row) => [row.external_id, row.username]));
+    const host = status?.url_host ?? "";
+    const extra = extraGroup ? [extraGroup] : [];
     const chunks = chunksOf(ids);
     const imported = [];
     const skipped = [];
     let done = 0;
+    let out = null;                      // the chunk in flight, so a failure can name its accounts
+    let landed = false;
     try {
       for (const chunk of chunks) {
-        setProgress({ done, total: ids.length });
+        if (mounted.current) setProgress({ done, total: ids.length });
+        out = chunk;
         // eslint-disable-next-line no-await-in-loop
-        const answer = await store.track(() => api.ldapImport(chunk, extraGroup ? [extraGroup] : []));
-        if (!mounted.current) return;
+        const answer = await store.track(() => api.ldapImport(chunk, extra));
+        out = null;
         imported.push(...(answer?.imported ?? []));
         skipped.push(...(answer?.skipped ?? []));
         done += chunk.length;
-        setChosen((was) => new Set([...was].filter((id) => !chunk.includes(id))));
-        setFound((was) => markImported(was, answer));
+        if (mounted.current) {
+          setChosen((was) => new Set([...was].filter((id) => !chunk.includes(id))));
+          setFound((was) => markImported(was, answer));
+        }
       }
-      setReport({ imported, skipped });
-      toast(doneFor(t, status?.url_host ?? "", t("source.importDone", { imported: imported.length, skipped: skipped.length })));
-      await admin.reload();
+      landed = true;
+      if (mounted.current) setReport({ imported, skipped });
+      toast(doneFor(t, host, t("source.importDone", { imported: imported.length, skipped: skipped.length })));
     } catch (err) {
-      if (!mounted.current) return;
-      setReport({ imported, skipped });
-      const names = chunks[Math.floor(done / Math.max(1, LDAP_IMPORT_CHUNK))]?.map(nameOf).join(", ") ?? "";
-      setChunkFailed(names);
+      const names = (out ?? []).map((id) => usernames.get(id) ?? id).join(", ");
+      // A timeout may have landed: the note must not say "could not be sent" beside a toast that
+      // says the operation may have happened. Recognised by its key, never by a status.
+      const unknown = apiErrorKey(err)?.key === "errors.requestTimeout";
+      if (mounted.current) {
+        setReport({ imported, skipped });
+        setChunkFailed({ names, unknown });
+      }
       toast(refusedFor(t, names, err), "error");
     } finally {
       if (mounted.current) {
@@ -266,15 +356,23 @@ export function SourceTab({ admin }) {
         setImporting(false);
       }
     }
+    // The accounts exist now: the frame's lists are read again (it guards its own unmount).
+    if (landed) await admin.reload();
   }
 
   async function searchAdGroups(event) {
     event?.preventDefault?.();
     if (groupSearching || lengthOf(adQuery.trim()) < FIELD_MIN.ldap_query) return;
+    begin();
     setGroupSearching(true);
+    // A choice from the previous answer is forgotten as soon as a new search starts — and again
+    // when it answers: the picker must never hold a DN it is not showing.
+    setAdDn("");
     try {
       const rows = await store.track(() => api.ldapGroups(adQuery.trim()));
-      if (mounted.current) setAdGroups(Array.isArray(rows) ? rows : []);
+      if (!mounted.current) return;
+      setAdGroups(Array.isArray(rows) ? rows : []);
+      setAdDn("");
     } catch (err) {
       if (!mounted.current) return;
       setAdGroups(null);
@@ -286,46 +384,50 @@ export function SourceTab({ admin }) {
   }
 
   async function addMapping() {
-    if (adding || !adDn || !ourGroup) return;
-    setAdding(true);
-    const name = adGroups?.find((g) => g.dn === adDn)?.name ?? adDn;
-    let landed = false;
+    // Only a DN the picker is SHOWING, and never while a group search may replace the picker.
+    const shown = adGroups?.find((g) => g.dn === adDn);
+    if (adding || groupSearching || !shown || !ourGroup) return;
+    begin();
+    const name = shown.name || shown.dn;
+    setAdding(name);
     try {
-      await store.track(() => api.ldapCreateMapping(adDn, ourGroup));
-      landed = true;
+      await store.track(() => api.ldapCreateMapping(shown.dn, ourGroup));
       toast(doneFor(t, name, t("source.mapAdded")));
-      setAdDn("");
-      setOurGroup("");
+      if (mounted.current) {
+        setAdDn("");
+        setOurGroup("");
+      }
     } catch (err) {
       toast(refusedFor(t, name, err), "error");
     } finally {
-      if (mounted.current) setAdding(false);
+      if (mounted.current) setAdding(null);
     }
-    // After the write's own try: a re-read that fails is a READ failure, shown on the table with
-    // its retry — never a refusal of a row that now exists.
-    if (landed && mounted.current) await readMappings();
+    // After the write's own try, and whatever it answered: a re-read that fails is a READ
+    // failure, shown on the table with its retry — never a refusal of a row that now exists — and
+    // a refusal (a 409 for a row someone else added, a 404) is news about the table too.
+    if (mounted.current) await readMappings();
   }
 
   async function removeMapping(row) {
     if (removingId) return;
+    begin();
     setRemovingId(row.id);
-    let landed = false;
     try {
       await store.track(() => api.ldapDeleteMapping(row.id));
-      landed = true;
       toast(doneFor(t, row.ad_group_dn, t("source.mapRemoved")));
     } catch (err) {
       toast(refusedFor(t, row.ad_group_dn, err), "error");
     } finally {
       if (mounted.current) setRemovingId(null);
     }
-    if (landed && mounted.current) await readMappings();
+    if (mounted.current) await readMappings();
   }
 
-  /** The extra group an import may give: only a group this desk may grant (`canGrant`) — the
-   *  server refuses the WHOLE import otherwise (403 `_grantable`), and offering the system group
-   *  here would make that the common case. */
-  const grantable = useMemo(() => groups.filter((g) => canGrant(me.perms, g, catalogue)), [groups, me.perms, catalogue]);
+  /** May this desk give `g` as the import's extra group? A group it may not grant is still SHOWN,
+   *  disabled, with `admin.cannotGrant` (front.md Decision 11): hidden, an administrator cannot
+   *  tell "this hospital has no such group" from "I may not give it". The server refuses the WHOLE
+   *  import for a group beyond the caller's rights (403 `_grantable`), so it is never selectable. */
+  const mayGrant = (g) => canGrant(me.perms, g, catalogue);
 
   const stateOf = (row) => {
     if (row.already_imported) return <Tag>{t("source.alreadyImported")}</Tag>;
@@ -334,26 +436,32 @@ export function SourceTab({ admin }) {
   };
 
   // ONE live region, and it says WHICH operation is in flight — or, once a test has answered,
-  // what it answered. The visible test result is a Note, which is not live.
+  // what it answered, until the next operation starts. The visible test result is a Note, which
+  // is not live.
   const removingDn = mappings?.find((row) => row.id === removingId)?.ad_group_dn ?? "";
   const announced = testing ? t("source.testing")
     : searching ? t("source.searchingFor", { query: query.trim() })
       : importing && progress ? t("source.importProgress", progress)
         : groupSearching ? t("source.searchingGroupsFor", { query: adQuery.trim() })
-          : adding ? t("admin.savingFor", { subject: adGroups?.find((g) => g.dn === adDn)?.name ?? adDn })
+          : adding ? t("admin.savingFor", { subject: adding })
             : removingId ? t("admin.savingFor", { subject: removingDn })
-              : test ? (test.ok ? t("source.testOk") : t(testReasonKey(test.reason)))
+              : test && testSaid ? (test.ok ? t("source.testOk") : t(testReasonKey(test.reason)))
                 : "";
 
   return (
     <div className="flex flex-col gap-3">
       <div>
-        <h2 className="m-0 font-display text-17 font-bold">{t("source.title")}</h2>
+        <h2 ref={heading} tabIndex={-1} className="m-0 font-display text-17 font-bold outline-none">{t("source.title")}</h2>
         <p className="m-0 text-13 text-mute">{t("source.sub")}</p>
       </div>
 
       <Box title={t("source.statusTitle")} icon="key" level={3}>
-        {statusError ? <Note tone="warn" icon="plug">{readErrorText(t, statusError)}</Note> : null}
+        {statusError ? (
+          <div ref={statusRetryBox} className="flex flex-wrap items-center gap-2">
+            <Note tone="warn" icon="plug">{readErrorText(t, statusError)}</Note>
+            <Button size="sm" icon="swap" busy={statusLoading} onClick={retryStatus}>{t("source.mappingsRetry")}</Button>
+          </div>
+        ) : null}
         {status === null && !statusError ? <p className="m-0 text-13 text-mute">{t("admin.loading")}</p> : null}
         {status && !status.configured ? <Note tone="info" icon="plug">{t("source.notConfigured")}</Note> : null}
         {status?.configured ? (
@@ -390,7 +498,9 @@ export function SourceTab({ admin }) {
           <form noValidate onSubmit={runSearch} className="flex flex-wrap items-end gap-2">
             <Field layout="col" label={t("source.searchLabel")} hint={t("source.searchHint", { cap: LDAP_SEARCH_CAP })}
               className="mb-0 min-w-[220px] flex-1">
-              <Input value={query} maxLength={FIELD_MAX.ldap_query} disabled={searching} onChange={(e) => setQuery(e.target.value)} />
+              {/* readOnly, never disabled, while it searches: Enter pressed in a field that then
+                  becomes natively disabled drops the keyboard user's focus to <body>. */}
+              <Input value={query} maxLength={FIELD_MAX.ldap_query} readOnly={searching} onChange={(e) => setQuery(e.target.value)} />
             </Field>
             {/* Busy while an import runs too: the search is held then (see runSearch), and a button
                 that looks live and does nothing is the thing the clinical screens refuse. */}
@@ -442,10 +552,16 @@ export function SourceTab({ admin }) {
                 <Field layout="col" label={t("source.extraGroup")} hint={t("source.extraGroupHint")} className="mb-0">
                   <Select value={extraGroup} disabled={importing} onChange={(e) => setExtraGroup(e.target.value)}>
                     <option value="">{t("source.extraGroupNone")}</option>
-                    {grantable.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id} disabled={!mayGrant(g)}>
+                        {mayGrant(g) ? g.name : `${g.name} — ${t("admin.cannotGrant")}`}
+                      </option>
+                    ))}
                   </Select>
                 </Field>
-                <Button icon="userPlus" variant="primary" busy={importing} onClick={runImport}>
+                {/* Busy while a search is out too: the import is held then (see runImport), and the
+                    live region names the search in flight. */}
+                <Button icon="userPlus" variant="primary" busy={importing || searching} onClick={runImport}>
                   {t("source.importChosen", { count: chosen.size })}
                 </Button>
               </div>
@@ -454,8 +570,12 @@ export function SourceTab({ admin }) {
               ) : null}
               {/* A Note, not an Alert: the chunk's refusal was announced once, on the toast, named
                   by its accounts; this is the visible explanation of what stays chosen and why a
-                  retry is safe. */}
-              {chunkFailed ? <Note tone="warn" icon="swap" className="mt-2">{t("source.importChunkFailed", { names: chunkFailed })}</Note> : null}
+                  retry is safe — or, for a chunk that timed out, that it may have landed. */}
+              {chunkFailed ? (
+                <Note tone="warn" icon="swap" className="mt-2">
+                  {t(chunkFailed.unknown ? "source.importChunkUnknown" : "source.importChunkFailed", { names: chunkFailed.names })}
+                </Note>
+              ) : null}
             </>
           )}
 
@@ -490,13 +610,14 @@ export function SourceTab({ admin }) {
 
       {status?.configured ? (
         <Box title={t("source.mapTitle")} icon="link" level={3}>
-          <p className="m-0 mb-2 text-13 text-mute">{t("source.mapSub")}</p>
+          {/* Where the mapping Retry hands the focus once the table has been read. */}
+          <p ref={mapIntro} tabIndex={-1} className="m-0 mb-2 text-13 text-mute outline-none">{t("source.mapSub")}</p>
           {mayMap ? null : <Note tone="info" icon="shield">{t("errors.mappingAdminOnly")}</Note>}
 
           {mappingsError ? (
-            <div className="mb-2 flex flex-wrap items-center gap-2">
+            <div ref={mapRetryBox} className="mb-2 flex flex-wrap items-center gap-2">
               <Note tone="warn" icon="plug">{refusedFor(t, t("source.mappingsFailed"), readErrorText(t, mappingsError))}</Note>
-              <Button size="sm" icon="swap" busy={mappingsLoading} onClick={readMappings}>{t("source.mappingsRetry")}</Button>
+              <Button size="sm" icon="swap" busy={mappingsLoading} onClick={retryMappings}>{t("source.mappingsRetry")}</Button>
             </div>
           ) : null}
           {mappings === null && !mappingsError ? <p className="m-0 text-13 text-mute">{t("admin.loading")}</p>
@@ -523,7 +644,10 @@ export function SourceTab({ admin }) {
                         <td>{row.group_name}</td>
                         {mayMap ? (
                           <td>
-                            <Button size="sm" variant="ghost" icon="trash" busy={removingId === row.id}
+                            {/* Every row's delete is busy while one is out — one at a time, and the
+                                live region names the row in flight — so none looks live and does
+                                nothing. */}
+                            <Button size="sm" variant="ghost" icon="trash" busy={removingId !== null}
                               label={`${t("source.mapRemove")}: ${row.ad_group_dn}`}
                               onClick={() => removeMapping(row)} />
                           </td>
@@ -541,7 +665,7 @@ export function SourceTab({ admin }) {
               <form noValidate onSubmit={searchAdGroups} className="mt-2 flex flex-wrap items-end gap-2">
                 <Field layout="col" label={t("source.mapPickGroup")} hint={t("source.mapPickHint")}
                   className="mb-0 min-w-[220px] flex-1">
-                  <Input value={adQuery} maxLength={FIELD_MAX.ldap_query} disabled={groupSearching} onChange={(e) => setAdQuery(e.target.value)} />
+                  <Input value={adQuery} maxLength={FIELD_MAX.ldap_query} readOnly={groupSearching} onChange={(e) => setAdQuery(e.target.value)} />
                 </Field>
                 {/* Its own words, not "Search": two buttons named identically on one panel are two
                     buttons a screen-reader user cannot tell apart, and this panel has two
@@ -551,18 +675,20 @@ export function SourceTab({ admin }) {
               {adGroups === null ? null : (
                 <div className="mt-2 flex flex-wrap items-end gap-2">
                   <Field layout="col" label={t("source.colAdGroup")} className="mb-0 min-w-[240px] flex-1">
-                    <Select value={adDn} disabled={adding} onChange={(e) => setAdDn(e.target.value)}>
+                    <Select value={adDn} disabled={adding !== null} onChange={(e) => setAdDn(e.target.value)}>
                       <option value="">—</option>
                       {adGroups.map((g) => <option key={g.dn} value={g.dn}>{`${g.name} — ${g.dn}`}</option>)}
                     </Select>
                   </Field>
                   <Field layout="col" label={t("source.mapOurGroup")} className="mb-0">
-                    <Select value={ourGroup} disabled={adding} onChange={(e) => setOurGroup(e.target.value)}>
+                    <Select value={ourGroup} disabled={adding !== null} onChange={(e) => setOurGroup(e.target.value)}>
                       <option value="">—</option>
                       {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                     </Select>
                   </Field>
-                  <Button icon="plus" variant="primary" busy={adding} onClick={addMapping}>
+                  {/* Busy while a group search is out too: its answer replaces the picker, and the
+                      add is held until it has (see addMapping). */}
+                  <Button icon="plus" variant="primary" busy={adding !== null || groupSearching} onClick={addMapping}>
                     {t("source.mapAdd")}
                   </Button>
                 </div>

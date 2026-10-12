@@ -16,8 +16,40 @@ import {
 } from "./admin.testutil.js";
 import { FIELD_MAX } from "./limits.js";
 import { SourceTab, chunksOf, markImported, skipReasonKey, testReasonKey } from "./SourceTab.jsx";
+import { AdminScreen, onlyTabs, resetTabs } from "./AdminScreen.jsx";
+import SOURCE from "../../i18n/strings/source.js";
 
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
+/** Longer than the live region's announcement delay (`ANNOUNCE_DELAY_MS`). */
+const pause = (ms = 400) => act(async () => { await new Promise((resolve) => { setTimeout(resolve, ms); }); });
+
+/** A STATEFUL mapping server: `ldapMappings` answers what the writes left behind, as the real one
+ *  does, so a test asserts what the TABLE shows rather than how often the table was asked. Its
+ *  refusals are the server's own words (`ldap_service.MAPPING_EXISTS` / `MAPPING_NOT_FOUND`). */
+function mappingServer(api, rows = [mapping()]) {
+  let table = [...rows];
+  let next = 2;
+  api.ldapMappings.mockImplementation(async () => table.map((row) => ({ ...row })));
+  api.ldapCreateMapping.mockImplementation(async (dn, groupId) => {
+    if (table.some((row) => row.ad_group_dn === dn && row.group_id === groupId)) {
+      throw refusal(409, "Bu AD grubu bu gruba zaten eşlenmiş");
+    }
+    const g = GROUPS.find((x) => x.id === groupId);
+    const row = mapping({ id: `m-${next++}`, ad_group_dn: dn, group_id: groupId, group_slug: g?.slug, group_name: g?.name });
+    table = [...table, row];
+    return row;
+  });
+  api.ldapDeleteMapping.mockImplementation(async (id) => {
+    if (!table.some((row) => row.id === id)) throw refusal(404, "Mapping not found");
+    table = table.filter((row) => row.id !== id);
+    return null;
+  });
+  return {
+    /** Another administrator's write, behind this screen's back. */
+    put: (row) => { table = [...table, row]; },
+    drop: (id) => { table = table.filter((row) => row.id !== id); },
+  };
+}
 
 /** `LdapTestOut` and `LdapImportOut` (admin/schemas.py), built HERE and not in admin.testutil.js:
  *  only this tab reads them, and the shared file belongs to no arm — an arm that adds to it meets
@@ -75,8 +107,24 @@ function expectConfirmed(text) {
 }
 
 afterEach(() => {
+  resetTabs();
   vi.restoreAllMocks();
 });
+
+/** The whole administration screen with this tab and one stand-in beside it, on the login source:
+ *  leaving the tab is then what it really is — the frame unmounting it for another. */
+async function openFrame({ setup } = {}) {
+  onlyTabs({ users: () => <p>users-tab</p>, source: SourceTab });
+  const mounted = await mount(<AdminScreen />, {
+    access: token({ sub: "u-admin", perms: DESK }),
+    me: profile({ id: "u-admin", perms: DESK }),
+    setup: (api) => { ADMIN_READS(api); setup?.(api); },
+  });
+  await act(async () => { await settle(); });
+  await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "Giriş mənbəyi" })); await settle(); });
+  return mounted;
+}
+const leaveTab = () => act(async () => { fireEvent.click(screen.getByRole("tab", { name: "İstifadəçilər" })); await settle(); });
 
 describe("the pure parts", () => {
   it("names a sentence for each of the test's five reasons, and for one it has never seen", () => {
@@ -112,6 +160,20 @@ describe("the pure parts", () => {
     expect(found.map((row) => row.already_imported)).toEqual([false, false, false]);   // not in place
     expect(markImported(null, answer())).toEqual([]);
     expect(markImported(found, null).map((row) => row.already_imported)).toEqual([false, false, false]);
+  });
+
+  it("writes the Azerbaijani locative in its own form (-dakı / -dəki), never Turkish's -daki / -deki", () => {
+    // "buradaki", "təşkilatdaki" were Turkish spellings in an Azerbaijani text (review round).
+    const az = Object.values(SOURCE.az).join(" ");
+    expect(az).not.toMatch(/[dt]aki|[dt]eki/);
+    expect(SOURCE.az.colOurGroup).toBe("Buradakı qrup");
+  });
+
+  it("says what \"exists\" means — an account for this directory user, possibly in another hospital — never \"already here\"", () => {
+    // ldap_service.imported_ids: the objectGUID already has an account in ANY tenant.
+    expect(SOURCE.en.skipExists).toMatch(/already exists \(possibly in another hospital\)/);
+    expect(SOURCE.en.skipExists).not.toMatch(/already here/);
+    expect(SOURCE.az.skipExists).toMatch(/başqa təşkilatda/);
   });
 });
 
@@ -207,6 +269,47 @@ describe("the status", () => {
     expect(alerts()).toMatch(/kataloq serverinə/);
   });
 
+  it("announces the test's result only until the next operation starts — never again after a refused search", async () => {
+    // Review P4: the live region fell back to the last test's result whenever nothing was in
+    // flight, so "connected, the service account was accepted" was said AGAIN after a search the
+    // server had just refused — a second, stale answer beside a fresh refusal.
+    const { api } = await open();
+    api.ldapTest.mockResolvedValue(tested());
+    await runTest();
+    await waitFor(() => expect(statuses()).toContain("xidmət hesabı doğrulandı"), { timeout: 4000 });
+    let rejectSearch;
+    api.ldapSearch.mockImplementation(() => new Promise((_, no) => { rejectSearch = no; }));
+    fireEvent.change(screen.getByLabelText(/Ad və ya istifadəçi adı/), { target: { value: "sintetik" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Axtar" })); });
+    await pause();
+    expect(statuses()).toContain("Axtarılır: sintetik…");
+    await act(async () => { rejectSearch(refusal(503, "Dizin sunucusuna ulaşılamıyor")); await settle(); });
+    await pause();
+    expect(alerts()).toMatch(/kataloq serverinə/);
+    expect(statuses()).not.toContain("xidmət hesabı doğrulandı");
+    expect(notes()).toMatch(/xidmət hesabı doğrulandı/);              // still SHOWN, just not said again
+  });
+
+  it("a status read that failed offers a retry that keeps the focus while it runs, then hands it to the tab's heading", async () => {
+    let release;
+    const { api } = await open({ setup: (a) => a.ldapStatus.mockRejectedValueOnce(refusal(503, "Dizin sunucusuna ulaşılamıyor")) });
+    expect(notes()).toMatch(/kataloq serverinə/);
+    expect(screen.queryByText("Kataloq konfiqurasiya olunub")).toBeNull();
+    api.ldapStatus.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const retry = screen.getByRole("button", { name: "Yenidən oxu" });
+    retry.focus();
+    await act(async () => { fireEvent.click(retry); await settle(); });
+    // The failure stays while the read runs, so the button — busy, never disabled — keeps the focus.
+    expect(document.body.contains(retry)).toBe(true);
+    expect(retry).toHaveAttribute("aria-busy", "true");
+    expect(retry).not.toBeDisabled();
+    expect(document.activeElement).toBe(retry);
+    await act(async () => { release(ldapStatus()); await settle(); await settle(); });
+    expect(screen.getByText("Kataloq konfiqurasiya olunub")).toBeInTheDocument();
+    expect(document.body.contains(retry)).toBe(false);
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Giriş mənbəyi" }));
+  });
+
   it("says directory operations can take up to thirty seconds", async () => {
     await open();
     expect(screen.getByText(/30 saniyəyə qədər/)).toBeInTheDocument();
@@ -284,6 +387,31 @@ describe("the search", () => {
     // The old query's rows do not stay under the new query's text.
     expect(screen.queryByRole("table", { name: "Kataloq axtarışının nəticələri" })).toBeNull();
   });
+
+  it("both search fields keep the focus while they search: read-only, never natively disabled", async () => {
+    // A field that becomes `disabled` under Enter drops a keyboard user's focus to <body>.
+    let releaseAccounts;
+    let releaseGroups;
+    const { api } = await open({ setup: (a) => {
+      a.ldapSearch.mockImplementation(() => new Promise((resolve) => { releaseAccounts = resolve; }));
+      a.ldapGroups.mockImplementation(() => new Promise((resolve) => { releaseGroups = resolve; }));
+    } });
+    for (const [label, release] of [[/Ad və ya istifadəçi adı/, () => releaseAccounts([])], [/AD qrupunu axtar/, () => releaseGroups([])]]) {
+      const field = screen.getByLabelText(label);
+      fireEvent.change(field, { target: { value: "sintetik" } });
+      field.focus();
+      // eslint-disable-next-line no-await-in-loop
+      await act(async () => { fireEvent.submit(field.closest("form")); await settle(); });
+      expect(field, String(label)).not.toBeDisabled();
+      expect(field, String(label)).toHaveAttribute("readonly");
+      expect(document.activeElement, String(label)).toBe(field);
+      // eslint-disable-next-line no-await-in-loop
+      await act(async () => { release(); await settle(); });
+      expect(field, String(label)).not.toHaveAttribute("readonly");
+    }
+    expect(api.ldapSearch).toHaveBeenCalledTimes(1);
+    expect(api.ldapGroups).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("the import", () => {
@@ -301,27 +429,68 @@ describe("the import", () => {
   };
 
   it("is sent in chunks of two, strictly sequentially, with the extra group on every call — and reads as done", async () => {
+    // The first chunk is HELD. A run that sent its chunks side by side would have made the second
+    // call by now; the first version of this test answered every chunk at once and passed for one.
+    let releaseFirst;
     const { api, reload } = await open();
-    api.ldapImport.mockResolvedValue(answer());
+    api.ldapImport
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseFirst = resolve; }))
+      .mockResolvedValue(answer());
     // The extra-group choice only exists once there are results to import, so it is set inside
     // the helper's flow rather than before the search.
     await chooseAndImport(api, 3, (count) => {
       fireEvent.change(screen.getByLabelText(/Əlavə qrup/), { target: { value: NURSE_GROUP.id } });
       return count;
     });
-    expect(api.ldapImport).toHaveBeenCalledTimes(2);                 // 3 accounts, chunks of 2
+    expect(api.ldapImport).toHaveBeenCalledTimes(1);                 // the second waits for the first
     expect(api.ldapImport.mock.calls[0]).toEqual([[guid(1), guid(2)], [NURSE_GROUP.id]]);
+    await act(async () => { releaseFirst(answer()); await settle(); });
+    expect(api.ldapImport).toHaveBeenCalledTimes(2);                 // 3 accounts, chunks of 2
     expect(api.ldapImport.mock.calls[1]).toEqual([[guid(3)], [NURSE_GROUP.id]]);
     expectConfirmed(new RegExp(`${HOST} · 0 hesab idxal olundu, 0 hesab buraxıldı\\.`));
     expect(reload).toHaveBeenCalled();
   });
 
-  it("offers as the extra group only one this desk may grant — a group beyond its rights would 403 the whole import", async () => {
+  it("lists every group as the extra group — one this desk may not grant is shown disabled, with its reason, never hidden", async () => {
+    // front.md Decision 11 (X2): hidden, an administrator cannot tell "this hospital has no such
+    // group" from "I may not give it". A group beyond her rights would 403 the WHOLE import, so it
+    // cannot be chosen.
     await open({ perms: ["users.manage", "board.view", "alerts.ack"] });
     await searchFor();
-    const options = [...screen.getByLabelText(/Əlavə qrup/).querySelectorAll("option")].map((o) => o.textContent);
-    expect(options).toEqual(["Əlavə qrup verilməsin", "Hemşire", "Gece ekibi"]);
-    expect(options).not.toContain("Sistem yöneticisi");
+    const options = [...screen.getByLabelText(/Əlavə qrup/).querySelectorAll("option")];
+    expect(options.map((o) => o.textContent)).toEqual([
+      "Əlavə qrup verilməsin",
+      "Sistem yöneticisi — Bu qrupun səlahiyyətləri sizinkini aşır; verə bilmərsiniz.",
+      "Hemşire",
+      "Gece ekibi",
+    ]);
+    expect(options.map((o) => o.disabled)).toEqual([false, true, false, false]);
+  });
+
+  it("is held while a search is out, and says so — the search's answer would overwrite the rows it marks", async () => {
+    // Review P3: an import started under a slow search landed, and then the search answered with
+    // what the server knew BEFORE the import — the imported rows read "can be imported" again.
+    let releaseSearch;
+    const { api } = await open({ setup: (a) => {
+      a.ldapSearch.mockResolvedValueOnce([ldapUser(1), ldapUser(2)])
+        .mockImplementationOnce(() => new Promise((resolve) => { releaseSearch = resolve; }));
+      a.ldapImport.mockResolvedValue(answer([importedRow(1), importedRow(2)]));
+    } });
+    await searchFor("sintetik");
+    fireEvent.click(screen.getByRole("checkbox", { name: "hs.sintetik1" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "hs.sintetik2" }));
+    fireEvent.change(screen.getByLabelText(/Ad və ya istifadəçi adı/), { target: { value: "sintetik1" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Axtar" })); });
+    const importButton = screen.getByRole("button", { name: "Seçilənləri idxal et (2)" });
+    expect(importButton).toHaveAttribute("aria-busy", "true");
+    expect(importButton).not.toBeDisabled();
+    await act(async () => { fireEvent.click(importButton); await settle(); });
+    expect(api.ldapImport).not.toHaveBeenCalled();
+    await act(async () => { releaseSearch([ldapUser(1)]); await settle(); });
+    const row = within(screen.getByRole("table", { name: "Kataloq axtarışının nəticələri" }))
+      .getByRole("rowheader", { name: "hs.sintetik1" }).closest("tr");
+    expect(within(row).getByText("İdxal edilə bilər")).toBeInTheDocument();   // true: nothing was imported
+    expect(screen.queryByText("İdxal olunanlar")).toBeNull();
   });
 
   it("shows how many accounts it has sent while it is sending them, and holds the search meanwhile", async () => {
@@ -365,7 +534,7 @@ describe("the import", () => {
     // act on say what to do about them.
     const skipped = screen.getByText("Buraxılanlar").closest("div");
     expect(within(skipped).getByText("hs.sintetik2")).toBeInTheDocument();
-    expect(within(skipped).getByText(/AD-də adı dəyişin və ya buradaki hesabı passivləşdirin/)).toBeInTheDocument();
+    expect(within(skipped).getByText(/AD-də adı dəyişin və ya buradakı hesabı passivləşdirin/)).toBeInTheDocument();
     expect(within(skipped).getByText(/sAMAccountName-i Latın qarşılığı ilə yazın/)).toBeInTheDocument();
     // The imported account's row now says so and cannot be chosen again; the skipped ones can.
     const table = screen.getByRole("table", { name: "Kataloq axtarışının nəticələri" });
@@ -399,11 +568,55 @@ describe("the import", () => {
     expect(within(imported).getByText("hs.sintetik1")).toBeInTheDocument();
   });
 
-  it("a timeout says the operation may have happened", async () => {
+  it("a timeout says the operation may have happened — and the note agrees, never \"could not be sent\"", async () => {
     const { api } = await open();
     api.ldapImport.mockRejectedValue(Object.assign(new Error("…"), { code: "REQUEST_TIMEOUT" }));
     await chooseAndImport(api, 2);
-    expect(alerts()).toMatch(/Server cavab vermədi\. Əməliyyat yerinə yetirilmiş ola bilər/);
+    expect(alerts()).toMatch(/hs\.sintetik1, hs\.sintetik2: Server cavab vermədi\. Əməliyyat yerinə yetirilmiş ola bilər/);
+    // Review P5: the chunk may have landed, so the note may not claim it was not sent.
+    expect(notes()).toMatch(/hs\.sintetik1, hs\.sintetik2: server vaxtında cavab vermədi; bu hesablar idxal olunmuş da ola bilər/);
+    expect(notes()).not.toMatch(/göndərilə bilmədi/);
+  });
+
+  it("a run the administrator leaves mid-way still sends every chunk, and its outcome reaches the toast", async () => {
+    // Review P2, through the frame: moving to another tab unmounted the tab, the run stopped at its
+    // `mounted` check, and accounts 3 and 4 were silently never sent. She chose them.
+    let release;
+    const { api } = await openFrame({ setup: (a) => {
+      a.ldapSearch.mockResolvedValue([1, 2, 3, 4].map((n) => ldapUser(n)));
+      a.ldapImport.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }))
+        .mockResolvedValueOnce(answer([importedRow(3), importedRow(4)]));
+    } });
+    await searchFor();
+    for (const n of [1, 2, 3, 4]) fireEvent.click(screen.getByRole("checkbox", { name: `hs.sintetik${n}` }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Seçilənləri idxal et (4)" })); });
+    const usersRead = api.adminUsers.mock.calls.length;
+    await leaveTab();
+    expect(screen.getByText("users-tab")).toBeInTheDocument();
+    expect(screen.queryByText("Hesab axtar və idxal et")).toBeNull();       // the tab is gone
+    await act(async () => { release(answer([importedRow(1), importedRow(2)])); await settle(); await settle(); });
+    expect(api.ldapImport).toHaveBeenCalledTimes(2);
+    expect(api.ldapImport.mock.calls[1]).toEqual([[guid(3), guid(4)], []]);
+    expectConfirmed(new RegExp(`${HOST} · 4 hesab idxal olundu, 0 hesab buraxıldı\\.`));
+    expect(api.adminUsers.mock.calls.length).toBeGreaterThan(usersRead);   // the frame read them again
+  });
+
+  it("a chunk refused after the administrator left is still named on the toast — never swallowed", async () => {
+    let reject;
+    await openFrame({ setup: (a) => {
+      a.ldapSearch.mockResolvedValue([1, 2].map((n) => ldapUser(n)));
+      a.ldapImport.mockImplementationOnce(() => new Promise((_, no) => { reject = no; }));
+    } });
+    await searchFor();
+    for (const n of [1, 2]) fireEvent.click(screen.getByRole("checkbox", { name: `hs.sintetik${n}` }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Seçilənləri idxal et (2)" })); });
+    await leaveTab();
+    await act(async () => {
+      reject(refusal(403, "Kendi yetkilerinizi aşan bir işlem yapılamaz: alerts.ack"));
+      await settle();
+      await settle();
+    });
+    expect(alerts()).toMatch(/hs\.sintetik1, hs\.sintetik2: /);
   });
 
   it("a group list that could not be read leaves the tab standing, with no extra group offered", async () => {
@@ -433,14 +646,25 @@ describe("the group mapping", () => {
   });
 
   it("a table that could not be read says so, with the server's reason and a retry — never \"loading\" forever", async () => {
+    let release;
     const { api } = await open({ setup: (a) => a.ldapMappings.mockRejectedValueOnce(refusal(503, "Dizin sunucusuna ulaşılamıyor")) });
     expect(notes()).toMatch(/Uyğunlaşdırma cədvəli oxunmadı: .*kataloq serverinə/);
     expect(screen.queryByRole("table", { name: "AD qrupu və qarşılığı" })).toBeNull();
     expect(alerts().trim()).toBe("");                              // a read, not a refused write
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yenidən oxu" })); await settle(); });
-    expect(api.ldapMappings).toHaveBeenCalledTimes(2);
+    api.ldapMappings.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const retry = screen.getByRole("button", { name: "Yenidən oxu" });
+    retry.focus();
+    await act(async () => { fireEvent.click(retry); await settle(); });
+    // The failure stays while the re-read runs: the button (busy) keeps the keyboard user's focus,
+    // where the first version cleared the error and unmounted the button she had just pressed.
+    expect(document.body.contains(retry)).toBe(true);
+    expect(retry).toHaveAttribute("aria-busy", "true");
+    expect(document.activeElement).toBe(retry);
+    await act(async () => { release([mapping()]); await settle(); await settle(); });
     expect(screen.getByRole("table", { name: "AD qrupu və qarşılığı" })).toBeInTheDocument();
     expect(notes()).not.toMatch(/Uyğunlaşdırma cədvəli oxunmadı/);
+    // ...and once the failure has gone, the focus is on the section it was about, not on <body>.
+    expect(document.activeElement).toBe(screen.getByText("Bir AD qrupunun üzvləri, növbəti girişlərində burada seçilən qrupu alır."));
   });
 
   it("is read-only without every permission, with the server's own reason", async () => {
@@ -453,8 +677,8 @@ describe("the group mapping", () => {
   });
 
   it("a DN comes from the picker, the panel says why a typed one may not match, and the add reads as done", async () => {
-    const { api } = await open();
-    api.ldapCreateMapping.mockResolvedValue(mapping({ id: "m-2" }));
+    const { api } = await open({ setup: (a) => { mappingServer(a, []); } });
+    expect(screen.getByText("Hələ uyğunlaşdırma yoxdur.")).toBeInTheDocument();
     expect(screen.getByText(/əl ilə yazılan DN-in Türk\/Azərbaycan hərfləri/)).toBeInTheDocument();
     expect(screen.getByLabelText(/AD qrupunu axtar/)).toHaveAttribute("maxlength", String(FIELD_MAX.ldap_query));
     await addMapping();
@@ -463,7 +687,36 @@ describe("the group mapping", () => {
     expect(screen.getByLabelText("AD qrupu").tagName).toBe("SELECT");
     expect(api.ldapCreateMapping).toHaveBeenCalledWith(ldapGroup().dn, NURSE_GROUP.id);
     expectConfirmed(/YB-Hemsire · Uyğunlaşdırma əlavə edildi\./);
-    expect(api.ldapMappings).toHaveBeenCalledTimes(2);                 // read back, not assumed
+    // Read back, not assumed: the table shows the row the server now holds.
+    const table = screen.getByRole("table", { name: "AD qrupu və qarşılığı" });
+    const row = within(table).getByRole("rowheader", { name: /CN=YB-Hemsire/ }).closest("tr");
+    expect(within(row).getByText("Hemşire")).toBeInTheDocument();
+  });
+
+  it("maps only a DN the picker is SHOWING: a new group search forgets the previous choice", async () => {
+    // Review P1 (C1): the first answer's DN stayed chosen, invisible behind "—", after a second
+    // search — and Add mapped it.
+    const OTHER = ldapGroup({ dn: "CN=YB-Hekim,OU=Gruplar,DC=sentetik,DC=local", name: "YB-Hekim" });
+    const { api } = await open({ setup: (a) => {
+      a.ldapGroups.mockResolvedValueOnce([ldapGroup()]).mockResolvedValueOnce([OTHER]);
+      a.ldapCreateMapping.mockResolvedValue(mapping({ id: "m-2" }));
+    } });
+    fireEvent.change(screen.getByLabelText(/AD qrupunu axtar/), { target: { value: "Hemsire" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Qrupu axtar" })); await settle(); });
+    fireEvent.change(screen.getByLabelText("AD qrupu"), { target: { value: ldapGroup().dn } });
+    // She searches again, for another group.
+    fireEvent.change(screen.getByLabelText(/AD qrupunu axtar/), { target: { value: "Hekim" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Qrupu axtar" })); await settle(); });
+    const picker = screen.getByLabelText("AD qrupu");
+    expect([...picker.querySelectorAll("option")].map((o) => o.value)).toEqual(["", OTHER.dn]);
+    expect(picker.value).toBe("");
+    fireEvent.change(screen.getByLabelText(/Hansı qrup verilsin/), { target: { value: NURSE_GROUP.id } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Uyğunlaşdırmanı əlavə et" })); await settle(); });
+    expect(api.ldapCreateMapping).not.toHaveBeenCalled();
+    // The DN she can see is the one that is mapped.
+    fireEvent.change(picker, { target: { value: OTHER.dn } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Uyğunlaşdırmanı əlavə et" })); await settle(); });
+    expect(api.ldapCreateMapping).toHaveBeenCalledWith(OTHER.dn, NURSE_GROUP.id);
   });
 
   it("a mapping that LANDED is never reported refused: a failed re-read is the table's own failure, with a retry", async () => {
@@ -488,9 +741,29 @@ describe("the group mapping", () => {
     expect(alerts()).toMatch(/Bu AD qrupu bu qrupa artıq uyğunlaşdırılıb/);
   });
 
+  it("a refused mapping write is followed by a re-read: the table shows what the server holds", async () => {
+    // A 409 for a row another administrator added, or a 404 for one she deleted, is news about the
+    // table: the first version re-read only after a write that landed, and kept the old rows.
+    let server;
+    const { api } = await open({ setup: (a) => { server = mappingServer(a, []); } });
+    server.put(mapping());                                           // added elsewhere meanwhile
+    await addMapping();
+    expect(alerts()).toMatch(/YB-Hemsire: Bu AD qrupu bu qrupa artıq uyğunlaşdırılıb/);
+    expect(within(screen.getByRole("table", { name: "AD qrupu və qarşılığı" }))
+      .getByRole("rowheader", { name: /CN=YB-Hemsire/ })).toBeInTheDocument();
+    server.drop("m-1");                                              // and deleted elsewhere
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Uyğunlaşdırmanı sil: CN=YB-Hemsire/ }));
+      await settle();
+    });
+    expect(api.ldapDeleteMapping).toHaveBeenCalledWith("m-1");
+    expect(alerts()).toMatch(/CN=YB-Hemsire,OU=Gruplar,DC=sentetik,DC=local: Uyğunlaşdırma tapılmadı/);
+    expect(screen.queryByRole("table", { name: "AD qrupu və qarşılığı" })).toBeNull();
+    expect(screen.getByText("Hələ uyğunlaşdırma yoxdur.")).toBeInTheDocument();
+  });
+
   it("deleting a mapping says the memberships it gave are removed with it, reads as done, and re-reads the list", async () => {
-    const { api } = await open();
-    api.ldapDeleteMapping.mockResolvedValue(null);
+    const { api } = await open({ setup: (a) => { mappingServer(a, [mapping()]); } });
     expect(screen.getByText(/üzvlüklər də götürülür/)).toBeInTheDocument();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Uyğunlaşdırmanı sil: CN=YB-Hemsire/ }));
@@ -498,7 +771,49 @@ describe("the group mapping", () => {
     });
     expect(api.ldapDeleteMapping).toHaveBeenCalledWith("m-1");
     expectConfirmed(new RegExp(`${MAPPED_DN} · Uyğunlaşdırma silindi\\.`));
-    expect(api.ldapMappings).toHaveBeenCalledTimes(2);                 // read back, not assumed
+    // Read back, not assumed: the row is gone from the table because the server no longer has it.
+    expect(screen.queryByRole("table", { name: "AD qrupu və qarşılığı" })).toBeNull();
+    expect(screen.getByText("Hələ uyğunlaşdırma yoxdur.")).toBeInTheDocument();
+  });
+
+  it("a re-read that answers after a newer one is dropped — a deleted row does not come back", async () => {
+    // Review P6: the slow re-read after an add answered after the delete's re-read, and put the
+    // deleted row back on the table.
+    const m2 = mapping({ id: "m-2", ad_group_dn: "CN=YB-Hekim,OU=Gruplar,DC=sentetik,DC=local", group_name: "Hemşire" });
+    let releaseA;
+    await open({ setup: (a) => {
+      a.ldapMappings.mockResolvedValueOnce([mapping()])                                    // mount
+        .mockImplementationOnce(() => new Promise((resolve) => { releaseA = resolve; }))   // after the add (slow)
+        .mockResolvedValueOnce([m2]);                                                      // after the delete
+      a.ldapCreateMapping.mockResolvedValue(m2);
+      a.ldapDeleteMapping.mockResolvedValue(null);
+    } });
+    await addMapping();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Uyğunlaşdırmanı sil: CN=YB-Hemsire/ })); await settle(); });
+    // The delete's re-read has answered: m-1 is gone. Now the add's (issued BEFORE the delete) answers.
+    await act(async () => { releaseA([mapping(), m2]); await settle(); });
+    const table = screen.getByRole("table", { name: "AD qrupu və qarşılığı" });
+    expect(within(table).queryByRole("rowheader", { name: /CN=YB-Hemsire/ })).toBeNull();
+    expect(within(table).getByRole("rowheader", { name: /CN=YB-Hekim/ })).toBeInTheDocument();
+  });
+
+  it("while one row's delete is out, every delete says busy and a second press sends nothing", async () => {
+    // Review P7: the other rows' delete looked live and silently did nothing.
+    let release;
+    const m2 = mapping({ id: "m-2", ad_group_dn: "CN=YB-Hekim,OU=Gruplar,DC=sentetik,DC=local" });
+    const { api } = await open({ setup: (a) => {
+      a.ldapMappings.mockResolvedValue([mapping(), m2]);
+      a.ldapDeleteMapping.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Uyğunlaşdırmanı sil: CN=YB-Hemsire/ })); });
+    const second = screen.getByRole("button", { name: /Uyğunlaşdırmanı sil: CN=YB-Hekim/ });
+    expect(second).toHaveAttribute("aria-busy", "true");
+    expect(second).not.toBeDisabled();
+    await act(async () => { fireEvent.click(second); await settle(); });
+    expect(api.ldapDeleteMapping).toHaveBeenCalledTimes(1);
+    // The live region names the row actually in flight.
+    await waitFor(() => expect(statuses()).toContain(`${MAPPED_DN} · yadda saxlanılır…`), { timeout: 4000 });
+    await act(async () => { release(null); await settle(); });
   });
 });
 
@@ -516,6 +831,12 @@ describe("accessibility", () => {
 
   it("every control is busy rather than natively disabled, except a row that cannot be chosen", async () => {
     await open();
+    // After a search and a group search, so the sweep reaches the import and the picker's controls.
+    await searchFor();
+    fireEvent.change(screen.getByLabelText(/AD qrupunu axtar/), { target: { value: "YB" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Qrupu axtar" })); await settle(); });
+    expect(screen.getByRole("button", { name: /Seçilənləri idxal et/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Uyğunlaşdırmanı əlavə et" })).toBeInTheDocument();
     for (const control of screen.getAllByRole("button")) {
       expect(control.hasAttribute("disabled"), control.getAttribute("aria-label") || control.textContent).toBe(false);
     }
