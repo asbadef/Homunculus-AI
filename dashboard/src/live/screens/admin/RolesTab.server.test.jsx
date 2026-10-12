@@ -16,7 +16,7 @@ import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import perms from "../../i18n/strings/perms.js";
 import { PERMISSION_KEYS } from "./catalogue.js";
-import { ADMIN_READS, GROUPS, NURSE_GROUP, WARD_GROUP } from "./admin.testutil.js";
+import { ADMIN_READS, GROUPS, NURSE_GROUP, SYSTEM_GROUP, WARD_GROUP, group } from "./admin.testutil.js";
 import { AdminScreen, onlyTabs, resetTabs } from "./AdminScreen.jsx";
 import { RolesTab } from "./RolesTab.jsx";
 
@@ -45,7 +45,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** The screen, on a server with state. `hold` keeps every PATCH open until its gate is released. */
+/** The screen, on a server with state. `hold` keeps every PATCH open until its gate is released;
+ *  `ctl.holdReads = true` does the same to every groups read from then on (`readGates`). */
 async function openLive({ desk = [...PERMISSION_KEYS], groups = GROUPS, hold = false } = {}) {
   // The subject is the roles tab, so the build's tabs are pinned (Decision 21): with the users tab
   // built too, the frame would open on that one.
@@ -54,12 +55,17 @@ async function openLive({ desk = [...PERMISSION_KEYS], groups = GROUPS, hold = f
   const copy = (g) => ({ ...g, permissions: [...g.permissions] });
   const gates = [];
   const patches = [];
+  const readGates = [];
+  const ctl = { holdReads: false };
   const mounted = await mount(<AdminScreen />, {
     access: token({ sub: "u-admin", perms: desk }),
     me: profile({ id: "u-admin", perms: desk }),
     setup: (api) => {
       ADMIN_READS(api);
-      api.adminGroups.mockImplementation(async () => state.groups.map(copy));
+      api.adminGroups.mockImplementation(async () => {
+        if (ctl.holdReads) await new Promise((resolve) => { readGates.push(resolve); });
+        return state.groups.map(copy);
+      });
       api.adminUpdateGroup.mockImplementation(async (id, body) => {
         patches.push({ id, body });
         if (hold) await new Promise((resolve) => { gates.push(resolve); });
@@ -74,7 +80,9 @@ async function openLive({ desk = [...PERMISSION_KEYS], groups = GROUPS, hold = f
     },
   });
   await act(async () => { await settle(); await settle(); });
-  return { ...mounted, state, gates, patches, held: (id) => state.groups.find((g) => g.id === id).permissions };
+  return {
+    ...mounted, state, gates, patches, readGates, ctl, held: (id) => state.groups.find((g) => g.id === id).permissions,
+  };
 }
 
 describe("against a server with state", () => {
@@ -130,6 +138,49 @@ describe("against a server with state", () => {
     expect(patches[1].body.permissions).toContain("users.manage");
     expect(patches[1].body.expected_permissions).toEqual(["alerts.ack", "board.view", "users.manage"]);
     expect(held(NURSE_GROUP.id)).toEqual(["alerts.ack", "audit.view", "board.view", "users.manage"]);
+  });
+
+  it("after a 409 the column stays busy until its re-read answers — a second press sends nothing — and then saves on the re-read list", async () => {
+    // A Save pressed during that re-read could only carry the `expected_permissions` the server
+    // has just refused, and would earn a second 409 (once Task 14e compares them).
+    const { state, patches, ctl, readGates, held } = await openLive();
+    state.groups = state.groups.map((g) => (g.id === NURSE_GROUP.id ? { ...g, permissions: [...g.permissions, "audit.view"] } : g));
+    fireEvent.click(cell("Hemşire", AZ.users.manage));
+    ctl.holdReads = true;                                                 // the re-read will hang
+    await saveIn(/Hemşire/);
+    expect(patches).toHaveLength(1);
+    const button = within(column(/Hemşire/)).getByRole("button", { name: "Yadda saxla" });
+    expect(button).toHaveAttribute("aria-busy", "true");
+    await act(async () => { fireEvent.click(button); await settle(); await settle(); });
+    expect(patches).toHaveLength(1);                                      // nothing sent twice
+    const box = cell("Hemşire", AZ.alerts.ack);
+    expect(box).toHaveAttribute("aria-disabled", "true");
+    expect(document.getElementById(box.getAttribute("aria-describedby")))
+      .toHaveTextContent("Hemşire · sütun serverdən yenidən oxunur…");
+    ctl.holdReads = false;
+    await act(async () => { readGates.forEach((release) => release()); await settle(); await settle(); await settle(); });
+    expect(within(column(/Hemşire/)).getByRole("button", { name: "Yadda saxla" })).not.toHaveAttribute("aria-busy");
+    expect(cell("Hemşire", AZ.audit.view)).toBeChecked();
+    await saveIn(/Hemşire/);
+    expect(patches[1].body.expected_permissions).toEqual(["alerts.ack", "audit.view", "board.view"]);
+    expect(held(NURSE_GROUP.id)).toEqual(["alerts.ack", "audit.view", "board.view", "users.manage"]);
+  });
+
+  it("N7 a delete that lands hands the focus to the tab's heading: its column, and the button the dialog would return to, are gone", async () => {
+    const { api, state } = await openLive({ groups: [SYSTEM_GROUP, NURSE_GROUP, group("bos", { name: "Boş qrup", member_count: 0 })] });
+    api.adminDeleteGroup.mockImplementation(async (id) => { state.groups = state.groups.filter((g) => g.id !== id); return null; });
+    const trash = within(column(/Boş qrup/)).getByRole("button", { name: "Qrupu sil: Boş qrup" });
+    trash.focus();
+    await act(async () => { fireEvent.click(trash); await settle(); });
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Qrupu sil" }));
+      await settle(); await settle(); await settle();
+    });
+    expect(screen.queryByRole("columnheader", { name: /Boş qrup/ })).toBeNull();
+    expect(screen.getAllByText(/Boş qrup · silindi\./).length).toBeGreaterThan(0);
+    expect(alerts().trim()).toBe("");
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Rollar və səlahiyyətlər" }));
   });
 
   it("P8 after a 409 whose re-read FAILED, the Note does not claim the column was re-read — it says it could not be", async () => {

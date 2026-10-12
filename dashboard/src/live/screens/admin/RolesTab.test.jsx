@@ -479,6 +479,25 @@ describe("what cannot be edited", () => {
     await open({ reads: { groups: "stale" } });
     expect(within(column(/Hemşire/)).getByRole("button", { name: "Qrupu sil: Hemşire" })).not.toHaveAttribute("aria-disabled");
   });
+
+  it("why a group with members cannot be deleted is written beside the dimmed trash, for a sighted reader too, and is its tooltip", async () => {
+    await open();
+    const col = column(/Hemşire/);
+    const trash = within(col).getByRole("button", { name: "Qrupu sil: Hemşire" });
+    const reason = document.getElementById(trash.getAttribute("aria-describedby"));
+    // In the column's own header and not screen-reader-only. jsdom does not lay out, so the class is
+    // what can be checked here; the look is checked in a browser.
+    expect(col).toContainElement(reason);
+    expect(reason).toHaveTextContent("Üzvü olan qrup silinə bilməz.");
+    expect(reason.className).not.toMatch(/\bsr-only\b/);
+    expect(trash).toHaveAttribute("title", "Üzvü olan qrup silinə bilməz.");
+    cleanup();
+    // A group that may be deleted keeps its own tooltip, and no such sentence.
+    await open({ groups: EMPTY });
+    const free = within(column(/Hemşire/)).getByRole("button", { name: "Qrupu sil: Hemşire" });
+    expect(free).toHaveAttribute("title", "Qrupu sil: Hemşire");
+    expect(within(column(/Hemşire/)).queryByText("Üzvü olan qrup silinə bilməz.")).toBeNull();
+  });
 });
 
 describe("creating and deleting a group", () => {

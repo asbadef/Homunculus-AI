@@ -140,6 +140,8 @@ export function descriptionOf(t, row) {
 
 /** The id of the one sentence an unticked cell for a right the session does not hold points at. */
 const PERM_LOCK_ID = "roles-perm-lock";
+/** `refocus` for the tab's own heading rather than a column's. */
+const TAB = Symbol("the roles tab's heading");
 
 export function RolesTab({ admin }) {
   const { t } = useI18n();
@@ -159,7 +161,10 @@ export function RolesTab({ admin }) {
    *  Save, each PATCH is atomic for its group, and the server serialises them on the tenant lock
    *  — so a second column's Save during the first's flight is a real request, not a press that
    *  silently does nothing. */
-  const [inFlight, setInFlight] = useState(() => new Set());
+  //  Each id maps to what is in flight: "save" (a PATCH or a DELETE), or "reread" — the re-read after
+  //  a 409, through which the column stays busy: a Save pressed then would carry the same stale
+  //  `expected_permissions` and earn a second 409.
+  const [inFlight, setInFlight] = useState(() => new Map());
   /** The groups whose Save met a 409, each with the read that was on screen when it did: the
    *  column was re-read once `read` is a different answer, and the re-read failed while it is not. */
   const [reread, setReread] = useState(() => new Map());
@@ -170,9 +175,11 @@ export function RolesTab({ admin }) {
   const [newGroup, setNewGroup] = useState(false);
   const [removing, setRemoving] = useState(null);
   /** A column whose buttons a write or a discard just removed: its heading takes the focus, if the
-   *  focus fell to <body> with them (the house pattern, `AdminScreen`'s Retry). */
+   *  focus fell to <body> with them (the house pattern, `AdminScreen`'s Retry). `TAB` is the tab's
+   *  own heading, for a deleted group whose whole column went. */
   const [refocus, setRefocus] = useState(null);
   const heads = useRef({});
+  const heading = useRef(null);
 
   /** The read on screen, for a write that answers later. Kept from the last COMMITTED render. */
   const lastRead = useRef(read);
@@ -188,7 +195,7 @@ export function RolesTab({ admin }) {
     if (refocus === null) return;
     setRefocus(null);
     const active = document.activeElement;
-    if (!active || active === document.body) heads.current[refocus]?.focus();
+    if (!active || active === document.body) (refocus === TAB ? heading.current : heads.current[refocus])?.focus();
   }, [refocus]);
 
   /** The columns as this screen believes the server holds them. */
@@ -222,9 +229,10 @@ export function RolesTab({ admin }) {
     setRefocus(group.id);
   };
 
-  const flying = (group, on) => setInFlight((was) => {
-    const next = new Set(was);
-    if (on) next.add(group.id);
+  /** `kind` is "save", "reread", or null when nothing is in flight for the group any more. */
+  const flying = (group, kind) => setInFlight((was) => {
+    const next = new Map(was);
+    if (kind) next.set(group.id, kind);
     else next.delete(group.id);
     return next;
   });
@@ -236,7 +244,8 @@ export function RolesTab({ admin }) {
     const sent = Object.fromEntries(Object.entries(pending).filter(([key]) => key.split("|")[0] === group.id));
     const permissions = listToSend(group, catalogue, pending);
     let reload = false;
-    flying(group, true);
+    let conflict = false;
+    flying(group, "save");
     try {
       const answer = await store.track(() => api.adminUpdateGroup(group.id, {
         permissions,
@@ -271,30 +280,48 @@ export function RolesTab({ admin }) {
         // say so. The Note is not an Alert: the refusal was announced once already, on the toast.
         setReread((was) => new Map(was).set(group.id, lastRead.current));
         reload = true;
+        conflict = true;
       }
     } finally {
-      flying(group, false);
+      // After a 409 the column stays busy until its re-read answers: until then the only list it
+      // could send as `expected_permissions` is the one the server has just refused.
+      flying(group, conflict ? "reread" : null);
     }
     // A READ, after the write's own try: its failure is the frame's to show, never this write's.
     if (reload) await admin.reload();
+    if (conflict) flying(group, null);
   }
 
   async function remove(group) {
     if (inFlight.has(group.id)) return;
-    flying(group, true);
+    let landed = false;
+    flying(group, "save");
     try {
       await store.track(() => api.adminDeleteGroup(group.id));
       toast(doneFor(t, group.name, t("roles.removed")));
       setRemoving(null);
-      await admin.reload();
+      landed = true;
     } catch (err) {
       toast(refusedFor(t, group.name, err), "error");
     } finally {
-      flying(group, false);
+      flying(group, null);
     }
+    if (!landed) return;
+    // A READ, after the write's own try (as in `save`).
+    await admin.reload();
+    // The column went with the group — its trash button too, which is where the dialog handed the
+    // focus back. The tab's heading takes it rather than <body>.
+    setRefocus(TAB);
   }
 
-  const inFlightNames = groups.filter((g) => inFlight.has(g.id)).map((g) => g.name).join(", ");
+  // What the one live region says: whose column is being saved, and whose is being re-read.
+  const namesIn = (kind) => groups.filter((g) => inFlight.get(g.id) === kind).map((g) => g.name).join(", ");
+  const savingNames = namesIn("save");
+  const rereadingNames = namesIn("reread");
+  const inFlightSaid = [
+    savingNames ? t("admin.savingFor", { subject: savingNames }) : "",
+    rereadingNames ? t("roles.rereading", { group: rereadingNames }) : "",
+  ].filter(Boolean).join(" ");
 
   // Without the catalogue there is no table to draw: its rows ARE the catalogue. Which sentence
   // depends on WHY it is missing, and the read's own state says why: "unasked" — a desk without
@@ -314,7 +341,7 @@ export function RolesTab({ admin }) {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-0 flex-1">
-          <h2 className="m-0 font-display text-17 font-bold">{t("roles.title")}</h2>
+          <h2 ref={heading} tabIndex={-1} className="m-0 font-display text-17 font-bold outline-none">{t("roles.title")}</h2>
           <p className="m-0 text-13 text-mute">{t("roles.sub")}</p>
         </div>
         <Button icon="plus" variant="primary" onClick={() => setNewGroup(true)}>{t("roles.newGroup")}</Button>
@@ -382,10 +409,26 @@ export function RolesTab({ admin }) {
                             label={`${t("roles.remove")}: ${group.name}`}
                             aria-disabled={hasMembers ? "true" : undefined}
                             aria-describedby={hasMembers ? membersId(group) : undefined}
+                            // The reason as the tooltip too, in place of "Delete the group: …" — which
+                            // is what the dimmed button cannot do.
+                            {...(hasMembers ? { title: t("errors.groupHasMembers") } : {})}
                             onClick={hasMembers ? () => {} : () => setRemoving(group)} />
-                          {hasMembers ? <span id={membersId(group)} className="sr-only">{t("errors.groupHasMembers")}</span> : null}
-                          {/* What a cell of this column points at while its Save is in flight. */}
-                          {busy ? <span id={busyId(group)} className="sr-only">{t("admin.savingFor", { subject: group.name })}</span> : null}
+                          {/* What a cell of this column points at while its Save is in flight, or while
+                              the re-read after a 409 is. */}
+                          {busy ? (
+                            <span id={busyId(group)} className="sr-only">
+                              {inFlight.get(group.id) === "reread"
+                                ? t("roles.rereading", { group: group.name })
+                                : t("admin.savingFor", { subject: group.name })}
+                            </span>
+                          ) : null}
+                          {/* Why the trash is dimmed, where a sighted reader sees it — not only to a
+                              screen reader. */}
+                          {hasMembers ? (
+                            <p id={membersId(group)} className="m-0 basis-full max-w-[190px] whitespace-normal text-10.5 font-normal text-mute">
+                              {t("errors.groupHasMembers")}
+                            </p>
+                          ) : null}
                         </div>
                       )}
                     </div>
@@ -457,7 +500,7 @@ export function RolesTab({ admin }) {
 
       {/* A busy Button reads only "unavailable" to a screen reader; the words come from here, and
           they name the group(s) whose column is in flight. */}
-      <Announce text={inFlightNames ? t("admin.savingFor", { subject: inFlightNames }) : ""} />
+      <Announce text={inFlightSaid} />
 
       {newGroup ? (
         <GroupForm
