@@ -1,0 +1,537 @@
+// src/live/screens/admin/UsersTab.jsx — the staff of this hospital, their groups and their unit
+// scope (G1-12). The prototype's `admin.js` users tab, reduced to what the API can back.
+//
+// THE WHOLE LIST ARRIVES IN ONE ANSWER AND IS FILTERED HERE. `GET /admin/users` has no `limit`, no
+// `offset`, no cursor and no `q` (`admin/router.list_users`): the answer is every account in the
+// hospital. At a pilot's size that is the right trade — a dozen accounts, one request, a search
+// and a sort with no round trip — and the user decided it deliberately (Needs the user, 10:
+// option (a) for the pilot, `limit`/`offset` before a second hospital). What it must NOT become is
+// a tab that silently depends on having the whole list, because then its search and its sort
+// quietly start lying the day pagination arrives. So:
+//
+//   * the search and the role filter are applied to `admin.data.users` and the screen says HOW
+//     MANY of how many it is showing, every time it is showing fewer;
+//   * the list is capped for rendering at `PAGE` rows with a "show more", so an AD import of
+//     several hundred accounts does not put six hundred rows and three thousand cells into one
+//     commit — the slow screen is the first symptom, and it arrives long before the request does;
+//   * and when the answer is at or over `MANY` accounts the tab says so once, in the reader's own
+//     language, with the fact that it loaded them all. That line is the handover note to whoever
+//     adds pagination: it is visible to the person who will ask for it.
+//
+// A REFUSED ACTION IS NOT DRAWN. `rules.canManageUser` decides, and where it refuses, the reason
+// is in the row's own actions cell ONCE — the keys this desk lacks, or that the user's rights are
+// unknown, or that this is your own account. N disabled buttons answer the same question N times,
+// and a disabled button also drops a keyboard user's focus to <body> when it becomes disabled
+// mid-write, which is why `Button` has `busy` and never `disabled`.
+//
+// THE UNITS COLUMN CANNOT BE FILLED FROM THE LIST. There is no bulk scope read: `GET /scope/{id}`
+// is per user and `GET /scope/unassigned` answers a COUNT. So the cell does not claim anything it
+// has not read — `admin.unitsNotRead`, not a dash and not a zero — and reading one user's scope
+// (opening the editor) fills that row. Decision 6 in this wave's plan, with the fan-out of one
+// request per account as the rejected alternative. What the cell says once it HAS read is
+// `rules.scopeKind`'s, the rule the editor follows too: "scope unrestricted" only for a scope
+// unrestricted by ROLE, "no unit assigned" for an account nobody has assigned — which at the pilot
+// is `unrestricted: true` as well, and is a different statement about a different person.
+//
+// WHAT THE FRAME READ IS READ BY ITS STATE (`useAdminData`). Each read is its last answer or null,
+// and a failed read is never `[]`: a users read that failed is said as that — not as "no user
+// matches" — and the frame's Alert above names it; a list is drawn when it is known or stale; a
+// COUNT (the unassigned users) only when its read is known, because a stale number is a claim
+// about now that nobody has made.
+import React, { useCallback, useMemo, useState } from "react";
+import { useI18n } from "../../i18n/I18nProvider.jsx";
+import { useSession } from "../../session/SessionProvider.jsx";
+import { Announce, Box, Button, Empty, Field, Input, Modal, Note, Pill, Select, StatusPill, Table, Tag, useToast } from "../../ui/index.js";
+import { ddmmyyyy, hhmm } from "../../i18n/dates.js";
+import { apiErrorText, readErrorText } from "../../apiErrors.js";
+import { PASSWORD_MIN } from "../../auth/passwordRules.js";
+import { norm } from "../beds/order.js";
+import { FIELD_MAX, lengthOf } from "./limits.js";
+import { canAssignScope, canManageUser, scopeFromApi, scopeKind } from "./rules.js";
+import { doneFor, refusedFor } from "./refusal.js";
+import { UserForm } from "./UserForm.jsx";
+import { ScopeEditor } from "./ScopeEditor.jsx";
+
+/** How many rows are rendered before "show more". Not a page of data — the whole list is already
+ *  here — only a bound on one commit's DOM. */
+export const PAGE = 50;
+/** At or above this many accounts the tab says out loud that it loaded the whole hospital. */
+export const MANY = 200;
+
+/** The role this account's groups give it, and everything else it holds, split as the form does. */
+export function membershipOf(user) {
+  const role = user.groups.find((g) => g.kind === "role") ?? null;
+  return {
+    role,
+    extras: user.groups.filter((g) => g.kind === "extra"),
+    others: user.groups.filter((g) => g.kind === "other"),
+  };
+}
+
+/** Does any group this user holds require two-step verification? The groups' own `mfa_required` is
+ *  what the server reads when it decides `requires_mfa` for a token (spec §4), so a user in such a
+ *  group with no authenticator is "required · not set up" and never "off": the two are a different
+ *  statement about the same account, and only one of them is a thing to fix.
+ *
+ *  "unknown" when one of the user's groups is not in the list this screen was given: the rule
+ *  may hold there and the screen cannot see it, so "off" would be a claim. The same row's actions
+ *  already read "rights unknown" (`canManageUser`); the 2FA cell says the same thing for the
+ *  same reason, rather than a confident "off" beside an honest "unknown". */
+export function mfaState(user, groups) {
+  if (user.mfa) return "on";
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  if (user.groups.some((link) => !byId.has(link.id))) return "unknown";
+  const required = user.groups.some((link) => byId.get(link.id)?.mfaRequired === true);
+  return required ? "required" : "off";
+}
+
+/** One account's row against the search box: its name and its username, diacritics folded, so
+ *  "aygun" finds "Ayşe Aygün" and "ayse" finds her too. `norm` is the bed board's — one copy. */
+const matches = (user, query) => query === "" || norm(`${user.fullName} ${user.username}`).includes(query);
+
+/** The sentence a row puts where its actions would be, or null when it has actions. */
+function refusalKey(verdict, isSelf) {
+  if (verdict.beyond === null) return { key: "admin.beyondUnknown", vars: {} };
+  if (!verdict.within) return { key: "admin.beyond", vars: { keys: verdict.beyond.join(", ") } };
+  if (isSelf) return { key: "admin.selfNote", vars: {} };
+  return null;
+}
+
+export function UsersTab({ admin }) {
+  const { t } = useI18n();
+  const { user: me, store } = useSession();
+  const toast = useToast();
+  const api = store.api;
+  const users = admin.data.users ?? [];
+  const groups = admin.data.groups ?? [];
+  const catalogue = admin.data.catalogue ?? [];
+  const usersUnread = admin.data.users === null;
+  const unassigned = admin.reads.unassigned === "known" && Number.isFinite(admin.data.unassigned)
+    ? admin.data.unassigned
+    : null;
+
+  const [query, setQuery] = useState("");
+  const [role, setRole] = useState("");
+  const [shown, setShown] = useState(PAGE);
+  /** `{kind, user}` — which dialog is open and for whom. */
+  const [open, setOpen] = useState(null);
+  /** The scopes this session has actually read, by user id: nothing is claimed for a row that is
+   *  not in here. */
+  const [scopes, setScopes] = useState({});
+  const [myScope, setMyScope] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+
+  // `kind` is the ADAPTED group's: the API's own answer when it sends one (`GroupOut.kind`), the
+  // mirror's otherwise (`rules.groupFromApi`) — never the mirror directly, which would ignore
+  // what the server said about a group it defines.
+  const roleGroups = useMemo(() => groups.filter((g) => g.kind === "role"), [groups]);
+
+  const picked = useMemo(() => {
+    const q = norm(query);
+    return users.filter((u) => matches(u, q) && (role === "" || u.groups.some((g) => g.id === role)));
+  }, [users, query, role]);
+
+  /** Every write goes through this: the session's `track` (so a refused refresh ends the session
+   *  here too), the toast named after the account, and a reload — the screen then shows what the
+   *  server holds rather than what it hoped. */
+  const write = useCallback(async (user, run, doneText) => {
+    if (busyId) return false;
+    setBusyId(user.id);
+    try {
+      await store.track(run);
+      toast(doneFor(t, user.fullName || user.username, doneText));
+      await admin.reload();
+      return true;
+    } catch (err) {
+      toast(refusedFor(t, user.fullName || user.username, err), "error");
+      return false;
+    } finally {
+      setBusyId(null);
+    }
+  }, [admin, busyId, store, t, toast]);
+
+  /** One user's scope, read when it is needed and remembered for the row — and, the first time, the
+   *  desk's OWN scope, which is the only way to know whether it may assign one at all
+   *  (`canAssignScope`). Two READS, one after the other, each failing on its own terms and each
+   *  NAMED AFTER ITSELF: the desk's own scope failing is "your own scope could not be read" — the
+   *  first version named the user for it, which blamed the wrong record — and the editor still
+   *  opens, with no Save and the sentence that the right is unknown; the user's scope failing is a
+   *  read about THAT user, and there is then nothing to edit. Neither is a refused write, so neither
+   *  says a write's "it may have happened" (`readErrorText`). */
+  const openScope = useCallback(async (user) => {
+    if (busyId) return;
+    setBusyId(user.id);
+    try {
+      let mine = myScope;
+      if (!mine) {
+        try {
+          mine = scopeFromApi(await store.track(() => api.myScope()));
+          setMyScope(mine);
+        } catch (err) {
+          toast(t("admin.readFailed", { read: t("admin.readMyScope"), reason: readErrorText(t, err) }), "error");
+        }
+      }
+      let read;
+      try {
+        read = scopeFromApi(await store.track(() => api.userScope(user.id)));
+      } catch (err) {
+        toast(t("admin.readFailed", {
+          read: t("admin.readScopeOf", { name: user.fullName || user.username }), reason: readErrorText(t, err),
+        }), "error");
+        return;
+      }
+      setScopes((was) => ({ ...was, [user.id]: read }));
+      setOpen({ kind: "scope", user, scope: read });
+    } finally {
+      setBusyId(null);
+    }
+  }, [api, busyId, myScope, store, t, toast]);
+
+  /** The form's write. A NEW account is one call. An EDIT is two — `PATCH /admin/users/{id}` (name,
+   *  e-mail, active) and `PUT /admin/users/{id}/groups` — and no endpoint takes both, so they go IN
+   *  SEQUENCE, never at once: the groups are not sent when the details were refused, and when the
+   *  details LANDED and the groups were refused, the account on the server has changed — so the
+   *  list is reloaded, and the refusal says which half landed. Sending the two together had
+   *  neither property: a refused PATCH could land a PUT beside it, and a half-landed edit read as
+   *  wholly refused, with no reload, so the list went on showing the old name. */
+  const saveUser = async (body) => {
+    if (open.kind !== "edit") return store.track(() => api.adminCreateUser(body));
+    const id = open.user.id;
+    await store.track(() => api.adminUpdateUser(id, {
+      full_name: body.full_name, email: body.email, is_active: body.is_active,
+    }));
+    try {
+      return await store.track(() => api.adminSetUserGroups(id, body.group_ids));
+    } catch (err) {
+      await admin.reload();
+      throw new Error(t("admin.groupsNotSaved", { reason: apiErrorText(t, err) }));
+    }
+  };
+
+  /** After a save, read the scope back rather than keeping the list we sent: the server's answer is
+   *  the scope, and it normalises the keys it stores. A failed re-read leaves the row UNREAD
+   *  (`undefined`), never an empty scope — "we did not look" is not "nothing is assigned". */
+  const rereadScope = useCallback(async (user) => {
+    try {
+      const theirs = await store.track(() => api.userScope(user.id));
+      setScopes((was) => ({ ...was, [user.id]: scopeFromApi(theirs) }));
+    } catch {
+      setScopes((was) => {
+        const next = { ...was };
+        delete next[user.id];
+        return next;
+      });
+    }
+  }, [api, store]);
+
+  /** The units cell, by `rules.scopeKind` — the rule the editor follows too, so the two cannot
+   *  disagree. "Scope unrestricted" ONLY for a scope unrestricted by role: an account unrestricted
+   *  because nobody has assigned it anything — the pilot's normal state — has "no unit assigned",
+   *  which is the different and true statement Decision 6 keeps apart; and a scope the engine
+   *  could not place gets no invented summary. */
+  const unitsCell = (user) => {
+    const scope = scopes[user.id];
+    const kind = scopeKind(scope);
+    if (kind === "unread") return <span className="text-mute">{t("admin.unitsNotRead")}</span>;
+    if (kind === "role") return t("admin.allUnits");
+    if (kind === "unknown") return <span className="text-mute">{t("admin.unitsUnknown")}</span>;
+    if (kind === "unassigned") return t("admin.noUnits");
+    const units = scope.grants.filter((g) => g.unitId).length;
+    const beds = scope.grants.filter((g) => g.bedId).length;
+    if (units === 0 && beds === 0) return t("admin.noUnits");
+    return [units ? t("admin.unitCount", { count: units }) : null, beds ? t("admin.bedCount", { count: beds }) : null]
+      .filter(Boolean).join(" · ");
+  };
+
+  const rows = picked.slice(0, shown);
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* "Everyone sees everything because nobody has been assigned yet" and "…because that is the
+          policy" are the same screen without this number — and it is shown only when the read that
+          produced it answered: a count this tab cannot know is never a zero. */}
+      {unassigned === null
+        ? <p className="m-0 text-12.5 text-mute">{t("admin.scopeUnassignedUnknown")}</p>
+        : <p className="m-0 text-12.5 text-mute">{t("admin.scopeUnassigned", { count: unassigned })}</p>}
+
+      {users.length >= MANY ? <Note tone="info" icon="list">{t("admin.wholeList", { count: users.length })}</Note> : null}
+
+      <div className="flex flex-wrap items-end gap-2">
+        <Field layout="col" label={t("admin.search")} className="mb-0 min-w-[220px] flex-1">
+          {/* Never sent anywhere: it filters `"<name> <username>"` here (`matches`), so its limit is
+              the longest text a row can hold, from the server's own two limits. */}
+          <Input type="search" value={query} maxLength={FIELD_MAX.full_name + 1 + FIELD_MAX.username}
+            onChange={(e) => { setQuery(e.target.value); setShown(PAGE); }} />
+        </Field>
+        <Field layout="col" label={t("admin.filterRole")} className="mb-0">
+          <Select value={role} onChange={(e) => { setRole(e.target.value); setShown(PAGE); }}>
+            <option value="">{t("admin.filterAll")}</option>
+            {roleGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </Select>
+        </Field>
+        <Button icon="userPlus" variant="primary" onClick={() => setOpen({ kind: "new", user: null })}>
+          {t("admin.newUser")}
+        </Button>
+      </div>
+
+      {picked.length < users.length ? (
+        <p className="m-0 text-12.5 text-mute">{t("admin.filtered", { shown: picked.length, total: users.length })}</p>
+      ) : null}
+
+      {usersUnread ? <Empty icon="users">{t("admin.usersUnread")}</Empty> : picked.length === 0 ? <Empty icon="users">{t("admin.none")}</Empty> : (
+        <Table caption={t("admin.caption")}>
+          <thead>
+            <tr>
+              <th scope="col">{t("admin.colName")}</th>
+              <th scope="col">{t("admin.colUsername")}</th>
+              <th scope="col">{t("admin.colRole")}</th>
+              <th scope="col">{t("admin.colUnits")}</th>
+              <th scope="col">{t("admin.colState")}</th>
+              <th scope="col">{t("admin.colMfa")}</th>
+              <th scope="col">{t("admin.colLastLogin")}</th>
+              <th scope="col">{t("admin.colActions")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((user) => {
+              const verdict = canManageUser(me.perms, user, groups, me.id, catalogue);
+              const isSelf = user.id === me.id;
+              const refused = refusalKey(verdict, isSelf);
+              const { role: ownRole, extras, others } = membershipOf(user);
+              const mfa = mfaState(user, groups);
+              const busy = busyId === user.id;
+              return (
+                <tr key={user.id}>
+                  {/* The row's own header is the USERNAME, not the display name: it is the
+                      identifier the server knows, it is unique, and a screen reader repeats it
+                      with every cell of the row. */}
+                  <td>
+                    <b>{user.fullName}</b>
+                    <div className="font-data text-11.5 text-mute">{user.username}</div>
+                  </td>
+                  <th scope="row" className="font-data font-semibold">
+                    {user.username}
+                    <div className="text-11.5 font-normal text-mute">
+                      {t(user.authSource === "ldap" ? "admin.sourceLdap" : "admin.sourceLocal")}
+                    </div>
+                  </th>
+                  <td>
+                    {ownRole ? ownRole.name : <span className="text-mute">{t("admin.noRole")}</span>}
+                    {extras.length > 0 ? (
+                      <div className="text-11.5 text-mute">{t("admin.extras", { list: extras.map((g) => g.name).join(", ") })}</div>
+                    ) : null}
+                    {others.length > 0 ? (
+                      <div className="text-11.5 text-mute">{t("admin.otherGroups", { list: others.map((g) => g.name).join(", ") })}</div>
+                    ) : null}
+                  </td>
+                  <td>{unitsCell(user)}</td>
+                  <td>
+                    {user.active
+                      ? <StatusPill tone="ok">{t("admin.active")}</StatusPill>
+                      : <Tag>{t("admin.inactive")}</Tag>}
+                    {user.mustChangePassword ? <div className="mt-1"><Tag tone="warn">{t("admin.mustChange")}</Tag></div> : null}
+                  </td>
+                  <td>
+                    {mfa === "on" ? <Pill icon="ok">{t("admin.mfaOn")}</Pill> : null}
+                    {mfa === "required" ? <Tag tone="warn">{t("admin.mfaRequired")}</Tag> : null}
+                    {mfa === "unknown" ? <Tag>{t("admin.mfaUnknown")}</Tag> : null}
+                    {mfa === "off" ? <span className="text-mute">{t("admin.mfaOff")}</span> : null}
+                  </td>
+                  <td className="font-data text-mute">
+                    {user.lastLoginAt
+                      ? `${ddmmyyyy(Date.parse(user.lastLoginAt))} ${hhmm(Date.parse(user.lastLoginAt))}`
+                      : t("admin.never")}
+                  </td>
+                  <td>
+                    {refused ? <span className="text-12 text-mute">{t(refused.key, refused.vars)}</span> : null}
+                    <div className="flex flex-wrap gap-1">
+                      {verdict.edit ? (
+                        <Button size="sm" variant="ghost" icon="edit" busy={busy}
+                          label={`${t("admin.edit")}: ${user.username}`}
+                          onClick={() => setOpen({ kind: "edit", user })} />
+                      ) : null}
+                      {verdict.within ? (
+                        <Button size="sm" variant="ghost" icon="bed" busy={busy}
+                          label={`${t("admin.scope")}: ${user.username}`}
+                          onClick={() => openScope(user)} />
+                      ) : null}
+                      {verdict.resetPassword ? (
+                        <Button size="sm" variant="ghost" icon="key" busy={busy}
+                          label={`${t("admin.resetPassword")}: ${user.username}`}
+                          onClick={() => setOpen({ kind: "password", user })} />
+                      ) : null}
+                      {verdict.resetMfa ? (
+                        <Button size="sm" variant="ghost" icon="shield" busy={busy}
+                          label={`${t("admin.resetMfa")}: ${user.username}`}
+                          onClick={() => setOpen({ kind: "mfa", user })} />
+                      ) : null}
+                      {verdict.unlockSignIn ? (
+                        <Button size="sm" variant="ghost" icon="lock" busy={busy}
+                          label={`${t("admin.unlockSignIn")}: ${user.username}`}
+                          onClick={() => setOpen({ kind: "unlock", user })} />
+                      ) : null}
+                      {verdict.deactivate ? (
+                        <Button size="sm" variant="ghost" icon={user.active ? "x" : "ok"} busy={busy}
+                          label={`${t(user.active ? "admin.deactivate" : "admin.activate")}: ${user.username}`}
+                          onClick={() => setOpen({ kind: user.active ? "deactivate" : "activate", user })} />
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </Table>
+      )}
+
+      {picked.length > rows.length ? (
+        <Button icon="plus" onClick={() => setShown((n) => n + PAGE)}>
+          {t("admin.showMore", { count: picked.length - rows.length })}
+        </Button>
+      ) : null}
+
+      {/* A busy row's Button reads only "unavailable" to a screen reader: the words come from here,
+          and they name the account, so an administrator moving down a list of twelve knows which
+          row is in flight. */}
+      <Announce text={busyId ? t("admin.savingFor", { subject: users.find((u) => u.id === busyId)?.username ?? "" }) : ""} />
+
+      {open?.kind === "new" || open?.kind === "edit" ? (
+        <UserForm
+          user={open.kind === "edit" ? open.user : null}
+          groups={groups}
+          catalogue={catalogue}
+          perms={me.perms}
+          submit={saveUser}
+          onSaved={async () => {
+            toast(t(open.kind === "edit" ? "admin.saved" : "admin.created"));
+            setOpen(null);
+            await admin.reload();
+          }}
+          // `reason` is the failure, or a 422's `others` already in words; `subject` is the name typed
+          // into the form, which is the only name a NEW account has.
+          onRefused={(reason, subject) => toast(refusedFor(t,
+            open.user ? open.user.fullName || open.user.username : subject, reason), "error")}
+          onClose={() => setOpen(null)}
+        />
+      ) : null}
+
+      {open?.kind === "scope" ? (
+        <ScopeEditor
+          user={open.user}
+          scope={open.scope}
+          mayAssign={canAssignScope(myScope)}
+          save={(grants) => store.track(() => api.setScope(open.user.id, grants))}
+          onSaved={async () => {
+            toast(doneFor(t, open.user.fullName || open.user.username, t("admin.scopeSaved")));
+            setOpen(null);
+            await rereadScope(open.user);
+          }}
+          onRefused={(err) => toast(refusedFor(t, open.user.fullName || open.user.username, err), "error")}
+          onClose={() => setOpen(null)}
+        />
+      ) : null}
+
+      {CONFIRMATIONS[open?.kind] ? (
+        <Confirm
+          user={open.user}
+          kind={open.kind}
+          busy={busyId === open.user.id}
+          onConfirm={async (reason) => {
+            const done = await write(open.user, CONFIRMATIONS[open.kind].run(api, open.user, reason),
+              t(CONFIRMATIONS[open.kind].done));
+            if (done) setOpen(null);
+          }}
+          onClose={() => setOpen(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** The three destructive writes and the unlock: what each one asks, what it sends and what it says
+ *  afterwards. Each confirmation NAMES the account and the consequence — resetting a password or an
+ *  authenticator ENDS that user's open sessions, and so does deactivating. */
+const CONFIRMATIONS = {
+  password: {
+    title: "admin.resetPassword", body: "admin.confirmResetPassword", done: "admin.passwordReset",
+    password: true,
+    run: (api, user, password) => () => api.adminResetPassword(user.id, password),
+  },
+  mfa: {
+    title: "admin.resetMfa", body: "admin.confirmResetMfa", done: "admin.mfaReset",
+    run: (api, user) => () => api.adminResetMfa(user.id),
+  },
+  deactivate: {
+    title: "admin.deactivate", body: "admin.confirmDeactivate", done: "admin.deactivated",
+    run: (api, user) => () => api.adminUpdateUser(user.id, { is_active: false }),
+  },
+  activate: {
+    title: "admin.activate", body: "admin.confirmDeactivate", done: "admin.activated",
+    run: (api, user) => () => api.adminUpdateUser(user.id, { is_active: true }),
+  },
+  unlock: {
+    title: "admin.unlockSignIn", body: "admin.confirmUnlock", done: "admin.unlocked",
+    reason: true,
+    run: (api, user, reason) => () => api.adminUnlockSignIn(user.id, reason),
+  },
+};
+
+/** One confirmation. While the request is in flight the dialog CANNOT be dismissed (`Modal busy`):
+ *  a refusal must land in an open form, or an administrator is told nothing about a write that did
+ *  not happen. The unlock's reason is checked for the one thing the server will certainly refuse
+ *  (nothing readable in it) before a request is sent, and the sentence says it is audited. */
+function Confirm({ user, kind, busy, onConfirm, onClose }) {
+  const { t } = useI18n();
+  const spec = CONFIRMATIONS[kind];
+  const [reason, setReason] = useState("");
+  const [password, setPassword] = useState("");
+  const [problem, setProblem] = useState(null);
+  const name = user.fullName || user.username;
+
+  const confirm = () => {
+    if (spec.reason && !/[\p{L}\p{N}]/u.test(reason)) {
+      setProblem(t("errors.reasonNeedsText"));
+      return;
+    }
+    // In code points, as the server counts (`limits.lengthOf`): `.length` passed four emoji as eight
+    // characters, and the server then refused them as four.
+    if (spec.password && lengthOf(password) < PASSWORD_MIN) {
+      setProblem(t("errors.passwordTooShort"));
+      return;
+    }
+    setProblem(null);
+    onConfirm(spec.reason ? reason.trim() : password);
+  };
+
+  return (
+    <Modal
+      open
+      title={t(spec.title)}
+      busy={busy}
+      onClose={onClose}
+      actions={(
+        <>
+          <Button onClick={onClose} busy={busy}>{t("admin.cancel")}</Button>
+          <Button variant={kind === "activate" ? "primary" : "danger"} busy={busy} onClick={confirm}>
+            {t(spec.title)}
+          </Button>
+        </>
+      )}
+    >
+      <p className="m-0 mb-3 text-14">{t(spec.body, { name })}</p>
+      {spec.password ? (
+        <Field layout="col" required label={t("admin.fieldPassword")} hint={t("admin.fieldPasswordHint")} error={problem}>
+          <Input type="password" autoComplete="new-password" value={password} maxLength={FIELD_MAX.password}
+            disabled={busy} onChange={(e) => { setPassword(e.target.value); setProblem(null); }} />
+        </Field>
+      ) : null}
+      {spec.reason ? (
+        <Field layout="col" required label={t("admin.reasonLabel")} hint={t("admin.reasonHint")} error={problem}>
+          <Input value={reason} maxLength={FIELD_MAX.reason} disabled={busy}
+            onChange={(e) => { setReason(e.target.value); setProblem(null); }} />
+        </Field>
+      ) : null}
+      <Announce text={busy ? t("admin.saving") : ""} />
+    </Modal>
+  );
+}
