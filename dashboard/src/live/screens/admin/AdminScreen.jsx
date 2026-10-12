@@ -32,7 +32,7 @@ import { READS, useAdminData } from "./useAdminData.js";
 
 // G1-13: import { RolesTab } from "./RolesTab.jsx";
 
-// G1-14: import { SourceTab } from "./SourceTab.jsx";
+import { SourceTab } from "./SourceTab.jsx";
 
 const TAB_ID = "admin";
 
@@ -66,7 +66,7 @@ const TAB_SCREENS = Object.freeze({
 
   roles: null, //    G1-13
 
-  source: null, //   G1-14
+  source: SourceTab, //   G1-14
 });
 
 /** What `tabScreenOf` reads: this build's own tabs, until a test stands in for one. */
