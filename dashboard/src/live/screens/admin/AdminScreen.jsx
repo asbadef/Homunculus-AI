@@ -28,7 +28,7 @@ import { readErrorText } from "../../apiErrors.js";
 import { Alert, Announce, Box, Button, Empty, TabPanel, Tabs } from "../../ui/index.js";
 import { hasPerm } from "./catalogue.js";
 import { READS, useAdminData } from "./useAdminData.js";
-// G1-12: import { UsersTab } from "./UsersTab.jsx";
+import { UsersTab } from "./UsersTab.jsx";
 
 // G1-13: import { RolesTab } from "./RolesTab.jsx";
 
@@ -62,7 +62,7 @@ export const TABS = Object.freeze([
  *  three arms editing three ADJACENT lines of one object conflict on the second merge every time —
  *  which this block did until it was measured with `git merge` itself. Do not tidy them away. */
 const TAB_SCREENS = Object.freeze({
-  users: null, //    G1-12
+  users: UsersTab, //    G1-12
 
   roles: null, //    G1-13
 

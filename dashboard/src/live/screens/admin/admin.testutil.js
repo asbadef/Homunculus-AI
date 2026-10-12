@@ -48,7 +48,7 @@ export const SYSTEM_GROUP = group("hospital_admin", {
 });
 
 /** One account as `UserOut` carries it. `id` is positional. `groups` entries are `UserGroupOut`:
- *  `{id, slug, name, source}` where `source` is "manual" or "directory" — a directory-held
+ *  `{id, slug, name, source}` where `source` is "manual" or "ldap" — a directory-held
  *  membership is AD's and `PUT /users/{id}/groups` leaves it alone. */
 export function user(id = "u-1", over = {}) {
   if (typeof id !== "string") {
@@ -170,7 +170,7 @@ export const USERS = [
   user("u-nurse", { groups: [member(NURSE_GROUP)], must_change_password: true }),
   user("u-ad", {
     username: "dr.kamran", full_name: "Kamran Sintetik", email: null, auth_source: "ldap",
-    totp_enabled: true, last_login_at: null, groups: [member(NURSE_GROUP, "directory")],
+    totp_enabled: true, last_login_at: null, groups: [member(NURSE_GROUP, "ldap")],
   }),
   user("u-stranger", {
     username: "hs.gece", full_name: "Gecə Sintetik", groups: [{ id: "g-?", slug: "?", name: "?", source: "manual" }],

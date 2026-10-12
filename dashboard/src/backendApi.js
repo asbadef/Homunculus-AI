@@ -601,9 +601,15 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     adminUsers() { return authed("/admin/users"); },
     adminCreateUser(body) { return authed("/admin/users", { method: "POST", body }); },
     adminUpdateUser(id, body) { return authed(`/admin/users/${seg(id)}`, { method: "PATCH", body }); },
-    /** Replaces the user's MANUAL memberships; directory-held ones stay. */
-    adminSetUserGroups(id, groupIds) {
-      return authed(`/admin/users/${seg(id)}/groups`, { method: "PUT", body: { group_ids: groupIds } });
+    /** Replaces the user's MANUAL memberships; directory-held ones stay. `expectedGroupIds` is
+     *  the manual set the screen last READ: the replacement is a whole set built on that read, so
+     *  the server can refuse it (409 concurrentChange, Task 14e) when another desk has changed the
+     *  set since, instead of silently undoing that change. Omitted, the body is what it always
+     *  was; a server without the field ignores it. */
+    adminSetUserGroups(id, groupIds, expectedGroupIds) {
+      const body = { group_ids: groupIds };
+      if (Array.isArray(expectedGroupIds)) body.expected_group_ids = expectedGroupIds;
+      return authed(`/admin/users/${seg(id)}/groups`, { method: "PUT", body });
     },
     adminResetPassword(id, password) {
       return authed(`/admin/users/${seg(id)}/reset-password`, { method: "POST", body: { password } });
