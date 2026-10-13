@@ -49,9 +49,10 @@ Projenin bir anda bitmesi mümkün değil; **basamak basamak** ilerliyor. Şu an
 | **4. Gerçek cihaz + ML** | Gerçek hastane cihazlarına bağlanmak ve öğrenen bir ML modeli eklemek | ML ilk dilimi ✅; cihaz köprüsü (NCE dosya rotası) ✅ yazıldı ve test edildi — sahada devreye alma (paylaşım + alan tablosu) 🔜; ventilatör köprüsü (MEDIBUS, `medibus/`) ✅ yazıldı, USB'den tek cihazda denenecek |
 
 **Şu anki dürüst tablo:** Beyin (vault) ve kalp (motor) çalışıyor. Motor, uydurma bir
-hastayı saat saat kötüleştirip doğru uyarıyı doğru anda ürettiğini kanıtlıyor. Ama henüz
-**gözü yok** (ekran/panel) ve **gerçek cihaza bağlı değil**. "İstediğin aşama" — doktorun
-ekranda canlı görüp bildirim aldığı hâl — 3. basamak.
+hastayı saat saat kötüleştirip doğru uyarıyı doğru anda ürettiğini kanıtlıyor. Gözü de var:
+canlı panel (3. basamak) çalışıyor, ve yeni tasarımdaki arayüzü Grup 1'de yazılıyor — yataklar,
+alarmlar, hasta ekranı ve yönetim ekranı hazır (aşağıda 3.5 ve 3.6), hastanenin sunucusuna henüz
+çıkmadı. Gerçek cihaz bağlantısının durumu 4. basamakta.
 
 ### "Tam çalışır" için daha neler gerekli?
 
@@ -345,7 +346,8 @@ Bu bölüm, gerçek sistemde (`?live=1`) kimin neyi yapabildiğini anlatır. Kay
 (`docs/superpowers/specs/2026-09-23-ldap-rbac-design.md`) ve kod (`homunculus-engine/src/homunculus/auth/`,
 `admin/`). Active Directory (LDAP) ile giriş için aşağıdaki "Active Directory ile giriş"
 maddesine bakın. Yeni arayüzün yönetim ekranı — kullanıcılar, roller ve yetkiler, giriş kaynağı
-(AD) — Dalga 3B'de geldi: aşağıda "Yönetim ekranı".
+(AD) — Dalga 3B'de geldi: aşağıda "Yönetim ekranı". Klinik ekranlar (Yataklar, Alarmlar, Hasta)
+Dalga 3'te geldi: 3.6.
 
 **İzin (permission)**
 - *Basit:* "Panoyu görebilir", "alarm onaylayabilir", "kullanıcı yönetebilir" gibi tek tek haklar.
@@ -519,10 +521,21 @@ maddesine bakın. Yeni arayüzün yönetim ekranı — kullanıcılar, roller ve
   seçimi (kapsamı iki ya da daha çok birimle sınırlıysa; motor o an birim listesini göndermiyorsa
   çip kendini "güncel olmayabilir" diye işaretler, eski liste atılmaz), saat, dil, tema, tam
   ekran, kısayollar, yanıt bekleyen alarmların zili ve hesap menüsü (sürüm numarası dahil).
-  Ekranlar Grup 1'in sonraki dalgalarında gelir; o zamana kadar herkes Ayarlar'a düşer.
-  Yetkisi olmayan bir sayfa
-  "Bu səhifəyə icazəniz yoxdur", olmayan bir sayfa "Belə səhifə yoxdur" der. Önceki arayüz G1-16'ya
-  dek `?eski=1` ile açılır; o kilit ekranını bilmez.
+  Zilin her satırı o hastanın sayfasını açar; menüdeki Alarmlar maddesi yanıt bekleyen alarmları
+  zille aynı kuralla sayar (aşağıda 3.6). Yetkisi olmayan bir sayfa "Bu səhifəyə icazəniz
+  yoxdur", olmayan bir sayfa "Belə səhifə yoxdur" der. Önceki arayüz G1-16'ya dek `?eski=1` ile
+  açılır; o kilit ekranını bilmez.
+- *Girişten sonra nereye düşülür:* Herkes kendi ana ekranına — menüsünün açtığı ilk ekrana:
+  panoyu görme yetkisi (`board.view`) olan herkes **Yataklar**'a (Azerbaycanca arayüzde
+  "Çarpayılar"): hekim, hemşire, sorumlu hemşire, hızlı yanıt ekibi, denetçi, eczacı ve Sistem
+  Yöneticisi. Panoyu görmeyen ama kullanıcı ya da grup yöneten biri **Yönetim**'e. Yetkileri yeni
+  arayüzün hiçbir ekranını açmayan bir hesap — varsayılan gruplarda Biyomedikal Teknisyen ve
+  Üretici Destek: ikisinde de yalnız cihaz ve denetim yetkisi var — içeri alınmaz; giriş ekranı
+  bunu söyler ("Hesabınızın yetkileri bu arayüzdeki ekranlardan hiçbirini açmıyor (ör. yalnız
+  cihaz yönetimi). Sistem yöneticinizle görüşün."). Cihaz sayfası Grup 4'te gelecek. **Ayarlar**
+  herkese açık, menünün en altında. Bir yer imiyle ya da bağlantıyla açılan adres girişten sonra
+  bir kez kullanılır — kişi o ekranı açabiliyorsa; bir **hastanın** adresi ise girişten sonra
+  açılmaz, ana ekrana düşülür (kilit açılınca olduğu gibi: yukarıda "Kilit ekranı").
 - *Bağlantı canlı mı:* Sunucu, pano akışında hiçbir şey olmasa da 15 saniyede bir "yaşıyorum"
   işareti gönderir; 45 saniye hiç ses gelmezse tarayıcı bağlantıyı kopmuş sayar, yeniden bağlanır
   ve o sırada sayıları "güncel olmayabilir" diye işaretler. Böylece yarı kopmuş bir bağlantı
@@ -724,7 +737,10 @@ maddesine bakın. Yeni arayüzün yönetim ekranı — kullanıcılar, roller ve
 **Canlı mod: simüle edilen hiçbir şey gösterilmez**
 - *Basit:* Gerçek sistemde, arkasında gerçek bir kayıt olmayan hiçbir düğme "çalışıyormuş gibi"
   durmaz.
-- *Homunculus'ta:* `?live=1` iken panel şunları gizler:
+- *Homunculus'ta:* Yeni arayüzde (yalın adres ya da `?live=1`) simülasyon hiç yok: ekranlar
+  yalnız gerçek API'nin yaptıklarını çizer; arkasında bir uç olmayan ekran ya da düğme yoktur
+  (yukarıda "Yeni canlı arayüz", aşağıda 3.6). Önceki canlı arayüz (`?eski=1`, G1-16'da kalkacak)
+  ise simülasyonla aynı ekranları kullandığı için şunları gizleyerek çalışır:
   - simülasyona dayanan yönetim sekmeleri (raporlar, yapı, cihazlar, denetim, arşiv, oturumlar,
     güvenlik) ve simülasyona dayanan klinik sayfalar;
   - simülasyon kontrolleri (alarm tetikleme, zaman ölçeği, break-glass, çevrimdışı ve otomatik
@@ -732,9 +748,152 @@ maddesine bakın. Yeni arayüzün yönetim ekranı — kullanıcılar, roller ve
   - alarm kartındaki "RRT'ye Eskale Et", "Sessize Al" ve "Ertele" düğmeleri, onayın nedeni ve
     notu.
 
-  Simülasyon saati ve otomatik alarm motoru durur; gerçek bir alarmın yaşı duvar saatine göre
-  sayılır. Gizlenenler gerçek API'ye bağlandıkça geri gelecek. Demo modu (`?demo=1`) eskisi gibi
-  her şeyi gösterir.
+  Orada da simülasyon saati ve otomatik alarm motoru durur; gerçek bir alarmın yaşı duvar saatine
+  göre sayılır. Demo modu (`?demo=1`) eskisi gibi her şeyi gösterir; G1-16'da o da kalkar.
+
+---
+
+### 3.6 Yeni arayüzün klinik ekranları (Yataklar · Alarmlar · Hasta)
+
+Grup 1'in üç klinik ekranı Dalga 3'te geldi. Üçü de tek bir kuralla yazıldı: **ekran motorun ve
+hastanenin gönderdiğini gösterir, kendisi hiçbir klinik değer hesaplamaz** — skor, bant, normal
+aralık, değere göre renk ya da kendi riskini üretmez. Homunculus tanı koymaz; bu ekranlar da
+koymaz: gösterdikleri motorun bulguları ve gerekçeleridir, kararı klinisyen verir. Aşağısı
+ekranların *ne gösterdiğini ve neyi asla iddia etmediğini* anlatır, tıbbi bir yorum değildir;
+klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
+
+**Gösterim kuralları (üç ekranda da aynı)**
+- *Basit:* Ekran bilmediği bir şeyi "her şey yolunda" gibi göstermez.
+- *Homunculus'ta:*
+  - **Hiçbir şey yeşil değil.** Risk hapı motorun düzeyini sözcük, simge ve renkle birlikte söyler;
+    renk hiçbir zaman tek ipucu değildir (kartın sol şeridi hapın rengini tekrarlar, yanında hep
+    sözcük vardır). "Orta" amber; "Bulgu yok" ve "Bilgi" nötr gri; hiçbir düzey yeşil bir
+    "stabil"e dönmez.
+  - **"Ölçülmedi" ≠ "Bulgu yok".** "Bulgu yok", ölçümü olan bir hastada motorun alarm üretmediği
+    demektir — değerlerin normal olduğu iddiası değildir. Monitöründen hiç ölçüm gelmemiş bir
+    hastada aynı yanıt "Ölçülmedi" diye okunur.
+  - **Bilinmeyen dikkat ister.** Motor risk göndermediyse ("Risk bildirilmedi") ya da bu sürümün
+    tanımadığı bir düzey gönderdiyse ("Tanımsız risk: …"), hap dikkat görünümü alır — sakin gri
+    asla. Sıralamada da en üste çıkar: en kötüsü olabilir.
+  - **"Bekleyen yok"u yalnız canlı pano söyler.** Bağlantı bozulursa ekranın üstünde bir şerit
+    çıkar. Canlı akış koptuysa veriler gösterilir ama "güncel olmayabilir" diye işaretlenir.
+    Sunucuya hiç ulaşılamıyorsa: "Sunucuya bağlantı yok — hasta listesi gösterilmiyor. Bu ekran
+    hasta olmadığı anlamına GELMEZ." Boş bir pano sakin bir servis gibi görünmez; alarm sayıları
+    bilinemeyen bir panodan "0" diye basılmaz.
+  - **Yaş, sunucunun saatiyle.** Her değerin ve alarmın yaşı sunucunun zamanına göre sayılır;
+    servis bilgisayarının saati yanlışsa sunucunun yanıtlarındaki saatle düzeltilir — yanlış bir
+    saat eski bir ölçümü taze gösterebilirdi. Ekran yaşı söyler, "çok eski"ye karar vermez: o eşik
+    motorundur; motorun bayat saydığı girdiler bulgunun altında motorun sözleriyle yazılır.
+  - **NEWS2 motorun.** Tek NEWS2 vardır, motorunki. Motor göndermediyse "NEWS2: —"; eksik vitalle
+    hesaplanmışsa yanında "kısmi" hapı (ekran okuyucu ölçülmeyen parametreleri de okur). "Bir
+    parametre 3 puan aldı" hapı motorun bildirdiği bir olgudur ve düzeyi değiştirmez.
+  - **Motorun metinleri İngilizce.** Bulgu özetleri, gerekçe, öneriler ve kesinlik motorun yazdığı
+    gibi, İngilizce gösterilir ve ekran bunu okuyanın dilinde söyler ("Motorun metinleri
+    İngilizcedir; çevrilmemiştir."). Klinik bir cümleyi ekran kendisi çevirmez — çeviri de bir
+    iddiadır. Pilot öncesi Azerbaycanca konuşan bir klinisyen bu metinleri okuyup yazıldığı gibi
+    anlaşıldığını onaylayacak (G1-15 deploy kapısı). Motorun kapsam cümlesi ise Türkçe gelir;
+    altında okuyanın dilinde "Bu cümleyi sunucu yazdı" satırı vardır.
+  - **Bir ret, neyin reddedildiğini söyler.** "Gördüm" ya da şüpheli enfeksiyon işaretlemesi
+    reddedilirse ret bildirimde (toast) neyin reddedildiğiyle görünür ve ekrandan ayrılınca
+    kaybolmaz. Ret bildiriminde hastanın adı değil yatağı (yatağı yoksa kimliği) yazılır.
+
+**Yataklar** (Azerbaycanca arayüzde "Çarpayılar")
+- *Basit:* Servisin yatak yatak görünümü; panoyu gören herkesin girişten sonraki ilk ekranı.
+- *Homunculus'ta:* Yukarıdan aşağı: bağlantı şeridi; motorun kapsam cümlesi (pano neden bu kadar,
+  kaç kart kapsam dışında kaldı); yanıt bekleyen alarm sayısı ve en eskisinin ne zamandır açık
+  olduğu (Alarmlar ekranına götürür); besleme çipi — kaç yatak sustu, kaçından hiç ölçüm gelmedi,
+  en eski ölçümün saati (yalnız canlı panoda; bir bağlantı kopukluğunu servisin monitörlerine
+  yüklemesin diye); sonra yataklar. Her kartta: sunucunun eşlediği yatak; HBYS'nin verdiği ad ya
+  da "kimlik bekleniyor" (cihazın hasta numarası ad yerine yazılmaz); risk hapı; açık alarmlar
+  motorun özetiyle; yalnız değeri olan kanallar, birimleriyle (hiç ölçüm yoksa bir cümle: "Bu
+  yataktan hiç ölçüm gelmedi."); motorun NEWS2'si; son ölçüm saati ve gecikmiş kanal sayısı;
+  kimliğin nereden geldiği (HBYS, elle giriş ya da kimlik kaydı yok); yatak tablosunun
+  karşılamadığı bir HBYS konumu ("Yatak eşleşmedi · …" — tabloya eklenmesi gereken satır).
+- *Sıra ve süzgeç:* Kart ya da liste görünümü, yatak ya da risk sırası bu tarayıcıda hatırlanır.
+  **Yatak sırası** varsayılandır ve yerinden oynamaz: bir alarm yatağı öne çıkarır, listeyi yeniden
+  dizmez (yatağın ekrandaki yeri ezberlenir). **Risk sırası** istenirse motorun düzey sırasını
+  izler. Arama yatakta, kimlikte ve HBYS adında arar; büyük/küçük harf ve aksan fark etmez (ə/e,
+  ı/i dahil). **Birim süzgeci** — kapsamı iki ya da daha çok birim olan için — ekranın kendi
+  seçicisidir (telefonda üst çubuğun birim çipi gizli) ve çiple aynı seçimdir. **Hatırlanmaz:**
+  kilit ya da çıkışla gider, ortak bir istasyonda bir sonraki kişi başkasının daralttığı servise
+  açmasın diye. Süzgeç ya da arama kart gizliyorsa ekran kaç kart gizlediğini her zaman yazar.
+- *Göstermedikleri:* prototipteki uydurma dikkat kutuları ("3 sonuç görülmedi · laktat 4.1 dahil",
+  "1 cihaz sessiz · RE07"), ağrı, düşme ve bası yarası çipleri, rastgele çizilmiş küçük eğriler ve
+  tarayıcının kendi risk hesabı.
+
+**Alarmlar** (Azerbaycanca arayüzde "Siqnallar")
+- *Basit:* Açık alarmların listesi: hangisi yanıt bekliyor, hangisine biri bakıyor.
+- *Homunculus'ta:* İki bölüm. **Yanıt bekliyor** ("Cavab gözləyir"): en ağır ve en eski üstte, bu
+  sürümün tanımadığı bir şiddet hepsinin üstünde. **Değerlendiriliyor** ("Qiymətləndirilir"): biri
+  "Gördüm" demiş olanlar. Her satırda şiddet hapı, yatak (hastanın sayfasına götürür), motorun
+  özeti, açık kalma süresi (bir saatin altında `d:ss`, üstünde `s:dd:ss`; motor ilk görülme
+  zamanını göndermediyse süre yazılmaz, uydurulmaz), "Eskale edildi" (motorun bayrağı), "Gördü:
+  <kişi>" ve saati. "Yalnız kritik" süzgeci kaç alarmı gizlediğini yazar; başlıktaki "Açık" sayısı
+  süzgeçten bağımsız, servisin tamamını sayar ve yalnız canlı panoda görünür.
+- *"Gördüm":* Yalnız `alerts.ack` yetkisi olana çizilir — varsayılan gruplarda hemşire, hekim,
+  sorumlu hemşire, hızlı yanıt ekibi, sorumlu hekim, ünite hekimi ve Sistem Yöneticisi; denetçi ve
+  eczacıda yoktur, onlara ekran hangi yetkinin gerektiğini söyler. Sunucu kabul etmeden ekranda
+  hiçbir şey değişmez: "Gördü: …" bir kişi hakkında bir iddiadır, olmamış bir onay için yazılmaz.
+  Pano güncel değilken düğme kalır (onay sunucuya gider, liste eski olabilir — ekran bunu yazar).
+- *Eskalasyon:* Motorun işidir; ekran yalnız motorun bildirdiği "Eskale edildi" durumunu gösterir.
+  Prototipteki 3/5/10 dakikalık basamaklar canlı sistemde yoktur. Erteleme ve elle eskalasyon
+  Grup 2'de.
+- *Hastanın kendi normaline göre düşürülen bulgu:* Motor bir bulguyu hastanın kayıtlı kronik
+  normaline göre düşürdüyse yanında nötr bir "Hastanın kendi normaline göre beklenen" hapı durur;
+  motorun açıklaması hasta ekranındadır. Bulgu kartta ve listede kalır, ama "yanıt bekleyen"
+  sayısına, zile ve menü sayacına girmez — motor onu "görünür kalsın ama alarm vermesin" diye
+  işaretledi. Düşürülmüş bir kritik ya da yüksek yine sayılır.
+
+**Hasta ekranı**
+- *Basit:* Tek bir hastanın özeti: motor ne ölçtü, ne buldu, neye dayanarak.
+- *Homunculus'ta:* Karttan, listeden, alarm satırından ya da zilden açılır; ekranda "Yataklara
+  dön" bağlantısı vardır ve menüde Yataklar maddesi güncel görünür. Gösterdikleri:
+  - yatak ve HBYS adı (ya da "kimlik bekleniyor"), risk hapı, motorun NEWS2'si;
+  - **ölçülen her değer, saatiyle ve yaşıyla** ("3 dk önce") — yaşı yazılmayan bir sayı, bir saat
+    önce gelmeyi bırakmış bir sayıdan ayırt edilemez;
+  - motorun her bulgusu için bir kart: şiddet, özet, "Değerlendirme önerilir · karar hekimindir.",
+    motorun **gerekçesi**, **dayanağı** (kasadaki kaynakların adları), **düşünülebilecekler**,
+    **kesinlik**, motorun bayat saydığı girdiler ve — düşürüldüyse — hastanın kendi normaline göre
+    açıklaması. Hiçbiri ekran tarafından yeniden yazılmaz;
+  - **Sepsis-3 bağlamı:** SOFA, bazal SOFA ve yükselme, her biri kendi etiketinin altında ve motorun
+    gönderdiği gibi (ekran çıkarma yapmaz: motor yükselmeyi göndermediyse "—"); bazal SOFA
+    girilmemişse motorun 0 varsaydığını söyler;
+  - **ilaç ve antibiyotik:** motorun yayımladığı vazopressör/inotrop kayıtları, antibiyotiğin
+    verildiği saat ya da penceresinin dolduğu saat; antibiyotik kaydı yoksa "kimse kaydetmedi —
+    verilmediği anlamına gelmez".
+- *Şüpheli enfeksiyon — ekranın yazdığı tek şey:* Motorun sepsis kuralı yalnız şüpheli enfeksiyonu
+  "var" diye işaretlenmiş hastada çalışır; kimse işaretlemediyse ekran bunu açıkça söyler ("kimse
+  işaretlemedi — sepsis kuralı bu hastada hiç çalışmıyor"), yani sakin bir hasta güven verici
+  sayılmaz. `clinical.chart` yetkisi olan klinisyen "Var olarak işaretle" ya da "Yok olarak
+  işaretle"ye basar. Ekran hiçbir yanıtı önermez ya da önceden seçmez, ikisini de her zaman sunar
+  (yargı değişebilir; "var"dan sonra "yok" bir klinik olaydır, geri alma değil) ve basmadan önce
+  bunun klinisyenin adıyla ve saatiyle denetim kaydına yazıldığını, geri alınamadığını, yalnız yeni
+  bir işaretlemenin üstüne yazdığını söyler. Kayıttan sonra motor hastayı yeniden değerlendirir ve
+  ekran onun yeni hâlini gösterir. Yetkisi olmayana düğme çizilmez, nedeni yazılır. SOFA formunu
+  doldurup imzalamak ve hastanın kendi normalini girmek Grup 2'de.
+- *Göstermedikleri:* yaş, vücut yüzey alanı, hasta kimliğinden uydurulmuş hastane ya da protokol
+  numarası, simüle monitör dalgası, hemşirelik risk skorları ve **vital eğrileri**.
+- *Panoda olmayan bir hasta:* Adres panonuzda olmayan bir kimliği gösteriyorsa ekran tek bir şey
+  söyler: ya böyle bir kayıt yok ya da kapsamınız dışında — ikisi ayırt edilemez, sunucu ikisine
+  de bilerek aynı yanıtı veriyor (farklı bir yanıt hastanın orada yattığını ele verirdi). Pano
+  okunamadıysa bunu söyler. Açılan her hasta denetim kaydına bir "görüntüleme" satırı bırakır;
+  gösterilemeyen bir hasta için hiçbir şey yazılmaz.
+
+**Klinisyenin soracağı üç şey**
+1. **"Risk 'Düşük' yazıyor ama yanında 'Bir parametre 3 puan aldı' var — hangisi doğru?"** İkisi de
+   motorun. Motor, puan alan her parametreyi hastanın kayıtlı kronik normali ya da kayıtlı bir eşlik
+   eden hastalığı açıklıyorsa NEWS2 uyarısını düşürür (4. bölümdeki hastaya göreli katman). Ekran
+   düzeyi de olguyu da gösterir, birini ötekine tercih etmez; yanındaki "Hastanın kendi normaline
+   göre beklenen" hapı motorun açıklamasını taşır, hasta ekranında açıklamanın kendisi yazar.
+   Kırmızı parametrenin düşürmeyi engellemesi gerekip gerekmediği **açık bir klinik karardır**:
+   kasada bir kaynak ve bir klinisyenin onayını bekliyor (yol haritası, kullanıcı kararı 9). O
+   zamana dek ekran karar vermez, iki olguyu birlikte gösterir.
+2. **"Kapanan alarm nereye gitti?"** Panodan düştü. Motor yalnız açık alarmları gönderiyor ve
+   alarm geçmişi için henüz bir uç yok; kapanma kaydı denetim kaydında (`audit.view` ister).
+   Ekran boş bir "kapananlar" bölümü çizmez — boş bölüm "hiçbir şey kapanmadı" diye okunurdu —
+   bunu tek cümleyle söyler.
+3. **"Vital eğrileri nerede?"** Grup 2'de. Motorda bir vitalin geçmişini veren uç henüz yok, pano
+   yalnız son ölçümü gönderiyor; tarayıcı tek bir son değerden eğri uydurmaz.
 
 ---
 

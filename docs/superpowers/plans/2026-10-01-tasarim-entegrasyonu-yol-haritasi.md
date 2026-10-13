@@ -108,14 +108,14 @@ dokunulmaz.
 | G1-06 | Dört dil çatısı (anahtarlı sözlük, D2 varsayılanı) · plan: [dalga 1B](2026-10-03-g1-dalga1b-tasarim-temeli.md) | 3 | Düşük | G1-05 | ✅ 03.10 · 9d130be…bec4d7d (`dashboard/src/live`; cila dahil, Dalga 1A commit'leri arada) |
 | G1-07 | Kabuk: sol menü (izinle), üst çubuk (birim çipi, saat, nöbet bitimine, dil, tema, zil, kişi menüsü); canlı mod yeni kabuğa · plan: [dalga 2](2026-10-04-g1-dalga2-kabuk-giris.md) (nöbet bitimine gösterilmiyor: karar 12) | 5 | Orta | G1-05, G1-06 | ✅ 07.10 · a60de51…7cdee86 |
 | G1-08 | Giriş + 2FA + (D4'e göre) ilk girişte şifre, kilit ekranı · plan: [dalga 2](2026-10-04-g1-dalga2-kabuk-giris.md) (göç `0011` bütün yerel hesapları işaretler, `POST /auth/reauth`) | 5 | Orta | G1-07 | ✅ 07.10 · a60de51…7cdee86 |
-| G1-09 | Yataklar: kart/liste, risk sırası, dikkat kartları, birim filtresi, kapsam açıklaması | 5 | Orta | G1-07 | Bekliyor |
-| G1-10 | Alarmlar: yanıt bekliyor / değerlendiriliyor / kapanan, Gördüm, eskalasyon hapları, sunucu saatiyle süre | 3 | Düşük | G1-07 | Bekliyor |
-| G1-11 | Hasta ekranı · Özet: başlık, vital çubuğu, öneri kartı (gerekçe + kaynak), salt okunur | 5 | Orta | G1-09 | Bekliyor |
+| G1-09 | Yataklar: kart/liste, risk sırası, dikkat kartları, birim filtresi, kapsam açıklaması · plan: [dalga 3](2026-10-08-g1-dalga3-is-ekranlari.md) | 5 | Orta | G1-07 | ✅ 11.10 · ortak temel (Görev 0–8) 5a76853…266f52f, inceleme düzeltmeleri 39d4337; kart bdd5e0e, sıra ve süzgeçler 32d0ce9, ekran c23d002; üç ekranın ortak sembolleri 7acd78b; inceleme a326421, 28e6722. "`red_param` kartı en az amber yapar" ölçütü bilerek karşılanmadı (aşağıda kabul ölçütleri). Tarayıcıda bakış kayıtlı değil → G1-15 |
+| G1-10 | Alarmlar: yanıt bekliyor / değerlendiriliyor / kapanan, Gördüm, eskalasyon hapları, sunucu saatiyle süre · plan: [dalga 3](2026-10-08-g1-dalga3-is-ekranlari.md) | 3 | Düşük | G1-07 | ✅ 11.10 · ekran 29b158c, menüdeki sayaç ve zilin satır bağlantıları 0a698a3 (birleşme 3a8d589); inceleme 450507d, a0d9402, 4791442, f4d6449. "Kapanan" bölümü yok: geçmiş için uç yok, ekran bunu söylüyor. Tarayıcıda bakış kayıtlı değil → G1-15 |
+| G1-11 | Hasta ekranı · Özet: başlık, vital çubuğu, öneri kartı (gerekçe + kaynak), salt okunur · plan: [dalga 3](2026-10-08-g1-dalga3-is-ekranlari.md) | 5 | Orta | G1-09 | ✅ 11.10 · menüde `under` 41a2b83, dört dil c42ad07, ekran c5f6cb6, şüpheli enfeksiyon işaretleme 420bbbe; inceleme 40fd08a, 0a4f754, 36f7860, 4791442, f4d6449. Salt okunur değil: tek yazdığı şüpheli enfeksiyon işareti (kullanıcı kararı); SOFA formu ve hastanın kendi normali → Grup 2. Tarayıcıda bakış kayıtlı değil → G1-15 |
 | G1-12 | Yönetim · Kullanıcılar (D3) + birimler (kapsam matrisi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 5 | Orta | G1-07 | ✅ 13.10 · temel (Görev 0–4) 5fdc5cd…34494a8; Görev 5–7 b10179d, 6bc6740, 95adfa6, inceleme turları 9f49cb3 + baa1780; Görev 14 fa8c522 (`/scope/me` panoyla aynı karar) + 65d6a36 (14e). Kapsam "matrisi" liste olarak (Karar 7, aşağıda kabul ölçütleri). Tarayıcıda 390/1440 px bakışı kullanıcıda |
 | G1-13 | Yönetim · Roller ve yetkiler (grup × izin matrisi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 3 | Düşük | G1-12 | ✅ 13.10 · Görev 8–9 05c7e7a, 1eb7356, inceleme turları fedde5b + 2ab1f10; 409 yolunu canlı yapan sunucu karşılaştırması Görev 14e 65d6a36. Tarayıcıda bakış kullanıcıda |
 | G1-14 | Yönetim · Sistem ayarları › Giriş kaynağı (AD durumu, bağlantı testi, ara + içe aktar, grup eşlemesi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 5 | Orta | G1-04, G1-12 | ✅ 13.10 (kod ve testler) · Görev 10–11 a6de6b2, 96c37ee, inceleme turları 6e8f6c9, 5fd309d, a06fc3c. Bağlantı testinin beş gerçek nedeni hastanenin etki alanı denetleyicisi olmadan denenemez (yalnız taklitle test edildi) → G1-15 kapısı |
 | G1-16 | Demo ve eski modları kaldır (`ClinicalDemo.jsx`, `clinicalDemo.js`, `liveStore.js`, `clinicalI18n.js`, `legacyRoots.jsx`, replay, legacy board, `?eski=1` önceki canlı arayüz — kilidi bilmez, G1-15'ten önce gitmeli); PWA `?demo` başlangıcı Dalga 2'de düzeltildi | 3 | Orta | G1-09…G1-14 | Bekliyor |
-| G1-15 | Uçtan uca doğrulama (yerel yığın, 4 dil, 390 px/1440 px) + VM deploy notları · temel: [RBAC planı](2026-09-23-rbac-groups-permissions.md), "Deploy notes for the VM" (zorunlu MFA kaydı: Sistem Yöneticisi, Sorumlu Hekim, Ünite Hekimi, Üretici Destek ilk girişte TOTP kurar; `0010` ön kontrolü) | 3 | Orta | hepsi | Bekliyor |
+| G1-15 | Uçtan uca doğrulama (yerel yığın, 4 dil, 390 px/1440 px; Dalga 3'ün koşulmamış Görev 24'ü buraya katlandı, aşağıda) + VM deploy notları · temel: [RBAC planı](2026-09-23-rbac-groups-permissions.md), "Deploy notes for the VM" (zorunlu MFA kaydı: Sistem Yöneticisi, Sorumlu Hekim, Ünite Hekimi, Üretici Destek ilk girişte TOTP kurar; `0010` ön kontrolü) | 3 | Orta | hepsi | Bekliyor |
 
 Dalga 0 sonu: backend 1665 geçti / 1 atlandı / 0 hata; dashboard 810 geçti (43 dosya); vite build tamam.
 Kapanış düzeltmeleriyle (`f5abde8` test hesabı tohumu, `1e7b11b` iki metin): backend 1670 geçti /
@@ -131,6 +131,17 @@ Dalga 2 sonu (G1-07/G1-08, son kod commit'i `7cdee86`; sonrası yalnız belge): 
 6 atlandı / 0 hata (Python 3.14, test veritabanıyla) ve üretim imajının Python 3.12'siyle 2285
 geçti / 8 atlandı / 0 hata; dashboard 1741 geçti (86 dosya) — bunun 851'i yeni arayüzün
 (`src/live/`, 41 dosya); vite build tamam.
+
+Dalga 3 sonu (G1-09/G1-10/G1-11; `5a76853…91dbd05`, son kod commit'i `f4d6449`, `91dbd05` yalnız
+tasarımcı notu): dashboard 2089 geçti (98 dosya); vite build tamam — Dalga 3B planının `91dbd05`'te
+ölçtüğü taban ([dalga 3B planı](2026-10-12-g1-dalga3b-yonetim-ekranlari.md), "Counts"). Dalga 3
+planının beklediği 99 dosya / 2097 test, yönetim temelinin (Görev 16–19) 3 dosya / 58 testini de
+sayıyordu; o temel Dalga 3'te birleşmedi, Dalga 3B Görev 1'de `5fdc5cd` ile geldi. Dalga 3 arka uca
+dokunmadı (`git diff 5a76853^ 91dbd05 -- homunculus-engine` boş). Ortak temel (Görev 0–8) ve üç
+klinik ekran ayrı ayrı incelendi; bulguları yukarıdaki inceleme commit'lerinde. Ama
+dalganın uçtan uca doğrulaması (Görev 24: tarayıcı, dört dil ekranda, 390/1440 px, yalnız klavye,
+dört kasıtlı ret, motorun gerekçe metinlerinin okunması) **koşulmadı** — G1-15 kapısına katlandı
+(aşağıda "(Dalga 3) Uçtan uca yürüyüş").
 
 Dalga 3B sonu (G1-12/G1-13/G1-14, son kod commit'i `65d6a36`): dashboard 2413 geçti (108 dosya);
 vite build tamam; backend Python 3.12'de 2294 geçti / 8 atlandı, 3.14'te 2298 geçti / 6 atlandı —
@@ -189,6 +200,24 @@ bakış (390/1440 px, iki tema) **yapılmadı**: kullanıcının işi, aşağıd
   girip yenisini belirler; AD hesapları etkilenmez. İlk vardiya, aynı adresin arkasındaki bir
   serviste nginx'in `homunculus_reauth` bölgesini (dakikada 30, burst 30) şifre değişiklikleri ve
   kilit açmalarla paylaşır: bir dakika bekleyip yeniden denemek gerekebilir (runbook, "Updating").
+- **(Dalga 3)** Azerbaycanca konuşan bir **klinisyen**, motorun kullanımdaki gerekçe metinlerini
+  okur ve her birinin yazıldığı gibi anlaşıldığını onaylar. Motorun klinik metinleri
+  (`clinical_reasoning`, `recommended_actions`, `confidence`, `chronic_context`, her `summary`)
+  pilot için İngilizce kalıyor; kullanıcının bu karara bağladığı koşul budur, not değil kapı
+  maddesidir. Metinleri dört kural ailesi üretir (`news2`, `septic_shock`, `acute_change`,
+  `patient_relative`): kısa bir okuma, çeviri işi değil. Hangi metinlerin ekranda olduğu aşağıdaki
+  yürüyüşün 3. adımında kaydedilir; okuma o listeye karşı yapılır.
+- **(Dalga 3)** Servis deploy'dan **önce** bilgilendirilir: klinisyenler yeni bir yatak ekranı,
+  yeni bir alarm ekranı ve bir hasta ekranı görecek; şüpheli enfeksiyon artık hasta ekranından
+  işaretleniyor ve klinisyenin adıyla denetim kaydına yazılıyor.
+- **(Dalga 3)** İlk kapsam atamasından önce `bed-mapping.json` keşif raporuyla karşılaştırılır:
+  kapsamı sınırlı bir hemşirenin bir şey görüp görmeyeceğine yatak eşleme tablosu karar verir
+  (eşleşmeyen bir kart hiçbir birime düşmez ve hiçbir atama ona ulaşmaz).
+- **(Dalga 3)** Denetim kaydı, bir klinisyenin açtığı her hasta için bir `view` satırı taşımaya
+  başlıyor (hasta ekranı açılınca `POST /view`; panoda olmayan bir hasta için gönderilmez):
+  yalnız eklenen bir kayıtta yeni hacim, disk ve denetim ekranı için hesaba katılır.
+- **(Dalga 3)** Aşağıdaki **uçtan uca yürüyüş** (Dalga 3'ün Görev 24'ü; koşulmadı, buraya katlandı)
+  yerel yığında yapılır ve gözlemleri yazılır.
 - **(Dalga 3B)** Azerbaycanca konuşan bir yönetici aşağıdaki beş metni okur ve her birinin yazıldığı
   gibi anlaşıldığını onaylar. Planın seçtiği beş metin (`admin.sub` dışındakiler dalganın en uzun
   cümleleri); dört dil makineyle yazıldı. Klinik metin
@@ -233,6 +262,51 @@ ekranda hastanenin adıyla doldurulur.
   - ru: Не менее 2 знаков. Отличительное имя (DN) выбирается из списка, а не вводится: у введённого вручную DN турецкие и азербайджанские буквы могут отличаться от написания в AD, и сопоставление молча не сработает.
   - en: At least 2 characters. The distinguished name (DN) is chosen from the list, never typed: a typed DN whose Turkish or Azerbaijani letters differ from AD's spelling will silently fail to match.
 
+**G1-15 · (Dalga 3) Uçtan uca yürüyüş** — Dalga 3 planının Görev 24'ü. Koşulmadı; hiçbir gözlemi
+yok, o yüzden burada gözlem değil yapılacak iş olarak duruyor. Birleşmiş ağaçta, yerel yığında
+(`deploy/local`), sırayla; her adımın gözlemi yazılır — gözlemi yazılmamış bir adım yapılmamış
+sayılır:
+
+1. **Bütün dashboard takımı iki kez:** bir kez olduğu gibi, bir kez de ekran kaydı boşa sabitlenmiş
+   olarak — hiçbir test hangi ekranların kurulu olduğuna sessizce bağlanmamış olmalı.
+2. **Üretim derlemesi ve bedeli:** temiz derleme; ilk parçanın boyutu ve servis çalışanının önbellek
+   sayısı kaydedilir (Dalga 2 sonu: 145 kB / 47 kB gzip, 22 kayıt / 556 KiB). İlk parça yaklaşık
+   250 kB gzip'i geçtiyse söylenir, burada düzeltilmez: bölme G1-16'nın işi.
+3. **Dört dil, ekranda:** Yataklar → bir hasta → Alarmlar → Yönetim, az / tr / ru / en. Aranacaklar:
+   çevirisi olmayan bir anahtarın görünmesi (`beds.something`), çekimli bir sözcüğün içine düşmüş
+   sayı, Latin harfle yazılmış Rusça, Rusçada (dördünün en uzunu) kutusundan taşan satır. Bilerek
+   okuyanın dilinde olmayan iki yere ayrıca bakılır: hasta ekranında motorun İngilizce gerekçe
+   blokları — Azerbaycanca konuşan bir klinisyenin okuyacağı gibi okunur ve dört kural ailesinden
+   hangilerinin metni ekranda olduğu yazılır (yukarıdaki klinisyen okumasının listesi budur);
+   kapsamı sınırlı bir panoda Türkçe gelen `scope_note` — altındaki "bu cümleyi sunucu yazdı"
+   satırının okuyanın dilinde olduğu (Türkçe değil) doğrulanır.
+4. **390 px ve 1440 px, iki temada:** 390 px'te dört ekranın hiçbirinde yatay sayfa kaydırması yok;
+   yatak kartları tek sütunda; yataklar ekranının kendi birim seçicisi ve araması erişilebilir (üst
+   çubuğun birim çipi orada gizli); alarm satırları düğmeleriyle okunur; hasta ekranında vital
+   ızgarası bir ya da iki sütun ve üç Sepsis-3 sayısı (SOFA, bazal, yükselme) her biri kendi
+   etiketinin altında; Yönetim çerçevesi — başlığı, üç sekme düğmesi, yükleniyor satırı — sekme
+   listesi iki ayrı liste gibi iki satıra kırılmadan sığar. 1440 px'te Gün temasında kart şeritleri
+   ve durum hapları `card` üzerinde 3:1'i geçer (`tokens.test.js` yalnız değişkenleri tutar,
+   bileşimi değil).
+5. **Yalnız klavye:** atlama bağlantısından `<main>`'e, menüden, üst çubuktan, panonun denetimlerinden
+   bir karta; Enter'la bir hasta açılır; Enter'la bir alarm "Gördüm" diye işaretlenir ve
+   "kaydediliyor" satırı duyulur; Enter'la şüpheli enfeksiyon işaretlenir ve "işaretleniyor" satırı
+   duyulur; yönetim sekmeleri arasında ok tuşlarıyla geçilir. Yalnız fareyle ulaşılan bir şey
+   olmamalı; odak hiçbir zaman `<body>`'ye düşmemeli.
+6. **Dört ret, bilerek:**
+   1. API durdurulur → pano şeridi "Sunucuya bağlantı yok — … hasta olmadığı anlamına GELMEZ" der;
+      hiçbir ekran "bekleyen yok" demez.
+   2. Yalnız akış kesilir (nginx yeniden başlatılır ya da `/stream` engellenir) → güncel olmayabilir:
+      veriler gösterilir ve işaretlenir, zilde amber nokta, menüde nokta, hiçbir yerde "yok".
+   3. Hemşire olarak girilip panosunda olmayan bir kimlikle `#/patients/<id>` açılır → tek ve dürüst
+      bir ileti (böyle bir kayıt yok ya da kapsamı dışında; ikisi ayırt edilmez) ve denetim kaydında
+      bunun için **`scope_denied` satırı yok**.
+   4. Denetçi olarak girilir (`board.view`, `audit.view`) → alarm ekranında onay düğmesi yok,
+      `alerts.ack` yetkisini adlandıran satır var.
+7. **Rapor:** sayılar, derleme boyutları, dört retin ekrandaki hâli, ekranda görülen motor gerekçe
+   metinleri (klinisyen okumasının listesi) ve şimdi düzeltmeye değmeyen bulgular — "Dalga 3'ten
+   açık kalanlar"a yazılır.
+
 ### Dalgalar
 
 | Dalga | İşler | Paralel mi |
@@ -240,8 +314,9 @@ ekranda hastanenin adıyla doldurulur.
 | 0 | G1-01 → G1-02 | Sıralı (her şey buna dayanır) |
 | 1 | G1-03 → G1-04 ‖ G1-05 → G1-06 | İki kol paralel (arka uç / ön yüz) |
 | 2 | G1-07 → G1-08 | Sıralı |
-| 3 | G1-09 → G1-11 ‖ G1-10 ‖ G1-12 → G1-13 | Üç kol paralel |
-| 4 | G1-14 → G1-16 → G1-15 | Sıralı |
+| 3 | G1-09 ‖ G1-10 ‖ G1-11 (+ yönetim temeli, birleşmedi) | Ortak temel sıralı, sonra üç kol paralel (yataklar, alarmlar, hasta) ✅ |
+| 3B | G1-12 ‖ G1-13 ‖ G1-14 | Temel sıralı, sonra üç kol paralel; arka uç yarısı (Görev 14) ✅ |
+| 4 | G1-16 → G1-15 | Sıralı |
 
 ### Hastaneden gerekenler (G1-03'ü bekletmez, G1-15'i bekletir)
 
@@ -275,31 +350,66 @@ ekranda hastanenin adıyla doldurulur.
 
 **G1-09 Yataklar**
 
+Dalga 3'ün karşıladıkları (`5a76853…91dbd05`) her maddenin altında; testler `dashboard/src/live/screens/`
+altında, adlarıyla.
+
 - Motorun `risk` değerleri açıkça eşlenir: `moderate` amber; `none`/`info` nötr
   ("bulgu yok / ölçülmedi"; `info` bir alarmdır, hep "Bilgi"). Hiçbiri yeşil "stabil"e düşmez.
+  ✅ `ui/riskStyle.js`; `BedCard.test.jsx` `moderate is amber, never a green "stable"`. Motorun
+  göndermediği ya da bu derlemenin tanımadığı bir risk dikkat görünümü alır, hiçbir zaman sakin gri.
 - Kart `RiskPill`'e `measured`'ı açıkça geçirir (kartın zaman damgalarından).
   Geçirmezse `none` "ölçülmedi" okunur, "bulgu yok" değil.
+  ✅ `BedCard.jsx` (`hasMeasurement(patient.measuredAt)`); hasta ekranı da aynı.
 - Renk şeridi/noktası hiçbir zaman tek ipucu değildir: yanında ikon ya da metin olur.
   Gün'de `--mid`, `--high`, `--ok` dolgularının parlaklığı neredeyse aynı (1,01–1,04:1).
+  ✅ Şerit hapın tonunu tekrarlar; hap ikon ve sözcük taşır. Şerit renkleri tek tablodan
+  (`screens/common/BoardState.jsx` `RAIL`/`RAIL_LEFT`); tablonun tanımadığı bir ton dikkat rengine
+  düşer. Gün temasında 1440 px'te 3:1 bakışı yapılmadı → G1-15 yürüyüşü.
 - NEWS2 `red_param` kartı en az amber yapar. Motorla çatışıyor → aşağıda
   "Kullanıcı kararları", 9.
-- Açık alarm kartın üstünde görünür.
+  **Bilerek karşılanmadı.** Kullanıcının seçimi (Dalga 3, Karar 5, seçenek d): `red_param` motorun
+  düzeyinin yanında bir olgu olarak gösterilir ("Bir parametre 3 puan aldı") ve düzeyi
+  değiştirmez; motorun hastanın kendi normaline göre düşürdüğü bulgunun yanında nötr bir hap
+  ("Hastanın kendi normaline göre beklenen") motorun `chronic_context` açıklamasını erişilebilir
+  adında taşır. Ölçütü doğru yapacak olan motor tarafı (seçenek b) açık klinik karar — "Dalga 3'ten
+  açık kalanlar".
+- Açık alarm kartın üstünde görünür. ✅ motorun kendi özetiyle (`BedCard.test.jsx` "puts the open
+  alarms on the card, with the engine's own summary").
 - Bağlantı durumu (DEGRADED/UNAVAILABLE) ekranda bir şeritle görünür;
   boş pano "sakin servis" gibi görünmez.
-- Besleme sağlığı çipi ("N yatak sessiz").
-- Motorun kapsam notu görünür.
+  ✅ `BoardStrip`; "boş ve canlı" cümlesini yalnız canlı pano söyler (`BedsScreen.test.jsx`).
+- Besleme sağlığı çipi ("N yatak sessiz"). ✅ `FeedHealth`: yalnız canlı panoda konuşur; "hiç
+  ölçülmemiş" ile "susmuş" iki ayrı sayı. Pencereleri tarayıcıda sabit → "Dalga 3'ten açık kalanlar".
+- Motorun kapsam notu görünür. ✅ `ScopeNote`: motorun cümlesi olduğu gibi (Türkçe, `lang="tr"`) ve
+  altında okuyanın dilinde "bu cümleyi sunucu yazdı" satırı; gizlenen kart sayısı.
 
 **G1-10 Alarmlar**
 
 - Alarm bandı `<body>`'nin doğrudan çocuğudur ve `MODAL_EXEMPT` taşır: açık bir pencere
   `#root`'u `inert` yapar ve `inert` içindeki canlı bölge (live region) susar.
+  **Dalga 3'te bir alarm bandı yapılmadı** (zil, menüdeki sayaç ve Alarmlar ekranı var); ölçüt bir
+  bant çizildiğinde geçerli. `MODAL_EXEMPT`'i bugün yalnız bildirimler (toast) taşıyor.
+- (Dalga 3) İki bölüm: "Yanıt bekliyor" ve "Değerlendiriliyor". "Kapanan" bölümü yok: `/patients`
+  yalnız açık alarmları taşır, geçmiş için uç yok; ekran kapanan bir alarmın nereye gittiğini tek
+  cümleyle söyler. Eskalasyon motorun tek bayrağı (`escalated`), prototipin 3/5/10 dakikalık
+  basamakları değil. Süre sunucunun anına göre `d:ss`, bir saatin üstünde `s:dd:ss`; motor ilk
+  görülme zamanını göndermediyse süre gösterilmez. "Gördüm" sunucu kabul etmeden hiçbir şey yazmaz.
 
 **G1-11 Hasta özeti**
 
-- Her vitalin yaşı/bayatlığı görünür.
+- Her vitalin yaşı/bayatlığı görünür. ✅ `PatientScreen.jsx`: her değerin saati ve yaşı, sunucunun
+  saatine göre (`useBoardNow`; `PatientScreen.test.jsx` "ages a reading against the SERVER's clock,
+  not this browser's"). Ekran yaşı söyler, "çok eski"ye karar vermez: o eşik motorun; motorun bayat
+  saydığı girdiler bulgunun altında motorun sözleriyle.
 - NEWS2 eski vitallerle "tam" görünmez. Motor tarafı da var: `api/board.py`
   `news2.score()`'u tazelik uygulamadan çağırıyor → Grup 2 motor işi
   (aşağıda "Dalga 0'dan açık kalanlar").
+  Ekran tarafı ✅: kısmi skor "kısmi" diye işaretlenir ve ölçülmeyen parametreler ekran okuyucuya
+  okunur; motor skor göndermediyse "NEWS2: —" ve nedeni. Motor tarafı hâlâ Grup 2.
+- (Dalga 3) Salt okunur değil: ekran tek bir şey yazar — şüpheli enfeksiyon var/yok
+  (`POST /clinical/{id}`, `clinical.chart`; kullanıcı kararı, Dalga 3 Karar 27). Gerekçe: o
+  işaretlenene kadar motorun sepsis kuralı hiç çalışmıyor (`septic_shock.evaluate` ilk satırında
+  döner). SOFA formu ve hastanın kendi normali Grup 2'de.
 
 **G1-12 Kullanıcılar + birimler**
 
@@ -336,7 +446,8 @@ VM'den kaldırır:
 - elle vazopressör/sıvı girişi (septik şok kuralı ve SOFA kardiyovasküler bileşeni bunları kullanır)
 - hasta normali (bazal değerler)
 - kabulde kilo/komorbidite profili
-- besleme sağlığı
+- besleme sağlığı (Dalga 3: yataklar ekranına özet çip olarak döndü — kaç yatak sustu, kaçından
+  hiç ölçüm gelmedi; cihaz sayfası Grup 4)
 - duvar monitörü, RRT, ısı haritası
 - alarm kalitesi, denetim bütünlüğü
 - biyomedikal araştırma penceresi
@@ -345,17 +456,24 @@ Bu yüzden G1-15 öncesi kullanıcı kararı gerekir (aşağıda "Kullanıcı ka
 
 Tutulup bağlanmamış modüller → hedef:
 
-- SOFA şiddet formu doldur/imzala (`severityScore.jsx`; `scores.sign` yoksa "İmzala" gizli) → G1-11
-- Şüpheli enfeksiyon ve bazal SOFA girişi (`setSuspectedInfection`/`setProfile`; bunlar olmadan sepsis kuralı hiç çalışmaz) → G1-11
+- SOFA şiddet formu doldur/imzala (`severityScore.jsx`; `scores.sign` yoksa "İmzala" gizli) → G1-11.
+  **Kullanıcı kararıyla → Grup 2** (Dalga 3: form, doğrulama ve imza ister; hiçbir kuralın çalışmasını
+  engellemiyor). Hasta ekranı bunu ve vital eğrilerini tek kutuda "sonraki grupta" diye söylüyor.
+- Şüpheli enfeksiyon ve bazal SOFA girişi (`setSuspectedInfection`/`setProfile`; bunlar olmadan sepsis kuralı hiç çalışmaz) → G1-11.
+  ✅ **Şüpheli enfeksiyon G1-11'de** (`420bbbe`, kullanıcı kararı): hasta ekranı var/yok işaretler,
+  hiçbirini önermez, ikisini de her zaman sunar ve işaretlemenin denetim kaydına adla yazıldığını
+  önceden söyler. **Bazal SOFA ve hastanın kendi normali → Grup 2.**
 - Alarm kalitesi paneli (`AlarmQualityPanel`, `clinicalAdmin.jsx`) → Grup 4
 - Denetim bütünlüğü + motor denetim sayfası (`refreshAudit`/`verifyAudit`) → Grup 2
 - InfinityBeds + cihaz sağlığı (`feedHealth`) → Grup 4
 - Duvar monitörü + ad maskeleme politikası (`wallBoard.jsx`, `policySettings`) → Grup 2
 - Arayüzde build SHA (`__BUILD_SHA__`) → G1-07 ✅ hesap menüsü ve Ayarlar › Profil.
-- Motorun kapsam notu (`engineScope`/`scopeNote`) → G1-09
+- Motorun kapsam notu (`engineScope`/`scopeNote`) → G1-09 ✅ `ScopeNote` (`screens/common/BoardState.jsx`):
+  yataklar, alarmlar ve hasta ekranında.
 - RRT kuyruğu (`rrtQueue`) → Grup 2
 - Isı haritası (`alarmDensity`) → Grup 2
-- Hasta etiketi (`patientLabel`) → G1-09
+- Hasta etiketi (`patientLabel`) → G1-09 ✅ `nameOf`: HBYS'nin adı ya da "kimlik bekleniyor"; cihazın
+  hasta numarası ad yerine yazılmaz (yatak etiketi o kimliği zaten taşıyor).
 - `patientScope.js` ekran kapsamı (rol yerine izin modeline uyarlanmalı) → G1-12
 
 ## Main'den gelen ve yeni kabukta karşılanacak davranışlar
@@ -377,17 +495,17 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - admissionScreen · Kabul onaylanınca doğum tarihi kayda düşer, protokol numarası ve yazdırılabilir barkodlu etiket çıkar; onaydan önce barkod uydurulmaz. → Grup 2
 - biomedicalAccess · "Cihaz & Veri Akışı" sayfasına biyomedikal ve hastane yöneticisi ulaşır, hekim ve hemşire ulaşmaz; yalnız `devices.manage` taşıyan kullanıcı bugün canlı arayüze hiç giremiyor (`NO_BOARD_ACCESS`), sayfa gelince giriş kuralı da değişmeli. → Grup 4
 - biomedicalAccess · Cihaz sayfası önce "veri geliyor mu" sorusunu yanıtlar (sessiz yatak, bayat kanal, veri akışı), sonra cihaz envanterini gösterir. → Grup 4
-- escalationClock · Canlıda alarm ve eskalasyon süresi gerçek zamanla ilerler; simülasyonun 60× hızı uygulanmaz. → G1-10
-- escalationClock · Süre biçimi: bir saatin altında `d:ss`, üstünde `s:dd:ss` (318:30 yazılmaz), negatif süre `0:00`. → G1-10
+- escalationClock · Canlıda alarm ve eskalasyon süresi gerçek zamanla ilerler; simülasyonun 60× hızı uygulanmaz. → G1-10 ✅ `screens/common/elapsed.js`: sunucunun ilk görme anından, tarayıcının saatine sunucunun `Date` başlığından ölçülen fark eklenerek (`useBoardNow`).
+- escalationClock · Süre biçimi: bir saatin altında `d:ss`, üstünde `s:dd:ss` (318:30 yazılmaz), negatif süre `0:00`. → G1-10 ✅ `elapsed.js`; motor ilk görülme zamanını göndermediyse süre hiç gösterilmez.
 - loginRemember · "Beni hatırla" yalnız kullanıcı adını/e-postayı saklar, şifre ya da PIN'i asla; işaret kaldırılınca silinir; hatırlanan ad oturum açmaz, giriş ekranı yine gelir. → G1-08 ✅ `session/browserState.js`, `sessionStore.test.js`, `SignIn.test.jsx`.
-- news2Honesty, news2Source · Kartta tek NEWS2 vardır, motorunki: motor göndermezse sayı yerine "—" ve nedeni (motor göndermedi) görünür; tarayıcı kendi NEWS2'sini (OAB'li yerel hesap) canlıda hiç göstermez. → G1-09
-- news2Honesty · Eksik vitalle hesaplanmış kısmi NEWS2 kartta işaretlenir (kısmi skor yalnız düşük gösterebilir). → G1-09
+- news2Honesty, news2Source · Kartta tek NEWS2 vardır, motorunki: motor göndermezse sayı yerine "—" ve nedeni (motor göndermedi) görünür; tarayıcı kendi NEWS2'sini (OAB'li yerel hesap) canlıda hiç göstermez. → G1-09 ✅ `News2` (`screens/common/BoardState.jsx`): kart, liste ve hasta ekranı aynı bileşeni kullanır.
+- news2Honesty · Eksik vitalle hesaplanmış kısmi NEWS2 kartta işaretlenir (kısmi skor yalnız düşük gösterebilir). → G1-09 ✅ "kısmi" hapı; ölçülmeyen parametreler ekran okuyucuya okunur.
 - patientBaseline · Hastaya özel alarm aralığı motora gider (`PUT /clinical/{id}/profile` · `baselines`); girilmeyen parametre gönderilmez (boş ≠ sıfır), ters aralık gönderilmeden reddedilir, kutu bunun cihaz alarmı olmadığını söyler. → Grup 2
 - pharmacyView · Eczacının kendi sayfası vardır (antibiyotik saati, doz önermez, "kayıt yok"u "verilmedi" diye göstermez); eczacı ve sorumlu hekim görür, hemşire görmez. → Grup 3
 - rrtPage · RRT ekranı menüdedir: hızlı yanıt ekibi ve yönetici görür, hemşire görmez. → Grup 2
 - rrtPage · RRT ekranı kendisine eskale edilen alarmları (elle çağrıldıysa yazılı) ve yoldaki cevapsız alarmları ayrı gösterir; liste boşsa boş durumu, 3. kademe kapalıysa bunu açıkça yazar. → Grup 2
 - rrtPage · Menü rozeti cevapsız eskalasyon sayısını gösterir; cevaplanan alarm rozetten düşer. → Grup 2
-- setupWizardScope · Canlı kurulumda yönetici kurulum sihirbazına düşmez (kiracı deploy'da kurulur), doğrudan ürüne, Sistem Ayarları'na ve cihaz sayfasına ulaşır; diğer roller de doğrudan girer. → G1-07 ✅ sihirbaz yok; herkes kendi ana ekranına düşer (`shell/routes.js` `homePath`; Dalga 2'de Ayarlar), `LiveApp.test.jsx`. Sistem Ayarları ve cihaz sayfası G1-14 / Grup 4.
+- setupWizardScope · Canlı kurulumda yönetici kurulum sihirbazına düşmez (kiracı deploy'da kurulur), doğrudan ürüne, Sistem Ayarları'na ve cihaz sayfasına ulaşır; diğer roller de doğrudan girer. → G1-07 ✅ sihirbaz yok; herkes kendi ana ekranına düşer (`shell/routes.js` `homePath`; Dalga 2'de Ayarlar; artık menünün açabildiği ilk kurulu ekran: panoyu gören herkes Yataklar'a, panoyu görmeyen ama kullanıcı ya da grup yöneten biri Yönetim'e), `LiveApp.test.jsx`. Sistem Ayarları ve cihaz sayfası G1-14 / Grup 4.
 - simulationGating · Canlıda simülasyon denetimleri (alarm üret, saat hızı 30×/60×/120×, duraklat, "sonuç simüle et", DEMO etiketi) hiç çizilmez; mod belirtilmezse varsayılan canlıdır. → G1-16
 - simulationGating · Break-glass canlıda kalır: araç değil, gerçek klinik denetim. → Grup 2
 - simulationGating · Canlı Sonuçlar sayfası gerçek bekleyen sayısını ve elle yüklemeyi korur. → Grup 3
@@ -412,9 +530,9 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - `api/board.py` NEWS2'yi tazelik uygulamadan hesaplıyor (`news2.score()`; tazelik yalnız kuralın `evaluate()`'inde): eski vitallerle kart "tam" görünebilir. → Grup 2 motor işi (G1-11 kabul ölçütü)
 - Motor oda havası ve "Alert"i varsayıyor ama kısmi saymıyor (`rules/news2.py:140-143`). → klinik karar, kasaya dayanmalı (Grup 2; karar 7)
 - Tüm uygulamanın rotalarını sınıflandıran tek bir test yok (scope/infinity/auth router'ları tabloda değil). → G1-03 öncesi küçük iş
-- İzin açıklamaları güncel değil: `users.manage` kapsam atamayı, `devices.manage` canlı değerleri ve satıcı grubunu söylemiyor. → G1-13 — **kısmen**: roller tablosu açıklamaları artık sunucunun İngilizcesinden değil, izin anahtarına göre dört dilde kendi metninden gösteriyor (`strings/perms.js`; sunucunun metni yalnız bu derlemenin bilmediği bir anahtar için, İngilizce olarak işaretli yedek). Ama bu iki anahtarın panodaki metinleri de sunucununkiyle aynı eksikleri taşıyor; sunucudaki metin de değişmedi → "Dalga 3B'den açık kalanlar".
+- İzin açıklamaları güncel değil: `users.manage` kapsam atamayı, `devices.manage` canlı değerleri ve satıcı grubunu söylemiyor. → G1-13 — **kısmen**: roller tablosu açıklamaları artık sunucunun İngilizcesinden değil, izin anahtarına göre dört dilde kendi metninden gösteriyor (`strings/perms.js`; sunucunun metni yalnız bu derlemenin bilmediği bir anahtar için, İngilizce olarak işaretli yedek). ✅ **`9a62c0c` ile kapandı:** sunucunun metni (`auth/permissions.PERMISSIONS`) ve panonun dört dildeki metni birlikte düzeltildi — `users.manage` birim ve yatak kapsamını okumayı, ataması olmayanları saymayı ve kapsam atamayı (atayanın kendi kapsamı rolü gereği sınırsız olmalı), `devices.manage` salt okunur cihaz araştırma penceresini ve varsayılan olarak biyomedikal ile üreticinin destek grubunda (`platform_support`) olduğunu söylüyor.
 - Kısmi NEWS2 ipucu ve `NEWS2_MISSING_LABEL` yalnız Türkçe. → G1-06 ✅ Dört dilde `src/live/i18n/strings/news2.js`; karta G1-09 bağlar.
-- `patientFromBoard` `identity.bed_id`/`unit_id`'yi okumuyor: her HBYS hastası "yatak bekliyor" görünür; birim filtresi ve kapsam matrisi için gerekli. → G1-09
+- `patientFromBoard` `identity.bed_id`/`unit_id`'yi okumuyor: her HBYS hastası "yatak bekliyor" görünür; birim filtresi ve kapsam matrisi için gerekli. → G1-09 ✅ `9b07755`: ikisini de okuyor; yataklar ekranının birim süzgeci ve kapsam düzenleyicisinin seçenekleri bunlardan geliyor. Yatak tablosunun karşılamadığı HBYS konumu kartta "Yatak eşleşmedi · <anahtar>" diye yazılır.
 - `auditRowFromRecord` kişi alanını `actor`'dan okumuyor (ack ve `scope_denied` satırları "—"); test fikstürü backend'in göndermediği `{by}` biçimini kullanıyor. → Grup 2
 - Vite dev proxy'de `/admin`, `/scope`, `/scores`, `/infinity-research` yok (`/clinical` ve `/alarm-quality` var; yalnız `npm run dev`'i etkiler). → G1-07 ✅ `devProxy.test.js` nginx'in her API yolunu arar.
 - `main.jsx`'te ölü `simulation` prop'u; PWA manifest `start_url: "/?demo=1"`. → G1-16 ✅ ikisi de Dalga 2'de düzeltildi: ölü prop gitti, manifest `start_url: "/"` ve `lang: "az"`. Yalnız **yeni** kurulumlar için geçerli: ana ekrana zaten eklenmiş bir kısayol, tarayıcı manifesti yeniden okuyana kadar `/?demo=1`'i — yani simülasyonu — açmayı sürdürür. Her tablette yeniden eklenmesi G1-15 deploy kapısında.
@@ -576,11 +694,15 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   - `--ok` `#16a34a` → `#179f49`: kart 3,45 · card2 3,12 · sayfa 3,02 · app 3,18 (önce card2 2,99, sayfa 2,89).
 - Gün'de vital renkleri card2 üzerinde 4,5:1'in altında: `--v-map` 4,38, `--v-spo` 4,46
   (kartta geçer). Değer değişmedi → G1-09/G1-11 vitalleri nereye koyacağına karar verirken.
+  ✅ Dalga 3: değerlerin kendisi `ink` ile yazılır; kanal rengi yalnız `card` üzerindeki etikette
+  (yatak kartı, hasta ekranı). Liste görünümünün `card2` başlığı ve zebrası kanal rengi taşımaz.
 - Button `busy` (işlem sürerken) durumu → G1-10, ilk kullanımda. ✅ Eklendi (`6ab73a0`):
   `aria-busy`, odakta kalır, tıklamayı ve form gönderimini yok sayar.
 - Dil, tema ve yazı boyutu sekmeler arası eşlenmiyor (`storage` olayı dinlenmiyor):
   bir sekmede değişince öbürü eskisinde kalır → G1-07. ✅ `storage` olayı dinleniyor (Dalga 2).
 - Ekran okuyucu risk hapında yalnız düzeyi okur ("Orta"); görünmez "Risk:" öneki → G1-09.
+  ✅ `ae08829`: hap, kendi sözcüğünde "risk" geçmeyen her etiketin önüne görünmez "Risk: " koyar
+  (`ui/RiskPill.jsx`, `risk.prefix`).
 - Pencere açıkken bildirime (toast) klavyeyle ulaşılamaz: pencere Tab'ı içinde tutar.
   Fareyle kapanır; yığın o sırada sağ üste çıkar (sağ altta altbilgiyi örtüyordu,
   390×380) → G1-10.
@@ -588,6 +710,8 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   ekran okuyucu hatayı alanla birlikte okur → G1-08/G1-12 formları. ✅ G1-08'in bütün formları böyle (giriş, kod, şifre, kilit).
 - Meşgul `Button` ekran okuyucuda yalnız "kullanılamaz" okunur; görünmez bir
   "kaydediliyor…" metni düşünülmeli → G1-10, ilk kullanımda.
+  ✅ Çağıran söyler: "Gördüm" sürerken `Announce` "Kaydediliyor…", şüpheli enfeksiyon işaretlenirken
+  "İşaretleniyor…" der (`AlarmsScreen.jsx`, `PatientScreen.jsx`).
 - `ThemeProvider` sökülünce `<html>` özniteliklerini önceki değerlerine döndürmez,
   siler; `I18nProvider` `<html lang>`'ı bırakır → G1-07. ✅ önceki değerler geri konuyor.
 - Tutarlılık notu: `StatusPill`/`Tag` bilinmeyen tonu nötre düşürür; `riskStyle` ise
@@ -612,7 +736,7 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - Test boşlukları: `Table`'ın `ResizeObserver` yolu (jsdom'da yok, yalnız `resize` yedeği
   test ediliyor) ve `Empty` testinin yalnız metni denetlemesi. → G1-07 ✅ ikisi de test edildi.
 - Türkçe rehbere risk gösterim kuralları girsin (asla yeşil; "ölçülmedi" ≠ "bulgu yok";
-  bilinmeyen/bildirilmeyen → dikkat). → G1-09
+  bilinmeyen/bildirilmeyen → dikkat). → G1-09 ✅ Rehber, "3.6 Yeni arayüzün klinik ekranları".
 
 ## Dalga 2'den açık kalanlar
 
@@ -632,10 +756,20 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - **G1-09 notu:** birim çipi 640 px ve altında gizli (telefonda birim seçilemez), ve seçilen birim
   her kilitte unutulur (kabuk yeniden kurulur) — G1-09 yataklar ekranında ikisini de ele alır
   (ör. ekranın kendi birim seçimi; seçimin oturum boyunca saklanması).
+  ✅ **Dalga 3'ün yanıtı:** yataklar ekranının kendi birim seçicisi her genişlikte var (kapsam iki
+  ya da daha çok birimse) ve üst çubuğun çipiyle aynı seçimi yazar. Seçim **bilerek saklanmaz**:
+  kabuğun belleğinde durur, kilit ya da çıkışla gider — ortak bir istasyonda bir sonraki klinisyen
+  başkasının daralttığı servise açmasın (Dalga 3, Karar 7; bu notun önerdiği saklama reddedildi).
+  Bunun yerine süzgeç kaç kartı gizlediğini her zaman söyler.
 - Kilit sayacı (yerel hesapta `reauth_failures`) AD sınırı gibi bellekte: yeniden başlatma
   sıfırlar, tek süreç → pilot için kabul (Dalga 1A'daki AD sınırıyla aynı karar).
 - Zil: alarm ekranı (G1-10) gelince her satır hastaya/alarma bağlanır ve sol menüdeki Alarmlar
   maddesine sayaç gelir → G1-10.
+  ✅ `0a698a3`: zilin her satırı hastasına, paneli Alarmlar ekranına götürür; menüdeki Alarmlar
+  maddesi zilin kuralıyla sayar — sayı yalnız canlı panodan, güncel olmayabilecek panoda amber
+  nokta, bilinemiyorsa hiçbir şey — ve maddenin erişilebilir adı aynısını sözle söyler. Motorun
+  hastanın kendi normaline göre düşürdüğü bulgu sayaca girmez (düşürülmüş bir kritik ya da yüksek
+  yine girer).
 - Pano yeniden yüklendikten sonra gelen akış kareleri "istek gönderildikten sonra geldi" =
   "anlık görüntüden yeni" varsayımıyla üst üste konuyor; isteğin gönderilmesinden sonraya sarkan
   eski bir kare daha yeni bir anlık görüntünün üzerine yazılabilir (dar bir durum). Kalıcı çözüm
@@ -650,8 +784,112 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   eklenince kural genişletilmeli. `stubScreens()` iç içe kullanılırsa katmanlar LIFO çözülmez
   (içteki çağrı dıştakini de temizler). `Shell.jsx` boş adreste `resumeTo.current ||
   home`'a gider: oturum ortasında hash silinirse ana ekran değil hatırlanan ekran açılır (zararsız).
+  ✅ **Dalga 3'ün yanıtları:** parametreli bir ana rota eklenmedi, bu yüzden `resumePath`
+  değişmedi — birim süzgeci adreste değil kabuğun belleğinde (yukarıdaki G1-09 notu), ve
+  `/beds/:unit` istenmiyor: kilitten sonra bir sonraki kişiye daraltılmış bir servis vermesin diye;
+  biri eklenirse kural o zaman genişletilir. `stubScreens` iç içe kullanılmıyor: `onlyScreens()`
+  bütün tabloyu bir kerede kurar (`shell/screens.testutil.js`), hangi ekranların kurulu olduğunu
+  soran test kendi derlemesini söyler. Boş adres davranışı olduğu gibi kaldı. Ayrıca Dalga 2'nin
+  açık bıraktığı `aria-current`: hasta ekranı açıkken menüde Yataklar maddesi güncel okunur
+  (`routes.js` `under: "beds"`, `41a2b83`); ekranda görünür bir "Yataklara dön" bağlantısı da var.
 - Yeni metinler (`nav`, `shell`, `auth`, `lock`, `account`, `errors`'ın çoğu) AZ/RU/EN'de anadili
   konuşan bir klinisyenin okumasını bekliyor → pilot öncesi.
+
+## Dalga 3'ten açık kalanlar
+
+Plan: [dalga 3](2026-10-08-g1-dalga3-is-ekranlari.md) (G1-09 yataklar, G1-10 alarmlar, G1-11 hasta
+ekranı; planın yönetim temeli — Görev 16–19 — Dalga 3B Görev 1'de birleşti, üç yönetim sekmesi
+Görev 20–22'de yalnız şartnameydi). Sayılar yukarıda, iş listesinin altında.
+
+**Yapılmadı:**
+
+- **Uçtan uca doğrulama (Görev 24) koşulmadı** ve bu belgedeki hiçbir satır onun gözlemi değildir.
+  Tarayıcı, dört dil ekranda, 390/1440 px iki temada, yalnız klavye, dört kasıtlı ret ve motorun
+  gerekçe metinlerinin okunması G1-15 kapısına katlandı (yukarıda "G1-15 · (Dalga 3) Uçtan uca
+  yürüyüş"). Ekranların kendi görevlerindeki tarayıcı bakışları (Görev 11 Adım 7, 12 Adım 9a, 14
+  Adım 9a, 15B Adım 9) da hiçbir commit'te ya da çalışma notunda kayıtlı değil; ekranlar yalnız
+  düzeni olmayan jsdom'da sınandı, yani bu dalganın her 390 px iddiası bir gereksinimdir, gözlem
+  değil.
+- Yeni metinler (`board`, `beds`, `alarms`, `patient`, `risk` ad alanları) AZ/RU/EN'de anadili
+  konuşan bir klinisyenin okumasını bekliyor (dosyaların başlıkları böyle diyor) → pilot öncesi.
+- **Yataklar başlığının altındaki sayı bağlantıya bakmıyor** (bu belgeler yazılırken kod okunarak
+  bulundu, tarayıcıda görülmedi): `BedsScreen.jsx` `beds.sub` "{count} yatak"ı her durumda basar,
+  ve pano okunamadığında ya da daha yüklenirken liste boş olduğundan başlık "0 yatak" der — hemen
+  altındaki şerit listenin gösterilmediğini söylerken. "Bilinemeyen panodan sayı yok" kuralının
+  (Dalga 3'ün klinik ekran incelemesi, kural b) kaçırdığı bir yer; küçük bir düzeltme, G1-15'ten
+  önce.
+
+**Kullanıcının kararlarıyla kapananlar ve açık kalan yarısı:**
+
+- **`red_param` ve motorun düzeyi.** Ekran tarafı kararlaştırıldı (Karar 5, seçenek d):
+  `red_param` motorun düzeyinin yanında olgu olarak gösterilir ("Bir parametre 3 puan aldı") ve
+  düzeyi değiştirmez; motorun `downgraded` diye işaretlediği bulgunun yanında nötr bir hap
+  ("Hastanın kendi normaline göre beklenen") motorun `chronic_context`'ini erişilebilir adında
+  taşır — "Düşük"ün yanındaki kırmızı parametre böylece bir motor hatası değil, açıklanmış bir
+  düşürme olarak okunabilir. **Klinik soru açık:** seçenek b — `rules/patient_relative.py`,
+  `red_param` doğruyken bir NEWS2 alarmını ORTA'nın altına indirmesin mi. Motorun vardığı sonucu
+  değiştirir; kasada bir kaynak ve bir klinisyenin onayı ister (aşağıda "Kullanıcı kararları", 9).
+  Karar verilirken bilinmeli: `_adjust_news2` açıklayamadığı değil, **puanı olmayan** parametreyi
+  atlar (`pts <= 0 → continue`), yani kayıtlı bir normal, yedi parametrenin dördüyle hesaplanmış
+  **kısmi** bir NEWS2'yi de DÜŞÜK'e indirebilir; ölçülmeyen üç parametre hakkında hiçbir şey
+  söylemeden. Kart "kısmi"yi ve eksik parametreleri hapın yanında gösterir; yalnız düzeyi okuyan
+  bunları görmez.
+- **Şüpheli enfeksiyon Grup 1'de işaretleniyor** (Karar 27, `420bbbe`): hasta ekranının yazdığı tek
+  şey. SOFA formu ve hastanın kendi normali Grup 2'de.
+- **Motorun klinik metinleri pilot için İngilizce kalıyor** (Karar 24): `clinical_reasoning`,
+  `recommended_actions`, `confidence`, `chronic_context`, her `summary`. Onları basan her yer
+  `lang="en"` işaretli ve ekran bunu okuyanın dilinde söyler ("Motorun metinleri İngilizcedir;
+  çevrilmemiştir"). Koşul: pilot öncesi Azerbaycanca konuşan bir klinisyen kullanılan gerekçe
+  metinlerini okur — **G1-15 kapı maddesi**.
+- **Motorun düşürdüğü bulgu kimseye "yanıtla" demez** (Karar 26): kartta, alarm listesinde ve
+  motorun metninde görünür kalır; yanıt bekleyen kuyruğu, zili ve menü sayacını sürmez (motorun
+  sözleşmesi: "görünür kalır ama alarm ya da eskalasyon yapmaz"). Alt sınır: düşürülmüş bir
+  KRİTİK ya da YÜKSEK yine sayılır. Kullanıcı bunu tersine çevirebilir — tek fonksiyonda tek sözcük.
+
+**Açık — arka uç ya da sonraki grup:**
+
+- `feedHealth`'in kanal başına pencereleri tarayıcıda sabit (nabız ve SpO₂ 300 s, basınçlar 900 s,
+  solunum 600 s, sıcaklık 1 saat, laktat 6 saat; son ikisi "yatak sustu mu" sorusuna katılmaz) ve
+  sunucuya aittir; 20–30 dakikada bir ölçen manşonlu bir serviste sistolik ve ortalama basınç
+  neredeyse hep "gecikmiş" sayılır (sessiz yatak saydırmaz, hiçbir değeri boyamaz) → Grup 2,
+  sitenin NIBP aralığıyla.
+- Bir kapsamın adlandırabileceği birim ve yatakları listeleyen uç yok. G1-12 bunu Dalga 3B'de liste
+  olarak karşıladı (yukarıda kabul ölçütleri); uç → Grup 2, yatak eşleme işiyle.
+- `api/board.py` NEWS2'yi hâlâ tazelik uygulamadan hesaplıyor → Grup 2 (Dalga 0'dan).
+- Pano yanıtında sunucu saati ve kayıt başına sıra numarası yok. Tarayıcı her yanıtın `Date`
+  başlığından saat farkını ölçüp yaşları onunla düzeltiyor (`useBoardNow`), yani bu artık bir
+  doğruluk açığı değil; kalan iş bir cihazın saati bozuksa bunu **birine söylemek** — cihaz
+  sayfasıyla Grup 4. Sıra numarası Grup 2 (Dalga 2'den).
+- `GET /patients/{id}` yok: hasta ekranı hastayı oturumun zaten tuttuğu panodan okur. Bugün doğru —
+  `/patients` kapsamla süzülüyor ve sunucu "yok" ile "kapsamınız dışında"ya bilerek aynı yanıtı
+  veriyor — ama ekran panosuz açılamıyor ve yeniden yüklenen bir derin bağlantı bütün servisin
+  yüklenmesini bekliyor → hedef grup seçilmedi.
+- `/audit` ve `/alarm-quality` en ESKİ satırları döndürüyor → Grup 2 (Dalga 0'dan): Grup 2'nin denetim
+  ekranı buna dayanamaz.
+- `api/board.py` `scope_note`'u istenen dil ne olursa olsun Türkçe yazıyor; ekran `lang="tr"`
+  işaretliyor ve okuyanın dilinde nereden geldiğini söylüyor. Düzeltme motorun istenen dilde yanıt
+  vermesi; önce isteğe bir dil gerekir → Grup 2.
+- Bir alarmın `kind`'ı ham bir kısa ad (`news2_red_param`, `sepsis_antibiotic_overdue`); motor
+  `summary` göndermezse ekranların bastığı budur. Motor bugün hep gönderiyor, yani bu bir dikiş,
+  kusur değil — ama bir klinisyenin okuyacağı adlar kaynaklarıyla kasaya, sonra motorun yanıtına
+  aittir; ekranın bir sözlük dosyasında uydurulamaz.
+- Alarm geçmişi ucu yok: Alarmlar ekranında iki bölüm var, kapanan alarm panodan düşer ve denetim
+  kaydında yaşar (`audit.view` ister, hiçbir hemşirede yok) → Grup 2, denetim ekranıyla.
+- `identity_only_board` (`api/board.py`) `sepsis` ve `meds` bloklarını göndermiyor, oysa yorumu
+  "patient_board ile aynı anahtarlar" diyor. Pano tarafı düzeltildi (`0a4f754`: şüpheli enfeksiyon
+  işaretlemesi blok yokken de çiziliyor); motor tarafı → Grup 2: iki bloğu dürüst boşlarıyla
+  göndermek ya da yorumu düzeltmek.
+
+**Dalga 3B'nin kapattıkları** (Dalga 3 planı bunları açık listeliyordu):
+
+- ✅ `/scope/me` panoyla aynı kararı veriyor (`enforce_unassigned` ve break-glass) — Dalga 3B Görev
+  14, `fa8c522` (yukarıda G1-12 kabul ölçütü).
+- ✅ G1-12 / G1-13 / G1-14: Dalga 3'te "kısmen" (temel yazılmış ama birleşmemiş, sekmeler yalnız
+  şartname) — Dalga 3B kurdu, iş listesinde ✅.
+- ✅ `GroupOut` grubun rol mü ek görev mi olduğunu söylüyor (`kind`) — Dalga 3B Görev 14, `fa8c522`.
+- ✅ İki izin açıklaması (`users.manage`, `devices.manage`) — `9a62c0c`.
+- `GET /admin/users` sayfalamasız: Dalga 3B'de kullanıcının kararıyla pilot için bırakıldı
+  (aşağıda).
 
 ## Dalga 3B'den açık kalanlar
 
@@ -702,12 +940,11 @@ Görev 14). Sayılar yukarıda, iş listesinin altında.
   kabuğu kaldırır, yani kilit sırasında biten bir kayıt sessizdir ve kilitte biten bir kapsam
   kaydı Birimler hücresini bir sonraki okumaya dek eski bırakır. `6c6b4f6`'dan beri bildirimler
   kilit boyunca tutulduğu için başarı bildirimi koşulsuz (oturuma bağlı) verilebilir → Grup 3.
-- **İki izin açıklaması eski:** `auth/permissions.PERMISSIONS`'ta `users.manage` birim kapsamı
-  rotalarını (`/scope/{id}`, `/scope/unassigned`, `PUT /scope/{id}`), `devices.manage` cihaz
-  araştırma penceresini ve satıcı grubunun (`platform_support`) onu taşıdığını söylemiyor. Pano
-  açıklamaları anahtara göre kendi metninden gösteriyor, ama bu iki anahtarın dört dildeki
-  metinleri (`strings/perms.js`) sunucununkinden yazıldı ve aynı eksikleri ekranda da taşıyor.
-  İkisi birlikte düzeltilir.
+- ✅ **İki izin açıklaması eskiydi — `9a62c0c` ile kapandı:** `auth/permissions.PERMISSIONS`'ta
+  `users.manage` birim kapsamı rotalarını (`/scope/{id}`, `/scope/unassigned`, `PUT /scope/{id}`),
+  `devices.manage` cihaz araştırma penceresini ve satıcı grubunun (`platform_support`) onu
+  taşıdığını söylemiyordu; panonun dört dildeki metinleri (`strings/perms.js`) aynı eksikleri
+  ekranda da taşıyordu. İkisi birlikte düzeltildi.
 - **"Canlı bileşende onaltılık renk ya da Tailwind paleti rengi yok" kuralını sınayan test yok:**
   kural incelemeyle korunuyor, testle değil. Dalganın düşünüp kurmadığı tek sistemli ağ;
   `rawKeys.test.jsx`'teki statik anahtar ağının yanında yaklaşık yirmi satır.
@@ -763,7 +1000,7 @@ Görev 14). Sayılar yukarıda, iş listesinin altında.
 "Dalga 2'de kullanıcının verdiği kararlar".)
 
 1. **VM bugün (bu daldan bağımsız):** risk eşlemesi hatası VM'de de var (orta risk yeşil görünüyor) — VM'ye hotfix mi, G1-09'u mu bekler? VM'nin nginx'i `/clinical`, `/scores`, `/alarm-quality`'yi iletiyor mu (iletmiyorsa VM'de klinik giriş/SOFA imzası motora hiç ulaşmamış olabilir)? Kontrol: `curl -sk -X POST https://<vm>/clinical/x -H 'Authorization: Bearer x'` → JSON 401 = iletiliyor, HTML/405 = iletilmiyor.
-2. **G1-15 deploy kapısı:** Grup 2–4'e kalan VM yetenekleri (özellikle vazopressör/sıvı girişi, hasta normali, kabul profili, besleme sağlığı) kaybedilsin mi, Grup 1'e mi alınsın, yoksa deploy beklesin mi?
+2. **G1-15 deploy kapısı:** Grup 2–4'e kalan VM yetenekleri (özellikle vazopressör/sıvı girişi, hasta normali, kabul profili, besleme sağlığı) kaybedilsin mi, Grup 1'e mi alınsın, yoksa deploy beklesin mi? (Dalga 3 bunlardan yalnız besleme sağlığını yataklar ekranına özet çip olarak getirdi — bir de listede olmayan şüpheli enfeksiyon işaretlemesini; geri kalanlar hâlâ açık.)
 3. **Geçişte zorunlu MFA:** 4 grup (Sistem Yöneticisi, Sorumlu Hekim, Ünite Hekimi, Üretici Destek) ilk girişte TOTP kuracak (VM hiç zorlamadı) — kabul mü, pilot için gevşetilsin mi?
 4. **Cihaz token'ı:** `/clinical` ile klinik kayıt ve hasta normali yazabiliyor (main'deki gibi; profil alarmları düşürebilir) — reddedilsin mi (repo'da kullanan tek yer `scripts/dev_seed_ward.py`, JWT'ye taşınır), kalsın mı?
 5. **Kapsamın erimi:** kabul/eskalasyon/devir uçlarına da kapsam uygulansın mı; `SCOPE_ENFORCE_UNASSIGNED` altında denetçi tam ize erişsin mi?
@@ -779,6 +1016,11 @@ Görev 14). Sayılar yukarıda, iş listesinin altında.
    3 puandır (`news2.py:87-89`), yani demans tek başına bir red_param'ı DÜŞÜK'e indirebilir. G1-09 kabul ölçütü
    "red_param kartı en az amber yapar" bununla çelişir. Klinik karar: kronik normal ya da
    eşlik eden hastalık red_param tabanını geçersiz kılsın mı? (kasaya dayanmalı)
+   **Ekran yarısı yanıtlandı (Dalga 3, Karar 5, seçenek d):** ikisi de gösterilir, biri ötekini
+   geçersiz kılmaz; motorun düşürdüğü bulgunun yanında nötr "Hastanın kendi normaline göre
+   beklenen" hapı motorun açıklamasını taşır. **Motor yarısı açık** (seçenek b: `red_param`
+   doğruyken NEWS2 alarmı ORTA'nın altına inmesin) — kasada kaynak ve klinisyen onayı bekliyor;
+   ayrıntı "Dalga 3'ten açık kalanlar"da.
 10. **Giriş kutusu kenarlık kontrastı:** `--line2` kart/card2 üzerinde 1,37–1,63:1
     (iki temada); WCAG 1.4.11 arayüz bileşeni için 3:1 ister. Odakta `--pri` geçer.
     Tüm form kenarlıkları koyulaştırılsın mı? (görünüm değişir)

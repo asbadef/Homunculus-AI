@@ -120,10 +120,11 @@ the patient's own baseline) and `scores.sign` (sign a SOFA severity-score form w
 are developer English, not the hospital's words. The dashboard does not show them: it translates
 each key in four languages (`dashboard/src/live/i18n/strings/perms.js`, keyed by the permission
 key) and prints the server's text only as a fallback, marked `lang="en"`, for a key that build does
-not know. Two of the server's texts are out of date and the dashboard's four-language texts for the
-same two keys were written from them, so the gap shows on screen too: `users.manage` does not say
-it gates the unit-scope routes (§6, *Unit scope*), and `devices.manage` does not name the device
-research window or say that `platform_support` holds it. Open; the two are fixed together.
+not know. Two of the server's texts were out of date and the dashboard's four-language texts for
+the same two keys had been written from them, so the gap showed on screen too: `users.manage` did
+not say it gates the unit-scope routes (§6, *Unit scope*), and `devices.manage` did not name the
+device research window or say that `platform_support` holds it. Closed by `9a62c0c`: both texts,
+server and dashboard, now say what each key gates.
 
 ## 3. Default groups and the legacy conversion
 
@@ -884,6 +885,21 @@ not carried forward.
   counts stay current and unlocking is instant: the stream sends a named `heartbeat` event every
   15 s of silence, and a stream silent for three of them (45 s) is dropped like a failed one —
   DEGRADED, then a reconnect — so a half-open connection can never read as a calm ward.
+- *As built (Wave 3) — who enters the new shell, where they land, and what the clinical screens
+  ask for.* The old `liveAuth.js` rule above ("no `board.view` → refused") is the previous
+  workspace's. The new shell admits a session whose rights open at least one work screen
+  (`shell/routes.js` `hasWorkRoute`): beds and alarms need `board.view`, administration
+  `users.manage` or `groups.manage`. Rights that open none — the default `biomedical` and
+  `platform_support` groups, whose only keys are `devices.manage` and `audit.view` — are refused at
+  sign-in with a sentence saying so (`auth.notice.noScreen`); the device research window has no
+  screen in the new UI yet (Group 4). A session lands on the first screen its rail shows
+  (`homePath`): the beds board for anyone with `board.view`, otherwise administration. On the
+  clinical screens, "acknowledge" (`POST /ack`) is drawn only with `alerts.ack`, and without it the
+  alarms screen names the missing key instead of drawing disabled buttons; the patient screen's one
+  write, the suspected-infection flag (`POST /clinical/{id}`), needs `clinical.chart` and says so
+  when it is missing. Opening a patient the board holds sends `POST /view` once — the audit row
+  that answers "who opened this patient" — and an id the board does not hold sends nothing, so a
+  stale bookmark leaves no `scope_denied` row behind.
 
 ## 9. Migration, seeding, deployment
 
