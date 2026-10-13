@@ -10,6 +10,7 @@ import { resetScreens, stubScreens } from "./shell/routes.js";
 import { onlyScreens } from "./shell/screens.testutil.js";
 import { PRODUCT } from "./shell/Shell.jsx";
 import { ANNOUNCE_DELAY_MS, useToast } from "./ui/index.js";
+import { fakeAudio, onPage } from "./signals/fakeAudio.testutil.js";
 
 vi.mock("qrcode", () => ({ default: { toDataURL: vi.fn(async () => "data:image/png;base64,QR") } }));
 
@@ -288,6 +289,41 @@ describe("the lock", () => {
     fireEvent.click(screen.getByRole("button", { name: "Kilidi aç" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Ayarlar" })).toBeInTheDocument();
     expect(api.reauth).toHaveBeenLastCalledWith("Gizli-Sifre-1");
+  });
+
+  // The alarm sound sits outside the phases (signals/AlarmSignals.jsx): the shell is unmounted at the
+  // lock, and a locked ward PC must still alert. Proved on the whole page: an alarm that arrives
+  // while the screen is locked changes what plays.
+  it("keeps the alarm sound going through the lock — a critical alarm arriving then is heard", async () => {
+    localStorage.setItem("hmc.alarmSound", "on");
+    const audio = fakeAudio();
+    const page = onPage({ AudioContext: audio.AudioContext });
+    try {
+      const api = fakeApi(vi, { access: null });
+      api.boardPatients.mockResolvedValue(BOARD);
+      api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+      let stream = null;
+      const openStream = vi.fn((url, handlers) => {
+        stream = handlers;
+        Promise.resolve().then(() => handlers.onopen());
+        return () => {};
+      });
+      render(<LiveApp api={api} openStream={openStream} />);
+      await signIn(api);                                  // its click is the gesture that starts the audio
+      await screen.findByRole("heading", { level: 1, name: "Ayarlar" });
+      await waitFor(() => expect(audio.pulses()).toEqual([640, 640, 640]));   // REA-01's high alarm
+      fireEvent.click(screen.getByRole("button", { name: "Hesab menyusu" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Ekranı kilidlə" }));
+      await screen.findByRole("heading", { level: 1, name: "Ekran kilidlənib" });
+      act(() => {
+        stream.onmessage({ data: JSON.stringify({ patient_id: "P-002", risk: "critical", vitals: {}, alerts: [
+          { kind: "septic_shock", severity: "critical", summary: "sintetik", first_seen_at: "2026-10-04T08:01:00Z", acknowledged: false },
+        ] }) });
+      });
+      await waitFor(() => expect(audio.pulses().slice(3)).toEqual(Array(10).fill(960)));
+    } finally {
+      page.undo();
+    }
   });
 
   it("lets someone else sign in instead, with no password", async () => {

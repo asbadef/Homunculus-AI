@@ -35,6 +35,9 @@ import perms from "./strings/perms.js";
 
 import source from "./strings/source.js";
 
+// G1-16: the alarm sound and the critical-alarm notification, ported before the old workspace went.
+import signals from "./strings/signals.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -53,6 +56,8 @@ export const NAMESPACES = {
   roles, perms,
 
   source,
+
+  signals,
 };
 
 function flattenInto(out, prefix, entries) {

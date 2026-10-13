@@ -43,6 +43,14 @@ export const PHASE = Object.freeze({
   LOCKED: "locked",
 });
 
+/** Whether a session may see the board now: ready or LOCKED — the lock screen counts the open
+ *  alarms, and a locked ward PC still sounds them — and holding `board.view`. LiveApp starts and
+ *  clears the board by it, and the alarm signals sound by it (signals/AlarmSignals.jsx): one rule,
+ *  so the two cannot disagree about whether a ward is being watched. */
+export function seesBoard(phase, user) {
+  return (phase === PHASE.READY || phase === PHASE.LOCKED) && Boolean(user?.perms?.includes("board.view"));
+}
+
 /** Why the sign-in form opened (`state.notice.code`); each has an `auth.notice.*` text. */
 export const NOTICE = Object.freeze({
   SIGNED_OUT: "signedOut",          // the user signed out

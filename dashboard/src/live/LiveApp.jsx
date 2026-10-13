@@ -6,7 +6,9 @@
 // is open or locked (the lock screen counts its open alarms) and is emptied the moment the session
 // ends; the toasts are held out of sight while the shell is gone (a lock, a step screen) and come
 // back with it, and are dropped when the session ends (ui/Toast.jsx). Every per-user thing the page
-// held goes with the session (sessionStore.js `end`).
+// held goes with the session (sessionStore.js `end`). The alarm sound and the critical-alarm
+// notification sit outside the phases (signals/AlarmSignals.jsx): a lock does not silence them, the
+// end of the session does.
 import "./theme/assets.js";
 import React, { useEffect, useRef, useState } from "react";
 import { backendApi } from "../backendApi.js";
@@ -14,11 +16,12 @@ import { ThemeProvider } from "./theme/ThemeProvider.jsx";
 import { I18nProvider } from "./i18n/I18nProvider.jsx";
 import { ToastProvider } from "./ui/index.js";
 import { SessionProvider, useSession } from "./session/SessionProvider.jsx";
-import { FALLBACK_LOCK_MINUTES, PHASE, createSessionStore } from "./session/sessionStore.js";
+import { FALLBACK_LOCK_MINUTES, PHASE, createSessionStore, seesBoard } from "./session/sessionStore.js";
 import { useIdleLock } from "./session/useIdleLock.js";
 import { IdleWarning } from "./session/IdleWarning.jsx";
 import { BoardProvider } from "./data/BoardProvider.jsx";
 import { createBoardStore } from "./data/boardStore.js";
+import { AlarmSignals } from "./signals/AlarmSignals.jsx";
 import { hasWorkRoute, hashPath, resumePath } from "./shell/routes.js";
 import { PRODUCT, Shell } from "./shell/Shell.jsx";
 import { SignIn } from "./auth/SignIn.jsx";
@@ -29,8 +32,7 @@ import { LockScreen } from "./auth/LockScreen.jsx";
 
 function Phases({ board }) {
   const { phase, user, store } = useSession();
-  const open = phase === PHASE.READY || phase === PHASE.LOCKED;
-  const watch = open && Boolean(user?.perms.includes("board.view"));
+  const watch = seesBoard(phase, user);
   const owner = watch ? user.id : null;
 
   useEffect(() => {
@@ -130,7 +132,11 @@ export default function LiveApp({ api = backendApi, openStream } = {}) {
       <I18nProvider>
         <SessionProvider store={session}>
           <BoardProvider store={board}>
-            <Phases board={board} />
+            {/* Outside the phases: the sound goes on through a lock (the shell is unmounted then)
+                and stops when the session ends (signals/AlarmSignals.jsx). */}
+            <AlarmSignals>
+              <Phases board={board} />
+            </AlarmSignals>
           </BoardProvider>
         </SessionProvider>
       </I18nProvider>

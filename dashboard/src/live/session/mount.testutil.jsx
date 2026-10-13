@@ -13,6 +13,7 @@ import { SessionProvider } from "./SessionProvider.jsx";
 import { createSessionStore } from "./sessionStore.js";
 import { BoardProvider } from "../data/BoardProvider.jsx";
 import { createBoardStore } from "../data/boardStore.js";
+import { AlarmSignals } from "../signals/AlarmSignals.jsx";
 import { fakeApi, profile, token } from "./testTokens.testutil.js";
 
 export const refusal = (status, message, extra = {}) => Object.assign(new Error(message), { status, ...extra });
@@ -62,7 +63,9 @@ export async function mount(ui, { access = token(), me = profile(), setup } = {}
   const board = createBoardStore({ api, track: store.track, openStream: stream.openStream });
   render(
     <I18nProvider><ToastProvider>
-      <SessionProvider store={store}><BoardProvider store={board}>{ui}</BoardProvider></SessionProvider>
+      <SessionProvider store={store}><BoardProvider store={board}>
+        <AlarmSignals>{ui}</AlarmSignals>
+      </BoardProvider></SessionProvider>
     </ToastProvider></I18nProvider>,
   );
   return { api, store, board, events, stream };
