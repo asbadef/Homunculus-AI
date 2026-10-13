@@ -127,7 +127,7 @@ dokunulmaz.
 | G1-13 | Yönetim · Roller ve yetkiler (grup × izin matrisi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 3 | Düşük | G1-12 | ✅ 13.10 · Görev 8–9 05c7e7a, 1eb7356, inceleme turları fedde5b + 2ab1f10; 409 yolunu canlı yapan sunucu karşılaştırması Görev 14e 65d6a36. Tarayıcıda bakış kullanıcıda |
 | G1-14 | Yönetim · Sistem ayarları › Giriş kaynağı (AD durumu, bağlantı testi, ara + içe aktar, grup eşlemesi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 5 | Orta | G1-04, G1-12 | ✅ 13.10 (kod ve testler) · Görev 10–11 a6de6b2, 96c37ee, inceleme turları 6e8f6c9, 5fd309d, a06fc3c; son bütün-dalga incelemesi d9bb996 (eşleme silmek çerçevenin listelerini yeniden okur). Bağlantı testinin beş gerçek nedeni hastanenin etki alanı denetleyicisi olmadan denenemez (yalnız taklitle test edildi) → G1-15 kapısı |
 | G1-16 | Demo ve eski modları kaldır (`ClinicalDemo.jsx`, `clinicalDemo.js`, `liveStore.js`, `clinicalI18n.js`, `legacyRoots.jsx`, replay, legacy board, `?eski=1` önceki canlı arayüz — kilidi bilmez, G1-15'ten önce gitmeli); PWA `?demo` başlangıcı Dalga 2'de düzeltildi · plan: [G1-16](2026-10-13-g1-16-eski-modlari-kaldir.md) | 3 | Orta | G1-09…G1-14 | Kod ✅ 13.10 · `ab6dead`…`8574bbb`. 80 dosya silindi (75 kaynak + 5 replay JSON'u, ~29 bin satır): sayfadan erişilemeyen 13 modül (`ab6dead`; Grup 2–4 hedefleri, aşağıda "G1-16'da silinenler"), replay ve eski pano (`8c0ed89`), simülasyon ve önceki canlı arayüz (`2ba255c`). `?demo=1`, `#/demo`, `?eski=1`, `?mode=replay`, `?scenario=`, `?board=1` canlı sistemi açar; parametre adresten silinir (`main.jsx` `withoutRetired`). `src/` altında sayfanın erişemediği modül kalmaz (`reachable.test.js`). Silmeden önce eski çalışma alanının **sesli alarmı ve arka plandaki kritik alarm bildirimi** yeni arayüze taşındı (`999b1c9`, `a6ddabb`; kullanıcı kararı 18, 13.10): kilitte de çalar, oturum bitince durur, ayarı Ayarlar › "Ses ve bildirim"de; Görev 1–5 incelemesinin düzeltmeleri `cf1aa7c`, `7168ac6`. Dashboard 75 dosya / 1804 test; 500 kB uyarısı yok; önbellek 20 kayıt. Planın Görev 10'u (son doğrulama) 13.10'da yapıldı: test takımı iki kez 1804/1804, build bütçe içinde, aramalar temiz. **Açık:** tarayıcıda bakış — eski adresler, Ayarlar sekmesi, gerçek hoparlör, Windows bildirimi (G1-15 kapısı) |
-| G1-15 | Uçtan uca doğrulama (yerel yığın, 4 dil, 390 px/1440 px; Dalga 3'ün koşulmamış Görev 24'ü buraya katlandı, aşağıda) + VM deploy notları · temel: [RBAC planı](2026-09-23-rbac-groups-permissions.md), "Deploy notes for the VM" (zorunlu MFA kaydı: Sistem Yöneticisi, Sorumlu Hekim, Ünite Hekimi, Üretici Destek ilk girişte TOTP kurar; `0010` ön kontrolü) | 3 | Orta | hepsi | Bekliyor |
+| G1-15 | Uçtan uca doğrulama (yerel yığın, 4 dil, 390 px/1440 px; Dalga 3'ün koşulmamış Görev 24'ü buraya katlandı, aşağıda) + VM deploy notları · temel: [RBAC planı](2026-09-23-rbac-groups-permissions.md), "Deploy notes for the VM" (zorunlu MFA kaydı: Sistem Yöneticisi, Sorumlu Hekim, Ünite Hekimi, Üretici Destek ilk girişte TOTP kurar; `0010` ön kontrolü) · plan: [G1-15](2026-10-14-g1-15-uctan-uca-ve-vm.md) | 3 | Orta | hepsi | Part A (yerel kapı) ✅ 14.10 · `86117d6`'da (F1–F3 birleşmiş: `d1d0a74`, `835d739`, `86117d6`; F4 ölçüldü): yığın kuruldu ve `0011`'de sağlıklı, 37/37 duman denetimi (28 + F1'in 9'u), VM'nin `538ba54`'ünden yükseltme provası ve geri dönüşü, dashboard 1809/1809 ve sabitli 1787/1787, build bütçe içinde, backend 3.12 ve 3.14'te 2304 / 8; makine bulunduğu gibi bırakıldı. Sonuç aşağıda "G1-15 kapısı — Part A sonucu". **Açık:** Part B (tarayıcıda yürüyüş), Part C (VM deploy, yalnız kullanıcıyla), A8 (takım API imajının içinde) ve kişi gerektiren maddeler (B10/B11 okumaları, servis duyurusu, hastanenin yanıtları) |
 
 Dalga 0 sonu: backend 1665 geçti / 1 atlandı / 0 hata; dashboard 810 geçti (43 dosya); vite build tamam.
 Kapanış düzeltmeleriyle (`f5abde8` test hesabı tohumu, `1e7b11b` iki metin): backend 1670 geçti /
@@ -179,8 +179,79 @@ notu; dalın tabana göre farkı 127 dosya (80 silindi, 10 eklendi, 37 değişti
 adreslerin ve gerçek bir hoparlörün denenmesi kullanıcıda ve G1-15'te (yukarıda G1-15 kapısı;
 G1-16 planı, "Needs the user").
 
-> G1-15'teki VM deploy kullanıcının kararıdır (aşağıda "Kullanıcı kararları", 2–3):
-> yedek → `0010` ön kontrolü → göç `0008 → 0009 → 0010` → herkes bir kez yeniden girer.
+**G1-15 kapısı — Part A sonucu (yerel kapı, 14.10, `86117d6`).** Plan:
+[G1-15](2026-10-14-g1-15-uctan-uca-ve-vm.md), Part A (A0–A10). Kapı dalın ucunda koşuldu:
+`86117d6`, F1–F3 birleşmiş (F1 `d1d0a74` compose `SCOPE_ENFORCE_UNASSIGNED`'ı API'ye geçirir; F2
+`835d739` build SHA'sı Docker derlemesine ulaşır; F3 `86117d6` ortak anahtarlar testi derlemesini
+söyler). Her sayı bu commit'te ölçüldü; VM'ye bağlanılmadı; bütün veriler sentetik (`TEST …`,
+`yatak-0N`, `yb`/`yyb`).
+
+- **A0 · taban:** uç `86117d6`, `git status` boş, yığın konteyneri yok; compose yapılandırması üç
+  bağlama kaynağını karalamada, `127.0.0.1:18080/18443`'te gösteriyor; `SCOPE_ENFORCE_UNASSIGNED`
+  (F1) ve `BUILD_SHA` (F2) yapılandırmada.
+- **A1 · yığın:** iki imaj derlendi; `BUILD_SHA=86117d6` ile web imajında `index` 146,74 / 48,02 kB
+  gzip, `Toast` 186,01 / 68,39, `LiveApp` 206,71 / 63,94, önbellek 20 kayıt (753,09 KiB). API
+  sağlıklı, `0011`; on bir grup, MFA zorunlu dördü roadmap'inkiler (`attending`, `hospital_admin`,
+  `platform_support`, `unit_physician`); tohum yönetici `local|t|f`; HTTP 200, HTTPS 200.
+- **F2 denetimi:** Docker'da derlenmiş web imajının `LiveApp-CRKoRz8Y.js`'i `"86117d6"`'yı iki
+  sabitte taşıyor (üst çubuk ve Ayarlar › Profil); `onrender.com` yok. Derleme `BUILD_SHA` ile
+  yapılınca (C7) paket SHA'yı taşır; ekranda görülmesi Part B'nin işi (B7.3). A5 provasında aynı
+  komutla derlenen web imajı da aynı SHA'yı taşıdı.
+- **A2–A3:** 12 sentetik hesap, 11 grup, dört TOTP hesabı; altı yataklı sentetik koğuş: `yb`'de
+  yatak-01..03, `yyb`'de 04..05, yatak-06 kimliksiz; riskler none / high / **critical** (news2,
+  sepsis, antibiotic_due, under_resuscitated_sepsis, septic_shock) / high / none / high.
+- **A4 · duman, nginx üzerinden: 37/37** — planın 28 denetimi ve F1'in 9 denetimi (`smoke.sh`'a
+  eklendi). **F1 denetimi:** atanmamış hemşire, kapalıyken 6 yatak görür; env dosyasına
+  `SCOPE_ENFORCE_UNASSIGNED=1` eklenip `up -d --no-build api` ile API yeniden kurulunca konteyner
+  değeri taşır, nginx yeni API'ye ulaşır, hemşirenin `/scope/me`'si `('unassigned', False, [])`,
+  panosu **0** yatak; yönetici değişmez (`('role', True)`); satır kaldırılıp API yeniden kurulunca
+  değer boş, `/scope/me` `('unassigned', True)`, pano yine 6. `scope_denied` satırı **0**; API
+  yeniden başlatıldıktan sonra pano 6 yatakla geri geldi. **Plandan sapma:** API durdurulduğunda
+  nginx hemen 502 değil, **60 s sonra 504** verdi (durmuş konteynerin adresine bağlantı zaman aşımı,
+  nginx'in varsayılan `proxy_connect_timeout`'u). Sonuç yine "hata", "boş pano" değil; ama API
+  dururken her istek bir dakika asılı kalır — B4.1 şeridin ne zaman göründüğüne bakar.
+- **A5 · VM yükseltme provası, `538ba54`'ten (VM'nin commit'i):** bulgu 1 yeniden görüldü (eski API
+  imajı bugün derlenince SQLAlchemy 2.1.4, `greenlet` yok; yamayla açıldı, `0008`); bulgu 5 yeniden
+  görüldü (eski nginx `POST /clinical` → 405 HTML; `/admin/users`, `/scope/me`, `/scores/…`,
+  `/alarm-quality`, `/tenant/units` → 200 `index.html`). Eski şemaya 12 hesap + koğuş (pano 6) + bir
+  sentetik büyük/küçük harf çakışması. Yedek ve geri dönüş etiketleri alındı; yeni imajlar aynı
+  projede derlendi, çalışan konteynerler eski imajlarda kaldı. **`0010` ön kontrolü:**
+  `PRE-FLIGHT STOP` (`[['TEST.Eczaci@…', 'test.eczaci@…']]`). Ön kontrol atlanınca (isteğe bağlı
+  adım): API `restarting`, 8 yeniden başlama, `RuntimeError: Migration 0010 cannot backfill
+  usernames…`, şema `0008`'de, `staff_scopes` yok. Yeniden adlandırınca `PRE-FLIGHT OK`; `up` →
+  API kendiliğinden düzeldi, **`0011`**, 14 hesabın 14'ü yerel ve işaretli, eski roller gruplara
+  döndü (`HOSPITAL_ADMIN`→`hospital_admin` …; çakışma kopyasının grubu yok), **pano 6**;
+  `test.hemsire` `password_change_required: True`, `/patients` 403 → `POST /auth/password` → 200;
+  C10'un on beş öneki JSON (401/404/405), hiçbiri `text/html`. **Geri dönüş:** eski imajlar `0011`
+  veritabanında açılmaz (`FAILED: Can't locate revision identified by '0011'`, 7 yeniden başlama);
+  döküm geri yüklenip eski imajlarla **`0008`**, API sağlıklı, **pano 6**, hemşire **eski**
+  şifresiyle girer (200), yenisiyle giremez (401). Prova konteynerleri, birimleri, imajları (yeniden
+  etiketlemeden sonra adsız kalan ikisi dahil) ve `wt-vm` çalışma ağacı silindi.
+- **A6 · dashboard:** takım **76 dosya / 1809 test, 1809 geçti**; ekran kaydı boşa sabitlenmiş
+  (`routes.test.js` hariç) **75 dosya / 1787 / 1787** — F3'ten sonra tamamen yeşil; `routes.test.js`
+  sabitliyken yalnız kendi üç kayıt testinde düşer (beklenen; dışarıdan sabitleme onları bozar).
+  Build karalamaya: `index` 146,74 / 48,01 kB gzip, `LiveApp` 206,66 / 63,90, `Toast` 186,01 /
+  68,39, `DesignGallery` 8,61, CSS 28,94 + 7,46; önbellek 20 kayıt (753,04 KiB); 500 kB uyarısı
+  yok; `dist`'te `legacyRoots`/`browser-` 0, `demo` 0. (İş istasyonu derlemesi `onrender.com`
+  taşır — her zaman öyle; gönderilebilir olan yalnız A1'in imajı.)
+- **A7 · backend (F1–F4 ajanının bu uçtaki ölçümü, yeniden koşulmadı):** Python 3.12.13 ve 3.14.5'te
+  **2304 geçti, 8 atlandı** — üçte birler 1001 · 871+6 · 432+2; `tests/test_infinity_vm_pilot.py`
+  hariç (Grup 4). F4 böylece kapandı: 3.14 artık ölçülü.
+- **A8 · takım API imajının içinde:** **koşulmadı** — F7 kapısının maddesi açık (Part D, 10).
+- **A9 · makine:** A0'da alınan dökümle aynı: 24 konteyner (adlar aynı; `homunculus-test-pg` ve
+  `summa-*` çalışıyor, dokunulmadı), 29 birim, 68 imaj, 10 ağ, 4 çalışma ağacı; `git status` boş.
+  Yalnız Docker'ın derleme önbelleği büyüdü (559 → 567 kayıt; başka projelerin önbelleğine
+  dokunmamak için temizlenmedi). Karalamada `/c/tmp/g115plan/` kaldı.
+- **Açık — işaretlenmedi:** **Part B** (tarayıcıda yürüyüş: dört dil, 390/1440 px iki temada, yalnız
+  klavye, dört ret ekranda, Yönetim, eski adresler, Ayarlar, kilit, gerçek hoparlör ve Windows
+  bildirimi); **Part C** (VM deploy — yalnız kullanıcıyla, sırayla; ajan VM'ye bağlanmaz);
+  **kişi gerektirenler:** B10 (motorun gerekçe metinleri, Azerbaycanca konuşan bir klinisyen),
+  B11 (Dalga 3B'nin beş metni, Azerbaycanca konuşan bir yönetici), servis duyurusu (C0.1), Part D'nin
+  hastane maddeleri (AD soruları, NAT, sertifika, Chrome sürümü) ve A8.
+
+> G1-15'teki VM deploy kullanıcının kararıdır (aşağıda "Kullanıcı kararları", 2–3; ikisi de
+> 14.10'da yanıtlandı): yedek → `0010` ön kontrolü → göç `0008 → 0009 → 0010 → 0011` → herkes bir
+> kez yeniden girer.
 
 **G1-15 deploy kapısı — AD açılmadan önce (F7):**
 
@@ -365,7 +436,7 @@ sayılır:
 | 2 | G1-07 → G1-08 | Sıralı |
 | 3 | G1-09 ‖ G1-10 ‖ G1-11 (+ yönetim temeli, birleşmedi) | Ortak temel sıralı, sonra üç kol paralel (yataklar, alarmlar, hasta) ✅ |
 | 3B | G1-12 ‖ G1-13 ‖ G1-14 | Temel sıralı, sonra üç kol paralel; arka uç yarısı (Görev 14) ✅ |
-| 4 | G1-16 → G1-15 | Sıralı; G1-16 kodu ✅ (son doğrulaması açık) |
+| 4 | G1-16 → G1-15 | Sıralı; G1-16 kodu ✅ (tarayıcı adımı G1-15 Part B'de); G1-15 Part A ✅ 14.10 (`86117d6`), Part B ve C açık |
 
 ### Hastaneden gerekenler (G1-03'ü bekletmez, G1-15'i bekletir)
 
@@ -501,7 +572,9 @@ VM'den kaldırır:
 - alarm kalitesi, denetim bütünlüğü
 - biyomedikal araştırma penceresi
 
-Bu yüzden G1-15 öncesi kullanıcı kararı gerekir (aşağıda "Kullanıcı kararları", 2).
+Bu yüzden G1-15 öncesi kullanıcı kararı gerekir (aşağıda "Kullanıcı kararları", 2). **Karar
+verildi 14.10: kabul** — deploy bunlar olmadan yapılır, Grup 2–4 geri getirir; servis duyurusu
+septik şokun vazopresör bilgisi alamadığını ve uyarıların bazalsız çalıştığını söyler.
 
 Tutulup bağlanmamış modüller → hedef:
 
@@ -1168,7 +1241,14 @@ verdiği kararlar". 12–17 numaralı kararlar Dalga 2'de soruldu ve yanıtland�
 
 1. **VM bugün (bu daldan bağımsız):** risk eşlemesi hatası VM'de de var (orta risk yeşil görünüyor) — VM'ye hotfix mi, G1-09'u mu bekler? VM'nin nginx'i `/clinical`, `/scores`, `/alarm-quality`'yi iletiyor mu (iletmiyorsa VM'de klinik giriş/SOFA imzası motora hiç ulaşmamış olabilir)? Kontrol: `curl -sk -X POST https://<vm>/clinical/x -H 'Authorization: Bearer x'` → JSON 401 = iletiliyor, HTML/405 = iletilmiyor.
 2. **G1-15 deploy kapısı:** Grup 2–4'e kalan VM yetenekleri (özellikle vazopressör/sıvı girişi, hasta normali, kabul profili, besleme sağlığı) kaybedilsin mi, Grup 1'e mi alınsın, yoksa deploy beklesin mi? (Dalga 3 bunlardan yalnız besleme sağlığını yataklar ekranına özet çip olarak getirdi — bir de listede olmayan şüpheli enfeksiyon işaretlemesini; geri kalanlar hâlâ açık.)
+   **Yanıtlandı 14.10 (kullanıcı): kabul — şimdi deploy edilir; eksikleri Grup 2–4 geri getirir.**
+   Deploy'un VM'den kaldırdığı her şey ("Bu dal VM'ye çıkmaz" listesi; panodaki Infinity araştırma
+   penceresi dahil, Biyomedikal grubu yeni arayüze giremez) bekleme nedeni değil. Servise duyuru
+   (G1-15 planı C0.1) bu sürede **septik şok kuralının vazopresör bilgisi alamadığını** ve
+   **uyarıların hastaya özel bazal değer olmadan çalıştığını** söyler.
 3. **Geçişte zorunlu MFA:** 4 grup (Sistem Yöneticisi, Sorumlu Hekim, Ünite Hekimi, Üretici Destek) ilk girişte TOTP kuracak (VM hiç zorlamadı) — kabul mü, pilot için gevşetilsin mi?
+   **Yanıtlandı 14.10 (kullanıcı): dört grup için de zorunlu kalır** — gevşetilmez. `0010` dört
+   grubu `mfa_required` işaretler (A1'de ölçüldü); üyeleri ilk girişte TOTP kurar (G1-15 planı C11).
 4. **Cihaz token'ı:** `/clinical` ile klinik kayıt ve hasta normali yazabiliyor (main'deki gibi; profil alarmları düşürebilir) — reddedilsin mi (repo'da kullanan tek yer `scripts/dev_seed_ward.py`, JWT'ye taşınır), kalsın mı?
 5. **Kapsamın erimi:** kabul/eskalasyon/devir uçlarına da kapsam uygulansın mı; `SCOPE_ENFORCE_UNASSIGNED` altında denetçi tam ize erişsin mi?
 6. **Satıcı erişimi:** `platform_support` canlı araştırma penceresini ve tam denetim izini görsün mü, görmesin mi?
