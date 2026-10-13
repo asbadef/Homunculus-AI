@@ -581,8 +581,10 @@ Dalga 3'te geldi: 3.6.
   alarm da kritik sayılır —, yatağın etiketiyle (etiket yoksa hasta kimliğiyle — eski arayüzdeki
   gibi, kullanıcı kararı 13.10); ekran kilitliyken bildirim hiçbir yatak ya da hasta adlandırmaz.
   Bildirim kilit açılınca, cevaplanan bir alarm yeniden bekleyince ve her yeni oturumda yeniden
-  gelir; aynı tarayıcının iki sekmesi aynı alarm için bildirimi üst üste yığmasın diye her bildirim
-  alarmına göre etiketlenir. Sayfa kapanınca ya da yenilenince açık bildirimler kapanır; sayfa
+  gelir; dışarıdan kapatılırsa (kullanıcı, işletim sistemi, başka bir sekme) ve alarm hâlâ
+  bekliyorsa, panonun bir sonraki değişikliğinde yeniden gelir. Aynı tarayıcının iki sekmesi aynı
+  alarm için bildirimi üst üste yığmasın diye her bildirim alarmına göre etiketlenir; etiket
+  alarmın kimliğinin bir özetidir (hash), hasta kimliğini taşımaz. Sayfa kapanınca ya da yenilenince açık bildirimler kapanır; sayfa
   kapalıysa bildirim gelmez; güvenli olmayan (HTTPS olmayan) bir adreste tarayıcı bildirim
   göstermez, ekran da bunu söyler. Eski arayüzden taşındı (G1-16). Ses düzeni eski arayüzünkidir;
   bir klinik standarda (IEC 60601-1-8) göre gözden geçirilmedi — Grup 2'de bir klinisyen ya da
