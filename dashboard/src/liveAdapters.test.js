@@ -87,9 +87,9 @@ describe("patientsFromBoard", () => {
   });
 });
 
-// bedsFromPatients / alertsFromPatients synthesize the simulation's `beds` and `alerts` shapes
-// from live patients, so the existing BedBoard/AlarmPage components — written against the
-// simulation — render real data without changing a line of component code.
+// bedsFromPatients / alertsFromPatients synthesize the old workspace's `beds` and `alerts` shapes
+// from live patients — its BedBoard/AlarmPage were written against the simulation. That workspace
+// went in G1-16; the live board store reads alertsFromPatients.
 describe("bedsFromPatients", () => {
   it("makes one OCCUPIED bed per live patient, keyed by patient id", () => {
     const patients = [patientFromBoard(entry), patientFromBoard({ ...entry, patient_id: "bed-4" })];
@@ -146,7 +146,11 @@ describe("alertsFromPatients", () => {
 
     expect(alert.status).toBe("ACKNOWLEDGED");
     expect(alert.ack.by).toBe("nurse");
-    expect(alert.ack.atSec).toBe(Date.parse("2026-08-27T10:05:00Z") / 1000);
+    // The instant is `ackAtMs`, in milliseconds. `ack` also carried it in SECONDS (`atSec`) for
+    // the old workspace's time-to-acknowledge; `elapsed(ack.atSec)` would have aged it by about 56
+    // years without an error. That workspace went in G1-16, and the second unit with it.
+    expect(alert.ack).not.toHaveProperty("atSec");
+    expect(alert.ackAtMs).toBe(Date.parse("2026-08-27T10:05:00Z"));
   });
 
   it("never invents a reason or note the clinician did not enter — the backend does not store them yet", () => {
@@ -198,8 +202,8 @@ describe("alertsFromPatients", () => {
     });
 
     it("carries the acknowledgement as a bare name and instant too", () => {
-      // What a list row shows: who, and when on the wall clock. `ack` keeps the shape the old
-      // workspace's AlertCard reads; these two are what a new screen needs.
+      // What a list row shows: who, and when on the wall clock. `ack` is the presence flag the
+      // board store's waiting queue tests; these two are what a screen prints.
       const acked = { ...entry, alerts: [{ ...entry.alerts[0], acknowledged: true,
         acknowledged_by: "ayse", acknowledged_at: "2026-08-27T10:05:00Z" }] };
       const alert = alertsFromPatients([patientFromBoard(acked)])[0];
@@ -238,9 +242,9 @@ describe("alertsFromPatients", () => {
   });
 
   it("marks every synthesized alert as device-sourced, so the UI knows the backend owns its escalation timing", () => {
-    // The local escalation countdown in AlertCard is computed from the SIMULATION's own
-    // thresholds. Real alerts escalate server-side, on the backend's own timing, so the UI needs
-    // a way to tell a real alert apart from a simulated one and suppress that local countdown.
+    // The old workspace's AlertCard computed a local escalation countdown from the SIMULATION's
+    // own thresholds. Real alerts escalate server-side, on the backend's own timing, so a real
+    // alert says so rather than leave a screen to guess.
     const alert = alertsFromPatients([patientFromBoard(entry)])[0];
     expect(alert.source).toBe("device");
   });

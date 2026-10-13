@@ -122,10 +122,10 @@ export function patientsFromBoard(payload) {
 }
 
 // -----------------------------------------------------------------------------------------------
-// Board/alert synthesis: BedBoard and AlarmPage were written against clinicalDemo.js's simulated
-// `beds`/`alerts` shapes and stay that way (see ClinicalDemo.jsx's `BedBoard`/`AlertCard`). Rather
-// than teach those components a second data language, these functions synthesize the SAME shapes
-// from live patients, so live data renders through unmodified components.
+// Board/alert synthesis. The shapes are the old workspace's: its BedBoard and AlarmPage were
+// written against clinicalDemo.js's simulated `beds`/`alerts`, and these functions gave them the
+// same shapes from live patients. That workspace went in G1-16 (it can be read at e4cdf15); the
+// live board store reads `alertsFromPatients`, and the shapes are otherwise kept as they were.
 
 /** One live bed per patient. There is no clinician-assigned bed label yet (Slice 2), so the label
  *  is the patient id — that IS the identifier the HL7 feed keys a patient by, so it is honest
@@ -144,39 +144,33 @@ export function bedsFromPatients(patients) {
   }));
 }
 
-// Engine severity (theme.js scale: info|low|moderate|high|critical) -> the TIER the alarm UI
-// colors, sorts and gates snoozing by. Mirrors clinicalDemo.js's TIER_TO_SEV, inverted.
+// Engine severity (info|low|moderate|high|critical) -> the TIER the old workspace's alarm UI
+// coloured, sorted and gated snoozing by (clinicalDemo.js's TIER_TO_SEV, inverted). The live UI
+// reads `severity`.
 const SEVERITY_TO_TIER = {
   critical: "CRITICAL", high: "HIGH", moderate: "MEDIUM", low: "LOW", info: "INFO",
 };
 
-/** ISO-8601 -> epoch seconds, or null if absent/unparseable. Never fabricate a time. */
-function secondsFromTimestamp(iso) {
-  if (!iso) return null;
-  const ms = Date.parse(iso);
-  return Number.isNaN(ms) ? null : ms / 1000;
-}
-
-/** ISO-8601 -> epoch milliseconds, or null if absent/unparseable. */
+/** ISO-8601 -> epoch milliseconds, or null if absent/unparseable. Never fabricate a time. */
 function msFromTimestamp(iso) {
   if (!iso) return null;
   const ms = Date.parse(iso);
   return Number.isNaN(ms) ? null : ms;
 }
 
-/** Flattens every patient's alerts into the flat list AlarmPage/AlertCard and the audio/push
- *  effects in ClinicalDemo.jsx read. `id` is "<patient_id>::<kind>" — a delimiter that cannot
- *  appear in a kind, so it round-trips through acknowledgeAlert unambiguously (see liveStore.js).
+/** Flattens every patient's alerts into one flat list (the board store's `alerts`). `id` is
+ *  "<patient_id>::<kind>" — a delimiter that cannot appear in a kind, so it round-trips
+ *  unambiguously.
  *
  *  A real alarm's age is WALL-CLOCK time since the backend first saw it: `firstSeenAtMs` (epoch
  *  ms), null when the payload does not say — then the UI shows no age rather than an invented
- *  one. Nothing is put on the simulation's clock (`firedAtSec` is null): that clock runs at 60x
- *  and would age a real alarm a minute per second.
+ *  one. `firedAtSec` stays null: it was the old workspace's simulation clock, which ran at 60x and
+ *  aged a real alarm a minute per second.
  *
  *  Escalation-chain fields (`currentStep`, `events`, `snooze`, `mutedUntil`) stay at their "just
  *  fired" defaults: escalation for live alerts happens server-side (the engine's own escalation
- *  loop). `source: "device"` marks that explicitly, so AlertCard shows none of the simulation's
- *  local escalation countdown, stages or chain for it. */
+ *  loop). `source: "device"` marks that explicitly — the old workspace's AlertCard drew its own
+ *  local escalation countdown for anything without it. */
 export function alertsFromPatients(patients) {
   const list = Array.isArray(patients) ? patients : [];
   const out = [];
@@ -206,12 +200,9 @@ export function alertsFromPatients(patients) {
         chronicContext: a.chronic_context || null,
         staleInputs: Array.isArray(a.stale_inputs) ? a.stale_inputs : [],
         status: a.acknowledged ? "ACKNOWLEDGED" : "FIRED",
-        // WHO and WHEN, for a Wave-3 alarms row. **These two are the pair a new screen reads**;
-        // `ack` below is the old workspace's own shape and carries the same instant in SECONDS.
-        // Both are derived from the one value here so they cannot drift, but the units differ, and
-        // `elapsed(ack.atSec)` would hand a clinician an age of about 56 years without erroring —
-        // the instant is simply in the wrong unit, and nothing in a number's type says so. Prefer
-        // `ackAtMs` everywhere new; `ack` goes with the workspace G1-16 deletes.
+        // WHO and WHEN, for an alarms row. **These two are the pair a screen reads**, the instant
+        // in milliseconds on the wall clock. `ack` below is a presence flag the board store tests
+        // (`needsAnswer`); it no longer carries a time of its own (G1-16).
         ackBy: a.acknowledged ? (a.acknowledged_by ?? null) : null,
         ackAtMs: a.acknowledged ? msFromTimestamp(a.acknowledged_at) : null,
         escalated: !!a.escalated,
@@ -219,18 +210,13 @@ export function alertsFromPatients(patients) {
         firedAtSec: null,
         currentStep: "NONE",
         events: [],
-        // Only `by` and `atSec` are known: the backend does not persist a reason/note yet (Slice
-        // 1's AckStore keeps only {by, at}). Inventing them would look like a clinician's own
-        // words when they are not.
-        //
-        // The OLD workspace's shape, in SECONDS, kept because `clinicalDemo.js` computes its
-        // time-to-acknowledge as `ack.atSec - firedAtSec` in three places and that code is live
-        // until G1-16 deletes it. `atSec` is derived from the same instant as `ackAtMs` above
-        // rather than parsed again, so the two can never state different times — only the same
-        // time in two units. A new screen uses `ackBy` / `ackAtMs`.
+        // Only `by` is known: the backend does not persist a reason/note yet (Slice 1's AckStore
+        // keeps only {by, at}). Inventing them would look like a clinician's own words when they
+        // are not. Until G1-16 this also carried the instant in SECONDS (`atSec`) for the old
+        // workspace's time-to-acknowledge — the same time in a second unit, which
+        // `elapsed(ack.atSec)` would have read as about 56 years. The instant is `ackAtMs`.
         ack: a.acknowledged
-          ? { by: a.acknowledged_by ?? null, reason: null, note: null,
-              atSec: secondsFromTimestamp(a.acknowledged_at) }
+          ? { by: a.acknowledged_by ?? null, reason: null, note: null }
           : null,
         snooze: null,
         mutedUntil: null,
