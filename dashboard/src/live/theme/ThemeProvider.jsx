@@ -22,8 +22,8 @@ export function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState(() => readPref("theme", THEMES, DEFAULT_THEME));
   const [size, setSizeState] = useState(() => readPref("size", SIZES, DEFAULT_SIZE));
 
-  // Record what <html> had before (usually nothing) and put it back on unmount: the old app may run
-  // in the same tab (?eski=1, until G1-16) and must not keep the live UI's theme, and a page that
+  // Record what <html> had before (usually nothing) and put it back on unmount: nothing the live
+  // UI wrote outlives it (the old app that once shared the tab went in G1-16), and a page that
   // had set its own value keeps it. A layout effect declared BEFORE the ones that write: it runs
   // first when mounting, and when an instance is replaced in one commit (a key change, hot reload)
   // the old one's cleanup has already restored the page's value before this one reads it.

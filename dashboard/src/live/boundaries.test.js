@@ -1,8 +1,8 @@
-// Roadmap D1: the new shell does not rest on the demo. Nothing under src/live/ may import the old
+// Roadmap D1: the new shell does not rest on the demo. Nothing under src/live/ imported the old
 // workspace — ClinicalDemo.jsx, clinicalDemo.js, liveStore.js (built over the simulation),
-// clinicalI18n.js, ui.jsx… — so G1-16 can delete it without touching a line here. What it may use
+// clinicalI18n.js, ui.jsx… — so G1-16 deleted it without touching a line here. What it may use
 // from outside is the framework-free client of the real API: listed below, nothing else.
-// (Tests may read more — permissions.js for the catalogue — so test files are not checked.)
+// (Tests may read more — the engine's own sources, for one — so test files are not checked.)
 //
 // Every way a module can pull another in is read (imports.testutil.js, shared with
 // routing.test.js): `import … from`, `export … from`, a bare `import "x"` (side effects only),

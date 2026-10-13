@@ -2,8 +2,8 @@
 //
 // Taken over from the old workspace's `src/feedHealth.js`, which was written and tested and never
 // connected to a screen (the project's own named failure mode). It could not simply be imported:
-// roadmap D1 keeps `src/live/` off the old workspace, which G1-16 deletes. So it is copied, with
-// its reasoning, and this time a screen reads it.
+// roadmap D1 kept `src/live/` off the old workspace, which G1-16 deleted, the original with it. So
+// it was copied, with its reasoning, and this time a screen reads it.
 //
 // Its reason for existing, in its author's words: on an on-prem deployment nobody can look at the
 // bridge from here. A ward with no alarms and a ward whose feed died an hour ago look exactly the

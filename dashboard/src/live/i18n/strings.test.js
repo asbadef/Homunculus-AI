@@ -1,5 +1,5 @@
-// Every key in all four languages, non-empty, with the Turkish source's placeholders — the same
-// guarantee i18n.rbac.test.js gives the old workspace's rbac block.
+// Every key in all four languages, non-empty, with the Turkish source's placeholders — the
+// guarantee i18n.rbac.test.js gave the old workspace's rbac block until G1-16 removed both.
 import { describe, it, expect } from "vitest";
 import { NAMESPACES, DICTIONARIES, buildDictionaries } from "./catalog.js";
 import { LANG_CODES, SOURCE_LANG } from "./langs.js";

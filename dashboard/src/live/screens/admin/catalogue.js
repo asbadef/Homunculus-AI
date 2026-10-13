@@ -16,9 +16,9 @@
 // (`useSession().user.perms`), which is what the server checks this hour. This list is the
 // vocabulary, not the grant.
 //
-// It is a copy rather than an import of `src/permissions.js`: roadmap D1 keeps `src/live/` off the
-// old workspace, which G1-16 deletes. The old file carries the simulation's role tables too,
-// which have no meaning here.
+// It was a copy rather than an import of `src/permissions.js`: roadmap D1 kept `src/live/` off the
+// old workspace, which G1-16 deleted, that file with it. The old file carried the simulation's
+// role tables too, which have no meaning here.
 const freeze = (a) => Object.freeze([...a]);
 
 export const PERMISSION_KEYS = freeze([

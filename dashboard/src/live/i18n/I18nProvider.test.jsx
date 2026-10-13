@@ -1,6 +1,5 @@
-// The D2 versions of the language cases that i18n.rbac.test.js pins for the old workspace
-// ("the UI language a ward opens in"): those stay as they are until the old workspace is removed
-// (G1-16); the new shell opens in Azerbaijani.
+// The D2 versions of the language cases i18n.rbac.test.js pinned for the old workspace ("the UI
+// language a ward opens in"), which G1-16 removed with it: the shell opens in Azerbaijani.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { I18nProvider, useI18n } from "./I18nProvider.jsx";

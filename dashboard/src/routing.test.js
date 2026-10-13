@@ -15,38 +15,47 @@ describe("chooseMode", () => {
     expect(chooseMode(new URLSearchParams(""))).toBe("live");
   });
 
-  it("keeps the simulation on ?demo=1", () => {
-    expect(chooseMode(new URLSearchParams("demo=1"))).toBe("demo");
-  });
-
   it("still honours ?live=1 for anyone with an old link", () => {
     expect(chooseMode(new URLSearchParams("live=1"))).toBe("live");
   });
 
-  // G1-16 removed the roots that were not the live system. Their addresses are still in
-  // bookmarks and in links in old messages: each opens what the bare URL opens — never a blank
+  // G1-16 removed every root that was not the live system. Their addresses are still in
+  // bookmarks, in links in old messages and in the icon a tablet added to its home screen before
+  // Wave 2 (whose start_url was /?demo=1): each opens what the bare URL opens — never a blank
   // page, and never a simulation.
-  it.each(["mode=replay", "scenario=septic_shock", "board=1", "board=1&token=abc"])(
+  it.each(["demo=1", "eski=1", "mode=replay", "scenario=septic_shock", "board=1", "board=1&token=abc"])(
     "opens the live system on the retired ?%s", (query) => {
       expect(chooseMode(new URLSearchParams(query))).toBe("live");
     },
   );
+});
 
-  it("lets an explicit demo flag win over nothing", () => {
-    // ?demo=1&live=1 is contradictory; live wins because showing simulated data by accident is
-    // the worse failure. Document the decision either way with this assertion.
-    expect(chooseMode(new URLSearchParams("demo=1&live=1"))).toBe("live");
+describe("design gallery (?tasarim=1)", () => {
+  it("opens the new UI's design gallery", () => {
+    expect(chooseMode(new URLSearchParams("tasarim=1"))).toBe("tasarim");
+  });
+
+  it("never wins over an explicit ?live=1", () => {
+    expect(chooseMode(new URLSearchParams("tasarim=1&live=1"))).toBe("live");
   });
 });
 
 describe("the address an old bookmark is left with", () => {
   // The page it opens is the live system, so the address must stop saying otherwise: a bar that
-  // reads ?mode=replay above real patients is a claim, and ?board=1&token=… kept a tenant token in
-  // the address, the history and every bookmark made from it.
+  // reads ?demo=1 above real patients is a claim, and ?board=1&token=… kept a tenant token in the
+  // address, the history and every bookmark made from it.
   it("is not rewritten when it carries nothing retired", () => {
     for (const url of ["/", "/?live=1", "/?tasarim=1", "/#/alarms", "/?mode=kiosk", "/#/demographics"]) {
       expect(withoutRetired(at(url)), url).toBeNull();
     }
+  });
+
+  it("loses the simulation's parameter", () => {
+    expect(withoutRetired(at("/?demo=1"))).toBe("/");
+  });
+
+  it("loses the previous workspace's", () => {
+    expect(withoutRetired(at("/?eski=1"))).toBe("/");
   });
 
   it("loses the legacy board's parameter, and the tenant token it carried", () => {
@@ -57,6 +66,11 @@ describe("the address an old bookmark is left with", () => {
   it("loses the replay's", () => {
     expect(withoutRetired(at("/?mode=replay&scenario=nec"))).toBe("/");
     expect(withoutRetired(at("/?scenario=nec"))).toBe("/");
+  });
+
+  it("loses the simulation's oldest link, #/demo", () => {
+    expect(withoutRetired(at("/#/demo"))).toBe("/");
+    expect(withoutRetired(at("/?live=1#/demo/beds"))).toBe("/?live=1");
   });
 
   it("keeps everything else, the path and the deep link included", () => {
@@ -96,75 +110,40 @@ describe("AppShell", () => {
   // screen tall with overflow hidden: if the app's wrapper did not scroll, everything below the
   // first screen (a bed below the fold) would be unreachable. Measured in Chrome at 1366x768
   // before the fix: 3032 px of board in a 672 px window, no scrollbar anywhere.
-  it("lets the app scroll inside the one-screen frame, in live mode", () => {
-    render(createElement(AppShell, { mode: "live" }, createElement("p", null, "uygulama")));
+  it("lets the app scroll inside the one-screen frame", () => {
+    render(createElement(AppShell, null, createElement("p", null, "uygulama")));
     const wrapper = screen.getByText("uygulama").parentElement;
     expect(wrapper.className.split(/\s+/)).toEqual(
       expect.arrayContaining(["min-h-0", "flex-1", "overflow-y-auto"]));
     expect(wrapper.parentElement.className).toContain("overflow-hidden");
   });
 
-  it("shows the demo banner only for the simulation", () => {
-    const { container, unmount } = render(createElement(AppShell, { mode: "live" }, "x"));
-    expect(container.firstChild.children).toHaveLength(1);
-    unmount();
-    const demo = render(createElement(AppShell, { mode: "demo" }, "x"));
-    expect(demo.container.firstChild.children).toHaveLength(2);
-  });
-});
-
-describe("design gallery (?tasarim=1)", () => {
-  it("opens the new UI's design gallery", () => {
-    expect(chooseMode(new URLSearchParams("tasarim=1"))).toBe("tasarim");
-  });
-
-  it("never wins over an explicit ?live=1", () => {
-    expect(chooseMode(new URLSearchParams("tasarim=1&live=1"))).toBe("live");
-  });
-
-  it("gets no demo banner: it shows no data", () => {
-    const { container } = render(createElement(AppShell, { mode: "tasarim" }, "x"));
+  it("draws the app and nothing else: no demonstration banner is left to draw", () => {
+    const { container } = render(createElement(AppShell, null, "x"));
     expect(container.firstChild.children).toHaveLength(1);
   });
 });
 
-describe("the new live shell (G1-07) and the previous workspace (?eski=1, until G1-16)", () => {
-  it("opens the new shell on the bare URL and on ?live=1", () => {
-    expect(chooseMode(new URLSearchParams(""))).toBe("live");
-    expect(chooseMode(new URLSearchParams("live=1"))).toBe("live");
-  });
-
-  it("keeps the previous live workspace on ?eski=1", () => {
-    expect(chooseMode(new URLSearchParams("eski=1"))).toBe("eski");
-  });
-
-  it("lets an explicit ?live=1 win over ?eski=1", () => {
-    expect(chooseMode(new URLSearchParams("eski=1&live=1"))).toBe("live");
-  });
-
-  it("gives the previous workspace no demo banner: it talks to the real API", () => {
-    const { container } = render(createElement(AppShell, { mode: "eski" }, "x"));
-    expect(container.firstChild.children).toHaveLength(1);
-  });
-});
-
-describe("what the live page downloads", () => {
+describe("what the page downloads", () => {
   const MAIN = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "main.jsx"), "utf8");
-  // The same reader boundaries.test.js uses, so a multi-line import, a re-export or a bare
-  // `import "x"` cannot slip past this check either.
+  // The same reader boundaries.test.js and reachable.test.js use, so a multi-line import, a
+  // re-export or a bare `import "x"` cannot slip past this check either.
   const all = importsOf(MAIN);
   const statics = staticImportsOf(MAIN);
   const lazily = all.specs.filter((spec) => !statics.includes(spec));
 
-  // The simulation, its data builder and the previous workspace are the bulk of the bundle, and
-  // the live page renders none of them: a ward PC opening the real system was fetching every byte
-  // of a simulation it never shows (710 kB in one chunk). They are reachable only lazily.
-  it("reaches the simulation and the previous workspace through a dynamic import only", () => {
-    expect(all.unreadable).toEqual([]);                  // nothing this check cannot follow
-    for (const heavy of ["./ClinicalDemo.jsx", "./clinicalDemo.js", "./liveStore.js", "./Board.jsx",
-      "./demo.jsx", "./legacyRoots.jsx", "./live/LiveApp.jsx", "./live/gallery/DesignGallery.jsx"]) {
-      expect(statics, heavy).not.toContain(heavy);
-    }
-    expect(lazily).toEqual(expect.arrayContaining(["./legacyRoots.jsx", "./live/LiveApp.jsx"]));
+  it("reads every import main.jsx makes", () => {
+    expect(all.unreadable).toEqual([]);
+  });
+
+  // Whatever main.jsx imports statically is in the first chunk, which every page load fetches
+  // before it can show even "the page could not be loaded". Adding to it is a decision, not a
+  // side effect of an import line: this list is where that decision is made.
+  it("puts only React, the load boundary and the page's own stylesheet and font in the first chunk", () => {
+    expect(statics).toEqual(["@fontsource-variable/figtree", "./index.css", "react", "react-dom/client", "./LoadFailed.jsx"]);
+  });
+
+  it("reaches the live UI and the design gallery lazily, and nothing else", () => {
+    expect([...lazily].sort()).toEqual(["./live/LiveApp.jsx", "./live/gallery/DesignGallery.jsx"]);
   });
 });

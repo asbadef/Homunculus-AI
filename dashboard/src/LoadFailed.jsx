@@ -1,7 +1,7 @@
 // src/LoadFailed.jsx — the page's last resort when a root will not load.
 //
-// Every root but the first is fetched on demand (main.jsx: the live shell, the design gallery, the
-// previous workspace and the simulation). A tablet whose network has gone — or one that was
+// Every root is fetched on demand (main.jsx: the live shell and the design gallery). A tablet
+// whose network has gone — or one that was
 // installed before a deploy and whose service worker no longer holds the chunk the new index.html
 // asks for — can fail that fetch, and React answers a failed lazy import by THROWING during
 // render. Without a boundary a ward sees a blank white page: nothing said, nothing to press. It

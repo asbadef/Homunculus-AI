@@ -86,8 +86,8 @@ describe("ThemeProvider", () => {
     expect(html.dataset.size).toBe("buyuk");
   });
 
-  // The old app may run in the same tab (?eski=1, until G1-16): leaving the live UI must not
-  // leave its theme on <html> — and a value the page had before is given back, not deleted.
+  // Leaving the live UI must not leave its theme on <html> (the old app that once shared the tab
+  // went in G1-16) — and a value the page had before is given back, not deleted.
   it("takes data-theme and data-size off <html> when it unmounts", () => {
     const { unmount } = render(<ThemeProvider><Probe /></ThemeProvider>);
     fireEvent.click(screen.getByText("gun"));

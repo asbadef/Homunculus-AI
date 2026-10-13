@@ -1,7 +1,7 @@
 // Every refusal the sign-in, MFA, password, lock-screen and session surface can show is mapped
 // to a translated text. The messages are read from their sources as TEXT (never executed), so a
-// message added or changed on the server fails here until apiErrors.js maps it — the same
-// guarantee i18n.rbac.test.js gives the old workspace.
+// message added or changed on the server fails here until apiErrors.js maps it — the guarantee
+// i18n.rbac.test.js gave the old workspace until G1-16 removed both.
 // (Paths built with node:path: under jsdom the global URL is jsdom's, which fileURLToPath refuses.)
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
