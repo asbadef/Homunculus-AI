@@ -2,9 +2,10 @@
 //
 // Mounted through the real `AdminScreen` + `useAdminData`, so a reload really re-reads, and the
 // fake server below behaves like `admin/service.update_group`: the body's list REPLACES the set,
-// and — as the plan's Task 14e will make the real one do — a body carrying `expected_permissions`
-// that differs from what the server holds is refused with 409 `concurrentChange` and writes
-// nothing. A body without it is taken as before (today's server ignores the field).
+// and — as the real one does since Task 14e (`admin/router.update_group`) — a body carrying
+// `expected_permissions` that differs, AS A SET, from the list the server serves for the group is
+// refused with 409 and the server's exact `CONCURRENT_CHANGE` text, which the screen recognises as
+// `concurrentChange`, and writes nothing. A body without it is taken as it always was.
 //
 // These are the review's proofs (P1, P2, P6, P7, P8), kept as regression tests: each asserts what
 // the administrator SEES after the server has answered and the column has been re-read — never only

@@ -46,7 +46,7 @@
 // the details carry only the fields that differ from what the form opened with, and the groups
 // are sent only when the role or the groups differ from the memberships it opened with — and then
 // WITH those memberships (`expected`), so the server can refuse a replacement built on a list
-// that is no longer the one it holds (Task 14e; today's server ignores the field). An account
+// that is no longer the one it holds (Task 14e: 409 `concurrentChange`, nothing written). An account
 // holding more than one role keeps every one of them: the role `<select>` shows the first and the
 // rest are listed, ticked, under it — a second role is not dropped because a select holds one.
 import React, { useEffect, useMemo, useRef, useState } from "react";

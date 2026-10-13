@@ -45,7 +45,7 @@ from homunculus.auth.dependencies import (
     Principal, caller_tenant_id, get_principal, require_permission,
 )
 from homunculus.auth.models import Group, User
-from homunculus.auth.permissions import ALL_PERMISSIONS, DEFAULT_GROUPS, PERMISSIONS
+from homunculus.auth.permissions import DEFAULT_GROUPS, PERMISSIONS
 from homunculus.auth.service import password_change_due
 from homunculus.db import get_db
 
@@ -75,7 +75,8 @@ def _group_out(group: Group, count: int) -> GroupOut:
                     is_system=group.is_system,
                     # A system group's rights are the whole catalogue by rule (spec §3); report
                     # that, not the rows seeded when the tenant was created.
-                    permissions=sorted(ALL_PERMISSIONS) if group.is_system else group.permission_keys,
+                    # (`service.served_permissions`, which the compare-and-swap reads too.)
+                    permissions=service.served_permissions(group),
                     member_count=count,
                     # Read from the spec by slug rather than stored on the row: it is a property of
                     # the group this product DEFINES, not of the tenant's copy of it, so there is
@@ -174,6 +175,10 @@ async def update_group(group_id: uuid.UUID, body: GroupPatch, request: Request,
                        db: AsyncSession = Depends(get_db)) -> GroupOut:
     actor = await _begin(db, tenant_id, principal)
     group = await _run(db, service.get_group(db, tenant_id, group_id, for_update=True))
+    # Under the lock and before anything is written: the list the caller's screen read must be
+    # the one it would replace (Task 14e) — what `GroupOut` served, not `group_rights`.
+    await _run(db, service.unchanged_since_read(body.expected_permissions,
+                                                service.served_permissions(group)))
     before = {"name": group.name, "description": group.description,
               "permissions": group.permission_keys, "mfa_required": group.mfa_required}
     changed = await _run(db, service.update_group(
@@ -254,6 +259,11 @@ async def set_user_groups(user_id: uuid.UUID, body: UserGroupsIn, request: Reque
                           db: AsyncSession = Depends(get_db)) -> UserOut:
     actor = await _begin(db, tenant_id, principal)
     user = await _run(db, service.get_tenant_user(db, tenant_id, user_id))
+    # Read under the tenant lock `_begin` took — every writer of memberships, the AD sync
+    # included, takes it — and before anything is written: the MANUAL memberships the caller's
+    # form opened with must be the ones this write replaces (Task 14e). AD's are no part of it.
+    await _run(db, service.unchanged_since_read(body.expected_group_ids,
+                                                service.manual_group_ids(user, tenant_id)))
     before = [g.slug for g in _user_out(user, tenant_id).groups]
     user = await _run(db, service.set_user_groups(db, tenant_id, user, body.group_ids, actor))
     await db.commit()

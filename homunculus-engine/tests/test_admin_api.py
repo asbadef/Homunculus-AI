@@ -400,6 +400,204 @@ async def test_setting_groups_leaves_directory_memberships_alone(client, world, 
     assert [(g["slug"], g["source"]) for g in res.json()["groups"]] == [("physician", "ldap")]
 
 
+# ---------------------------------------------------------------- whole-set writes: compare-and-swap
+#
+# `PATCH /admin/groups/{id}` and `PUT /admin/users/{id}/groups` each REPLACE a whole set that a
+# screen built from what it last read, and the server keeps no version of either. A save from an
+# out-of-date view therefore silently undid another administrator's change — and the dashboard's
+# "409: re-read and keep the ticks" path was dead code, because the only 409 these routes could
+# answer came from an IntegrityError the tenant lock makes unreachable. A body may now say what it
+# believed the set WAS (Task 14e); under the lock the server compares it, AS A SET, with what it
+# holds, and refuses a mismatch with CONCURRENT_CHANGE — the exact text the dashboard recognises
+# as `concurrentChange`. Refused, nothing is written and nothing audited. A matching or absent
+# expectation is the write as it always was.
+
+async def _served(c, headers, slug) -> dict:
+    """One group as `GET /admin/groups` serves it — what a screen's expectation is built from."""
+    return {g["slug"]: g for g in (await c.get("/admin/groups", headers=headers)).json()}[slug]
+
+
+def _changed_meanwhile(res) -> bool:
+    """The refusal the dashboard recognises by its text (`apiErrors.js`: concurrentChange)."""
+    return res.status_code == 409 and res.json().get("detail") == service.CONCURRENT_CHANGE
+
+
+async def test_a_group_save_from_a_stale_read_is_refused_and_writes_nothing(client, world,
+                                                                          db_session):
+    c, app = client
+    admin, _ = await _headers(db_session, world["admin"])
+    read = await _served(c, admin, "nurse")               # the screen reads the column ...
+    # ... and another desk grants `shifts.manage` before it saves.
+    other = await c.patch(f"/admin/groups/{read['id']}", headers=admin,
+                          json={"permissions": [*read["permissions"], "shifts.manage"]})
+    assert other.status_code == 200, other.text
+    tv = (await _fresh(db_session, world["nurse"].id)).token_version
+    audited = len(app.state.audit.records(event_type="admin"))
+
+    # Built on the stale read, the body would REVOKE what the other desk just granted.
+    res = await c.patch(f"/admin/groups/{read['id']}", headers=admin, json={
+        "name": "Hemşire (gece)", "permissions": [*read["permissions"], "audit.view"],
+        "expected_permissions": read["permissions"]})
+    assert _changed_meanwhile(res), res.text
+    now = await _served(c, admin, "nurse")
+    assert now["name"] == "Hemşire"                                       # nothing written
+    assert sorted(now["permissions"]) == sorted([*read["permissions"], "shifts.manage"])
+    assert (await _fresh(db_session, world["nurse"].id)).token_version == tv   # no member bumped
+    assert len(app.state.audit.records(event_type="admin")) == audited     # nothing audited
+
+
+async def test_a_group_save_whose_expectation_holds_goes_through_in_any_order(client, world,
+                                                                            db_session):
+    c, app = client
+    admin, _ = await _headers(db_session, world["admin"])
+    read = await _served(c, admin, "nurse")
+    # A SET: the order the screen sorted its list in says nothing about what it read.
+    res = await c.patch(f"/admin/groups/{read['id']}", headers=admin, json={
+        "permissions": [*read["permissions"], "shifts.manage"],
+        "expected_permissions": sorted(read["permissions"], reverse=True)})
+    assert res.status_code == 200, res.text
+    assert sorted(res.json()["permissions"]) == sorted([*read["permissions"], "shifts.manage"])
+    assert [r.subject for r in app.state.audit.records(event_type="admin")] == ["group.update"]
+
+
+async def test_a_group_save_without_an_expectation_is_the_write_it_always_was(client, world,
+                                                                             db_session):
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    read = await _served(c, admin, "nurse")
+    res = await c.patch(f"/admin/groups/{read['id']}", headers=admin,
+                        json={"permissions": [*read["permissions"], "shifts.manage"]})
+    assert res.status_code == 200, res.text
+    assert "shifts.manage" in res.json()["permissions"]
+
+
+async def test_an_empty_expectation_means_the_group_held_nothing(client, world, db_session):
+    """An EMPTY list is an expectation — "this group holds nothing" — not an absent one."""
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    read = await _served(c, admin, "nurse")
+    res = await c.patch(f"/admin/groups/{read['id']}", headers=admin,
+                        json={"permissions": ["board.view"], "expected_permissions": []})
+    assert _changed_meanwhile(res), res.text
+    assert sorted((await _served(c, admin, "nurse"))["permissions"]) == sorted(read["permissions"])
+
+    empty = await c.post("/admin/groups", headers=admin, json={
+        "slug": "bos_grup", "name": "Boş grup", "permissions": []})
+    assert empty.status_code == 201, empty.text
+    res = await c.patch(f"/admin/groups/{empty.json()['id']}", headers=admin,
+                        json={"permissions": ["board.view"], "expected_permissions": []})
+    assert res.status_code == 200, res.text                  # a group that held nothing meets it
+
+
+async def test_the_expectation_is_the_list_the_group_was_served(client, world, db_session):
+    """Compared with what `GroupOut.permissions` SERVES — the stored rows, a retired key
+    included, and the whole catalogue for the system group — never with `group_rights`, and never
+    validated against the catalogue: an expectation is what the screen was shown, and refusing a
+    list the server itself served would be a 409 no re-read can cure."""
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    db_session.add(GroupPermission(group_id=world["groups"]["auditor"].id,
+                                   permission="retired.key"))
+    await db_session.commit()
+    auditor = await _served(c, admin, "auditor")
+    assert "retired.key" in auditor["permissions"]
+    res = await c.patch(f"/admin/groups/{auditor['id']}", headers=admin, json={
+        "name": "Denetçi (salt okunur)", "expected_permissions": auditor["permissions"]})
+    assert res.status_code == 200, res.text
+
+    await db_session.execute(delete(GroupPermission).where(
+        GroupPermission.group_id == world["groups"]["hospital_admin"].id,
+        GroupPermission.permission.in_(["audit.view", "devices.manage"])))
+    await db_session.commit()
+    system = await _served(c, admin, "hospital_admin")
+    assert system["permissions"] == sorted(ALL_PERMISSIONS)      # served by rule, not by its rows
+    res = await c.patch(f"/admin/groups/{system['id']}", headers=admin, json={
+        "name": "Sistem Yöneticisi (BT)", "expected_permissions": system["permissions"]})
+    assert res.status_code == 200, res.text
+
+
+async def test_a_membership_save_from_a_stale_read_is_refused_and_writes_nothing(client, world,
+                                                                               db_session):
+    c, app = client
+    admin, _ = await _headers(db_session, world["admin"])
+    g, nurse = world["groups"], world["nurse"]
+    # The form opened when she held `nurse`; another desk has since added `charge_nurse`.
+    other = await c.put(f"/admin/users/{nurse.id}/groups", headers=admin,
+                        json={"group_ids": [str(g["nurse"].id), str(g["charge_nurse"].id)]})
+    assert other.status_code == 200, other.text
+    tv = (await _fresh(db_session, nurse.id)).token_version
+    audited = len(app.state.audit.records(event_type="admin"))
+
+    res = await c.put(f"/admin/users/{nurse.id}/groups", headers=admin, json={
+        "group_ids": [str(g["nurse"].id), str(g["rapid_response"].id)],
+        "expected_group_ids": [str(g["nurse"].id)]})
+    assert _changed_meanwhile(res), res.text
+    assert await _groups_of(db_session, nurse.id) == ["charge_nurse", "nurse"]   # nothing written
+    assert (await _fresh(db_session, nurse.id)).token_version == tv
+    assert len(app.state.audit.records(event_type="admin")) == audited          # nothing audited
+
+
+async def test_a_membership_save_whose_expectation_holds_goes_through(client, world, db_session):
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    g, nurse = world["groups"], world["nurse"]
+    res = await c.put(f"/admin/users/{nurse.id}/groups", headers=admin, json={
+        "group_ids": [str(g["nurse"].id), str(g["charge_nurse"].id)],
+        "expected_group_ids": [str(g["nurse"].id)]})
+    assert res.status_code == 200, res.text
+    assert [x["slug"] for x in res.json()["groups"]] == ["charge_nurse", "nurse"]
+
+
+async def test_a_membership_save_without_an_expectation_is_the_write_it_always_was(client, world,
+                                                                                  db_session):
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    g, nurse = world["groups"], world["nurse"]
+    res = await c.put(f"/admin/users/{nurse.id}/groups", headers=admin,
+                      json={"group_ids": [str(g["charge_nurse"].id)]})
+    assert res.status_code == 200, res.text
+    assert [x["slug"] for x in res.json()["groups"]] == ["charge_nurse"]
+
+
+async def test_an_empty_membership_expectation_means_she_held_none(client, world, db_session):
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    g, nurse = world["groups"], world["nurse"]
+    res = await c.put(f"/admin/users/{nurse.id}/groups", headers=admin, json={
+        "group_ids": [str(g["charge_nurse"].id)], "expected_group_ids": []})
+    assert _changed_meanwhile(res), res.text
+    assert await _groups_of(db_session, nurse.id) == ["nurse"]
+
+    nobody = await _make_user(db_session, world["tenant"], g, "bos", None)
+    await db_session.commit()
+    res = await c.put(f"/admin/users/{nobody.id}/groups", headers=admin, json={
+        "group_ids": [str(g["nurse"].id)], "expected_group_ids": []})
+    assert res.status_code == 200, res.text                  # an account that held none meets it
+
+
+async def test_a_membership_the_directory_holds_is_no_part_of_the_expectation(client, world,
+                                                                            db_session):
+    """The form's expectation is the MANUAL list it read — the only one `PUT /groups` replaces.
+    An AD-held membership is AD's: counting it would make every directory account 409 forever."""
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    g, ad = world["groups"], world["ldap"]                   # manual `nurse` ...
+    db_session.add(UserGroup(user_id=ad.id, group_id=g["physician"].id, source=SOURCE_LDAP))
+    await db_session.commit()                                # ... and AD's `physician`
+    res = await c.put(f"/admin/users/{ad.id}/groups", headers=admin, json={
+        "group_ids": [str(g["nurse"].id), str(g["rapid_response"].id)],
+        "expected_group_ids": [str(g["nurse"].id)]})
+    assert res.status_code == 200, res.text
+    assert [(x["slug"], x["source"]) for x in res.json()["groups"]] == [
+        ("nurse", "manual"), ("physician", "ldap"), ("rapid_response", "manual")]
+    # And an expectation that counts AD's membership as one of the manual ones is a stale read.
+    res = await c.put(f"/admin/users/{ad.id}/groups", headers=admin, json={
+        "group_ids": [str(g["nurse"].id)],
+        "expected_group_ids": [str(g["nurse"].id), str(g["physician"].id),
+                               str(g["rapid_response"].id)]})
+    assert _changed_meanwhile(res), res.text
+
+
 async def test_deactivation_guard_and_effect(client, world, db_session):
     c, _ = client
     admin, _ = await _headers(db_session, world["admin"])

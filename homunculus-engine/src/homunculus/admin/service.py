@@ -46,6 +46,10 @@ Concurrency (spec §6, Guards):
   * A group being edited or deleted is read with `get_group(..., for_update=True)`: the row lock
     serialises two edits of one group, and it blocks anyone adding a member to the group (the
     foreign key takes a KEY SHARE lock on it) while its member count is checked.
+  * A group's permissions and a user's manual memberships are written WHOLE, replaced by a list a
+    screen built from what it last read. The body may say what that read was
+    (`expected_permissions`, `expected_group_ids`); `unchanged_since_read` compares it under the
+    lock and answers 409 CONCURRENT_CHANGE when another write changed the set since (Task 14e).
 
 The caller's tenant comes from `auth.dependencies.caller_tenant_id` (Task 7b), which also checks
 the membership and the tenant are active. A user or group of another tenant is never found here:
@@ -70,7 +74,8 @@ from homunculus.auth.groups import (
 )
 from homunculus.auth.limits import Unlocked, directory_binds, reauth_failures
 from homunculus.auth.models import (
-    AUTH_LOCAL, Group, GroupPermission, LdapGroupMapping, TenantMembership, User, UserGroup,
+    AUTH_LOCAL, SOURCE_MANUAL, Group, GroupPermission, LdapGroupMapping, TenantMembership, User,
+    UserGroup,
 )
 from homunculus.auth.permissions import ALL_PERMISSIONS, UnknownPermission, validate_permissions
 from homunculus.auth.service import (
@@ -241,6 +246,39 @@ async def _refuse_global_account(db: AsyncSession, tenant_id: uuid.UUID, user: U
     )).first()
     if elsewhere is not None:
         raise AdminError(409, SHARED_ACCOUNT)
+
+
+async def unchanged_since_read(expected: Iterable | None, current: Iterable) -> None:
+    """The compare-and-swap of a whole-set write (Task 14e): `expected` is the set the caller's
+    screen read and built its replacement from, `current` what this tenant holds now, read under
+    the tenant lock. Not the same set → 409 CONCURRENT_CHANGE — the exact text the dashboard
+    recognises as `concurrentChange` — and the router's rollback leaves nothing written and
+    nothing audited. None means the caller stated no expectation (the write as it always was);
+    an EMPTY expectation is a real one and is compared like any other.
+
+    The server keeps no version of a group's permissions or of a user's memberships, and both
+    writes REPLACE the whole set: without this, a save from an out-of-date view silently undid
+    whatever another administrator had saved since. Compared as sets — order and repetition say
+    nothing about what was read — and never validated: an expectation is what the server served."""
+    if expected is not None and set(expected) != set(current):
+        raise AdminError(409, CONCURRENT_CHANGE)
+
+
+def served_permissions(group: Group) -> list[str]:
+    """The permission list `GroupOut` serves for this group, and so the one a screen's
+    `expected_permissions` was read from: the whole catalogue for the system group (its rights are
+    a rule, spec §3, whatever rows were seeded), else its stored rows AS STORED — a key a release
+    retired included, which `group_rights` would drop. Comparing with anything else would refuse a
+    list the server itself served, a 409 no re-read can cure."""
+    return sorted(ALL_PERMISSIONS) if group.is_system else group.permission_keys
+
+
+def manual_group_ids(user: User, tenant_id: uuid.UUID) -> set[uuid.UUID]:
+    """The user's MANUAL memberships in this tenant (group links loaded): the set `PUT
+    /users/{id}/groups` replaces, and so the one its `expected_group_ids` describes. AD-held
+    memberships are the directory's and no part of it."""
+    return {link.group_id for link in user.group_links
+            if link.group.tenant_id == tenant_id and link.source == SOURCE_MANUAL}
 
 
 async def _flush(db: AsyncSession, detail: str) -> None:

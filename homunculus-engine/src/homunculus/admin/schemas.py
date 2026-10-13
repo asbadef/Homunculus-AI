@@ -108,6 +108,14 @@ class GroupPatch(BaseModel):
     description: str | None = Field(default=None, max_length=_DESCRIPTION_MAX)
     mfa_required: bool | None = None
     permissions: list[str] | None = None
+    # What the caller believed the group's permission list WAS — the `GroupOut.permissions` its
+    # screen last read and built `permissions` from (compare-and-swap, Task 14e). Given, and not
+    # the list the server holds now (as a SET), the write is refused 409 CONCURRENT_CHANGE and
+    # nothing changes: a save from an out-of-date view otherwise silently undid another desk's
+    # change. None is "no expectation", the write as it always was; an EMPTY list is a real one,
+    # "this group held nothing". Not validated against the catalogue: it is what the server served,
+    # a retired key included.
+    expected_permissions: list[str] | None = None
 
     @field_validator("name")
     @classmethod
@@ -178,6 +186,12 @@ class UserPatch(BaseModel):
 
 class UserGroupsIn(BaseModel):
     group_ids: list[uuid.UUID]
+    # The MANUAL memberships the caller's form opened with (compare-and-swap, Task 14e): the
+    # only ones this write replaces. Not the ones it holds now (as a SET) → 409
+    # CONCURRENT_CHANGE, nothing written. AD-held memberships are no part of it — they are AD's,
+    # and counting them would refuse every directory account for ever. None: no expectation; an
+    # EMPTY list: "she held none".
+    expected_group_ids: list[uuid.UUID] | None = None
 
 
 class PasswordResetIn(BaseModel):
