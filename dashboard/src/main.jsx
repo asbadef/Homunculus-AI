@@ -5,8 +5,6 @@ import { createRoot } from "react-dom/client";
 import { DemoDataBanner } from "./DemoDataBanner.jsx";
 import { LoadBoundary } from "./LoadFailed.jsx";
 
-const params = new URLSearchParams(window.location.search);
-
 /**
  * Which mode a URL selects. Exported so the routing is testable without a DOM.
  *
@@ -14,13 +12,13 @@ const params = new URLSearchParams(window.location.search);
  * naturally types must be the real one, not a simulation. `?demo=1` keeps the simulation
  * reachable for anyone who wants it deliberately. `?live=1` remains honoured for old links
  * and, being an explicit ask for the real system, wins over a simultaneous `?demo=1`: showing
- * simulated data by accident is the worse failure of the two.
+ * simulated data by accident is the worse failure of the two. The replay (`?mode=replay`,
+ * `?scenario=`) and the legacy board (`?board=1`) are gone (G1-16): their addresses open the
+ * live system, and `withoutRetired` takes their parameters out of the address.
  */
 export function chooseMode(params) {
   if (params.get("live") === "1") return "live";
   if (params.get("demo") === "1") return "demo";
-  if (params.get("mode") === "replay" || params.has("scenario")) return "replay";
-  if (params.get("board") === "1") return "board";
   // The new UI's design review page (G1-05): no API, no patient data, linked from nowhere.
   if (params.get("tasarim") === "1") return "tasarim";
   // The previous live workspace (LDAP ClinicalDemo on the real API), kept reachable as the
@@ -28,6 +26,43 @@ export function chooseMode(params) {
   if (params.get("eski") === "1") return "eski";
   return "live";
 }
+
+/** Parameters only a removed root read. `mode` is retired only as `mode=replay`: another value
+ *  is not this page's to take away. */
+const RETIRED_PARAMS = Object.freeze(["board", "token", "scenario"]);
+
+/**
+ * The address an old bookmark is left with once the parameters of the roots G1-16 removed are
+ * taken out — or null when it carries none, and must not be touched. Exported for its tests.
+ *
+ * Such an address opens the live system (chooseMode), so it must stop saying otherwise: a bar
+ * reading `?mode=replay` above real patients is a claim, and `?board=1&token=…` kept a tenant
+ * token in the address, the history and every bookmark made from it. Everything else stays —
+ * the path, any other parameter and the hash, which is a deep link the live UI uses once.
+ */
+export function withoutRetired({ pathname, search, hash }) {
+  const query = new URLSearchParams(search);
+  let changed = false;
+  for (const key of RETIRED_PARAMS) {
+    if (query.has(key)) {
+      query.delete(key);
+      changed = true;
+    }
+  }
+  if (query.get("mode") === "replay") {
+    query.delete("mode");
+    changed = true;
+  }
+  if (!changed) return null;
+  const rest = query.toString();
+  return `${pathname}${rest ? `?${rest}` : ""}${hash}`;
+}
+
+// Once, before anything renders: LiveApp keeps `location.search` whenever it clears the hash, so a
+// retired parameter left here would stay in the bar for the whole session.
+const cleaned = withoutRetired(window.location);
+if (cleaned !== null) window.history.replaceState(window.history.state, "", cleaned);
+const params = new URLSearchParams(window.location.search);
 
 function pickRoot(mode) {
   // The live system: the new shell (G1-07/G1-08), on the real API and nothing simulated.
@@ -37,10 +72,10 @@ function pickRoot(mode) {
   if (mode === "tasarim") {
     return <React.Suspense fallback={null}><DesignGallery /></React.Suspense>;
   }
-  // Everything else — the previous live workspace (?eski=1), the simulation (?demo=1), the replay
-  // demonstration and the legacy bearer-token board — is one lazy chunk of its own, so the live
-  // page never downloads a simulation it does not render (legacyRoots.jsx).
-  return <React.Suspense fallback={null}><LegacyRoot mode={mode} params={params} /></React.Suspense>;
+  // Everything else — the previous live workspace (?eski=1) and the simulation (?demo=1) — is one
+  // lazy chunk of its own, so the live page never downloads a simulation it does not render
+  // (legacyRoots.jsx).
+  return <React.Suspense fallback={null}><LegacyRoot mode={mode} /></React.Suspense>;
 }
 
 // Lazy: the gallery and its fonts load only when ?tasarim=1 asks for them.
@@ -65,14 +100,14 @@ const mode = window.location.hash.startsWith("#/demo") ? "demo" : chooseMode(par
  * relies on page scroll, and without it everything below the first screen — a bed below the
  * fold, i.e. a patient — is unreachable (measured 1366x768: 3032 px of content in 672 px).
  *
- * The banner belongs only to the simulation: demo and replay both draw from fabricated data, so
- * both say so. Live and board talk to the real API — labelling them as demonstration data would
- * be false, and a notice that is sometimes wrong is worse than none, because people stop reading it.
+ * The banner belongs only to the simulation, which draws from fabricated data and says so. Live
+ * talks to the real API — labelling it as demonstration data would be false, and a notice that
+ * is sometimes wrong is worse than none, because people stop reading it.
  */
 export function AppShell({ mode, children }) {
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden">
-      {mode === "demo" || mode === "replay" ? (
+      {mode === "demo" ? (
         <div className="shrink-0"><DemoDataBanner /></div>
       ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>

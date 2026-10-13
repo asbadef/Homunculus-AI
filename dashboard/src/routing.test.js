@@ -1,11 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { createElement } from "react";
 import { render, screen } from "@testing-library/react";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { importsOf, staticImportsOf } from "./live/imports.testutil.js";
-import { chooseMode, AppShell } from "./main.jsx";
+import { chooseMode, withoutRetired, AppShell } from "./main.jsx";
+
+/** An address as `window.location` carries it: `{pathname, search, hash}`. */
+const at = (url) => new URL(url, "http://localhost:3000");
 
 describe("chooseMode", () => {
   it("defaults to live — the address a clinician types is the real system", () => {
@@ -20,22 +23,71 @@ describe("chooseMode", () => {
     expect(chooseMode(new URLSearchParams("live=1"))).toBe("live");
   });
 
-  it("routes the replay demo via ?mode=replay", () => {
-    expect(chooseMode(new URLSearchParams("mode=replay"))).toBe("replay");
-  });
-
-  it("routes the replay demo via ?scenario=", () => {
-    expect(chooseMode(new URLSearchParams("scenario=septic_shock"))).toBe("replay");
-  });
-
-  it("routes the legacy board", () => {
-    expect(chooseMode(new URLSearchParams("board=1"))).toBe("board");
-  });
+  // G1-16 removed the roots that were not the live system. Their addresses are still in
+  // bookmarks and in links in old messages: each opens what the bare URL opens — never a blank
+  // page, and never a simulation.
+  it.each(["mode=replay", "scenario=septic_shock", "board=1", "board=1&token=abc"])(
+    "opens the live system on the retired ?%s", (query) => {
+      expect(chooseMode(new URLSearchParams(query))).toBe("live");
+    },
+  );
 
   it("lets an explicit demo flag win over nothing", () => {
     // ?demo=1&live=1 is contradictory; live wins because showing simulated data by accident is
     // the worse failure. Document the decision either way with this assertion.
     expect(chooseMode(new URLSearchParams("demo=1&live=1"))).toBe("live");
+  });
+});
+
+describe("the address an old bookmark is left with", () => {
+  // The page it opens is the live system, so the address must stop saying otherwise: a bar that
+  // reads ?mode=replay above real patients is a claim, and ?board=1&token=… kept a tenant token in
+  // the address, the history and every bookmark made from it.
+  it("is not rewritten when it carries nothing retired", () => {
+    for (const url of ["/", "/?live=1", "/?tasarim=1", "/#/alarms", "/?mode=kiosk", "/#/demographics"]) {
+      expect(withoutRetired(at(url)), url).toBeNull();
+    }
+  });
+
+  it("loses the legacy board's parameter, and the tenant token it carried", () => {
+    expect(withoutRetired(at("/?board=1&token=abc"))).toBe("/");
+    expect(withoutRetired(at("/?token=abc"))).toBe("/");
+  });
+
+  it("loses the replay's", () => {
+    expect(withoutRetired(at("/?mode=replay&scenario=nec"))).toBe("/");
+    expect(withoutRetired(at("/?scenario=nec"))).toBe("/");
+  });
+
+  it("keeps everything else, the path and the deep link included", () => {
+    expect(withoutRetired(at("/panel/?board=1&live=1#/alarms"))).toBe("/panel/?live=1#/alarms");
+  });
+});
+
+describe("the page as it loads", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.history.replaceState(null, "", "/");
+  });
+
+  // main.jsx does this once, at load, before anything renders: LiveApp keeps `location.search`
+  // whenever it clears the hash, so a retired parameter left in the bar would stay there for the
+  // whole session.
+  it("rewrites an old bookmark's address before anything renders", async () => {
+    window.history.replaceState(null, "", "/?board=1&token=abc#/alarms");
+    vi.resetModules();
+    await import("./main.jsx");
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("#/alarms");
+  });
+
+  it("leaves an address with nothing retired untouched — a reload keeps its place", async () => {
+    window.history.replaceState(null, "", "/?live=1#/patients/P-1");
+    const replace = vi.spyOn(window.history, "replaceState");
+    vi.resetModules();
+    await import("./main.jsx");
+    expect(replace).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe("#/patients/P-1");
   });
 });
 

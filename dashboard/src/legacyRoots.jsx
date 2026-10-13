@@ -1,14 +1,12 @@
 // src/legacyRoots.jsx — every root that is NOT the live system: the previous live workspace
-// (?eski=1, the reference Wave 3 ports from, removed with the demo in G1-16), the simulation
-// (?demo=1), the replay demonstration (?mode=replay) and the legacy bearer-token board (?board=1).
+// (?eski=1, the reference Wave 3 ports from, removed with the demo in G1-16) and the simulation
+// (?demo=1). The replay demonstration and the legacy bearer-token board are already gone.
 //
 // They sit behind main.jsx's one lazy import, so that the live page does not download them. The
 // simulation, its data builder and the old workspace are the bulk of this bundle — 710 kB in the
 // first chunk — and a ward PC opening the real system was fetching every byte of a simulation it
 // never renders. Nothing here is new code: it is main.jsx's own branches, moved.
 import React from "react";
-import { Board } from "./Board.jsx";
-import { DemoApp } from "./demo.jsx";
 import { ClinicalDemo } from "./ClinicalDemo.jsx";
 import { createDemoStore, buildRealisticState } from "./clinicalDemo.js";
 import { createLiveStore } from "./liveStore.js";
@@ -29,13 +27,7 @@ function Eski() {
   return <ClinicalDemo store={store} />;
 }
 
-/** `params`: the page's query string (main.jsx), for the roots that read it. */
-export default function LegacyRoot({ mode, params }) {
+export default function LegacyRoot({ mode }) {
   if (mode === "eski") return <Eski />;
-  if (mode === "demo") return <ClinicalDemo simulation />;
-  if (mode === "replay") return <DemoApp scenario={params.get("scenario") || "septic_shock"} />;
-  // ?board=1 → the legacy bearer-token board. It authenticates with a tenant token, so on any
-  // real deployment every fetch 401s and the screen sits at "reconnecting" — which looks exactly
-  // like a quiet ward. Pass ?board=1&token=<tenant-token> to use it deliberately.
-  return <Board token={params.get("token") || "dev-token"} />;
+  return <ClinicalDemo simulation />;
 }
