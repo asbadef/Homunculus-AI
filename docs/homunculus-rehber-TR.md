@@ -570,16 +570,23 @@ Dalga 3'te geldi: 3.6.
   saklanır): yanıt bekleyen alarmların en kötüsüne göre, eski arayüzün ses düzeniyle çalar —
   kritikte 2,5 saniyede bir 10 vuruş (5+5), yüksekte 12, ortada 20 saniyede bir 3 vuruş; düşük ve
   bilgi sessizdir; önem derecesi bilinmeyen bir alarm kritik gibi çalar. Alarm onaylanınca susar.
-  Ekran **kilitliyken de çalar**; oturum kapanınca durur. Sunucuyla akış koparsa panonun son
-  bildiğini çalmaya devam eder; pano hiç okunamıyorsa çalmaz. Tarayıcılar sesi ancak bir tıklama
-  ya da tuş vuruşundan sonra başlatır: sayfa yeniden açıldıysa ses "bekliyor"dur ve ekranın
-  köşesindeki düğme bunu söyler — giriş ya da kilit açma için yazmak da sesi başlatır. "Sesi dene"
-  bir kritik düzen çalar. **Bildirim** (tarayıcı izin isterse "İzin ver"): sayfa arka plandayken
-  her yeni kritik alarm için bir bildirim, yatağın etiketiyle (etiket yoksa hasta kimliğiyle —
-  eski arayüzdeki gibi, kullanıcı kararı 13.10); ekran kilitliyken bildirim hiçbir yatak ya da
-  hasta adlandırmaz. Sayfa kapalıysa bildirim gelmez; güvenli olmayan (HTTPS olmayan) bir adreste
-  tarayıcı bildirim göstermez, ekran da bunu söyler. Eski arayüzden taşındı (G1-16). Ses düzeni
-  eski arayüzünkidir; bir klinik standarda göre gözden geçirilmedi.
+  Ekran **kilitliyken de çalar**; oturum kapanınca durur, o an çalmakta olan vuruşlar da kesilir.
+  Pano ilk yüklemesini aldıysa, sunucuyla akış daha açılmadan da çalar; akış koparsa panonun son
+  bildiğini çalmaya devam eder; pano hiç okunamıyorsa çalmaz. Tarayıcı sesi askıya alıp geri
+  verirse (örneğin bir ses aygıtı değişince) ses kendiliğinden sürer. Tarayıcılar sesi ancak bir
+  tıklama ya da tuş vuruşundan sonra başlatır: sayfa yeniden açıldıysa ses "bekliyor"dur ve ekranın
+  köşesindeki düğme bunu söyler (ekran okuyucuya da) — giriş ya da kilit açma için yazmak da sesi
+  başlatır. "Sesi dene" bir kritik düzen çalar. **Bildirim** (tarayıcı izin isterse "İzin ver"):
+  sayfa arka plandayken her yeni kritik alarm için bir bildirim — önem derecesi bilinmeyen bir
+  alarm da kritik sayılır —, yatağın etiketiyle (etiket yoksa hasta kimliğiyle — eski arayüzdeki
+  gibi, kullanıcı kararı 13.10); ekran kilitliyken bildirim hiçbir yatak ya da hasta adlandırmaz.
+  Bildirim kilit açılınca, cevaplanan bir alarm yeniden bekleyince ve her yeni oturumda yeniden
+  gelir; aynı tarayıcının iki sekmesi aynı alarm için bildirimi üst üste yığmasın diye her bildirim
+  alarmına göre etiketlenir. Sayfa kapanınca ya da yenilenince açık bildirimler kapanır; sayfa
+  kapalıysa bildirim gelmez; güvenli olmayan (HTTPS olmayan) bir adreste tarayıcı bildirim
+  göstermez, ekran da bunu söyler. Eski arayüzden taşındı (G1-16). Ses düzeni eski arayüzünkidir;
+  bir klinik standarda (IEC 60601-1-8) göre gözden geçirilmedi — Grup 2'de bir klinisyen ya da
+  biyomedikal mühendis bakacak.
 
 **Active Directory ile giriş**
 - *Basit:* Hastanedeki bilgisayar hesabıyla (kullanıcı adı ve Windows parolası) giriş.
