@@ -126,7 +126,7 @@ dokunulmaz.
 | G1-12 | Yönetim · Kullanıcılar (D3) + birimler (kapsam matrisi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 5 | Orta | G1-07 | ✅ 13.10 · temel (Görev 0–4) 5fdc5cd…34494a8; Görev 5–7 b10179d, 6bc6740, 95adfa6, inceleme turları 9f49cb3 + baa1780; Görev 14 fa8c522 (`/scope/me` panoyla aynı karar) + 65d6a36 (14e); son bütün-dalga incelemesi d9bb996 (kapsam kaydı sayacı yeniden okur) + a301c73 (`PUT /scope` karşılaştır-ve-değiştir). Kapsam "matrisi" liste olarak (Karar 7, aşağıda kabul ölçütleri). Tarayıcıda 390/1440 px bakışı kullanıcıda |
 | G1-13 | Yönetim · Roller ve yetkiler (grup × izin matrisi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 3 | Düşük | G1-12 | ✅ 13.10 · Görev 8–9 05c7e7a, 1eb7356, inceleme turları fedde5b + 2ab1f10; 409 yolunu canlı yapan sunucu karşılaştırması Görev 14e 65d6a36. Tarayıcıda bakış kullanıcıda |
 | G1-14 | Yönetim · Sistem ayarları › Giriş kaynağı (AD durumu, bağlantı testi, ara + içe aktar, grup eşlemesi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 5 | Orta | G1-04, G1-12 | ✅ 13.10 (kod ve testler) · Görev 10–11 a6de6b2, 96c37ee, inceleme turları 6e8f6c9, 5fd309d, a06fc3c; son bütün-dalga incelemesi d9bb996 (eşleme silmek çerçevenin listelerini yeniden okur). Bağlantı testinin beş gerçek nedeni hastanenin etki alanı denetleyicisi olmadan denenemez (yalnız taklitle test edildi) → G1-15 kapısı |
-| G1-16 | Demo ve eski modları kaldır (`ClinicalDemo.jsx`, `clinicalDemo.js`, `liveStore.js`, `clinicalI18n.js`, `legacyRoots.jsx`, replay, legacy board, `?eski=1` önceki canlı arayüz — kilidi bilmez, G1-15'ten önce gitmeli); PWA `?demo` başlangıcı Dalga 2'de düzeltildi · plan: [G1-16](2026-10-13-g1-16-eski-modlari-kaldir.md) | 3 | Orta | G1-09…G1-14 | Kod ✅ 13.10 · `ab6dead`…`8574bbb`. 80 dosya silindi (75 kaynak + 5 replay JSON'u, ~29 bin satır): sayfadan erişilemeyen 13 modül (`ab6dead`; Grup 2–4 hedefleri, aşağıda "G1-16'da silinenler"), replay ve eski pano (`8c0ed89`), simülasyon ve önceki canlı arayüz (`2ba255c`). `?demo=1`, `#/demo`, `?eski=1`, `?mode=replay`, `?scenario=`, `?board=1` canlı sistemi açar; parametre adresten silinir (`main.jsx` `withoutRetired`). `src/` altında sayfanın erişemediği modül kalmaz (`reachable.test.js`). Silmeden önce eski çalışma alanının **sesli alarmı ve arka plandaki kritik alarm bildirimi** yeni arayüze taşındı (`999b1c9`, `a6ddabb`; kullanıcı kararı 18, 13.10): kilitte de çalar, oturum bitince durur, ayarı Ayarlar › "Ses ve bildirim"de; Görev 1–5 incelemesinin düzeltmeleri `cf1aa7c`, `7168ac6`. Dashboard 75 dosya / 1804 test; 500 kB uyarısı yok; önbellek 20 kayıt. **Açık:** planın Görev 10'u (son doğrulama) ve tarayıcıda bakış — eski adresler, gerçek hoparlör, Windows bildirimi (G1-15 kapısı) |
+| G1-16 | Demo ve eski modları kaldır (`ClinicalDemo.jsx`, `clinicalDemo.js`, `liveStore.js`, `clinicalI18n.js`, `legacyRoots.jsx`, replay, legacy board, `?eski=1` önceki canlı arayüz — kilidi bilmez, G1-15'ten önce gitmeli); PWA `?demo` başlangıcı Dalga 2'de düzeltildi · plan: [G1-16](2026-10-13-g1-16-eski-modlari-kaldir.md) | 3 | Orta | G1-09…G1-14 | Kod ✅ 13.10 · `ab6dead`…`8574bbb`. 80 dosya silindi (75 kaynak + 5 replay JSON'u, ~29 bin satır): sayfadan erişilemeyen 13 modül (`ab6dead`; Grup 2–4 hedefleri, aşağıda "G1-16'da silinenler"), replay ve eski pano (`8c0ed89`), simülasyon ve önceki canlı arayüz (`2ba255c`). `?demo=1`, `#/demo`, `?eski=1`, `?mode=replay`, `?scenario=`, `?board=1` canlı sistemi açar; parametre adresten silinir (`main.jsx` `withoutRetired`). `src/` altında sayfanın erişemediği modül kalmaz (`reachable.test.js`). Silmeden önce eski çalışma alanının **sesli alarmı ve arka plandaki kritik alarm bildirimi** yeni arayüze taşındı (`999b1c9`, `a6ddabb`; kullanıcı kararı 18, 13.10): kilitte de çalar, oturum bitince durur, ayarı Ayarlar › "Ses ve bildirim"de; Görev 1–5 incelemesinin düzeltmeleri `cf1aa7c`, `7168ac6`. Dashboard 75 dosya / 1804 test; 500 kB uyarısı yok; önbellek 20 kayıt. Planın Görev 10'u (son doğrulama) 13.10'da yapıldı: test takımı iki kez 1804/1804, build bütçe içinde, aramalar temiz. **Açık:** tarayıcıda bakış — eski adresler, Ayarlar sekmesi, gerçek hoparlör, Windows bildirimi (G1-15 kapısı) |
 | G1-15 | Uçtan uca doğrulama (yerel yığın, 4 dil, 390 px/1440 px; Dalga 3'ün koşulmamış Görev 24'ü buraya katlandı, aşağıda) + VM deploy notları · temel: [RBAC planı](2026-09-23-rbac-groups-permissions.md), "Deploy notes for the VM" (zorunlu MFA kaydı: Sistem Yöneticisi, Sorumlu Hekim, Ünite Hekimi, Üretici Destek ilk girişte TOTP kurar; `0010` ön kontrolü) | 3 | Orta | hepsi | Bekliyor |
 
 Dalga 0 sonu: backend 1665 geçti / 1 atlandı / 0 hata; dashboard 810 geçti (43 dosya); vite build tamam.
@@ -171,9 +171,13 @@ dosya / 1504'ten 65 / 1562'ye çıktı; hiçbir silme ondan bir şey almadı. Vi
 uyarısı yok: ilk parça 146,74 kB / 48,02 kB gzip, `LiveApp` 206,66 kB / 63,90 kB, ortak parça
 (`Toast`) 186,01 kB / 68,39 kB; servis çalışanı 20 kayıt / ~753 KiB (önce 22 / ~785).
 Arka uçta yalnız üç yorum değişti (`tests/test_nginx_routes.py` 40 geçti, Python 3.14). Planın
-Görev 10'u (test takımı iki kez, build bütçesi, aramalar) henüz yapılmadı; tarayıcıda eski
-adreslerin ve gerçek bir hoparlörün denenmesi kullanıcıda ve G1-15'te (G1-16 planı, "Needs the
-user").
+Görev 10'u yapıldı (13.10): test takımı iki kez 1804/1804; build bütçe içinde (500 kB'ı geçen
+parça yok, ilk parça ≤ 150 kB / ≤ 50 kB gzip, önbellek 20 kayıt, `dist`'te `legacyRoots`,
+`browser` ve `demo` yok); kaldırılan bir modu hâlâ açık sanan bir satır yok (eski adresleri bilerek
+anan dört dosya dışında); eski modüllerin adı yalnız on dosyada, hepsi test girdisi ya da kaynak
+notu; dalın tabana göre farkı 127 dosya (80 silindi, 10 eklendi, 37 değişti). Tarayıcıda eski
+adreslerin ve gerçek bir hoparlörün denenmesi kullanıcıda ve G1-15'te (yukarıda G1-15 kapısı;
+G1-16 planı, "Needs the user").
 
 > G1-15'teki VM deploy kullanıcının kararıdır (aşağıda "Kullanıcı kararları", 2–3):
 > yedek → `0010` ön kontrolü → göç `0008 → 0009 → 0010` → herkes bir kez yeniden girer.
@@ -221,6 +225,12 @@ user").
   gelen bildirim yatak adı taşımaz; (6) adres HTTPS değilse ekran bildirimlerin çalışmadığını
   söyler. Tarayıcı güvenli olmayan (HTTP) bir adreste bildirime izin vermez: VM HTTP üzerindeyse
   bildirim hiç görünmez (eski derleme de bunu ekranda söylüyordu) — bu deploy kapısında söylenir.
+- **(G1-16, Görev 10'un tarayıcı adımı)** **Eski adresler ve yeni Ayarlar sekmesi bir tarayıcıda
+  bakılır** — burada tarayıcı sürücüsü yoktu; adres temizliği yalnız jsdom'da test edildi. Yerel
+  yığında `/?demo=1`, `/#/demo`, `/?eski=1`, `/?mode=replay&scenario=septic_shock` ve
+  `/?board=1&token=x` açılır: her biri canlı arayüzün giriş ekranını gösterir ve adres çubuğu `/`
+  okur; `/?tasarim=1` tasarım galerisini açar. Ayarlar › "Ses ve bildirim" 390 ve 1440 px'te, iki
+  temada; sesi bekleyen düğme bir iletişim kutusu açıkken görünmez.
 - **(Dalga 2 incelemesi)** VM'nin kendi nginx yapılandırmasında `location = /auth/reauth` ve
   `location = /auth/password` tam eşleşmeleri ile `homunculus_reauth` bölgesi **var mı** diye
   bakılır (`deploy/local/web/nginx.conf` ile karşılaştır). Yoksa istekler yine de vekillenir —
@@ -1074,8 +1084,9 @@ Görev 14). Sayılar yukarıda, iş listesinin altında.
 Plan: [G1-16](2026-10-13-g1-16-eski-modlari-kaldir.md). Silinen her dosya `e4cdf15`'te okunur
 (`git show e4cdf15:dashboard/src/<dosya>`); o commit `origin/feat/canli-tasarim`'de de var.
 
-- **Görev 10 (son doğrulama) yapılmadı:** test takımı iki kez, build bütçesi ve "kaldırılan bir
-  mod hâlâ anılıyor mu" aramaları. Görev 1–5'in incelemesi bitince koşulur.
+- ✅ **Görev 10 (son doğrulama) yapıldı** (13.10, Görev 1–5'in incelemesinden sonra): test takımı
+  iki kez, build bütçesi, "kaldırılan bir mod hâlâ anılıyor mu" aramaları. Yapılamayan tek adımı —
+  tarayıcıda bakış — G1-15 kapısında (yukarıda).
 - ✅ **Sesli alarm ve arka plan bildirimi taşındı** (`999b1c9`, `a6ddabb`; kullanıcı kararı 18,
   13.10) — `live/signals/`. Eskisi gibi: eski derlemenin aynı ses düzenleri (`clinicalAudio.js`'in
   sayıları), yanıt bekleyen en kötü alarm, gizli sayfada kritik alarm başına bir bildirim. Yeni: kilitte de çalar, kilitliyken
