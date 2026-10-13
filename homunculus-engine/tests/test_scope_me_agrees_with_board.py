@@ -10,9 +10,13 @@ and a clinician holding an open break-glass session had its patient omitted here
 grant that is reason-bound and audited.
 
 These tests are written as an AGREEMENT between the two, not as assertions about the route's
-output: each one resolves the scope through the board's resolver and through HTTP and compares
-them. That is the property that was broken, and a future change to either side that re-breaks it
-fails here rather than in a hospital. Four reasons, one test each: `role`, `assigned`,
+output: each one resolves the SAME access token through the board's resolver and through HTTP and
+compares them. The board side is the real `make_scope_resolver`, wired exactly as production wires
+it (`api/prodserver._scope_resolver`: `read_scope_for_user`, `decode_access_credential`,
+`break_glass_patient_ids`) and reading the test database — not a copy of its arguments rebuilt
+here, which would agree with the route by construction and keep agreeing after the resolver or its
+wiring changed. That is the property that was broken, and a future change to either side that
+re-breaks it fails here rather than in a hospital. Four reasons, one test each: `role`, `assigned`,
 `unassigned` (both with enforcement and without) and `break_glass` — and the fifth answer the
 resolver gives, `unknown`, for an account with no active membership or no active account here:
 `read_role` answers None for it, the resolver turns None into UNKNOWN (sees nothing), and the
@@ -34,14 +38,16 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from homunculus.admission.models import Patient
 from homunculus.auth.groups import ensure_default_groups, set_manual_groups
-from homunculus.auth.models import TenantMembership, User
+from homunculus.auth.models import AUTH_LDAP, SOURCE_LDAP, TenantMembership, User, UserGroup
 from homunculus.auth.service import build_context, hash_password, issue_tokens
 from homunculus.db import get_db
 from homunculus.escalation.models import BreakGlassReason, BreakGlassSession
 from homunculus.scope import service
 from homunculus.scope.models import StaffScope  # noqa: F401  (staff_scopes, before create_all)
-from homunculus.scope.resolver import UNKNOWN, break_glass_in_tenant
-from homunculus.scope.rules import ScopeReason, build_scope
+from homunculus.scope.resolver import (
+    break_glass_patient_ids, decode_access_credential, make_scope_resolver, read_scope_for_user,
+)
+from homunculus.scope.rules import ScopeReason
 from homunculus.tenant.models import Tenant
 from tests.conftest import requires_db
 
@@ -93,27 +99,27 @@ async def client(db_session):
         yield c
 
 
+@pytest_asyncio.fixture
+async def board(db_session, monkeypatch):
+    """The BOARD's scope resolver, built exactly as `api/prodserver._scope_resolver` builds it and
+    reading the test database (its readers open `homunculus.db.AsyncSessionLocal`, as in
+    production). `enforce_unassigned` is left at its default, which reads `SCOPE_ENFORCE_UNASSIGNED`
+    — the variable each test sets for the route as well."""
+    import homunculus.db
+
+    monkeypatch.setattr(homunculus.db, "AsyncSessionLocal",
+                        async_sessionmaker(db_session.bind, expire_on_commit=False))
+    return make_scope_resolver(read_scope_for_user, decode=decode_access_credential,
+                               break_glass=break_glass_patient_ids)
+
+
+async def _token(db, user) -> str:
+    """The access token the board and the route both resolve."""
+    return issue_tokens(user, await build_context(db, user), mfa_verified=True)["access_token"]
+
+
 async def _headers(db, user):
-    tokens = issue_tokens(user, await build_context(db, user), mfa_verified=True)
-    return {"Authorization": f"Bearer {tokens['access_token']}"}
-
-
-async def _as_the_board_sees_it(db, user, tenant, *, enforce_unassigned):
-    """The scope the BOARD's resolver would build for this user, from the same four reads plus the
-    two arguments the route used to omit (`scope/resolver.make_scope_resolver`) — and, as the
-    resolver does, UNKNOWN for a role of None: no active account or membership here sees nothing."""
-    role = await service.read_role(db, user.id, tenant.id)
-    if role is None:
-        return UNKNOWN
-    grants = await service.read_grants(db, user.id, tenant.id)
-    return build_scope(
-        role,
-        unit_ids=[g.unit_id for g in grants if g.unit_id],
-        bed_ids=[g.bed_id for g in grants if g.bed_id],
-        own_patient_ids=await service.read_own_patient_ids(db, user.id, tenant.id),
-        break_glass_patient_ids=await break_glass_in_tenant(db, user.id, tenant.id),
-        enforce_unassigned=enforce_unassigned,
-    )
+    return {"Authorization": f"Bearer {await _token(db, user)}"}
 
 
 def _agree(answer: dict, scope) -> None:
@@ -132,56 +138,56 @@ def _agree(answer: dict, scope) -> None:
     assert answer["own_patients"] == len(scope.own_patient_ids), answer
 
 
-async def _me(client, db, user) -> dict:
-    res = await client.get("/scope/me", headers=await _headers(db, user))
+async def _me_and_the_board(client, board, db, user):
+    """`/scope/me` and the board's resolver, for ONE access token of `user`."""
+    token = await _token(db, user)
+    res = await client.get("/scope/me", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 200, res.text
-    return res.json()
+    return res.json(), await board(token)
 
 
 # ---------------------------------------------------------------- the four reasons
 
-async def test_an_administrator_is_unrestricted_by_role_and_both_say_so(db_session, world, client):
-    answer = await _me(client, db_session, world["admin"])
+async def test_an_administrator_is_unrestricted_by_role_and_both_say_so(db_session, world, client,
+                                                                        board):
+    answer, scope = await _me_and_the_board(client, board, db_session, world["admin"])
     assert answer["reason"] == ScopeReason.UNRESTRICTED_ROLE
-    _agree(answer, await _as_the_board_sees_it(
-        db_session, world["admin"], world["tenant"], enforce_unassigned=False))
+    _agree(answer, scope)
 
 
-async def test_an_assigned_nurse_agrees_with_the_board(db_session, world, client):
+async def test_an_assigned_nurse_agrees_with_the_board(db_session, world, client, board):
     await service.replace_grants(db_session, tenant_id=world["tenant"].id,
                                  user_id=world["nurse"].id,
                                  grants=[("REA-01", ""), ("", "REA-01-2")], granted_by_id=None)
     await db_session.commit()
-    answer = await _me(client, db_session, world["nurse"])
+    answer, scope = await _me_and_the_board(client, board, db_session, world["nurse"])
     assert answer["reason"] == ScopeReason.ASSIGNED
     assert answer["unrestricted"] is False
-    _agree(answer, await _as_the_board_sees_it(
-        db_session, world["nurse"], world["tenant"], enforce_unassigned=False))
+    _agree(answer, scope)
 
 
 async def test_an_unassigned_nurse_agrees_with_the_board_while_enforcement_is_off(
-        db_session, world, client, monkeypatch):
+        db_session, world, client, board, monkeypatch):
     monkeypatch.delenv("SCOPE_ENFORCE_UNASSIGNED", raising=False)
-    answer = await _me(client, db_session, world["nurse"])
+    answer, scope = await _me_and_the_board(client, board, db_session, world["nurse"])
     # Unassigned stays unrestricted until a deployment decides otherwise — and the route says
     # WHY, which is the whole reason it reports a reason at all.
     assert (answer["unrestricted"], answer["reason"]) == (True, ScopeReason.UNASSIGNED)
-    _agree(answer, await _as_the_board_sees_it(
-        db_session, world["nurse"], world["tenant"], enforce_unassigned=False))
+    _agree(answer, scope)
 
 
 async def test_an_unassigned_nurse_agrees_with_the_board_once_enforcement_is_on(
-        db_session, world, client, monkeypatch):
+        db_session, world, client, board, monkeypatch):
     # THE DEFECT. Before the fix this route answered `unrestricted: true` here — "you see
     # everything" — while the board showed this nurse nothing at all.
     monkeypatch.setenv("SCOPE_ENFORCE_UNASSIGNED", "1")
-    answer = await _me(client, db_session, world["nurse"])
+    answer, scope = await _me_and_the_board(client, board, db_session, world["nurse"])
     assert (answer["unrestricted"], answer["reason"]) == (False, ScopeReason.UNASSIGNED)
-    _agree(answer, await _as_the_board_sees_it(
-        db_session, world["nurse"], world["tenant"], enforce_unassigned=True))
+    _agree(answer, scope)
 
 
-async def test_break_glass_is_the_reason_and_both_say_so(db_session, world, client, monkeypatch):
+async def test_break_glass_is_the_reason_and_both_say_so(db_session, world, client, board,
+                                                         monkeypatch):
     # An otherwise unassigned clinician who broke glass: the emergency is the only reason she can
     # see anything, and the route used to omit it entirely.
     monkeypatch.delenv("SCOPE_ENFORCE_UNASSIGNED", raising=False)
@@ -196,16 +202,15 @@ async def test_break_glass_is_the_reason_and_both_say_so(db_session, world, clie
     ))
     await db_session.commit()
 
-    answer = await _me(client, db_session, world["nurse"])
+    answer, scope = await _me_and_the_board(client, board, db_session, world["nurse"])
     assert (answer["unrestricted"], answer["reason"]) == (False, ScopeReason.BREAK_GLASS)
     assert answer["own_patients"] == 1            # the one patient the session names, as a count
     assert "S-001" not in json.dumps(answer)      # and never as an identifier
-    _agree(answer, await _as_the_board_sees_it(
-        db_session, world["nurse"], world["tenant"], enforce_unassigned=False))
+    _agree(answer, scope)
 
 
 async def test_a_closed_break_glass_session_grants_nothing_here_either(
-        db_session, world, client, monkeypatch):
+        db_session, world, client, board, monkeypatch):
     monkeypatch.delenv("SCOPE_ENFORCE_UNASSIGNED", raising=False)
     patient = Patient(tenant_id=world["tenant"].id, display_name="Kamran Sintetik",
                       date_of_birth="1975-05-05", sex="M", his_patient_reference="S-002")
@@ -218,12 +223,11 @@ async def test_a_closed_break_glass_session_grants_nothing_here_either(
         closed_at=datetime.now(timezone.utc),
     ))
     await db_session.commit()
-    answer = await _me(client, db_session, world["nurse"])
+    answer, scope = await _me_and_the_board(client, board, db_session, world["nurse"])
     # Back to plain "unassigned": the 30-minute box is the point of break-glass.
     assert answer["reason"] == ScopeReason.UNASSIGNED
     assert answer["own_patients"] == 0
-    _agree(answer, await _as_the_board_sees_it(
-        db_session, world["nurse"], world["tenant"], enforce_unassigned=False))
+    _agree(answer, scope)
 
 
 # ---------------------------------------------------------------- the administrator's counter
@@ -232,11 +236,25 @@ async def test_the_unassigned_count_leaves_out_those_who_need_no_grant(db_sessio
     """`GET /scope/unassigned` is the number that says whether the scope table has ever been
     filled in. It used to count the administrator — unrestricted by role, needing no grant — so
     on a pilot with one administrator it read "1" forever: a permanent "there is work here" about
-    a person for whom there is none. Only members who WOULD need a grant are counted."""
+    a person for whom there is none. Only members who WOULD need a grant are counted.
+
+    Nor are the others whose scope is unrestricted by role: a platform operator (the
+    `is_platform_support` flag, PLATFORM_SUPPORT), and an administrator who holds the system group
+    through the DIRECTORY rather than a manual membership — still HOSPITAL_ADMIN to `read_role`."""
+    operator = await _make_user(db_session, world["tenant"], world["groups"], "uretici", None,
+                                is_platform_support=True)
+    ad_admin = await _make_user(db_session, world["tenant"], world["groups"], "adyonetici", None,
+                                auth_source=AUTH_LDAP)
+    db_session.add(UserGroup(user_id=ad_admin.id, group_id=world["groups"]["hospital_admin"].id,
+                             source=SOURCE_LDAP))
+    await db_session.commit()
+    assert await service.read_role(db_session, operator.id, world["tenant"].id) == "PLATFORM_SUPPORT"
+    assert await service.read_role(db_session, ad_admin.id, world["tenant"].id) == "HOSPITAL_ADMIN"
+
     headers = await _headers(db_session, world["admin"])
     res = await client.get("/scope/unassigned", headers=headers)
     assert res.status_code == 200, res.text
-    assert res.json()["unassigned_users"] == 1          # the nurse; not the administrator
+    assert res.json()["unassigned_users"] == 1          # the nurse; nobody unrestricted by role
 
     await service.replace_grants(db_session, tenant_id=world["tenant"].id,
                                  user_id=world["nurse"].id,
@@ -248,37 +266,38 @@ async def test_the_unassigned_count_leaves_out_those_who_need_no_grant(db_sessio
 
 # ---------------------------------------------------------------- the administrator's own view
 
-async def test_the_administrator_route_decides_the_same_way(db_session, world, client, monkeypatch):
+async def test_the_administrator_route_decides_the_same_way(db_session, world, client, board,
+                                                             monkeypatch):
     """`GET /scope/{user_id}` shares `_view`, so it gains the same correction.
 
     This is what the administration screen's scope editor reads, and it is the one that would have
     told an administrator "this nurse's scope is unrestricted — nothing to assign here" about a
-    nurse whose board was empty.
+    nurse whose board was empty. The board side resolves the NURSE's own token.
     """
     monkeypatch.setenv("SCOPE_ENFORCE_UNASSIGNED", "1")
     res = await client.get(f"/scope/{world['nurse'].id}",
                            headers=await _headers(db_session, world["admin"]))
     assert res.status_code == 200, res.text
     assert (res.json()["unrestricted"], res.json()["reason"]) == (False, ScopeReason.UNASSIGNED)
-    _agree(res.json(), await _as_the_board_sees_it(
-        db_session, world["nurse"], world["tenant"], enforce_unassigned=True))
+    _agree(res.json(), await board(await _token(db_session, world["nurse"])))
 
 
-async def test_a_deactivated_account_sees_nothing_here_as_on_the_board(db_session, world, client, monkeypatch):
+async def test_a_deactivated_account_sees_nothing_here_as_on_the_board(db_session, world, client,
+                                                                       board, monkeypatch):
     """`read_role` answers None for an account that is not active, and the board's resolver turns
     None into UNKNOWN: it sees nothing. `_view` handed the None to `build_scope`, which read it as
     "no assignment" — and, with enforcement off, as UNRESTRICTED. The administrator's own route told
     her a deactivated nurse "sees every patient". The membership stays active, so the route still
     answers rather than 404ing; what it answers is now the board's."""
     monkeypatch.delenv("SCOPE_ENFORCE_UNASSIGNED", raising=False)
+    token = await _token(db_session, world["nurse"])         # a token she held before it happened
     world["nurse"].is_active = False
     await db_session.commit()
     res = await client.get(f"/scope/{world['nurse'].id}",
                            headers=await _headers(db_session, world["admin"]))
     assert res.status_code == 200, res.text
     assert (res.json()["unrestricted"], res.json()["reason"]) == (False, "unknown")
-    _agree(res.json(), await _as_the_board_sees_it(
-        db_session, world["nurse"], world["tenant"], enforce_unassigned=False))
+    _agree(res.json(), await board(token))
 
 
 async def test_an_unknown_user_is_still_not_found(db_session, world, client):

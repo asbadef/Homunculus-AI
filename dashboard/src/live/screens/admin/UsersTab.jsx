@@ -604,15 +604,20 @@ const CONFIRMATIONS = {
     // NUMBER of attempts let through is the server's too — `allowed_after - allowed_before` —
     // never a "three" the screen knows from reading the chain's source: a figure the screen cannot
     // verify in the sentence that exists to stop over-claiming would be the same fault again.
-    // `granted` missing, or the two numbers missing, reads as the cautious sentence. (The dialog
-    // before the write, `admin.confirmUnlock`, promises no number either, for the same reason.)
+    // Three sentences, each only what the server said: `granted: false` is "nothing to lift";
+    // `granted: true` with the two numbers is the count; anything else — `granted: true` without
+    // usable numbers, or a 200 that says nothing about `granted` — is only "accepted, the server
+    // did not say how many" (`admin.unlockedUncounted`). "Nothing to lift" there would contradict
+    // a server that said it granted. (The dialog before the write, `admin.confirmUnlock`, promises
+    // no number either, for the same reason.)
     done: (answer) => {
+      if (answer?.granted === false) return { key: "admin.unlockedNothing", vars: {} };
       const before = answer?.allowed_before;
       const after = answer?.allowed_after;
       if (answer?.granted === true && Number.isFinite(before) && Number.isFinite(after) && after > before) {
         return { key: "admin.unlocked", vars: { count: after - before } };
       }
-      return { key: "admin.unlockedNothing", vars: {} };
+      return { key: "admin.unlockedUncounted", vars: {} };
     },
     reason: true,
     run: (api, user, reason) => () => api.adminUnlockSignIn(user.id, reason),

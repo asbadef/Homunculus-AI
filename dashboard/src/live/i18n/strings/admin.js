@@ -122,6 +122,9 @@ export default {
     activated: "Hesap etkinleştirildi.",
     unlocked: "Dizin girişi bir kez açıldı: {count} deneme daha.",
     unlockedNothing: "Bu hesapta açılacak bir sınır yoktu; hiçbir şey değişmedi. Giriş yine de denenebilir.",
+    // The server accepted the unlock but did not say how many attempts it let through: no number,
+    // and not "nothing to lift" either (`UsersTab` CONFIRMATIONS.unlock).
+    unlockedUncounted: "Dizin girişinin açılması kabul edildi; sunucu kaç deneme daha tanındığını bildirmedi.",
     // the scope editor
     scopeTitle: "{name} · birim ve yatak kapsamı",
     // ONLY for a scope unrestricted by ROLE (`rules.scopeKind` "role"). An account that is
@@ -267,6 +270,7 @@ export default {
     activated: "Hesab aktivləşdirildi.",
     unlocked: "Kataloq girişi bir dəfə açıldı: {count} cəhd daha.",
     unlockedNothing: "Bu hesabda açılacaq hədd yox idi; heç nə dəyişmədi. Giriş yenə də cəhd edilə bilər.",
+    unlockedUncounted: "Kataloq girişinin açılması qəbul edildi; server neçə cəhd daha verildiyini bildirmədi.",
     scopeTitle: "{name} · şöbə və çarpayı əhatəsi",
     scopeUnrestricted: "Bu istifadəçi rolu gərəyi bütün xəstələri görür ({reason}); burada təyin edilən şöbə və ya çarpayı heç nəyi dəyişməz.",
     scopeUnassignedOpen: "Hələ heç bir təyinat yoxdur və bu server təyinatı olmayan hesabı məhdudlaşdırmır: bu istifadəçi hazırda bütün xəstələri görür. Burada yadda saxlanılan şöbə və ya çarpayı onu dərhal onlarla məhdudlaşdırır.",
@@ -408,6 +412,7 @@ export default {
     activated: "Учётная запись активирована.",
     unlocked: "Вход через каталог открыт один раз: ещё попыток: {count}.",
     unlockedNothing: "У этой записи не было ограничения, которое можно открыть; ничего не изменилось. Войти всё равно можно.",
+    unlockedUncounted: "Снятие ограничения входа через каталог принято; сервер не сообщил, сколько ещё попыток это даёт.",
     scopeTitle: "{name} · область отделений и коек",
     scopeUnrestricted: "Этот пользователь видит всех пациентов по своей роли ({reason}); назначенное здесь отделение или койка ничего не изменят.",
     scopeUnassignedOpen: "Назначений пока нет, а этот сервер не ограничивает учётную запись без назначений: сейчас пользователь видит всех пациентов. Сохранённое здесь отделение или койка сразу ограничат его ими.",
@@ -549,6 +554,7 @@ export default {
     activated: "The account was activated.",
     unlocked: "The directory sign-in was opened once: {count} more attempts.",
     unlockedNothing: "This account had no throttle to lift; nothing changed. Signing in can still be tried.",
+    unlockedUncounted: "The directory sign-in unlock was accepted; the server did not say how many more attempts it allows.",
     scopeTitle: "{name} · unit and bed scope",
     scopeUnrestricted: "This user sees every patient by role ({reason}); a unit or bed assigned here would change nothing.",
     scopeUnassignedOpen: "Nothing is assigned yet, and this server does not restrict an account with no assignment: this user sees every patient now. A unit or bed saved here limits them to it at once.",

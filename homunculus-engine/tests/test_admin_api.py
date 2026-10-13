@@ -575,6 +575,27 @@ async def test_an_empty_membership_expectation_means_she_held_none(client, world
     assert res.status_code == 200, res.text                  # an account that held none meets it
 
 
+async def test_a_membership_in_another_hospital_is_no_part_of_the_expectation(client, world,
+                                                                            db_session):
+    """The expectation describes THIS tenant's manual memberships — the only ones this write
+    replaces and the only ones this hospital's form can show. An account shared with another
+    hospital holds manual groups there too; counting them would refuse every save of a shared
+    account here, for ever, with a 409 no re-read can cure."""
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    g, nurse = world["groups"], world["nurse"]
+    elsewhere = world["other_groups"]["physician"]
+    db_session.add(TenantMembership(user_id=nurse.id, tenant_id=elsewhere.tenant_id))
+    db_session.add(UserGroup(user_id=nurse.id, group_id=elsewhere.id, source="manual"))
+    await db_session.commit()
+    res = await c.put(f"/admin/users/{nurse.id}/groups", headers=admin, json={
+        "group_ids": [str(g["nurse"].id), str(g["charge_nurse"].id)],
+        "expected_group_ids": [str(g["nurse"].id)]})
+    assert res.status_code == 200, res.text
+    assert [x["slug"] for x in res.json()["groups"]] == ["charge_nurse", "nurse"]
+    assert await _groups_of(db_session, nurse.id) == ["charge_nurse", "nurse", "physician"]
+
+
 async def test_a_membership_the_directory_holds_is_no_part_of_the_expectation(client, world,
                                                                             db_session):
     """The form's expectation is the MANUAL list it read — the only one `PUT /groups` replaces.

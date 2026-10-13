@@ -607,12 +607,14 @@ describe("the three confirmations and the unlock", () => {
     // clear; `granted` tells the two apart and `allowed_after - allowed_before` is how many it let
     // through. The screen used to claim "three more" for both — the one place in this surface it
     // said more than it was told.
+    // 3 → 5, not the real chain's 3 → 6: a screen that printed "three" from its own knowledge of the
+    // chain would pass with 6 and fails here.
     const { api } = await open();
-    api.adminUnlockSignIn.mockResolvedValue({ ok: true, granted: true, allowed_before: 3, allowed_after: 6 });
+    api.adminUnlockSignIn.mockResolvedValue({ ok: true, granted: true, allowed_before: 3, allowed_after: 5 });
     await press(/Girişi aç: dr\.kamran/);
     fireEvent.change(screen.getByLabelText(/Səbəb/), { target: { value: "telefonla doğrulandı" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Girişi aç" })); await settle(); });
-    expectConfirmed(/Kamran Sintetik · Kataloq girişi bir dəfə açıldı: 3 cəhd daha\./);
+    expectConfirmed(/Kamran Sintetik · Kataloq girişi bir dəfə açıldı: 2 cəhd daha\./);
 
     cleanup();
     const second = await open();
@@ -621,16 +623,26 @@ describe("the three confirmations and the unlock", () => {
     fireEvent.change(screen.getByLabelText(/Səbəb/), { target: { value: "telefonla doğrulandı" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Girişi aç" })); await settle(); });
     expectConfirmed(/açılacaq hədd yox idi; heç nə dəyişmədi/);
+  });
 
-    cleanup();
-    // A server that reports `granted` without the numbers gets the cautious sentence: a count the
-    // screen cannot verify is the over-claim this sentence exists to remove.
-    const third = await open();
-    third.api.adminUnlockSignIn.mockResolvedValue({ ok: true, granted: true });
-    await press(/Girişi aç: dr\.kamran/);
-    fireEvent.change(screen.getByLabelText(/Səbəb/), { target: { value: "telefonla doğrulandı" } });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Girişi aç" })); await settle(); });
-    expectConfirmed(/açılacaq hədd yox idi; heç nə dəyişmədi/);
+  it("an unlock the server did not count is said as accepted — never as 'nothing to lift', never with a number", async () => {
+    // `granted: true` with the numbers missing (or not after > before), and a 200 that says nothing
+    // about `granted` at all: the screen knows the unlock was ACCEPTED and nothing more. "Nothing to
+    // lift" contradicts a server that said it granted; a count would be one the screen made up.
+    for (const answer of [
+      { ok: true, granted: true },
+      { ok: true, granted: true, allowed_before: 3, allowed_after: 3 },
+      { ok: true },
+    ]) {
+      cleanup();
+      const { api } = await open();
+      api.adminUnlockSignIn.mockResolvedValue(answer);
+      await press(/Girişi aç: dr\.kamran/);
+      fireEvent.change(screen.getByLabelText(/Səbəb/), { target: { value: "telefonla doğrulandı" } });
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Girişi aç" })); await settle(); });
+      expectConfirmed(/Kamran Sintetik · Kataloq girişinin açılması qəbul edildi; server neçə cəhd daha verildiyini bildirmədi\./);
+      expect(screen.queryByText(/heç nə dəyişmədi|\d+ cəhd daha/), JSON.stringify(answer)).toBeNull();
+    }
   });
 
   it("the unlock asks for a reason, refuses an empty one before sending, and says it is audited", async () => {
