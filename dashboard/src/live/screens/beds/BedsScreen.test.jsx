@@ -80,10 +80,17 @@ describe("the bed board", () => {
     expect(screen.queryByText("Hazırda izlənən xəstə yoxdur. Bağlantı işləyir.")).toBeNull();
   });
 
+  it("counts no beds before a read has put any on screen — never '0' for a ward it cannot see", async () => {
+    await open({ connection: "unavailable" });
+    expect(screen.getByRole("heading", { level: 1, name: "Çarpayılar" })).toBeInTheDocument();
+    expect(screen.queryByText(/\d+ çarpayı/)).toBeNull();
+  });
+
   it("a board that lost its stream shows what it has, marked out of date", async () => {
     await open({ payload: board([entry("S-001", [], CARD)]), connection: "degraded" });
     expect(screen.getByText("REA-01 · 2")).toBeInTheDocument();
     expect(screen.getAllByRole("note").some((n) => n.textContent.includes("güncəl olmaya bilər"))).toBe(true);
+    expect(screen.getByText("1 çarpayı")).toBeInTheDocument(); // the cards kept on screen, counted
   });
 
   it("writes the engine's own scope sentence, and how many cards it withheld", async () => {

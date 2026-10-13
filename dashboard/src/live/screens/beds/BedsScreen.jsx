@@ -185,9 +185,14 @@ export function BedsScreen() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="m-0 font-display text-23 font-bold">{t("nav.beds")}</h1>
-          <p className="m-0 text-13 text-mute">
-            {unit ? t("beds.subUnit", { unit, count: shown.length }) : t("beds.sub", { count: shown.length })}
-          </p>
+          {/* A count only of cards a read put on screen (live, or kept and marked out of date):
+              while connecting, or after a load that failed, there are none to count, and "0 beds"
+              would read as an empty ward. The unit alone is still true. */}
+          {boardKnown(board.connection) || boardStale(board.connection) ? (
+            <p className="m-0 text-13 text-mute">
+              {unit ? t("beds.subUnit", { unit, count: shown.length }) : t("beds.sub", { count: shown.length })}
+            </p>
+          ) : unit ? <p className="m-0 text-13 text-mute">{unit}</p> : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Seg label={t("beds.view")} value={view} onChange={setView} options={[
