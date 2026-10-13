@@ -10,14 +10,21 @@ import { VitePWA } from "vite-plugin-pwa";
  * olduğu ancak dosya adındaki karma değere bakılarak anlaşıldı. Bir hastane sisteminde bu,
  * hata ayıklamanın ilk adımıdır — "sizde hangi sürüm var" sorusunun cevabı ekranda olmalı.
  *
- * Docker imajı `.git` olmadan derlenebilir; o durumda uydurulmaz, "bilinmiyor" denir.
+ * Docker imajı `.git` olmadan derlenir (.dockerignore) ve imajda git yoktur: orada SHA dışarıdan
+ * gelir — `BUILD_SHA=$(git rev-parse --short HEAD) docker compose build web`, compose'un build
+ * argümanı, Dockerfile'ın ARG'ı (G1-15, F2). İkisi de yoksa uydurulmaz, "bilinmiyor" denir.
  */
-function gitSha() {
+export function gitSha(
+  env = process.env,
+  run = (cmd) => execSync(cmd, { stdio: ["ignore", "pipe", "ignore"] }),
+) {
   try {
-    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+    const sha = run("git rev-parse --short HEAD").toString().trim();
+    if (sha) return sha;
   } catch {
-    return "";
+    // git yok ya da burası bir checkout değil: BUILD_SHA'ya bakılır.
   }
+  return (env.BUILD_SHA ?? "").trim();
 }
 
 export default defineConfig({

@@ -114,6 +114,11 @@ services:
     build:
       context: ../..
       dockerfile: deploy/local/web/Dockerfile
+      args:
+        # The commit shown in the dashboard's account menu. The image is built without .git, so
+        # pass it in: BUILD_SHA=$(git rev-parse --short HEAD) docker compose build web. Unset, the
+        # dashboard says "version unknown".
+        BUILD_SHA: ${BUILD_SHA:-}
     container_name: homunculus-web
     restart: unless-stopped
     ports:

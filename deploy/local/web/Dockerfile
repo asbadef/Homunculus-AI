@@ -20,6 +20,14 @@ RUN rm -f .env .env.local .env.production .env.production.local
 # VITE_API_URL is DELIBERATELY NOT SET. With it unset, defaultBaseUrl() returns "" and the app
 # talks to its own origin, which nginx proxies to the API. Setting it here would reintroduce the
 # build-time address that broke the Vercel deployment.
+#
+# BUILD_SHA: the commit this image is built from, for the account menu's version line. The context
+# has no .git and this image has no git, so vite.config.js cannot ask; the deploy passes it in:
+#   BUILD_SHA=$(git rev-parse --short HEAD) docker compose build web
+# Unset, the dashboard says "version unknown" rather than invent one. Declared here, after npm ci,
+# so a new SHA does not throw away the cached dependencies. An ARG is in the environment of the RUN
+# below, which is how `npm run build` (vite.config.js, gitSha) sees it.
+ARG BUILD_SHA
 RUN npm run build
 
 # Fail the build rather than ship a dashboard pointed at someone else's server.
