@@ -643,6 +643,41 @@ describe("backendApi — scope assignment (until G1-12 rebuilds the screen)", ()
 
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ grants: [] });
   });
+
+  // The third whole-set write's compare-and-swap (`ScopeAssignment.expected_grants`): the grants the
+  // editor READ, beside the list that replaces them, so the server can refuse a save built on a
+  // scope another desk has changed since (409 concurrentChange). The same contract as
+  // `adminSetUserGroups`'s third argument.
+  const sentScope = async (...args) => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(TOKENS))
+      .mockResolvedValueOnce(jsonResponse({}));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    await api.login("admin", "gizli");
+    await api.setScope(...args);
+    return JSON.parse(fetchMock.mock.calls[1][1].body);
+  };
+
+  it("carries the grants the editor read as `expected_grants`, beside the new `grants`, both as given", async () => {
+    expect(await sentScope("u-1", [{ unit_id: "REA-01" }, { bed_id: "REA-02-1" }], [{ unit_id: "REA-01" }])).toEqual({
+      grants: [{ unit_id: "REA-01" }, { bed_id: "REA-02-1" }], expected_grants: [{ unit_id: "REA-01" }],
+    });
+  });
+
+  it("without an expected list the key is ABSENT — not null, not [] — so the server reads the old body", async () => {
+    for (const missing of [undefined, null]) {
+      // eslint-disable-next-line no-await-in-loop
+      const body = await sentScope("u-1", [{ unit_id: "REA-01" }], missing);
+      expect(body, String(missing)).toEqual({ grants: [{ unit_id: "REA-01" }] });
+      expect("expected_grants" in body, String(missing)).toBe(false);
+    }
+    expect("expected_grants" in await sentScope("u-1", [{ unit_id: "REA-01" }])).toBe(false);
+  });
+
+  it("an EMPTY expected list is sent as [] — a real expectation: \"she holds no grant\"", async () => {
+    const body = await sentScope("u-1", [{ unit_id: "REA-01" }], []);
+    expect(body).toEqual({ grants: [{ unit_id: "REA-01" }], expected_grants: [] });
+  });
 });
 
 // The two whole-set writes of the administration screens. Each REPLACES a set on the server, so

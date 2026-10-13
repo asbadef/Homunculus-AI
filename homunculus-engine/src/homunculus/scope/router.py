@@ -17,7 +17,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from homunculus.admin.service import CONCURRENT_CHANGE
 from homunculus.auth.dependencies import caller_tenant_id, get_current_user, require_permission
+from homunculus.auth.groups import lock_admin_guard
 from homunculus.auth.models import TenantMembership, User
 from homunculus.db import get_db
 from homunculus.scope import service
@@ -152,7 +154,23 @@ async def put_scope(
     Replacement, not a diff: an administrator filling in a form is deciding what this person's
     access *is*. Two administrators saving diffs concurrently would merge into the union of both
     — the more permissive outcome, chosen by neither of them.
+
+    A replacement has its own fault, and this route closes it the way `/admin` closes it for a
+    group's permissions and a user's memberships (Task 14e). The list was built from what a
+    screen last READ; written blind, a save from an out-of-date editor silently revoked a grant
+    another administrator had just added, and two saves at once — each reading the scope before
+    the other committed — could still end as the union. So:
+
+      * the whole write runs under the tenant's admin-guard lock (`lock_admin_guard`, the lock
+        every `/admin` write takes first), from before anything is read to the commit in
+        `replace_grants`: two scope writes to one hospital run one at a time, and each reads what
+        the one before it committed;
+      * a body carrying `expected_grants` is compared, as a set of (unit, bed) pairs, with the
+        grants held now, and a mismatch is refused 409 CONCURRENT_CHANGE — the exact text the
+        dashboard recognises as `concurrentChange` — with nothing written and nothing audited. An
+        absent expectation is the write as it always was; an empty one means "she held none".
     """
+    await lock_admin_guard(db, tenant_id)
     # Only an unrestricted administrator assigns scope (as on main). `users.manage` alone would
     # let its holder grant themselves every unit or blind someone with more rights.
     if await service.read_role(db, admin.id, tenant_id) not in SCOPE_UNRESTRICTED_ROLES:
@@ -160,7 +178,12 @@ async def put_scope(
                             detail="kapsam atamak için kapsamı sınırsız bir yönetici olmalısınız")
     slug = await _slug_of_member(db, tenant_id, user_id)
 
-    before = sorted(g.target for g in await service.read_grants(db, user_id, tenant_id))
+    held = await service.read_grants(db, user_id, tenant_id)
+    if (body.expected_grants is not None
+            and service.grant_pairs(body.expected_grants) != service.grant_pairs(held)):
+        await db.rollback()                       # nothing written; the lock goes with it
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=CONCURRENT_CHANGE)
+    before = sorted(g.target for g in held)
     rows = await service.replace_grants(
         db, tenant_id=tenant_id, user_id=user_id,
         grants=[(g.unit_id.strip(), g.bed_id.strip()) for g in body.grants],

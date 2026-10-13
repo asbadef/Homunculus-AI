@@ -126,6 +126,14 @@ def _window_open(start: datetime | None, end: datetime | None, now: datetime) ->
     return not (end is not None and now > end)
 
 
+def grant_pairs(grants) -> set[tuple[str, str]]:
+    """Grants as the set of (unit_id, bed_id) pairs they name, each stripped as `replace_grants`
+    stores it: what a scope write's expectation and the stored scope are compared as. Takes the
+    stored rows and a body's `ScopeGrantIn`s alike — both carry the two strings. A set, because the
+    order a screen listed them in and a repeated entry say nothing about what it read."""
+    return {(g.unit_id.strip(), g.bed_id.strip()) for g in grants}
+
+
 async def replace_grants(
     db: AsyncSession,
     *,

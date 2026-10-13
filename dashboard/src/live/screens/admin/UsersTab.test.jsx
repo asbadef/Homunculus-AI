@@ -107,13 +107,20 @@ function rememberingServer(api) {
   // Each account's unit and bed scope (`/scope/{id}`; nobody holds any to begin with), and the
   // to-do counter that counts the accounts holding none — `count_unassigned`: active, and not
   // unrestricted by role. A scope save MOVES that counter, which is why the tab must read it again.
+  // The scope write is the third whole-set write and follows the same contract: a PUT whose
+  // `expected_grants` differ from the grants held — as a SET of stripped (unit, bed) pairs, as
+  // `scope.router.put_scope` compares them — is refused, 409 concurrentChange, nothing written.
   state.scopes = {};
   const held = (id) => state.scopes[id] ?? [];
+  const pairs = (grants) => asSet(grants.map((g) => `${(g.unit_id ?? "").trim()}|${(g.bed_id ?? "").trim()}`));
   const viewOf = (id) => (held(id).length === 0
     ? scopeView({ user_id: id, unrestricted: true, reason: "unassigned" })
     : scopeView({ user_id: id, grants: held(id) }));
   api.userScope.mockImplementation(async (id) => viewOf(id));
-  api.setScope.mockImplementation(async (id, grants) => {
+  api.setScope.mockImplementation(async (id, grants, expected) => {
+    if (Array.isArray(expected) && pairs(expected) !== pairs(held(id))) {
+      throw refusal(409, "Kayıt aynı anda değiştirildi; lütfen tekrar deneyin");
+    }
     state.scopes[id] = grants.map((g) => ({ unit_id: g.unit_id ?? "", bed_id: g.bed_id ?? "" }));
     return viewOf(id);
   });
@@ -753,7 +760,9 @@ describe("the scope editor", () => {
     api.userScope.mockResolvedValue(scopeView({ user_id: "u-nurse", grants: [{ unit_id: "REA-01" }] }));
     fireEvent.click(screen.getByRole("checkbox", { name: "REA-01" }));
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Əhatəni yadda saxla" })); await settle(); });
-    expect(api.setScope).toHaveBeenCalledWith("u-nurse", [{ unit_id: "REA-01" }]);
+    // The third argument is what the editor READ — nothing, here: `expected_grants: []` is a real
+    // expectation ("she holds no grant"), never an absent one.
+    expect(api.setScope).toHaveBeenCalledWith("u-nurse", [{ unit_id: "REA-01" }], []);
     expectConfirmed(/Ayşe Sentetik · Əhatə yadda saxlanıldı\./);
     expect(within(row).getByText("1 şöbə")).toBeInTheDocument();
   });
@@ -808,7 +817,7 @@ describe("the scope editor", () => {
     api.setScope.mockResolvedValue(scopeView({ grants: [{ unit_id: "REA-09" }, { bed_id: "REA-01-2" }] }));
     fireEvent.click(screen.getByRole("checkbox", { name: "REA-01-2" }));
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Əhatəni yadda saxla" })); await settle(); });
-    expect(api.setScope).toHaveBeenCalledWith("u-nurse", [{ unit_id: "REA-09" }, { bed_id: "REA-01-2" }]);
+    expect(api.setScope).toHaveBeenCalledWith("u-nurse", [{ unit_id: "REA-09" }, { bed_id: "REA-01-2" }], [{ unit_id: "REA-09" }]);
     expect(api.userScope).toHaveBeenCalledTimes(2);                    // read back, not assumed
     expectConfirmed(/Ayşe Sentetik · Əhatə yadda saxlanıldı\./);
   });
@@ -1382,5 +1391,58 @@ describe("the final review: a scope save re-reads what it changed", () => {
     await act(async () => { store.signOut(); await settle(); });
     await act(async () => { releaseRead(scopeView({ user_id: "u-nurse", grants: [{ unit_id: "REA-01" }] })); await settle(); await settle(); });
     expect(admin.reload).not.toHaveBeenCalled();
+  });
+
+  // `PUT /scope/{id}` is the third whole-set write, and it had no compare-and-swap: a stale editor
+  // silently revoked a grant another administrator had just added. It now carries the grants the
+  // editor READ (`expected_grants`), and the server refuses a save built on a scope that has moved.
+  const CHANGED = "Bu hesab bu arada başqa masada dəyişdirilib; indiki vəziyyətini görmək üçün hesabı yenidən açın.";
+  const nurseRow = () => screen.getByRole("rowheader", { name: /hs\.aygun/ }).closest("tr");
+
+  it("a save carries the grants the editor opened with, beside the new list", async () => {
+    const { api, server } = await openFrame();
+    server.scopes["u-nurse"] = [{ unit_id: "REA-09", bed_id: "" }];
+    await openScopeOf("hs\\.aygun");
+    addKey("REA-01");
+    await saveScope();
+    expect(api.setScope).toHaveBeenCalledWith("u-nurse", [{ unit_id: "REA-09" }, { unit_id: "REA-01" }], [{ unit_id: "REA-09" }]);
+    expect(server.scopes["u-nurse"]).toEqual([{ unit_id: "REA-09", bed_id: "" }, { unit_id: "REA-01", bed_id: "" }]);
+    expectConfirmed(/Ayşe Sentetik · Əhatə yadda saxlanıldı\./);
+  });
+
+  it("a scope another desk changed since the editor read it is not overwritten: the editor closes, says why, and the row and the counter show the server's", async () => {
+    const { server } = await openFrame();
+    await openScopeOf("hs\\.aygun");                       // she reads: nothing assigned
+    server.scopes["u-nurse"] = [{ unit_id: "NICU-01", bed_id: "" }];   // another desk gives NICU-01
+    addKey("REA-01");
+    await saveScope();
+    // Built on the stale read, the save would have REVOKED NICU-01. Refused, nothing written.
+    expect(server.scopes["u-nurse"]).toEqual([{ unit_id: "NICU-01", bed_id: "" }]);
+    expect(alerts()).toContain(`Ayşe Sentetik: ${CHANGED}`);
+    // Saving again from this editor would be refused again: it closes, and reopened it reads the
+    // scope as it is. The row and the counter are read again meanwhile.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(within(nurseRow()).getByText("1 şöbə")).toBeInTheDocument();
+    expect(screen.getByText(COUNT(2))).toBeInTheDocument();
+    await openScopeOf("hs\\.aygun");
+    expect(screen.getByRole("rowheader", { name: "NICU-01" })).toBeInTheDocument();
+  });
+
+  it("after a save with no answer, the editor rebases on the read-back: the next save expects what the server holds, and lands", async () => {
+    const { api, server } = await openFrame();
+    const take = api.setScope.getMockImplementation();
+    api.setScope.mockImplementationOnce(async (...args) => { await take(...args); throw new TypeError("Failed to fetch"); });
+    await openScopeOf("hs\\.aygun");
+    addKey("REA-01");
+    await saveScope();                                     // it landed; the answer was lost
+    expect(screen.getByText(/saxlanılmış da ola bilər, saxlanılmamış da\. Yenidən oxundu/)).toBeInTheDocument();
+    addKey("REA-02");
+    await saveScope();
+    expect(api.setScope).toHaveBeenLastCalledWith("u-nurse", [{ unit_id: "REA-01" }, { unit_id: "REA-02" }], [{ unit_id: "REA-01" }]);
+    expect(server.scopes["u-nurse"]).toEqual([{ unit_id: "REA-01", bed_id: "" }, { unit_id: "REA-02", bed_id: "" }]);
+    // Confirmed — and never refused as changed elsewhere. (The first save's "may have gone
+    // through" is still on the toast, rightly: that one got no answer.)
+    expect(screen.getAllByText(/Ayşe Sentetik · Əhatə yadda saxlanıldı\./).length).toBeGreaterThan(0);
+    expect(alerts()).not.toContain(CHANGED);
   });
 });

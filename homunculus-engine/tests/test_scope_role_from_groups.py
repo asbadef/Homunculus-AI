@@ -6,15 +6,17 @@ administrator like a nurse — and an empty-scoped administrator cannot fix anyo
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from homunculus.auth.groups import ensure_default_groups, set_manual_groups
+from homunculus.admin.service import CONCURRENT_CHANGE
+from homunculus.auth.groups import ensure_default_groups, lock_admin_guard, set_manual_groups
 from homunculus.auth.models import Group, GroupPermission, TenantMembership, User
 from homunculus.scope.models import StaffScope
 from homunculus.auth.service import build_context, hash_password, issue_tokens
@@ -231,3 +233,157 @@ async def test_break_glass_in_another_tenant_does_not_reach_this_one(db_session,
     await db_session.commit()
     assert await break_glass_in_tenant(db_session, nurse.id, b.id) == ["MRN-B-1"]
     assert await break_glass_in_tenant(db_session, nurse.id, a.id) == []
+
+
+# ------------------------------------------------------------- the write: compare-and-swap
+#
+# `PUT /scope/{id}` REPLACES the user's whole scope with a list a screen built from what it last
+# read, and the server keeps no version of it — the third whole-set write, beside a group's
+# permissions and a user's memberships (Task 14e). A save from an out-of-date editor therefore
+# silently revoked a grant another administrator had just added, and two saves at once could end as
+# the UNION of both: the more permissive outcome, chosen by neither. The body may now say what it
+# believed the scope WAS (`expected_grants`); under the tenant's admin lock the server compares it,
+# as a SET of (unit, bed) pairs, with the grants it holds, and refuses a mismatch with
+# CONCURRENT_CHANGE — the exact text the dashboard recognises as `concurrentChange`. Refused,
+# nothing is written and nothing audited. A matching or absent expectation is the write as it
+# always was.
+
+async def _active_grants(db, user_id) -> list[tuple[str, str]]:
+    """What the user holds now, read on a fresh session (never the test's identity map)."""
+    async with async_sessionmaker(db.bind)() as fresh:
+        rows = (await fresh.execute(select(StaffScope.unit_id, StaffScope.bed_id).where(
+            StaffScope.user_id == user_id, StaffScope.is_active == True))).all()  # noqa: E712
+    return sorted((unit, bed) for unit, bed in rows)
+
+
+def _scope_events(client) -> int:
+    return len(client.app.state.audit.records(tenant="demo-hastanesi", event_type="scope"))
+
+
+def _changed_meanwhile(res) -> bool:
+    """The refusal the dashboard recognises by its text (`apiErrors.js`: concurrentChange)."""
+    return res.status_code == 409 and res.json().get("detail") == CONCURRENT_CHANGE
+
+
+async def test_a_scope_save_from_a_stale_read_is_refused_and_writes_nothing(db_session, world,
+                                                                          client):
+    headers = await _headers(db_session, world["admin"])
+    nurse = world["nurse"].id
+    read = (await client.get(f"/scope/{nurse}", headers=headers)).json()["grants"]   # [] ...
+    # ... and another desk gives her a unit before this editor saves.
+    other = await client.put(f"/scope/{nurse}", headers=headers,
+                             json={"grants": [{"unit_id": "unit-adult"}]})
+    assert other.status_code == 200, other.text
+    audited = _scope_events(client)
+
+    # Built on the stale read, the body would REVOKE the unit the other desk just gave.
+    res = await client.put(f"/scope/{nurse}", headers=headers, json={
+        "grants": [{"bed_id": "bed-a1"}],
+        "expected_grants": [{"unit_id": g["unit_id"], "bed_id": g["bed_id"]} for g in read]})
+    assert _changed_meanwhile(res), res.text
+    assert await _active_grants(db_session, nurse) == [("unit-adult", "")]   # nothing written
+    assert _scope_events(client) == audited                                  # nothing audited
+
+
+async def test_a_scope_save_whose_expectation_holds_goes_through_in_any_order(db_session, world,
+                                                                            client):
+    """A SET of normalised pairs: the order the screen listed them in, and a key's surrounding
+    blanks (the server strips both when it stores them), say nothing about what was read."""
+    headers = await _headers(db_session, world["admin"])
+    nurse = world["nurse"].id
+    first = await client.put(f"/scope/{nurse}", headers=headers, json={
+        "grants": [{"unit_id": "unit-adult"}, {"bed_id": "bed-a1"}]})
+    assert first.status_code == 200, first.text
+    res = await client.put(f"/scope/{nurse}", headers=headers, json={
+        "grants": [{"unit_id": "unit-adult"}, {"bed_id": "bed-a1"}, {"unit_id": "unit-nicu"}],
+        "expected_grants": [{"bed_id": " bed-a1 "}, {"unit_id": "unit-adult"}]})
+    assert res.status_code == 200, res.text
+    assert await _active_grants(db_session, nurse) == [
+        ("", "bed-a1"), ("unit-adult", ""), ("unit-nicu", "")]
+
+
+async def test_a_scope_save_without_an_expectation_is_the_write_it_always_was(db_session, world,
+                                                                             client):
+    headers = await _headers(db_session, world["admin"])
+    nurse = world["nurse"].id
+    await client.put(f"/scope/{nurse}", headers=headers, json={"grants": [{"unit_id": "unit-adult"}]})
+    res = await client.put(f"/scope/{nurse}", headers=headers,
+                           json={"grants": [{"bed_id": "bed-a1"}]})
+    assert res.status_code == 200, res.text
+    assert await _active_grants(db_session, nurse) == [("", "bed-a1")]
+
+
+async def test_an_empty_scope_expectation_means_she_held_none(db_session, world, client):
+    """An EMPTY list is an expectation — "this user holds no grant" — not an absent one."""
+    headers = await _headers(db_session, world["admin"])
+    nurse = world["nurse"].id
+    await client.put(f"/scope/{nurse}", headers=headers, json={"grants": [{"unit_id": "unit-adult"}]})
+    audited = _scope_events(client)
+    res = await client.put(f"/scope/{nurse}", headers=headers,
+                           json={"grants": [], "expected_grants": []})
+    assert _changed_meanwhile(res), res.text
+    assert await _active_grants(db_session, nurse) == [("unit-adult", "")]
+    assert _scope_events(client) == audited
+
+    # An account that held none meets it.
+    admin_id = world["admin"].id
+    res = await client.put(f"/scope/{admin_id}", headers=headers,
+                           json={"grants": [{"unit_id": "unit-adult"}], "expected_grants": []})
+    assert res.status_code == 200, res.text
+
+
+@pytest.mark.parametrize("expectation", [[], None], ids=["stale-expectation", "no-expectation"])
+async def test_two_scope_saves_at_once_never_end_as_the_union(db_session, world, client,
+                                                              expectation):
+    """Another administrator's save is in flight — it holds the tenant's admin lock and has
+    written its unit, not yet committed — when this one arrives. This one must WAIT for it and
+    then decide against what it committed: refused when its expectation is now stale, a plain
+    replacement when it stated none. Never both units: the union is the outcome neither chose.
+
+    Before the lock, the second save read the scope without the first's uncommitted row, wrote
+    its own, and the two commits together left both grants standing."""
+    headers = await _headers(db_session, world["admin"])
+    nurse, tid = world["nurse"].id, world["tenant"].id
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    pids: list[int] = []
+
+    async def _db():
+        async with maker() as session:
+            # Which backend serves this request, so the test can see it wait.
+            pids.append((await session.execute(select(func.pg_backend_pid()))).scalar_one())
+            yield session
+
+    client.app.dependency_overrides[get_db] = _db
+    body = {"grants": [{"unit_id": "unit-b"}]}
+    if expectation is not None:
+        body["expected_grants"] = expectation
+
+    async with maker() as first:
+        await lock_admin_guard(first, tid)
+        first.add(StaffScope(tenant_id=tid, user_id=nurse, unit_id="unit-a", bed_id=""))
+        await first.flush()
+        racing = asyncio.create_task(client.put(f"/scope/{nurse}", headers=headers, json=body))
+        try:
+            async with maker() as probe:
+                for _ in range(400):
+                    if racing.done():
+                        break                     # it did not wait: the defect, shown below
+                    if pids and (await probe.execute(
+                            text("SELECT count(*) FROM pg_locks WHERE pid = :pid AND NOT granted"),
+                            {"pid": pids[-1]})).scalar_one():
+                        break                     # it waits for the first save, as it must
+                    await asyncio.sleep(0.025)
+                else:
+                    raise AssertionError("the second save neither waited nor finished")
+        finally:
+            await first.commit()
+        res = await racing
+
+    held = await _active_grants(db_session, nurse)
+    assert held != [("unit-a", ""), ("unit-b", "")], "two saves ended as the union of both"
+    if expectation is None:
+        assert res.status_code == 200, res.text
+        assert held == [("unit-b", "")]
+    else:
+        assert _changed_meanwhile(res), res.text
+        assert held == [("unit-a", "")]

@@ -539,7 +539,7 @@ export function UsersTab({ admin }) {
           user={open.user}
           scope={open.scope}
           mayAssign={canAssignScope(myScope)}
-          save={(grants) => store.track(() => api.setScope(open.user.id, grants))}
+          save={(grants, expected) => store.track(() => api.setScope(open.user.id, grants, expected))}
           // A scope write MOVES the to-do counter (`/scope/unassigned`: the first unit given to an
           // unassigned account takes it off), so after one that landed — or may have — the
           // frame's reads are taken again as well as this user's scope: a counter the tab calls

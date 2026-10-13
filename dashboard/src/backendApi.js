@@ -536,11 +536,18 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
 
     /** Replace one user's scope. `grants` is a list of `{unit_id}` / `{bed_id}` objects.
      *  Replacement, not a diff: two administrators saving diffs concurrently would merge into
-     *  the union of both — the more permissive outcome, chosen by neither. */
-    setScope(userId, grants) {
-      return authed(`/scope/${encodeURIComponent(userId)}`, {
-        method: "PUT", body: { grants },
-      });
+     *  the union of both — the more permissive outcome, chosen by neither.
+     *
+     *  `expectedGrants`, in the same shape, is the scope the editor READ and built `grants` from
+     *  (`ScopeAssignment.expected_grants`): the server compares it, as a set, with what it holds and
+     *  answers 409 concurrentChange when another desk changed the scope since — a replacement built
+     *  on an old read would silently revoke that change. Sent only when given: absent (or null),
+     *  the key is left out and the write is the old one; `[]` is a real expectation, "she holds no
+     *  grant". The same contract as `adminSetUserGroups`'s third argument. */
+    setScope(userId, grants, expectedGrants) {
+      const body = { grants };
+      if (Array.isArray(expectedGrants)) body.expected_grants = expectedGrants;
+      return authed(`/scope/${encodeURIComponent(userId)}`, { method: "PUT", body });
     },
 
     /** How many active users hold no scope at all — the administrator's to-do counter. */

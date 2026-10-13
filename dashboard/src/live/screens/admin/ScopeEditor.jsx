@@ -22,6 +22,16 @@
 // The screen shows its own list at once and PUTS THE PREVIOUS LIST BACK when the server refuses,
 // saying so — the only optimism in this surface, and it is reversible because the list is local.
 //
+// EVERY SAVE SAYS WHAT IT READ (`expected_grants`). A replacement built from an out-of-date read
+// silently revoked whatever another administrator had granted since; so the body also carries the
+// grants this editor last had from the engine (`base` — the opening read, or the read-back after a
+// save with no answer), and the server compares them, as a set, with what it holds and refuses a
+// mismatch, 409 `concurrentChange`, writing nothing (the third whole-set write's compare-and-swap,
+// as the roles and the account form have theirs). Saving again from here would be refused again —
+// the expectation is still the old read — so a 409 CLOSES the editor, as the account form closes:
+// the toast says the account was changed at another desk meanwhile, the row's scope and the
+// frame's counter are read again, and reopened, the editor reads the scope as it is.
+//
 // ONE GRANT NAMES A UNIT OR A BED, NEVER BOTH (`ScopeGrantIn._exactly_one`, 422): a grant naming
 // neither "reads as access while granting nothing", which is the dangerous half.
 //
@@ -47,6 +57,7 @@
 // READ BACK, the list becomes what the engine holds, and the screen says the save may or may not
 // have landed (`mayHaveLanded`, the one copy all three tabs read: `refusal.js`).
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { apiErrorKey } from "../../apiErrors.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
@@ -67,6 +78,8 @@ const unassignedNoteKey = (scope) => (scope.unrestricted === true
 const asGrant = (unitId, bedId) => ({ unitId: unitId || "", bedId: bedId || "" });
 const sameGrant = (a, b) => a.unitId === b.unitId && a.bedId === b.bedId;
 const keyOf = (g) => `${g.unitId}|${g.bedId}`;
+/** Grants as `PUT /scope/{id}` takes them (`ScopeGrantIn`): one key each, the other left out. */
+const asBody = (list) => list.map((g) => (g.bedId ? { bed_id: g.bedId } : { unit_id: g.unitId }));
 
 /** The unit and bed keys this board can offer, plus the ones the user already holds. Sorted, with
  *  duplicates removed; a card the bed table did not place carries neither and contributes nothing. */
@@ -95,10 +108,11 @@ const OUTCOME_NOTE = {
 
 /**
  * `scope` is `rules.scopeFromApi(GET /scope/{id})`; `mayAssign` is `canAssignScope(myScope)` —
- * true, false, or null while the caller's own scope is still unknown. `save(grants)` sends
- * `PUT /scope/{id}` with the WHOLE list and resolves with the scope the server answered.
- * `reread()` reads this user's scope again and resolves with it (adapted), or with null when that
- * read failed — asked only after a save that got no answer.
+ * true, false, or null while the caller's own scope is still unknown. `save(grants, expected)`
+ * sends `PUT /scope/{id}` with the WHOLE list and, as `expected_grants`, the grants this editor
+ * last read, and resolves with the scope the server answered. `reread()` reads this user's scope
+ * again and resolves with it (adapted), or with null when that read failed — asked after a save
+ * that got no answer, and after one refused as changed elsewhere.
  */
 export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onRefused, onClose }) {
   const { t } = useI18n();
@@ -147,14 +161,25 @@ export function ScopeEditor({ user, scope, mayAssign, save, reread, onSaved, onR
     const epoch = store.epoch();
     const ours = () => store.epoch() === epoch;
     try {
-      await save(previous.map((g) => (g.bedId ? { bed_id: g.bedId } : { unit_id: g.unitId })));
+      // What the engine last told this editor, as the server's expectation: the opening read, or
+      // the read-back after a save with no answer (`base` moves with it).
+      await save(asBody(previous), asBody(base.grants));
       if (mounted.current && ours()) onSaved();
     } catch (err) {
       if (!ours()) return;
+      const stale = apiErrorKey(err)?.key === "errors.concurrentChange";
       // The toast first, whether or not this editor is still on screen: the toast outlives it,
       // and a refusal that waited for a mounted editor was a refusal nobody read.
-      onRefused(err);
+      onRefused(stale ? t("admin.changedElsewhere") : err);
       if (!mounted.current) return;
+      if (stale) {
+        // Another desk changed this scope since it was read, and nothing was written. Saving
+        // again from here would be refused again, so the editor closes (as the account form
+        // does) and what the save was about is read again — the row's scope and the counter.
+        onClose();
+        await reread();
+        return;
+      }
       if (mayHaveLanded(err)) {
         // No answer: the new list may be in force. Not rolled back — read back, and said so.
         setOutcome("maybe");

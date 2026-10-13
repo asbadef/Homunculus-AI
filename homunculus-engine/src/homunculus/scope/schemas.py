@@ -43,9 +43,21 @@ class ScopeAssignment(BaseModel):
     person's access *is*, not issuing a diff. Two admins editing concurrently with a diff API
     would silently merge into a union — the strictly more permissive outcome, arrived at by
     nobody.
+
+    A replacement built from an out-of-date read has the opposite fault: it silently revokes
+    whatever another administrator granted since. So the body may also say what the screen READ
+    (`expected_grants`), and the route compares it with what it holds before writing (see
+    `scope.router.put_scope`).
     """
 
     grants: list[ScopeGrantIn] = Field(default_factory=list)
+    # The grants the caller's screen read and built `grants` from — the third whole-set write's
+    # compare-and-swap, the same contract as `GroupPatch.expected_permissions` and
+    # `UserGroupsIn.expected_group_ids` (Task 14e). Compared as a SET of (unit, bed) pairs, each
+    # stripped as the server stores it; not the same set → 409 CONCURRENT_CHANGE, nothing written.
+    # None (absent): the caller states no expectation — the write as it always was. An EMPTY list
+    # is a real expectation, "this user holds no grant", and is compared like any other.
+    expected_grants: list[ScopeGrantIn] | None = None
 
 
 class ScopeView(BaseModel):
