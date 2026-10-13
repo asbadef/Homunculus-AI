@@ -104,6 +104,24 @@ function rememberingServer(api) {
     row.groups = [...row.groups.filter((g) => g.source !== "manual"), ...ids.map((g) => member(byId.get(g)))];
     return copy(row);
   });
+  // Each account's unit and bed scope (`/scope/{id}`; nobody holds any to begin with), and the
+  // to-do counter that counts the accounts holding none — `count_unassigned`: active, and not
+  // unrestricted by role. A scope save MOVES that counter, which is why the tab must read it again.
+  state.scopes = {};
+  const held = (id) => state.scopes[id] ?? [];
+  const viewOf = (id) => (held(id).length === 0
+    ? scopeView({ user_id: id, unrestricted: true, reason: "unassigned" })
+    : scopeView({ user_id: id, grants: held(id) }));
+  api.userScope.mockImplementation(async (id) => viewOf(id));
+  api.setScope.mockImplementation(async (id, grants) => {
+    state.scopes[id] = grants.map((g) => ({ unit_id: g.unit_id ?? "", bed_id: g.bed_id ?? "" }));
+    return viewOf(id);
+  });
+  api.unassignedScopes.mockImplementation(async () => ({
+    tenant: "sentetik",
+    unassigned_users: state.users.filter((u) => u.is_active && held(u.id).length === 0
+      && !u.groups.some((g) => g.id === SYSTEM_GROUP.id)).length,
+  }));
   return state;
 }
 
@@ -1306,5 +1324,63 @@ describe("the review round", () => {
       expect(s.unitCount, `${lang}.unitCount`).toMatch(/^[^{]+: \{count\}$/);
       expect(s.bedCount, `${lang}.bedCount`).toMatch(/^[^{]+: \{count\}$/);
     }
+  });
+});
+
+// The final whole-wave review (Wave 3B). A scope save MOVES the to-do counter ("users with no
+// assignment") — the first unit given to an unassigned nurse takes her off it — but the tab re-read
+// only that user's scope, and the counter, a figure the screen calls KNOWN, went on saying the
+// number from before the save. Through the frame, against a server that remembers.
+describe("the final review: a scope save re-reads what it changed", () => {
+  const COUNT = (n) => `Heç bir təyinatı olmayan istifadəçi: ${n}`;
+  const openScopeOf = async (name) => {
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: new RegExp(`Şöbələr: ${name}`) })[0]);
+      await settle(); await settle();
+    });
+  };
+  const addKey = (key) => {
+    fireEvent.change(screen.getByLabelText(/Şöbə və ya çarpayı açarı/), { target: { value: key } });
+    fireEvent.click(screen.getByRole("button", { name: "Əlavə et" }));
+  };
+  const saveScope = () => act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Əhatəni yadda saxla" }));
+    await settle(); await settle(); await settle();
+  });
+
+  it("giving the first unit to an unassigned nurse takes her off the counter on screen", async () => {
+    const { server } = await openFrame();
+    expect(screen.getByText(COUNT(3))).toBeInTheDocument();          // the three synthetic accounts
+    await openScopeOf("hs\\.aygun");
+    addKey("REA-01");
+    await saveScope();
+    expect(server.scopes["u-nurse"]).toEqual([{ unit_id: "REA-01", bed_id: "" }]);   // the server's truth
+    expectConfirmed(/Ayşe Sentetik · Əhatə yadda saxlanıldı\./);
+    expect(screen.getByText(COUNT(2))).toBeInTheDocument();
+    expect(screen.queryByText(COUNT(3))).toBeNull();
+  });
+
+  it("a scope save with no answer that DID land: the read-back moves the counter too", async () => {
+    const { api } = await openFrame();
+    const take = api.setScope.getMockImplementation();
+    api.setScope.mockImplementation(async (...args) => { await take(...args); throw new TypeError("Failed to fetch"); });
+    await openScopeOf("hs\\.aygun");
+    addKey("REA-01");
+    await saveScope();
+    expect(screen.getByText(/saxlanılmış da ola bilər, saxlanılmamış da\. Yenidən oxundu/)).toBeInTheDocument();
+    expect(screen.getByText(COUNT(2))).toBeInTheDocument();
+  });
+
+  it("a scope save whose read-back answers after the session ended reads nothing into the next one", async () => {
+    const { api, admin, store } = await openGated();
+    let releaseRead;
+    api.setScope.mockResolvedValue(scopeView({ user_id: "u-nurse", grants: [{ unit_id: "REA-01" }] }));
+    await openScopeOf("hs\\.aygun");
+    api.userScope.mockImplementation(() => new Promise((resolve) => { releaseRead = resolve; }));
+    addKey("REA-01");
+    await saveScope();                                     // landed; the read-back is out
+    await act(async () => { store.signOut(); await settle(); });
+    await act(async () => { releaseRead(scopeView({ user_id: "u-nurse", grants: [{ unit_id: "REA-01" }] })); await settle(); await settle(); });
+    expect(admin.reload).not.toHaveBeenCalled();
   });
 });

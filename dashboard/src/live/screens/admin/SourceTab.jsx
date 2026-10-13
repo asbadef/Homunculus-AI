@@ -69,7 +69,12 @@
 // tabs): a timeout, a dropped connection or a server that could not answer may come after the
 // engine committed. The toast says it may have gone through (`refusedFor`), and what the write
 // touched is read again — the mapping table after every mapping write, the frame's lists after an
-// import chunk that may have landed.
+// import chunk or a mapping delete that may have landed.
+//
+// A MAPPING DELETE CHANGES ACCOUNTS NOW (`ldap_service.delete_mapping` removes the group's AD-held
+// memberships in the same transaction), so a delete that landed re-reads the frame's lists too —
+// the users and roles tabs draw them. A create changes nobody until their next sign-in, and does
+// not. (The final whole-wave review: the users tab went on showing the removed role.)
 //
 // THE REVIEW ROUND (G1-14 quality review, P1–P7), each held by a test in SourceTab.test.jsx:
 //   * The import OUTLIVES the tab. She chose those accounts; leaving for another tab mid-run must
@@ -452,22 +457,35 @@ export function SourceTab({ admin }) {
     if (mounted.current && ours()) await readMappings();
   }
 
+  /** A delete changes ACCOUNTS, not only this table: `ldap_service.delete_mapping` takes every
+   *  AD-held membership of the row's group away at once (they come back at the next sign-in for
+   *  whoever another mapping still entitles). So after a delete that landed — or one with no answer,
+   *  which may have — the frame's lists are read again as well as the table, or the users tab goes
+   *  on showing a role the server has taken away and the roles tab a member count it no longer
+   *  holds. (A CREATE changes nobody now — each account picks the group up at its next sign-in,
+   *  refresh or import — so `addMapping` re-reads only the table.) Like the import's, the frame
+   *  reload does not wait on this tab being mounted (the frame outlives it) and is not asked for a
+   *  session that is not this one. */
   async function removeMapping(row) {
     if (removingId) return;
     begin();
     setRemovingId(row.id);
     const ours = sessionNow();
+    let changed = false;
     try {
       await store.track(() => api.ldapDeleteMapping(row.id));
+      changed = true;
       if (!ours()) return;
       toast(doneFor(t, row.ad_group_dn, t("source.mapRemoved")));
     } catch (err) {
+      changed = mayHaveLanded(err);
       if (!ours()) return;
       toast(refusedFor(t, row.ad_group_dn, err), "error");
     } finally {
       if (mounted.current) setRemovingId(null);
     }
     if (mounted.current && ours()) await readMappings();
+    if (changed && ours()) await admin.reload();
   }
 
   /** May this desk give `g` as the import's extra group? A group it may not grant is still SHOWN,

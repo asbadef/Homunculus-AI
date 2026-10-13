@@ -540,11 +540,23 @@ export function UsersTab({ admin }) {
           scope={open.scope}
           mayAssign={canAssignScope(myScope)}
           save={(grants) => store.track(() => api.setScope(open.user.id, grants))}
-          reread={() => rereadScope(open.user)}
+          // A scope write MOVES the to-do counter (`/scope/unassigned`: the first unit given to an
+          // unassigned account takes it off), so after one that landed — or may have — the
+          // frame's reads are taken again as well as this user's scope: a counter the tab calls
+          // known must not go on saying the number from before the save. Only for the session
+          // that saved (`sessionNow`): the read-back is an await, and a session may end under it.
+          reread={async () => {
+            const ours = sessionNow();
+            const fresh = await rereadScope(open.user);
+            if (ours()) await admin.reload();
+            return fresh;
+          }}
           onSaved={async () => {
+            const ours = sessionNow();
             toast(doneFor(t, open.user.fullName || open.user.username, t("admin.scopeSaved")));
             setOpen(null);
             await rereadScope(open.user);
+            if (ours()) await admin.reload();
           }}
           onRefused={(err) => toast(refusedFor(t, open.user.fullName || open.user.username, err), "error")}
           onClose={() => setOpen(null)}

@@ -12,10 +12,13 @@ import { profile, token } from "../../session/testTokens.testutil.js";
 import { LDAP_IMPORT_CHUNK, LDAP_QUERY_MAX, LDAP_SEARCH_CAP } from "../../../backendApi.js";
 import { PERMISSION_KEYS } from "./catalogue.js";
 import {
-  ADMIN_READS, CATALOGUE, GROUPS, NURSE_GROUP, adminProp, guid, ldapGroup, ldapStatus, ldapUser, mapping,
+  ADMIN_READS, CATALOGUE, GROUPS, NURSE_GROUP, USERS, adminProp, guid, ldapGroup, ldapStatus, ldapUser, mapping,
 } from "./admin.testutil.js";
 import { FIELD_MAX } from "./limits.js";
 import { SourceTab, chunksOf, markImported, skipReasonKey, testReasonKey } from "./SourceTab.jsx";
+import { UsersTab } from "./UsersTab.jsx";
+import { RolesTab } from "./RolesTab.jsx";
+import { board } from "../../data/board.testutil.js";
 import { AdminScreen, onlyTabs, resetTabs } from "./AdminScreen.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import SOURCE from "../../i18n/strings/source.js";
@@ -33,10 +36,22 @@ const pause = (ms = 400) => act(async () => { await new Promise((resolve) => { s
 
 /** A STATEFUL mapping server: `ldapMappings` answers what the writes left behind, as the real one
  *  does, so a test asserts what the TABLE shows rather than how often the table was asked. Its
- *  refusals are the server's own words (`ldap_service.MAPPING_EXISTS` / `MAPPING_NOT_FOUND`). */
+ *  refusals are the server's own words (`ldap_service.MAPPING_EXISTS` / `MAPPING_NOT_FOUND`).
+ *
+ *  It holds the ACCOUNTS too (`adminUsers`), because a delete changes them: as
+ *  `ldap_service.delete_mapping` does, the row goes AND, at once, every `ldap`-sourced membership
+ *  of its group in this hospital — whatever other mapping still grants it, until that account's
+ *  next sign-in. A create changes nobody now (each account picks the group up at its next sign-in,
+ *  refresh or import), so it touches only the table. */
 function mappingServer(api, rows = [mapping()]) {
   let table = [...rows];
   let next = 2;
+  let users = JSON.parse(JSON.stringify(USERS));
+  api.adminUsers.mockImplementation(async () => JSON.parse(JSON.stringify(users)));
+  // Each group's member count is what the accounts hold, as `list_groups` counts it.
+  api.adminGroups.mockImplementation(async () => GROUPS.map((g) => ({
+    ...g, member_count: users.filter((u) => u.groups.some((link) => link.id === g.id)).length,
+  })));
   api.ldapMappings.mockImplementation(async () => table.map((row) => ({ ...row })));
   api.ldapCreateMapping.mockImplementation(async (dn, groupId) => {
     if (table.some((row) => row.ad_group_dn === dn && row.group_id === groupId)) {
@@ -48,14 +63,20 @@ function mappingServer(api, rows = [mapping()]) {
     return row;
   });
   api.ldapDeleteMapping.mockImplementation(async (id) => {
-    if (!table.some((row) => row.id === id)) throw refusal(404, "Mapping not found");
+    const gone = table.find((row) => row.id === id);
+    if (!gone) throw refusal(404, "Mapping not found");
     table = table.filter((row) => row.id !== id);
+    users = users.map((u) => ({
+      ...u, groups: u.groups.filter((g) => !(g.source === "ldap" && g.id === gone.group_id)),
+    }));
     return null;
   });
   return {
     /** Another administrator's write, behind this screen's back. */
     put: (row) => { table = [...table, row]; },
     drop: (id) => { table = table.filter((row) => row.id !== id); },
+    /** What the server holds of one account now. */
+    user: (id) => users.find((u) => u.id === id),
   };
 }
 
@@ -979,6 +1000,100 @@ describe("the group mapping", () => {
     // The live region names the row actually in flight.
     await waitFor(() => expect(statuses()).toContain(`${MAPPED_DN} · yadda saxlanılır…`), { timeout: 4000 });
     await act(async () => { release(null); await settle(); });
+  });
+});
+
+// The final whole-wave review (Wave 3B): `delete_mapping` takes the group's AD-held memberships
+// away AT ONCE, so the accounts and the groups' member counts — the frame's lists, which the users
+// and roles tabs draw — changed with it. The tab re-read only its own table, and the users tab went
+// on showing an AD nurse holding "Hemşire" the server had just taken from her, under no stale mark.
+// Through the FRAME with the real tabs, against a server that remembers, because the defect was
+// what the screen showed after a write, which a reload spy cannot show.
+describe("a mapping delete changes accounts now, and the frame's lists follow", () => {
+  async function openAll({ setup } = {}) {
+    onlyTabs({ users: UsersTab, roles: RolesTab, source: SourceTab });
+    let server;
+    const mounted = await mount(<WhileSignedIn><AdminScreen /></WhileSignedIn>, {
+      access: token({ sub: "u-admin", perms: DESK }),
+      me: profile({ id: "u-admin", perms: DESK }),
+      setup: (api) => {
+        ADMIN_READS(api);
+        api.boardPatients.mockResolvedValue(board([]));
+        api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+        server = mappingServer(api);
+        setup?.(api);
+      },
+    });
+    await act(async () => { await settle(); await settle(); });
+    return { ...mounted, server };
+  }
+  const goTo = (name) => act(async () => { fireEvent.click(screen.getByRole("tab", { name })); await settle(); await settle(); });
+  const adRow = () => screen.getByRole("rowheader", { name: /dr\.kamran/ }).closest("tr");
+  const removeMapped = () => act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: `Uyğunlaşdırmanı sil: ${MAPPED_DN}` }));
+    await settle(); await settle();
+  });
+
+  it("after the delete, the users tab no longer shows the AD-held group, and the roles tab counts one member fewer", async () => {
+    const { server } = await openAll();
+    expect(within(adRow()).getByText(NURSE_GROUP.name)).toBeInTheDocument();       // held through AD
+    await goTo("Rollar və səlahiyyətlər");
+    expect(screen.getByText("2 nəfər")).toBeInTheDocument();                       // u-nurse and u-ad
+    await goTo("Giriş mənbəyi");
+    await removeMapped();
+    expectConfirmed(new RegExp(`${MAPPED_DN} · Uyğunlaşdırma silindi\\.`));
+    expect(server.user("u-ad").groups).toEqual([]);                                // the server's truth
+    await goTo("İstifadəçilər");
+    expect(within(adRow()).queryByText(NURSE_GROUP.name)).toBeNull();
+    expect(within(adRow()).getByText("Rol seçilməyib")).toBeInTheDocument();
+    await goTo("Rollar və səlahiyyətlər");
+    expect(screen.getByText("1 nəfər")).toBeInTheDocument();
+    expect(screen.queryByText("2 nəfər")).toBeNull();
+  });
+
+  it("a delete whose connection dropped may have landed: the frame's lists are read again too", async () => {
+    const { api, server } = await openAll();
+    const drop = api.ldapDeleteMapping.getMockImplementation();
+    api.ldapDeleteMapping.mockImplementation(async (id) => { await drop(id); throw dropped(); });
+    await goTo("Giriş mənbəyi");
+    await removeMapped();
+    expect(alerts()).toContain(`${MAPPED_DN}: ${DROPPED} ${MAY_HAVE}`);
+    expect(server.user("u-ad").groups).toEqual([]);
+    await goTo("İstifadəçilər");
+    expect(within(adRow()).queryByText(NURSE_GROUP.name)).toBeNull();
+  });
+
+  it("a refused delete changed nobody: the frame's lists are not read again for it", async () => {
+    const { api, server } = await openAll();
+    await goTo("Giriş mənbəyi");
+    server.drop("m-1");                                     // deleted at another desk meanwhile
+    const reads = api.adminUsers.mock.calls.length;
+    await removeMapped();
+    expect(alerts()).toMatch(/Uyğunlaşdırma tapılmadı/);
+    expect(api.adminUsers.mock.calls.length).toBe(reads);
+  });
+
+  it("a delete that answers after the session ended reads nothing into the next one", async () => {
+    let release;
+    const { api, store } = await openAll({ setup: (a) => {
+      a.ldapDeleteMapping.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    } });
+    await goTo("Giriş mənbəyi");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: `Uyğunlaşdırmanı sil: ${MAPPED_DN}` })); });
+    const reads = api.adminUsers.mock.calls.length;
+    await act(async () => { store.signOut(); await settle(); });
+    await act(async () => { release(null); await settle(); await settle(); });
+    expect(api.adminUsers.mock.calls.length).toBe(reads);
+  });
+
+  it("CREATING a mapping changes nobody now (each account takes the group at its next sign-in): the frame's lists are not re-read", async () => {
+    const { api, server } = await openAll();
+    server.drop("m-1");                                     // so the one DN the picker offers is free
+    await goTo("Giriş mənbəyi");
+    const reads = api.adminUsers.mock.calls.length;
+    await addMapping();
+    expectConfirmed(/YB-Hemsire · Uyğunlaşdırma əlavə edildi\./);
+    expect(api.adminUsers.mock.calls.length).toBe(reads);
   });
 });
 
