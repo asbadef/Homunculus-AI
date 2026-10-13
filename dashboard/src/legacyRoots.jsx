@@ -2,7 +2,7 @@
 // (?eski=1, the reference Wave 3 ports from, removed with the demo in G1-16), the simulation
 // (?demo=1), the replay demonstration (?mode=replay) and the legacy bearer-token board (?board=1).
 //
-// They sit behind one lazy import (main.jsx) so that the live page does not download them. The
+// They sit behind main.jsx's one lazy import, so that the live page does not download them. The
 // simulation, its data builder and the old workspace are the bulk of this bundle — 710 kB in the
 // first chunk — and a ward PC opening the real system was fetching every byte of a simulation it
 // never renders. Nothing here is new code: it is main.jsx's own branches, moved.
