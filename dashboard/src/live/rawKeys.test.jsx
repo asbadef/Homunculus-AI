@@ -36,7 +36,10 @@ import { profile, token } from "./session/testTokens.testutil.js";
 import { DICTIONARIES, NAMESPACES } from "./i18n/catalog.js";
 import { LANG_CODES } from "./i18n/langs.js";
 import { ROUTES, hashPath, resetScreens, screenOf } from "./shell/routes.js";
+import { onlyScreens } from "./shell/screens.testutil.js";
 import { Shell } from "./shell/Shell.jsx";
+import { BedsScreen } from "./screens/beds/BedsScreen.jsx";
+import { AlarmsScreen } from "./screens/alarms/AlarmsScreen.jsx";
 import { PERMISSION_KEYS } from "./screens/admin/catalogue.js";
 import { NOW, ago, alarm, board, entry, identity, news2, reading } from "./data/board.testutil.js";
 import { ADMIN_READS } from "./screens/admin/admin.testutil.js";
@@ -230,7 +233,12 @@ describe("no screen shows a reader a translation key", () => {
   // The anchor for the sweep above, and the regression test for the six keys the Wave 3 fix-up
   // moved into `board.*`: each is asserted as the reader meets it, so a payload that stopped
   // reaching one of them fails here rather than quietly weakening the sweep.
+  //
+  // Unlike the sweep, this test names two screens, so it states that build itself rather than
+  // leaning on the registry (`afterEach` restores it): with the registry pinned empty it opened
+  // `/beds` on no screen at all (G1-15, F3).
   it("the keys three screens share resolve on each screen that draws them", async () => {
+    onlyScreens({ beds: BedsScreen, alarms: AlarmsScreen });
     await openAt("/beds");
     expect(screen.getByText("kimlik gözlənilir")).toBeInTheDocument();      // board.identityPending
     expect(screen.getByText("NEWS2:")).toBeInTheDocument();                 // board.news2
