@@ -31,12 +31,13 @@
 //     is closed; so they are when the page itself goes (`pagehide`). A notification is also closed
 //     once a LIVE board says its alarm no longer waits.
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useBoard } from "../data/BoardProvider.jsx";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { PREF_PREFIX, readPref, writePref } from "../prefs.js";
 import { useSession } from "../session/SessionProvider.jsx";
 import { PHASE, seesBoard } from "../session/sessionStore.js";
-import { Announce, Button } from "../ui/index.js";
+import { Announce, Button, MODAL_EXEMPT } from "../ui/index.js";
 import { createAlarmSound } from "./alarmSound.js";
 import { notifyFor, soundFor } from "./signals.js";
 
@@ -52,6 +53,22 @@ const LOCKED = "locked";
 /** A notification's tag: the browser replaces a notification of the same tag instead of adding
  *  one, so two tabs of the ward PC show one per alarm. The locked one names no alarm. */
 export const TAG_PREFIX = "homunculus-alarm:";
+
+/** FNV-1a (32-bit) of a string, as 8 hex digits: deterministic, so every tab computes the same. */
+function fnv1a(text) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+/** The tag of one alarm's notification: a hash of its key, never the key — the key is
+ *  `<patient_id>::<kind>`, and the patient id stays out of what the page hands the operating
+ *  system (Decision 21). Two different alarms sharing a 32-bit hash would replace each other's
+ *  notification; with a ward's handful of open alarms that is about one in a hundred million. */
+export const alarmTag = (key) => TAG_PREFIX + fnv1a(String(key));
 
 const SignalsContext = createContext(null);
 
@@ -187,7 +204,7 @@ export function AlarmSignals({ children }) {
   // outlive it into the next person's session at this PC.
   useEffect(() => {
     const closeAll = () => {
-      for (const notification of raised.current.values()) notification?.close?.();
+      for (const notification of [...raised.current.values()]) notification?.close?.();
       raised.current.clear();
     };
     window.addEventListener("pagehide", closeAll);
@@ -199,6 +216,13 @@ export function AlarmSignals({ children }) {
   useEffect(() => {
     const open = raised.current;
     const close = (key) => { open.get(key)?.close?.(); open.delete(key); };
+    // One closed from OUTSIDE — the user, the operating system, another tab closing the same tag —
+    // is forgotten, so an alarm still waiting is raised again on the board's next change. Only that
+    // same notification: a later one under the key is not.
+    const keep = (key, notification) => {
+      if (notification) notification.onclose = () => { if (open.get(key) === notification) open.delete(key); };
+      open.set(key, notification);
+    };
     if (!active || permission !== "granted") {
       for (const key of [...open.keys()]) close(key);
       return;
@@ -213,14 +237,14 @@ export function AlarmSignals({ children }) {
     if (!hidden) return;
     if (locked) {
       if (keys.length && !open.has(LOCKED)) {
-        open.set(LOCKED, raise(t("signals.notifyTitle"), t("signals.notifyBodyLocked"), { tag: TAG_PREFIX + LOCKED }));
+        keep(LOCKED, raise(t("signals.notifyTitle"), t("signals.notifyBodyLocked"), { tag: TAG_PREFIX + LOCKED }));
       }
       return;
     }
     for (const alarm of items) {
       if (open.has(alarm.id)) continue;
-      open.set(alarm.id, raise(t("signals.notifyTitle"), t("signals.notifyBody", { bed: alarm.bedLabel || "—" }),
-        { tag: TAG_PREFIX + alarm.id }));
+      keep(alarm.id, raise(t("signals.notifyTitle"), t("signals.notifyBody", { bed: alarm.bedLabel || "—" }),
+        { tag: alarmTag(alarm.id) }));
     }
   }, [active, permission, alerts, connection, loaded, locked, hidden, t]);
 
@@ -248,8 +272,13 @@ export function AlarmSignals({ children }) {
     <SignalsContext.Provider value={value}>
       {children}
       {/* Said politely through a region that is on the page before the words are (ui/Alert.jsx):
-          mounted with the wish for a sound, filled once the sound is waiting. */}
-      {active && wanted ? <Announce text={waiting ? t("signals.soundWaiting") : ""} /> : null}
+          mounted with the wish for a sound, filled once the sound is waiting. It lives where the
+          toasts do (ui/Toast.jsx): in <body>, exempt from a dialog's inert — an inert region is
+          dropped from the accessibility tree, and the waiting must still be said under a dialog. */}
+      {active && wanted ? createPortal(
+        <div {...{ [MODAL_EXEMPT]: "" }}><Announce text={waiting ? t("signals.soundWaiting") : ""} /></div>,
+        document.body,
+      ) : null}
       {waiting ? <WaitingButton label={t("signals.soundWaiting")} onClick={resume} /> : null}
     </SignalsContext.Provider>
   );

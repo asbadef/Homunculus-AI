@@ -147,6 +147,20 @@ describe("createAlarmSound", () => {
     expect(audio.audible().map((o) => o.frequency.value)).toEqual([500, 500, 500]);
   });
 
+  // A browser fires "statechange" when a closed context reaches "closed" — after `close()` has let
+  // the context go. That late event must find nothing to do, not a null to read.
+  it("ignores the state changes of a context it has closed", async () => {
+    const audio = fakeAudio();
+    const changes = [];
+    const sound = createAlarmSound({ win: { AudioContext: audio.AudioContext }, onState: (s) => changes.push(s) });
+    await sound.resume();
+    const context = audio.contexts[0];
+    sound.close();
+    context.state = "closed";
+    expect(() => context.onstatechange()).not.toThrow();
+    expect(changes).toEqual(["running"]);                // nothing reported for a context let go
+  });
+
   it("plays one burst on request — the settings screen's test — and nothing after it", async () => {
     timers();
     const { audio, sound } = await running();

@@ -49,12 +49,16 @@ export function createAlarmSound({ win = typeof window === "undefined" ? undefin
   function context() {
     if (!AudioContextImpl) return null;
     if (!ctx) {
-      ctx = new AudioContextImpl();
+      const created = new AudioContextImpl();
+      ctx = created;
       master = ctx.createGain();
       master.gain.value = 1;
       master.connect(ctx.destination);
-      ctx.onstatechange = () => {
-        if (ctx.state === "running") sound();
+      created.onstatechange = () => {
+        // A context this engine has let go (`close`) still reports its way to "closed", later:
+        // nothing here is about it any more.
+        if (ctx !== created) return;
+        if (created.state === "running") sound();
         else silence();
         onState?.(state());
       };

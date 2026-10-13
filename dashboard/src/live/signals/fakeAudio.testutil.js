@@ -79,7 +79,9 @@ export function fakeAudio({ refuse = false } = {}) {
 }
 
 /** A Notification stand-in with the browser's static `permission` and `requestPermission`.
- *  `shown` is every notification raised, `open()` those not closed since. */
+ *  `shown` is every notification raised, `open()` those not closed since. Closing one fires its
+ *  `onclose`, as a browser's does; `dismiss()` is a close from OUTSIDE the page — the user, the
+ *  operating system, or another tab closing a notification of the same tag. */
 export function fakeNotifications(permission = "granted", answer = "granted") {
   const shown = [];
   class FakeNotification {
@@ -88,11 +90,18 @@ export function fakeNotifications(permission = "granted", answer = "granted") {
       this.body = options.body;
       this.options = options;
       this.closed = false;
+      this.onclose = null;
       shown.push(this);
     }
 
     close() {
+      if (this.closed) return;
       this.closed = true;
+      this.onclose?.({ target: this });
+    }
+
+    dismiss() {
+      this.close();
     }
   }
   FakeNotification.permission = permission;
