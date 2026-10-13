@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { mount } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
+import { fakeAudio, fakeNotifications, onPage } from "../../signals/fakeAudio.testutil.js";
 import { SettingsScreen } from "./SettingsScreen.jsx";
 
 afterEach(() => {
@@ -48,5 +49,69 @@ describe("SettingsScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "English" }));
     expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
     expect(document.documentElement).toHaveAttribute("lang", "en");
+  });
+});
+
+// The alarm sound and the critical-alarm notification (signals/AlarmSignals.jsx). The previous
+// workspace had two top-bar buttons for them; here they are this browser's settings.
+describe("SettingsScreen · sound and notifications", () => {
+  let page = null;
+  afterEach(() => {
+    page?.undo();
+    page = null;
+  });
+  const flush = () => act(() => new Promise((resolve) => { setTimeout(resolve, 0); }));
+  const sound = () => screen.getByRole("group", { name: "Siqnal səsi" });
+
+  it("turns the sound on for this browser — the click that does it starts the audio — and offers a test", async () => {
+    const audio = fakeAudio();
+    page = onPage({ AudioContext: audio.AudioContext });
+    await mount(<SettingsScreen />);
+    tab("Səs və bildiriş");
+    expect(within(sound()).getByRole("button", { name: "Bağlı" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(within(sound()).getByRole("button", { name: "Açıq" }));
+    await flush();
+    expect(localStorage.getItem("hmc.alarmSound")).toBe("on");
+    expect(screen.getByText("Hazırdır")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Səsi yoxla" }));
+    expect(audio.pulses()).toEqual(Array(10).fill(960));
+  });
+
+  // A browser that has not let the audio start yet: what a ward PC shows after a reload nobody has
+  // touched (here the tab's own click would start it, so the fake refuses).
+  it("says a wanted sound is waiting for a click after a reload, and why", async () => {
+    localStorage.setItem("hmc.alarmSound", "on");
+    page = onPage({ AudioContext: fakeAudio({ refuse: true }).AudioContext });
+    await mount(<SettingsScreen />);
+    tab("Səs və bildiriş");
+    expect(screen.getByText("Bir klik gözləyir")).toBeInTheDocument();
+    expect(screen.getByText(/kimsə səhifəyə toxunana qədər səs çıxmır/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Siqnal səsi gözləmədədir — açmaq üçün klikləyin" })).toBeInTheDocument();
+  });
+
+  it("asks the browser for notifications only on a click, says what it answered, and offers a test", async () => {
+    const notes = fakeNotifications("default");
+    page = onPage({ Notification: notes.Notification });
+    await mount(<SettingsScreen />);
+    tab("Səs və bildiriş");
+    expect(screen.getByText("İcazə verilməyib")).toBeInTheDocument();
+    expect(notes.Notification.requestPermission).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "İcazə ver" }));
+    await flush();
+    expect(screen.getByText("İcazə verilib")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Bildirişi yoxla" }));
+    expect(notes.shown.map((n) => [n.title, n.options.requireInteraction])).toEqual([["Homunculus · yoxlama", false]]);
+  });
+
+  it("says what is missing: no Web Audio, a permission the browser has blocked", async () => {
+    page = onPage({ Notification: fakeNotifications("denied").Notification });
+    await mount(<SettingsScreen />);
+    tab("Səs və bildiriş");
+    fireEvent.click(within(sound()).getByRole("button", { name: "Açıq" }));
+    await flush();
+    expect(screen.getByText(/Bu brauzer səs çala bilmir/)).toBeInTheDocument();
+    expect(screen.getByText("Bloklanıb")).toBeInTheDocument();
+    expect(screen.getByText(/Brauzer bildirişləri bloklayıb/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "İcazə ver" })).toBeNull();
   });
 });

@@ -8,7 +8,8 @@ import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useTheme } from "../../theme/ThemeProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { PasswordForm } from "../../auth/PasswordForm.jsx";
-import { Box, KV, KVList, Note, Seg, StatusPill, TabPanel, Tabs, useToast } from "../../ui/index.js";
+import { useAlarmSignals } from "../../signals/AlarmSignals.jsx";
+import { Box, Button, KV, KVList, Note, Seg, StatusPill, TabPanel, Tabs, useToast } from "../../ui/index.js";
 
 const BUILD_SHA = typeof __BUILD_SHA__ === "string" ? __BUILD_SHA__ : "";
 const TAB_ID = "settings";
@@ -93,11 +94,58 @@ function Security() {
   );
 }
 
+const SOUND_PILL = {
+  off: ["neutral", "signals.soundOff"],
+  waiting: ["att", "signals.soundStateWaiting"],
+  on: ["ok", "signals.soundStateRunning"],
+  unsupported: ["neutral", "signals.soundStateUnsupported"],
+};
+const NOTIFY_PILL = {
+  granted: ["ok", "signals.notifyStateGranted"],
+  default: ["neutral", "signals.notifyStateDefault"],
+  denied: ["att", "signals.notifyStateDenied"],
+  insecure: ["neutral", "signals.notifyStateUnavailable"],
+  unsupported: ["neutral", "signals.notifyStateUnavailable"],
+};
+const NOTIFY_NOTE = {
+  denied: "signals.notifyDenied",
+  insecure: "signals.notifyInsecure",
+  unsupported: "signals.notifyUnsupported",
+};
+
+/** The alarm sound and the critical-alarm notification for this browser (signals/AlarmSignals.jsx):
+ *  what the previous workspace's two top-bar buttons did, with what each state means said out loud. */
+function Signals() {
+  const { t } = useI18n();
+  const { sound, setSound, testSound, notify, askNotify, testNotify } = useAlarmSignals();
+  const [soundTone, soundLabel] = SOUND_PILL[sound];
+  const [notifyTone, notifyLabel] = NOTIFY_PILL[notify] ?? NOTIFY_PILL.unsupported;
+  return (
+    <div className="grid gap-3">
+      <Box title={t("signals.sound")} icon="bell" level={2} right={<StatusPill tone={soundTone}>{t(soundLabel)}</StatusPill>}>
+        <Seg label={t("signals.sound")} value={sound === "off" ? "off" : "on"} onChange={(value) => setSound(value === "on")}
+          options={[{ value: "off", label: t("signals.soundOff") }, { value: "on", label: t("signals.soundOn") }]} />
+        <p className="m-0 mt-2 text-13 text-mute">{t("signals.soundHelp")}</p>
+        {sound === "waiting" ? <Note className="mt-2">{t("signals.soundWaitingHelp")}</Note> : null}
+        {sound === "unsupported" ? <Note className="mt-2">{t("signals.soundUnsupported")}</Note> : null}
+        {sound === "on" ? <Button className="mt-2" icon="bell" onClick={testSound}>{t("signals.soundTest")}</Button> : null}
+      </Box>
+      <Box title={t("signals.notify")} icon="alert" level={2} right={<StatusPill tone={notifyTone}>{t(notifyLabel)}</StatusPill>}>
+        <p className="m-0 text-13 text-mute">{t("signals.notifyHelp")}</p>
+        {NOTIFY_NOTE[notify] ? <Note className="mt-2">{t(NOTIFY_NOTE[notify])}</Note> : null}
+        {notify === "default" ? <Button className="mt-2" variant="primary" onClick={askNotify}>{t("signals.notifyAsk")}</Button> : null}
+        {notify === "granted" ? <Button className="mt-2" onClick={testNotify}>{t("signals.notifyTest")}</Button> : null}
+      </Box>
+    </div>
+  );
+}
+
 export function SettingsScreen() {
   const { t } = useI18n();
   const [tab, setTab] = useState("look");
   const tabs = [
     { value: "look", label: t("account.look") },
+    { value: "signals", label: t("signals.tab") },
     { value: "profile", label: t("account.profile") },
     { value: "security", label: t("account.security") },
   ];
@@ -107,7 +155,7 @@ export function SettingsScreen() {
       <p className="m-0 mb-4 text-13 text-mute">{t("account.sub")}</p>
       <Tabs id={TAB_ID} label={t("account.sections")} tabs={tabs} value={tab} onChange={setTab} className="mb-3" />
       <TabPanel id={TAB_ID} tabs={tabs} value={tab}>
-        {tab === "look" ? <Look /> : tab === "profile" ? <Profile /> : <Security />}
+        {tab === "look" ? <Look /> : tab === "signals" ? <Signals /> : tab === "profile" ? <Profile /> : <Security />}
       </TabPanel>
     </div>
   );
