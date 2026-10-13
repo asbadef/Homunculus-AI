@@ -53,12 +53,26 @@ gösterir. Motorun söylemediği bir şeyi tarayıcı uyduramaz.
 11. **Şifre kuralı tarayıcıda, üç ayrı ve birbiriyle çelişen sürümde;** ayrıca tarayıcı
     açık metin şifre üretiyor. Canlı sistemde kural sunucuda (en az 8 karakter) ve yalnız
     orada; yöneticinin araçları tarayıcının kuralını bilmez.
+    → *Canlı ekran:* Yönetim › Kullanıcılar'da ("Yeni kullanıcı" formu ve "Şifre sıfırla")
+    geçici şifreyi yönetici yazar; ekran şifre üretmez, tek kural sunucununkidir, alan gizli
+    yazılır ve pencere kapanınca boşaltılır — şifre bir daha hiçbir yerde görünmez
+    (`dashboard/src/live/screens/admin/UserForm.jsx`).
 12. **Yetkiler `localStorage`'da tutuluyor ve yalnız tarayıcıda denetleniyor.** Bu, yetki
     denetimi değil görüntü; sunucu her istekte kendi denetler.
+    → *Canlı ekran:* yönetim ekranının üç sekmesi oturumun yetkilerini yalnız ipucu olarak
+    kullanır (gri düğme, kilitli sütun; `screens/admin/rules.js`); her yazmayı sunucu yeniden
+    denetler ve reddederse nedenini bildirimde yazar. Roller ve yetkiler tablosunun altındaki not
+    da bunu söyler: "Yetki denetimi sunucuda yapılır…".
 13. **Grup × yetki onay kutusu tıklandığı an uygulanıyor** — kaydet yok, işlem bütünlüğü
     yok. Canlı sistemde yetki değişikliği tek bir işlemde ve denetim kaydıyla olur.
+    → *Canlı ekran:* Yönetim › Roller ve yetkiler'de kutu yalnız değişikliği toplar ve sütun kaç
+    değişikliğin beklediğini söyler; her grubun kendi "Kaydet"i o grubun listesini tek istekte
+    gönderir ve denetim kaydına yazar; bu arada başkası aynı grubu kaydettiyse sunucu reddeder,
+    sütun yeniden okunur ve işaretler kalır (`screens/admin/RolesTab.jsx`).
 14. **"Bu rolün gözüyle bak" anahtarı.** Yetkiyi taklit eden bir görünüm, denetim kaydında
     kimin ne gördüğünü belirsizleştirir.
+    → *Canlı ekran:* böyle bir anahtar yok; Roller ve yetkiler tablosu her grubun hangi yetkileri
+    taşıdığını gösterir — neyin verildiğini, neyin görüneceğini değil (`screens/admin/RolesTab.jsx`).
 
 ## Sorumuz: üçü ürün müydü?
 

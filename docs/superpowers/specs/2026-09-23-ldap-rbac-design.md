@@ -112,6 +112,19 @@ time, so a typo in a route guard fails at startup rather than silently denying e
 A user with no groups signs in successfully and holds no permissions; the dashboard shows the
 existing "Hesabınıza kurum yetkisi tanımlanmamış" message and refuses the session.
 
+*As built (G1-02):* the merge with main added two keys, so the catalogue holds **21**:
+`clinical.chart` (chart clinician-observed inputs — infection suspicion, pressor, fluids, GCS — and
+the patient's own baseline) and `scores.sign` (sign a SOFA severity-score form with corrections).
+
+*As built (Wave 3B):* the descriptions in `PERMISSIONS` — which `GET /admin/permissions` serves —
+are developer English, not the hospital's words. The dashboard does not show them: it translates
+each key in four languages (`dashboard/src/live/i18n/strings/perms.js`, keyed by the permission
+key) and prints the server's text only as a fallback, marked `lang="en"`, for a key that build does
+not know. Two of the server's texts are out of date and the dashboard's four-language texts for the
+same two keys were written from them, so the gap shows on screen too: `users.manage` does not say
+it gates the unit-scope routes (§6, *Unit scope*), and `devices.manage` does not name the device
+research window or say that `platform_support` holds it. Open; the two are fixed together.
+
 ## 3. Default groups and the legacy conversion
 
 Seeded for every tenant — by the migration for existing tenants, and by the same service function
@@ -137,6 +150,18 @@ require only a valid sign-in are a separate matter; see *What the defaults tight
 Only `hospital_admin` is `is_system`. Every other default may be renamed, have its permissions
 changed, or be deleted once it has no members and no LDAP mapping. Administrators may create any
 number of further groups.
+
+*As built (Wave 3B, Task 14):* each default also carries a **kind** — what the group is to a
+person, as opposed to what it grants. `GroupSpec.kind` is `"role"` (the job someone does) or
+`"extra"` (a duty added to a role for a while): `charge_nurse` and `rapid_response` are `extra`,
+the other nine `role`. `auth/permissions.GROUP_KINDS` names the two, and a default whose `kind` is
+neither fails at import. `GroupOut.kind` serves it, matched by slug, and is **`null`** for a group
+the hospital created: not a job this product knows and not a duty either, and guessing from a slug
+or a permission set is how a screen tells an administrator something nobody decided. No migration:
+it is a property of the group this product defines, not of a tenant's copy of it. The user form
+(roadmap D3: one role, any number of duties, "other groups") reads it; the dashboard keeps its own
+mirror of the eleven slugs only for a server that sends no `kind` at all — `null` is an answer, not
+a missing field.
 
 **The system group.** `hospital_admin` holds every permission in the catalogue **by rule, not by
 its rows**: at token issuance a member of a system group receives the whole catalogue, including
@@ -384,11 +409,29 @@ another tenant is a 404.
 ### Groups (`groups.manage`)
 
 - `GET /admin/permissions` — the catalogue with a short English description per key.
-- `GET /admin/groups` — with member counts.
+- `GET /admin/groups` — with member counts. *As built (Wave 3B, Task 14):* each with its `kind`
+  (§3).
 - `POST /admin/groups {slug, name, description, mfa_required, permissions[]}`
 - `PATCH /admin/groups/{id}` — any of the above; permission changes bump `token_version` of every
   member. On the system group, `permissions` and `mfa_required` are refused with 409; name and
   description may change.
+  *As built (Wave 3B, Task 14e) — a whole-set write refused when the set changed since it was
+  read.* `permissions` REPLACES the group's whole list, and the server keeps no version of it, so
+  until 14e a save from an out-of-date screen silently undid whatever another administrator had
+  saved since — and the dashboard's "on 409, re-read and keep the ticks" path was dead code: the
+  only `CONCURRENT_CHANGE` this route could answer came from an IntegrityError the tenant and row
+  locks make unreachable.
+  The body may now carry `expected_permissions: list[str] | None`, the list the screen read. Under
+  the tenant lock and the group's row lock, before anything is written,
+  `service.unchanged_since_read` compares it with the current list **as sets** (order and
+  repetition say nothing); not the same → 409 `CONCURRENT_CHANGE` (`Kayıt aynı anda değiştirildi;
+  lütfen tekrar deneyin` — the exact text the dashboard recognises), the rollback leaves nothing
+  written and nothing audited. It is checked with `is not None`, so an empty list is a real
+  expectation ("this group holds nothing"); omitted, the write is what it always was. The current
+  list is what `GroupOut` SERVES (`service.served_permissions`): the stored rows as stored, a key a
+  release retired included, and the whole catalogue for the system group — never `group_rights`,
+  and the expectation is never validated. Comparing with anything else would refuse a list the
+  server itself served, and the system group would answer 409 for ever.
 - `DELETE /admin/groups/{id}` — 409 if the group has members, has LDAP mappings, or is `is_system`.
 
 ### Users (`users.manage`)
@@ -401,7 +444,16 @@ another tenant is a 404.
   the user's first step with the new password is never refused by a lock the old one engaged.
 - `PATCH /admin/users/{id} {full_name?, email?, is_active?}`
 - `PUT /admin/users/{id}/groups {group_ids[]}` — replaces the **manual** memberships only;
-  `ldap`-sourced rows are untouched.
+  `ldap`-sourced rows are untouched. *As built (Wave 3B, Task 14e):* the body may carry
+  `expected_group_ids: list[uuid] | None`, the manual memberships the screen's form opened with,
+  compared as sets with the user's current MANUAL memberships in this tenant
+  (`service.manual_group_ids`) under the tenant lock — every writer of memberships, the AD sync
+  included, takes it — before anything is written; not the same → 409 `CONCURRENT_CHANGE`, nothing
+  written or audited; `None` → the write as before, `[]` → a real expectation. AD-held memberships
+  are no part of the comparison: they are the directory's, and counting them would make every
+  directory account 409 for ever. The dashboard's edit form also PATCHes only the fields that
+  changed since it opened (a name fix used to re-send a stale `is_active` and re-activate an
+  account another desk had deactivated) and PUTs groups only when they changed.
 - `POST /admin/users/{id}/reset-password {password}` — local accounts only; 400 for AD users.
 - `POST /admin/users/{id}/reset-mfa` — clears the TOTP secret; the user re-enrols at next sign-in.
 - *As built:* `POST /admin/users/{id}/unlock-sign-in {reason}` — lets 3 more failed binds
@@ -414,7 +466,46 @@ another tenant is a 404.
   changes. *As built (F7):* the audit row's `before` and `after` are `{"failed": n, "allowed":
   3 or 6}`, with `granted` (false when there was nothing to clear); the second unlock's 409
   says the run's one unlock is spent and that sign-in frees itself once 15 minutes pass
-  without a failed password.
+  without a failed password. *As built (Wave 3B, Task 14):* the answer is `{"ok": true,
+  "granted": …, "allowed_before": …, "allowed_after": …}`. It used to be `{"ok": true}` alone,
+  with `granted` written to the audit row and thrown away in the answer, so the screen could not
+  tell "three more tries" from "there was nothing to clear". The number of tries an unlock let
+  through is the server's difference, `allowed_after - allowed_before`, never the screen's: the
+  confirmation before the write promises no number in any language.
+
+### Unit scope (`/scope`; *as built* — from main with G1-02, measured in Wave 3B)
+
+This spec put unit-scoped visibility out of scope; main built it (`staff_scopes`, `/scope/*`, the
+board's own filter) and G1-02 brought it across with its role guard turned into permissions.
+`/scope/me` answers any member about themselves; the other three need `users.manage`.
+
+- `GET /scope/me` and `GET /scope/{user_id}` → `ScopeView {user_id, role, unrestricted, reason,
+  unit_ids, bed_ids, grants, own_patients}`. *As of Wave 3B Task 14* both decide **as the board
+  does** (`scope/router._view`): they pass `enforce_unassigned` and the open break-glass patients
+  to `build_scope`, as the board's resolver does — before, with `SCOPE_ENFORCE_UNASSIGNED` on, an
+  unassigned clinician whose board was empty was told "unrestricted", and a break-glass grant was
+  missing. A role of None — no active account, or no active membership here; a deactivated
+  account, which `/scope/{user_id}` still finds — is the resolver's UNKNOWN and sees nothing; it
+  used to reach `build_scope` as "unassigned" and, with enforcement off, read as unrestricted.
+  `own_patients` is a **count** — the care-team and break-glass patients the scope reaches by
+  name — never an identifier (this route carries no patient id). `tests/test_scope_me_agrees_with_board.py`
+  holds the route and the resolver to each other under the four reasons a user route can give
+  (`role`, `assigned`, `unassigned`, `break_glass`) and under UNKNOWN.
+- `GET /scope/unassigned` → `{tenant, unassigned_users}`. *As of Wave 3B Task 14* it counts only
+  members who WOULD need a grant: members of the tenant's system group and platform operators are
+  left out (`build_scope` gives them the whole board before it reads grants). It used to read "1"
+  for ever on a pilot with one administrator.
+- `PUT /scope/{user_id} {grants: [{unit_id} | {bed_id}]}` replaces the user's whole scope and
+  answers its `ScopeView`. It needs `users.manage` **and** the caller's own scope unrestricted
+  **by role** (`SCOPE_UNRESTRICTED_ROLES`: `HOSPITAL_ADMIN`, `PLATFORM_SUPPORT`), else 403
+  `kapsam atamak için kapsamı sınırsız bir yönetici olmalısınız`. No permission key reports that
+  rule, so a screen can learn it only from the caller's own `/scope/me`: `unrestricted: true` with
+  `reason: "unassigned"` — the pilot's normal state — is still refused; only `reason: "role"`
+  passes.
+- There is no bulk scope read and no endpoint listing the units and beds a scope may name (they
+  are the keys of the site's bed mapping). The administration screen therefore reads a user's
+  scope only when its editor opens, and builds the editor's choices from the board, the user's
+  grants and a typed key.
 
 ### Guards
 
@@ -435,7 +526,11 @@ another tenant is a 404.
   and `is_active`, so a request queued behind the caller's own demotion is refused (401).
 - The guard keeps at least one active LOCAL administrator: a local account with a password. An AD
   outage must never lock the ward out of its own administration, so AD-held administrators do not
-  count toward it.
+  count toward it. *Wave 3B note:* the users and login-source tabs may both grant
+  `hospital_admin` to an AD account (a full-rights desk only; the server's own grant rule accepts
+  it, so it is no new path to privilege), and such a member never counts here — a hospital whose
+  remaining administrators are all AD accounts is refused the last local one's removal. The
+  screens do not yet say why an AD `hospital_admin` "does not count" (open, Group 3).
 - **No grant beyond your own rights.** The caller's permissions bound everything they can do:
   - a user can be edited, reset or regrouped only if that user's effective rights in the tenant are
     within the caller's;
@@ -614,7 +709,9 @@ not carried forward.
 - `POST /admin/ldap/test` → binds with the service account; 200 or the failure reason.
   *As built:* 200 `{ok, reason, checked_at}` either way, `reason` one of the fixed codes.
 - `GET /admin/ldap/search?q=` → up to 50 `LdapIdentity` rows, each flagged `already_imported`.
-  *As built:* `q` is trimmed, then 2–64 characters.
+  *As built:* `q` is trimmed, then 2–64 characters. *Measured in Wave 3B:* `q` is **required**
+  (absent → 422), and the cap is `ldap_service.RESULT_CAP = 50` with no parameter to ask for
+  fewer; the dashboard's `ldapSearch(query)` takes no limit.
 - `POST /admin/ldap/import {external_ids[], extra_group_ids[]}` → for each id: fetch by GUID,
   create the user (`auth_source = ldap`, `hashed_password = NULL`, `username = sAMAccountName`,
   `email = mail or NULL`, `full_name = displayName`), add the tenant membership, apply the group
@@ -631,8 +728,13 @@ not carried forward.
   user name taken meanwhile `login_taken`, and the rest of the batch goes on (an e-mail taken
   meanwhile is the 409 for the whole request). The response and the
   `ldap.import` audit rows are built from what was written, before the commit.
-- `GET /admin/ldap/groups?q=` → AD groups for the mapping picker.
+- `GET /admin/ldap/groups?q=` → AD groups for the mapping picker. *Measured in Wave 3B:* a
+  **search**, not a listing — `q` is required and trimmed, then 2–64 characters, as for
+  `/search`, and the answer is capped at the same `RESULT_CAP = 50`.
 - `GET /admin/ldap/group-mappings`, `POST {ad_group_dn, group_id}`, `DELETE /{id}`.
+  *Measured in Wave 3B:* the GET sits behind `configured_ldap` like the writes, so on a
+  deployment with LDAP off it answers 409 `Dizin yapılandırılmamış` — `/status` is the only
+  `/admin/ldap` route that answers then, and the login-source tab draws nothing but its status.
   *As built:* `POST` and `DELETE` need the whole catalogue (every permission key, through any
   groups; 403 `AD grup eşlemesini yalnız tüm yetkilere sahip bir yönetici değiştirebilir`):
   a row regroups every member of its AD group, which a user manager (§6) may not do. The DN is stored in
@@ -877,7 +979,8 @@ the `LDAP_*` configuration in §9, and the LDAP tests in §10.
 
 ## Out of scope (named, not forgotten)
 
-- Unit-scoped visibility (a nurse seeing only her unit's patients).
+- Unit-scoped visibility (a nurse seeing only her unit's patients). *As built:* out of scope for
+  this spec, but main built it and G1-02 brought it across — see §6, *Unit scope*.
 - Kerberos/SPNEGO single sign-on; SAML/OIDC through ADFS or Entra.
 - Scheduled AD synchronisation and automatic off-boarding of accounts disabled in AD.
 - The invitation flow, quick PINs and per-user MFA overrides that exist only in the simulation.

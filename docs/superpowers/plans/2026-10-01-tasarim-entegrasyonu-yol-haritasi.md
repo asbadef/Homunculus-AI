@@ -111,9 +111,9 @@ dokunulmaz.
 | G1-09 | Yataklar: kart/liste, risk sırası, dikkat kartları, birim filtresi, kapsam açıklaması | 5 | Orta | G1-07 | Bekliyor |
 | G1-10 | Alarmlar: yanıt bekliyor / değerlendiriliyor / kapanan, Gördüm, eskalasyon hapları, sunucu saatiyle süre | 3 | Düşük | G1-07 | Bekliyor |
 | G1-11 | Hasta ekranı · Özet: başlık, vital çubuğu, öneri kartı (gerekçe + kaynak), salt okunur | 5 | Orta | G1-09 | Bekliyor |
-| G1-12 | Yönetim · Kullanıcılar (D3) + birimler (kapsam matrisi) | 5 | Orta | G1-07 | Bekliyor |
-| G1-13 | Yönetim · Roller ve yetkiler (grup × izin matrisi) | 3 | Düşük | G1-12 | Bekliyor |
-| G1-14 | Yönetim · Sistem ayarları › Giriş kaynağı (AD durumu, bağlantı testi, ara + içe aktar, grup eşlemesi) | 5 | Orta | G1-04, G1-12 | Bekliyor |
+| G1-12 | Yönetim · Kullanıcılar (D3) + birimler (kapsam matrisi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 5 | Orta | G1-07 | ✅ 13.10 · temel (Görev 0–4) 5fdc5cd…34494a8; Görev 5–7 b10179d, 6bc6740, 95adfa6, inceleme turları 9f49cb3 + baa1780; Görev 14 fa8c522 (`/scope/me` panoyla aynı karar) + 65d6a36 (14e). Kapsam "matrisi" liste olarak (Karar 7, aşağıda kabul ölçütleri). Tarayıcıda 390/1440 px bakışı kullanıcıda |
+| G1-13 | Yönetim · Roller ve yetkiler (grup × izin matrisi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 3 | Düşük | G1-12 | ✅ 13.10 · Görev 8–9 05c7e7a, 1eb7356, inceleme turları fedde5b + 2ab1f10; 409 yolunu canlı yapan sunucu karşılaştırması Görev 14e 65d6a36. Tarayıcıda bakış kullanıcıda |
+| G1-14 | Yönetim · Sistem ayarları › Giriş kaynağı (AD durumu, bağlantı testi, ara + içe aktar, grup eşlemesi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 5 | Orta | G1-04, G1-12 | ✅ 13.10 (kod ve testler) · Görev 10–11 a6de6b2, 96c37ee, inceleme turları 6e8f6c9, 5fd309d, a06fc3c. Bağlantı testinin beş gerçek nedeni hastanenin etki alanı denetleyicisi olmadan denenemez (yalnız taklitle test edildi) → G1-15 kapısı |
 | G1-16 | Demo ve eski modları kaldır (`ClinicalDemo.jsx`, `clinicalDemo.js`, `liveStore.js`, `clinicalI18n.js`, `legacyRoots.jsx`, replay, legacy board, `?eski=1` önceki canlı arayüz — kilidi bilmez, G1-15'ten önce gitmeli); PWA `?demo` başlangıcı Dalga 2'de düzeltildi | 3 | Orta | G1-09…G1-14 | Bekliyor |
 | G1-15 | Uçtan uca doğrulama (yerel yığın, 4 dil, 390 px/1440 px) + VM deploy notları · temel: [RBAC planı](2026-09-23-rbac-groups-permissions.md), "Deploy notes for the VM" (zorunlu MFA kaydı: Sistem Yöneticisi, Sorumlu Hekim, Ünite Hekimi, Üretici Destek ilk girişte TOTP kurar; `0010` ön kontrolü) | 3 | Orta | hepsi | Bekliyor |
 
@@ -131,6 +131,13 @@ Dalga 2 sonu (G1-07/G1-08, son kod commit'i `7cdee86`; sonrası yalnız belge): 
 6 atlandı / 0 hata (Python 3.14, test veritabanıyla) ve üretim imajının Python 3.12'siyle 2285
 geçti / 8 atlandı / 0 hata; dashboard 1741 geçti (86 dosya) — bunun 851'i yeni arayüzün
 (`src/live/`, 41 dosya); vite build tamam.
+
+Dalga 3B sonu (G1-12/G1-13/G1-14, son kod commit'i `65d6a36`): dashboard 2413 geçti (108 dosya);
+vite build tamam; backend Python 3.12'de 2294 geçti / 8 atlandı, 3.14'te 2298 geçti / 6 atlandı —
+ikisinde de `tests/test_infinity_vm_pilot.py` hariç: yük altında asılı kalıyor (tek başına 8 s'de
+geçiyor), düzeltmesi Grup 4. Her sekme iki ya da üç kez incelendi; her bulgu düzeltilmeden önce
+başarısız bir testle kanıtlandı ve incelemecilerin mutantlarını testler yakaladı. Tarayıcıda
+bakış (390/1440 px, iki tema) **yapılmadı**: kullanıcının işi, aşağıda "Dalga 3B'den açık kalanlar".
 
 > G1-15'teki VM deploy kullanıcının kararıdır (aşağıda "Kullanıcı kararları", 2–3):
 > yedek → `0010` ön kontrolü → göç `0008 → 0009 → 0010` → herkes bir kez yeniden girer.
@@ -182,6 +189,49 @@ geçti / 8 atlandı / 0 hata; dashboard 1741 geçti (86 dosya) — bunun 851'i y
   girip yenisini belirler; AD hesapları etkilenmez. İlk vardiya, aynı adresin arkasındaki bir
   serviste nginx'in `homunculus_reauth` bölgesini (dakikada 30, burst 30) şifre değişiklikleri ve
   kilit açmalarla paylaşır: bir dakika bekleyip yeniden denemek gerekebilir (runbook, "Updating").
+- **(Dalga 3B)** Azerbaycanca konuşan bir yönetici aşağıdaki beş metni okur ve her birinin yazıldığı
+  gibi anlaşıldığını onaylar. Planın seçtiği beş metin (`admin.sub` dışındakiler dalganın en uzun
+  cümleleri); dört dil makineyle yazıldı. Klinik metin
+  değiller, ama `source.skipInvalidLogin` yöneticinin **uygulayacağı** bir harf çevirme kuralı
+  taşıyor: Azerbaycancası kötüyse yanlış uygular.
+- **(Dalga 3B)** Yönetimin üç sekmesi VM'nin kendi verisiyle **390 px'te** açılır: hastanenin
+  yöneticileri masada tablet kullanıyor.
+- **(Dalga 3B)** Giriş kaynağındaki bağlantı testi hastanenin gerçek etki alanı denetleyicisine
+  karşı koşulur ve yanıtı kaydedilir. Testin beş ret nedeni (ulaşılamıyor, süre aşımı, TLS, servis
+  hesabı reddedildi, protokol) bu dalganın denetleyici olmadan sınanamayan tek parçası: yalnız
+  taklitle test edildi. AD'nin VM'de açılması hâlâ BT biriminin yanıtlarını bekliyor
+  (`docs/active-directory-bt-sorulari.md`) ve yukarıdaki F7 maddelerine bağlı.
+
+**G1-15 okuması · Dalga 3B'nin beş metni** — ekranda görünen hâlleri, `65d6a36`'da
+`dashboard/src/live/i18n/strings/` altındaki `admin.js`, `roles.js`, `source.js`'ten olduğu gibi
+alındı (Dalga 3B Görev 12 Adım 6'nın kaydı; o adım yazılmamıştı, burada yapıldı). `{hospital}`
+ekranda hastanenin adıyla doldurulur.
+
+- `admin.sub` (Yönetim sayfasının alt başlığı)
+  - az: {hospital} · hər dəyişiklik audit jurnalına yazılır
+  - tr: {hospital} · her değişiklik denetim kaydına yazılır
+  - ru: {hospital} · каждое изменение пишется в журнал аудита
+  - en: {hospital} · every change is written to the audit trail
+- `roles.note` (Roller ve yetkiler tablosunun altındaki not)
+  - az: Səlahiyyət yoxlanışı serverdə aparılır: bu cədvəl nəyin verildiyini göstərir, nəyin görünəcəyini deyil. Menyudan gizlətmək səlahiyyəti götürmək deyil.
+  - tr: Yetki denetimi sunucuda yapılır: bu tablo neyin verildiğini gösterir, neyin görüneceğini değil. Menüden gizlemek yetki kaldırmak değildir.
+  - ru: Проверка прав выполняется на сервере: эта таблица показывает, что выдано, а не что будет видно. Спрятать в меню — не значит снять право.
+  - en: Permissions are checked on the server: this table shows what has been granted, not what will be visible. Hiding something in a menu is not taking a permission away.
+- `source.notConfigured` (dizin yapılandırılmamışken Giriş kaynağı sekmesinin Durum kutusundaki not; sekme o zaman başka bölüm çizmez)
+  - az: Kataloq konfiqurasiya olunmayıb. Korporativ hesabla giriş bağlıdır; yalnız lokal hesablar istifadə olunur. Bu, server konfiqurasiyasıdır (LDAP_URL) və buradan dəyişdirilə bilməz.
+  - tr: Dizin yapılandırılmamış. Kurumsal hesapla giriş kapalı; yalnız yerel hesaplar kullanılıyor. Bu, sunucu yapılandırmasıdır (LDAP_URL) ve buradan değiştirilemez.
+  - ru: Каталог не настроен. Вход с корпоративной записью отключён; используются только локальные записи. Это настройка сервера (LDAP_URL), и отсюда её изменить нельзя.
+  - en: The directory is not configured. Signing in with a corporate account is off; only local accounts are in use. This is server configuration (LDAP_URL) and cannot be changed here.
+- `source.skipInvalidLogin` (içe aktarmada atlanan bir hesabın nedeni)
+  - az: istifadəçi adı lokal qaydaya uyğun deyil (a-z, 0-9 və . _ @ -); AD-dəki sAMAccountName-i Latın qarşılığı ilə yazın: ş→s, ç→c, ğ→g, ö→o, ü→u, ı→i, ə→e
+  - tr: kullanıcı adı yerel kurala uymuyor (a-z, 0-9 ve . _ @ -); AD'deki sAMAccountName'i Latin karşılığıyla yazın: ş→s, ç→c, ğ→g, ö→o, ü→u, ı→i, ə→e
+  - ru: логин не соответствует местному правилу (a-z, 0-9 и . _ @ -); запишите sAMAccountName латиницей: ş→s, ç→c, ğ→g, ö→o, ü→u, ı→i, ə→e
+  - en: the username does not match the local rule (a-z, 0-9 and . _ @ -); write the sAMAccountName in its Latin form: ş→s, ç→c, ğ→g, ö→o, ü→u, ı→i, ə→e
+- `source.mapPickHint` (AD grup eşlemesinde grup arama alanının ipucu; yalnız eşlemeyi değiştirebilen yöneticiye görünür)
+  - az: Ən azı 2 simvol. Fərqləndirici ad (DN) siyahıdan seçilir, əl ilə yazılmır: əl ilə yazılan DN-in Türk/Azərbaycan hərfləri AD-dəki yazılışdan fərqlənərsə uyğunlaşma səssizcə işləməz.
+  - tr: En az 2 karakter. Ayırt edici ad (DN) listeden seçilir, elle yazılmaz: elle yazılan bir DN'in Türkçe/Azerbaycanca harfleri AD'deki yazımdan farklı olursa eşleşme sessizce çalışmaz.
+  - ru: Не менее 2 знаков. Отличительное имя (DN) выбирается из списка, а не вводится: у введённого вручную DN турецкие и азербайджанские буквы могут отличаться от написания в AD, и сопоставление молча не сработает.
+  - en: At least 2 characters. The distinguished name (DN) is chosen from the list, never typed: a typed DN whose Turkish or Azerbaijani letters differ from AD's spelling will silently fail to match.
 
 ### Dalgalar
 
@@ -253,8 +303,20 @@ geçti / 8 atlandı / 0 hata; dashboard 1741 geçti (86 dosya) — bunun 851'i y
 
 **G1-12 Kullanıcılar + birimler**
 
-- `/scope/me` panoyla aynı kararı verir: `enforce_unassigned` ve break-glass dahil
-  (bugün `scope/router.py:66-71` ikisini de `build_scope`'a geçirmiyor).
+- `/scope/me` panoyla aynı kararı verir: `enforce_unassigned` ve break-glass dahil.
+  ✅ **Karşılandı, Dalga 3B Görev 14 (`fa8c522`).** `scope/router._view` artık ikisini de panonun
+  kendi çözücüsü gibi `build_scope`'a geçiriyor; rolü None olan kullanıcı (etkin hesabı ya da bu
+  kurumda etkin üyeliği yok — örneğin pasifleştirilmiş bir hesap, yönetici rotası eskiden onu
+  "sınırsız" diye bildiriyordu) çözücünün UNKNOWN'ı olur ve hiçbir şey görmez.
+  `tests/test_scope_me_agrees_with_board.py` iki tarafı dört kapsam nedeninde (rol, atanmış,
+  atanmamış, break-glass) ve UNKNOWN'da birbirine bağlar. `SCOPE_ENFORCE_UNASSIGNED` açıkken
+  ataması olmayan bir hemşire için yanıt artık "sınırsız" değil: yalnız kendi hastalarını (bakım
+  ekibi ve acil erişim) görür. `ScopeView.own_patients` bu hastaların **sayısıdır**, kimlikleri değil.
+- Kapsam "matrisi" (birim × yatak): **liste olarak karşılandı**, Dalga 3B planının Karar 7'siyle.
+  Bir kapsamın adlandırabileceği birimleri ve yatakları listeleyen bir uç yok (yatak eşleme
+  dosyasının anahtarlarıdır; `/tenant/*` ağacı `structure.manage` ister ve kimlikleri o dosyaya
+  bağlı değil). Düzenleyicinin seçenekleri panodaki kartlardan, kullanıcının mevcut atamalarından
+  ve elle yazılan bir anahtardan gelir; ekran bunu ve boş bir birimin listede görünmediğini söyler.
 
 ---
 
@@ -333,7 +395,7 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - clinicalCharting (silinen vakalar) · Vazopressör/inotrop dozu (noradrenalin, adrenalin, dopamin, dobutamin; yazım farkı önemsiz) motora hız kodu olarak gider; puanlanmayan ilaç sinyal diye uydurulmaz. → Grup 3
 - clinicalCharting (silinen vakalar) · Verilen sıvı (yalnız giriş) motora `crystalloid_bolus_ml` olarak gider; çıkış gönderilmez. → Grup 3
 - clinicalCharting (silinen vakalar) · Kabulde kilo `weight_kg` gözlemi, serbest metin eşlik eden hastalıklar ("DM, HT; KOAH") hasta profili olarak motora gider; boş kutu profil göndermez, yan kanal hatası kabulü geri almaz. → Grup 2
-- scopeAssignment (silinen vakalar) · Kapsam matrisi (birim + yatak) `PUT /scope/{user}` ile motora yazılır, tek hücre tıklaması da aynı yoldan gider; motor reddederse ekrandaki matris geri alınır. → G1-12
+- scopeAssignment (silinen vakalar) · Kapsam matrisi (birim + yatak) `PUT /scope/{user}` ile motora yazılır, tek hücre tıklaması da aynı yoldan gider; motor reddederse ekrandaki matris geri alınır. → G1-12 ✅ Dalga 3B: matris değil liste (Karar 7, yukarıda kabul ölçütleri); kayıt bütün listeyi `PUT /scope/{user}` ile tek seferde yazar; motor reddederse ekrandaki liste geri alınır ve bunu söyler; yanıt gelmezse (süre aşımı, kopan bağlantı) geri alınmaz, kapsam yeniden okunur — yazma gitmiş olabilir. Kaydet yalnız kapsamı **rolü gereği** sınırsız olan yöneticiye çizilir (`users.manage` yetmez; sunucunun kuralı).
 
 ## Dalga 0'dan açık kalanlar
 
@@ -350,13 +412,13 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - `api/board.py` NEWS2'yi tazelik uygulamadan hesaplıyor (`news2.score()`; tazelik yalnız kuralın `evaluate()`'inde): eski vitallerle kart "tam" görünebilir. → Grup 2 motor işi (G1-11 kabul ölçütü)
 - Motor oda havası ve "Alert"i varsayıyor ama kısmi saymıyor (`rules/news2.py:140-143`). → klinik karar, kasaya dayanmalı (Grup 2; karar 7)
 - Tüm uygulamanın rotalarını sınıflandıran tek bir test yok (scope/infinity/auth router'ları tabloda değil). → G1-03 öncesi küçük iş
-- İzin açıklamaları güncel değil: `users.manage` kapsam atamayı, `devices.manage` canlı değerleri ve satıcı grubunu söylemiyor. → G1-13
+- İzin açıklamaları güncel değil: `users.manage` kapsam atamayı, `devices.manage` canlı değerleri ve satıcı grubunu söylemiyor. → G1-13 — **kısmen**: roller tablosu açıklamaları artık sunucunun İngilizcesinden değil, izin anahtarına göre dört dilde kendi metninden gösteriyor (`strings/perms.js`; sunucunun metni yalnız bu derlemenin bilmediği bir anahtar için, İngilizce olarak işaretli yedek). Ama bu iki anahtarın panodaki metinleri de sunucununkiyle aynı eksikleri taşıyor; sunucudaki metin de değişmedi → "Dalga 3B'den açık kalanlar".
 - Kısmi NEWS2 ipucu ve `NEWS2_MISSING_LABEL` yalnız Türkçe. → G1-06 ✅ Dört dilde `src/live/i18n/strings/news2.js`; karta G1-09 bağlar.
 - `patientFromBoard` `identity.bed_id`/`unit_id`'yi okumuyor: her HBYS hastası "yatak bekliyor" görünür; birim filtresi ve kapsam matrisi için gerekli. → G1-09
 - `auditRowFromRecord` kişi alanını `actor`'dan okumuyor (ack ve `scope_denied` satırları "—"); test fikstürü backend'in göndermediği `{by}` biçimini kullanıyor. → Grup 2
 - Vite dev proxy'de `/admin`, `/scope`, `/scores`, `/infinity-research` yok (`/clinical` ve `/alarm-quality` var; yalnız `npm run dev`'i etkiler). → G1-07 ✅ `devProxy.test.js` nginx'in her API yolunu arar.
 - `main.jsx`'te ölü `simulation` prop'u; PWA manifest `start_url: "/?demo=1"`. → G1-16 ✅ ikisi de Dalga 2'de düzeltildi: ölü prop gitti, manifest `start_url: "/"` ve `lang: "az"`. Yalnız **yeni** kurulumlar için geçerli: ana ekrana zaten eklenmiş bir kısayol, tarayıcı manifesti yeniden okuyana kadar `/?demo=1`'i — yani simülasyonu — açmayı sürdürür. Her tablette yeniden eklenmesi G1-15 deploy kapısında.
-- `backendApi.myScope()` kullanılmıyor. → G1-12
+- `backendApi.myScope()` kullanılmıyor. → G1-12 ✅ Kullanıcılar sekmesi yöneticinin kendi kapsamını onunla okuyor: kapsam atama hakkı (`rules.canAssignScope`) yalnız `reason: "role"` iken var; yanıt gelmemişse bilinmiyor sayılır ve Kaydet çizilmez.
 - `?infinityTest=1` yalnız ana çalışma ağacındaki commit'lenmemiş değişiklikte var. → kullanıcıya not
 - `clinicalDemo.js:475`'teki demo yönetici parolası git geçmişinde; gerçek bir yerde kullanıldıysa değiştirilmeli. → kullanıcıya not
 - `homunculus-ml/**/__pycache__/*.pyc` takipte (`324d2bd`'den beri). → ayrı temizlik
@@ -590,6 +652,110 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   home`'a gider: oturum ortasında hash silinirse ana ekran değil hatırlanan ekran açılır (zararsız).
 - Yeni metinler (`nav`, `shell`, `auth`, `lock`, `account`, `errors`'ın çoğu) AZ/RU/EN'de anadili
   konuşan bir klinisyenin okumasını bekliyor → pilot öncesi.
+
+## Dalga 3B'den açık kalanlar
+
+Plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) (G1-12/G1-13/G1-14 ve arka uç yarısı,
+Görev 14). Sayılar yukarıda, iş listesinin altında.
+
+**Yapılmadı — kullanıcının ya da hastanenin işi:**
+
+- **Tarayıcıda bakış** (390 px ve 1440 px, iki temada; Görev 12 Adım 5) yapılmadı, kullanıcı
+  yapacak. Bakılacaklar: 390 px'te sekme listesi (iki ayrı liste gibi iki satıra kırılmamalı,
+  sekme listesi olarak kaymalı); kullanıcılar sekmesinde alınan bir ret bildirimi roller sekmesine
+  geçince ekranda kalıyor mu (hiçbir birim testi sekme değişimini gözlemiyor); roller tablosu yana
+  kayarken ilk sütun yerinde kalıyor mu; üyesi olduğu için silinemeyen bir grubun nedeni sütun
+  başlığına sığıyor mu.
+- Bağlantı testinin beş gerçek nedeni hastanenin etki alanı denetleyicisi olmadan denenemez;
+  yalnız taklitle test edildi → G1-15 kapısında bir madde.
+- AD ile girişin VM'de açılması BT biriminin yanıtlarını bekliyor (`docs/active-directory-bt-sorulari.md`,
+  yukarıda "Hastaneden gerekenler").
+- VM'ye hiçbir şey çıkmadı: kullanıcının kararı (07.10.2026) — Grup 1'in tamamı kendi kapısından
+  geçmeden VM'ye bir şey gitmez (yukarıda "Bu dal VM'ye çıkmaz").
+
+**Bilerek bırakılanlar:**
+
+- **`GET /admin/users` sınırsız** (pilot için kullanıcının kararı): sekme bütün hastaneyi tek
+  istekte yükler, tarayıcıda süzer, 50'şer satır çizer ve 200 ya da daha çok hesapta bunu ekranda söyler.
+  **Sunucu tarafı sayfalama ikinci bir hastaneden önce** gerekir.
+- **Toplu kapsam okuması yok:** `GET /scope/{id}` kullanıcı başına, `/scope/unassigned` yalnız bir
+  sayı. Birimler sütunu bir kullanıcının kapsamı okunana dek "Okunmadı" der (düzenleyici açılınca
+  okunur); satır başına bir istek bilerek yapılmadı (dizin çağrılarıyla aynı yönetici şeridini
+  tüketir). Sütunun gerçek olması için toplu bir kapsam okuması gerekir → hedef grup seçilmedi.
+- **Roller sekmesinde sekme değiştirmek bekleyen işaretleri düşürür** (inceleme bulgusu P5):
+  `AdminScreen` yalnız açık sekmeyi kurar. Görünür (dönünce sütun işaretsiz), yanlış bir iddia
+  değil. Seçenekler: bekleyenleri `AdminScreen`'e taşımak ya da kaydedilmemiş değişiklikle sekmeden
+  çıkarken sormak → Grup 3.
+- **Bir izin anahtarı ekleyen sürümden önce alınmış token:** bütün yetkileri olan bir yönetici o
+  token'ın ömrü boyunca (en çok 60 dakika) yeni anahtarın hücrelerini "bu yetkiye sahip
+  değilsiniz", o anahtarı taşıyan grubu "yetkilerinizi aşıyor" diye görür; sunucu (yetkileri
+  veritabanından okur) kabul ederdi. Seçenekler: pano sistem grubu üyesini bütün kataloğu taşıyor
+  saysın ya da bir sürüm bütün token sürümlerini artırsın → Grup 3.
+- **AD'den gelen bir Sistem Yöneticisi üyeliği son yönetici korumasında hiç sayılmaz:**
+  `count_admins` bilerek yalnız YEREL üyeleri sayar (AD kesintisi yöneticilerin hepsini
+  kilitlememeli). Yalnız AD yöneticileri kalan bir hastanede son yerel yöneticinin kaldırılması
+  reddedilir — doğru — ama kullanıcılar ve giriş kaynağı sekmeleri bir AD `hospital_admin`'inin
+  neden "sayılmadığını" söylemiyor. Bütün yetkileri olan bir masa iki sekmeden de
+  `hospital_admin` verebilir (sunucu kabul eder; yeni bir yetki yolu değil). Ekranda ipucu → Grup 3.
+- **Kilit sırasında sonuçlanan başarılı bir yazma onaylanmaz:** kullanıcı formu ve kapsam
+  düzenleyicisi başarıyı yalnız ekrandayken onaylar (ret her durumda bildirime düşer); kilit
+  kabuğu kaldırır, yani kilit sırasında biten bir kayıt sessizdir ve kilitte biten bir kapsam
+  kaydı Birimler hücresini bir sonraki okumaya dek eski bırakır. `6c6b4f6`'dan beri bildirimler
+  kilit boyunca tutulduğu için başarı bildirimi koşulsuz (oturuma bağlı) verilebilir → Grup 3.
+- **İki izin açıklaması eski:** `auth/permissions.PERMISSIONS`'ta `users.manage` birim kapsamı
+  rotalarını (`/scope/{id}`, `/scope/unassigned`, `PUT /scope/{id}`), `devices.manage` cihaz
+  araştırma penceresini ve satıcı grubunun (`platform_support`) onu taşıdığını söylemiyor. Pano
+  açıklamaları anahtara göre kendi metninden gösteriyor, ama bu iki anahtarın dört dildeki
+  metinleri (`strings/perms.js`) sunucununkinden yazıldı ve aynı eksikleri ekranda da taşıyor.
+  İkisi birlikte düzeltilir.
+- **"Canlı bileşende onaltılık renk ya da Tailwind paleti rengi yok" kuralını sınayan test yok:**
+  kural incelemeyle korunuyor, testle değil. Dalganın düşünüp kurmadığı tek sistemli ağ;
+  `rawKeys.test.jsx`'teki statik anahtar ağının yanında yaklaşık yirmi satır.
+- `tests/test_infinity_vm_pilot.py` yük altında asılı kalıyor (PowerShell alt sürecinin `kill()`'i
+  `communicate()`'i bitirmiyor); düzelene dek iki tam backend koşusu aynı makinede birlikte
+  koşulmaz → Grup 4 (test düzeni).
+
+**Bu dalganın kapattıkları:**
+
+- ✅ **Kayıp güncellemeler gerçekti; artık sunucu kapatıyor (Görev 14e, `65d6a36`).** Sunucu bir
+  grubun izinlerini ve bir kullanıcının elle verilmiş üyeliklerini sürümsüz, bütün küme olarak
+  değiştiriyordu: eski bir görünümden yapılan kayıt başka bir yöneticinin değişikliğini sessizce
+  geri alıyordu ve panodaki "409 gelirse yeniden oku" yolları 14e'ye dek ölüydü (bu rotaların
+  "aynı anda değiştirildi" 409'u yalnız kilitlerin erişilmez kıldığı bir IntegrityError'dan
+  gelebiliyordu). Şimdi
+  `PATCH /admin/groups/{id}` `expected_permissions`'ı, `PUT /admin/users/{id}/groups`
+  `expected_group_ids`'i alır; ikisi de kiracı kilidi altında (grupta satır kilidiyle birlikte),
+  hiçbir şey yazılmadan **küme olarak** karşılaştırılır; farklıysa 409 `CONCURRENT_CHANGE`,
+  hiçbir şey yazılmaz, denetim satırı da olmaz. Grup, `GroupOut`'un sunduğuyla karşılaştırılır
+  (`served_permissions`; sistem grubu için bütün katalog) — yoksa sistem grubu sonsuza dek 409
+  alırdı; kullanıcı yalnız ELLE verilmiş üyelikleriyle, AD'den gelenler dışarıda. Alan
+  gönderilmezse yazma eskisi gibi. Roller sütunu 409'da yeniden okunur ve işaretler kalır;
+  kullanıcı formu 409'da kapanır ve hesabın başka masada değiştirildiğini söyler.
+- ✅ **Kullanıcı formu yalnız değişen alanları gönderir** (`9f49cb3`): bir ad düzeltmesi son
+  okunan `is_active`'i yeniden gönderiyor ve başka bir masanın pasifleştirdiği hesabı yeniden
+  etkinleştiriyordu — "kaydedildi" diyerek.
+- ✅ **Yanıtsız kalan bir yazma için tek kural** (`3beedea`): `refusal.js` `mayHaveLanded`
+  `errors.requestTimeout`, `errors.serverUnreachable` ve `errors.network`'ü kapsar. Böyle biten bir
+  YAZMA "gitmiş olabilir" der (`admin.mayHaveLanded`; zaman aşımı bunu kendi cümlesinde zaten
+  söylüyor) ve ekran dokunduğunu yeniden okur. Okumalar bunu hiç demez; dizin bağlantı testi
+  okuma gibi yazıldı.
+- ✅ **Bildirimler ve kilit ekranı** (`6c6b4f6`, `afaab61`): `ToastProvider` `open`/`session`
+  alır — bildirimler kilit ekranı boyunca tutulur ve kilit açılınca gösterilir, başka bir oturuma
+  taşınmaz, `useToast()` kendi oturumuna bağlıdır. Ekranlar YAZMALARINI çıkışa karşı yine kendileri
+  `store.epoch()` ile korur (kullanıcılar ve giriş kaynağı sekmeleri).
+- ✅ **AD'den içe aktarma:** 2'şer hesaplık parçalarla, kesinlikle sırayla. Yönetici sekmeden
+  ayrılırsa aktarma biter ve sonucu bildirime düşer; çıkış yapılırsa sessizce durur. Yarıda kalan
+  bir aktarma da — bir hesap aktarılmışsa ya da başarısız parça gitmiş olabilirse — listeleri
+  yeniden okur. "exists" o dizin kullanıcısı için bir hesap olduğunu söyler — başka bir hastanede
+  de olabilir.
+- ✅ **Karar X2:** bir masanın veremeyeceği grup gizlenmez, nedeniyle birlikte seçilemez gösterilir
+  — kullanıcı formunda da, içe aktarmanın ek grubunda da.
+- ✅ **Görev 14 (`fa8c522`):** `POST /admin/users/{id}/unlock-sign-in` `{ok, granted,
+  allowed_before, allowed_after}` döner (eskiden yalnız `{ok: true}`; ekran "üç deneme daha" ile
+  "açılacak bir şey yoktu"yu ayırt edemiyordu, şimdi sunucunun sayısını söylüyor); `GroupOut.kind`
+  (`"role"` / `"extra"`, hastanenin açtığı grup için `null`) ve `ScopeView.own_patients` (yalnız
+  sayı) yeni; `/scope/unassigned` yöneticileri ve platform operatörlerini saymıyor; `/scope/me`
+  panoyla aynı kararı veriyor (yukarıda G1-12 kabul ölçütü).
 
 ## Kullanıcı kararları (Dalga 0 sonrası)
 

@@ -344,11 +344,12 @@ kötüleşme, laboratuvar bunu yakalayana kadar saatler geçebilirken, sürekli 
 Bu bölüm, gerçek sistemde (`?live=1`) kimin neyi yapabildiğini anlatır. Kaynağı tasarım belgesi
 (`docs/superpowers/specs/2026-09-23-ldap-rbac-design.md`) ve kod (`homunculus-engine/src/homunculus/auth/`,
 `admin/`). Active Directory (LDAP) ile giriş için aşağıdaki "Active Directory ile giriş"
-maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te gelir.
+maddesine bakın. Yeni arayüzün yönetim ekranı — kullanıcılar, roller ve yetkiler, giriş kaynağı
+(AD) — Dalga 3B'de geldi: aşağıda "Yönetim ekranı".
 
 **İzin (permission)**
 - *Basit:* "Panoyu görebilir", "alarm onaylayabilir", "kullanıcı yönetebilir" gibi tek tek haklar.
-- *Homunculus'ta:* 19 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…).
+- *Homunculus'ta:* 21 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…).
   Liste kodda yaşar (`auth/permissions.py`), çünkü yazılımın *neler yapabildiği* yazılımın
   özelliğidir; bunları *kimin* yapabileceği ise hastanenin kararıdır ve veritabanında, gruplarda
   yaşar. Her API rotası bir izinle korunur. Bir test her rotayı kendi iznine sabitler: izni
@@ -401,6 +402,9 @@ maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te geli
 
   Haklarınız token'dan değil, veritabanından okunur. Kuralı aşan istek 403 ile reddedilir. Panel,
   veremeyeceğiniz grubu gri gösterir ve nedenini yazar: "Yetkileriniz bu grubu vermeye yetmiyor."
+  Yeni yönetim ekranında böyle bir grup listeden **gizlenmez**; seçilemez ve yanında "Bu grubun
+  yetkileri sizinkini aşıyor; veremezsiniz." yazar — kullanıcı formunda da, AD'den içe aktarmanın
+  ek grubunda da. "Bu hastanede böyle bir grup yok" ile "bu grubu ben veremem" ayrı iki cevaptır.
 - *Kendinize uygulanamayanlar:* Yönetici ekranından kendi parolanızı ya da MFA'nızı sıfırlayamaz,
   kendinizi pasifleştiremezsiniz (409). Kendi parolanız için "Parolamı değiştir" kullanılır.
 - *Başka kurumla paylaşılan hesap:* Başka bir kurumda da etkin üyeliği olan bir hesabın ya da bir
@@ -554,7 +558,9 @@ maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te geli
   yanıt süresi bir adın AD hesabı olup olmadığını ele vermesin diye. (Dizin kapalıyken AD
   hesabı hemen 503 alır, öbürleri 401: o anda AD hesapları yine ayırt edilir — kullanıcı
   kararı 11.) Kurulumdan sonra dizinin bağlanıp bağlanmadığı yönetici olarak
-  `GET /admin/ldap/status` ile görülür (`last_test_ok: true`). Parola hastanenin dizinine
+  `GET /admin/ldap/status` ile görülür (`last_test_ok: true`); yeni arayüzde aynı bilgi Yönetim ›
+  Giriş kaynağı › Durum kutusundadır ve "Bağlantıyı dene" düğmesi bağlantıyı orada sınar
+  (aşağıda "Yönetim ekranı"). Parola hastanenin dizinine
   yazıldığı gibi, değiştirilmeden gider: bölünmez boşluk ya da birleşik yazılmamış bir `ş`
   içeren doğru parola da kabul edilir. Sunucu üretimde `LDAP_ALLOW_INSECURE=1` ile açılırsa
   AD girişi kapalı kalır (şifresiz ya da doğrulanmamış bağlantıda AD parolaları ağda okunabilir).
@@ -592,7 +598,9 @@ maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te geli
   hesabın bu hatalı giriş dizisi için tek kilit açma hakkı kullanıldı; 15 dakika hatalı parola
   girilmezse giriş kendiliğinden açılır". Denetim kaydı kilit açmanın öncesini ve sonrasını
   (`failed`: dizideki hatalı deneme, `allowed`: 3 ya da 6) ve bir şey verip vermediğini
-  (`granted`) yazar. Hatalı denemesi olmayan bir hesapta (ya da yerel
+  (`granted`) yazar; yanıt da artık bunları taşır, yani yönetim ekranı "3 deneme daha" ile
+  "açılacak bir sınır yoktu"yu ayırt eder ve kaç deneme tanındığını sunucunun sayısıyla söyler —
+  onaydan önce sayı vaat etmez. Hatalı denemesi olmayan bir hesapta (ya da yerel
   hesapta) kilit açma hiçbir şey vermez ve dizinin hakkını harcamaz; başka kurumda da etkin bir
   hesap ya da platform operatörü için olmaz. Gerekçe tek satır, en çok 200 karakter, en az bir
   harf ya da rakam içerir; görünmez biçim karakterleri (yön değiştiriciler, sıfır genişlikli
@@ -610,12 +618,101 @@ maddesine bakın: arka ucu hazır, yönetim panelindeki AD sekmesi G1-14'te geli
   (Windows oturumunu kilitlemez); yönetici bunu dizi başına bir kez açabilir (kullanıcı kararı
   11).
 
+**Yönetim ekranı (Kullanıcılar · Roller ve yetkiler · Giriş kaynağı)**
+- *Basit:* Hastanenin kendi hesaplarını, gruplarını ve kurumsal (AD) girişini yönettiği sayfa.
+  Sol menüde "Yönetim" (Azerbaycanca arayüzde "İdarə"); içinde üç sekme var: Kullanıcılar, Roller
+  ve yetkiler, Giriş kaynağı ("İstifadəçilər", "Rollar və səlahiyyətlər", "Giriş mənbəyi").
+  Sayfanın başlığı her değişikliğin denetim kaydına yazıldığını söyler.
+- *Kim açabilir:* Sayfa `users.manage` ya da `groups.manage` izni olana açılır, her sekme de
+  kendi iznine bakar: Kullanıcılar ve Giriş kaynağı `users.manage`, Roller ve yetkiler
+  `groups.manage` ister. Varsayılan gruplarda ikisi de yalnız Sistem Yöneticisi'ndedir. Ekrandaki
+  gri düğmeler ve kilitli sütunlar yalnız ipucudur: her yazmayı sunucu kendi kurallarıyla yeniden
+  denetler. Reddederse nedeni bildirimde (toast) yazar ve bildirim neyin reddedildiğini adıyla
+  söyler (hesap, grup, AD grubu); bildirim sekme ya da ekran değişince kaybolmaz.
+- *Kullanıcılar:* Hastanedeki bütün hesaplar tek listede: ad, kullanıcı adı, rol, birimler, durum,
+  2FA, son giriş, işlemler. Arama ve rol süzgeci tarayıcıda çalışır; liste 50'şer satır gösterilir.
+  Bir hesapta bir **rol**, istenen sayıda **ek görev** (Sorumlu Hemşire, Hızlı Yanıt Ekibi) ve
+  hastanenin kendi açtığı **diğer gruplar** seçilir; AD'den gelen gruplar burada değiştirilemez.
+  İşlemler: düzenle, şifre sıfırla, 2FA sıfırla, pasifleştir / etkinleştir, girişi aç (yukarıda
+  "AD giriş sınırı ve kilit açma") ve birimler. Her yazmadan sonra liste sunucudan yeniden okunur.
+  - **Birimler (birim kapsamı):** kişinin panoda hangi birimlerin ve yatakların hastalarını
+    gördüğü. Bütün kullanıcıların kapsamını birden okuyan bir uç yok, bu yüzden "Birimler" sütunu
+    bir kişinin kapsamı okunana dek "Okunmadı" der; birimler penceresi açılınca okunur. Penceredeki
+    seçenekler panodaki kartlardan, kişinin mevcut atamalarından ve elle yazılan bir anahtardan
+    gelir (hastası olmayan boş bir birim panoda görünmez, anahtarı elle yazılır). Kapsamı yalnız
+    kendi kapsamı **rolü gereği** sınırsız olan yönetici (Sistem Yöneticisi ya da platform
+    operatörü) kaydedebilir; `users.manage` tek başına yetmez. Ataması olmayan bir hesap bugün
+    bütün hastaları görür; sunucu ataması olmayanları kısıtlayacak biçimde ayarlanırsa
+    (`SCOPE_ENFORCE_UNASSIGNED`) yalnız bakım ekibinde adı geçtiği ya da acil erişimle açtığı
+    hastaları görür. Ekran hangisinin geçerli olduğunu sunucudan okuyup yazar. Sekmedeki "Hiç
+    atama yapılmamış kullanıcı" sayısı yöneticileri ve platform operatörlerini saymaz — onların
+    atamaya ihtiyacı yok.
+- *Roller ve yetkiler:* Grup × yetki tablosu: her sütun bir grup, her satır bir yetki; yetkinin
+  açıklaması okuyanın dilinde, altında izin anahtarı (destek çağrısında anılan odur). Kilitli
+  sütunlar: Sistem Yöneticisi (hakları kural gereği bütün katalog), yetkileri sizinkini aşan bir
+  grup ve kataloğun tanımadığı bir yetki taşıyan grup (oradan kaydedilse o yetki sessizce
+  silinirdi). Sahip olmadığınız bir yetkinin kutusu işaretlenemez. Üyesi olan grup silinemez;
+  nedeni sütun başlığında yazar. Yeni grup buradan açılır.
+- *Giriş kaynağı:* **Durum** — dizin yapılandırılmış mı, sunucunun adı, son bağlantı denemesi —
+  ve "Bağlantıyı dene". Deneme başarısızsa beş nedenden birini neyin kontrol edileceğiyle söyler
+  (sunucuya ulaşılamadı; süre içinde yanıt yok; şifreli bağlantı kurulamadı; servis hesabı
+  reddedildi; beklenmeyen yanıt). **Hesap ara ve içe aktar** — dizin listelenmez, aranır (en az 2
+  karakter, en çok 50 sonuç); seçilen hesaplar ikişer ikişer, sırayla aktarılır. Yönetici başka
+  sekmeye geçse de aktarma biter ve sonucu bildirime düşer; çıkış yapılırsa durur. Atlanan her
+  hesap nedeniyle listelenir; "bu dizin hesabı için zaten bir hesap var" başka bir hastanedeki
+  hesap da olabilir. Aktarmayı tekrarlamak zararsızdır. **AD grup eşlemesi** — AD grubu elle
+  yazılmaz, aranıp listeden seçilir; eşlemeyi yalnız bütün kataloğu taşıyan yönetici değiştirir,
+  diğerleri okur. Dizin işlemleri 30 saniyeye kadar sürebilir.
+- *Yöneticilerin soracağı üç şey:*
+  1. **"Geçici şifre nerede görünüyor?" — Hiçbir yerde.** Ekran şifre üretmez: geçici şifreyi
+     yönetici kendisi yazar (en az 8 karakter; sunucunun kuralı, sunucunun saydığı gibi sayılır).
+     Alan gizli yazılır ve pencere kapanınca boşaltılır; şifre bildirimde, sayfada ya da bir
+     başlıkta bir daha görünmez. Kişiye yüz yüze ya da telefonla iletilir, e-postayla gönderilmez;
+     kişi sonraki girişinde kendi şifresini belirler. Unutulursa ekrandan okunamaz: "Şifre
+     sıfırla" ile yeni bir geçici şifre belirlenir (kişinin açık oturumları kapanır).
+  2. **"Kutuyu işaretledim; yetki verildi mi?" — Henüz değil.** Kutu yalnız değişikliği toplar;
+     sütun kaç değişikliğin beklediğini söyler. Grubun kendi "Kaydet"ine basılınca o grubun bütün
+     yetki listesi tek istekte gider ve denetim kaydına yazılır. Gruplar tek tek kaydedilir,
+     "hepsini kaydet" yoktur: sunucu bir grubu bütün olarak yazar; üç grubun ikincisi reddedilse
+     tablo kimsenin seçmediği bir hâlde kalırdı. Bu arada başka bir yönetici aynı grubu
+     kaydettiyse kaydınız reddedilir (sunucu sizin okuduğunuz listeyle şimdikini karşılaştırır),
+     sütun yeniden okunur ve işaretleriniz durur: yeni duruma bakıp tekrar kaydedersiniz.
+     Kaydedilmemiş işaretler başka sekmeye geçince kaybolur. Gruptaki kişiler yeni yetkiyi oturum
+     kapanmadan, token'ları yenilenince alır (yukarıda "RBAC").
+  3. **"Dizin sunucusunun adresini nereden değiştiririm?" — Bu ekrandan değil.** Adres
+     (`LDAP_URL`) ve servis hesabı sunucu yapılandırmasıdır; BT birimiyle kurulumda ayarlanır.
+     Ekran yalnız sunucunun adını gösterir; servis hesabı ve şifresi hiçbir yanıtta yer almaz.
+     Dizin yapılandırılmamışsa sekme yalnız bunu söyleyen bir not gösterir.
+- *Bilinmesi iyi olanlar:*
+  - Bir yazmaya yanıt gelmezse (zaman aşımı, kopan bağlantı, yanıt veremeyen sunucu) ekran
+    "reddedildi" demez: "Değişiklik yine de uygulanmış olabilir: yeniden denemeden önce kontrol
+    edin." der ve ilgili listeyi sunucudan yeniden okur. Bir okuma başarısız olursa bunu demez —
+    okunamayan bir listede değişen bir şey yoktur.
+  - Bir hesabı düzenlemek yalnız değiştirilen alanları gönderir: bir ad düzeltmesi, başka bir
+    masada pasifleştirilmiş hesabı yeniden etkinleştirmez. Grupları bu arada başka bir masada
+    değiştirilmiş bir hesabın gruplarını kaydetmek reddedilir; form kapanır ve "Bu hesap bu arada
+    başka bir masada değiştirildi; şimdiki hâlini görmek için hesabı yeniden açın." der.
+  - Bildirimler ekran kilitlenirse kilit boyunca bekler ve kilit açılınca gösterilir; çıkış
+    yapılırsa bir sonraki oturuma taşınmaz. Kilit sırasında sonuçlanan **başarılı** bir kayıt bugün
+    onaylanmaz (bir ret yine bildirilir) — açık iş, Grup 3.
+  - Ekran bütün hesap listesini tek istekte yükler; 200 ya da daha çok hesapta bunu kendisi
+    söyler. İkinci bir hastaneden önce sunucu tarafında sayfalama gerekecek.
+  - AD'den gelen bir Sistem Yöneticisi üyeliği son yönetici korumasında sayılmaz (yukarıda
+    "Yönetici"): yalnız AD yöneticileri kalmış bir hastanede son **yerel** yöneticinin
+    kaldırılması reddedilir. Ekran bunun nedenini henüz söylemiyor (Grup 3).
+
 **Yetkilerin yeniden okunması**
 - *Basit:* Panelin menüde gösterdiği haklar bir ipucudur; asıl kararı her istekte sunucu verir.
 - *Homunculus'ta:* Panel, fark ettirmeden yenilenen her token'dan hakları yeniden okur, böylece bir
   yetki değişikliği oturum kapanmadan menüye yansır. Personel sekmesi açılırken haklar `/auth/me`
   üzerinden veritabanından okunur: yeni bir sürüm izin eklediyse, eski token'ı olan bir yönetici de
   gerçek haklarını görür. Bir hak kaybedilirse sunucu 403 der; hata her zaman kapalı yönde olur.
+  (Bu, önceki arayüzün personel sekmesi içindir. Yeni yönetim ekranı açılırken `/auth/me`'yi
+  yeniden okumaz: oturum token'daki hakları her istekten sonra, `/auth/me`'yi de girişte ve sayfa
+  açılırken zaten yeniden okuyor.
+  Bedeli: bir izin anahtarı ekleyen sürümden önce alınmış token'ın ömrü boyunca — en çok 60
+  dakika — bütün yetkili bir yönetici yeni anahtarın kutularını "bu yetkiye sahip değilsiniz" diye
+  gri görebilir; sunucu kabul ederdi. Açık iş, Grup 3.)
 
 **Oturumun korunması ve "Tekrar dene"**
 - *Homunculus'ta:* Sayfa yenilenince panel kayıtlı oturumu sunucuya sorar. Sunucu oturumu
