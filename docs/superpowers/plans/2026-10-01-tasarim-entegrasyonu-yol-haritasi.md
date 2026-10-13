@@ -111,9 +111,9 @@ dokunulmaz.
 | G1-09 | Yataklar: kart/liste, risk sırası, dikkat kartları, birim filtresi, kapsam açıklaması · plan: [dalga 3](2026-10-08-g1-dalga3-is-ekranlari.md) | 5 | Orta | G1-07 | ✅ 11.10 · ortak temel (Görev 0–8) 5a76853…266f52f, inceleme düzeltmeleri 39d4337; kart bdd5e0e, sıra ve süzgeçler 32d0ce9, ekran c23d002; üç ekranın ortak sembolleri 7acd78b; inceleme a326421, 28e6722. "`red_param` kartı en az amber yapar" ölçütü bilerek karşılanmadı (aşağıda kabul ölçütleri). Tarayıcıda bakış kayıtlı değil → G1-15 |
 | G1-10 | Alarmlar: yanıt bekliyor / değerlendiriliyor / kapanan, Gördüm, eskalasyon hapları, sunucu saatiyle süre · plan: [dalga 3](2026-10-08-g1-dalga3-is-ekranlari.md) | 3 | Düşük | G1-07 | ✅ 11.10 · ekran 29b158c, menüdeki sayaç ve zilin satır bağlantıları 0a698a3 (birleşme 3a8d589); inceleme 450507d, a0d9402, 4791442, f4d6449. "Kapanan" bölümü yok: geçmiş için uç yok, ekran bunu söylüyor. Tarayıcıda bakış kayıtlı değil → G1-15 |
 | G1-11 | Hasta ekranı · Özet: başlık, vital çubuğu, öneri kartı (gerekçe + kaynak), salt okunur · plan: [dalga 3](2026-10-08-g1-dalga3-is-ekranlari.md) | 5 | Orta | G1-09 | ✅ 11.10 · menüde `under` 41a2b83, dört dil c42ad07, ekran c5f6cb6, şüpheli enfeksiyon işaretleme 420bbbe; inceleme 40fd08a, 0a4f754, 36f7860, 4791442, f4d6449. Salt okunur değil: tek yazdığı şüpheli enfeksiyon işareti (kullanıcı kararı); SOFA formu ve hastanın kendi normali → Grup 2. Tarayıcıda bakış kayıtlı değil → G1-15 |
-| G1-12 | Yönetim · Kullanıcılar (D3) + birimler (kapsam matrisi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 5 | Orta | G1-07 | ✅ 13.10 · temel (Görev 0–4) 5fdc5cd…34494a8; Görev 5–7 b10179d, 6bc6740, 95adfa6, inceleme turları 9f49cb3 + baa1780; Görev 14 fa8c522 (`/scope/me` panoyla aynı karar) + 65d6a36 (14e). Kapsam "matrisi" liste olarak (Karar 7, aşağıda kabul ölçütleri). Tarayıcıda 390/1440 px bakışı kullanıcıda |
+| G1-12 | Yönetim · Kullanıcılar (D3) + birimler (kapsam matrisi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 5 | Orta | G1-07 | ✅ 13.10 · temel (Görev 0–4) 5fdc5cd…34494a8; Görev 5–7 b10179d, 6bc6740, 95adfa6, inceleme turları 9f49cb3 + baa1780; Görev 14 fa8c522 (`/scope/me` panoyla aynı karar) + 65d6a36 (14e); son bütün-dalga incelemesi d9bb996 (kapsam kaydı sayacı yeniden okur) + a301c73 (`PUT /scope` karşılaştır-ve-değiştir). Kapsam "matrisi" liste olarak (Karar 7, aşağıda kabul ölçütleri). Tarayıcıda 390/1440 px bakışı kullanıcıda |
 | G1-13 | Yönetim · Roller ve yetkiler (grup × izin matrisi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 3 | Düşük | G1-12 | ✅ 13.10 · Görev 8–9 05c7e7a, 1eb7356, inceleme turları fedde5b + 2ab1f10; 409 yolunu canlı yapan sunucu karşılaştırması Görev 14e 65d6a36. Tarayıcıda bakış kullanıcıda |
-| G1-14 | Yönetim · Sistem ayarları › Giriş kaynağı (AD durumu, bağlantı testi, ara + içe aktar, grup eşlemesi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 5 | Orta | G1-04, G1-12 | ✅ 13.10 (kod ve testler) · Görev 10–11 a6de6b2, 96c37ee, inceleme turları 6e8f6c9, 5fd309d, a06fc3c. Bağlantı testinin beş gerçek nedeni hastanenin etki alanı denetleyicisi olmadan denenemez (yalnız taklitle test edildi) → G1-15 kapısı |
+| G1-14 | Yönetim · Sistem ayarları › Giriş kaynağı (AD durumu, bağlantı testi, ara + içe aktar, grup eşlemesi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 5 | Orta | G1-04, G1-12 | ✅ 13.10 (kod ve testler) · Görev 10–11 a6de6b2, 96c37ee, inceleme turları 6e8f6c9, 5fd309d, a06fc3c; son bütün-dalga incelemesi d9bb996 (eşleme silmek çerçevenin listelerini yeniden okur). Bağlantı testinin beş gerçek nedeni hastanenin etki alanı denetleyicisi olmadan denenemez (yalnız taklitle test edildi) → G1-15 kapısı |
 | G1-16 | Demo ve eski modları kaldır (`ClinicalDemo.jsx`, `clinicalDemo.js`, `liveStore.js`, `clinicalI18n.js`, `legacyRoots.jsx`, replay, legacy board, `?eski=1` önceki canlı arayüz — kilidi bilmez, G1-15'ten önce gitmeli); PWA `?demo` başlangıcı Dalga 2'de düzeltildi | 3 | Orta | G1-09…G1-14 | Bekliyor |
 | G1-15 | Uçtan uca doğrulama (yerel yığın, 4 dil, 390 px/1440 px; Dalga 3'ün koşulmamış Görev 24'ü buraya katlandı, aşağıda) + VM deploy notları · temel: [RBAC planı](2026-09-23-rbac-groups-permissions.md), "Deploy notes for the VM" (zorunlu MFA kaydı: Sistem Yöneticisi, Sorumlu Hekim, Ünite Hekimi, Üretici Destek ilk girişte TOTP kurar; `0010` ön kontrolü) | 3 | Orta | hepsi | Bekliyor |
 
@@ -812,12 +812,14 @@ Görev 20–22'de yalnız şartnameydi). Sayılar yukarıda, iş listesinin alt�
   değil.
 - Yeni metinler (`board`, `beds`, `alarms`, `patient`, `risk` ad alanları) AZ/RU/EN'de anadili
   konuşan bir klinisyenin okumasını bekliyor (dosyaların başlıkları böyle diyor) → pilot öncesi.
-- **Yataklar başlığının altındaki sayı bağlantıya bakmıyor** (bu belgeler yazılırken kod okunarak
-  bulundu, tarayıcıda görülmedi): `BedsScreen.jsx` `beds.sub` "{count} yatak"ı her durumda basar,
-  ve pano okunamadığında ya da daha yüklenirken liste boş olduğundan başlık "0 yatak" der — hemen
-  altındaki şerit listenin gösterilmediğini söylerken. "Bilinemeyen panodan sayı yok" kuralının
-  (Dalga 3'ün klinik ekran incelemesi, kural b) kaçırdığı bir yer; küçük bir düzeltme, G1-15'ten
-  önce.
+- ✅ **Yataklar başlığının altındaki sayı bağlantıya bakmıyordu — `e4cdf15` ile kapandı.** Bu
+  belgeler yazılırken kod okunarak bulunmuştu: `BedsScreen.jsx` `beds.sub` "{count} yatak"ı her
+  durumda basıyordu ve pano okunamadığında ya da daha yüklenirken başlık "0 yatak" diyordu — hemen
+  altındaki şerit listenin gösterilmediğini söylerken ("bilinemeyen panodan sayı yok" kuralı,
+  Dalga 3'ün klinik ekran incelemesi, kural b). Artık sayı yalnız bir okumanın ekrana koyduğu
+  kartlar için basılır (canlı, ya da tutulup eskimiş diye işaretlenmiş); bağlanırken ya da yükleme
+  başarısızken yalnız birim adı kalır ya da hiçbir şey (`BedsScreen.test.jsx` "counts no beds
+  before a read has put any on screen"). Tarayıcıda görülmedi — G1-15 yürüyüşü bakar.
 
 **Kullanıcının kararlarıyla kapananlar ve açık kalan yarısı:**
 
@@ -968,6 +970,26 @@ Görev 14). Sayılar yukarıda, iş listesinin altında.
   alırdı; kullanıcı yalnız ELLE verilmiş üyelikleriyle, AD'den gelenler dışarıda. Alan
   gönderilmezse yazma eskisi gibi. Roller sütunu 409'da yeniden okunur ve işaretler kalır;
   kullanıcı formu 409'da kapanır ve hesabın başka masada değiştirildiğini söyler.
+  **Üçüncü bütün-küme yazması, birim kapsamı, 14e'nin dışında kalmıştı** — dalganın son bütün-dalga
+  incelemesi buldu, `a301c73` kapattı: `PUT /scope/{id}` de kullanıcının bütün kapsamını sürümsüz
+  değiştiriyordu; eski bir pencereden yapılan kayıt başka bir yöneticinin az önce verdiği birimi
+  sessizce geri alıyor, aynı anda iki kayıt ikisinin BİRLEŞİMİYLE bitebiliyordu. Şimdi rota her
+  `/admin` yazmasının aldığı kiracı yönetim kilidini (`lock_admin_guard`) bir şey okumadan alır —
+  bir hastanenin kapsam yazmaları sırayla işlenir — ve `expected_grants`'ı (pencerenin okuduğu
+  atamalar) şimdikilerle (birim, yatak) çiftlerinin **kümesi** olarak karşılaştırır; farklıysa 409
+  `CONCURRENT_CHANGE`, hiçbir şey yazılmaz, denetim satırı olmaz; alan yoksa eskisi gibi, `[]`
+  gerçek bir beklenti. Kapsam penceresi 409'da kapanır, hesabın başka masada değiştirildiğini
+  söyler; satır ve sayaç yeniden okunur.
+- ✅ **Son bütün-dalga incelemesinin iki "yeniden okuma" bulgusu** (`d9bb996`): (1) bir AD grup
+  eşlemesini silmek o grubun AD'den gelen üyeliklerini sunucuda HEMEN kaldırır, ama giriş kaynağı
+  sekmesi yalnız kendi tablosunu yeniden okuyordu — Kullanıcılar sekmesi sunucunun az önce aldığı
+  rolü göstermeye, Roller sekmesi eski üye sayısını göstermeye devam ediyordu. Kaydedilen (ya da
+  yanıtsız kalıp kaydedilmiş olabilecek) bir silme artık çerçevenin listelerini de yeniden okur;
+  yeni bir eşleme kimseyi hemen değiştirmediği için okumaz. (2) Bir kapsam kaydı "hiç atama
+  yapılmamış kullanıcı" sayısını değiştirir, ama sekme yalnız o kişinin kapsamını yeniden okuyordu;
+  artık kayıttan ve yanıtsız kaydın geri okumasından sonra sayı da yeniden okunur. İkisi de yalnız
+  isteyen oturum için. Ayrıca (`7275c11`) roller sekmesinin yeni grup formu meşgulken alanlarını
+  `disabled` değil `readOnly` tutar (odak `<body>`'ye düşmez).
 - ✅ **Kullanıcı formu yalnız değişen alanları gönderir** (`9f49cb3`): bir ad düzeltmesi son
   okunan `is_active`'i yeniden gönderiyor ve başka bir masanın pasifleştirdiği hesabı yeniden
   etkinleştiriyordu — "kaydedildi" diyerek.

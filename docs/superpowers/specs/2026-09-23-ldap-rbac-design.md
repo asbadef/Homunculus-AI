@@ -503,6 +503,20 @@ board's own filter) and G1-02 brought it across with its role guard turned into 
   rule, so a screen can learn it only from the caller's own `/scope/me`: `unrestricted: true` with
   `reason: "unassigned"` — the pilot's normal state — is still refused; only `reason: "role"`
   passes.
+  *As built (Wave 3B final review, `a301c73`) — the third whole-set write, closed as Task 14e
+  closed the other two.* `grants` REPLACES the user's whole scope and the server keeps no version
+  of it, so a save from an out-of-date editor silently revoked a grant another administrator had
+  just added, and two saves at once, each reading before the other committed, could end as the
+  UNION of both. The route now takes the tenant's admin-guard lock (`lock_admin_guard`, the lock
+  every `/admin` write takes first) before it reads anything and holds it to the commit, so scope
+  writes to one hospital run one at a time; and the body may carry `expected_grants:
+  list[ScopeGrantIn] | None`, the grants the editor read. It is compared with the grants held **as
+  a set of (unit, bed) pairs**, each stripped as stored (`scope.service.grant_pairs`); not the same
+  → 409 `CONCURRENT_CHANGE` (the same constant, the text the dashboard recognises), nothing written
+  and nothing audited. Checked with `is not None`: `[]` is a real expectation ("she holds no
+  grant"); omitted, the write is what it always was. The dashboard's scope editor sends the grants
+  it last had from the engine and, on that 409, closes and says the account was changed at another
+  desk (`admin.changedElsewhere`), as the account form does.
 - There is no bulk scope read and no endpoint listing the units and beds a scope may name (they
   are the keys of the site's bed mapping). The administration screen therefore reads a user's
   scope only when its editor opens, and builds the editor's choices from the board, the user's

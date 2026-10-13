@@ -647,7 +647,9 @@ Dalga 3'te geldi: 3.6.
   Bir hesapta bir **rol**, istenen sayıda **ek görev** (Sorumlu Hemşire, Hızlı Yanıt Ekibi) ve
   hastanenin kendi açtığı **diğer gruplar** seçilir; AD'den gelen gruplar burada değiştirilemez.
   İşlemler: düzenle, şifre sıfırla, 2FA sıfırla, pasifleştir / etkinleştir, girişi aç (yukarıda
-  "AD giriş sınırı ve kilit açma") ve birimler. Her yazmadan sonra liste sunucudan yeniden okunur.
+  "AD giriş sınırı ve kilit açma") ve birimler. Kaydedilen ya da kaydedilmiş olabilecek her
+  yazmadan sonra — birimler kaydı da dahil — liste ve "Hiç atama yapılmamış kullanıcı" sayısı
+  sunucudan yeniden okunur.
   - **Birimler (birim kapsamı):** kişinin panoda hangi birimlerin ve yatakların hastalarını
     gördüğü. Bütün kullanıcıların kapsamını birden okuyan bir uç yok, bu yüzden "Birimler" sütunu
     bir kişinin kapsamı okunana dek "Okunmadı" der; birimler penceresi açılınca okunur. Penceredeki
@@ -675,7 +677,10 @@ Dalga 3'te geldi: 3.6.
   hesap nedeniyle listelenir; "bu dizin hesabı için zaten bir hesap var" başka bir hastanedeki
   hesap da olabilir. Aktarmayı tekrarlamak zararsızdır. **AD grup eşlemesi** — AD grubu elle
   yazılmaz, aranıp listeden seçilir; eşlemeyi yalnız bütün kataloğu taşıyan yönetici değiştirir,
-  diğerleri okur. Dizin işlemleri 30 saniyeye kadar sürebilir.
+  diğerleri okur. Yeni bir eşleme kimseyi hemen değiştirmez (kişiler grubu bir sonraki
+  girişlerinde alır); bir eşlemeyi silmek ise o grubun AD'den gelen üyeliklerini **hemen** kaldırır
+  (başka bir eşlemeyle hak eden kişi bir sonraki girişinde geri alır) — Kullanıcılar ve Roller
+  sekmeleri bunu silmenin hemen ardından gösterir. Dizin işlemleri 30 saniyeye kadar sürebilir.
 - *Yöneticilerin soracağı üç şey:*
   1. **"Geçici şifre nerede görünüyor?" — Hiçbir yerde.** Ekran şifre üretmez: geçici şifreyi
      yönetici kendisi yazar (en az 8 karakter; sunucunun kuralı, sunucunun saydığı gibi sayılır).
@@ -704,7 +709,11 @@ Dalga 3'te geldi: 3.6.
   - Bir hesabı düzenlemek yalnız değiştirilen alanları gönderir: bir ad düzeltmesi, başka bir
     masada pasifleştirilmiş hesabı yeniden etkinleştirmez. Grupları bu arada başka bir masada
     değiştirilmiş bir hesabın gruplarını kaydetmek reddedilir; form kapanır ve "Bu hesap bu arada
-    başka bir masada değiştirildi; şimdiki hâlini görmek için hesabı yeniden açın." der.
+    başka bir masada değiştirildi; şimdiki hâlini görmek için hesabı yeniden açın." der. Birimler
+    de böyledir: pencere açıldıktan sonra başka bir masada değiştirilmiş bir kapsamı kaydetmek
+    reddedilir (sunucu pencerenin okuduğu atamaları şimdikilerle karşılaştırır; hiçbir şey
+    yazılmaz), pencere kapanır, aynı cümleyi söyler; satır ve sayı yeniden okunur. Aynı anda
+    yapılan iki kapsam kaydı da sırayla işlenir, ikisinin birleşimiyle bitmez.
   - Bildirimler ekran kilitlenirse kilit boyunca bekler ve kilit açılınca gösterilir; çıkış
     yapılırsa bir sonraki oturuma taşınmaz. Kilit sırasında sonuçlanan **başarılı** bir kayıt bugün
     onaylanmaz (bir ret yine bildirilir) — açık iş, Grup 3.
