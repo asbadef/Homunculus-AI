@@ -7,6 +7,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { mount } from "../session/mount.testutil.jsx";
 import { alarm, board, entry, identity } from "../data/board.testutil.js";
+import { ANNOUNCE_DELAY_MS } from "../ui/index.js";
 import { useAlarmSignals } from "./AlarmSignals.jsx";
 import { fakeAudio, fakeNotifications, onPage } from "./fakeAudio.testutil.js";
 
@@ -24,26 +25,32 @@ afterEach(() => {
   localStorage.clear();
 });
 
+/** The provider's state, and a stand-in for the shell's `<main id="main">` (Shell.jsx), where
+ *  focus goes when the waiting button it had is gone. */
 function Probe() {
   const { sound, notify, askNotify } = useAlarmSignals();
   return (
-    <>
+    <main id="main" tabIndex={-1}>
       <p data-testid="signals">{`${sound} ${notify}`}</p>
       <button type="button" onClick={askNotify}>ask</button>
-    </>
+    </main>
   );
 }
 
 const reaBed = (id, alarms, over = {}) => entry(id, alarms, { identity: identity({ patient_id: id, bed_label: "REA-01 · 2" }), ...over });
 
 /** A LIVE ward, with the sound wanted (or not) and notifications allowed (or not). Fake timers are
- *  installed first, as the house recipe says (amendments, useRetryHold), so the repeat is driven. */
-async function ward(patients, { sound = true, permission = "granted", secure = true, load } = {}) {
+ *  installed first, as the house recipe says (amendments, useRetryHold), so the repeat is driven.
+ *  `open: false` leaves the stream unopened: the board has loaded and is still CONNECTING.
+ *  `notifications: false` is a browser with no Notification at all. */
+async function ward(patients, {
+  sound = true, permission = "granted", secure = true, load, open = true, notifications = true,
+} = {}) {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
   if (sound) localStorage.setItem("hmc.alarmSound", "on");
   const audio = fakeAudio();
   const notes = fakeNotifications(permission);
-  page = onPage({ AudioContext: audio.AudioContext, Notification: notes.Notification, secure });
+  page = onPage({ AudioContext: audio.AudioContext, Notification: notifications ? notes.Notification : undefined, secure });
   const view = await mount(<Probe />, { setup: (api) => {
     if (load) load(api);
     else api.boardPatients.mockResolvedValue(board(patients));
@@ -51,8 +58,10 @@ async function ward(patients, { sound = true, permission = "granted", secure = t
   } });
   await act(async () => { view.board.start(); });
   await flush();
-  await act(async () => { view.stream.open(); });
-  await flush();
+  if (open) {
+    await act(async () => { view.stream.open(); });
+    await flush();
+  }
   return { ...view, audio, notes };
 }
 
@@ -133,6 +142,53 @@ describe("the alarm sound", () => {
     expect(audio.pulses()).toEqual([]);
   });
 
+  // An audio-device change (a headset plugged in, a USB speaker gone) or Safari's "interrupted"
+  // suspends the context and resumes it — possibly within one React batch, so the page sees no
+  // change at all. The pill went on saying "ready" over a silent critical alarm.
+  it("sounds again when the browser suspends and resumes the audio in one go", async () => {
+    const { audio } = await ward([reaBed("S-001", [alarm("septic_shock", "critical")])]);
+    fireEvent.click(document.body);
+    await flush();
+    const context = audio.contexts[0];
+    act(() => { context.suspend(); context.resume(); });
+    tick(10000);
+    expect(state()).toBe("on granted");
+    expect(audio.pulses()).toHaveLength(60);
+  });
+
+  // The old build sounded its first load; this board loads, then opens its stream, and is
+  // CONNECTING until the stream's reload lands — one round trip, or 45 s if the stream never opens.
+  it("sounds and notifies the first load, before the stream has opened", async () => {
+    const { audio, notes, board: store } = await ward([reaBed("S-001", [alarm("septic_shock", "critical")])], { open: false });
+    expect(store.getState().connection).toBe("connecting");
+    fireEvent.click(document.body);
+    await flush();
+    expect(audio.pulses()).toEqual(Array(10).fill(960));
+    act(() => { page.setHidden(true); });
+    expect(notes.shown.map((n) => n.body)).toEqual(["REA-01 · 2 — cavab gözləyən kritik siqnal"]);
+  });
+
+  it("says out loud that the sound is waiting, and leaves focus somewhere sensible when its button goes", async () => {
+    await ward([reaBed("S-001", [alarm("news2", "high")])]);
+    tick(ANNOUNCE_DELAY_MS);
+    expect(screen.getAllByRole("status").map((el) => el.textContent)).toContain(WAITING);
+    const button = screen.getByRole("button", { name: WAITING });
+    button.focus();
+    fireEvent.click(button);
+    await flush();
+    expect(screen.queryByRole("button", { name: WAITING })).toBeNull();
+    expect(document.activeElement).toBe(document.getElementById("main"));
+  });
+
+  // A modal makes the rest of the page inert (ui/Modal.jsx), the button with it: drawn above the
+  // scrim it would be a control nobody can use. It hides while a dialog is open, as the toasts move
+  // (ui/Toast.jsx, the same body attribute). jsdom applies no CSS, so the rule itself is pinned.
+  it("hides the waiting button while a dialog is open", async () => {
+    await ward([reaBed("S-001", [alarm("news2", "high")])]);
+    const holder = screen.getByRole("button", { name: WAITING }).parentElement;
+    expect(holder.className.split(/\s+/)).toContain("[body[data-modal-open]_&]:hidden");
+  });
+
   it("follows another tab of this browser turning it off", async () => {
     const { audio } = await ward([reaBed("S-001", [alarm("septic_shock", "critical")])]);
     fireEvent.click(document.body);
@@ -183,6 +239,42 @@ describe("the critical-alarm notification", () => {
     expect(notes.open()).toHaveLength(1);
     await act(async () => { store.signOut(); });
     expect(notes.open()).toHaveLength(0);
+  });
+
+  // Two tabs of the ward PC each raise their own: the tag makes the browser replace one with the
+  // other instead of stacking them, as the old build's did. The locked one has a tag of its own,
+  // which names no alarm.
+  it("tags each notification so the browser replaces it rather than repeating it", async () => {
+    const { notes, store, stream } = await ward([reaBed("S-001", [alarm("septic_shock", "critical")])], { sound: false });
+    act(() => { page.setHidden(true); });
+    expect(notes.shown[0].options.tag).toBe("homunculus-alarm:S-001::septic_shock");
+    act(() => { stream.drop(); });
+    await act(async () => { store.lock(); });
+    expect(notes.open().map((n) => n.options.tag)).toEqual(["homunculus-alarm:locked"]);
+  });
+
+  it("closes every notification it raised when the page goes away — none outlives it", async () => {
+    const { notes } = await ward([
+      reaBed("S-001", [alarm("septic_shock", "critical")]), reaBed("S-002", [alarm("septic_shock", "critical")]),
+    ], { sound: false });
+    act(() => { page.setHidden(true); });
+    expect(notes.open()).toHaveLength(2);
+    act(() => { window.dispatchEvent(new Event("pagehide")); });
+    expect(notes.open()).toHaveLength(0);
+  });
+
+  it("reads the browser's permission again when the page comes back to the front", async () => {
+    const { notes } = await ward([], { sound: false, permission: "default" });
+    expect(state()).toBe("off default");
+    notes.Notification.permission = "denied";              // changed in the browser's site settings
+    act(() => { page.setHidden(true); });
+    act(() => { page.setHidden(false); });
+    expect(state()).toBe("off denied");
+  });
+
+  it("says the address is not secure, not that the browser cannot, on a plain-HTTP page", async () => {
+    await ward([], { sound: false, secure: false, notifications: false });
+    expect(state()).toBe("off insecure");
   });
 
   it("asks for permission only when asked, and says what the browser answered", async () => {

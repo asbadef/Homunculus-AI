@@ -34,9 +34,13 @@ export const STREAM_SILENCE_MS = 3 * HEARTBEAT_MS;
 /** The heartbeat's event name; the board's frames are unnamed (`message`). */
 export const HEARTBEAT_EVENT = "heartbeat";
 
+// `loaded`: the board holds a ward it LOADED (the last whole load succeeded), whatever the stream
+// is doing. It is what tells "connecting, with the first load landed" — `start` loads first and
+// opens the stream after — from "connecting, nothing yet": both are CONNECTING. The alarm sound
+// and the notification act on a loaded board (alarmsToSignal); the bell still waits for LIVE.
 const EMPTY = Object.freeze({
   patients: [], alerts: [], connection: CONNECTION.CONNECTING, scope: null, scopeNote: null,
-  clockSkewMs: null,
+  clockSkewMs: null, loaded: false,
 });
 
 /** Real SSE. `ticket` is short-lived and single-use: EventSource sends no headers, and a bearer
@@ -142,11 +146,11 @@ export function createBoardStore({
       const connection = live ? CONNECTION.LIVE
         : state.connection === CONNECTION.CONNECTING ? CONNECTION.CONNECTING : CONNECTION.DEGRADED;
       withPatients(newer.reduce(applyFrame, patients),
-        { scope: board?.scope ?? null, scopeNote: board?.scope_note ?? null, connection });
+        { scope: board?.scope ?? null, scopeNote: board?.scope_note ?? null, connection, loaded: true });
     } else {
       // An empty list with the reason, never the last one: a board that stopped updating must
       // not look like a ward that is calm.
-      withPatients([], { scope: null, scopeNote: null, connection: CONNECTION.UNAVAILABLE });
+      withPatients([], { scope: null, scopeNote: null, connection: CONNECTION.UNAVAILABLE, loaded: false });
       // Under an open stream nothing else would load it again (the open's reload was this one,
       // and frames alone are no ward): try again after a pause, for as long as it fails.
       if (streamOpen && !reloadRetry) {
@@ -484,10 +488,27 @@ export function alarmCounts({ alerts = [], connection } = {}) {
 export function waitingAlarms({ alerts = [], connection } = {}) {
   const { known, stale } = knowing(connection);
   if (!known && !stale) return { known, stale, items: null };
+  return { known, stale, items: queue(alerts) };
+}
+
+/** The alarms somebody must answer (`needsAnswer`), unknown severity first, then the most severe,
+ *  then the oldest. The one ordering `waitingAlarms` and `alarmsToSignal` share. */
+function queue(alerts) {
   const rank = (a) => SEVERITY_ORDER.indexOf(a.severity);   // -1: unknown, first
-  const items = alerts.filter(needsAnswer).sort((a, b) => rank(a) - rank(b)
+  return alerts.filter(needsAnswer).sort((a, b) => rank(a) - rank(b)
     || (a.firstSeenAtMs ?? Infinity) - (b.firstSeenAtMs ?? Infinity));
-  return { known, stale, items };
+}
+
+/** The alarms the alarm sound and the critical-alarm notification act on (signals/signals.js): the
+ *  same queue as `waitingAlarms` — `needsAnswer`, the same order — but from ANY board that holds a
+ *  ward it loaded (`loaded`), LIVE or not: DEGRADED (what it last had, as the previous workspace
+ *  went on sounding after a dropped stream) and CONNECTING once the first load has landed (the
+ *  previous workspace sounded its first load). A board that never loaded, or whose load failed,
+ *  gives no items. `known` is LIVE only, as everywhere: only a LIVE board may say an alarm stopped
+ *  waiting. Not for the bell or a count — those still wait for LIVE (Decision 18). */
+export function alarmsToSignal({ alerts = [], connection, loaded } = {}) {
+  if (loaded !== true || connection === CONNECTION.UNAVAILABLE) return { known: false, items: [] };
+  return { known: connection === CONNECTION.LIVE, items: queue(alerts) };
 }
 
 /** All the lock screen may show of the ward (Decision 3): the open alarms in the session's units,

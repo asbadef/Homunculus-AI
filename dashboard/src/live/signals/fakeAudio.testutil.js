@@ -5,9 +5,28 @@ import { vi } from "vitest";
 /** A Web Audio stand-in. Every context starts "suspended", as a browser's does before a gesture;
  *  `resume()` makes it "running" — unless `refuse`, a browser that has seen no real gesture yet
  *  (a test's synthetic click is not one to a real browser). `pulses()` is the frequency of every
- *  tone scheduled so far, in order; `contexts` every context created. */
+ *  tone scheduled so far, in order; `contexts` every context created. Each node records what it is
+ *  connected to, so `audible()` is the tones that would still reach the speakers: the ones whose
+ *  chain of connections ends at the context's destination (a disconnected node cuts it). */
 export function fakeAudio({ refuse = false } = {}) {
   const contexts = [];
+  const node = (extra = {}) => {
+    const self = {
+      target: null,
+      connect(target) { self.target = target; },
+      disconnect() { self.target = null; },
+      ...extra,
+    };
+    return self;
+  };
+  const reaches = (start, destination) => {
+    let at = start;
+    for (let hop = 0; at && hop < 16; hop += 1) {
+      if (at === destination) return true;
+      at = at.target;
+    }
+    return false;
+  };
   class FakeAudioContext {
     constructor() {
       this.state = "suspended";
@@ -19,17 +38,16 @@ export function fakeAudio({ refuse = false } = {}) {
     }
 
     createGain() {
-      return { gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {} };
+      return node({ gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {} } });
     }
 
     createOscillator() {
-      const osc = {
+      const osc = node({
         type: "sine",
         frequency: { value: 0 },
-        connect() {},
         start(at) { osc.startAt = at; },
         stop(at) { osc.stopAt = at; },
-      };
+      });
       this.oscillators.push(osc);
       return osc;
     }
@@ -56,6 +74,7 @@ export function fakeAudio({ refuse = false } = {}) {
     AudioContext: FakeAudioContext,
     contexts,
     pulses: () => contexts.flatMap((c) => c.oscillators.map((o) => o.frequency.value)),
+    audible: () => contexts.flatMap((c) => c.oscillators.filter((o) => reaches(o, c.destination))),
   };
 }
 

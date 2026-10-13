@@ -103,6 +103,26 @@ describe("SettingsScreen · sound and notifications", () => {
     expect(notes.shown.map((n) => [n.title, n.options.requireInteraction])).toEqual([["Homunculus · yoxlama", false]]);
   });
 
+  // A plain-HTTP page: the browser refuses notifications there (it may not even expose the API),
+  // and the screen says why — not that this browser cannot.
+  it("says notifications are unavailable on an address that is not secure, and why", async () => {
+    page = onPage({ secure: false });
+    await mount(<SettingsScreen />);
+    tab("Səs və bildiriş");
+    expect(screen.getByText("Əlçatan deyil")).toBeInTheDocument();
+    expect(screen.getByText("Brauzer bildirişləri yalnız təhlükəsiz (HTTPS) ünvanda işləyir.")).toBeInTheDocument();
+  });
+
+  // The pattern is the previous workspace's, ported number for number. It is not IEC 60601-1-8's
+  // (its critical burst outlasts its own repeat), and nobody has reviewed it against the standard:
+  // the screen claims no standard.
+  it("claims no clinical standard for the sound's pattern", async () => {
+    await mount(<SettingsScreen />);
+    tab("Səs və bildiriş");
+    expect(screen.getByText(/Cavab gözləyən siqnal olanda bu kompüterdə çalınır/)).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent(/IEC/);
+  });
+
   it("says what is missing: no Web Audio, a permission the browser has blocked", async () => {
     page = onPage({ Notification: fakeNotifications("denied").Notification });
     await mount(<SettingsScreen />);

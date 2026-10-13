@@ -51,7 +51,7 @@ describe("createAlarmSound", () => {
     expect(sound.playing()).toBe("critical");
     expect(audio.pulses()).toEqual(Array(10).fill(960));
     const starts = audio.contexts[0].oscillators.map((o) => o.startAt);
-    // 250 ms apart, and the IEC group gap (350 ms more) after the fifth.
+    // 250 ms apart, and the old build's group gap (350 ms more) after the fifth.
     expect(starts[1] - starts[0]).toBeCloseTo(0.25);
     expect(starts[5] - starts[4]).toBeCloseTo(0.6);
     vi.advanceTimersByTime(2499);
@@ -101,6 +101,50 @@ describe("createAlarmSound", () => {
     await audio.contexts[0].suspend();
     expect(changes).toEqual(["running", "suspended"]);
     expect(sound.playing()).toBeNull();
+  });
+
+  // An audio-device change, or Safari's "interrupted", suspends the context and gives it back. The
+  // page may see both in one React batch — nothing changed, as far as it can tell — so the engine
+  // itself must remember what it was asked to play and sound it again.
+  it("sounds the wanted pattern again when the browser gives the audio back", async () => {
+    timers();
+    const { audio, sound } = await running();
+    sound.play("critical");
+    const context = audio.contexts[0];
+    context.suspend();
+    expect(sound.playing()).toBeNull();
+    context.resume();
+    expect(sound.playing()).toBe("critical");
+    expect(audio.pulses()).toHaveLength(20);
+    vi.advanceTimersByTime(2500);
+    expect(audio.pulses()).toHaveLength(30);
+  });
+
+  it("does not bring back a pattern it was told to stop", async () => {
+    timers();
+    const { audio, sound } = await running();
+    sound.play("critical");
+    sound.stop();
+    audio.contexts[0].suspend();
+    audio.contexts[0].resume();
+    vi.advanceTimersByTime(10000);
+    expect(audio.pulses()).toHaveLength(10);
+    expect(sound.playing()).toBeNull();
+  });
+
+  // A burst is scheduled ahead (a critical one lasts ~2.8 s): clearing the timer alone left the
+  // pulses already scheduled to play on after an acknowledgement or a sign-out.
+  it("stops at once: the pulses already scheduled are cut off too", async () => {
+    timers();
+    const { audio, sound } = await running();
+    sound.play("critical");
+    expect(audio.audible()).toHaveLength(10);
+    sound.stop();
+    expect(audio.audible()).toHaveLength(0);
+    sound.play("high");
+    expect(audio.audible()).toHaveLength(3);
+    sound.play("moderate");                            // a switch cuts the old pattern's pulses too
+    expect(audio.audible().map((o) => o.frequency.value)).toEqual([500, 500, 500]);
   });
 
   it("plays one burst on request — the settings screen's test — and nothing after it", async () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
-  HEARTBEAT_MS, RECONNECT_DELAY_MS, STREAM_SILENCE_MS, alarmCounts, createBoardStore, lockSummary, scopeUnits, waitingAlarms,
+  HEARTBEAT_MS, RECONNECT_DELAY_MS, STREAM_SILENCE_MS, alarmCounts, alarmsToSignal, createBoardStore, lockSummary, scopeUnits,
+  waitingAlarms,
 } from "./boardStore.js";
 import { CONNECTION } from "../../liveConnection.js";
 import { alertsFromPatients, patientsFromBoard } from "../../liveAdapters.js";
@@ -63,6 +64,29 @@ describe("the board store", () => {
     handlers[0].onopen();
     expect(api.boardPatients).toHaveBeenCalledTimes(2);                // the open reloads the board
     await vi.waitFor(() => expect(state().connection).toBe(CONNECTION.LIVE));
+  });
+
+  // The alarm sound and the critical-alarm notification act on a board that holds a ward it loaded
+  // (alarmsToSignal), LIVE or not: the state "connecting, with data" is the first load landed and
+  // the stream not yet open (`start` loads first). That must be said by the store, not guessed —
+  // a board still waiting for its first load is CONNECTING too, with nothing in it.
+  it("says whether it holds a ward it loaded: not before its first load lands, yes once it has, not after a failed load or the end of the session", async () => {
+    const { api, store, state } = setup();
+    expect(state().loaded).toBe(false);
+    let answer;
+    api.boardPatients.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    const started = store.start();
+    expect(state()).toMatchObject({ connection: CONNECTION.CONNECTING, loaded: false });
+    answer(BOARD);
+    await started;
+    expect(state()).toMatchObject({ connection: CONNECTION.CONNECTING, loaded: true });
+    api.boardPatients.mockRejectedValueOnce(new Error("Failed to fetch"));
+    await store.refresh();
+    expect(state()).toMatchObject({ connection: CONNECTION.UNAVAILABLE, loaded: false });
+    await store.refresh();
+    expect(state()).toMatchObject({ connection: CONNECTION.DEGRADED, loaded: true });
+    store.clear();
+    expect(state().loaded).toBe(false);
   });
 
   it("is never LIVE over a load that failed — an open stream vouches for nothing", async () => {
@@ -343,6 +367,36 @@ describe("alarm counts and lists", () => {
     expect(waitingAlarms({ alerts, connection: CONNECTION.LIVE })).toEqual({
       known: true, stale: false, items: [alerts[0], alerts[4], alerts[2], alerts[3]],
     });
+  });
+
+  // Escalation is the engine's own (server-side) and is not an answer: an escalated alarm nobody
+  // has acknowledged still waits — for the bell, the rail, the lock screen's count and the sound.
+  it("keeps an escalated alarm in the queue until somebody acknowledges it", () => {
+    const escalated = alertsFromPatients(patientsFromBoard(board([
+      entry("P-001", [alert("sepsis", "critical", { escalated: true })]),
+    ])));
+    expect(escalated[0].escalated).toBe(true);
+    expect(waitingAlarms({ alerts: escalated, connection: CONNECTION.LIVE }).items).toEqual(escalated);
+    expect(alarmCounts({ alerts: escalated, connection: CONNECTION.LIVE }).waiting).toBe(1);
+  });
+
+  // The alarm sound and the notification act on what a board LOADED, whatever its stream is doing
+  // (the previous workspace sounded its first load): LIVE, DEGRADED, or still connecting after the
+  // first load landed. Only LIVE is `known` — only it may say an alarm stopped waiting. A board that
+  // never loaded, or whose load failed, gives nothing.
+  it("gives the alarm signals the waiting alarms of any board that holds a ward it loaded", () => {
+    const queue = [alerts[0], alerts[4], alerts[2], alerts[3]];
+    expect(alarmsToSignal({ alerts, connection: CONNECTION.LIVE, loaded: true })).toEqual({ known: true, items: queue });
+    expect(alarmsToSignal({ alerts, connection: CONNECTION.CONNECTING, loaded: true })).toEqual({ known: false, items: queue });
+    expect(alarmsToSignal({ alerts, connection: CONNECTION.DEGRADED, loaded: true })).toEqual({ known: false, items: queue });
+    for (const notLoaded of [
+      { alerts, connection: CONNECTION.CONNECTING, loaded: false },
+      { alerts, connection: CONNECTION.UNAVAILABLE, loaded: false },
+      { alerts, connection: CONNECTION.LIVE },
+      {},
+    ]) {
+      expect(alarmsToSignal(notLoaded)).toEqual({ known: false, items: [] });
+    }
   });
 
   it("puts a severity it does not know first, and counts it apart — it may be the worst", () => {

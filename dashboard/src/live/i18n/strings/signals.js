@@ -6,6 +6,8 @@
 // service; the page itself raises them), and they are not "with sound and vibration" on a PC.
 // A notification raised while the screen is LOCKED names no bed (`notifyBodyLocked`): the lock
 // screen shows numbers only, and the operating system's notification is outside it.
+// `soundHelp` names no standard: the pattern is the previous workspace's, ported for parity, and has
+// not been reviewed against IEC 60601-1-8 (alarmSound.js; deferred.md, Group 2).
 // AZ/RU/EN await a native-speaking clinician's review before the pilot.
 export default {
   tr: {
@@ -20,7 +22,7 @@ export default {
     sound: "Alarm sesi",
     soundOff: "Kapalı",
     soundOn: "Açık",
-    soundHelp: "Yanıt bekleyen bir alarm varken bu bilgisayarda çalar: kritik alarmda sık ve hızlı, yüksek ve orta alarmda daha seyrek (IEC 60601-1-8 düzeni). Alarm onaylanınca susar. Ekran kilitliyken de çalar; oturum kapanınca durur. Seçim bu tarayıcıda saklanır.",
+    soundHelp: "Yanıt bekleyen bir alarm varken bu bilgisayarda çalar: kritik alarmda sık ve hızlı, yüksek ve orta alarmda daha seyrek. Alarm onaylanınca susar. Ekran kilitliyken de çalar; oturum kapanınca durur. Seçim bu tarayıcıda saklanır.",
     soundStateRunning: "Hazır",
     soundStateWaiting: "Bir tıklama bekliyor",
     soundStateUnsupported: "Bu tarayıcıda yok",
@@ -50,7 +52,7 @@ export default {
     sound: "Siqnal səsi",
     soundOff: "Bağlı",
     soundOn: "Açıq",
-    soundHelp: "Cavab gözləyən siqnal olanda bu kompüterdə çalınır: kritik siqnalda tez-tez və sürətlə, yüksək və orta siqnalda daha seyrək (IEC 60601-1-8 qaydası). Siqnal təsdiqlənəndə susur. Ekran kilidli olanda da çalınır; sessiya bağlananda dayanır. Seçim bu brauzerdə saxlanılır.",
+    soundHelp: "Cavab gözləyən siqnal olanda bu kompüterdə çalınır: kritik siqnalda tez-tez və sürətlə, yüksək və orta siqnalda daha seyrək. Siqnal təsdiqlənəndə susur. Ekran kilidli olanda da çalınır; sessiya bağlananda dayanır. Seçim bu brauzerdə saxlanılır.",
     soundStateRunning: "Hazırdır",
     soundStateWaiting: "Bir klik gözləyir",
     soundStateUnsupported: "Bu brauzerdə yoxdur",
@@ -63,7 +65,7 @@ export default {
     notifyStateGranted: "İcazə verilib",
     notifyStateDefault: "İcazə verilməyib",
     notifyStateDenied: "Bloklanıb",
-    notifyStateUnavailable: "İstifadə olunmur",
+    notifyStateUnavailable: "Əlçatan deyil",
     notifyDenied: "Brauzer bildirişləri bloklayıb; brauzerin sayt ayarlarından açılır.",
     notifyInsecure: "Brauzer bildirişləri yalnız təhlükəsiz (HTTPS) ünvanda işləyir.",
     notifyUnsupported: "Bu brauzer bildiriş göstərə bilmir.",
@@ -80,7 +82,7 @@ export default {
     sound: "Звук тревоги",
     soundOff: "Выкл.",
     soundOn: "Вкл.",
-    soundHelp: "Звучит на этом компьютере, пока есть тревога, ожидающая ответа: при критической — часто и быстро, при высокой и средней — реже (схема IEC 60601-1-8). Смолкает, когда тревогу подтвердили. Звучит и при заблокированном экране; останавливается, когда сеанс завершён. Выбор хранится в этом браузере.",
+    soundHelp: "Звучит на этом компьютере, пока есть тревога, ожидающая ответа: при критической — часто и быстро, при высокой и средней — реже. Смолкает, когда тревогу подтвердили. Звучит и при заблокированном экране; останавливается, когда сеанс завершён. Выбор хранится в этом браузере.",
     soundStateRunning: "Готов",
     soundStateWaiting: "Ждёт щелчка",
     soundStateUnsupported: "В этом браузере нет",
@@ -110,7 +112,7 @@ export default {
     sound: "Alarm sound",
     soundOff: "Off",
     soundOn: "On",
-    soundHelp: "Plays on this computer while an alarm is awaiting a response: often and fast for a critical alarm, sparser for a high or moderate one (the IEC 60601-1-8 pattern). It stops when the alarm is acknowledged. It plays while the screen is locked too, and stops when the session ends. The choice is kept in this browser.",
+    soundHelp: "Plays on this computer while an alarm is awaiting a response: often and fast for a critical alarm, sparser for a high or moderate one. It stops when the alarm is acknowledged. It plays while the screen is locked too, and stops when the session ends. The choice is kept in this browser.",
     soundStateRunning: "Ready",
     soundStateWaiting: "Waiting for a click",
     soundStateUnsupported: "Not in this browser",

@@ -9,10 +9,12 @@ import { alertsFromPatients, patientsFromBoard } from "../../liveAdapters.js";
 import { alarm, board, entry } from "../data/board.testutil.js";
 import { PATTERNS, notifyFor, patternOf, soundFor } from "./signals.js";
 
-/** The board's state as `useBoard()` gives it: each alarm on its own synthetic patient. */
-const ward = (alarms, connection = CONNECTION.LIVE) => ({
+/** The board's state as `useBoard()` gives it: each alarm on its own synthetic patient. `loaded`:
+ *  the board holds a ward it loaded (boardStore.js) — false for one whose load failed or never ran. */
+const ward = (alarms, connection = CONNECTION.LIVE, loaded = true) => ({
   alerts: alertsFromPatients(patientsFromBoard(board(alarms.map((a, i) => entry(`S-00${i + 1}`, [a]))))),
   connection,
+  loaded,
 });
 
 describe("the pattern an alarm asks for", () => {
@@ -58,9 +60,27 @@ describe("what the page plays", () => {
   it("plays on a board whose stream dropped, and nothing on one that cannot say what is open", () => {
     const open = [alarm("a", "critical")];
     expect(soundFor(ward(open, CONNECTION.DEGRADED))).toBe("critical");
-    expect(soundFor(ward(open, CONNECTION.CONNECTING))).toBeNull();
-    expect(soundFor(ward(open, CONNECTION.UNAVAILABLE))).toBeNull();
+    expect(soundFor(ward(open, CONNECTION.CONNECTING, false))).toBeNull();
+    expect(soundFor(ward(open, CONNECTION.UNAVAILABLE, false))).toBeNull();
     expect(soundFor({})).toBeNull();
+  });
+
+  // The previous workspace sounded its first load. This board loads first and opens its stream
+  // after (boardStore.js `start`): until the stream's own reload lands it is still CONNECTING —
+  // one round trip, or up to 45 s when the stream never opens — with a ward it did load.
+  it("plays a board still connecting once its first load has landed", () => {
+    expect(soundFor(ward([alarm("a", "critical")], CONNECTION.CONNECTING))).toBe("critical");
+    const { known, items } = notifyFor(ward([alarm("a", "critical")], CONNECTION.CONNECTING));
+    expect(known).toBe(false);
+    expect(items).toHaveLength(1);
+  });
+
+  // Escalation (the engine's own, server-side) is not an answer: the old build sounded an escalated
+  // alarm nobody had acknowledged, and so does this one.
+  it("sounds and notifies an escalated alarm nobody has answered", () => {
+    const escalated = ward([alarm("a", "critical", { escalated: true })]);
+    expect(soundFor(escalated)).toBe("critical");
+    expect(notifyFor(escalated).items.map((a) => a.id)).toEqual(["S-001::a"]);
   });
 });
 
@@ -74,7 +94,7 @@ describe("what raises a notification", () => {
   });
 
   it("names nothing it cannot know, and says whether the board is LIVE", () => {
-    expect(notifyFor(ward([alarm("a", "critical")], CONNECTION.UNAVAILABLE))).toEqual({ known: false, items: [] });
+    expect(notifyFor(ward([alarm("a", "critical")], CONNECTION.UNAVAILABLE, false))).toEqual({ known: false, items: [] });
     const stale = notifyFor(ward([alarm("a", "critical")], CONNECTION.DEGRADED));
     expect(stale.known).toBe(false);
     expect(stale.items).toHaveLength(1);

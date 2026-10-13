@@ -7,31 +7,36 @@
 //     Settings and is kept in this browser (`hmc.alarmSound`) — a ward PC is the alarm station,
 //     not a person's — so a reload does not quietly turn it off. A browser still starts audio only
 //     after a click or a key press: until one happens a wanted sound is "waiting", and a button on
-//     every screen, the lock screen included, says so and starts it.
+//     every screen, the lock screen included, says so (and is announced) and starts it.
 //   * It plays the worst pattern among the alarms nobody has answered (signals.js), until they are
-//     answered — the old one also honoured a snooze, which the live system does not have. On a
-//     board whose stream has dropped it plays what the board last had, as the old store kept its
-//     alarms then; on a board that cannot say what is open it plays nothing.
+//     answered — the old one also honoured a snooze, which the live system does not have. It acts
+//     on any board that holds a ward it loaded: from the first load on (the old one sounded its
+//     first load), and, when the stream has dropped, on what the board last had (the old store kept
+//     its alarms then); on a board that never loaded, or whose load failed, it plays nothing.
 //   * A notification is raised for each critical alarm while the page is in the background
 //     (`document.hidden`), once per alarm, staying until dismissed (`requireInteraction`), with the
-//     old vibration pattern. Its text names the alarm's bed — the HIS bed label, else the patient id
-//     (liveAdapters.js `bedLabel`), exactly as the old one did.
+//     old vibration pattern and, as the old one, a `tag` per alarm, so that two tabs of the same
+//     browser replace each other's rather than stack. Its text names the alarm's bed — the HIS bed
+//     label, else the patient id (liveAdapters.js `bedLabel`), exactly as the old one did (the
+//     user's decision, 13.10).
 // What is new, because the old workspace had no lock screen and never ended a sound at sign-out:
 //   * It sits OUTSIDE the phases (LiveApp.jsx): the shell is unmounted when the screen locks, and a
 //     locked ward PC must still alert. The board runs while locked (`seesBoard`), so does the sound.
-//   * While locked a notification names no bed (`signals.notifyBodyLocked`), and the ones that did
-//     are closed at the lock: the lock screen shows numbers only, and the OS notification is not
-//     behind it.
-//   * When the session ends — sign-out, another account, the server ending it — the sound stops and
-//     every notification this page raised is closed. A notification is also closed once a LIVE
-//     board says its alarm no longer waits.
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+//   * While locked a notification names nothing (`signals.notifyBodyLocked`, a tag of its own), and
+//     the ones that named a bed are closed at the lock: the lock screen shows numbers only, and the
+//     OS notification is not behind it. (After an unlock the bed-naming ones are raised again for
+//     alarms still waiting; so they are after an alarm fires again, and in each new session.)
+//   * When the session ends — sign-out, another account, the server ending it — the sound stops at
+//     once (alarmSound.js cuts the pulses already scheduled) and every notification this page raised
+//     is closed; so they are when the page itself goes (`pagehide`). A notification is also closed
+//     once a LIVE board says its alarm no longer waits.
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBoard } from "../data/BoardProvider.jsx";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { PREF_PREFIX, readPref, writePref } from "../prefs.js";
 import { useSession } from "../session/SessionProvider.jsx";
 import { PHASE, seesBoard } from "../session/sessionStore.js";
-import { Button } from "../ui/index.js";
+import { Announce, Button } from "../ui/index.js";
 import { createAlarmSound } from "./alarmSound.js";
 import { notifyFor, soundFor } from "./signals.js";
 
@@ -44,6 +49,9 @@ const GESTURES = ["pointerdown", "keydown", "click"];
 export const VIBRATE = Object.freeze([300, 120, 300, 120, 300]);
 /** The one notification raised while locked: it names no bed, so one stands for all of them. */
 const LOCKED = "locked";
+/** A notification's tag: the browser replaces a notification of the same tag instead of adding
+ *  one, so two tabs of the ward PC show one per alarm. The locked one names no alarm. */
+export const TAG_PREFIX = "homunculus-alarm:";
 
 const SignalsContext = createContext(null);
 
@@ -57,24 +65,57 @@ export function useAlarmSignals() {
 }
 
 function notifyState() {
-  if (typeof window.Notification !== "function") return "unsupported";
-  // Chrome refuses the Notification API on a plain-HTTP origin, silently: the old workspace learned
-  // that on a ward visit and said so. So does this.
+  // A plain-HTTP origin first: the browser refuses notifications there (Chrome silently; a browser
+  // may not even expose the API), and the reason is the address, not the browser — the old
+  // workspace learned that on a ward visit and said so. So does this.
   if (window.isSecureContext === false) return "insecure";
+  if (typeof window.Notification !== "function") return "unsupported";
   return window.Notification.permission;
 }
 
 /** An alarm's notification stays until someone dismisses it (`sticky`), as the old one did; the
  *  settings screen's test does not. */
-function raise(title, body, sticky = true) {
+function raise(title, body, { sticky = true, tag } = {}) {
   try {
-    const notification = new window.Notification(title, { body, requireInteraction: sticky, vibrate: VIBRATE });
+    const options = { body, requireInteraction: sticky, vibrate: VIBRATE };
+    if (tag) options.tag = tag;
+    const notification = new window.Notification(title, options);
     navigator.vibrate?.(VIBRATE);
     return notification;
   } catch {
     // Some browsers refuse the constructor outright (Chrome on Android wants a service worker).
     return null;
   }
+}
+
+/** Where the keyboard goes when the waiting button, which had it, is gone: the shell's main region
+ *  (Shell.jsx `<main id="main" tabIndex={-1}>`), else the first control of the page's `<main>` —
+ *  the lock screen's password. Never left on <body>. */
+function landing() {
+  const shell = document.getElementById("main");
+  if (shell) return shell;
+  return document.querySelector("main")?.querySelector(
+    "input:not([disabled]):not([type='hidden']), button:not([disabled]), [href], [tabindex]:not([tabindex='-1'])",
+  ) ?? null;
+}
+
+/** The button a wanted sound shows until the browser has started the audio. It hides while a
+ *  dialog is open: a Modal makes the rest of the page inert (ui/Modal.jsx), this button with it,
+ *  and drawn above the dialog's scrim it would be a control nobody can use — the toasts move out
+ *  of the way by the same body attribute (ui/Toast.jsx). A key press still starts the sound then
+ *  (the listener is on the window). When it goes because the sound started, the focus it had moves
+ *  to the page (`landing`). */
+function WaitingButton({ label, onClick }) {
+  const holder = useRef(null);
+  useLayoutEffect(() => () => {
+    // A layout cleanup runs before React takes the node out: the focus can still be seen here.
+    if (holder.current?.contains(document.activeElement)) landing()?.focus();
+  }, []);
+  return (
+    <div ref={holder} className="fixed bottom-[22px] left-[22px] z-[210] [body[data-modal-open]_&]:hidden">
+      <Button variant="primary" icon="bell" onClick={onClick}>{label}</Button>
+    </div>
+  );
 }
 
 export function AlarmSignals({ children }) {
@@ -123,20 +164,38 @@ export function AlarmSignals({ children }) {
   }, [wanted, audio, resume]);
 
   // The sound: the worst waiting pattern while this session may see the board, nothing otherwise.
+  // The engine keeps it while the browser has the audio suspended and sounds it once the audio
+  // runs again — by itself, since a suspend and a resume may reach React as no change at all.
   const pattern = active && wanted ? soundFor(board) : null;
   useEffect(() => {
-    if (pattern && audio === "running") engine.play(pattern);
+    if (pattern) engine.play(pattern);
     else engine.stop();
-  }, [pattern, audio, engine]);
+  }, [pattern, engine]);
 
+  // In the background or not; and the permission, read again whenever the page comes and goes —
+  // it may have been changed in the browser's own site settings meanwhile.
   useEffect(() => {
-    const follow = () => setHidden(document.hidden === true);
+    const follow = () => {
+      setHidden(document.hidden === true);
+      setPermission(notifyState());
+    };
     document.addEventListener("visibilitychange", follow);
     return () => document.removeEventListener("visibilitychange", follow);
   }, []);
 
+  // The page goes (a reload, the tab closed, the browser navigating away): nothing it raised may
+  // outlive it into the next person's session at this PC.
+  useEffect(() => {
+    const closeAll = () => {
+      for (const notification of raised.current.values()) notification?.close?.();
+      raised.current.clear();
+    };
+    window.addEventListener("pagehide", closeAll);
+    return () => window.removeEventListener("pagehide", closeAll);
+  }, []);
+
   // The notifications. Keyed by alarm id — or LOCKED, the one raised while locked.
-  const { alerts, connection } = board;
+  const { alerts, connection, loaded } = board;
   useEffect(() => {
     const open = raised.current;
     const close = (key) => { open.get(key)?.close?.(); open.delete(key); };
@@ -144,7 +203,7 @@ export function AlarmSignals({ children }) {
       for (const key of [...open.keys()]) close(key);
       return;
     }
-    const { known, items } = notifyFor({ alerts, connection });
+    const { known, items } = notifyFor({ alerts, connection, loaded });
     const keys = locked ? (items.length ? [LOCKED] : []) : items.map((a) => a.id);
     for (const key of [...open.keys()]) {
       const lockChanged = locked !== (key === LOCKED);
@@ -153,14 +212,17 @@ export function AlarmSignals({ children }) {
     }
     if (!hidden) return;
     if (locked) {
-      if (keys.length && !open.has(LOCKED)) open.set(LOCKED, raise(t("signals.notifyTitle"), t("signals.notifyBodyLocked")));
+      if (keys.length && !open.has(LOCKED)) {
+        open.set(LOCKED, raise(t("signals.notifyTitle"), t("signals.notifyBodyLocked"), { tag: TAG_PREFIX + LOCKED }));
+      }
       return;
     }
     for (const alarm of items) {
       if (open.has(alarm.id)) continue;
-      open.set(alarm.id, raise(t("signals.notifyTitle"), t("signals.notifyBody", { bed: alarm.bedLabel || "—" })));
+      open.set(alarm.id, raise(t("signals.notifyTitle"), t("signals.notifyBody", { bed: alarm.bedLabel || "—" }),
+        { tag: TAG_PREFIX + alarm.id }));
     }
-  }, [active, permission, alerts, connection, locked, hidden, t]);
+  }, [active, permission, alerts, connection, loaded, locked, hidden, t]);
 
   const askNotify = useCallback(async () => {
     if (notifyState() !== "default") {
@@ -175,20 +237,20 @@ export function AlarmSignals({ children }) {
   }, []);
 
   const testNotify = useCallback(() => {
-    if (notifyState() === "granted") raise(t("signals.testTitle"), t("signals.testBody"), false);
+    if (notifyState() === "granted") raise(t("signals.testTitle"), t("signals.testBody"), { sticky: false });
   }, [t]);
 
   const sound = !wanted ? "off" : audio === "running" ? "on" : audio === "unsupported" ? "unsupported" : "waiting";
   const value = { sound, setSound, resume, testSound: () => engine.test(), notify: permission, askNotify, testNotify };
+  const waiting = active && sound === "waiting";
 
   return (
     <SignalsContext.Provider value={value}>
       {children}
-      {active && sound === "waiting" ? (
-        <div className="fixed bottom-[22px] left-[22px] z-[210]">
-          <Button variant="primary" icon="bell" onClick={resume}>{t("signals.soundWaiting")}</Button>
-        </div>
-      ) : null}
+      {/* Said politely through a region that is on the page before the words are (ui/Alert.jsx):
+          mounted with the wish for a sound, filled once the sound is waiting. */}
+      {active && wanted ? <Announce text={waiting ? t("signals.soundWaiting") : ""} /> : null}
+      {waiting ? <WaitingButton label={t("signals.soundWaiting")} onClick={resume} /> : null}
     </SignalsContext.Provider>
   );
 }
