@@ -40,14 +40,13 @@ describe("the dev server's proxy", () => {
 });
 
 describe("what the service worker keeps offline", () => {
-  // The simulation is not part of the product, and the service worker precached it: the
-  // legacyRoots chunk and the five replay scenarios made a first visit to the REAL system cost
-  // half a megabyte of a demonstration it never shows (31 entries / 1245 KiB, now 22 / 556 KiB).
-  // They are still served when ?eski=1, ?demo=1 or ?mode=replay asks for them — just not kept.
-  it("leaves the simulation's chunk and the replay scenarios out of the precache", () => {
-    expect(VITE).toMatch(/globIgnores:\s*\[[^\]]*"\*\*\/legacyRoots-\*\.js"/);
-    expect(VITE).toMatch(/globIgnores:\s*\[[^\]]*"demo\/\*\*"/);
-    expect(VITE).not.toMatch(/includeAssets:\s*\[[^\]]*demo/);
+  // A ward PC's first visit downloads the precache. The design gallery (?tasarim=1) is a review
+  // page with no data, linked from nowhere: it is served when someone types its address, and not
+  // kept offline. The simulation's chunk and the replay scenarios were excluded the same way until
+  // G1-16 removed them; a pattern for a file that no longer exists would only mislead.
+  it("leaves the design gallery's chunk out of the precache, and names nothing that is gone", () => {
+    expect(VITE).toMatch(/globIgnores:\s*\[\s*"\*\*\/DesignGallery-\*\.js"\s*\]/);
+    expect(VITE).not.toMatch(/legacyRoots|demo\/\*\*|demo\/\*\.json/);
   });
 });
 
@@ -61,5 +60,15 @@ describe("the manifest of the installed app", () => {
     expect(VITE).not.toMatch(/start_url:\s*"[^"]*demo/);
     expect(VITE).toContain(`lang: "${DEFAULT_LANG}"`);
     expect(VITE).not.toMatch(/description:\s*"[^"]*(demo|sentetik)/i);
+  });
+
+  // index.html is what a browser shows before any chunk has loaded, and all it shows if the live
+  // UI cannot load (LoadFailed.jsx). It said Turkish and carried the old app's `dark` class (a
+  // Tailwind switch nothing in the live UI reads; it themes with data-theme).
+  it("opens the page in the language the UI opens in, without the old app's dark class", () => {
+    const html = fs.readFileSync(path.resolve(HERE, "../index.html"), "utf8");
+    expect(html).toMatch(new RegExp(`<html lang="${DEFAULT_LANG}">`));
+    expect(html).not.toMatch(/class="dark"/);
+    expect(html).toMatch(/<title>Homunculus<\/title>/);
   });
 });

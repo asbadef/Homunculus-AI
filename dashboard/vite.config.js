@@ -32,7 +32,9 @@ export default defineConfig({
       includeAssets: ["icon.svg"],
       // What a ward gets when it adds this to a tablet's home screen. start_url was "/?demo=1",
       // left over from before the bare URL became the live system: the installed icon opened the
-      // SIMULATION, and the description said so while the app itself is the real one. The language
+      // SIMULATION, and the description said so while the app itself is the real one. An icon
+      // installed before then keeps opening "/?demo=1" until the browser re-reads this manifest;
+      // since G1-16 that address opens the live system too (main.jsx, withoutRetired). The language
       // is the one the UI opens in (live/i18n/langs.js DEFAULT_LANG), not Turkish.
       manifest: {
         name: "Homunculus",
@@ -47,14 +49,13 @@ export default defineConfig({
           { src: "icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" },
         ],
       },
-      // What a ward PC downloads on its first visit. The simulation is not part of the product:
-      // its chunk (legacyRoots-*, ~529 kB) and the replay scenarios (demo/*.json) were precached
-      // too, so opening the real system cost half a megabyte of a demonstration it never shows.
-      // Both are still reachable — ?eski=1, ?demo=1 and ?mode=replay fetch them from the network
-      // when someone deliberately asks — they are simply not kept offline.
+      // What a ward PC downloads on its first visit: the live system and nothing else. The design
+      // gallery (?tasarim=1) is a review page with no data, linked from nowhere — fetched from the
+      // network when someone types its address, not kept offline. (The simulation's chunk and the
+      // replay scenarios were excluded the same way until G1-16 removed them.)
       workbox: {
         globPatterns: ["**/*.{js,css,html,json,woff2,svg}"],
-        globIgnores: ["**/legacyRoots-*.js", "demo/**"],
+        globIgnores: ["**/DesignGallery-*.js"],
       },
     }),
   ],
