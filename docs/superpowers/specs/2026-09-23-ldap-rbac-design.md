@@ -354,7 +354,8 @@ succeeds if the token's `perms` contains **any** of the listed keys.
 | `GET /admin/groups` | `groups.manage` or `users.manage` (a user manager lists the groups it may grant) |
 
 **The device path is unchanged.** A static tenant token (the bridge's `/ingest` credential, and
-the legacy `?board=1` screen) is a machine identity and is exempt from permission checks.
+the legacy `?board=1` screen — removed from the dashboard in G1-16) is a machine identity and is
+exempt from permission checks.
 
 The `_hospital()` helper in `api/app.py` becomes `_caller()`, which returns a `Caller`:
 - A tenant token gives `Caller(hospital, device=True)`. No permission is demanded, and "device" is
@@ -834,6 +835,13 @@ not carried forward.
 - *As built — timing parity:* see §4 (dummy bcrypt on every AD 401, 0.5 s floor on every 401).
 
 ## 8. Dashboard
+
+> *As built (G1-16):* this section describes the **previous** dashboard workspace —
+> `ClinicalDemo.jsx`, `clinicalDemo.js`, `liveStore.js`, `permissions.js`, `admin/*` — which G1-16
+> deleted (readable at `e4cdf15`). The live UI that replaced it: session and token reading
+> `src/live/session/sessionStore.js` over `src/liveAuth.js`; navigation `src/live/shell/routes.js`
+> (gated on `perms`); administration `src/live/screens/admin/` (Wave 3B); the catalogue mirror
+> `src/live/screens/admin/catalogue.js`. There is no simulated mode any more.
 
 - **`liveAuth.js`** reads `{tenant, groups, perms, mfa_required, mfa_verified}` from the token.
   The backend-role → UI-role map and its precedence list are deleted. No permissions → the existing

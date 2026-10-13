@@ -162,8 +162,8 @@ def test_a_limited_sign_in_is_answered_in_json() -> None:
     """nginx's own 429 page is HTML, and the dashboard reads the reason from a JSON `detail`:
     it would show a generic failure. The sign-in location hands its 429 to a named location
     that answers in the API's shape — {"detail": "…"}, JSON in UTF-8 — which
-    dashboard/src/clinicalI18n.js maps (i18n.rbac.test.js reads it from this file). Only nginx's
-    own refusal: the API's 429s pass through as they are (no proxy_intercept_errors)."""
+    dashboard/src/live/apiErrors.js maps (live/apiErrors.test.js reads it from nginx.conf). Only
+    nginx's own refusal: the API's 429s pass through as they are (no proxy_intercept_errors)."""
     text = CONF.read_text(encoding="utf-8")
     body = _location(text, "location = /auth/login")
     assert _directives(body, "error_page") == {"error_page 429 = @login_limited"}
@@ -190,7 +190,7 @@ REAUTH_LIMITED = "Çok fazla deneme. Bir dakika sonra yeniden deneyin."
 def test_a_limited_unlock_or_password_change_is_answered_in_json_and_says_when() -> None:
     """The unlock and the password change are no sign-in: their 429 says "too many attempts",
     not "too many sign-in attempts" — in the API's shape ({"detail": "…"}, JSON in UTF-8, which
-    dashboard/src/clinicalI18n.js maps; i18n.rbac.test.js reads it from this file), with
+    dashboard/src/live/apiErrors.js maps; live/apiErrors.test.js reads it from nginx.conf), with
     `Retry-After: 60` as the sign-in's. Declared once, used by the two locations."""
     text = CONF.read_text(encoding="utf-8")
     named = _named_location(text, "@reauth_limited")

@@ -52,7 +52,7 @@ Prototipteki sabit sayılar (`core.js:499` `H.VITAL.al/nb`) kaynaksızdır, taş
 | # | Soru | Durum | Seçim |
 |---|---|---|---|
 | D0 | AD kullanıcısı nasıl açılır? | ✅ LDAP spec'i (23.09) | Yönetici AD'den içe aktarır; otomatik hesap yok |
-| D1 | Eski simülasyon demosu (`?demo=1`) | ✅ 01.10 | **Kaldırılır.** Yeni kabuk canlı store'u demo store'a dayanmadan kurar; `ClinicalDemo.jsx`, `clinicalDemo.js`, `?mode=replay`, `?board=1` Grup 1 sonunda silinir (G1-16). Vercel'deki genel demo da kalkar (yayından kaldırma kullanıcının işi) |
+| D1 | Eski simülasyon demosu (`?demo=1`) | ✅ 01.10 | **Kaldırılır.** Yeni kabuk canlı store'u demo store'a dayanmadan kurar; `ClinicalDemo.jsx`, `clinicalDemo.js`, `?mode=replay`, `?board=1` Grup 1 sonunda silinir (G1-16). Vercel'deki genel demo da kalkar (yayından kaldırma kullanıcının işi). ✅ **G1-16 (`ab6dead`…`8574bbb`):** simülasyon, önceki canlı arayüz, replay ve eski pano koddan çıktı; eski adresleri canlı sistemi açar ve adres çubuğundan silinir. Vercel'deki yayın hâlâ kullanıcının işi |
 | D2 | Varsayılan dil | ✅ 01.10 | **Azerbaycanca**; kullanıcı TR/RU/EN seçebilir, seçim tarayıcıda saklanır |
 | D3 | Kullanıcı formu | ✅ 01.10 | **Rol + Ek görev + Birimler.** Rol = tek grup; ek görev = `charge_nurse`, `rapid_response`; birimler = `staff_scopes`. Arkada çoklu grup modeli değişmez; özel gruplar "Diğer gruplar" altında |
 | D4 | Giriş akışı | ✅ 01.10 | **Giriş + 2FA + ilk girişte şifre değiştirme + kilit ekranı.** "Şifremi unuttum" = "BT birimine başvurun" (SMS/e-posta yok) |
@@ -88,6 +88,18 @@ RRT, ısı haritası, Sistem ayarları, kapsam atama) G1-02'de envanterlenir. Ka
     girerse ya da oturum geçersiz kılınırsa hatırlanan ekran düşer; yer imiyle açılan derin
     adres girişten sonra bir kez kullanılır (`shell/routes.js` `resumePath`, `LiveApp.jsx`).
 
+**G1-16'da kullanıcının verdiği kararlar (13.10.2026; [G1-16 planı](2026-10-13-g1-16-eski-modlari-kaldir.md)):**
+
+18. **Sesli alarm ve kritik alarm bildirimi:** ✅ **eski çalışma alanı silinmeden ve VM
+    deploy'undan önce yeni arayüze taşınır.** Taşındı (`999b1c9`, `a6ddabb`, `src/live/signals/`),
+    eski kod ondan sonra silindi (`2ba255c`). Gerçek bir hoparlörde ve Windows bildiriminde
+    denenmesi G1-15 kapısında.
+19. **Kritik alarm bildiriminin metni:** ✅ **eski derlemedeki gibi kalır** — uygulama açıkken
+    alarmın yatak etiketi, etiket yoksa hasta kimliği; uygulama kilitliyken hiçbir şey
+    adlandırmaz ("Cavab gözləyən kritik siqnal var…", `signals.notifyBodyLocked`).
+20. **Sayfadan erişilemeyen 13 modül:** ✅ **silinir**, Grup 2–4 için başvuru olarak tutulmaz; git
+    geçmişi saklar (`e4cdf15`; silme `ab6dead`).
+
 ---
 
 ## Grup 1 · iş listesi
@@ -114,7 +126,7 @@ dokunulmaz.
 | G1-12 | Yönetim · Kullanıcılar (D3) + birimler (kapsam matrisi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 5 | Orta | G1-07 | ✅ 13.10 · temel (Görev 0–4) 5fdc5cd…34494a8; Görev 5–7 b10179d, 6bc6740, 95adfa6, inceleme turları 9f49cb3 + baa1780; Görev 14 fa8c522 (`/scope/me` panoyla aynı karar) + 65d6a36 (14e); son bütün-dalga incelemesi d9bb996 (kapsam kaydı sayacı yeniden okur) + a301c73 (`PUT /scope` karşılaştır-ve-değiştir). Kapsam "matrisi" liste olarak (Karar 7, aşağıda kabul ölçütleri). Tarayıcıda 390/1440 px bakışı kullanıcıda |
 | G1-13 | Yönetim · Roller ve yetkiler (grup × izin matrisi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 3 | Düşük | G1-12 | ✅ 13.10 · Görev 8–9 05c7e7a, 1eb7356, inceleme turları fedde5b + 2ab1f10; 409 yolunu canlı yapan sunucu karşılaştırması Görev 14e 65d6a36. Tarayıcıda bakış kullanıcıda |
 | G1-14 | Yönetim · Sistem ayarları › Giriş kaynağı (AD durumu, bağlantı testi, ara + içe aktar, grup eşlemesi) · plan: [dalga 3B](2026-10-12-g1-dalga3b-yonetim-ekranlari.md) | 5 | Orta | G1-04, G1-12 | ✅ 13.10 (kod ve testler) · Görev 10–11 a6de6b2, 96c37ee, inceleme turları 6e8f6c9, 5fd309d, a06fc3c; son bütün-dalga incelemesi d9bb996 (eşleme silmek çerçevenin listelerini yeniden okur). Bağlantı testinin beş gerçek nedeni hastanenin etki alanı denetleyicisi olmadan denenemez (yalnız taklitle test edildi) → G1-15 kapısı |
-| G1-16 | Demo ve eski modları kaldır (`ClinicalDemo.jsx`, `clinicalDemo.js`, `liveStore.js`, `clinicalI18n.js`, `legacyRoots.jsx`, replay, legacy board, `?eski=1` önceki canlı arayüz — kilidi bilmez, G1-15'ten önce gitmeli); PWA `?demo` başlangıcı Dalga 2'de düzeltildi | 3 | Orta | G1-09…G1-14 | Bekliyor |
+| G1-16 | Demo ve eski modları kaldır (`ClinicalDemo.jsx`, `clinicalDemo.js`, `liveStore.js`, `clinicalI18n.js`, `legacyRoots.jsx`, replay, legacy board, `?eski=1` önceki canlı arayüz — kilidi bilmez, G1-15'ten önce gitmeli); PWA `?demo` başlangıcı Dalga 2'de düzeltildi · plan: [G1-16](2026-10-13-g1-16-eski-modlari-kaldir.md) | 3 | Orta | G1-09…G1-14 | Kod ✅ 13.10 · `ab6dead`…`8574bbb`. 80 dosya silindi (75 kaynak + 5 replay JSON'u, ~29 bin satır): sayfadan erişilemeyen 13 modül (`ab6dead`; Grup 2–4 hedefleri, aşağıda "G1-16'da silinenler"), replay ve eski pano (`8c0ed89`), simülasyon ve önceki canlı arayüz (`2ba255c`). `?demo=1`, `#/demo`, `?eski=1`, `?mode=replay`, `?scenario=`, `?board=1` canlı sistemi açar; parametre adresten silinir (`main.jsx` `withoutRetired`). `src/` altında sayfanın erişemediği modül kalmaz (`reachable.test.js`). Silmeden önce eski çalışma alanının **sesli alarmı ve arka plandaki kritik alarm bildirimi** yeni arayüze taşındı (`999b1c9`, `a6ddabb`; kullanıcı kararı 18, 13.10): kilitte de çalar, oturum bitince durur, ayarı Ayarlar › "Ses ve bildirim"de. Dashboard 75 dosya / 1782 test; 500 kB uyarısı yok; önbellek 20 kayıt. **Açık:** planın Görev 10'u (son doğrulama) ve tarayıcıda bakış — eski adresler, gerçek hoparlör, Windows bildirimi (G1-15 kapısı) |
 | G1-15 | Uçtan uca doğrulama (yerel yığın, 4 dil, 390 px/1440 px; Dalga 3'ün koşulmamış Görev 24'ü buraya katlandı, aşağıda) + VM deploy notları · temel: [RBAC planı](2026-09-23-rbac-groups-permissions.md), "Deploy notes for the VM" (zorunlu MFA kaydı: Sistem Yöneticisi, Sorumlu Hekim, Ünite Hekimi, Üretici Destek ilk girişte TOTP kurar; `0010` ön kontrolü) | 3 | Orta | hepsi | Bekliyor |
 
 Dalga 0 sonu: backend 1665 geçti / 1 atlandı / 0 hata; dashboard 810 geçti (43 dosya); vite build tamam.
@@ -150,6 +162,18 @@ geçiyor), düzeltmesi Grup 4. Her sekme iki ya da üç kez incelendi; her bulgu
 başarısız bir testle kanıtlandı ve incelemecilerin mutantlarını testler yakaladı. Tarayıcıda
 bakış (390/1440 px, iki tema) **yapılmadı**: kullanıcının işi, aşağıda "Dalga 3B'den açık kalanlar".
 
+G1-16 sonu (son kod commit'i `8574bbb`): dashboard 1782 geçti (75 dosya) — G1-16'nın tabanından
+(`69f059f` / `126a011`: 2430 / 108) 648 test ve 33 dosya eksik: silinen kodun 37 test dosyası
+gitti, 4 yeni geldi — erişilebilirlik ağı (`reachable.test.js`) ve taşınan ses ve bildirimin 3
+dosyası (taşıma toplam 36 test ekledi). Yeni arayüzün kendi testleri (`src/live/`) yalnız bu
+taşımayla 62 dosya / 1504'ten 65 / 1540'a çıktı; hiçbir silme ondan bir şey almadı. Vite build
+tamam, 500 kB uyarısı yok: ilk parça 146,74 kB / 48,01 kB gzip, `LiveApp` 205,05 kB / 63,20 kB,
+ortak parça (`Toast`) 186,10 kB / 68,44 kB; servis çalışanı 20 kayıt / ~751 KiB (önce 22 / ~785).
+Arka uçta yalnız üç yorum değişti (`tests/test_nginx_routes.py` 40 geçti, Python 3.14). Planın
+Görev 10'u (test takımı iki kez, build bütçesi, aramalar) henüz yapılmadı; tarayıcıda eski
+adreslerin ve gerçek bir hoparlörün denenmesi kullanıcıda ve G1-15'te (G1-16 planı, "Needs the
+user").
+
 > G1-15'teki VM deploy kullanıcının kararıdır (aşağıda "Kullanıcı kararları", 2–3):
 > yedek → `0010` ön kontrolü → göç `0008 → 0009 → 0010` → herkes bir kez yeniden girer.
 
@@ -178,19 +202,31 @@ bakış (390/1440 px, iki tema) **yapılmadı**: kullanıcının işi, aşağıd
   **değil**: yerel bir hesabın hatalı şifresi de bu gerekçeyi yazıyor ve AD'ye hiç gitmiyor, yani
   yerel satırlar "son 15 dakikada AD'ye bind gitti mi?" sorusunun yanlış pozitifleriydi (runbook,
   "Before restarting the API").
-- **(Dalga 2 incelemesi)** Tabletlerde ana ekrana eklenmiş uygulama **yeniden eklenir ya da yeniden
-  kurulur.** PWA manifestinin `start_url`'ü Dalga 2'de `/?demo=1`'den `/`'ye çekildi, ama kurulu
-  bir kısayol tarayıcı manifesti yeniden okuyana kadar eski adresi açmaya devam eder — yani
-  simülasyonu. `?demo=1` G1-16'da silindiğinde o kısayol hiçbir şey açmaz (artık boş sayfa değil,
-  "sayfa yüklenemedi" der — `src/LoadFailed.jsx`). Deploy'dan sonra her tablet tek tek gözden
-  geçirilir.
+- **(Dalga 2 incelemesi; G1-16'yla değişti)** Tabletlerde ana ekrana eklenmiş uygulama: PWA
+  manifestinin `start_url`'ü Dalga 2'de `/?demo=1`'den `/`'ye çekildi, ama kurulu bir kısayol
+  tarayıcı manifesti yeniden okuyana kadar eski adresi açar. **G1-16'dan beri o adres de canlı
+  sistemi açar** — `?demo=1` adresten silinir (`main.jsx` `withoutRetired`); simülasyon da yok,
+  "sayfa yüklenemedi" de. Yeniden eklemek artık doğruluk için gerekmiyor: eski kurulumda kalan
+  yalnız eski manifestin adı, açıklaması ve dilidir, tarayıcı manifesti yeniden okuyunca düzelir.
+  Tabletleri yine de tek tek gözden geçirmek kullanıcının kararı.
+- **(G1-16)** **Sesli alarm ve kritik alarm bildirimi gerçek bir serviste denenir** — yeni arayüze
+  taşındılar (`999b1c9`, `a6ddabb`), ama yalnız taklit bir Web Audio ve taklit bir `Notification`
+  ile test edildiler. Bir servis bilgisayarında, yerel yığında: (1) Ayarlar › "Ses ve bildirim"de
+  ses açılır ve "Sesi dene" hoparlörden kritik düzeni (10 vuruş, 5+5) çalar; (2) kritik bir alarm
+  gelince ses çalar, yüksekte ve ortada daha seyrek; alarm "Gördüm" ile onaylanınca susar; (3)
+  ekran kilitlenir — ses sürer; çıkış yapılır — ses durur; (4) sayfa yenilenir — "Siqnal səsi
+  gözləmədədir…" düğmesi görünür, bir tıklamayla kalkar; (5) bildirime izin verilir, başka bir
+  pencere öne alınır, kritik bir alarm gelir — Windows bildirimi yatak adıyla görünür; kilitliyken
+  gelen bildirim yatak adı taşımaz; (6) adres HTTPS değilse ekran bildirimlerin çalışmadığını
+  söyler. Tarayıcı güvenli olmayan (HTTP) bir adreste bildirime izin vermez: VM HTTP üzerindeyse
+  bildirim hiç görünmez (eski derleme de bunu ekranda söylüyordu) — bu deploy kapısında söylenir.
 - **(Dalga 2 incelemesi)** VM'nin kendi nginx yapılandırmasında `location = /auth/reauth` ve
   `location = /auth/password` tam eşleşmeleri ile `homunculus_reauth` bölgesi **var mı** diye
   bakılır (`deploy/local/web/nginx.conf` ile karşılaştır). Yoksa istekler yine de vekillenir —
   önek bloğu yakalar — ama sınırsız ve JSON 429'suz: kilit açma ile şifre değiştirmede hız sınırı
   olmaz. Tek satırlık kontrol, deploy'dan önce.
-- **(Dalga 2)** `?eski=1` (önceki canlı arayüz) G1-16 ile kaldırıldı: kilit ekranını bilmez, kilitli
-  bir tarayıcıda açık oturumu gösterir.
+- **(Dalga 2)** `?eski=1` (önceki canlı arayüz) G1-16 ile kaldırıldı ✅ (`2ba255c`): kilit ekranını
+  bilmiyordu, kilitli bir tarayıcıda açık oturumu gösteriyordu. Adres artık canlı arayüzü açar.
 - **(Dalga 2)** Mobil uygulama: geçici şifreli hesap girişte "önce panodan şifrenizi belirleyin"
   der (Dalga 2, Görev 3). Cihazlarda bu sürümden eski bir uygulama varsa, işaretli hesap orada her
   istekte çıplak 403 alır — deploy'dan önce güncellenir ya da kullanıcılar şifrelerini önce
@@ -270,8 +306,10 @@ sayılır:
 1. **Bütün dashboard takımı iki kez:** bir kez olduğu gibi, bir kez de ekran kaydı boşa sabitlenmiş
    olarak — hiçbir test hangi ekranların kurulu olduğuna sessizce bağlanmamış olmalı.
 2. **Üretim derlemesi ve bedeli:** temiz derleme; ilk parçanın boyutu ve servis çalışanının önbellek
-   sayısı kaydedilir (Dalga 2 sonu: 145 kB / 47 kB gzip, 22 kayıt / 556 KiB). İlk parça yaklaşık
-   250 kB gzip'i geçtiyse söylenir, burada düzeltilmez: bölme G1-16'nın işi.
+   sayısı kaydedilir (Dalga 2 sonu: 145 kB / 47 kB gzip, 22 kayıt / 556 KiB; G1-16 sonu: 146,74 kB
+   / 48,01 kB gzip, 20 kayıt / ~751 KiB, 500 kB'ı geçen parça yok). İlk parça yaklaşık 250 kB
+   gzip'i geçtiyse söylenir. G1-16 bölmeye gerek görmedi: ilk parçanın neredeyse tamamı React;
+   `routing.test.js` ilk parçaya statik olarak giren importları sabitler.
 3. **Dört dil, ekranda:** Yataklar → bir hasta → Alarmlar → Yönetim, az / tr / ru / en. Aranacaklar:
    çevirisi olmayan bir anahtarın görünmesi (`beds.something`), çekimli bir sözcüğün içine düşmüş
    sayı, Latin harfle yazılmış Rusça, Rusçada (dördünün en uzunu) kutusundan taşan satır. Bilerek
@@ -316,7 +354,7 @@ sayılır:
 | 2 | G1-07 → G1-08 | Sıralı |
 | 3 | G1-09 ‖ G1-10 ‖ G1-11 (+ yönetim temeli, birleşmedi) | Ortak temel sıralı, sonra üç kol paralel (yataklar, alarmlar, hasta) ✅ |
 | 3B | G1-12 ‖ G1-13 ‖ G1-14 | Temel sıralı, sonra üç kol paralel; arka uç yarısı (Görev 14) ✅ |
-| 4 | G1-16 → G1-15 | Sıralı |
+| 4 | G1-16 → G1-15 | Sıralı; G1-16 kodu ✅ (son doğrulaması açık) |
 
 ### Hastaneden gerekenler (G1-03'ü bekletmez, G1-15'i bekletir)
 
@@ -476,6 +514,15 @@ Tutulup bağlanmamış modüller → hedef:
   hasta numarası ad yerine yazılmaz (yatak etiketi o kimliği zaten taşıyor).
 - `patientScope.js` ekran kapsamı (rol yerine izin modeline uyarlanmalı) → G1-12
 
+**G1-16 bu listede adı geçen modüllerin hepsini sildi** (`ab6dead`: `clinicalAdmin.jsx`,
+`InfinityBeds.jsx`, `feedHealth.js`, `wallBoard.jsx`, `rrtQueue.js`, `alarmDensity.js`,
+`patientLabel.js`, `patientScope.js`): sayfadan hiçbiri erişilebilir değildi ve
+`reachable.test.js` artık bunu yasaklıyor. `refreshAudit` ve `setSuspectedInfection` eski
+`liveStore.js`'in içindeydi, o da gitti (`2ba255c`); API istemcisinin `setProfile` ve `verifyAudit`
+yöntemleri `backendApi.js`'te testleriyle kalır. Hedefleri değişmedi; kodları ve testleri
+`e4cdf15`'te okunur (`git show e4cdf15:dashboard/src/<dosya>`). Liste aşağıda "G1-16'da
+silinenler".
+
 ## Main'den gelen ve yeni kabukta karşılanacak davranışlar
 
 Birleştirmede (G1-02) main'in `ClinicalDemo.jsx` yeniden yazımı alınmadı (D1); o ekranları
@@ -506,10 +553,10 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - rrtPage · RRT ekranı kendisine eskale edilen alarmları (elle çağrıldıysa yazılı) ve yoldaki cevapsız alarmları ayrı gösterir; liste boşsa boş durumu, 3. kademe kapalıysa bunu açıkça yazar. → Grup 2
 - rrtPage · Menü rozeti cevapsız eskalasyon sayısını gösterir; cevaplanan alarm rozetten düşer. → Grup 2
 - setupWizardScope · Canlı kurulumda yönetici kurulum sihirbazına düşmez (kiracı deploy'da kurulur), doğrudan ürüne, Sistem Ayarları'na ve cihaz sayfasına ulaşır; diğer roller de doğrudan girer. → G1-07 ✅ sihirbaz yok; herkes kendi ana ekranına düşer (`shell/routes.js` `homePath`; Dalga 2'de Ayarlar; artık menünün açabildiği ilk kurulu ekran: panoyu gören herkes Yataklar'a, panoyu görmeyen ama kullanıcı ya da grup yöneten biri Yönetim'e), `LiveApp.test.jsx`. Sistem Ayarları ve cihaz sayfası G1-14 / Grup 4.
-- simulationGating · Canlıda simülasyon denetimleri (alarm üret, saat hızı 30×/60×/120×, duraklat, "sonuç simüle et", DEMO etiketi) hiç çizilmez; mod belirtilmezse varsayılan canlıdır. → G1-16
+- simulationGating · Canlıda simülasyon denetimleri (alarm üret, saat hızı 30×/60×/120×, duraklat, "sonuç simüle et", DEMO etiketi) hiç çizilmez; mod belirtilmezse varsayılan canlıdır. → G1-16 ✅ Simülasyon koddan çıktı (`2ba255c`): her adres canlı sistemi açar, yalnız `?tasarim=1` tasarım galerisini.
 - simulationGating · Break-glass canlıda kalır: araç değil, gerçek klinik denetim. → Grup 2
 - simulationGating · Canlı Sonuçlar sayfası gerçek bekleyen sayısını ve elle yüklemeyi korur. → Grup 3
-- simulationGating · Dil algılama bugün İngilizce yerel ayarda TR, Azerbaycanca cihazda AZ açar, seçilen dil kazanır (testleri `i18n.rbac.test.js`'te); D2 ile varsayılan AZ olunca bu testler birlikte değişir. → G1-06 ✅ Yeni kabukta `src/live/i18n/I18nProvider.test.jsx` (AZ varsayılan, algılama yok, saklanan seçim kazanır); `i18n.rbac.test.js`'teki eski vakalar eski çalışma alanını G1-16'ya kadar korur.
+- simulationGating · Dil algılama bugün İngilizce yerel ayarda TR, Azerbaycanca cihazda AZ açar, seçilen dil kazanır (testleri `i18n.rbac.test.js`'te); D2 ile varsayılan AZ olunca bu testler birlikte değişir. → G1-06 ✅ Yeni kabukta `src/live/i18n/I18nProvider.test.jsx` (AZ varsayılan, algılama yok, saklanan seçim kazanır); `i18n.rbac.test.js`'teki eski vakalar eski çalışma alanıyla birlikte G1-16'da silindi (`2ba255c`).
 - clinicalCharting (silinen vakalar) · Vazopressör/inotrop dozu (noradrenalin, adrenalin, dopamin, dobutamin; yazım farkı önemsiz) motora hız kodu olarak gider; puanlanmayan ilaç sinyal diye uydurulmaz. → Grup 3
 - clinicalCharting (silinen vakalar) · Verilen sıvı (yalnız giriş) motora `crystalloid_bolus_ml` olarak gider; çıkış gönderilmez. → Grup 3
 - clinicalCharting (silinen vakalar) · Kabulde kilo `weight_kg` gözlemi, serbest metin eşlik eden hastalıklar ("DM, HT; KOAH") hasta profili olarak motora gider; boş kutu profil göndermez, yan kanal hatası kabulü geri almaz. → Grup 2
@@ -535,10 +582,10 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 - `patientFromBoard` `identity.bed_id`/`unit_id`'yi okumuyor: her HBYS hastası "yatak bekliyor" görünür; birim filtresi ve kapsam matrisi için gerekli. → G1-09 ✅ `9b07755`: ikisini de okuyor; yataklar ekranının birim süzgeci ve kapsam düzenleyicisinin seçenekleri bunlardan geliyor. Yatak tablosunun karşılamadığı HBYS konumu kartta "Yatak eşleşmedi · <anahtar>" diye yazılır.
 - `auditRowFromRecord` kişi alanını `actor`'dan okumuyor (ack ve `scope_denied` satırları "—"); test fikstürü backend'in göndermediği `{by}` biçimini kullanıyor. → Grup 2
 - Vite dev proxy'de `/admin`, `/scope`, `/scores`, `/infinity-research` yok (`/clinical` ve `/alarm-quality` var; yalnız `npm run dev`'i etkiler). → G1-07 ✅ `devProxy.test.js` nginx'in her API yolunu arar.
-- `main.jsx`'te ölü `simulation` prop'u; PWA manifest `start_url: "/?demo=1"`. → G1-16 ✅ ikisi de Dalga 2'de düzeltildi: ölü prop gitti, manifest `start_url: "/"` ve `lang: "az"`. Yalnız **yeni** kurulumlar için geçerli: ana ekrana zaten eklenmiş bir kısayol, tarayıcı manifesti yeniden okuyana kadar `/?demo=1`'i — yani simülasyonu — açmayı sürdürür. Her tablette yeniden eklenmesi G1-15 deploy kapısında.
+- `main.jsx`'te ölü `simulation` prop'u; PWA manifest `start_url: "/?demo=1"`. → G1-16 ✅ ikisi de Dalga 2'de düzeltildi: ölü prop gitti, manifest `start_url: "/"` ve `lang: "az"`. Yalnız **yeni** kurulumlar için geçerli: ana ekrana zaten eklenmiş bir kısayol, tarayıcı manifesti yeniden okuyana kadar `/?demo=1`'i — yani simülasyonu — açmayı sürdürür. Her tablette yeniden eklenmesi G1-15 deploy kapısındaydı; G1-16'dan beri o adres de canlı sistemi açıyor, yeniden ekleme yalnız kurulu uygulamanın adını ve dilini tazeler (kullanıcının kararı).
 - `backendApi.myScope()` kullanılmıyor. → G1-12 ✅ Kullanıcılar sekmesi yöneticinin kendi kapsamını onunla okuyor: kapsam atama hakkı (`rules.canAssignScope`) yalnız `reason: "role"` iken var; yanıt gelmemişse bilinmiyor sayılır ve Kaydet çizilmez.
 - `?infinityTest=1` yalnız ana çalışma ağacındaki commit'lenmemiş değişiklikte var. → kullanıcıya not
-- `clinicalDemo.js:475`'teki demo yönetici parolası git geçmişinde; gerçek bir yerde kullanıldıysa değiştirilmeli. → kullanıcıya not
+- `clinicalDemo.js:475`'teki demo yönetici parolası git geçmişinde; gerçek bir yerde kullanıldıysa değiştirilmeli. → kullanıcıya not (G1-16 dosyayı sildi; parola `e4cdf15` ve öncesinde, `origin`'de de, kalır)
 - `homunculus-ml/**/__pycache__/*.pyc` takipte (`324d2bd`'den beri). → ayrı temizlik
 - `scripts/dev_local.py` SQLite'ta hâlâ tamamlanmaz: `seed_bootstrap` Postgres'e özgü kilit alıyor (`pg_advisory_xact_lock`), varsayılan yönetici parolası `Demo1234!` 12 karakter kuralına takılıyor, venv'de `aiosqlite` yok. → ayrı küçük iş
 
@@ -732,7 +779,8 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   940→1130 KiB); G1-07 fontları zaten kullanır, galeriyi `globIgnores` ile dışarıda bırakmak → G1-16.
   Kısmen yapıldı (Dalga 2): simülasyon parçası (`legacyRoots-*.js`) ve replay verisi (`demo/**`)
   önbellekten çıktı, 31 kayıt/1245 KiB → 22 kayıt/556 KiB. Galeri parçası (`?tasarim=1`) ve
-  fontlar hâlâ önbellekte → G1-16.
+  fontlar hâlâ önbellekte → G1-16. ✅ G1-16 (`8574bbb`): galeri parçası da çıktı
+  (`globIgnores: ["**/DesignGallery-*.js"]`), 20 kayıt / ~751 KiB; fontlar canlı arayüzün, kalır.
 - Test boşlukları: `Table`'ın `ResizeObserver` yolu (jsdom'da yok, yalnız `resize` yedeği
   test ediliyor) ve `Empty` testinin yalnız metni denetlemesi. → G1-07 ✅ ikisi de test edildi.
 - Türkçe rehbere risk gösterim kuralları girsin (asla yeşil; "ölçülmedi" ≠ "bulgu yok";
@@ -741,7 +789,8 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
 ## Dalga 2'den açık kalanlar
 
 - `?eski=1` (önceki canlı arayüz) kilit ekranını bilmez: kilitli bir tarayıcıda yeni sekmede
-  `?eski=1` açılırsa oturum açık görünür → G1-16 kaldırır (G1-15 deploy'undan önce).
+  `?eski=1` açılırsa oturum açık görünür → G1-16 kaldırır (G1-15 deploy'undan önce). ✅ `2ba255c`:
+  `?eski=1` canlı arayüzü açar.
 - Sunucu tarafı çıkış yok: çıkış token'ları tarayıcıdan siler; tarayıcıdan alınmış bir yenileme
   token'ı süresi dolana (7 gün) ya da hesap değişene dek geçerli kalır → ayrı iş (Grup 4).
 - Açık bir akış (SSE) oturum ortasında kesilmiyor: hesap işaretlenince (geçici şifre),
@@ -776,7 +825,10 @@ hasta) silinmedi, `dashboard/src/liveAdapters.test.js`'e; dil algılama vakalar�
   `/patients` kayıtlarında ve karelerde sunucu tarafı sıra numarası, sonra "yeni olan kazanır"
   → Grup 2 (motor + pano).
 - `/notifications` akışının kalp atışı (heartbeat) yok; yalnız eski çalışma alanı okuyor →
-  G1-16'yla birlikte kalkar, kalacaksa kalp atışı eklenir.
+  G1-16'yla birlikte kalkar, kalacaksa kalp atışı eklenir. **G1-16: uç kalır** — panoda okuyan
+  kalmadı (eski pano ve `api.js` silindi) ama mobil uygulama okuyor
+  (`homunculus-mobile/src/transport/sseTransport.ts`, `/notifications?role=…`) ve onun da sessizlik
+  bekçisi yok. Kalp atışı → Grup 5 (mobil).
 - `reset_password` kilit sayacını commit'ten önce sıfırlıyor (yöneticinin kendi işlemi, zararsız)
   — kabul edildi.
 - **Dalga 3 için notlar:** `resumePath` yalnız "`nav:false` ve parametresi var" durumunu reddeder,
@@ -1016,9 +1068,74 @@ Görev 14). Sayılar yukarıda, iş listesinin altında.
   sayı) yeni; `/scope/unassigned` yöneticileri ve platform operatörlerini saymıyor; `/scope/me`
   panoyla aynı kararı veriyor (yukarıda G1-12 kabul ölçütü).
 
+## G1-16'dan açık kalanlar
+
+Plan: [G1-16](2026-10-13-g1-16-eski-modlari-kaldir.md). Silinen her dosya `e4cdf15`'te okunur
+(`git show e4cdf15:dashboard/src/<dosya>`); o commit `origin/feat/canli-tasarim`'de de var.
+
+- **Görev 10 (son doğrulama) yapılmadı:** test takımı iki kez, build bütçesi ve "kaldırılan bir
+  mod hâlâ anılıyor mu" aramaları. Görev 1–5'in incelemesi bitince koşulur.
+- ✅ **Sesli alarm ve arka plan bildirimi taşındı** (`999b1c9`, `a6ddabb`; kullanıcı kararı 18,
+  13.10) — `live/signals/`. Eskisi gibi: eski derlemenin aynı ses düzenleri (`clinicalAudio.js`'in
+  sayıları), yanıt bekleyen en kötü alarm, gizli sayfada kritik alarm başına bir bildirim. Yeni: kilitte de çalar, kilitliyken
+  bildirim yatak adı taşımaz, oturum bitince ses durur ve bildirimler kapanır; ayar tarayıcıda
+  saklanır ve tarayıcı sesi başlatana kadar "bekliyor" der. Bilinmeyen bir önem derecesi kritik
+  gibi çalar (eskisi sessizdi). Açık kalan: gerçek hoparlör ve Windows bildirimi denemesi
+  (yukarıda G1-15 kapısı).
+- ✅ **Bildirim metni eskisi gibi kalır** (kullanıcı kararı 19, 13.10): uygulama açıkken alarmın
+  yatak etiketi, etiket yoksa hasta kimliği (`liveAdapters.js` `bedLabel`, eski derlemedeki gibi);
+  uygulama kilitliyken bildirim hiçbir yatak ya da hasta adlandırmaz (`signals.notifyBodyLocked`)
+  ve yatak adı taşıyanlar kilitte kapanır. Bildirim kapatılana dek kalacak şekilde istenir
+  (`requireInteraction`); Windows'ta nasıl göründüğü denenmedi (G1-15 kapısı).
+- **Üst çubukta ses göstergesi yok** (eskisinde düğme vardı); ayar Ayarlar'da, bekleyen ses için
+  ekranın köşesinde bir düğme. Üst çubuğa bir gösterge eklemek tasarım kararı. → kullanıcı / tasarımcı.
+- **Vercel'deki genel yayın** (`homunculus-ai.vercel.app`) ve arkasındaki Render API'si hiçbir
+  commit'le kapanmaz; kod tarafında demo kalmadı. `main`'e her push Vercel'i yeniden derler
+  (`docs/DEPLOY-SUPABASE.md`): bu dal main'e birleşirse ve proje bağlıysa o adres simülasyonu değil
+  canlı arayüzün giriş ekranını gösterir. Yayından kaldırma ve `vercel.json` / `render.yaml` /
+  `dashboard/.env.production`'ın akıbeti → kullanıcı.
+- `homunculus-engine/scripts/record_demo.py` (+ `test_record_demo.py`, `test_record_ward.py`)
+  replay'in JSON'unu üretiyordu; artık okuyanı yok. Senaryo YAML'ları kalır (motor testleri ve
+  `scripts/replay.py`). → Grup 4 (temizlik) ya da kullanıcı.
+- `lucide-react` paketi artık kullanılmıyor (Vite ağaçtan atar, paket ağırlığı yok); kaldırmak
+  bütün G1 worktree'lerinin paylaştığı `node_modules` bağlantısında `npm uninstall` demek. → Grup 4.
+- `liveAdapters.js`'in eski uyarı alanları (`tier`, `firedAtSec`, `currentStep`, `events`,
+  `snooze`, `mutedUntil`, `auto`, `trigger`) ve canlıda okunmayan üç dışa aktarımı
+  (`bedsFromPatients`, `ageFromBirthDate`, `awaitingLocalAdmission`) testleriyle kaldı;
+  `ageFromBirthDate` ile `awaitingLocalAdmission` Grup 2'nin kabul ekranının sözleşmesi (yukarıda
+  "Main'den gelen ve yeni kabukta karşılanacak davranışlar"). Yalnız `ack.atSec` gitti
+  (`47ca495`). → Grup 2.
+- `/notifications` kalp atışı → Grup 5 (yukarıda "Dalga 2'den açık kalanlar").
+
+**G1-16'da silinenler** (her biri `e4cdf15`'te; testleri koruduğu davranışın kaydıdır; test sayıları
+G1-16'nın tabanında):
+
+| Silinen | Testi (test) | Ne yapıyordu → nereye |
+|---|---|---|
+| `wallBoard.jsx` | `policySettings.test.jsx` (13) | Duvar monitörü + ad maskeleme → Grup 2 |
+| `rrtQueue.js` | `rrtQueue.test.js` (11) | RRT kuyruğu → Grup 2 |
+| `alarmDensity.js` | `alarmDensity.test.js` (11) | Isı haritası → Grup 2 |
+| `severityScore.jsx` | `severityScore.test.jsx` (10) | SOFA formu ve imza → Grup 2 |
+| `clinicalAdmin.jsx` | `alarmQualityPanel.test.jsx` (7), `auditIntegrity.test.jsx` (6) | Alarm kalitesi → Grup 4; denetim bütünlüğü → Grup 2 |
+| `InfinityBeds.jsx` | `InfinityBeds.test.jsx` (9) | Cihaz sağlığı → Grup 4 |
+| `admissionPage.jsx`, `patientLabel.js` | `patientLabel.test.js` (15) | Kabul / transfer / bakım ekibi, barkod etiketi → Grup 2 |
+| `patientScope.js` | `patientScope.test.js` (15) | Ekran kapsamı → G1-12 ✅ sunucuda |
+| `feedHealth.js` | `feedHealth.test.js` (22) | → G1-09 ✅ `live/screens/common/feedHealth.js` |
+| `risk.js` | `risk.test.js` (2) | → G1-09 ✅ `pillRisk` |
+| `clinicalUi.jsx`, `ui.jsx`, `clinicalTheme.js` | `ui.test.jsx` (9) | Eski bileşenler ve tema → `live/ui`, `live/theme` |
+| `loginHero.jsx` | — | Eski giriş ekranı sahnesi → yok (D4 girişi) |
+| `liveStore.js` | `liveStore*.test.js` (48 + 47 + 25), `auditFromEngine.test.js` (12), `clinicalCharting.test.js` (6), `scopeAssignment.test.js` (3) | Eski canlı store → `live/session`, `live/data` ✅; denetim satırı (`auditRowFromRecord`) → Grup 2; klinik girdi → Grup 3; kapsam ataması → G1-12 ✅ |
+| `liveAdmin.js`, `admin/*` | `liveAdmin.test.js` (28), `LiveUserAdmin.test.jsx` (35), `GroupAdmin.test.jsx` (20) | → G1-12/13 ✅ `live/screens/admin` |
+| `clinicalI18n.js` | `i18n.rbac.test.js` (109) | → G1-06 ✅ `live/i18n`; sunucu iletileri `live/apiErrors.test.js`'te |
+| `permissions.js` | `permissions.test.js` (14) | → `live/screens/admin/catalogue.js` ✅ (grupların hakları sunucunun) |
+| `clinicalAudio.js`, `ClinicalDemo.jsx`'in bildirimi | — | Sesli alarm, arka plan bildirimi → ✅ silinmeden önce taşındı: `live/signals/` (`999b1c9`, `a6ddabb`) |
+| `ClinicalDemo.jsx`, `clinicalDemo.js`, `legacyRoots.jsx`, `DemoDataBanner.jsx` | `ClinicalDemo.rbac.test.jsx` (43), `nav.test.js` (6), `clinicalDemo.test.js` (123), `legacyRoots.test.jsx` (4; ikisi `8c0ed89`'de), `DemoDataBanner.test.jsx` (4) | Simülasyon ve önceki canlı arayüz → yok (D1) |
+| `Board.jsx`, `PatientDetail.jsx`, `PatientList.jsx`, `NotificationHistory.jsx`, `Toasts.jsx`, `notifications.js`, `api.js`, `i18n.js`, `theme.js`, `demo.jsx`, `demoTransport.js`, `public/demo/*.json` | 38 test, 9 dosya | Eski pano ve replay → yok (D1) |
+
 ## Kullanıcı kararları (Dalga 0 sonrası)
 
-Öncelik sırasıyla. (12–17 numaralı kararlar Dalga 2'de soruldu ve yanıtlandı: yukarıda
+Öncelik sırasıyla. (18–20 numaralı kararlar G1-16'da verildi: yukarıda "G1-16'da kullanıcının
+verdiği kararlar". 12–17 numaralı kararlar Dalga 2'de soruldu ve yanıtlandı: yukarıda
 "Dalga 2'de kullanıcının verdiği kararlar".)
 
 1. **VM bugün (bu daldan bağımsız):** risk eşlemesi hatası VM'de de var (orta risk yeşil görünüyor) — VM'ye hotfix mi, G1-09'u mu bekler? VM'nin nginx'i `/clinical`, `/scores`, `/alarm-quality`'yi iletiyor mu (iletmiyorsa VM'de klinik giriş/SOFA imzası motora hiç ulaşmamış olabilir)? Kontrol: `curl -sk -X POST https://<vm>/clinical/x -H 'Authorization: Bearer x'` → JSON 401 = iletiliyor, HTML/405 = iletilmiyor.

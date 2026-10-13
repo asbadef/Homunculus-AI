@@ -1,7 +1,8 @@
 # Gerçek sistemi canlıya alma — Supabase (DB) + Render (backend) + Vercel (frontend)
 
-> **Not:** Public **demo** (`?demo=1` → ClinicalDemo) tamamen tarayıcı-içidir ve buna İHTİYAÇ DUYMAZ.
-> Bu runbook, **gerçek sistem** (`?live=1` → gerçek login/MFA, kalıcı Postgres) içindir. Yalnızca
+> **Not:** Tarayıcı-içi public **demo** (`?demo=1`) G1-16'da koddan çıktı; o adres de artık gerçek
+> sistemi açar. Bu runbook, **gerçek sistem** (yalın adres ya da `?live=1` → gerçek login/MFA, kalıcı
+> Postgres) içindir ve Vercel/Render yayını yayından kaldırılana dek geçerlidir. Yalnızca
 > **sentetik veya de-identifiye veri** — gerçek PHI, InfoSec/BAA/SaMD yönetişimi kurulana kadar girmez.
 
 ```
@@ -108,8 +109,8 @@ Proje: **Homunculus-AI** (`tfilvvlfhnxzgaqkxwaj`), eu-central-1, Postgres 17.6 �
 
 1. Vercel → **Settings → Environment Variables** → `VITE_API_URL` = `https://<servis>.onrender.com`
 2. **Redeploy** (env değişikliği yeni build ister).
-3. Gerçek sistem: `https://homunculus-ai.vercel.app/?live=1` → login ekranı **gerçek** backend'e gider.
-   Public demo (`/?demo=1`) değişmeden çalışmaya devam eder.
+3. Gerçek sistem: `https://homunculus-ai.vercel.app/` → login ekranı **gerçek** backend'e gider.
+   (G1-16'dan beri `/?demo=1` ve `/?live=1` de aynı ekranı açar; demo yok.)
 
 ## Bundan sonra
 

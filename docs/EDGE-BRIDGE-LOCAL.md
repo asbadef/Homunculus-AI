@@ -622,9 +622,10 @@ optional, see `.env.example`).
 
 ## What the dashboard shows in Phase 1
 
-The board still draws its patients and alerts from the simulation, and carries a banner saying so.
-Real device data is verified through `/patients`, `/alerts/{patient_id}` and the audit table.
-Phase 2 wires the board to live data and removes the banner.
+The dashboard shows live data only: since G1-16 there is no simulation and no demo-data banner in
+it, and every address but the design gallery's (`?tasarim=1`) opens the live UI (sign-in, then the
+beds, alarms and patient screens). Device data can also be checked directly through `/patients`,
+`/alerts/{patient_id}` and the audit table.
 
 ## Clock
 

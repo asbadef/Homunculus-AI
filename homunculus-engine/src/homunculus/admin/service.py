@@ -103,7 +103,8 @@ SELF_DEACTIVATE = "Kendi hesabınızı pasifleştiremezsiniz"
 # A second unlock in the same chain of failed sign-ins (auth/limits.py, FailureChain.unlock):
 # the chain's one unlock is spent, and the chain — the throttle with it — ends only once
 # DIRECTORY_BIND_WINDOW_S ("15") pass without a failed bind; waiting a fixed time from now is not
-# it. The dashboard translates by this exact text (clinicalI18n.js): change both together.
+# it. The dashboard translates by this exact text (dashboard/src/live/apiErrors.js): change both
+# together.
 UNLOCK_COOLDOWN = ("Bu hesabın bu hatalı giriş dizisi için tek kilit açma hakkı kullanıldı; "
                    "15 dakika hatalı parola girilmezse giriş kendiliğinden açılır")
 NOT_AUTHENTICATED = "Invalid or missing authentication credentials"

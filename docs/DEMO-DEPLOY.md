@@ -1,27 +1,18 @@
-# Deploying the Homunculus demo (Vercel)
+# The Homunculus demo (Vercel) — removed
 
-The demo is a pure static PWA — no backend. Real engine output is pre-recorded into
-`dashboard/public/demo/*.json`; the browser replays it. Synthetic data only.
+The public demo was a static PWA: `/?demo=1` opened an in-browser simulation, and `/?mode=replay`
+/ `/?scenario=…` replayed pre-recorded engine output (`dashboard/public/demo/*.json`). Both were
+removed from the dashboard in **G1-16** (roadmap
+`docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md`, decision D1): the
+dashboard is the live system only. Every address the demo used — `/?demo=1`, `/#/demo`,
+`/?mode=replay`, `/?scenario=…` — now opens the live system (its sign-in, for anyone not signed
+in), and the parameter is taken out of the address bar.
 
-## One-time
-1. Push to GitHub (done).
-2. In Vercel: **New Project → import `asbadef/Homunculus-AI`**. Vercel reads `vercel.json`
-   (build `dashboard`, output `dashboard/dist`, Vite framework, SPA rewrite). Deploy.
-3. Share the URL — open it (auto-lands on `/?demo=1`), pick a role, watch the scenario. Installable
-   via the browser's "Add to Home Screen".
-
-## Re-recording the demo data (after engine changes)
-    cd homunculus-engine
-    for s in septic_shock stable_control under_resuscitated; do \
-      .venv/Scripts/python.exe scripts/record_demo.py $s.yaml; done
-    git add dashboard/public/demo && git commit -m "chore(demo): refresh recorded timelines"
-
-Vercel redeploys on push.
-
-## CLI alternative
-`npm i -g vercel && vercel` from the repo root (uses `vercel.json`).
-
-## Notes
-- Landing on `/` shows the live-mode Board (which expects a backend and will just show an empty
-  board when hosted statically). Share the **`/?demo=1`** URL for the demo; the PWA `start_url`
-  is already `/?demo=1` so installed instances open straight into the demo.
+- The removed code and the recorded scenarios can be read at commit `e4cdf15`
+  (`git show e4cdf15:dashboard/src/clinicalDemo.js`, `git show e4cdf15:dashboard/public/demo/septic_shock.json`).
+- `homunculus-engine/scripts/record_demo.py` still exists and still writes those files when run;
+  nothing in the dashboard reads them any more.
+- **The Vercel project itself is not removed by any commit.** Taking the public deployment down
+  — and the Render API behind it — is done in the Vercel and Render dashboards. Until then,
+  `vercel.json`, `dashboard/.env.production` and `render.yaml` describe that deployment, and
+  `docs/DEPLOY-SUPABASE.md` is its runbook.

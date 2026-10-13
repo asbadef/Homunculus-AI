@@ -324,6 +324,7 @@ kötüleşme, laboratuvar bunu yakalayana kadar saatler geçebilirken, sürekli 
   dilde gösteren inceleme sayfası. Uygulamadan bağlantı verilmez; adrese elle yazılır.
 - *Homunculus'ta:* Varsayılan dil Azerbaycanca'dır (yol haritası D2); seçilen dil, tema ve yazı
   boyu tarayıcıda saklanır. Hasta verisi hiçbir zaman çevrilmez — yalnız arayüz metinleri.
+  Çevrimdışı önbellekte tutulmaz (G1-16): ağ yokken açılmaz, servis bilgisayarı onu indirmez.
 
 **Sabit paket sürümleri (`constraints.txt`)**
 - *Basit:* Sunucuya kurulan her yazılım paketinin tam sürümünün listesi. Liste olmadan her
@@ -523,8 +524,8 @@ Dalga 3'te geldi: 3.6.
   ekran, kısayollar, yanıt bekleyen alarmların zili ve hesap menüsü (sürüm numarası dahil).
   Zilin her satırı o hastanın sayfasını açar; menüdeki Alarmlar maddesi yanıt bekleyen alarmları
   zille aynı kuralla sayar (aşağıda 3.6). Yetkisi olmayan bir sayfa "Bu səhifəyə icazəniz
-  yoxdur", olmayan bir sayfa "Belə səhifə yoxdur" der. Önceki arayüz G1-16'ya dek `?eski=1` ile
-  açılır; o kilit ekranını bilmez.
+  yoxdur", olmayan bir sayfa "Belə səhifə yoxdur" der. Önceki arayüz (`?eski=1`, kilit ekranını
+  bilmiyordu) G1-16'da kaldırıldı: o adres de artık bu arayüzü açar (aşağıda "Eski adresler").
 - *Girişten sonra nereye düşülür:* Herkes kendi ana ekranına — menüsünün açtığı ilk ekrana:
   panoyu görme yetkisi (`board.view`) olan herkes **Yataklar**'a (Azerbaycanca arayüzde
   "Çarpayılar"): hekim, hemşire, sorumlu hemşire, hızlı yanıt ekibi, denetçi, eczacı ve Sistem
@@ -540,18 +541,45 @@ Dalga 3'te geldi: 3.6.
   işareti gönderir; 45 saniye hiç ses gelmezse tarayıcı bağlantıyı kopmuş sayar, yeniden bağlanır
   ve o sırada sayıları "güncel olmayabilir" diye işaretler. Böylece yarı kopmuş bir bağlantı
   "sakin servis" gibi okunmaz.
-- *Ana ekrana eklenen uygulama:* Uygulama artık **gerçek sistemle** kurulur — eskiden kısayol
-  simülasyonu (`?demo=1`) açıyordu. Bu yalnız **yeni** kurulumlar için geçerli: ana ekranda zaten
-  duran bir kısayol, tarayıcı uygulama tanımını yeniden okuyana kadar eski adresi açmayı sürdürür.
-  Bu yüzden deploy'dan sonra her tablette uygulamanın yeniden eklenmesi gerekir (G1-15 deploy
-  kapısında bir madde). Buna karşılık eski arayüz, demo, replay ve eski pano
-  (`?eski=1`, `?demo=1`, `?mode=replay`, `?board=1`) **ağ yokken açılmaz**: bilerek çevrimdışı
-  önbelleğin dışında bırakıldılar, böylece servis bilgisayarı yalnız gerçek sistemi indirir.
+- *Ana ekrana eklenen uygulama:* Uygulama **gerçek sistemle** kurulur — Dalga 2'den önce kısayol
+  simülasyonu (`?demo=1`) açıyordu. Ana ekranda zaten duran eski bir kısayol, tarayıcı uygulama
+  tanımını yeniden okuyana kadar eski adresi açar; G1-16'dan beri o adres de gerçek sistemi açar
+  (aşağıda "Eski adresler"). Servis bilgisayarı ilk açılışta yalnız gerçek sistemi indirir.
 - *Sayfa yüklenemezse:* Arayüzün parçaları gerektiğinde indirilir. Ağ yoksa — ya da kurulu
   uygulama deploy öncesinden kalma bir önbellek taşıyorsa — bu indirme başarısız olabilir. O
   durumda ekran boş kalmaz: kişinin kendi dilinde "Səhifə yüklənə bilmədi — bağlantınızı yoxlayıb
   yenidən yükləyin" der ve bir "Yenidən yüklə" düğmesi verir; hata ayrıntısı tarayıcı günlüğüne
   yazılır (destek çağrısı oradan başlar).
+
+**Eski adresler (G1-16)**
+- *Basit:* Panonun eski hâllerine götüren adresler artık hep gerçek sisteme götürür; yer imleri ve
+  eski kısayollar boş sayfa ya da hata göstermez.
+- *Homunculus'ta:* Simülasyon (`?demo=1`, `#/demo`), önceki canlı arayüz (`?eski=1`), replay
+  (`?mode=replay`, `?scenario=…`) ve eski pano (`?board=1`, `&token=…`) G1-16'da koddan çıktı. Bu
+  adreslerden biriyle açılan sayfa gerçek sistemi açar (oturum yoksa giriş ekranını) ve parametre
+  daha hiçbir şey çizilmeden adres çubuğundan silinir: gerçek hastaların üstünde "demo" yazan bir
+  adres kalmaz, eski panonun adreste taşıdığı cihaz anahtarı da adres çubuğundan silinir.
+  `?live=1` eskisi gibi kabul edilir; `?tasarim=1` tasarım galerisini açar. Silinen kod `e4cdf15`
+  commit'inde okunur. Vercel'deki genel demonun yayından kaldırılması kod işi değil, kullanıcının
+  işidir.
+
+**Alarm sesi ve kritik alarm bildirimi**
+- *Basit:* Yanıt bekleyen bir alarm varken servis bilgisayarı ses çıkarır; sayfa arka plandayken
+  kritik bir alarm için Windows bir bildirim gösterir. İkisi de bu tarayıcıda açılır.
+- *Homunculus'ta:* Ayarlar › "Ses ve bildirim". **Ses** (kapalı başlar, açılınca bu tarayıcıda
+  saklanır): yanıt bekleyen alarmların en kötüsüne göre, eski arayüzün ses düzeniyle çalar —
+  kritikte 2,5 saniyede bir 10 vuruş (5+5), yüksekte 12, ortada 20 saniyede bir 3 vuruş; düşük ve
+  bilgi sessizdir; önem derecesi bilinmeyen bir alarm kritik gibi çalar. Alarm onaylanınca susar.
+  Ekran **kilitliyken de çalar**; oturum kapanınca durur. Sunucuyla akış koparsa panonun son
+  bildiğini çalmaya devam eder; pano hiç okunamıyorsa çalmaz. Tarayıcılar sesi ancak bir tıklama
+  ya da tuş vuruşundan sonra başlatır: sayfa yeniden açıldıysa ses "bekliyor"dur ve ekranın
+  köşesindeki düğme bunu söyler — giriş ya da kilit açma için yazmak da sesi başlatır. "Sesi dene"
+  bir kritik düzen çalar. **Bildirim** (tarayıcı izin isterse "İzin ver"): sayfa arka plandayken
+  her yeni kritik alarm için bir bildirim, yatağın etiketiyle (etiket yoksa hasta kimliğiyle —
+  eski arayüzdeki gibi, kullanıcı kararı 13.10); ekran kilitliyken bildirim hiçbir yatak ya da
+  hasta adlandırmaz. Sayfa kapalıysa bildirim gelmez; güvenli olmayan (HTTPS olmayan) bir adreste
+  tarayıcı bildirim göstermez, ekran da bunu söyler. Eski arayüzden taşındı (G1-16). Ses düzeni
+  eski arayüzünkidir; bir klinik standarda göre gözden geçirilmedi.
 
 **Active Directory ile giriş**
 - *Basit:* Hastanedeki bilgisayar hesabıyla (kullanıcı adı ve Windows parolası) giriş.
@@ -749,19 +777,12 @@ Dalga 3'te geldi: 3.6.
 **Canlı mod: simüle edilen hiçbir şey gösterilmez**
 - *Basit:* Gerçek sistemde, arkasında gerçek bir kayıt olmayan hiçbir düğme "çalışıyormuş gibi"
   durmaz.
-- *Homunculus'ta:* Yeni arayüzde (yalın adres ya da `?live=1`) simülasyon hiç yok: ekranlar
-  yalnız gerçek API'nin yaptıklarını çizer; arkasında bir uç olmayan ekran ya da düğme yoktur
-  (yukarıda "Yeni canlı arayüz", aşağıda 3.6). Önceki canlı arayüz (`?eski=1`, G1-16'da kalkacak)
-  ise simülasyonla aynı ekranları kullandığı için şunları gizleyerek çalışır:
-  - simülasyona dayanan yönetim sekmeleri (raporlar, yapı, cihazlar, denetim, arşiv, oturumlar,
-    güvenlik) ve simülasyona dayanan klinik sayfalar;
-  - simülasyon kontrolleri (alarm tetikleme, zaman ölçeği, break-glass, çevrimdışı ve otomatik
-    alarm anahtarları);
-  - alarm kartındaki "RRT'ye Eskale Et", "Sessize Al" ve "Ertele" düğmeleri, onayın nedeni ve
-    notu.
-
-  Orada da simülasyon saati ve otomatik alarm motoru durur; gerçek bir alarmın yaşı duvar saatine
-  göre sayılır. Demo modu (`?demo=1`) eskisi gibi her şeyi gösterir; G1-16'da o da kalkar.
+- *Homunculus'ta:* Panoda simülasyon yok: ekranlar yalnız gerçek API'nin yaptıklarını çizer;
+  arkasında bir uç olmayan ekran ya da düğme yoktur (yukarıda "Yeni canlı arayüz", aşağıda 3.6).
+  G1-16'dan beri tek arayüz budur — simülasyon (`?demo=1`) ve onunla aynı ekranları kullanan önceki
+  canlı arayüz (`?eski=1`) koddan çıktı (yukarıda "Eski adresler"). Önceki arayüzün **sesli
+  alarmı** ve arka plandaki **kritik alarm bildirimi** silinmeden önce yeni arayüze taşındı
+  (yukarıda "Alarm sesi ve kritik alarm bildirimi").
 
 ---
 
