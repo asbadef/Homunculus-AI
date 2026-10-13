@@ -1,10 +1,24 @@
 // dashboard/src/liveAuth.test.js
 import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   decodeJwtPayload, sessionFromToken, accessProblem, secretFromProvisioningUri,
   NO_PERMISSIONS, NO_BOARD_ACCESS,
 } from "./liveAuth.js";
-import { DEFAULT_GROUPS } from "./permissions.js";
+
+// A default group's rights, read from the backend's own catalogue (auth/permissions.py) as text:
+// the rights a token carries are the server's, and the dashboard keeps no copy of them to drift.
+// Only groups written as a literal tuple — `"permissions": ("board.view", …)` — can be read; a
+// derived one (hospital_admin, unit_physician) fails here, loudly, rather than reading as empty.
+const PERMISSIONS_PY = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)),
+  "../../homunculus-engine/src/homunculus/auth/permissions.py"), "utf8");
+function backendPermsOf(slug) {
+  const spec = new RegExp(`\\{"slug": "${slug}"[^}]*?"permissions": \\(([^)]*)\\)`).exec(PERMISSIONS_PY);
+  if (!spec) throw new Error(`auth/permissions.py: no literal permissions tuple for "${slug}"`);
+  return [...spec[1].matchAll(/"([\w.]+)"/g)].map((m) => m[1]);
+}
 
 /** Build an unsigned JWT-shaped token (only the payload matters to the client).
  *  Encodes UTF-8 bytes before base64url, exactly as a real JWT library does — btoa() alone
@@ -103,7 +117,7 @@ describe("the pharmacist and biomedical groups in the permission model", () => {
   // On main these were two roles (PHARMACIST, BIOMEDICAL, engine migration 0007) the UI mapped
   // from the token's `roles`. Here a token carries its groups' `perms`, and what opens the
   // clinical UI is board.view (accessProblem), not the name of a role.
-  const permsOf = (slug) => [...DEFAULT_GROUPS.find((g) => g.slug === slug).permissions];
+  const permsOf = backendPermsOf;
   const sessionFor = (...slugs) => sessionFromToken(tokenWith({
     tenant: "demo-hastanesi", groups: slugs, perms: [...new Set(slugs.flatMap(permsOf))],
   }));

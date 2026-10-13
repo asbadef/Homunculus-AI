@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { ROUTES, canReach, hasWorkRoute, hashPath, homePath, matchRoute, navRoutes, resetScreens, resumePath, screenOf, stubScreens } from "./routes.js";
 import { onlyScreens } from "./screens.testutil.js";
-import { PERMISSION_KEYS } from "../../permissions.js";
+import { PERMISSION_KEYS } from "../screens/admin/catalogue.js";
 import { DICTIONARIES } from "../i18n/catalog.js";
 import { LANG_CODES } from "../i18n/langs.js";
 import { ICON_NAMES } from "../ui/icons.js";
