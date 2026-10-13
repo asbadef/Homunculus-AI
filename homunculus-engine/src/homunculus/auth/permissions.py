@@ -93,54 +93,69 @@ class GroupSpec(TypedDict):
     mfa_required: bool
     is_system: bool
     permissions: tuple[str, ...]
+    # What this group IS to a person, as opposed to what it grants: a ROLE is the job someone
+    # does, an EXTRA duty is added to a role for a while. A charge nurse is a nurse with more; a
+    # rapid-response duty ends with the shift. The membership table is one flat list and says
+    # nothing about this, so the administration screen's user form — one role, any number of
+    # duties (roadmap D3) — had to classify these eleven slugs itself, two files away from the
+    # groups it was classifying. It lives here now, and `GroupOut.kind` carries it.
+    #
+    # A group a HOSPITAL creates is neither, and `GroupOut.kind` is then null: it is not a job
+    # this product knows about and not a duty either, and guessing from its slug or its
+    # permission set is how a screen comes to tell an administrator something nobody decided.
+    kind: str
 
+
+#: The two kinds a DEFAULT group can be. A group a hospital creates is neither, and the API sends
+#: `kind: null` for it rather than a guess (`admin/router._group_out`).
+GROUP_KINDS: frozenset[str] = frozenset({"role", "extra"})
 
 # The SYSTEM group (`is_system`) holds the whole catalogue BY RULE at token issuance — including
 # keys added after a tenant was seeded — and its rows cannot be edited. Its rows are seeded all
 # the same, so the admin screen can show them.
 DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
-    {"slug": "hospital_admin", "name": "Sistem Yöneticisi",
+    {"slug": "hospital_admin", "kind": "role", "name": "Sistem Yöneticisi",
      "description": "Kullanıcı, grup, yapı ve cihaz yönetimi; denetim kaydı.",
      "mfa_required": True, "is_system": True, "permissions": tuple(PERMISSIONS)},
-    {"slug": "attending", "name": "Sorumlu Hekim",
+    {"slug": "attending", "kind": "role", "name": "Sorumlu Hekim",
      "description": "Kabul onayı, transfer/taburcu başlatma, bakım ekibi atama.",
      "mfa_required": True, "is_system": False, "permissions": _ATTENDING},
-    {"slug": "unit_physician", "name": "Ünite Hekimi",
+    {"slug": "unit_physician", "kind": "role", "name": "Ünite Hekimi",
      "description": "Kabul onayı ve transfer/taburcu başlatma; bakım ekibi atamaz.",
      "mfa_required": True, "is_system": False,
      "permissions": tuple(p for p in _ATTENDING if not p.startswith("care_team."))},
-    {"slug": "physician", "name": "Hekim",
+    {"slug": "physician", "kind": "role", "name": "Hekim",
      "description": "Pano, alarm onayı ve eskalasyon, devir imzası, break-glass.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                      "handover.sign", "break_glass.use", "clinical.chart", "scores.sign")},
-    {"slug": "charge_nurse", "name": "Sorumlu Hemşire",
+    {"slug": "charge_nurse", "kind": "extra", "name": "Sorumlu Hemşire",
      "description": "Hasta kabul, transfer/taburcu onayı, nöbet çizelgesi, bakım ekibi.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                      "admissions.admit", "admissions.transfer.confirm",
                      "admissions.discharge.confirm", "care_team.claim", "handover.sign",
                      "shifts.manage", "break_glass.use", "clinical.chart")},
-    {"slug": "nurse", "name": "Hemşire",
+    {"slug": "nurse", "kind": "role", "name": "Hemşire",
      "description": "Pano, alarm onayı, hasta kabul, devir imzası.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "admissions.view", "admissions.admit",
                      "admissions.transfer.confirm", "handover.sign", "clinical.chart")},
-    {"slug": "rapid_response", "name": "Hızlı Yanıt Ekibi",
+    {"slug": "rapid_response", "kind": "extra", "name": "Hızlı Yanıt Ekibi",
      "description": "Pano, alarm onayı ve eskalasyon, break-glass.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                      "break_glass.use", "clinical.chart")},
-    {"slug": "auditor", "name": "Denetçi",
+    {"slug": "auditor", "kind": "role", "name": "Denetçi",
      "description": "Salt okunur: pano ve denetim kaydı.",
      "mfa_required": False, "is_system": False, "permissions": ("board.view", "audit.view")},
-    {"slug": "platform_support", "name": "Üretici Destek",
+    {"slug": "platform_support", "kind": "role", "name": "Üretici Destek",
      "description": "Üretici tarafı destek: denetim kaydı ve cihaz uç noktaları.",
      "mfa_required": True, "is_system": False, "permissions": ("audit.view", "devices.manage")},
-    {"slug": "pharmacist", "name": "Eczacı",
+    {"slug": "pharmacist", "kind": "role", "name": "Eczacı",
      "description": "Pano ve kabul kayıtlarını okuma.",
      "mfa_required": False, "is_system": False, "permissions": ("board.view", "admissions.view")},
-    {"slug": "biomedical", "name": "Biyomedikal Teknisyen",
+    {"slug": "biomedical", "kind": "role", "name": "Biyomedikal Teknisyen",
      "description": "Cihaz ve araştırma uç noktaları.",
      "mfa_required": False, "is_system": False, "permissions": ("devices.manage",)},
 )
@@ -175,6 +190,9 @@ def _self_check() -> None:
         raise RuntimeError(f"LEGACY_ROLE_TO_GROUP names unknown group(s): {sorted(missing)}")
     if [g["slug"] for g in DEFAULT_GROUPS if g["is_system"]] != ["hospital_admin"]:
         raise RuntimeError("exactly one system group, hospital_admin, is expected")
+    bad = [g["slug"] for g in DEFAULT_GROUPS if g["kind"] not in GROUP_KINDS]
+    if bad:
+        raise RuntimeError(f"DEFAULT_GROUPS: kind must be one of {sorted(GROUP_KINDS)}: {bad}")
 
 
 _self_check()

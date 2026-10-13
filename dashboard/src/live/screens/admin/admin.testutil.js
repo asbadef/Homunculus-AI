@@ -14,7 +14,7 @@
 // `scopeFromApi` exactly as an answer does. A builder that took the ADAPTED shape would let a tab
 // pass its tests against a payload the server cannot send.
 import { vi } from "vitest";
-import { PERMISSION_KEYS } from "./catalogue.js";
+import { DEFAULT_GROUPS, PERMISSION_KEYS } from "./catalogue.js";
 import { groupFromApi, userFromApi } from "./rules.js";
 import { READS } from "./useAdminData.js";
 
@@ -37,6 +37,11 @@ export function group(slug = "nurse", over = {}) {
     is_system: false,
     permissions: ["board.view", "alerts.ack"],
     member_count: 0,
+    // `GroupOut.kind`, as the API now reports it: the spec's own kind for one of the eleven
+    // default groups, and **null** for a group the hospital created — which is an answer, not a
+    // gap. Derived here rather than defaulted, so a fixture cannot describe a group the server
+    // would describe differently.
+    kind: DEFAULT_GROUPS.find((g) => g.slug === slug)?.kind ?? null,
     ...over,
   };
 }

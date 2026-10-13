@@ -1092,7 +1092,12 @@ async def test_an_administrator_unlocks_a_throttled_ad_account(client, world, db
     await _throttle(c, "ayilmaz")
     asked = _authenticates(world["directory"])
     res = await _unlock(c, ayse_id, admin)
-    assert (res.status_code, res.json()) == (200, {"ok": True})
+    # `granted` and `allowed_after` are in the ANSWER, not only in the audit row. Without them a
+    # screen can say no more than "the request was sent": an unlock with nothing to clear grants
+    # nothing and answers 200 just the same, and the administration screen said "the throttle was
+    # lifted" for both. A screen must not claim more than the server told it.
+    assert (res.status_code, res.json()) == (
+        200, {"ok": True, "granted": True, "allowed_before": 3, "allowed_after": 6})
     assert (await c.post("/auth/login", json={"login": "ayilmaz", "password": AD_PASSWORD})
             ).status_code == 200
     assert _authenticates(world["directory"]) == asked + 1
@@ -1103,6 +1108,26 @@ async def test_an_administrator_unlocks_a_throttled_ad_account(client, world, db
                              "granted": True, "reason": REASON}
     assert event.tenant == TENANT_SLUG
     assert WRONG not in str(event.payload) and AD_PASSWORD not in str(event.payload)
+
+
+async def test_an_unlock_with_nothing_to_clear_says_it_granted_nothing(client, world, db_session):
+    """The third outcome, and the one no screen could see before.
+
+    An account with no failed bind in the current chain — or a LOCAL account, which has no bind
+    chain at all — is not a refusal: the unlock is allowed, it is audited, and it grants nothing,
+    because there was nothing to let through. It answers 200 exactly as a real unlock does, so
+    `granted` is the only thing that tells the two apart, and the administration screen says which
+    of them happened instead of claiming the throttle was lifted.
+    """
+    c, app = client
+    admin = await bearer(db_session, world["admin"])
+    res = await _unlock(c, world["account"].id, admin)      # never throttled
+    assert res.status_code == 200, res.text
+    assert res.json()["granted"] is False
+    assert res.json()["allowed_before"] == res.json()["allowed_after"] == 3   # nothing let through
+    [event] = audit_events(app, "admin", "user.sign_in_unlocked")
+    assert event.payload["granted"] is False
+    assert event.payload["reason"] == REASON                # audited whatever it granted
 
 
 async def test_a_second_unlock_in_the_same_chain_is_refused(client, world, db_session):

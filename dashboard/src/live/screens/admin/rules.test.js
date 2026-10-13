@@ -78,6 +78,16 @@ describe("groupFromApi", () => {
     expect(group({ member_count: 0 }).memberCount).toBe(0);           // a real zero stays a zero
     expect(groupFromApi(null).memberCount).toBeNull();
   });
+
+  it("takes the API's own `kind`, and falls back to the mirror only when there is none", () => {
+    // `GroupOut.kind` carries it now. A server that answers `null` has said "neither" about a
+    // group the hospital made; a server that does not have the field at all says nothing, and
+    // only then is the mirror asked.
+    expect(group({ slug: "nurse", kind: "extra" }).kind).toBe("extra");       // the API wins
+    expect(group({ slug: "gece_ekibi", kind: null }).kind).toBe("other");     // "neither"
+    expect(groupFromApi({ slug: "charge_nurse" }).kind).toBe("extra");        // the mirror
+    expect(groupFromApi({ slug: "gece_ekibi" }).kind).toBe("other");
+  });
 });
 
 describe("scopeFromApi", () => {

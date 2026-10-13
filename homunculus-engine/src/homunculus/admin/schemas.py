@@ -73,6 +73,13 @@ class GroupOut(BaseModel):
     is_system: bool
     permissions: list[str]
     member_count: int
+    # "role" | "extra" for one of the eleven DEFAULT groups (`auth/permissions.GroupSpec.kind`),
+    # None for a group this hospital created. What the group IS to a person, as opposed to what it
+    # grants: the administration screen's user form offers one role plus any number of extra
+    # duties (roadmap D3), and the membership table is one flat list that says nothing about it.
+    # None is an answer, not a gap: a hospital's own group is neither, and a screen must not guess
+    # from the slug or the permission set.
+    kind: str | None = None
 
 
 class GroupCreate(BaseModel):

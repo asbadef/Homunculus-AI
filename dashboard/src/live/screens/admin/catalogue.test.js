@@ -70,6 +70,21 @@ describe("role, extra duty, or neither", () => {
     expect([...EXTRA_DUTY_SLUGS, ...ROLE_SLUGS].sort()).toEqual(DEFAULT_GROUPS.map((g) => g.slug).sort());
   });
 
+  it("agrees with the backend's own `kind`, which is now where the classification lives", () => {
+    // The mirror used to be the ONLY place this was written down. `GroupSpec.kind` carries it now
+    // and `GroupOut.kind` reports it, so the mirror is a fallback — for a group the API describes
+    // without a kind, and for a desk that cannot read `/admin/groups` at all. A fallback that
+    // disagreed with the thing it falls back from would be worse than none, so this reads the
+    // backend and fails when the two drift.
+    const kinds = new Map(
+      [...PY.matchAll(/\{"slug": "(\w+)", "kind": "(\w+)"/g)].map((m) => [m[1], m[2]]),
+    );
+    expect(kinds.size, "GroupSpec.kind in auth/permissions.py").toBe(DEFAULT_GROUPS.length);
+    for (const group of DEFAULT_GROUPS) {
+      expect(kinds.get(group.slug), `${group.slug} kind`).toBe(group.kind);
+    }
+  });
+
   it("a group the hospital made itself is neither", () => {
     expect(groupKind("nurse")).toBe("role");
     expect(groupKind("charge_nurse")).toBe("extra");

@@ -21,6 +21,7 @@ from homunculus.auth.dependencies import caller_tenant_id, get_current_user, req
 from homunculus.auth.models import TenantMembership, User
 from homunculus.db import get_db
 from homunculus.scope import service
+from homunculus.scope.resolver import UNKNOWN, break_glass_in_tenant, enforce_unassigned_default
 from homunculus.scope.rules import SCOPE_UNRESTRICTED_ROLES, build_scope
 from homunculus.scope.schemas import ScopeAssignment, ScopeGrantOut, ScopeView
 
@@ -60,20 +61,49 @@ async def _slug_of_member(db: AsyncSession, tenant_id: uuid.UUID, user_id: uuid.
 
 
 async def _view(db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID) -> ScopeView:
+    """What this user's scope resolves to — decided the way the BOARD decides it.
+
+    Both of the arguments below used to be missing, and that made this route answer a different
+    question from the one every caller thinks it answers. The board's own resolver
+    (`scope/resolver.make_scope_resolver`) passes `break_glass_patient_ids` and
+    `enforce_unassigned`; this route passed neither, so:
+
+      * with `SCOPE_ENFORCE_UNASSIGNED` on, a user with no assignment resolved here as
+        `unrestricted: true, reason: "unassigned"` — "you see everything" — while the board showed
+        that user nothing. A screen reading this route would have told an administrator the
+        opposite of what the clinician was looking at, on exactly the configuration a hospital
+        turns on when it starts restricting access;
+      * a clinician holding an open break-glass session had its patients omitted here, so the one
+        thing that is reason-bound and audited was invisible to the route that exists to explain
+        why a board is the size it is.
+
+    And a role of None — no active account or no active membership here; a DEACTIVATED account,
+    whose membership `/scope/{id}` still finds — is UNKNOWN, as the resolver decides it: sees
+    nothing. Handed to `build_scope` it read as "no assignment" and, with enforcement off, as
+    unrestricted: the administrator was told a deactivated nurse saw every patient.
+
+    Nothing else about the route changes: the same four reads, the same `ScopeView`. Both
+    arguments are read from the same places the board reads them, so there is one answer to
+    "what may this user see" and not two.
+    """
     grants = await service.read_grants(db, user_id, tenant_id)
     role = await service.read_role(db, user_id, tenant_id)
     own = await service.read_own_patient_ids(db, user_id, tenant_id)
-    scope = build_scope(
+    emergency = await break_glass_in_tenant(db, user_id, tenant_id)
+    scope = UNKNOWN if role is None else build_scope(
         role,
         unit_ids=[g.unit_id for g in grants if g.unit_id],
         bed_ids=[g.bed_id for g in grants if g.bed_id],
         own_patient_ids=own,
+        break_glass_patient_ids=emergency,
+        enforce_unassigned=enforce_unassigned_default(),
     )
     return ScopeView(
         user_id=user_id, role=role,
         unrestricted=scope.unrestricted, reason=scope.reason,
         unit_ids=sorted(scope.unit_ids), bed_ids=sorted(scope.bed_ids),
         grants=[ScopeGrantOut.model_validate(g) for g in grants],
+        own_patients=len(scope.own_patient_ids),
     )
 
 

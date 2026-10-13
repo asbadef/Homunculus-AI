@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admission.models import Admission, CareTeamMember
-from homunculus.auth.models import TenantMembership, User
+from homunculus.auth.models import Group, TenantMembership, User, UserGroup
 from homunculus.scope.models import StaffScope
 
 
@@ -165,12 +165,24 @@ async def replace_grants(
 
 
 async def count_unassigned(db: AsyncSession, tenant_id: uuid.UUID) -> int:
-    """How many active members of this tenant hold no scope at all.
+    """How many active members of this tenant hold no scope at all — AND would need one.
 
     The number the administrator's screen needs in order to know there is work here. Without it,
     "everyone sees everything because nobody has been assigned" is indistinguishable from
     "everyone sees everything because that is the policy".
+
+    A member whose scope is unrestricted BY ROLE is not counted: a hospital administrator (the
+    tenant's system group) or a platform operator needs no grant and `build_scope` gives them the
+    whole board before it looks at grants (`SCOPE_UNRESTRICTED_ROLES`). Counting them made this
+    number read "1" forever on a pilot with one administrator — a permanent "there is work here"
+    about a person for whom there is none, on the one figure that exists to say whether the scope
+    table has ever been filled in.
     """
+    unrestricted = (
+        select(UserGroup.user_id)
+        .join(Group, UserGroup.group_id == Group.id)
+        .where(Group.tenant_id == tenant_id, Group.is_system == True)  # noqa: E712
+    )
     members = await db.execute(
         select(TenantMembership.user_id)
         .select_from(TenantMembership)
@@ -179,6 +191,8 @@ async def count_unassigned(db: AsyncSession, tenant_id: uuid.UUID) -> int:
             TenantMembership.tenant_id == tenant_id,
             TenantMembership.is_active == True,  # noqa: E712
             User.is_active == True,  # noqa: E712
+            User.is_platform_support == False,  # noqa: E712
+            TenantMembership.user_id.not_in(unrestricted),
         )
     )
     member_ids = {row[0] for row in members.all()}

@@ -50,6 +50,8 @@ describe("the administration fixtures are the API's own shapes", () => {
   it("the builders are positional and refuse the other shape", () => {
     expect(() => group({ slug: "nurse" })).toThrow(TypeError);
     expect(() => user({ id: "u-1" })).toThrow(TypeError);
+    expect(group("gece_ekibi").kind).toBeNull();                 // a hospital's own group
+    expect(group("charge_nurse").kind).toBe("extra");
   });
 
   it("an external id is a UUID, as POST /admin/ldap/import requires", () => {

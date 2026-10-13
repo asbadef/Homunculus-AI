@@ -70,10 +70,17 @@ const DRAWN = {
   edit: ["full_name", "email"],
 };
 
-/** The groups a desk may choose from, split the way the form offers them (catalogue.groupKind):
- *  one role, any number of extra duties, any number of the hospital's own groups. */
+/** What a group is to the form: the ADAPTED group's own `kind` — the API's answer
+ *  (`GroupOut.kind`, read by `rules.groupFromApi`) — and the mirror (`catalogue.groupKind`) only
+ *  for a group described without any kind, as `groupFromApi` itself falls back. Classifying by the
+ *  mirror here while the list read the API made the form and the list disagree about a group the
+ *  server describes and the mirror does not know (a hospital's own group the API calls a duty). */
+export const kindOf = (group) => (group?.kind === undefined ? groupKind(group?.slug) : (group.kind ?? "other"));
+
+/** The groups a desk may choose from, split the way the form offers them (`kindOf`): one role,
+ *  any number of extra duties, any number of the hospital's own groups. */
 export function splitGroups(groups) {
-  const of = (kind) => groups.filter((g) => groupKind(g.slug) === kind);
+  const of = (kind) => groups.filter((g) => kindOf(g) === kind);
   return { roles: of("role"), extras: of("extra"), others: of("other") };
 }
 

@@ -27,7 +27,7 @@ from homunculus.auth.jwt import create_access_token, decode_token
 from homunculus.auth.models import (
     AUTH_LDAP, SOURCE_LDAP, Group, GroupPermission, TenantMembership, User, UserGroup,
 )
-from homunculus.auth.permissions import ALL_PERMISSIONS
+from homunculus.auth.permissions import ALL_PERMISSIONS, DEFAULT_GROUPS, GROUP_KINDS
 from homunculus.auth.service import build_context, hash_password, issue_tokens
 from homunculus.db import get_db
 from homunculus.tenant.models import Tenant
@@ -119,6 +119,37 @@ async def test_groups_are_listed_with_member_counts(client, world, db_session):
     assert groups["hospital_admin"]["is_system"] is True
     assert "yabanci" not in str(groups)              # the other tenant's world is invisible
     assert {g["id"] for g in groups.values()} == {str(g.id) for g in world["groups"].values()}
+
+
+async def test_a_group_says_what_kind_it_is_and_a_hospitals_own_says_nothing(client, world,
+                                                                            db_session):
+    """`kind` is what a group IS to a person, not what it grants (`GroupSpec.kind`).
+
+    The administration screen's user form offers ONE role plus any number of extra duties (roadmap
+    D3), and the membership table is a single flat list that says nothing about which a group is —
+    so the dashboard classified these eleven slugs itself, two files away from the groups it was
+    classifying. It is reported here now. A group a HOSPITAL creates is neither and `kind` is
+    null: not a gap, an answer, because guessing it from a slug or a permission set is how a screen
+    tells an administrator something nobody decided.
+    """
+    c, _ = client
+    admin, _ = await _headers(db_session, world["admin"])
+    groups = {g["slug"]: g for g in (await c.get("/admin/groups", headers=admin)).json()}
+    assert groups["charge_nurse"]["kind"] == "extra"      # a nurse with more, for a while
+    assert groups["rapid_response"]["kind"] == "extra"    # a duty that ends with the shift
+    assert groups["nurse"]["kind"] == "role"
+    assert groups["hospital_admin"]["kind"] == "role"
+    # Every default group is one or the other, and only those two kinds exist.
+    assert {g["kind"] for g in groups.values()} <= GROUP_KINDS
+    assert all(groups[spec["slug"]]["kind"] == spec["kind"] for spec in DEFAULT_GROUPS)
+
+    made_here = await c.post("/admin/groups", headers=admin, json={
+        "slug": "gece_ekibi", "name": "Gece ekibi", "description": "",
+        "mfa_required": False, "permissions": ["board.view"]})
+    assert made_here.status_code == 201, made_here.text
+    assert made_here.json()["kind"] is None
+    listed = {g["slug"]: g for g in (await c.get("/admin/groups", headers=admin)).json()}
+    assert listed["gece_ekibi"]["kind"] is None
 
 
 async def test_the_system_group_reports_the_whole_catalogue_whatever_its_rows(client, world,

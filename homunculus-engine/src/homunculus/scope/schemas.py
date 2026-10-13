@@ -58,3 +58,9 @@ class ScopeView(BaseModel):
     unit_ids: list[str]
     bed_ids: list[str]
     grants: list[ScopeGrantOut]
+    # How many patients this scope reaches by NAME rather than by unit or bed — the care-team
+    # patients plus any open break-glass session's. A COUNT, not the ids: this route carries no
+    # patient identifier (PHI rule in the router's docstring), and the count is what lets a reader
+    # of `/scope/me` — and the test that holds it to the board — see that a break-glass grant is
+    # in the scope at all. The same figure `Scope.as_dict()` publishes on the board's own `scope`.
+    own_patients: int = 0

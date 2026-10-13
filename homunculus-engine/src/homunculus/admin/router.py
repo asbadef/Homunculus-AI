@@ -45,7 +45,7 @@ from homunculus.auth.dependencies import (
     Principal, caller_tenant_id, get_principal, require_permission,
 )
 from homunculus.auth.models import Group, User
-from homunculus.auth.permissions import ALL_PERMISSIONS, PERMISSIONS
+from homunculus.auth.permissions import ALL_PERMISSIONS, DEFAULT_GROUPS, PERMISSIONS
 from homunculus.auth.service import password_change_due
 from homunculus.db import get_db
 
@@ -64,6 +64,11 @@ def _http(exc: AdminError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=exc.detail, headers=headers)
 
 
+#: slug -> "role" | "extra", for the eleven groups this product defines. A hospital's own group is
+#: in neither, and `_group_out` sends `kind: null` for it.
+_DEFAULT_KIND: dict[str, str] = {g["slug"]: g["kind"] for g in DEFAULT_GROUPS}
+
+
 def _group_out(group: Group, count: int) -> GroupOut:
     return GroupOut(id=group.id, slug=group.slug, name=group.name,
                     description=group.description, mfa_required=group.mfa_required,
@@ -71,7 +76,12 @@ def _group_out(group: Group, count: int) -> GroupOut:
                     # A system group's rights are the whole catalogue by rule (spec §3); report
                     # that, not the rows seeded when the tenant was created.
                     permissions=sorted(ALL_PERMISSIONS) if group.is_system else group.permission_keys,
-                    member_count=count)
+                    member_count=count,
+                    # Read from the spec by slug rather than stored on the row: it is a property of
+                    # the group this product DEFINES, not of the tenant's copy of it, so there is
+                    # nothing for a migration to backfill and nothing for a tenant to diverge on.
+                    # None for a group the hospital created — see GroupOut.kind.
+                    kind=_DEFAULT_KIND.get(group.slug))
 
 
 def _user_out(user: User, tenant_id: uuid.UUID) -> UserOut:
@@ -296,4 +306,14 @@ async def unlock_sign_in(user_id: uuid.UUID, body: SignInUnlockIn, request: Requ
            before={"failed": unlocked.failed, "allowed": unlocked.allowed_before},
            after={"failed": unlocked.failed, "allowed": unlocked.allowed_after},
            extra={"granted": unlocked.granted}, reason=body.reason)
-    return {"ok": True}
+    # `granted` and `allowed_after` are in the ANSWER as well as in the audit row. They used not
+    # to be, and the administration screen could then only say "the throttle was lifted once" for
+    # a call that may have lifted nothing — an account with no failed bind in the current chain,
+    # or a local account, grants nothing and the screen stated otherwise. The 409 case
+    # (UNLOCK_COOLDOWN, the chain's one unlock already used) was always distinguishable; these
+    # two were not. A screen must not claim more than the server told it — which is also why
+    # `allowed_before` is here: the number of attempts an unlock let through is their difference,
+    # and a screen that printed "three more" from its own knowledge of the chain would be stating a
+    # figure it cannot verify, in the sentence that exists to stop exactly that.
+    return {"ok": True, "granted": unlocked.granted,
+            "allowed_before": unlocked.allowed_before, "allowed_after": unlocked.allowed_after}

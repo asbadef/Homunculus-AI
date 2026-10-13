@@ -22,6 +22,7 @@ import { AdminScreen, onlyTabs, resetTabs } from "./AdminScreen.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import ADMIN_STRINGS from "../../i18n/strings/admin.js";
 import { UsersTab, mfaState } from "./UsersTab.jsx";
+import { splitGroups } from "./UserForm.jsx";
 
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 const alerts = () => screen.getAllByRole("alert").map((a) => a.textContent).join(" ");
@@ -82,7 +83,10 @@ const copy = (value) => JSON.parse(JSON.stringify(value));
 function rememberingServer(api) {
   const state = { users: copy(USERS) };
   const find = (id) => state.users.find((u) => u.id === id);
-  const manual = (u) => u.groups.filter((g) => g.source === "manual").map((g) => g.id).sort();
+  // Compared as SETS, as `admin/router.set_user_groups` compares them (`set(expected) !=
+  // set(manual)`): order and repetition say nothing about which memberships the screen read.
+  const asSet = (ids) => [...new Set(ids)].sort().join();
+  const manual = (u) => asSet(u.groups.filter((g) => g.source === "manual").map((g) => g.id));
   api.adminUsers.mockImplementation(async () => copy(state.users));
   api.adminUpdateUser.mockImplementation(async (id, patch) => {
     const row = find(id);
@@ -93,7 +97,7 @@ function rememberingServer(api) {
   });
   api.adminSetUserGroups.mockImplementation(async (id, ids, expected) => {
     const row = find(id);
-    if (Array.isArray(expected) && [...expected].sort().join() !== manual(row).join()) {
+    if (Array.isArray(expected) && asSet(expected) !== manual(row)) {
       throw refusal(409, "Kayıt aynı anda değiştirildi; lütfen tekrar deneyin");
     }
     const byId = new Map(GROUPS.map((g) => [g.id, g]));
@@ -377,6 +381,27 @@ describe("the form", () => {
     expect(screen.getByText(/AD-dən gələn qruplar burada dəyişdirilə bilməz: Hemşire/)).toBeInTheDocument();
   });
 
+  it("a hospital-made group the API calls an extra duty is an extra duty in the row AND in the form", async () => {
+    // `GroupOut.kind` is the API's answer (Task 14c) and the role filter reads it through
+    // `groupFromApi`. The form split its groups by the MIRROR (`groupKind(slug)`), which knows only
+    // the eleven default slugs, and so did the row's role cell: a group the server describes as a
+    // duty was a duty to the filter and an "other group" to the form and the row. One answer, read
+    // everywhere; the mirror only for a group described without any kind.
+    const duty = group("gece_ekibi", { name: "Gece ekibi", permissions: ["board.view"], kind: "extra" });
+    const nurse = user("u-nurse", { groups: [member(NURSE_GROUP), member(duty)] });
+    await open({ users: [nurse], groups: [SYSTEM_GROUP, NURSE_GROUP, duty] });
+    const row = screen.getByRole("rowheader", { name: /hs\.aygun/ }).closest("tr");
+    expect(within(row).getByText("Əlavə vəzifə: Gece ekibi")).toBeInTheDocument();
+    expect(within(row).queryByText(/Digər qruplar/)).toBeNull();
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: /Redaktə et: hs\.aygun/ })[0]); });
+    const form = within(screen.getByRole("dialog"));
+    expect(within(form.getByRole("group", { name: "Əlavə vəzifə" })).getByLabelText("Gece ekibi")).toBeChecked();
+    expect(form.queryByRole("group", { name: "Digər qruplar" })).toBeNull();
+    // The mirror answers only for a group the API described with no kind at all.
+    expect(splitGroups([{ id: "x", slug: "charge_nurse" }]).extras.map((g) => g.id)).toEqual(["x"]);
+    expect(splitGroups([{ id: "y", slug: "gece_ekibi", kind: "other" }]).others.map((g) => g.id)).toEqual(["y"]);
+  });
+
   it("a 422 on the username lands on the username field, in the reader's language, with the focus", async () => {
     const RULE = "Kullanıcı adı 2-128 karakter olmalı; yalnızca a-z, 0-9 ve . _ @ - kullanılabilir. Türkçe/Azerbaycanca harfleri Latin karşılığıyla yazın: ş→s, ç→c, ğ→g, ö→o, ü→u, ı→i, ə→e.";
     const { api } = await openForm();
@@ -577,11 +602,50 @@ describe("the three confirmations and the unlock", () => {
     expectConfirmed(/Ayşe Sentetik · Hesab passivləşdirildi\./);
   });
 
+  it("the unlock says what the server actually did, with the server's own number", async () => {
+    // POST /unlock-sign-in answers 200 whether it let more binds through or found nothing to
+    // clear; `granted` tells the two apart and `allowed_after - allowed_before` is how many it let
+    // through. The screen used to claim "three more" for both — the one place in this surface it
+    // said more than it was told.
+    const { api } = await open();
+    api.adminUnlockSignIn.mockResolvedValue({ ok: true, granted: true, allowed_before: 3, allowed_after: 6 });
+    await press(/Girişi aç: dr\.kamran/);
+    fireEvent.change(screen.getByLabelText(/Səbəb/), { target: { value: "telefonla doğrulandı" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Girişi aç" })); await settle(); });
+    expectConfirmed(/Kamran Sintetik · Kataloq girişi bir dəfə açıldı: 3 cəhd daha\./);
+
+    cleanup();
+    const second = await open();
+    second.api.adminUnlockSignIn.mockResolvedValue({ ok: true, granted: false, allowed_before: 3, allowed_after: 3 });
+    await press(/Girişi aç: dr\.kamran/);
+    fireEvent.change(screen.getByLabelText(/Səbəb/), { target: { value: "telefonla doğrulandı" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Girişi aç" })); await settle(); });
+    expectConfirmed(/açılacaq hədd yox idi; heç nə dəyişmədi/);
+
+    cleanup();
+    // A server that reports `granted` without the numbers gets the cautious sentence: a count the
+    // screen cannot verify is the over-claim this sentence exists to remove.
+    const third = await open();
+    third.api.adminUnlockSignIn.mockResolvedValue({ ok: true, granted: true });
+    await press(/Girişi aç: dr\.kamran/);
+    fireEvent.change(screen.getByLabelText(/Səbəb/), { target: { value: "telefonla doğrulandı" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Girişi aç" })); await settle(); });
+    expectConfirmed(/açılacaq hədd yox idi; heç nə dəyişmədi/);
+  });
+
   it("the unlock asks for a reason, refuses an empty one before sending, and says it is audited", async () => {
     const { api } = await open();
-    api.adminUnlockSignIn.mockResolvedValue({ ok: true });
+    api.adminUnlockSignIn.mockResolvedValue({ ok: true, granted: true, allowed_before: 3, allowed_after: 6 });
     await press(/Girişi aç: dr\.kamran/);
     expect(screen.getByText(/Səbəb audit jurnalına yazılır/)).toBeInTheDocument();
+    // BEFORE the write the dialog promises no number and no lifted limit: how many more attempts an
+    // unlock lets through is the server's answer (`allowed_after - allowed_before`), and with no
+    // failed sign-in to clear it lets through none. "(three more attempts)" was that over-claim,
+    // made before the server had said anything — in all four languages.
+    expect(screen.getByText(/neçə cəhd daha verildiyini server deyir/i)).toBeInTheDocument();
+    for (const lang of ["tr", "az", "ru", "en"]) {
+      expect(ADMIN_STRINGS[lang].confirmUnlock, `${lang}.confirmUnlock`).not.toMatch(/üç (cəhd|deneme)|three more|ещё три|\d/i);
+    }
     expect(screen.getByLabelText(/Səbəb/)).toHaveAttribute("maxlength", String(FIELD_MAX.reason));
     fireEvent.change(screen.getByLabelText(/Səbəb/), { target: { value: "   " } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Girişi aç" })); await settle(); });

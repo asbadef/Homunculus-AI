@@ -50,7 +50,7 @@ import { norm } from "../beds/order.js";
 import { FIELD_MAX, lengthOf } from "./limits.js";
 import { canAssignScope, canManageUser, scopeFromApi, scopeKind } from "./rules.js";
 import { doneFor, mayHaveLanded, refusedFor } from "./refusal.js";
-import { UserForm } from "./UserForm.jsx";
+import { UserForm, kindOf } from "./UserForm.jsx";
 import { ScopeEditor } from "./ScopeEditor.jsx";
 
 /** How many rows are rendered before "show more". Not a page of data — the whole list is already
@@ -60,12 +60,17 @@ export const PAGE = 50;
 export const MANY = 200;
 
 /** The roles this account's groups give it — EVERY one: an account can hold two, and a cell that
- *  showed the first would hide the second — and everything else it holds, split as the form does. */
-export function membershipOf(user) {
+ *  showed the first would hide the second — and everything else it holds, split as the form does.
+ *  A membership link (`UserGroupOut`) carries no kind, so a group in the list is classified by the
+ *  LISTED group's kind (`GroupOut.kind`, the API's answer, which the form and the role filter read
+ *  too); the link's own mirror-made kind only for a group the list does not hold. */
+export function membershipOf(user, groups = []) {
+  const listed = new Map(groups.map((g) => [g.id, g]));
+  const kind = (link) => kindOf(listed.get(link.id) ?? link);
   return {
-    roles: user.groups.filter((g) => g.kind === "role"),
-    extras: user.groups.filter((g) => g.kind === "extra"),
-    others: user.groups.filter((g) => g.kind === "other"),
+    roles: user.groups.filter((g) => kind(g) === "role"),
+    extras: user.groups.filter((g) => kind(g) === "extra"),
+    others: user.groups.filter((g) => kind(g) === "other"),
   };
 }
 
@@ -161,10 +166,15 @@ export function UsersTab({ admin }) {
     setBusyId(user.id);
     const ours = sessionNow();
     try {
-      await store.track(run);
+      const answer = await store.track(run);
       // Its session is over: no reload, and no confirmation into another session's screen.
       if (!ours()) return false;
-      toast(doneFor(t, user.fullName || user.username, doneText));
+      // `doneText` may be a function of the server's ANSWER rather than a fixed sentence. The
+      // unlock is the one that needs it: `POST /unlock-sign-in` answers 200 whether it let three
+      // more binds through or found nothing to clear, and the two are a different thing to tell
+      // an administrator. A fixed sentence claimed the first for both.
+      toast(doneFor(t, user.fullName || user.username,
+                    typeof doneText === "function" ? doneText(answer) : doneText));
       await admin.reload();
       return true;
     } catch (err) {
@@ -395,7 +405,7 @@ export function UsersTab({ admin }) {
               const verdict = canManageUser(me.perms, user, groups, me.id, catalogue);
               const isSelf = user.id === me.id;
               const refused = refusalKey(verdict, isSelf);
-              const { roles: ownRoles, extras, others } = membershipOf(user);
+              const { roles: ownRoles, extras, others } = membershipOf(user, groups);
               const mfa = mfaState(user, groups);
               // Busy while ANY request is out, not only this row's: one at a time, said as that
               // (the region below names the account in flight), never a live-looking no-op.
@@ -547,8 +557,13 @@ export function UsersTab({ admin }) {
           kind={open.kind}
           busy={busyId === open.user.id}
           onConfirm={async (reason) => {
-            const done = await write(open.user, CONFIRMATIONS[open.kind].run(api, open.user, reason),
-              t(CONFIRMATIONS[open.kind].done));
+            const spec = CONFIRMATIONS[open.kind];
+            // `done` is a key, or a function of the server's answer — `{key, vars}` — when the
+            // server can answer more than one thing (the unlock).
+            const said = typeof spec.done === "function"
+              ? (answer) => { const { key, vars } = spec.done(answer); return t(key, vars); }
+              : t(spec.done);
+            const done = await write(open.user, spec.run(api, open.user, reason), said);
             if (done) setOpen(null);
           }}
           onClose={() => setOpen(null)}
@@ -580,7 +595,25 @@ const CONFIRMATIONS = {
     run: (api, user) => () => api.adminUpdateUser(user.id, { is_active: true }),
   },
   unlock: {
-    title: "admin.unlockSignIn", body: "admin.confirmUnlock", done: "admin.unlocked",
+    title: "admin.unlockSignIn", body: "admin.confirmUnlock",
+    // The only confirmation whose sentence depends on the ANSWER. `POST /unlock-sign-in` answers
+    // 200 both when it lets three more binds through and when it finds nothing to clear — an
+    // account with no failed bind in the current chain, or a local account — and `granted` is
+    // what tells them apart. A fixed "the throttle was lifted" claimed the first for both, which
+    // is the one place in this surface a screen said more than the server had told it. And the
+    // NUMBER of attempts let through is the server's too — `allowed_after - allowed_before` —
+    // never a "three" the screen knows from reading the chain's source: a figure the screen cannot
+    // verify in the sentence that exists to stop over-claiming would be the same fault again.
+    // `granted` missing, or the two numbers missing, reads as the cautious sentence. (The dialog
+    // before the write, `admin.confirmUnlock`, promises no number either, for the same reason.)
+    done: (answer) => {
+      const before = answer?.allowed_before;
+      const after = answer?.allowed_after;
+      if (answer?.granted === true && Number.isFinite(before) && Number.isFinite(after) && after > before) {
+        return { key: "admin.unlocked", vars: { count: after - before } };
+      }
+      return { key: "admin.unlockedNothing", vars: {} };
+    },
     reason: true,
     run: (api, user, reason) => () => api.adminUnlockSignIn(user.id, reason),
   },

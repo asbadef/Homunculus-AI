@@ -3,9 +3,9 @@
 //
 // Taken over from the old workspace's `src/liveAdmin.js`, which was written and tested against
 // exactly this API; roadmap D1 keeps `src/live/` off that workspace, so it is copied rather than
-// imported, with its reasoning, and the `kind` of a group added (catalogue.js: a role, an extra
-// duty, or one the hospital made itself — the distinction the user form needs and the API does
-// not send).
+// imported, with its reasoning, and the `kind` of a group added (a role, an extra duty, or one the
+// hospital made itself — the distinction the user form needs). The API reports it as
+// `GroupOut.kind` (Task 14c); catalogue.js's mirror is the fallback for a server without it.
 //
 // ADAPTERS fail closed, with one deliberate exception: a flag the API said nothing about reads as
 // the SAFER value, except `is_active` — an account the API does not describe is shown as it is,
@@ -54,7 +54,13 @@ export function groupFromApi(g) {
     description: row.description || "",
     mfaRequired: row.mfa_required === true,
     isSystem: row.is_system === true,
-    kind: groupKind(row.slug),
+    // The API's own answer first (`GroupOut.kind`: "role" | "extra" for one of the eleven groups
+    // this product defines, null for a group the hospital created), and the mirror only when it
+    // said nothing at all. `null` is an ANSWER from a server that has the field — "neither" — so
+    // it must not fall through to the mirror, which would answer "other" for the same thing and
+    // be right by luck; `undefined` is a server that does not have the field, which is the case
+    // the mirror exists for.
+    kind: row.kind === undefined ? groupKind(row.slug) : (row.kind ?? "other"),
     permissions: Array.isArray(row.permissions) ? [...row.permissions] : [],
     // A count the API did not send is NOT ZERO. `Number(x) || 0` turned null, undefined and a
     // string alike into 0 — which a screen then printed as "0 people", a statement about the

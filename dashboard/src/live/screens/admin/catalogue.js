@@ -32,10 +32,11 @@ export const PERMISSION_KEYS = freeze([
 ]);
 
 /** The backend's DEFAULT_GROUPS, in its order and with its slugs. The screen needs the ORDER (the
- *  roles table reads top to bottom as the hospital's own hierarchy) and `kind`, which the API does
- *  not send: the user form offers one ROLE and any number of EXTRA DUTIES (roadmap D3), and
- *  nothing in `GroupOut` says which a group is. A group the hospital created itself is neither and
- *  appears under "other groups". */
+ *  roles table reads top to bottom as the hospital's own hierarchy) and `kind`: the user form
+ *  offers one ROLE and any number of EXTRA DUTIES (roadmap D3). The API reports `kind` itself now
+ *  (`GroupSpec.kind` / `GroupOut.kind`, Task 14c) and the screens read that first; this copy is
+ *  the FALLBACK for a group described without one, and `catalogue.test.js` holds it to the
+ *  backend's. A group the hospital created itself is neither and appears under "other groups". */
 export const DEFAULT_GROUPS = Object.freeze([
   { slug: "hospital_admin", kind: "role", mfaRequired: true, isSystem: true },
   { slug: "attending", kind: "role", mfaRequired: true, isSystem: false },
@@ -53,8 +54,7 @@ export const DEFAULT_GROUPS = Object.freeze([
 /** The two groups the user form offers as an EXTRA DUTY rather than as a role (roadmap D3:
  *  "Rol + Ek görev + Birimler"; the prototype's `H.EXTRA`). A duty adds rights to the person's
  *  role — a charge nurse is a nurse with more, and a rapid-response duty ends with the shift. The
- *  backend has one flat membership list and says nothing about this distinction, so it lives here
- *  and the screen is explicit that it is OUR vocabulary, not the server's. */
+ *  membership list is flat; the distinction is the backend's `GroupSpec.kind`, mirrored here. */
 export const EXTRA_DUTY_SLUGS = freeze(DEFAULT_GROUPS.filter((g) => g.kind === "extra").map((g) => g.slug));
 export const ROLE_SLUGS = freeze(DEFAULT_GROUPS.filter((g) => g.kind === "role").map((g) => g.slug));
 
