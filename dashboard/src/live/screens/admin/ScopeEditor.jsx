@@ -29,7 +29,8 @@
 // mismatch, 409 `concurrentChange`, writing nothing (the third whole-set write's compare-and-swap,
 // as the roles and the account form have theirs). Saving again from here would be refused again —
 // the expectation is still the old read — so a 409 CLOSES the editor, as the account form closes:
-// the toast says the account was changed at another desk meanwhile, the row's scope and the
+// the toast says the account changed since this window read it — at another desk, or by an
+// earlier save of hers that got no answer (both are possible, so it names both) — the row's scope and the
 // frame's counter are read again, and reopened, the editor reads the scope as it is.
 //
 // ONE GRANT NAMES A UNIT OR A BED, NEVER BOTH (`ScopeGrantIn._exactly_one`, 422): a grant naming

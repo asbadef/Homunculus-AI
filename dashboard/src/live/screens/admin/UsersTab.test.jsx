@@ -939,7 +939,7 @@ describe("the review round", () => {
     expect(nurse().groups.map((g) => g.id).sort()).toEqual([NURSE_GROUP.id, WARD_GROUP.id].sort());
     // A 409 here is a dead end from THIS form — its `expected` is the list it read, so "try again"
     // would be refused for ever (R2-3). It says why, and closes; the list was read again.
-    expect(alerts()).toContain("Ayşe Sentetik: Bu hesab bu arada başqa masada dəyişdirilib; indiki vəziyyətini görmək üçün hesabı yenidən açın.");
+    expect(alerts()).toContain("Ayşe Sentetik: Bu hesab bu pəncərə oxuyandan sonra dəyişib — başqa masada və ya cavab almayan əvvəlki yadda saxlamanızla; indiki vəziyyətini görmək üçün hesabı yenidən açın.");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(within(rowOf("hs\\.aygun")).getByText(/Gece ekibi/)).toBeInTheDocument();
     // Reopened, the form reads the account as it is now, and the same change lands.
@@ -1396,7 +1396,7 @@ describe("the final review: a scope save re-reads what it changed", () => {
   // `PUT /scope/{id}` is the third whole-set write, and it had no compare-and-swap: a stale editor
   // silently revoked a grant another administrator had just added. It now carries the grants the
   // editor READ (`expected_grants`), and the server refuses a save built on a scope that has moved.
-  const CHANGED = "Bu hesab bu arada başqa masada dəyişdirilib; indiki vəziyyətini görmək üçün hesabı yenidən açın.";
+  const CHANGED = "Bu hesab bu pəncərə oxuyandan sonra dəyişib — başqa masada və ya cavab almayan əvvəlki yadda saxlamanızla; indiki vəziyyətini görmək üçün hesabı yenidən açın.";
   const nurseRow = () => screen.getByRole("rowheader", { name: /hs\.aygun/ }).closest("tr");
 
   it("a save carries the grants the editor opened with, beside the new list", async () => {

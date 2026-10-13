@@ -708,8 +708,11 @@ Dalga 3'te geldi: 3.6.
     okunamayan bir listede değişen bir şey yoktur.
   - Bir hesabı düzenlemek yalnız değiştirilen alanları gönderir: bir ad düzeltmesi, başka bir
     masada pasifleştirilmiş hesabı yeniden etkinleştirmez. Grupları bu arada başka bir masada
-    değiştirilmiş bir hesabın gruplarını kaydetmek reddedilir; form kapanır ve "Bu hesap bu arada
-    başka bir masada değiştirildi; şimdiki hâlini görmek için hesabı yeniden açın." der. Birimler
+    değiştirilmiş bir hesabın gruplarını kaydetmek reddedilir; form kapanır ve "Bu hesap, bu
+    pencere okuduktan sonra değişti — başka bir masada ya da yanıt alamayan önceki bir kaydınızla;
+    şimdiki hâlini görmek için hesabı yeniden açın." der. (Yanıt alamayan bir kayıt sonradan
+    yerine geçmişse, değişikliği yapan kişinin kendisi olabilir; cümle bu yüzden ikisini de
+    söyler.) Birimler
     de böyledir: pencere açıldıktan sonra başka bir masada değiştirilmiş bir kapsamı kaydetmek
     reddedilir (sunucu pencerenin okuduğu atamaları şimdikilerle karşılaştırır; hiçbir şey
     yazılmaz), pencere kapanır, aynı cümleyi söyler; satır ve sayı yeniden okunur. Aynı anda

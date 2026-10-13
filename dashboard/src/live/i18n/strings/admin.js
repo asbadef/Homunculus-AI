@@ -167,7 +167,7 @@ export default {
     fieldMoreRolesHint: "Bu hesabın birden fazla rolü var. Hepsi korunur; kaldırmak istediğinizin işaretini kaldırın.",
     scopeMaybe: "Motor yanıt vermedi: kapsam kaydedilmiş de olabilir, kaydedilmemiş de; yeniden okunamadı. Motorda ne olduğunu görmek için pencereyi kapatıp yeniden açın.",
     scopeMaybeRead: "Motor yanıt vermedi; kapsam kaydedilmiş de olabilir, kaydedilmemiş de. Yeniden okundu: liste şimdi motorda olanı gösteriyor.",
-    changedElsewhere: "Bu hesap bu arada başka bir masada değiştirildi; şimdiki hâlini görmek için hesabı yeniden açın.",
+    changedElsewhere: "Bu hesap, bu pencere okuduktan sonra değişti — başka bir masada ya da yanıt alamayan önceki bir kaydınızla; şimdiki hâlini görmek için hesabı yeniden açın.",
     remove: "Kaldır",
   },
   az: {
@@ -309,7 +309,7 @@ export default {
     fieldMoreRolesHint: "Bu hesabın birdən çox rolu var. Hamısı saxlanılır; götürmək istədiyinizin işarəsini silin.",
     scopeMaybe: "Mühərrik cavab vermədi: əhatə yadda saxlanılmış da ola bilər, saxlanılmamış da; yenidən oxunmadı. Mühərrikdə nə olduğunu görmək üçün pəncərəni bağlayıb yenidən açın.",
     scopeMaybeRead: "Mühərrik cavab vermədi; əhatə yadda saxlanılmış da ola bilər, saxlanılmamış da. Yenidən oxundu: siyahı indi mühərrikdə olanı göstərir.",
-    changedElsewhere: "Bu hesab bu arada başqa masada dəyişdirilib; indiki vəziyyətini görmək üçün hesabı yenidən açın.",
+    changedElsewhere: "Bu hesab bu pəncərə oxuyandan sonra dəyişib — başqa masada və ya cavab almayan əvvəlki yadda saxlamanızla; indiki vəziyyətini görmək üçün hesabı yenidən açın.",
     remove: "Götür",
   },
   ru: {
@@ -451,7 +451,7 @@ export default {
     fieldMoreRolesHint: "У этой учётной записи несколько ролей. Все сохраняются; снимите отметку с той, которую нужно убрать.",
     scopeMaybe: "Система не ответила: область могла сохраниться, а могла и нет; прочитать её заново не удалось. Закройте окно и откройте снова, чтобы увидеть, что хранит система.",
     scopeMaybeRead: "Система не ответила; область могла сохраниться, а могла и нет. Она прочитана заново: список показывает то, что хранит система.",
-    changedElsewhere: "Эту учётную запись тем временем изменили с другого рабочего места; откройте её заново, чтобы увидеть текущее состояние.",
+    changedElsewhere: "Эта учётная запись изменилась после того, как это окно её прочитало, — на другом рабочем месте или вашим предыдущим сохранением, на которое не пришёл ответ; откройте её заново, чтобы увидеть текущее состояние.",
     remove: "Убрать",
   },
   en: {
@@ -593,7 +593,7 @@ export default {
     fieldMoreRolesHint: "This account holds more than one role. Each is kept; untick the one to remove.",
     scopeMaybe: "The engine gave no answer: the scope may or may not have been saved, and it could not be read back. Close the editor and open it again to see what the engine holds.",
     scopeMaybeRead: "The engine gave no answer, so the scope may or may not have been saved. It was read back: the list now shows what the engine holds.",
-    changedElsewhere: "This account was changed at another desk meanwhile; reopen it to see its current state.",
+    changedElsewhere: "This account changed after this window read it — at another desk, or by an earlier save of yours that got no answer; reopen it to see its current state.",
     remove: "Remove",
   },
 };
