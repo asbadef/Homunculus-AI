@@ -7,9 +7,10 @@
 // ONE `PATCH /admin/groups/{id}` with the WHOLE permission list.
 //
 // THE API OFFERS NO TRANSACTION ACROSS GROUPS, AND THIS SCREEN DOES NOT PRETEND OTHERWISE.
-// `PATCH /admin/groups/{id}` is atomic for ONE group — the service takes the tenant's lock, checks
-// the caller's rights against the group's new rights, and writes under a row version that answers
-// 409 `concurrentChange` if somebody else moved it meanwhile. There is no endpoint that changes two
+// `PATCH /admin/groups/{id}` is atomic for ONE group — the service takes the tenant's lock and the
+// group's row lock, checks the caller's rights against the group's new rights, and answers 409
+// `concurrentChange` when the list the body says it read (`expected_permissions`, Task 14e — the
+// server keeps no row version) is not the one it holds. There is no endpoint that changes two
 // groups at once. So the unit of saving here is the GROUP, not the table: each column has its own
 // Save, each save is one request, and a column that fails leaves the others as they were and says
 // which one failed. A single "Save everything" button would be a promise of atomicity the server
@@ -625,8 +626,9 @@ function GroupForm({ catalogue, perms, submit, onSaved, onRefused, onClose }) {
       const slugTaken = apiErrorKey(err)?.key === "errors.slugTaken";
       if (Object.keys(named).length > 0 || slugTaken) {
         const shown = slugTaken ? { slug: t("errors.slugTaken"), ...named } : named;
-        // Enabled before focused: the fields are `disabled` while busy, and `focus()` on a
-        // disabled element is a no-op in a browser. `flushSync` lands both updates first.
+        // Out of busy before focused: the fields are read-only while busy, and the refusal under
+        // the field must be in the DOM, and the field editable, when the focus reaches it.
+        // `flushSync` lands both updates first.
         flushSync(() => {
           setBusy(false);
           setRefusals(shown);
@@ -658,17 +660,20 @@ function GroupForm({ catalogue, perms, submit, onSaved, onRefused, onClose }) {
       <form noValidate onSubmit={onSubmit}>
         {/* A busy control's words name their subject (Decision 25): the group being created. */}
         <Announce text={busy ? t("admin.savingFor", { subject: name.trim() }) : ""} />
+        {/* Read-only, never disabled, while the group is being created: Enter in a field sends the
+            form, and a field that then becomes natively disabled drops the keyboard user's focus
+            to <body> mid-write (as `UserForm`, `ScopeEditor` and `SourceTab` hold theirs). */}
         <Field layout="col" required label={t("roles.fieldSlug")} hint={t("roles.fieldSlugHint")} error={refusals.slug}>
           <Input ref={(el) => { fields.current.slug = el; }} value={slug} maxLength={FIELD_MAX.slug}
-            disabled={busy} autoFocus onChange={(e) => setSlug(e.target.value)} />
+            readOnly={busy} autoFocus onChange={(e) => setSlug(e.target.value)} />
         </Field>
         <Field layout="col" required label={t("roles.fieldName")} error={refusals.name}>
           <Input ref={(el) => { fields.current.name = el; }} value={name} maxLength={FIELD_MAX.group_name}
-            disabled={busy} onChange={(e) => setName(e.target.value)} />
+            readOnly={busy} onChange={(e) => setName(e.target.value)} />
         </Field>
         <Field layout="col" label={t("roles.fieldDescription")} error={refusals.description}>
           <Input ref={(el) => { fields.current.description = el; }} value={description}
-            maxLength={FIELD_MAX.description} disabled={busy} onChange={(e) => setDescription(e.target.value)} />
+            maxLength={FIELD_MAX.description} readOnly={busy} onChange={(e) => setDescription(e.target.value)} />
         </Field>
         <label className="mb-2.5 flex items-center gap-2 font-text text-13.5">
           <input type="checkbox" checked={mfa} disabled={busy} onChange={(e) => setMfa(e.target.checked)} />

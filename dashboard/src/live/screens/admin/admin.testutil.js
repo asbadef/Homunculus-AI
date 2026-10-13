@@ -112,16 +112,22 @@ export const CATALOGUE = PERMISSION_KEYS.map((key) => ({ key, description: PERMI
  *
  *  `unit_ids` / `bed_ids` are the RESOLVED, normalised sets — `build_scope` casefolds them — while
  *  `grants` carries the keys as they were stored. The editor shows the grants, not the resolved
- *  sets, which is why a fixture must be able to differ between the two. */
+ *  sets, which is why a fixture must be able to differ between the two.
+ *
+ *  `role` is the scope CLASS `scope/service.read_role` answers — "HOSPITAL_ADMIN",
+ *  "PLATFORM_SUPPORT", "MEMBER" or null — never a clinical role (a "NURSE" here described a payload
+ *  the server cannot send). `own_patients` is a COUNT, the care-team and break-glass patients the
+ *  scope reaches by name (`ScopeView.own_patients`). */
 export function scopeView(over = {}) {
   const grants = over.grants ?? [];
   return {
     user_id: "u-1",
-    role: "NURSE",
+    role: "MEMBER",
     unrestricted: false,
     reason: "assigned",
     unit_ids: grants.filter((g) => g.unit_id).map((g) => String(g.unit_id).toLowerCase()).sort(),
     bed_ids: grants.filter((g) => g.bed_id).map((g) => String(g.bed_id).toLowerCase()).sort(),
+    own_patients: 0,
     ...over,
     grants: grants.map((g, i) => ({
       id: `sg-${i}`, unit_id: "", bed_id: "", is_active: true, granted_by_id: "u-admin",

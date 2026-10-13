@@ -521,6 +521,29 @@ describe("creating and deleting a group", () => {
     expect(reload).toHaveBeenCalled();
   });
 
+  it("while the new group is being created, the field Enter was pressed in keeps the focus — read-only, never disabled", async () => {
+    // A field that becomes natively `disabled` under the keyboard drops its focus to <body>
+    // mid-write (front.md note (c)); the user form, the scope editor and the source tab hold their
+    // fields `readOnly` instead, and so does this one.
+    let release;
+    const { api } = await open();
+    api.adminCreateGroup.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni qrup" })); });
+    const form = within(screen.getByRole("dialog"));
+    fireEvent.change(form.getByLabelText(/Qısa ad/), { target: { value: "gece_ekibi" } });
+    const name = form.getByLabelText(/Görünən ad/);
+    fireEvent.change(name, { target: { value: "Gecə ekibi" } });
+    name.focus();
+    await act(async () => { fireEvent.submit(name.closest("form")); await settle(); });
+    expect(api.adminCreateGroup).toHaveBeenCalledTimes(1);
+    for (const label of [/Qısa ad/, /Görünən ad/, /Təsvir/]) {
+      expect(form.getByLabelText(label), String(label)).not.toBeDisabled();
+      expect(form.getByLabelText(label), String(label)).toHaveAttribute("readonly");
+    }
+    expect(name).toHaveFocus();
+    await act(async () => { release(WARD_GROUP); await settle(); });
+  });
+
   it("a duplicate slug's 409 lands on the slug field, with the focus, and nowhere else", async () => {
     const { api } = await open();
     api.adminCreateGroup.mockRejectedValue(refusal(409, "Bu kısa ad zaten kullanılıyor"));
@@ -533,9 +556,10 @@ describe("creating and deleting a group", () => {
     expect(slug).toHaveAttribute("aria-invalid", "true");
     expect(document.getElementById(slug.getAttribute("aria-describedby").split(" ")[0]).textContent)
       .toMatch(/Bu qısa ad artıq istifadə olunur/);
-    // Enabled again and focused: the refusal is where the administrator can act on it. (A field
-    // still `disabled` from the write cannot take focus in a browser.)
+    // Editable again and focused: the refusal is where the administrator can act on it. (A field
+    // still read-only from the write would take the focus and refuse the correction.)
     expect(slug).not.toBeDisabled();
+    expect(slug).not.toHaveAttribute("readonly");
     expect(slug).toHaveFocus();
     expect(alerts().trim()).toBe("");                              // on the field, not on the toast
     expect(screen.getByRole("dialog")).toBeInTheDocument();      // still open, to be corrected
