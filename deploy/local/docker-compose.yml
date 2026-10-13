@@ -87,6 +87,10 @@ services:
       SCREEN_LOCK_IDLE_MINUTES: ${SCREEN_LOCK_IDLE_MINUTES:-}
       # Hours a browser may stay locked before it signs itself out (1-72; unset = 12).
       SCREEN_LOCK_SIGNOUT_HOURS: ${SCREEN_LOCK_SIGNOUT_HOURS:-}
+      # A user with no unit, bed or patient assignment sees nothing (1/true/yes; unset = off:
+      # an unassigned user sees the whole hospital). Turn it on only once assignments exist —
+      # on an empty assignment table it blacks out every clinical screen at once.
+      SCOPE_ENFORCE_UNASSIGNED: ${SCOPE_ENFORCE_UNASSIGNED:-}
     volumes:
       # This site's HIS-location -> our-bed table. Copy bed-mapping.example.json to
       # bed-mapping.json before the first `up`: Docker leaves a DIRECTORY at a bind-mount target

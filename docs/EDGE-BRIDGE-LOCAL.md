@@ -609,6 +609,11 @@ with the password they have now as the "current" one. Two consequences for the f
 The dashboard's lock reads `SCREEN_LOCK_IDLE_MINUTES` and `SCREEN_LOCK_SIGNOUT_HOURS` (both
 optional, see `.env.example`).
 
+`SCOPE_ENFORCE_UNASSIGNED=1` in `.env` (optional, off by default) makes a user with no unit, bed
+or patient assignment see nothing; set it only after everyone has been assigned, because on an
+empty assignment table it blanks every clinical screen at once, and apply it with
+`docker compose up -d api`.
+
 ## PHI
 
 - The `pgdata` volume holds patient data. Encrypted storage, and it is removed only deliberately.
