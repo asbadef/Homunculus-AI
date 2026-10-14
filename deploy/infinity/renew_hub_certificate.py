@@ -56,24 +56,45 @@ def issue_leaf(ca_pem, ca_key_pem, address, now):
                               serialization.NoEncryption()))
 
 
+def _private_write(path, data):
+    """Create a file that did not exist, owner-only from its first byte, and sync it to disk.
+
+    As `activate_pilot.private_write`: never follow or overwrite an existing file. The caller
+    sets the final mode and owner afterwards.
+    """
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
+    with os.fdopen(fd, "wb") as out:
+        out.write(data)
+        out.flush()
+        os.fsync(out.fileno())
+
+
 def install(config, cert_pem, key_pem, stamp):
     """Back the current pair up, then put the new pair in place with the same owner and mode."""
     pairs = (("server-key.pem", key_pem), ("server.pem", cert_pem))
     if any((config / f"{name}.bak-{stamp}").exists() for name, _ in pairs):
         raise ValueError("A backup with this stamp exists; nothing changed.")
+    if any((config / f"{name}.new").exists() for name, _ in pairs):
+        raise ValueError("A staged .new file exists from an earlier run; inspect it. Nothing changed.")
     staged = []
     for name, data in pairs:
-        current, new = config / name, config / f"{name}.new"
+        current, new, backup = config / name, config / f"{name}.new", config / f"{name}.bak-{stamp}"
         info = current.stat()
-        (config / f"{name}.bak-{stamp}").write_bytes(current.read_bytes())
-        new.write_bytes(data)
-        for path in (config / f"{name}.bak-{stamp}", new):
+        _private_write(backup, current.read_bytes())
+        _private_write(new, data)
+        for path in (backup, new):
             os.chmod(path, info.st_mode & 0o777)
             if hasattr(os, "chown"):
                 os.chown(path, info.st_uid, info.st_gid)
         staged.append((new, current))
     for new, current in staged:          # the key first, then the certificate
         os.replace(new, current)
+    if hasattr(os, "O_DIRECTORY"):       # the renames themselves, on Linux
+        fd = os.open(config, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
 
 def main():
@@ -93,10 +114,13 @@ def main():
         raise SystemExit("Run on the hub with sudo.")
     cert_pem, key_pem = issue_leaf((CONFIG / "ca.pem").read_bytes(), (CONFIG / "ca-key.pem").read_bytes(),
                                    ADDRESS, now)
-    install(CONFIG, cert_pem, key_pem, now.strftime("%Y%m%dT%H%M%SZ"))
+    stamp = now.strftime("%Y%m%dT%H%M%SZ")
+    install(CONFIG, cert_pem, key_pem, stamp)
     renewed = x509.load_pem_x509_certificate(cert_pem)
     print("RENEWED: new leaf expires " + renewed.not_valid_after_utc.isoformat()
           + "; restart homunculus-infinity-pilot-hub to use it.")
+    # The rollback restores both files of this stamp, never "the newest backup".
+    print("backup stamp: " + stamp)
     return 0
 
 

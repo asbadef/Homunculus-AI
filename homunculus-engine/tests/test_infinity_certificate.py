@@ -80,3 +80,52 @@ def test_install_keeps_the_current_pair_and_never_overwrites_a_backup(tmp_path):
         renewal.install(tmp_path, b"third", b"third key", "20261201T000000Z")
     assert (tmp_path / "server.pem").read_bytes() == b"new certificate"
     assert not list(tmp_path.glob("*.new"))
+
+
+def test_install_creates_every_file_exclusively_owner_only_and_synced(tmp_path, monkeypatch):
+    # Review of R2, M5: the new key and its backup were written under the default umask and
+    # never synced, so a key could sit readable, or a power loss leave half a pair.
+    import os
+    (tmp_path / "server.pem").write_bytes(b"old certificate")
+    (tmp_path / "server-key.pem").write_bytes(b"old key")
+    opened, synced = {}, []
+    real_open, real_fsync = os.open, os.fsync
+    def recording_open(path, flags, mode=0o777, *args, **kwargs):
+        opened[Path(path).name] = (bool(flags & os.O_EXCL), mode)
+        return real_open(path, flags, mode, *args, **kwargs)
+    def recording_fsync(fd):
+        synced.append(fd)
+        return real_fsync(fd)
+    monkeypatch.setattr(renewal.os, "open", recording_open)
+    monkeypatch.setattr(renewal.os, "fsync", recording_fsync)
+    renewal.install(tmp_path, b"new certificate", b"new key", "20261201T000000Z")
+    for name in ("server-key.pem.new", "server-key.pem.bak-20261201T000000Z",
+                 "server.pem.new", "server.pem.bak-20261201T000000Z"):
+        assert opened.get(name) == (True, 0o600), name
+    assert len(synced) >= 4
+
+
+def test_a_stale_staged_file_stops_the_install_before_anything_changes(tmp_path):
+    (tmp_path / "server.pem").write_bytes(b"old certificate")
+    (tmp_path / "server-key.pem").write_bytes(b"old key")
+    (tmp_path / "server.pem.new").write_bytes(b"left by an interrupted run")
+    with pytest.raises(ValueError):
+        renewal.install(tmp_path, b"new certificate", b"new key", "20261201T000000Z")
+    assert (tmp_path / "server-key.pem").read_bytes() == b"old key"
+    assert not list(tmp_path.glob("*.bak-*")) and not (tmp_path / "server-key.pem.new").exists()
+
+
+def test_the_renewal_prints_the_one_stamp_that_names_both_backups(authority, tmp_path, monkeypatch, capsys):
+    # Review of R2, M5: C-2 found its backups with "ls | tail -2", which a second renewal breaks.
+    for name in ("ca.pem", "ca-key.pem", "server.pem", "server-key.pem"):
+        (tmp_path / name).write_bytes(authority[name])
+    monkeypatch.setattr(renewal, "CONFIG", tmp_path)
+    monkeypatch.setattr(renewal, "ADDRESS", "127.0.0.1")
+    monkeypatch.setattr(renewal.sys, "platform", "linux")
+    monkeypatch.setattr(renewal.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr("sys.argv", ["renew_hub_certificate.py", "--apply"])
+    assert renewal.main() == 0
+    lines = capsys.readouterr().out.splitlines()
+    stamp = next(line.split(": ", 1)[1] for line in lines if line.startswith("backup stamp: "))
+    assert (tmp_path / f"server.pem.bak-{stamp}").read_bytes() == authority["server.pem"]
+    assert (tmp_path / f"server-key.pem.bak-{stamp}").read_bytes() == authority["server-key.pem"]
