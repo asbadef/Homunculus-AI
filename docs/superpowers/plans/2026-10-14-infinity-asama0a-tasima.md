@@ -3057,7 +3057,7 @@ Expected: `SONUÇ: KABUL` and `ROW: -`. `t0-ozet.txt` is T0 for Task 10. It hold
 - [ ] **`docs/INFINITY-PARAMETER-RECORDS.md`**, under §"Yatak adları ve bir işletim tuzağı", after "Açık düzeltme:", a Turkish paragraph `**Kapandı (<tarih>):**` saying:
   - the hub now recognises a device by its address `(kaynak, grup, port)`, so a renamed id is no longer refused (K1);
   - a batch the hub refuses for good (400/409/413) is set aside in the worker's `quarantine` table and counted as `quarantined`, so the queue head cannot wedge;
-  - renaming is still done on both sides together, but the order no longer matters;
+  - a rename (same address) no longer depends on the order of the two sides, but **adding or moving an address is strictly hub first**: the hub answers an address it does not list with 503 (not final), so the worker's queue waits instead of setting good events aside;
   - the two tests: `test_the_22_09_wedge_cannot_recur`, `test_the_hub_knows_a_monitor_by_its_address_not_by_its_name`.
 - [ ] **`docs/homunculus-rehber-TR.md`**, next to its Infinity lines (around 1010–1024), one short paragraph in Turkish:
   - the research transport was ~15 min late from 02.10 and has been fixed; delivery is now within seconds;
@@ -3067,6 +3067,17 @@ Expected: `SONUÇ: KABUL` and `ROW: -`. `t0-ozet.txt` is T0 for Task 10. It hold
 
 ---
 
+## Amendment after the R2 review (14.10)
+
+R2 (`transport-d25d737b2b160bed`) was reviewed before deploy and replaced by R2b. What changed, each with a test seen red first:
+- **I1:** the hub answers 503, not 400, for a well-formed event it cannot take yet: an address its inventory does not list (`UnknownDevice`), a clock more than 5 s ahead, or a payload it does not accept. 400 stays for malformed events and wins in a mixed batch. 400/409/413 remain the only final codes, so good events are no longer set aside behind a configuration step. **Inventory edits are strictly hub first** (Ortak kurallar).
+- **M1:** a row exactly at the retention cutoff is kept, in both tables (pins `<`).
+- **M2:** the running totals move directly after `commit()`, before any bookkeeping.
+- **M3:** set-aside rows count against the same caps (`held_rows`, `held_bytes`) until they expire; they stay out of the snapshot's `rows`, so the wire does not change.
+- **M4:** `flush_once` returns 0 after a set-aside, so the loop pauses `LINGER` before the next batch.
+- **M5:** the certificate renewal writes every new and backup file with `O_EXCL` and mode 0600, fsyncs them and the directory, refuses a stale `.new`, and prints its backup stamp; C-2 and C-geri use that stamp for both files.
+- **M6:** C-2 verifies the served leaf with `-verify_ip 172.100.101.72 -verify_return_error`.
+
 ## Dağıtım blokları (Türkçe, kopyala-yapıştır)
 
 **Ortak kurallar:**
@@ -3074,6 +3085,7 @@ Expected: `SONUÇ: KABUL` and `ROW: -`. `t0-ozet.txt` is T0 for Task 10. It hold
 - **Önce hub, sonra worker.** Worker adımı, hub adımı doğrulanmadan başlamaz.
 - **Geri alma:** en yeni drop-in silinir, `daemon-reload` yapılır, yalnız o servis yeniden başlatılır. Release klasörü yerinde kalır; zararsızdır.
 - **Envanter (`inventory.json`), anahtarlar, `.env` dosyaları ve kuyruk dosyaları değişmez. Cihaz adları değiştirilmez.**
+- **Envanter değişikliği (bu aşamadan sonra) kesinlikle önce hub'da, sonra worker'da yapılır.** R2b'den itibaren hub, envanterinde olmayan bir adresten gelen batch'i 503 ile "şimdilik" reddeder. Worker o batch'i bir kenara koymaz; hub adresi öğrenene dek tekrar dener ve kuyruk bekler (`aktarim_hatasi` artar). Worker'a önce eklenen bir monitör, bütün monitörlerin teslimini durdurur. Yalnız ad değişikliği (adres aynı) sıradan bağımsızdır (K1).
 - Her blok `bash -eu -o pipefail` içinde çalışır. Bir adım hata verirse blok orada durur ve oturum açık kalır.
 - `sudo` ilk seferde parola sorar. Worker'da parolayı kullanıcı girer.
 - Ajan, bloğu kullanıcıya `REL` ve `SHA` değerleri **doldurulmuş** olarak verir. Bu değerleri Task 3 ve Task 9'daki derleme satırı üretir.
@@ -3284,7 +3296,7 @@ Bunların hiçbiri Task 0–2'yi ve Task 4–7'yi (kod ve testler) beklemez. Tas
 8. **Geçici yetkiler.**
    - **Hub'da:** parolasız sudo duruyor (`/etc/sudoers.d/90-homunculus-claude`, 14.10 07:19'da yeniden verilmiş). Aşama 0a bitince kaldırılmalı: `sudo rm /etc/sudoers.d/90-homunculus-claude`.
    - **Worker'da:** parolasız sudo da `tcpdump` yetkisi de zaten yok (14.10'da kontrol edildi).
-9. **Envanter ve cihaz adları bu aşamada değişmez.** `.28`, `.34` ve `.38` adsız kalır. K1 düzeltmesinden sonra bir yeniden adlandırma artık kuyruğu kilitlemez. Yine de adlandırma ayrı bir karar ve ayrı bir iştir (biyomedikal tablosu, Aşama A).
+9. **Envanter ve cihaz adları bu aşamada değişmez.** `.28`, `.34` ve `.38` adsız kalır. K1 düzeltmesinden sonra bir yeniden adlandırma artık kuyruğu kilitlemez. Yeni ya da taşınan bir adres ise kesinlikle önce hub'a yazılır (yukarıdaki ortak kural). Yine de adlandırma ayrı bir karar ve ayrı bir iştir (biyomedikal tablosu, Aşama A).
 
 ---
 

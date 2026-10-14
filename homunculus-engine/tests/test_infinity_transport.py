@@ -231,7 +231,8 @@ def test_replay_is_never_live_and_future_clock_rejected(factory):
     c = client(inventory(), factory())
     assert post(c, [event(mode="replay")]).status_code == 200
     assert status(c)["devices"][0]["status"] == "replay"
-    assert post(c, [event(stamp=1100)]).status_code == 400
+    # Refused, but not for good (503): a clock ahead of the hub's is fixed by the clock, not the event.
+    assert post(c, [event(stamp=1100)]).status_code == 503
 
 
 def test_roles_body_limits_and_no_payload_or_patient_in_status(factory):
@@ -240,7 +241,7 @@ def test_roles_body_limits_and_no_payload_or_patient_in_status(factory):
     assert c.get("/v1/status").status_code == 401
     assert c.get("/v1/status", headers={"Authorization": "Bearer " + TOKEN}).status_code == 401
     assert c.post("/v1/packets", json={"events": [event()]}, headers={"Authorization": "Bearer " + VIEW}).status_code == 401
-    assert post(c, [event(raw=True)]).status_code == 400
+    assert post(c, [event(raw=True)]).status_code == 503       # payload policy: refused, not for good
     dirty = dict(event(), patient_id="MUST-NOT-BE-ACCEPTED")
     response = post(c, [dirty])
     assert response.status_code == 400 and "MUST-NOT" not in response.text

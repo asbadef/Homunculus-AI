@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
 from .infinity_journal import CapacityError, ConflictError
-from .infinity_stream import MAX_BATCH, MAX_REQUEST, validate_event
+from .infinity_stream import MAX_BATCH, MAX_REQUEST, UnknownDevice, validate_event
 from .infinity_timing import WORKER_NAMES, Timings, valid_snapshot
 
 
@@ -113,15 +113,26 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
         data = await body(request)
         timings.since("body_ms", started)
         validating = timings.clock()
+        not_now = False
         try:
             if not isinstance(data, dict) or set(data) != {"events"} or not isinstance(data["events"], list) or not 1 <= len(data["events"]) <= MAX_BATCH:
                 raise ValueError
             for event in data["events"]:
-                validate_event(event, inventory, match_name=False)
+                try:
+                    validate_event(event, inventory, match_name=False)
+                except UnknownDevice:
+                    not_now = True
+                    continue
                 if event["received_at"] > clock() + 5 or (event["payload_base64"] is not None and not accept_payload):
-                    raise ValueError
+                    not_now = True
         except (ValueError, TypeError):
-            raise HTTPException(400, "Rejected event, clock or payload policy.") from None
+            raise HTTPException(400, "Rejected event.") from None
+        if not_now:
+            # Well-formed, but not acceptable here yet: an address this inventory does not list,
+            # a clock ahead of the hub's, or a payload this hub does not take. 400 would be final
+            # and the worker would set the whole batch aside, every good event with it; 503 is
+            # retried until the inventory, the clock or the configuration is put right.
+            raise HTTPException(503, "Not accepted yet: unknown device address, clock ahead or payload policy.")
         timings.since("validate_ms", validating)
         try:
             ack = journal.append(data["events"], update_devices=True, device_ids=[

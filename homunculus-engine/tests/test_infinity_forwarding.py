@@ -78,7 +78,63 @@ def test_the_hub_knows_a_monitor_by_its_address_not_by_its_name(factory):
 
 def test_an_address_the_hub_does_not_know_is_still_refused(factory):
     c = client(inventory(1), factory())
-    assert post(c, [event(inventory(2), index=1)]).status_code == 400
+    response = post(c, [event(inventory(2), index=1)])
+    # Refused, but not for good: the hub's inventory may simply not list it yet.
+    assert response.status_code == 503 and response.status_code not in Refused.FINAL
+
+
+def relay(c):
+    """The worker's view of a test hub: a final refusal raises Refused, any other failure OSError."""
+    class Relay:
+        def post(self, path, body):
+            response = c.post(path, json=body, headers={"Authorization": "Bearer " + TOKEN})
+            if response.status_code in Refused.FINAL:
+                raise Refused(response.status_code)
+            if response.status_code != 200:
+                raise OSError("Receiver refused delivery.")
+            return response.json()
+    return Relay()
+
+
+def test_a_worker_clock_ahead_of_the_hub_is_retried_not_set_aside(factory):
+    # Review of R2, I1: a hub that refused a batch from the future with 400 had every batch set
+    # aside, good events included, for as long as the worker's clock ran more than 5 s ahead.
+    inv = inventory()
+    outbox, archive = factory(), factory()
+    outbox.append([event(inv, stamp=1006.0) for _ in range(10)])
+    c = client(inv, archive, now=lambda: 1000)
+    with pytest.raises(OSError) as caught:
+        flush_once(outbox, relay(c))
+    assert not isinstance(caught.value, Refused)
+    assert outbox.snapshot()["rows"] == 10 and "quarantined" not in outbox.snapshot()["counters"]
+    c = client(inv, archive, now=lambda: 1006)                   # the clocks agree again
+    assert flush_once(outbox, relay(c)) == 10 and archive.snapshot()["rows"] == 10
+
+
+def test_an_address_the_hub_lacks_holds_the_queue_until_the_hub_learns_it(factory):
+    # Review of R2, I1: a monitor added to the worker's inventory first had every mixed batch set
+    # aside, all the other monitors' events with it. Inventory edits go hub first; until then the
+    # queue waits instead of draining into the set-aside table.
+    worker, hub = inventory(4), inventory(3)
+    outbox, archive = factory(), factory()
+    outbox.append([event(worker, index=i % 4) for i in range(8)])
+    with pytest.raises(OSError) as caught:
+        flush_once(outbox, relay(client(hub, archive)))
+    assert not isinstance(caught.value, Refused)
+    assert outbox.snapshot()["rows"] == 8 and archive.snapshot()["rows"] == 0
+    c = client(worker, archive)                                  # the hub now lists monitor-4
+    while flush_once(outbox, relay(c)):
+        pass
+    assert archive.snapshot()["rows"] == 8 and "quarantined" not in outbox.snapshot()["counters"]
+
+
+def test_a_malformed_event_is_still_refused_for_good(factory):
+    inv = inventory(2)
+    c = client(inventory(1), factory())
+    dirty = dict(event(inv), patient_id="MUST-NOT-BE-ACCEPTED")
+    # Malformed beats "not now", whatever the order of the events in the batch.
+    assert post(c, [event(inv, index=1), dirty]).status_code == 400
+    assert post(c, [event(inv, stamp=1100), dirty]).status_code == 400
 
 
 class _Status(http.server.BaseHTTPRequestHandler):
@@ -122,7 +178,7 @@ def test_a_refused_batch_is_set_aside_and_the_queue_moves_on(factory):
     inv = inventory()
     outbox = factory()
     outbox.append([event(inv), event(inv)])
-    assert flush_once(outbox, Refusing()) == 2
+    assert flush_once(outbox, Refusing()) == 0             # nothing delivered: the loop pauses (M4)
     state = outbox.snapshot()
     assert state["rows"] == 0 and state["counters"]["quarantined"] == 2
     assert outbox.db.execute("SELECT COUNT(*) FROM quarantine").fetchone()[0] == 2
@@ -131,6 +187,23 @@ def test_a_refused_batch_is_set_aside_and_the_queue_moves_on(factory):
         def post(self, path, body):
             return {"ack": [e["id"] for e in body["events"]]}
     assert flush_once(outbox, Accepting()) == 1 and outbox.snapshot()["rows"] == 0
+
+
+def test_a_set_aside_batch_is_followed_by_a_pause(factory):
+    # Review of R2, M4: full batches set aside went out back to back, so a hub refusing
+    # everything was sent some 30 TLS requests a second on a VM it shares with the clinical API.
+    inv = inventory()
+    outbox = factory()
+    outbox.append([event(inv) for _ in range(70)])
+    log = []
+    class RefusingHub:
+        def post(self, path, body):
+            if path == "/v1/packets":
+                log.append(len(body["events"]))
+                raise Refused(400)
+            return {"ok": True}
+    forward_loop(outbox, RefusingHub(), inv, Recording(3, log), "live")
+    assert log == [32, 0.25, 32, 0.25, 6, 0.25]
 
 
 def test_a_transient_failure_keeps_the_batch_queued(factory):

@@ -83,3 +83,70 @@ def test_an_existing_journal_gains_the_expiry_index_when_opened(tmp_path):
         assert state["rows"] == 1 and state["encrypted_bytes"] > 0     # totals rebuilt on open
     finally:
         reopened.close()
+
+
+def test_a_row_exactly_at_the_retention_cutoff_is_kept(factory):
+    # Review of R2, M1: "<" against "<=" in the expiry survived every test.
+    now = [1000.0]
+    inv = inventory()
+    journal = factory(clock=lambda: now[0], retention=60)
+    journal.append([event(inv), event(inv)])
+    journal.quarantine([journal.pending(1)[0]["id"]], 400)
+    held = lambda: journal.db.execute("SELECT COUNT(*) FROM quarantine").fetchone()[0]
+    now[0] = 1060.0                                           # exactly the retention: kept
+    assert journal.snapshot()["rows"] == 1 and held() == 1
+    now[0] = 1060.001                                         # a moment later: gone, both kinds
+    assert journal.snapshot()["rows"] == 0 and held() == 0
+
+
+def test_a_failure_after_the_commit_cannot_skew_the_totals(factory):
+    # Review of R2, M2: the totals moved only after the commit's own bookkeeping, so anything
+    # raising in between left committed rows uncounted, and the capacity check drifted for good.
+    class FailsOnceAfterCommit:
+        armed = True
+
+        @staticmethod
+        def clock():
+            return 0.0
+
+        def since(self, name, started):
+            if name == "commit_ms" and self.armed:
+                self.armed = False
+                raise RuntimeError("synthetic failure after the commit")
+    journal = factory(timings=FailsOnceAfterCommit())
+    with pytest.raises(RuntimeError):
+        journal.append([event()])
+    rows, size = journal.db.execute("SELECT COUNT(*), COALESCE(SUM(size),0) FROM events").fetchone()
+    assert rows == 1 and (journal.rows, journal.bytes) == (rows, size)
+
+
+def test_set_aside_rows_count_against_the_caps_until_they_expire(tmp_path):
+    # Review of R2, M3: the set-aside table sat outside the caps, so a hub refusing everything
+    # could double the file. Its rows now count against the same caps until they expire.
+    from cryptography.fernet import Fernet
+    from homunculus.edge.infinity_journal import Journal
+    now = [1000.0]
+    inv = inventory()
+    key = Fernet.generate_key()
+    journal = Journal(tmp_path / "caps.sqlite", key, clock=lambda: now[0], retention=60, max_rows=3)
+    def held():
+        recount = journal.db.execute("SELECT COUNT(*), COALESCE(SUM(size),0) FROM quarantine").fetchone()
+        assert (journal.held_rows, journal.held_bytes) == recount
+        return recount[0]
+    try:
+        journal.append([event(inv), event(inv)])
+        journal.quarantine([e["id"] for e in journal.pending(2)], 400)
+        assert journal.snapshot()["rows"] == 0 and held() == 2    # the queue is empty, the file is not
+        with pytest.raises(CapacityError):
+            journal.append([event(inv), event(inv)])
+        journal.append([event(inv)])
+        journal.close()
+        journal = Journal(tmp_path / "caps.sqlite", key, clock=lambda: now[0], retention=60, max_rows=3)
+        assert held() == 2                                         # rebuilt on open
+        with pytest.raises(CapacityError):
+            journal.append([event(inv)])
+        now[0] += 61                                               # everything expires
+        journal.append([event(inv), event(inv), event(inv)])
+        assert held() == 0 and journal.snapshot()["rows"] == 3
+    finally:
+        journal.close()

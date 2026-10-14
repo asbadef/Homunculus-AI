@@ -88,7 +88,11 @@ class Journal:
         # Rows and encrypted bytes, counted once here and then kept in step with every
         # commit, so the capacity check no longer sums the whole table on every append.
         self.rows, self.bytes = self.db.execute("SELECT COUNT(*),COALESCE(SUM(size),0) FROM events").fetchone()
-        self._delta = [0, 0]
+        # Rows set aside count against the same caps until they expire, so the caps bound the
+        # whole file even when a hub refuses everything. They are not queue rows: not in `rows`.
+        self.held_rows, self.held_bytes = self.db.execute(
+            "SELECT COUNT(*),COALESCE(SUM(size),0) FROM quarantine").fetchone()
+        self._delta = [0, 0, 0, 0]
 
     @contextmanager
     def _transaction(self, name=None):
@@ -99,18 +103,21 @@ class Journal:
         started = self.timings.clock()
         with self.lock:
             self.timings.since("lock_wait_ms", started)
-            self._delta = [0, 0]
+            self._delta = [0, 0, 0, 0]
             try:
                 yield
                 committing = self.timings.clock()
                 self.db.commit()
+                # Only a committed change moves the totals, and nothing may run between the
+                # commit and them; a rolled-back batch leaves them be.
+                self.rows += self._delta[0]
+                self.bytes += self._delta[1]
+                self.held_rows += self._delta[2]
+                self.held_bytes += self._delta[3]
                 self.timings.since("commit_ms", committing)
             except BaseException:
                 self.db.rollback()
                 raise
-            # Only a committed change moves the totals; a rolled-back batch leaves them be.
-            self.rows += self._delta[0]
-            self.bytes += self._delta[1]
         if name:
             self.timings.since(name, started)
 
@@ -121,9 +128,10 @@ class Journal:
         with self._transaction():
             self._increment(name, amount)
 
-    def _removed(self, sizes):
-        self._delta[0] -= len(sizes)
-        self._delta[1] -= sum(size for (size,) in sizes)
+    def _removed(self, sizes, slot=0):
+        """Count rows leaving the queue (slot 0) or the set-aside table (slot 2) in this transaction."""
+        self._delta[slot] -= len(sizes)
+        self._delta[slot + 1] -= sum(size for (size,) in sizes)
         return len(sizes)
 
     def _expire(self):
@@ -131,7 +139,8 @@ class Journal:
         cutoff = self.clock() - self.retention
         count = self._removed(self.db.execute("DELETE FROM events WHERE created < ? RETURNING size",
                                               (cutoff,)).fetchall())
-        self.db.execute("DELETE FROM quarantine WHERE created < ?", (cutoff,))
+        self._removed(self.db.execute("DELETE FROM quarantine WHERE created < ? RETURNING size",
+                                      (cutoff,)).fetchall(), 2)
         self.timings.since("expire_ms", started)
         if count:
             self._increment("expired", count)
@@ -147,7 +156,8 @@ class Journal:
         with self._transaction("append_ms"):
             self._expire()
             started = self.timings.clock()
-            size, rows = self.bytes + self._delta[1], self.rows + self._delta[0]
+            size = self.bytes + self.held_bytes + self._delta[1] + self._delta[3]
+            rows = self.rows + self.held_rows + self._delta[0] + self._delta[2]
             self.timings.since("capacity_ms", started)
             started = self.timings.clock()
             for index, event in enumerate(events):
@@ -198,9 +208,13 @@ class Journal:
             for x in ids:
                 for row in self.db.execute("DELETE FROM events WHERE id=? RETURNING id,digest,created,size,body",
                                            (x,)).fetchall():
-                    self.db.execute("INSERT OR REPLACE INTO quarantine VALUES (?,?,?,?,?,?)", (*row, status))
+                    self._removed(self.db.execute("DELETE FROM quarantine WHERE id=? RETURNING size",
+                                                  (x,)).fetchall(), 2)
+                    self.db.execute("INSERT INTO quarantine VALUES (?,?,?,?,?,?)", (*row, status))
                     moved.append((row[3],))
             if self._removed(moved):
+                self._delta[2] += len(moved)
+                self._delta[3] += sum(size for (size,) in moved)
                 self._increment("quarantined", len(moved))
 
     def snapshot(self):

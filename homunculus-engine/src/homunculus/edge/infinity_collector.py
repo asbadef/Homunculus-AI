@@ -90,7 +90,9 @@ def flush_once(journal, sender, timings=None):
         # This hub will refuse this batch every time. Retried, it held the head of the queue
         # for good (22.09: 7,006 rows, none delivered). Set it aside, counted, and move on.
         journal.quarantine([event["id"] for event in batch], refusal.status)
-        return len(batch)
+        # Nothing was delivered, so the loop pauses as after a part batch: a hub refusing
+        # everything must not be sent full batches back to back.
+        return 0
     if timings is not None:
         timings.since("post_ms", posting)
     expected = [event["id"] for event in batch]

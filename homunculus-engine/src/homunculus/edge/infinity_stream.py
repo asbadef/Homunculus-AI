@@ -89,6 +89,25 @@ def packet_event(inventory, device, payload, source_port, *, received_at=None, r
     return event
 
 
+class UnknownDevice(ValueError):
+    """A well-formed event from an address this inventory does not list.
+
+    Not malformed, so a hub answers it "not now" (503), never "not ever": the usual cause is an
+    inventory edited on the worker first, and the events of every other monitor in the same
+    batch must not be set aside with it. Inventory edits go hub first.
+    """
+
+
+def _listable(event):
+    """An address an inventory row could hold, so "not listed" is never mistaken for "malformed"."""
+    source, group = event["source_ip"], event["group"]
+    if not isinstance(source, str) or not isinstance(group, str):
+        return False
+    source_ip, group_ip = ipaddress.IPv4Address(source), ipaddress.IPv4Address(group)
+    return (str(source_ip) == source and str(group_ip) == group and group_ip.is_multicast
+            and group_ip not in ipaddress.IPv4Network("224.0.0.0/24") and event["port"] == 2050)
+
+
 def validate_event(event, inventory, *, match_name=True):
     """Reject arbitrary metadata/clinical fields; failures never echo packet content.
 
@@ -104,13 +123,15 @@ def validate_event(event, inventory, *, match_name=True):
         named = (device.id == event["device_id"] if match_name and device else
                  isinstance(event["device_id"], str) and IDENTIFIER.fullmatch(event["device_id"]))
         if (event["schema"] != SCHEMA or event["collector_id"] != inventory.collector_id
-                or not device or not named or event["mode"] not in ("live", "replay")
+                or not named or event["mode"] not in ("live", "replay")
                 or str(uuid.UUID(event["id"])) != event["id"]
                 or type(event["received_at"]) not in (float, int) or not math.isfinite(event["received_at"])
                 or event["received_at"] <= 0 or type(event["source_port"]) is not int
                 or not 1 <= event["source_port"] <= 65535 or type(event["port"]) is not int
                 or type(event["payload_bytes"]) is not int or not 1 <= event["payload_bytes"] <= 65507
                 or not isinstance(event["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", event["sha256"])):
+            raise ValueError
+        if device is None and not _listable(event):
             raise ValueError
         raw = event["payload_base64"]
         if raw is not None:
@@ -121,4 +142,6 @@ def validate_event(event, inventory, *, match_name=True):
                 raise ValueError
     except (ValueError, TypeError, KeyError, AttributeError):
         raise ValueError("Invalid transport event.") from None
+    if device is None:
+        raise UnknownDevice("Transport event from an address the inventory does not list.")
     return event
