@@ -18,6 +18,9 @@ from .infinity_stream import MAX_BATCH, canonical, packet_event
 
 IP_PKTINFO = 8  # Linux UAPI, not a portable Winsock constant
 IP_MULTICAST_ALL = 49
+# After less than a full batch the queue is drained: let the next packets gather this long.
+# Well inside the hub's 3 s live window, and the same pause an empty queue already took.
+LINGER = 0.25
 
 
 def membership_capacity(inventory, *, proc_path=Path("/proc/sys/net/ipv4/igmp_max_memberships")):
@@ -97,8 +100,11 @@ def forward_loop(journal, sender, inventory, stop, mode, failure=None, timings=N
                 sender.post("/v1/heartbeat", beat)
             sent = flush_once(journal, sender, timings)
             backoff = 0.25
-            if not sent:
-                stop.wait(0.25)
+            if sent < MAX_BATCH:
+                # Sent at once, a drained queue went out as a stream of one- and two-event
+                # requests, each costing the hub a TLS handshake and a commit. A full batch
+                # means a backlog, and that goes straight on.
+                stop.wait(LINGER)
         except (OSError, ValueError, http.client.HTTPException):
             try:
                 journal.count("forward_errors")
