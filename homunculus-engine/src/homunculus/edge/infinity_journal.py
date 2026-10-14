@@ -63,6 +63,11 @@ class Journal:
             -- Expiry and the oldest row's age read this, not the whole table. Created on the
             -- first open of an older file (one scan, once); older code keeps working with it.
             CREATE INDEX IF NOT EXISTS events_created ON events(created);
+            -- Rows the hub refused for good, still encrypted, kept no longer than the queue.
+            CREATE TABLE IF NOT EXISTS quarantine (
+                id TEXT PRIMARY KEY, digest TEXT NOT NULL, created REAL NOT NULL,
+                size INTEGER NOT NULL, body BLOB NOT NULL, status INTEGER NOT NULL);
+            CREATE INDEX IF NOT EXISTS quarantine_created ON quarantine(created);
             CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value BLOB NOT NULL);
             CREATE TABLE IF NOT EXISTS stats (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS devices (
@@ -123,14 +128,20 @@ class Journal:
 
     def _expire(self):
         started = self.timings.clock()
+        cutoff = self.clock() - self.retention
         count = self._removed(self.db.execute("DELETE FROM events WHERE created < ? RETURNING size",
-                                              (self.clock() - self.retention,)).fetchall())
+                                              (cutoff,)).fetchall())
+        self.db.execute("DELETE FROM quarantine WHERE created < ?", (cutoff,))
         self.timings.since("expire_ms", started)
         if count:
             self._increment("expired", count)
 
-    def append(self, events, *, update_devices=False):
-        """Atomic batch: ack only after commit. Same ID with different content is an error."""
+    def append(self, events, *, update_devices=False, device_ids=None):
+        """Atomic batch: ack only after commit. Same ID with different content is an error.
+
+        `device_ids`, when given, names each event's device for the per-device counts in place
+        of the label the event carries: the hub's own name for the address (K1).
+        """
         if not events:
             return []
         with self._transaction("append_ms"):
@@ -139,7 +150,7 @@ class Journal:
             size, rows = self.bytes + self._delta[1], self.rows + self._delta[0]
             self.timings.since("capacity_ms", started)
             started = self.timings.clock()
-            for event in events:
+            for index, event in enumerate(events):
                 plain = canonical(event)
                 digest = hashlib.sha256(plain).hexdigest()
                 existing = self.db.execute("SELECT digest FROM events WHERE id=?", (event["id"],)).fetchone()
@@ -164,7 +175,8 @@ class Journal:
                         length=CASE WHEN excluded.stamp>stamp THEN excluded.length ELSE length END,
                         mode=CASE WHEN excluded.stamp>stamp THEN excluded.mode ELSE mode END,
                         stamp=MAX(stamp,excluded.stamp)""",
-                        (event["device_id"], event["received_at"], event["payload_bytes"], event["payload_bytes"], event["mode"]))
+                        (device_ids[index] if device_ids else event["device_id"], event["received_at"],
+                         event["payload_bytes"], event["payload_bytes"], event["mode"]))
             self.timings.since("insert_ms", started)
         return [e["id"] for e in events]
 
@@ -178,6 +190,18 @@ class Journal:
         with self._transaction("ack_ms"):
             for x in ids:
                 self._removed(self.db.execute("DELETE FROM events WHERE id=? RETURNING size", (x,)).fetchall())
+
+    def quarantine(self, ids, status):
+        """Move rows the hub refused for good out of the queue, counted as `quarantined`."""
+        with self._transaction():
+            moved = []
+            for x in ids:
+                for row in self.db.execute("DELETE FROM events WHERE id=? RETURNING id,digest,created,size,body",
+                                           (x,)).fetchall():
+                    self.db.execute("INSERT OR REPLACE INTO quarantine VALUES (?,?,?,?,?,?)", (*row, status))
+                    moved.append((row[3],))
+            if self._removed(moved):
+                self._increment("quarantined", len(moved))
 
     def snapshot(self):
         with self._transaction("snapshot_ms"):

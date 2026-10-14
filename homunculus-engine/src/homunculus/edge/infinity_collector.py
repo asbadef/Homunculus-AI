@@ -30,6 +30,19 @@ def membership_capacity(inventory, *, proc_path=Path("/proc/sys/net/ipv4/igmp_ma
     return {"required_groups": required, "host_membership_limit": available, "sufficient": available >= required}
 
 
+class Refused(OSError):
+    """The hub answered, and will answer the same batch the same way every time.
+
+    400 (an event its policy rejects), 409 (an id it holds with other content) and 413 (too
+    large). Anything else, 401, 5xx and 507 (archive full) included, may pass on a retry.
+    """
+    FINAL = (400, 409, 413)
+
+    def __init__(self, status):
+        super().__init__(f"Receiver refused the batch ({status}).")
+        self.status = status
+
+
 class Sender:
     def __init__(self, endpoint, token, *, ca_file=None, allow_loopback_http=False, timings=None):
         target = urlsplit(endpoint)
@@ -56,6 +69,8 @@ class Sender:
                                {"Authorization": "Bearer " + self.token, "Content-Type": "application/json"})
             response = connection.getresponse()
             data = response.read(65537)
+            if response.status in Refused.FINAL:
+                raise Refused(response.status)
             if response.status != 200 or len(data) > 65536:
                 raise OSError("Receiver refused delivery.")
             return json.loads(data)
@@ -69,7 +84,13 @@ def flush_once(journal, sender, timings=None):
     if not batch:
         return 0
     posting = time.perf_counter()
-    result = sender.post("/v1/packets", {"events": batch})
+    try:
+        result = sender.post("/v1/packets", {"events": batch})
+    except Refused as refusal:
+        # This hub will refuse this batch every time. Retried, it held the head of the queue
+        # for good (22.09: 7,006 rows, none delivered). Set it aside, counted, and move on.
+        journal.quarantine([event["id"] for event in batch], refusal.status)
+        return len(batch)
     if timings is not None:
         timings.since("post_ms", posting)
     expected = [event["id"] for event in batch]

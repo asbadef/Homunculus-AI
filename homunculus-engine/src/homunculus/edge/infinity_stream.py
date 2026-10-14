@@ -89,15 +89,22 @@ def packet_event(inventory, device, payload, source_port, *, received_at=None, r
     return event
 
 
-def validate_event(event, inventory):
-    """Reject arbitrary metadata/clinical fields; failures never echo packet content."""
+def validate_event(event, inventory, *, match_name=True):
+    """Reject arbitrary metadata/clinical fields; failures never echo packet content.
+
+    The device is the address: (source, group, port). With `match_name=False` (the hub, K1)
+    the name the event carries need only be a well-formed name, not this inventory's, so a
+    monitor renamed on one side is still delivered and a queue holding the old name drains.
+    """
     try:
         if set(event) != {"schema", "id", "collector_id", "device_id", "source_ip", "group", "source_port",
                           "port", "received_at", "mode", "payload_bytes", "sha256", "payload_base64"}:
             raise ValueError
         device = inventory.lookup(event["source_ip"], event["group"], event["port"])
+        named = (device.id == event["device_id"] if match_name and device else
+                 isinstance(event["device_id"], str) and IDENTIFIER.fullmatch(event["device_id"]))
         if (event["schema"] != SCHEMA or event["collector_id"] != inventory.collector_id
-                or not device or device.id != event["device_id"] or event["mode"] not in ("live", "replay")
+                or not device or not named or event["mode"] not in ("live", "replay")
                 or str(uuid.UUID(event["id"])) != event["id"]
                 or type(event["received_at"]) not in (float, int) or not math.isfinite(event["received_at"])
                 or event["received_at"] <= 0 or type(event["source_port"]) is not int

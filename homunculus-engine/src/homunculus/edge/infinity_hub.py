@@ -117,14 +117,15 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
             if not isinstance(data, dict) or set(data) != {"events"} or not isinstance(data["events"], list) or not 1 <= len(data["events"]) <= MAX_BATCH:
                 raise ValueError
             for event in data["events"]:
-                validate_event(event, inventory)
+                validate_event(event, inventory, match_name=False)
                 if event["received_at"] > clock() + 5 or (event["payload_base64"] is not None and not accept_payload):
                     raise ValueError
         except (ValueError, TypeError):
             raise HTTPException(400, "Rejected event, clock or payload policy.") from None
         timings.since("validate_ms", validating)
         try:
-            ack = journal.append(data["events"], update_devices=True)
+            ack = journal.append(data["events"], update_devices=True, device_ids=[
+                inventory.lookup(e["source_ip"], e["group"], e["port"]).id for e in data["events"]])
         except CapacityError:
             raise HTTPException(507, "Archive capacity reached; delivery not acknowledged.") from None
         except ConflictError:
@@ -181,7 +182,7 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
             # The membership_refresh_* names carry the collector's rejoin activity. A hub
             # must learn them BEFORE a worker that sends them, or the whole heartbeat is
             # rejected as malformed: deploy hub first, worker second.
-            if (not isinstance(counters, dict) or not set(counters).issubset({"accepted", "expired", "forward_errors", "queue_full_dropped", "rejected_datagrams", "membership_refresh_scheduled", "membership_refresh_silence", "membership_refresh_failed"})
+            if (not isinstance(counters, dict) or not set(counters).issubset({"accepted", "expired", "forward_errors", "queue_full_dropped", "rejected_datagrams", "membership_refresh_scheduled", "membership_refresh_silence", "membership_refresh_failed", "quarantined"})
                     or any(type(v) is not int or not 0 <= v <= 10**12 for v in counters.values())):
                 raise ValueError
         except (ValueError, TypeError, KeyError):
