@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from .infinity_journal import CapacityError, ConflictError
 from .infinity_stream import MAX_BATCH, MAX_REQUEST, validate_event
+from .infinity_timing import WORKER_NAMES, Timings, valid_snapshot
 
 
 PAGE = """<!doctype html><html lang="tr"><meta charset="utf-8">
@@ -61,7 +62,7 @@ async function poll(g){try{
 
 
 def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payload=False, clock=time.time,
-               research_view=None):
+               research_view=None, timings=None):
     if min(len(collector_token), len(viewer_token)) < 32 or collector_token == viewer_token:
         raise ValueError("Use distinct collector and viewer tokens of at least 32 characters.")
     if research_view is not None and not accept_payload:
@@ -69,6 +70,9 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     heartbeat = {"seen": None, "value": None}
     lock = threading.Lock()
+    # Pass the journal's own Timings here too, and /v1/status shows the whole handler,
+    # the journal's phases included, under one key.
+    timings = timings or Timings()
 
     @app.middleware("http")
     async def response_headers(request, call_next):
@@ -104,8 +108,11 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
 
     @app.post("/v1/packets")
     async def packets(request: Request):
+        started = timings.clock()
         auth(request, collector_token)
         data = await body(request)
+        timings.since("body_ms", started)
+        validating = timings.clock()
         try:
             if not isinstance(data, dict) or set(data) != {"events"} or not isinstance(data["events"], list) or not 1 <= len(data["events"]) <= MAX_BATCH:
                 raise ValueError
@@ -115,14 +122,25 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
                     raise ValueError
         except (ValueError, TypeError):
             raise HTTPException(400, "Rejected event, clock or payload policy.") from None
+        timings.since("validate_ms", validating)
         try:
             ack = journal.append(data["events"], update_devices=True)
         except CapacityError:
             raise HTTPException(507, "Archive capacity reached; delivery not acknowledged.") from None
         except ConflictError:
             raise HTTPException(409, "Conflicting event ID.") from None
+        now = clock()
+        for event in data["events"]:
+            # How far behind the hub's clock a live packet arrives: the number the 3 s live
+            # window judges. A replay carries its capture time, which is not a delay.
+            if event["mode"] == "live":
+                timings.add("lag_ms", (now - event["received_at"]) * 1000)
         if research_view is not None:
+            consuming = timings.clock()
             research_view.consume(data["events"])
+            timings.since("consume_ms", consuming)
+        timings.add("batch_events", len(data["events"]))
+        timings.since("packets_ms", started)
         return {"ack": ack, "clinical_forwarding": False}
 
     @app.get("/infinity-research/state")
@@ -142,9 +160,13 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
         auth(request, collector_token)
         data = await body(request, 8192)
         try:
-            if (not isinstance(data, dict) or set(data) != {"collector_id", "mode", "queue", "clinical_forwarding"}
+            # `timings` is optional: a worker that predates it keeps its heartbeat accepted.
+            # A worker that sends it needs this hub first (deploy hub first, worker second).
+            if (not isinstance(data, dict)
+                    or set(data) - {"timings"} != {"collector_id", "mode", "queue", "clinical_forwarding"}
                     or data["collector_id"] != inventory.collector_id or data["mode"] not in ("live", "replay")
-                    or data["clinical_forwarding"] is not False):
+                    or data["clinical_forwarding"] is not False
+                    or ("timings" in data and not valid_snapshot(data["timings"], WORKER_NAMES))):
                 raise ValueError
             queue = data["queue"]
             if set(queue) != {"rows", "encrypted_bytes", "oldest_age_seconds", "counters", "retention_seconds"}:
@@ -170,6 +192,7 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
 
     @app.get("/v1/status")
     def status(request: Request):
+        started = timings.clock()
         auth(request, viewer_token)
         states = journal.device_states()
         devices = []
@@ -186,7 +209,9 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
         with lock:
             collector = {"id": inventory.collector_id, "connected": heartbeat["seen"] is not None and 0 <= clock()-heartbeat["seen"] <= 15,
                          "heartbeat": heartbeat["value"]}
-        return {"devices": devices, "collector": collector, "archive": journal.snapshot(),
-                "clinical_forwarding": False, "kernel_drop_count": None}
+        archive = journal.snapshot()
+        timings.since("status_ms", started)
+        return {"devices": devices, "collector": collector, "archive": archive,
+                "clinical_forwarding": False, "kernel_drop_count": None, "timings": timings.snapshot()}
 
     return app

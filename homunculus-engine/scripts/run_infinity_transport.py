@@ -17,6 +17,7 @@ from homunculus.edge.infinity_collector import Sender, collect, forward_loop, me
 from homunculus.edge.infinity_hub import create_hub
 from homunculus.edge.infinity_journal import Journal
 from homunculus.edge.infinity_stream import Inventory, MAX_BATCH
+from homunculus.edge.infinity_timing import Timings
 
 
 def main():
@@ -47,6 +48,9 @@ def main():
     worker = None
     stop = threading.Event()
     failure = threading.Event()
+    # One object for the journal, the sender, the forwarding loop and the hub, so a reading
+    # of /v1/status or of a heartbeat shows every phase of a batch side by side.
+    timings = Timings()
     try:
         inventory = Inventory.read(args.inventory)
         research_view = None
@@ -69,7 +73,8 @@ def main():
         else:
             if not args.endpoint:
                 raise ValueError("Collector requires --endpoint.")
-            sender = Sender(args.endpoint, token, ca_file=args.ca_file, allow_loopback_http=args.allow_loopback_http)
+            sender = Sender(args.endpoint, token, ca_file=args.ca_file, allow_loopback_http=args.allow_loopback_http,
+                            timings=timings)
             if not args.replay:
                 if sys.platform != "linux":
                     raise ValueError("Live mode requires Linux.")
@@ -79,18 +84,19 @@ def main():
                     print("Host IGMP membership limit is below the inventory's group count; no groups joined.", flush=True)
                     return 2
         journal = Journal(args.database, key, max_bytes=args.max_mib*1024*1024,
-                          max_rows=args.max_rows, retention=args.retention_seconds)
+                          max_rows=args.max_rows, retention=args.retention_seconds, timings=timings)
         print("Infinity research transport; clinical forwarding DISABLED.", flush=True)
         if args.role == "hub":
             app = create_hub(inventory, journal, token, viewer, accept_payload=args.capture_payload,
-                             research_view=research_view)
+                             research_view=research_view, timings=timings)
             uvicorn.run(app, host=args.host, port=args.port, ssl_certfile=args.tls_cert,
                         ssl_keyfile=args.tls_key, access_log=False, proxy_headers=False)
             return 0
         for signum in (signal.SIGINT, signal.SIGTERM):
             signal.signal(signum, lambda *_: stop.set())
         worker = threading.Thread(target=forward_loop, args=(journal, sender, inventory, stop,
-                                   "replay" if args.replay else "live", failure), daemon=True)
+                                   "replay" if args.replay else "live", failure),
+                                  kwargs={"timings": timings}, daemon=True)
         worker.start()
         if args.replay:
             baseline = journal.snapshot()["counters"]

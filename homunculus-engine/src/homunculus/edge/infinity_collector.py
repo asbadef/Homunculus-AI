@@ -28,14 +28,14 @@ def membership_capacity(inventory, *, proc_path=Path("/proc/sys/net/ipv4/igmp_ma
 
 
 class Sender:
-    def __init__(self, endpoint, token, *, ca_file=None, allow_loopback_http=False):
+    def __init__(self, endpoint, token, *, ca_file=None, allow_loopback_http=False, timings=None):
         target = urlsplit(endpoint)
         if (target.username or target.password or target.query or target.fragment or target.path not in ("", "/")
                 or not target.hostname or target.scheme not in ("http", "https") or len(token) < 32):
             raise ValueError("Invalid receiver endpoint or token.")
         if target.scheme == "http" and not (allow_loopback_http and target.hostname in ("127.0.0.1", "::1", "localhost")):
             raise ValueError("Remote forwarding requires HTTPS.")
-        self.target, self.token = target, token
+        self.target, self.token, self.timings = target, token, timings
         self.context = ssl.create_default_context(cafile=ca_file) if target.scheme == "https" else None
 
     def post(self, path, body):
@@ -43,6 +43,12 @@ class Sender:
         kwargs = {"context": self.context} if self.context else {}
         connection = cls(self.target.hostname, self.target.port, timeout=5, **kwargs)
         try:
+            # TCP and the TLS handshake on their own line: one new connection per request is
+            # a suspect for the batch cycle, and request() alone would hide it.
+            started = time.perf_counter()
+            connection.connect()
+            if self.timings is not None:
+                self.timings.since("connect_ms", started)
             connection.request("POST", path, canonical(body),
                                {"Authorization": "Bearer " + self.token, "Content-Type": "application/json"})
             response = connection.getresponse()
@@ -54,28 +60,42 @@ class Sender:
             connection.close()
 
 
-def flush_once(journal, sender):
+def flush_once(journal, sender, timings=None):
+    started = time.perf_counter()
     batch = journal.pending(MAX_BATCH)
     if not batch:
         return 0
+    posting = time.perf_counter()
     result = sender.post("/v1/packets", {"events": batch})
+    if timings is not None:
+        timings.since("post_ms", posting)
     expected = [event["id"] for event in batch]
     if not isinstance(result, dict) or result.get("ack") != expected:
         raise OSError("Invalid receiver acknowledgment.")
     journal.ack(expected)
+    if timings is not None:
+        timings.since("flush_ms", started)
+        timings.add("batch_events", len(expected))
     return len(expected)
 
 
-def forward_loop(journal, sender, inventory, stop, mode, failure=None):
+def forward_loop(journal, sender, inventory, stop, mode, failure=None, timings=None):
     next_heartbeat = 0
     backoff = 0.25
     while not stop.is_set():
         try:
             if time.monotonic() >= next_heartbeat:
-                sender.post("/v1/heartbeat", {"collector_id": inventory.collector_id,
-                            "mode": mode, "queue": journal.snapshot(), "clinical_forwarding": False})
+                # Scheduled before it is sent: a refused heartbeat is counted below and tried
+                # again in five seconds, but it must never hold delivery up. Retried at once,
+                # it starved the queue, so a worker deployed ahead of its hub stopped
+                # delivering altogether instead of merely going unseen.
                 next_heartbeat = time.monotonic() + 5
-            sent = flush_once(journal, sender)
+                beat = {"collector_id": inventory.collector_id, "mode": mode,
+                        "queue": journal.snapshot(), "clinical_forwarding": False}
+                if timings is not None:
+                    beat["timings"] = timings.snapshot()
+                sender.post("/v1/heartbeat", beat)
+            sent = flush_once(journal, sender, timings)
             backoff = 0.25
             if not sent:
                 stop.wait(0.25)

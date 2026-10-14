@@ -1,6 +1,7 @@
 """Encrypted, bounded durable packet outbox/archive; no patient assignments."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import json
 import sqlite3
@@ -28,15 +29,27 @@ def external_path(path):
     return path
 
 
+class _Untimed:
+    """Stands in when no one asked for timings, so the journal's code has one shape."""
+    @staticmethod
+    def clock():
+        return 0.0
+
+    @staticmethod
+    def since(name, started):
+        pass
+
+
 class Journal:
     def __init__(self, path, key, *, max_bytes=128 * 1024 * 1024, max_rows=100_000,
-                 retention=3600, clock=time.time):
+                 retention=3600, clock=time.time, timings=None):
         if not 1024 <= max_bytes <= 4 * 1024**3 or not 1 <= max_rows <= 1_000_000 or not 60 <= retention <= 86400:
             raise ValueError("Invalid storage limits.")
         self.path = external_path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.fernet = Fernet(key)
         self.clock, self.retention = clock, retention
+        self.timings = timings or _Untimed()
         self.max_bytes, self.max_rows = max_bytes, max_rows
         self.lock = threading.RLock()
         self.db = sqlite3.connect(self.path, check_same_thread=False)
@@ -65,15 +78,37 @@ class Journal:
             self.db.close()
             raise ValueError("Journal key does not match existing storage.") from None
 
+    @contextmanager
+    def _transaction(self, name=None):
+        """The lock, one transaction, and where the time went: waiting, working, committing.
+
+        Commits on success and rolls back on any exception, exactly as `with self.db:` did.
+        """
+        started = self.timings.clock()
+        with self.lock:
+            self.timings.since("lock_wait_ms", started)
+            try:
+                yield
+                committing = self.timings.clock()
+                self.db.commit()
+                self.timings.since("commit_ms", committing)
+            except BaseException:
+                self.db.rollback()
+                raise
+        if name:
+            self.timings.since(name, started)
+
     def _increment(self, name, amount=1):
         self.db.execute("INSERT INTO stats VALUES (?,?) ON CONFLICT(name) DO UPDATE SET value=value+excluded.value", (name, amount))
 
     def count(self, name, amount=1):
-        with self.lock, self.db:
+        with self._transaction():
             self._increment(name, amount)
 
     def _expire(self):
+        started = self.timings.clock()
         count = self.db.execute("DELETE FROM events WHERE created < ?", (self.clock() - self.retention,)).rowcount
+        self.timings.since("expire_ms", started)
         if count:
             self._increment("expired", count)
 
@@ -81,9 +116,12 @@ class Journal:
         """Atomic batch: ack only after commit. Same ID with different content is an error."""
         if not events:
             return []
-        with self.lock, self.db:
+        with self._transaction("append_ms"):
             self._expire()
+            started = self.timings.clock()
             size, rows = self.db.execute("SELECT COALESCE(SUM(size),0),COUNT(*) FROM events").fetchone()
+            self.timings.since("capacity_ms", started)
+            started = self.timings.clock()
             for event in events:
                 plain = canonical(event)
                 digest = hashlib.sha256(plain).hexdigest()
@@ -108,20 +146,21 @@ class Journal:
                         mode=CASE WHEN excluded.stamp>stamp THEN excluded.mode ELSE mode END,
                         stamp=MAX(stamp,excluded.stamp)""",
                         (event["device_id"], event["received_at"], event["payload_bytes"], event["payload_bytes"], event["mode"]))
+            self.timings.since("insert_ms", started)
         return [e["id"] for e in events]
 
     def pending(self, limit=32):
-        with self.lock, self.db:
+        with self._transaction("pending_ms"):
             self._expire()
             rows = self.db.execute("SELECT body FROM events ORDER BY seq LIMIT ?", (limit,)).fetchall()
             return [json.loads(self.fernet.decrypt(row[0])) for row in rows]
 
     def ack(self, ids):
-        with self.lock, self.db:
+        with self._transaction("ack_ms"):
             self.db.executemany("DELETE FROM events WHERE id=?", ((x,) for x in ids))
 
     def snapshot(self):
-        with self.lock, self.db:
+        with self._transaction("snapshot_ms"):
             self._expire()
             rows, size, oldest = self.db.execute("SELECT COUNT(*),COALESCE(SUM(size),0),MIN(created) FROM events").fetchone()
             return {"rows": rows, "encrypted_bytes": size, "oldest_age_seconds": None if oldest is None else max(0, self.clock()-oldest),
