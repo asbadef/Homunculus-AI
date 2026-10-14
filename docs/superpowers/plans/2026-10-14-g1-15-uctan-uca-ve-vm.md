@@ -473,7 +473,15 @@ Expected (gate): `clean`, `no g115 volumes`, no `g115` network, `0`; every listi
 
 # Part B — Tarayıcıda yürüyüş (kullanıcı ya da Chrome'u süren bir ajan için)
 
-**Nerede:** yerel yığın, Part A'nın A1–A3'ü yapılmış ve `smoke.sh` **koşulmamış** taze bir veritabanı (smoke testi kapsam ve TOTP durumunu değiştirir; B4.3 için hemşirenin `yb` atamasını B5'te ekrandan yapacaksınız). Adres: **`https://127.0.0.1:18443`** (kendinden imzalı sertifika: bir kez "Gelişmiş → Devam et"). Kilit testleri için isterseniz `stack/local.env`'e `SCREEN_LOCK_IDLE_MINUTES=1` ekleyip `$C up -d --no-build api` (api yeniden kurulur).
+> **Kullanıcı kararı (14.10):** sentetik yatak verisine gerek yok; Part B yerel yığında değil,
+> **deploy'dan sonra VM'de, monitörlerden gelen gerçek yataklarla, kullanıcıyla birlikte**
+> yapılır (C10'un ardından). Yerel yığın ve sentetik koğuş kapatıldı ve silindi. Aşağıdaki
+> satırlar aynen kullanılır; adres VM'nin adresi, hesaplar VM'deki gerçek hesaplardır (sentetik
+> `test.*` hesaplarının yerine). Hasta verisi ekran görüntüsüne ya da depoya girmez — görüntü
+> gerekirse hasta adı/kimliği görünmeyen bir bölümden alınır ya da yalnız gözlem yazılır.
+> Bir satır ❌ çıkarsa düzeltme deploy'dan sonra yapılır (C-adımlarındaki geri dönüş R ayrı kalır).
+
+**Nerede (ilk plan — yerel yığın):** yerel yığın, Part A'nın A1–A3'ü yapılmış ve `smoke.sh` **koşulmamış** taze bir veritabanı (smoke testi kapsam ve TOTP durumunu değiştirir; B4.3 için hemşirenin `yb` atamasını B5'te ekrandan yapacaksınız). Adres: **`https://127.0.0.1:18443`** (kendinden imzalı sertifika: bir kez "Gelişmiş → Devam et"). Kilit testleri için isterseniz `stack/local.env`'e `SCREEN_LOCK_IDLE_MINUTES=1` ekleyip `$C up -d --no-build api` (api yeniden kurulur).
 
 **Hesaplar** (hepsi sentetik, parola `G115-Sentetik-Parola-1`, alan `@homunculus.health`): `test.yonetici` (Sistem Yöneticisi, ilk girişte TOTP — telefonda bir doğrulayıcı uygulama), `test.hemsire` (Hemşire), `test.denetci` (Denetçi), `test.sorumlu.hekim` (Sorumlu Hekim, TOTP), `test.biyomedikal` (yalnız `devices.manage`). Tohum yönetici `g115.admin@homunculus.health` / `G115-Synthetic-Admin-1`: TOTP + ilk girişte şifre değiştirme (göç `0011`'in davranışını görmek için).
 
@@ -613,7 +621,7 @@ Metinler roadmap'ten (l. 286–310) olduğu gibi. Son ikisi AD açılmadan ekran
 
 # Part C — VM deploy runbook'u (YALNIZ kullanıcıyla birlikte, sırayla)
 
-**Kural:** Bu bölümdeki hiçbir komut kullanıcı yanında değilken koşulmaz; ajan VM'ye bağlanmaz. Kapı (Part A + Part B) geçmeden ve Part D'nin "deploy'dan önce" maddeleri yanıtlanmadan başlanmaz. Hub (`172.100.101.72`) bu deploy'un tek hedefidir; worker (`.74`) yalnız C14'te (setcap). Infinity pilotunun "önce hub" kuralı Infinity sürümleri içindir; bu Docker deploy'u Infinity birimlerine dokunmaz.
+**Kural:** Bu bölümdeki hiçbir komut kullanıcı yanında değilken koşulmaz; ajan VM'ye bağlanmaz. Part A geçmeden ve Part D'nin "deploy'dan önce" maddeleri yanıtlanmadan başlanmaz. Part B (kullanıcı kararı 14.10) C10'dan sonra VM'de, gerçek yataklarla yapılır. Hub (`172.100.101.72`) bu deploy'un tek hedefidir; worker (`.74`) yalnız C14'te (setcap). Infinity pilotunun "önce hub" kuralı Infinity sürümleri içindir; bu Docker deploy'u Infinity birimlerine dokunmaz.
 
 Her adımda **Geri alma** yazılıdır. Tam geri dönüş: aşağıda **R**.
 
