@@ -60,6 +60,9 @@ class Journal:
             CREATE TABLE IF NOT EXISTS events (
                 seq INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, digest TEXT NOT NULL,
                 created REAL NOT NULL, size INTEGER NOT NULL, body BLOB NOT NULL);
+            -- Expiry and the oldest row's age read this, not the whole table. Created on the
+            -- first open of an older file (one scan, once); older code keeps working with it.
+            CREATE INDEX IF NOT EXISTS events_created ON events(created);
             CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value BLOB NOT NULL);
             CREATE TABLE IF NOT EXISTS stats (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS devices (
@@ -77,6 +80,10 @@ class Journal:
         except Exception:
             self.db.close()
             raise ValueError("Journal key does not match existing storage.") from None
+        # Rows and encrypted bytes, counted once here and then kept in step with every
+        # commit, so the capacity check no longer sums the whole table on every append.
+        self.rows, self.bytes = self.db.execute("SELECT COUNT(*),COALESCE(SUM(size),0) FROM events").fetchone()
+        self._delta = [0, 0]
 
     @contextmanager
     def _transaction(self, name=None):
@@ -87,6 +94,7 @@ class Journal:
         started = self.timings.clock()
         with self.lock:
             self.timings.since("lock_wait_ms", started)
+            self._delta = [0, 0]
             try:
                 yield
                 committing = self.timings.clock()
@@ -95,6 +103,9 @@ class Journal:
             except BaseException:
                 self.db.rollback()
                 raise
+            # Only a committed change moves the totals; a rolled-back batch leaves them be.
+            self.rows += self._delta[0]
+            self.bytes += self._delta[1]
         if name:
             self.timings.since(name, started)
 
@@ -105,9 +116,15 @@ class Journal:
         with self._transaction():
             self._increment(name, amount)
 
+    def _removed(self, sizes):
+        self._delta[0] -= len(sizes)
+        self._delta[1] -= sum(size for (size,) in sizes)
+        return len(sizes)
+
     def _expire(self):
         started = self.timings.clock()
-        count = self.db.execute("DELETE FROM events WHERE created < ?", (self.clock() - self.retention,)).rowcount
+        count = self._removed(self.db.execute("DELETE FROM events WHERE created < ? RETURNING size",
+                                              (self.clock() - self.retention,)).fetchall())
         self.timings.since("expire_ms", started)
         if count:
             self._increment("expired", count)
@@ -119,7 +136,7 @@ class Journal:
         with self._transaction("append_ms"):
             self._expire()
             started = self.timings.clock()
-            size, rows = self.db.execute("SELECT COALESCE(SUM(size),0),COUNT(*) FROM events").fetchone()
+            size, rows = self.bytes + self._delta[1], self.rows + self._delta[0]
             self.timings.since("capacity_ms", started)
             started = self.timings.clock()
             for event in events:
@@ -137,6 +154,8 @@ class Journal:
                                 (event["id"], digest, self.clock(), len(encrypted), encrypted))
                 size += len(encrypted)
                 rows += 1
+                self._delta[0] += 1
+                self._delta[1] += len(encrypted)
                 self._increment("accepted")
                 if update_devices:
                     self.db.execute("""INSERT INTO devices VALUES (?,?,1,?,?,?)
@@ -157,12 +176,14 @@ class Journal:
 
     def ack(self, ids):
         with self._transaction("ack_ms"):
-            self.db.executemany("DELETE FROM events WHERE id=?", ((x,) for x in ids))
+            for x in ids:
+                self._removed(self.db.execute("DELETE FROM events WHERE id=? RETURNING size", (x,)).fetchall())
 
     def snapshot(self):
         with self._transaction("snapshot_ms"):
             self._expire()
-            rows, size, oldest = self.db.execute("SELECT COUNT(*),COALESCE(SUM(size),0),MIN(created) FROM events").fetchone()
+            oldest = self.db.execute("SELECT MIN(created) FROM events").fetchone()[0]
+            rows, size = self.rows + self._delta[0], self.bytes + self._delta[1]
             return {"rows": rows, "encrypted_bytes": size, "oldest_age_seconds": None if oldest is None else max(0, self.clock()-oldest),
                     "counters": dict(self.db.execute("SELECT name,value FROM stats")), "retention_seconds": self.retention}
 
