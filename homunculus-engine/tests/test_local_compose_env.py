@@ -28,9 +28,11 @@ _ENV_EXAMPLE = _REPO / "deploy" / "local" / ".env.example"
 _MODULES = [
     _SRC / "scope" / "resolver.py",
     _SRC / "auth" / "session_policy.py",
+    _SRC / "api" / "infinity_shadow.py",
 ]
 # What the scan must find at least, so a scanner that goes blind cannot pass vacuously.
-_KNOWN = {"SCOPE_ENFORCE_UNASSIGNED", "SCREEN_LOCK_IDLE_MINUTES", "SCREEN_LOCK_SIGNOUT_HOURS"}
+_KNOWN = {"SCOPE_ENFORCE_UNASSIGNED", "SCREEN_LOCK_IDLE_MINUTES", "SCREEN_LOCK_SIGNOUT_HOURS",
+          "INFINITY_CLINICAL_STAGE"}
 
 _ENV_NAME = re.compile(r"[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+")
 

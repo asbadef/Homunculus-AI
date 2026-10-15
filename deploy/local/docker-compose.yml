@@ -69,6 +69,13 @@ services:
       INFINITY_HUB_URL: ${INFINITY_HUB_URL:-}
       INFINITY_VIEWER_TOKEN: ${INFINITY_VIEWER_TOKEN:-}
       INFINITY_HUB_CA_FILE: ${INFINITY_HUB_CA_FILE:-}
+      # Aşama A — the unvalidated monitor strip (docs/superpowers/plans/2026-10-15-infinity-asama-a-golge.md).
+      # Unset = off. The token is the hub forwarder's, NOT a TENANTS device token: it opens
+      # POST /infinity-shadow/readings and nothing else.
+      INFINITY_CLINICAL_STAGE: ${INFINITY_CLINICAL_STAGE:-}
+      INFINITY_SHADOW_TOKEN: ${INFINITY_SHADOW_TOKEN:-}
+      INFINITY_SHADOW_HOSPITAL: ${TENANT_SLUG:-demo-hastanesi}
+      INFINITY_DEVICE_BEDS_PATH: /etc/homunculus/infinity-shadow/device-beds.json
       # Active Directory sign-in (optional; spec §7, docs/EDGE-BRIDGE-LOCAL.md). LDAP_URL unset =
       # off. A value the API cannot use is logged and leaves AD sign-in off; it never stops the
       # API. The service account's password stays in .env and never reaches a browser.
@@ -106,6 +113,12 @@ services:
       # missing source, and a missing directory is harmless where a missing file would become a
       # directory named like a certificate.
       - ./ldap-ca:/etc/homunculus/ldap-ca:ro
+      # Aşama A's approved device->bed table: deploy/local/infinity-shadow/device-beds.json, a copy
+      # of deploy/infinity/device-beds.icu2.json checked by its sha256. A directory, not a file, for
+      # the ldap-ca reason above: a missing file source would become a directory named
+      # device-beds.json (what happened to bed-mapping.json). A missing table places no monitor
+      # on a bed; it never stops the API.
+      - ./infinity-shadow:/etc/homunculus/infinity-shadow:ro
     depends_on:
       postgres:
         condition: service_healthy
