@@ -30,6 +30,9 @@ deploy/local/site-mapping.json
 deploy/local/bed-mapping.json
 # The domain controller's CA certificate: public, but site-specific.
 deploy/local/ldap-ca/
+# Aşama A's DEPLOYED device->bed table: a copy of deploy/infinity/device-beds.icu2.json, installed
+# with its sha256 checked. The reviewed, approved source of record is that repo file, not this.
+deploy/local/infinity-shadow/
 
 # Python bytecode. Never useful in a diff, and it pulled a compiled copy of a deleted module along
 # with it.
