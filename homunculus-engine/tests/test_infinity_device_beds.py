@@ -7,7 +7,6 @@ the site's real table is checked through its file, never written into a test.
 """
 from __future__ import annotations
 
-import copy
 import hashlib
 import importlib.util
 import json
@@ -339,12 +338,13 @@ def test_loads_and_failures_are_logged_once_each_with_version_sha_and_counts(cap
 ICU2 = ROOT / "deploy" / "infinity" / "device-beds.icu2.json"
 
 
-def test_the_committed_site_table_passes_every_rule_but_its_approval():
+def test_the_committed_site_table_is_approved_and_puts_every_monitor_on_its_own_bed():
+    # Task 13: approved on 19.10.2026, every monitor on a bed (the three left open before were read
+    # on the central station that day). parse_table refuses two monitors on one bed.
     raw = json.loads(ICU2.read_text(encoding="utf-8"))
-    if not raw["approved_by"] or not raw["approved_at"]:                # Task 13 fills these
-        raw = {**copy.deepcopy(raw), "approved_by": "review", "approved_at": "2026-10-15"}
     table = parse_table(raw)
-    assert table.counts() == (10, 3)
+    assert (table.version, table.approved_at) == (1, "2026-10-19")
+    assert table.counts() == (13, 0)
     inventory = json.loads((ROOT / "deploy" / "infinity" / "inventory.icu2.json").read_text(encoding="utf-8-sig"))
     assert {(r.source, r.group, r.port) for r in table.rows} == {
         (d["source"], d["group"], d["port"]) for d in inventory["devices"]}

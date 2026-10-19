@@ -2,8 +2,11 @@
 
 Run it without copying it anywhere, from a machine that has the hub's SSH key:
 
-    ssh sysadmin@172.100.101.72 'python3 - --window 300 --table-version 1 --table-sha <12 hex> \
-        --unassigned 10.10.203.28,10.10.203.34,10.10.203.38' < deploy/infinity/shadow_check.py
+    ssh sysadmin@172.100.101.72 'python3 - --window 300 --table-version 1 --table-sha <12 hex>' \
+        < deploy/infinity/shadow_check.py
+
+`--unassigned a,b,…` names the devices the table leaves on no bed; left out, none is expected (the
+table approved on 19.10.2026 puts all 13 on a bed).
 
 It reads `TENANT_TOKEN` from the clinical stack's `.env` (never printing it) and asks the panel, on
 the host's own address over plain HTTP (it never leaves the machine, and needs no certificate or
