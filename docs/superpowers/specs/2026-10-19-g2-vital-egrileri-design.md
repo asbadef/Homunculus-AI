@@ -208,9 +208,10 @@ Rules:
   Gün (low-alpha tints; the `--v-*` lines must keep 3:1 on `card` over them — the contrast test
   gains these pairs). The header comment's "not ported yet" list drops `--band-*`/`--grid`.
 - `src/live/i18n/strings/patient.js`: the keys in §9, four languages.
-- `src/live/screens/patient/PatientScreen.jsx`: the placeholder is replaced; `trendsSoon` and
-  `formsSoon` keys are removed (the forms seam text moves to its own small note, since forms are
-  still Group 3).
+- `src/live/screens/patient/PatientScreen.jsx`: the dashed placeholder is replaced by
+  `TrendsBox`; the `trendsSoon` key is removed. The forms seam stays visible, since forms are
+  still Group 3: the existing `formsSoon` sentence moves into a one-line `Note` under the
+  Sepsis/Meds row, unchanged in wording.
 
 ## 7. Accessibility and honesty
 
