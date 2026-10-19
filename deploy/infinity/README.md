@@ -336,3 +336,87 @@ It runs locally and does not replace the deployed metadata worker/hub units.
 Those services are already active; do not rerun preparation or recreate keys.
 The new Linux validation capture runs alongside the existing receiver without
 binding its UDP port. Independent live measurement validation remains pending.
+
+# Aşama A — gölge forwarder (2026-10-19)
+
+Stage A puts an **unvalidated monitor strip** on the clinical board: the hub's own live
+research view, forwarded to the clinical API as display-only data. Nothing clinical changes.
+The hub still reports `clinical_forwarding: False`; the API keeps the readings in a
+memory-only store behind its own token; no rule, score, alert, notification or sound reads
+them; and no audit row is written for them (measured: 0 rows from ~720 posts an hour).
+Plan and copy-paste deploy blocks:
+`docs/superpowers/plans/2026-10-15-infinity-asama-a-golge.md` ("Dağıtım blokları").
+
+**Release and drop-ins** (hub unit `homunculus-infinity-pilot-hub`, drop-ins under
+`/etc/systemd/system/homunculus-infinity-pilot-hub.service.d/`):
+
+- Release R3 `/opt/homunculus-infinity/transport-3940346adc66ca7b` (tarball sha256
+  `e55325f9…`): the Stage 0a decoder and transport unchanged, plus a forwarder thread that
+  reads the live view every 5 s and posts at most one value per parameter per device, only
+  values younger than 3 s, never NBP.
+- `92-asama-a-kod.conf` — the same as `90-transport-0a-duzeltme.conf` with the release path
+  changed to R3. Code present, forwarder OFF. Created 2026-10-19 08:49 UTC.
+- `93-asama-a-golge.conf` — adds only
+  `EnvironmentFile=/etc/homunculus-infinity-pilot/shadow-forwarder.env`. Its presence turns
+  the forwarder ON (journal line `Shadow display forwarding ENABLED`). Created 2026-10-19
+  09:00:13 UTC.
+
+**Files under `/etc/homunculus-infinity-pilot/`** (contents never printed or copied anywhere):
+
+- `shadow-forwarder.env` (root:root 0600) holds `INFINITY_SHADOW_URL`
+  (`https://172.100.101.72:8443/infinity-shadow/readings`), `INFINITY_SHADOW_CA_FILE` and
+  `INFINITY_SHADOW_TOKEN` — the shadow token, a credential separate from `TENANT_TOKEN`. The
+  same token sits in `deploy/local/.env` on the API side.
+- `web-ca.pem` (root:homunculus-infinity-pilot 0640) is the web container's self-signed
+  certificate (SAN `IP:172.100.101.72`), so the hub verifies TLS to the API rather than
+  skipping it.
+
+**API side (`deploy/local`).** `.env` carries `INFINITY_CLINICAL_STAGE=shadow` and the shadow
+token. `infinity-shadow/device-beds.json` is the device→bed table: version 1, sha256
+`ac5ce1c9549c…`, 13 devices on 13 beds, 0 unassigned, approved by the project owner on
+2026-10-19 from the central station's bed list (commit `a2c1257`). A change to the table is a
+new version approved the same way, never an edit in place.
+
+**Rollback, three tiers** (blocks in the plan; each stops on its first error, and a line saying
+"durdum" means nothing changed):
+
+1. **G-1 — forwarder off** (hub; seconds; the API does not restart): delete
+   `93-asama-a-golge.conf`, `systemctl daemon-reload`, restart the hub. Within 15–20 s the strip
+   says "Monitör verisi gelmiyor" and every value disappears; the board is otherwise unchanged.
+2. **G-2 — stage off** (API): `INFINITY_CLINICAL_STAGE=off` in `.env`, then
+   `docker compose up -d --no-build api`. The strip, the monitor cards, the feed chip and the
+   Settings legend disappear; the API restarts, so the board may be away for a few minutes.
+3. **G-3 / G-4 — code back** (hub to Stage 0a by deleting 92; API and web to the previous
+   images), only after G-1. **G-5** removes the leftovers once everything is rolled back.
+
+For a problem on the strip alone: G-1, then G-2 if the strip must go entirely.
+
+**`deploy/infinity/shadow_check.py`** is the read-only acceptance check, run from a
+workstation without copying it to the VM:
+
+    ssh sysadmin@172.100.101.72 'python3 - --window 300 --table-version 1 --table-sha ac5ce1c9549c' \
+        < deploy/infinity/shadow_check.py
+
+It reads `TENANT_TOKEN` from the API's `.env` (never printing it), asks the API for the strip
+and the board twice, `--window` seconds apart, and prints one KABUL/RED row per criterion, each
+device's status with its fresh-value count and oldest age, and `PANO_OZET` — the sha256 of
+`/patients` with the self-ageing keys removed, so two readings of an unchanged board hash
+alike. It never prints a physiological value, a patient id or a token.
+
+**Acceptance as measured on 2026-10-19** (Kabul K0–K9 of the plan; engineering thresholds,
+none clinical):
+
+| K | Measured |
+|---|---|
+| K1 live values on assigned beds | 13 devices: 7 streaming, 6 standby; every streaming bed carried ≥ 1 fresh value. BED08 showed its three parameters as device-flagged *invalid* for some minutes with a patient present, then five fresh values — recorded, nothing changed. Bedside eye comparison on 3 beds (same/different only): **pending**. |
+| K2 unassigned devices | none expected, none seen |
+| K3 lag | 2347 readings in 300 s, mean 820 ms, 100 % within 3000 ms; 60 posts in 300 s (≥ 54 required) |
+| K4 engine output unchanged | `PANO_OZET` sha256 `26a1c3af…` (6 cards, 0 alerts) identical before the forwarder (P0), right after it (P1) and 90 min later. **24 h reading pending** (due 2026-10-20). |
+| K5 audit row rate | the hour before drop-in 93: 0 rows; the hour after: 11 rows, all human (`auth`, `admin`); no new event type; 0 rows from the forwarder |
+| K6 hub unaffected | `transport_check.py --window 300`: KABUL — 19 322 live packets, 100 % within 3 s, mean 251 ms, 0 expired / 0 transfer errors / 0 quarantined, 13/13 devices, hub CPU 9.0 % of one core (ceiling 43 %) |
+| K7 feed death | **pending**: a 5-minute G-1 then drop-in 93 again, agreed with the ward |
+| K8 labels and accessibility | 390 px and 1440 px, four languages, both themes, with the strip rendered: no horizontal overflow; strip heading az "Monitor · təsdiqlənməmiş", tr "Monitör · doğrulanmamış", en "Monitor · unvalidated", ru "Монитор · не валидировано"; no raw keys; the strip holds no live region and no focusable element, so it announces nothing and cannot trap focus |
+| K9 biomedical / nurse | a biomedical-only account reaches Monitörler (13 devices, bed labels and addresses, no patient name or number) and nothing else; a nurse-only account has no Monitörler. A first attempt with both "Ek görev" boxes ticked gave the biomedical account `board.view` — the account was wrong, not the screen. |
+
+The pending rows (K7, the 24 h K4 reading, the bedside comparison) are filled in here when
+they are taken.

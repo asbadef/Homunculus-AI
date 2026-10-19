@@ -124,6 +124,20 @@ ofsetleri kayar ve profil sessizce yanlış alan okumaya başlar.
 - Bir cihazda yalnız `ART_map` okunabildi; o cihazın mesaj düzeni tam çözülmedi.
 - Bu bir klinik decoder değildir. Klinik ingest kapalıdır ve bu bulgular tek başına
   klinik kullanım için yeterli doğrulama sayılmaz.
+- **Aşama A şeridi (19 Ekim 2026'dan beri).** Bu kayıtlardan çözülen değerler klinik panoda
+  "Monitör · doğrulanmamış" başlıklı, kesik çizgili bir şeritte gösterilir; yalnız görüntüdür.
+  Hiçbir alarm, skor (NEWS2 dahil), bildirim ya da ses bu değerlerden üretilmez; birincil alarm
+  başucu monitörünün kendisidir. Her değerin yanında saniye cinsinden yaşı ve kanıt düzeyi,
+  ekranda göründüğü sözcüklerle yazılıdır: "İki cihazda monitör ekranıyla birebir", "Monitör
+  ekranıyla birebir; ölçüm yeri bilinmiyor", "Tek yatakta aralık örtüşmesi; ekranla birebir
+  değil", "MAP bağıntısı ve ekran eğilimi", "Yalnız yapısal kontrol (MAP bağıntısı); ekranla
+  karşılaştırılmadı". Kısmi doğrulanan parametre "KISMİ" rozeti taşır; hangi parametrenin hangi
+  düzeyde olduğu Ayarlar'daki açıklamada ve Aşama A planının tablosundadır. Cihazın geçersiz
+  işaretlediği değer sayı olarak değil `***` olarak çizilir. **NBP şeritte yoktur, bilerek:** son
+  NBP her pakette geçerli kayıt olarak yinelenir (yukarıda "Geçerlilik bayrağı") ve cihaz zaman
+  damgası çözülmediği için manşonun ne zaman ölçtüğü bilinemez. Şeritte yaşı anlamsız tek değer
+  olurdu; hastanın değiştiği bir yatakta önceki hastanın NBP'si de olabilirdi. NBP başucu
+  monitöründen okunur.
 
 ## Uygulama ve dağıtım — 22 Eylül 2026
 

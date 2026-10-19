@@ -1024,6 +1024,18 @@ Bu bölüm proje büyüdükçe dolacak. Şu an sıradaki terim grupları:
     bilinmiyor — biomed'e sorulan sorular `docs/drager-infinity-biomed-sorulari.md`'de. Varsa,
     hiç yeni kod yazmadan mevcut MLLP köprüsü (`run_bridge.py`) kullanılır; yoksa Kappa'nın kendi
     seri protokolü (MS28819, X5 konektörü — MEDIBUS'tan farklı) bir sonraki seçenek olur.
+  - **Aşama A şeridi (19 Ekim 2026'dan beri canlı):** Gateway beklenmeden, kendi çözücümüzün
+    okuduğu 13 Kappa monitörünün değerleri klinik panoda "Monitör · doğrulanmamış" başlıklı kesik
+    çizgili bir şeritte görünür. Yalnız görüntüdür: alarm, skor, bildirim, ses üretmez; motor bu
+    değerleri hiç görmez (kabulde pano özeti değişmedi, denetim kaydına 0 satır düştü). Bütün
+    klinisyenler görür; biyomedikal ayrıca "Monitörler" ekranında cihazları hasta bilgisi olmadan
+    görür. Kapatma üç kademe: **G-1** forwarder kapalı (hub'da drop-in 93 silinir; saniyeler
+    sürer; şerit "Monitör verisi gelmiyor" der), **G-2** aşama kapalı (API `.env`'de
+    `INFINITY_CLINICAL_STAGE=off`; şerit tamamen kalkar), **G-3/G-4** kod geri. Cihaz→yatak
+    tablosu (`deploy/local/infinity-shadow/device-beds.json`, sürüm 1, sha `ac5ce1c9549c`)
+    19.10'da proje sahibince merkezi monitörün yatak listesinden onaylandı; değişiklik yeni bir
+    sürüm olarak aynı yolla onaylanır. Ayrıntı ve kabul ölçümleri: `deploy/infinity/README.md`,
+    "Aşama A" bölümü.
 - **ML terimleri (ilk model kuruldu — [[early-sepsis-ml-model]]):**
   - **Etiket (label):** modele "doğru cevap" olarak verdiğimiz şey. Bizde: hasta 6 saat *sonra*
     sepsis olacak mı? (PhysioNet verisi bunu hazır işaretlemiş.)
