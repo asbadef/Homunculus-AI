@@ -7,6 +7,7 @@ import { resetScreens } from "../../shell/routes.js";
 import { onlyScreens } from "../../shell/screens.testutil.js";
 import { ShellProvider } from "../../shell/ShellContext.jsx";
 import { NOW, ago, alarm, board, entry, identity, measured, news2, scopedTo } from "../../data/board.testutil.js";
+import { STAGE_OFF, bed as monitorBed, param, strip, unassigned } from "../../data/shadow.testutil.js";
 import { BedsScreen } from "./BedsScreen.jsx";
 
 /** Let every answer already given land. */
@@ -259,5 +260,38 @@ describe("the bed board", () => {
       fireEvent.change(screen.getByLabelText("Çarpayı və ya xəstə axtar"), { target: { value: "zzz" } });
       expect(screen.getByText("\"zzz\" ilə uyğun gələn kart yoxdur.")).toBeInTheDocument();
     });
+  });
+});
+
+// Aşama A: the unvalidated monitor strip on the beds screen. The shadow store is started as LiveApp
+// starts it for a READY session, with the strip's answer the test gives.
+async function openStrip(answer, options = {}) {
+  const mounted = await open({
+    ...options,
+    screens: options.screens,
+  });
+  mounted.api.shadowBoard.mockImplementation(async () => (answer instanceof Error ? Promise.reject(answer) : answer));
+  await act(async () => { mounted.shadow.start(["board.view", "alerts.ack"]); await settle(); });
+  return mounted;
+}
+
+describe("the monitor strip (Aşama A)", () => {
+  it("with the stage off draws nothing: no chip, no monitor card", async () => {
+    const { api } = await openStrip(STAGE_OFF, { payload: board([entry("S-001", [], CARD)]) });
+    expect(api.shadowBoard).toHaveBeenCalled();
+    expect(screen.queryByText(/Monitor \(təsdiqlənməyib\)/)).toBeNull();
+    expect(document.querySelector("[data-monitor], [data-monitor-strip]")).toBeNull();
+  });
+
+  it("puts its chip in the feed row, separately labelled, with the server's counts", async () => {
+    const answer = strip({
+      beds: [monitorBed("REA-01 · 4", [param("hr", 72)]), monitorBed("REA-01 · 5", [], { status: "standby" })],
+      unassigned: [unassigned("192.0.2.28")],
+    });
+    await openStrip(answer, { payload: board([entry("S-001", [], CARD)]) });
+    const chip = screen.getByText(/məlumat göndərir/).closest("span");
+    expect(chip).toHaveTextContent("Monitor (təsdiqlənməyib): 1/3 məlumat göndərir · 2 gözləmədə · 1 təyin edilməyib");
+    // the existing feed chip's row: the one beside the attention line, two columns from 861 px
+    expect(chip.closest(".min-\\[861px\\]\\:grid-cols-2")).not.toBeNull();
   });
 });

@@ -38,6 +38,9 @@ import source from "./strings/source.js";
 // G1-16: the alarm sound and the critical-alarm notification, ported before the old workspace went.
 import signals from "./strings/signals.js";
 
+// Aşama A: the unvalidated monitor strip (screens/common/MonitorStrip.jsx).
+import monitor from "./strings/monitor.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -58,6 +61,8 @@ export const NAMESPACES = {
   source,
 
   signals,
+
+  monitor,
 };
 
 function flattenInto(out, prefix, entries) {

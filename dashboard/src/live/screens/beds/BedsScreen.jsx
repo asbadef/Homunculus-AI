@@ -43,6 +43,8 @@ import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
 import { measuredVitals } from "../common/vitals.js";
 import { ORDERS, VIEWS, bedNameOf, inUnit, matching, orderBeds } from "./order.js";
 import { BedCard } from "./BedCard.jsx";
+import { useShadow } from "../../data/ShadowProvider.jsx";
+import { MonitorFeedChip } from "../common/MonitorStrip.jsx";
 
 /** How often the ages on this screen are re-read. A bed card shows a measurement's clock time and
  *  a channel's overdue count, neither of which changes faster than this. */
@@ -155,6 +157,9 @@ function BedList({ patients, alertsOf }) {
 export function BedsScreen() {
   const { t } = useI18n();
   const board = useBoard();
+  // Aşama A's unvalidated monitor strip: its own store, its own clock, read nowhere else on this
+  // screen's clinical path (the waiting line, the feed chip and the cards' order are the board's).
+  const shadow = useShadow();
   const { unit, setUnit, units, stale: unitsStale } = useShell();
   const nowMs = useBoardNow(TICK_MS);
   const [view, setView] = useState(() => readPref("bedView", VIEWS, "kart"));
@@ -211,8 +216,11 @@ export function BedsScreen() {
 
       <div className="grid gap-2 min-[861px]:grid-cols-2">
         <Waiting nowMs={nowMs} />
-        <div className="flex items-center gap-2 rounded-box border border-line bg-card px-3 py-2.5">
+        <div className="flex flex-wrap items-center gap-2 rounded-box border border-line bg-card px-3 py-2.5">
           <FeedHealth connection={board.connection} patients={all} nowMs={nowMs} />
+          {/* The monitors' own chip, beside the board's and separately labelled: it speaks of the
+              unvalidated strip only, and wraps under FeedHealth below 861 px. */}
+          <MonitorFeedChip data={shadow.data} phase={shadow.phase} />
         </div>
       </div>
 

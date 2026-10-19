@@ -93,9 +93,10 @@ describe("src/live/ stands on its own", () => {
 // screen — the beds screen that draws the strip, the device screen — so that the router can show
 // them, and it reads nothing from any of them but the component.
 describe("the monitor strip never reaches an alarm path", () => {
-  const STRIP = ["data/shadowStore.js", "data/ShadowProvider.jsx"];
+  const STRIP = ["data/shadowStore.js", "data/ShadowProvider.jsx", "screens/common/monitor.js",
+    "screens/common/MonitorStrip.jsx"];
   const STRIP_PREFIXES = ["screens/devices/"];
-  const STRIP_ALSO = ["screens/common/monitor.js", "screens/common/MonitorStrip.jsx"];   // later tasks
+  const STRIP_ALSO = [];
   const REGISTRY = "shell/routes.js";
   const rel = (file) => path.relative(LIVE, file).replace(/\\/g, "/");
   const guarded = [

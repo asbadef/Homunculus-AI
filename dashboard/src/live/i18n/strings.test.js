@@ -39,6 +39,10 @@ const NEUTRAL = new Set([
 
   // G1-14 (admin · login source) · neutral
 
+  // Aşama A (monitor) · neutral — the bedside monitor's own labels, so the strip reads against its screen
+  "monitor.p.hr", "monitor.p.pls", "monitor.p.spo2", "monitor.p.etco2", "monitor.p.temperature",
+  "monitor.p.art_systolic", "monitor.p.art_diastolic", "monitor.p.art_mean", "monitor.p.respiration",
+
 ]);
 // Azerbaijani and Turkish share many words, so an AZ text may equal its TR source — but that is
 // also exactly what a forgotten translation looks like (the Turkish copied across). Each identity
@@ -120,6 +124,10 @@ const AZ_SAME_AS_TR = new Set([
   // G1-14 (admin · login source) · az = tr
   "source.colName", //       Ad — "name" in Azerbaijani too (as admin.colName)
   "source.colChoose", //     Seç — the same imperative in Azerbaijani
+
+  // Aşama A (monitor) · az = tr — the bedside monitor's own labels (HR, PLS, SpO₂, ART S…), not words
+  "monitor.p.hr", "monitor.p.pls", "monitor.p.spo2", "monitor.p.etco2", "monitor.p.temperature",
+  "monitor.p.art_systolic", "monitor.p.art_diastolic", "monitor.p.art_mean", "monitor.p.respiration",
 
 ]);
 
