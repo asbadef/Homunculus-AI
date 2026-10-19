@@ -52,6 +52,8 @@ export function fakeApi(vi, { access = null } = {}) {
     view: vi.fn(),
     chart: vi.fn(),
     serverClockSkewMs: vi.fn(() => null),
+    // Aşama A's unvalidated monitor strip (data/shadowStore.js)
+    shadowBoard: vi.fn(),
     // the users and units screen (G1-12)
     adminUsers: vi.fn(),
     adminCreateUser: vi.fn(),

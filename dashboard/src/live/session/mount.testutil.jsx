@@ -13,6 +13,8 @@ import { SessionProvider } from "./SessionProvider.jsx";
 import { createSessionStore } from "./sessionStore.js";
 import { BoardProvider } from "../data/BoardProvider.jsx";
 import { createBoardStore } from "../data/boardStore.js";
+import { ShadowProvider } from "../data/ShadowProvider.jsx";
+import { createShadowStore } from "../data/shadowStore.js";
 import { AlarmSignals } from "../signals/AlarmSignals.jsx";
 import { fakeApi, profile, token } from "./testTokens.testutil.js";
 
@@ -61,12 +63,16 @@ export async function mount(ui, { access = token(), me = profile(), setup } = {}
   // refresh ends it here too and a 403 password_change_required moves the shell on — the paths a
   // board-driven test would otherwise never reach.
   const board = createBoardStore({ api, track: store.track, openStream: stream.openStream });
+  // Aşama A's monitor strip, nested as LiveApp nests it (inside the alarm signals, around the
+  // screens). Not started: a test that wants the strip calls `shadow.start(perms)`, as LiveApp's
+  // phases do for a READY session, and sets `api.shadowBoard` up.
+  const shadow = createShadowStore({ api, track: store.track });
   render(
     <I18nProvider><ToastProvider>
       <SessionProvider store={store}><BoardProvider store={board}>
-        <AlarmSignals>{ui}</AlarmSignals>
+        <AlarmSignals><ShadowProvider store={shadow}>{ui}</ShadowProvider></AlarmSignals>
       </BoardProvider></SessionProvider>
     </ToastProvider></I18nProvider>,
   );
-  return { api, store, board, events, stream };
+  return { api, store, board, events, stream, shadow };
 }

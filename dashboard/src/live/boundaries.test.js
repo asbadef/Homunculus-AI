@@ -84,3 +84,54 @@ describe("src/live/ stands on its own", () => {
     expect(outside).toEqual([]);
   });
 });
+
+// Aşama A: the unvalidated monitor strip feeds nothing. Its values must never reach what alarms —
+// the sound, the notification (signals/), the bell, the rail badge and the menu (shell/), the lock
+// screen's counts (auth/LockScreen.jsx) or the board those all read (data/boardStore.js and its
+// provider). Read by direct import, every relative spec resolved: none of those modules may name a
+// strip module. The ONE exception is `shell/routes.js`, the screen registry: it imports every
+// screen — the beds screen that draws the strip, the device screen — so that the router can show
+// them, and it reads nothing from any of them but the component.
+describe("the monitor strip never reaches an alarm path", () => {
+  const STRIP = ["data/shadowStore.js", "data/ShadowProvider.jsx"];
+  const STRIP_PREFIXES = ["screens/devices/"];
+  const STRIP_ALSO = ["screens/common/monitor.js", "screens/common/MonitorStrip.jsx"];   // later tasks
+  const REGISTRY = "shell/routes.js";
+  const rel = (file) => path.relative(LIVE, file).replace(/\\/g, "/");
+  const guarded = [
+    ...sources(path.join(LIVE, "signals")),
+    ...sources(path.join(LIVE, "shell")).filter((f) => rel(f) !== REGISTRY),
+    path.join(LIVE, "auth", "LockScreen.jsx"),
+    path.join(LIVE, "data", "boardStore.js"),
+    path.join(LIVE, "data", "BoardProvider.jsx"),
+  ];
+  const isStrip = (target) => STRIP.includes(target) || STRIP_ALSO.includes(target)
+    || STRIP_PREFIXES.some((p) => target.startsWith(p));
+
+  it("the strip's own modules exist, so the rule cannot pass by their absence", () => {
+    for (const file of STRIP) expect(fs.existsSync(path.join(LIVE, file)), file).toBe(true);
+    expect(guarded.length).toBeGreaterThan(8);
+    for (const file of guarded) expect(fs.existsSync(file), rel(file)).toBe(true);
+  });
+
+  it("no signal, shell, lock-screen or board-store module imports it", () => {
+    const leaks = [];
+    for (const file of guarded) {
+      for (const spec of importsOf(fs.readFileSync(file, "utf8")).specs) {
+        if (!spec.startsWith(".")) continue;
+        const target = rel(path.resolve(path.dirname(file), spec));
+        if (isStrip(target)) leaks.push(`${rel(file)} -> ${target}`);
+      }
+    }
+    expect(leaks).toEqual([]);
+  });
+
+  it("the rule sees a leak when there is one", () => {
+    // The reader, the resolution and the match, on a module that WOULD leak.
+    const leaking = 'import { useShadow } from "../data/ShadowProvider.jsx";';
+    const target = rel(path.resolve(path.join(LIVE, "shell"), importsOf(leaking).specs[0]));
+    expect(isStrip(target)).toBe(true);
+    expect(isStrip("screens/devices/DevicesScreen.jsx")).toBe(true);
+    expect(isStrip("data/boardStore.js")).toBe(false);
+  });
+});

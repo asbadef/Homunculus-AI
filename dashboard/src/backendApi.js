@@ -519,6 +519,13 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       return authed("/patients");
     },
 
+    /** Aşama A: the unvalidated monitor strip (GET /infinity-shadow/board). `{stage: "off"}` when
+     *  the hospital has not turned it on. Read by the shadow store only — never by the board store,
+     *  the bell, the sound, the notifications or the lock screen (live/boundaries.test.js). */
+    shadowBoard() {
+      return authed("/infinity-shadow/board");
+    },
+
     /** What the caller may see, and why. The administration screen reads it for one thing it
      *  cannot ask any other way: `PUT /scope/{id}` is refused (403) unless the CALLER's own scope
      *  is unrestricted by role (`scope/router.py put_scope`, `SCOPE_UNRESTRICTED_ROLES`), which no

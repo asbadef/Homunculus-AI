@@ -21,6 +21,8 @@ import { useIdleLock } from "./session/useIdleLock.js";
 import { IdleWarning } from "./session/IdleWarning.jsx";
 import { BoardProvider } from "./data/BoardProvider.jsx";
 import { createBoardStore } from "./data/boardStore.js";
+import { ShadowProvider } from "./data/ShadowProvider.jsx";
+import { createShadowStore, mayReadShadow } from "./data/shadowStore.js";
 import { AlarmSignals } from "./signals/AlarmSignals.jsx";
 import { hasWorkRoute, hashPath, resumePath } from "./shell/routes.js";
 import { PRODUCT, Shell } from "./shell/Shell.jsx";
@@ -30,7 +32,7 @@ import { PasswordStep } from "./auth/PasswordStep.jsx";
 import { SessionWait } from "./auth/SessionWait.jsx";
 import { LockScreen } from "./auth/LockScreen.jsx";
 
-function Phases({ board }) {
+function Phases({ board, shadow }) {
   const { phase, user, store } = useSession();
   const watch = seesBoard(phase, user);
   const owner = watch ? user.id : null;
@@ -39,6 +41,17 @@ function Phases({ board }) {
     if (owner) board.start();
     else board.clear();
   }, [owner, board]);
+
+  // Aşama A's monitor strip: only while the shell is open (READY — never LOCKED: no monitor value
+  // reaches a lock screen, which shows counts only) and only for a session that may read it. The
+  // lock, a step screen and the end of the session all clear it. Its own store, never the board's.
+  const stripPerms = useRef(null);
+  stripPerms.current = phase === PHASE.READY && mayReadShadow(user?.perms) ? user.perms : null;
+  const stripOwner = stripPerms.current ? `${user.id} ${stripPerms.current.join(" ")}` : null;
+  useEffect(() => {
+    if (stripOwner) shadow.start(stripPerms.current);
+    else shadow.clear();
+  }, [stripOwner, shadow]);
 
   // Where the shell was when it went, so the SAME session can come back to it: an unlock, a
   // forced password change, a retry after an outage. Held here and never in the URL — the address
@@ -120,13 +133,15 @@ function Phases({ board }) {
 export default function LiveApp({ api = backendApi, openStream } = {}) {
   const [session] = useState(() => createSessionStore({ api, canEnter: hasWorkRoute }));
   const [board] = useState(() => createBoardStore({ api, track: session.track, openStream }));
+  const [shadow] = useState(() => createShadowStore({ api, track: session.track }));
   useEffect(() => {
     session.restore();
     return () => {
       session.dispose();
       board.clear();
+      shadow.clear();
     };
-  }, [session, board]);
+  }, [session, board, shadow]);
   return (
     <ThemeProvider>
       <I18nProvider>
@@ -135,7 +150,11 @@ export default function LiveApp({ api = backendApi, openStream } = {}) {
             {/* Outside the phases: the sound goes on through a lock (the shell is unmounted then)
                 and stops when the session ends (signals/AlarmSignals.jsx). */}
             <AlarmSignals>
-              <Phases board={board} />
+              {/* The monitor strip's provider wraps the phases ONLY: the alarm signals sit above it
+                  and cannot reach it (data/shadowStore.js, rule 2). */}
+              <ShadowProvider store={shadow}>
+                <Phases board={board} shadow={shadow} />
+              </ShadowProvider>
             </AlarmSignals>
           </BoardProvider>
         </SessionProvider>

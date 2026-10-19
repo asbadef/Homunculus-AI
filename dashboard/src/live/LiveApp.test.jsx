@@ -11,6 +11,7 @@ import { onlyScreens } from "./shell/screens.testutil.js";
 import { PRODUCT } from "./shell/Shell.jsx";
 import { ANNOUNCE_DELAY_MS, useToast } from "./ui/index.js";
 import { fakeAudio, onPage } from "./signals/fakeAudio.testutil.js";
+import { useShadow } from "./data/ShadowProvider.jsx";
 
 vi.mock("qrcode", () => ({ default: { toDataURL: vi.fn(async () => "data:image/png;base64,QR") } }));
 
@@ -355,6 +356,51 @@ describe("the lock", () => {
 // A ward PC is shared. The hash names a patient, and the browser keeps it in its history and in
 // the window's title: both must go with the session, or the next person who signs in is taken
 // straight to the last one's patient.
+// Aşama A's unvalidated monitor strip: read only while the shell is open, never on the lock screen,
+// and nothing of it carried across a lock (data/shadowStore.js, rule 1).
+describe("the monitor strip", () => {
+  const seen = [];
+  function StripProbe() {
+    const { phase, stage } = useShadow();
+    seen.push(phase);
+    return <h1>{`Çarpayı ekranı ${phase} ${stage ?? "-"}`}</h1>;
+  }
+  const STRIP = { stage: "shadow", beds: [], unassigned: [] };
+
+  it("is read while the shell is open, not at all while locked, and starts empty after the unlock", async () => {
+    const api = app({ setup: (a) => a.shadowBoard.mockResolvedValue(STRIP) });
+    built({ beds: StripProbe });
+    await signIn(api);
+    await screen.findByRole("heading", { level: 1, name: "Çarpayı ekranı ok shadow" });
+    const asked = api.shadowBoard.mock.calls.length;
+    expect(asked).toBe(1);
+
+    act(() => { fireEvent.keyDown(document, { key: "l", code: "KeyL", altKey: true }); });
+    await screen.findByRole("heading", { level: 1, name: "Ekran kilidlənib" });
+    await act(async () => { await settle(); });
+    expect(api.shadowBoard.mock.calls.length).toBe(asked);          // nothing asked while locked
+    expect(document.body).not.toHaveTextContent("shadow");
+
+    seen.length = 0;
+    api.reauth.mockResolvedValueOnce({ ok: true });
+    fireEvent.change(screen.getByLabelText("Şifrə"), { target: { value: "Gizli-Sifre-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Kilidi aç" }));
+    await screen.findByRole("heading", { level: 1, name: "Çarpayı ekranı ok shadow" });
+    expect(seen[0]).not.toBe("ok");                                   // the lock cleared it
+    expect(api.shadowBoard.mock.calls.length).toBe(asked + 1);
+  });
+
+  it("is never asked for by a session that holds neither board.view nor devices.manage", async () => {
+    const perms = ["users.manage"];
+    const api = app({ setup: (a) => a.shadowBoard.mockResolvedValue(STRIP) });
+    built({ admin: StripProbe });
+    await signIn(api, { tokens: { access_token: token({ perms }) }, me: profile({ perms }) });
+    await screen.findByRole("heading", { level: 1, name: "Çarpayı ekranı idle -" });
+    await act(async () => { await settle(); });
+    expect(api.shadowBoard).not.toHaveBeenCalled();
+  });
+});
+
 describe("what the next person at the workstation finds", () => {
   async function onPatient() {
     const api = app();

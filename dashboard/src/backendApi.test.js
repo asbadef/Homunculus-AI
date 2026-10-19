@@ -430,6 +430,16 @@ describe("backendApi — what the work screens call", () => {
     expect(JSON.parse(init.body)).toEqual({ patient_id: "S-001", kind: "sepsis" });
   });
 
+  it("reads Aşama A's monitor strip with an authed GET /infinity-shadow/board", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ stage: "off" }));
+    const api = signedIn(fetchMock);
+    expect(await api.shadowBoard()).toEqual({ stage: "off" });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/infinity-shadow/board");
+    expect(init.method || "GET").toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+  });
+
   it("records that a patient was opened", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
     const api = signedIn(fetchMock);
