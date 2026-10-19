@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import React from "react";
-import { act, fireEvent, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { resetScreens } from "../../shell/routes.js";
 import { onlyScreens } from "../../shell/screens.testutil.js";
 import { NOW, ago, alarm, board, entry, identity, measured, news2 } from "../../data/board.testutil.js";
+import { STAGE_OFF, bed as monitorBed, param as monitorParam, strip } from "../../data/shadow.testutil.js";
 import { PatientScreen } from "./PatientScreen.jsx";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -545,5 +546,45 @@ describe("charting a suspected infection", () => {
     await open({ payload: board([entry("S-001", [], SEPSIS)]) });
     expect(screen.queryByRole("button", { name: "Var kimi işarələ" })).toBeNull();
     expect(screen.getByText(/səlahiyyətiniz yoxdur \(clinical.chart\)/)).toBeInTheDocument();
+  });
+});
+
+// Aşama A: the unvalidated monitor strip, for a patient the API links to one monitor — and only then.
+describe("the monitor strip on the patient screen", () => {
+  async function withStrip(answer) {
+    const mounted = await open({ payload: board([entry("S-001", [], FULL)]) });
+    mounted.api.shadowBoard.mockResolvedValue(answer);
+    await act(async () => { mounted.shadow.start(["board.view", "alerts.ack"]); await settle(); });
+    return mounted;
+  }
+  const linked = (link = "one", patientId = "S-001") => strip({
+    beds: [monitorBed("REA-01 · 2", [monitorParam("hr", 72), monitorParam("art_mean", 84)], { link, patient_id: patientId })],
+  });
+
+  it("gives a linked patient the whole strip right after the vitals, with the evidence per parameter", async () => {
+    await withStrip(linked());
+    const region = screen.getByRole("region", { name: "Monitor · təsdiqlənməyib" });
+    expect(region).toHaveTextContent("72");
+    expect(within(region).getByText("İki cihazda monitor ekranı ilə eynidir")).toBeInTheDocument();
+    expect(within(region).getByText(/tədqiqat məqsədilə deşifrə olunur və təsdiqlənməyib/)).toBeInTheDocument();
+    expect(within(region).getByRole("heading", { level: 2 })).toBeInTheDocument();
+    const vitals = screen.getByRole("heading", { level: 2, name: "Ölçülən dəyərlər" });
+    const findings = screen.getByRole("heading", { level: 2, name: "Mühərrikin tapıntıları" });
+    expect(vitals.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(region.compareDocumentPosition(findings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("gives an unlinked patient none — and no 'no monitor' box: it does not advertise what it cannot attribute", async () => {
+    for (const answer of [linked("none", null), linked("ambiguous", null), linked("one", "S-999")]) {
+      await withStrip(answer);
+      expect(document.querySelector("[data-monitor-strip]"), answer.beds[0].link).toBeNull();
+      expect(screen.queryByText(/Bu çarpayıya bağlı xəstə qeydi yoxdur|bir neçə aktiv xəstə qeydi/)).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("gives none with the stage off", async () => {
+    await withStrip(STAGE_OFF);
+    expect(document.querySelector("[data-monitor-strip]")).toBeNull();
   });
 });

@@ -14,6 +14,16 @@ import { ageParts } from "./feedHealth.js";
 export const PARAM_ORDER = Object.freeze(["hr", "pls", "spo2", "etco2", "temperature", "art_systolic",
   "art_diastolic", "art_mean", "respiration"]);
 
+/** Each parameter's evidence today, and the four only partly checked — the API's own tables
+ *  (api/infinity_shadow.py EVIDENCE, PARTIAL; monitor.test.js holds this copy to them). The
+ *  Settings legend lists them all; a card carries its own parameters' `evidence` and `partial`. */
+export const EVIDENCE = Object.freeze({
+  hr: "screen_match_two_devices", pls: "screen_match_two_devices", spo2: "screen_match_two_devices",
+  etco2: "screen_match_two_devices", art_systolic: "screen_match", temperature: "screen_match_site_unknown",
+  art_mean: "structural", art_diastolic: "structural_trend", respiration: "range_overlap",
+});
+export const PARTIAL = Object.freeze(new Set(["temperature", "art_mean", "art_diastolic", "respiration"]));
+
 /** The API sends `display_max_age_s`; this is the value it sends, for a screen that has none. */
 export const DISPLAY_MAX_AGE_S = 15;
 

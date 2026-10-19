@@ -5,8 +5,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  PARAM_ORDER, STATUS_KEY, UNIT_KEY, ageText, cellOf, chipCounts, displayAge, feedSentenceKey, linkSentenceKey,
-  reasonKey,
+  EVIDENCE, PARAM_ORDER, PARTIAL, STATUS_KEY, UNIT_KEY, ageText, cellOf, chipCounts, displayAge, feedSentenceKey,
+  linkSentenceKey, reasonKey,
 } from "./monitor.js";
 import { param, strip, bed, unassigned } from "../../data/shadow.testutil.js";
 import { createTranslator } from "../../i18n/translate.js";
@@ -98,6 +98,19 @@ describe("the tables", () => {
   it("writes each unit with the board's own unit text", () => {
     expect(UNIT_KEY).toEqual({ bpm: "board.unitBpm", "/min": "board.unitBpm", "%": "board.unitPct",
       mmHg: "board.unitMmhg", C: "board.unitC" });
+  });
+
+  it("knows each parameter's evidence and partial mark as the API states them", () => {
+    // The legend lists every parameter, including ones no card is showing; it reads this copy, which
+    // is held to the API's own (homunculus-engine api/infinity_shadow.py EVIDENCE, PARTIAL).
+    const py = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)),
+      "../../../../../homunculus-engine/src/homunculus/api/infinity_shadow.py"), "utf8");
+    const evidence = Object.fromEntries([.../^EVIDENCE = \{([^}]*)\}/m.exec(py)[1].matchAll(/"(\w+)":\s*"(\w+)"/g)]
+      .map((m) => [m[1], m[2]]));
+    const partial = [.../^PARTIAL = frozenset\(\{([^}]*)\}\)/m.exec(py)[1].matchAll(/"(\w+)"/g)].map((m) => m[1]);
+    expect(EVIDENCE).toEqual(evidence);
+    expect([...PARTIAL].sort()).toEqual(partial.sort());
+    expect(Object.keys(EVIDENCE).sort()).toEqual([...PARAM_ORDER].sort());
   });
 
   it("holds no threshold, band or colour that depends on a value", () => {

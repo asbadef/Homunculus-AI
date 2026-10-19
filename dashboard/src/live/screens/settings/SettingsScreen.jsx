@@ -9,7 +9,10 @@ import { useTheme } from "../../theme/ThemeProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { PasswordForm } from "../../auth/PasswordForm.jsx";
 import { useAlarmSignals } from "../../signals/AlarmSignals.jsx";
-import { Box, Button, KV, KVList, Note, Seg, StatusPill, TabPanel, Tabs, useToast } from "../../ui/index.js";
+import { Box, Button, KV, KVList, Note, Seg, StatusPill, TabPanel, Table, Tabs, useToast } from "../../ui/index.js";
+import { useShadow } from "../../data/ShadowProvider.jsx";
+import { stripOn } from "../common/MonitorStrip.jsx";
+import { EVIDENCE, PARAM_ORDER, PARTIAL } from "../common/monitor.js";
 
 const BUILD_SHA = typeof __BUILD_SHA__ === "string" ? __BUILD_SHA__ : "";
 const TAB_ID = "settings";
@@ -113,6 +116,45 @@ const NOTIFY_NOTE = {
   unsupported: "signals.notifyUnsupported",
 };
 
+/** Aşama A: what the unvalidated monitor strip is, beside the sound and the notifications it never
+ *  makes — shown only while the hospital has it on. The evidence table is every parameter the
+ *  strip can show, in the API's order, with the four only partly checked marked. */
+function MonitorLegend() {
+  const { t } = useI18n();
+  const { data } = useShadow();
+  if (!stripOn(data)) return null;
+  return (
+    <Box title={t("monitor.legendTitle")} icon="activity" level={2} className="!border-dashed">
+      <p className="m-0 text-13">{t("monitor.full")}</p>
+      <p className="m-0 mt-2 text-13 font-semibold">{t("monitor.noSound")}</p>
+      <p className="m-0 mt-2 text-13 text-mute">{t("monitor.legendAges")}</p>
+      <p className="m-0 mt-2 text-13 text-mute">{t("monitor.legendNbp")}</p>
+      <div className="mt-3 overflow-x-auto">
+        <Table caption={t("monitor.legendEvidence")}>
+          <thead>
+            <tr>
+              <th scope="col">{t("monitor.title")}</th>
+              <th scope="col">{t("monitor.legendEvidence")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {PARAM_ORDER.map((name) => (
+              <tr key={name}>
+                <th scope="row" className="font-data">
+                  {t(`monitor.p.${name}`)}
+                  {PARTIAL.has(name) ? <StatusPill tone="neutral" className="ml-1.5">{t("monitor.partial")}</StatusPill> : null}
+                </th>
+                <td>{t(`monitor.ev.${EVIDENCE[name]}`)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </div>
+      <p className="m-0 mt-2 text-12.5 text-mute">{t("monitor.legendN")}</p>
+    </Box>
+  );
+}
+
 /** The alarm sound and the critical-alarm notification for this browser (signals/AlarmSignals.jsx):
  *  what the previous workspace's two top-bar buttons did, with what each state means said out loud. */
 function Signals() {
@@ -136,6 +178,7 @@ function Signals() {
         {notify === "default" ? <Button className="mt-2" variant="primary" onClick={askNotify}>{t("signals.notifyAsk")}</Button> : null}
         {notify === "granted" ? <Button className="mt-2" onClick={testNotify}>{t("signals.notifyTest")}</Button> : null}
       </Box>
+      <MonitorLegend />
     </div>
   );
 }

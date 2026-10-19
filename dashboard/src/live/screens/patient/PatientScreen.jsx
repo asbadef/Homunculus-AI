@@ -50,6 +50,8 @@ import {
 import { ageOf, hasMeasurement } from "../common/freshness.js";
 import { ageParts } from "../common/feedHealth.js";
 import { measuredVitals } from "../common/vitals.js";
+import { useShadow } from "../../data/ShadowProvider.jsx";
+import { MonitorStrip, stripOn } from "../common/MonitorStrip.jsx";
 
 const TICK_MS = 30_000;
 
@@ -280,6 +282,13 @@ export function PatientScreen({ params }) {
   const patient = useMemo(() => board.patients.find((p) => p.patient_id === id) ?? null, [board.patients, id]);
   const alarms = useMemo(() => board.alerts.filter((a) => a.patientId === id), [board.alerts, id]);
   const known = boardKnown(board.connection);
+  // Aşama A: the unvalidated monitor strip, ONLY for a patient the API links to exactly one monitor
+  // (an admitted identity on the table's bed). No other patient gets a box, not even "no monitor":
+  // the screen does not advertise monitors it cannot attribute.
+  const shadow = useShadow();
+  const monitor = stripOn(shadow.data)
+    ? (shadow.data.beds ?? []).find((card) => card.link === "one" && card.patient_id === id) ?? null
+    : null;
 
   // Record that a clinician opened this patient — the audit line an inspection asks for. Sent only
   // for a patient the screen actually SHOWS: the server logs a refusal as `scope_denied`, so
@@ -379,6 +388,13 @@ export function PatientScreen({ params }) {
           <Box title={t("patient.vitals")} icon="activity" level={2}>
             <Vitals patient={patient} nowMs={nowMs} />
           </Box>
+
+          {monitor ? (
+            <MonitorStrip entry={monitor} variant="full" level={2} className="bg-card" nowMs={shadow.nowMs}
+              fetchedAtMs={shadow.fetchedAtMs}
+              maxAgeS={Number.isFinite(shadow.data.display_max_age_s) ? shadow.data.display_max_age_s : undefined}
+              feedOk={shadow.data.feed?.state === "ok"} />
+          ) : null}
 
           <section className="grid gap-2">
             <h2 className="m-0 font-text text-11 font-bold uppercase leading-[normal] tracking-[.08em] text-mute">{t("patient.reco")}</h2>
