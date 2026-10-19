@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "homunculus-engine" / "src"))
 
-from homunculus.api.infinity_device_beds import TableError, parse_table  # noqa: E402
+from homunculus.api.infinity_device_beds import TableError, no_duplicate_keys, parse_table  # noqa: E402
 
 METHOD_TR = {"central_station_list": "merkezi istasyon listesi", "monitor_screen": "monitör ekranı",
              "both": "liste + ekran", None: "—"}
@@ -42,9 +42,10 @@ def main(argv: list[str] | None = None) -> int:
     data = Path(args.path).read_bytes()
     digest = hashlib.sha256(data).hexdigest()
     try:
-        raw = json.loads(data.decode("utf-8-sig"))
+        # A key given twice hides one of its values from the reviewer: refused, as the API refuses it.
+        raw = json.loads(data.decode("utf-8-sig"), object_pairs_hook=no_duplicate_keys)
     except (UnicodeDecodeError, ValueError):
-        print("TABLO GEÇERSİZ: JSON okunamadı")
+        print("TABLO GEÇERSİZ: JSON okunamadı (bozuk ya da tekrarlanan anahtar)")
         return 1
     unapproved = isinstance(raw, dict) and not (str(raw.get("approved_by") or "").strip()
                                                 and str(raw.get("approved_at") or "").strip())

@@ -27,6 +27,8 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from homunculus.scope.rules import normalise_id
+
 log = logging.getLogger(__name__)
 
 SCHEMA = "homunculus.infinity-device-beds.v1"
@@ -221,6 +223,23 @@ def _overlap(a: Row, b: Row) -> bool:
     return a.valid_from < (b.valid_to or _FOREVER) and b.valid_from < (a.valid_to or _FOREVER)
 
 
+_SEPARATORS = re.compile(r"[\s._-]+")
+
+
+def bed_label_key(label: str) -> str:
+    """One bed, however its label is spelled: "BED05", "bed 05" and "BED-05" are the same bed. Two
+    monitors on one bed is the ambiguity (design K5) this table must never contain, so the match
+    errs towards "the same": a table that spells two beds alike is refused and is easily fixed,
+    while two monitors on one patient's bed are not."""
+    return _SEPARATORS.sub("", label).casefold()
+
+
+def _same_bed(a: Row, b: Row) -> bool:
+    if bed_label_key(a.bed_label) == bed_label_key(b.bed_label):
+        return True
+    return bool(a.bed_id and b.bed_id and normalise_id(a.bed_id) == normalise_id(b.bed_id))
+
+
 def parse_table(raw: Any) -> DeviceBedTable:
     """The table, or `TableError` with one Turkish reason. Nothing is partly accepted."""
     if not isinstance(raw, dict):
@@ -251,17 +270,26 @@ def parse_table(raw: Any) -> DeviceBedTable:
                 continue
             if a.source == b.source:
                 raise TableError(f"aynı kaynak ({a.source}) için geçerlilik aralıkları çakışan iki satır var")
-            if a.assigned and b.assigned and a.bed_label.casefold() == b.bed_label.casefold():
-                raise TableError(f"aynı yatak ({a.bed_label}) için geçerlilik aralıkları çakışan iki atanmış "
-                                 f"satır var ({a.source}, {b.source}): bir yatakta iki monitör")
+            if a.assigned and b.assigned and _same_bed(a, b):
+                raise TableError(f"aynı yatak ({a.bed_label} / {b.bed_label}) için geçerlilik aralıkları "
+                                 f"çakışan iki atanmış satır var ({a.source}, {b.source}): bir yatakta iki monitör")
     return DeviceBedTable(version, raw["site"], approved_by, approved_at, rows)
 
 
-def _no_duplicate_keys(pairs):
+def no_duplicate_keys(pairs):
+    """`json.loads(..., object_pairs_hook=no_duplicate_keys)`: a key given twice hides one of its
+    values from whoever reviewed the file, so it is refused (the review printer uses it too)."""
     keys = [key for key, _ in pairs]
     if len(keys) != len(set(keys)):
         raise ValueError("duplicate key")
     return dict(pairs)
+
+
+def read_capped(path: Path) -> bytes:
+    """At most one byte past MAX_BYTES: the size check is a stat, and a file that grew after it is
+    still never read whole."""
+    with open(path, "rb") as handle:
+        return handle.read(MAX_BYTES + 1)
 
 
 class TableState(NamedTuple):
@@ -273,57 +301,64 @@ class TableState(NamedTuple):
 
 
 class TableFile:
-    """The deployed table, re-read when its size or mtime changed, looked at once per
-    RELOAD_EVERY_S at most. `clock` is monotonic seconds; `stat` and `read` are injectable."""
+    """The deployed table, looked at once per RELOAD_EVERY_S at most and re-parsed when its BYTES
+    changed (their sha256). Not by size or mtime: `cp -p`, `rsync -t`, `tar x` or a same-length
+    edit keep both, and on some filesystems (NTFS) neither the inode nor the ctime moves on a
+    rewrite either. Reading a file of at most MAX_BYTES every 10 s costs nothing worth saving.
+    `clock` is monotonic seconds; `stat` and `read` are injectable."""
 
     def __init__(self, path: str | os.PathLike, clock: Callable[[], float], *,
-                 stat: Callable = os.stat, read: Callable = Path.read_bytes):
+                 stat: Callable = os.stat, read: Callable = read_capped):
         self._path = Path(path)
         self._clock, self._stat, self._read = clock, stat, read
         self._state: TableState | None = None
         self._checked_at = 0.0
-        self._signature: tuple | None = None
+        self._seen: tuple | None = None          # what was found last: the bytes' sha, or why none
 
     def current(self, now: float | None = None) -> TableState:
         now = self._clock() if now is None else now
-        if self._state is not None and now - self._checked_at < RELOAD_EVERY_S:
+        if self._state is not None and 0 <= now - self._checked_at < RELOAD_EVERY_S:
             return self._state
         self._checked_at = now
-        signature, early = self._look()
-        if self._state is not None and signature == self._signature:
+        early, data = self._fetch()
+        seen = ("bytes", hashlib.sha256(data).hexdigest()) if data is not None else ("none", early)
+        if self._state is not None and seen == self._seen:
             return self._state
-        self._signature = signature
-        state = early or self._load()
+        self._seen = seen
+        state = early if data is None else self._parse(data)
         self._announce(state)
         self._state = state
         return state
 
-    def _look(self) -> tuple[tuple, TableState | None]:
+    def _fetch(self) -> tuple[TableState | None, bytes | None]:
+        """The file's bytes, or the state that says why there are none."""
         try:
             info = self._stat(self._path)
         except (FileNotFoundError, NotADirectoryError):
-            return ("absent",), TableState(None, "missing", "dosya yok", None, None)
-        except OSError as error:
-            return ("error", type(error).__name__), TableState(None, "invalid", "dosyaya erişilemedi", None, None)
+            return TableState(None, "missing", "dosya yok", None, None), None
+        except OSError:
+            return TableState(None, "invalid", "dosyaya erişilemedi", None, None), None
         if stat_module.S_ISDIR(info.st_mode):
-            return ("directory",), TableState(None, "missing", "yol bir klasör, dosya değil", None, None)
-        signature = ("file", info.st_size, info.st_mtime_ns)
+            return TableState(None, "missing", "yol bir klasör, dosya değil", None, None), None
         if not stat_module.S_ISREG(info.st_mode):
-            return signature, TableState(None, "invalid", "yol düzenli bir dosya değil", None, None)
+            return TableState(None, "invalid", "yol düzenli bir dosya değil", None, None), None
+        too_large = TableState(None, "invalid", f"dosya {MAX_BYTES // 1024} KiB'tan büyük", None, None)
         if info.st_size > MAX_BYTES:
-            return signature, TableState(None, "invalid", f"dosya {MAX_BYTES // 1024} KiB'tan büyük", None, None)
-        return signature, None
-
-    def _load(self) -> TableState:
+            return too_large, None
         try:
             data = self._read(self._path)
         except FileNotFoundError:
-            return TableState(None, "missing", "dosya yok", None, None)
+            return TableState(None, "missing", "dosya yok", None, None), None
         except OSError:
-            return TableState(None, "invalid", "dosya okunamadı", None, None)
+            return TableState(None, "invalid", "dosya okunamadı", None, None), None
+        if len(data) > MAX_BYTES:                  # it grew between the stat and the read
+            return too_large, None
+        return None, data
+
+    def _parse(self, data: bytes) -> TableState:
         digest = hashlib.sha256(data).hexdigest()
         try:
-            raw = json.loads(data.decode("utf-8-sig"), object_pairs_hook=_no_duplicate_keys)
+            raw = json.loads(data.decode("utf-8-sig"), object_pairs_hook=no_duplicate_keys)
         except (UnicodeDecodeError, ValueError, RecursionError):
             return TableState(None, "invalid", "JSON okunamadı (bozuk ya da tekrarlanan anahtar)", digest, None)
         try:

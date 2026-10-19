@@ -41,6 +41,12 @@ class ShadowSettings:
     hospital: str = ""
     table_path: str = DEFAULT_TABLE_PATH
 
+    def __post_init__(self) -> None:
+        # compare_digest(b"", b"") is True: an "on" lane with an empty or short token would take a
+        # POST carrying no credential. The env reader never builds one; nothing else may either.
+        if self.stage == "shadow" and len(self.token) < MIN_TOKEN:
+            raise ValueError("a shadow stage needs a token of at least 32 characters")
+
     @property
     def on(self) -> bool:
         return self.stage == "shadow"
@@ -224,13 +230,22 @@ class ShadowStore:
 
     In memory only, gone on restart (it refills within one forwarder cycle). It writes nothing
     else, anywhere, and holds no reference to the engine, the audit, the broadcaster, the
-    notification hub or the identity store. `clock` is the API's wall clock (epoch seconds)."""
+    notification hub or the identity store.
 
-    def __init__(self, clock: Callable[[], float] = time.time):
+    Two clocks. `clock` is the API's wall clock (epoch seconds), for what is measured against the
+    hub's own timestamps: a reading's age, too old, too far ahead. `monotonic` is for what is the
+    API's alone — the 1 s spacing, how long ago the last POST came, how long a device has gone
+    unreported — so a wall clock stepped back (an NTP step, a VM restore) neither refuses every
+    POST as "too soon" nor shows a value frozen before the step as 0 s old. A test that injects
+    only the wall clock gets it for both."""
+
+    def __init__(self, clock: Callable[[], float] = time.time, monotonic: Callable[[], float] | None = None):
         self._clock = clock
+        self._monotonic = monotonic or (time.monotonic if clock is time.time else clock)
         self._devices: dict[str, _Device] = {}
         self._last_attempt: float | None = None
         self._last_post: float | None = None
+        self._last_post_wall: float | None = None
         self._posts = 0
         self._forwarder: dict | None = None
         self._hub: dict | None = None
@@ -241,10 +256,10 @@ class ShadowStore:
     def ingest(self, body: Any) -> dict:
         """Keep a forwarder body. `TooSoon` within 1 s of the last; `ShadowRejected` for a schema
         violation (nothing kept). Returns what was accepted and why the rest was not."""
-        now = self._clock()
-        if self._last_attempt is not None and now - self._last_attempt < MIN_POST_SPACING_S:
+        now, tick = self._clock(), self._monotonic()
+        if self._last_attempt is not None and 0 <= tick - self._last_attempt < MIN_POST_SPACING_S:
             raise TooSoon()
-        self._last_attempt = now
+        self._last_attempt = tick
         _validate(body)
         self._expire(now)
         counts, accepted = dict.fromkeys(REJECTIONS, 0), 0
@@ -252,8 +267,8 @@ class ShadowStore:
             source = unicast_ipv4(item["source"])
             held = self._devices.get(source)
             if held is None:
-                held = self._devices[source] = _Device(item["group"], item["status"], now, None)
-            held.group, held.status, held.status_at = item["group"], item["status"], now
+                held = self._devices[source] = _Device(item["group"], item["status"], tick, None)
+            held.group, held.status, held.status_at = item["group"], item["status"], tick
             held.packet_age_ms = None if item["packet_age_ms"] is None else float(item["packet_age_ms"])
             for reading in item["readings"]:
                 reason = self._judge(held, reading, now)
@@ -266,7 +281,7 @@ class ShadowStore:
                 accepted += 1
         while len(self._devices) > MAX_DEVICES:              # the least recently reported goes
             del self._devices[min(self._devices, key=lambda s: self._devices[s].status_at)]
-        self._last_post, self._posts = now, self._posts + 1
+        self._last_post, self._last_post_wall, self._posts = tick, now, self._posts + 1
         self._forwarder = dict(body["forwarder"])
         self._hub = {"accepted_packets": body["hub"]["accepted_packets"],
                      "old_or_duplicate_packets": body["hub"]["old_or_duplicate_packets"]}
@@ -277,12 +292,14 @@ class ShadowStore:
         return {"accepted": accepted, "rejected": counts}
 
     def devices(self, now: float | None = None) -> dict[str, DeviceView]:
+        """As of wall time `now` for the readings' ages; a device's own report age is monotonic."""
         now = self._clock() if now is None else now
+        tick = self._monotonic()
         self._expire(now)
         views = {}
         for source, held in self._devices.items():
-            age = now - held.status_at
-            status = "unknown" if age > SILENT_AFTER_S else SHOWN_STATUS[held.status]
+            age = tick - held.status_at
+            status = "unknown" if not 0 <= age <= SILENT_AFTER_S else SHOWN_STATUS[held.status]
             parameters = tuple(self._view(name, held.readings[name], now)
                                for name in PARAMETERS if name in held.readings)
             views[source] = DeviceView(source, held.group, PORT, status, round(max(0.0, age), 1),
@@ -290,13 +307,13 @@ class ShadowStore:
         return views
 
     def feed(self, now: float | None = None) -> dict:
-        now = self._clock() if now is None else now
+        """The forwarder's state. Its ages are monotonic; `now` is accepted for symmetry."""
         rejected, lag = dict(self._rejected), list(self._lag)
         if self._last_post is None:
             return {"state": "never", "last_post_at": None, "last_post_age_s": None,
                     "collector_age_s": None, "collector_connected": None, "posts": 0,
                     "forwarder": None, "hub": None, "rejected": rejected, "lag_ms": lag}
-        post_age = max(0.0, now - self._last_post)
+        post_age = max(0.0, self._monotonic() - self._last_post)
         collector = None if self._collector_age is None else self._collector_age + post_age
         connected = collector is not None and collector <= SILENT_AFTER_S
         if post_age > SILENT_AFTER_S:
@@ -305,7 +322,7 @@ class ShadowStore:
             state = "collector_disconnected"
         else:
             state = "ok"
-        return {"state": state, "last_post_at": _iso(self._last_post), "last_post_age_s": round(post_age, 1),
+        return {"state": state, "last_post_at": _iso(self._last_post_wall), "last_post_age_s": round(post_age, 1),
                 "collector_age_s": None if collector is None else round(collector, 1),
                 "collector_connected": connected, "posts": self._posts,
                 "forwarder": dict(self._forwarder), "hub": dict(self._hub),
@@ -334,8 +351,10 @@ class ShadowStore:
     @staticmethod
     def _view(name: str, held: _Held, now: float) -> dict:
         age = now - held.captured_at
-        if age > DISPLAY_MAX_AGE_S:
-            state, value = "old", None                       # the number is withheld
+        if age < 0 or age > DISPLAY_MAX_AGE_S:
+            # Withheld: too old, or "from the future" — a wall clock stepped back, and a value whose
+            # age cannot be known must not read as fresh.
+            state, value = "old", None
         elif held.valid:
             state, value = "value", held.value
         else:
@@ -345,8 +364,12 @@ class ShadowStore:
                 "evidence": EVIDENCE[name], "partial": name in PARTIAL}
 
     def _expire(self, now: float) -> None:
+        """Forget what is too old, and what is further ahead than any arrival is allowed to be: after
+        a wall clock steps back, the values held from before would otherwise never age out, and a
+        newer reading would be refused as "not newer" than them."""
         for held in self._devices.values():
-            for name in [n for n, r in held.readings.items() if now - r.captured_at > FORGET_AFTER_S]:
+            for name in [n for n, r in held.readings.items()
+                         if now - r.captured_at > FORGET_AFTER_S or r.captured_at - now > ARRIVAL_MAX_AHEAD_S]:
                 del held.readings[name]
 
     def _count_lag(self, amount_ms: float) -> None:
@@ -385,6 +408,13 @@ def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState,
     Parameters are in PARAMETERS order, beds by label, unassigned devices by address."""
     beds: list[dict] = []
     unassigned: list[dict] = []
+    # How many devices the table puts on each bed right now. parse_table refuses two at once; this
+    # holds anyway, because two monitors linked to one patient is the one wrong-patient path here.
+    rows_now = [table.table.at(source, now) for source in devices] if table.status == "ok" else []
+    per_bed: dict[str, int] = {}
+    for row in rows_now:
+        if row is not None and row.assigned and row.bed_id and normalise_id(row.bed_id):
+            per_bed[normalise_id(row.bed_id)] = per_bed.get(normalise_id(row.bed_id), 0) + 1
     for source in sorted(devices, key=_address_key):
         view = devices[source]
         base = {"source": source, "group": view.group, "status": view.status,
@@ -405,9 +435,11 @@ def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState,
             continue
         card = {"bed_label": row.bed_label, "bed_id": row.bed_id, "unit_id": row.unit_id,
                 "method": row.method, "verified_at": row.verified_at, **base,
-                "link": "none", "patient_id": None}
+                "link": "none", "patient_id": None, "link_reason": None}
         if occupants is None:
             card["link"] = "hidden"
+        elif row.bed_id and per_bed.get(normalise_id(row.bed_id), 0) > 1:
+            card["link"], card["link_reason"] = "ambiguous", "two_monitors"
         elif row.bed_id:
             present = occupants.get(normalise_id(row.bed_id), [])
             if len(present) == 1:
@@ -415,7 +447,7 @@ def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState,
                 if not patient_visible(card):
                     card["link"], card["patient_id"] = "hidden", None
             elif len(present) > 1:
-                card["link"] = "ambiguous"
+                card["link"], card["link_reason"] = "ambiguous", "two_patients"
         if visible(card):
             beds.append(card)
     beds.sort(key=lambda c: (c["bed_label"].casefold(), _address_key(c["source"])))

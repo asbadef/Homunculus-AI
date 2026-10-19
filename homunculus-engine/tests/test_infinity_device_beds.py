@@ -163,6 +163,19 @@ def test_two_monitors_on_one_bed_in_overlapping_intervals_are_refused():
     assert "B-1" in reason and "çakışan" in reason
 
 
+@pytest.mark.parametrize(("first", "second"), [
+    (dict(bed="B-1", bed_id="bed-b1"), dict(bed="B-1a", bed_id="BED-B1 ")),   # one bed id, two spellings
+    (dict(bed="B-1"), dict(bed="B-1 ")),                                     # a trailing space
+    (dict(bed="BED05"), dict(bed="BED 05")),                                 # a separator
+    (dict(bed="BED-05"), dict(bed="bed_05")),
+])
+def test_one_bed_by_any_spelling_holds_one_monitor(first, second):
+    # Two monitors on one bed would both link to its patient (the review's wrong-patient path): a
+    # label or a bed id is the same bed whatever its case, spaces or separators.
+    reason = _refused(_table(_row(**first), _row("192.0.2.11", "239.20.1.11", **second)))
+    assert "çakışan" in reason and "bir yatakta iki monitör" in reason
+
+
 def test_the_same_source_and_bed_may_repeat_in_intervals_that_do_not_overlap():
     table = parse_table(_table(_row(valid_to="2026-07-10T00:00:00Z"),
                                _row(valid_from="2026-07-10T00:00:00Z"),
@@ -179,13 +192,16 @@ def test_a_table_that_is_not_an_object_is_refused():
 class FakeFile:
     def __init__(self, data: bytes | None = None, *, directory: bool = False):
         self.data, self.directory, self.mtime, self.reads = data, directory, 1, 0
+        self.ino, self.ctime = 7, 1
 
     def stat(self, path):
         if self.directory:
-            return SimpleNamespace(st_mode=stat_module.S_IFDIR | 0o755, st_size=0, st_mtime_ns=self.mtime)
+            return SimpleNamespace(st_mode=stat_module.S_IFDIR | 0o755, st_size=0, st_mtime_ns=self.mtime,
+                                   st_ino=self.ino, st_ctime_ns=self.ctime)
         if self.data is None:
             raise FileNotFoundError(str(path))
-        return SimpleNamespace(st_mode=stat_module.S_IFREG | 0o644, st_size=len(self.data), st_mtime_ns=self.mtime)
+        return SimpleNamespace(st_mode=stat_module.S_IFREG | 0o644, st_size=len(self.data), st_mtime_ns=self.mtime,
+                               st_ino=self.ino, st_ctime_ns=self.ctime)
 
     def read(self, path):
         self.reads += 1
@@ -251,8 +267,42 @@ def test_a_changed_file_is_re_read_at_most_every_10_s():
     assert tablefile.current().version == 1 and fake.reads == 1        # not looked at yet
     clock["t"] += 0.1
     assert tablefile.current().version == 2 and fake.reads == 2
+    clock["t"] += 3
+    assert tablefile.current().version == 2 and fake.reads == 2        # inside the 10 s: not looked at
     clock["t"] += 60
-    assert tablefile.current().version == 2 and fake.reads == 2        # unchanged: not re-read
+    assert tablefile.current().version == 2 and fake.reads == 3        # looked at once, at most
+
+
+def test_a_same_length_edit_with_every_timestamp_kept_is_re_read():
+    # `cp -p`, `rsync -t` and `tar x` keep the mtime, a same-length edit keeps the size, and on NTFS
+    # a rewrite keeps the inode and the "ctime" (its creation time). Only the bytes say it changed.
+    clock, fake = {"t": 0.0}, FakeFile(_bytes(_table(_row(bed="B-1"))))
+    tablefile = _file(fake, clock)
+    assert tablefile.current().table.rows[0].bed_label == "B-1"
+    fake.data = _bytes(_table(_row(bed="B-2")))                       # same length; stat unchanged
+    clock["t"] += RELOAD_EVERY_S
+    assert tablefile.current().table.rows[0].bed_label == "B-2"
+
+
+def test_a_table_that_did_not_change_is_not_parsed_or_logged_again(caplog):
+    clock, fake = {"t": 0.0}, FakeFile(_bytes(_table()))
+    tablefile = _file(fake, clock)
+    with caplog.at_level(logging.INFO, logger="homunculus.api.infinity_device_beds"):
+        first = tablefile.current()
+        for _ in range(5):
+            clock["t"] += RELOAD_EVERY_S
+            assert tablefile.current() is first
+    assert fake.reads == 6 and len(caplog.records) == 1
+
+
+def test_a_file_that_grew_between_stat_and_read_is_refused(tmp_path):
+    # The size check is a stat; the read is capped at one byte over the limit, so a file that grew
+    # in between is still never read whole.
+    path = tmp_path / "device-beds.json"
+    path.write_bytes(b" " * (300 * 1024))
+    small = SimpleNamespace(st_mode=stat_module.S_IFREG | 0o644, st_size=10, st_mtime_ns=1, st_ino=1, st_ctime_ns=1)
+    state = TableFile(str(path), clock=lambda: 0.0, stat=lambda p: small).current()
+    assert state.status == "invalid" and "KiB" in state.reason
 
 
 def test_an_invalid_replacement_does_not_keep_the_old_table():
@@ -322,3 +372,7 @@ def test_the_review_prints_the_table_its_counts_and_its_sha256(tmp_path, capsys)
     path.write_bytes(_bytes(_table()))
     assert review.main([str(path)]) == 0
     assert "onaylayan: test" in capsys.readouterr().out
+    # A duplicated key hides a value from the reviewer: refused, as the API refuses it.
+    path.write_bytes(b'{"schema": "a", ' + _bytes(_table())[1:])
+    assert review.main([str(path)]) == 1
+    assert "JSON" in capsys.readouterr().out

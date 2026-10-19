@@ -147,6 +147,73 @@ def test_a_post_without_the_shadow_token_is_401_even_with_a_tenants_token(tmp_pa
     assert _board(client)["feed"]["state"] == "never"            # nothing was taken
 
 
+def test_an_empty_credential_never_opens_the_lane_even_around_the_settings_check(tmp_path):
+    # ShadowSettings refuses an "on" stage without a strong token; the route checks again, so a
+    # settings object that got round that (built with object.__new__) still cannot take a POST
+    # with no credential: compare_digest(b"", b"") is True.
+    path = tmp_path / "device-beds.json"
+    path.write_text(json.dumps(TABLE), encoding="utf-8")
+    hollow = object.__new__(ShadowSettings)
+    for name, value in dict(stage="shadow", configured="shadow", problem=None, token="",
+                            hospital=HOSPITAL, table_path=str(path)).items():
+        object.__setattr__(hollow, name, value)
+    client, clock, _ = _app(tmp_path, settings=hollow)
+    for headers in ({}, {"Authorization": "Bearer "}, {"Authorization": ""}):
+        response = client.post("/infinity-shadow/readings", json=_body(clock.t), headers=headers)
+        assert response.status_code in (401, 409), headers
+        assert response.status_code != 200
+
+
+def test_the_route_stops_reading_a_body_once_it_is_over_64_kib(tmp_path):
+    # Driven at the ASGI level, so the test can count what the route takes from the wire: a body
+    # with no Content-Length is counted chunk by chunk and refused at the limit, not read whole.
+    import asyncio
+
+    client, _, _ = _app(tmp_path)
+    taken = {"chunks": 0}
+    chunk = b" " * 8192
+
+    async def receive():
+        taken["chunks"] += 1
+        return {"type": "http.request", "body": chunk, "more_body": taken["chunks"] < 40}
+
+    sent = []
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
+             "scheme": "http", "path": "/infinity-shadow/readings", "raw_path": b"/infinity-shadow/readings",
+             "query_string": b"", "root_path": "", "server": ("t", 80), "client": ("192.0.2.200", 1),
+             "headers": [(b"authorization", f"Bearer {SHADOW}".encode()), (b"content-type", b"application/json"),
+                         (b"transfer-encoding", b"chunked")]}
+    asyncio.run(client.app(scope, receive, send))
+    assert sent[0]["status"] == 413
+    assert taken["chunks"] <= 9                     # 64 KiB of 8 KiB chunks, and the one that crossed
+
+
+def test_a_chunked_body_over_64_kib_is_413(tmp_path):
+    client, clock, _ = _app(tmp_path)
+    chunk = b" " * 8192
+
+    def chunks():                                   # no Content-Length: Transfer-Encoding: chunked
+        yield json.dumps(_body(clock.t)).encode()[:-1]
+        for _ in range(10):
+            yield chunk
+        yield b"}"
+
+    response = client.post("/infinity-shadow/readings", content=chunks(),
+                           headers={**_hdr(SHADOW), "Content-Type": "application/json"})
+    assert response.status_code == 413
+    assert _board(client)["feed"]["state"] == "never"
+
+    def small():
+        yield json.dumps(_body(clock.t)).encode()
+
+    assert client.post("/infinity-shadow/readings", content=small(),
+                       headers={**_hdr(SHADOW), "Content-Type": "application/json"}).status_code == 200
+
+
 def test_a_post_over_64_kib_is_413(tmp_path):
     client, clock, _ = _app(tmp_path)
     big = json.dumps({**_body(clock.t), "pad": "x" * (65 * 1024)}).encode()
@@ -261,7 +328,7 @@ def test_two_admitted_identities_on_one_bed_are_ambiguous_and_name_no_one(tmp_pa
     client, clock, _ = _app(tmp_path, identities=identities)
     _post(client, clock)
     b1 = _board(client)["beds"][0]
-    assert (b1["link"], b1["patient_id"]) == ("ambiguous", None)
+    assert (b1["link"], b1["patient_id"], b1["link_reason"]) == ("ambiguous", None, "two_patients")
 
 
 def test_a_discharged_identity_never_links(tmp_path):

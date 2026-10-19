@@ -206,11 +206,13 @@ def test_each_parameter_carries_unit_evidence_and_partial_in_table_order():
 
 
 def test_a_parameter_is_forgotten_after_120_s():
-    store = ShadowStore(Clock())
+    clock = Clock()
+    store = ShadowStore(clock)
     store.ingest(body(device("192.0.2.10", reading("hr", 72, captured_at=T0))))
     assert "hr" in _params(store, now=T0 + FORGET_AFTER_S)
     assert "hr" not in _params(store, now=T0 + FORGET_AFTER_S + 0.1)
-    view = store.devices(T0 + 500)["192.0.2.10"]
+    clock.t = T0 + 500
+    view = store.devices()["192.0.2.10"]
     assert view.parameters == () and view.status == "unknown"          # only the status is left
 
 
@@ -218,25 +220,30 @@ def test_a_parameter_is_forgotten_after_120_s():
                                             ("stale", "silent"), ("waiting", "waiting"),
                                             ("unsupported", "unsupported")])
 def test_the_hub_status_is_named_for_the_board_once(hub, shown):
-    store = ShadowStore(Clock())
+    clock = Clock()
+    store = ShadowStore(clock)
     store.ingest(body(device("192.0.2.10", status=hub, packet_age_ms=None if hub == "waiting" else 5000.0)))
-    view = store.devices(T0 + 1)["192.0.2.10"]
+    clock.t = T0 + 1
+    view = store.devices()["192.0.2.10"]
     assert (view.status, view.status_age_s) == (shown, 1.0)
-    assert store.devices(T0 + 15.1)["192.0.2.10"].status == "unknown"   # not reported for > 15 s
+    clock.t = T0 + 15.1
+    assert store.devices()["192.0.2.10"].status == "unknown"           # not reported for > 15 s
 
 
 def test_feed_states_never_ok_silent_and_collector_disconnected():
     clock = Clock()
     store = ShadowStore(clock)
-    assert store.feed(T0)["state"] == "never"
+    assert store.feed()["state"] == "never"
     store.ingest(body(device("192.0.2.10", reading()), collector_age_s=1.0))
-    feed = store.feed(T0 + 2.0)
+    clock.t = T0 + 2.0
+    feed = store.feed()
     assert (feed["state"], feed["last_post_age_s"], feed["collector_connected"]) == ("ok", 2.0, True)
     assert feed["collector_age_s"] == 3.0                              # aged with the post
     assert feed["forwarder"] == {"interval_s": 5, "sent": 10, "failed": 0,
                                  "decoder": "homunculus.infinity-preview.v3"}
-    assert store.feed(T0 + 16.0)["state"] == "forwarder_silent"
-    clock.t += 20
+    clock.t = T0 + 16.0
+    assert store.feed()["state"] == "forwarder_silent"
+    clock.t = T0 + 20
     store.ingest(body(device("192.0.2.10", reading(captured_at=clock.t - 0.5)), collector_age_s=20.0))
     feed = store.feed(clock.t)
     assert (feed["state"], feed["collector_connected"]) == ("collector_disconnected", False)
@@ -255,6 +262,72 @@ def test_the_lag_histogram_counts_received_minus_captured():
     assert len(lag) == 2 + len(LAG_BUCKETS_MS) + 1
     assert lag[0] == 4 and lag[1] == 0 + 5 + 200 + 4000               # count, total (a future one is 0)
     assert lag[2:] == [2, 0, 0, 1, 0, 0, 0, 1]                         # <=10 (5 and 0), <=250, >3000
+
+
+# --- the wall clock may step; the lane's own spacing and silence may not -------------------------
+
+def test_a_wall_clock_stepped_back_never_shows_a_frozen_value_as_fresh():
+    # An NTP step or a VM restore moves the wall clock back ten minutes. The value held from before
+    # is now "ten minutes in the future": it is forgotten rather than shown with an age of 0 s, the
+    # next POST is not "too soon", and the new reading is taken rather than refused as older.
+    wall, mono = Clock(T0), Clock(5_000.0)
+    store = ShadowStore(wall, monotonic=mono)
+    store.ingest(body(device("192.0.2.10", reading("hr", 80, captured_at=T0 - 0.5))))
+    wall.t -= 600
+    mono.t += 1
+    assert "hr" not in _params(store)                                  # not 80 at age 0
+    mono.t += 4
+    answer = store.ingest(body(device("192.0.2.10", reading("hr", 120, captured_at=wall.t - 0.5)), sent_at=wall.t))
+    assert answer["accepted"] == 1 and answer["rejected"]["duplicate"] == 0
+    hr = _params(store)["hr"]
+    assert (hr["state"], hr["value"], hr["age_s"]) == ("value", 120, 0.5)
+    assert store.feed()["state"] == "ok"
+
+
+def test_a_value_ahead_of_the_api_clock_is_old_not_fresh():
+    clock = Clock()
+    store = ShadowStore(clock)
+    store.ingest(body(device("192.0.2.10", reading("hr", 72, captured_at=T0 + 1.5))))   # taken: <= 2 s ahead
+    hr = _params(store)["hr"]
+    assert (hr["state"], hr["value"]) == ("old", None)
+
+
+def test_the_spacing_and_the_silence_run_on_the_monotonic_clock():
+    wall, mono = Clock(T0), Clock(5_000.0)
+    store = ShadowStore(wall, monotonic=mono)
+    store.ingest(body(device("192.0.2.10", reading())))
+    wall.t += 100                                                     # a step forward: not 100 s later
+    mono.t += 0.5
+    with pytest.raises(TooSoon):
+        store.ingest(body(device("192.0.2.10", reading(captured_at=wall.t - 0.5))))
+    mono.t += 15.6
+    wall.t -= 100
+    assert store.feed()["state"] == "forwarder_silent"
+    assert store.devices()["192.0.2.10"].status == "unknown"
+
+
+def test_two_monitors_on_one_bed_link_neither_to_its_patient():
+    # parse_table refuses such a table; board_view must not link two devices to one patient even if
+    # one ever reached it.
+    from datetime import datetime, timezone
+
+    from homunculus.api.infinity_device_beds import DeviceBedTable, Row, TableState
+    from homunculus.api.infinity_shadow import board_view
+
+    start = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    rows = tuple(Row(src, f"239.20.1.{src.rsplit('.', 1)[1]}", 2050, label, bed_id, None, "monitor_screen",
+                     "2026-07-14", start, None, "")
+                 for src, label, bed_id in (("192.0.2.10", "B-1", "bed-b1"), ("192.0.2.11", "B-1a", "BED-B1 "),
+                                            ("192.0.2.12", "B-2", "bed-b2")))
+    table = TableState(DeviceBedTable(1, "synthetic", "test", "2026-07-14", rows), "ok", None, "0" * 64, 1)
+    store = ShadowStore(Clock())
+    store.ingest(body(*(device(s, reading()) for s in ("192.0.2.10", "192.0.2.11", "192.0.2.12"))))
+    out = board_view(store.devices(), store.feed(), table, occupants={"bed-b1": ["p1"], "bed-b2": ["p2"]},
+                     visible=lambda card: True, patient_visible=lambda card: True, show_unassigned=True, now=T0)
+    links = {b["source"]: (b["link"], b["patient_id"], b.get("link_reason")) for b in out["beds"]}
+    assert links["192.0.2.10"] == ("ambiguous", None, "two_monitors")
+    assert links["192.0.2.11"] == ("ambiguous", None, "two_monitors")
+    assert links["192.0.2.12"] == ("one", "p2", None)
 
 
 # --- bounds --------------------------------------------------------------------------------------
@@ -279,6 +352,53 @@ def test_the_store_stays_bounded_at_100_devices_by_9_parameters():
     assert len(store.devices(clock.t)) == 100
 
 
+def test_any_mangled_body_is_refused_or_taken_never_an_error():
+    # The review's fuzzer, deterministic: 2000 bodies with one to three fields replaced by odd
+    # values (None, NaN, inf, 10**20, 2**63, nested containers, the wrong strings). Each is refused
+    # whole or taken; nothing else is raised, and the store stays readable and bounded.
+    import json as _json
+    import random
+
+    weird = [None, True, False, 0, -1, 1.5, float("nan"), float("inf"), -0.0, 10**20, "", "x", "192.0.2.10",
+             [], {}, [1], {"a": 1}, "239.20.1.10", 2050, "bpm", "hr", 2**63]
+
+    def paths(obj, prefix=()):
+        yield prefix
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                yield from paths(value, prefix + (key,))
+        elif isinstance(obj, list):
+            for i, value in enumerate(obj):
+                yield from paths(value, prefix + (i,))
+
+    clock = Clock()
+    store = ShadowStore(clock)
+    rng = random.Random(7)
+    seen = {"taken": 0, "refused": 0}
+    for _ in range(2000):
+        clock.t += 1.5
+        raw = body(device("192.0.2.10", reading(captured_at=clock.t - 0.5),
+                          reading("spo2", None, "%", valid=False, captured_at=clock.t - 0.5)), sent_at=clock.t)
+        for _ in range(rng.randint(1, 3)):
+            target = rng.choice([p for p in paths(raw) if p])
+            holder = raw
+            for key in target[:-1]:
+                holder = holder[key]
+            try:
+                holder[target[-1]] = copy.deepcopy(rng.choice(weird))
+            except (TypeError, KeyError, IndexError):
+                pass
+        try:
+            store.ingest(_json.loads(_json.dumps(raw)))
+            seen["taken"] += 1
+        except (ShadowRejected, TooSoon):
+            seen["refused"] += 1
+        store.devices()
+        store.feed()
+    assert seen["taken"] > 0 and seen["refused"] > 0
+    assert len(store.devices()) <= 100
+
+
 # --- no side door --------------------------------------------------------------------------------
 
 def test_the_store_has_no_method_that_could_reach_the_clinical_side():
@@ -287,6 +407,6 @@ def test_the_store_has_no_method_that_could_reach_the_clinical_side():
     for name in public:
         params = set(inspect.signature(getattr(ShadowStore, name)).parameters) - {"self"}
         assert params <= {"body", "now"}, name
-    assert set(inspect.signature(ShadowStore).parameters) == {"clock"}
+    assert set(inspect.signature(ShadowStore).parameters) == {"clock", "monotonic"}
     assert math.isclose(FORGET_AFTER_S, 120.0)
     assert copy.deepcopy(body()) == body()                             # the fixture is pure data

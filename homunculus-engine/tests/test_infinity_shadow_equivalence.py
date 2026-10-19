@@ -12,6 +12,7 @@ on 2026-10-19: api/app.py, api/board.py, api/clinical.py and api/patient_identit
 and add any new one: two runs must differ ONLY by the shadow lane.
 """
 import json
+from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -28,9 +29,11 @@ import homunculus.api.patient_identity as identity_module
 import homunculus.scenarios
 from homunculus.api.app import create_app
 from homunculus.api.audit import InMemoryAuditLog, verify_chain
+from homunculus.api.identity import Caller
 from homunculus.api.infinity_shadow import ShadowSettings
 from homunculus.api.patient_identity import InMemoryIdentityStore
 from homunculus.scenarios.loader import load_scenario
+from homunculus.scope import Scope, ScopeReason
 from homunculus.tenant.bedmap import BedMap, BedRef
 
 SCEN = Path(homunculus.scenarios.__file__).parent
@@ -45,6 +48,29 @@ TABLE = {
                  "verified_at": "2026-07-14", "valid_from": "2026-07-01T00:00:00Z", "valid_to": None,
                  "note": "synthetic"}],
 }
+# Clinicians as well as the device token: a leak that only a signed-in or a scoped caller would see
+# (the strip merged into /patients for a JWT only) must show here too. One nurse sees the whole
+# hospital; one is scoped to the bed the table puts the monitor on.
+JWTS = {
+    "nurse-jwt": Caller(hospital=HOSPITAL, actor="ayse", groups=("nurse",),
+                        perms=frozenset({"board.view", "alerts.ack"})),
+    "scoped-jwt": Caller(hospital=HOSPITAL, actor="zeyneb", groups=("nurse",), perms=frozenset({"board.view"})),
+}
+SCOPES = {"scoped-jwt": Scope(False, ScopeReason.ASSIGNED, bed_ids=frozenset({"bed-b1"}))}
+# Every 30 s from 0.5 to 12 min: a change to the escalation TIMER (5 min) shows at the cycle it moves.
+ESCALATION_MINUTES = [m / 2 for m in range(1, 25)]
+
+
+async def _resolve_jwt(token):
+    return JWTS.get(token)
+
+
+async def _resolve_scope(token):
+    return SCOPES.get(token, Scope(True, ScopeReason.UNASSIGNED))
+
+
+def _record(what):
+    return asdict(what) if is_dataclass(what) else what
 
 
 class Frozen(datetime):
@@ -100,10 +126,25 @@ async def _run(monkeypatch, tmp_path, *, stage, extra_ingest=False, probe=None):
     lane = {"t": 1_800_000_000.0}           # the lane's own clock: advanced 2 s per shadow step
     app = create_app({TOKEN: HOSPITAL}, escalate_after=timedelta(minutes=5), run_escalation_loop=False,
                      audit=audit, identities=identities, bedmap=bedmap, shadow=settings,
-                     shadow_clock=lambda: lane["t"])
-    frames = app.state.broadcaster.subscribe(HOSPITAL)
-    notes = {r: app.state.notification_hub.subscribe(HOSPITAL, r) for r in ("nurse", "doctor")}
-    seen = {"patients": [], "alerts": []}
+                     shadow_clock=lambda: lane["t"], resolve_jwt=_resolve_jwt, resolve_scope=_resolve_scope)
+    # Everything the board stream and the notification hub are ever handed, for any tenant and any
+    # audience — not what one subscriber happens to receive.
+    published = {"frames": [], "notes": []}
+    broadcaster, hub = app.state.broadcaster, app.state.notification_hub
+    board_publish, note_publish = broadcaster.publish, hub.publish
+
+    async def board_spy(tenant, message):
+        published["frames"].append(json.dumps([tenant, _record(message)], sort_keys=True, default=str))
+        await board_publish(tenant, message)
+
+    async def note_spy(tenant, note):
+        published["notes"].append(json.dumps([tenant, _record(note)], sort_keys=True, default=str))
+        await note_publish(tenant, note)
+
+    monkeypatch.setattr(broadcaster, "publish", board_spy)
+    monkeypatch.setattr(hub, "publish", note_spy)
+    seen = {"patients": [], "alerts": [], **{f"patients {jwt}": [] for jwt in JWTS},
+            **{f"alerts {jwt}": [] for jwt in JWTS}}
     hdr = {"Authorization": f"Bearer {TOKEN}"}
     events = load_scenario(SCEN / "septic_shock.yaml") + load_scenario(SCEN / "news2_deterioration.yaml")
     pid = events[0][1]["subject"]["reference"].split("/", 1)[1]
@@ -123,6 +164,12 @@ async def _run(monkeypatch, tmp_path, *, stage, extra_ingest=False, probe=None):
         async def observe():
             seen["patients"].append(json.dumps((await c.get("/patients", headers=hdr)).json(), sort_keys=True))
             seen["alerts"].append(json.dumps((await c.get(f"/alerts/{pid}", headers=hdr)).json(), sort_keys=True))
+            for jwt in JWTS:
+                bearer = {"Authorization": f"Bearer {jwt}"}
+                seen[f"patients {jwt}"].append(json.dumps((await c.get("/patients", headers=bearer)).json(),
+                                                          sort_keys=True))
+                seen[f"alerts {jwt}"].append(json.dumps((await c.get(f"/alerts/{pid}", headers=bearer)).json(),
+                                                        sort_keys=True))
 
         await shadow_step()
         assert (await c.post("/ingest", json=_encounter(pid), headers=hdr)).status_code == 200
@@ -145,17 +192,15 @@ async def _run(monkeypatch, tmp_path, *, stage, extra_ingest=False, probe=None):
         if live:
             await c.post("/ack", json={"patient_id": pid, "kind": live[0]["kind"], "role": "nurse"}, headers=hdr)
         await shadow_step(); await observe()
-        for minutes in (1, 6, 12):
+        for minutes in ESCALATION_MINUTES:
             Frozen.now_value = FROZEN + timedelta(minutes=minutes)
             await app.state.escalation_cycle(Frozen.now_value)
             await shadow_step(); await observe()
         Frozen.now_value = FROZEN
-    drained = lambda q: [json.dumps(q.get_nowait(), sort_keys=True, default=str) for _ in range(q.qsize())]  # noqa: E731
     store = app.state.ack_stores[HOSPITAL]
     return {
         **seen,
-        "frames": drained(frames),
-        "notes": {r: drained(q) for r, q in notes.items()},
+        **published,
         "escalated": sorted(store.escalated),
         "acks": sorted((k, v["by"]) for k, v in store.acks.items()),
         "first_seen": sorted((k, v.isoformat()) for k, v in store.first_seen.items()),
@@ -172,10 +217,13 @@ async def _run(monkeypatch, tmp_path, *, stage, extra_ingest=False, probe=None):
 async def test_every_clinical_output_is_identical_with_the_stage_on_or_off(monkeypatch, tmp_path):
     off = await _run(monkeypatch, tmp_path, stage="off")
     on = await _run(monkeypatch, tmp_path, stage="shadow")
-    # Not vacuous: the scenario raised alerts, escalated, notified, acknowledged and was audited.
-    assert len(off["audit"]) > 0 and len(off["frames"]) > 0 and any(off["notes"].values())
+    # Not vacuous: the scenario raised alerts, escalated, notified, acknowledged and was audited; the
+    # scoped nurse sees less than the unrestricted one; escalation happened at a cycle in between.
+    assert len(off["audit"]) > 0 and len(off["frames"]) > 0 and len(off["notes"]) > 0
     assert off["escalated"] and off["acks"] and off["first_seen"] and off["identity"] is not None
     assert off["unmatched"] and off["chain_ok"].ok
+    assert off["patients scoped-jwt"] != off["patients nurse-jwt"]
+    assert any(row[1] == "escalation" for row in off["audit"])
     for key in off:
         assert on[key] == off[key], key
 

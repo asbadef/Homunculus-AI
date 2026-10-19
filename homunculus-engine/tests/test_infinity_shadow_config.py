@@ -98,6 +98,15 @@ def test_the_token_is_never_in_repr_or_logs(caplog):
         assert secret not in logged
 
 
+@pytest.mark.parametrize("token", ["", "s" * 31])
+def test_a_shadow_stage_cannot_be_built_without_a_strong_token(token):
+    # compare_digest(b"", b"") is True: a lane "on" with an empty token would take a POST carrying
+    # no credential at all. Settings built by hand cannot be on without the env reader's checks.
+    with pytest.raises(ValueError):
+        ShadowSettings("shadow", "shadow", None, token, "HOSP1")
+    assert ShadowSettings("off", "off", None, token).on is False        # off needs none
+
+
 def test_the_table_path_defaults_inside_the_mounted_directory():
     assert DEFAULT_TABLE_PATH == "/etc/homunculus/infinity-shadow/device-beds.json"
     assert shadow_settings_from_env({}, TENANTS).table_path == DEFAULT_TABLE_PATH

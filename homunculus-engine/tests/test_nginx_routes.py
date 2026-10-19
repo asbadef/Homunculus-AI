@@ -70,10 +70,34 @@ def test_stream_ticket_is_served_by_the_sse_block() -> None:
 
 
 def test_every_api_location_is_found() -> None:
-    """Five: the SSE block, the prefix block — and the exact `/auth/login`, `/auth/reauth` and
+    """Six: the SSE block, the prefix block — the exact `/auth/login`, `/auth/reauth` and
     `/auth/password` blocks, which nginx picks before any regex location so that the routes
-    that check a password carry a per-address limit."""
-    assert len(_api_locations()) == 5
+    that check a password carry a per-address limit — and the exact block of Aşama A's
+    forwarder POST, which refuses plain HTTP."""
+    assert len(_api_locations()) == 6
+
+
+def _block(text: str, header: str) -> str:
+    """A whole location block, nested braces included: from its header to its own closing brace
+    (four spaces in, as every block of this server is)."""
+    start = text.index(header)
+    return text[start:text.index("\n    }\n", start)]
+
+
+def test_the_forwarders_post_is_https_only_post_only_and_64_kib() -> None:
+    """Aşama A: the hub forwarder sends its own bearer token to POST /infinity-shadow/readings. The
+    panel also listens in the clear (:8080 on the VM), and that port must never carry the token: a
+    plain-HTTP request is refused here, before the API sees it. POST only, and nginx's body limit
+    is the API's own 64 KiB (the API counts the bytes itself as well). An allow-list of the hub's
+    address is added once its $remote_addr has been seen on the VM (plan, D-3)."""
+    text = CONF.read_text(encoding="utf-8")
+    body = _block(text, "location = /infinity-shadow/readings {")
+    assert re.search(r'if \(\$scheme != "?https"?\)\s*\{\s*return 403 ', body)
+    assert re.search(r"limit_except POST\s*\{\s*deny all;\s*\}", body)
+    assert re.search(r"^\s*client_max_body_size 64k;", body, re.M)
+    assert re.search(r"^\s*proxy_pass http://api:8000;", body, re.M)
+    assert "proxy_set_header X-Forwarded-Proto $scheme;" in body
+    assert body.index("proxy_pass") < body.index("if (")                # read by _api_locations
 
 
 def _location(text: str, header: str) -> str:

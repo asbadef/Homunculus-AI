@@ -41,7 +41,8 @@ from homunculus.api.escalation import escalate
 from homunculus.api.identity import Caller, bounded_role
 from homunculus.api.infinity_device_beds import TableFile
 from homunculus.api.infinity_shadow import (
-    MAX_BODY as SHADOW_MAX_BODY, ShadowRejected, ShadowSettings, ShadowStore, TooSoon, board_view,
+    MAX_BODY as SHADOW_MAX_BODY, MIN_TOKEN as SHADOW_MIN_TOKEN, ShadowRejected, ShadowSettings, ShadowStore,
+    TooSoon, board_view,
 )
 from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import rehydrate
@@ -165,6 +166,7 @@ def create_app(
     ldap: LdapRuntime | None = None,
     shadow: ShadowSettings | None = None,
     shadow_clock: Callable[[], float] = time.time,
+    shadow_monotonic: Callable[[], float] | None = None,
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
     run_escalation_loop=False disables the background task so tests are deterministic.
@@ -184,8 +186,9 @@ def create_app(
     `ldap`, if given, is the directory (LDAP / Active Directory, spec §7) and becomes
     `app.state.ldap`; None leaves AD sign-in off — AD accounts get 503, /admin/ldap/* 409.
     `shadow` is Aşama A's monitor strip (`api/infinity_shadow.py`); None is the stage `off`, so
-    every existing caller is unchanged. `shadow_clock` is the lane's wall clock (epoch seconds),
-    injected by the tests; the engine never reads it."""
+    every existing caller is unchanged. `shadow_clock` is the lane's wall clock (epoch seconds) and
+    `shadow_monotonic` its own spacing-and-silence clock (ShadowStore), both injected by the tests;
+    the engine never reads either."""
     # A device token is a non-empty string. A missing token reads as "" further down, so an empty
     # key in this map would let a request with no credential at all in as that hospital's device.
     empty = [hospital for token, hospital in tenants.items()
@@ -221,7 +224,7 @@ def create_app(
     # store's writes (tests/test_infinity_shadow_isolation.py). With the stage on, the table is
     # read right here, so its version and sha256 (or why it failed) are in the start-up log.
     shadow = shadow if shadow is not None else ShadowSettings()
-    shadow_store = ShadowStore(clock=shadow_clock)
+    shadow_store = ShadowStore(clock=shadow_clock, monotonic=shadow_monotonic)
     shadow_table = TableFile(shadow.table_path, clock=time.monotonic)
     shadow_occupancy: dict[str, tuple[float, dict[str, list[str]]]] = {}
     if shadow.on:
@@ -804,14 +807,23 @@ def create_app(
         if not shadow.on:
             raise HTTPException(status_code=409, detail={"reason": "stage_off"})
         provided = (authorization or "").removeprefix("Bearer ")
-        if not secrets.compare_digest(provided.encode(), shadow.token.encode()):
+        # Twice over: ShadowSettings refuses an "on" stage without a strong token, and this refuses a
+        # short one again — compare_digest(b"", b"") is True, so an empty token would open the lane
+        # to a request with no credential at all.
+        if (len(shadow.token) < SHADOW_MIN_TOKEN
+                or not secrets.compare_digest(provided.encode(), shadow.token.encode())):
             raise HTTPException(status_code=401, detail="unknown credential")
         declared = request.headers.get("content-length", "")
         if declared.isdigit() and int(declared) > SHADOW_MAX_BODY:
             raise HTTPException(status_code=413, detail={"reason": "too_large"})
-        raw = await request.body()
-        if len(raw) > SHADOW_MAX_BODY:
-            raise HTTPException(status_code=413, detail={"reason": "too_large"})
+        # Counted as it arrives, not read whole first: a body with no Content-Length (chunked) is
+        # refused at the limit. The API holds its own limit whatever the proxy in front of it does
+        # (nginx's location for this route has the same 64 KiB), as the hub's receiver does.
+        raw = bytearray()
+        async for chunk in request.stream():
+            if len(raw) + len(chunk) > SHADOW_MAX_BODY:
+                raise HTTPException(status_code=413, detail={"reason": "too_large"})
+            raw.extend(chunk)
         try:
             return shadow_store.ingest(json.loads(raw))
         except TooSoon:

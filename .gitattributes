@@ -1,3 +1,7 @@
 # Shell scripts are executed inside Alpine containers: a CRLF checkout on a Windows dev
 # machine must never reach them, or /bin/sh fails on the invisible \r.
 *.sh text eol=lf
+# Deployed and checked by sha256 (Aşama A's device->bed table, the inventories): the bytes a Windows
+# checkout holds — and that deploy/infinity/device_beds_review.py hashes — must be the bytes git
+# holds and the VM receives.
+deploy/infinity/*.json text eol=lf

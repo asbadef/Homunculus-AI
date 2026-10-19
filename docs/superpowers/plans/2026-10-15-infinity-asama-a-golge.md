@@ -2300,6 +2300,8 @@ BLOK
 
 Yaklaşık 15 saniye sonra ajan iki denetimi koşar: `shadow_check.py --window 60 …`, beklenen sonuç besleme `ok`, atanmış yataklarda taze değer, atanmamış = {.28, .34, .38}; ve `transport_check.py --window 60`, beklenen sonuç `KABUL`.
 
+**Not (Tasks 1–5 incelemesi, 19.10):** nginx `POST /infinity-shadow/readings`'i yalnız HTTPS ile kabul eder; düz HTTP (:8080) `403 https_required` alır, yani forwarder adresi `https://…:8443` olmalıdır (bu blokta öyle). Hub'ın adresini kısıtlayan bir izin listesi (`allow <hub>; deny all;`, `deploy/local/web/nginx.conf`'taki bu location'a) hub'ın POST'larının nginx günlüğündeki `$remote_addr`'ı VM'de görüldükten sonra ayrı bir değişiklikle eklenir; adres gözlenmeden yazılan bir liste forwarder'ı kesebilir.
+
 ### Geri alma blokları
 
 **Hangi sırayla:** sorun yalnız şeritteyse önce **G-1** (saniyeler, API yeniden başlamaz). Şeridin tamamen kalkması gerekiyorsa **G-2**. Kod geri alınacaksa **G-3**, sonra **G-4**. Hepsi geri alındıysa **G-5** (artıklar).
