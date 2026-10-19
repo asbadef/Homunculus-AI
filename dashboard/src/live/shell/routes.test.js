@@ -120,7 +120,7 @@ describe("who may open what", () => {
   it("lets in whoever a Group-1 screen is for — built or not — and nobody else", () => {
     expect(hasWorkRoute(NURSE)).toBe(true);
     expect(hasWorkRoute(["users.manage"])).toBe(true);
-    expect(hasWorkRoute(["devices.manage"])).toBe(false);     // biomedical: Group 4
+    expect(hasWorkRoute(["devices.manage"])).toBe(true);      // biomedical: the monitor screen (Aşama A)
     expect(hasWorkRoute(["audit.view"])).toBe(false);         // the audit page: Group 2
     expect(hasWorkRoute([])).toBe(false);
   });
@@ -128,7 +128,38 @@ describe("who may open what", () => {
   it("lands on the first built screen the session opens, else on its settings", () => {
     const first = navRoutes(NURSE).main[0];
     expect(homePath(NURSE)).toBe(first ? first.path : "/settings");
-    expect(homePath(["devices.manage"])).toBe("/settings");
+    expect(homePath(["devices.manage"])).toBe("/devices");
+  });
+});
+
+// Aşama A: biomedical's device-only screen (Decision 12) — devices, beds and values, no patient.
+describe("the monitor screen's route", () => {
+  afterEach(() => resetScreens());
+  const devices = () => ROUTES.find((r) => r.id === "devices");
+
+  it("is a work screen for devices.manage alone, on the main rail, with its own icon and names", () => {
+    expect(devices()).toMatchObject({ path: "/devices", perms: ["devices.manage"], work: true, nav: "main",
+      icon: "activity", labelKey: "nav.devices", shortKey: "nav.devicesShort" });
+    expect(screenOf(devices())).not.toBeNull();
+    expect(ICON_NAMES).toContain("activity");
+    for (const lang of LANG_CODES) expect(DICTIONARIES[lang]["nav.devices"], lang).toBeTruthy();
+  });
+
+  it("is the one main entry and the home of a devices.manage-only session — biomedical, vendor support", () => {
+    for (const perms of [["devices.manage"], ["audit.view", "devices.manage"]]) {
+      expect(hasWorkRoute(perms)).toBe(true);
+      expect(navRoutes(perms).main.map((r) => r.id)).toEqual(["devices"]);
+      expect(homePath(perms)).toBe("/devices");
+    }
+  });
+
+  it("is not a clinician's: board.view alone does not see it; a hospital administrator sees both", () => {
+    expect(navRoutes(NURSE).main.map((r) => r.id)).not.toContain("devices");
+    const hospitalAdmin = ["board.view", "alerts.ack", "users.manage", "groups.manage", "devices.manage"];
+    const ids = navRoutes(hospitalAdmin).main.map((r) => r.id);
+    expect(ids).toContain("beds");
+    expect(ids).toContain("devices");
+    expect(homePath(hospitalAdmin)).toBe("/beds");
   });
 });
 

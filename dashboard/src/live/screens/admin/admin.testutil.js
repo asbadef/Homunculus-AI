@@ -84,7 +84,7 @@ export const member = (g, source = "manual") => ({ id: g.id, slug: g.slug, name:
  *  them unchanged because a fixture that carried anything else would describe a payload the
  *  server cannot send; `admin.testutil.test.js` reads the backend and fails when they drift. */
 export const PERMISSION_TEXTS = Object.freeze({
-  "board.view": "See the live board, patient detail and the event stream",
+  "board.view": "See the live board, patient detail and the event stream — including, while Aşama A is on, the monitor strip labelled unvalidated, which feeds no rule, score, alert, notification or sound",
   "alerts.ack": "Acknowledge or snooze an alert",
   "alerts.escalate": "Create an alert manually; escalate one",
   "admissions.view": "Read admissions and patient records",
@@ -102,7 +102,7 @@ export const PERMISSION_TEXTS = Object.freeze({
   "users.manage": "Users: create, edit, activate, reset password or MFA, unlock an AD sign-in, set groups; read a user's unit and bed scope, count the users with none, and assign one (assigning also needs a caller whose own scope is unrestricted by role); search and import AD accounts, read the AD group mapping (changing the mapping needs every permission)",
   "groups.manage": "Groups and their permission sets",
   "structure.manage": "Tenant, site, unit, room and bed configuration",
-  "devices.manage": "Devices: the read-only device research window (Infinity research hub): live per-device values decoded from bedside-monitor traffic, candidates for checking the decoding, not observations, never read by the clinical pipeline. Held by default by biomedical and by platform_support, the vendor's support group",
+  "devices.manage": "Devices: the device screen and the research window — live per-device values decoded from bedside-monitor traffic, UNVALIDATED. Aşama A shows them to clinicians as a strip labelled unvalidated; they are never an observation and no rule, score, alert, notification or audit row is made from them. Shows no patient. Held by default by biomedical and by platform_support, the vendor's support group",
   "clinical.chart": "Chart clinician-observed inputs (infection suspicion, pressor, fluids, GCS…) and the patient's own baseline",
   "scores.sign": "Sign a severity-score form (SOFA) with corrections",
 });

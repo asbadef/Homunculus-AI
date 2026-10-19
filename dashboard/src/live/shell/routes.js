@@ -26,6 +26,8 @@ import { PatientScreen } from "../screens/patient/PatientScreen.jsx";
 
 import { AdminScreen } from "../screens/admin/AdminScreen.jsx";
 
+import { DevicesScreen } from "../screens/devices/DevicesScreen.jsx";
+
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
  *  `resetScreens` puts it back whatever a test stood in for. */
@@ -41,6 +43,8 @@ const SCREENS = Object.freeze({
   patient: PatientScreen, // G1-11
 
   admin: AdminScreen, // G1-12 (users), G1-13 (roles), G1-14 (login source) — tabs inside one screen
+
+  devices: DevicesScreen, // Aşama A — biomedical's monitor screen (devices, beds, values; no patient)
 
   settings: SettingsScreen,
 });
@@ -65,6 +69,11 @@ export const ROUTES = Object.freeze([
 
   route({ id: "admin", path: "/admin", icon: "shield", labelKey: "nav.admin", shortKey: "nav.adminShort",
     perms: ["users.manage", "groups.manage"], work: true, nav: "main" }),
+
+  // Aşama A (Decision 12): the monitors for the people who own the device→bed table — biomedical and
+  // the vendor's support group sign in to this alone; it shows no patient.
+  route({ id: "devices", path: "/devices", icon: "activity", labelKey: "nav.devices", shortKey: "nav.devicesShort",
+    perms: ["devices.manage"], work: true, nav: "main" }),
 
   route({ id: "settings", path: "/settings", icon: "gear", labelKey: "nav.settings", shortKey: "nav.settingsShort",
     perms: [], work: false, nav: "bottom" }),

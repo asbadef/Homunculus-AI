@@ -8,6 +8,7 @@ export default {
     alarms: "Alarmlar", alarmsShort: "Alarm",
     patient: "Hasta",
     admin: "Yönetim", adminShort: "Yönetim",
+    devices: "Monitörler", devicesShort: "Monitörler", // Aşama A: biomedical's device-only screen
     settings: "Ayarlar", settingsShort: "Ayarlar",
   },
   az: {
@@ -15,6 +16,7 @@ export default {
     alarms: "Siqnallar", alarmsShort: "Siqnal",
     patient: "Xəstə",
     admin: "İdarə", adminShort: "İdarə",
+    devices: "Monitorlar", devicesShort: "Monitorlar",
     settings: "Ayarlar", settingsShort: "Ayarlar",
   },
   ru: {
@@ -22,6 +24,7 @@ export default {
     alarms: "Тревоги", alarmsShort: "Тревоги",
     patient: "Пациент",
     admin: "Управление", adminShort: "Управл.",
+    devices: "Мониторы", devicesShort: "Мониторы",
     settings: "Настройки", settingsShort: "Настр.",
   },
   en: {
@@ -29,6 +32,7 @@ export default {
     alarms: "Alarms", alarmsShort: "Alarms",
     patient: "Patient",
     admin: "Admin", adminShort: "Admin",
+    devices: "Monitors", devicesShort: "Monitors",
     settings: "Settings", settingsShort: "Settings",
   },
 };

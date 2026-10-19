@@ -94,7 +94,7 @@ describe("src/live/ stands on its own", () => {
 // them, and it reads nothing from any of them but the component.
 describe("the monitor strip never reaches an alarm path", () => {
   const STRIP = ["data/shadowStore.js", "data/ShadowProvider.jsx", "screens/common/monitor.js",
-    "screens/common/MonitorStrip.jsx"];
+    "screens/common/MonitorStrip.jsx", "screens/devices/DevicesScreen.jsx"];
   const STRIP_PREFIXES = ["screens/devices/"];
   const STRIP_ALSO = [];
   const REGISTRY = "shell/routes.js";
