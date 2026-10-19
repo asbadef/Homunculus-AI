@@ -71,8 +71,7 @@ def _forbidden(name: str) -> bool:
 @pytest.mark.parametrize("relative", LANE)
 def test_the_lanes_modules_import_nothing_clinical(relative):
     path = PACKAGE / relative
-    if not path.exists():
-        pytest.skip(f"{relative} is written by the plan's Task 6 (the hub forwarder)")
+    assert path.is_file(), f"{relative} is part of the lane; a missing module must fail here, not skip"
     imported = _imports(path)
     assert imported, "the scan went blind"
     assert not sorted(name for name in imported if _forbidden(name))

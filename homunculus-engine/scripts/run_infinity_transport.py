@@ -16,6 +16,10 @@ import uvicorn
 from homunculus.edge.infinity_collector import Sender, collect, forward_loop, membership_capacity, raw_pcap_events, save_batch
 from homunculus.edge.infinity_hub import create_hub
 from homunculus.edge.infinity_journal import Journal
+# Aşama A's forwarder, under its own names: its `forward_loop` must never shadow the collector's.
+from homunculus.edge.infinity_shadow import ShadowMisconfigured
+from homunculus.edge.infinity_shadow import settings_from_env as shadow_settings_from_env
+from homunculus.edge.infinity_shadow import start as start_shadow_forwarder
 from homunculus.edge.infinity_stream import Inventory, MAX_BATCH
 from homunculus.edge.infinity_timing import Timings
 
@@ -89,6 +93,15 @@ def main():
         if args.role == "hub":
             app = create_hub(inventory, journal, token, viewer, accept_payload=args.capture_payload,
                              research_view=research_view, timings=timings)
+            # Aşama A: display values to the clinical API's shadow lane, only with drop-in 93's
+            # environment. Not clinical ingest: the hub's answers keep clinical_forwarding False.
+            shadow = shadow_settings_from_env(os.environ)
+            if shadow is not None and research_view is None:
+                print("Shadow display forwarding NOT started: it needs --unverified-live-research.", flush=True)
+            elif shadow is not None:
+                start_shadow_forwarder(research_view, shadow, stop, collector_age=app.state.collector_age)
+                print("Shadow display forwarding ENABLED (Stage A, unvalidated; not clinical ingest) every 5 s.",
+                      flush=True)
             uvicorn.run(app, host=args.host, port=args.port, ssl_certfile=args.tls_cert,
                         ssl_keyfile=args.tls_key, access_log=False, proxy_headers=False)
             return 0
@@ -120,9 +133,14 @@ def main():
         else:
             collect(inventory, journal, stop, retain_payload=args.capture_payload)
         return 2 if failure.is_set() else 0
+    except ShadowMisconfigured as error:
+        # A fixed sentence naming variables, never their values; the deploy block greps it.
+        print(f"Transport stopped: {error}", flush=True)
+        return 2
     except (OSError, ValueError, KeyError):
         # Do not log credentials, untrusted payloads or full exception text.
-        print("Transport stopped: check inventory, storage key/path, network membership capacity and endpoint configuration.", flush=True)
+        print("Transport stopped: check inventory, storage key/path, network membership capacity, endpoint "
+              "or shadow forwarding configuration.", flush=True)
         return 2
     finally:
         stop.set()

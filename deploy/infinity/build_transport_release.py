@@ -21,7 +21,7 @@ import tarfile
 ROOT = Path(__file__).resolve().parents[2]
 ENGINE = "homunculus-engine/"
 EDGE = ("__init__", "infinity_stream", "infinity_journal", "infinity_collector", "infinity_hub",
-        "infinity_live", "infinity_records", "infinity_timing")
+        "infinity_live", "infinity_records", "infinity_timing", "infinity_shadow")
 SOURCES = {"app/run_infinity_transport.py": ENGINE + "scripts/run_infinity_transport.py",
            **{f"app/src/homunculus/edge/{name}.py": f"{ENGINE}src/homunculus/edge/{name}.py" for name in EDGE}}
 # The package root is the release's own: the repo's would import the clinical engine.

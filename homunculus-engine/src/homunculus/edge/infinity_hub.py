@@ -70,6 +70,15 @@ def create_hub(inventory, journal, collector_token, viewer_token, *, accept_payl
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     heartbeat = {"seen": None, "value": None}
     lock = threading.Lock()
+
+    def collector_age():
+        with lock:
+            seen = heartbeat["seen"]
+        return None if seen is None else max(0.0, clock() - seen)
+
+    # Aşama A's forwarder reads how long ago the collector last spoke, so the board can say "the
+    # collector is not connected" instead of "13 monitors silent". Read-only; no answer changes.
+    app.state.collector_age = collector_age
     # Pass the journal's own Timings here too, and /v1/status shows the whole handler,
     # the journal's phases included, under one key.
     timings = timings or Timings()
