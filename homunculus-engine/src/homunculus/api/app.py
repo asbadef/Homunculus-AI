@@ -808,10 +808,10 @@ def create_app(
             raise HTTPException(status_code=401, detail="unknown credential")
         declared = request.headers.get("content-length", "")
         if declared.isdigit() and int(declared) > SHADOW_MAX_BODY:
-            raise HTTPException(status_code=413, detail="too large")
+            raise HTTPException(status_code=413, detail={"reason": "too_large"})
         raw = await request.body()
         if len(raw) > SHADOW_MAX_BODY:
-            raise HTTPException(status_code=413, detail="too large")
+            raise HTTPException(status_code=413, detail={"reason": "too_large"})
         try:
             return shadow_store.ingest(json.loads(raw))
         except TooSoon:

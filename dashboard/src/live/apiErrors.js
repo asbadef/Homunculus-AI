@@ -139,7 +139,8 @@ const REQUEST_FAILED = /^İstek başarısız \((\d{3})\)$/; // backendApi.js
 // own tail is carried into the text. Both name permission keys — the catalogue's own identifiers
 // (`alerts.ack`), which are not translated: they are what an administrator searches the
 // permission table for and what a support call quotes.
-const PERMISSION_REQUIRED = /^permission required: ([\w.]+)$/;           // api/app.py, auth/dependencies.py
+// "a or b": a route either of two rights opens (GET /infinity-shadow/board: board.view or devices.manage).
+const PERMISSION_REQUIRED = /^permission required: ([\w.]+(?: or [\w.]+)?)$/; // api/app.py, auth/dependencies.py
 const BEYOND_OWN_RIGHTS = /^Kendi yetkilerinizi aşan bir işlem yapılamaz: (.+)$/; // admin/service.py
 const PASSWORD_FIELDS = new Set(["password", "current_password", "new_password"]);
 

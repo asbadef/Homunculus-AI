@@ -154,6 +154,7 @@ describe("no message site escapes the readers", () => {
     // Wave 3's files.
     ["api/app.py", /^f"permission required:/, 1, "a permission key of the route; the key is not translated, the sentence around it is"],
     ["api/app.py", /^str\(exc\)/, 6, "ClinicalEntryError / GatewayError / ScoreError: the engine's own validation text, shown as the engine wrote it"],
+    ["api/app.py", /^\{"reason": "/, 5, "Aşama A's forwarder lane (POST /infinity-shadow/readings): the hub reads these by status; no screen calls the route or shows them"],
     ["admin/service.py", /^f"\{BEYOND_OWN_RIGHTS\}/, 1, "the constant plus the keys it lacks; matched by shape (BEYOND_OWN_RIGHTS in apiErrors.js)"],
     ["admin/service.py", /^detail\) from None/, 1, "_flush's own parameter: every caller passes a constant read above"],
     ["admin/service.py", /^str\(exc\)\)/, 2, "the ORM's own message for a bad id or a group of another tenant, shown as it arrived"],
@@ -252,6 +253,14 @@ describe("apiErrorText", () => {
   it("prefers the client's code to the text", () => {
     const err = Object.assign(new Error("anything"), { code: "REQUEST_TIMEOUT" });
     expect(apiErrorText(en, err)).toMatch(/^The server did not answer/);
+  });
+
+  it("names the permission a route asks for, and both when either opens it", () => {
+    expect(apiErrorText(en, "permission required: board.view")).toBe("You do not have the right for this (board.view).");
+    // GET /infinity-shadow/board (Aşama A) opens for either of two rights.
+    expect(apiErrorText(en, "permission required: board.view or devices.manage"))
+      .toBe("You do not have the right for this (board.view or devices.manage).");
+    expect(apiErrorText(en, "permission required: board.view or")).not.toMatch(/^You do not have the right/);
   });
 
   it("keeps the status of a request that failed without a message of its own", () => {

@@ -100,6 +100,7 @@ export default defineConfig({
       "/scope",
       "/scores",
       "/infinity-research",
+      "/infinity-shadow",   // Aşama A's monitor strip (the board GET; the POST is the hub forwarder's)
     ].map((path) => [path, "http://localhost:8000"])),
   },
   test: {
