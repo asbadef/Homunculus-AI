@@ -33,6 +33,7 @@ import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
 import { patientFeedHealth } from "../common/feedHealth.js";
 import { measuredVitals } from "../common/vitals.js";
 import { ChronicExpected, News2, boardKnown, nameOf, pillRisk, railOf, summaryOf } from "../common/BoardState.jsx";
+import { MonitorStrip } from "../common/MonitorStrip.jsx";
 
 /** Where this card's identity came from, and what state the HIS says it is in. */
 function Provenance({ patient }) {
@@ -86,8 +87,12 @@ function Vitals({ patient }) {
  *   go on growing it, reporting OUR lost connection as the ward's dead monitors. `FeedHealth`
  *   suppresses the ward chip off LIVE for exactly this reason (screens/common/BoardState.jsx);
  *   this is the same rule per card. `BoardStrip` is what speaks about the connection.
+ * `monitor`: Aşama A's unvalidated strip for this patient — given ONLY when the API links this
+ *   patient's bed to one monitor (`link: "one"`), as `{entry, nowMs, fetchedAtMs, maxAgeS, feedOk}`.
+ *   Drawn after the card's link, outside it: a monitor value is never part of what opening the
+ *   patient reads out, and nothing on the card above it (risk, alarms, NEWS2) reads it.
  */
-export function BedCard({ patient, alerts = [], nowMs, connection }) {
+export function BedCard({ patient, alerts = [], nowMs, connection, monitor }) {
   const { t } = useI18n();
   const measured = hasMeasurement(patient?.measuredAt);
   const style = riskStyle(patient?.risk, { measured });
@@ -151,6 +156,12 @@ export function BedCard({ patient, alerts = [], nowMs, connection }) {
           </p>
         ) : null}
       </a>
+      {monitor?.entry ? (
+        <div className="pb-3 pl-[18px] pr-3.5">
+          <MonitorStrip variant="compact" entry={monitor.entry} nowMs={monitor.nowMs} fetchedAtMs={monitor.fetchedAtMs}
+            maxAgeS={monitor.maxAgeS} feedOk={monitor.feedOk} />
+        </div>
+      ) : null}
     </li>
   );
 }

@@ -294,4 +294,82 @@ describe("the monitor strip (Aşama A)", () => {
     // the existing feed chip's row: the one beside the attention line, two columns from 861 px
     expect(chip.closest(".min-\\[861px\\]\\:grid-cols-2")).not.toBeNull();
   });
+
+  // Two patient cards (one REA-01, one NICU-01); three assigned monitor beds, one linked to S-001;
+  // two devices on no bed.
+  const WARD = board([
+    entry("S-001", [], CARD),
+    entry("S-002", [], { identity: identity({ patient_id: "S-002", display_name: "Kamran Sentetik",
+      bed_label: "NICU-01 · 1", bed_id: "NICU-01-1", unit_id: "NICU-01" }), at: measured(30) }),
+  ]);
+  const MONITORS = (over = {}) => strip({
+    beds: [
+      monitorBed("REA-01 · 2", [param("hr", 72)], { bed_id: "REA-01-2", unit_id: "REA-01", link: "one", patient_id: "S-001" }),
+      monitorBed("REA-01 · 5", [param("hr", 64)], { unit_id: "REA-01" }),
+      monitorBed("NICU-01 · 7", [param("spo2", 95)], { unit_id: "NICU-01" }),
+    ],
+    unassigned: [unassigned("192.0.2.28"), unassigned("192.0.2.34", "not_in_table")],
+    ...over,
+  });
+  const section = () => screen.getByRole("region", { name: "Monitorlar — təsdiqlənməyib" });
+  const cards = () => [...section().querySelectorAll("li[data-monitor]")];
+
+  it("puts the strip of a linked patient on that patient's card, outside its link", async () => {
+    await openStrip(MONITORS(), { payload: WARD });
+    const link = screen.getByRole("link", { name: "REA-01 · 2 xəstəsini aç" });
+    const strip = within(link.closest("li")).getByRole("region", { name: "Monitor · təsdiqlənməyib" });
+    expect(strip).toHaveTextContent("72");
+    expect(link.contains(strip)).toBe(false);
+  });
+
+  it("lists the unlinked beds and the unassigned devices in their own section, after the patients", async () => {
+    await openStrip(MONITORS(), { payload: WARD });
+    expect(screen.getByRole("heading", { level: 2, name: "Monitorlar — təsdiqlənməyib" })).toBeInTheDocument();
+    expect(cards()).toHaveLength(4);
+    expect(section()).not.toHaveTextContent("72");                           // the linked one is on its card
+    expect(within(section()).queryAllByRole("link")).toEqual([]);            // monitor cards open nothing
+    expect(within(section()).getByRole("region", { name: "REA-01 · 5 · Monitor · təsdiqlənməyib" })).toHaveTextContent("64");
+    expect(section()).toHaveTextContent("Bu çarpayıya bağlı xəstə qeydi yoxdur");
+    expect(within(section()).getByRole("region", { name: "Təyin edilməmiş cihaz · 192.0.2.28 · Monitor · təsdiqlənməyib" }))
+      .toHaveTextContent("Cihaz→çarpayı cədvəlində çarpayısı müəyyənləşdirilməyib");
+    expect(section()).toHaveTextContent("Cihaz→çarpayı cədvəlində yoxdur");
+    const patients = screen.getByRole("link", { name: "REA-01 · 2 xəstəsini aç" }).closest("ul");
+    expect(patients.compareDocumentPosition(section()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // the beds grid's own layout, one column at 640 px and below
+    expect(section().querySelector("ul")).toHaveClass("max-[640px]:grid-cols-1");
+  });
+
+  it("a unit filter hides another unit's monitors and every unassigned device, and says how many", async () => {
+    await openStrip(MONITORS(), { payload: WARD, units: ["REA-01", "NICU-01"] });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "NICU-01" } });
+    expect(cards()).toHaveLength(1);
+    expect(section()).toHaveTextContent("NICU-01 · 7");
+    // S-001's card (with its monitor), REA-01 · 5 and the two unassigned devices
+    expect(screen.getByText("Süzgəc 4 kartı gizlədir.")).toBeInTheDocument();
+  });
+
+  it("the search finds a monitor by its bed", async () => {
+    await openStrip(MONITORS(), { payload: WARD });
+    fireEvent.change(screen.getByLabelText("Çarpayı və ya xəstə axtar"), { target: { value: "nicu-01 · 7" } });
+    expect(cards()).toHaveLength(1);
+    expect(section()).toHaveTextContent("NICU-01 · 7");
+    expect(screen.getByText("Axtarış 5 kartı gizlədir.")).toBeInTheDocument();
+  });
+
+  it("with the forwarder silent says so instead of counting, and shows no number anywhere", async () => {
+    await openStrip(MONITORS({ feed: { state: "forwarder_silent" } }), { payload: WARD });
+    expect(screen.getAllByRole("note").some((n) => n.textContent.startsWith("Monitor məlumatı gəlmir"))).toBe(true);
+    expect(screen.queryByText(/məlumat göndərir/)).toBeNull();
+    for (const strip of document.querySelectorAll("[data-monitor-strip]")) {
+      expect(strip).not.toHaveTextContent(/\b(72|64|95)\b/);
+    }
+  });
+
+  it("says it cannot read the strip when a poll fails, and keeps the last cards ageing", async () => {
+    const mounted = await openStrip(MONITORS(), { payload: WARD });
+    mounted.api.shadowBoard.mockRejectedValue(new Error("down"));
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
+    expect(screen.getAllByRole("note").some((n) => n.textContent === "Monitor zolağı oxunmur")).toBe(true);
+    expect(cards()).toHaveLength(4);
+  });
 });

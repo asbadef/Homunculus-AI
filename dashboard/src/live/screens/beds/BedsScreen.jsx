@@ -23,7 +23,7 @@
 // screen exists to prevent. What this screen adds instead is a selector that works at 390 px
 // (the chip is hidden there) and a line saying how many cards a filter is hiding, so an active
 // filter can never be silent.
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useId, useMemo, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { CONNECTION } from "../../../liveConnection.js";
@@ -41,10 +41,55 @@ import {
 import { elapsed } from "../common/elapsed.js";
 import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
 import { measuredVitals } from "../common/vitals.js";
-import { ORDERS, VIEWS, bedNameOf, inUnit, matching, orderBeds } from "./order.js";
+import { ORDERS, VIEWS, bedNameOf, inUnit, matching, norm, orderBeds } from "./order.js";
 import { BedCard } from "./BedCard.jsx";
 import { useShadow } from "../../data/ShadowProvider.jsx";
-import { MonitorFeedChip } from "../common/MonitorStrip.jsx";
+import { MonitorFeedChip, MonitorStrip, stripOn } from "../common/MonitorStrip.jsx";
+import { DISPLAY_MAX_AGE_S, linkSentenceKey, reasonKey } from "../common/monitor.js";
+
+/** Monitor cards whose bed label or address contains what was typed. */
+const matchingMonitors = (cards, query) => {
+  const q = norm(query);
+  return q ? cards.filter((c) => norm(c.bed_label).includes(q) || norm(c.source).includes(q)) : cards;
+};
+
+/** Aşama A's section: monitors on no patient card of this board — the beds the table places a
+ *  monitor on whose patient is not linked here, then the devices on no bed at all. After the
+ *  patients, under its own heading, so no engine card is ever pushed down by a monitor. The cards
+ *  are not links: there is no screen to open. */
+function MonitorSection({ beds, devices, view }) {
+  const { t } = useI18n();
+  const id = useId();
+  if (beds.length + devices.length === 0) return null;
+  return (
+    <section aria-labelledby={id} className="flex flex-col gap-2">
+      <div>
+        <h2 id={id} className="m-0 font-display text-17 font-bold">{t("monitor.section")}</h2>
+        <p className="m-0 text-12.5 text-mute">{t("monitor.sectionSub")}</p>
+      </div>
+      <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-2.5 p-0 max-[640px]:grid-cols-1">
+        {beds.map((card) => {
+          const why = linkSentenceKey(card);
+          return (
+            <li key={card.source} data-monitor="" className="rounded-box bg-card">
+              <MonitorStrip entry={card} variant="compact" title={card.bed_label} {...view}>
+                {why ? <p className="m-0 mt-1 text-11.5 font-semibold text-att-ink">{t(why)}</p> : null}
+              </MonitorStrip>
+            </li>
+          );
+        })}
+        {devices.map((card) => (
+          <li key={card.source} data-monitor="" className="rounded-box bg-card">
+            <MonitorStrip entry={card} variant="compact" title={t("monitor.unassignedTitle", { source: card.source })} {...view}>
+              <p className="m-0 mt-1 text-11.5 font-semibold text-att-ink">{t(reasonKey(card.reason))}</p>
+              <p className="m-0 text-11.5 text-mute">{t("monitor.unassignedNote")}</p>
+            </MonitorStrip>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 /** How often the ages on this screen are re-read. A bed card shows a measurement's clock time and
  *  a channel's overdue count, neither of which changes faster than this. */
@@ -172,8 +217,36 @@ export function BedsScreen() {
   const inUnits = useMemo(() => inUnit(all, unit), [all, unit]);
   const found = useMemo(() => matching(inUnits, query), [inUnits, query]);
   const shown = useMemo(() => orderBeds(found, order), [found, order]);
-  const hiddenByUnit = all.length - inUnits.length;
-  const hiddenBySearch = inUnits.length - found.length;
+
+  // The strip, when it is on. A bed the API links to a patient of this board goes on that
+  // patient's card; every other one, and every device on no bed, goes in the section. The unit
+  // filter and the search apply to both, and the "hidden" lines count them with the patients. The
+  // patient cards' order, count and alarms never read any of this.
+  const strip = stripOn(shadow.data) ? shadow.data : null;
+  const stripView = strip ? {
+    nowMs: shadow.nowMs, fetchedAtMs: shadow.fetchedAtMs,
+    maxAgeS: Number.isFinite(strip.display_max_age_s) ? strip.display_max_age_s : DISPLAY_MAX_AGE_S,
+    feedOk: strip.feed?.state === "ok",
+  } : null;
+  const { linked, loose } = useMemo(() => {
+    const onBoard = new Set(all.map((p) => p.patient_id));
+    const byPatient = new Map();
+    const rest = [];
+    for (const card of strip?.beds ?? []) {
+      if (card.link === "one" && card.patient_id && onBoard.has(card.patient_id)) byPatient.set(card.patient_id, card);
+      else rest.push(card);
+    }
+    return { linked: byPatient, loose: rest };
+  }, [all, strip]);
+  const strays = strip?.unassigned ?? [];
+  const looseInUnit = unit ? loose.filter((c) => c.unit_id === unit) : loose;
+  const straysInUnit = unit ? [] : strays;              // a device on no bed belongs to no unit
+  const looseFound = matchingMonitors(looseInUnit, query);
+  const straysFound = matchingMonitors(straysInUnit, query);
+
+  const hiddenByUnit = all.length - inUnits.length + (loose.length - looseInUnit.length) + (strays.length - straysInUnit.length);
+  const hiddenBySearch = inUnits.length - found.length + (looseInUnit.length - looseFound.length)
+    + (straysInUnit.length - straysFound.length);
 
   const byPatient = useMemo(() => {
     const map = new Map();
@@ -271,11 +344,13 @@ export function BedsScreen() {
       ) : (
         <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-2.5 p-0 max-[640px]:grid-cols-1">
           {shown.map((p) => (
-            <BedCard key={p.patient_id} patient={p} alerts={alertsOf(p.patient_id)} nowMs={nowMs} connection={board.connection} />
+            <BedCard key={p.patient_id} patient={p} alerts={alertsOf(p.patient_id)} nowMs={nowMs} connection={board.connection}
+              monitor={linked.has(p.patient_id) ? { entry: linked.get(p.patient_id), ...stripView } : undefined} />
           ))}
         </ul>
       )}
       {order === "yatak" ? <p className="m-0 text-11.5 text-mute">{t("beds.orderNote")}</p> : null}
+      {strip ? <MonitorSection beds={looseFound} devices={straysFound} view={stripView} /> : null}
     </div>
   );
 }

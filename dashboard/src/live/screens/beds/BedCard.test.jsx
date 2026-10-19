@@ -5,6 +5,7 @@ import { I18nProvider } from "../../i18n/I18nProvider.jsx";
 import { CONNECTION } from "../../../liveConnection.js";
 import { patientFromBoard, alertsFromPatients } from "../../../liveAdapters.js";
 import { NOW, ago, alarm, entry, identity, measured, news2, reading } from "../../data/board.testutil.js";
+import { bed as monitorBed, param as monitorParam } from "../../data/shadow.testutil.js";
 import { BedCard } from "./BedCard.jsx";
 
 /** The card as the screen builds it: the adapter's record, and that patient's flattened alarms.
@@ -251,5 +252,36 @@ describe("the bed card reconciles a downgraded level at a glance", () => {
   it("a card with no alarm says nothing about English", () => {
     card(entry("S-001", [], { at: measured(30) }));
     expect(screen.queryByText(/İngiliscədir/)).toBeNull();
+  });
+});
+
+// Aşama A: a strip only on a card the API links to this patient (`link: "one"`), drawn after the
+// card's link so that a monitor value is never part of what opening the patient reads out.
+describe("the bed card — the monitor strip", () => {
+  const STRIP = { entry: monitorBed("REA-01 · 2", [monitorParam("hr", 72)], { link: "one", patient_id: "S-001" }),
+    nowMs: NOW, fetchedAtMs: NOW, maxAgeS: 15, feedOk: true };
+
+  function withStrip(monitor) {
+    const patient = patientFromBoard(entry("S-001", [], { identity: identity(), at: measured(30) }));
+    return render(
+      <I18nProvider>
+        <ul><BedCard patient={patient} alerts={[]} nowMs={NOW} connection={CONNECTION.LIVE} monitor={monitor} /></ul>
+      </I18nProvider>,
+    );
+  }
+
+  it("draws none without one", () => {
+    const { container } = withStrip(undefined);
+    expect(container.querySelector("[data-monitor-strip]")).toBeNull();
+  });
+
+  it("draws the compact strip after the patient link, outside it", () => {
+    withStrip(STRIP);
+    const strip = screen.getByRole("region", { name: "Monitor · təsdiqlənməyib" });
+    const link = screen.getByRole("link", { name: "REA-01 · 2 xəstəsini aç" });
+    expect(link.contains(strip)).toBe(false);
+    expect(link.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(strip).toHaveTextContent("72");
+    expect(strip).toHaveTextContent("Tədqiqat deşifrəsi · qərar üçün ölçmə deyil · siqnal yaratmır");
   });
 });

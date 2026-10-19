@@ -33,7 +33,10 @@ const EMPTY = Object.freeze({ phase: SHADOW_PHASE.IDLE, stage: null, data: null,
 export const mayReadShadow = (perms) => Array.isArray(perms)
   && (perms.includes("board.view") || perms.includes("devices.manage"));
 
-const defaultIsVisible = () => typeof document === "undefined" || document.visibilityState !== "hidden";
+// Either says hidden, it is hidden: a browser keeps the two in step, and a page that says so through
+// only one of them still costs the ward nothing.
+const defaultIsVisible = () => typeof document === "undefined"
+  || (document.visibilityState !== "hidden" && document.hidden !== true);
 function defaultOnVisibility(fn) {
   if (typeof document === "undefined") return () => {};
   document.addEventListener("visibilitychange", fn);

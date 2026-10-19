@@ -108,6 +108,23 @@ describe("the shadow store polls only while the strip is on screen", () => {
     expect(timers.delays).toEqual([POLL_MS]);
   });
 
+  it("takes a page whose document says hidden for a hidden one, whatever visibilityState says", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(document, "hidden");
+    const api = { shadowBoard: vi.fn(async () => SHADOW) };
+    const store = createShadowStore({ api });                       // the page's own visibility
+    try {
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+      store.start(NURSE);
+      store.acquire();
+      await settle();
+      expect(api.shadowBoard).not.toHaveBeenCalled();
+    } finally {
+      store.clear();
+      if (descriptor) Object.defineProperty(document, "hidden", descriptor);
+      else delete document.hidden;
+    }
+  });
+
   it("never fetches for a session that holds neither board.view nor devices.manage", async () => {
     const { api, store } = harness();
     store.start(["audit.view"]);
