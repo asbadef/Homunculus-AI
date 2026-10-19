@@ -1,0 +1,203 @@
+"""Aşama A changes nothing clinical: the proof the plan's gate rests on.
+
+Two apps run the same engine inputs: A with the stage off, B with the stage on and the shadow lane
+fed, between every step, with monitor values that would raise every alert if they were clinical.
+Everything a clinician, a notification or an auditor could ever see must be identical. A negative
+control shows the harness can tell a difference. Synthetic scenarios only (the engine's own YAML).
+
+Every wall-clock read on the clinical path is frozen (`_freeze`). Found by grepping
+`datetime.now` / `_now_iso` / `time.time()` under src/homunculus/api/ (and the engine's packages)
+on 2026-10-19: api/app.py, api/board.py, api/clinical.py and api/patient_identity.py read
+`datetime.now`; api/audit.py and api/notify.py have `_now_iso`. Grep again when this file changes,
+and add any new one: two runs must differ ONLY by the shadow lane.
+"""
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import httpx
+import pytest
+from httpx import ASGITransport
+
+import homunculus.api.app as app_module
+import homunculus.api.audit as audit_module
+import homunculus.api.board as board_module
+import homunculus.api.clinical as clinical_module
+import homunculus.api.notify as notify_module
+import homunculus.api.patient_identity as identity_module
+import homunculus.scenarios
+from homunculus.api.app import create_app
+from homunculus.api.audit import InMemoryAuditLog, verify_chain
+from homunculus.api.infinity_shadow import ShadowSettings
+from homunculus.api.patient_identity import InMemoryIdentityStore
+from homunculus.scenarios.loader import load_scenario
+from homunculus.tenant.bedmap import BedMap, BedRef
+
+SCEN = Path(homunculus.scenarios.__file__).parent
+TOKEN, HOSPITAL = "tok-device-00000000000000000000000000", "HOSP1"
+SHADOW = "s" * 40
+FROZEN = datetime(2026, 7, 14, 10, 0, tzinfo=timezone.utc)
+TABLE = {
+    "schema": "homunculus.infinity-device-beds.v1", "version": 1, "site": "synthetic",
+    "approved_by": "test", "approved_at": "2026-07-14",
+    "devices": [{"source": "192.0.2.10", "group": "239.20.1.10", "port": 2050, "bed_label": "B-1",
+                 "bed_id": "bed-b1", "unit_id": "unit-1", "method": "monitor_screen",
+                 "verified_at": "2026-07-14", "valid_from": "2026-07-01T00:00:00Z", "valid_to": None,
+                 "note": "synthetic"}],
+}
+
+
+class Frozen(datetime):
+    now_value = FROZEN
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.now_value
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+def _freeze(monkeypatch):
+    """Every wall-clock read on the clinical path (see the module docstring): two runs must differ
+    ONLY by the shadow lane."""
+    Frozen.now_value = FROZEN               # a run that failed half-way must not leak its time
+    for module in (app_module, board_module, clinical_module, identity_module):
+        monkeypatch.setattr(module, "datetime", Frozen)
+    monkeypatch.setattr(audit_module, "_now_iso", lambda: Frozen.now_value.isoformat())
+    monkeypatch.setattr(notify_module, "_now_iso", lambda: Frozen.now_value.isoformat())
+
+
+def _encounter(pid, location="YB^1^1"):
+    # parse_fhir_encounter refuses an empty meta.source; lastUpdated pins the identity's time.
+    return {"resourceType": "Encounter", "status": "in-progress",
+            "subject": {"reference": f"Patient/{pid}"},
+            "meta": {"source": "comed", "lastUpdated": FROZEN.isoformat()},
+            "location": [{"location": {"display": location}}]}
+
+
+def _shadow_body(now):
+    readings = [("hr", 180, "bpm"), ("spo2", 70, "%"), ("respiration", 40, "/min"), ("art_systolic", 70, "mmHg")]
+    return {"schema": "homunculus.infinity-shadow.v1", "sent_at": now,
+            "forwarder": {"interval_s": 5, "sent": 1, "failed": 0, "decoder": "homunculus.infinity-preview.v3"},
+            "hub": {"collector_age_s": 1.0, "accepted_packets": 1, "old_or_duplicate_packets": 0},
+            "devices": [{"source": "192.0.2.10", "group": "239.20.1.10", "port": 2050, "status": "streaming",
+                         "packet_age_ms": 100,
+                         "readings": [{"parameter": p, "value": v, "unit": u, "valid": True, "captured_at": now - 0.5}
+                                      for p, v, u in readings]}]}
+
+
+async def _run(monkeypatch, tmp_path, *, stage, extra_ingest=False, probe=None):
+    _freeze(monkeypatch)
+    table = tmp_path / f"{stage}-{extra_ingest}-table.json"
+    table.write_text(json.dumps(TABLE), encoding="utf-8")
+    settings = (ShadowSettings("shadow", "shadow", None, SHADOW, HOSPITAL, str(table)) if stage == "shadow"
+                else ShadowSettings(table_path=str(table)))
+    bedmap = BedMap({"YB^1^1": BedRef("bed-b1", "unit-1", "B-1")})
+    audit, identities = InMemoryAuditLog(), InMemoryIdentityStore()
+    lane = {"t": 1_800_000_000.0}           # the lane's own clock: advanced 2 s per shadow step
+    app = create_app({TOKEN: HOSPITAL}, escalate_after=timedelta(minutes=5), run_escalation_loop=False,
+                     audit=audit, identities=identities, bedmap=bedmap, shadow=settings,
+                     shadow_clock=lambda: lane["t"])
+    frames = app.state.broadcaster.subscribe(HOSPITAL)
+    notes = {r: app.state.notification_hub.subscribe(HOSPITAL, r) for r in ("nurse", "doctor")}
+    seen = {"patients": [], "alerts": []}
+    hdr = {"Authorization": f"Bearer {TOKEN}"}
+    events = load_scenario(SCEN / "septic_shock.yaml") + load_scenario(SCEN / "news2_deterioration.yaml")
+    pid = events[0][1]["subject"]["reference"].split("/", 1)[1]
+    other = events[-1][1]["subject"]["reference"].split("/", 1)[1]      # the NEWS2 scenario's patient
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        async def shadow_step():
+            if stage == "shadow":
+                lane["t"] += 2.0                 # past the lane's 1 s spacing, no sleeping
+                body = _shadow_body(lane["t"])
+                posted = await c.post("/infinity-shadow/readings", json=body,
+                                      headers={"Authorization": f"Bearer {SHADOW}"})
+                board = await c.get("/infinity-shadow/board", headers=hdr)
+                if probe is not None:
+                    probe.setdefault("posts", []).append(posted.status_code)
+                    probe["board"] = board.json()
+
+        async def observe():
+            seen["patients"].append(json.dumps((await c.get("/patients", headers=hdr)).json(), sort_keys=True))
+            seen["alerts"].append(json.dumps((await c.get(f"/alerts/{pid}", headers=hdr)).json(), sort_keys=True))
+
+        await shadow_step()
+        assert (await c.post("/ingest", json=_encounter(pid), headers=hdr)).status_code == 200
+        # A bed the map does not cover: every /patients counts a miss in both apps, so the
+        # discovery counters compared below are not empty, and a shadow read that counted would show.
+        assert (await c.post("/ingest", json=_encounter(other, "YB^9^9"), headers=hdr)).status_code == 200
+        await shadow_step(); await observe()
+        for _ts, fhir in events:
+            assert (await c.post("/ingest", json=fhir, headers=hdr)).status_code == 200
+            await shadow_step(); await observe()
+        if extra_ingest:
+            assert (await c.post("/ingest", json={**events[0][1], "code": {"coding": [{"code": "heart_rate"}]},
+                                                  "valueQuantity": {"value": 180, "unit": "/min"}},
+                                 headers=hdr)).status_code == 200
+        charted = await c.post(f"/clinical/{pid}", json={"entries": [{"code": "suspected_infection", "value": 1}]},
+                               headers=hdr)
+        assert charted.status_code == 200, charted.text
+        await shadow_step(); await observe()
+        live = (await c.get(f"/alerts/{pid}", headers=hdr)).json()["alerts"]
+        if live:
+            await c.post("/ack", json={"patient_id": pid, "kind": live[0]["kind"], "role": "nurse"}, headers=hdr)
+        await shadow_step(); await observe()
+        for minutes in (1, 6, 12):
+            Frozen.now_value = FROZEN + timedelta(minutes=minutes)
+            await app.state.escalation_cycle(Frozen.now_value)
+            await shadow_step(); await observe()
+        Frozen.now_value = FROZEN
+    drained = lambda q: [json.dumps(q.get_nowait(), sort_keys=True, default=str) for _ in range(q.qsize())]  # noqa: E731
+    store = app.state.ack_stores[HOSPITAL]
+    return {
+        **seen,
+        "frames": drained(frames),
+        "notes": {r: drained(q) for r, q in notes.items()},
+        "escalated": sorted(store.escalated),
+        "acks": sorted((k, v["by"]) for k, v in store.acks.items()),
+        "first_seen": sorted((k, v.isoformat()) for k, v in store.first_seen.items()),
+        "audit": [(r.tenant, r.event_type, r.patient_id, r.subject, json.dumps(r.payload, sort_keys=True))
+                  for r in audit.records(tenant=HOSPITAL, limit=100_000)],
+        "audit_count": len(audit.records(tenant=HOSPITAL, limit=100_000)),
+        "chain_ok": verify_chain(audit.records(tenant=HOSPITAL, limit=100_000)),
+        "unmatched": bedmap.unmatched(),
+        "identity": identities.get(HOSPITAL, pid),
+    }
+
+
+@pytest.mark.anyio
+async def test_every_clinical_output_is_identical_with_the_stage_on_or_off(monkeypatch, tmp_path):
+    off = await _run(monkeypatch, tmp_path, stage="off")
+    on = await _run(monkeypatch, tmp_path, stage="shadow")
+    # Not vacuous: the scenario raised alerts, escalated, notified, acknowledged and was audited.
+    assert len(off["audit"]) > 0 and len(off["frames"]) > 0 and any(off["notes"].values())
+    assert off["escalated"] and off["acks"] and off["first_seen"] and off["identity"] is not None
+    assert off["unmatched"] and off["chain_ok"].ok
+    for key in off:
+        assert on[key] == off[key], key
+
+
+@pytest.mark.anyio
+async def test_the_shadow_lane_actually_ran_in_the_on_app(monkeypatch, tmp_path):
+    # Guards against a B that silently ran as off: the readings must have been taken and placed.
+    probe: dict = {}
+    await _run(monkeypatch, tmp_path, stage="shadow", probe=probe)
+    assert probe["posts"] and set(probe["posts"]) == {200}
+    board = probe["board"]
+    assert board["stage"] == "shadow" and board["table"]["status"] == "ok"
+    (bed,) = board["beds"]
+    assert (bed["bed_label"], bed["link"], bed["patient_id"]) == ("B-1", "one", "bed-3")
+    values = {p["parameter"]: (p["state"], p["value"]) for p in bed["parameters"]}
+    assert values["hr"] == ("value", 180) and values["spo2"] == ("value", 70)
+
+
+@pytest.mark.anyio
+async def test_the_harness_sees_a_real_clinical_difference(monkeypatch, tmp_path):
+    off = await _run(monkeypatch, tmp_path, stage="off")
+    changed = await _run(monkeypatch, tmp_path, stage="off", extra_ingest=True)
+    assert changed["patients"] != off["patients"]
+    assert changed["audit"] != off["audit"]
+    assert changed["frames"] != off["frames"]
