@@ -107,3 +107,25 @@ class TestTheWholeSnapshot:
         card = identity_only_board(KNOWN, BEDMAP)
         assert card["identity"]["bed_id"] == "bed-a1"
         assert card["latest"]["news2"] is None   # nothing measured yet, and it says so
+
+
+class TestALookupThatCountsNothing:
+    """Aşama A's monitor strip asks the bed map which bed an admitted patient is in every few
+    seconds. The discovery counter is the board's statement of where its patients arrived from;
+    a reader that is not the board must not inflate it."""
+
+    def test_lookup_finds_what_resolve_finds(self):
+        bedmap = BedMap.from_dict({"beds": {"YB^304^2": {"bed_id": "bed-a1", "unit_id": "unit-adult"}}})
+        assert bedmap.lookup("yb", " 304 ", "2") == bedmap.resolve("YB", "304", "2").ref
+        assert bedmap.lookup("YB", "999", "9") is None
+
+    def test_lookup_never_changes_the_discovery_counter(self):
+        bedmap = BedMap.from_dict({"beds": {"YB^304^2": {"bed_id": "bed-a1"}}})
+        bedmap.resolve("YB", "999", "9")
+        before = bedmap.unmatched()
+        for _ in range(50):
+            bedmap.lookup("YB", "999", "9")
+            bedmap.lookup("YB", "304", "2")
+            bedmap.lookup("", "", "")
+        assert bedmap.unmatched() == before == {"YB^999^9": 1}
+        assert bedmap.discovery_report() == "Eşlenmemiş yataklar: YB^999^9 (1)"

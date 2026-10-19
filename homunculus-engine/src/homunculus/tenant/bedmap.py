@@ -126,6 +126,14 @@ class BedMap:
             self._unmatched[key] += 1
         return Resolution(key=key, ref=ref)
 
+    def lookup(self, unit: str, room: str, bed: str) -> BedRef | None:
+        """Look up one location WITHOUT counting a miss.
+
+        For readers that are not the board: the discovery counter is the board's statement of
+        which HIS locations its patients arrived from, and a reader that looked up the same
+        locations every few seconds (Aşama A's monitor strip) would inflate it into noise."""
+        return self._table.get(normalise_key(unit, room, bed))
+
     def unmatched(self) -> dict[str, int]:
         """Locations this table did not cover, and how often each was seen."""
         return dict(self._unmatched)

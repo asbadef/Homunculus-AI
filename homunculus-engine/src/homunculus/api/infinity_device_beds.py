@@ -134,20 +134,27 @@ def _utc(value: Any) -> datetime | None:
     return moment
 
 
-def _unicast(value: Any) -> str | None:
+def unicast_ipv4(value: Any) -> str | None:
+    """A monitor's source address, as edge/infinity_stream.py `Inventory.parse` accepts it, or None.
+    A string only: `ipaddress` would otherwise take an integer for an address."""
+    if not isinstance(value, str):
+        return None
     try:
         ip = ipaddress.IPv4Address(value)
-    except (ipaddress.AddressValueError, ValueError, TypeError):
+    except (ipaddress.AddressValueError, ValueError):
         return None
     if ip.is_multicast or ip.is_loopback or ip.is_unspecified or ip.is_reserved:
         return None
     return str(ip)
 
 
-def _multicast(value: Any) -> str | None:
+def multicast_ipv4(value: Any) -> str | None:
+    """A monitor's multicast group (not the link-local 224.0.0.0/24), or None."""
+    if not isinstance(value, str):
+        return None
     try:
         ip = ipaddress.IPv4Address(value)
-    except (ipaddress.AddressValueError, ValueError, TypeError):
+    except (ipaddress.AddressValueError, ValueError):
         return None
     if not ip.is_multicast or ip in _LINK_LOCAL_MULTICAST:
         return None
@@ -166,11 +173,11 @@ def _row(position: int, raw: Any) -> Row:
         raise TableError(f"{where}: bilinmeyen alan ({_names(set(raw) - ROW_KEYS)}); şema kapalı")
     if ROW_KEYS - set(raw):
         raise TableError(f"{where}: eksik alan ({_names(ROW_KEYS - set(raw))})")
-    source = _unicast(raw["source"])
+    source = unicast_ipv4(raw["source"])
     if source is None:
         raise TableError(f"{where}: kaynak adres tek-noktaya (unicast) bir IPv4 adresi değil")
     where = f"{where} ({source})"
-    group = _multicast(raw["group"])
+    group = multicast_ipv4(raw["group"])
     if group is None:
         raise TableError(f"{where}: grup adresi çok-noktaya (multicast) bir IPv4 adresi değil")
     if type(raw["port"]) is not int or raw["port"] != PORT:
