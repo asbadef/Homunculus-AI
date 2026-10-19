@@ -22,7 +22,8 @@ CONF = Path(__file__).resolve().parents[2] / "deploy" / "local" / "web" / "nginx
 API_PATHS = [
     "/auth/login", "/auth/reauth", "/auth/password", "/auth/me", "/admin/users", "/tenant/tenants", "/admissions", "/shift-schedule",
     "/handovers", "/alerts/x", "/break-glass", "/scope/me", "/clinical/p1",
-    "/scores/sofa/p1", "/alarm-quality", "/infinity-research/state", "/patients", "/ack",
+    "/scores/sofa/p1", "/alarm-quality", "/infinity-research/state",
+    "/infinity-shadow/board", "/infinity-shadow/readings", "/patients", "/ack",
     "/ingest", "/view", "/audit", "/audit/verify", "/health", "/stream", "/stream-ticket",
     "/notifications",
 ]

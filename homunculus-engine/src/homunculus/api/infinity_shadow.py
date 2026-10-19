@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from homunculus.api.infinity_device_beds import PORT, multicast_ipv4, unicast_ipv4
+from homunculus.api.infinity_device_beds import PORT, TableState, multicast_ipv4, unicast_ipv4
+from homunculus.scope.rules import normalise_id
 
 log = logging.getLogger(__name__)
 
@@ -354,3 +355,76 @@ class ShadowStore:
         self._lag[0] += 1
         self._lag[1] += amount
         self._lag[2 + slot] += 1
+
+
+# --- the board's answer --------------------------------------------------------------------------
+
+COUNTED_STATUSES = ("streaming", "standby", "silent", "waiting", "unsupported", "unknown")
+
+
+def _address_key(source: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in source.split("."))
+
+
+def board_view(devices: Mapping[str, DeviceView], feed: dict, table: TableState, *,
+               occupants: Mapping[str, list[str]] | None,
+               visible: Callable[[dict], bool],
+               patient_visible: Callable[[dict], bool],
+               show_unassigned: bool, now: float) -> dict:
+    """`GET /infinity-shadow/board`'s body. Pure: everything it needs is handed in.
+
+    - A device sits on a bed only through the approved table's row valid now. A device the table
+      leaves unassigned, does not list, or a table that is missing or invalid, gives an
+      "atanmamış cihaz" card instead — shown only when `show_unassigned` (an unrestricted caller,
+      or `devices.manage`).
+    - `occupants` maps a normalised bed id to the ADMITTED patients the bed map puts there; None
+      means the caller may not see patients (`link: "hidden"`). Exactly one gives `link: "one"`
+      and its id; two or more `"ambiguous"` and no id; none, or a row without `bed_id`, `"none"`.
+      A link the caller's scope does not reach (`patient_visible`) is reported as hidden.
+    - `visible(card)` decides each bed card (scope). Counts cover only what is shown.
+    Parameters are in PARAMETERS order, beds by label, unassigned devices by address."""
+    beds: list[dict] = []
+    unassigned: list[dict] = []
+    for source in sorted(devices, key=_address_key):
+        view = devices[source]
+        base = {"source": source, "group": view.group, "status": view.status,
+                "status_age_s": view.status_age_s, "packet_age_ms": view.packet_age_ms,
+                "parameters": [dict(p) for p in view.parameters]}
+        row = table.table.at(source, now) if table.status == "ok" else None
+        if table.status != "ok":
+            reason = f"table_{table.status}"
+        elif row is None:
+            reason = "not_in_table"
+        elif not row.assigned:
+            reason = "table_unassigned"
+        else:
+            reason = None
+        if reason is not None:
+            if show_unassigned:
+                unassigned.append({**base, "reason": reason, "note": row.note if row is not None else None})
+            continue
+        card = {"bed_label": row.bed_label, "bed_id": row.bed_id, "unit_id": row.unit_id,
+                "method": row.method, "verified_at": row.verified_at, **base,
+                "link": "none", "patient_id": None}
+        if occupants is None:
+            card["link"] = "hidden"
+        elif row.bed_id:
+            present = occupants.get(normalise_id(row.bed_id), [])
+            if len(present) == 1:
+                card["link"], card["patient_id"] = "one", present[0]
+                if not patient_visible(card):
+                    card["link"], card["patient_id"] = "hidden", None
+            elif len(present) > 1:
+                card["link"] = "ambiguous"
+        if visible(card):
+            beds.append(card)
+    beds.sort(key=lambda c: (c["bed_label"].casefold(), _address_key(c["source"])))
+    shown = beds + unassigned
+    counts = {"total": len(shown), **{s: sum(1 for c in shown if c["status"] == s) for s in COUNTED_STATUSES}}
+    approved_at = table.table.approved_at if table.status == "ok" else None
+    site = table.table.site if table.status == "ok" else None
+    return {"stage": "shadow", "display_max_age_s": DISPLAY_MAX_AGE_S, "generated_at": _iso(now),
+            "table": {"status": table.status, "reason": table.reason, "version": table.version,
+                      "sha256": table.sha256, "approved_at": approved_at, "site": site},
+            "feed": {**feed, "devices": counts, "unassigned": len(unassigned)},
+            "beds": beds, "unassigned": unassigned}

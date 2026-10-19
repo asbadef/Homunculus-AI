@@ -238,6 +238,11 @@ def test_a_signed_in_ack_survives_a_restart():
 DEVICE_ONLY = "device only"   # the bridge's static token alone
 TICKET = "ticket"             # an SSE stream: a single-use ticket (or the device token), never a JWT
 OPEN = "open"                 # no credential
+# Aşama A. The forwarder's POST takes only the lane's own token — never a JWT, never a TENANTS
+# token (tests/test_infinity_shadow_isolation.py) — and with the stage off (as here) answers 409
+# before any credential is read. The board's GET opens for either of two permissions.
+SHADOW_TOKEN = "shadow token"
+BOARD_OR_DEVICES = "board.view or devices.manage"
 
 BOARD_EXPECTED = {
     ("POST", "/ingest"): DEVICE_ONLY,
@@ -259,8 +264,10 @@ BOARD_EXPECTED = {
     ("POST", "/scores/sofa/{patient_id}"): "scores.sign",
     ("GET", "/alarm-quality"): "audit.view",
     ("GET", "/audit/verify"): "audit.view",
+    ("POST", "/infinity-shadow/readings"): SHADOW_TOKEN,
+    ("GET", "/infinity-shadow/board"): BOARD_OR_DEVICES,
 }
-KINDS = {DEVICE_ONLY, TICKET, OPEN}
+KINDS = {DEVICE_ONLY, TICKET, OPEN, SHADOW_TOKEN, BOARD_OR_DEVICES}
 PERMISSION_ROUTES = sorted(k for k, v in BOARD_EXPECTED.items() if v not in KINDS)
 
 
@@ -309,6 +316,12 @@ async def test_a_jwt_without_permissions_gets_nothing_but_the_open_routes(route)
     elif guard == DEVICE_ONLY:
         assert res.status_code == 403
         assert res.json()["detail"] == "ingest requires a device token"
+    elif guard == SHADOW_TOKEN:
+        assert res.status_code == 409
+        assert res.json()["detail"] == {"reason": "stage_off"}
+    elif guard == BOARD_OR_DEVICES:
+        assert res.status_code == 403
+        assert res.json()["detail"] == f"permission required: {guard}"
     else:
         assert res.status_code == 403
         assert res.json()["detail"] == f"permission required: {guard}"
@@ -319,6 +332,12 @@ async def test_the_listed_permission_alone_opens_the_route(route):
     method, path = route
     res = await _call(method, path, f"only:{BOARD_EXPECTED[route]}")
     assert res.status_code not in (401, 403), res.text
+
+
+@pytest.mark.parametrize("permission", ["board.view", "devices.manage"])
+async def test_either_permission_alone_opens_the_monitor_strip(permission):
+    res = await _call("GET", "/infinity-shadow/board", f"only:{permission}")
+    assert res.status_code == 200 and res.json() == {"stage": "off"}
 
 
 async def test_the_device_token_opens_the_device_only_route():

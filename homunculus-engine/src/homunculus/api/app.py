@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -20,7 +21,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
-from fastapi import Body, FastAPI, Header, HTTPException
+from fastapi import Body, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -38,6 +39,10 @@ from homunculus.api.clinical import (
 )
 from homunculus.api.escalation import escalate
 from homunculus.api.identity import Caller, bounded_role
+from homunculus.api.infinity_device_beds import TableFile
+from homunculus.api.infinity_shadow import (
+    MAX_BODY as SHADOW_MAX_BODY, ShadowRejected, ShadowSettings, ShadowStore, TooSoon, board_view,
+)
 from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import rehydrate
 from homunculus.api.tickets import TicketStore
@@ -48,7 +53,7 @@ from homunculus.scoring import sofa_form
 from homunculus.scoring.signing import (
     ScoreSigningError, parse_overrides, sign as sign_score,
 )
-from homunculus.scope import Scope, ScopeReason, apply_scope, scope_report, sees_patient
+from homunculus.scope import Scope, ScopeReason, apply_scope, normalise_id, scope_report, sees_patient
 from homunculus.scope.resolver import UNKNOWN as UNKNOWN_SCOPE
 from homunculus.state.timeline import PatientState
 from homunculus.tenant.bedmap import BedMap
@@ -61,8 +66,11 @@ log = logging.getLogger(__name__)
 # The board's permission keys, checked against the catalogue when this module is imported. A
 # typo here would otherwise refuse every clinician on that route with a 403, and nothing else
 # would complain.
-BOARD_VIEW, ALERTS_ACK, AUDIT_VIEW, CLINICAL_CHART, SCORES_SIGN = validate_permissions(
-    ("board.view", "alerts.ack", "audit.view", "clinical.chart", "scores.sign"))
+BOARD_VIEW, ALERTS_ACK, AUDIT_VIEW, CLINICAL_CHART, SCORES_SIGN, DEVICES_MANAGE = validate_permissions(
+    ("board.view", "alerts.ack", "audit.view", "clinical.chart", "scores.sign", "devices.manage"))
+
+#: Aşama A: a patient's admitted beds are re-read for the monitor strip at most this often.
+SHADOW_OCCUPANCY_CACHE_S = 10.0
 
 DEVICE_ROLE_MAX = 64
 PATIENT_ID_MAX = 128
@@ -155,6 +163,8 @@ def create_app(
     resolve_scope: Callable[[str], Awaitable[Scope]] | None = None,
     on_startup_check: Callable[[], Awaitable[None]] | None = None,
     ldap: LdapRuntime | None = None,
+    shadow: ShadowSettings | None = None,
+    shadow_clock: Callable[[], float] = time.time,
 ) -> FastAPI:
     """`tenants` maps bearer token -> hospital id. Escalation params are injectable for tests;
     run_escalation_loop=False disables the background task so tests are deterministic.
@@ -172,7 +182,10 @@ def create_app(
     block boot: a failure is logged and swallowed, because a service that will not start is
     worse than one running with a fault an operator can read in the log.
     `ldap`, if given, is the directory (LDAP / Active Directory, spec §7) and becomes
-    `app.state.ldap`; None leaves AD sign-in off — AD accounts get 503, /admin/ldap/* 409."""
+    `app.state.ldap`; None leaves AD sign-in off — AD accounts get 503, /admin/ldap/* 409.
+    `shadow` is Aşama A's monitor strip (`api/infinity_shadow.py`); None is the stage `off`, so
+    every existing caller is unchanged. `shadow_clock` is the lane's wall clock (epoch seconds),
+    injected by the tests; the engine never reads it."""
     # A device token is a non-empty string. A missing token reads as "" further down, so an empty
     # key in this map would let a request with no credential at all in as that hospital's device.
     empty = [hospital for token, hospital in tenants.items()
@@ -202,6 +215,18 @@ def create_app(
     # every patient still gets a card, and the discovery report is what tells the operator the
     # table has yet to be written.
     bedmap = bedmap if bedmap is not None else BedMap()
+
+    # Aşama A — the unvalidated monitor strip. Its own memory and its own table; it holds no
+    # reference to the engine, the audit, the broadcaster, the notification hub or the identity
+    # store's writes (tests/test_infinity_shadow_isolation.py). With the stage on, the table is
+    # read right here, so its version and sha256 (or why it failed) are in the start-up log.
+    shadow = shadow if shadow is not None else ShadowSettings()
+    shadow_store = ShadowStore(clock=shadow_clock)
+    shadow_table = TableFile(shadow.table_path, clock=time.monotonic)
+    shadow_occupancy: dict[str, tuple[float, dict[str, list[str]]]] = {}
+    if shadow.on:
+        log.info("Aşama A gölge şeridi açık (doğrulanmamış; klinik girdi değil): hastane %s", shadow.hospital)
+        shadow_table.current()
 
     rehydrated: set[str] = set()
 
@@ -345,6 +370,7 @@ def create_app(
     app.state.audit = audit
     app.state.tickets = tickets
     app.state.ldap = ldap
+    app.state.shadow_store = shadow_store
 
     def _device_hospital(credential: str | None) -> str | None:
         """The hospital a static device token names, or None. An empty value is never a token."""
@@ -746,6 +772,86 @@ def create_app(
         return {"patients": result.boards,
                 "scope": result.as_dict(),
                 "scope_note": scope_report(result)}
+
+    # ------------------------------------------------------------------ Aşama A: the shadow lane
+    def _occupants(hospital: str, now: float) -> dict[str, list[str]]:
+        """Admitted patients per bed, through the site's bed map — read-only and counting nothing
+        (`BedMap.lookup`), cached 10 s. The ONLY bridge between a monitor and a patient in
+        Aşama A: an explicit binding the hospital already made (ADT or set_identity), never a
+        guess from a name (design K3, K5). Discharged identities are not admitted, so never here."""
+        cached = shadow_occupancy.get(hospital)
+        if cached is not None and 0 <= now - cached[0] < SHADOW_OCCUPANCY_CACHE_S:
+            return cached[1]
+        beds: dict[str, list[str]] = {}
+        for patient_id in identities.admitted_ids(hospital):
+            record = identities.get(hospital, patient_id)
+            if record is None:
+                continue
+            ref = bedmap.lookup(record.unit, record.room, record.bed)
+            if ref is not None and normalise_id(ref.bed_id):
+                beds.setdefault(normalise_id(ref.bed_id), []).append(patient_id)
+        shadow_occupancy[hospital] = (now, beds)
+        return beds
+
+    @app.post("/infinity-shadow/readings")
+    async def shadow_readings(request: Request, authorization: str | None = Header(default=None)):
+        """The hub forwarder's display values (Aşama A). NOT clinical ingest: nothing here reaches
+        the engine, the audit, the board stream, a notification or an identity.
+
+        The one route not reached through `_caller`, on purpose: its credential is the lane's own
+        token, and `_caller` would accept a TENANTS token as a device — which passes every
+        permission check and can write /ingest. A TENANTS token gets 401 here."""
+        if not shadow.on:
+            raise HTTPException(status_code=409, detail={"reason": "stage_off"})
+        provided = (authorization or "").removeprefix("Bearer ")
+        if not secrets.compare_digest(provided.encode(), shadow.token.encode()):
+            raise HTTPException(status_code=401, detail="unknown credential")
+        declared = request.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > SHADOW_MAX_BODY:
+            raise HTTPException(status_code=413, detail="too large")
+        raw = await request.body()
+        if len(raw) > SHADOW_MAX_BODY:
+            raise HTTPException(status_code=413, detail="too large")
+        try:
+            return shadow_store.ingest(json.loads(raw))
+        except TooSoon:
+            raise HTTPException(status_code=429, detail={"reason": "too_soon"}) from None
+        except (ShadowRejected, ValueError, RecursionError):
+            raise HTTPException(status_code=400, detail={"reason": "rejected"}) from None
+
+    @app.get("/infinity-shadow/board")
+    async def shadow_board(authorization: str | None = Header(default=None)):
+        """The monitor strip, for `board.view` or `devices.manage` (and the device token).
+
+        Unvalidated values, labelled so on every screen; a monitor sits on a bed only through the
+        approved table, and on a patient only through an explicit binding. A `devices.manage`
+        caller without `board.view` never sees a patient id."""
+        caller = await _caller(authorization)
+        viewer, manager = caller.can(BOARD_VIEW), caller.can(DEVICES_MANAGE)
+        if not (viewer or manager):
+            raise HTTPException(status_code=403, detail="permission required: board.view or devices.manage")
+        if not shadow.on:
+            body: dict = {"stage": "off"}
+            if shadow.configured != "off":
+                body.update(configured_stage=shadow.configured, problem=shadow.problem)
+            return body
+        if caller.hospital != shadow.hospital:
+            return {"stage": "off"}
+        scope = await _scope(authorization)
+        now = shadow_clock()
+
+        def _at(card: dict, patient_id: str) -> bool:
+            return sees_patient({"patient_id": patient_id,
+                                 "identity": {"bed_id": card["bed_id"], "unit_id": card["unit_id"]}}, scope)
+
+        return board_view(
+            shadow_store.devices(now), shadow_store.feed(now), shadow_table.current(),
+            occupants=_occupants(caller.hospital, now) if viewer else None,
+            # A scoped clinician sees a bed's monitor when that bed or its unit is theirs; a row
+            # with neither id is the board's unresolved bed, visible only unrestricted.
+            visible=lambda card: manager or _at(card, ""),
+            patient_visible=lambda card: _at(card, "") and _at(card, card["patient_id"]),
+            show_unassigned=scope.unrestricted or manager, now=now)
 
     @app.get("/alerts/{patient_id}")
     async def alerts(patient_id: str, authorization: str | None = Header(default=None)):

@@ -12,6 +12,9 @@ Env:
     LDAP_*         optional Active Directory sign-in, read by auth/ldap3_directory.py
                    (`ldap_from_env`); unset or unusable = off, never a refusal to start — in
                    production LDAP_ALLOW_INSECURE=1 is unusable too
+    INFINITY_CLINICAL_STAGE / INFINITY_SHADOW_TOKEN / INFINITY_SHADOW_HOSPITAL / INFINITY_DEVICE_BEDS_PATH
+                   Aşama A's monitor strip, read by api/infinity_shadow.py (`shadow_settings_from_env`);
+                   unset = off, a problem = off and logged, never a refusal to start
 
 Production means a Postgres DATABASE_URL (`_is_production`). There, before anything is built,
 `_refuse_unsafe_start` stops the process (SystemExit) on a missing PHI key, a weak signing key or
@@ -35,6 +38,7 @@ from sqlalchemy import Select, select, true
 from homunculus.api.app import create_app
 from homunculus.api.audit import SqliteAuditLog
 from homunculus.api.identity import Caller, unmatched_hospital_keys
+from homunculus.api.infinity_shadow import shadow_settings_from_env
 from homunculus.auth import jwt as auth_jwt
 from homunculus.auth.dependencies import (
     MEMBERSHIP_INACTIVE, NO_TENANT, PASSWORD_CHANGE_REQUIRED,
@@ -470,4 +474,7 @@ app = create_app(
     resolve_scope=_scope_resolver(),
     on_startup_check=make_startup_tenant_check(list(_tenants.values())),
     ldap=_ldap(_database_url()),
+    # Aşama A's monitor strip: INFINITY_CLINICAL_STAGE, off unless set. A problem turns it off and
+    # is logged; it never stops the API (api/infinity_shadow.py).
+    shadow=shadow_settings_from_env(os.environ, _tenants),
 )
