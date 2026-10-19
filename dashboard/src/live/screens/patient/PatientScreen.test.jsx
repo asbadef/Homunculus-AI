@@ -563,7 +563,7 @@ describe("the monitor strip on the patient screen", () => {
 
   it("gives a linked patient the whole strip right after the vitals, with the evidence per parameter", async () => {
     await withStrip(linked());
-    const region = screen.getByRole("region", { name: "Monitor · təsdiqlənməyib" });
+    const region = screen.getByRole("region", { name: "Monitor · təsdiqlənməmiş" });
     expect(region).toHaveTextContent("72");
     expect(within(region).getByText("İki cihazda monitor ekranı ilə eynidir")).toBeInTheDocument();
     expect(within(region).getByText(/tədqiqat məqsədilə deşifrə olunur və təsdiqlənməyib/)).toBeInTheDocument();
@@ -586,5 +586,12 @@ describe("the monitor strip on the patient screen", () => {
   it("gives none with the stage off", async () => {
     await withStrip(STAGE_OFF);
     expect(document.querySelector("[data-monitor-strip]")).toBeNull();
+  });
+
+  it("says on the strip that it cannot be read when a poll fails, while its values age out", async () => {
+    const mounted = await withStrip(linked());
+    mounted.api.shadowBoard.mockRejectedValue(new Error("down"));
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
+    expect(screen.getByRole("region", { name: "Monitor · təsdiqlənməmiş" })).toHaveTextContent("Monitor zolağı oxunmur");
   });
 });

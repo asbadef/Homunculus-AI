@@ -51,7 +51,8 @@ import { ageOf, hasMeasurement } from "../common/freshness.js";
 import { ageParts } from "../common/feedHealth.js";
 import { measuredVitals } from "../common/vitals.js";
 import { useShadow } from "../../data/ShadowProvider.jsx";
-import { MonitorStrip, stripOn } from "../common/MonitorStrip.jsx";
+import { MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
+import { maxAgeOf } from "../common/monitor.js";
 
 const TICK_MS = 30_000;
 
@@ -391,9 +392,9 @@ export function PatientScreen({ params }) {
 
           {monitor ? (
             <MonitorStrip entry={monitor} variant="full" level={2} className="bg-card" nowMs={shadow.nowMs}
-              fetchedAtMs={shadow.fetchedAtMs}
-              maxAgeS={Number.isFinite(shadow.data.display_max_age_s) ? shadow.data.display_max_age_s : undefined}
-              feedOk={shadow.data.feed?.state === "ok"} />
+              fetchedAtMs={shadow.fetchedAtMs} maxAgeS={maxAgeOf(shadow.data)}
+              feedOk={shadow.data.feed?.state === "ok"}
+              unreadable={readUnknown(shadow, shadow.nowMs, maxAgeOf(shadow.data))} />
           ) : null}
 
           <section className="grid gap-2">

@@ -1,7 +1,7 @@
 // Biomedical's monitor screen (Aşama A, Decision 12): every device, where the approved table puts
 // it, what it is sending — and nothing about any patient, even when the answer carries a patient
 // id (a session that also holds board.view). Synthetic devices only (data/shadow.testutil.js).
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import React from "react";
 import { act, cleanup, screen, within } from "@testing-library/react";
 import { mount } from "../../session/mount.testutil.jsx";
@@ -10,7 +10,10 @@ import { STAGE_OFF, bed, param, strip, unassigned } from "../../data/shadow.test
 import { DevicesScreen } from "./DevicesScreen.jsx";
 
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 0); });
-afterEach(() => localStorage.clear());
+afterEach(() => {
+  vi.restoreAllMocks();
+  localStorage.clear();
+});
 
 async function open(answer, perms = ["devices.manage"]) {
   const mounted = await mount(<DevicesScreen />, {
@@ -42,18 +45,19 @@ describe("the monitor screen", () => {
 
   it("lists every device: its bed or why it has none, its address, status, values, ages and evidence", async () => {
     await open(WARD);
-    const bedStrip = screen.getByRole("region", { name: "REA-01 · 2 · Monitor · təsdiqlənməyib" });
+    const bedStrip = screen.getByRole("region", { name: "REA-01 · 2 · Monitor · təsdiqlənməmiş" });
     expect(bedStrip).toHaveTextContent("192.0.2.2");
     expect(bedStrip).toHaveTextContent("72");
-    expect(bedStrip).toHaveTextContent("2 san");
+    // 2 s old when the server answered, plus the milliseconds since (real timers), rounded up.
+    expect(bedStrip).toHaveTextContent(/[23] san/);
     expect(bedStrip).toHaveTextContent("monitor ekranı");
     expect(within(bedStrip).getByText("İki cihazda monitor ekranı ilə eynidir")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "REA-01 · 5 · Monitor · təsdiqlənməyib" }))
+    expect(screen.getByRole("region", { name: "REA-01 · 5 · Monitor · təsdiqlənməmiş" }))
       .toHaveTextContent("Monitor gözləmə rejimindədir");
-    const stray = screen.getByRole("region", { name: "Təyin edilməmiş cihaz · 192.0.2.28 · Monitor · təsdiqlənməyib" });
+    const stray = screen.getByRole("region", { name: "Təyin edilməmiş cihaz · 192.0.2.28 · Monitor · təsdiqlənməmiş" });
     expect(stray).toHaveTextContent("Cihaz→çarpayı cədvəlində çarpayısı müəyyənləşdirilməyib");
     expect(stray).toHaveTextContent("96");
-    expect(screen.getByRole("region", { name: "Təyin edilməmiş cihaz · 192.0.2.34 · Monitor · təsdiqlənməyib" }))
+    expect(screen.getByRole("region", { name: "Təyin edilməmiş cihaz · 192.0.2.34 · Monitor · təsdiqlənməmiş" }))
       .toHaveTextContent("Cihaz→çarpayı cədvəlində yoxdur");
     expect(document.querySelectorAll("[data-monitor-strip]")).toHaveLength(4);
   });
@@ -87,6 +91,33 @@ describe("the monitor screen", () => {
     cleanup();
     await open({ stage: "off", configured_stage: "shadow", problem: "token_weak" });
     expect(screen.getByText("Monitor zolağı açıla bilmədi: token_weak")).toBeInTheDocument();
+  });
+
+  it("heads each device one level under the screen's own heading", async () => {
+    await open(WARD);
+    expect(screen.getAllByRole("heading", { level: 2 }).length).toBe(4);
+    expect(screen.queryAllByRole("heading", { level: 3 })).toEqual([]);
+  });
+
+  it("takes the server's display limit, but never longer than 15 s", async () => {
+    const answer = strip({ beds: [bed("REA-01 · 2", [param("hr", 72, { age_s: 20 })])] });
+    answer.display_max_age_s = 60;
+    await open(answer);
+    const region = screen.getByRole("region", { name: "REA-01 · 2 · Monitor · təsdiqlənməmiş" });
+    expect(region).not.toHaveTextContent("72");
+    expect(region).toHaveTextContent(/köhnə · 2[01] san/);
+  });
+
+  it("prints no counter from a read older than the display limit — a poll that hangs, a sleeping PC", async () => {
+    const mounted = await open(WARD);
+    expect(screen.getByText(/Alınan göndəriş: 12/)).toBeInTheDocument();
+    mounted.api.shadowBoard.mockReturnValue(new Promise(() => {}));     // the next poll never answers
+    const later = Date.now() + 18_000;
+    vi.spyOn(Date, "now").mockReturnValue(later);
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
+    expect(screen.queryByText(/Alınan göndəriş/)).toBeNull();
+    expect(screen.queryByText(/rədd edilən oxunuş/i)).toBeNull();
+    expect(screen.getAllByText("Monitor zolağı oxunmur").length).toBeGreaterThan(0);
   });
 
   it("says it cannot read the strip, and counts nothing", async () => {

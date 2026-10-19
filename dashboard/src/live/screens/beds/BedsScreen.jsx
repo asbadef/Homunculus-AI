@@ -44,8 +44,8 @@ import { measuredVitals } from "../common/vitals.js";
 import { ORDERS, VIEWS, bedNameOf, inUnit, matching, norm, orderBeds } from "./order.js";
 import { BedCard } from "./BedCard.jsx";
 import { useShadow } from "../../data/ShadowProvider.jsx";
-import { MonitorFeedChip, MonitorStrip, stripOn } from "../common/MonitorStrip.jsx";
-import { DISPLAY_MAX_AGE_S, linkSentenceKey, reasonKey } from "../common/monitor.js";
+import { MonitorFeedChip, MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
+import { linkSentenceKey, maxAgeOf, reasonKey } from "../common/monitor.js";
 
 /** Monitor cards whose bed label or address contains what was typed. */
 const matchingMonitors = (cards, query) => {
@@ -145,7 +145,7 @@ function Waiting({ nowMs }) {
 /** The list view (the prototype's `table.t`). The numbers are written in `ink`, not in the
  *  channels' own colours: on `card2` — which the table's header and zebra use — `--v-map` and
  *  `--v-spo` fall under 4.5:1 in daylight (Wave 1B's contrast table). */
-function BedList({ patients, alertsOf }) {
+function BedList({ patients, alertsOf, monitored }) {
   const { t } = useI18n();
   return (
     <Table caption={t("beds.caption")}>
@@ -182,6 +182,9 @@ function BedList({ patients, alertsOf }) {
               <td className={p.display_name ? "" : "italic text-mute"}>
                 {nameOf(p, t)}
                 {open.length ? <small lang="en" className="block text-11 text-mute">{summaryOf(open[0]) ?? t("board.findingUnnamed")}</small> : null}
+                {/* Aşama A: the list has no room for the strip, so it says where the strip is —
+                    a linked monitor is never silently dropped. No value of it appears here. */}
+                {monitored.has(p.patient_id) ? <small data-monitor-slot="" className="block text-11 text-mute">{t("monitor.inCards")}</small> : null}
               </td>
               <td><RiskPill risk={p.risk} measured={measured} /></td>
               <td>{cell("heart_rate")}</td>
@@ -223,10 +226,11 @@ export function BedsScreen() {
   // filter and the search apply to both, and the "hidden" lines count them with the patients. The
   // patient cards' order, count and alarms never read any of this.
   const strip = stripOn(shadow.data) ? shadow.data : null;
+  const maxAgeS = maxAgeOf(shadow.data);
   const stripView = strip ? {
-    nowMs: shadow.nowMs, fetchedAtMs: shadow.fetchedAtMs,
-    maxAgeS: Number.isFinite(strip.display_max_age_s) ? strip.display_max_age_s : DISPLAY_MAX_AGE_S,
+    nowMs: shadow.nowMs, fetchedAtMs: shadow.fetchedAtMs, maxAgeS,
     feedOk: strip.feed?.state === "ok",
+    unreadable: readUnknown(shadow, shadow.nowMs, maxAgeS),
   } : null;
   const { linked, loose } = useMemo(() => {
     const onBoard = new Set(all.map((p) => p.patient_id));
@@ -293,7 +297,8 @@ export function BedsScreen() {
           <FeedHealth connection={board.connection} patients={all} nowMs={nowMs} />
           {/* The monitors' own chip, beside the board's and separately labelled: it speaks of the
               unvalidated strip only, and wraps under FeedHealth below 861 px. */}
-          <MonitorFeedChip data={shadow.data} phase={shadow.phase} />
+          <MonitorFeedChip data={shadow.data} phase={shadow.phase} nowMs={shadow.nowMs}
+            fetchedAtMs={shadow.fetchedAtMs} maxAgeS={maxAgeS} />
         </div>
       </div>
 
@@ -340,7 +345,7 @@ export function BedsScreen() {
                   : t("board.connecting")}
         </Empty>
       ) : view === "liste" ? (
-        <BedList patients={shown} alertsOf={alertsOf} />
+        <BedList patients={shown} alertsOf={alertsOf} monitored={linked} />
       ) : (
         <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-2.5 p-0 max-[640px]:grid-cols-1">
           {shown.map((p) => (

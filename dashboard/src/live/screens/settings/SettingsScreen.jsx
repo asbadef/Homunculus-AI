@@ -133,7 +133,7 @@ function MonitorLegend() {
         <Table caption={t("monitor.legendEvidence")}>
           <thead>
             <tr>
-              <th scope="col">{t("monitor.title")}</th>
+              <th scope="col">{t("monitor.legendParameter")}</th>
               <th scope="col">{t("monitor.legendEvidence")}</th>
             </tr>
           </thead>

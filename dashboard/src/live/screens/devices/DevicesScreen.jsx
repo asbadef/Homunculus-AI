@@ -16,8 +16,8 @@ import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useShadow } from "../../data/ShadowProvider.jsx";
 import { SHADOW_PHASE } from "../../data/shadowStore.js";
 import { Note } from "../../ui/index.js";
-import { MonitorFeedChip, MonitorStrip, stripOn } from "../common/MonitorStrip.jsx";
-import { DISPLAY_MAX_AGE_S, reasonKey } from "../common/monitor.js";
+import { MonitorFeedChip, MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
+import { maxAgeOf, reasonKey } from "../common/monitor.js";
 
 /** A device with no patient in it: whatever the answer carried about a link is not drawn here. */
 const withoutPatient = (card) => ({ ...card, patient_id: null, link: "hidden", link_reason: null });
@@ -44,18 +44,21 @@ function Device({ card, assigned, view }) {
 function Strip({ shadow }) {
   const { t } = useI18n();
   const { data, phase } = shadow;
-  const known = phase === SHADOW_PHASE.OK;
+  // The server's display limit, never longer than this build's own; a read older than it, or one
+  // this browser's clock puts in the future, is not today's — no counter is printed from it.
+  const maxAgeS = maxAgeOf(data);
+  const unreadable = readUnknown(shadow, shadow.nowMs, maxAgeS);
+  const known = phase === SHADOW_PHASE.OK && !unreadable;
   const view = {
-    nowMs: shadow.nowMs, fetchedAtMs: shadow.fetchedAtMs,
-    maxAgeS: Number.isFinite(data.display_max_age_s) ? data.display_max_age_s : DISPLAY_MAX_AGE_S,
-    feedOk: data.feed?.state === "ok",
+    nowMs: shadow.nowMs, fetchedAtMs: shadow.fetchedAtMs, maxAgeS,
+    feedOk: data.feed?.state === "ok", unreadable, level: 2,
   };
   const table = data.table ?? {};
   const rejected = data.feed?.rejected;
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <MonitorFeedChip data={data} phase={phase} />
+        <MonitorFeedChip data={data} phase={phase} nowMs={shadow.nowMs} fetchedAtMs={shadow.fetchedAtMs} maxAgeS={maxAgeS} />
       </div>
       {table.status === "ok" ? (
         <p className="m-0 font-data text-12.5 text-mute">

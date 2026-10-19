@@ -150,13 +150,15 @@ describe("SettingsScreen — the monitor strip's legend", () => {
 
   it("with the stage on explains it: the note, never a sound, the ages, NIBP, the evidence, no sample count", async () => {
     await legend({ stage: "shadow", beds: [], unassigned: [], feed: { state: "ok" } });
-    const box = screen.getByRole("heading", { level: 2, name: "Monitor zolağı (təsdiqlənməyib)" }).closest("div.rounded-box");
+    const box = screen.getByRole("heading", { level: 2, name: "Monitor zolağı (təsdiqlənməmiş)" }).closest("div.rounded-box");
     expect(box).toHaveTextContent(/tədqiqat məqsədilə deşifrə olunur və təsdiqlənməyib/);
-    expect(box).toHaveTextContent("Bu zolaq heç vaxt səs çıxarmır, bildiriş göndərmir, siqnal siyahısına və zəngə düşmür.");
+    expect(box).toHaveTextContent("Bu zolaq heç vaxt səs çıxarmır, bildiriş göndərmir, siqnal siyahısına və «Cavab gözləyən siqnallar» siyahısına düşmür.");
     expect(box).toHaveTextContent(/15 saniyədən köhnə dəyər göstərilmir/);
     expect(box).toHaveTextContent(/NIBP bu mərhələdə göstərilmir/);
     expect(box).toHaveTextContent("Heç bir parametr üçün nümunə sayı qeydə alınmayıb.");
+    expect(box).toHaveTextContent("əvəzində «köhnə» və son dəyərin yaşı yazılır");     // the cell shows an age
     const table = within(box).getByRole("table", { name: "Hər parametr üzrə bugünkü sübut" });
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Parametr", "Hər parametr üzrə bugünkü sübut"]);
     const rows = within(table).getAllByRole("row").slice(1);
     const labels = rows.map((r) => within(r).getByRole("rowheader").textContent);
     expect(labels).toEqual(["HR", "PLS", "SpO₂", "etCO₂", "Ta", "ART S", "ART D", "ART M", "RESP"]
@@ -168,7 +170,7 @@ describe("SettingsScreen — the monitor strip's legend", () => {
 
   it("with the stage off shows no legend", async () => {
     await legend({ stage: "off" });
-    expect(screen.queryByRole("heading", { name: "Monitor zolağı (təsdiqlənməyib)" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Monitor zolağı (təsdiqlənməmiş)" })).toBeNull();
     expect(screen.getByRole("heading", { level: 2, name: "Siqnal səsi" })).toBeInTheDocument();
   });
 });

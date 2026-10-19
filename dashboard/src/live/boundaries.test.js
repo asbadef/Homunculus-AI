@@ -127,6 +127,44 @@ describe("the monitor strip never reaches an alarm path", () => {
     expect(leaks).toEqual([]);
   });
 
+  // A direct import is not the only way in: a bell that imports a helper that imports the strip
+  // reaches it all the same, and the test above would not see it. So every chain is followed to
+  // its end from each guarded module, stopping only at the registry (for the reason above), and a
+  // leak is reported as its whole chain.
+  it("no signal, shell, lock-screen or board-store module reaches it through any chain of imports", () => {
+    const resolveSpec = (from, spec) => {
+      const base = path.resolve(path.dirname(from), spec);
+      return [base, `${base}.js`, `${base}.jsx`, path.join(base, "index.js"), path.join(base, "index.jsx")]
+        .find((candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isFile()) ?? null;
+    };
+    const leaks = [];
+    let followed = 0;
+    for (const root of guarded) {
+      const via = new Map([[root, null]]);
+      const queue = [root];
+      while (queue.length > 0) {
+        const file = queue.shift();
+        if (file !== root && rel(file) === REGISTRY) continue;
+        for (const spec of importsOf(fs.readFileSync(file, "utf8")).specs) {
+          if (!spec.startsWith(".")) continue;
+          const target = resolveSpec(file, spec);
+          if (!target || via.has(target) || !target.startsWith(LIVE + path.sep)) continue;
+          via.set(target, file);
+          queue.push(target);
+        }
+      }
+      followed += via.size - 1;
+      for (const file of via.keys()) {
+        if (!isStrip(rel(file))) continue;
+        const chain = [];
+        for (let at = file; at; at = via.get(at)) chain.unshift(rel(at));
+        leaks.push(chain.join(" -> "));
+      }
+    }
+    expect(followed, "the walk followed no import at all").toBeGreaterThan(guarded.length);
+    expect(leaks).toEqual([]);
+  });
+
   it("the rule sees a leak when there is one", () => {
     // The reader, the resolution and the match, on a module that WOULD leak.
     const leaking = 'import { useShadow } from "../data/ShadowProvider.jsx";';

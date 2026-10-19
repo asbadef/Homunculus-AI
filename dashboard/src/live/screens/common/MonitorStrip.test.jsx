@@ -22,12 +22,12 @@ const card = (parameters = [HR], over = {}) => bed("REA-01 · 2", parameters, ov
 const Strip = (props) => (
   <MonitorStrip entry={card()} variant="compact" nowMs={NOW} fetchedAtMs={NOW} maxAgeS={15} {...props} />
 );
-const region = (name = "Monitor · təsdiqlənməyib") => screen.getByRole("region", { name });
+const region = (name = "Monitor · təsdiqlənməmiş") => screen.getByRole("region", { name });
 
 describe("the strip says what it is", () => {
   it("is headed unvalidated in the default language and in Turkish", () => {
     const { unmount } = show(<Strip />);
-    expect(screen.getByRole("heading", { name: "Monitor · təsdiqlənməyib" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Monitor · təsdiqlənməmiş" })).toBeInTheDocument();
     expect(region()).toBeInTheDocument();
     unmount();
     show(<Strip />, "tr");
@@ -37,7 +37,7 @@ describe("the strip says what it is", () => {
 
   it("carries the tag, the short note when compact and the whole note when full", () => {
     const { unmount } = show(<Strip />);
-    expect(within(region()).getByText("TƏSDİQLƏNMƏYİB")).toBeInTheDocument();
+    expect(within(region()).getByText("TƏSDİQLƏNMƏMİŞ")).toBeInTheDocument();
     expect(within(region()).getByText("Tədqiqat deşifrəsi · qərar üçün ölçmə deyil · siqnal yaratmır")).toBeInTheDocument();
     unmount();
     show(<Strip variant="full" />);
@@ -99,6 +99,23 @@ describe("every value with its age, and nothing it cannot vouch for", () => {
     expect(region()).not.toHaveTextContent("72");
   });
 
+  it("draws no values for a status this build does not know — it is read as unknown", () => {
+    show(<Strip entry={card([HR], { status: "rebooting" })} />);
+    expect(within(region()).getByText("Bu monitordan xəbər yoxdur")).toBeInTheDocument();
+    expect(region()).not.toHaveTextContent("72");
+  });
+
+  it("says a streaming monitor with nothing to show has nothing to show, rather than an empty box", () => {
+    show(<Strip entry={card([])} />);
+    expect(within(region()).getByText("Monitor məlumat göndərir; göstəriləcək dəyər yoxdur")).toBeInTheDocument();
+  });
+
+  it("says the strip cannot be read when it is told so, and still ages the last values", () => {
+    show(<Strip unreadable />);
+    expect(within(region()).getByText("Monitor zolağı oxunmur")).toBeInTheDocument();
+    expect(within(region()).getByRole("definition")).toHaveTextContent("72");   // 2 s old: still a value
+  });
+
   it("says when a silent monitor last sent", () => {
     show(<Strip entry={card([param("hr", 72, { last_at: AT })], { status: "silent" })} />);
     expect(within(region()).getByText(`Monitor susur · son məlumat ${hhmm(Date.parse(AT))}`)).toBeInTheDocument();
@@ -121,8 +138,8 @@ describe("nothing on it can be taken for an alarm", () => {
     const { container } = show(
       <>
         <Strip entry={card([HR, param("spo2", null), param("art_mean", 84), param("hr", 72, { age_s: 40 })])} variant="full" />
-        <MonitorFeedChip data={strip({ beds: [card()] })} phase="ok" />
-        <MonitorFeedChip data={strip({ beds: [card()], feed: { state: "forwarder_silent" } })} phase="ok" />
+        <MonitorFeedChip data={strip({ beds: [card()] })} phase="ok" nowMs={NOW} fetchedAtMs={NOW} />
+        <MonitorFeedChip data={strip({ beds: [card()], feed: { state: "forwarder_silent" } })} phase="ok" nowMs={NOW} fetchedAtMs={NOW} />
       </>,
     );
     for (const cls of RISKY) expect(container.querySelector(`.${cls}`), cls).toBeNull();
@@ -150,15 +167,38 @@ describe("the feed chip", () => {
     unassigned: [unassigned("192.0.2.28")],
   });
 
+  it("says it cannot read the strip once its last answer is older than the display limit", () => {
+    // One good answer, then a poll that hangs (or a hidden tab, a sleeping PC): 18 s later the
+    // counts are not today's.
+    show(<MonitorFeedChip data={ward} phase="ok" nowMs={NOW} fetchedAtMs={NOW - 18_000} maxAgeS={15} />);
+    expect(screen.getByRole("note")).toHaveTextContent("Monitor zolağı oxunmur");
+    expect(screen.queryByText(/məlumat göndərir/)).toBeNull();
+  });
+
+  it("says it cannot read the strip when this browser's clock is before the answer", () => {
+    show(<MonitorFeedChip data={ward} phase="ok" nowMs={NOW - 1000} fetchedAtMs={NOW} maxAgeS={15} />);
+    expect(screen.getByRole("note")).toHaveTextContent("Monitor zolağı oxunmur");
+  });
+
+  it("says it cannot read the strip when the first read failed, before any answer", () => {
+    show(<MonitorFeedChip data={null} phase="unreadable" />);
+    expect(screen.getByRole("note")).toHaveTextContent("Monitor zolağı oxunmur");
+  });
+
+  it("wraps its words: the az and ru counts do not fit one line at 390 px", () => {
+    show(<MonitorFeedChip data={ward} phase="ok" nowMs={NOW} fetchedAtMs={NOW} />);
+    expect(screen.getByText(/məlumat göndərir/).closest("span")).toHaveClass("!whitespace-normal");
+  });
+
   it("counts what it saw, by the server's own counts", () => {
-    show(<MonitorFeedChip data={ward} phase="ok" />);
+    show(<MonitorFeedChip data={ward} phase="ok" nowMs={NOW} fetchedAtMs={NOW} />);
     const chip = screen.getByText(/məlumat göndərir/).closest("span");
-    expect(chip).toHaveTextContent("Monitor (təsdiqlənməyib):");
+    expect(chip).toHaveTextContent("Monitor (təsdiqlənməmiş):");
     expect(chip).toHaveTextContent("1/4 məlumat göndərir · 1 susur · 2 gözləmədə · 1 təyin edilməyib");
   });
 
   it("says the feed's trouble instead of counts, as a static note", () => {
-    show(<MonitorFeedChip data={{ ...ward, feed: { ...ward.feed, state: "forwarder_silent" } }} phase="ok" />);
+    show(<MonitorFeedChip data={{ ...ward, feed: { ...ward.feed, state: "forwarder_silent" } }} phase="ok" nowMs={NOW} fetchedAtMs={NOW} />);
     const note = screen.getByRole("note");
     expect(note).toHaveTextContent(`Monitor məlumatı gəlmir (son: ${hhmm(Date.parse(AT))})`);
     expect(screen.queryByText(/məlumat göndərir/)).toBeNull();
@@ -171,7 +211,7 @@ describe("the feed chip", () => {
   });
 
   it("says the table is missing, beside the counts", () => {
-    show(<MonitorFeedChip data={{ ...ward, table: { ...ward.table, status: "missing", reason: "dosya yok" } }} phase="ok" />);
+    show(<MonitorFeedChip data={{ ...ward, table: { ...ward.table, status: "missing", reason: "dosya yok" } }} phase="ok" nowMs={NOW} fetchedAtMs={NOW} />);
     expect(screen.getByRole("note")).toHaveTextContent("Cihaz→çarpayı cədvəli yoxdur və ya etibarsızdır");
   });
 });

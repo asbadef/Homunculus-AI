@@ -30,6 +30,10 @@ export function useShadow() {
     return () => store.release();
   }, [store]);
   const state = useSyncExternalStore(store.subscribe, store.getState);
-  const nowMs = useNow(1000);
+  const tick = useNow(1000);
+  // An answer lands between two ticks, so the last tick is older than its `fetchedAtMs`: aged by
+  // the tick, every fresh read would be in the future — unknown — for up to a second after each
+  // poll. The clock is read again then; only a clock that really went back stays behind the read.
+  const nowMs = Number.isFinite(state.fetchedAtMs) && tick < state.fetchedAtMs ? Date.now() : tick;
   return { ...state, nowMs, store };
 }

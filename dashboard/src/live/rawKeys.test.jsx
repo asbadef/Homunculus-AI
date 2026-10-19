@@ -42,6 +42,7 @@ import { BedsScreen } from "./screens/beds/BedsScreen.jsx";
 import { AlarmsScreen } from "./screens/alarms/AlarmsScreen.jsx";
 import { PERMISSION_KEYS } from "./screens/admin/catalogue.js";
 import { NOW, ago, alarm, board, entry, identity, news2, reading } from "./data/board.testutil.js";
+import { bed, param, strip, unassigned } from "./data/shadow.testutil.js";
 import { ADMIN_READS } from "./screens/admin/admin.testutil.js";
 
 /** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
@@ -146,6 +147,22 @@ const PAYLOAD = board([
   entry("S-002", [], reading({ heart_rate: 88 }, 30)),
 ]);
 
+/** Aşama A's monitor strip, on: a monitor on the fixture's card (a value, a `***`, a partly checked
+ *  parameter, an old one), a bed with no patient, a bed with two monitors, a silent one, a device
+ *  the table leaves unplaced and one it does not list. The beds, patient, devices and settings
+ *  screens draw it; without it every `monitor.*` string was outside the sweep. Synthetic devices
+ *  only (shadow.testutil.js). */
+const STRIP = strip({
+  beds: [
+    bed("REA-01 · 1", [param("hr", 96), param("spo2", null), param("art_mean", 84), param("respiration", 18, { age_s: 40 })],
+      { link: "one", patient_id: FIXTURE_ID }),
+    bed("REA-01 · 3", [param("temperature", 37.1)]),
+    bed("REA-01 · 4", [], { link: "ambiguous", link_reason: "two_monitors" }),
+    bed("REA-01 · 5", [], { status: "silent" }),
+  ],
+  unassigned: [unassigned("192.0.2.28"), unassigned("192.0.2.34", "not_in_table", [param("pls", 70)], { status: "streaming" })],
+});
+
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 async function openAt(path) {
   window.location.hash = `#${path}`;
@@ -159,10 +176,12 @@ async function openAt(path) {
       // resolve `undefined`, every list comes out empty, and the sweep walks three tabs that each
       // say only "nothing matches" — green, and covering none of the strings this file exists for.
       ADMIN_READS(api);
+      api.shadowBoard.mockResolvedValue(STRIP);
     },
   });
   await act(async () => { await mounted.board.start(); });
   await act(async () => { mounted.stream.open(); await settle(); });
+  await act(async () => { mounted.shadow.start(PERMS); await settle(); });
   return mounted;
 }
 
@@ -242,13 +261,34 @@ describe("no screen shows a reader a translation key", () => {
     await openAt("/beds");
     expect(screen.getByText("kimlik gözlənilir")).toBeInTheDocument();      // board.identityPending
     expect(screen.getByText("NEWS2:")).toBeInTheDocument();                 // board.news2
-    expect(screen.getByText("qismən")).toBeInTheDocument();                 // board.news2Partial
+    // board.news2Partial — the card's own, not the monitor strip's `monitor.partial` (the same word)
+    expect(screen.getAllByText("qismən").filter((el) => !el.closest("[data-monitor-strip]"))).toHaveLength(1);
     expect(screen.getByText("Bir parametr 3 bal alıb")).toBeInTheDocument(); // board.news2Red
     cleanup();
     const mounted = await openAt("/alarms");
     expect(screen.getByText("Eskalasiya edilib")).toBeInTheDocument();      // board.escalated
     expect(screen.getByText(/Eskalasiyanı mühərrik yürüdür/)).toBeInTheDocument(); // board.escalatedHelp
     act(() => { mounted.board.clear(); });
+  });
+
+  // The same anchor for Aşama A's monitor strip: with no strip in the shadow store, every
+  // `monitor.*` string sat outside the sweep while it reported the beds, patient, devices and
+  // settings screens covered. Each of these is a branch STRIP below has to reach.
+  it("the monitor strip's keys resolve on the beds screen, on a card, in the section and in the chip", async () => {
+    onlyScreens({ beds: BedsScreen });
+    const mounted = await openAt("/beds");
+    expect(screen.getByRole("region", { name: "Monitor · təsdiqlənməmiş" })).toBeInTheDocument(); // monitor.title, on S-001's card
+    expect(screen.getAllByText("TƏSDİQLƏNMƏMİŞ").length).toBeGreaterThan(1);                      // monitor.tag
+    expect(screen.getByRole("heading", { name: "Monitorlar — təsdiqlənməmiş" })).toBeInTheDocument(); // monitor.section
+    expect(screen.getAllByText("Bu çarpayıya bağlı xəstə qeydi yoxdur").length).toBeGreaterThan(0); // monitor.noPatient
+    expect(screen.getByText(/Bu çarpayıya bir neçə monitor yazılıb/)).toBeInTheDocument();          // monitor.ambiguousMonitors
+    expect(screen.getByRole("region", { name: "Təyin edilməmiş cihaz · 192.0.2.28 · Monitor · təsdiqlənməmiş" }))
+      .toHaveTextContent("Cihaz→çarpayı cədvəlində çarpayısı müəyyənləşdirilməyib");                 // monitor.unassignedTitle, reasonUnassigned
+    expect(screen.getByText("monitor etibarlı dəyər göstərmir")).toBeInTheDocument();               // monitor.invalid
+    expect(screen.getByText(/^köhnə · /)).toBeInTheDocument();                                       // monitor.old
+    expect(screen.getByText(/\d+\/\d+ məlumat göndərir/).closest("span")).toHaveTextContent("Monitor (təsdiqlənməmiş):"); // monitor.chipTitle, chipCounts
+    expect(screen.getByText("Monitor məlumat göndərir; göstəriləcək dəyər yoxdur")).toBeInTheDocument(); // monitor.noValues
+    act(() => { mounted.board.clear(); mounted.shadow.clear(); });
   });
 });
 

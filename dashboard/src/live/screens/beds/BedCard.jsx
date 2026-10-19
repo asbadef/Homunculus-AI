@@ -157,9 +157,9 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor }) {
         ) : null}
       </a>
       {monitor?.entry ? (
-        <div className="pb-3 pl-[18px] pr-3.5">
+        <div data-monitor-slot="" className="pb-3 pl-[18px] pr-3.5">
           <MonitorStrip variant="compact" entry={monitor.entry} nowMs={monitor.nowMs} fetchedAtMs={monitor.fetchedAtMs}
-            maxAgeS={monitor.maxAgeS} feedOk={monitor.feedOk} />
+            maxAgeS={monitor.maxAgeS} feedOk={monitor.feedOk} unreadable={monitor.unreadable} />
         </div>
       ) : null}
     </li>

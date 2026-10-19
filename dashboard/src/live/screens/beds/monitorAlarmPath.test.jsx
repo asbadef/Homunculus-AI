@@ -101,6 +101,17 @@ async function run({ patients = WARD, shadow = STAGE_OFF } = {}) {
 
   const state = view.board.getState();
   const cardsInOrder = screen.getAllByRole("link", { name: /xəstəsini aç$/ }).map((a) => a.getAttribute("aria-label"));
+  // What every patient card SHOWS — its risk pill, its rail, its alarms, its vitals, its NEWS2 —
+  // as markup, with the monitor's own slot taken out (B has one on a linked card, A none) and the
+  // per-mount ids React's useId hands out (they differ between two mounts) set aside.
+  const cards = screen.getAllByRole("link", { name: /xəstəsini aç$/ }).map((a) => {
+    const card = a.closest("li").cloneNode(true);
+    for (const slot of card.querySelectorAll("[data-monitor-slot]")) slot.remove();
+    for (const el of [card, ...card.querySelectorAll("*")]) {
+      for (const attr of ["id", "aria-labelledby", "aria-describedby", "aria-controls"]) el.removeAttribute(attr);
+    }
+    return card.outerHTML;
+  });
   const waitingLine = screen.getByText(/Cavab gözləyən siqnal/).textContent;
   const out = {
     pulses: audio.pulses(),
@@ -114,6 +125,7 @@ async function run({ patients = WARD, shadow = STAGE_OFF } = {}) {
     board: JSON.stringify({ patients: state.patients, alerts: state.alerts, connection: state.connection, loaded: state.loaded }),
     boardUntouchedByPolls: state === boardBefore,
     cardsInOrder,
+    cards,
     waitingLine,
     shadowAsked: view.api.shadowBoard.mock.calls.length,
     strips: document.querySelectorAll("[data-monitor-strip]").length,
@@ -142,9 +154,11 @@ describe("the monitor strip never reaches the alarm path", () => {
     expect(off.strips).toBe(0);
     expect(on.boardUntouchedByPolls).toBe(true);
     for (const key of ["pulses", "audible", "notifications", "signals", "alarmsToSignal", "waitingAlarms", "alarmCounts",
-      "lockSummary", "board", "cardsInOrder", "waitingLine"]) {
+      "lockSummary", "board", "cardsInOrder", "cards", "waitingLine"]) {
       expect(on[key], key).toEqual(off[key]);
     }
+    expect(on.cards).toHaveLength(3);
+    expect(on.cards[0]).toMatch(/data-rail=/);                 // the comparison holds the rail and the pill
   });
 
   it("the harness sees a real difference: one more critical alarm changes what the alarm path says", async () => {

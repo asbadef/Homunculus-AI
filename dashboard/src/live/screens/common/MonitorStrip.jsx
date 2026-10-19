@@ -17,6 +17,7 @@ import { hhmm } from "../../i18n/dates.js";
 import { Note, Pill, StatusPill, Tag } from "../../ui/index.js";
 import {
   DISPLAY_MAX_AGE_S, PARAM_ORDER, STATUS_KEY, UNIT_KEY, ageText, cellOf, chipCounts, feedSentenceKey, lastSeenMs,
+  readAgeS,
 } from "./monitor.js";
 
 const KNOWN = new Set(PARAM_ORDER);
@@ -63,10 +64,12 @@ function Cell({ param, nowMs, fetchedAtMs, maxAgeS, feedOk, full }) {
   );
 }
 
-/** What a device is doing, when that replaces its values. */
+/** What a device is doing, when that replaces its values. A status this build does not know is
+ *  read as "unknown": its values are not drawn (the server's word for a device that may not be
+ *  sending, read the safe way). */
 function statusSentence(t, entry) {
-  const key = STATUS_KEY[entry.status];
-  if (!key) return null;
+  if (entry.status === "streaming") return null;
+  const key = STATUS_KEY[entry.status] ?? STATUS_KEY.unknown;
   if (entry.status !== "silent") return t(key);
   const seen = lastSeenMs(entry);
   return seen === null ? t("monitor.silentNoTime") : t("monitor.silent", { time: hhmm(seen) });
@@ -78,10 +81,12 @@ function statusSentence(t, entry) {
  * whole note and the evidence per parameter). `nowMs`/`fetchedAtMs` age every value on screen;
  * `feedOk` false (the forwarder silent, the collector gone) shows every cell as a dash.
  * `title` replaces the heading ("{bed} · monitor"), which always carries the "unvalidated" word.
+ * `unreadable`: the strip's last poll failed or its answer is too old — said in words on the strip
+ * itself, while the values it still holds age out.
  */
 export function MonitorStrip({
   entry, variant = "compact", nowMs, fetchedAtMs, maxAgeS = DISPLAY_MAX_AGE_S, feedOk = true, title, level = 3,
-  className = "", children,
+  unreadable = false, className = "", children,
 }) {
   const { t } = useI18n();
   const id = useId();
@@ -99,6 +104,7 @@ export function MonitorStrip({
         <Tag tone="warn">{t("monitor.tag")}</Tag>
       </div>
       {children}
+      {unreadable ? <p className="m-0 mt-1 text-11.5 font-semibold text-att-ink">{t("monitor.unreadable")}</p> : null}
       {sentence ? (
         <p className="m-0 mt-1.5 text-12.5 font-semibold text-mute">{sentence}</p>
       ) : params.length > 0 ? (
@@ -108,7 +114,9 @@ export function MonitorStrip({
               feedOk={feedOk} full={full} />
           ))}
         </dl>
-      ) : null}
+      ) : (
+        <p className="m-0 mt-1.5 text-12.5 font-semibold text-mute">{t("monitor.noValues")}</p>
+      )}
       <p className="m-0 mt-1.5 text-10.5 leading-[normal] text-mute">{t(full ? "monitor.full" : "monitor.short")}</p>
     </section>
   );
@@ -117,17 +125,27 @@ export function MonitorStrip({
 /** Whether a board answer is a strip that is on — the only one a screen draws anything for. */
 export const stripOn = (data) => data?.stage === "shadow";
 
+/** Whether the strip's state cannot be vouched for now: the last poll failed, or the answer it
+ *  holds is older than the display limit (a poll that hangs, a hidden tab, a sleeping PC), or its
+ *  age is unknown. A screen then says "cannot read" and still lets the values it has age out. */
+export function readUnknown({ phase, fetchedAtMs }, nowMs, maxAgeS = DISPLAY_MAX_AGE_S) {
+  if (phase === "unreadable") return true;
+  const age = readAgeS(nowMs, fetchedAtMs);
+  return age === null || age > maxAgeS;
+}
+
 /**
  * The beds screen's monitor chip, beside FeedHealth and separately labelled. Counts only from a
- * read it can vouch for: the last poll answered (`phase` ok) and the feed is ok. Otherwise its
- * sentence — "cannot read the strip", "no monitor data arriving", "the collector is not
- * connected" — and never a count of the last answer. Nothing at all for a strip that is off or
- * not yet read: nothing is being claimed.
+ * read it can vouch for: the last poll answered, no longer ago than `maxAgeS`, and the feed is ok.
+ * Otherwise its sentence — "cannot read the strip", "no monitor data arriving", "the collector is
+ * not connected" — and never a count of the last answer. A first read that failed says it cannot
+ * read the strip; a strip that is off, or not yet read, draws nothing: nothing is being claimed.
  */
-export function MonitorFeedChip({ data, phase, className = "" }) {
+export function MonitorFeedChip({ data, phase, nowMs, fetchedAtMs, maxAgeS = DISPLAY_MAX_AGE_S, className = "" }) {
   const { t } = useI18n();
+  if (!data && phase === "unreadable") return <Note className={className}>{t("monitor.unreadable")}</Note>;
   if (!stripOn(data)) return null;
-  if (phase === "unreadable") return <Note className={className}>{t("monitor.unreadable")}</Note>;
+  if (readUnknown({ phase, fetchedAtMs }, nowMs, maxAgeS)) return <Note className={className}>{t("monitor.unreadable")}</Note>;
   const feedKey = feedSentenceKey(data.feed?.state);
   const last = Date.parse(data.feed?.last_post_at ?? "");
   const tableNote = data.table?.status && data.table.status !== "ok"
@@ -150,7 +168,8 @@ export function MonitorFeedChip({ data, phase, className = "" }) {
   ].filter(Boolean);
   return (
     <>
-      <Pill icon="wifi" className={className}>
+      {/* Wraps: the az and ru counts are wider than a 390 px screen on one line. */}
+      <Pill icon="wifi" className={`!whitespace-normal ${className}`}>
         <span className="sr-only">{`${t("monitor.chipTitle")}: `}</span>
         {parts.join(" · ")}
       </Pill>

@@ -279,7 +279,7 @@ describe("the monitor strip (Aşama A)", () => {
   it("with the stage off draws nothing: no chip, no monitor card", async () => {
     const { api } = await openStrip(STAGE_OFF, { payload: board([entry("S-001", [], CARD)]) });
     expect(api.shadowBoard).toHaveBeenCalled();
-    expect(screen.queryByText(/Monitor \(təsdiqlənməyib\)/)).toBeNull();
+    expect(screen.queryByText(/Monitor \(təsdiqlənməmiş\)/)).toBeNull();
     expect(document.querySelector("[data-monitor], [data-monitor-strip]")).toBeNull();
   });
 
@@ -290,7 +290,7 @@ describe("the monitor strip (Aşama A)", () => {
     });
     await openStrip(answer, { payload: board([entry("S-001", [], CARD)]) });
     const chip = screen.getByText(/məlumat göndərir/).closest("span");
-    expect(chip).toHaveTextContent("Monitor (təsdiqlənməyib): 1/3 məlumat göndərir · 2 gözləmədə · 1 təyin edilməyib");
+    expect(chip).toHaveTextContent("Monitor (təsdiqlənməmiş): 1/3 məlumat göndərir · 2 gözləmədə · 1 təyin edilməyib");
     // the existing feed chip's row: the one beside the attention line, two columns from 861 px
     expect(chip.closest(".min-\\[861px\\]\\:grid-cols-2")).not.toBeNull();
   });
@@ -311,26 +311,26 @@ describe("the monitor strip (Aşama A)", () => {
     unassigned: [unassigned("192.0.2.28"), unassigned("192.0.2.34", "not_in_table")],
     ...over,
   });
-  const section = () => screen.getByRole("region", { name: "Monitorlar — təsdiqlənməyib" });
+  const section = () => screen.getByRole("region", { name: "Monitorlar — təsdiqlənməmiş" });
   const cards = () => [...section().querySelectorAll("li[data-monitor]")];
 
   it("puts the strip of a linked patient on that patient's card, outside its link", async () => {
     await openStrip(MONITORS(), { payload: WARD });
     const link = screen.getByRole("link", { name: "REA-01 · 2 xəstəsini aç" });
-    const strip = within(link.closest("li")).getByRole("region", { name: "Monitor · təsdiqlənməyib" });
+    const strip = within(link.closest("li")).getByRole("region", { name: "Monitor · təsdiqlənməmiş" });
     expect(strip).toHaveTextContent("72");
     expect(link.contains(strip)).toBe(false);
   });
 
   it("lists the unlinked beds and the unassigned devices in their own section, after the patients", async () => {
     await openStrip(MONITORS(), { payload: WARD });
-    expect(screen.getByRole("heading", { level: 2, name: "Monitorlar — təsdiqlənməyib" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Monitorlar — təsdiqlənməmiş" })).toBeInTheDocument();
     expect(cards()).toHaveLength(4);
     expect(section()).not.toHaveTextContent("72");                           // the linked one is on its card
     expect(within(section()).queryAllByRole("link")).toEqual([]);            // monitor cards open nothing
-    expect(within(section()).getByRole("region", { name: "REA-01 · 5 · Monitor · təsdiqlənməyib" })).toHaveTextContent("64");
+    expect(within(section()).getByRole("region", { name: "REA-01 · 5 · Monitor · təsdiqlənməmiş" })).toHaveTextContent("64");
     expect(section()).toHaveTextContent("Bu çarpayıya bağlı xəstə qeydi yoxdur");
-    expect(within(section()).getByRole("region", { name: "Təyin edilməmiş cihaz · 192.0.2.28 · Monitor · təsdiqlənməyib" }))
+    expect(within(section()).getByRole("region", { name: "Təyin edilməmiş cihaz · 192.0.2.28 · Monitor · təsdiqlənməmiş" }))
       .toHaveTextContent("Cihaz→çarpayı cədvəlində çarpayısı müəyyənləşdirilməyib");
     expect(section()).toHaveTextContent("Cihaz→çarpayı cədvəlində yoxdur");
     const patients = screen.getByRole("link", { name: "REA-01 · 2 xəstəsini aç" }).closest("ul");
@@ -371,5 +371,33 @@ describe("the monitor strip (Aşama A)", () => {
     await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
     expect(screen.getAllByRole("note").some((n) => n.textContent === "Monitor zolağı oxunmur")).toBe(true);
     expect(cards()).toHaveLength(4);
+    // …and every strip says so itself: the linked card's and each card in the section.
+    const strips = [...document.querySelectorAll("[data-monitor-strip]")];
+    expect(strips).toHaveLength(5);
+    for (const strip of strips) expect(strip).toHaveTextContent("Monitor zolağı oxunmur");
+  });
+
+  it("says it cannot read the strip when the first read after sign-in fails", async () => {
+    await openStrip(new Error("down"), { payload: WARD });
+    expect(screen.getAllByRole("note").some((n) => n.textContent === "Monitor zolağı oxunmur")).toBe(true);
+    expect(document.querySelector("[data-monitor-strip]")).toBeNull();
+  });
+
+  it("in the list view says a linked bed's monitor is in the card view, rather than dropping it", async () => {
+    await openStrip(MONITORS(), { payload: WARD });
+    fireEvent.click(screen.getByRole("button", { name: "Siyahı" }));
+    const row = screen.getByRole("link", { name: "REA-01 · 2" }).closest("tr");
+    expect(row).toHaveTextContent("Bu çarpayının təsdiqlənməmiş monitor zolağı «Kart» görünüşündədir");
+    expect(row).not.toHaveTextContent("72");
+  });
+
+  it("takes the server's display limit, but never longer than 15 s", async () => {
+    const answer = MONITORS();
+    answer.display_max_age_s = 60;
+    answer.beds[1].parameters = [param("hr", 64, { age_s: 20 })];
+    await openStrip(answer, { payload: WARD });
+    const strip = within(section()).getByRole("region", { name: "REA-01 · 5 · Monitor · təsdiqlənməmiş" });
+    expect(strip).not.toHaveTextContent("64");
+    expect(strip).toHaveTextContent("köhnə · 20 san");
   });
 });

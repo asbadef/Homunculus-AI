@@ -42,11 +42,27 @@ const FEED_KEY = Object.freeze({
   never: "monitor.feedNever", forwarder_silent: "monitor.feedForwarder", collector_disconnected: "monitor.feedCollector",
 });
 
-/** How old a parameter is now: its age when the server answered, plus the time since. */
+/** The display limit: the server's own, but never longer than DISPLAY_MAX_AGE_S. */
+export function maxAgeOf(data) {
+  const server = data?.display_max_age_s;
+  return Number.isFinite(server) ? Math.min(server, DISPLAY_MAX_AGE_S) : DISPLAY_MAX_AGE_S;
+}
+
+/** How long ago the strip's last answer arrived, in seconds, on this browser's clock — or null
+ *  when that cannot be known (no answer, or a clock now BEFORE the answer: it was stepped back,
+ *  and an age measured across the step would read younger than it is). */
+export function readAgeS(nowMs, fetchedAtMs) {
+  if (!Number.isFinite(nowMs) || !Number.isFinite(fetchedAtMs) || nowMs < fetchedAtMs) return null;
+  return (nowMs - fetchedAtMs) / 1000;
+}
+
+/** How old a parameter is now: its age when the server answered, plus the time since — or null
+ *  when the time since cannot be known (readAgeS). */
 export function displayAge(param, nowMs, fetchedAtMs) {
   if (!Number.isFinite(param?.age_s)) return null;
-  const since = Number.isFinite(nowMs) && Number.isFinite(fetchedAtMs) ? Math.max(0, nowMs - fetchedAtMs) / 1000 : 0;
-  return param.age_s + since;
+  if (!Number.isFinite(nowMs) || !Number.isFinite(fetchedAtMs)) return param.age_s;
+  const since = readAgeS(nowMs, fetchedAtMs);
+  return since === null ? null : param.age_s + since;
 }
 
 /**
@@ -71,18 +87,22 @@ export function ageText(t, seconds) {
   return t(key, { count: parts.value });
 }
 
+const COUNTED = ["total", "streaming", "silent", "waiting", "unknown", "standby"];
+const isCount = (n) => Number.isInteger(n) && n >= 0;
+
 /** The chip's numbers, from the server's own counts of what this caller may see — or null when
- *  the answer carries none (a stage that is off). The caller shows them only for a read it can
- *  vouch for: the last poll answered and the feed is ok. */
+ *  the answer does not carry every one of them (a stage that is off, an answer cut short): a count
+ *  it was not told is no count, never a zero. The caller shows them only for a read it can vouch
+ *  for: the last poll answered, recently, and the feed is ok. */
 export function chipCounts(data) {
   const devices = data?.feed?.devices;
-  if (!devices) return null;
+  if (!devices || !COUNTED.every((k) => isCount(devices[k])) || !isCount(data.feed.unassigned)) return null;
   return {
-    total: devices.total ?? 0,
-    streaming: devices.streaming ?? 0,
-    silent: (devices.silent ?? 0) + (devices.waiting ?? 0) + (devices.unknown ?? 0),
-    standby: devices.standby ?? 0,
-    unassigned: data.feed.unassigned ?? 0,
+    total: devices.total,
+    streaming: devices.streaming,
+    silent: devices.silent + devices.waiting + devices.unknown,
+    standby: devices.standby,
+    unassigned: data.feed.unassigned,
   };
 }
 

@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   EVIDENCE, PARAM_ORDER, PARTIAL, STATUS_KEY, UNIT_KEY, ageText, cellOf, chipCounts, displayAge, feedSentenceKey,
-  linkSentenceKey, reasonKey,
+  linkSentenceKey, maxAgeOf, readAgeS, reasonKey,
 } from "./monitor.js";
 import { param, strip, bed, unassigned } from "../../data/shadow.testutil.js";
 import { createTranslator } from "../../i18n/translate.js";
@@ -17,8 +17,15 @@ const FETCHED = 1_000_000;
 describe("ages and cells", () => {
   it("adds the time since the fetch to the server's age", () => {
     expect(displayAge(param("hr", 72, { age_s: 2 }), FETCHED + 3000, FETCHED)).toBe(5);
-    expect(displayAge(param("hr", 72, { age_s: 2 }), FETCHED - 500, FETCHED)).toBe(2);   // never younger
     expect(displayAge({ age_s: null }, FETCHED, FETCHED)).toBeNull();
+  });
+
+  it("does not know an age when this browser's clock is before the fetch (it was stepped back)", () => {
+    expect(displayAge(param("hr", 72, { age_s: 2 }), FETCHED - 500, FETCHED)).toBeNull();
+    expect(cellOf(param("hr", 72), { nowMs: FETCHED - 500, fetchedAtMs: FETCHED }).kind).toBe("old");
+    expect(readAgeS(FETCHED + 2500, FETCHED)).toBe(2.5);
+    expect(readAgeS(FETCHED - 1, FETCHED)).toBeNull();
+    expect(readAgeS(FETCHED, null)).toBeNull();
   });
 
   it("draws a number only while it is fresh — 14.9 s is a value, 15.1 s is old and has none", () => {
@@ -61,6 +68,13 @@ describe("counts and sentences", () => {
     expect(chipCounts({ stage: "off" })).toBeNull();
   });
 
+  it("counts nothing it was not told: a missing number is no count, never a zero", () => {
+    const data = strip({ beds: [bed("REA-01 · 1")] });
+    delete data.feed.devices.unknown;
+    expect(chipCounts(data)).toBeNull();
+    expect(chipCounts({ ...data, feed: { ...data.feed, unassigned: undefined } })).toBeNull();
+  });
+
   it("names the feed's trouble, and nothing when it is ok", () => {
     expect(feedSentenceKey("ok")).toBeNull();
     expect(feedSentenceKey("never")).toBe("monitor.feedNever");
@@ -86,6 +100,15 @@ describe("counts and sentences", () => {
     expect(reasonKey("not_in_table")).toBe("monitor.reasonNotInTable");
     expect(reasonKey("table_missing")).toBe("monitor.reasonTable");
     expect(reasonKey("table_invalid")).toBe("monitor.reasonTable");
+  });
+});
+
+describe("the display limit", () => {
+  it("is the server's, but never longer than 15 s", () => {
+    expect(maxAgeOf({ display_max_age_s: 10 })).toBe(10);
+    expect(maxAgeOf({ display_max_age_s: 60 })).toBe(15);
+    expect(maxAgeOf({})).toBe(15);
+    expect(maxAgeOf({ display_max_age_s: "x" })).toBe(15);
   });
 });
 

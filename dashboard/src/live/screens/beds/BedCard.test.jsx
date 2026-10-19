@@ -277,7 +277,7 @@ describe("the bed card — the monitor strip", () => {
 
   it("draws the compact strip after the patient link, outside it", () => {
     withStrip(STRIP);
-    const strip = screen.getByRole("region", { name: "Monitor · təsdiqlənməyib" });
+    const strip = screen.getByRole("region", { name: "Monitor · təsdiqlənməmiş" });
     const link = screen.getByRole("link", { name: "REA-01 · 2 xəstəsini aç" });
     expect(link.contains(strip)).toBe(false);
     expect(link.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
