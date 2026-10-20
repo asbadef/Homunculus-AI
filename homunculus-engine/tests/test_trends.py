@@ -342,8 +342,9 @@ def test_a_now_without_a_zone_is_refused():
 
 def test_a_profile_row_with_a_bound_that_is_not_a_number_never_reaches_the_answer():
     """An audit row written before the profile door refused non-finite bounds replays through
-    `rehydrate`. Refused there now, it leaves the patient without that range — not a NaN band that
-    JSON cannot carry (Starlette's JSONResponse has allow_nan=False)."""
+    `rehydrate`. Refused there now, the row is skipped: the patient has no own normal from it (with
+    an earlier profile row, the replay keeps that earlier profile) — not a NaN band that JSON
+    cannot carry (Starlette's JSONResponse has allow_nan=False)."""
     from homunculus.api.ackstore import AckStore
     from homunculus.api.audit import AuditRecord
     from homunculus.api.rehydrate import rehydrate

@@ -346,3 +346,67 @@ def test_a_bound_that_is_not_a_finite_number_is_refused(bad):
         profile_from_payload("bed-7", {"baselines": {"heart_rate": {"low": bad, "high": 115}}})
     with pytest.raises(Exception, match="geçersiz sayı"):
         profile_from_payload("bed-7", {"baselines": {"heart_rate": {"low": 100, "high": bad}}})
+
+
+@pytest.mark.parametrize("side", ["low", "high"])
+@pytest.mark.parametrize("bad", [True, False])
+def test_a_boolean_bound_is_refused(side, bad):
+    """A bool is an int in Python, so `{"low": true, "high": 140}` charted a 1–140 range nobody
+    typed — inside which the patient-relative layer would downgrade heart-rate findings. Refused as
+    `_baseline_sofa` refuses a bool."""
+    span = {"low": 100, "high": 140, side: bad}
+    with pytest.raises(Exception, match="low ve high sayı olmalı"):
+        profile_from_payload("bed-7", {"baselines": {"heart_rate": span}})
+
+
+def test_the_door_refuses_a_boolean_bound_and_charts_nothing(client):
+    r = _profile(client, "bed-7", {"baselines": {"heart_rate": {"low": True, "high": 140}}})
+    assert r.status_code == 400
+    assert "sayı olmalı" in r.json()["detail"]
+    rows = [x for x in client.get("/audit", headers=AUTH).json()["records"] if x["event_type"] == "profile"]
+    assert rows == []
+
+
+def test_clearing_the_ranges_and_the_comorbidities_together_may_empty_the_profile():
+    """The clear is explicit, and nothing says it may not be the whole profile: a COPD-only profile
+    with no range, sent `comorbidities: []` and `baselines: {}`, is accepted and comes out empty."""
+    base = profile_from_payload("bed-7", {"comorbidities": ["copd"]})
+    emptied = profile_from_payload("bed-7", {"comorbidities": [], "baselines": {}}, base)
+    assert emptied.comorbidities == frozenset()
+    assert emptied.baselines == {}
+    assert emptied.baseline_sofa is None
+
+
+def test_clearing_a_profile_that_has_no_ranges_is_accepted_and_changes_nothing(client):
+    """A repeated PUT is idempotent: the result is the same, and each PUT is one more audit row."""
+    assert _profile(client, "bed-7", {"comorbidities": ["copd"]}).status_code == 200
+    first = _profile(client, "bed-7", {"baselines": {}})
+    second = _profile(client, "bed-7", {"baselines": {}})
+    assert first.status_code == second.status_code == 200
+    expected = {"patient_id": "bed-7", "comorbidities": ["copd"], "baselines": {}, "baseline_sofa": None}
+    assert first.json() == second.json() == expected
+    rows = [x for x in client.get("/audit", headers=AUTH).json()["records"] if x["event_type"] == "profile"]
+    assert [row["payload"]["comorbidities"] for row in rows] == [["copd"], ["copd"], ["copd"]]
+    assert [row["payload"]["baselines"] for row in rows] == [{}, {}, {}]
+
+
+def test_a_null_baseline_set_over_a_charted_profile_clears_like_an_empty_one():
+    """The contract is: an absent `baselines` key keeps the ranges, a null or empty one clears them
+    (the merge already read null as empty, so it cleared whenever anything else was charted — and was
+    refused as 'empty' only when the ranges were the last thing charted)."""
+    base = profile_from_payload("bed-7", BASELINES_ONLY)
+    cleared = profile_from_payload("bed-7", {"baselines": None}, base)
+    assert cleared.baselines == {}
+    assert cleared.comorbidities == frozenset() and cleared.baseline_sofa is None
+
+
+def test_from_nothing_a_null_baseline_set_is_still_refused():
+    with pytest.raises(Exception, match="boş olamaz"):
+        profile_from_payload("bed-7", {"baselines": None})
+
+
+def test_the_door_reads_a_null_baseline_set_as_a_clear(client):
+    assert _profile(client, "bed-7", BASELINES_ONLY).status_code == 200
+    r = _profile(client, "bed-7", {"baselines": None})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"patient_id": "bed-7", "comorbidities": [], "baselines": {}, "baseline_sofa": None}
