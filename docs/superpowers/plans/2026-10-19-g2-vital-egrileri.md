@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12 and 3.14, FastAPI, SQLAlchemy/psycopg2 (Postgres) and sqlite3, pytest; React 18, Vite, Vitest + Testing Library (`fireEvent`; no user-event), Tailwind on the live token classes, inline SVG (no chart library).
 
-**Spec (authoritative):** `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. Where the code made the spec's letter impossible or unsafe, this plan departs from it; every departure is in the table below with its file and line, and is an open item for the user. **2026-10-20:** the user approved X1–X19 and chose explicit clearing for O4 — Task 14a and Task 14's clear; X21 was found while amending (X20 is kept for the thinning departure the Task 2 review found, which Task 17 adds from the controller's open-items list). **Second amendment, 2026-10-20:** Task 3b (the gateways refuse NaN/±inf), Task 4's two changes (non-finite readings skipped; the marks' read bounded by the window and flagged — X22), and Task 8's strings as the Task 8 quality review corrected them (lane commit `f082251`), mirrored in every later task that quotes them. **Third, 2026-10-20:** for the tasks the lanes have done, the plan now IS their code — Tasks 1–4 and 3b as `feat/g2v-be` has them (head `bd8afda`), Tasks 6–10 as `feat/g2v-dash` has them (head `339c3f2`), review follow-ups included (X23, X24); Task 11's card edits are rebased on the reviewed card and Task 12's box carries the lane's `Note`; Task 12's legend says MAP has no NEWS2 band, that ▲ is a first detection (O17) and when the marks' read stopped at its limit; Task 14a refuses non-finite bounds. **Fourth, 2026-10-20:** the backend lane's last commits mirrored (Tasks 4, 5 and 14a as `e933ca1` has them — X25) and the dashboard lane's Task 11 (`4ecbc11` — X26); Tasks 12–15 rebased on it; Task 12 settles the review's chart items — value labels at the nearest round step (d3's thresholds), no finer than the data is measured and never past the data, time labels anchored to the edge they would cross, MAP's hollow dots filled with the dialog's own ground, and every mark at an instant named in the readout. **Fifth, 2026-10-20:** Task 12 mirrored to the dashboard lane's `a877057` (X27; its geometry, chart and their tests now written whole); Task 13 rebuilt on it — the keyboard steps over instants (two readings at one instant are one stop), the axis, the readout and the table share `trendText.js`, a mark beside a reading carries its own time when that reads differently, and the dialog opens with focus on the pressed window option; Tasks 14–15 re-checked on it.
+**Spec (authoritative):** `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. Where the code made the spec's letter impossible or unsafe, this plan departs from it; every departure is in the table below with its file and line, and is an open item for the user. **2026-10-20:** the user approved X1–X19 and chose explicit clearing for O4 — Task 14a and Task 14's clear; X21 was found while amending (X20 is kept for the thinning departure the Task 2 review found, which Task 17 adds from the controller's open-items list). **Second amendment, 2026-10-20:** Task 3b (the gateways refuse NaN/±inf), Task 4's two changes (non-finite readings skipped; the marks' read bounded by the window and flagged — X22), and Task 8's strings as the Task 8 quality review corrected them (lane commit `f082251`), mirrored in every later task that quotes them. **Third, 2026-10-20:** for the tasks the lanes have done, the plan now IS their code — Tasks 1–4 and 3b as `feat/g2v-be` has them (head `bd8afda`), Tasks 6–10 as `feat/g2v-dash` has them (head `339c3f2`), review follow-ups included (X23, X24); Task 11's card edits are rebased on the reviewed card and Task 12's box carries the lane's `Note`; Task 12's legend says MAP has no NEWS2 band, that ▲ is a first detection (O17) and when the marks' read stopped at its limit; Task 14a refuses non-finite bounds. **Fourth, 2026-10-20:** the backend lane's last commits mirrored (Tasks 4, 5 and 14a as `e933ca1` has them — X25) and the dashboard lane's Task 11 (`4ecbc11` — X26); Tasks 12–15 rebased on it; Task 12 settles the review's chart items — value labels at the nearest round step (d3's thresholds), no finer than the data is measured and never past the data, time labels anchored to the edge they would cross, MAP's hollow dots filled with the dialog's own ground, and every mark at an instant named in the readout. **Fifth, 2026-10-20:** Task 12 mirrored to the dashboard lane's `a877057` (X27; its geometry, chart and their tests now written whole); Task 13 rebuilt on it — the keyboard steps over instants (two readings at one instant are one stop), the axis, the readout and the table share `trendText.js`, a mark beside a reading carries its own time when that reads differently, and the dialog opens with focus on the pressed window option; Tasks 14–15 re-checked on it. **Sixth, 2026-10-20:** Task 13 mirrored to the dashboard lane's `372e781` (X28 — the keyboard chart an application — X29 — the table carries the legend's notes — X30 — a MAP read at another minute keeps its own time — and the review's minors); its files written whole; Tasks 14–17 re-checked against it, their anchors unchanged.
 
 **How the numbers in this plan were obtained.** All seventeen tasks were implemented, in this order, in the worktree while the plan was written, and every red, every green and every count below is what was printed; the tree was then restored to `b6ed65d` and only this file was committed. The O4 amendment (Task 14a, Task 14's clear) and then the second amendment (Task 3b, Task 4, the review's strings) were implemented the same way on top of all seventeen on 2026-10-20, and every suite re-run; the third pass (the lanes' code mirrored into Tasks 1–4, 3b and 6–10, Tasks 11–17 rebased on it) was verified by replaying the whole plan into the worktree and running every suite on that replay; a count marked *derived* is the measured one minus a later task's measured delta. The verified implementation is kept beside the per-task files as `/c/tmp/homunculus-plans/g2v/reference.patch` — a cross-check, not the authority: build from the tasks.
 
@@ -44,6 +44,9 @@
 | X25 | §4: the route checks the scope "the same way the board does" | `_require_patient` resolved the caller's scope itself, and the trends route resolved it first too (to answer 503 for one that cannot be read): two look-ups on every minute's poll, and a blip between them could answer 404 for a patient in scope. Found by the Task 5 quality review, 2026-10-20. | `_require_patient(caller, authorization, patient_id, *, scope=None)` takes a scope already resolved; the trends route passes the one it read; every other route leaves it out (Task 5, commit `1b91f81`). `TREND_WINDOWS_TEXT` names the windows once. |
 | X26 | §3.1: every card's 46 px mini chart "with the NEWS2 bands and the patient's normal" | A calm patient's pressure card carried a permanent red stripe — the systolic ≤ 90 row scores 3 — behind MAP dots NEWS2 never scores, and the mini chart is `aria-hidden` with no legend to explain it. The controller's decision from the Task 11 quality review, 2026-10-20. | A card with more than one series draws NO NEWS2 tints and no own-normal band in its mini chart (the card passes `bands=null`); single-series cards keep theirs; the big chart keeps everything, with its legend (Task 11, commit `4ecbc11`). The frame and the badge still carry the points. |
 | X27 | §3.2: the readout "HH:MM · value unit" of the measurement under the cursor | On the pressure card the readout named only the systolic reading; MAP — the vasopressor target — was drawn at the same instant and not read. Found by the Task 12 quality review, 2026-10-20. | The readout reads EVERY series of the card at the cursor's instant — "Sistolik AT 118 · MAP 80 mmHg", one unit when they share it, "—" where a series has no reading then (Task 12, commit `a877057`). The cursor is an instant, not an index (`indexAtTime`), so a poll that slides the window does not move it to another reading. |
+| X28 | §6 `TrendChart`: "`role="img"` with a summarising `aria-label`"; §7: the keyboard moves the cursor and the reader hears the readout | NVDA and JAWS stay in browse mode over an `img`: ← → move the virtual caret, Home / End the line, and the page never sees the key — §7's promise was unreachable by default on Windows (VoiceOver was fine). Found by the Task 13 quality review, 2026-10-20. | A chart that takes ← → Home End is `role="application"` with a localised `aria-roledescription` (`patient.trendsChartRole`, four languages); its name and `aria-describedby` are unchanged. With no drawable reading in its first series (the cursor's) it is no tab stop — no `tabindex`, no hint, no keys. The card's mini chart stays `aria-hidden` with no role (Task 13, commit `50589dd`). |
+| X29 | §3.2: the table view "the same numbers"; the legend under the graph | The legend's honesty notes — thinned "N nöqtədən M", the marks' read cut short, MAP not scored, ▲ a first detection — showed only under the graph: a thinned table looked like the complete list, and a newest-first table without the truncation sentence invites "no antibiotic mark lately" = "no antibiotic given". Task 13 quality review. | `TrendNotes`, split out of `TrendLegend`, renders the notes under BOTH views; the table says `trendsNoData` when the channel has no readings (Task 13, commit `50589dd`). |
+| X30 | §3.2: the readout of the measurement under the cursor | X27's "MAP beside systolic" read the MAP at the systolic's instant within one pixel column — about 80 s at 24 h on the 1180 px dialog, 4 min at 72 h, 16 min at 72 h on a 390 px phone — and printed it with the systolic's time. Task 13 quality review. | `valueBeside` in `trendText.js`: a MAP read at another minute prints its own time, and then each number carries its unit ("Sistolik AT 95 mmHg · MAP 70 mmHg (10:17)") — the rule `markBeside` gives marks (Task 13, commit `50589dd`). |
 
 ---
 
@@ -74,16 +77,16 @@ If tasks are merged in another order, a total is the base plus the deltas of the
 | 10 | — | 84 / 2177 | `news2Tone.test.js` **2**, `TrendCard.test.jsx` **21** (new); PatientScreen 55 → **57** |
 | 11 | — | 86 / 2262 | `trendGeometry.test.js` **22**, `TrendChart.test.jsx` **19** (new); TrendCard 21 → **25**; `tokens.test.js` 400 → **440** |
 | 12 | — | 87 / 2298 | `TrendModal.test.jsx` **26** (new); trendGeometry 22 → **30**; TrendChart 19 → **20**; PatientScreen 57 → **58** |
-| 13 | — | 87 / 2308 | TrendModal 26 → **36** |
+| 13 | — | 88 / 2333 | TrendModal 26 → **53**; `trendText.test.js` **4** (new); TrendChart 20 → **22**; trendGeometry 30 → **31**; TrendCard 25 → **26** |
 | 14a | 2126 / 650 | — | `test_api_patient_profile.py` 27 → **56**; `test_trends.py` 29 → **30** |
-| 14 | — | 88 / 2325 | `BaselineForm.test.jsx` **15** (new); PatientScreen 58 → **60** |
-| 15 | — | 88 / 2326 | `rawKeys.test.jsx` 6 → **7** |
+| 14 | — | 89 / 2350 | `BaselineForm.test.jsx` **15** (new); PatientScreen 58 → **60** |
+| 15 | — | 89 / 2351 | `rawKeys.test.jsx` 6 → **7** |
 | 16 | 2130 / 650 | — | `test_scenario_rebase.py` **4** (new) |
 | 17 | — | — | docs only |
 
-Measured: the base; backend after 16 and dashboard after 15 (the whole replay, 2026-10-20); the dashboard after 6, 7, 8, 9, 10, 11 and 12 at the lane's commits (`950176d`, `e2afede`, `f082251`, `dac5051`, `339c3f2`, `4ecbc11`, `a877057` — each the row minus 3, Task 5's `apiErrors` tests, which the dashboard lane does not carry). The other rows are the per-file counts summed. Tasks 1–5, 3b, 14a and 6–12 are the lanes' code as reviewed (their follow-up commits included), so these are the counts the lanes have.
+Measured: the base; backend after 16 and dashboard after 15 (the whole replay, 2026-10-20); the dashboard after 6, 7, 8, 9, 10, 11, 12 and 13 at the lane's commits (`950176d`, `e2afede`, `f082251`, `dac5051`, `339c3f2`, `4ecbc11`, `a877057`, `372e781` — each the row minus 3, Task 5's `apiErrors` tests, which the dashboard lane does not carry). The other rows are the per-file counts summed. Tasks 1–5, 3b, 14a and 6–13 are the lanes' code as reviewed (their follow-up commits included), so these are the counts the lanes have.
 
-Backend arithmetic: 14 + 17 + 15 + 9 + 29 + (26 + 3 + 2) + 30 + 4 = **149** passed and **6** skipped over the base. Dashboard: 3 + 7 + 208 + 0 + 22 + 25 + 85 + 36 + 10 + 17 + 1 = **414** tests and 7 files.
+Backend arithmetic: 14 + 17 + 15 + 9 + 29 + (26 + 3 + 2) + 30 + 4 = **149** passed and **6** skipped over the base. Dashboard: 3 + 7 + 208 + 0 + 22 + 25 + 85 + 36 + 35 + 17 + 1 = **439** tests and 8 files.
 
 ---
 
@@ -8022,29 +8025,355 @@ red: TrendModal import unresolved; trendGeometry 11 failed (the new geometry not
 
 ### Task 13: The keyboard, the one announcement, and the table view
 
-Spec §3.2 (keyboard cursor, Grafik | Tablo, the table) and §7. The big chart becomes one tab stop (`tabIndex=0`, `role="img"`, its keys described by a visible hint through `aria-describedby`); ← → move the cursor one measurement, Home / End to the first and last, staying put at either end; the readout follows, and **only a keyboard move** is said, once, through `Announce` (a hover empties the region). The `Seg` "Qrafik | Cədvəl" swaps in `TrendTable`: the kit `Table` with a caption, a `th scope="row"` time per row, newest first, every reading the chart draws with **the engine's NEWS2 points for that reading** (the endpoint's third column, printed — "+3", "0", "—"), and each mark as a row of its own. `trendText.js` holds how the axis, the readout and the table word a time, a mark and a point total — a mark beside a reading with its OWN time when that reads differently. The keyboard steps over drawable readings only, and two readings at one instant are one stop (the cursor is an instant, after Task 12). The dialog opens with focus on the pressed window option, after the kit `Modal` has put it on the first control.
+**Done in the dashboard lane** (commits `d5260a4`, `50589dd` and `372e781`, the Task 13 quality review — X28, X29, X30 — and its minors: the table fed the dialog's own parsed series and markers, valueless rows dropped, `indexAtTime` preferring the last drawable reading, stable row keys, the later reading first at one instant, an empty NEWS2 cell for a channel NEWS2 does not score and "—" with `trendsPointsUnknownRowSr` for a NEWS2 reading the engine sent none for, Alt/Ctrl/Meta left to the browser, the cursor cleared on the switch to the table); the blocks below are that code.
+
+Spec §3.2 (keyboard cursor, Grafik | Tablo, the table) and §7. The big chart becomes one tab stop (`tabIndex=0`, `role="application"` with a localised `aria-roledescription` — X28 — its keys described by a visible hint through `aria-describedby`); ← → move the cursor one measurement, Home / End to the first and last, staying put at either end; the readout follows, and **only a keyboard move** is said, once, through `Announce` (a hover empties the region). The `Seg` "Qrafik | Cədvəl" swaps in `TrendTable`: the kit `Table` with a caption, a `th scope="row"` time per row, newest first, every reading the chart draws with **the engine's NEWS2 points for that reading** (the endpoint's third column, printed — "+3", "0", "—"), and each mark as a row of its own. `trendText.js` holds how the axis, the readout and the table word a time, a mark and a point total — a mark beside a reading with its OWN time when that reads differently. The keyboard steps over drawable readings only, and two readings at one instant are one stop (the cursor is an instant, after Task 12). The dialog opens with focus on the pressed window option, after the kit `Modal` has put it on the first control.
 
 **Files:**
-- Create: `trends/trendText.js`, `trends/TrendTable.jsx`
-- Modify: `trends/TrendChart.jsx`, `trends/TrendModal.jsx` (Write, whole), `trends/TrendModal.test.jsx`
+- Create: `trends/trendText.js`, `trends/trendText.test.js`, `trends/TrendTable.jsx`
+- Modify (Write, whole): `trends/TrendModal.jsx`, `trends/TrendModal.test.jsx`, `trends/TrendChart.jsx`, `trends/TrendChart.test.jsx`, `trends/trendGeometry.js`, `trends/trendGeometry.test.js`, `trends/TrendLegend.jsx`
+- Modify (Edit): `trends/TrendCard.test.jsx`, `src/live/i18n/strings/patient.js` (two keys)
 
-- [ ] **Step 1: The tests.** Edit `trends/TrendModal.test.jsx` — replace its last test and the file's end:
+- [ ] **Step 1: The tests.** Write `dashboard/src/live/screens/patient/trends/TrendModal.test.jsx` (whole; the dashboard lane's commits `d5260a4`, `50589dd` and `372e781`):
 
 ```jsx
-  it("write a lactate to the tenth, not to the step", async () => {
-    await open("lactate", answering((pid, hours) => trends(pid, [channel("lactate", [point(60, 4.1)])], { hours })));
-    const labels = [...within(dialog()).getByRole("img").querySelectorAll("[data-tick='value'] text")].map((t) => t.textContent);
-    expect(labels).toEqual(["4.1"]);
+// The big chart: its window, its readout, its legend — read as the clinician reads them.
+import { describe, it, expect, afterEach, vi } from "vitest";
+import React, { useState } from "react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { mount } from "../../../session/mount.testutil.jsx";
+import { profile, token } from "../../../session/testTokens.testutil.js";
+import { NOW } from "../../../data/board.testutil.js";
+import { ddmm, hhmm } from "../../../i18n/dates.js";
+import { CARDS } from "./cards.js";
+import { TrendModal } from "./TrendModal.jsx";
+import { plotFrame, timeScale } from "./trendGeometry.js";
+import { answering, channel, marker, point, trends } from "./trends.testutil.js";
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+const PATIENT = { patient_id: "S-001", display_name: "Ayşe Sentetik", measuredAt: {} };
+const card = (id) => CARDS.find((c) => c.id === id);
+const HR_ANSWER = answering((pid, hours) => trends(pid, [channel("heart_rate", [point(120, 84, 0), point(60, 132, 3)])],
+  { hours, markers: [marker(60, "alarm", "news2")] }));
+const down = () => Promise.reject(Object.assign(new Error("down"), { status: 503 }));
+const HOUR = 3_600_000;
+
+// The host stands in for the patient screen: a new measurement of the patient changes `measuredAt`,
+// and the dialog re-reads the SAME window (useTrends' own rule).
+let bump;
+function Host({ id, bed, onClose }) {
+  const [n, setN] = useState(0);
+  bump = () => setN((v) => v + 1);
+  return <TrendModal card={card(id)} patient={{ ...PATIENT, measuredAt: { heart_rate: `r${n}` } }} bed={bed} onClose={onClose} />;
+}
+const reread = () => act(async () => { bump(); await settle(); });
+
+async function open(id = "heart_rate", answer = HR_ANSWER, { bed = "REA-01 · 2", onClose = () => {} } = {}) {
+  vi.setSystemTime(NOW);
+  const mounted = await mount(<Host id={id} bed={bed} onClose={onClose} />, {
+    access: token(), me: profile(), setup: (api) => api.patientTrends.mockImplementation(answer),
+  });
+  await act(async () => { await settle(); });
+  return mounted;
+}
+const dialog = () => screen.getByRole("dialog");
+// The big chart takes the arrow keys, so it is an application to a screen reader, not an image (an
+// image keeps NVDA and JAWS in browse mode, where the keys never reach the page). With nothing to step
+// over it takes no keys and is the image it looks like.
+const chart = () => within(dialog()).getByRole("application");
+const quietChart = () => within(dialog()).getByRole("img");
+const readout = () => dialog().querySelector("[data-readout]");
+const legend = () => dialog().querySelector("[data-legend]");
+const choose = (name) => act(async () => { fireEvent.click(within(dialog()).getByRole("button", { name })); await settle(); });
+const xOf = (minutesAgo, hours = 24) => {
+  const frame = plotFrame(640, 280, { labels: true, markers: true, axis: true });
+  return timeScale(NOW - hours * HOUR, NOW, frame.left, frame.right)(NOW - minutesAgo * 60_000);
+};
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+describe("the big chart", () => {
+  it("is titled with the bed, the patient and the channel", async () => {
+    await open();
+    expect(screen.getByRole("dialog", { name: "REA-01 · 2 · Ayşe Sentetik · Nəbz" })).toBeInTheDocument();
+  });
+
+  it("is titled without a leading separator when the bed's label is missing", async () => {
+    await open("heart_rate", HR_ANSWER, { bed: "" });
+    expect(screen.getByRole("dialog", { name: "Ayşe Sentetik · Nəbz" })).toBeInTheDocument();
+  });
+
+  it("reads 24 hours on open, and each window it is switched to", async () => {
+    const { api } = await open();
+    await choose("6 saat");
+    await choose("3 gün");
+    expect(api.patientTrends.mock.calls).toEqual([["S-001", 24], ["S-001", 6], ["S-001", 72]]);
+    expect(within(dialog()).getByRole("button", { name: "3 gün" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("names the chart for a reader: what it shows and how many points it draws", async () => {
+    await open();
+    expect(chart()).toHaveAttribute("aria-label", "Nəbz: son 24 saat, çəkilən nöqtə 2");
+  });
+
+  it("is an application to a screen reader, not an image — an image keeps NVDA and JAWS in browse mode, where ← → never arrive — and says what it is", async () => {
+    await open();
+    expect(chart()).toHaveAttribute("role", "application");
+    expect(chart()).toHaveAttribute("aria-roledescription", "qrafik");
+    expect(chart()).toHaveAttribute("aria-label", "Nəbz: son 24 saat, çəkilən nöqtə 2");     // the name stays
+    expect(within(dialog()).queryByRole("img")).toBeNull();
+    expect(chart()).toHaveClass("rounded-ctl");                                           // the ring has a shape to follow
+  });
+
+  it("is a tab stop only while there is something to step over — no tabindex, no key hint, no keys described", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [], { hours })));
+    expect(quietChart()).not.toHaveAttribute("tabindex");
+    expect(quietChart()).not.toHaveAttribute("aria-describedby");
+    expect(quietChart()).not.toHaveAttribute("aria-roledescription");
+    expect(quietChart()).not.toHaveClass("rounded-ctl");                                  // no ring, no shape for it
+    expect(dialog()).not.toHaveTextContent("← → əvvəlki / növbəti ölçmə");
+  });
+
+  it("is no tab stop on a pressure card with only MAP readings either — the cursor follows the first series, so there is no stop", async () => {
+    await open("pressure", answering((pid, hours) => trends(pid, [channel("map", [point(60, 64)])], { hours })));
+    expect(quietChart()).not.toHaveAttribute("tabindex");
+    expect(quietChart()).not.toHaveAttribute("aria-describedby");
+    expect(dialog()).not.toHaveTextContent("← → əvvəlki / növbəti ölçmə");
   });
 });
-```
 
-with:
+describe("the big chart while it reads", () => {
+  it("keeps its height while a window is read — an empty frame with the loading line in it, no chart", async () => {
+    // Without the frame the dialog shrinks, the window buttons jump, and a second click lands on the backdrop.
+    let release;
+    await open("heart_rate", (pid, hours) => (hours === 6
+      ? new Promise((resolve) => { release = () => resolve(trends(pid, [channel("heart_rate", [point(30, 90, 0)])], { hours })); })
+      : HR_ANSWER(pid, hours)));
+    await choose("6 saat");
+    const frame = dialog().querySelector("[data-chart-frame]");
+    expect(frame).not.toBeNull();
+    expect(frame).toHaveClass("h-[280px]");                              // the plot's own height
+    expect(frame).toHaveTextContent("Vital qrafikləri oxunur…");
+    expect(within(dialog()).queryByRole("application")).toBeNull();
+    expect(within(dialog()).queryByRole("img")).toBeNull();
+    expect(within(dialog()).getByRole("button", { name: "6 saat" })).toHaveAttribute("aria-pressed", "true");
+    await act(async () => { release(); await settle(); });
+    expect(chart()).toHaveAttribute("aria-label", "Nəbz: son 6 saat, çəkilən nöqtə 1");
+    expect(dialog().querySelector("[data-chart-frame]")).toBeNull();
+  });
 
-```jsx
+  it("keeps the chart, and says since when, when a re-read of the same window fails", async () => {
+    let fail = false;
+    await open("heart_rate", (pid, hours) => (fail ? down() : HR_ANSWER(pid, hours)));
+    fail = true;
+    await reread();
+    expect(dialog()).toHaveTextContent(`Vital qrafikləri oxuna bilmir (son: ${hhmm(NOW)})`);
+    expect(chart()).toHaveAttribute("aria-label", "Nəbz: son 24 saat, çəkilən nöqtə 2");
+  });
+
+  it("says it cannot read a window it never read — 'son: —' — and draws no chart, but keeps its height", async () => {
+    await open("heart_rate", (pid, hours) => (hours === 6 ? down() : HR_ANSWER(pid, hours)));
+    await choose("6 saat");
+    expect(dialog()).toHaveTextContent("Vital qrafikləri oxuna bilmir (son: —)");
+    expect(within(dialog()).queryByRole("application")).toBeNull();
+    expect(within(dialog()).queryByRole("img")).toBeNull();
+    expect(dialog().querySelector("[data-chart-frame]")).toHaveClass("h-[280px]");
+    expect(dialog()).not.toHaveTextContent("Vital qrafikləri oxunur…");
+  });
+});
+
+describe("the big chart's readout", () => {
+  it("reads out the measurement under the mouse — its time, value and unit, and a mark in the same pixel column", async () => {
+    await open();
+    const svg = chart();
+    expect(readout()).toHaveAttribute("aria-hidden", "true");
+    expect(readout()).toHaveTextContent("Ölçməni oxumaq üçün qrafikin üzərinə gəlin");
+    fireEvent.mouseMove(svg, { clientX: xOf(60) });
+    expect(readout()).toHaveTextContent(`${hhmm(NOW - HOUR)} · 132 /dəq · siqnal: news2`);
+    fireEvent.mouseMove(svg, { clientX: xOf(120) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · 84 /dəq`);
+    fireEvent.mouseLeave(svg);
+    expect(readout()).toHaveTextContent("Ölçməni oxumaq üçün qrafikin üzərinə gəlin");
+  });
+
+  it("names every mark at the instant under the cursor — two kinds first detected on one reading", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate", [point(120, 84, 0), point(60, 132, 3)])],
+      { hours, markers: [marker(60, "alarm", "news2"), marker(60, "alarm", "sepsis")] })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · 132 /dəq · siqnal: news2 · siqnal: sepsis`);
+  });
+
+  it("writes the date as well over three days, as the chart's own time labels do", async () => {
+    await open();
+    await choose("3 gün");
+    fireEvent.mouseMove(chart(), { clientX: xOf(60, 72) });
+    expect(readout().textContent).toBe(`${ddmm(NOW - HOUR)} ${hhmm(NOW - HOUR)} · 132 /dəq · siqnal: news2`);
+  });
+
+  it("reads MAP beside the systolic at the same instant on the pressure card — the vasopressor target", async () => {
+    await open("pressure", answering((pid, hours) => trends(pid, [
+      channel("sbp", [point(120, 118, 0), point(60, 95, 2)]), channel("map", [point(120, 80), point(60, 64)])], { hours })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP 64 mmHg`);
+    fireEvent.mouseMove(chart(), { clientX: xOf(120) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · Sistolik AT 118 · MAP 80 mmHg`);
+  });
+
+  it("says MAP was not measured at that instant instead of leaving it out", async () => {
+    await open("pressure", answering((pid, hours) => trends(pid, [
+      channel("sbp", [point(120, 118, 0), point(60, 95, 2)]), channel("map", [point(120, 80)])], { hours })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP — mmHg`);
+  });
+
+  it("reads a MAP stamped seconds from the systolic beside it — the same pixel column — and takes the nearer one", async () => {
+    // A 24-hour chart is about 150 s to a pixel: a MAP half a minute from the systolic is, on the
+    // chart, the same moment, and "MAP —" beside a MAP the chart draws there would say it was not measured.
+    await open("pressure", answering((pid, hours) => trends(pid, [
+      channel("sbp", [point(120, 118, 0), point(60, 95, 2)]),
+      channel("map", [point(119.8, 78), point(60.5, 70), point(59.8, 64)])], { hours })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP 64 mmHg`);
+    fireEvent.mouseMove(chart(), { clientX: xOf(120) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · Sistolik AT 118 · MAP 78 mmHg`);
+  });
+
+  it("gives a MAP read beside the systolic its own time when that reads differently — it does not borrow the systolic's", async () => {
+    // 75 s before the systolic: inside the chart's pixel column (so it is read beside it), but another minute.
+    await open("pressure", answering((pid, hours) => trends(pid, [
+      channel("sbp", [point(120, 118, 0), point(60, 95, 2)]), channel("map", [point(120, 80), point(61.25, 70)])], { hours })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 mmHg · MAP 70 mmHg (${hhmm(NOW - 61.25 * 60_000)})`);
+    fireEvent.mouseMove(chart(), { clientX: xOf(120) });                        // the same minute: no time of its own
+    expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · Sistolik AT 118 · MAP 80 mmHg`);
+  });
+
+  it("stays on the instant it was reading when a re-read slides the window — not on the reading that took its index", async () => {
+    let slid = false;
+    const shift = 10 * 60_000;
+    await open("heart_rate", answering((pid, hours) => (slid
+      ? trends(pid, [channel("heart_rate", [point(120, 84, 0), point(60, 132, 3), point(10, 90, 0)])],
+        { hours, since: new Date(NOW - 24 * HOUR + shift).toISOString(), until: new Date(NOW + shift).toISOString() })
+      : trends(pid, [channel("heart_rate", [point(180, 70, 0), point(120, 84, 0), point(60, 132, 3)])], { hours }))));
+    fireEvent.mouseMove(chart(), { clientX: xOf(120) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · 84 /dəq`);
+    slid = true;                                    // the 70 slid out of the front: index 1 is now the 132
+    await reread();
+    expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · 84 /dəq`);
+    const frame = plotFrame(640, 280, { labels: true, markers: true, axis: true });
+    const x = timeScale(NOW - 24 * HOUR + shift, NOW + shift, frame.left, frame.right);
+    expect(Number(dialog().querySelector("[data-cursor] line").getAttribute("x1"))).toBeCloseTo(x(NOW - 2 * HOUR));
+  });
+
+  it("lets the cursor go when the reading it was on slid out of the window", async () => {
+    let slid = false;
+    await open("heart_rate", answering((pid, hours) => (slid
+      ? trends(pid, [channel("heart_rate", [point(120, 84, 0), point(60, 132, 3)])], { hours })
+      : trends(pid, [channel("heart_rate", [point(180, 70, 0), point(120, 84, 0), point(60, 132, 3)])], { hours }))));
+    fireEvent.mouseMove(chart(), { clientX: xOf(180) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - 3 * HOUR)} · 70 /dəq`);
+    slid = true;
+    await reread();
+    expect(readout()).toHaveTextContent("Ölçməni oxumaq üçün qrafikin üzərinə gəlin");
+    expect(dialog().querySelector("[data-cursor]")).toBeNull();
+  });
+
+  it("prints no value for a reading that arrives without one — never 'NaN'", async () => {
+    let blank = false;
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
+      [point(120, 84, 0), blank ? point(60, null) : point(60, 132, 3)])], { hours })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · 132 /dəq`);
+    blank = true;
+    await reread();
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · —`);
+    expect(readout().textContent).not.toMatch(/NaN/);
+  });
+
+  it("says so — and gives no prompt to hover — when the window holds no reading to read", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [], { hours })));
+    expect(readout()).toBeNull();
+    expect(dialog().querySelector("[data-no-data]")).toHaveTextContent("Bu kanal üçün ölçmə yoxdur");
+    expect(dialog()).not.toHaveTextContent("Ölçməni oxumaq üçün");
+    expect(quietChart()).toHaveAttribute("aria-label", "Nəbz: son 24 saat, çəkilən nöqtə 0");
+    expect(legend()).not.toBeNull();                                      // what the chart's marks mean still stands
+  });
+
+  it("counts a reading with no value as no reading", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate", [point(60, null), point(30, null)])], { hours })));
+    expect(dialog().querySelector("[data-no-data]")).toHaveTextContent("Bu kanal üçün ölçmə yoxdur");
+    expect(quietChart()).toHaveAttribute("aria-label", "Nəbz: son 24 saat, çəkilən nöqtə 0");
+  });
+});
+
+describe("the big chart's legend", () => {
+  it("is a list, so a screen reader that drops a bare list-style still counts its items", async () => {
+    await open();
+    expect(legend()).toHaveAttribute("role", "list");
+  });
+
+  it("explains every mark in words: the server's NEWS2 source, both band tones, both marks, the dashed line", async () => {
+    await open();
+    expect(legend()).toHaveTextContent("NEWS2 zolağı (yetkin) · mənbə news2-rcp-2017");
+    // ▲ is the finding's first detection for this patient, not every episode (O17).
+    for (const words of ["1–2 bal", "3 bal", "siqnalın ilk aşkarlanması", "antibiotik", "nöqtələr ölçmədir; aralarındakı qırıq xətt ölçmə deyil"]) {
+      expect(legend()).toHaveTextContent(words);
+    }
+    expect(legend()).not.toHaveTextContent("xəstənin norması");            // none charted
+    expect(legend()).not.toHaveTextContent("işarələrin hamısı");           // the server read every mark
+  });
+
+  it("leaves out what does not apply: nothing thinned, and no 'MAP is not scored' line without a second series", async () => {
+    await open();
+    expect(legend()).not.toHaveTextContent("seyrəldildi");
+    expect(legend()).not.toHaveTextContent("qiymətləndirilmir");
+  });
+
+  it("says a channel was thinned, and from how many", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
+      [point(90, 84, 0), point(60, 90, 0), point(30, 96, 1)], { thinned: true, total_points: 2500 })], { hours })));
+    expect(legend()).toHaveTextContent("Nəbz seyrəldildi: 2500 nöqtədən 3");
+  });
+
+  it("draws systolic and MAP as two series of one chart, named in the legend", async () => {
+    await open("pressure", answering((pid, hours) => trends(pid, [
+      channel("sbp", [point(60, 118, 0)]), channel("map", [point(60, 80)])], { hours })));
+    const svg = chart();
+    expect(svg.querySelector("[data-series='sbp']")).not.toBeNull();
+    // Hollow on the dialog's own ground (bg-app), not a card's: a card-coloured disc would show on it.
+    expect(svg.querySelector("[data-series='map'] circle")).toHaveClass("fill-app");
+    expect(legend().querySelector("circle.fill-app")).not.toBeNull();
+    expect(legend()).toHaveTextContent(/Sistolik AT.*MAP/);
+    // MAP is drawn over the systolic rows but is not a NEWS2 parameter: the legend says so in words.
+    expect(legend()).toHaveTextContent("MAP NEWS2-də qiymətləndirilmir; zolaqlar Sistolik AT üçündür");
+    expect(legend()).not.toHaveTextContent("seyrəldildi");
+  });
+
+  it("says when the server's read of the marks stopped at its limit", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate", [point(60, 84, 0)])],
+      { hours, markers_truncated: true })));
+    expect(legend()).toHaveTextContent("işarələrin hamısı oxunmadı: ən yeniləri çatışmaya bilər");
+  });
+
+  it("shows no NEWS2 band in the legend of a channel the engine scores none for", async () => {
+    await open("lactate", answering((pid, hours) => trends(pid, [channel("lactate", [point(60, 4.1)])], { hours })));
+    expect(legend()).not.toHaveTextContent("NEWS2");
+  });
+});
+
+describe("the big chart's value labels", () => {
+  it("label a lone reading with its own value, so the chart has a number on it", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate", [point(60, 85, 0)])], { hours })));
+    const labels = [...chart().querySelectorAll("[data-tick='value'] text")].map((t) => t.textContent);
+    expect(labels).toEqual(["85"]);
+  });
+
   it("write a lactate to the tenth, not to the step", async () => {
     await open("lactate", answering((pid, hours) => trends(pid, [channel("lactate", [point(60, 4.1)])], { hours })));
-    const labels = [...within(dialog()).getByRole("img").querySelectorAll("[data-tick='value'] text")].map((t) => t.textContent);
+    const labels = [...chart().querySelectorAll("[data-tick='value'] text")].map((t) => t.textContent);
     expect(labels).toEqual(["4.1"]);
   });
 });
@@ -8056,7 +8385,7 @@ describe("the big chart by keyboard", () => {
 
   it("is one tab stop, its keys described in words", async () => {
     await open("heart_rate", THREE);
-    const svg = within(dialog()).getByRole("img");
+    const svg = chart();
     expect(svg).toHaveAttribute("tabindex", "0");
     expect(document.getElementById(svg.getAttribute("aria-describedby")))
       .toHaveTextContent("Qrafik seçiləndə ← → əvvəlki / növbəti ölçmə, Home/End ilk / son ölçmə.");
@@ -8064,7 +8393,9 @@ describe("the big chart by keyboard", () => {
 
   it("walks the measurements with ← → Home End, and the readout follows", async () => {
     await open("heart_rate", THREE);
-    const svg = within(dialog()).getByRole("img");
+    const svg = chart();
+    svg.focus();                                                        // keys go to the focused chart, as for a user
+    expect(document.activeElement).toBe(svg);
     const readout = () => dialog().querySelector("[data-readout]").textContent;
     const press = (key) => fireEvent.keyDown(svg, { key });
     press("ArrowRight");
@@ -8083,7 +8414,8 @@ describe("the big chart by keyboard", () => {
 
   it("says the readout once after a keyboard move, and nothing after the mouse", async () => {
     await open("heart_rate", THREE);
-    const svg = within(dialog()).getByRole("img");
+    const svg = chart();
+    svg.focus();
     const region = within(dialog()).getByRole("status");
     fireEvent.mouseMove(svg, { clientX: xOf(60) });
     await wait(200);
@@ -8095,19 +8427,62 @@ describe("the big chart by keyboard", () => {
     await wait(200);
     expect(region.textContent).toBe("");
   });
+
+  it("says nothing for a chart nobody can see: switching to the table lets the cursor go, and the announcement with it", async () => {
+    await open("heart_rate", THREE);
+    const region = within(dialog()).getByRole("status");
+    chart().focus();
+    fireEvent.keyDown(chart(), { key: "End" });
+    await wait(200);
+    expect(region).toHaveTextContent(`${hhmm(NOW - 3_600_000)} · 132 /dəq`);
+    await act(async () => { fireEvent.click(within(dialog()).getByRole("button", { name: "Cədvəl" })); await settle(); });
+    expect(region.textContent).toBe("");                                // emptied at once, not said again
+    await act(async () => { fireEvent.click(within(dialog()).getByRole("button", { name: "Qrafik" })); await settle(); });
+    await wait(200);
+    expect(region.textContent).toBe("");                                // back on the chart: no cursor, nothing to say
+    expect(chart().querySelector("[data-cursor]")).toBeNull();
+    expect(readout()).toHaveTextContent("Ölçməni oxumaq üçün qrafikin üzərinə gəlin");
+  });
+
+  it("closes on Escape pressed on the focused chart — the keys it takes do not swallow that one", async () => {
+    const onClose = vi.fn();
+    await open("heart_rate", THREE, { onClose });
+    chart().focus();
+    fireEvent.keyDown(chart(), { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a key pressed with Alt, Ctrl or Meta to the browser — Alt+← is Back, Ctrl+Home is the top of the page", async () => {
+    await open("heart_rate", THREE);
+    const svg = chart();
+    svg.focus();
+    for (const modifier of ["altKey", "ctrlKey", "metaKey"]) {
+      for (const key of ["ArrowLeft", "ArrowRight", "Home", "End"]) {
+        // fireEvent returns false when the handler called preventDefault.
+        expect(fireEvent.keyDown(svg, { key, [modifier]: true }), `${modifier} ${key}`).toBe(true);
+      }
+    }
+    expect(svg.querySelector("[data-cursor]")).toBeNull();
+    expect(readout()).toHaveTextContent("Ölçməni oxumaq üçün qrafikin üzərinə gəlin");
+    expect(fireEvent.keyDown(svg, { key: "End" })).toBe(false);          // the plain key is the chart's
+  });
 });
 
 describe("the big chart as a table", () => {
   const MIXED = answering((pid, hours) => trends(pid, [channel("heart_rate",
     [point(180, 80, 0), point(120, 72, 3), point(60, 132, 3)])], { hours, markers: [marker(90, "antibiotic")] }));
-  const table = async () => {
-    await act(async () => { fireEvent.click(within(dialog()).getByRole("button", { name: "Cədvəl" })); await settle(); });
-    return within(dialog()).getByRole("table", { name: "Nəbz — ölçmələr, ən yenisi yuxarıda" });
+  const toTable = () => act(async () => { fireEvent.click(within(dialog()).getByRole("button", { name: "Cədvəl" })); await settle(); });
+  const table = async (title = "Nəbz") => {
+    await toTable();
+    return within(dialog()).getByRole("table", { name: `${title} — ölçmələr, ən yenisi yuxarıda` });
   };
+  const PRESSURE = answering((pid, hours) => trends(pid, [
+    channel("sbp", [point(180, 118, 0), point(120, 95, null), point(60, 101, 1)]),
+    channel("map", [point(180, 80), point(120, 64), point(60, 70)])], { hours }));
 
   it("holds exactly what the chart draws, newest first", async () => {
     await open("heart_rate", MIXED);
-    const drawn = [...within(dialog()).getByRole("img").querySelectorAll("circle[data-value]")]
+    const drawn = [...chart().querySelectorAll("circle[data-value]")]
       .map((c) => [c.dataset.ts, c.dataset.value]);
     const listed = [...(await table()).querySelectorAll("tr[data-value]")].map((r) => [r.dataset.ts, r.dataset.value]);
     expect(listed).toEqual([...drawn].reverse());
@@ -8124,6 +8499,110 @@ describe("the big chart as a table", () => {
     const rows = [...(await table()).querySelectorAll("tbody tr")];
     expect(rows.map((r) => r.dataset.value ?? r.dataset.mark)).toEqual(["132", "antibiotic", "72", "80"]);
     expect(rows[1]).toHaveTextContent("antibiotik");
+  });
+
+  it("lists two readings at one instant as two rows — each its own, not two under one repeated key", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
+        [point(120, 84, 0), point(60, 130, 2), point(60, 132, 3)])], { hours })));
+      const values = [...(await table()).querySelectorAll("tr[data-value]")].map((r) => r.dataset.value);
+      // Newest first: at one instant the later reading — the one the chart and the readout take — is on top.
+      expect(values).toEqual(["132", "130", "84"]);
+      expect(error.mock.calls.filter(([message]) => /same key/.test(String(message)))).toEqual([]);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("adds a row for a newer reading and leaves the rows already there alone — the same elements, not a body rebuilt at each poll", async () => {
+    let newer = false;
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
+      [point(180, 80, 0), point(120, 84, 0), ...(newer ? [point(30, 90, 1)] : [])])], { hours })));
+    await table();
+    const oldest = dialog().querySelector("tr[data-value='80']");
+    const middle = dialog().querySelector("tr[data-value='84']");
+    newer = true;
+    await reread();
+    expect(dialog().querySelectorAll("tbody tr")).toHaveLength(3);
+    expect(dialog().querySelector("tr[data-value='90']")).not.toBeNull();
+    // Newest first, so the new row is added at the top: a key by position would hand every row its
+    // neighbour's element instead.
+    expect(dialog().querySelector("tr[data-value='80']")).toBe(oldest);
+    expect(dialog().querySelector("tr[data-value='84']")).toBe(middle);
+  });
+
+  it("has no row for a reading that arrived without a value — the chart draws no dot for it, so the table lists none", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate", [point(120, 84, 0), point(60, null)])], { hours })));
+    const rows = [...(await table()).querySelectorAll("tbody tr")];
+    expect(rows.map((r) => r.dataset.value)).toEqual(["84"]);
+    expect(dialog().querySelector("[data-value='NaN']")).toBeNull();
+  });
+
+  it("holds what the chart draws on the pressure card too — both series, every reading once, newest first", async () => {
+    await open("pressure", PRESSURE);
+    const drawn = [...chart().querySelectorAll("circle[data-value]")]
+      .map((c) => [c.closest("[data-series]").dataset.series, c.dataset.ts, c.dataset.value]);
+    const listed = [...(await table("Sistolik AT · MAP")).querySelectorAll("tr[data-value]")]
+      .map((r) => [r.dataset.series, r.dataset.ts, r.dataset.value]);
+    const keyed = (rows) => rows.map((row) => row.join("|")).sort();
+    expect(drawn).toHaveLength(6);
+    expect(keyed(listed)).toEqual(keyed(drawn));
+    const instants = listed.map(([, ts]) => Date.parse(ts));
+    expect(instants).toEqual([...instants].sort((a, b) => b - a));
+  });
+
+  it("prints the engine's points for a NEWS2 channel, a reason for one it sent none for, and nothing for MAP", async () => {
+    await open("pressure", PRESSURE);
+    const grid = await table("Sistolik AT · MAP");
+    const cells = (series, value) => within(grid.querySelector(`tr[data-series='${series}'][data-value='${value}']`)).getAllByRole("cell");
+    expect(cells("sbp", 118).map((c) => c.textContent)).toEqual(["Sistolik AT", "118", "mmHg", "0", ""]);
+    expect(cells("sbp", 101)[3]).toHaveTextContent("+1");
+    // The engine sent no points for this systolic reading: a dash, and the reason for a screen reader.
+    const unscored = cells("sbp", 95)[3];
+    expect(within(unscored).getByText("—")).toHaveAttribute("aria-hidden", "true");
+    // Worded for the row it is in: this reading, not "the last one" (that is the card's sentence).
+    expect(unscored).toHaveTextContent("NEWS2 balı yoxdur: bu ölçmə qiymətləndirilməyib");
+    expect(unscored).not.toHaveTextContent("son ölçmə");
+    // MAP is not a NEWS2 parameter: its cell is empty — not a dash that reads as a missing score.
+    for (const value of [80, 64, 70]) expect(cells("map", value)[3].textContent).toBe("");
+  });
+
+  it("carries the legend's notes into the table — thinned, marks cut short, an alarm's first detection — but not the chart's swatches", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
+      [point(90, 84, 0), point(60, 90, 0), point(30, 96, 1)], { thinned: true, total_points: 2500 })], { hours, markers_truncated: true })));
+    await table();
+    const notes = dialog().querySelector("[data-notes]");
+    expect(notes).toHaveAttribute("role", "list");
+    expect(notes).toHaveTextContent("Nəbz seyrəldildi: 2500 nöqtədən 3");
+    expect(notes).toHaveTextContent("işarələrin hamısı oxunmadı: ən yeniləri çatışmaya bilər");
+    expect(notes).toHaveTextContent("siqnalın ilk aşkarlanması");
+    expect(dialog().querySelector("[data-legend]")).toBeNull();
+  });
+
+  it("says MAP is not scored by NEWS2 under the pressure table too, and leaves out what does not apply", async () => {
+    await open("pressure", PRESSURE);
+    await table("Sistolik AT · MAP");
+    const notes = dialog().querySelector("[data-notes]");
+    expect(notes).toHaveTextContent("MAP NEWS2-də qiymətləndirilmir; zolaqlar Sistolik AT üçündür");
+    expect(notes).not.toHaveTextContent("seyrəldildi");
+    expect(notes).not.toHaveTextContent("işarələrin hamısı");
+  });
+
+  it("says there is no measurement instead of showing an empty captioned table", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [], { hours })));
+    await toTable();
+    expect(dialog().querySelector("[data-no-data]")).toHaveTextContent("Bu kanal üçün ölçmə yoxdur");
+    expect(within(dialog()).queryByRole("table")).toBeNull();
+    expect(dialog().querySelector("[data-notes]")).not.toBeNull();         // what the marks mean still stands
+  });
+
+  it("lists the marks when there is no reading, under the same no-measurement line", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [], { hours, markers: [marker(90, "antibiotic")] })));
+    await toTable();
+    expect(dialog().querySelector("[data-no-data]")).toHaveTextContent("Bu kanal üçün ölçmə yoxdur");
+    const rows = [...within(dialog()).getByRole("table").querySelectorAll("tbody tr")];
+    expect(rows.map((r) => r.dataset.mark)).toEqual(["antibiotic"]);
   });
 
   it("is a real table: a caption, column headers, and the time heading each row", async () => {
@@ -8147,7 +8626,7 @@ describe("the big chart, opening and reading", () => {
     // its minute: the readout must not give the mark the reading's time.
     await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate", [point(120, 84, 0), point(60, 132, 3)])],
       { hours, markers: [marker(61, "alarm", "news2")] })));
-    fireEvent.mouseMove(within(dialog()).getByRole("img"), { clientX: xOf(60) });
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
     expect(dialog().querySelector("[data-readout]").textContent)
       .toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · siqnal: news2 (${hhmm(NOW - 61 * 60_000)})`);
   });
@@ -8155,7 +8634,7 @@ describe("the big chart, opening and reading", () => {
   it("takes two readings at one instant as one keyboard stop, read as the later one", async () => {
     await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
       [point(120, 84, 0), point(60, 130, 2), point(60, 132, 3)])], { hours })));
-    const svg = within(dialog()).getByRole("img");
+    const svg = chart();
     const readout = () => dialog().querySelector("[data-readout]").textContent;
     fireEvent.keyDown(svg, { key: "Home" });
     expect(readout()).toBe(`${hhmm(NOW - 7_200_000)} · 84 /dəq`);
@@ -8167,9 +8646,681 @@ describe("the big chart, opening and reading", () => {
 });
 ```
 
-Run it: `npx vitest run src/live/screens/patient/trends/TrendModal.test.jsx 2>&1 | grep -E "Tests "` → `Tests  10 failed | 26 passed (36)` (no tab stop, no keys, no status region, no "Cədvəl"; the focus is on the first control; a mark beside a reading carries the reading's time; no keyboard to step).
+Write `dashboard/src/live/screens/patient/trends/trendText.test.js`:
 
-- [ ] **Step 2: The words the axis, the readout and the table share** — Write `dashboard/src/live/screens/patient/trends/trendText.js` (Task 12's `whenText` and `markText` move here from `TrendModal.jsx`, beside `markBeside` — a mark's own time when it reads differently from the reading's — and `pointsText`):
+```js
+// How an instant, a mark and a value beside a reading are worded. The time labels are the chart's own
+// (whenText), so a value or a mark that carries its own time says it the way the axis does.
+import { describe, it, expect } from "vitest";
+import { NOW } from "../../../data/board.testutil.js";
+import { ddmm, hhmm } from "../../../i18n/dates.js";
+import { markBeside, pointsText, valueBeside, whenText } from "./trendText.js";
+
+const MINUTE = 60_000;
+const t = (key) => ({ "patient.trendsMarkerAlarm": "siqnal", "patient.trendsMarkerAntibiotic": "antibiotik" })[key];
+
+describe("trendText", () => {
+  it("writes an instant as the chart's axis does — the date as well over three days", () => {
+    expect(whenText(NOW, 24)).toBe(hhmm(NOW));
+    expect(whenText(NOW, 6)).toBe(hhmm(NOW));
+    expect(whenText(NOW, 72)).toBe(`${ddmm(NOW)} ${hhmm(NOW)}`);
+  });
+
+  it("gives a value its own time in parentheses when it reads differently from the reading it is beside", () => {
+    const at = NOW - 60 * MINUTE;
+    expect(valueBeside("64 mmHg", at - 75_000, at, 24)).toBe(`64 mmHg (${hhmm(at - 75_000)})`);
+    expect(valueBeside("64 mmHg", at + 12_000, at, 24)).toBe("64 mmHg");            // the same minute: nothing added
+    expect(valueBeside("64", at, at, 24)).toBe("64");
+    // Over three days the date is part of the reading — a value a day away is not "the same time".
+    expect(valueBeside("64", at - 24 * 60 * MINUTE, at, 72)).toBe(`64 (${whenText(at - 24 * 60 * MINUTE, 72)})`);
+  });
+
+  it("gives a mark its own time in the same way", () => {
+    const at = NOW - 60 * MINUTE;
+    const mark = { kind: "alarm", label: "news2", ms: at - 90_000 };
+    expect(markBeside(t, mark, at, 24)).toBe(`siqnal: news2 (${hhmm(at - 90_000)})`);
+    expect(markBeside(t, { ...mark, ms: at }, at, 24)).toBe("siqnal: news2");
+    expect(markBeside(t, { kind: "antibiotic", ms: at }, at, 24)).toBe("antibiotik");
+  });
+
+  it("prints the engine's points as a column does: +n, 0, or a dash for none", () => {
+    expect(pointsText(3)).toBe("+3");
+    expect(pointsText(0)).toBe("0");
+    expect(pointsText(null)).toBe("—");
+    expect(pointsText(Number.NaN)).toBe("—");
+    expect(pointsText(2.5)).toBe("—");
+  });
+});
+```
+
+Write `dashboard/src/live/screens/patient/trends/TrendChart.test.jsx` (whole):
+
+```jsx
+// What the chart draws, read off the SVG. jsdom has no layout, so the chart runs on its fallback
+// width (320 small, 640 big) and every x below is worked out from `plotFrame` + `timeScale`.
+import { afterEach, describe, it, expect, vi } from "vitest";
+import React from "react";
+import { act, fireEvent, render } from "@testing-library/react";
+import { NOW } from "../../../data/board.testutil.js";
+import { hhmm } from "../../../i18n/dates.js";
+import { TrendChart } from "./TrendChart.jsx";
+import { parseMarkers, parsePoints, plotFrame, timeScale, timeTicks } from "./trendGeometry.js";
+import { BANDS, marker, point } from "./trends.testutil.js";
+
+const SINCE = NOW - 24 * 3_600_000;
+const hr = (raw, over = {}) => ({ key: "heart_rate", color: "text-v-hr", hollow: false, points: parsePoints(raw), ...over });
+
+function draw(props) {
+  const { container } = render(<TrendChart sinceMs={SINCE} untilMs={NOW} hours={24} {...props} />);
+  return container.querySelector("svg");
+}
+const all = (svg, selector) => [...svg.querySelectorAll(selector)];
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe("the trend chart", () => {
+  it("draws a dot per measurement and a dashed connector between them", () => {
+    const svg = draw({ series: [hr([point(120, 84, 0), point(60, 90, 0), point(30, 96, 1)])] });
+    expect(all(svg, "circle").map((c) => c.dataset.value)).toEqual(["84", "90", "96"]);
+    const [line] = all(svg, "path");
+    expect(line.getAttribute("stroke-dasharray")).toBe("4 3");
+  });
+
+  it("draws one measurement as a dot, and no line", () => {
+    const svg = draw({ series: [hr([point(60, 84, 0)])] });
+    expect(all(svg, "circle")).toHaveLength(1);
+    expect(all(svg, "path")).toHaveLength(0);
+  });
+
+  it("breaks the connector where a value is missing, and draws no dot for it", () => {
+    const svg = draw({ series: [hr([point(120, 84, 0), point(90, null), point(60, 90, 0), point(30, 95, 1)])] });
+    expect(all(svg, "path")[0].getAttribute("d").match(/M/g)).toHaveLength(2);
+    expect(all(svg, "circle")).toHaveLength(3);
+  });
+
+  it("tints the rows the server scored 1–3 in the server's tone, and none it scored 0", () => {
+    const svg = draw({ series: [hr([point(60, 60, 0), point(30, 100, 1)])], bands: { news2: BANDS.heart_rate } });
+    // 60–100 drawn as 54–106: 50–90 scores 0 (untinted), 90–110 scores 1.
+    expect(all(svg, "[data-band]").map((r) => [r.dataset.band, r.getAttribute("class")])).toEqual([["mid", "fill-band-mid"]]);
+  });
+
+  it("draws a row red because the server scored it 3 — the browser does not judge the values under it", () => {
+    const svg = draw({ series: [hr([point(60, 72, 0)])], bands: { news2: [{ low: null, high: null, points: 3 }] } });
+    expect(all(svg, "[data-band]").map((r) => r.getAttribute("class"))).toEqual(["fill-band-crit"]);
+  });
+
+  it("draws the patient's normal tinted and edged with dashes, so it is not told by colour alone", () => {
+    const svg = draw({ series: [hr([point(60, 72, 0)])], bands: { news2: null, own_normal: { low: 70, high: 80 } } });
+    const own = svg.querySelector("[data-own-normal]");
+    expect(own.querySelector("rect")).toHaveClass("fill-band-n");
+    expect(all(own, "line").map((l) => l.getAttribute("stroke-dasharray"))).toEqual(["2 3", "2 3"]);
+  });
+
+  it("gives a reader a summary — or, inside a card whose text already says it, nothing at all", () => {
+    const named = draw({ series: [hr([point(60, 72, 0)])], label: "Nəbz: 1" });
+    expect(named).toHaveAttribute("role", "img");
+    expect(named).toHaveAttribute("aria-label", "Nəbz: 1");
+    expect(named).not.toHaveAttribute("tabindex");                       // an image with no keys is no tab stop
+    expect(named).not.toHaveAttribute("aria-roledescription");
+    document.body.innerHTML = "";
+    const quiet = draw({ series: [hr([point(60, 72, 0)])] });
+    expect(quiet).toHaveAttribute("aria-hidden", "true");
+    expect(quiet).not.toHaveAttribute("role");
+    expect(quiet).not.toHaveAttribute("tabindex");
+  });
+
+  it("takes the keys as an application, not an image: one tab stop with a name, a spoken kind and its keys described", () => {
+    // An image keeps NVDA and JAWS in browse mode, where the arrow keys never reach the page.
+    const onKeyDown = vi.fn();
+    const svg = draw({
+      series: [hr([point(60, 72, 0)])], label: "Nəbz: 1", big: true, height: 280, onKeyDown, describedBy: "hint-1", roleDescription: "qrafik",
+    });
+    expect(svg).toHaveAttribute("role", "application");
+    expect(svg).toHaveAttribute("aria-roledescription", "qrafik");
+    expect(svg).toHaveAttribute("aria-label", "Nəbz: 1");
+    expect(svg).toHaveAttribute("aria-describedby", "hint-1");
+    expect(svg).toHaveAttribute("tabindex", "0");
+    expect(svg).toHaveClass("rounded-ctl");
+    fireEvent.keyDown(svg, { key: "Home" });
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives the ring a shape only where there is a ring: the chart that takes no keys is a plain block", () => {
+    const svg = draw({ series: [hr([point(60, 72, 0)])], label: "Nəbz: 1", big: true, height: 280 });
+    expect(svg).toHaveClass("block");
+    expect(svg).not.toHaveClass("rounded-ctl");
+  });
+
+  it("on the big chart: time and value labels, ▲ and ◆ in their own lane, inside the window only", () => {
+    const markers = parseMarkers([marker(60, "alarm"), marker(120, "antibiotic"), marker(30 * 60, "alarm")]);
+    const svg = draw({ series: [hr([point(120, 84, 0), point(60, 132, 3)])], markers, big: true, height: 280 });
+    expect(all(svg, "[data-marker]").map((m) => m.dataset.marker)).toEqual(["alarm", "antibiotic"]);
+    expect(svg.querySelector("[data-marker='alarm']")).toHaveClass("fill-crit");
+    expect(svg.querySelector("[data-marker='antibiotic']")).toHaveClass("fill-pri");
+    expect(all(svg, "[data-tick='time']").map((t) => t.textContent)).toEqual(timeTicks(SINCE, NOW, 24).map(hhmm));
+    expect(all(svg, "[data-tick='value']").length).toBeGreaterThan(1);
+  });
+
+  it("draws no marks and no labels on the small chart", () => {
+    const svg = draw({ series: [hr([point(60, 84, 0)])], markers: parseMarkers([marker(60)]) });
+    expect(all(svg, "[data-marker]")).toHaveLength(0);
+    expect(all(svg, "text")).toHaveLength(0);
+  });
+
+  it("follows the mouse to the nearest measurement, and lets go when it leaves", () => {
+    const onCursor = vi.fn();
+    const svg = draw({ series: [hr([point(120, 84, 0), point(60, 90, 0)])], big: true, height: 280, onCursor });
+    const frame = plotFrame(640, 280, { labels: true, markers: true, axis: true });
+    const x = timeScale(SINCE, NOW, frame.left, frame.right);
+    fireEvent.mouseMove(svg, { clientX: x(NOW - 61 * 60_000) });
+    expect(onCursor).toHaveBeenLastCalledWith(1, "mouse");
+    fireEvent.mouseLeave(svg);
+    expect(onCursor).toHaveBeenLastCalledWith(null, "mouse");
+  });
+
+  it("draws the cursor where it is told, on the first series", () => {
+    const svg = draw({ series: [hr([point(120, 84, 0), point(60, 90, 0)])], big: true, height: 280, cursor: 1 });
+    const frame = plotFrame(640, 280, { labels: true, markers: true, axis: true });
+    const x = timeScale(SINCE, NOW, frame.left, frame.right);
+    expect(Number(svg.querySelector("[data-cursor] line").getAttribute("x1"))).toBeCloseTo(x(NOW - 60 * 60_000));
+  });
+
+  it("draws MAP's dots hollow", () => {
+    const svg = draw({ series: [hr([point(60, 58)], { key: "map", color: "text-v-map", hollow: true })] });
+    expect(svg.querySelector("[data-series='map'] circle")).toHaveClass("fill-card");
+  });
+
+  it("widens its range to take in the patient's normal, so a band just entered is always on the chart", () => {
+    // 72 alone would span 68.4–75.6 and leave a normal of 100–115 off the chart. With it the range is
+    // 72–115 ± 15 % = 65.55–121.45 on y 40 (bottom) to 6 (top): y(115) = 9.92, y(100) = 19.05.
+    const svg = draw({ series: [hr([point(60, 72, 0)])], bands: { news2: null, own_normal: { low: 100, high: 115 } } });
+    const own = svg.querySelector("[data-own-normal]");
+    const rect = own.querySelector("rect");
+    expect(Number(rect.getAttribute("y"))).toBeCloseTo(9.923, 2);
+    expect(Number(rect.getAttribute("height"))).toBeCloseTo(9.123, 2);
+    // The dashed edges are 1-px lines: each sits on the centre of the pixel row its edge falls in.
+    expect(all(own, "line").map((l) => [l.getAttribute("y1"), l.getAttribute("y2")])).toEqual([["9.5", "9.5"], ["19.5", "19.5"]]);
+  });
+
+  it("snaps the big chart's grid lines onto the centre of a pixel row too", () => {
+    const svg = draw({ series: [hr([point(120, 84, 0), point(60, 132, 3)])], big: true, height: 280 });
+    const ys = all(svg, "[data-tick='value'] line").map((l) => Number(l.getAttribute("y1")));
+    expect(ys.length).toBeGreaterThan(1);
+    expect(ys.every((v) => v % 1 === 0.5)).toBe(true);
+  });
+
+  it("draws nothing for a window it cannot place — an end that is missing, or an end before the start", () => {
+    const series = [hr([point(60, 84, 0), point(30, 90, 0)])];
+    expect(draw({ series, sinceMs: Number.NaN })).toBeNull();
+    expect(draw({ series, untilMs: undefined })).toBeNull();
+    expect(draw({ series, sinceMs: NOW, untilMs: SINCE })).toBeNull();
+    expect(draw({ series, sinceMs: Number.NaN, big: true, height: 280, label: "Nəbz" })).toBeNull();
+  });
+
+  it("places a measurement stamped after the window's end by the same scale, and drops a mark there", () => {
+    const frame = plotFrame(640, 280, { labels: true, markers: true, axis: true });
+    const x = timeScale(SINCE, NOW, frame.left, frame.right);
+    const svg = draw({
+      series: [hr([point(60, 84, 0), point(-30, 90, 0)])],            // the second is 30 minutes AFTER `until`
+      markers: parseMarkers([marker(-30, "alarm")]), big: true, height: 280,
+    });
+    const [, late] = all(svg, "circle");
+    expect(Number(late.getAttribute("cx"))).toBeCloseTo(x(NOW + 30 * 60_000));
+    expect(Number(late.getAttribute("cx"))).toBeGreaterThan(frame.right);   // past the edge, never clamped onto it
+    expect(all(svg, "[data-marker]")).toHaveLength(0);
+  });
+
+  it("draws two readings at one instant, and two alerts first seen on one reading, each under a key of its own", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const markers = parseMarkers([marker(60, "alarm", "news2"), marker(60, "alarm", "lactate"), marker(60, "antibiotic")]);
+    const svg = draw({ series: [hr([point(60, 84, 0), point(60, 90, 1)])], markers, big: true, height: 280 });
+    expect(all(svg, "circle").map((c) => c.dataset.value)).toEqual(["84", "90"]);
+    expect(all(svg, "[data-marker]").map((m) => m.dataset.marker)).toEqual(["alarm", "alarm", "antibiotic"]);
+    expect(error.mock.calls.flat().join(" ")).not.toMatch(/same key/);
+  });
+});
+
+describe("the trend chart's width", () => {
+  // jsdom has no layout: clientWidth is 0 and there is no ResizeObserver. Both are stood in for here.
+  function measured(initial) {
+    const state = { width: initial, notify: null, disconnect: vi.fn() };
+    vi.spyOn(Element.prototype, "clientWidth", "get").mockImplementation(() => state.width);
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback) { state.notify = callback; }
+      observe() {}
+      disconnect() { state.disconnect(); }
+    });
+    return state;
+  }
+
+  it("measures the box it sits in, so a unit is a pixel, follows it as it resizes and lets go on unmount", () => {
+    const box = measured(480);
+    const { container, unmount } = render(<TrendChart series={[hr([point(60, 84, 0)])]} sinceMs={SINCE} untilMs={NOW} />);
+    const svg = container.querySelector("svg");
+    expect(svg).toHaveAttribute("viewBox", "0 0 480 46");
+    const x480 = timeScale(SINCE, NOW, 2, 478);
+    expect(Number(svg.querySelector("circle").getAttribute("cx"))).toBeCloseTo(x480(NOW - 60 * 60_000));
+    box.width = 300;
+    act(() => box.notify());
+    expect(svg).toHaveAttribute("viewBox", "0 0 300 46");
+    unmount();
+    expect(box.disconnect).toHaveBeenCalled();
+  });
+
+  it("attaches its observer when a window it could not draw becomes one, and lets go when it stops being one", () => {
+    // An answer whose since / until cannot be read draws nothing, so there is no box to measure; the
+    // valid answer after it must find one.
+    const box = measured(480);
+    const series = [hr([point(60, 84, 0)])];
+    const { container, rerender } = render(<TrendChart series={series} sinceMs={Number.NaN} untilMs={Number.NaN} />);
+    expect(container.querySelector("svg")).toBeNull();
+    rerender(<TrendChart series={series} sinceMs={SINCE} untilMs={NOW} />);
+    const svg = container.querySelector("svg");
+    expect(svg).toHaveAttribute("viewBox", "0 0 480 46");
+    box.width = 300;
+    act(() => box.notify());
+    expect(svg).toHaveAttribute("viewBox", "0 0 300 46");
+    rerender(<TrendChart series={series} sinceMs={Number.NaN} untilMs={Number.NaN} />);
+    expect(box.disconnect).toHaveBeenCalled();
+  });
+
+  it("keeps its fallback width while the box has none (hidden, not laid out yet)", () => {
+    measured(0);
+    const { container } = render(<TrendChart series={[hr([point(60, 84, 0)])]} sinceMs={SINCE} untilMs={NOW} />);
+    expect(container.querySelector("svg")).toHaveAttribute("viewBox", "0 0 320 46");
+  });
+});
+```
+
+Write `dashboard/src/live/screens/patient/trends/trendGeometry.test.js` (whole):
+
+```js
+// The trend charts' geometry, without React: every number below is worked out by hand in the
+// comment beside it, so a change to the arithmetic shows up as a change to a number someone wrote.
+import { describe, it, expect } from "vitest";
+import {
+  bandRects, crisp, indexAtTime, linePath, markerMarks, marksAtTime, nearestIndex, ownNormalRect, parseMarkers,
+  parsePoints, plotFrame, tickLabel, timeLabelPlace, timeScale, timeTicks, validWindow, valueDomain, valueExtent,
+  valueResolution, valueScale, valueTickStep, valueTicks,
+} from "./trendGeometry.js";
+import { BANDS } from "./trends.testutil.js";
+
+const same = (v) => v;
+const p = (ms, value) => ({ ms, value });
+
+describe("the frame and the scales", () => {
+  it("leaves the mini chart its whole width, and the big one room for labels, marks and times", () => {
+    expect(plotFrame(320, 46)).toEqual({ left: 2, right: 318, top: 6, bottom: 40, laneY: 53, axisY: 42 });
+    // 280 − 6 − 14 (marks) − 16 (times) = 244; the marks' lane centres at 244 + 6 + 7 = 257.
+    expect(plotFrame(640, 280, { labels: true, markers: true, axis: true }))
+      .toEqual({ left: 34, right: 632, top: 6, bottom: 244, laneY: 257, axisY: 276 });
+  });
+
+  it("maps the window's ends onto the plot's, and a window of no length onto its left edge", () => {
+    expect(timeScale(0, 100, 10, 110)(50)).toBe(60);
+    expect(timeScale(5, 5, 10, 110)(5)).toBe(10);
+  });
+
+  it("spans the data plus 15 % either side, and never a range of its own", () => {
+    expect(valueDomain([60, 80])).toEqual({ lo: 57, hi: 83 });
+    expect(valueDomain([84])).toEqual({ lo: 79.8, hi: 88.2 });          // ±5 % of one value
+    expect(valueDomain([0])).toEqual({ lo: -1, hi: 1 });                // at least ±1
+    expect(valueDomain([Number.NaN, null, undefined])).toBeNull();
+    expect(valueDomain([])).toBeNull();
+  });
+
+  it("puts larger values higher", () => {
+    const y = valueScale({ lo: 0, hi: 100 }, 0, 200);
+    expect([y(0), y(50), y(100)]).toEqual([200, 100, 0]);
+  });
+
+  it("puts a range of no height on the plot's midline instead of dividing by it", () => {
+    expect(valueScale({ lo: 5, hi: 5 }, 0, 20)(5)).toBe(10);
+    expect(valueScale({ lo: 0, hi: Number.NaN }, 0, 20)(3)).toBe(10);
+    expect(valueScale({ lo: 9, hi: 1 }, 0, 20)(3)).toBe(10);
+  });
+
+  it("places a time outside the window by the same scale — past the plot's edge, never clamped onto it", () => {
+    const x = timeScale(0, 100, 10, 110);
+    expect([x(-50), x(150)]).toEqual([-40, 160]);
+  });
+
+  it("calls a window drawable only when both ends are numbers and it does not run backwards", () => {
+    expect(validWindow(0, 100)).toBe(true);
+    expect(validWindow(5, 5)).toBe(true);
+    expect(validWindow(100, 0)).toBe(false);
+    expect(validWindow(Number.NaN, 100)).toBe(false);
+    expect(validWindow(0, Number.NaN)).toBe(false);
+    expect(validWindow(0, Infinity)).toBe(false);
+    expect(validWindow(undefined, 100)).toBe(false);
+  });
+
+  it("snaps a 1-px line to the centre of the pixel row it falls in, so it is not smeared over two", () => {
+    expect([crisp(9.92), crisp(19.05), crisp(10.5), crisp(10)]).toEqual([9.5, 19.5, 10.5, 10.5]);
+  });
+});
+
+describe("the bands", () => {
+  // Heart rate on 30–140, one pixel a beat, 140 at the top: y(v) = 140 − v (exact in binary).
+  const domain = { lo: 30, hi: 140 };
+  const y = (v) => 140 - v;
+
+  it("draws each row the server scores 1 or more, clipped to the domain, in the tone of its points", () => {
+    expect(bandRects(BANDS.heart_rate, domain, y, 0, 300)).toEqual([
+      { x: 0, y: 100, w: 300, h: 10, tone: "crit", points: 3 }, // ≤ 40, clipped at 30
+      { x: 0, y: 90, w: 300, h: 10, tone: "mid", points: 1 }, //  40–50
+      { x: 0, y: 30, w: 300, h: 20, tone: "mid", points: 1 }, //  90–110
+      { x: 0, y: 10, w: 300, h: 20, tone: "mid", points: 2 }, //  110–130
+      { x: 0, y: 0, w: 300, h: 10, tone: "crit", points: 3 }, //  > 130, clipped at 140
+    ]);
+  });
+
+  it("tints nothing a row of 0 covers, and nothing outside the domain", () => {
+    expect(bandRects(BANDS.heart_rate, { lo: 60, hi: 80 }, valueScale({ lo: 60, hi: 80 }, 0, 20), 0, 300)).toEqual([]);
+    expect(bandRects(null, domain, y, 0, 300)).toEqual([]);
+  });
+
+  it("draws a row red because the SERVER scored it 3, whatever the values under it look like", () => {
+    const [rect] = bandRects([{ low: null, high: null, points: 3 }], { lo: 60, hi: 80 }, valueScale({ lo: 60, hi: 80 }, 0, 20), 0, 300);
+    expect(rect).toEqual({ x: 0, y: 0, w: 300, h: 20, tone: "crit", points: 3 });
+  });
+
+  it("draws the patient's charted normal where the clinician put it", () => {
+    const own = (v) => 120 - v;                                        // 90–120 on 0–30 px
+    expect(ownNormalRect({ low: 100, high: 115 }, { lo: 90, hi: 120 }, own, 0, 300)).toEqual({ x: 0, y: 5, w: 300, h: 15 });
+    expect(ownNormalRect(null, { lo: 90, hi: 120 }, own, 0, 300)).toBeNull();
+    expect(ownNormalRect({ low: 200, high: 210 }, { lo: 90, hi: 120 }, own, 0, 300)).toBeNull();
+  });
+});
+
+describe("the line, the labels and the marks", () => {
+  it("joins two or more measurements, never one, and breaks where a value is not a number", () => {
+    expect(linePath([p(0, 10), p(50, 20)], same, same)).toBe("M0.0,10.0L50.0,20.0");
+    expect(linePath([p(0, 10)], same, same)).toBe("");
+    expect(linePath([p(0, 10), p(10, Number.NaN), p(20, 30), p(30, 40)], same, same)).toBe("M0.0,10.0M20.0,30.0L30.0,40.0");
+  });
+
+  it("labels values at round steps inside the domain: 1, 2, 5 or 10 × 10ⁿ, the nearest (d3's rule)", () => {
+    const ticksOf = (domain) => valueTicks(domain).ticks;
+    expect(ticksOf({ lo: 0, hi: 100 })).toEqual([0, 20, 40, 60, 80, 100]);         // raw 25 → 20, not 25
+    expect(ticksOf({ lo: 57, hi: 83 })).toEqual([60, 65, 70, 75, 80]);             // raw 6.5 → 5
+    expect(ticksOf({ lo: 36.1, hi: 37.9 })).toEqual([36.5, 37, 37.5]);             // raw 0.45 → 0.5
+    expect(valueTicks(null)).toEqual({ step: null, ticks: [] });
+    expect(valueTicks({ lo: 5, hi: 5 }, 4, { extent: { lo: 5, hi: 5 } })).toEqual({ step: null, ticks: [] });   // a range of no height
+    expect(valueTickStep({ lo: 0, hi: 0 })).toBeNull();
+  });
+
+  it("returns the step it labelled at with the labels, so a caller computes it once", () => {
+    expect(valueTicks({ lo: 57, hi: 83 }).step).toBe(5);
+    expect(valueTicks({ lo: 57, hi: 83 }).step).toBe(valueTickStep({ lo: 57, hi: 83 }));
+  });
+
+  it("labels systolic 60–220 every 50 — not only 100 and 200 — and only inside the data", () => {
+    const domain = valueDomain([60, 220]);                                          // 36–244
+    expect(valueTickStep(domain)).toBe(50);
+    expect(valueTicks(domain).ticks).toEqual([50, 100, 150, 200]);
+    expect(valueTicks(domain, 4, { extent: valueExtent([60, 220]) }).ticks).toEqual([100, 150, 200]);
+  });
+
+  it("never labels a value past the data: no SpO₂ 105, no lactate −0.5 in the chart's margin", () => {
+    const spo2 = [92, 99, 100];
+    expect(Math.max(...valueTicks(valueDomain(spo2), 4, { extent: valueExtent(spo2) }).ticks)).toBeLessThanOrEqual(100);
+    const lactate = [0.5, 1, 4.1];
+    expect(Math.min(...valueTicks(valueDomain(lactate), 4, { extent: valueExtent(lactate) }).ticks)).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it("labels a single reading with its own value, written at the DATA's resolution — not at a step it fell between", () => {
+    const label = (values) => {
+      const { ticks, step } = valueTicks(valueDomain(values), 4, { extent: valueExtent(values), resolution: valueResolution(values) });
+      return ticks.map((v) => tickLabel(v, step));
+    };
+    // The round steps (2, 0.5, 0.2) all fall to one side of the value: without this the chart has no number on it.
+    expect(label([85])).toEqual(["85"]);
+    expect(label([4.1])).toEqual(["4.1"]);
+    expect(label([37.4])).toEqual(["37.4"]);
+    expect(label([100])).toEqual(["100"]);                                          // SpO₂ 100: a step lands on it, and not past it
+    expect(label([0])).toEqual(["0"]);                                              // lactate 0: the margin is −1…1, the label is 0
+    expect(label([84, 84, 84])).toEqual(["84"]);                                    // repeated, still one value
+  });
+
+  it("labels both ends of an extent that no round step falls inside, written at the data's resolution", () => {
+    // 80–90 asks for steps of 2 (raw 2.5); 82.6–83.4 holds no multiple of 2. (A range of two or more
+    // measured values always holds a step: the margin makes the domain wider than the step.)
+    const gap = valueTicks({ lo: 80, hi: 90 }, 4, { extent: { lo: 82.6, hi: 83.4 }, resolution: 0.1 });
+    expect(gap.ticks).toEqual([82.6, 83.4]);
+    expect(gap.step).toBe(0.1);
+    // Where a step does fall inside, only the steps are labelled.
+    expect(valueTicks({ lo: 80, hi: 90 }, 4, { extent: { lo: 81, hi: 87 }, resolution: 0.1 }).ticks).toEqual([82, 84, 86]);
+  });
+
+  it("labels no finer than the data is measured, with as many decimals as the step and no more", () => {
+    const temps = [36.9, 37, 37.1];
+    expect(valueResolution(temps)).toBeCloseTo(0.1);
+    expect(valueResolution([84, 90])).toBe(1);
+    const domain = valueDomain(temps);                                              // 36.87–37.13: raw 0.065
+    expect(valueTickStep(domain)).toBeCloseTo(0.05);                                // what the range alone asks for
+    expect(valueTickStep(domain, 4, valueResolution(temps))).toBeCloseTo(0.1);      // what a tenth-measured value allows
+    expect(tickLabel(37, 0.1)).toBe("37.0");
+    expect(tickLabel(36.5, 0.5)).toBe("36.5");
+    expect(tickLabel(150, 50)).toBe("150");
+  });
+
+  it("keeps a wide range to a handful of round labels inside it (systolic 60–220 spans 36–244)", () => {
+    const domain = valueDomain([60, 220]);
+    const { ticks } = valueTicks(domain);
+    expect(domain).toEqual({ lo: 36, hi: 244 });
+    expect(ticks.length).toBeGreaterThanOrEqual(2);
+    expect(ticks.length).toBeLessThanOrEqual(6);
+    expect(ticks.every((v) => v >= domain.lo && v <= domain.hi && v % 10 === 0)).toBe(true);
+    expect(ticks).toEqual([...ticks].sort((a, b) => a - b));
+  });
+
+  it("labels no time at all — and does not hang — for a window that is not a window", () => {
+    expect(timeTicks(Number.NaN, 5, 24)).toEqual([]);
+    expect(timeTicks(0, Number.NaN, 24)).toEqual([]);
+    expect(timeTicks(0, Infinity, 24)).toEqual([]);
+    expect(timeTicks(undefined, undefined, 24)).toEqual([]);
+    expect(timeTicks(10, 5, 24)).toEqual([]);                          // until before since
+    expect(timeTicks(0, 5, Number.NaN)).toEqual([]);                   // nor a step it cannot work out
+  });
+
+  it("labels time on whole local hours: every hour, every 4 hours, every 12 hours", () => {
+    const since = new Date(2026, 9, 19, 3, 20).getTime();
+    const hoursOf = (ticks) => ticks.map((ms) => new Date(ms).getHours());
+    expect(hoursOf(timeTicks(since, since + 6 * 3_600_000, 6))).toEqual([4, 5, 6, 7, 8, 9]);
+    expect(hoursOf(timeTicks(since, since + 24 * 3_600_000, 24))).toEqual([4, 8, 12, 16, 20, 0]);
+    expect(hoursOf(timeTicks(since, since + 72 * 3_600_000, 72))).toEqual([12, 0, 12, 0, 12, 0]);
+  });
+
+  it("keeps the marks inside the window, with their x", () => {
+    expect(markerMarks([{ ms: 10, kind: "alarm" }, { ms: 200, kind: "antibiotic" }], same, 0, 100))
+      .toEqual([{ ms: 10, kind: "alarm", x: 10 }]);
+  });
+
+  it("finds the measurement nearest the pointer, the later one on a tie, none in an empty chart", () => {
+    const points = [p(0, 1), p(10, 2), p(20, 3), p(25, Number.NaN)];
+    expect(nearestIndex(points, same, 14)).toBe(1);
+    expect(nearestIndex(points, same, 15)).toBe(2);
+    expect(nearestIndex(points, same, 26)).toBe(2);                     // the NaN reading is not one
+    expect(nearestIndex([], same, 5)).toBe(-1);
+  });
+
+  it("names EVERY mark within one pixel's worth of milliseconds of an instant, and never on a chart of no width", () => {
+    // Two alert kinds first detected on one reading share an instant: the readout must name both.
+    const marks = [{ ms: 1_000, kind: "alarm", label: "news2" }, { ms: 1_000, kind: "alarm", label: "sepsis" }];
+    expect(marksAtTime(marks, 1_090, 100)).toEqual(marks);
+    expect(marksAtTime(marks, 1_200, 100)).toEqual([]);
+    expect(marksAtTime(marks, 1_000, 0)).toEqual([]);
+  });
+
+  it("finds a reading by its exact instant — the later one when two share it — and none when it slid out", () => {
+    const points = [p(10, 1), p(20, 2), p(20, 3), p(30, Number.NaN)];
+    expect(indexAtTime(points, 20)).toBe(2);
+    expect(indexAtTime(points, 10)).toBe(0);
+    expect(indexAtTime(points, 30)).toBe(3);                            // a missing value is still that instant
+    expect(indexAtTime(points, 15)).toBe(-1);
+    expect(indexAtTime([], 10)).toBe(-1);
+    expect(indexAtTime(undefined, 10)).toBe(-1);
+  });
+
+  it("prefers the last DRAWABLE reading when two share an instant — not a valueless twin stamped after it", () => {
+    const NaN_ = Number.NaN;
+    expect(indexAtTime([p(10, 1), p(20, 2), p(20, NaN_)], 20)).toBe(1);
+    expect(indexAtTime([p(20, 2), p(20, 3), p(20, NaN_)], 20)).toBe(1);   // the last of the drawable ones
+    expect(indexAtTime([p(20, NaN_), p(20, 3)], 20)).toBe(1);
+    expect(indexAtTime([p(20, NaN_), p(20, NaN_)], 20)).toBe(1);          // none drawable: still that instant, the later
+  });
+
+  it("places a time label centred on its instant, unless that would run it past an edge", () => {
+    expect(timeLabelPlace(300, "12:00", 640)).toEqual({ x: 300, anchor: "middle" });
+    expect(timeLabelPlace(630, "12:00", 640)).toEqual({ x: 640, anchor: "end" });              // 5 × 6.5 / 2 = 16.25 px
+    expect(timeLabelPlace(600, "20.10 12:00", 640)).toEqual({ x: 600, anchor: "middle" });     // 72 h: 11 × 6.5 / 2 = 35.75 px
+    expect(timeLabelPlace(610, "20.10 12:00", 640)).toEqual({ x: 640, anchor: "end" });
+    expect(timeLabelPlace(4, "12:00", 640)).toEqual({ x: 0, anchor: "start" });
+  });
+});
+
+describe("reading the endpoint's rows", () => {
+  it("keeps every readable instant, a missing value as NaN, and the server's points only when whole", () => {
+    expect(parsePoints([["2026-10-19T09:00:00Z", 84, 0], ["bad", 1, 0], ["2026-10-19T10:00:00Z", null, 2.5], "nope"])).toEqual([
+      { ms: Date.parse("2026-10-19T09:00:00Z"), iso: "2026-10-19T09:00:00Z", value: 84, points: 0 },
+      { ms: Date.parse("2026-10-19T10:00:00Z"), iso: "2026-10-19T10:00:00Z", value: Number.NaN, points: null },
+    ]);
+    expect(parsePoints(undefined)).toEqual([]);
+  });
+
+  it("keeps every mark with a readable instant", () => {
+    expect(parseMarkers([{ ts: "2026-10-19T09:00:00Z", kind: "alarm", label: "news2" }, { ts: "x", kind: "alarm" }])).toEqual([
+      { ms: Date.parse("2026-10-19T09:00:00Z"), iso: "2026-10-19T09:00:00Z", kind: "alarm", label: "news2" },
+    ]);
+  });
+});
+```
+
+And in `trends/TrendCard.test.jsx` the mini chart stays decoration inside the card's button (X28) — replace:
+
+```jsx
+  it("draws no NEWS2 tint and no own-normal band behind the pressure card's two series (X26)", () => {
+```
+
+with:
+
+```jsx
+  it("adds no tab stop and no role of its own inside the card's button — the button is the one control", () => {
+    // The big chart is an application with a tab stop; the mini chart in the card must stay hidden decoration.
+    const card = show(PRESSURE, [
+      channel("sbp", [point(90, 118, 0), point(30, 112, 0)]),
+      channel("map", [point(90, 80), point(30, 76)]),
+    ], { onOpen: () => {} });
+    expect(card.tagName).toBe("BUTTON");
+    const svg = card.querySelector("svg");
+    expect(svg).toHaveAttribute("aria-hidden", "true");
+    expect(svg).toHaveAttribute("focusable", "false");
+    expect(svg).not.toHaveAttribute("role");
+    expect(svg).not.toHaveAttribute("aria-roledescription");
+    expect(card.querySelectorAll("[tabindex]")).toHaveLength(0);
+    expect(card.querySelectorAll("[role='application']")).toHaveLength(0);
+  });
+
+  it("draws no NEWS2 tint and no own-normal band behind the pressure card's two series (X26)", () => {
+```
+
+Run them: `TrendModal.test.jsx` → `Tests  39 failed | 14 passed (53)` (`Unable to find an accessible element with the role "application"` — the chart is an `img`, no keys, no table, no notes, no own times); `trendText.test.js` → `Failed to resolve import "./trendText.js"`; `TrendChart.test.jsx` → `Tests  1 failed | 21 passed (22)`; `trendGeometry.test.js` → `Tests  1 failed | 30 passed (31)` (`indexAtTime` takes a valueless twin); `TrendCard.test.jsx` → `Tests  26 passed (26)` (the guard holds already).
+
+- [ ] **Step 2: The words.** Two keys in four languages — the chart's role description (X28) and the table row's own reason for a reading NEWS2 did not score — four Edits in `dashboard/src/live/i18n/strings/patient.js`:
+
+In `tr`, replace:
+
+```js
+    trendsPointsUnknownSr: "NEWS2 puanı yok: son ölçüm puanlanmadı",
+    trendsOwnNormalPill: "Hastanın normalinde",
+    trendsOpen: "{channel}: büyük grafiği aç",
+    trendsChartLabel: "{channel}: son {hours} saat, çizilen nokta {count}",
+    trendsThinned: "{channel} seyreltildi: {total} noktadan {kept}",
+```
+
+with:
+
+```js
+    trendsPointsUnknownSr: "NEWS2 puanı yok: son ölçüm puanlanmadı",
+    trendsPointsUnknownRowSr: "NEWS2 puanı yok: bu ölçüm puanlanmadı",
+    trendsOwnNormalPill: "Hastanın normalinde",
+    trendsOpen: "{channel}: büyük grafiği aç",
+    trendsChartLabel: "{channel}: son {hours} saat, çizilen nokta {count}",
+    trendsChartRole: "grafik",
+    trendsThinned: "{channel} seyreltildi: {total} noktadan {kept}",
+```
+
+In `az`, replace:
+
+```js
+    trendsPointsUnknownSr: "NEWS2 balı yoxdur: son ölçmə qiymətləndirilməyib",
+    trendsOwnNormalPill: "Xəstənin normasında",
+    trendsOpen: "{channel}: böyük qrafiki aç",
+    trendsChartLabel: "{channel}: son {hours} saat, çəkilən nöqtə {count}",
+    trendsThinned: "{channel} seyrəldildi: {total} nöqtədən {kept}",
+```
+
+with:
+
+```js
+    trendsPointsUnknownSr: "NEWS2 balı yoxdur: son ölçmə qiymətləndirilməyib",
+    trendsPointsUnknownRowSr: "NEWS2 balı yoxdur: bu ölçmə qiymətləndirilməyib",
+    trendsOwnNormalPill: "Xəstənin normasında",
+    trendsOpen: "{channel}: böyük qrafiki aç",
+    trendsChartLabel: "{channel}: son {hours} saat, çəkilən nöqtə {count}",
+    trendsChartRole: "qrafik",
+    trendsThinned: "{channel} seyrəldildi: {total} nöqtədən {kept}",
+```
+
+In `ru`, replace:
+
+```js
+    trendsPointsUnknownSr: "Нет баллов NEWS2: последнее измерение не оценено",
+    trendsOwnNormalPill: "В пределах нормы пациента",
+    trendsOpen: "{channel}: открыть большой график",
+    trendsChartLabel: "{channel}: последние {hours} ч, точек на графике — {count}",
+    trendsThinned: "{channel}: прорежено, показано {kept} из {total}",
+```
+
+with:
+
+```js
+    trendsPointsUnknownSr: "Нет баллов NEWS2: последнее измерение не оценено",
+    trendsPointsUnknownRowSr: "Нет баллов NEWS2: это измерение не оценено",
+    trendsOwnNormalPill: "В пределах нормы пациента",
+    trendsOpen: "{channel}: открыть большой график",
+    trendsChartLabel: "{channel}: последние {hours} ч, точек на графике — {count}",
+    trendsChartRole: "график",
+    trendsThinned: "{channel}: прорежено, показано {kept} из {total}",
+```
+
+In `en`, replace:
+
+```js
+    trendsPointsUnknownSr: "No NEWS2 points: the last reading was not scored",
+    trendsOwnNormalPill: "Within the patient's normal",
+    trendsOpen: "{channel}: open the large chart",
+    trendsChartLabel: "{channel}: last {hours} h, {count} points drawn",
+    trendsThinned: "{channel} thinned: {kept} of {total} points shown",
+```
+
+with:
+
+```js
+    trendsPointsUnknownSr: "No NEWS2 points: the last reading was not scored",
+    trendsPointsUnknownRowSr: "No NEWS2 points: this reading was not scored",
+    trendsOwnNormalPill: "Within the patient's normal",
+    trendsOpen: "{channel}: open the large chart",
+    trendsChartLabel: "{channel}: last {hours} h, {count} points drawn",
+    trendsChartRole: "chart",
+    trendsThinned: "{channel} thinned: {kept} of {total} points shown",
+```
+
+Then Write `dashboard/src/live/screens/patient/trends/trendText.js` (Task 12's `whenText` and `markText` move here from `TrendModal.jsx`, beside `markBeside`, `valueBeside` — a MAP read at another minute prints its own time, each number with its unit (X30) — and `pointsText`):
 
 ```js
 // src/live/screens/patient/trends/trendText.js — how the big chart's axis, its readout and its table
@@ -8192,109 +9343,669 @@ export function markBeside(t, mark, readingMs, hours) {
   return own === whenText(readingMs, hours) ? markText(t, mark) : `${markText(t, mark)} (${own})`;
 }
 
+/** A value as the readout names it beside the reading under the cursor ("64 mmHg", the text already
+ *  written): followed by its OWN time in parentheses when that reads differently. The second series of a
+ *  card (MAP) is read at the nearest reading within one pixel column of the first — seconds, perhaps a
+ *  minute, apart — and the readout must not give it the first one's time. */
+export function valueBeside(text, readingMs, atMs, hours) {
+  const own = whenText(readingMs, hours);
+  return own === whenText(atMs, hours) ? text : `${text} (${own})`;
+}
+
 /** The engine's NEWS2 points for one reading, as a column prints them: "+3", "0", or "—" for none. */
 export const pointsText = (points) => (Number.isInteger(points) ? (points > 0 ? `+${points}` : "0") : "—");
 ```
 
-- [ ] **Step 3: The chart takes the keyboard, and writes its time labels with the same words.** Six Edits in `trends/TrendChart.jsx`.
+- [ ] **Step 3: The geometry and the chart.** Write `dashboard/src/live/screens/patient/trends/trendGeometry.js` (whole; `indexAtTime` prefers the last DRAWABLE reading at an instant):
 
-(a) Replace:
+```js
+// src/live/screens/patient/trends/trendGeometry.js — where things go on a trend chart. Pure: no
+// React, no DOM, and no clock but the instants it is handed.
+//
+// NOTHING HERE DECIDES ANYTHING CLINICAL. Every band edge and every point total comes from the
+// engine (GET /patients/{id}/trends); this file maps them to pixels and does nothing else. The value
+// range a chart spans is the data's own (plus a margin, plus the patient's charted normal so a band a
+// clinician just entered is always on the chart) — never a "normal range" of its own. A band is drawn
+// where the server put it, clipped to that range, in the tone of the server's points (`news2Tone`,
+// the one mapping the card's frame uses too).
+import { news2Tone } from "./news2Tone.js";
 
-```jsx
-import { ddmm, hhmm } from "../../../i18n/dates.js";
+// The plot's margins, in pixels. The viewBox is the measured width, so a unit is a pixel.
+const LABEL_PAD = 34;       // room for the value labels on the left, big chart only
+const LABEL_RIGHT_PAD = 8;  // the big chart's right margin, so its last time label is not cut off
+const EDGE_PAD = 2;         // the mini chart's side margins, so an edge dot is not cut off
+const TOP_PAD = 6;
+const BOTTOM_PAD = 6;
+const AXIS_BASELINE = 4;    // the time labels' baseline above the chart's bottom edge
+export const MARKER_LANE = 14;
+export const AXIS_LANE = 16;
+// The time-label step per window: hourly over 6 h, every 4 h over 24 h, every 12 h over 3 days.
+const TICK_HOURS = { 6: 1, 24: 4, 72: 12 };
+// A value label's step is 1, 2, 5 or 10 × 10ⁿ — the one NEAREST the raw step on a log scale, by d3's
+// thresholds (√50, √10, √2). Rounding up to the next nice step instead could double it: systolic
+// 60–220 then got only two labels, 100 and 200.
+const STEP_E10 = Math.sqrt(50);
+const STEP_E5 = Math.sqrt(10);
+const STEP_E2 = Math.sqrt(2);
+// A time label's width, estimated: 10-px digits at up to 1.12× (the --fs setting) are ≈ 6.5 px each.
+const TIME_LABEL_CHAR_PX = 6.5;
+
+/** The plot area of a `width` × `height` chart. The big chart has value labels on the left, a lane
+ *  under the plot for the ▲/◆ marks, and one under that for the time labels. */
+export function plotFrame(width, height, { labels = false, markers = false, axis = false } = {}) {
+  const left = labels ? LABEL_PAD : EDGE_PAD;
+  const right = Math.max(left + 1, width - (labels ? LABEL_RIGHT_PAD : EDGE_PAD));
+  const top = TOP_PAD;
+  const bottom = Math.max(top + 1, height - BOTTOM_PAD - (markers ? MARKER_LANE : 0) - (axis ? AXIS_LANE : 0));
+  return { left, right, top, bottom, laneY: bottom + BOTTOM_PAD + MARKER_LANE / 2, axisY: height - AXIS_BASELINE };
+}
+
+/** Whether a window can be drawn: both ends are numbers and it does not run backwards. A window of no
+ *  length is drawable (everything lands on its left edge); one with an end that is not a number is
+ *  not — every x would be NaN, or, worse, every dot would pile up on the left edge. */
+export function validWindow(sinceMs, untilMs) {
+  return Number.isFinite(sinceMs) && Number.isFinite(untilMs) && untilMs >= sinceMs;
+}
+
+/** The centre of the pixel row (or column) a coordinate falls in. A 1-px line drawn on a whole number
+ *  straddles two rows and renders as two blurred ones; drawn on the centre it is one crisp one. */
+export const crisp = (v) => Math.floor(v) + 0.5;
+
+/** The endpoint's `[iso, value, points]` rows as `{ ms, iso, value, points }`, in their order. A row
+ *  whose instant cannot be read is dropped (it could be drawn nowhere); a value that is not a number
+ *  is kept as NaN, which breaks the line there. */
+export function parsePoints(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((row) => {
+    if (!Array.isArray(row)) return [];
+    const ms = Date.parse(row[0]);
+    if (!Number.isFinite(ms)) return [];
+    return [{ ms, iso: row[0], value: typeof row[1] === "number" ? row[1] : Number.NaN, points: Number.isInteger(row[2]) ? row[2] : null }];
+  });
+}
+
+/** The response's markers as `{ ms, iso, kind, label }`; unreadable instants dropped. */
+export function parseMarkers(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((m) => {
+    const ms = Date.parse(m?.ts);
+    return Number.isFinite(ms) ? [{ ms, iso: m.ts, kind: m.kind, label: m.label }] : [];
+  });
+}
+
+/** [sinceMs, untilMs] onto [left, right]. */
+export function timeScale(sinceMs, untilMs, left, right) {
+  const span = untilMs - sinceMs;
+  return (ms) => left + (span > 0 ? ((ms - sinceMs) / span) * (right - left) : 0);
+}
+
+/** The value range drawn: the finite values' own, with 15 % either side (±5 % of the value, at least
+ *  1, when they are all one number). Null when there is no finite value at all. */
+export function valueDomain(values) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of values) {
+    if (Number.isFinite(v)) {
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+  }
+  if (lo > hi) return null;
+  const margin = hi > lo ? (hi - lo) * 0.15 : Math.max(Math.abs(hi) * 0.05, 1);
+  return { lo: lo - margin, hi: hi + margin };
+}
+
+/** The domain onto [bottom, top] (larger values higher). A range with no height — `valueDomain` never
+ *  gives one, but a caller's own might — is drawn on the midline instead of dividing by zero. */
+export function valueScale(domain, top, bottom) {
+  const span = domain.hi - domain.lo;
+  if (!(span > 0)) return () => (top + bottom) / 2;
+  return (v) => bottom - ((v - domain.lo) / span) * (bottom - top);
+}
+
+function clip(low, high, domain, y, left, right) {
+  const a = Math.max(low ?? -Infinity, domain.lo);
+  const b = Math.min(high ?? Infinity, domain.hi);
+  if (!(b > a)) return null;
+  return { x: left, y: y(b), w: right - left, h: y(a) - y(b) };
+}
+
+/** The NEWS2 rows that score at least 1, as rectangles clipped to the domain, each in the tone of the
+ *  SERVER's points for it. A row scoring 0 is not tinted; a row outside the domain is not drawn. */
+export function bandRects(rows, domain, y, left, right) {
+  if (!Array.isArray(rows) || !domain) return [];
+  return rows.flatMap((row) => {
+    const tone = news2Tone(row?.points);
+    const rect = tone ? clip(row.low, row.high, domain, y, left, right) : null;
+    return rect ? [{ ...rect, tone, points: row.points }] : [];
+  });
+}
+
+/** The patient's charted normal as a rectangle, or null. */
+export function ownNormalRect(own, domain, y, left, right) {
+  if (!own || !domain || !Number.isFinite(own.low) || !Number.isFinite(own.high)) return null;
+  return clip(own.low, own.high, domain, y, left, right);
+}
+
+/** The connector through the points: an SVG path, broken wherever a value is not a number. Empty
+ *  when fewer than two points can be drawn — one measurement is a dot, never a line. */
+export function linePath(points, x, y) {
+  let d = "";
+  let pen = false;
+  let drawn = 0;
+  for (const p of points) {
+    if (!Number.isFinite(p.ms) || !Number.isFinite(p.value)) {
+      pen = false;
+      continue;
+    }
+    d += `${pen ? "L" : "M"}${x(p.ms).toFixed(1)},${y(p.value).toFixed(1)}`;
+    pen = true;
+    drawn += 1;
+  }
+  return drawn >= 2 ? d : "";
+}
+
+/** The finite values' own range, `{ lo, hi }`, or null. */
+export function valueExtent(values) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of values ?? []) {
+    if (Number.isFinite(v)) {
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+  }
+  return lo > hi ? null : { lo, hi };
+}
+
+/** The data's resolution: the coarsest power of ten every finite value is a multiple of (to three
+ *  decimals) — 1 for a pulse, 0.1 for a temperature measured to a tenth. */
+export function valueResolution(values) {
+  let decimals = 0;
+  for (const v of values ?? []) {
+    if (!Number.isFinite(v)) continue;
+    while (decimals < 3 && Math.abs(Number(v.toFixed(decimals)) - v) > 1e-9) decimals += 1;
+  }
+  return 10 ** -decimals;
+}
+
+/** The step of the value labels: about `count` of them over the domain, at 1, 2, 5 or 10 × 10ⁿ —
+ *  the nearest (d3's rule) — and never finer than the data's own `resolution`: a temperature measured
+ *  to 0.1 is not labelled to 0.05. Null for no domain, or one of no height. */
+export function valueTickStep(domain, count = 4, resolution = 0) {
+  if (!domain || !(domain.hi > domain.lo)) return null;
+  const raw = (domain.hi - domain.lo) / count;
+  const power = Math.floor(Math.log10(raw));
+  const error = raw / 10 ** power;
+  const factor = error >= STEP_E10 ? 10 : error >= STEP_E5 ? 5 : error >= STEP_E2 ? 2 : 1;
+  return Math.max(factor * 10 ** power, resolution);
+}
+
+/** The value labels: `{ step, ticks }` — `ticks` the values to label, `step` what to write them at
+ *  (`tickLabel(v, step)`), so the caller never works the step out a second time.
+ *
+ *  The ticks are round values at `valueTickStep`. With `extent` — the data's own range — only those
+ *  inside it: the domain's margin is the chart's, not the patient's, and a label past the data names a
+ *  value nobody measured (SpO₂ 105, lactate −0.5). Clamping to a "possible" range instead would be a
+ *  range the browser holds; there is none here.
+ *
+ *  When no round value falls inside the extent — a lone reading between two steps — the extent's own
+ *  value(s) are labelled instead (both ends when they differ), written at the DATA's `resolution`,
+ *  so a chart with one measurement still has a number on it: "85", "4.1", "37.4". */
+export function valueTicks(domain, count = 4, { extent = null, resolution = 0 } = {}) {
+  const step = valueTickStep(domain, count, resolution);
+  if (!step) return { step: null, ticks: [] };
+  const lo = extent ? Math.max(domain.lo, extent.lo) : domain.lo;
+  const hi = extent ? Math.min(domain.hi, extent.hi) : domain.hi;
+  const ticks = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) ticks.push(Number(v.toFixed(6)));
+  if (ticks.length > 0 || !extent) return { step, ticks };
+  return { step: resolution > 0 ? resolution : step, ticks: extent.hi > extent.lo ? [extent.lo, extent.hi] : [extent.lo] };
+}
+
+/** A value label: as many decimals as its step has, and no more ("37.5", never "37.50"). */
+export function tickLabel(v, step) {
+  const decimals = step > 0 ? Math.min(3, Math.max(0, -Math.floor(Math.log10(step) + 1e-9))) : 0;
+  return v.toFixed(decimals);
+}
+
+/** The time labels: whole local hours on the window's step (the browser's zone is the ward's). None
+ *  for a window that is not a window — `new Date(NaN).getHours()` is NaN, and the search below would
+ *  never end. */
+export function timeTicks(sinceMs, untilMs, hours) {
+  if (!validWindow(sinceMs, untilMs)) return [];
+  const step = TICK_HOURS[hours] ?? Math.max(1, Math.round(hours / 6));
+  if (!Number.isFinite(step)) return [];
+  const at = new Date(sinceMs);
+  at.setMinutes(0, 0, 0);
+  while (at.getTime() < sinceMs || at.getHours() % step !== 0) at.setHours(at.getHours() + 1);
+  const out = [];
+  for (; at.getTime() <= untilMs; at.setHours(at.getHours() + step)) out.push(at.getTime());
+  return out;
+}
+
+/** Where a time label goes on a chart `width` wide: centred on its instant, unless that runs it past
+ *  an edge — then anchored to that edge, so "dd.mm HH:MM" at 72 h is never cut off. */
+export function timeLabelPlace(x, text, width) {
+  const half = (String(text).length * TIME_LABEL_CHAR_PX) / 2;
+  if (x + half > width) return { x: width, anchor: "end" };
+  if (x - half < 0) return { x: 0, anchor: "start" };
+  return { x, anchor: "middle" };
+}
+
+/** The marks inside the window, with their x. */
+export function markerMarks(markers, x, sinceMs, untilMs) {
+  return (markers ?? []).filter((m) => m.ms >= sinceMs && m.ms <= untilMs).map((m) => ({ ...m, x: x(m.ms) }));
+}
+
+/** The index of the drawable point nearest `px` in time (the later one on a tie), or -1. */
+export function nearestIndex(points, x, px) {
+  let best = -1;
+  let distance = Infinity;
+  points.forEach((p, i) => {
+    if (!Number.isFinite(p.ms) || !Number.isFinite(p.value)) return;
+    const d = Math.abs(x(p.ms) - px);
+    if (d <= distance) {
+      best = i;
+      distance = d;
+    }
+  });
+  return best;
+}
+
+/** EVERY mark within one pixel of an instant, in their order — two alert kinds can be first detected on
+ *  one reading, and the readout must name both. The caller holds the instant (the dialog's cursor) and
+ *  the chart's milliseconds per pixel. None on a chart of no width. */
+export function marksAtTime(markers, ms, msPerPx) {
+  if (!(msPerPx > 0) || !Number.isFinite(ms)) return [];
+  return (markers ?? []).filter((m) => Math.abs(m.ms - ms) <= msPerPx);
+}
+
+/** The index of the reading stamped exactly `ms` — the later one when two share the instant, as
+ *  `nearestIndex` picks on a tie, and the last one that HAS a value (a valueless twin stamped after it
+ *  is not "the" reading; the chart draws no dot for it) — or -1. When none at that instant has a value
+ *  the later one still is that instant. A reading is found by WHEN it was taken, not by its place in
+ *  the list: a poll that slides the window moves every index. */
+export function indexAtTime(points, ms) {
+  const list = points ?? [];
+  let valueless = -1;
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (list[i].ms !== ms) continue;
+    if (Number.isFinite(list[i].value)) return i;
+    if (valueless < 0) valueless = i;
+  }
+  return valueless;
+}
 ```
 
-with:
+Write `dashboard/src/live/screens/patient/trends/TrendChart.jsx` (whole; a chart that takes ← → Home End is `role="application"` with `aria-roledescription` (X28) — NVDA and JAWS stay in browse mode over an `img` and the keys never arrive — and is no tab stop when its first series has nothing to step to; the mini chart stays `aria-hidden`; its time labels read `whenText` from `trendText.js`):
 
 ```jsx
+// src/live/screens/patient/trends/TrendChart.jsx — one card's chart, small (in the card) or big (in
+// the dialog). It draws what the engine sent and nothing else:
+//   * the NEWS2 rows the server scored 1–3, tinted by the server's points (`news2Tone`), and the
+//     patient's charted normal, tinted and edged with a dashed line (so it is not told by colour);
+//   * a DOT per measurement, and between two measurements a DASHED line — an interval, never a
+//     measurement (the legend says so); one measurement is a dot and no line;
+//   * on the big chart, the value and time labels, and ▲ (alarm, `--crit`) and ◆ (antibiotic,
+//     `--pri`) in a lane of their own under the plot, never over a band (tokens.test.js holds both).
+// The series' colour is its channel's identity colour (`vitals.js`), through `currentColor`; MAP's dots
+// are hollow. Every colour is a token class; none is written here.
+//
+// A window that is not a window (an end that is not a number, an end before the start) draws NOTHING:
+// there is nowhere to put a measurement, and a chart that piles every dot on its left edge would say
+// something false. The card's text is the equivalent either way.
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FOCUS_RING } from "../../../ui/focus.js";
-```
-
-(b) Replace:
-
-```jsx
-} from "./trendGeometry.js";
-```
-
-with:
-
-```jsx
+import {
+  bandRects, crisp, linePath, markerMarks, nearestIndex, ownNormalRect, plotFrame, tickLabel, timeLabelPlace,
+  timeScale, timeTicks, validWindow, valueDomain, valueExtent, valueResolution, valueScale, valueTicks,
 } from "./trendGeometry.js";
 import { whenText } from "./trendText.js";
-```
 
-(c) Replace:
+const BAND_FILL = { mid: "fill-band-mid", crit: "fill-band-crit" };
+const drawable = (p) => Number.isFinite(p.ms) && Number.isFinite(p.value);
 
-```jsx
-  label, cursor = null, onCursor, onPlot,
-```
+// How things are drawn, in pixels (the viewBox is the measured width, so a unit is a pixel). Sizes and
+// dashes only: no clinical number, and no colour, lives here.
+const DOT_RADIUS = { small: 2.5, big: 3.5 };
+const LINE_WIDTH = 1.5;             // a series' connector, and the ring of a hollow dot
+const HAIRLINE = 1;
+const CONNECTOR_DASH = "4 3";       // between two measurements: an interval, never a measurement
+const OWN_NORMAL_DASH = "2 3";      // the patient's normal's edges; finer, so the two never read alike
+const VALUE_LABEL_GAP = 5;          // between a value label and the plot's left edge
+const VALUE_LABEL_BASELINE = 3.5;   // a value label's baseline below the gridline it names
+const ALARM_HALF_WIDTH = 6;         // ▲ is 12 px wide and 10 px high
+const ALARM_HALF_HEIGHT = 5;
+const DIAMOND_HALF = 4;             // ◆ is an 8-px square turned 45°
+const CURSOR_RADIUS = 6;
+const CURSOR_LINE_OPACITY = 0.5;
 
-with:
+/** The element's width in CSS pixels, followed as it changes; `fallback` where nothing can measure
+ *  it (no ResizeObserver: jsdom, an old browser). The viewBox is that width, so one unit is one pixel
+ *  and a dot stays round at any size.
+ *
+ *  `mounted` says whether the element exists at all: the chart renders nothing for a window it cannot
+ *  place, so an answer whose `since` / `until` cannot be read leaves no box to measure, and a valid
+ *  answer after it brings one. The effect therefore depends on it — run once on `[ref]`, it would
+ *  find no element, return, and never attach the observer to the box that appears later. */
+function useWidth(ref, fallback, mounted) {
+  const [width, setWidth] = useState(fallback);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!mounted || !el || typeof ResizeObserver !== "function") return undefined;
+    const measure = () => {
+      if (el.clientWidth > 0) setWidth(Math.round(el.clientWidth));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref, mounted]);
+  return width;
+}
 
-```jsx
-  label, cursor = null, onCursor, onPlot, onKeyDown, describedBy,
-```
+export function TrendChart({
+  series, bands = null, markers = [], sinceMs, untilMs, hours = 24, height = 46, big = false,
+  label, cursor = null, onCursor, onPlot, onKeyDown, describedBy, roleDescription,
+}) {
+  const box = useRef(null);
+  const placeable = validWindow(sinceMs, untilMs);
+  const width = useWidth(box, big ? 640 : 320, placeable);
+  const frame = plotFrame(width, height, { labels: big, markers: big, axis: big });
+  const plotWidth = frame.right - frame.left;
+  // The plot's width in pixels, for a caller that names a mark "within one pixel column" of a
+  // cursor it moved itself (the dialog's keyboard). Before the early return: a hook runs on every render.
+  useEffect(() => { onPlot?.(plotWidth); }, [onPlot, plotWidth]);
+  if (!placeable) return null;
+  const x = timeScale(sinceMs, untilMs, frame.left, frame.right);
+  const own = bands?.own_normal ?? null;
+  const values = series.flatMap((s) => s.points.map((p) => p.value));
+  if (own) values.push(own.low, own.high);
+  const domain = valueDomain(values);
+  const y = domain ? valueScale(domain, frame.top, frame.bottom) : null;
+  // The value labels: at the nearest round step, no finer than the data is measured, and only inside
+  // the data — the domain's margin is the chart's, and a label there names a value nobody measured.
+  // A lone reading between two steps is labelled with its own value.
+  const { step: tickStep, ticks } = big && domain
+    ? valueTicks(domain, 4, { extent: valueExtent(values), resolution: valueResolution(values) })
+    : { step: null, ticks: [] };
+  const rects = y ? bandRects(bands?.news2, domain, y, frame.left, frame.right) : [];
+  const ownRect = y ? ownNormalRect(own, domain, y, frame.left, frame.right) : null;
+  const marks = big ? markerMarks(markers, x, sinceMs, untilMs) : [];
+  const at = cursor === null ? null : series[0]?.points[cursor] ?? null;
 
-(d) Replace:
-
-```jsx
-  const named = label ? { role: "img", "aria-label": label } : { "aria-hidden": "true", focusable: "false" };
-```
-
-with:
-
-```jsx
-  const named = label ? { role: "img", "aria-label": label } : { "aria-hidden": "true", focusable: "false" };
-  // The big chart is one tab stop whose arrow keys move the cursor (the dialog's `onKeyDown`).
+  const move = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const px = rect.width > 0 ? ((event.clientX - rect.left) / rect.width) * width : event.clientX - rect.left;
+    const index = nearestIndex(series[0]?.points ?? [], x, px);
+    onCursor(index >= 0 ? index : null, "mouse");
+  };
+  // The big chart is one tab stop whose arrow keys move the cursor (the dialog's `onKeyDown`). A chart
+  // that takes keys is an APPLICATION, not an image: a screen reader stays in browse mode over an `img`
+  // and keeps the arrow keys for itself, so ← → Home End would never reach the page. `aria-roledescription`
+  // says in words what it is ("chart"); the name, and the hint the keys are described by, stay as they were.
   const keys = onKeyDown ? { tabIndex: 0, onKeyDown, "aria-describedby": describedBy } : {};
-```
+  let named = { "aria-hidden": "true", focusable: "false" };
+  if (label) named = onKeyDown ? { role: "application", "aria-roledescription": roleDescription, "aria-label": label } : { role: "img", "aria-label": label };
 
-(e) Replace:
-
-```jsx
-        width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="block" {...named}
-```
-
-with:
-
-```jsx
+  // A <span>, not a <div>: the small chart sits inside the card's <button>, which takes phrasing
+  // content only.
+  return (
+    <span ref={box} className="block w-full min-w-0">
+      <svg
         width="100%" height={height} viewBox={`0 0 ${width} ${height}`}
-        className={`block rounded-ctl ${onKeyDown ? FOCUS_RING : ""}`} {...named} {...keys}
-```
-
-(f) Replace:
-
-```jsx
-          const text = hours === 72 ? `${ddmm(ms)} ${hhmm(ms)}` : hhmm(ms);
-```
-
-with:
-
-```jsx
+        className={onKeyDown ? `block rounded-ctl ${FOCUS_RING}` : "block"} {...named} {...keys}
+        onMouseMove={onCursor ? move : undefined}
+        onMouseLeave={onCursor ? () => onCursor(null, "mouse") : undefined}
+      >
+        {rects.map((r) => (
+          <rect key={`${r.y}-${r.tone}`} data-band={r.tone} x={r.x} y={r.y} width={r.w} height={r.h} className={BAND_FILL[r.tone]} />
+        ))}
+        {ownRect ? (
+          <g data-own-normal="">
+            <rect x={ownRect.x} y={ownRect.y} width={ownRect.w} height={ownRect.h} className="fill-band-n" />
+            {[["top", ownRect.y], ["bottom", ownRect.y + ownRect.h]].map(([side, edge]) => (
+              <line
+                key={side} x1={ownRect.x} x2={ownRect.x + ownRect.w} y1={crisp(edge)} y2={crisp(edge)}
+                className="stroke-pri" strokeDasharray={OWN_NORMAL_DASH}
+              />
+            ))}
+          </g>
+        ) : null}
+        {big && y ? ticks.map((v) => (
+          <g key={`v${v}`} data-tick="value">
+            <line x1={frame.left} x2={frame.right} y1={crisp(y(v))} y2={crisp(y(v))} className="stroke-grid" />
+            <text x={frame.left - VALUE_LABEL_GAP} y={y(v) + VALUE_LABEL_BASELINE} textAnchor="end" className="fill-mute text-10">{tickLabel(v, tickStep)}</text>
+          </g>
+        )) : null}
+        {y ? series.map((s) => {
+          const path = linePath(s.points, x, y);
+          return (
+            <g key={s.key} data-series={s.key} className={s.color}>
+              {path ? <path d={path} fill="none" stroke="currentColor" strokeWidth={LINE_WIDTH} strokeDasharray={CONNECTOR_DASH} /> : null}
+              {s.points.filter(drawable).map((p, i) => (
+                // A hollow dot is filled with the chart's OWN ground: the card under the mini chart, the
+                // dialog's app background under the big one.
+                <circle
+                  key={`${p.iso}#${i}`} data-ts={p.iso} data-value={p.value} cx={x(p.ms)} cy={y(p.value)}
+                  r={big ? DOT_RADIUS.big : DOT_RADIUS.small}
+                  fill={s.hollow ? undefined : "currentColor"} className={s.hollow ? (big ? "fill-app" : "fill-card") : undefined}
+                  stroke="currentColor" strokeWidth={s.hollow ? LINE_WIDTH : 0}
+                />
+              ))}
+            </g>
+          );
+        }) : null}
+        {marks.map((m, i) => {
+          // Keyed by position as well: two alert kinds can first be seen on one reading.
+          const key = `${m.kind}:${m.label}:${m.iso}:${i}`;
+          return m.kind === "alarm" ? (
+            <path
+              key={key} data-marker="alarm" className="fill-crit"
+              d={`M${m.x - ALARM_HALF_WIDTH},${frame.laneY + ALARM_HALF_HEIGHT}L${m.x},${frame.laneY - ALARM_HALF_HEIGHT}L${m.x + ALARM_HALF_WIDTH},${frame.laneY + ALARM_HALF_HEIGHT}Z`}
+            />
+          ) : (
+            <rect
+              key={key} data-marker={m.kind} x={m.x - DIAMOND_HALF} y={frame.laneY - DIAMOND_HALF}
+              width={DIAMOND_HALF * 2} height={DIAMOND_HALF * 2} transform={`rotate(45 ${m.x} ${frame.laneY})`} className="fill-pri"
+            />
+          );
+        })}
+        {big ? timeTicks(sinceMs, untilMs, hours).map((ms) => {
           const text = whenText(ms, hours);   // the readout's and the table's words for an instant
+          const place = timeLabelPlace(x(ms), text, width);   // anchored to an edge it would cross
+          return (
+            <text key={`t${ms}`} data-tick="time" x={place.x} y={frame.axisY} textAnchor={place.anchor} className="fill-mute text-10">
+              {text}
+            </text>
+          );
+        }) : null}
+        {at && y && drawable(at) ? (
+          <g data-cursor="">
+            <line x1={x(at.ms)} x2={x(at.ms)} y1={frame.top} y2={frame.bottom} className="stroke-ink" strokeWidth={HAIRLINE} opacity={CURSOR_LINE_OPACITY} />
+            <circle cx={x(at.ms)} cy={y(at.value)} r={CURSOR_RADIUS} fill="none" className="stroke-ink" strokeWidth={LINE_WIDTH} />
+          </g>
+        ) : null}
+      </svg>
+    </span>
+  );
+}
 ```
 
-- [ ] **Step 4: The table** — Write `dashboard/src/live/screens/patient/trends/TrendTable.jsx`:
+- [ ] **Step 4: The legend and its notes.** Write `dashboard/src/live/screens/patient/trends/TrendLegend.jsx` (whole; `TrendNotes` — thinned, the marks' read cut short, MAP not scored, ▲ a first detection — split out so the table carries them too, X29):
+
+```jsx
+// src/live/screens/patient/trends/TrendLegend.jsx — what the big chart's marks mean, in words. Colour
+// is never the only carrier (spec §7): every swatch has its name beside it, the two marks differ in
+// shape, and the source of the NEWS2 rows is the one the SERVER named (`bands_source`).
+import React from "react";
+import { useI18n } from "../../../i18n/I18nProvider.jsx";
+
+function Swatch({ className, dashed = false }) {
+  return (
+    <svg aria-hidden="true" width="18" height="10" viewBox="0 0 18 10" className="shrink-0">
+      <rect x="0" y="0" width="18" height="10" className={className} />
+      {dashed ? <line x1="0" x2="18" y1="0.5" y2="0.5" className="stroke-pri" strokeDasharray="2 3" /> : null}
+    </svg>
+  );
+}
+
+function Glyph({ kind, color = "", hollow = false }) {
+  return (
+    <svg aria-hidden="true" width="18" height="10" viewBox="0 0 18 10" className={`shrink-0 ${color}`}>
+      {kind === "alarm" ? <path d="M3,9L9,1L15,9Z" className="fill-crit" /> : null}
+      {kind === "antibiotic" ? <rect x="5" y="1" width="8" height="8" transform="rotate(45 9 5)" className="fill-pri" /> : null}
+      {kind === "points" ? (
+        <>
+          <line x1="3" x2="15" y1="5" y2="5" stroke="currentColor" strokeDasharray="3 2" />
+          <circle cx="3" cy="5" r="2.5" fill="currentColor" />
+          <circle cx="15" cy="5" r="2.5" fill="currentColor" />
+        </>
+      ) : null}
+      {kind === "dot" ? (
+        <circle cx="9" cy="5" r="3" fill={hollow ? undefined : "currentColor"} className={hollow ? "fill-app" : undefined}
+          stroke="currentColor" strokeWidth={hollow ? 1.5 : 0} />
+      ) : null}
+    </svg>
+  );
+}
+
+const Item = ({ children }) => <li className="flex items-center gap-1.5">{children}</li>;
+const LIST = "m-0 mt-2 flex list-none flex-wrap gap-x-4 gap-y-1.5 p-0 text-11.5 text-mute";
+
+/** The notes that qualify what is drawn or listed, in words — shared by the chart's legend and by the
+ *  table (which has no swatches, but the same numbers and the same caveats):
+ *    * a series drawn over another's NEWS2 bands (MAP on the pressure card) is not scored by NEWS2 —
+ *      said in words, so nobody reads the systolic rows as MAP's thresholds. The ENGINE decides which
+ *      channel has bands (`bands.news2` null for MAP and lactate); this only notices the difference;
+ *    * the server's own flag: its read of the marks stopped at its limit (api/trends.py);
+ *    * a channel the server thinned for drawing, and from how many. */
+function NoteItems({ card, channels, truncated }) {
+  const { t } = useI18n();
+  const primary = channels[card.series[0].key] ?? null;
+  const scored = Array.isArray(primary?.bands?.news2);
+  const unbanded = scored ? card.series.slice(1).filter((s) => channels[s.key] && !Array.isArray(channels[s.key].bands?.news2)) : [];
+  const thinned = card.series.filter((s) => channels[s.key]?.thinned);
+  return (
+    <>
+      {unbanded.map((s) => (
+        <Item key={`unbanded-${s.key}`}>
+          {t("patient.trendsLegendNoBand", { channel: t(s.labelKey), scored: t(card.series[0].labelKey) })}
+        </Item>
+      ))}
+      {truncated ? <Item>{t("patient.trendsLegendMarksTruncated")}</Item> : null}
+      {thinned.map((s) => (
+        <Item key={s.key}>
+          {t("patient.trendsThinned", { channel: t(s.labelKey), kept: channels[s.key].points.length, total: channels[s.key].total_points })}
+        </Item>
+      ))}
+    </>
+  );
+}
+
+/** What the table view keeps of the legend: no swatches (the table has no bands or glyphs), but every
+ *  note that says how far to trust the numbers — and what a mark row is: an alarm's FIRST detection. */
+export function TrendNotes({ card, channels, truncated = false }) {
+  const { t } = useI18n();
+  return (
+    <ul role="list" data-notes="" className={LIST}>
+      <Item>{t("patient.trendsLegendAlarm")}</Item>
+      <NoteItems card={card} channels={channels} truncated={truncated} />
+    </ul>
+  );
+}
+
+export function TrendLegend({ card, channels, source, truncated = false }) {
+  const { t } = useI18n();
+  const primary = channels[card.series[0].key] ?? null;
+  const scored = Array.isArray(primary?.bands?.news2);
+  return (
+    // role="list": a list with its bullets removed (`list-none`) stops being one for VoiceOver.
+    <ul role="list" data-legend="" className={LIST}>
+      {scored ? (
+        <Item>
+          {t("patient.trendsBandNews2", { source })}:
+          <Swatch className="fill-band-mid" /> {t("patient.trendsBandPoints12")}
+          <Swatch className="fill-band-crit" /> {t("patient.trendsBandPoints3")}
+        </Item>
+      ) : null}
+      {primary?.bands?.own_normal ? <Item><Swatch className="fill-band-n" dashed /> {t("patient.trendsBandOwn")}</Item> : null}
+      <Item><Glyph kind="points" color={card.series[0].color} /> {t("patient.trendsLegendPoints")}</Item>
+      {card.series.length > 1 ? card.series.map((s) => (
+        <Item key={s.key}><Glyph kind="dot" color={s.color} hollow={s.hollow} /> {t(s.labelKey)}</Item>
+      )) : null}
+      {/* ▲ is a finding's FIRST DETECTION for this patient (its `first_seen` stamp), not every
+          alarm episode: the engine's active alerts never clear a kind today (O17). */}
+      <Item><Glyph kind="alarm" /> {t("patient.trendsLegendAlarm")}</Item>
+      <Item><Glyph kind="antibiotic" /> {t("patient.trendsMarkerAntibiotic")}</Item>
+      <NoteItems card={card} channels={channels} truncated={truncated} />
+    </ul>
+  );
+}
+```
+
+- [ ] **Step 5: The table** — Write `dashboard/src/live/screens/patient/trends/TrendTable.jsx` (fed the dialog's own parsed series and markers; valueless rows dropped; stable row keys; newest first, at one instant the later reading first; the engine's NEWS2 points, an empty cell for a channel NEWS2 does not score, "—" with `trendsPointsUnknownRowSr` for a NEWS2 reading the engine sent none for; `trendsNoData` when empty):
 
 ```jsx
 // src/live/screens/patient/trends/TrendTable.jsx — the big chart as a table (spec §3.2, §7): every
 // measurement the chart draws, newest first, with the ENGINE'S NEWS2 points for that reading (the
-// endpoint's third column — printed, never looked up here), and each mark as a row of its own. The
-// same numbers the SVG shows; TrendModal.test.jsx holds the two views equal.
+// endpoint's third column — printed, never looked up here), and each mark as a row of its own. It is
+// handed the dialog's own parsed series and markers — the very arrays the SVG draws — so the two views
+// hold the same numbers by construction; TrendModal.test.jsx holds them equal.
 import React from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { Table } from "../../../ui/index.js";
 import { cardTitle } from "./cards.js";
-import { parseMarkers, parsePoints } from "./trendGeometry.js";
 import { markText, pointsText, whenText } from "./trendText.js";
 
-export function TrendTable({ card, channels, markers, hours }) {
+/** The table's rows, newest first. A reading with no value is not one (the chart draws no dot for it).
+ *  At one instant a series' LATER reading comes first — it is the one the chart and the readout take —
+ *  then the card's series in their order, then the marks.
+ *
+ *  A row's key is what it is — its series (or kind and label) and its instant — with a counter for the
+ *  second and later row of the same: it does not move when a newer reading is added, so a poll adds a
+ *  row instead of re-mounting the body (a position key would). */
+function rowsOf(card, series, markers) {
+  const seen = new Map();
+  const keyed = (base) => {
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return n === 0 ? base : `${base}#${n}`;
+  };
+  const rows = [
+    ...card.series.flatMap((s, i) => (series[i]?.points ?? []).flatMap((p, j) => (
+      Number.isFinite(p.value) && Number.isFinite(p.ms)
+        ? [{ ms: p.ms, rank: i, order: j, key: keyed(`${s.key}-${p.iso}`), series: s, p }]
+        : []
+    ))),
+    ...(markers ?? []).map((m, j) => ({ ms: m.ms, rank: card.series.length, order: j, key: keyed(`${m.kind}:${m.label}-${m.iso}`), mark: m })),
+  ];
+  return rows.sort((a, b) => b.ms - a.ms || a.rank - b.rank || b.order - a.order);
+}
+
+/** The NEWS2 cell. The engine's points where it sent them; for a NEWS2 channel it sent none for, a dash
+ *  and — for a screen reader — the reason (the card's own split, X24, but worded for THIS reading: the
+ *  card's sentence says "the last reading", which is true there and false in a row); for a channel NEWS2 does not
+ *  score (MAP, lactate: the engine sent no bands), nothing at all — a dash there would read as a
+ *  missing score. Never a comparison with a band edge. */
+function PointsCell({ points, news2 }) {
+  const { t } = useI18n();
+  if (Number.isInteger(points)) return <td className="font-data">{pointsText(points)}</td>;
+  if (!news2) return <td />;
+  return (
+    <td className="font-data">
+      <span aria-hidden="true">{pointsText(points)}</span>
+      <span className="sr-only">{t("patient.trendsPointsUnknownRowSr")}</span>
+    </td>
+  );
+}
+
+export function TrendTable({ card, channels, series, markers, hours }) {
   const { t } = useI18n();
   const two = card.series.length > 1;
-  const rows = [
-    ...card.series.flatMap((s) => parsePoints(channels[s.key]?.points).map((p) => ({ ms: p.ms, key: `${s.key}-${p.iso}`, series: s, p }))),
-    ...parseMarkers(markers).map((m) => ({ ms: m.ms, key: `${m.kind}-${m.iso}`, mark: m })),
-  ].sort((a, b) => b.ms - a.ms);
+  const rows = rowsOf(card, series, markers);
+  if (rows.length === 0) return null;      // nothing to list: the dialog says so, not an empty captioned table
   return (
     <Table caption={t("patient.trendsCaption", { channel: cardTitle(t, card) })} className="mt-3">
       <thead>
@@ -8321,9 +10032,9 @@ export function TrendTable({ card, channels, markers, hours }) {
           <tr key={row.key} data-ts={row.p.iso} data-value={row.p.value} data-series={row.series.key}>
             <th scope="row" className="font-data font-semibold">{whenText(row.ms, hours)}</th>
             {two ? <td>{t(row.series.labelKey)}</td> : null}
-            <td className="font-data font-bold">{Number.isFinite(row.p.value) ? row.p.value : "—"}</td>
+            <td className="font-data font-bold">{row.p.value}</td>
             <td>{t(row.series.unitKey)}</td>
-            <td className="font-data">{pointsText(row.p.points)}</td>
+            <PointsCell points={row.p.points} news2={Array.isArray(channels[row.series.key]?.bands?.news2)} />
             <td />
           </tr>
         )))}
@@ -8333,23 +10044,27 @@ export function TrendTable({ card, channels, markers, hours }) {
 }
 ```
 
-- [ ] **Step 5: The dialog, whole** — Write `dashboard/src/live/screens/patient/trends/TrendModal.jsx` (Task 12's dialog as the lane built it — the cursor an instant, `useMemo` over the answer, the no-data line, the frame that holds its height — with the keyboard, the table view, the one announcement, and the opening focus on the pressed window option):
+- [ ] **Step 6: The dialog, whole** — Write `dashboard/src/live/screens/patient/trends/TrendModal.jsx` (Task 12's dialog as the lane built it, with the keyboard — the instants of drawable readings, one stop per instant, Alt/Ctrl/Meta left to the browser — the table view, which the cursor does not survive, the one announcement, and the opening focus on the pressed window option):
 
 ```jsx
 // src/live/screens/patient/trends/TrendModal.jsx — one card's chart, large (spec §3.2): the window
 // (6 h / 24 h / 3 days, each a read of its own), a readout of the measurement under the cursor, the
 // marks and the legend — and the same numbers as a table (Grafik | Tablo).
 //
-// The cursor follows the mouse, and the arrow keys, Home and End when the chart has focus. The
-// readout is drawn for the eye and HIDDEN from assistive technology; a screen reader hears it once
-// per KEYBOARD move (`Announce`), never on a mouse hover — a live region that spoke at every pixel of
-// a hover would drown everything else the dialog says.
+// The cursor follows the mouse, and the arrow keys, Home and End when the chart has focus (the chart
+// is an application to a screen reader, not an image — see TrendChart — and only a chart with a
+// reading to step to takes the keys at all). The readout is drawn for the eye and HIDDEN from assistive
+// technology; a screen reader hears it (`Announce`) when a KEYBOARD move changes what it says — never on
+// a mouse hover, which would drown everything else the dialog says. The live region is keyed on its
+// text, so a move to a stop that reads the same (the same minute and value), or → at the last stop,
+// says nothing again.
 //
 // THE CURSOR IS AN INSTANT, NOT AN INDEX. The state is `{ ms, how }`: the instant of the reading the
 // cursor is on, and who moved it ("mouse" | "key"). It is turned into an index at render, by
 // `indexAtTime` over the series as it is NOW — a poll that slides the window drops readings off the
 // front and moves every index, and a cursor held as an index would silently jump to a later reading
 // while the clinician reads. If the reading has slid out of the window the cursor is gone with it.
+// Switching to the table lets it go too: the chart is not on screen, and its readout is not for saying.
 //
 // It opens with focus on the pressed window option — what the dialog is showing — not on whichever
 // control happens to come first.
@@ -8360,10 +10075,10 @@ import { Announce, Modal, Seg } from "../../../ui/index.js";
 import { nameOf } from "../../common/BoardState.jsx";
 import { cardTitle, channelsOf } from "./cards.js";
 import { TrendChart } from "./TrendChart.jsx";
-import { TrendLegend } from "./TrendLegend.jsx";
+import { TrendLegend, TrendNotes } from "./TrendLegend.jsx";
 import { TrendTable } from "./TrendTable.jsx";
-import { indexAtTime, marksAtTime, parseMarkers, parsePoints } from "./trendGeometry.js";
-import { markBeside, whenText } from "./trendText.js";
+import { indexAtTime, marksAtTime, parseMarkers, parsePoints, validWindow } from "./trendGeometry.js";
+import { markBeside, valueBeside, whenText } from "./trendText.js";
 import { measuredKeyOf, useTrends } from "./useTrends.js";
 
 const WINDOWS = [
@@ -8378,26 +10093,47 @@ const WINDOWS = [
 const CHART_HEIGHT = 280;
 const NO_VALUE = "—";
 
+/** The drawable reading of a series nearest an instant, within `tolerance` milliseconds — the later one
+ *  on a tie — or null. */
+function readingNear(points, ms, tolerance) {
+  let best = null;
+  let distance = Infinity;
+  for (const p of points) {
+    if (!Number.isFinite(p.value) || !Number.isFinite(p.ms)) continue;
+    const d = Math.abs(p.ms - ms);
+    if (d <= tolerance && d <= distance) {
+      best = p;
+      distance = d;
+    }
+  }
+  return best;
+}
+
 /** "HH:MM · 132 /dəq", EVERY mark within a pixel after it — two alert kinds first detected on one
  *  reading are both named, each with its own time when that reads differently. A card with two series
- *  (pressure) names each and reads the other one at the SAME instant — "Sistolik AT 118 · MAP 80 mmHg",
- *  MAP being the vasopressor target — and says "—" where it has no reading then; the unit is written
- *  once when the series share it. A reading that arrived without a value prints "—", never "NaN".
- *  Everything printed is the engine's number. */
-function readoutOf(t, card, series, at, marks, hours) {
+ *  (pressure) names each and reads the other one AT that instant — "Sistolik AT 118 · MAP 80 mmHg",
+ *  MAP being the vasopressor target — meaning the nearest reading within one pixel column (`msPerPx`,
+ *  the tolerance the marks use): a MAP stamped seconds from the systolic is, on the chart, the same
+ *  moment. When it reads at another minute it says so ("MAP 64 mmHg (10:17)") rather than borrow the
+ *  systolic's time, and each number then keeps its own unit; otherwise the unit is written once when the
+ *  series share it. "—" where a series has no reading then. A reading that arrived without a value
+ *  prints "—", never "NaN". Everything printed is the engine's number. */
+function readoutOf(t, card, series, at, marks, hours, msPerPx) {
   const named = card.series.length > 1;
   const shared = card.series.every((s) => s.unitKey === card.series[0].unitKey);
-  const values = card.series.map((s, i) => {
-    const points = series[i].points;
-    const reading = i === 0 ? at : points[indexAtTime(points, at.ms)];
-    return Number.isFinite(reading?.value) ? String(reading.value) : null;
+  const readings = card.series.map((s, i) => {
+    const reading = i === 0 ? at : readingNear(series[i].points, at.ms, msPerPx);
+    return Number.isFinite(reading?.value) ? reading : null;
   });
-  const parts = card.series.map((s, i) => [
-    named ? t(s.labelKey) : null,
-    values[i] ?? NO_VALUE,
-    !shared && values[i] !== null ? t(s.unitKey) : null,
-  ].filter(Boolean).join(" "));
-  const unit = shared && values.some((v) => v !== null) ? ` ${t(card.series[0].unitKey)}` : "";
+  const apart = readings.map((r) => r !== null && whenText(r.ms, hours) !== whenText(at.ms, hours));
+  const unitEach = !shared || apart.some(Boolean);
+  const parts = card.series.map((s, i) => {
+    const reading = readings[i];
+    if (reading === null) return [named ? t(s.labelKey) : null, NO_VALUE].filter(Boolean).join(" ");
+    const value = [String(reading.value), unitEach ? t(s.unitKey) : null].filter(Boolean).join(" ");
+    return [named ? t(s.labelKey) : null, valueBeside(value, reading.ms, at.ms, hours)].filter(Boolean).join(" ");
+  });
+  const unit = !unitEach && readings.some((r) => r !== null) ? ` ${t(card.series[0].unitKey)}` : "";
   return [whenText(at.ms, hours), `${parts.join(" · ")}${unit}`, ...marks.map((m) => markBeside(t, m, at.ms, hours))].join(" · ");
 }
 
@@ -8432,14 +10168,11 @@ export function TrendModal({ card, patient, bed, onClose }) {
   const [cursor, setCursor] = useState(null);   // { ms, how: "mouse" | "key" } — an instant, see the header
   const [plotWidth, setPlotWidth] = useState(0);
   const trends = useTrends(patient.patient_id, hours, measuredKeyOf(patient.measuredAt));
-  // Parsed once per answer, not on every render of a mouse move.
-  const { channels, series, markers } = useMemo(() => {
+  // Parsed once per answer, not on every render of a mouse move. The table is handed these very arrays.
+  const { channels, series, markers, stops } = useMemo(() => {
     const byKey = channelsOf(trends.data);
-    return {
-      channels: byKey,
-      series: card.series.map((s) => ({ key: s.key, color: s.color, hollow: s.hollow, points: parsePoints(byKey[s.key]?.points) })),
-      markers: parseMarkers(trends.data?.markers),
-    };
+    const drawn = card.series.map((s) => ({ key: s.key, color: s.color, hollow: s.hollow, points: parsePoints(byKey[s.key]?.points) }));
+    return { channels: byKey, series: drawn, markers: parseMarkers(trends.data?.markers), stops: stopsOf(drawn[0].points) };
   }, [card, trends.data]);
   const primary = channels[card.series[0].key] ?? null;
   const sinceMs = Date.parse(trends.data?.since);
@@ -8447,16 +10180,26 @@ export function TrendModal({ card, patient, bed, onClose }) {
   const title = cardTitle(t, card);
   const index = cursor ? indexAtTime(series[0].points, cursor.ms) : -1;
   const at = index >= 0 ? series[0].points[index] : null;
-  const marks = at ? marksAtTime(markers, at.ms, plotWidth > 0 ? (untilMs - sinceMs) / plotWidth : 0) : [];
-  const readout = at ? readoutOf(t, card, series, at, marks, hours) : null;
+  const msPerPx = plotWidth > 0 ? (untilMs - sinceMs) / plotWidth : 0;   // one pixel column of the plot
+  const marks = at ? marksAtTime(markers, at.ms, msPerPx) : [];
+  const readout = at ? readoutOf(t, card, series, at, marks, hours, msPerPx) : null;
   // The readings the chart draws — a reading that arrived without a value is not one.
   const count = series.reduce((n, s) => n + s.points.filter((p) => Number.isFinite(p.value)).length, 0);
+  // The chart takes the keys (and is a tab stop) only while there is a stop to step to, on a chart that
+  // is drawn: keys that do nothing are a trap, not a control. The cursor follows the card's FIRST series.
+  const keyed = stops.length > 0 && validWindow(sinceMs, untilMs);
+  const truncated = trends.data?.markers_truncated === true;
 
   // After the kit Modal's own effect (a child's runs first) put focus on the body's first control.
   useEffect(() => { controls.current?.querySelector("[aria-pressed='true']")?.focus(); }, []);
 
   const choose = (value) => {
     setHours(value);
+    setCursor(null);
+  };
+  // The table has no cursor, and `Announce` must not speak a readout for a chart nobody can see.
+  const chooseView = (value) => {
+    setView(value);
     setCursor(null);
   };
   // The chart reports an index into the series it drew; the dialog keeps the instant. Nothing changed
@@ -8469,7 +10212,9 @@ export function TrendModal({ card, patient, bed, onClose }) {
     });
   };
   const onKeyDown = (event) => {
-    const next = step(event.key, stopsOf(series[0].points), at ? at.ms : null);
+    // Alt+← is the browser's Back and Ctrl+Home the top of the page: not the chart's to take.
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const next = step(event.key, stops, at ? at.ms : null);
     if (next === null) return;
     event.preventDefault();
     setCursor({ ms: next, how: "key" });
@@ -8480,7 +10225,7 @@ export function TrendModal({ card, patient, bed, onClose }) {
       <div ref={controls} className="flex flex-wrap items-center gap-2">
         <Seg label={t("patient.trendsHoursLabel")} value={hours} onChange={choose}
           options={WINDOWS.map((w) => ({ value: w.value, label: t(w.key) }))} />
-        <Seg label={t("patient.trendsViewLabel")} value={view} onChange={setView}
+        <Seg label={t("patient.trendsViewLabel")} value={view} onChange={chooseView}
           options={[{ value: "graph", label: t("patient.trendsGraph") }, { value: "table", label: t("patient.trendsTable") }]} />
       </div>
       {trends.unreadable ? (
@@ -8501,14 +10246,19 @@ export function TrendModal({ card, patient, bed, onClose }) {
             series={series} bands={primary?.bands ?? null} markers={markers} sinceMs={sinceMs} untilMs={untilMs}
             hours={hours} height={CHART_HEIGHT} big label={t("patient.trendsChartLabel", { channel: title, hours, count })}
             cursor={index >= 0 ? index : null} onPlot={setPlotWidth} onCursor={moveCursor}
-            onKeyDown={onKeyDown} describedBy={hintId}
+            onKeyDown={keyed ? onKeyDown : undefined} describedBy={keyed ? hintId : undefined}
+            roleDescription={t("patient.trendsChartRole")}
           />
-          <p id={hintId} className="m-0 mt-1 text-11 text-mute">{t("patient.trendsKeysHint")}</p>
-          <TrendLegend card={card} channels={channels} source={trends.data.bands_source} truncated={trends.data.markers_truncated === true} />
+          {keyed ? <p id={hintId} className="m-0 mt-1 text-11 text-mute">{t("patient.trendsKeysHint")}</p> : null}
+          <TrendLegend card={card} channels={channels} source={trends.data.bands_source} truncated={truncated} />
         </>
       ) : null}
       {trends.data && view === "table" ? (
-        <TrendTable card={card} channels={channels} markers={trends.data.markers} hours={hours} />
+        <>
+          {count === 0 ? <p data-no-data="" className="m-0 mt-3 text-13 text-mute">{t("patient.trendsNoData")}</p> : null}
+          <TrendTable card={card} channels={channels} series={series} markers={markers} hours={hours} />
+          <TrendNotes card={card} channels={channels} truncated={truncated} />
+        </>
       ) : null}
       {!trends.data ? (
         <>
@@ -8524,23 +10274,23 @@ export function TrendModal({ card, patient, bed, onClose }) {
 }
 ```
 
-- [ ] **Step 6: Green, then the gate.**
+- [ ] **Step 7: Green, then the gate.**
 
 ```bash
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/screens/patient/trends/ src/reachable.test.js 2>&1 | grep -E "Test Files|Tests |×"
 ```
-Expected: no `×`; `Test Files  7 passed (7)` (the folder's six + reachable), `Tests  133 passed (133)` (130 in the folder: useTrends 17, news2Tone 2, TrendCard 25, trendGeometry 30, TrendChart 20, TrendModal 36; reachable 3). Then the suite — **87 / 2308** in plan order (the lane alone: 87 / 2305) — and the build.
+Expected: no `×`; `Test Files  8 passed (8)` (the folder's seven + reachable), `Tests  158 passed (158)` (155 in the folder: useTrends 17, news2Tone 2, TrendCard 26, trendGeometry 31, TrendChart 22, TrendModal 53, trendText 4; reachable 3). Then the suite — **88 / 2333** in plan order (the lane alone, `372e781`: 88 / 2330) — and the build.
 
-- [ ] **Step 7: Commit.**
+- [ ] **Step 8: Commit.**
 
 ```bash
 cd /c/tmp/g2-vital
 git add dashboard/src/live/screens/patient/trends/trendText.js dashboard/src/live/screens/patient/trends/TrendTable.jsx dashboard/src/live/screens/patient/trends/TrendModal.jsx dashboard/src/live/screens/patient/trends/TrendModal.test.jsx dashboard/src/live/screens/patient/trends/TrendChart.jsx
 git status --short && git diff --cached --stat
-git commit -m "feat(patient): the big chart by keyboard, said once, and as a table" -m "The chart is one tab stop with its keys described; arrows, Home and End walk the measurements and the readout follows; a keyboard move is announced once (Announce), a hover never. Grafik | Tablo: the kit Table, newest first, the engine's NEWS2 points per reading printed (72 reads +3 when the server says 3), each mark a row of its own — the same numbers the SVG draws.
+git commit -m "feat(patient): the big chart by keyboard, said once, and as a table" -m "The keyboard chart is an application with a role description (X28), one tab stop with its keys described; arrows, Home and End walk the instants of the drawable readings, one stop per instant, Alt/Ctrl/Meta left to the browser; a keyboard move is announced once, a hover never. Grafik | Tablo: the kit Table fed the same parsed series and markers the SVG draws, newest first, the engine's NEWS2 points per reading, each mark a row of its own, the legend's notes under both views (X29). trendText.js shared by the axis, the readout and the table: a mark, and a MAP read beside systolic, carry their own time when it reads differently (X30). The dialog opens with focus on the pressed window option.
 
-red: 10 failed — no tab stop, no keys, no status region, no table, focus on the first control, a mark beside a reading given its time, no keyboard to step" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+red: TrendModal 39 failed | 14 passed (53); trendText import unresolved; TrendChart 1 failed; trendGeometry 1 failed (a valueless twin)" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
@@ -9516,7 +11266,7 @@ with:
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/screens/patient/ src/reachable.test.js src/live/boundaries.test.js src/live/rawKeys.test.jsx src/live/i18n/ 2>&1 | grep -E "Test Files|Tests |×"
 ```
-Expected: no `×`; PatientScreen 60, BaselineForm 15. Then the suite — **88 / 2325** — and the build.
+Expected: no `×`; PatientScreen 60, BaselineForm 15. Then the suite — **89 / 2350** — and the build.
 
 - [ ] **Step 7: Commit.**
 
@@ -9649,7 +11399,7 @@ with:
 
 - [ ] **Step 3: Prove the net bites** (then put it back). Edit `trends/TrendCard.jsx`: replace `t("patient.trendsSingle")` with `t("patient.trendsSingel")`, and run the sweep again. Expected — three nets catch it: `[i18n] "patient.trendsSingel" has no az text — showing the key.`; `× … every screen this build has renders its texts …` with `patient (/patients/S-001) → patient.trendsSingel`; `× … the trend charts' keys resolve …` (its `tək ölçmə` is now the raw key); `× … names no key the dictionaries do not have …` with `screens\patient\trends\TrendCard.jsx → patient.trendsSingel (az, tr, ru, en)`. Edit it back to `t("patient.trendsSingle")` and re-run: `Tests  7 passed (7)`. **Nothing of this step is committed.**
 
-- [ ] **Step 4: The dashboard gate.** The suite: **88 files / 2326 tests** (measured); the build: `built in`, `precache  20 entries`, no `larger than 500 kB`. Then, by hand, read the dashboard part of `git diff b6ed65d --stat`: every new file under `src/live/screens/patient/trends/` is under ~250 lines (the largest, `TrendModal.test.jsx`, ≈ 210; `TrendModal.jsx` ≈ 145).
+- [ ] **Step 4: The dashboard gate.** The suite: **89 files / 2351 tests** (measured); the build: `built in`, `precache  20 entries`, no `larger than 500 kB`. Then, by hand, read the dashboard part of `git diff b6ed65d --stat`: every new file under `src/live/screens/patient/trends/` is near the ~250-line guide or under it — `TrendModal.jsx` 225, `trendGeometry.js` 277 (one pure module, a little over) — while three tests are larger: `TrendModal.test.jsx` 607, `trendGeometry.test.js` 260, `TrendChart.test.jsx` 237 (the dialog's test is a candidate to split by view — O23).
 
 - [ ] **Step 5: The backend, without the database.**
 
@@ -9941,7 +11691,7 @@ bed-3 6h heart_rate:0 | map:4(63.0 Δ1.0 N2 None) | sbp:0 | spo2:0 | temperature
   6. Back on `bed-1`, **Xəstənin norması…**: five rows, no MAP and no lactate; enter Nəbz 120 – 135, Yadda saxla → the toast "Xəstənin norması yadda saxlanıldı; …", the Nəbz card now also wears "Xəstənin normasında" (130 is inside), its frame still amber; the dialog shows the dashed band. **Acceptance 3 — the form writes and the band appears.**
   6a. **The O4 amendment.** **Xəstənin norması…** again; empty Nəbz's two fields: under the fields "Bütün sətirlər boşdur: «Yadda saxla» bu xəstənin daxil edilmiş bütün aralıqlarını silir.", and Yadda saxla is offered (no `aria-disabled`). Save → the toast "Xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.", and the "Xəstənin normasında" pill and the dashed band are gone. Then `$C restart api` (`C` as in Step 5), wait for `healthy` as in Step 5, reload: still no pill, no band — the clear survived the replay from Postgres. The form once more: every row empty, Save `aria-disabled` with "Göndəriləcək aralıq yoxdur …". **Acceptance 3b — the last range can be removed, and stays removed.**
   7. Sign out; sign in as `test.denetci@homunculus.health`: the cards are there, the **Xəstənin norması…** button is not.
-  8. **Acceptance 4:** at 390 px (devtools device toolbar, 390 × 844) and at 1440 px — no horizontal page scroll on the patient screen, in the big chart, in its table (it scrolls inside its own frame) and in the form; one column at 390, three at 1440. Ayarlar → Tema: Gece and Gün. Dil: az, tr, ru, en — no raw `patient.…` key anywhere. And by eye, on a 1× monitor: MAP's hollow ring (r 2.5, stroke 1.5) leaves a hole of about 3.5 px — say if it still reads as a dot; and whether the 72 h time labels, anchored to the right edge, read cleanly at `--fs` 1.12.
+  8. **Acceptance 4:** at 390 px (devtools device toolbar, 390 × 844) and at 1440 px — no horizontal page scroll on the patient screen, in the big chart, in its table (it scrolls inside its own frame) and in the form; one column at 390, three at 1440. Ayarlar → Tema: Gece and Gün. Dil: az, tr, ru, en — no raw `patient.…` key anywhere. With NVDA and Chrome (X28): Tab to the big chart — NVDA must switch to focus mode, and ← → must move the cursor and say the readout once per move; the table must read in browse mode while a poll inserts rows at its top (if NVDA's reading position jumps a row per reading, say so — holding the table still while it is shown is the fix); note whether NVDA re-speaks the chart's name when its count changes. And by eye, on a 1× monitor: MAP's hollow ring (r 2.5, stroke 1.5) leaves a hole of about 3.5 px — say if it still reads as a dot; and whether the 72 h time labels, anchored to the right edge, read cleanly at `--fs` 1.12.
 
 - [ ] **Step 9: Tear it down.** `$C down -v` (with `C` set as in Step 5) → the three containers and the `g2v` volumes removed; `docker ps -a --format '{{.Names}}' | grep -E '^homunculus-(postgres|api|web)$' || echo "no stack containers"` → `no stack containers`. Nothing to commit: write the walk's outcome (pass / what differed) into Task 17's roadmap row.
 
@@ -10085,7 +11835,7 @@ Prototipteki sabit sayılar (`core.js:499` `H.VITAL.al/nb`) kaynaksızdır, taş
 
 | # | İş | Durum |
 |---|---|---|
-| G2-01 | Vital eğrileri (hasta ekranı): altı kart, büyük grafik (6 sa / 24 sa / 3 gün, tablo), hastanın normali formu; `GET /patients/{id}/trends` · spec: [2026-10-19](../specs/2026-10-19-g2-vital-egrileri-design.md) · plan: [G2 dilim 1](2026-10-19-g2-vital-egrileri.md) | Kod ✅ <date> · <range>. Backend 2130 / 650 (DB'siz), 2772 / 8 (Postgres); dashboard 88 dosya / 2326 test. Yerel yürüyüş: <walk>. **Açık:** az/ru yerel okuma; VM'de kullanıcının bakışı (gerçek bir hasta, 390 ve 1440 px, değerler yazılmaz); plandaki X20 (Task 2 incelemesi), X21–X27 ve O1–O3, O6–O12, O14, O15, O17–O19 (X1–X19 onaylandı, O4 çözüldü: 2026-10-20) |
+| G2-01 | Vital eğrileri (hasta ekranı): altı kart, büyük grafik (6 sa / 24 sa / 3 gün, tablo), hastanın normali formu; `GET /patients/{id}/trends` · spec: [2026-10-19](../specs/2026-10-19-g2-vital-egrileri-design.md) · plan: [G2 dilim 1](2026-10-19-g2-vital-egrileri.md) | Kod ✅ <date> · <range>. Backend 2130 / 650 (DB'siz), 2772 / 8 (Postgres); dashboard 89 dosya / 2351 test. Yerel yürüyüş: <walk>. **Açık:** az/ru yerel okuma; VM'de kullanıcının bakışı (gerçek bir hasta, 390 ve 1440 px, değerler yazılmaz); plandaki X20 (Task 2 incelemesi), X21–X30 ve O1–O3, O6–O12, O14, O15, O17–O23 (X1–X19 onaylandı, O4 çözüldü: 2026-10-20) |
 ```
 
 (c) Append to the two items the slice moved — replace:
@@ -10113,7 +11863,7 @@ with:
 ```markdown
 - Acceptance on the VM will show sparse charts today; that is the data, not the chart.
 - **Found while planning (2026-10-19; `docs/superpowers/plans/2026-10-19-g2-vital-egrileri.md`,
-  "What the code says", X1–X27; X1–X19 approved by the user on 2026-10-20):** the plan departs from this spec where the code made its letter
+  "What the code says", X1–X30; X1–X19 approved by the user on 2026-10-20):** the plan departs from this spec where the code made its letter
   impossible or unsafe — 503 for an unreadable scope, checked before `_require_patient` (X1); bands
   as `low < v <= high` (X2); alarm marks from `first_seen`, one per episode, not from `alert` rows
   (X3); antibiotic marks only for doses ≥ 1 (X4); each point carries the engine's NEWS2 points
@@ -10132,6 +11882,10 @@ with:
   patient's normal at once — the second wins silently (plan O3).
 - ▲ on the charts is a finding's first detection for this patient, not every episode: the engine's
   active alerts never clear a kind today (plan O17 — an engine fix, the user's choice of slice).
+- The keyboard-driven big chart is `role="application"` with a role description, not §6's
+  `role="img"` (plan X28): NVDA and JAWS stay in browse mode over an image, and the arrow keys
+  that §7 promises would move the cursor never reach it. The table carries the legend's notes
+  (X29); a MAP read beside systolic at another minute prints its own time (X30).
 - Additive ideas not taken in this slice: `previous_ts` beside `delta` ("since when"), and a
   severity on the alarm marks.
 ```
@@ -10171,6 +11925,9 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 | O18 | **Two tones for one fact.** The header's `News2` pill shows a 3-point parameter in attention amber; the card frames it red (D2). The kit `Tag` has no `mid` tone, so the 1–2-point badge borrows the attention look. One vocabulary for NEWS2 tones across the header, the card and the kit is a kit-level decision (Task 10 quality review). | User / kit | Later |
 | O19 | **Stage B's performance, before Stage B** (next to O14): the builder takes ≈ 2.1 s for 72 h of 5 s data, mostly `thin()`, and the route runs it synchronously inside an `async def`, holding the event loop for that time (Task 4 quality review). Options: thin per request in a worker thread (`run_in_threadpool`), cache per (patient, window, last reading), or bound the history (O2). | Stage B's plan | Before Stage B |
 | O20 | **Before Stage B, too: memoise the chart's parsing and drawing.** `parsePoints` runs on every render for every series (the dialog re-renders on each cursor move), and `TrendChart` re-renders with it: memoise `parsePoints` per points array and wrap `TrendChart` in `React.memo` before 5 s data arrives (Task 11 quality review; a note, not this slice). | Stage B's plan | Before Stage B |
+| O21 | **NEWS2 points in the spoken readout?** A sighted reader reads a reading's points from the band colour behind its dot; a screen-reader user hears only the value (the table has the points). Adding " · 2 bal" to the readout is a small change to spec §3.3's readout — the user's decision (the Task 13 quality review; the controller's list calls it O18). | User decision | Before the VM |
+| O22 | **Two stops in one minute with the same value say the same words**, and `useAnnounced` dedupes by text, so the second keypress is silent (≈ 1 reading a minute today). At Stage B rates: seconds in the readout when two stops share a minute, or a live region re-mounted per stop. Accepted for this slice. | Stage B's plan | Stage B |
+| O23 | **`TrendModal.test.jsx` is 607 lines**, well past the ~250-line guide (with `trendGeometry.js` 277, `trendGeometry.test.js` 260, `TrendChart.test.jsx` 237 a little past it). Split the dialog's test by view (graph, keyboard, table) when it next changes. | Group 2 | — |
 
 **Commit trailer.** The controller's brief set `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` for this plan's tasks; amendments.md's latest recorded trailer is `Claude Opus 5.5`. Use the one the controller gives when the tasks run.
 
@@ -10220,5 +11977,5 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 
 **Placeholder scan.** No "TBD", no "similar to Task N", no "add appropriate error handling". The only fill-ins are runtime facts that cannot exist before the work does — T17's roadmap row takes the date, the commit range and the walk's outcome, each with the command or step that produces it.
 
-**Names and types across tasks.** Engine: `Band`, `NEWS2_BANDS`, `BANDS_SOURCE`, `points_for` (T1) are what T4 imports; `thin(series, max_points)` (T2) is called with `TRENDS_MAX_POINTS`; `since_utc` (T3) is shared by `audit.py` and `audit_postgres.py`; `records(…, since=…)` is keyword-only everywhere (T3's signature test); `patient_trends(engine, audit, *, hospital, patient_id, hours, now)` (T4) is what T5's route calls with `int(hours)` after the text check against `TRENDS_HOURS`; the route is listed in `BOARD_EXPECTED` and `UNSCOPED_BY_DESIGN` under the path FastAPI reports, `/patients/{patient_id}/trends`. Dashboard: `patientTrends(patientId, hours)` / `putPatientProfile(patientId, body)` (T6) are the names `useTrends` (T9) and `BaselineForm` (T14) call, and `fakeApi` carries both; `useTrends(patientId, hours, measuredKey)` → `{data, loading, unreadable, lastOkAt, reload}` is read the same way by `TrendsBox` and `TrendModal`; `measuredKeyOf(patient.measuredAt)`; the fixtures `trends(patientId, channels, over)`, `channel(key, points, over)`, `point(minutesAgo, value, points)`, `marker(minutesAgo, kind, label)`, `answering(build)`, `BANDS`, `KEYS` (T9) are what every later test uses; `news2Tone(points)` (T10) is used by `TrendCard` and `bandRects`; `CARDS` / `cardTitle` / `channelsOf` (T10) by the box, the dialog, the legend and the table; `TrendCard({card, channels, nowMs, sinceMs, untilMs, onOpen})` gains `sinceMs`/`untilMs` in T11 and `onOpen` is passed from T12; `TrendChart`'s props grow `onPlot` (T12) and `onKeyDown`, `describedBy` (T13) by Edit, never renamed; `whenText`/`markText` live in `TrendModal.jsx` in T12 and move to `trendText.js` (with `pointsText`) in T13, where `TrendModal` and `TrendTable` both import them and nothing else imported them from the dialog; `TrendsBox({patient, bed, nowMs})` gains `nowMs` in T10 and `bed` in T12, matching PatientScreen's edits in those tasks. The fifth pass follows the lane's Task 12: `valueTicks` returns `{ step, ticks }`; `indexAtTime(points, ms)` resolves the cursor (an instant) to an index at render; `marksNear` is gone (`marksAtTime` is the one rule); Task 13 moves `whenText` and `markText` from `TrendModal.jsx` to `trendText.js`, beside `markBeside` and `pointsText`, and `TrendChart` reads `whenText` from there; `readoutOf` stays private to the dialog (the announcement reads the same `readout` value). The fourth pass renames two exports and adds six: Task 12 replaces Task 11's `markerNear` (read only by its test) with `marksNear`, and its own `markerAtTime` with `marksAtTime` — both return EVERY mark at an x or an instant, and both dialogs (Tasks 12 and 13) read `marksAtTime`; `valueTicks(domain, count, { extent, resolution })` keeps Task 11's two-argument call working, beside `valueTickStep`, `valueExtent`, `valueResolution`, `tickLabel` and `timeLabelPlace`. The third pass renames nothing in the plan's own tasks: Tasks 1–4, 3b and 6–10 are the lanes' code, and Tasks 11–17 are written against it — `TrendCard` keeps its props and gains `sinceMs`/`untilMs` in Task 11 on the lane's `Reading` (`badge`, `pill`); `TrendLegend` gains `truncated`, which both dialogs (Tasks 12 and 13) pass from `markers_truncated`; the legend's ▲ reads `trendsLegendAlarm` while the readout and the table keep `trendsMarkerAlarm`. The second amendment renames nothing either: `TRENDS_MARKER_LIMIT` keeps its name (5000 now); `_markers` returns `(marks, truncated)` and only `patient_trends` calls it; `_finite` is private to `api/trends.py`; `markers_truncated` is a new key no dashboard module reads yet (O16); Task 12's `TrendLegend` passes `channel: t(s.labelKey)` to `trendsThinned`, which takes `{channel}` since the Task 8 review. The O4 amendment renames nothing: `profile_from_payload(patient_id, payload, base=None)` keeps its signature (T14a) and `_replay_profile` now passes `engine.profile(rec.patient_id)` as `base`; `BaselineForm`'s `own` is the box's `{key: bands.own_normal | null}` map it already received, read once more to tell a clear (`clearing`) from nothing to send (`nothing`). Every `t("patient.…")` the code names is one T8 (or, for `baselineClearsAll` / `baselineClearedAll`, T14) defines in four languages (checked by `rawKeys.test.jsx`'s static net, T15 step 3 proves it bites).
+**Names and types across tasks.** Engine: `Band`, `NEWS2_BANDS`, `BANDS_SOURCE`, `points_for` (T1) are what T4 imports; `thin(series, max_points)` (T2) is called with `TRENDS_MAX_POINTS`; `since_utc` (T3) is shared by `audit.py` and `audit_postgres.py`; `records(…, since=…)` is keyword-only everywhere (T3's signature test); `patient_trends(engine, audit, *, hospital, patient_id, hours, now)` (T4) is what T5's route calls with `int(hours)` after the text check against `TRENDS_HOURS`; the route is listed in `BOARD_EXPECTED` and `UNSCOPED_BY_DESIGN` under the path FastAPI reports, `/patients/{patient_id}/trends`. Dashboard: `patientTrends(patientId, hours)` / `putPatientProfile(patientId, body)` (T6) are the names `useTrends` (T9) and `BaselineForm` (T14) call, and `fakeApi` carries both; `useTrends(patientId, hours, measuredKey)` → `{data, loading, unreadable, lastOkAt, reload}` is read the same way by `TrendsBox` and `TrendModal`; `measuredKeyOf(patient.measuredAt)`; the fixtures `trends(patientId, channels, over)`, `channel(key, points, over)`, `point(minutesAgo, value, points)`, `marker(minutesAgo, kind, label)`, `answering(build)`, `BANDS`, `KEYS` (T9) are what every later test uses; `news2Tone(points)` (T10) is used by `TrendCard` and `bandRects`; `CARDS` / `cardTitle` / `channelsOf` (T10) by the box, the dialog, the legend and the table; `TrendCard({card, channels, nowMs, sinceMs, untilMs, onOpen})` gains `sinceMs`/`untilMs` in T11 and `onOpen` is passed from T12; `TrendChart`'s props grow `onPlot` (T12) and `onKeyDown`, `describedBy` (T13) by Edit, never renamed; `whenText`/`markText` live in `TrendModal.jsx` in T12 and move to `trendText.js` (with `pointsText`) in T13, where `TrendModal` and `TrendTable` both import them and nothing else imported them from the dialog; `TrendsBox({patient, bed, nowMs})` gains `nowMs` in T10 and `bed` in T12, matching PatientScreen's edits in those tasks. The sixth pass follows the lane's Task 13: `TrendLegend.jsx` exports `TrendNotes` beside `TrendLegend`; `trendText.js` gains `valueBeside`; `TrendTable` takes the dialog's parsed `series` and `markers`; two keys, `patient.trendsChartRole` and `patient.trendsPointsUnknownRowSr`. The fifth pass follows the lane's Task 12: `valueTicks` returns `{ step, ticks }`; `indexAtTime(points, ms)` resolves the cursor (an instant) to an index at render; `marksNear` is gone (`marksAtTime` is the one rule); Task 13 moves `whenText` and `markText` from `TrendModal.jsx` to `trendText.js`, beside `markBeside` and `pointsText`, and `TrendChart` reads `whenText` from there; `readoutOf` stays private to the dialog (the announcement reads the same `readout` value). The fourth pass renames two exports and adds six: Task 12 replaces Task 11's `markerNear` (read only by its test) with `marksNear`, and its own `markerAtTime` with `marksAtTime` — both return EVERY mark at an x or an instant, and both dialogs (Tasks 12 and 13) read `marksAtTime`; `valueTicks(domain, count, { extent, resolution })` keeps Task 11's two-argument call working, beside `valueTickStep`, `valueExtent`, `valueResolution`, `tickLabel` and `timeLabelPlace`. The third pass renames nothing in the plan's own tasks: Tasks 1–4, 3b and 6–10 are the lanes' code, and Tasks 11–17 are written against it — `TrendCard` keeps its props and gains `sinceMs`/`untilMs` in Task 11 on the lane's `Reading` (`badge`, `pill`); `TrendLegend` gains `truncated`, which both dialogs (Tasks 12 and 13) pass from `markers_truncated`; the legend's ▲ reads `trendsLegendAlarm` while the readout and the table keep `trendsMarkerAlarm`. The second amendment renames nothing either: `TRENDS_MARKER_LIMIT` keeps its name (5000 now); `_markers` returns `(marks, truncated)` and only `patient_trends` calls it; `_finite` is private to `api/trends.py`; `markers_truncated` is a new key no dashboard module reads yet (O16); Task 12's `TrendLegend` passes `channel: t(s.labelKey)` to `trendsThinned`, which takes `{channel}` since the Task 8 review. The O4 amendment renames nothing: `profile_from_payload(patient_id, payload, base=None)` keeps its signature (T14a) and `_replay_profile` now passes `engine.profile(rec.patient_id)` as `base`; `BaselineForm`'s `own` is the box's `{key: bands.own_normal | null}` map it already received, read once more to tell a clear (`clearing`) from nothing to send (`nothing`). Every `t("patient.…")` the code names is one T8 (or, for `baselineClearsAll` / `baselineClearedAll`, T14) defines in four languages (checked by `rawKeys.test.jsx`'s static net, T15 step 3 proves it bites).
 
