@@ -17,9 +17,11 @@
  * fail on it), --body-* (body map).
  * The trend charts' grounds (Group 2 · slice 1): --band-mid and --band-crit tint a NEWS2 row scoring
  *   1–2 and 3 points (the engine's points, never a value judged here), --band-n the patient's own
- *   normal (the prototype's --band-n), --grid the value lines. The prototype's single --band-al
- *   became two, because D2 frames 1–2 points amber and 3 red. Every --v-* line holds 3:1 over each
- *   tint on a card (tokens.test.js).
+ *   normal (the prototype's --band-n meant a reference range; here it is the patient's charted
+ *   normal), --grid the value lines. The prototype's single --band-al became two, because D2 frames
+ *   1–2 points amber and 3 red. The mini chart sits on a card, the big chart on the dialog's --app
+ *   background; every --v-* line holds 3:1 over each tint, and over --band-n stacked on a scored
+ *   row, on card, card2, page and app (tokens.test.js).
  */
 
 :root {
