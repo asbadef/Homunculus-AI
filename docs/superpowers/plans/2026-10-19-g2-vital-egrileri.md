@@ -8,9 +8,9 @@
 
 **Tech Stack:** Python 3.12 and 3.14, FastAPI, SQLAlchemy/psycopg2 (Postgres) and sqlite3, pytest; React 18, Vite, Vitest + Testing Library (`fireEvent`; no user-event), Tailwind on the live token classes, inline SVG (no chart library).
 
-**Spec (authoritative):** `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. Where the code made the spec's letter impossible or unsafe, this plan departs from it; every departure is in the table below with its file and line, and is an open item for the user. **2026-10-20:** the user approved X1–X19 and chose explicit clearing for O4 — Task 14a and Task 14's clear; X21 was found while amending (X20 is kept for the thinning departure the Task 2 review found, which Task 17 adds from the controller's open-items list). **Second amendment, 2026-10-20:** Task 3b (the gateways refuse NaN/±inf), Task 4's two changes (non-finite readings skipped; the marks' read bounded by the window and flagged — X22), and Task 8's strings as the Task 8 quality review corrected them (lane commit `f082251`), mirrored in every later task that quotes them.
+**Spec (authoritative):** `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. Where the code made the spec's letter impossible or unsafe, this plan departs from it; every departure is in the table below with its file and line, and is an open item for the user. **2026-10-20:** the user approved X1–X19 and chose explicit clearing for O4 — Task 14a and Task 14's clear; X21 was found while amending (X20 is kept for the thinning departure the Task 2 review found, which Task 17 adds from the controller's open-items list). **Second amendment, 2026-10-20:** Task 3b (the gateways refuse NaN/±inf), Task 4's two changes (non-finite readings skipped; the marks' read bounded by the window and flagged — X22), and Task 8's strings as the Task 8 quality review corrected them (lane commit `f082251`), mirrored in every later task that quotes them. **Third, 2026-10-20:** for the tasks the lanes have done, the plan now IS their code — Tasks 1–4 and 3b as `feat/g2v-be` has them (head `bd8afda`), Tasks 6–10 as `feat/g2v-dash` has them (head `339c3f2`), review follow-ups included (X23, X24); Task 11's card edits are rebased on the reviewed card and Task 12's box carries the lane's `Note`; Task 12's legend says MAP has no NEWS2 band, that ▲ is a first detection (O17) and when the marks' read stopped at its limit; Task 14a refuses non-finite bounds.
 
-**How the numbers in this plan were obtained.** All seventeen tasks were implemented, in this order, in the worktree while the plan was written, and every red, every green and every count below is what was printed; the tree was then restored to `b6ed65d` and only this file was committed. The O4 amendment (Task 14a, Task 14's clear) and then the second amendment (Task 3b, Task 4, the review's strings) were implemented the same way on top of all seventeen on 2026-10-20, and every suite re-run; a count marked *derived* is the measured one minus a later task's measured delta. The verified implementation is kept beside the per-task files as `/c/tmp/homunculus-plans/g2v/reference.patch` — a cross-check, not the authority: build from the tasks.
+**How the numbers in this plan were obtained.** All seventeen tasks were implemented, in this order, in the worktree while the plan was written, and every red, every green and every count below is what was printed; the tree was then restored to `b6ed65d` and only this file was committed. The O4 amendment (Task 14a, Task 14's clear) and then the second amendment (Task 3b, Task 4, the review's strings) were implemented the same way on top of all seventeen on 2026-10-20, and every suite re-run; the third pass (the lanes' code mirrored into Tasks 1–4, 3b and 6–10, Tasks 11–17 rebased on it) was verified by replaying the whole plan into the worktree and running every suite on that replay; a count marked *derived* is the measured one minus a later task's measured delta. The verified implementation is kept beside the per-task files as `/c/tmp/homunculus-plans/g2v/reference.patch` — a cross-check, not the authority: build from the tasks.
 
 ---
 
@@ -20,7 +20,7 @@
 |---|---|---|---|
 | X1 | §4: `_require_patient` gives "403 out of scope, 404 unknown patient, 503 scope unreadable (the same three the board gives)" | `_require_patient` (api/app.py:476–514) answers **404** for out of scope *and* for an unreadable scope (`UNKNOWN = Scope(False, "unknown")`, scope/resolver.py:23, sees nothing); 403 is the missing permission (`_require`, app.py:436–440); 503 exists only at `/stream-ticket` (app.py:889–894); `/patients` answers 200 with an empty board. The roadmap already records "her yerde 503 olmalı" (roadmap l. 659). | 401 no credential · 403 without `board.view` (before the scope is asked) · 400 bad `hours` · **503 when the scope is UNKNOWN**, checked before `_require_patient` · 404 out of scope (audited `scope_denied`) or unknown id (nothing created). |
 | X2 | §4 example bands `{"low": 41, "high": 50}` | The rules score real numbers with `<=` chains (rules/news2.py:23–84); whole-number rows leave `40 < v < 41` in no row. | Rows are `low < value <= high`: `{"low": 40, "high": 50, "points": 1}` — contiguous, and exactly the old boundaries. |
-| X3 | §4: "`markers.alarm` are the patient's audited `alert` events" | The engine re-emits every active alert on every reading (pipeline.py:91–96) and `/ingest` appends an `alert` row for each (app.py:684–687); api/alarm_quality.py:14–18: "The unit is the episode, not the alert row … `first_seen` is stamped exactly once per episode". | Alarm marks are `first_seen` rows (one per episode), at the escalation clock's own instant (`payload["at"]`, else `ts`). |
+| X3 | §4: "`markers.alarm` are the patient's audited `alert` events" | The engine re-emits every active alert on every reading (pipeline.py:91–96) and `/ingest` appends an `alert` row for each (app.py:684–687); api/alarm_quality.py:14–18: "The unit is the episode, not the alert row … `first_seen` is stamped exactly once per episode". | Alarm marks are `first_seen` rows (one per episode — and today, because the engine never clears an active alert's kind, one per patient and kind ever: O17; the legend calls ▲ the first detection), at the escalation clock's own instant (`payload["at"]`, else `ts`). |
 | X4 | §4: "`markers.antibiotic` are `ANTIBIOTIC_ADMINISTERED` observations" | A charted `0.0` means "not given" (api/board.py:98–101 counts only `>= 1.0`). | Only values `>= 1.0` are marks. |
 | X5 | §4 `points: [[iso_ts, value]]`; §3.2 the table's NEWS2 column is "a lookup, not a computation" | — | Each point carries a third element, **the engine's NEWS2 points for that reading** (`null` for MAP and lactate), so the browser never compares a value with a band edge. Additive; the chart ignores it. |
 | X6 | §3.1: MAP "in the same `--v-map` colour at reduced opacity"; §6: "the `--v-*` lines must keep 3:1" | Measured: `--v-map` at opacity .55–.70 over the band tints on a card is **2.17–3.34:1** in Gece and Gün. | MAP drawn at full colour with **hollow** dots; systolic filled; the legend names both. |
@@ -39,6 +39,8 @@
 | X19 | — | `src/reachable.test.js` fails on any module `main.jsx` cannot reach. | The dashboard is built top-down: each task wires the module it creates (Task 9 wires the box before any card exists). |
 | X21 | §3.3: the save's toast "Hastanın normali kaydedildi; motor yeniden değerlendirdi" | `PUT /clinical/{id}/profile` (api/app.py:608–640) sets the profile, audits it and republishes the board; it re-scores nothing — the standing alerts are the last reading's until the next one (`Engine.ingest`, pipeline.py:51). The trends answer does re-read the profile (the own-normal band and pill). Found while amending for O4, 2026-10-20. | A save keeps the spec's sentence (Task 8, unchanged — open item O12). A clear, new with the amendment, says only what is true: the ranges are deleted and the next reading is judged without them (Task 14). |
 | X22 | §4 the response shape; §4 "markers.alarm are the patient's audited alert events" | `records(…, since=, limit=)` returns the OLDEST rows at or after `since` (ORDER BY id); `AckStore.prune` (api/ackstore.py:28–33) drops the `first_seen` stamp when an alert clears, so a flapping alert writes a row each time it comes back — ≈ 30/h at one reading a minute, ≈ 2 160 in 72 h. Readings replayed from the audit (`rehydrate`) pass no gateway, so a NaN/±inf from before Task 3b can sit in `PatientState`. Found by the Task 2 and Task 3 quality reviews, 2026-10-20. | Task 4: the marks' read takes up to 5000 rows and the answer gains `markers_truncated` (additive); a non-finite reading is never in `points`, `total_points` or `latest`. Task 3b closes the two gateways. |
+| X23 | §6 `useTrends`: "on a new measurement … every 60 s while READY and visible" | The plan's hook superseded every read in flight on any trigger — a new measurement, the tick, a wake, a reload — so at Stage B's rates a chart could never fill. Found by the Task 9 quality review, 2026-10-20. | The lane's hook (Task 9, commit `dac5051`): a read is discarded only on a patient, window or key change, on leaving READY and on unmount; a same-key trigger during a read queues ONE more read when it settles; the timer sleeps while the page is hidden; `reload()` reads only while READY; the unreadable line is a warn `Note`. Return shape unchanged. |
+| X24 | §3.1: the card's values "in the channel's identity colour"; the own-normal pill beside the frame | Daylight `--v-map` is exactly `--crit`: a calm pressure card showed critical-red numbers, and a 3-point pulse showed green numbers in a red frame. A NEWS2 channel whose latest value came with no finite points read as calm. In Russian "САД" reads as systolic, where a vasopressor target is a MAP. Found by the Task 10 quality review, 2026-10-20. | The lane's card (Task 10, commits `4cdb563` and `339c3f2`): values in `text-ink`, the identity colour on the title and (Task 11) the line; the badge and the pill on the first channel's reading row; "NEWS2: —" in attention tone, with its reason for a screen reader, for an unscored NEWS2 channel; the delta's direction in words for a screen reader; no age without a finite clock; `border-2` in every tone; ru `board.chMap` "СрАД". Task 12's legend says MAP is not scored by NEWS2. **User eye-check in Task 16:** say if the prototype's coloured numbers should come back. |
 
 ---
 
@@ -57,26 +59,28 @@ If tasks are merged in another order, a total is the base plus the deltas of the
 |---|---|---|---|
 | base | 1981 / 644 | 81 / 1912 | — |
 | 1 | 1995 / 644 | — | `test_news2_bands.py` **14** (new) |
-| 2 | 2010 / 644 | — | `test_timeline_thin.py` **15** (new) |
-| 3 | 2023 / 648 | — | `test_audit_since.py` **13 + 4 skipped** without the DB, **17** with it (new) |
-| 3b | 2032 / 648 (*derived*) | — | `test_gateway_hl7.py` 14 → **18**, `test_gateway_fhir.py` 5 → **10** |
-| 4 | 2055 / 648 (*derived*) | — | `test_trends.py` **23** (new) |
-| 5 | 2081 / 648 (*derived*) | 81 / 1914 | `test_trends_api.py` **21** (new); isolation 15 → **18**; board_permissions 55 → **57**; tenant_isolation 109 (a registry row, no new test); dashboard `apiErrors.test.js` 141 → **143** |
-| 6 | — | 81 / 1920 | `backendApi.test.js` 104 → **110** |
-| 7 | — | 81 / 1954 | `tokens.test.js` 192 → **226** |
-| 8 | — | 81 / 1954 | `strings.test.js` 6 → **6** (it loops; no count moves) |
-| 9 | — | 82 / 1967 | `useTrends.test.jsx` **9** (new); `PatientScreen.test.jsx` 50 → **54** |
-| 10 | — | 84 / 1981 | `news2Tone.test.js` **2**, `TrendCard.test.jsx` **10** (new); PatientScreen 54 → **56** |
-| 11 | — | 86 / 2010 | `trendGeometry.test.js` **16**, `TrendChart.test.jsx` **12** (new); TrendCard 10 → **11** |
-| 12 | — | 87 / 2020 | `TrendModal.test.jsx` **8** (new); trendGeometry 16 → **17**; PatientScreen 56 → **57** |
-| 13 | — | 87 / 2027 | TrendModal 8 → **15** |
-| 14a | 2088 / 648 (*derived*) | — | `test_api_patient_profile.py` 27 → **34** |
-| 14 | — | 88 / 2044 | `BaselineForm.test.jsx` **15** (new); PatientScreen 57 → **59** |
-| 15 | — | 88 / 2045 | `rawKeys.test.jsx` 6 → **7** |
-| 16 | 2092 / 648 | — | `test_scenario_rebase.py` **4** (new) |
+| 2 | 2012 / 644 | — | `test_timeline_thin.py` **17** (new) |
+| 3 | 2027 / 650 | — | `test_audit_since.py` **15 + 6 skipped** without the DB, **21** with it (new) |
+| 3b | 2036 / 650 | — | `test_gateway_hl7.py` 14 → **18**, `test_gateway_fhir.py` 5 → **10** |
+| 4 | 2059 / 650 | — | `test_trends.py` **23** (new) |
+| 5 | 2085 / 650 | 81 / 1914 | `test_trends_api.py` **21** (new); isolation 15 → **18**; board_permissions 55 → **57**; tenant_isolation 109 (a registry row, no new test); dashboard `apiErrors.test.js` 141 → **143** |
+| 6 | — | 81 / 1921 | `backendApi.test.js` 104 → **111** |
+| 7 | — | 81 / 2129 | `tokens.test.js` 192 → **400** |
+| 8 | — | 81 / 2129 | `strings.test.js` 6 → **6** (it loops; no count moves) |
+| 9 | — | 82 / 2151 | `useTrends.test.jsx` **17** (new); `PatientScreen.test.jsx` 50 → **55** |
+| 10 | — | 84 / 2176 | `news2Tone.test.js` **2**, `TrendCard.test.jsx` **21** (new); PatientScreen 55 → **57** |
+| 11 | — | 86 / 2205 | `trendGeometry.test.js` **16**, `TrendChart.test.jsx` **12** (new); TrendCard 21 → **22** |
+| 12 | — | 87 / 2216 | `TrendModal.test.jsx` **9** (new); trendGeometry 16 → **17**; PatientScreen 57 → **58** |
+| 13 | — | 87 / 2223 | TrendModal 9 → **16** |
+| 14a | 2098 / 650 | — | `test_api_patient_profile.py` 27 → **39**; `test_trends.py` 23 → **24** |
+| 14 | — | 88 / 2240 | `BaselineForm.test.jsx` **15** (new); PatientScreen 58 → **60** |
+| 15 | — | 88 / 2241 | `rawKeys.test.jsx` 6 → **7** |
+| 16 | 2102 / 650 | — | `test_scenario_rebase.py` **4** (new) |
 | 17 | — | — | docs only |
 
-Backend arithmetic: 14 + 15 + 13 + 9 + 23 + (21 + 3 + 2) + 7 + 4 = **111** passed and **4** skipped over the base. (Review follow-ups add tests this table does not count — the backend lane's Tasks 2 and 3 have them; a lane's total is then this one plus those.) Dashboard: 2 + 6 + 34 + 13 + 14 + 29 + 10 + 7 + 17 + 1 = **133** tests and 7 files.
+Measured: the base; backend after 16 and dashboard after 15 (the whole replay, 2026-10-20); the dashboard after 6, 7, 8, 9 and 10 at the lane's commits (`950176d`, `e2afede`, `f082251`, `dac5051`, `339c3f2` — each the row minus 2, Task 5's `apiErrors` tests, which the dashboard lane does not carry). The other rows are the per-file counts summed. Tasks 1–3 and 6–10 are the lanes' code as reviewed (their follow-up commits included), so these are the counts the lanes have.
+
+Backend arithmetic: 14 + 17 + 15 + 9 + 23 + (21 + 3 + 2) + 13 + 4 = **121** passed and **6** skipped over the base. Dashboard: 2 + 7 + 208 + 0 + 22 + 25 + 29 + 11 + 7 + 17 + 1 = **329** tests and 7 files.
 
 ---
 
@@ -160,7 +164,8 @@ Backend arithmetic: 14 + 15 + 13 + 9 + 23 + (21 + 3 + 2) + 7 + 4 = **111** passe
 | `src/homunculus/api/app.py` | `GET /patients/{patient_id}/trends`. | 5 |
 | `src/homunculus/api/clinical.py` | `profile_from_payload`: `{"baselines": {}}` over a charted profile clears every range. | 14a |
 | `src/homunculus/api/rehydrate.py` | `_replay_profile` reads each row over what the replay restored so far. | 14a |
-| `tests/test_api_patient_profile.py` | seven tests: the clear, what stays refused, the door, the next reading, the restart. | 14a |
+| `tests/test_api_patient_profile.py` | twelve tests: the clear, what stays refused, the door, the next reading, the restart; five non-finite bounds. | 14a |
+| `tests/test_trends.py` | a replayed profile row with a NaN bound never reaches the answer. | 4, 14a |
 | `tests/test_infinity_shadow_isolation.py` | trends imports nothing of the lane; a trends read never reaches the shadow store; the shadow token is refused there. | 5 |
 | `tests/test_board_permissions.py`, `tests/test_tenant_isolation.py` | one registry row each. | 5 |
 | `src/homunculus/scenarios/loader.py` | `rebased(events, end)`. | 16 |
@@ -194,8 +199,9 @@ Backend arithmetic: 14 + 15 + 13 + 9 + 23 + (21 + 3 + 2) + 7 + 4 = **111** passe
 | `src/backendApi.js` (+ `src/backendApi.test.js`) | `patientTrends(id, hours)`, `putPatientProfile(id, body)`. | 6 |
 | `src/live/session/testTokens.testutil.js` | `fakeApi` gains both. | 6 |
 | `src/live/theme/tokens.css`, `tokens.js`, `tokens.test.js` | `--band-n`, `--band-mid`, `--band-crit`, `--grid` (Gece and Gün); the chart contrast pairs. | 7 |
-| `src/live/i18n/strings/patient.js` | 49 keys × 4 languages; `onlyWrite` and `formsSoon` reworded (8); `trendsSoon` removed (9); `baselineClearsAll`, `baselineClearedAll` (14). | 8, 9, 14 |
-| `src/live/i18n/strings.test.js` | one `NEUTRAL` and five `AZ_SAME_AS_TR` entries. | 8 |
+| `src/live/i18n/strings/patient.js` | 49 keys × 4 languages; `onlyWrite` and `formsSoon` reworded (8); `trendsSoon` removed (9); `trendsDeltaUp/Down/Same`, `trendsPointsUnknown[Sr]` (10); `trendsLegendNoBand`, `trendsLegendAlarm`, `trendsLegendMarksTruncated` (12); `baselineClearsAll`, `baselineClearedAll` (14). | 8, 9, 10, 12, 14 |
+| `src/live/i18n/strings/board.js` | ru `chMap` "СрАД" ("САД" reads as systolic). | 10 |
+| `src/live/i18n/strings.test.js` | one `NEUTRAL` and five `AZ_SAME_AS_TR` entries (8); `trendsPointsUnknown` in both (10). | 8, 10 |
 | `src/live/screens/patient/PatientScreen.jsx` (+ test) | `TrendsBox` where the placeholder stood; the forms note under the Sepsis/Meds row; `ageText` imported; header comment. | 9, 10, 12 (test also 14) |
 | `src/live/rawKeys.test.jsx` | `patientTrends` stubbed; the trend charts' anchor. | 15 |
 
@@ -221,19 +227,21 @@ Backend arithmetic: 14 + 15 + 13 + 9 + 23 + (21 + 3 + 2) + 7 + 4 = **111** passe
 | 11 the mini chart | 10 (and 7 for the colours to render) | 4, 5 | `TrendCard.jsx`, `TrendsBox.jsx` |
 | 12 the big chart | 11 | 4, 5 | `TrendChart.jsx`, `trendGeometry.*`, `TrendsBox.jsx` |
 | 13 keyboard and table | 12 | 4, 5 | `TrendModal.*`, `TrendChart.jsx` |
-| 14a the engine clears the last range | — | any task (its three files are touched by no other) | — |
+| 14a the engine clears the last range | 4 (Steps 6–8 edit `test_trends.py`) | any task after 4 (its other files are touched by no other) | — |
 | 14 the patient's normal | 13, 6 (14a for a real engine to take the clear; the tests stub the API) | 4, 5, 14a | `TrendsBox.jsx`, `PatientScreen.test.jsx` |
 | 15 sweeps and the full gates | 1–14, 3b, 14a | — | `rawKeys.test.jsx` |
 | 16 replay and the local walk | 15 | — | — |
 | 17 docs | 16 | — | — |
 
-**Waves:** A = {1, 2, 3, 6, 7, 8} in six worktrees; B = {4} beside {9}; C = {5} beside the chain 10 → 11 → 12 → 13 → 14 (sequential: each edits `TrendsBox.jsx`); then 15, 16, 17. **3b** and **14a** (the amendments of 2026-10-20) join whichever wave is running when they are picked up — each needs nothing and shares no file — and both must be merged before 15. (The controller runs 3b in the backend lane before Task 4.)
+**Waves:** A = {1, 2, 3, 6, 7, 8} in six worktrees; B = {4} beside {9}; C = {5} beside the chain 10 → 11 → 12 → 13 → 14 (sequential: each edits `TrendsBox.jsx`); then 15, 16, 17. **3b** and **14a** (the amendments of 2026-10-20) join whichever wave is running when they are picked up — 3b needs nothing and shares no file; 14a needs Task 4 (its Steps 6–8 edit `test_trends.py`) — and both must be merged before 15. (The controller runs 3b in the backend lane before Task 4.)
 
 ---
 
 # Part 1 · The engine (Tasks 1–5)
 
 ### Task 1: NEWS2's rows as data — one table the score and the charts both read
+
+**Done in the backend lane** (`feat/g2v-be`, commits `de0085f` and `dfbc69e`, the Task 1 quality review); the blocks below are that code.
 
 Spec §5.1. The five `*_points` functions become lookups in `NEWS2_BANDS`; the trends endpoint (Task 4) serves the same rows, so a band on a chart and a point in the score cannot disagree. **No score moves:** the old if-chains are kept verbatim in the test as the reference, and every value on a dense grid, every boundary and both sides of it, ±∞ and NaN must score what they scored before. Scale 1 only (the module docstring says why Scale 2 is not implemented).
 
@@ -261,6 +269,7 @@ import pytest
 
 from homunculus.rules import news2
 from homunculus.rules.news2 import BANDS_SOURCE, NEWS2_BANDS, Band
+from homunculus.state.timeline import PatientState
 
 VAULT = Path(__file__).resolve().parents[2] / "Homunculus" / "wiki"
 
@@ -341,6 +350,9 @@ IDS = [name for name, *_ in CASES]
 def test_the_table_holds_the_five_scored_vitals_and_scale_1_only():
     assert set(NEWS2_BANDS) == {"respiration_rate", "spo2", "systolic_bp", "pulse", "temperature"}
     assert set(NEWS2_BANDS) == set(news2._CORE_VITALS)
+    # `_CORE_VITALS` is a constant score() never reads, so pin the scorer's own breakdown names and
+    # their order too: an empty state lists every core vital as missing, in the order score() walks.
+    assert news2.score(PatientState("p-a1")).missing == list(NEWS2_BANDS)
     # Scale 2 is deliberately not implemented (module docstring): no row of it may appear here.
     assert not [name for name in NEWS2_BANDS if "scale2" in name or "scale_2" in name]
 
@@ -369,9 +381,11 @@ def test_every_value_scores_what_the_if_chain_scored(parameter, fn, reference, s
 
 
 def test_the_functions_read_the_table(monkeypatch):
-    monkeypatch.setitem(NEWS2_BANDS, "pulse", (Band(None, 200, 2), Band(200, None, 3)))
+    # Both rows give a value the real table never gives there (100 scores 1, 201 scores 3), so each
+    # assertion can only hold if the function reads the patched table.
+    monkeypatch.setitem(NEWS2_BANDS, "pulse", (Band(None, 200, 2), Band(200, None, 0)))
     assert news2.pulse_points(100) == 2
-    assert news2.pulse_points(201) == 3
+    assert news2.pulse_points(201) == 0
 
 
 def test_the_source_is_the_vault_note():
@@ -463,6 +477,8 @@ with:
 
 ```python
 #: The vault source note every row below is read from (Homunculus/wiki/sources/news2-rcp-2017.md).
+#: That note is `capture: extract`: the Scale 1 rows come from its secondary renderings, and the
+#: primary RCP chart is not captured in full.
 #: Served with the rows by the trends endpoint, so a chart's legend names it.
 BANDS_SOURCE = "news2-rcp-2017"
 
@@ -471,10 +487,11 @@ BANDS_SOURCE = "news2-rcp-2017"
 class Band:
     """One row of a NEWS2 parameter's chart: a value with `low < value <= high` scores `points`.
 
-    `None` is an open side. The vault writes the chart in whole numbers (41–50 → 1), but the engine
-    scores real numbers, and whole-number rows leave 40 < value < 41 belonging to none of them. So
-    each row's lower edge is the previous row's upper edge, exclusive: the rows tile the line with
-    no gap and no overlap, and every boundary sits where the if-chains these replaced had it.
+    `None` is an open side. The vault writes the chart at the chart's own resolution (whole
+    numbers; tenths for temperature), e.g. 41–50 → 1, but the engine scores real numbers, and rows
+    written that way leave 40 < value < 41 belonging to none of them. So each row's lower edge is
+    the previous row's upper edge, exclusive: the rows tile the line with no gap and no overlap,
+    and every boundary sits where the if-chains these replaced had it.
     """
     low: float | None
     high: float | None
@@ -565,6 +582,8 @@ red: 1 error — ImportError: cannot import name 'BANDS_SOURCE'" -m "Co-Authored
 
 ### Task 2: `thin()` — at most N readings of a series, keeping its shape
 
+**Done in the backend lane** (commits `7a33576` and `cd5fb9a`, the Task 2 quality review: two more tests, the preconditions in words); the blocks below are that code.
+
 Spec D8 and §5.2. Pure, over `[Observation]` in time order. At or below the cap it is the series itself (a copy). Above it, the series' span is cut into `max_points // 4` equal slices and each keeps its first, last, lowest and highest reading, in order — the lowest because the reading a clinician must not lose is the worst one. Today's spot-check data never reaches the cap; Stage B's 5 s data would be 51 840 readings per 72 h.
 
 **Files:**
@@ -598,14 +617,23 @@ def _obs(seconds: float, value: float) -> Observation:
     return Observation("S-001", SignalCode.SPO2, value, "%", T0 + timedelta(seconds=seconds), "test")
 
 
+def _micros(moment: datetime) -> int:
+    """A moment as whole microseconds since T0 — exact integer arithmetic, no floats."""
+    return (moment - T0) // timedelta(microseconds=1)
+
+
 def _slices(series: list[Observation], buckets: int) -> list[list[Observation]]:
-    """The series cut into `buckets` equal slices of its time span, as the docstring defines them."""
-    t0 = series[0].timestamp
-    span = (series[-1].timestamp - t0).total_seconds()
+    """The series cut into `buckets` equal slices of its time span, as the docstring defines them.
+
+    The slice of a reading is `(its offset) * buckets // span`, in integer microseconds, so the
+    edges are checked against exact arithmetic and not against the float expression `thin()` uses.
+    """
+    t0_us = _micros(series[0].timestamp)
+    span_us = _micros(series[-1].timestamp) - t0_us
     out: list[list[Observation]] = [[] for _ in range(buckets)]
     for obs in series:
-        at = 0 if span <= 0 else min(buckets - 1,
-                                     int((obs.timestamp - t0).total_seconds() / span * buckets))
+        at = 0 if span_us <= 0 else min(buckets - 1,
+                                        (_micros(obs.timestamp) - t0_us) * buckets // span_us)
         out[at].append(obs)
     return [part for part in out if part]
 
@@ -624,6 +652,28 @@ def test_an_empty_series_stays_empty():
 def test_a_cap_below_four_is_refused():
     with pytest.raises(ValueError, match="at least 4"):
         thin([_obs(0, 96)], 3)
+
+
+def test_a_cap_of_exactly_four_keeps_the_first_last_lowest_and_highest():
+    values = [95.0, 91.0, 97.0, 93.0, 85.0, 99.0, 94.0, 92.0, 96.0, 90.0]
+    series = [_obs(i * 60, value) for i, value in enumerate(values)]
+
+    kept = thin(series, 4)                    # the smallest cap: one slice, up to four readings
+
+    assert len(kept) <= 4
+    held = {id(o) for o in kept}
+    assert id(series[0]) in held and id(series[-1]) in held
+    assert id(min(series, key=lambda o: o.value)) in held
+    assert id(max(series, key=lambda o: o.value)) in held
+
+
+def test_a_cap_that_is_not_a_multiple_of_four_is_rounded_down_to_whole_slices():
+    rng = random.Random(2003)
+    series = [_obs(i * 10, round(rng.uniform(80, 100), 1)) for i in range(6000)]
+
+    kept = thin(series, 2003)
+
+    assert len(kept) <= 4 * (2003 // 4)       # 2 000: whole slices of four, never 2 003
 
 
 @pytest.mark.parametrize("seed", range(10))
@@ -696,6 +746,9 @@ def thin(series: list[Observation], max_points: int) -> list[Observation]:
     span is cut into `max_points // 4` equal slices, and each keeps its first, last, lowest and
     highest reading, in their order.
 
+    Preconditions: `series` in time order, as `window()` returns it; values are finite (the
+    gateways' contract).
+
     For a chart, never for a rule: a thinned series has lost readings by construction, and no score
     may be computed from one. At or below the cap it is the series itself (a copy), so the spot-check
     data the wards send today is never touched. The extremes are what is kept because the reading a
@@ -722,13 +775,26 @@ def thin(series: list[Observation], max_points: int) -> list[Observation]:
     return [series[i] for i in sorted(keep)]
 ```
 
+And the module says what it now holds (the Task 2 quality review, lane commit `cd5fb9a`) — replace:
+
+```python
+"""Per-patient current values, history, and staleness."""
+```
+
+with:
+
+```python
+"""Per-patient current values, history, and staleness — and `thin()`, a pure helper that caps an
+observation series for drawing."""
+```
+
 - [ ] **Step 4: Green.**
 
 ```bash
 cd /c/tmp/g2-vital/homunculus-engine
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_timeline_thin.py tests/test_state_timeline.py 2>&1 | tail -1
 ```
-Expected: `23 passed` — 15 new, `test_state_timeline.py` 8 unchanged.
+Expected: `25 passed` — 17 new (the Task 2 quality review, lane commit `cd5fb9a`, added the cap's lower boundary and a non-multiple of 4), `test_state_timeline.py` 8 unchanged.
 
 - [ ] **Step 5: Commit.**
 
@@ -744,6 +810,8 @@ red: ImportError: cannot import name 'thin'" -m "Co-Authored-By: Claude Fable 5.
 ---
 
 ### Task 3: `records(…, since=)` on the protocol, in memory, SQLite and Postgres
+
+**Done in the backend lane** (commits `9f5aae5` and `5571cfb`, the Task 3 quality review: the Postgres cast pinned by a row the text would order wrongly, one `_now_iso` for every backend); the blocks below are that code.
 
 Spec §5.3. A `ts >= since` clause; the `/audit` route does not change (only the trends endpoint passes `since`). `ts` is TEXT in both databases (migration 0004 `ts TEXT NOT NULL`), so the comparison must order **instants**: a bound in any zone means the same instant, and a row stamped on a whole second (`isoformat()` writes `…09:00:00+00:00`, no fraction) must still sort before `…09:00:00.500000+00:00`. SQLite compares TEXT byte by byte, which is right here because every `ts` is `_now_iso()` and the bound is formatted the same way ("+" sorts before "."); Postgres compares TEXT by its collation, so it casts both sides to `timestamptz`. A bound with no zone is refused, in all three.
 
@@ -765,6 +833,7 @@ not strings: the bound may come in any time zone, and a row stamped on a whole s
 from __future__ import annotations
 
 import inspect
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -780,6 +849,8 @@ BAKU = timezone(timedelta(hours=4))
 # Three rows a second apart, the first on a whole second: isoformat() writes it with no fraction.
 CRAFTED = ["2026-10-19T09:00:00+00:00", "2026-10-19T09:00:00.500000+00:00",
            "2026-10-19T09:00:01+00:00"]
+# What `_now_iso()` writes: UTC, six fraction digits or none, always "+00:00" (never "Z").
+TS_SHAPE = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{6})?\+00:00")
 
 
 def _event(**over) -> AuditEvent:
@@ -791,7 +862,11 @@ def _event(**over) -> AuditEvent:
 def _two(log):
     """Two appends with a clear instant between them; returns their records."""
     first = log.append(_event())
-    time.sleep(0.01)
+    stamped = datetime.fromisoformat(first.ts)
+    # Wait until the clock has strictly passed the first stamp rather than sleeping a fixed time:
+    # on Windows the clock can tick at ~15.6 ms, and a short sleep may give both rows one `ts`.
+    while datetime.now(timezone.utc) <= stamped:
+        time.sleep(0.001)
     second = log.append(_event(subject="septic_shock"))
     return first, second
 
@@ -840,6 +915,14 @@ def test_a_since_without_a_zone_is_refused(log):
     log.append(_event())
     with pytest.raises(ValueError, match="time zone"):
         log.records(since=datetime(2026, 10, 19, 9, 0))
+
+
+def test_append_stamps_ts_in_the_shape_the_sqlite_comparison_needs(log):
+    # SQLite compares `ts` as text against `bound.isoformat()` (UTC, "+00:00"); a "Z" suffix or a
+    # local offset written by `append` would silently break `since` there.
+    record = log.append(_event())
+    assert TS_SHAPE.fullmatch(record.ts), record.ts
+    assert [TS_SHAPE.fullmatch(r.ts) is not None for r in log.records()] == [True]
 
 
 def test_sqlite_orders_a_whole_second_against_its_fractions():
@@ -905,6 +988,32 @@ def test_postgres_orders_instants_not_text(pg_log):
 
 
 @requires_db
+def test_postgres_stamps_ts_in_the_same_shape(pg_log):
+    record = pg_log.append(_event())
+    assert TS_SHAPE.fullmatch(record.ts), record.ts
+    assert [TS_SHAPE.fullmatch(r.ts) is not None for r in pg_log.records()] == [True]
+
+
+@requires_db
+def test_postgres_compares_instants_where_the_text_would_say_otherwise(pg_log):
+    """Pins the `timestamptz` cast, not a real row: no writer stores a non-UTC `ts`
+    (`_now_iso`, `PostgresAuditLog.append`).
+
+    "2026-10-20T12:30:00+04:00" is 08:30 UTC, before the 09:00 UTC bound, yet as text it sorts
+    AFTER "2026-10-20T09:00:00+00:00" (the hour's "1" > "0", in every collation). Only comparing
+    instants leaves it out.
+    """
+    stamps = ["2026-10-20T12:30:00+04:00", "2026-10-20T09:00:00+00:00"]
+    with pg_log._engine.begin() as conn:                   # noqa: SLF001
+        for ts in stamps:
+            conn.execute(text("INSERT INTO audit (ts, tenant, event_type, patient_id, subject, payload)"
+                              " VALUES (:ts, 'HOSP1', 'first_seen', 'S-001', 'news2', '{}'::jsonb)"),
+                         {"ts": ts})
+    bound = datetime(2026, 10, 20, 9, 0, tzinfo=timezone.utc)
+    assert [r.ts for r in pg_log.records(since=bound)] == ["2026-10-20T09:00:00+00:00"]
+
+
+@requires_db
 def test_postgres_refuses_a_since_without_a_zone(pg_log):
     with pytest.raises(ValueError, match="time zone"):
         pg_log.records(since=datetime(2026, 10, 19, 9, 0))
@@ -919,7 +1028,7 @@ cd /c/tmp/g2-vital/homunculus-engine
 TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:55432/homunculus_test_g2v PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 \
   /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_audit_since.py 2>&1 | grep -E "^E |failed" | sort | uniq -c
 ```
-Expected: `17 failed` — `TypeError: InMemoryAuditLog.records() got an unexpected keyword argument 'since'` (and the same for `SqliteAuditLog`, and Postgres' `PostgresAuditLog.records()`), and `KeyError: 'since'` from the four signature cases. Without the database: `13 failed, 4 skipped`.
+Expected: `18 failed, 3 passed` (`13 failed, 2 passed, 6 skipped` without the database; three cases pin what holds already) — `TypeError: InMemoryAuditLog.records() got an unexpected keyword argument 'since'` (and the same for `SqliteAuditLog`, and Postgres' `PostgresAuditLog.records()`), and `KeyError: 'since'` from the four signature cases. Without the database: `13 failed, 4 skipped`.
 
 - [ ] **Step 3: The contract and the two in-process logs.** Three Edits in `homunculus-engine/src/homunculus/api/audit.py`.
 
@@ -1039,7 +1148,8 @@ from homunculus.api.audit import GENESIS_HASH, AuditEvent, AuditRecord, chain_ha
 with:
 
 ```python
-from homunculus.api.audit import GENESIS_HASH, AuditEvent, AuditRecord, chain_hash, since_utc
+from homunculus.api.audit import (
+    GENESIS_HASH, AuditEvent, AuditRecord, _now_iso, chain_hash, since_utc)
 ```
 
 (b) Replace:
@@ -1080,6 +1190,30 @@ with:
 
 (`datetime` is already imported in audit_postgres.py.)
 
+(c) and (d) — the Task 3 quality review (lane commit `5571cfb`): Postgres stamps `ts` with the same `_now_iso()` the other two logs use, so every backend writes one shape. Replace:
+
+```python
+from datetime import datetime, timezone
+```
+
+with:
+
+```python
+from datetime import datetime
+```
+
+and replace:
+
+```python
+            ts = datetime.now(timezone.utc).isoformat()
+```
+
+with:
+
+```python
+            ts = _now_iso()
+```
+
 - [ ] **Step 5: Green, with and without the database.**
 
 ```bash
@@ -1088,7 +1222,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:55432/hom
   /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_audit_since.py tests/test_audit_postgres.py tests/test_audit_memory.py tests/test_audit_sqlite.py tests/test_audit_chain.py tests/test_api_audit.py tests/test_rehydrate.py 2>&1 | tail -1
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_audit_since.py 2>&1 | tail -1
 ```
-Expected: `69 passed` (17 + 11 + 4 + 5 + 21 + 5 + 6), then `13 passed, 4 skipped`.
+Expected: `73 passed` (21 + 11 + 4 + 5 + 21 + 5 + 6), then `15 passed, 6 skipped`.
 
 - [ ] **Step 6: Commit.**
 
@@ -1098,12 +1232,14 @@ git add homunculus-engine/src/homunculus/api/audit.py homunculus-engine/src/homu
 git status --short && git diff --cached --stat
 git commit -m "feat(engine): audit records(since=) in memory, SQLite and Postgres — instants, not text" -m "A zone-aware lower bound on ts (since_utc refuses a naive one). SQLite compares the isoformat text byte by byte (every ts is _now_iso); Postgres casts both sides to timestamptz, because TEXT follows the collation. /audit is unchanged; only the trends endpoint passes since.
 
-red: 17 failed (13 + 4 skipped without the DB) — TypeError: ...records() got an unexpected keyword argument 'since'; KeyError: 'since'" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+red: 18 failed, 3 passed (13 failed, 2 passed, 6 skipped without the DB) — TypeError: ...records() got an unexpected keyword argument 'since'; KeyError: 'since'" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
 
 ### Task 3b: The gateways refuse non-finite values
+
+**Done in the backend lane** (commit `b2ea2e5`); the blocks below are that code.
 
 **Added 2026-10-20 (the Task 2 quality review; the controller's decision).** `float()` reads "NaN", "nan", "inf", "-Infinity" without complaint, and so does JSON as Python reads it: the edge bridge's `json.dumps` writes a bare `NaN` token and Starlette's `request.json()` reads it back. Two doors let them in: `gateway/hl7.py:121` (`float(_at(f, 5))`) and `gateway/fhir.py:59` (`float(vq["value"])`). Inside `PatientState` a NaN (a) poisons `thin()` — a NaN first in a slice becomes that slice's minimum and maximum and the real extreme is dropped (measured: an 85 % desaturation lost) — and (b) makes the trends answer 500, because Starlette's `JSONResponse` has `allow_nan=False`. `edge/ncefiles.py:264` and `api/clinical.py:137` already refuse non-finite values. This task mirrors each gateway's own way with a bad value: HL7 drops the field (as it drops a non-numeric one), FHIR raises its `GatewayError` (which `/ingest` turns into a 400, app.py:675–676). Nothing else is validated here. `thin()` stays NaN-intolerant on purpose; Task 4's builder skips a non-finite reading as well, for rows already in the audit.
 
@@ -1271,7 +1407,7 @@ PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_gateway_hl7.py tests/test_gateway_fhir.py tests/test_api_ingest.py tests/test_edge_bridge.py tests/test_edge_ncebridge.py tests/test_integration_e2e.py tests/test_scenarios_e2e.py tests/test_scenarios_hl7_parity.py tests/test_scenario_news2.py tests/test_pipeline.py 2>&1 | tail -1
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -1
 ```
-Expected: `28 passed`; `95 passed` (18 + 10 + `test_api_ingest.py` 7 + `test_edge_bridge.py` 5 + `test_edge_ncebridge.py` 16 + `test_integration_e2e.py` 2 + `test_scenarios_e2e.py` 4 + `test_scenarios_hl7_parity.py` 4 + `test_scenario_news2.py` 23 + `test_pipeline.py` 6); the no-DB suite **2032 passed, 648 skipped** in plan order after Task 3 (*derived* — measured 2092 / 648 with every task in place) — in any other order, the base plus the merged tasks' deltas, this one's being 9.
+Expected: `28 passed`; `95 passed` (18 + 10 + `test_api_ingest.py` 7 + `test_edge_bridge.py` 5 + `test_edge_ncebridge.py` 16 + `test_integration_e2e.py` 2 + `test_scenarios_e2e.py` 4 + `test_scenarios_hl7_parity.py` 4 + `test_scenario_news2.py` 23 + `test_pipeline.py` 6); the no-DB suite **2036 passed, 650 skipped** in plan order after Task 3 (*derived* — measured 2102 / 650 with every task in place) — in any other order, the base plus the merged tasks' deltas, this one's being 9.
 
 - [ ] **Step 5: Commit.**
 
@@ -1285,6 +1421,8 @@ red: 9 failed — four HL7 sentinels kept, four FHIR not raised, /ingest 200 to 
 ```
 
 ### Task 4: `api/trends.py` — the answer, built by the engine
+
+**Done in the backend lane** (commit `bd8afda`); the blocks below are that code.
 
 Spec §4 and §5.4, with X1–X5 above. `patient_trends(engine, audit, *, hospital, patient_id, hours, now)` returns the response: the board's seven channels in its order, even empty; each reading as `[iso, value, the engine's NEWS2 points]`; `latest` with the delta over the whole history (rounded to 2 places), the breakdown's points and the own-normal verdict; `bands.news2` from `NEWS2_BANDS` on the five NEWS2 channels, `bands.own_normal` from the charted profile, `bands.device` reserved as `None`; thinning above `TRENDS_MAX_POINTS = 2000`; marks from `first_seen` audit rows and charted doses, in time order. It never creates a patient (an unmeasured id is read from an empty `PatientState`), writes nothing to the audit, and imports nothing of Aşama A.
 
@@ -1753,7 +1891,7 @@ def patient_trends(engine: Engine, audit: AuditLog, *, hospital: str, patient_id
 cd /c/tmp/g2-vital/homunculus-engine
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_trends.py tests/test_news2_bands.py tests/test_timeline_thin.py tests/test_audit_since.py 2>&1 | tail -1
 ```
-Expected: `65 passed, 4 skipped` (23 + 14 + 15 + 13, the four Postgres cases skipped without the database) on the plan's Tasks 1–3; the three earlier files count what their tasks left after review (the backend lane's follow-ups added tests), `test_trends.py` is **23**.
+Expected: `69 passed, 6 skipped` (23 + 14 + 17 + 15, the six Postgres cases skipped without the database) on Tasks 1–3 as merged; the three earlier files count what their tasks left after review (the backend lane's follow-ups added tests), `test_trends.py` is **23**.
 
 - [ ] **Step 5: Commit.**
 
@@ -2230,7 +2368,7 @@ Expected: `Test Files  5 passed (5)`, `Tests  184 passed (184)` (apiErrors 143).
 cd /c/tmp/g2-vital/homunculus-engine
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -1
 ```
-Expected: `2070 passed, 648 skipped`.
+Expected: `2085 passed, 650 skipped` (*derived*, plan order).
 
 - [ ] **Step 9: Commit.**
 
@@ -2248,6 +2386,8 @@ red: test_trends_api 21 failed; isolation 2, board_permissions 2, tenant_isolati
 # Part 2 · The dashboard's foundations (Tasks 6–8, independent of each other and of Part 1)
 
 ### Task 6: `backendApi` — `patientTrends` and `putPatientProfile`
+
+**Done in the dashboard lane** (`feat/g2v-dash`, commits `db87711` and `950176d`, the Task 6 quality review: `setProfile` marked a hazard, a 12-hour window sent as named); the blocks below are that code.
 
 Spec §6 with X12, X13. `patientTrends(patientId, hours = 24)` is an `authed()` GET like `boardPatients()` — the same refusal mapping (`failure()`), the same 15 s `timed()` limit. `putPatientProfile(patientId, body)` sends the body exactly as given, because the existing `setProfile` always sends `comorbidities` and the engine reads a present empty list as "clear them". `fakeApi` gains both, so every screen test that mounts the patient screen has them (an unset `vi.fn()` resolves `undefined`, which the screen must survive).
 
@@ -2317,10 +2457,19 @@ describe("backendApi — the trend charts and the patient's own normal (Group 2 
     expect(JSON.parse(init.body)).toEqual(body);
   });
 
-  it("setProfile always sends comorbidities, which the engine reads as 'clear them' — why the form does not use it", async () => {
+  it("sends a window the server does not offer as it was named — refusing it (400) is the server's job", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
-    await signedIn(fetchMock).setProfile("S-001", { baselines: { heart_rate: { low: 1, high: 2 } } });
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).comorbidities).toEqual([]);
+    await signedIn(fetchMock).patientTrends("S-001", 12);
+    expect(fetchMock.mock.calls[0][0]).toBe("/patients/S-001/trends?hours=12");
+  });
+
+  it("setProfile sends comorbidities: [] and baselines: {} even when given only a baseline SOFA — why nothing new calls it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    await signedIn(fetchMock).setProfile("S-001", { baselineSofa: 3 });
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(sent.comorbidities).toEqual([]);
+    expect(sent.baselines).toEqual({});
+    expect(sent.baseline_sofa).toBe(3);
   });
 
   it("a trends read that gets no answer gives up after 15 s, as every read does", async () => {
@@ -2345,7 +2494,7 @@ describe("backendApi — the trend charts and the patient's own normal (Group 2 
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/backendApi.test.js 2>&1 | grep -E "×|Tests "
 ```
-Expected: five `×` in the new describe (`…patientTrends is not a function` / `…putPatientProfile is not a function`) and `Tests  5 failed | 105 passed (110)` — the `setProfile` case passes already: it pins today's behaviour.
+Expected: five `×` in the new describe (`…patientTrends is not a function` / `…putPatientProfile is not a function`) and `Tests  6 failed | 105 passed (111)` (the sixth: the 12-hour window is sent as named) — the `setProfile` case passes already: it pins today's behaviour.
 
 - [ ] **Step 3: The two calls.** Edit `dashboard/src/backendApi.js` — replace:
 
@@ -2371,11 +2520,12 @@ with:
     /**
      * The patient's own normal, written as the caller built it (PUT /clinical/{id}/profile).
      *
-     * Not `setProfile` above: that always sends `comorbidities` (an empty list unless given),
-     * and the engine reads a present-but-empty list as "clear them" (api/clinical.py
-     * `profile_from_payload`) — so a form that only means to write the baselines would erase
-     * every charted comorbidity. The baseline form sends `{baselines}` alone, and the engine keeps
-     * whatever the body does not mention.
+     * Not `setProfile` above: that always sends `comorbidities` and `baselines` (an empty list
+     * and an empty object unless given), and the engine reads a present-but-empty key as "clear
+     * it" (api/clinical.py `profile_from_payload`) — so a form that only means to write the
+     * baselines would erase every charted comorbidity, and one that only means to write a baseline
+     * SOFA would erase the baselines too. The baseline form sends `{baselines}` alone, and the
+     * engine keeps whatever the body does not mention.
      */
     putPatientProfile(patientId, body) {
       return authed(`/clinical/${seg(patientId)}/profile`, { method: "PUT", body });
@@ -2383,6 +2533,32 @@ with:
 
     /** Escape hatch for endpoints not yet wrapped (admissions, alerts, tenant…). */
     request: authed,
+```
+
+And mark `setProfile` a hazard where a caller reads it (the Task 6 quality review, lane commit `950176d`) — replace:
+
+```js
+     * Without it every patient is judged against the population threshold, so someone whose
+     * atrial fibrillation lives at 105 bpm alarms on every measurement. The boundary is always
+     * the clinician's — the system never mints one.
+     */
+    setProfile(patientId, { comorbidities = [], baselines = {}, baselineSofa = null } = {}) {
+```
+
+with:
+
+```js
+     * Without it every patient is judged against the population threshold, so someone whose
+     * atrial fibrillation lives at 105 bpm alarms on every measurement. The boundary is always
+     * the clinician's — the system never mints one.
+     *
+     * @deprecated Do not call this from anything new. It ALWAYS sends `comorbidities: []` AND
+     * `baselines: {}` (unless given others), and the engine reads a present-but-empty key as
+     * "clear" (api/clinical.py `profile_from_payload`) — so a partial call such as
+     * `setProfile(id, { baselineSofa: 3 })` erases both the charted comorbidities and every
+     * baseline range on the server. Use `putPatientProfile` with only the keys to change.
+     */
+    setProfile(patientId, { comorbidities = [], baselines = {}, baselineSofa = null } = {}) {
 ```
 
 Edit `dashboard/src/live/session/testTokens.testutil.js` — replace:
@@ -2408,7 +2584,7 @@ with:
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/backendApi.test.js 2>&1 | grep -E "Tests "
 ```
-Expected: `Tests  110 passed (110)`. Then the suite — **81 files / 1920 tests** in plan order (base + 2 from Task 5 + 6 here) — and the build.
+Expected: `Tests  111 passed (111)`. Then the suite — **81 files / 1921 tests** in plan order (base + 2 from Task 5 + 7 here; the lane alone, `950176d`: 81 / 1919) — and the build.
 
 - [ ] **Step 5: Commit.**
 
@@ -2418,59 +2594,273 @@ git add dashboard/src/backendApi.js dashboard/src/backendApi.test.js dashboard/s
 git status --short && git diff --cached --stat
 git commit -m "feat(dashboard): backendApi.patientTrends and putPatientProfile" -m "patientTrends is an authed GET like boardPatients (same refusal mapping, same 15 s limit). putPatientProfile sends the body as given: setProfile always sends comorbidities, which the engine reads as 'clear them' (a test pins that, so nobody moves the form onto it). fakeApi gains both.
 
-red: 5 failed — patientTrends / putPatientProfile is not a function" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+red: 6 failed — patientTrends / putPatientProfile is not a function" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
 
 ### Task 7: Tokens — `--band-n`, `--band-mid`, `--band-crit`, `--grid`, held to contrast
 
+**Done in the dashboard lane** (commits `35ba65d` and `e2afede`, the Task 7 quality review: every line measured on the four grounds and over stacked tints, the lists read from `COLOR_TOKENS`); the blocks below are that code.
+
 Spec §6 with X6. `--band-mid` and `--band-crit` tint a NEWS2 row the engine scores 1–2 and 3 points (D2's amber and red); `--band-n` the patient's own normal (the prototype's own `--band-n`); `--grid` the value lines. The prototype's single `--band-al` (`rgba(239,68,68,.12)` / `rgba(220,38,38,.08)`) becomes two. Every `--v-*` line must clear **3:1** over each tint on a card (measured lowest: Gün `--v-map` over `--band-n`, 4.21:1); the ▲/◆ marks sit on the card in their own lane (`crit` 3.57 / 4.83, `pri` 7.31 / 5.36).
 
 **Files:**
 - Modify: `dashboard/src/live/theme/tokens.css`, `dashboard/src/live/theme/tokens.js`, `dashboard/src/live/theme/tokens.test.js`
 
-- [ ] **Step 1: Write the failing tests.** Edit `dashboard/src/live/theme/tokens.test.js` — replace:
+- [ ] **Step 1: The tests** — Write `dashboard/src/live/theme/tokens.test.js` (whole: the Task 7 quality review, lane commit `e2afede`, reworked its helpers — `over()` takes a list of translucent layers; `VITALS` and `BANDS` are read from `COLOR_TOKENS`; every line is measured over every band tint on `card`, `card2`, `page` and `app`, the big chart's ground, and over `band-n` stacked on a scored row):
 
 ```js
-  // A bed card's stripe sits on the card, a dot or bar in a card2 row (G1-09), a stripe on the
-  // page or the app frame (G1-07): each ground is held to 3:1.
-```
+// WCAG AA for the live UI's palette, enforced as arithmetic rather than a review note (the mobile
+// app's precedent: homunculus-mobile/__tests__/contrast.test.ts). Each pair below is one that
+// actually renders as text — or, at 3:1, a focus outline or severity stripe — and says where.
+// Body text needs 4.5:1. Every text pair is held to 4.5:1, large or not: the pills and badges
+// that carry severity are 10–12 px.
+//
+// Not measured on purpose: --line/--line2 (borders; the input border is ~1.4-1.6:1 on a card in
+// both themes — an open user decision in the roadmap's "Kullanıcı kararları"), --attLine, the
+// shadows, --scrim (a dimmed backdrop, not a ground for text).
+import { describe, it, expect } from "vitest";
+import { COLOR_TOKENS } from "./tokens.js";
+import { rule, THEMES } from "./tokensCss.testutil.js";
 
-with:
+function parse(value) {
+  let m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(value);
+  if (m) return { rgb: [m[1], m[2], m[3]].map((h) => parseInt(h, 16) / 255), a: 1 };
+  m = /^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)$/i.exec(value);
+  if (m) return { rgb: [m[1], m[2], m[3]].map((n) => Number(n) / 255), a: Number(m[4]) };
+  throw new Error(`not a colour this test reads: ${value}`);
+}
 
-```js
-  // Group 2's trend charts (screens/patient/trends/): a vital's dots and dashed connectors are drawn
-  // over a band tint on the card — a NEWS2 row scoring 1–2 (band-mid) or 3 (band-crit), or the
-  // patient's own normal (band-n). A line is a graphic, held to 3:1, over every tint it can cross.
-  // (The prototype drew MAP at reduced opacity; at .55–.70 that measured 2.17–3.34:1, so the
-  // charts draw MAP at full colour with hollow dots instead.)
-  it.each(["v-hr", "v-map", "v-spo", "v-rr", "v-t"].flatMap((v) => ["band-n", "band-mid", "band-crit"].map((b) => [v, b])))(
-    "chart: the %s line clears 3:1 over the %s tint on a card",
-    (vital, band) => {
-      expect(ratio(s(vital), over(theme, band, "card"))).toBeGreaterThanOrEqual(UI);
+/** An opaque token. A translucent one must say what it sits on (over/tint). */
+function solid(theme, name) {
+  const c = parse(THEMES[theme][name]);
+  if (c.a !== 1) throw new Error(`--${name} is translucent in ${theme}: measure it over a surface`);
+  return c.rgb;
+}
+
+/**
+ * A token as it renders over an opaque surface token (alpha compositing). Several translucent
+ * layers may be given — a name or a list, bottom first: ["band-mid", "band-n"] is the patient's
+ * own normal laid over a NEWS2 row, both over the ground.
+ */
+function over(theme, layers, ground) {
+  return [].concat(layers).reduce((under, name) => {
+    const c = parse(THEMES[theme][name]);
+    return c.rgb.map((v, i) => v * c.a + under[i] * (1 - c.a));
+  }, solid(theme, ground));
+}
+
+/** color-mix(in srgb, var(--name) <share>, transparent) — the pill tint — over a surface. */
+function tint(theme, name, share, ground) {
+  const c = solid(theme, name);
+  const g = solid(theme, ground);
+  return c.map((v, i) => v * share + g[i] * (1 - share));
+}
+
+const luminance = (rgb) => {
+  const f = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * f(rgb[0]) + 0.7152 * f(rgb[1]) + 0.0722 * f(rgb[2]);
+};
+const ratio = (a, b) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
+const BODY = 4.5;
+const UI = 3;
+const SURFACES = ["page", "app", "rail", "card", "card2"];
+const SEVERITY = ["crit", "high", "mid", "low", "ok"];
+// Read from the registry, so a new vital channel or a new band tint is measured without anyone
+// remembering to add it here.
+const VITALS = COLOR_TOKENS.filter((name) => name.startsWith("v-"));
+const BANDS = COLOR_TOKENS.filter((name) => name.startsWith("band-"));
+// The patient's own normal (band-n) can lie inside a scored NEWS2 row: it is then composited over
+// that row's tint (bottom first), the thinnest ground a line is ever drawn on.
+const STACKED = BANDS.filter((name) => name !== "band-n").map((name) => `${name} + band-n`);
+// The mini chart sits on a card; the big chart in the kit Modal, whose panel is bg-app (Modal.jsx).
+// card2 and page are measured too, as the severity fills are: a chart may be moved there.
+const CHART_GROUNDS = ["card", "card2", "page", "app"];
+
+describe.each(["gece", "gun"])("%s theme: contrast", (theme) => {
+  const s = (name) => solid(theme, name);
+
+  it.each(SURFACES)("ink and mute text clear 4.5:1 on %s", (bg) => {
+    expect(ratio(s("ink"), s(bg))).toBeGreaterThanOrEqual(BODY);
+    expect(ratio(s("mute"), s(bg))).toBeGreaterThanOrEqual(BODY);
+  });
+
+  it.each(["page", "app", "card", "card2"])("primary text (links, info notes) clears 4.5:1 on %s", (bg) => {
+    expect(ratio(s("pri"), s(bg))).toBeGreaterThanOrEqual(BODY);
+  });
+
+  it("info note: pri text on priSoft over a card clears 4.5:1", () => {
+    expect(ratio(s("pri"), over(theme, "priSoft", "card"))).toBeGreaterThanOrEqual(BODY);
+  });
+
+  it.each([
+    ["onpri", "pri", "primary button, chosen segment"],
+    ["oncrit", "crit", "danger button"],
+    ["onmid", "mid", "tab count badge"],
+  ])("%s on %s (%s) clears 4.5:1", (fg, bg) => {
+    expect(ratio(s(fg), s(bg))).toBeGreaterThanOrEqual(BODY);
+  });
+
+  it.each(["card", "card2", "page", "app"])(
+    "warning note, tag and attention pill: attInk on att over %s clears 4.5:1",
+    (ground) => {
+      expect(ratio(s("attInk"), over(theme, "att", ground))).toBeGreaterThanOrEqual(BODY);
     },
   );
 
-  // The ▲ alarm and ◆ antibiotic marks sit in their own lane under the plot, on the card — never
-  // over a band.
-  it.each(["crit", "pri"])("chart: the %s marker clears 3:1 on a card", (name) => {
-    expect(ratio(s(name), s("card"))).toBeGreaterThanOrEqual(UI);
+  it("critical tag: critInk on critSoft over a card clears 4.5:1", () => {
+    expect(ratio(s("critInk"), over(theme, "critSoft", "card"))).toBeGreaterThanOrEqual(BODY);
   });
+
+  it.each(SEVERITY.flatMap((sev) => ["page", "app", "card", "card2"].map((bg) => [sev, bg])))(
+    "%s ink (timers, bed numbers) clears 4.5:1 on %s",
+    (sev, bg) => {
+      expect(ratio(s(`${sev}Ink`), s(bg))).toBeGreaterThanOrEqual(BODY);
+    },
+  );
+
+  // The tint is translucent, so the pill's ground counts: a card, a card2 row, and — in a page
+  // header or a dialog — the page or the app frame.
+  it.each(SEVERITY.flatMap((sev) => ["card", "card2", "page", "app"].map((bg) => [sev, bg])))(
+    "%s status pill: ink on its 14%% tint over %s clears 4.5:1",
+    (sev, bg) => {
+      expect(ratio(s(`${sev}Ink`), tint(theme, sev, 0.14, bg))).toBeGreaterThanOrEqual(BODY);
+    },
+  );
+
+  // On a card only. On card2 Gun's v-map (4.38) and v-spo (4.46) fall under 4.5:1: recorded in the
+  // roadmap for G1-09/G1-11, which decide where vitals sit.
+  it.each(VITALS)("vital %s clears 4.5:1 on a card", (v) => {
+    expect(ratio(s(v), s("card"))).toBeGreaterThanOrEqual(BODY);
+  });
+
+  // The focus outline (ui/focus.js) sits 2 px outside a control, on whatever ground surrounds it:
+  // any surface — the rail holds the G1-07 sidebar's links, card2 input rows and table headers,
+  // the app frame dialogs — and the tinted grounds a control can sit in, measured over a card: a
+  // warning note or attention card (att), a critical tag's ground (critSoft), an info note
+  // (priSoft).
+  it.each(SURFACES)("focus outline (pri) clears 3:1 against %s", (bg) => {
+    expect(ratio(s("pri"), s(bg))).toBeGreaterThanOrEqual(UI);
+  });
+
+  it.each(["att", "critSoft", "priSoft"])("focus outline (pri) clears 3:1 against %s over a card", (tinted) => {
+    expect(ratio(s("pri"), over(theme, tinted, "card"))).toBeGreaterThanOrEqual(UI);
+  });
+
+  // The top bar's "may be out of date" marks (G1-07): the bell's and the unit chip's amber ring
+  // and dot (mid), and the grey dot that means "cannot know" (mute). They sit on the RAIL, which
+  // the severity fills below are not measured against — and they are the only thing that says, at
+  // a glance, that what the bell shows may be stale.
+  it.each(["mid", "mute"])("the top bar's %s ring and dot clear 3:1 against the rail", (name) => {
+    expect(ratio(s(name), s("rail"))).toBeGreaterThanOrEqual(UI);
+  });
+
+  // Group 2's trend charts (screens/patient/trends/): a vital's dots and dashed connectors are drawn
+  // over a band tint — a NEWS2 row scoring 1–2 (band-mid) or 3 (band-crit), or the patient's own
+  // normal (band-n) — on a card (the mini chart) or on the dialog's app background (the big chart).
+  // A line is a graphic, held to 3:1, over every tint it can cross, on every ground it is drawn on.
+  // (The prototype drew MAP at reduced opacity; at .55–.70 that measured 2.17–3.20:1 over the
+  // tints, so the charts draw MAP at full colour with hollow dots instead.)
+  it.each(VITALS.flatMap((v) => BANDS.flatMap((b) => CHART_GROUNDS.map((g) => [v, b, g]))))(
+    "chart: the %s line clears 3:1 over the %s tint on %s",
+    (vital, band, ground) => {
+      expect(ratio(s(vital), over(theme, band, ground))).toBeGreaterThanOrEqual(UI);
+    },
+  );
+
+  // Where the patient's own normal lies inside a scored row, band-n is laid over band-mid or
+  // band-crit: two translucent layers on the ground, the thinnest margins in this set.
+  it.each(VITALS.flatMap((v) => STACKED.flatMap((b) => CHART_GROUNDS.map((g) => [v, b, g]))))(
+    "chart: the %s line clears 3:1 over the stacked %s tints on %s",
+    (vital, stack, ground) => {
+      expect(ratio(s(vital), over(theme, stack.split(" + "), ground))).toBeGreaterThanOrEqual(UI);
+    },
+  );
+
+  // The ▲ alarm and ◆ antibiotic marks sit in their own lane under the plot — on the card in the
+  // mini chart, on the dialog's app background in the big one — never over a band.
+  it.each(["crit", "pri"].flatMap((name) => ["card", "app"].map((g) => [name, g])))(
+    "chart: the %s marker clears 3:1 on %s",
+    (name, ground) => {
+      expect(ratio(s(name), s(ground))).toBeGreaterThanOrEqual(UI);
+    },
+  );
 
   // A bed card's stripe sits on the card, a dot or bar in a card2 row (G1-09), a stripe on the
   // page or the app frame (G1-07): each ground is held to 3:1.
+  it.each(SEVERITY.flatMap((sev) => ["card", "card2", "page", "app"].map((bg) => [sev, bg])))(
+    "%s fill (stripe, bar, dot) clears 3:1 against %s",
+    (sev, bg) => {
+      expect(ratio(s(sev), s(bg))).toBeGreaterThanOrEqual(UI);
+    },
+  );
+});
+
+// The sign-in hero and the lock screen are always dark (data-theme="gece" on their roots) and lie
+// on a radial gradient from color-mix(in srgb, var(--pri) 25%, var(--page)) to the page colour:
+// their text is held to 4.5:1 at the gradient's lightest point, and the primary icons to 3:1.
+describe("the dark gradient of the sign-in hero and the lock screen (Gece)", () => {
+  const glow = tint("gece", "pri", 0.25, "page");
+  it.each(["ink", "mute"])("%s clears 4.5:1 on the gradient's lightest point", (name) => {
+    expect(ratio(solid("gece", name), glow)).toBeGreaterThanOrEqual(BODY);
+  });
+  // The hero's pill is ink on priSoft: pri text there would be 4.09:1.
+  it("pri (icons) clears 3:1 there, and the pill's ink 4.5:1 on priSoft over it", () => {
+    expect(ratio(solid("gece", "pri"), glow)).toBeGreaterThanOrEqual(UI);
+    const pill = parse(THEMES.gece.priSoft);
+    const ground = pill.rgb.map((v, i) => v * pill.a + glow[i] * (1 - pill.a));
+    expect(ratio(solid("gece", "ink"), ground)).toBeGreaterThanOrEqual(BODY);
+  });
+});
+
+describe("token registry", () => {
+  it.each(["gece", "gun"])("%s declares every named colour, and only those", (theme) => {
+    const declared = Object.keys(THEMES[theme]).filter((name) => name !== "shadow").sort();
+    expect(declared).toEqual([...COLOR_TOKENS].sort());
+    for (const name of COLOR_TOKENS) expect(() => parse(THEMES[theme][name]), name).not.toThrow();
+  });
+
+  it("text size: --fs is 1, and 1.12 under data-size=buyuk", () => {
+    expect(rule(":root").fs).toBe("1");
+    expect(rule('[data-size="buyuk"]').fs).toBe("1.12");
+  });
+});
 ```
 
-- [ ] **Step 2: Run it — red.**
+- [ ] **Step 2: Run it — no red yet, by design.**
 
 ```bash
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/theme/tokens.test.js 2>&1 | grep -E "Tests |not a colour" | sort -u
 ```
-Expected: `Error: not a colour this test reads: undefined` and `Tests  30 failed | 196 passed (226)` (fifteen line-over-tint cases per theme; the four marker cases pass already).
+Expected: `Tests  200 passed (200)`. The line-over-tint cases are generated from `COLOR_TOKENS`, which lists no band token yet, so there is nothing to fail; the red comes in Step 3, between its two files.
 
-- [ ] **Step 3: The tokens.** Edit `dashboard/src/live/theme/tokens.css` three times.
+- [ ] **Step 3: The tokens — the registry first, then the stylesheet.** Edit `dashboard/src/live/theme/tokens.js` — replace:
+
+```js
+  // vital-sign channels
+  "v-hr", "v-map", "v-spo", "v-rr", "v-t",
+```
+
+with:
+
+```js
+  // vital-sign channels
+  "v-hr", "v-map", "v-spo", "v-rr", "v-t",
+  // the trend charts: the patient's own normal, NEWS2 rows scoring 1–2 and 3 points, value lines
+  "band-n", "band-mid", "band-crit", "grid",
+```
+
+(Tailwind reaches them as `fill-band-mid`, `fill-band-crit`, `fill-band-n`, `stroke-grid` through `tailwindColors()`; `tailwind.test.js` checks the mapping and that no name shadows a Tailwind default.)
+
+Run Step 2's command. Expected: `Error: not a colour this test reads: undefined` and `Tests  202 failed | 198 passed (400)` — the registry now names the four tokens and no stylesheet defines them.
+
+Then Edit `dashboard/src/live/theme/tokens.css` three times.
 
 (a) Replace the header's last lines:
 
@@ -2487,9 +2877,11 @@ with:
  * fail on it), --body-* (body map).
  * The trend charts' grounds (Group 2 · slice 1): --band-mid and --band-crit tint a NEWS2 row scoring
  *   1–2 and 3 points (the engine's points, never a value judged here), --band-n the patient's own
- *   normal (the prototype's --band-n), --grid the value lines. The prototype's single --band-al
- *   became two, because D2 frames 1–2 points amber and 3 red. Every --v-* line holds 3:1 over each
- *   tint on a card (tokens.test.js).
+ *   normal (the prototype's --band-n meant a reference range; here it is the patient's charted
+ *   normal), --grid the value lines. The prototype's single --band-al became two, because D2 frames
+ *   1–2 points amber and 3 red. The mini chart sits on a card, the big chart on the dialog's --app
+ *   background; every --v-* line holds 3:1 over each tint, and over --band-n stacked on a scored
+ *   row, on card, card2, page and app (tokens.test.js).
  */
 ```
 
@@ -2531,31 +2923,13 @@ with:
   --scrim: rgba(2, 6, 14, .55);
 ```
 
-Edit `dashboard/src/live/theme/tokens.js` — replace:
-
-```js
-  // vital-sign channels
-  "v-hr", "v-map", "v-spo", "v-rr", "v-t",
-```
-
-with:
-
-```js
-  // vital-sign channels
-  "v-hr", "v-map", "v-spo", "v-rr", "v-t",
-  // the trend charts: NEWS2 rows scoring 1–2 and 3 points, the patient's own normal, value lines
-  "band-n", "band-mid", "band-crit", "grid",
-```
-
-(Tailwind reaches them as `fill-band-mid`, `fill-band-crit`, `fill-band-n`, `stroke-grid` through `tailwindColors()`; `tailwind.test.js` checks the mapping and that no name shadows a Tailwind default.)
-
 - [ ] **Step 4: Green, then the gate.**
 
 ```bash
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/theme/ 2>&1 | grep -E "Test Files|Tests "
 ```
-Expected: `Test Files  4 passed (4)`, `Tests  262 passed (262)` (tokens.test.js 226). Then the suite — **81 / 1954** in plan order — and the build.
+Expected: `Test Files  4 passed (4)`, `Tests  436 passed (436)` (tokens.test.js 400). Then the suite — **81 / 2129** in plan order (the lane alone: 81 / 2127) — and the build.
 
 - [ ] **Step 5: Commit.**
 
@@ -2563,14 +2937,16 @@ Expected: `Test Files  4 passed (4)`, `Tests  262 passed (262)` (tokens.test.js 
 cd /c/tmp/g2-vital
 git add dashboard/src/live/theme/tokens.css dashboard/src/live/theme/tokens.js dashboard/src/live/theme/tokens.test.js
 git status --short && git diff --cached --stat
-git commit -m "feat(theme): the trend charts' band and grid tokens, every vital line held to 3:1 over them" -m "--band-mid / --band-crit tint the NEWS2 rows the engine scores 1–2 and 3, --band-n the patient's own normal, --grid the value lines, in Gece and Gün. Each --v-* line clears 3:1 over each tint on a card (lowest: Gun v-map over band-n, 4.21); the alarm and antibiotic marks clear 3:1 on the card.
+git commit -m "feat(theme): the trend charts' band and grid tokens, every vital line held to 3:1 over them on every ground" -m "--band-mid / --band-crit tint the NEWS2 rows the engine scores 1–2 and 3, --band-n the patient's own normal, --grid the value lines, in Gece and Gün. Every v-* line clears 3:1 over every band tint on card, card2, page and app, and over band-n stacked on a scored row; the alarm and antibiotic marks on card and app. VITALS and BANDS are read from COLOR_TOKENS. Lowest held (Gece / Gün): single tint card 4.56 / 4.21, app 5.16 / 3.90; stacked card 3.69 / 3.74, app 4.17 / 3.48.
 
-red: 30 failed — not a colour this test reads: undefined" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+red: 202 failed — not a colour this test reads: undefined (the registry before the stylesheet)" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
 
 ### Task 8: The strings — 49 keys in four languages, and two sentences that would become false
+
+**Done in the dashboard lane** (commits `886cb12` and `f082251`); the blocks below are that code.
 
 Spec §9 (its 31 new keys; `trends` exists), plus what the table, the dialog's controls and the form need (18 more: `trendsLoading`, `trendsChartLabel`, `trendsBandPoints12`, `trendsBandPoints3`, `trendsHoursLabel`, `trendsViewLabel`, `trendsKeysHint`, `trendsCaption`, `trendsCol*` ×6, `baselineNotDeviceAlarm`, `baselineNotNumber`, `baselineNothingToSend`, `baselineSaving`), and two placeholders the spec's list does not carry: `trendsBandNews2` takes `{source}` (the legend names the source the SERVER sent), `baselineMayHaveLanded` takes `{subject}` (amendments (f)). Per X9, `onlyWrite` and `formsSoon` are reworded in four languages (the old texts stay recognisable to the existing tests). `trendsSoon` stays until Task 9 removes the placeholder that reads it. Nothing renders these yet; `rawKeys.test.jsx`'s static net checks only that a key a source NAMES exists.
 
@@ -2934,7 +3310,7 @@ with:
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/i18n/ src/live/rawKeys.test.jsx src/live/screens/patient/ 2>&1 | grep -E "Test Files|Tests "
 ```
-Expected: `Test Files  6 passed (6)`, `Tests  97 passed (97)` — the patient screen's own test still passes: its `heç nə yazılmır` and `növbəti qrupda əlavə olunacaq` match the new sentences. Then the suite — **81 / 1954** — and the build.
+Expected: `Test Files  6 passed (6)`, `Tests  97 passed (97)` — the patient screen's own test still passes: its `heç nə yazılmır` and `növbəti qrupda əlavə olunacaq` match the new sentences. Then the suite — **81 / 2129** in plan order (the lane alone, `f082251`: 81 / 2127) — and the build.
 
 - [ ] **Step 8: Commit.**
 
@@ -2956,6 +3332,8 @@ red: 2 failed — az patient.trendsFrameBadge = tr; ru patient.trendsFrameBadge 
 Spec §3.1 (the box, its header, its unreadable state) and §6 (`useTrends`). The box is wired into the patient screen in this task — `reachable.test.js` refuses a module the page cannot reach — so for one commit it holds only its header and its states; the cards come in Task 10.
 
 `useTrends(patientId, hours, measuredKey)` reads through `store.track(() => store.api.patientTrends(…))`: on mount, on a new patient or window (what is shown is cleared first, so another patient's answer is never on screen), when the board's `measuredAt` for the patient changes (`measuredKeyOf`), and every `TRENDS_POLL_MS = 60 000` while the page is visible and the session READY; nothing while LOCKED, and an answer landing after the lock, a sign-out (`store.epoch()`) or an unmount is dropped. A failed or malformed read keeps the last answer and reports `unreadable` with `lastOkAt`. The forms seam keeps its sentence, as a `Note` under the Sepsis/Meds row; `trendsSoon` goes.
+
+**As the dashboard lane built it (commits `620d4ed` and `dac5051`, the Task 9 quality review — X23); the blocks below are that code.** Reads for the same patient and window no longer supersede each other: only a move to another patient or window, leaving READY and an unmount discard a read in flight. A new measurement, the timer, a return to the page or `reload()` that arrives while a read is out sets one queued flag, and ONE more read follows when it settles (success or failure) — so measurements arriving faster than the endpoint answers still fill the box, and a `reload()` after a save is a read made after the save. The minute timer is not armed while the page is hidden; `reload()` reads only while READY. The unreadable line is a warn `Note` (`role="note"`, not a live region), the first line of the box's body, as the monitor strip says the same state. The return shape is unchanged.
 
 **Files:**
 - Create: `dashboard/src/live/screens/patient/trends/trends.testutil.js`, `trends/useTrends.js`, `trends/useTrends.test.jsx`, `trends/TrendsBox.jsx`
@@ -3196,6 +3574,130 @@ describe("useTrends", () => {
     await flush();
     expect(api.patientTrends).toHaveBeenCalledTimes(2);
   });
+
+  it("a poll in flight does not bring the loading state back: the last answer stays, no blink", async () => {
+    let late;
+    const { api } = await start();
+    api.patientTrends.mockImplementationOnce((pid, hours) => new Promise((resolve) => { late = () => resolve(withHr(90)(pid, hours)); }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(TRENDS_POLL_MS); });
+    expect(api.patientTrends).toHaveBeenCalledTimes(2);
+    expect(probe().dataset).toMatchObject({ loading: "false", unreadable: "false", patient: "S-001" });
+    expect(probe()).toHaveTextContent("84");
+    await act(async () => { late(); });
+    await flush();
+    expect(probe()).toHaveTextContent("90");
+  });
+
+  it("a new measurement during a read in flight does not discard it: it lands, and ONE more read follows", async () => {
+    const lands = [];
+    const answer = (pid, hours) => new Promise((resolve) => { lands.push((value) => resolve(withHr(value)(pid, hours))); });
+    const { api } = await start({ answer });
+    expect(api.patientTrends).toHaveBeenCalledTimes(1);
+    for (const next of ["k2", "k3", "k4"]) act(() => setProps((p) => ({ ...p, measuredKey: next })));
+    await flush();
+    expect(api.patientTrends).toHaveBeenCalledTimes(1);          // joined the read in flight, not started over
+    expect(probe().dataset.loading).toBe("true");
+    await act(async () => { lands[0](84); });
+    await flush();
+    expect(probe()).toHaveTextContent("84");                      // the first read was not thrown away
+    expect(probe().dataset.loading).toBe("false");
+    expect(api.patientTrends).toHaveBeenCalledTimes(2);          // three keys asked for one more read, not three
+    await act(async () => { lands[1](91); });
+    await flush();
+    expect(probe()).toHaveTextContent("91");
+    expect(api.patientTrends).toHaveBeenCalledTimes(2);
+  });
+
+  it("fills the box when measurements arrive faster than the endpoint answers", async () => {
+    const slow = (pid, hours) => new Promise((resolve) => { setTimeout(() => resolve(withHr(84)(pid, hours)), 6_000); });
+    const { api } = await start({ answer: slow });
+    for (let i = 1; i <= 4; i += 1) {
+      act(() => setProps((p) => ({ ...p, measuredKey: `k${i}` })));          // a measurement every 5 s,
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });  // an answer every 6 s
+    }
+    expect(probe().dataset).toMatchObject({ loading: "false", unreadable: "false", patient: "S-001" });
+    expect(probe()).toHaveTextContent("84");
+    expect(api.patientTrends).toHaveBeenCalledTimes(4);          // one read at a time, each as soon as the last landed
+  });
+
+  it("a read asked for while one is in flight is made even when that one fails, and reload() after a save is that read", async () => {
+    let fail;
+    const pending = () => new Promise((_resolve, reject) => { fail = () => reject(Object.assign(new Error("down"), { status: 503 })); });
+    const { api } = await start({ answer: pending });
+    api.patientTrends.mockImplementation(answering(withHr(77)));
+    fireEvent.click(screen.getByRole("button", { name: "again" }));       // the save landed while the old read was out
+    await flush();
+    expect(api.patientTrends).toHaveBeenCalledTimes(1);
+    await act(async () => { fail(); });
+    await flush();
+    expect(api.patientTrends).toHaveBeenCalledTimes(2);
+    expect(probe()).toHaveTextContent("77");
+    expect(probe().dataset).toMatchObject({ loading: "false", unreadable: "false" });
+  });
+
+  it("arms no timer while the page is hidden, ignores a measurement then, reads once on the return, and the minute starts from there", async () => {
+    const { api } = await start();
+    const armed = vi.getTimerCount();
+    act(() => visibility("hidden"));
+    expect(vi.getTimerCount()).toBe(armed - 1);
+    act(() => setProps((p) => ({ ...p, measuredKey: "k2" })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5 * TRENDS_POLL_MS); });
+    expect(api.patientTrends).toHaveBeenCalledTimes(1);           // the wake covers the measurement
+    act(() => visibility("visible"));
+    await flush();
+    expect(api.patientTrends).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(armed);
+    await act(async () => { await vi.advanceTimersByTimeAsync(TRENDS_POLL_MS - 1_000); });
+    expect(api.patientTrends).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(api.patientTrends).toHaveBeenCalledTimes(3);
+  });
+
+  it("a move to another window clears what is shown, as a move to another patient does, and reads that window", async () => {
+    let late;
+    const answer = (pid, hours) => (hours === 24
+      ? Promise.resolve(withHr(84)(pid, hours))
+      : new Promise((resolve) => { late = () => resolve(withHr(70)(pid, hours)); }));
+    const { api } = await start({ answer });
+    expect(probe()).toHaveTextContent("84");
+    act(() => setProps((p) => ({ ...p, hours: 6 })));
+    expect(probe().dataset).toMatchObject({ patient: "", loading: "true" });
+    expect(probe().textContent).toBe("");
+    expect(api.patientTrends).toHaveBeenLastCalledWith("S-001", 6);
+    await act(async () => { late(); });
+    await flush();
+    expect(probe().dataset).toMatchObject({ patient: "S-001", loading: "false" });
+    expect(probe()).toHaveTextContent("70");
+  });
+
+  it("takes the listener away at the lock, reads nothing while locked, and reads exactly once after the unlock", async () => {
+    const { api, store } = await start();
+    const removed = vi.spyOn(document, "removeEventListener");
+    try {
+      act(() => { store.lock(); });
+      expect(removed.mock.calls.filter(([type]) => type === "visibilitychange")).toHaveLength(1);
+    } finally {
+      removed.mockRestore();
+    }
+    act(() => visibility("hidden"));
+    act(() => visibility("visible"));
+    fireEvent.click(screen.getByRole("button", { name: "again" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3 * TRENDS_POLL_MS); });
+    expect(api.patientTrends).toHaveBeenCalledTimes(1);           // not the page returning, not reload(), not the clock
+    api.reauth.mockResolvedValue({ ok: true });
+    await act(async () => { await store.unlock("Gizli-Sifre-1"); });
+    await flush();
+    expect(api.patientTrends).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(TRENDS_POLL_MS); });
+    expect(api.patientTrends).toHaveBeenCalledTimes(3);           // and the minute is running again
+  });
+
+  it("takes a window that reached it as a string: the engine's number still answers it", async () => {
+    const { api } = await start({ hours: "24", answer: answering((pid) => withHr(84)(pid, 24)) });
+    expect(api.patientTrends.mock.calls).toEqual([["S-001", "24"]]);
+    expect(probe().dataset).toMatchObject({ loading: "false", unreadable: "false", patient: "S-001" });
+    expect(probe()).toHaveTextContent("84");
+  });
 });
 
 describe("measuredKeyOf", () => {
@@ -3226,17 +3728,28 @@ Expected: `Error: Failed to resolve import "./useTrends.js" from "src/live/scree
 //
 //   const { data, loading, unreadable, lastOkAt, reload } = useTrends(patientId, hours, measuredKey);
 //
-// Four rules, each held by useTrends.test.jsx:
+// Six rules, each held by useTrends.test.jsx:
 //   * READ ONLY WHILE THE SESSION IS READY. A locked screen shows nothing of a patient, so nothing
-//     is read for one; an answer that lands after the lock, a sign-out or another sign-in is dropped.
-//     (The shell also unmounts at the lock, which clears the timers; this does not rely on it.)
+//     is read for one — not by the timer, not by `reload()`; an answer that lands after the lock, a
+//     sign-out or another sign-in is dropped. (The shell also unmounts at the lock, which clears the
+//     timers; this does not rely on it.)
 //   * A FAILED READ KEEPS THE LAST ANSWER and says the trends are unreadable, with the time the last
 //     answer came — the monitor strip's rule. A chart that went blank on one dropped request would
 //     read as "no measurements", which is a claim about the patient, and a false one.
 //   * NEVER ANOTHER PATIENT'S ANSWER. A move to another patient or window shows nothing until that
-//     one answers, and a late answer for the one left behind is dropped.
+//     one answers, and a late answer for the one left behind is dropped. That move — and leaving
+//     READY, and unmounting — are the ONLY things that discard a read in flight.
+//   * READS FOR THE SAME PATIENT AND WINDOW DO NOT SUPERSEDE EACH OTHER (the shadow store's
+//     `inFlight` guard). A new measurement, the timer, a return to the page or `reload()` that
+//     arrives while a read is in flight sets one `queued` flag; when that read settles, success or
+//     failure, ONE more is made. Measurements arriving faster than the endpoint answers (a burst
+//     from one HL7 message, a 72 h window) therefore still fill the box, and a `reload()` after a
+//     save still yields data read after the save.
 //   * READ AGAIN when the board says something was measured (`measuredKey`), and once a minute while
 //     the page is visible — an antibiotic charted elsewhere moves no `measuredAt`.
+//   * A HIDDEN PAGE READS NOTHING. The minute timer is not armed while the page is hidden (no
+//     no-op ticks), a new measurement does not read, and the return to visible reads once and
+//     starts the minute again — the shadow store's cadence.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../../session/SessionProvider.jsx";
 import { PHASE } from "../../../session/sessionStore.js";
@@ -3254,74 +3767,136 @@ export function measuredKeyOf(measuredAt) {
     .join("|");
 }
 
-/** This patient's trends for this window — or not an answer at all. */
+/** This patient's trends for this window — or not an answer at all. The window is compared as a
+ *  number: a `hours` that reached us as "24" must not turn every answer into an unreadable one. */
 const isTrends = (answer, patientId, hours) => Boolean(answer) && typeof answer === "object"
-  && answer.patient_id === patientId && answer.hours === hours && Array.isArray(answer.channels);
+  && answer.patient_id === patientId && Number(answer.hours) === Number(hours) && Array.isArray(answer.channels);
 
-const hidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
+// Either says hidden, it is hidden (the shadow store's rule).
+const hidden = () => typeof document !== "undefined"
+  && (document.visibilityState === "hidden" || document.hidden === true);
 
 export function useTrends(patientId, hours, measuredKey = "") {
   const { phase, store } = useSession();
   const ready = phase === PHASE.READY;
   const key = `${patientId}|${hours}`;
   const [state, setState] = useState({ ...NOTHING, key });
-  const seq = useRef(0);
+  const generation = useRef(0);   // bumped when a read in flight may no longer land
+  const inFlight = useRef(false);
+  const queued = useRef(false);   // a read was asked for while one was in flight: one more, after it
+  const readFor = useRef(null);   // the key the last pass read for; null while not READY
 
-  const read = useCallback(async () => {
-    seq.current += 1;
-    const mine = seq.current;
-    const epoch = store.epoch();
-    const stale = () => mine !== seq.current || epoch !== store.epoch();
-    try {
-      const answer = await store.track(() => store.api.patientTrends(patientId, hours));
-      if (stale()) return;
-      if (!isTrends(answer, patientId, hours)) throw new Error("not a trends answer");
-      setState({ data: answer, loading: false, unreadable: false, lastOkAt: Date.now(), key });
-    } catch (err) {
-      if (stale() || err?.superseded) return;
-      setState((s) => (s.key === key ? { ...s, loading: false, unreadable: true }
-        : { ...NOTHING, loading: false, unreadable: true, key }));
-    }
-  }, [store, patientId, hours, key]);
-
-  // Mount, a new patient or window, a new measurement: read. Leaving READY: whatever is in flight
-  // will not land.
-  useEffect(() => {
-    if (!ready) {
-      seq.current += 1;
+  /** Ask for a read of this patient and window — the one way every trigger gets one. */
+  const request = useCallback(() => {
+    if (store.getState().phase !== PHASE.READY) return;
+    if (inFlight.current) {
+      queued.current = true;
       return;
     }
-    read();
-  }, [ready, read, measuredKey]);
+    inFlight.current = true;
+    queued.current = false;
+    const mine = generation.current;
+    const epoch = store.epoch();
+    const stale = () => mine !== generation.current || epoch !== store.epoch()
+      || store.getState().phase !== PHASE.READY;
+    (async () => {
+      let again = true;
+      try {
+        const answer = await store.track(() => store.api.patientTrends(patientId, hours));
+        if (stale()) return;
+        if (!isTrends(answer, patientId, hours)) throw new Error("not a trends answer");
+        setState({ data: answer, loading: false, unreadable: false, lastOkAt: Date.now(), key });
+      } catch (err) {
+        if (err?.superseded) {
+          again = false;
+          return;
+        }
+        if (stale()) return;
+        setState((s) => (s.key === key ? { ...s, loading: false, unreadable: true }
+          : { ...NOTHING, loading: false, unreadable: true, key }));
+      } finally {
+        // Only the read that still counts frees the slot; one that was discarded left it to whoever
+        // discarded it. A page that was hidden meanwhile reads when it comes back, not now.
+        if (mine === generation.current) {
+          inFlight.current = false;
+          const next = again && queued.current && epoch === store.epoch() && !hidden();
+          queued.current = false;
+          if (next) request();
+        }
+      }
+    })();
+  }, [store, patientId, hours, key]);
 
-  // Once a minute while visible, and at once when the page comes back.
+  // Mount, a new patient or window, READY again: whatever is in flight is discarded and the read
+  // starts afresh. Leaving READY: whatever is in flight will not land. The same patient and window
+  // with a new measurement: a request (which joins the one in flight), unless the page is hidden.
+  useEffect(() => {
+    if (!ready) {
+      generation.current += 1;
+      inFlight.current = false;
+      queued.current = false;
+      readFor.current = null;
+      return;
+    }
+    if (readFor.current !== key) {
+      readFor.current = key;
+      generation.current += 1;
+      inFlight.current = false;
+      queued.current = false;
+      request();
+    } else if (!hidden()) {
+      request();
+    }
+  }, [ready, key, measuredKey, request]);
+
+  // Once a minute while the page is visible. Hidden: no timer at all. Back: one read now, and the
+  // minute starts from then.
   useEffect(() => {
     if (!ready) return undefined;
     let timer = 0;
-    const tick = () => {
-      if (!hidden()) read();
-      timer = setTimeout(tick, TRENDS_POLL_MS);
-    };
-    const wake = () => {
-      if (!hidden()) read();
-    };
-    timer = setTimeout(tick, TRENDS_POLL_MS);
-    document.addEventListener("visibilitychange", wake);
-    return () => {
+    const stop = () => {
       clearTimeout(timer);
-      document.removeEventListener("visibilitychange", wake);
+      timer = 0;
     };
-  }, [ready, read]);
+    const arm = () => {
+      stop();
+      if (!hidden()) timer = setTimeout(tick, TRENDS_POLL_MS);
+    };
+    const tick = () => {
+      timer = 0;
+      request();
+      arm();
+    };
+    const onVisibility = () => {
+      if (hidden()) {
+        stop();
+        return;
+      }
+      request();
+      arm();
+    };
+    arm();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [ready, request]);
 
   // Gone: nothing late may land.
-  useEffect(() => () => { seq.current += 1; }, []);
+  useEffect(() => () => {
+    generation.current += 1;
+    inFlight.current = false;
+    queued.current = false;
+    readFor.current = null;
+  }, []);
 
   const shown = state.key === key ? state : { ...NOTHING, key };
-  return { data: shown.data, loading: shown.loading, unreadable: shown.unreadable, lastOkAt: shown.lastOkAt, reload: read };
+  return { data: shown.data, loading: shown.loading, unreadable: shown.unreadable, lastOkAt: shown.lastOkAt, reload: request };
 }
 ```
 
-- [ ] **Step 5: Green.** `npx vitest run src/live/screens/patient/trends/useTrends.test.jsx 2>&1 | grep -E "Tests "` → `Tests  9 passed (9)`.
+- [ ] **Step 5: Green.** `npx vitest run src/live/screens/patient/trends/useTrends.test.jsx 2>&1 | grep -E "Tests "` → `Tests  17 passed (17)`.
 
 - [ ] **Step 6: The screen's tests — red.** Four Edits in `dashboard/src/live/screens/patient/PatientScreen.test.jsx`.
 
@@ -3336,6 +3911,7 @@ with:
 
 ```jsx
 import { STAGE_OFF, bed as monitorBed, param as monitorParam, strip } from "../../data/shadow.testutil.js";
+import { hhmm } from "../../i18n/dates.js";
 import { answering } from "./trends/trends.testutil.js";
 import { PatientScreen } from "./PatientScreen.jsx";
 ```
@@ -3431,13 +4007,24 @@ with:
         payload: board([entry("S-001", [], FULL)]),
         setup: (api) => api.patientTrends.mockRejectedValue(Object.assign(new Error("down"), { status: 503 })),
       });
-      expect(screen.getByText("Vital qrafikləri oxuna bilmir (son: —)")).toBeInTheDocument();
+      const said = screen.getByText("Vital qrafikləri oxuna bilmir (son: —)");
+      expect(said.closest("[role='note']")).not.toBeNull();          // a note, as the monitor strip says it; not a live region
+      expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ")).not.toMatch(/Vital qrafikləri/);
+    });
+
+    it("say since when once a later read fails, after one that worked", async () => {
+      const { api, stream } = await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(screen.queryByText(/oxuna bilmir/)).toBeNull();
+      api.patientTrends.mockRejectedValue(Object.assign(new Error("down"), { status: 503 }));
+      await act(async () => { stream.frame(entry("S-001", [], { ...FULL, at: measured(10) })); await settle(); });
+      // The time of the last read that worked (the browser's clock, pinned to NOW), not "—" and not the failure's.
+      expect(screen.getByText(`Vital qrafikləri oxuna bilmir (son: ${hhmm(NOW)})`)).toBeInTheDocument();
       expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ")).not.toMatch(/Vital qrafikləri/);
     });
   });
 ```
 
-Run `npx vitest run src/live/screens/patient/PatientScreen.test.jsx 2>&1 | grep -E "×|Tests "`. Expected: `Tests  4 failed | 50 passed (54)` — "stand where…" (the placeholder's text is still there), "keep the forms seam…" (no note), "read the 24-hour trends…" (nothing reads), "say they cannot be read…".
+Run `npx vitest run src/live/screens/patient/PatientScreen.test.jsx 2>&1 | grep -E "×|Tests "`. Expected: `Tests  5 failed | 50 passed (55)` — "stand where…" (the placeholder's text is still there), "keep the forms seam…" (no note), "read the 24-hour trends…" (nothing reads), "say they cannot be read…" and "say since when once a later read fails…" (the Task 9 quality review's, lane commit `dac5051`).
 
 - [ ] **Step 7: The box** — Write `dashboard/src/live/screens/patient/trends/TrendsBox.jsx`:
 
@@ -3451,12 +4038,13 @@ Run `npx vitest run src/live/screens/patient/PatientScreen.test.jsx 2>&1 | grep 
 // came. Nothing here or below it computes a band, a threshold, a delta or a point.
 //
 // It never says less than it knows: an unreadable read keeps the last answer on screen and says so
-// in the header, with the time that answer came (the monitor strip's rule), and it is a plain line,
-// not an alert — nothing the clinician did was refused.
+// in a warn `Note` — the first line of the box's body, as the monitor strip says the same state —
+// with the time that answer came. A `Note` is `role="note"`, not a live region, and not an alert:
+// nothing the clinician did was refused, and a poll that fails once a minute must not interrupt.
 import React from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../../i18n/dates.js";
-import { Box } from "../../../ui/index.js";
+import { Box, Note } from "../../../ui/index.js";
 import { measuredKeyOf, useTrends } from "./useTrends.js";
 
 export function TrendsBox({ patient }) {
@@ -3466,9 +4054,9 @@ export function TrendsBox({ patient }) {
     <Box title={t("patient.trends")} icon="chart" level={2} right={t("patient.trendsNote")}>
       <div data-trends-box="">
         {trends.unreadable ? (
-          <p className="m-0 mb-2 text-12 font-semibold text-att-ink">
+          <Note tone="warn" icon="alert" className="mb-2">
             {t("patient.trendsUnreadable", { time: trends.lastOkAt ? hhmm(trends.lastOkAt) : "—" })}
-          </p>
+          </Note>
         ) : null}
         {trends.loading ? <p className="m-0 text-12.5 text-mute">{t("patient.trendsLoading")}</p> : null}
       </div>
@@ -3574,7 +4162,7 @@ Then remove `trendsSoon` from `dashboard/src/live/i18n/strings/patient.js`, four
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/screens/patient/ src/reachable.test.js src/live/boundaries.test.js src/live/rawKeys.test.jsx src/live/i18n/ 2>&1 | grep -E "Test Files|Tests |×"
 ```
-Expected: no `×`; `PatientScreen.test.jsx` 54, `useTrends.test.jsx` 9 (`reachable.test.js` passes because PatientScreen imports the box, which imports the hook). Then the suite — **82 / 1967** — and the build.
+Expected: no `×`; `Test Files  9 passed (9)`, `Tests  130 passed (130)` — `PatientScreen.test.jsx` 55, `useTrends.test.jsx` 17 (`reachable.test.js` passes because PatientScreen imports the box, which imports the hook). Then the suite — **82 / 2151** in plan order (the lane alone, `dac5051`: 82 / 2149) — and the build.
 
 - [ ] **Step 10: Commit.**
 
@@ -3584,14 +4172,16 @@ git add dashboard/src/live/screens/patient/trends/trends.testutil.js dashboard/s
 git status --short && git diff --cached --stat
 git commit -m "feat(patient): the trends box where the placeholder stood, and the read behind it" -m "useTrends reads GET /patients/{id}/trends through the session's track: on mount, on a new patient or window (cleared first), on a new measurement (measuredKeyOf), every 60 s while READY and visible; nothing while locked, nothing late after a lock, a sign-out or an unmount; a failed read keeps the last answer and says since when. The forms seam keeps its sentence as a Note; trendsSoon goes.
 
-red: useTrends — Failed to resolve import ./useTrends.js; PatientScreen 4 failed" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+red: useTrends — Failed to resolve import ./useTrends.js; PatientScreen 5 failed" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
 
 ### Task 10: The six cards — the engine's facts, printed and judged by nobody here
 
-Spec §3.1 and D2, D3 with X7. `news2Tone(points)` is the ONE mapping from the engine's points to a tone (0 → none, 1–2 → `mid`, 3 → `crit`), shared by the card's frame here and the chart's bands in Task 11. `cards.js` lists the six cards in the bed card's order — pulse, respiration, SpO₂, systolic + MAP, temperature, lactate — with names, units and identity colours from `vitals.js`. A card prints each channel's latest value in its identity colour, the engine's delta with an arrow for its sign ("↑ +6", "↓ −3", "→ 0") or "tek ölçüm" when there was no previous one, and its age against the screen's `useBoardNow` instant; it is framed and badged ("NEWS2 +3") from the first channel's `news2_points` (systolic on the pressure card); the own-normal pill shows when `within_own_normal === true`, beside the frame. `ageText` moves out of PatientScreen.jsx so the two say an age the same way.
+Spec §3.1 and D2, D3 with X7. `news2Tone(points)` is the ONE mapping from the engine's points to a tone (0 → none, 1–2 → `mid`, 3 → `crit`), shared by the card's frame here and the chart's bands in Task 11. `cards.js` lists the six cards in the bed card's order — pulse, respiration, SpO₂, systolic + MAP, temperature, lactate — with names, units and identity colours from `vitals.js`. A card prints each channel's latest value, the engine's delta with an arrow for its sign ("↑ +6", "↓ −3", "→ 0") or "tek ölçüm" when there was no previous one, and its age against the screen's `useBoardNow` instant; it is framed and badged ("NEWS2 +3") from the first channel's `news2_points` (systolic on the pressure card); the own-normal pill shows when `within_own_normal === true`. `ageText` moves out of PatientScreen.jsx so the two say an age the same way.
+
+**As the dashboard lane built it (commits `004e9c3`, `4cdb563` and `339c3f2`, the Task 10 quality review — X24); the blocks below are that code.** Values print in `text-ink`; the identity colour stays on the title (and, from Task 11, on the line) — daylight `--v-map` equals `--crit`, and a calm pressure card must not show critical-red numbers. The badge and the own-normal pill belong to a reading: both sit on the first channel's row (systolic's on the pressure card), after the age; MAP's row never carries either, and the title row holds the title (`[data-title]`) and nothing else. A NEWS2 channel (the engine sent it bands) whose latest value came with no finite points wears an attention-tone "NEWS2: —" with its reason for a screen reader, and frames nothing — a card must not read as calm because the engine's answer was missing; MAP and lactate say nothing. "tek ölçüm" only for a delta of `null` — any other non-number prints no delta; the arrow is a glyph, so a screen reader hears the direction in words (`trendsDeltaUp/Down/Same`). `ageText` returns null unless `nowMs` is a finite number — never `Date.now()` (X7). The frame is `border-2` in every tone. In Russian MAP is "СрАД" ("САД" reads as systolic).
 
 **Files:**
 - Create: `dashboard/src/live/screens/patient/ageText.js`, `trends/news2Tone.js`, `trends/news2Tone.test.js`, `trends/cards.js`, `trends/TrendCard.jsx`, `trends/TrendCard.test.jsx`
@@ -3655,10 +4245,14 @@ const HR = CARDS.find((c) => c.id === "heart_rate");
 const PRESSURE = CARDS.find((c) => c.id === "pressure");
 const LACTATE = CARDS.find((c) => c.id === "lactate");
 
-function show(card, channels, { onOpen } = {}) {
+// `nowMs` is the screen's `useBoardNow` instant; a test about a card handed no clock passes `nowMs: undefined`.
+function show(card, channels, { onOpen, ...clock } = {}) {
   render(
     <I18nProvider>
-      <ul><TrendCard card={card} channels={channelsOf(trends("S-001", channels))} nowMs={NOW} onOpen={onOpen} /></ul>
+      <ul>
+        <TrendCard card={card} channels={channelsOf(trends("S-001", channels))}
+          nowMs={"nowMs" in clock ? clock.nowMs : NOW} onOpen={onOpen} />
+      </ul>
     </I18nProvider>,
   );
   return document.querySelector("[data-frame]");
@@ -3698,12 +4292,29 @@ describe("the trend card", () => {
     document.body.innerHTML = "";
     show(HR, [channel("heart_rate", [point(5, 108, 1)], { latest: latest({ value: 108, within_own_normal: false }) })]);
     expect(screen.queryByText("Xəstənin normasında")).toBeNull();
+    document.body.innerHTML = "";
+    show(HR, [channel("heart_rate", [point(5, 108, 1)], { latest: latest({ value: 108, within_own_normal: null }) })]);
+    expect(screen.queryByText("Xəstənin normasında")).toBeNull();
   });
 
   it("prints the engine's delta — not the difference of the points it was given", () => {
     show(HR, [channel("heart_rate", [point(60, 84, 0), point(5, 90, 0)], { latest: latest({ value: 90, delta: 2 }) })]);
     expect(screen.getByText("↑ +2 (əvvəlkinə görə)")).toBeInTheDocument();
     expect(screen.queryByText(/\+6/)).toBeNull();
+  });
+
+  it("says rose, fell or unchanged to a screen reader, and hides the arrow it is drawn with", () => {
+    const cases = [
+      [2, "↑ +2 (əvvəlkinə görə)", "yüksəldi +2 (əvvəlkinə görə)"],
+      [-3, "↓ −3 (əvvəlkinə görə)", "düşdü −3 (əvvəlkinə görə)"],
+      [0, "→ 0 (əvvəlkinə görə)", "eyni (əvvəlkinə görə)"],
+    ];
+    for (const [delta, drawn, spoken] of cases) {
+      document.body.innerHTML = "";
+      show(HR, [channel("heart_rate", [point(5, 90, 0)], { latest: latest({ value: 90, delta }) })]);
+      expect(screen.getByText(drawn), String(delta)).toHaveAttribute("aria-hidden", "true");
+      expect(screen.getByText(spoken), String(delta)).toHaveClass("sr-only");
+    }
   });
 
   it("says when there was no previous measurement, and when there is none at all", () => {
@@ -3714,9 +4325,74 @@ describe("the trend card", () => {
     expect(screen.getByText("Bu kanal üçün ölçmə yoxdur")).toBeInTheDocument();
   });
 
+  it("says 'one measurement' only for a delta of null — any other non-number prints no delta at all", () => {
+    for (const nothing of [undefined, Number.NaN, "2"]) {
+      document.body.innerHTML = "";
+      show(HR, [channel("heart_rate", [point(5, 84, 0)], { latest: latest({ value: 84, delta: nothing }) })]);
+      expect(screen.queryByText("tək ölçmə"), String(nothing)).toBeNull();
+      expect(screen.queryByText(/əvvəlkinə/), String(nothing)).toBeNull();
+      expect(screen.getByText("84"), String(nothing)).toBeInTheDocument();
+    }
+  });
+
   it("says how long ago, against the clock it is handed", () => {
     show(HR, [channel("heart_rate", [point(5, 84, 0)])]);
     expect(screen.getByText("5 dəq əvvəl")).toBeInTheDocument();
+  });
+
+  it("prints no age at all when it is handed no clock — never the browser's own", () => {
+    for (const none of [undefined, Number.NaN, null]) {
+      document.body.innerHTML = "";
+      const card = show(HR, [channel("heart_rate", [point(5, 84, 0)])], { nowMs: none });
+      expect(card, String(none)).not.toHaveTextContent(/əvvəl/);
+      expect(card, String(none)).toHaveTextContent("84");
+    }
+  });
+
+  it("keeps the parts of a reading apart, so a reader does not hear '84/dəq↑ +2' as one word", () => {
+    const card = show(HR, [channel("heart_rate", [point(5, 84, 0)], { latest: latest({ value: 84, delta: 2 }) })]);
+    const text = card.querySelector("[data-series='heart_rate']").textContent;
+    expect(text).toMatch(/84 \/dəq ↑ \+2 /);
+    expect(text).toMatch(/ 5 dəq əvvəl$/);
+  });
+
+  it("prints the value in ink and keeps the channel's identity colour on the title", () => {
+    const card = show(HR, [channel("heart_rate", [point(5, 84, 0)])]);
+    expect(card.querySelector("[data-series='heart_rate'] b")).toHaveClass("text-ink");
+    expect(card.querySelector("[data-series='heart_rate'] b")).not.toHaveClass("text-v-hr");
+    expect(card.querySelector("[data-title]")).toHaveClass("text-v-hr");
+  });
+
+  it("keeps the frame the same width in every tone, so nothing moves when the tone does", () => {
+    for (const points of [0, 2, 3]) {
+      document.body.innerHTML = "";
+      const card = show(HR, [channel("heart_rate", [point(5, 72, points)], { latest: latest({ news2_points: points }) })]);
+      expect(card, String(points)).toHaveClass("border-2");
+    }
+  });
+
+  it("says out loud that a NEWS2 channel was not scored — and frames nothing", () => {
+    for (const points of [null, undefined, "3"]) {
+      document.body.innerHTML = "";
+      const card = show(HR, [channel("heart_rate", [point(5, 132, null)], { latest: latest({ value: 132, news2_points: points }) })]);
+      expect(card.dataset.frame, String(points)).toBe("none");
+      expect(screen.getByText("NEWS2: —"), String(points)).toHaveAttribute("aria-hidden", "true");
+      expect(screen.getByText("NEWS2: —").closest("[data-tone]"), String(points)).toHaveAttribute("data-tone", "warn");
+      expect(screen.getByText("NEWS2 balı yoxdur: son ölçmə qiymətləndirilməyib"), String(points)).toHaveClass("sr-only");
+      expect(screen.queryByText(/NEWS2 \+/), String(points)).toBeNull();
+    }
+  });
+
+  it("says nothing about points where the engine has none to give (MAP, lactate)", () => {
+    const card = show(PRESSURE, [
+      channel("sbp", [point(5, 120, 0)], { latest: latest({ value: 120, news2_points: 0 }) }),
+      channel("map", [point(5, 90)], { latest: latest({ value: 90, news2_points: null }) }),
+    ]);
+    expect(card.dataset.frame).toBe("none");
+    expect(screen.queryByText(/NEWS2/)).toBeNull();
+    document.body.innerHTML = "";
+    show(LACTATE, [channel("lactate", [point(5, 2.1)], { latest: latest({ value: 2.1, news2_points: undefined }) })]);
+    expect(screen.queryByText(/NEWS2/)).toBeNull();
   });
 
   it("puts systolic and MAP on one card, each named, framed by systolic's points", () => {
@@ -3727,6 +4403,48 @@ describe("the trend card", () => {
     expect(card.dataset.frame).toBe("crit");
     expect(card.querySelector("[data-series='sbp']")).toHaveTextContent(/Sistolik AT\s*88/);
     expect(card.querySelector("[data-series='map']")).toHaveTextContent(/MAP\s*58/);
+  });
+
+  it("carries the badge on systolic's row, so the reader sees whose points they are — MAP's row has none", () => {
+    const card = show(PRESSURE, [
+      channel("sbp", [point(5, 88, 3)], { latest: latest({ value: 88, news2_points: 3 }) }),
+      channel("map", [point(5, 58)], { latest: latest({ value: 58, news2_points: null }) }),
+    ]);
+    expect(card.querySelector("[data-series='sbp']")).toHaveTextContent("NEWS2 +3");
+    expect(card.querySelector("[data-series='map']")).not.toHaveTextContent(/NEWS2/);
+    expect(card.querySelector("[data-title]")).not.toHaveTextContent(/NEWS2/);
+    document.body.innerHTML = "";
+    const unscored = show(PRESSURE, [
+      channel("sbp", [point(5, 88, null)], { latest: latest({ value: 88, news2_points: null }) }),
+      channel("map", [point(5, 58)], { latest: latest({ value: 58, news2_points: null }) }),
+    ]);
+    expect(unscored.querySelector("[data-series='sbp']")).toHaveTextContent("NEWS2: —");
+    expect(unscored.querySelector("[data-series='map']")).not.toHaveTextContent(/NEWS2/);
+    expect(screen.getAllByText("NEWS2: —")).toHaveLength(1);
+  });
+
+  it("puts the own-normal pill on the reading it judges: systolic's, beside the badge — never MAP's or the title's", () => {
+    const card = show(PRESSURE, [
+      channel("sbp", [point(5, 108, 1)], { latest: latest({ value: 108, news2_points: 1, within_own_normal: true }) }),
+      channel("map", [point(5, 58)], { latest: latest({ value: 58, news2_points: null, within_own_normal: true }) }),
+    ]);
+    const pill = screen.getByText("Xəstənin normasında");
+    expect(card.querySelector("[data-series='sbp']")).toContainElement(pill);
+    expect(card.querySelector("[data-series='sbp']")).toHaveTextContent(/NEWS2 \+1.*Xəstənin normasında/);
+    expect(card.querySelector("[data-series='map']")).not.toHaveTextContent("Xəstənin normasında");
+    expect(card.querySelector("[data-title]")).not.toHaveTextContent("Xəstənin normasında");
+    expect(screen.getAllByText("Xəstənin normasında")).toHaveLength(1);
+    expect(card.dataset.frame).toBe("mid");
+  });
+
+  it("never frames a card from MAP — whatever points it is handed", () => {
+    const card = show(PRESSURE, [
+      channel("sbp", [point(5, 120, 0)], { latest: latest({ value: 120, news2_points: 0 }) }),
+      channel("map", [point(5, 58)], { latest: latest({ value: 58, news2_points: 3 }) }),
+    ]);
+    expect(card.dataset.frame).toBe("none");
+    expect(card).not.toHaveClass("border-crit");
+    expect(screen.queryByText(/NEWS2/)).toBeNull();
   });
 
   it("is a button naming the chart it opens only when it can open one", () => {
@@ -3790,10 +4508,15 @@ Write `dashboard/src/live/screens/patient/ageText.js`:
 // The number and the unit stay apart, so neither ends up inside a word that would need a suffix
 // fitted to it. Shared by the measured-values box and the trend cards, so the two never word one
 // age two ways. The instant it ages against is the caller's `useBoardNow` (the server's clock).
+//
+// NO CLOCK, NO AGE. `ageOf` falls back to the browser's own `Date.now()` for a missing instant —
+// which is the one clock a ward tablet cannot be trusted to have right (X7) — so a caller that was
+// not handed the server's instant gets `null` here, and prints no age rather than a wrong one.
 import { ageOf } from "../common/freshness.js";
 import { ageParts } from "../common/feedHealth.js";
 
 export function ageText(t, iso, nowMs) {
+  if (typeof nowMs !== "number" || !Number.isFinite(nowMs)) return null;
   const ms = ageOf(iso, nowMs);
   if (ms === null) return null;
   const parts = ageParts(ms / 1000);
@@ -3803,6 +4526,120 @@ export function ageText(t, iso, nowMs) {
 ```
 
 (The one difference from PatientScreen.jsx's copy: no instant → `null` up front. The old one computed `ageParts(NaN)` = "NaN sa" and relied on its caller not printing it.)
+
+Then the card's words that Task 8 did not have (the Task 10 quality review, lane commits `4cdb563` and `339c3f2`; X24): the attention tag "NEWS2: —" for a NEWS2 channel the engine sent no finite points for, with its reason for a screen reader, and the delta's direction in words (the arrow is a glyph). Four Edits in `dashboard/src/live/i18n/strings/patient.js`. In `tr`, replace:
+
+```js
+    trendsDelta: "{delta} (öncekine göre)",
+    trendsFrameBadge: "NEWS2 +{points}",
+```
+
+with:
+
+```js
+    trendsDelta: "{delta} (öncekine göre)",
+    trendsFrameBadge: "NEWS2 +{points}",
+    trendsDeltaUp: "yükseldi",
+    trendsDeltaDown: "düştü",
+    trendsDeltaSame: "aynı",
+    trendsPointsUnknown: "NEWS2: —",
+    trendsPointsUnknownSr: "NEWS2 puanı yok: son ölçüm puanlanmadı",
+```
+
+In `az`, replace:
+
+```js
+    trendsDelta: "{delta} (əvvəlkinə görə)",
+    trendsFrameBadge: "NEWS2 +{points}",
+```
+
+with:
+
+```js
+    trendsDelta: "{delta} (əvvəlkinə görə)",
+    trendsFrameBadge: "NEWS2 +{points}",
+    trendsDeltaUp: "yüksəldi",
+    trendsDeltaDown: "düşdü",
+    trendsDeltaSame: "eyni",
+    trendsPointsUnknown: "NEWS2: —",
+    trendsPointsUnknownSr: "NEWS2 balı yoxdur: son ölçmə qiymətləndirilməyib",
+```
+
+In `ru`, replace:
+
+```js
+    trendsDelta: "{delta} (к предыдущему)",
+    trendsFrameBadge: "NEWS2 +{points}",
+```
+
+with:
+
+```js
+    trendsDelta: "{delta} (к предыдущему)",
+    trendsFrameBadge: "NEWS2 +{points}",
+    trendsDeltaUp: "выросло",
+    trendsDeltaDown: "снизилось",
+    trendsDeltaSame: "без изменений",
+    trendsPointsUnknown: "NEWS2: —",
+    trendsPointsUnknownSr: "Нет баллов NEWS2: последнее измерение не оценено",
+```
+
+In `en`, replace:
+
+```js
+    trendsDelta: "{delta} (vs the previous)",
+    trendsFrameBadge: "NEWS2 +{points}",
+```
+
+with:
+
+```js
+    trendsDelta: "{delta} (vs the previous)",
+    trendsFrameBadge: "NEWS2 +{points}",
+    trendsDeltaUp: "rose",
+    trendsDeltaDown: "fell",
+    trendsDeltaSame: "unchanged",
+    trendsPointsUnknown: "NEWS2: —",
+    trendsPointsUnknownSr: "No NEWS2 points: the last reading was not scored",
+```
+
+"NEWS2: —" is the score's name and a dash in every language: two Edits in `dashboard/src/live/i18n/strings.test.js` register it. Replace:
+
+```js
+  "patient.trendsFrameBadge", //  "NEWS2 +{points}" — the score's own name and a number (Group 2)
+```
+
+with:
+
+```js
+  "patient.trendsFrameBadge", //  "NEWS2 +{points}" — the score's own name and a number (Group 2)
+  "patient.trendsPointsUnknown", // "NEWS2: —" — the score's own name and a dash (Group 2)
+```
+
+and replace:
+
+```js
+  "patient.trendsFrameBadge", // "NEWS2 +{points}" — the score's name and a number
+```
+
+with:
+
+```js
+  "patient.trendsFrameBadge", // "NEWS2 +{points}" — the score's name and a number
+  "patient.trendsPointsUnknown", // "NEWS2: —" — the score's name and a dash
+```
+
+And in Russian the MAP label "САД" reads as systolic (систолическое АД), where a vasopressor target is a MAP: Edit `dashboard/src/live/i18n/strings/board.js` — replace:
+
+```js
+    chMap: "САД",
+```
+
+with:
+
+```js
+    chMap: "СрАД",
+```
 
 - [ ] **Step 5: The card** — Write `dashboard/src/live/screens/patient/trends/TrendCard.jsx`:
 
@@ -3816,6 +4653,22 @@ export function ageText(t, iso, nowMs) {
 // number reads. The pill is the engine's `within_own_normal` (D3): it never silences the frame and
 // the frame never hides it. The delta is the engine's, printed with an arrow for its sign.
 //
+// The badge and the own-normal pill belong to a READING, not to the card: both sit on the first
+// channel's row (systolic's, on the pressure card), so the reader sees whose points and whose
+// verdict they are; MAP's row never carries either (the engine keeps no baseline for MAP) and MAP
+// never frames the card. The title row holds the title and nothing else. A NEWS2 channel (the engine sent it bands) whose latest value arrived
+// with no points says so — "NEWS2: —", in attention tone, with the reason for a screen reader — and
+// frames nothing: a card must not read as calm because the engine's answer was missing.
+//
+// VALUES ARE PRINTED IN INK. The channel's identity colour stays on the title (and, from Task 11,
+// on the line); daylight's `--v-map` equals `--crit`, and a calm pressure card must not show
+// critical-red numbers (the bed card and the measured-values box print in ink for the same reason).
+//
+// `nowMs` is required: the patient screen's `useBoardNow` instant. Without a finite one no age is
+// printed — never the browser's clock (X7; `ageText`).
+//
+// The frame is `border-2` in every tone, so nothing moves by a pixel when the tone changes.
+//
 // A button only when it can open the big chart (`onOpen`).
 import React from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
@@ -3825,32 +4678,69 @@ import { ageText } from "../ageText.js";
 import { cardTitle } from "./cards.js";
 import { news2Tone } from "./news2Tone.js";
 
-const FRAME = { none: "border border-line", mid: "border-2 border-mid", crit: "border-2 border-crit" };
+const FRAME = { none: "border-2 border-line", mid: "border-2 border-mid", crit: "border-2 border-crit" };
 const BADGE = { mid: "warn", crit: "crit" };
+
+/** The engine's delta in its parts — the arrow it is drawn with, the signed number, and the word a
+ *  screen reader gets in place of the arrow; null for no number. Formatting only: the sign picks the
+ *  arrow, nothing is computed from the value. */
+function deltaParts(delta) {
+  if (typeof delta !== "number" || !Number.isFinite(delta)) return null;
+  if (delta > 0) return { arrow: "↑", number: `+${delta}`, word: "patient.trendsDeltaUp" };
+  if (delta < 0) return { arrow: "↓", number: `−${Math.abs(delta)}`, word: "patient.trendsDeltaDown" };
+  return { arrow: "→", number: "0", word: "patient.trendsDeltaSame" };
+}
 
 /** The engine's delta as the card prints it: "↑ +6", "↓ −3", "→ 0"; null for no number. */
 export function deltaText(delta) {
-  if (typeof delta !== "number" || !Number.isFinite(delta)) return null;
-  if (delta > 0) return `↑ +${delta}`;
-  if (delta < 0) return `↓ −${Math.abs(delta)}`;
-  return "→ 0";
+  const parts = deltaParts(delta);
+  return parts ? `${parts.arrow} ${parts.number}` : null;
 }
 
-function Reading({ series, channel, nowMs, named }) {
+/** The delta as a screen reader gets it: "rose +6 (vs the previous)", "unchanged (vs the previous)". */
+function Delta({ delta }) {
+  const { t } = useI18n();
+  const parts = deltaParts(delta);
+  if (!parts) return null;
+  const spoken = parts.word === "patient.trendsDeltaSame" ? t(parts.word) : `${t(parts.word)} ${parts.number}`;
+  return (
+    <span className="ml-1 font-data text-12 font-semibold text-ink">
+      <span aria-hidden="true">{t("patient.trendsDelta", { delta: deltaText(delta) })}</span>
+      <span className="sr-only">{t("patient.trendsDelta", { delta: spoken })}</span>
+    </span>
+  );
+}
+
+/** "NEWS2 +3" for the engine's points, "NEWS2: —" for a NEWS2 channel it sent none for. */
+function Badge({ tone, points, unscored }) {
+  const { t } = useI18n();
+  if (tone) return <Tag tone={BADGE[tone]}>{t("patient.trendsFrameBadge", { points })}</Tag>;
+  if (!unscored) return null;
+  return (
+    <Tag tone="warn">
+      <span aria-hidden="true">{t("patient.trendsPointsUnknown")}</span>
+      <span className="sr-only">{t("patient.trendsPointsUnknownSr")}</span>
+    </Tag>
+  );
+}
+
+function Reading({ series, channel, nowMs, named, badge, pill }) {
   const { t } = useI18n();
   const latest = channel?.latest ?? null;
   if (!latest) return null;
-  const delta = deltaText(latest.delta);
   const age = ageText(t, latest.ts, nowMs);
   return (
     <span className="mt-1 block" data-series={series.key}>
-      {named ? <span className="mr-1.5 text-11 font-semibold text-mute">{t(series.labelKey)}</span> : null}
-      <b className={`font-data text-20 font-bold ${series.color}`}>{latest.value}</b>
-      <small className="ml-1 text-11 font-semibold text-mute">{t(series.unitKey)}</small>
-      <span className="ml-2 font-data text-12 font-semibold text-ink">
-        {delta ? t("patient.trendsDelta", { delta }) : t("patient.trendsSingle")}
-      </span>
-      {age ? <span className="ml-2 text-11 text-mute">{age}</span> : null}
+      {named ? <><span className="text-11 font-semibold text-mute">{t(series.labelKey)}</span>{" "}</> : null}
+      <b className="font-data text-20 font-bold text-ink">{latest.value}</b>{" "}
+      <small className="text-11 font-semibold text-mute">{t(series.unitKey)}</small>
+      {/* No previous measurement is `null`; any other non-number is printed as nothing at all. */}
+      {latest.delta === null ? (
+        <>{" "}<span className="ml-1 font-data text-12 font-semibold text-ink">{t("patient.trendsSingle")}</span></>
+      ) : <>{" "}<Delta delta={latest.delta} /></>}
+      {age ? <>{" "}<span className="ml-1 text-11 text-mute">{age}</span></> : null}
+      {badge ? <>{" "}{badge}</> : null}
+      {pill ? <>{" "}{pill}</> : null}
     </span>
   );
 }
@@ -3858,8 +4748,12 @@ function Reading({ series, channel, nowMs, named }) {
 export function TrendCard({ card, channels, nowMs, onOpen }) {
   const { t } = useI18n();
   const primary = channels?.[card.series[0].key] ?? null;
-  const points = primary?.latest?.news2_points ?? null;
+  const latest = primary?.latest ?? null;
+  const points = latest?.news2_points ?? null;
   const tone = news2Tone(points);
+  // A NEWS2 channel is one the engine sent bands for; "scored" is a number it sent, whatever it is.
+  const scored = typeof points === "number" && Number.isFinite(points);
+  const unscored = Boolean(latest) && Array.isArray(primary.bands?.news2) && !scored;
   const measured = card.series.some((s) => channels?.[s.key]?.latest);
   const title = cardTitle(t, card);
   const Wrapper = onOpen ? "button" : "div";
@@ -3871,26 +4765,24 @@ export function TrendCard({ card, channels, nowMs, onOpen }) {
         data-frame={tone ?? "none"}
         className={`block w-full min-w-0 rounded-box bg-card px-3 py-2.5 text-left ${FRAME[tone ?? "none"]} ${onOpen ? FOCUS_RING : ""}`}
       >
-        <span className="flex flex-wrap items-center gap-1.5">
-          <span className={`text-10.5 font-bold uppercase leading-[normal] tracking-[.06em] ${card.series[0].color}`}>{title}</span>
-          {tone ? <Tag tone={BADGE[tone]}>{t("patient.trendsFrameBadge", { points })}</Tag> : null}
-          {primary?.latest?.within_own_normal === true ? <Pill icon="user">{t("patient.trendsOwnNormalPill")}</Pill> : null}
-        </span>
+        <span data-title="" className={`block text-10.5 font-bold uppercase leading-[normal] tracking-[.06em] ${card.series[0].color}`}>{title}</span>
         {measured ? (
-          card.series.map((s) => (
-            <Reading key={s.key} series={s} channel={channels?.[s.key]} nowMs={nowMs} named={card.series.length > 1} />
+          card.series.map((s, i) => (
+            <Reading key={s.key} series={s} channel={channels?.[s.key]} nowMs={nowMs} named={card.series.length > 1}
+              badge={i === 0 && (tone || unscored) ? <Badge tone={tone} points={points} unscored={unscored} /> : null}
+              pill={i === 0 && latest?.within_own_normal === true ? <Pill icon="user">{t("patient.trendsOwnNormalPill")}</Pill> : null} />
           ))
         ) : (
           <span className="mt-1 block text-12.5 text-mute">{t("patient.trendsNoData")}</span>
         )}
-        {onOpen ? <span className="sr-only">{t("patient.trendsOpen", { channel: title })}</span> : null}
+        {onOpen ? <>{" "}<span className="sr-only">{t("patient.trendsOpen", { channel: title })}</span></> : null}
       </Wrapper>
     </li>
   );
 }
 ```
 
-`npx vitest run src/live/screens/patient/trends/TrendCard.test.jsx 2>&1 | grep -E "Tests "` → `Tests  10 passed (10)`.
+`npx vitest run src/live/screens/patient/trends/TrendCard.test.jsx 2>&1 | grep -E "Tests "` → `Tests  21 passed (21)`.
 
 - [ ] **Step 6: The screen's tests — red while the box lists nothing.** Edit `PatientScreen.test.jsx` four times.
 
@@ -3981,7 +4873,7 @@ with:
     it("show six cards, in the bed card's channel order, one list", async () => {
       await open({ payload: board([entry("S-001", [], FULL)]) });
       const list = document.querySelector("[data-trends-box] ul");
-      expect([...list.children].map((li) => li.querySelector("[data-frame] span span").textContent))
+      expect([...list.children].map((li) => li.querySelector("[data-title]").textContent))
         .toEqual(["Nəbz", "Tənəffüs", "SpO2", "Sistolik AT · MAP", "Bədən hərarəti", "Laktat"]);
     });
 
@@ -3998,7 +4890,7 @@ with:
     });
 ```
 
-Run it: `npx vitest run src/live/screens/patient/PatientScreen.test.jsx 2>&1 | grep -E "Tests "` → `Tests  2 failed | 54 passed (56)` — the two new tests (the box holds no list yet). (b) and (c) pass now and keep passing once the cards render; without them three measured-values tests would fail then with `Found multiple elements with the text: Nəbz` / `Laktat` — measured while this plan was written.
+Run it: `npx vitest run src/live/screens/patient/PatientScreen.test.jsx 2>&1 | grep -E "Tests "` → `Tests  2 failed | 55 passed (57)` — the two new tests (the box holds no list yet). (b) and (c) pass now and keep passing once the cards render; without them three measured-values tests would fail then with `Found multiple elements with the text: Nəbz` / `Laktat` — measured while this plan was written.
 
 - [ ] **Step 7: The box lists the cards** — Write `dashboard/src/live/screens/patient/trends/TrendsBox.jsx` (whole, replacing Task 9's):
 
@@ -4012,12 +4904,16 @@ Run it: `npx vitest run src/live/screens/patient/PatientScreen.test.jsx 2>&1 | g
 // came. Nothing here or below it computes a band, a threshold, a delta or a point.
 //
 // It never says less than it knows: an unreadable read keeps the last answer on screen and says so
-// in the header, with the time that answer came (the monitor strip's rule), and it is a plain line,
-// not an alert — nothing the clinician did was refused.
+// in a warn `Note` — the first line of the box's body, as the monitor strip says the same state —
+// with the time that answer came. A `Note` is `role="note"`, not a live region, and not an alert:
+// nothing the clinician did was refused, and a poll that fails once a minute must not interrupt.
+//
+// `nowMs` is REQUIRED: the patient screen's `useBoardNow` instant (the server's clock), which the
+// cards age their values against. Without a finite one a card prints no age — never the browser's.
 import React from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../../i18n/dates.js";
-import { Box } from "../../../ui/index.js";
+import { Box, Note } from "../../../ui/index.js";
 import { CARDS, channelsOf } from "./cards.js";
 import { TrendCard } from "./TrendCard.jsx";
 import { measuredKeyOf, useTrends } from "./useTrends.js";
@@ -4030,9 +4926,9 @@ export function TrendsBox({ patient, nowMs }) {
     <Box title={t("patient.trends")} icon="chart" level={2} right={t("patient.trendsNote")}>
       <div data-trends-box="">
         {trends.unreadable ? (
-          <p className="m-0 mb-2 text-12 font-semibold text-att-ink">
+          <Note tone="warn" icon="alert" className="mb-2">
             {t("patient.trendsUnreadable", { time: trends.lastOkAt ? hhmm(trends.lastOkAt) : "—" })}
-          </p>
+          </Note>
         ) : null}
         {trends.loading ? <p className="m-0 text-12.5 text-mute">{t("patient.trendsLoading")}</p> : null}
         {trends.data ? (
@@ -4111,7 +5007,7 @@ with:
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/screens/patient/ src/reachable.test.js src/live/boundaries.test.js src/live/rawKeys.test.jsx src/live/i18n/ 2>&1 | grep -E "Test Files|Tests |×"
 ```
-Expected: no `×`; PatientScreen 56, TrendCard 10, news2Tone 2, useTrends 9. Then the suite — **84 / 1981** — and the build.
+Expected: no `×`; `Test Files  11 passed (11)`, `Tests  155 passed (155)` — PatientScreen 57, TrendCard 21, news2Tone 2, useTrends 17. Then the suite — **84 / 2176** in plan order (the lane alone, `339c3f2`: 84 / 2174) — and the build.
 
 - [ ] **Step 10: Commit.**
 
@@ -4698,16 +5594,15 @@ export function TrendChart({
 (a) Replace:
 
 ```jsx
-      <ul><TrendCard card={card} channels={channelsOf(trends("S-001", channels))} nowMs={NOW} onOpen={onOpen} /></ul>
+        <TrendCard card={card} channels={channelsOf(trends("S-001", channels))}
+          nowMs={"nowMs" in clock ? clock.nowMs : NOW} onOpen={onOpen} />
 ```
 
 with:
 
 ```jsx
-      <ul>
-        <TrendCard card={card} channels={channelsOf(trends("S-001", channels))} nowMs={NOW}
-          sinceMs={NOW - 24 * 3_600_000} untilMs={NOW} onOpen={onOpen} />
-      </ul>
+        <TrendCard card={card} channels={channelsOf(trends("S-001", channels))}
+          nowMs={"nowMs" in clock ? clock.nowMs : NOW} sinceMs={NOW - 24 * 3_600_000} untilMs={NOW} onOpen={onOpen} />
 ```
 
 (b) Replace:
@@ -4735,7 +5630,7 @@ with:
   it("is a button naming the chart it opens only when it can open one", () => {
 ```
 
-Run it: `Tests  1 failed | 10 passed (11)` (no `svg` in the card yet).
+Run it: `Tests  1 failed | 21 passed (22)` (no `svg` in the card yet).
 
 - [ ] **Step 6: Into the card.** Five Edits in `trends/TrendCard.jsx`.
 
@@ -4802,8 +5697,10 @@ export function TrendCard({ card, channels, nowMs, sinceMs, untilMs, onOpen }) {
 
 ```jsx
         {measured ? (
-          card.series.map((s) => (
-            <Reading key={s.key} series={s} channel={channels?.[s.key]} nowMs={nowMs} named={card.series.length > 1} />
+          card.series.map((s, i) => (
+            <Reading key={s.key} series={s} channel={channels?.[s.key]} nowMs={nowMs} named={card.series.length > 1}
+              badge={i === 0 && (tone || unscored) ? <Badge tone={tone} points={points} unscored={unscored} /> : null}
+              pill={i === 0 && latest?.within_own_normal === true ? <Pill icon="user">{t("patient.trendsOwnNormalPill")}</Pill> : null} />
           ))
         ) : (
 ```
@@ -4813,8 +5710,10 @@ with:
 ```jsx
         {measured ? (
           <>
-            {card.series.map((s) => (
-              <Reading key={s.key} series={s} channel={channels?.[s.key]} nowMs={nowMs} named={card.series.length > 1} />
+            {card.series.map((s, i) => (
+              <Reading key={s.key} series={s} channel={channels?.[s.key]} nowMs={nowMs} named={card.series.length > 1}
+                badge={i === 0 && (tone || unscored) ? <Badge tone={tone} points={points} unscored={unscored} /> : null}
+                pill={i === 0 && latest?.within_own_normal === true ? <Pill icon="user">{t("patient.trendsOwnNormalPill")}</Pill> : null} />
             ))}
             <span className="mt-1.5 block">
               <TrendChart series={drawn} bands={primary?.bands ?? null} sinceMs={sinceMs} untilMs={untilMs} hours={24} height={46} />
@@ -4845,7 +5744,7 @@ Two Edits in `trends/TrendsBox.jsx`:
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/screens/patient/ src/reachable.test.js src/live/boundaries.test.js src/live/rawKeys.test.jsx 2>&1 | grep -E "Test Files|Tests |×"
 ```
-Expected: no `×`; TrendCard 11, TrendChart 12, trendGeometry 16, PatientScreen 56. Then the suite — **86 / 2010** — and the build.
+Expected: no `×`; TrendCard 22, TrendChart 12, trendGeometry 16, PatientScreen 57. Then the suite — **86 / 2205** — and the build.
 
 - [ ] **Step 8: Commit.**
 
@@ -4866,7 +5765,7 @@ Spec §3.2 (graph view) and §7. A card is now a button; it opens `TrendModal` o
 
 **Files:**
 - Create: `trends/TrendLegend.jsx`, `trends/TrendModal.jsx`, `trends/TrendModal.test.jsx`
-- Modify: `trends/trendGeometry.js` (+ test), `trends/TrendChart.jsx`, `trends/TrendsBox.jsx` (Write, whole), `PatientScreen.jsx`, `PatientScreen.test.jsx`
+- Modify: `trends/trendGeometry.js` (+ test), `trends/TrendChart.jsx`, `trends/TrendsBox.jsx` (Write, whole — the lane's box after Task 10, with its warn `Note`, plus this task's dialog), `PatientScreen.jsx`, `PatientScreen.test.jsx`, `src/live/i18n/strings/patient.js` (three keys)
 
 - [ ] **Step 1: The mark lookup in time — test first.** Two Edits in `trends/trendGeometry.test.js`.
 
@@ -5054,10 +5953,12 @@ describe("the big chart", () => {
     await open();
     const legend = dialog().querySelector("[data-legend]");
     expect(legend).toHaveTextContent("NEWS2 zolağı (yetkin) · mənbə news2-rcp-2017");
-    for (const words of ["1–2 bal", "3 bal", "siqnal", "antibiotik", "nöqtələr ölçmədir; aralarındakı qırıq xətt ölçmə deyil"]) {
+    // ▲ is the finding's first detection for this patient, not every episode (O17).
+    for (const words of ["1–2 bal", "3 bal", "siqnalın ilk aşkarlanması", "antibiotik", "nöqtələr ölçmədir; aralarındakı qırıq xətt ölçmə deyil"]) {
       expect(legend).toHaveTextContent(words);
     }
     expect(legend).not.toHaveTextContent("xəstənin norması");            // none charted
+    expect(legend).not.toHaveTextContent("işarələrin hamısı");           // the server read every mark
   });
 
   it("says a channel was thinned, and from how many", async () => {
@@ -5073,6 +5974,14 @@ describe("the big chart", () => {
     expect(svg.querySelector("[data-series='sbp']")).not.toBeNull();
     expect(svg.querySelector("[data-series='map'] circle")).toHaveClass("fill-card");
     expect(dialog().querySelector("[data-legend]")).toHaveTextContent(/Sistolik AT.*MAP/);
+    // MAP is drawn over the systolic rows but is not a NEWS2 parameter: the legend says so in words.
+    expect(dialog().querySelector("[data-legend]")).toHaveTextContent("MAP NEWS2-də qiymətləndirilmir; zolaqlar Sistolik AT üçündür");
+  });
+
+  it("says when the server's read of the marks stopped at its limit", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate", [point(60, 84, 0)])],
+      { hours, markers_truncated: true })));
+    expect(dialog().querySelector("[data-legend]")).toHaveTextContent("işarələrin hamısı oxunmadı: ən yeniləri çatışmaya bilər");
   });
 
   it("shows no NEWS2 band in the legend of a channel the engine scores none for", async () => {
@@ -5105,9 +6014,69 @@ with:
     it("say they cannot be read, and since when, without raising an alert", async () => {
 ```
 
-Run both: `TrendModal.test.jsx` → `Error: Failed to resolve import "./TrendModal.jsx" …`; `PatientScreen.test.jsx` → `Tests  1 failed | 56 passed (57)` (the card is not a button yet).
+Run both: `TrendModal.test.jsx` → `Error: Failed to resolve import "./TrendModal.jsx" …`; `PatientScreen.test.jsx` → `Tests  1 failed | 57 passed (58)` (the card is not a button yet).
 
-- [ ] **Step 5: The legend** — Write `dashboard/src/live/screens/patient/trends/TrendLegend.jsx`:
+- [ ] **Step 5: The legend.** First its three sentences Task 8 did not have (the Task 10 and Task 4 quality reviews, 2026-10-20): on the pressure card MAP is drawn over the systolic NEWS2 rows and is not a NEWS2 parameter (the ENGINE's `bands.news2: null`), so the legend says so (X24); ▲ is a finding's FIRST DETECTION for this patient — the engine's active alerts never clear a kind today, so a `first_seen` stamp is written once per patient and kind, not once per episode (O17) — and the legend says exactly that; and when the server's read of the marks stopped at its limit (`markers_truncated`, Task 4) the legend says the newest may be missing. Four Edits in `dashboard/src/live/i18n/strings/patient.js`. In `tr`, replace:
+
+```js
+    trendsLegendPoints: "noktalar ölçüm; aralarındaki kesikli çizgi ölçüm değil",
+```
+
+with:
+
+```js
+    trendsLegendPoints: "noktalar ölçüm; aralarındaki kesikli çizgi ölçüm değil",
+    trendsLegendNoBand: "{channel} NEWS2'de puanlanmaz; bantlar {scored} içindir",
+    trendsLegendAlarm: "alarmın ilk tespiti",
+    trendsLegendMarksTruncated: "işaretlerin hepsi okunamadı: en yenileri eksik olabilir",
+```
+
+In `az`, replace:
+
+```js
+    trendsLegendPoints: "nöqtələr ölçmədir; aralarındakı qırıq xətt ölçmə deyil",
+```
+
+with:
+
+```js
+    trendsLegendPoints: "nöqtələr ölçmədir; aralarındakı qırıq xətt ölçmə deyil",
+    trendsLegendNoBand: "{channel} NEWS2-də qiymətləndirilmir; zolaqlar {scored} üçündür",
+    trendsLegendAlarm: "siqnalın ilk aşkarlanması",
+    trendsLegendMarksTruncated: "işarələrin hamısı oxunmadı: ən yeniləri çatışmaya bilər",
+```
+
+In `ru`, replace:
+
+```js
+    trendsLegendPoints: "точки — измерения; пунктир между ними — не измерение",
+```
+
+with:
+
+```js
+    trendsLegendPoints: "точки — измерения; пунктир между ними — не измерение",
+    trendsLegendNoBand: "{channel} не оценивается по NEWS2; полосы — для показателя «{scored}»",
+    trendsLegendAlarm: "первое обнаружение тревоги",
+    trendsLegendMarksTruncated: "прочитаны не все отметки: самых новых может не быть",
+```
+
+In `en`, replace:
+
+```js
+    trendsLegendPoints: "dots are measurements; the dashed line between them is not one",
+```
+
+with:
+
+```js
+    trendsLegendPoints: "dots are measurements; the dashed line between them is not one",
+    trendsLegendNoBand: "{channel} is not scored by NEWS2; the bands belong to {scored}",
+    trendsLegendAlarm: "an alarm's first detection",
+    trendsLegendMarksTruncated: "not every mark could be read: the newest may be missing",
+```
+
+(`trendsMarkerAlarm` stays: the readout and the table print "siqnal: news2" beside the mark's own time.) Then Write `dashboard/src/live/screens/patient/trends/TrendLegend.jsx`:
 
 ```jsx
 // src/live/screens/patient/trends/TrendLegend.jsx — what the big chart's marks mean, in words. Colour
@@ -5147,10 +6116,15 @@ function Glyph({ kind, color = "", hollow = false }) {
 
 const Item = ({ children }) => <li className="flex items-center gap-1.5">{children}</li>;
 
-export function TrendLegend({ card, channels, source }) {
+export function TrendLegend({ card, channels, source, truncated = false }) {
   const { t } = useI18n();
   const primary = channels[card.series[0].key] ?? null;
   const thinned = card.series.filter((s) => channels[s.key]?.thinned);
+  // A series drawn over another's NEWS2 bands (MAP on the pressure card) is not scored by NEWS2:
+  // said in words, so nobody reads the systolic rows as MAP's thresholds. The ENGINE decides which
+  // channel has bands (`bands.news2` null for MAP and lactate); this only notices the difference.
+  const scored = Array.isArray(primary?.bands?.news2);
+  const unbanded = scored ? card.series.slice(1).filter((s) => channels[s.key] && !Array.isArray(channels[s.key].bands?.news2)) : [];
   return (
     <ul data-legend="" className="m-0 mt-2 flex list-none flex-wrap gap-x-4 gap-y-1.5 p-0 text-11.5 text-mute">
       {Array.isArray(primary?.bands?.news2) ? (
@@ -5165,8 +6139,17 @@ export function TrendLegend({ card, channels, source }) {
       {card.series.length > 1 ? card.series.map((s) => (
         <Item key={s.key}><Glyph kind="dot" color={s.color} hollow={s.hollow} /> {t(s.labelKey)}</Item>
       )) : null}
-      <Item><Glyph kind="alarm" /> {t("patient.trendsMarkerAlarm")}</Item>
+      {/* ▲ is a finding's FIRST DETECTION for this patient (its `first_seen` stamp), not every
+          alarm episode: the engine's active alerts never clear a kind today (O17). */}
+      <Item><Glyph kind="alarm" /> {t("patient.trendsLegendAlarm")}</Item>
       <Item><Glyph kind="antibiotic" /> {t("patient.trendsMarkerAntibiotic")}</Item>
+      {unbanded.map((s) => (
+        <Item key={`unbanded-${s.key}`}>
+          {t("patient.trendsLegendNoBand", { channel: t(s.labelKey), scored: t(card.series[0].labelKey) })}
+        </Item>
+      ))}
+      {/* The server's own flag: its read of the marks stopped at its limit (api/trends.py). */}
+      {truncated ? <Item>{t("patient.trendsLegendMarksTruncated")}</Item> : null}
       {thinned.map((s) => (
         <Item key={s.key}>
           {t("patient.trendsThinned", { channel: t(s.labelKey), kept: channels[s.key].points.length, total: channels[s.key].total_points })}
@@ -5261,7 +6244,7 @@ export function TrendModal({ card, patient, bed, onClose }) {
             cursor={cursor?.index ?? null} onPlot={setPlotWidth}
             onCursor={(index, how) => setCursor(index === null ? null : { index, how })}
           />
-          <TrendLegend card={card} channels={channels} source={trends.data.bands_source} />
+          <TrendLegend card={card} channels={channels} source={trends.data.bands_source} truncated={trends.data.markers_truncated === true} />
         </>
       ) : trends.loading ? (
         <p className="m-0 mt-3 text-12.5 text-mute">{t("patient.trendsLoading")}</p>
@@ -5283,12 +6266,16 @@ export function TrendModal({ card, patient, bed, onClose }) {
 // came. Nothing here or below it computes a band, a threshold, a delta or a point.
 //
 // It never says less than it knows: an unreadable read keeps the last answer on screen and says so
-// in the header, with the time that answer came (the monitor strip's rule), and it is a plain line,
-// not an alert — nothing the clinician did was refused.
+// in a warn `Note` — the first line of the box's body, as the monitor strip says the same state —
+// with the time that answer came. A `Note` is `role="note"`, not a live region, and not an alert:
+// nothing the clinician did was refused, and a poll that fails once a minute must not interrupt.
+//
+// `nowMs` is REQUIRED: the patient screen's `useBoardNow` instant (the server's clock), which the
+// cards age their values against. Without a finite one a card prints no age — never the browser's.
 import React, { useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../../i18n/dates.js";
-import { Box } from "../../../ui/index.js";
+import { Box, Note } from "../../../ui/index.js";
 import { CARDS, channelsOf } from "./cards.js";
 import { TrendCard } from "./TrendCard.jsx";
 import { TrendModal } from "./TrendModal.jsx";
@@ -5306,9 +6293,9 @@ export function TrendsBox({ patient, bed, nowMs }) {
     <Box title={t("patient.trends")} icon="chart" level={2} right={t("patient.trendsNote")}>
       <div data-trends-box="">
         {trends.unreadable ? (
-          <p className="m-0 mb-2 text-12 font-semibold text-att-ink">
+          <Note tone="warn" icon="alert" className="mb-2">
             {t("patient.trendsUnreadable", { time: trends.lastOkAt ? hhmm(trends.lastOkAt) : "—" })}
-          </p>
+          </Note>
         ) : null}
         {trends.loading ? <p className="m-0 text-12.5 text-mute">{t("patient.trendsLoading")}</p> : null}
         {trends.data ? (
@@ -5340,13 +6327,13 @@ Edit `PatientScreen.jsx` — replace `          <TrendsBox patient={patient} now
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/screens/patient/ src/reachable.test.js src/live/boundaries.test.js src/live/rawKeys.test.jsx 2>&1 | grep -E "Test Files|Tests |×"
 ```
-Expected: no `×`; TrendModal 8, trendGeometry 17, PatientScreen 57. Then the suite — **87 / 2020** — and the build.
+Expected: no `×`; TrendModal 9, trendGeometry 17, PatientScreen 58. Then the suite — **87 / 2216** — and the build.
 
 - [ ] **Step 9: Commit.**
 
 ```bash
 cd /c/tmp/g2-vital
-git add dashboard/src/live/screens/patient/trends/trendGeometry.js dashboard/src/live/screens/patient/trends/trendGeometry.test.js dashboard/src/live/screens/patient/trends/TrendChart.jsx dashboard/src/live/screens/patient/trends/TrendLegend.jsx dashboard/src/live/screens/patient/trends/TrendModal.jsx dashboard/src/live/screens/patient/trends/TrendModal.test.jsx dashboard/src/live/screens/patient/trends/TrendsBox.jsx dashboard/src/live/screens/patient/PatientScreen.jsx dashboard/src/live/screens/patient/PatientScreen.test.jsx
+git add dashboard/src/live/screens/patient/trends/trendGeometry.js dashboard/src/live/screens/patient/trends/trendGeometry.test.js dashboard/src/live/screens/patient/trends/TrendChart.jsx dashboard/src/live/screens/patient/trends/TrendLegend.jsx dashboard/src/live/screens/patient/trends/TrendModal.jsx dashboard/src/live/screens/patient/trends/TrendModal.test.jsx dashboard/src/live/screens/patient/trends/TrendsBox.jsx dashboard/src/live/screens/patient/PatientScreen.jsx dashboard/src/live/screens/patient/PatientScreen.test.jsx dashboard/src/live/i18n/strings/patient.js
 git status --short && git diff --cached --stat
 git commit -m "feat(patient): the big chart — 6 h / 24 h / 3 days, a readout under the mouse, the legend in words" -m "A card opens TrendModal (kit Modal: focus in, Escape out, focus back). Each window is a read of its own. The readout says time, value, unit and the mark within one pixel column (markerAtTime, from the plot width the chart reports) and is aria-hidden. The legend names the server's NEWS2 source, both tones' points, the charted normal, dots vs dashed intervals, both series of the pressure card, both marks, and a thinned channel's counts.
 
@@ -5469,7 +6456,7 @@ describe("the big chart as a table", () => {
 });
 ```
 
-Run it: `npx vitest run src/live/screens/patient/trends/TrendModal.test.jsx 2>&1 | grep -E "Tests "` → `Tests  7 failed | 8 passed (15)` (no tab stop, no keys, no status region, no "Cədvəl").
+Run it: `npx vitest run src/live/screens/patient/trends/TrendModal.test.jsx 2>&1 | grep -E "Tests "` → `Tests  7 failed | 9 passed (16)` (no tab stop, no keys, no status region, no "Cədvəl").
 
 - [ ] **Step 2: The chart takes the keyboard.** Four Edits in `trends/TrendChart.jsx`.
 
@@ -5700,7 +6687,7 @@ export function TrendModal({ card, patient, bed, onClose }) {
             onCursor={(index, how) => setCursor(index === null ? null : { index, how })}
           />
           <p id={hintId} className="m-0 mt-1 text-11 text-mute">{t("patient.trendsKeysHint")}</p>
-          <TrendLegend card={card} channels={channels} source={trends.data.bands_source} />
+          <TrendLegend card={card} channels={channels} source={trends.data.bands_source} truncated={trends.data.markers_truncated === true} />
         </>
       ) : null}
       {trends.data && view === "table" ? (
@@ -5721,7 +6708,7 @@ export function TrendModal({ card, patient, bed, onClose }) {
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/screens/patient/trends/ src/reachable.test.js 2>&1 | grep -E "Test Files|Tests |×"
 ```
-Expected: no `×`; `Test Files  7 passed (7)` (the folder's six + reachable), `Tests  69 passed (69)` (66 in the folder: useTrends 9, news2Tone 2, TrendCard 11, trendGeometry 17, TrendChart 12, TrendModal 15; reachable 3). Then the suite — **87 / 2027** — and the build.
+Expected: no `×`; `Test Files  7 passed (7)` (the folder's six + reachable), `Tests  89 passed (89)` (86 in the folder: useTrends 17, news2Tone 2, TrendCard 22, trendGeometry 17, TrendChart 12, TrendModal 16; reachable 3). Then the suite — **87 / 2223** — and the build.
 
 - [ ] **Step 7: Commit.**
 
@@ -5738,7 +6725,7 @@ red: 7 failed — no tab stop, no keys, no status region, no table" -m "Co-Autho
 
 ### Task 14a: The engine clears the last range — `{"baselines": {}}` over a charted profile
 
-**Amendment of 2026-10-20 (O4, the user's choice: explicit clearing).** An engine task; it touches no file another task touches, so it may run at any time, beside anything, in its own worktree — it must land before Task 15. Task 14's form sends `{"baselines": {}}` when every row is emptied over a charted set; today the engine refuses that unless a comorbidity or a baseline SOFA is also charted (api/clinical.py:257–259, X15), so a range charted in error could never be taken away when it is the last thing charted — and it would keep quietening this patient's alarms.
+**Amendment of 2026-10-20 (O4, the user's choice: explicit clearing).** An engine task. Its Steps 1–5 touch no file another task touches; its Steps 6–8 edit Task 4's `test_trends.py`, so it runs after Task 4, in its own worktree, and must land before Task 15. Task 14's form sends `{"baselines": {}}` when every row is emptied over a charted set; today the engine refuses that unless a comorbidity or a baseline SOFA is also charted (api/clinical.py:257–259, X15), so a range charted in error could never be taken away when it is the last thing charted — and it would keep quietening this patient's alarms.
 
 The rule: a payload whose `baselines` key is present and is an empty object, sent while a profile exists (`base is not None`), clears every range and is accepted even when nothing else is charted; the comorbidities and the baseline SOFA come from `base` as before (the door merges). "profil boş olamaz" stays for an empty profile made from nothing and for a payload with no `baselines` key.
 
@@ -5748,7 +6735,7 @@ The door itself (api/app.py:608–640) is unchanged and on this path does what i
 
 **Files:**
 - Modify: `homunculus-engine/src/homunculus/api/clinical.py`, `homunculus-engine/src/homunculus/api/rehydrate.py`
-- Test: `homunculus-engine/tests/test_api_patient_profile.py` (27 → 34)
+- Test: `homunculus-engine/tests/test_api_patient_profile.py` (27 → 39), `homunculus-engine/tests/test_trends.py` (23 → 24; Steps 6–8 need Task 4)
 
 - [ ] **Step 1: The tests.** Edit `homunculus-engine/tests/test_api_patient_profile.py` — replace its last three lines:
 
@@ -5909,17 +6896,107 @@ PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_api_patient_profile.py tests/test_rehydrate.py tests/test_alarm_quality.py tests/test_api_persistence.py tests/test_first_seen_persistence.py tests/test_pipeline.py 2>&1 | tail -1
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -1
 ```
-Expected: `34 passed`; `69 passed` (34 + `test_rehydrate.py` 6 + `test_alarm_quality.py` 18 + `test_api_persistence.py` 2 + `test_first_seen_persistence.py` 3 + `test_pipeline.py` 6); the no-DB suite **2088 passed, 648 skipped** when merged in plan order after Task 13 (derived: measured 2092 / 648 with Task 16 in place too) — in any other order, the base plus the merged tasks' deltas, this one's being 7. Task 15 runs these files against Postgres and on Python 3.14.
+Expected: `34 passed`; `69 passed` (34 + `test_rehydrate.py` 6 + `test_alarm_quality.py` 18 + `test_api_persistence.py` 2 + `test_first_seen_persistence.py` 3 + `test_pipeline.py` 6); the no-DB suite **2092 passed, 650 skipped** when merged in plan order after Task 13 (*derived*) — in any other order, the base plus the merged tasks' deltas, these steps' being 7. Task 15 runs these files against Postgres and on Python 3.14.
 
-- [ ] **Step 6: Commit.**
+- [ ] **Step 6: A bound that is not a finite number — tests first** (the Task 4 quality review, 2026-10-20). `float(span["low"])` reads `"nan"` and `"inf"`, and `low > high` is False with a NaN, so a NaN bound passes both checks: `bands.own_normal` then carries NaN, `json.dumps(allow_nan=False)` refuses every trends read for that patient (a 500), and the replay brings it back after every restart. Edit `homunculus-engine/tests/test_api_patient_profile.py` — replace:
+
+```python
+    assert fresh.profile("bed-7") is not None
+    assert fresh.profile("bed-7").baselines == {}
+```
+
+with:
+
+```python
+    assert fresh.profile("bed-7") is not None
+    assert fresh.profile("bed-7").baselines == {}
+
+
+@pytest.mark.parametrize("bad", ["nan", "inf", "-inf", float("nan"), float("inf")])
+def test_a_bound_that_is_not_a_finite_number_is_refused(bad):
+    """float() reads "nan" and "inf", and `low > high` is False with a NaN — so a NaN bound slipped
+    past both checks, reached every trends read for this patient (JSON refuses NaN: a 500) and came
+    back with every replay of the audit. Refused as `_value` refuses a charted one."""
+    with pytest.raises(Exception, match="geçersiz sayı"):
+        profile_from_payload("bed-7", {"baselines": {"heart_rate": {"low": bad, "high": 115}}})
+    with pytest.raises(Exception, match="geçersiz sayı"):
+        profile_from_payload("bed-7", {"baselines": {"heart_rate": {"low": 100, "high": bad}}})
+```
+
+And one trends test — Edit `homunculus-engine/tests/test_trends.py` (Task 4's file; this step needs it) — replace:
+
+```python
+def test_a_now_without_a_zone_is_refused():
+    with pytest.raises(ValueError, match="time zone"):
+        patient_trends(Engine(), InMemoryAuditLog(), hospital=HOSPITAL, patient_id="S-001",
+                       hours=24, now=datetime(2026, 10, 19, 9, 0))
+```
+
+with:
+
+```python
+def test_a_now_without_a_zone_is_refused():
+    with pytest.raises(ValueError, match="time zone"):
+        patient_trends(Engine(), InMemoryAuditLog(), hospital=HOSPITAL, patient_id="S-001",
+                       hours=24, now=datetime(2026, 10, 19, 9, 0))
+
+
+def test_a_profile_row_with_a_bound_that_is_not_a_number_never_reaches_the_answer():
+    """An audit row written before the profile door refused non-finite bounds replays through
+    `rehydrate`. Refused there now, it leaves the patient without that range — not a NaN band that
+    JSON cannot carry (Starlette's JSONResponse has allow_nan=False)."""
+    from homunculus.api.ackstore import AckStore
+    from homunculus.api.audit import AuditRecord
+    from homunculus.api.rehydrate import rehydrate
+
+    engine = _engine((SignalCode.HEART_RATE, 84, 30))
+    row = AuditRecord(id=1, ts=NOW.isoformat(), tenant=HOSPITAL, event_type="profile", patient_id="S-001",
+                      subject="", payload={"baselines": {"heart_rate": {"low": "nan", "high": 115}}})
+    rehydrate(engine, AckStore(), [row])
+    answer = _trends(engine)
+    json.dumps(answer, allow_nan=False)
+    assert _channel(answer, "heart_rate")["bands"]["own_normal"] is None
+```
+
+```bash
+cd /c/tmp/g2-vital/homunculus-engine
+PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_api_patient_profile.py tests/test_trends.py 2>&1 | grep -E "^FAILED|passed|failed"
+```
+Expected: `6 failed, 57 passed` — the five `test_a_bound_that_is_not_a_finite_number_is_refused[…]` (`DID NOT RAISE`) and the trends test (`ValueError: Out of range float values are not JSON compliant`).
+
+- [ ] **Step 7: The check, as `_value` makes it.** Edit `homunculus-engine/src/homunculus/api/clinical.py` — replace:
+
+```python
+        except (KeyError, TypeError, ValueError):
+            raise ClinicalEntryError(f"{name}: low ve high sayı olmalı") from None
+        if low > high:
+```
+
+with:
+
+```python
+        except (KeyError, TypeError, ValueError):
+            raise ClinicalEntryError(f"{name}: low ve high sayı olmalı") from None
+        if any(v != v or v in (float("inf"), float("-inf")) for v in (low, high)):   # NaN / inf
+            # "nan" and "inf" parse as floats, and `low > high` is False with a NaN: a NaN bound would
+            # reach every trends read for this patient (JSON refuses it) and replay with the audit.
+            raise ClinicalEntryError(f"{name}: geçersiz sayı")
+        if low > high:
+```
+
+- [ ] **Step 8: Green, again.** Run Step 6's command, then Step 5's three. Expected: `63 passed`; then `39 passed`; `74 passed` (39 + 6 + 18 + 2 + 3 + 6); the no-DB suite **2098 passed, 650 skipped** in plan order after Task 13 (*derived* — measured 2102 / 650 with Task 16 in place too); this task's delta is 13.
+
+- [ ] **Step 9: Commit.**
 
 ```bash
 cd /c/tmp/g2-vital
-git add homunculus-engine/src/homunculus/api/clinical.py homunculus-engine/src/homunculus/api/rehydrate.py homunculus-engine/tests/test_api_patient_profile.py
+git add homunculus-engine/src/homunculus/api/clinical.py homunculus-engine/src/homunculus/api/rehydrate.py homunculus-engine/tests/test_api_patient_profile.py homunculus-engine/tests/test_trends.py
 git status --short && git diff --cached --stat
-git commit -m "fix(engine): an empty baseline set over a charted profile clears every range — and stays cleared after a restart" -m "profile_from_payload: {\"baselines\": {}} with a profile already charted is a clinician taking every range away, accepted even when nothing else is charted; comorbidities and baseline SOFA kept from the charted profile. Still refused: an empty profile from nothing, and one emptied by a payload without a baselines key. rehydrate reads each profile row over what it has restored so far, as the live door does: the clearing row is an empty profile, and read from nothing it was refused and skipped, so the cleared range came back with the next deploy. The PUT re-scores nothing; the next reading is judged without the range (pinned).
+git commit -m "fix(engine): an empty baseline set over a charted profile clears every range — and stays cleared after a restart; a bound that is not a finite number is refused" -m "profile_from_payload: {\"baselines\": {}} with a profile already charted is a clinician taking every range away, accepted even when nothing else is charted; comorbidities and baseline SOFA kept from the charted profile. Still refused: an empty profile from nothing, and one emptied by a payload without a baselines key. rehydrate reads each profile row over what it has restored so far, as the live door does: the clearing row is an empty profile, and read from nothing it was refused and skipped, so the cleared range came back with the next deploy. The PUT re-scores nothing; the next reading is judged without the range (pinned).
 
-red: test_api_patient_profile 4 failed (profil boş olamaz / 400); then 1 (the replay brought the range back)" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+A NaN/inf bound (float() reads "nan", and low > high is False with a NaN) is refused as _value refuses a charted value: it would have reached every trends read (JSON refuses NaN: a 500) and replayed with the audit.
+
+red: test_api_patient_profile 4 failed (profil boş olamaz / 400); then 1 (the replay brought the range back); then 6 (five NaN/inf bounds accepted; the trends answer not JSON)" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ### Task 14: The patient's own normal — the form
@@ -6366,7 +7443,7 @@ with:
     it("say they cannot be read, and since when, without raising an alert", async () => {
 ```
 
-Run it: `Tests  1 failed | 58 passed (59)` (no button yet).
+Run it: `Tests  1 failed | 59 passed (60)` (no button yet).
 
 - [ ] **Step 5: The button and the form in the box.** Two Edits in `trends/TrendsBox.jsx`.
 
@@ -6376,7 +7453,7 @@ Run it: `Tests  1 failed | 58 passed (59)` (no button yet).
 import React, { useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../../i18n/dates.js";
-import { Box } from "../../../ui/index.js";
+import { Box, Note } from "../../../ui/index.js";
 import { CARDS, channelsOf } from "./cards.js";
 import { TrendCard } from "./TrendCard.jsx";
 import { TrendModal } from "./TrendModal.jsx";
@@ -6401,7 +7478,7 @@ import React, { useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../../i18n/dates.js";
 import { useSession } from "../../../session/SessionProvider.jsx";
-import { Box, Button } from "../../../ui/index.js";
+import { Box, Button, Note } from "../../../ui/index.js";
 import { BASELINE_KEYS, BaselineForm } from "./BaselineForm.jsx";
 import { CARDS, channelsOf } from "./cards.js";
 import { TrendCard } from "./TrendCard.jsx";
@@ -6457,7 +7534,7 @@ with:
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/screens/patient/ src/reachable.test.js src/live/boundaries.test.js src/live/rawKeys.test.jsx src/live/i18n/ 2>&1 | grep -E "Test Files|Tests |×"
 ```
-Expected: no `×`; PatientScreen 59, BaselineForm 15. Then the suite — **88 / 2044** — and the build.
+Expected: no `×`; PatientScreen 60, BaselineForm 15. Then the suite — **88 / 2240** — and the build.
 
 - [ ] **Step 7: Commit.**
 
@@ -6590,7 +7667,7 @@ with:
 
 - [ ] **Step 3: Prove the net bites** (then put it back). Edit `trends/TrendCard.jsx`: replace `t("patient.trendsSingle")` with `t("patient.trendsSingel")`, and run the sweep again. Expected — three nets catch it: `[i18n] "patient.trendsSingel" has no az text — showing the key.`; `× … every screen this build has renders its texts …` with `patient (/patients/S-001) → patient.trendsSingel`; `× … the trend charts' keys resolve …` (its `tək ölçmə` is now the raw key); `× … names no key the dictionaries do not have …` with `screens\patient\trends\TrendCard.jsx → patient.trendsSingel (az, tr, ru, en)`. Edit it back to `t("patient.trendsSingle")` and re-run: `Tests  7 passed (7)`. **Nothing of this step is committed.**
 
-- [ ] **Step 4: The dashboard gate.** The suite: **88 files / 2045 tests**; the build: `built in`, `precache  20 entries`, no `larger than 500 kB`. Then, by hand, read the dashboard part of `git diff b6ed65d --stat`: every new file under `src/live/screens/patient/trends/` is under ~250 lines (the largest, `TrendModal.test.jsx`, ≈ 210; `TrendModal.jsx` ≈ 145).
+- [ ] **Step 4: The dashboard gate.** The suite: **88 files / 2241 tests** (measured); the build: `built in`, `precache  20 entries`, no `larger than 500 kB`. Then, by hand, read the dashboard part of `git diff b6ed65d --stat`: every new file under `src/live/screens/patient/trends/` is under ~250 lines (the largest, `TrendModal.test.jsx`, ≈ 210; `TrendModal.jsx` ≈ 145).
 
 - [ ] **Step 5: The backend, without the database.**
 
@@ -6598,7 +7675,7 @@ with:
 cd /c/tmp/g2-vital/homunculus-engine
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -1
 ```
-Expected: `2088 passed, 648 skipped` (≈ 100–145 s; *derived*). (2092 once Task 16 has landed — measured.)
+Expected: `2098 passed, 650 skipped` (≈ 100–145 s; *derived*). (2102 once Task 16 has landed — measured.)
 
 - [ ] **Step 6: The backend with Postgres, in five parts** (each under the 10-minute call limit; one at a time — they share `homunculus_test_g2v` and its advisory lock):
 
@@ -6627,7 +7704,7 @@ cd /c/tmp/g2-vital/homunculus-engine
 DB=postgresql+asyncpg://homunculus:homunculus@localhost:55432/homunculus_test_g2v
 TEST_DATABASE_URL=$DB PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q $(ls tests/test_[s-z]*.py) 2>&1 | tail -1
 ```
-Expected (measured with the whole slice and both amendments in place, 2026-10-20): `205 passed` (6 min); `648 passed` (8–9 min — Task 14a's 7 are here; together the two were one 846-test part that ran 8 min 44 s on 2026-10-19 and 14–15 min on 2026-10-20, hence the split); `517 passed, 1 skipped` (1 min — Task 3b's 9 are here); `1028 passed, 7 skipped` (2 min 12 s); `330 passed` before Task 16, `334 passed` after it (Task 4's 23; 2 min 20 s – 3 min 48 s). Total **2728 passed, 8 skipped** at this task (base 2617 / 8 + 111; *derived*), **2732 / 8** after Task 16 (measured). `grep -v` keeps `test_infinity_vm_pilot.py` out of the third part: never let a glob pick it up.
+Expected (measured with the whole slice, every amendment and both lanes' review follow-ups in place, 2026-10-20): `205 passed` (4–6 min); `657 passed` (5–9 min — Task 14a's 12 and `test_audit_since.py`'s 21 are here; together the two were one 846-test part that ran 8 min 44 s on 2026-10-19 and 14–15 min on 2026-10-20, hence the split); `517 passed, 1 skipped` (1 min — Task 3b's 9 are here); `1028 passed, 7 skipped` (1 min 34 s – 2 min 12 s); `333 passed` before Task 16, `337 passed` after it (Task 4's 23 + Task 14a's 1, `test_timeline_thin.py`'s 17; 2 min 20 s – 3 min 48 s). Total **2740 passed, 8 skipped** at this task (base 2617 / 8 + 123; *derived*), **2744 / 8** after Task 16 (measured). `grep -v` keeps `test_infinity_vm_pilot.py` out of the third part: never let a glob pick it up.
 
 - [ ] **Step 7: The slice's files on Python 3.14.**
 
@@ -6636,7 +7713,7 @@ cd /c/tmp/g2-vital/homunculus-engine
 TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:55432/homunculus_test_g2v PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 \
   /c/tmp/g115-py314/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_news2_bands.py tests/rules/test_news2.py tests/test_timeline_thin.py tests/test_audit_since.py tests/test_audit_postgres.py tests/test_gateway_hl7.py tests/test_gateway_fhir.py tests/test_trends.py tests/test_trends_api.py tests/test_infinity_shadow_isolation.py tests/test_board_permissions.py tests/test_api_patient_profile.py tests/test_rehydrate.py 2>&1 | tail -1
 ```
-Expected: `309 passed` (14 + 65 + 15 + 17 + 11 + 18 + 10 + 23 + 21 + 18 + 57 + 34 + 6; Task 16 adds `test_scenario_rebase.py`'s 4 → 313, measured with it in the list).
+Expected: `321 passed` (14 + 65 + 17 + 21 + 11 + 18 + 10 + 24 + 21 + 18 + 57 + 39 + 6; Task 16 adds `test_scenario_rebase.py`'s 4 → 325, measured with it in the list).
 
 - [ ] **Step 8: Acceptance 2 — the 72-hour window answers in under 300 ms.**
 
@@ -6821,7 +7898,7 @@ cd /c/tmp/g2-vital/homunculus-engine
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_scenario_rebase.py tests/test_scenario_loader.py tests/test_scenarios_e2e.py 2>&1 | tail -1
 PYTHONPATH=src /c/tmp/f7-py312/venv/Scripts/python.exe scripts/replay.py --help | head -2
 ```
-Expected: `9 passed` (4 + 1 + 4); `usage: replay.py [-h] [--url URL] [--token-env TOKEN_ENV] [--now]` / `[scenario] [delay]`. The whole no-DB suite: `2092 passed, 648 skipped` (with Tasks 3b and 14a and Task 4's two added tests).
+Expected: `9 passed` (4 + 1 + 4); `usage: replay.py [-h] [--url URL] [--token-env TOKEN_ENV] [--now]` / `[scenario] [delay]`. The whole no-DB suite: `2102 passed, 650 skipped` (measured, with every task, amendment and lane follow-up in place).
 
 ```bash
 cd /c/tmp/g2-vital
@@ -6963,7 +8040,8 @@ bunların hiçbirini hesaplamaz. Homunculus tanı koymaz; eğriler de koymaz.
 - **"Hastanın normalinde" hapı:** son değer bu hasta için girilmiş aralığın içindeyse. Hap çerçeveyi
   susturmaz, çerçeve de hapı gizlemez — iki olgu birlikte gösterilir.
 - Karta basınca büyük grafik: 6 saat / 24 saat / 3 gün; imlecin altındaki ölçümün saati, değeri
-  ve birimi; ▲ bir alarmın ilk çıktığı an, ◆ kaydedilmiş antibiyotik dozu; aynı sayıların tablosu,
+  ve birimi; ▲ bulgunun bu hasta için ilk tespit edildiği an (bugün aynı türden bir bulgu kapanıp
+  yeniden açılsa da yeni ▲ çıkmaz — plandaki O17), ◆ kaydedilmiş antibiyotik dozu; aynı sayıların tablosu,
   her ölçümün motorun verdiği NEWS2 puanıyla. Klavyeyle de gezilir; ekran okuyucu okumayı yalnız
   klavye hareketinde duyar.
 - Noktalar ölçümdür; aralarındaki kesikli çizgi yalnız aradaki zamandır, ölçüm değildir.
@@ -7025,7 +8103,7 @@ Prototipteki sabit sayılar (`core.js:499` `H.VITAL.al/nb`) kaynaksızdır, taş
 
 | # | İş | Durum |
 |---|---|---|
-| G2-01 | Vital eğrileri (hasta ekranı): altı kart, büyük grafik (6 sa / 24 sa / 3 gün, tablo), hastanın normali formu; `GET /patients/{id}/trends` · spec: [2026-10-19](../specs/2026-10-19-g2-vital-egrileri-design.md) · plan: [G2 dilim 1](2026-10-19-g2-vital-egrileri.md) | Kod ✅ <date> · <range>. Backend 2092 / 648 (DB'siz), 2732 / 8 (Postgres); dashboard 88 dosya / 2045 test. Yerel yürüyüş: <walk>. **Açık:** az/ru yerel okuma; VM'de kullanıcının bakışı (gerçek bir hasta, 390 ve 1440 px, değerler yazılmaz); plandaki X20 (Task 2 incelemesi), X21, X22 ve O1–O3, O6–O12, O14–O16 (X1–X19 onaylandı, O4 çözüldü: 2026-10-20) |
+| G2-01 | Vital eğrileri (hasta ekranı): altı kart, büyük grafik (6 sa / 24 sa / 3 gün, tablo), hastanın normali formu; `GET /patients/{id}/trends` · spec: [2026-10-19](../specs/2026-10-19-g2-vital-egrileri-design.md) · plan: [G2 dilim 1](2026-10-19-g2-vital-egrileri.md) | Kod ✅ <date> · <range>. Backend 2102 / 650 (DB'siz), 2744 / 8 (Postgres); dashboard 88 dosya / 2241 test. Yerel yürüyüş: <walk>. **Açık:** az/ru yerel okuma; VM'de kullanıcının bakışı (gerçek bir hasta, 390 ve 1440 px, değerler yazılmaz); plandaki X20 (Task 2 incelemesi), X21–X24 ve O1–O3, O6–O12, O14, O15, O17–O19 (X1–X19 onaylandı, O4 çözüldü: 2026-10-20) |
 ```
 
 (c) Append to the two items the slice moved — replace:
@@ -7053,7 +8131,7 @@ with:
 ```markdown
 - Acceptance on the VM will show sparse charts today; that is the data, not the chart.
 - **Found while planning (2026-10-19; `docs/superpowers/plans/2026-10-19-g2-vital-egrileri.md`,
-  "What the code says", X1–X21; X1–X19 approved by the user on 2026-10-20):** the plan departs from this spec where the code made its letter
+  "What the code says", X1–X24; X1–X19 approved by the user on 2026-10-20):** the plan departs from this spec where the code made its letter
   impossible or unsafe — 503 for an unreadable scope, checked before `_require_patient` (X1); bands
   as `low < v <= high` (X2); alarm marks from `first_seen`, one per episode, not from `alert` rows
   (X3); antibiotic marks only for doses ≥ 1 (X4); each point carries the engine's NEWS2 points
@@ -7070,6 +8148,10 @@ with:
   alerts are re-judged at the next reading (plan X21, O12).
 - `PUT /clinical/{id}/profile` replaces the set with no lost-update check: two clinicians saving one
   patient's normal at once — the second wins silently (plan O3).
+- ▲ on the charts is a finding's first detection for this patient, not every episode: the engine's
+  active alerts never clear a kind today (plan O17 — an engine fix, the user's choice of slice).
+- Additive ideas not taken in this slice: `previous_ts` beside `delta` ("since when"), and a
+  severity on the alarm marks.
 ```
 
 - [ ] **Step 4: Check and commit.** `git diff --stat` shows the three files only; read the guide's new §3.7 once in a Markdown preview (it renders under §3.6's three questions).
@@ -7102,7 +8184,10 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 | O13 | **Resolved 2026-10-20 — the Task 2 quality review's two findings.** A NaN in `PatientState` (a) took a thinning slice's minimum and maximum, dropping the real extreme (an 85 % desaturation, measured), and (b) made the trends answer 500 (Starlette's `JSONResponse` has `allow_nan=False`). Task 3b closes the doors (`gateway/hl7.py` drops the field, `gateway/fhir.py` raises `GatewayError`); Task 4's builder skips a non-finite reading for rows already in the audit, which replay through `rehydrate` and no gateway. `thin()` stays NaN-intolerant **on purpose** — a documented precondition, filtered by its caller — and other doors into `PatientState` (Aşama A's lane, a future one) must keep refusing non-finite values the way `edge/ncefiles.py` and `api/clinical.py` do. | — | Done in the plan |
 | O14 | **The audit table has no index beyond its key and `(tenant, prev_hash)`**, so every trends read (and `/audit`, `/alarm-quality`) scans the whole table for one patient's `first_seen` rows. The fix is an index on `(tenant, patient_id, event_type, id)`; an expression index on the `CAST(ts AS timestamptz)` the `since` filter uses is impossible (`timestamptz_in` is STABLE, not IMMUTABLE). A migration, not this slice (from the Task 3 quality review). | Stage B's plan | Before Stage B |
 | O15 | **Who may enter the patient's normal.** Today every `clinical.chart` holder — nurses, charge nurses and rapid response included — can; the engine's own words call the ranges "clinician-charted", and the Task 8 review's wording ("hastanın normali, girildiyse", no "hekim") assumes that stays. Physician-only would be a permission change (a new permission or a role split), not a text. The older `patient.suspectedYes/No` "(hekim işaretledi)" (Group 1) has the same who-entered problem. | User decision | Before the VM |
-| O16 | **`markers_truncated` is served, but no screen prints it yet.** Within the 5000-row bound only a window holding more alarm episodes than that sets it (≈ 2 160 is the 72-hour worst case for one flapping alert at one reading a minute). Task 12's legend could say so in one more key, four languages. | Group 2 | — |
+| O16 | **Resolved in the plan (2026-10-20):** Task 12's legend prints `markers_truncated` (`trendsLegendMarksTruncated`, four languages). Today the flag cannot be set (O17): with the alerts sticky, a patient writes at most one `first_seen` row per kind. | — | Done in the plan |
+| O17 | **The engine's active alerts are sticky.** `pipeline.py:93–96` sets `bucket[a.kind] = a` and never removes a kind, so `active_alerts` keeps a finding whose rule stopped firing until a replacement of the same kind: `_live_keys` never shrinks, `AckStore.prune` never drops a stamp, `first_seen` is written once per (patient, kind) ever, escalation clocks never reset, and `alarm_quality`'s episode counts are off. For this slice: a ▲ means "the first time this finding was ever raised for this patient", not an episode — the legend says "first detection" (Task 12) — and `markers_truncated` is unreachable. The fix (rebuild the bucket from each evaluation's kinds, so a kind that stops firing clears; tests across the board, acks, escalation, notifications, `alarm_quality` and `rehydrate`) is an engine change with clinical effect. **Two options:** a separate engine task 4b in this slice, or a later slice; Task 12's legend and Task 17's guide follow whichever is true at ship time (found by the Task 4 quality review). | User decision | Before the VM |
+| O18 | **Two tones for one fact.** The header's `News2` pill shows a 3-point parameter in attention amber; the card frames it red (D2). The kit `Tag` has no `mid` tone, so the 1–2-point badge borrows the attention look. One vocabulary for NEWS2 tones across the header, the card and the kit is a kit-level decision (Task 10 quality review). | User / kit | Later |
+| O19 | **Stage B's performance, before Stage B** (next to O14): the builder takes ≈ 2.1 s for 72 h of 5 s data, mostly `thin()`, and the route runs it synchronously inside an `async def`, holding the event loop for that time (Task 4 quality review). Options: thin per request in a worker thread (`run_in_threadpool`), cache per (patient, window, last reading), or bound the history (O2). | Stage B's plan | Before Stage B |
 
 **Commit trailer.** The controller's brief set `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` for this plan's tasks; amendments.md's latest recorded trailer is `Claude Opus 5.5`. Use the one the controller gives when the tasks run.
 
@@ -7116,7 +8201,7 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 |---|---|
 | §1 the four deliverables | cards T10–T11; big chart T12–T13; the form T14; the endpoint T4–T5 |
 | §2 D1 server composes, browser draws | T4 (everything computed there); every dashboard test hands the browser a contradicting fact (T10, T11, T13) |
-| D2 frame from the engine's points + badge | T10 (`news2Tone`, frame, "NEWS2 +3"), reused for bands T11 |
+| D2 frame from the engine's points + badge | T10 (`news2Tone`, frame, "NEWS2 +3" on the first channel's row; "NEWS2: —" when the engine sent no points — X24), reused for bands T11 |
 | D3 own-normal pill beside the frame | T4 (`within_own_normal`), T10 (pill, frame kept) |
 | D4 the form, five channels, `clinical.chart` | T14 (`BASELINE_KEYS` held to `api/clinical.py`), T6 (`putPatientProfile`) |
 | D5 no waveforms | nothing drawn; T17 guide says so |
@@ -7141,7 +8226,7 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 | §6 PatientScreen: placeholder replaced, `formsSoon` as a Note under Sepsis/Meds | T9 (+ X9) |
 | §7 accessibility and honesty | text equivalents T10 (card text, mini chart hidden) and T13 (table); keyboard T12–T13; colour never alone T10 (badge), T11 (dashed own normal, hollow MAP), T12 (legend); announcement only on keyboard T13; ages on the server's clock T10; 390 px T10 (classes) + T16 (browser); dashed connectors + legend sentence T11–T12 |
 | §8 tests | engine T1–T5, T3b and T14a (named files), dashboard T6–T15, end to end T16 |
-| §9 keys | T8 (all 31 new + 18); T14 adds the clear's two |
+| §9 keys | T8 (all 31 new + 18); T10 adds five (the unscored tag, the delta's words — X24), T12 three (the legend), T14 the clear's two |
 | §10 not in this slice | nothing built for it |
 | §11 risks | T17 updates it; O2 |
 | §12 acceptance 1 | T15 steps 4–7 (3.12, 3.14, dashboard; counts here) |
@@ -7152,5 +8237,5 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 
 **Placeholder scan.** No "TBD", no "similar to Task N", no "add appropriate error handling". The only fill-ins are runtime facts that cannot exist before the work does — T17's roadmap row takes the date, the commit range and the walk's outcome, each with the command or step that produces it.
 
-**Names and types across tasks.** Engine: `Band`, `NEWS2_BANDS`, `BANDS_SOURCE`, `points_for` (T1) are what T4 imports; `thin(series, max_points)` (T2) is called with `TRENDS_MAX_POINTS`; `since_utc` (T3) is shared by `audit.py` and `audit_postgres.py`; `records(…, since=…)` is keyword-only everywhere (T3's signature test); `patient_trends(engine, audit, *, hospital, patient_id, hours, now)` (T4) is what T5's route calls with `int(hours)` after the text check against `TRENDS_HOURS`; the route is listed in `BOARD_EXPECTED` and `UNSCOPED_BY_DESIGN` under the path FastAPI reports, `/patients/{patient_id}/trends`. Dashboard: `patientTrends(patientId, hours)` / `putPatientProfile(patientId, body)` (T6) are the names `useTrends` (T9) and `BaselineForm` (T14) call, and `fakeApi` carries both; `useTrends(patientId, hours, measuredKey)` → `{data, loading, unreadable, lastOkAt, reload}` is read the same way by `TrendsBox` and `TrendModal`; `measuredKeyOf(patient.measuredAt)`; the fixtures `trends(patientId, channels, over)`, `channel(key, points, over)`, `point(minutesAgo, value, points)`, `marker(minutesAgo, kind, label)`, `answering(build)`, `BANDS`, `KEYS` (T9) are what every later test uses; `news2Tone(points)` (T10) is used by `TrendCard` and `bandRects`; `CARDS` / `cardTitle` / `channelsOf` (T10) by the box, the dialog, the legend and the table; `TrendCard({card, channels, nowMs, sinceMs, untilMs, onOpen})` gains `sinceMs`/`untilMs` in T11 and `onOpen` is passed from T12; `TrendChart`'s props grow `onPlot` (T12) and `onKeyDown`, `describedBy` (T13) by Edit, never renamed; `whenText`/`markText` live in `TrendModal.jsx` in T12 and move to `trendText.js` (with `pointsText`) in T13, where `TrendModal` and `TrendTable` both import them and nothing else imported them from the dialog; `TrendsBox({patient, bed, nowMs})` gains `nowMs` in T10 and `bed` in T12, matching PatientScreen's edits in those tasks. The second amendment renames nothing either: `TRENDS_MARKER_LIMIT` keeps its name (5000 now); `_markers` returns `(marks, truncated)` and only `patient_trends` calls it; `_finite` is private to `api/trends.py`; `markers_truncated` is a new key no dashboard module reads yet (O16); Task 12's `TrendLegend` passes `channel: t(s.labelKey)` to `trendsThinned`, which takes `{channel}` since the Task 8 review. The O4 amendment renames nothing: `profile_from_payload(patient_id, payload, base=None)` keeps its signature (T14a) and `_replay_profile` now passes `engine.profile(rec.patient_id)` as `base`; `BaselineForm`'s `own` is the box's `{key: bands.own_normal | null}` map it already received, read once more to tell a clear (`clearing`) from nothing to send (`nothing`). Every `t("patient.…")` the code names is one T8 (or, for `baselineClearsAll` / `baselineClearedAll`, T14) defines in four languages (checked by `rawKeys.test.jsx`'s static net, T15 step 3 proves it bites).
+**Names and types across tasks.** Engine: `Band`, `NEWS2_BANDS`, `BANDS_SOURCE`, `points_for` (T1) are what T4 imports; `thin(series, max_points)` (T2) is called with `TRENDS_MAX_POINTS`; `since_utc` (T3) is shared by `audit.py` and `audit_postgres.py`; `records(…, since=…)` is keyword-only everywhere (T3's signature test); `patient_trends(engine, audit, *, hospital, patient_id, hours, now)` (T4) is what T5's route calls with `int(hours)` after the text check against `TRENDS_HOURS`; the route is listed in `BOARD_EXPECTED` and `UNSCOPED_BY_DESIGN` under the path FastAPI reports, `/patients/{patient_id}/trends`. Dashboard: `patientTrends(patientId, hours)` / `putPatientProfile(patientId, body)` (T6) are the names `useTrends` (T9) and `BaselineForm` (T14) call, and `fakeApi` carries both; `useTrends(patientId, hours, measuredKey)` → `{data, loading, unreadable, lastOkAt, reload}` is read the same way by `TrendsBox` and `TrendModal`; `measuredKeyOf(patient.measuredAt)`; the fixtures `trends(patientId, channels, over)`, `channel(key, points, over)`, `point(minutesAgo, value, points)`, `marker(minutesAgo, kind, label)`, `answering(build)`, `BANDS`, `KEYS` (T9) are what every later test uses; `news2Tone(points)` (T10) is used by `TrendCard` and `bandRects`; `CARDS` / `cardTitle` / `channelsOf` (T10) by the box, the dialog, the legend and the table; `TrendCard({card, channels, nowMs, sinceMs, untilMs, onOpen})` gains `sinceMs`/`untilMs` in T11 and `onOpen` is passed from T12; `TrendChart`'s props grow `onPlot` (T12) and `onKeyDown`, `describedBy` (T13) by Edit, never renamed; `whenText`/`markText` live in `TrendModal.jsx` in T12 and move to `trendText.js` (with `pointsText`) in T13, where `TrendModal` and `TrendTable` both import them and nothing else imported them from the dialog; `TrendsBox({patient, bed, nowMs})` gains `nowMs` in T10 and `bed` in T12, matching PatientScreen's edits in those tasks. The third pass renames nothing in the plan's own tasks: Tasks 1–4, 3b and 6–10 are the lanes' code, and Tasks 11–17 are written against it — `TrendCard` keeps its props and gains `sinceMs`/`untilMs` in Task 11 on the lane's `Reading` (`badge`, `pill`); `TrendLegend` gains `truncated`, which both dialogs (Tasks 12 and 13) pass from `markers_truncated`; the legend's ▲ reads `trendsLegendAlarm` while the readout and the table keep `trendsMarkerAlarm`. The second amendment renames nothing either: `TRENDS_MARKER_LIMIT` keeps its name (5000 now); `_markers` returns `(marks, truncated)` and only `patient_trends` calls it; `_finite` is private to `api/trends.py`; `markers_truncated` is a new key no dashboard module reads yet (O16); Task 12's `TrendLegend` passes `channel: t(s.labelKey)` to `trendsThinned`, which takes `{channel}` since the Task 8 review. The O4 amendment renames nothing: `profile_from_payload(patient_id, payload, base=None)` keeps its signature (T14a) and `_replay_profile` now passes `engine.profile(rec.patient_id)` as `base`; `BaselineForm`'s `own` is the box's `{key: bands.own_normal | null}` map it already received, read once more to tell a clear (`clearing`) from nothing to send (`nothing`). Every `t("patient.…")` the code names is one T8 (or, for `baselineClearsAll` / `baselineClearedAll`, T14) defines in four languages (checked by `rawKeys.test.jsx`'s static net, T15 step 3 proves it bites).
 
