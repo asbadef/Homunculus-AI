@@ -25,6 +25,7 @@ from homunculus.tenant.bedmap import BedMap
 TOKEN = {"Authorization": "Bearer bridge-token"}
 NURSE = {"Authorization": "Bearer nurse-jwt"}
 NURSE_PERMS = frozenset(next(g["permissions"] for g in DEFAULT_GROUPS if g["slug"] == "nurse"))
+BIOMED_PERMS = frozenset(next(g["permissions"] for g in DEFAULT_GROUPS if g["slug"] == "biomedical"))
 ADULT = build_scope("NURSE", unit_ids=["unit-adult"])
 WHOLE = build_scope("HOSPITAL_ADMIN")
 BEDMAP = BedMap.from_dict({"beds": {
@@ -44,8 +45,12 @@ def _identities() -> InMemoryIdentityStore:
     return store
 
 
-def _app(scope: Scope = WHOLE, perms: frozenset[str] = NURSE_PERMS):
-    async def resolve_scope(_credential: str) -> Scope:
+def _app(scope: Scope = WHOLE, perms: frozenset[str] = NURSE_PERMS,
+         looked_up: list[str] | None = None):
+    """`looked_up`, when given, collects the credential of every scope look-up the app makes."""
+    async def resolve_scope(credential: str) -> Scope:
+        if looked_up is not None:
+            looked_up.append(credential)
         return scope
 
     async def resolve_jwt(_credential: str) -> Caller:
@@ -103,6 +108,27 @@ class TestTheAnswer:
         r = client.get(f"/patients/p-a1/trends?hours={hours}", headers=NURSE)
         assert (r.status_code, r.json()["hours"]) == (200, int(hours))
 
+    def test_the_window_ends_at_the_servers_utc_now(self, ward):
+        _app, client = ward
+        before = datetime.now(timezone.utc)
+        answer = client.get("/patients/p-a1/trends", headers=NURSE).json()
+        after = datetime.now(timezone.utc)
+        slack = timedelta(seconds=5)
+        for key in ("since", "until", "generated_at"):
+            assert answer[key].endswith("+00:00"), (key, answer[key])
+        for key in ("until", "generated_at"):
+            assert before - slack <= datetime.fromisoformat(answer[key]) <= after + slack, key
+        assert (datetime.fromisoformat(answer["until"]) - datetime.fromisoformat(answer["since"])
+                == timedelta(hours=24))
+
+    def test_the_hours_reach_the_builder_a_ten_hour_old_reading_is_in_24_and_72_only(self, ward):
+        _app, client = ward
+        _reading(client, "p-a1", "spo2", 96, minutes_ago=600)
+        seen = {h: len(_channel(client.get(f"/patients/p-a1/trends?hours={h}", headers=NURSE).json(),
+                                "spo2")["points"])
+                for h in (6, 24, 72)}
+        assert seen == {6: 0, 24: 1, 72: 1}
+
     def test_bands_only_on_the_news2_channels(self, ward):
         _app, client = ward
         answer = client.get("/patients/p-a1/trends", headers=NURSE).json()
@@ -151,12 +177,46 @@ class TestTheDoor:
         assert client.get("/patients/p-a1/trends").status_code == 401
 
     def test_without_board_view_it_is_403_before_the_scope_is_asked(self):
+        # p-n1 is OUT of ADULT's scope: were the scope asked first, this would be 404 and a
+        # scope_denied row. A patient in scope could not tell the two orders apart.
         app = _app(ADULT, perms=frozenset())
+        with TestClient(app) as client:
+            _reading(client, "p-n1", "heart_rate", 84)
+            r = client.get("/patients/p-n1/trends", headers=NURSE)
+        assert (r.status_code, r.json()["detail"]) == (403, "permission required: board.view")
+        assert not _rows(app, "scope_denied")
+
+    def test_without_board_view_an_unreadable_scope_is_still_403_not_503(self):
+        app = _app(UNKNOWN, perms=frozenset())
         with TestClient(app) as client:
             _reading(client, "p-a1", "heart_rate", 84)
             r = client.get("/patients/p-a1/trends", headers=NURSE)
         assert (r.status_code, r.json()["detail"]) == (403, "permission required: board.view")
         assert not _rows(app, "scope_denied")
+
+    def test_a_biomedical_caller_is_403_and_the_scope_is_never_looked_up(self):
+        # devices.manage is a right of its own: it opens no patient, and the refusal comes before
+        # any look-up of what the caller may see.
+        looked_up: list[str] = []
+        app = _app(WHOLE, perms=BIOMED_PERMS, looked_up=looked_up)
+        with TestClient(app) as client:
+            _reading(client, "p-a1", "heart_rate", 84)
+            r = client.get("/patients/p-a1/trends", headers=NURSE)
+        assert (r.status_code, r.json()["detail"]) == (403, "permission required: board.view")
+        assert looked_up == []
+
+    def test_the_scope_is_looked_up_once_per_read(self):
+        # The chart polls every minute: a second look-up is doubled work, and a blip between the
+        # two would turn a readable scope into a 404 for a patient who is in it.
+        looked_up: list[str] = []
+        app = _app(ADULT, looked_up=looked_up)
+        with TestClient(app) as client:
+            _reading(client, "p-a1", "heart_rate", 84)
+            _reading(client, "p-n1", "heart_rate", 84)
+            assert client.get("/patients/p-a1/trends", headers=NURSE).status_code == 200
+            assert looked_up == ["nurse-jwt"]
+            assert client.get("/patients/p-n1/trends", headers=NURSE).status_code == 404
+            assert looked_up == ["nurse-jwt", "nurse-jwt"]
 
     def test_out_of_scope_is_404_like_an_unknown_id_and_is_audited(self):
         app = _app(ADULT)

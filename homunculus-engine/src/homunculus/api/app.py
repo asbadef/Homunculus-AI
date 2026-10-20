@@ -77,6 +77,10 @@ SHADOW_OCCUPANCY_CACHE_S = 10.0
 DEVICE_ROLE_MAX = 64
 PATIENT_ID_MAX = 128
 
+#: The windows GET /patients/{id}/trends accepts, as the text the query string carries. The route
+#: reads `hours` as text so that any other value is its own 400 rather than FastAPI's 422.
+TREND_WINDOWS_TEXT = frozenset(str(h) for h in TRENDS_HOURS)
+
 
 def _device_role(value: object) -> str:
     """The device path's self-declared `role`: `bounded_role` with the tighter DEVICE_ROLE_MAX,
@@ -475,7 +479,7 @@ def create_app(
         return await resolve_scope(credential)
 
     async def _require_patient(caller: Caller, authorization: str | None,
-                               patient_id: str) -> None:
+                               patient_id: str, *, scope: Scope | None = None) -> None:
         """Refuse a single-patient route the caller's scope does not reach.
 
         Every route that names a patient in its path or body goes through here. Filtering only
@@ -493,13 +497,18 @@ def create_app(
         It runs after the route's permission check: a permission says what a caller may do, the
         scope says to whom, and both must hold.
 
+        `scope` is the caller's scope when the route has already resolved it (the trends route
+        needs it first, to answer 503 for one that cannot be read). Passing it spares a second
+        look-up, and a second chance for a blip to turn a readable scope into "not found". Every
+        other route leaves it out and the scope is resolved here.
+
         The card it checks carries only what `sees_patient` reads — the id, and the bed and unit
         the board publishes for that patient (same identity, same bed map). It is NOT built with
         `patient_board`: that reads `engine.state()`, which creates the patient, so a refused
         probe for a made-up id would put that id on every board in the hospital.
         """
         hospital = caller.hospital
-        scope = await _scope(authorization)
+        scope = scope if scope is not None else await _scope(authorization)
         if scope.unrestricted:
             return
         record = identities.get(hospital, patient_id)
@@ -789,14 +798,19 @@ def create_app(
         reader's words, rather than FastAPI's 422. A scope that cannot be read is 503, as the stream
         ticket answers it: `_require_patient` would call it "not found", which tells a screen the
         patient is gone when only the look-up failed. Out of scope and unknown stay one 404.
+
+        The scope is resolved once, here, and handed to `_require_patient`: the chart polls every
+        minute, and a second look-up would double that work and give a blip between the two a way
+        to answer 404 for a patient who is in scope.
         """
         caller = await _caller(authorization)
         _require(caller, BOARD_VIEW)
-        if hours not in {str(h) for h in TRENDS_HOURS}:
+        if hours not in TREND_WINDOWS_TEXT:
             raise HTTPException(status_code=400, detail="geçersiz hours: 6, 24 veya 72 olmalı")
-        if (await _scope(authorization)).reason == UNKNOWN_SCOPE.reason:
+        scope = await _scope(authorization)
+        if scope.reason == UNKNOWN_SCOPE.reason:
             raise HTTPException(status_code=503, detail="kapsam şu anda okunamıyor")
-        await _require_patient(caller, authorization, patient_id)
+        await _require_patient(caller, authorization, patient_id, scope=scope)
         _score_state(caller.hospital, patient_id)     # 404 for an id neither measured nor admitted
         return patient_trends(_engine(caller.hospital), audit, hospital=caller.hospital,
                               patient_id=patient_id, hours=int(hours),

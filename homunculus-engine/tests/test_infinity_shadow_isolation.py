@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -180,12 +181,19 @@ def test_a_shadow_post_and_get_call_no_clinical_writer(tmp_path, monkeypatch):
 
 
 def test_a_trends_read_never_reaches_the_shadow_store(tmp_path, monkeypatch):
-    """The lane holds a heart rate of 180 for p1's bed; the clinical trends of p1 must not show it,
-    and must not even ask the shadow store."""
+    """The lane holds a heart rate of 180 for p1's bed and the clinical chart holds 72; the trends of
+    p1 must show the 72 and nothing of the lane, and must not even ask the shadow store."""
     identities = InMemoryIdentityStore()
     identities.apply(HOSPITAL, IdentityRecord(patient_id="p1", unit="YB", room="1", bed="1", source="test"))
     client, clock = _app(tmp_path, identities=identities)
     assert client.post("/infinity-shadow/readings", json=_body(clock.t), headers=_hdr(SHADOW)).status_code == 200
+    # The clinical lane's own reading, stamped against the real clock: the route cuts its window at
+    # the server's now. Without it "no points" would be trivially true of an empty patient.
+    clinical = {"resourceType": "Observation", "status": "final",
+                "code": {"coding": [{"code": "heart_rate"}]}, "subject": {"reference": "Patient/p1"},
+                "effectiveDateTime": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(),
+                "valueQuantity": {"value": 72, "unit": "/min"}}
+    assert client.post("/ingest", json=clinical, headers=_hdr(DEVICE)).status_code == 200
     calls: list[str] = []
     store = client.app.state.shadow_store
     for name in ("devices", "feed"):
@@ -195,8 +203,13 @@ def test_a_trends_read_never_reaches_the_shadow_store(tmp_path, monkeypatch):
     answer = client.get("/patients/p1/trends", headers=_hdr(DEVICE))
 
     assert answer.status_code == 200, answer.text
-    assert all(channel["points"] == [] for channel in answer.json()["channels"])
+    channels = {channel["key"]: channel for channel in answer.json()["channels"]}
+    assert [point[1] for point in channels["heart_rate"]["points"]] == [72.0]   # the clinical lane, not 180
+    assert all(channel["points"] == [] for key, channel in channels.items() if key != "heart_rate")
     assert calls == []
+    # Control: the spies are wired. The shadow board's own read does reach both store reads.
+    assert client.get("/infinity-shadow/board", headers=_hdr(DEVICE)).status_code == 200
+    assert {"devices", "feed"} <= set(calls)
 
 
 # --- tokens ------------------------------------------------------------------------------------
