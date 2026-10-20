@@ -2,6 +2,7 @@
 """FHIR R4 Observation -> canonical Observation. The seam where real hospital feeds plug in."""
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 
 from homunculus.canonical import Observation, SignalCode
@@ -53,10 +54,16 @@ def parse_fhir_observation(resource: dict) -> Observation:
         raise GatewayError(f"missing or malformed subject.reference: {subject!r}")
     patient_id = subject.split("/", 1)[1]
 
+    value = float(vq["value"])
+    if not math.isfinite(value):
+        # NaN / ±inf parse as floats — and JSON as Python reads it carries a bare NaN token — but
+        # are not measurements; edge/ncefiles.py and api/clinical.py refuse them too.
+        raise GatewayError(f"valueQuantity.value is not a finite number: {vq['value']!r}")
+
     return Observation(
         patient_id=patient_id,
         code=code,
-        value=float(vq["value"]),
+        value=value,
         unit=vq.get("unit", ""),
         timestamp=timestamp,
         source_device=resource.get("device", {}).get("display", "unknown"),
