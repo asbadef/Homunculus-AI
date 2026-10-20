@@ -188,7 +188,8 @@ describe("the trend chart's width", () => {
   });
 
   it("attaches its observer when a window it could not draw becomes one, and lets go when it stops being one", () => {
-    // The dialog mounts the chart before the read answers: no window yet, so no box to measure.
+    // An answer whose since / until cannot be read draws nothing, so there is no box to measure; the
+    // valid answer after it must find one.
     const box = measured(480);
     const series = [hr([point(60, 84, 0)])];
     const { container, rerender } = render(<TrendChart series={series} sinceMs={Number.NaN} untilMs={Number.NaN} />);

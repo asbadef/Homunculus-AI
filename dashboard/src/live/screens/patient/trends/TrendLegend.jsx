@@ -45,8 +45,9 @@ export function TrendLegend({ card, channels, source, truncated = false }) {
   const scored = Array.isArray(primary?.bands?.news2);
   const unbanded = scored ? card.series.slice(1).filter((s) => channels[s.key] && !Array.isArray(channels[s.key].bands?.news2)) : [];
   return (
-    <ul data-legend="" className="m-0 mt-2 flex list-none flex-wrap gap-x-4 gap-y-1.5 p-0 text-11.5 text-mute">
-      {Array.isArray(primary?.bands?.news2) ? (
+    // role="list": a list with its bullets removed (`list-none`) stops being one for VoiceOver.
+    <ul role="list" data-legend="" className="m-0 mt-2 flex list-none flex-wrap gap-x-4 gap-y-1.5 p-0 text-11.5 text-mute">
+      {scored ? (
         <Item>
           {t("patient.trendsBandNews2", { source })}:
           <Swatch className="fill-band-mid" /> {t("patient.trendsBandPoints12")}

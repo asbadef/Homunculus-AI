@@ -40,7 +40,8 @@ export function TrendsBox({ patient, bed, nowMs }) {
         ) : null}
         {trends.loading ? <p className="m-0 text-12.5 text-mute">{t("patient.trendsLoading")}</p> : null}
         {trends.data ? (
-          <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0 min-[861px]:grid-cols-2 min-[1200px]:grid-cols-3">
+          // role="list": a list with its bullets removed (`list-none`) stops being one for VoiceOver.
+          <ul role="list" className="m-0 grid list-none grid-cols-1 gap-2 p-0 min-[861px]:grid-cols-2 min-[1200px]:grid-cols-3">
             {CARDS.map((c) => (
               <TrendCard key={c.id} card={c} channels={channels} nowMs={nowMs} sinceMs={sinceMs} untilMs={untilMs}
                 onOpen={() => setOpen(c.id)} />

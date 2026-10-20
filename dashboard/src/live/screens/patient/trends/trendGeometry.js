@@ -180,18 +180,26 @@ export function valueTickStep(domain, count = 4, resolution = 0) {
   return Math.max(factor * 10 ** power, resolution);
 }
 
-/** Round values for the value labels, at `valueTickStep`. With `extent` — the data's own range — only
- *  those inside it: the domain's margin is the chart's, not the patient's, and a label past the data
- *  names a value nobody measured (SpO₂ 105, lactate −0.5). Clamping to a "possible" range instead
- *  would be a range the browser holds; there is none here. */
+/** The value labels: `{ step, ticks }` — `ticks` the values to label, `step` what to write them at
+ *  (`tickLabel(v, step)`), so the caller never works the step out a second time.
+ *
+ *  The ticks are round values at `valueTickStep`. With `extent` — the data's own range — only those
+ *  inside it: the domain's margin is the chart's, not the patient's, and a label past the data names a
+ *  value nobody measured (SpO₂ 105, lactate −0.5). Clamping to a "possible" range instead would be a
+ *  range the browser holds; there is none here.
+ *
+ *  When no round value falls inside the extent — a lone reading between two steps — the extent's own
+ *  value(s) are labelled instead (both ends when they differ), written at the DATA's `resolution`,
+ *  so a chart with one measurement still has a number on it: "85", "4.1", "37.4". */
 export function valueTicks(domain, count = 4, { extent = null, resolution = 0 } = {}) {
   const step = valueTickStep(domain, count, resolution);
-  if (!step) return [];
+  if (!step) return { step: null, ticks: [] };
   const lo = extent ? Math.max(domain.lo, extent.lo) : domain.lo;
   const hi = extent ? Math.min(domain.hi, extent.hi) : domain.hi;
-  const out = [];
-  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(Number(v.toFixed(6)));
-  return out;
+  const ticks = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) ticks.push(Number(v.toFixed(6)));
+  if (ticks.length > 0 || !extent) return { step, ticks };
+  return { step: resolution > 0 ? resolution : step, ticks: extent.hi > extent.lo ? [extent.lo, extent.hi] : [extent.lo] };
 }
 
 /** A value label: as many decimals as its step has, and no more ("37.5", never "37.50"). */
@@ -244,16 +252,19 @@ export function nearestIndex(points, x, px) {
   return best;
 }
 
-/** EVERY mark within one pixel column of `px`, in their order — two alert kinds can be first detected
- *  on one reading, and the readout must name both. */
-export function marksNear(marks, px) {
-  return (marks ?? []).filter((m) => Math.abs(m.x - px) <= 1);
-}
-
-/** The same question asked in time, for a caller that holds an instant and the chart's milliseconds
- *  per pixel (the dialog's readout, whose cursor may have been moved by the keyboard). None on a
- *  chart of no width. */
+/** EVERY mark within one pixel of an instant, in their order — two alert kinds can be first detected on
+ *  one reading, and the readout must name both. The caller holds the instant (the dialog's cursor) and
+ *  the chart's milliseconds per pixel. None on a chart of no width. */
 export function marksAtTime(markers, ms, msPerPx) {
   if (!(msPerPx > 0) || !Number.isFinite(ms)) return [];
   return (markers ?? []).filter((m) => Math.abs(m.ms - ms) <= msPerPx);
+}
+
+/** The index of the reading stamped exactly `ms` — the later one when two share the instant, as
+ *  `nearestIndex` picks on a tie — or -1. A reading is found by WHEN it was taken, not by its place in
+ *  the list: a poll that slides the window moves every index. */
+export function indexAtTime(points, ms) {
+  const list = points ?? [];
+  for (let i = list.length - 1; i >= 0; i -= 1) if (list[i].ms === ms) return i;
+  return -1;
 }

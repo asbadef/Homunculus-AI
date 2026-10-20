@@ -319,6 +319,8 @@ describe("the patient screen", () => {
       const list = document.querySelector("[data-trends-box] ul");
       expect([...list.children].map((li) => li.querySelector("[data-title]").textContent))
         .toEqual(["Nəbz", "Tənəffüs", "SpO2", "Sistolik AT · MAP", "Bədən hərarəti", "Laktat"]);
+      // `list-none` drops the list for VoiceOver unless the role is written out.
+      expect(list).toHaveAttribute("role", "list");
     });
 
     it("frame a card from the engine's points, and age its value against the server's clock", async () => {

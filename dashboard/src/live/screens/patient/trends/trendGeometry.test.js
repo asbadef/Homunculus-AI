@@ -2,7 +2,7 @@
 // comment beside it, so a change to the arithmetic shows up as a change to a number someone wrote.
 import { describe, it, expect } from "vitest";
 import {
-  bandRects, crisp, linePath, markerMarks, marksAtTime, marksNear, nearestIndex, ownNormalRect, parseMarkers,
+  bandRects, crisp, indexAtTime, linePath, markerMarks, marksAtTime, nearestIndex, ownNormalRect, parseMarkers,
   parsePoints, plotFrame, tickLabel, timeLabelPlace, timeScale, timeTicks, validWindow, valueDomain, valueExtent,
   valueResolution, valueScale, valueTickStep, valueTicks,
 } from "./trendGeometry.js";
@@ -104,25 +104,56 @@ describe("the line, the labels and the marks", () => {
   });
 
   it("labels values at round steps inside the domain: 1, 2, 5 or 10 × 10ⁿ, the nearest (d3's rule)", () => {
-    expect(valueTicks({ lo: 0, hi: 100 })).toEqual([0, 20, 40, 60, 80, 100]);       // raw 25 → 20, not 25
-    expect(valueTicks({ lo: 57, hi: 83 })).toEqual([60, 65, 70, 75, 80]);          // raw 6.5 → 5
-    expect(valueTicks({ lo: 36.1, hi: 37.9 })).toEqual([36.5, 37, 37.5]);          // raw 0.45 → 0.5
-    expect(valueTicks(null)).toEqual([]);
+    const ticksOf = (domain) => valueTicks(domain).ticks;
+    expect(ticksOf({ lo: 0, hi: 100 })).toEqual([0, 20, 40, 60, 80, 100]);         // raw 25 → 20, not 25
+    expect(ticksOf({ lo: 57, hi: 83 })).toEqual([60, 65, 70, 75, 80]);             // raw 6.5 → 5
+    expect(ticksOf({ lo: 36.1, hi: 37.9 })).toEqual([36.5, 37, 37.5]);             // raw 0.45 → 0.5
+    expect(valueTicks(null)).toEqual({ step: null, ticks: [] });
+    expect(valueTicks({ lo: 5, hi: 5 }, 4, { extent: { lo: 5, hi: 5 } })).toEqual({ step: null, ticks: [] });   // a range of no height
     expect(valueTickStep({ lo: 0, hi: 0 })).toBeNull();
+  });
+
+  it("returns the step it labelled at with the labels, so a caller computes it once", () => {
+    expect(valueTicks({ lo: 57, hi: 83 }).step).toBe(5);
+    expect(valueTicks({ lo: 57, hi: 83 }).step).toBe(valueTickStep({ lo: 57, hi: 83 }));
   });
 
   it("labels systolic 60–220 every 50 — not only 100 and 200 — and only inside the data", () => {
     const domain = valueDomain([60, 220]);                                          // 36–244
     expect(valueTickStep(domain)).toBe(50);
-    expect(valueTicks(domain)).toEqual([50, 100, 150, 200]);
-    expect(valueTicks(domain, 4, { extent: valueExtent([60, 220]) })).toEqual([100, 150, 200]);
+    expect(valueTicks(domain).ticks).toEqual([50, 100, 150, 200]);
+    expect(valueTicks(domain, 4, { extent: valueExtent([60, 220]) }).ticks).toEqual([100, 150, 200]);
   });
 
   it("never labels a value past the data: no SpO₂ 105, no lactate −0.5 in the chart's margin", () => {
     const spo2 = [92, 99, 100];
-    expect(Math.max(...valueTicks(valueDomain(spo2), 4, { extent: valueExtent(spo2) }))).toBeLessThanOrEqual(100);
+    expect(Math.max(...valueTicks(valueDomain(spo2), 4, { extent: valueExtent(spo2) }).ticks)).toBeLessThanOrEqual(100);
     const lactate = [0.5, 1, 4.1];
-    expect(Math.min(...valueTicks(valueDomain(lactate), 4, { extent: valueExtent(lactate) }))).toBeGreaterThanOrEqual(0.5);
+    expect(Math.min(...valueTicks(valueDomain(lactate), 4, { extent: valueExtent(lactate) }).ticks)).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it("labels a single reading with its own value, written at the DATA's resolution — not at a step it fell between", () => {
+    const label = (values) => {
+      const { ticks, step } = valueTicks(valueDomain(values), 4, { extent: valueExtent(values), resolution: valueResolution(values) });
+      return ticks.map((v) => tickLabel(v, step));
+    };
+    // The round steps (2, 0.5, 0.2) all fall to one side of the value: without this the chart has no number on it.
+    expect(label([85])).toEqual(["85"]);
+    expect(label([4.1])).toEqual(["4.1"]);
+    expect(label([37.4])).toEqual(["37.4"]);
+    expect(label([100])).toEqual(["100"]);                                          // SpO₂ 100: a step lands on it, and not past it
+    expect(label([0])).toEqual(["0"]);                                              // lactate 0: the margin is −1…1, the label is 0
+    expect(label([84, 84, 84])).toEqual(["84"]);                                    // repeated, still one value
+  });
+
+  it("labels both ends of an extent that no round step falls inside, written at the data's resolution", () => {
+    // 80–90 asks for steps of 2 (raw 2.5); 82.6–83.4 holds no multiple of 2. (A range of two or more
+    // measured values always holds a step: the margin makes the domain wider than the step.)
+    const gap = valueTicks({ lo: 80, hi: 90 }, 4, { extent: { lo: 82.6, hi: 83.4 }, resolution: 0.1 });
+    expect(gap.ticks).toEqual([82.6, 83.4]);
+    expect(gap.step).toBe(0.1);
+    // Where a step does fall inside, only the steps are labelled.
+    expect(valueTicks({ lo: 80, hi: 90 }, 4, { extent: { lo: 81, hi: 87 }, resolution: 0.1 }).ticks).toEqual([82, 84, 86]);
   });
 
   it("labels no finer than the data is measured, with as many decimals as the step and no more", () => {
@@ -139,7 +170,7 @@ describe("the line, the labels and the marks", () => {
 
   it("keeps a wide range to a handful of round labels inside it (systolic 60–220 spans 36–244)", () => {
     const domain = valueDomain([60, 220]);
-    const ticks = valueTicks(domain);
+    const { ticks } = valueTicks(domain);
     expect(domain).toEqual({ lo: 36, hi: 244 });
     expect(ticks.length).toBeGreaterThanOrEqual(2);
     expect(ticks.length).toBeLessThanOrEqual(6);
@@ -177,18 +208,22 @@ describe("the line, the labels and the marks", () => {
     expect(nearestIndex([], same, 5)).toBe(-1);
   });
 
-  it("names every mark within one pixel column of the pointer, and only those", () => {
-    // Two alert kinds first detected on one reading share an x: the readout must name both.
-    const marks = [{ x: 10, kind: "alarm", label: "news2" }, { x: 10.5, kind: "alarm", label: "sepsis" }, { x: 20, kind: "antibiotic" }];
-    expect(marksNear(marks, 10.9)).toEqual([marks[0], marks[1]]);
-    expect(marksNear(marks, 12)).toEqual([]);
-  });
-
-  it("asks the same in time: within one pixel's worth of milliseconds, and never on a chart of no width", () => {
+  it("names EVERY mark within one pixel's worth of milliseconds of an instant, and never on a chart of no width", () => {
+    // Two alert kinds first detected on one reading share an instant: the readout must name both.
     const marks = [{ ms: 1_000, kind: "alarm", label: "news2" }, { ms: 1_000, kind: "alarm", label: "sepsis" }];
     expect(marksAtTime(marks, 1_090, 100)).toEqual(marks);
     expect(marksAtTime(marks, 1_200, 100)).toEqual([]);
     expect(marksAtTime(marks, 1_000, 0)).toEqual([]);
+  });
+
+  it("finds a reading by its exact instant — the later one when two share it — and none when it slid out", () => {
+    const points = [p(10, 1), p(20, 2), p(20, 3), p(30, Number.NaN)];
+    expect(indexAtTime(points, 20)).toBe(2);
+    expect(indexAtTime(points, 10)).toBe(0);
+    expect(indexAtTime(points, 30)).toBe(3);                            // a missing value is still that instant
+    expect(indexAtTime(points, 15)).toBe(-1);
+    expect(indexAtTime([], 10)).toBe(-1);
+    expect(indexAtTime(undefined, 10)).toBe(-1);
   });
 
   it("places a time label centred on its instant, unless that would run it past an edge", () => {

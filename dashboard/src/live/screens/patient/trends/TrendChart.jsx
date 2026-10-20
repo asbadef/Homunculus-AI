@@ -16,7 +16,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ddmm, hhmm } from "../../../i18n/dates.js";
 import {
   bandRects, crisp, linePath, markerMarks, nearestIndex, ownNormalRect, plotFrame, tickLabel, timeLabelPlace,
-  timeScale, timeTicks, validWindow, valueDomain, valueExtent, valueResolution, valueScale, valueTickStep, valueTicks,
+  timeScale, timeTicks, validWindow, valueDomain, valueExtent, valueResolution, valueScale, valueTicks,
 } from "./trendGeometry.js";
 
 const BAND_FILL = { mid: "fill-band-mid", crit: "fill-band-crit" };
@@ -42,9 +42,9 @@ const CURSOR_LINE_OPACITY = 0.5;
  *  and a dot stays round at any size.
  *
  *  `mounted` says whether the element exists at all: the chart renders nothing for a window it cannot
- *  place, and a chart mounted before its first answer (the dialog's) gets its box only when the window
- *  turns valid. The effect therefore depends on it — run once on `[ref]`, it would find no element,
- *  return, and never attach the observer to the box that appears later. */
+ *  place, so an answer whose `since` / `until` cannot be read leaves no box to measure, and a valid
+ *  answer after it brings one. The effect therefore depends on it — run once on `[ref]`, it would
+ *  find no element, return, and never attach the observer to the box that appears later. */
 function useWidth(ref, fallback, mounted) {
   const [width, setWidth] = useState(fallback);
   useLayoutEffect(() => {
@@ -82,9 +82,10 @@ export function TrendChart({
   const y = domain ? valueScale(domain, frame.top, frame.bottom) : null;
   // The value labels: at the nearest round step, no finer than the data is measured, and only inside
   // the data — the domain's margin is the chart's, and a label there names a value nobody measured.
-  const resolution = valueResolution(values);
-  const tickStep = big && domain ? valueTickStep(domain, 4, resolution) : null;
-  const ticks = big && domain ? valueTicks(domain, 4, { extent: valueExtent(values), resolution }) : [];
+  // A lone reading between two steps is labelled with its own value.
+  const { step: tickStep, ticks } = big && domain
+    ? valueTicks(domain, 4, { extent: valueExtent(values), resolution: valueResolution(values) })
+    : { step: null, ticks: [] };
   const rects = y ? bandRects(bands?.news2, domain, y, frame.left, frame.right) : [];
   const ownRect = y ? ownNormalRect(own, domain, y, frame.left, frame.right) : null;
   const marks = big ? markerMarks(markers, x, sinceMs, untilMs) : [];
