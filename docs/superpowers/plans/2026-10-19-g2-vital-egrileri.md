@@ -8,9 +8,9 @@
 
 **Tech Stack:** Python 3.12 and 3.14, FastAPI, SQLAlchemy/psycopg2 (Postgres) and sqlite3, pytest; React 18, Vite, Vitest + Testing Library (`fireEvent`; no user-event), Tailwind on the live token classes, inline SVG (no chart library).
 
-**Spec (authoritative):** `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. Where the code made the spec's letter impossible or unsafe, this plan departs from it; every departure is in the table below with its file and line, and is an open item for the user.
+**Spec (authoritative):** `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. Where the code made the spec's letter impossible or unsafe, this plan departs from it; every departure is in the table below with its file and line, and is an open item for the user. **2026-10-20:** the user approved X1–X19 and chose explicit clearing for O4 — Task 14a and Task 14's clear; X21 was found while amending (X20 is kept for the thinning departure the Task 2 review found, which Task 17 adds from the controller's open-items list).
 
-**How the numbers in this plan were obtained.** All seventeen tasks were implemented, in this order, in the worktree while the plan was written, and every red, every green and every count below is what was printed; the tree was then restored to `b6ed65d` and only this file was committed. The verified implementation is kept beside the per-task files as `/c/tmp/homunculus-plans/g2v/reference.patch` — a cross-check, not the authority: build from the tasks.
+**How the numbers in this plan were obtained.** All seventeen tasks were implemented, in this order, in the worktree while the plan was written, and every red, every green and every count below is what was printed; the tree was then restored to `b6ed65d` and only this file was committed. The O4 amendment (Task 14a, Task 14's clear) was implemented the same way on top of all seventeen on 2026-10-20, and every suite re-run; a count marked *derived* is the measured one minus a later task's measured delta. The verified implementation is kept beside the per-task files as `/c/tmp/homunculus-plans/g2v/reference.patch` — a cross-check, not the authority: build from the tasks.
 
 ---
 
@@ -32,11 +32,12 @@
 | X12 | §6: "same error mapping as `patients()`" | There is no `patients()`; the board read is `boardPatients()` (backendApi.js:519). | `patientTrends` is an `authed()` GET like `boardPatients`; same `failure()` mapping, same 15 s `timed()`. |
 | X13 | — | backendApi.js:778–787 `setProfile` always sends `comorbidities: []` unless given one; the engine reads a present-but-empty list as "clear them" (api/clinical.py:212–222). No live screen calls it today. | `putPatientProfile(id, body)` sends the body as given; a test pins `setProfile`'s behaviour so nobody "simplifies" the form onto it. |
 | X14 | §3.3: "all pairs empty → the Save button is disabled" | Amendments (c): `Button` takes `busy`, never `disabled`. | `aria-disabled="true"`, focusable, the reason in words under the fields, and no request. |
-| X15 | §3.3: "the engine refuses an empty profile" | Only when no comorbidity and no baseline SOFA is charted either (api/clinical.py:249–259); with either, `{"baselines": {}}` is accepted and clears every baseline. | As the spec says (nothing sent when all pairs are empty) — which means **the form cannot remove the last baseline**. Open item O4. |
+| X15 | §3.3: "the engine refuses an empty profile" | Only when no comorbidity and no baseline SOFA is charted either (api/clinical.py:249–259); with either, `{"baselines": {}}` is accepted and clears every baseline. | **Amended 2026-10-20 (O4, the user chose explicit clearing):** Task 14a — the engine takes `{"baselines": {}}` over a charted profile as "clear every range", even with nothing else charted (still refused from nothing, or without a `baselines` key), and the replay reads each profile row over the one before (api/rehydrate.py:61 read it from nothing, so the clearing row was refused on replay and the cleared range came back after a restart). Task 14's form sends it when every row is emptied over a charted set and says so before and after; with nothing charted, Save stays `aria-disabled` (X14). |
 | X16 | §5 | Two route registries the spec does not name must list the route: tests/test_board_permissions.py `BOARD_EXPECTED` and tests/test_tenant_isolation.py `UNSCOPED_BY_DESIGN`; and the dashboard's apiErrors.test.js reads every `detail="…"` literal of api/app.py, so the route's new 400 needs an `errors.*` key in the same task. | Task 5 does all three. |
 | X17 | §6 the form "on the kit's Modal, Field, Button"; prefill "from `bands.own_normal` of the current response" | The engine REPLACES the whole set with what is sent. | The button is offered only once the trends have answered and while they are readable: the form must open on the set it replaces. |
 | X18 | — | `refusal.js` is `src/live/screens/admin/refusal.js`, not `src/live/refusal.js`. | The form imports `mayHaveLanded` from there (the one rule). |
 | X19 | — | `src/reachable.test.js` fails on any module `main.jsx` cannot reach. | The dashboard is built top-down: each task wires the module it creates (Task 9 wires the box before any card exists). |
+| X21 | §3.3: the save's toast "Hastanın normali kaydedildi; motor yeniden değerlendirdi" | `PUT /clinical/{id}/profile` (api/app.py:608–640) sets the profile, audits it and republishes the board; it re-scores nothing — the standing alerts are the last reading's until the next one (`Engine.ingest`, pipeline.py:51). The trends answer does re-read the profile (the own-normal band and pill). Found while amending for O4, 2026-10-20. | A save keeps the spec's sentence (Task 8, unchanged — open item O12). A clear, new with the amendment, says only what is true: the ranges are deleted and the next reading is judged without them (Task 14). |
 
 ---
 
@@ -44,7 +45,7 @@
 
 - **Dashboard:** `npx vitest run` → **81 files / 1912 tests**, all passing. `npx vite build` clean, precache 20 entries.
 - **Backend, the brief's command** (`--ignore=tests/test_infinity_vm_pilot.py`, no `PYTHONPATH`, no database): **1979 passed, 644 skipped, 2 failed** — `test_infinity_research.py::test_schema_validation_remains_active_under_optimized_python` and `test_jwt_caller.py::test_the_refusals_run_when_prodserver_is_imported`. Both spawn a child `python` that cannot `import homunculus` (`ModuleNotFoundError: No module named 'homunculus'`): the f7-py312 venv does not have this worktree installed. **With `PYTHONPATH=src` both pass: 1981 passed, 644 skipped, 0 failed.** Every Python command below sets `PYTHONPATH=src`.
-- **Backend with Postgres** (`TEST_DATABASE_URL=…/homunculus_test_g2v`, `PYTHONPATH=src`): **2617 passed, 8 skipped** in 25 min 41 s — longer than one Bash call may run (10 min), so Task 15 runs it in thirds.
+- **Backend with Postgres** (`TEST_DATABASE_URL=…/homunculus_test_g2v`, `PYTHONPATH=src`): **2617 passed, 8 skipped** in 25 min 41 s — longer than one Bash call may run (10 min), so Task 15 runs it in five parts.
 - **Python 3.14:** `/c/tmp/g115-py314/Scripts/python.exe` (3.14.5) runs this worktree's tests with `PYTHONPATH=src`.
 
 ## Counts after each task (merged in plan order)
@@ -67,12 +68,13 @@ If tasks are merged in another order, a total is the base plus the deltas of the
 | 11 | — | 86 / 2010 | `trendGeometry.test.js` **16**, `TrendChart.test.jsx` **12** (new); TrendCard 10 → **11** |
 | 12 | — | 87 / 2020 | `TrendModal.test.jsx` **8** (new); trendGeometry 16 → **17**; PatientScreen 56 → **57** |
 | 13 | — | 87 / 2027 | TrendModal 8 → **15** |
-| 14 | — | 88 / 2041 | `BaselineForm.test.jsx` **12** (new); PatientScreen 57 → **59** |
-| 15 | — | 88 / 2042 | `rawKeys.test.jsx` 6 → **7** |
-| 16 | 2074 / 648 | — | `test_scenario_rebase.py` **4** (new) |
+| 14a | 2077 / 648 (*derived*) | — | `test_api_patient_profile.py` 27 → **34** |
+| 14 | — | 88 / 2044 | `BaselineForm.test.jsx` **15** (new); PatientScreen 57 → **59** |
+| 15 | — | 88 / 2045 | `rawKeys.test.jsx` 6 → **7** |
+| 16 | 2081 / 648 | — | `test_scenario_rebase.py` **4** (new) |
 | 17 | — | — | docs only |
 
-Backend arithmetic: 14 + 15 + 13 + 21 + (21 + 3 + 2) + 4 = **93** passed and **4** skipped over the base. Dashboard: 2 + 6 + 34 + 13 + 14 + 29 + 10 + 7 + 14 + 1 = **130** tests and 7 files.
+Backend arithmetic: 14 + 15 + 13 + 21 + (21 + 3 + 2) + 7 + 4 = **100** passed and **4** skipped over the base. Dashboard: 2 + 6 + 34 + 13 + 14 + 29 + 10 + 7 + 17 + 1 = **133** tests and 7 files.
 
 ---
 
@@ -87,7 +89,7 @@ Backend arithmetic: 14 + 15 + 13 + 21 + (21 + 3 + 2) + 4 = **93** passed and **4
   Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
   ```
   (the trailer the controller set for this plan; if amendments.md records a newer one by the time you commit, use that.)
-- **Foreground gates.** Run every suite and build in the foreground; never background a gate and wait on it (an agent that did sat silent for hours). One Bash call runs at most 10 minutes: name the files; the whole Postgres-backed suite runs in thirds (Task 15).
+- **Foreground gates.** Run every suite and build in the foreground; never background a gate and wait on it (an agent that did sat silent for hours). One Bash call runs at most 10 minutes: name the files; the whole Postgres-backed suite runs in five parts (Task 15).
 - **Python commands** (always from the engine directory, always `PYTHONPATH=src`, always name files):
   ```bash
   cd /c/tmp/g2-vital/homunculus-engine
@@ -152,6 +154,9 @@ Backend arithmetic: 14 + 15 + 13 + 21 + (21 + 3 + 2) + 4 = **93** passed and **4
 | `src/homunculus/api/audit.py` | `since_utc()`; `AuditLog.records` / `InMemoryAuditLog.records` / `SqliteAuditLog.records` take `since`. | 3 |
 | `src/homunculus/api/audit_postgres.py` | `records(since=)` with a `timestamptz` cast. | 3 |
 | `src/homunculus/api/app.py` | `GET /patients/{patient_id}/trends`. | 5 |
+| `src/homunculus/api/clinical.py` | `profile_from_payload`: `{"baselines": {}}` over a charted profile clears every range. | 14a |
+| `src/homunculus/api/rehydrate.py` | `_replay_profile` reads each row over what the replay restored so far. | 14a |
+| `tests/test_api_patient_profile.py` | seven tests: the clear, what stays refused, the door, the next reading, the restart. | 14a |
 | `tests/test_infinity_shadow_isolation.py` | trends imports nothing of the lane; a trends read never reaches the shadow store; the shadow token is refused there. | 5 |
 | `tests/test_board_permissions.py`, `tests/test_tenant_isolation.py` | one registry row each. | 5 |
 | `src/homunculus/scenarios/loader.py` | `rebased(events, end)`. | 16 |
@@ -185,7 +190,7 @@ Backend arithmetic: 14 + 15 + 13 + 21 + (21 + 3 + 2) + 4 = **93** passed and **4
 | `src/backendApi.js` (+ `src/backendApi.test.js`) | `patientTrends(id, hours)`, `putPatientProfile(id, body)`. | 6 |
 | `src/live/session/testTokens.testutil.js` | `fakeApi` gains both. | 6 |
 | `src/live/theme/tokens.css`, `tokens.js`, `tokens.test.js` | `--band-n`, `--band-mid`, `--band-crit`, `--grid` (Gece and Gün); the chart contrast pairs. | 7 |
-| `src/live/i18n/strings/patient.js` | 49 keys × 4 languages; `onlyWrite` and `formsSoon` reworded (8); `trendsSoon` removed (9). | 8, 9 |
+| `src/live/i18n/strings/patient.js` | 49 keys × 4 languages; `onlyWrite` and `formsSoon` reworded (8); `trendsSoon` removed (9); `baselineClearsAll`, `baselineClearedAll` (14). | 8, 9, 14 |
 | `src/live/i18n/strings.test.js` | one `NEUTRAL` and six `AZ_SAME_AS_TR` entries. | 8 |
 | `src/live/screens/patient/PatientScreen.jsx` (+ test) | `TrendsBox` where the placeholder stood; the forms note under the Sepsis/Meds row; `ageText` imported; header comment. | 9, 10, 12 (test also 14) |
 | `src/live/rawKeys.test.jsx` | `patientTrends` stubbed; the trend charts' anchor. | 15 |
@@ -205,18 +210,19 @@ Backend arithmetic: 14 + 15 + 13 + 21 + (21 + 3 + 2) + 4 = **93** passed and **4
 | 5 the route | 4 | 9 → 14 (its two dashboard files, `apiErrors.js` and `errors.js`, are touched by no other task) | — |
 | 6 the API client | — | 1, 2, 3, 7, 8 | `testTokens.testutil.js` |
 | 7 the tokens | — | 1, 2, 3, 6, 8 | — |
-| 8 the strings | — | 1, 2, 3, 6, 7 | `strings/patient.js` (9) |
+| 8 the strings | — | 1, 2, 3, 6, 7 | `strings/patient.js` (9, 14) |
 | 9 the box reads the endpoint | 6, 8 | 4, 5 | `TrendsBox.jsx`, `PatientScreen.jsx` + test |
 | 10 the six cards | 9 | 4, 5 | `TrendsBox.jsx`, `PatientScreen.*` |
 | 11 the mini chart | 10 (and 7 for the colours to render) | 4, 5 | `TrendCard.jsx`, `TrendsBox.jsx` |
 | 12 the big chart | 11 | 4, 5 | `TrendChart.jsx`, `trendGeometry.*`, `TrendsBox.jsx` |
 | 13 keyboard and table | 12 | 4, 5 | `TrendModal.*`, `TrendChart.jsx` |
-| 14 the patient's normal | 13, 6 | 4, 5 | `TrendsBox.jsx`, `PatientScreen.test.jsx` |
-| 15 sweeps and the full gates | 1–14 | — | `rawKeys.test.jsx` |
+| 14a the engine clears the last range | — | any task (its three files are touched by no other) | — |
+| 14 the patient's normal | 13, 6 (14a for a real engine to take the clear; the tests stub the API) | 4, 5, 14a | `TrendsBox.jsx`, `PatientScreen.test.jsx` |
+| 15 sweeps and the full gates | 1–14, 14a | — | `rawKeys.test.jsx` |
 | 16 replay and the local walk | 15 | — | — |
 | 17 docs | 16 | — | — |
 
-**Waves:** A = {1, 2, 3, 6, 7, 8} in six worktrees; B = {4} beside {9}; C = {5} beside the chain 10 → 11 → 12 → 13 → 14 (sequential: each edits `TrendsBox.jsx`); then 15, 16, 17.
+**Waves:** A = {1, 2, 3, 6, 7, 8} in six worktrees; B = {4} beside {9}; C = {5} beside the chain 10 → 11 → 12 → 13 → 14 (sequential: each edits `TrendsBox.jsx`); then 15, 16, 17. **14a** (the O4 amendment, 2026-10-20) joins whichever wave is running when it is picked up — it needs nothing and shares no file — and must be merged before 15.
 
 ---
 
@@ -5479,13 +5485,200 @@ red: 7 failed — no tab stop, no keys, no status region, no table" -m "Co-Autho
 
 ---
 
+### Task 14a: The engine clears the last range — `{"baselines": {}}` over a charted profile
+
+**Amendment of 2026-10-20 (O4, the user's choice: explicit clearing).** An engine task; it touches no file another task touches, so it may run at any time, beside anything, in its own worktree — it must land before Task 15. Task 14's form sends `{"baselines": {}}` when every row is emptied over a charted set; today the engine refuses that unless a comorbidity or a baseline SOFA is also charted (api/clinical.py:257–259, X15), so a range charted in error could never be taken away when it is the last thing charted — and it would keep quietening this patient's alarms.
+
+The rule: a payload whose `baselines` key is present and is an empty object, sent while a profile exists (`base is not None`), clears every range and is accepted even when nothing else is charted; the comorbidities and the baseline SOFA come from `base` as before (the door merges). "profil boş olamaz" stays for an empty profile made from nothing and for a payload with no `baselines` key.
+
+What planning found on the way: the replay. `rehydrate._replay_profile` (api/rehydrate.py:61) reads each `profile` row with no `base`. The clearing row's audit payload is an empty profile (`{"comorbidities": [], "baselines": {}, "baseline_sofa": null}`), so read from nothing it is refused, skipped silently — and the profile before it, ranges and all, survives the restart. The replay now reads each row over what it has restored so far, as the live door reads over what is charted; the payloads are written whole (`profile_to_payload` names all three keys), so for every row ever written this reads exactly as before.
+
+The door itself (api/app.py:608–640) is unchanged and on this path does what it always did: sets the profile, appends the `profile` audit row with `charted_by`, republishes the board. It re-scores nothing: the alerts standing are the last reading's until the next one (`Engine.ingest`, pipeline.py:51). A test pins that the next reading is judged without the range; the wording that claims more is open item O12.
+
+**Files:**
+- Modify: `homunculus-engine/src/homunculus/api/clinical.py`, `homunculus-engine/src/homunculus/api/rehydrate.py`
+- Test: `homunculus-engine/tests/test_api_patient_profile.py` (27 → 34)
+
+- [ ] **Step 1: The tests.** Edit `homunculus-engine/tests/test_api_patient_profile.py` — replace its last three lines:
+
+```python
+    r = client.put("/clinical/bed-7/profile",
+                   json={"comorbidities": [], "baseline_sofa": 1}, headers=AUTH)
+    assert r.json()["comorbidities"] == []
+```
+
+with:
+
+```python
+    r = client.put("/clinical/bed-7/profile",
+                   json={"comorbidities": [], "baseline_sofa": 1}, headers=AUTH)
+    assert r.json()["comorbidities"] == []
+
+
+# --- Clearing the patient's own normal (G2 slice 1, O4) -------------------------------------------
+# The trend screen's form writes the whole baseline set. A range charted in error keeps quietening
+# this patient's alarms until someone takes it away — so it must be removable even when it is the
+# last thing charted: `{"baselines": {}}` over a charted profile clears every range. From nothing
+# there is nothing to clear, and an empty profile is still refused.
+
+BASELINES_ONLY = {"baselines": {"heart_rate": {"low": 125, "high": 140}}}
+
+
+def test_an_empty_baseline_set_over_a_charted_profile_clears_every_range():
+    base = profile_from_payload("bed-7", BASELINES_ONLY)
+    cleared = profile_from_payload("bed-7", {"baselines": {}}, base)
+    assert cleared.baselines == {}
+    assert cleared.comorbidities == frozenset() and cleared.baseline_sofa is None
+
+
+def test_clearing_the_ranges_keeps_the_comorbidities_and_the_baseline_sofa():
+    base = profile_from_payload("bed-7", {**CHRONIC_AF, "baseline_sofa": 2})
+    cleared = profile_from_payload("bed-7", {"baselines": {}}, base)
+    assert cleared.baselines == {}
+    assert cleared.comorbidities == frozenset({"chronic_af"})
+    assert cleared.baseline_sofa == 2
+
+
+def test_from_nothing_an_empty_baseline_set_is_still_refused():
+    with pytest.raises(Exception, match="boş olamaz"):
+        profile_from_payload("bed-7", {"baselines": {}})
+
+
+def test_without_a_baselines_key_a_payload_still_cannot_empty_a_profile():
+    base = profile_from_payload("bed-7", {"comorbidities": ["copd"]})
+    with pytest.raises(Exception, match="boş olamaz"):
+        profile_from_payload("bed-7", {"comorbidities": []}, base)
+
+
+def test_the_door_clears_the_last_range_and_audits_it(client):
+    assert _profile(client, "bed-7", BASELINES_ONLY).status_code == 200
+    r = _profile(client, "bed-7", {"baselines": {}})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"patient_id": "bed-7", "comorbidities": [], "baselines": {}, "baseline_sofa": None}
+    rows = [x for x in client.get("/audit", headers=AUTH).json()["records"] if x["event_type"] == "profile"]
+    assert [row["payload"]["baselines"] for row in rows] == [{"heart_rate": {"low": 125.0, "high": 140.0}}, {}]
+    assert rows[-1]["payload"]["charted_by"] == "tenant-token"
+
+
+def test_once_cleared_the_next_pulse_is_judged_like_anyone_elses():
+    """The point of clearing: the range stops quietening the alarm. The PUT itself re-scores
+    nothing — the alerts standing are the last reading's — so it is the NEXT reading that the
+    engine judges without the range."""
+    from datetime import timedelta
+    from homunculus.canonical import Observation
+    from homunculus.pipeline import Engine
+
+    engine = Engine()
+    engine.set_profile(profile_from_payload("bed-7", BASELINES_ONLY))
+    first = Observation("bed-7", SignalCode.HEART_RATE, 132, "/min", WHEN, "dev")
+    assert {a.kind: a for a in engine.ingest(first, now=WHEN)}["news2"].downgraded is True
+
+    engine.set_profile(profile_from_payload("bed-7", {"baselines": {}}, engine.profile("bed-7")))
+    later = WHEN + timedelta(minutes=5)
+    second = Observation("bed-7", SignalCode.HEART_RATE, 132, "/min", later, "dev")
+    news2 = {a.kind: a for a in engine.ingest(second, now=later)}["news2"]
+    assert news2.downgraded is False
+    assert news2.urgency == "soon"
+
+
+def test_a_cleared_set_stays_cleared_after_a_restart(client):
+    """The replay reads the profile rows in order. The clearing row is an empty profile: read
+    from nothing it would be refused and skipped — and the range the clinician removed would
+    come back with the next deploy, quietening alarms nobody asked to quieten."""
+    from homunculus.api.ackstore import AckStore
+    from homunculus.api.audit import AuditRecord
+    from homunculus.api.rehydrate import rehydrate
+    from homunculus.pipeline import Engine
+
+    _profile(client, "bed-7", BASELINES_ONLY)
+    assert _profile(client, "bed-7", {"baselines": {}}).status_code == 200
+    records = client.get("/audit", headers=AUTH).json()["records"]
+    fresh = Engine()
+    rehydrate(fresh, AckStore(), [AuditRecord(**r) for r in records])
+    assert fresh.profile("bed-7") is not None
+    assert fresh.profile("bed-7").baselines == {}
+```
+
+(A pulse of 132 scores 3 — a single red parameter — so NEWS2 raises a finding on its own; inside a charted 125–140 the patient-relative layer downgrades it, `rules/patient_relative.py` `_adjust_news2`.)
+
+- [ ] **Step 2: Run them — red.**
+
+```bash
+cd /c/tmp/g2-vital/homunculus-engine
+PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_api_patient_profile.py 2>&1 | grep -E "^FAILED|passed|failed"
+```
+Expected: `4 failed, 30 passed` — `test_an_empty_baseline_set_over_a_charted_profile_clears_every_range` and `test_once_cleared_the_next_pulse_is_judged_like_anyone_elses` (`ClinicalEntryError: profil boş olamaz …`), `test_the_door_clears_the_last_range_and_audits_it` and `test_a_cleared_set_stays_cleared_after_a_restart` (`assert 400 == 200`). The three that pass are the refusals that must stay, and the merge that already keeps the comorbidities.
+
+- [ ] **Step 3: The parser.** Edit `homunculus-engine/src/homunculus/api/clinical.py` — replace:
+
+```python
+    if not comorbidities and not baselines and baseline_sofa is None:
+        raise ClinicalEntryError(
+```
+
+with:
+
+```python
+    # An empty set sent over a charted profile is a clinician taking every range away: the trend
+    # screen's form writes the whole set, and a range charted in error must be removable even when
+    # it is the last thing charted. From nothing there is nothing to clear, and an empty profile is
+    # still refused — as is one emptied by a payload that does not name the baselines at all.
+    clearing = base is not None and payload.get("baselines") == {}
+    if not comorbidities and not baselines and baseline_sofa is None and not clearing:
+        raise ClinicalEntryError(
+```
+
+Run Step 2's command again. Expected: `1 failed, 33 passed` — the restart test, with `assert {<SignalCode.HEART_RATE: 'heart_rate'>: BaselineRange(low=125.0, high=140.0)} == {}`: the live door clears, and the replay brings the range back.
+
+- [ ] **Step 4: The replay.** Edit `homunculus-engine/src/homunculus/api/rehydrate.py` — replace:
+
+```python
+    try:
+        engine.set_profile(profile_from_payload(rec.patient_id, rec.payload))
+    except (ValueError, TypeError, KeyError):
+```
+
+with:
+
+```python
+    # Read over what the replay has restored so far, as the live door read it over what was
+    # charted. A row that cleared the last range is an empty profile, refused when read from
+    # nothing — and the range the clinician removed would come back with the next deploy.
+    try:
+        engine.set_profile(profile_from_payload(rec.patient_id, rec.payload,
+                                                engine.profile(rec.patient_id)))
+    except (ValueError, TypeError, KeyError):
+```
+
+- [ ] **Step 5: Green, and everything that replays a profile.**
+
+```bash
+cd /c/tmp/g2-vital/homunculus-engine
+PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_api_patient_profile.py 2>&1 | tail -1
+PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_api_patient_profile.py tests/test_rehydrate.py tests/test_alarm_quality.py tests/test_api_persistence.py tests/test_first_seen_persistence.py tests/test_pipeline.py 2>&1 | tail -1
+PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -1
+```
+Expected: `34 passed`; `69 passed` (34 + `test_rehydrate.py` 6 + `test_alarm_quality.py` 18 + `test_api_persistence.py` 2 + `test_first_seen_persistence.py` 3 + `test_pipeline.py` 6); the no-DB suite **2077 passed, 648 skipped** when merged in plan order after Task 13 (derived: measured 2081 / 648 with Task 16 in place too) — in any other order, the base plus the merged tasks' deltas, this one's being 7. Task 15 runs these files against Postgres and on Python 3.14.
+
+- [ ] **Step 6: Commit.**
+
+```bash
+cd /c/tmp/g2-vital
+git add homunculus-engine/src/homunculus/api/clinical.py homunculus-engine/src/homunculus/api/rehydrate.py homunculus-engine/tests/test_api_patient_profile.py
+git status --short && git diff --cached --stat
+git commit -m "fix(engine): an empty baseline set over a charted profile clears every range — and stays cleared after a restart" -m "profile_from_payload: {\"baselines\": {}} with a profile already charted is a clinician taking every range away, accepted even when nothing else is charted; comorbidities and baseline SOFA kept from the charted profile. Still refused: an empty profile from nothing, and one emptied by a payload without a baselines key. rehydrate reads each profile row over what it has restored so far, as the live door does: the clearing row is an empty profile, and read from nothing it was refused and skipped, so the cleared range came back with the next deploy. The PUT re-scores nothing; the next reading is judged without the range (pinned).
+
+red: test_api_patient_profile 4 failed (profil boş olamaz / 400); then 1 (the replay brought the range back)" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
 ### Task 14: The patient's own normal — the form
 
-Spec §3.3, §3.4 and D4, with X8, X14, X15, X17. For a `clinical.chart` holder the box's header offers "Xəstənin norması…" — once the trends have answered and while they are readable, because the engine replaces the whole baseline set with what is sent and the form must open on the set it replaces. Five rows (pulse, respiration, SpO₂, systolic, temperature — `BASELINE_KEYS`, held equal to api/clinical.py `BASELINE_SIGNALS` by a test that reads that file), each "alt" / "üst", prefilled from `bands.own_normal`. Held inline before anything is sent: one side without the other, a bound that is not a number (a decimal comma is read as a point), low above high. Every filled pair is sent as `{baselines}` alone; an emptied pair is not sent and the engine deletes it — the form says so, and says the comorbidities are not touched. All pairs empty: Save is `aria-disabled` and says why; nothing is sent. 200 → toast "…yadda saxlanıldı…", the trends read again, the form closes, no alert anywhere. 400 → the engine's reason on the toast named after the bed, the form stays open. 403 → the toast says the right is gone, the form closes. No answer → `mayHaveLanded`: the trends read again, the clinician is told to look at the band, the form closes. While in flight: Save `busy`, the fields `readOnly`, the dialog will not close, "…yadda saxlanılır…" said once.
+Spec §3.3, §3.4 and D4, with X8, X14, X15, X17. For a `clinical.chart` holder the box's header offers "Xəstənin norması…" — once the trends have answered and while they are readable, because the engine replaces the whole baseline set with what is sent and the form must open on the set it replaces. Five rows (pulse, respiration, SpO₂, systolic, temperature — `BASELINE_KEYS`, held equal to api/clinical.py `BASELINE_SIGNALS` by a test that reads that file), each "alt" / "üst", prefilled from `bands.own_normal`. Held inline before anything is sent: one side without the other, a bound that is not a number (a decimal comma is read as a point), low above high. Every filled pair is sent as `{baselines}` alone; an emptied pair is not sent and the engine deletes it — the form says so, and says the comorbidities are not touched. All pairs empty over a charted set (an `own_normal` band on any of the five): Save is offered, the text under the fields says it deletes every charted range, `{"baselines": {}}` is sent — which Task 14a's engine takes as "clear every range" — and the toast says the ranges are deleted and the next reading is judged without them (the user's choice for O4, 2026-10-20). All pairs empty with nothing charted: Save is `aria-disabled` and says why; nothing is sent. 200 → toast "…yadda saxlanıldı…", the trends read again, the form closes, no alert anywhere. 400 → the engine's reason on the toast named after the bed, the form stays open. 403 → the toast says the right is gone, the form closes. No answer → `mayHaveLanded`: the trends read again, the clinician is told to look at the band, the form closes. While in flight: Save `busy`, the fields `readOnly`, the dialog will not close, "…yadda saxlanılır…" said once.
 
 **Files:**
 - Create: `trends/BaselineForm.jsx`, `trends/BaselineForm.test.jsx`
-- Modify: `trends/TrendsBox.jsx`, `PatientScreen.test.jsx`
+- Modify: `trends/TrendsBox.jsx`, `PatientScreen.test.jsx`, `src/live/i18n/strings/patient.js` (two keys)
+- The tests stub the API, so this task builds without Task 14a; a real engine refuses the clear until 14a has landed.
 
 - [ ] **Step 1: The form's tests** — Write `dashboard/src/live/screens/patient/trends/BaselineForm.test.jsx`:
 
@@ -5593,6 +5786,41 @@ describe("the patient's own normal", () => {
     expect(api.putPatientProfile).not.toHaveBeenCalled();
   });
 
+  it("every row emptied over a charted set: Save is offered, says it deletes every range, and sends an empty set", async () => {
+    const { api } = await open({ own: { heart_rate: { low: 100, high: 115 } } });
+    type("heart_rate", "low", "");
+    type("heart_rate", "high", "");
+    const button = within(dialog()).getByRole("button", { name: "Yadda saxla" });
+    expect(button).not.toHaveAttribute("aria-disabled");
+    expect(dialog()).toHaveTextContent("Bütün sətirlər boşdur: «Yadda saxla» bu xəstənin daxil edilmiş bütün aralıqlarını silir.");
+    expect(dialog()).not.toHaveTextContent("Göndəriləcək aralıq yoxdur");
+    await save();
+    expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: {} });
+  });
+
+  it("a clear the engine took: the confirmation says every range is deleted, the trends are read again, the form closes", async () => {
+    const { onClose, onSaved } = await open({ own: { heart_rate: { low: 100, high: 115 } } });
+    type("heart_rate", "low", "");
+    type("heart_rate", "high", "");
+    await save();
+    expect(screen.getAllByText("Xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.")).toBeNull();
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("with nothing charted, a row typed and emptied again leaves nothing to clear: Save stays aria-disabled", async () => {
+    const { api } = await open({ own: { heart_rate: null, spo2: null } });
+    type("spo2", "low", "88");
+    type("spo2", "low", "");
+    const button = within(dialog()).getByRole("button", { name: "Yadda saxla" });
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(dialog()).toHaveTextContent("Göndəriləcək aralıq yoxdur");
+    expect(dialog()).not.toHaveTextContent("bütün aralıqlarını silir");
+    await save();
+    expect(api.putPatientProfile).not.toHaveBeenCalled();
+  });
+
   it("a save the engine took: the confirmation, the trends read again, the form closed — and no alert", async () => {
     const { onClose, onSaved } = await open({ own: { heart_rate: { low: 100, high: 115 } } });
     await save();
@@ -5645,7 +5873,65 @@ describe("the patient's own normal", () => {
 
 Run it → red: `Error: Failed to resolve import "./BaselineForm.jsx" …`.
 
-- [ ] **Step 2: The form** — Write `dashboard/src/live/screens/patient/trends/BaselineForm.jsx`:
+- [ ] **Step 2: The two sentences of a clear, in four languages.** Every row empty over a charted set is a clear — Task 14a's engine reads `{"baselines": {}}` over a charted profile as "delete every range" — and the form says so before it sends and after it landed. The confirmation says only what is true: the PUT re-scores nothing (Task 14a's `test_once_cleared_the_next_pulse_is_judged_like_anyone_elses`), so it is the next reading that is judged without the ranges. Four Edits in `dashboard/src/live/i18n/strings/patient.js`. In `tr`, replace:
+
+```js
+    baselineNothingToSend: "Gönderilecek aralık yok: en az bir satırın iki sınırını da girin.",
+```
+
+with:
+
+```js
+    baselineNothingToSend: "Gönderilecek aralık yok: en az bir satırın iki sınırını da girin.",
+    baselineClearsAll: "Bütün satırlar boş: «Kaydet» bu hastanın girilmiş bütün aralıklarını siler.",
+    baselineClearedAll: "Hastanın bütün aralıkları silindi; sonraki ölçüm onlarsız değerlendirilecek.",
+```
+
+In `az`, replace:
+
+```js
+    baselineNothingToSend: "Göndəriləcək aralıq yoxdur: ən azı bir sətrin hər iki həddini daxil edin.",
+```
+
+with:
+
+```js
+    baselineNothingToSend: "Göndəriləcək aralıq yoxdur: ən azı bir sətrin hər iki həddini daxil edin.",
+    baselineClearsAll: "Bütün sətirlər boşdur: «Yadda saxla» bu xəstənin daxil edilmiş bütün aralıqlarını silir.",
+    baselineClearedAll: "Xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.",
+```
+
+In `ru`, replace:
+
+```js
+    baselineNothingToSend: "Нечего отправлять: введите обе границы хотя бы в одной строке.",
+```
+
+with:
+
+```js
+    baselineNothingToSend: "Нечего отправлять: введите обе границы хотя бы в одной строке.",
+    baselineClearsAll: "Все строки пусты: «Сохранить» удалит все введённые диапазоны этого пациента.",
+    baselineClearedAll: "Все диапазоны пациента удалены; следующее измерение будет оценено без них.",
+```
+
+In `en`, replace:
+
+```js
+    baselineNothingToSend: "Nothing to send: enter both limits of at least one row.",
+```
+
+with:
+
+```js
+    baselineNothingToSend: "Nothing to send: enter both limits of at least one row.",
+    baselineClearsAll: "Every row is empty: Save deletes all of this patient's charted ranges.",
+    baselineClearedAll: "All of the patient's ranges are deleted; the next reading will be judged without them.",
+```
+
+`npx vitest run src/live/i18n/strings.test.js 2>&1 | grep -E "Tests "` → `Tests  6 passed (6)` (it loops over every key: the four languages agree, az differs from tr, ru is Cyrillic).
+
+- [ ] **Step 3: The form** — Write `dashboard/src/live/screens/patient/trends/BaselineForm.jsx`:
 
 ```jsx
 // src/live/screens/patient/trends/BaselineForm.jsx — "the patient's normal" (spec §3.3): the patient's
@@ -5715,7 +6001,11 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
   useEffect(() => () => { mounted.current = false; }, []);
 
   const { errors, baselines } = checkBaselines(rows);
-  const nothing = Object.keys(baselines).length === 0 && Object.keys(errors).length === 0;
+  const empty = Object.keys(baselines).length === 0 && Object.keys(errors).length === 0;
+  // Every row empty over a set that IS charted is a clear: the engine reads `{baselines: {}}` over a
+  // charted profile as "delete every range" (api/clinical.py). Over nothing there is nothing to clear.
+  const clearing = empty && BASELINE_KEYS.some((key) => own?.[key]);
+  const nothing = empty && !clearing;
   const errorOf = (key, side) => (tried && errors[key]?.side === side ? t(errors[key].key) : undefined);
   const edit = (key, side) => (event) => {
     const { value } = event.target;
@@ -5731,7 +6021,7 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
     try {
       await store.track(() => store.api.putPatientProfile(patient.patient_id, { baselines }));
       if (epoch !== store.epoch()) return;
-      toast(t("patient.baselineSaved"));
+      toast(t(clearing ? "patient.baselineClearedAll" : "patient.baselineSaved"));
       onSaved();
       onClose();
     } catch (err) {
@@ -5779,15 +6069,16 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
       ))}
       <p className="m-0 mt-2 text-12 text-mute">{t("patient.baselineClearsNote")}</p>
       {nothing ? <p className="m-0 mt-1 text-12 font-semibold text-att-ink">{t("patient.baselineNothingToSend")}</p> : null}
+      {clearing ? <p className="m-0 mt-1 text-12 font-semibold text-att-ink">{t("patient.baselineClearsAll")}</p> : null}
       <Announce text={busy ? t("patient.baselineSaving") : ""} />
     </Modal>
   );
 }
 ```
 
-`npx vitest run src/live/screens/patient/trends/BaselineForm.test.jsx 2>&1 | grep -E "Tests "` → `Tests  12 passed (12)`. (Each row is a `<fieldset>` whose `<legend>` names the vital, so a reader hears "Nəbz (/dəq), alt" rather than five identical "alt" fields.)
+`npx vitest run src/live/screens/patient/trends/BaselineForm.test.jsx 2>&1 | grep -E "Tests "` → `Tests  15 passed (15)`. (Each row is a `<fieldset>` whose `<legend>` names the vital, so a reader hears "Nəbz (/dəq), alt" rather than five identical "alt" fields.)
 
-- [ ] **Step 3: The screen offers it — tests first.** Edit `PatientScreen.test.jsx` — replace:
+- [ ] **Step 4: The screen offers it — tests first.** Edit `PatientScreen.test.jsx` — replace:
 
 ```jsx
     it("say they cannot be read, and since when, without raising an alert", async () => {
@@ -5826,7 +6117,7 @@ with:
 
 Run it: `Tests  1 failed | 58 passed (59)` (no button yet).
 
-- [ ] **Step 4: The button and the form in the box.** Two Edits in `trends/TrendsBox.jsx`.
+- [ ] **Step 5: The button and the form in the box.** Two Edits in `trends/TrendsBox.jsx`.
 
 (a) Replace:
 
@@ -5909,21 +6200,21 @@ with:
     </Box>
 ```
 
-- [ ] **Step 5: Green, then the gate.**
+- [ ] **Step 6: Green, then the gate.**
 
 ```bash
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/screens/patient/ src/reachable.test.js src/live/boundaries.test.js src/live/rawKeys.test.jsx src/live/i18n/ 2>&1 | grep -E "Test Files|Tests |×"
 ```
-Expected: no `×`; PatientScreen 59, BaselineForm 12. Then the suite — **88 / 2041** — and the build.
+Expected: no `×`; PatientScreen 59, BaselineForm 15. Then the suite — **88 / 2044** — and the build.
 
-- [ ] **Step 6: Commit.**
+- [ ] **Step 7: Commit.**
 
 ```bash
 cd /c/tmp/g2-vital
-git add dashboard/src/live/screens/patient/trends/BaselineForm.jsx dashboard/src/live/screens/patient/trends/BaselineForm.test.jsx dashboard/src/live/screens/patient/trends/TrendsBox.jsx dashboard/src/live/screens/patient/PatientScreen.test.jsx
+git add dashboard/src/live/screens/patient/trends/BaselineForm.jsx dashboard/src/live/screens/patient/trends/BaselineForm.test.jsx dashboard/src/live/screens/patient/trends/TrendsBox.jsx dashboard/src/live/screens/patient/PatientScreen.test.jsx dashboard/src/live/i18n/strings/patient.js
 git status --short && git diff --cached --stat
-git commit -m "feat(patient): the patient's own normal — five ranges, the whole set, written through the engine's profile door" -m "Offered to clinical.chart once the trends answered (the engine replaces the whole set, so the form opens on the set it replaces). Held inline: both bounds, a number, low <= high. Sends {baselines} alone; an emptied pair is deleted and the form says so; nothing to send is aria-disabled with the reason. 200: toast, trends re-read, closed, no alert. 400: the engine's reason on the toast, named after the bed. 403: toast, closed. No answer: may have landed, re-read, told to look at the band.
+git commit -m "feat(patient): the patient's own normal — five ranges, the whole set, written through the engine's profile door" -m "Offered to clinical.chart once the trends answered (the engine replaces the whole set, so the form opens on the set it replaces). Held inline: both bounds, a number, low <= high. Sends {baselines} alone; an emptied pair is deleted and the form says so. Every row emptied over a charted set sends {baselines: {}} and clears them all (Task 14a), said under the fields and on the toast (the next reading is judged without them); with nothing charted, nothing to send is aria-disabled with the reason. 200: toast, trends re-read, closed, no alert. 400: the engine's reason on the toast, named after the bed. 403: toast, closed. No answer: may have landed, re-read, told to look at the band.
 
 red: BaselineForm import unresolved; PatientScreen 1 failed (no button)" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
@@ -6048,7 +6339,7 @@ with:
 
 - [ ] **Step 3: Prove the net bites** (then put it back). Edit `trends/TrendCard.jsx`: replace `t("patient.trendsSingle")` with `t("patient.trendsSingel")`, and run the sweep again. Expected — three nets catch it: `[i18n] "patient.trendsSingel" has no az text — showing the key.`; `× … every screen this build has renders its texts …` with `patient (/patients/S-001) → patient.trendsSingel`; `× … the trend charts' keys resolve …` (its `tək ölçmə` is now the raw key); `× … names no key the dictionaries do not have …` with `screens\patient\trends\TrendCard.jsx → patient.trendsSingel (az, tr, ru, en)`. Edit it back to `t("patient.trendsSingle")` and re-run: `Tests  7 passed (7)`. **Nothing of this step is committed.**
 
-- [ ] **Step 4: The dashboard gate.** The suite: **88 files / 2042 tests**; the build: `built in`, `precache  20 entries`, no `larger than 500 kB`. Then, by hand, read the dashboard part of `git diff b6ed65d --stat`: every new file under `src/live/screens/patient/trends/` is under ~250 lines (the largest, `TrendModal.test.jsx`, ≈ 210; `TrendModal.jsx` ≈ 145).
+- [ ] **Step 4: The dashboard gate.** The suite: **88 files / 2045 tests**; the build: `built in`, `precache  20 entries`, no `larger than 500 kB`. Then, by hand, read the dashboard part of `git diff b6ed65d --stat`: every new file under `src/live/screens/patient/trends/` is under ~250 lines (the largest, `TrendModal.test.jsx`, ≈ 210; `TrendModal.jsx` ≈ 145).
 
 - [ ] **Step 5: The backend, without the database.**
 
@@ -6056,14 +6347,19 @@ with:
 cd /c/tmp/g2-vital/homunculus-engine
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -1
 ```
-Expected: `2070 passed, 648 skipped` (≈ 100 s). (2074 once Task 16 has landed.)
+Expected: `2077 passed, 648 skipped` (≈ 100–140 s; 2070 + Task 14a's 7). (2081 once Task 16 has landed — measured.)
 
-- [ ] **Step 6: The backend with Postgres, in four parts** (each under the 10-minute call limit; one at a time — they share `homunculus_test_g2v` and its advisory lock):
+- [ ] **Step 6: The backend with Postgres, in five parts** (each under the 10-minute call limit; one at a time — they share `homunculus_test_g2v` and its advisory lock):
 
 ```bash
 cd /c/tmp/g2-vital/homunculus-engine
 DB=postgresql+asyncpg://homunculus:homunculus@localhost:55432/homunculus_test_g2v
-TEST_DATABASE_URL=$DB PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q $(ls tests/test_a*.py) 2>&1 | tail -1
+TEST_DATABASE_URL=$DB PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q $(ls tests/test_ad*.py) 2>&1 | tail -1
+```
+```bash
+cd /c/tmp/g2-vital/homunculus-engine
+DB=postgresql+asyncpg://homunculus:homunculus@localhost:55432/homunculus_test_g2v
+TEST_DATABASE_URL=$DB PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q $(ls tests/test_a*.py | grep -v "tests/test_ad") 2>&1 | tail -1
 ```
 ```bash
 cd /c/tmp/g2-vital/homunculus-engine
@@ -6080,16 +6376,16 @@ cd /c/tmp/g2-vital/homunculus-engine
 DB=postgresql+asyncpg://homunculus:homunculus@localhost:55432/homunculus_test_g2v
 TEST_DATABASE_URL=$DB PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q $(ls tests/test_[s-z]*.py) 2>&1 | tail -1
 ```
-Expected (measured with the whole slice in place): `846 passed` (8 min 44 s — if a slow day takes it past 10 minutes, run `tests/test_ad*.py` and the other `test_a*.py` files separately); `508 passed, 1 skipped` (38 s); `1028 passed, 7 skipped` (89 s); `328 passed` before Task 16, `332 passed` after it (2 min 20 s). Total **2710 passed, 8 skipped** at this task (base 2617 / 8 + 93), **2714 / 8** after Task 16. `grep -v` keeps `test_infinity_vm_pilot.py` out of the third part: never let a glob pick it up.
+Expected (measured with the whole slice and the O4 amendment in place, 2026-10-20): `205 passed` (6 min); `648 passed` (8 min — Task 14a's 7 are here; together the two were one 846-test part that ran 8 min 44 s on 2026-10-19 and 14 min on 2026-10-20, hence the split); `508 passed, 1 skipped` (1 min); `1028 passed, 7 skipped` (2 min 11 s); `328 passed` before Task 16, `332 passed` after it (2 min 20 s – 3 min 48 s). Total **2717 passed, 8 skipped** at this task (base 2617 / 8 + 100; *derived*), **2721 / 8** after Task 16 (measured). `grep -v` keeps `test_infinity_vm_pilot.py` out of the third part: never let a glob pick it up.
 
 - [ ] **Step 7: The slice's files on Python 3.14.**
 
 ```bash
 cd /c/tmp/g2-vital/homunculus-engine
 TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:55432/homunculus_test_g2v PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 \
-  /c/tmp/g115-py314/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_news2_bands.py tests/rules/test_news2.py tests/test_timeline_thin.py tests/test_audit_since.py tests/test_audit_postgres.py tests/test_trends.py tests/test_trends_api.py tests/test_infinity_shadow_isolation.py tests/test_board_permissions.py 2>&1 | tail -1
+  /c/tmp/g115-py314/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_news2_bands.py tests/rules/test_news2.py tests/test_timeline_thin.py tests/test_audit_since.py tests/test_audit_postgres.py tests/test_trends.py tests/test_trends_api.py tests/test_infinity_shadow_isolation.py tests/test_board_permissions.py tests/test_api_patient_profile.py tests/test_rehydrate.py 2>&1 | tail -1
 ```
-Expected: `239 passed` (14 + 65 + 15 + 17 + 11 + 21 + 21 + 18 + 57; Task 16 adds `test_scenario_rebase.py`'s 4 → 243).
+Expected: `279 passed` (14 + 65 + 15 + 17 + 11 + 21 + 21 + 18 + 57 + 34 + 6; Task 16 adds `test_scenario_rebase.py`'s 4 → 283, measured with it in the list).
 
 - [ ] **Step 8: Acceptance 2 — the 72-hour window answers in under 300 ms.**
 
@@ -6274,7 +6570,7 @@ cd /c/tmp/g2-vital/homunculus-engine
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_scenario_rebase.py tests/test_scenario_loader.py tests/test_scenarios_e2e.py 2>&1 | tail -1
 PYTHONPATH=src /c/tmp/f7-py312/venv/Scripts/python.exe scripts/replay.py --help | head -2
 ```
-Expected: `9 passed` (4 + 1 + 4); `usage: replay.py [-h] [--url URL] [--token-env TOKEN_ENV] [--now]` / `[scenario] [delay]`. The whole no-DB suite: `2074 passed, 648 skipped`.
+Expected: `9 passed` (4 + 1 + 4); `usage: replay.py [-h] [--url URL] [--token-env TOKEN_ENV] [--now]` / `[scenario] [delay]`. The whole no-DB suite: `2081 passed, 648 skipped` (with Task 14a; 2074 without it).
 
 ```bash
 cd /c/tmp/g2-vital
@@ -6333,6 +6629,7 @@ bed-3 6h heart_rate:0 | map:4(63.0 Δ1.0 N2 None) | sbp:0 | spo2:0 | temperature
   4. Cədvəl: five rows, newest first, the values equal to the dots, "NEWS2 balı" equal to the frames; the ▲ as a row of its own. Escape closes and focus returns to the card.
   5. `bed-3`: Laktat and Sistolik AT · MAP cards with readings; in the Laktat dialog ▲ sepsis, antibiotic_due, septic_shock and ◆ antibiotik.
   6. Back on `bed-1`, **Xəstənin norması…**: five rows, no MAP and no lactate; enter Nəbz 120 – 135, Yadda saxla → the toast "Xəstənin norması yadda saxlanıldı; …", the Nəbz card now also wears "Xəstənin normasında" (130 is inside), its frame still amber; the dialog shows the dashed band. **Acceptance 3 — the form writes and the band appears.**
+  6a. **The O4 amendment.** **Xəstənin norması…** again; empty Nəbz's two fields: under the fields "Bütün sətirlər boşdur: «Yadda saxla» bu xəstənin daxil edilmiş bütün aralıqlarını silir.", and Yadda saxla is offered (no `aria-disabled`). Save → the toast "Xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.", and the "Xəstənin normasında" pill and the dashed band are gone. Then `$C restart api` (`C` as in Step 5), wait for `healthy` as in Step 5, reload: still no pill, no band — the clear survived the replay from Postgres. The form once more: every row empty, Save `aria-disabled` with "Göndəriləcək aralıq yoxdur …". **Acceptance 3b — the last range can be removed, and stays removed.**
   7. Sign out; sign in as `test.denetci@homunculus.health`: the cards are there, the **Xəstənin norması…** button is not.
   8. **Acceptance 4:** at 390 px (devtools device toolbar, 390 × 844) and at 1440 px — no horizontal page scroll on the patient screen, in the big chart, in its table (it scrolls inside its own frame) and in the form; one column at 390, three at 1440. Ayarlar → Tema: Gece and Gün. Dil: az, tr, ru, en — no raw `patient.…` key anywhere.
 
@@ -6439,7 +6736,10 @@ yaklaşmaz.
 **Hastanın normali (form):** `clinical.chart` yetkisi olan klinisyen kutunun başlığındaki
 "Hastanın normali…" ile beş vital için alt ve üst sınır girer. İki sınır da gerekir; alt üstten
 büyük olamaz. Motor gönderilen kümeyi bütünüyle yeniler: boş bırakılan aralık silinir,
-komorbiditelere dokunulmaz. Bu aralık monitörün alarm sınırı değildir; motor bu hastanın
+komorbiditelere dokunulmaz. Kayıtlı bir aralık varken bütün satırlar boşaltılırsa form bunu
+söyler ve Kaydet hepsini siler; silme denetim kaydına yazılır ve sunucu yeniden başlasa da geri
+gelmez. Kayıt anlık alarmları yeniden hesaplamaz: sonraki ölçüm yeni normale (ya da normalsiz)
+göre değerlendirilir. Bu aralık monitörün alarm sınırı değildir; motor bu hastanın
 değerlerini yorumlarken (4. bölümdeki hastaya göreli katman) bu normali kullanır. Reddedilen bir
 kayıt yatağın adıyla bildirimde söylenir; sunucu yanıt vermezse kaydın gerçekleşmiş olabileceği
 söylenir ve eğri yeniden okunur.
@@ -6472,7 +6772,7 @@ Prototipteki sabit sayılar (`core.js:499` `H.VITAL.al/nb`) kaynaksızdır, taş
 
 | # | İş | Durum |
 |---|---|---|
-| G2-01 | Vital eğrileri (hasta ekranı): altı kart, büyük grafik (6 sa / 24 sa / 3 gün, tablo), hastanın normali formu; `GET /patients/{id}/trends` · spec: [2026-10-19](../specs/2026-10-19-g2-vital-egrileri-design.md) · plan: [G2 dilim 1](2026-10-19-g2-vital-egrileri.md) | Kod ✅ <date> · <range>. Backend 2074 / 648 (DB'siz), 2714 / 8 (Postgres); dashboard 88 dosya / 2042 test. Yerel yürüyüş: <walk>. **Açık:** az/ru yerel okuma; VM'de kullanıcının bakışı (gerçek bir hasta, 390 ve 1440 px, değerler yazılmaz); plandaki X1–X19 ve O1–O11 |
+| G2-01 | Vital eğrileri (hasta ekranı): altı kart, büyük grafik (6 sa / 24 sa / 3 gün, tablo), hastanın normali formu; `GET /patients/{id}/trends` · spec: [2026-10-19](../specs/2026-10-19-g2-vital-egrileri-design.md) · plan: [G2 dilim 1](2026-10-19-g2-vital-egrileri.md) | Kod ✅ <date> · <range>. Backend 2081 / 648 (DB'siz), 2721 / 8 (Postgres); dashboard 88 dosya / 2045 test. Yerel yürüyüş: <walk>. **Açık:** az/ru yerel okuma; VM'de kullanıcının bakışı (gerçek bir hasta, 390 ve 1440 px, değerler yazılmaz); plandaki X20 (Task 2 incelemesi), X21 ve O1–O3, O6–O12 (X1–X19 onaylandı, O4 çözüldü: 2026-10-20) |
 ```
 
 (c) Append to the two items the slice moved — replace:
@@ -6500,15 +6800,19 @@ with:
 ```markdown
 - Acceptance on the VM will show sparse charts today; that is the data, not the chart.
 - **Found while planning (2026-10-19; `docs/superpowers/plans/2026-10-19-g2-vital-egrileri.md`,
-  "What the code says", X1–X19):** the plan departs from this spec where the code made its letter
+  "What the code says", X1–X21; X1–X19 approved by the user on 2026-10-20):** the plan departs from this spec where the code made its letter
   impossible or unsafe — 503 for an unreadable scope, checked before `_require_patient` (X1); bands
   as `low < v <= high` (X2); alarm marks from `first_seen`, one per episode, not from `alert` rows
   (X3); antibiotic marks only for doses ≥ 1 (X4); each point carries the engine's NEWS2 points
   (X5); MAP at full colour with hollow dots, because reduced opacity measured 2.17–3.34:1 (X6);
   ages through `useBoardNow` (X7); a 400 only on the toast (X8); `onlyWrite` and `formsSoon`
   reworded (X9); 390 px checked in a browser (X10); `replay.py --now` (X11).
-- The form cannot remove the last baseline (all pairs empty sends nothing), although the engine
-  accepts `{"baselines": {}}` when a comorbidity or a baseline SOFA is charted (plan X15, O4).
+- The last baseline can be removed (the user's choice for O4, 2026-10-20): every row emptied over
+  a charted set sends `{"baselines": {}}`, which the engine takes as clearing every range even when
+  nothing else is charted, and the audit replay reads each profile row over the one before, so the
+  clear survives a restart (plan X15, Task 14a).
+- §3.3's save toast says the engine re-evaluated; the profile PUT re-scores nothing — the standing
+  alerts are re-judged at the next reading (plan X21, O12).
 - `PUT /clinical/{id}/profile` replaces the set with no lost-update check: two clinicians saving one
   patient's normal at once — the second wins silently (plan O3).
 ```
@@ -6528,17 +6832,18 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 
 | # | Item | Who | When |
 |---|---|---|---|
-| O1 | **Native reading of the Azerbaijani and Russian texts:** the 49 `patient.trends*` / `patient.baseline*` keys, the two reworded sentences (`onlyWrite`, `formsSoon`) and `errors.badTrendHours` were written by the planner. | A native-speaking clinician | Before the VM |
+| O1 | **Native reading of the Azerbaijani and Russian texts:** the 49 `patient.trends*` / `patient.baseline*` keys of Task 8 and Task 14's two (`baselineClearsAll`, `baselineClearedAll`), the two reworded sentences (`onlyWrite`, `formsSoon`) and `errors.badTrendHours` were written by the planner. | A native-speaking clinician | Before the VM |
 | O2 | **Stage B retention cap** on `PatientState._history` (unbounded per signal, spec §11). The trends endpoint scans a window linearly per request — 864 readings in ≈ 4 ms today — and thins only what it serves; 51 840 readings per channel per 72 h is Stage B's to bound. | Stage B's plan | Stage B |
 | O3 | **Lost update on the profile.** `PUT /clinical/{id}/profile` replaces the baseline set with no expected-set check (Wave 3B's 14e closed this for the three `/admin` whole-set writes only). Two clinicians saving one patient's normal at once: the second wins, silently. | User decision; engine | Group 2 |
-| O4 | **The form cannot remove the last baseline** (X15): all pairs empty sends nothing, though the engine would accept `{"baselines": {}}` whenever a comorbidity or a baseline SOFA is charted. Offer a "clear all" (with that condition) or keep as is. | User decision | — |
-| O5 | **The departures X1–X9 need the user's nod**, above all X3 (marks from `first_seen`, not `alert` rows), X5 (a third element on every point) and X9 (two sentences reworded). | User | Before merge |
+| O4 | **Resolved 2026-10-20 — the user chose explicit clearing.** Task 14a: the engine takes `{"baselines": {}}` over a charted profile as "clear every range", even with nothing else charted (still refused from nothing and without a `baselines` key); the replay reads each profile row over the one before, so the clear survives a restart (it did not: the clearing row, an empty profile, was refused on replay). Task 14: every row emptied over a charted set sends it, said under the fields and on the toast; with nothing charted, Save stays `aria-disabled`. | — | Done in the plan |
+| O5 | **Approved 2026-10-20:** the user approved every departure X1–X19. X21, found while amending for O4, waits on O12. | — | — |
 | O6 | UNKNOWN scope → 503 only on the trends route; every other single-patient route still answers 404 and writes `scope_denied` (roadmap l. 659). | Group 2 | — |
 | O7 | `/audit`, `/alarm-quality` and `rehydrate` still read the oldest N (roadmap l. 658); `since` now exists for them to use. | Group 2 | Before the alarm-quality panel |
 | O8 | `backendApi.setProfile` (backendApi.js:778–787) sends `comorbidities: []` by default and so clears every charted comorbidity when called with only baselines. No live screen calls it; the admission form (Group 2/3) must not, or must be fixed first. | Whoever builds the admission form | — |
 | O9 | `errors.scopeUnreadable` speaks of the live stream ("canlı akış başlatılamadı"); a trends 503 maps to the same key. The trends screens print their own "okunamıyor" line and never that text, but a later screen that prints `apiErrorText` for a trends 503 would say "live stream". | i18n | Minor |
 | O10 | **A mark's instant is the escalation clock's** (when the server first raised the episode); a reading's is its own measured instant. Live they are minutes apart; a replayed, back-filled or late-arriving reading can sit hours before its ▲ (seen in Task 16 with `--now`). Honest, but worth a sentence in the legend if the ward finds it confusing. | User, after the VM look | — |
 | O11 | The brief's backend command fails 2 tests without `PYTHONPATH=src` (`ModuleNotFoundError` in a child process; the f7-py312 venv has no install of this worktree). This plan always sets it; installing the worktree editable into a venv is the other fix. | Environment | — |
+| O12 | **The save's toast says more than the engine does** (X21): "Hastanın normali kaydedildi; motor yeniden değerlendirdi" (spec §3.3, Task 8's `baselineSaved`) — but the PUT re-scores nothing: an alert a range downgraded stays downgraded, or an alert a new range would quieten stays loud, until the next reading (minutes on a monitor; the next spot check otherwise). Either reword it in four languages (e.g. "…kaydedildi; sonraki ölçüm bu normale göre değerlendirilecek") or make the door re-judge the patient's latest state when the profile changes (an engine change, with its own tests). The clear's new toast already says only what is true. | User decision | Before the VM |
 
 **Commit trailer.** The controller's brief set `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` for this plan's tasks; amendments.md's latest recorded trailer is `Claude Opus 5.5`. Use the one the controller gives when the tasks run.
 
@@ -6562,7 +6867,7 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 | D9 device limits reserved | T4 (`bands.device: None`, test) |
 | §3.1 the box, header note, button, grid 1/2/3, card contents, 46 px mini chart, states, unreadable header, systolic + MAP, card is a button | T9 (box, note, unreadable), T10 (grid, values, delta, age, frame, pill, no data, single), T11 (mini chart), T12 (button), T14 (the header's button) |
 | §3.2 the big chart: Modal, title, Seg hours (refetch), Grafik | Tablo, 280 px, time labels in the ward's zone, bands, points, connectors, ▲ ◆, readout with the nearest mark, mouse, keyboard, legend incl. thinned; table with caption and columns | T12 (dialog, hours, readout, mouse, legend), T13 (keyboard, Grafik | Tablo, table), T11 (labels, marks) |
-| §3.3 the form: prefill, both-or-neither, low > high, full set, the note, all-empty, 200 / 400 / timeout / 403, button only with `clinical.chart` | T14 (+ X8, X14, X15, X17) |
+| §3.3 the form: prefill, both-or-neither, low > high, full set, the note, all-empty, 200 / 400 / timeout / 403, button only with `clinical.chart` | T14 (+ X8, X14, X15, X17, X21); all-empty over a charted set clears every range — T14a (engine, replay), T14 (form), T16 step 8.6a |
 | §3.4 who sees what | T5 (`board.view`), T14 (`clinical.chart`; the auditor has no button, T16 step 8.7) |
 | §4 the endpoint and its rules | T4 (shape, order, points, latest, bands, markers, thinning), T5 (hours, 400/401/403/404/503, no audit row) with X1–X5 |
 | §5.1 NEWS2 bands as data | T1 |
@@ -6576,8 +6881,8 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 | §6 i18n | T8 (and T9 removes `trendsSoon`) |
 | §6 PatientScreen: placeholder replaced, `formsSoon` as a Note under Sepsis/Meds | T9 (+ X9) |
 | §7 accessibility and honesty | text equivalents T10 (card text, mini chart hidden) and T13 (table); keyboard T12–T13; colour never alone T10 (badge), T11 (dashed own normal, hollow MAP), T12 (legend); announcement only on keyboard T13; ages on the server's clock T10; 390 px T10 (classes) + T16 (browser); dashed connectors + legend sentence T11–T12 |
-| §8 tests | engine T1–T5 (named files), dashboard T6–T15, end to end T16 |
-| §9 keys | T8 (all 31 new + 18) |
+| §8 tests | engine T1–T5 and T14a (named files), dashboard T6–T15, end to end T16 |
+| §9 keys | T8 (all 31 new + 18); T14 adds the clear's two |
 | §10 not in this slice | nothing built for it |
 | §11 risks | T17 updates it; O2 |
 | §12 acceptance 1 | T15 steps 4–7 (3.12, 3.14, dashboard; counts here) |
@@ -6588,5 +6893,5 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 
 **Placeholder scan.** No "TBD", no "similar to Task N", no "add appropriate error handling". The only fill-ins are runtime facts that cannot exist before the work does — T17's roadmap row takes the date, the commit range and the walk's outcome, each with the command or step that produces it.
 
-**Names and types across tasks.** Engine: `Band`, `NEWS2_BANDS`, `BANDS_SOURCE`, `points_for` (T1) are what T4 imports; `thin(series, max_points)` (T2) is called with `TRENDS_MAX_POINTS`; `since_utc` (T3) is shared by `audit.py` and `audit_postgres.py`; `records(…, since=…)` is keyword-only everywhere (T3's signature test); `patient_trends(engine, audit, *, hospital, patient_id, hours, now)` (T4) is what T5's route calls with `int(hours)` after the text check against `TRENDS_HOURS`; the route is listed in `BOARD_EXPECTED` and `UNSCOPED_BY_DESIGN` under the path FastAPI reports, `/patients/{patient_id}/trends`. Dashboard: `patientTrends(patientId, hours)` / `putPatientProfile(patientId, body)` (T6) are the names `useTrends` (T9) and `BaselineForm` (T14) call, and `fakeApi` carries both; `useTrends(patientId, hours, measuredKey)` → `{data, loading, unreadable, lastOkAt, reload}` is read the same way by `TrendsBox` and `TrendModal`; `measuredKeyOf(patient.measuredAt)`; the fixtures `trends(patientId, channels, over)`, `channel(key, points, over)`, `point(minutesAgo, value, points)`, `marker(minutesAgo, kind, label)`, `answering(build)`, `BANDS`, `KEYS` (T9) are what every later test uses; `news2Tone(points)` (T10) is used by `TrendCard` and `bandRects`; `CARDS` / `cardTitle` / `channelsOf` (T10) by the box, the dialog, the legend and the table; `TrendCard({card, channels, nowMs, sinceMs, untilMs, onOpen})` gains `sinceMs`/`untilMs` in T11 and `onOpen` is passed from T12; `TrendChart`'s props grow `onPlot` (T12) and `onKeyDown`, `describedBy` (T13) by Edit, never renamed; `whenText`/`markText` live in `TrendModal.jsx` in T12 and move to `trendText.js` (with `pointsText`) in T13, where `TrendModal` and `TrendTable` both import them and nothing else imported them from the dialog; `TrendsBox({patient, bed, nowMs})` gains `nowMs` in T10 and `bed` in T12, matching PatientScreen's edits in those tasks. Every `t("patient.…")` the code names is one T8 defines in four languages (checked by `rawKeys.test.jsx`'s static net, T15 step 3 proves it bites).
+**Names and types across tasks.** Engine: `Band`, `NEWS2_BANDS`, `BANDS_SOURCE`, `points_for` (T1) are what T4 imports; `thin(series, max_points)` (T2) is called with `TRENDS_MAX_POINTS`; `since_utc` (T3) is shared by `audit.py` and `audit_postgres.py`; `records(…, since=…)` is keyword-only everywhere (T3's signature test); `patient_trends(engine, audit, *, hospital, patient_id, hours, now)` (T4) is what T5's route calls with `int(hours)` after the text check against `TRENDS_HOURS`; the route is listed in `BOARD_EXPECTED` and `UNSCOPED_BY_DESIGN` under the path FastAPI reports, `/patients/{patient_id}/trends`. Dashboard: `patientTrends(patientId, hours)` / `putPatientProfile(patientId, body)` (T6) are the names `useTrends` (T9) and `BaselineForm` (T14) call, and `fakeApi` carries both; `useTrends(patientId, hours, measuredKey)` → `{data, loading, unreadable, lastOkAt, reload}` is read the same way by `TrendsBox` and `TrendModal`; `measuredKeyOf(patient.measuredAt)`; the fixtures `trends(patientId, channels, over)`, `channel(key, points, over)`, `point(minutesAgo, value, points)`, `marker(minutesAgo, kind, label)`, `answering(build)`, `BANDS`, `KEYS` (T9) are what every later test uses; `news2Tone(points)` (T10) is used by `TrendCard` and `bandRects`; `CARDS` / `cardTitle` / `channelsOf` (T10) by the box, the dialog, the legend and the table; `TrendCard({card, channels, nowMs, sinceMs, untilMs, onOpen})` gains `sinceMs`/`untilMs` in T11 and `onOpen` is passed from T12; `TrendChart`'s props grow `onPlot` (T12) and `onKeyDown`, `describedBy` (T13) by Edit, never renamed; `whenText`/`markText` live in `TrendModal.jsx` in T12 and move to `trendText.js` (with `pointsText`) in T13, where `TrendModal` and `TrendTable` both import them and nothing else imported them from the dialog; `TrendsBox({patient, bed, nowMs})` gains `nowMs` in T10 and `bed` in T12, matching PatientScreen's edits in those tasks. The O4 amendment renames nothing: `profile_from_payload(patient_id, payload, base=None)` keeps its signature (T14a) and `_replay_profile` now passes `engine.profile(rec.patient_id)` as `base`; `BaselineForm`'s `own` is the box's `{key: bands.own_normal | null}` map it already received, read once more to tell a clear (`clearing`) from nothing to send (`nothing`). Every `t("patient.…")` the code names is one T8 (or, for `baselineClearsAll` / `baselineClearedAll`, T14) defines in four languages (checked by `rawKeys.test.jsx`'s static net, T15 step 3 proves it bites).
 
