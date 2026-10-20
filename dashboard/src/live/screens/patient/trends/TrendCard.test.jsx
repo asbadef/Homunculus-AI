@@ -232,6 +232,22 @@ describe("the trend card", () => {
     expect(show(HR, []).querySelector("svg")).toBeNull();          // nothing measured: no empty chart either
   });
 
+  it("adds no tab stop and no role of its own inside the card's button — the button is the one control", () => {
+    // The big chart is an application with a tab stop; the mini chart in the card must stay hidden decoration.
+    const card = show(PRESSURE, [
+      channel("sbp", [point(90, 118, 0), point(30, 112, 0)]),
+      channel("map", [point(90, 80), point(30, 76)]),
+    ], { onOpen: () => {} });
+    expect(card.tagName).toBe("BUTTON");
+    const svg = card.querySelector("svg");
+    expect(svg).toHaveAttribute("aria-hidden", "true");
+    expect(svg).toHaveAttribute("focusable", "false");
+    expect(svg).not.toHaveAttribute("role");
+    expect(svg).not.toHaveAttribute("aria-roledescription");
+    expect(card.querySelectorAll("[tabindex]")).toHaveLength(0);
+    expect(card.querySelectorAll("[role='application']")).toHaveLength(0);
+  });
+
   it("draws no NEWS2 tint and no own-normal band behind the pressure card's two series (X26)", () => {
     // Measured: a calm patient's pressure card carried a permanent red stripe (systolic ≤ 90 scores 3)
     // behind MAP dots that NEWS2 never scores, and the mini chart is aria-hidden, so nothing explained

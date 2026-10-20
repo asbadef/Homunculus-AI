@@ -65,10 +65,35 @@ describe("the trend chart", () => {
     const named = draw({ series: [hr([point(60, 72, 0)])], label: "Nəbz: 1" });
     expect(named).toHaveAttribute("role", "img");
     expect(named).toHaveAttribute("aria-label", "Nəbz: 1");
+    expect(named).not.toHaveAttribute("tabindex");                       // an image with no keys is no tab stop
+    expect(named).not.toHaveAttribute("aria-roledescription");
     document.body.innerHTML = "";
     const quiet = draw({ series: [hr([point(60, 72, 0)])] });
     expect(quiet).toHaveAttribute("aria-hidden", "true");
     expect(quiet).not.toHaveAttribute("role");
+    expect(quiet).not.toHaveAttribute("tabindex");
+  });
+
+  it("takes the keys as an application, not an image: one tab stop with a name, a spoken kind and its keys described", () => {
+    // An image keeps NVDA and JAWS in browse mode, where the arrow keys never reach the page.
+    const onKeyDown = vi.fn();
+    const svg = draw({
+      series: [hr([point(60, 72, 0)])], label: "Nəbz: 1", big: true, height: 280, onKeyDown, describedBy: "hint-1", roleDescription: "qrafik",
+    });
+    expect(svg).toHaveAttribute("role", "application");
+    expect(svg).toHaveAttribute("aria-roledescription", "qrafik");
+    expect(svg).toHaveAttribute("aria-label", "Nəbz: 1");
+    expect(svg).toHaveAttribute("aria-describedby", "hint-1");
+    expect(svg).toHaveAttribute("tabindex", "0");
+    expect(svg).toHaveClass("rounded-ctl");
+    fireEvent.keyDown(svg, { key: "Home" });
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives the ring a shape only where there is a ring: the chart that takes no keys is a plain block", () => {
+    const svg = draw({ series: [hr([point(60, 72, 0)])], label: "Nəbz: 1", big: true, height: 280 });
+    expect(svg).toHaveClass("block");
+    expect(svg).not.toHaveClass("rounded-ctl");
   });
 
   it("on the big chart: time and value labels, ▲ and ◆ in their own lane, inside the window only", () => {

@@ -226,6 +226,14 @@ describe("the line, the labels and the marks", () => {
     expect(indexAtTime(undefined, 10)).toBe(-1);
   });
 
+  it("prefers the last DRAWABLE reading when two share an instant — not a valueless twin stamped after it", () => {
+    const NaN_ = Number.NaN;
+    expect(indexAtTime([p(10, 1), p(20, 2), p(20, NaN_)], 20)).toBe(1);
+    expect(indexAtTime([p(20, 2), p(20, 3), p(20, NaN_)], 20)).toBe(1);   // the last of the drawable ones
+    expect(indexAtTime([p(20, NaN_), p(20, 3)], 20)).toBe(1);
+    expect(indexAtTime([p(20, NaN_), p(20, NaN_)], 20)).toBe(1);          // none drawable: still that instant, the later
+  });
+
   it("places a time label centred on its instant, unless that would run it past an edge", () => {
     expect(timeLabelPlace(300, "12:00", 640)).toEqual({ x: 300, anchor: "middle" });
     expect(timeLabelPlace(630, "12:00", 640)).toEqual({ x: 640, anchor: "end" });              // 5 × 6.5 / 2 = 16.25 px

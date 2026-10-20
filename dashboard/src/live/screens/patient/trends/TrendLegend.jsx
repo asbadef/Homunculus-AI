@@ -34,19 +34,57 @@ function Glyph({ kind, color = "", hollow = false }) {
 }
 
 const Item = ({ children }) => <li className="flex items-center gap-1.5">{children}</li>;
+const LIST = "m-0 mt-2 flex list-none flex-wrap gap-x-4 gap-y-1.5 p-0 text-11.5 text-mute";
+
+/** The notes that qualify what is drawn or listed, in words — shared by the chart's legend and by the
+ *  table (which has no swatches, but the same numbers and the same caveats):
+ *    * a series drawn over another's NEWS2 bands (MAP on the pressure card) is not scored by NEWS2 —
+ *      said in words, so nobody reads the systolic rows as MAP's thresholds. The ENGINE decides which
+ *      channel has bands (`bands.news2` null for MAP and lactate); this only notices the difference;
+ *    * the server's own flag: its read of the marks stopped at its limit (api/trends.py);
+ *    * a channel the server thinned for drawing, and from how many. */
+function NoteItems({ card, channels, truncated }) {
+  const { t } = useI18n();
+  const primary = channels[card.series[0].key] ?? null;
+  const scored = Array.isArray(primary?.bands?.news2);
+  const unbanded = scored ? card.series.slice(1).filter((s) => channels[s.key] && !Array.isArray(channels[s.key].bands?.news2)) : [];
+  const thinned = card.series.filter((s) => channels[s.key]?.thinned);
+  return (
+    <>
+      {unbanded.map((s) => (
+        <Item key={`unbanded-${s.key}`}>
+          {t("patient.trendsLegendNoBand", { channel: t(s.labelKey), scored: t(card.series[0].labelKey) })}
+        </Item>
+      ))}
+      {truncated ? <Item>{t("patient.trendsLegendMarksTruncated")}</Item> : null}
+      {thinned.map((s) => (
+        <Item key={s.key}>
+          {t("patient.trendsThinned", { channel: t(s.labelKey), kept: channels[s.key].points.length, total: channels[s.key].total_points })}
+        </Item>
+      ))}
+    </>
+  );
+}
+
+/** What the table view keeps of the legend: no swatches (the table has no bands or glyphs), but every
+ *  note that says how far to trust the numbers — and what a mark row is: an alarm's FIRST detection. */
+export function TrendNotes({ card, channels, truncated = false }) {
+  const { t } = useI18n();
+  return (
+    <ul role="list" data-notes="" className={LIST}>
+      <Item>{t("patient.trendsLegendAlarm")}</Item>
+      <NoteItems card={card} channels={channels} truncated={truncated} />
+    </ul>
+  );
+}
 
 export function TrendLegend({ card, channels, source, truncated = false }) {
   const { t } = useI18n();
   const primary = channels[card.series[0].key] ?? null;
-  const thinned = card.series.filter((s) => channels[s.key]?.thinned);
-  // A series drawn over another's NEWS2 bands (MAP on the pressure card) is not scored by NEWS2:
-  // said in words, so nobody reads the systolic rows as MAP's thresholds. The ENGINE decides which
-  // channel has bands (`bands.news2` null for MAP and lactate); this only notices the difference.
   const scored = Array.isArray(primary?.bands?.news2);
-  const unbanded = scored ? card.series.slice(1).filter((s) => channels[s.key] && !Array.isArray(channels[s.key].bands?.news2)) : [];
   return (
     // role="list": a list with its bullets removed (`list-none`) stops being one for VoiceOver.
-    <ul role="list" data-legend="" className="m-0 mt-2 flex list-none flex-wrap gap-x-4 gap-y-1.5 p-0 text-11.5 text-mute">
+    <ul role="list" data-legend="" className={LIST}>
       {scored ? (
         <Item>
           {t("patient.trendsBandNews2", { source })}:
@@ -63,18 +101,7 @@ export function TrendLegend({ card, channels, source, truncated = false }) {
           alarm episode: the engine's active alerts never clear a kind today (O17). */}
       <Item><Glyph kind="alarm" /> {t("patient.trendsLegendAlarm")}</Item>
       <Item><Glyph kind="antibiotic" /> {t("patient.trendsMarkerAntibiotic")}</Item>
-      {unbanded.map((s) => (
-        <Item key={`unbanded-${s.key}`}>
-          {t("patient.trendsLegendNoBand", { channel: t(s.labelKey), scored: t(card.series[0].labelKey) })}
-        </Item>
-      ))}
-      {/* The server's own flag: its read of the marks stopped at its limit (api/trends.py). */}
-      {truncated ? <Item>{t("patient.trendsLegendMarksTruncated")}</Item> : null}
-      {thinned.map((s) => (
-        <Item key={s.key}>
-          {t("patient.trendsThinned", { channel: t(s.labelKey), kept: channels[s.key].points.length, total: channels[s.key].total_points })}
-        </Item>
-      ))}
+      <NoteItems card={card} channels={channels} truncated={truncated} />
     </ul>
   );
 }

@@ -64,7 +64,7 @@ function useWidth(ref, fallback, mounted) {
 
 export function TrendChart({
   series, bands = null, markers = [], sinceMs, untilMs, hours = 24, height = 46, big = false,
-  label, cursor = null, onCursor, onPlot, onKeyDown, describedBy,
+  label, cursor = null, onCursor, onPlot, onKeyDown, describedBy, roleDescription,
 }) {
   const box = useRef(null);
   const placeable = validWindow(sinceMs, untilMs);
@@ -98,9 +98,13 @@ export function TrendChart({
     const index = nearestIndex(series[0]?.points ?? [], x, px);
     onCursor(index >= 0 ? index : null, "mouse");
   };
-  const named = label ? { role: "img", "aria-label": label } : { "aria-hidden": "true", focusable: "false" };
-  // The big chart is one tab stop whose arrow keys move the cursor (the dialog's `onKeyDown`).
+  // The big chart is one tab stop whose arrow keys move the cursor (the dialog's `onKeyDown`). A chart
+  // that takes keys is an APPLICATION, not an image: a screen reader stays in browse mode over an `img`
+  // and keeps the arrow keys for itself, so ← → Home End would never reach the page. `aria-roledescription`
+  // says in words what it is ("chart"); the name, and the hint the keys are described by, stay as they were.
   const keys = onKeyDown ? { tabIndex: 0, onKeyDown, "aria-describedby": describedBy } : {};
+  let named = { "aria-hidden": "true", focusable: "false" };
+  if (label) named = onKeyDown ? { role: "application", "aria-roledescription": roleDescription, "aria-label": label } : { role: "img", "aria-label": label };
 
   // A <span>, not a <div>: the small chart sits inside the card's <button>, which takes phrasing
   // content only.
@@ -108,7 +112,7 @@ export function TrendChart({
     <span ref={box} className="block w-full min-w-0">
       <svg
         width="100%" height={height} viewBox={`0 0 ${width} ${height}`}
-        className={`block rounded-ctl ${onKeyDown ? FOCUS_RING : ""}`} {...named} {...keys}
+        className={onKeyDown ? `block rounded-ctl ${FOCUS_RING}` : "block"} {...named} {...keys}
         onMouseMove={onCursor ? move : undefined}
         onMouseLeave={onCursor ? () => onCursor(null, "mouse") : undefined}
       >

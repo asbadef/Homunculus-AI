@@ -18,5 +18,14 @@ export function markBeside(t, mark, readingMs, hours) {
   return own === whenText(readingMs, hours) ? markText(t, mark) : `${markText(t, mark)} (${own})`;
 }
 
+/** A value as the readout names it beside the reading under the cursor ("64 mmHg", the text already
+ *  written): followed by its OWN time in parentheses when that reads differently. The second series of a
+ *  card (MAP) is read at the nearest reading within one pixel column of the first — seconds, perhaps a
+ *  minute, apart — and the readout must not give it the first one's time. */
+export function valueBeside(text, readingMs, atMs, hours) {
+  const own = whenText(readingMs, hours);
+  return own === whenText(atMs, hours) ? text : `${text} (${own})`;
+}
+
 /** The engine's NEWS2 points for one reading, as a column prints them: "+3", "0", or "—" for none. */
 export const pointsText = (points) => (Number.isInteger(points) ? (points > 0 ? `+${points}` : "0") : "—");

@@ -261,10 +261,17 @@ export function marksAtTime(markers, ms, msPerPx) {
 }
 
 /** The index of the reading stamped exactly `ms` — the later one when two share the instant, as
- *  `nearestIndex` picks on a tie — or -1. A reading is found by WHEN it was taken, not by its place in
+ *  `nearestIndex` picks on a tie, and the last one that HAS a value (a valueless twin stamped after it
+ *  is not "the" reading; the chart draws no dot for it) — or -1. When none at that instant has a value
+ *  the later one still is that instant. A reading is found by WHEN it was taken, not by its place in
  *  the list: a poll that slides the window moves every index. */
 export function indexAtTime(points, ms) {
   const list = points ?? [];
-  for (let i = list.length - 1; i >= 0; i -= 1) if (list[i].ms === ms) return i;
-  return -1;
+  let valueless = -1;
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (list[i].ms !== ms) continue;
+    if (Number.isFinite(list[i].value)) return i;
+    if (valueless < 0) valueless = i;
+  }
+  return valueless;
 }

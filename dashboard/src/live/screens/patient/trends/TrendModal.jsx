@@ -2,16 +2,20 @@
 // (6 h / 24 h / 3 days, each a read of its own), a readout of the measurement under the cursor, the
 // marks and the legend — and the same numbers as a table (Grafik | Tablo).
 //
-// The cursor follows the mouse, and the arrow keys, Home and End when the chart has focus. The
-// readout is drawn for the eye and HIDDEN from assistive technology; a screen reader hears it once
-// per KEYBOARD move (`Announce`), never on a mouse hover — a live region that spoke at every pixel of
-// a hover would drown everything else the dialog says.
+// The cursor follows the mouse, and the arrow keys, Home and End when the chart has focus (the chart
+// is an application to a screen reader, not an image — see TrendChart — and only a chart with a
+// reading to step to takes the keys at all). The readout is drawn for the eye and HIDDEN from assistive
+// technology; a screen reader hears it (`Announce`) when a KEYBOARD move changes what it says — never on
+// a mouse hover, which would drown everything else the dialog says. The live region is keyed on its
+// text, so a move to a stop that reads the same (the same minute and value), or → at the last stop,
+// says nothing again.
 //
 // THE CURSOR IS AN INSTANT, NOT AN INDEX. The state is `{ ms, how }`: the instant of the reading the
 // cursor is on, and who moved it ("mouse" | "key"). It is turned into an index at render, by
 // `indexAtTime` over the series as it is NOW — a poll that slides the window drops readings off the
 // front and moves every index, and a cursor held as an index would silently jump to a later reading
 // while the clinician reads. If the reading has slid out of the window the cursor is gone with it.
+// Switching to the table lets it go too: the chart is not on screen, and its readout is not for saying.
 //
 // It opens with focus on the pressed window option — what the dialog is showing — not on whichever
 // control happens to come first.
@@ -22,10 +26,10 @@ import { Announce, Modal, Seg } from "../../../ui/index.js";
 import { nameOf } from "../../common/BoardState.jsx";
 import { cardTitle, channelsOf } from "./cards.js";
 import { TrendChart } from "./TrendChart.jsx";
-import { TrendLegend } from "./TrendLegend.jsx";
+import { TrendLegend, TrendNotes } from "./TrendLegend.jsx";
 import { TrendTable } from "./TrendTable.jsx";
-import { indexAtTime, marksAtTime, parseMarkers, parsePoints } from "./trendGeometry.js";
-import { markBeside, whenText } from "./trendText.js";
+import { indexAtTime, marksAtTime, parseMarkers, parsePoints, validWindow } from "./trendGeometry.js";
+import { markBeside, valueBeside, whenText } from "./trendText.js";
 import { measuredKeyOf, useTrends } from "./useTrends.js";
 
 const WINDOWS = [
@@ -61,22 +65,26 @@ function readingNear(points, ms, tolerance) {
  *  (pressure) names each and reads the other one AT that instant — "Sistolik AT 118 · MAP 80 mmHg",
  *  MAP being the vasopressor target — meaning the nearest reading within one pixel column (`msPerPx`,
  *  the tolerance the marks use): a MAP stamped seconds from the systolic is, on the chart, the same
- *  moment. It says "—" where the series has no reading then; the unit is written once when the series
- *  share it. A reading that arrived without a value prints "—", never "NaN". Everything printed is
- *  the engine's number. */
+ *  moment. When it reads at another minute it says so ("MAP 64 mmHg (10:17)") rather than borrow the
+ *  systolic's time, and each number then keeps its own unit; otherwise the unit is written once when the
+ *  series share it. "—" where a series has no reading then. A reading that arrived without a value
+ *  prints "—", never "NaN". Everything printed is the engine's number. */
 function readoutOf(t, card, series, at, marks, hours, msPerPx) {
   const named = card.series.length > 1;
   const shared = card.series.every((s) => s.unitKey === card.series[0].unitKey);
-  const values = card.series.map((s, i) => {
+  const readings = card.series.map((s, i) => {
     const reading = i === 0 ? at : readingNear(series[i].points, at.ms, msPerPx);
-    return Number.isFinite(reading?.value) ? String(reading.value) : null;
+    return Number.isFinite(reading?.value) ? reading : null;
   });
-  const parts = card.series.map((s, i) => [
-    named ? t(s.labelKey) : null,
-    values[i] ?? NO_VALUE,
-    !shared && values[i] !== null ? t(s.unitKey) : null,
-  ].filter(Boolean).join(" "));
-  const unit = shared && values.some((v) => v !== null) ? ` ${t(card.series[0].unitKey)}` : "";
+  const apart = readings.map((r) => r !== null && whenText(r.ms, hours) !== whenText(at.ms, hours));
+  const unitEach = !shared || apart.some(Boolean);
+  const parts = card.series.map((s, i) => {
+    const reading = readings[i];
+    if (reading === null) return [named ? t(s.labelKey) : null, NO_VALUE].filter(Boolean).join(" ");
+    const value = [String(reading.value), unitEach ? t(s.unitKey) : null].filter(Boolean).join(" ");
+    return [named ? t(s.labelKey) : null, valueBeside(value, reading.ms, at.ms, hours)].filter(Boolean).join(" ");
+  });
+  const unit = !unitEach && readings.some((r) => r !== null) ? ` ${t(card.series[0].unitKey)}` : "";
   return [whenText(at.ms, hours), `${parts.join(" · ")}${unit}`, ...marks.map((m) => markBeside(t, m, at.ms, hours))].join(" · ");
 }
 
@@ -111,14 +119,11 @@ export function TrendModal({ card, patient, bed, onClose }) {
   const [cursor, setCursor] = useState(null);   // { ms, how: "mouse" | "key" } — an instant, see the header
   const [plotWidth, setPlotWidth] = useState(0);
   const trends = useTrends(patient.patient_id, hours, measuredKeyOf(patient.measuredAt));
-  // Parsed once per answer, not on every render of a mouse move.
-  const { channels, series, markers } = useMemo(() => {
+  // Parsed once per answer, not on every render of a mouse move. The table is handed these very arrays.
+  const { channels, series, markers, stops } = useMemo(() => {
     const byKey = channelsOf(trends.data);
-    return {
-      channels: byKey,
-      series: card.series.map((s) => ({ key: s.key, color: s.color, hollow: s.hollow, points: parsePoints(byKey[s.key]?.points) })),
-      markers: parseMarkers(trends.data?.markers),
-    };
+    const drawn = card.series.map((s) => ({ key: s.key, color: s.color, hollow: s.hollow, points: parsePoints(byKey[s.key]?.points) }));
+    return { channels: byKey, series: drawn, markers: parseMarkers(trends.data?.markers), stops: stopsOf(drawn[0].points) };
   }, [card, trends.data]);
   const primary = channels[card.series[0].key] ?? null;
   const sinceMs = Date.parse(trends.data?.since);
@@ -131,12 +136,21 @@ export function TrendModal({ card, patient, bed, onClose }) {
   const readout = at ? readoutOf(t, card, series, at, marks, hours, msPerPx) : null;
   // The readings the chart draws — a reading that arrived without a value is not one.
   const count = series.reduce((n, s) => n + s.points.filter((p) => Number.isFinite(p.value)).length, 0);
+  // The chart takes the keys (and is a tab stop) only while there is a stop to step to, on a chart that
+  // is drawn: keys that do nothing are a trap, not a control. The cursor follows the card's FIRST series.
+  const keyed = stops.length > 0 && validWindow(sinceMs, untilMs);
+  const truncated = trends.data?.markers_truncated === true;
 
   // After the kit Modal's own effect (a child's runs first) put focus on the body's first control.
   useEffect(() => { controls.current?.querySelector("[aria-pressed='true']")?.focus(); }, []);
 
   const choose = (value) => {
     setHours(value);
+    setCursor(null);
+  };
+  // The table has no cursor, and `Announce` must not speak a readout for a chart nobody can see.
+  const chooseView = (value) => {
+    setView(value);
     setCursor(null);
   };
   // The chart reports an index into the series it drew; the dialog keeps the instant. Nothing changed
@@ -149,7 +163,9 @@ export function TrendModal({ card, patient, bed, onClose }) {
     });
   };
   const onKeyDown = (event) => {
-    const next = step(event.key, stopsOf(series[0].points), at ? at.ms : null);
+    // Alt+← is the browser's Back and Ctrl+Home the top of the page: not the chart's to take.
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const next = step(event.key, stops, at ? at.ms : null);
     if (next === null) return;
     event.preventDefault();
     setCursor({ ms: next, how: "key" });
@@ -160,7 +176,7 @@ export function TrendModal({ card, patient, bed, onClose }) {
       <div ref={controls} className="flex flex-wrap items-center gap-2">
         <Seg label={t("patient.trendsHoursLabel")} value={hours} onChange={choose}
           options={WINDOWS.map((w) => ({ value: w.value, label: t(w.key) }))} />
-        <Seg label={t("patient.trendsViewLabel")} value={view} onChange={setView}
+        <Seg label={t("patient.trendsViewLabel")} value={view} onChange={chooseView}
           options={[{ value: "graph", label: t("patient.trendsGraph") }, { value: "table", label: t("patient.trendsTable") }]} />
       </div>
       {trends.unreadable ? (
@@ -181,14 +197,19 @@ export function TrendModal({ card, patient, bed, onClose }) {
             series={series} bands={primary?.bands ?? null} markers={markers} sinceMs={sinceMs} untilMs={untilMs}
             hours={hours} height={CHART_HEIGHT} big label={t("patient.trendsChartLabel", { channel: title, hours, count })}
             cursor={index >= 0 ? index : null} onPlot={setPlotWidth} onCursor={moveCursor}
-            onKeyDown={onKeyDown} describedBy={hintId}
+            onKeyDown={keyed ? onKeyDown : undefined} describedBy={keyed ? hintId : undefined}
+            roleDescription={t("patient.trendsChartRole")}
           />
-          <p id={hintId} className="m-0 mt-1 text-11 text-mute">{t("patient.trendsKeysHint")}</p>
-          <TrendLegend card={card} channels={channels} source={trends.data.bands_source} truncated={trends.data.markers_truncated === true} />
+          {keyed ? <p id={hintId} className="m-0 mt-1 text-11 text-mute">{t("patient.trendsKeysHint")}</p> : null}
+          <TrendLegend card={card} channels={channels} source={trends.data.bands_source} truncated={truncated} />
         </>
       ) : null}
       {trends.data && view === "table" ? (
-        <TrendTable card={card} channels={channels} markers={trends.data.markers} hours={hours} />
+        <>
+          {count === 0 ? <p data-no-data="" className="m-0 mt-3 text-13 text-mute">{t("patient.trendsNoData")}</p> : null}
+          <TrendTable card={card} channels={channels} series={series} markers={markers} hours={hours} />
+          <TrendNotes card={card} channels={channels} truncated={truncated} />
+        </>
       ) : null}
       {!trends.data ? (
         <>
