@@ -411,12 +411,11 @@ none clinical):
 | K1 live values on assigned beds | 13 devices: 7 streaming, 6 standby; every streaming bed carried ≥ 1 fresh value. BED08 showed its three parameters as device-flagged *invalid* for some minutes with a patient present, then five fresh values — recorded, nothing changed. Bedside eye comparison on 3 beds (same/different only): **pending**. |
 | K2 unassigned devices | none expected, none seen |
 | K3 lag | 2347 readings in 300 s, mean 820 ms, 100 % within 3000 ms; 60 posts in 300 s (≥ 54 required) |
-| K4 engine output unchanged | `PANO_OZET` sha256 `26a1c3af…` (6 cards, 0 alerts) identical before the forwarder (P0), right after it (P1) and 90 min later. **24 h reading pending** (due 2026-10-20). |
-| K5 audit row rate | the hour before drop-in 93: 0 rows; the hour after: 11 rows, all human (`auth`, `admin`); no new event type; 0 rows from the forwarder |
-| K6 hub unaffected | `transport_check.py --window 300`: KABUL — 19 322 live packets, 100 % within 3 s, mean 251 ms, 0 expired / 0 transfer errors / 0 quarantined, 13/13 devices, hub CPU 9.0 % of one core (ceiling 43 %) |
+| K4 engine output unchanged | `PANO_OZET` sha256 `26a1c3af…` (6 cards, 0 alerts) identical before the forwarder (P0), right after it (P1), 90 min later and **at +24 h** (2026-10-20 09:00–09:05 UTC): P0 = P1 = P90 = P24. |
+| K5 audit row rate | the hour before drop-in 93: 0 rows; the hour after: 11 rows, all human (`auth`, `admin`); no new event type; 0 rows from the forwarder. **The whole first day** (24 h after drop-in 93): 34 rows — `admin` 7, `auth` 19, `view` 8 — every one a human action; no `ingest`/`alert` row (the last `ingest` row in the audit is from 2026-09-05). |
+| K6 hub unaffected | `transport_check.py --window 300`: KABUL — 19 322 live packets, 100 % within 3 s, mean 251 ms, 0 expired / 0 transfer errors / 0 quarantined, 13/13 devices, hub CPU 9.0 % of one core (ceiling 43 %). **At +24 h:** KABUL again — 19 170 packets, 100 % within 3 s, mean 302 ms, 0/0/0, 13/13, hub CPU 9.1 %. The strip at +24 h: 13 devices (8 streaming, 5 standby), 2 656 readings in 300 s, mean lag 952 ms, 100 % within 3 s, 60 posts. |
 | K7 feed death | **pending**: a 5-minute G-1 then drop-in 93 again, agreed with the ward |
 | K8 labels and accessibility | 390 px and 1440 px, four languages, both themes, with the strip rendered: no horizontal overflow; strip heading az "Monitor · təsdiqlənməmiş", tr "Monitör · doğrulanmamış", en "Monitor · unvalidated", ru "Монитор · не валидировано"; no raw keys; the strip holds no live region and no focusable element, so it announces nothing and cannot trap focus |
 | K9 biomedical / nurse | a biomedical-only account reaches Monitörler (13 devices, bed labels and addresses, no patient name or number) and nothing else; a nurse-only account has no Monitörler. A first attempt with both "Ek görev" boxes ticked gave the biomedical account `board.view` — the account was wrong, not the screen. |
 
-The pending rows (K7, the 24 h K4 reading, the bedside comparison) are filled in here when
-they are taken.
+The pending rows (K7, the bedside comparison) are filled in here when they are taken.
