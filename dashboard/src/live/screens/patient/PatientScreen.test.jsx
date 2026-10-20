@@ -7,6 +7,7 @@ import { resetScreens } from "../../shell/routes.js";
 import { onlyScreens } from "../../shell/screens.testutil.js";
 import { NOW, ago, alarm, board, entry, identity, measured, news2 } from "../../data/board.testutil.js";
 import { STAGE_OFF, bed as monitorBed, param as monitorParam, strip } from "../../data/shadow.testutil.js";
+import { answering } from "./trends/trends.testutil.js";
 import { PatientScreen } from "./PatientScreen.jsx";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -22,6 +23,7 @@ async function open({ payload = board(), id = "S-001", connection = "live", setu
       else api.boardPatients.mockResolvedValue(payload);
       api.streamTicket.mockResolvedValue({ ticket: "t-1" });
       api.view.mockResolvedValue({ ok: true });
+      api.patientTrends.mockImplementation(answering());     // empty channels, for whoever is asked
       setup?.(api);
     },
   });
@@ -52,14 +54,14 @@ afterEach(() => {
 });
 
 describe("the patient screen", () => {
-  it("names the bed and the patient, and says the one thing it writes", async () => {
+  it("names the bed and the patient, and says the two things it writes", async () => {
     await open({ payload: board([entry("S-001", [], FULL)]) });
     expect(screen.getByRole("heading", { level: 1, name: "Ayşe Sentetik" })).toBeInTheDocument();
     // One h1 and no more: the shell moves focus to <main> after every move, and the screen's own
     // heading is what a reader lands on.
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByText("REA-01 · 2")).toBeInTheDocument();
-    expect(screen.getByText(/heç nə yazılmır/)).toBeInTheDocument();
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi və xəstənin norması/);
   });
 
   it("offers the way back to the board it was opened from", async () => {
@@ -280,11 +282,41 @@ describe("the patient screen", () => {
     });
   });
 
-  describe("the seams Group 2 fills", () => {
-    it("draws no trend, and says the engine has no history endpoint", async () => {
+  describe("the trend charts (Group 2 · slice 1)", () => {
+    it("stand where the placeholder stood, after the Sepsis and medication row", async () => {
       await open({ payload: board([entry("S-001", [], FULL)]) });
-      expect(screen.getByText(/Brauzer öz qrafikini uydurmur/)).toBeInTheDocument();
-      expect(screen.getByText(/növbəti qrupda əlavə olunacaq/)).toBeInTheDocument();
+      const trends = screen.getByRole("heading", { level: 2, name: "Vital qrafikləri" });
+      const meds = screen.getByRole("heading", { level: 2, name: /Dərman/ });
+      expect(meds.compareDocumentPosition(trends) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.queryByText(/Brauzer öz qrafikini uydurmur/)).toBeNull();
+      expect(document.querySelector("[data-trends-box]")).not.toBeNull();
+    });
+
+    it("keep the forms seam as one note, which no longer promises the patient's normal", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      const seam = screen.getByText(/növbəti qrupda əlavə olunacaq/).closest("[role='note']");
+      expect(seam).not.toBeNull();
+      expect(seam).toHaveTextContent(/SOFA/);
+      expect(seam).not.toHaveTextContent(/norma/);
+    });
+
+    it("read the 24-hour trends of the patient the screen shows", async () => {
+      const { api } = await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(api.patientTrends).toHaveBeenCalledWith("S-001", 24);
+    });
+
+    it("read nothing for a patient the board does not hold", async () => {
+      const { api } = await open({ payload: board([entry("S-001", [], FULL)]), id: "S-999" });
+      expect(api.patientTrends).not.toHaveBeenCalled();
+    });
+
+    it("say they cannot be read, and since when, without raising an alert", async () => {
+      await open({
+        payload: board([entry("S-001", [], FULL)]),
+        setup: (api) => api.patientTrends.mockRejectedValue(Object.assign(new Error("down"), { status: 503 })),
+      });
+      expect(screen.getByText("Vital qrafikləri oxuna bilmir (son: —)")).toBeInTheDocument();
+      expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ")).not.toMatch(/Vital qrafikləri/);
     });
   });
 

@@ -1,6 +1,7 @@
 // src/live/screens/patient/PatientScreen.jsx — one patient, as the engine describes them (G1-11).
-// It writes EXACTLY ONE thing (Task 15B, Decision 27): whether an infection is suspected. Nothing
-// else here reaches the record, and the screen says so in as many words (`patient.onlyWrite`).
+// It writes TWO things, and says so in as many words (`patient.onlyWrite`): whether an infection is
+// suspected (Task 15B, Decision 27), and — since Group 2 · slice 1, from the trends box, for a
+// `clinical.chart` holder — the patient's own normal ranges. Nothing else here reaches the record.
 //
 // Four things it shows, and one it refuses to:
 //
@@ -25,9 +26,9 @@
 //      charted it (and then the sepsis branch never runs at all, so a quiet patient is not a
 //      reassuring one), a physician charted yes, a physician charted no.
 //
-// It refuses to draw a trend. The engine has no endpoint for a vital's history, and the browser
-// drawing one from the single latest value — as the prototype does, from a seeded random
-// generator — would be a picture of nothing. The seam is stated in one box, for Group 2.
+// The trends are the engine's (`trends/TrendsBox.jsx`, GET /patients/{id}/trends): the prototype
+// drew a curve from the single latest value and a seeded random generator, a picture of nothing.
+// The box draws the measurements the engine holds and the bands it scores with, and nothing else.
 //
 // `News2` and `nameOf` come from `../common/BoardState.jsx` with the rest of the shared board
 // components. They were written on the bed card and moved there by the Wave 3 fix-up, because an
@@ -53,6 +54,7 @@ import { measuredVitals } from "../common/vitals.js";
 import { useShadow } from "../../data/ShadowProvider.jsx";
 import { MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { maxAgeOf } from "../common/monitor.js";
+import { TrendsBox } from "./trends/TrendsBox.jsx";
 
 const TICK_MS = 30_000;
 
@@ -417,12 +419,10 @@ export function PatientScreen({ params }) {
             <Sepsis sepsis={patient.sepsis} canChart={canChart} onChart={chart} pending={charting} />
             <Meds meds={patient.meds} />
           </div>
+          {/* The one seam left: the SOFA form is Group 3's, and the screen says so where it will go. */}
+          <Note tone="info" icon="clock">{t("patient.formsSoon")}</Note>
 
-          {/* The seams. Both say what is missing on the SERVER, not what nobody got round to. */}
-          <Box title={t("patient.trends")} icon="chart" level={2} className="!border-dashed">
-            <p className="m-0 text-12.5 text-mute">{t("patient.trendsSoon")}</p>
-            <p className="m-0 mt-1.5 text-12.5 text-mute">{t("patient.formsSoon")}</p>
-          </Box>
+          <TrendsBox patient={patient} />
         </>
       )}
     </div>

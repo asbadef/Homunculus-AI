@@ -59,7 +59,6 @@ export default {
     recoLanguage: "Motorun gerekçe, dayanak ve kesinlik metinleri İngilizcedir; çevrilmemiştir.",
     seenBy: "Gördü: {who}",
     trends: "Vital eğrileri",
-    trendsSoon: "Vital eğrileri Grup 2'de gelecek: motorda vital geçmişi için bir uç nokta henüz yok, pano yalnız son ölçümü gönderiyor. Tarayıcı kendi eğrisini uydurmaz.",
     formsSoon: "SOFA formunu doldurma ve imzalama bu ekrana sonraki grupta eklenecek.",
     // Group 2 · slice 1 — the trend charts and the patient's own normal (spec §9, plus the
     // table, the dialog's controls and the form's own words).
@@ -163,7 +162,6 @@ export default {
     recoLanguage: "Mühərrikin əsaslandırma, dayaq və dəqiqlik mətnləri İngiliscədir; tərcümə olunmayıb.",
     seenBy: "Gördü: {who}",
     trends: "Vital qrafikləri",
-    trendsSoon: "Vital qrafikləri Qrup 2-də gələcək: mühərrikdə vital tarixçəsi üçün uç nöqtə hələ yoxdur, panel yalnız son ölçməni göndərir. Brauzer öz qrafikini uydurmur.",
     formsSoon: "SOFA formasının doldurulması və imzalanması bu ekrana növbəti qrupda əlavə olunacaq.",
     trendsNote: "NEWS2 · yetkin zolaqları; xəstənin norması, daxil edilibsə",
     trendsLoading: "Vital qrafikləri oxunur…",
@@ -265,7 +263,6 @@ export default {
     recoLanguage: "Тексты обоснования, основания и уверенности система выдаёт по-английски; они не переведены.",
     seenBy: "Принял: {who}",
     trends: "Графики показателей",
-    trendsSoon: "Графики показателей появятся в Группе 2: в системе пока нет конечной точки для истории показателей, панель передаёт только последнее измерение. Браузер свою кривую не выдумывает.",
     formsSoon: "Заполнение и подпись формы SOFA будут добавлены на этот экран в следующей группе.",
     trendsNote: "Полосы NEWS2 · для взрослых; норма пациента — если введена",
     trendsLoading: "Графики показателей загружаются…",
@@ -367,7 +364,6 @@ export default {
     recoLanguage: "The engine writes its reasoning, evidence and certainty in English; they are not translated.",
     seenBy: "Seen by {who}",
     trends: "Vital trends",
-    trendsSoon: "Vital trends come with Group 2: the engine has no endpoint for a vital's history yet, and the board sends the latest measurement only. The browser does not invent a curve of its own.",
     formsSoon: "Filling in and signing the SOFA form comes to this screen in the next group.",
     trendsNote: "NEWS2 · adult bands; the patient's normal, if one was entered",
     trendsLoading: "Loading vital trends…",
