@@ -20,7 +20,14 @@ export const MARKER_LANE = 14;
 export const AXIS_LANE = 16;
 // The time-label step per window: hourly over 6 h, every 4 h over 24 h, every 12 h over 3 days.
 const TICK_HOURS = { 6: 1, 24: 4, 72: 12 };
-const NICE_STEPS = [1, 2, 2.5, 5];
+// A value label's step is 1, 2, 5 or 10 × 10ⁿ — the one NEAREST the raw step on a log scale, by d3's
+// thresholds (√50, √10, √2). Rounding up to the next nice step instead could double it: systolic
+// 60–220 then got only two labels, 100 and 200.
+const STEP_E10 = Math.sqrt(50);
+const STEP_E5 = Math.sqrt(10);
+const STEP_E2 = Math.sqrt(2);
+// A time label's width, estimated: 10-px digits at up to 1.12× (the --fs setting) are ≈ 6.5 px each.
+const TIME_LABEL_CHAR_PX = 6.5;
 
 /** The plot area of a `width` × `height` chart. The big chart has value labels on the left, a lane
  *  under the plot for the ▲/◆ marks, and one under that for the time labels. */
@@ -137,15 +144,60 @@ export function linePath(points, x, y) {
   return drawn >= 2 ? d : "";
 }
 
-/** Round values for the value labels: about `count` steps of 1, 2, 2.5 or 5 × 10ⁿ inside the domain. */
-export function valueTicks(domain, count = 4) {
-  if (!domain) return [];
+/** The finite values' own range, `{ lo, hi }`, or null. */
+export function valueExtent(values) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of values ?? []) {
+    if (Number.isFinite(v)) {
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+  }
+  return lo > hi ? null : { lo, hi };
+}
+
+/** The data's resolution: the coarsest power of ten every finite value is a multiple of (to three
+ *  decimals) — 1 for a pulse, 0.1 for a temperature measured to a tenth. */
+export function valueResolution(values) {
+  let decimals = 0;
+  for (const v of values ?? []) {
+    if (!Number.isFinite(v)) continue;
+    while (decimals < 3 && Math.abs(Number(v.toFixed(decimals)) - v) > 1e-9) decimals += 1;
+  }
+  return 10 ** -decimals;
+}
+
+/** The step of the value labels: about `count` of them over the domain, at 1, 2, 5 or 10 × 10ⁿ —
+ *  the nearest (d3's rule) — and never finer than the data's own `resolution`: a temperature measured
+ *  to 0.1 is not labelled to 0.05. Null for no domain, or one of no height. */
+export function valueTickStep(domain, count = 4, resolution = 0) {
+  if (!domain || !(domain.hi > domain.lo)) return null;
   const raw = (domain.hi - domain.lo) / count;
-  const magnitude = 10 ** Math.floor(Math.log10(raw));
-  const step = NICE_STEPS.map((s) => s * magnitude).find((s) => s >= raw) ?? 10 * magnitude;
+  const power = Math.floor(Math.log10(raw));
+  const error = raw / 10 ** power;
+  const factor = error >= STEP_E10 ? 10 : error >= STEP_E5 ? 5 : error >= STEP_E2 ? 2 : 1;
+  return Math.max(factor * 10 ** power, resolution);
+}
+
+/** Round values for the value labels, at `valueTickStep`. With `extent` — the data's own range — only
+ *  those inside it: the domain's margin is the chart's, not the patient's, and a label past the data
+ *  names a value nobody measured (SpO₂ 105, lactate −0.5). Clamping to a "possible" range instead
+ *  would be a range the browser holds; there is none here. */
+export function valueTicks(domain, count = 4, { extent = null, resolution = 0 } = {}) {
+  const step = valueTickStep(domain, count, resolution);
+  if (!step) return [];
+  const lo = extent ? Math.max(domain.lo, extent.lo) : domain.lo;
+  const hi = extent ? Math.min(domain.hi, extent.hi) : domain.hi;
   const out = [];
-  for (let v = Math.ceil(domain.lo / step) * step; v <= domain.hi + 1e-9; v += step) out.push(Number(v.toFixed(6)));
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(Number(v.toFixed(6)));
   return out;
+}
+
+/** A value label: as many decimals as its step has, and no more ("37.5", never "37.50"). */
+export function tickLabel(v, step) {
+  const decimals = step > 0 ? Math.min(3, Math.max(0, -Math.floor(Math.log10(step) + 1e-9))) : 0;
+  return v.toFixed(decimals);
 }
 
 /** The time labels: whole local hours on the window's step (the browser's zone is the ward's). None
@@ -161,6 +213,15 @@ export function timeTicks(sinceMs, untilMs, hours) {
   const out = [];
   for (; at.getTime() <= untilMs; at.setHours(at.getHours() + step)) out.push(at.getTime());
   return out;
+}
+
+/** Where a time label goes on a chart `width` wide: centred on its instant, unless that runs it past
+ *  an edge — then anchored to that edge, so "dd.mm HH:MM" at 72 h is never cut off. */
+export function timeLabelPlace(x, text, width) {
+  const half = (String(text).length * TIME_LABEL_CHAR_PX) / 2;
+  if (x + half > width) return { x: width, anchor: "end" };
+  if (x - half < 0) return { x: 0, anchor: "start" };
+  return { x, anchor: "middle" };
 }
 
 /** The marks inside the window, with their x. */
@@ -183,7 +244,16 @@ export function nearestIndex(points, x, px) {
   return best;
 }
 
-/** The mark within one pixel column of `px`, or null. */
-export function markerNear(marks, px) {
-  return marks.find((m) => Math.abs(m.x - px) <= 1) ?? null;
+/** EVERY mark within one pixel column of `px`, in their order — two alert kinds can be first detected
+ *  on one reading, and the readout must name both. */
+export function marksNear(marks, px) {
+  return (marks ?? []).filter((m) => Math.abs(m.x - px) <= 1);
+}
+
+/** The same question asked in time, for a caller that holds an instant and the chart's milliseconds
+ *  per pixel (the dialog's readout, whose cursor may have been moved by the keyboard). None on a
+ *  chart of no width. */
+export function marksAtTime(markers, ms, msPerPx) {
+  if (!(msPerPx > 0) || !Number.isFinite(ms)) return [];
+  return (markers ?? []).filter((m) => Math.abs(m.ms - ms) <= msPerPx);
 }

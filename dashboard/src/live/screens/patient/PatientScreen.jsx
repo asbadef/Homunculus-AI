@@ -413,7 +413,7 @@ export function PatientScreen({ params }) {
           {/* The one seam left: the SOFA form is Group 3's, and the screen says so where it will go. */}
           <Note tone="info" icon="clock">{t("patient.formsSoon")}</Note>
 
-          <TrendsBox patient={patient} nowMs={nowMs} />
+          <TrendsBox patient={patient} bed={bed} nowMs={nowMs} />
         </>
       )}
     </div>

@@ -13,20 +13,23 @@
 //
 // `nowMs` is REQUIRED: the patient screen's `useBoardNow` instant (the server's clock), which the
 // cards age their values against. Without a finite one a card prints no age — never the browser's.
-import React from "react";
+import React, { useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../../i18n/dates.js";
 import { Box, Note } from "../../../ui/index.js";
 import { CARDS, channelsOf } from "./cards.js";
 import { TrendCard } from "./TrendCard.jsx";
+import { TrendModal } from "./TrendModal.jsx";
 import { measuredKeyOf, useTrends } from "./useTrends.js";
 
-export function TrendsBox({ patient, nowMs }) {
+export function TrendsBox({ patient, bed, nowMs }) {
   const { t } = useI18n();
   const trends = useTrends(patient.patient_id, 24, measuredKeyOf(patient.measuredAt));
+  const [open, setOpen] = useState(null);       // the id of the card whose big chart is open
   const channels = channelsOf(trends.data);
   const sinceMs = Date.parse(trends.data?.since);
   const untilMs = Date.parse(trends.data?.until);
+  const card = CARDS.find((c) => c.id === open) ?? null;
   return (
     <Box title={t("patient.trends")} icon="chart" level={2} right={t("patient.trendsNote")}>
       <div data-trends-box="">
@@ -38,12 +41,14 @@ export function TrendsBox({ patient, nowMs }) {
         {trends.loading ? <p className="m-0 text-12.5 text-mute">{t("patient.trendsLoading")}</p> : null}
         {trends.data ? (
           <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0 min-[861px]:grid-cols-2 min-[1200px]:grid-cols-3">
-            {CARDS.map((card) => (
-              <TrendCard key={card.id} card={card} channels={channels} nowMs={nowMs} sinceMs={sinceMs} untilMs={untilMs} />
+            {CARDS.map((c) => (
+              <TrendCard key={c.id} card={c} channels={channels} nowMs={nowMs} sinceMs={sinceMs} untilMs={untilMs}
+                onOpen={() => setOpen(c.id)} />
             ))}
           </ul>
         ) : null}
       </div>
+      {card ? <TrendModal card={card} patient={patient} bed={bed} onClose={() => setOpen(null)} /> : null}
     </Box>
   );
 }

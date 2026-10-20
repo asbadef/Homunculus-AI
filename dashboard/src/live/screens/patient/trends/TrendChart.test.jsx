@@ -187,6 +187,22 @@ describe("the trend chart's width", () => {
     expect(box.disconnect).toHaveBeenCalled();
   });
 
+  it("attaches its observer when a window it could not draw becomes one, and lets go when it stops being one", () => {
+    // The dialog mounts the chart before the read answers: no window yet, so no box to measure.
+    const box = measured(480);
+    const series = [hr([point(60, 84, 0)])];
+    const { container, rerender } = render(<TrendChart series={series} sinceMs={Number.NaN} untilMs={Number.NaN} />);
+    expect(container.querySelector("svg")).toBeNull();
+    rerender(<TrendChart series={series} sinceMs={SINCE} untilMs={NOW} />);
+    const svg = container.querySelector("svg");
+    expect(svg).toHaveAttribute("viewBox", "0 0 480 46");
+    box.width = 300;
+    act(() => box.notify());
+    expect(svg).toHaveAttribute("viewBox", "0 0 300 46");
+    rerender(<TrendChart series={series} sinceMs={Number.NaN} untilMs={Number.NaN} />);
+    expect(box.disconnect).toHaveBeenCalled();
+  });
+
   it("keeps its fallback width while the box has none (hidden, not laid out yet)", () => {
     measured(0);
     const { container } = render(<TrendChart series={[hr([point(60, 84, 0)])]} sinceMs={SINCE} untilMs={NOW} />);

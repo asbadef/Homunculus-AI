@@ -333,6 +333,17 @@ describe("the patient screen", () => {
       expect(hr).toHaveTextContent("4 dəq əvvəl");
     });
 
+    it("open a card's big chart from the card, and give the focus back to it when Escape closes it", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      const hr = screen.getByRole("button", { name: /Nəbz: böyük qrafiki aç/ });
+      hr.focus();
+      await act(async () => { fireEvent.click(hr); await settle(); });
+      expect(screen.getByRole("dialog", { name: "REA-01 · 2 · Ayşe Sentetik · Nəbz" })).toBeInTheDocument();
+      await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); await settle(); });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(document.activeElement).toBe(hr);
+    });
+
     it("say they cannot be read, and since when, without raising an alert", async () => {
       await open({
         payload: board([entry("S-001", [], FULL)]),

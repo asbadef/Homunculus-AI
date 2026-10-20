@@ -12,11 +12,11 @@
 // A window that is not a window (an end that is not a number, an end before the start) draws NOTHING:
 // there is nowhere to put a measurement, and a chart that piles every dot on its left edge would say
 // something false. The card's text is the equivalent either way.
-import React, { useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ddmm, hhmm } from "../../../i18n/dates.js";
 import {
-  bandRects, crisp, linePath, markerMarks, nearestIndex, ownNormalRect, plotFrame, timeScale, timeTicks,
-  validWindow, valueDomain, valueScale, valueTicks,
+  bandRects, crisp, linePath, markerMarks, nearestIndex, ownNormalRect, plotFrame, tickLabel, timeLabelPlace,
+  timeScale, timeTicks, validWindow, valueDomain, valueExtent, valueResolution, valueScale, valueTickStep, valueTicks,
 } from "./trendGeometry.js";
 
 const BAND_FILL = { mid: "fill-band-mid", crit: "fill-band-crit" };
@@ -39,12 +39,17 @@ const CURSOR_LINE_OPACITY = 0.5;
 
 /** The element's width in CSS pixels, followed as it changes; `fallback` where nothing can measure
  *  it (no ResizeObserver: jsdom, an old browser). The viewBox is that width, so one unit is one pixel
- *  and a dot stays round at any size. */
-function useWidth(ref, fallback) {
+ *  and a dot stays round at any size.
+ *
+ *  `mounted` says whether the element exists at all: the chart renders nothing for a window it cannot
+ *  place, and a chart mounted before its first answer (the dialog's) gets its box only when the window
+ *  turns valid. The effect therefore depends on it — run once on `[ref]`, it would find no element,
+ *  return, and never attach the observer to the box that appears later. */
+function useWidth(ref, fallback, mounted) {
   const [width, setWidth] = useState(fallback);
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el || typeof ResizeObserver !== "function") return undefined;
+    if (!mounted || !el || typeof ResizeObserver !== "function") return undefined;
     const measure = () => {
       if (el.clientWidth > 0) setWidth(Math.round(el.clientWidth));
     };
@@ -52,24 +57,34 @@ function useWidth(ref, fallback) {
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [ref]);
+  }, [ref, mounted]);
   return width;
 }
 
 export function TrendChart({
   series, bands = null, markers = [], sinceMs, untilMs, hours = 24, height = 46, big = false,
-  label, cursor = null, onCursor,
+  label, cursor = null, onCursor, onPlot,
 }) {
   const box = useRef(null);
-  const width = useWidth(box, big ? 640 : 320);
-  if (!validWindow(sinceMs, untilMs)) return null;
+  const placeable = validWindow(sinceMs, untilMs);
+  const width = useWidth(box, big ? 640 : 320, placeable);
   const frame = plotFrame(width, height, { labels: big, markers: big, axis: big });
+  const plotWidth = frame.right - frame.left;
+  // The plot's width in pixels, for a caller that names a mark "within one pixel column" of a
+  // cursor it moved itself (the dialog's keyboard). Before the early return: a hook runs on every render.
+  useEffect(() => { onPlot?.(plotWidth); }, [onPlot, plotWidth]);
+  if (!placeable) return null;
   const x = timeScale(sinceMs, untilMs, frame.left, frame.right);
   const own = bands?.own_normal ?? null;
   const values = series.flatMap((s) => s.points.map((p) => p.value));
   if (own) values.push(own.low, own.high);
   const domain = valueDomain(values);
   const y = domain ? valueScale(domain, frame.top, frame.bottom) : null;
+  // The value labels: at the nearest round step, no finer than the data is measured, and only inside
+  // the data — the domain's margin is the chart's, and a label there names a value nobody measured.
+  const resolution = valueResolution(values);
+  const tickStep = big && domain ? valueTickStep(domain, 4, resolution) : null;
+  const ticks = big && domain ? valueTicks(domain, 4, { extent: valueExtent(values), resolution }) : [];
   const rects = y ? bandRects(bands?.news2, domain, y, frame.left, frame.right) : [];
   const ownRect = y ? ownNormalRect(own, domain, y, frame.left, frame.right) : null;
   const marks = big ? markerMarks(markers, x, sinceMs, untilMs) : [];
@@ -106,10 +121,10 @@ export function TrendChart({
             ))}
           </g>
         ) : null}
-        {big && y ? valueTicks(domain).map((v) => (
+        {big && y ? ticks.map((v) => (
           <g key={`v${v}`} data-tick="value">
             <line x1={frame.left} x2={frame.right} y1={crisp(y(v))} y2={crisp(y(v))} className="stroke-grid" />
-            <text x={frame.left - VALUE_LABEL_GAP} y={y(v) + VALUE_LABEL_BASELINE} textAnchor="end" className="fill-mute text-10">{v}</text>
+            <text x={frame.left - VALUE_LABEL_GAP} y={y(v) + VALUE_LABEL_BASELINE} textAnchor="end" className="fill-mute text-10">{tickLabel(v, tickStep)}</text>
           </g>
         )) : null}
         {y ? series.map((s) => {
@@ -118,10 +133,12 @@ export function TrendChart({
             <g key={s.key} data-series={s.key} className={s.color}>
               {path ? <path d={path} fill="none" stroke="currentColor" strokeWidth={LINE_WIDTH} strokeDasharray={CONNECTOR_DASH} /> : null}
               {s.points.filter(drawable).map((p, i) => (
+                // A hollow dot is filled with the chart's OWN ground: the card under the mini chart, the
+                // dialog's app background under the big one.
                 <circle
                   key={`${p.iso}#${i}`} data-ts={p.iso} data-value={p.value} cx={x(p.ms)} cy={y(p.value)}
                   r={big ? DOT_RADIUS.big : DOT_RADIUS.small}
-                  fill={s.hollow ? undefined : "currentColor"} className={s.hollow ? "fill-card" : undefined}
+                  fill={s.hollow ? undefined : "currentColor"} className={s.hollow ? (big ? "fill-app" : "fill-card") : undefined}
                   stroke="currentColor" strokeWidth={s.hollow ? LINE_WIDTH : 0}
                 />
               ))}
@@ -143,11 +160,15 @@ export function TrendChart({
             />
           );
         })}
-        {big ? timeTicks(sinceMs, untilMs, hours).map((ms) => (
-          <text key={`t${ms}`} data-tick="time" x={x(ms)} y={frame.axisY} textAnchor="middle" className="fill-mute text-10">
-            {hours === 72 ? `${ddmm(ms)} ${hhmm(ms)}` : hhmm(ms)}
-          </text>
-        )) : null}
+        {big ? timeTicks(sinceMs, untilMs, hours).map((ms) => {
+          const text = hours === 72 ? `${ddmm(ms)} ${hhmm(ms)}` : hhmm(ms);
+          const place = timeLabelPlace(x(ms), text, width);   // anchored to an edge it would cross
+          return (
+            <text key={`t${ms}`} data-tick="time" x={place.x} y={frame.axisY} textAnchor={place.anchor} className="fill-mute text-10">
+              {text}
+            </text>
+          );
+        }) : null}
         {at && y && drawable(at) ? (
           <g data-cursor="">
             <line x1={x(at.ms)} x2={x(at.ms)} y1={frame.top} y2={frame.bottom} className="stroke-ink" strokeWidth={HAIRLINE} opacity={CURSOR_LINE_OPACITY} />

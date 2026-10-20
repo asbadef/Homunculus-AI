@@ -2,8 +2,9 @@
 // comment beside it, so a change to the arithmetic shows up as a change to a number someone wrote.
 import { describe, it, expect } from "vitest";
 import {
-  bandRects, crisp, linePath, markerMarks, markerNear, nearestIndex, ownNormalRect, parseMarkers, parsePoints,
-  plotFrame, timeScale, timeTicks, validWindow, valueDomain, valueScale, valueTicks,
+  bandRects, crisp, linePath, markerMarks, marksAtTime, marksNear, nearestIndex, ownNormalRect, parseMarkers,
+  parsePoints, plotFrame, tickLabel, timeLabelPlace, timeScale, timeTicks, validWindow, valueDomain, valueExtent,
+  valueResolution, valueScale, valueTickStep, valueTicks,
 } from "./trendGeometry.js";
 import { BANDS } from "./trends.testutil.js";
 
@@ -102,11 +103,38 @@ describe("the line, the labels and the marks", () => {
     expect(linePath([p(0, 10), p(10, Number.NaN), p(20, 30), p(30, 40)], same, same)).toBe("M0.0,10.0M20.0,30.0L30.0,40.0");
   });
 
-  it("labels values at round steps inside the domain", () => {
-    expect(valueTicks({ lo: 0, hi: 100 })).toEqual([0, 25, 50, 75, 100]);
-    expect(valueTicks({ lo: 57, hi: 83 })).toEqual([60, 70, 80]);
-    expect(valueTicks({ lo: 36.1, hi: 37.9 })).toEqual([36.5, 37, 37.5]);
+  it("labels values at round steps inside the domain: 1, 2, 5 or 10 × 10ⁿ, the nearest (d3's rule)", () => {
+    expect(valueTicks({ lo: 0, hi: 100 })).toEqual([0, 20, 40, 60, 80, 100]);       // raw 25 → 20, not 25
+    expect(valueTicks({ lo: 57, hi: 83 })).toEqual([60, 65, 70, 75, 80]);          // raw 6.5 → 5
+    expect(valueTicks({ lo: 36.1, hi: 37.9 })).toEqual([36.5, 37, 37.5]);          // raw 0.45 → 0.5
     expect(valueTicks(null)).toEqual([]);
+    expect(valueTickStep({ lo: 0, hi: 0 })).toBeNull();
+  });
+
+  it("labels systolic 60–220 every 50 — not only 100 and 200 — and only inside the data", () => {
+    const domain = valueDomain([60, 220]);                                          // 36–244
+    expect(valueTickStep(domain)).toBe(50);
+    expect(valueTicks(domain)).toEqual([50, 100, 150, 200]);
+    expect(valueTicks(domain, 4, { extent: valueExtent([60, 220]) })).toEqual([100, 150, 200]);
+  });
+
+  it("never labels a value past the data: no SpO₂ 105, no lactate −0.5 in the chart's margin", () => {
+    const spo2 = [92, 99, 100];
+    expect(Math.max(...valueTicks(valueDomain(spo2), 4, { extent: valueExtent(spo2) }))).toBeLessThanOrEqual(100);
+    const lactate = [0.5, 1, 4.1];
+    expect(Math.min(...valueTicks(valueDomain(lactate), 4, { extent: valueExtent(lactate) }))).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it("labels no finer than the data is measured, with as many decimals as the step and no more", () => {
+    const temps = [36.9, 37, 37.1];
+    expect(valueResolution(temps)).toBeCloseTo(0.1);
+    expect(valueResolution([84, 90])).toBe(1);
+    const domain = valueDomain(temps);                                              // 36.87–37.13: raw 0.065
+    expect(valueTickStep(domain)).toBeCloseTo(0.05);                                // what the range alone asks for
+    expect(valueTickStep(domain, 4, valueResolution(temps))).toBeCloseTo(0.1);      // what a tenth-measured value allows
+    expect(tickLabel(37, 0.1)).toBe("37.0");
+    expect(tickLabel(36.5, 0.5)).toBe("36.5");
+    expect(tickLabel(150, 50)).toBe("150");
   });
 
   it("keeps a wide range to a handful of round labels inside it (systolic 60–220 spans 36–244)", () => {
@@ -149,10 +177,26 @@ describe("the line, the labels and the marks", () => {
     expect(nearestIndex([], same, 5)).toBe(-1);
   });
 
-  it("names a mark only within one pixel column of the pointer", () => {
-    const marks = [{ x: 10, kind: "alarm" }, { x: 20, kind: "antibiotic" }];
-    expect(markerNear(marks, 10.9)).toEqual(marks[0]);
-    expect(markerNear(marks, 12)).toBeNull();
+  it("names every mark within one pixel column of the pointer, and only those", () => {
+    // Two alert kinds first detected on one reading share an x: the readout must name both.
+    const marks = [{ x: 10, kind: "alarm", label: "news2" }, { x: 10.5, kind: "alarm", label: "sepsis" }, { x: 20, kind: "antibiotic" }];
+    expect(marksNear(marks, 10.9)).toEqual([marks[0], marks[1]]);
+    expect(marksNear(marks, 12)).toEqual([]);
+  });
+
+  it("asks the same in time: within one pixel's worth of milliseconds, and never on a chart of no width", () => {
+    const marks = [{ ms: 1_000, kind: "alarm", label: "news2" }, { ms: 1_000, kind: "alarm", label: "sepsis" }];
+    expect(marksAtTime(marks, 1_090, 100)).toEqual(marks);
+    expect(marksAtTime(marks, 1_200, 100)).toEqual([]);
+    expect(marksAtTime(marks, 1_000, 0)).toEqual([]);
+  });
+
+  it("places a time label centred on its instant, unless that would run it past an edge", () => {
+    expect(timeLabelPlace(300, "12:00", 640)).toEqual({ x: 300, anchor: "middle" });
+    expect(timeLabelPlace(630, "12:00", 640)).toEqual({ x: 640, anchor: "end" });              // 5 × 6.5 / 2 = 16.25 px
+    expect(timeLabelPlace(600, "20.10 12:00", 640)).toEqual({ x: 600, anchor: "middle" });     // 72 h: 11 × 6.5 / 2 = 35.75 px
+    expect(timeLabelPlace(610, "20.10 12:00", 640)).toEqual({ x: 640, anchor: "end" });
+    expect(timeLabelPlace(4, "12:00", 640)).toEqual({ x: 0, anchor: "start" });
   });
 });
 
