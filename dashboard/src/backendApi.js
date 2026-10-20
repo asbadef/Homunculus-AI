@@ -784,6 +784,30 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       });
     },
 
+    /**
+     * One patient's vital history for the trend charts (GET /patients/{id}/trends, Group 2): the
+     * series, the NEWS2 rows as bands, the latest value's movement and NEWS2 points, whether it
+     * sits inside the normal a clinician charted, and the alarm and antibiotic moments — every
+     * fact a chart draws, decided by the engine (homunculus-engine api/trends.py). `hours` is 6, 24
+     * or 72; the API refuses any other with a 400.
+     */
+    patientTrends(patientId, hours = 24) {
+      return authed(`/patients/${seg(patientId)}/trends?hours=${encodeURIComponent(hours)}`);
+    },
+
+    /**
+     * The patient's own normal, written as the caller built it (PUT /clinical/{id}/profile).
+     *
+     * Not `setProfile` above: that always sends `comorbidities` (an empty list unless given),
+     * and the engine reads a present-but-empty list as "clear them" (api/clinical.py
+     * `profile_from_payload`) — so a form that only means to write the baselines would erase
+     * every charted comorbidity. The baseline form sends `{baselines}` alone, and the engine keeps
+     * whatever the body does not mention.
+     */
+    putPatientProfile(patientId, body) {
+      return authed(`/clinical/${seg(patientId)}/profile`, { method: "PUT", body });
+    },
+
     /** Escape hatch for endpoints not yet wrapped (admissions, alerts, tenant…). */
     request: authed,
   };

@@ -1329,3 +1329,64 @@ describe("backendApi — the server's clock", () => {
     }
   });
 });
+
+describe("backendApi — the trend charts and the patient's own normal (Group 2 · slice 1)", () => {
+  const signedIn = (fetchMock) => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    return createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+  };
+
+  it("reads one patient's trends with an authed GET, the window in the query", async () => {
+    const answer = { patient_id: "S 1/x", hours: 72, channels: [], markers: [] };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(answer));
+    expect(await signedIn(fetchMock).patientTrends("S 1/x", 72)).toEqual(answer);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/patients/S%201%2Fx/trends?hours=72");
+    expect(init.method).toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+  });
+
+  it("asks for the 24-hour window when none is named", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    await signedIn(fetchMock).patientTrends("S-001");
+    expect(fetchMock.mock.calls[0][0]).toBe("/patients/S-001/trends?hours=24");
+  });
+
+  it("a refused read carries the API's own message and status", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ detail: "hasta bulunamadı" }, { ok: false, status: 404 }));
+    await expect(signedIn(fetchMock).patientTrends("S-999", 24))
+      .rejects.toMatchObject({ status: 404, message: "hasta bulunamadı" });
+  });
+
+  it("writes the patient's own normal with exactly the body it was given — no comorbidities key", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ patient_id: "S-001" }));
+    const body = { baselines: { heart_rate: { low: 100, high: 115 } } };
+    await signedIn(fetchMock).putPatientProfile("S-001", body);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/clinical/S-001/profile");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body)).toEqual(body);
+  });
+
+  it("setProfile always sends comorbidities, which the engine reads as 'clear them' — why the form does not use it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    await signedIn(fetchMock).setProfile("S-001", { baselines: { heart_rate: { low: 1, high: 2 } } });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).comorbidities).toEqual([]);
+  });
+
+  it("a trends read that gets no answer gives up after 15 s, as every read does", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn(() => new Promise(() => {}));
+      const outcome = signedIn(fetchMock).patientTrends("S-001", 24).then(() => "answered", (err) => err);
+      await vi.advanceTimersByTimeAsync(14_999);
+      expect(await Promise.race([outcome, Promise.resolve("pending")])).toBe("pending");
+      await vi.advanceTimersByTimeAsync(1);
+      expect((await outcome).code).toBe(REQUEST_TIMEOUT);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
