@@ -25,6 +25,8 @@ export function TrendsBox({ patient, nowMs }) {
   const { t } = useI18n();
   const trends = useTrends(patient.patient_id, 24, measuredKeyOf(patient.measuredAt));
   const channels = channelsOf(trends.data);
+  const sinceMs = Date.parse(trends.data?.since);
+  const untilMs = Date.parse(trends.data?.until);
   return (
     <Box title={t("patient.trends")} icon="chart" level={2} right={t("patient.trendsNote")}>
       <div data-trends-box="">
@@ -37,7 +39,7 @@ export function TrendsBox({ patient, nowMs }) {
         {trends.data ? (
           <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0 min-[861px]:grid-cols-2 min-[1200px]:grid-cols-3">
             {CARDS.map((card) => (
-              <TrendCard key={card.id} card={card} channels={channels} nowMs={nowMs} />
+              <TrendCard key={card.id} card={card} channels={channels} nowMs={nowMs} sinceMs={sinceMs} untilMs={untilMs} />
             ))}
           </ul>
         ) : null}

@@ -21,7 +21,7 @@ function show(card, channels, { onOpen, ...clock } = {}) {
     <I18nProvider>
       <ul>
         <TrendCard card={card} channels={channelsOf(trends("S-001", channels))}
-          nowMs={"nowMs" in clock ? clock.nowMs : NOW} onOpen={onOpen} />
+          nowMs={"nowMs" in clock ? clock.nowMs : NOW} sinceMs={NOW - 24 * 3_600_000} untilMs={NOW} onOpen={onOpen} />
       </ul>
     </I18nProvider>,
   );
@@ -215,6 +215,19 @@ describe("the trend card", () => {
     expect(card.dataset.frame).toBe("none");
     expect(card).not.toHaveClass("border-crit");
     expect(screen.queryByText(/NEWS2/)).toBeNull();
+  });
+
+  it("draws its 24-hour mini chart — a dot per reading — hidden from a reader the card's text already told", () => {
+    const card = show(PRESSURE, [
+      channel("sbp", [point(90, 118, 0), point(30, 112, 0)]),
+      channel("map", [point(90, 80), point(30, 76)]),
+    ]);
+    const svg = card.querySelector("svg");
+    expect(svg).toHaveAttribute("aria-hidden", "true");
+    expect([...svg.querySelectorAll("circle")].map((c) => c.dataset.value)).toEqual(["118", "112", "80", "76"]);
+    expect(svg.querySelector("[data-series='map'] circle")).toHaveClass("fill-card");
+    document.body.innerHTML = "";
+    expect(show(HR, []).querySelector("svg")).toBeNull();          // nothing measured: no empty chart either
   });
 
   it("is a button naming the chart it opens only when it can open one", () => {

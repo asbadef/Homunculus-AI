@@ -1,6 +1,5 @@
 // src/live/screens/patient/trends/TrendCard.jsx — one trend card: the latest value of each of its
-// channels, how it moved since the previous measurement, how long ago, and (Task 11) a 24-hour mini
-// chart.
+// channels, how it moved since the previous measurement, how long ago, and a 24-hour mini chart.
 //
 // The frame and its badge are the ENGINE'S NEWS2 points for the latest value (spec D2), through
 // `news2Tone` — never a judgement made here: a card handed `news2_points: 3` frames red whatever the
@@ -23,7 +22,8 @@
 //
 // The frame is `border-2` in every tone, so nothing moves by a pixel when the tone changes.
 //
-// A button only when it can open the big chart (`onOpen`).
+// A button only when it can open the big chart (`onOpen`); its text — the values, the delta, the age —
+// is the chart's text equivalent, so the mini chart inside it is hidden from assistive technology.
 import React from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { Pill, Tag } from "../../../ui/index.js";
@@ -31,6 +31,8 @@ import { FOCUS_RING } from "../../../ui/focus.js";
 import { ageText } from "../ageText.js";
 import { cardTitle } from "./cards.js";
 import { news2Tone } from "./news2Tone.js";
+import { TrendChart } from "./TrendChart.jsx";
+import { parsePoints } from "./trendGeometry.js";
 
 const FRAME = { none: "border-2 border-line", mid: "border-2 border-mid", crit: "border-2 border-crit" };
 const BADGE = { mid: "warn", crit: "crit" };
@@ -99,9 +101,10 @@ function Reading({ series, channel, nowMs, named, badge, pill }) {
   );
 }
 
-export function TrendCard({ card, channels, nowMs, onOpen }) {
+export function TrendCard({ card, channels, nowMs, sinceMs, untilMs, onOpen }) {
   const { t } = useI18n();
   const primary = channels?.[card.series[0].key] ?? null;
+  const drawn = card.series.map((s) => ({ key: s.key, color: s.color, hollow: s.hollow, points: parsePoints(channels?.[s.key]?.points) }));
   const latest = primary?.latest ?? null;
   const points = latest?.news2_points ?? null;
   const tone = news2Tone(points);
@@ -121,11 +124,16 @@ export function TrendCard({ card, channels, nowMs, onOpen }) {
       >
         <span data-title="" className={`block text-10.5 font-bold uppercase leading-[normal] tracking-[.06em] ${card.series[0].color}`}>{title}</span>
         {measured ? (
-          card.series.map((s, i) => (
-            <Reading key={s.key} series={s} channel={channels?.[s.key]} nowMs={nowMs} named={card.series.length > 1}
-              badge={i === 0 && (tone || unscored) ? <Badge tone={tone} points={points} unscored={unscored} /> : null}
-              pill={i === 0 && latest?.within_own_normal === true ? <Pill icon="user">{t("patient.trendsOwnNormalPill")}</Pill> : null} />
-          ))
+          <>
+            {card.series.map((s, i) => (
+              <Reading key={s.key} series={s} channel={channels?.[s.key]} nowMs={nowMs} named={card.series.length > 1}
+                badge={i === 0 && (tone || unscored) ? <Badge tone={tone} points={points} unscored={unscored} /> : null}
+                pill={i === 0 && latest?.within_own_normal === true ? <Pill icon="user">{t("patient.trendsOwnNormalPill")}</Pill> : null} />
+            ))}
+            <span className="mt-1.5 block">
+              <TrendChart series={drawn} bands={primary?.bands ?? null} sinceMs={sinceMs} untilMs={untilMs} hours={24} height={46} />
+            </span>
+          </>
         ) : (
           <span className="mt-1 block text-12.5 text-mute">{t("patient.trendsNoData")}</span>
         )}
