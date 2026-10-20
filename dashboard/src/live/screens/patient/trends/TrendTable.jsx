@@ -35,7 +35,8 @@ function rowsOf(card, series, markers) {
 }
 
 /** The NEWS2 cell. The engine's points where it sent them; for a NEWS2 channel it sent none for, a dash
- *  and — for a screen reader — the reason (the card's own split, X24); for a channel NEWS2 does not
+ *  and — for a screen reader — the reason (the card's own split, X24, but worded for THIS reading: the
+ *  card's sentence says "the last reading", which is true there and false in a row); for a channel NEWS2 does not
  *  score (MAP, lactate: the engine sent no bands), nothing at all — a dash there would read as a
  *  missing score. Never a comparison with a band edge. */
 function PointsCell({ points, news2 }) {
@@ -45,7 +46,7 @@ function PointsCell({ points, news2 }) {
   return (
     <td className="font-data">
       <span aria-hidden="true">{pointsText(points)}</span>
-      <span className="sr-only">{t("patient.trendsPointsUnknownSr")}</span>
+      <span className="sr-only">{t("patient.trendsPointsUnknownRowSr")}</span>
     </td>
   );
 }

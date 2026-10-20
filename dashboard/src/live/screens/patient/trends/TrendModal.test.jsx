@@ -522,7 +522,9 @@ describe("the big chart as a table", () => {
     // The engine sent no points for this systolic reading: a dash, and the reason for a screen reader.
     const unscored = cells("sbp", 95)[3];
     expect(within(unscored).getByText("—")).toHaveAttribute("aria-hidden", "true");
-    expect(unscored).toHaveTextContent("NEWS2 balı yoxdur: son ölçmə qiymətləndirilməyib");
+    // Worded for the row it is in: this reading, not "the last one" (that is the card's sentence).
+    expect(unscored).toHaveTextContent("NEWS2 balı yoxdur: bu ölçmə qiymətləndirilməyib");
+    expect(unscored).not.toHaveTextContent("son ölçmə");
     // MAP is not a NEWS2 parameter: its cell is empty — not a dash that reads as a missing score.
     for (const value of [80, 64, 70]) expect(cells("map", value)[3].textContent).toBe("");
   });
