@@ -14,7 +14,12 @@
  *   --oncrit / --onmid  name the text colours the prototype hard-coded (#fff, #1b1400)
  * Fills (--crit --high --mid --low --ok) paint stripes, bars, dots and solid buttons — held to 3:1
  * on card, card2, page and app; the *Ink tokens are for text. Not ported yet (YAGNI): --monbg (Group 2 monitor; its Gun vital colours
- * fail on it), --band-*, --grid (charts), --body-* (body map).
+ * fail on it), --body-* (body map).
+ * The trend charts' grounds (Group 2 · slice 1): --band-mid and --band-crit tint a NEWS2 row scoring
+ *   1–2 and 3 points (the engine's points, never a value judged here), --band-n the patient's own
+ *   normal (the prototype's --band-n), --grid the value lines. The prototype's single --band-al
+ *   became two, because D2 frames 1–2 points amber and 3 red. Every --v-* line holds 3:1 over each
+ *   tint on a card (tokens.test.js).
  */
 
 :root {
@@ -64,6 +69,10 @@
   --v-spo: #ffe14a;
   --v-rr: #3fd8ff;
   --v-t: #e8eef7;
+  --band-n: rgba(34, 184, 214, .13);
+  --band-mid: rgba(234, 179, 8, .12);
+  --band-crit: rgba(239, 68, 68, .12);
+  --grid: #1c2c45;
   --scrim: rgba(2, 6, 14, .55);
   --shadow: 0 12px 30px rgba(0, 0, 0, .45);
 }
@@ -105,6 +114,10 @@
   --v-spo: #a16207;
   --v-rr: #0369a1;
   --v-t: #152231;
+  --band-n: rgba(14, 116, 144, .10);
+  --band-mid: rgba(186, 127, 7, .10);
+  --band-crit: rgba(220, 38, 38, .08);
+  --grid: #e7ebf1;
   --scrim: rgba(2, 6, 14, .55);
   --shadow: 0 12px 30px rgba(20, 30, 50, .12);
 }

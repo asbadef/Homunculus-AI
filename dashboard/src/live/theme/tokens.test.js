@@ -132,6 +132,24 @@ describe.each(["gece", "gun"])("%s theme: contrast", (theme) => {
     expect(ratio(s(name), s("rail"))).toBeGreaterThanOrEqual(UI);
   });
 
+  // Group 2's trend charts (screens/patient/trends/): a vital's dots and dashed connectors are drawn
+  // over a band tint on the card — a NEWS2 row scoring 1–2 (band-mid) or 3 (band-crit), or the
+  // patient's own normal (band-n). A line is a graphic, held to 3:1, over every tint it can cross.
+  // (The prototype drew MAP at reduced opacity; at .55–.70 that measured 2.17–3.34:1, so the
+  // charts draw MAP at full colour with hollow dots instead.)
+  it.each(["v-hr", "v-map", "v-spo", "v-rr", "v-t"].flatMap((v) => ["band-n", "band-mid", "band-crit"].map((b) => [v, b])))(
+    "chart: the %s line clears 3:1 over the %s tint on a card",
+    (vital, band) => {
+      expect(ratio(s(vital), over(theme, band, "card"))).toBeGreaterThanOrEqual(UI);
+    },
+  );
+
+  // The ▲ alarm and ◆ antibiotic marks sit in their own lane under the plot, on the card — never
+  // over a band.
+  it.each(["crit", "pri"])("chart: the %s marker clears 3:1 on a card", (name) => {
+    expect(ratio(s(name), s("card"))).toBeGreaterThanOrEqual(UI);
+  });
+
   // A bed card's stripe sits on the card, a dot or bar in a card2 row (G1-09), a stripe on the
   // page or the app frame (G1-07): each ground is held to 3:1.
   it.each(SEVERITY.flatMap((sev) => ["card", "card2", "page", "app"].map((bg) => [sev, bg])))(
