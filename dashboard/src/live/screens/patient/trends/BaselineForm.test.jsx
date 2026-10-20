@@ -9,7 +9,7 @@ import React from "react";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { mount } from "../../../session/mount.testutil.jsx";
 import { profile, token } from "../../../session/testTokens.testutil.js";
-import { BASELINE_KEYS, BaselineForm, checkBaselines } from "./BaselineForm.jsx";
+import { BASELINE_KEYS, BaselineForm, checkBaselines, keyOf } from "./BaselineForm.jsx";
 
 const ENGINE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../../homunculus-engine/src/homunculus");
 const CHARTABLE = ["board.view", "alerts.ack", "clinical.chart"];
@@ -202,9 +202,20 @@ describe("the patient's own normal", () => {
       expect(button).toHaveAttribute("aria-disabled", "true");
       expect(button).not.toBeDisabled();
       expect(button).toHaveAccessibleDescription(/Göndəriləcək aralıq yoxdur/);
-      expect(button.parentElement).toContainElement(screen.getByText(/Göndəriləcək aralıq yoxdur/));
+      expect(button.closest(".flex-wrap")).toContainElement(screen.getByText(/Göndəriləcək aralıq yoxdur/));
       await save();
       expect(api.putPatientProfile).not.toHaveBeenCalled();
+    });
+
+    it("keeps Cancel and Save together as one unit at the right edge, so on a phone the pair wraps as a pair under the sentence", async () => {
+      await open();
+      const cancel = within(dialog()).getByRole("button", { name: "İmtina" });
+      const pair = saveButton().parentElement;
+      const sentence = screen.getByText(/Göndəriləcək aralıq yoxdur/);
+      expect(cancel.parentElement).toBe(pair);
+      expect(pair).toHaveClass("ml-auto", "shrink-0");
+      expect(pair).not.toContainElement(sentence);                          // the sentence is the pair's sibling, in the same wrapping row
+      expect(pair.parentElement).toContainElement(sentence);
     });
 
     it("the reason is quiet until Save has been pressed, and then it is the attention tone", async () => {
@@ -223,7 +234,7 @@ describe("the patient's own normal", () => {
       expect(button).not.toHaveAttribute("aria-disabled");
       expect(button.classList.contains("bg-crit")).toBe(true);
       expect(button).toHaveAccessibleDescription("Bütün sətirlər boşdur: «Yadda saxla» bu xəstənin daxil edilmiş bütün aralıqlarını silir.");
-      expect(button.parentElement).toContainElement(screen.getByText(/bütün aralıqlarını silir/));
+      expect(button.closest(".flex-wrap")).toContainElement(screen.getByText(/bütün aralıqlarını silir/));
       expect(dialog()).not.toHaveTextContent("Göndəriləcək aralıq yoxdur");
       await save();
       expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: {} });
@@ -236,6 +247,50 @@ describe("the patient's own normal", () => {
       await wait(200);
       expect(within(dialog()).getAllByRole("status").map((s) => s.textContent))
         .toContain("Bütün sətirlər boşdur: «Yadda saxla» bu xəstənin daxil edilmiş bütün aralıqlarını silir.");
+    });
+  });
+
+  it("tells a screen reader why nothing was sent when Save, or Enter, is pressed with nothing to send — and not before", async () => {
+    await open();
+    const nothing = "Göndəriləcək aralıq yoxdur: ən azı bir sətrin hər iki həddini daxil edin.";
+    await wait(200);
+    expect(within(dialog()).getAllByRole("status").map((s) => s.textContent)).not.toContain(nothing);
+    await act(async () => { fireEvent.submit(dialog().querySelector("form")); await settle(); });
+    await wait(200);
+    expect(within(dialog()).getAllByRole("status").map((s) => s.textContent)).toContain(nothing);
+  });
+
+  describe("a range counts as charted when both its bounds are numbers", () => {
+    const hollow = { heart_rate: { low: null, high: null } };
+
+    it("reads a range with null bounds, a half range and an absent range as the same set", () => {
+      expect(keyOf(hollow)).toBe(keyOf({}));
+      expect(keyOf({ heart_rate: null })).toBe(keyOf({}));
+      expect(keyOf({ heart_rate: { low: 100, high: null } })).toBe(keyOf({}));
+      expect(keyOf({ heart_rate: { low: 100, high: 115 } })).not.toBe(keyOf({}));
+      expect(keyOf({ heart_rate: { low: 0, high: 0 } })).not.toBe(keyOf({}));        // 0 is a bound
+    });
+
+    it("a set of hollow ranges is nothing to clear, exactly as an absent range is: Save is held, with the nothing-to-send reason", async () => {
+      const { api } = await open({ own: hollow });
+      expect(input("heart_rate", "low")).toHaveValue("");
+      expect(saveButton()).toHaveAttribute("aria-disabled", "true");
+      expect(saveButton()).toHaveAccessibleDescription(/Göndəriləcək aralıq yoxdur/);
+      expect(dialog()).not.toHaveTextContent("bütün aralıqlarını silir");
+      await save();
+      expect(api.putPatientProfile).not.toHaveBeenCalled();
+    });
+
+    it("does not prefill half a range", async () => {
+      await open({ own: { heart_rate: { low: 100, high: null } } });
+      expect(input("heart_rate", "low")).toHaveValue("");
+      expect(input("heart_rate", "high")).toHaveValue("");
+    });
+
+    it("a poll that turns a hollow range into an absent one has changed nothing", async () => {
+      const { setOwn } = await open({ own: hollow });
+      await setOwn({});
+      expect(dialog()).not.toHaveTextContent("forma açıq ikən dəyişdi");
     });
   });
 
@@ -257,7 +312,7 @@ describe("the patient's own normal", () => {
       type("temperature", "low", "36");
       type("temperature", "high", "37.5");
       await setOwn({ heart_rate: { low: 90, high: 120 } });
-      const sentence = "Bu xəstənin aralıqları forma açıq ikən dəyişdi: formu bağlayıb yenidən açın.";
+      const sentence = "Bu xəstənin aralıqları forma açıq ikən dəyişdi: formanı bağlayıb yenidən açın.";
       expect(within(dialog()).getAllByRole("note").map((n) => n.textContent)).toContain(sentence);
       expect(saveButton()).toHaveAttribute("aria-disabled", "true");
       expect(saveButton()).toHaveAccessibleDescription(sentence);

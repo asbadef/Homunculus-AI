@@ -31,14 +31,23 @@ export function TrendsBox({ patient, bed, nowMs }) {
   // The id of the card whose big chart is open. Like `editing` it survives a move to another patient (the
   // shell mounts this screen with no `key`), but the chart is read-only and reads for the patient it is given.
   const [open, setOpen] = useState(null);
-  // The patient_id the form was opened FOR, or null. The shell renders the screen with no `key`, so a move to
-  // another patient (browser Back under the inert page) keeps this box and its state: the form is shown only
-  // to the patient it was opened for — rows read from one patient are never written under another — and the
-  // move forgets it, so that coming back does not reopen it.
+  // `{ id, opening }`: the patient_id the form was opened FOR and which opening of it this is, or null. The
+  // shell renders the screen with no `key`, so a move to another patient (browser Back under the inert page)
+  // keeps this box and its state: the form is shown only to the patient it was opened for — rows read from one
+  // patient are never written under another — and the move forgets it, so that coming back does not reopen it.
+  // The form is keyed by its opening, and what it closes is its own opening: a save started on an earlier form
+  // that lands after she has reopened another (A -> B -> back to A) closes nothing of the new one.
   const [editing, setEditing] = useState(null);
+  const openings = useRef(0);
   useEffect(() => { setEditing(null); }, [patient.patient_id]);
   const shownFor = useRef(patient.patient_id);
   shownFor.current = patient.patient_id;
+  // True inside the effect (the house pattern), so StrictMode's rehearsal does not leave it false.
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const reasonId = useId();
   const channels = channelsOf(trends.data);
   const sinceMs = Date.parse(trends.data?.since);
@@ -53,7 +62,8 @@ export function TrendsBox({ patient, bed, nowMs }) {
   function openForm() {
     if (trends.unreadable) return;
     trends.reload();      // the set it replaces must not be a minute old (the form says if it changed since)
-    setEditing(patient.patient_id);
+    openings.current += 1;
+    setEditing({ id: patient.patient_id, opening: openings.current });
   }
   const right = (
     <>
@@ -89,12 +99,13 @@ export function TrendsBox({ patient, bed, nowMs }) {
         ) : null}
       </div>
       {card ? <TrendModal card={card} patient={patient} bed={bed} onClose={() => setOpen(null)} /> : null}
-      {editing === patient.patient_id ? (
+      {editing?.id === patient.patient_id ? (
         <BaselineForm
-          key={editing} patient={patient} bed={bed} own={own}
-          // A save that lands after a move closes nothing of the next patient's and reads nothing for her.
-          onClose={() => setEditing((current) => (current === patient.patient_id ? null : current))}
-          onSaved={() => { if (shownFor.current === patient.patient_id) trends.reload(); }}
+          key={editing.opening} patient={patient} bed={bed} own={own}
+          // A save that lands after a move, or after she has left the screen, closes nothing of anyone else's
+          // form and reads nothing for a patient who is no longer shown.
+          onClose={() => setEditing((current) => (current?.opening === editing.opening ? null : current))}
+          onSaved={() => { if (mounted.current && shownFor.current === patient.patient_id) trends.reload(); }}
         />
       ) : null}
     </Box>

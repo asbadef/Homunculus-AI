@@ -43,7 +43,11 @@ import { mayHaveLanded } from "../../admin/refusal.js";
 export const BASELINE_KEYS = Object.freeze(["heart_rate", "resp_rate", "spo2", "sbp", "temperature"]);
 const META = Object.fromEntries(VITALS.map((v) => [v.at, v]));
 
-const shown = (v) => (typeof v === "number" && Number.isFinite(v) ? String(v) : "");
+/** A range the engine charted: BOTH bounds are numbers. The one idea of "charted" in this form — what the
+ *  rows open with, what the snapshot compares and whether there is anything to clear all read it — so a
+ *  range of nulls and a range that is not there are the same thing. */
+const charted = (range) => Number.isFinite(range?.low) && Number.isFinite(range?.high);
+const prefill = (range, side) => (charted(range) ? String(range[side]) : "");
 /** A typed bound: "" when empty, its number (a decimal comma read as a point), NaN when it is not a
  *  plain finite decimal. A run of nines that overflows to Infinity travels as null and would come back
  *  as the engine's refusal, so it is not a number here. */
@@ -72,14 +76,14 @@ export function checkBaselines(rows) {
 }
 
 /** A set of ranges as one string: two sets are the same ranges when their strings are equal. */
-const keyOf = (set) => BASELINE_KEYS.map((key) => (set?.[key] ? `${set[key].low}~${set[key].high}` : "-")).join("|");
+export const keyOf = (set) => BASELINE_KEYS.map((key) => (charted(set?.[key]) ? `${set[key].low}~${set[key].high}` : "-")).join("|");
 
 export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
   const { t } = useI18n();
   const { store } = useSession();
   const toast = useToast();
   const [rows, setRows] = useState(() => Object.fromEntries(
-    BASELINE_KEYS.map((key) => [key, { low: shown(own?.[key]?.low), high: shown(own?.[key]?.high) }])));
+    BASELINE_KEYS.map((key) => [key, { low: prefill(own?.[key], "low"), high: prefill(own?.[key], "high") }])));
   const [openedWith] = useState(() => keyOf(own));
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -98,7 +102,7 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
   const empty = Object.keys(baselines).length === 0 && Object.keys(errors).length === 0;
   // Every row empty over a set that IS charted is a clear: the engine reads `{baselines: {}}` over a
   // charted profile as "delete every range" (api/clinical.py). Over nothing there is nothing to clear.
-  const clearing = empty && BASELINE_KEYS.some((key) => own?.[key]);
+  const clearing = empty && BASELINE_KEYS.some((key) => charted(own?.[key]));
   const nothing = empty && !clearing;
   const changed = keyOf(own) !== openedWith;
   const held = changed || nothing;
@@ -166,17 +170,20 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
               )}
             </div>
           ) : null}
-          <Button variant="ghost" onClick={onClose} busy={busy}>{t("common.cancel")}</Button>
-          {/* Save is the form's submit although it sits in the footer, outside it: `form` ties it to the
-              fields, so a browser's Enter in any of them presses it (a form's default button is its first
-              submit among everything associated with it), and a click submits the same way. A busy Save
-              cancels the click (Button), and `sending` holds a second press that beats the re-render. */}
-          <Button
-            type="submit" form={formId} variant={clearing ? "danger" : "primary"} busy={busy}
-            aria-disabled={held ? "true" : undefined} aria-describedby={say ? noteId : undefined}
-          >
-            {t("common.save")}
-          </Button>
+          {/* The two buttons are one flex item: on a phone the pair wraps as a pair, under the sentence. */}
+          <div className="ml-auto flex shrink-0 gap-2">
+            <Button variant="ghost" onClick={onClose} busy={busy}>{t("common.cancel")}</Button>
+            {/* Save is the form's submit although it sits in the footer, outside it: `form` ties it to the
+                fields, so a browser's Enter in any of them presses it (a form's default button is its first
+                submit among everything associated with it), and a click submits the same way. A busy Save
+                cancels the click (Button), and `sending` holds a second press that beats the re-render. */}
+            <Button
+              type="submit" form={formId} variant={clearing ? "danger" : "primary"} busy={busy}
+              aria-disabled={held ? "true" : undefined} aria-describedby={say ? noteId : undefined}
+            >
+              {t("common.save")}
+            </Button>
+          </div>
         </div>
       )}
     >
@@ -209,7 +216,9 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
         })}
         <p className="m-0 mt-2 text-12 text-mute">{t("patient.baselineClearsNote")}</p>
       </form>
-      <Announce text={busy ? t("patient.baselineSaving") : changed || clearing ? say : ""} />
+      {/* Said once, in this order of weight. "Nothing to send" only after a submit was held (Save pressed, or
+          Enter in a field): a screen reader hears nothing from an Enter that did nothing otherwise. */}
+      <Announce text={busy ? t("patient.baselineSaving") : changed || clearing || (nothing && tried) ? say : ""} />
     </Modal>
   );
 }

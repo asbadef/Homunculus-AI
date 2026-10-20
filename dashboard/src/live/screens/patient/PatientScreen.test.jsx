@@ -457,18 +457,22 @@ describe("the patient screen", () => {
       expect(document.activeElement).toBe(offer());
     });
 
-    it("a form left open while she moves to another patient does not follow her, and writes nothing to the next one", async () => {
-      // The shell renders <Screen params/> with no `key`, so /patients/S-001 -> /patients/S-002 keeps this screen, the
-      // box and its state mounted, and only the props change. Browser Back, Alt+← or a mouse's back button move the
-      // address under the inert page while the form is open: rows read from S-001 must never be written under S-002.
+    // The screen mounted the way the shell mounts it: the same element with NO `key`, so /patients/S-001 ->
+    // /patients/S-002 keeps this screen, the box and its state mounted and only the props change (browser Back,
+    // Alt+← or a mouse's back button move the address under the inert page while a form is open). `leave` takes
+    // the whole screen away, as a move to another screen does.
+    async function mover() {
       onlyScreens({ beds: () => null }, { keep: [] });
-      let move;
-      function Mover() {
+      let go;
+      let away;
+      function Harness() {
         const [id, setId] = React.useState("S-001");
-        move = setId;
-        return <PatientScreen params={{ id }} />;
+        const [here, setHere] = React.useState(true);
+        go = setId;
+        away = () => setHere(false);
+        return here ? <PatientScreen params={{ id }} /> : null;
       }
-      const mounted = await mount(<Mover />, {
+      const mounted = await mount(<Harness />, {
         access: token({ perms: CHART }), me: profile({ perms: CHART }),
         setup: (api) => {
           api.boardPatients.mockResolvedValue(board([entry("S-001", [], FULL), entry("S-002", [], FULL)]));
@@ -480,18 +484,77 @@ describe("the patient screen", () => {
       });
       await act(async () => { await mounted.board.start(); });
       await act(async () => { mounted.stream.open(); await settle(); });
+      return {
+        ...mounted,
+        move: (id) => act(async () => { go(id); await settle(); }),
+        leave: () => act(async () => { away(); await settle(); }),
+      };
+    }
+    // A write that has not been answered yet, and the way to answer it later.
+    const pending = (api) => {
+      const held = {};
+      api.putPatientProfile.mockImplementationOnce(() => new Promise((resolve) => { held.release = resolve; }));
+      return () => act(async () => { held.release({ patient_id: "S-001" }); await settle(); });
+    };
+
+    it("a form left open while she moves to another patient does not follow her, and writes nothing to the next one", async () => {
+      // Rows read from S-001 must never be written under S-002.
+      const { api, move } = await mover();
       await press(offer());
       expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
-      await act(async () => { move("S-002"); await settle(); });
+      await move("S-002");
       expect(screen.queryByRole("dialog")).toBeNull();
-      expect(mounted.api.putPatientProfile).not.toHaveBeenCalled();
-      await act(async () => { move("S-001"); await settle(); });          // and Forward does not bring the old form back
+      expect(api.putPatientProfile).not.toHaveBeenCalled();
+      await move("S-001");                                                 // and Forward does not bring the old form back
       expect(screen.queryByRole("dialog")).toBeNull();
-      await act(async () => { move("S-002"); await settle(); });
+      await move("S-002");
       await press(offer());                                                // a new form for S-002 writes to S-002
       await press(formButton("Yadda saxla"));
-      expect(mounted.api.putPatientProfile).toHaveBeenCalledTimes(1);
-      expect(mounted.api.putPatientProfile).toHaveBeenCalledWith("S-002", { baselines: { heart_rate: { low: 100, high: 115 } } });
+      expect(api.putPatientProfile).toHaveBeenCalledTimes(1);
+      expect(api.putPatientProfile).toHaveBeenCalledWith("S-002", { baselines: { heart_rate: { low: 100, high: 115 } } });
+    });
+
+    it("a save that lands after she has moved on is told to her, and touches nothing of the next patient's: no read for her, her form still open", async () => {
+      const { api, move } = await mover();
+      const answer = pending(api);
+      await press(offer());
+      await press(formButton("Yadda saxla"));                               // S-001's save, unanswered
+      await move("S-002");
+      await press(offer());                                                // S-002's own form, open
+      const reads = api.patientTrends.mock.calls.length;
+      await answer();                                                      // S-001's write lands now
+      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+      expect(api.patientTrends.mock.calls.length).toBe(reads);
+      expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
+      expect(api.putPatientProfile).toHaveBeenCalledTimes(1);              // nothing was sent for S-002
+    });
+
+    it("an old save does not close the form she has reopened for the same patient since", async () => {
+      const { api, move } = await mover();
+      const answer = pending(api);
+      await press(offer());
+      await press(formButton("Yadda saxla"));
+      await move("S-002");
+      await move("S-001");
+      await press(offer());                                                // the second form for S-001
+      expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
+      await answer();                                                      // the FIRST form's write lands
+      expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
+      expect(within(screen.getByRole("dialog", { name: FORM })).getByRole("button", { name: "Yadda saxla" })).not.toHaveAttribute("aria-busy");
+      expect(api.putPatientProfile).toHaveBeenCalledTimes(1);
+    });
+
+    it("a save that lands after she has left the patient screen reads nothing", async () => {
+      const { api, leave } = await mover();
+      const answer = pending(api);
+      await press(offer());
+      await press(formButton("Yadda saxla"));
+      await leave();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      const reads = api.patientTrends.mock.calls.length;
+      await answer();
+      expect(api.patientTrends.mock.calls.length).toBe(reads);
+      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
     });
 
     it("say they cannot be read, and since when, without raising an alert", async () => {
