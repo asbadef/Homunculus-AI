@@ -48,24 +48,15 @@ import {
   BoardStrip, News2, RAIL_LEFT, ScopeNote, boardKnown, nameOf, pillRisk, railOf, summaryOf,
   useBoardNow,
 } from "../common/BoardState.jsx";
-import { ageOf, hasMeasurement } from "../common/freshness.js";
-import { ageParts } from "../common/feedHealth.js";
+import { hasMeasurement } from "../common/freshness.js";
 import { measuredVitals } from "../common/vitals.js";
 import { useShadow } from "../../data/ShadowProvider.jsx";
 import { MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { maxAgeOf } from "../common/monitor.js";
+import { ageText } from "./ageText.js";
 import { TrendsBox } from "./trends/TrendsBox.jsx";
 
 const TICK_MS = 30_000;
-
-/** How old, in the reader's own language: "3 dk", "2 sa". The number and the unit stay apart, so
- *  neither ends up inside a word that would need a suffix fitted to it. */
-function ageText(t, iso, nowMs) {
-  const parts = ageParts((ageOf(iso, nowMs) ?? NaN) / 1000);
-  if (!parts) return null;
-  const key = parts.unit === "s" ? "board.ageS" : parts.unit === "m" ? "board.ageM" : "board.ageH";
-  return t("patient.vitalAge", { age: t(key, { count: parts.value }) });
-}
 
 /** Every channel the engine has a value for, with the instant and the age of each. A channel with
  *  no value is left out — not printed as a dash five times over (the wall board's rule). */
@@ -422,7 +413,7 @@ export function PatientScreen({ params }) {
           {/* The one seam left: the SOFA form is Group 3's, and the screen says so where it will go. */}
           <Note tone="info" icon="clock">{t("patient.formsSoon")}</Note>
 
-          <TrendsBox patient={patient} />
+          <TrendsBox patient={patient} nowMs={nowMs} />
         </>
       )}
     </div>

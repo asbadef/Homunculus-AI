@@ -8,7 +8,7 @@ import { onlyScreens } from "../../shell/screens.testutil.js";
 import { NOW, ago, alarm, board, entry, identity, measured, news2 } from "../../data/board.testutil.js";
 import { STAGE_OFF, bed as monitorBed, param as monitorParam, strip } from "../../data/shadow.testutil.js";
 import { hhmm } from "../../i18n/dates.js";
-import { answering } from "./trends/trends.testutil.js";
+import { answering, channel, point, trends } from "./trends/trends.testutil.js";
 import { PatientScreen } from "./PatientScreen.jsx";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -76,18 +76,21 @@ describe("the patient screen", () => {
   });
 
   describe("the measured values", () => {
+    // The trend cards below name the same channels, so these read the measured-values box only.
+    const vitalsBox = () => within(screen.getByRole("heading", { level: 2, name: "Ölçülən dəyərlər" }).closest(".rounded-box"));
+
     it("shows each channel with its value, its unit, its clock time and its age", async () => {
       await open({ payload: board([entry("S-001", [], FULL)]) });
-      expect(screen.getByText("118")).toBeInTheDocument();
-      expect(screen.getByText("Nəbz")).toBeInTheDocument();
+      expect(vitalsBox().getByText("118")).toBeInTheDocument();
+      expect(vitalsBox().getByText("Nəbz")).toBeInTheDocument();
       // Every vital's age is visible — the gap the old workspace never closed.
-      expect(screen.getAllByText(/2 dəq əvvəl/).length).toBeGreaterThan(0);
+      expect(vitalsBox().getAllByText(/2 dəq əvvəl/).length).toBeGreaterThan(0);
     });
 
     it("a channel with no value is left out, and a card with none says so once", async () => {
       await open({ payload: board([entry("S-001", [], { identity: identity() })]) });
-      expect(screen.getByText("Bu çarpayıdan heç bir ölçmə gəlməyib.")).toBeInTheDocument();
-      expect(screen.queryByText("Nəbz")).toBeNull();
+      expect(vitalsBox().getByText("Bu çarpayıdan heç bir ölçmə gəlməyib.")).toBeInTheDocument();
+      expect(vitalsBox().queryByText("Nəbz")).toBeNull();
     });
 
     it("ages a reading against the SERVER's clock, not this browser's", async () => {
@@ -111,8 +114,8 @@ describe("the patient screen", () => {
 
     it("a lactate is shown with the monitor channels — septic shock turns on it", async () => {
       await open({ payload: board([entry("S-001", [], FULL)]) });
-      expect(screen.getByText("4.1")).toBeInTheDocument();
-      expect(screen.getByText("Laktat")).toBeInTheDocument();
+      expect(vitalsBox().getByText("4.1")).toBeInTheDocument();
+      expect(vitalsBox().getByText("Laktat")).toBeInTheDocument();
     });
   });
 
@@ -309,6 +312,25 @@ describe("the patient screen", () => {
     it("read nothing for a patient the board does not hold", async () => {
       const { api } = await open({ payload: board([entry("S-001", [], FULL)]), id: "S-999" });
       expect(api.patientTrends).not.toHaveBeenCalled();
+    });
+
+    it("show six cards, in the bed card's channel order, one list", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      const list = document.querySelector("[data-trends-box] ul");
+      expect([...list.children].map((li) => li.querySelector("[data-frame] span span").textContent))
+        .toEqual(["Nəbz", "Tənəffüs", "SpO2", "Sistolik AT · MAP", "Bədən hərarəti", "Laktat"]);
+    });
+
+    it("frame a card from the engine's points, and age its value against the server's clock", async () => {
+      await open({
+        payload: board([entry("S-001", [], FULL)]),
+        setup: (api) => api.patientTrends.mockImplementation(answering((pid, hours) =>
+          trends(pid, [channel("heart_rate", [point(4, 72, 3)])], { hours }))),
+      });
+      const hr = document.querySelector("[data-trends-box] li [data-frame]");
+      expect(hr.dataset.frame).toBe("crit");
+      expect(hr).toHaveTextContent("NEWS2 +3");
+      expect(hr).toHaveTextContent("4 dəq əvvəl");
     });
 
     it("say they cannot be read, and since when, without raising an alert", async () => {
