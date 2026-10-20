@@ -2,8 +2,8 @@
 // comment beside it, so a change to the arithmetic shows up as a change to a number someone wrote.
 import { describe, it, expect } from "vitest";
 import {
-  bandRects, linePath, markerMarks, markerNear, nearestIndex, ownNormalRect, parseMarkers, parsePoints,
-  plotFrame, timeScale, timeTicks, valueDomain, valueScale, valueTicks,
+  bandRects, crisp, linePath, markerMarks, markerNear, nearestIndex, ownNormalRect, parseMarkers, parsePoints,
+  plotFrame, timeScale, timeTicks, validWindow, valueDomain, valueScale, valueTicks,
 } from "./trendGeometry.js";
 import { BANDS } from "./trends.testutil.js";
 
@@ -34,6 +34,31 @@ describe("the frame and the scales", () => {
   it("puts larger values higher", () => {
     const y = valueScale({ lo: 0, hi: 100 }, 0, 200);
     expect([y(0), y(50), y(100)]).toEqual([200, 100, 0]);
+  });
+
+  it("puts a range of no height on the plot's midline instead of dividing by it", () => {
+    expect(valueScale({ lo: 5, hi: 5 }, 0, 20)(5)).toBe(10);
+    expect(valueScale({ lo: 0, hi: Number.NaN }, 0, 20)(3)).toBe(10);
+    expect(valueScale({ lo: 9, hi: 1 }, 0, 20)(3)).toBe(10);
+  });
+
+  it("places a time outside the window by the same scale — past the plot's edge, never clamped onto it", () => {
+    const x = timeScale(0, 100, 10, 110);
+    expect([x(-50), x(150)]).toEqual([-40, 160]);
+  });
+
+  it("calls a window drawable only when both ends are numbers and it does not run backwards", () => {
+    expect(validWindow(0, 100)).toBe(true);
+    expect(validWindow(5, 5)).toBe(true);
+    expect(validWindow(100, 0)).toBe(false);
+    expect(validWindow(Number.NaN, 100)).toBe(false);
+    expect(validWindow(0, Number.NaN)).toBe(false);
+    expect(validWindow(0, Infinity)).toBe(false);
+    expect(validWindow(undefined, 100)).toBe(false);
+  });
+
+  it("snaps a 1-px line to the centre of the pixel row it falls in, so it is not smeared over two", () => {
+    expect([crisp(9.92), crisp(19.05), crisp(10.5), crisp(10)]).toEqual([9.5, 19.5, 10.5, 10.5]);
   });
 });
 
@@ -82,6 +107,25 @@ describe("the line, the labels and the marks", () => {
     expect(valueTicks({ lo: 57, hi: 83 })).toEqual([60, 70, 80]);
     expect(valueTicks({ lo: 36.1, hi: 37.9 })).toEqual([36.5, 37, 37.5]);
     expect(valueTicks(null)).toEqual([]);
+  });
+
+  it("keeps a wide range to a handful of round labels inside it (systolic 60–220 spans 36–244)", () => {
+    const domain = valueDomain([60, 220]);
+    const ticks = valueTicks(domain);
+    expect(domain).toEqual({ lo: 36, hi: 244 });
+    expect(ticks.length).toBeGreaterThanOrEqual(2);
+    expect(ticks.length).toBeLessThanOrEqual(6);
+    expect(ticks.every((v) => v >= domain.lo && v <= domain.hi && v % 10 === 0)).toBe(true);
+    expect(ticks).toEqual([...ticks].sort((a, b) => a - b));
+  });
+
+  it("labels no time at all — and does not hang — for a window that is not a window", () => {
+    expect(timeTicks(Number.NaN, 5, 24)).toEqual([]);
+    expect(timeTicks(0, Number.NaN, 24)).toEqual([]);
+    expect(timeTicks(0, Infinity, 24)).toEqual([]);
+    expect(timeTicks(undefined, undefined, 24)).toEqual([]);
+    expect(timeTicks(10, 5, 24)).toEqual([]);                          // until before since
+    expect(timeTicks(0, 5, Number.NaN)).toEqual([]);                   // nor a step it cannot work out
   });
 
   it("labels time on whole local hours: every hour, every 4 hours, every 12 hours", () => {

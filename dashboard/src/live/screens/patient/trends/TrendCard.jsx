@@ -22,6 +22,12 @@
 //
 // The frame is `border-2` in every tone, so nothing moves by a pixel when the tone changes.
 //
+// X26 (a sanctioned departure from the spec): a card with MORE THAN ONE series — the pressure card —
+// draws NO NEWS2 tints and no own-normal band in its mini chart. Measured: a calm patient's pressure
+// card carried a permanent red stripe (the systolic ≤ 90 row) behind MAP dots that NEWS2 never scores,
+// and the mini chart is `aria-hidden`, so no legend could say why. The frame and the badge already
+// carry the points; the big chart keeps the tints, with its legend. A single-series card keeps them.
+//
 // A button only when it can open the big chart (`onOpen`); its text — the values, the delta, the age —
 // is the chart's text equivalent, so the mini chart inside it is hidden from assistive technology.
 import React from "react";
@@ -32,7 +38,7 @@ import { ageText } from "../ageText.js";
 import { cardTitle } from "./cards.js";
 import { news2Tone } from "./news2Tone.js";
 import { TrendChart } from "./TrendChart.jsx";
-import { parsePoints } from "./trendGeometry.js";
+import { parsePoints, validWindow } from "./trendGeometry.js";
 
 const FRAME = { none: "border-2 border-line", mid: "border-2 border-mid", crit: "border-2 border-crit" };
 const BADGE = { mid: "warn", crit: "crit" };
@@ -130,9 +136,13 @@ export function TrendCard({ card, channels, nowMs, sinceMs, untilMs, onOpen }) {
                 badge={i === 0 && (tone || unscored) ? <Badge tone={tone} points={points} unscored={unscored} /> : null}
                 pill={i === 0 && latest?.within_own_normal === true ? <Pill icon="user">{t("patient.trendsOwnNormalPill")}</Pill> : null} />
             ))}
-            <span className="mt-1.5 block">
-              <TrendChart series={drawn} bands={primary?.bands ?? null} sinceMs={sinceMs} untilMs={untilMs} hours={24} height={46} />
-            </span>
+            {validWindow(sinceMs, untilMs) ? (
+              <span className="mt-1.5 block">
+                <TrendChart
+                  series={drawn} bands={card.series.length > 1 ? null : primary?.bands ?? null}
+                  sinceMs={sinceMs} untilMs={untilMs} hours={24} height={46} />
+              </span>
+            ) : null}
           </>
         ) : (
           <span className="mt-1 block text-12.5 text-mute">{t("patient.trendsNoData")}</span>

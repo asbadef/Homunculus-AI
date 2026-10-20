@@ -9,7 +9,7 @@ import { I18nProvider } from "../../../i18n/I18nProvider.jsx";
 import { NOW, ago } from "../../../data/board.testutil.js";
 import { CARDS, channelsOf } from "./cards.js";
 import { TrendCard, deltaText } from "./TrendCard.jsx";
-import { channel, point, trends } from "./trends.testutil.js";
+import { BANDS, channel, point, trends } from "./trends.testutil.js";
 
 const HR = CARDS.find((c) => c.id === "heart_rate");
 const PRESSURE = CARDS.find((c) => c.id === "pressure");
@@ -21,7 +21,9 @@ function show(card, channels, { onOpen, ...clock } = {}) {
     <I18nProvider>
       <ul>
         <TrendCard card={card} channels={channelsOf(trends("S-001", channels))}
-          nowMs={"nowMs" in clock ? clock.nowMs : NOW} sinceMs={NOW - 24 * 3_600_000} untilMs={NOW} onOpen={onOpen} />
+          nowMs={"nowMs" in clock ? clock.nowMs : NOW}
+          sinceMs={"sinceMs" in clock ? clock.sinceMs : NOW - 24 * 3_600_000}
+          untilMs={"untilMs" in clock ? clock.untilMs : NOW} onOpen={onOpen} />
       </ul>
     </I18nProvider>,
   );
@@ -228,6 +230,36 @@ describe("the trend card", () => {
     expect(svg.querySelector("[data-series='map'] circle")).toHaveClass("fill-card");
     document.body.innerHTML = "";
     expect(show(HR, []).querySelector("svg")).toBeNull();          // nothing measured: no empty chart either
+  });
+
+  it("draws no NEWS2 tint and no own-normal band behind the pressure card's two series (X26)", () => {
+    // Measured: a calm patient's pressure card carried a permanent red stripe (systolic ≤ 90 scores 3)
+    // behind MAP dots that NEWS2 never scores, and the mini chart is aria-hidden, so nothing explained
+    // it. The frame and the badge already carry the points; the big chart keeps the tints and its legend.
+    const own = { news2: BANDS.sbp, own_normal: { low: 100, high: 130 }, device: null };
+    const card = show(PRESSURE, [
+      channel("sbp", [point(90, 118, 0), point(30, 112, 0)], { bands: own }),
+      channel("map", [point(90, 80), point(30, 76)]),
+    ]);
+    const svg = card.querySelector("svg");
+    expect(svg.querySelectorAll("circle")).toHaveLength(4);
+    expect(svg.querySelectorAll("[data-band]")).toHaveLength(0);
+    expect(svg.querySelector("[data-own-normal]")).toBeNull();
+  });
+
+  it("keeps the tints and the own-normal band on a single-series card's mini chart", () => {
+    const bands = { news2: BANDS.heart_rate, own_normal: { low: 95, high: 105 }, device: null };
+    const card = show(HR, [channel("heart_rate", [point(90, 100, 1), point(30, 120, 2)], { bands })]);
+    const svg = card.querySelector("svg");
+    expect([...svg.querySelectorAll("[data-band]")].map((r) => r.dataset.band)).toEqual(["mid", "mid"]);   // 90–110 and 110–130
+    expect(svg.querySelector("[data-own-normal]")).not.toBeNull();
+  });
+
+  it("draws no mini chart — and leaves no gap where it would be — when the answer's window cannot be read", () => {
+    const card = show(HR, [channel("heart_rate", [point(60, 84, 0)])], { sinceMs: Number.NaN, untilMs: Number.NaN });
+    expect(card.querySelector("svg")).toBeNull();
+    expect(card.querySelector(".mt-1\\.5")).toBeNull();
+    expect(card).toHaveTextContent("84");                              // the card still says what it was told
   });
 
   it("is a button naming the chart it opens only when it can open one", () => {

@@ -9,10 +9,13 @@
 // the one mapping the card's frame uses too).
 import { news2Tone } from "./news2Tone.js";
 
-const LABEL_PAD = 34;   // room for the value labels, big chart only
-const EDGE_PAD = 2;
+// The plot's margins, in pixels. The viewBox is the measured width, so a unit is a pixel.
+const LABEL_PAD = 34;       // room for the value labels on the left, big chart only
+const LABEL_RIGHT_PAD = 8;  // the big chart's right margin, so its last time label is not cut off
+const EDGE_PAD = 2;         // the mini chart's side margins, so an edge dot is not cut off
 const TOP_PAD = 6;
 const BOTTOM_PAD = 6;
+const AXIS_BASELINE = 4;    // the time labels' baseline above the chart's bottom edge
 export const MARKER_LANE = 14;
 export const AXIS_LANE = 16;
 // The time-label step per window: hourly over 6 h, every 4 h over 24 h, every 12 h over 3 days.
@@ -23,11 +26,22 @@ const NICE_STEPS = [1, 2, 2.5, 5];
  *  under the plot for the ▲/◆ marks, and one under that for the time labels. */
 export function plotFrame(width, height, { labels = false, markers = false, axis = false } = {}) {
   const left = labels ? LABEL_PAD : EDGE_PAD;
-  const right = Math.max(left + 1, width - (labels ? 8 : EDGE_PAD));
+  const right = Math.max(left + 1, width - (labels ? LABEL_RIGHT_PAD : EDGE_PAD));
   const top = TOP_PAD;
   const bottom = Math.max(top + 1, height - BOTTOM_PAD - (markers ? MARKER_LANE : 0) - (axis ? AXIS_LANE : 0));
-  return { left, right, top, bottom, laneY: bottom + BOTTOM_PAD + MARKER_LANE / 2, axisY: height - 4 };
+  return { left, right, top, bottom, laneY: bottom + BOTTOM_PAD + MARKER_LANE / 2, axisY: height - AXIS_BASELINE };
 }
+
+/** Whether a window can be drawn: both ends are numbers and it does not run backwards. A window of no
+ *  length is drawable (everything lands on its left edge); one with an end that is not a number is
+ *  not — every x would be NaN, or, worse, every dot would pile up on the left edge. */
+export function validWindow(sinceMs, untilMs) {
+  return Number.isFinite(sinceMs) && Number.isFinite(untilMs) && untilMs >= sinceMs;
+}
+
+/** The centre of the pixel row (or column) a coordinate falls in. A 1-px line drawn on a whole number
+ *  straddles two rows and renders as two blurred ones; drawn on the centre it is one crisp one. */
+export const crisp = (v) => Math.floor(v) + 0.5;
 
 /** The endpoint's `[iso, value, points]` rows as `{ ms, iso, value, points }`, in their order. A row
  *  whose instant cannot be read is dropped (it could be drawn nowhere); a value that is not a number
@@ -73,9 +87,11 @@ export function valueDomain(values) {
   return { lo: lo - margin, hi: hi + margin };
 }
 
-/** The domain onto [bottom, top] (larger values higher). */
+/** The domain onto [bottom, top] (larger values higher). A range with no height — `valueDomain` never
+ *  gives one, but a caller's own might — is drawn on the midline instead of dividing by zero. */
 export function valueScale(domain, top, bottom) {
   const span = domain.hi - domain.lo;
+  if (!(span > 0)) return () => (top + bottom) / 2;
   return (v) => bottom - ((v - domain.lo) / span) * (bottom - top);
 }
 
@@ -132,9 +148,13 @@ export function valueTicks(domain, count = 4) {
   return out;
 }
 
-/** The time labels: whole local hours on the window's step (the browser's zone is the ward's). */
+/** The time labels: whole local hours on the window's step (the browser's zone is the ward's). None
+ *  for a window that is not a window — `new Date(NaN).getHours()` is NaN, and the search below would
+ *  never end. */
 export function timeTicks(sinceMs, untilMs, hours) {
+  if (!validWindow(sinceMs, untilMs)) return [];
   const step = TICK_HOURS[hours] ?? Math.max(1, Math.round(hours / 6));
+  if (!Number.isFinite(step)) return [];
   const at = new Date(sinceMs);
   at.setMinutes(0, 0, 0);
   while (at.getTime() < sinceMs || at.getHours() % step !== 0) at.setHours(at.getHours() + 1);

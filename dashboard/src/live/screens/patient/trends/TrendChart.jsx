@@ -8,15 +8,34 @@
 //     `--pri`) in a lane of their own under the plot, never over a band (tokens.test.js holds both).
 // The series' colour is its channel's identity colour (`vitals.js`), through `currentColor`; MAP's dots
 // are hollow. Every colour is a token class; none is written here.
+//
+// A window that is not a window (an end that is not a number, an end before the start) draws NOTHING:
+// there is nowhere to put a measurement, and a chart that piles every dot on its left edge would say
+// something false. The card's text is the equivalent either way.
 import React, { useLayoutEffect, useRef, useState } from "react";
 import { ddmm, hhmm } from "../../../i18n/dates.js";
 import {
-  bandRects, linePath, markerMarks, nearestIndex, ownNormalRect, plotFrame, timeScale, timeTicks,
-  valueDomain, valueScale, valueTicks,
+  bandRects, crisp, linePath, markerMarks, nearestIndex, ownNormalRect, plotFrame, timeScale, timeTicks,
+  validWindow, valueDomain, valueScale, valueTicks,
 } from "./trendGeometry.js";
 
 const BAND_FILL = { mid: "fill-band-mid", crit: "fill-band-crit" };
 const drawable = (p) => Number.isFinite(p.ms) && Number.isFinite(p.value);
+
+// How things are drawn, in pixels (the viewBox is the measured width, so a unit is a pixel). Sizes and
+// dashes only: no clinical number, and no colour, lives here.
+const DOT_RADIUS = { small: 2.5, big: 3.5 };
+const LINE_WIDTH = 1.5;             // a series' connector, and the ring of a hollow dot
+const HAIRLINE = 1;
+const CONNECTOR_DASH = "4 3";       // between two measurements: an interval, never a measurement
+const OWN_NORMAL_DASH = "2 3";      // the patient's normal's edges; finer, so the two never read alike
+const VALUE_LABEL_GAP = 5;          // between a value label and the plot's left edge
+const VALUE_LABEL_BASELINE = 3.5;   // a value label's baseline below the gridline it names
+const ALARM_HALF_WIDTH = 6;         // ▲ is 12 px wide and 10 px high
+const ALARM_HALF_HEIGHT = 5;
+const DIAMOND_HALF = 4;             // ◆ is an 8-px square turned 45°
+const CURSOR_RADIUS = 6;
+const CURSOR_LINE_OPACITY = 0.5;
 
 /** The element's width in CSS pixels, followed as it changes; `fallback` where nothing can measure
  *  it (no ResizeObserver: jsdom, an old browser). The viewBox is that width, so one unit is one pixel
@@ -43,6 +62,7 @@ export function TrendChart({
 }) {
   const box = useRef(null);
   const width = useWidth(box, big ? 640 : 320);
+  if (!validWindow(sinceMs, untilMs)) return null;
   const frame = plotFrame(width, height, { labels: big, markers: big, axis: big });
   const x = timeScale(sinceMs, untilMs, frame.left, frame.right);
   const own = bands?.own_normal ?? null;
@@ -78,35 +98,51 @@ export function TrendChart({
         {ownRect ? (
           <g data-own-normal="">
             <rect x={ownRect.x} y={ownRect.y} width={ownRect.w} height={ownRect.h} className="fill-band-n" />
-            <line x1={ownRect.x} x2={ownRect.x + ownRect.w} y1={ownRect.y} y2={ownRect.y} className="stroke-pri" strokeDasharray="2 3" />
-            <line x1={ownRect.x} x2={ownRect.x + ownRect.w} y1={ownRect.y + ownRect.h} y2={ownRect.y + ownRect.h} className="stroke-pri" strokeDasharray="2 3" />
+            {[["top", ownRect.y], ["bottom", ownRect.y + ownRect.h]].map(([side, edge]) => (
+              <line
+                key={side} x1={ownRect.x} x2={ownRect.x + ownRect.w} y1={crisp(edge)} y2={crisp(edge)}
+                className="stroke-pri" strokeDasharray={OWN_NORMAL_DASH}
+              />
+            ))}
           </g>
         ) : null}
         {big && y ? valueTicks(domain).map((v) => (
           <g key={`v${v}`} data-tick="value">
-            <line x1={frame.left} x2={frame.right} y1={y(v)} y2={y(v)} className="stroke-grid" />
-            <text x={frame.left - 5} y={y(v) + 3.5} textAnchor="end" className="fill-mute text-10">{v}</text>
+            <line x1={frame.left} x2={frame.right} y1={crisp(y(v))} y2={crisp(y(v))} className="stroke-grid" />
+            <text x={frame.left - VALUE_LABEL_GAP} y={y(v) + VALUE_LABEL_BASELINE} textAnchor="end" className="fill-mute text-10">{v}</text>
           </g>
         )) : null}
-        {y ? series.map((s) => (
-          <g key={s.key} data-series={s.key} className={s.color}>
-            {linePath(s.points, x, y) ? (
-              <path d={linePath(s.points, x, y)} fill="none" stroke="currentColor" strokeWidth={1.5} strokeDasharray="4 3" />
-            ) : null}
-            {s.points.filter(drawable).map((p) => (
-              <circle
-                key={p.iso} data-ts={p.iso} data-value={p.value} cx={x(p.ms)} cy={y(p.value)} r={big ? 3.5 : 2.5}
-                fill={s.hollow ? undefined : "currentColor"} className={s.hollow ? "fill-card" : undefined}
-                stroke="currentColor" strokeWidth={s.hollow ? 1.5 : 0}
-              />
-            ))}
-          </g>
-        )) : null}
-        {marks.map((m) => (m.kind === "alarm" ? (
-          <path key={`a${m.iso}`} data-marker="alarm" d={`M${m.x - 6},${frame.laneY + 5}L${m.x},${frame.laneY - 5}L${m.x + 6},${frame.laneY + 5}Z`} className="fill-crit" />
-        ) : (
-          <rect key={`m${m.iso}`} data-marker={m.kind} x={m.x - 4} y={frame.laneY - 4} width={8} height={8} transform={`rotate(45 ${m.x} ${frame.laneY})`} className="fill-pri" />
-        )))}
+        {y ? series.map((s) => {
+          const path = linePath(s.points, x, y);
+          return (
+            <g key={s.key} data-series={s.key} className={s.color}>
+              {path ? <path d={path} fill="none" stroke="currentColor" strokeWidth={LINE_WIDTH} strokeDasharray={CONNECTOR_DASH} /> : null}
+              {s.points.filter(drawable).map((p, i) => (
+                <circle
+                  key={`${p.iso}#${i}`} data-ts={p.iso} data-value={p.value} cx={x(p.ms)} cy={y(p.value)}
+                  r={big ? DOT_RADIUS.big : DOT_RADIUS.small}
+                  fill={s.hollow ? undefined : "currentColor"} className={s.hollow ? "fill-card" : undefined}
+                  stroke="currentColor" strokeWidth={s.hollow ? LINE_WIDTH : 0}
+                />
+              ))}
+            </g>
+          );
+        }) : null}
+        {marks.map((m, i) => {
+          // Keyed by position as well: two alert kinds can first be seen on one reading.
+          const key = `${m.kind}:${m.label}:${m.iso}:${i}`;
+          return m.kind === "alarm" ? (
+            <path
+              key={key} data-marker="alarm" className="fill-crit"
+              d={`M${m.x - ALARM_HALF_WIDTH},${frame.laneY + ALARM_HALF_HEIGHT}L${m.x},${frame.laneY - ALARM_HALF_HEIGHT}L${m.x + ALARM_HALF_WIDTH},${frame.laneY + ALARM_HALF_HEIGHT}Z`}
+            />
+          ) : (
+            <rect
+              key={key} data-marker={m.kind} x={m.x - DIAMOND_HALF} y={frame.laneY - DIAMOND_HALF}
+              width={DIAMOND_HALF * 2} height={DIAMOND_HALF * 2} transform={`rotate(45 ${m.x} ${frame.laneY})`} className="fill-pri"
+            />
+          );
+        })}
         {big ? timeTicks(sinceMs, untilMs, hours).map((ms) => (
           <text key={`t${ms}`} data-tick="time" x={x(ms)} y={frame.axisY} textAnchor="middle" className="fill-mute text-10">
             {hours === 72 ? `${ddmm(ms)} ${hhmm(ms)}` : hhmm(ms)}
@@ -114,8 +150,8 @@ export function TrendChart({
         )) : null}
         {at && y && drawable(at) ? (
           <g data-cursor="">
-            <line x1={x(at.ms)} x2={x(at.ms)} y1={frame.top} y2={frame.bottom} className="stroke-ink" strokeWidth={1} opacity={0.5} />
-            <circle cx={x(at.ms)} cy={y(at.value)} r={6} fill="none" className="stroke-ink" strokeWidth={1.5} />
+            <line x1={x(at.ms)} x2={x(at.ms)} y1={frame.top} y2={frame.bottom} className="stroke-ink" strokeWidth={HAIRLINE} opacity={CURSOR_LINE_OPACITY} />
+            <circle cx={x(at.ms)} cy={y(at.value)} r={CURSOR_RADIUS} fill="none" className="stroke-ink" strokeWidth={LINE_WIDTH} />
           </g>
         ) : null}
       </svg>

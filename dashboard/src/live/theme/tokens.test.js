@@ -169,6 +169,17 @@ describe.each(["gece", "gun"])("%s theme: contrast", (theme) => {
     },
   );
 
+  // The patient's own normal is edged with a dashed 1-px line in --pri — the cue that does not rest on
+  // colour alone (TrendChart.jsx). Half of that line lies inside the band and half outside it, so it is
+  // held to 3:1 over every tint it can cross: band-n, the NEWS2 row tints, and band-n stacked on them,
+  // on every ground a chart is drawn on.
+  it.each([...BANDS, ...STACKED].flatMap((b) => CHART_GROUNDS.map((g) => [b, g])))(
+    "chart: the patient's-normal dashed edge (pri) clears 3:1 over the %s tint on %s",
+    (stack, ground) => {
+      expect(ratio(s("pri"), over(theme, stack.split(" + "), ground))).toBeGreaterThanOrEqual(UI);
+    },
+  );
+
   // The ▲ alarm and ◆ antibiotic marks sit in their own lane under the plot — on the card in the
   // mini chart, on the dialog's app background in the big one — never over a band.
   it.each(["crit", "pri"].flatMap((name) => ["card", "app"].map((g) => [name, g])))(
