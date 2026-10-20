@@ -240,6 +240,10 @@ def profile_from_payload(patient_id: str, payload: dict,
             low, high = float(span["low"]), float(span["high"])
         except (KeyError, TypeError, ValueError):
             raise ClinicalEntryError(f"{name}: low ve high sayı olmalı") from None
+        if any(v != v or v in (float("inf"), float("-inf")) for v in (low, high)):   # NaN / inf
+            # "nan" and "inf" parse as floats, and `low > high` is False with a NaN: a NaN bound would
+            # reach every trends read for this patient (JSON refuses it) and replay with the audit.
+            raise ClinicalEntryError(f"{name}: geçersiz sayı")
         if low > high:
             # Silently swapping them would hide a data-entry mistake behind a range that looks
             # deliberate, and the layer would then downgrade on a boundary nobody chose.
@@ -254,7 +258,12 @@ def profile_from_payload(patient_id: str, payload: dict,
     else:
         baseline_sofa = base.baseline_sofa if base is not None else None
 
-    if not comorbidities and not baselines and baseline_sofa is None:
+    # An empty set sent over a charted profile is a clinician taking every range away: the trend
+    # screen's form writes the whole set, and a range charted in error must be removable even when
+    # it is the last thing charted. From nothing there is nothing to clear, and an empty profile is
+    # still refused — as is one emptied by a payload that does not name the baselines at all.
+    clearing = base is not None and payload.get("baselines") == {}
+    if not comorbidities and not baselines and baseline_sofa is None and not clearing:
         raise ClinicalEntryError(
             "profil boş olamaz — komorbidite, bazal aralık veya bazal SOFA gerekir")
 

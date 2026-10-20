@@ -338,3 +338,20 @@ def test_a_now_without_a_zone_is_refused():
     with pytest.raises(ValueError, match="time zone"):
         patient_trends(Engine(), InMemoryAuditLog(), hospital=HOSPITAL, patient_id="S-001",
                        hours=24, now=datetime(2026, 10, 19, 9, 0))
+
+
+def test_a_profile_row_with_a_bound_that_is_not_a_number_never_reaches_the_answer():
+    """An audit row written before the profile door refused non-finite bounds replays through
+    `rehydrate`. Refused there now, it leaves the patient without that range — not a NaN band that
+    JSON cannot carry (Starlette's JSONResponse has allow_nan=False)."""
+    from homunculus.api.ackstore import AckStore
+    from homunculus.api.audit import AuditRecord
+    from homunculus.api.rehydrate import rehydrate
+
+    engine = _engine((SignalCode.HEART_RATE, 84, 30))
+    row = AuditRecord(id=1, ts=NOW.isoformat(), tenant=HOSPITAL, event_type="profile", patient_id="S-001",
+                      subject="", payload={"baselines": {"heart_rate": {"low": "nan", "high": 115}}})
+    rehydrate(engine, AckStore(), [row])
+    answer = _trends(engine)
+    json.dumps(answer, allow_nan=False)
+    assert _channel(answer, "heart_rate")["bands"]["own_normal"] is None

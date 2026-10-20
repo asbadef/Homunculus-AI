@@ -251,3 +251,98 @@ def test_an_explicitly_empty_list_still_clears(client):
     r = client.put("/clinical/bed-7/profile",
                    json={"comorbidities": [], "baseline_sofa": 1}, headers=AUTH)
     assert r.json()["comorbidities"] == []
+
+
+# --- Clearing the patient's own normal (G2 slice 1, O4) -------------------------------------------
+# The trend screen's form writes the whole baseline set. A range charted in error keeps quietening
+# this patient's alarms until someone takes it away — so it must be removable even when it is the
+# last thing charted: `{"baselines": {}}` over a charted profile clears every range. From nothing
+# there is nothing to clear, and an empty profile is still refused.
+
+BASELINES_ONLY = {"baselines": {"heart_rate": {"low": 125, "high": 140}}}
+
+
+def test_an_empty_baseline_set_over_a_charted_profile_clears_every_range():
+    base = profile_from_payload("bed-7", BASELINES_ONLY)
+    cleared = profile_from_payload("bed-7", {"baselines": {}}, base)
+    assert cleared.baselines == {}
+    assert cleared.comorbidities == frozenset() and cleared.baseline_sofa is None
+
+
+def test_clearing_the_ranges_keeps_the_comorbidities_and_the_baseline_sofa():
+    base = profile_from_payload("bed-7", {**CHRONIC_AF, "baseline_sofa": 2})
+    cleared = profile_from_payload("bed-7", {"baselines": {}}, base)
+    assert cleared.baselines == {}
+    assert cleared.comorbidities == frozenset({"chronic_af"})
+    assert cleared.baseline_sofa == 2
+
+
+def test_from_nothing_an_empty_baseline_set_is_still_refused():
+    with pytest.raises(Exception, match="boş olamaz"):
+        profile_from_payload("bed-7", {"baselines": {}})
+
+
+def test_without_a_baselines_key_a_payload_still_cannot_empty_a_profile():
+    base = profile_from_payload("bed-7", {"comorbidities": ["copd"]})
+    with pytest.raises(Exception, match="boş olamaz"):
+        profile_from_payload("bed-7", {"comorbidities": []}, base)
+
+
+def test_the_door_clears_the_last_range_and_audits_it(client):
+    assert _profile(client, "bed-7", BASELINES_ONLY).status_code == 200
+    r = _profile(client, "bed-7", {"baselines": {}})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"patient_id": "bed-7", "comorbidities": [], "baselines": {}, "baseline_sofa": None}
+    rows = [x for x in client.get("/audit", headers=AUTH).json()["records"] if x["event_type"] == "profile"]
+    assert [row["payload"]["baselines"] for row in rows] == [{"heart_rate": {"low": 125.0, "high": 140.0}}, {}]
+    assert rows[-1]["payload"]["charted_by"] == "tenant-token"
+
+
+def test_once_cleared_the_next_pulse_is_judged_like_anyone_elses():
+    """The point of clearing: the range stops quietening the alarm. The PUT itself re-scores
+    nothing — the alerts standing are the last reading's — so it is the NEXT reading that the
+    engine judges without the range."""
+    from datetime import timedelta
+    from homunculus.canonical import Observation
+    from homunculus.pipeline import Engine
+
+    engine = Engine()
+    engine.set_profile(profile_from_payload("bed-7", BASELINES_ONLY))
+    first = Observation("bed-7", SignalCode.HEART_RATE, 132, "/min", WHEN, "dev")
+    assert {a.kind: a for a in engine.ingest(first, now=WHEN)}["news2"].downgraded is True
+
+    engine.set_profile(profile_from_payload("bed-7", {"baselines": {}}, engine.profile("bed-7")))
+    later = WHEN + timedelta(minutes=5)
+    second = Observation("bed-7", SignalCode.HEART_RATE, 132, "/min", later, "dev")
+    news2 = {a.kind: a for a in engine.ingest(second, now=later)}["news2"]
+    assert news2.downgraded is False
+    assert news2.urgency == "soon"
+
+
+def test_a_cleared_set_stays_cleared_after_a_restart(client):
+    """The replay reads the profile rows in order. The clearing row is an empty profile: read
+    from nothing it would be refused and skipped — and the range the clinician removed would
+    come back with the next deploy, quietening alarms nobody asked to quieten."""
+    from homunculus.api.ackstore import AckStore
+    from homunculus.api.audit import AuditRecord
+    from homunculus.api.rehydrate import rehydrate
+    from homunculus.pipeline import Engine
+
+    _profile(client, "bed-7", BASELINES_ONLY)
+    assert _profile(client, "bed-7", {"baselines": {}}).status_code == 200
+    records = client.get("/audit", headers=AUTH).json()["records"]
+    fresh = Engine()
+    rehydrate(fresh, AckStore(), [AuditRecord(**r) for r in records])
+    assert fresh.profile("bed-7") is not None
+    assert fresh.profile("bed-7").baselines == {}
+
+
+@pytest.mark.parametrize("bad", ["nan", "inf", "-inf", float("nan"), float("inf")])
+def test_a_bound_that_is_not_a_finite_number_is_refused(bad):
+    """float() reads "nan" and "inf", and `low > high` is False with a NaN — so a NaN bound slipped
+    past both checks, reached every trends read for this patient (JSON refuses NaN: a 500) and came
+    back with every replay of the audit. Refused as `_value` refuses a charted one."""
+    with pytest.raises(Exception, match="geçersiz sayı"):
+        profile_from_payload("bed-7", {"baselines": {"heart_rate": {"low": bad, "high": 115}}})
+    with pytest.raises(Exception, match="geçersiz sayı"):
+        profile_from_payload("bed-7", {"baselines": {"heart_rate": {"low": 100, "high": bad}}})
