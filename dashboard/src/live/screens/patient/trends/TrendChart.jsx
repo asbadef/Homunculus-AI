@@ -13,11 +13,12 @@
 // there is nowhere to put a measurement, and a chart that piles every dot on its left edge would say
 // something false. The card's text is the equivalent either way.
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ddmm, hhmm } from "../../../i18n/dates.js";
+import { FOCUS_RING } from "../../../ui/focus.js";
 import {
   bandRects, crisp, linePath, markerMarks, nearestIndex, ownNormalRect, plotFrame, tickLabel, timeLabelPlace,
   timeScale, timeTicks, validWindow, valueDomain, valueExtent, valueResolution, valueScale, valueTicks,
 } from "./trendGeometry.js";
+import { whenText } from "./trendText.js";
 
 const BAND_FILL = { mid: "fill-band-mid", crit: "fill-band-crit" };
 const drawable = (p) => Number.isFinite(p.ms) && Number.isFinite(p.value);
@@ -63,7 +64,7 @@ function useWidth(ref, fallback, mounted) {
 
 export function TrendChart({
   series, bands = null, markers = [], sinceMs, untilMs, hours = 24, height = 46, big = false,
-  label, cursor = null, onCursor, onPlot,
+  label, cursor = null, onCursor, onPlot, onKeyDown, describedBy,
 }) {
   const box = useRef(null);
   const placeable = validWindow(sinceMs, untilMs);
@@ -98,13 +99,16 @@ export function TrendChart({
     onCursor(index >= 0 ? index : null, "mouse");
   };
   const named = label ? { role: "img", "aria-label": label } : { "aria-hidden": "true", focusable: "false" };
+  // The big chart is one tab stop whose arrow keys move the cursor (the dialog's `onKeyDown`).
+  const keys = onKeyDown ? { tabIndex: 0, onKeyDown, "aria-describedby": describedBy } : {};
 
   // A <span>, not a <div>: the small chart sits inside the card's <button>, which takes phrasing
   // content only.
   return (
     <span ref={box} className="block w-full min-w-0">
       <svg
-        width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="block" {...named}
+        width="100%" height={height} viewBox={`0 0 ${width} ${height}`}
+        className={`block rounded-ctl ${onKeyDown ? FOCUS_RING : ""}`} {...named} {...keys}
         onMouseMove={onCursor ? move : undefined}
         onMouseLeave={onCursor ? () => onCursor(null, "mouse") : undefined}
       >
@@ -162,7 +166,7 @@ export function TrendChart({
           );
         })}
         {big ? timeTicks(sinceMs, untilMs, hours).map((ms) => {
-          const text = hours === 72 ? `${ddmm(ms)} ${hhmm(ms)}` : hhmm(ms);
+          const text = whenText(ms, hours);   // the readout's and the table's words for an instant
           const place = timeLabelPlace(x(ms), text, width);   // anchored to an edge it would cross
           return (
             <text key={`t${ms}`} data-tick="time" x={place.x} y={frame.axisY} textAnchor={place.anchor} className="fill-mute text-10">
