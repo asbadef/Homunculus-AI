@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12 and 3.14, FastAPI, SQLAlchemy/psycopg2 (Postgres) and sqlite3, pytest; React 18, Vite, Vitest + Testing Library (`fireEvent`; no user-event), Tailwind on the live token classes, inline SVG (no chart library).
 
-**Spec (authoritative):** `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. Where the code made the spec's letter impossible or unsafe, this plan departs from it; every departure is in the table below with its file and line, and is an open item for the user. **2026-10-20:** the user approved X1–X19 and chose explicit clearing for O4 — Task 14a and Task 14's clear; X21 was found while amending (X20 is kept for the thinning departure the Task 2 review found, which Task 17 adds from the controller's open-items list). **Second amendment, 2026-10-20:** Task 3b (the gateways refuse NaN/±inf), Task 4's two changes (non-finite readings skipped; the marks' read bounded by the window and flagged — X22), and Task 8's strings as the Task 8 quality review corrected them (lane commit `f082251`), mirrored in every later task that quotes them. **Third, 2026-10-20:** for the tasks the lanes have done, the plan now IS their code — Tasks 1–4 and 3b as `feat/g2v-be` has them (head `bd8afda`), Tasks 6–10 as `feat/g2v-dash` has them (head `339c3f2`), review follow-ups included (X23, X24); Task 11's card edits are rebased on the reviewed card and Task 12's box carries the lane's `Note`; Task 12's legend says MAP has no NEWS2 band, that ▲ is a first detection (O17) and when the marks' read stopped at its limit; Task 14a refuses non-finite bounds. **Fourth, 2026-10-20:** the backend lane's last commits mirrored (Tasks 4, 5 and 14a as `e933ca1` has them — X25) and the dashboard lane's Task 11 (`4ecbc11` — X26); Tasks 12–15 rebased on it; Task 12 settles the review's chart items — value labels at the nearest round step (d3's thresholds), no finer than the data is measured and never past the data, time labels anchored to the edge they would cross, MAP's hollow dots filled with the dialog's own ground, and every mark at an instant named in the readout. **Fifth, 2026-10-20:** Task 12 mirrored to the dashboard lane's `a877057` (X27; its geometry, chart and their tests now written whole); Task 13 rebuilt on it — the keyboard steps over instants (two readings at one instant are one stop), the axis, the readout and the table share `trendText.js`, a mark beside a reading carries its own time when that reads differently, and the dialog opens with focus on the pressed window option; Tasks 14–15 re-checked on it. **Sixth, 2026-10-20:** Task 13 mirrored to the dashboard lane's `372e781` (X28 — the keyboard chart an application — X29 — the table carries the legend's notes — X30 — a MAP read at another minute keeps its own time — and the review's minors); its files written whole; Tasks 14–17 re-checked against it, their anchors unchanged.
+**Spec (authoritative):** `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. Where the code made the spec's letter impossible or unsafe, this plan departs from it; every departure is in the table below with its file and line, and is an open item for the user. **2026-10-20:** the user approved X1–X19 and chose explicit clearing for O4 — Task 14a and Task 14's clear; X21 was found while amending (X20 is kept for the thinning departure the Task 2 review found, which Task 17 adds from the controller's open-items list). **Second amendment, 2026-10-20:** Task 3b (the gateways refuse NaN/±inf), Task 4's two changes (non-finite readings skipped; the marks' read bounded by the window and flagged — X22), and Task 8's strings as the Task 8 quality review corrected them (lane commit `f082251`), mirrored in every later task that quotes them. **Third, 2026-10-20:** for the tasks the lanes have done, the plan now IS their code — Tasks 1–4 and 3b as `feat/g2v-be` has them (head `bd8afda`), Tasks 6–10 as `feat/g2v-dash` has them (head `339c3f2`), review follow-ups included (X23, X24); Task 11's card edits are rebased on the reviewed card and Task 12's box carries the lane's `Note`; Task 12's legend says MAP has no NEWS2 band, that ▲ is a first detection (O17) and when the marks' read stopped at its limit; Task 14a refuses non-finite bounds. **Fourth, 2026-10-20:** the backend lane's last commits mirrored (Tasks 4, 5 and 14a as `e933ca1` has them — X25) and the dashboard lane's Task 11 (`4ecbc11` — X26); Tasks 12–15 rebased on it; Task 12 settles the review's chart items — value labels at the nearest round step (d3's thresholds), no finer than the data is measured and never past the data, time labels anchored to the edge they would cross, MAP's hollow dots filled with the dialog's own ground, and every mark at an instant named in the readout. **Fifth, 2026-10-20:** Task 12 mirrored to the dashboard lane's `a877057` (X27; its geometry, chart and their tests now written whole); Task 13 rebuilt on it — the keyboard steps over instants (two readings at one instant are one stop), the axis, the readout and the table share `trendText.js`, a mark beside a reading carries its own time when that reads differently, and the dialog opens with focus on the pressed window option; Tasks 14–15 re-checked on it. **Sixth, 2026-10-20:** Task 13 mirrored to the dashboard lane's `372e781` (X28 — the keyboard chart an application — X29 — the table carries the legend's notes — X30 — a MAP read at another minute keeps its own time — and the review's minors); its files written whole; Tasks 14–17 re-checked against it, their anchors unchanged. **Seventh, 2026-10-20:** Task 14 mirrored to the dashboard lane's `432712e` (commits `56456a9`, `16e87ef`, `e9eab88`, `432712e`: X31 — the form is the patient's and the opening's it was opened for — X32 — what Save will do is said beside Save — X33 — a held submit takes focus to the first wrong field — X34 — the form notices a set that changed under it, the client half of O3 — and the review's minors); its form, test and box written whole; Task 15's sweep names the form by its title with the bed; Tasks 15–17 re-checked against it (one anchor changed: the sweep's dialog name). O12 is now visible — every save shows the toast that overclaims — and carries a recommendation.
 
 **How the numbers in this plan were obtained.** All seventeen tasks were implemented, in this order, in the worktree while the plan was written, and every red, every green and every count below is what was printed; the tree was then restored to `b6ed65d` and only this file was committed. The O4 amendment (Task 14a, Task 14's clear) and then the second amendment (Task 3b, Task 4, the review's strings) were implemented the same way on top of all seventeen on 2026-10-20, and every suite re-run; the third pass (the lanes' code mirrored into Tasks 1–4, 3b and 6–10, Tasks 11–17 rebased on it) was verified by replaying the whole plan into the worktree and running every suite on that replay; a count marked *derived* is the measured one minus a later task's measured delta. The verified implementation is kept beside the per-task files as `/c/tmp/homunculus-plans/g2v/reference.patch` — a cross-check, not the authority: build from the tasks.
 
@@ -37,7 +37,7 @@
 | X17 | §6 the form "on the kit's Modal, Field, Button"; prefill "from `bands.own_normal` of the current response" | The engine REPLACES the whole set with what is sent. | The button is offered only once the trends have answered and while they are readable: the form must open on the set it replaces. |
 | X18 | — | `refusal.js` is `src/live/screens/admin/refusal.js`, not `src/live/refusal.js`. | The form imports `mayHaveLanded` from there (the one rule). |
 | X19 | — | `src/reachable.test.js` fails on any module `main.jsx` cannot reach. | The dashboard is built top-down: each task wires the module it creates (Task 9 wires the box before any card exists). |
-| X21 | §3.3: the save's toast "Hastanın normali kaydedildi; motor yeniden değerlendirdi" | `PUT /clinical/{id}/profile` (api/app.py:608–640) sets the profile, audits it and republishes the board; it re-scores nothing — the standing alerts are the last reading's until the next one (`Engine.ingest`, pipeline.py:51). The trends answer does re-read the profile (the own-normal band and pill). Found while amending for O4, 2026-10-20. | A save keeps the spec's sentence (Task 8, unchanged — open item O12). A clear, new with the amendment, says only what is true: the ranges are deleted and the next reading is judged without them (Task 14). |
+| X21 | §3.3: the save's toast "Hastanın normali kaydedildi; motor yeniden değerlendirdi" | `PUT /clinical/{id}/profile` (api/app.py:608–640) sets the profile, audits it and republishes the board; it re-scores nothing — the standing alerts are the last reading's until the next one (`Engine.ingest`, pipeline.py:51). The trends answer does re-read the profile (the own-normal band and pill). Found while amending for O4, 2026-10-20. | A save keeps the spec's sentence (Task 8, unchanged — open item O12); since Task 14 it is shown after every save, so the overclaim is visible — O12 recommends rewording it now, with `{subject}`, and an engine re-judge as a follow-up. A clear, new with the amendment, says only what is true: the ranges are deleted and the next reading is judged without them (Task 14). |
 | X22 | §4 the response shape; §4 "markers.alarm are the patient's audited alert events" | `records(…, since=, limit=)` returns the OLDEST rows at or after `since` (ORDER BY id); `AckStore.prune` (api/ackstore.py:28–33) drops the `first_seen` stamp when an alert clears, so a flapping alert writes a row each time it comes back — ≈ 30/h at one reading a minute, ≈ 2 160 in 72 h. Readings replayed from the audit (`rehydrate`) pass no gateway, so a NaN/±inf from before Task 3b can sit in `PatientState`. Found by the Task 2 and Task 3 quality reviews, 2026-10-20. | Task 4: the marks' read takes up to 5000 rows and the answer gains `markers_truncated` (additive); a non-finite reading is never in `points`, `total_points` or `latest`. Task 3b closes the two gateways. |
 | X23 | §6 `useTrends`: "on a new measurement … every 60 s while READY and visible" | The plan's hook superseded every read in flight on any trigger — a new measurement, the tick, a wake, a reload — so at Stage B's rates a chart could never fill. Found by the Task 9 quality review, 2026-10-20. | The lane's hook (Task 9, commit `dac5051`): a read is discarded only on a patient, window or key change, on leaving READY and on unmount; a same-key trigger during a read queues ONE more read when it settles; the timer sleeps while the page is hidden; `reload()` reads only while READY; the unreadable line is a warn `Note`. Return shape unchanged. |
 | X24 | §3.1: the card's values "in the channel's identity colour"; the own-normal pill beside the frame | Daylight `--v-map` is exactly `--crit`: a calm pressure card showed critical-red numbers, and a 3-point pulse showed green numbers in a red frame. A NEWS2 channel whose latest value came with no finite points read as calm. In Russian "САД" reads as systolic, where a vasopressor target is a MAP. Found by the Task 10 quality review, 2026-10-20. | The lane's card (Task 10, commits `4cdb563` and `339c3f2`): values in `text-ink`, the identity colour on the title and (Task 11) the line; the badge and the pill on the first channel's reading row; "NEWS2: —" in attention tone, with its reason for a screen reader, for an unscored NEWS2 channel; the delta's direction in words for a screen reader; no age without a finite clock; `border-2` in every tone; ru `board.chMap` "СрАД". Task 12's legend says MAP is not scored by NEWS2. **User eye-check in Task 16:** say if the prototype's coloured numbers should come back. |
@@ -47,6 +47,10 @@
 | X28 | §6 `TrendChart`: "`role="img"` with a summarising `aria-label`"; §7: the keyboard moves the cursor and the reader hears the readout | NVDA and JAWS stay in browse mode over an `img`: ← → move the virtual caret, Home / End the line, and the page never sees the key — §7's promise was unreachable by default on Windows (VoiceOver was fine). Found by the Task 13 quality review, 2026-10-20. | A chart that takes ← → Home End is `role="application"` with a localised `aria-roledescription` (`patient.trendsChartRole`, four languages); its name and `aria-describedby` are unchanged. With no drawable reading in its first series (the cursor's) it is no tab stop — no `tabindex`, no hint, no keys. The card's mini chart stays `aria-hidden` with no role (Task 13, commit `50589dd`). |
 | X29 | §3.2: the table view "the same numbers"; the legend under the graph | The legend's honesty notes — thinned "N nöqtədən M", the marks' read cut short, MAP not scored, ▲ a first detection — showed only under the graph: a thinned table looked like the complete list, and a newest-first table without the truncation sentence invites "no antibiotic mark lately" = "no antibiotic given". Task 13 quality review. | `TrendNotes`, split out of `TrendLegend`, renders the notes under BOTH views; the table says `trendsNoData` when the channel has no readings (Task 13, commit `50589dd`). |
 | X30 | §3.2: the readout of the measurement under the cursor | X27's "MAP beside systolic" read the MAP at the systolic's instant within one pixel column — about 80 s at 24 h on the 1180 px dialog, 4 min at 72 h, 16 min at 72 h on a 390 px phone — and printed it with the systolic's time. Task 13 quality review. | `valueBeside` in `trendText.js`: a MAP read at another minute prints its own time, and then each number carries its unit ("Sistolik AT 95 mmHg · MAP 70 mmHg (10:17)") — the rule `markBeside` gives marks (Task 13, commit `50589dd`). |
+| X31 | §3.3: the modal's title "Hastanın normali"; D4: the form on the patient screen | The shell mounts the patient screen with no `key`, so the box outlived a move: browser Back under the inert page moved to S-002 with the form still open on S-001's rows, and Save wrote them under S-002 (Critical — the Task 14 quality review, 2026-10-20). Then: a save that landed after the form was reopened closed the new form, and one that landed after she left the screen started a read. | `TrendsBox` holds `editing = { id, opening }` — the patient_id the form was opened for and an openings counter; the form is shown only to that patient, a move forgets it, it is keyed by its opening and closes only its own, and a save that lands after a move or after leaving the screen (a StrictMode-safe `mounted` ref) reads nothing; the title names the bed (Task 14, commits `16e87ef`, `432712e`). |
+| X32 | §3.3: "The form says so under the fields"; "all pairs empty → the Save button is disabled" | A sentence at the bottom of the scrolling body is below the fold on a laptop: what Save was about to do (delete every range) and why it did nothing were not where Save is (Task 14 quality review). | The sentence sits in the footer beside Save as its `aria-describedby`; the one `Announce` says the consequential ones once (in flight, changed meanwhile, clearing, and the nothing-reason after a held submit); Save is the `danger` button while it clears; the nothing-reason is muted until Save has been pressed; Cancel and Save wrap as one pair at 390 px (Task 14, commits `16e87ef`, `432712e`). |
+| X33 | §3.3: the rules "checked inline before sending" | A held submit left focus on Save, and the reason was under a field the reader had not reached (Task 14 quality review). | A held submit moves focus to the first wrong row's field, which says why (refs per field; `flushSync` so the error is in the DOM before the focus) (Task 14, commit `16e87ef`). |
+| X34 | §3.3: "prefilled from `bands.own_normal` of the current response"; "the engine replaces the whole baseline set with what is sent" | The poll hands the open form a fresh `own` every minute; a range another desk charted or cleared meanwhile was overwritten by Save without a word — O3's lost update, on the client (Task 14 quality review). | The box reads the trends again when the form opens; the form snapshots `keyOf(own)` (one `charted()` — both bounds finite — behind the prefill, the key and the clear); when it no longer matches, a warn `Note` and the `Announce` say so (`baselineChangedMeanwhile`, four languages) and Save is held until the form is reopened. Two saves inside one poll still race: the engine's half of O3 stays open (Task 14, commits `16e87ef`, `432712e`). |
 
 ---
 
@@ -79,14 +83,14 @@ If tasks are merged in another order, a total is the base plus the deltas of the
 | 12 | — | 87 / 2298 | `TrendModal.test.jsx` **26** (new); trendGeometry 22 → **30**; TrendChart 19 → **20**; PatientScreen 57 → **58** |
 | 13 | — | 88 / 2333 | TrendModal 26 → **53**; `trendText.test.js` **4** (new); TrendChart 20 → **22**; trendGeometry 30 → **31**; TrendCard 25 → **26** |
 | 14a | 2126 / 650 | — | `test_api_patient_profile.py` 27 → **56**; `test_trends.py` 29 → **30** |
-| 14 | — | 89 / 2350 | `BaselineForm.test.jsx` **15** (new); PatientScreen 58 → **60** |
-| 15 | — | 89 / 2351 | `rawKeys.test.jsx` 6 → **7** |
+| 14 | — | 89 / 2384 | `BaselineForm.test.jsx` **39** (new); PatientScreen 58 → **70** |
+| 15 | — | 89 / 2385 | `rawKeys.test.jsx` 6 → **7** |
 | 16 | 2130 / 650 | — | `test_scenario_rebase.py` **4** (new) |
 | 17 | — | — | docs only |
 
-Measured: the base; backend after 16 and dashboard after 15 (the whole replay, 2026-10-20); the dashboard after 6, 7, 8, 9, 10, 11, 12 and 13 at the lane's commits (`950176d`, `e2afede`, `f082251`, `dac5051`, `339c3f2`, `4ecbc11`, `a877057`, `372e781` — each the row minus 3, Task 5's `apiErrors` tests, which the dashboard lane does not carry). The other rows are the per-file counts summed. Tasks 1–5, 3b, 14a and 6–13 are the lanes' code as reviewed (their follow-up commits included), so these are the counts the lanes have.
+Measured: the base; backend after 16 and dashboard after 15 (the whole replay, 2026-10-20); the dashboard after 6, 7, 8, 9, 10, 11, 12, 13 and 14 at the lane's commits (`950176d`, `e2afede`, `f082251`, `dac5051`, `339c3f2`, `4ecbc11`, `a877057`, `372e781`, `432712e` — each the row minus 3, Task 5's `apiErrors` tests, which the dashboard lane does not carry). The other rows are the per-file counts summed. Tasks 1–5, 3b, 14a and 6–14 are the lanes' code as reviewed (their follow-up commits included), so these are the counts the lanes have.
 
-Backend arithmetic: 14 + 17 + 15 + 9 + 29 + (26 + 3 + 2) + 30 + 4 = **149** passed and **6** skipped over the base. Dashboard: 3 + 7 + 208 + 0 + 22 + 25 + 85 + 36 + 35 + 17 + 1 = **439** tests and 8 files.
+Backend arithmetic: 14 + 17 + 15 + 9 + 29 + (26 + 3 + 2) + 30 + 4 = **149** passed and **6** skipped over the base. Dashboard: 3 + 7 + 208 + 0 + 22 + 25 + 85 + 36 + 35 + 51 + 1 = **473** tests and 8 files.
 
 ---
 
@@ -205,7 +209,7 @@ Backend arithmetic: 14 + 17 + 15 + 9 + 29 + (26 + 3 + 2) + 30 + 4 = **149** pass
 | `src/backendApi.js` (+ `src/backendApi.test.js`) | `patientTrends(id, hours)`, `putPatientProfile(id, body)`. | 6 |
 | `src/live/session/testTokens.testutil.js` | `fakeApi` gains both. | 6 |
 | `src/live/theme/tokens.css`, `tokens.js`, `tokens.test.js` | `--band-n`, `--band-mid`, `--band-crit`, `--grid` (Gece and Gün); the chart contrast pairs. | 7 |
-| `src/live/i18n/strings/patient.js` | 49 keys × 4 languages; `onlyWrite` and `formsSoon` reworded (8); `trendsSoon` removed (9); `trendsDeltaUp/Down/Same`, `trendsPointsUnknown[Sr]` (10); `trendsLegendNoBand`, `trendsLegendAlarm`, `trendsLegendMarksTruncated` (12); `baselineClearsAll`, `baselineClearedAll` (14). | 8, 9, 10, 12, 14 |
+| `src/live/i18n/strings/patient.js` | 49 keys × 4 languages; `onlyWrite` and `formsSoon` reworded (8); `trendsSoon` removed (9); `trendsDeltaUp/Down/Same`, `trendsPointsUnknown[Sr]` (10); `trendsLegendNoBand`, `trendsLegendAlarm`, `trendsLegendMarksTruncated` (12); `trendsChartRole`, `trendsPointsUnknownRowSr` (13); `baselineClearsAll`, `baselineClearedAll`, `baselineChangedMeanwhile` (14). | 8, 9, 10, 12, 13, 14 |
 | `src/live/i18n/strings/board.js` | ru `chMap` "СрАД" ("САД" reads as systolic). | 10 |
 | `src/live/i18n/strings.test.js` | one `NEUTRAL` and five `AZ_SAME_AS_TR` entries (8); `trendsPointsUnknown` in both (10). | 8, 10 |
 | `src/live/screens/patient/PatientScreen.jsx` (+ test) | `TrendsBox` where the placeholder stood; the forms note under the Sepsis/Meds row; `ageText` imported; header comment. | 9, 10, 12 (test also 14) |
@@ -10733,11 +10737,14 @@ red: test_api_patient_profile 4 failed (profil boş olamaz / 400); then 1 (the r
 
 ### Task 14: The patient's own normal — the form
 
-Spec §3.3, §3.4 and D4, with X8, X14, X15, X17. For a `clinical.chart` holder the box's header offers "Xəstənin norması…" — once the trends have answered and while they are readable, because the engine replaces the whole baseline set with what is sent and the form must open on the set it replaces. Five rows (pulse, respiration, SpO₂, systolic, temperature — `BASELINE_KEYS`, held equal to api/clinical.py `BASELINE_SIGNALS` by a test that reads that file), each "alt" / "üst", prefilled from `bands.own_normal`. Held inline before anything is sent: one side without the other, a bound that is not a number (a decimal comma is read as a point), low above high. Every filled pair is sent as `{baselines}` alone; an emptied pair is not sent and the engine deletes it — the form says so, and says the comorbidities are not touched. All pairs empty over a charted set (an `own_normal` band on any of the five): Save is offered, the text under the fields says it deletes every charted range, `{"baselines": {}}` is sent — which Task 14a's engine takes as "clear every range" — and the toast says the ranges are deleted and the next reading is judged without them (the user's choice for O4, 2026-10-20). All pairs empty with nothing charted: Save is `aria-disabled` and says why; nothing is sent. 200 → toast "…yadda saxlanıldı…", the trends read again, the form closes, no alert anywhere. 400 → the engine's reason on the toast named after the bed, the form stays open. 403 → the toast says the right is gone, the form closes. No answer → `mayHaveLanded`: the trends read again, the clinician is told to look at the band, the form closes. While in flight: Save `busy`, the fields `readOnly`, the dialog will not close, "…yadda saxlanılır…" said once.
+**Done in the dashboard lane** (commits `56456a9`, `16e87ef`, `e9eab88` and `432712e`, the Task 14 quality review — X31, X32, X33, X34 — and its minors: `<form noValidate onSubmit>` with Save `type="submit" form={formId}`, so Enter in a field saves without a hidden button; a `sending` ref, so a second press sends nothing even before a re-render; StrictMode-safe `mounted` refs in the form and the box; the success work after the try/catch/finally, so a throwing `onSaved` can never read as "not saved"; `bound()` refuses a number that is not finite (a 400-digit bound); an honest header comment; `{subject}` in `baselineClearedAll`; the offer kept, `aria-disabled` with its reason, while the trends are unreadable; each field's label carries its vital in `sr-only` text; en "evaluated"; `«{save}»` filled from `common.save` (in en with ASCII quotes); az "formanı bağlayıb"; one `charted()` behind the prefill, `keyOf` and the clear, `keyOf` exported; the footer's Cancel and Save one flex item; the nothing-reason announced after a held submit); the blocks below are that code.
+
+Spec §3.3, §3.4 and D4, with X8, X14, X15, X17, X31–X34. For a `clinical.chart` holder the box's header offers "Xəstənin norması…" once the trends have answered — the engine replaces the whole baseline set with what is sent, and the form must open on the set it replaces; while the trends cannot be read the offer stays, `aria-disabled` with the reason, so focus has somewhere to return. Opening it reads the trends again; the dialog's title names the bed, and the form is shown only to the patient and the opening it was opened for (X31). Five rows (pulse, respiration, SpO₂, systolic, temperature — `BASELINE_KEYS`, held equal to api/clinical.py `BASELINE_SIGNALS` by a test that reads that file), each "alt" / "üst", prefilled from `bands.own_normal`. Held inline before anything is sent: one side without the other, a bound that is not a number (a decimal comma is read as a point), low above high. Every filled pair is sent as `{baselines}` alone; an emptied pair is not sent and the engine deletes it — the form says so, and says the comorbidities are not touched. All pairs empty over a charted set (an `own_normal` band with both bounds on any of the five — the form's one idea of "charted"): Save is offered as the danger button, the sentence beside it in the footer says it deletes every charted range (X32), `{"baselines": {}}` is sent — which Task 14a's engine takes as "clear every range" — and the toast names the bed and says the ranges are deleted and the next reading is judged without them (the user's choice for O4, 2026-10-20). All pairs empty with nothing charted: Save is `aria-disabled`, its footer sentence says why (muted until Save is pressed, then said once); nothing is sent. 200 → toast "…yadda saxlanıldı…", the trends read again, the form closes, no alert anywhere. 400 → the engine's reason on the toast named after the bed, the form stays open. 403 → the toast says the right is gone, the form closes. No answer → `mayHaveLanded`: the trends read again, the clinician is told to look at the band, the form closes. While in flight: Save `busy`, the fields `readOnly`, the dialog will not close, "…yadda saxlanılır…" said once, and a second press sends nothing. A held submit moves focus to the first wrong field (X33). A set that changes while the form is open (the minute's poll) is said — a warn note and the one announcement — and Save is held until the form is reopened (X34). Save is the form's own submit (`type="submit" form={id}`), so Enter in a field saves.
 
 **Files:**
 - Create: `trends/BaselineForm.jsx`, `trends/BaselineForm.test.jsx`
-- Modify: `trends/TrendsBox.jsx`, `PatientScreen.test.jsx`, `src/live/i18n/strings/patient.js` (two keys)
+- Modify (Write, whole): `trends/TrendsBox.jsx`
+- Modify (Edit): `PatientScreen.test.jsx`, `src/live/i18n/strings/patient.js` (three keys)
 - The tests stub the API, so this task builds without Task 14a; a real engine refuses the clear until 14a has landed.
 
 - [ ] **Step 1: The form's tests** — Write `dashboard/src/live/screens/patient/trends/BaselineForm.test.jsx`:
@@ -10754,32 +10761,81 @@ import React from "react";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { mount } from "../../../session/mount.testutil.jsx";
 import { profile, token } from "../../../session/testTokens.testutil.js";
-import { BASELINE_KEYS, BaselineForm } from "./BaselineForm.jsx";
+import { BASELINE_KEYS, BaselineForm, checkBaselines, keyOf } from "./BaselineForm.jsx";
 
 const ENGINE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../../homunculus-engine/src/homunculus");
 const CHARTABLE = ["board.view", "alerts.ack", "clinical.chart"];
 const PATIENT = { patient_id: "S-001", display_name: "Ayşe Sentetik", measuredAt: {} };
+const HR = { heart_rate: { low: 100, high: 115 } };
+// What the clinician hears for each vital, in front of "alt" / "üst" (the fieldset's legend is not
+// read in a screen reader's list of fields, so every field's own name says whose range it is).
+const NAMES = { heart_rate: "Nəbz", resp_rate: "Tənəffüs", spo2: "SpO2", sbp: "Sistolik AT", temperature: "Bədən hərarəti" };
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const wait = (ms) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
 
+/** The form on a session that may chart. `setOwn` plays the trends poll handing it a new set. */
 async function open({ own = {}, answer } = {}) {
   const onClose = vi.fn();
   const onSaved = vi.fn();
-  const mounted = await mount(<BaselineForm patient={PATIENT} bed="REA-01 · 2" own={own} onClose={onClose} onSaved={onSaved} />, {
+  let change;
+  function Harness() {
+    const [current, setCurrent] = React.useState(own);
+    change = setCurrent;
+    return <BaselineForm patient={PATIENT} bed="REA-01 · 2" own={current} onClose={onClose} onSaved={onSaved} />;
+  }
+  const mounted = await mount(<Harness />, {
     access: token({ perms: CHARTABLE }), me: profile({ perms: CHARTABLE }),
     setup: (api) => api.putPatientProfile.mockImplementation(answer ?? (() => Promise.resolve({ patient_id: "S-001" }))),
   });
-  return { ...mounted, onClose, onSaved };
+  return { ...mounted, onClose, onSaved, setOwn: (next) => act(async () => { change(next); await settle(); }) };
 }
-const dialog = () => screen.getByRole("dialog", { name: "Xəstənin norması" });
+const dialog = () => screen.getByRole("dialog", { name: "Xəstənin norması · REA-01 · 2" });
 const row = (key) => dialog().querySelector(`[data-baseline='${key}']`);
-const type = (key, side, value) => fireEvent.change(within(row(key)).getByLabelText(side === "low" ? "alt" : "üst"), { target: { value } });
-const save = () => act(async () => { fireEvent.click(within(dialog()).getByRole("button", { name: "Yadda saxla" })); await settle(); });
+const input = (key, side) => within(row(key)).getByLabelText(`${NAMES[key]} ${side === "low" ? "alt" : "üst"}`);
+const type = (key, side, value) => fireEvent.change(input(key, side), { target: { value } });
+const saveButton = () => within(dialog()).getByRole("button", { name: "Yadda saxla" });
+const save = () => act(async () => { fireEvent.click(saveButton()); await settle(); });
 const toastText = () => document.body.textContent;
+const emptyRow = (key) => { type(key, "low", ""); type(key, "high", ""); };
 
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+});
+
+describe("what the form holds back (checkBaselines)", () => {
+  const rows = (low, high, key = "heart_rate") => ({ [key]: { low, high } });
+  const problem = (low, high) => checkBaselines(rows(low, high)).errors.heart_rate;
+
+  it("reads a decimal comma as a point, and ignores the whitespace around a number", () => {
+    expect(checkBaselines(rows("36,5", " 37.5 ", "temperature")).baselines).toEqual({ temperature: { low: 36.5, high: 37.5 } });
+  });
+
+  it("refuses a number with a space inside it, an exponent, a plus sign, a bare point and a Unicode minus", () => {
+    for (const bad of ["1 00", "1e3", "+5", ".5", "5.", "−5", "0x10", "12abc", "1,2,3"]) {
+      expect(problem(bad, "200"), bad).toEqual({ side: "low", key: "patient.baselineNotNumber" });
+    }
+  });
+
+  it("tells an empty bound from a zero: 0 is a bound, an empty string is none", () => {
+    expect(checkBaselines(rows("0", "5")).baselines).toEqual({ heart_rate: { low: 0, high: 5 } });
+    expect(checkBaselines(rows("", "5")).errors.heart_rate).toEqual({ side: "low", key: "patient.baselineBothOrNeither" });
+    expect(checkBaselines(rows("5", "  ")).errors.heart_rate).toEqual({ side: "high", key: "patient.baselineBothOrNeither" });
+    expect(checkBaselines(rows("", "  "))).toEqual({ errors: {}, baselines: {} });
+  });
+
+  it("takes low equal to high, and negatives, and holds low above high", () => {
+    expect(checkBaselines(rows("90", "90")).baselines).toEqual({ heart_rate: { low: 90, high: 90 } });
+    expect(checkBaselines(rows("-5", "-2")).baselines).toEqual({ heart_rate: { low: -5, high: -2 } });
+    expect(problem("-2", "-5")).toEqual({ side: "low", key: "patient.baselineLowAboveHigh" });
+    expect(problem("91", "90")).toEqual({ side: "low", key: "patient.baselineLowAboveHigh" });
+  });
+
+  it("refuses a number too large to be one: it would travel as null and reach the engine as a refusal in another tongue", () => {
+    const huge = "9".repeat(400);
+    expect(problem(huge, "5")).toEqual({ side: "low", key: "patient.baselineNotNumber" });
+    expect(problem("5", huge)).toEqual({ side: "high", key: "patient.baselineNotNumber" });
+  });
 });
 
 describe("the patient's own normal", () => {
@@ -10789,13 +10845,25 @@ describe("the patient's own normal", () => {
     expect([...block.matchAll(/"(\w+)":/g)].map((m) => m[1]).sort()).toEqual([...BASELINE_KEYS].sort());
   });
 
+  it("names the bed in its title, so a form that outlives a glance still says whose ranges these are", async () => {
+    await open();
+    expect(screen.getByRole("heading", { level: 2, name: "Xəstənin norması · REA-01 · 2" })).toBeInTheDocument();
+  });
+
   it("opens with what is charted, says it is not a monitor alarm, and says an emptied range is deleted", async () => {
-    await open({ own: { heart_rate: { low: 100, high: 115 } } });
-    expect(within(row("heart_rate")).getByLabelText("alt")).toHaveValue("100");
-    expect(within(row("heart_rate")).getByLabelText("üst")).toHaveValue("115");
-    expect(within(row("spo2")).getByLabelText("alt")).toHaveValue("");
+    await open({ own: HR });
+    expect(input("heart_rate", "low")).toHaveValue("100");
+    expect(input("heart_rate", "high")).toHaveValue("115");
+    expect(input("spo2", "low")).toHaveValue("");
     expect(dialog()).toHaveTextContent("Bu aralıqlar monitorun siqnal həddi deyil");
     expect(dialog()).toHaveTextContent("Boş saxlanılan aralıq silinir. Yanaşı xəstəliklər və bazal SOFA dəyişmir.");
+  });
+
+  it("names the vital in each field, so a list of fields or a voice command can tell ten of them apart", async () => {
+    await open();
+    expect(within(dialog()).getAllByLabelText(/ alt$/)).toHaveLength(5);
+    expect(within(dialog()).getAllByLabelText(/ üst$/)).toHaveLength(5);
+    expect(within(dialog()).queryAllByLabelText(/^(alt|üst)$/)).toHaveLength(0);
   });
 
   it("holds one side without the other, in words, and sends nothing", async () => {
@@ -10818,8 +10886,28 @@ describe("the patient's own normal", () => {
     expect(api.putPatientProfile).not.toHaveBeenCalled();
   });
 
+  it("after a held submit, focus is on the side that is wrong and a screen reader is told what is wrong with it", async () => {
+    await open();
+    type("spo2", "low", "88");
+    await save();
+    expect(document.activeElement).toBe(input("spo2", "high"));
+    expect(input("spo2", "high")).toHaveAccessibleDescription("hər iki hədd lazımdır");
+    expect(input("spo2", "high")).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("puts focus on the FIRST wrong row in the order the form lists them, not the first one typed", async () => {
+    await open();
+    type("temperature", "low", "otuz");
+    type("temperature", "high", "37");
+    type("heart_rate", "low", "120");
+    type("heart_rate", "high", "100");
+    await save();
+    expect(document.activeElement).toBe(input("heart_rate", "low"));
+    expect(input("heart_rate", "low")).toHaveAccessibleDescription("alt hədd üst həddən böyükdür");
+  });
+
   it("sends the whole filled set — the charted pairs too, a decimal comma as a point — and nothing but baselines", async () => {
-    const { api } = await open({ own: { heart_rate: { low: 100, high: 115 } } });
+    const { api } = await open({ own: HR });
     type("temperature", "low", "36,0");
     type("temperature", "high", "37.5");
     await save();
@@ -10830,59 +10918,193 @@ describe("the patient's own normal", () => {
 
   it("does not send an emptied pair: the engine deletes it", async () => {
     const { api } = await open({ own: { heart_rate: { low: 100, high: 115 }, resp_rate: { low: 12, high: 22 } } });
-    type("heart_rate", "low", "");
-    type("heart_rate", "high", "");
+    emptyRow("heart_rate");
     await save();
     expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: { resp_rate: { low: 12, high: 22 } } });
   });
 
-  it("with nothing to send, Save says why, stays focusable and sends nothing", async () => {
-    const { api } = await open();
-    const button = within(dialog()).getByRole("button", { name: "Yadda saxla" });
-    expect(button).toHaveAttribute("aria-disabled", "true");
-    expect(button).not.toBeDisabled();
-    expect(dialog()).toHaveTextContent("Göndəriləcək aralıq yoxdur");
-    await save();
-    expect(api.putPatientProfile).not.toHaveBeenCalled();
+  it("saves on Enter: the fields are a form, and Save — in the footer, outside it — is that form's submit", async () => {
+    const { api } = await open({ own: HR });
+    const form = dialog().querySelector("form");
+    expect(form).not.toBeNull();
+    expect(form.id).not.toBe("");
+    // A browser's Enter presses the form's first submit button among everything associated with it,
+    // wherever that button sits in the page: Save names the form by id.
+    expect(saveButton()).toHaveAttribute("type", "submit");
+    expect(saveButton().getAttribute("form")).toBe(form.id);
+    expect(saveButton().form).toBe(form);
+    // And nothing else stands in for it: no button inside the form, no second submit in the dialog.
+    expect(form.querySelector("button")).toBeNull();
+    expect(dialog().querySelectorAll("button[type='submit']")).toHaveLength(1);
+    await act(async () => { fireEvent.submit(form); await settle(); });
+    expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: HR });
   });
 
-  it("every row emptied over a charted set: Save is offered, says it deletes every range, and sends an empty set", async () => {
-    const { api } = await open({ own: { heart_rate: { low: 100, high: 115 } } });
-    type("heart_rate", "low", "");
-    type("heart_rate", "high", "");
-    const button = within(dialog()).getByRole("button", { name: "Yadda saxla" });
-    expect(button).not.toHaveAttribute("aria-disabled");
-    expect(dialog()).toHaveTextContent("Bütün sətirlər boşdur: «Yadda saxla» bu xəstənin daxil edilmiş bütün aralıqlarını silir.");
-    expect(dialog()).not.toHaveTextContent("Göndəriləcək aralıq yoxdur");
-    await save();
-    expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: {} });
+  it("sends once however fast Save is pressed twice", async () => {
+    const { api } = await open({ own: HR, answer: () => new Promise(() => {}) });
+    const button = saveButton();
+    await act(async () => { fireEvent.click(button); fireEvent.click(button); await settle(); });
+    expect(api.putPatientProfile).toHaveBeenCalledTimes(1);
   });
 
-  it("a clear the engine took: the confirmation says every range is deleted, the trends are read again, the form closes", async () => {
-    const { onClose, onSaved } = await open({ own: { heart_rate: { low: 100, high: 115 } } });
-    type("heart_rate", "low", "");
-    type("heart_rate", "high", "");
-    await save();
-    expect(screen.getAllByText("Xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.")).toBeNull();
-    expect(onSaved).toHaveBeenCalledTimes(1);
-    expect(onClose).toHaveBeenCalledTimes(1);
+  describe("what Save is about to do, in the footer beside it", () => {
+    it("with nothing to send, Save says why — in its description — stays focusable and sends nothing", async () => {
+      const { api } = await open();
+      const button = saveButton();
+      expect(button).toHaveAttribute("aria-disabled", "true");
+      expect(button).not.toBeDisabled();
+      expect(button).toHaveAccessibleDescription(/Göndəriləcək aralıq yoxdur/);
+      expect(button.closest(".flex-wrap")).toContainElement(screen.getByText(/Göndəriləcək aralıq yoxdur/));
+      await save();
+      expect(api.putPatientProfile).not.toHaveBeenCalled();
+    });
+
+    it("keeps Cancel and Save together as one unit at the right edge, so on a phone the pair wraps as a pair under the sentence", async () => {
+      await open();
+      const cancel = within(dialog()).getByRole("button", { name: "İmtina" });
+      const pair = saveButton().parentElement;
+      const sentence = screen.getByText(/Göndəriləcək aralıq yoxdur/);
+      expect(cancel.parentElement).toBe(pair);
+      expect(pair).toHaveClass("ml-auto", "shrink-0");
+      expect(pair).not.toContainElement(sentence);                          // the sentence is the pair's sibling, in the same wrapping row
+      expect(pair.parentElement).toContainElement(sentence);
+    });
+
+    it("the reason is quiet until Save has been pressed, and then it is the attention tone", async () => {
+      await open();
+      expect(screen.getByText(/Göndəriləcək aralıq yoxdur/)).toHaveClass("text-mute");
+      await save();
+      expect(screen.getByText(/Göndəriləcək aralıq yoxdur/)).toHaveClass("text-att-ink");
+    });
+
+    it("every row emptied over a charted set: Save is offered, is the danger button, and says in its description that it deletes every range", async () => {
+      const { api } = await open({ own: HR });
+      expect(saveButton().classList.contains("bg-pri")).toBe(true);
+      expect(saveButton()).not.toHaveAccessibleDescription(/silir/);
+      emptyRow("heart_rate");
+      const button = saveButton();
+      expect(button).not.toHaveAttribute("aria-disabled");
+      expect(button.classList.contains("bg-crit")).toBe(true);
+      expect(button).toHaveAccessibleDescription("Bütün sətirlər boşdur: «Yadda saxla» bu xəstənin daxil edilmiş bütün aralıqlarını silir.");
+      expect(button.closest(".flex-wrap")).toContainElement(screen.getByText(/bütün aralıqlarını silir/));
+      expect(dialog()).not.toHaveTextContent("Göndəriləcək aralıq yoxdur");
+      await save();
+      expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: {} });
+    });
+
+    it("says that it deletes every range once, to a screen reader, the moment the last row is emptied", async () => {
+      await open({ own: HR });
+      expect(within(dialog()).getAllByRole("status").map((s) => s.textContent).join(" ")).not.toMatch(/silir/);
+      emptyRow("heart_rate");
+      await wait(200);
+      expect(within(dialog()).getAllByRole("status").map((s) => s.textContent))
+        .toContain("Bütün sətirlər boşdur: «Yadda saxla» bu xəstənin daxil edilmiş bütün aralıqlarını silir.");
+    });
+  });
+
+  it("tells a screen reader why nothing was sent when Save, or Enter, is pressed with nothing to send — and not before", async () => {
+    await open();
+    const nothing = "Göndəriləcək aralıq yoxdur: ən azı bir sətrin hər iki həddini daxil edin.";
+    await wait(200);
+    expect(within(dialog()).getAllByRole("status").map((s) => s.textContent)).not.toContain(nothing);
+    await act(async () => { fireEvent.submit(dialog().querySelector("form")); await settle(); });
+    await wait(200);
+    expect(within(dialog()).getAllByRole("status").map((s) => s.textContent)).toContain(nothing);
+  });
+
+  describe("a range counts as charted when both its bounds are numbers", () => {
+    const hollow = { heart_rate: { low: null, high: null } };
+
+    it("reads a range with null bounds, a half range and an absent range as the same set", () => {
+      expect(keyOf(hollow)).toBe(keyOf({}));
+      expect(keyOf({ heart_rate: null })).toBe(keyOf({}));
+      expect(keyOf({ heart_rate: { low: 100, high: null } })).toBe(keyOf({}));
+      expect(keyOf({ heart_rate: { low: 100, high: 115 } })).not.toBe(keyOf({}));
+      expect(keyOf({ heart_rate: { low: 0, high: 0 } })).not.toBe(keyOf({}));        // 0 is a bound
+    });
+
+    it("a set of hollow ranges is nothing to clear, exactly as an absent range is: Save is held, with the nothing-to-send reason", async () => {
+      const { api } = await open({ own: hollow });
+      expect(input("heart_rate", "low")).toHaveValue("");
+      expect(saveButton()).toHaveAttribute("aria-disabled", "true");
+      expect(saveButton()).toHaveAccessibleDescription(/Göndəriləcək aralıq yoxdur/);
+      expect(dialog()).not.toHaveTextContent("bütün aralıqlarını silir");
+      await save();
+      expect(api.putPatientProfile).not.toHaveBeenCalled();
+    });
+
+    it("does not prefill half a range", async () => {
+      await open({ own: { heart_rate: { low: 100, high: null } } });
+      expect(input("heart_rate", "low")).toHaveValue("");
+      expect(input("heart_rate", "high")).toHaveValue("");
+    });
+
+    it("a poll that turns a hollow range into an absent one has changed nothing", async () => {
+      const { setOwn } = await open({ own: hollow });
+      await setOwn({});
+      expect(dialog()).not.toHaveTextContent("forma açıq ikən dəyişdi");
+    });
   });
 
   it("with nothing charted, a row typed and emptied again leaves nothing to clear: Save stays aria-disabled", async () => {
     const { api } = await open({ own: { heart_rate: null, spo2: null } });
     type("spo2", "low", "88");
     type("spo2", "low", "");
-    const button = within(dialog()).getByRole("button", { name: "Yadda saxla" });
+    const button = saveButton();
     expect(button).toHaveAttribute("aria-disabled", "true");
-    expect(dialog()).toHaveTextContent("Göndəriləcək aralıq yoxdur");
+    expect(button).toHaveAccessibleDescription(/Göndəriləcək aralıq yoxdur/);
     expect(dialog()).not.toHaveTextContent("bütün aralıqlarını silir");
     await save();
     expect(api.putPatientProfile).not.toHaveBeenCalled();
   });
 
+  describe("when the ranges change under an open form", () => {
+    it("says so, holds Save with that sentence as its reason, and keeps what the clinician typed", async () => {
+      const { api, setOwn } = await open({ own: HR });
+      type("temperature", "low", "36");
+      type("temperature", "high", "37.5");
+      await setOwn({ heart_rate: { low: 90, high: 120 } });
+      const sentence = "Bu xəstənin aralıqları forma açıq ikən dəyişdi: formanı bağlayıb yenidən açın.";
+      expect(within(dialog()).getAllByRole("note").map((n) => n.textContent)).toContain(sentence);
+      expect(saveButton()).toHaveAttribute("aria-disabled", "true");
+      expect(saveButton()).toHaveAccessibleDescription(sentence);
+      expect(input("heart_rate", "low")).toHaveValue("100");        // the snapshot she was editing, not the new set
+      expect(input("temperature", "low")).toHaveValue("36");
+      await save();
+      expect(api.putPatientProfile).not.toHaveBeenCalled();
+      await wait(200);
+      expect(within(dialog()).getAllByRole("status").map((s) => s.textContent)).toContain(sentence);
+    });
+
+    it("says nothing when a poll hands it the same ranges again", async () => {
+      const { api, setOwn } = await open({ own: HR });
+      await setOwn({ heart_rate: { low: 100, high: 115 } });
+      expect(dialog()).not.toHaveTextContent("forma açıq ikən dəyişdi");
+      expect(saveButton()).not.toHaveAttribute("aria-disabled");
+      await save();
+      expect(api.putPatientProfile).toHaveBeenCalledTimes(1);
+    });
+
+    it("a range cleared or added by someone else is a change too", async () => {
+      const { setOwn } = await open({ own: HR });
+      await setOwn({});
+      expect(dialog()).toHaveTextContent("forma açıq ikən dəyişdi");
+    });
+  });
+
+  it("a clear the engine took: the confirmation names the patient and says every range is deleted, the trends are read again, the form closes — and no alert", async () => {
+    const { onClose, onSaved } = await open({ own: HR });
+    emptyRow("heart_rate");
+    await save();
+    expect(screen.getAllByText("REA-01 · 2: xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.")).toBeNull();
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ").trim()).toBe("");
+  });
+
   it("a save the engine took: the confirmation, the trends read again, the form closed — and no alert", async () => {
-    const { onClose, onSaved } = await open({ own: { heart_rate: { low: 100, high: 115 } } });
+    const { onClose, onSaved } = await open({ own: HR });
     await save();
     expect(screen.getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
     expect(onSaved).toHaveBeenCalledTimes(1);
@@ -10892,25 +11114,30 @@ describe("the patient's own normal", () => {
 
   it("a refusal goes on the toast, named after the bed and never inline, and the form stays open", async () => {
     const refused = Object.assign(new Error("profil boş olamaz — komorbidite, bazal aralık veya bazal SOFA gerekir"), { status: 400 });
-    const { onClose, onSaved } = await open({ own: { heart_rate: { low: 100, high: 115 } }, answer: () => Promise.reject(refused) });
+    const { onClose, onSaved } = await open({ own: HR, answer: () => Promise.reject(refused) });
     await save();
     expect(toastText()).toContain("REA-01 · 2: xəstənin norması yadda saxlanılmadı — profil boş olamaz");
     expect(within(dialog()).queryAllByRole("alert")).toHaveLength(0);
     expect(onClose).not.toHaveBeenCalled();
     expect(onSaved).not.toHaveBeenCalled();
+    expect(saveButton()).not.toHaveAttribute("aria-busy");      // released, so she can correct it and send again
   });
 
   it("a right taken away meanwhile (403): the toast says so, and the form closes", async () => {
     const refused = Object.assign(new Error("permission required: clinical.chart"), { status: 403 });
-    const { onClose } = await open({ own: { heart_rate: { low: 100, high: 115 } }, answer: () => Promise.reject(refused) });
+    const { onClose, onSaved } = await open({ own: HR, answer: () => Promise.reject(refused) });
     await save();
     expect(toastText()).toContain("REA-01 · 2: xəstənin norması yadda saxlanılmadı — bu əməliyyat üçün artıq səlahiyyətiniz yoxdur (clinical.chart)");
     expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onSaved).not.toHaveBeenCalled();
   });
 
-  it("no answer: it may have landed — the trends are read again and the clinician is told to look at the band", async () => {
-    const silent = Object.assign(new Error("Sunucu yanıt vermedi."), { code: "REQUEST_TIMEOUT" });
-    const { onClose, onSaved } = await open({ own: { heart_rate: { low: 100, high: 115 } }, answer: () => Promise.reject(silent) });
+  it.each([
+    ["the client's own timeout", () => Object.assign(new Error("Sunucu yanıt vermedi."), { code: "REQUEST_TIMEOUT" })],
+    ["a gateway that could not answer (502)", () => Object.assign(new Error("Bad Gateway"), { status: 502 })],
+    ["a connection that dropped", () => new TypeError("Failed to fetch")],
+  ])("no answer, %s: it may have landed — the trends are read again and the clinician is told to look at the band", async (_what, make) => {
+    const { onClose, onSaved } = await open({ own: HR, answer: () => Promise.reject(make()) });
     await save();
     expect(toastText()).toContain("REA-01 · 2: server cavab vermədi; xəstənin norması yadda saxlanılmış ola bilər — qrafikdəki zolağı yoxlayın.");
     expect(onSaved).toHaveBeenCalledTimes(1);
@@ -10918,11 +11145,10 @@ describe("the patient's own normal", () => {
   });
 
   it("while in flight: Save is busy and says so, the fields are read-only, and the dialog will not close", async () => {
-    const { onClose } = await open({ own: { heart_rate: { low: 100, high: 115 } }, answer: () => new Promise(() => {}) });
+    const { onClose } = await open({ own: HR, answer: () => new Promise(() => {}) });
     await save();
-    const button = within(dialog()).getByRole("button", { name: "Yadda saxla" });
-    expect(button).toHaveAttribute("aria-busy", "true");
-    expect(within(row("heart_rate")).getByLabelText("alt")).toHaveAttribute("readonly");
+    expect(saveButton()).toHaveAttribute("aria-busy", "true");
+    expect(input("heart_rate", "low")).toHaveAttribute("readonly");
     await wait(200);
     expect(within(dialog()).getAllByRole("status").map((s) => s.textContent)).toContain("Xəstənin norması yadda saxlanılır…");
     fireEvent.keyDown(document, { key: "Escape" });
@@ -10933,7 +11159,7 @@ describe("the patient's own normal", () => {
 
 Run it → red: `Error: Failed to resolve import "./BaselineForm.jsx" …`.
 
-- [ ] **Step 2: The two sentences of a clear, in four languages.** Every row empty over a charted set is a clear — Task 14a's engine reads `{"baselines": {}}` over a charted profile as "delete every range" — and the form says so before it sends and after it landed. The confirmation says only what is true: the PUT re-scores nothing (Task 14a's `test_once_cleared_the_next_pulse_is_judged_like_anyone_elses`), so it is the next reading that is judged without the ranges. Four Edits in `dashboard/src/live/i18n/strings/patient.js`. In `tr`, replace:
+- [ ] **Step 2: Three sentences, in four languages.** Every row empty over a charted set is a clear — Task 14a's engine reads `{"baselines": {}}` over a charted profile as "delete every range" — and the form says so before it sends (naming Save: `{save}` is filled from `common.save`) and after it landed (naming the bed: `{subject}`). The confirmation says only what is true: the PUT re-scores nothing (Task 14a's `test_once_cleared_the_next_pulse_is_judged_like_anyone_elses`), so it is the next reading that is judged without the ranges. The third says the set changed while the form was open (X34). Four Edits in `dashboard/src/live/i18n/strings/patient.js`. In `tr`, replace:
 
 ```js
     baselineNothingToSend: "Gönderilecek aralık yok: en az bir satırın iki sınırını da girin.",
@@ -10943,8 +11169,9 @@ with:
 
 ```js
     baselineNothingToSend: "Gönderilecek aralık yok: en az bir satırın iki sınırını da girin.",
-    baselineClearsAll: "Bütün satırlar boş: «Kaydet» bu hastanın girilmiş bütün aralıklarını siler.",
-    baselineClearedAll: "Hastanın bütün aralıkları silindi; sonraki ölçüm onlarsız değerlendirilecek.",
+    baselineClearsAll: "Bütün satırlar boş: «{save}» bu hastanın girilmiş bütün aralıklarını siler.",
+    baselineClearedAll: "{subject}: hastanın bütün aralıkları silindi; sonraki ölçüm onlarsız değerlendirilecek.",
+    baselineChangedMeanwhile: "Bu hastanın aralıkları form açıkken değişti: formu kapatıp yeniden açın.",
 ```
 
 In `az`, replace:
@@ -10957,8 +11184,9 @@ with:
 
 ```js
     baselineNothingToSend: "Göndəriləcək aralıq yoxdur: ən azı bir sətrin hər iki həddini daxil edin.",
-    baselineClearsAll: "Bütün sətirlər boşdur: «Yadda saxla» bu xəstənin daxil edilmiş bütün aralıqlarını silir.",
-    baselineClearedAll: "Xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.",
+    baselineClearsAll: "Bütün sətirlər boşdur: «{save}» bu xəstənin daxil edilmiş bütün aralıqlarını silir.",
+    baselineClearedAll: "{subject}: xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.",
+    baselineChangedMeanwhile: "Bu xəstənin aralıqları forma açıq ikən dəyişdi: formanı bağlayıb yenidən açın.",
 ```
 
 In `ru`, replace:
@@ -10971,8 +11199,9 @@ with:
 
 ```js
     baselineNothingToSend: "Нечего отправлять: введите обе границы хотя бы в одной строке.",
-    baselineClearsAll: "Все строки пусты: «Сохранить» удалит все введённые диапазоны этого пациента.",
-    baselineClearedAll: "Все диапазоны пациента удалены; следующее измерение будет оценено без них.",
+    baselineClearsAll: "Все строки пусты: «{save}» удалит все введённые диапазоны этого пациента.",
+    baselineClearedAll: "{subject}: все диапазоны пациента удалены; следующее измерение будет оценено без них.",
+    baselineChangedMeanwhile: "Диапазоны этого пациента изменились, пока форма была открыта: закройте и откройте её снова.",
 ```
 
 In `en`, replace:
@@ -10985,8 +11214,9 @@ with:
 
 ```js
     baselineNothingToSend: "Nothing to send: enter both limits of at least one row.",
-    baselineClearsAll: "Every row is empty: Save deletes all of this patient's charted ranges.",
-    baselineClearedAll: "All of the patient's ranges are deleted; the next reading will be judged without them.",
+    baselineClearsAll: "Every row is empty: \"{save}\" deletes all of this patient's charted ranges.",
+    baselineClearedAll: "{subject}: all of the patient's ranges are deleted; the next reading will be evaluated without them.",
+    baselineChangedMeanwhile: "This patient's ranges changed while the form was open: close it and open it again.",
 ```
 
 `npx vitest run src/live/i18n/strings.test.js 2>&1 | grep -E "Tests "` → `Tests  6 passed (6)` (it loops over every key: the four languages agree, az differs from tr, ru is Cyrillic).
@@ -11000,18 +11230,32 @@ with:
 //
 // THE ENGINE REPLACES THE WHOLE SET WITH WHAT IS SENT (api/clinical.py `profile_from_payload`). So the
 // form opens with what is charted and sends every filled pair; an emptied pair is a deleted baseline,
-// and the form says so under the fields. Only `baselines` is sent: the comorbidities and the baseline
-// SOFA are not in the body, so the engine keeps them (`backendApi.putPatientProfile`, not `setProfile`).
+// and the form says so. Only `baselines` is sent: the comorbidities and the baseline SOFA are not in
+// the body, so the engine keeps them (`backendApi.putPatientProfile`, not `setProfile`).
 //
-// Held here before sending, in the reader's words, exactly what the engine would refuse: one side
-// without the other, a bound that is not a number, low above high. Nothing else is judged — what a
-// range means is the engine's, and anything this form lets through is the engine's to refuse.
+// THE FORM IS A SNAPSHOT of the set it was opened on, and it knows it: the trends poll hands it a
+// fresh `own` every minute, and when that no longer matches what the rows were read from (another
+// desk charted or cleared a range meanwhile) it says so and holds Save until the form is opened
+// again — last write wins is the engine's, and a clinician must not make it silently. The box that
+// opens it keys it by patient (TrendsBox), so rows read from one patient are never written to another.
+//
+// Held here before sending, in the reader's words: one side without the other, a bound that is not a
+// plain decimal (a shape the engine would refuse, or one this form will not guess at: 1e3, +5, .5 and
+// 5. are held back, and so is a number too large to be finite), low above high. Nothing else is judged
+// — what a range means is the engine's, and anything this form lets through is the engine's to refuse.
+//
+// WHAT SAVE IS ABOUT TO DO is said beside it, in the footer that stays on screen (a sentence at the
+// bottom of a scrolling body is below the fold on a laptop): the sentence is Save's description, the
+// one live region says the consequential ones once, and a Save that would delete every range is the
+// danger button. A held submit moves focus to the first row that is wrong; its field says why.
 //
 // A refusal goes on the toast, named after the bed, and never also inline (amendments (a), (f)); a
 // write that got no answer may have landed (`mayHaveLanded`, the one rule): the trends are read again
 // and the clinician is told to look at the band. `busy` holds Save (never `disabled`, amendment (c))
-// and the fields go read-only while the write is in flight.
-import React, { useEffect, useRef, useState } from "react";
+// and the fields go read-only while the write is in flight; a second press while one is in flight is
+// ignored even before the screen has re-rendered (`sending`).
+import React, { useEffect, useId, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { useSession } from "../../../session/SessionProvider.jsx";
 import { apiErrorText } from "../../../apiErrors.js";
@@ -11025,12 +11269,20 @@ import { mayHaveLanded } from "../../admin/refusal.js";
 export const BASELINE_KEYS = Object.freeze(["heart_rate", "resp_rate", "spo2", "sbp", "temperature"]);
 const META = Object.fromEntries(VITALS.map((v) => [v.at, v]));
 
-const shown = (v) => (typeof v === "number" && Number.isFinite(v) ? String(v) : "");
-/** A typed bound: "" when empty, its number (a decimal comma read as a point), NaN when not one. */
+/** A range the engine charted: BOTH bounds are numbers. The one idea of "charted" in this form — what the
+ *  rows open with, what the snapshot compares and whether there is anything to clear all read it — so a
+ *  range of nulls and a range that is not there are the same thing. */
+const charted = (range) => Number.isFinite(range?.low) && Number.isFinite(range?.high);
+const prefill = (range, side) => (charted(range) ? String(range[side]) : "");
+/** A typed bound: "" when empty, its number (a decimal comma read as a point), NaN when it is not a
+ *  plain finite decimal. A run of nines that overflows to Infinity travels as null and would come back
+ *  as the engine's refusal, so it is not a number here. */
 function bound(raw) {
   const s = String(raw ?? "").trim().replace(",", ".");
   if (s === "") return "";
-  return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : Number.NaN;
+  if (!/^-?\d+(\.\d+)?$/.test(s)) return Number.NaN;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : Number.NaN;
 }
 
 /** What the rows would send, and each row's problem as `{ side, key }`. */
@@ -11049,23 +11301,40 @@ export function checkBaselines(rows) {
   return { errors, baselines };
 }
 
+/** A set of ranges as one string: two sets are the same ranges when their strings are equal. */
+export const keyOf = (set) => BASELINE_KEYS.map((key) => (charted(set?.[key]) ? `${set[key].low}~${set[key].high}` : "-")).join("|");
+
 export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
   const { t } = useI18n();
   const { store } = useSession();
   const toast = useToast();
   const [rows, setRows] = useState(() => Object.fromEntries(
-    BASELINE_KEYS.map((key) => [key, { low: shown(own?.[key]?.low), high: shown(own?.[key]?.high) }])));
+    BASELINE_KEYS.map((key) => [key, { low: prefill(own?.[key], "low"), high: prefill(own?.[key], "high") }])));
+  const [openedWith] = useState(() => keyOf(own));
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
-  const mounted = useRef(true);
-  useEffect(() => () => { mounted.current = false; }, []);
+  const inputs = useRef({});
+  const sending = useRef(false);
+  const mounted = useRef(false);
+  const noteId = useId();
+  const formId = useId();
+  // True inside the effect (the house pattern), so StrictMode's rehearsal does not leave it false.
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const { errors, baselines } = checkBaselines(rows);
   const empty = Object.keys(baselines).length === 0 && Object.keys(errors).length === 0;
   // Every row empty over a set that IS charted is a clear: the engine reads `{baselines: {}}` over a
   // charted profile as "delete every range" (api/clinical.py). Over nothing there is nothing to clear.
-  const clearing = empty && BASELINE_KEYS.some((key) => own?.[key]);
+  const clearing = empty && BASELINE_KEYS.some((key) => charted(own?.[key]));
   const nothing = empty && !clearing;
+  const changed = keyOf(own) !== openedWith;
+  const held = changed || nothing;
+  const say = changed ? t("patient.baselineChangedMeanwhile")
+    : clearing ? t("patient.baselineClearsAll", { save: t("common.save") })
+      : nothing ? t("patient.baselineNothingToSend") : "";
   const errorOf = (key, side) => (tried && errors[key]?.side === side ? t(errors[key].key) : undefined);
   const edit = (key, side) => (event) => {
     const { value } = event.target;
@@ -11073,70 +11342,115 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
   };
 
   async function save() {
-    if (busy || nothing) return;
+    if (sending.current || busy) return;
+    const first = BASELINE_KEYS.find((key) => errors[key]);
+    if (first && !changed) {
+      // The error is under its field, and the field is where she is taken (flushSync: it must be in
+      // the DOM, and linked to the field, when the focus arrives).
+      flushSync(() => setTried(true));
+      inputs.current[`${first}.${errors[first].side}`]?.focus();
+      return;
+    }
     setTried(true);
-    if (Object.keys(errors).length > 0) return;
+    if (held) return;
+    sending.current = true;
     const epoch = store.epoch();
     setBusy(true);
+    let done;   // what is said and done once the write is settled and Save is released
     try {
       await store.track(() => store.api.putPatientProfile(patient.patient_id, { baselines }));
       if (epoch !== store.epoch()) return;
-      toast(t(clearing ? "patient.baselineClearedAll" : "patient.baselineSaved"));
-      onSaved();
-      onClose();
+      const text = clearing ? t("patient.baselineClearedAll", { subject: bed }) : t("patient.baselineSaved");
+      done = { say: [text], reread: true, close: true };
     } catch (err) {
       if (err?.superseded || epoch !== store.epoch()) return;
       if (mayHaveLanded(err)) {
-        toast(t("patient.baselineMayHaveLanded", { subject: bed }), "warn");
-        onSaved();
-        onClose();
-      } else if (err?.status === 403) {
-        toast(t("patient.baselineRefused", { subject: bed, reason: t("patient.baselineNoRight") }), "error");
-        onClose();
+        done = { say: [t("patient.baselineMayHaveLanded", { subject: bed }), "warn"], reread: true, close: true };
       } else {
-        toast(t("patient.baselineRefused", { subject: bed, reason: apiErrorText(t, err) }), "error");
+        const forbidden = err?.status === 403;
+        const reason = forbidden ? t("patient.baselineNoRight") : apiErrorText(t, err);
+        done = { say: [t("patient.baselineRefused", { subject: bed, reason }), "error"], reread: false, close: forbidden };
       }
     } finally {
+      sending.current = false;
       if (mounted.current) setBusy(false);
+    }
+    // Out of the `try`: a callback that throws must never turn a write the engine took into "not saved".
+    toast(...done.say);
+    try {
+      if (done.reread) onSaved();
+    } finally {
+      if (done.close) onClose();
     }
   }
 
   return (
     <Modal
-      open title={t("patient.baselineTitle")} onClose={onClose} busy={busy}
+      open title={`${t("patient.baselineTitle")} · ${bed}`} onClose={onClose} busy={busy}
       actions={(
-        <>
-          <Button variant="ghost" onClick={onClose} busy={busy}>{t("common.cancel")}</Button>
-          <Button variant="primary" onClick={save} busy={busy} aria-disabled={nothing ? "true" : undefined}>{t("common.save")}</Button>
-        </>
+        <div className="flex w-full flex-wrap items-center justify-end gap-2">
+          {say ? (
+            <div id={noteId} className="mr-auto min-w-0 flex-[1_1_14rem]">
+              {changed ? <Note tone="warn" icon="alert">{say}</Note> : (
+                <p className={`m-0 text-12 font-semibold ${clearing || tried ? "text-att-ink" : "text-mute"}`}>{say}</p>
+              )}
+            </div>
+          ) : null}
+          {/* The two buttons are one flex item: on a phone the pair wraps as a pair, under the sentence. */}
+          <div className="ml-auto flex shrink-0 gap-2">
+            <Button variant="ghost" onClick={onClose} busy={busy}>{t("common.cancel")}</Button>
+            {/* Save is the form's submit although it sits in the footer, outside it: `form` ties it to the
+                fields, so a browser's Enter in any of them presses it (a form's default button is its first
+                submit among everything associated with it), and a click submits the same way. A busy Save
+                cancels the click (Button), and `sending` holds a second press that beats the re-render. */}
+            <Button
+              type="submit" form={formId} variant={clearing ? "danger" : "primary"} busy={busy}
+              aria-disabled={held ? "true" : undefined} aria-describedby={say ? noteId : undefined}
+            >
+              {t("common.save")}
+            </Button>
+          </div>
+        </div>
       )}
     >
-      <Note tone="info" icon="user">{t("patient.baselineNotDeviceAlarm")}</Note>
-      {BASELINE_KEYS.map((key) => (
-        <fieldset key={key} data-baseline={key} className="m-0 mt-3 min-w-0 border-0 p-0">
-          <legend className="mb-1 p-0 text-12.5 font-semibold">
-            {t(META[key].labelKey)} <span className="font-normal text-mute">({t(META[key].unitKey)})</span>
-          </legend>
-          <div className="grid grid-cols-2 gap-x-2">
-            <Field label={t("patient.baselineLow")} layout="col" error={errorOf(key, "low")}>
-              <Input inputMode="decimal" autoComplete="off" value={rows[key].low} onChange={edit(key, "low")} readOnly={busy} />
+      <form id={formId} noValidate onSubmit={(event) => { event.preventDefault(); save(); }}>
+        <Note tone="info" icon="user">{t("patient.baselineNotDeviceAlarm")}</Note>
+        {BASELINE_KEYS.map((key) => {
+          const name = t(META[key].labelKey);
+          // Each field's own name says whose range it is ("Nəbz alt"): ten fields called "alt" and
+          // "üst" are indistinguishable in a screen reader's list of fields and to voice control.
+          const label = (side) => <><span className="sr-only">{name} </span>{t(side === "low" ? "patient.baselineLow" : "patient.baselineHigh")}</>;
+          const field = (side) => (
+            <Field label={label(side)} layout="col" error={errorOf(key, side)}>
+              <Input
+                ref={(el) => { inputs.current[`${key}.${side}`] = el; }}
+                inputMode="decimal" autoComplete="off" value={rows[key][side]} onChange={edit(key, side)} readOnly={busy}
+              />
             </Field>
-            <Field label={t("patient.baselineHigh")} layout="col" error={errorOf(key, "high")}>
-              <Input inputMode="decimal" autoComplete="off" value={rows[key].high} onChange={edit(key, "high")} readOnly={busy} />
-            </Field>
-          </div>
-        </fieldset>
-      ))}
-      <p className="m-0 mt-2 text-12 text-mute">{t("patient.baselineClearsNote")}</p>
-      {nothing ? <p className="m-0 mt-1 text-12 font-semibold text-att-ink">{t("patient.baselineNothingToSend")}</p> : null}
-      {clearing ? <p className="m-0 mt-1 text-12 font-semibold text-att-ink">{t("patient.baselineClearsAll")}</p> : null}
-      <Announce text={busy ? t("patient.baselineSaving") : ""} />
+          );
+          return (
+            <fieldset key={key} data-baseline={key} className="m-0 mt-3 min-w-0 border-0 p-0">
+              <legend className="mb-1 p-0 text-12.5 font-semibold">
+                {name} <span className="font-normal text-mute">({t(META[key].unitKey)})</span>
+              </legend>
+              <div className="grid grid-cols-2 gap-x-2">
+                {field("low")}
+                {field("high")}
+              </div>
+            </fieldset>
+          );
+        })}
+        <p className="m-0 mt-2 text-12 text-mute">{t("patient.baselineClearsNote")}</p>
+      </form>
+      {/* Said once, in this order of weight. "Nothing to send" only after a submit was held (Save pressed, or
+          Enter in a field): a screen reader hears nothing from an Enter that did nothing otherwise. */}
+      <Announce text={busy ? t("patient.baselineSaving") : changed || clearing || (nothing && tried) ? say : ""} />
     </Modal>
   );
 }
 ```
 
-`npx vitest run src/live/screens/patient/trends/BaselineForm.test.jsx 2>&1 | grep -E "Tests "` → `Tests  15 passed (15)`. (Each row is a `<fieldset>` whose `<legend>` names the vital, so a reader hears "Nəbz (/dəq), alt" rather than five identical "alt" fields.)
+`npx vitest run src/live/screens/patient/trends/BaselineForm.test.jsx 2>&1 | grep -E "Tests "` → `Tests  39 passed (39)`. (Each row is a `<fieldset>` whose `<legend>` names the vital and its unit, and each field's label carries the vital's name in `sr-only` text, so a reader hears "Nəbz alt" rather than five identical "alt" fields.)
 
 - [ ] **Step 4: The screen offers it — tests first.** Edit `PatientScreen.test.jsx` — replace:
 
@@ -11147,66 +11461,241 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
 with:
 
 ```jsx
+    // The patient's normal (Task 14): the box offers it, and the form it opens writes through the profile door.
+    const CHART = ["board.view", "alerts.ack", "clinical.chart"];
+    const FORM = "Xəstənin norması · REA-01 · 2";
+    const withNormal = (pid, hours) => trends(pid, [channel("heart_rate", [point(5, 108, 1)],
+      { bands: { news2: null, own_normal: { low: 100, high: 115 }, device: null } })], { hours });
+    const openNormal = (more) => open({
+      payload: board([entry("S-001", [], FULL)]), perms: CHART,
+      setup: (api) => {
+        api.patientTrends.mockImplementation(answering(withNormal));
+        api.putPatientProfile.mockResolvedValue({ patient_id: "S-001" });
+        more?.(api);
+      },
+    });
+    const offer = () => screen.getByRole("button", { name: "Xəstənin norması…" });
+    const press = (el) => act(async () => { fireEvent.click(el); await settle(); });
+    const formButton = (name) => within(screen.getByRole("dialog", { name: FORM })).getByRole("button", { name });
+    const toasts = () => within(screen.getByRole("region", { name: "Bildirişlər" }));
+    const down = () => Object.assign(new Error("down"), { status: 503 });
+
     it("offer the patient's normal to nobody without clinical.chart", async () => {
       await open({ payload: board([entry("S-001", [], FULL)]) });
       expect(screen.queryByRole("button", { name: "Xəstənin norması…" })).toBeNull();
     });
 
-    it("open the patient's normal from the box, prefilled from the trends, and read them again after a save", async () => {
-      const { api } = await open({
-        payload: board([entry("S-001", [], FULL)]),
-        perms: ["board.view", "alerts.ack", "clinical.chart"],
-        setup: (api) => {
-          api.patientTrends.mockImplementation(answering((pid, hours) => trends(pid, [channel("heart_rate", [point(5, 108, 1)],
-            { bands: { news2: null, own_normal: { low: 100, high: 115 }, device: null } })], { hours })));
-          api.putPatientProfile.mockResolvedValue({ patient_id: "S-001" });
-        },
+    it("offer the patient's normal only once the trends have answered: the form replaces the set it was opened on", async () => {
+      let release;
+      await open({
+        payload: board([entry("S-001", [], FULL)]), perms: CHART,
+        setup: (api) => api.patientTrends.mockImplementation(() => new Promise((resolve) => { release = resolve; })),
       });
-      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Xəstənin norması…" })); await settle(); });
-      const form = screen.getByRole("dialog", { name: "Xəstənin norması" });
-      expect(within(form.querySelector("[data-baseline='heart_rate']")).getByLabelText("alt")).toHaveValue("100");
-      const reads = api.patientTrends.mock.calls.length;
-      await act(async () => { fireEvent.click(within(form).getByRole("button", { name: "Yadda saxla" })); await settle(); });
+      expect(screen.queryByRole("button", { name: "Xəstənin norması…" })).toBeNull();
+      await act(async () => { release(withNormal("S-001", 24)); await settle(); });
+      expect(offer()).not.toHaveAttribute("aria-disabled");
+    });
+
+    it("offer it to nobody when the first read of the trends failed: there is no set to replace", async () => {
+      await open({
+        payload: board([entry("S-001", [], FULL)]), perms: CHART,
+        setup: (api) => api.patientTrends.mockRejectedValue(down()),
+      });
+      expect(screen.queryByRole("button", { name: "Xəstənin norması…" })).toBeNull();
+    });
+
+    it("open the patient's normal from the box, prefilled from the trends, read them on opening and again after a save", async () => {
+      const { api } = await openNormal();
+      const before = api.patientTrends.mock.calls.length;
+      await press(offer());
+      const form = screen.getByRole("dialog", { name: FORM });
+      expect(within(form.querySelector("[data-baseline='heart_rate']")).getByLabelText("Nəbz alt")).toHaveValue("100");
+      // Opening it reads the trends again: the set it replaces must not be a minute old.
+      expect(api.patientTrends.mock.calls.length).toBe(before + 1);
+      await press(within(form).getByRole("button", { name: "Yadda saxla" }));
       expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: { heart_rate: { low: 100, high: 115 } } });
+      expect(api.patientTrends.mock.calls.length).toBe(before + 2);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+    });
+
+    it("clear every range from the box: an empty set is sent, the toast names the bed, the trends are read again", async () => {
+      const { api } = await openNormal();
+      await press(offer());
+      const form = screen.getByRole("dialog", { name: FORM });
+      const row = form.querySelector("[data-baseline='heart_rate']");
+      fireEvent.change(within(row).getByLabelText("Nəbz alt"), { target: { value: "" } });
+      fireEvent.change(within(row).getByLabelText("Nəbz üst"), { target: { value: "" } });
+      const reads = api.patientTrends.mock.calls.length;
+      await press(within(form).getByRole("button", { name: "Yadda saxla" }));
+      expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: {} });
+      expect(toasts().getAllByText("REA-01 · 2: xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.").length).toBeGreaterThan(0);
       expect(api.patientTrends.mock.calls.length).toBe(reads + 1);
       expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ").trim()).toBe("");
+    });
+
+    it("a right taken away meanwhile closes the form and says so, named after the bed, without reading the trends again", async () => {
+      const { api } = await openNormal((api) => api.putPatientProfile.mockRejectedValue(
+        Object.assign(new Error("permission required: clinical.chart"), { status: 403 })));
+      await press(offer());
+      const reads = api.patientTrends.mock.calls.length;
+      await press(formButton("Yadda saxla"));
+      expect(toasts().getAllByText(/REA-01 · 2: xəstənin norması yadda saxlanılmadı — bu əməliyyat üçün artıq səlahiyyətiniz yoxdur/).length).toBeGreaterThan(0);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(api.patientTrends.mock.calls.length).toBe(reads);
+    });
+
+    it("keep the offer, dimmed and with its reason, when the trends turn unreadable under an open form — and give focus back to it", async () => {
+      const { api, stream } = await openNormal();
+      offer().focus();
+      await press(offer());
+      api.patientTrends.mockRejectedValue(down());
+      await act(async () => { stream.frame(entry("S-001", [], { ...FULL, at: measured(10) })); await settle(); });
+      await press(formButton("İmtina"));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(offer()).toHaveAttribute("aria-disabled", "true");
+      expect(offer()).toHaveAccessibleDescription(/Vital qrafikləri oxuna bilmir/);
+      expect(document.activeElement).toBe(offer());
+      await press(offer());
+      expect(screen.queryByRole("dialog")).toBeNull();        // dimmed means it opens nothing: the set it would replace is not known
+    });
+
+    it("keep the offer, and focus on it, when the read after a save fails", async () => {
+      const { api } = await openNormal();
+      offer().focus();
+      await press(offer());
+      api.patientTrends.mockRejectedValue(down());
+      await press(formButton("Yadda saxla"));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(offer()).toHaveAttribute("aria-disabled", "true");
+      expect(document.activeElement).toBe(offer());
+    });
+
+    // The screen mounted the way the shell mounts it: the same element with NO `key`, so /patients/S-001 ->
+    // /patients/S-002 keeps this screen, the box and its state mounted and only the props change (browser Back,
+    // Alt+← or a mouse's back button move the address under the inert page while a form is open). `leave` takes
+    // the whole screen away, as a move to another screen does.
+    async function mover() {
+      onlyScreens({ beds: () => null }, { keep: [] });
+      let go;
+      let away;
+      function Harness() {
+        const [id, setId] = React.useState("S-001");
+        const [here, setHere] = React.useState(true);
+        go = setId;
+        away = () => setHere(false);
+        return here ? <PatientScreen params={{ id }} /> : null;
+      }
+      const mounted = await mount(<Harness />, {
+        access: token({ perms: CHART }), me: profile({ perms: CHART }),
+        setup: (api) => {
+          api.boardPatients.mockResolvedValue(board([entry("S-001", [], FULL), entry("S-002", [], FULL)]));
+          api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+          api.view.mockResolvedValue({ ok: true });
+          api.patientTrends.mockImplementation(answering(withNormal));
+          api.putPatientProfile.mockResolvedValue({ patient_id: "x" });
+        },
+      });
+      await act(async () => { await mounted.board.start(); });
+      await act(async () => { mounted.stream.open(); await settle(); });
+      return {
+        ...mounted,
+        move: (id) => act(async () => { go(id); await settle(); }),
+        leave: () => act(async () => { away(); await settle(); }),
+      };
+    }
+    // A write that has not been answered yet, and the way to answer it later.
+    const pending = (api) => {
+      const held = {};
+      api.putPatientProfile.mockImplementationOnce(() => new Promise((resolve) => { held.release = resolve; }));
+      return () => act(async () => { held.release({ patient_id: "S-001" }); await settle(); });
+    };
+
+    it("a form left open while she moves to another patient does not follow her, and writes nothing to the next one", async () => {
+      // Rows read from S-001 must never be written under S-002.
+      const { api, move } = await mover();
+      await press(offer());
+      expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
+      await move("S-002");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(api.putPatientProfile).not.toHaveBeenCalled();
+      await move("S-001");                                                 // and Forward does not bring the old form back
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await move("S-002");
+      await press(offer());                                                // a new form for S-002 writes to S-002
+      await press(formButton("Yadda saxla"));
+      expect(api.putPatientProfile).toHaveBeenCalledTimes(1);
+      expect(api.putPatientProfile).toHaveBeenCalledWith("S-002", { baselines: { heart_rate: { low: 100, high: 115 } } });
+    });
+
+    it("a save that lands after she has moved on is told to her, and touches nothing of the next patient's: no read for her, her form still open", async () => {
+      const { api, move } = await mover();
+      const answer = pending(api);
+      await press(offer());
+      await press(formButton("Yadda saxla"));                               // S-001's save, unanswered
+      await move("S-002");
+      await press(offer());                                                // S-002's own form, open
+      const reads = api.patientTrends.mock.calls.length;
+      await answer();                                                      // S-001's write lands now
+      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+      expect(api.patientTrends.mock.calls.length).toBe(reads);
+      expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
+      expect(api.putPatientProfile).toHaveBeenCalledTimes(1);              // nothing was sent for S-002
+    });
+
+    it("an old save does not close the form she has reopened for the same patient since", async () => {
+      const { api, move } = await mover();
+      const answer = pending(api);
+      await press(offer());
+      await press(formButton("Yadda saxla"));
+      await move("S-002");
+      await move("S-001");
+      await press(offer());                                                // the second form for S-001
+      expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
+      await answer();                                                      // the FIRST form's write lands
+      expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
+      expect(within(screen.getByRole("dialog", { name: FORM })).getByRole("button", { name: "Yadda saxla" })).not.toHaveAttribute("aria-busy");
+      expect(api.putPatientProfile).toHaveBeenCalledTimes(1);
+    });
+
+    it("a save that lands after she has left the patient screen reads nothing", async () => {
+      const { api, leave } = await mover();
+      const answer = pending(api);
+      await press(offer());
+      await press(formButton("Yadda saxla"));
+      await leave();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      const reads = api.patientTrends.mock.calls.length;
+      await answer();
+      expect(api.patientTrends.mock.calls.length).toBe(reads);
+      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
     });
 
     it("say they cannot be read, and since when, without raising an alert", async () => {
 ```
 
-Run it: `Tests  1 failed | 59 passed (60)` (no button yet).
+Run it: `Tests  10 failed | 60 passed (70)` (no button yet — the ten tests that press it: the offer, the save, the clear, a right taken away, the offer kept while unreadable and after a failed read, and the four moves: another patient, a save landing after a move, after a reopening, after leaving the screen).
 
-- [ ] **Step 5: The button and the form in the box.** Two Edits in `trends/TrendsBox.jsx`.
-
-(a) Replace:
+- [ ] **Step 5: The button and the form in the box** — Write `dashboard/src/live/screens/patient/trends/TrendsBox.jsx` (whole; the form is the patient's and the opening's it was opened for — `editing` is `{ id, opening }` from an openings counter, the form is shown only while the screen shows that patient, a move forgets it, it mounts with `key={editing.opening}` and closes only its own opening, and a save that lands after a move or after leaving the screen — a StrictMode-safe `mounted` ref — reads nothing (X31); the trends are read again when the form opens, so it starts from the set as it is now (X34); the offer stays rendered, `aria-disabled` with its reason, while the trends cannot be read):
 
 ```jsx
-import React, { useState } from "react";
-import { useI18n } from "../../../i18n/I18nProvider.jsx";
-import { hhmm } from "../../../i18n/dates.js";
-import { Box, Note } from "../../../ui/index.js";
-import { CARDS, channelsOf } from "./cards.js";
-import { TrendCard } from "./TrendCard.jsx";
-import { TrendModal } from "./TrendModal.jsx";
-import { measuredKeyOf, useTrends } from "./useTrends.js";
-
-export function TrendsBox({ patient, bed, nowMs }) {
-  const { t } = useI18n();
-  const trends = useTrends(patient.patient_id, 24, measuredKeyOf(patient.measuredAt));
-  const [open, setOpen] = useState(null);       // the id of the card whose big chart is open
-  const channels = channelsOf(trends.data);
-  const sinceMs = Date.parse(trends.data?.since);
-  const untilMs = Date.parse(trends.data?.until);
-  const card = CARDS.find((c) => c.id === open) ?? null;
-  return (
-    <Box title={t("patient.trends")} icon="chart" level={2} right={t("patient.trendsNote")}>
-```
-
-with:
-
-```jsx
-import React, { useState } from "react";
+// src/live/screens/patient/trends/TrendsBox.jsx — the patient's vital trends (Group 2 · slice 1),
+// where the dashed "Vital eğrileri" placeholder stood.
+//
+// THE BROWSER DRAWS; IT NEVER SCORES. Every fact this box shows about a value — its NEWS2 points,
+// the band it sits in, whether it is inside the patient's charted normal, how it moved — is the
+// engine's (GET /patients/{id}/trends, homunculus-engine api/trends.py), printed or drawn as it
+// came. Nothing here or below it computes a band, a threshold, a delta or a point.
+//
+// It never says less than it knows: an unreadable read keeps the last answer on screen and says so
+// in a warn `Note` — the first line of the box's body, as the monitor strip says the same state —
+// with the time that answer came. A `Note` is `role="note"`, not a live region, and not an alert:
+// nothing the clinician did was refused, and a poll that fails once a minute must not interrupt.
+//
+// `nowMs` is REQUIRED: the patient screen's `useBoardNow` instant (the server's clock), which the
+// cards age their values against. Without a finite one a card prints no age — never the browser's.
+import React, { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../../i18n/dates.js";
 import { useSession } from "../../../session/SessionProvider.jsx";
@@ -11221,43 +11710,89 @@ export function TrendsBox({ patient, bed, nowMs }) {
   const { t } = useI18n();
   const { user } = useSession();
   const trends = useTrends(patient.patient_id, 24, measuredKeyOf(patient.measuredAt));
-  const [open, setOpen] = useState(null);       // the id of the card whose big chart is open
-  const [editing, setEditing] = useState(false);
+  // The id of the card whose big chart is open. Like `editing` it survives a move to another patient (the
+  // shell mounts this screen with no `key`), but the chart is read-only and reads for the patient it is given.
+  const [open, setOpen] = useState(null);
+  // `{ id, opening }`: the patient_id the form was opened FOR and which opening of it this is, or null. The
+  // shell renders the screen with no `key`, so a move to another patient (browser Back under the inert page)
+  // keeps this box and its state: the form is shown only to the patient it was opened for — rows read from one
+  // patient are never written under another — and the move forgets it, so that coming back does not reopen it.
+  // The form is keyed by its opening, and what it closes is its own opening: a save started on an earlier form
+  // that lands after she has reopened another (A -> B -> back to A) closes nothing of the new one.
+  const [editing, setEditing] = useState(null);
+  const openings = useRef(0);
+  useEffect(() => { setEditing(null); }, [patient.patient_id]);
+  const shownFor = useRef(patient.patient_id);
+  shownFor.current = patient.patient_id;
+  // True inside the effect (the house pattern), so StrictMode's rehearsal does not leave it false.
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const reasonId = useId();
   const channels = channelsOf(trends.data);
   const sinceMs = Date.parse(trends.data?.since);
   const untilMs = Date.parse(trends.data?.until);
   const card = CARDS.find((c) => c.id === open) ?? null;
-  // The form replaces the whole baseline set, so it opens only on a set this box has READ: offered
-  // to a `clinical.chart` holder once the trends answered, and not while they cannot be read.
-  const canEdit = (user?.perms?.includes("clinical.chart") ?? false) && Boolean(trends.data) && !trends.unreadable;
+  const unreadableText = t("patient.trendsUnreadable", { time: trends.lastOkAt ? hhmm(trends.lastOkAt) : "—" });
+  // The form replaces the whole baseline set, so it opens only on a set this box has READ: offered to a
+  // `clinical.chart` holder once the trends answered. While they cannot be read the button stays — a button
+  // that unmounts under an open form leaves focus on <body> when it closes — but dimmed, with the reason.
+  const offered = (user?.perms?.includes("clinical.chart") ?? false) && Boolean(trends.data);
   const own = Object.fromEntries(BASELINE_KEYS.map((key) => [key, channels[key]?.bands?.own_normal ?? null]));
+  function openForm() {
+    if (trends.unreadable) return;
+    trends.reload();      // the set it replaces must not be a minute old (the form says if it changed since)
+    openings.current += 1;
+    setEditing({ id: patient.patient_id, opening: openings.current });
+  }
   const right = (
     <>
       <span>{t("patient.trendsNote")}</span>
-      {canEdit ? (
-        <Button size="sm" icon="edit" className="ml-2" onClick={() => setEditing(true)}>{t("patient.baselineOpen")}</Button>
+      {offered ? (
+        <Button
+          size="sm" icon="edit" className="ml-2" onClick={openForm}
+          aria-disabled={trends.unreadable ? "true" : undefined} aria-describedby={trends.unreadable ? reasonId : undefined}
+        >
+          {t("patient.baselineOpen")}
+        </Button>
       ) : null}
+      {offered && trends.unreadable ? <span id={reasonId} className="sr-only">{unreadableText}</span> : null}
     </>
   );
   return (
     <Box title={t("patient.trends")} icon="chart" level={2} right={right}>
-```
-
-(b) Replace:
-
-```jsx
+      <div data-trends-box="">
+        {trends.unreadable ? (
+          <Note tone="warn" icon="alert" className="mb-2">
+            {unreadableText}
+          </Note>
+        ) : null}
+        {trends.loading ? <p className="m-0 text-12.5 text-mute">{t("patient.trendsLoading")}</p> : null}
+        {trends.data ? (
+          // role="list": a list with its bullets removed (`list-none`) stops being one for VoiceOver.
+          <ul role="list" className="m-0 grid list-none grid-cols-1 gap-2 p-0 min-[861px]:grid-cols-2 min-[1200px]:grid-cols-3">
+            {CARDS.map((c) => (
+              <TrendCard key={c.id} card={c} channels={channels} nowMs={nowMs} sinceMs={sinceMs} untilMs={untilMs}
+                onOpen={() => setOpen(c.id)} />
+            ))}
+          </ul>
+        ) : null}
+      </div>
       {card ? <TrendModal card={card} patient={patient} bed={bed} onClose={() => setOpen(null)} /> : null}
-    </Box>
-```
-
-with:
-
-```jsx
-      {card ? <TrendModal card={card} patient={patient} bed={bed} onClose={() => setOpen(null)} /> : null}
-      {editing ? (
-        <BaselineForm patient={patient} bed={bed} own={own} onClose={() => setEditing(false)} onSaved={trends.reload} />
+      {editing?.id === patient.patient_id ? (
+        <BaselineForm
+          key={editing.opening} patient={patient} bed={bed} own={own}
+          // A save that lands after a move, or after she has left the screen, closes nothing of anyone else's
+          // form and reads nothing for a patient who is no longer shown.
+          onClose={() => setEditing((current) => (current?.opening === editing.opening ? null : current))}
+          onSaved={() => { if (mounted.current && shownFor.current === patient.patient_id) trends.reload(); }}
+        />
       ) : null}
     </Box>
+  );
+}
 ```
 
 - [ ] **Step 6: Green, then the gate.**
@@ -11266,7 +11801,7 @@ with:
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/screens/patient/ src/reachable.test.js src/live/boundaries.test.js src/live/rawKeys.test.jsx src/live/i18n/ 2>&1 | grep -E "Test Files|Tests |×"
 ```
-Expected: no `×`; PatientScreen 60, BaselineForm 15. Then the suite — **89 / 2350** — and the build.
+Expected: no `×`; `Test Files  16 passed (16)`, `Tests  322 passed (322)` (PatientScreen 70, BaselineForm 39). Then the suite — **89 / 2384** — and the build (`built in`, `precache  20 entries`).
 
 - [ ] **Step 7: Commit.**
 
@@ -11274,9 +11809,11 @@ Expected: no `×`; PatientScreen 60, BaselineForm 15. Then the suite — **89 / 
 cd /c/tmp/g2-vital
 git add dashboard/src/live/screens/patient/trends/BaselineForm.jsx dashboard/src/live/screens/patient/trends/BaselineForm.test.jsx dashboard/src/live/screens/patient/trends/TrendsBox.jsx dashboard/src/live/screens/patient/PatientScreen.test.jsx dashboard/src/live/i18n/strings/patient.js
 git status --short && git diff --cached --stat
-git commit -m "feat(patient): the patient's own normal — five ranges, the whole set, written through the engine's profile door" -m "Offered to clinical.chart once the trends answered (the engine replaces the whole set, so the form opens on the set it replaces). Held inline: both bounds, a number, low <= high. Sends {baselines} alone; an emptied pair is deleted and the form says so. Every row emptied over a charted set sends {baselines: {}} and clears them all (Task 14a), said under the fields and on the toast (the next reading is judged without them); with nothing charted, nothing to send is aria-disabled with the reason. 200: toast, trends re-read, closed, no alert. 400: the engine's reason on the toast, named after the bed. 403: toast, closed. No answer: may have landed, re-read, told to look at the band.
+git commit -m "feat(patient): the patient's own normal — five ranges, the whole set, written through the engine's profile door" -m "Offered to clinical.chart once the trends answered (the engine replaces the whole set, so the form opens on the set it replaces, read again on opening). Held inline: both bounds, a number, low <= high; a held submit takes focus to the first wrong field. Sends {baselines} alone; an emptied pair is deleted and the form says so. Every row emptied over a charted set sends {baselines: {}} and clears them all (Task 14a), said beside Save (the danger button) and on the toast named after the bed (the next reading is judged without them); with nothing charted, nothing to send is aria-disabled with the reason. 200: toast, trends re-read, closed, no alert. 400: the engine's reason on the toast, named after the bed. 403: toast, closed. No answer: may have landed, re-read, told to look at the band.
 
-red: BaselineForm import unresolved; PatientScreen 1 failed (no button)" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+The form is the patient's and the opening's it was opened for: a move forgets it, an old save closes nothing of a newer form, and a save that lands after a move or after leaving the screen reads nothing (X31). What Save will do is said beside it, once, through the one Announce (X32). A set that changed under an open form is said and holds Save until it is reopened (X34). Save is the form's own submit, so Enter saves; one send at a time.
+
+red: BaselineForm import unresolved; PatientScreen 10 failed | 60 passed (70) (no button)" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
@@ -11384,7 +11921,7 @@ with:
     expect(screen.getByRole("dialog")).toHaveTextContent("Bədən hərarəti seyrəldildi: 2400 nöqtədən 2");
     await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); await settle(); });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Xəstənin norması…" })); await settle(); });
-    expect(screen.getByRole("dialog", { name: "Xəstənin norması" })).toHaveTextContent("Boş saxlanılan aralıq silinir.");
+    expect(screen.getByRole("dialog", { name: "Xəstənin norması · REA-01 · 2" })).toHaveTextContent("Boş saxlanılan aralıq silinir.");
     offenders.push(...rawKeys(document.body));
     expect(offenders).toEqual([]);
     act(() => { mounted.board.clear(); mounted.shadow.clear(); });
@@ -11393,13 +11930,13 @@ with:
   // The same anchor for Aşama A's monitor strip: with no strip in the shadow store, every
 ```
 
-(`PERMS` is the whole catalogue, so `clinical.chart` is in it and the form's button is drawn.)
+(`PERMS` is the whole catalogue, so `clinical.chart` is in it and the form's button is drawn. The form's title names the bed — X31 — so the sweep finds the dialog as "Xəstənin norması · REA-01 · 2".)
 
 - [ ] **Step 2: Run the sweep.** `npx vitest run src/live/rawKeys.test.jsx 2>&1 | grep -E "Tests "` → `Tests  7 passed (7)`.
 
 - [ ] **Step 3: Prove the net bites** (then put it back). Edit `trends/TrendCard.jsx`: replace `t("patient.trendsSingle")` with `t("patient.trendsSingel")`, and run the sweep again. Expected — three nets catch it: `[i18n] "patient.trendsSingel" has no az text — showing the key.`; `× … every screen this build has renders its texts …` with `patient (/patients/S-001) → patient.trendsSingel`; `× … the trend charts' keys resolve …` (its `tək ölçmə` is now the raw key); `× … names no key the dictionaries do not have …` with `screens\patient\trends\TrendCard.jsx → patient.trendsSingel (az, tr, ru, en)`. Edit it back to `t("patient.trendsSingle")` and re-run: `Tests  7 passed (7)`. **Nothing of this step is committed.**
 
-- [ ] **Step 4: The dashboard gate.** The suite: **89 files / 2351 tests** (measured); the build: `built in`, `precache  20 entries`, no `larger than 500 kB`. Then, by hand, read the dashboard part of `git diff b6ed65d --stat`: every new file under `src/live/screens/patient/trends/` is near the ~250-line guide or under it — `TrendModal.jsx` 225, `trendGeometry.js` 277 (one pure module, a little over) — while three tests are larger: `TrendModal.test.jsx` 607, `trendGeometry.test.js` 260, `TrendChart.test.jsx` 237 (the dialog's test is a candidate to split by view — O23).
+- [ ] **Step 4: The dashboard gate.** The suite: **89 files / 2385 tests** (measured); the build: `built in`, `precache  20 entries`, no `larger than 500 kB`. Then, by hand, read the dashboard part of `git diff b6ed65d --stat`: every new file under `src/live/screens/patient/trends/` is near the ~250-line guide or under it — `TrendModal.jsx` 225, `BaselineForm.jsx` 224, `trendGeometry.js` 277 (one pure module, a little over) — while four tests are larger: `TrendModal.test.jsx` 607, `BaselineForm.test.jsx` 405, `trendGeometry.test.js` 260, `TrendChart.test.jsx` 237 (the dialog's and the form's tests are candidates to split — O23); `PatientScreen.test.jsx`, older than the slice, is 887 after it.
 
 - [ ] **Step 5: The backend, without the database.**
 
@@ -11688,10 +12225,10 @@ bed-3 6h heart_rate:0 | map:4(63.0 Δ1.0 N2 None) | sbp:0 | spo2:0 | temperature
   3. Nəbz → the dialog "bed-1 · kimlik gözlənilir · Nəbz". Hover: the readout names time, value, "/dəq". Tab to the chart; ← → Home End move the cursor. 6 saat / 24 saat / 3 gün each re-draw. The ▲ sits at the right edge: the alarm's instant is when the server first raised it (the replay's wall clock), while the readings carry their rebased instants — the honest picture (open item O10). Legend: "NEWS2 zolağı (yetkin) · mənbə news2-rcp-2017: 1–2 bal 3 bal", dots and dashes, ▲ siqnal, ◆ antibiotik.
   4. Cədvəl: five rows, newest first, the values equal to the dots, "NEWS2 balı" equal to the frames; the ▲ as a row of its own. Escape closes and focus returns to the card.
   5. `bed-3`: Laktat and Sistolik AT · MAP cards with readings; in the Laktat dialog ▲ sepsis, antibiotic_due, septic_shock and ◆ antibiotik.
-  6. Back on `bed-1`, **Xəstənin norması…**: five rows, no MAP and no lactate; enter Nəbz 120 – 135, Yadda saxla → the toast "Xəstənin norması yadda saxlanıldı; …", the Nəbz card now also wears "Xəstənin normasında" (130 is inside), its frame still amber; the dialog shows the dashed band. **Acceptance 3 — the form writes and the band appears.**
-  6a. **The O4 amendment.** **Xəstənin norması…** again; empty Nəbz's two fields: under the fields "Bütün sətirlər boşdur: «Yadda saxla» bu xəstənin daxil edilmiş bütün aralıqlarını silir.", and Yadda saxla is offered (no `aria-disabled`). Save → the toast "Xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.", and the "Xəstənin normasında" pill and the dashed band are gone. Then `$C restart api` (`C` as in Step 5), wait for `healthy` as in Step 5, reload: still no pill, no band — the clear survived the replay from Postgres. The form once more: every row empty, Save `aria-disabled` with "Göndəriləcək aralıq yoxdur …". **Acceptance 3b — the last range can be removed, and stays removed.**
+  6. Back on `bed-1`, **Xəstənin norması…**: the title names the bed; five rows, no MAP and no lactate; enter Nəbz 120 – 135, Yadda saxla → the toast "Xəstənin norması yadda saxlanıldı; …", the Nəbz card now also wears "Xəstənin normasında" (130 is inside), its frame still amber; the dialog shows the dashed band. **Acceptance 3 — the form writes and the band appears.**
+  6a. **The O4 amendment.** **Xəstənin norması…** again; empty Nəbz's two fields: beside Yadda saxla, in the footer, "Bütün sətirlər boşdur: «Yadda saxla» bu xəstənin daxil edilmiş bütün aralıqlarını silir.", and Yadda saxla is offered as the red danger button (no `aria-disabled`). Save → the toast "<the bed>: xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.", and the "Xəstənin normasında" pill and the dashed band are gone. Then `$C restart api` (`C` as in Step 5), wait for `healthy` as in Step 5, reload: still no pill, no band — the clear survived the replay from Postgres. The form once more: every row empty, Save `aria-disabled`, its footer sentence "Göndəriləcək aralıq yoxdur …" muted until Save is pressed, then said. **Acceptance 3b — the last range can be removed, and stays removed.**
   7. Sign out; sign in as `test.denetci@homunculus.health`: the cards are there, the **Xəstənin norması…** button is not.
-  8. **Acceptance 4:** at 390 px (devtools device toolbar, 390 × 844) and at 1440 px — no horizontal page scroll on the patient screen, in the big chart, in its table (it scrolls inside its own frame) and in the form; one column at 390, three at 1440. Ayarlar → Tema: Gece and Gün. Dil: az, tr, ru, en — no raw `patient.…` key anywhere. With NVDA and Chrome (X28): Tab to the big chart — NVDA must switch to focus mode, and ← → must move the cursor and say the readout once per move; the table must read in browse mode while a poll inserts rows at its top (if NVDA's reading position jumps a row per reading, say so — holding the table still while it is shown is the fix); note whether NVDA re-speaks the chart's name when its count changes. And by eye, on a 1× monitor: MAP's hollow ring (r 2.5, stroke 1.5) leaves a hole of about 3.5 px — say if it still reads as a dot; and whether the 72 h time labels, anchored to the right edge, read cleanly at `--fs` 1.12.
+  8. **Acceptance 4:** at 390 px (devtools device toolbar, 390 × 844) and at 1440 px — no horizontal page scroll on the patient screen, in the big chart, in its table (it scrolls inside its own frame) and in the form; one column at 390, three at 1440. Ayarlar → Tema: Gece and Gün. Dil: az, tr, ru, en — no raw `patient.…` key anywhere. With NVDA and Chrome (X28): Tab to the big chart — NVDA must switch to focus mode, and ← → must move the cursor and say the readout once per move; the table must read in browse mode while a poll inserts rows at its top (if NVDA's reading position jumps a row per reading, say so — holding the table still while it is shown is the fix); note whether NVDA re-speaks the chart's name when its count changes. And by eye, on a 1× monitor: MAP's hollow ring (r 2.5, stroke 1.5) leaves a hole of about 3.5 px — say if it still reads as a dot; and whether the 72 h time labels, anchored to the right edge, read cleanly at `--fs` 1.12. In the form, in Chrome: a real Enter in a filled field saves through Yadda saxla (the tests fire a synthetic submit; a browser's default button is the form's first submit, which here sits in the footer outside the `<form>`); a row with one side filled, then Enter, puts focus in that row's field. At 390 px the footer sentence wraps, and Cancel and Yadda saxla wrap together as one pair under it — Save never on a row of its own.
 
 - [ ] **Step 9: Tear it down.** `$C down -v` (with `C` set as in Step 5) → the three containers and the `g2v` volumes removed; `docker ps -a --format '{{.Names}}' | grep -E '^homunculus-(postgres|api|web)$' || echo "no stack containers"` → `no stack containers`. Nothing to commit: write the walk's outcome (pass / what differed) into Task 17's roadmap row.
 
@@ -11835,7 +12372,7 @@ Prototipteki sabit sayılar (`core.js:499` `H.VITAL.al/nb`) kaynaksızdır, taş
 
 | # | İş | Durum |
 |---|---|---|
-| G2-01 | Vital eğrileri (hasta ekranı): altı kart, büyük grafik (6 sa / 24 sa / 3 gün, tablo), hastanın normali formu; `GET /patients/{id}/trends` · spec: [2026-10-19](../specs/2026-10-19-g2-vital-egrileri-design.md) · plan: [G2 dilim 1](2026-10-19-g2-vital-egrileri.md) | Kod ✅ <date> · <range>. Backend 2130 / 650 (DB'siz), 2772 / 8 (Postgres); dashboard 89 dosya / 2351 test. Yerel yürüyüş: <walk>. **Açık:** az/ru yerel okuma; VM'de kullanıcının bakışı (gerçek bir hasta, 390 ve 1440 px, değerler yazılmaz); plandaki X20 (Task 2 incelemesi), X21–X30 ve O1–O3, O6–O12, O14, O15, O17–O23 (X1–X19 onaylandı, O4 çözüldü: 2026-10-20) |
+| G2-01 | Vital eğrileri (hasta ekranı): altı kart, büyük grafik (6 sa / 24 sa / 3 gün, tablo), hastanın normali formu; `GET /patients/{id}/trends` · spec: [2026-10-19](../specs/2026-10-19-g2-vital-egrileri-design.md) · plan: [G2 dilim 1](2026-10-19-g2-vital-egrileri.md) | Kod ✅ <date> · <range>. Backend 2130 / 650 (DB'siz), 2772 / 8 (Postgres); dashboard 89 dosya / 2385 test. Yerel yürüyüş: <walk>. **Açık:** az/ru yerel okuma; VM'de kullanıcının bakışı (gerçek bir hasta, 390 ve 1440 px, değerler yazılmaz); plandaki X20 (Task 2 incelemesi), X21–X34 ve O1–O3, O6–O12, O14, O15, O17–O23 (X1–X19 onaylandı, O4 çözüldü: 2026-10-20) |
 ```
 
 (c) Append to the two items the slice moved — replace:
@@ -11863,7 +12400,7 @@ with:
 ```markdown
 - Acceptance on the VM will show sparse charts today; that is the data, not the chart.
 - **Found while planning (2026-10-19; `docs/superpowers/plans/2026-10-19-g2-vital-egrileri.md`,
-  "What the code says", X1–X30; X1–X19 approved by the user on 2026-10-20):** the plan departs from this spec where the code made its letter
+  "What the code says", X1–X34; X1–X19 approved by the user on 2026-10-20):** the plan departs from this spec where the code made its letter
   impossible or unsafe — 503 for an unreadable scope, checked before `_require_patient` (X1); bands
   as `low < v <= high` (X2); alarm marks from `first_seen`, one per episode, not from `alert` rows
   (X3); antibiotic marks only for doses ≥ 1 (X4); each point carries the engine's NEWS2 points
@@ -11879,7 +12416,12 @@ with:
 - §3.3's save toast says the engine re-evaluated; the profile PUT re-scores nothing — the standing
   alerts are re-judged at the next reading (plan X21, O12).
 - `PUT /clinical/{id}/profile` replaces the set with no lost-update check: two clinicians saving one
-  patient's normal at once — the second wins silently (plan O3).
+  patient's normal at once — the second wins silently. The form now notices a set that changed while
+  it was open (the minute's poll) and holds Save until it is reopened (plan X34); two saves inside one
+  poll still race (plan O3).
+- The form is shown only to the patient it was opened for, and its title names the bed (plan X31): the
+  patient screen outlives a move, so without that a form opened on one patient could write under the
+  next. What Save will do is said beside Save (X32); a held submit goes to the first wrong field (X33).
 - ▲ on the charts is a finding's first detection for this patient, not every episode: the engine's
   active alerts never clear a kind today (plan O17 — an engine fix, the user's choice of slice).
 - The keyboard-driven big chart is `role="application"` with a role description, not §6's
@@ -11905,10 +12447,10 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 
 | # | Item | Who | When |
 |---|---|---|---|
-| O1 | **Native reading of the Azerbaijani and Russian texts:** the 49 `patient.trends*` / `patient.baseline*` keys of Task 8 and Task 14's two (`baselineClearsAll`, `baselineClearedAll`), the two reworded sentences (`onlyWrite`, `formsSoon`) and `errors.badTrendHours` were written by the planner; the Task 8 quality review corrected several in all four languages (lane commit `f082251`, mirrored here), but no native speaker has read them yet. | A native-speaking clinician | Before the VM |
+| O1 | **Native reading of the Azerbaijani and Russian texts:** the 49 `patient.trends*` / `patient.baseline*` keys of Task 8 and Task 14's three (`baselineClearsAll`, `baselineClearedAll`, `baselineChangedMeanwhile`; the lane corrected az "formanı" and the en quotes in `432712e`), the two reworded sentences (`onlyWrite`, `formsSoon`) and `errors.badTrendHours` were written by the planner; the Task 8 quality review corrected several in all four languages (lane commit `f082251`, mirrored here), but no native speaker has read them yet. | A native-speaking clinician | Before the VM |
 | O2 | **Stage B retention cap** on `PatientState._history` (unbounded per signal, spec §11). The trends endpoint scans a window linearly per request — 864 readings in ≈ 4 ms today — and thins only what it serves; 51 840 readings per channel per 72 h is Stage B's to bound. | Stage B's plan | Stage B |
-| O3 | **Lost update on the profile.** `PUT /clinical/{id}/profile` replaces the baseline set with no expected-set check (Wave 3B's 14e closed this for the three `/admin` whole-set writes only). Two clinicians saving one patient's normal at once: the second wins, silently. | User decision; engine | Group 2 |
-| O4 | **Resolved 2026-10-20 — the user chose explicit clearing.** Task 14a: the engine takes `{"baselines": {}}` over a charted profile as "clear every range", even with nothing else charted (still refused from nothing and without a `baselines` key); the replay reads each profile row over the one before, so the clear survives a restart (it did not: the clearing row, an empty profile, was refused on replay). Task 14: every row emptied over a charted set sends it, said under the fields and on the toast; with nothing charted, Save stays `aria-disabled`. | — | Done in the plan |
+| O3 | **Lost update on the profile.** `PUT /clinical/{id}/profile` replaces the baseline set with no expected-set check (Wave 3B's 14e closed this for the three `/admin` whole-set writes only). Two clinicians saving one patient's normal at once: the second wins, silently. **The client half is done (X34, Task 14):** the form reads the trends on opening, notices a set that changed under it at the next poll, says so and holds Save; two saves inside one poll still race — the engine's expected-set check is what remains. | User decision; engine | Group 2 |
+| O4 | **Resolved 2026-10-20 — the user chose explicit clearing.** Task 14a: the engine takes `{"baselines": {}}` over a charted profile as "clear every range", even with nothing else charted (still refused from nothing and without a `baselines` key); the replay reads each profile row over the one before, so the clear survives a restart (it did not: the clearing row, an empty profile, was refused on replay). Task 14: every row emptied over a charted set sends it, said beside Save (X32) and on the toast; with nothing charted, Save stays `aria-disabled`. | — | Done in the plan |
 | O5 | **Approved 2026-10-20:** the user approved every departure X1–X19. X21, found while amending for O4, waits on O12. | — | — |
 | O6 | UNKNOWN scope → 503 only on the trends route; every other single-patient route still answers 404 and writes `scope_denied` (roadmap l. 659). | Group 2 | — |
 | O7 | `/audit`, `/alarm-quality` and `rehydrate` still read the oldest N (roadmap l. 658); `since` now exists for them to use. | Group 2 | Before the alarm-quality panel |
@@ -11916,7 +12458,7 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 | O9 | `errors.scopeUnreadable` speaks of the live stream ("canlı akış başlatılamadı"); a trends 503 maps to the same key. The trends screens print their own "okunamıyor" line and never that text, but a later screen that prints `apiErrorText` for a trends 503 would say "live stream". | i18n | Minor |
 | O10 | **A mark's instant is the escalation clock's** (when the server first raised the episode); a reading's is its own measured instant. Live they are minutes apart; a replayed, back-filled or late-arriving reading can sit hours before its ▲ (seen in Task 16 with `--now`). Honest, but worth a sentence in the legend if the ward finds it confusing. | User, after the VM look | — |
 | O11 | The brief's backend command fails 2 tests without `PYTHONPATH=src` (`ModuleNotFoundError` in a child process; the f7-py312 venv has no install of this worktree). This plan always sets it; installing the worktree editable into a venv is the other fix. | Environment | — |
-| O12 | **The save's toast says more than the engine does** (X21): "Hastanın normali kaydedildi; motor yeniden değerlendirdi" (spec §3.3, Task 8's `baselineSaved`) — but the PUT re-scores nothing: an alert a range downgraded stays downgraded, or an alert a new range would quieten stays loud, until the next reading (minutes on a monitor; the next spot check otherwise). Either reword it in four languages (e.g. "…kaydedildi; sonraki ölçüm bu normale göre değerlendirilecek") or make the door re-judge the patient's latest state when the profile changes (an engine change, with its own tests). The clear's new toast already says only what is true. | User decision | Before the VM |
+| O12 | **The save's toast says more than the engine does** (X21): "Hastanın normali kaydedildi; motor yeniden değerlendirdi" (spec §3.3, Task 8's `baselineSaved`) — but the PUT re-scores nothing: an alert a range downgraded stays downgraded, or an alert a new range would quieten stays loud, until the next reading (minutes on a monitor; the next spot check otherwise). Either reword it in four languages (e.g. "…kaydedildi; sonraki ölçüm bu normale göre değerlendirilecek") or make the door re-judge the patient's latest state when the profile changes (an engine change, with its own tests). The clear's new toast already says only what is true. **Now visible (the Task 14 spec review, 2026-10-20):** Task 14 shows this toast after every save, so the overclaim reaches the ward with the form. Recommendation: (b) in this slice, reword `baselineSaved` in four languages to what the PUT does and name the patient with `{subject}`, as `baselineClearedAll` does (a planner's wording, for O1's native reading); (a) as a follow-up, make the door re-judge the latest state when the profile changes (an engine change with its own tests). | User decision | Before the VM |
 | O13 | **Resolved 2026-10-20 — the Task 2 quality review's two findings.** A NaN in `PatientState` (a) took a thinning slice's minimum and maximum, dropping the real extreme (an 85 % desaturation, measured), and (b) made the trends answer 500 (Starlette's `JSONResponse` has `allow_nan=False`). Task 3b closes the doors (`gateway/hl7.py` drops the field, `gateway/fhir.py` raises `GatewayError`); Task 4's builder skips a non-finite reading for rows already in the audit, which replay through `rehydrate` and no gateway. `thin()` stays NaN-intolerant **on purpose** — a documented precondition, filtered by its caller — and other doors into `PatientState` (Aşama A's lane, a future one) must keep refusing non-finite values the way `edge/ncefiles.py` and `api/clinical.py` do. | — | Done in the plan |
 | O14 | **The audit table has no index beyond its key and `(tenant, prev_hash)`**, so every trends read (and `/audit`, `/alarm-quality`) scans the whole table for one patient's `first_seen` rows. The fix is an index on `(tenant, patient_id, event_type, id)`; an expression index on the `CAST(ts AS timestamptz)` the `since` filter uses is impossible (`timestamptz_in` is STABLE, not IMMUTABLE). A migration, not this slice (from the Task 3 quality review). | Stage B's plan | Before Stage B |
 | O15 | **Who may enter the patient's normal.** Today every `clinical.chart` holder — nurses, charge nurses and rapid response included — can; the engine's own words call the ranges "clinician-charted", and the Task 8 review's wording ("hastanın normali, girildiyse", no "hekim") assumes that stays. Physician-only would be a permission change (a new permission or a role split), not a text. The older `patient.suspectedYes/No` "(hekim işaretledi)" (Group 1) has the same who-entered problem. | User decision | Before the VM |
@@ -11927,7 +12469,7 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 | O20 | **Before Stage B, too: memoise the chart's parsing and drawing.** `parsePoints` runs on every render for every series (the dialog re-renders on each cursor move), and `TrendChart` re-renders with it: memoise `parsePoints` per points array and wrap `TrendChart` in `React.memo` before 5 s data arrives (Task 11 quality review; a note, not this slice). | Stage B's plan | Before Stage B |
 | O21 | **NEWS2 points in the spoken readout?** A sighted reader reads a reading's points from the band colour behind its dot; a screen-reader user hears only the value (the table has the points). Adding " · 2 bal" to the readout is a small change to spec §3.3's readout — the user's decision (the Task 13 quality review; the controller's list calls it O18). | User decision | Before the VM |
 | O22 | **Two stops in one minute with the same value say the same words**, and `useAnnounced` dedupes by text, so the second keypress is silent (≈ 1 reading a minute today). At Stage B rates: seconds in the readout when two stops share a minute, or a live region re-mounted per stop. Accepted for this slice. | Stage B's plan | Stage B |
-| O23 | **`TrendModal.test.jsx` is 607 lines**, well past the ~250-line guide (with `trendGeometry.js` 277, `trendGeometry.test.js` 260, `TrendChart.test.jsx` 237 a little past it). Split the dialog's test by view (graph, keyboard, table) when it next changes. | Group 2 | — |
+| O23 | **`TrendModal.test.jsx` is 607 lines and `BaselineForm.test.jsx` 405**, well past the ~250-line guide (with `trendGeometry.js` 277, `trendGeometry.test.js` 260, `TrendChart.test.jsx` 237 a little past it; `PatientScreen.test.jsx`, older than the slice, is 887 after it). Split the dialog's test by view (graph, keyboard, table) and the form's by concern (the checks, the clear, the answers, the moves) when they next change. | Group 2 | — |
 
 **Commit trailer.** The controller's brief set `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` for this plan's tasks; amendments.md's latest recorded trailer is `Claude Opus 5.5`. Use the one the controller gives when the tasks run.
 
@@ -11966,7 +12508,7 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 | §6 PatientScreen: placeholder replaced, `formsSoon` as a Note under Sepsis/Meds | T9 (+ X9) |
 | §7 accessibility and honesty | text equivalents T10 (card text, mini chart hidden) and T13 (table); keyboard T12–T13; colour never alone T10 (badge), T11 (dashed own normal, hollow MAP), T12 (legend); announcement only on keyboard T13; ages on the server's clock T10; 390 px T10 (classes) + T16 (browser); dashed connectors + legend sentence T11–T12 |
 | §8 tests | engine T1–T5, T3b and T14a (named files), dashboard T6–T15, end to end T16 |
-| §9 keys | T8 (all 31 new + 18); T10 adds five (the unscored tag, the delta's words — X24), T12 three (the legend), T14 the clear's two |
+| §9 keys | T8 (all 31 new + 18); T10 adds five (the unscored tag, the delta's words — X24), T12 three (the legend), T14 three (the clear's two, the set changed meanwhile) |
 | §10 not in this slice | nothing built for it |
 | §11 risks | T17 updates it; O2 |
 | §12 acceptance 1 | T15 steps 4–7 (3.12, 3.14, dashboard; counts here) |
@@ -11977,5 +12519,5 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 
 **Placeholder scan.** No "TBD", no "similar to Task N", no "add appropriate error handling". The only fill-ins are runtime facts that cannot exist before the work does — T17's roadmap row takes the date, the commit range and the walk's outcome, each with the command or step that produces it.
 
-**Names and types across tasks.** Engine: `Band`, `NEWS2_BANDS`, `BANDS_SOURCE`, `points_for` (T1) are what T4 imports; `thin(series, max_points)` (T2) is called with `TRENDS_MAX_POINTS`; `since_utc` (T3) is shared by `audit.py` and `audit_postgres.py`; `records(…, since=…)` is keyword-only everywhere (T3's signature test); `patient_trends(engine, audit, *, hospital, patient_id, hours, now)` (T4) is what T5's route calls with `int(hours)` after the text check against `TRENDS_HOURS`; the route is listed in `BOARD_EXPECTED` and `UNSCOPED_BY_DESIGN` under the path FastAPI reports, `/patients/{patient_id}/trends`. Dashboard: `patientTrends(patientId, hours)` / `putPatientProfile(patientId, body)` (T6) are the names `useTrends` (T9) and `BaselineForm` (T14) call, and `fakeApi` carries both; `useTrends(patientId, hours, measuredKey)` → `{data, loading, unreadable, lastOkAt, reload}` is read the same way by `TrendsBox` and `TrendModal`; `measuredKeyOf(patient.measuredAt)`; the fixtures `trends(patientId, channels, over)`, `channel(key, points, over)`, `point(minutesAgo, value, points)`, `marker(minutesAgo, kind, label)`, `answering(build)`, `BANDS`, `KEYS` (T9) are what every later test uses; `news2Tone(points)` (T10) is used by `TrendCard` and `bandRects`; `CARDS` / `cardTitle` / `channelsOf` (T10) by the box, the dialog, the legend and the table; `TrendCard({card, channels, nowMs, sinceMs, untilMs, onOpen})` gains `sinceMs`/`untilMs` in T11 and `onOpen` is passed from T12; `TrendChart`'s props grow `onPlot` (T12) and `onKeyDown`, `describedBy` (T13) by Edit, never renamed; `whenText`/`markText` live in `TrendModal.jsx` in T12 and move to `trendText.js` (with `pointsText`) in T13, where `TrendModal` and `TrendTable` both import them and nothing else imported them from the dialog; `TrendsBox({patient, bed, nowMs})` gains `nowMs` in T10 and `bed` in T12, matching PatientScreen's edits in those tasks. The sixth pass follows the lane's Task 13: `TrendLegend.jsx` exports `TrendNotes` beside `TrendLegend`; `trendText.js` gains `valueBeside`; `TrendTable` takes the dialog's parsed `series` and `markers`; two keys, `patient.trendsChartRole` and `patient.trendsPointsUnknownRowSr`. The fifth pass follows the lane's Task 12: `valueTicks` returns `{ step, ticks }`; `indexAtTime(points, ms)` resolves the cursor (an instant) to an index at render; `marksNear` is gone (`marksAtTime` is the one rule); Task 13 moves `whenText` and `markText` from `TrendModal.jsx` to `trendText.js`, beside `markBeside` and `pointsText`, and `TrendChart` reads `whenText` from there; `readoutOf` stays private to the dialog (the announcement reads the same `readout` value). The fourth pass renames two exports and adds six: Task 12 replaces Task 11's `markerNear` (read only by its test) with `marksNear`, and its own `markerAtTime` with `marksAtTime` — both return EVERY mark at an x or an instant, and both dialogs (Tasks 12 and 13) read `marksAtTime`; `valueTicks(domain, count, { extent, resolution })` keeps Task 11's two-argument call working, beside `valueTickStep`, `valueExtent`, `valueResolution`, `tickLabel` and `timeLabelPlace`. The third pass renames nothing in the plan's own tasks: Tasks 1–4, 3b and 6–10 are the lanes' code, and Tasks 11–17 are written against it — `TrendCard` keeps its props and gains `sinceMs`/`untilMs` in Task 11 on the lane's `Reading` (`badge`, `pill`); `TrendLegend` gains `truncated`, which both dialogs (Tasks 12 and 13) pass from `markers_truncated`; the legend's ▲ reads `trendsLegendAlarm` while the readout and the table keep `trendsMarkerAlarm`. The second amendment renames nothing either: `TRENDS_MARKER_LIMIT` keeps its name (5000 now); `_markers` returns `(marks, truncated)` and only `patient_trends` calls it; `_finite` is private to `api/trends.py`; `markers_truncated` is a new key no dashboard module reads yet (O16); Task 12's `TrendLegend` passes `channel: t(s.labelKey)` to `trendsThinned`, which takes `{channel}` since the Task 8 review. The O4 amendment renames nothing: `profile_from_payload(patient_id, payload, base=None)` keeps its signature (T14a) and `_replay_profile` now passes `engine.profile(rec.patient_id)` as `base`; `BaselineForm`'s `own` is the box's `{key: bands.own_normal | null}` map it already received, read once more to tell a clear (`clearing`) from nothing to send (`nothing`). Every `t("patient.…")` the code names is one T8 (or, for `baselineClearsAll` / `baselineClearedAll`, T14) defines in four languages (checked by `rawKeys.test.jsx`'s static net, T15 step 3 proves it bites).
+**Names and types across tasks.** Engine: `Band`, `NEWS2_BANDS`, `BANDS_SOURCE`, `points_for` (T1) are what T4 imports; `thin(series, max_points)` (T2) is called with `TRENDS_MAX_POINTS`; `since_utc` (T3) is shared by `audit.py` and `audit_postgres.py`; `records(…, since=…)` is keyword-only everywhere (T3's signature test); `patient_trends(engine, audit, *, hospital, patient_id, hours, now)` (T4) is what T5's route calls with `int(hours)` after the text check against `TRENDS_HOURS`; the route is listed in `BOARD_EXPECTED` and `UNSCOPED_BY_DESIGN` under the path FastAPI reports, `/patients/{patient_id}/trends`. Dashboard: `patientTrends(patientId, hours)` / `putPatientProfile(patientId, body)` (T6) are the names `useTrends` (T9) and `BaselineForm` (T14) call, and `fakeApi` carries both; `useTrends(patientId, hours, measuredKey)` → `{data, loading, unreadable, lastOkAt, reload}` is read the same way by `TrendsBox` and `TrendModal`; `measuredKeyOf(patient.measuredAt)`; the fixtures `trends(patientId, channels, over)`, `channel(key, points, over)`, `point(minutesAgo, value, points)`, `marker(minutesAgo, kind, label)`, `answering(build)`, `BANDS`, `KEYS` (T9) are what every later test uses; `news2Tone(points)` (T10) is used by `TrendCard` and `bandRects`; `CARDS` / `cardTitle` / `channelsOf` (T10) by the box, the dialog, the legend and the table; `TrendCard({card, channels, nowMs, sinceMs, untilMs, onOpen})` gains `sinceMs`/`untilMs` in T11 and `onOpen` is passed from T12; `TrendChart`'s props grow `onPlot` (T12) and `onKeyDown`, `describedBy` (T13) by Edit, never renamed; `whenText`/`markText` live in `TrendModal.jsx` in T12 and move to `trendText.js` (with `pointsText`) in T13, where `TrendModal` and `TrendTable` both import them and nothing else imported them from the dialog; `TrendsBox({patient, bed, nowMs})` gains `nowMs` in T10 and `bed` in T12, matching PatientScreen's edits in those tasks. The seventh pass follows the lane's Task 14: `BaselineForm.jsx` exports `BASELINE_KEYS`, `checkBaselines`, `keyOf` and `BaselineForm({patient, bed, own, onClose, onSaved})`; `charted(range)` is private to it; `TrendsBox`'s `editing` is `{ id, opening }`; one new key, `patient.baselineChangedMeanwhile`, and `baselineClearedAll` takes `{subject}`. The sixth pass follows the lane's Task 13: `TrendLegend.jsx` exports `TrendNotes` beside `TrendLegend`; `trendText.js` gains `valueBeside`; `TrendTable` takes the dialog's parsed `series` and `markers`; two keys, `patient.trendsChartRole` and `patient.trendsPointsUnknownRowSr`. The fifth pass follows the lane's Task 12: `valueTicks` returns `{ step, ticks }`; `indexAtTime(points, ms)` resolves the cursor (an instant) to an index at render; `marksNear` is gone (`marksAtTime` is the one rule); Task 13 moves `whenText` and `markText` from `TrendModal.jsx` to `trendText.js`, beside `markBeside` and `pointsText`, and `TrendChart` reads `whenText` from there; `readoutOf` stays private to the dialog (the announcement reads the same `readout` value). The fourth pass renames two exports and adds six: Task 12 replaces Task 11's `markerNear` (read only by its test) with `marksNear`, and its own `markerAtTime` with `marksAtTime` — both return EVERY mark at an x or an instant, and both dialogs (Tasks 12 and 13) read `marksAtTime`; `valueTicks(domain, count, { extent, resolution })` keeps Task 11's two-argument call working, beside `valueTickStep`, `valueExtent`, `valueResolution`, `tickLabel` and `timeLabelPlace`. The third pass renames nothing in the plan's own tasks: Tasks 1–4, 3b and 6–10 are the lanes' code, and Tasks 11–17 are written against it — `TrendCard` keeps its props and gains `sinceMs`/`untilMs` in Task 11 on the lane's `Reading` (`badge`, `pill`); `TrendLegend` gains `truncated`, which both dialogs (Tasks 12 and 13) pass from `markers_truncated`; the legend's ▲ reads `trendsLegendAlarm` while the readout and the table keep `trendsMarkerAlarm`. The second amendment renames nothing either: `TRENDS_MARKER_LIMIT` keeps its name (5000 now); `_markers` returns `(marks, truncated)` and only `patient_trends` calls it; `_finite` is private to `api/trends.py`; `markers_truncated` is a new key no dashboard module reads yet (O16); Task 12's `TrendLegend` passes `channel: t(s.labelKey)` to `trendsThinned`, which takes `{channel}` since the Task 8 review. The O4 amendment renames nothing: `profile_from_payload(patient_id, payload, base=None)` keeps its signature (T14a) and `_replay_profile` now passes `engine.profile(rec.patient_id)` as `base`; `BaselineForm`'s `own` is the box's `{key: bands.own_normal | null}` map it already received, read once more to tell a clear (`clearing`) from nothing to send (`nothing`). Every `t("patient.…")` the code names is one T8 (or, for `baselineClearsAll` / `baselineClearedAll` / `baselineChangedMeanwhile`, T14) defines in four languages (checked by `rawKeys.test.jsx`'s static net, T15 step 3 proves it bites).
 
