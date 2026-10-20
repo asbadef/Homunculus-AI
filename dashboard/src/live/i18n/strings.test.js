@@ -104,8 +104,7 @@ const AZ_SAME_AS_TR = new Set([
   // Group 2 · slice 1 (the trend charts and the patient's own normal)
   "patient.trendsFrameBadge", // "NEWS2 +{points}" — the score's name and a number
   "patient.trendsHours72", //  3 gün — "3 days" reads the same in Azerbaijani
-  "patient.trendsColTime", //  Saat — "time" (of day) in Azerbaijani too
-  "patient.trendsColChannel", // Kanal — the same word (board.chLac's neighbour, "Bu kanal üçün")
+  "patient.trendsColChannel", // Kanal — the same word (beds.staleChannels: az "Gecikmiş kanal", beds.js:81)
   "patient.baselineLow", //    alt — "lower" in Azerbaijani too
   "patient.baselineHigh", //   üst — "upper" in Azerbaijani too
 
