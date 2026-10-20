@@ -410,3 +410,30 @@ def test_the_door_reads_a_null_baseline_set_as_a_clear(client):
     r = _profile(client, "bed-7", {"baselines": None})
     assert r.status_code == 200, r.text
     assert r.json() == {"patient_id": "bed-7", "comorbidities": [], "baselines": {}, "baseline_sofa": None}
+
+
+# Only null and {} clear. A clinical range must not be taken away by junk: any other value that is
+# not an object — `[]`, `""`, `0`, `false` — used to read as "empty" through `or {}`, and so cleared.
+
+@pytest.mark.parametrize("junk", [[], "", 0, False])
+def test_a_baseline_set_that_is_not_an_object_is_refused_and_clears_nothing(junk):
+    base = profile_from_payload("bed-7", {**CHRONIC_AF, "baseline_sofa": 2})
+    with pytest.raises(Exception, match="baselines bir nesne olmalı"):
+        profile_from_payload("bed-7", {"baselines": junk}, base)
+    with pytest.raises(Exception, match="baselines bir nesne olmalı"):
+        profile_from_payload("bed-7", {"baselines": junk})
+
+
+@pytest.mark.parametrize("empty", [None, {}])
+def test_null_and_an_empty_object_still_clear(empty):
+    base = profile_from_payload("bed-7", BASELINES_ONLY)
+    assert profile_from_payload("bed-7", {"baselines": empty}, base).baselines == {}
+
+
+def test_the_door_refuses_a_baseline_set_that_is_not_an_object_and_keeps_the_ranges(client):
+    assert _profile(client, "bed-7", BASELINES_ONLY).status_code == 200
+    r = _profile(client, "bed-7", {"baselines": []})
+    assert r.status_code == 400
+    assert "baselines bir nesne olmalı" in r.json()["detail"]
+    rows = [x for x in client.get("/audit", headers=AUTH).json()["records"] if x["event_type"] == "profile"]
+    assert [row["payload"]["baselines"] for row in rows] == [{"heart_rate": {"low": 125.0, "high": 140.0}}]

@@ -225,7 +225,11 @@ def profile_from_payload(patient_id: str, payload: dict,
     else:
         comorbidities = base.comorbidities if base is not None else frozenset()
 
-    raw_baselines = payload.get("baselines") or {}
+    # Only null and {} are "no ranges". Anything else that is not an object (`[]`, `""`, `0`, `false`)
+    # is refused rather than read as empty: a clinical range must not be cleared by junk.
+    raw_baselines = payload.get("baselines")
+    if raw_baselines is None:
+        raw_baselines = {}
     if not isinstance(raw_baselines, dict):
         raise ClinicalEntryError("baselines bir nesne olmalı")
 
@@ -268,8 +272,8 @@ def profile_from_payload(patient_id: str, payload: dict,
     # screen's form writes the whole set, and a range charted in error must be removable even when
     # it is the last thing charted. From nothing there is nothing to clear, and an empty profile is
     # still refused — as is one emptied by a payload that does not name the baselines at all. A
-    # present key that is null or empty is a clear (the merge above already reads it so): absent
-    # keeps, null/empty clears.
+    # present key that is null or {} is a clear (the merge above reads it so): absent keeps,
+    # null/{} clears, anything else that is not an object was refused above.
     clearing = base is not None and "baselines" in payload and not raw_baselines
     if not comorbidities and not baselines and baseline_sofa is None and not clearing:
         raise ClinicalEntryError(
