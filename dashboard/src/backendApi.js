@@ -773,6 +773,12 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      * Without it every patient is judged against the population threshold, so someone whose
      * atrial fibrillation lives at 105 bpm alarms on every measurement. The boundary is always
      * the clinician's — the system never mints one.
+     *
+     * @deprecated Do not call this from anything new. It ALWAYS sends `comorbidities: []` AND
+     * `baselines: {}` (unless given others), and the engine reads a present-but-empty key as
+     * "clear" (api/clinical.py `profile_from_payload`) — so a partial call such as
+     * `setProfile(id, { baselineSofa: 3 })` erases both the charted comorbidities and every
+     * baseline range on the server. Use `putPatientProfile` with only the keys to change.
      */
     setProfile(patientId, { comorbidities = [], baselines = {}, baselineSofa = null } = {}) {
       return authed(`/clinical/${encodeURIComponent(patientId)}/profile`, {
@@ -782,6 +788,31 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         body: { comorbidities, baselines,
                 ...(baselineSofa === null || baselineSofa === "" ? {} : { baseline_sofa: baselineSofa }) },
       });
+    },
+
+    /**
+     * One patient's vital history for the trend charts (GET /patients/{id}/trends, Group 2): the
+     * series, the NEWS2 rows as bands, the latest value's movement and NEWS2 points, whether it
+     * sits inside the normal a clinician charted, and the alarm and antibiotic moments — every
+     * fact a chart draws, decided by the engine (homunculus-engine api/trends.py). `hours` is 6, 24
+     * or 72; the API refuses any other with a 400.
+     */
+    patientTrends(patientId, hours = 24) {
+      return authed(`/patients/${seg(patientId)}/trends?hours=${encodeURIComponent(hours)}`);
+    },
+
+    /**
+     * The patient's own normal, written as the caller built it (PUT /clinical/{id}/profile).
+     *
+     * Not `setProfile` above: that always sends `comorbidities` and `baselines` (an empty list
+     * and an empty object unless given), and the engine reads a present-but-empty key as "clear
+     * it" (api/clinical.py `profile_from_payload`) — so a form that only means to write the
+     * baselines would erase every charted comorbidity, and one that only means to write a baseline
+     * SOFA would erase the baselines too. The baseline form sends `{baselines}` alone, and the
+     * engine keeps whatever the body does not mention.
+     */
+    putPatientProfile(patientId, body) {
+      return authed(`/clinical/${seg(patientId)}/profile`, { method: "PUT", body });
     },
 
     /** Escape hatch for endpoints not yet wrapped (admissions, alerts, tenant…). */

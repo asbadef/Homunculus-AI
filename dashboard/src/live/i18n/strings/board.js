@@ -150,7 +150,7 @@ export default {
     chHr: "Пульс",
     chSpo2: "SpO2",
     chSbp: "Систолическое АД",
-    chMap: "САД",
+    chMap: "СрАД",
     chTemp: "Температура тела",
     chRr: "Дыхание",
     chLac: "Лактат",

@@ -23,6 +23,8 @@ export const COLOR_TOKENS = [
   "ok", "okInk",
   // vital-sign channels
   "v-hr", "v-map", "v-spo", "v-rr", "v-t",
+  // the trend charts: the patient's own normal, NEWS2 rows scoring 1–2 and 3 points, value lines
+  "band-n", "band-mid", "band-crit", "grid",
   // the dimmed page behind a modal dialog (the prototype's .modalBg)
   "scrim",
 ];

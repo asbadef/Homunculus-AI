@@ -26,11 +26,16 @@ function solid(theme, name) {
   return c.rgb;
 }
 
-/** A token as it renders over an opaque surface token (alpha compositing). */
-function over(theme, name, ground) {
-  const c = parse(THEMES[theme][name]);
-  const g = solid(theme, ground);
-  return c.rgb.map((v, i) => v * c.a + g[i] * (1 - c.a));
+/**
+ * A token as it renders over an opaque surface token (alpha compositing). Several translucent
+ * layers may be given — a name or a list, bottom first: ["band-mid", "band-n"] is the patient's
+ * own normal laid over a NEWS2 row, both over the ground.
+ */
+function over(theme, layers, ground) {
+  return [].concat(layers).reduce((under, name) => {
+    const c = parse(THEMES[theme][name]);
+    return c.rgb.map((v, i) => v * c.a + under[i] * (1 - c.a));
+  }, solid(theme, ground));
 }
 
 /** color-mix(in srgb, var(--name) <share>, transparent) — the pill tint — over a surface. */
@@ -53,6 +58,16 @@ const BODY = 4.5;
 const UI = 3;
 const SURFACES = ["page", "app", "rail", "card", "card2"];
 const SEVERITY = ["crit", "high", "mid", "low", "ok"];
+// Read from the registry, so a new vital channel or a new band tint is measured without anyone
+// remembering to add it here.
+const VITALS = COLOR_TOKENS.filter((name) => name.startsWith("v-"));
+const BANDS = COLOR_TOKENS.filter((name) => name.startsWith("band-"));
+// The patient's own normal (band-n) can lie inside a scored NEWS2 row: it is then composited over
+// that row's tint (bottom first), the thinnest ground a line is ever drawn on.
+const STACKED = BANDS.filter((name) => name !== "band-n").map((name) => `${name} + band-n`);
+// The mini chart sits on a card; the big chart in the kit Modal, whose panel is bg-app (Modal.jsx).
+// card2 and page are measured too, as the severity fills are: a chart may be moved there.
+const CHART_GROUNDS = ["card", "card2", "page", "app"];
 
 describe.each(["gece", "gun"])("%s theme: contrast", (theme) => {
   const s = (name) => solid(theme, name);
@@ -107,7 +122,7 @@ describe.each(["gece", "gun"])("%s theme: contrast", (theme) => {
 
   // On a card only. On card2 Gun's v-map (4.38) and v-spo (4.46) fall under 4.5:1: recorded in the
   // roadmap for G1-09/G1-11, which decide where vitals sit.
-  it.each(["v-hr", "v-map", "v-spo", "v-rr", "v-t"])("vital %s clears 4.5:1 on a card", (v) => {
+  it.each(VITALS)("vital %s clears 4.5:1 on a card", (v) => {
     expect(ratio(s(v), s("card"))).toBeGreaterThanOrEqual(BODY);
   });
 
@@ -131,6 +146,48 @@ describe.each(["gece", "gun"])("%s theme: contrast", (theme) => {
   it.each(["mid", "mute"])("the top bar's %s ring and dot clear 3:1 against the rail", (name) => {
     expect(ratio(s(name), s("rail"))).toBeGreaterThanOrEqual(UI);
   });
+
+  // Group 2's trend charts (screens/patient/trends/): a vital's dots and dashed connectors are drawn
+  // over a band tint — a NEWS2 row scoring 1–2 (band-mid) or 3 (band-crit), or the patient's own
+  // normal (band-n) — on a card (the mini chart) or on the dialog's app background (the big chart).
+  // A line is a graphic, held to 3:1, over every tint it can cross, on every ground it is drawn on.
+  // (The prototype drew MAP at reduced opacity; at .55–.70 that measured 2.17–3.20:1 over the
+  // tints, so the charts draw MAP at full colour with hollow dots instead.)
+  it.each(VITALS.flatMap((v) => BANDS.flatMap((b) => CHART_GROUNDS.map((g) => [v, b, g]))))(
+    "chart: the %s line clears 3:1 over the %s tint on %s",
+    (vital, band, ground) => {
+      expect(ratio(s(vital), over(theme, band, ground))).toBeGreaterThanOrEqual(UI);
+    },
+  );
+
+  // Where the patient's own normal lies inside a scored row, band-n is laid over band-mid or
+  // band-crit: two translucent layers on the ground, the thinnest margins in this set.
+  it.each(VITALS.flatMap((v) => STACKED.flatMap((b) => CHART_GROUNDS.map((g) => [v, b, g]))))(
+    "chart: the %s line clears 3:1 over the stacked %s tints on %s",
+    (vital, stack, ground) => {
+      expect(ratio(s(vital), over(theme, stack.split(" + "), ground))).toBeGreaterThanOrEqual(UI);
+    },
+  );
+
+  // The patient's own normal is edged with a dashed 1-px line in --pri — the cue that does not rest on
+  // colour alone (TrendChart.jsx). Half of that line lies inside the band and half outside it, so it is
+  // held to 3:1 over every tint it can cross: band-n, the NEWS2 row tints, and band-n stacked on them,
+  // on every ground a chart is drawn on.
+  it.each([...BANDS, ...STACKED].flatMap((b) => CHART_GROUNDS.map((g) => [b, g])))(
+    "chart: the patient's-normal dashed edge (pri) clears 3:1 over the %s tint on %s",
+    (stack, ground) => {
+      expect(ratio(s("pri"), over(theme, stack.split(" + "), ground))).toBeGreaterThanOrEqual(UI);
+    },
+  );
+
+  // The ▲ alarm and ◆ antibiotic marks sit in their own lane under the plot — on the card in the
+  // mini chart, on the dialog's app background in the big one — never over a band.
+  it.each(["crit", "pri"].flatMap((name) => ["card", "app"].map((g) => [name, g])))(
+    "chart: the %s marker clears 3:1 on %s",
+    (name, ground) => {
+      expect(ratio(s(name), s(ground))).toBeGreaterThanOrEqual(UI);
+    },
+  );
 
   // A bed card's stripe sits on the card, a dot or bar in a card2 row (G1-09), a stripe on the
   // page or the app frame (G1-07): each ground is held to 3:1.

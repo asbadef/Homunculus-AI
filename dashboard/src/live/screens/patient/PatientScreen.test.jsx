@@ -7,6 +7,8 @@ import { resetScreens } from "../../shell/routes.js";
 import { onlyScreens } from "../../shell/screens.testutil.js";
 import { NOW, ago, alarm, board, entry, identity, measured, news2 } from "../../data/board.testutil.js";
 import { STAGE_OFF, bed as monitorBed, param as monitorParam, strip } from "../../data/shadow.testutil.js";
+import { hhmm } from "../../i18n/dates.js";
+import { answering, channel, point, trends } from "./trends/trends.testutil.js";
 import { PatientScreen } from "./PatientScreen.jsx";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -22,6 +24,7 @@ async function open({ payload = board(), id = "S-001", connection = "live", setu
       else api.boardPatients.mockResolvedValue(payload);
       api.streamTicket.mockResolvedValue({ ticket: "t-1" });
       api.view.mockResolvedValue({ ok: true });
+      api.patientTrends.mockImplementation(answering());     // empty channels, for whoever is asked
       setup?.(api);
     },
   });
@@ -52,14 +55,14 @@ afterEach(() => {
 });
 
 describe("the patient screen", () => {
-  it("names the bed and the patient, and says the one thing it writes", async () => {
+  it("names the bed and the patient, and says the two things it writes", async () => {
     await open({ payload: board([entry("S-001", [], FULL)]) });
     expect(screen.getByRole("heading", { level: 1, name: "Ayşe Sentetik" })).toBeInTheDocument();
     // One h1 and no more: the shell moves focus to <main> after every move, and the screen's own
     // heading is what a reader lands on.
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByText("REA-01 · 2")).toBeInTheDocument();
-    expect(screen.getByText(/heç nə yazılmır/)).toBeInTheDocument();
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi və xəstənin norması/);
   });
 
   it("offers the way back to the board it was opened from", async () => {
@@ -73,18 +76,21 @@ describe("the patient screen", () => {
   });
 
   describe("the measured values", () => {
+    // The trend cards below name the same channels, so these read the measured-values box only.
+    const vitalsBox = () => within(screen.getByRole("heading", { level: 2, name: "Ölçülən dəyərlər" }).closest(".rounded-box"));
+
     it("shows each channel with its value, its unit, its clock time and its age", async () => {
       await open({ payload: board([entry("S-001", [], FULL)]) });
-      expect(screen.getByText("118")).toBeInTheDocument();
-      expect(screen.getByText("Nəbz")).toBeInTheDocument();
+      expect(vitalsBox().getByText("118")).toBeInTheDocument();
+      expect(vitalsBox().getByText("Nəbz")).toBeInTheDocument();
       // Every vital's age is visible — the gap the old workspace never closed.
-      expect(screen.getAllByText(/2 dəq əvvəl/).length).toBeGreaterThan(0);
+      expect(vitalsBox().getAllByText(/2 dəq əvvəl/).length).toBeGreaterThan(0);
     });
 
     it("a channel with no value is left out, and a card with none says so once", async () => {
       await open({ payload: board([entry("S-001", [], { identity: identity() })]) });
-      expect(screen.getByText("Bu çarpayıdan heç bir ölçmə gəlməyib.")).toBeInTheDocument();
-      expect(screen.queryByText("Nəbz")).toBeNull();
+      expect(vitalsBox().getByText("Bu çarpayıdan heç bir ölçmə gəlməyib.")).toBeInTheDocument();
+      expect(vitalsBox().queryByText("Nəbz")).toBeNull();
     });
 
     it("ages a reading against the SERVER's clock, not this browser's", async () => {
@@ -108,8 +114,8 @@ describe("the patient screen", () => {
 
     it("a lactate is shown with the monitor channels — septic shock turns on it", async () => {
       await open({ payload: board([entry("S-001", [], FULL)]) });
-      expect(screen.getByText("4.1")).toBeInTheDocument();
-      expect(screen.getByText("Laktat")).toBeInTheDocument();
+      expect(vitalsBox().getByText("4.1")).toBeInTheDocument();
+      expect(vitalsBox().getByText("Laktat")).toBeInTheDocument();
     });
   });
 
@@ -280,11 +286,295 @@ describe("the patient screen", () => {
     });
   });
 
-  describe("the seams Group 2 fills", () => {
-    it("draws no trend, and says the engine has no history endpoint", async () => {
+  describe("the trend charts (Group 2 · slice 1)", () => {
+    it("stand where the placeholder stood, after the Sepsis and medication row", async () => {
       await open({ payload: board([entry("S-001", [], FULL)]) });
-      expect(screen.getByText(/Brauzer öz qrafikini uydurmur/)).toBeInTheDocument();
-      expect(screen.getByText(/növbəti qrupda əlavə olunacaq/)).toBeInTheDocument();
+      const trends = screen.getByRole("heading", { level: 2, name: "Vital qrafikləri" });
+      const meds = screen.getByRole("heading", { level: 2, name: /Dərman/ });
+      expect(meds.compareDocumentPosition(trends) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.queryByText(/Brauzer öz qrafikini uydurmur/)).toBeNull();
+      expect(document.querySelector("[data-trends-box]")).not.toBeNull();
+    });
+
+    it("keep the forms seam as one note, which no longer promises the patient's normal", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      const seam = screen.getByText(/növbəti qrupda əlavə olunacaq/).closest("[role='note']");
+      expect(seam).not.toBeNull();
+      expect(seam).toHaveTextContent(/SOFA/);
+      expect(seam).not.toHaveTextContent(/norma/);
+    });
+
+    it("read the 24-hour trends of the patient the screen shows", async () => {
+      const { api } = await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(api.patientTrends).toHaveBeenCalledWith("S-001", 24);
+    });
+
+    it("read nothing for a patient the board does not hold", async () => {
+      const { api } = await open({ payload: board([entry("S-001", [], FULL)]), id: "S-999" });
+      expect(api.patientTrends).not.toHaveBeenCalled();
+    });
+
+    it("show six cards, in the bed card's channel order, one list", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      const list = document.querySelector("[data-trends-box] ul");
+      expect([...list.children].map((li) => li.querySelector("[data-title]").textContent))
+        .toEqual(["Nəbz", "Tənəffüs", "SpO2", "Sistolik AT · MAP", "Bədən hərarəti", "Laktat"]);
+      // `list-none` drops the list for VoiceOver unless the role is written out.
+      expect(list).toHaveAttribute("role", "list");
+    });
+
+    it("frame a card from the engine's points, and age its value against the server's clock", async () => {
+      await open({
+        payload: board([entry("S-001", [], FULL)]),
+        setup: (api) => api.patientTrends.mockImplementation(answering((pid, hours) =>
+          trends(pid, [channel("heart_rate", [point(4, 72, 3)])], { hours }))),
+      });
+      const hr = document.querySelector("[data-trends-box] li [data-frame]");
+      expect(hr.dataset.frame).toBe("crit");
+      expect(hr).toHaveTextContent("NEWS2 +3");
+      expect(hr).toHaveTextContent("4 dəq əvvəl");
+    });
+
+    it("open a card's big chart from the card, and give the focus back to it when Escape closes it", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      const hr = screen.getByRole("button", { name: /Nəbz: böyük qrafiki aç/ });
+      hr.focus();
+      await act(async () => { fireEvent.click(hr); await settle(); });
+      expect(screen.getByRole("dialog", { name: "REA-01 · 2 · Ayşe Sentetik · Nəbz" })).toBeInTheDocument();
+      await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); await settle(); });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(document.activeElement).toBe(hr);
+    });
+
+    // The patient's normal (Task 14): the box offers it, and the form it opens writes through the profile door.
+    const CHART = ["board.view", "alerts.ack", "clinical.chart"];
+    const FORM = "Xəstənin norması · REA-01 · 2";
+    const withNormal = (pid, hours) => trends(pid, [channel("heart_rate", [point(5, 108, 1)],
+      { bands: { news2: null, own_normal: { low: 100, high: 115 }, device: null } })], { hours });
+    const openNormal = (more) => open({
+      payload: board([entry("S-001", [], FULL)]), perms: CHART,
+      setup: (api) => {
+        api.patientTrends.mockImplementation(answering(withNormal));
+        api.putPatientProfile.mockResolvedValue({ patient_id: "S-001" });
+        more?.(api);
+      },
+    });
+    const offer = () => screen.getByRole("button", { name: "Xəstənin norması…" });
+    const press = (el) => act(async () => { fireEvent.click(el); await settle(); });
+    const formButton = (name) => within(screen.getByRole("dialog", { name: FORM })).getByRole("button", { name });
+    const toasts = () => within(screen.getByRole("region", { name: "Bildirişlər" }));
+    const down = () => Object.assign(new Error("down"), { status: 503 });
+
+    it("offer the patient's normal to nobody without clinical.chart", async () => {
+      await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(screen.queryByRole("button", { name: "Xəstənin norması…" })).toBeNull();
+    });
+
+    it("offer the patient's normal only once the trends have answered: the form replaces the set it was opened on", async () => {
+      let release;
+      await open({
+        payload: board([entry("S-001", [], FULL)]), perms: CHART,
+        setup: (api) => api.patientTrends.mockImplementation(() => new Promise((resolve) => { release = resolve; })),
+      });
+      expect(screen.queryByRole("button", { name: "Xəstənin norması…" })).toBeNull();
+      await act(async () => { release(withNormal("S-001", 24)); await settle(); });
+      expect(offer()).not.toHaveAttribute("aria-disabled");
+    });
+
+    it("offer it to nobody when the first read of the trends failed: there is no set to replace", async () => {
+      await open({
+        payload: board([entry("S-001", [], FULL)]), perms: CHART,
+        setup: (api) => api.patientTrends.mockRejectedValue(down()),
+      });
+      expect(screen.queryByRole("button", { name: "Xəstənin norması…" })).toBeNull();
+    });
+
+    it("open the patient's normal from the box, prefilled from the trends, read them on opening and again after a save", async () => {
+      const { api } = await openNormal();
+      const before = api.patientTrends.mock.calls.length;
+      await press(offer());
+      const form = screen.getByRole("dialog", { name: FORM });
+      expect(within(form.querySelector("[data-baseline='heart_rate']")).getByLabelText("Nəbz alt")).toHaveValue("100");
+      // Opening it reads the trends again: the set it replaces must not be a minute old.
+      expect(api.patientTrends.mock.calls.length).toBe(before + 1);
+      await press(within(form).getByRole("button", { name: "Yadda saxla" }));
+      expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: { heart_rate: { low: 100, high: 115 } } });
+      expect(api.patientTrends.mock.calls.length).toBe(before + 2);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+    });
+
+    it("clear every range from the box: an empty set is sent, the toast names the bed, the trends are read again", async () => {
+      const { api } = await openNormal();
+      await press(offer());
+      const form = screen.getByRole("dialog", { name: FORM });
+      const row = form.querySelector("[data-baseline='heart_rate']");
+      fireEvent.change(within(row).getByLabelText("Nəbz alt"), { target: { value: "" } });
+      fireEvent.change(within(row).getByLabelText("Nəbz üst"), { target: { value: "" } });
+      const reads = api.patientTrends.mock.calls.length;
+      await press(within(form).getByRole("button", { name: "Yadda saxla" }));
+      expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: {} });
+      expect(toasts().getAllByText("REA-01 · 2: xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.").length).toBeGreaterThan(0);
+      expect(api.patientTrends.mock.calls.length).toBe(reads + 1);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ").trim()).toBe("");
+    });
+
+    it("a right taken away meanwhile closes the form and says so, named after the bed, without reading the trends again", async () => {
+      const { api } = await openNormal((api) => api.putPatientProfile.mockRejectedValue(
+        Object.assign(new Error("permission required: clinical.chart"), { status: 403 })));
+      await press(offer());
+      const reads = api.patientTrends.mock.calls.length;
+      await press(formButton("Yadda saxla"));
+      expect(toasts().getAllByText(/REA-01 · 2: xəstənin norması yadda saxlanılmadı — bu əməliyyat üçün artıq səlahiyyətiniz yoxdur/).length).toBeGreaterThan(0);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(api.patientTrends.mock.calls.length).toBe(reads);
+    });
+
+    it("keep the offer, dimmed and with its reason, when the trends turn unreadable under an open form — and give focus back to it", async () => {
+      const { api, stream } = await openNormal();
+      offer().focus();
+      await press(offer());
+      api.patientTrends.mockRejectedValue(down());
+      await act(async () => { stream.frame(entry("S-001", [], { ...FULL, at: measured(10) })); await settle(); });
+      await press(formButton("İmtina"));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(offer()).toHaveAttribute("aria-disabled", "true");
+      expect(offer()).toHaveAccessibleDescription(/Vital qrafikləri oxuna bilmir/);
+      expect(document.activeElement).toBe(offer());
+      await press(offer());
+      expect(screen.queryByRole("dialog")).toBeNull();        // dimmed means it opens nothing: the set it would replace is not known
+    });
+
+    it("keep the offer, and focus on it, when the read after a save fails", async () => {
+      const { api } = await openNormal();
+      offer().focus();
+      await press(offer());
+      api.patientTrends.mockRejectedValue(down());
+      await press(formButton("Yadda saxla"));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(offer()).toHaveAttribute("aria-disabled", "true");
+      expect(document.activeElement).toBe(offer());
+    });
+
+    // The screen mounted the way the shell mounts it: the same element with NO `key`, so /patients/S-001 ->
+    // /patients/S-002 keeps this screen, the box and its state mounted and only the props change (browser Back,
+    // Alt+← or a mouse's back button move the address under the inert page while a form is open). `leave` takes
+    // the whole screen away, as a move to another screen does.
+    async function mover() {
+      onlyScreens({ beds: () => null }, { keep: [] });
+      let go;
+      let away;
+      function Harness() {
+        const [id, setId] = React.useState("S-001");
+        const [here, setHere] = React.useState(true);
+        go = setId;
+        away = () => setHere(false);
+        return here ? <PatientScreen params={{ id }} /> : null;
+      }
+      const mounted = await mount(<Harness />, {
+        access: token({ perms: CHART }), me: profile({ perms: CHART }),
+        setup: (api) => {
+          api.boardPatients.mockResolvedValue(board([entry("S-001", [], FULL), entry("S-002", [], FULL)]));
+          api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+          api.view.mockResolvedValue({ ok: true });
+          api.patientTrends.mockImplementation(answering(withNormal));
+          api.putPatientProfile.mockResolvedValue({ patient_id: "x" });
+        },
+      });
+      await act(async () => { await mounted.board.start(); });
+      await act(async () => { mounted.stream.open(); await settle(); });
+      return {
+        ...mounted,
+        move: (id) => act(async () => { go(id); await settle(); }),
+        leave: () => act(async () => { away(); await settle(); }),
+      };
+    }
+    // A write that has not been answered yet, and the way to answer it later.
+    const pending = (api) => {
+      const held = {};
+      api.putPatientProfile.mockImplementationOnce(() => new Promise((resolve) => { held.release = resolve; }));
+      return () => act(async () => { held.release({ patient_id: "S-001" }); await settle(); });
+    };
+
+    it("a form left open while she moves to another patient does not follow her, and writes nothing to the next one", async () => {
+      // Rows read from S-001 must never be written under S-002.
+      const { api, move } = await mover();
+      await press(offer());
+      expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
+      await move("S-002");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(api.putPatientProfile).not.toHaveBeenCalled();
+      await move("S-001");                                                 // and Forward does not bring the old form back
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await move("S-002");
+      await press(offer());                                                // a new form for S-002 writes to S-002
+      await press(formButton("Yadda saxla"));
+      expect(api.putPatientProfile).toHaveBeenCalledTimes(1);
+      expect(api.putPatientProfile).toHaveBeenCalledWith("S-002", { baselines: { heart_rate: { low: 100, high: 115 } } });
+    });
+
+    it("a save that lands after she has moved on is told to her, and touches nothing of the next patient's: no read for her, her form still open", async () => {
+      const { api, move } = await mover();
+      const answer = pending(api);
+      await press(offer());
+      await press(formButton("Yadda saxla"));                               // S-001's save, unanswered
+      await move("S-002");
+      await press(offer());                                                // S-002's own form, open
+      const reads = api.patientTrends.mock.calls.length;
+      await answer();                                                      // S-001's write lands now
+      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+      expect(api.patientTrends.mock.calls.length).toBe(reads);
+      expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
+      expect(api.putPatientProfile).toHaveBeenCalledTimes(1);              // nothing was sent for S-002
+    });
+
+    it("an old save does not close the form she has reopened for the same patient since", async () => {
+      const { api, move } = await mover();
+      const answer = pending(api);
+      await press(offer());
+      await press(formButton("Yadda saxla"));
+      await move("S-002");
+      await move("S-001");
+      await press(offer());                                                // the second form for S-001
+      expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
+      await answer();                                                      // the FIRST form's write lands
+      expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
+      expect(within(screen.getByRole("dialog", { name: FORM })).getByRole("button", { name: "Yadda saxla" })).not.toHaveAttribute("aria-busy");
+      expect(api.putPatientProfile).toHaveBeenCalledTimes(1);
+    });
+
+    it("a save that lands after she has left the patient screen reads nothing", async () => {
+      const { api, leave } = await mover();
+      const answer = pending(api);
+      await press(offer());
+      await press(formButton("Yadda saxla"));
+      await leave();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      const reads = api.patientTrends.mock.calls.length;
+      await answer();
+      expect(api.patientTrends.mock.calls.length).toBe(reads);
+      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+    });
+
+    it("say they cannot be read, and since when, without raising an alert", async () => {
+      await open({
+        payload: board([entry("S-001", [], FULL)]),
+        setup: (api) => api.patientTrends.mockRejectedValue(Object.assign(new Error("down"), { status: 503 })),
+      });
+      const said = screen.getByText("Vital qrafikləri oxuna bilmir (son: —)");
+      expect(said.closest("[role='note']")).not.toBeNull();          // a note, as the monitor strip says it; not a live region
+      expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ")).not.toMatch(/Vital qrafikləri/);
+    });
+
+    it("say since when once a later read fails, after one that worked", async () => {
+      const { api, stream } = await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(screen.queryByText(/oxuna bilmir/)).toBeNull();
+      api.patientTrends.mockRejectedValue(Object.assign(new Error("down"), { status: 503 }));
+      await act(async () => { stream.frame(entry("S-001", [], { ...FULL, at: measured(10) })); await settle(); });
+      // The time of the last read that worked (the browser's clock, pinned to NOW), not "—" and not the failure's.
+      expect(screen.getByText(`Vital qrafikləri oxuna bilmir (son: ${hhmm(NOW)})`)).toBeInTheDocument();
+      expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ")).not.toMatch(/Vital qrafikləri/);
     });
   });
 
