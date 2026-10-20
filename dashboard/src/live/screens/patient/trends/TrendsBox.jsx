@@ -10,6 +10,9 @@
 // in a warn `Note` — the first line of the box's body, as the monitor strip says the same state —
 // with the time that answer came. A `Note` is `role="note"`, not a live region, and not an alert:
 // nothing the clinician did was refused, and a poll that fails once a minute must not interrupt.
+//
+// `nowMs` is REQUIRED: the patient screen's `useBoardNow` instant (the server's clock), which the
+// cards age their values against. Without a finite one a card prints no age — never the browser's.
 import React from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../../i18n/dates.js";

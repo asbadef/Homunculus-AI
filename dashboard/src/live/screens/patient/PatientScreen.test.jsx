@@ -317,7 +317,7 @@ describe("the patient screen", () => {
     it("show six cards, in the bed card's channel order, one list", async () => {
       await open({ payload: board([entry("S-001", [], FULL)]) });
       const list = document.querySelector("[data-trends-box] ul");
-      expect([...list.children].map((li) => li.querySelector("[data-frame] span span").textContent))
+      expect([...list.children].map((li) => li.querySelector("[data-title]").textContent))
         .toEqual(["Nəbz", "Tənəffüs", "SpO2", "Sistolik AT · MAP", "Bədən hərarəti", "Laktat"]);
     });
 

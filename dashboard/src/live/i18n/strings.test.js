@@ -26,6 +26,7 @@ const NEUTRAL = new Set([
   // G1-11 (patient) · neutral
   "patient.sofa", //              SOFA — the same
   "patient.trendsFrameBadge", //  "NEWS2 +{points}" — the score's own name and a number (Group 2)
+  "patient.trendsPointsUnknown", // "NEWS2: —" — the score's own name and a dash (Group 2)
 
   // admin (the frame, shared by the three tabs) · neutral
   "admin.refusedFor", //          "{subject}: {reason}"  — punctuation; the words are the halves'
@@ -103,6 +104,7 @@ const AZ_SAME_AS_TR = new Set([
   "patient.seenBy", //       Gördü — the same verb as alarms.seenBy
   // Group 2 · slice 1 (the trend charts and the patient's own normal)
   "patient.trendsFrameBadge", // "NEWS2 +{points}" — the score's name and a number
+  "patient.trendsPointsUnknown", // "NEWS2: —" — the score's name and a dash
   "patient.trendsHours72", //  3 gün — "3 days" reads the same in Azerbaijani
   "patient.trendsColChannel", // Kanal — the same word (beds.staleChannels: az "Gecikmiş kanal", beds.js:81)
   "patient.baselineLow", //    alt — "lower" in Azerbaijani too
