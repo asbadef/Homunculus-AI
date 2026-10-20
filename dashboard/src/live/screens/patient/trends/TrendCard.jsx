@@ -7,9 +7,10 @@
 // number reads. The pill is the engine's `within_own_normal` (D3): it never silences the frame and
 // the frame never hides it. The delta is the engine's, printed with an arrow for its sign.
 //
-// The badge belongs to a READING, not to the card: it sits on the first channel's row (systolic's,
-// on the pressure card), so the reader sees whose points they are; MAP's row never carries one and
-// MAP never frames the card. A NEWS2 channel (the engine sent it bands) whose latest value arrived
+// The badge and the own-normal pill belong to a READING, not to the card: both sit on the first
+// channel's row (systolic's, on the pressure card), so the reader sees whose points and whose
+// verdict they are; MAP's row never carries either (the engine keeps no baseline for MAP) and MAP
+// never frames the card. The title row holds the title and nothing else. A NEWS2 channel (the engine sent it bands) whose latest value arrived
 // with no points says so — "NEWS2: —", in attention tone, with the reason for a screen reader — and
 // frames nothing: a card must not read as calm because the engine's answer was missing.
 //
@@ -77,7 +78,7 @@ function Badge({ tone, points, unscored }) {
   );
 }
 
-function Reading({ series, channel, nowMs, named, badge }) {
+function Reading({ series, channel, nowMs, named, badge, pill }) {
   const { t } = useI18n();
   const latest = channel?.latest ?? null;
   if (!latest) return null;
@@ -93,6 +94,7 @@ function Reading({ series, channel, nowMs, named, badge }) {
       ) : <>{" "}<Delta delta={latest.delta} /></>}
       {age ? <>{" "}<span className="ml-1 text-11 text-mute">{age}</span></> : null}
       {badge ? <>{" "}{badge}</> : null}
+      {pill ? <>{" "}{pill}</> : null}
     </span>
   );
 }
@@ -117,14 +119,12 @@ export function TrendCard({ card, channels, nowMs, onOpen }) {
         data-frame={tone ?? "none"}
         className={`block w-full min-w-0 rounded-box bg-card px-3 py-2.5 text-left ${FRAME[tone ?? "none"]} ${onOpen ? FOCUS_RING : ""}`}
       >
-        <span className="flex flex-wrap items-center gap-1.5">
-          <span data-title="" className={`text-10.5 font-bold uppercase leading-[normal] tracking-[.06em] ${card.series[0].color}`}>{title}</span>
-          {latest?.within_own_normal === true ? <Pill icon="user">{t("patient.trendsOwnNormalPill")}</Pill> : null}
-        </span>
+        <span data-title="" className={`block text-10.5 font-bold uppercase leading-[normal] tracking-[.06em] ${card.series[0].color}`}>{title}</span>
         {measured ? (
           card.series.map((s, i) => (
             <Reading key={s.key} series={s} channel={channels?.[s.key]} nowMs={nowMs} named={card.series.length > 1}
-              badge={i === 0 && (tone || unscored) ? <Badge tone={tone} points={points} unscored={unscored} /> : null} />
+              badge={i === 0 && (tone || unscored) ? <Badge tone={tone} points={points} unscored={unscored} /> : null}
+              pill={i === 0 && latest?.within_own_normal === true ? <Pill icon="user">{t("patient.trendsOwnNormalPill")}</Pill> : null} />
           ))
         ) : (
           <span className="mt-1 block text-12.5 text-mute">{t("patient.trendsNoData")}</span>

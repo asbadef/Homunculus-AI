@@ -193,6 +193,20 @@ describe("the trend card", () => {
     expect(screen.getAllByText("NEWS2: —")).toHaveLength(1);
   });
 
+  it("puts the own-normal pill on the reading it judges: systolic's, beside the badge — never MAP's or the title's", () => {
+    const card = show(PRESSURE, [
+      channel("sbp", [point(5, 108, 1)], { latest: latest({ value: 108, news2_points: 1, within_own_normal: true }) }),
+      channel("map", [point(5, 58)], { latest: latest({ value: 58, news2_points: null, within_own_normal: true }) }),
+    ]);
+    const pill = screen.getByText("Xəstənin normasında");
+    expect(card.querySelector("[data-series='sbp']")).toContainElement(pill);
+    expect(card.querySelector("[data-series='sbp']")).toHaveTextContent(/NEWS2 \+1.*Xəstənin normasında/);
+    expect(card.querySelector("[data-series='map']")).not.toHaveTextContent("Xəstənin normasında");
+    expect(card.querySelector("[data-title]")).not.toHaveTextContent("Xəstənin normasında");
+    expect(screen.getAllByText("Xəstənin normasında")).toHaveLength(1);
+    expect(card.dataset.frame).toBe("mid");
+  });
+
   it("never frames a card from MAP — whatever points it is handed", () => {
     const card = show(PRESSURE, [
       channel("sbp", [point(5, 120, 0)], { latest: latest({ value: 120, news2_points: 0 }) }),
