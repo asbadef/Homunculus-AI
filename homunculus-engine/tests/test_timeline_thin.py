@@ -22,14 +22,23 @@ def _obs(seconds: float, value: float) -> Observation:
     return Observation("S-001", SignalCode.SPO2, value, "%", T0 + timedelta(seconds=seconds), "test")
 
 
+def _micros(moment: datetime) -> int:
+    """A moment as whole microseconds since T0 — exact integer arithmetic, no floats."""
+    return (moment - T0) // timedelta(microseconds=1)
+
+
 def _slices(series: list[Observation], buckets: int) -> list[list[Observation]]:
-    """The series cut into `buckets` equal slices of its time span, as the docstring defines them."""
-    t0 = series[0].timestamp
-    span = (series[-1].timestamp - t0).total_seconds()
+    """The series cut into `buckets` equal slices of its time span, as the docstring defines them.
+
+    The slice of a reading is `(its offset) * buckets // span`, in integer microseconds, so the
+    edges are checked against exact arithmetic and not against the float expression `thin()` uses.
+    """
+    t0_us = _micros(series[0].timestamp)
+    span_us = _micros(series[-1].timestamp) - t0_us
     out: list[list[Observation]] = [[] for _ in range(buckets)]
     for obs in series:
-        at = 0 if span <= 0 else min(buckets - 1,
-                                     int((obs.timestamp - t0).total_seconds() / span * buckets))
+        at = 0 if span_us <= 0 else min(buckets - 1,
+                                        (_micros(obs.timestamp) - t0_us) * buckets // span_us)
         out[at].append(obs)
     return [part for part in out if part]
 
@@ -48,6 +57,28 @@ def test_an_empty_series_stays_empty():
 def test_a_cap_below_four_is_refused():
     with pytest.raises(ValueError, match="at least 4"):
         thin([_obs(0, 96)], 3)
+
+
+def test_a_cap_of_exactly_four_keeps_the_first_last_lowest_and_highest():
+    values = [95.0, 91.0, 97.0, 93.0, 85.0, 99.0, 94.0, 92.0, 96.0, 90.0]
+    series = [_obs(i * 60, value) for i, value in enumerate(values)]
+
+    kept = thin(series, 4)                    # the smallest cap: one slice, up to four readings
+
+    assert len(kept) <= 4
+    held = {id(o) for o in kept}
+    assert id(series[0]) in held and id(series[-1]) in held
+    assert id(min(series, key=lambda o: o.value)) in held
+    assert id(max(series, key=lambda o: o.value)) in held
+
+
+def test_a_cap_that_is_not_a_multiple_of_four_is_rounded_down_to_whole_slices():
+    rng = random.Random(2003)
+    series = [_obs(i * 10, round(rng.uniform(80, 100), 1)) for i in range(6000)]
+
+    kept = thin(series, 2003)
+
+    assert len(kept) <= 4 * (2003 // 4)       # 2 000: whole slices of four, never 2 003
 
 
 @pytest.mark.parametrize("seed", range(10))

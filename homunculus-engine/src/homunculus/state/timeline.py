@@ -1,5 +1,6 @@
 # src/homunculus/state/timeline.py
-"""Per-patient current values, history, and staleness."""
+"""Per-patient current values, history, and staleness — and `thin()`, a pure helper that caps an
+observation series for drawing."""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -51,6 +52,9 @@ def thin(series: list[Observation], max_points: int) -> list[Observation]:
     """At most `max_points` readings of `series` (oldest first), keeping its shape: the series' time
     span is cut into `max_points // 4` equal slices, and each keeps its first, last, lowest and
     highest reading, in their order.
+
+    Preconditions: `series` in time order, as `window()` returns it; values are finite (the
+    gateways' contract).
 
     For a chart, never for a rule: a thinned series has lost readings by construction, and no score
     may be computed from one. At or below the cap it is the series itself (a copy), so the spot-check
