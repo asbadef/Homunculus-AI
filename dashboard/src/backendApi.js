@@ -773,6 +773,12 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      * Without it every patient is judged against the population threshold, so someone whose
      * atrial fibrillation lives at 105 bpm alarms on every measurement. The boundary is always
      * the clinician's — the system never mints one.
+     *
+     * @deprecated Do not call this from anything new. It ALWAYS sends `comorbidities: []` AND
+     * `baselines: {}` (unless given others), and the engine reads a present-but-empty key as
+     * "clear" (api/clinical.py `profile_from_payload`) — so a partial call such as
+     * `setProfile(id, { baselineSofa: 3 })` erases both the charted comorbidities and every
+     * baseline range on the server. Use `putPatientProfile` with only the keys to change.
      */
     setProfile(patientId, { comorbidities = [], baselines = {}, baselineSofa = null } = {}) {
       return authed(`/clinical/${encodeURIComponent(patientId)}/profile`, {
@@ -798,11 +804,12 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     /**
      * The patient's own normal, written as the caller built it (PUT /clinical/{id}/profile).
      *
-     * Not `setProfile` above: that always sends `comorbidities` (an empty list unless given),
-     * and the engine reads a present-but-empty list as "clear them" (api/clinical.py
-     * `profile_from_payload`) — so a form that only means to write the baselines would erase
-     * every charted comorbidity. The baseline form sends `{baselines}` alone, and the engine keeps
-     * whatever the body does not mention.
+     * Not `setProfile` above: that always sends `comorbidities` and `baselines` (an empty list
+     * and an empty object unless given), and the engine reads a present-but-empty key as "clear
+     * it" (api/clinical.py `profile_from_payload`) — so a form that only means to write the
+     * baselines would erase every charted comorbidity, and one that only means to write a baseline
+     * SOFA would erase the baselines too. The baseline form sends `{baselines}` alone, and the
+     * engine keeps whatever the body does not mention.
      */
     putPatientProfile(patientId, body) {
       return authed(`/clinical/${seg(patientId)}/profile`, { method: "PUT", body });

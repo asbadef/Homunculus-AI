@@ -1370,10 +1370,19 @@ describe("backendApi — the trend charts and the patient's own normal (Group 2 
     expect(JSON.parse(init.body)).toEqual(body);
   });
 
-  it("setProfile always sends comorbidities, which the engine reads as 'clear them' — why the form does not use it", async () => {
+  it("sends a window the server does not offer as it was named — refusing it (400) is the server's job", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
-    await signedIn(fetchMock).setProfile("S-001", { baselines: { heart_rate: { low: 1, high: 2 } } });
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).comorbidities).toEqual([]);
+    await signedIn(fetchMock).patientTrends("S-001", 12);
+    expect(fetchMock.mock.calls[0][0]).toBe("/patients/S-001/trends?hours=12");
+  });
+
+  it("setProfile sends comorbidities: [] and baselines: {} even when given only a baseline SOFA — why nothing new calls it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    await signedIn(fetchMock).setProfile("S-001", { baselineSofa: 3 });
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(sent.comorbidities).toEqual([]);
+    expect(sent.baselines).toEqual({});
+    expect(sent.baseline_sofa).toBe(3);
   });
 
   it("a trends read that gets no answer gives up after 15 s, as every read does", async () => {
