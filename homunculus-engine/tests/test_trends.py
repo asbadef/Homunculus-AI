@@ -64,7 +64,7 @@ def test_the_window_and_the_bands_source_are_stated():
     assert answer["since"] == (NOW - timedelta(hours=6)).isoformat()
     assert answer["until"] == NOW.isoformat() and answer["generated_at"] == NOW.isoformat()
     assert (answer["bands_source"], answer["news2_scale"]) == ("news2-rcp-2017", 1)
-    json.dumps(answer)                         # nothing in it a JSON response cannot carry
+    json.dumps(answer, allow_nan=False)        # nothing in it a JSON response cannot carry
 
 
 # --- points -------------------------------------------------------------------------------------
@@ -76,6 +76,23 @@ def test_points_are_the_window_oldest_first_with_the_engines_points():
     assert hr["points"] == [[_at(120).isoformat(), 84.0, 0], [_at(60).isoformat(), 132.0, 3]]
     assert (hr["thinned"], hr["total_points"]) == (False, 2)
     assert len(_channel(_trends(engine, hours=72), "heart_rate")["points"]) == 3
+
+
+def test_a_reading_exactly_on_the_start_of_the_window_is_drawn():
+    engine = _engine((SignalCode.HEART_RATE, 84, 6 * 60 + 1), (SignalCode.HEART_RATE, 86, 6 * 60),
+                     (SignalCode.HEART_RATE, 88, 30))
+    answer = _trends(engine, hours=6)
+    hr = _channel(answer, "heart_rate")
+    assert [value for _ts, value, _points in hr["points"]] == [86.0, 88.0]     # the minute before is out
+    assert hr["points"][0][0] == answer["since"]
+
+
+def test_a_reading_exactly_on_the_end_of_the_window_is_drawn():
+    engine = _engine((SignalCode.HEART_RATE, 84, 30), (SignalCode.HEART_RATE, 86, 0))
+    answer = _trends(engine, hours=6)
+    hr = _channel(answer, "heart_rate")
+    assert [value for _ts, value, _points in hr["points"]] == [84.0, 86.0]
+    assert hr["points"][-1][0] == answer["until"] == hr["latest"]["ts"]
 
 
 def test_map_and_lactate_points_carry_no_news2_points():
@@ -200,8 +217,11 @@ def test_markers_are_in_time_order():
 
 
 def test_more_episodes_than_the_read_takes_are_flagged_not_cut_quietly():
-    """A flapping alert writes a `first_seen` row each time it comes back (`AckStore.prune` drops
-    the stamp when it clears): about 30 an hour at one reading a minute, about 2 160 in the 72-hour
+    """Today the engine never drops an alert kind from `active_alerts` (pipeline.py:93–96), so
+    `first_seen` is stamped once per (patient, kind) and a ▲ means "the first time this finding was
+    raised for this patient"; a window holds a handful. IF alert episodes are ever cleared and
+    re-raised, `AckStore.prune` would drop the stamp each time and a flapping alert would write a row
+    each time it came back — about 30 an hour at one reading a minute, about 2 160 in the 72-hour
     window. The read is oldest-first, so past its limit the NEWEST marks — the end a clinician looks
     at — would be the missing ones; the answer says so instead of drawing a quiet end."""
     assert TRENDS_MARKER_LIMIT >= 72 * 30
@@ -219,6 +239,19 @@ def test_more_episodes_than_the_read_takes_are_flagged_not_cut_quietly():
     assert answer["markers"][-1]["ts"] == _at(600 - (TRENDS_MARKER_LIMIT - 1) * 0.1).isoformat()
 
 
+def test_exactly_the_limit_of_episodes_is_not_a_truncation():
+    """Nothing was cut, so nothing is flagged: the flag means "the read stopped short", not "the
+    read came back full"."""
+    engine = _engine((SignalCode.SPO2, 85, 60))
+    exact = InMemoryAuditLog()
+    for i in range(TRENDS_MARKER_LIMIT):
+        _first_seen(exact, "news2", 600 - i * 0.1)
+    answer = _trends(engine, exact)
+    assert answer["markers_truncated"] is False
+    assert len(answer["markers"]) == TRENDS_MARKER_LIMIT
+    assert answer["markers"][-1]["ts"] == _at(600 - (TRENDS_MARKER_LIMIT - 1) * 0.1).isoformat()
+
+
 # --- readings that are not numbers ---------------------------------------------------------------
 
 def test_a_reading_that_is_not_a_number_is_never_drawn_counted_or_latest():
@@ -228,6 +261,8 @@ def test_a_reading_that_is_not_a_number_is_never_drawn_counted_or_latest():
     first in a thinning slice would take that slice's minimum and maximum."""
     engine = _engine((SignalCode.HEART_RATE, 80, 120), (SignalCode.HEART_RATE, 84, 90),
                      (SignalCode.HEART_RATE, float("nan"), 60), (SignalCode.HEART_RATE, float("inf"), 30))
+    engine.set_profile(PatientProfile("S-001", baselines={
+        SignalCode.HEART_RATE: BaselineRange(70, 90)}))
     answer = _trends(engine)
     json.dumps(answer, allow_nan=False)          # what Starlette's JSONResponse does
     hr = _channel(answer, "heart_rate")
@@ -235,7 +270,26 @@ def test_a_reading_that_is_not_a_number_is_never_drawn_counted_or_latest():
     assert (hr["thinned"], hr["total_points"]) == (False, 2)
     assert (hr["latest"]["ts"], hr["latest"]["value"], hr["latest"]["delta"]) == (_at(90).isoformat(), 84.0, 4.0)
     # The engine's breakdown scored the newest reading — the inf — so its points are not 84's to print.
+    # Nor is a verdict: 84 sits inside the charted 70–90, but the engine judges the newest reading,
+    # and "within normal" printed beside that could contradict what it says.
     assert hr["latest"]["news2_points"] is None
+    assert hr["latest"]["within_own_normal"] is None
+    assert hr["bands"]["own_normal"] == {"low": 70, "high": 90}
+
+
+def test_a_gap_of_not_a_number_mid_window_leaves_the_finite_newest_reading_scored_and_judged():
+    """The `scored` guard must not over-reach: with a NaN in the MIDDLE of the history the newest
+    reading is the engine's scored one, so its points and its own-normal verdict are served, and the
+    delta is measured from the last finite reading before it."""
+    engine = _engine((SignalCode.HEART_RATE, 80, 120), (SignalCode.HEART_RATE, float("nan"), 90),
+                     (SignalCode.HEART_RATE, 132, 60))
+    engine.set_profile(PatientProfile("S-001", baselines={
+        SignalCode.HEART_RATE: BaselineRange(120, 140)}))
+    hr = _channel(_trends(engine), "heart_rate")
+    assert hr["points"] == [[_at(120).isoformat(), 80.0, 0], [_at(60).isoformat(), 132.0, 3]]
+    assert (hr["thinned"], hr["total_points"]) == (False, 2)
+    assert hr["latest"] == {"ts": _at(60).isoformat(), "value": 132.0, "delta": 52.0,
+                            "news2_points": 3, "within_own_normal": True}
 
 
 # --- what it refuses, and what it never does ----------------------------------------------------
@@ -245,6 +299,32 @@ def test_an_unmeasured_patient_is_read_without_being_created():
     answer = _trends(engine, patient="S-009")
     assert {c["key"]: c["points"] for c in answer["channels"]} == {k: [] for k in _PUBLISHED_SIGNALS}
     assert "S-009" not in engine.patient_ids()
+
+
+def test_a_charted_normal_with_no_readings_is_served_without_creating_the_patient():
+    engine = _engine((SignalCode.HEART_RATE, 84, 30))
+    engine.set_profile(PatientProfile("S-002", baselines={
+        SignalCode.HEART_RATE: BaselineRange(100, 115)}))
+    answer = _trends(engine, patient="S-002")
+    hr = _channel(answer, "heart_rate")
+    assert hr["bands"]["own_normal"] == {"low": 100, "high": 115}
+    assert hr["points"] == [] and hr["latest"] is None
+    assert answer["markers"] == []
+    assert "S-002" not in engine.patient_ids()
+
+
+def test_a_now_in_another_zone_is_answered_in_utc():
+    audit = InMemoryAuditLog()
+    audit.append(AuditEvent(HOSPITAL, "first_seen", "S-001", "news2",
+                            {"at": "2026-10-19T12:00:00+04:00"}))      # 08:00 UTC
+    engine = _engine((SignalCode.HEART_RATE, 84, 30))
+    baku = timezone(timedelta(hours=4))
+    answer = patient_trends(engine, audit, hospital=HOSPITAL, patient_id="S-001", hours=6,
+                            now=NOW.astimezone(baku))                  # 13:00+04:00, the same instant
+    assert (answer["since"], answer["until"], answer["generated_at"]) == (
+        "2026-10-19T03:00:00+00:00", "2026-10-19T09:00:00+00:00", "2026-10-19T09:00:00+00:00")
+    assert answer["markers"] == [{"ts": "2026-10-19T08:00:00+00:00", "kind": "alarm", "label": "news2"}]
+    assert answer == _trends(engine, audit, hours=6)                   # nothing depends on the zone
 
 
 @pytest.mark.parametrize("hours", [0, 12, 48, 168])
