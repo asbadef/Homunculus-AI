@@ -147,7 +147,7 @@ def patient_trends(engine: Engine, audit: AuditLog, *, hospital: str, patient_id
     # The window is cut in UTC and `since`/`until`/`generated_at` are written `+00:00`, whatever zone
     # the caller's clock wore; the marks are written in UTC too.
     now = now.astimezone(timezone.utc)
-    state =(engine.state(patient_id) if patient_id in set(engine.patient_ids())
+    state = (engine.state(patient_id) if patient_id in set(engine.patient_ids())
              else PatientState(patient_id))
     profile = engine.profile(patient_id)
     breakdown = news2_score(state).breakdown

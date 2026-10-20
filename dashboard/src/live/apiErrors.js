@@ -83,6 +83,8 @@ export const API_MESSAGE_KEYS = new Map([
   ["denetim kaydının tamamı kapsam dışı; bir patient_id verin", "auditScoped"],
   ["alarm kalitesi raporunun tamamı kapsam dışı", "alarmQualityScoped"],
   ["skor formunu yalnız bir kişi imzalayabilir", "scoreSignedByOne"],
+  // GET /patients/{id}/trends (Group 2's trend charts): a window other than 6, 24 or 72 hours.
+  ["geçersiz hours: 6, 24 veya 72 olmalı", "badTrendHours"],
 
   // admin/service.py — its module constants and the AdminError literals.
   ["Son yönetici yetkisi kaldırılamaz", "lastAdmin"],
@@ -132,8 +134,10 @@ export const API_CODE_KEYS = new Map([
   ["SESSION_SUPERSEDED", "sessionSuperseded"],
 ]);
 
-/** What a 5xx may say that is more exact than "the server cannot be reached". */
-const SERVER_ANSWERS = new Set(["errors.directoryUnreachable", "errors.directoryNotConfigured", "errors.sessionUnreachable"]);
+/** What a 5xx may say that is more exact than "the server cannot be reached". `scopeUnreadable` is
+ *  the 503 of POST /stream-ticket and GET /patients/{id}/trends: the server answered, only the
+ *  look-up of what the caller may see failed. */
+const SERVER_ANSWERS = new Set(["errors.directoryUnreachable", "errors.directoryNotConfigured", "errors.sessionUnreachable", "errors.scopeUnreadable"]);
 const REQUEST_FAILED = /^İstek başarısız \((\d{3})\)$/; // backendApi.js
 // Two messages the server BUILDS rather than writes out, so they are matched by shape and their
 // own tail is carried into the text. Both name permission keys — the catalogue's own identifiers

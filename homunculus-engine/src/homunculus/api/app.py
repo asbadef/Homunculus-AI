@@ -47,6 +47,7 @@ from homunculus.api.infinity_shadow import (
 from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import rehydrate
 from homunculus.api.tickets import TicketStore
+from homunculus.api.trends import TRENDS_HOURS, patient_trends
 from homunculus.auth.permissions import validate_permissions
 from homunculus.gateway.fhir import GatewayError, parse_fhir_observation
 from homunculus.pipeline import Engine
@@ -775,6 +776,31 @@ def create_app(
         return {"patients": result.boards,
                 "scope": result.as_dict(),
                 "scope_note": scope_report(result)}
+
+    @app.get("/patients/{patient_id}/trends")
+    async def trends(patient_id: str, hours: str = "24",
+                     authorization: str | None = Header(default=None)):
+        """One patient's vital history for the trend charts (`api/trends.py`): the series, the
+        NEWS2 rows as bands, the latest value's movement and points, and the alarm and antibiotic
+        moments — everything a chart draws, decided here. Read-only, and not audited: opening the
+        patient already wrote `view`, and a chart read every minute would bury that record.
+
+        `hours` is read as text so that anything but 6, 24 or 72 is this route's 400, in the
+        reader's words, rather than FastAPI's 422. A scope that cannot be read is 503, as the stream
+        ticket answers it: `_require_patient` would call it "not found", which tells a screen the
+        patient is gone when only the look-up failed. Out of scope and unknown stay one 404.
+        """
+        caller = await _caller(authorization)
+        _require(caller, BOARD_VIEW)
+        if hours not in {str(h) for h in TRENDS_HOURS}:
+            raise HTTPException(status_code=400, detail="geçersiz hours: 6, 24 veya 72 olmalı")
+        if (await _scope(authorization)).reason == UNKNOWN_SCOPE.reason:
+            raise HTTPException(status_code=503, detail="kapsam şu anda okunamıyor")
+        await _require_patient(caller, authorization, patient_id)
+        _score_state(caller.hospital, patient_id)     # 404 for an id neither measured nor admitted
+        return patient_trends(_engine(caller.hospital), audit, hospital=caller.hospital,
+                              patient_id=patient_id, hours=int(hours),
+                              now=datetime.now(timezone.utc))
 
     # ------------------------------------------------------------------ Aşama A: the shadow lane
     def _occupants(hospital: str, now: float) -> dict[str, list[str]]:

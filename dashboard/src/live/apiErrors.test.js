@@ -296,6 +296,21 @@ describe("apiErrorText", () => {
     for (const lang of LANG_CODES) expect(DICTIONARIES[lang]["errors.serverUnreachable"], lang).toBeTruthy();
   });
 
+  it("a 503 that says the scope could not be read stays that answer, not 'the server cannot be reached'", () => {
+    // /stream-ticket and GET /patients/{id}/trends answer 503 "kapsam şu anda okunamıyor": the
+    // server IS reachable, only the look-up of what the caller may see failed.
+    const err = Object.assign(new Error("kapsam şu anda okunamıyor"), { status: 503 });
+    expect(apiErrorKey(err)).toEqual({ key: "errors.scopeUnreadable", vars: {} });
+    for (const lang of LANG_CODES) {
+      const t = createTranslator(lang, DICTIONARIES);
+      expect(apiErrorText(t, err), lang).toBe(t("errors.scopeUnreadable"));
+      expect(apiErrorText(t, err), lang).not.toBe(t("errors.serverUnreachable"));
+    }
+    // and a 5xx that says nothing of the scope is still the generic one
+    expect(apiErrorKey(Object.assign(new Error("Beklenmeyen"), { status: 503 })))
+      .toEqual({ key: "errors.serverUnreachable", vars: {} });
+  });
+
   it("the lock and the password's throttle do not claim the account is the hospital's", () => {
     for (const lang of LANG_CODES) {
       expect(DICTIONARIES[lang]["errors.directoryThrottled"], lang).not.toMatch(/hospital|больнич|xəstəxana|hastane/i);

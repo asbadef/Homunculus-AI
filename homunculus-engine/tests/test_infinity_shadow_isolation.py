@@ -81,6 +81,17 @@ def test_the_lanes_modules_import_nothing_clinical(relative):
         assert not outside, outside
 
 
+def test_the_trend_charts_import_nothing_of_the_lane():
+    """The other direction (spec §5.5, D7): the clinical trends charts no Aşama A value. Its
+    readings keep no history, are bound to no patient and are unvalidated; a chart of them would
+    put an unvalidated number on a clinical axis."""
+    imported = _imports(PACKAGE / "api" / "trends.py")
+    assert imported, "the scan went blind"
+    lane = ("homunculus.api.infinity_shadow", "homunculus.api.infinity_device_beds",
+            "homunculus.edge")
+    assert not sorted(n for n in imported if any(n == m or n.startswith(m + ".") for m in lane))
+
+
 def test_importing_the_lane_loads_nothing_clinical_even_indirectly():
     code = ("import sys; import homunculus.api.infinity_shadow, homunculus.api.infinity_device_beds; "
             "print('\\n'.join(sorted(m for m in sys.modules if m.startswith('homunculus'))))")
@@ -168,6 +179,26 @@ def test_a_shadow_post_and_get_call_no_clinical_writer(tmp_path, monkeypatch):
     assert {"ingest", "append", "publish"} <= set(calls)
 
 
+def test_a_trends_read_never_reaches_the_shadow_store(tmp_path, monkeypatch):
+    """The lane holds a heart rate of 180 for p1's bed; the clinical trends of p1 must not show it,
+    and must not even ask the shadow store."""
+    identities = InMemoryIdentityStore()
+    identities.apply(HOSPITAL, IdentityRecord(patient_id="p1", unit="YB", room="1", bed="1", source="test"))
+    client, clock = _app(tmp_path, identities=identities)
+    assert client.post("/infinity-shadow/readings", json=_body(clock.t), headers=_hdr(SHADOW)).status_code == 200
+    calls: list[str] = []
+    store = client.app.state.shadow_store
+    for name in ("devices", "feed"):
+        original = getattr(store, name)
+        monkeypatch.setattr(store, name, lambda *a, _n=name, _o=original, **k: (calls.append(_n), _o(*a, **k))[1])
+
+    answer = client.get("/patients/p1/trends", headers=_hdr(DEVICE))
+
+    assert answer.status_code == 200, answer.text
+    assert all(channel["points"] == [] for channel in answer.json()["channels"])
+    assert calls == []
+
+
 # --- tokens ------------------------------------------------------------------------------------
 
 CLINICAL_ROUTES = [
@@ -175,6 +206,7 @@ CLINICAL_ROUTES = [
     ("POST", "/ack", {"patient_id": "p1", "kind": "news2", "role": "nurse"}),
     ("POST", "/clinical/p1", {"entries": [{"code": "suspected_infection", "value": 1}]}),
     ("GET", "/patients", None),
+    ("GET", "/patients/p1/trends", None),
     ("POST", "/stream-ticket", None),
     ("GET", "/audit", None),
 ]
