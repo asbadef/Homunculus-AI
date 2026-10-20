@@ -7,6 +7,7 @@ import { resetScreens } from "../../shell/routes.js";
 import { onlyScreens } from "../../shell/screens.testutil.js";
 import { NOW, ago, alarm, board, entry, identity, measured, news2 } from "../../data/board.testutil.js";
 import { STAGE_OFF, bed as monitorBed, param as monitorParam, strip } from "../../data/shadow.testutil.js";
+import { hhmm } from "../../i18n/dates.js";
 import { answering } from "./trends/trends.testutil.js";
 import { PatientScreen } from "./PatientScreen.jsx";
 
@@ -315,7 +316,18 @@ describe("the patient screen", () => {
         payload: board([entry("S-001", [], FULL)]),
         setup: (api) => api.patientTrends.mockRejectedValue(Object.assign(new Error("down"), { status: 503 })),
       });
-      expect(screen.getByText("Vital qrafikləri oxuna bilmir (son: —)")).toBeInTheDocument();
+      const said = screen.getByText("Vital qrafikləri oxuna bilmir (son: —)");
+      expect(said.closest("[role='note']")).not.toBeNull();          // a note, as the monitor strip says it; not a live region
+      expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ")).not.toMatch(/Vital qrafikləri/);
+    });
+
+    it("say since when once a later read fails, after one that worked", async () => {
+      const { api, stream } = await open({ payload: board([entry("S-001", [], FULL)]) });
+      expect(screen.queryByText(/oxuna bilmir/)).toBeNull();
+      api.patientTrends.mockRejectedValue(Object.assign(new Error("down"), { status: 503 }));
+      await act(async () => { stream.frame(entry("S-001", [], { ...FULL, at: measured(10) })); await settle(); });
+      // The time of the last read that worked (the browser's clock, pinned to NOW), not "—" and not the failure's.
+      expect(screen.getByText(`Vital qrafikləri oxuna bilmir (son: ${hhmm(NOW)})`)).toBeInTheDocument();
       expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ")).not.toMatch(/Vital qrafikləri/);
     });
   });
