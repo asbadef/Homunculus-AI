@@ -9,6 +9,7 @@ not strings: the bound may come in any time zone, and a row stamped on a whole s
 from __future__ import annotations
 
 import inspect
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -24,6 +25,8 @@ BAKU = timezone(timedelta(hours=4))
 # Three rows a second apart, the first on a whole second: isoformat() writes it with no fraction.
 CRAFTED = ["2026-10-19T09:00:00+00:00", "2026-10-19T09:00:00.500000+00:00",
            "2026-10-19T09:00:01+00:00"]
+# What `_now_iso()` writes: UTC, six fraction digits or none, always "+00:00" (never "Z").
+TS_SHAPE = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{6})?\+00:00")
 
 
 def _event(**over) -> AuditEvent:
@@ -35,7 +38,11 @@ def _event(**over) -> AuditEvent:
 def _two(log):
     """Two appends with a clear instant between them; returns their records."""
     first = log.append(_event())
-    time.sleep(0.01)
+    stamped = datetime.fromisoformat(first.ts)
+    # Wait until the clock has strictly passed the first stamp rather than sleeping a fixed time:
+    # on Windows the clock can tick at ~15.6 ms, and a short sleep may give both rows one `ts`.
+    while datetime.now(timezone.utc) <= stamped:
+        time.sleep(0.001)
     second = log.append(_event(subject="septic_shock"))
     return first, second
 
@@ -84,6 +91,14 @@ def test_a_since_without_a_zone_is_refused(log):
     log.append(_event())
     with pytest.raises(ValueError, match="time zone"):
         log.records(since=datetime(2026, 10, 19, 9, 0))
+
+
+def test_append_stamps_ts_in_the_shape_the_sqlite_comparison_needs(log):
+    # SQLite compares `ts` as text against `bound.isoformat()` (UTC, "+00:00"); a "Z" suffix or a
+    # local offset written by `append` would silently break `since` there.
+    record = log.append(_event())
+    assert TS_SHAPE.fullmatch(record.ts), record.ts
+    assert [TS_SHAPE.fullmatch(r.ts) is not None for r in log.records()] == [True]
 
 
 def test_sqlite_orders_a_whole_second_against_its_fractions():
@@ -146,6 +161,32 @@ def test_postgres_orders_instants_not_text(pg_log):
     half = datetime(2026, 10, 19, 9, 0, 0, 500000, tzinfo=timezone.utc)
     assert [r.ts for r in pg_log.records(since=half)] == CRAFTED[1:]
     assert [r.ts for r in pg_log.records(since=half.astimezone(BAKU))] == CRAFTED[1:]
+
+
+@requires_db
+def test_postgres_stamps_ts_in_the_same_shape(pg_log):
+    record = pg_log.append(_event())
+    assert TS_SHAPE.fullmatch(record.ts), record.ts
+    assert [TS_SHAPE.fullmatch(r.ts) is not None for r in pg_log.records()] == [True]
+
+
+@requires_db
+def test_postgres_compares_instants_where_the_text_would_say_otherwise(pg_log):
+    """Pins the `timestamptz` cast, not a real row: no writer stores a non-UTC `ts`
+    (`_now_iso`, `PostgresAuditLog.append`).
+
+    "2026-10-20T12:30:00+04:00" is 08:30 UTC, before the 09:00 UTC bound, yet as text it sorts
+    AFTER "2026-10-20T09:00:00+00:00" (the hour's "1" > "0", in every collation). Only comparing
+    instants leaves it out.
+    """
+    stamps = ["2026-10-20T12:30:00+04:00", "2026-10-20T09:00:00+00:00"]
+    with pg_log._engine.begin() as conn:                   # noqa: SLF001
+        for ts in stamps:
+            conn.execute(text("INSERT INTO audit (ts, tenant, event_type, patient_id, subject, payload)"
+                              " VALUES (:ts, 'HOSP1', 'first_seen', 'S-001', 'news2', '{}'::jsonb)"),
+                         {"ts": ts})
+    bound = datetime(2026, 10, 20, 9, 0, tzinfo=timezone.utc)
+    assert [r.ts for r in pg_log.records(since=bound)] == ["2026-10-20T09:00:00+00:00"]
 
 
 @requires_db

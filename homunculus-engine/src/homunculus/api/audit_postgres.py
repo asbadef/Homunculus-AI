@@ -18,12 +18,13 @@ is a durable queue, not a fire-and-forget one.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 
-from homunculus.api.audit import GENESIS_HASH, AuditEvent, AuditRecord, chain_hash, since_utc
+from homunculus.api.audit import (
+    GENESIS_HASH, AuditEvent, AuditRecord, _now_iso, chain_hash, since_utc)
 
 
 _PG_SCHEMES = ("postgresql+asyncpg://", "postgresql+psycopg2://", "postgresql://", "postgres://")
@@ -57,7 +58,7 @@ class PostgresAuditLog:
         """
         payload = dict(event.payload)
         for _ in range(5):
-            ts = datetime.now(timezone.utc).isoformat()
+            ts = _now_iso()
             try:
                 with self._engine.begin() as conn:
                     head = conn.execute(
