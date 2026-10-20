@@ -346,29 +346,152 @@ describe("the patient screen", () => {
       expect(document.activeElement).toBe(hr);
     });
 
+    // The patient's normal (Task 14): the box offers it, and the form it opens writes through the profile door.
+    const CHART = ["board.view", "alerts.ack", "clinical.chart"];
+    const FORM = "Xəstənin norması · REA-01 · 2";
+    const withNormal = (pid, hours) => trends(pid, [channel("heart_rate", [point(5, 108, 1)],
+      { bands: { news2: null, own_normal: { low: 100, high: 115 }, device: null } })], { hours });
+    const openNormal = (more) => open({
+      payload: board([entry("S-001", [], FULL)]), perms: CHART,
+      setup: (api) => {
+        api.patientTrends.mockImplementation(answering(withNormal));
+        api.putPatientProfile.mockResolvedValue({ patient_id: "S-001" });
+        more?.(api);
+      },
+    });
+    const offer = () => screen.getByRole("button", { name: "Xəstənin norması…" });
+    const press = (el) => act(async () => { fireEvent.click(el); await settle(); });
+    const formButton = (name) => within(screen.getByRole("dialog", { name: FORM })).getByRole("button", { name });
+    const toasts = () => within(screen.getByRole("region", { name: "Bildirişlər" }));
+    const down = () => Object.assign(new Error("down"), { status: 503 });
+
     it("offer the patient's normal to nobody without clinical.chart", async () => {
       await open({ payload: board([entry("S-001", [], FULL)]) });
       expect(screen.queryByRole("button", { name: "Xəstənin norması…" })).toBeNull();
     });
 
-    it("open the patient's normal from the box, prefilled from the trends, and read them again after a save", async () => {
-      const { api } = await open({
-        payload: board([entry("S-001", [], FULL)]),
-        perms: ["board.view", "alerts.ack", "clinical.chart"],
-        setup: (api) => {
-          api.patientTrends.mockImplementation(answering((pid, hours) => trends(pid, [channel("heart_rate", [point(5, 108, 1)],
-            { bands: { news2: null, own_normal: { low: 100, high: 115 }, device: null } })], { hours })));
-          api.putPatientProfile.mockResolvedValue({ patient_id: "S-001" });
-        },
+    it("offer the patient's normal only once the trends have answered: the form replaces the set it was opened on", async () => {
+      let release;
+      await open({
+        payload: board([entry("S-001", [], FULL)]), perms: CHART,
+        setup: (api) => api.patientTrends.mockImplementation(() => new Promise((resolve) => { release = resolve; })),
       });
-      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Xəstənin norması…" })); await settle(); });
-      const form = screen.getByRole("dialog", { name: "Xəstənin norması" });
-      expect(within(form.querySelector("[data-baseline='heart_rate']")).getByLabelText("alt")).toHaveValue("100");
-      const reads = api.patientTrends.mock.calls.length;
-      await act(async () => { fireEvent.click(within(form).getByRole("button", { name: "Yadda saxla" })); await settle(); });
+      expect(screen.queryByRole("button", { name: "Xəstənin norması…" })).toBeNull();
+      await act(async () => { release(withNormal("S-001", 24)); await settle(); });
+      expect(offer()).not.toHaveAttribute("aria-disabled");
+    });
+
+    it("offer it to nobody when the first read of the trends failed: there is no set to replace", async () => {
+      await open({
+        payload: board([entry("S-001", [], FULL)]), perms: CHART,
+        setup: (api) => api.patientTrends.mockRejectedValue(down()),
+      });
+      expect(screen.queryByRole("button", { name: "Xəstənin norması…" })).toBeNull();
+    });
+
+    it("open the patient's normal from the box, prefilled from the trends, read them on opening and again after a save", async () => {
+      const { api } = await openNormal();
+      const before = api.patientTrends.mock.calls.length;
+      await press(offer());
+      const form = screen.getByRole("dialog", { name: FORM });
+      expect(within(form.querySelector("[data-baseline='heart_rate']")).getByLabelText("Nəbz alt")).toHaveValue("100");
+      // Opening it reads the trends again: the set it replaces must not be a minute old.
+      expect(api.patientTrends.mock.calls.length).toBe(before + 1);
+      await press(within(form).getByRole("button", { name: "Yadda saxla" }));
       expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: { heart_rate: { low: 100, high: 115 } } });
+      expect(api.patientTrends.mock.calls.length).toBe(before + 2);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+    });
+
+    it("clear every range from the box: an empty set is sent, the toast names the bed, the trends are read again", async () => {
+      const { api } = await openNormal();
+      await press(offer());
+      const form = screen.getByRole("dialog", { name: FORM });
+      const row = form.querySelector("[data-baseline='heart_rate']");
+      fireEvent.change(within(row).getByLabelText("Nəbz alt"), { target: { value: "" } });
+      fireEvent.change(within(row).getByLabelText("Nəbz üst"), { target: { value: "" } });
+      const reads = api.patientTrends.mock.calls.length;
+      await press(within(form).getByRole("button", { name: "Yadda saxla" }));
+      expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: {} });
+      expect(toasts().getAllByText("REA-01 · 2: xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.").length).toBeGreaterThan(0);
       expect(api.patientTrends.mock.calls.length).toBe(reads + 1);
       expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ").trim()).toBe("");
+    });
+
+    it("a right taken away meanwhile closes the form and says so, named after the bed, without reading the trends again", async () => {
+      const { api } = await openNormal((api) => api.putPatientProfile.mockRejectedValue(
+        Object.assign(new Error("permission required: clinical.chart"), { status: 403 })));
+      await press(offer());
+      const reads = api.patientTrends.mock.calls.length;
+      await press(formButton("Yadda saxla"));
+      expect(toasts().getAllByText(/REA-01 · 2: xəstənin norması yadda saxlanılmadı — bu əməliyyat üçün artıq səlahiyyətiniz yoxdur/).length).toBeGreaterThan(0);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(api.patientTrends.mock.calls.length).toBe(reads);
+    });
+
+    it("keep the offer, dimmed and with its reason, when the trends turn unreadable under an open form — and give focus back to it", async () => {
+      const { api, stream } = await openNormal();
+      offer().focus();
+      await press(offer());
+      api.patientTrends.mockRejectedValue(down());
+      await act(async () => { stream.frame(entry("S-001", [], { ...FULL, at: measured(10) })); await settle(); });
+      await press(formButton("İmtina"));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(offer()).toHaveAttribute("aria-disabled", "true");
+      expect(offer()).toHaveAccessibleDescription(/Vital qrafikləri oxuna bilmir/);
+      expect(document.activeElement).toBe(offer());
+      await press(offer());
+      expect(screen.queryByRole("dialog")).toBeNull();        // dimmed means it opens nothing: the set it would replace is not known
+    });
+
+    it("keep the offer, and focus on it, when the read after a save fails", async () => {
+      const { api } = await openNormal();
+      offer().focus();
+      await press(offer());
+      api.patientTrends.mockRejectedValue(down());
+      await press(formButton("Yadda saxla"));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(offer()).toHaveAttribute("aria-disabled", "true");
+      expect(document.activeElement).toBe(offer());
+    });
+
+    it("a form left open while she moves to another patient does not follow her, and writes nothing to the next one", async () => {
+      // The shell renders <Screen params/> with no `key`, so /patients/S-001 -> /patients/S-002 keeps this screen, the
+      // box and its state mounted, and only the props change. Browser Back, Alt+← or a mouse's back button move the
+      // address under the inert page while the form is open: rows read from S-001 must never be written under S-002.
+      onlyScreens({ beds: () => null }, { keep: [] });
+      let move;
+      function Mover() {
+        const [id, setId] = React.useState("S-001");
+        move = setId;
+        return <PatientScreen params={{ id }} />;
+      }
+      const mounted = await mount(<Mover />, {
+        access: token({ perms: CHART }), me: profile({ perms: CHART }),
+        setup: (api) => {
+          api.boardPatients.mockResolvedValue(board([entry("S-001", [], FULL), entry("S-002", [], FULL)]));
+          api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+          api.view.mockResolvedValue({ ok: true });
+          api.patientTrends.mockImplementation(answering(withNormal));
+          api.putPatientProfile.mockResolvedValue({ patient_id: "x" });
+        },
+      });
+      await act(async () => { await mounted.board.start(); });
+      await act(async () => { mounted.stream.open(); await settle(); });
+      await press(offer());
+      expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
+      await act(async () => { move("S-002"); await settle(); });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(mounted.api.putPatientProfile).not.toHaveBeenCalled();
+      await act(async () => { move("S-001"); await settle(); });          // and Forward does not bring the old form back
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await act(async () => { move("S-002"); await settle(); });
+      await press(offer());                                                // a new form for S-002 writes to S-002
+      await press(formButton("Yadda saxla"));
+      expect(mounted.api.putPatientProfile).toHaveBeenCalledTimes(1);
+      expect(mounted.api.putPatientProfile).toHaveBeenCalledWith("S-002", { baselines: { heart_rate: { low: 100, high: 115 } } });
     });
 
     it("say they cannot be read, and since when, without raising an alert", async () => {

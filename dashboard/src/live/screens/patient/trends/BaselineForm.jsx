@@ -4,18 +4,32 @@
 //
 // THE ENGINE REPLACES THE WHOLE SET WITH WHAT IS SENT (api/clinical.py `profile_from_payload`). So the
 // form opens with what is charted and sends every filled pair; an emptied pair is a deleted baseline,
-// and the form says so under the fields. Only `baselines` is sent: the comorbidities and the baseline
-// SOFA are not in the body, so the engine keeps them (`backendApi.putPatientProfile`, not `setProfile`).
+// and the form says so. Only `baselines` is sent: the comorbidities and the baseline SOFA are not in
+// the body, so the engine keeps them (`backendApi.putPatientProfile`, not `setProfile`).
 //
-// Held here before sending, in the reader's words, exactly what the engine would refuse: one side
-// without the other, a bound that is not a number, low above high. Nothing else is judged — what a
-// range means is the engine's, and anything this form lets through is the engine's to refuse.
+// THE FORM IS A SNAPSHOT of the set it was opened on, and it knows it: the trends poll hands it a
+// fresh `own` every minute, and when that no longer matches what the rows were read from (another
+// desk charted or cleared a range meanwhile) it says so and holds Save until the form is opened
+// again — last write wins is the engine's, and a clinician must not make it silently. The box that
+// opens it keys it by patient (TrendsBox), so rows read from one patient are never written to another.
+//
+// Held here before sending, in the reader's words: one side without the other, a bound that is not a
+// plain decimal (a shape the engine would refuse, or one this form will not guess at: 1e3, +5, .5 and
+// 5. are held back, and so is a number too large to be finite), low above high. Nothing else is judged
+// — what a range means is the engine's, and anything this form lets through is the engine's to refuse.
+//
+// WHAT SAVE IS ABOUT TO DO is said beside it, in the footer that stays on screen (a sentence at the
+// bottom of a scrolling body is below the fold on a laptop): the sentence is Save's description, the
+// one live region says the consequential ones once, and a Save that would delete every range is the
+// danger button. A held submit moves focus to the first row that is wrong; its field says why.
 //
 // A refusal goes on the toast, named after the bed, and never also inline (amendments (a), (f)); a
 // write that got no answer may have landed (`mayHaveLanded`, the one rule): the trends are read again
 // and the clinician is told to look at the band. `busy` holds Save (never `disabled`, amendment (c))
-// and the fields go read-only while the write is in flight.
-import React, { useEffect, useRef, useState } from "react";
+// and the fields go read-only while the write is in flight; a second press while one is in flight is
+// ignored even before the screen has re-rendered (`sending`).
+import React, { useEffect, useId, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { useSession } from "../../../session/SessionProvider.jsx";
 import { apiErrorText } from "../../../apiErrors.js";
@@ -30,11 +44,15 @@ export const BASELINE_KEYS = Object.freeze(["heart_rate", "resp_rate", "spo2", "
 const META = Object.fromEntries(VITALS.map((v) => [v.at, v]));
 
 const shown = (v) => (typeof v === "number" && Number.isFinite(v) ? String(v) : "");
-/** A typed bound: "" when empty, its number (a decimal comma read as a point), NaN when not one. */
+/** A typed bound: "" when empty, its number (a decimal comma read as a point), NaN when it is not a
+ *  plain finite decimal. A run of nines that overflows to Infinity travels as null and would come back
+ *  as the engine's refusal, so it is not a number here. */
 function bound(raw) {
   const s = String(raw ?? "").trim().replace(",", ".");
   if (s === "") return "";
-  return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : Number.NaN;
+  if (!/^-?\d+(\.\d+)?$/.test(s)) return Number.NaN;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : Number.NaN;
 }
 
 /** What the rows would send, and each row's problem as `{ side, key }`. */
@@ -53,16 +71,27 @@ export function checkBaselines(rows) {
   return { errors, baselines };
 }
 
+/** A set of ranges as one string: two sets are the same ranges when their strings are equal. */
+const keyOf = (set) => BASELINE_KEYS.map((key) => (set?.[key] ? `${set[key].low}~${set[key].high}` : "-")).join("|");
+
 export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
   const { t } = useI18n();
   const { store } = useSession();
   const toast = useToast();
   const [rows, setRows] = useState(() => Object.fromEntries(
     BASELINE_KEYS.map((key) => [key, { low: shown(own?.[key]?.low), high: shown(own?.[key]?.high) }])));
+  const [openedWith] = useState(() => keyOf(own));
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
-  const mounted = useRef(true);
-  useEffect(() => () => { mounted.current = false; }, []);
+  const inputs = useRef({});
+  const sending = useRef(false);
+  const mounted = useRef(false);
+  const noteId = useId();
+  // True inside the effect (the house pattern), so StrictMode's rehearsal does not leave it false.
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const { errors, baselines } = checkBaselines(rows);
   const empty = Object.keys(baselines).length === 0 && Object.keys(errors).length === 0;
@@ -70,6 +99,11 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
   // charted profile as "delete every range" (api/clinical.py). Over nothing there is nothing to clear.
   const clearing = empty && BASELINE_KEYS.some((key) => own?.[key]);
   const nothing = empty && !clearing;
+  const changed = keyOf(own) !== openedWith;
+  const held = changed || nothing;
+  const say = changed ? t("patient.baselineChangedMeanwhile")
+    : clearing ? t("patient.baselineClearsAll", { save: t("common.save") })
+      : nothing ? t("patient.baselineNothingToSend") : "";
   const errorOf = (key, side) => (tried && errors[key]?.side === side ? t(errors[key].key) : undefined);
   const edit = (key, side) => (event) => {
     const { value } = event.target;
@@ -77,64 +111,103 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
   };
 
   async function save() {
-    if (busy || nothing) return;
+    if (sending.current || busy) return;
+    const first = BASELINE_KEYS.find((key) => errors[key]);
+    if (first && !changed) {
+      // The error is under its field, and the field is where she is taken (flushSync: it must be in
+      // the DOM, and linked to the field, when the focus arrives).
+      flushSync(() => setTried(true));
+      inputs.current[`${first}.${errors[first].side}`]?.focus();
+      return;
+    }
     setTried(true);
-    if (Object.keys(errors).length > 0) return;
+    if (held) return;
+    sending.current = true;
     const epoch = store.epoch();
     setBusy(true);
+    let done;   // what is said and done once the write is settled and Save is released
     try {
       await store.track(() => store.api.putPatientProfile(patient.patient_id, { baselines }));
       if (epoch !== store.epoch()) return;
-      toast(t(clearing ? "patient.baselineClearedAll" : "patient.baselineSaved"));
-      onSaved();
-      onClose();
+      const text = clearing ? t("patient.baselineClearedAll", { subject: bed }) : t("patient.baselineSaved");
+      done = { say: [text], reread: true, close: true };
     } catch (err) {
       if (err?.superseded || epoch !== store.epoch()) return;
       if (mayHaveLanded(err)) {
-        toast(t("patient.baselineMayHaveLanded", { subject: bed }), "warn");
-        onSaved();
-        onClose();
-      } else if (err?.status === 403) {
-        toast(t("patient.baselineRefused", { subject: bed, reason: t("patient.baselineNoRight") }), "error");
-        onClose();
+        done = { say: [t("patient.baselineMayHaveLanded", { subject: bed }), "warn"], reread: true, close: true };
       } else {
-        toast(t("patient.baselineRefused", { subject: bed, reason: apiErrorText(t, err) }), "error");
+        const forbidden = err?.status === 403;
+        const reason = forbidden ? t("patient.baselineNoRight") : apiErrorText(t, err);
+        done = { say: [t("patient.baselineRefused", { subject: bed, reason }), "error"], reread: false, close: forbidden };
       }
     } finally {
+      sending.current = false;
       if (mounted.current) setBusy(false);
+    }
+    // Out of the `try`: a callback that throws must never turn a write the engine took into "not saved".
+    toast(...done.say);
+    try {
+      if (done.reread) onSaved();
+    } finally {
+      if (done.close) onClose();
     }
   }
 
   return (
     <Modal
-      open title={t("patient.baselineTitle")} onClose={onClose} busy={busy}
+      open title={`${t("patient.baselineTitle")} · ${bed}`} onClose={onClose} busy={busy}
       actions={(
-        <>
+        <div className="flex w-full flex-wrap items-center justify-end gap-2">
+          {say ? (
+            <div id={noteId} className="mr-auto min-w-0 flex-[1_1_14rem]">
+              {changed ? <Note tone="warn" icon="alert">{say}</Note> : (
+                <p className={`m-0 text-12 font-semibold ${clearing || tried ? "text-att-ink" : "text-mute"}`}>{say}</p>
+              )}
+            </div>
+          ) : null}
           <Button variant="ghost" onClick={onClose} busy={busy}>{t("common.cancel")}</Button>
-          <Button variant="primary" onClick={save} busy={busy} aria-disabled={nothing ? "true" : undefined}>{t("common.save")}</Button>
-        </>
+          <Button
+            variant={clearing ? "danger" : "primary"} onClick={save} busy={busy}
+            aria-disabled={held ? "true" : undefined} aria-describedby={say ? noteId : undefined}
+          >
+            {t("common.save")}
+          </Button>
+        </div>
       )}
     >
-      <Note tone="info" icon="user">{t("patient.baselineNotDeviceAlarm")}</Note>
-      {BASELINE_KEYS.map((key) => (
-        <fieldset key={key} data-baseline={key} className="m-0 mt-3 min-w-0 border-0 p-0">
-          <legend className="mb-1 p-0 text-12.5 font-semibold">
-            {t(META[key].labelKey)} <span className="font-normal text-mute">({t(META[key].unitKey)})</span>
-          </legend>
-          <div className="grid grid-cols-2 gap-x-2">
-            <Field label={t("patient.baselineLow")} layout="col" error={errorOf(key, "low")}>
-              <Input inputMode="decimal" autoComplete="off" value={rows[key].low} onChange={edit(key, "low")} readOnly={busy} />
+      {/* A form, so that Enter in a field saves; its own submit is invisible and out of the tab order
+          because the dialog's visible Save sits in the footer, outside it. */}
+      <form noValidate onSubmit={(event) => { event.preventDefault(); save(); }}>
+        <Note tone="info" icon="user">{t("patient.baselineNotDeviceAlarm")}</Note>
+        {BASELINE_KEYS.map((key) => {
+          const name = t(META[key].labelKey);
+          // Each field's own name says whose range it is ("Nəbz alt"): ten fields called "alt" and
+          // "üst" are indistinguishable in a screen reader's list of fields and to voice control.
+          const label = (side) => <><span className="sr-only">{name} </span>{t(side === "low" ? "patient.baselineLow" : "patient.baselineHigh")}</>;
+          const field = (side) => (
+            <Field label={label(side)} layout="col" error={errorOf(key, side)}>
+              <Input
+                ref={(el) => { inputs.current[`${key}.${side}`] = el; }}
+                inputMode="decimal" autoComplete="off" value={rows[key][side]} onChange={edit(key, side)} readOnly={busy}
+              />
             </Field>
-            <Field label={t("patient.baselineHigh")} layout="col" error={errorOf(key, "high")}>
-              <Input inputMode="decimal" autoComplete="off" value={rows[key].high} onChange={edit(key, "high")} readOnly={busy} />
-            </Field>
-          </div>
-        </fieldset>
-      ))}
-      <p className="m-0 mt-2 text-12 text-mute">{t("patient.baselineClearsNote")}</p>
-      {nothing ? <p className="m-0 mt-1 text-12 font-semibold text-att-ink">{t("patient.baselineNothingToSend")}</p> : null}
-      {clearing ? <p className="m-0 mt-1 text-12 font-semibold text-att-ink">{t("patient.baselineClearsAll")}</p> : null}
-      <Announce text={busy ? t("patient.baselineSaving") : ""} />
+          );
+          return (
+            <fieldset key={key} data-baseline={key} className="m-0 mt-3 min-w-0 border-0 p-0">
+              <legend className="mb-1 p-0 text-12.5 font-semibold">
+                {name} <span className="font-normal text-mute">({t(META[key].unitKey)})</span>
+              </legend>
+              <div className="grid grid-cols-2 gap-x-2">
+                {field("low")}
+                {field("high")}
+              </div>
+            </fieldset>
+          );
+        })}
+        <p className="m-0 mt-2 text-12 text-mute">{t("patient.baselineClearsNote")}</p>
+        <button type="submit" tabIndex={-1} aria-hidden="true" className="sr-only" />
+      </form>
+      <Announce text={busy ? t("patient.baselineSaving") : changed || clearing ? say : ""} />
     </Modal>
   );
 }

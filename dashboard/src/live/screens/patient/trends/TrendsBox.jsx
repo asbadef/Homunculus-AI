@@ -13,7 +13,7 @@
 //
 // `nowMs` is REQUIRED: the patient screen's `useBoardNow` instant (the server's clock), which the
 // cards age their values against. Without a finite one a card prints no age — never the browser's.
-import React, { useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../../i18n/dates.js";
 import { useSession } from "../../../session/SessionProvider.jsx";
@@ -28,22 +28,45 @@ export function TrendsBox({ patient, bed, nowMs }) {
   const { t } = useI18n();
   const { user } = useSession();
   const trends = useTrends(patient.patient_id, 24, measuredKeyOf(patient.measuredAt));
-  const [open, setOpen] = useState(null);       // the id of the card whose big chart is open
-  const [editing, setEditing] = useState(false);
+  // The id of the card whose big chart is open. Like `editing` it survives a move to another patient (the
+  // shell mounts this screen with no `key`), but the chart is read-only and reads for the patient it is given.
+  const [open, setOpen] = useState(null);
+  // The patient_id the form was opened FOR, or null. The shell renders the screen with no `key`, so a move to
+  // another patient (browser Back under the inert page) keeps this box and its state: the form is shown only
+  // to the patient it was opened for — rows read from one patient are never written under another — and the
+  // move forgets it, so that coming back does not reopen it.
+  const [editing, setEditing] = useState(null);
+  useEffect(() => { setEditing(null); }, [patient.patient_id]);
+  const shownFor = useRef(patient.patient_id);
+  shownFor.current = patient.patient_id;
+  const reasonId = useId();
   const channels = channelsOf(trends.data);
   const sinceMs = Date.parse(trends.data?.since);
   const untilMs = Date.parse(trends.data?.until);
   const card = CARDS.find((c) => c.id === open) ?? null;
-  // The form replaces the whole baseline set, so it opens only on a set this box has READ: offered
-  // to a `clinical.chart` holder once the trends answered, and not while they cannot be read.
-  const canEdit = (user?.perms?.includes("clinical.chart") ?? false) && Boolean(trends.data) && !trends.unreadable;
+  const unreadableText = t("patient.trendsUnreadable", { time: trends.lastOkAt ? hhmm(trends.lastOkAt) : "—" });
+  // The form replaces the whole baseline set, so it opens only on a set this box has READ: offered to a
+  // `clinical.chart` holder once the trends answered. While they cannot be read the button stays — a button
+  // that unmounts under an open form leaves focus on <body> when it closes — but dimmed, with the reason.
+  const offered = (user?.perms?.includes("clinical.chart") ?? false) && Boolean(trends.data);
   const own = Object.fromEntries(BASELINE_KEYS.map((key) => [key, channels[key]?.bands?.own_normal ?? null]));
+  function openForm() {
+    if (trends.unreadable) return;
+    trends.reload();      // the set it replaces must not be a minute old (the form says if it changed since)
+    setEditing(patient.patient_id);
+  }
   const right = (
     <>
       <span>{t("patient.trendsNote")}</span>
-      {canEdit ? (
-        <Button size="sm" icon="edit" className="ml-2" onClick={() => setEditing(true)}>{t("patient.baselineOpen")}</Button>
+      {offered ? (
+        <Button
+          size="sm" icon="edit" className="ml-2" onClick={openForm}
+          aria-disabled={trends.unreadable ? "true" : undefined} aria-describedby={trends.unreadable ? reasonId : undefined}
+        >
+          {t("patient.baselineOpen")}
+        </Button>
       ) : null}
+      {offered && trends.unreadable ? <span id={reasonId} className="sr-only">{unreadableText}</span> : null}
     </>
   );
   return (
@@ -51,7 +74,7 @@ export function TrendsBox({ patient, bed, nowMs }) {
       <div data-trends-box="">
         {trends.unreadable ? (
           <Note tone="warn" icon="alert" className="mb-2">
-            {t("patient.trendsUnreadable", { time: trends.lastOkAt ? hhmm(trends.lastOkAt) : "—" })}
+            {unreadableText}
           </Note>
         ) : null}
         {trends.loading ? <p className="m-0 text-12.5 text-mute">{t("patient.trendsLoading")}</p> : null}
@@ -66,8 +89,13 @@ export function TrendsBox({ patient, bed, nowMs }) {
         ) : null}
       </div>
       {card ? <TrendModal card={card} patient={patient} bed={bed} onClose={() => setOpen(null)} /> : null}
-      {editing ? (
-        <BaselineForm patient={patient} bed={bed} own={own} onClose={() => setEditing(false)} onSaved={trends.reload} />
+      {editing === patient.patient_id ? (
+        <BaselineForm
+          key={editing} patient={patient} bed={bed} own={own}
+          // A save that lands after a move closes nothing of the next patient's and reads nothing for her.
+          onClose={() => setEditing((current) => (current === patient.patient_id ? null : current))}
+          onSaved={() => { if (shownFor.current === patient.patient_id) trends.reload(); }}
+        />
       ) : null}
     </Box>
   );
