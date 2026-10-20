@@ -171,11 +171,19 @@ describe("the patient's own normal", () => {
     expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: { resp_rate: { low: 12, high: 22 } } });
   });
 
-  it("saves on Enter: the fields are a form, with a submit of its own that a browser presses for Enter", async () => {
+  it("saves on Enter: the fields are a form, and Save — in the footer, outside it — is that form's submit", async () => {
     const { api } = await open({ own: HR });
     const form = dialog().querySelector("form");
     expect(form).not.toBeNull();
-    expect(form.querySelector("button[type='submit']")).not.toBeNull();
+    expect(form.id).not.toBe("");
+    // A browser's Enter presses the form's first submit button among everything associated with it,
+    // wherever that button sits in the page: Save names the form by id.
+    expect(saveButton()).toHaveAttribute("type", "submit");
+    expect(saveButton().getAttribute("form")).toBe(form.id);
+    expect(saveButton().form).toBe(form);
+    // And nothing else stands in for it: no button inside the form, no second submit in the dialog.
+    expect(form.querySelector("button")).toBeNull();
+    expect(dialog().querySelectorAll("button[type='submit']")).toHaveLength(1);
     await act(async () => { fireEvent.submit(form); await settle(); });
     expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: HR });
   });

@@ -87,6 +87,7 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
   const sending = useRef(false);
   const mounted = useRef(false);
   const noteId = useId();
+  const formId = useId();
   // True inside the effect (the house pattern), so StrictMode's rehearsal does not leave it false.
   useEffect(() => {
     mounted.current = true;
@@ -166,8 +167,12 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
             </div>
           ) : null}
           <Button variant="ghost" onClick={onClose} busy={busy}>{t("common.cancel")}</Button>
+          {/* Save is the form's submit although it sits in the footer, outside it: `form` ties it to the
+              fields, so a browser's Enter in any of them presses it (a form's default button is its first
+              submit among everything associated with it), and a click submits the same way. A busy Save
+              cancels the click (Button), and `sending` holds a second press that beats the re-render. */}
           <Button
-            variant={clearing ? "danger" : "primary"} onClick={save} busy={busy}
+            type="submit" form={formId} variant={clearing ? "danger" : "primary"} busy={busy}
             aria-disabled={held ? "true" : undefined} aria-describedby={say ? noteId : undefined}
           >
             {t("common.save")}
@@ -175,9 +180,7 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
         </div>
       )}
     >
-      {/* A form, so that Enter in a field saves; its own submit is invisible and out of the tab order
-          because the dialog's visible Save sits in the footer, outside it. */}
-      <form noValidate onSubmit={(event) => { event.preventDefault(); save(); }}>
+      <form id={formId} noValidate onSubmit={(event) => { event.preventDefault(); save(); }}>
         <Note tone="info" icon="user">{t("patient.baselineNotDeviceAlarm")}</Note>
         {BASELINE_KEYS.map((key) => {
           const name = t(META[key].labelKey);
@@ -205,7 +208,6 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
           );
         })}
         <p className="m-0 mt-2 text-12 text-mute">{t("patient.baselineClearsNote")}</p>
-        <button type="submit" tabIndex={-1} aria-hidden="true" className="sr-only" />
       </form>
       <Announce text={busy ? t("patient.baselineSaving") : changed || clearing ? say : ""} />
     </Modal>
