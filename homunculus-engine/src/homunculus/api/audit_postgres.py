@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 
-from homunculus.api.audit import GENESIS_HASH, AuditEvent, AuditRecord, chain_hash
+from homunculus.api.audit import GENESIS_HASH, AuditEvent, AuditRecord, chain_hash, since_utc
 
 
 _PG_SCHEMES = ("postgresql+asyncpg://", "postgresql+psycopg2://", "postgresql://", "postgres://")
@@ -94,13 +94,21 @@ class PostgresAuditLog:
         raise RuntimeError("denetim zinciri yazılamadı — eşzamanlı yazım çözülemedi")
 
     def records(self, *, tenant: str | None = None, patient_id: str | None = None,
-                event_type: str | None = None, limit: int = 200) -> list[AuditRecord]:
+                event_type: str | None = None, since: datetime | None = None,
+                limit: int = 200) -> list[AuditRecord]:
         clauses, params = [], {"limit": limit}
         for column, value in (("tenant", tenant), ("patient_id", patient_id),
                               ("event_type", event_type)):
             if value is not None:
                 clauses.append(f"{column} = :{column}")
                 params[column] = value
+        bound = since_utc(since)
+        if bound is not None:
+            # `ts` is TEXT (migration 0004). Compared as text it would follow the database's
+            # collation, which need not order "…:00+00:00" before "…:00.5+00:00"; cast, it is an
+            # instant against an instant, whatever the collation and whatever zone the bound was in.
+            clauses.append("CAST(ts AS timestamptz) >= CAST(:since AS timestamptz)")
+            params["since"] = bound.isoformat()
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
         with self._engine.connect() as conn:
