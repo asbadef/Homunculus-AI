@@ -15,6 +15,7 @@ import pytest
 
 from homunculus.rules import news2
 from homunculus.rules.news2 import BANDS_SOURCE, NEWS2_BANDS, Band
+from homunculus.state.timeline import PatientState
 
 VAULT = Path(__file__).resolve().parents[2] / "Homunculus" / "wiki"
 
@@ -95,6 +96,9 @@ IDS = [name for name, *_ in CASES]
 def test_the_table_holds_the_five_scored_vitals_and_scale_1_only():
     assert set(NEWS2_BANDS) == {"respiration_rate", "spo2", "systolic_bp", "pulse", "temperature"}
     assert set(NEWS2_BANDS) == set(news2._CORE_VITALS)
+    # `_CORE_VITALS` is a constant score() never reads, so pin the scorer's own breakdown names and
+    # their order too: an empty state lists every core vital as missing, in the order score() walks.
+    assert news2.score(PatientState("p-a1")).missing == list(NEWS2_BANDS)
     # Scale 2 is deliberately not implemented (module docstring): no row of it may appear here.
     assert not [name for name in NEWS2_BANDS if "scale2" in name or "scale_2" in name]
 
@@ -123,9 +127,11 @@ def test_every_value_scores_what_the_if_chain_scored(parameter, fn, reference, s
 
 
 def test_the_functions_read_the_table(monkeypatch):
-    monkeypatch.setitem(NEWS2_BANDS, "pulse", (Band(None, 200, 2), Band(200, None, 3)))
+    # Both rows give a value the real table never gives there (100 scores 1, 201 scores 3), so each
+    # assertion can only hold if the function reads the patched table.
+    monkeypatch.setitem(NEWS2_BANDS, "pulse", (Band(None, 200, 2), Band(200, None, 0)))
     assert news2.pulse_points(100) == 2
-    assert news2.pulse_points(201) == 3
+    assert news2.pulse_points(201) == 0
 
 
 def test_the_source_is_the_vault_note():

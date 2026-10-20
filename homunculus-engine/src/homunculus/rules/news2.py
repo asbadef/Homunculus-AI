@@ -21,6 +21,8 @@ from homunculus.state.timeline import PatientState
 
 
 #: The vault source note every row below is read from (Homunculus/wiki/sources/news2-rcp-2017.md).
+#: That note is `capture: extract`: the Scale 1 rows come from its secondary renderings, and the
+#: primary RCP chart is not captured in full.
 #: Served with the rows by the trends endpoint, so a chart's legend names it.
 BANDS_SOURCE = "news2-rcp-2017"
 
@@ -29,10 +31,11 @@ BANDS_SOURCE = "news2-rcp-2017"
 class Band:
     """One row of a NEWS2 parameter's chart: a value with `low < value <= high` scores `points`.
 
-    `None` is an open side. The vault writes the chart in whole numbers (41–50 → 1), but the engine
-    scores real numbers, and whole-number rows leave 40 < value < 41 belonging to none of them. So
-    each row's lower edge is the previous row's upper edge, exclusive: the rows tile the line with
-    no gap and no overlap, and every boundary sits where the if-chains these replaced had it.
+    `None` is an open side. The vault writes the chart at the chart's own resolution (whole
+    numbers; tenths for temperature), e.g. 41–50 → 1, but the engine scores real numbers, and rows
+    written that way leave 40 < value < 41 belonging to none of them. So each row's lower edge is
+    the previous row's upper edge, exclusive: the rows tile the line with no gap and no overlap,
+    and every boundary sits where the if-chains these replaced had it.
     """
     low: float | None
     high: float | None
