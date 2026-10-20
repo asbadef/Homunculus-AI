@@ -47,6 +47,7 @@ from homunculus.api.infinity_shadow import (
 from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import rehydrate
 from homunculus.api.tickets import TicketStore
+from homunculus.api.trends import TRENDS_HOURS, patient_trends
 from homunculus.auth.permissions import validate_permissions
 from homunculus.gateway.fhir import GatewayError, parse_fhir_observation
 from homunculus.pipeline import Engine
@@ -75,6 +76,10 @@ SHADOW_OCCUPANCY_CACHE_S = 10.0
 
 DEVICE_ROLE_MAX = 64
 PATIENT_ID_MAX = 128
+
+#: The windows GET /patients/{id}/trends accepts, as the text the query string carries. The route
+#: reads `hours` as text so that any other value is its own 400 rather than FastAPI's 422.
+TREND_WINDOWS_TEXT = frozenset(str(h) for h in TRENDS_HOURS)
 
 
 def _device_role(value: object) -> str:
@@ -474,7 +479,7 @@ def create_app(
         return await resolve_scope(credential)
 
     async def _require_patient(caller: Caller, authorization: str | None,
-                               patient_id: str) -> None:
+                               patient_id: str, *, scope: Scope | None = None) -> None:
         """Refuse a single-patient route the caller's scope does not reach.
 
         Every route that names a patient in its path or body goes through here. Filtering only
@@ -492,13 +497,18 @@ def create_app(
         It runs after the route's permission check: a permission says what a caller may do, the
         scope says to whom, and both must hold.
 
+        `scope` is the caller's scope when the route has already resolved it (the trends route
+        needs it first, to answer 503 for one that cannot be read). Passing it spares a second
+        look-up, and a second chance for a blip to turn a readable scope into "not found". Every
+        other route leaves it out and the scope is resolved here.
+
         The card it checks carries only what `sees_patient` reads — the id, and the bed and unit
         the board publishes for that patient (same identity, same bed map). It is NOT built with
         `patient_board`: that reads `engine.state()`, which creates the patient, so a refused
         probe for a made-up id would put that id on every board in the hospital.
         """
         hospital = caller.hospital
-        scope = await _scope(authorization)
+        scope = scope if scope is not None else await _scope(authorization)
         if scope.unrestricted:
             return
         record = identities.get(hospital, patient_id)
@@ -775,6 +785,36 @@ def create_app(
         return {"patients": result.boards,
                 "scope": result.as_dict(),
                 "scope_note": scope_report(result)}
+
+    @app.get("/patients/{patient_id}/trends")
+    async def trends(patient_id: str, hours: str = "24",
+                     authorization: str | None = Header(default=None)):
+        """One patient's vital history for the trend charts (`api/trends.py`): the series, the
+        NEWS2 rows as bands, the latest value's movement and points, and the alarm and antibiotic
+        moments — everything a chart draws, decided here. Read-only, and not audited: opening the
+        patient already wrote `view`, and a chart read every minute would bury that record.
+
+        `hours` is read as text so that anything but 6, 24 or 72 is this route's 400, in the
+        reader's words, rather than FastAPI's 422. A scope that cannot be read is 503, as the stream
+        ticket answers it: `_require_patient` would call it "not found", which tells a screen the
+        patient is gone when only the look-up failed. Out of scope and unknown stay one 404.
+
+        The scope is resolved once, here, and handed to `_require_patient`: the chart polls every
+        minute, and a second look-up would double that work and give a blip between the two a way
+        to answer 404 for a patient who is in scope.
+        """
+        caller = await _caller(authorization)
+        _require(caller, BOARD_VIEW)
+        if hours not in TREND_WINDOWS_TEXT:
+            raise HTTPException(status_code=400, detail="geçersiz hours: 6, 24 veya 72 olmalı")
+        scope = await _scope(authorization)
+        if scope.reason == UNKNOWN_SCOPE.reason:
+            raise HTTPException(status_code=503, detail="kapsam şu anda okunamıyor")
+        await _require_patient(caller, authorization, patient_id, scope=scope)
+        _score_state(caller.hospital, patient_id)     # 404 for an id neither measured nor admitted
+        return patient_trends(_engine(caller.hospital), audit, hospital=caller.hospital,
+                              patient_id=patient_id, hours=int(hours),
+                              now=datetime.now(timezone.utc))
 
     # ------------------------------------------------------------------ Aşama A: the shadow lane
     def _occupants(hospital: str, now: float) -> dict[str, list[str]]:

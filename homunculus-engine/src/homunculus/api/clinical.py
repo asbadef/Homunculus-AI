@@ -196,7 +196,9 @@ def profile_from_payload(patient_id: str, payload: dict,
     that write here are separate — the admission form sends comorbidities, the sepsis panel sends
     a baseline SOFA — and under replace semantics whichever was used second would silently erase
     the other's work. Losing a charted comorbidity because someone typed a baseline is exactly
-    the kind of quiet harm this system must not do.
+    the kind of quiet harm this system must not do. The one way to take ranges away is to name
+    them: `{"baselines": {}}` (or null) over an existing profile is an explicit clear of every
+    range — and, combined with `comorbidities: []`, it may empty the profile entirely.
 
     Two rules, both from `rules/patient_relative.py`, restated here because this is the door
     the values come through:
@@ -223,7 +225,11 @@ def profile_from_payload(patient_id: str, payload: dict,
     else:
         comorbidities = base.comorbidities if base is not None else frozenset()
 
-    raw_baselines = payload.get("baselines") or {}
+    # Only null and {} are "no ranges". Anything else that is not an object (`[]`, `""`, `0`, `false`)
+    # is refused rather than read as empty: a clinical range must not be cleared by junk.
+    raw_baselines = payload.get("baselines")
+    if raw_baselines is None:
+        raw_baselines = {}
     if not isinstance(raw_baselines, dict):
         raise ClinicalEntryError("baselines bir nesne olmalı")
 
@@ -236,10 +242,18 @@ def profile_from_payload(patient_id: str, payload: dict,
                 f"tutulanlar: {', '.join(sorted(BASELINE_SIGNALS))}")
         if not isinstance(span, dict):
             raise ClinicalEntryError(f"{name}: aralık {{low, high}} biçiminde olmalı")
+        if isinstance(span.get("low"), bool) or isinstance(span.get("high"), bool):
+            # A bool is an int in Python, as `_baseline_sofa` notes: `true` would chart a bound of 1 —
+            # a range nobody typed, inside which the layer would downgrade this patient's findings.
+            raise ClinicalEntryError(f"{name}: low ve high sayı olmalı")
         try:
             low, high = float(span["low"]), float(span["high"])
         except (KeyError, TypeError, ValueError):
             raise ClinicalEntryError(f"{name}: low ve high sayı olmalı") from None
+        if any(v != v or v in (float("inf"), float("-inf")) for v in (low, high)):   # NaN / inf
+            # "nan" and "inf" parse as floats, and `low > high` is False with a NaN: a NaN bound would
+            # reach every trends read for this patient (JSON refuses it) and replay with the audit.
+            raise ClinicalEntryError(f"{name}: geçersiz sayı")
         if low > high:
             # Silently swapping them would hide a data-entry mistake behind a range that looks
             # deliberate, and the layer would then downgrade on a boundary nobody chose.
@@ -254,7 +268,14 @@ def profile_from_payload(patient_id: str, payload: dict,
     else:
         baseline_sofa = base.baseline_sofa if base is not None else None
 
-    if not comorbidities and not baselines and baseline_sofa is None:
+    # An empty set sent over a charted profile is a clinician taking every range away: the trend
+    # screen's form writes the whole set, and a range charted in error must be removable even when
+    # it is the last thing charted. From nothing there is nothing to clear, and an empty profile is
+    # still refused — as is one emptied by a payload that does not name the baselines at all. A
+    # present key that is null or {} is a clear (the merge above reads it so): absent keeps,
+    # null/{} clears, anything else that is not an object was refused above.
+    clearing = base is not None and "baselines" in payload and not raw_baselines
+    if not comorbidities and not baselines and baseline_sofa is None and not clearing:
         raise ClinicalEntryError(
             "profil boş olamaz — komorbidite, bazal aralık veya bazal SOFA gerekir")
 

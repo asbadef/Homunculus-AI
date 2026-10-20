@@ -745,6 +745,8 @@ UNSCOPED_BY_DESIGN = NOT_THE_BOARD | {
     ("POST", "/scores/sofa/{patient_id}"),
     ("GET", "/alarm-quality"),
     ("GET", "/audit/verify"),
+    # Group 2's trend charts (api/trends.py): the board's Caller, board.view and _require_patient.
+    ("GET", "/patients/{patient_id}/trends"),
     # Aşama A's monitor strip (api/app.py). The GET goes through the Caller and answers only a
     # caller of the ONE hospital the lane is configured for (INFINITY_SHADOW_HOSPITAL); the POST
     # takes the forwarder's own token and writes only that hospital's in-memory strip.

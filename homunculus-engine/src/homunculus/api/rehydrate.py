@@ -57,8 +57,12 @@ def _replay_profile(engine: Engine, rec: AuditRecord) -> None:
     at 105 bpm starts alarming on every measurement again — the exact alarm fatigue the layer
     exists to prevent, arriving quietly after a deploy.
     """
+    # Read over what the replay has restored so far, as the live door read it over what was
+    # charted. A row that cleared the last range is an empty profile, refused when read from
+    # nothing — and the range the clinician removed would come back with the next deploy.
     try:
-        engine.set_profile(profile_from_payload(rec.patient_id, rec.payload))
+        engine.set_profile(profile_from_payload(rec.patient_id, rec.payload,
+                                                engine.profile(rec.patient_id)))
     except (ValueError, TypeError, KeyError):
         return  # a payload we cannot read must not fail the whole replay
 

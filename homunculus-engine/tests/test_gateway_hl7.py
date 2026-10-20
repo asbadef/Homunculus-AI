@@ -68,6 +68,18 @@ def test_non_numeric_value_is_dropped_not_fabricated():
     assert parse_hl7_oru(msg) == []
 
 
+@pytest.mark.parametrize("sentinel", ["NaN", "nan", "inf", "-Infinity"])
+def test_a_non_finite_value_is_dropped_like_a_non_numeric_one(sentinel):
+    """float() reads "NaN" and "inf" without complaint, but neither is a measurement. Inside a
+    patient's history a NaN takes a thinning slice's minimum and maximum (the real extreme is
+    dropped) and makes the trends answer unserialisable; edge/ncefiles.py and api/clinical.py
+    already refuse them. The rest of the message still parses."""
+    msg = _msg(_MSH, _PID, _OBR,
+               f"OBX|1|NM|lactate||{sentinel}|mmol/L|||||F|||20260716143000",
+               "OBX|2|NM|heart_rate||118|bpm|||||F|||20260716143000")
+    assert [(o.code, o.value) for o in parse_hl7_oru(msg)] == [(SignalCode.HEART_RATE, 118.0)]
+
+
 def test_obx_timestamp_falls_back_to_message_time_when_absent():
     # OBX-14 empty -> use MSH-7 message datetime.
     msg = _msg(_MSH, _PID, _OBR, "OBX|1|NM|heart_rate||118|bpm|||||F")

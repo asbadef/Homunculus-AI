@@ -9,6 +9,7 @@ we do not track.
 """
 from __future__ import annotations
 
+import math
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -121,6 +122,8 @@ def parse_hl7_oru(message: str, mapping: dict[str, SignalCode] | None = None) ->
             value = float(_at(f, 5))
         except ValueError:
             continue  # non-numeric / errored result — drop, never fabricate
+        if not math.isfinite(value):
+            continue  # "NaN" / "inf" parse as floats but are not measurements — dropped the same way
 
         timestamp = _parse_hl7_ts(_at(f, 14)) or message_time
         if timestamp is None:

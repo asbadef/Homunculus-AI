@@ -117,16 +117,34 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _matches(rec: AuditRecord, tenant, patient_id, event_type) -> bool:
+def since_utc(since: datetime | None) -> datetime | None:
+    """The lower bound of a `records(since=…)` read, in UTC, or None.
+
+    Refused without a zone: every row's `ts` is UTC (`_now_iso`), and a zone-less bound would move
+    the window by the server's own offset — the NCE server's local clock ran an hour off the UTC
+    stamps in its own filenames, and that is the mistake this refuses to make silently.
+    """
+    if since is None:
+        return None
+    if since.tzinfo is None or since.utcoffset() is None:
+        raise ValueError("since must carry a time zone")
+    return since.astimezone(timezone.utc)
+
+
+def _matches(rec: AuditRecord, tenant, patient_id, event_type, since=None) -> bool:
     return ((tenant is None or rec.tenant == tenant)
             and (patient_id is None or rec.patient_id == patient_id)
-            and (event_type is None or rec.event_type == event_type))
+            and (event_type is None or rec.event_type == event_type)
+            and (since is None or datetime.fromisoformat(rec.ts) >= since))
 
 
 class AuditLog(Protocol):
     def append(self, event: AuditEvent) -> AuditRecord: ...
+    # `since` (zone-aware) keeps the rows written at or after it. Without it a read is the OLDEST
+    # `limit` rows — the right end for a replay, the wrong one for "what happened in this window".
     def records(self, *, tenant: str | None = None, patient_id: str | None = None,
-                event_type: str | None = None, limit: int = 200) -> list[AuditRecord]: ...
+                event_type: str | None = None, since: datetime | None = None,
+                limit: int = 200) -> list[AuditRecord]: ...
 
 
 class InMemoryAuditLog:
@@ -150,8 +168,9 @@ class InMemoryAuditLog:
         self._head[event.tenant] = digest
         return rec
 
-    def records(self, *, tenant=None, patient_id=None, event_type=None, limit=200):
-        hits = [r for r in self._rows if _matches(r, tenant, patient_id, event_type)]
+    def records(self, *, tenant=None, patient_id=None, event_type=None, since=None, limit=200):
+        bound = since_utc(since)
+        hits = [r for r in self._rows if _matches(r, tenant, patient_id, event_type, bound)]
         return hits[:limit]
 
 
@@ -243,12 +262,20 @@ class SqliteAuditLog:
                                prev_hash=prev, hash=digest)
         raise RuntimeError("denetim zinciri yazılamadı — eşzamanlı yazım çözülemedi")
 
-    def records(self, *, tenant=None, patient_id=None, event_type=None, limit=200):
+    def records(self, *, tenant=None, patient_id=None, event_type=None, since=None, limit=200):
         clauses, params = [], []
         for col, val in (("tenant", tenant), ("patient_id", patient_id), ("event_type", event_type)):
             if val is not None:
                 clauses.append(f"{col} = ?")
                 params.append(val)
+        bound = since_utc(since)
+        if bound is not None:
+            # Text against text, which orders instants here and only here: every `ts` is written by
+            # `_now_iso` (UTC, "+00:00"), the bound is formatted the same way, and SQLite compares
+            # TEXT byte by byte. A row on a whole second has no fraction ("…:00+00:00"), and "+"
+            # sorts before ".", so it still comes before "…:00.000001+00:00" — as its instant does.
+            clauses.append("ts >= ?")
+            params.append(bound.isoformat())
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(limit)
         rows = self.connection.execute(

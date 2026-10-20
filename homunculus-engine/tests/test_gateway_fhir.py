@@ -52,3 +52,27 @@ def test_missing_value_raises_gateway_error():
 def test_wrong_resource_type_raises_gateway_error():
     with pytest.raises(GatewayError, match="resourceType"):
         parse_fhir_observation({"resourceType": "Patient"})
+
+
+@pytest.mark.parametrize("sentinel", [float("nan"), float("inf"), float("-inf"), "NaN"])
+def test_a_non_finite_value_raises_gateway_error(sentinel):
+    """float() takes NaN and ±inf, and so does JSON as Python reads it: the edge bridge's
+    json.dumps writes a bare NaN token and Starlette's request.json() reads it back. Neither is a
+    measurement — edge/ncefiles.py and api/clinical.py already refuse them."""
+    with pytest.raises(GatewayError, match="finite"):
+        parse_fhir_observation(_fhir("lactate", sentinel))
+
+
+def test_the_ingest_door_answers_400_to_a_nan_token_and_records_nothing():
+    import json
+    from fastapi.testclient import TestClient
+    from homunculus.api.app import create_app
+
+    body = json.dumps(_fhir("lactate", float("nan")))      # what the bridge's json.dumps sends
+    assert '"value": NaN' in body
+    auth = {"Authorization": "Bearer tok", "Content-Type": "application/json"}
+    with TestClient(create_app({"tok": "h1"}, run_escalation_loop=False)) as client:
+        r = client.post("/ingest", content=body, headers=auth)
+        assert r.status_code == 400 and "finite" in r.json()["detail"]
+        records = client.get("/audit", headers=auth).json()["records"]
+        assert [x for x in records if x["event_type"] == "ingest"] == []
