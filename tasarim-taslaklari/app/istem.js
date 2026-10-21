@@ -52,13 +52,14 @@
     const rows = list.length
       ? `<div class="tw"><table class="t"><thead><tr><th style="width:116px">Saat</th><th style="width:130px">Tür</th><th>İstem</th><th>Ayrıntı</th><th style="width:96px">Durum</th><th style="width:44px"></th></tr></thead><tbody>${list.map(o => `<tr><td class="mono adm-sub">${esc(o.at)}</td><td>${esc(o.cat)}</td><td><b>${esc(o.ad || "")}</b></td><td class="adm-sub">${esc(o.detay || "")}</td><td><span class="tag">${esc(o.durum)}</span></td><td><button class="btn g sm" data-istrm="${o.id}" title="Kaldır">${ic("x") || "×"}</button></td></tr>`).join("")}</tbody></table></div>`
       : `<div class="empty">Bu başvuruda henüz istem yok. Yukarıdan bir istem türü seçin.</div>`;
-    // Şablonlar (adlı istem paketleri): tek tıkla içindeki tüm istemler hastaya eklenir.
-    const mt = myTpls();
+    // Şablonlar (adlı istem paketleri): kapsam Benim / Bölümüm / Tümü. Tek tıkla hepsi hastaya eklenir.
+    const mt = tplsFor();
+    const scopeTabs = `<div class="seg sm" data-tplsc>${TPL_SCOPES.map(([k, l]) => `<button data-tplscope="${k}" class="${tplScope === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
     const tplRow = mt.length
-      ? `<div class="ist-tpls">${mt.map(t => `<span class="ist-tpl"><button class="btn sm" data-tplap="${t.id}" title="Bu paketteki tüm istemleri hastaya ekle">${ic("add") || "+"} ${esc(t.name)} <em>${t.items.length}</em></button><button class="btn g sm" data-tpldel="${t.id}" title="Paketi sil">${ic("x") || "×"}</button></span>`).join("")}</div>`
-      : `<div class="adm-sub">Kayıtlı paket yok. Birkaç istem ekleyip <b>Paket olarak kaydet</b> deyin; sonra tek tıkla başka hastaya da istersiniz.</div>`;
+      ? `<div class="ist-tpls">${mt.map(t => `<span class="ist-tpl"><button class="btn sm" data-tplap="${t.id}" title="Bu paketteki tüm istemleri hastaya ekle · ${esc(t.owner || "")}">${ic("add") || "+"} ${esc(t.name)} <em>${t.items.length}</em></button>${t.owner === me() ? `<button class="btn g sm" data-tpldel="${t.id}" title="Paketi sil">${ic("x") || "×"}</button>` : ""}</span>`).join("")}</div>`
+      : `<div class="adm-sub">Bu kapsamda kayıtlı paket yok. Birkaç istem ekleyip <b>Paket olarak kaydet</b> deyin.</div>`;
     return `<div class="ist" data-ist-root><div class="ist-launch">${grp}</div>
-      <div class="ist-sec"><h5>Hazır paketler (şablonlar)</h5>${tplRow}</div>
+      <div class="ist-sec"><div class="ist-hd"><h5>Hazır paketler (şablonlar)</h5>${scopeTabs}</div>${tplRow}</div>
       <div class="ist-sec ist-hd"><h5>Bu başvurudaki istemler</h5><span class="r" style="display:flex;gap:8px">${list.length ? `<button class="btn sm" data-tplsave>${ic("save") || ""} Paket olarak kaydet</button>` : ""}<button class="btn sm" data-isthist>${ic("clock") || ""} İstem tarihçesi</button></span></div>${rows}
       <p class="adm-sub" style="margin-top:8px">İstemler bu ekranda tutulur; gerçek HBYS / laboratuvar / radyoloji (PACS) / eczane bağlantısını ayrı ekip kurar.</p></div>`;
   }
@@ -279,20 +280,25 @@
       } });
   }
 
-  /* ---------- Şablonlar (adlı istem paketleri) ---------- */
+  /* ---------- Şablonlar (adlı istem paketleri) · kapsam: Benim / Bölümüm / Tümü ---------- */
+  const TPL_SCOPES = [["benim", "Benim"], ["bolum", "Bölümüm"], ["tumu", "Tümü"]];
+  let tplScope = "benim";
+  const myDept = () => (H.state.user && (H.state.user.units || []).slice().sort().join(",")) || "";
   const tpls = () => (H.data.orderTemplates = H.data.orderTemplates || []);
-  const myTpls = () => tpls().filter(t => !t.owner || t.owner === me());
+  const tplsFor = () => tpls().filter(t => tplScope === "tumu" ? true : tplScope === "bolum" ? (t.dept === myDept() || t.owner === me()) : (t.owner === me() || !t.owner));
   function saveTemplate(p, rerender) {
     const items = ordersOf(p).map(o => ({ cat:o.cat, ad:o.ad, detay:o.detay }));
     if (!items.length) { H.toast("Önce birkaç istem ekleyin.", "w"); return; }
     H.modal({ title:"İstem paketi (şablon) kaydet",
       body:`<div class="icd-form"><div class="fr"><label>Paket adı</label><input data-f="ad" placeholder="ör. Apse drenajı paketi" autofocus></div>
+        <div class="fr"><label>Paylaşım</label><select data-f="scope"><option value="benim">Yalnız benim</option><option value="bolum">Bölümüm</option><option value="tumu">Tümü (hastane)</option></select></div>
         <p class="adm-sub">Bu başvurudaki ${items.length} istem bu adla paket olur; sonra tek tıkla başka hastaya da istenebilir.</p></div>`,
       actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
       onMount(m) { m.querySelector("[data-ok]").onclick = () => {
         const ad = (m.querySelector("[data-f='ad']").value || "").trim(); if (!ad) { H.toast("Paket adı gerekli.", "w"); return; }
-        tpls().unshift({ id:"tpl" + Date.now(), name:ad, owner:me(), items });
-        H.log("İstem paketi kaydedildi", ad + " · " + items.length + " istem"); H.toast("Paket kaydedildi: " + ad); H.closeModal(); rerender(); }; } });
+        const scope = m.querySelector('[data-f="scope"]').value;
+        tpls().unshift({ id:"tpl" + Date.now(), name:ad, owner:me(), dept:myDept(), scope, items });
+        H.log("İstem paketi kaydedildi", ad + " · " + items.length + " istem · " + scope); H.toast("Paket kaydedildi: " + ad); H.closeModal(); rerender(); }; } });
   }
   function applyTemplate(p, id, rerender) {
     const t = tpls().find(x => x.id === id); if (!t) return;
@@ -326,6 +332,7 @@
     const rerender = () => H.go("patient", { pid:p.id, tab:"istem" });
     root.onclick = (e) => {
       const b = e.target.closest("[data-ist]"); if (b) { dispatch(p, b.dataset.ist, rerender); return; }
+      const sc = e.target.closest("[data-tplscope]"); if (sc) { tplScope = sc.dataset.tplscope; rerender(); return; }
       const ap = e.target.closest("[data-tplap]"); if (ap) { applyTemplate(p, ap.dataset.tplap, rerender); return; }
       const sv = e.target.closest("[data-tplsave]"); if (sv) { saveTemplate(p, rerender); return; }
       const hs = e.target.closest("[data-isthist]"); if (hs) { openHistory(p); return; }
