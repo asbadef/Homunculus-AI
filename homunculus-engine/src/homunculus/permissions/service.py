@@ -82,3 +82,19 @@ async def grant_user_permission(db: AsyncSession, *, tenant_id: uuid.UUID, user_
     db.add(grant)
     await db.flush()
     return grant
+
+
+async def list_permissions(db: AsyncSession, tenant_id: uuid.UUID) -> list[PermissionGrant]:
+    result = await db.execute(
+        select(PermissionGrant).where(PermissionGrant.tenant_id == tenant_id)
+    )
+    return list(result.scalars().all())
+
+
+async def revoke_permission(db: AsyncSession, *, tenant_id: uuid.UUID, grant_id: uuid.UUID) -> None:
+    grant = await db.get(PermissionGrant, grant_id)
+    if grant is None or grant.tenant_id != tenant_id:
+        # Başka hastaneye ait ya da yok -> varlık sızdırılmaz.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
+    grant.is_active = False
+    await db.flush()
