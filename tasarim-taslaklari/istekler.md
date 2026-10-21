@@ -396,6 +396,18 @@
 | 339 | İlaç / malzeme listesi | ⏳ Ozan verecek | — |
 | 340 | Lab/Radyoloji iş akışı, Vezne/faturalama+SAMHI, Randevu | ⏳ | sonraki fazlar |
 
+## 2026-10-22 · KALAN-PLAN (A–F) tamamlandı — onaysız, baştan sona
+
+Onay alındıktan sonra tüm fazlar bitirildi (Faz E en sona):
+- **Faz A (muayene):** detaylı göz muayenesi (b6306de), ağrı zengin (4d5b0df), özgeçmiş zengin (f63cef9), taburculuk (7905b9b).
+- **Faz B (ayaktan omurga):** Tüm Gelişler/İş Listesi (4c0f8f5), Otomatik Hizmet Tanımı (5c5953e) + seçim düzeltmesi (0dbfd1e).
+- **Faz C:** Ameliyat raporu (e222c53), şablon kapsamı Benim/Bölümüm/Tümü (f7bc43e).
+- **Faz D:** İlaç reçetesi (0f83d01), Bölüm/Branş listesi (17464e9), protokol tipleri veri-güdümlü + çeviriler (9e7e1cf), Anestezi değ. + Onam belge tipleri (e6dbea3).
+- **Faz E (en sona):** Randevu (7ef46e6), Vezne/Faturalama + İK (b8fee1c), Lab/Rad iş akışı (b7e32dd), kabul Kurum/sigorta (6028fcb).
+- **Faz F:** yeni ekranlar mevcut yetki gruplarını kullanır; çeviriler her fazla eklendi; seçim ekranları chip/temiz.
+
+Bekleyen veri: ilaç/malzeme listesi (#339), branş SUT/SağlıkNet kodları (#344) — sahip verince yüklenir.
+
 ## 2026-10-22 · Kapsama analizi (referans ekran ↔ prototip)
 
 Klinik/doktor tarafı büyük ölçüde YAPILDI (muayene, epikriz, izlem, hemşire formları, istemler, belgeler, bakım planı, vital/trend/skor, kamera, ilaç/sıvı). İdari/finansal/randevu/İK tarafı EKSİK (çoğu sonraki fazlar — diğer roller).
