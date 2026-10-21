@@ -11830,3 +11830,13 @@ Object.assign(window.HMC_SOZLUK, {
 "Görme keskinliği (düzeltmesiz)": { "AZ": "Görmə itiliyi (düzəlişsiz)", "EN": "Visual acuity (uncorrected)", "RU": "Острота зрения (без коррекции)" },
 "Görme keskinliği (düzeltmeli)": { "AZ": "Görmə itiliyi (düzəlişli)", "EN": "Visual acuity (corrected)", "RU": "Острота зрения (с коррекцией)" }
 });
+
+(function (A) { for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({   // 22.10 · taburculuk onerileri
+"Taburculuk önerileri": { "AZ": "Evə yazılma tövsiyələri", "EN": "Discharge recommendations", "RU": "Рекомендации при выписке" },
+"Taburcu tipi": { "AZ": "Evə yazılma növü", "EN": "Discharge type", "RU": "Тип выписки" },
+"Taburculuk notu": { "AZ": "Evə yazılma qeydi", "EN": "Discharge note", "RU": "Заметка о выписке" },
+"Şifa ile": { "AZ": "Sağalma ilə", "EN": "Recovered", "RU": "С выздоровлением" },
+"Sevk": { "AZ": "Yönləndirmə", "EN": "Referral", "RU": "Направление" },
+"Kendi isteğiyle": { "AZ": "Öz istəyi ilə", "EN": "Own request", "RU": "По собственному желанию" },
+"Kontrole gelecek": { "AZ": "Kontrola gələcək", "EN": "Will return for follow-up", "RU": "Явится на контроль" }
+});

@@ -632,7 +632,10 @@
         <div class="dc-segs">${multi(["Ayaktan takip ve tedavi", "Yatarak takip ve tedavi", "Ayaktan cerrahi girişim", "Yatarak cerrahi girişim", "Rehabilitasyon", "Palyatif tedavi", "Kemoterapi"])}</div>
         <div class="dc-segrow" style="margin-top:10px"><span class="dc-ml">Ameliyat planlanacak mı?</span><div class="dc-segs">${seg("ameliyat", ["Evet", "Hayır"])}</div></div>
         <div class="dc-segrow" style="margin-top:10px"><label class="dc-chk"><input type="checkbox" data-dc-muac="kontrol" ${M.kontrol ? "checked" : ""}> Kontrol önerildi</label>
-          <input class="dc-min" data-dc-muain="kontrolNot" placeholder="Kontrol notu / tarihi" value="${esc(M.kontrolNot || "")}"></div></div>` : "";
+          <input class="dc-min" data-dc-muain="kontrolNot" placeholder="Kontrol notu / tarihi" value="${esc(M.kontrolNot || "")}"></div></div>
+      <div class="dc-sec dc-mua"><div class="dc-sh"><b>Taburculuk önerileri</b></div>
+        <div class="dc-segrow"><span class="dc-ml">Taburcu tipi</span><div class="dc-segs">${seg("taburcu", ["Şifa ile", "Sevk", "Kendi isteğiyle", "Kontrole gelecek"])}</div></div>
+        <input class="dc-min" data-dc-muain="taburcuNot" placeholder="Taburculuk notu" value="${esc(M.taburcuNot || "")}" style="margin-top:8px;width:100%"></div>` : "";
     const detayW = (edit && d.type === "muayene") ? `<div class="dc-sec"><div class="dc-sh"><b>Detaylı muayene bulguları</b><span class="r"><button class="btn g sm" data-dc-detay="goz">${H.icon("eye")}Göz muayenesi</button></span></div>${(d.detay && gozHas(d.detay.goz)) ? `<div class="dc-ro">${esc(gozSummary(d.detay.goz))}</div>` : `<span class="mute" style="font-size:12px">Branşa göre ayrıntılı bulgu. Şimdilik Göz formu hazır; diğer branşlar sırayla eklenecek.</span>`}</div>` : "";
     let foot = "";
     if (d.status === "muhur") {
