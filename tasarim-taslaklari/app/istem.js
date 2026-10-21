@@ -27,6 +27,10 @@
   const isFav = (kod) => !!favs()[kod];
   const toggleFav = (kod) => { const f = favs(); if (f[kod]) delete f[kod]; else f[kod] = 1; };
 
+  // Katalogda hizmet olarak GÖSTERİLMEYEN kategoriler: CheckUp bir pakettir (içinde tanımlı lab/rad);
+  // 1./2./3. Asistan faturalama kodudur, istenmez. (Ozan)
+  const EXCLUDE_TIP = ["CheckUp", "1. Asistan", "2. Asistan", "3. Asistan", "Anestezi Asistanı", "Ameliyathane Dışı Anestezi", "1. Asistan "];
+
   const all = () => (H.data.orders = H.data.orders || []);
   const ordersOf = (p) => all().filter(o => o.pid === p.id);
   function addOrder(p, o) {
@@ -55,7 +59,7 @@
       : `<div class="adm-sub">Kayıtlı paket yok. Birkaç istem ekleyip <b>Paket olarak kaydet</b> deyin; sonra tek tıkla başka hastaya da istersiniz.</div>`;
     return `<div class="ist" data-ist-root><div class="ist-launch">${grp}</div>
       <div class="ist-sec"><h5>Hazır paketler (şablonlar)</h5>${tplRow}</div>
-      <div class="ist-sec ist-hd"><h5>Bu başvurudaki istemler</h5>${list.length ? `<button class="btn sm" data-tplsave>${ic("save") || ""} Paket olarak kaydet</button>` : ""}</div>${rows}
+      <div class="ist-sec ist-hd"><h5>Bu başvurudaki istemler</h5><span class="r" style="display:flex;gap:8px">${list.length ? `<button class="btn sm" data-tplsave>${ic("save") || ""} Paket olarak kaydet</button>` : ""}<button class="btn sm" data-isthist>${ic("clock") || ""} İstem tarihçesi</button></span></div>${rows}
       <p class="adm-sub" style="margin-top:8px">İstemler bu ekranda tutulur; gerçek HBYS / laboratuvar / radyoloji (PACS) / eczane bağlantısını ayrı ekip kurar.</p></div>`;
   }
 
@@ -63,8 +67,8 @@
   function openCatalog(p, cfg, rerender) {
     const tipsOk = cfg.tips;                       // izinli Hizmet Tipi listesi; null → tümü
     const tipIdxOk = tipsOk && (H.HIZMET_TIP || []).reduce((a, t, i) => { if (tipsOk.includes(t)) a[i] = 1; return a; }, {});
-    // cfg.pool verilirse özel katalog (ör. bakım); yoksa kurum hizmet listesi.
-    const pool = cfg.pool || (H.HIZMET || []).filter(r => !tipIdxOk || tipIdxOk[r[3]]);
+    // cfg.pool verilirse özel katalog (ör. bakım); yoksa kurum hizmet listesi (hariç tutulan kategoriler çıkarılır).
+    const pool = cfg.pool || (H.HIZMET || []).filter(r => (!tipIdxOk || tipIdxOk[r[3]]) && !EXCLUDE_TIP.includes(tipOf(r)));
     // Sol ağaç: havuzdaki kategoriler + "Favoriler" + "Hepsi"
     const cats = [...new Set(pool.map(r => tipOf(r)))];
     const cart = [];                               // seçilenler: {row, aciklama, acil}
@@ -286,6 +290,16 @@
     H.toast(t.name + " paketi eklendi (" + t.items.length + " istem)"); rerender();
   }
 
+  /* ---------- İstem tarihçesi (bu hastanın tüm istemleri, zaman sırasıyla) ---------- */
+  function openHistory(p) {
+    const list = ordersOf(p);   // en yeni en üstte
+    const body = list.length
+      ? `<div class="tw"><table class="t"><thead><tr><th style="width:130px">Zaman</th><th style="width:120px">Tür</th><th>İstem</th><th>Ayrıntı</th><th style="width:90px">Durum</th><th style="width:150px">İsteyen</th></tr></thead><tbody>${list.map(o => `<tr><td class="mono adm-sub">${esc(o.at)}</td><td>${esc(o.cat)}</td><td><b>${esc(o.ad || "")}</b></td><td class="adm-sub">${esc(o.detay || "")}</td><td><span class="tag">${esc(o.durum)}</span></td><td class="adm-sub">${esc(o.by || "")}</td></tr>`).join("")}</tbody></table></div>`
+      : `<div class="empty">Bu hastada henüz istem yok.</div>`;
+    H.modal({ title:"İstem tarihçesi", wide:true, body:`${body}<p class="adm-sub" style="margin-top:8px">Hastanın tüm istemleri zaman sırasıyla. Gerçek sistemde önceki başvurular da burada listelenir (HBYS bağlantısıyla).</p>`,
+      actions:`<button class="btn p" data-x>Kapat</button>` });
+  }
+
   function dispatch(p, key, rerender) {
     if (key === "lab") return openCatalog(p, { title:"Laboratuvar tetkiki", tips:["Laboratuvar Hizmeti", "Patoloji Hizmeti"], cat:"Laboratuvar" }, rerender);
     if (key === "rad") return openCatalog(p, { title:"Görüntüleme (radyoloji)", tips:["Radyoloji Hizmeti"], cat:"Radyoloji" }, rerender);
@@ -304,6 +318,7 @@
       const b = e.target.closest("[data-ist]"); if (b) { dispatch(p, b.dataset.ist, rerender); return; }
       const ap = e.target.closest("[data-tplap]"); if (ap) { applyTemplate(p, ap.dataset.tplap, rerender); return; }
       const sv = e.target.closest("[data-tplsave]"); if (sv) { saveTemplate(p, rerender); return; }
+      const hs = e.target.closest("[data-isthist]"); if (hs) { openHistory(p); return; }
       const td = e.target.closest("[data-tpldel]"); if (td) { const a = tpls(), i = a.findIndex(t => t.id === td.dataset.tpldel);
         if (i >= 0 && confirm("Bu paketi silmek istiyor musunuz?")) { a.splice(i, 1); H.toast("Paket silindi", "w"); rerender(); } return; }
       const rm = e.target.closest("[data-istrm]"); if (rm) { const arr = all(), i = arr.findIndex(o => o.id === rm.dataset.istrm);
