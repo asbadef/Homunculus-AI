@@ -29,3 +29,19 @@ def load_scenario(path: str | Path) -> list[tuple[datetime, dict]]:
         out.append((ts, resource))
     out.sort(key=lambda pair: pair[0])
     return out
+
+
+def rebased(events: list[tuple[datetime, dict]], end: datetime) -> list[tuple[datetime, dict]]:
+    """The same events moved in time so the last one falls at `end`, every gap between two kept.
+
+    For a replay into a local stack (scripts/replay.py `--now`): the scenarios are written at fixed
+    dates, and the trend charts' window ends at the server's now, so an unmoved replay draws an
+    empty chart. A copy: the loaded events are not changed.
+    """
+    if end.tzinfo is None or end.utcoffset() is None:
+        raise ValueError("end must carry a time zone")
+    if not events:
+        return []
+    shift = end - events[-1][0]
+    return [(ts + shift, {**resource, "effectiveDateTime": (ts + shift).isoformat()})
+            for ts, resource in events]
