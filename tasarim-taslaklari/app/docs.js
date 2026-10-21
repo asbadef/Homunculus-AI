@@ -526,16 +526,16 @@
   }
 
   // Özgeçmiş: yapısal (alışkanlıklar + Var/Yok+açıklama satırları + meslek/eğitim/medeni). Referans ekran.
-  const OZG_ROWS = [["hastalik", "Kronik hastalık"], ["ilac", "Sürekli ilaç"], ["alerji", "Alerji"], ["ameliyat", "Geçirilmiş ameliyat"], ["asi", "Aşı"], ["cihaz", "Vücuttaki cihaz"], ["kan", "Kan transfüzyonu"], ["ozel", "Özel durum"]];
-  const OZG_ALIS = ["Sigara", "Alkol", "Madde bağımlılığı"];
+  const OZG_ROWS = [["hastalik", "Kronik hastalık"], ["ilac", "Sürekli ilaç"], ["alerji", "Alerji"], ["ameliyat", "Geçirilmiş ameliyat"], ["asi", "Aşı"], ["cihaz", "Vücuttaki cihaz"], ["kan", "Kan transfüzyonu"], ["terapi", "Terapi"], ["ozel", "Özel durum"]];
+  const OZG_ALIS = ["Yok", "Sigara", "Alkol", "Madde bağımlılığı"];
   const OZG_EGITIM = ["Okur-yazar değil", "İlköğretim", "Lise", "Üniversite", "Lisansüstü"];
   function ozgWidget(d, label, edit) {
     const O = d.ozg || {}, al = O.aliskanlik || [], R = O.rows || {};
     if (!edit) { const parts = [al.length ? "Alışkanlık: " + al.join(", ") : "", ...OZG_ROWS.filter(([k]) => (R[k] || {}).v === "Var").map(([k, l]) => l + ((R[k] || {}).not ? " (" + R[k].not + ")" : "")), O.meslek ? "Meslek: " + O.meslek : "", O.medeni ? O.medeni : ""].filter(Boolean);
       return `<div class="dc-sec dc-ozg"><div class="dc-sh"><b>${esc(label)}</b></div><div class="dc-ro">${parts.length ? esc(parts.join(" · ")) : "<span class='mute'>Özellik yok</span>"}</div></div>`; }
     return `<div class="dc-sec dc-ozg"><div class="dc-sh"><b>${esc(label)}</b></div>
-      <div class="ozg-al"><span class="dc-ml">Alışkanlıklar</span><div class="dc-segs">${OZG_ALIS.map(a => `<button class="dc-seg sm${al.includes(a) ? " on" : ""}" data-dc-ozgal="${esc(a)}">${esc(a)}</button>`).join("")}</div></div>
-      <div class="ozg-rows">${OZG_ROWS.map(([k, l]) => { const r = R[k] || {}; return `<div class="ozg-row"><span class="ozg-rl">${esc(l)}</span><div class="dc-segs">${["Var", "Yok"].map(v => `<button class="dc-seg sm${r.v === v ? " on" : ""}" data-dc-ozgv="${k}" data-mv="${v}">${v}</button>`).join("")}</div><input class="dc-min" data-dc-ozgn="${k}" placeholder="Açıklama" value="${esc(r.not || "")}"></div>`; }).join("")}</div>
+      <div class="ozg-al"><span class="dc-ml">Alışkanlıklar</span><div class="dc-segs">${OZG_ALIS.map(a => `<button class="dc-seg sm${al.includes(a) ? " on" : ""}" data-dc-ozgal="${esc(a)}">${esc(a)}</button>`).join("")}</div><input class="dc-min" data-dc-ozgf="aliskanlikNot" placeholder="Açıklama" value="${esc(O.aliskanlikNot || "")}" style="flex:1;min-width:140px"></div>
+      <div class="ozg-rows">${OZG_ROWS.map(([k, l]) => { const r = R[k] || {}; return `<div class="ozg-row"><span class="ozg-rl">${esc(l)}</span><div class="dc-segs">${["Var", "Yok"].map(v => `<button class="dc-seg sm${r.v === v ? " on" : ""}" data-dc-ozgv="${k}" data-mv="${v}">${v}</button>`).join("")}</div><input class="dc-min" data-dc-ozgn="${k}" placeholder="Açıklama" value="${esc(r.not || "")}"><button class="ozg-flag${r.onemli ? " on" : ""}" data-dc-ozgflag="${k}" title="Önemli olarak işaretle">!</button></div>`; }).join("")}</div>
       <div class="ozg-bottom"><input class="dc-min" data-dc-ozgf="meslek" placeholder="Meslek" value="${esc(O.meslek || "")}">
         <select class="dc-min" data-dc-ozgf="egitim"><option value="">Eğitim</option>${OZG_EGITIM.map(e => `<option${O.egitim === e ? " selected" : ""}>${esc(e)}</option>`).join("")}</select>
         <span class="dc-ml">Medeni</span><div class="dc-segs">${["Bekar", "Evli", "Belirtilmedi"].map(v => `<button class="dc-seg sm${O.medeni === v ? " on" : ""}" data-dc-ozgm="${v}">${v}</button>`).join("")}</div></div></div>`;
@@ -803,6 +803,7 @@
       const ozgal = T.closest("[data-dc-ozgal]"); if (ozgal) { if (!canEdit(d)) return; d.ozg = d.ozg || {}; const a = d.ozg.aliskanlik = d.ozg.aliskanlik || [], v = ozgal.dataset.dcOzgal, i = a.indexOf(v); if (i >= 0) a.splice(i, 1); else a.push(v); markDirty(root, d); rerender(); return; }
       const ozgv = T.closest("[data-dc-ozgv]"); if (ozgv) { if (!canEdit(d)) return; d.ozg = d.ozg || {}; d.ozg.rows = d.ozg.rows || {}; const r = d.ozg.rows[ozgv.dataset.dcOzgv] = d.ozg.rows[ozgv.dataset.dcOzgv] || {}; r.v = r.v === ozgv.dataset.mv ? "" : ozgv.dataset.mv; markDirty(root, d); rerender(); return; }
       const ozgm = T.closest("[data-dc-ozgm]"); if (ozgm) { if (!canEdit(d)) return; d.ozg = d.ozg || {}; d.ozg.medeni = d.ozg.medeni === ozgm.dataset.dcOzgm ? "" : ozgm.dataset.dcOzgm; markDirty(root, d); rerender(); return; }
+      const ozgfl = T.closest("[data-dc-ozgflag]"); if (ozgfl) { if (!canEdit(d)) return; d.ozg = d.ozg || {}; d.ozg.rows = d.ozg.rows || {}; const r = d.ozg.rows[ozgfl.dataset.dcOzgflag] = d.ozg.rows[ozgfl.dataset.dcOzgflag] || {}; r.onemli = !r.onemli; markDirty(root, d); rerender(); return; }
       const soyg = T.closest("[data-dc-soyg]"); if (soyg) { if (!canEdit(d)) return; d.soyg = d.soyg || {}; d.soyg.rel = d.soyg.rel || {}; const rel = d.soyg.rel[soyg.dataset.dcSoyg] = d.soyg.rel[soyg.dataset.dcSoyg] || {}; rel[soyg.dataset.cond] = soyg.checked; markDirty(root, d); return; }
       const soygak = T.closest("[data-dc-soygak]"); if (soygak) { if (!canEdit(d)) return; d.soyg = d.soyg || {}; d.soyg.akraba = soygak.checked; markDirty(root, d); return; }
       const detay = T.closest("[data-dc-detay]"); if (detay) { if (!canEdit(d)) return; openDetay(p, d, root, rerender); return; }
