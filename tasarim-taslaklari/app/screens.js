@@ -154,10 +154,12 @@
     { no:"1167466", matbu:"508942966", kurum:"Azərsun Holding", durum:"Vezneden teslim edildi" },
     { no:"1167468", matbu:"", kurum:"İcbari Tibbi Sığorta", durum:"Vezneye iade edildi" },
   ]);
+  const hzName = (r) => (H.state.lang === "TR" ? (r[2] || r[1]) : (r[1] || r[2])) || r[1] || r[2] || "";
   H.register("vezne", { title:() => H.t("m_vezne"), perm:["admission", "summary"], render(root, params = {}) {
     const bankolar = BANKOLAR(), banko = H.state.vezneBanko || bankolar[0], donemNo = H.data.vezneDonemNo || (H.data.vezneDonemNo = 54038), tab = params.tab || "fatura";
+    const donemAcik = H.data.vezneDonemAcik !== false, donemYetki = H.can("admission") || H.can("summary");
     const TABS = [["fatura", "Faturalar"], ["fiyat", "Fiyat verme"], ["gfk", "GFK takip"], ["evrak", "Evrak takip"]];
-    const bar = `<div class="ist-lock"><span>${I("key")} Dönem <b>#${donemNo}</b> · Açık · Banko: <b>${H.esc(banko)}</b></span><select data-vbanko title="Çalıştığın banko/kasa">${bankolar.map(b => `<option${b === banko ? " selected" : ""}>${H.esc(b)}</option>`).join("")}</select><button class="btn sm" data-vdonem>Dönem kapat</button></div>`;
+    const bar = `<div class="ist-lock ${donemAcik ? "" : "closed"}">${I(donemAcik ? "key" : "lock") || ""}<span>Dönem <b>#${donemNo}</b> · <b>${donemAcik ? "Açık" : "Kapalı · işlem yapılamaz"}</b> · Banko: <b>${H.esc(banko)}</b></span><select data-vbanko title="Çalıştığın banko/kasa"${donemAcik ? "" : " disabled"}>${bankolar.map(b => `<option${b === banko ? " selected" : ""}>${H.esc(b)}</option>`).join("")}</select>${donemYetki ? `<button class="btn sm" data-vdonem>${donemAcik ? "Dönem kapat" : "Yeni dönem aç"}</button>` : ""}</div>`;
     const strip = `<div class="seg" style="margin-bottom:12px">${TABS.map(([k, l]) => `<button data-vtab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
     const panFatura = () => { const all = faturalar(), f = params.durum || "hepsi", list = f === "hepsi" ? all : all.filter(x => x.durum === f);
       return `<div class="seg" style="margin-bottom:10px">${[["hepsi", "Hepsi"], ["Bekliyor", "Bekliyor"], ["Ödendi", "Ödendi"]].map(([k, l]) => `<button data-vf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
@@ -169,7 +171,7 @@
       const ind = (kamp && kamp.uyg === "Yüzde indirim") ? Math.round(hastaBrut * (kamp.oran || 0) / 100) : 0, hasta = hastaBrut - ind;
       return `<div class="rc-head" style="margin-bottom:10px"><div class="fr"><label>Kurum / sigorta</label><select data-fkurum>${((H.data.secenekler && H.data.secenekler.kurum && H.data.secenekler.kurum.length ? H.data.secenekler.kurum : ["Özel ödeme", "SAMHI (İcbari Tibbi Sığorta)", "Anlaşmalı kurum"])).map(k => `<option${k === kurum ? " selected" : ""}>${H.esc(k)}</option>`).join("")}</select></div>
         <div class="fr"><label>Kampanya / indirim</label><select data-fkamp><option value="">— yok —</option>${kamps.map(k => `<option value="${k.id}"${kamp && kamp.id === k.id ? " selected" : ""}>${H.esc(k.ad)}${k.uyg === "Yüzde indirim" ? " (%" + k.oran + ")" : ""}</option>`).join("")}</select></div></div>
-        <div class="rc-add" style="margin-bottom:10px"><input data-fhiz placeholder="Hizmet / işlem adı" style="flex:1;min-width:200px"><input data-ffiyat type="number" placeholder="Fiyat (₼)" style="max-width:130px"><button class="btn p sm" data-fadd>Ekle</button></div>
+        <div class="rc-add" style="margin-bottom:10px"><div class="amel-cb" style="flex:1;min-width:220px"><input data-fhiz placeholder="Hizmet ara (katalogdan)" autocomplete="off"${donemAcik ? "" : " disabled"}><div class="amel-dd hidden" data-fhiz-dd></div></div><input data-ffiyat type="number" placeholder="Fiyat (₼)" style="max-width:130px"${donemAcik ? "" : " disabled"}><button class="btn p sm" data-fadd${donemAcik ? "" : " disabled"}>Ekle</button></div>
         <div class="tw"><table class="t"><thead><tr><th>İşlem</th><th style="width:100px">Fiyat</th><th style="width:100px">Hasta</th><th style="width:100px">SGK/kurum</th><th style="width:40px"></th></tr></thead><tbody>
         ${rows.length ? rows.map((r, i) => { const rs = samhi ? Math.round(r.fiyat * 0.7) : 0; return `<tr><td><b>${H.esc(r.ad)}</b></td><td class="n">${r.fiyat} ₼</td><td class="n">${r.fiyat - rs} ₼</td><td class="n">${rs} ₼</td><td><button class="btn g sm" data-frm="${i}">${I("x") || "×"}</button></td></tr>`; }).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Fiyat teklifi için hizmet ekleyin.</td></tr>`}</tbody>
         <tfoot>${ind ? `<tr><td class="adm-sub">Kampanya indirimi (${H.esc(kamp.ad)})</td><td class="n adm-sub">–${ind} ₼</td><td class="n adm-sub">–${ind} ₼</td><td class="n adm-sub">—</td><td></td></tr>` : ""}<tr><td><b>Toplam</b></td><td class="n"><b>${top} ₼</b></td><td class="n"><b>${hasta} ₼</b></td><td class="n"><b>${sgk} ₼</b></td><td></td></tr></tfoot></table></div>
@@ -186,6 +188,16 @@
         <p class="adm-sub" style="margin-top:8px">Fatura evrak teslim takibi (veznede → teslim edildi → medikal muhasebede → iade).</p>`; };
     const panel = ({ fatura:panFatura, fiyat:panFiyat, gfk:panGfk, evrak:panEvrak })[tab]();
     root.innerHTML = `<div class="ph"><div><h2>${H.t("m_vezne")}</h2><p>Hasta-360 vezne · banko ${H.esc(banko)} · dönem #${donemNo} (tasarım)</p></div></div>${bar}${strip}${panel}`;
+    if (tab === "fiyat" && donemAcik) {  // hizmet combobox (her yerde aynı H.HIZMET kataloğu)
+      const inp = root.querySelector("[data-fhiz]"), dd = root.querySelector("[data-fhiz-dd]"), fy = root.querySelector("[data-ffiyat]"), kurum = params.kurum || "Özel ödeme";
+      const show = () => { const q = (inp.value || "").trim().toLocaleLowerCase("tr");
+        const hits = (H.HIZMET || []).filter(r => !q || (r[1] + " " + r[2] + " " + r[0]).toLocaleLowerCase("tr").includes(q)).slice(0, 40);
+        dd.innerHTML = hits.length ? hits.map(r => `<div class="amel-opt" data-code="${H.esc(r[0])}" data-ad="${H.esc(hzName(r))}"><b>${H.esc(hzName(r))}</b> <span class="mono adm-sub">${H.esc(r[0])}</span> <span class="adm-sub">${H.fiyatOf(r[0], kurum)} ₼</span></div>`).join("") : `<div class="amel-opt mute">Eşleşen hizmet yok</div>`;
+        dd.classList.remove("hidden"); };
+      inp.addEventListener("input", show); inp.addEventListener("focus", show);
+      dd.addEventListener("click", (e) => { const o = e.target.closest("[data-code]"); if (!o) return; inp.value = o.dataset.ad; inp.dataset.kod = o.dataset.code; fy.value = H.fiyatOf(o.dataset.code, kurum); dd.classList.add("hidden"); });
+      document.addEventListener("click", (e) => { if (!root.querySelector(".amel-cb").contains(e.target)) dd.classList.add("hidden"); });
+    }
     root.onchange = (e) => {
       const vb = e.target.closest("[data-vbanko]"); if (vb) { H.state.vezneBanko = vb.value; H.log("Vezne banko değişti", vb.value); H.toast("Banko: " + vb.value); return; }
       const fk = e.target.closest("[data-fkurum]"); if (fk) return H.go("vezne", { tab:"fiyat", kurum:fk.value, kamp:params.kamp });
@@ -194,11 +206,12 @@
     };
     root.onclick = (e) => {
       const vt = e.target.closest("[data-vtab]"); if (vt) return H.go("vezne", { tab:vt.dataset.vtab });
-      if (e.target.closest("[data-vdonem]")) { H.toast("Dönem kapatıldı · devir/yeni dönem (tasarım)", "w"); return; }
+      if (e.target.closest("[data-vdonem]")) { if (!donemYetki) { H.toast("Dönem açma/kapatma yetkiniz yok.", "e"); return; } H.data.vezneDonemAcik = !donemAcik; if (donemAcik) { H.log("Vezne dönem kapatıldı", "#" + donemNo + " · " + banko); H.toast("Dönem kapatıldı · kapatmadan işlem yapılamaz", "w"); } else { H.data.vezneDonemNo = donemNo + 1; H.log("Vezne yeni dönem açıldı", "#" + (donemNo + 1)); H.toast("Yeni dönem açıldı: #" + (donemNo + 1)); } return H.go("vezne", params); }
+      if (!donemAcik) { if (e.target.closest("[data-fadd],[data-tahsil],[data-frm],[data-evteslim]")) { H.toast("Dönem kapalı · önce yeni dönem açın.", "e"); return; } }
       const vf = e.target.closest("[data-vf]"); if (vf) return H.go("vezne", { tab:"fatura", durum:vf.dataset.vf });
       const gf = e.target.closest("[data-gf]"); if (gf) return H.go("vezne", { tab:"gfk", gfk:gf.dataset.gf });
       const ef = e.target.closest("[data-ef]"); if (ef) return H.go("vezne", { tab:"evrak", ev:ef.dataset.ef });
-      const fa = e.target.closest("[data-fadd]"); if (fa) { const ad = (root.querySelector("[data-fhiz]").value || "").trim(), fy = +root.querySelector("[data-ffiyat]").value || 0; if (!ad) { H.toast("Hizmet adı gerekli.", "w"); return; } (H.data.vFiyat = H.data.vFiyat || []).push({ ad, fiyat:fy }); H.go("vezne", params); return; }
+      const fa = e.target.closest("[data-fadd]"); if (fa) { const el = root.querySelector("[data-fhiz]"), ad = (el.value || "").trim(), kod = el.dataset.kod || "", fy = +root.querySelector("[data-ffiyat]").value || (kod ? H.fiyatOf(kod, params.kurum || "Özel ödeme") : 0); if (!ad) { H.toast("Katalogdan hizmet seçin.", "w"); return; } (H.data.vFiyat = H.data.vFiyat || []).push({ ad, kod, fiyat:fy }); H.go("vezne", params); return; }
       const frm = e.target.closest("[data-frm]"); if (frm) { (H.data.vFiyat || []).splice(+frm.dataset.frm, 1); H.go("vezne", params); return; }
       const et = e.target.closest("[data-evteslim]"); if (et) { const x = evrakRows().find(y => y.no === et.dataset.evteslim); if (x) { x.durum = "Vezneden teslim edildi"; H.log("Evrak teslim", x.no); H.toast("Evrak teslim edildi"); H.go("vezne", params); } return; }
       const th = e.target.closest("[data-tahsil]"); if (th) { const x = faturalar().find(y => y.id === th.dataset.tahsil); if (!x) return;

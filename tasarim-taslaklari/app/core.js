@@ -307,6 +307,15 @@
   };
   // Protokol durumu: "Açık" düzenlenebilir; "Kapalı" ya da fatura kesildiyse kilitli (işlem/hizmet eklenemez).
   H.protoOpen = (p) => p && (p.protoDurum || "Açık") === "Açık" && !p.faturaKesildi;
+  // Hizmet fiyatı: her hizmetin kuruma göre fiyatı olur. Şimdilik koddan türeyen baz fiyat + kurum çarpanı;
+  // admin düzenlerse H.data.fiyatlar[kod][kurum] kullanılır. Gerçek fiyat matematiği ileride oturtulacak.
+  H.fiyatBaz = (kod) => { let n = 0; for (const c of String(kod)) n = (n * 31 + c.charCodeAt(0)) >>> 0; return 20 + (n % 481); };
+  H.fiyatOf = (kod, kurum) => {
+    const ov = H.data.fiyatlar && H.data.fiyatlar[kod] && H.data.fiyatlar[kod][kurum];
+    if (ov != null) return ov;
+    const k = kurum || "", m = /SAMHI|İcbari/.test(k) ? 0.85 : /Özel sigorta/.test(k) ? 1.15 : /Kurum/.test(k) ? 0.95 : 1;
+    return Math.round(H.fiyatBaz(kod) * m);
+  };
   // Hastanın başvuru tipi: açıkça yazılmışsa onu, yoksa yattığı birimden türet.
   H.encOf = (p) => {
     if (p && p.encounter && H.ENC[p.encounter]) return p.encounter;
