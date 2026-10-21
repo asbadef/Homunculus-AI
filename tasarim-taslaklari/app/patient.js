@@ -230,7 +230,7 @@
       <div class="md">
         <div class="nm">${esc(pname(p))}</div>
         <div class="mt">${H.ageText(p)} · ${p.sex === "E" ? "Erkek" : "Kadın"} · <span class="${rhNeg ? "rhn" : ""}">${esc(p.blood)}</span> · ${body}</div>
-        <div class="mt k dx"><b>${esc(p.dx)}</b> <span class="mono">${esc(p.icd)}</span> · ${esc(u.tr)} · <span class="tag">${esc(encI.label || "")}</span> ${stayTxt}${p.antibioticDay ? ` · <b>Antibiyotik: ${p.antibioticDay}. gün</b>` : ""}</div>
+        <div class="mt k dx"><b>${esc(p.dx)}</b> <span class="mono">${esc(p.icd)}</span> · ${esc(u.tr)} · <span class="tag">${esc(encI.label || "")}</span> ${stayTxt}${H.protoOpen(p) ? "" : ` · <span class="tag c k">${H.icon("lock")}Protokol kapalı</span>`}${p.antibioticDay ? ` · <b>Antibiyotik: ${p.antibioticDay}. gün</b>` : ""}</div>
         <div class="tg k">${p.allergies.map(a => `<span class="tag c k">${H.icon("alert")}Alerji: ${esc(a)}</span>`).join("")}${p.allergies.length ? "" : `<span class="tag k">Bilinen alerji yok</span>`}
           ${p.chronic.map(c => `<span class="tag w">${esc(c)}</span>`).join("")}
           ${p.isolation ? `<span class="tag w k">${H.icon("shield")}İzolasyon: ${esc(p.isolation)}</span>` : ""}

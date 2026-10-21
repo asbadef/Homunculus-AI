@@ -58,7 +58,9 @@
     const tplRow = mt.length
       ? `<div class="ist-tpls">${mt.map(t => `<span class="ist-tpl"><button class="btn sm" data-tplap="${t.id}" title="Bu paketteki tüm istemleri hastaya ekle · ${esc(t.owner || "")}">${ic("add") || "+"} ${esc(t.name)} <em>${t.items.length}</em></button>${t.owner === me() ? `<button class="btn g sm" data-tpldel="${t.id}" title="Paketi sil">${ic("x") || "×"}</button>` : ""}</span>`).join("")}</div>`
       : `<div class="adm-sub">Bu kapsamda kayıtlı paket yok. Birkaç istem ekleyip <b>Paket olarak kaydet</b> deyin.</div>`;
-    return `<div class="ist" data-ist-root><div class="ist-launch">${grp}</div>
+    const pOpen = H.protoOpen(p), pCan = H.can("admission") || H.can("orders");
+    const lockBar = `<div class="ist-lock ${pOpen ? "" : "closed"}">${ic(pOpen ? "ok" : "lock") || ""}<span>Protokol: <b>${pOpen ? "Açık" : (p.faturaKesildi ? "Fatura kesildi · kilitli" : "Kapalı · kilitli")}</b>${pOpen ? "" : " · yeni işlem/hizmet eklenemez"}</span>${pCan ? `<button class="btn sm" data-protokat>${pOpen ? "Protokolü kapat" : "Protokolü aç"}</button>` : ""}</div>`;
+    return `<div class="ist" data-ist-root>${lockBar}<div class="ist-launch">${grp}</div>
       <div class="ist-sec"><div class="ist-hd"><h5>Hazır paketler (şablonlar)</h5>${scopeTabs}</div>${tplRow}</div>
       <div class="ist-sec ist-hd"><h5>Bu başvurudaki istemler</h5><span class="r" style="display:flex;gap:8px">${list.length ? `<button class="btn sm" data-tplsave>${ic("save") || ""} Paket olarak kaydet</button>` : ""}<button class="btn sm" data-isthist>${ic("clock") || ""} İstem tarihçesi</button></span></div>${rows}
       <p class="adm-sub" style="margin-top:8px">İstemler bu ekranda tutulur; gerçek HBYS / laboratuvar / radyoloji (PACS) / eczane bağlantısını ayrı ekip kurar.</p></div>`;
@@ -301,6 +303,7 @@
         H.log("İstem paketi kaydedildi", ad + " · " + items.length + " istem · " + scope); H.toast("Paket kaydedildi: " + ad); H.closeModal(); rerender(); }; } });
   }
   function applyTemplate(p, id, rerender) {
+    if (!H.protoOpen(p)) { H.toast("Protokol kapalı · işlem eklenemez.", "e"); return; }
     const t = tpls().find(x => x.id === id); if (!t) return;
     t.items.forEach(it => addOrder(p, { cat:it.cat, ad:it.ad, detay:it.detay }));
     H.toast(t.name + " paketi eklendi (" + t.items.length + " istem)"); rerender();
@@ -360,6 +363,7 @@
   }
 
   function dispatch(p, key, rerender) {
+    if (!H.protoOpen(p)) { H.toast("Protokol kapalı / fatura kesildi · işlem eklenemez.", "e"); return; }
     if (key === "recete") return openRecete(p, rerender);
     if (key === "lab") return openCatalog(p, { title:"Laboratuvar tetkiki", tips:["Laboratuvar Hizmeti", "Patoloji Hizmeti"], cat:"Laboratuvar" }, rerender);
     if (key === "rad") return openCatalog(p, { title:"Görüntüleme (radyoloji)", tips:["Radyoloji Hizmeti"], cat:"Radyoloji" }, rerender);
@@ -375,6 +379,7 @@
     if (!root) return;
     const rerender = () => H.go("patient", { pid:p.id, tab:"istem" });
     root.onclick = (e) => {
+      const pk = e.target.closest("[data-protokat]"); if (pk) { if (!(H.can("admission") || H.can("orders"))) return; const willOpen = !H.protoOpen(p); p.protoDurum = willOpen ? "Açık" : "Kapalı"; if (willOpen) p.faturaKesildi = false; H.log("Protokol durumu", bedNo(p) + " · " + p.protoDurum); H.toast("Protokol " + p.protoDurum.toLowerCase()); rerender(); return; }
       const b = e.target.closest("[data-ist]"); if (b) { dispatch(p, b.dataset.ist, rerender); return; }
       const sc = e.target.closest("[data-tplscope]"); if (sc) { tplScope = sc.dataset.tplscope; rerender(); return; }
       const ap = e.target.closest("[data-tplap]"); if (ap) { applyTemplate(p, ap.dataset.tplap, rerender); return; }
@@ -382,7 +387,7 @@
       const hs = e.target.closest("[data-isthist]"); if (hs) { openHistory(p); return; }
       const td = e.target.closest("[data-tpldel]"); if (td) { const a = tpls(), i = a.findIndex(t => t.id === td.dataset.tpldel);
         if (i >= 0 && confirm("Bu paketi silmek istiyor musunuz?")) { a.splice(i, 1); H.toast("Paket silindi", "w"); rerender(); } return; }
-      const rm = e.target.closest("[data-istrm]"); if (rm) { const arr = all(), i = arr.findIndex(o => o.id === rm.dataset.istrm);
+      const rm = e.target.closest("[data-istrm]"); if (rm) { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · değişiklik yapılamaz.", "e"); return; } const arr = all(), i = arr.findIndex(o => o.id === rm.dataset.istrm);
         if (i >= 0) { arr.splice(i, 1); H.log("İstem kaldırıldı", bedNo(p)); H.toast("İstem kaldırıldı", "w"); rerender(); } return; }
     };
   }

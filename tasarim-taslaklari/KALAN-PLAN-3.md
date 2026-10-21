@@ -14,5 +14,12 @@ Tarih: 2026-10-22 · Dal: `hbys/gelistirme`
 ## Değişmez
 Kendi kodlarımız/isimlerimiz · Azerbaycan muadili (SAMHI/TABIB) · her özellik iki taraflı · admin düzenleyebilir · düzenli çeviri+yerleşim.
 
+## Faz L — iş kuralları (sahibin verdiği mantık)
+- **L6. Hasta No ≠ Protokol No:** Hasta No **tektir** (FİN'e bağlı, aynı hasta her gelişte aynı numarayı taşır). **Protokol No her gelişte yenilenir.** (Örn. hasta no 0000001 sabit, protokol 0000154 her gelişte değişir.) Aynı FİN tekrar gelince: aynı hasta no + yeni protokol.
+- **L7. Protokol Aç/Kapat + fatura kilidi:** Protokol **Kapalı** ya da **fatura kesildi** ise o protokole kimse (doktor dahil) **işlem/hizmet/istem ekleyemez** (kilitli). Vezne/yetkili açıp kapatır.
+- **L8. Özel Onay = ödeme alındı:** Bir işlemin "özel onay"ı, ödemesinin alındığını gösterir. Hekimin iş listesinde ödeme yapılmamış/eksik hasta için uyarı; ödeme/özel onay olmadan ilgili işlem bloklanır.
+- **L9. Yazdır çıktıları menüsü:** Epikriz, Hasta barkod, Kabul bilgi formu, Muayene formu, Onam formu, Refakatçi formu, Hizmet dökümü, Taahütname, Tetkik istem, Proforma, Protokol barkod, SGK hizmet dökümü, Patoloji istek, Poliklinik rıza, Order raporu… düzenli tek menüde.
+- **L10. İşlem Havuzu sağ-tık:** Doktor/Tarih/Tutar/Paket/Yeniden fiyatlandır/Durum (bekleyene at, iptal, fatura kesilmeyecek)/Özel onay/Yazdır/Diğer/Seçim.
+
 ## Not
 Bu faz uzun; parça parça yapılıp commit'lenecek. Sağ panel "Vezne 360" en görünür parça; L1/L2 (kabul formu + admin seçenekleri) önce, çünkü diğerleri buna bağlı.

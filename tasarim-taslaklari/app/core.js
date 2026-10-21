@@ -304,6 +304,8 @@
     yatan:      { label:"Yatan", short:"Yatan hasta", vitals:true, tabs:["ozet", "trend", "skor", "takip", "bakim", "ilac", "sivi", "sonuc", "belge", "istem", "devir"] },
     yogun:      { label:"Yoğun bakım", short:"Yoğun bakım", vitals:true, tabs:null },
   };
+  // Protokol durumu: "Açık" düzenlenebilir; "Kapalı" ya da fatura kesildiyse kilitli (işlem/hizmet eklenemez).
+  H.protoOpen = (p) => p && (p.protoDurum || "Açık") === "Açık" && !p.faturaKesildi;
   // Hastanın başvuru tipi: açıkça yazılmışsa onu, yoksa yattığı birimden türet.
   H.encOf = (p) => {
     if (p && p.encounter && H.ENC[p.encounter]) return p.encounter;

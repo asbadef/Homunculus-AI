@@ -99,6 +99,11 @@
 .ist-btns { display:flex; flex-direction:column; gap:6px; }
 .ist-b { display:flex; align-items:center; gap:8px; text-align:left; padding:10px 12px; border-radius:10px; border:1px solid var(--line2); background:var(--card); cursor:pointer; color:var(--ink); font:600 13px Figtree; transition:background .12s, border-color .12s; }
 .ist-b:hover { background:var(--card2); border-color:var(--pri); }
+/* Protokol kilit çubuğu (açık/kapalı) */
+.ist-lock { display:flex; align-items:center; gap:8px; padding:9px 12px; border-radius:10px; margin-bottom:12px; font:600 13px Figtree; background:color-mix(in srgb, var(--ok, #30a46c) 12%, var(--card)); border:1px solid color-mix(in srgb, var(--ok, #30a46c) 30%, var(--line2)); }
+.ist-lock.closed { background:color-mix(in srgb, var(--bad, #e5484d) 12%, var(--card)); border-color:color-mix(in srgb, var(--bad, #e5484d) 35%, var(--line2)); }
+.ist-lock button { margin-left:auto; }
+.ist-lock svg { width:15px; height:15px; }
 .ist-sec { margin-top:16px; } .ist-sec h5 { margin:0 0 7px; }
 .ist-hd { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .ist-tpls { display:flex; flex-wrap:wrap; gap:8px; }
