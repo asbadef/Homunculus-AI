@@ -281,8 +281,25 @@
       ${RAPOR_GRUP.map(([g, items]) => `<div class="ist-sec"><div class="ist-hd"><h5>${H.esc(g)}</h5></div>
         <div class="rp-grid">${items.map(r => `<button class="rp-card" data-rap="${H.esc(r)}">${I("chart") || ""}<span>${H.esc(r)}</span></button>`).join("")}</div></div>`).join("")}
       <p class="adm-sub" style="margin-top:10px">Her rapor: tarih/bölüm/doktor filtresi + tablo/özet olacak. Öncelikli raporlar örnek veriyle sırayla doldurulacak; gerçek veri bağlantısını ayrı ekip kurar.</p>`;
-    root.onclick = (e) => { const c = e.target.closest("[data-rap]"); if (c) H.toast(c.dataset.rap + " · yapım aşamasında (tasarım)", "w"); };
+    root.onclick = (e) => { const c = e.target.closest("[data-rap]"); if (!c) return; const d = reportData(c.dataset.rap);
+      if (!d) { H.toast(c.dataset.rap + " · yapım aşamasında (tasarım)", "w"); return; }
+      H.modal({ title:c.dataset.rap, wide:true, body:`<div class="tw"><table class="t"><thead><tr>${d.cols.map(cc => `<th>${H.esc(cc)}</th>`).join("")}</tr></thead><tbody>${d.rows.length ? d.rows.map(r => `<tr>${r.map((cell, i) => `<td${i > 0 ? ' class="n"' : ""}>${H.esc(String(cell))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${d.cols.length}" class="mute" style="padding:16px;text-align:center">Veri yok.</td></tr>`}</tbody></table></div><p class="adm-sub" style="margin-top:8px">${H.esc(d.note || "Örnek/özet veri. Gerçek filtre (tarih/bölüm/doktor) ve veri bağlantısı ileride.")}</p>`, actions:`<button class="btn" data-x>Kapat</button>` });
+    };
   } });
+  // Öncelikli raporların örnek/özet verisi (gerçek veriden türetilir)
+  function reportData(name) {
+    const docName = (id) => { const u = (H.data.users || []).find(x => x.u === id); return u ? u.name : (id || "—"); };
+    if (name === "Hasta Geliş Analizi") { const g = {}; (H.data.patients || []).forEach(p => { const e = (H.ENC[H.encOf(p)] || {}).label || H.encOf(p); g[e] = (g[e] || 0) + 1; });
+      return { cols:["Geliş tipi", "Hasta sayısı"], rows:Object.entries(g).map(([k, v]) => [k, v]), note:"Yatan hastalar birimlerinden, ayaktan hastalar başvuru tipinden sayılır." }; }
+    if (name === "Fatura Analizi") { const f = faturalar(), g = {}; f.forEach(x => { g[x.durum] = g[x.durum] || { a:0, t:0, k:0 }; g[x.durum].a++; g[x.durum].t += x.toplam; g[x.durum].k += x.katilim; });
+      return { cols:["Durum", "Adet", "Toplam ₼", "Katılım ₼"], rows:Object.entries(g).map(([k, v]) => [k, v.a, v.t, v.k]) }; }
+    if (name === "Hasta İndirim Analizi") { const r = indirimRows(), g = {}; r.forEach(x => { g[x.durum] = g[x.durum] || { a:0, t:0 }; g[x.durum].a++; g[x.durum].t += x.tutar; });
+      return { cols:["Durum", "Adet", "Toplam tutar ₼"], rows:Object.entries(g).map(([k, v]) => [k, v.a, v.t]), note:"İndirim onay ekranındaki taleplerden." }; }
+    if (name === "Doktor Protokol Sayı Analizi") { const g = {}; (H.data.patients || []).forEach(p => { const d = docName(p.attending); g[d] = (g[d] || 0) + 1; });
+      return { cols:["Doktor", "Hasta / protokol sayısı"], rows:Object.entries(g).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, v]) }; }
+    if (name === "Protokol Listesi") { return { cols:["Protokol", "Hasta", "Geliş", "Bölüm", "Fatura durumu"], rows:gfkRows().map(x => [x.proto, x.hasta, x.gelis, x.bolum, x.durum]) }; }
+    return null;
+  }
 
   /* ================= LAB / RADYOLOJİ İŞ AKIŞI ================= */
   const LAB_DURUM = ["İstendi", "Numune alındı", "Çalışılıyor", "Sonuç onaylandı", "Serbest bırakıldı"];
