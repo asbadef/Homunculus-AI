@@ -415,6 +415,8 @@ Klinik/doktor tarafı büyük ölçüde YAPILDI (muayene, epikriz, izlem, hemşi
 | 355 | Ayaktan/randevulu hasta akışı düzgün kurgulanmadı | ⏳ | #353+#354+#343 birlikte |
 | 356 | Özgeçmiş/soygeçmiş yapısal olmalı (referans) | ✅ | docs.js ozgWidget/soygWidget. commit 5d9441c |
 | 357 | Yatan hasta gözlem notu + hemşire gözlem notu var mı | 🔧 var | docs.js izlem (hekim günlük izlem) + hemsire (hemşirelik notu) mevcut; "Yatış" ekranı düzeni eklenebilir |
+| 358 | Bölüme göre detaylı muayene bulguları (ör. Detaylı Göz Muayene Bulguları) — her branşta değişir | ⏳ sonraki odak | mekanizma + göz (OD/OS: refraksiyon, GİB, görme keskinliği, gözlük, biyomikroskopi, fundus…) örneği; sonra diğer branşlar |
+| 359 | Ameliyat isteminde "Yapılacak ameliyat" katalogdan (ameliyat hizmetleri) seçilsin | ✅ | istem.js openAmeliyat combobox. commit 79ab8e7 |
 | 348 | Protokol tipleri tanımı (bayraklarıyla) | admin | faturalama/iş kurallarını yönetir |
 | 349 | Rapor/çıktı şablon motoru (Taahütname, Anestezi Değ., Tetkik İstem) | admin | yazdir.js sabit şablonlardan genişletme |
 | 350 | Hasta 360 / FİN + sigorta + KVKK-ETK onayları | kabul | kayıt formu tamamlama |
