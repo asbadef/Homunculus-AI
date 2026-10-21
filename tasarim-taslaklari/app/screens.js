@@ -97,10 +97,10 @@
   const RND_DURUM = ["Bekliyor", "Geldi", "Tamamlandı", "Gelmedi", "İptal"];
   const RND_TUR = ["Poliklinik", "Cihaz", "Video klinik", "Check-up", "Kemoterapi"];
   H.register("randevu", { title:() => "Randevu", perm:["admission", "beds"], render(root, params = {}) {
-    const all = randevular(), f = params.durum || "hepsi";
-    const list = f === "hepsi" ? all : all.filter(r => r.durum === f);
-    root.innerHTML = `<div class="ph"><div><h2>Randevu</h2><p>${list.length} randevu · poliklinik / cihaz / bölüm takvimi (tasarım)</p></div><div class="r"><button class="btn p" data-rndnew>${I("plus")} Yeni randevu</button></div></div>
-      <div class="seg" style="margin-bottom:12px">${[["hepsi", "Hepsi"], ...RND_DURUM.map(x => [x, x])].map(([k, l]) => `<button data-rf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    const all = randevular(), f = params.durum || "hepsi", GECMIS = ["Tamamlandı", "Gelmedi", "İptal"];
+    const list = f === "hepsi" ? all : f === "gecmis" ? all.filter(r => GECMIS.includes(r.durum)) : all.filter(r => r.durum === f);
+    root.innerHTML = `<div class="ph"><div><h2>Randevu${f === "gecmis" ? " geçmişi" : ""}</h2><p>${list.length} randevu · poliklinik / cihaz / bölüm takvimi (tasarım)</p></div><div class="r"><button class="btn p" data-rndnew>${I("plus")} Yeni randevu</button></div></div>
+      <div class="seg" style="margin-bottom:12px">${[["hepsi", "Hepsi"], ["gecmis", "Geçmiş"], ...RND_DURUM.map(x => [x, x])].map(([k, l]) => `<button data-rf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div class="tw"><table class="t"><thead><tr><th style="width:150px">Saat</th><th>Hasta</th><th>Bölüm</th><th>Doktor</th><th>Not</th><th style="width:120px">Durum</th><th style="width:44px"></th></tr></thead><tbody>
       ${list.length ? list.slice().sort((a, z) => a.tarih.localeCompare(z.tarih)).map(r => `<tr><td class="mono adm-sub">${H.esc((r.tarih || "").replace("T", " "))}${r.sms ? ` ${I("bell") || ""}` : ""}</td><td><b>${H.esc(r.hasta)}</b></td><td>${H.esc(r.bolum)}${r.tur ? ` <span class="tag">${H.esc(r.tur)}</span>` : ""}</td><td class="adm-sub">${H.esc(r.doktor)}</td><td class="adm-sub">${H.esc(r.not || "")}</td><td><select data-rndst="${r.id}">${RND_DURUM.map(s => `<option${r.durum === s ? " selected" : ""}>${s}</option>`).join("")}</select></td><td><button class="btn g sm" data-rnddel="${r.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bu durumda randevu yok.</td></tr>`}
       </tbody></table></div>`;
