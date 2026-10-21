@@ -182,6 +182,11 @@
     if (name === "Son hastalar") return { cols:["Hasta no", "Hasta", "Yatak / birim", "Geliş"], rows:(H.data.patients || []).slice(-8).reverse().map(p => { const b = H.bed(p.bed), u = b && H.unit(b.unitId); return [p.hn || "—", p.name, b ? b.no + (u ? " · " + u.tr : "") : "—", (H.ENC[H.encOf(p)] || {}).label || H.encOf(p)]; }) };
     if (name === "Protokol listesi") return { cols:["Protokol", "Hasta", "Geliş", "Bölüm", "Fatura durumu"], rows:gfkRows().map(x => [x.proto, x.hasta, x.gelis, x.bolum, x.durum]) };
     if (name === "Reçete listesi") return { cols:["Reçete no", "Hasta", "Tür", "Tarih"], rows:[["RX-50894308", "Nobatxanım Dadaşova", "Normal reçete", "21.10.2026"], ["RX-50893071", "Elvin Hüseynov", "İlaç reçetesi", "20.10.2026"], ["RX-50889384", "Günel Məmmədova", "Gözlük reçetesi", "14.10.2026"]] };
+    if (name === "Hasta arama") return { cols:["Hasta no", "Hasta", "Cinsiyet", "Yaş"], rows:(H.data.patients || []).map(p => [p.hn || "—", p.name, p.sex === "E" ? "Erkek" : "Kadın", p.age || "—"]), note:"Tüm hastalar · gerçekte ad/soyad/FİN/protokol ile arama." };
+    if (name === "Doktor iş listesi") { const g = {}; (H.data.patients || []).forEach(p => { const d = (H.data.users || []).find(u => u.u === p.attending); const n = d ? d.name : (p.attending || "—"); (g[n] = g[n] || []).push(p); });
+      const rows = []; Object.entries(g).forEach(([d, ps]) => ps.forEach(p => rows.push([d, p.name, (H.ENC[H.encOf(p)] || {}).label || H.encOf(p), H.ozelOnay(p) ? "Ödeme OK" : "Ödeme bekliyor"]))); return { cols:["Doktor", "Hasta", "Geliş", "Özel onay"], rows }; }
+    if (name === "Randevu arama") return { cols:["Tarih", "Hasta", "Bölüm", "Doktor", "Durum"], rows:[["22.10.2026 09:00", "Nobatxanım Dadaşova", "Oftalmologiya", "Dr. Əhməd Abdullayev", "Bekliyor"], ["22.10.2026 10:30", "Orxan Əliyev", "Daxili", "Dr. Kamran Rzayev", "Geldi"]], note:"Örnek randevular." };
+    if (name === "Gizli / VIP hasta listesi") return { cols:["Hasta no", "Hasta", "Not"], rows:[["0260215", "VIP Hasta 1", "Gizli · yalnız yetkili görür"], ["0260233", "VIP Hasta 2", "Gizli"]], note:"Gizli/VIP hastalar maskeli; gerçekte özel yetki ile açılır." };
     return null;
   }
   H.register("vezne", { title:() => H.t("m_vezne"), perm:["admission", "summary"], render(root, params = {}) {
@@ -314,6 +319,15 @@
     if (name === "Doktor Protokol Sayı Analizi") { const g = {}; (H.data.patients || []).forEach(p => { const d = docName(p.attending); g[d] = (g[d] || 0) + 1; });
       return { cols:["Doktor", "Hasta / protokol sayısı"], rows:Object.entries(g).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, v]) }; }
     if (name === "Protokol Listesi") { return { cols:["Protokol", "Hasta", "Geliş", "Bölüm", "Fatura durumu"], rows:gfkRows().map(x => [x.proto, x.hasta, x.gelis, x.bolum, x.durum]) }; }
+    if (name === "Aynı Gün Geliş Analizi") { const bolum = {}; (H.data.patients || []).filter(p => (p.admitDays || 0) === 0).forEach(p => { const b = H.bed(p.bed), u = b && H.unit(b.unitId), k = u ? u.tr : "—"; bolum[k] = (bolum[k] || 0) + 1; });
+      return { cols:["Bölüm / birim", "Bugünkü geliş"], rows:Object.entries(bolum).map(([k, v]) => [k, v]), note:"Yatış günü 0 olan (bugün gelen) hastalar." }; }
+    if (name === "Yeni Muayene Gelişi") { const r = (H.data.patients || []).filter(p => H.encOf(p) === "ayaktan").map(p => [p.hn || "—", p.name, p.dx || "—", docName(p.attending)]);
+      return { cols:["Hasta no", "Hasta", "Ön tanı", "Doktor"], rows:r, note:"Ayaktan (poliklinik) muayene gelişleri." }; }
+    if (name === "Vezne Tahakkuk Tahsilat Analizi") { const f = faturalar(), od = f.filter(x => x.durum === "Ödendi"), bk = f.filter(x => x.durum !== "Ödendi");
+      return { cols:["Durum", "Adet", "Tutar ₼"], rows:[["Tahsil edildi", od.length, od.reduce((a, x) => a + x.katilim, 0)], ["Bekleyen tahakkuk", bk.length, bk.reduce((a, x) => a + x.katilim, 0)]] }; }
+    if (name === "Medula Takip Analizi") { const g = {}; gfkRows().forEach(x => { g[x.durum] = (g[x.durum] || 0) + 1; });
+      return { cols:["Provizyon / fatura durumu", "Protokol sayısı"], rows:Object.entries(g).map(([k, v]) => [k, v]), note:"GFK takipteki protokollerin provizyon/fatura durumu." }; }
+    if (name === "Bekleyen Avans Listesi") return { cols:["Protokol", "Hasta", "Avans ₼", "Durum"], rows:[["50894026", "Şebnem Süleymanlı", 500, "Bekliyor"], ["50892562", "Nurgül Süleymanova", 300, "Bekliyor"], ["50790716", "Aytac Rüstemli", 100, "Kısmi iade"]], note:"Örnek veri." };
     return null;
   }
 
