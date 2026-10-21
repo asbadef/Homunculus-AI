@@ -11877,3 +11877,24 @@ Object.assign(window.HMC_SOZLUK, {
 "Bölümüm": { "AZ": "Bölməm", "EN": "My department", "RU": "Моё отделение" },
 "Tümü": { "AZ": "Hamısı", "EN": "All", "RU": "Все" }
 });
+
+(function (A) { for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({   // 22.10 · kayit secenekleri + vezne/IK/randevu etiketleri; yalniz eksik olanlar
+"Kayıt Seçenekleri": { "AZ": "Qeydiyyat seçimləri", "EN": "Registration options", "RU": "Параметры регистрации" },
+"Erişim kanalı": { "AZ": "Giriş kanalı", "EN": "Acquisition channel", "RU": "Канал обращения" },
+"Tercih sebebi": { "AZ": "Üstünlük səbəbi", "EN": "Reason for choosing", "RU": "Причина выбора" },
+"Geliş tipi": { "AZ": "Gəliş növü", "EN": "Visit type", "RU": "Тип обращения" },
+"Provizyon tipi": { "AZ": "Provizion növü", "EN": "Provision type", "RU": "Тип обеспечения" },
+"Anlaşmalı kurum / sigorta": { "AZ": "Razılaşdırılmış qurum / sığorta", "EN": "Contracted institution / insurance", "RU": "Партнёрское учреждение / страховая" },
+"Danışman": { "AZ": "Məsləhətçi", "EN": "Consultant", "RU": "Консультант" },
+"Seçenek ekle": { "AZ": "Seçim əlavə et", "EN": "Add option", "RU": "Добавить вариант" },
+"Ayaktan / poliklinik": { "AZ": "Ambulator / poliklinika", "EN": "Outpatient / clinic", "RU": "Амбулаторно / поликлиника" },
+"Geliş nedeni": { "AZ": "Gəliş səbəbi", "EN": "Reason for visit", "RU": "Причина обращения" },
+"Kayıt aç ve iş listesine gönder": { "AZ": "Qeyd aç və iş siyahısına göndər", "EN": "Open record and send to worklist", "RU": "Открыть запись и отправить в список работ" },
+"Personel ekle": { "AZ": "Personal əlavə et", "EN": "Add staff", "RU": "Добавить сотрудника" },
+"Yeni personel": { "AZ": "Yeni personal", "EN": "New staff", "RU": "Новый сотрудник" },
+"Personel tipi": { "AZ": "Personal növü", "EN": "Staff type", "RU": "Тип сотрудника" },
+"Mesaj Kalıpları (SMS)": { "AZ": "Mesaj şablonları (SMS)", "EN": "Message templates (SMS)", "RU": "Шаблоны сообщений (SMS)" },
+"Yeni randevu": { "AZ": "Yeni görüş", "EN": "New appointment", "RU": "Новая запись" },
+"Randevu türü": { "AZ": "Görüş növü", "EN": "Appointment type", "RU": "Тип записи" },
+"Video klinik": { "AZ": "Video klinika", "EN": "Video clinic", "RU": "Видео-приём" }
+});
