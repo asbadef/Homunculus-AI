@@ -80,7 +80,9 @@ def _latest(state: PatientState, key: str, code: SignalCode, breakdown: dict[str
     if not history:
         return None
     last = history[-1]
-    previous = history[-2] if len(history) > 1 else None
+    # The previous MEASUREMENT: a reading at the same instant is the same one delivered again
+    # (edge/uplink.py is at-least-once) or its twin, never "the previous".
+    previous = next((o for o in reversed(history) if o.timestamp < last.timestamp), None)
     parameter = _NEWS2_PARAMETER.get(key)
     # The engine's breakdown scores the newest reading. When that one is not a number it is not
     # `last`: its points are not this value's to print, and neither is a verdict on the patient's own

@@ -127,6 +127,25 @@ def test_one_measurement_has_no_delta():
                             "news2_points": 0, "within_own_normal": None}
 
 
+def test_a_reading_delivered_twice_is_not_the_previous_one():
+    """The edge uplink delivers at least once (`edge/uplink.py` resends a POST that timed out after
+    the hub had processed it), so the same reading can arrive twice and sort in at the same instant.
+    118 then 130, the 130 twice, moved +12 — not 0 ("unchanged"), which would read as reassurance."""
+    engine = _engine((SignalCode.HEART_RATE, 118, 120), (SignalCode.HEART_RATE, 130, 60),
+                     (SignalCode.HEART_RATE, 130, 60))
+    hr = _channel(_trends(engine), "heart_rate")
+    assert len(engine.state("S-001").history(SignalCode.HEART_RATE)) == 3     # both copies are held
+    assert hr["latest"]["value"] == 130.0
+    assert hr["latest"]["delta"] == 12.0
+
+
+def test_one_measurement_delivered_twice_still_has_no_delta():
+    engine = _engine((SignalCode.HEART_RATE, 84, 30), (SignalCode.HEART_RATE, 84, 30))
+    hr = _channel(_trends(engine), "heart_rate")
+    assert len(engine.state("S-001").history(SignalCode.HEART_RATE)) == 2     # both copies are held
+    assert hr["latest"]["delta"] is None
+
+
 def test_the_delta_is_the_clinicians_number_not_floating_point_noise():
     engine = _engine((SignalCode.TEMPERATURE, 36.9, 120), (SignalCode.TEMPERATURE, 37.2, 60))
     assert _channel(_trends(engine), "temperature")["latest"]["delta"] == 0.3
