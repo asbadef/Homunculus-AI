@@ -98,7 +98,8 @@ checked inline before sending:
   nothing to send).
 
 Save → `PUT /clinical/{id}/profile` with `{"baselines": {...}}` only. On 200: the modal closes,
-toast "Hastanın normali kaydedildi; motor yeniden değerlendirdi", the trends are refetched so the
+toast "<bed>: hastanın normali kaydedildi; sonraki ölçüm bu aralıklarla değerlendirilecek" (as built
+since 2026-10-21, X21/O12 — the PUT does not re-evaluate), the trends are refetched so the
 band appears. On 400: the engine's reason under the form (it is already in the reader's words) and
 a toast via `refusal.js` named after the bed label. On timeout: the may-have-landed rule — refetch
 trends, tell the user to check the band. On 403 (right removed meanwhile): toast and close. The
@@ -298,11 +299,13 @@ charting Stage A values; the `/audit` oldest-N fix beyond `since`.
   a charted set sends `{"baselines": {}}`, which the engine takes as clearing every range even when
   nothing else is charted, and the audit replay reads each profile row over the one before, so the
   clear survives a restart (plan X15, Task 14a).
-- §3.3's save toast says the engine re-evaluated; the profile PUT re-scores nothing — the standing
-  alerts are re-judged at the next reading (plan X21, O12). Every save now shows it, so the user
-  decides before the VM. Recommendation (the Task 14 spec review): reword `baselineSaved` in four
-  languages to what the PUT does and name the patient with `{subject}` in this slice; make the door
-  re-judge the latest state when the profile changes as a follow-up.
+- §3.3's save toast used to say the engine re-evaluated; the profile PUT re-scores nothing — the
+  standing alerts are re-judged at the next reading (plan X21, O12). **Decided 2026-10-21:**
+  `baselineSaved` reworded in four languages to what the PUT does, named after the bed with
+  `{subject}` (commit `cefbf58`); making the door re-judge the latest state when the profile changes
+  stays a follow-up. Same day: the big chart's readout (drawn and announced) names the reading's
+  NEWS2 points (O21, `8f1ba57`); who may enter the normal stays every `clinical.chart` holder (O15);
+  the engine's never-clearing findings (O17) become a separate slice after this one is deployed.
 - `PUT /clinical/{id}/profile` replaces the set with no lost-update check: two clinicians saving one
   patient's normal at once — the second wins silently. The form now notices a set that changed while
   it was open (the minute's poll) and holds Save until it is reopened (plan X34); two saves inside one

@@ -997,9 +997,10 @@ kayıttan sonraki yine sessizce kazanır (plandaki O3). Kayıtlı bir aralık va
 söyler ve Kaydet hepsini siler; silme denetim kaydına yazılır ve sunucu yeniden başlasa da geri
 gelmez. Kayıt açık alarmları yeniden hesaplamaz: eğrideki bant ve "Hastanın normalinde" hapı
 hemen yenilenir, alarmlar ise sonraki ölçüme dek eski hâlinde kalır; sonraki ölçüm yeni normale
-(ya da normalsiz) göre değerlendirilir. (Kayıt bildirimi bugün "motor yeniden değerlendirdi"
-diyor; bu kodun yaptığından fazlası, düzeltilmesi kullanıcı kararını bekliyor — plandaki
-X21/O12.) Bu aralık monitörün alarm sınırı değildir; motor bu hastanın
+(ya da normalsiz) göre değerlendirilir. Kayıt bildirimi de tam bunu söyler: "<yatak>: hastanın
+normali kaydedildi; sonraki ölçüm bu aralıklarla değerlendirilecek" (kullanıcı kararı 21.10,
+plandaki X21/O12; motorun kayıtta anında yeniden yargılaması ayrı bir iş olarak sonraya kaldı).
+Bu aralık monitörün alarm sınırı değildir; motor bu hastanın
 değerlerini yorumlarken (4. bölümdeki hastaya göreli katman) bu normali kullanır. Reddedilen bir
 kayıt yatağın adıyla bildirimde söylenir; sunucu yanıt vermezse kaydın gerçekleşmiş olabileceği
 söylenir ve eğri yeniden okunur.
