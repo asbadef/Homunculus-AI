@@ -17,21 +17,9 @@
 
   // İlaç/kan ürünü örnek listesi (katalog dışı; kendi alanları var).
   const KAN = ["Eritrosit Süspansiyonu", "Taze Donmuş Plazma", "Tam Kan", "Random Trombosit Süspansiyonu", "Aferez Trombosit Süspansiyonu", "Kriyopresipitat", "Aferez Granülosit Süspansiyonu", "Havuzlanmış Trombosit"];
-  // Hemşirelik bakım kataloğu (kurum bakım listesi örneği; satır: [kod, ad(AZ), ad(TR), tip]).
-  const BAKIM = [
-    ["B1", "Qlükometr", "Glukometre (kan şekeri)", "Bakım"], ["B2", "Arteriya Baxımı", "Arter bakımı", "Bakım"],
-    ["B3", "Decubitus Qulluğu", "Bası yarası bakımı", "Bakım"], ["B4", "Dializ Kateter Sarğı", "Diyaliz kateter pansumanı", "Bakım"],
-    ["B5", "Drenaj Baxımı", "Dren bakımı", "Bakım"], ["B6", "Əl-Üz Qulluğu", "El-yüz bakımı", "Bakım"],
-    ["B7", "İntubasiya Baxımı", "Entübasyon bakımı", "Bakım"], ["B8", "Gözə Qulluq", "Göz bakımı", "Bakım"],
-    ["B9", "Perineum Təqibi", "Perine bakımı", "Bakım"], ["B10", "Saç Hamamı", "Saç yıkama", "Bakım"],
-    ["B11", "Stoma Qulluğu", "Stoma bakımı", "Bakım"], ["B12", "Traxeostomiya Baxımı", "Trakeostomi bakımı", "Bakım"],
-    ["B13", "Triflo", "Triflo (solunum egzersizi)", "Bakım"], ["B14", "Yara Baxımı", "Yara bakımı", "Bakım"],
-    ["B15", "Yataq Hamamı", "Yatak banyosu", "Bakım"], ["B16", "Yataq Dəyişməsi", "Yatak değişimi", "Bakım"],
-    ["B17", "Sidik Kateteri Baxımı", "İdrar sondası bakımı", "Bakım"], ["B18", "Ağız Baxımı", "Ağız bakımı", "Bakım"],
-    ["B19", "Nazoqastrik Zond Baxımı", "Nazogastrik sonda bakımı", "Bakım"], ["B20", "Mərkəzi Kateter Baxımı", "Santral kateter bakımı", "Bakım"],
-    ["B21", "Pozisiya Dəyişməsi", "Pozisyon değiştirme", "Bakım"], ["B22", "Aspirasiya", "Aspirasyon", "Bakım"],
-    ["B23", "Enteral Qidalanma", "Enteral beslenme", "Bakım"], ["B24", "Soyuq/İsti Tətbiqi", "Soğuk/sıcak uygulama", "Bakım"],
-  ];
+  // Hemşirelik bakım kataloğu: tercihen kurum listesi (H.BAKIM = [[kod, ad(AZ), ad(TR)]]), yoksa kısa yedek.
+  const BAKIM_FALLBACK = [["B001", "Yara Baxımı", "Yara bakımı"], ["B002", "Ağız Baxımı", "Ağız bakımı"], ["B003", "Pozisiya Dəyişməsi", "Pozisyon değiştirme"], ["B004", "Aspirasiya", "Aspirasyon"]];
+  const bakimPool = () => (H.BAKIM && H.BAKIM.length ? H.BAKIM : BAKIM_FALLBACK).map(r => [r[0], r[1], r[2], "Bakım"]);
   // Diyet tipleri (öğün bazlı diyet formunda kullanılır).
   const DIET = ["Normal", "Diyabetik", "Tuzsuz", "Yüksek proteinli", "Düşük proteinli", "Gebe / emziren diyeti", "Sıvı diyet", "Yumuşak diyet", "Gazsız diyet", "Oral alım yok (NPO)"];
 
@@ -291,7 +279,7 @@
     if (key === "lab") return openCatalog(p, { title:"Laboratuvar tetkiki", tips:["Laboratuvar Hizmeti", "Patoloji Hizmeti"], cat:"Laboratuvar" }, rerender);
     if (key === "rad") return openCatalog(p, { title:"Görüntüleme (radyoloji)", tips:["Radyoloji Hizmeti"], cat:"Radyoloji" }, rerender);
     if (key === "hizmet") return openCatalog(p, { title:"Hizmet / işlem", tips:null, cat:"Hizmet" }, rerender);
-    if (key === "bakim") return openCatalog(p, { title:"Bakım istemi", pool:BAKIM, cat:"Bakım" }, rerender);
+    if (key === "bakim") return openCatalog(p, { title:"Bakım istemi", pool:bakimPool(), cat:"Bakım" }, rerender);
     if (key === "diyet") return openDiyet(p, rerender);
     if (key === "ameliyat") return openAmeliyat(p, rerender);
     return openForm(p, key, rerender);   // ilac / kan / kons
