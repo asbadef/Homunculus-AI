@@ -177,6 +177,17 @@
   ]);
   const PTIP_ETKI = [["hastaFark", "Hastaya fark atılmaz (hasta payı 0)"], ["sgkKatilim", "SGK katılım payı oluşmaz"], ["avans", "Avans alınabilir"], ["otoKapanma", "Otomatik kapanmaz"], ["islemHavuz", "İşlem havuzuna düşer"], ["doktorsuz", "Doktorsuz protokol"], ["nobetsiz", "Nöbetsiz protokol"]];
   const hzName = (r) => (H.state.lang === "TR" ? (r[2] || r[1]) : (r[1] || r[2])) || r[1] || r[2] || "";
+  // Basit sağ-tık/işlem menüsü (İşlem Havuzu)
+  function vzMenu(ev, items) {
+    document.querySelectorAll(".vz-menu").forEach(m => m.remove());
+    const m = document.createElement("div"); m.className = "vz-menu";
+    m.innerHTML = items.map((it, i) => `<button data-mi="${i}">${H.esc(it[0])}</button>`).join("");
+    document.body.appendChild(m);
+    m.style.left = Math.min(ev.clientX, window.innerWidth - 220) + "px";
+    m.style.top = Math.min(ev.clientY, window.innerHeight - items.length * 34 - 12) + "px";
+    m.onclick = (e) => { const b = e.target.closest("[data-mi]"); if (b) items[+b.dataset.mi][1](); m.remove(); };
+    setTimeout(() => document.addEventListener("click", function h() { m.remove(); document.removeEventListener("click", h); }), 0);
+  }
   // Vezne 360 sağ ray hızlı listeleri (örnek/özet)
   function railData(name) {
     if (name === "Son hastalar") return { cols:["Hasta no", "Hasta", "Yatak / birim", "Geliş"], rows:(H.data.patients || []).slice(-8).reverse().map(p => { const b = H.bed(p.bed), u = b && H.unit(b.unitId); return [p.hn || "—", p.name, b ? b.no + (u ? " · " + u.tr : "") : "—", (H.ENC[H.encOf(p)] || {}).label || H.encOf(p)]; }) };
@@ -211,7 +222,7 @@
         ${flagNot.length ? `<div class="ist-lock" style="margin-bottom:10px"><span>${I("key") || ""} Protokol tipi etkisi: <b>${H.esc(flagNot.join(" · "))}</b></span></div>` : ""}
         <div class="rc-add" style="margin-bottom:10px"><div class="amel-cb" style="flex:1;min-width:220px"><input data-fhiz placeholder="Hizmet ara (katalogdan)" autocomplete="off"${donemAcik ? "" : " disabled"}><div class="amel-dd hidden" data-fhiz-dd></div></div><input data-ffiyat type="number" placeholder="Fiyat (₼)" style="max-width:130px"${donemAcik ? "" : " disabled"}><button class="btn p sm" data-fadd${donemAcik ? "" : " disabled"}>Ekle</button></div>
         <div class="tw"><table class="t"><thead><tr><th>İşlem</th><th style="width:100px">Fiyat</th><th style="width:100px">Hasta</th><th style="width:100px">SGK/kurum</th><th style="width:40px"></th></tr></thead><tbody>
-        ${rows.length ? rows.map((r, i) => { const rs = farkYok ? r.fiyat : (samhi ? Math.round(r.fiyat * 0.7) : 0); return `<tr><td><b>${H.esc(r.ad)}</b></td><td class="n">${r.fiyat} ₼</td><td class="n">${r.fiyat - rs} ₼</td><td class="n">${rs} ₼</td><td><button class="btn g sm" data-frm="${i}">${I("x") || "×"}</button></td></tr>`; }).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Fiyat teklifi için hizmet ekleyin.</td></tr>`}</tbody>
+        ${rows.length ? rows.map((r, i) => { const rs = farkYok ? r.fiyat : (samhi ? Math.round(r.fiyat * 0.7) : 0); return `<tr data-fri="${i}" title="Sağ tık: işlem menüsü"><td><b>${H.esc(r.ad)}</b></td><td class="n">${r.fiyat} ₼</td><td class="n">${r.fiyat - rs} ₼</td><td class="n">${rs} ₼</td><td><button class="btn g sm" data-frm="${i}">${I("x") || "×"}</button></td></tr>`; }).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Fiyat teklifi için hizmet ekleyin.</td></tr>`}</tbody>
         <tfoot>${ind ? `<tr><td class="adm-sub">Kampanya indirimi (${H.esc(kamp.ad)})</td><td class="n adm-sub">–${ind} ₼</td><td class="n adm-sub">–${ind} ₼</td><td class="n adm-sub">—</td><td></td></tr>` : ""}<tr><td><b>Toplam</b></td><td class="n"><b>${top} ₼</b></td><td class="n"><b>${hasta} ₼</b></td><td class="n"><b>${sgk} ₼</b></td><td></td></tr></tfoot></table></div>
         <p class="adm-sub" style="margin-top:8px">SAMHI'de hasta/kurum payı örnek %30/%70 bölünür. Kampanyayı yetkili rol admin'de oluşturur, vezne burada seçer. Teklif çıktısı alınabilir (tasarım).</p>`; };
     const panGfk = () => { const g = params.gfk || "hepsi", all = gfkRows(), list = g === "hepsi" ? all : all.filter(x => x.durum === g);
@@ -250,7 +261,18 @@
         dd.classList.remove("hidden"); };
       inp.addEventListener("input", show); inp.addEventListener("focus", show);
       dd.addEventListener("click", (e) => { const o = e.target.closest("[data-code]"); if (!o) return; inp.value = o.dataset.ad; inp.dataset.kod = o.dataset.code; fy.value = H.fiyatOf(o.dataset.code, kurum); dd.classList.add("hidden"); });
-      document.addEventListener("click", (e) => { if (!root.querySelector(".amel-cb").contains(e.target)) dd.classList.add("hidden"); });
+      document.addEventListener("click", (e) => { const cb = root.querySelector(".amel-cb"); if (cb && !cb.contains(e.target)) dd.classList.add("hidden"); });
+      // İşlem Havuzu sağ-tık menüsü (fiyat satırları)
+      root.querySelector(".vz-main").addEventListener("contextmenu", (e) => { const tr = e.target.closest("[data-fri]"); if (!tr) return; e.preventDefault(); const i = +tr.dataset.fri, r = (H.data.vFiyat || [])[i]; if (!r) return;
+        vzMenu(e, [
+          ["Yeniden fiyatlandır", () => { const v = prompt("Yeni fiyat (₼):", r.fiyat); if (v != null && v !== "" && !isNaN(+v)) { r.fiyat = +v; H.log("İşlem yeniden fiyatlandırıldı", r.ad + " · " + v); H.go("vezne", params); } }],
+          ["Bekleyene at", () => H.toast("Bekleyene atıldı (tasarım)", "w")],
+          ["Özel onay (ödeme alındı)", () => H.toast("Özel onay işaretlendi (tasarım)")],
+          ["Fatura kesilmeyecek", () => H.toast("'Fatura kesilmeyecek' işaretlendi (tasarım)", "w")],
+          ["Yazdır (hizmet dökümü)", () => H.toast("Çıktı hazırlanıyor (tasarım)")],
+          ["İptal (satırı çıkar)", () => { (H.data.vFiyat || []).splice(i, 1); H.toast("İşlem çıkarıldı", "w"); H.go("vezne", params); }],
+        ]);
+      });
     }
     root.onchange = (e) => {
       const vb = e.target.closest("[data-vbanko]"); if (vb) { if (!H.can("vezne_banko")) { vb.value = banko; H.toast("Banko değiştirme yetkiniz yok.", "e"); return; } H.state.vezneBanko = vb.value; H.log("Vezne banko değişti", vb.value); H.toast("Banko: " + vb.value); return; }
