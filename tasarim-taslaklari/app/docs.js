@@ -496,9 +496,22 @@
   const stTag = (d) => isSys(d) && d.status === "taslak" ? `<span class="dc-st s">${H.icon("zap")}${esc(t("dc_sys_tag"))}</span>`
     : d.status === "muhur" ? `<span class="dc-st m">${H.icon("lock")}mühürlendi</span>` : `<span class="dc-st t">${H.icon("edit")}taslak</span>`;
 
+  function docHistory(p, mine) {
+    const L0 = docsOf(p.id).filter(d => !mine || d.by === me());
+    const durumOf = (d) => d.sentAt ? "Hastane kaydında" : d.sealedAt ? "Mühürlü" : (d.savedAt ? "Taslak (saklı)" : "Taslak");
+    const verOf = (d) => (1 + ((d.addenda || []).length)) + ". version";
+    const rows = L0.length ? L0.map((d, i) => `<tr><td>${i + 1}</td><td class="adm-sub">${esc(verOf(d))}</td><td><b>${esc(tName(d.type))}</b></td><td class="adm-sub">${esc(short(d.by))}</td><td class="adm-sub">${esc(d.at || "")}</td><td>${d.sealedAt ? H.icon("check") : "—"}</td><td><span class="tag ${d.sentAt ? "ok" : ""}">${esc(durumOf(d))}</span></td></tr>`).join("")
+      : `<tr><td colspan="7" class="mute" style="padding:16px;text-align:center">Belge yok.</td></tr>`;
+    H.modal({ title:"Doküman tarihçesi · " + esc(p.name), wide:true,
+      body:`<div class="seg" style="margin-bottom:10px"><button data-dh="tumu" class="${mine ? "" : "on"}">Tümü</button><button data-dh="benim" class="${mine ? "on" : ""}">Benim</button></div>
+        <div class="tw"><table class="t"><thead><tr><th style="width:36px">#</th><th style="width:90px">Versiyon</th><th>Doküman</th><th>Oluşturan</th><th>Tarih</th><th style="width:60px">İmzalı</th><th style="width:150px">Durum</th></tr></thead><tbody>${rows}</tbody></table></div>
+        <p class="adm-sub" style="margin-top:8px">Hastanın tüm belgelerinin versiyon/imza geçmişi. Mühürlü belge değiştirilemez; sonraki düzeltmeler ek not (yeni versiyon) olarak işlenir.</p>`,
+      actions:`<button class="btn" data-x>Kapat</button>`,
+      onMount(m) { m.querySelectorAll("[data-dh]").forEach(b => b.onclick = () => { H.closeModal(); docHistory(p, b.dataset.dh === "benim"); }); } });
+  }
   function listHtml(p, sel) {
     const L0 = docsOf(p.id);
-    return `<aside class="dc-list"><div class="dc-lh"><b>Belgeler</b><span>${L0.length} belge</span></div>
+    return `<aside class="dc-list"><div class="dc-lh"><b>Belgeler</b><span>${L0.length} belge</span><button class="btn g sm" data-dc-hist title="Doküman tarihçesi (versiyon/imza)">${H.icon("clock")}Tarihçe</button></div>
       <div class="dc-new">${isDoc() ? `<button class="btn p" data-dc-new="muayene">${H.icon("plus")}Yeni muayene notu</button><button class="btn sm" data-dc-new="izlem">${H.icon("plus")}${esc(t("dc_t_izlem"))}</button><button class="btn sm" data-dc-new="ameliyatrapor">${H.icon("plus")}Ameliyat raporu</button><button class="btn sm" data-dc-new="anestezi">${H.icon("plus")}Anestezi değ.</button><button class="btn sm" data-dc-new="onam">${H.icon("plus")}Onam</button>`
         : isNurse() ? `<button class="btn p" data-dc-new="hemsire">${H.icon("plus")}Yeni hemşirelik notu</button>` : `<span class="mute" style="font-size:12px">Belge yazma yetkiniz yok; yalnız okuyabilirsiniz.</span>`}</div>
       <div class="dc-items">${L0.map(d => `<button class="dc-it ${d.id === sel ? "on" : ""}" data-dc-open="${d.id}"><span class="dc-ic">${H.icon(TYPES[d.type].icon)}</span>
@@ -799,6 +812,7 @@
       const op = T.closest("[data-dc-open]"); if (op) { ui(p.id).sel = op.dataset.dcOpen; rerender(); return; }
       const nw = T.closest("[data-dc-new]"); if (nw) { const t = nw.dataset.dcNew; if (t === "hemsire" ? !isNurse() : !isDoc()) return;
         const d = newDoc(p, t); prefill(p, d); ui(p.id).sel = d.id; ui(p.id).page = false; H.log(`${TYPES[t].name} başlatıldı`, bedNo(p)); rerender(); return; }
+      if (T.closest("[data-dc-hist]")) { docHistory(p, false); return; }
       const d = cur(); if (!d) return;
       if (T.closest("[data-dc-dxadd]")) { if (!canEdit(d)) return; openDxPicker(p, d, root, rerender); return; }
       const dxrm = T.closest("[data-dc-dxrm]"); if (dxrm) { if (!canEdit(d)) return; (d.dx || []).splice(+dxrm.dataset.dcDxrm, 1); markDirty(root, d); rerender(); return; }
