@@ -659,6 +659,7 @@
   const ATABS = [["users", "Kullanıcılar", "admin_users", "users"], ["roles", "Roller ve yetkiler", "admin_roles", "shield"], ["structure", "Hastane yapısı", "admin_structure", "building"],
     ["integrations", "Entegrasyonlar", "admin_integrations", "plug"], ["camera", "Kamera bağlantısı", "admin_camera", "tv"], ["notify", "Bildirim kuralları", "admin_system", "bell"],
     ["careCat", { toString:() => H.t("adm_cc_tab") }, "admin_system", "list"],   // 24.09 · bakım kataloğu (etiket dile göre)
+    ["icdliste", "Tanı Listesi (ICD)", "admin_system", "list"],   // ICD-10 tanı kataloğu (ara + ekle); doktor muayenede seçer
     ["mobile", "Telefon modülleri", "admin_system", "tablet"],   // 27.09 · #193
     ["system", "Sistem ayarları", "admin_system", "gear"], ["audit", "Denetim kaydı", "audit", "file"],
     // 30.09 · İzleme ve işletim (Y1–Y7) · kod: dosyanın sonundaki "İZLEME VE İŞLETİM" bölümü
@@ -667,7 +668,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -693,7 +694,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -702,6 +703,37 @@
         AD.tab = mine.some(t => t[0] === last) ? last : mine[0][0]; H.state.params = Object.assign({}, H.state.params, { tab:AD.tab }); draw(); return; }
       const t = e.target.closest("[data-tab]"); if (t && el.contains(t)) { AD.tab = t.dataset.tab; H.state.params = Object.assign({}, H.state.params, { tab:AD.tab }); draw(); } });
     draw();
+  }
+
+  /* ---------- Tanı Listesi (ICD) ---------- */
+  // ICD-10 kataloğu: ara + ekle. Veri icd-veri.js'te (H.ICD = [[kod, ad, kronik, bulasici], ...]).
+  // Doktor muayene/epikriz/anamnez yazarken bu listeden seçer (sonraki faz).
+  function tabIcd(body) {
+    const ALL = (H.ICD = H.ICD || []);
+    body.innerHTML = `<div class="adm-bar"><input data-icdq placeholder="Kod ya da tanı adı ara (ör. J18 veya pnevmoniya)" value="${esc(AD.icdq || "")}"><span class="spacer"></span><span class="adm-sub" data-icdcount></span></div>
+      <div class="adm-bar" style="flex-wrap:wrap;gap:6px"><input data-nk placeholder="Yeni kod" style="max-width:130px"><input data-nn placeholder="Yeni tanı adı" style="flex:1;min-width:180px"><label style="display:flex;align-items:center;gap:4px"><input type="checkbox" data-nkr> Kronik</label><label style="display:flex;align-items:center;gap:4px"><input type="checkbox" data-nb> Bulaşıcı</label><button class="btn p" data-icdadd>+ Ekle</button></div>
+      <div data-icdlist></div>
+      <p class="adm-sub" style="margin-top:10px">ICD-10 tanı listesi. Admin buradan tanı ekler; doktor muayene/epikriz/anamnez yazarken bu listeden seçer (sonraki faz). Kaynak: hastanenin tanı listesi.</p>`;
+    const list = body.querySelector("[data-icdlist]");
+    const draw = () => {
+      const q = norm(AD.icdq || "");
+      const res = q ? ALL.filter(x => norm(x[0]).includes(q) || norm(x[1]).includes(q)) : ALL;
+      const shown = res.slice(0, 200);
+      body.querySelector("[data-icdcount]").textContent = ALL.length.toLocaleString("tr") + " tanı";
+      list.innerHTML = `<div class="adm-sub" style="margin:6px 0">${res.length.toLocaleString("tr")} sonuç${res.length > 200 ? " · ilk 200 (aramayı daraltın)" : ""}</div>
+        ${shown.length ? `<div class="tw"><table class="t"><thead><tr><th style="width:120px">Kod</th><th>Tanı</th><th style="width:80px">Kronik</th><th style="width:90px">Bulaşıcı</th></tr></thead><tbody>${shown.map(x => `<tr><td class="mono">${esc(x[0])}</td><td>${esc(x[1])}</td><td style="text-align:center">${x[2] ? "✓" : ""}</td><td style="text-align:center">${x[3] ? "✓" : ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen tanı yok.</div>`}`;
+    };
+    draw();
+    body.querySelector("[data-icdq]").addEventListener("input", e => { AD.icdq = e.target.value; draw(); });
+    body.querySelector("[data-icdadd]").addEventListener("click", () => {
+      const kod = body.querySelector("[data-nk]").value.trim(), ad = body.querySelector("[data-nn]").value.trim();
+      if (!kod || !ad) { H.toast("Kod ve tanı adı gerekli.", "w"); return; }
+      ALL.unshift([kod, ad, body.querySelector("[data-nkr]").checked ? 1 : 0, body.querySelector("[data-nb]").checked ? 1 : 0]);
+      H.log("ICD tanı eklendi", kod + " · " + ad);
+      H.toast("Tanı eklendi.");
+      body.querySelector("[data-nk]").value = ""; body.querySelector("[data-nn]").value = "";
+      AD.icdq = kod; body.querySelector("[data-icdq]").value = kod; draw();
+    });
   }
 
   /* ---------- Kullanıcılar ---------- */
