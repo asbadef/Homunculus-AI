@@ -614,6 +614,7 @@
     const M = d.mua || {};
     const seg = (field, opts) => opts.map(o => `<button class="dc-seg${M[field] === o ? " on" : ""}" data-dc-mua="${field}" data-mv="${esc(o)}">${esc(o)}</button>`).join("");
     const multi = (opts) => opts.map(o => `<button class="dc-seg${(M.tedavi || []).includes(o) ? " on" : ""}" data-dc-muat="${esc(o)}">${esc(o)}</button>`).join("");
+    const multiF = (field, opts) => opts.map(o => `<button class="dc-seg sm${(M[field] || []).includes(o) ? " on" : ""}" data-dc-muam="${field}" data-mv="${esc(o)}">${esc(o)}</button>`).join("");
     const muaW = (edit && d.type === "muayene") ? `
       <div class="dc-sec dc-mua"><div class="dc-sh"><b>Psikolojik durum</b></div>
         <div class="dc-segs">${seg("psiko", ["Sakin", "Üzgün", "Ajite", "Kaygılı", "Agresif"])}</div>
@@ -621,7 +622,12 @@
       <div class="dc-sec dc-mua"><div class="dc-sh"><b>Ağrı</b></div>
         <div class="dc-segrow"><div class="dc-segs">${seg("agri", ["Var", "Yok"])}</div>
           <input class="dc-min sm" type="number" min="0" max="10" data-dc-muain="agriSkor" placeholder="Skor 0-10" value="${esc(M.agriSkor || "")}">
-          <input class="dc-min" data-dc-muain="agriNot" placeholder="Açıklama" value="${esc(M.agriNot || "")}"></div></div>
+          <input class="dc-min" data-dc-muain="agriBolge" placeholder="Bölge" value="${esc(M.agriBolge || "")}" style="max-width:150px">
+          <input class="dc-min" data-dc-muain="agriNot" placeholder="Açıklama" value="${esc(M.agriNot || "")}"></div>
+        ${M.agri === "Var" ? `<div class="agri-det">
+          <div class="dc-segrow"><span class="dc-ml">Niteliği</span><div class="dc-segs">${multiF("agriNitelik", ["Keskin", "Bastırıcı", "Kolik", "Ezici", "Dolgunluk", "Saplanıcı", "Künt", "Yanıcı"])}</div></div>
+          <div class="dc-segrow" style="margin-top:8px"><span class="dc-ml">Ritmi</span><div class="dc-segs">${seg("agriRitim", ["Sürekli", "Aralıklı"])}</div>
+            <input class="dc-min" data-dc-muain="agriBas" placeholder="Başlangıç (ör. 3 gün önce)" value="${esc(M.agriBas || "")}" style="max-width:220px"></div></div>` : ""}</div>
       <div class="dc-sec dc-mua"><div class="dc-sh"><b>İzlem ve plan · tedavi tipi</b></div>
         <div class="dc-segs">${multi(["Ayaktan takip ve tedavi", "Yatarak takip ve tedavi", "Ayaktan cerrahi girişim", "Yatarak cerrahi girişim", "Rehabilitasyon", "Palyatif tedavi", "Kemoterapi"])}</div>
         <div class="dc-segrow" style="margin-top:10px"><span class="dc-ml">Ameliyat planlanacak mı?</span><div class="dc-segs">${seg("ameliyat", ["Evet", "Hayır"])}</div></div>
@@ -792,6 +798,7 @@
       const dxrm = T.closest("[data-dc-dxrm]"); if (dxrm) { if (!canEdit(d)) return; (d.dx || []).splice(+dxrm.dataset.dcDxrm, 1); markDirty(root, d); rerender(); return; }
       const mua = T.closest("[data-dc-mua]"); if (mua) { if (!canEdit(d)) return; d.mua = d.mua || {}; const f = mua.dataset.dcMua; d.mua[f] = d.mua[f] === mua.dataset.mv ? "" : mua.dataset.mv; markDirty(root, d); rerender(); return; }
       const muat = T.closest("[data-dc-muat]"); if (muat) { if (!canEdit(d)) return; d.mua = d.mua || {}; const arr = d.mua.tedavi = d.mua.tedavi || [], v = muat.dataset.dcMuat, i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); markDirty(root, d); rerender(); return; }
+      const muam = T.closest("[data-dc-muam]"); if (muam) { if (!canEdit(d)) return; d.mua = d.mua || {}; const f = muam.dataset.dcMuam, arr = d.mua[f] = d.mua[f] || [], v = muam.dataset.mv, i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); markDirty(root, d); rerender(); return; }
       const muac = T.closest("[data-dc-muac]"); if (muac) { if (!canEdit(d)) return; d.mua = d.mua || {}; d.mua[muac.dataset.dcMuac] = muac.checked; markDirty(root, d); return; }
       const ozgal = T.closest("[data-dc-ozgal]"); if (ozgal) { if (!canEdit(d)) return; d.ozg = d.ozg || {}; const a = d.ozg.aliskanlik = d.ozg.aliskanlik || [], v = ozgal.dataset.dcOzgal, i = a.indexOf(v); if (i >= 0) a.splice(i, 1); else a.push(v); markDirty(root, d); rerender(); return; }
       const ozgv = T.closest("[data-dc-ozgv]"); if (ozgv) { if (!canEdit(d)) return; d.ozg = d.ozg || {}; d.ozg.rows = d.ozg.rows || {}; const r = d.ozg.rows[ozgv.dataset.dcOzgv] = d.ozg.rows[ozgv.dataset.dcOzgv] || {}; r.v = r.v === ozgv.dataset.mv ? "" : ozgv.dataset.mv; markDirty(root, d); rerender(); return; }
