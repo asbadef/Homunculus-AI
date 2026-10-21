@@ -8,9 +8,9 @@
 
 **Tech Stack:** Python 3.12 and 3.14, FastAPI, SQLAlchemy/psycopg2 (Postgres) and sqlite3, pytest; React 18, Vite, Vitest + Testing Library (`fireEvent`; no user-event), Tailwind on the live token classes, inline SVG (no chart library).
 
-**Spec (authoritative):** `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. Where the code made the spec's letter impossible or unsafe, this plan departs from it; every departure is in the table below with its file and line, and is an open item for the user. **2026-10-20:** the user approved X1–X19 and chose explicit clearing for O4 — Task 14a and Task 14's clear; X21 was found while amending (X20 is kept for the thinning departure the Task 2 review found, which Task 17 adds from the controller's open-items list). **Second amendment, 2026-10-20:** Task 3b (the gateways refuse NaN/±inf), Task 4's two changes (non-finite readings skipped; the marks' read bounded by the window and flagged — X22), and Task 8's strings as the Task 8 quality review corrected them (lane commit `f082251`), mirrored in every later task that quotes them. **Third, 2026-10-20:** for the tasks the lanes have done, the plan now IS their code — Tasks 1–4 and 3b as `feat/g2v-be` has them (head `bd8afda`), Tasks 6–10 as `feat/g2v-dash` has them (head `339c3f2`), review follow-ups included (X23, X24); Task 11's card edits are rebased on the reviewed card and Task 12's box carries the lane's `Note`; Task 12's legend says MAP has no NEWS2 band, that ▲ is a first detection (O17) and when the marks' read stopped at its limit; Task 14a refuses non-finite bounds. **Fourth, 2026-10-20:** the backend lane's last commits mirrored (Tasks 4, 5 and 14a as `e933ca1` has them — X25) and the dashboard lane's Task 11 (`4ecbc11` — X26); Tasks 12–15 rebased on it; Task 12 settles the review's chart items — value labels at the nearest round step (d3's thresholds), no finer than the data is measured and never past the data, time labels anchored to the edge they would cross, MAP's hollow dots filled with the dialog's own ground, and every mark at an instant named in the readout. **Fifth, 2026-10-20:** Task 12 mirrored to the dashboard lane's `a877057` (X27; its geometry, chart and their tests now written whole); Task 13 rebuilt on it — the keyboard steps over instants (two readings at one instant are one stop), the axis, the readout and the table share `trendText.js`, a mark beside a reading carries its own time when that reads differently, and the dialog opens with focus on the pressed window option; Tasks 14–15 re-checked on it. **Sixth, 2026-10-20:** Task 13 mirrored to the dashboard lane's `372e781` (X28 — the keyboard chart an application — X29 — the table carries the legend's notes — X30 — a MAP read at another minute keeps its own time — and the review's minors); its files written whole; Tasks 14–17 re-checked against it, their anchors unchanged. **Seventh, 2026-10-20:** Task 14 mirrored to the dashboard lane's `432712e` (commits `56456a9`, `16e87ef`, `e9eab88`, `432712e`: X31 — the form is the patient's and the opening's it was opened for — X32 — what Save will do is said beside Save — X33 — a held submit takes focus to the first wrong field — X34 — the form notices a set that changed under it, the client half of O3 — and the review's minors); its form, test and box written whole; Task 15's sweep names the form by its title with the bed; Tasks 15–17 re-checked against it (one anchor changed: the sweep's dialog name). O12 is now visible — every save shows the toast that overclaims — and carries a recommendation. **Eighth, 2026-10-21:** the lanes are merged on this branch (`5c1758d`, `cfa903b`) and Tasks 15 and 16 are committed (`d8419e4`, `59e011a`, `e1549c7`, `649af49`); Tasks 15–16 now ARE that code — the sweep reads `aria-roledescription` and reaches the pressure dialog, its table, the truncation note and the form's clear sentence; `replay.py` refuses `--token`, times out and says why a refusal came; `rebased()` anchors on the latest event and deep-copies. The walk ran (Task 16, 2026-10-21): Step 7 line for line, Step 8 passed except the checks that need a person (O25). X20 joins the table; acceptance 2's max is a gen-2 GC pause, not a cold start; Task 17 now carries every departure, open item, the deploy order (O24) and the walk's outcome. **Ninth and last, 2026-10-21:** `6112c3e` folded into Task 16 (a token the server echoes in its detail is printed as `<token>`; an unreachable stack ends in one line, exit 1; two tests); Task 17 done as `d8eee36`, its placeholders filled (`<date>` 2026-10-21, `<range>` `ec8678a..6112c3e`); the plan's replay of Tasks 1–17 is the branch at `d8eee36` byte for byte — the 61 code files and the three docs. **Then, 2026-10-21:** Task 17 gains `8578960`, the docs review's accuracy fixes (two guide Edits added: (d) §2, (e) §3.6's second question); the replay of Tasks 1–17 is the branch at `8578960` byte for byte. **And X35, 2026-10-21** (the final whole-slice review, `74380a1`): the card's previous reading is the newest one strictly earlier than the last, so a twice-delivered reading no longer reads as "unchanged" — folded into Task 4 with its two tests; every count after Task 4 moves by 2; the replay of Tasks 1–17 is the branch at `74380a1` byte for byte. The roadmap row and spec §11 then named departures only up to X34; `5b73637` brought them to X35 and the counts at `74380a1`, and Task 17 carries it — the replay of Tasks 1–17 is the branch at `5b73637` byte for byte.
+**Spec (authoritative):** `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. Where the code made the spec's letter impossible or unsafe, this plan departs from it; every departure is in the table below with its file and line, and is an open item for the user. **2026-10-20:** the user approved X1–X19 and chose explicit clearing for O4 — Task 14a and Task 14's clear; X21 was found while amending (X20 is kept for the thinning departure the Task 2 review found, which Task 17 adds from the controller's open-items list). **Second amendment, 2026-10-20:** Task 3b (the gateways refuse NaN/±inf), Task 4's two changes (non-finite readings skipped; the marks' read bounded by the window and flagged — X22), and Task 8's strings as the Task 8 quality review corrected them (lane commit `f082251`), mirrored in every later task that quotes them. **Third, 2026-10-20:** for the tasks the lanes have done, the plan now IS their code — Tasks 1–4 and 3b as `feat/g2v-be` has them (head `bd8afda`), Tasks 6–10 as `feat/g2v-dash` has them (head `339c3f2`), review follow-ups included (X23, X24); Task 11's card edits are rebased on the reviewed card and Task 12's box carries the lane's `Note`; Task 12's legend says MAP has no NEWS2 band, that ▲ is a first detection (O17) and when the marks' read stopped at its limit; Task 14a refuses non-finite bounds. **Fourth, 2026-10-20:** the backend lane's last commits mirrored (Tasks 4, 5 and 14a as `e933ca1` has them — X25) and the dashboard lane's Task 11 (`4ecbc11` — X26); Tasks 12–15 rebased on it; Task 12 settles the review's chart items — value labels at the nearest round step (d3's thresholds), no finer than the data is measured and never past the data, time labels anchored to the edge they would cross, MAP's hollow dots filled with the dialog's own ground, and every mark at an instant named in the readout. **Fifth, 2026-10-20:** Task 12 mirrored to the dashboard lane's `a877057` (X27; its geometry, chart and their tests now written whole); Task 13 rebuilt on it — the keyboard steps over instants (two readings at one instant are one stop), the axis, the readout and the table share `trendText.js`, a mark beside a reading carries its own time when that reads differently, and the dialog opens with focus on the pressed window option; Tasks 14–15 re-checked on it. **Sixth, 2026-10-20:** Task 13 mirrored to the dashboard lane's `372e781` (X28 — the keyboard chart an application — X29 — the table carries the legend's notes — X30 — a MAP read at another minute keeps its own time — and the review's minors); its files written whole; Tasks 14–17 re-checked against it, their anchors unchanged. **Seventh, 2026-10-20:** Task 14 mirrored to the dashboard lane's `432712e` (commits `56456a9`, `16e87ef`, `e9eab88`, `432712e`: X31 — the form is the patient's and the opening's it was opened for — X32 — what Save will do is said beside Save — X33 — a held submit takes focus to the first wrong field — X34 — the form notices a set that changed under it, the client half of O3 — and the review's minors); its form, test and box written whole; Task 15's sweep names the form by its title with the bed; Tasks 15–17 re-checked against it (one anchor changed: the sweep's dialog name). O12 is now visible — every save shows the toast that overclaims — and carries a recommendation. **Eighth, 2026-10-21:** the lanes are merged on this branch (`5c1758d`, `cfa903b`) and Tasks 15 and 16 are committed (`d8419e4`, `59e011a`, `e1549c7`, `649af49`); Tasks 15–16 now ARE that code — the sweep reads `aria-roledescription` and reaches the pressure dialog, its table, the truncation note and the form's clear sentence; `replay.py` refuses `--token`, times out and says why a refusal came; `rebased()` anchors on the latest event and deep-copies. The walk ran (Task 16, 2026-10-21): Step 7 line for line, Step 8 passed except the checks that need a person (O25). X20 joins the table; acceptance 2's max is a gen-2 GC pause, not a cold start; Task 17 now carries every departure, open item, the deploy order (O24) and the walk's outcome. **Ninth and last, 2026-10-21:** `6112c3e` folded into Task 16 (a token the server echoes in its detail is printed as `<token>`; an unreachable stack ends in one line, exit 1; two tests); Task 17 done as `d8eee36`, its placeholders filled (`<date>` 2026-10-21, `<range>` `ec8678a..6112c3e`); the plan's replay of Tasks 1–17 is the branch at `d8eee36` byte for byte — the 61 code files and the three docs. **Then, 2026-10-21:** Task 17 gains `8578960`, the docs review's accuracy fixes (two guide Edits added: (d) §2, (e) §3.6's second question); the replay of Tasks 1–17 is the branch at `8578960` byte for byte. **And X35, 2026-10-21** (the final whole-slice review, `74380a1`): the card's previous reading is the newest one strictly earlier than the last, so a twice-delivered reading no longer reads as "unchanged" — folded into Task 4 with its two tests; every count after Task 4 moves by 2; the replay of Tasks 1–17 is the branch at `74380a1` byte for byte. The roadmap row and spec §11 then named departures only up to X34; `5b73637` brought them to X35 and the counts at `74380a1`, and Task 17 carries it — the replay of Tasks 1–17 is the branch at `5b73637` byte for byte. **The user's decisions, 2026-10-21:** X21/O12 (b) — the save toast reworded in four languages, named after the bed (`cefbf58`; Tasks 8 and 14); O21 — the big chart's readout names the reading's NEWS2 points (`8f1ba57`; Task 13); O15 kept; O17 a separate slice after the deploy; O3 accepted for the pilot; the docs record them (`6407492`; Task 17 gains a spec §3.3 Edit). The branch also merged `origin/feat/infinity-asama-a` (`9040d4f`: `deploy/infinity/README.md` only, outside this plan). The replay of Tasks 1–17 is the branch at `6407492` byte for byte.
 
-**How the numbers in this plan were obtained.** All seventeen tasks were implemented, in this order, in the worktree while the plan was written, and every red, every green and every count below is what was printed; the tree was then restored to `b6ed65d` and only this file was committed. The O4 amendment (Task 14a, Task 14's clear) and then the second amendment (Task 3b, Task 4, the review's strings) were implemented the same way on top of all seventeen on 2026-10-20, and every suite re-run; the third pass (the lanes' code mirrored into Tasks 1–4, 3b and 6–10, Tasks 11–17 rebased on it) was verified by replaying the whole plan into the worktree and running every suite on that replay; a count marked *derived* is the measured one minus a later task's measured delta. The verified implementation is kept beside the per-task files as `/c/tmp/homunculus-plans/g2v/reference.patch` — a cross-check, not the authority: build from the tasks. Since the eighth pass the code is on this branch: the plan's replay of Tasks 1–17 is byte for byte the branch at `5b73637` (the 61 code files and the three docs, against the blobs git stores), and `reference.patch` is `git diff b6ed65d 5b73637 -- . ':!docs'` (the code is unchanged since `74380a1`).
+**How the numbers in this plan were obtained.** All seventeen tasks were implemented, in this order, in the worktree while the plan was written, and every red, every green and every count below is what was printed; the tree was then restored to `b6ed65d` and only this file was committed. The O4 amendment (Task 14a, Task 14's clear) and then the second amendment (Task 3b, Task 4, the review's strings) were implemented the same way on top of all seventeen on 2026-10-20, and every suite re-run; the third pass (the lanes' code mirrored into Tasks 1–4, 3b and 6–10, Tasks 11–17 rebased on it) was verified by replaying the whole plan into the worktree and running every suite on that replay; a count marked *derived* is the measured one minus a later task's measured delta. The verified implementation is kept beside the per-task files as `/c/tmp/homunculus-plans/g2v/reference.patch` — a cross-check, not the authority: build from the tasks. Since the eighth pass the code is on this branch: the plan's replay of Tasks 1–17 is byte for byte the branch at `6407492` (the 61 code files and the three docs, against the blobs git stores; `deploy/infinity/README.md`, from the Aşama A merge `9040d4f`, is the branch's one other change and not this plan's), and `reference.patch` is `git diff b6ed65d 6407492 -- . ':!docs' ':!deploy'`.
 
 ---
 
@@ -38,7 +38,7 @@
 | X18 | — | `refusal.js` is `src/live/screens/admin/refusal.js`, not `src/live/refusal.js`. | The form imports `mayHaveLanded` from there (the one rule). |
 | X19 | — | `src/reachable.test.js` fails on any module `main.jsx` cannot reach. | The dashboard is built top-down: each task wires the module it creates (Task 9 wires the box before any card exists). |
 | X20 | §4: thinning — "the window is cut into 500 equal buckets" | `thin(series, max_points)` — the spec's own §5.2 signature, which has no window parameter — cuts the time span from the window's first reading to its last. Every guarantee holds (the cap, first / last / minimum / maximum per slice, time order); the only effect is finer slices when the readings cover part of the window (the Task 2 spec review, 2026-10-20). | No code change; Task 17 adds the sentence to spec §4. |
-| X21 | §3.3: the save's toast "Hastanın normali kaydedildi; motor yeniden değerlendirdi" | `PUT /clinical/{id}/profile` (api/app.py:608–640) sets the profile, audits it and republishes the board; it re-scores nothing — the standing alerts are the last reading's until the next one (`Engine.ingest`, pipeline.py:51). The trends answer does re-read the profile (the own-normal band and pill). Found while amending for O4, 2026-10-20. | A save keeps the spec's sentence (Task 8, unchanged — open item O12); since Task 14 it is shown after every save, so the overclaim is visible — O12 recommends rewording it now, with `{subject}`, and an engine re-judge as a follow-up. A clear, new with the amendment, says only what is true: the ranges are deleted and the next reading is judged without them (Task 14). |
+| X21 | §3.3: the save's toast "Hastanın normali kaydedildi; motor yeniden değerlendirdi" | `PUT /clinical/{id}/profile` (api/app.py:608–640) sets the profile, audits it and republishes the board; it re-scores nothing — the standing alerts are the last reading's until the next one (`Engine.ingest`, pipeline.py:51). The trends answer does re-read the profile (the own-normal band and pill). Found while amending for O4, 2026-10-20. | A save keeps the spec's sentence (Task 8, unchanged — open item O12); since Task 14 it is shown after every save, so the overclaim is visible — O12 recommends rewording it now, with `{subject}`, and an engine re-judge as a follow-up. A clear, new with the amendment, says only what is true: the ranges are deleted and the next reading is judged without them (Task 14). **Decided 2026-10-21, option (b):** `baselineSaved` reworded in four languages to what the PUT does and named after the bed — "{subject}: hastanın normali kaydedildi; sonraki ölçüm bu aralıklarla değerlendirilecek" (az "…növbəti ölçmə bu aralıqlarla qiymətləndiriləcək.") — and the form passes `{ subject: bed }`; the tests hold that "yenidən qiymətləndirdi" appears nowhere after a save or a clear (commit `cefbf58`). The engine re-judge stays a follow-up. |
 | X22 | §4 the response shape; §4 "markers.alarm are the patient's audited alert events" | `records(…, since=, limit=)` returns the OLDEST rows at or after `since` (ORDER BY id); `AckStore.prune` (api/ackstore.py:28–33) drops the `first_seen` stamp when an alert clears, so a flapping alert writes a row each time it comes back — ≈ 30/h at one reading a minute, ≈ 2 160 in 72 h. Readings replayed from the audit (`rehydrate`) pass no gateway, so a NaN/±inf from before Task 3b can sit in `PatientState`. Found by the Task 2 and Task 3 quality reviews, 2026-10-20. | Task 4: the marks' read takes up to 5000 rows and the answer gains `markers_truncated` (additive); a non-finite reading is never in `points`, `total_points` or `latest`. Task 3b closes the two gateways. |
 | X23 | §6 `useTrends`: "on a new measurement … every 60 s while READY and visible" | The plan's hook superseded every read in flight on any trigger — a new measurement, the tick, a wake, a reload — so at Stage B's rates a chart could never fill. Found by the Task 9 quality review, 2026-10-20. | The lane's hook (Task 9, commit `dac5051`): a read is discarded only on a patient, window or key change, on leaving READY and on unmount; a same-key trigger during a read queues ONE more read when it settles; the timer sleeps while the page is hidden; `reload()` reads only while READY; the unreadable line is a warn `Note`. Return shape unchanged. |
 | X24 | §3.1: the card's values "in the channel's identity colour"; the own-normal pill beside the frame | Daylight `--v-map` is exactly `--crit`: a calm pressure card showed critical-red numbers, and a 3-point pulse showed green numbers in a red frame. A NEWS2 channel whose latest value came with no finite points read as calm. In Russian "САД" reads as systolic, where a vasopressor target is a MAP. Found by the Task 10 quality review, 2026-10-20. | The lane's card (Task 10, commits `4cdb563` and `339c3f2`): values in `text-ink`, the identity colour on the title and (Task 11) the line; the badge and the pill on the first channel's reading row; "NEWS2: —" in attention tone, with its reason for a screen reader, for an unscored NEWS2 channel; the delta's direction in words for a screen reader; no age without a finite clock; `border-2` in every tone; ru `board.chMap` "СрАД". Task 12's legend says MAP is not scored by NEWS2. **User eye-check in Task 16:** say if the prototype's coloured numbers should come back. |
@@ -83,16 +83,16 @@ If tasks are merged in another order, a total is the base plus the deltas of the
 | 10 | — | 84 / 2177 | `news2Tone.test.js` **2**, `TrendCard.test.jsx` **21** (new); PatientScreen 55 → **57** |
 | 11 | — | 86 / 2262 | `trendGeometry.test.js` **22**, `TrendChart.test.jsx` **19** (new); TrendCard 21 → **25**; `tokens.test.js` 400 → **440** |
 | 12 | — | 87 / 2298 | `TrendModal.test.jsx` **26** (new); trendGeometry 22 → **30**; TrendChart 19 → **20**; PatientScreen 57 → **58** |
-| 13 | — | 88 / 2333 | TrendModal 26 → **53**; `trendText.test.js` **4** (new); TrendChart 20 → **22**; trendGeometry 30 → **31**; TrendCard 25 → **26** |
+| 13 | — | 88 / 2339 | TrendModal 26 → **58**; `trendText.test.js` **5** (new); TrendChart 20 → **22**; trendGeometry 30 → **31**; TrendCard 25 → **26** |
 | 14a | 2128 / 650 | — | `test_api_patient_profile.py` 27 → **56**; `test_trends.py` 31 → **32** |
-| 14 | — | 89 / 2384 | `BaselineForm.test.jsx` **39** (new); PatientScreen 58 → **70** |
-| 15 | — | 89 / 2385 | `rawKeys.test.jsx` 6 → **7** |
+| 14 | — | 89 / 2390 | `BaselineForm.test.jsx` **39** (new); PatientScreen 58 → **70** |
+| 15 | — | 89 / 2391 | `rawKeys.test.jsx` 6 → **7** |
 | 16 | 2143 / 650 | — | `test_scenario_rebase.py` **15** (new) |
 | 17 | — | — | docs only |
 
-Measured: the base; backend after 16 and dashboard after 15 (the whole replay, 2026-10-20; again on the branch on 2026-10-21 — backend 2126 / 650 at `d8419e4`, 2139 / 650 at `649af49`, 2141 / 650 at `6112c3e`, 2143 / 650 at `74380a1` (X35), dashboard 89 / 2385 throughout); the dashboard after 6, 7, 8, 9, 10, 11, 12, 13 and 14 at the lane's commits (`950176d`, `e2afede`, `f082251`, `dac5051`, `339c3f2`, `4ecbc11`, `a877057`, `372e781`, `432712e` — each the row minus 3, Task 5's `apiErrors` tests, which the dashboard lane does not carry). The other rows are the per-file counts summed. Tasks 1–5, 3b, 14a and 6–14 are the lanes' code as reviewed (their follow-up commits included) and Tasks 15–17 the branch's (`d8419e4` … `d8eee36`), so these are the counts the code has.
+Measured: the base; backend after 16 and dashboard after 15 (the whole replay, 2026-10-20; again on the branch on 2026-10-21 — backend 2126 / 650 at `d8419e4`, 2139 / 650 at `649af49`, 2141 / 650 at `6112c3e`, 2143 / 650 at `74380a1` (X35), dashboard 89 / 2385 until `8f1ba57`'s six (O21: TrendModal 53 → 58, trendText 4 → 5) made it **89 / 2391** at `6407492`, build clean); the dashboard after 6, 7, 8, 9, 10, 11, 12, 13 and 14 at the lane's commits (`950176d`, `e2afede`, `f082251`, `dac5051`, `339c3f2`, `4ecbc11`, `a877057`, `372e781`, `432712e` — each the row minus 3, Task 5's `apiErrors` tests, which the dashboard lane does not carry; rows 13–15 also carry `8f1ba57`'s six). The other rows are the per-file counts summed. Tasks 1–5, 3b, 14a and 6–14 are the lanes' code as reviewed (their follow-up commits included) and Tasks 15–17 the branch's (`d8419e4` … `d8eee36`), so these are the counts the code has.
 
-Backend arithmetic: 14 + 17 + 15 + 9 + 31 + (26 + 3 + 2) + 30 + 15 = **162** passed and **6** skipped over the base. Dashboard: 3 + 7 + 208 + 0 + 22 + 25 + 85 + 36 + 35 + 51 + 1 = **473** tests and 8 files.
+Backend arithmetic: 14 + 17 + 15 + 9 + 31 + (26 + 3 + 2) + 30 + 15 = **162** passed and **6** skipped over the base. Dashboard: 3 + 7 + 208 + 0 + 22 + 25 + 85 + 36 + 41 + 51 + 1 = **479** tests and 8 files.
 
 ---
 
@@ -3388,7 +3388,7 @@ with:
     baselineClearsNote: "Boş bırakılan aralık silinir. Komorbiditeler ve bazal SOFA değişmez.",
     baselineNothingToSend: "Gönderilecek aralık yok: en az bir satırın iki sınırını da girin.",
     baselineSaving: "Hastanın normali kaydediliyor…",
-    baselineSaved: "Hastanın normali kaydedildi; motor yeniden değerlendirdi.",
+    baselineSaved: "{subject}: hastanın normali kaydedildi; sonraki ölçüm bu aralıklarla değerlendirilecek.",
     baselineRefused: "{subject}: hastanın normali kaydedilmedi — {reason}",
     baselineMayHaveLanded: "{subject}: sunucu yanıt vermedi; hastanın normali kaydedilmiş olabilir — eğrideki bandı kontrol edin.",
     baselineNoRight: "bu işlem için artık yetkiniz yok (clinical.chart)",
@@ -3463,7 +3463,7 @@ with:
     baselineClearsNote: "Boş saxlanılan aralıq silinir. Yanaşı xəstəliklər və bazal SOFA dəyişmir.",
     baselineNothingToSend: "Göndəriləcək aralıq yoxdur: ən azı bir sətrin hər iki həddini daxil edin.",
     baselineSaving: "Xəstənin norması yadda saxlanılır…",
-    baselineSaved: "Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.",
+    baselineSaved: "{subject}: xəstənin norması yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək.",
     baselineRefused: "{subject}: xəstənin norması yadda saxlanılmadı — {reason}",
     baselineMayHaveLanded: "{subject}: server cavab vermədi; xəstənin norması yadda saxlanılmış ola bilər — qrafikdəki zolağı yoxlayın.",
     baselineNoRight: "bu əməliyyat üçün artıq səlahiyyətiniz yoxdur (clinical.chart)",
@@ -3538,7 +3538,7 @@ with:
     baselineClearsNote: "Пустой диапазон удаляется. Сопутствующие заболевания и базовый SOFA не меняются.",
     baselineNothingToSend: "Нечего отправлять: введите обе границы хотя бы в одной строке.",
     baselineSaving: "Норма пациента сохраняется…",
-    baselineSaved: "Норма пациента сохранена; система заново оценила пациента.",
+    baselineSaved: "{subject}: норма пациента сохранена; следующее измерение будет оценено по этим диапазонам.",
     baselineRefused: "{subject}: норма пациента не сохранена — {reason}",
     baselineMayHaveLanded: "{subject}: сервер не ответил; норма пациента могла сохраниться — проверьте полосу на графике.",
     baselineNoRight: "у вас больше нет права на это действие (clinical.chart)",
@@ -3613,7 +3613,7 @@ with:
     baselineClearsNote: "A range left empty is deleted. Comorbidities and the baseline SOFA are not changed.",
     baselineNothingToSend: "Nothing to send: enter both limits of at least one row.",
     baselineSaving: "Saving the patient's normal…",
-    baselineSaved: "The patient's normal is saved; the engine has re-evaluated.",
+    baselineSaved: "{subject}: the patient's normal is saved; the next reading will be evaluated with these ranges.",
     baselineRefused: "{subject}: the patient's normal was not saved — {reason}",
     baselineMayHaveLanded: "{subject}: the server did not answer; the patient's normal may have been saved — check the band on the chart.",
     baselineNoRight: "you no longer have the right for this (clinical.chart)",
@@ -8052,7 +8052,7 @@ red: TrendModal import unresolved; trendGeometry 11 failed (the new geometry not
 
 ### Task 13: The keyboard, the one announcement, and the table view
 
-**Done in the dashboard lane** (commits `d5260a4`, `50589dd` and `372e781`, the Task 13 quality review — X28, X29, X30 — and its minors: the table fed the dialog's own parsed series and markers, valueless rows dropped, `indexAtTime` preferring the last drawable reading, stable row keys, the later reading first at one instant, an empty NEWS2 cell for a channel NEWS2 does not score and "—" with `trendsPointsUnknownRowSr` for a NEWS2 reading the engine sent none for, Alt/Ctrl/Meta left to the browser, the cursor cleared on the switch to the table); the blocks below are that code.
+**Done in the dashboard lane** (commits `d5260a4`, `50589dd` and `372e781`, the Task 13 quality review — X28, X29, X30 — and its minors: the table fed the dialog's own parsed series and markers, valueless rows dropped, `indexAtTime` preferring the last drawable reading, stable row keys, the later reading first at one instant, an empty NEWS2 cell for a channel NEWS2 does not score and "—" with `trendsPointsUnknownRowSr` for a NEWS2 reading the engine sent none for, Alt/Ctrl/Meta left to the browser, the cursor cleared on the switch to the table) and, on the branch, `8f1ba57` — the user's decision on O21, 2026-10-21: `pointsBeside(t, points)` in `trendText.js` and `readoutOf` in `TrendModal.jsx` add the reading's "NEWS2 +N" after the value(s) and before the marks, drawn and announced, reusing `patient.trendsFrameBadge`; a 0-point or valueless reading prints nothing, MAP and lactate never; the blocks below are that code.
 
 Spec §3.2 (keyboard cursor, Grafik | Tablo, the table) and §7. The big chart becomes one tab stop (`tabIndex=0`, `role="application"` with a localised `aria-roledescription` — X28 — its keys described by a visible hint through `aria-describedby`); ← → move the cursor one measurement, Home / End to the first and last, staying put at either end; the readout follows, and **only a keyboard move** is said, once, through `Announce` (a hover empties the region). The `Seg` "Qrafik | Cədvəl" swaps in `TrendTable`: the kit `Table` with a caption, a `th scope="row"` time per row, newest first, every reading the chart draws with **the engine's NEWS2 points for that reading** (the endpoint's third column, printed — "+3", "0", "—"), and each mark as a row of its own. `trendText.js` holds how the axis, the readout and the table word a time, a mark and a point total — a mark beside a reading with its OWN time when that reads differently. The keyboard steps over drawable readings only, and two readings at one instant are one stop (the cursor is an instant, after Task 12). The dialog opens with focus on the pressed window option, after the kit `Modal` has put it on the first control.
 
@@ -8219,7 +8219,7 @@ describe("the big chart's readout", () => {
     expect(readout()).toHaveAttribute("aria-hidden", "true");
     expect(readout()).toHaveTextContent("Ölçməni oxumaq üçün qrafikin üzərinə gəlin");
     fireEvent.mouseMove(svg, { clientX: xOf(60) });
-    expect(readout()).toHaveTextContent(`${hhmm(NOW - HOUR)} · 132 /dəq · siqnal: news2`);
+    expect(readout()).toHaveTextContent(`${hhmm(NOW - HOUR)} · 132 /dəq · NEWS2 +3 · siqnal: news2`);
     fireEvent.mouseMove(svg, { clientX: xOf(120) });
     expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · 84 /dəq`);
     fireEvent.mouseLeave(svg);
@@ -8230,21 +8230,21 @@ describe("the big chart's readout", () => {
     await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate", [point(120, 84, 0), point(60, 132, 3)])],
       { hours, markers: [marker(60, "alarm", "news2"), marker(60, "alarm", "sepsis")] })));
     fireEvent.mouseMove(chart(), { clientX: xOf(60) });
-    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · 132 /dəq · siqnal: news2 · siqnal: sepsis`);
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · 132 /dəq · NEWS2 +3 · siqnal: news2 · siqnal: sepsis`);
   });
 
   it("writes the date as well over three days, as the chart's own time labels do", async () => {
     await open();
     await choose("3 gün");
     fireEvent.mouseMove(chart(), { clientX: xOf(60, 72) });
-    expect(readout().textContent).toBe(`${ddmm(NOW - HOUR)} ${hhmm(NOW - HOUR)} · 132 /dəq · siqnal: news2`);
+    expect(readout().textContent).toBe(`${ddmm(NOW - HOUR)} ${hhmm(NOW - HOUR)} · 132 /dəq · NEWS2 +3 · siqnal: news2`);
   });
 
   it("reads MAP beside the systolic at the same instant on the pressure card — the vasopressor target", async () => {
     await open("pressure", answering((pid, hours) => trends(pid, [
       channel("sbp", [point(120, 118, 0), point(60, 95, 2)]), channel("map", [point(120, 80), point(60, 64)])], { hours })));
     fireEvent.mouseMove(chart(), { clientX: xOf(60) });
-    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP 64 mmHg`);
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP 64 mmHg · NEWS2 +2`);
     fireEvent.mouseMove(chart(), { clientX: xOf(120) });
     expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · Sistolik AT 118 · MAP 80 mmHg`);
   });
@@ -8253,7 +8253,7 @@ describe("the big chart's readout", () => {
     await open("pressure", answering((pid, hours) => trends(pid, [
       channel("sbp", [point(120, 118, 0), point(60, 95, 2)]), channel("map", [point(120, 80)])], { hours })));
     fireEvent.mouseMove(chart(), { clientX: xOf(60) });
-    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP — mmHg`);
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP — mmHg · NEWS2 +2`);
   });
 
   it("reads a MAP stamped seconds from the systolic beside it — the same pixel column — and takes the nearer one", async () => {
@@ -8263,7 +8263,7 @@ describe("the big chart's readout", () => {
       channel("sbp", [point(120, 118, 0), point(60, 95, 2)]),
       channel("map", [point(119.8, 78), point(60.5, 70), point(59.8, 64)])], { hours })));
     fireEvent.mouseMove(chart(), { clientX: xOf(60) });
-    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP 64 mmHg`);
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP 64 mmHg · NEWS2 +2`);
     fireEvent.mouseMove(chart(), { clientX: xOf(120) });
     expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · Sistolik AT 118 · MAP 78 mmHg`);
   });
@@ -8273,7 +8273,7 @@ describe("the big chart's readout", () => {
     await open("pressure", answering((pid, hours) => trends(pid, [
       channel("sbp", [point(120, 118, 0), point(60, 95, 2)]), channel("map", [point(120, 80), point(61.25, 70)])], { hours })));
     fireEvent.mouseMove(chart(), { clientX: xOf(60) });
-    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 mmHg · MAP 70 mmHg (${hhmm(NOW - 61.25 * 60_000)})`);
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 mmHg · MAP 70 mmHg (${hhmm(NOW - 61.25 * 60_000)}) · NEWS2 +2`);
     fireEvent.mouseMove(chart(), { clientX: xOf(120) });                        // the same minute: no time of its own
     expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · Sistolik AT 118 · MAP 80 mmHg`);
   });
@@ -8313,11 +8313,51 @@ describe("the big chart's readout", () => {
     await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
       [point(120, 84, 0), blank ? point(60, null) : point(60, 132, 3)])], { hours })));
     fireEvent.mouseMove(chart(), { clientX: xOf(60) });
-    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · 132 /dəq`);
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · 132 /dəq · NEWS2 +3`);
     blank = true;
     await reread();
     expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · —`);
     expect(readout().textContent).not.toMatch(/NaN/);
+  });
+
+  it("names the reading's NEWS2 points between its value and its marks — the card's own badge text, the engine's number", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
+      [point(180, 84, 0), point(120, 118, 2), point(60, 132, 3), point(30, 96, null)])],
+    { hours, markers: [marker(120, "alarm", "news2")] })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(120) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · 118 /dəq · NEWS2 +2 · siqnal: news2`);
+    // Where the engine scored the reading 0 the card wears no badge, and the readout adds nothing either.
+    fireEvent.mouseMove(chart(), { clientX: xOf(180) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - 3 * HOUR)} · 84 /dəq`);
+    // Where the engine sent no points there is nothing to name, and nothing is worked out here.
+    fireEvent.mouseMove(chart(), { clientX: xOf(30) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - 30 * 60_000)} · 96 /dəq`);
+  });
+
+  it("names no points for lactate — a channel NEWS2 does not score", async () => {
+    await open("lactate", answering((pid, hours) => trends(pid, [channel("lactate", [point(60, 4.1)])], { hours })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · 4.1 mmol/L`);
+  });
+
+  it("names no points for a MAP beside a systolic the engine sent none for — MAP is not scored either", async () => {
+    await open("pressure", answering((pid, hours) => trends(pid, [
+      channel("sbp", [point(120, 118, 0), point(60, 95)]), channel("map", [point(120, 80), point(60, 64)])], { hours })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP 64 mmHg`);
+    fireEvent.mouseMove(chart(), { clientX: xOf(120) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · Sistolik AT 118 · MAP 80 mmHg`);
+  });
+
+  it("names no points for a reading that arrived without a value — a score with no measurement behind it", async () => {
+    let blank = false;
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
+      [point(120, 84, 0), blank ? point(60, null, 3) : point(60, 132, 3)])], { hours })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · 132 /dəq · NEWS2 +3`);
+    blank = true;
+    await reread();
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · —`);
   });
 
   it("says so — and gives no prompt to hover — when the window holds no reading to read", async () => {
@@ -8430,9 +8470,9 @@ describe("the big chart by keyboard", () => {
     press("ArrowRight");
     expect(readout()).toBe(`${hhmm(NOW - 2 * 3_600_000)} · 84 /dəq`);
     press("End");
-    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq`);
+    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3`);
     press("ArrowRight");                                                // stays on the last
-    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq`);
+    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3`);
     press("Home");
     press("ArrowLeft");                                                 // stays on the first
     expect(readout()).toBe(`${hhmm(NOW - 3 * 3_600_000)} · 80 /dəq`);
@@ -8449,10 +8489,29 @@ describe("the big chart by keyboard", () => {
     expect(region).toHaveTextContent("");
     fireEvent.keyDown(svg, { key: "End" });
     await wait(200);
-    expect(region).toHaveTextContent(`${hhmm(NOW - 3_600_000)} · 132 /dəq`);
+    expect(region.textContent).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3`);
     fireEvent.mouseMove(svg, { clientX: xOf(120) });
     await wait(200);
     expect(region.textContent).toBe("");
+  });
+
+  it("says the reading's NEWS2 points once per move, in the one announcement — the readout's own words", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
+      [point(180, 80, 0), point(120, 118, 2), point(60, 96, null)])], { hours })));
+    const svg = chart();
+    svg.focus();
+    const region = within(dialog()).getByRole("status");
+    fireEvent.keyDown(svg, { key: "ArrowRight" });                      // scored 0: nothing to add
+    await wait(200);
+    expect(region.textContent).toBe(`${hhmm(NOW - 3 * 3_600_000)} · 80 /dəq`);
+    fireEvent.keyDown(svg, { key: "ArrowRight" });
+    await wait(200);
+    expect(region.textContent).toBe(`${hhmm(NOW - 2 * 3_600_000)} · 118 /dəq · NEWS2 +2`);
+    expect(region.textContent.match(/NEWS2/g)).toHaveLength(1);
+    expect(dialog().querySelector("[data-readout]").textContent).toBe(region.textContent);
+    fireEvent.keyDown(svg, { key: "ArrowRight" });                      // the engine sent no points: none are made up
+    await wait(200);
+    expect(region.textContent).toBe(`${hhmm(NOW - 3_600_000)} · 96 /dəq`);
   });
 
   it("says nothing for a chart nobody can see: switching to the table lets the cursor go, and the announcement with it", async () => {
@@ -8461,7 +8520,7 @@ describe("the big chart by keyboard", () => {
     chart().focus();
     fireEvent.keyDown(chart(), { key: "End" });
     await wait(200);
-    expect(region).toHaveTextContent(`${hhmm(NOW - 3_600_000)} · 132 /dəq`);
+    expect(region.textContent).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3`);
     await act(async () => { fireEvent.click(within(dialog()).getByRole("button", { name: "Cədvəl" })); await settle(); });
     expect(region.textContent).toBe("");                                // emptied at once, not said again
     await act(async () => { fireEvent.click(within(dialog()).getByRole("button", { name: "Qrafik" })); await settle(); });
@@ -8655,7 +8714,7 @@ describe("the big chart, opening and reading", () => {
       { hours, markers: [marker(61, "alarm", "news2")] })));
     fireEvent.mouseMove(chart(), { clientX: xOf(60) });
     expect(dialog().querySelector("[data-readout]").textContent)
-      .toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · siqnal: news2 (${hhmm(NOW - 61 * 60_000)})`);
+      .toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3 · siqnal: news2 (${hhmm(NOW - 61 * 60_000)})`);
   });
 
   it("takes two readings at one instant as one keyboard stop, read as the later one", async () => {
@@ -8666,9 +8725,9 @@ describe("the big chart, opening and reading", () => {
     fireEvent.keyDown(svg, { key: "Home" });
     expect(readout()).toBe(`${hhmm(NOW - 7_200_000)} · 84 /dəq`);
     fireEvent.keyDown(svg, { key: "ArrowRight" });
-    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq`);
+    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3`);
     fireEvent.keyDown(svg, { key: "ArrowRight" });                     // no third stop
-    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq`);
+    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3`);
   });
 });
 ```
@@ -8681,10 +8740,12 @@ Write `dashboard/src/live/screens/patient/trends/trendText.test.js`:
 import { describe, it, expect } from "vitest";
 import { NOW } from "../../../data/board.testutil.js";
 import { ddmm, hhmm } from "../../../i18n/dates.js";
-import { markBeside, pointsText, valueBeside, whenText } from "./trendText.js";
+import { markBeside, pointsBeside, pointsText, valueBeside, whenText } from "./trendText.js";
 
 const MINUTE = 60_000;
-const t = (key) => ({ "patient.trendsMarkerAlarm": "siqnal", "patient.trendsMarkerAntibiotic": "antibiotik" })[key];
+const t = (key, params) => ({
+  "patient.trendsMarkerAlarm": "siqnal", "patient.trendsMarkerAntibiotic": "antibiotik", "patient.trendsFrameBadge": `NEWS2 +${params?.points}`,
+})[key];
 
 describe("trendText", () => {
   it("writes an instant as the chart's axis does — the date as well over three days", () => {
@@ -8716,6 +8777,16 @@ describe("trendText", () => {
     expect(pointsText(null)).toBe("—");
     expect(pointsText(Number.NaN)).toBe("—");
     expect(pointsText(2.5)).toBe("—");
+  });
+
+  it("names the engine's points beside a reading in the card's own badge words — and nothing where the card wears no badge", () => {
+    expect(pointsBeside(t, 2)).toBe("NEWS2 +2");
+    expect(pointsBeside(t, 3)).toBe("NEWS2 +3");
+    expect(pointsBeside(t, 0)).toBeNull();              // scored 0: no badge on the card, nothing in the readout
+    expect(pointsBeside(t, null)).toBeNull();           // the engine sent none (MAP, lactate, an unscored reading)
+    expect(pointsBeside(t, undefined)).toBeNull();
+    expect(pointsBeside(t, Number.NaN)).toBeNull();
+    expect(pointsBeside(t, 2.5)).toBeNull();
   });
 });
 ```
@@ -9255,7 +9326,7 @@ with:
   it("draws no NEWS2 tint and no own-normal band behind the pressure card's two series (X26)", () => {
 ```
 
-Run them: `TrendModal.test.jsx` → `Tests  39 failed | 14 passed (53)` (`Unable to find an accessible element with the role "application"` — the chart is an `img`, no keys, no table, no notes, no own times); `trendText.test.js` → `Failed to resolve import "./trendText.js"`; `TrendChart.test.jsx` → `Tests  1 failed | 21 passed (22)`; `trendGeometry.test.js` → `Tests  1 failed | 30 passed (31)` (`indexAtTime` takes a valueless twin); `TrendCard.test.jsx` → `Tests  26 passed (26)` (the guard holds already).
+Run them: `TrendModal.test.jsx` → `Tests  44 failed | 14 passed (58)` (`Unable to find an accessible element with the role "application"` — the chart is an `img`, no keys, no table, no notes, no own times); `trendText.test.js` → `Failed to resolve import "./trendText.js"`; `TrendChart.test.jsx` → `Tests  1 failed | 21 passed (22)`; `trendGeometry.test.js` → `Tests  1 failed | 30 passed (31)` (`indexAtTime` takes a valueless twin); `TrendCard.test.jsx` → `Tests  26 passed (26)` (the guard holds already).
 
 - [ ] **Step 2: The words.** Two keys in four languages — the chart's role description (X28) and the table row's own reason for a reading NEWS2 did not score — four Edits in `dashboard/src/live/i18n/strings/patient.js`:
 
@@ -9377,6 +9448,13 @@ export function markBeside(t, mark, readingMs, hours) {
 export function valueBeside(text, readingMs, atMs, hours) {
   const own = whenText(readingMs, hours);
   return own === whenText(atMs, hours) ? text : `${text} (${own})`;
+}
+
+/** The engine's NEWS2 points as the readout names them beside a reading: the card's own badge words
+ *  ("NEWS2 +2", `patient.trendsFrameBadge`), so the badge and the readout agree — or null where the card
+ *  wears no badge: points the engine did not send (MAP, lactate, a reading it did not score) or a 0. */
+export function pointsBeside(t, points) {
+  return Number.isInteger(points) && points > 0 ? t("patient.trendsFrameBadge", { points }) : null;
 }
 
 /** The engine's NEWS2 points for one reading, as a column prints them: "+3", "0", or "—" for none. */
@@ -10105,7 +10183,7 @@ import { TrendChart } from "./TrendChart.jsx";
 import { TrendLegend, TrendNotes } from "./TrendLegend.jsx";
 import { TrendTable } from "./TrendTable.jsx";
 import { indexAtTime, marksAtTime, parseMarkers, parsePoints, validWindow } from "./trendGeometry.js";
-import { markBeside, valueBeside, whenText } from "./trendText.js";
+import { markBeside, pointsBeside, valueBeside, whenText } from "./trendText.js";
 import { measuredKeyOf, useTrends } from "./useTrends.js";
 
 const WINDOWS = [
@@ -10136,8 +10214,11 @@ function readingNear(points, ms, tolerance) {
   return best;
 }
 
-/** "HH:MM · 132 /dəq", EVERY mark within a pixel after it — two alert kinds first detected on one
- *  reading are both named, each with its own time when that reads differently. A card with two series
+/** "HH:MM · 132 /dəq · NEWS2 +3", EVERY mark within a pixel after it. The points are the ENGINE'S for the
+ *  reading under the cursor (the card's first series, the one NEWS2 scores), in the card's own badge words;
+ *  nothing where it sent none or scored 0 (MAP and lactate are not scored), nor for a reading that arrived
+ *  without a value. The same line is drawn and, after a keyboard move, said once. Two alert kinds first
+ *  detected on one reading are both named, each with its own time when that reads differently. A card with two series
  *  (pressure) names each and reads the other one AT that instant — "Sistolik AT 118 · MAP 80 mmHg",
  *  MAP being the vasopressor target — meaning the nearest reading within one pixel column (`msPerPx`,
  *  the tolerance the marks use): a MAP stamped seconds from the systolic is, on the chart, the same
@@ -10161,7 +10242,8 @@ function readoutOf(t, card, series, at, marks, hours, msPerPx) {
     return [named ? t(s.labelKey) : null, valueBeside(value, reading.ms, at.ms, hours)].filter(Boolean).join(" ");
   });
   const unit = !unitEach && readings.some((r) => r !== null) ? ` ${t(card.series[0].unitKey)}` : "";
-  return [whenText(at.ms, hours), `${parts.join(" · ")}${unit}`, ...marks.map((m) => markBeside(t, m, at.ms, hours))].join(" · ");
+  const points = readings[0] === null ? null : pointsBeside(t, at.points);   // no value, no score
+  return [whenText(at.ms, hours), `${parts.join(" · ")}${unit}`, ...(points ? [points] : []), ...marks.map((m) => markBeside(t, m, at.ms, hours))].join(" · ");
 }
 
 /** The keyboard's stops: the instants of the readings that can be drawn, in time order — two readings
@@ -10307,7 +10389,7 @@ export function TrendModal({ card, patient, bed, onClose }) {
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/screens/patient/trends/ src/reachable.test.js 2>&1 | grep -E "Test Files|Tests |×"
 ```
-Expected: no `×`; `Test Files  8 passed (8)` (the folder's seven + reachable), `Tests  158 passed (158)` (155 in the folder: useTrends 17, news2Tone 2, TrendCard 26, trendGeometry 31, TrendChart 22, TrendModal 53, trendText 4; reachable 3). Then the suite — **88 / 2333** in plan order (the lane alone, `372e781`: 88 / 2330) — and the build.
+Expected: no `×`; `Test Files  8 passed (8)` (the folder's seven + reachable), `Tests  164 passed (164)` (161 in the folder: useTrends 17, news2Tone 2, TrendCard 26, trendGeometry 31, TrendChart 22, TrendModal 58, trendText 5; reachable 3). Then the suite — **88 / 2339** in plan order (the lane alone, `372e781`: 88 / 2330, before O21's six) — and the build.
 
 - [ ] **Step 8: Commit.**
 
@@ -10315,7 +10397,7 @@ Expected: no `×`; `Test Files  8 passed (8)` (the folder's seven + reachable), 
 cd /c/tmp/g2-vital
 git add dashboard/src/live/screens/patient/trends/trendText.js dashboard/src/live/screens/patient/trends/TrendTable.jsx dashboard/src/live/screens/patient/trends/TrendModal.jsx dashboard/src/live/screens/patient/trends/TrendModal.test.jsx dashboard/src/live/screens/patient/trends/TrendChart.jsx
 git status --short && git diff --cached --stat
-git commit -m "feat(patient): the big chart by keyboard, said once, and as a table" -m "The keyboard chart is an application with a role description (X28), one tab stop with its keys described; arrows, Home and End walk the instants of the drawable readings, one stop per instant, Alt/Ctrl/Meta left to the browser; a keyboard move is announced once, a hover never. Grafik | Tablo: the kit Table fed the same parsed series and markers the SVG draws, newest first, the engine's NEWS2 points per reading, each mark a row of its own, the legend's notes under both views (X29). trendText.js shared by the axis, the readout and the table: a mark, and a MAP read beside systolic, carry their own time when it reads differently (X30). The dialog opens with focus on the pressed window option.
+git commit -m "feat(patient): the big chart by keyboard, said once, and as a table" -m "The keyboard chart is an application with a role description (X28), one tab stop with its keys described; arrows, Home and End walk the instants of the drawable readings, one stop per instant, Alt/Ctrl/Meta left to the browser; a keyboard move is announced once, a hover never. Grafik | Tablo: the kit Table fed the same parsed series and markers the SVG draws, newest first, the engine's NEWS2 points per reading, each mark a row of its own, the legend's notes under both views (X29). trendText.js shared by the axis, the readout and the table: a mark, and a MAP read beside systolic, carry their own time when it reads differently (X30). The dialog opens with focus on the pressed window option. The readout names the reading's NEWS2 points after the value(s), drawn and said (O21).
 
 red: TrendModal 39 failed | 14 passed (53); trendText import unresolved; TrendChart 1 failed; trendGeometry 1 failed (a valueless twin)" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
@@ -10760,9 +10842,9 @@ red: test_api_patient_profile 4 failed (profil boş olamaz / 400); then 1 (the r
 
 ### Task 14: The patient's own normal — the form
 
-**Done in the dashboard lane** (commits `56456a9`, `16e87ef`, `e9eab88` and `432712e`, the Task 14 quality review — X31, X32, X33, X34 — and its minors: `<form noValidate onSubmit>` with Save `type="submit" form={formId}`, so Enter in a field saves without a hidden button; a `sending` ref, so a second press sends nothing even before a re-render; StrictMode-safe `mounted` refs in the form and the box; the success work after the try/catch/finally, so a throwing `onSaved` can never read as "not saved"; `bound()` refuses a number that is not finite (a 400-digit bound); an honest header comment; `{subject}` in `baselineClearedAll`; the offer kept, `aria-disabled` with its reason, while the trends are unreadable; each field's label carries its vital in `sr-only` text; en "evaluated"; `«{save}»` filled from `common.save` (in en with ASCII quotes); az "formanı bağlayıb"; one `charted()` behind the prefill, `keyOf` and the clear, `keyOf` exported; the footer's Cancel and Save one flex item; the nothing-reason announced after a held submit); the blocks below are that code.
+**Done in the dashboard lane** (commits `56456a9`, `16e87ef`, `e9eab88` and `432712e`, and on the branch `cefbf58` — the user's decision on X21/O12, 2026-10-21: the save's toast names the bed and says the next reading is judged with the ranges, the Task 14 quality review — X31, X32, X33, X34 — and its minors: `<form noValidate onSubmit>` with Save `type="submit" form={formId}`, so Enter in a field saves without a hidden button; a `sending` ref, so a second press sends nothing even before a re-render; StrictMode-safe `mounted` refs in the form and the box; the success work after the try/catch/finally, so a throwing `onSaved` can never read as "not saved"; `bound()` refuses a number that is not finite (a 400-digit bound); an honest header comment; `{subject}` in `baselineClearedAll`; the offer kept, `aria-disabled` with its reason, while the trends are unreadable; each field's label carries its vital in `sr-only` text; en "evaluated"; `«{save}»` filled from `common.save` (in en with ASCII quotes); az "formanı bağlayıb"; one `charted()` behind the prefill, `keyOf` and the clear, `keyOf` exported; the footer's Cancel and Save one flex item; the nothing-reason announced after a held submit); the blocks below are that code.
 
-Spec §3.3, §3.4 and D4, with X8, X14, X15, X17, X31–X34. For a `clinical.chart` holder the box's header offers "Xəstənin norması…" once the trends have answered — the engine replaces the whole baseline set with what is sent, and the form must open on the set it replaces; while the trends cannot be read the offer stays, `aria-disabled` with the reason, so focus has somewhere to return. Opening it reads the trends again; the dialog's title names the bed, and the form is shown only to the patient and the opening it was opened for (X31). Five rows (pulse, respiration, SpO₂, systolic, temperature — `BASELINE_KEYS`, held equal to api/clinical.py `BASELINE_SIGNALS` by a test that reads that file), each "alt" / "üst", prefilled from `bands.own_normal`. Held inline before anything is sent: one side without the other, a bound that is not a number (a decimal comma is read as a point), low above high. Every filled pair is sent as `{baselines}` alone; an emptied pair is not sent and the engine deletes it — the form says so, and says the comorbidities are not touched. All pairs empty over a charted set (an `own_normal` band with both bounds on any of the five — the form's one idea of "charted"): Save is offered as the danger button, the sentence beside it in the footer says it deletes every charted range (X32), `{"baselines": {}}` is sent — which Task 14a's engine takes as "clear every range" — and the toast names the bed and says the ranges are deleted and the next reading is judged without them (the user's choice for O4, 2026-10-20). All pairs empty with nothing charted: Save is `aria-disabled`, its footer sentence says why (muted until Save is pressed, then said once); nothing is sent. 200 → toast "…yadda saxlanıldı…", the trends read again, the form closes, no alert anywhere. 400 → the engine's reason on the toast named after the bed, the form stays open. 403 → the toast says the right is gone, the form closes. No answer → `mayHaveLanded`: the trends read again, the clinician is told to look at the band, the form closes. While in flight: Save `busy`, the fields `readOnly`, the dialog will not close, "…yadda saxlanılır…" said once, and a second press sends nothing. A held submit moves focus to the first wrong field (X33). A set that changes while the form is open (the minute's poll) is said — a warn note and the one announcement — and Save is held until the form is reopened (X34). Save is the form's own submit (`type="submit" form={id}`), so Enter in a field saves.
+Spec §3.3, §3.4 and D4, with X8, X14, X15, X17, X31–X34. For a `clinical.chart` holder the box's header offers "Xəstənin norması…" once the trends have answered — the engine replaces the whole baseline set with what is sent, and the form must open on the set it replaces; while the trends cannot be read the offer stays, `aria-disabled` with the reason, so focus has somewhere to return. Opening it reads the trends again; the dialog's title names the bed, and the form is shown only to the patient and the opening it was opened for (X31). Five rows (pulse, respiration, SpO₂, systolic, temperature — `BASELINE_KEYS`, held equal to api/clinical.py `BASELINE_SIGNALS` by a test that reads that file), each "alt" / "üst", prefilled from `bands.own_normal`. Held inline before anything is sent: one side without the other, a bound that is not a number (a decimal comma is read as a point), low above high. Every filled pair is sent as `{baselines}` alone; an emptied pair is not sent and the engine deletes it — the form says so, and says the comorbidities are not touched. All pairs empty over a charted set (an `own_normal` band with both bounds on any of the five — the form's one idea of "charted"): Save is offered as the danger button, the sentence beside it in the footer says it deletes every charted range (X32), `{"baselines": {}}` is sent — which Task 14a's engine takes as "clear every range" — and the toast names the bed and says the ranges are deleted and the next reading is judged without them (the user's choice for O4, 2026-10-20). All pairs empty with nothing charted: Save is `aria-disabled`, its footer sentence says why (muted until Save is pressed, then said once); nothing is sent. 200 → toast "<bed>: …yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək." (X21, decided 2026-10-21), the trends read again, the form closes, no alert anywhere. 400 → the engine's reason on the toast named after the bed, the form stays open. 403 → the toast says the right is gone, the form closes. No answer → `mayHaveLanded`: the trends read again, the clinician is told to look at the band, the form closes. While in flight: Save `busy`, the fields `readOnly`, the dialog will not close, "…yadda saxlanılır…" said once, and a second press sends nothing. A held submit moves focus to the first wrong field (X33). A set that changes while the form is open (the minute's poll) is said — a warn note and the one announcement — and Save is held until the form is reopened (X34). Save is the form's own submit (`type="submit" form={id}`), so Enter in a field saves.
 
 **Files:**
 - Create: `trends/BaselineForm.jsx`, `trends/BaselineForm.test.jsx`
@@ -11120,7 +11202,8 @@ describe("the patient's own normal", () => {
     emptyRow("heart_rate");
     await save();
     expect(screen.getAllByText("REA-01 · 2: xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.")).toBeNull();
+    expect(screen.queryByText("REA-01 · 2: xəstənin norması yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək.")).toBeNull();
+    expect(document.body.textContent).not.toContain("yenidən qiymətləndirdi");      // neither path claims the engine re-evaluated
     expect(onSaved).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ").trim()).toBe("");
@@ -11129,7 +11212,8 @@ describe("the patient's own normal", () => {
   it("a save the engine took: the confirmation, the trends read again, the form closed — and no alert", async () => {
     const { onClose, onSaved } = await open({ own: HR });
     await save();
-    expect(screen.getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("REA-01 · 2: xəstənin norması yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək.").length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toContain("yenidən qiymətləndirdi");      // the next reading is judged with the ranges: the engine does not re-evaluate on a save
     expect(onSaved).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ").trim()).toBe("");
@@ -11383,7 +11467,7 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
     try {
       await store.track(() => store.api.putPatientProfile(patient.patient_id, { baselines }));
       if (epoch !== store.epoch()) return;
-      const text = clearing ? t("patient.baselineClearedAll", { subject: bed }) : t("patient.baselineSaved");
+      const text = clearing ? t("patient.baselineClearedAll", { subject: bed }) : t("patient.baselineSaved", { subject: bed });
       done = { say: [text], reread: true, close: true };
     } catch (err) {
       if (err?.superseded || epoch !== store.epoch()) return;
@@ -11539,7 +11623,7 @@ with:
       expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: { heart_rate: { low: 100, high: 115 } } });
       expect(api.patientTrends.mock.calls.length).toBe(before + 2);
       expect(screen.queryByRole("dialog")).toBeNull();
-      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+      expect(toasts().getAllByText("REA-01 · 2: xəstənin norması yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək.").length).toBeGreaterThan(0);
     });
 
     it("clear every range from the box: an empty set is sent, the toast names the bed, the trends are read again", async () => {
@@ -11661,7 +11745,7 @@ with:
       await press(offer());                                                // S-002's own form, open
       const reads = api.patientTrends.mock.calls.length;
       await answer();                                                      // S-001's write lands now
-      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+      expect(toasts().getAllByText("REA-01 · 2: xəstənin norması yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək.").length).toBeGreaterThan(0);
       expect(api.patientTrends.mock.calls.length).toBe(reads);
       expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
       expect(api.putPatientProfile).toHaveBeenCalledTimes(1);              // nothing was sent for S-002
@@ -11692,7 +11776,7 @@ with:
       const reads = api.patientTrends.mock.calls.length;
       await answer();
       expect(api.patientTrends.mock.calls.length).toBe(reads);
-      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+      expect(toasts().getAllByText("REA-01 · 2: xəstənin norması yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək.").length).toBeGreaterThan(0);
     });
 
     it("say they cannot be read, and since when, without raising an alert", async () => {
@@ -11824,7 +11908,7 @@ export function TrendsBox({ patient, bed, nowMs }) {
 cd /c/tmp/g2-vital/dashboard
 npx vitest run src/live/screens/patient/ src/reachable.test.js src/live/boundaries.test.js src/live/rawKeys.test.jsx src/live/i18n/ 2>&1 | grep -E "Test Files|Tests |×"
 ```
-Expected: no `×`; `Test Files  16 passed (16)`, `Tests  322 passed (322)` (PatientScreen 70, BaselineForm 39). Then the suite — **89 / 2384** — and the build (`built in`, `precache  20 entries`).
+Expected: no `×`; `Test Files  16 passed (16)`, `Tests  328 passed (328)` (PatientScreen 70, BaselineForm 39). Then the suite — **89 / 2390** — and the build (`built in`, `precache  20 entries`).
 
 - [ ] **Step 7: Commit.**
 
@@ -12007,7 +12091,7 @@ with:
 
 - [ ] **Step 3: Prove the net bites** (then put it back). Edit `trends/TrendCard.jsx`: replace `t("patient.trendsSingle")` with `t("patient.trendsSingel")`, and run the sweep again. Expected — three nets catch it: `[i18n] "patient.trendsSingel" has no az text — showing the key.`; `× … every screen this build has renders its texts …` with `patient (/patients/S-001) → patient.trendsSingel`; `× … the trend charts' keys resolve …` (its `tək ölçmə` is now the raw key); `× … names no key the dictionaries do not have …` with `screens\patient\trends\TrendCard.jsx → patient.trendsSingel (az, tr, ru, en)`. Edit it back to `t("patient.trendsSingle")` and re-run: `Tests  7 passed (7)`. A second probe, for the attribute (e) adds: in `trends/TrendModal.jsx` replace `t("patient.trendsChartRole")` with `t("patient.trendsChartRoel")` — of the rendering sweeps only the anchor test catches it (`expected [ 'patient.trendsChartRoel', …(2) ] to deeply equal []`; the route sweep never opens the dialog), beside the static net's `screens\patient\trends\TrendModal.jsx → patient.trendsChartRoel (az, tr, ru, en)`; put it back → `Tests  7 passed (7)`. **Nothing of this step is committed.**
 
-- [ ] **Step 4: The dashboard gate.** The suite: **89 files / 2385 tests** (measured); the build: `built in`, `precache  20 entries`, no `larger than 500 kB`. Then, by hand, read the dashboard part of `git diff b6ed65d --stat`: every new file under `src/live/screens/patient/trends/` is near the ~250-line guide or under it — `TrendModal.jsx` 225, `BaselineForm.jsx` 224, `trendGeometry.js` 277 (one pure module, a little over) — while four tests are larger: `TrendModal.test.jsx` 607, `BaselineForm.test.jsx` 405, `trendGeometry.test.js` 260, `TrendChart.test.jsx` 237 (the dialog's and the form's tests are candidates to split — O23); `PatientScreen.test.jsx`, older than the slice, is 887 after it.
+- [ ] **Step 4: The dashboard gate.** The suite: **89 files / 2391 tests** (measured at `6407492`; 2385 before O21's six); the build: `built in`, `precache  20 entries`, no `larger than 500 kB`. Then, by hand, read the dashboard part of `git diff b6ed65d --stat`: every new file under `src/live/screens/patient/trends/` is near the ~250-line guide or under it — `TrendModal.jsx` 229, `BaselineForm.jsx` 224, `trendGeometry.js` 277 (one pure module, a little over) — while four tests are larger: `TrendModal.test.jsx` 666, `BaselineForm.test.jsx` 407, `trendGeometry.test.js` 260, `TrendChart.test.jsx` 237 (the dialog's and the form's tests are candidates to split — O23); `PatientScreen.test.jsx`, older than the slice, is 887 after it.
 
 - [ ] **Step 5: The backend, without the database.**
 
@@ -12069,7 +12153,7 @@ Expected: `observations 864, points served 858, requests 100: p50 4.3 ms, p95 5.
 cd /c/tmp/g2-vital
 git add dashboard/src/live/rawKeys.test.jsx dashboard/src/live/screens/patient/trends/BaselineForm.jsx
 git status --short && git diff --cached --stat
-git commit -m "test(i18n): the raw-key sweep reaches the trend cards, the big chart, its table and the form" -m "rawKeys.test.jsx stubs patientTrends with an answer reaching every card state (markers_truncated included) and opens the dialog, the pressure dialog and their tables, the temperature dialog and the form, emptied to its clear sentence, which the route sweep never saw; aria-roledescription joins the attributes read. BaselineForm.jsx: one comment reworded, no code change. Gates at this commit: dashboard 89 / 2385, build clean; backend 2128 / 650 without the DB, 2770 / 8 with it (five parts); the slice's files 351 on 3.14; the 72 h window: p50 ~4 ms, max ~30 ms (one gen-2 GC pause; bound 300 ms)." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+git commit -m "test(i18n): the raw-key sweep reaches the trend cards, the big chart, its table and the form" -m "rawKeys.test.jsx stubs patientTrends with an answer reaching every card state (markers_truncated included) and opens the dialog, the pressure dialog and their tables, the temperature dialog and the form, emptied to its clear sentence, which the route sweep never saw; aria-roledescription joins the attributes read. BaselineForm.jsx: one comment reworded, no code change. Gates at this commit: dashboard 89 / 2391, build clean; backend 2128 / 650 without the DB, 2770 / 8 with it (five parts); the slice's files 351 on 3.14; the 72 h window: p50 ~4 ms, max ~30 ms (one gen-2 GC pause; bound 300 ms)." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
@@ -12525,10 +12609,10 @@ bed-3 6h heart_rate:0 | map:4(63.0 Δ1.0 N2 None) | sbp:0 | spo2:0 | temperature
 - [ ] **Step 8: The walk in a browser** (a person, or an agent driving a browser). Open `http://127.0.0.1:18080`, sign in as `test.hemsire@homunculus.health` / `G115-Sentetik-Parola-1`, Yataklar → `bed-1` (no identity: the heading reads "kimlik gözlənilir").
   1. Under the Sepsis / İlaç row: the note "SOFA formasının doldurulması və imzalanması …" (`patient.formsSoon`, PatientScreen.jsx:414; no "normal" in it — the Sepsis card above it also prints "Bazal SOFA daxil edilməyib; mühərrik 0 fərz edir…", `patient.baselineAssumed` — the line the 2026-10-21 driver reported; neither says "normal"), then the box **Vital qrafikləri** with "NEWS2 · yetkin zolaqları; …" and the button **Xəstənin norması…**.
   2. Six cards in this order: Nəbz, Tənəffüs, SpO2, Sistolik AT · MAP, Bədən hərarəti, Laktat. **Acceptance 3 — each frame is the engine's points from Step 7:** Nəbz amber "NEWS2 +2", Tənəffüs red "+3", SpO2 red "+3", Sistolik AT · MAP red "+3", Bədən hərarəti amber "+2", Laktat "Bu kanal üçün ölçmə yoxdur". Deltas: "↑ +12 (əvvəlkinə görə)" on Nəbz, "↓ −10 …" on Sistolik.
-  3. Nəbz → the dialog "bed-1 · kimlik gözlənilir · Nəbz". Hover: the readout names time, value, "/dəq". Tab to the chart; ← → Home End move the cursor. 6 saat / 24 saat / 3 gün each re-draw. The ▲ sits at the right edge: the alarm's instant is when the server first raised it (the replay's wall clock), while the readings carry their rebased instants — the honest picture (open item O10). Legend: "NEWS2 zolağı (yetkin) · mənbə news2-rcp-2017: 1–2 bal 3 bal", dots and dashes, ▲ siqnal, ◆ antibiotik.
+  3. Nəbz → the dialog "bed-1 · kimlik gözlənilir · Nəbz". Hover: the readout names time, value, "/dəq" — and, since `8f1ba57` (O21), the reading's "NEWS2 +N" when it scored. Tab to the chart; ← → Home End move the cursor. 6 saat / 24 saat / 3 gün each re-draw. The ▲ sits at the right edge: the alarm's instant is when the server first raised it (the replay's wall clock), while the readings carry their rebased instants — the honest picture (open item O10). Legend: "NEWS2 zolağı (yetkin) · mənbə news2-rcp-2017: 1–2 bal 3 bal", dots and dashes, ▲ siqnal, ◆ antibiotik.
   4. Cədvəl: six rows — the five readings, newest first, and the ▲ as a row of its own; the values equal to the dots, "NEWS2 balı" equal to the frames. Escape closes and focus returns to the card.
   5. `bed-3`: Laktat and Sistolik AT · MAP cards with readings; in the Laktat dialog ▲ sepsis, antibiotic_due, septic_shock and ◆ antibiotik.
-  6. Back on `bed-1`, **Xəstənin norması…**: the title names the bed; five rows, no MAP and no lactate; enter Nəbz 120 – 135, Yadda saxla → the toast "Xəstənin norması yadda saxlanıldı; …", the Nəbz card now also wears "Xəstənin normasında" (130 is inside), its frame still amber; the dialog shows the dashed band. **Acceptance 3 — the form writes and the band appears.**
+  6. Back on `bed-1`, **Xəstənin norması…**: the title names the bed; five rows, no MAP and no lactate; enter Nəbz 120 – 135, Yadda saxla → the toast "bed-1: xəstənin norması yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək." (since `cefbf58`; the 2026-10-21 walk, before it, saw "…mühərrik yenidən qiymətləndirdi"), the Nəbz card now also wears "Xəstənin normasında" (130 is inside), its frame still amber; the dialog shows the dashed band. **Acceptance 3 — the form writes and the band appears.**
   6a. **The O4 amendment.** **Xəstənin norması…** again; empty Nəbz's two fields: beside Yadda saxla, in the footer, "Bütün sətirlər boşdur: «Yadda saxla» bu xəstənin daxil edilmiş bütün aralıqlarını silir.", and Yadda saxla is offered as the red danger button (no `aria-disabled`). Save → the toast "<the bed>: xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.", and the "Xəstənin normasında" pill and the dashed band are gone. Then `$C restart api` (`C` as in Step 5), wait for `healthy` as in Step 5, reload: still no pill, no band — the clear survived the replay from Postgres. The form once more: every row empty, Save `aria-disabled`, its footer sentence "Göndəriləcək aralıq yoxdur …" muted until Save is pressed, then said. **Acceptance 3b — the last range can be removed, and stays removed.**
   7. Sign out; sign in as `test.denetci@homunculus.health`: the cards are there, the **Xəstənin norması…** button is not.
   8. **Acceptance 4:** at 390 px (devtools device toolbar, 390 × 844) and at 1440 px — no horizontal page scroll on the patient screen, in the big chart, in its table (it scrolls inside its own frame) and in the form; one column at 390, three at 1440. Ayarlar → Tema: Gece and Gün. Dil: az, tr, ru, en — no raw `patient.…` key anywhere (a driver that sets `hmc.lang` / `hmc.theme` in localStorage must reload the page: the providers read them at mount). With NVDA and Chrome (X28): Tab to the big chart — NVDA must switch to focus mode, and ← → must move the cursor and say the readout once per move; the table must read in browse mode while a poll inserts rows at its top (if NVDA's reading position jumps a row per reading, say so — holding the table still while it is shown is the fix); note whether NVDA re-speaks the chart's name when its count changes. And by eye, on a 1× monitor: MAP's hollow ring (r 2.5, stroke 1.5) leaves a hole of about 3.5 px — say if it still reads as a dot; and whether the 72 h time labels, anchored to the right edge, read cleanly at `--fs` 1.12. In the form, in Chrome: a real Enter in a filled field saves through Yadda saxla (the tests fire a synthetic submit; a browser's default button is the form's first submit, which here sits in the footer outside the `<form>`); a row with one side filled, then Enter, puts focus in that row's field. At 390 px the footer sentence wraps, and Cancel and Yadda saxla wrap together as one pair under it — Save never on a row of its own.
@@ -12539,7 +12623,7 @@ bed-3 6h heart_rate:0 | map:4(63.0 Δ1.0 N2 None) | sbp:0 | spo2:0 | temperature
 
 ### Task 17: The docs — the Turkish guide, the roadmap, the spec
 
-**Done on the branch** (commits `d8eee36`, `8578960` and `5b73637`; `d8eee36` — the Edits as planned, with `<date>` = 2026-10-21 and `<range>` = `ec8678a..6112c3e`, the plan's first commit to the last code commit — and `8578960`, the Task 17 docs review's accuracy fixes. The roadmap: the counts at `6112c3e` (2141 / 650, 2783 / 8, Python 3.14 364), the three audit stores, "Karar (VM'den önce)" naming X21/O12, O15, O17 and O21, the NVDA chart-name check (O25) in the user's list, the timings "29–50 ms (yedi koşu…)". The guide: every patient scored with the adult table and no sourced neonatal band, the save that re-judges no open alarm while the band and the pill update at once (X21), the changed-while-open notice with its poll caveat (O3), ▲ with O17, the frame and badge sentence, "motor seyreltir", the vault note's `capture: extract` at its first citation, O17 in §3.6's second answer — Edit (e) — and §2's go-live of Group 1 and Aşama A on 19 Oct 2026, build a2c1257c — Edit (d). The spec: O15 in §11, the 5 s half of acceptance 2, "X20–X34 found by reviews on 2026-10-20 and 21", the timing wording. The three files keep the LF endings their index has.) The blocks below are that text: these Edits produce the branch's three docs byte for byte. X35 (`74380a1`) landed after the docs, and `5b73637` followed it: the roadmap row now says `ec8678a..74380a1`, 2143 / 650 (DB'siz), 2785 / 8 (Postgres), Python 3.14 dilimi 366 and "plandaki X20–X35" with the X35 clause; spec §11's lead-in says X1–X35 / X20–X35 with it. The blocks below carry `5b73637`.
+**Done on the branch** (commits `d8eee36`, `8578960`, `5b73637` and `6407492`; `d8eee36` — the Edits as planned, with `<date>` = 2026-10-21 and `<range>` = `ec8678a..6112c3e`, the plan's first commit to the last code commit — and `8578960`, the Task 17 docs review's accuracy fixes. The roadmap: the counts at `6112c3e` (2141 / 650, 2783 / 8, Python 3.14 364), the three audit stores, "Karar (VM'den önce)" naming X21/O12, O15, O17 and O21, the NVDA chart-name check (O25) in the user's list, the timings "29–50 ms (yedi koşu…)". The guide: every patient scored with the adult table and no sourced neonatal band, the save that re-judges no open alarm while the band and the pill update at once (X21), the changed-while-open notice with its poll caveat (O3), ▲ with O17, the frame and badge sentence, "motor seyreltir", the vault note's `capture: extract` at its first citation, O17 in §3.6's second answer — Edit (e) — and §2's go-live of Group 1 and Aşama A on 19 Oct 2026, build a2c1257c — Edit (d). The spec: O15 in §11, the 5 s half of acceptance 2, "X20–X34 found by reviews on 2026-10-20 and 21", the timing wording. The three files keep the LF endings their index has.) The blocks below are that text: these Edits produce the branch's three docs byte for byte. X35 (`74380a1`) landed after the docs, and `5b73637` followed it: the roadmap row now says `ec8678a..74380a1`, 2143 / 650 (DB'siz), 2785 / 8 (Postgres), Python 3.14 dilimi 366 and "plandaki X20–X35" with the X35 clause; spec §11's lead-in says X1–X35 / X20–X35 with it. The blocks below carry `5b73637` and `6407492` — the user's decisions of 2026-10-21: the guide's §3.7 toast sentence, spec §3.3's toast text (Edit (d) of Step 3, new) and §11's O12 bullet as decided (with O21, O15 and O17's outcomes), and the roadmap row's "Kararlar (21.10, VM'den önce)". The roadmap row still reads "dashboard 89 dosya / 2385 test"; with O21's six it is 2391 — a one-word docs follow-up, not made here.
 
 The guide says what the charts show and what they never claim, and where the thresholds come from; the roadmap records Group 2's first item; the spec's §11 records what planning found. The guide's text describes the system's behaviour and cites the vault's source note by its id only — no new clinical claim.
 
@@ -12653,9 +12737,10 @@ kayıttan sonraki yine sessizce kazanır (plandaki O3). Kayıtlı bir aralık va
 söyler ve Kaydet hepsini siler; silme denetim kaydına yazılır ve sunucu yeniden başlasa da geri
 gelmez. Kayıt açık alarmları yeniden hesaplamaz: eğrideki bant ve "Hastanın normalinde" hapı
 hemen yenilenir, alarmlar ise sonraki ölçüme dek eski hâlinde kalır; sonraki ölçüm yeni normale
-(ya da normalsiz) göre değerlendirilir. (Kayıt bildirimi bugün "motor yeniden değerlendirdi"
-diyor; bu kodun yaptığından fazlası, düzeltilmesi kullanıcı kararını bekliyor — plandaki
-X21/O12.) Bu aralık monitörün alarm sınırı değildir; motor bu hastanın
+(ya da normalsiz) göre değerlendirilir. Kayıt bildirimi de tam bunu söyler: "<yatak>: hastanın
+normali kaydedildi; sonraki ölçüm bu aralıklarla değerlendirilecek" (kullanıcı kararı 21.10,
+plandaki X21/O12; motorun kayıtta anında yeniden yargılaması ayrı bir iş olarak sonraya kaldı).
+Bu aralık monitörün alarm sınırı değildir; motor bu hastanın
 değerlerini yorumlarken (4. bölümdeki hastaya göreli katman) bu normali kullanır. Reddedilen bir
 kayıt yatağın adıyla bildirimde söylenir; sunucu yanıt vermezse kaydın gerçekleşmiş olabileceği
 söylenir ve eğri yeniden okunur.
@@ -12716,7 +12801,7 @@ Prototipteki sabit sayılar (`core.js:499` `H.VITAL.al/nb`) kaynaksızdır, taş
 
 | # | İş | Durum |
 |---|---|---|
-| G2-01 | Vital eğrileri (hasta ekranı): altı kart, büyük grafik (6 sa / 24 sa / 3 gün, tablo), hastanın normali formu; `GET /patients/{id}/trends` · spec: [2026-10-19](../specs/2026-10-19-g2-vital-egrileri-design.md) · plan: [G2 dilim 1](2026-10-19-g2-vital-egrileri.md) | Kod ✅ 2026-10-21 · ec8678a..74380a1. Backend 2143 / 650 (DB'siz), 2785 / 8 (Postgres), Python 3.14 dilimi 366; dashboard 89 dosya / 2385 test; 72 sa penceresi p50 ≈ 4 ms, en kötü 29–50 ms (yedi koşu; bir gen-2 çöp toplama duraklaması, sunucu da öder; sınır 300 ms). Yerel yürüyüş 2026-10-21 (g2v yığını, sentetik hesaplar, başsız Chrome): adım 7 motorun beklenen yanıtıyla satır satır aynı; adım 8'in bütün maddeleri geçti — altı kart ve çerçeveler motorun puanı, tablo = grafik, form yazıyor ve bant çıkıyor, temizleme `restart api` sonrası da geri gelmiyor, 390 / 1440 px, dört dil, iki tema, ham anahtar yok. **Kullanıcıda:** NVDA (grafikte odak kipi, her harekette bir okuma, tablo gözatma kipinde satır eklenirken), NVDA'nın grafik adını sayı değişince yeniden okuyup okumadığı (O25), MAP'in içi boş halkası noktadan ayrılıyor mu, 72 sa saat etiketleri `--fs` 1.12'de; göz kararları: değerler mürekkep renginde (X24), iki serili mini grafikte bant yok (X26), Gece'de 3 puan bandı 1–2 puan bandından sessiz, Gün'de diyalogdaki ızgara çizgileri silik; VM'de bakış (gerçek bir hasta, değerler yazılmaz). **Karar (VM'den önce):** X21/O12 — kayıt bildirimi "mühərrik yenidən qiymətləndirdi" diyor, PUT yeniden hesaplamıyor; öneri: `baselineSaved` dört dilde `{subject}` ile düzeltilsin, motorun yeniden değerlendirmesi sonra; O15 — normali kim girer (bugün her clinical.chart sahibi, hemşire dahil); O17 — motorun alarmları kapanmıyor (bu dilimde mi, sonra mı); O21 — sesli okumada NEWS2 puanı. **Dağıtım:** köprüler hub'dan önce ya da birlikte (3b; köprü tamponlarında sonlu olmayan satır var mı bakılır); pano asla tek başına (temizleme 14a'yı ister). **Açık:** az/ru yerel okuma; plandaki X20–X35 (X35: kartın farkı bir önceki *ölçüme* göre, bir önceki satıra değil — köprü aynı ölçümü iki kez teslim edebilir) ve O1–O3, O6–O12, O14, O15, O17–O25 (X1–X19 onaylandı, O4 çözüldü: 2026-10-20) |
+| G2-01 | Vital eğrileri (hasta ekranı): altı kart, büyük grafik (6 sa / 24 sa / 3 gün, tablo), hastanın normali formu; `GET /patients/{id}/trends` · spec: [2026-10-19](../specs/2026-10-19-g2-vital-egrileri-design.md) · plan: [G2 dilim 1](2026-10-19-g2-vital-egrileri.md) | Kod ✅ 2026-10-21 · ec8678a..74380a1. Backend 2143 / 650 (DB'siz), 2785 / 8 (Postgres), Python 3.14 dilimi 366; dashboard 89 dosya / 2385 test; 72 sa penceresi p50 ≈ 4 ms, en kötü 29–50 ms (yedi koşu; bir gen-2 çöp toplama duraklaması, sunucu da öder; sınır 300 ms). Yerel yürüyüş 2026-10-21 (g2v yığını, sentetik hesaplar, başsız Chrome): adım 7 motorun beklenen yanıtıyla satır satır aynı; adım 8'in bütün maddeleri geçti — altı kart ve çerçeveler motorun puanı, tablo = grafik, form yazıyor ve bant çıkıyor, temizleme `restart api` sonrası da geri gelmiyor, 390 / 1440 px, dört dil, iki tema, ham anahtar yok. **Kullanıcıda:** NVDA (grafikte odak kipi, her harekette bir okuma, tablo gözatma kipinde satır eklenirken), NVDA'nın grafik adını sayı değişince yeniden okuyup okumadığı (O25), MAP'in içi boş halkası noktadan ayrılıyor mu, 72 sa saat etiketleri `--fs` 1.12'de; göz kararları: değerler mürekkep renginde (X24), iki serili mini grafikte bant yok (X26), Gece'de 3 puan bandı 1–2 puan bandından sessiz, Gün'de diyalogdaki ızgara çizgileri silik; VM'de bakış (gerçek bir hasta, değerler yazılmaz). **Kararlar (21.10, VM'den önce):** X21/O12 — kayıt bildirimi düzeltildi: "<yatak>: hastanın normali kaydedildi; sonraki ölçüm bu aralıklarla değerlendirilecek" (`cefbf58`); motorun kayıtta yeniden yargılaması sonraya; O15 — böyle kalır (her clinical.chart sahibi); O17 — ayrı dilim, deploy'dan sonra; O21 — eklendi: okuma NEWS2 puanını söyler (`8f1ba57`); O3 — pilotta kabul. **Dağıtım:** köprüler hub'dan önce ya da birlikte (3b; köprü tamponlarında sonlu olmayan satır var mı bakılır); pano asla tek başına (temizleme 14a'yı ister). **Açık:** az/ru yerel okuma; plandaki X20–X35 (X35: kartın farkı bir önceki *ölçüme* göre, bir önceki satıra değil — köprü aynı ölçümü iki kez teslim edebilir) ve O1–O3, O6–O12, O14, O15, O17–O25 (X1–X19 onaylandı, O4 çözüldü: 2026-10-20) |
 ```
 
 (c) Append to the two items the slice moved — replace:
@@ -12733,7 +12818,7 @@ with:
 - Kapsam okunamadığında (UNKNOWN) `/patients` 200 + yanlış not dönüyor, `_require_patient` 404 + `scope_denied` yazıyor; her yerde 503 olmalı. → Grup 2 · **G2 dilim 1:** eğri ucu (`/patients/{id}/trends`) UNKNOWN'da 503 veriyor, `scope_denied` yazmıyor; öteki tek-hasta uçları hâlâ 404.
 ```
 
-- [ ] **Step 3: The spec — §4 and §7 as built, and §11's open points.** Three Edits in `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. (a) §11 — replace:
+- [ ] **Step 3: The spec — §3.3, §4 and §7 as built, and §11's open points.** Four Edits in `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. (a) §11 — replace:
 
 ```markdown
 - Acceptance on the VM will show sparse charts today; that is the data, not the chart.
@@ -12763,11 +12848,13 @@ with:
   a charted set sends `{"baselines": {}}`, which the engine takes as clearing every range even when
   nothing else is charted, and the audit replay reads each profile row over the one before, so the
   clear survives a restart (plan X15, Task 14a).
-- §3.3's save toast says the engine re-evaluated; the profile PUT re-scores nothing — the standing
-  alerts are re-judged at the next reading (plan X21, O12). Every save now shows it, so the user
-  decides before the VM. Recommendation (the Task 14 spec review): reword `baselineSaved` in four
-  languages to what the PUT does and name the patient with `{subject}` in this slice; make the door
-  re-judge the latest state when the profile changes as a follow-up.
+- §3.3's save toast used to say the engine re-evaluated; the profile PUT re-scores nothing — the
+  standing alerts are re-judged at the next reading (plan X21, O12). **Decided 2026-10-21:**
+  `baselineSaved` reworded in four languages to what the PUT does, named after the bed with
+  `{subject}` (commit `cefbf58`); making the door re-judge the latest state when the profile changes
+  stays a follow-up. Same day: the big chart's readout (drawn and announced) names the reading's
+  NEWS2 points (O21, `8f1ba57`); who may enter the normal stays every `clinical.chart` holder (O15);
+  the engine's never-clearing findings (O17) become a separate slice after this one is deployed.
 - `PUT /clinical/{id}/profile` replaces the set with no lost-update check: two clinicians saving one
   patient's normal at once — the second wins silently. The form now notices a set that changed while
   it was open (the minute's poll) and holds Save until it is reopened (plan X34); two saves inside one
@@ -12844,7 +12931,20 @@ with:
   (over an `img` they stay in browse mode); the card's mini chart, with no keys, stays `aria-hidden`.
 ```
 
-- [ ] **Step 4: Check and commit.** `git diff --stat` shows the three files only (the spec with three hunks); read the guide's new §3.7 once in a Markdown preview (it renders under §3.6's three questions).
+(d) §3.3 — the save's toast as built (the user's decision of 2026-10-21, X21/O12) — replace:
+
+```markdown
+toast "Hastanın normali kaydedildi; motor yeniden değerlendirdi", the trends are refetched so the
+```
+
+with:
+
+```markdown
+toast "<bed>: hastanın normali kaydedildi; sonraki ölçüm bu aralıklarla değerlendirilecek" (as built
+since 2026-10-21, X21/O12 — the PUT does not re-evaluate), the trends are refetched so the
+```
+
+- [ ] **Step 4: Check and commit.** `git diff --stat` shows the three files only (the spec with four hunks); read the guide's new §3.7 once in a Markdown preview (it renders under §3.6's three questions).
 
 ```bash
 cd /c/tmp/g2-vital
@@ -12859,9 +12959,9 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 
 | # | Item | Who | When |
 |---|---|---|---|
-| O1 | **Native reading of the Azerbaijani and Russian texts:** the 49 `patient.trends*` / `patient.baseline*` keys of Task 8 and Task 14's three (`baselineClearsAll`, `baselineClearedAll`, `baselineChangedMeanwhile`; the lane corrected az "formanı" and the en quotes in `432712e`), the two reworded sentences (`onlyWrite`, `formsSoon`) and `errors.badTrendHours` were written by the planner; the Task 8 quality review corrected several in all four languages (lane commit `f082251`, mirrored here), but no native speaker has read them yet. | A native-speaking clinician | Before the VM |
+| O1 | **Native reading of the Azerbaijani and Russian texts:** the 49 `patient.trends*` / `patient.baseline*` keys of Task 8 and Task 14's three (`baselineClearsAll`, `baselineClearedAll`, `baselineChangedMeanwhile`; the lane corrected az "formanı" and the en quotes in `432712e`), the two reworded sentences (`onlyWrite`, `formsSoon`) and `errors.badTrendHours` were written by the planner; the Task 8 quality review corrected several in all four languages (lane commit `f082251`, mirrored here), but no native speaker has read them yet — nor the reworded `baselineSaved` (X21, `cefbf58`). | A native-speaking clinician | Before the VM |
 | O2 | **Stage B retention cap** on `PatientState._history` (unbounded per signal, spec §11). The trends endpoint scans a window linearly per request — 864 readings in ≈ 4 ms today — and thins only what it serves; 51 840 readings per channel per 72 h is Stage B's to bound. | Stage B's plan | Stage B |
-| O3 | **Lost update on the profile.** `PUT /clinical/{id}/profile` replaces the baseline set with no expected-set check (Wave 3B's 14e closed this for the three `/admin` whole-set writes only). Two clinicians saving one patient's normal at once: the second wins, silently. **The client half is done (X34, Task 14):** the form reads the trends on opening, notices a set that changed under it at the next poll, says so and holds Save; two saves inside one poll still race — the engine's expected-set check is what remains. | User decision; engine | Group 2 |
+| O3 | **Lost update on the profile.** `PUT /clinical/{id}/profile` replaces the baseline set with no expected-set check (Wave 3B's 14e closed this for the three `/admin` whole-set writes only). Two clinicians saving one patient's normal at once: the second wins, silently. **The client half is done (X34, Task 14):** the form reads the trends on opening, notices a set that changed under it at the next poll, says so and holds Save; two saves inside one poll still race — the engine's expected-set check is what remains. **Decided 2026-10-21: accepted for the pilot.** | User decision; engine | Group 2 |
 | O4 | **Resolved 2026-10-20 — the user chose explicit clearing.** Task 14a: the engine takes `{"baselines": {}}` over a charted profile as "clear every range", even with nothing else charted (still refused from nothing and without a `baselines` key); the replay reads each profile row over the one before, so the clear survives a restart (it did not: the clearing row, an empty profile, was refused on replay). Task 14: every row emptied over a charted set sends it, said beside Save (X32) and on the toast; with nothing charted, Save stays `aria-disabled`. | — | Done in the plan |
 | O5 | **Approved 2026-10-20:** the user approved every departure X1–X19. X21, found while amending for O4, waits on O12. | — | — |
 | O6 | UNKNOWN scope → 503 only on the trends route; every other single-patient route still answers 404 and writes `scope_denied` (roadmap l. 659). | Group 2 | — |
@@ -12870,16 +12970,16 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 | O9 | `errors.scopeUnreadable` speaks of the live stream ("canlı akış başlatılamadı"); a trends 503 maps to the same key. The trends screens print their own "okunamıyor" line and never that text, but a later screen that prints `apiErrorText` for a trends 503 would say "live stream" (the Task 5 and Task 6 reviews: `scopeUnreadable` now reaches a reader through `SERVER_ANSWERS`; reword it route-neutrally, four languages with a native reading, before any screen prints it on this route — Task 17 says so in spec §11). | i18n | Minor |
 | O10 | **A mark's instant is the escalation clock's** (when the server first raised the episode); a reading's is its own measured instant. Live they are minutes apart; a replayed, back-filled or late-arriving reading can sit hours before its ▲ (seen in Task 16 with `--now`). Honest, but worth a sentence in the legend if the ward finds it confusing. | User, after the VM look | — |
 | O11 | The brief's backend command fails 2 tests without `PYTHONPATH=src` (`ModuleNotFoundError` in a child process; the f7-py312 venv has no install of this worktree). This plan always sets it; installing the worktree editable into a venv is the other fix. | Environment | — |
-| O12 | **The save's toast says more than the engine does** (X21): "Hastanın normali kaydedildi; motor yeniden değerlendirdi" (spec §3.3, Task 8's `baselineSaved`) — but the PUT re-scores nothing: an alert a range downgraded stays downgraded, or an alert a new range would quieten stays loud, until the next reading (minutes on a monitor; the next spot check otherwise). Either reword it in four languages (e.g. "…kaydedildi; sonraki ölçüm bu normale göre değerlendirilecek") or make the door re-judge the patient's latest state when the profile changes (an engine change, with its own tests). The clear's new toast already says only what is true. **Now visible (the Task 14 spec review, 2026-10-20):** Task 14 shows this toast after every save, so the overclaim reaches the ward with the form. Recommendation: (b) in this slice, reword `baselineSaved` in four languages to what the PUT does and name the patient with `{subject}`, as `baselineClearedAll` does (a planner's wording, for O1's native reading); (a) as a follow-up, make the door re-judge the latest state when the profile changes (an engine change with its own tests). | User decision | Before the VM |
+| O12 | **The save's toast says more than the engine does** (X21): "Hastanın normali kaydedildi; motor yeniden değerlendirdi" (spec §3.3, Task 8's `baselineSaved`) — but the PUT re-scores nothing: an alert a range downgraded stays downgraded, or an alert a new range would quieten stays loud, until the next reading (minutes on a monitor; the next spot check otherwise). Either reword it in four languages (e.g. "…kaydedildi; sonraki ölçüm bu normale göre değerlendirilecek") or make the door re-judge the patient's latest state when the profile changes (an engine change, with its own tests). The clear's new toast already says only what is true. **Now visible (the Task 14 spec review, 2026-10-20):** Task 14 shows this toast after every save, so the overclaim reaches the ward with the form. Recommendation: (b) in this slice, reword `baselineSaved` in four languages to what the PUT does and name the patient with `{subject}`, as `baselineClearedAll` does (a planner's wording, for O1's native reading); (a) as a follow-up, make the door re-judge the latest state when the profile changes (an engine change with its own tests). **Decided 2026-10-21: (b), done** — `baselineSaved` reworded in four languages with `{subject}` (commit `cefbf58`); (a) stays a follow-up. | User decision | Done |
 | O13 | **Resolved 2026-10-20 — the Task 2 quality review's two findings.** A NaN in `PatientState` (a) took a thinning slice's minimum and maximum, dropping the real extreme (an 85 % desaturation, measured), and (b) made the trends answer 500 (Starlette's `JSONResponse` has `allow_nan=False`). Task 3b closes the doors (`gateway/hl7.py` drops the field, `gateway/fhir.py` raises `GatewayError`); Task 4's builder skips a non-finite reading for rows already in the audit, which replay through `rehydrate` and no gateway. `thin()` stays NaN-intolerant **on purpose** — a documented precondition, filtered by its caller — and other doors into `PatientState` (Aşama A's lane, a future one) must keep refusing non-finite values the way `edge/ncefiles.py` and `api/clinical.py` do. | — | Done in the plan |
 | O14 | **The audit table has no index beyond its key and `(tenant, prev_hash)`**, so every trends read (and `/audit`, `/alarm-quality`) scans the whole table for one patient's `first_seen` rows. The fix is an index on `(tenant, patient_id, event_type, id)`; an expression index on the `CAST(ts AS timestamptz)` the `since` filter uses is impossible (`timestamptz_in` is STABLE, not IMMUTABLE). A migration, not this slice (from the Task 3 quality review). **Measured on the VM, 2026-10-21 (read-only):** 214 rows (ingest 158, auth 38, view 10, admin 8), indexes `pkey` and `chain_link` — a non-issue at this size; re-measure when the shadow lane writes alerts. | Stage B's plan | Before Stage B |
-| O15 | **Who may enter the patient's normal.** Today every `clinical.chart` holder — nurses, charge nurses and rapid response included — can; the engine's own words call the ranges "clinician-charted", and the Task 8 review's wording ("hastanın normali, girildiyse", no "hekim") assumes that stays. Physician-only would be a permission change (a new permission or a role split), not a text. The older `patient.suspectedYes/No` "(hekim işaretledi)" (Group 1) has the same who-entered problem. | User decision | Before the VM |
+| O15 | **Who may enter the patient's normal.** Today every `clinical.chart` holder — nurses, charge nurses and rapid response included — can; the engine's own words call the ranges "clinician-charted", and the Task 8 review's wording ("hastanın normali, girildiyse", no "hekim") assumes that stays. Physician-only would be a permission change (a new permission or a role split), not a text. The older `patient.suspectedYes/No` "(hekim işaretledi)" (Group 1) has the same who-entered problem. **Decided 2026-10-21: kept** — every `clinical.chart` holder may enter it. | User decision | Done |
 | O16 | **Resolved in the plan (2026-10-20):** Task 12's legend prints `markers_truncated` (`trendsLegendMarksTruncated`, four languages). Today the flag cannot be set (O17): with the alerts sticky, a patient writes at most one `first_seen` row per kind. | — | Done in the plan |
-| O17 | **The engine's active alerts are sticky.** `pipeline.py:93–96` sets `bucket[a.kind] = a` and never removes a kind, so `active_alerts` keeps a finding whose rule stopped firing until a replacement of the same kind: `_live_keys` never shrinks, `AckStore.prune` never drops a stamp, `first_seen` is written once per (patient, kind) ever, escalation clocks never reset, and `alarm_quality`'s episode counts are off. For this slice: a ▲ means "the first time this finding was ever raised for this patient", not an episode — the legend says "first detection" (Task 12) — and `markers_truncated` is unreachable. The fix (rebuild the bucket from each evaluation's kinds, so a kind that stops firing clears; tests across the board, acks, escalation, notifications, `alarm_quality` and `rehydrate`) is an engine change with clinical effect. **Two options:** a separate engine task 4b in this slice, or a later slice; Task 12's legend and Task 17's guide follow whichever is true at ship time (found by the Task 4 quality review). | User decision | Before the VM |
+| O17 | **The engine's active alerts are sticky.** `pipeline.py:93–96` sets `bucket[a.kind] = a` and never removes a kind, so `active_alerts` keeps a finding whose rule stopped firing until a replacement of the same kind: `_live_keys` never shrinks, `AckStore.prune` never drops a stamp, `first_seen` is written once per (patient, kind) ever, escalation clocks never reset, and `alarm_quality`'s episode counts are off. For this slice: a ▲ means "the first time this finding was ever raised for this patient", not an episode — the legend says "first detection" (Task 12) — and `markers_truncated` is unreachable. The fix (rebuild the bucket from each evaluation's kinds, so a kind that stops firing clears; tests across the board, acks, escalation, notifications, `alarm_quality` and `rehydrate`) is an engine change with clinical effect. **Two options:** a separate engine task 4b in this slice, or a later slice; Task 12's legend and Task 17's guide follow whichever is true at ship time (found by the Task 4 quality review). **Decided 2026-10-21: a separate engine slice after this one is deployed**; until then the legend's "first detection" is the truth. | User decision; engine | After the deploy |
 | O18 | **Two tones for one fact.** The header's `News2` pill shows a 3-point parameter in attention amber; the card frames it red (D2). The kit `Tag` has no `mid` tone, so the 1–2-point badge borrows the attention look. One vocabulary for NEWS2 tones across the header, the card and the kit is a kit-level decision (Task 10 quality review). | User / kit | Later |
 | O19 | **Stage B's performance, before Stage B** (next to O14): the builder takes ≈ 2.1 s for 72 h of 5 s data, mostly `thin()`, and the route runs it synchronously inside an `async def`, holding the event loop for that time (Task 4 quality review). Options: thin per request in a worker thread (`run_in_threadpool`), cache per (patient, window, last reading), or bound the history (O2). | Stage B's plan | Before Stage B |
 | O20 | **Before Stage B, too: memoise the chart's parsing and drawing.** `parsePoints` runs on every render for every series (the dialog re-renders on each cursor move), and `TrendChart` re-renders with it: memoise `parsePoints` per points array and wrap `TrendChart` in `React.memo` before 5 s data arrives (Task 11 quality review; a note, not this slice). | Stage B's plan | Before Stage B |
-| O21 | **NEWS2 points in the spoken readout?** A sighted reader reads a reading's points from the band colour behind its dot; a screen-reader user hears only the value (the table has the points). Adding " · 2 bal" to the readout is a small change to spec §3.3's readout — the user's decision (the Task 13 quality review; the controller's list calls it O18). | User decision | Before the VM |
+| O21 | **NEWS2 points in the spoken readout?** A sighted reader reads a reading's points from the band colour behind its dot; a screen-reader user hears only the value (the table has the points). Adding " · 2 bal" to the readout is a small change to spec §3.3's readout — the user's decision (the Task 13 quality review; the controller's list calls it O18). **Decided and done 2026-10-21** (commit `8f1ba57`): `pointsBeside(t, points)` in `trendText.js` adds "NEWS2 +N" after the value(s) and before the marks, in the drawn and the spoken readout, reusing `patient.trendsFrameBadge`; a 0-point or valueless reading prints nothing, MAP and lactate never. | User decision | Done |
 | O22 | **Two stops in one minute with the same value say the same words**, and `useAnnounced` dedupes by text, so the second keypress is silent (≈ 1 reading a minute today). At Stage B rates: seconds in the readout when two stops share a minute, or a live region re-mounted per stop. Accepted for this slice. | Stage B's plan | Stage B |
 | O23 | **`TrendModal.test.jsx` is 607 lines and `BaselineForm.test.jsx` 405**, well past the ~250-line guide (with `trendGeometry.js` 277, `trendGeometry.test.js` 260, `TrendChart.test.jsx` 237 a little past it; `PatientScreen.test.jsx`, older than the slice, is 887 after it). Split the dialog's test by view (graph, keyboard, table) and the form's by concern (the checks, the clear, the answers, the moves) when they next change. | Group 2 | — |
 
@@ -12934,5 +13034,5 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 
 **Placeholder scan.** No "TBD", no "similar to Task N", no "add appropriate error handling". The only fill-ins are runtime facts that cannot exist before the work does — T17's roadmap row takes the date, the commit range and the walk's outcome, each with the command or step that produces it.
 
-**Names and types across tasks.** Engine: `Band`, `NEWS2_BANDS`, `BANDS_SOURCE`, `points_for` (T1) are what T4 imports; `thin(series, max_points)` (T2) is called with `TRENDS_MAX_POINTS`; `since_utc` (T3) is shared by `audit.py` and `audit_postgres.py`; `records(…, since=…)` is keyword-only everywhere (T3's signature test); `patient_trends(engine, audit, *, hospital, patient_id, hours, now)` (T4) is what T5's route calls with `int(hours)` after the text check against `TRENDS_HOURS`; the route is listed in `BOARD_EXPECTED` and `UNSCOPED_BY_DESIGN` under the path FastAPI reports, `/patients/{patient_id}/trends`. Dashboard: `patientTrends(patientId, hours)` / `putPatientProfile(patientId, body)` (T6) are the names `useTrends` (T9) and `BaselineForm` (T14) call, and `fakeApi` carries both; `useTrends(patientId, hours, measuredKey)` → `{data, loading, unreadable, lastOkAt, reload}` is read the same way by `TrendsBox` and `TrendModal`; `measuredKeyOf(patient.measuredAt)`; the fixtures `trends(patientId, channels, over)`, `channel(key, points, over)`, `point(minutesAgo, value, points)`, `marker(minutesAgo, kind, label)`, `answering(build)`, `BANDS`, `KEYS` (T9) are what every later test uses; `news2Tone(points)` (T10) is used by `TrendCard` and `bandRects`; `CARDS` / `cardTitle` / `channelsOf` (T10) by the box, the dialog, the legend and the table; `TrendCard({card, channels, nowMs, sinceMs, untilMs, onOpen})` gains `sinceMs`/`untilMs` in T11 and `onOpen` is passed from T12; `TrendChart`'s props grow `onPlot` (T12) and `onKeyDown`, `describedBy` (T13) by Edit, never renamed; `whenText`/`markText` live in `TrendModal.jsx` in T12 and move to `trendText.js` (with `pointsText`) in T13, where `TrendModal` and `TrendTable` both import them and nothing else imported them from the dialog; `TrendsBox({patient, bed, nowMs})` gains `nowMs` in T10 and `bed` in T12, matching PatientScreen's edits in those tasks. The eighth pass follows the branch's Tasks 15–16: `rebased(events, end)` keeps its signature; `replay.py` gains `TIMEOUT_S` and `refusal_detail(err, token)`, and its parser `allow_abbrev=False`; the sweep's `LABELS` gains `aria-roledescription`. The seventh pass follows the lane's Task 14: `BaselineForm.jsx` exports `BASELINE_KEYS`, `checkBaselines`, `keyOf` and `BaselineForm({patient, bed, own, onClose, onSaved})`; `charted(range)` is private to it; `TrendsBox`'s `editing` is `{ id, opening }`; one new key, `patient.baselineChangedMeanwhile`, and `baselineClearedAll` takes `{subject}`. The sixth pass follows the lane's Task 13: `TrendLegend.jsx` exports `TrendNotes` beside `TrendLegend`; `trendText.js` gains `valueBeside`; `TrendTable` takes the dialog's parsed `series` and `markers`; two keys, `patient.trendsChartRole` and `patient.trendsPointsUnknownRowSr`. The fifth pass follows the lane's Task 12: `valueTicks` returns `{ step, ticks }`; `indexAtTime(points, ms)` resolves the cursor (an instant) to an index at render; `marksNear` is gone (`marksAtTime` is the one rule); Task 13 moves `whenText` and `markText` from `TrendModal.jsx` to `trendText.js`, beside `markBeside` and `pointsText`, and `TrendChart` reads `whenText` from there; `readoutOf` stays private to the dialog (the announcement reads the same `readout` value). The fourth pass renames two exports and adds six: Task 12 replaces Task 11's `markerNear` (read only by its test) with `marksNear`, and its own `markerAtTime` with `marksAtTime` — both return EVERY mark at an x or an instant, and both dialogs (Tasks 12 and 13) read `marksAtTime`; `valueTicks(domain, count, { extent, resolution })` keeps Task 11's two-argument call working, beside `valueTickStep`, `valueExtent`, `valueResolution`, `tickLabel` and `timeLabelPlace`. The third pass renames nothing in the plan's own tasks: Tasks 1–4, 3b and 6–10 are the lanes' code, and Tasks 11–17 are written against it — `TrendCard` keeps its props and gains `sinceMs`/`untilMs` in Task 11 on the lane's `Reading` (`badge`, `pill`); `TrendLegend` gains `truncated`, which both dialogs (Tasks 12 and 13) pass from `markers_truncated`; the legend's ▲ reads `trendsLegendAlarm` while the readout and the table keep `trendsMarkerAlarm`. The second amendment renames nothing either: `TRENDS_MARKER_LIMIT` keeps its name (5000 now); `_markers` returns `(marks, truncated)` and only `patient_trends` calls it; `_finite` is private to `api/trends.py`; `markers_truncated` is a new key no dashboard module reads yet (O16); Task 12's `TrendLegend` passes `channel: t(s.labelKey)` to `trendsThinned`, which takes `{channel}` since the Task 8 review. The O4 amendment renames nothing: `profile_from_payload(patient_id, payload, base=None)` keeps its signature (T14a) and `_replay_profile` now passes `engine.profile(rec.patient_id)` as `base`; `BaselineForm`'s `own` is the box's `{key: bands.own_normal | null}` map it already received, read once more to tell a clear (`clearing`) from nothing to send (`nothing`). Every `t("patient.…")` the code names is one T8 (or, for `baselineClearsAll` / `baselineClearedAll` / `baselineChangedMeanwhile`, T14) defines in four languages (checked by `rawKeys.test.jsx`'s static net, T15 step 3 proves it bites).
+**Names and types across tasks.** Engine: `Band`, `NEWS2_BANDS`, `BANDS_SOURCE`, `points_for` (T1) are what T4 imports; `thin(series, max_points)` (T2) is called with `TRENDS_MAX_POINTS`; `since_utc` (T3) is shared by `audit.py` and `audit_postgres.py`; `records(…, since=…)` is keyword-only everywhere (T3's signature test); `patient_trends(engine, audit, *, hospital, patient_id, hours, now)` (T4) is what T5's route calls with `int(hours)` after the text check against `TRENDS_HOURS`; the route is listed in `BOARD_EXPECTED` and `UNSCOPED_BY_DESIGN` under the path FastAPI reports, `/patients/{patient_id}/trends`. Dashboard: `patientTrends(patientId, hours)` / `putPatientProfile(patientId, body)` (T6) are the names `useTrends` (T9) and `BaselineForm` (T14) call, and `fakeApi` carries both; `useTrends(patientId, hours, measuredKey)` → `{data, loading, unreadable, lastOkAt, reload}` is read the same way by `TrendsBox` and `TrendModal`; `measuredKeyOf(patient.measuredAt)`; the fixtures `trends(patientId, channels, over)`, `channel(key, points, over)`, `point(minutesAgo, value, points)`, `marker(minutesAgo, kind, label)`, `answering(build)`, `BANDS`, `KEYS` (T9) are what every later test uses; `news2Tone(points)` (T10) is used by `TrendCard` and `bandRects`; `CARDS` / `cardTitle` / `channelsOf` (T10) by the box, the dialog, the legend and the table; `TrendCard({card, channels, nowMs, sinceMs, untilMs, onOpen})` gains `sinceMs`/`untilMs` in T11 and `onOpen` is passed from T12; `TrendChart`'s props grow `onPlot` (T12) and `onKeyDown`, `describedBy` (T13) by Edit, never renamed; `whenText`/`markText` live in `TrendModal.jsx` in T12 and move to `trendText.js` (with `pointsText`) in T13, where `TrendModal` and `TrendTable` both import them and nothing else imported them from the dialog; `TrendsBox({patient, bed, nowMs})` gains `nowMs` in T10 and `bed` in T12, matching PatientScreen's edits in those tasks. The user's decisions of 2026-10-21 follow the branch: `trendText.js` gains `pointsBeside(t, points)`, which `readoutOf` in `TrendModal.jsx` calls; `BaselineForm` passes `{ subject: bed }` to `baselineSaved`; no new key. The eighth pass follows the branch's Tasks 15–16: `rebased(events, end)` keeps its signature; `replay.py` gains `TIMEOUT_S` and `refusal_detail(err, token)`, and its parser `allow_abbrev=False`; the sweep's `LABELS` gains `aria-roledescription`. The seventh pass follows the lane's Task 14: `BaselineForm.jsx` exports `BASELINE_KEYS`, `checkBaselines`, `keyOf` and `BaselineForm({patient, bed, own, onClose, onSaved})`; `charted(range)` is private to it; `TrendsBox`'s `editing` is `{ id, opening }`; one new key, `patient.baselineChangedMeanwhile`, and `baselineClearedAll` takes `{subject}`. The sixth pass follows the lane's Task 13: `TrendLegend.jsx` exports `TrendNotes` beside `TrendLegend`; `trendText.js` gains `valueBeside`; `TrendTable` takes the dialog's parsed `series` and `markers`; two keys, `patient.trendsChartRole` and `patient.trendsPointsUnknownRowSr`. The fifth pass follows the lane's Task 12: `valueTicks` returns `{ step, ticks }`; `indexAtTime(points, ms)` resolves the cursor (an instant) to an index at render; `marksNear` is gone (`marksAtTime` is the one rule); Task 13 moves `whenText` and `markText` from `TrendModal.jsx` to `trendText.js`, beside `markBeside` and `pointsText`, and `TrendChart` reads `whenText` from there; `readoutOf` stays private to the dialog (the announcement reads the same `readout` value). The fourth pass renames two exports and adds six: Task 12 replaces Task 11's `markerNear` (read only by its test) with `marksNear`, and its own `markerAtTime` with `marksAtTime` — both return EVERY mark at an x or an instant, and both dialogs (Tasks 12 and 13) read `marksAtTime`; `valueTicks(domain, count, { extent, resolution })` keeps Task 11's two-argument call working, beside `valueTickStep`, `valueExtent`, `valueResolution`, `tickLabel` and `timeLabelPlace`. The third pass renames nothing in the plan's own tasks: Tasks 1–4, 3b and 6–10 are the lanes' code, and Tasks 11–17 are written against it — `TrendCard` keeps its props and gains `sinceMs`/`untilMs` in Task 11 on the lane's `Reading` (`badge`, `pill`); `TrendLegend` gains `truncated`, which both dialogs (Tasks 12 and 13) pass from `markers_truncated`; the legend's ▲ reads `trendsLegendAlarm` while the readout and the table keep `trendsMarkerAlarm`. The second amendment renames nothing either: `TRENDS_MARKER_LIMIT` keeps its name (5000 now); `_markers` returns `(marks, truncated)` and only `patient_trends` calls it; `_finite` is private to `api/trends.py`; `markers_truncated` is a new key no dashboard module reads yet (O16); Task 12's `TrendLegend` passes `channel: t(s.labelKey)` to `trendsThinned`, which takes `{channel}` since the Task 8 review. The O4 amendment renames nothing: `profile_from_payload(patient_id, payload, base=None)` keeps its signature (T14a) and `_replay_profile` now passes `engine.profile(rec.patient_id)` as `base`; `BaselineForm`'s `own` is the box's `{key: bands.own_normal | null}` map it already received, read once more to tell a clear (`clearing`) from nothing to send (`nothing`). Every `t("patient.…")` the code names is one T8 (or, for `baselineClearsAll` / `baselineClearedAll` / `baselineChangedMeanwhile`, T14) defines in four languages (checked by `rawKeys.test.jsx`'s static net, T15 step 3 proves it bites).
 
