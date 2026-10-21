@@ -13,6 +13,15 @@
 - Menü: **sade ray + açılır paneller + "daralt" düğmesi** (gerekirse "Daha fazla" grubu). Kullanım kolaylığı önemli.
 - İsimler **Azerice/bize özgü**, rakip adı geçmez. Çok dillilik korunur (AZ varsayılan).
 - Prototip kuralı korunur: sistem **tanı koymaz**, **öneri sunar**; ölçek/puan tabloları "hastane onayı gerekir" notuyla.
+- **Her özellik iki taraflı yapılır:** (1) kullanıcı ekranı (doktor/hemşire/kabul…), (2) **admin tarafı** — bu özelliğin tanımları ve **hangi rolde hangi yetki** olduğu. Bir ekran eklenince yetkisi de Roller & Yetkiler'de tanımlanır. Sahip hastanede kimin ne iş yaptığını biliyor; roller gerçek görevlere göre kurulur.
+- **Gerçek rol gözünden tasarım:** her akış "bu ekranı hasta / doktor / hemşire / kabul / vezne / yönetici gerçekte nasıl kullanır" diye düşünülerek yapılır.
+
+## Rol → yetki haritası (ana hat, geliştikçe dolar)
+- **hekim (doktor):** muayene/epikriz yaz, tanı(ICD) seç, **istem** (lab/rad/hizmet), **reçete**, konsültasyon, kontrol. Kendi hastaları + birim kapsamı.
+- **hemşire:** bakım planı, hemşire formları, **bakım istemi**, ilaç uygulama/takip, vital giriş, teslim notu. Sorumlu hemşire: birim doluluk/ekip.
+- **kabul (ön büro):** hasta kayıt/kabul, randevu, başvuru tipi (ayaktan/yatan/günübirlik), yatak/transfer. Klinik içerik görmez.
+- **vezne:** fatura/provizyon/katılım payı, SUT, proforma, tahsilat. Klinik içerik görmez.
+- **eczacı:** reçete/istem karşılama, stok/malzeme, etkileşim. **biyomed:** cihaz/kalibrasyon. **kalite:** gösterge/denetim (hasta adı yok). **yönetici/sistem:** tanımlar, roller, hastane yapısı, denetim kaydı.
 
 ## Mevcut güçlü yanlar (korunacak)
 Hemşirelik/klinik formlar (ağrı, yara/PUSH, Braden, düşme, GCS...), sürümlü bakım planı+katalog, ince yetki/güvenlik, temiz tasarım (tema/yazı boyu/4 dil), cihaz envanteri/kalibrasyon, doluluk, kalite, alarm, kamera, barkod.
@@ -25,9 +34,19 @@ Hemşirelik/klinik formlar (ağrı, yara/PUSH, Braden, düşme, GCS...), sürüm
 - Genel yerleşim/kayma kontrolü, küçük UX rötuşları.
 
 ### Faz 1 — Tanımlar / referans verileri
-- **ICD tanı listesi (14.891)** — `tanı listesi.xlsx`'ten yüklenip aranabilir liste; doktorun **tanı seçtiği** yere ve **bakım kataloğuna** bağlanır (kod → ad).
-- **Branş (+SUT), protokol tipleri** tanım ekranları (veri dosyaları geldikçe dolar).
+- ✅ **ICD tanı listesi (14.892)** — `tanı listesi.xlsx` yüklendi; admin'de aranabilir liste + tanı ekle/sil; doktorun tanı seçtiği yere bağlı.
+- ✅ **Hizmet kataloğu (20.631 aktif)** — `hizmet listesi.xlsx` yüklendi (`hizmet-veri.js`); İstem ekranı bundan beslenir.
+- ✅ **Başvuru tipi** — ayaktan / günübirlik / yatan / yoğun; poliklinik birimi; hasta ekranı tipe göre uyarlanır.
+- ✅ **Yeni ekranların AZ/RU/EN çevirisi** eklendi (sözlük). Çeviri eksiklerini doldurmak sürekli görev.
+- **Sırada:** Branş listesi, Bölüm listesi (tıbbi bölümler), protokol tipleri, diyet listesi, bakım (hemşirelik) kataloğu, ilaç/malzeme listesi — veri dosyaları geldikçe (ICD gibi dışa aktarımdan).
 - Cihaz tanımları: zaten var; "Yönetim > Tanımlar" altında toplanır.
+
+### Sahibin verdiği referans ekranlar (modüllere oturtulacak)
+- **İstem** (lab/rad/hizmet): sol katalog ağacı + aranabilir tablo + favori + sepet + açıklama/acil → ✅ yapıldı (katalogdan).
+- **Diyet istemi:** öğün bazlı (kahvaltı/öğle/akşam/ara/ek öğün), öğün başına diyet tipi + not + refakatçi + porsiyon; başlangıç tarihi.
+- **Bakım (hemşirelik) istemi:** katalog (Qlükometr, Arteriya Baxımı, Decubitus Qulluğu, Yara Baxımı… — kurum bakım listesi), favori, sayfalama.
+- **İlaç reçetesi:** reçete türü (yeşil/mor/turuncu/kırmızı/normal), alt tür (taburcu…), ICD tanı bağlama, ilaç satırı (ad/barkod/miktar+birim/sıklık/periyot/kullanım şekli/açıklama türü), e-Nabız/etkileşim sorgu, kaydet+gönder. → ad/etiketler bize özgü.
+- Her biri eklenirken **yetkisi** (hekim/hemşire) Roller & Yetkiler'de tanımlanır.
 
 ### Faz 2 — Doktor çekirdeği
 - **Muayene / epikriz** ekranı (şikâyet, öykü, muayene, tanı/ICD, plan; epikriz şablonu).
