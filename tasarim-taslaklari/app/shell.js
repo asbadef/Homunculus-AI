@@ -277,7 +277,8 @@
       return `<div class="ri ${H.state.page === k || (k === "patient" && H.state.page === "patient") ? "on" : ""}" data-nav="${k}" ${subs ? `data-fly="${k}"` : ""}>${I(ic)}${H.t(lab)}${n ? `<span class="b ${bc || ""}">${n}</span>` : ""}</div>
         ${subs ? `<div class="fly" data-flyfor="${k}"><h6>${H.t(lab)}</h6>${subs.map(([t, l]) => `<a data-nav="${k}" data-tab="${t}">${l}</a>`).join("")}</div>` : ""}`; }).join("");
     return `<div class="brand" data-nav="${H.data.roles[H.state.user.role].home}"><div class="mk">h</div><small>homunculus</small></div>${items}<div class="spacer"></div>
-      <div class="ri ${H.state.page === "settings" ? "on" : ""}" data-nav="settings">${I("gear")}${H.t("m_settings")}</div>`;
+      <div class="ri ${H.state.page === "settings" ? "on" : ""}" data-nav="settings">${I("gear")}${H.t("m_settings")}</div>
+      <div class="ri railtog" data-railtog title="Menüyü daralt / genişlet"><span class="rtm">«</span>Daralt</div>`;
   }
   /* 24.09 (2. oturum) · Ozan: "admin'de tüm roller açık gelsin".
    * Karar (konsey): BT hesabı kendi başına hasta verisi GÖRMEZ (gerçek üründe de öyle olmalı). Bunun yerine
@@ -418,6 +419,7 @@
     const scroll = shell ? shell.querySelector(".content").scrollTop : 0;
     if (!shell) { root.innerHTML = `<div class="shell"><nav class="rail"></nav><div class="main"><header class="top"></header><section class="content"></section></div></div>`; shell = root.querySelector(".shell"); }
     shell.querySelector(".rail").innerHTML = railHtml();
+    try { shell.classList.toggle("rc", localStorage.getItem("hmc.railCollapsed") === "1"); } catch {}
     shell.querySelector(".top").innerHTML = topHtml();
     if (H.announceBar) H.announceBar(shell.querySelector(".main"));   // 30.09 · Yönetim › Duyuru: hedefe uyan yayındaki duyuru şeridi (admin.js)
     const c = shell.querySelector(".content"), changed = lastPage !== H.state.page + JSON.stringify(H.state.params);
@@ -492,6 +494,7 @@
     const dz = e.target.closest("[data-do]"); if (dz) { closeMenus(); return dz.dataset.do === "lock" ? H.lockScreen() : H.logout(); }
     if (e.target.closest("[data-fullscreen]")) { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(() => {}); return; }
     if (e.target.closest("[data-theme-toggle]")) { H.state.theme = H.state.theme === "gece" ? "gun" : "gece"; H.savePref("theme", H.state.theme); return H.renderApp(); }
+    if (e.target.closest("[data-railtog]")) { const sh = document.querySelector(".shell"); if (sh) { const c = sh.classList.toggle("rc"); try { localStorage.setItem("hmc.railCollapsed", c ? "1" : "0"); } catch {} } return; }
     const nv = e.target.closest("[data-nav]");
     if (nv && !nv.closest(".content")) { e.preventDefault(); closeMenus(); const params = nv.dataset.tab ? { tab:nv.dataset.tab } : {}; return H.go(nv.dataset.nav, params); }
     if (!e.target.closest(".menu")) closeMenus();
