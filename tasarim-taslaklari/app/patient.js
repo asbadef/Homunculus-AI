@@ -216,6 +216,9 @@
   H.hnOf = hnOf; H.protoOf = protoOf;   // bileklik okutma (tarayici.js) ve yatak başı kimlik kartı aynı numarayı kullanır
   H.patientHeader = (p) => {
     const bed = H.bed(p.bed), u = unitOf(p), sev = H.SEV[p.risk] || H.SEV.stable;
+    const enc = H.encOf ? H.encOf(p) : "yogun", encI = (H.ENC && H.ENC[enc]) || {};
+    // Yatan/yoğun → kaçıncı gün; ayaktan/günübirlik → başvuru tipi.
+    const stayTxt = (enc === "yatan" || enc === "yogun") ? `Yatış: ${p.admitDays}. gün` : (encI.short || "Başvuru");
     const bsa = Math.sqrt(p.height * p.weight / 3600);
     const bmi = p.weight / Math.pow(p.height / 100, 2);
     const rhNeg = /Rh\(-\)/.test(p.blood);
@@ -227,7 +230,7 @@
       <div class="md">
         <div class="nm">${esc(pname(p))}</div>
         <div class="mt">${H.ageText(p)} · ${p.sex === "E" ? "Erkek" : "Kadın"} · <span class="${rhNeg ? "rhn" : ""}">${esc(p.blood)}</span> · ${body}</div>
-        <div class="mt k dx"><b>${esc(p.dx)}</b> <span class="mono">${esc(p.icd)}</span> · ${esc(u.tr)} · Yatış: ${p.admitDays}. gün${p.antibioticDay ? ` · <b>Antibiyotik: ${p.antibioticDay}. gün</b>` : ""}</div>
+        <div class="mt k dx"><b>${esc(p.dx)}</b> <span class="mono">${esc(p.icd)}</span> · ${esc(u.tr)} · <span class="tag">${esc(encI.label || "")}</span> ${stayTxt}${p.antibioticDay ? ` · <b>Antibiyotik: ${p.antibioticDay}. gün</b>` : ""}</div>
         <div class="tg k">${p.allergies.map(a => `<span class="tag c k">${H.icon("alert")}Alerji: ${esc(a)}</span>`).join("")}${p.allergies.length ? "" : `<span class="tag k">Bilinen alerji yok</span>`}
           ${p.chronic.map(c => `<span class="tag w">${esc(c)}</span>`).join("")}
           ${p.isolation ? `<span class="tag w k">${H.icon("shield")}İzolasyon: ${esc(p.isolation)}</span>` : ""}
@@ -526,8 +529,10 @@
   const TABS = [["ozet", "Özet"], ["trend", "Trendler"], ["skor", "Skorlar"], ["takip", "Takip"], ["bakim", "Bakım planı"], ["ilac", "İlaç"], ["sivi", "Sıvı"], ["sonuc", "Sonuçlar"], ["kamera", "Kamera"], ["devir", "Teslim notu"], ["belge", "Belgeler"], ["istem", "İstem"]];
   // 24.09: bakım planı yalnız hemşirelik yapan rollerde ve klinik birimde; kamera yalnız yetkili rolde ve yoğun bakım yatağında
   // Hangi sekmeyi kim görür: Yönetim → Roller → Modül erişimi (pt_* yetkileri). Özet her zaman açılabilir olmalı.
-  const tabsFor = (p) => TABS.filter(([k]) => (k === "ozet" || (k === "istem" ? H.can("orders") : H.can("pt_" + k))) && (k === "kamera" ? H.can("camera") && ["icu", "nicu"].includes(unitOf(p).type) && !!H.cameraTab
-    : k === "bakim" ? !!H.carePlan && H.isClinical(unitOf(p)) : k === "istem" ? !!H.orders : true));
+  // Başvuru tipine göre sekme süzgeci: ayaktan sadece özet/belge/istem/sonuç; yatan tam liste; yoğun bakım hepsi.
+  const encTabs = (p) => { const e = H.encOf ? H.encOf(p) : "yogun"; return (H.ENC && H.ENC[e] && H.ENC[e].tabs) || null; };
+  const tabsFor = (p) => { const allow = encTabs(p); return TABS.filter(([k]) => (allow ? allow.includes(k) : true) && (k === "ozet" || (k === "istem" ? H.can("orders") : H.can("pt_" + k))) && (k === "kamera" ? H.can("camera") && ["icu", "nicu"].includes(unitOf(p).type) && !!H.cameraTab
+    : k === "bakim" ? !!H.carePlan && H.isClinical(unitOf(p)) : k === "istem" ? !!H.orders : true)); };
   const badge = (p, k) => {
     if (k === "skor" && isIcuAdult(p) && !S(p.id).sofaSigned) return "1";
     if (k === "takip") { ensureMedTasks(p); const n = H.data.tasks.filter(t => t.pid === p.id && t.state === "late").length; return n ? String(n) : ""; }
@@ -1297,7 +1302,7 @@
       <div class="pt-bar"><span class="src">${H.icon("link").replace("<svg", '<svg style="width:13px;height:13px;vertical-align:-2px"')} Kimlik ve tanı: hastane kaydı · son eşitleme ${H.at("21:40")}</span>
         <div class="pt-dd"><button class="btn sm" data-act="fm">${H.icon("clip")}Form doldur ${H.icon("chevD")}</button>
           <div class="menu hidden" data-fm>${forms.map(f => `<a data-form="${f.key}">${H.icon(f.icon)}${esc(f.name)} <span class="mute" style="margin-left:auto;font-size:11px;font-weight:600">${esc(f.freq)}</span></a>`).join("")}</div></div></div>
-      ${p.monitored ? monitorHtml(p) : vitalBarHtml(p)}
+      ${(H.ENC && (H.ENC[H.encOf(p)] || {}).vitals === false) ? "" : (p.monitored ? monitorHtml(p) : vitalBarHtml(p))}
       <div class="tabs">${tabsFor(p).map(([k, l]) => { const b = badge(p, k); return `<span data-tab="${k}" class="${tab === k ? "on" : ""}">${l}${b ? `<em>${b}</em>` : ""}</span>`; }).join("")}</div>
       <div class="pt-body"></div></div>`;
     const bodyEl = root.querySelector(".pt-body");

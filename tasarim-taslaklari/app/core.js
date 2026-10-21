@@ -229,7 +229,8 @@
   H.data = {};
   H.data.hospital = { name:"Klinik Xəstəxana", short:"KX", city:"Bakı",
     buildings:[{ id:"A", name:"1. Blok · Əsas bina", floors:[
-      { id:"A0", no:0, units:[U("aci", "Təcili Yardım", "Acil Servis", "op", "er", "op", "adult", "—", [...beds("aci", ["Resus-1", "Resus-2"], 1, { bedType:"Resüsitasyon sedyesi" }), ...beds("aci", ["Müşahidə"], 6, { bedType:"Gözlem sedyesi" }).map((b, i) => Object.assign(b, { id:"aci-" + (i + 3), no:"ACI" + String(i + 3).padStart(2, "0") }))], "1101")] },
+      { id:"A0", no:0, units:[U("aci", "Təcili Yardım", "Acil Servis", "op", "er", "op", "adult", "—", [...beds("aci", ["Resus-1", "Resus-2"], 1, { bedType:"Resüsitasyon sedyesi" }), ...beds("aci", ["Müşahidə"], 6, { bedType:"Gözlem sedyesi" }).map((b, i) => Object.assign(b, { id:"aci-" + (i + 3), no:"ACI" + String(i + 3).padStart(2, "0") }))], "1101"),
+        U("pol", "Poliklinikalar", "Poliklinikler", "poli", "clinic", "op", "adult", "—", beds("pol", ["Daxili müayinə", "Cərrahiyyə", "Uşaq", "Qadın-doğuş"], 1, { bedType:"Müayinə otağı" }), "1201")] },
       { id:"A2", no:2, units:[U("dax", "Daxili Xəstəliklər Servisi", "Dahiliye Servisi", "ward", "ward", "ara", "adult", "NEWS2", beds("dax", 6, 2, { bedType:"Servis yatağı", iso:[6] }), "2201")] },
       { id:"A3", no:3, units:[U("cer", "Cərrahiyyə Servisi", "Genel Cerrahi Servisi", "ward", "ward", "ara", "adult", "NEWS2", beds("cer", 5, 2, { bedType:"Servis yatağı" }), "2301")] },
       { id:"A4", no:4, units:[
@@ -266,6 +267,7 @@
     gun:["Günübirlik Xidmət", "Günübirlik Hizmet", "Дневной стационар", "Day Care Unit"],
     bmt:["Sümük İliyi Köçürülməsi", "Kemik İliği Nakli", "Трансплантация костного мозга", "Bone Marrow Transplant"],
     ivf:["IVF Günübirlik Xidmət", "Tüp Bebek (IVF) Günübirlik", "ЭКО (дневной стационар)", "IVF Day Unit"],
+    pol:["Poliklinikalar", "Poliklinikler", "Поликлиники", "Outpatient Clinics"],
   };
   const BN = { A:["1. Blok · Əsas bina", "1. Blok · Ana bina", "Корпус 1 · Главный", "Block 1 · Main building"], B:["2. Blok · Uşaq, Ana və Onkologiya", "2. Blok · Çocuk, Anne ve Onkoloji", "Корпус 2 · Детство, материнство, онкология", "Block 2 · Children, Maternity and Oncology"] };
   const LI = { AZ:0, TR:1, RU:2, EN:3 };
@@ -282,13 +284,31 @@
     b.floors.forEach(f => { if (f.active === undefined) f.active = true; f.units.forEach(localize); }); });
   // Birim türü etiketi ve katman açıklaması (ekranlarda tek kaynak)
   H.KIND = { icu:"Yoğun bakım", cvicu:"KVC yoğun bakım", picu:"Çocuk yoğun bakım", nicu:"Yenidoğan yoğun bakım", ward:"Servis", bmt:"Kemik iliği nakli", er:"Acil servis",
-    cath:"Anjiyografi", chemo:"Kemoterapi günübirlik", day:"Günübirlik", ivf:"IVF günübirlik", nursery:"Bebek odası" };
+    cath:"Anjiyografi", chemo:"Kemoterapi günübirlik", day:"Günübirlik", ivf:"IVF günübirlik", nursery:"Bebek odası", clinic:"Poliklinik" };
   const KN = { icu:["Reanimasiya", "Реанимация", "ICU"], cvicu:["KVC reanimasiyası", "Кардиореанимация", "CV ICU"], picu:["Uşaq reanimasiyası", "Детская реанимация", "PICU"], nicu:["Yenidoğulmuş reanimasiyası", "Реанимация новорождённых", "NICU"],
     ward:["Servis", "Отделение", "Ward"], bmt:["Sümük iliyi köçürülməsi", "Трансплантация КМ", "BMT"], er:["Təcili yardım", "Приёмное", "Emergency"], cath:["Anjioqrafiya", "Ангиография", "Cath lab"],
-    chemo:["Kimya terapiyası", "Химиотерапия", "Chemotherapy"], day:["Günübirlik", "Дневной стационар", "Day care"], ivf:["IVF", "ЭКО", "IVF"], nursery:["Körpə otağı", "Палата новорождённых", "Nursery"] };
+    chemo:["Kimya terapiyası", "Химиотерапия", "Chemotherapy"], day:["Günübirlik", "Дневной стационар", "Day care"], ivf:["IVF", "ЭКО", "IVF"], nursery:["Körpə otağı", "Палата новорождённых", "Nursery"], clinic:["Poliklinika", "Поликлиника", "Clinic"] };
   H.kindName = (k) => { const i = { AZ:0, RU:1, EN:2 }[H.state.lang]; return i === undefined || !KN[k] ? H.KIND[k] || k : KN[k][i]; };
   H.TIER = { tam:["Tam izlem", "Skor, eskalasyon ve öneri"], ara:["Vital izlem", "Vital + erken uyarı skoru; eşikler hastanenin onayıyla"], op:["Operasyonel", "Yatak, kabul/taburcu, cihaz. Klinik öneri yok"] };
   H.isClinical = (u) => u && u.tier !== "op";
+  /* Başvuru (encounter) tipi — sistem yoğun bakıma özel kalmasın diye: ayaktan / günübirlik / yatan / yoğun.
+   * Her tip hangi sekmeleri ve vital bloğunu görür onu belirler. tabs:null → tüm sekmeler (yoğun bakım). */
+  H.ENC = {
+    ayaktan:    { label:"Ayaktan", short:"Ayaktan başvuru", vitals:false, tabs:["ozet", "belge", "istem", "sonuc"] },
+    gunubirlik: { label:"Günübirlik", short:"Günübirlik", vitals:false, tabs:["ozet", "belge", "istem", "ilac", "sonuc", "devir"] },
+    yatan:      { label:"Yatan", short:"Yatan hasta", vitals:true, tabs:["ozet", "trend", "skor", "takip", "bakim", "ilac", "sivi", "sonuc", "belge", "istem", "devir"] },
+    yogun:      { label:"Yoğun bakım", short:"Yoğun bakım", vitals:true, tabs:null },
+  };
+  // Hastanın başvuru tipi: açıkça yazılmışsa onu, yoksa yattığı birimden türet.
+  H.encOf = (p) => {
+    if (p && p.encounter && H.ENC[p.encounter]) return p.encounter;
+    const b = p && H.bed(p.bed), u = b && H.unit(b.unitId);
+    if (!u) return "ayaktan";
+    if (u.type === "poli") return "ayaktan";
+    if (u.tier === "tam") return "yogun";
+    if (u.type === "ward") return "yatan";
+    return "gunubirlik";
+  };
   // Pasif bina/kat/birim klinik ekranlarda görünmez; yönetim ağacı H.allUnits() ile hepsini görür.
   H.allUnits = () => H.data.hospital.buildings.flatMap(b => b.floors.flatMap(f => f.units.map(u => { localize(u); u.building = b.id; u.floor = f.no; u.live = b.active !== false && f.active !== false && u.active !== false; return u; })));
   H.units = () => H.allUnits().filter(u => u.live);
@@ -352,7 +372,7 @@
   /* ================= kullanıcılar (hepsi uydurma) =================
    * Demo şifreleri ekranda gösterilir; gerçek sistemde şifreler hiçbir yerde düz yazılmaz. */
   H.data.users = [
-    { u:"dr.kamran",   pw:"Demo123!", name:"Dr. Kamran Rzayev",     role:"hekim",    units:["rea","kvc","dax","cer"], mfa:true,  title:"Anesteziyoloq-reanimatoloq" },
+    { u:"dr.kamran",   pw:"Demo123!", name:"Dr. Kamran Rzayev",     role:"hekim",    units:["rea","kvc","dax","cer","pol"], mfa:true,  title:"Anesteziyoloq-reanimatoloq" },
     { u:"hs.sevda",    pw:"Demo123!", name:"Sevda Quliyeva",         role:"hemsire",  extras:["charge"], units:["rea","kvc"], title:"Baş tibb bacısı" },
     { u:"hs.gulnar",   pw:"Demo123!", name:"Gülnar İsmayılova",      role:"hemsire",  units:["dax"], title:"Tibb bacısı" },
     { u:"hs.nuray",    pw:"Demo123!", name:"Nuray Ələkbərova",       role:"hemsire",  units:["usq","nic","pic"], title:"Uşaq tibb bacısı" },
@@ -390,6 +410,9 @@
     P0({ id:"p17", name:"Vüqar Nəbiyev", sex:"E", age:52, ageGroup:"adult", bed:"aci-3", dx:"Göğüs ağrısı · gözlem", icd:"R07.4", admitDays:0, attending:"rrt.emil", nurse:null, blood:"Bilinmiyor", weight:88, height:178, risk:"low", v:{ hr:92, sbp:146, dbp:88, map:107, spo2:97, rr:18, temp:36.7, o2:"Oda havası", loc:"Uyanık" }, flags:{} }),
     P0({ id:"p18", name:"Könül Rəsulova", sex:"K", age:49, ageGroup:"adult", bed:"kem-1", dx:"Planlı kemoterapi kürü", icd:"Z51.1", admitDays:0, attending:"dr.kamran", nurse:null, blood:"A Rh(+)", weight:59, height:162, risk:"stable", v:{ hr:78, sbp:118, dbp:72, map:87, spo2:98, rr:15, temp:36.6, o2:"Oda havası", loc:"Uyanık" }, flags:{} }),
     P0({ id:"p19", name:"İlqar Sadıqov", sex:"E", age:41, ageGroup:"adult", bed:"bmt-2", dx:"Kemik iliği nakli sonrası 8. gün · nötropeni", icd:"Z94.8", admitDays:12, attending:"dr.kamran", nurse:null, blood:"AB Rh(+)", weight:71, height:177, risk:"mid", news2:3, antibioticDay:3, isolation:"Koruyucu", v:{ hr:104, sbp:112, dbp:68, map:83, spo2:96, rr:18, temp:37.9, o2:"Oda havası", loc:"Uyanık" }, flags:{ pain:2 } }),
+    // 21.10 · AYAKTAN (poliklinik) hastalar — başvuru tipi açıkça "ayaktan"; muayene odası slotunda, vital/skor yok.
+    P0({ id:"p20", name:"Günel Məmmədova", sex:"K", age:34, ageGroup:"adult", bed:"pol-1", encounter:"ayaktan", dx:"Hamiləlik izləmi", icd:"Z34.9", admitDays:0, attending:"dr.kamran", nurse:null, blood:"A Rh(+)", weight:68, height:164, risk:"stable", v:{ hr:76, sbp:118, dbp:74, map:89, spo2:99, rr:16, temp:36.6, o2:"Oda havası", loc:"Uyanık" }, flags:{} }),
+    P0({ id:"p21", name:"Orxan Əliyev", sex:"E", age:45, ageGroup:"adult", bed:"pol-2", encounter:"ayaktan", dx:"Hipertansiyon kontrolü", icd:"I10", admitDays:0, attending:"dr.kamran", nurse:null, blood:"0 Rh(+)", weight:83, height:177, chronic:["Hipertansiyon"], risk:"stable", v:{ hr:72, sbp:138, dbp:86, map:103, spo2:98, rr:15, temp:36.7, o2:"Oda havası", loc:"Uyanık" }, flags:{} }),
   ];
   // yatak durumlarını hastalardan doldur, birkaçını temizlik / bloke / kullanım dışı yap
   H.data.patients.forEach(p => { const b = H.bed(p.bed); if (b) { b.status = "dolu"; b.pid = p.id; } });
