@@ -70,10 +70,13 @@
 
 /* Hizmet katalog seçici (İstem modalı): sol kategori ağacı · orta aranabilir liste · sağ seçilenler
  * Ozan: ekran küçük kalıyordu → katalog modalı neredeyse tam ekran, yazılar büyük ve rahat okunur. */
-.modal.wide:has(.hc) { width:min(1600px, 97vw); max-width:97vw; }
-.modal.wide:has(.hc) .mb { padding-bottom:6px; }
+/* Katalog modalı = modern tam-yükseklik panel: başlık üstte, altlık altta sabit, SADECE iç paneller kayar.
+ * Ozan: "altlık ortada kalıyor, yarıda kesilmiş gibi" → modalı ekran yüksekliğine sabitle, dış kaydırmayı kaldır. */
+.modal.wide:has(.hc) { width:min(1600px, 97vw); max-width:97vw; height:calc(100vh - 24px); max-height:calc(100vh - 24px); display:flex; flex-direction:column; overflow:hidden; }
+.modal.wide:has(.hc) .mb { flex:1; min-height:0; overflow:hidden; display:flex; padding-bottom:10px; }
 .modal.wide:has(.dyt) { width:min(1080px, 94vw); }
-.hc { display:grid; grid-template-columns:250px 1fr 350px; gap:14px; height:min(74vh, 720px); }
+.hc { display:grid; grid-template-columns:250px 1fr 350px; gap:14px; height:100%; min-height:0; width:100%; }
+.hc > * { min-height:0; }   /* panellerin kendi içinde kayabilmesi için (grid taşmasını önler) */
 .hc-tree { overflow:auto; border:1px solid var(--line2); border-radius:12px; padding:9px; background:var(--card); display:flex; flex-direction:column; gap:3px; }
 .hc-cat { display:flex; align-items:center; gap:7px; width:100%; text-align:left; padding:10px 12px; border:0; background:transparent; border-radius:9px; cursor:pointer; color:var(--ink); font:600 14px Figtree; }
 .hc-cat em { margin-left:auto; font:600 11px "JetBrains Mono",monospace; color:var(--mute); font-style:normal; }
