@@ -1,0 +1,1557 @@
+<!doctype html>
+<html lang="az" data-theme="gun">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homunculus · Reanimasiya üçün klinik və əməliyyat sistemi</title>
+<!-- 29.09: paylaşım önizlemesi için; metin girişteki cümlelerden (varsayılan dil AZ). og:image, alan adı belli olunca eklenecek. -->
+<!-- 30.09: "sistem hastanenin kendi sunucusunda çalışır" çıkarıldı — motor bugün bulutta da çalışıyor, doğrulanamaz iddia. -->
+<meta name="description" content="Monitordan gələn ölçməni oxuyur, pisləşməni erkən görür və doğru şəxsə xəbər verir. Qərar həkimindir. Quraşdırma yerini xəstəxana seçir.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Homunculus · Reanimasiya üçün klinik və əməliyyat sistemi">
+<meta property="og:description" content="Monitordan gələn ölçməni oxuyur, pisləşməni erkən görür və doğru şəxsə xəbər verir. Qərar həkimindir.">
+<meta name="theme-color" content="#0e7490">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230e7490'/%3E%3Ctext x='16' y='23' font-family='Arial' font-weight='700' font-size='20' fill='%23fff' text-anchor='middle'%3Eh%3C/text%3E%3C/svg%3E">
+<script>
+/* Tema ve dil, sayfa çizilmeden önce: giriş ekranıyla aynı anahtarlar (hmc.theme, hmc.lang). */
+(function () { var t = "gun", l = "AZ"; try { t = localStorage.getItem("hmc.theme") || "gun"; l = localStorage.getItem("hmc.lang") || "AZ"; } catch (e) {}
+  document.documentElement.setAttribute("data-theme", t === "gece" ? "gece" : "gun"); document.documentElement.lang = (["AZ","TR","RU","EN"].indexOf(l) > -1 ? l : "AZ").toLowerCase(); })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* a1 · "Girişin devamı" — giriş ekranının gün/gece renkleri (app.css + ek.css) aynen. */
+:root, [data-theme="gun"] {
+  --page:#f5f8fb; --card:#ffffff; --card2:#f1f4f8; --ink:#152231; --mute:#5c6b7d; --line:#e1e6ee; --line2:#cbd3de;
+  --pri:#0e7490; --onpri:#ffffff; --priSoft:#e0f2f7; --priInk:#0e7490;
+  --crit:#dc2626; --critSoft:#fdecec; --mid:#ca8a04; --midSoft:#fdf6e3; --ok:#16a34a; --okSoft:#e7f6ec;
+  --spo:#a16207; --hr:#15803d; --tile:#f6f8fb;
+  --shadow:0 20px 50px rgba(20,30,50,.10); --shadowS:0 6px 18px rgba(20,30,50,.06);
+  --glow1:#0e7490; --glow2:#1d4ed8; --glowOp:.18; --dots:rgba(14,116,144,.14);
+  --hdr:rgba(245,248,251,.82);
+}
+[data-theme="gece"] {
+  --page:#07101f; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60;
+  --pri:#22b8d6; --onpri:#03141c; --priSoft:rgba(34,184,214,.13); --priInk:#7dd3e6;
+  --crit:#ef4444; --critSoft:rgba(239,68,68,.12); --mid:#eab308; --midSoft:rgba(234,179,8,.12); --ok:#22c55e; --okSoft:rgba(34,197,94,.12);
+  --spo:#ffe14a; --hr:#22e05a; --tile:#07101f;
+  --shadow:0 24px 60px rgba(0,0,0,.45); --shadowS:0 8px 22px rgba(0,0,0,.3);
+  --glow1:#0e7490; --glow2:#1d4ed8; --glowOp:.5; --dots:rgba(143,161,186,.07);
+  --hdr:rgba(7,16,31,.8);
+}
+* { box-sizing:border-box; }
+html { scroll-behavior:smooth; scroll-padding-top:80px; }
+html, body { margin:0; overflow-x:clip; }
+body { background:var(--page); color:var(--ink); font:16px/1.55 Figtree, system-ui, sans-serif; -webkit-font-smoothing:antialiased; transition:background .3s, color .3s; }
+a { color:var(--pri); }
+button { font:inherit; color:inherit; }
+h1, h2, h3 { font-family:"Space Grotesk", Figtree, sans-serif; letter-spacing:-.01em; margin:0; }
+.mono { font-family:"JetBrains Mono", monospace; }
+svg.i { width:18px; height:18px; flex:none; }
+/* 24.09 · Ozan: 1920'de iki yanda ~370 px boşluk kalıyordu → kap 1440'a genişledi, kenar payı ekranla büyür */
+.wrap { width:100%; max-width:1680px; margin:0 auto; padding:0 clamp(16px, 4vw, 80px); }
+
+/* ---------- logo ---------- */
+.brand { display:flex; align-items:center; gap:10px; text-decoration:none; color:var(--ink); min-width:0; }
+.mk { width:36px; height:36px; border-radius:11px; display:grid; place-items:center; background:#0e7490; color:#fff; font:700 19px "Space Grotesk", system-ui, sans-serif; box-shadow:0 8px 18px rgba(14,116,144,.25); flex:none; }
+[data-theme="gece"] .mk { background:#e8eef7; color:#07101f; box-shadow:0 0 0 5px rgba(232,238,247,.06); }
+.brand b { font:700 19px "Space Grotesk", system-ui, sans-serif; }
+
+/* ---------- üst çubuk ---------- */
+.hdr { position:sticky; top:0; z-index:50; background:var(--hdr); backdrop-filter:saturate(1.4) blur(12px); -webkit-backdrop-filter:saturate(1.4) blur(12px); border-bottom:1px solid transparent; transition:border-color .2s, background .3s; }
+.hdr.sc { border-color:var(--line); background:color-mix(in srgb, var(--card) 92%, transparent); box-shadow:0 6px 20px rgba(20,30,50,.07); }
+[data-theme="gece"] .hdr.sc { box-shadow:0 6px 24px rgba(0,0,0,.35); }
+/* kaydırma ilerleme çizgisi: sabit üst çubuğun altında ince şerit */
+.anc { display:block; height:0; }
+.prog { position:absolute; left:0; bottom:-1px; height:2px; width:100%; transform-origin:0 50%; transform:scaleX(0); background:var(--pri); pointer-events:none; }
+.hdr .wrap { display:flex; align-items:center; gap:18px; height:68px; }
+.nav { position:relative; display:flex; gap:2px; margin:0 auto; padding:4px; border-radius:14px; background:color-mix(in srgb, var(--card2) 70%, transparent); border:1px solid var(--line); }
+.nav-ind { position:absolute; top:4px; bottom:4px; left:0; width:0; border-radius:10px; background:var(--card); box-shadow:var(--shadowS); transition:transform .3s cubic-bezier(.2,.8,.2,1), width .3s cubic-bezier(.2,.8,.2,1), opacity .2s; opacity:0; z-index:0; }
+[data-theme="gece"] .nav-ind { background:var(--card2); }
+.nav a { position:relative; z-index:1; }
+.pilotL { height:40px; }
+.nav a { padding:8px 12px; border-radius:10px; color:var(--mute); text-decoration:none; font:600 14px Figtree, system-ui, sans-serif; white-space:nowrap; transition:color .15s, background .15s; }
+.nav a:hover { color:var(--ink); background:var(--card2); }
+.nav a.on { color:var(--ink); }
+/* Figtree "ə" harfini taşımıyor; yedek yazı tipi satırı kaydırmasın diye yükseklik sabit */
+.nav a, .chips span, .lsel b { line-height:20px; }
+.nav a { display:inline-flex; align-items:center; height:36px; }
+.tools { display:flex; align-items:center; gap:8px; }
+.lsel { display:inline-flex; align-items:center; gap:7px; height:38px; padding:0 10px 0 8px; border-radius:11px; border:1px solid var(--line); background:var(--card); cursor:pointer; color:var(--ink); font:700 12.5px Figtree, system-ui, sans-serif; transition:border-color .15s; }
+.lsel:hover, .lsel[aria-expanded="true"] { border-color:var(--pri); }
+.lsel svg.i { width:14px; height:14px; color:var(--mute); }
+.flagbox { position:relative; display:block; flex:none; width:22px; height:15px; border-radius:3px; overflow:hidden; }
+.flagbox svg { display:block; width:100%; height:100%; }
+.flagbox::after { content:""; position:absolute; inset:0; border-radius:inherit; box-shadow:inset 0 0 0 1px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.25); pointer-events:none; }
+.ib { width:38px; height:38px; border-radius:11px; border:1px solid var(--line); background:var(--card); display:grid; place-items:center; cursor:pointer; color:var(--ink); transition:border-color .15s; }
+.ib:hover { border-color:var(--pri); }
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:40px; padding:0 16px; border-radius:12px; border:1px solid var(--line2); background:var(--card); color:var(--ink); font:700 14px Figtree, system-ui, sans-serif; text-decoration:none; cursor:pointer; white-space:nowrap; transition:transform .12s, box-shadow .2s, border-color .15s, filter .2s; }
+.btn:hover { border-color:var(--pri); }
+.btn.p { background:var(--pri); color:var(--onpri); border-color:var(--pri); }
+.btn.p:hover { box-shadow:0 10px 24px color-mix(in srgb, var(--pri) 35%, transparent); filter:brightness(1.05); }
+.btn.lg { height:48px; padding:0 22px; font-size:15px; }
+.btn svg.i { transition:transform .2s; } .btn:hover svg.i.go { transform:translateX(3px); }
+.lwrap { position:relative; }
+/* 30.09: uygulamadaki dil menüsüyle aynı ölçüler (app.css .menu + ek.css .menu .lopt) */
+.lmenu { position:absolute; right:0; top:46px; min-width:230px; background:var(--card); border:1px solid var(--line2); border-radius:14px; box-shadow:var(--shadow); padding:8px; z-index:60; animation:up .14s ease-out; }
+.lmenu[hidden] { display:none; }
+.lopt { display:flex; align-items:center; gap:12px; width:100%; padding:9px 10px; border:0; background:none; border-radius:9px; cursor:pointer; text-align:left; color:var(--ink); font:600 13px Figtree, system-ui, sans-serif; }
+.lopt:hover { background:var(--card2); } .lopt.on { background:var(--priSoft); }
+.lopt .flagbox { width:24px; height:16px; flex:none; }
+.lopt .lt { display:flex; flex-direction:column; line-height:1.2; flex:1; font-weight:600; font-size:13px; }
+.lopt small { color:var(--mute); font:600 11px Figtree, system-ui, sans-serif; }
+.lopt svg.i { color:var(--pri); width:16px; height:16px; }
+.mnav { display:none; }
+.mpanel { display:none; }
+.loginS { display:none; }
+
+/* ---------- kahraman ---------- */
+.hero { position:relative; isolation:isolate; overflow:hidden; }
+.bg { position:absolute; inset:0; z-index:-1; overflow:hidden; background-image:radial-gradient(var(--dots) 1px, transparent 1px); background-size:26px 26px; -webkit-mask-image:radial-gradient(90% 75% at 25% 20%, #000 35%, transparent 85%); mask-image:radial-gradient(90% 75% at 25% 20%, #000 35%, transparent 85%); }
+[data-theme="gece"] .bg { background-image:linear-gradient(var(--dots) 1px, transparent 1px), linear-gradient(90deg, var(--dots) 1px, transparent 1px); background-size:44px 44px; }
+.bg i { position:absolute; border-radius:50%; filter:blur(60px); opacity:var(--glowOp); animation:float 18s ease-in-out infinite alternate; }
+.bg i:nth-child(1) { width:460px; height:460px; left:-140px; top:-160px; background:var(--glow1); }
+.bg i:nth-child(2) { width:380px; height:380px; right:-120px; top:30%; background:var(--glow2); opacity:calc(var(--glowOp) * .6); animation-duration:23s; }
+.bg i:nth-child(3) { width:300px; height:300px; left:30%; bottom:-180px; background:#22b8d6; opacity:calc(var(--glowOp) * .5); animation-duration:27s; }
+[data-theme="gun"] .hero { background:linear-gradient(135deg, #e9f4f8 0%, #f5f8fb 55%, #eaf2fb 100%); }
+@keyframes float { from { transform:translate(0,0) scale(1); } to { transform:translate(60px,40px) scale(1.15); } }
+.hero .wrap { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1.08fr); gap:clamp(40px, 5vw, 88px); align-items:center; padding-top:clamp(56px, 7vh, 96px); padding-bottom:56px; min-height:min(calc(100vh - 68px), 860px); }
+.pill { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px; border:1px solid color-mix(in srgb, var(--pri) 30%, transparent); background:var(--card); color:var(--priInk); font:700 12.5px Figtree, system-ui, sans-serif; margin-bottom:20px; max-width:100%; }
+[data-theme="gece"] .pill { background:rgba(34,184,214,.08); border-color:rgba(125,211,230,.35); }
+.pill i { width:6px; height:6px; border-radius:50%; background:currentColor; flex:none; }
+.hero h1 { font-size:clamp(34px, 3.9vw, 68px); line-height:1.02; margin-bottom:22px; }
+.hero h1 .rot { display:block; }
+.hero h1 .rest { display:block; font-size:.47em; line-height:1.2; margin-top:.35em; white-space:nowrap; color:var(--ink); letter-spacing:-.005em; }
+@media (max-width:1080px) { .hero h1 .rest { white-space:normal; font-size:.55em; } }
+.rot { color:var(--priInk); display:inline-block; }
+.hero h1 .rot { text-decoration:underline; text-decoration-thickness:.06em; text-underline-offset:.14em; text-decoration-color:color-mix(in srgb, var(--pri) 40%, transparent); }
+.rot.in { animation:rot .45s ease-out; }
+@keyframes rot { from { opacity:0; transform:translateY(10px); filter:blur(3px); } to { opacity:1; transform:none; filter:none; } }
+.lead { color:var(--mute); font-size:clamp(17px, 1.25vw, 20px); max-width:600px; margin:0 0 30px; }
+/* ürünün kendi ölçüleri — sonuç iddiası değil, prototipte sayılabilen şeyler */
+.lead2 { color:var(--mute); font-size:16px; max-width:600px; margin:-14px 0 30px; }
+.vals { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; margin-top:34px; }
+.val { background:var(--card); border:1px solid var(--line); border-left:3px solid var(--c); border-radius:12px; padding:12px 14px; min-width:0; }
+[data-theme="gece"] .val { background:rgba(15,27,46,.72); }
+.val b { display:block; font:700 14px Figtree, system-ui, sans-serif; color:var(--ink); margin-bottom:3px; }
+.val span { display:block; font-size:13px; line-height:1.45; color:var(--mute); }
+.facts { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; margin-top:34px; max-width:640px; }
+.facts div { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; min-width:0; }
+[data-theme="gece"] .facts div { background:rgba(15,27,46,.7); }
+.facts b { display:block; font:700 24px/1.1 "Space Grotesk", system-ui, sans-serif; color:var(--priInk); }
+.facts span { display:block; font-size:12.5px; color:var(--mute); margin-top:3px; line-height:1.3; }
+[data-theme="gun"] .lead { color:#4a5b6e; }
+.ctas { display:flex; gap:10px; flex-wrap:wrap; }
+.trust { display:flex; gap:10px 22px; flex-wrap:wrap; font-size:13px; color:var(--mute); border-top:1px solid var(--line); margin-top:28px; padding-top:16px; }
+.trust span { display:flex; align-items:center; gap:7px; }
+.trust svg.i { width:16px; height:16px; color:var(--ok); }
+
+/* canlı birim kartı — girişteki sahnenin aynısı */
+.scene { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:14px; box-shadow:var(--shadow); }
+[data-theme="gece"] .scene { background:rgba(4,10,20,.78); backdrop-filter:blur(10px); border-color:#1f3150; }
+.sc-head { display:flex; justify-content:space-between; align-items:center; gap:10px; font:700 12px Figtree, system-ui, sans-serif; color:var(--mute); margin-bottom:10px; }
+.sc-head > span:first-child { display:flex; align-items:center; gap:8px; min-width:0; }
+.dot { width:7px; height:7px; border-radius:50%; background:#22c55e; flex:none; animation:dot 1.6s ease-out infinite; }
+@keyframes dot { from { box-shadow:0 0 0 0 rgba(34,197,94,.6); } to { box-shadow:0 0 0 8px rgba(34,197,94,0); } }
+.sc-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; }
+.sc-bed { background:var(--tile); border:1px solid var(--line); border-radius:12px; padding:8px 9px 7px; transition:border-color .4s, box-shadow .4s, background .4s; min-width:0; }
+.sc-no { display:flex; justify-content:space-between; align-items:center; } .sc-no b { font-size:11.5px; color:var(--ink); }
+[data-theme="gece"] .sc-no b { color:#a9bccf; }
+.sc-no i { width:7px; height:7px; border-radius:50%; background:#22c55e; transition:background .4s; }
+.sc-bed svg { width:100%; height:22px; display:block; margin:4px 0 2px; }
+.sc-bed polyline { fill:none; stroke:#22b8d6; stroke-width:1.6; vector-effect:non-scaling-stroke; opacity:.8; transition:stroke .4s; }
+.sc-v { display:flex; justify-content:space-between; align-items:baseline; } .sc-v small { font:700 9.5px Figtree, system-ui, sans-serif; color:var(--mute); } .sc-v b { font-size:16px; color:var(--spo); transition:color .4s; }
+.sc-bed.warn { border-color:#eab308; } .sc-bed.warn .sc-no i { background:#eab308; } .sc-bed.warn polyline { stroke:#eab308; }
+.sc-bed.crit { border-color:#ef4444; background:var(--critSoft); animation:crit 1s steps(2, jump-none) infinite; } .sc-bed.crit .sc-no i { background:#ef4444; } .sc-bed.crit polyline { stroke:#ef4444; } .sc-bed.crit .sc-v b { color:var(--crit); }
+@keyframes crit { 0% { box-shadow:0 0 0 1px #ef4444, 0 0 22px rgba(239,68,68,.4); } 100% { box-shadow:none; } }
+.sc-bed.ok { border-color:#22c55e; } .sc-bed.ok .sc-v b { color:var(--ok); }
+/* 30.09: hekim gördü — yatak yeşil çerçeve, değer hâlâ kırmızı (karar hekimin); yanıt vermeyen basamak sarı */
+.sc-bed.seen { border-color:#16a34a; box-shadow:0 0 0 1px #16a34a; } .sc-bed.seen .sc-no i { background:#16a34a; } .sc-bed.seen polyline { stroke:#ef4444; } .sc-bed.seen .sc-v b { color:var(--crit); }
+.sc-st.nr { border-color:color-mix(in srgb, #ca8a04 55%, transparent); background:var(--midSoft); } .sc-st.nr .ic { background:#eab308; color:#fff; } .sc-st.nr b { color:#a16207; }
+[data-theme="gece"] .sc-st.nr b { color:var(--mid); }
+.sc-cap.w { color:#a16207; } [data-theme="gece"] .sc-cap.w { color:var(--mid); }
+/* 29.09: üç çip yan yana sığmıyordu (AZ/RU'da "Baş tibb bacısı +3 dəq" komşusunun altına giriyordu) → her genişlikte
+   telefondaki üç sütunlu düzen: simge üstte, ad ve süre altta. */
+.sc-chain { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px; margin-top:12px; }
+.sc-ln { display:none; }
+.sc-chain .sc-st { flex-direction:column; gap:4px; border-radius:14px; padding:8px 4px; text-align:center; }
+.sc-chain .sc-st b { white-space:normal; line-height:1.2; }
+.sc-st { display:flex; align-items:center; gap:8px; padding:7px 10px 7px 7px; border-radius:999px; border:1px solid var(--line); background:var(--tile); transition:all .35s; min-width:0; }
+.sc-st .ic { width:26px; height:26px; border-radius:50%; display:grid; place-items:center; background:var(--card2); color:var(--mute); transition:all .35s; flex:none; }
+.sc-st .ic svg.i { width:14px; height:14px; }
+.sc-st b { font:700 12px Figtree, system-ui, sans-serif; color:var(--mute); white-space:nowrap; } .sc-st small { font-size:10.5px; color:var(--mute); white-space:nowrap; }
+.sc-st.on { border-color:#ef4444; background:var(--critSoft); } .sc-st.on .ic { background:#ef4444; color:#fff; box-shadow:0 0 0 5px rgba(239,68,68,.18); } .sc-st.on b { color:var(--crit); }
+.sc-st.done { border-color:color-mix(in srgb, var(--ok) 50%, transparent); } .sc-st.done .ic { background:#16a34a; color:#fff; } .sc-st.done b { color:var(--ok); }
+.sc-cap { margin-top:12px; font:700 14px/1.45 Figtree, system-ui, sans-serif; color:var(--ink); min-height:2.9em; }
+.sc-cap.in { animation:rot .4s ease-out; } .sc-cap.c { color:var(--crit); } .sc-cap.g { color:var(--ok); }
+
+/* ---------- bölümler ---------- */
+section.s { padding:96px 0; }
+section.s.alt { background:var(--card); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+[data-theme="gece"] section.s.alt { background:#0a1628; }
+.kick { display:inline-flex; align-items:center; gap:8px; font:700 12px Figtree, system-ui, sans-serif; letter-spacing:.08em; text-transform:uppercase; color:var(--priInk); margin-bottom:12px; }
+.kick::before { content:""; width:18px; height:2px; border-radius:2px; background:currentColor; }
+.s h2 { font-size:clamp(28px, 3.2vw, 40px); line-height:1.12; max-width:720px; }
+.s .sub { color:var(--mute); font-size:17px; max-width:620px; margin:12px 0 0; }
+.head { margin-bottom:44px; }
+
+/* 30.09 · "Bir değer bozulduğunda ne olur?" — üç adımlık kartların yerine hareketli hikâye (Ozan: "ana sayfa biraz hareketlensin").
+   Birim ekranında REA03 kızarır → NEWS2 hekim onayına düşer → hemşirenin telefonuna bildirim → 3 dk yanıt yok →
+   sorumlu hemşire → 5. dk hekim görür. Altta zaman çizelgesi, sağda denetim kaydı satır satır dolar.
+   Ekran dışındayken durur; "hareketi azalt" açıksa son hâl gösterilir. */
+.story { position:relative; background:var(--card); border:1px solid var(--line); border-radius:24px; box-shadow:var(--shadow); padding:18px; overflow:hidden; isolation:isolate; }
+[data-theme="gece"] .story { background:#0a1628; }
+.story::before { content:""; position:absolute; inset:-30% -10% auto auto; width:520px; height:520px; border-radius:50%; background:radial-gradient(closest-side, color-mix(in srgb, var(--crit) 16%, transparent), transparent); opacity:0; transition:opacity .8s; z-index:-1; pointer-events:none; }
+.story[data-p="1"]::before, .story[data-p="2"]::before, .story[data-p="3"]::before, .story[data-p="4"]::before { opacity:1; }
+.st-top { display:flex; align-items:center; gap:14px; padding:4px 4px 16px; border-bottom:1px solid var(--line); margin-bottom:16px; }
+.st-clock { display:flex; align-items:center; gap:8px; padding:6px 12px 6px 10px; border-radius:12px; background:var(--card2); border:1px solid var(--line); flex:none; }
+.st-clock svg.i { width:16px; height:16px; color:var(--mute); }
+.st-clock b { font:700 20px/1 "JetBrains Mono", ui-monospace, monospace; letter-spacing:-.02em; min-width:5ch; display:inline-block; }
+.st-clock b.tick { animation:tick .35s ease-out; }
+@keyframes tick { from { transform:translateY(-8px); opacity:0; } to { transform:none; opacity:1; } }
+.st-cap { margin:0; flex:1; min-width:0; font:700 16px Figtree, system-ui, sans-serif; color:var(--ink); }
+.st-cap.in { animation:rot .45s ease-out; }
+.st-cap.c { color:var(--crit); } .st-cap.w { color:var(--mid); } .st-cap.g { color:var(--ok); }
+[data-theme="gun"] .st-cap.w { color:#a16207; }
+.st-replay { display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 12px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--mute); font:700 12.5px Figtree, system-ui, sans-serif; cursor:pointer; flex:none; }
+.st-replay:hover { color:var(--ink); border-color:var(--pri); }
+.st-replay svg.i { width:14px; height:14px; }
+.st-body { display:grid; grid-template-columns:minmax(0, 1.12fr) minmax(0, .78fr) minmax(0, 1fr); gap:16px; align-items:stretch; }
+.st-pane { position:relative; background:var(--page); border:1px solid var(--line); border-radius:18px; padding:14px; min-width:0; }
+[data-theme="gece"] .st-pane { background:#07101f; }
+.st-h { display:flex; align-items:center; gap:8px; font:700 11.5px Figtree, system-ui, sans-serif; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); margin-bottom:12px; }
+.st-h svg.i { width:15px; height:15px; }
+.st-h .live { margin-left:auto; display:inline-flex; align-items:center; gap:6px; letter-spacing:.04em; color:var(--ok); }
+.st-h .live::before { content:""; width:7px; height:7px; border-radius:50%; background:#22c55e; animation:dot 1.6s ease-out infinite; }
+/* birim ekranı */
+.st-beds { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px; }
+.sb2 { position:relative; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:8px 9px 7px; min-width:0; transition:border-color .4s, background .4s, box-shadow .4s, transform .4s; }
+[data-theme="gece"] .sb2 { background:#0f1b2e; }
+.sb2 .no { display:flex; justify-content:space-between; align-items:center; font:700 11.5px "JetBrains Mono", ui-monospace, monospace; color:var(--mute); }
+.sb2 .no i { width:7px; height:7px; border-radius:50%; background:#22c55e; transition:background .4s; }
+.sb2 svg { display:block; width:100%; height:26px; margin:5px 0 3px; }
+.sb2 polyline { fill:none; stroke:#22b8d6; stroke-width:1.6; vector-effect:non-scaling-stroke; transition:stroke .4s; }
+.sb2 .v { display:flex; justify-content:space-between; align-items:baseline; }
+.sb2 .v small { font:700 9.5px Figtree, system-ui, sans-serif; color:var(--mute); }
+.sb2 .v b { font:700 18px "JetBrains Mono", ui-monospace, monospace; color:var(--spo); transition:color .4s; }
+.sb2.crit { border-color:#ef4444; background:var(--critSoft); animation:crit 1s steps(2, jump-none) infinite; transform:scale(1.04); z-index:1; }
+.sb2.crit .no i { background:#ef4444; } .sb2.crit polyline { stroke:#ef4444; } .sb2.crit .v b { color:var(--crit); } .sb2.crit .no { color:var(--crit); }
+.sb2.seen { border-color:#16a34a; background:var(--okSoft); animation:none; transform:none; } .sb2.seen .no i { background:#16a34a; } .sb2.seen .v b { color:var(--crit); }
+.st-news { margin-top:12px; display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:14px; border:1px dashed var(--line2); color:var(--mute); font:600 13px Figtree, system-ui, sans-serif; min-height:58px; transition:all .4s; }
+.st-news .sc { display:grid; place-items:center; width:40px; height:40px; border-radius:12px; background:var(--card2); color:var(--mute); font:700 18px "JetBrains Mono", ui-monospace, monospace; flex:none; transition:all .4s; }
+.st-news .sn { display:grid; gap:1px; min-width:0; } .st-news .sn b { color:var(--ink); font-size:14px; } .st-news .sn small { font-size:12px; }
+.st-news .sg { margin-left:auto; flex:none; font:700 11px Figtree, system-ui, sans-serif; padding:4px 9px; border-radius:999px; background:var(--midSoft); color:#a16207; border:1px solid color-mix(in srgb, #ca8a04 45%, transparent); opacity:0; transform:translateX(8px); transition:all .4s .15s; }
+[data-theme="gece"] .st-news .sg { color:var(--mid); }
+.story.nw .st-news { border-style:solid; border-color:color-mix(in srgb, var(--crit) 45%, transparent); background:var(--card); }
+[data-theme="gece"] .story.nw .st-news { background:#0f1b2e; }
+.story.nw .st-news .sc { background:var(--crit); color:#fff; animation:pop .5s cubic-bezier(.2,.9,.3,1.4); }
+.story.nw .st-news .sg { opacity:1; transform:none; }
+@keyframes pop { from { transform:scale(.4); } to { transform:none; } }
+/* hemşirenin telefonu (çizim) */
+.st-ph { display:flex; flex-direction:column; }
+.mph { position:relative; align-self:center; width:100%; max-width:212px; aspect-ratio:9 / 17.5; margin-top:auto; margin-bottom:auto; border-radius:30px; padding:7px; background:linear-gradient(150deg, #3a4556, #0b1220 25%, #0b1220 75%, #2a3444); box-shadow:0 24px 50px -18px rgba(6,20,30,.55); transition:box-shadow .4s, transform .4s; }
+.story.ring .mph { animation:shake .5s ease-in-out 2; box-shadow:0 0 0 4px rgba(239,68,68,.35), 0 24px 50px -18px rgba(6,20,30,.55); }
+@keyframes shake { 0%, 100% { transform:none; } 20% { transform:rotate(-3deg); } 40% { transform:rotate(3deg); } 60% { transform:rotate(-2deg); } 80% { transform:rotate(2deg); } }
+.mp-scr { position:relative; height:100%; border-radius:24px; overflow:hidden; background:#f3f5f9; color:#152231; padding:30px 9px 9px; display:flex; flex-direction:column; gap:6px; font-family:Figtree, system-ui, sans-serif; }
+[data-theme="gece"] .mp-scr { background:#0b1220; color:#e8eef7; }
+.mp-scr::before { content:""; position:absolute; left:50%; top:7px; width:56px; height:15px; border-radius:10px; background:#05080f; transform:translateX(-50%); }
+.mp-hd { display:flex; justify-content:space-between; align-items:center; font:700 15px "Space Grotesk", system-ui, sans-serif; }
+.mp-hd i { width:22px; height:22px; border-radius:50%; background:#0e7490; color:#fff; font:800 8.5px Figtree; font-style:normal; display:grid; place-items:center; }
+.mp-row { display:flex; align-items:center; gap:7px; padding:7px 8px; border-radius:10px; background:#fff; border:1px solid #dde4ec; font-size:10.5px; font-weight:600; }
+[data-theme="gece"] .mp-row { background:#111c30; border-color:#1f2e48; }
+.mp-row span { font:600 9.5px "JetBrains Mono", ui-monospace, monospace; color:#5c6b7d; width:30px; flex:none; }
+.mp-row i { width:2px; align-self:stretch; border-radius:2px; background:#cbd3de; }
+.mp-al { display:grid; gap:4px; padding:10px; border-radius:14px; background:linear-gradient(135deg, #dc2626, #b91c1c); color:#fff; transform:translateY(12px) scale(.96); opacity:0; max-height:0; padding-block:0; overflow:hidden; transition:all .45s cubic-bezier(.2,.9,.3,1.1); }
+.story.al .mp-al { transform:none; opacity:1; max-height:220px; padding-block:10px; }
+.mp-al .k { font:800 9px Figtree; letter-spacing:.08em; text-transform:uppercase; color:#ffe1e1; }
+.mp-al b { font:700 17px "JetBrains Mono", ui-monospace, monospace; }
+.mp-al small { font-size:10.5px; opacity:.92; }
+.mp-al .bt { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-top:4px; }
+.mp-al .bt span { display:grid; place-items:center; height:26px; border-radius:9px; font:700 10px Figtree; background:rgba(255,255,255,.18); }
+.mp-al .bt span:first-child { background:#fff; color:#b91c1c; }
+.mp-al .tm { display:none; align-items:center; gap:5px; font:700 10px Figtree; padding:4px 7px; border-radius:8px; background:rgba(0,0,0,.22); justify-self:start; }
+.story.nr .mp-al .tm { display:inline-flex; animation:rot .4s ease-out; }
+.story.ok .mp-al { background:linear-gradient(135deg, #16a34a, #15803d); }
+.story.ok .mp-al .bt, .story.ok .mp-al .tm { display:none; }
+.mp-al .ok { display:none; align-items:center; gap:6px; font:700 11px Figtree; }
+.mp-al .ok svg.i { width:14px; height:14px; }
+.story.ok .mp-al .ok { display:flex; animation:rot .4s ease-out; }
+.mp-push { position:absolute; left:6px; right:6px; top:27px; z-index:3; display:grid; gap:1px; padding:7px 9px; border-radius:12px; background:rgba(15,27,46,.95); color:#fff; box-shadow:0 10px 24px rgba(0,0,0,.3); transform:translateY(-140%); opacity:0; transition:transform .45s cubic-bezier(.2,.9,.3,1.2), opacity .3s; }
+.mp-push .fp-app { display:flex; align-items:center; gap:5px; font:700 8.5px Figtree; color:#cfe3ea; }
+.mp-push .fp-app i { width:13px; height:13px; border-radius:4px; background:#0e7490; color:#fff; font:700 8px "Space Grotesk"; font-style:normal; display:grid; place-items:center; }
+.mp-push .fp-app em { margin-left:auto; font-style:normal; font-weight:600; color:#9fb6c3; }
+.mp-push b { font:700 10.5px Figtree; }
+.story.push .mp-push { transform:none; opacity:1; }
+.mp-scr .unit-ping { display:none; }
+/* zincir + denetim kaydı */
+.ch { list-style:none; margin:0; padding:0; display:grid; gap:0; position:relative; }
+.ch li { position:relative; display:flex; align-items:center; gap:12px; padding:8px 8px 8px 6px; border-radius:14px; border:1px solid transparent; transition:all .35s; }
+.ch li + li::before { content:""; position:absolute; left:23px; top:-10px; width:2px; height:20px; background:var(--line2); border-radius:2px; transition:background .35s; }
+.ch .ic { position:relative; z-index:1; width:34px; height:34px; border-radius:50%; display:grid; place-items:center; background:var(--card2); color:var(--mute); border:1px solid var(--line); flex:none; transition:all .35s; }
+.ch .ic svg.i { width:16px; height:16px; }
+.ch div { min-width:0; flex:1; } .ch b { display:block; font:700 14px Figtree, system-ui, sans-serif; color:var(--mute); transition:color .35s; }
+.ch small { display:flex; gap:6px; align-items:center; font:600 11.5px Figtree, system-ui, sans-serif; color:var(--mute); }
+.ch small .mono { font-size:11px; }
+.ch small em { font-style:normal; }
+.ch li.on { border-color:#ef4444; background:var(--critSoft); } .ch li.on .ic { background:#ef4444; color:#fff; border-color:#ef4444; animation:ring 1.2s ease-out infinite; } .ch li.on b { color:var(--crit); }
+@keyframes ring { from { box-shadow:0 0 0 0 rgba(239,68,68,.5); } to { box-shadow:0 0 0 10px rgba(239,68,68,0); } }
+.ch li.nr .ic { background:var(--midSoft); color:#a16207; border-color:color-mix(in srgb, #ca8a04 45%, transparent); } .ch li.nr b { color:var(--ink); } .ch li.nr small em { color:#a16207; font-weight:700; }
+[data-theme="gece"] .ch li.nr .ic, [data-theme="gece"] .ch li.nr small em { color:var(--mid); }
+.ch li.done .ic { background:#16a34a; color:#fff; border-color:#16a34a; } .ch li.done b { color:var(--ok); } .ch li.done small em { color:var(--ok); font-weight:700; }
+.ch li.on::before, .ch li.done::before, .ch li.nr + li.on::before { background:var(--pri); }
+.st-h2 { margin:16px 0 8px; padding-top:14px; border-top:1px solid var(--line); }
+.log { list-style:none; margin:0; padding:0; display:grid; gap:4px; min-height:124px; align-content:start; }
+.log li { display:flex; gap:8px; align-items:baseline; font-size:12.5px; color:var(--ink); padding:3px 6px; border-radius:7px; animation:logIn .4s ease-out; }
+.log li:last-child { background:var(--priSoft); }
+.log li span { font:600 11px "JetBrains Mono", ui-monospace, monospace; color:var(--mute); flex:none; }
+@keyframes logIn { from { opacity:0; transform:translateX(-10px); } to { opacity:1; transform:none; } }
+/* zaman çizelgesi */
+.st-tl { list-style:none; margin:18px 0 0; padding:0; display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:10px; position:relative; }
+.st-tl .bar { position:absolute; left:12px; right:12px; top:11px; height:3px; border-radius:3px; background:var(--line); }
+.st-tl .bar i { position:absolute; left:0; top:0; bottom:0; width:0; border-radius:3px; background:linear-gradient(90deg, var(--crit), var(--mid) 60%, var(--ok)); transition:width .8s cubic-bezier(.3,.7,.3,1); }
+.st-tl li { position:relative; z-index:1; min-width:0; }
+.st-tl button { display:grid; gap:3px; width:100%; padding:0; border:0; background:none; text-align:left; cursor:pointer; color:var(--ink); }
+.st-tl .dt { width:25px; height:25px; border-radius:50%; background:var(--card); border:2px solid var(--line2); display:grid; place-items:center; transition:all .35s; margin-bottom:8px; }
+.st-tl .dt::after { content:""; width:7px; height:7px; border-radius:50%; background:var(--line2); transition:background .35s; }
+.st-tl .t { font:700 12px "JetBrains Mono", ui-monospace, monospace; color:var(--mute); }
+.st-tl b { font:700 14.5px/1.3 Figtree, system-ui, sans-serif; }
+.st-tl small { color:var(--mute); font-size:13px; line-height:1.4; }
+.st-tl li.done .dt { border-color:var(--pri); } .st-tl li.done .dt::after { background:var(--pri); }
+.st-tl li.on .dt { border-color:var(--crit); box-shadow:0 0 0 5px color-mix(in srgb, var(--crit) 18%, transparent); } .st-tl li.on .dt::after { background:var(--crit); }
+.st-tl li.on .t { color:var(--crit); }
+.st-tl li:last-child.on .dt { border-color:var(--ok); box-shadow:0 0 0 5px color-mix(in srgb, var(--ok) 20%, transparent); } .st-tl li:last-child.on .dt::after { background:var(--ok); } .st-tl li:last-child.on .t { color:var(--ok); }
+.st-tl li:not(.on):not(.done) b, .st-tl li:not(.on):not(.done) small { opacity:.55; }
+.st-tl button:hover b { color:var(--priInk); }
+@media (max-width:1080px) {
+  .st-body { grid-template-columns:minmax(0, .9fr) minmax(0, 1fr); }
+  .st-unit { grid-column:1 / -1; }
+  .st-tl { grid-template-columns:repeat(3, minmax(0, 1fr)); row-gap:18px; } .st-tl .bar { display:none; }
+}
+@media (max-width:640px) {
+  .story { padding:12px; border-radius:20px; }
+  .st-top { flex-wrap:wrap; gap:10px; padding-bottom:12px; margin-bottom:12px; }
+  .st-cap { order:3; flex:1 1 100%; font-size:15px; }
+  .st-replay { margin-left:auto; }
+  .st-body { grid-template-columns:minmax(0, 1fr); gap:12px; }
+  .st-unit { grid-column:auto; }
+  .st-beds { gap:6px; } .sb2 { padding:7px 7px 6px; } .sb2 .v b { font-size:15px; } .sb2 svg { height:20px; }
+  .st-ph .mph { max-width:190px; }
+  .st-tl { grid-template-columns:minmax(0, 1fr); gap:10px; padding-left:4px; }
+  .st-tl::before { content:""; position:absolute; left:15px; top:6px; bottom:6px; width:2px; background:var(--line); }
+  .st-tl button { grid-template-columns:25px auto minmax(0, 1fr); column-gap:10px; align-items:start; }
+  .st-tl .dt { grid-row:1 / span 2; margin:0; }
+  .st-tl .t { padding-top:4px; } .st-tl b { grid-column:3; grid-row:1; padding-top:2px; } .st-tl small { grid-column:2 / -1; }
+}
+@media (prefers-reduced-motion: reduce) { .story *, .story::before { animation:none !important; transition:none !important; } }
+.note { display:flex; align-items:center; gap:10px; margin-top:22px; color:var(--mute); font-size:14.5px; }
+.note svg.i { color:var(--ok); }
+
+/* roller */
+.roles { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px; }
+.role { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:18px; display:flex; flex-direction:column; gap:8px; transition:border-color .2s, transform .2s; }
+.role:hover { border-color:var(--pri); transform:translateY(-2px); }
+.role .ic { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; background:var(--priSoft); color:var(--priInk); }
+.role .ic svg.i { width:20px; height:20px; }
+.role h3 { font-size:17px; }
+.role p { margin:0; color:var(--mute); font-size:14px; }
+.nn { margin-top:auto; align-self:flex-start; display:inline-flex; align-items:center; gap:6px; font:700 11.5px Figtree, system-ui, sans-serif; color:var(--mute); border:1px dashed var(--line2); border-radius:999px; padding:3px 9px; }
+.nn svg.i { width:13px; height:13px; }
+.role.anon .ic { background:var(--card2); color:var(--mute); }
+
+/* güven — 30.09: "Sınırları baştan belli." Dört kart; her birinin altında kırmızı "yapmaz" satırı */
+.trustg { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:16px; }
+.tc { position:relative; display:flex; flex-direction:column; gap:10px; background:var(--page); border:1px solid var(--line); border-radius:20px; padding:24px 22px 20px; transition:border-color .2s, transform .2s, box-shadow .2s; }
+[data-theme="gece"] .tc { background:#07101f; }
+.tc:hover { transform:translateY(-3px); border-color:color-mix(in srgb, var(--pri) 45%, transparent); box-shadow:var(--shadowS); }
+.tc .ic { width:48px; height:48px; border-radius:14px; display:grid; place-items:center; background:var(--priSoft); color:var(--priInk); }
+.tc .ic svg.i { width:24px; height:24px; }
+.tc h3 { font-size:19px; line-height:1.25; margin-top:6px; }
+.tc p { margin:0; color:var(--mute); font-size:14.5px; }
+.tc .no { margin-top:auto; display:flex; gap:8px; align-items:flex-start; padding-top:14px; border-top:1px dashed var(--line2); color:var(--crit); font:700 13.5px/1.4 Figtree, system-ui, sans-serif; }
+.tc .no svg.i { width:16px; height:16px; margin-top:1px; flex:none; stroke-width:2.6; }
+
+/* mobil uygulama · yakında (30.09) */
+.mob { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1.05fr); gap:clamp(32px, 5vw, 88px); align-items:center; }
+.mb-soon { display:inline-flex; align-items:center; gap:6px; margin-left:4px; padding:2px 8px; border-radius:999px; background:var(--priSoft); color:var(--priInk); font:700 11px Figtree, system-ui, sans-serif; letter-spacing:.04em; text-transform:none; }
+.mb-list { list-style:none; margin:30px 0 0; padding:0; display:grid; gap:12px; max-width:560px; }
+.mb-list li { display:flex; gap:14px; align-items:center; padding:14px 16px; border-radius:16px; background:var(--card); border:1px solid var(--line); transition:border-color .2s, transform .2s; }
+.mb-list li:hover { border-color:var(--pri); transform:translateX(3px); }
+.mb-list .ic { width:44px; height:44px; border-radius:13px; display:grid; place-items:center; background:var(--priSoft); color:var(--priInk); flex:none; }
+.mb-list .ic svg.i { width:21px; height:21px; }
+.mb-list li:first-child .ic { background:var(--critSoft); color:var(--crit); }
+.mb-list b { display:block; font-size:16px; } .mb-list span { display:block; color:var(--mute); font-size:14px; }
+.stores { display:flex; flex-wrap:wrap; gap:12px; margin-top:28px; }
+.store { display:inline-flex; align-items:center; gap:11px; height:56px; padding:0 20px 0 14px; border-radius:14px; background:#0b0f16; color:#fff; border:1px solid rgba(255,255,255,.16); cursor:default; user-select:none; box-shadow:var(--shadowS); }
+[data-theme="gece"] .store { background:#000; border-color:#2a3f60; }
+.store svg { width:26px; height:26px; flex:none; }
+.store span { display:grid; line-height:1.1; }
+.store small { font:600 10.5px Figtree, system-ui, sans-serif; letter-spacing:.06em; text-transform:uppercase; color:#b9c6d4; }
+.store b { font:600 19px Figtree, system-ui, sans-serif; letter-spacing:-.01em; }
+/* 30.09 (Ozan, 4. tur): iki cihaz aynı boyda, üst üste binen bilinçli bir çift — önde iPhone (İşlerim), arkada yana kaymış Android
+   (hasta kartı); ikisi de kahramandaki telefon gibi hafif eğik. Arkada yumuşak petrol parıltısı + halka; boş kutu yok. */
+.mb-vis { position:relative; display:grid; place-items:center; padding:12px 0; }
+.mb-pair { --pw:clamp(200px, 12.6vw, 248px); position:relative; width:calc(var(--pw) * 1.66); height:calc(var(--pw) * 2.2 + 64px); perspective:1600px; }
+.mb-pair::before { content:""; position:absolute; left:50%; top:50%; width:min(calc(var(--pw) * 2.5), calc(100vw - 32px)); aspect-ratio:1; transform:translate(-50%, -50%); border-radius:50%; background:radial-gradient(closest-side, color-mix(in srgb, var(--pri) 26%, transparent), color-mix(in srgb, var(--pri) 7%, transparent) 72%, transparent); z-index:0; pointer-events:none; }
+.mb-pair::after { content:""; position:absolute; left:50%; top:50%; width:min(calc(var(--pw) * 2), calc(100vw - 48px)); aspect-ratio:1; transform:translate(-50%, -50%); border-radius:50%; border:1px solid color-mix(in srgb, var(--pri) 22%, transparent); z-index:0; pointer-events:none; }
+.mb-pair .dv { position:absolute; width:var(--pw); transform:rotateY(-16deg) rotateX(4deg) rotateZ(2.5deg); transform-origin:60% 50%; }
+.mb-pair .dv.and { left:0; top:0; z-index:1; animation:hpf 8s ease-in-out -3s infinite; }
+.mb-pair .dv.ios { right:0; bottom:0; z-index:2; animation:hpf 7s ease-in-out infinite; }
+.mb-chip { position:absolute; z-index:3; display:flex; align-items:center; gap:9px; padding:9px 13px 9px 9px; border-radius:14px; background:var(--card); border:1px solid var(--line); box-shadow:var(--shadow); font:700 12.5px Figtree, system-ui, sans-serif; white-space:nowrap; animation:flt 6s ease-in-out infinite; }
+.mb-chip i { width:28px; height:28px; border-radius:9px; display:grid; place-items:center; font-style:normal; flex:none; }
+.mb-chip i svg.i { width:15px; height:15px; }
+.mb-chip small { display:block; font:600 11px Figtree, system-ui, sans-serif; color:var(--mute); }
+.mb-chip.c1 { left:-38px; bottom:15%; } .mb-chip.c1 i { background:var(--critSoft); color:var(--crit); }
+.mb-chip.c2 { right:0; bottom:4%; animation-delay:-2.5s; } .mb-chip.c2 i { background:var(--okSoft); color:var(--ok); }
+@keyframes flt { 0%, 100% { transform:translateY(0); } 50% { transform:translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .mb-chip { animation:none; } }
+@media (max-width:1080px) { .mob { grid-template-columns:minmax(0, 1fr); } }
+@media (max-width:560px) {
+  .mb-pair { --pw:150px; }
+  .mb-chip.c1 { left:-8px; }
+
+  .store { flex:1 1 150px; justify-content:center; padding:0 14px; }
+}
+
+/* pilot */
+.pilot { display:grid; grid-template-columns:minmax(0, 1.1fr) minmax(0, 1fr); gap:40px; align-items:center; background:var(--card); border:1px solid var(--line); border-radius:24px; padding:44px; box-shadow:var(--shadow); position:relative; overflow:hidden; isolation:isolate; }
+.pilot::before { content:""; position:absolute; width:420px; height:420px; right:-160px; top:-200px; border-radius:50%; background:#22b8d6; filter:blur(70px); opacity:calc(var(--glowOp) * .8); z-index:-1; }
+.pl { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+.pl li { display:flex; align-items:center; gap:14px; padding:14px 16px; border:1px solid var(--line); border-radius:14px; background:var(--page); font-weight:700; }
+[data-theme="gece"] .pl li { background:#07101f; }
+.pl li b { width:30px; height:30px; border-radius:50%; display:grid; place-items:center; background:var(--priSoft); color:var(--priInk); font:700 13px "JetBrains Mono", ui-monospace, monospace; flex:none; }
+.pilot .ctas { margin-top:24px; }
+
+/* sorun */
+.probs { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:16px; }
+.pc { background:var(--page); border:1px solid var(--line); border-radius:18px; padding:22px 20px; }
+[data-theme="gece"] .pc { background:#07101f; }
+.pc .ic { width:42px; height:42px; border-radius:12px; display:grid; place-items:center; background:var(--critSoft); color:var(--crit); margin-bottom:16px; }
+.pc h3 { font-size:18px; margin-bottom:6px; } .pc p { margin:0; color:var(--mute); font-size:14.5px; }
+
+/* bugün sistemde olanlar: üç sütun (hekim · hemşire · kurum) */
+.feat { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:18px; }
+.fg { background:var(--page); border:1px solid var(--line); border-radius:20px; padding:22px 22px 12px; display:flex; flex-direction:column; }
+[data-theme="gece"] .fg { background:#07101f; }
+.fg-h { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+.fg-h .ic { width:44px; height:44px; border-radius:13px; display:grid; place-items:center; background:var(--pri); color:var(--onpri); flex:none; }
+.fg-h h3 { font-size:20px; } .fg-h small { display:block; color:var(--mute); font:600 12.5px Figtree, system-ui, sans-serif; }
+.fi { display:flex; gap:12px; padding:12px 0; border-top:1px solid var(--line); min-width:0; }
+.fi .ic { width:32px; height:32px; border-radius:10px; display:grid; place-items:center; background:var(--priSoft); color:var(--priInk); flex:none; }
+.fi .ic svg.i { width:16px; height:16px; }
+.fi b { display:block; font-size:15px; } .fi span { display:block; color:var(--mute); font-size:13.5px; line-height:1.45; }
+
+/* birimler */
+.units { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:16px; }
+.un { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:20px; display:flex; flex-direction:column; gap:8px; box-shadow:var(--shadowS); }
+.un.big { grid-column:span 3; flex-direction:row; align-items:center; gap:22px; background:linear-gradient(120deg, var(--priSoft), var(--card) 60%); }
+.un .ic { width:44px; height:44px; border-radius:13px; display:grid; place-items:center; background:var(--priSoft); color:var(--priInk); flex:none; }
+.un.big .ic { width:56px; height:56px; background:var(--pri); color:var(--onpri); } .un.big .ic svg.i { width:26px; height:26px; }
+.un h3 { font-size:18px; } .un p { margin:0; color:var(--mute); font-size:14.5px; }
+.un .src { align-self:flex-start; margin-top:auto; display:inline-flex; align-items:center; gap:6px; font:700 11.5px Figtree, system-ui, sans-serif; color:var(--ok); background:var(--okSoft); border-radius:999px; padding:4px 10px; }
+.un .src svg.i { width:13px; height:13px; }
+.chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+.chips span { font:700 13px Figtree, system-ui, sans-serif; padding:6px 12px; border-radius:999px; background:var(--card); border:1px solid var(--line2); }
+
+/* ne yapar / ne yapmaz */
+.yn { display:grid; grid-template-columns:minmax(0, 1.25fr) minmax(0, 1fr); border:1px solid var(--line); border-radius:20px; overflow:hidden; background:var(--page); margin-bottom:44px; }
+[data-theme="gece"] .yn { background:#07101f; }
+.yn > div { padding:20px 24px 8px; } .yn .n { border-left:1px solid var(--line); }
+.yn h3 { display:flex; align-items:center; gap:10px; font:700 14px Figtree, system-ui, sans-serif; letter-spacing:.08em; text-transform:uppercase; margin-bottom:6px; }
+.yn .y h3 { color:var(--ok); } .yn .n h3 { color:var(--crit); }
+.yn .b { width:26px; height:26px; border-radius:50%; display:grid; place-items:center; }
+.yn .y .b { background:var(--okSoft); } .yn .n .b { background:var(--critSoft); }
+.yn .b svg.i { width:14px; height:14px; }
+.row { display:flex; gap:12px; padding:13px 0; border-top:1px solid var(--line); }
+.row .k { width:24px; height:24px; border-radius:50%; display:grid; place-items:center; flex:none; color:#fff; margin-top:1px; }
+.yn .y .row .k { background:var(--ok); } .yn .n .row .k { background:var(--crit); }
+.row .k svg.i { width:13px; height:13px; }
+.row b { display:block; font-size:15.5px; } .row span { color:var(--mute); font-size:14px; }
+
+/* altbilgi — Homunculus'un kendi dili: koyu petrol zemin, üstte yatak başı monitörünün çizgisi,
+   içinde son bir çağrı, ilkeler ve birim etiketleri. MedRapor'dan yalnız mantık (marka · sütunlar · alt şerit) alındı. */
+.ft { position:relative; background:#062530; color:#d7e7ee; padding:0; margin-top:0; }
+[data-theme="gece"] .ft { background:#040d18; }
+.ft-wave { height:60px; overflow:hidden; margin-top:18px; opacity:.9; }
+.ft-wave svg { display:block; width:100%; height:60px; }
+.ft-wave path { fill:none; stroke-width:2; vector-effect:non-scaling-stroke; stroke-linejoin:round; }
+.ft-wave path.base { stroke:rgba(34,184,214,.22); }
+.ft-wave path.beat { stroke:#5eead4; stroke-width:2.6; filter:drop-shadow(0 0 4px rgba(94,234,212,.8)); stroke-dasharray:160 2400; stroke-dashoffset:160; animation:ecg 5s linear infinite; }
+@keyframes ecg { from { stroke-dashoffset:160; } to { stroke-dashoffset:-2400; } }
+.ft-cta { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:20px 32px; padding:40px 0 44px; border-bottom:1px solid rgba(215,231,238,.12); }
+.ft-cta h3 { font-size:clamp(24px, 2.4vw, 34px); color:#fff; }
+.ft-cta p { margin:8px 0 0; color:#9fbac6; max-width:620px; }
+.ft-cta-b { display:flex; gap:10px; flex-wrap:wrap; }
+.ft .btn.p { background:#22b8d6; border-color:#22b8d6; color:#03141c; }
+.ft .btn.ghost { background:transparent; color:#fff; border-color:rgba(215,231,238,.3); }
+.ft .btn.ghost:hover { border-color:#22b8d6; }
+.ft-top { display:grid; grid-template-columns:minmax(0, 1.6fr) minmax(0, .8fr) minmax(0, .8fr); gap:36px; padding:44px 0 40px; }
+.ft-col[hidden] { display:none; }
+.ft .brand, .ft .brand b { color:#fff; }
+.ft .mk { background:#22b8d6; color:#03141c; box-shadow:none; }
+.ft-brand p { color:#9fbac6; font-size:14.5px; max-width:400px; margin:14px 0 18px; }
+.ft-prin { list-style:none; margin:0; padding:0; display:grid; gap:9px; }
+.ft-prin[hidden] { display:none; }
+.ft-prin li { display:flex; align-items:center; gap:10px; font-size:14px; color:#d7e7ee; }
+.ft-prin svg.i { width:16px; height:16px; color:#5eead4; }
+.ft-col h4 { font:700 12px Figtree, system-ui, sans-serif; letter-spacing:.12em; text-transform:uppercase; color:#6f95a4; margin:6px 0 16px; }
+.ft-col ul { list-style:none; margin:0; padding:0; display:grid; gap:11px; }
+.ft-col a { color:#d7e7ee; text-decoration:none; font-size:14.5px; } .ft-col a:hover { color:#22b8d6; }
+.ft-chips { display:flex; flex-wrap:wrap; gap:8px; }
+.ft-chips a { display:inline-flex; align-items:center; gap:8px; padding:7px 12px; border-radius:999px; border:1px solid rgba(215,231,238,.16); font-size:13.5px; line-height:20px; }
+.ft-chips a:hover { border-color:var(--c); color:#fff; }
+.ft-chips i { width:8px; height:8px; border-radius:50%; background:var(--c); box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 25%, transparent); }
+.ft-soc { display:flex; gap:8px; margin-top:22px; }
+.ft-soc a { width:38px; height:38px; border-radius:50%; border:1px solid rgba(215,231,238,.2); display:grid; place-items:center; color:#d7e7ee; }
+.ft-soc a:hover { color:#22b8d6; border-color:#22b8d6; }
+.ft-soc a[aria-disabled="true"] { opacity:.35; pointer-events:none; }
+.ft-soc svg.i { width:16px; height:16px; }
+.ft-bot { display:flex; flex-wrap:wrap; align-items:center; gap:12px 24px; padding:18px 0 22px; border-top:1px solid rgba(215,231,238,.12); }
+.fcopy { color:#6f95a4; font-size:13px; margin-right:auto; }
+.flinks { display:flex; flex-wrap:wrap; gap:6px 20px; font-size:13px; }
+.flinks a { color:#9fbac6; text-decoration:none; } .flinks a:hover { color:#fff; }
+.ft .lsel { background:transparent; border-color:rgba(215,231,238,.25); color:#fff; }
+.lwrap.up .lmenu { top:auto; bottom:46px; }
+@media (max-width:1080px) { .ft-top { grid-template-columns:repeat(2, minmax(0, 1fr)); } .ft-brand { grid-column:1 / -1; } }
+@media (max-width:560px) { .ft-top { gap:24px 16px; padding:32px 0 28px; } .ft-cta-b .btn { flex:1 1 100%; } }
+@media (prefers-reduced-motion:reduce) { .ft-wave path.beat { display:none; } }
+
+/* çerez şeridi: altta tam genişlik, engellemez. Takip çerezi olmadığı için "kabul / reddet" seçimi yok —
+   sorulacak bir şey yok; yalnız bilgi verilir. 15 sn sonra kendiliğinden kapanır, üstündeyken bekler. */
+.ck { position:fixed; left:0; right:0; bottom:0; z-index:70; background:color-mix(in srgb, var(--card) 94%, transparent); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-top:1px solid var(--line2); box-shadow:0 -10px 30px rgba(20,30,50,.08); animation:ckUp .35s ease-out; }
+@keyframes ckUp { from { transform:translateY(100%); } to { transform:none; } }
+.ck[hidden] { display:none; }
+.ck.out { transform:translateY(110%); transition:transform .35s ease-in; }
+.ck-in { display:flex; align-items:center; gap:14px; padding-top:14px; padding-bottom:14px; }
+.ck-ic { width:38px; height:38px; border-radius:11px; display:grid; place-items:center; background:var(--priSoft); color:var(--priInk); flex:none; }
+.ck-ic svg.i { width:18px; height:18px; }
+.ck p { margin:0 auto 0 0; font-size:13.5px; color:var(--mute); line-height:1.45; }
+.ck p b { display:block; color:var(--ink); font-size:14px; }
+.ck .btn { height:38px; padding:0 16px; flex:none; }
+.ck-bar { position:absolute; left:0; top:-1px; height:2px; width:100%; background:var(--pri); transform-origin:0 50%; transform:scaleX(1); }
+@media (max-width:760px) { .ck-in { flex-wrap:wrap; } .ck p { flex:1 1 calc(100% - 52px); } .ck .btn { flex:1; } }
+/* yukarı çık */
+.totop { position:fixed; right:18px; bottom:18px; z-index:60; width:44px; height:44px; border-radius:50%; display:grid; place-items:center; background:var(--card); border:1px solid var(--line2); color:var(--ink); box-shadow:var(--shadowS); opacity:0; transform:translateY(10px); pointer-events:none; transition:opacity .2s, transform .2s; }
+.totop.on { opacity:1; transform:none; pointer-events:auto; }
+.totop:hover { border-color:var(--pri); color:var(--pri); }
+
+/* görünür olunca yumuşak giriş */
+.rv { opacity:0; transform:translateY(14px); transition:opacity .6s ease, transform .6s ease; }
+.rv.in { opacity:1; transform:none; }
+@keyframes up { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+
+
+/* ---------- gerçek ekran + odak (24.09 kararı: "Görsel: C") ----------
+   Prototipten çekilmiş ekran; anlatılan parça keskin ve büyütülmüş, gerisi bulanık ve soluk.
+   --x/--y/--w/--h = odak kutusu, görüntünün kesri (0–1). Görüntü 1344×900 (oran 0.6696), çerçeve 16/10. */
+.shot { position:relative; aspect-ratio:16/10; overflow:hidden; container-type:inline-size; border-radius:12px; border:1px solid var(--line); background:var(--card2);
+  --s:max(1, calc(.86 / var(--w)));
+  --L:clamp(calc(100cqw - var(--s) * 100cqw), calc(50cqw - (var(--x) + var(--w) / 2) * var(--s) * 100cqw), 0cqw);
+  --T:clamp(calc(62.5cqw - var(--s) * 66.96cqw), calc(31.25cqw - (var(--y) + var(--h) / 2) * var(--s) * 66.96cqw), 0cqw); }
+.shot img { position:absolute; max-width:none; width:calc(var(--s) * 100cqw); height:auto; left:var(--L); top:var(--T); transition:filter .35s, opacity .35s; }
+.shot .sb { filter:blur(2.2px) saturate(.6); opacity:.5; }
+.shot .sf { clip-path:inset(calc(var(--y) * 100%) calc((1 - var(--x) - var(--w)) * 100%) calc((1 - var(--y) - var(--h)) * 100%) calc(var(--x) * 100%) round 8px); }
+.shot .ring { position:absolute; pointer-events:none; border-radius:9px; box-shadow:0 0 0 2px var(--pri), 0 10px 30px rgba(14,116,144,.25);
+  left:calc(var(--L) + var(--x) * var(--s) * 100cqw); top:calc(var(--T) + var(--y) * var(--s) * 66.96cqw);
+  width:calc(var(--w) * var(--s) * 100cqw); height:calc(var(--h) * var(--s) * 66.96cqw); }
+.shot:hover .sb { filter:blur(0) saturate(1); opacity:.9; }
+@media (prefers-reduced-motion: reduce) { .shot img { transition:none; } }
+.pc { display:flex; flex-direction:column; } .pc .ans { margin-top:auto; padding-top:16px; }
+.pc .ans .lb { display:flex; align-items:center; gap:6px; font:700 11px Figtree, system-ui, sans-serif; letter-spacing:.06em; text-transform:uppercase; color:var(--priInk); margin-bottom:8px; }
+.pc .ans .lb::before { content:""; width:12px; height:2px; background:currentColor; }
+.pc h3 { display:flex; gap:9px; align-items:baseline; } .pc h3::before { content:""; flex:none; width:8px; height:8px; border-radius:50%; background:var(--crit); transform:translateY(-2px); }
+.step .shot { margin:14px 0 16px; }
+/* 28.09 (#218): abstract schematics instead of screenshots — no data, no internal layout (#194). */
+section[hidden], .anc[hidden] { display:none !important; }
+.shot.abs { display:grid; place-items:center; }
+.shot.abs svg { width:86%; height:auto; }
+.step.mid h3 { display:flex; align-items:center; gap:8px; } .step.mid h3 i { font:700 13px "Space Grotesk", system-ui, sans-serif; font-style:normal; width:24px; height:24px; border-radius:7px; display:grid; place-items:center; background:#0e7490; color:#fff; }
+.un .shot { margin-bottom:6px; }
+.un.big .shot { flex:0 0 46%; margin:0; }
+.un.big > div:not(.shot) { flex:1; }
+.role .shot { margin-bottom:4px; border-radius:10px; }
+@media (max-width:1080px) { .probs { grid-template-columns:repeat(2, minmax(0, 1fr)); } .un.big { flex-direction:column; align-items:stretch; } .un.big .shot { flex:none; } }
+@media (max-width:560px) { .probs, .units { grid-template-columns:1fr; } .un.big { grid-column:auto; } }
+
+
+/* 30.09 · kahraman sahnesi (Ozan, 3. tur — ara sürüme dönüş): canlı birim kartı + sağ kenarına binen TEK büyük, eğik telefon
+   (iPhone tarzı çerçeve, gerçek hasta kartı + monitör paneli), altında "Mobil uygulama · yakında" çipi, sağ kenarda nabız rozeti.
+   Sahne "nasıl çalışır"ı anlatır: REA03 96→86 kayar, zincir basamak basamak yanar. */
+.stage { --pw:clamp(214px, 15.6vw, 292px); position:relative; padding:44px 0; }
+.stage::before { content:""; position:absolute; right:-4%; top:4%; width:58%; height:92%; border-radius:50%; background:radial-gradient(closest-side, color-mix(in srgb, var(--pri) 30%, transparent), transparent); filter:blur(24px); z-index:0; pointer-events:none; }
+.stage .scene { position:relative; z-index:1; margin-right:calc(var(--pw) - 34px); }
+.hphone { position:absolute; right:0; top:50%; z-index:2; width:var(--pw); transform:translateY(-50%); perspective:1600px; }
+.hphone .tilt { transform:rotateY(-16deg) rotateX(4deg) rotateZ(2.5deg); transform-origin:60% 50%; }
+.hphone .dv { width:100%; animation:hpf 7s ease-in-out infinite; }
+@keyframes hpf { 0%, 100% { translate:0 0; } 50% { translate:0 -8px; } }
+.hp-cap { position:absolute; left:-30px; bottom:7%; z-index:4; display:flex; align-items:center; gap:8px; padding:8px 12px 8px 8px; border-radius:14px; background:var(--card); border:1px solid var(--line); box-shadow:var(--shadow); font:700 12px Figtree, system-ui, sans-serif; color:var(--ink); white-space:nowrap; text-decoration:none; transition:border-color .2s, transform .2s; }
+.hp-cap:hover { border-color:var(--pri); transform:translateY(-2px); }
+.hp-cap i { width:26px; height:26px; border-radius:8px; display:grid; place-items:center; background:var(--priSoft); color:var(--priInk); font-style:normal; }
+.hp-cap i svg.i { width:14px; height:14px; }
+/* nabız rozeti: telefonun sağ kenarında, kritik evrede kırmızı */
+.hp-pulse { position:absolute; right:-16px; top:28%; z-index:4; width:36px; height:36px; border-radius:50%; display:grid; place-items:center; background:var(--card); color:var(--pri); border:1px solid var(--line); box-shadow:var(--shadowS); animation:hpp 1.8s ease-out infinite; transition:background .3s, color .3s; }
+.hp-pulse svg.i { width:17px; height:17px; }
+@keyframes hpp { from { box-shadow:0 0 0 0 color-mix(in srgb, var(--pri) 45%, transparent), var(--shadowS); } to { box-shadow:0 0 0 12px transparent, var(--shadowS); } }
+.stage.al .hp-pulse { background:#ef4444; color:#fff; border-color:#ef4444; animation-name:hppc; }
+@keyframes hppc { from { box-shadow:0 0 0 0 rgba(239,68,68,.55); } to { box-shadow:0 0 0 14px rgba(239,68,68,0); } }
+/* telefonun üstüne düşen bildirim: sahnede "hemşireye haber" evresinde */
+.hpush { position:absolute; left:7%; right:7%; top:8%; z-index:5; display:grid; gap:2px; padding:7px 9px; border-radius:12px; background:rgba(15,27,46,.95); color:#fff; box-shadow:0 12px 30px rgba(0,0,0,.35); transform:translateY(-30%); opacity:0; transition:transform .45s cubic-bezier(.2,.9,.3,1.2), opacity .3s; pointer-events:none; }
+.hpush .fp-app { display:flex; align-items:center; gap:5px; font:700 9.5px Figtree, system-ui, sans-serif; color:#cfe3ea; }
+.hpush .fp-app i { width:14px; height:14px; border-radius:4px; background:#0e7490; color:#fff; font:700 8.5px "Space Grotesk", system-ui, sans-serif; font-style:normal; display:grid; place-items:center; }
+.hpush .fp-app em { margin-left:auto; font-style:normal; font-weight:600; color:#9fb6c3; }
+.hpush b { font:700 11px/1.25 Figtree, system-ui, sans-serif; }
+.stage.push .hpush { transform:none; opacity:1; }
+.stage.al .hphone .dv.ios { filter:drop-shadow(0 0 12px rgba(239,68,68,.45)); }
+
+/* ---- cihazlar (30.09, 5. tur): saf CSS, marka logosu yok. Gerçek telefon katmanları, dıştan içe:
+   metal bant (2–3 px, metalik degrade + sol üstte parlama) → 1 px koyu çizgi → ince siyah cam çerçeve (~%2) → ekran.
+   Köşeler eş merkezli: dış yarıçap = ekran + çerçeve + bant. Boyutlar --pw'den (cihaz genişliği) hesaplanır.
+   Ekran = durum çubuğu + ekran görüntüsü (390×844 oranında, kırpılmaz). */
+.dv { --pw:220px; --band:3px; --bz:calc(var(--pw) * .02); --rs:calc(var(--pw) * .13); --scr:#f4f6fa; --ink2:#152231; --btn:#b9bec6;
+  position:relative; padding:var(--band); border-radius:calc(var(--rs) + var(--bz) + var(--band));
+  background:linear-gradient(135deg, rgba(255,255,255,.55) 0%, rgba(255,255,255,0) 14%), linear-gradient(90deg, #7d828b 0%, #d9dde3 12%, #9ba0a8 30%, #c9cdd3 55%, #8a8f98 78%, #d2d6dc 92%, #6e737b 100%);
+  box-shadow:0 34px 60px -26px rgba(15,30,45,.34), 0 10px 20px -12px rgba(15,30,45,.28), 0 1px 2px rgba(0,0,0,.18); }
+.hphone .dv, .mb-pair .dv { --pw:inherit; }
+[data-theme="gece"] .dv { --scr:#07101f; --ink2:#e8eef7; --btn:#9aa0a8;
+  background:linear-gradient(135deg, rgba(255,255,255,.6) 0%, rgba(255,255,255,0) 14%), linear-gradient(90deg, #8d929a 0%, #e4e7eb 12%, #a9aeb6 30%, #d6d9de 55%, #979ca4 78%, #dfe2e6 92%, #7c8189 100%);
+  box-shadow:0 34px 70px -24px rgba(0,0,0,.65), 0 10px 22px -12px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.08); }
+.dv .scr { position:relative; overflow:hidden; background:var(--scr); border:var(--bz) solid #050607; border-radius:calc(var(--rs) + var(--bz)); box-shadow:0 0 0 1px #1b1d21; }
+.dv img { display:block; width:100%; height:auto; aspect-ratio:390 / 844; object-fit:cover; object-position:top; }
+.dv .sb { position:relative; display:flex; align-items:center; justify-content:space-between; font:700 9px Figtree, system-ui, sans-serif; color:var(--ink2); background:var(--scr); }
+.dv .sb b { font:600 9px Figtree, system-ui, sans-serif; letter-spacing:.01em; }
+.dv .sb span { display:flex; gap:3px; align-items:center; }
+.dv .sb .sig { display:block; width:11px; height:7px; background:linear-gradient(90deg, currentColor 0 2px, transparent 2px 3px, currentColor 3px 5px, transparent 5px 6px, currentColor 6px 8px, transparent 8px 9px, currentColor 9px 11px); -webkit-mask:linear-gradient(to top right, #000 50%, transparent 52%); mask:linear-gradient(to top right, #000 50%, transparent 52%); }
+.dv .sb .bat { position:relative; display:block; width:14px; height:7px; border-radius:2px; border:1.2px solid currentColor; opacity:.9; }
+.dv .sb .bat::after { content:""; position:absolute; left:1px; top:1px; bottom:1px; width:72%; border-radius:1px; background:currentColor; }
+/* ekran camı: çok hafif çapraz yansıma (≤ .06) */
+.dv .gl { position:absolute; inset:calc(var(--band) + var(--bz)); border-radius:var(--rs); background:linear-gradient(125deg, rgba(255,255,255,.06) 0%, rgba(255,255,255,.02) 35%, rgba(255,255,255,0) 50%); pointer-events:none; z-index:2; }
+/* yan tuşlar: bant renginde, ince (3 px), bandın arkasından çıkar */
+.dv::before, .dv::after { content:""; position:absolute; width:3px; z-index:-1; }
+/* iPhone tarzı: sol — eylem tuşu + ses aç/kıs; sağ — yan tuş. Dynamic Island ekranın içinde, üstte ortada */
+.dv.ios::before { left:-2px; top:17%; height:17%; border-radius:2px 0 0 2px; background:linear-gradient(to bottom, var(--btn) 0 14%, transparent 14% 30%, var(--btn) 30% 62%, transparent 62% 68%, var(--btn) 68% 100%); }
+.dv.ios::after { right:-2px; top:26%; height:11%; border-radius:0 2px 2px 0; background:var(--btn); }
+.dv.ios .sb { aspect-ratio:390 / 46; padding:0 10% 0 11%; }
+.dv.ios .sb .isl { position:absolute; left:50%; top:10%; width:35%; height:64%; transform:translateX(-50%); border-radius:40px; background:#000; }
+/* Android tarzı: daha köşeli, alüminyum bant, ortada delik kamera, altta hareket çubuğu; sağda ses + güç */
+.dv.and { --band:2.5px; --bz:calc(var(--pw) * .022); --rs:calc(var(--pw) * .075); --btn:#6f747c;
+  background:linear-gradient(135deg, rgba(255,255,255,.35) 0%, rgba(255,255,255,0) 14%), linear-gradient(90deg, #3b3f45 0%, #9aa0a8 12%, #50555c 30%, #7d838b 55%, #43474e 78%, #8c929a 92%, #3b3f45 100%); }
+[data-theme="gece"] .dv.and { --btn:#8a9098; background:linear-gradient(135deg, rgba(255,255,255,.45) 0%, rgba(255,255,255,0) 14%), linear-gradient(90deg, #5a5f67 0%, #b7bcc3 12%, #6b7078 30%, #9ca1a9 55%, #60656d 78%, #aeb3ba 92%, #565b62 100%); }
+.dv.and::after { right:-2px; top:22%; height:20%; border-radius:0 2px 2px 0; background:linear-gradient(to bottom, var(--btn) 0 58%, transparent 58% 72%, var(--btn) 72% 100%); }
+.dv.and .sb { aspect-ratio:390 / 36; padding:0 6% 0 7%; }
+.dv.and .sb .cam { position:absolute; left:50%; top:50%; width:2.8%; aspect-ratio:1; transform:translate(-50%, -50%); border-radius:50%; background:#000; box-shadow:0 0 0 1px #202329; }
+.dv.and .gb { aspect-ratio:390 / 22; display:grid; place-items:center; background:var(--scr); }
+.dv.and .gb::before { content:""; width:28%; height:3.5px; border-radius:3px; background:var(--ink2); opacity:.55; }
+@media (prefers-reduced-motion: reduce) { .hphone .dv, .mb-vis .dv, .mb-pair .dv { animation:none !important; } .hpush { transition:none; } }
+@media (prefers-reduced-motion: reduce) { .hp-pulse { animation:none !important; } }
+@media (max-width:1280px) { .stage { --pw:200px; } .hp-cap { display:none; } }
+@media (max-width:1080px) { .stage { padding:0 0 12px; } .stage .scene { margin-right:0; } .stage::before, .hphone { display:none; } }
+
+/* ---------- dar ekran ---------- */
+@media (max-width:1280px) { .pilotL { display:none; } }
+@media (max-width:1080px) {
+  .nav { display:none; }
+  .tools { margin-left:auto; }
+  .mnav { display:grid; }
+  .mpanel { position:absolute; left:0; right:0; top:68px; background:var(--card); border-bottom:1px solid var(--line); box-shadow:var(--shadow); padding:10px 16px 16px; }
+  .hdr.open .mpanel { display:block; animation:up .16s ease-out; }
+  .mpanel a { display:block; padding:12px 10px; border-radius:10px; color:var(--ink); text-decoration:none; font-weight:600; }
+  .mpanel a:hover { background:var(--card2); }
+  .mpanel a.btn { display:flex; width:100%; margin-top:8px; padding:0 16px; height:46px; color:var(--onpri); }
+  .mpanel a.btn:hover { background:var(--pri); }
+  .hero .wrap { grid-template-columns:1fr; gap:36px; padding-top:40px; min-height:0; }
+  .roles { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .trustg { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:26px 18px; }
+  .pilot { grid-template-columns:1fr; padding:32px; }
+}
+@media (max-width:760px) {
+  .wrap { padding:0 16px; }
+  section.s { padding:64px 0; }
+  .steps { grid-template-columns:1fr; } .step .arr { right:auto; left:50%; top:auto; bottom:-17px; transform:translateX(-50%) rotate(90deg); }
+  .loginL { display:none; }
+  .loginS { display:grid; }
+  .lsel .chev { display:none; }
+  .tools { gap:6px; }
+  .hdr .wrap { gap:10px; }
+  .lead { font-size:16.5px; }
+}
+@media (max-width:560px) {
+  .vals { grid-template-columns:1fr; }
+  .roles, .trustg { grid-template-columns:1fr; }
+  .sc-grid { gap:6px; } .sc-bed { padding:7px 7px 6px; } .sc-v b { font-size:14px; } .sc-no b { font-size:10.5px; }
+  .sc-chain { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px; }
+  .sc-ln { display:none; }
+  .sc-st { flex-direction:column; gap:4px; border-radius:14px; padding:8px 4px; text-align:center; }
+  .sc-st b { font-size:11px; white-space:normal; line-height:1.2; }
+  /* 29.09: adımlar yan yana sıkı düzen (1.641 px'ti) */
+  .steps { gap:10px; }
+  .step { display:grid; grid-template-columns:96px minmax(0, 1fr); column-gap:14px; align-items:start; padding:14px; }
+  .step .n { grid-column:1 / -1; }
+  .step .shot { grid-row:2 / span 2; margin:6px 0 0; }
+  .step h3 { font-size:17px; margin:6px 0 4px; }
+  .step p { font-size:14px; }
+  .step > :not(.n):not(.shot):not(h3):not(p):not(.arr) { grid-column:1 / -1; }
+  .pilot { padding:24px 18px; }
+  .ctas .btn { flex:1 1 100%; }
+  .brand b { font-size:17px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  html { scroll-behavior:auto; }
+  .bg i, .dot, .sc-bed.crit, .rot.in, .sc-cap.in, .lmenu, .hdr.open .mpanel { animation:none !important; }
+  .rv { opacity:1; transform:none; transition:none; }
+  .sc:hover, .role:hover { transform:none; }
+}
+</style>
+</head>
+<body>
+
+<span class="anc" id="top"></span>
+<header class="hdr">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="homunculus"><span class="mk">h</span><b>homunculus</b></a>
+    <nav class="nav" aria-label="menu">
+      <a href="#nasil-calisir" data-i="nav_how"></a>
+      <a href="#ekranlar" data-i="nav_screens"></a>
+      <a href="#mobil" data-i="nav_mobile"></a>
+      <a href="#guven" data-i="nav_trust"></a>
+      <i class="nav-ind" aria-hidden="true"></i>
+    </nav>
+    <div class="tools">
+      <div class="lwrap">
+        <button type="button" class="lsel" data-lsel aria-haspopup="listbox" aria-expanded="false"></button>
+        <div class="lmenu" role="listbox" hidden></div>
+      </div>
+      <button type="button" class="ib" data-theme-btn></button>
+      <a class="btn pilotL" href="#pilot"><svg class="i" data-ic="chat"></svg><span data-i="nav_pilot"></span></a>
+      <a class="btn p loginL" href="../app/index.html" target="_top"><svg class="i" data-ic="login"></svg><span data-i="login"></span></a>
+      <a class="ib loginS" href="../app/index.html" target="_top" data-it="login"><svg class="i" data-ic="login"></svg></a>
+      <button type="button" class="ib mnav" data-mnav aria-expanded="false" data-it="menu"><svg class="i" data-ic="menu"></svg></button>
+    </div>
+  </div>
+  <i class="prog" data-prog aria-hidden="true"></i>
+  <div class="mpanel">
+    <a href="#nasil-calisir" data-i="nav_how"></a>
+    <a href="#ekranlar" data-i="nav_screens"></a>
+    <a href="#mobil" data-i="nav_mobile"></a>
+    <a href="#guven" data-i="nav_trust"></a>
+    <a href="#pilot" data-i="nav_pilot"></a>
+    <a class="btn p" href="../app/index.html" target="_top"><svg class="i" data-ic="login"></svg><span data-i="login"></span></a>
+  </div>
+</header>
+
+<main>
+<!-- kahraman: giriş ekranının sol yarısı, sağda canlı birim kartı -->
+<section class="hero">
+  <div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="wrap">
+    <div>
+      <span class="pill"><i></i><span data-i="pill"></span></span>
+      <h1><span class="rot" data-rot></span><span class="rest"><span data-i="h1"></span> <span data-i="h1b"></span></span></h1>
+      <p class="lead" data-i="lead"></p>
+      <p class="lead2" data-i="lead2"></p>
+      <div class="ctas">
+        <a class="btn p lg" href="#pilot"><span data-i="cta_pilot"></span><svg class="i go" data-ic="chevR"></svg></a>
+        <a class="btn lg" href="#ekranlar" data-i="cta_see"></a>
+      </div>
+      <div class="vals">
+        <div class="val" style="--c:#0e7490"><b data-i="v_doc"></b><span data-i="v_doc_p"></span></div>
+        <div class="val" style="--c:#16a34a"><b data-i="v_nur"></b><span data-i="v_nur_p"></span></div>
+        <div class="val" style="--c:#7c3aed"><b data-i="v_org"></b><span data-i="v_org_p"></span></div>
+      </div>
+      <div class="trust">
+        <span><svg class="i" data-ic="shield"></svg><span data-i="t1"></span></span>
+        <span><svg class="i" data-ic="lock"></svg><span data-i="t2"></span></span>
+        <span><svg class="i" data-ic="building"></svg><span data-i="t3"></span></span>
+      </div>
+    </div>
+    <div class="stage" id="nasil-calisir" data-stage>
+    <div class="scene" data-scene aria-hidden="true">
+      <div class="sc-head"><span><span class="dot"></span><span data-i="sc_unit"></span></span><span class="mono" data-clock>21:38</span></div>
+      <div class="sc-grid" data-beds></div>
+      <div class="sc-chain">
+        <div class="sc-st" data-s="0"><span class="ic"><svg class="i" data-ic="bell"></svg></span><b data-i="sc_n"></b><small class="mono">00:00</small></div><i class="sc-ln"></i>
+        <div class="sc-st" data-s="1"><span class="ic"><svg class="i" data-ic="userPlus"></svg></span><b data-i="sc_c"></b><small class="mono" data-i="p3"></small></div><i class="sc-ln"></i>
+        <div class="sc-st" data-s="2"><span class="ic"><svg class="i" data-ic="heart"></svg></span><b data-i="sc_d"></b><small class="mono" data-i="p5"></small></div>
+      </div>
+      <div class="sc-cap" data-cap></div>
+    </div>
+    <!-- 30.09 (3. tur, Ozan: ara sürüme dönüş): tek büyük eğik telefon, iPhone tarzı çerçeve; gerçek hasta kartı + monitör paneli -->
+    <div class="hphone">
+      <div class="tilt"><div class="dv ios"><div class="scr"><div class="sb"><b>21:42</b><i class="isl"></i><span><i class="sig"></i><i class="bat"></i></span></div><img data-mimg="hasta" data-ia="alt_pt" alt="" width="390" height="844" decoding="async" fetchpriority="high"></div><i class="gl"></i>
+        <div class="hpush" aria-hidden="true"><span class="fp-app"><i>h</i>Homunculus<em data-i="ov_now"></em></span><b data-i="ov_push"></b></div></div></div>
+      <span class="hp-pulse" aria-hidden="true"><svg class="i" data-ic="activity"></svg></span>
+      <a class="hp-cap" href="#mobil"><i><svg class="i" data-ic="smart"></svg></i><span data-i="mb_k"></span></a>
+    </div>
+    </div>
+  </div>
+</section>
+
+<!-- sorun: nöbette bilgi dağınık (a5'ten) -->
+<!-- 28.09.2026 · Ozan (#218): kısa sayfa, 5 bölüm (Giriş · Nasıl çalışır · Ekranlar · Güven · Pilot).
+     Gizlenen bölümler SİLİNMEDİ: sorun, nobet (24 saat), neler, birimler, roles — geri açmak için `hidden` kaldır.
+     Yedek: _yedek/anasayfa-2026-09-28/index.html -->
+<section class="s alt" id="sorun" hidden>
+  <div class="wrap">
+    <div class="head rv"><span class="kick" data-i="nav_problem"></span><h2 data-i="p_h"></h2><p class="sub" data-i="p_lead"></p></div>
+    <div class="probs" data-probs></div>
+  </div>
+</section>
+
+<!-- nasıl çalışır — 30.09 (Ozan): "Bir değer bozulduğunda ne olur?" hareketli hikâye. Yedek: _yedek/anasayfa-index-2026-09-30.html -->
+<!-- 30.09 (2. tur, Ozan): bu bölüm KALDIRILDI — hikâye artık kahraman sahnesinde anlatılıyor. İşaretleme geri dönüş için duruyor; açmak için hidden kaldır. -->
+<section class="s" id="how" hidden>
+  <div class="wrap">
+    <div class="head rv"><span class="kick" data-i="nav_how"></span><h2 data-i="how_h"></h2><p class="sub" data-i="how_p"></p></div>
+    <div class="story rv" data-story data-p="0">
+      <div class="st-top">
+        <div class="st-clock"><svg class="i" data-ic="clock"></svg><b data-st-clock>21:39</b></div>
+        <p class="st-cap" data-st-cap aria-live="polite"></p>
+        <button type="button" class="st-replay" data-st-replay><svg class="i" data-ic="replay"></svg><span data-i="hs_replay"></span></button>
+      </div>
+      <div class="st-body">
+        <div class="st-pane st-unit">
+          <div class="st-h"><svg class="i" data-ic="monitor"></svg><span data-i="hs_unit"></span><span class="live" data-i="hs_live"></span></div>
+          <div class="st-beds" data-st-beds></div>
+          <div class="st-news"><span class="sc" data-st-news>–</span><span class="sn"><b>NEWS2</b><small data-i="hs_news"></small></span><span class="sg" data-i="ex_sign"></span></div>
+        </div>
+        <div class="st-pane st-ph">
+          <div class="st-h"><svg class="i" data-ic="smart"></svg><span data-i="hs_phone"></span></div>
+          <div class="mph" aria-hidden="true"><div class="mp-scr">
+            <div class="mp-push"><span class="fp-app"><i>h</i>Homunculus<em data-i="ov_now"></em></span><b>REA03 · SpO₂ 86</b></div>
+            <div class="mp-hd"><span data-i="w_tasks"></span><i>SQ</i></div>
+            <div class="mp-al"><span class="k" data-i="ov_crit"></span><b>REA03</b><small>SpO₂ 86 · NEWS2 7</small>
+              <span class="tm"><svg class="i" data-ic="clock"></svg><span data-i="hs_noresp"></span></span>
+              <span class="bt"><span data-i="hs_seenbtn"></span><span data-i="hs_esc"></span></span>
+              <span class="ok"><svg class="i" data-ic="ok"></svg><span data-i="hs_seen"></span></span></div>
+            <div class="mp-row"><span>22:00</span><i></i><b data-i="k1"></b></div>
+            <div class="mp-row"><span>22:00</span><i></i><b data-i="ov_r1"></b></div>
+            <div class="mp-row"><span>23:00</span><i></i><b data-i="k2"></b></div>
+          </div></div>
+        </div>
+        <div class="st-pane st-chain">
+          <div class="st-h"><svg class="i" data-ic="users"></svg><span data-i="hs_chain"></span></div>
+          <ol class="ch">
+            <li data-ch="0"><span class="ic"><svg class="i" data-ic="bell"></svg></span><div><b data-i="sc_n"></b><small><span class="mono">21:40</span>·<em data-ch-st></em></small></div></li>
+            <li data-ch="1"><span class="ic"><svg class="i" data-ic="userPlus"></svg></span><div><b data-i="sc_c"></b><small><span class="mono" data-i="p3"></span>·<em data-ch-st></em></small></div></li>
+            <li data-ch="2"><span class="ic"><svg class="i" data-ic="heart"></svg></span><div><b data-i="sc_d"></b><small><span class="mono" data-i="p5"></span>·<em data-ch-st></em></small></div></li>
+          </ol>
+          <div class="st-h st-h2"><svg class="i" data-ic="file"></svg><span data-i="hs_log"></span></div>
+          <ul class="log" data-st-log></ul>
+        </div>
+      </div>
+      <ol class="st-tl" data-st-tl>
+        <li class="bar" aria-hidden="true"><i data-st-bar></i></li>
+        <li data-k="0"><button type="button"><span class="dt"></span><span class="t">21:40</span><b data-i="hw1t"></b><small data-i="hw1s"></small></button></li>
+        <li data-k="1"><button type="button"><span class="dt"></span><span class="t">21:40</span><b data-i="hw2t"></b><small data-i="hw2s"></small></button></li>
+        <li data-k="2"><button type="button"><span class="dt"></span><span class="t">21:40</span><b data-i="hw3t"></b><small data-i="hw3s"></small></button></li>
+        <li data-k="3"><button type="button"><span class="dt"></span><span class="t">21:43</span><b data-i="hw4t"></b><small data-i="hw4s"></small></button></li>
+        <li data-k="4"><button type="button"><span class="dt"></span><span class="t">21:45</span><b data-i="hw5t"></b><small data-i="hw5s"></small></button></li>
+      </ol>
+    </div>
+    <p class="note rv"><svg class="i" data-ic="shield"></svg><span data-i="how_note"></span></p>
+  </div>
+</section>
+
+<!-- ürün turu: parca/tur.js (a4'ten) -->
+<span class="anc" id="ekranlar"></span><section class="s alt" id="tur">
+  <div class="wrap">
+    <div class="head rv"><span class="kick" data-i="nav_screens"></span><h2 data-i="tur_h"></h2><p class="sub" data-i="tur_p"></p></div>
+    <div id="tur-mount"></div>
+  </div>
+</section>
+
+<!-- bir nöbet boyunca: parca/nobet.js (a3'ten) -->
+<span class="anc" id="24-saat" hidden></span><section class="s" id="nobet" hidden>
+  <div class="wrap">
+    <div class="head rv"><span class="kick" data-i="nav_night"></span><h2 data-i="nb_h"></h2><p class="sub" data-i="nb_p"></p></div>
+    <div id="nobet-mount"></div>
+  </div>
+</section>
+
+<!-- bugün sistemde olanlar: hekim / hemşire / kurum (app/shell.js NAV listesinden; hepsi prototipte açılıyor) -->
+<span class="anc" id="neler-var" hidden></span><section class="s alt" id="neler" hidden>
+  <div class="wrap">
+    <div class="head rv"><span class="kick" data-i="nav_feat"></span><h2 data-i="ft_h"></h2><p class="sub" data-i="ft_p"></p></div>
+    <div id="neler-mount"></div>
+  </div>
+</section>
+
+<!-- birimler: "önce / sonra" değil — prototipte bugün çalışan birim türleri -->
+<section class="s" id="birimler" hidden>
+  <div class="wrap">
+    <div class="head rv"><span class="kick" data-i="nav_units"></span><h2 data-i="u_h"></h2><p class="sub" data-i="u_lead"></p></div>
+    <div class="units" data-units></div>
+  </div>
+</section>
+
+<!-- kim ne görür -->
+<span class="anc" id="kim-ne-gorur" hidden></span><section class="s" id="roles" hidden>
+  <div class="wrap">
+    <div class="head rv"><span class="kick" data-i="nav_roles"></span><h2 data-i="roles_h"></h2><p class="sub" data-i="roles_p"></p></div>
+    <div class="roles" data-roles></div>
+  </div>
+</section>
+
+<!-- mobil uygulama · yakında (30.09). Görseller Expo uygulamasının web görünümünden çekildi: gorsel/mobil-<ekran>-<tema>.webp -->
+<!-- 30.09 (3. tur, Ozan): mobil bölüm geri açıldı, mağaza rozetleri geri geldi (bağlantı değil). -->
+<section class="s" id="mobil">
+  <div class="wrap mob">
+    <div class="rv">
+      <span class="kick" data-i="mb_k"></span>
+      <h2 data-i="mb_h"></h2>
+      <p class="sub" data-i="mb_p"></p>
+      <ul class="mb-list">
+        <li><span class="ic"><svg class="i" data-ic="bell"></svg></span><div><b data-i="mb1t"></b><span data-i="mb1s"></span></div></li>
+        <li><span class="ic"><svg class="i" data-ic="list"></svg></span><div><b data-i="mb2t"></b><span data-i="mb2s"></span></div></li>
+        <li><span class="ic"><svg class="i" data-ic="phone"></svg></span><div><b data-i="mb3t"></b><span data-i="mb3s"></span></div></li>
+      </ul>
+      <!-- mağaza rozetleri: bağlantı DEĞİL — uygulama henüz mağazada yok -->
+      <div class="stores">
+        <div class="store" role="img" data-ia="st_ios"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><span><small data-i="mb_soon"></small><b>App Store</b></span></div>
+        <div class="store" role="img" data-ia="st_and"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#00d7fe" d="M3.61 1.81 13.79 12 3.61 22.19c-.37-.2-.61-.6-.61-1.07V2.88c0-.47.24-.87.61-1.07Z"/><path fill="#00f076" d="M3.61 1.81c.33-.18.75-.2 1.14.02l12.02 6.9L13.79 12Z"/><path fill="#ff3a44" d="M13.79 12l2.98 3.27-12.02 6.9c-.39.22-.81.2-1.14.02Z"/><path fill="#ffd500" d="M16.77 8.73 20.3 10.76c.93.53.93 1.95 0 2.48l-3.53 2.03L13.79 12Z"/></svg><span><small data-i="mb_soon"></small><b>Google Play</b></span></div>
+      </div>
+    </div>
+    <div class="mb-vis rv"><div class="mb-pair">
+      <div class="dv and"><div class="scr"><div class="sb"><b>21:42</b><i class="cam"></i><span><i class="sig"></i><i class="bat"></i></span></div><img data-mimg="hasta" data-ia="alt_pt" alt="" width="390" height="844" loading="lazy" decoding="async"><div class="gb"></div></div><i class="gl"></i></div>
+      <div class="dv ios"><div class="scr"><div class="sb"><b>21:42</b><i class="isl"></i><span><i class="sig"></i><i class="bat"></i></span></div><img data-mimg="islerim" data-ia="alt_tasks" alt="" width="390" height="844" loading="lazy" decoding="async"></div><i class="gl"></i></div>
+      <div class="mb-chip c1" aria-hidden="true"><i><svg class="i" data-ic="bell"></svg></i><span>REA02 · SpO₂ 86<small data-i="hs_noresp"></small></span></div>
+    </div></div>
+  </div>
+</section>
+
+<!-- güven — 30.09: "Sınırları baştan belli." Eski Yapar/Yapmaz listesi kaldırıldı (anahtarları T'de değil). -->
+<span class="anc" id="guven"></span><section class="s alt" id="trust">
+  <div class="wrap">
+    <div class="head rv"><span class="kick" data-i="nav_trust"></span><h2 data-i="tr_h"></h2></div>
+    <div class="trustg" data-trustg></div>
+  </div>
+</section>
+
+<!-- tanışalım (eski "Pilot"; #pilot çapası korunuyor) -->
+<section class="s" id="pilot">
+  <div class="wrap">
+    <div class="pilot rv">
+      <div><span class="kick" data-i="nav_pilot"></span><h2 data-i="pl_h"></h2><p class="sub" data-i="pl_p"></p>
+        <div class="ctas"><a class="btn p lg" href="../app/index.html#legal=support" target="_top"><span data-i="pl_cta"></span><svg class="i go" data-ic="chevR"></svg></a><a class="btn lg" href="../app/index.html" target="_top" data-i="login"></a></div></div>
+      <ol class="pl"><li><b>1</b><span data-i="pl1"></span></li><li><b>2</b><span data-i="pl2"></span></li><li><b>3</b><span data-i="pl3"></span></li></ol>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="ft">
+  <div class="ft-wave" aria-hidden="true"><svg viewBox="0 0 1200 60" preserveAspectRatio="none"><path class="base" data-ecg d=""/><path class="beat" data-ecg d=""/></svg></div>
+  <div class="wrap">
+    <!-- 28.09 (#218): the dark "Kendi biriminizde görelim" box repeated the Pilot box above; removed. -->
+    <div class="ft-top">
+      <div class="ft-brand">
+        <a class="brand" href="#top" aria-label="homunculus"><span class="mk">h</span><b>homunculus</b></a>
+        <p data-i="ft_desc"></p>
+        <!-- 01.10 (Ozan, #317): üç slogan ("Kararı hekim verir · Kurulum yerini hastane seçer · Her işlem kayıt altında") gizli; geri açmak için hidden'ı kaldır -->
+        <ul class="ft-prin" hidden><li><svg class="i" data-ic="shield"></svg><span data-i="t1"></span></li><li><svg class="i" data-ic="building"></svg><span data-i="t3"></span></li><li><svg class="i" data-ic="file"></svg><span data-i="tr3_t"></span></li></ul>
+      </div>
+      <!-- 29.09: Birimler gizli olduğu için bu sütun da gizli (bağlantıları boşa gidiyordu). Geri açmak için hidden'ı kaldır. -->
+      <div class="ft-col" hidden><h4 data-i="nav_units"></h4><div class="ft-chips" data-fcol-units></div></div>
+      <div class="ft-col"><h4 data-i="ft_product"></h4><ul>
+        <li><a href="#nasil-calisir" data-i="nav_how"></a></li><li><a href="#ekranlar" data-i="nav_screens"></a></li><li><a href="#mobil" data-i="nav_mobile"></a></li></ul></div>
+      <div class="ft-col"><h4 data-i="ft_corp"></h4><ul>
+        <li><a href="#pilot" data-i="nav_pilot"></a></li><li><a href="#guven" data-i="nav_trust"></a></li><li><a href="../app/index.html#legal=support" target="_top" data-i="f_support"></a></li><li><a href="../app/index.html" target="_top" data-i="login"></a></li></ul>
+        <div class="ft-soc" data-soc></div></div>
+    </div>
+    <div class="ft-bot">
+      <span class="fcopy">© 2026 Homunculus · <span data-i="f_rights"></span></span>
+      <nav class="flinks" aria-label="legal">
+        <a href="../app/index.html#legal=privacy" target="_top" data-i="f_priv"></a>
+        <a href="../app/index.html#legal=terms" target="_top" data-i="f_terms"></a>
+        <a href="../app/index.html#legal=notice" target="_top" data-i="f_notice"></a>
+        <a href="../app/index.html#legal=cookies" target="_top" data-i="f_cookies"></a>
+      </nav>
+      <div class="lwrap up">
+        <button type="button" class="lsel" data-lsel aria-haspopup="listbox" aria-expanded="false"></button>
+        <div class="lmenu" role="listbox" hidden></div>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- çerez bilgi notu: izleme çerezi olmadığı için ekranı kapatan onay penceresi yok (karar #104); bir kez görünür, "Tamam" ile kapanır -->
+<div class="ck" data-ck role="region" aria-label="cookies" hidden>
+  <div class="wrap ck-in">
+    <span class="ck-ic"><svg class="i" data-ic="shield"></svg></span>
+    <p><b data-i="ck_h"></b><span data-i="ck_t"></span></p>
+    <a class="btn" href="../app/index.html#legal=cookies" target="_top" data-i="ck_more"></a>
+    <button type="button" class="btn p" data-ck-ok data-i="ck_ok"></button>
+  </div>
+  <i class="ck-bar" data-ck-bar aria-hidden="true"></i>
+</div>
+
+<a class="totop" href="#top" data-totop data-it="totop"><svg class="i" data-ic="up"></svg></a>
+
+<script>
+(function () {
+  "use strict";
+  var LANGS = [["AZ", "Azərbaycan"], ["TR", "Türkçe"], ["RU", "Русский"], ["EN", "English"]];
+  var T = {
+    nav_who:{ AZ:"Kimlər üçün", TR:"Kimler için", RU:"Для кого", EN:"Who it's for" },
+    nav_home:{ AZ:"Ana səhifə", TR:"Ana sayfa", RU:"Главная", EN:"Home" },
+    nav_how:{ AZ:"Necə işləyir", TR:"Nasıl çalışır", RU:"Как это работает", EN:"How it works" },
+    nav_screens:{ AZ:"Ekranlar", TR:"Ekranlar", RU:"Экраны", EN:"Screens" },
+    nav_roles:{ AZ:"Kim nə görür", TR:"Kim ne görür", RU:"Кто что видит", EN:"Who sees what" },
+    nav_trust:{ AZ:"Etibar", TR:"Güven", RU:"Доверие", EN:"Trust" },
+    nav_pilot:{ AZ:"Tanış olaq", TR:"Tanışalım", RU:"Познакомимся", EN:"Let's talk" },
+    login:{ AZ:"İstifadəçi girişi", TR:"Kullanıcı girişi", RU:"Вход для пользователей", EN:"User sign-in" },
+    menu:{ AZ:"Menyu", TR:"Menü", RU:"Меню", EN:"Menu" },
+    lang:{ AZ:"Dil", TR:"Dil", RU:"Язык", EN:"Language" },
+    day:{ AZ:"Gündüz görünüşü", TR:"Gündüz görünümü", RU:"Светлая тема", EN:"Light theme" },
+    night:{ AZ:"Gecə görünüşü", TR:"Gece görünümü", RU:"Тёмная тема", EN:"Dark theme" },
+    pill:{ AZ:"Reanimasiya üçün klinik və əməliyyat sistemi", TR:"Yoğun bakım için klinik ve operasyonel sistem", RU:"Клиническая и операционная система для реанимации", EN:"Clinical and operational system for intensive care" },
+
+    h1:{ AZ:"və bölmə idarəetməsi", TR:"ve birim yönetimi", RU:"и управление отделением", EN:"and unit management" },
+    h1b:{ AZ:"vahid sistemdə.", TR:"tek sistemde.", RU:"в одной системе.", EN:"in one system." },
+    /* başlığın baştaki değişen kelimesi: her biri prototipte açılan bir ekran */
+    sw:{ AZ:["Klinik izləmə", "Şkalalar", "Xəbərdarlıq", "Növbə təhvili", "Cihaz nəzarəti", "Keyfiyyət göstəriciləri"],
+         TR:["Klinik izlem", "Skorlama", "Bildirim", "Hemşire devri", "Cihaz takibi", "Kalite göstergeleri"],
+         RU:["Клинический мониторинг", "Шкалы", "Оповещения", "Передача смены", "Учёт оборудования", "Показатели качества"],
+         EN:["Clinical monitoring", "Scoring", "Escalation", "Shift handover", "Device tracking", "Quality metrics"] },
+
+
+
+
+    lead:{ AZ:"Monitordan gələn ölçməni oxuyur, pisləşməni erkən görür və doğru şəxsə xəbər verir. Qərar həkimindir.", TR:"Monitörden gelen ölçümü okur, kötüleşmeyi erken fark eder ve doğru kişiye haber verir. Karar hekimindir.", RU:"Считывает показания монитора, рано замечает ухудшение и сообщает нужному человеку. Решение за врачом.", EN:"It reads what the monitor measures, spots deterioration early and tells the right person. The physician decides." },
+
+    lead2:{ AZ:"Quraşdırma yerini xəstəxana seçir; hər giriş qeydə alınır.", TR:"Kurulum yerini hastane seçer; her erişim kayıt altındadır.", RU:"Где установить систему, решает больница; каждый доступ фиксируется.", EN:"The hospital chooses where it is installed; every access is logged." },
+
+    v_doc:{ AZ:"Həkim", TR:"Hekim", RU:"Врач", EN:"Physician" }, v_doc_p:{ AZ:"Bütün bölmə bir ekranda; şkala qaralaması təsdiqinizi gözləyir.", TR:"Birimin tamamı tek ekranda; skor taslağı onayınızı bekler.", RU:"Всё отделение на одном экране; черновик шкалы ждёт вашего подтверждения.", EN:"The whole unit on one screen; score drafts wait for your sign-off." },
+    v_nur:{ AZ:"Tibb bacısı", TR:"Hemşire", RU:"Медсестра", EN:"Nurse" }, v_nur_p:{ AZ:"İşlər qulluq planından gəlir; gecikən iş özünü göstərir.", TR:"İşler bakım planından gelir; geciken iş kendini belli eder.", RU:"Задачи приходят из плана ухода; просроченное видно сразу.", EN:"Tasks come from the care plan; overdue work makes itself known." },
+    v_org:{ AZ:"Rəhbərlik", TR:"Yönetim", RU:"Руководство", EN:"Management" }, v_org_p:{ AZ:"Cavab müddətləri, doluluq və audit qeydi bir yerdə.", TR:"Yanıt süreleri, doluluk ve denetim kaydı tek yerde.", RU:"Время реакции, загрузка и журнал аудита в одном месте.", EN:"Response times, occupancy and the audit log in one place." },
+    cta_see:{ AZ:"Ekranlara baxın", TR:"Ekranları görün", RU:"Посмотреть экраны", EN:"See the screens" },
+    f8:{ AZ:"rol, hər birinə öz ekranı", TR:"rol, her birine kendi ekranı", RU:"ролей, у каждой свой экран", EN:"roles, each with its own view" },
+    f19:{ AZ:"ekran: çarpayıdan hesabata", TR:"ekran: yataktan rapora", RU:"экранов: от койки до отчёта", EN:"screens, bedside to report" },
+    f3:{ AZ:"pilləli xəbər zənciri", TR:"basamaklı haber zinciri", RU:"ступени оповещения", EN:"-step alert chain" },
+    f4:{ AZ:"dil: AZ · TR · RU · EN", TR:"dil: AZ · TR · RU · EN", RU:"языка: AZ · TR · RU · EN", EN:"languages: AZ · TR · RU · EN" },
+    nav_night:{ AZ:"24 saat", TR:"24 saat", RU:"24 часа", EN:"24 hours" },
+    nav_feat:{ AZ:"Nələr var", TR:"Neler var", RU:"Что есть", EN:"What's inside" },
+    nav_problem:{ AZ:"Problem", TR:"Sorun", RU:"Проблема", EN:"The problem" },
+    nav_units:{ AZ:"Bölmələr", TR:"Birimler", RU:"Отделения", EN:"Units" },
+    p_h:{ AZ:"Növbədə məlumat dağınıqdır.", TR:"Nöbette bilgi dağınık.", RU:"На дежурстве информация разрознена.", EN:"On shift, information is scattered." },
+    p_lead:{ AZ:"Monitor bir ekrandadır, portativ cihazın ölçüsü kağızdadır, xəbər telefonla gedir. Kimin nə vaxt gördüyü sonradan bilinmir.", TR:"Monitör bir ekranda, portatif cihazın ölçümü kâğıtta, haber telefonla gidiyor. Kimin ne zaman gördüğü sonradan bilinmiyor.", RU:"Монитор на одном экране, показания портативного прибора — на бумаге, сообщение идёт по телефону. Кто и когда увидел — потом не установить.", EN:"The monitor is on one screen, the portable reading is on paper, the message goes by phone. Who saw what, and when, cannot be traced afterwards." },
+    p_ans:{ AZ:"Homunculus-da", TR:"Homunculus'ta", RU:"В Homunculus", EN:"In Homunculus" },
+    ov_now:{ AZ:"indi", TR:"şimdi", RU:"сейчас", EN:"now" },
+    ov_push:{ AZ:"REA03 · kritik · tətbiqi açın", TR:"REA03 · kritik · uygulamayı açın", RU:"REA03 · критично · откройте приложение", EN:"REA03 · critical · open the app" },
+    ov_crit:{ AZ:"Kritik · sizə düşdü", TR:"Kritik · size düştü", RU:"Критично · вам", EN:"Critical · for you" },
+    ov_r1:{ AZ:"Seftriakson 2 q IV", TR:"Seftriakson 2 g IV", RU:"Цефтриаксон 2 г в/в", EN:"Ceftriaxone 2 g IV" },
+    pc1t:{ AZ:"Ekranlar ayrı-ayrıdır", TR:"Ekranlar ayrı ayrı", RU:"Экраны разрознены", EN:"Separate screens" },
+    pc1s:{ AZ:"Hər monitor öz çarpayısını göstərir; bölmənin ümumi mənzərəsi yoxdur.", TR:"Her monitör kendi yatağını gösterir; birimin bütün resmi yok.", RU:"Каждый монитор показывает свою койку; общей картины отделения нет.", EN:"Each monitor shows its own bed; nobody sees the whole unit." },
+    pc2t:{ AZ:"Ölçü kağızda qalır", TR:"Ölçüm kâğıtta kalır", RU:"Измерения остаются на бумаге", EN:"Readings stay on paper" },
+    pc2s:{ AZ:"Portativ cihazla alınan ölçü sonradan əllə yazılır, bəzən heç yazılmır.", TR:"Portatif cihazla alınan ölçüm sonradan elle yazılır, bazen hiç yazılmaz.", RU:"Показания портативного прибора переписываются вручную позже, а иногда не записываются вовсе.", EN:"Portable readings are copied by hand later, and sometimes never." },
+    pc3t:{ AZ:"Xəbər iz qoymur", TR:"Haber iz bırakmıyor", RU:"Вызов не оставляет следа", EN:"Calls leave no trace" },
+    pc3s:{ AZ:"Zəng edildi, amma kim gördü, nə vaxt gördü — qeyd yoxdur.", TR:"Arandı, ama kim gördü, ne zaman gördü — kayıt yok.", RU:"Позвонили, но кто увидел и когда — записи нет.", EN:"Someone called — but who saw it, and when, is not recorded." },
+    pc4t:{ AZ:"Təhvil şifahidir", TR:"Devir sözlü", RU:"Передача смены устная", EN:"Handover is verbal" },
+    pc4s:{ AZ:"Növbə dəyişəndə vacib detal yaddaşda qalır.", TR:"Nöbet değişirken önemli ayrıntı hafızada kalır.", RU:"При смене дежурства важные детали держатся в памяти.", EN:"At shift change, key details live in people's memory." },
+    tur_h:{ AZ:"Altı ekran, bir sistem.", TR:"Altı ekran, tek sistem.", RU:"Шесть экранов, одна система.", EN:"Six screens, one system." },
+    tur_p:{ AZ:"Quraşdırmadan ekranları gəzin: nömrəli nöqtələrə toxunun, hər biri bir cümlə ilə nə iş gördüyünü deyir.", TR:"Kurulum yapmadan ekranları gezin: numaralı noktalara dokunun, her biri ne işe yaradığını tek cümleyle söyler.", RU:"Посмотрите экраны без установки: нажимайте на пронумерованные точки — каждая одной фразой объясняет, зачем она.", EN:"Walk through the screens without installing anything: tap the numbered dots, each says in one line what it is for." },
+    nb_h:{ AZ:"Reanimasiyada 24 saat.", TR:"Yoğun bakımda 24 saat.", RU:"24 часа в реанимации.", EN:"24 hours in intensive care." },
+    nb_p:{ AZ:"Səhər təhvilindən ertəsi səhərə qədər — gündüz və gecə. Özü irəliləyir; sürəti siz seçirsiniz.", TR:"Sabah devrinden ertesi sabaha — gündüz ve gece. Kendiliğinden ilerler; hızını siz seçersiniz.", RU:"От утренней передачи до следующего утра — днём и ночью. Идёт само; скорость выбираете вы.", EN:"From the morning handover to the next morning — day and night. It plays by itself; you choose the speed." },
+    ft_h:{ AZ:"Həkimin, tibb bacısının, xəstəxananın işinə yarayanlar.", TR:"Hekimin, hemşirenin, kurumun işine yarayanlar.", RU:"Что полезно врачу, медсестре и больнице.", EN:"What it does for physicians, nurses and the hospital." },
+    ft_p:{ AZ:"Bunlar bu gün tətbiqin menyusunda olan ekranlardır.", TR:"Bunlar bugün uygulamanın menüsünde olan ekranlar.", RU:"Это экраны, которые уже есть в меню приложения.", EN:"These are screens already in the app's menu today." },
+    g_doc:{ AZ:"Həkim üçün", TR:"Hekim için", RU:"Для врача", EN:"For physicians" }, g_doc_s:{ AZ:"Qiymətləndirmə və təsdiq", TR:"Değerlendirme ve onay", RU:"Оценка и подтверждение", EN:"Assessment and sign-off" },
+    g_nur:{ AZ:"Tibb bacısı üçün", TR:"Hemşire için", RU:"Для медсестры", EN:"For nurses" }, g_nur_s:{ AZ:"Çarpayı başında iş", TR:"Yatak başındaki iş", RU:"Работа у койки", EN:"Work at the bedside" },
+    g_org:{ AZ:"Xəstəxana üçün", TR:"Kurum için", RU:"Для больницы", EN:"For the hospital" }, g_org_s:{ AZ:"İdarə, keyfiyyət, texnika", TR:"Yönetim, kalite, teknik", RU:"Управление, качество, техника", EN:"Management, quality, technical" },
+    fd1:{ AZ:"Bölmə paneli", TR:"Birim panosu", RU:"Панель отделения", EN:"Unit dashboard" }, fd1s:{ AZ:"Risk istilik xəritəsi, çarpayı başına qrafiklər, şkala meyli, laktat.", TR:"Risk ısı haritası, hasta başına grafikler, skor eğilimi, laktat.", RU:"Тепловая карта риска, графики по койкам, тренд шкал, лактат.", EN:"Risk heat map, per-bed charts, score trend, lactate." },
+    fd2:{ AZ:"Şkala təsdiqi", TR:"Skor onayı", RU:"Подтверждение шкал", EN:"Score sign-off" }, fd2s:{ AZ:"NEWS2 və SOFA sistemdən qaralama gəlir; imza həkimindir.", TR:"NEWS2 ve SOFA sistemden taslak gelir; imza hekimindir.", RU:"NEWS2 и SOFA приходят черновиком; подпись — врача.", EN:"NEWS2 and SOFA arrive as drafts; the signature is the physician's." },
+    fd3:{ AZ:"Xəbər zənciri", TR:"Alarm ve haber zinciri", RU:"Цепочка оповещения", EN:"Alert chain" }, fd3s:{ AZ:"Kim, nə vaxt gördü; cavab olmasa növbəti pillə.", TR:"Kim ne zaman gördü; yanıt yoksa bir sonraki basamak.", RU:"Кто и когда увидел; без ответа — следующая ступень.", EN:"Who saw it and when; no answer moves it up a step." },
+    fd4:{ AZ:"Təcili müdaxilə komandası", TR:"Hızlı müdahale ekibi", RU:"Бригада быстрого реагирования", EN:"Rapid response team" }, fd4s:{ AZ:"Çağırış və cavab müddəti bir yerdə.", TR:"Çağrı ve yanıt süresi tek yerde.", RU:"Вызов и время ответа — в одном месте.", EN:"Calls and response times in one place." },
+    fd5:{ AZ:"Divar monitoru", TR:"Duvar monitörü", RU:"Настенный монитор", EN:"Wall monitor" }, fd5s:{ AZ:"Bütün çarpayılar uzaqdan oxunur; tam ekran bir xəstə.", TR:"Bütün yataklar uzaktan okunur; tam ekran tek hasta.", RU:"Все койки читаются издалека; один пациент во весь экран.", EN:"Every bed readable across the room; one patient full screen." },
+    fn1:{ AZ:"Tapşırıqlarım", TR:"Görevlerim", RU:"Мои задачи", EN:"My tasks" }, fn1s:{ AZ:"24 saatlıq cədvəl; gecikən iş özünü göstərir.", TR:"24 saatlik ızgara; geciken iş kendini belli eder.", RU:"24-часовая сетка; просроченное видно сразу.", EN:"A 24-hour grid; overdue work makes itself known." },
+    fn2:{ AZ:"Qulluq planı", TR:"Bakım planı", RU:"План ухода", EN:"Care plan" }, fn2s:{ AZ:"Tibb bacısı diaqnozu, səbəb, məqsəd, fəaliyyət; fəaliyyət tapşırığa düşür.", TR:"Hemşirelik tanısı, neden, hedef, faaliyet; faaliyet göreve düşer.", RU:"Сестринский диагноз, причина, цель, действие; действие становится задачей.", EN:"Nursing diagnosis, cause, goal, action; actions become tasks." },
+    fn3:{ AZ:"Çarpayı başında qeyd", TR:"Yatak başı kayıt", RU:"Записи у койки", EN:"Bedside charting" }, fn3s:{ AZ:"Planşetdən ölçmə, şkala formaları (Morse, Braden, QKŞ).", TR:"Tabletten ölçüm, skala formları (Morse, Braden, GKS).", RU:"Измерения с планшета, формы шкал (Морс, Брейден, ШКГ).", EN:"Readings from a tablet, scale forms (Morse, Braden, GCS)." },
+    fn4:{ AZ:"Portativ ölçmə paneli", TR:"Portatif ölçüm paneli", RU:"Панель портативных измерений", EN:"Portable reading panel" }, fn4s:{ AZ:"Monitorsuz çarpayıda son dəyər, fərq, mini əyri, növbəti ölçməyə qalan vaxt.", TR:"Monitörsüz yatakta son değer, fark, mini eğri, sıradaki ölçüme kalan süre.", RU:"Для койки без монитора: последнее значение, разница, мини-кривая, время до следующего.", EN:"For beds without a monitor: last value, change, mini-trend, time to next reading." },
+    fn5:{ AZ:"Möhürlü təhvil", TR:"Mühürlü devir", RU:"Скреплённая передача", EN:"Sealed handover" }, fn5s:{ AZ:"Sistem toplayır, komanda tamamlayır; möhürdən sonra dəyişmir.", TR:"Sistem toplar, ekip tamamlar; mühürden sonra değişmez.", RU:"Система собирает, команда дополняет; после печати не меняется.", EN:"The system gathers, the team completes; sealed, it cannot change." },
+    fo1:{ AZ:"Qəbul və çarpayı doluluğu", TR:"Kabul ve yatak doluluğu", RU:"Приём и занятость коек", EN:"Admissions and bed occupancy" }, fo1s:{ AZ:"Xəstə nömrəsi + protokol, qolbaq, köçürmə.", TR:"Hasta no + protokol, kol bandı, transfer.", RU:"Номер пациента + протокол, браслет, перевод.", EN:"Patient no. + protocol number, wristband, transfer." },
+    fo2:{ AZ:"İş yükü və infeksiya nəzarəti", TR:"İş yükü ve enfeksiyon kontrol", RU:"Нагрузка и инфекционный контроль", EN:"Workload and infection control" }, fo2s:{ AZ:"Baş tibb bacısı və keyfiyyət üçün bölmə görünüşü.", TR:"Sorumlu hemşire ve kalite için birim görünümü.", RU:"Вид отделения для старшей медсестры и качества.", EN:"A unit view for charge nurses and quality." },
+    fo3:{ AZ:"Cihazlar və texniki xidmət", TR:"Cihazlar ve bakım takvimi", RU:"Приборы и обслуживание", EN:"Devices and maintenance" }, fo3s:{ AZ:"İnventar, nasazlıq qeydi, xidmət təqvimi, otaqlar.", TR:"Envanter, arıza kaydı, bakım takvimi, odalar.", RU:"Реестр, журнал неисправностей, график обслуживания, палаты.", EN:"Inventory, fault log, maintenance calendar, rooms." },
+    fo4:{ AZ:"Keyfiyyət və pilot hesabatı", TR:"Kalite ve pilot raporu", RU:"Качество и отчёт пилота", EN:"Quality and pilot report" }, fo4s:{ AZ:"Cavab müddətləri, bölmə xülasəsi, ölçülən göstəricilər.", TR:"Yanıt süreleri, birim özeti, ölçülen göstergeler.", RU:"Время реакции, сводка отделения, измеряемые показатели.", EN:"Response times, unit summary, measured indicators." },
+    fo5:{ AZ:"İstifadəçilər, rollar, audit", TR:"Kullanıcılar, roller, denetim kaydı", RU:"Пользователи, роли, аудит", EN:"Users, roles, audit log" }, fo5s:{ AZ:"Xəstəxana quruluşu, inteqrasiyalar, kim nəyi gördü.", TR:"Hastane yapısı, entegrasyonlar, kim neyi gördü.", RU:"Структура больницы, интеграции, кто что видел.", EN:"Hospital structure, integrations, who saw what." },
+    u_h:{ AZ:"Hansı bölmələrdə işləyir", TR:"Hangi birimlerde çalışır", RU:"В каких отделениях работает", EN:"Which units it works in" },
+    u_lead:{ AZ:"Monitoru olan yerdə mərkəzi stansiyadan, olmayan yerdə portativ cihazdan. Hər birim öz qaydası ilə.", TR:"Monitör olan yerde merkez istasyondan, olmayan yerde portatif cihazdan. Her birim kendi kuralıyla.", RU:"Где есть монитор — с центральной станции, где нет — с портативного прибора. У каждого отделения свои правила.", EN:"From the central station where there are monitors, from portable devices where there are not. Each unit with its own rules." },
+    u1t:{ AZ:"Reanimasiya və intensiv terapiya", TR:"Yoğun bakımlar", RU:"Реанимация и интенсивная терапия", EN:"Intensive care units" },
+    u1s:{ AZ:"Monitorlar mərkəzi stansiyaya bağlıdır; hər çarpayı canlı izlənir, şkalalar və xəbər zənciri bölməyə görə qurulur.", TR:"Monitörler merkez istasyona bağlı; her yatak canlı izlenir, skorlar ve haber zinciri birime göre kurulur.", RU:"Мониторы подключены к центральной станции; каждая койка под наблюдением, шкалы и оповещения настроены под отделение.", EN:"Monitors feed the central station; every bed is watched live, scores and the alert chain are set per unit." },
+    uc1:{ AZ:"Böyüklər", TR:"Erişkin", RU:"Взрослая", EN:"Adult" }, uc2:{ AZ:"Yenidoğulmuş", TR:"Yenidoğan", RU:"Неонатальная", EN:"Neonatal" }, uc3:{ AZ:"Uşaq", TR:"Çocuk", RU:"Детская", EN:"Paediatric" }, uc4:{ AZ:"Ürək-damar cərrahiyyəsi", TR:"Kalp-damar cerrahisi", RU:"Кардиохирургия", EN:"Cardiac surgery" },
+    u2t:{ AZ:"Servislər", TR:"Servisler", RU:"Отделения", EN:"Wards" }, u2s:{ AZ:"Ölçmələr plana görə alınır; gecikən ölçmə və pisləşmə görünür olur.", TR:"Vital ölçümler plana göre alınır; geciken ölçüm ve kötüleşme görünür olur.", RU:"Измерения по плану; просроченное измерение и ухудшение становятся видны.", EN:"Readings follow a schedule; late readings and deterioration become visible." },
+    u3t:{ AZ:"Təcili yardım", TR:"Acil", RU:"Приёмное отделение", EN:"Emergency" }, u3s:{ AZ:"Gələn xəstə eyni çarpayı panelində izlənir.", TR:"Gelen hasta aynı yatak panelinde izlenir.", RU:"Поступивший пациент — на той же панели коек.", EN:"Arriving patients are followed on the same bed board." },
+    u4t:{ AZ:"Portativ cihazla ölçülən otaqlar", TR:"Portatif cihazla ölçüm yapılan odalar", RU:"Палаты с портативными приборами", EN:"Rooms measured with portable devices" }, u4s:{ AZ:"Sabit monitor olmayan yerdə ölçmə birbaşa cihazdan gəlir, əllə yazılmır.", TR:"Sabit monitörün olmadığı yerde ölçüm doğrudan cihazdan gelir, elle yazılmaz.", RU:"Где нет стационарного монитора, измерение приходит прямо с прибора, без ручного ввода.", EN:"Where there is no fixed monitor, the reading comes straight from the device, not typed in." },
+    src_mon:{ AZ:"Mərkəzi stansiya", TR:"Merkez istasyon", RU:"Центральная станция", EN:"Central station" }, src_port:{ AZ:"Portativ cihaz", TR:"Portatif cihaz", RU:"Портативный прибор", EN:"Portable device" },
+    // 01.10 (Ozan, #317): alt bilgi cümlesi bu metin; altındaki üç slogan gizlendi.
+    ft_desc:{ AZ:"Reanimasiya və bölmələr üçün klinik qərar dəstəyi və bölmə idarəetmə sistemi. Monitordan gələn göstəricini oxuyur, vəziyyəti pisləşən xəstəni önə çıxarır və həmin xəstəyə cavabdeh şəxsə xəbər verir.", TR:"Yoğun bakım ve servisler için klinik karar destek ve birim yönetim sistemi. Monitörden gelen değeri okur, kötüleşen hastayı öne çıkarır ve o hastadan sorumlu kişiye haber verir.", RU:"Система поддержки клинических решений и управления отделением для реанимации и отделений. Считывает показания монитора, выводит вперёд пациента, чьё состояние ухудшается, и сообщает сотруднику, ответственному за этого пациента.", EN:"Clinical decision support and unit management system for intensive care and wards. It reads values from the monitor, brings the deteriorating patient to the top and notifies the person responsible for that patient." },
+    ft_cta_h:{ AZ:"Öz bölmənizdə görək.", TR:"Kendi biriminizde görelim.", RU:"Посмотрим в вашем отделении.", EN:"See it in your own unit." },
+    ft_cta_p:{ AZ:"Cihazlarınızı, qaydalarınızı və rollarınızı danışaq; sonra bir bölmədə quraşdırıb birlikdə qiymətləndirək.", TR:"Cihazlarınızı, kurallarınızı ve rollerinizi konuşalım; sonra bir birimde kurup birlikte değerlendirelim.", RU:"Обсудим ваши приборы, правила и роли, затем установим систему в одном отделении и вместе оценим.", EN:"Let's talk through your devices, rules and roles, then set up in one unit and review it together." },
+    ft_contact:{ AZ:"Bizimlə əlaqə", TR:"Bize ulaşın", RU:"Связаться с нами", EN:"Contact us" },
+    ft_product:{ AZ:"Məhsul", TR:"Ürün", RU:"Продукт", EN:"Product" }, ft_corp:{ AZ:"Kurumsal", TR:"Kurumsal", RU:"Для организаций", EN:"Organisation" },
+    f_cookies:{ AZ:"Kukilər", TR:"Çerezler", RU:"Файлы cookie", EN:"Cookies" }, f_rights:{ AZ:"Bütün hüquqlar qorunur.", TR:"Tüm hakları saklıdır.", RU:"Все права защищены.", EN:"All rights reserved." },
+    ck_t:{ AZ:"İzləmə və ya reklam kukisi yoxdur. Brauzerinizdə yalnız dil və görünüş seçiminiz saxlanılır.", TR:"Takip ya da reklam çerezi yok. Tarayıcınızda yalnız dil ve tema tercihiniz saklanır.", RU:"Никаких cookie для отслеживания или рекламы. В браузере хранятся только язык и тема.", EN:"No tracking or advertising cookies. Only your language and theme choice is kept in your browser." },
+    ck_h:{ AZ:"Kukilər və məxfilik", TR:"Çerezler ve gizlilik", RU:"Cookie и конфиденциальность", EN:"Cookies and privacy" },
+    ck_more:{ AZ:"Ətraflı", TR:"Ayrıntılar", RU:"Подробнее", EN:"Details" }, ck_ok:{ AZ:"Aydındır", TR:"Tamam", RU:"Понятно", EN:"Got it" },
+    totop:{ AZ:"Yuxarı", TR:"Yukarı çık", RU:"Наверх", EN:"Back to top" },
+    cta_pilot:{ AZ:"Tanış olaq", TR:"Tanışalım", RU:"Познакомимся", EN:"Let's talk" },
+    t1:{ AZ:"Qərarı həkim verir", TR:"Kararı hekim verir", RU:"Решает врач", EN:"The physician decides" },
+    t2:{ AZ:"Şifrəli bağlantı", TR:"Şifreli bağlantı", RU:"Защищённое соединение", EN:"Encrypted connection" },
+    t3:{ AZ:"Quraşdırma yerini xəstəxana seçir", TR:"Kurulum yerini hastane seçer", RU:"Место установки выбирает больница", EN:"Hospital chooses where it runs" },
+    sc_unit:{ AZ:"Reanimasiya · 8 çarpayı · canlı", TR:"Erişkin yoğun bakım · 8 yatak · canlı", RU:"Реанимация · 8 коек · в эфире", EN:"Adult ICU · 8 beds · live" },
+    sc_n:{ AZ:"Tibb bacısı", TR:"Hemşire", RU:"Медсестра", EN:"Nurse" },
+    sc_c:{ AZ:"Baş tibb bacısı", TR:"Sorumlu hemşire", RU:"Старшая медсестра", EN:"Charge nurse" },
+    sc_d:{ AZ:"Həkim", TR:"Hekim", RU:"Врач", EN:"Physician" },
+    p3:{ AZ:"+3 dəq", TR:"+3 dk", RU:"+3 мин", EN:"+3 min" },
+    p5:{ AZ:"+5 dəq", TR:"+5 dk", RU:"+5 мин", EN:"+5 min" },
+    sc0:{ AZ:"8 çarpayı izlənilir · hamısı sabit", TR:"8 yatak izleniyor · hepsi sakin", RU:"8 коек под наблюдением · всё стабильно", EN:"8 beds monitored · all calm" },
+    sc1:{ AZ:"REA03 · SpO₂ düşür", TR:"REA03 · SpO₂ düşüyor", RU:"REA03 · SpO₂ снижается", EN:"REA03 · SpO₂ falling" },
+    sc2:{ AZ:"SpO₂ 86 · NEWS2 7 → həkim təsdiqinə", TR:"SpO₂ 86 · NEWS2 7 → hekim onayına", RU:"SpO₂ 86 · NEWS2 7 → врачу на подтверждение", EN:"SpO₂ 86 · NEWS2 7 → for physician sign-off" },
+    sc3:{ AZ:"Tibb bacısına xəbər: telefon və ekran", TR:"Hemşireye haber: telefon ve ekran", RU:"Медсестре: на телефон и экран", EN:"Nurse notified: phone and screen" },
+    sc4:{ AZ:"3 dəq cavab yoxdur → baş tibb bacısı", TR:"3 dk yanıt yok → sorumlu hemşire", RU:"3 мин без ответа → старшая медсестра", EN:"No response in 3 min → charge nurse" },
+    sc5:{ AZ:"5 dəq → həkim", TR:"5 dk → hekim", RU:"5 мин → врач", EN:"5 min → physician" },
+    sc6:{ AZ:"Həkim gördü · qərar həkimindir · hər addım qeyddə", TR:"Hekim gördü · karar hekimin · her adım kayıtta", RU:"Врач увидел · решение за ним · каждый шаг записан", EN:"Physician has seen it · the decision is theirs · every step logged" },
+    how_h:{ AZ:"Bir göstərici pisləşəndə nə baş verir?", TR:"Bir değer bozulduğunda ne olur?", RU:"Что происходит, когда показатель ухудшается?", EN:"What happens when a reading goes wrong?" },
+    ex_sign:{ AZ:"Həkim təsdiqi gözlənilir", TR:"Hekim onayı bekliyor", RU:"Ждёт подтверждения врача", EN:"Awaiting physician sign-off" },
+    how_note:{ AZ:"Homunculus xəbər verir və səbəbini göstərir; göstəriş vermir. Qərarı həkim verir.", TR:"Homunculus haber verir ve gerekçesini gösterir; emir vermez. Kararı hekim verir.", RU:"Homunculus сообщает и показывает основание, но не отдаёт распоряжений. Решение за врачом.", EN:"Homunculus informs and shows its reasoning; it gives no orders. The physician decides." },
+    scr_h:{ AZ:"Hər rol üçün sadə ekranlar.", TR:"Her rol için sade ekranlar.", RU:"Простые экраны для каждой роли.", EN:"Plain screens for every role." },
+    scr_p:{ AZ:"Tətbiqin dörd ekranından kəsiklər.", TR:"Uygulamanın dört ekranından kesitler.", RU:"Фрагменты четырёх экранов приложения.", EN:"Glimpses of four screens in the app." },
+    w_beds:{ AZ:"Çarpayı paneli", TR:"Yatak ızgarası", RU:"Панель коек", EN:"Bed board" },
+    w_beds_p:{ AZ:"Bölmənin bütün çarpayıları bir ekranda; pisləşən çarpayı önə çıxır.", TR:"Birimin bütün yatakları tek ekranda; kötüleşen yatak öne çıkar.", RU:"Все койки отделения на одном экране; ухудшающаяся койка выделяется.", EN:"Every bed in the unit on one screen; a worsening bed stands out." },
+    w_pt:{ AZ:"Xəstə ekranı", TR:"Hasta ekranı", RU:"Экран пациента", EN:"Patient view" },
+    w_pt_p:{ AZ:"Həyati göstəricilər, meyllər və həkim təsdiqi gözləyən şkalalar.", TR:"Yaşamsal bulgular, eğilimler ve hekim onayı bekleyen skorlar.", RU:"Витальные показатели, тренды и шкалы, ожидающие подтверждения врача.", EN:"Vital signs, trends and scores awaiting the physician's sign-off." },
+    w_sofa:{ AZ:"Sistem doldurdu", TR:"Sistem doldurdu", RU:"Заполнено системой", EN:"System-filled" },
+    w_await:{ AZ:"Həkim təsdiqi", TR:"Hekim onayı", RU:"Ждёт врача", EN:"Awaiting sign-off" },
+    w_tasks:{ AZ:"Tapşırıqlarım", TR:"Görevlerim", RU:"Мои задачи", EN:"My tasks" },
+    w_tasks_p:{ AZ:"24 saatlıq qulluq cədvəli; gecikən iş özünü göstərir.", TR:"24 saatlik bakım çizelgesi; geciken iş kendini belli eder.", RU:"24-часовой график ухода; просроченная задача видна сразу.", EN:"A 24-hour care grid; an overdue task makes itself known." },
+    k1:{ AZ:"Vəziyyətin dəyişdirilməsi", TR:"Pozisyon verme", RU:"Смена положения", EN:"Repositioning" },
+    k2:{ AZ:"Ağrının qiymətləndirilməsi", TR:"Ağrı değerlendirmesi", RU:"Оценка боли", EN:"Pain assessment" },
+    k3:{ AZ:"Ağız boşluğuna qulluq", TR:"Ağız bakımı", RU:"Уход за полостью рта", EN:"Oral care" },
+    k4:{ AZ:"Vəziyyətin dəyişdirilməsi", TR:"Pozisyon verme", RU:"Смена положения", EN:"Repositioning" },
+    k_done:{ AZ:"Edildi", TR:"Yapıldı", RU:"Выполнено", EN:"Done" },
+    k_late:{ AZ:"Gecikir", TR:"Gecikti", RU:"Просрочено", EN:"Overdue" },
+    k_next:{ AZ:"Növbədə", TR:"Sırada", RU:"Далее", EN:"Next" },
+    w_hand:{ AZ:"Təhvil", TR:"Devir", RU:"Передача смены", EN:"Handover" },
+    w_hand_p:{ AZ:"Növbə təhvili möhürlənir; sonradan dəyişdirilə bilməz.", TR:"Nöbet devri mühürlenir; sonradan değiştirilemez.", RU:"Передача смены скрепляется и потом не меняется.", EN:"The shift handover is sealed and cannot be altered afterwards." },
+    h_day:{ AZ:"Gündüz növbəsi", TR:"Gündüz nöbeti", RU:"Дневная смена", EN:"Day shift" },
+    h_night:{ AZ:"Gecə növbəsi", TR:"Gece nöbeti", RU:"Ночная смена", EN:"Night shift" },
+    h_seal:{ AZ:"Möhürləndi", TR:"Mühürlendi", RU:"Скреплено", EN:"Sealed" },
+    roles_h:{ AZ:"Hər kəs yalnız öz işini görür.", TR:"Herkes yalnız kendi işini görür.", RU:"Каждый видит только свою работу.", EN:"Everyone sees only their own work." },
+    roles_p:{ AZ:"Səkkiz rol, səkkiz ayrı görünüş. Xəstənin adını yalnız işi tələb edənlər görür.", TR:"Sekiz rol, sekiz ayrı görünüm. Hasta adını yalnız işi gereği bilmesi gerekenler görür.", RU:"Восемь ролей — восемь разных видов. Имя пациента видят только те, кому оно нужно по работе.", EN:"Eight roles, eight separate views. Only those whose work requires it see a patient's name." },
+    ro_doc:{ AZ:"Həkim", TR:"Hekim", RU:"Врач", EN:"Physician" },
+    ro_doc_p:{ AZ:"Çarpayı paneli, xəstə ekranı, şkala təsdiqi; xəbər zəncirinin son pilləsi.", TR:"Yatak ızgarası, hasta ekranı, skor onayı; haber zincirinin son basamağı.", RU:"Панель коек, экран пациента, подтверждение шкал; последняя ступень оповещения.", EN:"Bed board, patient view, score sign-off; the last step of the alert chain." },
+    ro_nur:{ AZ:"Tibb bacısı", TR:"Hemşire", RU:"Медсестра", EN:"Nurse" },
+    ro_nur_p:{ AZ:"Tapşırıqlarım, çarpayı başında qeyd; ilk xəbəri alır.", TR:"Görevlerim, yatak başı kayıt; ilk haberi alır.", RU:"Мои задачи, записи у постели; первой получает оповещение.", EN:"My tasks, bedside charting; receives the first alert." },
+    ro_chg:{ AZ:"Baş tibb bacısı", TR:"Sorumlu hemşire", RU:"Старшая медсестра", EN:"Charge nurse" },
+    ro_chg_p:{ AZ:"Bölmənin doluluğu, iş yükü, təhvil; ikinci pillə.", TR:"Birim doluluğu, iş yükü, devir; ikinci basamak.", RU:"Загрузка отделения, нагрузка, передача смены; вторая ступень.", EN:"Unit occupancy, workload, handover; the second step." },
+    ro_bio:{ AZ:"Biotibbi mühəndis", TR:"Biyomedikal", RU:"Биомедицинский инженер", EN:"Biomedical engineering" },
+    ro_bio_p:{ AZ:"Cihaz inventarı, nasazlıq qeydləri, texniki xidmət təqvimi.", TR:"Cihaz envanteri, arıza kayıtları, bakım takvimi.", RU:"Реестр приборов, журнал неисправностей, график обслуживания.", EN:"Device inventory, fault log, maintenance calendar." },
+    ro_qua:{ AZ:"Keyfiyyət", TR:"Kalite", RU:"Качество", EN:"Quality" },
+    ro_qua_p:{ AZ:"Cavab müddətləri, audit qeydi, bölmə hesabatları.", TR:"Yanıt süreleri, denetim kaydı, birim raporları.", RU:"Время реакции, журнал аудита, отчёты отделений.", EN:"Response times, audit log, unit reports." },
+    ro_adm:{ AZ:"Qəbul", TR:"Hasta kabul", RU:"Приёмное отделение", EN:"Admissions" },
+    ro_adm_p:{ AZ:"Yerləşdirmə, çarpayı doluluğu, ilkin qəbul.", TR:"Yatış, yatak doluluğu, ön kabul.", RU:"Госпитализация, занятость коек, предварительный приём.", EN:"Admission, bed occupancy, pre-admission." },
+    ro_ph:{ AZ:"Aptek", TR:"Eczane", RU:"Аптека", EN:"Pharmacy" },
+    ro_ph_p:{ AZ:"Dərman sifarişləri və onların dəyişiklikləri.", TR:"İlaç istemleri ve değişiklikleri.", RU:"Лекарственные назначения и их изменения.", EN:"Medication orders and their changes." },
+    ro_mg:{ AZ:"Rəhbərlik", TR:"Yönetim", RU:"Руководство", EN:"Management" },
+    ro_mg_p:{ AZ:"Bölmə xülasələri, doluluq və cavab müddətləri.", TR:"Birim özetleri, doluluk ve yanıt süreleri.", RU:"Сводки по отделениям, загрузка и время реакции.", EN:"Unit summaries, occupancy and response times." },
+    noname:{ AZ:"Xəstə adını görmür", TR:"Hasta adı görmez", RU:"Без имён пациентов", EN:"No patient names" },
+    tr_h:{ AZ:"Sərhədlər əvvəldən bəllidir.", TR:"Sınırları baştan belli.", RU:"Границы ясны с самого начала.", EN:"The limits are clear from the start." },
+    tr3_t:{ AZ:"Hər əməliyyat qeydə alınır", TR:"Her işlem kayıt altında", RU:"Каждое действие записывается", EN:"Every action is logged" },
+    tr3:{ AZ:"Kim, nəyi, nə vaxt gördü və ya dəyişdi — audit qeydində.", TR:"Kim neyi ne zaman gördü ya da değiştirdi — denetim kaydında.", RU:"Кто, что и когда увидел или изменил — в журнале аудита.", EN:"Who saw or changed what, and when — in the audit log." },
+    pl_h:{ AZ:"Bir bölmə ilə başlayaq.", TR:"Bir birimle başlayalım.", RU:"Начнём с одного отделения.", EN:"Let's start with one unit." },
+    pl_p:{ AZ:"Əvvəl tanış oluruq: cihazlarınızı, qaydalarınızı və rollarınızı danışırıq. Sonra bir bölmədə quraşdırır və birlikdə qiymətləndiririk.", TR:"Önce tanışırız: cihazlarınızı, kurallarınızı ve rollerinizi konuşuruz. Sonra bir birimde kurar ve birlikte değerlendiririz.", RU:"Сначала знакомимся: обсуждаем ваши приборы, правила и роли. Затем устанавливаем систему в одном отделении и вместе оцениваем.", EN:"First we meet: we talk through your devices, rules and roles. Then we set it up in one unit and review it together." },
+    pl1:{ AZ:"Tanışlıq görüşü", TR:"Tanışma görüşmesi", RU:"Знакомство", EN:"Introductory meeting" },
+    pl2:{ AZ:"Bir bölmədə quraşdırma", TR:"Bir birimde kurulum", RU:"Установка в одном отделении", EN:"Set-up in one unit" },
+    pl3:{ AZ:"Birgə qiymətləndirmə", TR:"Birlikte değerlendirme", RU:"Совместная оценка", EN:"Joint review" },
+    pl_cta:{ AZ:"Bizimlə əlaqə", TR:"Bize ulaşın", RU:"Связаться с нами", EN:"Contact us" },
+    f_priv:{ AZ:"Məxfilik", TR:"Gizlilik", RU:"Конфиденциальность", EN:"Privacy" },
+    f_terms:{ AZ:"İstifadə qaydaları", TR:"Kullanım koşulları", RU:"Условия использования", EN:"Terms of use" },
+    f_notice:{ AZ:"Məlumatlandırma", TR:"Aydınlatma", RU:"Уведомление о данных", EN:"Data notice" },
+    f_support:{ AZ:"Dəstək", TR:"Destek", RU:"Поддержка", EN:"Support" },
+    f_cookie:{ AZ:"Bu səhifə izləmə və ya reklam kukiləri istifadə etmir; yalnız dil və görünüş seçiminiz brauzerinizdə saxlanılır.", TR:"Bu sayfa takip ya da reklam çerezi kullanmaz; yalnız dil ve tema tercihiniz tarayıcınızda saklanır.", RU:"Эта страница не использует файлы cookie для отслеживания или рекламы; в браузере хранятся только выбранные язык и тема.", EN:"This page uses no tracking or advertising cookies; only your language and theme choice is kept in your browser." },
+    /* 30.09 · yeni: hareketli hikâye (hw*, hs*, hl*), güven kartları (g*), mobil bölüm (mb*) */
+    nav_mobile:{ AZ:"Mobil", TR:"Mobil", RU:"Мобильное", EN:"Mobile" },
+    how_p:{ AZ:"Bir hadisə, dəqiqə-dəqiqə: REA03-də SpO₂ düşür.", TR:"Tek bir olay, dakika dakika: REA03'te SpO₂ düşüyor.", RU:"Одно событие, минута за минутой: у REA03 падает SpO₂.", EN:"One event, minute by minute: SpO₂ is falling at REA03." },
+    hw1t:{ AZ:"Monitor: SpO₂ 86", TR:"Monitör: SpO₂ 86", RU:"Монитор: SpO₂ 86", EN:"Monitor: SpO₂ 86" },
+    hw1s:{ AZ:"REA03 çarpayısında ölçmə düşür.", TR:"REA03 yatağında ölçüm düşer.", RU:"Показатель у койки REA03 падает.", EN:"The reading at bed REA03 drops." },
+    hw2t:{ AZ:"NEWS2 7 hesablandı", TR:"NEWS2 7 hesaplandı", RU:"Рассчитан NEWS2 7", EN:"NEWS2 7 calculated" },
+    hw2s:{ AZ:"Həkim təsdiqinə göndərildi.", TR:"Hekim onayına gönderildi.", RU:"Отправлен врачу на подтверждение.", EN:"Sent for physician sign-off." },
+    hw3t:{ AZ:"Tibb bacısına xəbər", TR:"Hemşireye haber", RU:"Медсестра оповещена", EN:"Nurse notified" },
+    hw3s:{ AZ:"Telefon və bölmə ekranı.", TR:"Telefon ve birim ekranı.", RU:"Телефон и экран отделения.", EN:"Phone and unit screen." },
+    hw4t:{ AZ:"Cavab yoxdur → baş tibb bacısı", TR:"Yanıt yok → sorumlu hemşire", RU:"Нет ответа → старшая медсестра", EN:"No response → charge nurse" },
+    hw4s:{ AZ:"3 dəqiqədən sonra zəncir özü irəliləyir.", TR:"3 dakika sonra zincir kendiliğinden ilerler.", RU:"Через 3 минуты цепочка сама идёт дальше.", EN:"After 3 minutes the chain moves on by itself." },
+    hw5t:{ AZ:"Həkim görür və qərar verir", TR:"Hekim görür ve karar verir", RU:"Врач видит и принимает решение", EN:"The physician sees it and decides" },
+    hw5s:{ AZ:"5-ci dəqiqədə həkim; hər addım audit qeydində.", TR:"5. dakikada hekim; her adım denetim kaydında.", RU:"На 5-й минуте — врач; каждый шаг в журнале аудита.", EN:"Physician at minute 5; every step in the audit log." },
+    hw0:{ AZ:"Bölmə sakitdir · 6 çarpayı izlənilir", TR:"Birim sakin · 6 yatak izleniyor", RU:"В отделении спокойно · 6 коек под наблюдением", EN:"Unit calm · 6 beds monitored" },
+    hs_unit:{ AZ:"Bölmə ekranı", TR:"Birim ekranı", RU:"Экран отделения", EN:"Unit screen" },
+    hs_live:{ AZ:"canlı", TR:"canlı", RU:"в эфире", EN:"live" },
+    hs_news:{ AZ:"Sistem hesablayır, imza həkimindir", TR:"Sistem hesaplar, imza hekimin", RU:"Считает система, подпись — врача", EN:"The system calculates, the physician signs" },
+    hs_phone:{ AZ:"Tibb bacısının telefonu", TR:"Hemşirenin telefonu", RU:"Телефон медсестры", EN:"Nurse's phone" },
+    hs_chain:{ AZ:"Xəbər zənciri", TR:"Haber zinciri", RU:"Цепочка оповещения", EN:"Alert chain" },
+    hs_log:{ AZ:"Audit qeydi", TR:"Denetim kaydı", RU:"Журнал аудита", EN:"Audit log" },
+    hs_replay:{ AZ:"Yenidən", TR:"Baştan", RU:"Сначала", EN:"Replay" },
+    hs_noresp:{ AZ:"3 dəq cavab yoxdur", TR:"3 dk yanıt yok", RU:"3 мин без ответа", EN:"No response in 3 min" },
+    hs_seen:{ AZ:"Həkim gördü", TR:"Hekim gördü", RU:"Врач увидел", EN:"Physician has seen it" },
+    hs_seenbtn:{ AZ:"Gördüm", TR:"Gördüm", RU:"Видел", EN:"Seen" },
+    hs_esc:{ AZ:"Eskalasiya et", TR:"Eskale et", RU:"Эскалировать", EN:"Escalate" },
+    hs_wait:{ AZ:"gözləyir", TR:"sırada", RU:"ожидает", EN:"waiting" },
+    hs_sent:{ AZ:"xəbər getdi", TR:"haber gitti", RU:"оповещена", EN:"notified" },
+    hs_sentd:{ AZ:"xəbər getdi", TR:"haber gitti", RU:"оповещён", EN:"notified" },
+    hs_nor:{ AZ:"cavab yoxdur", TR:"yanıt yok", RU:"нет ответа", EN:"no response" },
+    hs_ok:{ AZ:"gördü", TR:"gördü", RU:"увидел", EN:"seen" },
+    hl1:{ AZ:"Monitor · REA03 SpO₂ 86", TR:"Monitör · REA03 SpO₂ 86", RU:"Монитор · REA03 SpO₂ 86", EN:"Monitor · REA03 SpO₂ 86" },
+    hl2:{ AZ:"NEWS2 7 · həkim təsdiqinə", TR:"NEWS2 7 · hekim onayına", RU:"NEWS2 7 · врачу на подтверждение", EN:"NEWS2 7 · to physician for sign-off" },
+    hl3:{ AZ:"Bildiriş · tibb bacısı", TR:"Bildirim · hemşire", RU:"Оповещение · медсестра", EN:"Alert · nurse" },
+    hl4:{ AZ:"Eskalasiya · baş tibb bacısı", TR:"Eskalasyon · sorumlu hemşire", RU:"Эскалация · старшая медсестра", EN:"Escalation · charge nurse" },
+    hl5:{ AZ:"Həkim gördü · qərar həkimdədir", TR:"Hekim gördü · karar hekimde", RU:"Врач увидел · решение за ним", EN:"Physician saw it · the decision is theirs" },
+    g1t:{ AZ:"Xəbər verir, göstəriş vermir", TR:"Haber verir, emir vermez", RU:"Сообщает, но не распоряжается", EN:"It alerts, it does not order" },
+    g1s:{ AZ:"Hər xəbərdarlığın yanında səbəbi və mənbəyi durur.", TR:"Her uyarının yanında gerekçesi ve kaynağı durur.", RU:"У каждого оповещения есть основание и источник.", EN:"Every alert carries its rationale and its source." },
+    g1n:{ AZ:"Diaqnoz qoymur, müalicə təklif etmir", TR:"Tanı koymaz, tedavi önermez", RU:"Не ставит диагноз и не предлагает лечение", EN:"Does not diagnose or suggest treatment" },
+    g2t:{ AZ:"Quraşdırma yerini xəstəxana seçir", TR:"Kurulum yerini hastane seçer", RU:"Место установки выбирает больница", EN:"The hospital chooses where it runs" },
+    g2s:{ AZ:"Öz serveri və ya təsdiqlənmiş məlumat mərkəzi; bağlantı şifrəlidir.", TR:"Kendi sunucusu ya da onaylı veri merkezi; bağlantı şifreli.", RU:"Собственный сервер или одобренный дата-центр; соединение зашифровано.", EN:"Its own server or an approved data centre; the connection is encrypted." },
+    g2n:{ AZ:"Xəstə məlumatı reklam və ya satış üçün istifadə edilmir", TR:"Hasta verisi reklam ya da satış için kullanılmaz", RU:"Данные пациентов не используются для рекламы или продажи", EN:"Patient data is never used for advertising or sale" },
+    g3t:{ AZ:"Hər kəs yalnız öz işini görür", TR:"Herkes yalnız işini görür", RU:"Каждый видит только свою работу", EN:"Everyone sees only their own work" },
+    g3s:{ AZ:"Biotibbi mühəndis cihazı, keyfiyyət prosesi görür; xəstə adını görmür.", TR:"Biyomedikal cihazı, kalite süreci görür; hasta adı görmez.", RU:"Биомедицинский инженер видит приборы, отдел качества — процессы; имён пациентов они не видят.", EN:"Biomedical sees the devices, quality sees the process; neither sees patient names." },
+    g3n:{ AZ:"İcazəsiz ekran açılmır", TR:"Yetkisiz ekran açılmaz", RU:"Экран без прав доступа не откроется", EN:"No screen opens without permission" },
+    g4t:{ AZ:"Hər addım qeyddədir", TR:"Her adım kayıtta", RU:"Каждый шаг записан", EN:"Every step is on record" },
+    g4s:{ AZ:"Kim nəyi nə vaxt gördü, təsdiqlədi, eskalasiya etdi.", TR:"Kim neyi ne zaman gördü, onayladı, eskale etti.", RU:"Кто, что и когда увидел, подтвердил, эскалировал.", EN:"Who saw, signed off or escalated what, and when." },
+    g4n:{ AZ:"Qeydsiz əməliyyat yoxdur", TR:"Kayıtsız işlem yok", RU:"Ни одного действия без записи", EN:"No action goes unrecorded" },
+    mb_k:{ AZ:"Mobil tətbiq · tezliklə", TR:"Mobil uygulama · yakında", RU:"Мобильное приложение · скоро", EN:"Mobile app · coming soon" },
+    mb_h:{ AZ:"Növbə cibinizdə.", TR:"Nöbet cebinizde.", RU:"Дежурство у вас в кармане.", EN:"Your shift, in your pocket." },
+    mb_p:{ AZ:"Telefonda yalnız cəld işlər. Formalar və təfərrüatlar veb paneldə qalır.", TR:"Telefonda yalnız hızlı işler. Formlar ve ayrıntı web panelinde kalır.", RU:"На телефоне — только быстрые действия. Формы и подробности остаются в веб-панели.", EN:"Only quick actions on the phone. Forms and detail stay in the web panel." },
+    mb1t:{ AZ:"Kritik xəbərdarlıq bir toxunuşla", TR:"Kritik uyarı tek dokunuşla", RU:"Критическое оповещение — одним касанием", EN:"Critical alerts in one tap" },
+    mb1s:{ AZ:"Gördüm, Eskalasiya et.", TR:"Gördüm, Eskale et.", RU:"«Видел», «Эскалировать».", EN:"Seen, Escalate." },
+    mb2t:{ AZ:"İşlərim", TR:"İşlerim", RU:"Мои задачи", EN:"My tasks" },
+    mb2s:{ AZ:"Vaxtı çatan qulluq işləri, tamamlananlar.", TR:"Saati gelen bakım işleri, tamamlananlar.", RU:"Задачи ухода, у которых подошло время, и выполненные.", EN:"Care tasks as they fall due, and those already done." },
+    mb3t:{ AZ:"Bir toxunuşla əlaqə", TR:"Tek dokunuşla ulaşın", RU:"Связь одним касанием", EN:"Reach people in one tap" },
+    mb3s:{ AZ:"Həkimə və xəstənin yaxınına.", TR:"Hekime ve hasta yakınına.", RU:"С врачом и с родственниками пациента.", EN:"The physician, and the patient's family." },
+    mb_soon:{ AZ:"Tezliklə", TR:"Yakında", RU:"Скоро", EN:"Coming soon" },
+    mb_chip2:{ AZ:"Gördüm · qeydə alındı", TR:"Gördüm · kayda geçti", RU:"Видел · записано", EN:"Seen · logged" },
+    st_ios:{ AZ:"App Store — tezliklə", TR:"App Store — yakında", RU:"App Store — скоро", EN:"App Store — coming soon" },
+    st_and:{ AZ:"Google Play — tezliklə", TR:"Google Play — yakında", RU:"Google Play — скоро", EN:"Google Play — coming soon" },
+    alt_tasks:{ AZ:"Mobil tətbiqdə İşlərim ekranı", TR:"Mobil uygulamada İşlerim ekranı", RU:"Экран «Мои задачи» в мобильном приложении", EN:"The My tasks screen in the mobile app" },
+    alt_pt:{ AZ:"Mobil tətbiqdə xəstə kartı və monitor paneli", TR:"Mobil uygulamada hasta kartı ve monitör paneli", RU:"Карточка пациента и панель монитора в мобильном приложении", EN:"Patient card and monitor panel in the mobile app" },
+  };
+
+  /* ikonlar: uygulamadaki çizgi seti (core.js) */
+  var P = {
+    bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+    userPlus:'<circle cx="9" cy="7" r="4"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M19 8v6M22 11h-6"/>',
+    user:'<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>',
+    users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+    heart:'<path d="M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4 3 5.5l7 7Z"/>',
+    shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+    lock:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    building:'<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/>',
+    chevR:'<path d="m9 18 6-6-6-6"/>', chevD:'<path d="m6 9 6 6 6-6"/>', ok:'<path d="M20 6 9 17l-5-5"/>',
+    moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+    sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+    login:'<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5M15 12H3"/>',
+    menu:'<path d="M4 7h16M4 12h16M4 17h16"/>', x:'<path d="M18 6 6 18M6 6l12 12"/>',
+    activity:'<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+    grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+    list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+    clip:'<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+    cpu:'<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/>',
+    star:'<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1Z"/>',
+    pill:'<path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/>',
+    chart:'<path d="M3 3v18h18"/><path d="M7 16V9M12 16V5M17 16v-4"/>',
+    file:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/>',
+    mail:'<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/>',
+    up:'<path d="m18 15-6-6-6 6"/>',
+    cookie:'<path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><path d="M8.5 8.5h.01M16 15.5h.01M12 12h.01M11 17h.01M7 14h.01"/>',
+    monitor:'<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4M6 10h3l2-3 2 6 2-3h3"/>',
+    phone:'<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>',
+    swap:'<path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>',
+    tablet:'<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M12 18h.01"/>',
+    tv:'<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+    zap:'<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>',
+    bed:'<path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9"/>',
+    amb:'<path d="M10 17h4V5H2v12h3M20 17h2v-3.3a1 1 0 0 0-.2-.6l-3.5-4.4a1 1 0 0 0-.8-.4H14v9h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/><path d="M6 8h4M8 6v4"/>',
+    ig:'<rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><path d="M17.5 6.5h.01"/>',
+    in:'<path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6zM2 9h4v12H2z"/><circle cx="4" cy="4" r="2"/>',
+    yt:'<path d="M2.5 17a24 24 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.6 49.6 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24 24 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.6 49.6 0 0 1-16.2 0A2 2 0 0 1 2.5 17"/><path d="m10 15 5-3-5-3z"/>',
+    x2:'<path d="M4 4l16 16M20 4 4 20"/>',
+    eyeOff:'<path d="M9.9 4.2A9.8 9.8 0 0 1 12 4c6.5 0 10 8 10 8a17 17 0 0 1-2.2 3.2M6.6 6.6A16 16 0 0 0 2 12s3.5 8 10 8a9.7 9.7 0 0 0 5.4-1.6M2 2l20 20M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+    clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    replay:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+    smart:'<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/>',
+    chat:'<path d="M21 12a8 8 0 0 1-11.8 7L4 20l1.1-4.4A8 8 0 1 1 21 12Z"/><path d="M8.5 11h.01M12 11h.01M15.5 11h.01"/>',
+  };
+  var svg = function (k, cls) { return '<svg class="i ' + (cls || "") + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (P[k] || "") + '</svg>'; };
+  function fillIcons(root) { (root || document).querySelectorAll("svg[data-ic]").forEach(function (s) { s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", "2"); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true"); s.innerHTML = P[s.getAttribute("data-ic")] || ""; }); }
+
+  /* bayraklar: app/core.js ile aynı çizim, 3:2 kutu, gerilmeden (slice) */
+  var star8 = function (cx, cy, r) { var d = ""; for (var i = 0; i < 16; i++) { var a = Math.PI / 8 * i - Math.PI / 2, rr = i % 2 ? r * .45 : r; d += (i ? "L" : "M") + (cx + rr * Math.cos(a)).toFixed(2) + " " + (cy + rr * Math.sin(a)).toFixed(2); } return d + "Z"; };
+  var star5 = function (cx, cy, r, rot) { var d = ""; for (var i = 0; i < 10; i++) { var a = Math.PI / 5 * i + rot, rr = i % 2 ? r * .38 : r; d += (i ? "L" : "M") + (cx + rr * Math.cos(a)).toFixed(2) + " " + (cy + rr * Math.sin(a)).toFixed(2); } return d + "Z"; };
+  var flagSeq = 0;
+  var FLAG = {
+    AZ:function () { return '<svg viewBox="0 0 30 20"><rect width="30" height="6.67" fill="#00B5E2"/><rect y="6.67" width="30" height="6.67" fill="#EF3340"/><rect y="13.33" width="30" height="6.67" fill="#509E2F"/><circle cx="14.1" cy="10" r="2.5" fill="#fff"/><circle cx="14.72" cy="10" r="2.05" fill="#EF3340"/><path d="' + star8(16.95, 10, 1.15) + '" fill="#fff"/></svg>'; },
+    TR:function () { return '<svg viewBox="0 0 30 20"><rect width="30" height="20" fill="#E30A17"/><circle cx="10" cy="10" r="5" fill="#fff"/><circle cx="11.25" cy="10" r="4" fill="#E30A17"/><path d="' + star5(14.58, 10, 2.5, Math.PI) + '" fill="#fff"/></svg>'; },
+    RU:function () { return '<svg viewBox="0 0 30 20"><rect width="30" height="6.67" fill="#fff"/><rect y="6.67" width="30" height="6.67" fill="#0039A6"/><rect y="13.33" width="30" height="6.67" fill="#D52B1E"/></svg>'; },
+    EN:function () { var i = ++flagSeq; return '<svg viewBox="0 0 60 30"><clipPath id="ukS' + i + '"><path d="M0 0v30h60V0z"/></clipPath><clipPath id="ukT' + i + '"><path d="M30 15h30v15zv15H0zH0V0zV0h30z"/></clipPath><g clip-path="url(#ukS' + i + ')"><path d="M0 0v30h60V0z" fill="#012169"/><path d="M0 0l60 30m0-30L0 30" stroke="#fff" stroke-width="6"/><path d="M0 0l60 30m0-30L0 30" clip-path="url(#ukT' + i + ')" stroke="#C8102E" stroke-width="4"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#C8102E" stroke-width="6"/></g></svg>'; },
+  };
+  var flagBox = function (l) { return '<span class="flagbox">' + FLAG[l]().replace("<svg ", '<svg preserveAspectRatio="xMidYMid slice" ') + '</span>'; };
+
+  /* durum */
+  var st = { lang:"AZ", theme:"gun" };
+  try { var l0 = localStorage.getItem("hmc.lang"); if (T.nav_home[l0]) st.lang = l0; st.theme = localStorage.getItem("hmc.theme") === "gece" ? "gece" : "gun"; } catch (e) {}
+  var save = function (k, v) { try { localStorage.setItem("hmc." + k, v); } catch (e) {} };
+  var t = function (k) { return (T[k] && T[k][st.lang]) || k; };
+  var reduced = !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  /* sabit parçalar: mini yatak ızgarası, 24 saat şeridi, roller, sahne yatakları */
+  /* ekran anahtarı + odak kutusu (x, y, w, h): gorsel/<anahtar>-<dil>-<tema>.webp */
+  var PROBS = [["pc1", "unitdash", ".5,.19,.5,.3"], ["pc2", "bedside", "0,.33,.55,.13"], ["pc3", "alarms", "0,.2,.55,.18"], ["pc4", "hand", "0,.18,.5,.22"]];
+  var shot = function (k, f) { return '<div class="shot" data-shot="' + k + '" data-f="' + f + '"></div>'; };
+  document.querySelector("[data-probs]").innerHTML = PROBS.map(function (p) { return '<div class="pc rv"><h3 data-i="' + p[0] + 't"></h3><p data-i="' + p[0] + 's"></p><div class="ans"><span class="lb" data-i="p_ans"></span>' + shot(p[1], p[2]) + '</div></div>'; }).join("");
+  var srcTag = function (k) { return '<span class="src">' + svg(k === "mon" ? "monitor" : "tablet") + '<span data-i="src_' + k + '"></span></span>'; };
+  document.querySelector("[data-units]").innerHTML =
+    '<div class="un big rv"><div><h3 data-i="u1t"></h3><p data-i="u1s"></p><div class="chips"><span data-i="uc1"></span><span data-i="uc2"></span><span data-i="uc3"></span><span data-i="uc4"></span></div></div>' + shot("wall", "0,.19,.66,.3") + '</div>' +
+    [["u2", "tasks", "port", "0,.14,.6,.3"], ["u3", "admission", "port", "0,.3,.45,.25"], ["u4", "portatif", "port", "0,.1,.6,.43"]].map(function (u) { return '<div class="un rv">' + shot(u[1], u[3]) + '<h3 data-i="' + u[0] + 't"></h3><p data-i="' + u[0] + 's"></p>' + srcTag(u[2]) + '</div>'; }).join("");
+  /* 30.09 · güven: dört kart, her birinin altında kırmızı "yapmaz" satırı (eski Yapar/Yapmaz listesinin yerine) */
+  var TRUST = [["g1", "shield"], ["g2", "building"], ["g3", "eyeOff"], ["g4", "file"]];
+  document.querySelector("[data-trustg]").innerHTML = TRUST.map(function (g) { return '<div class="tc rv"><span class="ic">' + svg(g[1]) + '</span><h3 data-i="' + g[0] + 't"></h3><p data-i="' + g[0] + 's"></p><span class="no">' + svg("x2") + '<span data-i="' + g[0] + 'n"></span></span></div>'; }).join("");
+  var UCOL = [["uc1", "#0e7490"], ["uc2", "#16a34a"], ["uc3", "#ca8a04"], ["uc4", "#dc2626"], ["u2t", "#1d4ed8"], ["u3t", "#7c3aed"]];
+  document.querySelector("[data-fcol-units]").innerHTML = UCOL.map(function (u) { return '<a href="#birimler" style="--c:' + u[1] + '"><i></i><span data-i="' + u[0] + '"></span></a>'; }).join("");
+  /* altbilgideki monitör çizgisi: yatak başı monitörünün EKG deseni, sayfa genişliğince tekrar */
+  (function () { var d = "", x = 0; while (x < 1200) { d += (x ? " L" : "M") + x + " 34 L" + (x + 40) + " 34 L" + (x + 46) + " 28 L" + (x + 52) + " 34 L" + (x + 62) + " 34 L" + (x + 66) + " 40 L" + (x + 71) + " 6 L" + (x + 76) + " 50 L" + (x + 81) + " 34 L" + (x + 96) + " 34 L" + (x + 104) + " 24 L" + (x + 114) + " 34"; x += 150; } document.querySelectorAll("[data-ecg]").forEach(function (p) { p.setAttribute("d", d + " L1200 34"); }); })();
+  /* sosyal ikonlar: yönetimde bağlantı girilince (hmc.social) etkin olur — girilmemişse soluk durur, tıklanmaz */
+  var SOC = [["ig", "Instagram"], ["in", "LinkedIn"], ["yt", "YouTube"]], socL = {};
+  try { socL = JSON.parse(localStorage.getItem("hmc.social") || "{}") || {}; } catch (e) {}
+  var socKey = { ig:["instagram", "ig"], in:["linkedin", "in"], yt:["youtube", "yt"] };
+  document.querySelector("[data-soc]").innerHTML = SOC.map(function (x) { var u = socKey[x[0]].map(function (k) { return socL[k]; }).filter(Boolean)[0]; return '<a ' + (u ? 'href="' + String(u).replace(/"/g, "") + '" target="_blank" rel="noopener"' : 'aria-disabled="true"') + ' aria-label="' + x[1] + '" title="' + x[1] + '">' + svg(x[0]) + '</a>'; }).join("");
+  var ROLES = [["ro_doc", "unitdash:0,.52,.5,.28"], ["ro_nur", "tasks:0,.14,.6,.3"], ["ro_chg", "workload:0,.14,.6,.3"], ["ro_adm", "admission:0,.1,.6,.35"], ["ro_ph", "pharmacy:0,.14,.6,.36"], ["ro_bio", "devices:0,.2,.6,.4", 1], ["ro_qua", "quality:0,.14,.6,.36", 1], ["ro_mg", "summary:0,.15,.6,.4", 1]];
+  document.querySelector("[data-roles]").innerHTML = ROLES.map(function (r) { return '<div class="role rv' + (r[2] ? " anon" : "") + '">' + shot(r[1].split(":")[0], r[1].split(":")[1]) + '<h3 data-i="' + r[0] + '"></h3><p data-i="' + r[0] + '_p"></p>' + (r[2] ? '<span class="nn">' + svg("eyeOff") + '<span data-i="noname"></span></span>' : "") + '</div>'; }).join("");
+  var BEDS = [["REA01", 96], ["REA02", 94], ["REA03", 96], ["REA04", 98], ["REA05", 95], ["REA06", 97], ["REA07", 99], ["REA08", 96]];
+  document.querySelector("[data-beds]").innerHTML = BEDS.map(function (b, k) {
+    var pts = Array.from({ length:12 }, function (_, x) { return (x / 11 * 100).toFixed(1) + "," + (12 + Math.sin(x * 1.3 + k) * 4 + ((k * 7 + x * 3) % 5) - 2).toFixed(1); }).join(" ");
+    return '<div class="sc-bed" data-b="' + k + '"><div class="sc-no"><b class="mono">' + b[0] + '</b><i></i></div><svg viewBox="0 0 100 24" preserveAspectRatio="none"><polyline points="' + pts + '"/></svg><div class="sc-v"><small>SpO₂</small><b class="mono">' + b[1] + '</b></div></div>'; }).join("");
+  fillIcons();
+
+  /* dil */
+  var rotK = 0, ph = 0;
+  function applyLang() {
+    document.documentElement.lang = st.lang.toLowerCase();
+    document.querySelectorAll("[data-i]").forEach(function (el) { el.textContent = t(el.getAttribute("data-i")); });
+    document.querySelectorAll("[data-it]").forEach(function (el) { var v = t(el.getAttribute("data-it")); el.title = v; el.setAttribute("aria-label", v); });
+    /* 30.09: resimde alt, diğerlerinde aria-label (mağaza rozetleri, telefon görüntüsü) */
+    document.querySelectorAll("[data-ia]").forEach(function (el) { var v = t(el.getAttribute("data-ia")); if (el.tagName === "IMG") el.alt = v; else el.setAttribute("aria-label", v); });
+    document.querySelector("[data-rot]").textContent = t("sw")[rotK % t("sw").length];
+    document.querySelectorAll("[data-lsel]").forEach(function (ls) {
+      ls.innerHTML = flagBox(st.lang) + "<b>" + st.lang + "</b>" + svg("chevD", "chev");
+      ls.title = t("lang"); ls.setAttribute("aria-label", t("lang") + ": " + LANGS.filter(function (x) { return x[0] === st.lang; })[0][1]);
+    });
+    var optsHtml = LANGS.map(function (x) { return '<button type="button" role="option" class="lopt' + (x[0] === st.lang ? " on" : "") + '" data-lang="' + x[0] + '" aria-selected="' + (x[0] === st.lang) + '" lang="' + x[0].toLowerCase() + '">' + flagBox(x[0]) + '<span class="lt">' + x[1] + '<small>' + x[0] + '</small></span>' + (x[0] === st.lang ? svg("ok") : "") + '</button>'; }).join("");
+    document.querySelectorAll(".lmenu").forEach(function (m) { m.setAttribute("aria-label", t("lang")); m.innerHTML = optsHtml; });
+    applyTheme(); paint(false);
+    /* parçalar (ürün turu, nöbet) kendi sözlükleriyle bu olayı dinler */
+    try { document.dispatchEvent(new CustomEvent("hmc:lang", { detail:st.lang })); } catch (e) {}
+  }
+  function applyTheme() {
+    document.documentElement.setAttribute("data-theme", st.theme);
+    var b = document.querySelector("[data-theme-btn]"), k = st.theme === "gece" ? "day" : "night";
+    b.innerHTML = svg(st.theme === "gece" ? "sun" : "moon"); b.title = t(k); b.setAttribute("aria-label", t(k));
+    paintShots();
+    /* mobil uygulamanın gerçek ekranları: temaya göre gündüz / gece görüntüsü */
+    document.querySelectorAll("img[data-mimg]").forEach(function (im) { if (im.closest("[hidden]")) return; var src = "gorsel/mobil-" + im.getAttribute("data-mimg") + "-" + st.theme + ".webp"; if (im.getAttribute("src") !== src) im.setAttribute("src", src); });
+    if (typeof storyPaint === "function") storyPaint(false);
+  }
+  /* gerçek ekranlar: odak kutusu CSS değişkenine, resim o anki dil + temaya */
+  function paintShots() {
+    document.querySelectorAll(".shot[data-shot]").forEach(function (el) {
+      if (el.closest("[hidden]")) return;   // 29.09: gizli bölümlerin resmi indirilmez (sayfanın %88'i buydu: 744 / 846 KB)
+      var src = "gorsel/" + el.getAttribute("data-shot") + "-" + st.lang + "-" + st.theme + ".webp";
+      if (!el.firstChild) {
+        var f = el.getAttribute("data-f").split(",");
+        ["--x", "--y", "--w", "--h"].forEach(function (v, i) { el.style.setProperty(v, f[i]); });
+        el.innerHTML = '<img class="sb" alt="" decoding="async"><img class="sf" alt="" decoding="async"><span class="ring"></span>';
+      }
+      el.querySelectorAll("img").forEach(function (im) { if (im.getAttribute("src") !== src) im.setAttribute("src", src); });
+    });
+  }
+
+  /* canlı sahne = "nasıl çalışır" (30.09, Ozan 2. tur): 7 evreli hikâye, sonra başa döner.
+     0 sakin · 1 REA03 SpO₂ 96→90 (sarı) · 2 →86 (kırmızı), NEWS2 7 hekim onayına · 3 hemşireye haber (telefona bildirim) ·
+     4 21:43 yanıt yok → sorumlu hemşire (+3 dk) · 5 21:45 → hekim (+5 dk) · 6 hekim gördü, karar hekimin.
+     Sahne ekran dışındayken ya da sekme arka plandayken durur; "hareketi azalt" açıksa son evre sabit gösterilir. */
+  var sc = document.querySelector("[data-scene]"), bed = sc.querySelector('[data-b="2"]'), val = bed.querySelector(".sc-v b"), cap = sc.querySelector("[data-cap]"), clk = sc.querySelector("[data-clock]");
+  var steps = [].slice.call(sc.querySelectorAll("[data-s]")), stage = document.querySelector("[data-stage]");
+  /* [SpO₂, yatak durumu, saat, süre ms] */
+  var PH = [[96, "", "21:38", 2200], [90, "warn", "21:39", 2300], [86, "crit", "21:40", 2600], [86, "crit", "21:40", 2800], [86, "crit", "21:43", 2800], [86, "crit", "21:45", 2600], [86, "seen", "21:45", 4200]];
+  var phT = 0, phCount = 0, phClock = 0, heroVis = true;
+  function paint(anim) {
+    var p = PH[ph], prev = +val.textContent || p[0];
+    bed.className = "sc-bed" + (p[1] ? " " + p[1] : "");
+    clearInterval(phCount);
+    if (anim && !reduced && prev !== p[0] && prev > p[0]) {   // SpO₂ yavaşça kayar
+      var v = prev; phCount = setInterval(function () { v--; val.textContent = v; if (v <= p[0]) clearInterval(phCount); }, Math.min(260, 1500 / (prev - p[0])));
+    } else val.textContent = p[0];
+    clearInterval(phClock);
+    var cur = clk.textContent, m = +cur.slice(3), end = +p[2].slice(3);
+    if (anim && !reduced && cur !== p[2] && end > m) { phClock = setInterval(function () { m++; clk.textContent = "21:" + ("0" + m).slice(-2); if (m >= end) clearInterval(phClock); }, 240); }
+    else clk.textContent = p[2];
+    /* zincir: 3 hemşire · 4 sorumlu hemşire · 5 hekim · 6 hekim gördü. Yanıt vermeyen basamak sarı ("nr"), gören yeşil */
+    steps.forEach(function (x, n) {
+      x.classList.toggle("on", ph >= 3 && ph <= 5 && n === ph - 3);
+      x.classList.toggle("nr", ph >= 4 && n < Math.min(ph - 3, 2));
+      x.classList.toggle("done", ph === 6 && n === 2);
+    });
+    cap.classList.remove("in"); if (anim) { void cap.offsetWidth; cap.classList.add("in"); }
+    cap.textContent = t("sc" + ph); cap.classList.toggle("w", ph === 1); cap.classList.toggle("c", ph >= 2 && ph <= 5); cap.classList.toggle("g", ph === 6);
+    stage.classList.toggle("al", ph >= 3 && ph <= 5);   // hemşirenin telefonu: kritik
+    stage.classList.toggle("push", ph === 3);            // ilk an: üstten bildirim şeridi
+  }
+  function heroNext() { ph = (ph + 1) % PH.length; paint(true); heroSched(); }
+  function heroSched() { clearTimeout(phT); if (heroVis && !document.hidden && !reduced) phT = setTimeout(heroNext, PH[ph][3]); }
+  if (reduced) ph = PH.length - 1;
+  if (!reduced) {
+    if ("IntersectionObserver" in window) new IntersectionObserver(function (es) { es.forEach(function (en) { heroVis = en.isIntersecting; heroSched(); }); }, { threshold:.2 }).observe(sc);
+    document.addEventListener("visibilitychange", heroSched);
+    heroSched();
+    var rot = document.querySelector("[data-rot]");
+    setInterval(function () { if (document.hidden || !heroVis) return; var w = t("sw"); rotK = (rotK + 1) % w.length; rot.classList.remove("in"); void rot.offsetWidth; rot.textContent = w[rotK]; rot.classList.add("in"); }, 2600);
+  }
+  /* 30.09 · "Bir değer bozulduğunda ne olur?" — hareketli hikâye.
+     Evreler: 0 sakin · 1 monitör SpO₂ 86 · 2 NEWS2 7 hekim onayına · 3 hemşireye haber (telefon + ekran) ·
+     4 21:43 yanıt yok → sorumlu hemşire (+3 dk) · 5 21:45 hekim görür, karar verir (+5 dk). Her adım denetim kaydına düşer.
+     Yalnız ekrandayken oynar (IntersectionObserver); "hareketi azalt" açıksa son evre sabit gösterilir. */
+  var story = document.querySelector("[data-story]"), sp = 0, sTimer = 0, sPush = 0, sTick = 0, sCount = 0, sVisible = false, sHold = 0, sLogN = 0;
+  var SPH = [["21:39", -1, "hw0", ""], ["21:40", 0, "hw1t", "c"], ["21:40", 1, "hw2t", "c"], ["21:40", 2, "hw3t", "c"], ["21:43", 3, "hw4t", "w"], ["21:45", 4, "hw5t", "g"]];
+  var SDUR = [1800, 2700, 2700, 3200, 3400, 4600], SLOG = ["21:40:02", "21:40:05", "21:40:06", "21:43:06", "21:45:10"];
+  var SBEDS = [["REA01", 96], ["REA02", 95], ["REA03", 94], ["REA04", 98], ["REA05", 97], ["REA06", 95]];
+  var sClock, sCap, sNews, sLog, sBar, sTl, sBed, sVal, sCh;
+  if (story && story.closest("[hidden]")) story = null;   // bölüm gizliyken motor hiç kurulmaz
+  if (story) {
+    story.querySelector("[data-st-beds]").innerHTML = SBEDS.map(function (b, k) {
+      var pts = Array.from({ length:14 }, function (_, x) { return (x / 13 * 100).toFixed(1) + "," + (13 + Math.sin(x * 1.25 + k * 1.7) * 5 + ((k * 5 + x * 3) % 4) - 2).toFixed(1); }).join(" ");
+      return '<div class="sb2" data-sb="' + k + '"><div class="no">' + b[0] + '<i></i></div><svg viewBox="0 0 100 26" preserveAspectRatio="none"><polyline points="' + pts + '"/></svg><div class="v"><small>SpO₂</small><b>' + b[1] + '</b></div></div>';
+    }).join("");
+    sClock = story.querySelector("[data-st-clock]"); sCap = story.querySelector("[data-st-cap]"); sNews = story.querySelector("[data-st-news]");
+    sLog = story.querySelector("[data-st-log]"); sBar = story.querySelector("[data-st-bar]"); sTl = story.querySelector("[data-st-tl]");
+    sBed = story.querySelector('[data-sb="2"]'); sVal = sBed.querySelector(".v b"); sCh = [].slice.call(story.querySelectorAll("[data-ch]"));
+  }
+  function storyBar(step) {
+    if (!sBar) return;
+    if (step < 0) { sBar.style.width = "0px"; return; }
+    var dot = sTl.querySelector('[data-k="' + step + '"] .dt'), bar = sBar.parentNode;
+    if (!dot || bar.offsetParent === null) return;
+    sBar.style.width = Math.max(0, dot.getBoundingClientRect().left + dot.offsetWidth / 2 - bar.getBoundingClientRect().left) + "px";
+  }
+  function storyPaint(anim) {
+    if (!story) return;
+    var p = SPH[sp], step = p[1];
+    story.setAttribute("data-p", String(sp));
+    story.classList.toggle("nw", sp >= 2); story.classList.toggle("al", sp >= 3);
+    story.classList.toggle("nr", sp === 4); story.classList.toggle("ok", sp === 5);
+    if (!anim) { story.classList.remove("push", "ring"); }
+    /* saat: 21:40 → 21:43 → 21:45 dakika dakika ilerler */
+    clearInterval(sTick);
+    var to = p[0];
+    if (anim && sClock.textContent !== to && !reduced) {
+      var m = +sClock.textContent.slice(3), end = +to.slice(3), hh = to.slice(0, 3);
+      if (end < m) m = end - 1;
+      sTick = setInterval(function () { m++; sClock.textContent = hh + ("0" + m).slice(-2); sClock.classList.remove("tick"); void sClock.offsetWidth; sClock.classList.add("tick"); if (m >= end) clearInterval(sTick); }, 260);
+    } else sClock.textContent = to;
+    /* birim ekranı: REA03 */
+    sBed.className = "sb2" + (sp >= 1 && sp <= 4 ? " crit" : sp === 5 ? " seen" : "");
+    clearInterval(sCount);
+    if (anim && sp === 1 && !reduced) { var v = 94; sVal.textContent = v; sCount = setInterval(function () { v--; sVal.textContent = v; if (v <= 86) clearInterval(sCount); }, 110); }
+    else sVal.textContent = sp >= 1 ? 86 : 94;
+    sNews.textContent = sp >= 2 ? "7" : "–";
+    /* telefon: bildirim önce üstten düşer, sonra kritik kart */
+    if (anim && sp === 3 && !reduced) {
+      story.classList.add("push", "ring"); clearTimeout(sPush);
+      sPush = setTimeout(function () { story.classList.remove("push", "ring"); }, 1700);
+    } else if (sp !== 3) story.classList.remove("push", "ring");
+    /* haber zinciri */
+    var ST = [sp < 3 ? "hs_wait" : sp === 3 ? "hs_sent" : "hs_nor", sp < 4 ? "hs_wait" : "hs_sent", sp < 5 ? "hs_wait" : "hs_ok"];
+    var CL = [sp === 3 ? "on" : sp >= 4 ? "nr" : "", sp === 4 ? "on" : "", sp === 5 ? "done" : ""];
+    sCh.forEach(function (li, n) { li.className = CL[n]; li.querySelector("[data-ch-st]").textContent = t(ST[n]); });
+    /* denetim kaydı: evre kadar satır; yeni satır kayarak gelir */
+    var n = Math.max(0, sp);
+    if (anim && n === sLogN + 1) { var li = document.createElement("li"); li.innerHTML = '<span>' + SLOG[n - 1] + '</span><b data-i="hl' + n + '">' + t("hl" + n) + '</b>'; sLog.appendChild(li); }
+    else sLog.innerHTML = SLOG.slice(0, n).map(function (x, i) { return '<li style="animation:none"><span>' + x + '</span><b data-i="hl' + (i + 1) + '">' + t("hl" + (i + 1)) + '</b></li>'; }).join("");
+    sLogN = n;
+    [].slice.call(sTl.querySelectorAll("li[data-k]")).forEach(function (li) { var k = +li.getAttribute("data-k"); li.classList.toggle("done", k < step); li.classList.toggle("on", k === step); });
+    storyBar(step);
+    sCap.textContent = t(p[2]); sCap.className = "st-cap" + (p[3] ? " " + p[3] : "");
+    if (anim) { void sCap.offsetWidth; sCap.classList.add("in"); }
+  }
+  function storyNext() { sp = (sp + 1) % SPH.length; storyPaint(true); storySched(); }
+  function storySched() { clearTimeout(sTimer); if (sVisible && !reduced && Date.now() >= sHold) sTimer = setTimeout(storyNext, SDUR[sp]); }
+  function storyGo(k, hold) { clearTimeout(sTimer); sp = k; storyPaint(true); if (hold) { sHold = Date.now() + hold; setTimeout(storySched, hold + 50); } else { sHold = 0; storySched(); } }
+  if (story) {
+    if (reduced) { sp = SPH.length - 1; storyPaint(false); }
+    else storyPaint(false);
+    sTl.addEventListener("click", function (e) { var li = e.target.closest("li[data-k]"); if (li) storyGo(+li.getAttribute("data-k") + 1, 9000); });
+    story.querySelector("[data-st-replay]").addEventListener("click", function () { storyGo(0, 0); });
+    if (!reduced && "IntersectionObserver" in window) {
+      new IntersectionObserver(function (es) { es.forEach(function (en) { sVisible = en.isIntersecting; if (sVisible) storySched(); else clearTimeout(sTimer); }); }, { threshold:.3 }).observe(story);
+    }
+    window.addEventListener("resize", function () { storyBar(SPH[sp][1]); });
+  }
+
+  /* dil menüsü, tema, telefon menüsü */
+  var lsel = null, lmenu = null, hdr = document.querySelector(".hdr"), mnav = document.querySelector("[data-mnav]");
+  function setMenu(open, btn) { if (!open && !lmenu) return; if (btn) { lsel = btn; lmenu = btn.parentNode.querySelector(".lmenu"); } document.querySelectorAll(".lmenu").forEach(function (m) { if (m !== lmenu) m.hidden = true; }); lmenu.hidden = !open; lsel.setAttribute("aria-expanded", String(open)); if (open) { var on = lmenu.querySelector(".on"); if (on) on.focus(); } }
+  function setNav(open) { hdr.classList.toggle("open", open); mnav.setAttribute("aria-expanded", String(open)); mnav.innerHTML = svg(open ? "x" : "menu"); }
+  document.addEventListener("click", function (e) {
+    var lb = e.target.closest("[data-lsel]"); if (lb) { e.preventDefault(); var m = lb.parentNode.querySelector(".lmenu"); return setMenu(m.hidden, lb); }
+    var lg = e.target.closest("[data-lang]");
+    if (lg) { st.lang = lg.getAttribute("data-lang"); save("lang", st.lang); setMenu(false); applyLang(); if (lsel) lsel.focus(); return; }
+    if (lmenu && !lmenu.hidden && !e.target.closest(".lmenu")) setMenu(false);
+    if (e.target.closest("[data-theme-btn]")) { st.theme = st.theme === "gece" ? "gun" : "gece"; save("theme", st.theme); applyTheme(); return; }
+    if (e.target.closest("[data-mnav]")) return setNav(!hdr.classList.contains("open"));
+    if (e.target.closest(".mpanel a")) setNav(false);
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { if (lmenu && !lmenu.hidden) { setMenu(false); lsel.focus(); } if (hdr.classList.contains("open")) setNav(false); }
+    if (lmenu && !lmenu.hidden && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); var o = [].slice.call(lmenu.querySelectorAll(".lopt")), i = o.indexOf(document.activeElement); o[(i + (e.key === "ArrowDown" ? 1 : -1) + o.length) % o.length].focus(); }
+  });
+  var prog = document.querySelector("[data-prog]"), totop = document.querySelector("[data-totop]");
+  var navA = [].slice.call(document.querySelectorAll(".nav a")), secs = navA.map(function (a) { var x = document.getElementById(a.getAttribute("href").slice(1)); return x && x.classList.contains("anc") ? x.nextElementSibling : x; });
+  function onScroll() {
+    var y = window.scrollY, h = document.documentElement.scrollHeight - window.innerHeight;
+    hdr.classList.toggle("sc", y > 8);
+    prog.style.transform = "scaleX(" + (h > 0 ? Math.min(1, y / h) : 0) + ")";
+    totop.classList.toggle("on", y > window.innerHeight * 0.9);
+    var cur = -1; secs.forEach(function (s, i) { if (s && !s.hidden && s.getBoundingClientRect().top < 140) cur = i; });
+    navA.forEach(function (a, i) { a.classList.toggle("on", i === cur); });
+  }
+  window.addEventListener("scroll", onScroll, { passive:true }); onScroll();
+  /* logo, "yukarı" düğmesi ve #top bağlantıları: sayfanın en başına, adres çubuğunda # bırakmadan */
+  document.addEventListener("click", function (e) { var a = e.target.closest('a[href="#top"]'); if (!a) return; e.preventDefault(); window.scrollTo({ top:0, behavior:reduced ? "auto" : "smooth" }); try { history.replaceState(null, "", location.pathname + location.search); } catch (x) {} if (hdr.classList.contains("open")) setNav(false); });
+  /* menüde kayan gösterge: etkin bölümün altına yumuşakça gider */
+  var ind = document.querySelector(".nav-ind");
+  function moveInd() { var on = document.querySelector(".nav a.on"); if (!on || !ind) { if (ind) ind.style.opacity = 0; return; } ind.style.opacity = 1; ind.style.width = on.offsetWidth + "px"; ind.style.transform = "translateX(" + on.offsetLeft + "px)"; }
+  window.addEventListener("scroll", moveInd, { passive:true }); window.addEventListener("resize", moveInd); setTimeout(moveInd, 60);
+
+  /* çerez bilgi notu: bir kez; "Tamam" hmc.cookieNote'a yazılır (app/legal.js Çerezler listesinde) */
+  var ck = document.querySelector("[data-ck]"), ckSeen = false;
+  try { ckSeen = localStorage.getItem("hmc.cookieNote") === "1"; } catch (e) {}
+  var ckBar = document.querySelector("[data-ck-bar]"), ckLeft = 15000, ckLast = 0, ckRaf = 0, ckHold = false;
+  function ckClose() { cancelAnimationFrame(ckRaf); save("cookieNote", "1"); ck.classList.add("out"); setTimeout(function () { ck.hidden = true; }, 380); totop.style.bottom = ""; }
+  function ckTick(ts) { if (!ckLast) ckLast = ts; if (!ckHold && !document.hidden) ckLeft -= ts - ckLast; ckLast = ts; ckBar.style.transform = "scaleX(" + Math.max(0, ckLeft / 15000) + ")"; if (ckLeft <= 0) return ckClose(); ckRaf = requestAnimationFrame(ckTick); }
+  if (!ckSeen) setTimeout(function () { ck.hidden = false; totop.style.bottom = (ck.offsetHeight + 14) + "px"; if (reduced) ckBar.style.display = "none"; ckRaf = requestAnimationFrame(ckTick); }, 1200);
+  ck.addEventListener("mouseenter", function () { ckHold = true; }); ck.addEventListener("mouseleave", function () { ckHold = false; });
+  ck.addEventListener("focusin", function () { ckHold = true; }); ck.addEventListener("focusout", function () { ckHold = false; });
+  document.querySelector("[data-ck-ok]").addEventListener("click", ckClose);
+
+  /* parçalar: ürün turu ve nöbet. Yüklenene kadar bölüm gizli — yarım bölüm görünmesin */
+  // 28.09 (#218): "nobet" (24 saat) and "neler" are hidden on the short page, so their parts are not
+  // loaded — loading them would unhide the sections again. Add them back here together with `hidden`.
+  [["tur", "parca/tur.js"]].forEach(function (p) {
+    var sec = document.getElementById(p[0]); sec.hidden = true;
+    var sc = document.createElement("script"); sc.src = p[1] + "?v=" + Date.now();
+    sc.onload = function () { if (document.getElementById(p[0] + "-mount").children.length) { sec.hidden = false; sec.querySelectorAll(".rv").forEach(function (x) { x.classList.add("in"); }); try { document.dispatchEvent(new CustomEvent("hmc:lang", { detail:st.lang })); } catch (e) {} } };
+    document.body.appendChild(sc);
+  });
+
+  /* görünür olunca yumuşak giriş (hareket azaltılmışsa hepsi baştan görünür) */
+  var rv = [].slice.call(document.querySelectorAll(".rv"));
+  if (reduced || !("IntersectionObserver" in window)) rv.forEach(function (x) { x.classList.add("in"); });
+  else { var io = new IntersectionObserver(function (es) { es.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); } }); }, { rootMargin:"0px 0px -8% 0px" }); rv.forEach(function (x) { io.observe(x); }); }
+
+  applyLang();
+})();
+</script>
+</body>
+</html>

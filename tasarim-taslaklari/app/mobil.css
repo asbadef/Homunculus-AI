@@ -1,0 +1,528 @@
+/* Homunculus · telefon düzeni (PWA) · 24.09.2026 · mobil.js ile birlikte.
+   Yalnız body.mob iken (ekran ≤ 760 px ve giriş yapılmış) etkili. Kararlar: alt C · üst C · seçili B · orta A. */
+
+body.mob .shell { display:flex; flex-direction:column; height:100dvh; grid-template-columns:none; }
+body.mob .rail { display:none !important; }
+body.mob .main { display:flex; flex-direction:column; flex:1; min-height:0; }
+body.mob .top { height:auto; padding:calc(env(safe-area-inset-top, 0px) + 8px) 12px 6px; border-bottom:1px solid var(--line); background:var(--rail); display:block; }
+body.mob .content { flex:1; min-height:0; overflow:auto; padding:12px 12px calc(env(safe-area-inset-bottom, 0px) + 104px); -webkit-overflow-scrolling:touch; }
+
+/* ---------- üst çubuk (C · arama öncelikli) ---------- */
+.mtop-r { display:flex; align-items:center; gap:8px; }
+.msearch { flex:1; min-width:0; display:flex; align-items:center; gap:8px; height:42px; padding:0 12px; border-radius:13px; background:var(--card2); border:1px solid var(--line); color:var(--mute); }
+.msearch svg.i { width:17px; height:17px; flex:none; }
+.msearch input { flex:1; min-width:0; border:0; outline:0; background:none; color:var(--ink); font:500 16px Figtree, system-ui, sans-serif; }
+.msearch:focus-within { border-color:var(--pri); box-shadow:0 0 0 3px var(--priSoft); }
+.mtop-t { flex:1; font:700 19px "Space Grotesk", system-ui, sans-serif; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mib, .mav { position:relative; flex:none; width:42px; height:42px; border-radius:13px; display:grid; place-items:center; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }
+.mib svg.i { width:19px; height:19px; }
+.mav { border-radius:50%; background:var(--pri); color:var(--onpri); border-color:transparent; font:800 13px Figtree, system-ui, sans-serif; }
+.mtop-lbl { margin-top:6px; font:600 12px Figtree, system-ui, sans-serif; color:var(--mute); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mtop-lbl b { color:var(--ink); font-weight:800; }
+.mt-b { position:absolute; top:-5px; right:-5px; min-width:18px; height:18px; padding:0 4px; border-radius:99px; background:var(--crit); color:#fff; font:800 10.5px Figtree, system-ui, sans-serif; display:grid; place-items:center; box-shadow:0 0 0 2px var(--rail); }
+
+/* ---------- alt menü (C) · seçili sekme B (dolgu hap) · orta düğme A (çentikli daire) ---------- */
+.mt-wrap { position:fixed; left:0; right:0; bottom:0; z-index:60; }
+.mt-bar { display:grid; align-items:end; background:var(--rail); border-top:1px solid var(--line); padding:8px 6px calc(env(safe-area-inset-bottom, 0px) + 8px); box-shadow:0 -8px 24px rgba(0,0,0,.06); }
+.mt-bar.has-mid { -webkit-mask:radial-gradient(circle 38px at 50% -6px, transparent 37px, #000 38px); mask:radial-gradient(circle 38px at 50% -6px, transparent 37px, #000 38px); }
+.mt-i { position:relative; display:flex; flex-direction:column; align-items:center; gap:3px; min-height:50px; justify-content:flex-end; border:0; background:none; color:var(--mute); font:700 11px Figtree, system-ui, sans-serif; cursor:pointer; -webkit-tap-highlight-color:transparent; transition:transform .12s, color .15s; }
+.mt-i svg.i { width:23px; height:23px; padding:4px 16px; box-sizing:content-box; border-radius:16px; transition:background .18s; }
+.mt-i:active { transform:scale(.9); }
+.mt-i.on { color:var(--priInk, var(--pri)); font-weight:800; }
+.mt-i.on svg.i { background:var(--priSoft); }
+.mt-i .mt-b { top:-2px; right:calc(50% - 26px); }
+.mt-i.mid .mt-sp { height:31px; }
+.mt-i.mid.on { color:var(--ink); }
+.mt-fab { position:absolute; left:50%; top:-30px; transform:translateX(-50%); z-index:2; width:60px; height:60px; border-radius:50%; border:0; background:var(--pri); color:var(--onpri); display:grid; place-items:center; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  box-shadow:0 10px 24px color-mix(in srgb, var(--pri) 45%, transparent); transition:transform .12s, box-shadow .15s; }
+.mt-fab svg.i { width:27px; height:27px; }
+.mt-fab:active { transform:translateX(-50%) scale(.92); }
+.mt-fab.on { box-shadow:0 0 0 4px var(--priSoft), 0 10px 24px color-mix(in srgb, var(--pri) 45%, transparent); }
+.mt-fab .mt-b { top:0; right:0; box-shadow:0 0 0 2px var(--pri); }
+
+/* ---------- bağlantı yok şeridi (madde 3) ---------- */
+.m-off { display:flex; align-items:center; gap:8px; padding:8px 14px; background:var(--mid); color:#1a1300; font:700 12.5px Figtree, system-ui, sans-serif; }
+.m-off svg.i { width:16px; height:16px; flex:none; }
+
+/* ---------- ortak parçalar ---------- */
+.m-page { display:grid; gap:8px; max-width:560px; margin:0 auto; }
+.m-greet b { display:block; font:700 20px "Space Grotesk", system-ui, sans-serif; }
+.m-greet small { color:var(--mute); font-size:12.5px; }
+.m-h6 { font:800 11px Figtree, system-ui, sans-serif; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); margin:10px 2px 0; }
+.m-row-h { display:flex; align-items:center; justify-content:space-between; }
+.m-row { display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:11px 12px; color:var(--ink); cursor:pointer; font:inherit; }
+.m-row .t { width:40px; flex:none; font-size:12px; color:var(--mute); }
+.m-row .bar { width:3px; align-self:stretch; border-radius:3px; background:var(--line2); flex:none; }
+.m-row .bar.c { background:var(--crit); } .m-row .bar.h { background:var(--high); } .m-row .bar.m { background:var(--mid); }
+.m-row .tx { flex:1; min-width:0; }
+.m-row b { display:block; font-size:14px; line-height:1.3; }
+.m-row small { display:block; color:var(--mute); font-size:12.5px; line-height:1.35; }
+.m-row > svg.i { width:17px; height:17px; color:var(--mute); flex:none; }
+.m-row.read { opacity:.62; }
+.m-row:active, .m-bed:active { transform:scale(.99); }
+.m-calm { display:flex; align-items:center; gap:10px; padding:16px; border-radius:16px; background:var(--card); border:1px solid var(--line); color:var(--mute); }
+.m-calm svg.i { color:var(--ok); }
+
+/* Bana · öncelik kartı */
+.m-hero { border-radius:20px; padding:14px 14px 12px; background:var(--critSoft); border:1px solid color-mix(in srgb, var(--crit) 45%, transparent); }
+.m-hero.high { background:color-mix(in srgb, var(--high) 12%, var(--card)); border-color:color-mix(in srgb, var(--high) 45%, transparent); }
+.m-hero-h { display:flex; justify-content:space-between; font:800 11px Figtree, system-ui, sans-serif; letter-spacing:.07em; text-transform:uppercase; color:var(--crit); }
+.m-hero.high .m-hero-h { color:var(--high); }
+.m-hero h3 { font:700 26px "Space Grotesk", system-ui, sans-serif; margin:4px 0 2px; }
+.m-hero p { margin:0; color:var(--ink); opacity:.8; font-size:14px; }
+.m-swipe { --p:0; position:relative; margin-top:14px; height:54px; border-radius:27px; background:color-mix(in srgb, var(--pri) calc(12% + var(--p) * 40%), var(--card)); border:1px solid color-mix(in srgb, var(--pri) 40%, transparent); display:flex; align-items:center; touch-action:none; user-select:none; overflow:hidden; }
+.m-knob { position:absolute; left:4px; top:4px; width:46px; height:46px; border-radius:50%; background:var(--pri); color:var(--onpri); display:grid; place-items:center; cursor:grab; box-shadow:0 4px 12px rgba(0,0,0,.18); z-index:1; }
+.m-knob svg.i { width:22px; height:22px; }
+.m-swipe-l { flex:1; text-align:center; padding-left:44px; font:800 13.5px Figtree, system-ui, sans-serif; color:var(--priInk, var(--pri)); opacity:calc(1 - var(--p)); }
+.m-acts { display:flex; gap:8px; margin-top:10px; }
+.m-acts .btn { flex:1; height:42px; justify-content:center; }
+.btn.r { background:var(--crit); border-color:var(--crit); color:#fff; }
+
+/* Hastalar · yatak kartları */
+.m-chips { display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; }
+.m-chip { flex:none; border:1px solid var(--line); background:var(--card); color:var(--mute); border-radius:99px; padding:7px 13px; font:700 13px Figtree, system-ui, sans-serif; cursor:pointer; }
+.m-chip.on { background:var(--ink); color:var(--page); border-color:var(--ink); }
+.m-bed { display:grid; gap:4px; width:100%; text-align:left; background:var(--card); border:1px solid var(--line); border-left:4px solid var(--ok); border-radius:14px; padding:11px 12px; color:var(--ink); cursor:pointer; font:inherit; }
+.m-bed.crit { border-left-color:var(--crit); } .m-bed.high { border-left-color:var(--high); } .m-bed.mid { border-left-color:var(--mid); } .m-bed.low { border-left-color:var(--low); }
+.m-bed-h { display:flex; align-items:center; gap:8px; min-width:0; }
+.m-bed-h b { font-size:15px; }
+.m-bed-h .nm { flex:1; min-width:0; font-weight:700; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.m-bed-s { color:var(--mute); font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.m-bed-v { display:flex; align-items:flex-end; gap:16px; }
+.m-bed-v small { display:block; font:700 10px Figtree, system-ui, sans-serif; color:var(--mute); }
+.m-bed-v b { font-size:19px; }
+.m-bed-v .hr { color:var(--hr, var(--ok)); } .m-bed-v .spo { color:var(--spo, var(--mid)); }
+.m-bed-v .sc { margin-left:auto; font:700 11px "JetBrains Mono", ui-monospace, monospace; color:var(--mute); }
+
+/* BT: masaüstünde açın */
+.m-desk { text-align:center; padding:40px 18px; background:var(--card); border:1px solid var(--line); border-radius:20px; }
+.m-desk svg.i { width:40px; height:40px; color:var(--pri); }
+.m-desk h3 { margin:12px 0 6px; font:700 20px "Space Grotesk", system-ui, sans-serif; }
+.m-desk p { margin:0; color:var(--mute); }
+
+/* Ben · telefon kartı */
+.m-card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:14px; margin:0 auto 14px; max-width:560px; display:grid; gap:10px; }
+.m-card h4 { display:flex; align-items:center; gap:8px; margin:0; font:700 16px "Space Grotesk", system-ui, sans-serif; }
+.m-card h4 svg.i { width:18px; height:18px; color:var(--pri); }
+.m-set { border-top:1px solid var(--line); padding-top:10px; }
+.m-set > b { display:block; margin-bottom:6px; }
+.m-sw { display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; }
+.m-sw small { display:block; color:var(--mute); font-size:12px; }
+.m-sw input[type=checkbox] { width:22px; height:22px; accent-color:var(--pri); flex:none; }
+.m-note { margin:6px 0 0; font-size:12.5px; color:var(--mute); }
+.m-note.w { color:var(--ink); background:color-mix(in srgb, var(--mid) 16%, transparent); border-radius:10px; padding:8px 10px; }
+.m-out { justify-content:center; height:44px; color:var(--crit); }
+
+/* ---------- var olan sayfalar telefonda: taşmasın, tek sütun ---------- */
+body.mob .content table { display:block; max-width:100%; overflow-x:auto; }
+body.mob .content .g2, body.mob .content .g3, body.mob .content .g4, body.mob .content .att { grid-template-columns:1fr !important; }
+body.mob .content img, body.mob .content svg { max-width:100%; }
+body.mob .content .tabs { overflow-x:auto; flex-wrap:nowrap; scrollbar-width:none; }
+body.mob .content .tabs > * { flex:none; }
+/* Alarmlar (screens.js satır içi ızgara): telefonda süre + çizgi + metin, düğmeler alt satırda tam genişlik */
+body.mob .content .card[style*="grid-template-columns:70px 4px"] { grid-template-columns:48px 3px minmax(0, 1fr) !important; gap:10px !important; }
+body.mob .content .card[style*="grid-template-columns:70px 4px"] > span.mono { font-size:14px !important; }
+body.mob .content .card[style*="grid-template-columns:70px 4px"] > div:last-child { grid-column:1 / -1; justify-content:stretch !important; }
+body.mob .content .card[style*="grid-template-columns:70px 4px"] > div:last-child .btn { flex:1; height:42px; justify-content:center; }
+
+/* =====================================================================
+   24.09 · Taslak 23 kararları: giriş A (koyu marka zemini + alttan kart) · renk B (canlı petrol) · dönüş A (+ PIN yedek)
+   ===================================================================== */
+
+/* ---------- giriş ekranı A (telefon) ---------- */
+@media (max-width:760px) {
+  .login.lg2 { display:flex; flex-direction:column; min-height:100dvh; background:radial-gradient(120% 60% at 15% 0%, #0f5b70, #062530 55%, #04161e); }
+  .lg2 .hero { display:flex !important; flex:none; padding:calc(env(safe-area-inset-top, 0px) + 22px) 22px 26px !important; background:none !important; color:#e8f3f7; overflow:visible; }
+  .lg2 .hero .lg-bg, .lg2 .lg-scene, .lg2 .hero .lead, .lg2 .lg-trustrow { display:none !important; }
+  .lg2 .lg-brand { color:#fff; } .lg2 .lg-brand .mk { background:#0e7490; color:#fff; } .lg2 .lg-brand div div { color:#9fc3cf; }
+  .lg2 .lg-body { padding:18px 0 0 !important; }
+  .lg2 .lg-pill { background:rgba(255,255,255,.1) !important; border-color:rgba(255,255,255,.2) !important; color:#cfeaf1 !important; }
+  .lg2 .hero h1 { font-size:30px !important; line-height:1.1; color:#fff; margin:12px 0 0; }
+  .lg2 .lg-rot { color:#5eead4 !important; }
+  .lg2 .side { flex:1; display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; background:var(--card) !important; border-radius:26px 26px 0 0; padding:22px 18px calc(env(safe-area-inset-bottom, 0px) + 88px) !important; overflow:visible; box-shadow:0 -12px 30px rgba(0,0,0,.25); }
+  .lg2 .side .form { width:100%; max-width:none; }
+  .lg2 .lg-mbrand { display:none !important; }
+  .lg2 .lg-corner { position:absolute; top:16px; right:14px; }
+  .lg2 .lg-back { order:5; align-self:center; margin-top:18px; position:static !important; }
+  .lg2 .lg-in h2 { font-size:22px; margin-right:120px; }
+  .lg2 .lg-in input { height:50px; font-size:16px; }
+  .lg2 .lg-in .btn.p, .lg2 .lg-in button[type=submit] { height:52px; font-size:16px; border-radius:15px; }
+  .lg2 .lg-links { font-size:11.5px; }
+  .m-faceid { width:100%; height:50px; margin-top:10px; border-radius:15px; border:1.5px solid var(--line2); background:var(--card); color:var(--ink); display:flex; align-items:center; justify-content:center; gap:8px; font:800 15px Figtree, system-ui, sans-serif; cursor:pointer; }
+  .m-faceid svg { width:20px; height:20px; }
+}
+
+/* ---------- hızlı dönüş: "… olarak devam et" + Face ID / PIN ---------- */
+.mq { position:fixed; inset:0; z-index:120; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; color:#fff; padding:calc(env(safe-area-inset-top, 0px) + 20px) 24px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  background:radial-gradient(120% 70% at 20% 0%, #0f5b70, #062530 60%, #04161e); font-family:Figtree, system-ui, sans-serif; }
+.mq .mq-ic { width:88px; height:88px; border-radius:26px; background:rgba(255,255,255,.12); display:grid; place-items:center; margin-bottom:18px; }
+.mq .mq-ic svg { width:46px; height:46px; }
+.mq.scan .mq-ic { animation:mqscan 1s ease-in-out infinite; box-shadow:0 0 0 0 rgba(94,234,212,.5); }
+.mq.ok .mq-ic { background:#16a34a; }
+@keyframes mqscan { 50% { box-shadow:0 0 0 14px rgba(94,234,212,0); background:rgba(94,234,212,.22); } }
+.mq h2 { margin:0; font:700 23px "Space Grotesk", system-ui, sans-serif; }
+.mq small { color:#9fc3cf; font-size:13.5px; }
+.mq .mq-main { margin-top:26px; width:min(320px, 100%); height:54px; border-radius:16px; border:0; background:#22b8d6; color:#03141c; font:800 16px Figtree, system-ui, sans-serif; display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer; }
+.mq .mq-main svg { width:20px; height:20px; }
+.mq .mq-link { margin-top:14px; background:none; border:0; color:#cfeaf1; font:700 14px Figtree, system-ui, sans-serif; cursor:pointer; padding:8px; }
+.mq .mq-brand { position:absolute; top:calc(env(safe-area-inset-top, 0px) + 22px); left:22px; display:flex; align-items:center; gap:9px; font:700 17px "Space Grotesk"; }
+.mq .mq-brand i { width:34px; height:34px; border-radius:11px; background:#0e7490; display:grid; place-items:center; font-style:normal; }
+.mq-dots { display:flex; gap:14px; justify-content:center; margin:20px 0 22px; }
+.mq-dots i { width:13px; height:13px; border-radius:50%; border:2px solid #cfeaf1; }
+.mq-dots i.f { background:#cfeaf1; }
+.mq.bad .mq-dots { animation:mqshake .35s; }
+@keyframes mqshake { 25% { transform:translateX(-8px); } 75% { transform:translateX(8px); } }
+.mq-pad { display:grid; grid-template-columns:repeat(3, 72px); gap:14px; justify-content:center; }
+.mq-pad button { width:72px; height:72px; border-radius:50%; border:0; background:rgba(255,255,255,.1); color:#fff; font:600 26px "Space Grotesk", system-ui, sans-serif; cursor:pointer; }
+.mq-pad button:active { background:rgba(255,255,255,.25); }
+.mq-pad button.ghost { background:none; font-size:14px; font-family:Figtree, system-ui, sans-serif; }
+.mq-note { margin-top:14px; font-size:12px; color:#9fc3cf; }
+
+/* ---------- renk B: canlı petrol (yalnız telefon kabuğu) ---------- */
+body.mob .main { background:#f3f7fa; }
+body.mob[data-theme="gece"] .main { background:#07101f; }
+body.mob .top { background:linear-gradient(135deg, #0e7490, #0b5c73) !important; border-bottom:0 !important; color:#fff; }
+body.mob[data-theme="gece"] .top { background:linear-gradient(135deg, #0b4a5c, #083644) !important; }
+body.mob .msearch { background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.22); color:#d8eef4; }
+body.mob .msearch input { color:#fff; } body.mob .msearch input::placeholder { color:#cfe6ee; }
+body.mob .msearch:focus-within { border-color:#fff; box-shadow:0 0 0 3px rgba(255,255,255,.25); }
+body.mob .mib { background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.22); color:#fff; }
+body.mob .mav { background:#fff; color:#0e7490; }
+body.mob .mtop-lbl { color:#cfe6ee; } body.mob .mtop-lbl b { color:#fff; }
+body.mob .mtop-t { color:#fff; }
+body.mob .mt-b { box-shadow:0 0 0 2px #0e7490; }
+/* seçili sekme: koyu dolgu, beyaz ikon */
+body.mob .mt-i.on { color:#0e7490; }
+body.mob[data-theme="gece"] .mt-i.on { color:#7dd3e6; }
+body.mob .mt-i.on svg.i { background:#0e7490; color:#fff; }
+body.mob[data-theme="gece"] .mt-i.on svg.i { background:#22b8d6; color:#03141c; }
+body.mob .mt-i .mt-b { box-shadow:0 0 0 2px var(--rail); }
+/* kritik kart: dolu kırmızı; yüksek: dolu turuncu */
+body.mob .m-hero { background:linear-gradient(135deg, #dc2626, #b91c1c); border:0; color:#fff; box-shadow:0 12px 28px rgba(185,28,28,.28); }
+body.mob .m-hero.high { background:linear-gradient(135deg, #ea580c, #c2410c); box-shadow:0 12px 28px rgba(194,65,12,.28); }
+body.mob .m-hero-h, body.mob .m-hero.high .m-hero-h { color:rgba(255,255,255,.85); }
+body.mob .m-hero p { color:#fff; opacity:.9; }
+body.mob .m-swipe { background:rgba(255,255,255,calc(.18 + var(--p) * .3)); border-color:rgba(255,255,255,.3); }
+body.mob .m-knob { background:#fff; color:#b91c1c; }
+body.mob .m-hero.high .m-knob { color:#c2410c; }
+body.mob .m-swipe-l { color:#fff; }
+body.mob .m-acts .btn:not(.r) { background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.35); color:#fff; }
+body.mob .m-acts .btn.r { background:#fff; border-color:#fff; color:#b91c1c; }
+/* kartlar: net kenar */
+body.mob .m-row, body.mob .m-bed, body.mob .m-calm, body.mob .m-card { border-color:#dbe4ec; }
+body.mob[data-theme="gece"] .m-row, body.mob[data-theme="gece"] .m-bed, body.mob[data-theme="gece"] .m-calm, body.mob[data-theme="gece"] .m-card { border-color:#1c2c45; }
+body.mob .m-chip.on { background:#0e7490; border-color:#0e7490; color:#fff; }
+
+/* =====================================================================
+   25.09 · Ozan: "giriş ekranı tek ekran olmalı" → telefonda kaydırma yok.
+   Hedef: 375×667 (iPhone SE) ve iPhone'da Chrome'un görünür alanı (~393×700) tek ekranda.
+   Kalkanlar: "yakında" LDAP düğmesi, sosyal ikonlar, "ya da" çizgisi. Yasal bağlantılar tek satır, küçük.
+   ===================================================================== */
+@media (max-width:760px) {
+  .login.lg2 { height:100dvh; min-height:0; overflow:hidden; }
+  .lg2 .hero { padding:calc(env(safe-area-inset-top, 0px) + 14px) 20px 16px !important; }
+  .lg2 .lg-brand .mk { width:36px; height:36px; font-size:18px; }
+  .lg2 .lg-brand b { font-size:17px; }
+  .lg2 .lg-body { padding:10px 0 0 !important; }
+  .lg2 .lg-pill { display:none !important; }
+  .lg2 .hero h1 { font-size:clamp(22px, 6.4vw, 27px) !important; margin:4px 0 0; }
+  .lg2 .side { flex:1; min-height:0; padding:16px 18px calc(env(safe-area-inset-bottom, 0px) + 12px) !important; overflow:hidden; }
+  .lg2 .side .form { display:flex; flex-direction:column; height:100%; }
+  .lg2 .lg-corner { top:12px; right:12px; }
+  .lg2 .lg-corner .lsel, .lg2 .lg-corner .ib { height:36px; }
+  .lg2 .lg-in h2 { font-size:20px; margin:2px 120px 2px 0; }
+  .lg2 .lg-in .sub { font-size:12.5px; margin:0 0 10px; }
+  .lg2 .lg-in .fld { margin-bottom:10px; }
+  .lg2 .lg-in .fld label { font-size:11px; margin-bottom:4px; }
+  .lg2 .lg-in input { height:46px !important; }
+  .lg2 .lg-in .btn.lg-go { height:50px !important; margin-top:4px; }
+  .lg2 .lg-or, .lg2 .lg-ldap, .lg2 .lg-soc, .lg2 .soc, .lg2 .lg-trust { display:none !important; }
+  .lg2 .lg-links { margin-top:auto; padding-top:10px; justify-content:center; gap:4px 10px; font-size:11px; }
+  .lg2 .lg-links i { display:none; }
+  .lg2 .lg-links a:last-child { width:auto; }
+  .lg2 .lg-back { position:absolute !important; top:calc(env(safe-area-inset-top, 0px) + 20px); right:18px; margin:0; font-size:12px; color:#cfeaf1 !important; }
+  .lg2 .lg-acc { right:12px; bottom:auto; top:calc(env(safe-area-inset-top, 0px) + 56px); }
+  .lg2 .lg-acc summary { height:32px; padding:0 11px; font-size:12px; }
+  .lg2 .lg-acc-p { bottom:auto; top:40px; }
+  .m-faceid { height:46px; margin-top:8px; }
+}
+@media (max-width:760px) and (max-height:700px) {
+  .lg2 .hero h1 { font-size:21px !important; }
+  .lg2 .lg-in .sub { display:none; }
+}
+/* bildirim kurulum paneli telefonda yok (25.09 · Ozan: "o alana ihtiyaç yok") */
+body.mob .st-card.pw { display:none !important; }
+
+/* =====================================================================
+   25.09 · üst çubuk üç biçim (Taslak 24): A sade başlık · B petrol şerit · C arama öncelikli (24.09)
+   A ve B: tek satır başlık + altında birim · nöbet; arama bir düğme, dokununca çubuğun tamamı arama olur.
+   ===================================================================== */
+.mtop2 { display:flex; align-items:center; gap:8px; min-height:48px; }
+.mt2-t { flex:1; min-width:0; }
+.mt2-t b { display:block; font:700 22px/1.15 "Space Grotesk", system-ui, sans-serif; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mt2-t small { display:block; font:600 12px Figtree, system-ui, sans-serif; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mib2, .mav2 { position:relative; flex:none; width:40px; height:40px; border-radius:12px; display:grid; place-items:center; border:0; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.mib2 svg.i { width:20px; height:20px; }
+.mav2 { border-radius:50%; font:800 13px Figtree, system-ui, sans-serif; }
+.mib2:active, .mav2:active { transform:scale(.92); }
+.mtop2.srch .msearch { flex:1; }
+
+/* A · sade başlık: çubuk sayfayla aynı zemin, renk yalnız vurguda */
+body.mob[data-mstil="A"] .top { background:#f3f7fa !important; color:var(--ink); border-bottom:1px solid #e3eaf0 !important; padding-bottom:10px; }
+body.mob[data-mstil="A"][data-theme="gece"] .top { background:#07101f !important; border-bottom-color:#16243a !important; }
+body.mob[data-mstil="A"] .mt2-t b { color:var(--ink); }
+body.mob[data-mstil="A"] .mt2-t small { color:var(--mute); }
+body.mob[data-mstil="A"] .mib2 { background:var(--card); color:var(--ink); border:1px solid var(--line); }
+body.mob[data-mstil="A"] .mav2 { background:#0e7490; color:#fff; }
+body.mob[data-mstil="A"][data-theme="gece"] .mav2 { background:#22b8d6; color:#03141c; }
+body.mob[data-mstil="A"] .msearch { background:var(--card); border-color:var(--line); color:var(--mute); }
+body.mob[data-mstil="A"] .msearch input { color:var(--ink); } body.mob[data-mstil="A"] .msearch input::placeholder { color:var(--mute); }
+body.mob[data-mstil="A"] .mt-b { box-shadow:0 0 0 2px #f3f7fa; }
+body.mob[data-mstil="A"][data-theme="gece"] .mt-b { box-shadow:0 0 0 2px #07101f; }
+
+/* B · petrol şerit: düz renk (degrade yok), koyu temada gece laciverti */
+body.mob[data-mstil="B"] .top { background:#0e7490 !important; color:#fff; padding-bottom:10px; }
+body.mob[data-mstil="B"][data-theme="gece"] .top { background:#0b1b2e !important; border-bottom:2px solid #22b8d6 !important; }
+body.mob[data-mstil="B"] .mt2-t b { color:#fff; font-size:20px; }
+body.mob[data-mstil="B"] .mt2-t small { color:rgba(255,255,255,.78); }
+body.mob[data-mstil="B"] .mib2 { background:rgba(255,255,255,.14); color:#fff; }
+body.mob[data-mstil="B"] .mav2 { background:#fff; color:#0e7490; }
+body.mob[data-mstil="B"][data-theme="gece"] .mav2 { background:#22b8d6; color:#03141c; }
+
+/* koyu tema genel düzeltme: degrade üst çubuk çamurlu duruyordu → C'de de düz lacivert */
+body.mob[data-mstil="C"][data-theme="gece"] .top { background:#0b1b2e !important; }
+/* sayfanın kendi büyük başlığı, A/B'de üst çubuktaki başlığı tekrar ediyor → telefonda gizli */
+body.mob[data-mstil="A"] .content .ph h2, body.mob[data-mstil="B"] .content .ph h2 { display:none; }
+body.mob[data-mstil="A"] .content .ph, body.mob[data-mstil="B"] .content .ph { margin-bottom:8px; }
+@media (max-width:760px) {
+  /* "Ana sayfaya dön" telefonda yok: personel tanıtım sayfasına dönmez, başlığın üstüne biniyordu */
+  .lg2 .lg-back { display:none !important; }
+  /* hızlı giriş (demo): marka satırının sağında, başlığa binmez */
+  .lg2 .lg-acc { top:calc(env(safe-area-inset-top, 0px) + 16px); right:14px; }
+  .lg2 .lg-acc summary { background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.25); color:#e8f3f7; }
+}
+
+/* =====================================================================
+   25.09 · 2. tur düzeltmeler (Ozan'ın iPhone denemesi)
+   ===================================================================== */
+/* "Temsili dalga" etiketi ve alttaki açıklama kalktı (Ozan: "numune dalga gibi şeyler yazmasın") */
+.mon .wm, .mon-full .mf-note { display:none !important; }
+/* nabız kalbi: her atımda metin ekleniyordu → satır yüksekliği değişip ekran zıplıyordu. Yer hep ayrılı, yalnız görünürlük değişir */
+.mon .nums .nu:first-child small span:first-child::after { content:" \2665\FE0E"; opacity:0; transition:opacity .08s; font-family:Figtree, system-ui, sans-serif; }
+.mon.hb .nums .nu:first-child small span:first-child::after { content:" \2665\FE0E"; opacity:1; }
+/* profil fotoğrafı */
+.has-ph { background-size:cover !important; background-position:center !important; color:transparent !important; }
+.av-ctl { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; width:100%; }
+.av-ctl small { flex-basis:100%; color:var(--mute); font-size:12px; }
+.st-me { flex-wrap:wrap; }
+
+@media (max-width:760px) {
+  /* Form doldur menüsü: telefonda alttan açılan tam genişlik liste (sığmıyordu) */
+  body.mob .pt-dd .menu:not(.hidden) { position:fixed !important; left:10px !important; right:10px !important; top:auto !important; bottom:calc(env(safe-area-inset-bottom, 0px) + 96px) !important;
+    width:auto !important; min-width:0 !important; max-width:none !important; max-height:58vh; overflow:auto; z-index:90; border-radius:18px; box-shadow:0 -10px 40px rgba(0,0,0,.35); }
+  body.mob .pt-dd .menu a { padding:13px 14px; font-size:15px; }
+  /* tam ekran monitör: değerler telefonda üst üste biniyordu → 2 sütun, her kutu kendi yerinde */
+  .mon-full .mon .nums { display:grid !important; grid-template-columns:1fr 1fr !important; gap:0 !important; }
+  .mon-full .mon .nums .nu { position:static !important; grid-column:auto !important; grid-row:auto !important; min-width:0; padding:10px 12px !important; border:0 !important; border-top:1px solid rgba(255,255,255,.08) !important; }
+  .mon-full .mon .nums .nu b { font-size:clamp(30px, 11vw, 46px) !important; line-height:1.05 !important; }
+  .mon-full .mf-top { flex-wrap:wrap; gap:8px; }
+}
+@media (max-width:760px) {
+  /* monitör telefonda: dalgalar üstte tam genişlik, değerler altta ızgara (yan sütun 240 px'le dalgaları eziyordu) */
+  body.mob .mon, .mon-full .mon { grid-template-columns:1fr !important; }
+  body.mob .mon .nums { grid-template-columns:repeat(3, minmax(0, 1fr)) !important; grid-template-rows:none !important; border-left:0 !important; border-top:1px solid #1c2c45; }
+  body.mob .mon .nu { padding:6px 10px !important; border-right:1px solid #1c2c45; }
+  .mon-full { padding:calc(env(safe-area-inset-top, 0px) + 8px) 12px calc(env(safe-area-inset-bottom, 0px) + 10px) !important; }
+  .mon-full .mon { grid-template-rows:minmax(0, 1fr) auto !important; }
+  .mon-full .mon .nums { display:grid !important; grid-template-columns:1fr 1fr !important; grid-template-rows:none !important; overflow:visible !important; }
+  .mon-full .mon .nums .nu { padding:8px 12px !important; border-right:1px solid rgba(255,255,255,.06) !important; }
+  .mon-full .mon .nums .nu small { font-size:12.5px !important; }
+  .mon-full .mon .nums .nu b { font-size:clamp(28px, 9.5vw, 40px) !important; white-space:nowrap; }
+  .mon-full .mon canvas { min-height:40px !important; }
+}
+@media (max-width:760px) {
+  body.mob .mon .nums .nu:nth-child(2) { grid-column:span 2; }                 /* ART "78/40 (51)" yan hücreye taşmasın */
+  body .mon-full .mon .nums { grid-template-columns:1fr 1fr !important; }
+  body .mon-full .mon .nums .nu:nth-child(2) { grid-column:auto; }
+}
+
+/* =====================================================================
+   25.09 · 3. tur: pencereler telefonda tam ekran · alt düğmeler iPhone ev çizgisinin üstünde · taşmalar
+   Hedef boylar: 360 (küçük Android) · 375 (iPhone SE/mini) · 393 (iPhone 15 Pro) · 430 (Pro Max)
+   ===================================================================== */
+@media (max-width:760px) {
+  .modalBg { padding:0 !important; place-items:end stretch !important; }
+  .modal, .modal.wide { width:100% !important; max-width:none !important; height:100dvh; max-height:100dvh !important; border-radius:0 !important; border:0 !important; display:flex; flex-direction:column; overflow:hidden !important; }
+  .modal .mh { padding:calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px !important; flex:none; }
+  .modal .mh b { font-size:18px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .modal .mh .x { width:40px; height:40px; }
+  .modal .mb { flex:1; min-height:0; overflow:auto; padding:12px 12px !important; -webkit-overflow-scrolling:touch; }
+  .modal .mf { flex:none; flex-wrap:wrap; padding:10px 12px calc(env(safe-area-inset-bottom, 0px) + 10px) !important; gap:8px !important; }
+  .modal .mf .btn { flex:1 1 calc(50% - 8px); justify-content:center; height:46px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .modal .mf .btn.g { flex-basis:100%; order:9; height:40px; }
+  /* form penceresi: sol form listesi telefonda yatay şerit */
+  .modal .nfShell { display:block !important; }
+  .modal .nfNav { display:flex !important; overflow-x:auto; gap:6px; position:sticky; top:-12px; z-index:3; background:var(--app); padding:4px 0 8px; margin:0 0 8px; scrollbar-width:none; }
+  .modal .nfNav > * { flex:none; white-space:nowrap; }
+  /* tablolar pencerede yatay kayar, sayfayı taşırmaz */
+  .modal .mb table { display:block; max-width:100%; overflow-x:auto; }
+  /* "Vital gir" gibi monitör altı düğmeler taşmasın */
+  body.mob .mon + *, body.mob .vbar .btn, body.mob [class*="vital"] .btn { max-width:100%; }
+  body.mob .content .btn { max-width:100%; }
+  body.mob .content img, body.mob .content canvas, body.mob .content video { max-width:100%; }
+}
+/* kilit ekranı, tam ekran monitör ve hızlı dönüş: üstteki saat şeridinin altından başlar */
+.mq { padding-top:calc(env(safe-area-inset-top, 0px) + 20px); }
+@media (max-width:760px) {
+  /* form kabuğu 2050 px'e çıkıyordu (form listesi şeridi genişliğini içeriğinden alıyordu) → ekran genişliğine sabit */
+  .modal .mb { display:block !important; }
+  .modal .nfShell, .modal .nfShell > .nf, .modal .nfDlg, .modal .nf { width:100% !important; max-width:100% !important; min-width:0 !important; }
+  .modal .nfNav { max-width:100%; width:100%; }
+  .modal .nf { padding:10px 2px !important; overflow:visible !important; }
+  .modal .nfHead { width:auto !important; max-width:100%; flex-wrap:wrap; }
+  .modal .nf .fld { grid-template-columns:minmax(0, 1fr) !important; }
+  .modal .nfGrid, .modal .nfTwo { grid-template-columns:minmax(0, 1fr) !important; }
+  .modal .nf table { display:block; max-width:100%; overflow-x:auto; }
+}
+@media (max-width:760px) {
+  .modal table.n2 { font-size:11px !important; width:100% !important; min-width:0 !important; table-layout:fixed; }
+  .modal table.n2 th, .modal table.n2 td { padding:5px 2px !important; white-space:normal !important; word-break:break-word; }
+  .modal table.n2 th:first-child, .modal table.n2 td:first-child { width:30%; text-align:left; }
+}
+@media (max-width:760px) {
+  .modalBg > .modal, .modalBg > .modal.wide, .modalBg > .modal.nfDlg { width:100vw !important; max-width:100vw !important; min-width:0 !important; margin:0 !important; }
+  /* NEWS2 tablosu: sayılar harf harf kırılmasın → kırılmaz, yana kayar; ilk sütun (parametre adı) sabit */
+  .modal table.n2 { table-layout:auto !important; width:auto !important; min-width:100% !important; font-size:12px !important; display:table !important; }
+  .modal table.n2 th, .modal table.n2 td { white-space:nowrap !important; word-break:normal !important; padding:6px 7px !important; }
+  .modal table.n2 th:first-child, .modal table.n2 td:first-child { position:sticky; left:0; z-index:1; background:var(--card); width:auto; }
+  .modal .nfTw { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+}
+/* Face ID durumu · PIN · kaydırma geçişi */
+.mq-main[disabled] { opacity:.45; cursor:not-allowed; }
+.mq-st { margin-top:10px; max-width:320px; font:600 13px Figtree, system-ui, sans-serif; color:#cfeaf1; line-height:1.4; }
+.mq.bad2 .mq-ic { background:#b91c1c; animation:mqshake .35s; }
+.mq [data-pmsg] { color:#fca5a5; min-height:18px; }
+.m-qbtns { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+body.mob .content.sw-l { animation:swl .26s ease-out; } body.mob .content.sw-r { animation:swr .26s ease-out; }
+@keyframes swl { from { transform:translateX(36px); opacity:.4; } to { transform:none; opacity:1; } }
+@keyframes swr { from { transform:translateX(-36px); opacity:.4; } to { transform:none; opacity:1; } }
+@media (prefers-reduced-motion: reduce) { body.mob .content.sw-l, body.mob .content.sw-r { animation:none; } }
+
+/* bileklik okutma (tarayici.js) */
+.scn { position:fixed; inset:0; z-index:200; background:#02070d; color:#e8f3f7; display:flex; flex-direction:column; font-family:Figtree, system-ui, sans-serif; }
+.scn-top { display:flex; align-items:center; justify-content:space-between; padding:calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px; }
+.scn-top b { font:700 19px "Space Grotesk", system-ui, sans-serif; }
+.scn-x { width:42px; height:42px; border-radius:12px; border:0; background:rgba(255,255,255,.12); color:#fff; display:grid; place-items:center; }
+.scn-x svg { width:20px; height:20px; }
+.scn-cam { position:relative; flex:1; min-height:0; overflow:hidden; background:#000; }
+.scn-cam video { width:100%; height:100%; object-fit:cover; }
+.scn-frame { position:absolute; left:10%; right:10%; top:28%; height:34%; }
+.scn-frame i { position:absolute; width:34px; height:34px; border:4px solid #22b8d6; }
+.scn-frame i:nth-child(1) { left:0; top:0; border-right:0; border-bottom:0; border-radius:10px 0 0 0; } .scn-frame i:nth-child(2) { right:0; top:0; border-left:0; border-bottom:0; border-radius:0 10px 0 0; }
+.scn-frame i:nth-child(3) { left:0; bottom:0; border-right:0; border-top:0; border-radius:0 0 0 10px; } .scn-frame i:nth-child(4) { right:0; bottom:0; border-left:0; border-top:0; border-radius:0 0 10px 0; }
+.scn-line { position:absolute; left:6%; right:6%; top:50%; height:2px; background:#ef4444; box-shadow:0 0 12px #ef4444; animation:scnl 1.6s ease-in-out infinite; }
+@keyframes scnl { 50% { transform:translateY(-40px); } }
+.scn.nocam .scn-cam { flex:none; height:0; }
+.scn-st { padding:12px 16px; font:600 14px Figtree, system-ui, sans-serif; color:#cfeaf1; text-align:center; }
+.scn-st.bad { color:#fca5a5; }
+.scn-man { padding:6px 14px calc(env(safe-area-inset-bottom, 0px) + 16px); display:grid; gap:8px; }
+.scn-man label { font:600 12.5px Figtree, system-ui, sans-serif; color:#9fc3cf; }
+.scn-man div { display:flex; gap:8px; }
+.scn-man input { flex:1; min-width:0; height:48px; border-radius:12px; border:1px solid #2a3f60; background:#0f1b2e; color:#fff; padding:0 12px; font:600 16px "JetBrains Mono", monospace; }
+.scn-man .btn { height:48px; padding:0 18px; }
+.scn.nocam .scn-man { margin-top:auto; }
+@media (max-width:760px) {
+  /* form seçici: şerit yerine açılır liste */
+  .modal .nfNav { display:none !important; }
+  .modal .nfNav.open { display:grid !important; grid-template-columns:1fr; gap:4px; position:sticky; top:40px; z-index:5; background:var(--card); border:1px solid var(--line2); border-radius:14px; padding:6px; margin:0 0 10px; box-shadow:0 14px 30px rgba(0,0,0,.18); max-height:58vh; overflow:auto; }
+  .modal .nfNav.open button { width:100%; justify-content:flex-start; text-align:left; white-space:normal; padding:12px 12px; min-height:48px; border-radius:10px; font-size:15px; }
+  .nf-pick { position:sticky; top:-12px; z-index:6; width:100%; display:flex; align-items:center; gap:10px; min-height:52px; margin:0 0 8px; padding:0 14px; border-radius:14px; border:1.5px solid var(--pri); background:var(--card); color:var(--ink); font:700 16px Figtree, system-ui, sans-serif; text-align:left; cursor:pointer; }
+  .nf-pick svg { width:20px; height:20px; flex:none; color:var(--pri); }
+  .nf-pick .chev { margin-left:auto; transition:transform .2s; }
+  .nf-pick.open .chev { transform:rotate(180deg); }
+  .nf-pick > *:not(svg) { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+}
+
+/* =====================================================================
+   25.09 · mobil öneriler (mobil-oneriler.md): kritik tam ekran · gizlilik · yazı boyu · gece odası · ilaç barkodu · hekime ulaş · gördüm
+   ===================================================================== */
+.mcrit { position:fixed; inset:0; z-index:180; background:linear-gradient(160deg, #dc2626, #7f1d1d); color:#fff; display:flex; flex-direction:column; justify-content:center; gap:10px;
+  padding:calc(env(safe-area-inset-top, 0px) + 24px) 22px calc(env(safe-area-inset-bottom, 0px) + 24px); animation:mcIn .25s ease-out; }
+@keyframes mcIn { from { opacity:0; transform:scale(1.04); } to { opacity:1; transform:none; } }
+.mcrit .mc-k { display:flex; align-items:center; gap:8px; font:800 14px Figtree, system-ui, sans-serif; letter-spacing:.12em; color:#ffe1e1; animation:mcBl 1s steps(2, jump-none) infinite; }
+.mcrit .mc-k svg { width:22px; height:22px; }
+@keyframes mcBl { 50% { opacity:.45; } }
+.mcrit .mc-bed { font-size:56px; font-weight:700; line-height:1; }
+.mcrit p { margin:0 0 14px; font:600 18px Figtree, system-ui, sans-serif; opacity:.95; }
+.mcrit .m-swipe { background:rgba(255,255,255,.2); border-color:rgba(255,255,255,.35); height:62px; border-radius:31px; }
+.mcrit .m-knob { width:54px; height:54px; background:#fff; color:#b91c1c; }
+.mcrit .m-swipe-l { color:#fff; font-size:15px; }
+.mcrit .m-acts .btn { background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.35); color:#fff; height:48px; }
+.mcrit .m-acts .btn.r { background:#fff; color:#b91c1c; }
+@media (prefers-reduced-motion: reduce) { .mcrit, .mcrit .mc-k { animation:none; } }
+
+/* arka planda gizle: uygulama değiştiricide hasta bilgisi bulanık */
+body.m-priv #root, body.m-priv .modalBg { filter:blur(22px) saturate(.5); }
+body.m-priv::after { content:"homunculus"; position:fixed; inset:0; z-index:400; display:grid; place-items:center; background:rgba(6,37,48,.55); color:#fff; font:700 26px "Space Grotesk", system-ui, sans-serif; }
+
+/* yazı boyu */
+body.mob[data-mfs="2"] .content, body.mob[data-mfs="2"] .modal .mb { zoom:1.12; }
+body.mob[data-mfs="3"] .content, body.mob[data-mfs="3"] .modal .mb { zoom:1.25; }
+.m-seg { display:flex; gap:4px; margin-top:8px; background:var(--card2); border:1px solid var(--line); border-radius:12px; padding:3px; }
+.m-seg button { flex:1; height:38px; border:0; border-radius:9px; background:none; color:var(--mute); font:700 13px Figtree, system-ui, sans-serif; }
+.m-seg button.on { background:var(--pri); color:var(--onpri); }
+
+/* gece odası: koyu + kısık, kırmızımsı ışık; kritik kırmızı yine seçilir */
+body.mob.m-night::before { content:""; position:fixed; inset:0; z-index:170; pointer-events:none; background:rgba(40,8,0,.32); mix-blend-mode:multiply; }
+body.mob.m-night #root { filter:brightness(.78) saturate(.85); }
+
+/* hasta ekranı eylemleri */
+.m-ptacts { display:flex; gap:8px; width:100%; margin-top:8px; }
+.m-ptacts .btn { flex:1; justify-content:center; height:42px; }
+body.mob .pt-bar { flex-wrap:wrap; }
+
+/* ilaç barkod doğrulama */
+.md-scan { display:grid; gap:8px; margin:10px 0; padding:12px; border-radius:14px; border:1px solid var(--line2); background:var(--card2); }
+.md-r { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.md-r > span { font-weight:700; flex:1; min-width:140px; }
+.md-r em { font-style:normal; font:800 12.5px Figtree, system-ui, sans-serif; }
+.md-r em.ok { color:var(--ok); } .md-r em.bad { color:var(--crit); flex-basis:100%; order:3; }
+.md-all { font:800 14px Figtree, system-ui, sans-serif; color:var(--ok); background:var(--okSoft, rgba(22,163,74,.12)); border-radius:10px; padding:8px 10px; }
+
+/* kritik bildirim: gördüm */
+.m-row .ack { color:var(--ok) !important; font-weight:700; margin-top:3px; }
+.m-row .ack-b { display:inline-flex; margin-top:6px; height:32px; padding:0 14px; }
+.mq-who { font:700 15px Figtree, system-ui, sans-serif; color:#cfeaf1; margin-bottom:6px; }
+.scn-nfc { margin:0 14px 6px; height:46px; justify-content:center; background:#0f1b2e; color:#fff; border-color:#2a3f60; }
+
+/* yana kaydırma tarayıcının "geri" hareketini tetiklemesin; uygulama kendi kaydırmasını yönetir */
+html, body { overscroll-behavior-x:none; }
+
+/* ---------- 27.09 · #196 katlanır hasta başlığı · #197 yapışık sekmeler · #198 başa dön ---------- */
+body.mob .pt-h { flex-wrap:nowrap; gap:10px; padding:10px 12px; }
+body.mob .pt-h .bn { font-size:17px; padding-top:5px; }
+body.mob .pt-h .md { flex:1 1 auto; }
+body.mob .pt-h .nm { font-size:18px; flex-wrap:nowrap; align-items:center; }
+.m-pth-tg { margin-left:auto; flex:none; width:38px; height:38px; border-radius:11px; border:1px solid var(--line2); background:var(--card2); color:var(--ink); display:grid; place-items:center; cursor:pointer; }
+.m-pth-tg svg { width:18px; height:18px; transition:transform .2s; }
+.pt-wrap.m-open .m-pth-tg svg { transform:rotate(180deg); }
+body.mob .pt-h .md > .rt { flex-direction:row; align-items:center; margin:4px 0 2px; gap:8px; }
+body.mob .pt-wrap:not(.m-open) .pt-h .md > :not(.nm):not(.rt):not(.k) { display:none; }
+body.mob .pt-wrap:not(.m-open) .pt-h .tg > :not(.k) { display:none; }
+body.mob .pt-wrap:not(.m-open) .pt-h .dx { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+body.mob .pt-wrap:not(.m-open) .pt-bar .src { display:none; }
+/* eylemler tek sırada: Form · Yazdır · Not · Hekim */
+body.mob .pt-bar { display:flex; flex-wrap:wrap; gap:6px; }
+body.mob .pt-bar .src { flex:1 0 100%; }
+body.mob .pt-bar .m-ptacts { display:contents; }
+body.mob .pt-bar .pt-dd, body.mob .pt-bar .m-ptacts .btn { flex:1 1 0; min-width:0; }
+body.mob .pt-bar .pt-dd > .btn, body.mob .pt-bar .m-ptacts .btn { width:100%; height:56px; margin:0; flex-direction:column; gap:3px; justify-content:center; padding:4px 2px; font-size:11.5px; line-height:1.15; text-align:center; white-space:normal; }
+body.mob .pt-bar .pt-dd > .btn > svg:last-child:not(:first-child) { display:none; }
+/* sekmeler kaydırırken üstte kalır */
+body.mob .pt-wrap > .tabs { position:sticky; top:-12px; z-index:6; margin:10px 0; background:#f3f7fa; box-shadow:-12px 0 0 #f3f7fa, 12px 0 0 #f3f7fa; }
+body.mob[data-theme="gece"] .pt-wrap > .tabs { background:#07101f; box-shadow:-12px 0 0 #07101f, 12px 0 0 #07101f; }
+/* başa dön: telefonda alt menünün üstünde */
+body.mob .toTop { display:grid !important; right:14px; bottom:calc(env(safe-area-inset-bottom, 0px) + 100px); z-index:59; }
+/* 27.09 · #199 · geri düğmesi (alt menüde olmayan sayfalar) */
+.mtop2 .mback { flex:none; margin-left:-4px; }
+.mtop2 .mback svg { width:22px; height:22px; }

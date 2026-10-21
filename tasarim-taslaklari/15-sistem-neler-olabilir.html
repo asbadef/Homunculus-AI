@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sistem Neler Olabilir</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --page:#07101f; --card:#0f1b2e; --card2:#15243b; --ink:#e8eef7; --mute:#8fa1ba; --line:#1c2c45; --line2:#2a3f60; --pri:#22b8d6; --onpri:#03141c;
+          --ok:#22c55e; --proto:#a78bfa; --idea:#eab308; --no:#64748b; }
+  :root[data-theme="gun"] { --page:#eef0f3; --card:#fff; --card2:#f1f4f8; --ink:#152231; --mute:#5c6b7d; --line:#e1e6ee; --line2:#cbd3de; --pri:#0e7490; --onpri:#fff;
+          --ok:#16a34a; --proto:#7c3aed; --idea:#a16207; --no:#64748b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:15px/1.55 Figtree, system-ui, sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:26px 16px 70px; }
+  h1 { font:700 30px/1.1 "Space Grotesk"; margin:0 0 6px; }
+  .lead { color:var(--mute); margin:0 0 16px; max-width:860px; } .lead b { color:var(--ink); }
+  .top { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:6px; }
+  .top a { color:var(--pri); font-weight:700; text-decoration:none; font-size:13px; }
+  .btn { font:600 13px Figtree; border-radius:10px; padding:7px 12px; border:1px solid var(--line2); background:var(--card); color:var(--ink); cursor:pointer; }
+  .btn.on { background:var(--pri); color:var(--onpri); border-color:transparent; }
+  .bar { display:flex; gap:6px; flex-wrap:wrap; margin:10px 0; }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; font-size:12.5px; color:var(--mute); margin:12px 0 18px; }
+  .st { display:inline-flex; align-items:center; gap:5px; font:700 11px Figtree; padding:3px 8px; border-radius:999px; white-space:nowrap; }
+  .st.real { background:color-mix(in srgb, var(--ok) 16%, transparent); color:var(--ok); }
+  .st.proto { background:color-mix(in srgb, var(--proto) 16%, transparent); color:var(--proto); }
+  .st.idea { background:color-mix(in srgb, var(--idea) 16%, transparent); color:var(--idea); }
+  .st.no { background:var(--card2); color:var(--mute); }
+  .principle { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; margin:16px 0; display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .principle div { font-size:13px; color:var(--mute); } .principle b { display:block; color:var(--ink); font:700 15px "Space Grotesk"; }
+  h2 { font:700 20px "Space Grotesk"; margin:28px 0 10px; display:flex; gap:10px; align-items:baseline; } h2 small { font:500 13px Figtree; color:var(--mute); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:10px; }
+  .it { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; display:flex; flex-direction:column; gap:6px; min-width:0; }
+  .it h3 { margin:0; font:700 15.5px "Space Grotesk"; display:flex; gap:8px; align-items:flex-start; justify-content:space-between; }
+  .it p { margin:0; font-size:13.5px; color:var(--mute); }
+  .kv { display:grid; grid-template-columns:92px 1fr; gap:3px 8px; font-size:12.5px; } .kv span { color:var(--mute); }
+  .who { display:flex; gap:4px; flex-wrap:wrap; } .who i { font-style:normal; font:600 11px Figtree; background:var(--card2); color:var(--mute); padding:2px 7px; border-radius:6px; }
+  details { font-size:13px; } summary { cursor:pointer; color:var(--pri); font-weight:700; font-size:12.5px; } details p { margin-top:6px; }
+  .warn { border-left:3px solid var(--idea); padding-left:8px; font-size:12.5px; color:var(--mute); }
+  .ask { background:linear-gradient(90deg, color-mix(in srgb, var(--idea) 12%, transparent), transparent 70%); border:1px solid color-mix(in srgb, var(--idea) 40%, transparent); border-radius:14px; padding:14px 16px; margin-top:26px; }
+  .ask b { font:700 16px "Space Grotesk"; } .ask code { display:block; margin-top:8px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:13px; white-space:pre-wrap; }
+  @media (max-width:760px) { .principle { grid-template-columns:1fr 1fr; } .grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><a href="index.html">← Tasarım Masası</a><span style="margin-left:auto"></span><button class="btn" id="th">Tema</button></div>
+  <h1>Sistem neler olabilir?</h1>
+  <p class="lead">Paylaştığın hastane bilgi sistemi ekranlarından (muayene, sıvı izlem, bakım planı, dokümanlar, görüntüleme, ameliyat raporu, istem menüsü) ve bugünkü prototipten çıkan fikir haritası. <b>Bu sayfa bir öneri listesidir.</b> Her kartta durumu yazar: gerçek üründe var mı, yalnız prototipte mi, yoksa henüz fikir mi.</p>
+
+  <div class="principle">
+    <div><b>Tekrar etme</b>Hastane sistemi zaten yapıyorsa (reçete, epikriz, ameliyat raporu) biz yazmayız, gösteririz.</div>
+    <div><b>Kendiliğinden doldur</b>Cihazdan, pompadan, önceki formdan gelen değeri hemşireye yeniden yazdırmayız.</div>
+    <div><b>Zamanı göster</b>Hastane sistemi tablo verir; biz eğilimi ve "ne zamandır" sorusunu cevaplarız.</div>
+    <div><b>Doğru kişiye haber ver</b>Olay kimin işiyse ona; kararı her zaman hekim ya da hemşire verir.</div>
+  </div>
+
+  <div class="legend"><span class="st real">● Gerçek üründe var</span><span class="st proto">● Yalnız prototipte (tıklanabilir)</span><span class="st idea">● Fikir · henüz çizilmedi</span><span class="st no">● Bilerek yapmıyoruz</span></div>
+  <div class="bar" id="f"></div>
+  <div id="list"></div>
+
+  <div class="ask"><b>Senden istenen: kısa cevap yeterli</b>
+    <p style="margin:6px 0 0;color:var(--mute);font-size:13.5px">Kartların sağ üstündeki numaralarla yaz. Örnek:</p>
+    <code>Önce: 3, 7, 12
+Sonra: 5, 9
+İstemiyorum: 20
+Ekle: ...</code></div>
+</div>
+<script>
+// [no, başlık, grup, durum(real|proto|idea|no), kimin işi[], hastane sisteminde, bizim katkımız, veri nereden, neden / not]
+const I = [
+  // Hasta başında
+  [1, "Bakım planı (hemşirelik tanıları)", "Hemşirelik", "proto", ["Hemşire", "Sorumlu hemşire"], "Var: tanı listesi, neden/hedef/faaliyet, vardiya işaretleri", "Tanıyı kayıtlardan ÖNERİRİZ (düşme formu yüksek → düşme riski), hemşire kabul eder; vardiya değerlendirmesi devirde görünür", "Düşme, bası yarası, ağrı formları; vital; oksijen", "Hastane sisteminde hemşire 40+ tanıyı tek tek arıyor. Kayıtlarda zaten görünen riski önermek zamanı kısaltır; karar hemşirede kalır."],
+  [2, "Sıvı izlem ızgarası (saatlik)", "Hemşirelik", "proto", ["Hemşire", "Hekim"], "Var: kategori × saat ızgarası, elle giriş", "Pompadan gelen IV kendiliğinden dolar; yalnız kullanılan satırlar açık; denge ve idrar mL/kg/sa eğilimi", "İnfüzyon pompası, hemşire girişi", "HBYS'de 30 satırın çoğu boş duruyor. Hemşire yalnız ölçtüğünü girer."],
+  [3, "Kateter ve cihaz günleri", "Hemşirelik", "idea", ["Hemşire", "Hekim", "Enfeksiyon kontrol"], "Genelde yok ya da dağınık", "Santral kateter, üriner kateter, entübasyon kaçıncı günde; ayrı sayaçlar hasta başlığında (antibiyotik günü gibi)", "Bakım planı, vücut haritası (kateter kaydı), yatış", "Kaynak gerekiyor: hangi günde ne yapılacağı hastanenin enfeksiyon kontrol protokolünden alınır; biz eşik uydurmayız."],
+  [4, "Vücut haritası (ağrı, yara, kateter)", "Hemşirelik", "proto", ["Hemşire"], "Kısmen: yara formu metin", "Yeri işaretli, fotoğraf izni ayrı, evre eğilimi", "Hemşire girişi", "23.09'da karar verildi, prototipte var."],
+  [5, "Görüntüleme zaman çizelgesi", "Sonuçlar", "idea", ["Hekim"], "Var: tetkik × tarih ızgarası, rapor ve görüntü simgesi, PACS düğmesi", "Aynı tetkikin önceki raporuyla yan yana; 'rapor çıktı, görülmedi' işareti; çekim bekleyen sırası", "Hastane sistemi (radyoloji raporu), PACS bağlantısı", "Görüntüyü biz açmayız, PACS açar. Katkımız: rapor geldiğinde doğru hekime haber ve öncekiyle karşılaştırma."],
+  [6, "Sonuç görüldü takibi", "Sonuçlar", "real", ["Hekim"], "Rapor listede durur, kimin gördüğü belli değil", "Kritik sonuç kime gitti, ne zaman görüldü; görülmezse eskalasyon", "Laboratuvar sonuç mesajı", "Gerçek panelde 'sonuç görülmedi' kutusu var; prototipte bildirim kurallarında."],
+  [7, "Konsültasyon takibi", "Hekim", "idea", ["Hekim", "Konsültan"], "Var: konsültasyon formu dokümanı", "İstendi → görüldü → öneri yazıldı süresi; bekleyen konsültasyon hasta kartında", "Hastane sistemindeki istem ve form zaman damgaları", "Yoğun bakımda konsültasyon beklemek günleri uzatır. Formu yeniden yazmayız, yalnız bekleme süresini gösteririz."],
+  [8, "Günlük izlem notu iskeleti", "Hekim", "idea", ["Hekim"], "Var: 'Yatan hasta izlem notu' serbest metin", "Son 24 saatin vitalleri, skorları, sıvı dengesi, yeni sonuçları not taslağına hazır gelir; hekim düzenler ve hastane sistemine aktarır", "Bizdeki tüm kayıtlar", "Hekim notu HEKİMİNDİR: taslak düzenlenmeden kaydedilmez, sistem yorum cümlesi yazmaz, yalnız ölçülmüş değerleri dizer."],
+  [9, "Epikriz ve transfer özeti hazırlığı", "Hekim", "idea", ["Hekim"], "Var: epikriz belgesi", "Yatış boyunca skor eğilimi, önemli olaylar, cihaz ve kateter günleri tek sayfa; epikrizi hastane sistemi yazar", "Bizdeki kayıtlar", "Epikrizi tekrar yazmayız; hekime eksiksiz bir özet veririz."],
+  [10, "Antibiyotik günü ve gözden geçirme", "Eczane", "real", ["Eczacı", "Hekim"], "Var: başlıkta 'Antibiyotik: 7. gün'", "Gözden geçirme zamanı gelen hastalar listesi, eczacıya haber", "Order (hastane sistemi)", "Gerçek panelde eczane sayfası var."],
+  [11, "Ameliyat sonrası ilk 24 saat", "Hekim", "idea", ["Hekim", "Hemşire"], "Var: ameliyat raporu (serbest metin)", "Ameliyattan gelen hastada saat saat izlem planı ve dren takibi hatırlatması; rapor yalnız bağlantı olarak", "Ameliyat raporu zamanı, dren kaydı", "Sıklıklar hastanenin protokolünden alınır."],
+  // Birim ve hastane
+  [12, "Yatak doluluğu ve yatış bekleyenler", "Birim", "proto", ["Hasta kabul", "Sorumlu hemşire", "Başhekim"], "Var: birim ağacı, yatak listesi", "Oda kartlarında canlı durum, temizlik bitti tek dokunuş, bekleyen yatış eşleşmesi", "Hastane sisteminin yatak ve kabul kayıtları", "Prototipte 'Doluluk' ekranı."],
+  [13, "Hemşire iş yükü", "Birim", "idea", ["Sorumlu hemşire"], "Yok", "Vardiyada hasta başına düşen iş (geciken form, ilaç saati, yüksek riskli hasta) → hasta dağıtımına yardımcı görünüm", "Görevler, riskler", "Bir ölçek seçilmeli ve hastane onaylamalı; biz puan uydurmayız."],
+  [14, "Enfeksiyon kontrol görünümü", "Birim", "idea", ["Enfeksiyon kontrol hemşiresi"], "Dağınık", "İzolasyon odaları, kateter günleri, kültür bekleyenler tek ekranda; hasta adı yetkiye göre", "Yatak (izolasyon), kültür sonuçları, kateter kayıtları", "Yeni bir rol ya da 'işaret' gerektirir (enfeksiyon kontrol). Rol sayısını artırmamak için hemşireye işaret olarak eklenebilir."],
+  [15, "Kamera", "Birim", "proto", ["Hekim", "Sorumlu hemşire"], "Yok", "Bağlantı ekranı, ön koşullar, gerekçeli izleme, mahremiyet perdesi, denetim kaydı", "Hastanenin kamera sistemi (bağlanmadı)", "Hukuki dayanak, politika ve levha olmadan bağlanamaz. Görüntü alarmın yerini tutmaz."],
+  [16, "Cihaz bakım ve kalibrasyon takvimi", "Birim", "proto", ["Biyomedikal"], "Genelde ayrı bir sistemde", "Hangi odada hangi cihaz, bakımı gecikenler, arıza kaydı; hasta adı yok", "Cihaz envanteri, ağ geçidi", "Prototipte 'Cihazlar' ekranı."],
+  [17, "Kalite göstergeleri", "Yönetim", "proto", ["Kalite", "Başhekim"], "Rapor olarak, gecikmeli", "Alarm yanıt süresi, devir imzası, zamanında değerlendirme, düşme ve bası yarası; kişi değil süreç", "Denetim kaydı, alarm zamanları", "Sayılar şimdilik örnek."],
+  [18, "Pilot başlangıç ölçümü ve sonuç raporu", "Yönetim", "idea", ["Başhekim", "Kalite"], "Yok", "Pilottan ÖNCE alarm yanıt süresi gibi ölçüler alınır; pilot sonunda karşılaştırmalı rapor", "Denetim kaydı", "23.09 konseyi: başlangıç ölçümü pilottan önce alınmazsa sonradan 'iyileştirdik' denemez."],
+  // Aile ve iletişim
+  [19, "Aile bilgilendirme kaydı", "İletişim", "idea", ["Hekim", "Sorumlu hemşire"], "Yok ya da not içinde", "Kime, ne zaman, kim bilgi verdi; kamera bilgilendirmesi dahil", "Elle giriş", "Yoğun bakımda en çok sorulan soru: aileye söylendi mi?"],
+  [20, "Hastaya ya da aileye doğrudan bildirim", "İletişim", "no", ["—"], "—", "Bilerek yapmıyoruz", "—", "Klinik bilgi hasta başında hekimden gelir; sistem aileye mesaj atmaz."],
+  [21, "Telefona bildirim", "İletişim", "idea", ["Hekim", "Hemşire", "Hızlı yanıt"], "Yok", "Uygulama kapalıyken kritik haber", "Motor bildirim akışı", "Karar gerekiyor: bildirim hastane dışından geçer, içerikte hasta bilgisi olmamalı. Bugün yalnız uygulama içi ve tarayıcı bildirimi var."],
+  // Bilerek yapmıyoruz
+  [22, "Reçete, ilaç istemi, tetkik istemi yazmak", "Hekim", "no", ["—"], "Var: istem ve reçete menüsü", "Hastane sistemi yapar; biz yalnız gösteririz (Mod 1)", "—", "Aynı işi iki yerde yapmak çift kayıt ve hata demek."],
+  [23, "Tanı koymak, doz önermek", "Hekim", "no", ["—"], "—", "Hiçbir zaman", "—", "Ürünün temel kuralı: kriterler karşılanıyor der, karar hekimindir."],
+];
+const G = ["Hemşirelik", "Sonuçlar", "Hekim", "Eczane", "Birim", "Yönetim", "İletişim"];
+const SL = { real:"Gerçek üründe var", proto:"Prototipte", idea:"Fikir", no:"Bilerek yapmıyoruz" };
+let flt = "";
+function draw() {
+  document.getElementById("f").innerHTML = [["", "Hepsi"], ["idea", "Yalnız fikirler"], ["proto", "Prototipte olanlar"], ["real", "Gerçek üründe"], ["no", "Yapmadıklarımız"]]
+    .map(([k, l]) => `<button class="btn ${flt === k ? "on" : ""}" data-f="${k}">${l}</button>`).join("");
+  document.getElementById("list").innerHTML = G.map(g => { const L = I.filter(x => x[2] === g && (!flt || x[3] === flt)); if (!L.length) return "";
+    return `<h2>${g} <small>${L.length} madde</small></h2><div class="grid">${L.map(([n, t, , st, who, hbys, ours, src, why]) => `<div class="it">
+      <h3><span>${t}</span><span style="display:flex;gap:6px;align-items:center"><span class="st ${st}">${SL[st]}</span><b style="color:var(--mute);font:700 13px Figtree">#${n}</b></span></h3>
+      <div class="who">${who.map(w => `<i>${w}</i>`).join("")}</div>
+      <div class="kv"><span>Hastane sist.</span><div>${hbys}</div><span>Bizim katkı</span><div><b>${ours}</b></div><span>Veri</span><div>${src}</div></div>
+      <details><summary>Neden böyle?</summary><p>${why}</p></details></div>`).join("")}</div>`; }).join("");
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-f]"); if (b) { flt = b.dataset.f; draw(); } if (e.target.id === "th") { const r = document.documentElement; r.dataset.theme = r.dataset.theme === "gun" ? "" : "gun"; } });
+draw();
+</script>
+</body>
+</html>

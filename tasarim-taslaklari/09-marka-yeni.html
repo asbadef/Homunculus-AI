@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marka Karakteri 2</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Sora:wght@400;600;700;800&family=Outfit:wght@400;600;700;800&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --page:#0c0e12; --ink:#eceff4; --mute:#939cab; --line:#232833; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:15px/1.55 Figtree, system-ui, sans-serif; }
+  .wrap { max-width:1240px; margin:0 auto; padding:32px 16px 70px; }
+  h1 { font:800 30px/1.1 Figtree; margin:0 0 10px; }
+  .lead { color:var(--mute); max-width:880px; margin:0; }
+  .lead b { color:var(--ink); }
+  .brief { margin:20px 0 0; display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .brief div { background:#12151b; border:1px solid var(--line); border-radius:14px; padding:12px 14px; font-size:13.5px; color:var(--mute); }
+  .brief b { color:var(--ink); display:block; font-size:14.5px; }
+
+  .board { margin-top:44px; border-radius:26px; overflow:hidden; border:1px solid var(--line); }
+  .bh { padding:34px; display:grid; grid-template-columns:1.1fr 1fr; gap:30px; align-items:center; }
+  .num { font:700 12px Figtree; letter-spacing:.14em; text-transform:uppercase; opacity:.7; }
+  .bh h2 { margin:6px 0 10px; }
+  .pos { font-size:17px; line-height:1.5; margin:0 0 14px; }
+  .kw { display:flex; flex-wrap:wrap; gap:6px; } .kw span { font:600 12px Figtree; padding:4px 10px; border-radius:999px; }
+  .stage { display:flex; flex-direction:column; align-items:center; gap:16px; text-align:center; }
+  .tagl { font:500 14px Inter; opacity:.8; margin-top:6px; }
+  .tagl i { font-style:normal; opacity:.6; }
+  .bb { display:grid; grid-template-columns:repeat(4,1fr); border-top:1px solid; }
+  .cell { padding:20px 22px; border-right:1px solid; min-width:0; } .cell:last-child { border-right:0; }
+  .cell h4 { margin:0 0 10px; font:700 10.5px Figtree; letter-spacing:.12em; text-transform:uppercase; opacity:.65; }
+  .sw { display:flex; gap:6px; } .sw i { flex:1; height:44px; border-radius:8px; }
+  .sw + small { display:block; margin-top:6px; font:11px Inter; opacity:.7; }
+  .voice p { margin:0 0 8px; font-size:14.5px; line-height:1.4; }
+  .voice .az { font-weight:700; }
+  .apps { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; padding:20px 22px 24px; border-top:1px solid; }
+  .x { border-radius:16px; overflow:hidden; min-height:180px; position:relative; padding:20px; }
+  .lbl { position:absolute; left:12px; bottom:9px; font:600 10.5px Figtree; letter-spacing:.06em; text-transform:uppercase; opacity:.6; }
+  .icons { display:flex; gap:14px; align-items:center; justify-content:center; height:100%; min-height:140px; }
+  .verdict { padding:16px 22px 20px; border-top:1px solid; display:grid; grid-template-columns:1fr 1fr; gap:16px; font-size:14px; }
+  .verdict b { display:block; font:700 11px Figtree; letter-spacing:.1em; text-transform:uppercase; margin-bottom:4px; opacity:.7; }
+
+  /* 1 LAMBA */
+  .t1 { background:#141a33; color:#f7f1e3; }
+  .t1 h2, .t1 .wm { font-family:"DM Serif Display", serif; font-weight:400; }
+  .t1 h2 { font-size:46px; line-height:1; } .t1 .wm { font-size:44px; line-height:1; }
+  .t1 .kw span { background:rgba(255,207,122,.14); color:#ffd898; }
+  .t1 .bb, .t1 .cell, .t1 .apps, .t1 .verdict { border-color:rgba(255,255,255,.1); }
+  /* 2 BUTA */
+  .t2 { background:#f5efe3; color:#1a2350; }
+  .t2 h2, .t2 .wm { font-family:Sora; font-weight:800; letter-spacing:-.02em; }
+  .t2 h2 { font-size:44px; line-height:1; color:#1f3a93; } .t2 .wm { font-size:38px; line-height:1; color:#1f3a93; }
+  .t2 .kw span { background:#e7dcc6; }
+  .t2 .bb, .t2 .cell, .t2 .apps, .t2 .verdict { border-color:#e0d3ba; }
+  /* 3 CANLI HASTANE */
+  .t3 { background:#0d3b3a; color:#effaf6; }
+  .t3 h2, .t3 .wm { font-family:Outfit; font-weight:800; letter-spacing:-.02em; }
+  .t3 h2 { font-size:46px; line-height:1; } .t3 .wm { font-size:40px; line-height:1; }
+  .t3 .kw span { background:rgba(94,240,196,.14); color:#8ff5d6; }
+  .t3 .bb, .t3 .cell, .t3 .apps, .t3 .verdict { border-color:rgba(255,255,255,.12); }
+  /* 4 TEK ÇİZGİ */
+  .t4 { background:#faf8f3; color:#15171c; }
+  .t4 h2, .t4 .wm { font-family:"Instrument Serif", serif; font-weight:400; }
+  .t4 h2 { font-size:54px; line-height:1; } .t4 .wm { font-size:50px; line-height:1; }
+  .t4 .kw span { border:1px solid #d9d4c7; }
+  .t4 .bb, .t4 .cell, .t4 .apps, .t4 .verdict { border-color:#e6e1d6; }
+
+  .rec { margin-top:44px; background:#12151b; border:1px solid #2c3444; border-radius:20px; padding:22px 24px; }
+  .rec h2 { margin:0 0 8px; font:800 22px Figtree; }
+  .rec p { color:var(--mute); margin:0 0 10px; max-width:920px; } .rec p b { color:var(--ink); }
+  .rec code { display:block; margin-top:10px; background:#050608; border:1px solid var(--line); color:#9ff3ff; border-radius:10px; padding:12px 14px; font:700 15px monospace; }
+  .note { font-size:12.5px; color:var(--mute); margin-top:14px; }
+
+  @media (max-width:900px) {
+    .brief { grid-template-columns:1fr; }
+    .bh { grid-template-columns:1fr; padding:24px 18px; }
+    .bb { grid-template-columns:1fr 1fr; } .cell { border-bottom:1px solid; }
+    .apps, .verdict { grid-template-columns:1fr; }
+    .bh h2 { font-size:34px !important; } .wm { font-size:32px !important; }
+  }
+  @media (max-width:480px) { .bb { grid-template-columns:1fr; } .cell { border-right:0; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Marka karakteri · yeni tur · Taslak 09</h1>
+  <p class="lead">Bu tur, <b>ne iş yaptığımızdan</b> yola çıktı: servisten yoğun bakıma kadar bütün hastanede hasta başı cihazları dinleyen, kötüleşmeyi erken fark eden ve doğru ekibi çağıran bir sistem. İlk pazar <b>Azerbaycan</b>. İsim sabit: <b>Homunculus</b>. Dört yeni karakter var, her birinde Azerbaycanca ve Türkçe söz yer alıyor.</p>
+  <div class="brief">
+    <div><b>Kime konuşuyoruz</b>Azerbaycan'daki başhekime ve hastane yöneticisine, sistemi her gece kullanacak hemşireye ve hekime.</div>
+    <div><b>Ne hissettirmeli</b>"Bu sistem hastalarımı benimle birlikte izliyor, gece bile." Güven ve rahatlık.</div>
+    <div><b>Neden olmamalı</b>Soğuk bir yazılım şirketi, oyuncak bir uygulama, ya da "yapay zekâ her şeyi bilir" iddiası.</div>
+  </div>
+
+  <!-- ============ 1 · LAMBA ============ -->
+  <section class="board t1">
+    <div class="bh">
+      <div><div class="num">Karakter 1</div><h2>Nöbetin Işığı</h2>
+        <p class="pos">Florence Nightingale geceleri elinde bir lambayla koğuşları dolaşır, hastaları tek tek kontrol ederdi. O lamba bugün bütün dünyada <b>hemşireliğin simgesi</b>. Homunculus da o lambanın bugünkü hâli: <b>gece nöbetinde her yatağa ışık tutan</b> sistem. Her hemşire bu hikâyeyi bilir, anlatmaya gerek bile kalmaz.</p>
+        <div class="kw"><span>koruyucu</span><span>insani</span><span>gece nöbeti</span><span>resim tarzı</span></div></div>
+      <div class="stage">
+        <svg width="190" height="160" viewBox="0 0 200 170" aria-label="Lamba logosu">
+          <defs><radialGradient id="glow1" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffd898" stop-opacity=".75"/><stop offset="1" stop-color="#ffd898" stop-opacity="0"/></radialGradient>
+            <linearGradient id="fl1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6e0"/><stop offset="1" stop-color="#ffb347"/></linearGradient>
+            <linearGradient id="lb1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3d9a4"/><stop offset="1" stop-color="#b8894a"/></linearGradient></defs>
+          <circle cx="150" cy="52" r="52" fill="url(#glow1)"/>
+          <path d="M150 12 C138 30 136 44 150 60 C164 44 162 30 150 12 Z" fill="url(#fl1)"/>
+          <path d="M143 44 h4 l2-6 l3 12 l2-6 h3" fill="none" stroke="#b8561f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M24 118 C24 96 60 86 104 86 C128 86 140 80 146 66 L156 68 C152 92 138 108 116 116 L62 126 C40 128 24 126 24 118 Z" fill="url(#lb1)"/>
+          <path d="M30 104 C8 100 8 128 32 124" fill="none" stroke="#d9b477" stroke-width="7" stroke-linecap="round"/>
+          <ellipse cx="72" cy="132" rx="38" ry="7" fill="#b8894a"/>
+          <path d="M40 104 C70 96 110 96 138 84" fill="none" stroke="#fff3d6" stroke-width="2" opacity=".5"/>
+        </svg>
+        <div><div class="wm">Homunculus</div><div class="tagl">Gecə növbəsinin işığı <i>· Gece nöbetinin ışığı</i></div></div>
+      </div>
+    </div>
+    <div class="bb">
+      <div class="cell"><h4>Renk</h4><div class="sw"><i style="background:#141a33;border:1px solid #2c3560"></i><i style="background:#ffd898"></i><i style="background:#b8894a"></i><i style="background:#f7f1e3"></i></div><small>gece mavisi · lamba ışığı · pirinç · fildişi</small></div>
+      <div class="cell"><h4>Yazı</h4><div style="font:400 30px/1 'DM Serif Display'">DM Serif</div><div style="margin-top:6px;font-size:13px;opacity:.7">Zarif ve sıcak. Gövde metni Inter.</div></div>
+      <div class="cell voice"><h4>Konuşma dili</h4><p class="az">"Siz yorulanda da o oyaqdır."</p><p style="opacity:.75">"Siz yorulduğunuzda da o uyanık."</p></div>
+      <div class="cell"><h4>Logonun hikâyesi</h4><div style="font-size:13.5px;opacity:.85">Nightingale lambası. Alevin içinde tek bir kalp atımı var. Resim ve gravür tarzında çizilebilir, broşde ve yaka kartında çok güzel durur.</div></div>
+    </div>
+    <div class="apps">
+      <div class="x" style="background:#f7f1e3;color:#141a33"><div style="font:700 11px Inter;letter-spacing:.18em;color:#b8894a">TƏQDİMAT · SUNUM</div><div style="font:400 30px/1.1 'DM Serif Display';margin-top:12px">Gecə saat 03:00.<br><i>Homunculus oyaqdır.</i></div><div style="font-size:12px;opacity:.6;margin-top:10px">Gece saat 03:00. Homunculus uyanık.</div></div>
+      <div class="x" style="background:#0e1226"><div class="icons">
+        <svg width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="#141a33"/><circle cx="40" cy="22" r="16" fill="#ffd898" opacity=".25"/><path d="M40 8 C35 15 34 21 40 27 C46 21 45 15 40 8Z" fill="#ffd898"/><path d="M12 44 C12 36 24 33 36 33 C42 33 44 30 46 27 L49 28 C48 36 42 41 34 43 L20 46 C15 47 12 46 12 44Z" fill="#d9b477"/></svg>
+        <svg width="40" height="40" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="#141a33"/><path d="M40 8 C35 15 34 21 40 27 C46 21 45 15 40 8Z" fill="#ffd898"/><path d="M12 44 C12 36 24 33 36 33 C42 33 44 30 46 27 L49 28 C48 36 42 41 34 43 L20 46 C15 47 12 46 12 44Z" fill="#d9b477"/></svg>
+        <svg width="20" height="20" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="#141a33"/><path d="M40 6 C33 15 32 22 40 30 C48 22 47 15 40 6Z" fill="#ffd898"/><path d="M10 46 C10 36 24 33 38 33 L50 28 C48 38 40 44 30 46Z" fill="#d9b477"/></svg></div><span class="lbl" style="color:#f7f1e3">Uygulama simgesi</span></div>
+      <div class="x" style="background:#1c2345"><div style="background:#f7f1e3;color:#141a33;border-radius:12px;padding:12px 14px;width:190px;margin:4px auto 0;box-shadow:0 10px 24px rgba(0,0,0,.4)"><div style="display:flex;gap:8px;align-items:center"><svg width="22" height="22" viewBox="0 0 64 64"><path d="M40 8 C35 15 34 21 40 27 C46 21 45 15 40 8Z" fill="#e0a13a"/><path d="M12 44 C12 36 24 33 36 33 C42 33 44 30 46 27 L49 28 C48 36 42 41 34 43 L20 46 C15 47 12 46 12 44Z" fill="#b8894a"/></svg><b style="font:400 16px 'DM Serif Display'">Homunculus</b></div><div style="font:600 13px Inter;margin-top:10px">Ayşe Demir</div><div style="font-size:11px;opacity:.7">Sorumlu tibb bacısı · Reanimasiya</div></div><span class="lbl" style="color:#f7f1e3">Yaka kartı</span></div>
+    </div>
+    <div class="verdict"><div><b>Kimi kazanır</b>Hemşireleri ve hekimleri, sistemi her gece kullananları. Hikâyesi evrensel, her dilde ve her ülkede çalışır.</div><div><b>Riski</b>"Teknoloji" hissi az. Başhekime rakam da göstermek gerekir. Lamba sarısı uygulamanın içinde alarm sarısıyla karışmamalı, içeride farklı bir ton kullanılır.</div></div>
+  </section>
+
+  <!-- ============ 2 · BUTA ============ -->
+  <section class="board t2">
+    <div class="bh">
+      <div><div class="num">Karakter 2</div><h2>Buta</h2>
+        <p class="pos">Buta, Azerbaycan'ın simgesi: halılarda, çinilerde, paralarda karşınıza çıkar. Anlamı <b>alev, can ve hayat</b>. Homunculus bu simgeyi bir hayat çizgisiyle birleştiriyor. Azerbaycan'daki hastane için "bizden biri" hissi verir. Halı desenleri de markanın resimli dokusu olur.</p>
+        <div class="kw"><span>yerel</span><span>gururlu</span><span>sıcak</span><span>desenli · resim tarzı</span></div></div>
+      <div class="stage">
+        <svg width="170" height="170" viewBox="0 0 200 200" aria-label="Buta logosu">
+          <defs><pattern id="rug" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M8 0 L16 8 L8 16 L0 8Z" fill="none" stroke="#2bb3b1" stroke-width="1.2" opacity=".55"/></pattern>
+            <clipPath id="butaC"><path d="M118 24 C74 30 42 72 50 116 C58 158 104 180 142 160 C174 142 176 100 152 86 C132 74 108 84 110 106 C112 124 134 128 140 114 C130 120 120 114 122 104"/></clipPath></defs>
+          <circle cx="100" cy="100" r="96" fill="#1f3a93"/>
+          <circle cx="100" cy="100" r="86" fill="none" stroke="#e0a526" stroke-width="1.5" stroke-dasharray="3 5"/>
+          <path d="M118 24 C74 30 42 72 50 116 C58 158 104 180 142 160 C174 142 176 100 152 86 C132 74 108 84 110 106 C112 124 134 128 140 114 C130 120 120 114 122 104" fill="#f5efe3"/>
+          <rect x="30" y="20" width="160" height="160" fill="url(#rug)" clip-path="url(#butaC)"/>
+          <path d="M118 24 C74 30 42 72 50 116 C58 158 104 180 142 160 C174 142 176 100 152 86 C132 74 108 84 110 106 C112 124 134 128 140 114" fill="none" stroke="#e0a526" stroke-width="3"/>
+          <path d="M58 130 H80 L88 112 L98 150 L106 124 L112 130 H126" fill="none" stroke="#1f3a93" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div><div class="wm">homunculus</div><div class="tagl" style="color:#1a2350">Hər çarpayı. Hər saniyə. <i>· Her yatak. Her saniye.</i></div></div>
+      </div>
+    </div>
+    <div class="bb">
+      <div class="cell"><h4>Renk</h4><div class="sw"><i style="background:#1f3a93"></i><i style="background:#2bb3b1"></i><i style="background:#e0a526"></i><i style="background:#f5efe3;border:1px solid #dccfb4"></i></div><small>lacivert çini · firuze · safran · halı fildişisi</small></div>
+      <div class="cell"><h4>Yazı</h4><div style="font:800 28px/1 Sora;color:#1f3a93">Sora</div><div style="margin-top:6px;font-size:13px;opacity:.7">Modern ve güçlü. Azerbaycan harflerini (ə, ğ, ş) destekler.</div></div>
+      <div class="cell voice"><h4>Konuşma dili</h4><p class="az">"Həyat xəttini itirmirik."</p><p style="opacity:.75">"Hayat çizgisini kaybetmeyiz."</p></div>
+      <div class="cell"><h4>Logonun hikâyesi</h4><div style="font-size:13.5px;opacity:.85">Buta'nın içinden bir kalp atımı geçiyor. İçi halı deseniyle dolu. Resim, desen ve baskı olarak çok zengin kullanılabilir.</div></div>
+    </div>
+    <div class="apps">
+      <div class="x" style="background:#1f3a93;color:#f5efe3;background-image:repeating-linear-gradient(45deg,rgba(43,179,177,.12) 0 2px,transparent 2px 14px),repeating-linear-gradient(-45deg,rgba(43,179,177,.12) 0 2px,transparent 2px 14px)"><div style="font:700 11px Inter;letter-spacing:.18em;color:#e0a526">TƏQDİMAT · SUNUM</div><div style="font:800 26px/1.15 Sora;margin-top:12px">Reanimasiyada<br>hər çarpayı<br>görünür.</div><div style="font-size:12px;opacity:.7;margin-top:8px">Yoğun bakımda her yatak görünür.</div></div>
+      <div class="x" style="background:#efe6d3"><div class="icons">
+        <svg width="64" height="64" viewBox="0 0 200 200"><rect width="200" height="200" rx="46" fill="#1f3a93"/><path d="M118 34 C78 40 52 76 58 114 C64 150 104 168 138 150 C166 134 168 100 148 88 C132 78 112 88 114 106 C116 122 134 124 138 112" fill="#f5efe3" stroke="#e0a526" stroke-width="5"/><path d="M66 128 H84 L92 110 L100 144 L108 122 H124" fill="none" stroke="#1f3a93" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg width="40" height="40" viewBox="0 0 200 200"><rect width="200" height="200" rx="46" fill="#1f3a93"/><path d="M118 34 C78 40 52 76 58 114 C64 150 104 168 138 150 C166 134 168 100 148 88 C132 78 112 88 114 106 C116 122 134 124 138 112" fill="#f5efe3"/><path d="M66 128 H84 L92 110 L100 144 L108 122 H124" fill="none" stroke="#1f3a93" stroke-width="10" stroke-linecap="round"/></svg>
+        <svg width="20" height="20" viewBox="0 0 200 200"><rect width="200" height="200" rx="46" fill="#1f3a93"/><path d="M118 30 C74 38 48 76 54 116 C60 154 104 172 140 152 C170 134 170 96 148 84 C126 74 110 90 116 108" fill="#f5efe3"/></svg></div><span class="lbl">Uygulama simgesi</span></div>
+      <div class="x" style="background:#f5efe3;border:1px solid #e0d3ba"><div style="font:700 11px Inter;letter-spacing:.18em;opacity:.6">DUVAR · KORİDOR</div><div style="margin-top:14px;border-top:6px solid #1f3a93;border-bottom:6px solid #1f3a93;padding:12px 0;background-image:repeating-linear-gradient(90deg,#e0a526 0 6px,transparent 6px 12px);background-size:100% 3px;background-repeat:no-repeat;background-position:bottom"><b style="font:800 20px Sora;color:#1f3a93">Reanimasiya şöbəsi</b><div style="font-size:12px;opacity:.7">Homunculus ilə izlənilir</div></div></div>
+    </div>
+    <div class="verdict"><div><b>Kimi kazanır</b>Azerbaycan'daki hastaneleri ve karar vericileri. Yerel gurur ve yakınlık demek, rakip yabancı markalardan hemen ayrışır.</div><div><b>Riski</b>Türkiye ya da başka pazarlarda "Azerbaycan markası" gibi okunur. Uluslararası büyümede motif sadeleştirilmeli.</div></div>
+  </section>
+
+  <!-- ============ 3 · CANLI HASTANE ============ -->
+  <section class="board t3">
+    <div class="bh">
+      <div><div class="num">Karakter 3</div><h2>Canlı Hastane</h2>
+        <p class="pos">Bir hastane binasının kesiti düşünün: <b>servis katları ve yoğun bakım katları</b>, her birinde hastalar ve cihazlar. Homunculus bütün binanın nabzını tek yerde tutuyor. Karar verene hitap ediyor: <b>bütün hastanem bir bakışta</b>.</p>
+        <div class="kw"><span>bütünlük</span><span>yönetici bakışı</span><span>modern</span><span>net</span></div></div>
+      <div class="stage">
+        <svg width="190" height="170" viewBox="0 0 200 180" aria-label="Canlı hastane logosu">
+          <defs><filter id="gl3"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+          <path d="M40 30 L100 8 L160 30" fill="none" stroke="#effaf6" stroke-width="5" stroke-linejoin="round"/>
+          
+          <g fill="none" stroke="#effaf6" stroke-width="4"><rect x="40" y="34" width="120" height="136" rx="6"/><path d="M40 61h120M40 88h120M40 115h120M40 142h120"/></g>
+          <g fill="#effaf6" opacity=".55"><rect x="52" y="43" width="10" height="9" rx="2"/><rect x="70" y="43" width="10" height="9" rx="2"/><rect x="88" y="43" width="10" height="9" rx="2"/><rect x="106" y="43" width="10" height="9" rx="2"/><rect x="124" y="43" width="10" height="9" rx="2"/><rect x="142" y="43" width="10" height="9" rx="2"/>
+            <rect x="52" y="124" width="10" height="9" rx="2"/><rect x="70" y="124" width="10" height="9" rx="2"/><rect x="88" y="124" width="10" height="9" rx="2"/><rect x="106" y="124" width="10" height="9" rx="2"/><rect x="124" y="124" width="10" height="9" rx="2"/><rect x="142" y="124" width="10" height="9" rx="2"/>
+            <rect x="52" y="97" width="10" height="9" rx="2"/><rect x="70" y="97" width="10" height="9" rx="2"/><rect x="88" y="97" width="10" height="9" rx="2"/><rect x="106" y="97" width="10" height="9" rx="2"/><rect x="124" y="97" width="10" height="9" rx="2"/><rect x="142" y="97" width="10" height="9" rx="2"/></g>
+          <rect x="42" y="63" width="116" height="23" fill="#5ef0c4" opacity=".14"/>
+          <path d="M22 75 H70 L78 64 L88 86 L96 70 L102 75 H178" fill="none" stroke="#5ef0c4" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#gl3)"/>
+          <rect x="88" y="150" width="24" height="20" fill="#0d3b3a" stroke="#effaf6" stroke-width="4"/>
+        </svg>
+        <div><div class="wm">homunculus</div><div class="tagl">Xəstəxananın nəbzi <i>· Hastanenin nabzı</i></div></div>
+      </div>
+    </div>
+    <div class="bb">
+      <div class="cell"><h4>Renk</h4><div class="sw"><i style="background:#0d3b3a;border:1px solid #1f5c5a"></i><i style="background:#5ef0c4"></i><i style="background:#effaf6"></i><i style="background:#16706b"></i></div><small>derin yeşil · nabız nanesi · beyaz · okyanus</small></div>
+      <div class="cell"><h4>Yazı</h4><div style="font:800 30px/1 Outfit">Outfit</div><div style="margin-top:6px;font-size:13px;opacity:.7">Geometrik ve dost canlısı, okunaklı.</div></div>
+      <div class="cell voice"><h4>Konuşma dili</h4><p class="az">"Bütün xəstəxana. Bir baxışda."</p><p style="opacity:.75">"Bütün hastane. Bir bakışta."</p></div>
+      <div class="cell"><h4>Logonun hikâyesi</h4><div style="font-size:13.5px;opacity:.85">Bina kesiti. Katlardan biri yoğun bakım, oradan bir nabız çizgisi geçiyor ve binadan dışarı taşıyor. Servis ile yoğun bakım bir arada.</div></div>
+    </div>
+    <div class="apps">
+      <div class="x" style="background:#effaf6;color:#0d3b3a"><div style="font:700 11px Inter;letter-spacing:.18em;color:#16706b">TƏQDİMAT · SUNUM</div><div style="font:800 28px/1.1 Outfit;margin-top:12px">5 mərtəbə.<br>212 çarpayı.<br>Bir ekran.</div><div style="font-size:12px;opacity:.6;margin-top:8px">5 kat. 212 yatak. Tek ekran.</div></div>
+      <div class="x" style="background:#0a2e2d"><div class="icons">
+        <svg width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="#0d3b3a"/><rect x="16" y="14" width="32" height="38" rx="3" fill="none" stroke="#effaf6" stroke-width="3"/><path d="M16 24h32M16 42h32" stroke="#effaf6" stroke-width="2.5"/><path d="M8 33 H24 L27 28 L31 38 L34 31 H56" fill="none" stroke="#5ef0c4" stroke-width="3" stroke-linecap="round"/></svg>
+        <svg width="40" height="40" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="#0d3b3a"/><rect x="16" y="14" width="32" height="38" rx="3" fill="none" stroke="#effaf6" stroke-width="3.5"/><path d="M8 33 H24 L27 28 L31 38 L34 31 H56" fill="none" stroke="#5ef0c4" stroke-width="4" stroke-linecap="round"/></svg>
+        <svg width="20" height="20" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="#0d3b3a"/><rect x="16" y="12" width="32" height="42" rx="3" fill="none" stroke="#effaf6" stroke-width="6"/><path d="M6 33 H56" stroke="#5ef0c4" stroke-width="7"/></svg></div><span class="lbl">Uygulama simgesi</span></div>
+      <div class="x" style="background:#0f4644"><div style="font:700 11px Inter;letter-spacing:.18em;opacity:.6">YÖNETİCİ EKRANI</div>
+        <div style="margin-top:12px;display:grid;gap:5px;font:600 12px Outfit">
+          <div style="display:flex;justify-content:space-between;background:rgba(255,255,255,.06);padding:5px 8px;border-radius:6px"><span>5 · Cərrahiyyə</span><span>24/28</span></div>
+          <div style="display:flex;justify-content:space-between;background:rgba(94,240,196,.16);padding:5px 8px;border-radius:6px;color:#8ff5d6"><span>4 · Reanimasiya</span><span>11/12 · 1 kritik</span></div>
+          <div style="display:flex;justify-content:space-between;background:rgba(255,255,255,.06);padding:5px 8px;border-radius:6px"><span>3 · Daxili xəstəliklər</span><span>31/36</span></div>
+          <div style="display:flex;justify-content:space-between;background:rgba(255,255,255,.06);padding:5px 8px;border-radius:6px"><span>2 · Kardiologiya</span><span>19/22</span></div></div></div>
+    </div>
+    <div class="verdict"><div><b>Kimi kazanır</b>Başhekimi ve hastane yöneticisini, yani satın alma kararını veren kişiyi. "Sadece yoğun bakım değil, bütün hastane" mesajı net.</div><div><b>Riski</b>Bina simgesi sektörde sık kullanılıyor. Nabız çizgisi olmadan sıradan kalır, ayrışması en zor karakter bu.</div></div>
+  </section>
+
+  <!-- ============ 4 · TEK ÇİZGİ ============ -->
+  <section class="board t4">
+    <div class="bh">
+      <div><div class="num">Karakter 4</div><h2>Tek Çizgi</h2>
+        <p class="pos">Tek bir kesintisiz çizgi hastane zemininden başlıyor, bir yatağa dönüşüyor, yatağın üstünde bir kalp atımına dönüşüyor ve bir noktada bitiyor. Mesajı: <b>hastayla bağımız hiç kopmuyor</b>. Elle çizilmiş gibi, sanat eseri tadında, sade ve pahalı bir his veriyor.</p>
+        <div class="kw"><span>zarif</span><span>sürekli bakım</span><span>el çizimi · resim tarzı</span><span>premium</span></div></div>
+      <div class="stage">
+        <svg width="240" height="130" viewBox="0 0 260 140" aria-label="Tek çizgi logosu">
+          <path d="M8 118 H44 V78 H58 C62 66 76 64 84 72 H182 V118 M44 104 H182 M84 72 V60 H104 L112 44 L122 90 L132 34 L142 72 L148 60 H206" fill="none" stroke="#15171c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M182 118 H222" fill="none" stroke="#15171c" stroke-width="4" stroke-linecap="round"/>
+          <circle cx="222" cy="60" r="9" fill="#2d5bd7"/><path d="M206 60 H213" stroke="#15171c" stroke-width="4" stroke-linecap="round"/>
+        </svg>
+        <div><div class="wm">Homunculus</div><div class="tagl" style="color:#15171c">Həyəcan siqnalından əvvəl <i>· Alarmdan önce</i></div></div>
+      </div>
+    </div>
+    <div class="bb">
+      <div class="cell"><h4>Renk</h4><div class="sw"><i style="background:#faf8f3;border:1px solid #ddd6c6"></i><i style="background:#15171c"></i><i style="background:#2d5bd7"></i><i style="background:#c9d6f7"></i></div><small>kâğıt · mürekkep · kobalt · açık kobalt</small></div>
+      <div class="cell"><h4>Yazı</h4><div style="font:400 34px/1 'Instrument Serif'">Instrument <i>Serif</i></div><div style="margin-top:6px;font-size:13px;opacity:.7">Dergi zarafetinde. Gövde metni Inter.</div></div>
+      <div class="cell voice"><h4>Konuşma dili</h4><p class="az">"Xəstə ilə bağımız heç qırılmır."</p><p style="opacity:.75">"Hastayla bağımız hiç kopmaz."</p></div>
+      <div class="cell"><h4>Logonun hikâyesi</h4><div style="font-size:13.5px;opacity:.85">Bina, yatak, nabız ve nokta tek bir çizgide birleşiyor. Mavi nokta, sistemin fark ettiği an. Sadece siyah çizgiyle bile her yere basılabilir.</div></div>
+    </div>
+    <div class="apps">
+      <div class="x" style="background:#15171c;color:#faf8f3"><div style="font:700 11px Inter;letter-spacing:.18em;color:#8fa8ec">TƏQDİMAT · SUNUM</div><div style="font:400 34px/1.05 'Instrument Serif';margin-top:12px">Həyəcan siqnalından <i>əvvəl.</i></div><div style="font-size:12px;opacity:.6;margin-top:8px">Alarmdan önce.</div></div>
+      <div class="x" style="background:#f1eee6"><div class="icons">
+        <svg width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="#15171c"/><path d="M10 44 H20 V34 H44 V44 M20 40 H44 M26 34 V28 H30 L33 20 L36 38 L39 28 H46" fill="none" stroke="#faf8f3" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="28" r="3.5" fill="#6d8ff0"/></svg>
+        <svg width="40" height="40" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="#15171c"/><path d="M10 44 H20 V34 H44 V44 M26 34 V28 H30 L33 20 L36 38 L39 28 H46" fill="none" stroke="#faf8f3" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="28" r="4" fill="#6d8ff0"/></svg>
+        <svg width="20" height="20" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="#15171c"/><path d="M12 36 H26 L31 20 L37 44 L41 32 H50" fill="none" stroke="#faf8f3" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span class="lbl">Uygulama simgesi</span></div>
+      <div class="x" style="background:#faf8f3;border:1px solid #e6e1d6"><div style="font:700 11px Inter;letter-spacing:.18em;opacity:.6">RAPOR KAPAĞI</div><svg width="100%" height="50" viewBox="0 0 260 50" preserveAspectRatio="none" style="margin-top:14px"><path d="M0 40 H90 L100 26 L110 46 L120 14 L130 40 H260" fill="none" stroke="#15171c" stroke-width="2"/></svg><div style="font:400 22px 'Instrument Serif';margin-top:6px">Aylıq keyfiyyət hesabatı</div><div style="font-size:12px;opacity:.6">Aylık kalite raporu · Sentyabr 2026</div></div>
+    </div>
+    <div class="verdict"><div><b>Kimi kazanır</b>Herkesi biraz, özellikle özel hastaneleri ve premium segmenti. Uluslararası büyümeye en uygun karakter.</div><div><b>Riski</b>Çok sade, ilk bakışta "ne yaptığı" hemen anlaşılmayabilir. Çizim kalitesi son hâlde çok iyi olmalı, iyi bir illüstratör gerekir.</div></div>
+  </section>
+
+  <div class="rec">
+    <h2>Benim önerim</h2>
+    <p>Azerbaycan önceliği için güçlü aday <b>2 · Buta</b>: yerel, sıcak, rakiplerden hemen ayrışıyor ve istediğin resim tarzı desen zenginliği var. Ama uzun vadede Türkiye ve başka pazarlar da hedefse, <b>1 · Nöbetin Işığı</b> evrensel ve hemşireyi kalbinden yakalıyor.</p>
+    <p>Karışım da olur: <b>logo ve hikâye 1'den, Azerbaycan'daki kampanya ve desenler 2'den.</b></p>
+    <code>Karakter: 1   (ya da 2 / 3 / 4, ya da "1 + 2")</code>
+    <div class="note">Not: Azerbaycanca cümleleri ben yazdım. Yayına çıkmadan önce mutlaka yerel birine okutulmalı.</div>
+  </div>
+</div>
+</body>
+</html>
