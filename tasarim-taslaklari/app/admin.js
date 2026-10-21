@@ -1209,6 +1209,8 @@
     const özel = { "Donör":["hastaFark", "sgkKatilim", "doktorsuz"], "Check-up":["sgkKatilim"], "Kontrol":["sgkKatilim"], "Preop":["sgkKatilim", "yatisOnceSgk"], "Laboratuvar":["sgkKatilim"], "Radyoloji":["sgkKatilim"] };
     H.data.protokolTipleri = base.map((ad, i) => ({ id:"pt" + (i + 1), ad, kisa:ad, gelis:"Ayaktan", bolum:"", mesajKonu:ad, flags:F(özel[ad]) }));
   }
+  H.ensurePtip = ptipSeed;   // diğer modüller protokol tiplerine erişmeden önce çağırır
+  H.ptipLabel = (key) => (PTIP_FLAGS.find(x => x[0] === key) || [key, key])[1];
   const ptipOzet = (fl) => PTIP_FLAGS.filter(([k]) => fl && fl[k]).map(([, l]) => l).slice(0, 3).join(" · ") || "—";
   function tabPtip(body) {
     ptipSeed(); const ALL = H.data.protokolTipleri;

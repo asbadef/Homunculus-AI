@@ -62,7 +62,9 @@
     const lockBar = `<div class="ist-lock ${pOpen ? "" : "closed"}">${ic(pOpen ? "ok" : "lock") || ""}<span>Protokol: <b>${pOpen ? "Açık" : (p.faturaKesildi ? "Fatura kesildi · kilitli" : "Kapalı · kilitli")}</b>${pOpen ? "" : " · yeni işlem/hizmet eklenemez"}</span>${pCan ? `<button class="btn sm" data-protokat>${pOpen ? "Protokolü kapat" : "Protokolü aç"}</button>` : ""}</div>`;
     const payOk = H.ozelOnay(p), payCan = H.can("admission") || H.can("vezne_donem");
     const payBar = payOk ? "" : `<div class="ist-lock closed">${ic("lock") || ""}<span>Özel onay: <b>Ödeme alınmadı · işlem/hizmet eklenemez</b></span>${payCan ? `<button class="btn sm" data-ozelonay>Özel onay ver (ödeme alındı)</button>` : ""}</div>`;
-    return `<div class="ist" data-ist-root>${lockBar}${payBar}<div class="ist-launch">${grp}</div>
+    const pt = H.protoTipOf(p), ptFlags = pt && pt.flags ? Object.keys(pt.flags).filter(k => pt.flags[k]) : [];
+    const ptBar = pt ? `<div class="ist-lock"><span>${ic("tag") || ic("key") || ""} Protokol tipi: <b>${esc(pt.ad)}</b>${ptFlags.length ? " · " + ptFlags.map(k => esc(H.ptipLabel ? H.ptipLabel(k) : k)).join(" · ") : ""}</span></div>` : "";
+    return `<div class="ist" data-ist-root>${lockBar}${payBar}${ptBar}<div class="ist-launch">${grp}</div>
       <div class="ist-sec"><div class="ist-hd"><h5>Hazır paketler (şablonlar)</h5>${scopeTabs}</div>${tplRow}</div>
       <div class="ist-sec ist-hd"><h5>Bu başvurudaki istemler</h5><span class="r" style="display:flex;gap:8px">${list.length ? `<button class="btn sm" data-tplsave>${ic("save") || ""} Paket olarak kaydet</button>` : ""}<button class="btn sm" data-isthist>${ic("clock") || ""} İstem tarihçesi</button></span></div>${rows}
       <p class="adm-sub" style="margin-top:8px">İstemler bu ekranda tutulur; gerçek HBYS / laboratuvar / radyoloji (PACS) / eczane bağlantısını ayrı ekip kurar.</p></div>`;
