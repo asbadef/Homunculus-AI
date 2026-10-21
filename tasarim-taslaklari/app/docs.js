@@ -451,7 +451,7 @@
   const newDoc = (p, type, o = {}) => { const d = Object.assign({ id:"doc" + (++seq), pid:p.id, type, at:H.nowFull(), by:me(), status:"taslak", sec:{}, addenda:[], savedAt:null, dirty:false }, o);
     TYPES[type].secs.forEach(([k]) => { if (d.sec[k] == null) d.sec[k] = ""; });
     if (TYPES[type].secs.some(([k]) => k === "fizik") && !d.vit) { const a = vitalAt(p); d.vit = Object.assign({}, p.v); d.vitSrc = a; d.vitEd = {}; }
-    if (type === "muayene" && !d.mua) d.mua = { tedavi:[] };
+    if (type === "muayene" && !d.mua) { d.mua = { tedavi:[] }; d.ozg = { aliskanlik:[], rows:{}, meslek:"", egitim:"", medeni:"" }; d.soyg = { rel:{}, akraba:false }; }
     H.data.docs.push(d); return d; };
 
   // Yeni izlem notunda son 24 saat hazır gelir (#8). Her bölümün sistemden gelen metni d.auto'da tutulur:
@@ -525,6 +525,34 @@
       <div class="dc-live hidden" data-dc-live="${k}"><span class="dc-dot"></span><b>Dinliyorum…</b><span class="dc-mode"></span><button class="btn sm" data-dc-stop>${H.icon("x")}Durdur</button><div class="dc-int"></div></div></div>`;
   }
 
+  // Özgeçmiş: yapısal (alışkanlıklar + Var/Yok+açıklama satırları + meslek/eğitim/medeni). Referans ekran.
+  const OZG_ROWS = [["hastalik", "Kronik hastalık"], ["ilac", "Sürekli ilaç"], ["alerji", "Alerji"], ["ameliyat", "Geçirilmiş ameliyat"], ["asi", "Aşı"], ["cihaz", "Vücuttaki cihaz"], ["kan", "Kan transfüzyonu"], ["ozel", "Özel durum"]];
+  const OZG_ALIS = ["Sigara", "Alkol", "Madde bağımlılığı"];
+  const OZG_EGITIM = ["Okur-yazar değil", "İlköğretim", "Lise", "Üniversite", "Lisansüstü"];
+  function ozgWidget(d, label, edit) {
+    const O = d.ozg || {}, al = O.aliskanlik || [], R = O.rows || {};
+    if (!edit) { const parts = [al.length ? "Alışkanlık: " + al.join(", ") : "", ...OZG_ROWS.filter(([k]) => (R[k] || {}).v === "Var").map(([k, l]) => l + ((R[k] || {}).not ? " (" + R[k].not + ")" : "")), O.meslek ? "Meslek: " + O.meslek : "", O.medeni ? O.medeni : ""].filter(Boolean);
+      return `<div class="dc-sec dc-ozg"><div class="dc-sh"><b>${esc(label)}</b></div><div class="dc-ro">${parts.length ? esc(parts.join(" · ")) : "<span class='mute'>Özellik yok</span>"}</div></div>`; }
+    return `<div class="dc-sec dc-ozg"><div class="dc-sh"><b>${esc(label)}</b></div>
+      <div class="ozg-al"><span class="dc-ml">Alışkanlıklar</span><div class="dc-segs">${OZG_ALIS.map(a => `<button class="dc-seg sm${al.includes(a) ? " on" : ""}" data-dc-ozgal="${esc(a)}">${esc(a)}</button>`).join("")}</div></div>
+      <div class="ozg-rows">${OZG_ROWS.map(([k, l]) => { const r = R[k] || {}; return `<div class="ozg-row"><span class="ozg-rl">${esc(l)}</span><div class="dc-segs">${["Var", "Yok"].map(v => `<button class="dc-seg sm${r.v === v ? " on" : ""}" data-dc-ozgv="${k}" data-mv="${v}">${v}</button>`).join("")}</div><input class="dc-min" data-dc-ozgn="${k}" placeholder="Açıklama" value="${esc(r.not || "")}"></div>`; }).join("")}</div>
+      <div class="ozg-bottom"><input class="dc-min" data-dc-ozgf="meslek" placeholder="Meslek" value="${esc(O.meslek || "")}">
+        <select class="dc-min" data-dc-ozgf="egitim"><option value="">Eğitim</option>${OZG_EGITIM.map(e => `<option${O.egitim === e ? " selected" : ""}>${esc(e)}</option>`).join("")}</select>
+        <span class="dc-ml">Medeni</span><div class="dc-segs">${["Bekar", "Evli", "Belirtilmedi"].map(v => `<button class="dc-seg sm${O.medeni === v ? " on" : ""}" data-dc-ozgm="${v}">${v}</button>`).join("")}</div></div></div>`;
+  }
+  // Soygeçmiş: yakın × hastalık tablosu + anne-baba akraba. Referans ekran.
+  const SOYG_REL = ["Anne", "Baba", "Kardeş", "Çocuk", "Diğer"];
+  const SOYG_COND = ["Diyabet", "Guatr", "Hipertansiyon", "Kan hastalığı", "Koroner arter", "Malignite"];
+  function soygWidget(d, label, edit) {
+    const S = d.soyg || {}, rel = S.rel || {};
+    if (!edit) { const parts = SOYG_REL.filter(r => rel[r] && Object.values(rel[r]).some(Boolean)).map(r => r + ": " + SOYG_COND.filter(c => (rel[r] || {})[c]).join(", "));
+      if (S.akraba) parts.push("Anne-baba akraba");
+      return `<div class="dc-sec dc-soyg"><div class="dc-sh"><b>${esc(label)}</b></div><div class="dc-ro">${parts.length ? esc(parts.join(" · ")) : "<span class='mute'>Özellik yok</span>"}</div></div>`; }
+    return `<div class="dc-sec dc-soyg"><div class="dc-sh"><b>${esc(label)}</b></div>
+      <div class="tw"><table class="t soyg-t"><thead><tr><th style="width:90px">Yakın</th>${SOYG_COND.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${SOYG_REL.map(r => `<tr><td><b>${esc(r)}</b></td>${SOYG_COND.map(c => `<td style="text-align:center"><input type="checkbox" data-dc-soyg="${esc(r)}" data-cond="${esc(c)}"${((rel[r] || {})[c]) ? " checked" : ""}></td>`).join("")}</tr>`).join("")}</tbody></table></div>
+      <label class="dc-chk" style="margin-top:8px"><input type="checkbox" data-dc-soygak ${S.akraba ? "checked" : ""}> Anne ile baba akraba</label></div>`;
+  }
+
   function editorHtml(p, d) {
     if (!d) return `<div class="dc-ed"><div class="dc-empty">Soldan bir belge seçin ya da yeni not başlatın.</div></div>`;
     const T = TYPES[d.type], edit = canEdit(d), epi = d.type === "epikriz", sys = isSys(d), U = ui(p.id);
@@ -541,7 +569,11 @@
     if (d.type === "izlem" && d.status === "taslak") infos.push(`<div class="dc-info">${H.icon("activity")}<div>${t("dc_info_izlem")}</div></div>`);
     if (edit) infos.push(DICT_NOTE);
     else if (d.status === "taslak") infos.push(`<div class="dc-info">${H.icon("eye")}<div>Bu taslağı yalnız görüntüleyebilirsiniz; ${d.type === "hemsire" ? "hemşirelik notunu hemşire" : "hekim belgesini hekim"} düzenler.</div></div>`);
-    let body = T.secs.map(([k, l]) => secHtml(p, d, k, sLabel(l), edit)).join("");
+    let body = T.secs.map(([k, l]) => {
+      if (d.type === "muayene" && k === "ozgecmis") return ozgWidget(d, sLabel(l), edit);
+      if (d.type === "muayene" && k === "soygecmis") return soygWidget(d, sLabel(l), edit);
+      return secHtml(p, d, k, sLabel(l), edit);
+    }).join("");
     const dxList = d.dx || [];
     const taniW = (edit && isDoc() && d.type !== "transfer") ? `<div class="dc-sec dc-tani"><div class="dc-sh"><b>Tanı (ICD)</b><span class="r"><button class="btn g sm" data-dc-dxadd>${H.icon("plus")}Tanı ekle</button></span></div>
       <div class="dc-dxw">${dxList.length ? dxList.map((x, i) => `<span class="dc-dxchip${x[3] ? " ana" : ""}"><b class="mono">${esc(x[0])}</b> ${esc(x[1])}${x[2] ? ` <small class="dc-dxtip">${esc(x[2])}</small>` : ""}${x[3] ? ` <small class="dc-dxana">Ana tanı</small>` : ""}<button data-dc-dxrm="${i}" title="Kaldır" aria-label="Kaldır">×</button></span>`).join("") : `<span class="mute" style="font-size:12px">Henüz tanı seçilmedi. “Tanı ekle” ile ICD listesinden arayıp seçin.</span>`}</div></div>` : "";
@@ -727,6 +759,11 @@
       const mua = T.closest("[data-dc-mua]"); if (mua) { if (!canEdit(d)) return; d.mua = d.mua || {}; const f = mua.dataset.dcMua; d.mua[f] = d.mua[f] === mua.dataset.mv ? "" : mua.dataset.mv; markDirty(root, d); rerender(); return; }
       const muat = T.closest("[data-dc-muat]"); if (muat) { if (!canEdit(d)) return; d.mua = d.mua || {}; const arr = d.mua.tedavi = d.mua.tedavi || [], v = muat.dataset.dcMuat, i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); markDirty(root, d); rerender(); return; }
       const muac = T.closest("[data-dc-muac]"); if (muac) { if (!canEdit(d)) return; d.mua = d.mua || {}; d.mua[muac.dataset.dcMuac] = muac.checked; markDirty(root, d); return; }
+      const ozgal = T.closest("[data-dc-ozgal]"); if (ozgal) { if (!canEdit(d)) return; d.ozg = d.ozg || {}; const a = d.ozg.aliskanlik = d.ozg.aliskanlik || [], v = ozgal.dataset.dcOzgal, i = a.indexOf(v); if (i >= 0) a.splice(i, 1); else a.push(v); markDirty(root, d); rerender(); return; }
+      const ozgv = T.closest("[data-dc-ozgv]"); if (ozgv) { if (!canEdit(d)) return; d.ozg = d.ozg || {}; d.ozg.rows = d.ozg.rows || {}; const r = d.ozg.rows[ozgv.dataset.dcOzgv] = d.ozg.rows[ozgv.dataset.dcOzgv] || {}; r.v = r.v === ozgv.dataset.mv ? "" : ozgv.dataset.mv; markDirty(root, d); rerender(); return; }
+      const ozgm = T.closest("[data-dc-ozgm]"); if (ozgm) { if (!canEdit(d)) return; d.ozg = d.ozg || {}; d.ozg.medeni = d.ozg.medeni === ozgm.dataset.dcOzgm ? "" : ozgm.dataset.dcOzgm; markDirty(root, d); rerender(); return; }
+      const soyg = T.closest("[data-dc-soyg]"); if (soyg) { if (!canEdit(d)) return; d.soyg = d.soyg || {}; d.soyg.rel = d.soyg.rel || {}; const rel = d.soyg.rel[soyg.dataset.dcSoyg] = d.soyg.rel[soyg.dataset.dcSoyg] || {}; rel[soyg.dataset.cond] = soyg.checked; markDirty(root, d); return; }
+      const soygak = T.closest("[data-dc-soygak]"); if (soygak) { if (!canEdit(d)) return; d.soyg = d.soyg || {}; d.soyg.akraba = soygak.checked; markDirty(root, d); return; }
       if (T.closest("[data-dc-page]")) { ui(p.id).page = !ui(p.id).page; rerender(); return; }
       if (T.closest("[data-dc-send]")) { if (!canSend(d)) return; d.sentAt = H.nowFull();
         H.log(`${TYPES[d.type].name} hastane kaydına gönderildi`, `${bedNo(p)} · ${d.status}`); H.toast(tp("dc_sent_tpl", { d:tName(d.type), t:d.sentAt })); rerender(); return; }
@@ -764,6 +801,8 @@
       const T = e.target, d = cur(); if (!d) return;
       if (T.matches("[data-dc-ta]")) { setSec(d, T.dataset.dcTa, T.value); if (T.dataset.dcTa !== "ek") markDirty(root, d); return; }
       if (T.matches("[data-dc-muain]")) { d.mua = d.mua || {}; d.mua[T.dataset.dcMuain] = T.value; markDirty(root, d); return; }
+      if (T.matches("[data-dc-ozgn]")) { d.ozg = d.ozg || {}; d.ozg.rows = d.ozg.rows || {}; (d.ozg.rows[T.dataset.dcOzgn] = d.ozg.rows[T.dataset.dcOzgn] || {}).not = T.value; markDirty(root, d); return; }
+      if (T.matches("[data-dc-ozgf]")) { d.ozg = d.ozg || {}; d.ozg[T.dataset.dcOzgf] = T.value; markDirty(root, d); return; }
       if (T.matches("[data-dc-v]")) { const k = T.dataset.dcV; d.vit[k] = T.value; d.vitEd = d.vitEd || {}; d.vitEd[k] = String(T.value) !== String(p.v[k]);
         const f = T.closest("[data-dc-vf]"); if (f) f.classList.toggle("ed", d.vitEd[k]); markDirty(root, d); }
     };
