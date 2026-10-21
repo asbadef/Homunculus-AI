@@ -496,11 +496,19 @@
     if (nv && !nv.closest(".content")) { e.preventDefault(); closeMenus(); const params = nv.dataset.tab ? { tab:nv.dataset.tab } : {}; return H.go(nv.dataset.nav, params); }
     if (!e.target.closest(".menu")) closeMenus();
   });
-  // alt menü: üzerine gelince aç (fixed konum, ray kaydırılsa da kırpılmasın)
+  // alt menü: üzerine gelince aç (fixed konum, ray kaydırılsa da kırpılmasın).
+  // Fare tetikleyiciden menüye geçerken aradaki boşlukta menü kapanmasın diye kısa bir
+  // gecikmeyle kapatılır; fare bu süre içinde menüye/tetikleyiciye dönerse kapanma iptal olur.
+  let flyHideT = null;
   document.addEventListener("mouseover", e => {
     const ri = e.target.closest("[data-fly]"); const fly = e.target.closest(".fly");
-    document.querySelectorAll(".fly").forEach(f => { if (f !== fly && (!ri || f.dataset.flyfor !== ri.dataset.fly)) f.style.display = "none"; });
-    if (ri) { const f = document.querySelector(`.fly[data-flyfor="${ri.dataset.fly}"]`); if (f) { const r = ri.getBoundingClientRect(); f.style.display = "block"; f.style.left = (r.right - 4) + "px"; f.style.top = Math.min(innerHeight - f.offsetHeight - 8, r.top - 4) + "px"; } }
+    if (ri || fly) {
+      if (flyHideT) { clearTimeout(flyHideT); flyHideT = null; }
+      document.querySelectorAll(".fly").forEach(f => { if (f !== fly && (!ri || f.dataset.flyfor !== ri.dataset.fly)) f.style.display = "none"; });
+      if (ri) { const f = document.querySelector(`.fly[data-flyfor="${ri.dataset.fly}"]`); if (f) { const r = ri.getBoundingClientRect(); f.style.display = "block"; f.style.left = (r.right - 4) + "px"; f.style.top = Math.min(innerHeight - f.offsetHeight - 8, r.top - 4) + "px"; } }
+    } else if (!flyHideT) {
+      flyHideT = setTimeout(() => { document.querySelectorAll(".fly").forEach(f => f.style.display = "none"); flyHideT = null; }, 280);
+    }
   });
   // arama: yatak no ya da ad
   document.addEventListener("keydown", e => {
