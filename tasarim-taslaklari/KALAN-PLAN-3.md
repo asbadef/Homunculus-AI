@@ -21,5 +21,14 @@ Kendi kodlarımız/isimlerimiz · Azerbaycan muadili (SAMHI/TABIB) · her özell
 - **L9. Yazdır çıktıları menüsü:** Epikriz, Hasta barkod, Kabul bilgi formu, Muayene formu, Onam formu, Refakatçi formu, Hizmet dökümü, Taahütname, Tetkik istem, Proforma, Protokol barkod, SGK hizmet dökümü, Patoloji istek, Poliklinik rıza, Order raporu… düzenli tek menüde.
 - **L10. İşlem Havuzu sağ-tık:** Doktor/Tarih/Tutar/Paket/Yeniden fiyatlandır/Durum (bekleyene at, iptal, fatura kesilmeyecek)/Özel onay/Yazdır/Diğer/Seçim.
 
+## Faz M — Vezne derinliği + rol/yetki bağlama (sahibin verdiği)
+- **M0. Her özellik bir role/yetkiye bağlı** (çapraz ilke): admin'de rol → yetki. Örn. **Kampanya oluşturma** yetkisi olan rol kampanyayı oluşturur; **vezne** yalnız oluşturulmuş kampanyayı **seçer**. Roller sahibin listesinden.
+- **M1. Vezne Kasası / Dönem:** Vezne çalışmaya başlarken **banko** (Yatan/Estetik/Pediatri/Preop/Eczane/Ofis… kasası) + **dönem** seçer; tüm işlemleri o dönem+banko altında kaydedilir. Dönem **Aç / Kapat / Devir Al**. Ödemeler **kart/nakit/havale** olarak o banko altında takip edilir.
+- **M2. Fiyat Verme:** bölüm-doktor + SGK/sigorta + kampanya/indirim seçip hizmet/malzeme/lab/radyoloji ekleyerek **hasta/SGK/ÖSS/AK/toplam** fiyat; Teklifler.
+- **M3. Kampanyalar:** kampanya tanımı (ad, tip, uygulama tipi, tarih, geliş/protokol/kurum/bölüm/doktor/yaş/cinsiyet kapsamı, kalemler=sabit fiyat/formül, hasta grupları). Yetkili rol oluşturur.
+- **M4. GFK Takip:** protokollerin fatura durumu (Hasta faturası kesilmiş / Kurum faturası kesilmiş / Provizyonu alınmamış…) + filtre; fatura kesildi/kesilmedi kontrolü.
+- **M5. Evrak Takip:** fatura evrak teslim (veznede/teslim edildi/medikal muhasebede/iade) + sağ-tık (teslim et, geri al, tarihçe).
+- **M6. Sağ Vezne 360 / İş Havuzu paneli:** Hasta/Randevu arama, Son hastalar, Reçete listesi, Onay bekleyen indirim/iade, Medula, Toplu fatura, Protokol listesi, Fiyat teklifleri…
+
 ## Not
 Bu faz uzun; parça parça yapılıp commit'lenecek. Sağ panel "Vezne 360" en görünür parça; L1/L2 (kabul formu + admin seçenekleri) önce, çünkü diğerleri buna bağlı.
