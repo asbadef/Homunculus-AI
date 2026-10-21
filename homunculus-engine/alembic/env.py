@@ -23,6 +23,7 @@ import homunculus.tenant.models  # noqa: F401
 import homunculus.admission.models  # noqa: F401
 import homunculus.escalation.models  # noqa: F401
 import homunculus.security_audit  # noqa: F401
+import homunculus.permissions.models  # noqa: F401
 
 config = context.config
 
