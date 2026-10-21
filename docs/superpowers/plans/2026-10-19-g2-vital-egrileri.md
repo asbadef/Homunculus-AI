@@ -8,9 +8,9 @@
 
 **Tech Stack:** Python 3.12 and 3.14, FastAPI, SQLAlchemy/psycopg2 (Postgres) and sqlite3, pytest; React 18, Vite, Vitest + Testing Library (`fireEvent`; no user-event), Tailwind on the live token classes, inline SVG (no chart library).
 
-**Spec (authoritative):** `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. Where the code made the spec's letter impossible or unsafe, this plan departs from it; every departure is in the table below with its file and line, and is an open item for the user. **2026-10-20:** the user approved X1–X19 and chose explicit clearing for O4 — Task 14a and Task 14's clear; X21 was found while amending (X20 is kept for the thinning departure the Task 2 review found, which Task 17 adds from the controller's open-items list). **Second amendment, 2026-10-20:** Task 3b (the gateways refuse NaN/±inf), Task 4's two changes (non-finite readings skipped; the marks' read bounded by the window and flagged — X22), and Task 8's strings as the Task 8 quality review corrected them (lane commit `f082251`), mirrored in every later task that quotes them. **Third, 2026-10-20:** for the tasks the lanes have done, the plan now IS their code — Tasks 1–4 and 3b as `feat/g2v-be` has them (head `bd8afda`), Tasks 6–10 as `feat/g2v-dash` has them (head `339c3f2`), review follow-ups included (X23, X24); Task 11's card edits are rebased on the reviewed card and Task 12's box carries the lane's `Note`; Task 12's legend says MAP has no NEWS2 band, that ▲ is a first detection (O17) and when the marks' read stopped at its limit; Task 14a refuses non-finite bounds. **Fourth, 2026-10-20:** the backend lane's last commits mirrored (Tasks 4, 5 and 14a as `e933ca1` has them — X25) and the dashboard lane's Task 11 (`4ecbc11` — X26); Tasks 12–15 rebased on it; Task 12 settles the review's chart items — value labels at the nearest round step (d3's thresholds), no finer than the data is measured and never past the data, time labels anchored to the edge they would cross, MAP's hollow dots filled with the dialog's own ground, and every mark at an instant named in the readout. **Fifth, 2026-10-20:** Task 12 mirrored to the dashboard lane's `a877057` (X27; its geometry, chart and their tests now written whole); Task 13 rebuilt on it — the keyboard steps over instants (two readings at one instant are one stop), the axis, the readout and the table share `trendText.js`, a mark beside a reading carries its own time when that reads differently, and the dialog opens with focus on the pressed window option; Tasks 14–15 re-checked on it. **Sixth, 2026-10-20:** Task 13 mirrored to the dashboard lane's `372e781` (X28 — the keyboard chart an application — X29 — the table carries the legend's notes — X30 — a MAP read at another minute keeps its own time — and the review's minors); its files written whole; Tasks 14–17 re-checked against it, their anchors unchanged. **Seventh, 2026-10-20:** Task 14 mirrored to the dashboard lane's `432712e` (commits `56456a9`, `16e87ef`, `e9eab88`, `432712e`: X31 — the form is the patient's and the opening's it was opened for — X32 — what Save will do is said beside Save — X33 — a held submit takes focus to the first wrong field — X34 — the form notices a set that changed under it, the client half of O3 — and the review's minors); its form, test and box written whole; Task 15's sweep names the form by its title with the bed; Tasks 15–17 re-checked against it (one anchor changed: the sweep's dialog name). O12 is now visible — every save shows the toast that overclaims — and carries a recommendation.
+**Spec (authoritative):** `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. Where the code made the spec's letter impossible or unsafe, this plan departs from it; every departure is in the table below with its file and line, and is an open item for the user. **2026-10-20:** the user approved X1–X19 and chose explicit clearing for O4 — Task 14a and Task 14's clear; X21 was found while amending (X20 is kept for the thinning departure the Task 2 review found, which Task 17 adds from the controller's open-items list). **Second amendment, 2026-10-20:** Task 3b (the gateways refuse NaN/±inf), Task 4's two changes (non-finite readings skipped; the marks' read bounded by the window and flagged — X22), and Task 8's strings as the Task 8 quality review corrected them (lane commit `f082251`), mirrored in every later task that quotes them. **Third, 2026-10-20:** for the tasks the lanes have done, the plan now IS their code — Tasks 1–4 and 3b as `feat/g2v-be` has them (head `bd8afda`), Tasks 6–10 as `feat/g2v-dash` has them (head `339c3f2`), review follow-ups included (X23, X24); Task 11's card edits are rebased on the reviewed card and Task 12's box carries the lane's `Note`; Task 12's legend says MAP has no NEWS2 band, that ▲ is a first detection (O17) and when the marks' read stopped at its limit; Task 14a refuses non-finite bounds. **Fourth, 2026-10-20:** the backend lane's last commits mirrored (Tasks 4, 5 and 14a as `e933ca1` has them — X25) and the dashboard lane's Task 11 (`4ecbc11` — X26); Tasks 12–15 rebased on it; Task 12 settles the review's chart items — value labels at the nearest round step (d3's thresholds), no finer than the data is measured and never past the data, time labels anchored to the edge they would cross, MAP's hollow dots filled with the dialog's own ground, and every mark at an instant named in the readout. **Fifth, 2026-10-20:** Task 12 mirrored to the dashboard lane's `a877057` (X27; its geometry, chart and their tests now written whole); Task 13 rebuilt on it — the keyboard steps over instants (two readings at one instant are one stop), the axis, the readout and the table share `trendText.js`, a mark beside a reading carries its own time when that reads differently, and the dialog opens with focus on the pressed window option; Tasks 14–15 re-checked on it. **Sixth, 2026-10-20:** Task 13 mirrored to the dashboard lane's `372e781` (X28 — the keyboard chart an application — X29 — the table carries the legend's notes — X30 — a MAP read at another minute keeps its own time — and the review's minors); its files written whole; Tasks 14–17 re-checked against it, their anchors unchanged. **Seventh, 2026-10-20:** Task 14 mirrored to the dashboard lane's `432712e` (commits `56456a9`, `16e87ef`, `e9eab88`, `432712e`: X31 — the form is the patient's and the opening's it was opened for — X32 — what Save will do is said beside Save — X33 — a held submit takes focus to the first wrong field — X34 — the form notices a set that changed under it, the client half of O3 — and the review's minors); its form, test and box written whole; Task 15's sweep names the form by its title with the bed; Tasks 15–17 re-checked against it (one anchor changed: the sweep's dialog name). O12 is now visible — every save shows the toast that overclaims — and carries a recommendation. **Eighth, 2026-10-21:** the lanes are merged on this branch (`5c1758d`, `cfa903b`) and Tasks 15 and 16 are committed (`d8419e4`, `59e011a`, `e1549c7`, `649af49`); Tasks 15–16 now ARE that code — the sweep reads `aria-roledescription` and reaches the pressure dialog, its table, the truncation note and the form's clear sentence; `replay.py` refuses `--token`, times out and says why a refusal came; `rebased()` anchors on the latest event and deep-copies. The walk ran (Task 16, 2026-10-21): Step 7 line for line, Step 8 passed except the checks that need a person (O25). X20 joins the table; acceptance 2's max is a gen-2 GC pause, not a cold start; Task 17 now carries every departure, open item, the deploy order (O24) and the walk's outcome.
 
-**How the numbers in this plan were obtained.** All seventeen tasks were implemented, in this order, in the worktree while the plan was written, and every red, every green and every count below is what was printed; the tree was then restored to `b6ed65d` and only this file was committed. The O4 amendment (Task 14a, Task 14's clear) and then the second amendment (Task 3b, Task 4, the review's strings) were implemented the same way on top of all seventeen on 2026-10-20, and every suite re-run; the third pass (the lanes' code mirrored into Tasks 1–4, 3b and 6–10, Tasks 11–17 rebased on it) was verified by replaying the whole plan into the worktree and running every suite on that replay; a count marked *derived* is the measured one minus a later task's measured delta. The verified implementation is kept beside the per-task files as `/c/tmp/homunculus-plans/g2v/reference.patch` — a cross-check, not the authority: build from the tasks.
+**How the numbers in this plan were obtained.** All seventeen tasks were implemented, in this order, in the worktree while the plan was written, and every red, every green and every count below is what was printed; the tree was then restored to `b6ed65d` and only this file was committed. The O4 amendment (Task 14a, Task 14's clear) and then the second amendment (Task 3b, Task 4, the review's strings) were implemented the same way on top of all seventeen on 2026-10-20, and every suite re-run; the third pass (the lanes' code mirrored into Tasks 1–4, 3b and 6–10, Tasks 11–17 rebased on it) was verified by replaying the whole plan into the worktree and running every suite on that replay; a count marked *derived* is the measured one minus a later task's measured delta. The verified implementation is kept beside the per-task files as `/c/tmp/homunculus-plans/g2v/reference.patch` — a cross-check, not the authority: build from the tasks. Since the eighth pass the code is on this branch: the plan's replay of Tasks 1–16 is byte for byte the branch at `649af49` (all 61 code files), and `reference.patch` is `git diff b6ed65d 649af49 -- . ':!docs'`.
 
 ---
 
@@ -37,6 +37,7 @@
 | X17 | §6 the form "on the kit's Modal, Field, Button"; prefill "from `bands.own_normal` of the current response" | The engine REPLACES the whole set with what is sent. | The button is offered only once the trends have answered and while they are readable: the form must open on the set it replaces. |
 | X18 | — | `refusal.js` is `src/live/screens/admin/refusal.js`, not `src/live/refusal.js`. | The form imports `mayHaveLanded` from there (the one rule). |
 | X19 | — | `src/reachable.test.js` fails on any module `main.jsx` cannot reach. | The dashboard is built top-down: each task wires the module it creates (Task 9 wires the box before any card exists). |
+| X20 | §4: thinning — "the window is cut into 500 equal buckets" | `thin(series, max_points)` — the spec's own §5.2 signature, which has no window parameter — cuts the time span from the window's first reading to its last. Every guarantee holds (the cap, first / last / minimum / maximum per slice, time order); the only effect is finer slices when the readings cover part of the window (the Task 2 spec review, 2026-10-20). | No code change; Task 17 adds the sentence to spec §4. |
 | X21 | §3.3: the save's toast "Hastanın normali kaydedildi; motor yeniden değerlendirdi" | `PUT /clinical/{id}/profile` (api/app.py:608–640) sets the profile, audits it and republishes the board; it re-scores nothing — the standing alerts are the last reading's until the next one (`Engine.ingest`, pipeline.py:51). The trends answer does re-read the profile (the own-normal band and pill). Found while amending for O4, 2026-10-20. | A save keeps the spec's sentence (Task 8, unchanged — open item O12); since Task 14 it is shown after every save, so the overclaim is visible — O12 recommends rewording it now, with `{subject}`, and an engine re-judge as a follow-up. A clear, new with the amendment, says only what is true: the ranges are deleted and the next reading is judged without them (Task 14). |
 | X22 | §4 the response shape; §4 "markers.alarm are the patient's audited alert events" | `records(…, since=, limit=)` returns the OLDEST rows at or after `since` (ORDER BY id); `AckStore.prune` (api/ackstore.py:28–33) drops the `first_seen` stamp when an alert clears, so a flapping alert writes a row each time it comes back — ≈ 30/h at one reading a minute, ≈ 2 160 in 72 h. Readings replayed from the audit (`rehydrate`) pass no gateway, so a NaN/±inf from before Task 3b can sit in `PatientState`. Found by the Task 2 and Task 3 quality reviews, 2026-10-20. | Task 4: the marks' read takes up to 5000 rows and the answer gains `markers_truncated` (additive); a non-finite reading is never in `points`, `total_points` or `latest`. Task 3b closes the two gateways. |
 | X23 | §6 `useTrends`: "on a new measurement … every 60 s while READY and visible" | The plan's hook superseded every read in flight on any trigger — a new measurement, the tick, a wake, a reload — so at Stage B's rates a chart could never fill. Found by the Task 9 quality review, 2026-10-20. | The lane's hook (Task 9, commit `dac5051`): a read is discarded only on a patient, window or key change, on leaving READY and on unmount; a same-key trigger during a read queues ONE more read when it settles; the timer sleeps while the page is hidden; `reload()` reads only while READY; the unreadable line is a warn `Note`. Return shape unchanged. |
@@ -85,12 +86,12 @@ If tasks are merged in another order, a total is the base plus the deltas of the
 | 14a | 2126 / 650 | — | `test_api_patient_profile.py` 27 → **56**; `test_trends.py` 29 → **30** |
 | 14 | — | 89 / 2384 | `BaselineForm.test.jsx` **39** (new); PatientScreen 58 → **70** |
 | 15 | — | 89 / 2385 | `rawKeys.test.jsx` 6 → **7** |
-| 16 | 2130 / 650 | — | `test_scenario_rebase.py` **4** (new) |
+| 16 | 2139 / 650 | — | `test_scenario_rebase.py` **13** (new) |
 | 17 | — | — | docs only |
 
-Measured: the base; backend after 16 and dashboard after 15 (the whole replay, 2026-10-20); the dashboard after 6, 7, 8, 9, 10, 11, 12, 13 and 14 at the lane's commits (`950176d`, `e2afede`, `f082251`, `dac5051`, `339c3f2`, `4ecbc11`, `a877057`, `372e781`, `432712e` — each the row minus 3, Task 5's `apiErrors` tests, which the dashboard lane does not carry). The other rows are the per-file counts summed. Tasks 1–5, 3b, 14a and 6–14 are the lanes' code as reviewed (their follow-up commits included), so these are the counts the lanes have.
+Measured: the base; backend after 16 and dashboard after 15 (the whole replay, 2026-10-20; again on the branch on 2026-10-21 — backend 2126 / 650 at `d8419e4`, 2139 / 650 at `649af49`, dashboard 89 / 2385 at both); the dashboard after 6, 7, 8, 9, 10, 11, 12, 13 and 14 at the lane's commits (`950176d`, `e2afede`, `f082251`, `dac5051`, `339c3f2`, `4ecbc11`, `a877057`, `372e781`, `432712e` — each the row minus 3, Task 5's `apiErrors` tests, which the dashboard lane does not carry). The other rows are the per-file counts summed. Tasks 1–5, 3b, 14a and 6–14 are the lanes' code as reviewed (their follow-up commits included), so these are the counts the lanes have.
 
-Backend arithmetic: 14 + 17 + 15 + 9 + 29 + (26 + 3 + 2) + 30 + 4 = **149** passed and **6** skipped over the base. Dashboard: 3 + 7 + 208 + 0 + 22 + 25 + 85 + 36 + 35 + 51 + 1 = **473** tests and 8 files.
+Backend arithmetic: 14 + 17 + 15 + 9 + 29 + (26 + 3 + 2) + 30 + 13 = **158** passed and **6** skipped over the base. Dashboard: 3 + 7 + 208 + 0 + 22 + 25 + 85 + 36 + 35 + 51 + 1 = **473** tests and 8 files.
 
 ---
 
@@ -11825,10 +11826,10 @@ red: BaselineForm import unresolved; PatientScreen 10 failed | 60 passed (70) (n
 Spec §8 and §12 (acceptance 1, 2, 4). `rawKeys.test.jsx` renders every built screen and checks no raw key reaches a reader — but the dialog, its table and the form open only on a click, so the sweep never saw them. It gains a trends answer that reaches every card state and an anchor test that opens all three. Then every gate this slice touches: the dashboard suite and build, the backend suite without and with the database, the new files on Python 3.14, and acceptance 2's timing.
 
 **Files:**
-- Modify: `dashboard/src/live/rawKeys.test.jsx`
+- Modify: `dashboard/src/live/rawKeys.test.jsx`; `dashboard/src/live/screens/patient/trends/BaselineForm.jsx` (one comment)
 - Uses (not in the repo): `/c/tmp/homunculus-plans/g2v/trends_timing.py`
 
-- [ ] **Step 1: The fixture and the stub.** Four Edits in `dashboard/src/live/rawKeys.test.jsx`.
+- [ ] **Step 1: The fixture and the stub.** Five Edits in `dashboard/src/live/rawKeys.test.jsx`, and one comment in `BaselineForm.jsx`.
 
 (a) Replace:
 
@@ -11865,7 +11866,7 @@ const TRENDS = trends(FIXTURE_ID, [
   channel("sbp", [point(30, 118, 0)]),
   channel("map", [point(30, 80)]),
   channel("temperature", [point(90, 37.9, 0), point(30, 38.2, 1)], { thinned: true, total_points: 2400 }),
-], { markers: [marker(45, "alarm"), marker(20, "antibiotic")] });
+], { markers: [marker(45, "alarm"), marker(20, "antibiotic")], markers_truncated: true });
 
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 ```
@@ -11917,11 +11918,32 @@ with:
     expect(screen.getByRole("table")).toHaveTextContent("siqnal: news2");
     offenders.push(...rawKeys(document.body));
     await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); await settle(); });
+    // The two-series pressure card: its series labels, the table's channel column and the legend's
+    // "MAP is not scored" line, which no single-series card reaches.
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Sistolik AT · MAP: böyük qrafiki aç/ })); await settle(); });
+    expect(screen.getByRole("dialog")).toHaveTextContent("MAP NEWS2-də qiymətləndirilmir");      // trendsLegendNoBand
+    expect(screen.getByRole("dialog")).toHaveTextContent("işarələrin hamısı oxunmadı");          // trendsLegendMarksTruncated
+    offenders.push(...rawKeys(document.body));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Cədvəl" })); await settle(); });
+    expect(screen.getByRole("table")).toHaveTextContent("Kanal");                       // trendsColChannel
+    offenders.push(...rawKeys(document.body));
+    await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); await settle(); });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Bədən hərarəti: böyük qrafiki aç/ })); await settle(); });
     expect(screen.getByRole("dialog")).toHaveTextContent("Bədən hərarəti seyrəldildi: 2400 nöqtədən 2");
+    offenders.push(...rawKeys(document.body));
     await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); await settle(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Xəstənin norması…" })); await settle(); });
-    expect(screen.getByRole("dialog", { name: "Xəstənin norması · REA-01 · 2" })).toHaveTextContent("Boş saxlanılan aralıq silinir.");
+    const formName = "Xəstənin norması · REA-01 · 2";
+    expect(screen.getByRole("dialog", { name: formName })).toHaveTextContent("Boş saxlanılan aralıq silinir.");
+    offenders.push(...rawKeys(document.body));
+    // Every row emptied over a charted set is a clear, and the footer says so beside Save.
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: "Nəbz alt" }), { target: { value: "" } });
+      fireEvent.change(screen.getByRole("textbox", { name: "Nəbz üst" }), { target: { value: "" } });
+      await settle();
+    });
+    expect(screen.getByRole("dialog", { name: formName })).toHaveTextContent("Bütün sətirlər boşdur: «Yadda saxla»"); // baselineClearsAll
     offenders.push(...rawKeys(document.body));
     expect(offenders).toEqual([]);
     act(() => { mounted.board.clear(); mounted.shadow.clear(); });
@@ -11932,9 +11954,36 @@ with:
 
 (`PERMS` is the whole catalogue, so `clinical.chart` is in it and the form's button is drawn. The form's title names the bed — X31 — so the sweep finds the dialog as "Xəstənin norması · REA-01 · 2".)
 
+(e) The attributes the sweep reads gain `aria-roledescription`, where the keyboard chart's `patient.trendsChartRole` lives (X28) — replace:
+
+```jsx
+const LABELS = ["aria-label", "aria-description", "title", "placeholder", "alt"];
+```
+
+with:
+
+```jsx
+const LABELS = ["aria-label", "aria-description", "aria-roledescription", "title", "placeholder", "alt"];
+```
+
+(f) And one comment in `dashboard/src/live/screens/patient/trends/BaselineForm.jsx` — no code change: `tried` stays true once set, so after any earlier submit a form left with nothing to send says so at once. Replace:
+
+```jsx
+      {/* Said once, in this order of weight. "Nothing to send" only after a submit was held (Save pressed, or
+          Enter in a field): a screen reader hears nothing from an Enter that did nothing otherwise. */}
+```
+
+with:
+
+```jsx
+      {/* Said once, in this order of weight. "Nothing to send" only once a submit has been tried (Save pressed,
+          or Enter in a field): a screen reader hears nothing from an Enter that did nothing otherwise. `tried`
+          stays true once set, so after any earlier submit, a form left with nothing to send says so at once. */}
+```
+
 - [ ] **Step 2: Run the sweep.** `npx vitest run src/live/rawKeys.test.jsx 2>&1 | grep -E "Tests "` → `Tests  7 passed (7)`.
 
-- [ ] **Step 3: Prove the net bites** (then put it back). Edit `trends/TrendCard.jsx`: replace `t("patient.trendsSingle")` with `t("patient.trendsSingel")`, and run the sweep again. Expected — three nets catch it: `[i18n] "patient.trendsSingel" has no az text — showing the key.`; `× … every screen this build has renders its texts …` with `patient (/patients/S-001) → patient.trendsSingel`; `× … the trend charts' keys resolve …` (its `tək ölçmə` is now the raw key); `× … names no key the dictionaries do not have …` with `screens\patient\trends\TrendCard.jsx → patient.trendsSingel (az, tr, ru, en)`. Edit it back to `t("patient.trendsSingle")` and re-run: `Tests  7 passed (7)`. **Nothing of this step is committed.**
+- [ ] **Step 3: Prove the net bites** (then put it back). Edit `trends/TrendCard.jsx`: replace `t("patient.trendsSingle")` with `t("patient.trendsSingel")`, and run the sweep again. Expected — three nets catch it: `[i18n] "patient.trendsSingel" has no az text — showing the key.`; `× … every screen this build has renders its texts …` with `patient (/patients/S-001) → patient.trendsSingel`; `× … the trend charts' keys resolve …` (its `tək ölçmə` is now the raw key); `× … names no key the dictionaries do not have …` with `screens\patient\trends\TrendCard.jsx → patient.trendsSingel (az, tr, ru, en)`. Edit it back to `t("patient.trendsSingle")` and re-run: `Tests  7 passed (7)`. A second probe, for the attribute (e) adds: in `trends/TrendModal.jsx` replace `t("patient.trendsChartRole")` with `t("patient.trendsChartRoel")` — of the rendering sweeps only the anchor test catches it (`expected [ 'patient.trendsChartRoel', …(2) ] to deeply equal []`; the route sweep never opens the dialog), beside the static net's `screens\patient\trends\TrendModal.jsx → patient.trendsChartRoel (az, tr, ru, en)`; put it back → `Tests  7 passed (7)`. **Nothing of this step is committed.**
 
 - [ ] **Step 4: The dashboard gate.** The suite: **89 files / 2385 tests** (measured); the build: `built in`, `precache  20 entries`, no `larger than 500 kB`. Then, by hand, read the dashboard part of `git diff b6ed65d --stat`: every new file under `src/live/screens/patient/trends/` is near the ~250-line guide or under it — `TrendModal.jsx` 225, `BaselineForm.jsx` 224, `trendGeometry.js` 277 (one pure module, a little over) — while four tests are larger: `TrendModal.test.jsx` 607, `BaselineForm.test.jsx` 405, `trendGeometry.test.js` 260, `TrendChart.test.jsx` 237 (the dialog's and the form's tests are candidates to split — O23); `PatientScreen.test.jsx`, older than the slice, is 887 after it.
 
@@ -11944,7 +11993,7 @@ with:
 cd /c/tmp/g2-vital/homunculus-engine
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -1
 ```
-Expected: `2126 passed, 650 skipped` (≈ 100–145 s; *derived*). (2130 once Task 16 has landed — measured.)
+Expected: `2126 passed, 650 skipped` (≈ 100–145 s; measured at `d8419e4`, 2026-10-21). (`2139 passed, 650 skipped` once Task 16 has landed — measured at `649af49`, 1 min 45 s.)
 
 - [ ] **Step 6: The backend with Postgres, in five parts** (each under the 10-minute call limit; one at a time — they share `homunculus_test_g2v` and its advisory lock):
 
@@ -11973,7 +12022,7 @@ cd /c/tmp/g2-vital/homunculus-engine
 DB=postgresql+asyncpg://homunculus:homunculus@localhost:55432/homunculus_test_g2v
 TEST_DATABASE_URL=$DB PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q $(ls tests/test_[s-z]*.py) 2>&1 | tail -1
 ```
-Expected (measured with the whole slice, every amendment and both lanes' review follow-ups in place, 2026-10-20): `205 passed` (4–6 min); `674 passed` (5–9 min — Task 14a's 29 and `test_audit_since.py`'s 21 are here; together the two were one 846-test part that ran 8 min 44 s on 2026-10-19 and 14–15 min on 2026-10-20, hence the split); `517 passed, 1 skipped` (1 min — Task 3b's 9 are here); `1028 passed, 7 skipped` (1 min 34 s – 2 min 12 s); `344 passed` before Task 16, `348 passed` after it (`test_trends.py`'s 30, `test_trends_api.py`'s 26, `test_timeline_thin.py`'s 17; 2 min 20 s – 3 min 48 s). Total **2768 passed, 8 skipped** at this task (base 2617 / 8 + 151; *derived*), **2772 / 8** after Task 16 (measured). `grep -v` keeps `test_infinity_vm_pilot.py` out of the third part: never let a glob pick it up.
+Expected (measured with the whole slice, every amendment and both lanes' review follow-ups in place, 2026-10-20): `205 passed` (4–6 min); `674 passed` (5–9 min — Task 14a's 29 and `test_audit_since.py`'s 21 are here; together the two were one 846-test part that ran 8 min 44 s on 2026-10-19 and 14–15 min on 2026-10-20, hence the split); `517 passed, 1 skipped` (1 min — Task 3b's 9 are here); `1028 passed, 7 skipped` (1 min 34 s – 2 min 12 s); `344 passed` before Task 16, `357 passed` after it (`test_trends.py`'s 30, `test_trends_api.py`'s 26, `test_timeline_thin.py`'s 17, and Task 16's `test_scenario_rebase.py` 13; 2 min 20 s – 3 min 48 s). Total **2768 passed, 8 skipped** at this task (base 2617 / 8 + 151; measured at `d8419e4`, 2026-10-21 — part 2 reported 53 444 s of wall time because the machine slept mid-run; the count is right), **2781 / 8** after Task 16 (part 5 measured at `649af49`; parts 1–4 run nothing of Task 16). `grep -v` keeps `test_infinity_vm_pilot.py` out of the third part: never let a glob pick it up.
 
 - [ ] **Step 7: The slice's files on Python 3.14.**
 
@@ -11982,7 +12031,7 @@ cd /c/tmp/g2-vital/homunculus-engine
 TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:55432/homunculus_test_g2v PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 \
   /c/tmp/g115-py314/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_news2_bands.py tests/rules/test_news2.py tests/test_timeline_thin.py tests/test_audit_since.py tests/test_audit_postgres.py tests/test_gateway_hl7.py tests/test_gateway_fhir.py tests/test_trends.py tests/test_trends_api.py tests/test_infinity_shadow_isolation.py tests/test_board_permissions.py tests/test_api_patient_profile.py tests/test_rehydrate.py 2>&1 | tail -1
 ```
-Expected: `349 passed` (14 + 65 + 17 + 21 + 11 + 18 + 10 + 30 + 26 + 18 + 57 + 56 + 6; Task 16 adds `test_scenario_rebase.py`'s 4 → 353, measured with it in the list).
+Expected: `349 passed` (14 + 65 + 17 + 21 + 11 + 18 + 10 + 30 + 26 + 18 + 57 + 56 + 6; Task 16 adds `test_scenario_rebase.py`'s 13 → 362, measured at `649af49` with it in the list).
 
 - [ ] **Step 8: Acceptance 2 — the 72-hour window answers in under 300 ms.**
 
@@ -11990,26 +12039,28 @@ Expected: `349 passed` (14 + 65 + 17 + 21 + 11 + 18 + 10 + 30 + 26 + 18 + 57 + 5
 cd /c/tmp/g2-vital/homunculus-engine
 PYTHONIOENCODING=utf-8 PYTHONPATH=src /c/tmp/f7-py312/venv/Scripts/python.exe /c/tmp/homunculus-plans/g2v/trends_timing.py 2>&1 | tail -1
 ```
-Expected: `observations 864, points served 858, median 4.0 ms, max 4.5 ms` (± the machine; the bound is 300 ms). The script feeds 72 h of synthetic spot checks (six channels every 30 min) through `/ingest` of an in-process app and times ten `GET /patients/S-001/trends?hours=72`. The 5 s half of acceptance 2 is Task 2's `test_a_desaturation_survives_three_days_of_five_second_data`.
+Expected: `observations 864, points served 858, requests 100: p50 4.3 ms, p95 5.0 ms, max 30.8 ms` (± the machine — over seven runs on 2026-10-21: p50 4.2–4.8 ms, p95 4.7–8.7 ms, max 28.7–49.7 ms; the bound is 300 ms). **The max is one full (gen-2) garbage collection landing inside a request** — the Task 15 review found it on the 9th, and `gc.callbacks` shows the same — not a cold first request: a `gc.collect()` before the loop only moves it (to the 93rd of 100; ten requests then miss it, max ≈ 5.5 ms). The server pays the same pause, so the script has no warm-up: ≈ 30 ms, a gen-2 GC pause the server also pays; well inside the 300 ms bound. The script feeds 72 h of synthetic spot checks (six channels every 30 min) through `/ingest` of an in-process app and times 100 `GET /patients/S-001/trends?hours=72` (ten until 2026-10-21: median 4.4 ms, max ≈ 29–33 ms at `d8419e4`). The 5 s half of acceptance 2 is Task 2's `test_a_desaturation_survives_three_days_of_five_second_data`.
 
 - [ ] **Step 9: Commit.**
 
 ```bash
 cd /c/tmp/g2-vital
-git add dashboard/src/live/rawKeys.test.jsx
+git add dashboard/src/live/rawKeys.test.jsx dashboard/src/live/screens/patient/trends/BaselineForm.jsx
 git status --short && git diff --cached --stat
-git commit -m "test(i18n): the raw-key sweep reaches the trend cards, the big chart, its table and the form" -m "rawKeys.test.jsx stubs patientTrends with an answer reaching every card state and opens the dialog, the table and the form, which the route sweep never saw. Gates at this commit: dashboard 88 / 2042, build clean; backend 2070 / 648 without the DB, 2710 / 8 with it (four parts); the slice's files 239 on 3.14; the 72 h window in ~4 ms." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+git commit -m "test(i18n): the raw-key sweep reaches the trend cards, the big chart, its table and the form" -m "rawKeys.test.jsx stubs patientTrends with an answer reaching every card state (markers_truncated included) and opens the dialog, the pressure dialog and their tables, the temperature dialog and the form, emptied to its clear sentence, which the route sweep never saw; aria-roledescription joins the attributes read. BaselineForm.jsx: one comment reworded, no code change. Gates at this commit: dashboard 89 / 2385, build clean; backend 2126 / 650 without the DB, 2768 / 8 with it (five parts); the slice's files 349 on 3.14; the 72 h window: p50 ~4 ms, max ~30 ms (one gen-2 GC pause; bound 300 ms)." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
 
 ### Task 16: A replay the charts can draw, and the walk on the local stack
 
+**Done on the branch** (commits `e1549c7` and `649af49`, the Task 16 review's fixes included: `allow_abbrev=False`, so `--token SECRET` is refused rather than read as an abbreviation of `--token-env` — the secret had become a variable name and the server answered 401 with no hint — and a test that proves it by behaviour; one stderr note naming an unset variable, never a value; `urlopen` times out after 15 s; an `HTTPError` prints `error: <endpoint> answered <code>: <detail | no detail>` and exits 1; `rebased()` anchors on `max(ts)`, deep-copies each resource, reads a naive timestamp as UTC; every `effectiveDateTime` asserted); the blocks below are that code. **The walk ran on 2026-10-21, 09:14–09:50 Baku**, on the local `g2v` stack with the synthetic accounts, Step 8 driven by a headless Chrome: Step 7 matched the expected engine lines exactly; every Step 8 item passed except the ones that need a person — NVDA (focus mode on the chart, the readout once per move, the table in browse mode while rows insert), MAP's ring against a dot by eye, the 72 h time labels at `--fs` 1.12 — which are the user's (O25). The stack was left up for that pass; Step 9 comes after it.
+
 Spec §8 (end to end) and §12 acceptance 3–4, with X11. Code first: `loader.rebased(events, end)` moves a scenario so its last event lands at `end`, every gap kept; `scripts/replay.py` gains `--now`, `--url` and `--token-env` (the token from the environment variable it names, never from the command line). Then the walk — the steps a person runs, or an agent with a browser, on a local Docker stack with synthetic accounts and synthetic patients.
 
 **Files:**
 - Create: `homunculus-engine/tests/test_scenario_rebase.py`
-- Modify: `homunculus-engine/src/homunculus/scenarios/loader.py`, `homunculus-engine/scripts/replay.py` (Write, whole)
+- Modify (Write, whole): `homunculus-engine/src/homunculus/scenarios/loader.py`, `homunculus-engine/scripts/replay.py`
 - Uses (not in the repo): `/c/tmp/homunculus-plans/g2v/read_trends.py`; G1-15's synthetic stack files `/c/tmp/g115plan/stack/{local.env, compose.g115.yml}` (if missing, recreate them exactly as `/c/tmp/homunculus-plans/2026-10-14-g1-15-uctan-uca-ve-vm.md` A0 Step 2 lists)
 
 - [ ] **Step 1: The test** — Write `homunculus-engine/tests/test_scenario_rebase.py`:
@@ -12019,11 +12070,18 @@ Spec §8 (end to end) and §12 acceptance 3–4, with X11. Code first: `loader.r
 
 The scenarios are written at fixed dates (2026-07-14, 2026-09-08) and the charts' window ends at the
 server's now, so an unmoved replay into a local stack draws an empty chart. Moved, every gap between
-two events is kept, only the dates change. Synthetic data only, like the scenarios themselves.
+two events is kept, only the dates change. Also `scripts/replay.py`, which does the moving: its token
+comes from the environment, never its command line. Synthetic data only, like the scenarios themselves.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import email.message
+import importlib.util
+import io
+import json
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -12034,6 +12092,13 @@ from homunculus.scenarios.loader import load_scenario, rebased
 SCEN = Path(homunculus.scenarios.__file__).parent
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "replay.py"
 END = datetime(2026, 10, 19, 9, 0, tzinfo=timezone.utc)
+TOKEN_VAR = "REPLAY_TEST_TOKEN"
+SECRET = "synthetic-secret-value"
+
+
+def gaps(events):
+    ordered = sorted(ts for ts, _ in events)
+    return [b - a for a, b in zip(ordered, ordered[1:])]
 
 
 def test_the_last_event_lands_at_the_end_and_every_gap_is_kept():
@@ -12043,13 +12108,41 @@ def test_the_last_event_lands_at_the_end_and_every_gap_is_kept():
     assert [b[0] - a[0] for a, b in zip(moved, moved[1:])] == [b[0] - a[0] for a, b in zip(events, events[1:])]
 
 
-def test_the_resource_carries_the_moved_instant_and_the_original_is_untouched():
+def test_every_resource_carries_its_moved_instant_and_the_original_is_untouched():
     events = load_scenario(SCEN / "septic_shock.yaml")
-    before = events[0][1]["effectiveDateTime"]
+    before = [resource["effectiveDateTime"] for _, resource in events]
     moved = rebased(events, END)
-    assert moved[0][1]["effectiveDateTime"] == moved[0][0].isoformat()
-    assert events[0][1]["effectiveDateTime"] == before
+    assert all(resource["effectiveDateTime"] == ts.isoformat() for ts, resource in moved)
+    assert [resource["effectiveDateTime"] for _, resource in events] == before
     assert moved[0][1]["valueQuantity"] == events[0][1]["valueQuantity"]
+
+
+def test_the_copy_is_deep_so_changing_a_moved_reading_leaves_the_original_alone():
+    events = load_scenario(SCEN / "septic_shock.yaml")
+    value = events[0][1]["valueQuantity"]["value"]
+    code = events[0][1]["code"]["coding"][0]["code"]
+    moved = rebased(events, END)
+    moved[0][1]["valueQuantity"]["value"] = -1.0
+    moved[0][1]["code"]["coding"][0]["code"] = "changed"
+    assert events[0][1]["valueQuantity"]["value"] == value
+    assert events[0][1]["code"]["coding"][0]["code"] == code
+
+
+def test_the_latest_event_is_the_one_anchored_even_when_the_events_arrive_unsorted():
+    events = load_scenario(SCEN / "news2_deterioration.yaml")
+    moved = rebased(list(reversed(events)), END)
+    assert max(ts for ts, _ in moved) == END
+    assert moved[0][0] == END
+    assert gaps(moved) == gaps(events)
+
+
+def test_a_naive_timestamp_is_read_as_utc_like_the_gateways_do():
+    events = load_scenario(SCEN / "news2_deterioration.yaml")
+    naive = [(ts.replace(tzinfo=None), resource) for ts, resource in events]
+    moved = rebased(naive, END)
+    assert moved[-1][0] == END
+    assert all(ts.tzinfo is not None for ts, _ in moved)
+    assert gaps(moved) == gaps(events)
 
 
 def test_an_empty_scenario_stays_empty_and_a_zone_less_end_is_refused():
@@ -12058,45 +12151,164 @@ def test_an_empty_scenario_stays_empty_and_a_zone_less_end_is_refused():
         rebased(load_scenario(SCEN / "stable_control.yaml"), datetime(2026, 10, 19, 9, 0))
 
 
-def test_the_replay_script_reads_its_token_from_the_environment_never_its_command_line():
-    """A token on a command line lands in a shell's history and in every process listing."""
-    source = SCRIPT.read_text(encoding="utf-8")
-    assert '"--token-env"' in source and '"--token"' not in source
-    assert '"--now"' in source and "rebased(" in source
+# --- scripts/replay.py -------------------------------------------------------------------------------
+
+def replay_main():
+    spec = importlib.util.spec_from_file_location("replay_script", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.main
+
+
+@pytest.fixture
+def sent(monkeypatch):
+    """Every request the script makes, and the timeout it made it with; no network, no sleeping."""
+    calls = []
+
+    class Answer:
+        def read(self):
+            return b""
+
+    def fake_urlopen(req, timeout=None):
+        calls.append((req, timeout))
+        return Answer()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda seconds: None)
+    return calls
+
+
+def test_a_token_on_the_command_line_is_refused_not_taken_for_an_abbreviation_of_token_env(sent, capsys):
+    """argparse would read `--token SECRET` as `--token-env SECRET`: the secret becomes a variable name
+    that is not set, the script falls back to the dev token and the server answers 401 without a hint."""
+    main = replay_main()
+    with pytest.raises(SystemExit) as refused:
+        main(["--token", "x"])
+    assert refused.value.code == 2
+    assert "unrecognized arguments" in capsys.readouterr().err
+    assert sent == []
+
+
+def test_the_token_comes_from_the_variable_named_and_is_printed_nowhere(sent, monkeypatch, capsys):
+    monkeypatch.setenv(TOKEN_VAR, SECRET)
+    replay_main()(["stable_control.yaml", "0", "--url", "http://stack.invalid:18080/", "--token-env", TOKEN_VAR])
+    shown = capsys.readouterr()
+    assert len(sent) == 7
+    assert {req.get_header("Authorization") for req, _ in sent} == {f"Bearer {SECRET}"}
+    assert {req.full_url for req, _ in sent} == {"http://stack.invalid:18080/ingest"}
+    assert SECRET not in shown.out + shown.err
+    assert "note:" not in shown.err
+
+
+def test_with_the_variable_unset_the_dev_token_is_used_and_one_note_names_the_variable(sent, monkeypatch, capsys):
+    monkeypatch.delenv(TOKEN_VAR, raising=False)
+    replay_main()(["stable_control.yaml", "0", "--token-env", TOKEN_VAR])
+    shown = capsys.readouterr()
+    assert {req.get_header("Authorization") for req, _ in sent} == {"Bearer dev-token"}
+    assert shown.err.count(f"note: {TOKEN_VAR} is not set; using the dev token") == 1
+    assert shown.err.count("note:") == 1
+
+
+def test_every_request_has_a_timeout_so_a_dead_stack_cannot_hang_the_replay(sent):
+    replay_main()(["stable_control.yaml", "0"])
+    assert {timeout for _, timeout in sent} == {15}
+
+
+def test_now_sends_the_moved_instants_and_without_it_the_scenario_keeps_its_own_dates(sent, capsys):
+    main = replay_main()
+    main(["stable_control.yaml", "0", "--now"])
+    moved = [json.loads(req.data)["effectiveDateTime"] for req, _ in sent]
+    assert datetime.fromisoformat(moved[-1]) > datetime(2026, 10, 1, tzinfo=timezone.utc)
+    sent.clear()
+    main(["stable_control.yaml", "0"])
+    kept = [json.loads(req.data)["effectiveDateTime"] for req, _ in sent]
+    assert kept == [resource["effectiveDateTime"] for _, resource in load_scenario(SCEN / "stable_control.yaml")]
+
+
+@pytest.mark.parametrize("body, said", [
+    (b'{"detail": "bad device token"}', "bad device token"),
+    (b"<html>gateway</html>", "no detail"),
+])
+def test_a_refusal_stops_the_replay_and_says_what_the_server_said_never_a_header(monkeypatch, capsys, body, said):
+    headers = email.message.Message()
+    headers["Authorization"] = f"Bearer {SECRET}"
+
+    def refuse(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 401, "Unauthorized", headers, io.BytesIO(body))
+
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+    monkeypatch.setattr("time.sleep", lambda seconds: None)
+    monkeypatch.setenv(TOKEN_VAR, SECRET)
+    with pytest.raises(SystemExit) as stopped:
+        replay_main()(["stable_control.yaml", "0", "--token-env", TOKEN_VAR])
+    shown = capsys.readouterr()
+    assert stopped.value.code == 1
+    assert "401" in shown.err and said in shown.err
+    assert SECRET not in shown.out + shown.err
 ```
 
 Run it: `… -q tests/test_scenario_rebase.py 2>&1 | grep -E "^E "` → `E   ImportError: cannot import name 'rebased' from 'homunculus.scenarios.loader' (…)`.
 
-- [ ] **Step 2: `rebased()`.** Edit `homunculus-engine/src/homunculus/scenarios/loader.py` — replace:
+- [ ] **Step 2: `rebased()`** — Write `homunculus-engine/src/homunculus/scenarios/loader.py` (whole; `load_scenario` is unchanged — `rebased` is new: it anchors on the latest event wherever it sits, deep-copies each resource, and reads a naive timestamp as UTC, as `gateway/fhir.py` does):
 
 ```python
-        out.append((ts, resource))
-    out.sort(key=lambda pair: pair[0])
-    return out
-```
+# src/homunculus/scenarios/loader.py
+"""Load a scenario YAML and yield (timestamp, FHIR Observation dict) in time order."""
+from __future__ import annotations
 
-with:
+import copy
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-```python
+import yaml
+
+CODE_SYSTEM = "http://homunculus.local/obs"
+
+
+def load_scenario(path: str | Path) -> list[tuple[datetime, dict]]:
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    patient_id = data["patient_id"]
+    start = datetime.fromisoformat(data["start"])
+    out: list[tuple[datetime, dict]] = []
+    for ev in data["events"]:
+        ts = start + timedelta(minutes=float(ev["at_min"]))
+        resource = {
+            "resourceType": "Observation",
+            "status": "final",
+            "code": {"coding": [{"system": CODE_SYSTEM, "code": ev["code"]}]},
+            "subject": {"reference": f"Patient/{patient_id}"},
+            "effectiveDateTime": ts.isoformat(),
+            "valueQuantity": {"value": float(ev["value"]), "unit": ev.get("unit", "")},
+            "device": {"display": ev.get("device", "sim")},
+        }
         out.append((ts, resource))
     out.sort(key=lambda pair: pair[0])
     return out
 
 
 def rebased(events: list[tuple[datetime, dict]], end: datetime) -> list[tuple[datetime, dict]]:
-    """The same events moved in time so the last one falls at `end`, every gap between two kept.
+    """The same events moved in time so the latest one falls at `end`, every gap between two kept.
 
     For a replay into a local stack (scripts/replay.py `--now`): the scenarios are written at fixed
     dates, and the trend charts' window ends at the server's now, so an unmoved replay draws an
-    empty chart. A copy: the loaded events are not changed.
+    empty chart. A deep copy: the loaded events are not changed, nested dicts included. The order
+    given is the order returned; the latest event is the one anchored, wherever it sits. A naive
+    timestamp is read as UTC, as the gateways do (gateway/fhir.py `to_utc`).
     """
     if end.tzinfo is None or end.utcoffset() is None:
         raise ValueError("end must carry a time zone")
     if not events:
         return []
-    shift = end - events[-1][0]
-    return [(ts + shift, {**resource, "effectiveDateTime": (ts + shift).isoformat()})
-            for ts, resource in events]
+    stamped = [(ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts, resource)
+               for ts, resource in events]
+    shift = end - max(ts for ts, _ in stamped)
+    moved: list[tuple[datetime, dict]] = []
+    for ts, resource in stamped:
+        at = ts + shift
+        clone = copy.deepcopy(resource)
+        clone["effectiveDateTime"] = at.isoformat()
+        moved.append((at, clone))
+    return moved
 ```
 
 - [ ] **Step 3: The script** — Write `homunculus-engine/scripts/replay.py` (whole; its positional `scenario` and `delay` keep working as before):
@@ -12112,14 +12324,16 @@ a patient sliding into septic shock live. Synthetic data only.
 stack's web front, which proxies /ingest (e.g. http://127.0.0.1:18080). The token is read from the
 environment variable `--token-env` names (HOMUNCULUS_TOKEN by default) and never from the command
 line, where it would land in a shell's history and in every process listing; with none set, the dev
-server's "dev-token". `--now` moves the scenario so its last event is now (`loader.rebased`): the
-trend charts' window ends at the server's clock and the scenarios are written at fixed dates, so an
-unmoved replay draws an empty chart.
+server's "dev-token" (one note on stderr says so, naming the variable and never a value). `--now`
+moves the scenario so its last event is now (`loader.rebased`): the trend charts' window ends at the
+server's clock and the scenarios are written at fixed dates, so an unmoved replay draws an empty chart.
 """
 import argparse
 import json
 import os
+import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12128,10 +12342,25 @@ import homunculus.scenarios
 from homunculus.scenarios.loader import load_scenario, rebased
 
 SCEN = Path(homunculus.scenarios.__file__).parent
+TIMEOUT_S = 15  # the dashboard's own read timeout: a dead stack must not hang the replay
+
+
+def refusal_detail(err: urllib.error.HTTPError) -> str:
+    """What the server said in its body (FastAPI's `detail`), never a header; "" when it said nothing usable."""
+    try:
+        detail = json.loads(err.read().decode("utf-8", "replace")).get("detail")
+    except (ValueError, AttributeError, OSError):
+        return ""
+    if detail is None:
+        return ""
+    return (detail if isinstance(detail, str) else json.dumps(detail))[:300]
 
 
 def main(argv=None) -> None:
-    parser = argparse.ArgumentParser(description="Replay a synthetic scenario into a Homunculus API.")
+    # allow_abbrev=False: `--token SECRET` must be refused, not read as an abbreviation of `--token-env`
+    # (the secret would become a variable name, the dev token would be used, and the server would answer 401).
+    parser = argparse.ArgumentParser(description="Replay a synthetic scenario into a Homunculus API.",
+                                     allow_abbrev=False)
     parser.add_argument("scenario", nargs="?", default="septic_shock.yaml")
     parser.add_argument("delay", nargs="?", type=float, default=1.0, help="seconds between observations")
     parser.add_argument("--url", default="http://localhost:8000")
@@ -12140,17 +12369,25 @@ def main(argv=None) -> None:
     parser.add_argument("--now", action="store_true", help="move the scenario so it ends now")
     args = parser.parse_args(argv)
 
-    token = os.environ.get(args.token_env) or "dev-token"
+    token = os.environ.get(args.token_env)
+    if not token:
+        print(f"note: {args.token_env} is not set; using the dev token", file=sys.stderr)
+        token = "dev-token"
+    endpoint = f"{args.url.rstrip('/')}/ingest"
     events = load_scenario(SCEN / args.scenario)
     if args.now:
         events = rebased(events, datetime.now(timezone.utc))
     for _ts, fhir in events:
         req = urllib.request.Request(
-            f"{args.url.rstrip('/')}/ingest",
+            endpoint,
             data=json.dumps(fhir).encode(),
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
         )
-        urllib.request.urlopen(req).read()
+        try:
+            urllib.request.urlopen(req, timeout=TIMEOUT_S).read()
+        except urllib.error.HTTPError as err:
+            print(f"error: {endpoint} answered {err.code}: {refusal_detail(err) or 'no detail'}", file=sys.stderr)
+            raise SystemExit(1) from None
         print("sent", fhir["code"]["coding"][0]["code"], fhir["valueQuantity"]["value"],
               fhir["effectiveDateTime"])
         time.sleep(args.delay)
@@ -12167,13 +12404,13 @@ cd /c/tmp/g2-vital/homunculus-engine
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_scenario_rebase.py tests/test_scenario_loader.py tests/test_scenarios_e2e.py 2>&1 | tail -1
 PYTHONPATH=src /c/tmp/f7-py312/venv/Scripts/python.exe scripts/replay.py --help | head -2
 ```
-Expected: `9 passed` (4 + 1 + 4); `usage: replay.py [-h] [--url URL] [--token-env TOKEN_ENV] [--now]` / `[scenario] [delay]`. The whole no-DB suite: `2130 passed, 650 skipped` (measured, with every task, amendment and lane follow-up in place).
+Expected: `18 passed` (13 + 1 + 4); `usage: replay.py [-h] [--url URL] [--token-env TOKEN_ENV] [--now]` / `[scenario] [delay]`. The whole no-DB suite: `2139 passed, 650 skipped` (measured at `649af49`, 2026-10-21).
 
 ```bash
 cd /c/tmp/g2-vital
 git add homunculus-engine/src/homunculus/scenarios/loader.py homunculus-engine/scripts/replay.py homunculus-engine/tests/test_scenario_rebase.py
 git status --short && git diff --cached --stat
-git commit -m "feat(scripts): replay.py --now moves a scenario to end now; --url and --token-env reach a local stack" -m "loader.rebased keeps every gap and moves only the dates, so a replay lands inside the trend charts' window. The token comes from the environment variable --token-env names, never the command line.
+git commit -m "feat(scripts): replay.py --now moves a scenario to end now; --url and --token-env reach a local stack" -m "loader.rebased keeps every gap and moves only the dates, so a replay lands inside the trend charts' window; it anchors on the latest event wherever it sits, copies deeply and reads a naive timestamp as UTC. The token comes from the environment variable --token-env names, never the command line: allow_abbrev=False refuses --token, an unset variable is one note naming it, never a value. urlopen times out after 15 s; a refusal prints the endpoint, the code and the server's detail, and exits 1.
 
 red: ImportError: cannot import name 'rebased'" -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
@@ -12220,17 +12457,17 @@ bed-3 6h heart_rate:0 | map:4(63.0 Δ1.0 N2 None) | sbp:0 | spo2:0 | temperature
 ```
 
 - [ ] **Step 8: The walk in a browser** (a person, or an agent driving a browser). Open `http://127.0.0.1:18080`, sign in as `test.hemsire@homunculus.health` / `G115-Sentetik-Parola-1`, Yataklar → `bed-1` (no identity: the heading reads "kimlik gözlənilir").
-  1. Under the Sepsis / İlaç row: the note "SOFA formasının doldurulması və imzalanması …" (no "normal" in it), then the box **Vital qrafikləri** with "NEWS2 · yetkin zolaqları; …" and the button **Xəstənin norması…**.
+  1. Under the Sepsis / İlaç row: the note "SOFA formasının doldurulması və imzalanması …" (`patient.formsSoon`, PatientScreen.jsx:414; no "normal" in it — the Sepsis card above it also prints "Bazal SOFA daxil edilməyib; mühərrik 0 fərz edir…", `patient.baselineAssumed` — the line the 2026-10-21 driver reported; neither says "normal"), then the box **Vital qrafikləri** with "NEWS2 · yetkin zolaqları; …" and the button **Xəstənin norması…**.
   2. Six cards in this order: Nəbz, Tənəffüs, SpO2, Sistolik AT · MAP, Bədən hərarəti, Laktat. **Acceptance 3 — each frame is the engine's points from Step 7:** Nəbz amber "NEWS2 +2", Tənəffüs red "+3", SpO2 red "+3", Sistolik AT · MAP red "+3", Bədən hərarəti amber "+2", Laktat "Bu kanal üçün ölçmə yoxdur". Deltas: "↑ +12 (əvvəlkinə görə)" on Nəbz, "↓ −10 …" on Sistolik.
   3. Nəbz → the dialog "bed-1 · kimlik gözlənilir · Nəbz". Hover: the readout names time, value, "/dəq". Tab to the chart; ← → Home End move the cursor. 6 saat / 24 saat / 3 gün each re-draw. The ▲ sits at the right edge: the alarm's instant is when the server first raised it (the replay's wall clock), while the readings carry their rebased instants — the honest picture (open item O10). Legend: "NEWS2 zolağı (yetkin) · mənbə news2-rcp-2017: 1–2 bal 3 bal", dots and dashes, ▲ siqnal, ◆ antibiotik.
-  4. Cədvəl: five rows, newest first, the values equal to the dots, "NEWS2 balı" equal to the frames; the ▲ as a row of its own. Escape closes and focus returns to the card.
+  4. Cədvəl: six rows — the five readings, newest first, and the ▲ as a row of its own; the values equal to the dots, "NEWS2 balı" equal to the frames. Escape closes and focus returns to the card.
   5. `bed-3`: Laktat and Sistolik AT · MAP cards with readings; in the Laktat dialog ▲ sepsis, antibiotic_due, septic_shock and ◆ antibiotik.
   6. Back on `bed-1`, **Xəstənin norması…**: the title names the bed; five rows, no MAP and no lactate; enter Nəbz 120 – 135, Yadda saxla → the toast "Xəstənin norması yadda saxlanıldı; …", the Nəbz card now also wears "Xəstənin normasında" (130 is inside), its frame still amber; the dialog shows the dashed band. **Acceptance 3 — the form writes and the band appears.**
   6a. **The O4 amendment.** **Xəstənin norması…** again; empty Nəbz's two fields: beside Yadda saxla, in the footer, "Bütün sətirlər boşdur: «Yadda saxla» bu xəstənin daxil edilmiş bütün aralıqlarını silir.", and Yadda saxla is offered as the red danger button (no `aria-disabled`). Save → the toast "<the bed>: xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.", and the "Xəstənin normasında" pill and the dashed band are gone. Then `$C restart api` (`C` as in Step 5), wait for `healthy` as in Step 5, reload: still no pill, no band — the clear survived the replay from Postgres. The form once more: every row empty, Save `aria-disabled`, its footer sentence "Göndəriləcək aralıq yoxdur …" muted until Save is pressed, then said. **Acceptance 3b — the last range can be removed, and stays removed.**
   7. Sign out; sign in as `test.denetci@homunculus.health`: the cards are there, the **Xəstənin norması…** button is not.
-  8. **Acceptance 4:** at 390 px (devtools device toolbar, 390 × 844) and at 1440 px — no horizontal page scroll on the patient screen, in the big chart, in its table (it scrolls inside its own frame) and in the form; one column at 390, three at 1440. Ayarlar → Tema: Gece and Gün. Dil: az, tr, ru, en — no raw `patient.…` key anywhere. With NVDA and Chrome (X28): Tab to the big chart — NVDA must switch to focus mode, and ← → must move the cursor and say the readout once per move; the table must read in browse mode while a poll inserts rows at its top (if NVDA's reading position jumps a row per reading, say so — holding the table still while it is shown is the fix); note whether NVDA re-speaks the chart's name when its count changes. And by eye, on a 1× monitor: MAP's hollow ring (r 2.5, stroke 1.5) leaves a hole of about 3.5 px — say if it still reads as a dot; and whether the 72 h time labels, anchored to the right edge, read cleanly at `--fs` 1.12. In the form, in Chrome: a real Enter in a filled field saves through Yadda saxla (the tests fire a synthetic submit; a browser's default button is the form's first submit, which here sits in the footer outside the `<form>`); a row with one side filled, then Enter, puts focus in that row's field. At 390 px the footer sentence wraps, and Cancel and Yadda saxla wrap together as one pair under it — Save never on a row of its own.
+  8. **Acceptance 4:** at 390 px (devtools device toolbar, 390 × 844) and at 1440 px — no horizontal page scroll on the patient screen, in the big chart, in its table (it scrolls inside its own frame) and in the form; one column at 390, three at 1440. Ayarlar → Tema: Gece and Gün. Dil: az, tr, ru, en — no raw `patient.…` key anywhere (a driver that sets `hmc.lang` / `hmc.theme` in localStorage must reload the page: the providers read them at mount). With NVDA and Chrome (X28): Tab to the big chart — NVDA must switch to focus mode, and ← → must move the cursor and say the readout once per move; the table must read in browse mode while a poll inserts rows at its top (if NVDA's reading position jumps a row per reading, say so — holding the table still while it is shown is the fix); note whether NVDA re-speaks the chart's name when its count changes. And by eye, on a 1× monitor: MAP's hollow ring (r 2.5, stroke 1.5) leaves a hole of about 3.5 px — say if it still reads as a dot; and whether the 72 h time labels, anchored to the right edge, read cleanly at `--fs` 1.12. In the form, in Chrome: a real Enter in a filled field saves through Yadda saxla (the tests fire a synthetic submit; a browser's default button is the form's first submit, which here sits in the footer outside the `<form>`); a row with one side filled, then Enter, puts focus in that row's field. At 390 px the footer sentence wraps, and Cancel and Yadda saxla wrap together as one pair under it — Save never on a row of its own.
 
-- [ ] **Step 9: Tear it down.** `$C down -v` (with `C` set as in Step 5) → the three containers and the `g2v` volumes removed; `docker ps -a --format '{{.Names}}' | grep -E '^homunculus-(postgres|api|web)$' || echo "no stack containers"` → `no stack containers`. Nothing to commit: write the walk's outcome (pass / what differed) into Task 17's roadmap row.
+- [ ] **Step 9: Tear it down.** `$C down -v` (with `C` set as in Step 5) → the three containers and the `g2v` volumes removed; `docker ps -a --format '{{.Names}}' | grep -E '^homunculus-(postgres|api|web)$' || echo "no stack containers"` → `no stack containers`. Nothing to commit: the walk's outcome goes into Task 17's roadmap row (2026-10-21: written there). That day the stack was left up for the user's NVDA pass — tear it down after that pass, not before.
 
 ---
 
@@ -12336,7 +12573,9 @@ yaklaşmaz.
 **Hastanın normali (form):** `clinical.chart` yetkisi olan klinisyen kutunun başlığındaki
 "Hastanın normali…" ile beş vital için alt ve üst sınır girer. İki sınır da gerekir; alt üstten
 büyük olamaz. Motor gönderilen kümeyi bütünüyle yeniler: boş bırakılan aralık silinir,
-komorbiditeler ve bazal SOFA değişmez. Kayıtlı bir aralık varken bütün satırlar boşaltılırsa form bunu
+komorbiditeler ve bazal SOFA değişmez. Form açıldığı hastanındır: başlığında yatak yazar, başka hastaya
+geçilince kapanır. Form açıkken aralıklar başka bir yerden değişirse form bunu söyler ve
+yeniden açılana dek Kaydet'i tutar. Kayıtlı bir aralık varken bütün satırlar boşaltılırsa form bunu
 söyler ve Kaydet hepsini siler; silme denetim kaydına yazılır ve sunucu yeniden başlasa da geri
 gelmez. Kayıt anlık alarmları yeniden hesaplamaz: sonraki ölçüm yeni normale (ya da normalsiz)
 göre değerlendirilir. Bu aralık monitörün alarm sınırı değildir; motor bu hastanın
@@ -12363,7 +12602,7 @@ söylenir ve eğri yeniden okunur.
 Prototipteki sabit sayılar (`core.js:499` `H.VITAL.al/nb`) kaynaksızdır, taşınmaz.
 ```
 
-with (fill `<date>` with `git log -1 --format=%cs`, `<range>` with the first and last commit of this plan, `git log --format=%h b6ed65d..HEAD`, and `<walk>` with Task 16's outcome):
+with (fill `<date>` with `git log -1 --format=%cs` and `<range>` with the first and last commit of this plan, `git log --format=%h b6ed65d..HEAD`; the walk's outcome is already written, from Task 16 on 2026-10-21):
 
 ```markdown
 Prototipteki sabit sayılar (`core.js:499` `H.VITAL.al/nb`) kaynaksızdır, taşınmaz.
@@ -12372,7 +12611,7 @@ Prototipteki sabit sayılar (`core.js:499` `H.VITAL.al/nb`) kaynaksızdır, taş
 
 | # | İş | Durum |
 |---|---|---|
-| G2-01 | Vital eğrileri (hasta ekranı): altı kart, büyük grafik (6 sa / 24 sa / 3 gün, tablo), hastanın normali formu; `GET /patients/{id}/trends` · spec: [2026-10-19](../specs/2026-10-19-g2-vital-egrileri-design.md) · plan: [G2 dilim 1](2026-10-19-g2-vital-egrileri.md) | Kod ✅ <date> · <range>. Backend 2130 / 650 (DB'siz), 2772 / 8 (Postgres); dashboard 89 dosya / 2385 test. Yerel yürüyüş: <walk>. **Açık:** az/ru yerel okuma; VM'de kullanıcının bakışı (gerçek bir hasta, 390 ve 1440 px, değerler yazılmaz); plandaki X20 (Task 2 incelemesi), X21–X34 ve O1–O3, O6–O12, O14, O15, O17–O23 (X1–X19 onaylandı, O4 çözüldü: 2026-10-20) |
+| G2-01 | Vital eğrileri (hasta ekranı): altı kart, büyük grafik (6 sa / 24 sa / 3 gün, tablo), hastanın normali formu; `GET /patients/{id}/trends` · spec: [2026-10-19](../specs/2026-10-19-g2-vital-egrileri-design.md) · plan: [G2 dilim 1](2026-10-19-g2-vital-egrileri.md) | Kod ✅ <date> · <range>. Backend 2139 / 650 (DB'siz), 2781 / 8 (Postgres), Python 3.14 dilimi 362; dashboard 89 dosya / 2385 test; 72 sa penceresi p50 ≈ 4 ms, en kötü ≈ 30 ms (bir gen-2 çöp toplama duraklaması, sunucu da öder; sınır 300 ms). Yerel yürüyüş 2026-10-21 (g2v yığını, sentetik hesaplar, başsız Chrome): adım 7 motorun beklenen yanıtıyla satır satır aynı; adım 8'in bütün maddeleri geçti — altı kart ve çerçeveler motorun puanı, tablo = grafik, form yazıyor ve bant çıkıyor, temizleme `restart api` sonrası da geri gelmiyor, 390 / 1440 px, dört dil, iki tema, ham anahtar yok. **Kullanıcıda:** NVDA (grafikte odak kipi, her harekette bir okuma, tablo gözatma kipinde satır eklenirken), MAP'in içi boş halkası noktadan ayrılıyor mu, 72 sa saat etiketleri `--fs` 1.12'de; göz kararları: değerler mürekkep renginde (X24), iki serili mini grafikte bant yok (X26), Gece'de 3 puan bandı 1–2 puan bandından sessiz, Gün'de diyalogdaki ızgara çizgileri silik; VM'de bakış (gerçek bir hasta, değerler yazılmaz). **Karar:** X21/O12 — kayıt bildirimi "mühərrik yenidən qiymətləndirdi" diyor, PUT yeniden hesaplamıyor; öneri: `baselineSaved` dört dilde `{subject}` ile düzeltilsin, motorun yeniden değerlendirmesi sonra. **Dağıtım:** köprüler hub'dan önce ya da birlikte (3b; köprü tamponlarında sonlu olmayan satır var mı bakılır); pano asla tek başına (temizleme 14a'yı ister). **Açık:** az/ru yerel okuma; plandaki X20–X34 ve O1–O3, O6–O12, O14, O15, O17–O25 (X1–X19 onaylandı, O4 çözüldü: 2026-10-20) |
 ```
 
 (c) Append to the two items the slice moved — replace:
@@ -12389,7 +12628,7 @@ with:
 - Kapsam okunamadığında (UNKNOWN) `/patients` 200 + yanlış not dönüyor, `_require_patient` 404 + `scope_denied` yazıyor; her yerde 503 olmalı. → Grup 2 · **G2 dilim 1:** eğri ucu (`/patients/{id}/trends`) UNKNOWN'da 503 veriyor, `scope_denied` yazmıyor; öteki tek-hasta uçları hâlâ 404.
 ```
 
-- [ ] **Step 3: The spec's open points.** Edit `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md` — replace:
+- [ ] **Step 3: The spec — §4 and §7 as built, and §11's open points.** Three Edits in `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. (a) §11 — replace:
 
 ```markdown
 - Acceptance on the VM will show sparse charts today; that is the data, not the chart.
@@ -12406,15 +12645,22 @@ with:
   (X3); antibiotic marks only for doses ≥ 1 (X4); each point carries the engine's NEWS2 points
   (X5); MAP at full colour with hollow dots, because reduced opacity measured 2.17–3.34:1 (X6);
   ages through `useBoardNow` (X7); a 400 only on the toast (X8); `onlyWrite` and `formsSoon`
-  reworded (X9); 390 px checked in a browser (X10); `replay.py --now` (X11); alarm marks read up
-  to 5000 episodes with `markers_truncated`, and a non-finite reading never drawn (X22, with the
-  gateways refusing NaN/±inf — plan Task 3b).
+  reworded (X9); 390 px checked in a browser (X10); `replay.py --now` (X11); thinning slices the
+  readings' span, not the window (X20, §4); alarm marks read up to 5000 episodes with
+  `markers_truncated`, and a non-finite reading never drawn (X22, with the gateways refusing
+  NaN/±inf — plan Task 3b); the trends hook coalesces same-key reads instead of superseding them,
+  so a chart can fill at Stage B rates (X23); card values in ink, not the identity colour (X24);
+  the route resolves the scope once (X25); no NEWS2 tints on a two-series mini chart (X26); the
+  readout names MAP beside systolic (X27).
 - The last baseline can be removed (the user's choice for O4, 2026-10-20): every row emptied over
   a charted set sends `{"baselines": {}}`, which the engine takes as clearing every range even when
   nothing else is charted, and the audit replay reads each profile row over the one before, so the
   clear survives a restart (plan X15, Task 14a).
 - §3.3's save toast says the engine re-evaluated; the profile PUT re-scores nothing — the standing
-  alerts are re-judged at the next reading (plan X21, O12).
+  alerts are re-judged at the next reading (plan X21, O12). Every save now shows it, so the user
+  decides before the VM. Recommendation (the Task 14 spec review): reword `baselineSaved` in four
+  languages to what the PUT does and name the patient with `{subject}` in this slice; make the door
+  re-judge the latest state when the profile changes as a follow-up.
 - `PUT /clinical/{id}/profile` replaces the set with no lost-update check: two clinicians saving one
   patient's normal at once — the second wins silently. The form now notices a set that changed while
   it was open (the minute's poll) and holds Save until it is reopened (plan X34); two saves inside one
@@ -12428,17 +12674,73 @@ with:
   `role="img"` (plan X28): NVDA and JAWS stay in browse mode over an image, and the arrow keys
   that §7 promises would move the cursor never reach it. The table carries the legend's notes
   (X29); a MAP read beside systolic at another minute prints its own time (X30).
+- Open for the user or later (plan O21–O23): the reading's NEWS2 points in the spoken readout
+  (O21); two cursor stops in one minute with one value say the same words, so the second is
+  silent (O22, Stage B); two tests past the size guide, to split when they next change (O23).
+- `errors.scopeUnreadable` speaks of the live stream, and the trends route's 503 carries the same
+  key; no screen prints it there today (the box only marks the trends unreadable). Reword it
+  route-neutrally, in four languages with a native reading, before any screen does (plan O9).
+- **Deploy order (plan O24):** bridges before, or with, the hub — after Task 3b the hub answers 400
+  to a non-finite FHIR value and an edge uplink keeps a refused observation at the head of its
+  queue, retrying it and holding every later reading; check the bridges' buffers for non-finite
+  rows before upgrading the hub. Never the dashboard alone: the clear (`{"baselines": {}}`) needs
+  Task 14a's engine — an older engine refuses it ("profil boş olamaz") and its replay brings
+  cleared ranges back after a restart. One branch carries both lanes, so one deploy does.
+- **Acceptance, as measured.** (1) Python 3.12, 3.14 and the dashboard green, counts in the plan.
+  (2) The 72 h window: p50 ≈ 4 ms over 100 requests; the max, ≈ 30 ms, is one gen-2 garbage
+  collection inside a request — a pause the server also pays, not a cold start — well inside the
+  300 ms bound. (3, 4) Walked on 2026-10-21 on the local stack with synthetic accounts and
+  scenarios (a headless-Chrome driver): the engine's answers matched the plan line for line; six
+  cards, frames equal to the engine's points, the table equal to the chart, the form writes and
+  the band appears, a clear survives a restart; 390 / 1440 px, four languages, both themes, no raw
+  key. Left for a person (plan O25): NVDA — focus mode on the chart, the readout once per move,
+  the table in browse mode while polls insert rows; MAP's hollow ring against a dot by eye; the
+  72 h time labels at `--fs` 1.12; and the by-eye choices the reviews left open (values in ink —
+  X24; no tints on the two-series mini chart — X26; the 3-point band quieter than the 1–2-point
+  band in Gece; the dialog's grid lines faint in Gün). (5) The VM look stays the user's.
 - Additive ideas not taken in this slice: `previous_ts` beside `delta` ("since when"), and a
   severity on the alarm marks.
 ```
 
-- [ ] **Step 4: Check and commit.** `git diff --stat` shows the three files only; read the guide's new §3.7 once in a Markdown preview (it renders under §3.6's three questions).
+(b) §4 — replace:
+
+```markdown
+  the window is cut into 500 equal buckets and each bucket keeps its first, last, minimum and
+  maximum (deduplicated, in time order); `thinned: true`, `total_points` = the count before.
+```
+
+with:
+
+```markdown
+  the window is cut into 500 equal buckets and each bucket keeps its first, last, minimum and
+  maximum (deduplicated, in time order); `thinned: true`, `total_points` = the count before.
+  As built (plan X20), the 500 slices cut the span from the window's first reading to its last,
+  not the whole window: finer slices when the readings cover part of it; every guarantee holds.
+```
+
+(c) §7 — replace:
+
+```markdown
+- Keyboard: cards are buttons; the modal traps focus (kit); the chart takes focus and moves the
+  cursor with arrows; Escape closes.
+```
+
+with:
+
+```markdown
+- Keyboard: cards are buttons; the modal traps focus (kit); the chart takes focus and moves the
+  cursor with arrows; Escape closes. As built (plan X28), the chart that takes the keys is
+  `role="application"` with a localised role description, so NVDA and JAWS hand it the arrows
+  (over an `img` they stay in browse mode); the card's mini chart, with no keys, stays `aria-hidden`.
+```
+
+- [ ] **Step 4: Check and commit.** `git diff --stat` shows the three files only (the spec with three hunks); read the guide's new §3.7 once in a Markdown preview (it renders under §3.6's three questions).
 
 ```bash
 cd /c/tmp/g2-vital
 git add docs/homunculus-rehber-TR.md docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md
 git status --short && git diff --cached --stat
-git commit -m "docs: the trend charts in the guide, Group 2's first row in the roadmap, what planning found in the spec" -m "Rehber §3.7: what the charts show and never claim, where every band comes from (NEWS2_BANDS, vault note news2-rcp-2017, adult, Scale 1; the clinician's normal; device limits at Stage B), thinning, the form's rules. Roadmap: G2-01 with counts and the walk's outcome; the audit and UNKNOWN-scope items say what this slice moved. Spec §11: the plan's departures and two open points." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+git commit -m "docs: the trend charts in the guide, Group 2's first row in the roadmap, what planning found in the spec" -m "Rehber §3.7: what the charts show and never claim, where every band comes from (NEWS2_BANDS, vault note news2-rcp-2017, adult, Scale 1; the clinician's normal; device limits at Stage B), thinning, the form's rules. Roadmap: G2-01 with counts and the walk's outcome; the audit and UNKNOWN-scope items say what this slice moved. Spec §4 and §7 as built (X20, X28); §11: the plan's departures, the open points, the deploy order and the acceptance as measured." -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
@@ -12455,7 +12757,7 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 | O6 | UNKNOWN scope → 503 only on the trends route; every other single-patient route still answers 404 and writes `scope_denied` (roadmap l. 659). | Group 2 | — |
 | O7 | `/audit`, `/alarm-quality` and `rehydrate` still read the oldest N (roadmap l. 658); `since` now exists for them to use. | Group 2 | Before the alarm-quality panel |
 | O8 | `backendApi.setProfile` (backendApi.js:778–787) sends `comorbidities: []` by default and so clears every charted comorbidity when called with only baselines. No live screen calls it; the admission form (Group 2/3) must not, or must be fixed first. | Whoever builds the admission form | — |
-| O9 | `errors.scopeUnreadable` speaks of the live stream ("canlı akış başlatılamadı"); a trends 503 maps to the same key. The trends screens print their own "okunamıyor" line and never that text, but a later screen that prints `apiErrorText` for a trends 503 would say "live stream". | i18n | Minor |
+| O9 | `errors.scopeUnreadable` speaks of the live stream ("canlı akış başlatılamadı"); a trends 503 maps to the same key. The trends screens print their own "okunamıyor" line and never that text, but a later screen that prints `apiErrorText` for a trends 503 would say "live stream" (the Task 5 and Task 6 reviews: `scopeUnreadable` now reaches a reader through `SERVER_ANSWERS`; reword it route-neutrally, four languages with a native reading, before any screen prints it on this route — Task 17 says so in spec §11). | i18n | Minor |
 | O10 | **A mark's instant is the escalation clock's** (when the server first raised the episode); a reading's is its own measured instant. Live they are minutes apart; a replayed, back-filled or late-arriving reading can sit hours before its ▲ (seen in Task 16 with `--now`). Honest, but worth a sentence in the legend if the ward finds it confusing. | User, after the VM look | — |
 | O11 | The brief's backend command fails 2 tests without `PYTHONPATH=src` (`ModuleNotFoundError` in a child process; the f7-py312 venv has no install of this worktree). This plan always sets it; installing the worktree editable into a venv is the other fix. | Environment | — |
 | O12 | **The save's toast says more than the engine does** (X21): "Hastanın normali kaydedildi; motor yeniden değerlendirdi" (spec §3.3, Task 8's `baselineSaved`) — but the PUT re-scores nothing: an alert a range downgraded stays downgraded, or an alert a new range would quieten stays loud, until the next reading (minutes on a monitor; the next spot check otherwise). Either reword it in four languages (e.g. "…kaydedildi; sonraki ölçüm bu normale göre değerlendirilecek") or make the door re-judge the patient's latest state when the profile changes (an engine change, with its own tests). The clear's new toast already says only what is true. **Now visible (the Task 14 spec review, 2026-10-20):** Task 14 shows this toast after every save, so the overclaim reaches the ward with the form. Recommendation: (b) in this slice, reword `baselineSaved` in four languages to what the PUT does and name the patient with `{subject}`, as `baselineClearedAll` does (a planner's wording, for O1's native reading); (a) as a follow-up, make the door re-judge the latest state when the profile changes (an engine change with its own tests). | User decision | Before the VM |
@@ -12470,6 +12772,9 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 | O21 | **NEWS2 points in the spoken readout?** A sighted reader reads a reading's points from the band colour behind its dot; a screen-reader user hears only the value (the table has the points). Adding " · 2 bal" to the readout is a small change to spec §3.3's readout — the user's decision (the Task 13 quality review; the controller's list calls it O18). | User decision | Before the VM |
 | O22 | **Two stops in one minute with the same value say the same words**, and `useAnnounced` dedupes by text, so the second keypress is silent (≈ 1 reading a minute today). At Stage B rates: seconds in the readout when two stops share a minute, or a live region re-mounted per stop. Accepted for this slice. | Stage B's plan | Stage B |
 | O23 | **`TrendModal.test.jsx` is 607 lines and `BaselineForm.test.jsx` 405**, well past the ~250-line guide (with `trendGeometry.js` 277, `trendGeometry.test.js` 260, `TrendChart.test.jsx` 237 a little past it; `PatientScreen.test.jsx`, older than the slice, is 887 after it). Split the dialog's test by view (graph, keyboard, table) and the form's by concern (the checks, the clear, the answers, the moves) when they next change. | Group 2 | — |
+
+| O24 | **Deploy order (a rule, from the Task 3b and Task 14 reviews).** Bridges before, or with, the hub: after Task 3b `/ingest` answers 400 to a non-finite FHIR value, and `edge/uplink.py` keeps a refused observation at the head of its queue and retries it forever, holding every later reading of that bridge (7 006 rows held this way on 22.09); check the bridges' buffers for non-finite rows before upgrading the hub. Never the dashboard alone: the clear needs Task 14a — an older engine refuses `{"baselines": {}}` ("profil boş olamaz"; nothing is deleted) and its replay brings cleared ranges back after a restart. One branch carries both lanes, so one deploy does. Later, for the user: should the uplink set a payload-refused observation aside, as the Infinity collector does? (It changes "an observation is never dropped".) | Whoever deploys; user | Every deploy of this slice |
+| O25 | **What the walk left for a person** (Task 16, 2026-10-21): NVDA and Chrome — focus mode on the big chart, the readout once per move, the table in browse mode while polls insert rows (and whether NVDA re-speaks the chart's name when its count changes); MAP's hollow ring against a dot on a 1× monitor; the 72 h time labels at `--fs` 1.12; and the reviews' by-eye choices — values in ink (X24), no tints on the two-series mini chart (X26), the Gece 3-point band (alpha .12) quieter than the 1–2-point band, the Gün grid lines on the dialog's ground nearly invisible. The `g2v` stack was left up for it. | User | Before the VM |
 
 **Commit trailer.** The controller's brief set `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` for this plan's tasks; amendments.md's latest recorded trailer is `Claude Opus 5.5`. Use the one the controller gives when the tasks run.
 
@@ -12511,13 +12816,13 @@ git commit -m "docs: the trend charts in the guide, Group 2's first row in the r
 | §9 keys | T8 (all 31 new + 18); T10 adds five (the unscored tag, the delta's words — X24), T12 three (the legend), T14 three (the clear's two, the set changed meanwhile) |
 | §10 not in this slice | nothing built for it |
 | §11 risks | T17 updates it; O2 |
-| §12 acceptance 1 | T15 steps 4–7 (3.12, 3.14, dashboard; counts here) |
-| acceptance 2 | T15 step 8 (≈ 4–15 ms by the day's load), T2 (5 s series ≤ 2 000, flagged in T4) |
-| acceptance 3 | T16 steps 7–8 |
-| acceptance 4 | T15 (rawKeys sweep, contrast via T7), T16 step 8.8 (390/1440, four languages, both themes) |
+| §12 acceptance 1 | T15 steps 4–7 (3.12, 3.14, dashboard; counts here) — met on the branch, 2026-10-21: dashboard 89 / 2385, backend 2139 / 650 and 2781 / 8, Python 3.14 362 at `649af49` |
+| acceptance 2 | T15 step 8 (p50 ≈ 4 ms; max ≈ 30 ms, one gen-2 GC pause; bound 300 ms), T2 (5 s series ≤ 2 000, flagged in T4) — met |
+| acceptance 3 | T16 steps 7–8 — walked 2026-10-21: Step 7 line for line; 8.2 (frames = the engine's points), 8.4 (table = chart), 8.6 (the form writes, the band appears), 8.6a (a clear survives `restart api`) passed |
+| acceptance 4 | T15 (rawKeys sweep, contrast via T7), T16 step 8.8 (390/1440, four languages, both themes) — passed by the driver on 2026-10-21; NVDA and the by-eye checks are the user's (O25) |
 | acceptance 5 (the VM look) | after merge, the user's; recorded as open in T17's roadmap row |
 
 **Placeholder scan.** No "TBD", no "similar to Task N", no "add appropriate error handling". The only fill-ins are runtime facts that cannot exist before the work does — T17's roadmap row takes the date, the commit range and the walk's outcome, each with the command or step that produces it.
 
-**Names and types across tasks.** Engine: `Band`, `NEWS2_BANDS`, `BANDS_SOURCE`, `points_for` (T1) are what T4 imports; `thin(series, max_points)` (T2) is called with `TRENDS_MAX_POINTS`; `since_utc` (T3) is shared by `audit.py` and `audit_postgres.py`; `records(…, since=…)` is keyword-only everywhere (T3's signature test); `patient_trends(engine, audit, *, hospital, patient_id, hours, now)` (T4) is what T5's route calls with `int(hours)` after the text check against `TRENDS_HOURS`; the route is listed in `BOARD_EXPECTED` and `UNSCOPED_BY_DESIGN` under the path FastAPI reports, `/patients/{patient_id}/trends`. Dashboard: `patientTrends(patientId, hours)` / `putPatientProfile(patientId, body)` (T6) are the names `useTrends` (T9) and `BaselineForm` (T14) call, and `fakeApi` carries both; `useTrends(patientId, hours, measuredKey)` → `{data, loading, unreadable, lastOkAt, reload}` is read the same way by `TrendsBox` and `TrendModal`; `measuredKeyOf(patient.measuredAt)`; the fixtures `trends(patientId, channels, over)`, `channel(key, points, over)`, `point(minutesAgo, value, points)`, `marker(minutesAgo, kind, label)`, `answering(build)`, `BANDS`, `KEYS` (T9) are what every later test uses; `news2Tone(points)` (T10) is used by `TrendCard` and `bandRects`; `CARDS` / `cardTitle` / `channelsOf` (T10) by the box, the dialog, the legend and the table; `TrendCard({card, channels, nowMs, sinceMs, untilMs, onOpen})` gains `sinceMs`/`untilMs` in T11 and `onOpen` is passed from T12; `TrendChart`'s props grow `onPlot` (T12) and `onKeyDown`, `describedBy` (T13) by Edit, never renamed; `whenText`/`markText` live in `TrendModal.jsx` in T12 and move to `trendText.js` (with `pointsText`) in T13, where `TrendModal` and `TrendTable` both import them and nothing else imported them from the dialog; `TrendsBox({patient, bed, nowMs})` gains `nowMs` in T10 and `bed` in T12, matching PatientScreen's edits in those tasks. The seventh pass follows the lane's Task 14: `BaselineForm.jsx` exports `BASELINE_KEYS`, `checkBaselines`, `keyOf` and `BaselineForm({patient, bed, own, onClose, onSaved})`; `charted(range)` is private to it; `TrendsBox`'s `editing` is `{ id, opening }`; one new key, `patient.baselineChangedMeanwhile`, and `baselineClearedAll` takes `{subject}`. The sixth pass follows the lane's Task 13: `TrendLegend.jsx` exports `TrendNotes` beside `TrendLegend`; `trendText.js` gains `valueBeside`; `TrendTable` takes the dialog's parsed `series` and `markers`; two keys, `patient.trendsChartRole` and `patient.trendsPointsUnknownRowSr`. The fifth pass follows the lane's Task 12: `valueTicks` returns `{ step, ticks }`; `indexAtTime(points, ms)` resolves the cursor (an instant) to an index at render; `marksNear` is gone (`marksAtTime` is the one rule); Task 13 moves `whenText` and `markText` from `TrendModal.jsx` to `trendText.js`, beside `markBeside` and `pointsText`, and `TrendChart` reads `whenText` from there; `readoutOf` stays private to the dialog (the announcement reads the same `readout` value). The fourth pass renames two exports and adds six: Task 12 replaces Task 11's `markerNear` (read only by its test) with `marksNear`, and its own `markerAtTime` with `marksAtTime` — both return EVERY mark at an x or an instant, and both dialogs (Tasks 12 and 13) read `marksAtTime`; `valueTicks(domain, count, { extent, resolution })` keeps Task 11's two-argument call working, beside `valueTickStep`, `valueExtent`, `valueResolution`, `tickLabel` and `timeLabelPlace`. The third pass renames nothing in the plan's own tasks: Tasks 1–4, 3b and 6–10 are the lanes' code, and Tasks 11–17 are written against it — `TrendCard` keeps its props and gains `sinceMs`/`untilMs` in Task 11 on the lane's `Reading` (`badge`, `pill`); `TrendLegend` gains `truncated`, which both dialogs (Tasks 12 and 13) pass from `markers_truncated`; the legend's ▲ reads `trendsLegendAlarm` while the readout and the table keep `trendsMarkerAlarm`. The second amendment renames nothing either: `TRENDS_MARKER_LIMIT` keeps its name (5000 now); `_markers` returns `(marks, truncated)` and only `patient_trends` calls it; `_finite` is private to `api/trends.py`; `markers_truncated` is a new key no dashboard module reads yet (O16); Task 12's `TrendLegend` passes `channel: t(s.labelKey)` to `trendsThinned`, which takes `{channel}` since the Task 8 review. The O4 amendment renames nothing: `profile_from_payload(patient_id, payload, base=None)` keeps its signature (T14a) and `_replay_profile` now passes `engine.profile(rec.patient_id)` as `base`; `BaselineForm`'s `own` is the box's `{key: bands.own_normal | null}` map it already received, read once more to tell a clear (`clearing`) from nothing to send (`nothing`). Every `t("patient.…")` the code names is one T8 (or, for `baselineClearsAll` / `baselineClearedAll` / `baselineChangedMeanwhile`, T14) defines in four languages (checked by `rawKeys.test.jsx`'s static net, T15 step 3 proves it bites).
+**Names and types across tasks.** Engine: `Band`, `NEWS2_BANDS`, `BANDS_SOURCE`, `points_for` (T1) are what T4 imports; `thin(series, max_points)` (T2) is called with `TRENDS_MAX_POINTS`; `since_utc` (T3) is shared by `audit.py` and `audit_postgres.py`; `records(…, since=…)` is keyword-only everywhere (T3's signature test); `patient_trends(engine, audit, *, hospital, patient_id, hours, now)` (T4) is what T5's route calls with `int(hours)` after the text check against `TRENDS_HOURS`; the route is listed in `BOARD_EXPECTED` and `UNSCOPED_BY_DESIGN` under the path FastAPI reports, `/patients/{patient_id}/trends`. Dashboard: `patientTrends(patientId, hours)` / `putPatientProfile(patientId, body)` (T6) are the names `useTrends` (T9) and `BaselineForm` (T14) call, and `fakeApi` carries both; `useTrends(patientId, hours, measuredKey)` → `{data, loading, unreadable, lastOkAt, reload}` is read the same way by `TrendsBox` and `TrendModal`; `measuredKeyOf(patient.measuredAt)`; the fixtures `trends(patientId, channels, over)`, `channel(key, points, over)`, `point(minutesAgo, value, points)`, `marker(minutesAgo, kind, label)`, `answering(build)`, `BANDS`, `KEYS` (T9) are what every later test uses; `news2Tone(points)` (T10) is used by `TrendCard` and `bandRects`; `CARDS` / `cardTitle` / `channelsOf` (T10) by the box, the dialog, the legend and the table; `TrendCard({card, channels, nowMs, sinceMs, untilMs, onOpen})` gains `sinceMs`/`untilMs` in T11 and `onOpen` is passed from T12; `TrendChart`'s props grow `onPlot` (T12) and `onKeyDown`, `describedBy` (T13) by Edit, never renamed; `whenText`/`markText` live in `TrendModal.jsx` in T12 and move to `trendText.js` (with `pointsText`) in T13, where `TrendModal` and `TrendTable` both import them and nothing else imported them from the dialog; `TrendsBox({patient, bed, nowMs})` gains `nowMs` in T10 and `bed` in T12, matching PatientScreen's edits in those tasks. The eighth pass follows the branch's Tasks 15–16: `rebased(events, end)` keeps its signature; `replay.py` gains `TIMEOUT_S` and `refusal_detail`, and its parser `allow_abbrev=False`; the sweep's `LABELS` gains `aria-roledescription`. The seventh pass follows the lane's Task 14: `BaselineForm.jsx` exports `BASELINE_KEYS`, `checkBaselines`, `keyOf` and `BaselineForm({patient, bed, own, onClose, onSaved})`; `charted(range)` is private to it; `TrendsBox`'s `editing` is `{ id, opening }`; one new key, `patient.baselineChangedMeanwhile`, and `baselineClearedAll` takes `{subject}`. The sixth pass follows the lane's Task 13: `TrendLegend.jsx` exports `TrendNotes` beside `TrendLegend`; `trendText.js` gains `valueBeside`; `TrendTable` takes the dialog's parsed `series` and `markers`; two keys, `patient.trendsChartRole` and `patient.trendsPointsUnknownRowSr`. The fifth pass follows the lane's Task 12: `valueTicks` returns `{ step, ticks }`; `indexAtTime(points, ms)` resolves the cursor (an instant) to an index at render; `marksNear` is gone (`marksAtTime` is the one rule); Task 13 moves `whenText` and `markText` from `TrendModal.jsx` to `trendText.js`, beside `markBeside` and `pointsText`, and `TrendChart` reads `whenText` from there; `readoutOf` stays private to the dialog (the announcement reads the same `readout` value). The fourth pass renames two exports and adds six: Task 12 replaces Task 11's `markerNear` (read only by its test) with `marksNear`, and its own `markerAtTime` with `marksAtTime` — both return EVERY mark at an x or an instant, and both dialogs (Tasks 12 and 13) read `marksAtTime`; `valueTicks(domain, count, { extent, resolution })` keeps Task 11's two-argument call working, beside `valueTickStep`, `valueExtent`, `valueResolution`, `tickLabel` and `timeLabelPlace`. The third pass renames nothing in the plan's own tasks: Tasks 1–4, 3b and 6–10 are the lanes' code, and Tasks 11–17 are written against it — `TrendCard` keeps its props and gains `sinceMs`/`untilMs` in Task 11 on the lane's `Reading` (`badge`, `pill`); `TrendLegend` gains `truncated`, which both dialogs (Tasks 12 and 13) pass from `markers_truncated`; the legend's ▲ reads `trendsLegendAlarm` while the readout and the table keep `trendsMarkerAlarm`. The second amendment renames nothing either: `TRENDS_MARKER_LIMIT` keeps its name (5000 now); `_markers` returns `(marks, truncated)` and only `patient_trends` calls it; `_finite` is private to `api/trends.py`; `markers_truncated` is a new key no dashboard module reads yet (O16); Task 12's `TrendLegend` passes `channel: t(s.labelKey)` to `trendsThinned`, which takes `{channel}` since the Task 8 review. The O4 amendment renames nothing: `profile_from_payload(patient_id, payload, base=None)` keeps its signature (T14a) and `_replay_profile` now passes `engine.profile(rec.patient_id)` as `base`; `BaselineForm`'s `own` is the box's `{key: bands.own_normal | null}` map it already received, read once more to tell a clear (`clearing`) from nothing to send (`nothing`). Every `t("patient.…")` the code names is one T8 (or, for `baselineClearsAll` / `baselineClearedAll` / `baselineChangedMeanwhile`, T14) defines in four languages (checked by `rawKeys.test.jsx`'s static net, T15 step 3 proves it bites).
 
