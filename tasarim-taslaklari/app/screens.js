@@ -157,7 +157,7 @@
   const hzName = (r) => (H.state.lang === "TR" ? (r[2] || r[1]) : (r[1] || r[2])) || r[1] || r[2] || "";
   H.register("vezne", { title:() => H.t("m_vezne"), perm:["admission", "summary"], render(root, params = {}) {
     const bankolar = BANKOLAR(), banko = H.state.vezneBanko || bankolar[0], donemNo = H.data.vezneDonemNo || (H.data.vezneDonemNo = 54038), tab = params.tab || "fatura";
-    const donemAcik = H.data.vezneDonemAcik !== false, donemYetki = H.can("admission") || H.can("summary");
+    const donemAcik = H.data.vezneDonemAcik !== false, donemYetki = H.can("vezne_donem");
     const TABS = [["fatura", "Faturalar"], ["fiyat", "Fiyat verme"], ["gfk", "GFK takip"], ["evrak", "Evrak takip"]];
     const bar = `<div class="ist-lock ${donemAcik ? "" : "closed"}">${I(donemAcik ? "key" : "lock") || ""}<span>Dönem <b>#${donemNo}</b> · <b>${donemAcik ? "Açık" : "Kapalı · işlem yapılamaz"}</b> · Banko: <b>${H.esc(banko)}</b></span><select data-vbanko title="Çalıştığın banko/kasa"${donemAcik ? "" : " disabled"}>${bankolar.map(b => `<option${b === banko ? " selected" : ""}>${H.esc(b)}</option>`).join("")}</select>${donemYetki ? `<button class="btn sm" data-vdonem>${donemAcik ? "Dönem kapat" : "Yeni dönem aç"}</button>` : ""}</div>`;
     const strip = `<div class="seg" style="margin-bottom:12px">${TABS.map(([k, l]) => `<button data-vtab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
@@ -199,7 +199,7 @@
       document.addEventListener("click", (e) => { if (!root.querySelector(".amel-cb").contains(e.target)) dd.classList.add("hidden"); });
     }
     root.onchange = (e) => {
-      const vb = e.target.closest("[data-vbanko]"); if (vb) { H.state.vezneBanko = vb.value; H.log("Vezne banko değişti", vb.value); H.toast("Banko: " + vb.value); return; }
+      const vb = e.target.closest("[data-vbanko]"); if (vb) { if (!H.can("vezne_banko")) { vb.value = banko; H.toast("Banko değiştirme yetkiniz yok.", "e"); return; } H.state.vezneBanko = vb.value; H.log("Vezne banko değişti", vb.value); H.toast("Banko: " + vb.value); return; }
       const fk = e.target.closest("[data-fkurum]"); if (fk) return H.go("vezne", { tab:"fiyat", kurum:fk.value, kamp:params.kamp });
       const fkp = e.target.closest("[data-fkamp]"); if (fkp) return H.go("vezne", { tab:"fiyat", kurum:params.kurum, kamp:fkp.value });
       const gs = e.target.closest("[data-gfkst]"); if (gs) { const x = gfkRows()[+gs.dataset.gfkst]; if (x) { x.durum = gs.value; H.log("GFK durumu", x.proto + " · " + x.durum); H.toast("Durum: " + x.durum); } }

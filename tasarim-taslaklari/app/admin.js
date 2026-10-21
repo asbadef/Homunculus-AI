@@ -1148,7 +1148,7 @@
   }
   function tabKampanya(body) {
     kampSeed(); const ALL = H.data.kampanyalar;
-    body.innerHTML = `<div class="adm-bar"><input data-kq placeholder="Kampanya ara" value="${esc(AD.kq || "")}"><span class="spacer"></span><span class="adm-sub" data-kcount></span><button class="btn p" data-knew>+ Yeni kampanya</button></div>
+    body.innerHTML = `<div class="adm-bar"><input data-kq placeholder="Kampanya ara" value="${esc(AD.kq || "")}"><span class="spacer"></span><span class="adm-sub" data-kcount></span>${H.can("kampanya_create") ? `<button class="btn p" data-knew>+ Yeni kampanya</button>` : `<span class="adm-sub">oluşturma yetkiniz yok</span>`}</div>
       <div data-klist></div>
       <p class="adm-sub" style="margin-top:10px">Kampanyayı yalnız <b>yetkili rol</b> (ör. Kampanya Yöneticisi) oluşturur; vezne Fiyat Verme ekranında yalnız aktif kampanyayı <b>seçer</b>. Kapsam (geliş/bölüm) ve uygulama tipi (yüzde/sabit) burada tanımlanır.</p>`;
     const list = body.querySelector("[data-klist]");
@@ -1159,7 +1159,7 @@
     };
     draw();
     body.querySelector("[data-kq]").addEventListener("input", e => { AD.kq = e.target.value; draw(); });
-    body.querySelector("[data-knew]").addEventListener("click", () => kampForm(null, draw));
+    const knew = body.querySelector("[data-knew]"); if (knew) knew.addEventListener("click", () => kampForm(null, draw));
     list.addEventListener("click", e => {
       const del = e.target.closest("[data-kdel]"); if (del) { e.stopPropagation(); if (confirm("Bu kampanya silinsin mi?")) { const i = ALL.findIndex(x => x.id === del.dataset.kdel); if (i >= 0) ALL.splice(i, 1); H.toast("Silindi", "w"); draw(); } return; }
       const tr = e.target.closest("[data-kedit]"); if (tr) { const row = ALL.find(x => x.id === tr.dataset.kedit); if (row) kampForm(row, draw); }
@@ -1385,6 +1385,7 @@
     ["Ekipler", [["rrt", "Hızlı yanıt ekibi"], ["pharmacy", "Eczane"], ["devices", "Cihaz envanteri"], ["maintenance", "Bakım ve kalibrasyon takvimi"]]],
     ["Yönetim", [["summary", "Yönetici özeti"], ["quality", "Kalite göstergeleri"], ["audit", "Denetim kaydı"], ["admin_users", "Kullanıcı yönetimi"], ["admin_structure", "Hastane yapısı"], ["admin_roles", "Roller ve yetkiler"],
       ["admin_system", "Sistem ayarları"], ["admin_integrations", "Entegrasyonlar"], ["admin_camera", "Kamera bağlantısı"]]],
+    ["Vezne ve finans", [["vezne_donem", "Vezne dönem aç / kapat"], ["vezne_banko", "Vezne banko / kasa değiştir"], ["kampanya_create", "Kampanya oluştur"], ["indirim_onay", "İndirim onayla"], ["iade_onay", "İade onayla"], ["fiyat_duzenle", "Hizmet fiyatı düzenle"]]],
   ];
   /* 24.09 (3. oturum) · Ozan #67: "admin panelinde tüm yetkileri aktif getir; elle açıyorum sonra kayboluyor".
    * 1) Sistem yöneticisi prototipte BÜTÜN yetkilerle gelir (hasta ekranları dahil).
