@@ -663,6 +663,7 @@
     ["diyetliste", "Diyet Listesi", "admin_system", "list"],   // diyet listesi + öğün giriş saatleri; doktor diyet isteminde seçer
     ["bakimliste", "Bakım İstem Listesi", "admin_system", "list"],   // hemşirelik bakım istem kataloğu; hemşire/doktor bakım isteminde seçer
     ["hizmettanim", "Otomatik Hizmet Tanımı", "admin_system", "list"],   // bölüm→muayene hizmeti eşlemesi; kabul kayıt açınca otomatik düşer
+    ["bolumliste", "Bölüm / Branş Listesi", "admin_system", "list"],   // tıbbi bölümler + branş; hizmet tanımı ve kabul bunu kullanır
     ["mobile", "Telefon modülleri", "admin_system", "tablet"],   // 27.09 · #193
     ["system", "Sistem ayarları", "admin_system", "gear"], ["audit", "Denetim kaydı", "audit", "file"],
     // 30.09 · İzleme ve işletim (Y1–Y7) · kod: dosyanın sonundaki "İZLEME VE İŞLETİM" bölümü
@@ -671,7 +672,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -697,7 +698,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -911,7 +912,7 @@
     htSeed(); const ALL = H.data.hizmetTanim, e = existing || {};
     H.modal({ title:existing ? "Hizmet tanımı düzenle" : "Yeni hizmet tanımı", wide:true,
       body:`<div class="icd-form">
-        <div class="fr"><label>Bölüm</label><input data-f="bolum" value="${esc(e.bolum || "")}" placeholder="ör. Kardiologiya"></div>
+        <div class="fr"><label>Bölüm</label><input data-f="bolum" list="ht-bolumler" value="${esc(e.bolum || "")}" placeholder="Bölüm seçin ya da yazın"><datalist id="ht-bolumler">${(bolumSeed(), (H.data.bolumler || []).map(b => `<option>${esc(b.ad)}</option>`).join(""))}</datalist></div>
         <div class="fr"><label>Muayene hizmeti</label><div class="amel-cb"><input data-f="hiz" value="${esc(e.hizmetAd || "")}" placeholder="Muayene hizmeti ara (katalogdan)" autocomplete="off"><div class="amel-dd hidden" data-ht-dd></div></div></div>
         <div class="fr"><label>Geliş tipi</label><select data-f="gelis">${HT_GELIS.map(x => `<option${e.gelis === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></div>
         <div class="fr"><label>Protokol tipi</label><select data-f="proto">${HT_PROTO.map(x => `<option${e.protokol === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></div>
@@ -935,6 +936,43 @@
           H.log(existing ? "Hizmet tanımı güncellendi" : "Hizmet tanımı eklendi", bolum + " → " + hizmetAd); H.closeModal(); H.toast("Kaydedildi"); redraw();
         };
         const del = m.querySelector("[data-htdelf]"); if (del) del.onclick = () => { if (!confirm("Bu tanım silinsin mi?")) return; const i = ALL.findIndex(x => x.id === e.id); if (i >= 0) ALL.splice(i, 1); H.closeModal(); H.toast("Silindi", "w"); redraw(); };
+      } });
+  }
+
+  /* ---------- Bölüm / Branş Listesi ---------- */
+  function bolumSeed() {
+    if (H.data.bolumler) return;
+    H.data.bolumler = ["Daxili Xəstəliklər", "Kardiologiya", "Oftalmologiya", "Ümumi Cərrahiyyə", "Uşaq Xəstəlikləri", "Nevrologiya", "Nevrocərrahiyyə", "Mamalıq-Ginekologiya", "Uşaq Cərrahiyyəsi", "Endokrinologiya", "Nefrologiya", "Hematologiya", "Qastroenterologiya", "Pulmonologiya", "Travmatologiya-Ortopediya", "Urologiya", "Dermatologiya", "Psixiatriya", "Onkologiya", "Anesteziologiya-Reanimatologiya", "Təcili Yardım", "Fizioterapiya-Reabilitasiya", "Nüvə Təbabəti", "İnfeksion Xəstəliklər", "Revmatologiya", "Plastik Cərrahiyyə", "Torakal Cərrahiyyə", "Ürək-Damar Cərrahiyyəsi"].map((ad, i) => ({ id:"bol" + (i + 1), ad, brans:ad }));
+  }
+  function tabBolum(body) {
+    bolumSeed(); const ALL = H.data.bolumler;
+    body.innerHTML = `<div class="adm-bar"><input data-blq placeholder="Bölüm ara" value="${esc(AD.blq || "")}"><span class="spacer"></span><span class="adm-sub" data-blcount></span><button class="btn p" data-blnew>+ Yeni bölüm</button></div>
+      <div data-bllist></div>
+      <p class="adm-sub" style="margin-top:10px">Tıbbi bölümler. Otomatik Hizmet Tanımı ve kabul kaydı bu listeyi kullanır. (Branş kodları/SUT eşlemesi veri dosyası gelince eklenir.)</p>`;
+    const list = body.querySelector("[data-bllist]");
+    const draw = () => {
+      const q = norm(AD.blq || ""), res = q ? ALL.filter(x => norm(x.ad).includes(q)) : ALL;
+      body.querySelector("[data-blcount]").textContent = ALL.length + " bölüm";
+      list.innerHTML = res.length ? `<div class="tw"><table class="t"><thead><tr><th>Bölüm / branş</th><th style="width:44px"></th></tr></thead><tbody>${res.map(x => `<tr data-bledit="${x.id}" style="cursor:pointer"><td><b>${esc(x.ad)}</b></td><td><button class="btn g sm" data-bldel="${x.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen bölüm yok.</div>`;
+    };
+    draw();
+    body.querySelector("[data-blq]").addEventListener("input", e => { AD.blq = e.target.value; draw(); });
+    body.querySelector("[data-blnew]").addEventListener("click", () => bolumForm(null, draw));
+    list.addEventListener("click", e => {
+      const del = e.target.closest("[data-bldel]"); if (del) { e.stopPropagation(); if (confirm("Bu bölüm silinsin mi?")) { const i = ALL.findIndex(x => x.id === del.dataset.bldel); if (i >= 0) ALL.splice(i, 1); H.toast("Silindi", "w"); draw(); } return; }
+      const tr = e.target.closest("[data-bledit]"); if (tr) { const row = ALL.find(x => x.id === tr.dataset.bledit); if (row) bolumForm(row, draw); }
+    });
+  }
+  function bolumForm(existing, redraw) {
+    bolumSeed(); const ALL = H.data.bolumler, e = existing || {};
+    H.modal({ title:existing ? "Bölüm düzenle" : "Yeni bölüm",
+      body:`<div class="icd-form"><div class="fr"><label>Bölüm / branş adı</label><input data-f="ad" value="${esc(e.ad || "")}" placeholder="ör. Kardiologiya"></div></div>`,
+      actions:`${existing ? `<button class="btn g" data-bldelf>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-blsave>Kaydet</button>`,
+      onMount(m) {
+        m.querySelector("[data-blsave]").onclick = () => { const ad = (m.querySelector('[data-f="ad"]').value || "").trim(); if (!ad) { H.toast("Ad gerekli.", "w"); return; }
+          if (existing) { e.ad = ad; e.brans = ad; } else ALL.unshift({ id:"bol" + Date.now(), ad, brans:ad });
+          H.log(existing ? "Bölüm güncellendi" : "Bölüm eklendi", ad); H.closeModal(); H.toast("Kaydedildi"); redraw(); };
+        const del = m.querySelector("[data-bldelf]"); if (del) del.onclick = () => { if (!confirm("Bu bölüm silinsin mi?")) return; const i = ALL.findIndex(x => x.id === e.id); if (i >= 0) ALL.splice(i, 1); H.closeModal(); H.toast("Silindi", "w"); redraw(); };
       } });
   }
 
