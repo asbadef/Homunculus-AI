@@ -12,10 +12,28 @@
 
   // Hizmet adı: TR seçiliyse ikinci (TR) ad, değilse kurum (AZ) adı. Boşsa diğerine düş.
   const hzName = (row) => (H.state.lang === "TR" ? (row[2] || row[1]) : (row[1] || row[2]));
-  const tipOf = (row) => (H.HIZMET_TIP ? H.HIZMET_TIP[row[3]] : "");
+  // tip: hizmet kataloğunda sayı (H.HIZMET_TIP index), özel kataloglarda düz metin.
+  const tipOf = (row) => (typeof row[3] === "number" ? (H.HIZMET_TIP ? H.HIZMET_TIP[row[3]] : "") : (row[3] || ""));
 
   // İlaç/kan ürünü örnek listesi (katalog dışı; kendi alanları var).
   const KAN = ["Eritrosit Süspansiyonu", "Taze Donmuş Plazma", "Tam Kan", "Random Trombosit Süspansiyonu", "Aferez Trombosit Süspansiyonu", "Kriyopresipitat", "Aferez Granülosit Süspansiyonu", "Havuzlanmış Trombosit"];
+  // Hemşirelik bakım kataloğu (kurum bakım listesi örneği; satır: [kod, ad(AZ), ad(TR), tip]).
+  const BAKIM = [
+    ["B1", "Qlükometr", "Glukometre (kan şekeri)", "Bakım"], ["B2", "Arteriya Baxımı", "Arter bakımı", "Bakım"],
+    ["B3", "Decubitus Qulluğu", "Bası yarası bakımı", "Bakım"], ["B4", "Dializ Kateter Sarğı", "Diyaliz kateter pansumanı", "Bakım"],
+    ["B5", "Drenaj Baxımı", "Dren bakımı", "Bakım"], ["B6", "Əl-Üz Qulluğu", "El-yüz bakımı", "Bakım"],
+    ["B7", "İntubasiya Baxımı", "Entübasyon bakımı", "Bakım"], ["B8", "Gözə Qulluq", "Göz bakımı", "Bakım"],
+    ["B9", "Perineum Təqibi", "Perine bakımı", "Bakım"], ["B10", "Saç Hamamı", "Saç yıkama", "Bakım"],
+    ["B11", "Stoma Qulluğu", "Stoma bakımı", "Bakım"], ["B12", "Traxeostomiya Baxımı", "Trakeostomi bakımı", "Bakım"],
+    ["B13", "Triflo", "Triflo (solunum egzersizi)", "Bakım"], ["B14", "Yara Baxımı", "Yara bakımı", "Bakım"],
+    ["B15", "Yataq Hamamı", "Yatak banyosu", "Bakım"], ["B16", "Yataq Dəyişməsi", "Yatak değişimi", "Bakım"],
+    ["B17", "Sidik Kateteri Baxımı", "İdrar sondası bakımı", "Bakım"], ["B18", "Ağız Baxımı", "Ağız bakımı", "Bakım"],
+    ["B19", "Nazoqastrik Zond Baxımı", "Nazogastrik sonda bakımı", "Bakım"], ["B20", "Mərkəzi Kateter Baxımı", "Santral kateter bakımı", "Bakım"],
+    ["B21", "Pozisiya Dəyişməsi", "Pozisyon değiştirme", "Bakım"], ["B22", "Aspirasiya", "Aspirasyon", "Bakım"],
+    ["B23", "Enteral Qidalanma", "Enteral beslenme", "Bakım"], ["B24", "Soyuq/İsti Tətbiqi", "Soğuk/sıcak uygulama", "Bakım"],
+  ];
+  // Diyet tipleri (öğün bazlı diyet formunda kullanılır).
+  const DIET = ["Normal", "Diyabetik", "Tuzsuz", "Yüksek proteinli", "Düşük proteinli", "Gebe / emziren diyeti", "Sıvı diyet", "Yumuşak diyet", "Gazsız diyet", "Oral alım yok (NPO)"];
 
   const favs = () => (H.data.hizmetFav = H.data.hizmetFav || {});
   const isFav = (kod) => !!favs()[kod];
@@ -30,20 +48,9 @@
 
   // İstem başlatıcı grupları. Katalogdan seçilenler "kat" ile işaretli; ötekiler kendi kısa formunu açar.
   const GROUPS = [
-    ["Tetkik ve görüntüleme", [
-      ["lab", "Laboratuvar tetkiki", "kat", ["Laboratuvar Hizmeti", "Patoloji Hizmeti"], "Laboratuvar"],
-      ["rad", "Görüntüleme (radyoloji)", "kat", ["Radyoloji Hizmeti"], "Radyoloji"],
-    ]],
-    ["Hizmet ve işlem", [
-      ["hizmet", "Hizmet / işlem", "kat", null, "Hizmet"],
-      ["kons", "Konsültasyon", "form"],
-      ["diyet", "Diyet", "form"],
-      ["bakim", "Bakım istemi", "form"],
-    ]],
-    ["İlaç ve kan", [
-      ["ilac", "İlaç istemi", "form"],
-      ["kan", "Kan ürünü", "form"],
-    ]],
+    ["Tetkik ve görüntüleme", [["lab", "Laboratuvar tetkiki"], ["rad", "Görüntüleme (radyoloji)"]]],
+    ["Hizmet ve işlem", [["hizmet", "Hizmet / işlem"], ["kons", "Konsültasyon"], ["diyet", "Diyet istemi"], ["bakim", "Bakım istemi"]]],
+    ["İlaç ve kan", [["ilac", "İlaç istemi"], ["kan", "Kan ürünü"]]],
   ];
 
   function html(p) {
@@ -61,7 +68,8 @@
   function openCatalog(p, cfg, rerender) {
     const tipsOk = cfg.tips;                       // izinli Hizmet Tipi listesi; null → tümü
     const tipIdxOk = tipsOk && (H.HIZMET_TIP || []).reduce((a, t, i) => { if (tipsOk.includes(t)) a[i] = 1; return a; }, {});
-    const pool = (H.HIZMET || []).filter(r => !tipIdxOk || tipIdxOk[r[3]]);
+    // cfg.pool verilirse özel katalog (ör. bakım); yoksa kurum hizmet listesi.
+    const pool = cfg.pool || (H.HIZMET || []).filter(r => !tipIdxOk || tipIdxOk[r[3]]);
     // Sol ağaç: havuzdaki kategoriler + "Favoriler" + "Hepsi"
     const cats = [...new Set(pool.map(r => tipOf(r)))];
     const cart = [];                               // seçilenler: {row, aciklama, acil}
@@ -85,10 +93,10 @@
     const listHtml = () => {
       const m = matches(), shown = m.slice(0, state.limit);
       if (!m.length) return `<div class="empty">Eşleşen hizmet yok.</div>`;
-      return `<div class="tw hc-tw"><table class="t"><thead><tr><th style="width:36px"></th><th>Ad</th><th style="width:150px">Katalog</th><th style="width:90px">Kod</th><th style="width:72px">SUT</th><th style="width:44px"></th></tr></thead><tbody>${shown.map(r => {
+      return `<div class="tw hc-tw"><table class="t"><thead><tr><th style="width:36px"></th><th>Ad</th><th style="width:160px">Katalog</th><th style="width:90px">Kod</th><th style="width:44px"></th></tr></thead><tbody>${shown.map(r => {
         const inCart = cart.some(c => c.row[0] === r[0]);
         return `<tr><td><button class="hc-fav ${isFav(r[0]) ? "on" : ""}" data-fav="${esc(r[0])}" title="Favori">${isFav(r[0]) ? "★" : "☆"}</button></td>
-          <td><b>${esc(hzName(r))}</b></td><td class="adm-sub">${esc(tipOf(r))}</td><td class="mono adm-sub">${esc(r[0])}</td><td class="mono adm-sub">${esc(r[4] || "—")}</td>
+          <td><b>${esc(hzName(r))}</b></td><td class="adm-sub">${esc(tipOf(r))}</td><td class="mono adm-sub">${esc(r[0])}</td>
           <td><button class="btn ${inCart ? "" : "p"} sm" data-add="${esc(r[0])}" ${inCart ? "disabled" : ""}>${inCart ? "✓" : "+"}</button></td></tr>`;
       }).join("")}</tbody></table></div>
       ${m.length > state.limit ? `<div class="hc-more"><button class="btn g sm" data-more>Daha fazla göster (${m.length - state.limit})</button></div>` : ""}`;
@@ -130,7 +138,7 @@
         cartEl.onchange = (e) => { const a = e.target.closest("[data-acil]"); if (a) cart[+a.dataset.acil].acil = a.checked; };
         m.querySelector("[data-ok]").onclick = () => {
           if (!cart.length) { H.toast("Önce hizmet seçin.", "w"); return; }
-          cart.forEach(c => addOrder(p, { cat:cfg.cat, ad:hzName(c.row), detay:[c.acil ? "Acil" : "", c.row[4] ? "SUT " + c.row[4] : "", c.aciklama].filter(Boolean).join(" · ") }));
+          cart.forEach(c => addOrder(p, { cat:cfg.cat, ad:hzName(c.row), detay:[c.acil ? "Acil" : "", "Kod " + c.row[0], c.aciklama].filter(Boolean).join(" · ") }));
           H.toast(cart.length + " istem eklendi"); H.closeModal(); rerender();
         };
       },
@@ -159,25 +167,50 @@
       `<div class="fr"><label>Bölüm</label><input data-f="ad" placeholder="ör. Kardiyoloji"></div>
        <div class="fr"><label>Neden</label><input data-f="det" placeholder="Konsültasyon nedeni"></div>`,
       (m) => { const ad = val(m, "ad"); if (!ad) { H.toast("Bölüm gerekli.", "w"); return null; } return { cat:"Konsültasyon", ad, detay:val(m, "det") }; });
-    if (type === "diyet") return simple("Diyet istemi",
-      `<div class="fr"><label>Diyet</label><input data-f="ad" placeholder="ör. Diyabetik diyet"></div>
-       <div class="fr"><label>Not</label><input data-f="det" placeholder="Açıklama"></div>`,
-      (m) => { const ad = val(m, "ad"); if (!ad) { H.toast("Diyet gerekli.", "w"); return null; } return { cat:"Diyet", ad, detay:val(m, "det") }; });
-    if (type === "bakim") return simple("Bakım istemi",
-      `<div class="fr"><label>Bakım</label><input data-f="ad" placeholder="ör. Yara pansumanı"></div>
-       <div class="fr"><label>Sıklık</label><input data-f="det" placeholder="ör. günde 1 kez"></div>`,
-      (m) => { const ad = val(m, "ad"); if (!ad) { H.toast("Bakım gerekli.", "w"); return null; } return { cat:"Bakım", ad, detay:val(m, "det") }; });
     H.toast("Bu istem türü yakında eklenecek.", "w");
   }
 
+  /* ---------- Diyet istemi (öğün bazlı) ---------- */
+  function openDiyet(p, rerender) {
+    const MEALS = ["Kahvaltı", "Öğle", "Akşam", "Ara öğün", "Ek öğün"];
+    const today = new Date().toISOString().slice(0, 10);
+    const body = `<div class="dyt">
+      <div class="fr"><label>Diyet başlangıcı</label><input type="date" data-f="tarih" value="${today}"></div>
+      <div class="tw"><table class="t"><thead><tr><th style="width:110px">Öğün</th><th>Diyet tipi</th><th>Not</th><th style="width:88px">Porsiyon</th><th style="width:96px">Refakatçi</th></tr></thead><tbody>
+      ${MEALS.map((mm, i) => `<tr><td><b>${esc(mm)}</b></td>
+        <td><select data-diet="${i}"><option value="">— seçilmedi —</option>${DIET.map(d => `<option>${esc(d)}</option>`).join("")}</select></td>
+        <td><input data-dnot="${i}" placeholder="Not"></td>
+        <td><input type="number" data-dpor="${i}" value="1" min="0" style="width:72px"></td>
+        <td><label class="hc-ac"><input type="checkbox" data-dref="${i}"> Var</label></td></tr>`).join("")}
+      </tbody></table></div>
+      <p class="adm-sub" style="margin-top:6px">Diyet tipi seçili öğünler istemle mutfağa iletilir (tasarım).</p></div>`;
+    H.modal({ title:"Diyet istemi", wide:true, body,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>İsteme ekle</button>`,
+      onMount(m) {
+        m.querySelector("[data-ok]").onclick = () => {
+          const tarih = m.querySelector("[data-f='tarih']").value || today;
+          const picked = MEALS.map((mm, i) => {
+            const diet = m.querySelector(`[data-diet="${i}"]`).value;
+            if (!diet) return null;
+            const not = m.querySelector(`[data-dnot="${i}"]`).value.trim();
+            const por = m.querySelector(`[data-dpor="${i}"]`).value;
+            const ref = m.querySelector(`[data-dref="${i}"]`).checked;
+            return `${mm}: ${diet}${por ? " ×" + por : ""}${ref ? " · refakatçi" : ""}${not ? " · " + not : ""}`;
+          }).filter(Boolean);
+          if (!picked.length) { H.toast("En az bir öğüne diyet seçin.", "w"); return; }
+          addOrder(p, { cat:"Diyet", ad:"Diyet planı", detay:`${tarih} · ${picked.join(" | ")}` });
+          H.toast("Diyet istemi eklendi"); H.closeModal(); rerender();
+        };
+      } });
+  }
+
   function dispatch(p, key, rerender) {
-    for (const [, items] of GROUPS) {
-      const it = items.find(x => x[0] === key);
-      if (it) {
-        if (it[2] === "kat") return openCatalog(p, { title:it[1], tips:it[3], cat:it[4] }, rerender);
-        return openForm(p, key, rerender);
-      }
-    }
+    if (key === "lab") return openCatalog(p, { title:"Laboratuvar tetkiki", tips:["Laboratuvar Hizmeti", "Patoloji Hizmeti"], cat:"Laboratuvar" }, rerender);
+    if (key === "rad") return openCatalog(p, { title:"Görüntüleme (radyoloji)", tips:["Radyoloji Hizmeti"], cat:"Radyoloji" }, rerender);
+    if (key === "hizmet") return openCatalog(p, { title:"Hizmet / işlem", tips:null, cat:"Hizmet" }, rerender);
+    if (key === "bakim") return openCatalog(p, { title:"Bakım istemi", pool:BAKIM, cat:"Bakım" }, rerender);
+    if (key === "diyet") return openDiyet(p, rerender);
+    return openForm(p, key, rerender);   // ilac / kan / kons
   }
 
   function after(el, p) {

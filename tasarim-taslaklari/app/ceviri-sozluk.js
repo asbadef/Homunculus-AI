@@ -11656,3 +11656,30 @@ Object.assign(window.HMC_SOZLUK, {
 "Poliklinik": { "AZ": "Poliklinika", "EN": "Outpatient clinic", "RU": "Поликлиника" },
 "Poliklinikler": { "AZ": "Poliklinikalar", "EN": "Outpatient clinics", "RU": "Поликлиники" },
 });
+
+(function (A) { for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({   // 21.10 · diyet (ogun bazli) istem metinleri; yalniz eksik olanlar
+"Kahvaltı": { "AZ": "Səhər yeməyi", "EN": "Breakfast", "RU": "Завтрак" },
+"Öğle": { "AZ": "Günorta", "EN": "Lunch", "RU": "Обед" },
+"Akşam": { "AZ": "Axşam", "EN": "Dinner", "RU": "Ужин" },
+"Ara öğün": { "AZ": "Aralıq yemək", "EN": "Snack", "RU": "Перекус" },
+"Ek öğün": { "AZ": "Əlavə yemək", "EN": "Extra meal", "RU": "Доп. приём пищи" },
+"Diyet başlangıcı": { "AZ": "Pəhrizin başlanğıcı", "EN": "Diet start", "RU": "Начало диеты" },
+"Diyet tipi": { "AZ": "Pəhriz növü", "EN": "Diet type", "RU": "Тип диеты" },
+"Porsiyon": { "AZ": "Porsiya", "EN": "Portion", "RU": "Порция" },
+"Refakatçi": { "AZ": "Müşayiətçi", "EN": "Companion", "RU": "Сопровождающий" },
+"İsteme ekle": { "AZ": "İstəyə əlavə et", "EN": "Add to orders", "RU": "Добавить в назначения" },
+"En az bir öğüne diyet seçin.": { "AZ": "Ən azı bir yeməyə pəhriz seçin.", "EN": "Choose a diet for at least one meal.", "RU": "Выберите диету хотя бы для одного приёма пищи." },
+"Diyet istemi eklendi": { "AZ": "Pəhriz istəyi əlavə olundu", "EN": "Diet order added", "RU": "Назначение диеты добавлено" },
+"Diyet planı": { "AZ": "Pəhriz planı", "EN": "Diet plan", "RU": "План диеты" },
+"— seçilmedi —": { "AZ": "— seçilməyib —", "EN": "— none —", "RU": "— не выбрано —" },
+"Diyabetik": { "AZ": "Diabetik", "EN": "Diabetic", "RU": "Диабетическая" },
+"Tuzsuz": { "AZ": "Duzsuz", "EN": "Salt-free", "RU": "Бессолевая" },
+"Yüksek proteinli": { "AZ": "Yüksək proteinli", "EN": "High-protein", "RU": "Высокобелковая" },
+"Düşük proteinli": { "AZ": "Aşağı proteinli", "EN": "Low-protein", "RU": "Низкобелковая" },
+"Gebe / emziren diyeti": { "AZ": "Hamilə / əmizdirən pəhrizi", "EN": "Pregnancy / nursing diet", "RU": "Диета для беременных / кормящих" },
+"Sıvı diyet": { "AZ": "Maye pəhriz", "EN": "Liquid diet", "RU": "Жидкая диета" },
+"Yumuşak diyet": { "AZ": "Yumşaq pəhriz", "EN": "Soft diet", "RU": "Мягкая диета" },
+"Gazsız diyet": { "AZ": "Qazsız pəhriz", "EN": "Gas-free diet", "RU": "Диета без газообразующих" },
+"Oral alım yok (NPO)": { "AZ": "Ağızdan qəbul yoxdur (NPO)", "EN": "Nothing by mouth (NPO)", "RU": "Ничего через рот (NPO)" },
+"Diyet tipi seçili öğünler istemle mutfağa iletilir (tasarım).": { "AZ": "Pəhriz növü seçilmiş yeməklər istəklə mətbəxə göndərilir (dizayn).", "EN": "Meals with a selected diet type are sent to the kitchen with the order (design).", "RU": "Приёмы пищи с выбранным типом диеты отправляются на кухню с назначением (дизайн)." }
+});
