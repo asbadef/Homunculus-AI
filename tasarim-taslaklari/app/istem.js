@@ -51,6 +51,7 @@
     ["Tetkik ve görüntüleme", [["lab", "Laboratuvar tetkiki"], ["rad", "Görüntüleme (radyoloji)"]]],
     ["Hizmet ve işlem", [["hizmet", "Hizmet / işlem"], ["kons", "Konsültasyon"], ["diyet", "Diyet istemi"], ["bakim", "Bakım istemi"]]],
     ["İlaç ve kan", [["ilac", "İlaç istemi"], ["kan", "Kan ürünü"]]],
+    ["Ameliyat / yatış", [["ameliyat", "Ameliyat / yatış istemi"]]],
   ];
 
   function html(p) {
@@ -59,8 +60,14 @@
     const rows = list.length
       ? `<div class="tw"><table class="t"><thead><tr><th style="width:116px">Saat</th><th style="width:130px">Tür</th><th>İstem</th><th>Ayrıntı</th><th style="width:96px">Durum</th><th style="width:44px"></th></tr></thead><tbody>${list.map(o => `<tr><td class="mono adm-sub">${esc(o.at)}</td><td>${esc(o.cat)}</td><td><b>${esc(o.ad || "")}</b></td><td class="adm-sub">${esc(o.detay || "")}</td><td><span class="tag">${esc(o.durum)}</span></td><td><button class="btn g sm" data-istrm="${o.id}" title="Kaldır">${ic("x") || "×"}</button></td></tr>`).join("")}</tbody></table></div>`
       : `<div class="empty">Bu başvuruda henüz istem yok. Yukarıdan bir istem türü seçin.</div>`;
+    // Şablonlar (adlı istem paketleri): tek tıkla içindeki tüm istemler hastaya eklenir.
+    const mt = myTpls();
+    const tplRow = mt.length
+      ? `<div class="ist-tpls">${mt.map(t => `<span class="ist-tpl"><button class="btn sm" data-tplap="${t.id}" title="Bu paketteki tüm istemleri hastaya ekle">${ic("add") || "+"} ${esc(t.name)} <em>${t.items.length}</em></button><button class="btn g sm" data-tpldel="${t.id}" title="Paketi sil">${ic("x") || "×"}</button></span>`).join("")}</div>`
+      : `<div class="adm-sub">Kayıtlı paket yok. Birkaç istem ekleyip <b>Paket olarak kaydet</b> deyin; sonra tek tıkla başka hastaya da istersiniz.</div>`;
     return `<div class="ist" data-ist-root><div class="ist-launch">${grp}</div>
-      <h5 style="margin:16px 0 6px">Bu başvurudaki istemler</h5>${rows}
+      <div class="ist-sec"><h5>Hazır paketler (şablonlar)</h5>${tplRow}</div>
+      <div class="ist-sec ist-hd"><h5>Bu başvurudaki istemler</h5>${list.length ? `<button class="btn sm" data-tplsave>${ic("save") || ""} Paket olarak kaydet</button>` : ""}</div>${rows}
       <p class="adm-sub" style="margin-top:8px">İstemler bu ekranda tutulur; gerçek HBYS / laboratuvar / radyoloji (PACS) / eczane bağlantısını ayrı ekip kurar.</p></div>`;
   }
 
@@ -204,12 +211,75 @@
       } });
   }
 
+  /* ---------- Ameliyat / yatış istemi ---------- */
+  function openAmeliyat(p, rerender) {
+    const today = new Date().toISOString().slice(0, 16);
+    const hekims = (H.data.users || []).filter(u => u.role === "hekim");
+    const units = (H.units ? H.units() : []).filter(u => u.tier !== "op" || u.type === "op");
+    const ANES = ["Genel", "Spinal", "Lokal", "İntravenöz", "İnfiltrasyon", "Rejyonal", "Sedoanaljezi"];
+    const OPTS = [["ameliyathane", "Ameliyathane kullanımı"], ["malzeme", "Özellikli malzeme"], ["kanrez", "Kan ürünü rezerve"], ["patoloji", "Muhtemel patoloji"], ["frozen", "Frozen inceleme"], ["konsinye", "Konsinye malzeme"]];
+    const body = `<div class="icd-form amf">
+      <div class="fg2">
+        <div class="fr"><label>Aciliyet</label><select data-f="acil"><option>Normal</option><option>En kısa sürede</option><option>Acil</option></select></div>
+        <div class="fr"><label>Ameliyat tarihi</label><input type="datetime-local" data-f="tarih" value="${today}"></div>
+        <div class="fr"><label>Yatış süresi (gün)</label><input type="number" data-f="yatis" value="1" min="0"></div>
+        <div class="fr"><label>Yoğun bakım süresi (gün)</label><input type="number" data-f="ybu" value="0" min="0"></div>
+        <div class="fr"><label>Bölüm</label><select data-f="bolum"><option value="">—</option>${units.map(u => `<option>${esc(u.tr)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Cerrah</label><select data-f="cerrah">${hekims.map(u => `<option>${esc(u.name)}</option>`).join("")}</select></div>
+      </div>
+      <label class="hc-ac" style="margin:4px 0 10px"><input type="checkbox" data-f="gunubirlik"> Günübirlik ameliyat</label>
+      <div class="fr"><label>Yapılacak ameliyat</label><input data-f="ad" placeholder="ör. Laparoskopik kolesistektomi"></div>
+      <div class="fg2">
+        <div class="fr"><label>Anestezi tipi</label><select data-f="anes">${ANES.map(a => `<option>${esc(a)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Anestezi değerlendirmesi</label><select data-f="anesist"><option>İç anestezist</option><option>Dış anestezist</option><option>Gerekmez</option></select></div>
+      </div>
+      <div class="fr"><label>Özellikli istekler</label><div class="amf-opts">${OPTS.map(o => `<label class="hc-ac"><input type="checkbox" data-opt="${o[0]}"> ${esc(o[1])}</label>`).join("")}</div></div>
+      <div class="fr"><label>Gerekli onamlar</label><input data-f="onam" placeholder="ör. Ameliyat ve anestezi onamı"></div>
+      <div class="fr"><label>İstek notu</label><input data-f="not" placeholder="Not"></div>
+      <p class="adm-sub">Ameliyat planı ameliyathane ve anesteziye iletilir; onam çıktısı alınır (tasarım).</p></div>`;
+    H.modal({ title:"Ameliyat / yatış istemi", wide:true, body,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>İsteme ekle</button>`,
+      onMount(m) {
+        const v = (s) => { const el = m.querySelector(`[data-f="${s}"]`); return el ? (el.type === "checkbox" ? el.checked : (el.value || "").trim()) : ""; };
+        m.querySelector("[data-ok]").onclick = () => {
+          const ad = v("ad"); if (!ad) { H.toast("Yapılacak ameliyatı yazın.", "w"); return; }
+          const opts = OPTS.filter(o => m.querySelector(`[data-opt="${o[0]}"]`).checked).map(o => o[1]);
+          const det = [v("acil"), v("gunubirlik") ? "Günübirlik" : `Yatış ${v("yatis")} gün`, +v("ybu") ? `YBÜ ${v("ybu")} gün` : "",
+            v("bolum"), v("cerrah"), "Anestezi: " + v("anes"), v("anesist"), opts.join(" + "), v("onam") ? "Onam: " + v("onam") : "", v("not")].filter(Boolean).join(" · ");
+          addOrder(p, { cat:"Ameliyat", ad, detay:det });
+          H.toast("Ameliyat istemi eklendi"); H.closeModal(); rerender();
+        };
+      } });
+  }
+
+  /* ---------- Şablonlar (adlı istem paketleri) ---------- */
+  const tpls = () => (H.data.orderTemplates = H.data.orderTemplates || []);
+  const myTpls = () => tpls().filter(t => !t.owner || t.owner === me());
+  function saveTemplate(p, rerender) {
+    const items = ordersOf(p).map(o => ({ cat:o.cat, ad:o.ad, detay:o.detay }));
+    if (!items.length) { H.toast("Önce birkaç istem ekleyin.", "w"); return; }
+    H.modal({ title:"İstem paketi (şablon) kaydet",
+      body:`<div class="icd-form"><div class="fr"><label>Paket adı</label><input data-f="ad" placeholder="ör. Apse drenajı paketi" autofocus></div>
+        <p class="adm-sub">Bu başvurudaki ${items.length} istem bu adla paket olur; sonra tek tıkla başka hastaya da istenebilir.</p></div>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+      onMount(m) { m.querySelector("[data-ok]").onclick = () => {
+        const ad = (m.querySelector("[data-f='ad']").value || "").trim(); if (!ad) { H.toast("Paket adı gerekli.", "w"); return; }
+        tpls().unshift({ id:"tpl" + Date.now(), name:ad, owner:me(), items });
+        H.log("İstem paketi kaydedildi", ad + " · " + items.length + " istem"); H.toast("Paket kaydedildi: " + ad); H.closeModal(); rerender(); }; } });
+  }
+  function applyTemplate(p, id, rerender) {
+    const t = tpls().find(x => x.id === id); if (!t) return;
+    t.items.forEach(it => addOrder(p, { cat:it.cat, ad:it.ad, detay:it.detay }));
+    H.toast(t.name + " paketi eklendi (" + t.items.length + " istem)"); rerender();
+  }
+
   function dispatch(p, key, rerender) {
     if (key === "lab") return openCatalog(p, { title:"Laboratuvar tetkiki", tips:["Laboratuvar Hizmeti", "Patoloji Hizmeti"], cat:"Laboratuvar" }, rerender);
     if (key === "rad") return openCatalog(p, { title:"Görüntüleme (radyoloji)", tips:["Radyoloji Hizmeti"], cat:"Radyoloji" }, rerender);
     if (key === "hizmet") return openCatalog(p, { title:"Hizmet / işlem", tips:null, cat:"Hizmet" }, rerender);
     if (key === "bakim") return openCatalog(p, { title:"Bakım istemi", pool:BAKIM, cat:"Bakım" }, rerender);
     if (key === "diyet") return openDiyet(p, rerender);
+    if (key === "ameliyat") return openAmeliyat(p, rerender);
     return openForm(p, key, rerender);   // ilac / kan / kons
   }
 
@@ -219,6 +289,10 @@
     const rerender = () => H.go("patient", { pid:p.id, tab:"istem" });
     root.onclick = (e) => {
       const b = e.target.closest("[data-ist]"); if (b) { dispatch(p, b.dataset.ist, rerender); return; }
+      const ap = e.target.closest("[data-tplap]"); if (ap) { applyTemplate(p, ap.dataset.tplap, rerender); return; }
+      const sv = e.target.closest("[data-tplsave]"); if (sv) { saveTemplate(p, rerender); return; }
+      const td = e.target.closest("[data-tpldel]"); if (td) { const a = tpls(), i = a.findIndex(t => t.id === td.dataset.tpldel);
+        if (i >= 0 && confirm("Bu paketi silmek istiyor musunuz?")) { a.splice(i, 1); H.toast("Paket silindi", "w"); rerender(); } return; }
       const rm = e.target.closest("[data-istrm]"); if (rm) { const arr = all(), i = arr.findIndex(o => o.id === rm.dataset.istrm);
         if (i >= 0) { arr.splice(i, 1); H.log("İstem kaldırıldı", bedNo(p)); H.toast("İstem kaldırıldı", "w"); rerender(); } return; }
     };
