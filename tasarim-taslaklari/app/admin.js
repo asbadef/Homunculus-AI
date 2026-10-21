@@ -1068,9 +1068,37 @@
   /* ---------- Klinik Doküman Tanımları (admin ekle/sil; her hastanede farklı set) ---------- */
   const DOK_ANA = ["Hemşire Dokümanları", "Hekim Dokümanları", "Kurum Dokümanları", "Hasta Dokümanları"];
   const DOK_KAT = ["Muayene Formları", "Rapor ve Takip Formları", "Tanımlama Formları", "Takip Formları", "Tetkik İstem Formları"];
+  // WHO Cerrahi Güvenlik Kontrol Listesi (3 aşama) — alan şablonu örneği
+  const WHO_CERRAHI = [
+    { ad:"Hasta kimliği, bölge, işlem ve onam doğrulandı", tip:"onay", bolum:"Giriş (anestezi öncesi)" },
+    { ad:"Ameliyat bölgesi işaretlendi / gerekli değil", tip:"onay", bolum:"Giriş (anestezi öncesi)" },
+    { ad:"Anestezi güvenlik kontrolü tamamlandı", tip:"onay", bolum:"Giriş (anestezi öncesi)" },
+    { ad:"Pulse oksimetre hastada ve çalışıyor", tip:"onay", bolum:"Giriş (anestezi öncesi)" },
+    { ad:"Bilinen alerji var mı?", tip:"secim", secenekler:["Yok", "Var"], bolum:"Giriş (anestezi öncesi)" },
+    { ad:"Zor hava yolu / aspirasyon riski", tip:"secim", secenekler:["Yok", "Var · ekipman/yardım hazır"], bolum:"Giriş (anestezi öncesi)" },
+    { ad:"≥500 ml (çocukta ≥7 ml/kg) kan kaybı riski", tip:"secim", secenekler:["Yok", "Var · damar yolu/sıvı planı"], bolum:"Giriş (anestezi öncesi)" },
+    { ad:"Tüm ekip adı ve göreviyle tanıştı", tip:"onay", bolum:"Mola (kesiden önce)" },
+    { ad:"Hasta adı, işlem ve kesi yeri sözlü doğrulandı", tip:"onay", bolum:"Mola (kesiden önce)" },
+    { ad:"Profilaktik antibiyotik son 60 dk içinde verildi / gerekli değil", tip:"onay", bolum:"Mola (kesiden önce)" },
+    { ad:"Cerrah: kritik adımlar, süre, beklenen kan kaybı", tip:"metin", bolum:"Mola (kesiden önce)" },
+    { ad:"Anestezi: hastaya özgü endişeler", tip:"metin", bolum:"Mola (kesiden önce)" },
+    { ad:"Hemşire: sterilizasyon doğrulandı, cihaz sorunu", tip:"onay", bolum:"Mola (kesiden önce)" },
+    { ad:"Gerekli görüntüleme mevcut", tip:"onay", bolum:"Mola (kesiden önce)" },
+    { ad:"Yapılan işlemin adı kayda geçti", tip:"onay", bolum:"Çıkış (hasta ayrılmadan)" },
+    { ad:"Alet, spanç ve iğne sayımı doğru", tip:"onay", bolum:"Çıkış (hasta ayrılmadan)" },
+    { ad:"Patoloji örneği hasta adıyla etiketlendi", tip:"onay", bolum:"Çıkış (hasta ayrılmadan)" },
+    { ad:"Ekipman sorunları belirtildi", tip:"metin", bolum:"Çıkış (hasta ayrılmadan)" },
+    { ad:"Postop iyileşme/bakım için kilit endişeler", tip:"metin", bolum:"Çıkış (hasta ayrılmadan)" },
+    { ad:"Cerrah imzası", tip:"imza", bolum:"İmzalar" }, { ad:"Anestezist imzası", tip:"imza", bolum:"İmzalar" }, { ad:"Hemşire imzası", tip:"imza", bolum:"İmzalar" },
+  ];
+  const AGRI_ALAN = [
+    { ad:"Ağrı var mı?", tip:"secim", secenekler:["Yok", "Var"] }, { ad:"Ağrı şiddeti (0-10)", tip:"sayi" },
+    { ad:"Ağrı yeri", tip:"metin" }, { ad:"Niteliği", tip:"secim", secenekler:["Künt", "Batıcı", "Yanıcı", "Zonklayıcı", "Kramp"] },
+    { ad:"Ritmi", tip:"secim", secenekler:["Sürekli", "Aralıklı"] }, { ad:"Başlangıç", tip:"metin" }, { ad:"Uygulanan tedavi / yanıt", tip:"metin" },
+  ];
   function dokSeed() {
     if (H.data.dokumanlar) return;
-    const D = (ana, kat, ad) => ({ id:"dk" + (dokSeed._n = (dokSeed._n || 0) + 1), ana, kat, ad, aktif:true });
+    const D = (ana, kat, ad, alanlar) => ({ id:"dk" + (dokSeed._n = (dokSeed._n || 0) + 1), ana, kat, ad, aktif:true, alanlar:alanlar || [] });
     H.data.dokumanlar = [
       D("Hekim Dokümanları", "Muayene Formları", "Ameliyat Raporu"),
       D("Hekim Dokümanları", "Muayene Formları", "Detaylı Göz Muayene Bulguları"),
@@ -1079,7 +1107,7 @@
       D("Hekim Dokümanları", "Rapor ve Takip Formları", "Epikriz"),
       D("Hekim Dokümanları", "Rapor ve Takip Formları", "İstirahat Raporu"),
       D("Hekim Dokümanları", "Rapor ve Takip Formları", "Patoloji Raporu"),
-      D("Hemşire Dokümanları", "Tanımlama Formları", "Ağrı Formu"),
+      D("Hemşire Dokümanları", "Tanımlama Formları", "Ağrı Formu", AGRI_ALAN),
       D("Hemşire Dokümanları", "Tanımlama Formları", "Glasgow Koma Skoru"),
       D("Hemşire Dokümanları", "Takip Formları", "Yetişkin Hasta Erken Uyarı Değerlendirme Formu (17 yaş ve üzeri)"),
       D("Hemşire Dokümanları", "Takip Formları", "Yenidoğan Hasta Erken Uyarı Değerlendirme Formu (0-30 gün)"),
@@ -1088,7 +1116,7 @@
       D("Hemşire Dokümanları", "Takip Formları", "Düşme Riski Değerlendirme Formu"),
       D("Kurum Dokümanları", "Rapor ve Takip Formları", "ÖSS Taahhütnamesi"),
       D("Kurum Dokümanları", "Rapor ve Takip Formları", "Bilgilendirme Formu"),
-      D("Hasta Dokümanları", "Rapor ve Takip Formları", "Cerrahi Güvenlik Kontrol Formu"),
+      D("Hasta Dokümanları", "Rapor ve Takip Formları", "Cerrahi Güvenlik Kontrol Formu", WHO_CERRAHI),
       D("Hasta Dokümanları", "Rapor ve Takip Formları", "Aydınlatılmış Onam Formu (Genel)"),
       D("Hasta Dokümanları", "Tanımlama Formları", "KVKK Aydınlatma ve Açık Rıza Formu"),
       D("Hasta Dokümanları", "Tanımlama Formları", "Hasta ve Ailesi Eğitim Formu - Genel"),
@@ -1106,7 +1134,7 @@
     const draw = () => {
       const q = norm(AD.dq || ""), res = ALL.filter(x => (!fa || x.ana === fa) && (!fk || x.kat === fk) && (!q || norm(x.ad).includes(q)));
       body.querySelector("[data-dcount]").textContent = res.length + " / " + ALL.length + " doküman";
-      list.innerHTML = res.length ? `<div class="tw"><table class="t"><thead><tr><th>Doküman</th><th>Grup</th><th>Kategori</th><th style="width:80px">Durum</th><th style="width:44px"></th></tr></thead><tbody>${res.map(x => `<tr data-dedit="${x.id}" style="cursor:pointer"><td><b>${esc(x.ad)}</b></td><td class="adm-sub">${esc(x.ana)}</td><td class="adm-sub">${esc(x.kat)}</td><td><span class="tag ${x.aktif ? "ok" : ""}">${x.aktif ? "Aktif" : "Pasif"}</span></td><td><button class="btn g sm" data-ddel="${x.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen doküman yok.</div>`;
+      list.innerHTML = res.length ? `<div class="tw"><table class="t"><thead><tr><th>Doküman</th><th>Grup</th><th>Kategori</th><th style="width:90px">Form alanı</th><th style="width:80px">Durum</th><th style="width:110px"></th></tr></thead><tbody>${res.map(x => { const n = (x.alanlar || []).length; return `<tr data-dedit="${x.id}" style="cursor:pointer"><td><b>${esc(x.ad)}</b></td><td class="adm-sub">${esc(x.ana)}</td><td class="adm-sub">${esc(x.kat)}</td><td class="adm-sub">${n ? n + " alan" : "—"}</td><td><span class="tag ${x.aktif ? "ok" : ""}">${x.aktif ? "Aktif" : "Pasif"}</span></td><td>${n ? `<button class="btn g sm" data-donz="${x.id}">Önizle</button> ` : ""}<button class="btn g sm" data-ddel="${x.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen doküman yok.</div>`;
     };
     draw();
     body.querySelector("[data-dq]").addEventListener("input", e => { AD.dq = e.target.value; draw(); });
@@ -1115,26 +1143,53 @@
     body.querySelector("[data-dnew]").addEventListener("click", () => dokForm(null, draw));
     list.addEventListener("click", e => {
       const del = e.target.closest("[data-ddel]"); if (del) { e.stopPropagation(); if (confirm("Bu doküman silinsin mi?")) { const i = ALL.findIndex(x => x.id === del.dataset.ddel); if (i >= 0) ALL.splice(i, 1); H.toast("Silindi", "w"); draw(); } return; }
+      const oz = e.target.closest("[data-donz]"); if (oz) { e.stopPropagation(); const row = ALL.find(x => x.id === oz.dataset.donz); if (row) dokPreview(row); return; }
       const tr = e.target.closest("[data-dedit]"); if (tr) { const row = ALL.find(x => x.id === tr.dataset.dedit); if (row) dokForm(row, draw); }
     });
   }
+  const DOK_ALANTIP = ["metin", "sayi", "secim", "onay", "tarih", "imza"];
+  const alanHtml = (alanlar) => { const A = alanlar || []; if (!A.length) return `<div class="adm-sub">Henüz alan yok. Şablon tanımlamak için "+ Alan ekle".</div>`;
+    const byB = {}; A.forEach((a, i) => { (byB[a.bolum || "Genel"] = byB[a.bolum || "Genel"] || []).push([a, i]); });
+    return Object.entries(byB).map(([b, items]) => `<div style="margin-bottom:6px"><b style="font-size:12px">${esc(b)}</b>${items.map(([a, i]) => `<div class="adm-row" style="gap:6px;padding:2px 0"><span class="adm-sub" style="flex:1">${esc(a.ad)} <em>· ${esc(a.tip)}${a.secenekler ? " (" + a.secenekler.length + ")" : ""}</em></span><button type="button" class="btn g sm" data-dalandel="${i}" title="Alanı sil">${I("x") || "×"}</button></div>`).join("")}</div>`).join(""); };
+  function dokPreview(d) {
+    const A = d.alanlar || []; const byB = {}; A.forEach(a => { (byB[a.bolum || "Genel"] = byB[a.bolum || "Genel"] || []).push(a); });
+    const fld = (a) => { if (a.tip === "onay") return `<label style="font-weight:400"><input type="checkbox"> ${esc(a.ad)}</label>`;
+      const lbl = `<label>${esc(a.ad)}</label>`;
+      if (a.tip === "metin") return `<div class="fr">${lbl}<textarea rows="2"></textarea></div>`;
+      if (a.tip === "sayi") return `<div class="fr">${lbl}<input type="number"></div>`;
+      if (a.tip === "tarih") return `<div class="fr">${lbl}<input type="date"></div>`;
+      if (a.tip === "imza") return `<div class="fr">${lbl}<input placeholder="Ad soyad / imza"></div>`;
+      if (a.tip === "secim") return `<div class="fr">${lbl}<select>${(a.secenekler || []).map(o => `<option>${esc(o)}</option>`).join("")}</select></div>`;
+      return `<div class="fr">${lbl}<input></div>`; };
+    const body = A.length ? Object.entries(byB).map(([b, items]) => `<div class="box" style="margin-bottom:10px"><h5>${esc(b)}</h5><div class="icd-form">${items.map(fld).join("")}</div></div>`).join("") : `<div class="empty">Bu dokümanın alan şablonu yok.</div>`;
+    H.modal({ title:"Önizleme · " + esc(d.ad), wide:true, body:body + `<p class="adm-sub">Doldurulabilir form önizlemesi (tasarım). Gerçekte doktor/hemşire modülünden açılıp hastaya kaydedilir.</p>`, actions:`<button class="btn" data-x>Kapat</button>` });
+  }
   function dokForm(existing, redraw) {
-    dokSeed(); const ALL = H.data.dokumanlar, e = existing || { ana:"Hekim Dokümanları", kat:"Muayene Formları", aktif:true };
+    dokSeed(); const ALL = H.data.dokumanlar, e = existing || { ana:"Hekim Dokümanları", kat:"Muayene Formları", aktif:true }, alanlar = (e.alanlar || []).slice();
     H.modal({ title:existing ? "Doküman düzenle" : "Yeni doküman tanımı",
       body:`<div class="icd-form">
         <div class="fr"><label>Doküman adı</label><input data-f="ad" value="${esc(e.ad || "")}" placeholder="ör. Aydınlatılmış Onam Formu"></div>
         <div class="fr"><label>Doküman grubu</label><select data-f="ana">${DOK_ANA.map(a => `<option${e.ana === a ? " selected" : ""}>${esc(a)}</option>`).join("")}</select></div>
         <div class="fr"><label>Kategori</label><select data-f="kat">${DOK_KAT.map(k => `<option${e.kat === k ? " selected" : ""}>${esc(k)}</option>`).join("")}</select></div>
         <div class="fr"><label>Durum</label><label style="font-weight:400"><input type="checkbox" data-f="aktif"${e.aktif ? " checked" : ""}> Aktif</label></div>
-      </div>`,
+      </div>
+      <div class="fr" style="align-items:flex-start;margin-top:8px"><label>Form alanları</label><div style="flex:1"><div data-dalan>${alanHtml(alanlar)}</div><div style="margin-top:8px;display:flex;gap:6px"><button type="button" class="btn sm" data-dalanadd>+ Alan ekle</button><button type="button" class="btn sm" data-donizle>Önizle</button></div></div></div>`,
       actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
-      onMount(m) { m.querySelector("[data-ok]").onclick = () => {
-        const g = (f) => { const el = m.querySelector(`[data-f="${f}"]`); return el.type === "checkbox" ? el.checked : el.value.trim(); };
-        const ad = g("ad"); if (!ad) { H.toast("Doküman adı gerekli.", "w"); return; }
-        if (existing) Object.assign(existing, { ad, ana:g("ana"), kat:g("kat"), aktif:g("aktif") });
-        else ALL.push({ id:"dk" + Date.now(), ad, ana:g("ana"), kat:g("kat"), aktif:g("aktif") });
-        H.log(existing ? "Doküman güncellendi" : "Doküman tanımlandı", ad); H.closeModal(); H.toast("Kaydedildi"); redraw && redraw();
-      }; } });
+      onMount(m) {
+        const redrawAlan = () => { m.querySelector("[data-dalan]").innerHTML = alanHtml(alanlar); };
+        m.querySelector("[data-dalanadd]").onclick = () => { const ad = prompt("Alan adı (soru):"); if (!ad || !ad.trim()) return;
+          const tip = (prompt("Alan tipi: " + DOK_ALANTIP.join(" / "), "metin") || "metin").trim(); const t = DOK_ALANTIP.includes(tip) ? tip : "metin";
+          const rec = { ad:ad.trim(), tip:t }; if (t === "secim") { const o = prompt("Seçenekler (virgülle):", "Evet,Hayır"); rec.secenekler = (o || "").split(",").map(s => s.trim()).filter(Boolean); }
+          const b = prompt("Bölüm/başlık (ops.):", ""); if (b && b.trim()) rec.bolum = b.trim(); alanlar.push(rec); redrawAlan(); };
+        m.querySelector("[data-dalan]").onclick = (ev) => { const d = ev.target.closest("[data-dalandel]"); if (d) { alanlar.splice(+d.dataset.dalandel, 1); redrawAlan(); } };
+        m.querySelector("[data-donizle]").onclick = () => { const g = (f) => (m.querySelector(`[data-f="${f}"]`).value || "").trim(); dokPreview({ ad:g("ad") || "Form", alanlar }); };
+        m.querySelector("[data-ok]").onclick = () => {
+          const g = (f) => { const el = m.querySelector(`[data-f="${f}"]`); return el.type === "checkbox" ? el.checked : el.value.trim(); };
+          const ad = g("ad"); if (!ad) { H.toast("Doküman adı gerekli.", "w"); return; }
+          if (existing) Object.assign(existing, { ad, ana:g("ana"), kat:g("kat"), aktif:g("aktif"), alanlar });
+          else ALL.push({ id:"dk" + Date.now(), ad, ana:g("ana"), kat:g("kat"), aktif:g("aktif"), alanlar });
+          H.log(existing ? "Doküman güncellendi" : "Doküman tanımlandı", ad + " · " + alanlar.length + " alan"); H.closeModal(); H.toast("Kaydedildi"); redraw && redraw();
+        }; } });
   }
 
   /* ---------- Kampanyalar (yetkili rol oluşturur, vezne seçer) ---------- */
