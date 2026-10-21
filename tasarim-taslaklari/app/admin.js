@@ -715,6 +715,7 @@
     ["bolumliste", "Bölüm / Branş Listesi", "admin_system", "list"],   // tıbbi bölümler + branş; hizmet tanımı ve kabul bunu kullanır
     ["secenekler", "Kayıt Seçenekleri", "admin_system", "list"],   // erişim kanalı/tercih sebebi/geliş-protokol tipi vb. açılır listeler; admin düzenler
     ["mesajkalip", "Mesaj Kalıpları (SMS)", "admin_system", "bell"],   // SMS/e-posta/uygulama bildirim kalıpları
+    ["kampanya", "Kampanyalar", "admin_system", "zap"],   // yetkili rol oluşturur, vezne seçer (Fiyat Verme)
     ["mobile", "Telefon modülleri", "admin_system", "tablet"],   // 27.09 · #193
     ["system", "Sistem ayarları", "admin_system", "gear"], ["audit", "Denetim kaydı", "audit", "file"],
     // 30.09 · İzleme ve işletim (Y1–Y7) · kod: dosyanın sonundaki "İZLEME VE İŞLETİM" bölümü
@@ -723,7 +724,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "kampanya", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "mesajkalip", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -749,7 +750,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -1058,6 +1059,62 @@
       const ed = e.target.closest("[data-secedit]"); if (ed) { const i = +ed.dataset.secedit, v = prompt("Düzenle:", items[i]); if (v && v.trim()) { items[i] = v.trim(); draw(); } return; }
       const dl = e.target.closest("[data-secdel]"); if (dl) { const i = +dl.dataset.secdel; if (confirm("Bu seçenek silinsin mi?")) { items.splice(i, 1); H.toast("Silindi", "w"); draw(); } }
     };
+  }
+
+  /* ---------- Kampanyalar (yetkili rol oluşturur, vezne seçer) ---------- */
+  const KAMP_TIP = ["İndirim", "Paket", "Kampanya fiyatı"];
+  const KAMP_UYG = ["Yüzde indirim", "Sabit fiyat", "Formül"];
+  function kampSeed() {
+    if (H.data.kampanyalar) return;
+    H.data.kampanyalar = [
+      { id:"k1", ad:"Check-up Bahar paketi", tip:"Paket", uyg:"Sabit fiyat", oran:0, baslangic:"2026-03-01", bitis:"2026-05-31", gelis:"Günübirlik", bolum:"Check Up", rol:"Kampanya Yöneticisi", aktif:true },
+      { id:"k2", ad:"Yeni hasta %15 indirim", tip:"İndirim", uyg:"Yüzde indirim", oran:15, baslangic:"2026-01-01", bitis:"2026-12-31", gelis:"", bolum:"", rol:"Kampanya Yöneticisi", aktif:true },
+      { id:"k3", ad:"Dermatoloji tanıtım %10", tip:"İndirim", uyg:"Yüzde indirim", oran:10, baslangic:"2026-02-01", bitis:"2026-04-30", gelis:"Ayaktan", bolum:"Dermatologiya", rol:"Kampanya Yöneticisi", aktif:false },
+    ];
+  }
+  function tabKampanya(body) {
+    kampSeed(); const ALL = H.data.kampanyalar;
+    body.innerHTML = `<div class="adm-bar"><input data-kq placeholder="Kampanya ara" value="${esc(AD.kq || "")}"><span class="spacer"></span><span class="adm-sub" data-kcount></span><button class="btn p" data-knew>+ Yeni kampanya</button></div>
+      <div data-klist></div>
+      <p class="adm-sub" style="margin-top:10px">Kampanyayı yalnız <b>yetkili rol</b> (ör. Kampanya Yöneticisi) oluşturur; vezne Fiyat Verme ekranında yalnız aktif kampanyayı <b>seçer</b>. Kapsam (geliş/bölüm) ve uygulama tipi (yüzde/sabit) burada tanımlanır.</p>`;
+    const list = body.querySelector("[data-klist]");
+    const draw = () => {
+      const q = norm(AD.kq || ""), res = q ? ALL.filter(x => norm(x.ad).includes(q)) : ALL;
+      body.querySelector("[data-kcount]").textContent = ALL.length + " kampanya";
+      list.innerHTML = res.length ? `<div class="tw"><table class="t"><thead><tr><th>Kampanya</th><th>Uygulama</th><th>Kapsam</th><th>Tarih</th><th>Oluşturan rol</th><th style="width:80px">Durum</th><th style="width:44px"></th></tr></thead><tbody>${res.map(x => `<tr data-kedit="${x.id}" style="cursor:pointer"><td><b>${esc(x.ad)}</b><div class="adm-sub" style="font-size:11.5px">${esc(x.tip)}</div></td><td class="adm-sub">${esc(x.uyg)}${x.uyg === "Yüzde indirim" ? " · %" + x.oran : ""}</td><td class="adm-sub">${esc([x.gelis, x.bolum].filter(Boolean).join(" · ") || "Tümü")}</td><td class="adm-sub">${esc(x.baslangic)} – ${esc(x.bitis)}</td><td class="adm-sub">${esc(x.rol || "—")}</td><td><span class="tag ${x.aktif ? "ok" : ""}">${x.aktif ? "Aktif" : "Pasif"}</span></td><td><button class="btn g sm" data-kdel="${x.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen kampanya yok.</div>`;
+    };
+    draw();
+    body.querySelector("[data-kq]").addEventListener("input", e => { AD.kq = e.target.value; draw(); });
+    body.querySelector("[data-knew]").addEventListener("click", () => kampForm(null, draw));
+    list.addEventListener("click", e => {
+      const del = e.target.closest("[data-kdel]"); if (del) { e.stopPropagation(); if (confirm("Bu kampanya silinsin mi?")) { const i = ALL.findIndex(x => x.id === del.dataset.kdel); if (i >= 0) ALL.splice(i, 1); H.toast("Silindi", "w"); draw(); } return; }
+      const tr = e.target.closest("[data-kedit]"); if (tr) { const row = ALL.find(x => x.id === tr.dataset.kedit); if (row) kampForm(row, draw); }
+    });
+  }
+  function kampForm(existing, redraw) {
+    kampSeed(); const ALL = H.data.kampanyalar, e = existing || { tip:"İndirim", uyg:"Yüzde indirim", oran:10, aktif:true }, roles = Object.entries(H.data.roles || {});
+    const gelisL = secGet("gelis"), bolumL = (H.data.bolumler || []).map(b => b.ad || b).filter(Boolean);
+    H.modal({ title:existing ? "Kampanya düzenle" : "Yeni kampanya", wide:true,
+      body:`<div class="icd-form">
+        <div class="fr"><label>Kampanya adı</label><input data-f="ad" value="${esc(e.ad || "")}" placeholder="ör. Yeni hasta indirimi"></div>
+        <div class="fr"><label>Tip</label><select data-f="tip">${KAMP_TIP.map(t => `<option${e.tip === t ? " selected" : ""}>${t}</option>`).join("")}</select></div>
+        <div class="fr"><label>Uygulama tipi</label><select data-f="uyg">${KAMP_UYG.map(t => `<option${e.uyg === t ? " selected" : ""}>${t}</option>`).join("")}</select></div>
+        <div class="fr"><label>Yüzde oran (%)</label><input data-f="oran" type="number" min="0" max="100" value="${esc(e.oran || 0)}"></div>
+        <div class="fr"><label>Başlangıç</label><input data-f="baslangic" type="date" value="${esc(e.baslangic || "")}"></div>
+        <div class="fr"><label>Bitiş</label><input data-f="bitis" type="date" value="${esc(e.bitis || "")}"></div>
+        <div class="fr"><label>Geliş kapsamı</label><select data-f="gelis"><option value="">— tümü —</option>${gelisL.map(g => `<option${e.gelis === g ? " selected" : ""}>${esc(g)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Bölüm kapsamı</label><select data-f="bolum"><option value="">— tümü —</option>${bolumL.map(b => `<option${e.bolum === b ? " selected" : ""}>${esc(b)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Oluşturabilen rol</label><select data-f="rol"><option value="">— tümü —</option>${roles.map(([k, r]) => `<option value="${esc(r.name)}"${e.rol === r.name ? " selected" : ""}>${esc(r.name)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Durum</label><label style="font-weight:400"><input type="checkbox" data-f="aktif"${e.aktif ? " checked" : ""}> Aktif</label></div>
+      </div>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+      onMount(m) { m.querySelector("[data-ok]").onclick = () => {
+        const g = (f) => { const el = m.querySelector(`[data-f="${f}"]`); return el.type === "checkbox" ? el.checked : el.value.trim(); };
+        const ad = g("ad"); if (!ad) { H.toast("Kampanya adı gerekli.", "w"); return; }
+        const rec = { id:e.id || "k" + Date.now(), ad, tip:g("tip"), uyg:g("uyg"), oran:+g("oran") || 0, baslangic:g("baslangic"), bitis:g("bitis"), gelis:g("gelis"), bolum:g("bolum"), rol:g("rol"), aktif:g("aktif") };
+        if (existing) Object.assign(existing, rec); else ALL.push(rec);
+        H.log(existing ? "Kampanya güncellendi" : "Kampanya oluşturuldu", ad); H.closeModal(); H.toast("Kaydedildi"); redraw && redraw();
+      }; } });
   }
 
   /* ---------- Mesaj Kalıpları (SMS / e-posta / uygulama bildirimi) ---------- */
