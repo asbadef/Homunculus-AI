@@ -25,6 +25,15 @@ const Strip = (props) => (
 const region = (name = "Monitor · təsdiqlənməmiş") => screen.getByRole("region", { name });
 
 describe("the strip says what it is", () => {
+  it("is a positioned box, so its screen-reader-only text cannot stretch the page", () => {
+    // Each cell carries `sr-only` text (`position: absolute`). With fifteen monitors the lowest
+    // ones sit thousands of pixels down; without a positioned ancestor they are placed against
+    // the viewport and the document grows below the shell (the ward's board, 2026-10-21: root
+    // 730 px, document 9375 px).
+    show(<Strip />);
+    expect(region().className.split(/\s+/)).toContain("relative");
+  });
+
   it("is headed unvalidated in the default language and in Turkish", () => {
     const { unmount } = show(<Strip />);
     expect(screen.getByRole("heading", { name: "Monitor · təsdiqlənməmiş" })).toBeInTheDocument();
