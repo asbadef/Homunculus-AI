@@ -449,3 +449,30 @@ Klinik/doktor tarafı büyük ölçüde YAPILDI (muayene, epikriz, izlem, hemşi
 | 370 | Vezne dönem kilidi: dönem kapatmadan başka dönemde işlem yok (yetki süreci) | vezne | ✅ commit; benzer kilit mantığı diğer kasa işlemlerine de |
 | 371 | YETKİ SÜRECİ denetimi (çapraz) — verilen her buton/alan bir role/yetkiye bağlı olmalı; roller ekranında granüler yetkiler (kampanya oluştur, indirim onay, dönem aç/kapat, vezne banko, iade onay vb.) artırılacak | admin/roller | M0; sistemli denetim gerekli |
 | 372 | TÜM sohbet görselleri yeniden analiz + eksik buton/yazı/süreç çıkarımı + planlama (İK düzen, onam/indirim/iade onay zincirleri, protokol tipi bayrakları, doktor tarihçe, vezne 360 sağ ray) | planlama | sıradaki büyük iş; parça parça tamamlanacak |
+
+## SON DURUM — 2026-10-22 (gece, otonom tamamlama)
+
+### ✅ Bu oturumda tamamlananlar
+- Vezne sekmeli panel: Faturalar · Fiyat verme · İndirim onay · İade · GFK takip · Evrak takip
+- Vezne Fiyat verme: hizmet KATALOGDAN seçilir (H.HIZMET) + kuruma göre fiyat (H.fiyatOf)
+- Vezne dönem kilidi (yetkiye bağlı: vezne_donem) + banko (vezne_banko)
+- Kampanya (kampanya_create) → vezne seçer, yüzde indirim uygulanır
+- İndirim onay akışı (#361, indirim_onay) + İade talep akışı (#365, iade_onay)
+- Vezne 360 / İş Havuzu sağ ray (#364)
+- Admin: Doküman Tanımları (#360), Protokol Tipleri bayraklarıyla (#362), Hizmet Fiyatları (#369)
+- Raporlar menüsü — tüm başlıklar (#363)
+- Hasta No ≠ Protokol No (#370/L6)
+- Özel Onay = ödeme (#L8): ödeme alınmadan istem bloklu
+- Granüler yetkiler (#371/M0): vezne_donem/banko, kampanya/indirim/iade onay, fiyat_duzenle
+- Doktor Doküman Tarihçesi (#366): versiyon/imza geçmişi
+
+### ⏳ Bekleyen (sıradaki)
+- Protokol tipi bayraklarının faturalama/akışa GERÇEK etkisi (şu an tanım; davranış bağlanacak)
+- Klinik doküman DERİN içerik (araştırmalı, form form) — #362b; admin tanım hazır, içerik azar azar
+- Yönetim raporlarının İÇİ (öncelikli 5-6 rapor örnek veriyle) — #363
+- İndirim/iade ÇOK KADEMELİ onay zinciri (seviye 1/2/3)
+- Hizmet/bölüm listesinin diğer ekranlarda da kullanım denetimi — #368
+- Randevu Geçmişi ayrı ekran; Vezne 360 placeholder'ların içi (Medula, Toplu fatura, Protokol listesi…)
+- İşlem Havuzu sağ-tık (#L10), Yazdır çıktıları düzenli menü (#L9, yazdir.js var)
+- PWA / mobil web (#367) — ileri faz
+- Tüm görsellerin tam yeniden analizi (#372) — süreç
