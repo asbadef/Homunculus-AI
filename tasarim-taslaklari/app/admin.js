@@ -706,6 +706,7 @@
     ["bakimliste", "Bakım İstem Listesi", "admin_system", "list"],   // hemşirelik bakım istem kataloğu; hemşire/doktor bakım isteminde seçer
     ["hizmettanim", "Otomatik Hizmet Tanımı", "admin_system", "list"],   // bölüm→muayene hizmeti eşlemesi; kabul kayıt açınca otomatik düşer
     ["bolumliste", "Bölüm / Branş Listesi", "admin_system", "list"],   // tıbbi bölümler + branş; hizmet tanımı ve kabul bunu kullanır
+    ["mesajkalip", "Mesaj Kalıpları (SMS)", "admin_system", "bell"],   // SMS/e-posta/uygulama bildirim kalıpları
     ["mobile", "Telefon modülleri", "admin_system", "tablet"],   // 27.09 · #193
     ["system", "Sistem ayarları", "admin_system", "gear"], ["audit", "Denetim kaydı", "audit", "file"],
     // 30.09 · İzleme ve işletim (Y1–Y7) · kod: dosyanın sonundaki "İZLEME VE İŞLETİM" bölümü
@@ -715,7 +716,7 @@
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
   const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "mobile"]],
-    ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
+    ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "mesajkalip", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
   const grpOf = (k) => AGRP.find(g => g[3].includes(k)) || AGRP[0];
@@ -740,7 +741,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, mesajkalip:tabMesaj,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -1016,6 +1017,68 @@
           if (existing) { e.ad = ad; e.brans = ad; } else ALL.unshift({ id:"bol" + Date.now(), ad, brans:ad });
           H.log(existing ? "Bölüm güncellendi" : "Bölüm eklendi", ad); H.closeModal(); H.toast("Kaydedildi"); redraw(); };
         const del = m.querySelector("[data-bldelf]"); if (del) del.onclick = () => { if (!confirm("Bu bölüm silinsin mi?")) return; const i = ALL.findIndex(x => x.id === e.id); if (i >= 0) ALL.splice(i, 1); H.closeModal(); H.toast("Silindi", "w"); redraw(); };
+      } });
+  }
+
+  /* ---------- Mesaj Kalıpları (SMS / e-posta / uygulama bildirimi) ---------- */
+  const MSG_KANAL = ["SMS", "E-posta", "Uygulama bildirimi", "OTP", "Sesli uyarı"];
+  const MSG_PARAM = ["*HastaAdi*", "*ProtokolNo*", "*ReceteNo*", "*RandevuNo*", "*Tarih*", "*Saat*", "*Bolum*", "*Doktor*"];
+  function msgSeed() {
+    if (H.data.mesajKalip) return;
+    H.data.mesajKalip = [
+      { id:"msg1", ad:"Randevu hatırlatma", baslik:"Randevu hatırlatması", icerik:"Sayın *HastaAdi*, *Tarih* *Saat* · *Bolum* randevunuz var. Değişiklik için arayın.", kanal:["SMS"], aktif:true, gecikme:0, rol:"", bolum:"" },
+      { id:"msg2", ad:"Randevu iptali", baslik:"Randevu iptali", icerik:"Sayın *HastaAdi*, *Tarih* randevunuz iptal edildi. Yeni randevu için arayın.", kanal:["SMS"], aktif:true, gecikme:0, rol:"", bolum:"" },
+      { id:"msg3", ad:"Reçete numarası", baslik:"Reçete", icerik:"Sayın *HastaAdi*, reçete numaranız *ReceteNo*.", kanal:["SMS"], aktif:true, gecikme:0, rol:"", bolum:"" },
+      { id:"msg4", ad:"Kritik lab sonucu", baslik:"Kritik sonuç", icerik:"*HastaAdi* için kritik laboratuvar sonucu var.", kanal:["Uygulama bildirimi", "Sesli uyarı"], aktif:true, gecikme:0, rol:"Hekim", bolum:"" },
+      { id:"msg5", ad:"Konsültasyon isteği", baslik:"Konsültasyon", icerik:"*Bolum* için konsültasyon isteği: *HastaAdi*.", kanal:["Uygulama bildirimi"], aktif:true, gecikme:0, rol:"Hekim", bolum:"" },
+    ];
+  }
+  function tabMesaj(body) {
+    msgSeed(); const ALL = H.data.mesajKalip;
+    body.innerHTML = `<div class="adm-bar"><input data-mq placeholder="Mesaj kalıbı ara" value="${esc(AD.mq || "")}"><span class="spacer"></span><span class="adm-sub" data-mcount></span><button class="btn p" data-mnew>+ Yeni kalıp</button></div>
+      <div data-mlist></div>
+      <p class="adm-sub" style="margin-top:10px">Randevu, reçete, sonuç ve bildirim mesajlarının kalıpları. Gönderim kanalı (SMS/e-posta/uygulama) ve içerik parametreleri (*HastaAdi* gibi) burada ayarlanır. Gerçek SMS/e-posta sağlayıcısını ayrı ekip bağlar.</p>`;
+    const list = body.querySelector("[data-mlist]");
+    const draw = () => {
+      const q = norm(AD.mq || ""), res = q ? ALL.filter(x => norm(x.ad).includes(q)) : ALL;
+      body.querySelector("[data-mcount]").textContent = ALL.length + " kalıp";
+      list.innerHTML = res.length ? `<div class="tw"><table class="t"><thead><tr><th>Kalıp</th><th>Kanal</th><th style="width:80px">Durum</th><th style="width:44px"></th></tr></thead><tbody>${res.map(x => `<tr data-medit="${x.id}" style="cursor:pointer"><td><b>${esc(x.ad)}</b><div class="adm-sub" style="font-size:11.5px">${esc(x.icerik.slice(0, 70))}${x.icerik.length > 70 ? "…" : ""}</div></td><td class="adm-sub">${(x.kanal || []).join(", ")}</td><td><span class="tag ${x.aktif ? "ok" : ""}">${x.aktif ? "Aktif" : "Pasif"}</span></td><td><button class="btn g sm" data-mdel="${x.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen kalıp yok.</div>`;
+    };
+    draw();
+    body.querySelector("[data-mq]").addEventListener("input", e => { AD.mq = e.target.value; draw(); });
+    body.querySelector("[data-mnew]").addEventListener("click", () => mesajForm(null, draw));
+    list.addEventListener("click", e => {
+      const del = e.target.closest("[data-mdel]"); if (del) { e.stopPropagation(); if (confirm("Bu kalıp silinsin mi?")) { const i = ALL.findIndex(x => x.id === del.dataset.mdel); if (i >= 0) ALL.splice(i, 1); H.toast("Silindi", "w"); draw(); } return; }
+      const tr = e.target.closest("[data-medit]"); if (tr) { const row = ALL.find(x => x.id === tr.dataset.medit); if (row) mesajForm(row, draw); }
+    });
+  }
+  function mesajForm(existing, redraw) {
+    msgSeed(); const ALL = H.data.mesajKalip, e = existing || { kanal:["SMS"], aktif:true };
+    const roles = Object.entries(H.data.roles);
+    H.modal({ title:existing ? "Mesaj kalıbı düzenle" : "Yeni mesaj kalıbı", wide:true,
+      body:`<div class="icd-form">
+        <div class="fr"><label>Kalıp adı</label><input data-f="ad" value="${esc(e.ad || "")}" placeholder="ör. Randevu hatırlatma"></div>
+        <div class="fr"><label>Başlık</label><input data-f="baslik" value="${esc(e.baslik || "")}" placeholder="Mesaj başlığı"></div>
+        <div class="fr"><label>İçerik</label><textarea data-f="icerik" rows="3" placeholder="Mesaj metni">${esc(e.icerik || "")}</textarea></div>
+        <div class="fr"><label>Parametre ekle</label><div class="dc-segs">${MSG_PARAM.map(pp => `<button type="button" class="dc-seg sm" data-mparam="${esc(pp)}">${esc(pp)}</button>`).join("")}</div></div>
+        <div class="fr"><label>Gönderim kanalı</label><div class="icd-oz">${MSG_KANAL.map(k => `<label><input type="checkbox" data-mk="${esc(k)}"${(e.kanal || []).includes(k) ? " checked" : ""}> ${esc(k)}</label>`).join("")}</div></div>
+        <div class="fr"><label>Hedef rol (ops.)</label><select data-f="rol"><option value="">— hastaya —</option>${roles.map(([k, r]) => `<option value="${esc(r.name)}"${e.rol === r.name ? " selected" : ""}>${esc(r.name)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Gecikme (dk)</label><input data-f="gecikme" type="number" min="0" value="${esc(e.gecikme || 0)}"></div>
+        <div class="fr"><label>Durum</label><label class="dc-chk"><input type="checkbox" data-f="aktif"${e.aktif !== false ? " checked" : ""}> Aktif</label></div>
+      </div>`,
+      actions:`${existing ? `<button class="btn g" data-mdelf>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-msave>Kaydet</button>`,
+      onMount(m) {
+        const ta = m.querySelector('[data-f="icerik"]');
+        m.querySelectorAll("[data-mparam]").forEach(b => b.onclick = () => { const p = b.dataset.mparam; ta.value = (ta.value + (ta.value && !ta.value.endsWith(" ") ? " " : "") + p); ta.focus(); });
+        m.querySelector("[data-msave]").onclick = () => {
+          const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
+          const ad = g("ad"); if (!ad) { H.toast("Kalıp adı gerekli.", "w"); return; }
+          const kanal = [...m.querySelectorAll("[data-mk]:checked")].map(x => x.dataset.mk);
+          const rec = { ad, baslik:g("baslik"), icerik:g("icerik"), kanal, rol:m.querySelector('[data-f="rol"]').value, gecikme:+g("gecikme") || 0, aktif:m.querySelector('[data-f="aktif"]').checked };
+          if (existing) Object.assign(e, rec); else ALL.unshift(Object.assign({ id:"msg" + Date.now() }, rec));
+          H.log(existing ? "Mesaj kalıbı güncellendi" : "Mesaj kalıbı eklendi", ad); H.closeModal(); H.toast("Kaydedildi"); redraw();
+        };
+        const del = m.querySelector("[data-mdelf]"); if (del) del.onclick = () => { if (!confirm("Bu kalıp silinsin mi?")) return; const i = ALL.findIndex(x => x.id === e.id); if (i >= 0) ALL.splice(i, 1); H.closeModal(); H.toast("Silindi", "w"); redraw(); };
       } });
   }
 
