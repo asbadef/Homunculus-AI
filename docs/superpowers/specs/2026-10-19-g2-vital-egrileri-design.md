@@ -279,8 +279,9 @@ charting Stage A values; the `/audit` oldest-N fix beyond `since`.
   1 000 000 rows): the charts are as complete as the audit.
 - Acceptance on the VM will show sparse charts today; that is the data, not the chart.
 - **Found while planning (2026-10-19; `docs/superpowers/plans/2026-10-19-g2-vital-egrileri.md`,
-  "What the code says", X1–X34; X1–X19 approved by the user on 2026-10-20; the list also covers
-  X20–X34, found by reviews on 2026-10-20 and 21):** the plan departs from this spec where the code made its letter
+  "What the code says", X1–X35; X1–X19 approved by the user on 2026-10-20; the list also covers
+  X20–X35, found by reviews on 2026-10-20 and 21 — X35: §3.1's delta is against the previous
+  *measurement*, not the previous row, because the uplink can deliver one reading twice):** the plan departs from this spec where the code made its letter
   impossible or unsafe — 503 for an unreadable scope, checked before `_require_patient` (X1); bands
   as `low < v <= high` (X2); alarm marks from `first_seen`, one per episode, not from `alert` rows
   (X3); antibiotic marks only for doses ≥ 1 (X4); each point carries the engine's NEWS2 points
