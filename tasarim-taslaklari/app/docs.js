@@ -451,7 +451,7 @@
   const newDoc = (p, type, o = {}) => { const d = Object.assign({ id:"doc" + (++seq), pid:p.id, type, at:H.nowFull(), by:me(), status:"taslak", sec:{}, addenda:[], savedAt:null, dirty:false }, o);
     TYPES[type].secs.forEach(([k]) => { if (d.sec[k] == null) d.sec[k] = ""; });
     if (TYPES[type].secs.some(([k]) => k === "fizik") && !d.vit) { const a = vitalAt(p); d.vit = Object.assign({}, p.v); d.vitSrc = a; d.vitEd = {}; }
-    if (type === "muayene" && !d.mua) { d.mua = { tedavi:[] }; d.ozg = { aliskanlik:[], rows:{}, meslek:"", egitim:"", medeni:"" }; d.soyg = { rel:{}, akraba:false }; }
+    if (type === "muayene" && !d.mua) { d.mua = { tedavi:[] }; d.ozg = { aliskanlik:[], rows:{}, meslek:"", egitim:"", medeni:"" }; d.soyg = { rel:{}, akraba:false }; d.detay = {}; }
     H.data.docs.push(d); return d; };
 
   // Yeni izlem notunda son 24 saat hazır gelir (#8). Her bölümün sistemden gelen metni d.auto'da tutulur:
@@ -553,6 +553,39 @@
       <label class="dc-chk" style="margin-top:8px"><input type="checkbox" data-dc-soygak ${S.akraba ? "checked" : ""}> Anne ile baba akraba</label></div>`;
   }
 
+  // Bölüme göre detaylı muayene bulguları. Şimdilik Göz (OD/OS) formu; diğer branşlar sırayla eklenir.
+  const GOZ_SIK = ["Bulanık görme", "Ani görme kaybı", "Çapaklanma", "Kuruluk hissi", "Yanma", "Göz ağrısı", "Batma", "Uçuşan cisimler", "Sulanma", "Kızarıklık"];
+  const GOZ_EYEF = [["gdy", "Göz dışı yapılar"], ["gh", "Göz hareketleri"], ["biyo", "Biyomikroskopi"], ["fundus", "Fundus"], ["otoref", "Otorefraktometre"], ["sikloref", "Sikloplejili otoref"], ["refr", "Mevcut refraksiyon"], ["gib", "GİB (mmHg)"], ["gkDmz", "Görme keskinliği (düzeltmesiz)"], ["gkDml", "Görme keskinliği (düzeltmeli)"]];
+  const GOZLUK_F = ["sph", "cyl", "axis", "add"];
+  const gozHas = (G) => !!(G && ((G.sik && G.sik.length) || G.sikDiger || G.takip || (G.od && G.od.refr) || (G.os && G.os.refr) || (G.od && G.od.gib) || (G.os && G.os.gib)));
+  const gozSummary = (G) => ["Göz muayenesi kaydedildi", (G.sik && G.sik.length) ? G.sik.length + " şikayet" : "", (G.od && G.od.gib) ? "OD GİB " + G.od.gib : "", (G.os && G.os.gib) ? "OS GİB " + G.os.gib : ""].filter(Boolean).join(" · ");
+  function openDetay(p, d, root, rerender) {
+    d.detay = d.detay || {}; const G = d.detay.goz = d.detay.goz || { sik:[], od:{ gozluk:{}, eski:{} }, os:{ gozluk:{}, eski:{} } };
+    const eye = (side, lbl) => { const E = G[side] = G[side] || { gozluk:{}, eski:{} };
+      return `<div class="det-eye"><h6>${esc(lbl)}</h6>
+        ${GOZ_EYEF.map(([k, l]) => `<label class="det-f">${esc(l)}<input data-det-eye="${side}" data-k="${k}" value="${esc(E[k] || "")}"></label>`).join("")}
+        <div class="det-sub">Verilen gözlük</div><div class="det-gl">${GOZLUK_F.map(g => `<label>${g.toUpperCase()}<input data-det-gl="${side}" data-k="${g}" value="${esc((E.gozluk || {})[g] || "")}"></label>`).join("")}</div>
+        <div class="det-sub">Eski gözlük</div><div class="det-gl">${GOZLUK_F.map(g => `<label>${g.toUpperCase()}<input data-det-eski="${side}" data-k="${g}" value="${esc((E.eski || {})[g] || "")}"></label>`).join("")}</div></div>`; };
+    const body = `<div class="det-goz">
+      <div class="dc-sh"><b>Hasta şikayetleri</b></div>
+      <div class="icd-oz">${GOZ_SIK.map(s => `<label><input type="checkbox" data-det-sik="${esc(s)}"${G.sik.includes(s) ? " checked" : ""}> ${esc(s)}</label>`).join("")}</div>
+      <input class="dc-min" data-det-f="sikDiger" placeholder="Diğer şikayet" value="${esc(G.sikDiger || "")}" style="margin-top:8px;width:100%">
+      <div class="det-eyes">${eye("od", "Sağ göz (OD)")}${eye("os", "Sol göz (OS)")}</div>
+      <div class="dc-sh" style="margin-top:12px"><b>Takip bulguları</b></div>
+      <textarea class="dc-min" data-det-f="takip" rows="4" placeholder="Takip bulguları" style="width:100%">${esc(G.takip || "")}</textarea></div>`;
+    H.modal({ title:"Detaylı göz muayene bulguları", wide:true, body,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-detok>Kaydet</button>`,
+      onMount(m) {
+        m.oninput = (e) => { const T = e.target;
+          if (T.matches("[data-det-f]")) G[T.dataset.detF] = T.value;
+          else if (T.matches("[data-det-eye]")) (G[T.dataset.detEye] = G[T.dataset.detEye] || {})[T.dataset.k] = T.value;
+          else if (T.matches("[data-det-gl]")) { const E = G[T.dataset.detGl] = G[T.dataset.detGl] || {}; (E.gozluk = E.gozluk || {})[T.dataset.k] = T.value; }
+          else if (T.matches("[data-det-eski]")) { const E = G[T.dataset.detEski] = G[T.dataset.detEski] || {}; (E.eski = E.eski || {})[T.dataset.k] = T.value; } };
+        m.onchange = (e) => { const c = e.target.closest("[data-det-sik]"); if (!c) return; const name = c.dataset.detSik, i = G.sik.indexOf(name); if (c.checked) { if (i < 0) G.sik.push(name); } else if (i >= 0) G.sik.splice(i, 1); };
+        m.querySelector("[data-detok]").onclick = () => { markDirty(root, d); H.closeModal(); H.toast("Detaylı göz bulguları kaydedildi"); rerender(); };
+      } });
+  }
+
   function editorHtml(p, d) {
     if (!d) return `<div class="dc-ed"><div class="dc-empty">Soldan bir belge seçin ya da yeni not başlatın.</div></div>`;
     const T = TYPES[d.type], edit = canEdit(d), epi = d.type === "epikriz", sys = isSys(d), U = ui(p.id);
@@ -594,6 +627,7 @@
         <div class="dc-segrow" style="margin-top:10px"><span class="dc-ml">Ameliyat planlanacak mı?</span><div class="dc-segs">${seg("ameliyat", ["Evet", "Hayır"])}</div></div>
         <div class="dc-segrow" style="margin-top:10px"><label class="dc-chk"><input type="checkbox" data-dc-muac="kontrol" ${M.kontrol ? "checked" : ""}> Kontrol önerildi</label>
           <input class="dc-min" data-dc-muain="kontrolNot" placeholder="Kontrol notu / tarihi" value="${esc(M.kontrolNot || "")}"></div></div>` : "";
+    const detayW = (edit && d.type === "muayene") ? `<div class="dc-sec"><div class="dc-sh"><b>Detaylı muayene bulguları</b><span class="r"><button class="btn g sm" data-dc-detay="goz">${H.icon("eye")}Göz muayenesi</button></span></div>${(d.detay && gozHas(d.detay.goz)) ? `<div class="dc-ro">${esc(gozSummary(d.detay.goz))}</div>` : `<span class="mute" style="font-size:12px">Branşa göre ayrıntılı bulgu. Şimdilik Göz formu hazır; diğer branşlar sırayla eklenecek.</span>`}</div>` : "";
     let foot = "";
     if (d.status === "muhur") {
       foot = `<div class="dc-seal">${H.icon("lock")}Mühürlendi · ${esc(short(d.sealedBy))} · ${esc(d.sealedAt)} <span>· değiştirilemez, yalnız ek not eklenir</span></div>
@@ -617,7 +651,7 @@
     } else if (d.status === "taslak") {
       foot = `<div class="dc-bar"><span class="dc-stat">${d.type === "hemsire" ? "Hemşire mühürleyince kesinleşir." : "Hekim mühürleyince kesinleşir."}</span></div>`;
     }
-    return `<div class="dc-ed">${head}${infos.join("")}${taniW}${body}${muaW}${foot}</div>`;
+    return `<div class="dc-ed">${head}${infos.join("")}${taniW}${body}${detayW}${muaW}${foot}</div>`;
   }
   // #9 · tek sayfa: başlık + iki sütunlu bölümler; 640px altında tek sütun
   function pageHtml(p, d) {
@@ -764,6 +798,7 @@
       const ozgm = T.closest("[data-dc-ozgm]"); if (ozgm) { if (!canEdit(d)) return; d.ozg = d.ozg || {}; d.ozg.medeni = d.ozg.medeni === ozgm.dataset.dcOzgm ? "" : ozgm.dataset.dcOzgm; markDirty(root, d); rerender(); return; }
       const soyg = T.closest("[data-dc-soyg]"); if (soyg) { if (!canEdit(d)) return; d.soyg = d.soyg || {}; d.soyg.rel = d.soyg.rel || {}; const rel = d.soyg.rel[soyg.dataset.dcSoyg] = d.soyg.rel[soyg.dataset.dcSoyg] || {}; rel[soyg.dataset.cond] = soyg.checked; markDirty(root, d); return; }
       const soygak = T.closest("[data-dc-soygak]"); if (soygak) { if (!canEdit(d)) return; d.soyg = d.soyg || {}; d.soyg.akraba = soygak.checked; markDirty(root, d); return; }
+      const detay = T.closest("[data-dc-detay]"); if (detay) { if (!canEdit(d)) return; openDetay(p, d, root, rerender); return; }
       if (T.closest("[data-dc-page]")) { ui(p.id).page = !ui(p.id).page; rerender(); return; }
       if (T.closest("[data-dc-send]")) { if (!canSend(d)) return; d.sentAt = H.nowFull();
         H.log(`${TYPES[d.type].name} hastane kaydına gönderildi`, `${bedNo(p)} · ${d.status}`); H.toast(tp("dc_sent_tpl", { d:tName(d.type), t:d.sentAt })); rerender(); return; }
