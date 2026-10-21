@@ -263,6 +263,7 @@
     ["rrt", "zap", "m_rrt", "rrt"], ["pharmacy", "pill", "m_pharmacy", "pharmacy"],
     ["devices", "cpu", "m_devices", "devices", null, null, [["ozet", "Özet", "devices"], ["envanter", "Envanter", "devices"], ["takvim", "Bakım takvimi", "maintenance"], ["ariza", "Arıza kayıtları", "devices"], ["odalar", "Yataklar ve odalar", "devices"]]],
     ["workload", "users", "m_workload", ["staff_view", "occupancy"]], ["infection", "shield", "m_infection", ["quality", "beds"]],
+    ["vezne", "file", "m_vezne", ["admission", "summary"]], ["ik", "users", "m_ik", ["admin_users", "summary"]],
     ["summary", "chart", "m_summary", "summary"], ["quality", "star", "m_quality", "quality"], ["pilot", "file", "m_pilot", ["summary", "quality"]],
     // Kalite ve başhekim yalnız "audit" yetkisiyle girer: onlara menüde "Denetim kaydı" olarak görünür, yönetim sekmeleri görünmez.
     ["admin", "shield", "m_admin", ["admin_users", "admin_roles", "admin_structure", "admin_integrations", "admin_system", "admin_camera", "audit"], null, null,

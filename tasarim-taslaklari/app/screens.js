@@ -126,6 +126,39 @@
     }
   } });
 
+  /* ================= VEZNE / FATURALAMA ================= */
+  const faturalar = () => (H.data.faturalar = H.data.faturalar || [
+    { id:"fat1", hasta:"Günel Məmmədova", protokol:"Ayaktan · Hamiləlik izləmi", kurum:"İcbari Tibbi Sığorta (SAMHI)", toplam:85, katilim:0, durum:"Bekliyor" },
+    { id:"fat2", hasta:"Orxan Əliyev", protokol:"Ayaktan · Kardioloji", kurum:"Özel ödeme", toplam:60, katilim:60, durum:"Bekliyor" },
+    { id:"fat3", hasta:"Elvin Səmədov", protokol:"Günübirlik · Check-up", kurum:"Kurum anlaşması", toplam:240, katilim:48, durum:"Ödendi" },
+  ]);
+  H.register("vezne", { title:() => H.t("m_vezne"), perm:["admission", "summary"], render(root, params = {}) {
+    const all = faturalar(), f = params.durum || "hepsi";
+    const list = f === "hepsi" ? all : all.filter(x => x.durum === f);
+    const bekleyen = all.filter(x => x.durum === "Bekliyor").reduce((a, x) => a + x.katilim, 0);
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_vezne")}</h2><p>${list.length} fatura · bekleyen tahsilat <b>${bekleyen} ₼</b> · SAMHI / özel / kurum (tasarım)</p></div></div>
+      <div class="seg" style="margin-bottom:12px">${[["hepsi", "Hepsi"], ["Bekliyor", "Bekliyor"], ["Ödendi", "Ödendi"]].map(([k, l]) => `<button data-vf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      <div class="tw"><table class="t"><thead><tr><th>Hasta</th><th>Protokol</th><th>Kurum / sigorta</th><th style="width:90px">Toplam</th><th style="width:110px">Katılım payı</th><th style="width:100px">Durum</th><th style="width:110px"></th></tr></thead><tbody>
+      ${list.length ? list.map(x => `<tr><td><b>${H.esc(x.hasta)}</b></td><td class="adm-sub">${H.esc(x.protokol)}</td><td>${H.esc(x.kurum)}</td><td class="n">${x.toplam} ₼</td><td class="n">${x.katilim} ₼</td><td><span class="tag ${x.durum === "Ödendi" ? "ok" : ""}">${x.durum}</span></td><td>${x.durum === "Bekliyor" ? `<button class="btn p sm" data-tahsil="${x.id}">Tahsil et</button>` : `<span class="adm-sub">—</span>`}</td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Fatura yok.</td></tr>`}
+      </tbody></table></div>
+      <p class="adm-sub" style="margin-top:8px">Faturalama ve tahsilat tasarımdır; gerçek SAMHI (İcbari Tibbi Sığorta) ve ödeme bağlantısını ayrı ekip kurar.</p>`;
+    root.onclick = (e) => {
+      const vf = e.target.closest("[data-vf]"); if (vf) return H.go("vezne", { durum:vf.dataset.vf });
+      const th = e.target.closest("[data-tahsil]"); if (th) { const x = all.find(y => y.id === th.dataset.tahsil); if (x) { x.durum = "Ödendi"; H.log("Tahsilat", x.hasta + " · " + x.katilim + " ₼"); H.toast("Tahsil edildi: " + x.katilim + " ₼"); H.go("vezne", params); } }
+    };
+  } });
+
+  /* ================= İNSAN KAYNAKLARI (İK) ================= */
+  H.register("ik", { title:() => H.t("m_ik"), perm:["admin_users", "summary"], render(root) {
+    const staff = (H.data.users || []).filter(u => !u.temp);
+    const rolAd = (r) => (H.data.roles[r] || { name:r }).name;
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim (tasarım)</p></div></div>
+      <div class="tw"><table class="t"><thead><tr><th>Ad</th><th>Unvan</th><th>Rol</th><th>Birimler</th><th>Durum</th></tr></thead><tbody>
+      ${staff.map(u => `<tr><td><b>${H.esc(u.name)}</b><div class="mute" style="font-size:11.5px">${H.esc(u.u)}</div></td><td class="adm-sub">${H.esc(u.title || "—")}</td><td>${H.esc(rolAd(u.role))}</td><td class="adm-sub">${(u.units === "*" ? ["Tüm birimler"] : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", ") || "—"}</td><td><span class="tag ${u.active === false ? "" : "ok"}">${u.active === false ? "Pasif" : "Aktif"}</span></td></tr>`).join("")}
+      </tbody></table></div>
+      <p class="adm-sub" style="margin-top:8px">Personel kartı, SGK/izin, kadro ve eğitim kayıtları sonraki adımda genişletilecek. Kullanıcı/rol yönetimi Yönetim ekranındadır.</p>`;
+  } });
+
   /* ================= ALARMLAR ================= */
   const STEPS = ["3. dk · sorumlu hemşire", "5. dk · hekim", "10. dk · hızlı yanıt"];
   const SEVC = { crit:"var(--crit)", high:"var(--high)", mid:"var(--mid)", low:"var(--low)" };
