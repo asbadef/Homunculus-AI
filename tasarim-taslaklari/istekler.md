@@ -490,3 +490,19 @@ Klinik/doktor tarafı büyük ölçüde YAPILDI (muayene, epikriz, izlem, hemşi
 - Kalan raporların içi; Vezne 360 kalan placeholder'lar (Medula, Toplu fatura, Kurum değişiklik onay…)
 - Randevu Geçmişi ayrı ekran; Yazdır çıktıları düzenli menü (yazdir.js var); İşlem Havuzu sağ-tık
 - PWA derinleştirme (pwa.js temel var)
+
+## SON DURUM — 2026-10-22 (gece, 3. otonom tur)
+### ✅ Ek tamamlananlar
+- Protokol tipi bayrak etkisi: vezne fiyatta hastaFark/sgkKatilim → hasta payı 0; istem ekranında protokol tipi + aktif bayrak şeridi (#1 kısmi; davranışsal tam bağlama backend)
+- Kalan raporlar: Aynı Gün Geliş, Yeni Muayene, Vezne Tahakkuk, Medula Takip, Bekleyen Avans; Vezne 360: Hasta arama, Doktor iş listesi, Randevu arama, Gizli/VIP (#3/#5)
+- İşlem Havuzu sağ-tık menüsü (vezne fiyat satırları) (#L10)
+- Randevu "Geçmiş" görünümü
+- Klinik doküman form şablon motoru (metin/sayı/seçim/onay/tarih/imza) + Önizle; Cerrahi Güvenlik (WHO 3 aşama, 22 alan) ve Ağrı formu araştırmayla dolduruldu (#N2 başlangıç)
+- Yeni faz planı: KALAN-PLAN-4.md (N/O/P fazları)
+### 🔎 İnceleme
+- Tüm sistemin mantık akışı + diğer rol ekranları bir inceleme ajanına verildi; bulgular sırayla düzeltilecek.
+### ⏳ Bekleyen
+- Protokol tipi bayraklarının istem/fatura akışına TAM davranışsal etkisi (otomatik kapanma/avans/işlem havuzu otomasyonu)
+- Doküman şablonlarının doktor/hemşire modülünde doldurulup hastaya kaydı (docs.js entegrasyonu); kalan ~15 form içeriği
+- Yazdır: tek birleşik menü (sistem kapsamlı, konsolidasyon opsiyonel); PWA derinleştirme
+- Kalan raporların gerçek filtre+dışa aktar
