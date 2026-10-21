@@ -718,6 +718,7 @@
     ["mesajkalip", "Mesaj Kalıpları (SMS)", "admin_system", "bell"],   // SMS/e-posta/uygulama bildirim kalıpları
     ["kampanya", "Kampanyalar", "admin_system", "zap"],   // yetkili rol oluşturur, vezne seçer (Fiyat Verme)
     ["dokuman", "Doküman Tanımları", "admin_system", "file"],   // onam/muayene/rapor form kataloğu; her hastanede farklı set
+    ["ptip", "Protokol Tipleri", "admin_system", "list"],   // zengin protokol tipi + iş kuralı bayrakları
     ["mobile", "Telefon modülleri", "admin_system", "tablet"],   // 27.09 · #193
     ["system", "Sistem ayarları", "admin_system", "gear"], ["audit", "Denetim kaydı", "audit", "file"],
     // 30.09 · İzleme ve işletim (Y1–Y7) · kod: dosyanın sonundaki "İZLEME VE İŞLETİM" bölümü
@@ -726,7 +727,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "kampanya", "dokuman", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "kampanya", "dokuman", "ptip", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "mesajkalip", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -752,7 +753,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -1188,6 +1189,64 @@
         const rec = { id:e.id || "k" + Date.now(), ad, tip:g("tip"), uyg:g("uyg"), oran:+g("oran") || 0, baslangic:g("baslangic"), bitis:g("bitis"), gelis:g("gelis"), bolum:g("bolum"), rol:g("rol"), aktif:g("aktif") };
         if (existing) Object.assign(existing, rec); else ALL.push(rec);
         H.log(existing ? "Kampanya güncellendi" : "Kampanya oluşturuldu", ad); H.closeModal(); H.toast("Kaydedildi"); redraw && redraw();
+      }; } });
+  }
+
+  /* ---------- Protokol Tipleri (zengin · bayraklarıyla) ---------- */
+  const PTIP_GELIS = ["Ayaktan", "Günübirlik", "Yatan"];
+  const PTIP_FLAGS = [
+    ["hastaFark", "Hastaya fark atmasın"], ["sgkFark", "SGK'lı hastaya fark atmasın"], ["sgkKatilim", "SGK katılım payı oluşmasın"],
+    ["otoKapanma", "Otomatik kapanmasın"], ["mesaj", "Protokol mesajı oluşsun"], ["doktorsuz", "Doktorsuz protokol"],
+    ["nobetsiz", "Nöbetsiz protokol"], ["avucIci", "Manuel avuç içi sorgulama yapılsın"], ["sira", "Muayene sıra numarası oluşsun"],
+    ["avans", "Avans alınabilsin"], ["kvkkMuaf", "KVKK onayından muaf"], ["yatisOnceSgk", "Yatış öncesi SGK protokolü"],
+    ["islemHavuz", "İşlem havuzuna düşsün"], ["kilitli", "Kontrol süresinde güncellenemez"],
+  ];
+  function ptipSeed() {
+    if (H.data.protokolTipleri) return;
+    secSeed(); const base = H.data.secenekler.protokol || [];
+    const F = (keys) => { const o = {}; (keys || []).forEach(k => o[k] = true); return o; };
+    const özel = { "Donör":["hastaFark", "sgkKatilim", "doktorsuz"], "Check-up":["sgkKatilim"], "Kontrol":["sgkKatilim"], "Preop":["sgkKatilim", "yatisOnceSgk"], "Laboratuvar":["sgkKatilim"], "Radyoloji":["sgkKatilim"] };
+    H.data.protokolTipleri = base.map((ad, i) => ({ id:"pt" + (i + 1), ad, kisa:ad, gelis:"Ayaktan", bolum:"", mesajKonu:ad, flags:F(özel[ad]) }));
+  }
+  const ptipOzet = (fl) => PTIP_FLAGS.filter(([k]) => fl && fl[k]).map(([, l]) => l).slice(0, 3).join(" · ") || "—";
+  function tabPtip(body) {
+    ptipSeed(); const ALL = H.data.protokolTipleri;
+    body.innerHTML = `<div class="adm-bar"><input data-ptq placeholder="Protokol tipi ara" value="${esc(AD.ptq || "")}"><span class="spacer"></span><span class="adm-sub" data-ptcount></span><button class="btn p" data-ptnew>+ Yeni protokol tipi</button></div>
+      <div data-ptlist></div>
+      <p class="adm-sub" style="margin-top:10px">Protokol tipleri ve iş kuralı bayrakları (fark atmasın, otomatik kapanmasın, doktorsuz, avans alınabilsin, işlem havuzuna düşsün…). Bu bayraklar faturalama ve protokol davranışını belirler.</p>`;
+    const list = body.querySelector("[data-ptlist]");
+    const draw = () => {
+      const q = norm(AD.ptq || ""), res = q ? ALL.filter(x => norm(x.ad).includes(q)) : ALL;
+      body.querySelector("[data-ptcount]").textContent = ALL.length + " tip";
+      list.innerHTML = res.length ? `<div class="tw"><table class="t"><thead><tr><th>Protokol tipi</th><th>Kısa ad</th><th>Geliş</th><th>Bölümler</th><th>Bayraklar (özet)</th><th style="width:44px"></th></tr></thead><tbody>${res.map(x => `<tr data-ptedit="${x.id}" style="cursor:pointer"><td><b>${esc(x.ad)}</b></td><td class="adm-sub">${esc(x.kisa || "")}</td><td class="adm-sub">${esc(x.gelis || "")}</td><td class="adm-sub">${esc(x.bolum || "—")}</td><td class="adm-sub" style="font-size:11.5px">${esc(ptipOzet(x.flags))}</td><td><button class="btn g sm" data-ptdel="${x.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen protokol tipi yok.</div>`;
+    };
+    draw();
+    body.querySelector("[data-ptq]").addEventListener("input", e => { AD.ptq = e.target.value; draw(); });
+    body.querySelector("[data-ptnew]").addEventListener("click", () => ptipForm(null, draw));
+    list.addEventListener("click", e => {
+      const del = e.target.closest("[data-ptdel]"); if (del) { e.stopPropagation(); if (confirm("Bu protokol tipi silinsin mi?")) { const i = ALL.findIndex(x => x.id === del.dataset.ptdel); if (i >= 0) ALL.splice(i, 1); H.toast("Silindi", "w"); draw(); } return; }
+      const tr = e.target.closest("[data-ptedit]"); if (tr) { const row = ALL.find(x => x.id === tr.dataset.ptedit); if (row) ptipForm(row, draw); }
+    });
+  }
+  function ptipForm(existing, redraw) {
+    ptipSeed(); const ALL = H.data.protokolTipleri, e = existing || { gelis:"Ayaktan", flags:{} }, bols = (H.data.bolumler || []).map(b => b.ad || b).filter(Boolean);
+    H.modal({ title:existing ? "Protokol tipi düzenle" : "Yeni protokol tipi", wide:true,
+      body:`<div class="icd-form">
+        <div class="fr"><label>Adı</label><input data-f="ad" value="${esc(e.ad || "")}" placeholder="ör. Genel Muayene"></div>
+        <div class="fr"><label>Kısa ad</label><input data-f="kisa" value="${esc(e.kisa || "")}"></div>
+        <div class="fr"><label>Geliş tipi</label><select data-f="gelis">${PTIP_GELIS.map(g => `<option${e.gelis === g ? " selected" : ""}>${g}</option>`).join("")}</select></div>
+        <div class="fr"><label>Bölümler</label><select data-f="bolum"><option value="">— tümü —</option>${bols.map(b => `<option${e.bolum === b ? " selected" : ""}>${esc(b)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Protokol mesaj konusu</label><input data-f="mesajKonu" value="${esc(e.mesajKonu || "")}"></div>
+      </div>
+      <div class="fr" style="margin-top:8px"><label>İş kuralı bayrakları</label><div class="icd-oz">${PTIP_FLAGS.map(([k, l]) => `<label><input type="checkbox" data-pf="${k}"${e.flags && e.flags[k] ? " checked" : ""}> ${esc(l)}</label>`).join("")}</div></div>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+      onMount(m) { m.querySelector("[data-ok]").onclick = () => {
+        const g = (f) => (m.querySelector(`[data-f="${f}"]`).value || "").trim();
+        const ad = g("ad"); if (!ad) { H.toast("Ad gerekli.", "w"); return; }
+        const flags = {}; m.querySelectorAll("[data-pf]:checked").forEach(c => flags[c.dataset.pf] = true);
+        const rec = { id:e.id || "pt" + Date.now(), ad, kisa:g("kisa") || ad, gelis:g("gelis"), bolum:g("bolum"), mesajKonu:g("mesajKonu"), flags };
+        if (existing) Object.assign(existing, rec); else ALL.push(rec);
+        H.log(existing ? "Protokol tipi güncellendi" : "Protokol tipi eklendi", ad); H.closeModal(); H.toast("Kaydedildi"); redraw && redraw();
       }; } });
   }
 
