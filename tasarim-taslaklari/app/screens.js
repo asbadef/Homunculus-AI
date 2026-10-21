@@ -84,6 +84,48 @@
     };
   } });
 
+  /* ================= RANDEVU ================= */
+  const randevular = () => (H.data.randevular = H.data.randevular || seedRandevu());
+  function seedRandevu() {
+    const now = new Date(), d = (h, m) => { const x = new Date(now); x.setHours(h, m, 0, 0); return x.toISOString().slice(0, 16); };
+    return [
+      { id:"rnd1", hasta:"Günel Məmmədova", bolum:"Mamalıq-Ginekologiya", doktor:"Dr. Kamran Rzayev", tarih:d(9, 0), durum:"Bekliyor", not:"Hamiləlik izləmi" },
+      { id:"rnd2", hasta:"Orxan Əliyev", bolum:"Kardiologiya", doktor:"Dr. Kamran Rzayev", tarih:d(9, 30), durum:"Bekliyor", not:"Hipertansiyon kontrolü" },
+      { id:"rnd3", hasta:"Elvin Səmədov", bolum:"Oftalmologiya", doktor:"Dr. Kamran Rzayev", tarih:d(10, 15), durum:"Geldi", not:"Check-up" },
+    ];
+  }
+  const RND_DURUM = ["Bekliyor", "Geldi", "Tamamlandı", "Gelmedi", "İptal"];
+  H.register("randevu", { title:() => "Randevu", perm:["admission", "beds"], render(root, params = {}) {
+    const all = randevular(), f = params.durum || "hepsi";
+    const list = f === "hepsi" ? all : all.filter(r => r.durum === f);
+    root.innerHTML = `<div class="ph"><div><h2>Randevu</h2><p>${list.length} randevu · poliklinik / cihaz / bölüm takvimi (tasarım)</p></div><div class="r"><button class="btn p" data-rndnew>${I("plus")} Yeni randevu</button></div></div>
+      <div class="seg" style="margin-bottom:12px">${[["hepsi", "Hepsi"], ...RND_DURUM.map(x => [x, x])].map(([k, l]) => `<button data-rf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      <div class="tw"><table class="t"><thead><tr><th style="width:150px">Saat</th><th>Hasta</th><th>Bölüm</th><th>Doktor</th><th>Not</th><th style="width:120px">Durum</th><th style="width:44px"></th></tr></thead><tbody>
+      ${list.length ? list.slice().sort((a, z) => a.tarih.localeCompare(z.tarih)).map(r => `<tr><td class="mono adm-sub">${H.esc((r.tarih || "").replace("T", " "))}</td><td><b>${H.esc(r.hasta)}</b></td><td>${H.esc(r.bolum)}</td><td class="adm-sub">${H.esc(r.doktor)}</td><td class="adm-sub">${H.esc(r.not || "")}</td><td><select data-rndst="${r.id}">${RND_DURUM.map(s => `<option${r.durum === s ? " selected" : ""}>${s}</option>`).join("")}</select></td><td><button class="btn g sm" data-rnddel="${r.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Bu durumda randevu yok.</td></tr>`}
+      </tbody></table></div>`;
+    root.onchange = (e) => { const st = e.target.closest("[data-rndst]"); if (st) { const r = all.find(x => x.id === st.dataset.rndst); if (r) { r.durum = st.value; H.log("Randevu durumu", r.hasta + " · " + st.value); } } };
+    root.onclick = (e) => {
+      const rf = e.target.closest("[data-rf]"); if (rf) return H.go("randevu", { durum:rf.dataset.rf });
+      const del = e.target.closest("[data-rnddel]"); if (del) { const i = all.findIndex(x => x.id === del.dataset.rnddel); if (i >= 0 && confirm("Bu randevu silinsin mi?")) { all.splice(i, 1); H.toast("Randevu silindi", "w"); H.go("randevu", params); } return; }
+      if (e.target.closest("[data-rndnew]")) return rndForm();
+    };
+    function rndForm() {
+      const hekims = (H.data.users || []).filter(u => u.role === "hekim"), bols = H.data.bolumler || [];
+      const now = new Date().toISOString().slice(0, 16);
+      H.modal({ title:"Yeni randevu", body:`<div class="icd-form">
+        <div class="fr"><label>Hasta</label><input data-f="hasta" placeholder="Hasta adı"></div>
+        <div class="fr"><label>Bölüm</label><input data-f="bolum" list="rnd-bol" placeholder="Bölüm"><datalist id="rnd-bol">${bols.map(b => `<option>${H.esc(b.ad)}</option>`).join("")}</datalist></div>
+        <div class="fr"><label>Doktor</label><select data-f="doktor"><option value="">—</option>${hekims.map(u => `<option>${H.esc(u.name)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Tarih / saat</label><input type="datetime-local" data-f="tarih" value="${now}"></div>
+        <div class="fr"><label>Not</label><input data-f="not" placeholder="Geliş nedeni"></div></div>`,
+        actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
+          if (!g("hasta")) { H.toast("Hasta adı gerekli.", "w"); return; }
+          all.unshift({ id:"rnd" + Date.now(), hasta:g("hasta"), bolum:g("bolum"), doktor:m.querySelector('[data-f="doktor"]').value, tarih:m.querySelector('[data-f="tarih"]').value, durum:"Bekliyor", not:g("not") });
+          H.log("Randevu oluşturuldu", g("hasta")); H.toast("Randevu eklendi"); H.closeModal(); H.go("randevu", params); }; } });
+    }
+  } });
+
   /* ================= ALARMLAR ================= */
   const STEPS = ["3. dk · sorumlu hemşire", "5. dk · hekim", "10. dk · hızlı yanıt"];
   const SEVC = { crit:"var(--crit)", high:"var(--high)", mid:"var(--mid)", low:"var(--low)" };
