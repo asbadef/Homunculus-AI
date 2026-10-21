@@ -435,3 +435,17 @@ Klinik/doktor tarafı büyük ölçüde YAPILDI (muayene, epikriz, izlem, hemşi
 | 351 | İK modülü (personel kartı, SGK, izin, kadro) | İK | diğer roller fazı |
 
 **Şimdiki fazda (doktor+admin) yapılacaklar:** #347 İstem Tarihçesi, #342 Tüm Gelişler, Ameliyat Raporu ekranı, #348 Protokol tipleri, #344 Bölüm/Branş (veri gelince). **Sonraki faz (diğer roller):** #343 Randevu, #345 Vezne, #346 Lab/Rad akışı, #351 İK.
+| 360 | Onam/klinik doküman tanımları admin'den ekle/sil/kategori — her hastanede farklı form seti | admin | ekran: "Doküman Tanımları" (Hemşire/Hekim/Kurum/Hasta dok., kategori: Muayene/Rapor ve Takip/Tanımlama/Takip/Tetkik İstem Formları) |
+| 361 | İndirim onay akışı — indirim atılınca yetkili rol onaylar (çok kademeli onay zinciri) | vezne/yönetim | ekran: "Onay Bekleyen İndirimler" (İstek+Onay kolonları, seviye 1/2/3, onaylayan, red açıklaması) |
+| 362 | Zengin Protokol Tipi tanımı — bayraklar: Hasta Fark Atmasın, Otomatik Kapama Yapılmasın, SGK Katılım Payı Alınmasın, Doktorsuz/Nöbetsiz Protokol, Medula Triaj, Tedavi/Takip Tipi, Kısa Ad, Geliş Tipi, Bölümler, Avans Alınabilsin, İşlem Havuzuna Düşsün vb. | admin | şu an secenekler'de düz liste; zenginleştir. #348 |
+| 363 | Yönetim raporları (İstatistik ve Analizler): TSIM, Aynı Gün Geliş, Hasta/Yeni Muayene Geliş, Fatura/İndirim/İptal Analizi, Protokol/Hasta/Vezne Borç Takip, Doktor Protokol Sayı, Protokol Fiyat Log, Bekleyen Avans, Banko Vezne Fatura, Vezne Açık Hesap vb. | yönetim | yaklaşım sorulacak |
+| 362b | Klinik doküman doldurma mantığı — her form nasıl doldurulur (araştırma ile içerik) | araştırma | kullanıcı başlıkları veriyor; mantık araştırılıp eklenebilir |
+| 364 | Vezne 360 / İş Havuzu sağ panel — Hasta/Randevu Arama, Son Hastalar, Reçete Listesi, Onay Bekleyen İndirim/İade, Medula, Toplu Fatura, Protokol Listesi, Fiyat Teklifleri, Evrak/Ödeme/GFK Takip, Gizli/VIP Hasta | vezne | ekran görsellerindeki sağ ray |
+| 365 | İade talepleri akışı (Avans/Fatura iadesi) + onay zinciri | vezne | ekran: "İade Talepleri" (Avans/Fatura/Tümü, onay seviyeleri) |
+| 366 | Doktor "Tarihçe" (Doküman Tarihçesi) — doküman versiyonları (1./2. version), Benim/Bölümüm/Tümü, İmzalı, İmza/Beyan/P.Açılış tarihi; + Randevu Geçmişi ekranı | doktor | muayene üstündeki Tarihçe butonu |
+| 367 | PWA / mobil web katmanı — ileride değerlendirilecek (şimdilik park) | ileri faz | genel mimari notu |
+| 368 | Hizmet listesi (H.HIZMET) + bölüm listesi her yerde kullanılsın (vezne fiyat, istem, randevu, İK, hizmet tanımı…) | hepsi | vezne fiyat combobox ✅ commit; diğer ekranlar tek tek denetlenecek |
+| 369 | Her hizmetin kuruma göre fiyatı — şimdilik H.fiyatOf baz+çarpan, admin düzenlenebilir (H.data.fiyatlar), gerçek matematik ileride | vezne/admin | temel ✅ commit; admin fiyat düzenleme ekranı sırada |
+| 370 | Vezne dönem kilidi: dönem kapatmadan başka dönemde işlem yok (yetki süreci) | vezne | ✅ commit; benzer kilit mantığı diğer kasa işlemlerine de |
+| 371 | YETKİ SÜRECİ denetimi (çapraz) — verilen her buton/alan bir role/yetkiye bağlı olmalı; roller ekranında granüler yetkiler (kampanya oluştur, indirim onay, dönem aç/kapat, vezne banko, iade onay vb.) artırılacak | admin/roller | M0; sistemli denetim gerekli |
+| 372 | TÜM sohbet görselleri yeniden analiz + eksik buton/yazı/süreç çıkarımı + planlama (İK düzen, onam/indirim/iade onay zincirleri, protokol tipi bayrakları, doktor tarihçe, vezne 360 sağ ray) | planlama | sıradaki büyük iş; parça parça tamamlanacak |
