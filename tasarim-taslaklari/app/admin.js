@@ -244,7 +244,8 @@
       v:Object.assign({}, VDEF[ag]), flags:{}, notes:[], admittedAt:H.now(), admittedBy:me().u || "—" }, d.meta || {});
     if (ag === "neonate") Object.assign(p, { ageDays:d.ageDays || 0, nsofa:0, gestWeeks:null, birthWeight:null });
     else if (ag === "child") p.pews = 0; else Object.assign(p, { news2:0, sofa:0 });
-    if (!p.hn) p.hn = nextHN();
+    // Hasta no kişiye ait: aynı FİN daha önce geldiyse o hasta no tekrar kullanılır (protokol her gelişte yeni).
+    if (!p.hn) { const prev = p.fin && H.data.patients.find(x => x.fin && x.hn && x.fin.toUpperCase() === p.fin.toUpperCase()); p.hn = prev ? prev.hn : nextHN(); }
     b.status = "dolu"; b.pid = p.id; H.data.patients.push(p);
     return p;
   }
