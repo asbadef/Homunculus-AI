@@ -177,3 +177,38 @@ def test_a_refusal_stops_the_replay_and_says_what_the_server_said_never_a_header
     assert stopped.value.code == 1
     assert "401" in shown.err and said in shown.err
     assert SECRET not in shown.out + shown.err
+
+
+def test_a_server_that_echoes_the_token_in_its_refusal_has_it_redacted(monkeypatch, capsys):
+    body = json.dumps({"detail": f"unknown device token {SECRET}"}).encode()
+
+    def refuse(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 401, "Unauthorized", email.message.Message(), io.BytesIO(body))
+
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+    monkeypatch.setattr("time.sleep", lambda seconds: None)
+    monkeypatch.setenv(TOKEN_VAR, SECRET)
+    with pytest.raises(SystemExit) as stopped:
+        replay_main()(["stable_control.yaml", "0", "--token-env", TOKEN_VAR])
+    shown = capsys.readouterr()
+    assert stopped.value.code == 1
+    assert "unknown device token <token>" in shown.err
+    assert SECRET not in shown.out + shown.err
+
+
+def test_an_unreachable_endpoint_stops_the_replay_with_one_line_and_no_traceback(monkeypatch, capsys):
+    """A refused connection (URLError) and a read that timed out (TimeoutError) end the same way."""
+    monkeypatch.setattr("time.sleep", lambda seconds: None)
+    monkeypatch.setenv(TOKEN_VAR, SECRET)
+    for failure, reason in [(urllib.error.URLError(ConnectionRefusedError("connection refused")), "connection refused"),
+                            (TimeoutError("timed out"), "timed out")]:
+        def unreachable(req, timeout=None, failure=failure):
+            raise failure
+
+        monkeypatch.setattr(urllib.request, "urlopen", unreachable)
+        with pytest.raises(SystemExit) as stopped:
+            replay_main()(["stable_control.yaml", "0", "--url", "http://stack.invalid:18080", "--token-env", TOKEN_VAR])
+        shown = capsys.readouterr()
+        assert stopped.value.code == 1
+        assert shown.err.strip().splitlines() == [f"error: http://stack.invalid:18080/ingest unreachable: {reason}"]
+        assert SECRET not in shown.out + shown.err

@@ -29,15 +29,19 @@ SCEN = Path(homunculus.scenarios.__file__).parent
 TIMEOUT_S = 15  # the dashboard's own read timeout: a dead stack must not hang the replay
 
 
-def refusal_detail(err: urllib.error.HTTPError) -> str:
-    """What the server said in its body (FastAPI's `detail`), never a header; "" when it said nothing usable."""
+def refusal_detail(err: urllib.error.HTTPError, token: str) -> str:
+    """What the server said in its body (FastAPI's `detail`), never a header; "" when it said nothing
+    usable. A server that echoes the token back has it replaced by "<token>" before anything is printed."""
     try:
         detail = json.loads(err.read().decode("utf-8", "replace")).get("detail")
     except (ValueError, AttributeError, OSError):
         return ""
     if detail is None:
         return ""
-    return (detail if isinstance(detail, str) else json.dumps(detail))[:300]
+    text = detail if isinstance(detail, str) else json.dumps(detail)
+    if token:
+        text = text.replace(token, "<token>")
+    return text[:300]
 
 
 def main(argv=None) -> None:
@@ -69,8 +73,13 @@ def main(argv=None) -> None:
         )
         try:
             urllib.request.urlopen(req, timeout=TIMEOUT_S).read()
-        except urllib.error.HTTPError as err:
-            print(f"error: {endpoint} answered {err.code}: {refusal_detail(err) or 'no detail'}", file=sys.stderr)
+        except urllib.error.HTTPError as err:  # before URLError, which it subclasses
+            print(f"error: {endpoint} answered {err.code}: {refusal_detail(err, token) or 'no detail'}",
+                  file=sys.stderr)
+            raise SystemExit(1) from None
+        except (urllib.error.URLError, TimeoutError) as err:  # refused, unresolvable, or a read that timed out
+            reason = err.reason if isinstance(err, urllib.error.URLError) else err
+            print(f"error: {endpoint} unreachable: {reason}", file=sys.stderr)
             raise SystemExit(1) from None
         print("sent", fhir["code"]["coding"][0]["code"], fhir["valueQuantity"]["value"],
               fhir["effectiveDateTime"])
