@@ -2,7 +2,8 @@
 """Load a scenario YAML and yield (timestamp, FHIR Observation dict) in time order."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import copy
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
@@ -32,16 +33,25 @@ def load_scenario(path: str | Path) -> list[tuple[datetime, dict]]:
 
 
 def rebased(events: list[tuple[datetime, dict]], end: datetime) -> list[tuple[datetime, dict]]:
-    """The same events moved in time so the last one falls at `end`, every gap between two kept.
+    """The same events moved in time so the latest one falls at `end`, every gap between two kept.
 
     For a replay into a local stack (scripts/replay.py `--now`): the scenarios are written at fixed
     dates, and the trend charts' window ends at the server's now, so an unmoved replay draws an
-    empty chart. A copy: the loaded events are not changed.
+    empty chart. A deep copy: the loaded events are not changed, nested dicts included. The order
+    given is the order returned; the latest event is the one anchored, wherever it sits. A naive
+    timestamp is read as UTC, as the gateways do (gateway/fhir.py `to_utc`).
     """
     if end.tzinfo is None or end.utcoffset() is None:
         raise ValueError("end must carry a time zone")
     if not events:
         return []
-    shift = end - events[-1][0]
-    return [(ts + shift, {**resource, "effectiveDateTime": (ts + shift).isoformat()})
-            for ts, resource in events]
+    stamped = [(ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts, resource)
+               for ts, resource in events]
+    shift = end - max(ts for ts, _ in stamped)
+    moved: list[tuple[datetime, dict]] = []
+    for ts, resource in stamped:
+        at = ts + shift
+        clone = copy.deepcopy(resource)
+        clone["effectiveDateTime"] = at.isoformat()
+        moved.append((at, clone))
+    return moved
