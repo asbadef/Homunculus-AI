@@ -26,6 +26,27 @@
 .fly { animation:ekFly .14s ease-out; }
 @keyframes ekFly { from { opacity:0; transform:translateX(-6px); } to { opacity:1; transform:none; } }
 
+/* Tanı (ICD) seçici — belge editörü (muayene/epikriz) */
+.dc-tani { background:var(--card2); border:1px dashed var(--line2); border-radius:12px; padding:10px 12px; margin:10px 0; }
+.dc-dxw { margin-top:6px; }
+.dc-dxchip { display:inline-flex; align-items:center; gap:6px; background:var(--card); border:1px solid var(--line2); border-radius:999px; padding:4px 8px 4px 11px; margin:4px 5px 0 0; font:600 12.5px Figtree; }
+.dc-dxchip.ana { border-color:var(--pri); box-shadow:0 0 0 1px var(--pri) inset; }
+.dc-dxchip .dc-dxtip { color:var(--mute); font-weight:600; }
+.dc-dxchip .dc-dxana { color:var(--pri); font-weight:700; }
+.dc-dxchip button { border:0; background:none; cursor:pointer; color:var(--mute); font-size:16px; line-height:1; padding:0 2px; }
+.dc-dxchip button:hover { color:var(--crit); }
+.dc-dxtop { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.dc-dxtop label { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; }
+.dc-dxrow { display:flex; gap:10px; width:100%; text-align:left; padding:8px 10px; border-radius:9px; border:0; background:none; cursor:pointer; color:var(--ink); align-items:baseline; }
+.dc-dxrow b { min-width:80px; }
+.dc-dxrow:hover { background:var(--card2); }
+
+/* Tanı (ICD) tanım formu — admin */
+.icd-form .fr { display:grid; grid-template-columns:140px 1fr; align-items:center; gap:10px; margin-bottom:8px; }
+.icd-form .fr label { font:600 12.5px Figtree; color:var(--mute); }
+.icd-oz { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:5px 16px; margin-top:8px; }
+.icd-oz label { display:flex; align-items:center; gap:7px; font-size:12.5px; }
+
 /* ---------- monitör · Ozan #59 ----------
  * Hasta ekranındaki monitör yatak başı cihazı gibi: koyu çerçeve, iç gölge, atan HR rakamı. */
 .pt-wrap .mon { border:6px solid #111a28; border-radius:18px; box-shadow:inset 0 0 0 1px #22324b, 0 10px 28px rgba(0,0,0,.35); background:radial-gradient(120% 140% at 30% 0%, #07142a, #02060d 70%); }

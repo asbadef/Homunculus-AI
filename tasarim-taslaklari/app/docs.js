@@ -541,6 +541,9 @@
     if (edit) infos.push(DICT_NOTE);
     else if (d.status === "taslak") infos.push(`<div class="dc-info">${H.icon("eye")}<div>Bu taslağı yalnız görüntüleyebilirsiniz; ${d.type === "hemsire" ? "hemşirelik notunu hemşire" : "hekim belgesini hekim"} düzenler.</div></div>`);
     let body = T.secs.map(([k, l]) => secHtml(p, d, k, sLabel(l), edit)).join("");
+    const dxList = d.dx || [];
+    const taniW = (edit && isDoc() && d.type !== "transfer") ? `<div class="dc-sec dc-tani"><div class="dc-sh"><b>Tanı (ICD)</b><span class="r"><button class="btn g sm" data-dc-dxadd>${H.icon("plus")}Tanı ekle</button></span></div>
+      <div class="dc-dxw">${dxList.length ? dxList.map((x, i) => `<span class="dc-dxchip${x[3] ? " ana" : ""}"><b class="mono">${esc(x[0])}</b> ${esc(x[1])}${x[2] ? ` <small class="dc-dxtip">${esc(x[2])}</small>` : ""}${x[3] ? ` <small class="dc-dxana">Ana tanı</small>` : ""}<button data-dc-dxrm="${i}" title="Kaldır" aria-label="Kaldır">×</button></span>`).join("") : `<span class="mute" style="font-size:12px">Henüz tanı seçilmedi. “Tanı ekle” ile ICD listesinden arayıp seçin.</span>`}</div></div>` : "";
     let foot = "";
     if (d.status === "muhur") {
       foot = `<div class="dc-seal">${H.icon("lock")}Mühürlendi · ${esc(short(d.sealedBy))} · ${esc(d.sealedAt)} <span>· değiştirilemez, yalnız ek not eklenir</span></div>
@@ -564,7 +567,7 @@
     } else if (d.status === "taslak") {
       foot = `<div class="dc-bar"><span class="dc-stat">${d.type === "hemsire" ? "Hemşire mühürleyince kesinleşir." : "Hekim mühürleyince kesinleşir."}</span></div>`;
     }
-    return `<div class="dc-ed">${head}${infos.join("")}${body}${foot}</div>`;
+    return `<div class="dc-ed">${head}${infos.join("")}${taniW}${body}${foot}</div>`;
   }
   // #9 · tek sayfa: başlık + iki sütunlu bölümler; 640px altında tek sütun
   function pageHtml(p, d) {
@@ -663,6 +666,32 @@
     } catch (err) { simulate(D, "· Ses tanıma başlatılamadı — örnek dikte"); }
   }
 
+  /* Tanı (ICD) seçici: H.ICD kataloğundan ara-seç. Seçilen tanı belgeye (d.dx) ve
+   * birincil tanı hasta başlığına (p.dx/p.icd) işlenir. Sistem tanı önermez, hekim seçer. */
+  function openDxPicker(p, d, root, rerender) {
+    const ALL = H.ICD || [];
+    H.modal({ title:"Tanı ekle (ICD)", wide:true,
+      body:`<div class="dc-dxtop"><label>Tanı tipi <select data-dx-tip><option>Ön Tanı</option><option>Kesin Tanı</option><option>Ayırıcı Tanı</option></select></label><label style="margin-left:14px"><input type="checkbox" data-dx-ana> Ana tanı</label></div>
+        <input data-dx-q placeholder="Kod ya da tanı adı ara (ör. J18 veya pnevmoniya)" style="width:100%;margin-top:8px">
+        <div data-dx-res style="margin-top:10px;max-height:46vh;overflow:auto"></div>
+        <p class="mute" style="font-size:12px;margin-top:8px">Önce tipi/ana tanıyı seçin, sonra listeden tanıya tıklayın. Seçtiğiniz tanı belgeye ve hastanın başlığına işlenir.</p>`,
+      onMount(m) {
+        const q = m.querySelector("[data-dx-q]"), res = m.querySelector("[data-dx-res]");
+        const draw = () => { const s = (q.value || "").trim().toLowerCase();
+          const list = (s ? ALL.filter(x => x[0].toLowerCase().includes(s) || (x[1] || "").toLowerCase().includes(s)) : ALL).slice(0, 60);
+          res.innerHTML = list.length ? list.map(x => `<button class="dc-dxrow" data-pick="${esc(x[0])}"><b class="mono">${esc(x[0])}</b><span>${esc(x[1])}</span></button>`).join("") : `<div class="empty">Eşleşen tanı yok.</div>`; };
+        draw(); q.oninput = draw; q.focus();
+        res.onclick = (e) => { const b = e.target.closest("[data-pick]"); if (!b) return;
+          const code = b.dataset.pick, row = ALL.find(x => x[0] === code); if (!row) return;
+          const tip = m.querySelector("[data-dx-tip]").value, ana = m.querySelector("[data-dx-ana]").checked;
+          d.dx = d.dx || [];
+          if (ana) d.dx.forEach(x => x[3] = false);   // tek ana tanı olur
+          const ex = d.dx.find(x => x[0] === code); if (ex) { ex[2] = tip; ex[3] = ana; } else d.dx.push([row[0], row[1], tip, ana]);
+          if (ana || d.dx.length === 1) { p.dx = row[1]; p.icd = row[0]; }
+          markDirty(root, d); H.log("Tanı eklendi (ICD)", bedNo(p) + " · " + code + " · " + tip + (ana ? " · Ana" : ""));
+          H.closeModal(); H.toast("Tanı eklendi: " + code); rerender(); }; } });
+  }
+
   /* ================= olaylar ================= */
   function after(el, p) {
     const root = el && (el.matches && el.matches(".dc-root") ? el : el.querySelector(".dc-root"));
@@ -675,6 +704,8 @@
       const nw = T.closest("[data-dc-new]"); if (nw) { const t = nw.dataset.dcNew; if (t === "hemsire" ? !isNurse() : !isDoc()) return;
         const d = newDoc(p, t); prefill(p, d); ui(p.id).sel = d.id; ui(p.id).page = false; H.log(`${TYPES[t].name} başlatıldı`, bedNo(p)); rerender(); return; }
       const d = cur(); if (!d) return;
+      if (T.closest("[data-dc-dxadd]")) { if (!canEdit(d)) return; openDxPicker(p, d, root, rerender); return; }
+      const dxrm = T.closest("[data-dc-dxrm]"); if (dxrm) { if (!canEdit(d)) return; (d.dx || []).splice(+dxrm.dataset.dcDxrm, 1); markDirty(root, d); rerender(); return; }
       if (T.closest("[data-dc-page]")) { ui(p.id).page = !ui(p.id).page; rerender(); return; }
       if (T.closest("[data-dc-send]")) { if (!canSend(d)) return; d.sentAt = H.nowFull();
         H.log(`${TYPES[d.type].name} hastane kaydına gönderildi`, `${bedNo(p)} · ${d.status}`); H.toast(tp("dc_sent_tpl", { d:tName(d.type), t:d.sentAt })); rerender(); return; }

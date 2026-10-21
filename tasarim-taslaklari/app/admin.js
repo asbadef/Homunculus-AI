@@ -708,12 +708,16 @@
   /* ---------- Tanı Listesi (ICD) ---------- */
   // ICD-10 kataloğu: ara + ekle. Veri icd-veri.js'te (H.ICD = [[kod, ad, kronik, bulasici], ...]).
   // Doktor muayene/epikriz/anamnez yazarken bu listeden seçer (sonraki faz).
+  // ICD Özellik (tanı öznitelikleri) ve geliş tipi — rakip HBYS'deki alanlara göre.
+  const ICD_OZ = ["Gebelik Tanısı", "Üst Solunum Yolu Enfeksiyonları", "Madde bağımlılığı Bildirim", "Bulaşıcı Hastalık Bildirimi", "Obezite İzlem", "Diyabet", "Kronik Hastalıklar", "Verem", "Kuduz Şüpheli Temas", "Mesleki Maruziyet", "Yabancı ICD Kodu", "SGK'lı Protokollerde Kullanılmasın", "Kanser Tanısı", "Kuduz Riskli Temas", "Kuduz Profilaksi İzlem", "Zehirlenme", "Hemoglobinopati", "HIV İzlem", "HIV Tespit", "Paraziter Hastalıklar Vaka", "Sıtma", "Zor Entübasyon", "Döküman Listesi Gösterilsin", "HIV Riskli", "Tanıya Bağlı Aşı Önerisi"];
+  const ICD_GELIS = ["Seçiniz", "Normal", "Acil", "Kontrol", "Günübirlik", "Yatan"];
+
   function tabIcd(body) {
     const ALL = (H.ICD = H.ICD || []);
-    body.innerHTML = `<div class="adm-bar"><input data-icdq placeholder="Kod ya da tanı adı ara (ör. J18 veya pnevmoniya)" value="${esc(AD.icdq || "")}"><span class="spacer"></span><span class="adm-sub" data-icdcount></span></div>
-      <div class="adm-bar" style="flex-wrap:wrap;gap:6px"><input data-nk placeholder="Yeni kod" style="max-width:130px"><input data-nn placeholder="Yeni tanı adı" style="flex:1;min-width:180px"><label style="display:flex;align-items:center;gap:4px"><input type="checkbox" data-nkr> Kronik</label><label style="display:flex;align-items:center;gap:4px"><input type="checkbox" data-nb> Bulaşıcı</label><button class="btn p" data-icdadd>+ Ekle</button></div>
+    H.ICDMETA = H.ICDMETA || {};
+    body.innerHTML = `<div class="adm-bar"><input data-icdq placeholder="Kod ya da tanı adı ara (ör. J18 veya pnevmoniya)" value="${esc(AD.icdq || "")}"><span class="spacer"></span><span class="adm-sub" data-icdcount></span><button class="btn p" data-icdnew>+ Yeni tanı</button></div>
       <div data-icdlist></div>
-      <p class="adm-sub" style="margin-top:10px">ICD-10 tanı listesi. Admin buradan tanı ekler; doktor muayene/epikriz/anamnez yazarken bu listeden seçer (sonraki faz). Kaynak: hastanenin tanı listesi.</p>`;
+      <p class="adm-sub" style="margin-top:10px">ICD-10 tanı listesi. Admin buradan tanı ekler/düzenler (kod, ad, grup, geliş tipi, uyarı, özellikler). Doktor muayene/epikriz/anamnez yazarken bu listeden seçer. Satıra tıklayarak düzenleyin. Kaynak: hastanenin tanı listesi.</p>`;
     const list = body.querySelector("[data-icdlist]");
     const draw = () => {
       const q = norm(AD.icdq || "");
@@ -721,19 +725,47 @@
       const shown = res.slice(0, 200);
       body.querySelector("[data-icdcount]").textContent = ALL.length.toLocaleString("tr") + " tanı";
       list.innerHTML = `<div class="adm-sub" style="margin:6px 0">${res.length.toLocaleString("tr")} sonuç${res.length > 200 ? " · ilk 200 (aramayı daraltın)" : ""}</div>
-        ${shown.length ? `<div class="tw"><table class="t"><thead><tr><th style="width:120px">Kod</th><th>Tanı</th><th style="width:80px">Kronik</th><th style="width:90px">Bulaşıcı</th></tr></thead><tbody>${shown.map(x => `<tr><td class="mono">${esc(x[0])}</td><td>${esc(x[1])}</td><td style="text-align:center">${x[2] ? "✓" : ""}</td><td style="text-align:center">${x[3] ? "✓" : ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen tanı yok.</div>`}`;
+        ${shown.length ? `<div class="tw"><table class="t"><thead><tr><th style="width:120px">Kod</th><th>Tanı</th><th style="width:80px">Kronik</th><th style="width:90px">Bulaşıcı</th><th>Grup / özellik</th></tr></thead><tbody>${shown.map(x => { const m = H.ICDMETA[x[0]] || {}; const oz = (m.ozel || []).length ? m.ozel.length + " özellik" : ""; return `<tr data-edit="${esc(x[0])}" style="cursor:pointer"><td class="mono">${esc(x[0])}</td><td>${esc(x[1])}</td><td style="text-align:center">${x[2] ? "✓" : ""}</td><td style="text-align:center">${x[3] ? "✓" : ""}</td><td class="adm-sub">${esc(m.grup || "")}${oz ? (m.grup ? " · " : "") + oz : ""}</td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen tanı yok.</div>`}`;
     };
     draw();
     body.querySelector("[data-icdq]").addEventListener("input", e => { AD.icdq = e.target.value; draw(); });
-    body.querySelector("[data-icdadd]").addEventListener("click", () => {
-      const kod = body.querySelector("[data-nk]").value.trim(), ad = body.querySelector("[data-nn]").value.trim();
-      if (!kod || !ad) { H.toast("Kod ve tanı adı gerekli.", "w"); return; }
-      ALL.unshift([kod, ad, body.querySelector("[data-nkr]").checked ? 1 : 0, body.querySelector("[data-nb]").checked ? 1 : 0]);
-      H.log("ICD tanı eklendi", kod + " · " + ad);
-      H.toast("Tanı eklendi.");
-      body.querySelector("[data-nk]").value = ""; body.querySelector("[data-nn]").value = "";
-      AD.icdq = kod; body.querySelector("[data-icdq]").value = kod; draw();
-    });
+    body.querySelector("[data-icdnew]").addEventListener("click", () => icdForm(null, draw));
+    list.addEventListener("click", e => { const tr = e.target.closest("[data-edit]"); if (!tr) return; const row = ALL.find(x => x[0] === tr.dataset.edit); if (row) icdForm({ kod:row[0], ad:row[1] }, draw); });
+  }
+
+  // Tanı ekle/düzenle formu (modal): çekirdek alanlar + ICD Özellikleri. Kronik/Bulaşıcı özelliklerden türetilir.
+  function icdForm(existing, redraw) {
+    const ALL = (H.ICD = H.ICD || []);
+    H.ICDMETA = H.ICDMETA || {};
+    const e = existing || {}, meta = H.ICDMETA[e.kod] || {};
+    H.modal({ title:existing ? "Tanı düzenle (ICD)" : "Yeni tanı (ICD)", wide:true,
+      body:`<div class="icd-form">
+        <div class="fr"><label>Kodu</label><input data-f="kod" value="${esc(e.kod || "")}" placeholder="ör. J18.9"${existing ? " readonly" : ""}></div>
+        <div class="fr"><label>Adı</label><input data-f="ad" value="${esc(e.ad || "")}" placeholder="Tanı adı"></div>
+        <div class="fr"><label>Yabancı Ad</label><input data-f="yad" value="${esc(meta.yad || "")}"></div>
+        <div class="fr"><label>Grubu</label><input data-f="grup" value="${esc(meta.grup || "")}" placeholder="ör. Bağırsak enfeksiyonları"></div>
+        <div class="fr"><label>Üst Tanısı</label><input data-f="ust" value="${esc(meta.ust || "")}" placeholder="ör. A00-A09"></div>
+        <div class="fr"><label>Geliş Tipi</label><select data-f="gelis">${ICD_GELIS.map(x => `<option${(meta.gelis || "Seçiniz") === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Uyarı Notu</label><input data-f="uyari" value="${esc(meta.uyari || "")}" placeholder="Tanı seçilince gösterilecek uyarı"></div>
+        <div style="margin-top:12px"><b style="font-size:13px">ICD Özellikleri</b>
+          <div class="icd-oz">${ICD_OZ.map(o => `<label><input type="checkbox" data-oz="${esc(o)}"${(meta.ozel || []).includes(o) ? " checked" : ""}> ${esc(o)}</label>`).join("")}</div></div>
+      </div>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-icdsave>Kaydet</button>`,
+      onMount(m) {
+        m.querySelector("[data-icdsave]").onclick = () => {
+          const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
+          const kod = g("kod"), ad = g("ad");
+          if (!kod || !ad) { H.toast("Kod ve ad gerekli.", "w"); return; }
+          const ozel = [...m.querySelectorAll("[data-oz]:checked")].map(x => x.dataset.oz);
+          H.ICDMETA[kod] = { yad:g("yad"), grup:g("grup"), ust:g("ust"), gelis:m.querySelector('[data-f="gelis"]').value, uyari:g("uyari"), ozel };
+          const kronik = ozel.includes("Kronik Hastalıklar") ? 1 : 0, bulasici = ozel.includes("Bulaşıcı Hastalık Bildirimi") ? 1 : 0;
+          const idx = ALL.findIndex(x => x[0] === kod);
+          if (idx >= 0) ALL[idx] = [kod, ad, kronik, bulasici]; else ALL.unshift([kod, ad, kronik, bulasici]);
+          H.log(existing ? "ICD tanı güncellendi" : "ICD tanı eklendi", kod + " · " + ad);
+          H.closeModal(); H.toast("Kaydedildi: " + kod);
+          AD.icdq = kod; redraw();
+        };
+      } });
   }
 
   /* ---------- Kullanıcılar ---------- */
