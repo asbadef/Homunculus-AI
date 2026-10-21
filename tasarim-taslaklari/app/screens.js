@@ -177,6 +177,13 @@
   ]);
   const PTIP_ETKI = [["hastaFark", "Hastaya fark atılmaz (hasta payı 0)"], ["sgkKatilim", "SGK katılım payı oluşmaz"], ["avans", "Avans alınabilir"], ["otoKapanma", "Otomatik kapanmaz"], ["islemHavuz", "İşlem havuzuna düşer"], ["doktorsuz", "Doktorsuz protokol"], ["nobetsiz", "Nöbetsiz protokol"]];
   const hzName = (r) => (H.state.lang === "TR" ? (r[2] || r[1]) : (r[1] || r[2])) || r[1] || r[2] || "";
+  // Vezne 360 sağ ray hızlı listeleri (örnek/özet)
+  function railData(name) {
+    if (name === "Son hastalar") return { cols:["Hasta no", "Hasta", "Yatak / birim", "Geliş"], rows:(H.data.patients || []).slice(-8).reverse().map(p => { const b = H.bed(p.bed), u = b && H.unit(b.unitId); return [p.hn || "—", p.name, b ? b.no + (u ? " · " + u.tr : "") : "—", (H.ENC[H.encOf(p)] || {}).label || H.encOf(p)]; }) };
+    if (name === "Protokol listesi") return { cols:["Protokol", "Hasta", "Geliş", "Bölüm", "Fatura durumu"], rows:gfkRows().map(x => [x.proto, x.hasta, x.gelis, x.bolum, x.durum]) };
+    if (name === "Reçete listesi") return { cols:["Reçete no", "Hasta", "Tür", "Tarih"], rows:[["RX-50894308", "Nobatxanım Dadaşova", "Normal reçete", "21.10.2026"], ["RX-50893071", "Elvin Hüseynov", "İlaç reçetesi", "20.10.2026"], ["RX-50889384", "Günel Məmmədova", "Gözlük reçetesi", "14.10.2026"]] };
+    return null;
+  }
   H.register("vezne", { title:() => H.t("m_vezne"), perm:["admission", "summary"], render(root, params = {}) {
     const bankolar = BANKOLAR(), banko = H.state.vezneBanko || bankolar[0], donemNo = H.data.vezneDonemNo || (H.data.vezneDonemNo = 54038), tab = params.tab || "fatura";
     const donemAcik = H.data.vezneDonemAcik !== false, donemYetki = H.can("vezne_donem");
@@ -254,7 +261,9 @@
       const vf = e.target.closest("[data-vf]"); if (vf) return H.go("vezne", { tab:"fatura", durum:vf.dataset.vf });
       const gf = e.target.closest("[data-gf]"); if (gf) return H.go("vezne", { tab:"gfk", gfk:gf.dataset.gf });
       const ef = e.target.closest("[data-ef]"); if (ef) return H.go("vezne", { tab:"evrak", ev:ef.dataset.ef });
-      const rl = e.target.closest("[data-rail]"); if (rl) { const t = rl.dataset.rail; if (t) return H.go("vezne", { tab:t }); H.toast(rl.dataset.raill + " · yapım aşamasında (tasarım)", "w"); return; }
+      const rl = e.target.closest("[data-rail]"); if (rl) { const t = rl.dataset.rail; if (t) return H.go("vezne", { tab:t }); const lbl = rl.dataset.raill, rd = railData(lbl);
+        if (!rd) { H.toast(lbl + " · yapım aşamasında (tasarım)", "w"); return; }
+        H.modal({ title:lbl, wide:true, body:`<div class="tw"><table class="t"><thead><tr>${rd.cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>${rd.rows.length ? rd.rows.map(r => `<tr>${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${rd.cols.length}" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}</tbody></table></div>`, actions:`<button class="btn" data-x>Kapat</button>` }); return; }
       const io = e.target.closest("[data-io]"); if (io) return H.go("vezne", { tab:"indirim", io:io.dataset.io });
       const ia = e.target.closest("[data-ia]"); if (ia) return H.go("vezne", { tab:"iade", ia:ia.dataset.ia, iatip:params.iatip });
       const iat = e.target.closest("[data-iatip]"); if (iat) return H.go("vezne", { tab:"iade", ia:params.ia, iatip:iat.dataset.iatip });
