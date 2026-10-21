@@ -786,3 +786,9 @@ button.iz-n:hover { filter:brightness(1.08); outline:2px solid var(--priSoft); }
 }
 .va-b { margin-top:auto !important; }
 .va-c > .kv:last-of-type { margin-bottom:10px; }
+
+/* Raporlar kataloğu (raporlar ekranı) */
+.rp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.rp-card{display:flex;align-items:center;gap:8px;text-align:left;padding:11px 12px;border:1px solid var(--line2);border-radius:10px;background:var(--card2);color:inherit;cursor:pointer;font:inherit;font-size:13px}
+.rp-card:hover{border-color:var(--pri);background:color-mix(in srgb,var(--pri) 8%,var(--card2))}
+.rp-card svg{flex:none;opacity:.7}

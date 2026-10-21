@@ -212,6 +212,23 @@
     };
   } });
 
+  /* ================= YÖNETİM RAPORLARI (başlık kataloğu · içerik yapım aşamasında) ================= */
+  const RAPOR_GRUP = [
+    ["Geliş ve Muayene", ["TSIM", "Aynı Gün Geliş Analizi", "Hasta Geliş Analizi", "Yeni Muayene Gelişi", "Doktor Protokol Sayı Analizi", "Doktor İşlem Analizi"]],
+    ["Fatura ve Tahsilat", ["Fatura Analizi", "Faturalanmamış Tahsilat Analizi", "Vezne Tahakkuk Tahsilat Analizi", "Banko Vezne Fatura Analizi", "Protokol Fiyat Log"]],
+    ["İndirim ve İade", ["Hasta İndirim Analizi", "Onay Bekleyen İndirimler", "İade Talepleri (Avans/Fatura)"]],
+    ["Borç ve Açık Hesap", ["Protokol Borç Takip", "Hasta Borç Takip", "Vezne Borç Takip", "Vezne Açık Hesap Analizi", "Personel ve Yakını Açık Hesap Analizi", "Bekleyen Avans Listesi"]],
+    ["İptal Analizleri", ["Protokol İptal Analizi", "Fatura İptal Analizi", "Vezne İşlem İptal Analizi", "Protokol İşlem İptal Analizi"]],
+    ["Protokol ve Liste", ["Protokol Listesi", "Medula Takip Analizi", "Kvk / Demografik Bilgi Raporu"]],
+  ];
+  H.register("raporlar", { title:() => H.t("m_raporlar"), perm:["summary", "audit"], render(root) {
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_raporlar")}</h2><p>Yönetim raporları ve analizler · başlık kataloğu (içerik yapım aşamasında, tasarım)</p></div></div>
+      ${RAPOR_GRUP.map(([g, items]) => `<div class="ist-sec"><div class="ist-hd"><h5>${H.esc(g)}</h5></div>
+        <div class="rp-grid">${items.map(r => `<button class="rp-card" data-rap="${H.esc(r)}">${I("chart") || ""}<span>${H.esc(r)}</span></button>`).join("")}</div></div>`).join("")}
+      <p class="adm-sub" style="margin-top:10px">Her rapor: tarih/bölüm/doktor filtresi + tablo/özet olacak. Öncelikli raporlar örnek veriyle sırayla doldurulacak; gerçek veri bağlantısını ayrı ekip kurar.</p>`;
+    root.onclick = (e) => { const c = e.target.closest("[data-rap]"); if (c) H.toast(c.dataset.rap + " · yapım aşamasında (tasarım)", "w"); };
+  } });
+
   /* ================= LAB / RADYOLOJİ İŞ AKIŞI ================= */
   const LAB_DURUM = ["İstendi", "Numune alındı", "Çalışılıyor", "Sonuç onaylandı", "Serbest bırakıldı"];
   H.register("labislem", { title:() => "Laboratuvar / Radyoloji", perm:["beds", "summary"], render(root, params = {}) {
