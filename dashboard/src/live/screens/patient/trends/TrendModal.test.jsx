@@ -153,7 +153,7 @@ describe("the big chart's readout", () => {
     expect(readout()).toHaveAttribute("aria-hidden", "true");
     expect(readout()).toHaveTextContent("Ölçməni oxumaq üçün qrafikin üzərinə gəlin");
     fireEvent.mouseMove(svg, { clientX: xOf(60) });
-    expect(readout()).toHaveTextContent(`${hhmm(NOW - HOUR)} · 132 /dəq · siqnal: news2`);
+    expect(readout()).toHaveTextContent(`${hhmm(NOW - HOUR)} · 132 /dəq · NEWS2 +3 · siqnal: news2`);
     fireEvent.mouseMove(svg, { clientX: xOf(120) });
     expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · 84 /dəq`);
     fireEvent.mouseLeave(svg);
@@ -164,21 +164,21 @@ describe("the big chart's readout", () => {
     await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate", [point(120, 84, 0), point(60, 132, 3)])],
       { hours, markers: [marker(60, "alarm", "news2"), marker(60, "alarm", "sepsis")] })));
     fireEvent.mouseMove(chart(), { clientX: xOf(60) });
-    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · 132 /dəq · siqnal: news2 · siqnal: sepsis`);
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · 132 /dəq · NEWS2 +3 · siqnal: news2 · siqnal: sepsis`);
   });
 
   it("writes the date as well over three days, as the chart's own time labels do", async () => {
     await open();
     await choose("3 gün");
     fireEvent.mouseMove(chart(), { clientX: xOf(60, 72) });
-    expect(readout().textContent).toBe(`${ddmm(NOW - HOUR)} ${hhmm(NOW - HOUR)} · 132 /dəq · siqnal: news2`);
+    expect(readout().textContent).toBe(`${ddmm(NOW - HOUR)} ${hhmm(NOW - HOUR)} · 132 /dəq · NEWS2 +3 · siqnal: news2`);
   });
 
   it("reads MAP beside the systolic at the same instant on the pressure card — the vasopressor target", async () => {
     await open("pressure", answering((pid, hours) => trends(pid, [
       channel("sbp", [point(120, 118, 0), point(60, 95, 2)]), channel("map", [point(120, 80), point(60, 64)])], { hours })));
     fireEvent.mouseMove(chart(), { clientX: xOf(60) });
-    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP 64 mmHg`);
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP 64 mmHg · NEWS2 +2`);
     fireEvent.mouseMove(chart(), { clientX: xOf(120) });
     expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · Sistolik AT 118 · MAP 80 mmHg`);
   });
@@ -187,7 +187,7 @@ describe("the big chart's readout", () => {
     await open("pressure", answering((pid, hours) => trends(pid, [
       channel("sbp", [point(120, 118, 0), point(60, 95, 2)]), channel("map", [point(120, 80)])], { hours })));
     fireEvent.mouseMove(chart(), { clientX: xOf(60) });
-    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP — mmHg`);
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP — mmHg · NEWS2 +2`);
   });
 
   it("reads a MAP stamped seconds from the systolic beside it — the same pixel column — and takes the nearer one", async () => {
@@ -197,7 +197,7 @@ describe("the big chart's readout", () => {
       channel("sbp", [point(120, 118, 0), point(60, 95, 2)]),
       channel("map", [point(119.8, 78), point(60.5, 70), point(59.8, 64)])], { hours })));
     fireEvent.mouseMove(chart(), { clientX: xOf(60) });
-    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP 64 mmHg`);
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP 64 mmHg · NEWS2 +2`);
     fireEvent.mouseMove(chart(), { clientX: xOf(120) });
     expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · Sistolik AT 118 · MAP 78 mmHg`);
   });
@@ -207,7 +207,7 @@ describe("the big chart's readout", () => {
     await open("pressure", answering((pid, hours) => trends(pid, [
       channel("sbp", [point(120, 118, 0), point(60, 95, 2)]), channel("map", [point(120, 80), point(61.25, 70)])], { hours })));
     fireEvent.mouseMove(chart(), { clientX: xOf(60) });
-    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 mmHg · MAP 70 mmHg (${hhmm(NOW - 61.25 * 60_000)})`);
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 mmHg · MAP 70 mmHg (${hhmm(NOW - 61.25 * 60_000)}) · NEWS2 +2`);
     fireEvent.mouseMove(chart(), { clientX: xOf(120) });                        // the same minute: no time of its own
     expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · Sistolik AT 118 · MAP 80 mmHg`);
   });
@@ -247,11 +247,51 @@ describe("the big chart's readout", () => {
     await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
       [point(120, 84, 0), blank ? point(60, null) : point(60, 132, 3)])], { hours })));
     fireEvent.mouseMove(chart(), { clientX: xOf(60) });
-    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · 132 /dəq`);
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · 132 /dəq · NEWS2 +3`);
     blank = true;
     await reread();
     expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · —`);
     expect(readout().textContent).not.toMatch(/NaN/);
+  });
+
+  it("names the reading's NEWS2 points between its value and its marks — the card's own badge text, the engine's number", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
+      [point(180, 84, 0), point(120, 118, 2), point(60, 132, 3), point(30, 96, null)])],
+    { hours, markers: [marker(120, "alarm", "news2")] })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(120) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · 118 /dəq · NEWS2 +2 · siqnal: news2`);
+    // Where the engine scored the reading 0 the card wears no badge, and the readout adds nothing either.
+    fireEvent.mouseMove(chart(), { clientX: xOf(180) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - 3 * HOUR)} · 84 /dəq`);
+    // Where the engine sent no points there is nothing to name, and nothing is worked out here.
+    fireEvent.mouseMove(chart(), { clientX: xOf(30) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - 30 * 60_000)} · 96 /dəq`);
+  });
+
+  it("names no points for lactate — a channel NEWS2 does not score", async () => {
+    await open("lactate", answering((pid, hours) => trends(pid, [channel("lactate", [point(60, 4.1)])], { hours })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · 4.1 mmol/L`);
+  });
+
+  it("names no points for a MAP beside a systolic the engine sent none for — MAP is not scored either", async () => {
+    await open("pressure", answering((pid, hours) => trends(pid, [
+      channel("sbp", [point(120, 118, 0), point(60, 95)]), channel("map", [point(120, 80), point(60, 64)])], { hours })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · Sistolik AT 95 · MAP 64 mmHg`);
+    fireEvent.mouseMove(chart(), { clientX: xOf(120) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - 2 * HOUR)} · Sistolik AT 118 · MAP 80 mmHg`);
+  });
+
+  it("names no points for a reading that arrived without a value — a score with no measurement behind it", async () => {
+    let blank = false;
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
+      [point(120, 84, 0), blank ? point(60, null, 3) : point(60, 132, 3)])], { hours })));
+    fireEvent.mouseMove(chart(), { clientX: xOf(60) });
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · 132 /dəq · NEWS2 +3`);
+    blank = true;
+    await reread();
+    expect(readout().textContent).toBe(`${hhmm(NOW - HOUR)} · —`);
   });
 
   it("says so — and gives no prompt to hover — when the window holds no reading to read", async () => {
@@ -364,9 +404,9 @@ describe("the big chart by keyboard", () => {
     press("ArrowRight");
     expect(readout()).toBe(`${hhmm(NOW - 2 * 3_600_000)} · 84 /dəq`);
     press("End");
-    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq`);
+    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3`);
     press("ArrowRight");                                                // stays on the last
-    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq`);
+    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3`);
     press("Home");
     press("ArrowLeft");                                                 // stays on the first
     expect(readout()).toBe(`${hhmm(NOW - 3 * 3_600_000)} · 80 /dəq`);
@@ -383,10 +423,29 @@ describe("the big chart by keyboard", () => {
     expect(region).toHaveTextContent("");
     fireEvent.keyDown(svg, { key: "End" });
     await wait(200);
-    expect(region).toHaveTextContent(`${hhmm(NOW - 3_600_000)} · 132 /dəq`);
+    expect(region.textContent).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3`);
     fireEvent.mouseMove(svg, { clientX: xOf(120) });
     await wait(200);
     expect(region.textContent).toBe("");
+  });
+
+  it("says the reading's NEWS2 points once per move, in the one announcement — the readout's own words", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate",
+      [point(180, 80, 0), point(120, 118, 2), point(60, 96, null)])], { hours })));
+    const svg = chart();
+    svg.focus();
+    const region = within(dialog()).getByRole("status");
+    fireEvent.keyDown(svg, { key: "ArrowRight" });                      // scored 0: nothing to add
+    await wait(200);
+    expect(region.textContent).toBe(`${hhmm(NOW - 3 * 3_600_000)} · 80 /dəq`);
+    fireEvent.keyDown(svg, { key: "ArrowRight" });
+    await wait(200);
+    expect(region.textContent).toBe(`${hhmm(NOW - 2 * 3_600_000)} · 118 /dəq · NEWS2 +2`);
+    expect(region.textContent.match(/NEWS2/g)).toHaveLength(1);
+    expect(dialog().querySelector("[data-readout]").textContent).toBe(region.textContent);
+    fireEvent.keyDown(svg, { key: "ArrowRight" });                      // the engine sent no points: none are made up
+    await wait(200);
+    expect(region.textContent).toBe(`${hhmm(NOW - 3_600_000)} · 96 /dəq`);
   });
 
   it("says nothing for a chart nobody can see: switching to the table lets the cursor go, and the announcement with it", async () => {
@@ -395,7 +454,7 @@ describe("the big chart by keyboard", () => {
     chart().focus();
     fireEvent.keyDown(chart(), { key: "End" });
     await wait(200);
-    expect(region).toHaveTextContent(`${hhmm(NOW - 3_600_000)} · 132 /dəq`);
+    expect(region.textContent).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3`);
     await act(async () => { fireEvent.click(within(dialog()).getByRole("button", { name: "Cədvəl" })); await settle(); });
     expect(region.textContent).toBe("");                                // emptied at once, not said again
     await act(async () => { fireEvent.click(within(dialog()).getByRole("button", { name: "Qrafik" })); await settle(); });
@@ -589,7 +648,7 @@ describe("the big chart, opening and reading", () => {
       { hours, markers: [marker(61, "alarm", "news2")] })));
     fireEvent.mouseMove(chart(), { clientX: xOf(60) });
     expect(dialog().querySelector("[data-readout]").textContent)
-      .toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · siqnal: news2 (${hhmm(NOW - 61 * 60_000)})`);
+      .toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3 · siqnal: news2 (${hhmm(NOW - 61 * 60_000)})`);
   });
 
   it("takes two readings at one instant as one keyboard stop, read as the later one", async () => {
@@ -600,8 +659,8 @@ describe("the big chart, opening and reading", () => {
     fireEvent.keyDown(svg, { key: "Home" });
     expect(readout()).toBe(`${hhmm(NOW - 7_200_000)} · 84 /dəq`);
     fireEvent.keyDown(svg, { key: "ArrowRight" });
-    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq`);
+    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3`);
     fireEvent.keyDown(svg, { key: "ArrowRight" });                     // no third stop
-    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq`);
+    expect(readout()).toBe(`${hhmm(NOW - 3_600_000)} · 132 /dəq · NEWS2 +3`);
   });
 });

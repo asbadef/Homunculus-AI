@@ -3,10 +3,12 @@
 import { describe, it, expect } from "vitest";
 import { NOW } from "../../../data/board.testutil.js";
 import { ddmm, hhmm } from "../../../i18n/dates.js";
-import { markBeside, pointsText, valueBeside, whenText } from "./trendText.js";
+import { markBeside, pointsBeside, pointsText, valueBeside, whenText } from "./trendText.js";
 
 const MINUTE = 60_000;
-const t = (key) => ({ "patient.trendsMarkerAlarm": "siqnal", "patient.trendsMarkerAntibiotic": "antibiotik" })[key];
+const t = (key, params) => ({
+  "patient.trendsMarkerAlarm": "siqnal", "patient.trendsMarkerAntibiotic": "antibiotik", "patient.trendsFrameBadge": `NEWS2 +${params?.points}`,
+})[key];
 
 describe("trendText", () => {
   it("writes an instant as the chart's axis does — the date as well over three days", () => {
@@ -38,5 +40,15 @@ describe("trendText", () => {
     expect(pointsText(null)).toBe("—");
     expect(pointsText(Number.NaN)).toBe("—");
     expect(pointsText(2.5)).toBe("—");
+  });
+
+  it("names the engine's points beside a reading in the card's own badge words — and nothing where the card wears no badge", () => {
+    expect(pointsBeside(t, 2)).toBe("NEWS2 +2");
+    expect(pointsBeside(t, 3)).toBe("NEWS2 +3");
+    expect(pointsBeside(t, 0)).toBeNull();              // scored 0: no badge on the card, nothing in the readout
+    expect(pointsBeside(t, null)).toBeNull();           // the engine sent none (MAP, lactate, an unscored reading)
+    expect(pointsBeside(t, undefined)).toBeNull();
+    expect(pointsBeside(t, Number.NaN)).toBeNull();
+    expect(pointsBeside(t, 2.5)).toBeNull();
   });
 });

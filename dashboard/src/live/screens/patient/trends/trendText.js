@@ -27,5 +27,12 @@ export function valueBeside(text, readingMs, atMs, hours) {
   return own === whenText(atMs, hours) ? text : `${text} (${own})`;
 }
 
+/** The engine's NEWS2 points as the readout names them beside a reading: the card's own badge words
+ *  ("NEWS2 +2", `patient.trendsFrameBadge`), so the badge and the readout agree — or null where the card
+ *  wears no badge: points the engine did not send (MAP, lactate, a reading it did not score) or a 0. */
+export function pointsBeside(t, points) {
+  return Number.isInteger(points) && points > 0 ? t("patient.trendsFrameBadge", { points }) : null;
+}
+
 /** The engine's NEWS2 points for one reading, as a column prints them: "+3", "0", or "—" for none. */
 export const pointsText = (points) => (Number.isInteger(points) ? (points > 0 ? `+${points}` : "0") : "—");

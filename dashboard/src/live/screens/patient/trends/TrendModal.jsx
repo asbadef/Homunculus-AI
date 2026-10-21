@@ -29,7 +29,7 @@ import { TrendChart } from "./TrendChart.jsx";
 import { TrendLegend, TrendNotes } from "./TrendLegend.jsx";
 import { TrendTable } from "./TrendTable.jsx";
 import { indexAtTime, marksAtTime, parseMarkers, parsePoints, validWindow } from "./trendGeometry.js";
-import { markBeside, valueBeside, whenText } from "./trendText.js";
+import { markBeside, pointsBeside, valueBeside, whenText } from "./trendText.js";
 import { measuredKeyOf, useTrends } from "./useTrends.js";
 
 const WINDOWS = [
@@ -60,8 +60,11 @@ function readingNear(points, ms, tolerance) {
   return best;
 }
 
-/** "HH:MM · 132 /dəq", EVERY mark within a pixel after it — two alert kinds first detected on one
- *  reading are both named, each with its own time when that reads differently. A card with two series
+/** "HH:MM · 132 /dəq · NEWS2 +3", EVERY mark within a pixel after it. The points are the ENGINE'S for the
+ *  reading under the cursor (the card's first series, the one NEWS2 scores), in the card's own badge words;
+ *  nothing where it sent none or scored 0 (MAP and lactate are not scored), nor for a reading that arrived
+ *  without a value. The same line is drawn and, after a keyboard move, said once. Two alert kinds first
+ *  detected on one reading are both named, each with its own time when that reads differently. A card with two series
  *  (pressure) names each and reads the other one AT that instant — "Sistolik AT 118 · MAP 80 mmHg",
  *  MAP being the vasopressor target — meaning the nearest reading within one pixel column (`msPerPx`,
  *  the tolerance the marks use): a MAP stamped seconds from the systolic is, on the chart, the same
@@ -85,7 +88,8 @@ function readoutOf(t, card, series, at, marks, hours, msPerPx) {
     return [named ? t(s.labelKey) : null, valueBeside(value, reading.ms, at.ms, hours)].filter(Boolean).join(" ");
   });
   const unit = !unitEach && readings.some((r) => r !== null) ? ` ${t(card.series[0].unitKey)}` : "";
-  return [whenText(at.ms, hours), `${parts.join(" · ")}${unit}`, ...marks.map((m) => markBeside(t, m, at.ms, hours))].join(" · ");
+  const points = readings[0] === null ? null : pointsBeside(t, at.points);   // no value, no score
+  return [whenText(at.ms, hours), `${parts.join(" · ")}${unit}`, ...(points ? [points] : []), ...marks.map((m) => markBeside(t, m, at.ms, hours))].join(" · ");
 }
 
 /** The keyboard's stops: the instants of the readings that can be drawn, in time order — two readings
