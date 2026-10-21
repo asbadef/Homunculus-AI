@@ -876,7 +876,8 @@
    * Kabul bir bölüme/doktora kayıt açınca, o bölümün muayene hizmeti hastaya otomatik düşer;
    * doktor Tüm Gelişler'de hangi hastanın ne amaçla geldiğini görür. */
   const HT_GELIS = ["Ayaktan", "Günübirlik", "Yatan", "Yoğun bakım"];
-  const HT_PROTO = ["Genel muayene", "Kontrol muayenesi", "Günübirlik", "Acil", "Yatış"];
+  const HT_PROTO_SEED = ["Genel muayene", "Kontrol muayenesi", "Günübirlik", "Acil", "Yatış", "CheckUp"];
+  const htProto = () => (H.data.protokolTip = H.data.protokolTip || HT_PROTO_SEED.slice());
   const htMuayeneList = () => (H.HIZMET || []).filter(r => ["Muayene Hizmeti", "Kontrol Muayenesi"].includes((H.HIZMET_TIP || [])[r[3]]));
   const htName = (r) => (H.state.lang === "TR" ? (r[2] || r[1]) : (r[1] || r[2]));
   function htSeed() {
@@ -915,7 +916,7 @@
         <div class="fr"><label>Bölüm</label><input data-f="bolum" list="ht-bolumler" value="${esc(e.bolum || "")}" placeholder="Bölüm seçin ya da yazın"><datalist id="ht-bolumler">${(bolumSeed(), (H.data.bolumler || []).map(b => `<option>${esc(b.ad)}</option>`).join(""))}</datalist></div>
         <div class="fr"><label>Muayene hizmeti</label><div class="amel-cb"><input data-f="hiz" value="${esc(e.hizmetAd || "")}" placeholder="Muayene hizmeti ara (katalogdan)" autocomplete="off"><div class="amel-dd hidden" data-ht-dd></div></div></div>
         <div class="fr"><label>Geliş tipi</label><select data-f="gelis">${HT_GELIS.map(x => `<option${e.gelis === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></div>
-        <div class="fr"><label>Protokol tipi</label><select data-f="proto">${HT_PROTO.map(x => `<option${e.protokol === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Protokol tipi</label><select data-f="proto">${htProto().map(x => `<option${e.protokol === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></div>
       </div>`,
       actions:`${existing ? `<button class="btn g" data-htdelf>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-htsave>Kaydet</button>`,
       onMount(m) {
