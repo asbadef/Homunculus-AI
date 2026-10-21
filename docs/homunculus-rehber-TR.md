@@ -51,8 +51,9 @@ Projenin bir anda bitmesi mümkün değil; **basamak basamak** ilerliyor. Şu an
 **Şu anki dürüst tablo:** Beyin (vault) ve kalp (motor) çalışıyor. Motor, uydurma bir
 hastayı saat saat kötüleştirip doğru uyarıyı doğru anda ürettiğini kanıtlıyor. Gözü de var:
 canlı panel (3. basamak) çalışıyor, ve yeni tasarımdaki arayüzü Grup 1'de yazılıyor — yataklar,
-alarmlar, hasta ekranı ve yönetim ekranı hazır (aşağıda 3.5 ve 3.6), hastanenin sunucusuna henüz
-çıkmadı. Gerçek cihaz bağlantısının durumu 4. basamakta.
+alarmlar, hasta ekranı ve yönetim ekranı hazır (aşağıda 3.5 ve 3.6); Grup 1 ile Aşama A, 19 Ekim
+2026'da hastanenin sunucusunda canlıya alındı (yapı a2c1257c). Gerçek cihaz bağlantısının durumu
+4. basamakta.
 
 ### "Tam çalışır" için daha neler gerekli?
 
@@ -931,7 +932,8 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
    Kırmızı parametrenin düşürmeyi engellemesi gerekip gerekmediği **açık bir klinik karardır**:
    kasada bir kaynak ve bir klinisyenin onayını bekliyor (yol haritası, kullanıcı kararı 9). O
    zamana dek ekran karar vermez, iki olguyu birlikte gösterir.
-2. **"Kapanan alarm nereye gitti?"** Panodan düştü. Motor yalnız açık alarmları gönderiyor ve
+2. **"Kapanan alarm nereye gitti?"** Panodan düştü (bugün motor bir bulguyu kapatmıyor; alarm
+   panoda kalır — plandaki O17, kullanıcı kararı bekliyor). Motor yalnız açık alarmları gönderiyor ve
    alarm geçmişi için henüz bir uç yok; kapanma kaydı denetim kaydında (`audit.view` ister).
    Ekran boş bir "kapananlar" bölümü çizmez — boş bölüm "hiçbir şey kapanmadı" diye okunurdu —
    bunu tek cümleyle söyler.
@@ -951,21 +953,26 @@ bunların hiçbirini hesaplamaz. Homunculus tanı koymaz; eğriler de koymaz.
   vücut sıcaklığı, laktat. Her kartta son değer, bir önceki ölçüme göre fark ("↑ +6"), ölçümün ne
   kadar önce yapıldığı (sunucunun saatiyle) ve son 24 saatin küçük grafiği.
 - **Çerçeve ve rozet motorun NEWS2 puanıdır:** o parametrenin son değeri 1–2 puan aldıysa amber,
-  3 puan aldıysa kırmızı çerçeve ve "NEWS2 +3" rozeti. MAP ve laktat NEWS2 parametresi değildir;
-  çerçeveleri yoktur.
+  3 puan aldıysa kırmızı çerçeve; ikisinde de puanı yazan rozet ("NEWS2 +2", "NEWS2 +3"). MAP ve
+  laktat NEWS2 parametresi değildir: laktat kartının çerçevesi yoktur, sistolik + MAP kartınınki
+  yalnız sistoliğin puanıdır.
 - **"Hastanın normalinde" hapı:** son değer bu hasta için girilmiş aralığın içindeyse. Hap çerçeveyi
   susturmaz, çerçeve de hapı gizlemez — iki olgu birlikte gösterilir.
 - Karta basınca büyük grafik: 6 saat / 24 saat / 3 gün; imlecin altındaki ölçümün saati, değeri
-  ve birimi; ▲ bulgunun bu hasta için ilk tespit edildiği an (bugün aynı türden bir bulgu kapanıp
-  yeniden açılsa da yeni ▲ çıkmaz — plandaki O17), ◆ kaydedilmiş antibiyotik dozu; aynı sayıların tablosu,
+  ve birimi; ▲ bulgunun bu hasta için ilk tespit edildiği an (motor bugün bir bulguyu kuralı
+  sustuktan sonra da açık tutuyor, bu yüzden aynı türden bir bulgu için ikinci ▲ çıkmaz — plandaki
+  O17), ◆ kaydedilmiş antibiyotik dozu; aynı sayıların tablosu,
   her ölçümün motorun verdiği NEWS2 puanıyla. Klavyeyle de gezilir; ekran okuyucu okumayı yalnız
   klavye hareketinde duyar.
 - Noktalar ölçümdür; aralarındaki kesikli çizgi yalnız aradaki zamandır, ölçüm değildir.
 
 **Bantlar nereden gelir**
 - NEWS2 bantları motorun puanlamada kullandığı tablonun kendisidir (`rules/news2.py`
-  `NEWS2_BANDS`); kaynağı kasadaki `news2-rcp-2017` notu. Yalnız yetişkin, SpO₂ için yalnız
-  Ölçek 1. Yenidoğan için bant yoktur — bu boşluk kasada kayıtlı, ekranda kapatılmaz.
+  `NEWS2_BANDS`); kaynağı kasadaki `news2-rcp-2017` notu (kasadaki kopya tam metin değil,
+  alıntıdır — `capture: extract`). Yalnız yetişkin, SpO₂ için yalnız Ölçek 1. Profilde yaş grubu
+  olmadığından motor her hastayı — bir yenidoğanı da — bu yetişkin tablosuyla puanlar; ekran da aynı
+  bantları ve çerçeveleri her hastada "NEWS2 · yetişkin" etiketiyle çizer. Yenidoğan için kaynaklı
+  bir bant yoktur — bu boşluk kasada kayıtlı, ekranda başka bir bantla kapatılmaz.
 - "Hastanın normali", `clinical.chart` yetkisi olan birinin bu hasta için girdiği aralıktır. NEWS2
   puanı alan bütün değerler bu aralıklardaysa bulgu gösterilir ama alarm vermez; aralığın dışına
   çıkan değer ayrıca bildirilir. Cihazın kendi alarm sınırları Aşama B'de
@@ -975,7 +982,7 @@ bunların hiçbirini hesaplamaz. Homunculus tanı koymaz; eğriler de koymaz.
 değerleri (geçmiş tutulmuyor, doğrulanmadı, hastaya bağlanmadı); MAP ve laktat için kişisel normal
 (motor tutmuyor).
 
-**Çok veri olunca:** bir kanalda pencerede 2 000'den çok ölçüm varsa grafik seyreltilir — eşit
+**Çok veri olunca:** bir kanalda pencerede 2 000'den çok ölçüm varsa motor seyreltir — eşit
 zaman dilimlerinin her birinde ilk, son, en düşük ve en yüksek ölçüm kalır, yani en kötü değer
 kaybolmaz — ve gösterge "‹kanal› seyreltildi: N noktadan M" der. Bugünkü aralıklı ölçümler bu sınıra
 yaklaşmaz.
@@ -984,11 +991,15 @@ yaklaşmaz.
 "Hastanın normali…" ile beş vital için alt ve üst sınır girer. İki sınır da gerekir; alt üstten
 büyük olamaz. Motor gönderilen kümeyi bütünüyle yeniler: boş bırakılan aralık silinir,
 komorbiditeler ve bazal SOFA değişmez. Form açıldığı hastanındır: başlığında yatak yazar, başka hastaya
-geçilince kapanır. Form açıkken aralıklar başka bir yerden değişirse form bunu söyler ve
-yeniden açılana dek Kaydet'i tutar. Kayıtlı bir aralık varken bütün satırlar boşaltılırsa form bunu
+geçilince kapanır. Form açıkken aralıklar başka bir yerden değişirse form bunu dakikalık
+yenilemede fark eder, söyler ve yeniden açılana dek Kaydet'i tutar; aynı dakika içindeki iki
+kayıttan sonraki yine sessizce kazanır (plandaki O3). Kayıtlı bir aralık varken bütün satırlar boşaltılırsa form bunu
 söyler ve Kaydet hepsini siler; silme denetim kaydına yazılır ve sunucu yeniden başlasa da geri
-gelmez. Kayıt anlık alarmları yeniden hesaplamaz: sonraki ölçüm yeni normale (ya da normalsiz)
-göre değerlendirilir. Bu aralık monitörün alarm sınırı değildir; motor bu hastanın
+gelmez. Kayıt açık alarmları yeniden hesaplamaz: eğrideki bant ve "Hastanın normalinde" hapı
+hemen yenilenir, alarmlar ise sonraki ölçüme dek eski hâlinde kalır; sonraki ölçüm yeni normale
+(ya da normalsiz) göre değerlendirilir. (Kayıt bildirimi bugün "motor yeniden değerlendirdi"
+diyor; bu kodun yaptığından fazlası, düzeltilmesi kullanıcı kararını bekliyor — plandaki
+X21/O12.) Bu aralık monitörün alarm sınırı değildir; motor bu hastanın
 değerlerini yorumlarken (4. bölümdeki hastaya göreli katman) bu normali kullanır. Reddedilen bir
 kayıt yatağın adıyla bildirimde söylenir; sunucu yanıt vermezse kaydın gerçekleşmiş olabileceği
 söylenir ve eğri yeniden okunur.

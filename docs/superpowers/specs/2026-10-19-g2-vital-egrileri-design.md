@@ -279,7 +279,8 @@ charting Stage A values; the `/audit` oldest-N fix beyond `since`.
   1 000 000 rows): the charts are as complete as the audit.
 - Acceptance on the VM will show sparse charts today; that is the data, not the chart.
 - **Found while planning (2026-10-19; `docs/superpowers/plans/2026-10-19-g2-vital-egrileri.md`,
-  "What the code says", X1–X34; X1–X19 approved by the user on 2026-10-20):** the plan departs from this spec where the code made its letter
+  "What the code says", X1–X34; X1–X19 approved by the user on 2026-10-20; the list also covers
+  X20–X34, found by reviews on 2026-10-20 and 21):** the plan departs from this spec where the code made its letter
   impossible or unsafe — 503 for an unreadable scope, checked before `_require_patient` (X1); bands
   as `low < v <= high` (X2); alarm marks from `first_seen`, one per episode, not from `alert` rows
   (X3); antibiotic marks only for doses ≥ 1 (X4); each point carries the engine's NEWS2 points
@@ -317,6 +318,7 @@ charting Stage A values; the `/audit` oldest-N fix beyond `since`.
 - Open for the user or later (plan O21–O23): the reading's NEWS2 points in the spoken readout
   (O21); two cursor stops in one minute with one value say the same words, so the second is
   silent (O22, Stage B); two tests past the size guide, to split when they next change (O23).
+- Who enters the patient's normal (plan O15): the form is offered to every `clinical.chart` holder — by default nurses, charge nurses and the rapid response team as well as physicians — so §1's "physician-entered" and §3.1's "hekim girdiyse" are, as built, "hastanın normali, girildiyse". Physician-only would be a permission change, not a text; the user's decision before the VM.
 - `errors.scopeUnreadable` speaks of the live stream, and the trends route's 503 carries the same
   key; no screen prints it there today (the box only marks the trends unreadable). Reword it
   route-neutrally, in four languages with a native reading, before any screen does (plan O9).
@@ -327,9 +329,11 @@ charting Stage A values; the `/audit` oldest-N fix beyond `since`.
   Task 14a's engine — an older engine refuses it ("profil boş olamaz") and its replay brings
   cleared ranges back after a restart. One branch carries both lanes, so one deploy does.
 - **Acceptance, as measured.** (1) Python 3.12, 3.14 and the dashboard green, counts in the plan.
-  (2) The 72 h window: p50 ≈ 4 ms over 100 requests; the max, ≈ 30 ms, is one gen-2 garbage
+  (2) The 72 h window: p50 ≈ 4 ms over 100 requests; the max, 29–50 ms over seven runs, is one gen-2 garbage
   collection inside a request — a pause the server also pays, not a cold start — well inside the
-  300 ms bound. (3, 4) Walked on 2026-10-21 on the local stack with synthetic accounts and
+  300 ms bound. The 5 s half (a synthetic 5 s series thins to ≤ 2 000 points) is met by
+  `test_a_desaturation_survives_three_days_of_five_second_data` (Task 2): 51 840 readings thin to
+  at most 2 000 and the one planted low reading stays. (3, 4) Walked on 2026-10-21 on the local stack with synthetic accounts and
   scenarios (a headless-Chrome driver): the engine's answers matched the plan line for line; six
   cards, frames equal to the engine's points, the table equal to the chart, the form writes and
   the band appears, a clear survives a restart; 390 / 1440 px, four languages, both themes, no raw
