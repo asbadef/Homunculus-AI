@@ -117,6 +117,7 @@
   const ADM_T = { medikal:"Medikal yatış", ameliyat:"Ameliyat", yb:"Yoğun bakım", mudahale:"Müdahale" };
   const BLOOD = ["Bilinmiyor", "0 Rh(+)", "0 Rh(-)", "A Rh(+)", "A Rh(-)", "B Rh(+)", "B Rh(-)", "AB Rh(+)", "AB Rh(-)"];
   const NAT = ["Azərbaycan", "Türkiyə", "Rusiya", "Gürcüstan", "İran", "Digər"];
+  const KURUM = ["İcbari Tibbi Sığorta (SAMHI)", "Özel ödeme", "Kurum anlaşması", "Özel sigorta"];   // Azerbaycan: SAMHI = zorunlu sığorta
   const RULES = ["NEWS2", "SOFA + NEWS2", "PEWS", "nSOFA"];
   const unitKind = (u) => (H.KIND && H.KIND[u.kind]) || (u.type === "nicu" ? "Yenidoğan yoğun bakım" : u.type === "icu" ? "Yoğun bakım" : "Servis");
 
@@ -301,7 +302,7 @@
    *                         HASTA KABUL
    * ================================================================ */
   const A = { tab:"hbys", form:null, q:"", tSel:null };
-  const newForm = () => ({ name:"", surname:"", father:"", sex:"", dob:"", nat:"Azərbaycan", fin:"", idDoc:"", phone:"", kin:"", kinRel:"", kinPhone:"", comp:"yok",
+  const newForm = () => ({ name:"", surname:"", father:"", sex:"", dob:"", nat:"Azərbaycan", fin:"", idDoc:"", phone:"", kin:"", kinRel:"", kinPhone:"", comp:"yok", kurum:"İcbari Tibbi Sığorta (SAMHI)",
     type:"medikal", attending:"", reason:"", allergy:"", noAllergy:false, blood:"Bilinmiyor", weight:"", height:"", kvkk:false, sms:false, unconscious:false, bed:null });
   const doctors = () => H.data.users.filter(x => x.role === "hekim" && x.active !== false);
   const docOpts = (v) => [["", "Seçin…"], ...doctors().map(d => [d.u, d.name])];
@@ -408,6 +409,7 @@
             ${fld("reason", "Yatış nedeni", `<textarea data-f="reason" rows="2" style="min-height:60px">${esc(f.reason)}</textarea>`, 1)}
             ${fld("allergy", "Bilinen alerji", `${inp("allergy", f.allergy, 'placeholder="Virgülle ayırın"' + (f.noAllergy ? " disabled" : ""))}${chk("noAllergy", f.noAllergy, "Bilinen alerjisi yok")}`)}
             ${fld("blood", "Kan grubu", sel("blood", BLOOD, f.blood))}
+            ${fld("kurum", "Kurum / sigorta", sel("kurum", KURUM, f.kurum))}
             ${fld("wh", "Kilo / boy", `<div class="adm-row" style="flex-wrap:nowrap"><input data-f="weight" class="adm-num" inputmode="decimal" value="${esc(f.weight)}" placeholder="kg"><input data-f="height" class="adm-num" inputmode="numeric" value="${esc(f.height)}" placeholder="cm"></div>`)}
           </div>
         </div>
@@ -454,7 +456,7 @@
         weight:+String(f.weight).replace(",", ".") || null, height:+f.height || null, allergies:f.noAllergy ? [] : f.allergy.split(",").map(s => s.trim()).filter(Boolean),
         meta:{ temp:true, proto, source:"elle", fin:f.fin.trim().toUpperCase(), dob:f.dob, father:f.father.trim(), nationality:f.nat, idDoc:f.idDoc.trim(), phone:f.phone ? "+994 " + f.phone.trim() : "",
           kin:f.kin ? { name:f.kin.trim(), rel:f.kinRel, phone:f.kinPhone ? "+994 " + f.kinPhone.trim() : "" } : null, companion:f.comp === "var" ? "Kalacak" : "Yok", admitType:f.type,
-          consent:f.kvkk ? "alındı" : "sonra alınacak", sms:!!f.sms } }, f.bed);
+          consent:f.kvkk ? "alındı" : "sonra alınacak", sms:!!f.sms, kurum:f.kurum || KURUM[0] } }, f.bed);
       H.log("Geçici kayıt açıldı", `${proto} · ${p.name} → ${bedLabel(p.bed)}`);
       A.form = newForm(); A.tab = "eslesme"; draw(); numbersModal(p);
     }
