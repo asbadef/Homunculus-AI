@@ -96,7 +96,7 @@ export function MonitorStrip({
   const sentence = statusSentence(t, entry);
   const params = (entry.parameters ?? []).filter((p) => KNOWN.has(p.parameter));
   return (
-    <section aria-labelledby={id} data-monitor-strip="" className={`rounded-ctl border border-dashed border-line2 px-2.5 py-2 ${className}`}>
+    <section aria-labelledby={id} data-monitor-strip="" className={`relative rounded-ctl border border-dashed border-line2 px-2.5 py-2 ${className}`}>
       <div className="flex flex-wrap items-center gap-2">
         <Heading id={id} className="m-0 font-text text-11.5 font-bold leading-[normal] text-ink">
           {title ? `${title} · ${t("monitor.title")}` : t("monitor.title")}

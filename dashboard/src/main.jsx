@@ -93,7 +93,12 @@ const mode = chooseMode(new URLSearchParams(window.location.search));
 export function AppShell({ children }) {
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden">
-      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      {/* `relative` makes the scroller the containing block for absolutely positioned descendants
+          (screen-reader-only text is `position: absolute`). Without it a `sr-only` span deep in a
+          long board sits at its static position against the viewport and stretches the DOCUMENT
+          below the frame: measured on the ward's board 2026-10-21 — root 730 px, document
+          9375 px, a second scrollbar and a dark band under the shell. */}
+      <div className="relative min-h-0 flex-1 overflow-y-auto">{children}</div>
     </div>
   );
 }

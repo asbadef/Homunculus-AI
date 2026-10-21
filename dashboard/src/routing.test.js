@@ -116,6 +116,11 @@ describe("AppShell", () => {
     expect(wrapper.className.split(/\s+/)).toEqual(
       expect.arrayContaining(["min-h-0", "flex-1", "overflow-y-auto"]));
     expect(wrapper.parentElement.className).toContain("overflow-hidden");
+    // The scroller must also be the containing block for absolutely positioned descendants:
+    // `sr-only` text is `position: absolute`, and without `relative` here a span deep in a long
+    // board stretches the document below the frame (the ward's board, 2026-10-21: root 730 px,
+    // document 9375 px, a second scrollbar).
+    expect(wrapper.className.split(/\s+/)).toContain("relative");
   });
 
   it("draws the app and nothing else: no demonstration banner is left to draw", () => {
