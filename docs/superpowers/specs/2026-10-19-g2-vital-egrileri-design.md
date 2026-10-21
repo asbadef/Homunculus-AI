@@ -166,6 +166,8 @@ Rules:
 - Thinning (D8): when a channel has more than `TRENDS_MAX_POINTS = 2000` points in the window,
   the window is cut into 500 equal buckets and each bucket keeps its first, last, minimum and
   maximum (deduplicated, in time order); `thinned: true`, `total_points` = the count before.
+  As built (plan X20), the 500 slices cut the span from the window's first reading to its last,
+  not the whole window: finer slices when the readings cover part of it; every guarantee holds.
 
 ## 5. Engine and API changes
 
@@ -217,7 +219,9 @@ Rules:
 
 - Every chart has a text equivalent: the card's value/delta/age text and the modal's table.
 - Keyboard: cards are buttons; the modal traps focus (kit); the chart takes focus and moves the
-  cursor with arrows; Escape closes.
+  cursor with arrows; Escape closes. As built (plan X28), the chart that takes the keys is
+  `role="application"` with a localised role description, so NVDA and JAWS hand it the arrows
+  (over an `img` they stay in browse mode); the card's mini chart, with no keys, stays `aria-hidden`.
 - Colour is never the only carrier: bands have a written legend, markers differ in shape, the
   frame has a text badge.
 - The screen reader hears the readout only on keyboard moves (`useAnnounced`), never on hover.
@@ -274,6 +278,68 @@ charting Stage A values; the `/audit` oldest-N fix beyond `since`.
 - The first restart after deploy rehydrates history from the audit (existing behaviour, up to
   1 000 000 rows): the charts are as complete as the audit.
 - Acceptance on the VM will show sparse charts today; that is the data, not the chart.
+- **Found while planning (2026-10-19; `docs/superpowers/plans/2026-10-19-g2-vital-egrileri.md`,
+  "What the code says", X1–X34; X1–X19 approved by the user on 2026-10-20):** the plan departs from this spec where the code made its letter
+  impossible or unsafe — 503 for an unreadable scope, checked before `_require_patient` (X1); bands
+  as `low < v <= high` (X2); alarm marks from `first_seen`, one per episode, not from `alert` rows
+  (X3); antibiotic marks only for doses ≥ 1 (X4); each point carries the engine's NEWS2 points
+  (X5); MAP at full colour with hollow dots, because reduced opacity measured 2.17–3.34:1 (X6);
+  ages through `useBoardNow` (X7); a 400 only on the toast (X8); `onlyWrite` and `formsSoon`
+  reworded (X9); 390 px checked in a browser (X10); `replay.py --now` (X11); thinning slices the
+  readings' span, not the window (X20, §4); alarm marks read up to 5000 episodes with
+  `markers_truncated`, and a non-finite reading never drawn (X22, with the gateways refusing
+  NaN/±inf — plan Task 3b); the trends hook coalesces same-key reads instead of superseding them,
+  so a chart can fill at Stage B rates (X23); card values in ink, not the identity colour (X24);
+  the route resolves the scope once (X25); no NEWS2 tints on a two-series mini chart (X26); the
+  readout names MAP beside systolic (X27).
+- The last baseline can be removed (the user's choice for O4, 2026-10-20): every row emptied over
+  a charted set sends `{"baselines": {}}`, which the engine takes as clearing every range even when
+  nothing else is charted, and the audit replay reads each profile row over the one before, so the
+  clear survives a restart (plan X15, Task 14a).
+- §3.3's save toast says the engine re-evaluated; the profile PUT re-scores nothing — the standing
+  alerts are re-judged at the next reading (plan X21, O12). Every save now shows it, so the user
+  decides before the VM. Recommendation (the Task 14 spec review): reword `baselineSaved` in four
+  languages to what the PUT does and name the patient with `{subject}` in this slice; make the door
+  re-judge the latest state when the profile changes as a follow-up.
+- `PUT /clinical/{id}/profile` replaces the set with no lost-update check: two clinicians saving one
+  patient's normal at once — the second wins silently. The form now notices a set that changed while
+  it was open (the minute's poll) and holds Save until it is reopened (plan X34); two saves inside one
+  poll still race (plan O3).
+- The form is shown only to the patient it was opened for, and its title names the bed (plan X31): the
+  patient screen outlives a move, so without that a form opened on one patient could write under the
+  next. What Save will do is said beside Save (X32); a held submit goes to the first wrong field (X33).
+- ▲ on the charts is a finding's first detection for this patient, not every episode: the engine's
+  active alerts never clear a kind today (plan O17 — an engine fix, the user's choice of slice).
+- The keyboard-driven big chart is `role="application"` with a role description, not §6's
+  `role="img"` (plan X28): NVDA and JAWS stay in browse mode over an image, and the arrow keys
+  that §7 promises would move the cursor never reach it. The table carries the legend's notes
+  (X29); a MAP read beside systolic at another minute prints its own time (X30).
+- Open for the user or later (plan O21–O23): the reading's NEWS2 points in the spoken readout
+  (O21); two cursor stops in one minute with one value say the same words, so the second is
+  silent (O22, Stage B); two tests past the size guide, to split when they next change (O23).
+- `errors.scopeUnreadable` speaks of the live stream, and the trends route's 503 carries the same
+  key; no screen prints it there today (the box only marks the trends unreadable). Reword it
+  route-neutrally, in four languages with a native reading, before any screen does (plan O9).
+- **Deploy order (plan O24):** bridges before, or with, the hub — after Task 3b the hub answers 400
+  to a non-finite FHIR value and an edge uplink keeps a refused observation at the head of its
+  queue, retrying it and holding every later reading; check the bridges' buffers for non-finite
+  rows before upgrading the hub. Never the dashboard alone: the clear (`{"baselines": {}}`) needs
+  Task 14a's engine — an older engine refuses it ("profil boş olamaz") and its replay brings
+  cleared ranges back after a restart. One branch carries both lanes, so one deploy does.
+- **Acceptance, as measured.** (1) Python 3.12, 3.14 and the dashboard green, counts in the plan.
+  (2) The 72 h window: p50 ≈ 4 ms over 100 requests; the max, ≈ 30 ms, is one gen-2 garbage
+  collection inside a request — a pause the server also pays, not a cold start — well inside the
+  300 ms bound. (3, 4) Walked on 2026-10-21 on the local stack with synthetic accounts and
+  scenarios (a headless-Chrome driver): the engine's answers matched the plan line for line; six
+  cards, frames equal to the engine's points, the table equal to the chart, the form writes and
+  the band appears, a clear survives a restart; 390 / 1440 px, four languages, both themes, no raw
+  key. Left for a person (plan O25): NVDA — focus mode on the chart, the readout once per move,
+  the table in browse mode while polls insert rows; MAP's hollow ring against a dot by eye; the
+  72 h time labels at `--fs` 1.12; and the by-eye choices the reviews left open (values in ink —
+  X24; no tints on the two-series mini chart — X26; the 3-point band quieter than the 1–2-point
+  band in Gece; the dialog's grid lines faint in Gün). (5) The VM look stays the user's.
+- Additive ideas not taken in this slice: `previous_ts` beside `delta` ("since when"), and a
+  severity on the alarm marks.
 
 ## 12. Acceptance (Kabul)
 

@@ -903,7 +903,7 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   - **ilaç ve antibiyotik:** motorun yayımladığı vazopressör/inotrop kayıtları, antibiyotiğin
     verildiği saat ya da penceresinin dolduğu saat; antibiyotik kaydı yoksa "kimse kaydetmedi —
     verilmediği anlamına gelmez".
-- *Şüpheli enfeksiyon — ekranın yazdığı tek şey:* Motorun sepsis kuralı yalnız şüpheli enfeksiyonu
+- *Şüpheli enfeksiyon — ekranın yazdığı iki şeyden biri* (öteki hastanın normali, 3.7): Motorun sepsis kuralı yalnız şüpheli enfeksiyonu
   "var" diye işaretlenmiş hastada çalışır; kimse işaretlemediyse ekran bunu açıkça söyler ("kimse
   işaretlemedi — sepsis kuralı bu hastada hiç çalışmıyor"), yani sakin bir hasta güven verici
   sayılmaz. `clinical.chart` yetkisi olan klinisyen "Var olarak işaretle" ya da "Yok olarak
@@ -912,9 +912,10 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
   bunun klinisyenin adıyla ve saatiyle denetim kaydına yazıldığını, geri alınamadığını, yalnız yeni
   bir işaretlemenin üstüne yazdığını söyler. Kayıttan sonra motor hastayı yeniden değerlendirir ve
   ekran onun yeni hâlini gösterir. Yetkisi olmayana düğme çizilmez, nedeni yazılır. SOFA formunu
-  doldurup imzalamak ve hastanın kendi normalini girmek Grup 2'de.
+  doldurup imzalamak sonraki grupta.
 - *Göstermedikleri:* yaş, vücut yüzey alanı, hasta kimliğinden uydurulmuş hastane ya da protokol
-  numarası, simüle monitör dalgası, hemşirelik risk skorları ve **vital eğrileri**.
+  numarası, simüle monitör dalgası ve hemşirelik risk skorları. Vital eğrileri artık motorun
+  kaydından çizilir (3.7).
 - *Panoda olmayan bir hasta:* Adres panonuzda olmayan bir kimliği gösteriyorsa ekran tek bir şey
   söyler: ya böyle bir kayıt yok ya da kapsamınız dışında — ikisi ayırt edilemez, sunucu ikisine
   de bilerek aynı yanıtı veriyor (farklı bir yanıt hastanın orada yattığını ele verirdi). Pano
@@ -934,8 +935,63 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
    alarm geçmişi için henüz bir uç yok; kapanma kaydı denetim kaydında (`audit.view` ister).
    Ekran boş bir "kapananlar" bölümü çizmez — boş bölüm "hiçbir şey kapanmadı" diye okunurdu —
    bunu tek cümleyle söyler.
-3. **"Vital eğrileri nerede?"** Grup 2'de. Motorda bir vitalin geçmişini veren uç henüz yok, pano
-   yalnız son ölçümü gönderiyor; tarayıcı tek bir son değerden eğri uydurmaz.
+3. **"Vital eğrileri nerede?"** Hasta ekranının altında, "Vital eğrileri" kutusunda (Grup 2 ·
+   dilim 1, 3.7). Eğriler motorun kaydettiği ölçümlerdir; tarayıcı hiçbir değeri, bandı ya da
+   puanı kendisi hesaplamaz.
+
+### 3.7 Vital eğrileri (hasta ekranı · Grup 2, dilim 1)
+
+Hasta ekranının "Vital eğrileri" kutusu motorun bu hasta için kaydettiği ölçümleri çizer. Kural
+Grup 1'inkidir: **ekran çizer, puanlamaz.** Her bant, her NEWS2 puanı, her "hastanın normalinde"
+yargısı ve her "öncekine göre" farkı motordan gelir (`GET /patients/{id}/trends`); tarayıcı
+bunların hiçbirini hesaplamaz. Homunculus tanı koymaz; eğriler de koymaz.
+
+**Ne gösterir**
+- Altı kart: nabız, solunum, SpO₂, sistolik + MAP (bir kart, iki seri; MAP'in noktaları içi boş),
+  vücut sıcaklığı, laktat. Her kartta son değer, bir önceki ölçüme göre fark ("↑ +6"), ölçümün ne
+  kadar önce yapıldığı (sunucunun saatiyle) ve son 24 saatin küçük grafiği.
+- **Çerçeve ve rozet motorun NEWS2 puanıdır:** o parametrenin son değeri 1–2 puan aldıysa amber,
+  3 puan aldıysa kırmızı çerçeve ve "NEWS2 +3" rozeti. MAP ve laktat NEWS2 parametresi değildir;
+  çerçeveleri yoktur.
+- **"Hastanın normalinde" hapı:** son değer bu hasta için girilmiş aralığın içindeyse. Hap çerçeveyi
+  susturmaz, çerçeve de hapı gizlemez — iki olgu birlikte gösterilir.
+- Karta basınca büyük grafik: 6 saat / 24 saat / 3 gün; imlecin altındaki ölçümün saati, değeri
+  ve birimi; ▲ bulgunun bu hasta için ilk tespit edildiği an (bugün aynı türden bir bulgu kapanıp
+  yeniden açılsa da yeni ▲ çıkmaz — plandaki O17), ◆ kaydedilmiş antibiyotik dozu; aynı sayıların tablosu,
+  her ölçümün motorun verdiği NEWS2 puanıyla. Klavyeyle de gezilir; ekran okuyucu okumayı yalnız
+  klavye hareketinde duyar.
+- Noktalar ölçümdür; aralarındaki kesikli çizgi yalnız aradaki zamandır, ölçüm değildir.
+
+**Bantlar nereden gelir**
+- NEWS2 bantları motorun puanlamada kullandığı tablonun kendisidir (`rules/news2.py`
+  `NEWS2_BANDS`); kaynağı kasadaki `news2-rcp-2017` notu. Yalnız yetişkin, SpO₂ için yalnız
+  Ölçek 1. Yenidoğan için bant yoktur — bu boşluk kasada kayıtlı, ekranda kapatılmaz.
+- "Hastanın normali", `clinical.chart` yetkisi olan birinin bu hasta için girdiği aralıktır. NEWS2
+  puanı alan bütün değerler bu aralıklardaysa bulgu gösterilir ama alarm vermez; aralığın dışına
+  çıkan değer ayrıca bildirilir. Cihazın kendi alarm sınırları Aşama B'de
+  doğrulanınca eklenecek; şimdilik yoktur.
+
+**Ne göstermez:** dalga formu (ECG vb.) — prototiptekiler sentetikti; Aşama A'nın monitör
+değerleri (geçmiş tutulmuyor, doğrulanmadı, hastaya bağlanmadı); MAP ve laktat için kişisel normal
+(motor tutmuyor).
+
+**Çok veri olunca:** bir kanalda pencerede 2 000'den çok ölçüm varsa grafik seyreltilir — eşit
+zaman dilimlerinin her birinde ilk, son, en düşük ve en yüksek ölçüm kalır, yani en kötü değer
+kaybolmaz — ve gösterge "‹kanal› seyreltildi: N noktadan M" der. Bugünkü aralıklı ölçümler bu sınıra
+yaklaşmaz.
+
+**Hastanın normali (form):** `clinical.chart` yetkisi olan klinisyen kutunun başlığındaki
+"Hastanın normali…" ile beş vital için alt ve üst sınır girer. İki sınır da gerekir; alt üstten
+büyük olamaz. Motor gönderilen kümeyi bütünüyle yeniler: boş bırakılan aralık silinir,
+komorbiditeler ve bazal SOFA değişmez. Form açıldığı hastanındır: başlığında yatak yazar, başka hastaya
+geçilince kapanır. Form açıkken aralıklar başka bir yerden değişirse form bunu söyler ve
+yeniden açılana dek Kaydet'i tutar. Kayıtlı bir aralık varken bütün satırlar boşaltılırsa form bunu
+söyler ve Kaydet hepsini siler; silme denetim kaydına yazılır ve sunucu yeniden başlasa da geri
+gelmez. Kayıt anlık alarmları yeniden hesaplamaz: sonraki ölçüm yeni normale (ya da normalsiz)
+göre değerlendirilir. Bu aralık monitörün alarm sınırı değildir; motor bu hastanın
+değerlerini yorumlarken (4. bölümdeki hastaya göreli katman) bu normali kullanır. Reddedilen bir
+kayıt yatağın adıyla bildirimde söylenir; sunucu yanıt vermezse kaydın gerçekleşmiş olabileceği
+söylenir ve eğri yeniden okunur.
 
 ---
 
