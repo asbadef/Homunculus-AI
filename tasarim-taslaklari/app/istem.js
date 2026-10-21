@@ -42,7 +42,7 @@
   const GROUPS = [
     ["Tetkik ve görüntüleme", [["lab", "Laboratuvar tetkiki"], ["rad", "Görüntüleme (radyoloji)"]]],
     ["Hizmet ve işlem", [["hizmet", "Hizmet / işlem"], ["kons", "Konsültasyon"], ["diyet", "Diyet istemi"], ["bakim", "Bakım istemi"]]],
-    ["İlaç ve kan", [["ilac", "İlaç istemi"], ["kan", "Kan ürünü"]]],
+    ["İlaç ve kan", [["ilac", "İlaç istemi"], ["recete", "İlaç reçetesi"], ["kan", "Kan ürünü"]]],
     ["Ameliyat / yatış", [["ameliyat", "Ameliyat / yatış istemi"]]],
   ];
 
@@ -316,7 +316,51 @@
       actions:`<button class="btn p" data-x>Kapat</button>` });
   }
 
+  /* ---------- İlaç reçetesi (çok ilaçlı) ---------- */
+  const RECETE_TUR = ["Normal", "Narkotik", "Psikotrop", "Kontrollü"];   // Azerbaycan muadili netleşince düzenlenir
+  const RECETE_ALT = ["Ayakta reçetesi", "Taburcu reçetesi"];
+  const RECETE_YOL = ["Ağızdan", "IV", "IM", "SC", "Topikal", "İnhalasyon", "Rektal", "Göze/kulağa"];
+  function openRecete(p, rerender) {
+    const drugs = [];   // {ad, doz, siklik, sure, yol, not}
+    const body = `<div class="rc">
+      <div class="rc-head">
+        <div class="fr"><label>Reçete türü</label><select data-f="tur">${RECETE_TUR.map(x => `<option>${esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Alt tür</label><select data-f="alt">${RECETE_ALT.map(x => `<option>${esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Tanı (ICD)</label><input data-f="tani" value="${esc((p.dx || "") + (p.icd ? " (" + p.icd + ")" : ""))}" placeholder="Tanı / ICD"></div>
+      </div>
+      <h6 style="margin:14px 0 6px">İlaç ekle</h6>
+      <div class="rc-add">
+        <input data-r="ad" placeholder="İlaç adı (ör. Parasetamol 500 mg)">
+        <input data-r="doz" placeholder="Doz/miktar" style="max-width:120px">
+        <input data-r="siklik" placeholder="Sıklık (2x1)" style="max-width:110px">
+        <input data-r="sure" placeholder="Süre (7 gün)" style="max-width:110px">
+        <select data-r="yol">${RECETE_YOL.map(x => `<option>${esc(x)}</option>`).join("")}</select>
+        <input data-r="not" placeholder="Açıklama">
+        <button class="btn p sm" data-radd>Ekle</button>
+      </div>
+      <div class="tw" style="margin-top:10px"><table class="t"><thead><tr><th>İlaç</th><th>Doz</th><th>Sıklık</th><th>Süre</th><th>Yol</th><th>Açıklama</th><th style="width:40px"></th></tr></thead><tbody data-rclist><tr><td colspan="7" class="empty" style="padding:14px">Henüz ilaç eklenmedi.</td></tr></tbody></table></div>
+      <p class="adm-sub" style="margin-top:8px">İlaç listesi/etkileşim sorgusu, ilaç kataloğu yüklenince bağlanır. Azerbaycan reçete türü (e-reçete) netleşince güncellenir.</p></div>`;
+    H.modal({ title:"İlaç reçetesi", wide:true, body,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Reçeteyi isteme ekle</button>`,
+      onMount(m) {
+        const g = s => (m.querySelector(`[data-r="${s}"]`).value || "").trim();
+        const listEl = m.querySelector("[data-rclist]");
+        const draw = () => { listEl.innerHTML = drugs.length ? drugs.map((d, i) => `<tr><td><b>${esc(d.ad)}</b></td><td>${esc(d.doz)}</td><td>${esc(d.siklik)}</td><td>${esc(d.sure)}</td><td>${esc(d.yol)}</td><td class="adm-sub">${esc(d.not)}</td><td><button class="btn g sm" data-rrm="${i}">${ic("x") || "×"}</button></td></tr>`).join("") : `<tr><td colspan="7" class="empty" style="padding:14px">Henüz ilaç eklenmedi.</td></tr>`; };
+        m.querySelector("[data-radd]").onclick = () => { const ad = g("ad"); if (!ad) { H.toast("İlaç adı gerekli.", "w"); return; }
+          drugs.push({ ad, doz:g("doz"), siklik:g("siklik"), sure:g("sure"), yol:m.querySelector('[data-r="yol"]').value, not:g("not") });
+          ["ad", "doz", "siklik", "sure", "not"].forEach(s => m.querySelector(`[data-r="${s}"]`).value = ""); m.querySelector('[data-r="ad"]').focus(); draw(); };
+        listEl.onclick = (e) => { const rm = e.target.closest("[data-rrm]"); if (rm) { drugs.splice(+rm.dataset.rrm, 1); draw(); } };
+        m.querySelector("[data-ok]").onclick = () => {
+          if (!drugs.length) { H.toast("En az bir ilaç ekleyin.", "w"); return; }
+          const tur = m.querySelector('[data-f="tur"]').value, alt = m.querySelector('[data-f="alt"]').value, tani = (m.querySelector('[data-f="tani"]').value || "").trim();
+          drugs.forEach(d => addOrder(p, { cat:"Reçete", ad:d.ad, detay:[tur, alt, [d.doz, d.siklik, d.sure, d.yol].filter(Boolean).join(" · "), d.not, tani ? "Tanı: " + tani : ""].filter(Boolean).join(" · ") }));
+          H.toast(drugs.length + " ilaçlı reçete eklendi"); H.closeModal(); rerender();
+        };
+      } });
+  }
+
   function dispatch(p, key, rerender) {
+    if (key === "recete") return openRecete(p, rerender);
     if (key === "lab") return openCatalog(p, { title:"Laboratuvar tetkiki", tips:["Laboratuvar Hizmeti", "Patoloji Hizmeti"], cat:"Laboratuvar" }, rerender);
     if (key === "rad") return openCatalog(p, { title:"Görüntüleme (radyoloji)", tips:["Radyoloji Hizmeti"], cat:"Radyoloji" }, rerender);
     if (key === "hizmet") return openCatalog(p, { title:"Hizmet / işlem", tips:null, cat:"Hizmet" }, rerender);

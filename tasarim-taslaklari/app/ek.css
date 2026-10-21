@@ -115,6 +115,15 @@
 .amel-opt:last-child { border-bottom:0; }
 .amel-opt:hover { background:var(--card2); }
 .amel-opt.mute { color:var(--mute); cursor:default; }
+/* İlaç reçetesi */
+.rc-head { display:grid; grid-template-columns:1fr 1fr 2fr; gap:10px 14px; }
+.rc-head .fr { display:flex; flex-direction:column; gap:4px; }
+.rc-head label { font:600 12px Figtree; color:var(--mute); }
+.rc-head select, .rc-head input { padding:8px 10px; border-radius:8px; border:1px solid var(--line2); background:var(--card); color:var(--ink); font:500 13px Figtree; }
+.rc-add { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.rc-add input, .rc-add select { padding:8px 10px; border-radius:8px; border:1px solid var(--line2); background:var(--card); color:var(--ink); font:500 13px Figtree; }
+.rc-add input[data-r="ad"] { flex:1; min-width:180px; }
+@media (max-width:720px){ .rc-head { grid-template-columns:1fr; } }
 
 /* Hizmet katalog seçici (İstem modalı): sol kategori ağacı · orta aranabilir liste · sağ seçilenler
  * Ozan: ekran küçük kalıyordu → katalog modalı neredeyse tam ekran, yazılar büyük ve rahat okunur. */
