@@ -158,10 +158,21 @@
        <div class="fr"><label>İstek şekli</label><select data-f="sekil"><option>İstem</option><option>Acil</option><option>Hazırda bulunsun</option></select></div>
        <div class="fr"><label>İstek nedeni</label><input data-f="neden" placeholder="ör. anemi / kanama"></div>`,
       (m) => { const ad = val(m, "ad"), mik = val(m, "mik") || "1"; return { cat:"Kan ürünü", ad, detay:`${mik} torba · ${val(m, "sekil")}${val(m, "neden") ? " · " + val(m, "neden") : ""}` }; });
-    if (type === "kons") return simple("Konsültasyon istemi",
-      `<div class="fr"><label>Bölüm</label><input data-f="ad" placeholder="ör. Kardiyoloji"></div>
-       <div class="fr"><label>Neden</label><input data-f="det" placeholder="Konsültasyon nedeni"></div>`,
-      (m) => { const ad = val(m, "ad"); if (!ad) { H.toast("Bölüm gerekli.", "w"); return null; } return { cat:"Konsültasyon", ad, detay:val(m, "det") }; });
+    if (type === "kons") {
+      const units = H.units ? H.units() : [];
+      const hekims = (H.data.users || []).filter(u => u.role === "hekim");
+      const nowL = new Date().toISOString().slice(0, 16);
+      return simple("Konsültasyon istemi",
+        `<div class="fr"><label>İstek yapan</label><input value="${esc(me())}" readonly></div>
+         <div class="fr"><label>Bölüm</label><input data-f="ad" list="kons-bolum" placeholder="ör. Kardiologiya"><datalist id="kons-bolum">${units.map(u => `<option>${esc(u.tr)}</option>`).join("")}</datalist></div>
+         <div class="fr"><label>Hedef doktor (ops.)</label><select data-f="dr"><option value="">—</option>${hekims.map(u => `<option>${esc(u.name)}</option>`).join("")}</select></div>
+         <div class="fr"><label>Aciliyet</label><select data-f="acil"><option>Normal</option><option>Acil</option></select></div>
+         <div class="fr"><label>İstek tarihi</label><input type="datetime-local" data-f="tarih" value="${nowL}"></div>
+         <div class="fr"><label>Konsültasyon nedeni</label><input data-f="det" placeholder="Neden / soru"></div>`,
+        (m) => { const ad = val(m, "ad"); if (!ad) { H.toast("Bölüm gerekli.", "w"); return null; }
+          const dr = val(m, "dr"), acil = m.querySelector('[data-f="acil"]').value, tarih = m.querySelector('[data-f="tarih"]').value, det = val(m, "det");
+          return { cat:"Konsültasyon", ad:ad + (dr ? " · " + dr : ""), detay:[acil, tarih, det, "İsteyen: " + me()].filter(Boolean).join(" · ") }; });
+    }
     H.toast("Bu istem türü yakında eklenecek.", "w");
   }
 

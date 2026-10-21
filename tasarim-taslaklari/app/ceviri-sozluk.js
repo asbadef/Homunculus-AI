@@ -11724,3 +11724,15 @@ Object.assign(window.HMC_SOZLUK, {
 "Paket silindi": { "AZ": "Paket silindi", "EN": "Package deleted", "RU": "Пакет удалён" },
 "Önce birkaç istem ekleyin.": { "AZ": "Əvvəlcə bir neçə istək əlavə edin.", "EN": "Add a few orders first.", "RU": "Сначала добавьте несколько назначений." }
 });
+
+(function (A) { for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({   // 22.10 · konsultasyon + bakim admin metinleri; yalniz eksik olanlar
+"İstek yapan": { "AZ": "İstək edən", "EN": "Requested by", "RU": "Запросил" },
+"Hedef doktor (ops.)": { "AZ": "Hədəf həkim (ops.)", "EN": "Target doctor (opt.)", "RU": "Целевой врач (опц.)" },
+"İstek tarihi": { "AZ": "İstək tarixi", "EN": "Request date", "RU": "Дата запроса" },
+"Konsültasyon nedeni": { "AZ": "Konsultasiya səbəbi", "EN": "Consultation reason", "RU": "Причина консультации" },
+"Bakım İstem Listesi": { "AZ": "Baxım istək siyahısı", "EN": "Care order list", "RU": "Список назначений ухода" },
+"Yeni bakım": { "AZ": "Yeni baxım", "EN": "New care item", "RU": "Новый уход" },
+"Bakım adı ara (AZ veya TR)": { "AZ": "Baxım adı axtar (AZ və ya TR)", "EN": "Search care name (AZ or TR)", "RU": "Поиск названия ухода (AZ или TR)" },
+"Diyet Listesi": { "AZ": "Pəhriz siyahısı", "EN": "Diet list", "RU": "Список диет" },
+"Yeni diyet": { "AZ": "Yeni pəhriz", "EN": "New diet", "RU": "Новая диета" }
+});
