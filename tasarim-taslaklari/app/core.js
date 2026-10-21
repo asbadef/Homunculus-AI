@@ -310,6 +310,8 @@
   // Hizmet fiyatı: her hizmetin kuruma göre fiyatı olur. Şimdilik koddan türeyen baz fiyat + kurum çarpanı;
   // admin düzenlerse H.data.fiyatlar[kod][kurum] kullanılır. Gerçek fiyat matematiği ileride oturtulacak.
   H.fiyatBaz = (kod) => { let n = 0; for (const c of String(kod)) n = (n * 31 + c.charCodeAt(0)) >>> 0; return 20 + (n % 481); };
+  // Özel onay = ödeme alındı. Ödeme alınmamış protokolde (ozelOnay:false) istem/işlem eklenemez; vezne/yetkili onay verir.
+  H.ozelOnay = (p) => !p || p.ozelOnay !== false;
   H.fiyatOf = (kod, kurum) => {
     const ov = H.data.fiyatlar && H.data.fiyatlar[kod] && H.data.fiyatlar[kod][kurum];
     if (ov != null) return ov;
@@ -429,7 +431,7 @@
     P0({ id:"p19", name:"İlqar Sadıqov", sex:"E", age:41, ageGroup:"adult", bed:"bmt-2", dx:"Kemik iliği nakli sonrası 8. gün · nötropeni", icd:"Z94.8", admitDays:12, attending:"dr.kamran", nurse:null, blood:"AB Rh(+)", weight:71, height:177, risk:"mid", news2:3, antibioticDay:3, isolation:"Koruyucu", v:{ hr:104, sbp:112, dbp:68, map:83, spo2:96, rr:18, temp:37.9, o2:"Oda havası", loc:"Uyanık" }, flags:{ pain:2 } }),
     // 21.10 · AYAKTAN (poliklinik) hastalar — başvuru tipi açıkça "ayaktan"; muayene odası slotunda, vital/skor yok.
     P0({ id:"p20", name:"Günel Məmmədova", sex:"K", age:34, ageGroup:"adult", bed:"pol-1", encounter:"ayaktan", dx:"Hamiləlik izləmi", icd:"Z34.9", admitDays:0, attending:"dr.kamran", nurse:null, blood:"A Rh(+)", weight:68, height:164, risk:"stable", v:{ hr:76, sbp:118, dbp:74, map:89, spo2:99, rr:16, temp:36.6, o2:"Oda havası", loc:"Uyanık" }, flags:{} }),
-    P0({ id:"p21", name:"Orxan Əliyev", sex:"E", age:45, ageGroup:"adult", bed:"pol-2", encounter:"ayaktan", dx:"Hipertansiyon kontrolü", icd:"I10", admitDays:0, attending:"dr.kamran", nurse:null, blood:"0 Rh(+)", weight:83, height:177, chronic:["Hipertansiyon"], risk:"stable", v:{ hr:72, sbp:138, dbp:86, map:103, spo2:98, rr:15, temp:36.7, o2:"Oda havası", loc:"Uyanık" }, flags:{} }),
+    P0({ id:"p21", name:"Orxan Əliyev", sex:"E", age:45, ageGroup:"adult", bed:"pol-2", encounter:"ayaktan", dx:"Hipertansiyon kontrolü", icd:"I10", admitDays:0, attending:"dr.kamran", nurse:null, blood:"0 Rh(+)", weight:83, height:177, chronic:["Hipertansiyon"], risk:"stable", ozelOnay:false, v:{ hr:72, sbp:138, dbp:86, map:103, spo2:98, rr:15, temp:36.7, o2:"Oda havası", loc:"Uyanık" }, flags:{} }),
   ];
   // yatak durumlarını hastalardan doldur, birkaçını temizlik / bloke / kullanım dışı yap
   H.data.patients.forEach(p => { const b = H.bed(p.bed); if (b) { b.status = "dolu"; b.pid = p.id; } });
