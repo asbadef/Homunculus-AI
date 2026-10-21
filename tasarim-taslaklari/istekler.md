@@ -367,3 +367,31 @@
 | 317 | 01.10: Ana sayfa alt bilgisindeki "Kararı hekim verir · Kurulum yerini hastane seçer · Her işlem kayıt altında" kalksın, yerine başka bir şey | ✅ | Ozan'ın cümlesi (4 dil): "Yoğun bakım ve servisler için klinik karar destek ve birim yönetim sistemi. Monitörden gelen değeri okur, kötüleşen hastayı öne çıkarır ve o hastadan sorumlu kişiye haber verir." Üç slogan `hidden` (CSS de düzeltildi; ölçüldü: 4 dil × 1440/390, görünmüyor, taşma 0). Yedek `_yedek/anasayfa-index-2026-10-01.html` |
 | 318 | 01.10: `main` birleştirmesi (pull request) onaylandı — çeviri ve ana sayfa bitince tüm proje git'e | ✅ | `tasarim/prototip` push + PR → `main` |
 | 288 | Evden çalışıyor → telefon denemesi | ✅ | `telefon.html`: Expo `exp://192.168.1.115:8083` (yeni sunucu, ev adresi) + PWA `http://192.168.1.115:5199/app/`, iki QR. 8082 hâlâ ofis adresini veriyor |
+
+## 2026-10-21/22 · HBYS genişleme oturumu (ayaktan/yatan/günübirlik + istem + diyet + bakım...)
+
+| # | İstek | Durum | Nereye bak / not |
+|---|---|---|---|
+| 319 | Sistem yoğun bakıma özel duruyor; ayaktan/yatan/günübirlik olmalı | ✅ | `H.ENC`+`H.encOf` (core.js); poliklinik birimi; ayaktan hastada vital/monitör yok, sade sekme. commit 51c6646 |
+| 320 | İstem ekranı: sol katalog ağacı + arama + favori + sepet (referans) | ✅ | istem.js openCatalog; hizmet listesi 20.631. commit 6389a36 |
+| 321 | Kodları kendimiz kodlayalım (00001…), kaynak/rakip kodu kullanma; SUT (EK2*) Azerbaycan'da yok | ✅ | hizmet-veri.js yeniden üretildi; SUT sütunu kaldırıldı. commit 90d7297 |
+| 322 | TABIB / e-tabib / Azerbaycan sağlık sistemi göz önünde | 🔧 araştırıldı | Hafıza: `hbys-azerbaycan-saglik-sistemi`. SAMHI=claims (SUT muadili); vezne fazında bağlanacak |
+| 323 | Referans etiketlerini birebir kopyalama; çeviri eksikleri doldur | ✅ süreklilik | Hafıza: `hbys-isimlendirme-ve-ceviri-kurali`; her ekranda AZ/RU/EN eklendi |
+| 324 | Katalog modalı küçük/okunmuyor → büyüt | ✅ | tam ekran + büyük yazı; sonra yükseklik taşması düzeltildi (bu tur) |
+| 325 | İstem paketleri (adlı şablon): içine farklı istemler, tek tıkla hepsi | ✅ | "Paket olarak kaydet" + "Hazır paketler". commit a9ac334. Geliştirme: Benim/Bölümüm/Tümü (#335) |
+| 326 | Ameliyat / yatış istemi ekranı | ✅ | openAmeliyat. commit a9ac334 |
+| 327 | Diyet: öğün bazlı + tam liste + refakatçi ne yiyecek + öğün giriş saat sınırı; admin'de ayar | ✅ | diyet-veri.js (87); refakatçi diyeti; H.DIYET_CUTOFF; Admin > Diyet Listesi. commit 2a9fe45 |
+| 328 | Bakım istem modalında düzen bozukluğu | ✅ | modal yükseklik düzeltildi (bu tur) |
+| 329 | Bakım kataloğu tam liste (~113 Azerice) + admin'de yönetim | ✅ | bakim-veri.js (108) + Admin > Bakım İstem Listesi. commit 4a18a58 |
+| 330 | Konsültasyon süreci: katalog + istek yapan/bölüm/doktor/tarih/aciliyet/açıklama | ✅ | istem.js openForm kons zengin form. commit d077718 |
+| 331 | Muayene/epikriz eksikleri; "Sistem Sorgusu" alanını kaldır; görsellerdeki alanlar | 🔧 kısmi | "Sistem Sorgusu" kaldırıldı (a379b9e). ⏳ kalan: tedavi tipi butonları, ameliyat planlanacak, kontrol, psikolojik durum, ağrı, fizik vital, ICD tanı tipi, taburculuk önerileri |
+| 341 | Seçim ekranları (checkbox ızgaraları) net görünmüyor; kutu-etiket hizasız; başka yerlerde de olabilir | 🔧 kısmi | ICD özellikleri + ameliyat seçenekleri chip kutuya çevrildi (a379b9e). ⏳ diğer seçim/form ekranlarını denetle |
+| 332 | İlaç reçetesi zengin ekranı (reçete türü/ICD bağlama/ilaç satırı/etkileşim) | ⏳ sırada | e-Nabız yerine Azerbaycan muadili |
+| 333 | Şablon+Tarihçe butonları her istem/belge ekranında standart | ⏳ | — |
+| 334 | Doktor workspace menüsü (Tüm Gelişler, İzlem alt, Sıvı İzlem, İstem Tarihçesi, Ameliyat Rapor, Protokol İşlem, Hasta Takip, Randevu Geçmişi...) | ⏳ | referans görsel |
+| 335 | Şablon kapsamı Benim/Bölümüm/Tümü + İsteme Dönüştür/Şablona Kopyala | ⏳ | referans görsel |
+| 336 | Her yeni ekran/istem türü için admin yetki ucu (hangi rol) | ⏳ süreklilik | her özellik iki taraflı |
+| 337 | Branş listesi, Bölüm listesi, İK modülü | ⏳ | Tanımlar |
+| 338 | Diğer rol akışları: kabul, vezne, eczane, laborant, radyoloji tekn., biyomed, kalite, hasta | ⏳ | doktor+admin sonrası |
+| 339 | İlaç / malzeme listesi | ⏳ Ozan verecek | — |
+| 340 | Lab/Radyoloji iş akışı, Vezne/faturalama+SAMHI, Randevu | ⏳ | sonraki fazlar |
