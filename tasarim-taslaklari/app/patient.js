@@ -523,11 +523,11 @@
   const vitalBarHtml = (p) => spotHtml(p);
 
   /* ================= sekmeler ================= */
-  const TABS = [["ozet", "Özet"], ["trend", "Trendler"], ["skor", "Skorlar"], ["takip", "Takip"], ["bakim", "Bakım planı"], ["ilac", "İlaç"], ["sivi", "Sıvı"], ["sonuc", "Sonuçlar"], ["kamera", "Kamera"], ["devir", "Teslim notu"], ["belge", "Belgeler"]];
+  const TABS = [["ozet", "Özet"], ["trend", "Trendler"], ["skor", "Skorlar"], ["takip", "Takip"], ["bakim", "Bakım planı"], ["ilac", "İlaç"], ["sivi", "Sıvı"], ["sonuc", "Sonuçlar"], ["kamera", "Kamera"], ["devir", "Teslim notu"], ["belge", "Belgeler"], ["istem", "İstem"]];
   // 24.09: bakım planı yalnız hemşirelik yapan rollerde ve klinik birimde; kamera yalnız yetkili rolde ve yoğun bakım yatağında
   // Hangi sekmeyi kim görür: Yönetim → Roller → Modül erişimi (pt_* yetkileri). Özet her zaman açılabilir olmalı.
-  const tabsFor = (p) => TABS.filter(([k]) => (k === "ozet" || H.can("pt_" + k)) && (k === "kamera" ? H.can("camera") && ["icu", "nicu"].includes(unitOf(p).type) && !!H.cameraTab
-    : k === "bakim" ? !!H.carePlan && H.isClinical(unitOf(p)) : true));
+  const tabsFor = (p) => TABS.filter(([k]) => (k === "ozet" || (k === "istem" ? H.can("orders") : H.can("pt_" + k))) && (k === "kamera" ? H.can("camera") && ["icu", "nicu"].includes(unitOf(p).type) && !!H.cameraTab
+    : k === "bakim" ? !!H.carePlan && H.isClinical(unitOf(p)) : k === "istem" ? !!H.orders : true));
   const badge = (p, k) => {
     if (k === "skor" && isIcuAdult(p) && !S(p.id).sofaSigned) return "1";
     if (k === "takip") { ensureMedTasks(p); const n = H.data.tasks.filter(t => t.pid === p.id && t.state === "late").length; return n ? String(n) : ""; }
@@ -1275,9 +1275,9 @@
   /* ================= sayfa ================= */
   const TAB_FN = { ozet:tabOzet, trend:tabTrend, skor:tabSkor, takip:tabTakip, ilac:tabIlac, sivi:(p) => tabSivi(p) + (H.fluidGrid ? `<div style="margin-top:12px">${H.fluidGrid.html(p)}</div>` : ""), sonuc:tabSonuc, devir:tabDevir,
     bakim:(p) => H.carePlan ? H.carePlan.html(p) : `<div class="empty">Bakım planı modülü yüklenmedi.</div>`,
-    belge:(p) => H.docs ? H.docs.html(p) : `<div class="empty">Belgeler modülü yükleniyor…</div>`, kamera:() => `<div data-cam></div>` };
+    belge:(p) => H.docs ? H.docs.html(p) : `<div class="empty">Belgeler modülü yükleniyor…</div>`, istem:(p) => H.orders ? H.orders.html(p) : `<div class="empty">İstem modülü yüklenmedi.</div>`, kamera:() => `<div data-cam></div>` };
   const AFTER = { ozet:afterOzet, trend:afterTrend, skor:afterN2, sivi:(el, p) => { afterSivi(el, p); H.fluidGrid && H.fluidGrid.after(el, p); },
-    bakim:(el, p) => H.carePlan && H.carePlan.after(el, p), belge:(el, p) => H.docs && H.docs.after(el, p), kamera:(el, p) => H.cameraTab && H.cameraTab(el.querySelector("[data-cam]"), p.id) };
+    bakim:(el, p) => H.carePlan && H.carePlan.after(el, p), belge:(el, p) => H.docs && H.docs.after(el, p), istem:(el, p) => H.orders && H.orders.after(el, p), kamera:(el, p) => H.cameraTab && H.cameraTab(el.querySelector("[data-cam]"), p.id) };
 
   function pickList(root) {
     const L = H.myPatients();

@@ -750,7 +750,7 @@
         <div style="margin-top:12px"><b style="font-size:13px">ICD Özellikleri</b>
           <div class="icd-oz">${ICD_OZ.map(o => `<label><input type="checkbox" data-oz="${esc(o)}"${(meta.ozel || []).includes(o) ? " checked" : ""}> ${esc(o)}</label>`).join("")}</div></div>
       </div>`,
-      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-icdsave>Kaydet</button>`,
+      actions:`${existing ? `<button class="btn g" data-icddel>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-icdsave>Kaydet</button>`,
       onMount(m) {
         m.querySelector("[data-icdsave]").onclick = () => {
           const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
@@ -764,6 +764,11 @@
           H.log(existing ? "ICD tanı güncellendi" : "ICD tanı eklendi", kod + " · " + ad);
           H.closeModal(); H.toast("Kaydedildi: " + kod);
           AD.icdq = kod; redraw();
+        };
+        const del = m.querySelector("[data-icddel]"); if (del) del.onclick = () => {
+          if (!confirm("Bu tanı silinsin mi?")) return;
+          const i = ALL.findIndex(x => x[0] === e.kod); if (i >= 0) ALL.splice(i, 1); delete H.ICDMETA[e.kod];
+          H.log("ICD tanı silindi", e.kod); H.closeModal(); H.toast("Tanı silindi", "w"); redraw();
         };
       } });
   }

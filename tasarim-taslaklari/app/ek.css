@@ -47,6 +47,13 @@
 .icd-oz { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:5px 16px; margin-top:8px; }
 .icd-oz label { display:flex; align-items:center; gap:7px; font-size:12.5px; }
 
+/* İstem ekranı (hasta sekmesi) */
+.ist-launch { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; }
+.ist-g h6 { margin:0 0 7px; font:700 10px Figtree; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); }
+.ist-btns { display:flex; flex-direction:column; gap:6px; }
+.ist-b { display:flex; align-items:center; gap:8px; text-align:left; padding:10px 12px; border-radius:10px; border:1px solid var(--line2); background:var(--card); cursor:pointer; color:var(--ink); font:600 13px Figtree; transition:background .12s, border-color .12s; }
+.ist-b:hover { background:var(--card2); border-color:var(--pri); }
+
 /* ---------- monitör · Ozan #59 ----------
  * Hasta ekranındaki monitör yatak başı cihazı gibi: koyu çerçeve, iç gölge, atan HR rakamı. */
 .pt-wrap .mon { border:6px solid #111a28; border-radius:18px; box-shadow:inset 0 0 0 1px #22324b, 0 10px 28px rgba(0,0,0,.35); background:radial-gradient(120% 140% at 30% 0%, #07142a, #02060d 70%); }
