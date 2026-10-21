@@ -716,10 +716,10 @@
     ["bolumliste", "Bölüm / Branş Listesi", "admin_system", "list"],   // tıbbi bölümler + branş; hizmet tanımı ve kabul bunu kullanır
     ["secenekler", "Kayıt Seçenekleri", "admin_system", "list"],   // erişim kanalı/tercih sebebi/geliş-protokol tipi vb. açılır listeler; admin düzenler
     ["mesajkalip", "Mesaj Kalıpları (SMS)", "admin_system", "bell"],   // SMS/e-posta/uygulama bildirim kalıpları
-    ["kampanya", "Kampanyalar", "admin_system", "zap"],   // yetkili rol oluşturur, vezne seçer (Fiyat Verme)
+    ["kampanya", "Kampanyalar", "kampanya_create", "zap"],   // kampanya oluşturma yetkisi olan rol görür (sistem + yönetici)
     ["dokuman", "Doküman Tanımları", "admin_system", "file"],   // onam/muayene/rapor form kataloğu; her hastanede farklı set
     ["ptip", "Protokol Tipleri", "admin_system", "list"],   // zengin protokol tipi + iş kuralı bayrakları
-    ["fiyat", "Hizmet Fiyatları", "admin_system", "list"],   // hizmetin kuruma göre fiyatı (fiyat_duzenle)
+    ["fiyat", "Hizmet Fiyatları", "fiyat_duzenle", "list"],   // fiyat düzenleme yetkisi olan rol görür (sistem + yönetici)
     ["mobile", "Telefon modülleri", "admin_system", "tablet"],   // 27.09 · #193
     ["system", "Sistem ayarları", "admin_system", "gear"], ["audit", "Denetim kaydı", "audit", "file"],
     // 30.09 · İzleme ve işletim (Y1–Y7) · kod: dosyanın sonundaki "İZLEME VE İŞLETİM" bölümü

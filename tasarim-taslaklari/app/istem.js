@@ -60,10 +60,10 @@
       : `<div class="adm-sub">Bu kapsamda kayıtlı paket yok. Birkaç istem ekleyip <b>Paket olarak kaydet</b> deyin.</div>`;
     const pOpen = H.protoOpen(p), pCan = H.can("admission") || H.can("orders");
     const lockBar = `<div class="ist-lock ${pOpen ? "" : "closed"}">${ic(pOpen ? "ok" : "lock") || ""}<span>Protokol: <b>${pOpen ? "Açık" : (p.faturaKesildi ? "Fatura kesildi · kilitli" : "Kapalı · kilitli")}</b>${pOpen ? "" : " · yeni işlem/hizmet eklenemez"}</span>${pCan ? `<button class="btn sm" data-protokat>${pOpen ? "Protokolü kapat" : "Protokolü aç"}</button>` : ""}</div>`;
-    const payOk = H.ozelOnay(p), payCan = H.can("admission") || H.can("vezne_donem");
-    const payBar = payOk ? "" : `<div class="ist-lock closed">${ic("lock") || ""}<span>Özel onay: <b>Ödeme alınmadı · işlem/hizmet eklenemez</b></span>${payCan ? `<button class="btn sm" data-ozelonay>Özel onay ver (ödeme alındı)</button>` : ""}</div>`;
+    const payOk = H.ozelOnay(p), payCan = H.can("admission") || H.can("vezne_donem") || H.can("summary") || H.can("orders");
+    const payBar = payOk ? "" : `<div class="ist-lock closed">${ic("lock") || ""}<span>Özel onay: <b>Ödeme alınmadı · işlem/hizmet eklenemez</b> · (gerçekte vezne ödemeyi alınca açılır)</span>${payCan ? `<button class="btn sm" data-ozelonay>Özel onay ver (ödeme alındı)</button>` : ""}</div>`;
     const pt = H.protoTipOf(p), ptFlags = pt && pt.flags ? Object.keys(pt.flags).filter(k => pt.flags[k]) : [];
-    const ptBar = pt ? `<div class="ist-lock"><span>${ic("tag") || ic("key") || ""} Protokol tipi: <b>${esc(pt.ad)}</b>${ptFlags.length ? " · " + ptFlags.map(k => esc(H.ptipLabel ? H.ptipLabel(k) : k)).join(" · ") : ""}</span></div>` : "";
+    const ptBar = pt ? `<div class="ist-lock"><span>${ic("key") || ""} Protokol tipi: <b>${esc(pt.ad)}</b>${ptFlags.length ? " · " + ptFlags.map(k => esc(H.ptipLabel ? H.ptipLabel(k) : k)).join(" · ") : ""}</span></div>` : "";
     return `<div class="ist" data-ist-root>${lockBar}${payBar}${ptBar}<div class="ist-launch">${grp}</div>
       <div class="ist-sec"><div class="ist-hd"><h5>Hazır paketler (şablonlar)</h5>${scopeTabs}</div>${tplRow}</div>
       <div class="ist-sec ist-hd"><h5>Bu başvurudaki istemler</h5><span class="r" style="display:flex;gap:8px">${list.length ? `<button class="btn sm" data-tplsave>${ic("save") || ""} Paket olarak kaydet</button>` : ""}<button class="btn sm" data-isthist>${ic("clock") || ""} İstem tarihçesi</button></span></div>${rows}
@@ -386,7 +386,7 @@
     const rerender = () => H.go("patient", { pid:p.id, tab:"istem" });
     root.onclick = (e) => {
       const pk = e.target.closest("[data-protokat]"); if (pk) { if (!(H.can("admission") || H.can("orders"))) return; const willOpen = !H.protoOpen(p); p.protoDurum = willOpen ? "Açık" : "Kapalı"; if (willOpen) p.faturaKesildi = false; H.log("Protokol durumu", bedNo(p) + " · " + p.protoDurum); H.toast("Protokol " + p.protoDurum.toLowerCase()); rerender(); return; }
-      const oz = e.target.closest("[data-ozelonay]"); if (oz) { if (!(H.can("admission") || H.can("vezne_donem"))) { H.toast("Özel onay yetkiniz yok.", "e"); return; } p.ozelOnay = true; H.log("Özel onay verildi (ödeme alındı)", bedNo(p)); H.toast("Özel onay verildi · işlem eklenebilir"); rerender(); return; }
+      const oz = e.target.closest("[data-ozelonay]"); if (oz) { if (!(H.can("admission") || H.can("vezne_donem") || H.can("summary") || H.can("orders"))) { H.toast("Özel onay yetkiniz yok.", "e"); return; } p.ozelOnay = true; H.log("Özel onay verildi (ödeme alındı)", bedNo(p)); H.toast("Özel onay verildi · işlem eklenebilir"); rerender(); return; }
       const b = e.target.closest("[data-ist]"); if (b) { dispatch(p, b.dataset.ist, rerender); return; }
       const sc = e.target.closest("[data-tplscope]"); if (sc) { tplScope = sc.dataset.tplscope; rerender(); return; }
       const ap = e.target.closest("[data-tplap]"); if (ap) { applyTemplate(p, ap.dataset.tplap, rerender); return; }
