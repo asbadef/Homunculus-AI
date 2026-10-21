@@ -434,7 +434,7 @@
 
   /* ================= belge türleri ================= */
   const TYPES = {
-    muayene:{ name:"Muayene notu", icon:"user", role:"hekim", secs:[["yakinma", "Yakınma"], ["oyku", "Öykü"], ["ozgecmis", "Özgeçmiş"], ["soygecmis", "Soygeçmiş"], ["sistem", "Sistem sorgusu"], ["fizik", "Fizik muayene"], ["deger", "Değerlendirme"], ["plan", "İzlem ve plan"]] },
+    muayene:{ name:"Muayene notu", icon:"user", role:"hekim", secs:[["yakinma", "Yakınma"], ["oyku", "Öykü"], ["ozgecmis", "Özgeçmiş"], ["soygecmis", "Soygeçmiş"], ["fizik", "Fizik muayene"], ["deger", "Değerlendirme"], ["plan", "İzlem ve plan"]] },
     izlem:{ name:"Günlük izlem notu", nameK:"dc_t_izlem", icon:"activity", role:"hekim", secs:[["vit24", "dc_s_vit24"], ["skor24", "dc_s_skor24"], ["sivi24", "dc_s_sivi24"], ["sonuc24", "dc_s_sonuc24"],
       ["olay24", "dc_s_olay24"], ["fizik", "dc_s_fizik"], ["deger", "dc_s_deger"], ["plan", "dc_s_plan"]] },
     transfer:{ name:"Transfer özeti", nameK:"dc_t_transfer", icon:"swap", role:"hekim", page:true, secs:[["tkim", "dc_s_tkim"], ["tskor", "dc_s_tskor"], ["tolay", "dc_s_tolay"], ["tcihaz", "dc_s_tcihaz"],
