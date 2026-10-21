@@ -476,3 +476,17 @@ Klinik/doktor tarafı büyük ölçüde YAPILDI (muayene, epikriz, izlem, hemşi
 - İşlem Havuzu sağ-tık (#L10), Yazdır çıktıları düzenli menü (#L9, yazdir.js var)
 - PWA / mobil web (#367) — ileri faz
 - Tüm görsellerin tam yeniden analizi (#372) — süreç
+
+## SON DURUM — 2026-10-22 (gece, 2. otonom tur)
+### ✅ Ek tamamlananlar
+- Protokol tipi bayraklarının GERÇEK etkisi: vezne fiyat vermede protokol tipi seçilir, hastaFark/sgkKatilim → hasta payı 0 (#1)
+- Raporların içi: 5 öncelikli rapor örnek/gerçek veriyle tablo (Hasta Geliş, Fatura, Hasta İndirim, Doktor Protokol Sayı, Protokol Listesi) (#3)
+- İndirim/iade ÇOK KADEMELİ onay zinciri (seviye/birim/personel; kademe kademe onay) (#4)
+- Vezne 360 yer tutucuları: Son hastalar / Protokol listesi / Reçete listesi gerçek tablo (#5 kısmi)
+- Smoke test ile bundle yük-anı doğrulandı (core/admin/screens/istem/docs temiz)
+### ⏳ Hâlâ bekleyen
+- Protokol tipi bayraklarının fatura/istem AKIŞINA tam etkisi (avans/otomatik kapanma/işlem havuzu davranışları)
+- Klinik doküman DERİN içerik (form form, araştırmalı) — altyapı hazır
+- Kalan raporların içi; Vezne 360 kalan placeholder'lar (Medula, Toplu fatura, Kurum değişiklik onay…)
+- Randevu Geçmişi ayrı ekran; Yazdır çıktıları düzenli menü (yazdir.js var); İşlem Havuzu sağ-tık
+- PWA derinleştirme (pwa.js temel var)
