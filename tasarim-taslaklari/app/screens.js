@@ -154,11 +154,25 @@
     { no:"1167466", matbu:"508942966", kurum:"Azərsun Holding", durum:"Vezneden teslim edildi" },
     { no:"1167468", matbu:"", kurum:"İcbari Tibbi Sığorta", durum:"Vezneye iade edildi" },
   ]);
+  const ONAY_DURUM = ["Onay bekliyor", "Onaylandı", "Reddedildi"];
+  const indirimRows = () => (H.data.indirimOnay = H.data.indirimOnay || [
+    { id:"io1", tarih:"22.10.2026 10:47", hasta:"Murat Can Aslan", isteyen:"Esli Daşdiyeva", islem:"Fibroblast deri/kozmetoloji tatbiqi", tutar:1250, oran:40, durum:"Onay bekliyor", grup:"Doktorlar Tatbiq" },
+    { id:"io2", tarih:"21.10.2026 12:26", hasta:"Nermin Süleymanova", isteyen:"Şöle Şıxeliyeva", islem:"Muayene paketi", tutar:41, oran:2.27, durum:"Onay bekliyor", grup:"Hastaya İskonto" },
+    { id:"io3", tarih:"21.10.2026 16:18", hasta:"Brilyand Memmedova", isteyen:"Esli Daşdiyeva", islem:"Radyoloji tetkik", tutar:400, oran:15, durum:"Onay bekliyor", grup:"Doktorlar Tatbiq" },
+    { id:"io4", tarih:"19.10.2026 10:40", hasta:"Sure Babayeva", isteyen:"Esli Daşdiyeva", islem:"Laboratuvar paketi", tutar:530, oran:19.14, durum:"Onaylandı", grup:"Hastaya İskonto" },
+  ]);
+  const IADE_DURUM = ["Onay bekliyor", "Onaylandı", "Reddedildi", "İade tamamlandı"];
+  const iadeRows = () => (H.data.iadeTalep = H.data.iadeTalep || [
+    { id:"ia1", tip:"Avans İade", tarih:"21.10.2026 15:55", eden:"Sebine Bağırova", tutar:2.90, dep:"Genel İade", aciklama:"Doktor ilaca gerek görmedi", durum:"Onay bekliyor", proto:"50894485" },
+    { id:"ia2", tip:"Avans İade", tarih:"21.10.2026 13:36", eden:"Şebnem Süleymanlı", tutar:607.02, dep:"Genel İade", aciklama:"Depozitten qalan məbləğ", durum:"Onay bekliyor", proto:"50880632" },
+    { id:"ia3", tip:"Fatura İade", tarih:"20.10.2026 17:15", eden:"Helime Ehmedova", tutar:30, dep:"Protokolden Protokola", aciklama:"Anadan yenidoğmuşa iade", durum:"Onaylandı", proto:"50892002" },
+    { id:"ia4", tip:"Avans İade", tarih:"20.10.2026 12:59", eden:"Aytac Rüstemli", tutar:100, dep:"Genel İade", aciklama:"Anestezi olmadığı üçün", durum:"Onay bekliyor", proto:"50893269" },
+  ]);
   const hzName = (r) => (H.state.lang === "TR" ? (r[2] || r[1]) : (r[1] || r[2])) || r[1] || r[2] || "";
   H.register("vezne", { title:() => H.t("m_vezne"), perm:["admission", "summary"], render(root, params = {}) {
     const bankolar = BANKOLAR(), banko = H.state.vezneBanko || bankolar[0], donemNo = H.data.vezneDonemNo || (H.data.vezneDonemNo = 54038), tab = params.tab || "fatura";
     const donemAcik = H.data.vezneDonemAcik !== false, donemYetki = H.can("vezne_donem");
-    const TABS = [["fatura", "Faturalar"], ["fiyat", "Fiyat verme"], ["gfk", "GFK takip"], ["evrak", "Evrak takip"]];
+    const TABS = [["fatura", "Faturalar"], ["fiyat", "Fiyat verme"], ["indirim", "İndirim onay"], ["iade", "İade"], ["gfk", "GFK takip"], ["evrak", "Evrak takip"]];
     const bar = `<div class="ist-lock ${donemAcik ? "" : "closed"}">${I(donemAcik ? "key" : "lock") || ""}<span>Dönem <b>#${donemNo}</b> · <b>${donemAcik ? "Açık" : "Kapalı · işlem yapılamaz"}</b> · Banko: <b>${H.esc(banko)}</b></span><select data-vbanko title="Çalıştığın banko/kasa"${donemAcik ? "" : " disabled"}>${bankolar.map(b => `<option${b === banko ? " selected" : ""}>${H.esc(b)}</option>`).join("")}</select>${donemYetki ? `<button class="btn sm" data-vdonem>${donemAcik ? "Dönem kapat" : "Yeni dönem aç"}</button>` : ""}</div>`;
     const strip = `<div class="seg" style="margin-bottom:12px">${TABS.map(([k, l]) => `<button data-vtab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
     const panFatura = () => { const all = faturalar(), f = params.durum || "hepsi", list = f === "hepsi" ? all : all.filter(x => x.durum === f);
@@ -186,7 +200,18 @@
         <div class="tw"><table class="t"><thead><tr><th>Fatura no</th><th>Matbu fatura no</th><th>Kurum</th><th style="width:190px">Evrak durumu</th><th style="width:110px"></th></tr></thead><tbody>
         ${list.map(x => `<tr><td class="mono">${H.esc(x.no)}</td><td class="mono adm-sub">${H.esc(x.matbu || "—")}</td><td>${H.esc(x.kurum)}</td><td><span class="tag ${x.durum === "Vezneden teslim edildi" ? "ok" : ""}">${H.esc(x.durum)}</span></td><td>${x.durum === "Veznede" ? `<button class="btn p sm" data-evteslim="${x.no}">Teslim et</button>` : `<span class="adm-sub">—</span>`}</td></tr>`).join("") || `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Evrak yok.</td></tr>`}</tbody></table></div>
         <p class="adm-sub" style="margin-top:8px">Fatura evrak teslim takibi (veznede → teslim edildi → medikal muhasebede → iade).</p>`; };
-    const panel = ({ fatura:panFatura, fiyat:panFiyat, gfk:panGfk, evrak:panEvrak })[tab]();
+    const panIndirim = () => { const d = params.io || "Onay bekliyor", all = indirimRows(), list = d === "hepsi" ? all : all.filter(x => x.durum === d), can = H.can("indirim_onay");
+      return `<div class="seg" style="margin-bottom:10px">${[["Onay bekliyor", "Onay bekleyen"], ["hepsi", "Hepsi"], ["Onaylandı", "Onaylanan"], ["Reddedildi", "Reddedilen"]].map(([k, l]) => `<button data-io="${k}" class="${d === k ? "on" : ""}">${l}</button>`).join("")}</div>
+        <div class="tw"><table class="t"><thead><tr><th>Tarih</th><th>Hasta</th><th>İsteyen</th><th>İşlem</th><th style="width:80px">Tutar</th><th style="width:70px">Oran</th><th>Onay grubu</th><th style="width:120px">Durum</th><th style="width:150px"></th></tr></thead><tbody>
+        ${list.map(x => `<tr><td class="adm-sub">${H.esc(x.tarih)}</td><td><b>${H.esc(x.hasta)}</b></td><td class="adm-sub">${H.esc(x.isteyen)}</td><td class="adm-sub">${H.esc(x.islem)}</td><td class="n">${x.tutar} ₼</td><td class="n">%${x.oran}</td><td class="adm-sub">${H.esc(x.grup)}</td><td><span class="tag ${x.durum === "Onaylandı" ? "ok" : x.durum === "Reddedildi" ? "w" : ""}">${x.durum}</span></td><td>${x.durum === "Onay bekliyor" && can ? `<button class="btn p sm" data-ioap="${x.id}">Onayla</button> <button class="btn g sm" data-iored="${x.id}">Reddet</button>` : x.durum === "Onay bekliyor" ? `<span class="adm-sub">yetki yok</span>` : `<span class="adm-sub">—</span>`}</td></tr>`).join("") || `<tr><td colspan="9" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}</tbody></table></div>
+        <p class="adm-sub" style="margin-top:8px">Bir hastaya indirim atılınca yetkili rol (İndirim onayla) onaylar/reddeder. Onaylanmayan indirim fatura/tahsilatta uygulanmaz. Çok kademeli onay gerçek kurguda eklenir.</p>`; };
+    const panIade = () => { const d = params.ia || "Onay bekliyor", t = params.iatip || "Tümü", all = iadeRows(), list = all.filter(x => (d === "hepsi" || x.durum === d) && (t === "Tümü" || x.tip === t)), can = H.can("iade_onay");
+      return `<div class="seg" style="margin-bottom:8px">${["Tümü", "Avans İade", "Fatura İade"].map(k => `<button data-iatip="${k}" class="${t === k ? "on" : ""}">${k}</button>`).join("")}</div>
+        <div class="seg" style="margin-bottom:10px">${[["Onay bekliyor", "Onay bekleyen"], ["hepsi", "Hepsi"], ["Onaylandı", "Onaylanan"], ["İade tamamlandı", "Tamamlanan"]].map(([k, l]) => `<button data-ia="${k}" class="${d === k ? "on" : ""}">${l}</button>`).join("")}</div>
+        <div class="tw"><table class="t"><thead><tr><th>Tip</th><th>Tarih</th><th>Talep eden</th><th style="width:90px">Tutar</th><th>Departman</th><th>Açıklama</th><th>Protokol</th><th style="width:120px">Durum</th><th style="width:150px"></th></tr></thead><tbody>
+        ${list.map(x => `<tr><td class="adm-sub">${H.esc(x.tip)}</td><td class="adm-sub">${H.esc(x.tarih)}</td><td><b>${H.esc(x.eden)}</b></td><td class="n">${x.tutar} ₼</td><td class="adm-sub">${H.esc(x.dep)}</td><td class="adm-sub">${H.esc(x.aciklama)}</td><td class="mono adm-sub">${H.esc(x.proto)}</td><td><span class="tag ${/Onaylandı|tamamlandı/.test(x.durum) ? "ok" : x.durum === "Reddedildi" ? "w" : ""}">${x.durum}</span></td><td>${x.durum === "Onay bekliyor" && can ? `<button class="btn p sm" data-iaap="${x.id}">Onayla</button> <button class="btn g sm" data-iared="${x.id}">Reddet</button>` : x.durum === "Onay bekliyor" ? `<span class="adm-sub">yetki yok</span>` : `<span class="adm-sub">—</span>`}</td></tr>`).join("") || `<tr><td colspan="9" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}</tbody></table></div>
+        <p class="adm-sub" style="margin-top:8px">Avans/fatura iadeleri yetkili rol (İade onayla) tarafından onaylanır. Onay zinciri (seviye 1/2/3) gerçek kurguda eklenir.</p>`; };
+    const panel = ({ fatura:panFatura, fiyat:panFiyat, indirim:panIndirim, iade:panIade, gfk:panGfk, evrak:panEvrak })[tab]();
     root.innerHTML = `<div class="ph"><div><h2>${H.t("m_vezne")}</h2><p>Hasta-360 vezne · banko ${H.esc(banko)} · dönem #${donemNo} (tasarım)</p></div></div>${bar}${strip}${panel}`;
     if (tab === "fiyat" && donemAcik) {  // hizmet combobox (her yerde aynı H.HIZMET kataloğu)
       const inp = root.querySelector("[data-fhiz]"), dd = root.querySelector("[data-fhiz-dd]"), fy = root.querySelector("[data-ffiyat]"), kurum = params.kurum || "Özel ödeme";
@@ -211,6 +236,11 @@
       const vf = e.target.closest("[data-vf]"); if (vf) return H.go("vezne", { tab:"fatura", durum:vf.dataset.vf });
       const gf = e.target.closest("[data-gf]"); if (gf) return H.go("vezne", { tab:"gfk", gfk:gf.dataset.gf });
       const ef = e.target.closest("[data-ef]"); if (ef) return H.go("vezne", { tab:"evrak", ev:ef.dataset.ef });
+      const io = e.target.closest("[data-io]"); if (io) return H.go("vezne", { tab:"indirim", io:io.dataset.io });
+      const ia = e.target.closest("[data-ia]"); if (ia) return H.go("vezne", { tab:"iade", ia:ia.dataset.ia, iatip:params.iatip });
+      const iat = e.target.closest("[data-iatip]"); if (iat) return H.go("vezne", { tab:"iade", ia:params.ia, iatip:iat.dataset.iatip });
+      const iap = e.target.closest("[data-ioap],[data-iored]"); if (iap) { if (!H.can("indirim_onay")) { H.toast("İndirim onay yetkiniz yok.", "e"); return; } const id = iap.dataset.ioap || iap.dataset.iored, ok = !!iap.dataset.ioap, x = indirimRows().find(y => y.id === id); if (x) { x.durum = ok ? "Onaylandı" : "Reddedildi"; H.log("İndirim " + (ok ? "onaylandı" : "reddedildi"), x.hasta + " · %" + x.oran); H.toast("İndirim " + (ok ? "onaylandı" : "reddedildi"), ok ? "ok" : "w"); H.go("vezne", params); } return; }
+      const iae = e.target.closest("[data-iaap],[data-iared]"); if (iae) { if (!H.can("iade_onay")) { H.toast("İade onay yetkiniz yok.", "e"); return; } const id = iae.dataset.iaap || iae.dataset.iared, ok = !!iae.dataset.iaap, x = iadeRows().find(y => y.id === id); if (x) { x.durum = ok ? "Onaylandı" : "Reddedildi"; H.log("İade " + (ok ? "onaylandı" : "reddedildi"), x.eden + " · " + x.tutar + " ₼"); H.toast("İade " + (ok ? "onaylandı" : "reddedildi"), ok ? "ok" : "w"); H.go("vezne", params); } return; }
       const fa = e.target.closest("[data-fadd]"); if (fa) { const el = root.querySelector("[data-fhiz]"), ad = (el.value || "").trim(), kod = el.dataset.kod || "", fy = +root.querySelector("[data-ffiyat]").value || (kod ? H.fiyatOf(kod, params.kurum || "Özel ödeme") : 0); if (!ad) { H.toast("Katalogdan hizmet seçin.", "w"); return; } (H.data.vFiyat = H.data.vFiyat || []).push({ ad, kod, fiyat:fy }); H.go("vezne", params); return; }
       const frm = e.target.closest("[data-frm]"); if (frm) { (H.data.vFiyat || []).splice(+frm.dataset.frm, 1); H.go("vezne", params); return; }
       const et = e.target.closest("[data-evteslim]"); if (et) { const x = evrakRows().find(y => y.no === et.dataset.evteslim); if (x) { x.durum = "Vezneden teslim edildi"; H.log("Evrak teslim", x.no); H.toast("Evrak teslim edildi"); H.go("vezne", params); } return; }
