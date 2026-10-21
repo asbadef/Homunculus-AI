@@ -442,6 +442,8 @@
     hemsire:{ name:"Hemşirelik notu", icon:"clip", role:"hemsire", secs:[["gozlem", "Gözlem"], ["bakim", "Yapılan bakım"], ["teslim", "Teslim / plan"]] },
     epikriz:{ name:"Epikriz taslağı", icon:"file", role:"hekim", secs:[["yatis", "Yatış bilgisi"], ["izlem", "İzlem özeti"], ["alarm", "Önemli alarmlar ve yanıtları"], ["sonuc", "Referans dışı sonuç gidişi"], ["abx", "Antibiyotik günleri"], ["bakimp", "Bakım planı ve teslim özeti"], ["taburcu", "Taburcu durumu ve öneriler"]] },
     ameliyatrapor:{ name:"Ameliyat raporu", icon:"file", role:"hekim", secs:[["ameliyat", "Yapılan ameliyat"], ["anestezi", "Anestezi"], ["bulgu", "Ameliyat bulguları"], ["islem", "Yapılan işlem"], ["komplikasyon", "Komplikasyon"], ["kanama", "Tahmini kanama"], ["patoloji", "Patoloji / frozen"], ["kapatma", "Kapatma / sonuç"]] },
+    anestezi:{ name:"Anestezi değerlendirme", icon:"clip", role:"hekim", secs:[["asa", "ASA sınıfı"], ["hava", "Hava yolu değerlendirmesi"], ["sistem", "Sistem muayenesi"], ["lab", "Lab / tetkik"], ["plan", "Anestezi planı"], ["risk", "Risk ve öneriler"]] },
+    onam:{ name:"Onam / taahütname", icon:"file", role:"hekim", secs:[["islem", "İşlem / ameliyat"], ["bilgi", "Verilen bilgi"], ["riskler", "Riskler ve alternatifler"], ["onay", "Hasta / yakın onayı"]] },
   };
   const tName = (type) => (TYPES[type].nameK ? t(TYPES[type].nameK) : TYPES[type].name);
   const sLabel = (l) => (/^dc_/.test(l) ? t(l) : l);
@@ -497,7 +499,7 @@
   function listHtml(p, sel) {
     const L0 = docsOf(p.id);
     return `<aside class="dc-list"><div class="dc-lh"><b>Belgeler</b><span>${L0.length} belge</span></div>
-      <div class="dc-new">${isDoc() ? `<button class="btn p" data-dc-new="muayene">${H.icon("plus")}Yeni muayene notu</button><button class="btn sm" data-dc-new="izlem">${H.icon("plus")}${esc(t("dc_t_izlem"))}</button><button class="btn sm" data-dc-new="ameliyatrapor">${H.icon("plus")}Ameliyat raporu</button>`
+      <div class="dc-new">${isDoc() ? `<button class="btn p" data-dc-new="muayene">${H.icon("plus")}Yeni muayene notu</button><button class="btn sm" data-dc-new="izlem">${H.icon("plus")}${esc(t("dc_t_izlem"))}</button><button class="btn sm" data-dc-new="ameliyatrapor">${H.icon("plus")}Ameliyat raporu</button><button class="btn sm" data-dc-new="anestezi">${H.icon("plus")}Anestezi değ.</button><button class="btn sm" data-dc-new="onam">${H.icon("plus")}Onam</button>`
         : isNurse() ? `<button class="btn p" data-dc-new="hemsire">${H.icon("plus")}Yeni hemşirelik notu</button>` : `<span class="mute" style="font-size:12px">Belge yazma yetkiniz yok; yalnız okuyabilirsiniz.</span>`}</div>
       <div class="dc-items">${L0.map(d => `<button class="dc-it ${d.id === sel ? "on" : ""}" data-dc-open="${d.id}"><span class="dc-ic">${H.icon(TYPES[d.type].icon)}</span>
         <b>${esc(tName(d.type))}</b><small>${esc(d.at)} · ${esc(short(d.by))}</small>${stTag(d)}</button>`).join("")}</div></aside>`;
