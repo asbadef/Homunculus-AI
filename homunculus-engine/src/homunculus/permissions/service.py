@@ -23,6 +23,8 @@ from homunculus.permissions.models import PermissionEffect, PermissionGrant
 
 async def action_allowed(db: AsyncSession, user: User, tenant_id: uuid.UUID, action: str) -> bool:
     roles = await access.roles_in_tenant(db, user, tenant_id)
+    if not roles:
+        return False  # bu hastanenin üyesi değil -> izin yok (kişisel grant da saymaz)
     result = await db.execute(
         select(PermissionGrant).where(
             PermissionGrant.tenant_id == tenant_id,

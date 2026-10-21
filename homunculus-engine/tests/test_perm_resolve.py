@@ -50,3 +50,23 @@ async def test_rollerden_biri_izinliyse_serbest(world):
                                     action="sample.accept", granted_by=u)
         await s.commit()
         assert await action_allowed(s, u, world.a.tenant_id, "sample.accept") is True
+
+
+async def test_kullanici_allow_serbest_birakir(world):
+    # Kullanıcıya özel ALLOW istisnası eylemi serbest bırakır (üye olduğu hastanede).
+    u = await world.add_user(world.a, "istisna-allow", UserRole.NURSE, totp=True)
+    async with world.maker() as s:
+        await grant_user_permission(s, tenant_id=world.a.tenant_id, user_id=u.id,
+                                    action="exam.print", effect=PermissionEffect.ALLOW, granted_by=u)
+        await s.commit()
+        assert await action_allowed(s, u, world.a.tenant_id, "exam.print") is True
+
+
+async def test_uye_olmayan_kullanici_izni_saymaz(world):
+    # Üyesi olmadığı hastanede verilmiş kişisel izin saymaz (savunma-derinliği).
+    u = await world.add_user(world.a, "disardan", UserRole.NURSE, totp=True)  # sadece A üyesi
+    async with world.maker() as s:
+        await grant_user_permission(s, tenant_id=world.b.tenant_id, user_id=u.id,
+                                    action="exam.print", effect=PermissionEffect.ALLOW, granted_by=u)
+        await s.commit()
+        assert await action_allowed(s, u, world.b.tenant_id, "exam.print") is False
