@@ -44,6 +44,7 @@ import { PERMISSION_KEYS } from "./screens/admin/catalogue.js";
 import { NOW, ago, alarm, board, entry, identity, news2, reading } from "./data/board.testutil.js";
 import { bed, param, strip, unassigned } from "./data/shadow.testutil.js";
 import { ADMIN_READS } from "./screens/admin/admin.testutil.js";
+import { BANDS, channel, marker, point, trends } from "./screens/patient/trends/trends.testutil.js";
 
 /** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
  *  fileURLToPath refuses — the note apiErrors.test.js carries.) */
@@ -163,6 +164,21 @@ const STRIP = strip({
   unassigned: [unassigned("192.0.2.28"), unassigned("192.0.2.34", "not_in_table", [param("pls", 70)], { status: "streaming" })],
 });
 
+/** The trend charts (Group 2 · slice 1), reaching every card state: a red frame with the
+ *  own-normal pill and a delta, a single reading, an amber frame, the two-series pressure card, a
+ *  thinned channel and a lactate never measured; and both kinds of mark for the dialog. */
+const TRENDS = trends(FIXTURE_ID, [
+  channel("heart_rate", [point(60, 120, 2), point(5, 132, 3)], {
+    latest: { ts: point(5, 0)[0], value: 132, delta: 12, news2_points: 3, within_own_normal: true },
+    bands: { news2: BANDS.heart_rate, own_normal: { low: 100, high: 135 }, device: null },
+  }),
+  channel("resp_rate", [point(5, 22, 2)]),
+  channel("spo2", [point(30, 93, 2)]),
+  channel("sbp", [point(30, 118, 0)]),
+  channel("map", [point(30, 80)]),
+  channel("temperature", [point(90, 37.9, 0), point(30, 38.2, 1)], { thinned: true, total_points: 2400 }),
+], { markers: [marker(45, "alarm"), marker(20, "antibiotic")] });
+
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 async function openAt(path) {
   window.location.hash = `#${path}`;
@@ -177,6 +193,7 @@ async function openAt(path) {
       // say only "nothing matches" — green, and covering none of the strings this file exists for.
       ADMIN_READS(api);
       api.shadowBoard.mockResolvedValue(STRIP);
+      api.patientTrends.mockImplementation((pid, hours) => Promise.resolve({ ...TRENDS, patient_id: pid, hours }));
     },
   });
   await act(async () => { await mounted.board.start(); });
@@ -269,6 +286,35 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByText("Eskalasiya edilib")).toBeInTheDocument();      // board.escalated
     expect(screen.getByText(/Eskalasiyanı mühərrik yürüdür/)).toBeInTheDocument(); // board.escalatedHelp
     act(() => { mounted.board.clear(); });
+  });
+
+  // The same anchor for the trend charts: the cards are on the patient screen, but the big chart, its
+  // table and the patient's-normal form open only on a click, so the sweep above never saw them.
+  it("the trend charts' keys resolve on the cards, in the big chart, its table and the form", async () => {
+    const mounted = await openAt(`/patients/${FIXTURE_ID}`);
+    await act(async () => { await settle(); });
+    const box = document.querySelector("[data-trends-box]");
+    expect(box).toHaveTextContent("NEWS2 +3");                                          // trendsFrameBadge
+    expect(box).toHaveTextContent("Xəstənin normasında");                               // trendsOwnNormalPill
+    expect(box).toHaveTextContent("↑ +12 (əvvəlkinə görə)");                            // trendsDelta
+    expect(box).toHaveTextContent("tək ölçmə");                                         // trendsSingle
+    expect(box).toHaveTextContent("Bu kanal üçün ölçmə yoxdur");                        // trendsNoData
+    const offenders = [...rawKeys(document.body)];
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Nəbz: böyük qrafiki aç/ })); await settle(); });
+    expect(screen.getByRole("dialog")).toHaveTextContent("NEWS2 zolağı (yetkin) · mənbə news2-rcp-2017");
+    offenders.push(...rawKeys(document.body));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Cədvəl" })); await settle(); });
+    expect(screen.getByRole("table")).toHaveTextContent("siqnal: news2");
+    offenders.push(...rawKeys(document.body));
+    await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); await settle(); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Bədən hərarəti: böyük qrafiki aç/ })); await settle(); });
+    expect(screen.getByRole("dialog")).toHaveTextContent("Bədən hərarəti seyrəldildi: 2400 nöqtədən 2");
+    await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); await settle(); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Xəstənin norması…" })); await settle(); });
+    expect(screen.getByRole("dialog", { name: "Xəstənin norması · REA-01 · 2" })).toHaveTextContent("Boş saxlanılan aralıq silinir.");
+    offenders.push(...rawKeys(document.body));
+    expect(offenders).toEqual([]);
+    act(() => { mounted.board.clear(); mounted.shadow.clear(); });
   });
 
   // The same anchor for Aşama A's monitor strip: with no strip in the shadow store, every
