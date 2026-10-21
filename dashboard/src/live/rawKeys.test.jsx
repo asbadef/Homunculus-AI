@@ -82,7 +82,7 @@ const KEY_SHAPE = new RegExp(
 );
 /** The attributes a reader meets that are not in the text: an accessible name is as much a place
  *  for a raw key as a paragraph, and `aria-label` is where a card's whole name lives. */
-const LABELS = ["aria-label", "aria-description", "title", "placeholder", "alt"];
+const LABELS = ["aria-label", "aria-description", "aria-roledescription", "title", "placeholder", "alt"];
 /** Not markup a reader is ever shown. A stylesheet in particular is full of `nav.something`. */
 const NOT_TEXT = new Set(["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"]);
 /** A file this interface names is not a key, whatever its first word is (`api/board.py`). */
@@ -177,7 +177,7 @@ const TRENDS = trends(FIXTURE_ID, [
   channel("sbp", [point(30, 118, 0)]),
   channel("map", [point(30, 80)]),
   channel("temperature", [point(90, 37.9, 0), point(30, 38.2, 1)], { thinned: true, total_points: 2400 }),
-], { markers: [marker(45, "alarm"), marker(20, "antibiotic")] });
+], { markers: [marker(45, "alarm"), marker(20, "antibiotic")], markers_truncated: true });
 
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 async function openAt(path) {
@@ -307,11 +307,32 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByRole("table")).toHaveTextContent("siqnal: news2");
     offenders.push(...rawKeys(document.body));
     await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); await settle(); });
+    // The two-series pressure card: its series labels, the table's channel column and the legend's
+    // "MAP is not scored" line, which no single-series card reaches.
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Sistolik AT · MAP: böyük qrafiki aç/ })); await settle(); });
+    expect(screen.getByRole("dialog")).toHaveTextContent("MAP NEWS2-də qiymətləndirilmir");      // trendsLegendNoBand
+    expect(screen.getByRole("dialog")).toHaveTextContent("işarələrin hamısı oxunmadı");          // trendsLegendMarksTruncated
+    offenders.push(...rawKeys(document.body));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Cədvəl" })); await settle(); });
+    expect(screen.getByRole("table")).toHaveTextContent("Kanal");                       // trendsColChannel
+    offenders.push(...rawKeys(document.body));
+    await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); await settle(); });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Bədən hərarəti: böyük qrafiki aç/ })); await settle(); });
     expect(screen.getByRole("dialog")).toHaveTextContent("Bədən hərarəti seyrəldildi: 2400 nöqtədən 2");
+    offenders.push(...rawKeys(document.body));
     await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); await settle(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Xəstənin norması…" })); await settle(); });
-    expect(screen.getByRole("dialog", { name: "Xəstənin norması · REA-01 · 2" })).toHaveTextContent("Boş saxlanılan aralıq silinir.");
+    const formName = "Xəstənin norması · REA-01 · 2";
+    expect(screen.getByRole("dialog", { name: formName })).toHaveTextContent("Boş saxlanılan aralıq silinir.");
+    offenders.push(...rawKeys(document.body));
+    // Every row emptied over a charted set is a clear, and the footer says so beside Save.
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: "Nəbz alt" }), { target: { value: "" } });
+      fireEvent.change(screen.getByRole("textbox", { name: "Nəbz üst" }), { target: { value: "" } });
+      await settle();
+    });
+    expect(screen.getByRole("dialog", { name: formName })).toHaveTextContent("Bütün sətirlər boşdur: «Yadda saxla»"); // baselineClearsAll
     offenders.push(...rawKeys(document.body));
     expect(offenders).toEqual([]);
     act(() => { mounted.board.clear(); mounted.shadow.clear(); });

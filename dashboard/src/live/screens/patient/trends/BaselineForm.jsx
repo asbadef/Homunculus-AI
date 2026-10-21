@@ -218,7 +218,7 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
       </form>
       {/* Said once, in this order of weight. "Nothing to send" only once a submit has been tried (Save pressed,
           or Enter in a field): a screen reader hears nothing from an Enter that did nothing otherwise. `tried`
-          stays true once set, so after any earlier submit, emptying the last row announces it at once. */}
+          stays true once set, so after any earlier submit, a form left with nothing to send says so at once. */}
       <Announce text={busy ? t("patient.baselineSaving") : changed || clearing || (nothing && tried) ? say : ""} />
     </Modal>
   );
