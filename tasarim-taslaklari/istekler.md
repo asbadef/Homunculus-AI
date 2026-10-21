@@ -506,3 +506,14 @@ Klinik/doktor tarafı büyük ölçüde YAPILDI (muayene, epikriz, izlem, hemşi
 - Doküman şablonlarının doktor/hemşire modülünde doldurulup hastaya kaydı (docs.js entegrasyonu); kalan ~15 form içeriği
 - Yazdır: tek birleşik menü (sistem kapsamlı, konsolidasyon opsiyonel); PWA derinleştirme
 - Kalan raporların gerçek filtre+dışa aktar
+
+## MANTIK AKIŞI İNCELEMESİ — 2026-10-22 (gece)
+İnceleme ajanı tüm sistemi + diğer rol ekranlarını taradı. Erişim çatısı sağlam (sayfalar çift korumalı; protokol kilidi/dispatch guard'ları sağlam; admission salt-okunur doğru). Bulgular ve durum:
+- ✅ #1/#2 Ölü finans yetkileri: admin Kampanyalar→kampanya_create, Hizmet Fiyatları→fiyat_duzenle (sistem zaten tüm yetkilerle; yönetici artık audit ile girip görür). Smoke ile doğrulandı.
+- ✅ #3 Özel onay çıkmazı: istem ekranındaki hekim (orders) özel onay verebilir hale geldi.
+- ✅ #4 Maskeleme ihlali: vezne'de tüm hasta adları artık H.showNames() ile maskeli.
+- ✅ #5 Dönem kaçağı: GFK durum değişikliği dönem kapalıyken bloklu.
+- ✅ #6 Reprice yetkisi: sağ-tık yeniden fiyatlandırma fiyat_duzenle'ye bağlandı.
+- ✅ #7 Tanımsız ikon: ptBar 'tag' yerine 'key'.
+- ⚠️ #8 (karar bekliyor): yönetici dönem açar/kapar ama banko değiştiremez (vezne_banko yok). Kasıtlı görünüyor; sahibin teyidi.
+- Not: indirim/iade ONAY işlemleri dönem kilidinden bağımsız bırakıldı (onay = kasa işlemi değil). Teklif satırı ekle/çıkar vezne (admission) için serbest; yalnız reprice yetkiye bağlı.
