@@ -11736,3 +11736,24 @@ Object.assign(window.HMC_SOZLUK, {
 "Diyet Listesi": { "AZ": "Pəhriz siyahısı", "EN": "Diet list", "RU": "Список диет" },
 "Yeni diyet": { "AZ": "Yeni pəhriz", "EN": "New diet", "RU": "Новая диета" }
 });
+
+(function (A) { for (const k in A) if (!window.HMC_SOZLUK[k]) window.HMC_SOZLUK[k] = A[k]; })({   // 22.10 · muayene yapisal alanlari; yalniz eksik olanlar
+"Psikolojik durum": { "AZ": "Psixoloji vəziyyət", "EN": "Psychological state", "RU": "Психологическое состояние" },
+"Sakin": { "AZ": "Sakit", "EN": "Calm", "RU": "Спокоен" },
+"Üzgün": { "AZ": "Kədərli", "EN": "Sad", "RU": "Подавлен" },
+"Ajite": { "AZ": "Ajitə", "EN": "Agitated", "RU": "Возбуждён" },
+"Kaygılı": { "AZ": "Narahat", "EN": "Anxious", "RU": "Тревожен" },
+"Agresif": { "AZ": "Aqressiv", "EN": "Aggressive", "RU": "Агрессивен" },
+"Skor 0-10": { "AZ": "Bal 0-10", "EN": "Score 0-10", "RU": "Балл 0-10" },
+"İzlem ve plan · tedavi tipi": { "AZ": "İzləmə və plan · müalicə növü", "EN": "Follow-up and plan · treatment type", "RU": "Наблюдение и план · тип лечения" },
+"Ayaktan takip ve tedavi": { "AZ": "Ambulator izləmə və müalicə", "EN": "Outpatient follow-up and treatment", "RU": "Амбулаторное наблюдение и лечение" },
+"Yatarak takip ve tedavi": { "AZ": "Yataqlı izləmə və müalicə", "EN": "Inpatient follow-up and treatment", "RU": "Стационарное наблюдение и лечение" },
+"Ayaktan cerrahi girişim": { "AZ": "Ambulator cərrahi müdaxilə", "EN": "Outpatient surgical intervention", "RU": "Амбулаторное хирургическое вмешательство" },
+"Yatarak cerrahi girişim": { "AZ": "Yataqlı cərrahi müdaxilə", "EN": "Inpatient surgical intervention", "RU": "Стационарное хирургическое вмешательство" },
+"Rehabilitasyon": { "AZ": "Reabilitasiya", "EN": "Rehabilitation", "RU": "Реабилитация" },
+"Palyatif tedavi": { "AZ": "Palliativ müalicə", "EN": "Palliative treatment", "RU": "Паллиативное лечение" },
+"Kemoterapi": { "AZ": "Kimyaterapiya", "EN": "Chemotherapy", "RU": "Химиотерапия" },
+"Ameliyat planlanacak mı?": { "AZ": "Əməliyyat planlaşdırılacaq?", "EN": "Will surgery be planned?", "RU": "Планируется ли операция?" },
+"Kontrol önerildi": { "AZ": "Kontrol tövsiyə olundu", "EN": "Follow-up recommended", "RU": "Рекомендован контроль" },
+"Kontrol notu / tarihi": { "AZ": "Kontrol qeydi / tarixi", "EN": "Follow-up note / date", "RU": "Заметка / дата контроля" }
+});

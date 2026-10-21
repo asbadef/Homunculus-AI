@@ -451,6 +451,7 @@
   const newDoc = (p, type, o = {}) => { const d = Object.assign({ id:"doc" + (++seq), pid:p.id, type, at:H.nowFull(), by:me(), status:"taslak", sec:{}, addenda:[], savedAt:null, dirty:false }, o);
     TYPES[type].secs.forEach(([k]) => { if (d.sec[k] == null) d.sec[k] = ""; });
     if (TYPES[type].secs.some(([k]) => k === "fizik") && !d.vit) { const a = vitalAt(p); d.vit = Object.assign({}, p.v); d.vitSrc = a; d.vitEd = {}; }
+    if (type === "muayene" && !d.mua) d.mua = { tedavi:[] };
     H.data.docs.push(d); return d; };
 
   // Yeni izlem notunda son 24 saat hazır gelir (#8). Her bölümün sistemden gelen metni d.auto'da tutulur:
@@ -544,6 +545,23 @@
     const dxList = d.dx || [];
     const taniW = (edit && isDoc() && d.type !== "transfer") ? `<div class="dc-sec dc-tani"><div class="dc-sh"><b>Tanı (ICD)</b><span class="r"><button class="btn g sm" data-dc-dxadd>${H.icon("plus")}Tanı ekle</button></span></div>
       <div class="dc-dxw">${dxList.length ? dxList.map((x, i) => `<span class="dc-dxchip${x[3] ? " ana" : ""}"><b class="mono">${esc(x[0])}</b> ${esc(x[1])}${x[2] ? ` <small class="dc-dxtip">${esc(x[2])}</small>` : ""}${x[3] ? ` <small class="dc-dxana">Ana tanı</small>` : ""}<button data-dc-dxrm="${i}" title="Kaldır" aria-label="Kaldır">×</button></span>`).join("") : `<span class="mute" style="font-size:12px">Henüz tanı seçilmedi. “Tanı ekle” ile ICD listesinden arayıp seçin.</span>`}</div></div>` : "";
+    // Muayene yapısal alanları (referans ekran): psikolojik durum · ağrı · tedavi tipi · ameliyat planı · kontrol.
+    const M = d.mua || {};
+    const seg = (field, opts) => opts.map(o => `<button class="dc-seg${M[field] === o ? " on" : ""}" data-dc-mua="${field}" data-mv="${esc(o)}">${esc(o)}</button>`).join("");
+    const multi = (opts) => opts.map(o => `<button class="dc-seg${(M.tedavi || []).includes(o) ? " on" : ""}" data-dc-muat="${esc(o)}">${esc(o)}</button>`).join("");
+    const muaW = (edit && d.type === "muayene") ? `
+      <div class="dc-sec dc-mua"><div class="dc-sh"><b>Psikolojik durum</b></div>
+        <div class="dc-segs">${seg("psiko", ["Sakin", "Üzgün", "Ajite", "Kaygılı", "Agresif"])}</div>
+        <input class="dc-min" data-dc-muain="psikoNot" placeholder="Açıklama" value="${esc(M.psikoNot || "")}"></div>
+      <div class="dc-sec dc-mua"><div class="dc-sh"><b>Ağrı</b></div>
+        <div class="dc-segrow"><div class="dc-segs">${seg("agri", ["Var", "Yok"])}</div>
+          <input class="dc-min sm" type="number" min="0" max="10" data-dc-muain="agriSkor" placeholder="Skor 0-10" value="${esc(M.agriSkor || "")}">
+          <input class="dc-min" data-dc-muain="agriNot" placeholder="Açıklama" value="${esc(M.agriNot || "")}"></div></div>
+      <div class="dc-sec dc-mua"><div class="dc-sh"><b>İzlem ve plan · tedavi tipi</b></div>
+        <div class="dc-segs">${multi(["Ayaktan takip ve tedavi", "Yatarak takip ve tedavi", "Ayaktan cerrahi girişim", "Yatarak cerrahi girişim", "Rehabilitasyon", "Palyatif tedavi", "Kemoterapi"])}</div>
+        <div class="dc-segrow" style="margin-top:10px"><span class="dc-ml">Ameliyat planlanacak mı?</span><div class="dc-segs">${seg("ameliyat", ["Evet", "Hayır"])}</div></div>
+        <div class="dc-segrow" style="margin-top:10px"><label class="dc-chk"><input type="checkbox" data-dc-muac="kontrol" ${M.kontrol ? "checked" : ""}> Kontrol önerildi</label>
+          <input class="dc-min" data-dc-muain="kontrolNot" placeholder="Kontrol notu / tarihi" value="${esc(M.kontrolNot || "")}"></div></div>` : "";
     let foot = "";
     if (d.status === "muhur") {
       foot = `<div class="dc-seal">${H.icon("lock")}Mühürlendi · ${esc(short(d.sealedBy))} · ${esc(d.sealedAt)} <span>· değiştirilemez, yalnız ek not eklenir</span></div>
@@ -567,7 +585,7 @@
     } else if (d.status === "taslak") {
       foot = `<div class="dc-bar"><span class="dc-stat">${d.type === "hemsire" ? "Hemşire mühürleyince kesinleşir." : "Hekim mühürleyince kesinleşir."}</span></div>`;
     }
-    return `<div class="dc-ed">${head}${infos.join("")}${taniW}${body}${foot}</div>`;
+    return `<div class="dc-ed">${head}${infos.join("")}${taniW}${body}${muaW}${foot}</div>`;
   }
   // #9 · tek sayfa: başlık + iki sütunlu bölümler; 640px altında tek sütun
   function pageHtml(p, d) {
@@ -706,6 +724,9 @@
       const d = cur(); if (!d) return;
       if (T.closest("[data-dc-dxadd]")) { if (!canEdit(d)) return; openDxPicker(p, d, root, rerender); return; }
       const dxrm = T.closest("[data-dc-dxrm]"); if (dxrm) { if (!canEdit(d)) return; (d.dx || []).splice(+dxrm.dataset.dcDxrm, 1); markDirty(root, d); rerender(); return; }
+      const mua = T.closest("[data-dc-mua]"); if (mua) { if (!canEdit(d)) return; d.mua = d.mua || {}; const f = mua.dataset.dcMua; d.mua[f] = d.mua[f] === mua.dataset.mv ? "" : mua.dataset.mv; markDirty(root, d); rerender(); return; }
+      const muat = T.closest("[data-dc-muat]"); if (muat) { if (!canEdit(d)) return; d.mua = d.mua || {}; const arr = d.mua.tedavi = d.mua.tedavi || [], v = muat.dataset.dcMuat, i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); markDirty(root, d); rerender(); return; }
+      const muac = T.closest("[data-dc-muac]"); if (muac) { if (!canEdit(d)) return; d.mua = d.mua || {}; d.mua[muac.dataset.dcMuac] = muac.checked; markDirty(root, d); return; }
       if (T.closest("[data-dc-page]")) { ui(p.id).page = !ui(p.id).page; rerender(); return; }
       if (T.closest("[data-dc-send]")) { if (!canSend(d)) return; d.sentAt = H.nowFull();
         H.log(`${TYPES[d.type].name} hastane kaydına gönderildi`, `${bedNo(p)} · ${d.status}`); H.toast(tp("dc_sent_tpl", { d:tName(d.type), t:d.sentAt })); rerender(); return; }
@@ -742,6 +763,7 @@
     root.oninput = (e) => {
       const T = e.target, d = cur(); if (!d) return;
       if (T.matches("[data-dc-ta]")) { setSec(d, T.dataset.dcTa, T.value); if (T.dataset.dcTa !== "ek") markDirty(root, d); return; }
+      if (T.matches("[data-dc-muain]")) { d.mua = d.mua || {}; d.mua[T.dataset.dcMuain] = T.value; markDirty(root, d); return; }
       if (T.matches("[data-dc-v]")) { const k = T.dataset.dcV; d.vit[k] = T.value; d.vitEd = d.vitEd || {}; d.vitEd[k] = String(T.value) !== String(p.v[k]);
         const f = T.closest("[data-dc-vf]"); if (f) f.classList.toggle("ed", d.vitEd[k]); markDirty(root, d); }
     };

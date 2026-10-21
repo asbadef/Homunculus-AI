@@ -52,6 +52,20 @@
 .icd-oz input[type=checkbox], .amf-opts input[type=checkbox] { flex:none; width:16px; height:16px; margin:1px 0 0; cursor:pointer; }
 .icd-oz label:has(input:checked), .amf-opts label:has(input:checked) { border-color:var(--pri); background:color-mix(in srgb, var(--pri) 12%, var(--card)); }
 
+/* Muayene yapısal alanları (psikolojik durum · ağrı · tedavi tipi · ameliyat · kontrol) */
+.dc-mua { margin-top:4px; }
+.dc-segs { display:flex; flex-wrap:wrap; gap:6px; }
+.dc-seg { padding:7px 12px; border:1px solid var(--line2); border-radius:8px; background:var(--card); color:var(--ink); font:600 12.5px Figtree; cursor:pointer; transition:border-color .12s, background .12s; }
+.dc-seg:hover { border-color:var(--pri); }
+.dc-seg.on { background:var(--pri); color:#fff; border-color:var(--pri); }
+.dc-mua .dc-min { margin-top:8px; padding:8px 10px; border:1px solid var(--line2); border-radius:8px; background:var(--card); color:var(--ink); font:500 13px Figtree; width:100%; }
+.dc-mua .dc-min.sm { width:120px; }
+.dc-segrow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.dc-segrow .dc-min { margin-top:0; flex:1; min-width:150px; }
+.dc-ml { font:600 12.5px Figtree; color:var(--mute); }
+.dc-chk { display:inline-flex; align-items:center; gap:7px; font:600 12.5px Figtree; cursor:pointer; }
+.dc-chk input { width:16px; height:16px; cursor:pointer; }
+
 /* İstem ekranı (hasta sekmesi) */
 .ist-launch { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; }
 .ist-g h6 { margin:0 0 7px; font:700 10px Figtree; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); }
