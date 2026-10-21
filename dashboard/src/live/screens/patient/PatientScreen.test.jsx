@@ -401,7 +401,7 @@ describe("the patient screen", () => {
       expect(api.putPatientProfile).toHaveBeenCalledWith("S-001", { baselines: { heart_rate: { low: 100, high: 115 } } });
       expect(api.patientTrends.mock.calls.length).toBe(before + 2);
       expect(screen.queryByRole("dialog")).toBeNull();
-      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+      expect(toasts().getAllByText("REA-01 · 2: xəstənin norması yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək.").length).toBeGreaterThan(0);
     });
 
     it("clear every range from the box: an empty set is sent, the toast names the bed, the trends are read again", async () => {
@@ -523,7 +523,7 @@ describe("the patient screen", () => {
       await press(offer());                                                // S-002's own form, open
       const reads = api.patientTrends.mock.calls.length;
       await answer();                                                      // S-001's write lands now
-      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+      expect(toasts().getAllByText("REA-01 · 2: xəstənin norması yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək.").length).toBeGreaterThan(0);
       expect(api.patientTrends.mock.calls.length).toBe(reads);
       expect(screen.getByRole("dialog", { name: FORM })).toBeInTheDocument();
       expect(api.putPatientProfile).toHaveBeenCalledTimes(1);              // nothing was sent for S-002
@@ -554,7 +554,7 @@ describe("the patient screen", () => {
       const reads = api.patientTrends.mock.calls.length;
       await answer();
       expect(api.patientTrends.mock.calls.length).toBe(reads);
-      expect(toasts().getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+      expect(toasts().getAllByText("REA-01 · 2: xəstənin norması yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək.").length).toBeGreaterThan(0);
     });
 
     it("say they cannot be read, and since when, without raising an alert", async () => {

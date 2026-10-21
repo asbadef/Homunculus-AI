@@ -134,7 +134,7 @@ export function BaselineForm({ patient, bed, own, onClose, onSaved }) {
     try {
       await store.track(() => store.api.putPatientProfile(patient.patient_id, { baselines }));
       if (epoch !== store.epoch()) return;
-      const text = clearing ? t("patient.baselineClearedAll", { subject: bed }) : t("patient.baselineSaved");
+      const text = clearing ? t("patient.baselineClearedAll", { subject: bed }) : t("patient.baselineSaved", { subject: bed });
       done = { say: [text], reread: true, close: true };
     } catch (err) {
       if (err?.superseded || epoch !== store.epoch()) return;

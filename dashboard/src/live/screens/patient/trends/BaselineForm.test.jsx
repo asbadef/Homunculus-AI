@@ -345,7 +345,8 @@ describe("the patient's own normal", () => {
     emptyRow("heart_rate");
     await save();
     expect(screen.getAllByText("REA-01 · 2: xəstənin bütün aralıqları silindi; növbəti ölçmə onlarsız qiymətləndiriləcək.").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.")).toBeNull();
+    expect(screen.queryByText("REA-01 · 2: xəstənin norması yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək.")).toBeNull();
+    expect(document.body.textContent).not.toContain("yenidən qiymətləndirdi");      // neither path claims the engine re-evaluated
     expect(onSaved).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ").trim()).toBe("");
@@ -354,7 +355,8 @@ describe("the patient's own normal", () => {
   it("a save the engine took: the confirmation, the trends read again, the form closed — and no alert", async () => {
     const { onClose, onSaved } = await open({ own: HR });
     await save();
-    expect(screen.getAllByText("Xəstənin norması yadda saxlanıldı; mühərrik yenidən qiymətləndirdi.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("REA-01 · 2: xəstənin norması yadda saxlanıldı; növbəti ölçmə bu aralıqlarla qiymətləndiriləcək.").length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toContain("yenidən qiymətləndirdi");      // the next reading is judged with the ranges: the engine does not re-evaluate on a save
     expect(onSaved).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.queryAllByRole("alert").map((a) => a.textContent).join(" ").trim()).toBe("");
