@@ -4,13 +4,18 @@ Action-level permission resolution and grant helpers.
 Resolution (action_allowed): within a tenant, over active grants for the action —
 user-DENY > user-ALLOW > role-ALLOW; no match => False (fail-closed). Roles come from
 auth.access.roles_in_tenant, so the hospital boundary is enforced here.
+
+ensure_action_allowed enforces it on a request: 404 if not a member of the tenant,
+403 (+ audit "denied") if not permitted, audit "allowed" on success. No PHI in the trail.
 """
 from __future__ import annotations
 import uuid
 
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from homunculus import security_audit
 from homunculus.auth import access
 from homunculus.auth.models import User, UserRole
 from homunculus.permissions.models import PermissionEffect, PermissionGrant
@@ -37,6 +42,24 @@ async def action_allowed(db: AsyncSession, user: User, tenant_id: uuid.UUID, act
         elif g.role is not None and g.role in roles and g.effect == PermissionEffect.ALLOW.value:
             role_allow = True
     return bool(user_allow or role_allow)
+
+
+async def ensure_action_allowed(db: AsyncSession, user: User, tenant_id: uuid.UUID, action: str,
+                                *, resource_type: str, resource_id: object | None = None) -> None:
+    await access.ensure_member(db, user, tenant_id)  # üye değilse 404 (varlık sızdırılmaz)
+    if not await action_allowed(db, user, tenant_id, action):
+        await security_audit.record(
+            db, action=action, user_id=user.id, tenant_id=tenant_id,
+            resource_type=resource_type, resource_id=resource_id,
+            outcome="denied", detail={"action": action}, commit=True,
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail=f"Bu islem icin yetki yok: {action}")
+    await security_audit.record(
+        db, action=action, user_id=user.id, tenant_id=tenant_id,
+        resource_type=resource_type, resource_id=resource_id,
+        outcome="allowed", detail=None, commit=False,
+    )
 
 
 async def grant_role_permission(db: AsyncSession, *, tenant_id: uuid.UUID, role: UserRole,
