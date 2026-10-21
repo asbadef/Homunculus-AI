@@ -124,6 +124,12 @@
 .rc-add input, .rc-add select { padding:8px 10px; border-radius:8px; border:1px solid var(--line2); background:var(--card); color:var(--ink); font:500 13px Figtree; }
 .rc-add input[data-r="ad"] { flex:1; min-width:180px; }
 @media (max-width:720px){ .rc-head { grid-template-columns:1fr; } }
+/* Personel kartı (İK) */
+.pers-tabs { margin-bottom:14px; flex-wrap:wrap; }
+.pers-panel.icd-form { display:grid; grid-template-columns:1fr 1fr; gap:8px 18px; }
+.pers-panel .pers-dr { grid-column:1 / -1; border-top:1px solid var(--line2); margin-top:6px; padding-top:8px; }
+.pers-panel .icd-oz { grid-column:1 / -1; }
+@media (max-width:720px){ .pers-panel.icd-form { grid-template-columns:1fr; } }
 
 /* Hizmet katalog seçici (İstem modalı): sol kategori ağacı · orta aranabilir liste · sağ seçilenler
  * Ozan: ekran küçük kalıyordu → katalog modalı neredeyse tam ekran, yazılar büyük ve rahat okunur. */

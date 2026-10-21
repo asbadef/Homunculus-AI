@@ -171,14 +171,64 @@
   } });
 
   /* ================= İNSAN KAYNAKLARI (İK) ================= */
+  const IK_TIP = ["Doktor", "Hemşire", "İdari", "Teknik", "Laborant", "Radyoloji teknisyeni", "Temizlik", "Güvenlik"];
+  const IK_YETKI = ["Konsültasyon yapabilir", "Randevu verilebilir", "Web randevu ekranında görünsün", "Ameliyat personeli", "Çağrı merkezi personeli", "Danışman personel", "Vezne kasalar arası para giriş/çıkış", "İş yeri hekimi"];
+  const IK_MEDENI = ["Bekar", "Evli", "Belirtilmedi"];
+  const IK_EGITIM = ["Lise", "Ön lisans", "Lisans", "Yüksek lisans", "Doktora"];
+  const persAll = () => { const users = (H.data.users || []).filter(u => !u.temp).map(u => ({ name:u.name, u:u.u, title:u.title || "", rol:(H.data.roles[u.role] || { name:u.role }).name, units:u.units, active:u.active !== false, src:"user" }));
+    const pers = (H.data.personel || []).map(p => ({ name:(p.ad + " " + p.soyad).trim(), u:p.kimlik || "", title:p.unvan || "", rol:p.tip, units:p.bolum ? [p.bolum] : [], active:true, src:"personel", _p:p }));
+    return users.concat(pers); };
   H.register("ik", { title:() => H.t("m_ik"), perm:["admin_users", "summary"], render(root) {
-    const staff = (H.data.users || []).filter(u => !u.temp);
-    const rolAd = (r) => (H.data.roles[r] || { name:r }).name;
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim (tasarım)</p></div></div>
-      <div class="tw"><table class="t"><thead><tr><th>Ad</th><th>Unvan</th><th>Rol</th><th>Birimler</th><th>Durum</th></tr></thead><tbody>
-      ${staff.map(u => `<tr><td><b>${H.esc(u.name)}</b><div class="mute" style="font-size:11.5px">${H.esc(u.u)}</div></td><td class="adm-sub">${H.esc(u.title || "—")}</td><td>${H.esc(rolAd(u.role))}</td><td class="adm-sub">${(u.units === "*" ? ["Tüm birimler"] : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", ") || "—"}</td><td><span class="tag ${u.active === false ? "" : "ok"}">${u.active === false ? "Pasif" : "Aktif"}</span></td></tr>`).join("")}
+    const staff = persAll();
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim (tasarım)</p></div><div class="r"><button class="btn p" data-persnew>${I("plus")} Personel ekle</button></div></div>
+      <div class="tw"><table class="t"><thead><tr><th>Ad</th><th>Unvan</th><th>Rol / tip</th><th>Birimler</th><th>Durum</th></tr></thead><tbody>
+      ${staff.map(u => `<tr${u.src === "personel" ? ` class="row" data-persedit="${H.esc(u._p.id)}" style="cursor:pointer"` : ""}><td><b>${H.esc(u.name)}</b><div class="mute" style="font-size:11.5px">${H.esc(u.u)}</div></td><td class="adm-sub">${H.esc(u.title || "—")}</td><td>${H.esc(u.rol)}</td><td class="adm-sub">${(u.units === "*" ? ["Tüm birimler"] : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", ") || "—"}</td><td><span class="tag ${u.active ? "ok" : ""}">${u.active ? "Aktif" : "Pasif"}</span></td></tr>`).join("")}
       </tbody></table></div>
-      <p class="adm-sub" style="margin-top:8px">Personel kartı, SGK/izin, kadro ve eğitim kayıtları sonraki adımda genişletilecek. Kullanıcı/rol yönetimi Yönetim ekranındadır.</p>`;
+      <p class="adm-sub" style="margin-top:8px">Login hesapları Yönetim → Kullanıcılar'da; buradan HR personel kartı (doktor/hemşire/idari…) eklenir. SGK/izin/çalışma takvimi/zimmet kart içinde.</p>`;
+    root.onclick = (e) => {
+      if (e.target.closest("[data-persnew]")) return persForm(null);
+      const ed = e.target.closest("[data-persedit]"); if (ed) { const p = (H.data.personel || []).find(x => x.id === ed.dataset.persedit); if (p) persForm(p); }
+    };
+    function persForm(existing) {
+      const p = existing || {}, bols = H.data.bolumler || [];
+      const TABS = [["genel", "Genel"], ["kisisel", "Kişisel"], ["calisma", "Çalışma / takvim"], ["iletisim", "İletişim"], ["yetki", "Yetkiler"]];
+      const f = (k, lbl, html) => `<div class="fr"><label>${lbl}</label>${html}</div>`;
+      const inp = (k, ph) => `<input data-f="${k}" value="${H.esc(p[k] || "")}" placeholder="${ph || ""}">`;
+      const selOf = (k, list) => `<select data-f="${k}">${["", ...list].map(x => `<option${(p[k] || "") === x ? " selected" : ""}>${H.esc(x || "— seçiniz —")}</option>`).join("")}</select>`;
+      const panels = {
+        genel:`${f("ad", "Ad", inp("ad"))}${f("soyad", "Soyad", inp("soyad"))}${f("kimlik", "Kimlik / FİN", inp("kimlik"))}
+          ${f("tip", "Personel tipi", selOf("tip", IK_TIP))}${f("meslek", "Meslek", inp("meslek"))}${f("gorev", "Görev", inp("gorev"))}${f("unvan", "Ünvan", inp("unvan"))}
+          ${f("bolum", "Bölüm", `<input data-f="bolum" list="pers-bol" value="${H.esc(p.bolum || "")}" placeholder="Bölüm"><datalist id="pers-bol">${bols.map(b => `<option>${H.esc(b.ad)}</option>`).join("")}</datalist>`)}
+          ${f("brans", "Branş", inp("brans"))}${f("sube", "Şube", inp("sube"))}
+          <div class="pers-dr" style="margin-top:6px"><b style="font-size:12.5px">Doktor bilgileri</b>
+          ${f("diploma", "Diploma no", inp("diploma"))}${f("tescil", "Tescil no", inp("tescil"))}${f("muayeneSure", "Muayene süresi (dk)", inp("muayeneSure"))}${f("ereceteKod", "E-reçete kullanıcı kodu", inp("ereceteKod"))}</div>`,
+        kisisel:`${f("pasaport", "Pasaport no", inp("pasaport"))}${f("anne", "Anne adı", inp("anne"))}${f("baba", "Baba adı", inp("baba"))}
+          ${f("kan", "Kan grubu", selOf("kan", ["0 Rh(+)", "0 Rh(-)", "A Rh(+)", "A Rh(-)", "B Rh(+)", "B Rh(-)", "AB Rh(+)", "AB Rh(-)"]))}
+          ${f("medeni", "Medeni hal", selOf("medeni", IK_MEDENI))}${f("egitim", "Eğitim", selOf("egitim", IK_EGITIM))}${f("uyruk", "Uyruk", inp("uyruk"))}${f("dogum", "Doğum tarihi", `<input type="date" data-f="dogum" value="${H.esc(p.dogum || "")}">`)}`,
+        calisma:`${f("calismaGun", "Çalışma günleri", inp("calismaGun", "ör. Pzt-Cuma"))}${f("calismaSaat", "Çalışma saatleri", inp("calismaSaat", "ör. 08:00-17:00"))}
+          ${f("nobet", "Nöbet durumu", inp("nobet", "ör. ayda 4 nöbet"))}${f("sgk", "SGK / sosyal sigorta no", inp("sgk"))}${f("izin", "Yıllık izin (gün)", inp("izin"))}
+          ${f("ranSure", "Randevu çizelge süresi (dk)", inp("ranSure"))}${f("ranGunluk", "Günlük randevu sayısı", inp("ranGunluk"))}`,
+        iletisim:`${f("telefon", "Telefon", inp("telefon"))}${f("eposta", "E-posta", inp("eposta"))}${f("adres", "Adres", `<textarea data-f="adres" rows="2">${H.esc(p.adres || "")}</textarea>`)}${f("acilKisi", "Acil durumda aranacak", inp("acilKisi"))}`,
+        yetki:`<div class="icd-oz">${IK_YETKI.map(y => `<label><input type="checkbox" data-y="${H.esc(y)}"${(p.yetki || []).includes(y) ? " checked" : ""}> ${H.esc(y)}</label>`).join("")}</div>`,
+      };
+      const body = `<div class="pers-card"><div class="seg pers-tabs" data-pt>${TABS.map(([k, l], i) => `<button data-ptab="${k}" class="${i === 0 ? "on" : ""}">${l}</button>`).join("")}</div>
+        ${TABS.map(([k], i) => `<div class="icd-form pers-panel" data-panel="${k}"${i === 0 ? "" : " hidden"}>${panels[k]}</div>`).join("")}</div>`;
+      H.modal({ title:existing ? "Personel kartı düzenle" : "Yeni personel", wide:true, body,
+        actions:`${existing ? `<button class="btn g" data-persdel>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-perssave>Kaydet</button>`,
+        onMount(m) {
+          m.querySelector("[data-pt]").onclick = (e) => { const b = e.target.closest("[data-ptab]"); if (!b) return; m.querySelectorAll("[data-ptab]").forEach(x => x.classList.toggle("on", x === b)); m.querySelectorAll("[data-panel]").forEach(x => x.hidden = x.dataset.panel !== b.dataset.ptab); };
+          m.querySelector("[data-perssave]").onclick = () => {
+            const g = s => { const el = m.querySelector(`[data-f="${s}"]`); return el ? (el.value || "").trim() : ""; };
+            const ad = g("ad"); if (!ad) { H.toast("Ad gerekli.", "w"); return; }
+            const rec = {}; ["ad", "soyad", "kimlik", "tip", "meslek", "gorev", "unvan", "bolum", "brans", "sube", "diploma", "tescil", "muayeneSure", "ereceteKod", "pasaport", "anne", "baba", "kan", "medeni", "egitim", "uyruk", "dogum", "calismaGun", "calismaSaat", "nobet", "sgk", "izin", "ranSure", "ranGunluk", "telefon", "eposta", "adres", "acilKisi"].forEach(k => rec[k] = g(k));
+            rec.yetki = [...m.querySelectorAll("[data-y]:checked")].map(x => x.dataset.y);
+            H.data.personel = H.data.personel || [];
+            if (existing) Object.assign(p, rec); else H.data.personel.unshift(Object.assign({ id:"per" + Date.now() }, rec));
+            H.log(existing ? "Personel güncellendi" : "Personel eklendi", ad + " " + rec.soyad); H.closeModal(); H.toast("Kaydedildi: " + ad); H.go("ik");
+          };
+          const del = m.querySelector("[data-persdel]"); if (del) del.onclick = () => { if (!confirm("Bu personel silinsin mi?")) return; const i = (H.data.personel || []).findIndex(x => x.id === p.id); if (i >= 0) H.data.personel.splice(i, 1); H.closeModal(); H.toast("Silindi", "w"); H.go("ik"); };
+        } });
+    }
   } });
 
   /* ================= ALARMLAR ================= */
