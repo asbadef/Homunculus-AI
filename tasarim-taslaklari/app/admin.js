@@ -320,12 +320,12 @@
 
     function draw() {
       const temps = H.data.patients.filter(p => p.temp);
-      const tabs = [["hbys", "Gelen yatışlar", HBYS_Q.length], ["elle", "Elle kayıt"], ["eslesme", "Eşleşme bekleyenler", temps.length], ["transfer", "Transfer / taburcu"]];
+      const tabs = [["hbys", "Gelen yatışlar", HBYS_Q.length], ["ayaktan", "Ayaktan / poliklinik"], ["elle", "Elle kayıt"], ["eslesme", "Eşleşme bekleyenler", temps.length], ["transfer", "Transfer / taburcu"]];
       el.innerHTML = `<div class="ph"><div><h2>Hasta kabul</h2><p>Yatışlar normalde hastane kaydından gelir. Kayda ulaşılamazsa geçici kayıt açılır, sonra asıl kayıtla eşleştirilir.</p></div><div class="r">${hbysChip()}</div></div>
         ${can ? "" : `<div class="note i">${I("eye")} Görüntüleme yetkisiyle açtınız. Kayıt açma, yatak atama ve taburcu işlemleri kabul görevlisi ya da sorumlu hemşiredir.</div>`}
         <div class="tabs">${tabs.map(([k, l, n]) => `<span data-tab="${k}" class="${A.tab === k ? "on" : ""}">${l}${n ? ` <em>${n}</em>` : ""}</span>`).join("")}</div><div data-body></div>`;
       const body = el.querySelector("[data-body]");
-      ({ hbys:tabHbys, elle:tabElle, eslesme:tabMatch, transfer:tabTransfer })[A.tab](body);
+      ({ hbys:tabHbys, ayaktan:tabAyaktan, elle:tabElle, eslesme:tabMatch, transfer:tabTransfer })[A.tab](body);
     }
 
     el.addEventListener("click", e => {
@@ -439,6 +439,46 @@
         if (k === "noAllergy") { const i = box.querySelector('[data-f="allergy"]'); i.disabled = f.noAllergy; if (f.noAllergy) { i.value = ""; f.allergy = ""; } }
         if (k === "kvkk" || k === "unconscious") box.querySelector('[data-w="consent"]').classList.remove("adm-err");
       });
+    }
+
+    /* ---------- Ayaktan / poliklinik kayıt (hafif, yataksız) ---------- */
+    function tabAyaktan(body) {
+      bolumSeed(); htSeed();
+      const bols = H.data.bolumler || [], hekims = (H.data.users || []).filter(u => u.role === "hekim");
+      const free = ((H.unit("pol") || { beds:[] }).beds).filter(b => b.status === "bos");
+      body.innerHTML = `<div class="note i" style="margin-bottom:12px">${I("user")} Ayaktan (poliklinik) başvuru: kimlikle hafif kayıt açılır, bölümün muayene hizmeti otomatik eklenir ve hasta hekimin <b>Tüm Gelişler</b> listesine düşer. Yatak gerekmez.</div>
+        <div data-ayform><fieldset style="border:0;padding:0;margin:0;min-width:0"${can ? "" : " disabled"}>
+        <div class="g2">
+          <div class="box"><h5>${I("user")} Kimlik</h5>
+            ${fld("name", "Ad soyad", inp("name", "", 'placeholder="Ad soyad"'), 1)}
+            ${fld("fin", "FİN kod", inp("fin", "", 'maxlength="7" placeholder="7 karakter" style="text-transform:uppercase"'))}
+            ${fld("sex", "Cinsiyet", opts("sex", [["K", "Kadın"], ["E", "Erkek"]], "K"))}
+            ${fld("age", "Yaş", `<input data-f="age" type="number" min="0" class="adm-num" placeholder="yaş">`)}
+            ${fld("phone", "Telefon", `<div class="adm-row" style="flex-wrap:nowrap"><span class="tag mono">+994</span>${inp("phone", "", 'inputmode="tel" placeholder="50 123 45 67"')}</div>`)}
+          </div>
+          <div class="box"><h5>${I("clip")} Başvuru</h5>
+            ${fld("bolum", "Bölüm", `<input data-f="bolum" list="ay-bol" placeholder="Bölüm seçin"><datalist id="ay-bol">${bols.map(b => `<option>${esc(b.ad)}</option>`).join("")}</datalist>`, 1)}
+            ${fld("doktor", "Doktor", `<select data-f="doktor"><option value="">—</option>${hekims.map(u => `<option value="${esc(u.u)}">${esc(u.name)}</option>`).join("")}</select>`)}
+            ${fld("neden", "Geliş nedeni", inp("neden", "", 'placeholder="Şikayet / amaç"'))}
+            ${fld("kurum", "Kurum / sigorta", sel("kurum", KURUM, KURUM[0]))}
+            ${chk("sms", true, "SMS ile randevu/hatırlatma bilgilendirmesi")}
+          </div>
+        </div></fieldset></div>
+        <div class="formbar"><span class="adm-sub">${free.length} boş muayene odası</span><span class="spacer"></span><button class="btn p" data-ayok${can ? "" : " disabled"}>${I("ok")}Kayıt aç ve iş listesine gönder</button></div>`;
+      body.querySelector("[data-ayok]").onclick = () => {
+        const g = s => (body.querySelector(`[data-f="${s}"]`).value || "").trim();
+        const name = g("name"); if (!name) { H.toast("Ad soyad gerekli.", "e"); return; }
+        const bed = ((H.unit("pol") || { beds:[] }).beds).find(b => b.status === "bos");
+        if (!bed) { H.toast("Boş muayene odası yok; poliklinik dolu.", "e"); return; }
+        const bolum = g("bolum"), doktor = body.querySelector('[data-f="doktor"]').value, now = H.nowFull ? H.nowFull() : H.now();
+        const p = admit({ name, sex:g("sex") || "K", age:+g("age") || 0, ageGroup:"adult", dx:g("neden") || "Ayaktan başvuru", attending:doktor || null, blood:"Bilinmiyor",
+          meta:{ temp:true, encounter:"ayaktan", source:"ayaktan", proto:nextG(), fin:g("fin").toUpperCase(), bolum, kurum:body.querySelector('[data-f="kurum"]').value,
+            phone:g("phone") ? "+994 " + g("phone") : "", sms:!!body.querySelector('[data-f="sms"]').checked, consent:"alındı", admitType:"ayaktan", admittedAt:H.now(), admittedBy:(me() || {}).u || "—" } }, bed.id);
+        const tanim = (H.data.hizmetTanim || []).find(t => norm(t.bolum) === norm(bolum));
+        if (tanim) { H.data.orders = H.data.orders || []; H.data.orders.unshift({ id:"ord" + Date.now(), pid:p.id, cat:"Muayene", ad:tanim.hizmetAd, detay:[tanim.gelis, tanim.protokol].filter(Boolean).join(" · "), by:(me() || {}).name || "Kabul", at:now, durum:"İstendi" }); }
+        H.log("Ayaktan kayıt açıldı", name + " · " + bolum + (tanim ? " · " + tanim.hizmetAd : ""));
+        H.toast(name + " · ayaktan kayıt açıldı, iş listesine düştü"); H.go("gelisler", { enc:"ayaktan" });
+      };
     }
 
     function saveForm() {
