@@ -245,7 +245,7 @@
         <div class="fr"><label>Cerrah</label><select data-f="cerrah">${hekims.map(u => `<option>${esc(u.name)}</option>`).join("")}</select></div>
       </div>
       <label class="hc-ac" style="margin:4px 0 10px"><input type="checkbox" data-f="gunubirlik"> Günübirlik ameliyat</label>
-      <div class="fr"><label>Yapılacak ameliyat</label><input data-f="ad" placeholder="ör. Laparoskopik kolesistektomi"></div>
+      <div class="fr"><label>Yapılacak ameliyat</label><div class="amel-cb"><input data-f="ad" placeholder="Ameliyat ara (katalogdan)" autocomplete="off"><div class="amel-dd hidden" data-amel-dd></div></div></div>
       <div class="fg2">
         <div class="fr"><label>Anestezi tipi</label><select data-f="anes">${ANES.map(a => `<option>${esc(a)}</option>`).join("")}</select></div>
         <div class="fr"><label>Anestezi değerlendirmesi</label><select data-f="anesist"><option>İç anestezist</option><option>Dış anestezist</option><option>Gerekmez</option></select></div>
@@ -258,10 +258,20 @@
       actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>İsteme ekle</button>`,
       onMount(m) {
         const v = (s) => { const el = m.querySelector(`[data-f="${s}"]`); return el ? (el.type === "checkbox" ? el.checked : (el.value || "").trim()) : ""; };
+        // "Yapılacak ameliyat": sisteme yüklü ameliyat hizmetleri kataloğundan aranarak seçilir.
+        const AMEL = (H.HIZMET || []).filter(r => ["Ameliyat Hizmeti", "Ameliyathane Hizmeti"].includes(tipOf(r)));
+        const adEl = m.querySelector('[data-f="ad"]'), dd = m.querySelector("[data-amel-dd]");
+        adEl.oninput = () => { adEl.dataset.code = ""; const q = adEl.value.trim().toLowerCase(); if (q.length < 2) { dd.classList.add("hidden"); return; }
+          const hits = AMEL.filter(r => (r[1] && r[1].toLowerCase().includes(q)) || (r[2] && r[2].toLowerCase().includes(q)) || r[0].includes(q)).slice(0, 40);
+          dd.innerHTML = hits.length ? hits.map(r => `<div class="amel-opt" data-code="${esc(r[0])}"><b>${esc(hzName(r))}</b> <span class="mono adm-sub">${esc(r[0])}</span></div>`).join("") : `<div class="amel-opt mute">Eşleşen ameliyat yok</div>`;
+          dd.classList.remove("hidden"); };
+        dd.onclick = (e) => { const o = e.target.closest("[data-code]"); if (!o) return; const r = AMEL.find(x => x[0] === o.dataset.code); if (r) { adEl.value = hzName(r); adEl.dataset.code = r[0]; } dd.classList.add("hidden"); };
+        document.addEventListener("click", (e) => { if (!m.querySelector(".amel-cb").contains(e.target)) dd.classList.add("hidden"); });
         m.querySelector("[data-ok]").onclick = () => {
-          const ad = v("ad"); if (!ad) { H.toast("Yapılacak ameliyatı yazın.", "w"); return; }
+          const ad = v("ad"); if (!ad) { H.toast("Yapılacak ameliyatı seçin.", "w"); return; }
+          const kod = adEl.dataset.code;
           const opts = OPTS.filter(o => m.querySelector(`[data-opt="${o[0]}"]`).checked).map(o => o[1]);
-          const det = [v("acil"), v("gunubirlik") ? "Günübirlik" : `Yatış ${v("yatis")} gün`, +v("ybu") ? `YBÜ ${v("ybu")} gün` : "",
+          const det = [kod ? "Kod " + kod : "", v("acil"), v("gunubirlik") ? "Günübirlik" : `Yatış ${v("yatis")} gün`, +v("ybu") ? `YBÜ ${v("ybu")} gün` : "",
             v("bolum"), v("cerrah"), "Anestezi: " + v("anes"), v("anesist"), opts.join(" + "), v("onam") ? "Onam: " + v("onam") : "", v("not")].filter(Boolean).join(" · ");
           addOrder(p, { cat:"Ameliyat", ad, detay:det });
           H.toast("Ameliyat istemi eklendi"); H.closeModal(); rerender();

@@ -94,6 +94,13 @@
 .amf .fg2 { display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; }
 .amf-opts { display:grid; grid-template-columns:1fr 1fr; gap:6px 14px; }
 @media (max-width:720px){ .amf .fg2, .amf-opts { grid-template-columns:1fr; } }
+/* Ameliyat seçim kutusu (katalogdan aranır) */
+.amel-cb { position:relative; }
+.amel-dd { position:absolute; left:0; right:0; top:calc(100% + 2px); z-index:20; max-height:260px; overflow:auto; background:var(--card); border:1px solid var(--line2); border-radius:10px; box-shadow:var(--shadow); }
+.amel-opt { padding:9px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--line); }
+.amel-opt:last-child { border-bottom:0; }
+.amel-opt:hover { background:var(--card2); }
+.amel-opt.mute { color:var(--mute); cursor:default; }
 
 /* Hizmet katalog seçici (İstem modalı): sol kategori ağacı · orta aranabilir liste · sağ seçilenler
  * Ozan: ekran küçük kalıyordu → katalog modalı neredeyse tam ekran, yazılar büyük ve rahat okunur. */
