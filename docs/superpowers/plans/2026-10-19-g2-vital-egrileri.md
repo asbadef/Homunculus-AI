@@ -8,9 +8,9 @@
 
 **Tech Stack:** Python 3.12 and 3.14, FastAPI, SQLAlchemy/psycopg2 (Postgres) and sqlite3, pytest; React 18, Vite, Vitest + Testing Library (`fireEvent`; no user-event), Tailwind on the live token classes, inline SVG (no chart library).
 
-**Spec (authoritative):** `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. Where the code made the spec's letter impossible or unsafe, this plan departs from it; every departure is in the table below with its file and line, and is an open item for the user. **2026-10-20:** the user approved X1–X19 and chose explicit clearing for O4 — Task 14a and Task 14's clear; X21 was found while amending (X20 is kept for the thinning departure the Task 2 review found, which Task 17 adds from the controller's open-items list). **Second amendment, 2026-10-20:** Task 3b (the gateways refuse NaN/±inf), Task 4's two changes (non-finite readings skipped; the marks' read bounded by the window and flagged — X22), and Task 8's strings as the Task 8 quality review corrected them (lane commit `f082251`), mirrored in every later task that quotes them. **Third, 2026-10-20:** for the tasks the lanes have done, the plan now IS their code — Tasks 1–4 and 3b as `feat/g2v-be` has them (head `bd8afda`), Tasks 6–10 as `feat/g2v-dash` has them (head `339c3f2`), review follow-ups included (X23, X24); Task 11's card edits are rebased on the reviewed card and Task 12's box carries the lane's `Note`; Task 12's legend says MAP has no NEWS2 band, that ▲ is a first detection (O17) and when the marks' read stopped at its limit; Task 14a refuses non-finite bounds. **Fourth, 2026-10-20:** the backend lane's last commits mirrored (Tasks 4, 5 and 14a as `e933ca1` has them — X25) and the dashboard lane's Task 11 (`4ecbc11` — X26); Tasks 12–15 rebased on it; Task 12 settles the review's chart items — value labels at the nearest round step (d3's thresholds), no finer than the data is measured and never past the data, time labels anchored to the edge they would cross, MAP's hollow dots filled with the dialog's own ground, and every mark at an instant named in the readout. **Fifth, 2026-10-20:** Task 12 mirrored to the dashboard lane's `a877057` (X27; its geometry, chart and their tests now written whole); Task 13 rebuilt on it — the keyboard steps over instants (two readings at one instant are one stop), the axis, the readout and the table share `trendText.js`, a mark beside a reading carries its own time when that reads differently, and the dialog opens with focus on the pressed window option; Tasks 14–15 re-checked on it. **Sixth, 2026-10-20:** Task 13 mirrored to the dashboard lane's `372e781` (X28 — the keyboard chart an application — X29 — the table carries the legend's notes — X30 — a MAP read at another minute keeps its own time — and the review's minors); its files written whole; Tasks 14–17 re-checked against it, their anchors unchanged. **Seventh, 2026-10-20:** Task 14 mirrored to the dashboard lane's `432712e` (commits `56456a9`, `16e87ef`, `e9eab88`, `432712e`: X31 — the form is the patient's and the opening's it was opened for — X32 — what Save will do is said beside Save — X33 — a held submit takes focus to the first wrong field — X34 — the form notices a set that changed under it, the client half of O3 — and the review's minors); its form, test and box written whole; Task 15's sweep names the form by its title with the bed; Tasks 15–17 re-checked against it (one anchor changed: the sweep's dialog name). O12 is now visible — every save shows the toast that overclaims — and carries a recommendation. **Eighth, 2026-10-21:** the lanes are merged on this branch (`5c1758d`, `cfa903b`) and Tasks 15 and 16 are committed (`d8419e4`, `59e011a`, `e1549c7`, `649af49`); Tasks 15–16 now ARE that code — the sweep reads `aria-roledescription` and reaches the pressure dialog, its table, the truncation note and the form's clear sentence; `replay.py` refuses `--token`, times out and says why a refusal came; `rebased()` anchors on the latest event and deep-copies. The walk ran (Task 16, 2026-10-21): Step 7 line for line, Step 8 passed except the checks that need a person (O25). X20 joins the table; acceptance 2's max is a gen-2 GC pause, not a cold start; Task 17 now carries every departure, open item, the deploy order (O24) and the walk's outcome. **Ninth and last, 2026-10-21:** `6112c3e` folded into Task 16 (a token the server echoes in its detail is printed as `<token>`; an unreachable stack ends in one line, exit 1; two tests); Task 17 done as `d8eee36`, its placeholders filled (`<date>` 2026-10-21, `<range>` `ec8678a..6112c3e`); the plan's replay of Tasks 1–17 is the branch at `d8eee36` byte for byte — the 61 code files and the three docs.
+**Spec (authoritative):** `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`. Where the code made the spec's letter impossible or unsafe, this plan departs from it; every departure is in the table below with its file and line, and is an open item for the user. **2026-10-20:** the user approved X1–X19 and chose explicit clearing for O4 — Task 14a and Task 14's clear; X21 was found while amending (X20 is kept for the thinning departure the Task 2 review found, which Task 17 adds from the controller's open-items list). **Second amendment, 2026-10-20:** Task 3b (the gateways refuse NaN/±inf), Task 4's two changes (non-finite readings skipped; the marks' read bounded by the window and flagged — X22), and Task 8's strings as the Task 8 quality review corrected them (lane commit `f082251`), mirrored in every later task that quotes them. **Third, 2026-10-20:** for the tasks the lanes have done, the plan now IS their code — Tasks 1–4 and 3b as `feat/g2v-be` has them (head `bd8afda`), Tasks 6–10 as `feat/g2v-dash` has them (head `339c3f2`), review follow-ups included (X23, X24); Task 11's card edits are rebased on the reviewed card and Task 12's box carries the lane's `Note`; Task 12's legend says MAP has no NEWS2 band, that ▲ is a first detection (O17) and when the marks' read stopped at its limit; Task 14a refuses non-finite bounds. **Fourth, 2026-10-20:** the backend lane's last commits mirrored (Tasks 4, 5 and 14a as `e933ca1` has them — X25) and the dashboard lane's Task 11 (`4ecbc11` — X26); Tasks 12–15 rebased on it; Task 12 settles the review's chart items — value labels at the nearest round step (d3's thresholds), no finer than the data is measured and never past the data, time labels anchored to the edge they would cross, MAP's hollow dots filled with the dialog's own ground, and every mark at an instant named in the readout. **Fifth, 2026-10-20:** Task 12 mirrored to the dashboard lane's `a877057` (X27; its geometry, chart and their tests now written whole); Task 13 rebuilt on it — the keyboard steps over instants (two readings at one instant are one stop), the axis, the readout and the table share `trendText.js`, a mark beside a reading carries its own time when that reads differently, and the dialog opens with focus on the pressed window option; Tasks 14–15 re-checked on it. **Sixth, 2026-10-20:** Task 13 mirrored to the dashboard lane's `372e781` (X28 — the keyboard chart an application — X29 — the table carries the legend's notes — X30 — a MAP read at another minute keeps its own time — and the review's minors); its files written whole; Tasks 14–17 re-checked against it, their anchors unchanged. **Seventh, 2026-10-20:** Task 14 mirrored to the dashboard lane's `432712e` (commits `56456a9`, `16e87ef`, `e9eab88`, `432712e`: X31 — the form is the patient's and the opening's it was opened for — X32 — what Save will do is said beside Save — X33 — a held submit takes focus to the first wrong field — X34 — the form notices a set that changed under it, the client half of O3 — and the review's minors); its form, test and box written whole; Task 15's sweep names the form by its title with the bed; Tasks 15–17 re-checked against it (one anchor changed: the sweep's dialog name). O12 is now visible — every save shows the toast that overclaims — and carries a recommendation. **Eighth, 2026-10-21:** the lanes are merged on this branch (`5c1758d`, `cfa903b`) and Tasks 15 and 16 are committed (`d8419e4`, `59e011a`, `e1549c7`, `649af49`); Tasks 15–16 now ARE that code — the sweep reads `aria-roledescription` and reaches the pressure dialog, its table, the truncation note and the form's clear sentence; `replay.py` refuses `--token`, times out and says why a refusal came; `rebased()` anchors on the latest event and deep-copies. The walk ran (Task 16, 2026-10-21): Step 7 line for line, Step 8 passed except the checks that need a person (O25). X20 joins the table; acceptance 2's max is a gen-2 GC pause, not a cold start; Task 17 now carries every departure, open item, the deploy order (O24) and the walk's outcome. **Ninth and last, 2026-10-21:** `6112c3e` folded into Task 16 (a token the server echoes in its detail is printed as `<token>`; an unreachable stack ends in one line, exit 1; two tests); Task 17 done as `d8eee36`, its placeholders filled (`<date>` 2026-10-21, `<range>` `ec8678a..6112c3e`); the plan's replay of Tasks 1–17 is the branch at `d8eee36` byte for byte — the 61 code files and the three docs. **Then, 2026-10-21:** Task 17 gains `8578960`, the docs review's accuracy fixes (two guide Edits added: (d) §2, (e) §3.6's second question); the replay of Tasks 1–17 is the branch at `8578960` byte for byte.
 
-**How the numbers in this plan were obtained.** All seventeen tasks were implemented, in this order, in the worktree while the plan was written, and every red, every green and every count below is what was printed; the tree was then restored to `b6ed65d` and only this file was committed. The O4 amendment (Task 14a, Task 14's clear) and then the second amendment (Task 3b, Task 4, the review's strings) were implemented the same way on top of all seventeen on 2026-10-20, and every suite re-run; the third pass (the lanes' code mirrored into Tasks 1–4, 3b and 6–10, Tasks 11–17 rebased on it) was verified by replaying the whole plan into the worktree and running every suite on that replay; a count marked *derived* is the measured one minus a later task's measured delta. The verified implementation is kept beside the per-task files as `/c/tmp/homunculus-plans/g2v/reference.patch` — a cross-check, not the authority: build from the tasks. Since the eighth pass the code is on this branch: the plan's replay of Tasks 1–17 is byte for byte the branch at `d8eee36` (the 61 code files and the three docs, against the blobs git stores), and `reference.patch` is `git diff b6ed65d d8eee36 -- . ':!docs'`.
+**How the numbers in this plan were obtained.** All seventeen tasks were implemented, in this order, in the worktree while the plan was written, and every red, every green and every count below is what was printed; the tree was then restored to `b6ed65d` and only this file was committed. The O4 amendment (Task 14a, Task 14's clear) and then the second amendment (Task 3b, Task 4, the review's strings) were implemented the same way on top of all seventeen on 2026-10-20, and every suite re-run; the third pass (the lanes' code mirrored into Tasks 1–4, 3b and 6–10, Tasks 11–17 rebased on it) was verified by replaying the whole plan into the worktree and running every suite on that replay; a count marked *derived* is the measured one minus a later task's measured delta. The verified implementation is kept beside the per-task files as `/c/tmp/homunculus-plans/g2v/reference.patch` — a cross-check, not the authority: build from the tasks. Since the eighth pass the code is on this branch: the plan's replay of Tasks 1–17 is byte for byte the branch at `8578960` (the 61 code files and the three docs, against the blobs git stores), and `reference.patch` is `git diff b6ed65d 8578960 -- . ':!docs'` (the code is unchanged since `6112c3e`).
 
 ---
 
@@ -12517,14 +12517,14 @@ bed-3 6h heart_rate:0 | map:4(63.0 Δ1.0 N2 None) | sbp:0 | spo2:0 | temperature
 
 ### Task 17: The docs — the Turkish guide, the roadmap, the spec
 
-**Done on the branch** (commit `d8eee36`: the ten Edits below, verbatim, with `<date>` = 2026-10-21 and `<range>` = `ec8678a..6112c3e`, the plan's first commit to the last code commit; the three files keep the LF endings their index has); the blocks below are that text. One figure went stale as it landed: the roadmap row's backend counts are `649af49`'s (2139 / 650, 2781 / 8, Python 3.14 362) — `6112c3e`'s two tests make them 2141 / 650, 2783 / 8 and 364 (Task 15's gates, measured at `6112c3e`); a one-line roadmap follow-up, if wanted.
+**Done on the branch** (commits `d8eee36` — the Edits as planned, with `<date>` = 2026-10-21 and `<range>` = `ec8678a..6112c3e`, the plan's first commit to the last code commit — and `8578960`, the Task 17 docs review's accuracy fixes. The roadmap: the counts at `6112c3e` (2141 / 650, 2783 / 8, Python 3.14 364), the three audit stores, "Karar (VM'den önce)" naming X21/O12, O15, O17 and O21, the NVDA chart-name check (O25) in the user's list, the timings "29–50 ms (yedi koşu…)". The guide: every patient scored with the adult table and no sourced neonatal band, the save that re-judges no open alarm while the band and the pill update at once (X21), the changed-while-open notice with its poll caveat (O3), ▲ with O17, the frame and badge sentence, "motor seyreltir", the vault note's `capture: extract` at its first citation, O17 in §3.6's second answer — Edit (e) — and §2's go-live of Group 1 and Aşama A on 19 Oct 2026, build a2c1257c — Edit (d). The spec: O15 in §11, the 5 s half of acceptance 2, "X20–X34 found by reviews on 2026-10-20 and 21", the timing wording. The three files keep the LF endings their index has.) The blocks below are that text: these Edits produce the branch's three docs byte for byte.
 
 The guide says what the charts show and what they never claim, and where the thresholds come from; the roadmap records Group 2's first item; the spec's §11 records what planning found. The guide's text describes the system's behaviour and cites the vault's source note by its id only — no new clinical claim.
 
 **Files:**
 - Modify: `docs/homunculus-rehber-TR.md`, `docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md`, `docs/superpowers/specs/2026-10-19-g2-vital-egrileri-design.md`
 
-- [ ] **Step 1: The guide.** Four Edits in `docs/homunculus-rehber-TR.md` (§3.6, then a new §3.7).
+- [ ] **Step 1: The guide.** Five Edits in `docs/homunculus-rehber-TR.md` (§3.6, a new §3.7, then §2 and §3.6's second question).
 
 (a) Replace:
 
@@ -12587,21 +12587,26 @@ bunların hiçbirini hesaplamaz. Homunculus tanı koymaz; eğriler de koymaz.
   vücut sıcaklığı, laktat. Her kartta son değer, bir önceki ölçüme göre fark ("↑ +6"), ölçümün ne
   kadar önce yapıldığı (sunucunun saatiyle) ve son 24 saatin küçük grafiği.
 - **Çerçeve ve rozet motorun NEWS2 puanıdır:** o parametrenin son değeri 1–2 puan aldıysa amber,
-  3 puan aldıysa kırmızı çerçeve ve "NEWS2 +3" rozeti. MAP ve laktat NEWS2 parametresi değildir;
-  çerçeveleri yoktur.
+  3 puan aldıysa kırmızı çerçeve; ikisinde de puanı yazan rozet ("NEWS2 +2", "NEWS2 +3"). MAP ve
+  laktat NEWS2 parametresi değildir: laktat kartının çerçevesi yoktur, sistolik + MAP kartınınki
+  yalnız sistoliğin puanıdır.
 - **"Hastanın normalinde" hapı:** son değer bu hasta için girilmiş aralığın içindeyse. Hap çerçeveyi
   susturmaz, çerçeve de hapı gizlemez — iki olgu birlikte gösterilir.
 - Karta basınca büyük grafik: 6 saat / 24 saat / 3 gün; imlecin altındaki ölçümün saati, değeri
-  ve birimi; ▲ bulgunun bu hasta için ilk tespit edildiği an (bugün aynı türden bir bulgu kapanıp
-  yeniden açılsa da yeni ▲ çıkmaz — plandaki O17), ◆ kaydedilmiş antibiyotik dozu; aynı sayıların tablosu,
+  ve birimi; ▲ bulgunun bu hasta için ilk tespit edildiği an (motor bugün bir bulguyu kuralı
+  sustuktan sonra da açık tutuyor, bu yüzden aynı türden bir bulgu için ikinci ▲ çıkmaz — plandaki
+  O17), ◆ kaydedilmiş antibiyotik dozu; aynı sayıların tablosu,
   her ölçümün motorun verdiği NEWS2 puanıyla. Klavyeyle de gezilir; ekran okuyucu okumayı yalnız
   klavye hareketinde duyar.
 - Noktalar ölçümdür; aralarındaki kesikli çizgi yalnız aradaki zamandır, ölçüm değildir.
 
 **Bantlar nereden gelir**
 - NEWS2 bantları motorun puanlamada kullandığı tablonun kendisidir (`rules/news2.py`
-  `NEWS2_BANDS`); kaynağı kasadaki `news2-rcp-2017` notu. Yalnız yetişkin, SpO₂ için yalnız
-  Ölçek 1. Yenidoğan için bant yoktur — bu boşluk kasada kayıtlı, ekranda kapatılmaz.
+  `NEWS2_BANDS`); kaynağı kasadaki `news2-rcp-2017` notu (kasadaki kopya tam metin değil,
+  alıntıdır — `capture: extract`). Yalnız yetişkin, SpO₂ için yalnız Ölçek 1. Profilde yaş grubu
+  olmadığından motor her hastayı — bir yenidoğanı da — bu yetişkin tablosuyla puanlar; ekran da aynı
+  bantları ve çerçeveleri her hastada "NEWS2 · yetişkin" etiketiyle çizer. Yenidoğan için kaynaklı
+  bir bant yoktur — bu boşluk kasada kayıtlı, ekranda başka bir bantla kapatılmaz.
 - "Hastanın normali", `clinical.chart` yetkisi olan birinin bu hasta için girdiği aralıktır. NEWS2
   puanı alan bütün değerler bu aralıklardaysa bulgu gösterilir ama alarm vermez; aralığın dışına
   çıkan değer ayrıca bildirilir. Cihazın kendi alarm sınırları Aşama B'de
@@ -12611,7 +12616,7 @@ bunların hiçbirini hesaplamaz. Homunculus tanı koymaz; eğriler de koymaz.
 değerleri (geçmiş tutulmuyor, doğrulanmadı, hastaya bağlanmadı); MAP ve laktat için kişisel normal
 (motor tutmuyor).
 
-**Çok veri olunca:** bir kanalda pencerede 2 000'den çok ölçüm varsa grafik seyreltilir — eşit
+**Çok veri olunca:** bir kanalda pencerede 2 000'den çok ölçüm varsa motor seyreltir — eşit
 zaman dilimlerinin her birinde ilk, son, en düşük ve en yüksek ölçüm kalır, yani en kötü değer
 kaybolmaz — ve gösterge "‹kanal› seyreltildi: N noktadan M" der. Bugünkü aralıklı ölçümler bu sınıra
 yaklaşmaz.
@@ -12620,11 +12625,15 @@ yaklaşmaz.
 "Hastanın normali…" ile beş vital için alt ve üst sınır girer. İki sınır da gerekir; alt üstten
 büyük olamaz. Motor gönderilen kümeyi bütünüyle yeniler: boş bırakılan aralık silinir,
 komorbiditeler ve bazal SOFA değişmez. Form açıldığı hastanındır: başlığında yatak yazar, başka hastaya
-geçilince kapanır. Form açıkken aralıklar başka bir yerden değişirse form bunu söyler ve
-yeniden açılana dek Kaydet'i tutar. Kayıtlı bir aralık varken bütün satırlar boşaltılırsa form bunu
+geçilince kapanır. Form açıkken aralıklar başka bir yerden değişirse form bunu dakikalık
+yenilemede fark eder, söyler ve yeniden açılana dek Kaydet'i tutar; aynı dakika içindeki iki
+kayıttan sonraki yine sessizce kazanır (plandaki O3). Kayıtlı bir aralık varken bütün satırlar boşaltılırsa form bunu
 söyler ve Kaydet hepsini siler; silme denetim kaydına yazılır ve sunucu yeniden başlasa da geri
-gelmez. Kayıt anlık alarmları yeniden hesaplamaz: sonraki ölçüm yeni normale (ya da normalsiz)
-göre değerlendirilir. Bu aralık monitörün alarm sınırı değildir; motor bu hastanın
+gelmez. Kayıt açık alarmları yeniden hesaplamaz: eğrideki bant ve "Hastanın normalinde" hapı
+hemen yenilenir, alarmlar ise sonraki ölçüme dek eski hâlinde kalır; sonraki ölçüm yeni normale
+(ya da normalsiz) göre değerlendirilir. (Kayıt bildirimi bugün "motor yeniden değerlendirdi"
+diyor; bu kodun yaptığından fazlası, düzeltilmesi kullanıcı kararını bekliyor — plandaki
+X21/O12.) Bu aralık monitörün alarm sınırı değildir; motor bu hastanın
 değerlerini yorumlarken (4. bölümdeki hastaya göreli katman) bu normali kullanır. Reddedilen bir
 kayıt yatağın adıyla bildirimde söylenir; sunucu yanıt vermezse kaydın gerçekleşmiş olabileceği
 söylenir ve eğri yeniden okunur.
@@ -12632,6 +12641,34 @@ söylenir ve eğri yeniden okunur.
 ---
 
 ## 4. "Neden bunu kullanmıyoruz" köşesi
+```
+
+(d) §2, what is live (the docs review, `8578960`) — replace:
+
+```markdown
+alarmlar, hasta ekranı ve yönetim ekranı hazır (aşağıda 3.5 ve 3.6), hastanenin sunucusuna henüz
+çıkmadı. Gerçek cihaz bağlantısının durumu 4. basamakta.
+```
+
+with:
+
+```markdown
+alarmlar, hasta ekranı ve yönetim ekranı hazır (aşağıda 3.5 ve 3.6); Grup 1 ile Aşama A, 19 Ekim
+2026'da hastanenin sunucusunda canlıya alındı (yapı a2c1257c). Gerçek cihaz bağlantısının durumu
+4. basamakta.
+```
+
+(e) §3.6, the second question, with O17 (the docs review) — replace:
+
+```markdown
+2. **"Kapanan alarm nereye gitti?"** Panodan düştü. Motor yalnız açık alarmları gönderiyor ve
+```
+
+with:
+
+```markdown
+2. **"Kapanan alarm nereye gitti?"** Panodan düştü (bugün motor bir bulguyu kapatmıyor; alarm
+   panoda kalır — plandaki O17, kullanıcı kararı bekliyor). Motor yalnız açık alarmları gönderiyor ve
 ```
 
 - [ ] **Step 2: The roadmap.** Three Edits in `docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md`.
@@ -12657,7 +12694,7 @@ Prototipteki sabit sayılar (`core.js:499` `H.VITAL.al/nb`) kaynaksızdır, taş
 
 | # | İş | Durum |
 |---|---|---|
-| G2-01 | Vital eğrileri (hasta ekranı): altı kart, büyük grafik (6 sa / 24 sa / 3 gün, tablo), hastanın normali formu; `GET /patients/{id}/trends` · spec: [2026-10-19](../specs/2026-10-19-g2-vital-egrileri-design.md) · plan: [G2 dilim 1](2026-10-19-g2-vital-egrileri.md) | Kod ✅ 2026-10-21 · ec8678a..6112c3e. Backend 2139 / 650 (DB'siz), 2781 / 8 (Postgres), Python 3.14 dilimi 362; dashboard 89 dosya / 2385 test; 72 sa penceresi p50 ≈ 4 ms, en kötü ≈ 30 ms (bir gen-2 çöp toplama duraklaması, sunucu da öder; sınır 300 ms). Yerel yürüyüş 2026-10-21 (g2v yığını, sentetik hesaplar, başsız Chrome): adım 7 motorun beklenen yanıtıyla satır satır aynı; adım 8'in bütün maddeleri geçti — altı kart ve çerçeveler motorun puanı, tablo = grafik, form yazıyor ve bant çıkıyor, temizleme `restart api` sonrası da geri gelmiyor, 390 / 1440 px, dört dil, iki tema, ham anahtar yok. **Kullanıcıda:** NVDA (grafikte odak kipi, her harekette bir okuma, tablo gözatma kipinde satır eklenirken), MAP'in içi boş halkası noktadan ayrılıyor mu, 72 sa saat etiketleri `--fs` 1.12'de; göz kararları: değerler mürekkep renginde (X24), iki serili mini grafikte bant yok (X26), Gece'de 3 puan bandı 1–2 puan bandından sessiz, Gün'de diyalogdaki ızgara çizgileri silik; VM'de bakış (gerçek bir hasta, değerler yazılmaz). **Karar:** X21/O12 — kayıt bildirimi "mühərrik yenidən qiymətləndirdi" diyor, PUT yeniden hesaplamıyor; öneri: `baselineSaved` dört dilde `{subject}` ile düzeltilsin, motorun yeniden değerlendirmesi sonra. **Dağıtım:** köprüler hub'dan önce ya da birlikte (3b; köprü tamponlarında sonlu olmayan satır var mı bakılır); pano asla tek başına (temizleme 14a'yı ister). **Açık:** az/ru yerel okuma; plandaki X20–X34 ve O1–O3, O6–O12, O14, O15, O17–O25 (X1–X19 onaylandı, O4 çözüldü: 2026-10-20) |
+| G2-01 | Vital eğrileri (hasta ekranı): altı kart, büyük grafik (6 sa / 24 sa / 3 gün, tablo), hastanın normali formu; `GET /patients/{id}/trends` · spec: [2026-10-19](../specs/2026-10-19-g2-vital-egrileri-design.md) · plan: [G2 dilim 1](2026-10-19-g2-vital-egrileri.md) | Kod ✅ 2026-10-21 · ec8678a..6112c3e. Backend 2141 / 650 (DB'siz), 2783 / 8 (Postgres), Python 3.14 dilimi 364; dashboard 89 dosya / 2385 test; 72 sa penceresi p50 ≈ 4 ms, en kötü 29–50 ms (yedi koşu; bir gen-2 çöp toplama duraklaması, sunucu da öder; sınır 300 ms). Yerel yürüyüş 2026-10-21 (g2v yığını, sentetik hesaplar, başsız Chrome): adım 7 motorun beklenen yanıtıyla satır satır aynı; adım 8'in bütün maddeleri geçti — altı kart ve çerçeveler motorun puanı, tablo = grafik, form yazıyor ve bant çıkıyor, temizleme `restart api` sonrası da geri gelmiyor, 390 / 1440 px, dört dil, iki tema, ham anahtar yok. **Kullanıcıda:** NVDA (grafikte odak kipi, her harekette bir okuma, tablo gözatma kipinde satır eklenirken), NVDA'nın grafik adını sayı değişince yeniden okuyup okumadığı (O25), MAP'in içi boş halkası noktadan ayrılıyor mu, 72 sa saat etiketleri `--fs` 1.12'de; göz kararları: değerler mürekkep renginde (X24), iki serili mini grafikte bant yok (X26), Gece'de 3 puan bandı 1–2 puan bandından sessiz, Gün'de diyalogdaki ızgara çizgileri silik; VM'de bakış (gerçek bir hasta, değerler yazılmaz). **Karar (VM'den önce):** X21/O12 — kayıt bildirimi "mühərrik yenidən qiymətləndirdi" diyor, PUT yeniden hesaplamıyor; öneri: `baselineSaved` dört dilde `{subject}` ile düzeltilsin, motorun yeniden değerlendirmesi sonra; O15 — normali kim girer (bugün her clinical.chart sahibi, hemşire dahil); O17 — motorun alarmları kapanmıyor (bu dilimde mi, sonra mı); O21 — sesli okumada NEWS2 puanı. **Dağıtım:** köprüler hub'dan önce ya da birlikte (3b; köprü tamponlarında sonlu olmayan satır var mı bakılır); pano asla tek başına (temizleme 14a'yı ister). **Açık:** az/ru yerel okuma; plandaki X20–X34 ve O1–O3, O6–O12, O14, O15, O17–O25 (X1–X19 onaylandı, O4 çözüldü: 2026-10-20) |
 ```
 
 (c) Append to the two items the slice moved — replace:
@@ -12670,7 +12707,7 @@ Prototipteki sabit sayılar (`core.js:499` `H.VITAL.al/nb`) kaynaksızdır, taş
 with:
 
 ```markdown
-`rehydrate` (1 000 000) sınırı aşınca en yeni ack/first_seen/kayıtları kaybeder; `limit`'lerin üst sınırı da yok. → Grup 2, alarm kalitesi paneli yeniden bağlanmadan ÖNCE · **G2 dilim 1:** üç günlük de `records(since=)` aldı (yalnız eğri ucu kullanıyor); `/audit`, `/alarm-quality` ve `rehydrate` hâlâ en eski N.
+`rehydrate` (1 000 000) sınırı aşınca en yeni ack/first_seen/kayıtları kaybeder; `limit`'lerin üst sınırı da yok. → Grup 2, alarm kalitesi paneli yeniden bağlanmadan ÖNCE · **G2 dilim 1:** üç denetim deposu da (bellek, SQLite, Postgres) `records(since=)` aldı (yalnız eğri ucu kullanıyor); `/audit`, `/alarm-quality` ve `rehydrate` hâlâ en eski N.
 - Kapsam okunamadığında (UNKNOWN) `/patients` 200 + yanlış not dönüyor, `_require_patient` 404 + `scope_denied` yazıyor; her yerde 503 olmalı. → Grup 2 · **G2 dilim 1:** eğri ucu (`/patients/{id}/trends`) UNKNOWN'da 503 veriyor, `scope_denied` yazmıyor; öteki tek-hasta uçları hâlâ 404.
 ```
 
@@ -12685,7 +12722,8 @@ with:
 ```markdown
 - Acceptance on the VM will show sparse charts today; that is the data, not the chart.
 - **Found while planning (2026-10-19; `docs/superpowers/plans/2026-10-19-g2-vital-egrileri.md`,
-  "What the code says", X1–X34; X1–X19 approved by the user on 2026-10-20):** the plan departs from this spec where the code made its letter
+  "What the code says", X1–X34; X1–X19 approved by the user on 2026-10-20; the list also covers
+  X20–X34, found by reviews on 2026-10-20 and 21):** the plan departs from this spec where the code made its letter
   impossible or unsafe — 503 for an unreadable scope, checked before `_require_patient` (X1); bands
   as `low < v <= high` (X2); alarm marks from `first_seen`, one per episode, not from `alert` rows
   (X3); antibiotic marks only for doses ≥ 1 (X4); each point carries the engine's NEWS2 points
@@ -12723,6 +12761,7 @@ with:
 - Open for the user or later (plan O21–O23): the reading's NEWS2 points in the spoken readout
   (O21); two cursor stops in one minute with one value say the same words, so the second is
   silent (O22, Stage B); two tests past the size guide, to split when they next change (O23).
+- Who enters the patient's normal (plan O15): the form is offered to every `clinical.chart` holder — by default nurses, charge nurses and the rapid response team as well as physicians — so §1's "physician-entered" and §3.1's "hekim girdiyse" are, as built, "hastanın normali, girildiyse". Physician-only would be a permission change, not a text; the user's decision before the VM.
 - `errors.scopeUnreadable` speaks of the live stream, and the trends route's 503 carries the same
   key; no screen prints it there today (the box only marks the trends unreadable). Reword it
   route-neutrally, in four languages with a native reading, before any screen does (plan O9).
@@ -12733,9 +12772,11 @@ with:
   Task 14a's engine — an older engine refuses it ("profil boş olamaz") and its replay brings
   cleared ranges back after a restart. One branch carries both lanes, so one deploy does.
 - **Acceptance, as measured.** (1) Python 3.12, 3.14 and the dashboard green, counts in the plan.
-  (2) The 72 h window: p50 ≈ 4 ms over 100 requests; the max, ≈ 30 ms, is one gen-2 garbage
+  (2) The 72 h window: p50 ≈ 4 ms over 100 requests; the max, 29–50 ms over seven runs, is one gen-2 garbage
   collection inside a request — a pause the server also pays, not a cold start — well inside the
-  300 ms bound. (3, 4) Walked on 2026-10-21 on the local stack with synthetic accounts and
+  300 ms bound. The 5 s half (a synthetic 5 s series thins to ≤ 2 000 points) is met by
+  `test_a_desaturation_survives_three_days_of_five_second_data` (Task 2): 51 840 readings thin to
+  at most 2 000 and the one planted low reading stays. (3, 4) Walked on 2026-10-21 on the local stack with synthetic accounts and
   scenarios (a headless-Chrome driver): the engine's answers matched the plan line for line; six
   cards, frames equal to the engine's points, the table equal to the chart, the form writes and
   the band appears, a clear survives a restart; 390 / 1440 px, four languages, both themes, no raw
