@@ -15,6 +15,10 @@
 - Prototip kuralı korunur: sistem **tanı koymaz**, **öneri sunar**; ölçek/puan tabloları "hastane onayı gerekir" notuyla.
 - **Her özellik iki taraflı yapılır:** (1) kullanıcı ekranı (doktor/hemşire/kabul…), (2) **admin tarafı** — bu özelliğin tanımları ve **hangi rolde hangi yetki** olduğu. Bir ekran eklenince yetkisi de Roller & Yetkiler'de tanımlanır. Sahip hastanede kimin ne iş yaptığını biliyor; roller gerçek görevlere göre kurulur.
 - **Gerçek rol gözünden tasarım:** her akış "bu ekranı hasta / doktor / hemşire / kabul / vezne / yönetici gerçekte nasıl kullanır" diye düşünülerek yapılır.
+- **Kodlama kuralı:** tüm katalog kodları (hizmet, tanı dışı, bakım…) **bize ait ve sıralı** (00001…). Kaynak/rakip sistemin kodları kullanılmaz (ileride eşleştirme kolay olsun). ICD gibi uluslararası standart kodlar istisnadır.
+- **Azerbaycan sağlık sistemi:** Türkiye'ye özgü SUT (EK2A2/EK2B vb.) ve **e-Nabız** gösterilmez; Azerbaycan muadili **TABIB / e-tabib / e-səhiyyə** (tabib.gov.az) araştırılıp uygun yere konur. Fiyat/SUT alanları bu netleşince dolar.
+- **Her istem/belge ekranında standart:** **Şablonlar** (şablon ekle / kayıtlı şablonu kullan) ve **Tarihçe** (bu hastanın/alanın geçmiş kayıtları) butonları olacak.
+- **Diğer roller de planlanacak:** şu an doktor + admin ağırlıklı ilerliyoruz; sonra kabul, vezne, eczacı, laborant, radyoloji teknisyeni, biyomed, kalite ve hasta akışları eklenecek. Her rolün gerçek görevine göre.
 
 ## Rol → yetki haritası (ana hat, geliştikçe dolar)
 - **hekim (doktor):** muayene/epikriz yaz, tanı(ICD) seç, **istem** (lab/rad/hizmet), **reçete**, konsültasyon, kontrol. Kendi hastaları + birim kapsamı.
