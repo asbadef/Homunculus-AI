@@ -919,11 +919,14 @@
       actions:`${existing ? `<button class="btn g" data-htdelf>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-htsave>Kaydet</button>`,
       onMount(m) {
         const MUA = htMuayeneList(), hiz = m.querySelector('[data-f="hiz"]'), dd = m.querySelector("[data-ht-dd]");
-        hiz.oninput = () => { hiz.dataset.code = ""; const q = hiz.value.trim().toLowerCase(); if (q.length < 2) { dd.classList.add("hidden"); return; }
-          const hits = MUA.filter(r => (r[1] && r[1].toLowerCase().includes(q)) || (r[2] && r[2].toLowerCase().includes(q)) || r[0].includes(q)).slice(0, 40);
+        // Katalogdan seçim: alana tıklayınca (odak) liste açılır, yazınca süzülür.
+        const show = (q) => { const hits = (q ? MUA.filter(r => (r[1] && r[1].toLowerCase().includes(q)) || (r[2] && r[2].toLowerCase().includes(q)) || r[0].includes(q)) : MUA).slice(0, 60);
           dd.innerHTML = hits.length ? hits.map(r => `<div class="amel-opt" data-code="${esc(r[0])}"><b>${esc(htName(r))}</b> <span class="mono adm-sub">${esc(r[0])}</span></div>`).join("") : `<div class="amel-opt mute">Eşleşen hizmet yok</div>`;
           dd.classList.remove("hidden"); };
+        hiz.onfocus = () => show(hiz.value.trim().toLowerCase());
+        hiz.oninput = () => { hiz.dataset.code = ""; show(hiz.value.trim().toLowerCase()); };
         dd.onclick = (ev) => { const o = ev.target.closest("[data-code]"); if (!o) return; const r = MUA.find(x => x[0] === o.dataset.code); if (r) { hiz.value = htName(r); hiz.dataset.code = r[0]; } dd.classList.add("hidden"); };
+        document.addEventListener("click", (ev) => { if (!m.querySelector(".amel-cb").contains(ev.target)) dd.classList.add("hidden"); });
         m.querySelector("[data-htsave]").onclick = () => {
           const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
           const bolum = g("bolum"), hizmetAd = g("hiz"); if (!bolum || !hizmetAd) { H.toast("Bölüm ve muayene hizmeti gerekli.", "w"); return; }
