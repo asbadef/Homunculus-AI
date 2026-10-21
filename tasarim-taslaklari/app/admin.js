@@ -717,6 +717,7 @@
     ["secenekler", "Kayıt Seçenekleri", "admin_system", "list"],   // erişim kanalı/tercih sebebi/geliş-protokol tipi vb. açılır listeler; admin düzenler
     ["mesajkalip", "Mesaj Kalıpları (SMS)", "admin_system", "bell"],   // SMS/e-posta/uygulama bildirim kalıpları
     ["kampanya", "Kampanyalar", "admin_system", "zap"],   // yetkili rol oluşturur, vezne seçer (Fiyat Verme)
+    ["dokuman", "Doküman Tanımları", "admin_system", "file"],   // onam/muayene/rapor form kataloğu; her hastanede farklı set
     ["mobile", "Telefon modülleri", "admin_system", "tablet"],   // 27.09 · #193
     ["system", "Sistem ayarları", "admin_system", "gear"], ["audit", "Denetim kaydı", "audit", "file"],
     // 30.09 · İzleme ve işletim (Y1–Y7) · kod: dosyanın sonundaki "İZLEME VE İŞLETİM" bölümü
@@ -725,7 +726,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "kampanya", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "kampanya", "dokuman", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "mesajkalip", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -751,7 +752,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -1060,6 +1061,78 @@
       const ed = e.target.closest("[data-secedit]"); if (ed) { const i = +ed.dataset.secedit, v = prompt("Düzenle:", items[i]); if (v && v.trim()) { items[i] = v.trim(); draw(); } return; }
       const dl = e.target.closest("[data-secdel]"); if (dl) { const i = +dl.dataset.secdel; if (confirm("Bu seçenek silinsin mi?")) { items.splice(i, 1); H.toast("Silindi", "w"); draw(); } }
     };
+  }
+
+  /* ---------- Klinik Doküman Tanımları (admin ekle/sil; her hastanede farklı set) ---------- */
+  const DOK_ANA = ["Hemşire Dokümanları", "Hekim Dokümanları", "Kurum Dokümanları", "Hasta Dokümanları"];
+  const DOK_KAT = ["Muayene Formları", "Rapor ve Takip Formları", "Tanımlama Formları", "Takip Formları", "Tetkik İstem Formları"];
+  function dokSeed() {
+    if (H.data.dokumanlar) return;
+    const D = (ana, kat, ad) => ({ id:"dk" + (dokSeed._n = (dokSeed._n || 0) + 1), ana, kat, ad, aktif:true });
+    H.data.dokumanlar = [
+      D("Hekim Dokümanları", "Muayene Formları", "Ameliyat Raporu"),
+      D("Hekim Dokümanları", "Muayene Formları", "Detaylı Göz Muayene Bulguları"),
+      D("Hekim Dokümanları", "Muayene Formları", "Detaylı Fizik Muayene Bulguları"),
+      D("Hekim Dokümanları", "Muayene Formları", "Öykü ve Fizik Muayene Formu"),
+      D("Hekim Dokümanları", "Rapor ve Takip Formları", "Epikriz"),
+      D("Hekim Dokümanları", "Rapor ve Takip Formları", "İstirahat Raporu"),
+      D("Hekim Dokümanları", "Rapor ve Takip Formları", "Patoloji Raporu"),
+      D("Hemşire Dokümanları", "Tanımlama Formları", "Ağrı Formu"),
+      D("Hemşire Dokümanları", "Tanımlama Formları", "Glasgow Koma Skoru"),
+      D("Hemşire Dokümanları", "Takip Formları", "Yetişkin Hasta Erken Uyarı Değerlendirme Formu (17 yaş ve üzeri)"),
+      D("Hemşire Dokümanları", "Takip Formları", "Yenidoğan Hasta Erken Uyarı Değerlendirme Formu (0-30 gün)"),
+      D("Hemşire Dokümanları", "Takip Formları", "Bölümler Arası Hasta Transfer Formu"),
+      D("Hemşire Dokümanları", "Takip Formları", "Nöbet Teslim Formu"),
+      D("Hemşire Dokümanları", "Takip Formları", "Düşme Riski Değerlendirme Formu"),
+      D("Kurum Dokümanları", "Rapor ve Takip Formları", "ÖSS Taahhütnamesi"),
+      D("Kurum Dokümanları", "Rapor ve Takip Formları", "Bilgilendirme Formu"),
+      D("Hasta Dokümanları", "Rapor ve Takip Formları", "Cerrahi Güvenlik Kontrol Formu"),
+      D("Hasta Dokümanları", "Rapor ve Takip Formları", "Aydınlatılmış Onam Formu (Genel)"),
+      D("Hasta Dokümanları", "Tanımlama Formları", "KVKK Aydınlatma ve Açık Rıza Formu"),
+      D("Hasta Dokümanları", "Tanımlama Formları", "Hasta ve Ailesi Eğitim Formu - Genel"),
+    ];
+  }
+  function tabDokuman(body) {
+    dokSeed(); const ALL = H.data.dokumanlar, fa = AD.dokAna || "", fk = AD.dokKat || "";
+    body.innerHTML = `<div class="adm-bar"><input data-dq placeholder="Doküman ara" value="${esc(AD.dq || "")}">
+      <select data-dfana><option value="">Tüm doküman grupları</option>${DOK_ANA.map(a => `<option${fa === a ? " selected" : ""}>${esc(a)}</option>`).join("")}</select>
+      <select data-dfkat><option value="">Tüm kategoriler</option>${DOK_KAT.map(k => `<option${fk === k ? " selected" : ""}>${esc(k)}</option>`).join("")}</select>
+      <span class="spacer"></span><span class="adm-sub" data-dcount></span><button class="btn p" data-dnew>+ Yeni doküman</button></div>
+      <div data-dlist></div>
+      <p class="adm-sub" style="margin-top:10px">Her hastanede farklı form seti olabilir; onam, muayene, rapor ve takip formları buradan eklenir/silinir. Formun doldurulacağı alanlar (detaylı içerik) ilgili modülde (muayene/istem) adım adım zenginleştirilir.</p>`;
+    const list = body.querySelector("[data-dlist]");
+    const draw = () => {
+      const q = norm(AD.dq || ""), res = ALL.filter(x => (!fa || x.ana === fa) && (!fk || x.kat === fk) && (!q || norm(x.ad).includes(q)));
+      body.querySelector("[data-dcount]").textContent = res.length + " / " + ALL.length + " doküman";
+      list.innerHTML = res.length ? `<div class="tw"><table class="t"><thead><tr><th>Doküman</th><th>Grup</th><th>Kategori</th><th style="width:80px">Durum</th><th style="width:44px"></th></tr></thead><tbody>${res.map(x => `<tr data-dedit="${x.id}" style="cursor:pointer"><td><b>${esc(x.ad)}</b></td><td class="adm-sub">${esc(x.ana)}</td><td class="adm-sub">${esc(x.kat)}</td><td><span class="tag ${x.aktif ? "ok" : ""}">${x.aktif ? "Aktif" : "Pasif"}</span></td><td><button class="btn g sm" data-ddel="${x.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen doküman yok.</div>`;
+    };
+    draw();
+    body.querySelector("[data-dq]").addEventListener("input", e => { AD.dq = e.target.value; draw(); });
+    body.querySelector("[data-dfana]").addEventListener("change", e => { AD.dokAna = e.target.value; tabDokuman(body); });
+    body.querySelector("[data-dfkat]").addEventListener("change", e => { AD.dokKat = e.target.value; tabDokuman(body); });
+    body.querySelector("[data-dnew]").addEventListener("click", () => dokForm(null, draw));
+    list.addEventListener("click", e => {
+      const del = e.target.closest("[data-ddel]"); if (del) { e.stopPropagation(); if (confirm("Bu doküman silinsin mi?")) { const i = ALL.findIndex(x => x.id === del.dataset.ddel); if (i >= 0) ALL.splice(i, 1); H.toast("Silindi", "w"); draw(); } return; }
+      const tr = e.target.closest("[data-dedit]"); if (tr) { const row = ALL.find(x => x.id === tr.dataset.dedit); if (row) dokForm(row, draw); }
+    });
+  }
+  function dokForm(existing, redraw) {
+    dokSeed(); const ALL = H.data.dokumanlar, e = existing || { ana:"Hekim Dokümanları", kat:"Muayene Formları", aktif:true };
+    H.modal({ title:existing ? "Doküman düzenle" : "Yeni doküman tanımı",
+      body:`<div class="icd-form">
+        <div class="fr"><label>Doküman adı</label><input data-f="ad" value="${esc(e.ad || "")}" placeholder="ör. Aydınlatılmış Onam Formu"></div>
+        <div class="fr"><label>Doküman grubu</label><select data-f="ana">${DOK_ANA.map(a => `<option${e.ana === a ? " selected" : ""}>${esc(a)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Kategori</label><select data-f="kat">${DOK_KAT.map(k => `<option${e.kat === k ? " selected" : ""}>${esc(k)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Durum</label><label style="font-weight:400"><input type="checkbox" data-f="aktif"${e.aktif ? " checked" : ""}> Aktif</label></div>
+      </div>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+      onMount(m) { m.querySelector("[data-ok]").onclick = () => {
+        const g = (f) => { const el = m.querySelector(`[data-f="${f}"]`); return el.type === "checkbox" ? el.checked : el.value.trim(); };
+        const ad = g("ad"); if (!ad) { H.toast("Doküman adı gerekli.", "w"); return; }
+        if (existing) Object.assign(existing, { ad, ana:g("ana"), kat:g("kat"), aktif:g("aktif") });
+        else ALL.push({ id:"dk" + Date.now(), ad, ana:g("ana"), kat:g("kat"), aktif:g("aktif") });
+        H.log(existing ? "Doküman güncellendi" : "Doküman tanımlandı", ad); H.closeModal(); H.toast("Kaydedildi"); redraw && redraw();
+      }; } });
   }
 
   /* ---------- Kampanyalar (yetkili rol oluşturur, vezne seçer) ---------- */
