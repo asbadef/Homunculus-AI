@@ -58,6 +58,32 @@
     });
   } });
 
+  /* ================= TÜM GELİŞLER / İŞ LİSTESİ (doktorun ana giriş ekranı) ================= */
+  // Birimlerinizdeki tüm başvurular: hangi hasta ne amaçla gelmiş (başvuru tipi + tanı), lab/rad sayısı, "Göreve git".
+  H.register("gelisler", { title:() => H.t("m_gelisler"), perm:"beds", render(root, params = {}) {
+    const pts = H.myPatients(), enc = params.enc || "hepsi";
+    const filt = enc === "hepsi" ? pts : pts.filter(p => H.encOf(p) === enc);
+    const ordCount = (pid, cat) => (H.data.orders || []).filter(o => o.pid === pid && o.cat === cat).length;
+    const encTabs = [["hepsi", "Hepsi"], ["ayaktan", "Ayaktan"], ["gunubirlik", "Günübirlik"], ["yatan", "Yatan"], ["yogun", "Yoğun bakım"]];
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_gelisler")}</h2><p>${filt.length} hasta · birimlerinizdeki tüm başvurular</p></div></div>
+      <div class="seg" style="margin-bottom:12px" data-enctabs>${encTabs.map(([k, l]) => `<button data-enc="${k}" class="${enc === k ? "on" : ""}">${l}${k !== "hepsi" ? ` (${pts.filter(p => H.encOf(p) === k).length})` : ""}</button>`).join("")}</div>
+      <div class="tw"><table class="t"><thead><tr><th>Hasta</th><th style="width:110px">Başvuru</th><th>Tanı / amaç</th><th style="width:60px">Lab</th><th style="width:60px">Rad</th><th>Birim</th><th>Hekim</th><th style="width:110px"></th></tr></thead><tbody>
+      ${filt.length ? filt.map(p => { const b = H.bed(p.bed), e = H.encOf(p), ei = H.ENC[e] || {}, u = b && H.unit(b.unitId), att = H.userBy(p.attending);
+        return `<tr class="row" data-pid="${p.id}"><td><b>${H.esc(H.showNames() ? p.name : (b ? b.no : "—"))}</b><div class="mute" style="font-size:11.5px">${H.ageText(p)} ${p.sex} · ${b ? H.esc(b.no) : ""}</div></td>
+          <td><span class="tag">${H.esc(ei.label || e)}</span></td>
+          <td>${H.esc(p.dx || "")} ${p.icd ? `<span class="mono mute">${H.esc(p.icd)}</span>` : ""}</td>
+          <td class="n">${ordCount(p.id, "Laboratuvar")}</td><td class="n">${ordCount(p.id, "Radyoloji")}</td>
+          <td class="mute" style="font-size:12px">${u ? H.esc(u.tr) : "—"}</td><td class="mute" style="font-size:12px">${H.esc(att ? att.name : "—")}</td>
+          <td><button class="btn sm p" data-goto="${p.id}">${I("link")}Göreve git</button></td></tr>`; }).join("")
+        : `<tr><td colspan="8" class="mute" style="padding:20px;text-align:center">Bu grupta hasta yok.</td></tr>`}
+      </tbody></table></div>`;
+    root.onclick = (e) => {
+      const en = e.target.closest("[data-enc]"); if (en) return H.go("gelisler", { enc:en.dataset.enc });
+      const g = e.target.closest("[data-goto]"); if (g) return H.can("patient") ? H.go("patient", { pid:g.dataset.goto, tab:"ozet" }) : H.toast("Hasta ekranına erişim yetkiniz yok.", "w");
+      const pc = e.target.closest("[data-pid]"); if (pc) return H.can("patient") ? H.go("patient", { pid:pc.dataset.pid, tab:"ozet" }) : H.toast("Hasta ekranına erişim yetkiniz yok.", "w");
+    };
+  } });
+
   /* ================= ALARMLAR ================= */
   const STEPS = ["3. dk · sorumlu hemşire", "5. dk · hekim", "10. dk · hızlı yanıt"];
   const SEVC = { crit:"var(--crit)", high:"var(--high)", mid:"var(--mid)", low:"var(--low)" };

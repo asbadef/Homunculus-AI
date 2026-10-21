@@ -72,6 +72,7 @@
     hero_title:{ AZ:"Hər çarpayı, hər növbə — bir baxışda.", TR:"Her yatak, her nöbet — tek bakışta.", RU:"Каждая койка, каждая смена — на одном экране.", EN:"Every bed, every shift — at a glance." },
     hero_sub:{ AZ:"Cihazlardan gələn məlumatı toplayır, pisləşməni erkən göstərir, doğru komandanı çağırır. Qərarı həkim verir.", TR:"Cihazlardan gelen veriyi toplar, kötüleşmeyi erken gösterir, doğru ekibi çağırır. Kararı hekim verir.", RU:"Собирает данные с приборов, рано показывает ухудшение, вызывает нужную команду. Решение за врачом.", EN:"Collects device data, surfaces deterioration early and calls the right team. The physician decides." },
     m_beds:{ AZ:"Çarpayılar", TR:"Yataklar", RU:"Койки", EN:"Beds" },
+    m_gelisler:{ AZ:"Bütün gəlişlər", TR:"Tüm Gelişler", RU:"Все обращения", EN:"All visits" },
     m_tasks:{ AZ:"Tapşırıqlar", TR:"Görevlerim", RU:"Задачи", EN:"My tasks" },
     m_bedside:{ AZ:"Ölçmə", TR:"Yatak başı", RU:"У койки", EN:"Bedside" },
     m_alarms:{ AZ:"Siqnallar", TR:"Alarmlar", RU:"Тревоги", EN:"Alarms" },
