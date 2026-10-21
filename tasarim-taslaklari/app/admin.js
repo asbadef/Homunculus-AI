@@ -660,6 +660,7 @@
     ["integrations", "Entegrasyonlar", "admin_integrations", "plug"], ["camera", "Kamera bağlantısı", "admin_camera", "tv"], ["notify", "Bildirim kuralları", "admin_system", "bell"],
     ["careCat", { toString:() => H.t("adm_cc_tab") }, "admin_system", "list"],   // 24.09 · bakım kataloğu (etiket dile göre)
     ["icdliste", "Tanı Listesi (ICD)", "admin_system", "list"],   // ICD-10 tanı kataloğu (ara + ekle); doktor muayenede seçer
+    ["diyetliste", "Diyet Listesi", "admin_system", "list"],   // diyet listesi + öğün giriş saatleri; doktor diyet isteminde seçer
     ["mobile", "Telefon modülleri", "admin_system", "tablet"],   // 27.09 · #193
     ["system", "Sistem ayarları", "admin_system", "gear"], ["audit", "Denetim kaydı", "audit", "file"],
     // 30.09 · İzleme ve işletim (Y1–Y7) · kod: dosyanın sonundaki "İZLEME VE İŞLETİM" bölümü
@@ -668,7 +669,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -694,7 +695,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -770,6 +771,56 @@
           const i = ALL.findIndex(x => x[0] === e.kod); if (i >= 0) ALL.splice(i, 1); delete H.ICDMETA[e.kod];
           H.log("ICD tanı silindi", e.kod); H.closeModal(); H.toast("Tanı silindi", "w"); redraw();
         };
+      } });
+  }
+
+  /* ---------- Diyet Listesi (öğün giriş saatleri + diyet adları) ---------- */
+  const DIET_MEALS = ["Kahvaltı", "Öğle", "Akşam", "Ara öğün", "Ek öğün"];
+  function tabDiet(body) {
+    const ALL = (H.DIYET = H.DIYET || []);
+    H.data.dietCutoff = H.data.dietCutoff || Object.assign({}, H.DIYET_CUTOFF || {});
+    body.innerHTML = `<h5 style="margin:4px 0 8px">Öğün giriş saatleri (mutfak için son saat)</h5>
+      <div class="diet-cuts">${DIET_MEALS.map(mm => `<label>${esc(mm)}<input type="time" data-cut="${esc(mm)}" value="${esc(H.data.dietCutoff[mm] || "")}"></label>`).join("")}</div>
+      <p class="adm-sub">Bir öğünün diyeti bu saatten sonra girilirse sistem doktoru uyarır (öğün bir sonraki güne geçebilir). Boş = sınır yok. Örn. öğle 10:00, akşam 14:00.</p>
+      <div class="adm-bar" style="margin-top:14px"><input data-dq placeholder="Diyet adı ara" value="${esc(AD.dq || "")}"><span class="spacer"></span><span class="adm-sub" data-dcount></span><button class="btn p" data-dnew>+ Yeni diyet</button></div>
+      <div data-dlist></div>
+      <p class="adm-sub" style="margin-top:10px">Diyet listesi. Doktor diyet istemi yazarken bu listeden seçer. Kodlar kurumumuza aittir (D001…).</p>`;
+    const list = body.querySelector("[data-dlist]");
+    const draw = () => {
+      const q = norm(AD.dq || "");
+      const res = q ? ALL.filter(x => norm(x[0]).includes(q) || norm(x[1]).includes(q)) : ALL;
+      const shown = res.slice(0, 300);
+      body.querySelector("[data-dcount]").textContent = ALL.length.toLocaleString("tr") + " diyet";
+      list.innerHTML = `<div class="adm-sub" style="margin:6px 0">${res.length.toLocaleString("tr")} sonuç${res.length > 300 ? " · ilk 300 (aramayı daraltın)" : ""}</div>
+        ${shown.length ? `<div class="tw"><table class="t"><thead><tr><th style="width:90px">Kod</th><th>Diyet adı</th><th style="width:44px"></th></tr></thead><tbody>${shown.map(x => `<tr data-dedit="${esc(x[0])}" style="cursor:pointer"><td class="mono">${esc(x[0])}</td><td>${esc(x[1])}</td><td><button class="btn g sm" data-ddel="${esc(x[0])}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen diyet yok.</div>`}`;
+    };
+    draw();
+    body.querySelectorAll("[data-cut]").forEach(inp => inp.onchange = () => { H.data.dietCutoff[inp.dataset.cut] = inp.value; H.log("Diyet öğün saati güncellendi", inp.dataset.cut + " · " + (inp.value || "sınırsız")); H.toast("Saat güncellendi: " + inp.dataset.cut); });
+    body.querySelector("[data-dq]").addEventListener("input", e => { AD.dq = e.target.value; draw(); });
+    body.querySelector("[data-dnew]").addEventListener("click", () => dietForm(null, draw));
+    list.addEventListener("click", e => {
+      const del = e.target.closest("[data-ddel]"); if (del) { e.stopPropagation(); if (confirm("Bu diyet silinsin mi?")) { const i = ALL.findIndex(x => x[0] === del.dataset.ddel); if (i >= 0) ALL.splice(i, 1); H.log("Diyet silindi", del.dataset.ddel); H.toast("Diyet silindi", "w"); draw(); } return; }
+      const tr = e.target.closest("[data-dedit]"); if (tr) { const row = ALL.find(x => x[0] === tr.dataset.dedit); if (row) dietForm({ kod:row[0], ad:row[1] }, draw); }
+    });
+  }
+  function dietForm(existing, redraw) {
+    const ALL = (H.DIYET = H.DIYET || []);
+    const e = existing || {};
+    H.modal({ title:existing ? "Diyet düzenle" : "Yeni diyet",
+      body:`<div class="icd-form"><div class="fr"><label>Kodu</label><input data-f="kod" value="${esc(e.kod || "")}" placeholder="boş = otomatik (D…)"${existing ? " readonly" : ""}></div>
+        <div class="fr"><label>Diyet adı</label><input data-f="ad" value="${esc(e.ad || "")}" placeholder="ör. R3 Normal Tuzsuz"></div></div>`,
+      actions:`${existing ? `<button class="btn g" data-ddelf>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-dsave>Kaydet</button>`,
+      onMount(m) {
+        m.querySelector("[data-dsave]").onclick = () => {
+          const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
+          let kod = g("kod"); const ad = g("ad");
+          if (!ad) { H.toast("Diyet adı gerekli.", "w"); return; }
+          if (!kod) { let n = 1; while (ALL.some(x => x[0] === "D" + String(n).padStart(3, "0"))) n++; kod = "D" + String(n).padStart(3, "0"); }
+          const idx = ALL.findIndex(x => x[0] === kod);
+          if (idx >= 0) ALL[idx] = [kod, ad]; else ALL.unshift([kod, ad]);
+          H.log(existing ? "Diyet güncellendi" : "Diyet eklendi", kod + " · " + ad); H.closeModal(); H.toast("Kaydedildi: " + kod); AD.dq = ad; redraw();
+        };
+        const del = m.querySelector("[data-ddelf]"); if (del) del.onclick = () => { if (!confirm("Bu diyet silinsin mi?")) return; const i = ALL.findIndex(x => x[0] === e.kod); if (i >= 0) ALL.splice(i, 1); H.log("Diyet silindi", e.kod); H.closeModal(); H.toast("Diyet silindi", "w"); redraw(); };
       } });
   }
 

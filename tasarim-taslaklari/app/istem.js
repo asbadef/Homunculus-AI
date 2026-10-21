@@ -178,33 +178,47 @@
   }
 
   /* ---------- Diyet istemi (öğün bazlı) ---------- */
+  // Diyet adları listesi: tercihen kurum listesi (H.DIYET), yoksa kısa yedek.
+  const dietList = () => (H.DIYET && H.DIYET.length ? H.DIYET.map(r => r[1]) : DIET);
+  const cutoff = () => (H.data.dietCutoff || H.DIYET_CUTOFF || {});
+  // Öğün için son giriş saati geçti mi? (mutfak hazırlığı). "" → sınır yok.
+  const mealLate = (meal) => { const c = cutoff()[meal]; if (!c) return false; const n = new Date(), [hh, mm] = c.split(":").map(Number); return (n.getHours() * 60 + n.getMinutes()) > (hh * 60 + mm); };
   function openDiyet(p, rerender) {
     const MEALS = ["Kahvaltı", "Öğle", "Akşam", "Ara öğün", "Ek öğün"];
     const today = new Date().toISOString().slice(0, 10);
+    const opts = `<option value="">— seçilmedi —</option>${dietList().map(d => `<option>${esc(d)}</option>`).join("")}`;
     const body = `<div class="dyt">
       <div class="fr"><label>Diyet başlangıcı</label><input type="date" data-f="tarih" value="${today}"></div>
-      <div class="tw"><table class="t"><thead><tr><th style="width:110px">Öğün</th><th>Diyet tipi</th><th>Not</th><th style="width:88px">Porsiyon</th><th style="width:96px">Refakatçi</th></tr></thead><tbody>
-      ${MEALS.map((mm, i) => `<tr><td><b>${esc(mm)}</b></td>
-        <td><select data-diet="${i}"><option value="">— seçilmedi —</option>${DIET.map(d => `<option>${esc(d)}</option>`).join("")}</select></td>
+      <div class="tw"><table class="t"><thead><tr><th style="width:132px">Öğün</th><th>Hasta diyeti</th><th style="width:150px">Not</th><th style="width:76px">Porsiyon</th><th style="width:62px">Refakatçi</th><th>Refakatçi diyeti</th></tr></thead><tbody>
+      ${MEALS.map((mm, i) => { const late = mealLate(mm), c = cutoff()[mm];
+        return `<tr><td><b>${esc(mm)}</b>${c ? `<div class="dyt-cut ${late ? "late" : ""}">son ${esc(c)}${late ? " · geçti" : ""}</div>` : ""}</td>
+        <td><select data-diet="${i}">${opts}</select></td>
         <td><input data-dnot="${i}" placeholder="Not"></td>
-        <td><input type="number" data-dpor="${i}" value="1" min="0" style="width:72px"></td>
-        <td><label class="hc-ac"><input type="checkbox" data-dref="${i}"> Var</label></td></tr>`).join("")}
+        <td><input type="number" data-dpor="${i}" value="1" min="0" style="width:62px"></td>
+        <td style="text-align:center"><input type="checkbox" data-dref="${i}"></td>
+        <td><select data-drefd="${i}" disabled>${opts}</select></td></tr>`; }).join("")}
       </tbody></table></div>
-      <p class="adm-sub" style="margin-top:6px">Diyet tipi seçili öğünler istemle mutfağa iletilir (tasarım).</p></div>`;
+      <p class="adm-sub" style="margin-top:6px">Diyet tipi seçili öğünler istemle mutfağa iletilir. Son saati geçen öğün bir sonraki güne geçebilir (tasarım).</p></div>`;
     H.modal({ title:"Diyet istemi", wide:true, body,
       actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>İsteme ekle</button>`,
       onMount(m) {
+        // Refakatçi işaretlenince refakatçi diyeti seçimi açılır.
+        m.querySelectorAll("[data-dref]").forEach(cb => cb.onchange = () => { const d = m.querySelector(`[data-drefd="${cb.dataset.dref}"]`); d.disabled = !cb.checked; if (!cb.checked) d.value = ""; });
         m.querySelector("[data-ok]").onclick = () => {
           const tarih = m.querySelector("[data-f='tarih']").value || today;
+          let lateHit = false;
           const picked = MEALS.map((mm, i) => {
             const diet = m.querySelector(`[data-diet="${i}"]`).value;
             if (!diet) return null;
+            if (mealLate(mm)) lateHit = true;
             const not = m.querySelector(`[data-dnot="${i}"]`).value.trim();
             const por = m.querySelector(`[data-dpor="${i}"]`).value;
             const ref = m.querySelector(`[data-dref="${i}"]`).checked;
-            return `${mm}: ${diet}${por ? " ×" + por : ""}${ref ? " · refakatçi" : ""}${not ? " · " + not : ""}`;
+            const refd = m.querySelector(`[data-drefd="${i}"]`).value;
+            return `${mm}: ${diet}${por ? " ×" + por : ""}${ref ? " · refakatçi" + (refd ? " (" + refd + ")" : "") : ""}${not ? " · " + not : ""}`;
           }).filter(Boolean);
           if (!picked.length) { H.toast("En az bir öğüne diyet seçin.", "w"); return; }
+          if (lateHit) H.toast("Bazı öğünlerde mutfak saati geçti; bir sonraki güne geçebilir.", "w");
           addOrder(p, { cat:"Diyet", ad:"Diyet planı", detay:`${tarih} · ${picked.join(" | ")}` });
           H.toast("Diyet istemi eklendi"); H.closeModal(); rerender();
         };
