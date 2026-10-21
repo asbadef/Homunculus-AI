@@ -446,6 +446,7 @@
       bolumSeed(); htSeed();
       const bols = H.data.bolumler || [], hekims = (H.data.users || []).filter(u => u.role === "hekim");
       const free = ((H.unit("pol") || { beds:[] }).beds).filter(b => b.status === "bos");
+      const gelisL = secGet("gelis"), protoL = secGet("protokol"), erisimL = secGet("erisim"), tercihL = secGet("tercih"), kurumL = secGet("kurum");
       body.innerHTML = `<div class="note i" style="margin-bottom:12px">${I("user")} Ayaktan (poliklinik) başvuru: kimlikle hafif kayıt açılır, bölümün muayene hizmeti otomatik eklenir ve hasta hekimin <b>Tüm Gelişler</b> listesine düşer. Yatak gerekmez.</div>
         <div data-ayform><fieldset style="border:0;padding:0;margin:0;min-width:0"${can ? "" : " disabled"}>
         <div class="g2">
@@ -457,10 +458,14 @@
             ${fld("phone", "Telefon", `<div class="adm-row" style="flex-wrap:nowrap"><span class="tag mono">+994</span>${inp("phone", "", 'inputmode="tel" placeholder="50 123 45 67"')}</div>`)}
           </div>
           <div class="box"><h5>${I("clip")} Başvuru</h5>
+            ${fld("gelis", "Geliş tipi", sel("gelis", gelisL, "Ayaktan"), 1)}
+            ${fld("protokol", "Protokol tipi", sel("protokol", protoL, protoL[0] || ""))}
             ${fld("bolum", "Bölüm", `<input data-f="bolum" list="ay-bol" placeholder="Bölüm seçin"><datalist id="ay-bol">${bols.map(b => `<option>${esc(b.ad)}</option>`).join("")}</datalist>`, 1)}
             ${fld("doktor", "Doktor", `<select data-f="doktor"><option value="">—</option>${hekims.map(u => `<option value="${esc(u.u)}">${esc(u.name)}</option>`).join("")}</select>`)}
             ${fld("neden", "Geliş nedeni", inp("neden", "", 'placeholder="Şikayet / amaç"'))}
-            ${fld("kurum", "Kurum / sigorta", sel("kurum", KURUM, KURUM[0]))}
+            ${fld("erisim", "Erişim kanalı", sel("erisim", ["", ...erisimL], ""))}
+            ${fld("tercih", "Tercih sebebi", sel("tercih", ["", ...tercihL], ""))}
+            ${fld("kurum", "Kurum / sigorta", sel("kurum", kurumL, kurumL[0] || ""))}
             ${chk("sms", true, "SMS ile randevu/hatırlatma bilgilendirmesi")}
           </div>
         </div></fieldset></div>
@@ -471,9 +476,11 @@
         const bed = ((H.unit("pol") || { beds:[] }).beds).find(b => b.status === "bos");
         if (!bed) { H.toast("Boş muayene odası yok; poliklinik dolu.", "e"); return; }
         const bolum = g("bolum"), doktor = body.querySelector('[data-f="doktor"]').value, now = H.nowFull ? H.nowFull() : H.now();
+        const gelis = body.querySelector('[data-f="gelis"]').value, enc = gelis === "Günübirlik" ? "gunubirlik" : "ayaktan";
         const p = admit({ name, sex:g("sex") || "K", age:+g("age") || 0, ageGroup:"adult", dx:g("neden") || "Ayaktan başvuru", attending:doktor || null, blood:"Bilinmiyor",
-          meta:{ temp:true, encounter:"ayaktan", source:"ayaktan", proto:nextG(), fin:g("fin").toUpperCase(), bolum, kurum:body.querySelector('[data-f="kurum"]').value,
-            phone:g("phone") ? "+994 " + g("phone") : "", sms:!!body.querySelector('[data-f="sms"]').checked, consent:"alındı", admitType:"ayaktan", admittedAt:H.now(), admittedBy:(me() || {}).u || "—" } }, bed.id);
+          meta:{ temp:true, encounter:enc, source:"ayaktan", proto:nextG(), fin:g("fin").toUpperCase(), bolum, gelis, protokol:body.querySelector('[data-f="protokol"]').value,
+            erisim:body.querySelector('[data-f="erisim"]').value, tercih:body.querySelector('[data-f="tercih"]').value, kurum:body.querySelector('[data-f="kurum"]').value,
+            phone:g("phone") ? "+994 " + g("phone") : "", sms:!!body.querySelector('[data-f="sms"]').checked, consent:"alındı", admitType:enc, admittedAt:H.now(), admittedBy:(me() || {}).u || "—" } }, bed.id);
         const tanim = (H.data.hizmetTanim || []).find(t => norm(t.bolum) === norm(bolum));
         if (tanim) { H.data.orders = H.data.orders || []; H.data.orders.unshift({ id:"ord" + Date.now(), pid:p.id, cat:"Muayene", ad:tanim.hizmetAd, detay:[tanim.gelis, tanim.protokol].filter(Boolean).join(" · "), by:(me() || {}).name || "Kabul", at:now, durum:"İstendi" }); }
         H.log("Ayaktan kayıt açıldı", name + " · " + bolum + (tanim ? " · " + tanim.hizmetAd : ""));
@@ -706,6 +713,7 @@
     ["bakimliste", "Bakım İstem Listesi", "admin_system", "list"],   // hemşirelik bakım istem kataloğu; hemşire/doktor bakım isteminde seçer
     ["hizmettanim", "Otomatik Hizmet Tanımı", "admin_system", "list"],   // bölüm→muayene hizmeti eşlemesi; kabul kayıt açınca otomatik düşer
     ["bolumliste", "Bölüm / Branş Listesi", "admin_system", "list"],   // tıbbi bölümler + branş; hizmet tanımı ve kabul bunu kullanır
+    ["secenekler", "Kayıt Seçenekleri", "admin_system", "list"],   // erişim kanalı/tercih sebebi/geliş-protokol tipi vb. açılır listeler; admin düzenler
     ["mesajkalip", "Mesaj Kalıpları (SMS)", "admin_system", "bell"],   // SMS/e-posta/uygulama bildirim kalıpları
     ["mobile", "Telefon modülleri", "admin_system", "tablet"],   // 27.09 · #193
     ["system", "Sistem ayarları", "admin_system", "gear"], ["audit", "Denetim kaydı", "audit", "file"],
@@ -715,7 +723,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "mesajkalip", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -741,7 +749,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, mesajkalip:tabMesaj,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -1018,6 +1026,37 @@
           H.log(existing ? "Bölüm güncellendi" : "Bölüm eklendi", ad); H.closeModal(); H.toast("Kaydedildi"); redraw(); };
         const del = m.querySelector("[data-bldelf]"); if (del) del.onclick = () => { if (!confirm("Bu bölüm silinsin mi?")) return; const i = ALL.findIndex(x => x.id === e.id); if (i >= 0) ALL.splice(i, 1); H.closeModal(); H.toast("Silindi", "w"); redraw(); };
       } });
+  }
+
+  /* ---------- Kayıt Seçenekleri (kabul/kayıt formlarındaki açılır listeler, admin düzenler) ---------- */
+  const SEC_LISTS = [["erisim", "Erişim kanalı"], ["tercih", "Tercih sebebi"], ["gelis", "Geliş tipi"], ["protokol", "Protokol tipi"], ["provizyon", "Provizyon tipi"], ["kurum", "Anlaşmalı kurum / sigorta"], ["danisman", "Danışman"]];
+  function secSeed() {
+    if (H.data.secenekler) return;
+    H.data.secenekler = {
+      erisim:["Sosyal medya", "TV-Radyo", "Açık hava reklam", "Telesatış", "Web", "Diğer"],
+      tercih:["Doktor tavsiyesi", "Yakın tavsiyesi", "İnternet", "Kampanya", "Daha önce geldi", "Diğer"],
+      gelis:["Ayaktan", "Günübirlik", "Yatan"],
+      protokol:(H.data.protokolTip || ["Genel muayene", "Preop", "Kontrol", "Laboratuvar", "Radyoloji", "Check-up", "Donör"]).slice(),
+      provizyon:["Normal", "Acil", "Kontrol"],
+      kurum:["İcbari Tibbi Sığorta (SAMHI)", "Özel ödeme", "Kurum anlaşması", "Özel sigorta"],
+      danisman:[],
+    };
+  }
+  const secGet = (k) => { secSeed(); return H.data.secenekler[k] || []; };
+  function tabSecenek(body) {
+    secSeed(); const key = AD.secKey || "erisim", items = H.data.secenekler[key];
+    body.innerHTML = `<div class="g2" style="align-items:start">
+      <div class="box" style="max-width:280px"><h5>Liste</h5><div style="display:flex;flex-direction:column;gap:3px">${SEC_LISTS.map(([k, l]) => `<button class="hc-cat ${key === k ? "on" : ""}" data-seckey="${k}">${esc(l)} <em>${H.data.secenekler[k].length}</em></button>`).join("")}</div></div>
+      <div class="box"><div class="adm-bar"><b>${esc((SEC_LISTS.find(x => x[0] === key) || [])[1] || "")}</b><span class="spacer"></span><button class="btn p sm" data-secnew>+ Seçenek ekle</button></div><div data-seclist></div></div></div>
+      <p class="adm-sub" style="margin-top:10px">Kabul/kayıt formlarındaki açılır listeler buradan yönetilir. Admin yeni seçenek ekleyince form otomatik gösterir.</p>`;
+    const draw = () => { body.querySelector("[data-seclist]").innerHTML = items.length ? `<div class="tw"><table class="t"><tbody>${items.map((x, i) => `<tr><td>${esc(x)}</td><td style="width:96px;text-align:right"><button class="btn g sm" data-secedit="${i}">Düzenle</button> <button class="btn g sm" data-secdel="${i}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Boş. "+ Seçenek ekle" ile girin.</div>`; };
+    draw();
+    body.querySelectorAll("[data-seckey]").forEach(b => b.onclick = () => { AD.secKey = b.dataset.seckey; tabSecenek(body); });
+    body.querySelector("[data-secnew]").onclick = () => { const v = prompt("Yeni seçenek:"); if (v && v.trim()) { items.push(v.trim()); H.log("Kayıt seçeneği eklendi", key + " · " + v.trim()); H.toast("Eklendi"); draw(); } };
+    body.querySelector("[data-seclist]").onclick = (e) => {
+      const ed = e.target.closest("[data-secedit]"); if (ed) { const i = +ed.dataset.secedit, v = prompt("Düzenle:", items[i]); if (v && v.trim()) { items[i] = v.trim(); draw(); } return; }
+      const dl = e.target.closest("[data-secdel]"); if (dl) { const i = +dl.dataset.secdel; if (confirm("Bu seçenek silinsin mi?")) { items.splice(i, 1); H.toast("Silindi", "w"); draw(); } }
+    };
   }
 
   /* ---------- Mesaj Kalıpları (SMS / e-posta / uygulama bildirimi) ---------- */
