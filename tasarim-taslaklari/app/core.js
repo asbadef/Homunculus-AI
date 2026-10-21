@@ -76,6 +76,7 @@
     m_randevu:{ AZ:"Randevu", TR:"Randevu", RU:"Запись на приём", EN:"Appointments" },
     m_vezne:{ AZ:"Kassa", TR:"Vezne", RU:"Касса", EN:"Cashier" },
     m_ik:{ AZ:"İnsan resursları", TR:"İnsan Kaynakları", RU:"Кадры", EN:"Human resources" },
+    m_labislem:{ AZ:"Laboratoriya / Radiologiya", TR:"Laboratuvar / Radyoloji", RU:"Лаборатория / Радиология", EN:"Lab / Radiology" },
     m_tasks:{ AZ:"Tapşırıqlar", TR:"Görevlerim", RU:"Задачи", EN:"My tasks" },
     m_bedside:{ AZ:"Ölçmə", TR:"Yatak başı", RU:"У койки", EN:"Bedside" },
     m_alarms:{ AZ:"Siqnallar", TR:"Alarmlar", RU:"Тревоги", EN:"Alarms" },

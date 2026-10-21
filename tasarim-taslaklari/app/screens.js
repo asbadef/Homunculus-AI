@@ -148,6 +148,23 @@
     };
   } });
 
+  /* ================= LAB / RADYOLOJİ İŞ AKIŞI ================= */
+  const LAB_DURUM = ["İstendi", "Numune alındı", "Çalışılıyor", "Sonuç onaylandı", "Serbest bırakıldı"];
+  H.register("labislem", { title:() => "Laboratuvar / Radyoloji", perm:["beds", "summary"], render(root, params = {}) {
+    const cats = { lab:["Laboratuvar"], rad:["Radyoloji"], kan:["Kan ürünü"] };
+    const tur = params.tur || "lab";
+    const ord = (H.data.orders || []).filter(o => cats[tur].includes(o.cat));
+    const pn = (pid) => { const p = H.pt(pid), b = p && H.bed(p.bed); return p ? (H.showNames() ? p.name : (b ? b.no : pid)) : pid; };
+    root.innerHTML = `<div class="ph"><div><h2>Laboratuvar / Radyoloji</h2><p>${ord.length} istem · numune/çekim → onay → serbest bırakma (tasarım)</p></div></div>
+      <div class="seg" style="margin-bottom:12px">${[["lab", "Laboratuvar"], ["rad", "Radyoloji"], ["kan", "Kan ürünü"]].map(([k, l]) => `<button data-lt="${k}" class="${tur === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      <div class="tw"><table class="t"><thead><tr><th style="width:120px">Saat</th><th>Hasta</th><th>İstem</th><th>İsteyen</th><th style="width:170px">Durum</th></tr></thead><tbody>
+      ${ord.length ? ord.map(o => `<tr><td class="mono adm-sub">${H.esc(o.at || "")}</td><td><b>${H.esc(pn(o.pid))}</b></td><td>${H.esc(o.ad || "")}<div class="adm-sub" style="font-size:11.5px">${H.esc(o.detay || "")}</div></td><td class="adm-sub">${H.esc(o.by || "")}</td><td><select data-labst="${o.id}">${LAB_DURUM.map(s => `<option${(o.durum || "İstendi") === s ? " selected" : ""}>${s}</option>`).join("")}</select></td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:20px;text-align:center">Bu türde istem yok.</td></tr>`}
+      </tbody></table></div>
+      <p class="adm-sub" style="margin-top:8px">Sonuç değerleri ve cihaz/PACS bağlantısı ayrı ekip tarafından kurulur. "Serbest bırakıldı" olunca sonuç hekime/hastaya görünür (tasarım).</p>`;
+    root.onchange = (e) => { const st = e.target.closest("[data-labst]"); if (st) { const o = (H.data.orders || []).find(x => x.id === st.dataset.labst); if (o) { o.durum = st.value; H.log("Lab/Rad durumu", (o.ad || "") + " · " + st.value); H.toast("Durum: " + st.value); } } };
+    root.onclick = (e) => { const lt = e.target.closest("[data-lt]"); if (lt) return H.go("labislem", { tur:lt.dataset.lt }); };
+  } });
+
   /* ================= İNSAN KAYNAKLARI (İK) ================= */
   H.register("ik", { title:() => H.t("m_ik"), perm:["admin_users", "summary"], render(root) {
     const staff = (H.data.users || []).filter(u => !u.temp);
