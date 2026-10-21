@@ -137,7 +137,8 @@
     { id:"fat2", hasta:"Orxan Əliyev", protokol:"Ayaktan · Kardioloji", kurum:"Özel ödeme", toplam:60, katilim:60, durum:"Bekliyor" },
     { id:"fat3", hasta:"Elvin Səmədov", protokol:"Günübirlik · Check-up", kurum:"Kurum anlaşması", toplam:240, katilim:48, durum:"Ödendi" },
   ]);
-  const BANKOLAR = () => (H.data.bankolar = H.data.bankolar || ["Yatan Kasası", "Estetik Kasası", "Pediatri Kasası", "Preop Kasası", "Eczane Kasası", "Ofis Kasası", "Acil Kasası"]);
+  // Bankolar tercihen admin "Kayıt Seçenekleri" > banko listesinden; yoksa yedek.
+  const BANKOLAR = () => (H.data.secenekler && H.data.secenekler.banko && H.data.secenekler.banko.length ? H.data.secenekler.banko : (H.data.bankolar = H.data.bankolar || ["Yatan Kasası", "Estetik Kasası", "Pediatri Kasası", "Preop Kasası", "Eczane Kasası", "Ofis Kasası", "Acil Kasası"]));
   const ODEME_TIP = ["Kart", "Nakit", "Havale"];
   H.register("vezne", { title:() => H.t("m_vezne"), perm:["admission", "summary"], render(root, params = {}) {
     const all = faturalar(), f = params.durum || "hepsi", bankolar = BANKOLAR();

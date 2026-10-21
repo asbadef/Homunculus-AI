@@ -1029,7 +1029,7 @@
   }
 
   /* ---------- Kayıt Seçenekleri (kabul/kayıt formlarındaki açılır listeler, admin düzenler) ---------- */
-  const SEC_LISTS = [["erisim", "Erişim kanalı"], ["tercih", "Tercih sebebi"], ["gelis", "Geliş tipi"], ["protokol", "Protokol tipi"], ["provizyon", "Provizyon tipi"], ["kurum", "Anlaşmalı kurum / sigorta"], ["danisman", "Danışman"]];
+  const SEC_LISTS = [["erisim", "Erişim kanalı"], ["tercih", "Tercih sebebi"], ["gelis", "Geliş tipi"], ["protokol", "Protokol tipi"], ["provizyon", "Provizyon tipi"], ["kurum", "Anlaşmalı kurum / sigorta"], ["banko", "Vezne bankoları / kasalar"], ["danisman", "Danışman"]];
   function secSeed() {
     if (H.data.secenekler) return;
     H.data.secenekler = {
@@ -1039,6 +1039,7 @@
       protokol:(H.data.protokolTip || ["Genel muayene", "Preop", "Kontrol", "Laboratuvar", "Radyoloji", "Check-up", "Donör"]).slice(),
       provizyon:["Normal", "Acil", "Kontrol"],
       kurum:["İcbari Tibbi Sığorta (SAMHI)", "Özel ödeme", "Kurum anlaşması", "Özel sigorta"],
+      banko:["Yatan Kasası", "Estetik Kasası", "Pediatri Kasası", "Preop Kasası", "Eczane Kasası", "Ofis Kasası", "Acil Kasası"],
       danisman:[],
     };
   }
