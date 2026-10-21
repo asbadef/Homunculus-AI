@@ -384,7 +384,7 @@
 | 328 | Bakım istem modalında düzen bozukluğu | ✅ | modal yükseklik düzeltildi (bu tur) |
 | 329 | Bakım kataloğu tam liste (~113 Azerice) + admin'de yönetim | ✅ | bakim-veri.js (108) + Admin > Bakım İstem Listesi. commit 4a18a58 |
 | 330 | Konsültasyon süreci: katalog + istek yapan/bölüm/doktor/tarih/aciliyet/açıklama | ✅ | istem.js openForm kons zengin form. commit d077718 |
-| 331 | Muayene/epikriz eksikleri; "Sistem Sorgusu" alanını kaldır; görsellerdeki alanlar | 🔧 kısmi | "Sistem Sorgusu" kaldırıldı (a379b9e). ⏳ kalan: tedavi tipi butonları, ameliyat planlanacak, kontrol, psikolojik durum, ağrı, fizik vital, ICD tanı tipi, taburculuk önerileri |
+| 331 | Muayene/epikriz eksikleri; "Sistem Sorgusu" alanını kaldır; görsellerdeki alanlar | ✅ büyük ölçüde | Sistem Sorgusu kaldırıldı; psikolojik durum/ağrı/tedavi tipi/ameliyat planlanacak/kontrol (d07a2cf); özgeçmiş/soygeçmiş yapısal (5d9441c); fizik vital (d.vit) + ICD tanı tipi (openDxPicker) zaten var. ⏳ taburculuk önerileri epikrizde |
 | 341 | Seçim ekranları (checkbox ızgaraları) net görünmüyor; kutu-etiket hizasız; başka yerlerde de olabilir | 🔧 kısmi | ICD özellikleri + ameliyat seçenekleri chip kutuya çevrildi (a379b9e). ⏳ diğer seçim/form ekranlarını denetle |
 | 332 | İlaç reçetesi zengin ekranı (reçete türü/ICD bağlama/ilaç satırı/etkileşim) | ⏳ sırada | e-Nabız yerine Azerbaycan muadili |
 | 333 | Şablon+Tarihçe butonları her istem/belge ekranında standart | ⏳ | — |
@@ -395,3 +395,29 @@
 | 338 | Diğer rol akışları: kabul, vezne, eczane, laborant, radyoloji tekn., biyomed, kalite, hasta | ⏳ | doktor+admin sonrası |
 | 339 | İlaç / malzeme listesi | ⏳ Ozan verecek | — |
 | 340 | Lab/Radyoloji iş akışı, Vezne/faturalama+SAMHI, Randevu | ⏳ | sonraki fazlar |
+
+## 2026-10-22 · Kapsama analizi (referans ekran ↔ prototip)
+
+Klinik/doktor tarafı büyük ölçüde YAPILDI (muayene, epikriz, izlem, hemşire formları, istemler, belgeler, bakım planı, vital/trend/skor, kamera, ilaç/sıvı). İdari/finansal/randevu/İK tarafı EKSİK (çoğu sonraki fazlar — diğer roller).
+
+**En önemli 10 eksik (analiz sırası):**
+| # | Eksik | Kapsam | Öncelik notu |
+|---|---|---|---|
+| 342 | Tüm Gelişler / başvuru listesi | doktor/kabul | hastaya ana giriş noktası (şu an yalnız ICU yatış kuyruğu) |
+| 343 | Randevu modülü (poliklinik takvimi + geçmiş) | kabul/doktor | diğer roller fazı |
+| 344 | Bölüm + Branş tanım katalogları (SUT/SağlıkNet) | admin/tanımlar | CSV seed gelince; diğer modüller buna bağlı |
+| 345 | Vezne / Faturalama (işlem havuzu, sigorta, AZN) | vezne | diğer roller fazı · SAMHI |
+| 346 | Lab/Radyoloji sonuç iş akışı (istem→onay→serbest) | laborant/radyoloji | şu an yalnız gösterim |
+| 347 | İstem Tarihçesi (order history) | ✅ | istem.js openHistory + "İstem tarihçesi" butonu. commit 92e0a8c |
+| 352 | Katalogdan CheckUp (paket) ve 1./2./3. Asistan (faturalama) kaldır | ✅ | istem.js EXCLUDE_TIP. commit 92e0a8c |
+| 353 | Otomatik Hizmet Tanım Listesi: bölüm→muayene hizmeti + geliş/protokol tipi; kabul kayıt açınca otomatik düşer, doktor amacı görür | ⏳ sırada | ayaktan akışının temeli; admin tanım + iş listesine besler |
+| 354 | Tüm Gelişler / İş Listesi (Hastalarım): protokol/amaç, lab-rad ilerleme, durum, "Göreve git" | ⏳ sırada | #342 ile aynı; doktorun ana giriş ekranı |
+| 355 | Ayaktan/randevulu hasta akışı düzgün kurgulanmadı | ⏳ | #353+#354+#343 birlikte |
+| 356 | Özgeçmiş/soygeçmiş yapısal olmalı (referans) | ✅ | docs.js ozgWidget/soygWidget. commit 5d9441c |
+| 357 | Yatan hasta gözlem notu + hemşire gözlem notu var mı | 🔧 var | docs.js izlem (hekim günlük izlem) + hemsire (hemşirelik notu) mevcut; "Yatış" ekranı düzeni eklenebilir |
+| 348 | Protokol tipleri tanımı (bayraklarıyla) | admin | faturalama/iş kurallarını yönetir |
+| 349 | Rapor/çıktı şablon motoru (Taahütname, Anestezi Değ., Tetkik İstem) | admin | yazdir.js sabit şablonlardan genişletme |
+| 350 | Hasta 360 / FİN + sigorta + KVKK-ETK onayları | kabul | kayıt formu tamamlama |
+| 351 | İK modülü (personel kartı, SGK, izin, kadro) | İK | diğer roller fazı |
+
+**Şimdiki fazda (doktor+admin) yapılacaklar:** #347 İstem Tarihçesi, #342 Tüm Gelişler, Ameliyat Raporu ekranı, #348 Protokol tipleri, #344 Bölüm/Branş (veri gelince). **Sonraki faz (diğer roller):** #343 Randevu, #345 Vezne, #346 Lab/Rad akışı, #351 İK.
