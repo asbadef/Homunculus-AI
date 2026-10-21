@@ -212,7 +212,12 @@
         ${list.map(x => `<tr><td class="adm-sub">${H.esc(x.tip)}</td><td class="adm-sub">${H.esc(x.tarih)}</td><td><b>${H.esc(x.eden)}</b></td><td class="n">${x.tutar} ₼</td><td class="adm-sub">${H.esc(x.dep)}</td><td class="adm-sub">${H.esc(x.aciklama)}</td><td class="mono adm-sub">${H.esc(x.proto)}</td><td><span class="tag ${/Onaylandı|tamamlandı/.test(x.durum) ? "ok" : x.durum === "Reddedildi" ? "w" : ""}">${x.durum}</span></td><td>${x.durum === "Onay bekliyor" && can ? `<button class="btn p sm" data-iaap="${x.id}">Onayla</button> <button class="btn g sm" data-iared="${x.id}">Reddet</button>` : x.durum === "Onay bekliyor" ? `<span class="adm-sub">yetki yok</span>` : `<span class="adm-sub">—</span>`}</td></tr>`).join("") || `<tr><td colspan="9" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}</tbody></table></div>
         <p class="adm-sub" style="margin-top:8px">Avans/fatura iadeleri yetkili rol (İade onayla) tarafından onaylanır. Onay zinciri (seviye 1/2/3) gerçek kurguda eklenir.</p>`; };
     const panel = ({ fatura:panFatura, fiyat:panFiyat, indirim:panIndirim, iade:panIade, gfk:panGfk, evrak:panEvrak })[tab]();
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_vezne")}</h2><p>Hasta-360 vezne · banko ${H.esc(banko)} · dönem #${donemNo} (tasarım)</p></div></div>${bar}${strip}${panel}`;
+    const RAIL = [
+      ["Vezne 360", [["Hasta arama", ""], ["Randevu arama", ""], ["Son hastalar", ""], ["Reçete listesi", ""], ["Gizli / VIP hasta listesi", ""], ["Doktor iş listesi", ""]]],
+      ["Vezne iş havuzu", [["Evrak takip", "evrak"], ["Ödeme takip", "fatura"], ["GFK takip", "gfk"], ["Onay bekleyen indirimler", "indirim"], ["Onay bekleyen iadeler", "iade"], ["Fiyat teklifleri", "fiyat"], ["Medula", ""], ["Toplu fatura işlemleri", ""], ["Protokol listesi", ""], ["Kurum değişiklik onay", ""]]],
+    ];
+    const rail = `<div class="vz-rail">${RAIL.map(([g, items]) => `<div class="vz-rg"><h6>${g}</h6>${items.map(([l, t]) => `<button class="vz-ri${t === tab && t ? " on" : ""}" data-rail="${t}" data-raill="${H.esc(l)}">${l}</button>`).join("")}</div>`).join("")}</div>`;
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_vezne")}</h2><p>Hasta-360 vezne · banko ${H.esc(banko)} · dönem #${donemNo} (tasarım)</p></div></div>${bar}<div class="vz-wrap"><div class="vz-main">${strip}${panel}</div>${rail}</div>`;
     if (tab === "fiyat" && donemAcik) {  // hizmet combobox (her yerde aynı H.HIZMET kataloğu)
       const inp = root.querySelector("[data-fhiz]"), dd = root.querySelector("[data-fhiz-dd]"), fy = root.querySelector("[data-ffiyat]"), kurum = params.kurum || "Özel ödeme";
       const show = () => { const q = (inp.value || "").trim().toLocaleLowerCase("tr");
@@ -236,6 +241,7 @@
       const vf = e.target.closest("[data-vf]"); if (vf) return H.go("vezne", { tab:"fatura", durum:vf.dataset.vf });
       const gf = e.target.closest("[data-gf]"); if (gf) return H.go("vezne", { tab:"gfk", gfk:gf.dataset.gf });
       const ef = e.target.closest("[data-ef]"); if (ef) return H.go("vezne", { tab:"evrak", ev:ef.dataset.ef });
+      const rl = e.target.closest("[data-rail]"); if (rl) { const t = rl.dataset.rail; if (t) return H.go("vezne", { tab:t }); H.toast(rl.dataset.raill + " · yapım aşamasında (tasarım)", "w"); return; }
       const io = e.target.closest("[data-io]"); if (io) return H.go("vezne", { tab:"indirim", io:io.dataset.io });
       const ia = e.target.closest("[data-ia]"); if (ia) return H.go("vezne", { tab:"iade", ia:ia.dataset.ia, iatip:params.iatip });
       const iat = e.target.closest("[data-iatip]"); if (iat) return H.go("vezne", { tab:"iade", ia:params.ia, iatip:iat.dataset.iatip });

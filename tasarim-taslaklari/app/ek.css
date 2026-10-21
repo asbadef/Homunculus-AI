@@ -792,3 +792,13 @@ button.iz-n:hover { filter:brightness(1.08); outline:2px solid var(--priSoft); }
 .rp-card{display:flex;align-items:center;gap:8px;text-align:left;padding:11px 12px;border:1px solid var(--line2);border-radius:10px;background:var(--card2);color:inherit;cursor:pointer;font:inherit;font-size:13px}
 .rp-card:hover{border-color:var(--pri);background:color-mix(in srgb,var(--pri) 8%,var(--card2))}
 .rp-card svg{flex:none;opacity:.7}
+
+/* Vezne 360 sağ ray */
+.vz-wrap{display:flex;gap:14px;align-items:flex-start}
+.vz-main{flex:1;min-width:0}
+.vz-rail{width:216px;flex:none;display:flex;flex-direction:column;gap:12px}
+.vz-rg h6{margin:0 0 6px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--mute)}
+.vz-ri{display:block;width:100%;text-align:left;padding:7px 10px;margin-bottom:3px;border:1px solid var(--line2);border-radius:8px;background:var(--card2);color:inherit;cursor:pointer;font:inherit;font-size:12.5px}
+.vz-ri:hover{border-color:var(--pri);background:color-mix(in srgb,var(--pri) 8%,var(--card2))}
+.vz-ri.on{border-color:var(--pri);background:color-mix(in srgb,var(--pri) 14%,var(--card2));font-weight:600}
+@media(max-width:900px){.vz-wrap{flex-direction:column}.vz-rail{width:100%;flex-direction:row;flex-wrap:wrap}.vz-rg{flex:1;min-width:160px}}
