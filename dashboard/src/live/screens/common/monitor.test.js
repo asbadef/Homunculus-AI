@@ -78,6 +78,13 @@ describe("NBP's cell: the time its value last changed", () => {
     expect(at(param("nbp", [118, 79, 92], { measured_age_s: 10_800 })).kind).toBe("nbp");
     const withheld = param("nbp", null, { changed_at: NBP_CHANGED_AT, last_at: NBP_CHANGED_AT, age_s: 600, measured_age_s: 600 });
     expect(at(withheld)).toEqual({ kind: "old", ageS: 600, lastAt: NBP_CHANGED_AT });
+    // A fresh packet that still carries numbers, which the server says are old: none is drawn.
+    expect(at(param("nbp", [118, 79, 92], { state: "old" }))).toEqual({ kind: "old", ageS: 600, lastAt: NBP_CHANGED_AT });
+  });
+
+  it("never draws NBP's numbers without the age and the time of their change", () => {
+    expect(at(param("nbp", [118, 79, 92], { measured_age_s: null }))).toEqual({ kind: "old", ageS: null, lastAt: NBP_CHANGED_AT });
+    expect(at(param("nbp", [118, 79, 92], { changed_at: null }))).toEqual({ kind: "old", ageS: null, lastAt: null });
   });
 
   it("awaits a measurement when no change was seen: no number, no age, no time", () => {
@@ -85,12 +92,15 @@ describe("NBP's cell: the time its value last changed", () => {
     expect(at(param("nbp", null), { nowMs: FETCHED - 500 })).toEqual({ kind: "old", ageS: null, lastAt: null });
   });
 
-  it("shows the monitor's *** when it flags a component", () => {
-    expect(at(param("nbp", null, { state: "invalid", age_s: 2, last_at: NBP_CHANGED_AT, changed_at: NBP_CHANGED_AT,
-      measured_age_s: 600 }))).toEqual({ kind: "invalid", ageS: 2 });
+  it("shows the monitor's *** when it flags a component, and lets it go old with its packet", () => {
+    const flagged = param("nbp", null, { state: "invalid", age_s: 2, last_at: NBP_CHANGED_AT, changed_at: NBP_CHANGED_AT,
+      measured_age_s: 600 });
+    expect(at(flagged)).toEqual({ kind: "invalid", ageS: 2 });
+    // 14 s later its packet is 16 s old: the *** is no longer shown, and the age left is the change's.
+    expect(at(flagged, { nowMs: FETCHED + 14_000 })).toEqual({ kind: "old", ageS: 614, lastAt: NBP_CHANGED_AT });
   });
 
-  it("is never built from a wire name", () => {
+  it("the test util refuses a wire name such as nbp_systolic", () => {
     expect(() => param("nbp_systolic", 118)).toThrow(TypeError);
   });
 
@@ -185,5 +195,7 @@ describe("the tables", () => {
     const source = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "monitor.js"), "utf8");
     expect(source).not.toMatch(/text-(?:crit|high|mid|low|ok|v-)|bg-(?:crit|high|mid|low|ok)/);
     expect(source).not.toMatch(/value\s*[<>]=?\s*\d/);
+    expect(source).not.toMatch(/\b(?:value|systolic|diastolic|mean)\b\s*[<>]=?\s*\d|\d\s*[<>]=?\s*(?:value|systolic|diastolic|mean)\b/);
+    expect(source).not.toMatch(/\b(?:ageS|measuredAgeS|age_s|measured_age_s)\b\s*[<>]=?\s*\d|\d\s*[<>]=?\s*(?:ageS|measuredAgeS|age_s|measured_age_s)\b/);
   });
 });
