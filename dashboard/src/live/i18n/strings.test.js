@@ -44,6 +44,7 @@ const NEUTRAL = new Set([
   // Aşama A (monitor) · neutral — the bedside monitor's own labels, so the strip reads against its screen
   "monitor.p.hr", "monitor.p.pls", "monitor.p.spo2", "monitor.p.etco2", "monitor.p.temperature",
   "monitor.p.art_systolic", "monitor.p.art_diastolic", "monitor.p.art_mean", "monitor.p.respiration",
+  "monitor.p.nbp", //              NBP — the Kappa's own label for the cuff pressure
 
 ]);
 // Azerbaijani and Turkish share many words, so an AZ text may equal its TR source — but that is
@@ -137,6 +138,7 @@ const AZ_SAME_AS_TR = new Set([
   // Aşama A (monitor) · az = tr — the bedside monitor's own labels (HR, PLS, SpO₂, ART S…), not words
   "monitor.p.hr", "monitor.p.pls", "monitor.p.spo2", "monitor.p.etco2", "monitor.p.temperature",
   "monitor.p.art_systolic", "monitor.p.art_diastolic", "monitor.p.art_mean", "monitor.p.respiration",
+  "monitor.p.nbp", //        NBP — the monitor's label, not a word
 
 ]);
 

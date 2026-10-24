@@ -16,10 +16,12 @@
 // monitor's own labels, so the strip can be read against the bedside screen; they are
 // language-neutral (strings.test.js NEUTRAL, AZ_SAME_AS_TR). `ev.*` restate the design's §4.1 and
 // docs/INFINITY-PARAMETER-RECORDS.md:36-50 — no sample count is recorded for any, and `legendN`
-// says so.
+// says so. NBP is shown with the time its value last CHANGED, an upper bound of the measurement
+// (`nbpMeasured`: "≤", never "at"); before a change has been seen it says it awaits one
+// (`nbpWaiting`).
 const p = {
   hr: "HR", pls: "PLS", spo2: "SpO₂", etco2: "etCO₂", temperature: "Ta",
-  art_systolic: "ART S", art_diastolic: "ART D", art_mean: "ART M", respiration: "RESP",
+  art_systolic: "ART S", art_diastolic: "ART D", art_mean: "ART M", respiration: "RESP", nbp: "NBP",
 };
 
 export default {
@@ -51,6 +53,9 @@ export default {
     invalid: "monitör geçerli değer göstermiyor",
     old: "eski · {age}",
     age: "{age} önce",
+    nbpMeasured: "ölçüm ≤ {time} ({age})",
+    nbpWaiting: "ölçüm bekleniyor",
+    nbpSaid: "{systolic} bölü {diastolic}, ortalama {mean} {unit}; ölçüm {time} ya da daha önce, {age} önce",
     partial: "kısmi",
     partialHint: "kısmi doğrulama — Ayarlar › Ses ve bildirim bölümündeki tabloya bakın",
     chipTitle: "Monitör (doğrulanmamış)",
@@ -117,6 +122,9 @@ export default {
     invalid: "monitor etibarlı dəyər göstərmir",
     old: "köhnə · {age}",
     age: "{age} əvvəl",
+    nbpMeasured: "ölçmə ≤ {time} ({age})",
+    nbpWaiting: "ölçmə gözlənilir",
+    nbpSaid: "{systolic} bölü {diastolic}, orta {mean} {unit}; ölçmə {time} və ya daha əvvəl, {age} əvvəl",
     partial: "qismən",
     partialHint: "qismən yoxlanılıb — Ayarlar › Səs və bildiriş bölməsindəki cədvələ baxın",
     chipTitle: "Monitor (təsdiqlənməmiş)",
@@ -183,6 +191,9 @@ export default {
     invalid: "монитор не показывает достоверного значения",
     old: "устарело · {age}",
     age: "{age} назад",
+    nbpMeasured: "измерение ≤ {time} ({age})",
+    nbpWaiting: "ожидается измерение",
+    nbpSaid: "{systolic} на {diastolic}, среднее {mean} {unit}; измерено в {time} или раньше, {age} назад",
     partial: "частично",
     partialHint: "частичная проверка — см. таблицу в разделе Настройки › Звук и уведомления",
     chipTitle: "Монитор (не валидировано)",
@@ -249,6 +260,9 @@ export default {
     invalid: "the monitor shows no valid value",
     old: "old · {age}",
     age: "{age} ago",
+    nbpMeasured: "measured ≤ {time} ({age})",
+    nbpWaiting: "awaiting a measurement",
+    nbpSaid: "{systolic} over {diastolic}, mean {mean} {unit}; measured at or before {time}, {age} ago",
     partial: "partial",
     partialHint: "partially checked — see the table under Settings › Sound and notifications",
     chipTitle: "Monitor (unvalidated)",
