@@ -154,7 +154,8 @@ describe("SettingsScreen — the monitor strip's legend", () => {
     expect(box).toHaveTextContent(/tədqiqat məqsədilə deşifrə olunur və təsdiqlənməyib/);
     expect(box).toHaveTextContent("Bu zolaq heç vaxt səs çıxarmır, bildiriş göndərmir, siqnal siyahısına və «Cavab gözləyən siqnallar» siyahısına düşmür.");
     expect(box).toHaveTextContent(/15 saniyədən köhnə dəyər göstərilmir/);
-    expect(box).toHaveTextContent(/NBP dəyərinin son dəyişdiyi vaxtla göstərilir/);
+    expect(box).toHaveTextContent(/NBP dəyərinin son dəyişdiyi saatla göstərilir/);
+    expect(box).toHaveTextContent(/ən gec 10:42-də ölçdüyü deməkdir: dəyər ən azı/);   // the example and the bound are one sentence (X49): the NBSP after "≤" is inside the «» quote, not here
     expect(box).toHaveTextContent(/ən azı bu qədər köhnədir/);   // the time is a bound: the value is at least this old (X49)
     expect(box).toHaveTextContent(/Dəyəri 2 saatdan çox dəyişməyən NBP göstərilmir/);
     expect(box).toHaveTextContent(/dəyəri dəyişən növbəti ölçməyə qədər göstərilmir \(«ölçmə gözlənilir»\)/);   // waits for a CHANGED value, after a hub restart or a data interruption (X49)
