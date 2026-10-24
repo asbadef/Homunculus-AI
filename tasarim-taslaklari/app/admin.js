@@ -719,8 +719,7 @@
     ["kampanya", "Kampanyalar", "kampanya_create", "zap"],   // kampanya oluşturma yetkisi olan rol görür (sistem + yönetici)
     ["dokuman", "Doküman Tanımları", "admin_system", "file"],   // onam/muayene/rapor form kataloğu; her hastanede farklı set
     ["ptip", "Protokol Tipleri", "admin_system", "list"],   // zengin protokol tipi + iş kuralı bayrakları
-    ["fiyat", "Hizmet Fiyatları", "fiyat_duzenle", "list"],   // fiyat düzenleme yetkisi olan rol görür (sistem + yönetici)
-    ["hizmetkart", "Hizmet Kartı", "fiyat_duzenle", "list"],   // zengin hizmet tanımı (yeni hizmet tek karttan)
+    ["fiyat", "Hizmet Kartı / Fiyatları", "fiyat_duzenle", "list"],   // hizmet tanımı + kuruma göre fiyat (birleşik)
     ["epikriz", "Epikriz Şablonu", "admin_system", "file"],   // epikriz bölümleri (aç/kapat/sıra/başlık)
     ["mobile", "Telefon modülleri", "admin_system", "tablet"],   // 27.09 · #193
     ["system", "Sistem ayarları", "admin_system", "gear"], ["audit", "Denetim kaydı", "audit", "file"],
@@ -730,7 +729,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "raporyetki", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "hizmetkart", "epikriz", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "raporyetki", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "epikriz", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "mesajkalip", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -756,7 +755,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, hizmetkart:tabHizmetKart, epikriz:tabEpikriz, raporyetki:tabRaporYetki,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, epikriz:tabEpikriz, raporyetki:tabRaporYetki,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -1489,19 +1488,26 @@
     const tipOf = (r) => (H.HIZMET_TIP ? H.HIZMET_TIP[r[3]] : "") || "";
     const samhiK = kurumlar.find(k => /SAMHI|İcbari/.test(k)) || "İcbari Tibbi Sığorta (SAMHI)";
     const pr = (kod, k) => { const ov = H.data.fiyatlar && H.data.fiyatlar[kod] && H.data.fiyatlar[kod][k]; return ov != null ? ov : H.fiyatOf(kod, k); };
-    body.innerHTML = `<div class="adm-bar"><input data-fzq placeholder="Hizmet ara (ad / kod)" value="${esc(AD.fzq || "")}" style="flex:1;min-width:240px"><span class="spacer"></span><span class="adm-sub" data-fzcount></span></div>
+    hkSeed();
+    body.innerHTML = `<div class="adm-bar"><input data-fzq placeholder="Hizmet ara (ad / kod)" value="${esc(AD.fzq || "")}" style="flex:1;min-width:240px"><span class="spacer"></span><span class="adm-sub" data-fzcount></span>${can ? `<button class="btn p" data-hknew>+ Yeni hizmet</button>` : `<span class="adm-sub">düzenleme için fiyat yetkisi gerekir</span>`}</div>
       <div data-fzlist></div>
-      <p class="adm-sub" style="margin-top:10px">Tüm hizmetler tek listede; satıra tıklayıp kuruma göre fiyatı düzenleyin. Girilmemiş fiyatlar baz + kurum çarpanından otomatik gelir. ${can ? "" : "(Düzenleme için fiyat yetkisi gerekir.)"}</p>`;
+      <p class="adm-sub" style="margin-top:10px">Hizmet kartı + fiyatları tek ekranda. "+ Yeni hizmet" ile kendi hizmetini (kendi kodumuzla) tanımlarsın; standart katalog hizmetine tıklayıp kuruma göre fiyatını düzenlersin. Kendi tanımladıkların listenin başında "yeni" etiketiyle görünür.</p>`;
     const list = body.querySelector("[data-fzlist]");
     const draw = () => {
-      const q = norm(AD.fzq || ""), all = H.HIZMET || [], hits = (q ? all.filter(r => norm(r[1] + " " + r[2] + " " + r[0]).includes(q)) : all).slice(0, 80);
-      body.querySelector("[data-fzcount]").textContent = all.length + " hizmet · " + hits.length + " gösteriliyor";
-      list.innerHTML = `<div class="tw"><table class="t"><thead><tr><th style="width:80px">Kod</th><th>Hizmet</th><th>Tip</th><th style="width:100px">Özel ödeme</th><th style="width:110px">SAMHI</th><th style="width:90px"></th></tr></thead><tbody>
-        ${hits.map(r => `<tr data-fzrow="${esc(r[0])}" style="cursor:pointer"><td class="mono adm-sub">${esc(r[0])}</td><td><b>${esc(hz(r))}</b></td><td class="adm-sub">${esc(tipOf(r))}</td><td class="n">${pr(r[0], "Özel ödeme")} ₼</td><td class="n">${pr(r[0], samhiK)} ₼</td><td>${can ? `<button class="btn g sm" data-fzedit>Düzenle</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="6" class="mute" style="padding:16px;text-align:center">Eşleşen hizmet yok.</td></tr>`}</tbody></table></div>`;
+      const q = norm(AD.fzq || ""), custom = (H.data.hizmetKartlari || []).filter(c => !q || norm(c.ad + " " + (c.kod || "")).includes(q));
+      const all = H.HIZMET || [], hits = (q ? all.filter(r => norm(r[1] + " " + r[2] + " " + r[0]).includes(q)) : all).slice(0, 80);
+      body.querySelector("[data-fzcount]").textContent = (all.length + (H.data.hizmetKartlari || []).length) + " hizmet · " + (custom.length + hits.length) + " gösteriliyor";
+      const cRows = custom.map(c => `<tr data-hkrow="${esc(c.id)}" style="cursor:pointer"><td class="mono adm-sub">${esc(c.kod || "—")}</td><td><b>${esc(c.ad)}</b> <span class="tag ok">yeni</span></td><td class="adm-sub">${esc(c.tip || "—")}</td><td class="n">${c.fiyat || 0} ₼</td><td class="n">—</td><td>${can ? `<button class="btn g sm" data-hkedit>Düzenle</button>` : ""}</td></tr>`).join("");
+      const kRows = hits.map(r => `<tr data-fzrow="${esc(r[0])}" style="cursor:pointer"><td class="mono adm-sub">${esc(r[0])}</td><td><b>${esc(hz(r))}</b></td><td class="adm-sub">${esc(tipOf(r))}</td><td class="n">${pr(r[0], "Özel ödeme")} ₼</td><td class="n">${pr(r[0], samhiK)} ₼</td><td>${can ? `<button class="btn g sm" data-fzedit>Fiyat</button>` : ""}</td></tr>`).join("");
+      list.innerHTML = `<div class="tw"><table class="t"><thead><tr><th style="width:80px">Kod</th><th>Hizmet</th><th>Tip</th><th style="width:100px">Özel ödeme</th><th style="width:110px">SAMHI</th><th style="width:90px"></th></tr></thead><tbody>${cRows}${kRows || (cRows ? "" : `<tr><td colspan="6" class="mute" style="padding:16px;text-align:center">Eşleşen hizmet yok.</td></tr>`)}</tbody></table></div>`;
     };
     draw();
     const qi = body.querySelector("[data-fzq]"); qi.addEventListener("input", () => { AD.fzq = qi.value; draw(); });
-    list.addEventListener("click", (e) => { const tr = e.target.closest("[data-fzrow]"); if (!tr) return; if (!can) { H.toast("Fiyat düzenleme yetkiniz yok.", "e"); return; } const r = (H.HIZMET || []).find(x => x[0] === tr.dataset.fzrow); if (r) fiyatEdit(r); });
+    const nb = body.querySelector("[data-hknew]"); if (nb) nb.addEventListener("click", () => hizmetKartForm(null, draw));
+    list.addEventListener("click", (e) => {
+      const hkr = e.target.closest("[data-hkrow]"); if (hkr) { if (!can) { H.toast("Yetkiniz yok.", "e"); return; } const c = (H.data.hizmetKartlari || []).find(x => x.id === hkr.dataset.hkrow); if (c) hizmetKartForm(c, draw); return; }
+      const tr = e.target.closest("[data-fzrow]"); if (!tr) return; if (!can) { H.toast("Fiyat düzenleme yetkiniz yok.", "e"); return; } const r = (H.HIZMET || []).find(x => x[0] === tr.dataset.fzrow); if (r) fiyatEdit(r);
+    });
     function fiyatEdit(r) {
       H.modal({ title:"Fiyat · " + esc(hz(r)), wide:true,
         body:`<div class="adm-bar"><b>${esc(hz(r))}</b> <span class="mono adm-sub">${esc(r[0])}</span> <span class="adm-sub">· ${esc(tipOf(r))}</span></div>
