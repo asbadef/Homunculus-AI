@@ -973,7 +973,13 @@
         <div class="fr"><label>Muayene hizmeti</label><div class="amel-cb"><input data-f="hiz" value="${esc(e.hizmetAd || "")}" placeholder="Muayene hizmeti ara (katalogdan)" autocomplete="off"><div class="amel-dd hidden" data-ht-dd></div></div></div>
         <div class="fr"><label>Geliş tipi</label><select data-f="gelis">${HT_GELIS.map(x => `<option${e.gelis === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></div>
         <div class="fr"><label>Protokol tipi</label><select data-f="proto">${htProto().map(x => `<option${e.protokol === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></div>
-      </div>`,
+        <div class="fr"><label>Provizyon tipi</label><select data-f="provizyon"><option value="">— tümü —</option>${(secGet("provizyon") || []).map(x => `<option${e.provizyon === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Kurum tipi</label><select data-f="kurumTip"><option value="">— tümü —</option>${["SAMHI", "Özel sigorta", "Kurum anlaşması", "Özel ödeme"].map(x => `<option${e.kurumTip === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Kurum</label><select data-f="kurum"><option value="">— tümü —</option>${(secGet("kurum") || []).map(x => `<option${e.kurum === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Doktor</label><select data-f="doktor"><option value="">— tümü —</option>${(H.data.users || []).filter(u => u.role === "hekim").map(u => `<option value="${esc(u.name)}"${e.doktor === u.name ? " selected" : ""}>${esc(u.name)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Doktor hariç</label><select data-f="doktorHaric"><option value="">— yok —</option>${(H.data.users || []).filter(u => u.role === "hekim").map(u => `<option value="${esc(u.name)}"${e.doktorHaric === u.name ? " selected" : ""}>${esc(u.name)}</option>`).join("")}</select></div>
+      </div>
+      <div class="fr" style="margin-top:6px"><label>Seçenekler</label><div class="icd-oz"><label><input type="checkbox" data-f2="paketAktar"${e.paketAktar ? " checked" : ""}> Paket içeriklerini aktar</label><label><input type="checkbox" data-f2="randevudanDus"${e.randevudanDus ? " checked" : ""}> Randevudan kabul edildiğinde düşsün</label></div></div>`,
       actions:`${existing ? `<button class="btn g" data-htdelf>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-htsave>Kaydet</button>`,
       onMount(m) {
         const MUA = htMuayeneList(), hiz = m.querySelector('[data-f="hiz"]'), dd = m.querySelector("[data-ht-dd]");
@@ -988,7 +994,9 @@
         m.querySelector("[data-htsave]").onclick = () => {
           const g = s => (m.querySelector(`[data-f="${s}"]`).value || "").trim();
           const bolum = g("bolum"), hizmetAd = g("hiz"); if (!bolum || !hizmetAd) { H.toast("Bölüm ve muayene hizmeti gerekli.", "w"); return; }
-          const rec = { bolum, hizmetAd, hizmetKod:hiz.dataset.code || e.hizmetKod || "", gelis:m.querySelector('[data-f="gelis"]').value, protokol:m.querySelector('[data-f="proto"]').value };
+          const rec = { bolum, hizmetAd, hizmetKod:hiz.dataset.code || e.hizmetKod || "", gelis:m.querySelector('[data-f="gelis"]').value, protokol:m.querySelector('[data-f="proto"]').value,
+            provizyon:g("provizyon"), kurumTip:g("kurumTip"), kurum:g("kurum"), doktor:g("doktor"), doktorHaric:g("doktorHaric"),
+            paketAktar:m.querySelector('[data-f2="paketAktar"]').checked, randevudanDus:m.querySelector('[data-f2="randevudanDus"]').checked };
           if (existing) Object.assign(e, rec); else ALL.unshift(Object.assign({ id:"ht" + Date.now() }, rec));
           H.log(existing ? "Hizmet tanımı güncellendi" : "Hizmet tanımı eklendi", bolum + " → " + hizmetAd); H.closeModal(); H.toast("Kaydedildi"); redraw();
         };
