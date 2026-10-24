@@ -6,9 +6,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   EVIDENCE, PARAM_ORDER, PARTIAL, STATUS_KEY, UNIT_KEY, ageText, cellOf, chipCounts, displayAge, feedSentenceKey,
-  linkSentenceKey, maxAgeOf, readAgeS, reasonKey,
+  lastSeenMs, linkSentenceKey, maxAgeOf, readAgeS, reasonKey,
 } from "./monitor.js";
-import { param, strip, bed, unassigned } from "../../data/shadow.testutil.js";
+import { NBP_CHANGED_AT, param, strip, bed, unassigned } from "../../data/shadow.testutil.js";
 import { createTranslator } from "../../i18n/translate.js";
 import { DICTIONARIES } from "../../i18n/catalog.js";
 
@@ -54,6 +54,61 @@ describe("ages and cells", () => {
     expect(ageText(az, 2.1)).toBe("3 san");
     expect(ageText(az, 120)).toBe("2 dəq");
     expect(ageText(az, null)).toBeNull();
+  });
+});
+
+describe("NBP's cell: the time its value last changed", () => {
+  const NBP = param("nbp", [118, 79, 92]);
+  const at = (p, over = {}) => cellOf(p, { nowMs: FETCHED, fetchedAtMs: FETCHED, ...over });
+
+  it("shows the three numbers with the time the value changed and how long ago that was", () => {
+    expect(at(NBP)).toEqual({ kind: "nbp", systolic: 118, diastolic: 79, mean: 92,
+      changedAtMs: Date.parse(NBP_CHANGED_AT), measuredAgeS: 600, ageS: 2 });
+  });
+
+  it("ages the change between polls, and goes old with its packet like any value", () => {
+    expect(at(NBP, { nowMs: FETCHED + 3000 })).toMatchObject({ kind: "nbp", measuredAgeS: 603, ageS: 5 });
+    expect(at(NBP, { nowMs: FETCHED + 14_000 })).toEqual({ kind: "old", ageS: 614, lastAt: NBP_CHANGED_AT });
+    expect(at(NBP, { feedOk: false })).toEqual({ kind: "old", ageS: 600, lastAt: NBP_CHANGED_AT });
+  });
+
+  it("takes the server's withholding as it comes and judges no age itself", () => {
+    // The 2-hour limit is the API's: an answer that says "value" three hours after the change is
+    // drawn, and one that says "old" ten minutes after it is not.
+    expect(at(param("nbp", [118, 79, 92], { measured_age_s: 10_800 })).kind).toBe("nbp");
+    const withheld = param("nbp", null, { changed_at: NBP_CHANGED_AT, last_at: NBP_CHANGED_AT, age_s: 600, measured_age_s: 600 });
+    expect(at(withheld)).toEqual({ kind: "old", ageS: 600, lastAt: NBP_CHANGED_AT });
+    // A fresh packet that still carries numbers, which the server says are old: none is drawn.
+    expect(at(param("nbp", [118, 79, 92], { state: "old" }))).toEqual({ kind: "old", ageS: 600, lastAt: NBP_CHANGED_AT });
+  });
+
+  it("never draws NBP's numbers without the age and the time of their change", () => {
+    expect(at(param("nbp", [118, 79, 92], { measured_age_s: null }))).toEqual({ kind: "old", ageS: null, lastAt: NBP_CHANGED_AT });
+    expect(at(param("nbp", [118, 79, 92], { changed_at: null }))).toEqual({ kind: "old", ageS: null, lastAt: null });
+  });
+
+  it("awaits a measurement when no change was seen: no number, no age, no time", () => {
+    expect(at(param("nbp", null))).toEqual({ kind: "old", ageS: null, lastAt: null });
+    expect(at(param("nbp", null), { nowMs: FETCHED - 500 })).toEqual({ kind: "old", ageS: null, lastAt: null });
+  });
+
+  it("shows the monitor's *** when it flags a component, and lets it go old with its packet", () => {
+    const flagged = param("nbp", null, { state: "invalid", age_s: 2, last_at: NBP_CHANGED_AT, changed_at: NBP_CHANGED_AT,
+      measured_age_s: 600 });
+    expect(at(flagged)).toEqual({ kind: "invalid", ageS: 2 });
+    // 14 s later its packet is 16 s old: the *** is no longer shown, and the age left is the change's.
+    expect(at(flagged, { nowMs: FETCHED + 14_000 })).toEqual({ kind: "old", ageS: 614, lastAt: NBP_CHANGED_AT });
+  });
+
+  it("the test util refuses a wire name such as nbp_systolic", () => {
+    expect(() => param("nbp_systolic", 118)).toThrow(TypeError);
+  });
+
+  it("does not lend its change time to a silent monitor's last-sent time", () => {
+    const hr = param("hr", 72, { last_at: "2026-10-08T09:59:00+00:00" });
+    const nbpNewer = param("nbp", [118, 79, 92], { last_at: "2026-10-08T09:59:30+00:00" });
+    expect(lastSeenMs(bed("REA-01 · 2", [hr, nbpNewer], { status: "silent" }))).toBe(Date.parse("2026-10-08T09:59:00+00:00"));
+    expect(lastSeenMs(bed("REA-01 · 2", [nbpNewer], { status: "silent" }))).toBeNull();
   });
 });
 
@@ -140,5 +195,7 @@ describe("the tables", () => {
     const source = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "monitor.js"), "utf8");
     expect(source).not.toMatch(/text-(?:crit|high|mid|low|ok|v-)|bg-(?:crit|high|mid|low|ok)/);
     expect(source).not.toMatch(/value\s*[<>]=?\s*\d/);
+    expect(source).not.toMatch(/\b(?:value|systolic|diastolic|mean)\b\s*[<>]=?\s*\d|\d\s*[<>]=?\s*(?:value|systolic|diastolic|mean)\b/);
+    expect(source).not.toMatch(/\b(?:ageS|measuredAgeS|age_s|measured_age_s)\b\s*[<>]=?\s*\d|\d\s*[<>]=?\s*(?:ageS|measuredAgeS|age_s|measured_age_s)\b/);
   });
 });

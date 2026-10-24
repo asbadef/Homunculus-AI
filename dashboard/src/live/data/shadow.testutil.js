@@ -10,30 +10,52 @@
 //
 //     param("hr", 72)                       a fresh value, 2 s old
 //     param("spo2", null, { state: "invalid" })
+//     param("nbp", [118, 79, 92])           NBP, its value changed ten minutes before AT
+//     param("nbp", null)                    NBP awaiting a change (none seen since the hub started)
 //     bed("REA-01 · 2", [param("hr", 72)], { link: "one", patient_id: "S-001" })
 //     unassigned("192.0.2.28", "table_unassigned")
 //     strip({ beds: [...], unassigned: [...] })
 
 export const UNIT = Object.freeze({
   hr: "bpm", pls: "bpm", spo2: "%", etco2: "mmHg", temperature: "C",
-  art_systolic: "mmHg", art_diastolic: "mmHg", art_mean: "mmHg", respiration: "/min",
+  art_systolic: "mmHg", art_diastolic: "mmHg", art_mean: "mmHg", respiration: "/min", nbp: "mmHg",
 });
 const EVIDENCE = Object.freeze({
   hr: "screen_match_two_devices", pls: "screen_match_two_devices", spo2: "screen_match_two_devices",
   etco2: "screen_match_two_devices", art_systolic: "screen_match", temperature: "screen_match_site_unknown",
-  art_mean: "structural", art_diastolic: "structural_trend", respiration: "range_overlap",
+  art_mean: "structural", art_diastolic: "structural_trend", respiration: "range_overlap", nbp: "screen_match",
 });
 const PARTIAL = new Set(["temperature", "art_mean", "art_diastolic", "respiration"]);
 
 /** When a strip answer was generated in these fixtures. */
 export const AT = "2026-10-08T10:00:00+00:00";
 
-/** One parameter as the API sends it. `value` null with no `state` override means "invalid". */
+/** When the fixtures' NBP last changed: ten minutes before AT. */
+export const NBP_CHANGED_AT = "2026-10-08T09:50:00+00:00";
+
+/** One parameter as the API sends it. `value` null with no `state` override means "invalid". NBP is
+ *  the API's ONE entry for its three readings (`param("nbp", [s, d, m])`, or `null` for "no change
+ *  seen yet"); a wire name such as `nbp_systolic` never reaches the board and is refused here. */
 export function param(name, value, over = {}) {
   if (!(name in UNIT)) throw new TypeError(`param(name, value, over): no such forwarded parameter ${name}`);
+  if (name === "nbp") return nbpParam(value, over);
   return {
     parameter: name, state: value === null ? "invalid" : "value", value, unit: UNIT[name], age_s: 2,
     last_at: AT, evidence: EVIDENCE[name], partial: PARTIAL.has(name), ...over,
+  };
+}
+
+function nbpParam(triple, over) {
+  if (triple !== null && !(Array.isArray(triple) && triple.length === 3)) {
+    throw new TypeError('param("nbp", [systolic, diastolic, mean] | null, over)');
+  }
+  const shown = triple !== null;
+  return {
+    parameter: "nbp", state: shown ? "value" : "old",
+    systolic: shown ? triple[0] : null, diastolic: shown ? triple[1] : null, mean: shown ? triple[2] : null,
+    unit: "mmHg", age_s: shown ? 2 : null, last_at: shown ? AT : null,
+    changed_at: shown ? NBP_CHANGED_AT : null, measured_age_s: shown ? 600 : null,
+    evidence: EVIDENCE.nbp, partial: false, ...over,
   };
 }
 

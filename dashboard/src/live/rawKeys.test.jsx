@@ -149,15 +149,15 @@ const PAYLOAD = board([
 ]);
 
 /** Aşama A's monitor strip, on: a monitor on the fixture's card (a value, a `***`, a partly checked
- *  parameter, an old one), a bed with no patient, a bed with two monitors, a silent one, a device
- *  the table leaves unplaced and one it does not list. The beds, patient, devices and settings
- *  screens draw it; without it every `monitor.*` string was outside the sweep. Synthetic devices
- *  only (shadow.testutil.js). */
+ *  parameter, an old one, an NBP with the time it changed), a bed with no patient (its NBP awaiting a
+ *  change), a bed with two monitors, a silent one, a device the table leaves unplaced and one it does
+ *  not list. The beds, patient, devices and settings screens draw it; without it every `monitor.*`
+ *  string was outside the sweep. Synthetic devices only (shadow.testutil.js). */
 const STRIP = strip({
   beds: [
-    bed("REA-01 · 1", [param("hr", 96), param("spo2", null), param("art_mean", 84), param("respiration", 18, { age_s: 40 })],
-      { link: "one", patient_id: FIXTURE_ID }),
-    bed("REA-01 · 3", [param("temperature", 37.1)]),
+    bed("REA-01 · 1", [param("hr", 96), param("spo2", null), param("art_mean", 84), param("respiration", 18, { age_s: 40 }),
+      param("nbp", [118, 79, 92])], { link: "one", patient_id: FIXTURE_ID }),
+    bed("REA-01 · 3", [param("temperature", 37.1), param("nbp", null)]),
     bed("REA-01 · 4", [], { link: "ambiguous", link_reason: "two_monitors" }),
     bed("REA-01 · 5", [], { status: "silent" }),
   ],
@@ -355,6 +355,9 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByText(/^köhnə · /)).toBeInTheDocument();                                       // monitor.old
     expect(screen.getByText(/\d+\/\d+ məlumat göndərir/).closest("span")).toHaveTextContent("Monitor (təsdiqlənməmiş):"); // monitor.chipTitle, chipCounts
     expect(screen.getByText("Monitor məlumat göndərir; göstəriləcək dəyər yoxdur")).toBeInTheDocument(); // monitor.noValues
+    expect(screen.getByText(/^ölçmə ≤ \d\d:\d\d \(10 dəq\)$/)).toBeInTheDocument();                   // monitor.nbpMeasured
+    expect(screen.getByText(/^118 bölü 79, orta 92 mmHg; ölçmə \d\d:\d\d/)).toHaveClass("sr-only"); // monitor.nbpSaid
+    expect(screen.getByText("ölçmə gözlənilir")).toBeInTheDocument();                                 // monitor.nbpWaiting
     act(() => { mounted.board.clear(); mounted.shadow.clear(); });
   });
 });
