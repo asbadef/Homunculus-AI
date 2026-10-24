@@ -720,6 +720,7 @@
     ["dokuman", "Doküman Tanımları", "admin_system", "file"],   // onam/muayene/rapor form kataloğu; her hastanede farklı set
     ["ptip", "Protokol Tipleri", "admin_system", "list"],   // zengin protokol tipi + iş kuralı bayrakları
     ["fiyat", "Hizmet Fiyatları", "fiyat_duzenle", "list"],   // fiyat düzenleme yetkisi olan rol görür (sistem + yönetici)
+    ["epikriz", "Epikriz Şablonu", "admin_system", "file"],   // epikriz bölümleri (aç/kapat/sıra/başlık)
     ["mobile", "Telefon modülleri", "admin_system", "tablet"],   // 27.09 · #193
     ["system", "Sistem ayarları", "admin_system", "gear"], ["audit", "Denetim kaydı", "audit", "file"],
     // 30.09 · İzleme ve işletim (Y1–Y7) · kod: dosyanın sonundaki "İZLEME VE İŞLETİM" bölümü
@@ -728,7 +729,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "epikriz", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "mesajkalip", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -754,7 +755,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, epikriz:tabEpikriz,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -1338,6 +1339,35 @@
   }
 
   /* ---------- Hizmet Fiyatları (kuruma göre · admin düzenler) ---------- */
+  /* ---------- Epikriz Şablonu (admin alanları aç/kapat, sıra, başlık) ---------- */
+  const EPIKRIZ_SABLON = ["Ayaktan Epikriz", "Yatan Epikriz", "Yoğun Bakım Epikriz", "FTR Epikriz", "Özet Ayaktan", "Özet Yatan"];
+  const EPIKRIZ_ALAN = [["sikayet", "Şikayet"], ["hikaye", "Hikaye"], ["ozgecmis", "Özgeçmiş"], ["bulgular", "Muayene Bulguları"], ["tedaviPlan", "Tedavi ve Bakım Planı"], ["tanilar", "Tanılar"], ["gozlem", "Gözlem/İzlem Notu"], ["radSonuc", "Radyoloji"], ["ameliyatNot", "Ameliyat Notu"], ["ameliyat", "Ameliyat"], ["labSonuc", "Laboratuvar"], ["konsultasyon", "Konsültasyon"], ["konsDoktor", "Konsültasyon Doktoru"], ["kanIstek", "Kan İstek"]];
+  function epikrizSeed() {
+    if (H.data.epikrizSablon) return;
+    H.data.epikrizSablon = {};
+    EPIKRIZ_SABLON.forEach(s => { H.data.epikrizSablon[s] = EPIKRIZ_ALAN.map(([k, l], i) => ({ key:k, ad:l, baslik:l + ":", dahil:true, sira:i + 1, bosCikmasin:false })); });
+  }
+  function tabEpikriz(body) {
+    epikrizSeed(); const tpl = AD.epiTpl || EPIKRIZ_SABLON[0], secs = H.data.epikrizSablon[tpl];
+    body.innerHTML = `<div class="g2" style="align-items:start">
+      <div class="box" style="max-width:240px"><h5>Şablonlar</h5><div style="display:flex;flex-direction:column;gap:3px">${EPIKRIZ_SABLON.map(s => `<button class="hc-cat ${tpl === s ? "on" : ""}" data-epitpl="${esc(s)}">${esc(s)} <em>${H.data.epikrizSablon[s].filter(x => x.dahil).length}</em></button>`).join("")}</div></div>
+      <div class="box"><div class="adm-bar"><b>${esc(tpl)}</b><span class="spacer"></span><button class="btn p sm" data-epinew>+ Alan ekle</button></div>
+        <div class="tw"><table class="t"><thead><tr><th style="width:50px">Sıra</th><th>Alan</th><th>Başlık</th><th style="width:70px">Dahil</th><th style="width:100px">Boş ise çıkmasın</th><th style="width:40px"></th></tr></thead><tbody data-epilist></tbody></table></div></div></div>
+      <p class="adm-sub" style="margin-top:10px">Doktor epikriz yazarken bu şablona göre bölümleri görür. Admin bir bölümü "Dahil" ile açar/kapatır, sırasını ve başlığını değiştirir. (Bağlam: bölüm kartındaki "Epikriz şablonu" bu listeden seçilir.)</p>`;
+    const list = body.querySelector("[data-epilist]");
+    const draw = () => { secs.sort((a, b) => a.sira - b.sira);
+      list.innerHTML = secs.map((s, i) => `<tr><td><input type="number" data-episira="${i}" value="${s.sira}" style="width:46px"></td><td><b>${esc(s.ad)}</b></td><td><input data-epibas="${i}" value="${esc(s.baslik)}" style="width:100%"></td><td style="text-align:center"><input type="checkbox" data-epidahil="${i}"${s.dahil ? " checked" : ""}></td><td style="text-align:center"><input type="checkbox" data-epibos="${i}"${s.bosCikmasin ? " checked" : ""}></td><td><button class="btn g sm" data-epidel="${i}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("") || `<tr><td colspan="6" class="mute" style="padding:14px;text-align:center">Alan yok.</td></tr>`; };
+    draw();
+    body.querySelectorAll("[data-epitpl]").forEach(b => b.onclick = () => { AD.epiTpl = b.dataset.epitpl; tabEpikriz(body); });
+    body.querySelector("[data-epinew]").onclick = () => { const ad = prompt("Alan adı:"); if (!ad || !ad.trim()) return; secs.push({ key:"c" + Date.now(), ad:ad.trim(), baslik:ad.trim() + ":", dahil:true, sira:secs.length + 1, bosCikmasin:false }); H.log("Epikriz alanı eklendi", tpl + " · " + ad.trim()); draw(); };
+    list.addEventListener("change", (e) => { const t = e.target;
+      const si = t.closest("[data-episira]"); if (si) { secs[+si.dataset.episira].sira = +si.value || 0; draw(); return; }
+      const ba = t.closest("[data-epibas]"); if (ba) { secs[+ba.dataset.epibas].baslik = ba.value; return; }
+      const dh = t.closest("[data-epidahil]"); if (dh) { secs[+dh.dataset.epidahil].dahil = dh.checked; tabEpikriz(body); return; }
+      const bo = t.closest("[data-epibos]"); if (bo) { secs[+bo.dataset.epibos].bosCikmasin = bo.checked; return; } });
+    list.addEventListener("click", (e) => { const d = e.target.closest("[data-epidel]"); if (d) { secs.splice(+d.dataset.epidel, 1); H.toast("Alan çıkarıldı", "w"); draw(); } });
+  }
+
   function tabFiyat(body) {
     secSeed(); const kurumlar = H.data.secenekler.kurum || [], can = H.can("fiyat_duzenle");
     const hz = (r) => (H.state.lang === "TR" ? (r[2] || r[1]) : (r[1] || r[2])) || r[1] || r[2] || "";
