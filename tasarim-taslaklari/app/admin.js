@@ -1593,6 +1593,7 @@
     ["Yönetim", [["summary", "Yönetici özeti"], ["quality", "Kalite göstergeleri"], ["audit", "Denetim kaydı"], ["admin_users", "Kullanıcı yönetimi"], ["admin_structure", "Hastane yapısı"], ["admin_roles", "Roller ve yetkiler"],
       ["admin_system", "Sistem ayarları"], ["admin_integrations", "Entegrasyonlar"], ["admin_camera", "Kamera bağlantısı"]]],
     ["Vezne ve finans", [["vezne_donem", "Vezne dönem aç / kapat"], ["vezne_banko", "Vezne banko / kasa değiştir"], ["kampanya_create", "Kampanya oluştur"], ["indirim_onay", "İndirim onayla"], ["iade_onay", "İade onayla"], ["fiyat_duzenle", "Hizmet fiyatı düzenle"]]],
+    ["Destek / İş takip", [["destek_ac", "Destek talebi açabilir"], ["destek_yonet", "Destek taleplerini yönetir (çöz/kapat/ata)"]]],
   ];
   /* 24.09 (3. oturum) · Ozan #67: "admin panelinde tüm yetkileri aktif getir; elle açıyorum sonra kayboluyor".
    * 1) Sistem yöneticisi prototipte BÜTÜN yetkilerle gelir (hasta ekranları dahil).

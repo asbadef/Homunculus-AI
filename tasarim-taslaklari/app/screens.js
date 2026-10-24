@@ -402,6 +402,72 @@
     return null;
   }
 
+  /* ================= DESTEK / İŞ TAKİP (talep aç → IT çözer/kapatır) ================= */
+  const TALEP_KAT = ["Bilgi Sistemleri", "Donanım", "Yazılım / program", "Hesap / yetki", "Ağ / internet", "Yazıcı / barkod", "Diğer"];
+  const TALEP_ONCELIK = ["Düşük", "Normal", "Yüksek", "Acil"];
+  const TALEP_DURUM = ["Açık", "İşlemde", "Çözüldü", "Kapalı"];
+  let talepSeq = 0;
+  const talepler = () => (H.data.talepler = H.data.talepler || [
+    { id:"t1", no:"IT-24100", acan:"hs.sevda", acanAd:"Sevda Quliyeva", kategori:"Yazıcı / barkod", konu:"Kol bandı yazıcısı çalışmıyor", aciklama:"Serviste kol bandı yazıcısı boş kağıt çıkarıyor.", oncelik:"Yüksek", durum:"Açık", atanan:"", tarih:"24.10.2026 09:12", notlar:[] },
+    { id:"t2", no:"IT-24099", acan:"dr.kamran", acanAd:"Dr. Kamran Rzayev", kategori:"Hesap / yetki", konu:"İstem ekranı açılmıyor", aciklama:"Hasta istem sekmesi boş geliyor, yetki eksik olabilir.", oncelik:"Normal", durum:"İşlemde", atanan:"admin", tarih:"24.10.2026 08:40", notlar:[{ by:"admin", at:"24.10.2026 08:55", text:"Rol yetkisi kontrol ediliyor." }] },
+    { id:"t3", no:"IT-24098", acan:"kabul.ulviyye", acanAd:"Ülviyyə Səfərova", kategori:"Ağ / internet", konu:"Vezne bilgisayarı internete bağlanmıyor", aciklama:"Sabahtan beri ağ yok.", oncelik:"Acil", durum:"Çözüldü", atanan:"admin", tarih:"23.10.2026 16:20", notlar:[{ by:"admin", at:"23.10.2026 16:45", text:"Switch portu değiştirildi, bağlandı." }] },
+  ]);
+  const talepAd = (u) => { const x = (H.data.users || []).find(y => y.u === u); return x ? x.name : (u || "—"); };
+  H.register("istakip", { title:() => H.t("m_istakip"), perm:"destek_ac", render(root, params = {}) {
+    const yonet = H.can("destek_yonet"), all = talepler(), f = params.durum || "aktif", mine = params.kapsam === "benim" || !yonet;
+    const me = (H.state.user || {}).u;
+    let list = all.filter(t => mine ? t.acan === me : true);
+    list = f === "hepsi" ? list : f === "aktif" ? list.filter(t => t.durum === "Açık" || t.durum === "İşlemde") : list.filter(t => t.durum === f);
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_istakip")}</h2><p>${yonet ? "Bilgi Sistemleri · tüm talepler" : "Sorununuzu iletin, Bilgi Sistemleri çözsün"} (tasarım)</p></div><div class="r"><button class="btn p" data-talnew>${I("plus")} Yeni talep</button></div></div>
+      ${yonet ? `<div class="seg" style="margin-bottom:8px"><button data-talkap="tum" class="${!mine ? "on" : ""}">Tüm talepler</button><button data-talkap="benim" class="${mine ? "on" : ""}">Benim taleplerim</button></div>` : ""}
+      <div class="seg" style="margin-bottom:12px">${[["aktif", "Aktif"], ["hepsi", "Hepsi"], ...TALEP_DURUM.map(d => [d, d])].map(([k, l]) => `<button data-talf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      <div class="tw"><table class="t"><thead><tr><th style="width:90px">No</th><th>Konu</th><th>Kategori</th><th>Açan</th><th style="width:80px">Öncelik</th><th style="width:150px">Tarih</th><th style="width:110px">Durum</th></tr></thead><tbody>
+      ${list.length ? list.map(t => `<tr data-talopen="${t.id}" style="cursor:pointer"><td class="mono adm-sub">${H.esc(t.no)}</td><td><b>${H.esc(t.konu)}</b></td><td class="adm-sub">${H.esc(t.kategori)}</td><td class="adm-sub">${H.esc(t.acanAd)}</td><td>${H.esc(t.oncelik)}</td><td class="adm-sub">${H.esc(t.tarih)}</td><td><span class="tag ${t.durum === "Çözüldü" || t.durum === "Kapalı" ? "ok" : t.durum === "İşlemde" ? "w" : ""}">${t.durum}</span></td></tr>`).join("") : `<tr><td colspan="7" class="mute" style="padding:20px;text-align:center">Talep yok. "+ Yeni talep" ile açın.</td></tr>`}
+      </tbody></table></div>
+      <p class="adm-sub" style="margin-top:8px">Talebi açan takip eder; Bilgi Sistemleri (IT) durumunu günceller, not ekler ve kapatır. Gerçek bildirim/e-posta bağlantısını ayrı ekip kurar.</p>`;
+    root.onclick = (e) => {
+      const tf = e.target.closest("[data-talf]"); if (tf) return H.go("istakip", { durum:tf.dataset.talf, kapsam:params.kapsam });
+      const tk = e.target.closest("[data-talkap]"); if (tk) return H.go("istakip", { durum:params.durum, kapsam:tk.dataset.talkap === "benim" ? "benim" : "tum" });
+      if (e.target.closest("[data-talnew]")) return talepForm();
+      const op = e.target.closest("[data-talopen]"); if (op) { const t = all.find(x => x.id === op.dataset.talopen); if (t) talepDetay(t); }
+    };
+    function talepForm() {
+      H.modal({ title:"Yeni destek talebi", wide:true, body:`<div class="icd-form">
+        <div class="fr"><label>Kategori</label><select data-f="kat">${TALEP_KAT.map(k => `<option>${H.esc(k)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Öncelik</label><select data-f="onc">${TALEP_ONCELIK.map(k => `<option${k === "Normal" ? " selected" : ""}>${H.esc(k)}</option>`).join("")}</select></div>
+        <div class="fr"><label>İlgili modül (ops.)</label><input data-f="modul" placeholder="ör. Vezne, İstem, Randevu"></div>
+        <div class="fr"><label>Konu</label><input data-f="konu" placeholder="Sorunu kısaca yazın"></div>
+        <div class="fr"><label>Açıklama</label><textarea data-f="acik" rows="4" placeholder="Ne oldu, ne zaman, hangi ekranda?"></textarea></div>
+      </div>`,
+        actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Talep aç</button>`,
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = (k) => (m.querySelector(`[data-f="${k}"]`).value || "").trim();
+          const konu = g("konu"); if (!konu) { H.toast("Konu gerekli.", "w"); return; }
+          const no = "IT-" + (24101 + (talepSeq++)); const u = (H.state.user || {});
+          all.unshift({ id:"t" + Date.now(), no, acan:u.u || "me", acanAd:u.name || "Ben", kategori:g("kat"), modul:g("modul"), konu, aciklama:g("acik"), oncelik:g("onc"), durum:"Açık", atanan:"", tarih:H.nowFull ? H.nowFull() : H.now(), notlar:[] });
+          H.log("Destek talebi açıldı", no + " · " + konu); H.closeModal(); H.toast("Talep açıldı: " + no); H.go("istakip", params); }; } });
+    }
+    function talepDetay(t) {
+      const yonet2 = H.can("destek_yonet"), heks = (H.data.users || []).filter(u => u.role === "sistem");
+      H.modal({ title:t.no + " · " + H.esc(t.konu), wide:true, body:`<div class="vz-hk">
+          <div class="kv"><span>Kategori</span><span>${H.esc(t.kategori)}</span></div><div class="kv"><span>Öncelik</span><span>${H.esc(t.oncelik)}</span></div>
+          <div class="kv"><span>Açan</span><span>${H.esc(t.acanAd)}</span></div><div class="kv"><span>Tarih</span><span>${H.esc(t.tarih)}</span></div>
+          <div class="kv"><span>İlgili modül</span><span>${H.esc(t.modul || "—")}</span></div><div class="kv"><span>Atanan</span><span>${H.esc(talepAd(t.atanan) || "—")}</span></div>
+        </div>
+        <div class="box" style="margin-top:10px"><b>Açıklama</b><div class="adm-sub" style="margin-top:4px;white-space:pre-wrap">${H.esc(t.aciklama || "—")}</div></div>
+        <div class="ist-sec ist-hd"><h5>İşlem notları</h5></div>
+        <div data-talnot>${(t.notlar || []).length ? t.notlar.map(n => `<div class="box" style="margin-bottom:6px"><div class="adm-sub">${H.esc(talepAd(n.by))} · ${H.esc(n.at)}</div><div>${H.esc(n.text)}</div></div>`).join("") : `<div class="adm-sub">Henüz not yok.</div>`}</div>
+        ${yonet2 ? `<div class="icd-form" style="margin-top:8px">
+          <div class="fr"><label>Durum</label><select data-td="durum">${TALEP_DURUM.map(d => `<option${t.durum === d ? " selected" : ""}>${d}</option>`).join("")}</select></div>
+          <div class="fr"><label>Ata</label><select data-td="atanan"><option value="">—</option>${heks.map(u => `<option value="${H.esc(u.u)}"${t.atanan === u.u ? " selected" : ""}>${H.esc(u.name)}</option>`).join("")}</select></div>
+          <div class="fr"><label>Not ekle</label><textarea data-td="not" rows="2" placeholder="Yapılan işlem / çözüm"></textarea></div></div>` : ""}`,
+        actions:`<button class="btn" data-x>Kapat</button>${yonet2 ? `<button class="btn p" data-talkay>Kaydet</button>` : ""}`,
+        onMount(m) { const kb = m.querySelector("[data-talkay]"); if (kb) kb.onclick = () => {
+          const d = m.querySelector('[data-td="durum"]').value, a = m.querySelector('[data-td="atanan"]').value, nt = (m.querySelector('[data-td="not"]').value || "").trim();
+          t.durum = d; t.atanan = a; if (nt) (t.notlar = t.notlar || []).push({ by:(H.state.user || {}).u || "admin", at:H.nowFull ? H.nowFull() : H.now(), text:nt });
+          H.log("Destek talebi güncellendi", t.no + " · " + d); H.closeModal(); H.toast("Talep güncellendi: " + d); H.go("istakip", params); }; } });
+    }
+  } });
+
   /* ================= LAB / RADYOLOJİ İŞ AKIŞI ================= */
   const LAB_DURUM = ["İstendi", "Numune alındı", "Çalışılıyor", "Sonuç onaylandı", "Serbest bırakıldı"];
   H.register("labislem", { title:() => "Laboratuvar / Radyoloji", perm:["beds", "summary"], render(root, params = {}) {

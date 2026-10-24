@@ -78,6 +78,7 @@
     m_ik:{ AZ:"İnsan resursları", TR:"İnsan Kaynakları", RU:"Кадры", EN:"Human resources" },
     m_labislem:{ AZ:"Laboratoriya / Radiologiya", TR:"Laboratuvar / Radyoloji", RU:"Лаборатория / Радиология", EN:"Lab / Radiology" },
     m_raporlar:{ AZ:"Hesabatlar", TR:"Raporlar", RU:"Отчёты", EN:"Reports" },
+    m_istakip:{ AZ:"Dəstək / İş izləmə", TR:"Destek / İş Takip", RU:"Поддержка / Заявки", EN:"Support / Tickets" },
     m_tasks:{ AZ:"Tapşırıqlar", TR:"Görevlerim", RU:"Задачи", EN:"My tasks" },
     m_bedside:{ AZ:"Ölçmə", TR:"Yatak başı", RU:"У койки", EN:"Bedside" },
     m_alarms:{ AZ:"Siqnallar", TR:"Alarmlar", RU:"Тревоги", EN:"Alarms" },
@@ -358,8 +359,10 @@
     kalite:   { group:"Yönetim", name:"Kalite", az:"Keyfiyyət", names:false, engine:"AUDITOR",
                 perms:["quality","audit"], home:"quality" },
     sistem:   { group:"Yönetim", name:"Sistem yöneticisi (BT)", az:"Sistem inzibatçısı (İT)", names:false, engine:"HOSPITAL_ADMIN",
-                perms:["admin_users","admin_structure","admin_roles","admin_system","admin_integrations","admin_camera","audit","occupancy"], home:"admin" },
+                perms:["admin_users","admin_structure","admin_roles","admin_system","admin_integrations","admin_camera","audit","occupancy","destek_yonet"], home:"admin" },
   };
+  // Destek / İş takip: her kullanıcı talep açabilir; yönetimi (çözme/kapatma) ayrı yetki (destek_yonet).
+  Object.values(H.data.roles).forEach(r => { if (!r.perms.includes("destek_ac")) r.perms.push("destek_ac"); });
   // Role eklenen işaret ve görevler: kendi başına rol değildir, kişinin rolüne yetki ekler.
   H.EXTRA = {
     charge: { name:"Sorumlu hemşire", az:"Baş tibb bacısı", for:["hemsire"], perms:["admission","staff_view","camera","occupancy"], engine:"CHARGE_NURSE" },
