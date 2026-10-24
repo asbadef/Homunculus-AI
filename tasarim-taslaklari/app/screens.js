@@ -596,16 +596,27 @@
     const h3seed = () => {
       if (p._h3) return; p._h3 = true;
       const pr = p.proto || "50894026", tr = p.dob ? "" : "";
+      const base = parseInt(String(pr).replace(/\D/g, ""), 10) || 50894026, pno = (off) => String(base - off);
+      const kbols = (H.klinikBolumler ? H.klinikBolumler() : []), bn = (i) => (kbols[i % Math.max(1, kbols.length)] || { ad:"Daxili Xəstəliklər" }).ad;
+      // Tek hasta kartı, altında çok sayıda protokol (geliş). Tarihe göre gruplu.
+      p._protokoller = p._protokoller || [
+        { no:String(base), tarih:"24.10.2026", bolum:(u && u.tr) || bn(0), doktor:(doctor && doctor.name) || "—", gelisTipi:"Acil", ptip:"Normal", kapali:false, bucket:"İki hafta önce" },
+        { no:pno(1306), tarih:"09.10.2026", bolum:bn(1), doktor:"Dr. Elçin Şirinov", gelisTipi:"Ayaktan", ptip:"Acil muayene", kapali:true, bucket:"İki hafta önce" },
+        { no:pno(5778), tarih:"24.09.2026", bolum:bn(2), doktor:"Dr. Rəvan İbrahimov", gelisTipi:"Ayaktan", ptip:"Normal", kapali:true, bucket:"Son ay" },
+        { no:pno(48651), tarih:"14.08.2026", bolum:bn(3), doktor:"Dr. Məhərrəm Nəbiyev", gelisTipi:"Ayaktan", ptip:"Kontrol", kapali:true, bucket:"Daha eski" },
+        { no:pno(65928), tarih:"28.07.2026", bolum:bn(4), doktor:"Dr. Cavanşir Vahabov", gelisTipi:"Yatarak", ptip:"Ameliyat", kapali:true, bucket:"Daha eski" },
+      ];
       p._fatura = p._fatura || [
-        { tarih:"24.10.2026", tip:"Satış faturası", cari:vzName(p.name), tur:"Hizmet", no:"FTR-" + pr, parent:"", durum:"Açık", pb:"₼", tutar:420, kdv:0 },
-        { tarih:"20.10.2026", tip:"Satış faturası", cari:vzName(p.name), tur:"Hizmet", no:"FTR-" + (+pr - 7), parent:"", durum:"Ödendi", pb:"₼", tutar:180, kdv:0 },
+        { proto:String(base), tarih:"24.10.2026", tip:"Satış faturası", cari:vzName(p.name), tur:"Hizmet", no:"FTR-" + pr, parent:"", durum:"Açık", pb:"₼", tutar:420, kdv:0 },
+        { proto:String(base), tarih:"20.10.2026", tip:"Satış faturası", cari:vzName(p.name), tur:"Hizmet", no:"FTR-" + pno(7), parent:"", durum:"Ödendi", pb:"₼", tutar:180, kdv:0 },
+        { proto:pno(5778), tarih:"24.09.2026", tip:"Satış faturası", cari:vzName(p.name), tur:"Hizmet", no:"FTR-" + pno(5780), parent:"", durum:"Ödendi", pb:"₼", tutar:95, kdv:0 },
       ];
       p._odeme = p._odeme || [
-        { tarih:"24.10.2026 10:12", sube:H.state.vezneBanko || "Mərkəz", kurumHasta:"Hasta", islem:"Tahsilat", sap:"—", odeme:"Kredi kartı", pb:"₼", kur:1, tutar:250 },
-        { tarih:"20.10.2026 14:40", sube:H.state.vezneBanko || "Mərkəz", kurumHasta:"Hasta", islem:"Avans", sap:"—", odeme:"Nakit", pb:"₼", kur:1, tutar:100 },
+        { proto:String(base), tarih:"24.10.2026 10:12", sube:H.state.vezneBanko || "Mərkəz", kurumHasta:"Hasta", islem:"Tahsilat", sap:"—", odeme:"Kredi kartı", pb:"₼", kur:1, tutar:250 },
+        { proto:String(base), tarih:"20.10.2026 14:40", sube:H.state.vezneBanko || "Mərkəz", kurumHasta:"Hasta", islem:"Avans", sap:"—", odeme:"Nakit", pb:"₼", kur:1, tutar:100 },
       ];
       p._indirim = p._indirim || [
-        { tarih:"24.10.2026", islem:"Hizmet indirimi", durum:"Onaylandı", onceki:420, oran:10, tutar:42, vezne:(H.state.user || {}).name || "—" },
+        { proto:String(base), tarih:"24.10.2026", islem:"Hizmet indirimi", durum:"Onaylandı", onceki:420, oran:10, tutar:42, vezne:(H.state.user || {}).name || "—" },
       ];
       p._dosya = p._dosya || [
         { bag:"Protokol", grup:"Onam formları", bagId:pr, tip:"PDF", ad:"aydinlatilmis-onam.pdf", tarih:"24.10.2026" },
@@ -637,6 +648,13 @@
     const tbar = (btns) => `<div class="r" style="gap:6px;margin-bottom:10px">${btns.map(b => `<button class="btn sm">${I(b[1]) || ""} ${b[0]}</button>`).join("")}</div>`;
     const sagtikNote = (k) => `<p class="adm-sub" style="margin-top:8px">Satıra sağ tıklayın: ${SAGTIK[k].join(" · ")}.</p>`;
     const money = (n, pb) => (pb || "₼") + " " + (n || 0).toLocaleString("az");
+    const selProto = params.proto || "tumu";
+    const protoList = () => { const ps = p._protokoller || [], buckets = {};
+      ps.forEach(x => { (buckets[x.bucket] = buckets[x.bucket] || []).push(x); });
+      const row = (x) => `<div class="h360-prow${selProto === x.no ? " on" : ""}" data-proto="${H.esc(x.no)}"><span class="pr-lock ${x.kapali ? "bad" : "ok"}">${x.kapali ? (I("lock") || "") : (I("ok") || "")}</span><div><b class="mono">${H.esc(x.no)}</b><div class="adm-sub" style="font-size:11px">${H.esc(x.tarih)} · ${H.esc(x.bolum)}</div></div></div>`;
+      return `<div class="h360-plist"><div class="h360-pbar">${I("refresh") || ""} Protokoller (${ps.length})</div><div class="h360-prow${selProto === "tumu" ? " on" : ""}" data-proto="tumu"><b>TÜMÜ</b></div>${Object.entries(buckets).map(([b, list]) => `<div class="h360-pgrp">${H.esc(b)}</div>${list.map(row).join("")}`).join("")}</div>`; };
+    const split = (right) => `<div class="h360-2col">${protoList()}<div class="h360-pdetail">${right}</div></div>`;
+    const byProto = (arr) => selProto === "tumu" ? arr : arr.filter(x => (x.proto || "") === selProto);
     const gelisHtml = () => `<div class="h360-cards">
       <div class="box"><h5>Geliş bilgileri</h5><div class="icd-form">
         ${fld("acilis", "Açılış", "", p.acilis || p.proto)}${fld("kapanis", "Kapanış")}${selF("gelisTipi", "Geliş tipi", ["İlk muayene", "Kontrol", "Acil", "Sevk"])}${selF("protokolTipi", "Protokol tipi", secArr("protokolTipi", ["Normal", "Ameliyat", "Preop", "Günübirlik"]))}
@@ -656,11 +674,11 @@
       ${rows.length ? rows.map(r => `<tr data-ctx="${k}" style="cursor:context-menu">${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${cols.length}" class="mute" style="padding:18px;text-align:center">Kayıt yok.</td></tr>`}
       </tbody></table></div>${sagtikNote(k)}`;
     const faturaHtml = () => tabloHtml("faturalar", ["Tarih", "Fatura tipi", "Cari", "Fatura türü", "Fatura no", "Durum", "Para b.", "Tutar", "KDV"],
-      p._fatura.map(x => [x.tarih, x.tip, x.cari, x.tur, x.no, x.durum, x.pb, x.tutar, x.kdv]), [["Yenile", "refresh"], ["Yazdır", "print"]]);
+      byProto(p._fatura).map(x => [x.tarih, x.tip, x.cari, x.tur, x.no, x.durum, x.pb, x.tutar, x.kdv]), [["Yenile", "refresh"], ["Yazdır", "print"], ["Omnitech faturalarını göster", "edit"]]);
     const odemeHtml = () => tabloHtml("odeme", ["Tarih", "Şube", "Kurum/Hasta", "İşlem tipi", "SAP belge", "Ödeme tipi", "Para b.", "Kur", "Tutar"],
-      p._odeme.map(x => [x.tarih, x.sube, x.kurumHasta, x.islem, x.sap, x.odeme, x.pb, x.kur, x.tutar]), [["Yenile", "refresh"], ["Kurum avans", "plus"], ["İade talebi", "edit"], ["Karekod üret", "print"], ["Yazdır", "print"]]);
+      byProto(p._odeme).map(x => [x.tarih, x.sube, x.kurumHasta, x.islem, x.sap, x.odeme, x.pb, x.kur, x.tutar]), [["Yenile", "refresh"], ["Kurum avans", "plus"], ["İade talebi", "edit"], ["Karekod üret", "print"], ["Yazdır", "print"]]);
     const indirimHtml = () => tabloHtml("indirim", ["Tarih", "İşlem tipi", "Durum", "İndirim öncesi", "Oran %", "Tutar", "Vezne"],
-      p._indirim.map(x => [x.tarih, x.islem, x.durum, money(x.onceki), x.oran, money(x.tutar), x.vezne]), [["Yenile", "refresh"], ["Yazdır", "print"]]);
+      byProto(p._indirim).map(x => [x.tarih, x.islem, x.durum, money(x.onceki), x.oran, money(x.tutar), x.vezne]), [["Yenile", "refresh"], ["Yazdır", "print"]]);
     const dosyaHtml = () => tabloHtml("dosya", ["Bağlantı tipi", "Döküman grubu", "Bağlantı id", "Dosya tipi", "Dosya adı", "Kayıt tarihi"],
       p._dosya.map(x => [x.bag, x.grup, x.bagId, x.tip, x.ad, x.tarih]), [["Ekle", "plus"], ["Tarayıcıdan yükle", "plus"], ["Dijital imzadan getir", "edit"], ["Sil", "trash"]]);
     const notHtml = () => tabloHtml("notlar", ["Tarih", "Not tipi", "Not türü", "Ekleyen kullanıcı", "Not"],
@@ -698,12 +716,12 @@
       if (ana === "arsiv") { body.innerHTML = placeholder("Arşiv (aktarım protokolleri / işlemler)"); return; }
       // ana === 360
       if (alt === "kart") { body.innerHTML = kartHtml(); return; }
-      if (alt === "gelisler") { body.innerHTML = gelisHtml(); return; }
-      if (alt === "faturalar") { body.innerHTML = faturaHtml(); return; }
-      if (alt === "odeme") { body.innerHTML = odemeHtml(); return; }
-      if (alt === "indirim") { body.innerHTML = indirimHtml(); return; }
-      if (alt === "dosya") { body.innerHTML = dosyaHtml(); return; }
-      if (alt === "notlar") { body.innerHTML = notHtml(); return; }
+      if (alt === "gelisler") { body.innerHTML = split(gelisHtml()); return; }
+      if (alt === "faturalar") { body.innerHTML = split(faturaHtml()); return; }
+      if (alt === "odeme") { body.innerHTML = split(odemeHtml()); return; }
+      if (alt === "indirim") { body.innerHTML = split(indirimHtml()); return; }
+      if (alt === "dosya") { body.innerHTML = split(dosyaHtml()); return; }
+      if (alt === "notlar") { body.innerHTML = split(notHtml()); return; }
       if (alt === "teklif") { body.innerHTML = teklifHtml(); return; }
       if (alt === "online") { body.innerHTML = tabloHtml("online", ["Tarih", "Kanal", "Tutar", "Durum", "Referans"], p._online.map(x => [x.tarih, x.kanal, x.tutar, x.durum, x.ref]), [["Yenile", "refresh"]]); return; }
       if (alt === "pos") { body.innerHTML = tabloHtml("pos", ["Tarih", "Terminal", "Kart", "Tutar", "Durum", "Referans"], p._pos.map(x => [x.tarih, x.terminal, x.kart, x.tutar, x.durum, x.ref]), [["Yenile", "refresh"]]); return; }
@@ -731,6 +749,7 @@
     root.onclick = (e) => {
       const an = e.target.closest("[data-h3ana]"); if (an) return H.go("hasta360", { pid:p.id, atab:an.dataset.h3ana, stab:"kart" });
       const al = e.target.closest("[data-h3alt]"); if (al) return H.go("hasta360", { pid:p.id, atab:"360", stab:al.dataset.h3alt });
+      const pp = e.target.closest("[data-proto]"); if (pp) return H.go("hasta360", { pid:p.id, atab:"360", stab:alt, proto:pp.dataset.proto });
       const kb = e.target.closest("[data-h3kabul]"); if (kb) { root.querySelector("[data-h3kabulm]").classList.toggle("hidden"); return; }
       const dg = e.target.closest("[data-h3diger]"); if (dg) { root.querySelector("[data-h3digerm]").classList.toggle("hidden"); return; }
       const ka = e.target.closest("[data-kabul]"); if (ka) { p.encounter = ka.dataset.kabul === "yogun" ? "yogun" : ka.dataset.kabul === "kontrol" || ka.dataset.kabul === "donor" ? "ayaktan" : ka.dataset.kabul; H.log("Hasta kabul", vzName(p.name) + " · " + ka.dataset.kabul); H.toast("Kabul: " + (H360_KABUL.find(x => x[0] === ka.dataset.kabul) || [, ka.dataset.kabul])[1]); return H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); }

@@ -867,6 +867,17 @@ button.iz-n:hover { filter:brightness(1.08); outline:2px solid var(--priSoft); }
 .gv-grp[open]>summary::before{content:"▾"}
 .gv-perms{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:3px 18px;padding:4px 12px 12px}
 .gv-perms .dc-chk{font-size:12.5px;align-items:flex-start}
+/* Hasta Dosyası tek-hasta-çok-protokol: sol protokol listesi + sağ detay */
+.h360-2col{display:grid;grid-template-columns:270px 1fr;gap:14px;align-items:start}
+@media(max-width:820px){.h360-2col{grid-template-columns:1fr}}
+.h360-plist{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card);max-height:70vh;overflow-y:auto}
+.h360-pbar{padding:8px 11px;font:700 12px Figtree;color:var(--mute);border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card)}
+.h360-pgrp{padding:6px 11px;font:700 11px Figtree;color:var(--mute);text-transform:uppercase;letter-spacing:.03em;background:color-mix(in srgb,var(--mute) 8%,transparent)}
+.h360-prow{display:flex;gap:8px;align-items:center;padding:8px 11px;cursor:pointer;border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
+.h360-prow:hover{background:color-mix(in srgb,var(--pri) 8%,transparent)}
+.h360-prow.on{background:color-mix(in srgb,var(--pri) 15%,transparent)}
+.h360-prow .pr-lock svg{width:14px;height:14px}
+.h360-pdetail{min-width:0}
 
 /* Geliş göstergesi (emoji yerine renkli nokta) + protokol kilidi (SVG) */
 .enc-dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle;background:var(--mute)}
