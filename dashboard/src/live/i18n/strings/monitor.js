@@ -18,7 +18,7 @@
 // docs/INFINITY-PARAMETER-RECORDS.md:36-50 — no sample count is recorded for any, and `legendN`
 // says so. NBP is shown with the time its value last CHANGED, an upper bound of the measurement
 // (`nbpMeasured`: "≤", never "at"); before a change has been seen it says it awaits one
-// (`nbpWaiting`).
+// (`nbpWaiting`); `legendNbp` says both, the 2-hour limit and the hub restart.
 const p = {
   hr: "HR", pls: "PLS", spo2: "SpO₂", etco2: "etCO₂", temperature: "Ta",
   art_systolic: "ART S", art_diastolic: "ART D", art_mean: "ART M", respiration: "RESP", nbp: "NBP",
@@ -72,7 +72,7 @@ export default {
     offProblem: "Monitör şeridi açılamadı: {problem}",
     legendTitle: "Monitör şeridi (doğrulanmamış)",
     legendAges: "Her değerin yanında yaşı yazar. 15 saniyeden eski bir değer gösterilmez; yerine «eski» ve son değerin yaşı yazar.",
-    legendNbp: "NIBP bu aşamada gösterilmez: ölçüm zamanı çözülmedi, değer saatler önceki bir ölçüm olabilir. Kan basıncını başucu monitöründen okuyun.",
+    legendNbp: "NBP, değerinin son değiştiği saatle gösterilir. «ölçüm ≤ 10:42», manşonun en geç 10:42'de ölçtüğü demektir: ölçüm daha önce olmuş olabilir, hiçbir zaman daha sonra değil (aynı değerle yinelenen bir ölçüm fark edilmez). Değeri 2 saatten uzun süredir değişmemiş bir NBP gösterilmez. Infinity sunucusu yeniden başladıktan sonra NBP, bir sonraki ölçüme kadar gösterilmez («ölçüm bekleniyor»).",
     legendEvidence: "Parametre başına bugünkü kanıt",
     legendParameter: "Parametre",
     legendN: "Örnek sayısı hiçbir parametre için kayıtlı değil.",
@@ -141,7 +141,7 @@ export default {
     offProblem: "Monitor zolağı açıla bilmədi: {problem}",
     legendTitle: "Monitor zolağı (təsdiqlənməmiş)",
     legendAges: "Hər dəyərin yanında onun yaşı yazılır. 15 saniyədən köhnə dəyər göstərilmir; əvəzində «köhnə» və son dəyərin yaşı yazılır.",
-    legendNbp: "NIBP bu mərhələdə göstərilmir: ölçmə vaxtı deşifrə olunmayıb, dəyər saatlar əvvəlki ölçmə ola bilər. Qan təzyiqini çarpayı yanındakı monitordan oxuyun.",
+    legendNbp: "NBP dəyərinin son dəyişdiyi vaxtla göstərilir. «ölçmə ≤ 10:42» manjetin ən gec 10:42-də ölçdüyü deməkdir: ölçmə daha əvvəl olmuş ola bilər, heç vaxt daha sonra yox (eyni dəyərlə təkrarlanan ölçmə fərq edilmir). Dəyəri 2 saatdan çox dəyişməyən NBP göstərilmir. Infinity serveri yenidən başladıqdan sonra NBP növbəti ölçməyə qədər göstərilmir («ölçmə gözlənilir»).",
     legendEvidence: "Hər parametr üzrə bugünkü sübut",
     legendParameter: "Parametr",
     legendN: "Heç bir parametr üçün nümunə sayı qeydə alınmayıb.",
@@ -210,7 +210,7 @@ export default {
     offProblem: "Не удалось включить блок монитора: {problem}",
     legendTitle: "Блок монитора (не валидировано)",
     legendAges: "Рядом с каждым значением указан его возраст. Значение старше 15 секунд не показывается; вместо него — «устарело» и возраст последнего значения.",
-    legendNbp: "НИАД на этом этапе не показывается: время измерения не декодировано, значение может быть многочасовой давности. Смотрите давление на прикроватном мониторе.",
+    legendNbp: "НИАД (NBP) показывается со временем последнего изменения значения. «измерение ≤ 10:42» значит, что манжета измерила не позже 10:42: измерение могло быть раньше, но никогда не позже (повторное измерение с тем же значением не распознаётся). НИАД, значение которого не менялось больше 2 часов, не показывается. После перезапуска сервера Infinity НИАД не показывается до следующего измерения («ожидается измерение»).",
     legendEvidence: "Текущие подтверждения по каждому параметру",
     legendParameter: "Параметр",
     legendN: "Число наблюдений не записано ни для одного параметра.",
@@ -279,7 +279,7 @@ export default {
     offProblem: "The monitor strip could not be turned on: {problem}",
     legendTitle: "Monitor strip (unvalidated)",
     legendAges: "Each value shows its age. A value older than 15 seconds is not shown; «old» and the last value's age are shown instead.",
-    legendNbp: "NIBP is not shown at this stage: its measurement time is not decoded, so the value may be hours old. Read blood pressure on the bedside monitor.",
+    legendNbp: "NBP is shown with the time its value last changed. «measured ≤ 10:42» means the cuff measured at 10:42 at the latest: the measurement may have been earlier, never later (a re-measurement with the same values is not detected). An NBP whose value has not changed for more than 2 hours is not shown. After the Infinity server restarts, NBP is not shown until the next measurement («awaiting a measurement»).",
     legendEvidence: "Today's evidence per parameter",
     legendParameter: "Parameter",
     legendN: "No sample count is recorded for any parameter.",

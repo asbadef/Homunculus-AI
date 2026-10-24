@@ -148,13 +148,17 @@ describe("SettingsScreen — the monitor strip's legend", () => {
     return mounted;
   }
 
-  it("with the stage on explains it: the note, never a sound, the ages, NIBP, the evidence, no sample count", async () => {
+  it("with the stage on explains it: the note, never a sound, the ages, NBP's time, the evidence, no sample count", async () => {
     await legend({ stage: "shadow", beds: [], unassigned: [], feed: { state: "ok" } });
     const box = screen.getByRole("heading", { level: 2, name: "Monitor zolağı (təsdiqlənməmiş)" }).closest("div.rounded-box");
     expect(box).toHaveTextContent(/tədqiqat məqsədilə deşifrə olunur və təsdiqlənməyib/);
     expect(box).toHaveTextContent("Bu zolaq heç vaxt səs çıxarmır, bildiriş göndərmir, siqnal siyahısına və «Cavab gözləyən siqnallar» siyahısına düşmür.");
     expect(box).toHaveTextContent(/15 saniyədən köhnə dəyər göstərilmir/);
-    expect(box).toHaveTextContent(/NIBP bu mərhələdə göstərilmir/);
+    expect(box).toHaveTextContent(/NBP dəyərinin son dəyişdiyi vaxtla göstərilir/);
+    expect(box).toHaveTextContent(/ölçmə daha əvvəl olmuş ola bilər, heç vaxt daha sonra yox/);   // the time is a bound
+    expect(box).toHaveTextContent(/Dəyəri 2 saatdan çox dəyişməyən NBP göstərilmir/);
+    expect(box).toHaveTextContent(/növbəti ölçməyə qədər göstərilmir \(«ölçmə gözlənilir»\)/);   // after a hub restart
+    expect(box).not.toHaveTextContent(/bu mərhələdə göstərilmir/);
     expect(box).toHaveTextContent("Heç bir parametr üçün nümunə sayı qeydə alınmayıb.");
     expect(box).toHaveTextContent("əvəzində «köhnə» və son dəyərin yaşı yazılır");     // the cell shows an age
     const table = within(box).getByRole("table", { name: "Hər parametr üzrə bugünkü sübut" });
@@ -166,6 +170,7 @@ describe("SettingsScreen — the monitor strip's legend", () => {
     const partial = labels.filter((label) => label.includes("qismən")).map((label) => label.replace("qismən", ""));
     expect(partial).toEqual(["Ta", "ART D", "ART M", "RESP"]);
     expect(within(rows[0]).getByText("İki cihazda monitor ekranı ilə eynidir")).toBeInTheDocument();
+    expect(within(rows[9]).getByText("Monitor ekranı ilə eynidir")).toBeInTheDocument();          // NBP
   });
 
   it("with the stage off shows no legend", async () => {
