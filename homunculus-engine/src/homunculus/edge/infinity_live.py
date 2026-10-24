@@ -33,11 +33,18 @@ HISTORY_INTERVAL = 1.0
 # hub can know is when the (systolic, diastolic, mean) triple last CHANGED: a measurement happened
 # at or before that packet. That time is an upper bound of the measurement; an identical
 # re-measurement is not seen and leaves it older, the safe direction. A change keeps its time only
-# when the device's NBP was heard within NBP_CONTINUITY_S before it: after a gap (an outage, a
-# monitor off the network) it may have happened at any moment of the gap, and stamping it with the
-# first packet after the gap would make an old measurement read as fresh.
+# when the packet before it that carried a COMPLETE VALID triple is at most NBP_CONTINUITY_S
+# older: after a gap (an outage, a monitor off the network, a spell of flagged or partial NBP) it
+# may have happened at any moment of the gap, and stamping it with the first packet after the gap
+# would make an old measurement read as fresh. Strict on purpose (X46): a flagged record can mean
+# "not carried in this message type", so hearing one proves nothing about having watched the
+# value; the time shown is never more than NBP_CONTINUITY_S too fresh.
 NBP = ("nbp_systolic", "nbp_diastolic", "nbp_mean")
-NBP_CONTINUITY_S = STALE_AFTER_MS / 1000.0
+# Its own constant, not STALE_AFTER_MS: that is how long any strip value counts as live; this is
+# how much fresher than the truth a shown NBP time may be. 3 s assumes the monitor repeats a
+# complete valid triple at least that often. The ward walk (open item O30) may widen it, with
+# evidence: the longest gap between complete valid triples seen on a real bed.
+NBP_CONTINUITY_S = 3.0
 
 
 class DeviceState:
@@ -49,12 +56,14 @@ class DeviceState:
         self.unsupported = False
         self.packets = 0
         # The last complete valid NBP triple, and the receipt time of the packet in which it
-        # changed. None until a change has been seen since this process started: a triple first
-        # seen after a start may be hours old (or another patient's), so its time is unknown.
-        # `nbp_heard_at` is the last packet that carried any NBP record, valid or flagged.
+        # changed. None until a change has been seen as it happened: after a start, an outage or
+        # any gap of more than NBP_CONTINUITY_S between complete valid triples, the next change
+        # (and a triple first seen) may be hours old, or another patient's, so its time is unknown.
+        # `nbp_valid_at` is the last packet that carried a complete valid triple; flagged and
+        # partial NBP packets do not set it.
         self.nbp_triple = None
         self.nbp_changed_at = None
-        self.nbp_heard_at = None
+        self.nbp_valid_at = None
 
 
 class LiveResearchView:
@@ -116,21 +125,20 @@ class LiveResearchView:
     @staticmethod
     def _track_nbp(state, decoded, epoch):
         """A change of this packet's own complete, valid NBP triple stamps it with the packet's
-        receipt time — if the device's NBP was heard within NBP_CONTINUITY_S before it; after a gap
-        the change has no time. A packet missing a component, or carrying one the device flags
-        invalid, neither counts as a change nor clears the triple held; the first triple seen is
+        receipt time — if the previous complete valid triple arrived at most NBP_CONTINUITY_S
+        before it; after any longer gap the change has no time. A packet missing a component, or
+        carrying one the device flags invalid, changes nothing at all: it neither counts as a
+        change, nor clears the triple held, nor keeps the run unbroken. The first triple seen is
         held with no time."""
-        if not any(name in decoded for name in NBP):
-            return
-        heard, state.nbp_heard_at = state.nbp_heard_at, epoch
         records = [decoded.get(name) for name in NBP]
         if not all(record is not None and record["valid"] for record in records):
             return
         triple = tuple(record["value"] for record in records)
         if state.nbp_triple is not None and triple != state.nbp_triple:
-            seen_as_it_happened = heard is not None and epoch - heard <= NBP_CONTINUITY_S
-            state.nbp_changed_at = epoch if seen_as_it_happened else None
+            unbroken = state.nbp_valid_at is not None and epoch - state.nbp_valid_at <= NBP_CONTINUITY_S
+            state.nbp_changed_at = epoch if unbroken else None
         state.nbp_triple = triple
+        state.nbp_valid_at = epoch
 
     @staticmethod
     def _nbp_changed_at(state, name, record):
