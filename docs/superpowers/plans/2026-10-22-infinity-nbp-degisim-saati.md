@@ -4,21 +4,21 @@
 
 **Goal:** The Aşama A monitor strip shows NBP as one cell, `NBP S/D (M) mmHg · ölçmə ≤ HH:MM (N dəq)`, where the time is when the hub saw the (systolic, diastolic, mean) triple change: an upper bound of the measurement. Before a change has been seen it says "— · ölçmə gözlənilir"; two hours after the change it is withheld.
 
-**Architecture:** The hub (.72) tracks the change in memory (`edge/infinity_live.py`): per device, the last complete valid triple and the receipt time of the packet in which it changed, kept only when the device's NBP was heard within 3 s before (X37). The forwarder (`edge/infinity_shadow.py`) speaks schema v2: NBP's three readings with `changed_at`, sent only once a change has been seen. The API (`api/infinity_shadow.py`) takes v1 and v2, folds the three held readings into one board entry `nbp` and withholds it 2 h after the change; `deploy/infinity/shadow_check.py` prints one `nbp:` line. The dashboard draws the entry (`monitor.js` `cellOf` → `MonitorStrip.jsx`), with no threshold in the browser. The worker (.74) does not change. Deploy order: API + web first, then the hub's release R4 with drop-in `94-nbp.conf`.
+**Architecture:** The hub (.72) tracks the change in memory (`edge/infinity_live.py`): per device, the last complete valid triple and the receipt time of the packet in which it changed, kept only when the previous complete valid triple came at most 3 s before (X37, X46: flagged or partial packets neither start nor continue a run). The forwarder (`edge/infinity_shadow.py`) speaks schema v2: NBP's three readings with `changed_at`, sent only once a change has been seen. The API (`api/infinity_shadow.py`) takes v1 and v2, folds the three held readings into one board entry `nbp` and withholds it 2 h after the change; `deploy/infinity/shadow_check.py` prints one `nbp:` line. The dashboard draws the entry (`monitor.js` `cellOf` → `MonitorStrip.jsx`), with no threshold in the browser. The worker (.74) does not change. Deploy order: API + web first, then the hub's release R4 with drop-in `94-nbp.conf`.
 
 **Tech Stack:** Python 3.12 and 3.14, FastAPI, pytest; React 18, Vite, Vitest + Testing Library (`render`, `screen`, `within`; no user-event); the hub's release builder (`deploy/infinity/build_transport_release.py`); systemd drop-ins on the hub VM.
 
-**Spec (authoritative):** `docs/superpowers/specs/2026-10-22-infinity-nbp-degisim-saati-design.md` (D1–D9, §3–§9). Where the code made the spec's letter unsafe, impossible or merely unspecified, this plan departs from it; every departure is in the table below with its reason. **All of X37–X45 are proposed (planning review, 2026-10-24) and await the user's yes.** X37 is the one that matters: the spec's letter would show an NBP measured during an outage as minutes old.
+**Spec (authoritative):** `docs/superpowers/specs/2026-10-22-infinity-nbp-degisim-saati-design.md` (D1–D9, §3–§9). Where the code made the spec's letter unsafe, impossible or merely unspecified, this plan departs from it; every departure is in the table below with its reason. **X37–X45 were proposed in the planning review (2026-10-24) and approved by the user (2026-10-25). X46 is the controller's decision from the Task 1 review (2026-10-25); the user sees it in the final list.** X37 with X46 is the one that matters: the spec's letter would show an NBP measured during an outage as minutes old.
 
-**How the numbers in this plan were obtained.** Every task was implemented in the worktree while the plan was written (a scratch branch from `14c208d`). Then the plan itself was replayed: a script applied this file's Edit blocks onto `14c208d`, task by task and step by step (the tests first, then the code), on a second scratch branch, and every command of Tasks 0–9 was run as written — every red, every green, every count and every line-end figure below is what that replay printed, the commit blocks included (2026-10-24/25). The replay's tree is identical to the implementation's (`git diff` empty, all 25 files); both scratch branches were deleted afterwards. The code is kept beside the per-task files as `/c/tmp/homunculus-plans/nbp/reference.patch` (`git diff 14c208d <replay head>`) — a cross-check, not the authority: build from the tasks. The release name in Task 8 (`transport-c1f619bf4e1df375`) is the hash of the release's files, so the same two edge files always give it (the replay built it from a different commit than the implementation and got the same name). Task 10's VM blocks were checked with `bash -n` and D-1's drop-in generation against a synthetic `92` file; they have not run on the VM.
+**How the numbers in this plan were obtained.** Every task was implemented in the worktree while the plan was written (a scratch branch from `14c208d`). Then the plan itself was replayed: a script applied this file's Edit blocks onto `14c208d`, task by task and step by step (the tests first, then the code), on a second scratch branch, and every command of Tasks 0–9 was run as written — every red, every green, every count and every line-end figure below is what that replay printed, the commit blocks included (2026-10-24/25). The replay's tree is identical to the implementation's (`git diff` empty, all 25 files); both scratch branches were deleted afterwards. The code is kept beside the per-task files as `/c/tmp/homunculus-plans/nbp/reference.patch` (`git diff 14c208d <replay head>`) — a cross-check, not the authority: build from the tasks. **Since then (2026-10-25):** Task 1 landed on the branch as `cbda9ff`, then `b536f75` (its review: X46) and `bcae99f` (the re-review: every repeat renews the run, one test and a comment); Tasks 2 and 3 landed as `5ae5810` and `b5509fd`. Tasks 1–3 here ARE that code: replayed onto `14c208d` they give the branch at `bcae99f`, 14 files, byte for byte. Task 1's red and counts are measured against it, and Tasks 4–9 were replayed again on top of it in a scratch export (every anchor unique; the lane's tests 262 passed on Python 3.12 and 3.14; the no-DB suite 2184 / 650 — in the export 2183 / 651, one test that needs the dashboard's `node_modules` skipped there). The release name in Task 8 (`transport-8268ad964b28b90c`, rebuilt from that export) is the hash of the release's files, so the same two edge files always give it; any change to `infinity_live.py` or `infinity_shadow.py` gives a new one — Task 8 builds it, Task 10 carries what Task 8 printed. Task 10's VM blocks were checked with `bash -n`, D-1's drop-in generation against a synthetic `92` file, and the O30 gap check against the live view fed synthetic packets; none has run on the VM.
 
 ---
 
-## What the code says that the spec did not — proposed departures (read before Task 1)
+## What the code says that the spec did not — departures (read before Task 1)
 
 | # | Spec | Code at `14c208d` / what was found | This plan |
 |---|---|---|---|
-| X37 | §1 "never fresher than reality"; §4.1 test "a change after a backlog/outage is seen on the first live packet" (stamped with that packet's time); D3 | The bound is on the TIME: the cuff measured at `m ≤ c`, `c` the packet that showed the change. The AGE the strip prints, `now − c`, is then a LOWER bound of the true age — fresher than reality by `c − m`. While the hub hears the device continuously that is under a second; after an outage (the worker's outbox delivers the backlog, which `_consume_one` drops as ≥ 3 s old, `infinity_live.py:64`) or a monitor off the network, the first live packet carries a change that may have happened at any moment of the gap, and the spec's letter would stamp it "ölçüm ≤ now (0 dəq)" for a measurement as old as the outage — the exact failure that kept NBP off the strip (spec §1). **Unsafe as written.** | A change keeps its time only when the device's NBP was heard (any NBP record, valid or flagged) within `NBP_CONTINUITY_S` = 3 s (`STALE_AFTER_MS`, the window in which any strip value counts as live) before the change packet. After a longer gap the new triple is held with **no** time: hidden until the next change seen as it happens — the same rule as after a hub restart (D4). A flagged spell (`***` while the cuff inflates) keeps continuity, because the records keep coming. Task 1: `_track_nbp`, `nbp_heard_at`, three tests (`test_a_change_seen_only_after_an_outage_has_no_time`, the 3.0 / 3.1 s boundary, the flagged spell). If the Kappa sends NBP records less often than every 3 s, NBP would stay "gözlənilir" on that bed: open item O30, checked in the walk (Task 10, E-2). The spec's letter is one line (`state.nbp_changed_at = epoch`) and one test if the user prefers it. |
+| X37 | §1 "never fresher than reality"; §4.1 test "a change after a backlog/outage is seen on the first live packet" (stamped with that packet's time); D3 | The bound is on the TIME: the cuff measured at `m ≤ c`, `c` the packet that showed the change. The AGE the strip prints, `now − c`, is then a LOWER bound of the true age — fresher than reality by `c − m`. While the hub hears the device continuously that is under a second; after an outage (the worker's outbox delivers the backlog, which `_consume_one` drops as ≥ 3 s old, `infinity_live.py:64`) or a monitor off the network, the first live packet carries a change that may have happened at any moment of the gap, and the spec's letter would stamp it "ölçüm ≤ now (0 dəq)" for a measurement as old as the outage — the exact failure that kept NBP off the strip (spec §1). **Unsafe as written.** | **Approved 2026-10-25; tightened by X46.** A change keeps its time only when the previous **complete valid** triple came at most `NBP_CONTINUITY_S` = 3.0 s before the change packet (`nbp_valid_at`). After any longer gap — an outage, a monitor off the network, a spell of flagged (`***`) or partial NBP — the new triple is held with **no** time: hidden until the next change seen within 3 s of a complete valid triple, the same rule as after a hub restart (D4). Task 1: `_track_nbp`, `nbp_valid_at`, tests `test_a_change_seen_only_after_an_outage_has_no_time` and the 3.0 / 3.1 s boundary (X46 adds five more). If the Kappa sends complete valid triples less often than every 3 s, NBP stays "gözlənilir" on that bed: O30, measured before the deploy (Task 10, A-3) and checked in the walk (E-2). |
 | X38 | §4.1 "the snapshot's `nbp_*` entries carry `changed_at`"; §4.3 folding | A partial packet updates one component's value in the research view (`infinity_live.py:87–94`) but not the triple; lending the triple's time to that newer value would print a newer measurement with an older time. And three held readings can come from two posts with two different change times. | Hub: an `nbp_*` entry carries the change time only while its value IS the held triple's component (`_nbp_changed_at`); otherwise `None`, and the forwarder does not send it. API: the three readings fold into a number only when all three are held **with one `changed_at`**; anything else is "awaiting". Tests in Tasks 1, 3, 4. |
 | X39 | §4.3 "`devices()` emits `nbp` after `respiration`"; §5 "dash + nbpWaiting when `last_at` is null" | Silent on when the entry exists. Emitted for every device, a monitor holding nothing would lose its "göstəriləcək dəyər yoxdur" sentence, and — worse — with the API deployed first (D8) or the hub rolled back to R3, every bed would say "ölçmə gözlənilir" for a hub that cannot send NBP at all. | `nbp` is emitted for a device that holds at least one reading, and only while the last body was v2 (`_nbp_lane`) or NBP readings from before are still held. Under an R3 hub the strip looks exactly as today. Tests: `test_a_v1_body_is_still_taken_and_shows_no_nbp_at_all`, `test_after_a_hub_rolled_back_to_v1_…`, `test_a_device_holding_readings_but_no_nbp_shows_it_awaiting_a_change`, the API's v1 test. |
 | X40 | §4.3 the v2 reading rules | "`changed_at` iff `parameter` starts with `nbp_`"; "not more than 2 s in the future"; silent on v1's NBP, on a flagged component and on what `age_s`/`last_at` mean for the folded entry. | Exact names (`NBP_PARTS`), so `nbp_foo` is just an unknown parameter; `0 < changed_at <= captured_at` in `_validate` — with `_judge`'s existing clock rule on `captured_at` that is "never more than 2 s ahead", without a second clock check; an NBP in a v1 body stays `unknown_parameter`, as v1 always had it; a component the device flags gives `state: "invalid"` (the monitor's `***`); a shown entry's `age_s`/`last_at` are the packet's (the 15 s rule), a withheld one's are the change's (so the strip's "köhnə · N" is the measurement's age). `SCHEMAS` and `NBP_PARTS` are tuples so a fuzzed list or dict compares instead of raising (the store's fuzzer test holds it). |
@@ -28,7 +28,9 @@
 | X44 | Docs: "the roadmap's Stage A row" | `docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md` has no Aşama A row (checked 2026-10-24: its "Grup 2 · durum" table holds G2-01 only). | Task 9 adds a row `A-NBP` under G2-01. |
 | X45 | §6.1 "'ölçüm ≤ HH:MM' is **not later** than the cuff time"; §6.3 "eski · 2 sa" | "≤ HH:MM" says the cuff measured at or before HH:MM, so a correct strip shows a time **equal to or (by the minute's rounding) one minute later than** the monitor's cuff time — never earlier. "Not later" would fail exactly when the strip is right. And ages round UP (`feedHealth.js` `ageParts`, the project's rule), so just past 2 h the dash reads "köhnə · 3 saat" / "eski · 3 sa". | The walk (Task 10, E-1, E-3) checks "equal, or one minute later; never earlier — if earlier, compare the monitor's clock with the board's first", and "köhnə · 3 saat". |
 
-Departures found while implementing go below X45 (X46 …), each with its file and line.
+| X46 | §4.1 "if all three are present and valid, build the triple" (silent on what keeps a run unbroken); the first version of X37 | **Found in the Task 1 review (I-1 on `cbda9ff`); the controller's decision, 2026-10-25.** X37 as first written counted *any* NBP record — valid or flagged, one component or three — as "heard" (`nbp_heard_at`). After an outage, a first packet whose NBP was all flagged, or that carried one component alone, restarted the run, and a complete new triple up to 3 s later was stamped "ölçmə ≤ now (0 dəq)" for a cuff result that may be minutes old. The records doc says a flagged record can mean "not carried in this message type" (`docs/INFINITY-PARAMETER-RECORDS.md`, "Geçerlilik bayrağı"), so hearing one proves nothing about having watched the value. | **Strict continuity** (`b536f75`): measured only from the last COMPLETE VALID triple (`nbp_valid_at`); flagged and partial packets change nothing at all — they neither start nor continue a run, neither count as a change nor clear the held triple. `NBP_CONTINUITY_S = 3.0` is its own constant, not tied to `STALE_AFTER_MS`, and may be widened only with O30's evidence. The time shown is never more than 3 s too fresh. **Cost:** NBP is hidden after any gap of more than 3 s between complete valid triples, a long `***` spell included, until the next change seen within 3 s of one (O28). Tests (`tests/test_infinity_live.py`, 31): a flagged and a lone-component first packet after an outage, a 599 s spell of stars leaving the result unstamped, dropped packets (old, delivered, replay, undecodable, future) neither renewing the run nor clearing the triple (two tests), two devices keeping their own run — and (`bcae99f`, re-review I-A) every repeat of the same complete valid triple renewing the run, so a result after ten minutes of a stable value is stamped: without it no real result would ever be. |
+
+Departures found while implementing go below X46 (X47 …), each with its file and line.
 
 ## Open items
 
@@ -37,9 +39,9 @@ Numbered after the G2 slice's O26, so a number names one item across the roadmap
 | # | Item | Owner | When |
 |---|---|---|---|
 | O27 | An identical re-measurement is not detected: the shown time stays older than the truth (the safe direction). Only decoding the device's own timestamp (spec §7) would see it. | — | Research |
-| O28 | After a hub restart, or an outage (X37), NBP is hidden until the bed's next cuff cycle — minutes to an hour. The legend says so. | User (accepted, spec D4) | — |
+| O28 | After a hub restart, an outage, or ANY gap of more than 3 s between complete valid triples — a `***` spell included (X37, X46) — NBP is hidden until the bed's next cuff cycle seen within 3 s of a complete triple: minutes to an hour. The legend says so for the restart. | User (accepted, spec D4; X46 by the controller) | — |
 | O29 | Device→patient links (D9) and the reset on a link change are deferred to Stage B. Until then a bed whose patient changed can show the previous patient's NBP, with its age, until a new measurement or the 2 h limit; whether a Kappa clears NBP on discharge is unknown (Aşama A plan, "It may not be this patient's"). | Stage B | — |
-| O30 | The 3 s continuity window (X37) assumes the Kappa sends NBP records — valid or flagged — at least every 3 s (spec §1: "repeats the last NBP in every packet"). Measured nowhere yet; the walk checks it (E-2: a bed that just measured must show its time). If it fails, the window is widened in one constant (`NBP_CONTINUITY_S`) and the bound's slack grows with it. | User + agent (walk) | Deploy |
+| O30 | The 3 s window (X37, X46) assumes the Kappa sends a **complete valid triple** at least every 3 s (spec §1: "repeats the last NBP in every packet"); flagged and partial packets do not count. Measured nowhere yet. **The walk records, on real beds, the longest gap between complete valid triples**: Task 10's A-3 (agent, read-only, before anything changes) polls the hub's live view once a second for 5 minutes and prints per bed that gap and how often the value changed (never a value); E-2 checks that a bed that just measured shows its time, and E-1 that the time does not move between cuff cycles (a value flickering between two triples would move it — too fresh). A streaming bed above 3 s is reported before the deploy goes on; widening `NBP_CONTINUITY_S` is then a code change with that evidence (and the time's slack grows with it). | User + agent (walk) | Before and at deploy |
 | O31 | The forwarder's body grows with NBP: 20 064 B for 13 fully reporting devices (measured with the trial's code); the API's 64 KiB cap (`MAX_BODY`) now holds 42 such devices, 59 without NBP. The 100-device design needs the cap raised or the body split — not this slice. | — | Before > 40 devices |
 | O32 | The az, ru and en texts (`nbpMeasured`, `nbpWaiting`, `nbpSaid`, `legendNbp`) are the planner's and await a native reading, as every text of this namespace (strings/monitor.js:6–8). | User | Before deploy |
 | O33 | A flagged NBP (`***`) never travels: a flagged component carries no change time (X38), so the strip shows the cell old after 15 s, never `***`. The API's `invalid` state for NBP is reachable only from a body this forwarder does not send. | — | — |
@@ -61,18 +63,18 @@ Numbered after the G2 slice's O26, so a number names one item across the roadmap
 | After | Engine, no DB (passed / skipped) | Dashboard (files / tests) | This task's test files |
 |---|---|---|---|
 | base | 2143 / 650 | 89 / 2392 | — |
-| 1 | 2153 / 650 | — | `test_infinity_live.py` 15 → **25** |
+| 1 | 2159 / 650 | — | `test_infinity_live.py` 15 → **31** (`cbda9ff` + `b536f75` + `bcae99f`) |
 | 2 | — | 89 / 2392 | `strings.test.js` 6 → **6** (it loops; no count moves) |
-| 3 | 2176 / 650 | 89 / 2392 | `test_infinity_shadow_store.py` 46 → **65**, `test_infinity_shadow_api.py` 36 → **39**, `test_infinity_shadow_check.py` 17 → **18**, equivalence 3 → **3**, isolation 18 → **18**; `monitor.test.js` 16 → **16**, `SettingsScreen.test.jsx` 12 → **12** |
-| 4 | 2178 / 650 | — | `test_infinity_shadow_forwarder.py` 52 → **54** |
+| 3 | 2182 / 650 | 89 / 2392 | `test_infinity_shadow_store.py` 46 → **65**, `test_infinity_shadow_api.py` 36 → **39**, `test_infinity_shadow_check.py` 17 → **18**, equivalence 3 → **3**, isolation 18 → **18**; `monitor.test.js` 16 → **16**, `SettingsScreen.test.jsx` 12 → **12** |
+| 4 | 2184 / 650 | — | `test_infinity_shadow_forwarder.py` 52 → **54** |
 | 5 | — | 89 / 2399 | `monitor.test.js` 16 → **23** |
 | 6 | — | 89 / 2406 | `MonitorStrip.test.jsx` 28 → **35**; `rawKeys.test.jsx` 7 → **7** |
 | 7 | — | 89 / 2406 | `SettingsScreen.test.jsx` 12 → **12** |
-| 8 | 2178 / 650 (gate) | 89 / 2406 (gate) | Python 3.14 slice **256** |
+| 8 | 2184 / 650 (gate) | 89 / 2406 (gate) | Python 3.14 slice **262** |
 | 9 | docs only | — | — |
 | 10 | no code | — | — |
 
-Engine arithmetic: 10 + 19 + 3 + 1 + 2 = **35** over the base. Dashboard: 7 + 7 = **14** tests, no new file.
+Engine arithmetic: 16 + 19 + 3 + 1 + 2 = **41** over the base. Dashboard: 7 + 7 = **14** tests, no new file.
 
 ---
 
@@ -80,7 +82,7 @@ Engine arithmetic: 10 + 19 + 3 + 1 + 2 = **35** over the base. Dashboard: 7 + 7 
 
 - **Your worktree.** `/c/tmp/inf-nbp`, branch `feat/infinity-nbp` (from `14c208d` = main `03daac4` + the spec; this plan is its next commit). If the controller gives you a parallel worktree branched from this one, every path below reads that worktree instead. **Never touch `/c/Users/User/Desktop/Project/Homunculus AI`** (the user's main checkout) or another `/c/tmp` worktree. Never `git push`, never deploy, never change anything on a VM: Task 10's VM blocks are pasted by the user; the agent runs only the read-only checks that block file marks "ajan". **Never run `git stash`** — the stash is shared with every other worktree and session. If you remove a worktree, unlink its `node_modules` junction first (`cmd //c "rmdir C:\\tmp\\inf-nbp\\dashboard\\node_modules"`), then `git worktree remove --force`: a recursive delete that follows the junction empties the shared install. Never reinstall `node_modules`.
 - **Write and Edit tools only — never `sed`, `python`, `node` or a shell heredoc on a repo file.** The tree checks out **CRLF** (`core.autocrlf=true`); every block here is LF. The Edit tool matches either way; a shell replacement fails or rewrites every line end. This slice creates **no** repo file: every change is an **Edit**, and its old text must match exactly once. Each task ends by counting the line ends of the files it touched — `CR` must equal `LF`, and both must be the numbers the task gives (a mismatch means a line end was rewritten or an edit landed twice). For `strings/*.js` (Azerbaijani, Russian, Turkish) run `npx vitest run src/live/i18n/strings.test.js` after editing: it fails if the Cyrillic or the `ə` was mangled. (Files outside the repo — the block file in Task 10 — may be made with any tool.)
-- **TDD.** Write the test, run it and **see it red for the reason the task names**, then the code, then green. Put the red in the commit body (`red: 10 failed, 15 passed — KeyError: 'changed_at'`).
+- **TDD.** Write the test, run it and **see it red for the reason the task names**, then the code, then green. Put the red in the commit body (`red: 15 failed, 15 passed — KeyError: 'changed_at'`).
 - **Stage explicit paths only** (the task's `git add` line). Before every commit run `git status --short` and `git diff --cached --stat`; if a staged path is not one the task lists, or a file you stage holds hunks that are not yours, stop and ask.
 - **Commit after every task that changes the repo.** Messages are `type(scope): what, in words` (`feat(edge): …`, `feat(api): …`, `feat(dashboard): …`, `docs(…): …`) and end with:
   ```
@@ -124,8 +126,8 @@ Engine arithmetic: 10 + 19 + 3 + 1 + 2 = **35** over the base. Dashboard: 7 + 7 
 
 | File | Change | Task |
 |---|---|---|
-| `src/homunculus/edge/infinity_live.py` | `NBP`, `NBP_CONTINUITY_S`; `DeviceState.nbp_triple / nbp_changed_at / nbp_heard_at`; `_track_nbp`, `_nbp_changed_at`; the snapshot's `nbp_*` entries carry `changed_at`. | 1 |
-| `tests/test_infinity_live.py` | ten tests: first sight, change, repeat, partial, flagged, a lone newer value, outage, the 3.0/3.1 s boundary, a flagged spell. | 1 |
+| `src/homunculus/edge/infinity_live.py` | `NBP`, `NBP_CONTINUITY_S` (3.0, its own constant); `DeviceState.nbp_triple / nbp_changed_at / nbp_valid_at`; `_track_nbp`, `_nbp_changed_at`; the snapshot's `nbp_*` entries carry `changed_at`. | 1 |
+| `tests/test_infinity_live.py` | sixteen tests: first sight, change, repeat, partial, flagged, a lone newer value, outage, the 3.0/3.1 s boundary, a flagged and a lone-component first packet after an outage, a long spell of stars, a result after minutes of repeats, dropped packets ×2, two devices. | 1 |
 | `src/homunculus/api/infinity_shadow.py` | `SCHEMA_V1`, `SCHEMA` v2, `SCHEMAS`; NBP in `PARAMETERS`; `NBP`, `NBP_PARTS`, `NBP_MAX_MEASURED_AGE_S`; `EVIDENCE["nbp"]`; `_NBP_READING`; `_Held.changed_at`; `_validate` v1/v2; `_judge`; `_nbp_lane`; `devices()` folds; `_nbp_view`. | 3 |
 | `tests/test_infinity_shadow_store.py`, `tests/test_infinity_shadow_api.py`, `tests/test_infinity_shadow_check.py`, `tests/test_infinity_shadow_equivalence.py`, `tests/test_infinity_shadow_isolation.py` | v1 still taken; v2 rules; folding; 2 h; the bound 100 × 12; the board's entry; the `nbp:` line; NBP in the equivalence and isolation bodies. | 3 |
 | `src/homunculus/edge/infinity_shadow.py` | `SCHEMA` v2; `FORWARDED` + NBP; `thin()` sends NBP only with `changed_at`. | 4 |
@@ -149,7 +151,7 @@ Engine arithmetic: 10 + 19 + 3 + 1 + 2 = **35** over the base. Dashboard: 7 + 7 
 
 **Modify — docs** (Task 9): `docs/INFINITY-PARAMETER-RECORDS.md`, `deploy/infinity/README.md`, `docs/superpowers/plans/2026-10-15-infinity-asama-a-golge.md`, `docs/homunculus-rehber-TR.md`, `docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md`.
 
-**Outside the repo** (Tasks 8, 10): `/c/tmp/infinity-a-releases/transport-c1f619bf4e1df375.tar.gz`, `nbp-<short>.bundle`, `NBP-bloklari.template.txt`, `NBP-bloklari.txt`.
+**Outside the repo** (Tasks 8, 10): `/c/tmp/infinity-a-releases/transport-<hash>.tar.gz` (`transport-8268ad964b28b90c` for the plan's files), `nbp-<short>.bundle`, `NBP-bloklari.template.txt`, `NBP-bloklari.txt`.
 
 **How an edit reads in this plan:** a bold **Edit** with the file's path and "replace:", a fenced block with the exact old text, "with:", and a fenced block with the new text. Use the Edit tool with those two texts, in the order given; each old text is unique in its file at that moment (the replay checked it). Task 10's two record edits say "(its new text from the run)": their new text is the deploy's own output.
 
@@ -223,15 +225,20 @@ No commit: Task 0 changes nothing in the repo.
 
 ### Task 1: The hub keeps the time each device's NBP last changed
 
-Spec D1–D4, §4.1, with X37 and X38. Everything happens in the hub's live view, in memory: per device, the last complete valid NBP triple, the receipt time of the packet in which it **changed** (`nbp_changed_at`), and the last packet that carried any NBP record at all (`nbp_heard_at`). The snapshot's three `nbp_*` entries gain `changed_at` (a float, or `None` for "not known"); nothing else in the snapshot changes, and the forwarder does not read it yet (Task 4).
+**Done on the branch** as `cbda9ff` (the plan's first version), `b536f75` (the Task 1 review's fix I-1, which is X46: continuity counts only complete valid triples; the re-review approved it) and `bcae99f` (finding I-A on `b536f75`: a test that every repeat of the same complete valid triple renews the run, and a one-line comment at the snapshot). The blocks below are that code: replayed onto `14c208d` they give `bcae99f`'s two files byte for byte.
+
+Spec D1–D4, §4.1, with X37, X38 and X46. Everything happens in the hub's live view, in memory: per device, the last complete valid NBP triple, the receipt time of the packet in which it **changed** (`nbp_changed_at`), and the last packet that carried a **complete valid** triple (`nbp_valid_at`). The snapshot's three `nbp_*` entries gain `changed_at` (a float, or `None` for "not known"); nothing else in the snapshot changes, and the forwarder does not read it yet (Task 4).
 
 The rules, each held by a test below:
 - the first triple seen after a start is held with **no** time (it may be hours old);
-- a different complete valid triple in one packet is a change, stamped with that packet's `received_at` — **if** the device's NBP was heard within 3 s before (X37); after a longer gap the new triple is held with no time;
-- the same triple repeated is nothing (an identical re-measurement is not detected: the time stays older than the truth);
-- a packet missing a component, or carrying one the device flags, neither counts nor clears the triple held;
+- a different complete valid triple in one packet is a change, stamped with that packet's `received_at` — **if** the previous complete valid triple arrived at most `NBP_CONTINUITY_S` = 3.0 s before it (X37, X46); after any longer gap — an outage, a monitor off the network, a spell of flagged or partial NBP — the new triple is held with no time, and NBP stays hidden until the next change seen within 3 s of a complete valid triple;
+- the same triple repeated is no change (an identical re-measurement is not detected: the time stays older than the truth) — but every repeat renews the run, so a result that follows minutes of a stable value is stamped (`bcae99f`: if only a change renewed it, no real result would ever be);
+- a packet missing a component, or carrying one the device flags, changes nothing at all: it neither counts as a change, nor clears the triple held, nor keeps the run unbroken (X46 — a flagged record can mean "not carried in this message type", so hearing one proves nothing about having watched the value);
 - an entry whose value is not the held triple's component (a partial packet's newer value) carries no time (X38);
-- a packet dropped as old (≥ 3 s) or already delivered changes nothing (it never reaches `_track_nbp`).
+- a packet the view drops — old (≥ 3 s), already delivered, replayed, undecodable, from the future — neither renews the run nor clears the triple (it never reaches `_track_nbp`);
+- each device keeps its own run.
+
+So the time shown is never more than 3 s too fresh; the cost is that NBP is hidden after any gap of more than 3 s between complete valid triples (O28, O30). `NBP_CONTINUITY_S` is its own constant, not `STALE_AFTER_MS`: the ward walk may widen it, with evidence (O30).
 
 **Files:**
 - Modify: `homunculus-engine/tests/test_infinity_live.py` (appended after the last test)
@@ -370,7 +377,7 @@ def test_a_change_seen_only_after_an_outage_has_no_time():
 
 
 @pytest.mark.parametrize(("gap", "stamped"), [(3.0, True), (3.1, False)])
-def test_a_change_keeps_its_time_only_if_the_monitor_sent_nbp_within_the_last_3_s(gap, stamped):
+def test_a_change_keeps_its_time_only_if_a_complete_triple_came_within_the_last_3_s(gap, stamped):
     now = [1000.]
     view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
     view.consume([event(1000., PAYLOAD + nbp(120, 80, 93))])
@@ -383,21 +390,134 @@ def test_a_change_keeps_its_time_only_if_the_monitor_sent_nbp_within_the_last_3_
     assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1001. + gap if stamped else None)
 
 
-def test_a_result_after_a_spell_of_stars_keeps_its_time_while_the_monitor_kept_sending_nbp():
-    # The monitor may flag its NBP while the cuff inflates; it keeps sending the records, so the
-    # result is seen as it appears.
+ALL_FLAGGED = (False, False, False)
+
+
+def test_a_flagged_first_packet_after_an_outage_does_not_start_a_run():
+    # A flagged record can mean "not carried in this message type", not "heard": hearing one proves
+    # nothing about having watched the value. The result that follows 0.2 s later may be as old as
+    # the outage, so it must not be stamped as seen live.
     now = [1000.]
     view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
     view.consume([event(1000., nbp(120, 80, 93))])
-    for second in range(1, 40):
+    now[0] = 1001.
+    view.consume([event(1001., nbp(118, 79, 92))])
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1001.)
+    now[0] = 1599.3                                                  # an outage; this is the first packet back
+    view.consume([event(1599.2, nbp(1, 1, 1, valid=ALL_FLAGGED))])
+    now[0] = 1599.5
+    view.consume([event(1599.4, nbp(131, 85, 100))])                 # a result, but since when?
+    assert device(view.snapshot())["parameters"]["nbp_systolic"]["value"] == 131
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES)
+
+
+def test_a_lone_component_as_the_first_packet_after_an_outage_does_not_start_a_run():
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    now[0] = 1001.
+    view.consume([event(1001., nbp(118, 79, 92))])
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1001.)
+    now[0] = 1599.3
+    view.consume([event(1599.2, record(NBP_SYS, 131))])              # one component alone, valid
+    now[0] = 1599.5
+    view.consume([event(1599.4, nbp(131, 85, 100))])
+    assert device(view.snapshot())["parameters"]["nbp_systolic"]["value"] == 131
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES)
+
+
+def test_a_result_after_a_long_spell_of_stars_has_no_time_because_flagged_records_prove_no_continuity():
+    # Strict rule: only a run of COMPLETE VALID triples is continuity. A spell of ten minutes of
+    # flagged NBP, one packet a second, leaves the result that ends it unstamped; the next change,
+    # seen right after a complete triple, is stamped again.
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    for second in range(1, 600):                                     # 599 packets, 1001 .. 1599
         now[0] = 1000. + second
-        view.consume([event(now[0], nbp(1, 1, 1, valid=(False, False, False)))])
-    now[0] = 1040.
-    view.consume([event(1040., nbp(131, 85, 100))])
-    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1040.)
+        view.consume([event(now[0], nbp(1, 1, 1, valid=ALL_FLAGGED))])
+    now[0] = 1600.
+    view.consume([event(1600., nbp(131, 85, 100))])
+    assert device(view.snapshot())["parameters"]["nbp_systolic"]["value"] == 131
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES)
+    now[0] = 1601.
+    view.consume([event(1601., nbp(132, 85, 100))])
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1601.)
+
+
+def test_a_result_after_minutes_of_the_same_triple_is_stamped_because_every_repeat_renews_the_run():
+    # The counterpart of the spell of stars: the monitor repeats its last result in every packet, so
+    # a result that follows ten minutes of a stable triple is preceded by a complete valid triple
+    # one second earlier. If only a CHANGE renewed the run, no real result would ever be stamped.
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    for second in range(1, 600):                                     # 599 repeats, 1001 .. 1599
+        now[0] = 1000. + second
+        view.consume([event(now[0], nbp(120, 80, 93))])
+    now[0] = 1600.5
+    view.consume([event(1600.5, nbp(131, 85, 100))])                 # 1.5 s after the last repeat
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1600.5)
+
+
+def test_packets_the_view_drops_do_not_renew_the_run():
+    # Old, already delivered, replayed, undecodable and from-the-future packets are not heard: a
+    # complete triple in one of them must not make the next change look watched.
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    now[0] = 1001.
+    view.consume([event(1001., nbp(118, 79, 92))])
+    now[0] = 1600.                                                   # an outage
+    other = nbp(140, 90, 107)
+    view.consume([event(1599., PAYLOAD)])                            # first packet back: no NBP record
+    view.consume([event(1597., other),                               # old: 3 s or more
+                  event(1598.9, other),                              # already delivered: before 1599.
+                  event(1599.5, other, mode="replay"),               # not live
+                  dict(event(1599.6, other), payload_base64="!"),    # not base64
+                  event(1601., other)])                              # from the future
+    snapshot = view.snapshot()
+    assert (snapshot["old_or_duplicate_packets"], snapshot["rejected_packets"]) == (2, 3)
+    view.consume([event(1599.8, nbp(141, 91, 108))])                 # the first live triple, not the dropped ones'
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES)              # changed, but when?
+
+
+def test_packets_the_view_drops_neither_clear_the_triple_nor_break_the_run():
+    now = [1000.]
+    view = LiveResearchView(inventory(), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93))])
+    now[0] = 1001.
+    view.consume([event(1001., nbp(118, 79, 92))])
+    now[0] = 1002.
+    view.consume([dict(event(1001.5, nbp(118, 79, 92)), payload_base64="!"),    # not base64
+                  event(1003., nbp(150, 95, 113))])                             # from the future
+    snapshot = view.snapshot()
+    assert snapshot["rejected_packets"] == 2
+    assert changed_at(view) == {}                                    # the readings are cleared, the triple is not
+    now[0] = 1003.
+    view.consume([event(1002.8, nbp(131, 85, 100))])                 # 1.8 s after the last complete triple
+    assert changed_at(view) == dict.fromkeys(NBP_NAMES, 1002.8)
+
+
+def test_two_devices_keep_their_own_run():
+    now = [1000.]
+    view = LiveResearchView(inventory(2), clock=lambda: now[0], monotonic=lambda: now[0])
+    view.consume([event(1000., nbp(120, 80, 93), index=0), event(1000., nbp(120, 80, 93), index=1)])
+    now[0] = 1001.
+    view.consume([event(1001., nbp(118, 79, 92), index=0)])
+    for stamp in (1002., 1003., 1004., 1005.):                       # device 0 goes on sending triples
+        now[0] = stamp
+        view.consume([event(stamp, nbp(118, 79, 92), index=0)])
+    view.consume([event(1005., nbp(118, 79, 92), index=1)])          # device 1 is back after 5 s with a new triple
+    assert changed_at(view, 0) == dict.fromkeys(NBP_NAMES, 1001.)
+    assert changed_at(view, 1) == dict.fromkeys(NBP_NAMES)
+    now[0] = 1006.
+    view.consume([event(1006., nbp(131, 85, 100), index=1)])         # device 1's next change, seen live
+    assert changed_at(view, 0) == dict.fromkeys(NBP_NAMES, 1001.)
+    assert changed_at(view, 1) == dict.fromkeys(NBP_NAMES, 1006.)
 ```
 
-The records are the decoder's own test builder (`tests/test_infinity_records.py:12–21`); `0x1E07/08/09` are `nbp_diastolic/systolic/mean` in `edge/infinity_records.py:47–49`. A 3.0 s gap is exactly representable (`1004.0 − 1001.0`), so the boundary is `<=`.
+The records are the decoder's own test builder (`tests/test_infinity_records.py:12–21`); `0x1E07/08/09` are `nbp_diastolic/systolic/mean` in `edge/infinity_records.py:47–49`. A 3.0 s gap is exactly representable (`1004.0 − 1001.0`), so the boundary is `<=`. The dropped-packet and two-device tests guard behaviour the view already has (the drops return before `_track_nbp`; the state is per device); on the branch each was checked to fail under a mutation that breaks it.
 
 - [ ] **Step 2: Run them and see them fail for the right reason**
 
@@ -408,8 +528,8 @@ PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe
 
 Expected:
 ```
-      1 10 failed, 15 passed, 1 warning in …
-     10 E       KeyError: 'changed_at'
+      1 16 failed, 15 passed, 1 warning in …
+     16 E       KeyError: 'changed_at'
 ```
 
 - [ ] **Step 3: The constants and the device's NBP state**
@@ -438,11 +558,18 @@ HISTORY_INTERVAL = 1.0
 # hub can know is when the (systolic, diastolic, mean) triple last CHANGED: a measurement happened
 # at or before that packet. That time is an upper bound of the measurement; an identical
 # re-measurement is not seen and leaves it older, the safe direction. A change keeps its time only
-# when the device's NBP was heard within NBP_CONTINUITY_S before it: after a gap (an outage, a
-# monitor off the network) it may have happened at any moment of the gap, and stamping it with the
-# first packet after the gap would make an old measurement read as fresh.
+# when the packet before it that carried a COMPLETE VALID triple is at most NBP_CONTINUITY_S
+# older: after a gap (an outage, a monitor off the network, a spell of flagged or partial NBP) it
+# may have happened at any moment of the gap, and stamping it with the first packet after the gap
+# would make an old measurement read as fresh. Strict on purpose (X46): a flagged record can mean
+# "not carried in this message type", so hearing one proves nothing about having watched the
+# value; the time shown is never more than NBP_CONTINUITY_S too fresh.
 NBP = ("nbp_systolic", "nbp_diastolic", "nbp_mean")
-NBP_CONTINUITY_S = STALE_AFTER_MS / 1000.0
+# Its own constant, not STALE_AFTER_MS: that is how long any strip value counts as live; this is
+# how much fresher than the truth a shown NBP time may be. 3 s assumes the monitor repeats a
+# complete valid triple at least that often. The ward walk (open item O30) may widen it, with
+# evidence: the longest gap between complete valid triples seen on a real bed.
+NBP_CONTINUITY_S = 3.0
 
 
 class DeviceState:
@@ -454,17 +581,19 @@ class DeviceState:
         self.unsupported = False
         self.packets = 0
         # The last complete valid NBP triple, and the receipt time of the packet in which it
-        # changed. None until a change has been seen since this process started: a triple first
-        # seen after a start may be hours old (or another patient's), so its time is unknown.
-        # `nbp_heard_at` is the last packet that carried any NBP record, valid or flagged.
+        # changed. None until a change has been seen as it happened: after a start, an outage or
+        # any gap of more than NBP_CONTINUITY_S between complete valid triples, the next change
+        # (and a triple first seen) may be hours old, or another patient's, so its time is unknown.
+        # `nbp_valid_at` is the last packet that carried a complete valid triple; flagged and
+        # partial NBP packets do not set it.
         self.nbp_triple = None
         self.nbp_changed_at = None
-        self.nbp_heard_at = None
+        self.nbp_valid_at = None
 ```
 
 - [ ] **Step 4: Track the change in every accepted packet**
 
-`_consume_one` has already dropped an old or duplicate packet (`infinity_live.py:64`) and a replay or undecodable one before this point, so only live, decoded packets reach `_track_nbp`.
+`_consume_one` has already dropped an old or duplicate packet (`infinity_live.py:64`) and a replay, future or undecodable one before this point, so only live, decoded packets reach `_track_nbp`.
 
 **Edit** `homunculus-engine/src/homunculus/edge/infinity_live.py` — replace:
 ```python
@@ -484,21 +613,20 @@ with:
     @staticmethod
     def _track_nbp(state, decoded, epoch):
         """A change of this packet's own complete, valid NBP triple stamps it with the packet's
-        receipt time — if the device's NBP was heard within NBP_CONTINUITY_S before it; after a gap
-        the change has no time. A packet missing a component, or carrying one the device flags
-        invalid, neither counts as a change nor clears the triple held; the first triple seen is
+        receipt time — if the previous complete valid triple arrived at most NBP_CONTINUITY_S
+        before it; after any longer gap the change has no time. A packet missing a component, or
+        carrying one the device flags invalid, changes nothing at all: it neither counts as a
+        change, nor clears the triple held, nor keeps the run unbroken. The first triple seen is
         held with no time."""
-        if not any(name in decoded for name in NBP):
-            return
-        heard, state.nbp_heard_at = state.nbp_heard_at, epoch
         records = [decoded.get(name) for name in NBP]
         if not all(record is not None and record["valid"] for record in records):
             return
         triple = tuple(record["value"] for record in records)
         if state.nbp_triple is not None and triple != state.nbp_triple:
-            seen_as_it_happened = heard is not None and epoch - heard <= NBP_CONTINUITY_S
-            state.nbp_changed_at = epoch if seen_as_it_happened else None
+            unbroken = state.nbp_valid_at is not None and epoch - state.nbp_valid_at <= NBP_CONTINUITY_S
+            state.nbp_changed_at = epoch if unbroken else None
         state.nbp_triple = triple
+        state.nbp_valid_at = epoch
 
     @staticmethod
     def _nbp_changed_at(state, name, record):
@@ -524,6 +652,7 @@ with:
                     }
                     if name in NBP:
                         # When the value last changed (receipt time), or None: not known.
+                        # Describes the held reading; `status` says whether it is current (stale keeps it).
                         parameters[name]["changed_at"] = self._nbp_changed_at(state, name, record)
 ```
 
@@ -535,7 +664,7 @@ PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_live.py tests/test_infinity_records.py tests/test_infinity_shadow_forwarder.py tests/test_infinity_research_api.py tests/test_infinity_preview.py 2>&1 | tail -1
 ```
 
-Expected: `25 passed, 1 warning in …`; then `109 passed, 3 warnings in …` (the forwarder still sends no NBP: it reads `changed_at` from Task 4 on).
+Expected: `31 passed, 1 warning in …`; then `115 passed, 3 warnings in …` (the forwarder still sends no NBP: it reads `changed_at` from Task 4 on). The whole no-DB suite after this task: `2159 passed, 650 skipped`.
 
 - [ ] **Step 7: Line ends**
 
@@ -544,9 +673,11 @@ cd /c/tmp/inf-nbp
 for f in homunculus-engine/src/homunculus/edge/infinity_live.py homunculus-engine/tests/test_infinity_live.py; do printf "%s CR=%s LF=%s\n" "$f" "$(tr -cd '\r' < "$f" | wc -c)" "$(tr -cd '\n' < "$f" | wc -c)"; done
 ```
 
-Expected: `infinity_live.py CR=215 LF=215`, `test_infinity_live.py CR=379 LF=379`.
+Expected: `infinity_live.py CR=224 LF=224`, `test_infinity_live.py CR=492 LF=492`.
 
 - [ ] **Step 8: Commit**
+
+On the branch this is three commits, `cbda9ff`, `b536f75` and `bcae99f`, whose messages record their reds (10 failed, 15 passed under the first version; 3 failed, 27 passed for the review's three strict-rule tests; 1 failed, 30 passed for the repeats test under a mutant that renews the run only on a change). Replaying from `14c208d`, commit once:
 
 ```bash
 cd /c/tmp/inf-nbp
@@ -558,14 +689,17 @@ feat(edge): the live view keeps the time each device's NBP last changed
 The monitor repeats its last NBP in every packet, so a packet's age says
 nothing about the cuff. Per device the hub now holds the last complete valid
 (systolic, diastolic, mean) and the receipt time of the packet in which it
-changed: an upper bound of the measurement. The first triple after a start has
-no time, and neither has a change seen only after the device's NBP went unheard
-for more than 3 s — it may have happened at any moment of the gap (X37). A
-partial or flagged packet neither counts nor clears; an entry whose value is
-not the held triple's carries no time (X38). The snapshot's nbp_* entries carry
-changed_at; the forwarder does not read it yet.
+changed: an upper bound of the measurement. A change keeps that time only when
+the previous complete valid triple came at most NBP_CONTINUITY_S (3.0 s) before
+it; after a start, an outage or any longer gap — flagged or partial NBP
+included, which neither start nor continue a run — the new triple has no time
+(X37, X46), so the time shown is never more than 3 s too fresh; every repeat
+of the same triple renews the run. A partial or flagged packet neither counts
+nor clears; an entry whose value is not the held
+triple's carries no time (X38). The snapshot's nbp_* entries carry changed_at;
+the forwarder does not read it yet.
 
-red: 10 failed, 15 passed — KeyError: 'changed_at' (tests/test_infinity_live.py)
+red: 16 failed, 15 passed — KeyError: 'changed_at' (tests/test_infinity_live.py)
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 MSG
@@ -575,6 +709,8 @@ git log --oneline -1
 ---
 
 ### Task 2: The strip's NBP words, in four languages
+
+**Done on the branch** as `5ae5810`, byte for byte this task.
 
 Spec §5 (strings), with X42. Additive only: the monitor's own label `p.nbp` and three keys a later task draws — `nbpMeasured` (the visible "ölçmə ≤ {time} ({age})"), `nbpWaiting` ("ölçmə gözlənilir") and `nbpSaid` (the screen reader's sentence). Nothing renders them yet, and nothing else changes; `legendNbp` is reworded in Task 7, together with the test that quotes it. Before anything renders, the reviewed lists in `strings.test.js` learn that `NBP` is the monitor's label in every language (neutral, and the same in az and tr).
 
@@ -759,6 +895,8 @@ git log --oneline -1
 ---
 
 ### Task 3: The API takes v1 and v2, shows NBP as one entry and withholds it two hours after it changed
+
+**Done on the branch** as `b5509fd`, byte for byte this task.
 
 Spec D5–D7, §4.3, with X38–X40, and X43 for why the dashboard's two tables land here. The store learns schema v2 (v1 is still taken: the hub keeps sending it until Task 4's code reaches the VM); an NBP reading must carry `changed_at` and nothing else may; the three held NBP readings fold into one board entry `nbp`, a number only when all three are held with one change time, fresh and valid, and the change is at most 2 h old. The entry exists for a device that holds a reading, while the hub speaks v2 or NBP readings are still held (X39). `shadow_check.py` prints one `nbp:` line. The dashboard's copy of the API's tables gains `nbp` in the same commit, because `monitor.test.js:126–137` holds the two equal; the Settings legend's table then shows an NBP row by itself (it iterates `PARAM_ORDER`), and its test lists it.
 
@@ -1706,7 +1844,7 @@ PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_shadow_forwarder.py tests/test_infinity_shadow_config.py tests/test_infinity_live.py tests/test_infinity_records.py tests/test_infinity_device_beds.py 2>&1 | tail -1
 ```
 
-Expected: `143 passed, 3 warnings in …` (65 + 39 + 18 + 3 + 18); then `168 passed, 3 warnings in …` — the forwarder still sends v1 and the API still takes it.
+Expected: `143 passed, 3 warnings in …` (65 + 39 + 18 + 3 + 18); then `174 passed, 3 warnings in …` (52 + 17 + 31 + 14 + 60) — the forwarder still sends v1 and the API still takes it.
 
 - [ ] **Step 12: The dashboard's copy of the API's tables — tests first**
 
@@ -2089,7 +2227,7 @@ with:
             readings.append(reading)
 ```
 
-The bound is on the time; the age the strip prints from it is younger than the truth by at most the few seconds between the cuff's result and the packet that showed it — which is why a change seen only after a gap has no time at all (X37).
+The bound is on the time; the age the strip prints from it is younger than the truth by at most `NBP_CONTINUITY_S` = 3 s — the hub stamps a change only when the previous complete valid triple came at most 3 s before it, and a change seen only after a longer gap (flagged or partial NBP included) has no time at all (X37, X46). The forwarder reads that as the snapshot's `changed_at`, the same key Task 1 has always produced.
 
 - [ ] **Step 4: Green, and the whole lane**
 
@@ -2099,7 +2237,7 @@ PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_live.py tests/test_infinity_records.py tests/test_infinity_shadow_forwarder.py tests/test_infinity_shadow_store.py tests/test_infinity_shadow_api.py tests/test_infinity_shadow_check.py tests/test_infinity_shadow_equivalence.py tests/test_infinity_shadow_isolation.py tests/test_infinity_shadow_config.py tests/test_infinity_release.py 2>&1 | tail -1
 ```
 
-Expected: `54 passed, 3 warnings in …`; then `256 passed, 3 warnings in …` (the isolation test's import check covers `edge/infinity_shadow.py`'s new import: an edge module, nothing clinical).
+Expected: `54 passed, 3 warnings in …`; then `262 passed, 3 warnings in …` (the isolation test's import check covers `edge/infinity_shadow.py`'s new import: an edge module, nothing clinical).
 
 - [ ] **Step 5: Line ends**
 
@@ -2122,7 +2260,8 @@ feat(edge): the forwarder sends NBP with the time it changed (shadow schema v2)
 FORWARDED gains the live view's three NBP names; thin() sends an nbp_* reading
 only when it is fresh and the live view has a change time for it, and sends
 that time as changed_at. Nothing is sent after a hub start, after an outage
-(X37) or for a partial packet's newer value (X38). The body is
+or any gap of more than 3 s between complete valid triples (X37, X46), or for
+a partial packet's newer value (X38). The body is
 homunculus.infinity-shadow.v2, which the API takes since the previous commit.
 The new import is an edge module: the release still packs only edge/.
 
@@ -2956,7 +3095,7 @@ cd /c/tmp/inf-nbp/homunculus-engine
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -1
 ```
 
-Expected: `2178 passed, 650 skipped, 3 warnings in …` — the base's 2143 plus this slice's 35.
+Expected: `2184 passed, 650 skipped, 3 warnings in …` — the base's 2143 plus this slice's 41.
 
 - [ ] **Step 2: Postgres is not needed — say so with evidence**
 
@@ -2975,7 +3114,7 @@ cd /c/tmp/inf-nbp/homunculus-engine
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/g115-py314/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_live.py tests/test_infinity_records.py tests/test_infinity_shadow_forwarder.py tests/test_infinity_shadow_store.py tests/test_infinity_shadow_api.py tests/test_infinity_shadow_check.py tests/test_infinity_shadow_equivalence.py tests/test_infinity_shadow_isolation.py tests/test_infinity_shadow_config.py tests/test_infinity_release.py 2>&1 | tail -1
 ```
 
-Expected: `256 passed, 3 warnings in …`.
+Expected: `262 passed, 3 warnings in …`.
 
 - [ ] **Step 4: The dashboard suite and build**
 
@@ -3001,7 +3140,7 @@ git diff --stat 14c208d HEAD -- homunculus-engine/src/homunculus/edge homunculus
 git status --short
 ```
 
-Expected: `.../src/homunculus/edge/infinity_live.py | 48 +++…`, `.../src/homunculus/edge/infinity_shadow.py | 30 ++…`, `2 files changed, …`; no status line (everything committed — the builder reads git).
+Expected: `.../src/homunculus/edge/infinity_live.py | 57 +++…`, `.../src/homunculus/edge/infinity_shadow.py | 30 ++…`, `2 files changed, 78 insertions(+), 9 deletions(-)`; no status line (everything committed — the builder reads git).
 
 - [ ] **Step 6: Build R4, and the base for comparison**
 
@@ -3011,20 +3150,20 @@ cd /c/tmp/inf-nbp
 BASE=$(mktemp -d) && /c/tmp/f7-py312/venv/Scripts/python.exe deploy/infinity/build_transport_release.py --output "$BASE" --commit 14c208d | cut -c1-48
 ```
 
-Expected: one JSON line `{"release": "transport-c1f619bf4e1df375", "tarball": "C:\\tmp\\infinity-a-releases\\transport-c1f619bf4e1df375.tar.gz", "sha256": "<64 hex>"}` — **write the sha256 down: Task 10 needs it** (R4_SHA). Then `{"release": "transport-3940346adc66ca7b", …` — the base rebuilds R3, the release the hub runs today, so the two edge files are the whole difference. Any other R4 name means an edge file is not byte-for-byte the plan's: stop and compare with `/c/tmp/homunculus-plans/nbp/reference.patch`.
+Expected: one JSON line `{"release": "transport-8268ad964b28b90c", "tarball": "C:\\tmp\\infinity-a-releases\\transport-8268ad964b28b90c.tar.gz", "sha256": "<64 hex>"}` — **write the name and the sha256 down: Task 10 carries both into the block file.** Then `{"release": "transport-3940346adc66ca7b", …` — the base rebuilds R3, the release the hub runs today, so the two edge files are the whole difference. `transport-8268ad964b28b90c` is what the plan's two edge files give (rebuilt 2026-10-25 from Task 1 as landed, `bcae99f`, plus Task 4; the names before X46 and before `bcae99f`'s comment were different, and any later change to `infinity_live.py` or `infinity_shadow.py` changes it again). If the printed name differs because a review changed an edge file after this plan, carry the printed name and say so; if nothing was supposed to change, an edge file is not byte-for-byte the plan's: stop and compare with `/c/tmp/homunculus-plans/nbp/reference.patch`.
 
 - [ ] **Step 7: Inspect the release before it leaves**
 
 ```bash
 cd /c/tmp/infinity-a-releases
-REL=transport-c1f619bf4e1df375
+REL=transport-8268ad964b28b90c          # the name Step 6 printed
 tar -tzf $REL.tar.gz | wc -l
 D=$(mktemp -d) && tar -xzf $REL.tar.gz -C "$D" && cd "$D/$REL" && sha256sum -c --quiet SHA256SUMS && echo "SUMS OK"
 /c/tmp/f7-py312/venv/Scripts/python.exe -I -c "import sys; sys.path.insert(0, 'app/src'); import homunculus, homunculus.edge.infinity_shadow as s, homunculus.edge.infinity_live as l; print(homunculus.__doc__, s.SCHEMA, s.FORWARDED[-3:], l.NBP_CONTINUITY_S)"
 cat RELEASE.json
 ```
 
-Expected: `13`; `SUMS OK`; `Isolated Infinity research package. homunculus.infinity-shadow.v2 ('nbp_systolic', 'nbp_diastolic', 'nbp_mean') 3.0` (the stub package, not the repo's: the release imports nothing of the clinical engine); `RELEASE.json` names `transport-c1f619bf4e1df375` and this branch's head commit (`git rev-parse HEAD`).
+Expected: `13`; `SUMS OK`; `Isolated Infinity research package. homunculus.infinity-shadow.v2 ('nbp_systolic', 'nbp_diastolic', 'nbp_mean') 3.0` (the stub package, not the repo's: the release imports nothing of the clinical engine); `RELEASE.json` names that release and this branch's head commit (`git rev-parse HEAD`).
 
 No commit: nothing in the repo changed. (`dist/` and the temp folders are outside git.)
 
@@ -3059,13 +3198,15 @@ with:
   çözülmediği için paketin yaşı manşonun ne zaman ölçtüğünü söylemez. Hub bunun yerine, cihaz
   başına (sistolik, diyastolik, ortalama) üçlüsünün **değiştiği** paketin alınış saatini tutar:
   ölçüm o anda ya da daha önce olmuştur, saat bir **üst sınırdır** ve şerit "ölçüm ≤ SS:DD (N dk)"
-  yazar. Üçlü, ancak cihazın NBP kaydı son 3 saniye içinde duyulmuşken değişirse saatini alır; bir
-  kesintiden (ağ, cihaz) sonra görülen değişikliğin saati bilinmez, çünkü kesintinin herhangi bir
-  anında olmuş olabilir. Hub yeniden başladıktan sonra, ya da böyle bir kesintiden sonra, NBP bir
-  sonraki ölçüme kadar gösterilmez ("ölçüm bekleniyor"); değeri 2 saatten uzun süredir
-  değişmemiş NBP gösterilmez (API). Aynı değerle yinelenen bir ölçüm fark edilmez: saat
-  gerçeğinden eski kalır, hiçbir zaman yeni değil. Üç bileşen tek bir pakette, geçerli ve tam
-  gelmelidir; eksik ya da `***` bileşenli paket ne değişiklik sayılır ne de tutulan üçlüyü siler.
+  yazar. Değişiklik, ancak bir önceki tam ve geçerli üçlü en çok 3 saniye önce gelmişse saatini
+  alır; daha uzun bir boşluktan sonra (ağ ya da cihaz kesintisi, `***` ya da eksik bileşenli
+  paketlerle geçen bir süre) görülen değişikliğin saati bilinmez, çünkü boşluğun herhangi bir
+  anında olmuş olabilir. Gösterilen saat gerçeğinden en çok 3 saniye yeni olabilir. Hub yeniden
+  başladıktan sonra, ya da böyle bir boşluktan sonra, NBP bir sonraki ölçüme kadar gösterilmez
+  ("ölçüm bekleniyor"); değeri 2 saatten uzun süredir değişmemiş NBP gösterilmez (API). Aynı
+  değerle yinelenen bir ölçüm fark edilmez: saat gerçeğinden eski kalır, hiçbir zaman yeni değil.
+  Üç bileşen tek bir pakette, geçerli ve tam gelmelidir; eksik ya da `***` bileşenli paket ne
+  değişiklik sayılır, ne tutulan üçlüyü siler, ne de 3 saniyelik süreyi başlatır ya da sürdürür.
   Hastanın değiştiği bir yatakta önceki hastanın NBP'si, yeni ölçüme ya da 2 saate kadar
   görünebilir; cihaz→hasta bağı geldiğinde (Aşama B) bağ değişince NBP sıfırlanacak.
 ```
@@ -3096,11 +3237,12 @@ with:
 **R4 — NBP on the strip** (spec `docs/superpowers/specs/2026-10-22-infinity-nbp-degisim-saati-design.md`,
 plan `docs/superpowers/plans/2026-10-22-infinity-nbp-degisim-saati.md`):
 
-- Release R4 `/opt/homunculus-infinity/transport-c1f619bf4e1df375`: R3 plus, in the live view, the
-  time each device's NBP triple last changed (kept only when the device's NBP was heard within 3 s
-  before the change), and the forwarder's schema `homunculus.infinity-shadow.v2` — NBP's three
-  readings with `changed_at`, sent only once a change has been seen since the hub started. The
-  name is the files' hash: the same two edge files always give it.
+- Release R4 `/opt/homunculus-infinity/transport-8268ad964b28b90c`: R3 plus, in the live view, the
+  time each device's NBP triple last changed (kept only when a complete valid triple came within
+  3 s before the change; flagged or partial NBP neither starts nor continues that run), and the
+  forwarder's schema `homunculus.infinity-shadow.v2` — NBP's three readings with `changed_at`, sent
+  only once such a change has been seen since the hub started. The name is the files' hash: the
+  same two edge files always give it.
 - `94-nbp.conf` — `92-asama-a-kod.conf` with the release path changed to R4, checked by `diff`
   before it is installed. 93 stays (the forwarder stays on).
 - **Order: the API and web first** (they take v1 and v2 and draw `nbp`), **then the hub.** An R4
@@ -3125,7 +3267,7 @@ with:
 ```markdown
 - *The cost:* a bed without an arterial line shows no blood pressure on the strip. The legend says that NIBP is withheld on purpose and that the monitor is the place to read it.
 
-> **Superseded by the NBP slice (user decision 2026-10-22).** NBP is now shown, with the time its value last *changed* as the hub saw it — an upper bound of the measurement ("ölçüm ≤ SS:DD"), kept only for a change seen while the device's NBP was being heard; hidden after a hub start or an outage until the next change, and withheld by the API 2 h after the change. The first reason above is answered by the bound; the third stays open until device→patient links exist (Stage B resets NBP on a link change). Hub release R4 (drop-in `94-nbp.conf`), wire schema `homunculus.infinity-shadow.v2`. Spec `docs/superpowers/specs/2026-10-22-infinity-nbp-degisim-saati-design.md`, plan `docs/superpowers/plans/2026-10-22-infinity-nbp-degisim-saati.md`.
+> **Superseded by the NBP slice (user decision 2026-10-22).** NBP is now shown, with the time its value last *changed* as the hub saw it — an upper bound of the measurement ("ölçüm ≤ SS:DD"), kept only for a change seen within 3 s of the previous complete valid triple; hidden after a hub start, an outage or any longer gap between complete valid triples until the next such change, and withheld by the API 2 h after the change. The first reason above is answered by the bound; the third stays open until device→patient links exist (Stage B resets NBP on a link change). Hub release R4 (drop-in `94-nbp.conf`), wire schema `homunculus.infinity-shadow.v2`. Spec `docs/superpowers/specs/2026-10-22-infinity-nbp-degisim-saati-design.md`, plan `docs/superpowers/plans/2026-10-22-infinity-nbp-degisim-saati.md`.
 ```
 
 **Edit** `docs/superpowers/plans/2026-10-15-infinity-asama-a-golge.md` — replace:
@@ -3160,9 +3302,11 @@ with:
   - **Şeritte NBP (NBP dilimi):** cihaz NBP'nin ne zaman ölçüldüğünü pakette söylemiyor (son
     değeri her pakette yineliyor), bu yüzden şerit NBP'yi **değerinin son değiştiği saatle**
     gösterir: "NBP 118/79 (92) mmHg · ölçüm ≤ 10:42 (12 dk)". "≤" bir **üst sınırdır**: manşon en
-    geç o saatte ölçmüştür, daha önce ölçmüş olabilir. Değişiklik ancak hub cihazın NBP'sini son
-    3 saniyede duymuşken görülürse saat alır; hub yeniden başladıktan ya da bir kesintiden sonra
-    NBP bir sonraki ölçüme kadar "— · ölçüm bekleniyor" yazar. Değeri 2 saatten uzun süredir
+    geç o saatte ölçmüştür, daha önce ölçmüş olabilir. Değişiklik ancak bir önceki tam ve geçerli
+    NBP üçlüsü en çok 3 saniye önce geldiyse saat alır (`***` ya da eksik paketler sayılmaz);
+    saat gerçeğinden en çok 3 saniye yeni olur. Hub yeniden başladıktan, bir kesintiden ya da tam
+    üçlüler arasında 3 saniyeden uzun bir boşluktan sonra NBP bir sonraki ölçüme kadar "— · ölçüm
+    bekleniyor" yazar. Değeri 2 saatten uzun süredir
     değişmemiş NBP gösterilmez ("— · eski · 3 sa"). Aynı değerle yinelenen ölçüm fark edilmez
     (saat gerçeğinden eski kalır, yeni değil). Hub sürümü R4, drop-in 94; geri alma: 94 silinir
     (hub R3'e, NBP'siz şeride döner). Önce API ve web, sonra hub dağıtılır.
@@ -3177,7 +3321,7 @@ O4 çözüldü: 2026-10-20) |
 with:
 ```markdown
 O4 çözüldü: 2026-10-20) |
-| A-NBP | Aşama A şeridinde NBP, değerinin son değiştiği saatle ("ölçüm ≤ SS:DD (N dk)"; üst sınır; kesintiden ya da hub başlangıcından sonra bir sonraki ölçüme kadar gizli; değişimden 2 sa sonra gizli) · hub R4 `transport-c1f619bf4e1df375` + drop-in 94, şema `homunculus.infinity-shadow.v2` · spec: [2026-10-22](../specs/2026-10-22-infinity-nbp-degisim-saati-design.md) · plan: [NBP](2026-10-22-infinity-nbp-degisim-saati.md) | Kod ✅ `feat/infinity-nbp` · backend 2178 / 650 (DB'siz), dashboard 89 dosya / 2406 test · **VM: bekliyor** (önce api+web, sonra hub R4; işçi değişmez) · **Açık:** önerilen X37–X45 (kullanıcı onayı), O27–O35 |
+| A-NBP | Aşama A şeridinde NBP, değerinin son değiştiği saatle ("ölçüm ≤ SS:DD (N dk)"; üst sınır, gerçeğinden en çok 3 sn yeni; hub başlangıcından, kesintiden ya da tam geçerli üçlüler arasında 3 sn'den uzun boşluktan sonra bir sonraki ölçüme kadar gizli; değişimden 2 sa sonra gizli) · hub R4 `transport-8268ad964b28b90c` + drop-in 94, şema `homunculus.infinity-shadow.v2` · spec: [2026-10-22](../specs/2026-10-22-infinity-nbp-degisim-saati-design.md) · plan: [NBP](2026-10-22-infinity-nbp-degisim-saati.md) | Kod ✅ `feat/infinity-nbp` · backend 2184 / 650 (DB'siz), dashboard 89 dosya / 2406 test · **VM: bekliyor** (önce api+web, sonra hub R4; işçi değişmez) · **Kararlar:** X37–X45 kullanıcı onayladı (25.10), X46 (sıkı süreklilik, Görev 1 incelemesi) · **Açık:** O27–O35 |
 ```
 
 (The old text is the end of the G2-01 row, which is one long line; it occurs once.)
@@ -3189,7 +3333,7 @@ cd /c/tmp/inf-nbp
 for f in docs/INFINITY-PARAMETER-RECORDS.md deploy/infinity/README.md docs/superpowers/plans/2026-10-15-infinity-asama-a-golge.md docs/homunculus-rehber-TR.md docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md; do printf "%s CR=%s LF=%s\n" "$f" "$(tr -cd '\r' < "$f" | wc -c)" "$(tr -cd '\n' < "$f" | wc -c)"; done
 ```
 
-Expected, in that order: 234, 442, 2490, 1150, 1293 — each `CR=` equal to its `LF=`.
+Expected, in that order: 236, 443, 2490, 1152, 1293 — each `CR=` equal to its `LF=`.
 
 - [ ] **Step 7: Commit**
 
@@ -3215,11 +3359,11 @@ git log --oneline -1
 
 ### Task 10: The deploy blocks, and the acceptance walk with the user
 
-Spec D8, §6, §9, with X39, X42, X45 and O30. The agent prepares two files outside the repo — a full git bundle of the branch and the block file `C:\tmp\infinity-a-releases\NBP-bloklari.txt` — and then **does not touch the VM**: the user pastes every VM block; the agent runs only the read-only checks marked "ajan" (`shadow_check.py`, `transport_check.py`, over SSH from the workstation, printing counts, ages and hashes, never a value or a token). Order, as D8 says: **API and web first** (they take v1 and v2; with the hub still on R3 the strip looks as before — X39), **then the hub** (R4, drop-in `94-nbp.conf` made from `92-asama-a-kod.conf` and checked by `diff`); the worker is not deployed. Rollback: delete 94 (hub back to R3, v1); API and web by image tag.
+Spec D8, §6, §9, with X39, X42, X45, X46 and O30. The agent prepares three files outside the repo — a full git bundle of the branch, the O30 gap check and the block file `C:\tmp\infinity-a-releases\NBP-bloklari.txt` — and then **does not touch the VM**: the user pastes every VM block; the agent runs only the read-only checks marked "ajan" (`shadow_check.py`, `transport_check.py`, `nbp_gap_check.py`, over SSH from the workstation, printing counts, ages and hashes, never a value or a token). Order, as D8 says: **API and web first** (they take v1 and v2; with the hub still on R3 the strip looks as before — X39), **then the hub** (R4, drop-in `94-nbp.conf` made from `92-asama-a-kod.conf` and checked by `diff`); the worker is not deployed. Rollback: delete 94 (hub back to R3, v1); API and web by image tag.
 
 What the VM runs today (the G2 slice's record, `docs/superpowers/plans/2026-10-19-g2-vital-egrileri.md`): `/opt/homunculus` on `feat/g2-vital-egrileri` at `0ea1d0551f8bd9420ab415263ddf14081d244a30` (api built at `6407492`, web at `0ea1d05`); the hub on R3 `transport-3940346adc66ca7b` through drop-ins 90 → 92, with 93 turning the forwarder on; the device→bed table version 1, sha `ac5ce1c9549c…`. Block B-1 checks each of these before anything changes and stops if one is not so.
 
-**Files (outside the repo):** `/c/tmp/infinity-a-releases/nbp-<short>.bundle`, `NBP-bloklari.template.txt`, `NBP-bloklari.txt` (the R4 tarball is Task 8's).
+**Files (outside the repo):** `/c/tmp/infinity-a-releases/nbp-<short>.bundle`, `nbp_gap_check.py`, `NBP-bloklari.template.txt`, `NBP-bloklari.txt` (the R4 tarball is Task 8's).
 
 - [ ] **Step 1: The bundle**
 
@@ -3229,12 +3373,117 @@ git status --short
 SHORT=$(git rev-parse --short=7 HEAD)
 git bundle create /c/tmp/infinity-a-releases/nbp-$SHORT.bundle feat/infinity-nbp
 git bundle verify /c/tmp/infinity-a-releases/nbp-$SHORT.bundle
-sha256sum /c/tmp/infinity-a-releases/nbp-$SHORT.bundle /c/tmp/infinity-a-releases/transport-c1f619bf4e1df375.tar.gz
+REL=transport-8268ad964b28b90c          # the name Task 8 Step 6 printed — carry that one if it differs
+sha256sum /c/tmp/infinity-a-releases/nbp-$SHORT.bundle /c/tmp/infinity-a-releases/$REL.tar.gz
 ```
 
 Expected: no status line; `The bundle contains this ref: … refs/heads/feat/infinity-nbp`, `The bundle records a complete history.`, `… is okay`; two sha256 lines (the tarball's is the one Task 8 printed).
 
-- [ ] **Step 2: The block template** — Write `/c/tmp/infinity-a-releases/NBP-bloklari.template.txt` with exactly this text (the `@…@` tokens are filled in Step 3):
+- [ ] **Step 2: The O30 gap check** — Write `/c/tmp/infinity-a-releases/nbp_gap_check.py` with exactly this text. It is read-only and runs on the hub VM like `transport_check.py` (piped over SSH, standard library only, the viewer token read from the `.env` and never printed); it prints per bed the longest gap between complete valid NBP triples and how often the value changed — never a value. A-3 runs it before anything changes, on R3: the live view's `capture_epoch` per `nbp_*` entry is the same in R3 and R4. (Checked while planning against the live view fed synthetic packets: a monitor sending a complete triple every 5 s is reported "3 SN'DEN UZUN", a flickering one by its change count, an HR-only bed as "görülmedi".)
+
+```python
+"""Read-only, on the hub VM: how often each monitor sends a COMPLETE VALID NBP triple (open item O30).
+
+    ssh sysadmin@172.100.101.72 'python3 - --window 300' < nbp_gap_check.py
+
+Polls the hub's live view (/infinity-research/state) once a second for --window seconds, with the
+viewer token from the clinical stack's .env (never printed), as transport_check.py does. A complete
+valid triple is seen when the three nbp_* entries are all fresh and valid ("candidate") and carry
+one capture_epoch: they came in one packet. Per device it prints how many such packets it saw, the
+longest gap between them, and how many times the triple's value changed — counts and seconds, never
+a pressure. The hub keeps a change's time only when the previous complete valid triple came at most
+NBP_CONTINUITY_S = 3.0 s before it (X46). Sampled once a second, a short gap reads as about 1 s; a
+gap longer than 3 s is real. Writes nothing. Python standard library only.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import ssl
+import time
+import urllib.request
+
+HUB = "https://172.100.101.72:8766"
+CA = "/etc/homunculus/infinity-ca.pem"
+ENV = "/opt/homunculus/deploy/local/.env"
+NBP = ("nbp_systolic", "nbp_diastolic", "nbp_mean")
+LIMIT_S = 3.0
+
+
+def complete(device):
+    """(capture_epoch, triple) of the device's complete valid NBP triple in this snapshot, or None."""
+    entries = [(device.get("parameters") or {}).get(name) for name in NBP]
+    if not all(e and e.get("status") == "candidate" and e.get("value") is not None for e in entries):
+        return None
+    epochs = {e.get("capture_epoch") for e in entries}
+    if len(epochs) != 1:
+        return None
+    return epochs.pop(), tuple(e["value"] for e in entries)
+
+
+class Watch:
+    """Per device: the epochs of the complete triples seen, in order, and how often the value changed."""
+
+    def __init__(self):
+        self.stamps, self.changes, self.last = {}, {}, {}
+
+    def add(self, state):
+        for device in state.get("devices") or []:
+            name = device.get("device_id")
+            self.stamps.setdefault(name, [])
+            self.changes.setdefault(name, 0)
+            found = complete(device)
+            if found is None:
+                continue
+            epoch, triple = found
+            if self.stamps[name] and epoch <= self.stamps[name][-1]:
+                continue                        # the same packet as at the last poll
+            if name in self.last and triple != self.last[name]:
+                self.changes[name] += 1
+            self.last[name] = triple
+            self.stamps[name].append(epoch)
+
+    def report(self, polls, window):
+        lines = []
+        for name in sorted(self.stamps):
+            stamps = self.stamps[name]
+            if len(stamps) < 2:
+                lines.append(f"{name}: tam ve geçerli NBP üçlüsü {'görülmedi' if not stamps else 'bir kez görüldü'}")
+                continue
+            gap = max(b - a for a, b in zip(stamps, stamps[1:]))
+            verdict = "≤ 3 sn" if gap <= LIMIT_S else "3 SN'DEN UZUN"
+            lines.append(f"{name}: {len(stamps)} tam üçlü, en uzun boşluk {gap:.1f} sn ({verdict}), "
+                         f"değer {self.changes[name]} kez değişti")
+        lines.append(f"{polls} okuma, {window} sn; sınır NBP_CONTINUITY_S = {LIMIT_S} sn")
+        return lines
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--window", type=int, default=300)
+    parser.add_argument("--every", type=float, default=1.0)
+    args = parser.parse_args(argv)
+    token = next(line.split("=", 1)[1].strip().strip("'\"") for line in open(ENV, encoding="utf-8")
+                 if line.startswith("INFINITY_VIEWER_TOKEN="))
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                                         urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=CA)))
+    watch, polls, end = Watch(), 0, time.monotonic() + args.window
+    while time.monotonic() < end:
+        request = urllib.request.Request(HUB + "/infinity-research/state", headers={"Authorization": "Bearer " + token})
+        with opener.open(request, timeout=5) as response:
+            watch.add(json.loads(response.read()))
+        polls += 1
+        time.sleep(args.every)
+    for line in watch.report(polls, args.window):
+        print(line)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+- [ ] **Step 2b: The block template** — Write `/c/tmp/infinity-a-releases/NBP-bloklari.template.txt` with exactly this text (the `@…@` tokens are filled in Step 3):
 
 ```text
 =====================================================================================================
@@ -3282,6 +3531,16 @@ ssh -i ~/.ssh/homunculus_vm sysadmin@172.100.101.72 'python3 - --window 10 --tab
 Beklenen: altı KABUL satırı; "nbp: 0 cihazda ölçüm saati ≤ ile gösteriliyor, 0 cihazda ölçüm
 bekleniyor, 0 cihazda gizli (eski)" (eski API NBP göstermez); "SONUÇ: KABUL"; PANO_OZET → P-önce
 olarak saklanır.
+
+--- A-3 (iş istasyonu, ajan — salt okunur, ~5 dk): tam geçerli NBP üçlüleri arasındaki en uzun boşluk (O30)
+ssh -i ~/.ssh/homunculus_vm sysadmin@172.100.101.72 'python3 - --window 300' < /c/tmp/infinity-a-releases/nbp_gap_check.py
+
+Hub'ın canlı görünümünü (R3, bugünkü) 5 dk boyunca saniyede bir okur; değer basmaz. Beklenen: veri
+gönderen ve NBP ölçen her yatak için "… tam üçlü, en uzun boşluk ≤ 3 sn …, değer 0 (ya da manşon
+döngüsü sayısı kadar) kez değişti"; NBP'siz ya da beklemedeki yatak "görülmedi". Bir NBP'li yatakta
+"3 SN'DEN UZUN" ya da manşon döngüsünden çok "değişti" görülürse B'ye GEÇMEYİN, ajana söyleyin: o
+yatakta NBP ya hep gizli kalır (X46) ya da saati ölçümsüz ilerler; karar NBP_CONTINUITY_S'nin
+kanıtla genişletilmesi (kod değişikliği, yeni R4) ya da kabul.
 
 =====================================================================================================
  B) VM — ÖN KONTROL VE GERİ DÖNÜŞ ETİKETLERİ
@@ -3454,11 +3713,14 @@ PANO_OZET'in sha256'sı P-önce ile AYNI (motor NBP'yi hiç okumaz).
 E-1 bed05, bir sonraki manşon ölçümünden sonra: şeritteki NBP S/D (M) merkezi istasyondakiyle AYNI;
     "ölçmə ≤ SS:DD" monitörün NBP saatiyle AYNI ya da EN ÇOK BİR DAKİKA SONRA — asla ÖNCE değil
     (≤ bir üst sınırdır: X45). Önceyse önce monitörün saatini panonun saatiyle karşılaştırın (cihaz
-    saati farkı şeridin hatası değildir); farkı ajana yazın. Sonraki döngüde saat ilerler.
+    saati farkı şeridin hatası değildir); farkı ajana yazın. Sonraki döngüde saat ilerler; İKİ
+    MANŞON DÖNGÜSÜ ARASINDA SAAT KIPIRDAMAZ (birkaç dakika izleyin): yeni ölçüm olmadan ilerleyen
+    bir saat, değeri iki üçlü arasında gidip gelen bir kayıt demektir — saat gerçeğinden yeni olur:
+    DURUN, ajana söyleyin.
 E-2 D-1'den hemen sonra veri gönderen her yatak "NBP — ölçmə gözlənilir" der (sayı yok), kendi
     manşon döngüsüne kadar. Monitörde yeni sonuç göründükten sonra 1 dakikada hâlâ "gözlənilir"
-    diyen bir yatak varsa DURUN ve ajana söyleyin (O30: cihaz NBP kaydını 3 sn'den seyrek gönderiyor
-    olabilir).
+    diyen bir yatak varsa DURUN ve ajana söyleyin (O30: cihaz tam ve geçerli NBP üçlüsünü 3 sn'den
+    seyrek gönderiyor olabilir; A-3'ün o yatak için yazdığı en uzun boşluğa bakılır).
 E-3 Son değişimden 2 saatten fazla geçmiş bir yatakta (elle NBP ölçülen bir yatak): "— köhnə · 3 saat"
     (2 saati geçince yukarı yuvarlanır: X45); merkezi istasyon değeri göstermeye devam eder — pano
     bilerek daha katıdır. Yürüyüşte böyle bir yatak yoksa "bekliyor" diye yazılır.
@@ -3506,7 +3768,7 @@ Beklenen: health 200. Göç yok, veri kaybı yok.
 ```bash
 cd /c/tmp/infinity-a-releases
 HEAD=$(git -C /c/tmp/inf-nbp rev-parse HEAD); SHORT=$(git -C /c/tmp/inf-nbp rev-parse --short=7 HEAD)
-REL=transport-c1f619bf4e1df375
+REL=transport-8268ad964b28b90c          # the name Task 8 Step 6 printed — carry that one if it differs
 BUNDLE_SHA=$(sha256sum nbp-$SHORT.bundle | cut -d' ' -f1); REL_SHA=$(sha256sum $REL.tar.gz | cut -d' ' -f1)
 sed -e "s/@HEAD@/$HEAD/g" -e "s/@SHORT@/$SHORT/g" -e "s/@BUNDLE_SHA@/$BUNDLE_SHA/g" -e "s/@REL@/$REL/g" \
     -e "s/@REL_SHA@/$REL_SHA/g" NBP-bloklari.template.txt > NBP-bloklari.txt
@@ -3517,9 +3779,9 @@ sed -n '10,15p' NBP-bloklari.txt
 
 Expected: `0` (no token left); `7` and `7` (B-1, B-2, C-1, C-2, D-1, G-1, G-2 — each opened and closed); the DEĞERLER lines with this branch's head, the bundle's and the tarball's sha256. Tell the controller the file is ready; nothing goes to the VM from the agent.
 
-- [ ] **Step 4: With the user, in order** — the user pastes A-1, then the agent runs A-2 and keeps the `PANO_OZET` line (P-önce); the user pastes B-1, B-2, C-1, C-2 and shows the output; the agent runs C-3; the user pastes D-1; the agent runs D-2. Each step starts only after the previous one printed what the file says it should; a "durdum" line or any other output goes to the controller before anything else is pasted.
+- [ ] **Step 4: With the user, in order** — the user pastes A-1, then the agent runs A-2 and keeps the `PANO_OZET` line (P-önce), and runs A-3 and gives its per-bed lines to the controller (a bed above 3 s, or one whose value changed more often than its cuff cycles, stops the deploy here: O30); the user pastes B-1, B-2, C-1, C-2 and shows the output; the agent runs C-3; the user pastes D-1; the agent runs D-2. Each step starts only after the previous one printed what the file says it should; a "durdum" line or any other output goes to the controller before anything else is pasted.
 
-- [ ] **Step 5: The walk (E-1 … E-6) with the user.** Record each as "aynı / farklı / bekliyor" — never a pressure, never a patient. E-2's outcome closes or keeps O30; E-1's says whether X45's direction holds on the ward's clocks.
+- [ ] **Step 5: The walk (E-1 … E-6) with the user.** Record each as "aynı / farklı / bekliyor" — never a pressure, never a patient. A-3's lines and E-2's outcome close or keep O30; E-1's says whether X45's direction holds on the ward's clocks.
 
 - [ ] **Step 6: Record the deploy** — after D-2 and the walk, two Edits whose new text is the run's own output (dates and times from the blocks, never estimated):
 
@@ -3557,9 +3819,9 @@ git log --oneline -1
 | Task | Needs | May run beside (own worktree) | Files it shares with a later task |
 |---|---|---|---|
 | 0 worktree, junction, baseline | — | — | — |
-| 1 the hub keeps NBP's change time | 0 | 2 | — |
-| 2 the strings | 0 | 1 | `strings/monitor.js` (7) |
-| 3 the API v1/v2, folding, 2 h; the dashboard's copy of the tables | 2 (the NBP row's label) | 1 | `monitor.js`, `monitor.test.js` (5); `SettingsScreen.test.jsx` (7) |
+| 1 the hub keeps NBP's change time — **done** (`cbda9ff`, review fixes `b536f75` X46 and `bcae99f`) | 0 | 2 | — |
+| 2 the strings — **done** (`5ae5810`) | 0 | 1 | `strings/monitor.js` (7) |
+| 3 the API v1/v2, folding, 2 h; the dashboard's copy of the tables — **done** (`b5509fd`) | 2 (the NBP row's label) | 1 | `monitor.js`, `monitor.test.js` (5); `SettingsScreen.test.jsx` (7) |
 | 4 the forwarder v2 | 1 (`NBP`, `changed_at` in the snapshot), 3 (its end-to-end tests post v2 into the real API) | 5, 6, 7 | — |
 | 5 `monitor.js` NBP cell | 3 | 4 | `shadow.testutil.js` is read by 6 |
 | 6 the strip's NBP cell | 5 | 4 | — |
