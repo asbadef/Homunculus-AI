@@ -547,3 +547,17 @@ Klinik/doktor tarafı büyük ölçüde YAPILDI (muayene, epikriz, izlem, hemşi
 - Madde 6: zengin hizmet kartı (yeni hizmet tanımı tek karttan)
 - R4: diğer liste ekranlarında tıkla-aç + filtre (genel desen)
 - İlaç/malzeme listesi gelince: eczane/stok fazı
+
+## DURUM — 2026-10-25 (devam)
+### ✅ Bu turda
+- Destek/İş Takip görünmeme sorunu düzeltildi (destek_ac yetkisi kayıtlı roller geri yüklenince de garanti) → sol menüde "Destek / İş Takip"
+- İK: isme tıklayınca detay açılmıyordu → artık login kullanıcı satırı → kullanıcı detay kartı; personel satırı → personel kartı
+- Vezne hasta kabul: FİN/Hasta no ara → varsa hasta kartı, yoksa "Yeni kayıt aç?" pop-up → Hasta Kabul ekranı
+### ⏳ Vezne süreci (devam edilecek — sahibin anlattığı tam akış)
+- Protokol geliş ikonları (ayaktan=kişi, günübirlik=güneş, yatan=yatak) + kilit (açık/kapalı) nüansları — gelişler/listelerde
+- Kayıt → otomatik hizmet → doktor iş listesi → tetkik/radyoloji istem → vezne istek havuzu → fiyat → işlem havuzu → fatura/indirim (parçalar var, uçtan uca bağlanacak)
+- Vezne'den tetkik/radyoloji isteği (ekle butonu, hasta bağlamında)
+### ⏳ Diğer bekleyen
+- İK→kullanıcı oluşturma: İK yalnız personel kartı açar; ADMIN Güvenlik Tanımları'ndan yetki/form/rol/değer verir + kullanıcı kartı + yetki kopyalama (büyük)
+- Çeviri eksikleri (4 dil) — ayrı titiz tur
+- Sol panel düzeni (görsel modül ağacı), zengin hizmet kartı, diğer listelerde tıkla-aç+filtre
