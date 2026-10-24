@@ -430,12 +430,16 @@
     { id:"t3", no:"IT-24098", acan:"kabul.ulviyye", acanAd:"Ülviyyə Səfərova", kategori:"Ağ / internet", konu:"Vezne bilgisayarı internete bağlanmıyor", aciklama:"Sabahtan beri ağ yok.", oncelik:"Acil", durum:"Çözüldü", atanan:"admin", tarih:"23.10.2026 16:20", notlar:[{ by:"admin", at:"23.10.2026 16:45", text:"Switch portu değiştirildi, bağlandı." }] },
   ]);
   const talepAd = (u) => { const x = (H.data.users || []).find(y => y.u === u); return x ? x.name : (u || "—"); };
+  // NAV rozeti: IT'de açık talep sayısı; normal kullanıcıda kendi talebi çözülüp görülmemişse bildirim.
+  H.istakipBadge = () => { const all = H.data.talepler || [], me = (H.state.user || {}).u;
+    if (H.can("destek_yonet")) return all.filter(t => t.durum === "Açık").length;
+    return all.filter(t => t.acan === me && t.cozumGoruldu === false).length; };
   H.register("istakip", { title:() => H.t("m_istakip"), perm:"destek_ac", render(root, params = {}) {
     const yonet = H.can("destek_yonet"), all = talepler(), f = params.durum || "aktif", mine = params.kapsam === "benim" || !yonet;
     const me = (H.state.user || {}).u;
     let list = all.filter(t => mine ? t.acan === me : true);
     list = f === "hepsi" ? list : f === "aktif" ? list.filter(t => t.durum === "Açık" || t.durum === "İşlemde") : list.filter(t => t.durum === f);
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_istakip")}</h2><p>${yonet ? "Bilgi Sistemleri · tüm talepler" : "Sorununuzu iletin, Bilgi Sistemleri çözsün"} (tasarım)</p></div><div class="r"><button class="btn p" data-talnew>${I("plus")} Yeni talep</button></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_istakip")}</h2><p>${yonet ? "Bilgi Sistemleri · talep yönetimi" : "Sorununuzu iletin, Bilgi Sistemleri çözsün · yalnız kendi talepleriniz"} (tasarım)</p></div><div class="r"><button class="btn" data-talexp>${I("save") || ""} Excel</button><button class="btn" data-talprint>${I("print") || ""} Yazdır</button><button class="btn p" data-talnew>${I("plus")} Yeni talep</button></div></div>
       ${yonet ? `<div class="seg" style="margin-bottom:8px"><button data-talkap="tum" class="${!mine ? "on" : ""}">Tüm talepler</button><button data-talkap="benim" class="${mine ? "on" : ""}">Benim taleplerim</button></div>` : ""}
       <div class="seg" style="margin-bottom:12px">${[["aktif", "Aktif"], ["hepsi", "Hepsi"], ...TALEP_DURUM.map(d => [d, d])].map(([k, l]) => `<button data-talf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div class="tw"><table class="t"><thead><tr><th style="width:90px">No</th><th>Konu</th><th>Kategori</th><th>Açan</th><th style="width:80px">Öncelik</th><th style="width:150px">Tarih</th><th style="width:110px">Durum</th></tr></thead><tbody>
@@ -446,8 +450,15 @@
       const tf = e.target.closest("[data-talf]"); if (tf) return H.go("istakip", { durum:tf.dataset.talf, kapsam:params.kapsam });
       const tk = e.target.closest("[data-talkap]"); if (tk) return H.go("istakip", { durum:params.durum, kapsam:tk.dataset.talkap === "benim" ? "benim" : "tum" });
       if (e.target.closest("[data-talnew]")) return talepForm();
-      const op = e.target.closest("[data-talopen]"); if (op) { const t = all.find(x => x.id === op.dataset.talopen); if (t) talepDetay(t); }
+      if (e.target.closest("[data-talexp]")) { H.exportCsv("Destek_talepleri", ["No", "Konu", "Kategori", "Açan", "Öncelik", "Tarih", "Durum"], list.map(t => [t.no, t.konu, t.kategori, t.acanAd, t.oncelik, t.tarih, t.durum])); H.toast("Excel (CSV) indirildi"); return; }
+      if (e.target.closest("[data-talprint]")) { talepPrint(list); return; }
+      const op = e.target.closest("[data-talopen]"); if (op) { const t = all.find(x => x.id === op.dataset.talopen); if (t) { if (t.acan === me) t.cozumGoruldu = true; talepDetay(t); } }
     };
+    function talepPrint(lst) {
+      const w = window.open("", "_blank"); if (!w) { H.toast("Yazdırma penceresi engellendi (pop-up izni gerekli).", "e"); return; }
+      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Destek talepleri</title><style>body{font:13px system-ui,Arial;padding:24px;color:#111}h2{font-size:17px;margin:0 0 12px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;font-size:12px}th{background:#f3f4f6}</style></head><body><h2>Destek / İş Takip — ${lst.length} talep</h2><table><thead><tr><th>No</th><th>Konu</th><th>Kategori</th><th>Açan</th><th>Öncelik</th><th>Tarih</th><th>Durum</th></tr></thead><tbody>${lst.map(t => `<tr><td>${H.esc(t.no)}</td><td>${H.esc(t.konu)}</td><td>${H.esc(t.kategori)}</td><td>${H.esc(t.acanAd)}</td><td>${H.esc(t.oncelik)}</td><td>${H.esc(t.tarih)}</td><td>${H.esc(t.durum)}</td></tr>`).join("")}</tbody></table></body></html>`);
+      w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch (x) {} }, 300);
+    }
     function talepForm() {
       H.modal({ title:"Yeni destek talebi", wide:true, body:`<div class="icd-form">
         <div class="fr"><label>Kategori</label><select data-f="kat">${TALEP_KAT.map(k => `<option>${H.esc(k)}</option>`).join("")}</select></div>
@@ -460,8 +471,8 @@
         onMount(m) { m.querySelector("[data-ok]").onclick = () => { const g = (k) => (m.querySelector(`[data-f="${k}"]`).value || "").trim();
           const konu = g("konu"); if (!konu) { H.toast("Konu gerekli.", "w"); return; }
           const no = "IT-" + (24101 + (talepSeq++)); const u = (H.state.user || {});
-          all.unshift({ id:"t" + Date.now(), no, acan:u.u || "me", acanAd:u.name || "Ben", kategori:g("kat"), modul:g("modul"), konu, aciklama:g("acik"), oncelik:g("onc"), durum:"Açık", atanan:"", tarih:H.nowFull ? H.nowFull() : H.now(), notlar:[] });
-          H.log("Destek talebi açıldı", no + " · " + konu); H.closeModal(); H.toast("Talep açıldı: " + no); H.go("istakip", params); }; } });
+          all.unshift({ id:"t" + Date.now(), no, acan:u.u || "me", acanAd:u.name || "Ben", kategori:g("kat"), modul:g("modul"), konu, aciklama:g("acik"), oncelik:g("onc"), durum:"Açık", atanan:"", tarih:H.nowFull ? H.nowFull() : H.now(), notlar:[], cozumGoruldu:true });
+          H.log("Destek talebi açıldı", no + " · " + konu); H.closeModal(); H.toast("Talep açıldı: " + no + " · Bilgi Sistemleri'ne bildirildi"); H.go("istakip", params); }; } });
     }
     function talepDetay(t) {
       const yonet2 = H.can("destek_yonet"), heks = (H.data.users || []).filter(u => u.role === "sistem");
@@ -480,8 +491,9 @@
         actions:`<button class="btn" data-x>Kapat</button>${yonet2 ? `<button class="btn p" data-talkay>Kaydet</button>` : ""}`,
         onMount(m) { const kb = m.querySelector("[data-talkay]"); if (kb) kb.onclick = () => {
           const d = m.querySelector('[data-td="durum"]').value, a = m.querySelector('[data-td="atanan"]').value, nt = (m.querySelector('[data-td="not"]').value || "").trim();
-          t.durum = d; t.atanan = a; if (nt) (t.notlar = t.notlar || []).push({ by:(H.state.user || {}).u || "admin", at:H.nowFull ? H.nowFull() : H.now(), text:nt });
-          H.log("Destek talebi güncellendi", t.no + " · " + d); H.closeModal(); H.toast("Talep güncellendi: " + d); H.go("istakip", params); }; } });
+          const cozuldu = (d === "Çözüldü" || d === "Kapalı") && t.durum !== d; t.durum = d; t.atanan = a; if (nt) (t.notlar = t.notlar || []).push({ by:(H.state.user || {}).u || "admin", at:H.nowFull ? H.nowFull() : H.now(), text:nt });
+          if (cozuldu) t.cozumGoruldu = false;   // açan kullanıcıya bildirim (rozet) olarak görünür
+          H.log("Destek talebi güncellendi", t.no + " · " + d); H.closeModal(); H.toast(cozuldu ? "Talep " + d.toLowerCase() + " · açan kullanıcıya bildirildi" : "Talep güncellendi: " + d); H.go("istakip", params); }; } });
     }
   } });
 
