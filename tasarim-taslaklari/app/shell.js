@@ -271,12 +271,24 @@
   ];
   const adminOnlyAudit = () => !["admin_users", "admin_roles", "admin_structure", "admin_integrations", "admin_system", "admin_camera"].some(p => H.can(p));
   const allowed = (perm) => { const a = [].concat(perm); return !a.length || a.some(p => H.can(p)); };
+  // Sol panel grupları (modül ağacı mantığı): her NAV ögesi bir başlık altında toplanır; yetkiye göre yine filtrelenir.
+  const NAV_GRP = { beds:"Hasta & Klinik", gelisler:"Hasta & Klinik", wall:"Hasta & Klinik", unitdash:"Hasta & Klinik", tasks:"Hasta & Klinik", bedside:"Hasta & Klinik", alarms:"Hasta & Klinik", hand:"Hasta & Klinik", admission:"Hasta & Klinik", randevu:"Hasta & Klinik", occupancy:"Hasta & Klinik",
+    labislem:"Tanı & Tedavi", pharmacy:"Tanı & Tedavi", rrt:"Tanı & Tedavi", devices:"Tanı & Tedavi", infection:"Tanı & Tedavi", workload:"Tanı & Tedavi", camera:"Tanı & Tedavi",
+    vezne:"Finans & Vezne", raporlar:"Finans & Vezne",
+    ik:"İnsan & Yönetim", summary:"İnsan & Yönetim", quality:"İnsan & Yönetim", pilot:"İnsan & Yönetim",
+    istakip:"Destek & Sistem", admin:"Destek & Sistem" };
+  const GRP_ORDER = ["Hasta & Klinik", "Tanı & Tedavi", "Finans & Vezne", "İnsan & Yönetim", "Destek & Sistem"];
   function railHtml() {
-    const items = NAV.filter(n => allowed(n[3]) && H.pages[n[0]]).map(([k, ic, lab, , badge, bc, fly]) => {
+    const filtered = NAV.filter(n => allowed(n[3]) && H.pages[n[0]]);
+    const renderItem = ([k, ic, lab, , badge, bc, fly]) => {
       if (k === "admin" && adminOnlyAudit()) { ic = "file"; lab = "m_audit"; fly = null; }
       const n = badge ? badge() : 0, subs = fly ? fly.filter(s => H.can(s[2])) : null;
       return `<div class="ri ${H.state.page === k || (k === "patient" && H.state.page === "patient") ? "on" : ""}" data-nav="${k}" ${subs ? `data-fly="${k}"` : ""}>${I(ic)}${H.t(lab)}${n ? `<span class="b ${bc || ""}">${n}</span>` : ""}</div>
-        ${subs ? `<div class="fly" data-flyfor="${k}"><h6>${H.t(lab)}</h6>${subs.map(([t, l]) => `<a data-nav="${k}" data-tab="${t}">${l}</a>`).join("")}</div>` : ""}`; }).join("");
+        ${subs ? `<div class="fly" data-flyfor="${k}"><h6>${H.t(lab)}</h6>${subs.map(([t, l]) => `<a data-nav="${k}" data-tab="${t}">${l}</a>`).join("")}</div>` : ""}`; };
+    let items = "";
+    GRP_ORDER.forEach(g => { const gi = filtered.filter(n => (NAV_GRP[n[0]] || "Destek & Sistem") === g); if (gi.length) items += `<div class="ri-grp">${H.esc(g)}</div>` + gi.map(renderItem).join(""); });
+    const used = new Set(Object.keys(NAV_GRP)); const extra = filtered.filter(n => !used.has(n[0]));
+    if (extra.length) items += `<div class="ri-grp">Diğer</div>` + extra.map(renderItem).join("");
     return `<div class="brand" data-nav="${H.data.roles[H.state.user.role].home}"><div class="mk">h</div><small>homunculus</small></div>${items}<div class="spacer"></div>
       <div class="ri ${H.state.page === "settings" ? "on" : ""}" data-nav="settings">${I("gear")}${H.t("m_settings")}</div>`;
   }
