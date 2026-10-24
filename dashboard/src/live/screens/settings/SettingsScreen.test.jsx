@@ -157,7 +157,8 @@ describe("SettingsScreen — the monitor strip's legend", () => {
     expect(box).toHaveTextContent(/NBP dəyərinin son dəyişdiyi vaxtla göstərilir/);
     expect(box).toHaveTextContent(/ölçmə daha əvvəl olmuş ola bilər, heç vaxt daha sonra yox/);   // the time is a bound
     expect(box).toHaveTextContent(/Dəyəri 2 saatdan çox dəyişməyən NBP göstərilmir/);
-    expect(box).toHaveTextContent(/növbəti ölçməyə qədər göstərilmir \(«ölçmə gözlənilir»\)/);   // after a hub restart
+    expect(box).toHaveTextContent(/növbəti ölçməyə qədər göstərilmir \(«ölçmə gözlənilir»\)/);   // after a hub restart or a data interruption
+    expect(box).toHaveTextContent(/monitorun məlumatı kəsildikdən sonra/);   // the interruption is named (X48)
     expect(box).not.toHaveTextContent(/bu mərhələdə göstərilmir/);
     expect(box).toHaveTextContent("Heç bir parametr üçün nümunə sayı qeydə alınmayıb.");
     expect(box).toHaveTextContent("əvəzində «köhnə» və son dəyərin yaşı yazılır");     // the cell shows an age
