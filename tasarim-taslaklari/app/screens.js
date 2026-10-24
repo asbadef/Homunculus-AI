@@ -65,7 +65,7 @@
     const filt = enc === "hepsi" ? pts : pts.filter(p => H.encOf(p) === enc);
     const ordCount = (pid, cat) => (H.data.orders || []).filter(o => o.pid === pid && o.cat === cat).length;
     const encTabs = [["hepsi", "Hepsi"], ["ayaktan", "Ayaktan"], ["gunubirlik", "Günübirlik"], ["yatan", "Yatan"], ["yogun", "Yoğun bakım"]];
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_gelisler")}</h2><p>${filt.length} hasta · birimlerinizdeki tüm başvurular</p></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_gelisler")}</h2><p>${filt.length} hasta · birimlerinizdeki tüm başvurular</p></div><div class="r"><button class="btn" data-gelexp>${I("save") || ""} Excel</button></div></div>
       <div class="seg" style="margin-bottom:12px" data-enctabs>${encTabs.map(([k, l]) => `<button data-enc="${k}" class="${enc === k ? "on" : ""}">${l}${k !== "hepsi" ? ` (${pts.filter(p => H.encOf(p) === k).length})` : ""}</button>`).join("")}</div>
       <div class="tw"><table class="t"><thead><tr><th>Hasta</th><th style="width:110px">Başvuru</th><th>Tanı / amaç</th><th style="width:60px">Lab</th><th style="width:60px">Rad</th><th>Birim</th><th>Hekim</th><th style="width:110px"></th></tr></thead><tbody>
       ${filt.length ? filt.map(p => { const b = H.bed(p.bed), e = H.encOf(p), ei = H.ENC[e] || {}, u = b && H.unit(b.unitId), att = H.userBy(p.attending);
@@ -78,6 +78,7 @@
         : `<tr><td colspan="8" class="mute" style="padding:20px;text-align:center">Bu grupta hasta yok.</td></tr>`}
       </tbody></table></div>`;
     root.onclick = (e) => {
+      if (e.target.closest("[data-gelexp]")) { H.exportCsv("Gelisler", ["Hasta", "Başvuru", "Tanı", "Birim", "Hekim"], filt.map(p => { const b = H.bed(p.bed), u = b && H.unit(b.unitId), att = H.userBy(p.attending); return [H.showNames() ? p.name : (b ? b.no : "—"), (H.ENC[H.encOf(p)] || {}).label || H.encOf(p), p.dx || "", u ? u.tr : "—", att ? att.name : "—"]; })); H.toast("Excel (CSV) indirildi"); return; }
       const en = e.target.closest("[data-enc]"); if (en) return H.go("gelisler", { enc:en.dataset.enc });
       const g = e.target.closest("[data-goto]"); if (g) return H.can("patient") ? H.go("patient", { pid:g.dataset.goto, tab:"ozet" }) : H.toast("Hasta ekranına erişim yetkiniz yok.", "w");
       const pc = e.target.closest("[data-pid]"); if (pc) return H.can("patient") ? H.go("patient", { pid:pc.dataset.pid, tab:"ozet" }) : H.toast("Hasta ekranına erişim yetkiniz yok.", "w");
@@ -554,12 +555,13 @@
     return users.concat(pers); };
   H.register("ik", { title:() => H.t("m_ik"), perm:["admin_users", "summary"], render(root) {
     const staff = persAll();
-    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim (tasarım)</p></div><div class="r"><button class="btn p" data-persnew>${I("plus")} Personel ekle</button></div></div>
+    root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim (tasarım)</p></div><div class="r"><button class="btn" data-persexp>${I("save") || ""} Excel</button><button class="btn p" data-persnew>${I("plus")} Personel ekle</button></div></div>
       <div class="tw"><table class="t"><thead><tr><th>Ad</th><th>Unvan</th><th>Rol / tip</th><th>Birimler</th><th>Durum</th></tr></thead><tbody>
       ${staff.map(u => `<tr class="row" style="cursor:pointer" ${u.src === "personel" ? `data-persedit="${H.esc(u._p.id)}"` : `data-usdetay="${H.esc(u.u)}"`}><td><b>${H.esc(u.name)}</b><div class="mute" style="font-size:11.5px">${H.esc(u.u)}</div></td><td class="adm-sub">${H.esc(u.title || "—")}</td><td>${H.esc(u.rol)}</td><td class="adm-sub">${(u.units === "*" ? ["Tüm birimler"] : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", ") || "—"}</td><td><span class="tag ${u.active ? "ok" : ""}">${u.active ? "Aktif" : "Pasif"}</span></td></tr>`).join("")}
       </tbody></table></div>
       <p class="adm-sub" style="margin-top:8px">Login hesapları Yönetim → Kullanıcılar'da; buradan HR personel kartı (doktor/hemşire/idari…) eklenir. Satıra tıklayınca personel kartı / kullanıcı detayı açılır.</p>`;
     root.onclick = (e) => {
+      if (e.target.closest("[data-persexp]")) { H.exportCsv("Personel_listesi", ["Ad", "Kullanıcı/Kimlik", "Ünvan", "Rol/tip", "Birimler", "Durum"], staff.map(u => [u.name, u.u, u.title, u.rol, (u.units === "*" ? "Tüm birimler" : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", "), u.active ? "Aktif" : "Pasif"])); H.toast("Excel (CSV) indirildi"); return; }
       if (e.target.closest("[data-persnew]")) return persForm(null);
       const ed = e.target.closest("[data-persedit]"); if (ed) { const p = (H.data.personel || []).find(x => x.id === ed.dataset.persedit); if (p) persForm(p); return; }
       const ud = e.target.closest("[data-usdetay]"); if (ud) { const user = (H.data.users || []).find(x => x.u === ud.dataset.usdetay); if (user) persForm(null, user); }
