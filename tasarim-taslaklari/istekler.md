@@ -572,3 +572,15 @@ Klinik/doktor tarafı büyük ölçüde YAPILDI (muayene, epikriz, izlem, hemşi
 - Vezne uçtan uca akış (geliş ikonları, otomatik hizmet→iş listesi→istem→istek/işlem havuzu→fatura/indirim, vezneden tetkik isteği)
 - İK→kullanıcı oluşturma (admin Güvenlik Tanımları: yetki/form/rol/değer + kullanıcı kartı + yetki kopyalama)
 - Çeviri eksikleri (4 dil, titiz tur) · sol panel düzeni · zengin hizmet kartı · diğer listelerde tıkla-aç+filtre+Excel
+
+## DURUM — 2026-10-25 (vezne akışı ilerleme)
+### ✅ Bu turda
+- Geliş ikonları: ayaktan 🚶 / günübirlik ☀️ / yatan 🛏️ / yoğun 🏥 + protokol kilit (açık 🔓 / kapalı 🔒) — gelişler listesi + vezne hasta kartı
+- Vezneden tetkik/radyoloji isteği: hasta kartından katalogdan seç → hastanın istem listesine düşer (protokol açıksa)
+- Excel'e aktar: İK personel + gelisler (genel desen yayılıyor)
+### ⏳ Bekleyen (devam) — sol panel görselleri DURUYOR
+- Sol panel (modül ağacı) düzeni — görsellere göre (büyük iş, odaklı yapılacak)
+- İK→kullanıcı oluşturma (admin Güvenlik Tanımları: yetki/form/rol/değer + kullanıcı kartı + yetki kopyalama)
+- Zengin hizmet kartı (yeni hizmet tanımı tek karttan)
+- Çeviri turu (4 dil, titiz)
+- Vezne uçtan uca kalan: otomatik hizmet→iş listesi→istem→istek/işlem havuzu→fatura/indirim tam zinciri
