@@ -535,22 +535,108 @@
         ${fld("anlasmaliKurulus", "Anlaşmalı kuruluş")}${fld("indirimliGrup", "İndirimli grup")}${fld("personelIndirim", "Personel indirimi")}${fld("indirimSebep", "İndirim sebebi")}</div></div>
     </div><p class="adm-sub" style="margin-top:8px">Hasta kartı · bizim tasarım (görseldeki tüm alanlar, kendi düzenimizle). "Kaydet" ile hastaya işlenir. Entegrasyon alanları (Omnitech/SAP/VNA) ayrı ekip.</p>`;
     const placeholder = (ad) => `<div class="empty">${H.esc(ad)} · sırada (bu sekme adım adım birebir yapılacak)</div>`;
+    // Alt sekmeler için örnek veri (hastaya bir kez işlenir, kalıcı olur)
+    const h3seed = () => {
+      if (p._h3) return; p._h3 = true;
+      const pr = p.proto || "50894026", tr = p.dob ? "" : "";
+      p._fatura = p._fatura || [
+        { tarih:"24.10.2026", tip:"Satış faturası", cari:vzName(p.name), tur:"Hizmet", no:"FTR-" + pr, parent:"", durum:"Açık", pb:"₼", tutar:420, kdv:0 },
+        { tarih:"20.10.2026", tip:"Satış faturası", cari:vzName(p.name), tur:"Hizmet", no:"FTR-" + (+pr - 7), parent:"", durum:"Ödendi", pb:"₼", tutar:180, kdv:0 },
+      ];
+      p._odeme = p._odeme || [
+        { tarih:"24.10.2026 10:12", sube:H.state.vezneBanko || "Mərkəz", kurumHasta:"Hasta", islem:"Tahsilat", sap:"—", odeme:"Kredi kartı", pb:"₼", kur:1, tutar:250 },
+        { tarih:"20.10.2026 14:40", sube:H.state.vezneBanko || "Mərkəz", kurumHasta:"Hasta", islem:"Avans", sap:"—", odeme:"Nakit", pb:"₼", kur:1, tutar:100 },
+      ];
+      p._indirim = p._indirim || [
+        { tarih:"24.10.2026", islem:"Hizmet indirimi", durum:"Onaylandı", onceki:420, oran:10, tutar:42, vezne:(H.state.user || {}).name || "—" },
+      ];
+      p._dosya = p._dosya || [
+        { bag:"Protokol", grup:"Onam formları", bagId:pr, tip:"PDF", ad:"aydinlatilmis-onam.pdf", tarih:"24.10.2026" },
+        { bag:"Hasta", grup:"Kimlik", bagId:p.fin || "", tip:"JPG", ad:"kimlik-on.jpg", tarih:"24.10.2026" },
+      ];
+      p._not = p._not || [
+        { tarih:"24.10.2026 09:30", tip:"Bilgi", tur:"Protokol", ekleyen:(H.state.user || {}).name || "—", metin:"Hasta ödeme planı için bilgilendirildi." },
+      ];
+      p._teklif = p._teklif || [
+        { no:"TKL-" + pr, tarih:"24.10.2026", ad:"Katarakt ameliyatı teklifi", ameliyat:true, aciklama:"Tek göz, standart lens", durum:"Bekliyor",
+          hizmetler:[{ ad:"Fakoemülsifikasyon", hasta:1200, oss:1000, ak:1100, sgk:0, miktar:1, pb:"₼" }, { ad:"Göz içi lens", hasta:400, oss:350, ak:380, sgk:0, miktar:1, pb:"₼" }] },
+      ];
+    };
+    // Sağ-tık menü aksiyonları (tasarım): her sekme için görseldeki menü maddeleri
+    const SAGTIK = {
+      faturalar:["Ödeme", "Ödeme listesi", "İptal", "İade", "Faturaya çevir", "Evrak durumu", "Düzenle (dönem/tarih/açıklama)", "İptalleri göster", "Provizyon"],
+      odeme:["İptal", "İade", "Düzenle (dönem/cari/aktar/banka)", "Dosyalar", "İptalleri göster", "Katılım payı iade", "Fatura eşleştirme tarihçesi"],
+      indirim:["İptal et", "Dosyalar", "Onay maili gönder", "İptalleri göster"],
+      dosya:["İndir", "Döküman grubunu değiştir", "Dosya tipini değiştir"],
+      notlar:["Tarihçe", "İptalleri göster"],
+      teklif:["Fiyat verildi", "Değerlendirme", "Onayla", "Reddet", "İptal", "Tarihçe"],
+    };
+    const tbar = (btns) => `<div class="r" style="gap:6px;margin-bottom:10px">${btns.map(b => `<button class="btn sm">${I(b[1]) || ""} ${b[0]}</button>`).join("")}</div>`;
+    const sagtikNote = (k) => `<p class="adm-sub" style="margin-top:8px">Satıra sağ tıklayın: ${SAGTIK[k].join(" · ")}. (işlemler tasarım)</p>`;
+    const money = (n, pb) => (pb || "₼") + " " + (n || 0).toLocaleString("az");
+    const gelisHtml = () => `<div class="h360-cards">
+      <div class="box"><h5>Geliş bilgileri</h5><div class="icd-form">
+        ${fld("acilis", "Açılış", "", p.acilis || p.proto)}${fld("kapanis", "Kapanış")}${selF("gelisTipi", "Geliş tipi", ["İlk muayene", "Kontrol", "Acil", "Sevk"])}${selF("protokolTipi", "Protokol tipi", secArr("protokolTipi", ["Normal", "Ameliyat", "Preop", "Günübirlik"]))}
+        ${fld("saglikMerkezi", "Sağlık merkezi")}${fld("tercihSebebi", "Tercih sebebi")}${fld("ozelDurum", "Özel durum")}${fld("dosyaNo", "Dosya no")}</div>
+        <div style="margin-top:6px;display:flex;gap:14px;flex-wrap:wrap" class="adm-sub"><label class="dc-chk"><input type="checkbox" ${p.damarIzi ? "checked" : ""} disabled> Damar izi okutuldu</label><label class="dc-chk"><input type="checkbox" ${p.yeniDogan ? "checked" : ""} disabled> Yeni doğan</label><label class="dc-chk"><input type="checkbox" ${p.kdvMuaf ? "checked" : ""} disabled> KDV'den muaf</label></div></div>
+      <div class="box"><h5>Hekim</h5><div class="icd-form">
+        ${selF("gelisBolum", "Bölüm", (H.klinikBolumler ? H.klinikBolumler() : []).map(x => x.ad), (u && u.tr) || "")}${fld("gelisDoktor", "Doktor", "", doctor ? doctor.name : "")}${fld("misafirDoktor", "Misafir doktor")}</div>
+        <div style="margin-top:6px;display:flex;gap:14px" class="adm-sub"><label class="dc-chk"><input type="checkbox" disabled> Nöbetçi doktor</label><label class="dc-chk"><input type="checkbox" disabled> Doktoru hasta seçti</label></div></div>
+      <div class="box"><h5>Arşiv</h5><div class="icd-form">${selF("arsivDurum", "Durum", ["Arşivde", "Teslim edildi", "Beklemede"])}${fld("arsivTeslim", "Teslim alan")}${fld("arsivNo", "Arşiv no")}${fld("arsivTarih", "Teslim tarihi", "gg.aa.yyyy")}</div></div>
+      <div class="box"><h5>Kurum</h5><div class="icd-form">${selF("kurumGelis", "Kurum / sigorta", secArr("kurum", ["İcbari Tibbi Sığorta (SAMHI)", "Özel ödeme", "Kurum anlaşması"]), p.kurum)}${fld("ossAk", "ÖSS / AK")}${selF("indirimKamp", "İndirim / kampanya", ["—", "Kampanya A", "Personel"])}${fld("sirket", "Şirket")}${fld("sigortaRef", "Sigorta referans no")}${selF("policeTuru", "Poliçe türü", ["—", "Tamamlayıcı", "Özel sağlık"])}</div></div>
+      <div class="box"><h5>Takip</h5><div class="icd-form">${fld("basvuruNo", "Başvuru no")}${fld("takipNo", "Takip no")}${fld("takipTarih", "Takip tarihi", "gg.aa.yyyy")}${selF("takipTipi", "Takip tipi", ["Ayaktan", "Yatan", "Günübirlik"])}${selF("tedaviTuru", "Tedavi türü", ["Normal", "Ameliyat", "Kemoterapi", "Diyaliz"])}</div></div>
+      <div class="box"><h5>Yurtdışı sigorta</h5><div class="icd-form">${fld("geldigiYer", "Geldiği yer")}${fld("otel", "Kaldığı otel")}${fld("odaNo", "Oda no")}${fld("acenta", "Seyahat acentası")}${fld("turOperator", "Tur operatörü")}</div></div>
+      <div class="box"><h5>Yatış</h5><div class="icd-form">${fld("kat", "Kat", "", b ? b.kat : "")}${fld("yatakNo", "Yatak", "", b ? b.no : "")}${fld("taburcuKodu", "Taburcu kodu")}${fld("kabulT", "Kabul tarihi")}${fld("taburcuT", "Taburcu tarihi")}${fld("yatisGun", "Yatış gün", "", p.admitDays)}</div></div>
+    </div>${tbar([["Durum", "edit"], ["Yatış", "bed"], ["Yazdır", "print"], ["Tüm gelişler", "link"]])}
+    <div style="margin-top:4px"><button class="btn sm" data-h3git-gelis>${I("link") || ""} Tüm Gelişler ekranını aç</button></div>
+    <p class="adm-sub" style="margin-top:6px">Geliş/protokol bilgileri · bizim tasarım. "Kaydet" ile hastaya işlenir. Entegrasyon (Omnitech/UHM) ayrı ekip.</p>`;
+    const tabloHtml = (k, cols, rows, btns) => `${tbar(btns)}<div class="tw"><table class="t"><thead><tr>${cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>
+      ${rows.length ? rows.map(r => `<tr data-ctx="${k}" style="cursor:context-menu">${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${cols.length}" class="mute" style="padding:18px;text-align:center">Kayıt yok.</td></tr>`}
+      </tbody></table></div>${sagtikNote(k)}`;
+    const faturaHtml = () => tabloHtml("faturalar", ["Tarih", "Fatura tipi", "Cari", "Fatura türü", "Fatura no", "Durum", "Para b.", "Tutar", "KDV"],
+      p._fatura.map(x => [x.tarih, x.tip, x.cari, x.tur, x.no, x.durum, x.pb, x.tutar, x.kdv]), [["Yenile", "refresh"], ["Yazdır", "print"]]);
+    const odemeHtml = () => tabloHtml("odeme", ["Tarih", "Şube", "Kurum/Hasta", "İşlem tipi", "SAP belge", "Ödeme tipi", "Para b.", "Kur", "Tutar"],
+      p._odeme.map(x => [x.tarih, x.sube, x.kurumHasta, x.islem, x.sap, x.odeme, x.pb, x.kur, x.tutar]), [["Yenile", "refresh"], ["Kurum avans", "plus"], ["İade talebi", "edit"], ["Karekod üret", "print"], ["Yazdır", "print"]]);
+    const indirimHtml = () => tabloHtml("indirim", ["Tarih", "İşlem tipi", "Durum", "İndirim öncesi", "Oran %", "Tutar", "Vezne"],
+      p._indirim.map(x => [x.tarih, x.islem, x.durum, money(x.onceki), x.oran, money(x.tutar), x.vezne]), [["Yenile", "refresh"], ["Yazdır", "print"]]);
+    const dosyaHtml = () => tabloHtml("dosya", ["Bağlantı tipi", "Döküman grubu", "Bağlantı id", "Dosya tipi", "Dosya adı", "Kayıt tarihi"],
+      p._dosya.map(x => [x.bag, x.grup, x.bagId, x.tip, x.ad, x.tarih]), [["Ekle", "plus"], ["Tarayıcıdan yükle", "plus"], ["Dijital imzadan getir", "edit"], ["Sil", "trash"]]);
+    const notHtml = () => tabloHtml("notlar", ["Tarih", "Not tipi", "Not türü", "Ekleyen kullanıcı", "Not"],
+      p._not.map(x => [x.tarih, x.tip, x.tur, x.ekleyen, x.metin]), [["Ekle", "plus"], ["Sil", "trash"]]);
+    const teklifHtml = () => { const t = p._teklif[0];
+      return `<div class="seg" style="margin-bottom:10px"><button class="on">Ameliyat teklifleri</button><button>Tüm teklifler</button></div>
+      ${tbar([["Yeni", "plus"], ["Teklif üzerinden oluştur", "edit"], ["Güncelle", "refresh"], ["Yazdır", "print"], ["İptal", "trash"]])}
+      <div class="tw"><table class="t"><thead><tr><th>Teklif no</th><th>Tarih</th><th>Teklif adı</th><th>Açıklama</th><th>Durum</th></tr></thead><tbody>
+      ${p._teklif.map(x => `<tr data-ctx="teklif" style="cursor:context-menu"><td class="mono adm-sub">${H.esc(x.no)}</td><td class="adm-sub">${H.esc(x.tarih)}</td><td><b>${H.esc(x.ad)}</b></td><td class="adm-sub">${H.esc(x.aciklama)}</td><td><span class="tag ${x.durum === "Onaylandı" ? "ok" : "w"}">${H.esc(x.durum)}</span></td></tr>`).join("")}
+      </tbody></table></div>
+      <h5 style="margin:14px 0 6px">Teklif hizmetleri — ${H.esc(t.ad)}</h5>
+      <div class="tw"><table class="t"><thead><tr><th>Hizmet adı</th><th>Hasta fiyatı</th><th>ÖSS</th><th>AK</th><th>SGK</th><th>Miktar</th><th>Para b.</th></tr></thead><tbody>
+      ${t.hizmetler.map(h => `<tr><td>${H.esc(h.ad)}</td><td>${money(h.hasta)}</td><td>${money(h.oss)}</td><td>${money(h.ak)}</td><td>${money(h.sgk)}</td><td class="n">${h.miktar}</td><td>${H.esc(h.pb)}</td>`).join("")}
+      <tr><td><b>Toplam</b></td><td colspan="6"><b>${money(t.hizmetler.reduce((a, h) => a + h.hasta * h.miktar, 0))}</b></td></tr>
+      </tbody></table></div>${sagtikNote("teklif")}`; };
+    const basitTab = (ad, not) => `<div class="empty">${H.esc(ad)}${not ? ` · ${H.esc(not)}` : ""}</div>`;
     const drawBody = () => {
+      h3seed();
       if (ana === "ishavuzu") { body.innerHTML = `<div class="seg" style="margin:10px 0"><button class="on">İstek Havuzu</button><button data-h3havuz>İşlem Havuzu</button><button data-h3rand>Randevular</button></div><div class="adm-sub">Hasta iş havuzu · İşlem Havuzu'nu açmak için düğme. (tam ekran sırada)</div><div style="margin-top:10px"><button class="btn p" data-h3islem>İşlem havuzunu aç</button></div>`; return; }
       if (ana === "tedavi") { body.innerHTML = placeholder("Tedavi (Klinik dokümanlar / Lab / Radyoloji / Patoloji / Tanılar)"); return; }
       if (ana === "arsiv") { body.innerHTML = placeholder("Arşiv (aktarım protokolleri / işlemler)"); return; }
       // ana === 360
       if (alt === "kart") { body.innerHTML = kartHtml(); return; }
-      if (alt === "gelisler") { body.innerHTML = `<div class="adm-sub" style="margin:8px 0">Bu hastanın gelişleri/protokolleri.</div><div style="margin-top:6px"><button class="btn p" data-h3git-gelis>Tüm Gelişler ekranını aç</button></div>`; return; }
-      if (alt === "faturalar") { body.innerHTML = placeholder("Faturalar (protokol listesi + fatura sütunları + sağ-tık)"); return; }
-      if (alt === "odeme") { body.innerHTML = placeholder("Ödemeler / Avanslar"); return; }
-      if (alt === "indirim") { body.innerHTML = placeholder("İndirimler"); return; }
-      if (alt === "dosya") { body.innerHTML = placeholder("Dosyalar / Resimler"); return; }
-      if (alt === "notlar") { body.innerHTML = placeholder("Notlar"); return; }
-      if (alt === "teklif") { body.innerHTML = placeholder("Teklifler"); return; }
+      if (alt === "gelisler") { body.innerHTML = gelisHtml(); return; }
+      if (alt === "faturalar") { body.innerHTML = faturaHtml(); return; }
+      if (alt === "odeme") { body.innerHTML = odemeHtml(); return; }
+      if (alt === "indirim") { body.innerHTML = indirimHtml(); return; }
+      if (alt === "dosya") { body.innerHTML = dosyaHtml(); return; }
+      if (alt === "notlar") { body.innerHTML = notHtml(); return; }
+      if (alt === "teklif") { body.innerHTML = teklifHtml(); return; }
+      if (alt === "online") { body.innerHTML = basitTab("Online ödemeler", "web/mobil ödeme hareketleri · entegrasyon ayrı ekip"); return; }
+      if (alt === "pos") { body.innerHTML = basitTab("POS işlem ödeme listesi", "kredi kartı POS hareketleri · entegrasyon ayrı ekip"); return; }
+      if (alt === "anlasma") { body.innerHTML = basitTab("Anlaşmalarım", "hastanın kurum/kampanya anlaşma kullanımları"); return; }
       body.innerHTML = placeholder(H360_ALT.find(x => x[0] === alt)[1]);
     };
     drawBody();
+    root.oncontextmenu = (e) => { const tr = e.target.closest("[data-ctx]"); if (!tr || !SAGTIK[tr.dataset.ctx]) return;
+      e.preventDefault(); vzMenu(e, SAGTIK[tr.dataset.ctx].map(a => [a, () => H.toast(a + " · tasarım", "w")])); };
     root.onclick = (e) => {
       const an = e.target.closest("[data-h3ana]"); if (an) return H.go("hasta360", { pid:p.id, atab:an.dataset.h3ana, stab:"kart" });
       const al = e.target.closest("[data-h3alt]"); if (al) return H.go("hasta360", { pid:p.id, atab:"360", stab:al.dataset.h3alt });
