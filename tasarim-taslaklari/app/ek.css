@@ -849,6 +849,11 @@ button.iz-n:hover { filter:brightness(1.08); outline:2px solid var(--priSoft); }
 .h360-cards .icd-form input,.h360-cards .icd-form select{padding:6px 9px;font-size:13px;min-height:32px}
 .h360-cards .box{padding:12px 14px}
 .h360-cards .box h5{margin:0 0 9px;font:700 13px Figtree}
+/* Vezne çoklu arama formu */
+.vz-search{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:5px 16px}
+.vz-search .fr{display:grid;grid-template-columns:96px 1fr;align-items:center;gap:8px;margin:0}
+.vz-search .fr label{font:600 11.5px Figtree;color:var(--mute)}
+.vz-search input{padding:6px 9px;font-size:13px;min-height:32px}
 
 /* Geliş göstergesi (emoji yerine renkli nokta) + protokol kilidi (SVG) */
 .enc-dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle;background:var(--mute)}

@@ -353,11 +353,20 @@
         <div class="tw"><table class="t"><thead><tr><th>Tip</th><th>Tarih</th><th>Talep eden</th><th style="width:90px">Tutar</th><th>Departman</th><th>Açıklama</th><th>Protokol</th><th style="width:120px">Durum</th><th style="width:150px"></th></tr></thead><tbody>
         ${list.map(x => `<tr><td class="adm-sub">${H.esc(x.tip)}</td><td class="adm-sub">${H.esc(x.tarih)}</td><td><b>${H.esc(vzName(x.eden))}</b></td><td class="n">${x.tutar} ₼</td><td class="adm-sub">${H.esc(x.dep)}</td><td class="adm-sub">${H.esc(x.aciklama)}</td><td class="mono adm-sub">${H.esc(x.proto)}<div class="adm-sub" style="font-size:11px">${H.esc(zincStr(x.zincir))}</div></td><td><span class="tag ${/Onaylandı|tamamlandı/.test(x.durum) ? "ok" : x.durum === "Reddedildi" ? "w" : ""}">${x.durum}</span></td><td>${x.durum === "Onay bekliyor" && can ? `<button class="btn p sm" data-iaap="${x.id}">Onayla</button> <button class="btn g sm" data-iared="${x.id}">Reddet</button>` : x.durum === "Onay bekliyor" ? `<span class="adm-sub">yetki yok</span>` : `<span class="adm-sub">—</span>`}</td></tr>`).join("") || `<tr><td colspan="9" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}</tbody></table></div>
         <p class="adm-sub" style="margin-top:8px">Avans/fatura iadeleri yetkili rol (İade onayla) tarafından onaylanır. Onay zinciri (seviye 1/2/3) gerçek kurguda eklenir.</p>`; };
-    const panGiris = () => { const son = (H.data.patients || []).slice(-8).reverse();
-      return `<div class="box"><h5>Hasta kabul / arama</h5><p class="adm-sub" style="margin:4px 0 0">Yukarıdaki "Hasta kabul" çubuğundan FİN ya da hasta no ile arayın; kayıt yoksa yeni kayıt açılır. Son gelen hastalar aşağıda — satıra tıklayın.</p></div>
-        <div class="ist-sec ist-hd"><h5>Son hastalar</h5></div>
-        <div class="tw"><table class="t"><thead><tr><th style="width:110px">Hasta no</th><th>Hasta</th><th>Geliş</th><th>Bölüm</th><th style="width:110px">Protokol</th></tr></thead><tbody>
-        ${son.length ? son.map(pp => { const bb = H.bed(pp.bed), uu = bb && H.unit(bb.unitId); return `<tr data-h3open="${pp.id}" style="cursor:pointer"><td class="mono adm-sub">${H.esc(pp.hn || "—")}</td><td><b>${H.esc(vzName(pp.name))}</b></td><td>${H.encIcon(pp)} ${H.esc((H.ENC[H.encOf(pp)] || {}).label || H.encOf(pp))} ${H.protoLock(pp)}</td><td class="adm-sub">${uu ? H.esc(uu.tr) : "—"}</td><td class="mono adm-sub">${H.esc(pp.proto || "—")}</td></tr>`; }).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Hasta yok.</td></tr>`}</tbody></table></div>`; };
+    const panGiris = () => { const hep = (H.data.patients || []).slice().reverse();
+      const sf = (k, ph) => `<div class="fr"><label>${H.esc(ph)}</label><input data-vs="${k}" placeholder=""></div>`;
+      const row = (pp) => { const bb = H.bed(pp.bed), uu = bb && H.unit(bb.unitId), att = H.userBy(pp.attending);
+        const nm = (vzName(pp.name) || "").split(" "), ad = nm[0] || "", soyad = nm.slice(1).join(" ");
+        const durum = pp.onKayit ? "Ön kayıt" : "Kesin", guv = pp.gizli ? "Gizli hasta" : "Normal";
+        const s = [pp.hn, pp.fin, ad, soyad, pp.father, pp.mother, pp.phone, pp.pasaport, pp.uyruk, pp.proto, uu && uu.tr, att && att.name].join(" ").toLocaleLowerCase("tr");
+        return `<tr data-h3open="${pp.id}" data-s="${H.esc(s)}" style="cursor:pointer"><td><span class="tag ${pp.onKayit ? "w" : "ok"}">${durum}</span></td><td class="mono adm-sub">${H.esc(pp.hn || "—")}</td><td class="mono adm-sub">${H.esc(pp.fin || "—")}</td><td><b>${H.esc(ad)}</b></td><td>${H.esc(soyad)}</td><td class="adm-sub">${H.esc(pp.father || "—")}</td><td class="adm-sub">${H.esc(pp.dob || "—")}</td><td class="adm-sub">${H.esc(pp.kurum || "—")}</td><td class="adm-sub">${H.esc(pp.phone || "—")}</td><td><span class="tag ${pp.gizli ? "w" : ""}">${guv}</span></td></tr>`; };
+      return `<div class="box"><div class="ist-sec ist-hd" style="margin:0 0 8px"><h5>Hasta arama</h5><button class="btn sm" data-vsdetay>Arama detay ▾</button></div>
+        <div class="icd-form vz-search">${sf("fin", "Kimlik / FİN no")}${sf("hn", "Hasta no")}${sf("ad", "Adı")}${sf("soyad", "Soyadı")}${sf("baba", "Baba adı")}${sf("ana", "Ana adı")}${sf("tel", "Telefon")}${sf("pasaport", "Pasaport no")}${sf("uyruk", "Uyruk")}</div>
+        <div class="icd-form vz-search hidden" data-vsdetaym style="margin-top:4px">${sf("proto", "Protokol no")}${sf("bolum", "Bölüm")}${sf("doktor", "Doktor")}${sf("tarih1", "Tarih (baş)")}${sf("tarih2", "Tarih (bitiş)")}</div>
+        <div class="r" style="gap:6px;margin-top:8px"><button class="btn p sm" data-vsara>${I("search") || ""} Listele</button><button class="btn sm" data-vstemizle>Temizle</button></div></div>
+        <div class="ist-sec ist-hd"><h5>Hasta listesi</h5><span class="adm-sub" data-vscount>${hep.length} hasta</span></div>
+        <div class="tw"><table class="t"><thead><tr><th style="width:80px">Durum</th><th style="width:100px">Hasta no</th><th style="width:100px">Kimlik</th><th>Adı</th><th>Soyadı</th><th>Baba adı</th><th style="width:100px">Doğum</th><th>Kurum / SGK</th><th style="width:110px">Telefon</th><th style="width:110px">Güvenlik</th></tr></thead><tbody data-vsbody>
+        ${hep.length ? hep.map(row).join("") : `<tr><td colspan="10" class="mute" style="padding:16px;text-align:center">Hasta yok.</td></tr>`}</tbody></table></div>`; };
     const panel = ({ giris:panGiris, fatura:panFatura, fiyat:panFiyat, indirim:panIndirim, iade:panIade, gfk:panGfk, evrak:panEvrak })[tab]();
     const RAIL = [
       ["Vezne paneli", [["Hasta arama", ""], ["Randevu arama", ""], ["Son hastalar", ""], ["Reçete listesi", ""], ["Gizli / VIP hasta listesi", ""], ["Doktor iş listesi", ""]]],
@@ -367,6 +376,16 @@
     const kabulBar = `<div class="rc-add" style="margin-bottom:10px"><b style="align-self:center;font-size:13px">Hasta kabul:</b><input data-fin placeholder="FİN / Hasta no ile ara (hasta gelince kimliği girilir)" style="flex:1;min-width:240px"><button class="btn p sm" data-finara>${I("search") || ""} Ara / Kabul</button></div>`;
     root.innerHTML = `<div class="ph"><div><h2>${H.t("m_vezne")}</h2><p>Hasta paneli · vezne · banko ${H.esc(banko)} · dönem #${donemNo} (tasarım)</p></div></div>${bar}${kabulBar}<div class="vz-wrap"><div class="vz-main">${strip}${panel}</div>${rail}</div>`;
     { const fi = root.querySelector("[data-fin]"); if (fi) fi.addEventListener("keydown", (ev) => { if (ev.key === "Enter") vzFinAra(root); }); }
+    if (tab === "giris") {
+      const body = root.querySelector("[data-vsbody]"), cnt = root.querySelector("[data-vscount]"), inputs = [...root.querySelectorAll("[data-vs]")];
+      const uygula = () => { const toks = inputs.map(i => (i.value || "").trim().toLocaleLowerCase("tr")).filter(Boolean);
+        let n = 0; body.querySelectorAll("tr[data-s]").forEach(tr => { const ok = toks.every(t => tr.dataset.s.includes(t)); tr.style.display = ok ? "" : "none"; if (ok) n++; });
+        if (cnt) cnt.textContent = n + " hasta"; };
+      inputs.forEach(i => i.addEventListener("keydown", (e) => { if (e.key === "Enter") uygula(); }));
+      const ara = root.querySelector("[data-vsara]"); if (ara) ara.onclick = uygula;
+      const tmz = root.querySelector("[data-vstemizle]"); if (tmz) tmz.onclick = () => { inputs.forEach(i => i.value = ""); uygula(); };
+      const dt = root.querySelector("[data-vsdetay]"), dtm = root.querySelector("[data-vsdetaym]"); if (dt && dtm) dt.onclick = () => dtm.classList.toggle("hidden");
+    }
     if (tab === "fiyat" && donemAcik) {  // hizmet combobox (her yerde aynı H.HIZMET kataloğu)
       const inp = root.querySelector("[data-fhiz]"), dd = root.querySelector("[data-fhiz-dd]"), fy = root.querySelector("[data-ffiyat]"), kurum = params.kurum || "Özel ödeme";
       const show = () => { const q = (inp.value || "").trim().toLocaleLowerCase("tr");
