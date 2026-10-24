@@ -200,4 +200,19 @@ describe("live UI dictionaries", () => {
     expect(DICTIONARIES.az["common.close"]).toBe("Bağla");
     expect(DICTIONARIES.tr["news2.missing.respiration_rate"]).toBe("solunum hızı");
   });
+
+  // The Settings legend quotes the strip's own words — «ölçüm ≤ 10:42», «ölçüm bekleniyor» — so a
+  // clinician can match the legend to what the cell prints. If the cell's wording changes, the
+  // legend has to change with it: this holds the two together, language by language.
+  it("the NBP legend quotes the words the strip itself prints, in every language", () => {
+    for (const lang of LANG_CODES) {
+      const legend = DICTIONARIES[lang]["monitor.legendNbp"];
+      const waiting = DICTIONARIES[lang]["monitor.nbpWaiting"];
+      const measured = DICTIONARIES[lang]["monitor.nbpMeasured"].split("{")[0];
+      expect(waiting.length, `${lang} nbpWaiting`).toBeGreaterThan(0);
+      expect(measured.trim().length, `${lang} nbpMeasured, up to its first {`).toBeGreaterThan(0);
+      expect(legend, `${lang} legendNbp quotes nbpWaiting "${waiting}"`).toContain(waiting);
+      expect(legend, `${lang} legendNbp quotes nbpMeasured "${measured}"`).toContain(measured);
+    }
+  });
 });
