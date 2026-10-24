@@ -36,8 +36,11 @@ MIN_TOKEN = 32
 PORT = 2050                          # the inventory admits no other (infinity_stream.Inventory.parse)
 # NBP travels with `changed_at`, the time its triple last changed as the live view saw it: the
 # monitor repeats the last NBP in every packet and its own clock is not decoded, so that time is an
-# upper bound of the measurement: the cuff measured then or earlier. No change seen since the hub
-# started: no time, and no NBP is sent. Airway RESP is absent on purpose (layout unverified).
+# upper bound of the measurement: the cuff measured then or earlier. Without a change seen as it
+# happened (after a hub start, an outage, or any gap of more than NBP_CONTINUITY_S between complete
+# valid triples; X46) the hub has no time, and no NBP is sent. A newer value of one component that
+# is not the held triple's carries no time either, and is not sent (X38). Airway RESP is absent on
+# purpose (layout unverified).
 FORWARDED = ("hr", "pls", "spo2", "etco2", "temperature",
              "art_systolic", "art_diastolic", "art_mean", "respiration") + NBP
 _STATES = {401: "token_refused", 409: "stage_off", 429: "too_soon"}

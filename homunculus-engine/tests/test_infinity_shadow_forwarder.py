@@ -95,7 +95,9 @@ def test_an_nbp_three_seconds_old_never_leaves_the_hub():
     now[0] = T + 2.4                                               # the packet is 2.9 s old
     assert _names(_thin(view, now)) == ["nbp_systolic", "nbp_diastolic", "nbp_mean"]
     now[0] = T + 2.5                                               # 3.0 s: no older value leaves the hub
-    assert _names(_thin(view, now)) == []
+    entry = view.snapshot()["devices"][0]["parameters"]["nbp_systolic"]
+    assert (entry["status"], entry["changed_at"]) == ("stale", T - 0.5)    # stale, yet it keeps its time
+    assert _names(_thin(view, now)) == []                          # so it is thin() that drops it
 
 
 def test_airway_respiration_is_never_sent_and_impedance_respiration_is():
