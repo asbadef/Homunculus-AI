@@ -714,6 +714,7 @@
     ["bakimliste", "Bakım İstem Listesi", "admin_system", "list"],   // hemşirelik bakım istem kataloğu; hemşire/doktor bakım isteminde seçer
     ["hizmettanim", "Otomatik Hizmet Tanımı", "admin_system", "list"],   // bölüm→muayene hizmeti eşlemesi; kabul kayıt açınca otomatik düşer
     ["bolumliste", "Bölüm / Branş Listesi", "admin_system", "list"],   // tıbbi bölümler + branş; hizmet tanımı ve kabul bunu kullanır
+    ["cihazliste", "Cihaz Listesi", "admin_system", "activity"],   // RIS/yazar kasa/hasta çağrı ekranı; IP/MAC/port tanımı
     ["secenekler", "Kayıt Seçenekleri", "admin_system", "list"],   // erişim kanalı/tercih sebebi/geliş-protokol tipi vb. açılır listeler; admin düzenler
     ["mesajkalip", "Mesaj Kalıpları (SMS)", "admin_system", "bell"],   // SMS/e-posta/uygulama bildirim kalıpları
     ["kampanya", "Kampanyalar", "kampanya_create", "zap"],   // kampanya oluşturma yetkisi olan rol görür (sistem + yönetici)
@@ -729,7 +730,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "raporyetki", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "epikriz", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "raporyetki", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "cihazliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "epikriz", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "mesajkalip", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -755,7 +756,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, epikriz:tabEpikriz, raporyetki:tabRaporYetki,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, cihazliste:tabCihaz, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, epikriz:tabEpikriz, raporyetki:tabRaporYetki,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -764,6 +765,46 @@
         AD.tab = mine.some(t => t[0] === last) ? last : mine[0][0]; H.state.params = Object.assign({}, H.state.params, { tab:AD.tab }); draw(); return; }
       const t = e.target.closest("[data-tab]"); if (t && el.contains(t)) { AD.tab = t.dataset.tab; H.state.params = Object.assign({}, H.state.params, { tab:AD.tab }); draw(); } });
     draw();
+  }
+
+  /* ---------- Cihaz Listesi (RIS / yazar kasa / hasta çağrı ekranı) ---------- */
+  const CIHAZ_TIP = ["RIS / görüntüleme", "Yazar kasa (ÖKC)", "Hasta çağrı ekranı", "Barkod / kol bandı yazıcısı", "Laboratuvar cihazı", "Diğer"];
+  const CIHAZ_DURUM = ["Aktif", "Pasif", "Bakımda", "Arızalı"];
+  const cihazlar = () => (H.data.cihazlar = H.data.cihazlar || [
+    { id:"chz1", ad:"MR Cihazı 1", tip:"RIS / görüntüleme", bolum:"Radiologiya", marka:"Siemens Magnetom", riskod:"RIS-MR-01", ip:"10.0.12.21", mac:"A4:BB:6D:11:22:33", port:"104", seri:"MR-2021-001", durum:"Aktif" },
+    { id:"chz2", ad:"Vezne ÖKC 1", tip:"Yazar kasa (ÖKC)", bolum:"Vezne / Ön büro", marka:"Profilo", riskod:"", ip:"10.0.5.40", mac:"A4:BB:6D:44:55:66", port:"9100", seri:"OKC-9931", durum:"Aktif" },
+    { id:"chz3", ad:"Poliklinik çağrı ekranı 2", tip:"Hasta çağrı ekranı", bolum:"Poliklinik girişi", marka:"LG 43\"", riskod:"", ip:"10.0.7.12", mac:"A4:BB:6D:77:88:99", port:"8080", seri:"CAGRI-0002", durum:"Aktif" },
+  ]);
+  function tabCihaz(body) {
+    const all = cihazlar(), q = (AD.cihazq || "").trim().toLocaleLowerCase("tr");
+    const list = q ? all.filter(c => (c.ad + " " + c.tip + " " + c.bolum + " " + c.ip + " " + c.marka).toLocaleLowerCase("tr").includes(q)) : all;
+    body.innerHTML = `<div class="adm-bar"><input data-chq placeholder="Cihaz / bölüm / IP ara" value="${esc(AD.cihazq || "")}"><span class="spacer"></span><span class="adm-sub">${list.length} cihaz</span><button class="btn p" data-chnew>+ Yeni cihaz</button></div>
+      <div class="tw"><table class="t"><thead><tr><th>Cihaz</th><th>Tip</th><th>Bölüm</th><th>Marka / model</th><th>RIS kod</th><th>IP</th><th>MAC</th><th style="width:60px">Port</th><th style="width:90px">Durum</th></tr></thead><tbody>
+      ${list.length ? list.map(c => `<tr data-chrow="${c.id}" style="cursor:pointer"><td><b>${esc(c.ad)}</b></td><td class="adm-sub">${esc(c.tip)}</td><td class="adm-sub">${esc(c.bolum)}</td><td class="adm-sub">${esc(c.marka || "—")}</td><td class="mono adm-sub">${esc(c.riskod || "—")}</td><td class="mono adm-sub">${esc(c.ip || "—")}</td><td class="mono adm-sub">${esc(c.mac || "—")}</td><td class="mono adm-sub">${esc(c.port || "—")}</td><td><span class="tag ${c.durum === "Aktif" ? "ok" : c.durum === "Arızalı" ? "w" : ""}">${esc(c.durum)}</span></td></tr>`).join("") : `<tr><td colspan="9" class="mute" style="padding:18px;text-align:center">Cihaz yok.</td></tr>`}
+      </tbody></table></div>
+      <p class="adm-sub" style="margin-top:10px">Cihaz envanteri: RIS/görüntüleme, yazar kasa (ÖKC), hasta çağrı ekranı, barkod yazıcısı. IP/MAC/port ağ bağlantısı içindir. Satıra tıklayarak düzenleyin.</p>`;
+    body.querySelector("[data-chq]").oninput = (e) => { AD.cihazq = e.target.value; tabCihaz(body); };
+    body.querySelector("[data-chnew]").onclick = () => cihazForm(null);
+    body.querySelectorAll("[data-chrow]").forEach(tr => tr.onclick = () => cihazForm(all.find(c => c.id === tr.dataset.chrow)));
+    function cihazForm(x) {
+      const c = x || {}, bols = (H.data.bolumler || []);
+      const fr = (k, l, html) => `<div class="fr"><label>${l}</label>${html}</div>`;
+      const inp = (k, ph) => `<input data-cf="${k}" value="${esc(c[k] || "")}" placeholder="${ph || ""}">`;
+      const sel = (k, arr) => `<select data-cf="${k}">${arr.map(o => `<option${(c[k] || "") === o ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+      H.modal({ title:x ? "Cihaz düzenle" : "Yeni cihaz", wide:true, body:`<div class="icd-form">
+        ${fr("ad", "Cihaz adı", inp("ad", "ör. MR Cihazı 1"))}${fr("tip", "Tip", sel("tip", CIHAZ_TIP))}
+        ${fr("bolum", "Bölüm", `<input data-cf="bolum" list="chz-bol" value="${esc(c.bolum || "")}"><datalist id="chz-bol">${bols.map(b => `<option>${esc(b.ad)}</option>`).join("")}</datalist>`)}${fr("marka", "Marka / model", inp("marka"))}
+        ${fr("riskod", "RIS kod", inp("riskod"))}${fr("seri", "Seri no", inp("seri"))}
+        ${fr("ip", "IP adresi", inp("ip", "10.0.0.0"))}${fr("mac", "MAC adresi", inp("mac"))}${fr("port", "Port", inp("port"))}${fr("durum", "Durum", sel("durum", CIHAZ_DURUM))}</div>`,
+        actions:`${x ? `<button class="btn g" data-chdel>${I("trash") || ""} Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-chsave>Kaydet</button>`,
+        onMount(m) {
+          m.querySelector("[data-chsave]").onclick = () => { const g = k => (m.querySelector(`[data-cf="${k}"]`).value || "").trim(); const ad = g("ad"); if (!ad) { H.toast("Cihaz adı gerekli.", "w"); return; }
+            const rec = {}; ["ad", "tip", "bolum", "marka", "riskod", "seri", "ip", "mac", "port", "durum"].forEach(k => rec[k] = g(k));
+            if (x) Object.assign(x, rec); else all.unshift(Object.assign({ id:"chz" + Date.now() }, rec));
+            H.log(x ? "Cihaz güncellendi" : "Cihaz eklendi", ad); H.toast("Kaydedildi: " + ad); H.closeModal(); tabCihaz(body); };
+          const d = m.querySelector("[data-chdel]"); if (d) d.onclick = () => { if (!confirm("Bu cihaz silinsin mi?")) return; const i = all.findIndex(y => y.id === x.id); if (i >= 0) all.splice(i, 1); H.closeModal(); H.toast("Silindi", "w"); tabCihaz(body); };
+        } });
+    }
   }
 
   /* ---------- Tanı Listesi (ICD) ---------- */
