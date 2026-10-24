@@ -192,15 +192,43 @@
   }
   // Vezne 360 sağ ray hızlı listeleri (örnek/özet)
   function railData(name) {
-    if (name === "Son hastalar") return { cols:["Hasta no", "Hasta", "Yatak / birim", "Geliş"], rows:(H.data.patients || []).slice(-8).reverse().map(p => { const b = H.bed(p.bed), u = b && H.unit(b.unitId); return [p.hn || "—", vzName(p.name), b ? b.no + (u ? " · " + u.tr : "") : "—", (H.ENC[H.encOf(p)] || {}).label || H.encOf(p)]; }) };
+    if (name === "Son hastalar") { const L = (H.data.patients || []).slice(-8).reverse(); return { cols:["Hasta no", "Hasta", "Yatak / birim", "Geliş"], pids:L.map(p => p.id), rows:L.map(p => { const b = H.bed(p.bed), u = b && H.unit(b.unitId); return [p.hn || "—", vzName(p.name), b ? b.no + (u ? " · " + u.tr : "") : "—", (H.ENC[H.encOf(p)] || {}).label || H.encOf(p)]; }) }; }
     if (name === "Protokol listesi") return { cols:["Protokol", "Hasta", "Geliş", "Bölüm", "Fatura durumu"], rows:gfkRows().map(x => [x.proto, vzName(x.hasta), x.gelis, x.bolum, x.durum]) };
     if (name === "Reçete listesi") return { cols:["Reçete no", "Hasta", "Tür", "Tarih"], rows:[["RX-50894308", "Nobatxanım Dadaşova", "Normal reçete", "21.10.2026"], ["RX-50893071", "Elvin Hüseynov", "İlaç reçetesi", "20.10.2026"], ["RX-50889384", "Günel Məmmədova", "Gözlük reçetesi", "14.10.2026"]] };
-    if (name === "Hasta arama") return { cols:["Hasta no", "Hasta", "Cinsiyet", "Yaş"], rows:(H.data.patients || []).map(p => [p.hn || "—", vzName(p.name), p.sex === "E" ? "Erkek" : "Kadın", p.age || "—"]), note:"Tüm hastalar · gerçekte ad/soyad/FİN/protokol ile arama." };
+    if (name === "Hasta arama") { const L = (H.data.patients || []); return { cols:["Hasta no", "Hasta", "Cinsiyet", "Yaş"], pids:L.map(p => p.id), rows:L.map(p => [p.hn || "—", vzName(p.name), p.sex === "E" ? "Erkek" : "Kadın", p.age || "—"]), note:"Satıra tıklayınca hasta bilgisi açılır · ara kutusu ad/no ile filtreler." }; }
     if (name === "Doktor iş listesi") { const g = {}; (H.data.patients || []).forEach(p => { const d = (H.data.users || []).find(u => u.u === p.attending); const n = d ? d.name : (p.attending || "—"); (g[n] = g[n] || []).push(p); });
-      const rows = []; Object.entries(g).forEach(([d, ps]) => ps.forEach(p => rows.push([d, vzName(p.name), (H.ENC[H.encOf(p)] || {}).label || H.encOf(p), H.ozelOnay(p) ? "Ödeme OK" : "Ödeme bekliyor"]))); return { cols:["Doktor", "Hasta", "Geliş", "Özel onay"], rows }; }
+      const rows = [], pids = []; Object.entries(g).forEach(([d, ps]) => ps.forEach(p => { rows.push([d, vzName(p.name), (H.ENC[H.encOf(p)] || {}).label || H.encOf(p), H.ozelOnay(p) ? "Ödeme OK" : "Ödeme bekliyor"]); pids.push(p.id); })); return { cols:["Doktor", "Hasta", "Geliş", "Özel onay"], pids, rows }; }
     if (name === "Randevu arama") return { cols:["Tarih", "Hasta", "Bölüm", "Doktor", "Durum"], rows:[["22.10.2026 09:00", "Nobatxanım Dadaşova", "Oftalmologiya", "Dr. Əhməd Abdullayev", "Bekliyor"], ["22.10.2026 10:30", "Orxan Əliyev", "Daxili", "Dr. Kamran Rzayev", "Geldi"]], note:"Örnek randevular." };
     if (name === "Gizli / VIP hasta listesi") return { cols:["Hasta no", "Hasta", "Not"], rows:[["0260215", "VIP Hasta 1", "Gizli · yalnız yetkili görür"], ["0260233", "VIP Hasta 2", "Gizli"]], note:"Gizli/VIP hastalar maskeli; gerçekte özel yetki ile açılır." };
     return null;
+  }
+  // Vezne hasta bilgi kartı: vezneye uygun özet (demografik + mali + ziyaret). İsme tıklayınca açılır.
+  function vzHastaModal(pid) {
+    const p = H.pt(pid); if (!p) { H.toast("Hasta bulunamadı.", "e"); return; }
+    const b = H.bed(p.bed), u = b && H.unit(b.unitId), doctor = (H.data.users || []).find(x => x.u === p.attending);
+    const kv = (k, v) => `<div class="kv"><span>${H.esc(k)}</span><span>${v === 0 || v ? H.esc(String(v)) : "—"}</span></div>`;
+    H.modal({ title:"Hasta · " + H.esc(vzName(p.name)),
+      body:`<div class="vz-hk">${kv("Hasta no", p.hn)}${kv("Protokol", p.proto)}${kv("FİN", p.fin)}${kv("Cinsiyet · yaş", (p.sex === "E" ? "Erkek" : "Kadın") + " · " + (p.age || "—"))}${kv("Telefon", p.phone)}${kv("Geliş tipi", (H.ENC[H.encOf(p)] || {}).label || H.encOf(p))}${kv("Bölüm / birim", u ? u.tr : "")}${kv("Doktor", doctor ? doctor.name : p.attending)}${kv("Kurum / sigorta", p.kurum)}${kv("Özel onay (ödeme)", H.ozelOnay(p) ? "Alındı" : "Bekliyor")}${kv("Ön tanı", p.dx)}${kv("Kan grubu", p.blood)}${(p.allergies && p.allergies.length) ? kv("Alerji", p.allergies.join(", ")) : ""}</div>
+        <p class="adm-sub" style="margin-top:8px">Vezne için özet bilgi kartı. Klinik ayrıntılar yalnız yetkili (hekim/hemşire) ekranında.</p>`,
+      actions:`<button class="btn" data-x>Kapat</button>${H.can("patient") ? `<button class="btn p" data-git>Hastaya git</button>` : ""}`,
+      onMount(m) { const g = m.querySelector("[data-git]"); if (g) g.onclick = () => { H.closeModal(); H.go("patient", { pid }); }; } });
+  }
+  // Rail listesi modalı: filtre kutusu + (pid varsa) tıklanabilir satırlar.
+  function railModal(lbl, rd) {
+    const head = `<tr>${rd.cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr>`;
+    const rowHtml = (r, i) => `<tr${rd.pids ? ` data-open="${rd.pids[i]}" style="cursor:pointer"` : ""}>${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`;
+    H.modal({ title:lbl, wide:true,
+      body:`<div class="adm-bar"><input data-rq placeholder="Ara (ad, no, ...)" style="flex:1"></div>
+        <div class="tw"><table class="t"><thead>${head}</thead><tbody data-rbody>${rd.rows.length ? rd.rows.map(rowHtml).join("") : `<tr><td colspan="${rd.cols.length}" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}</tbody></table></div>
+        ${rd.note ? `<p class="adm-sub" style="margin-top:8px">${H.esc(rd.note)}</p>` : ""}`,
+      actions:`<button class="btn" data-x>Kapat</button>`,
+      onMount(m) {
+        const body = m.querySelector("[data-rbody]"), q = m.querySelector("[data-rq]");
+        if (q) q.addEventListener("input", () => { const t = q.value.trim().toLocaleLowerCase("tr");
+          body.innerHTML = (t ? rd.rows.map((r, i) => [r, i]).filter(([r]) => r.join(" ").toLocaleLowerCase("tr").includes(t)) : rd.rows.map((r, i) => [r, i]))
+            .map(([r, i]) => rowHtml(r, i)).join("") || `<tr><td colspan="${rd.cols.length}" class="mute" style="padding:16px;text-align:center">Eşleşme yok.</td></tr>`; });
+        if (rd.pids) body.addEventListener("click", (e) => { const tr = e.target.closest("[data-open]"); if (tr) { H.closeModal(); vzHastaModal(tr.dataset.open); } });
+      } });
   }
   H.register("vezne", { title:() => H.t("m_vezne"), perm:["admission", "summary"], render(root, params = {}) {
     const bankolar = BANKOLAR(), banko = H.state.vezneBanko || bankolar[0], donemNo = H.data.vezneDonemNo || (H.data.vezneDonemNo = 54038), tab = params.tab || "fatura";
@@ -292,7 +320,7 @@
       const ef = e.target.closest("[data-ef]"); if (ef) return H.go("vezne", { tab:"evrak", ev:ef.dataset.ef });
       const rl = e.target.closest("[data-rail]"); if (rl) { const t = rl.dataset.rail; if (t) return H.go("vezne", { tab:t }); const lbl = rl.dataset.raill, rd = railData(lbl);
         if (!rd) { H.toast(lbl + " · yapım aşamasında (tasarım)", "w"); return; }
-        H.modal({ title:lbl, wide:true, body:`<div class="tw"><table class="t"><thead><tr>${rd.cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>${rd.rows.length ? rd.rows.map(r => `<tr>${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${rd.cols.length}" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}</tbody></table></div>`, actions:`<button class="btn" data-x>Kapat</button>` }); return; }
+        railModal(lbl, rd); return; }
       const io = e.target.closest("[data-io]"); if (io) return H.go("vezne", { tab:"indirim", io:io.dataset.io });
       const ia = e.target.closest("[data-ia]"); if (ia) return H.go("vezne", { tab:"iade", ia:ia.dataset.ia, iatip:params.iatip });
       const iat = e.target.closest("[data-iatip]"); if (iat) return H.go("vezne", { tab:"iade", ia:params.ia, iatip:iat.dataset.iatip });
