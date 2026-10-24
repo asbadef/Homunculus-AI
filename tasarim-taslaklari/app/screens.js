@@ -495,6 +495,9 @@
     ["Stok", ["Stok Durumu", "Hareketsiz Ürünler", "Stok İşlem Listesi", "İlaç Stok İşlem Analizi", "Sayım Listesi", "Miadı Yaklaşan Ürünler", "Sarf Analizi"]],
     ["Satınalma", ["Satınalma Fatura Analizi", "İrsaliye Analizi", "Satınalma Talep Analizi", "Sipariş Analizi"]],
     ["Ciro ve Verimlilik", ["Ciro", "Bölüm Bazlı Ciro", "Doktor Bazlı Ciro", "Hizmet Analizi", "Hastaya İşlenen Malzemeler", "Protokol Ciro Analizi", "Hasta Ciro Analizi", "Doktor Verimlilik Analizi", "Kurum Bazlı Ciro", "Günlük Nakit Akış Analizi", "Yurtdışı Hasta Ciro Analizi"]],
+    ["Yönetim Raporları", ["Bölüm Bazlı Ciro (Yetkili)", "Doktor Bazlı Ciro (Detaylı)", "Doktor Bazlı Ciro (Detaylı, Yetkili)", "Protokol Ciro Özet Analizi", "Genel Fatura Faaliyet Raporu", "Poliklinik Sayılarının Yatış ve Ameliyata Dönüş Oranı", "Ciro Değişim Analizi", "Ciro Dağılım Analizi", "İşlem Bazlı Ciro", "Hizmet Analizi (Fiyat İçermez)"]],
+    ["İnsan Kaynakları", ["Personel Listesi Raporu", "Nöbet / Mesai Analizi", "İzin Analizi", "Personel Zimmet Listesi"]],
+    ["Kurum", ["Ciro Detay Raporu", "Ciro Özet Raporu", "Muayene Sayıları Raporu", "Genel İstatistik Raporu", "Günlük İstatistik Raporu", "Kurum Bazlı Hakediş Raporu"]],
   ];
   H.raporGruplari = RAPOR_GRUP.map(g => g[0]);   // admin "Rapor Yetkileri" ekranı bunu kullanır
   H.register("raporlar", { title:() => H.t("m_raporlar"), perm:["summary", "audit"], render(root) {
@@ -506,9 +509,16 @@
       <p class="adm-sub" style="margin-top:10px">Her rapor: tarih/bölüm/doktor filtresi + tablo/özet olacak. Öncelikli raporlar örnek veriyle sırayla doldurulacak.</p>`;
     root.onclick = (e) => { const c = e.target.closest("[data-rap]"); if (!c) return; const name = c.dataset.rap, d = reportData(name);
       if (!d) { H.toast(name + " · yapım aşamasında (tasarım)", "w"); return; }
-      H.modal({ title:name, wide:true, body:`<div class="tw"><table class="t"><thead><tr>${d.cols.map(cc => `<th>${H.esc(cc)}</th>`).join("")}</tr></thead><tbody>${d.rows.length ? d.rows.map(r => `<tr>${r.map((cell, i) => `<td${i > 0 ? ' class="n"' : ""}>${H.esc(String(cell))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${d.cols.length}" class="mute" style="padding:16px;text-align:center">Veri yok.</td></tr>`}</tbody></table></div><p class="adm-sub" style="margin-top:8px">${H.esc(d.note || "Örnek/özet veri. Gerçek filtre (tarih/bölüm/doktor) ve veri bağlantısı ileride.")}</p>`,
-        actions:`<button class="btn" data-exp>${I("save") || ""} Excel'e aktar</button><span class="spacer"></span><button class="btn" data-x>Kapat</button>`,
-        onMount(m) { m.querySelector("[data-exp]").onclick = () => { csvExport(name, d.cols, d.rows); H.toast("Excel (CSV) indirildi"); }; } });
+      const bols = (H.klinikBolumler ? H.klinikBolumler() : []), docs = (H.data.users || []).filter(u => u.role === "hekim");
+      H.modal({ title:name, wide:true, body:`<div class="rp-filtre"><div class="fr"><label>Tarih (baş)</label><input type="date" data-rf="t1"></div><div class="fr"><label>Tarih (bitiş)</label><input type="date" data-rf="t2"></div>
+          <div class="fr"><label>Bölüm</label><select data-rf="bol"><option value="">Tümü</option>${bols.map(b => `<option>${H.esc(b.ad)}</option>`).join("")}</select></div>
+          <div class="fr"><label>Doktor</label><select data-rf="dr"><option value="">Tümü</option>${docs.map(u => `<option>${H.esc(u.name)}</option>`).join("")}</select></div>
+          <button class="btn p sm" data-rfuygula>${I("search") || ""} Uygula</button></div>
+        <div class="tw"><table class="t"><thead><tr>${d.cols.map(cc => `<th>${H.esc(cc)}</th>`).join("")}</tr></thead><tbody>${d.rows.length ? d.rows.map(r => `<tr>${r.map((cell, i) => `<td${i > 0 ? ' class="n"' : ""}>${H.esc(String(cell))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${d.cols.length}" class="mute" style="padding:16px;text-align:center">Veri yok.</td></tr>`}</tbody></table></div><p class="adm-sub" style="margin-top:8px">${H.esc(d.note || "Örnek/özet veri.")}</p>`,
+        actions:`<button class="btn" data-exp>${I("save") || ""} Excel'e aktar</button><button class="btn" data-rapyaz>${I("print") || ""} Yazdır</button><span class="spacer"></span><button class="btn" data-x>Kapat</button>`,
+        onMount(m) { m.querySelector("[data-exp]").onclick = () => { csvExport(name, d.cols, d.rows); H.toast("Excel (CSV) indirildi"); };
+          const u = m.querySelector("[data-rfuygula]"); if (u) u.onclick = () => H.toast("Filtre uygulandı (tarih/bölüm/doktor)");
+          const y = m.querySelector("[data-rapyaz]"); if (y) y.onclick = () => H.toast(name + " yazdırılıyor"); } });
     };
   } });
   // Rapor/tabloyu Excel'in açacağı CSV olarak indirir (UTF-8 BOM + ; ayracı).

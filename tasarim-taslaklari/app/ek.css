@@ -878,6 +878,11 @@ button.iz-n:hover { filter:brightness(1.08); outline:2px solid var(--priSoft); }
 .h360-prow.on{background:color-mix(in srgb,var(--pri) 15%,transparent)}
 .h360-prow .pr-lock svg{width:14px;height:14px}
 .h360-pdetail{min-width:0}
+/* Rapor filtre çubuğu */
+.rp-filtre{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.rp-filtre .fr{display:flex;flex-direction:column;gap:3px;margin:0}
+.rp-filtre .fr label{font:600 11px Figtree;color:var(--mute)}
+.rp-filtre input,.rp-filtre select{padding:6px 9px;font-size:13px;min-height:32px}
 
 /* Geliş göstergesi (emoji yerine renkli nokta) + protokol kilidi (SVG) */
 .enc-dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle;background:var(--mute)}
