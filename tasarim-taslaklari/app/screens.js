@@ -482,17 +482,16 @@
   }
 
   /* ================= HASTA 360 (tam ekran hasta kartı · bizim tasarım) ================= */
-  const H360_ANA = [["360", "Hasta 360"], ["ishavuzu", "Hasta İş Havuzu"], ["tedavi", "Tedavi"], ["arsiv", "Arşiv"]];
+  const H360_ANA = [["360", "Genel"], ["ishavuzu", "İş Havuzu"], ["tedavi", "Tedavi"], ["arsiv", "Arşiv"]];
   const H360_ALT = [["kart", "Hasta Kartı"], ["gelisler", "Gelişler"], ["faturalar", "Faturalar"], ["odeme", "Ödemeler / Avanslar"], ["indirim", "İndirimler"], ["dosya", "Dosyalar / Resimler"], ["notlar", "Notlar"], ["teklif", "Teklifler"], ["online", "Online Ödemeler"], ["pos", "POS İşlem Ödeme"], ["anlasma", "Anlaşmalarım"]];
   const H360_KABUL = [["ayaktan", "Poliklinik"], ["gunubirlik", "Günübirlik"], ["yatan", "Yatış"], ["yogun", "Yoğun bakım"], ["kontrol", "Kontrol"], ["donor", "Donör"]];
   const H360_DIGER = ["Özel hasta bilgileri", "Hasta yakınları", "Hasta vefat etmiş", "Tercüman listesi", "Yeni doğan kaydı aç", "Bebek hasta bilgileri", "Transplantasyon bilgileri", "Hasta referans", "Hasta değişim logu", "Arşiv bilgileri", "Mobil onay kodları", "E-posta / SMS", "Finans bilgileri", "Hasta yönlendirme", "Araç plaka bilgileri", "Diyaliz tedavi bilgileri"];
   const secArr = (k, def) => { const s = H.data.secenekler; return (s && s[k] && s[k].length) ? s[k] : def; };
-  H.register("hasta360", { title:() => "Hasta 360", perm:["admission", "summary", "patient"], render(root, params = {}) {
-    const p = H.pt(params.pid); if (!p) { root.innerHTML = `<div class="ph"><div><h2>Hasta 360</h2><p>Hasta seçilmedi.</p></div></div><div class="empty">Vezne panelinden bir hasta seçin.</div>`; return; }
+  H.register("hasta360", { title:() => "Hasta Dosyası", perm:["admission", "summary", "patient"], render(root, params = {}) {
+    const p = H.pt(params.pid); if (!p) { root.innerHTML = `<div class="ph"><div><h2>Hasta Dosyası</h2><p>Hasta seçilmedi.</p></div></div><div class="empty">Vezne panelinden bir hasta seçin.</div>`; return; }
     const ana = params.atab || "360", alt = params.stab || "kart", b = H.bed(p.bed), u = b && H.unit(b.unitId), doctor = H.userBy(p.attending);
-    const yuz = (p.risk === "crit" || p.risk === "high") ? "🔴" : "🙂";
     const hdr = `<div class="h360-hdr">
-      <div class="h360-id"><span class="h360-face">${yuz}</span><div><div class="h360-name">${H.esc(vzName(p.name))}</div><div class="adm-sub">${H.encIcon(p)} ${H.esc((H.ENC[H.encOf(p)] || {}).label || H.encOf(p))} ${H.protoLock(p)} · ${H.esc(p.dx || "")}</div></div></div>
+      <div class="h360-id"><span class="h360-risk" style="background:${(H.SEV && H.SEV[p.risk] || {}).c || "var(--mute)"}" title="Durum"></span><div><div class="h360-name">${H.esc(vzName(p.name))}</div><div class="adm-sub">${H.encIcon(p)} ${H.esc((H.ENC[H.encOf(p)] || {}).label || H.encOf(p))} ${H.protoLock(p)} · ${H.esc(p.dx || "")}</div></div></div>
       <div class="h360-meta">
         <div><span>FİN</span><b>${H.esc(p.fin || "—")}</b></div><div><span>Hasta no</span><b>${H.esc(p.hn || "—")}</b></div><div><span>Protokol</span><b>${H.esc(p.proto || "—")}</b></div>
         <div><span>Hasta tipi</span><b>${H.esc(p.hastaTipi || "Normal")}</b></div><div><span>Uyruk</span><b>${H.esc(p.uyruk || "Azərbaycan")}</b></div>

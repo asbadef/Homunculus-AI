@@ -308,9 +308,9 @@
   };
   // Protokol durumu: "Açık" düzenlenebilir; "Kapalı" ya da fatura kesildiyse kilitli (işlem/hizmet eklenemez).
   H.protoOpen = (p) => p && (p.protoDurum || "Açık") === "Açık" && !p.faturaKesildi;
-  // Geliş tipi ikonu (ayaktan=yürüyen kişi, günübirlik=güneş, yatan=yatak, yoğun=hastane) + protokol kilit nüansı.
-  H.encIcon = (p) => { const e = H.encOf(p); return `<span class="enc-ic" title="${(H.ENC[e] || {}).label || e}">${e === "ayaktan" ? "🚶" : e === "gunubirlik" ? "☀️" : e === "yatan" ? "🛏️" : e === "yogun" ? "🏥" : "•"}</span>`; };
-  H.protoLock = (p) => H.protoOpen(p) ? `<span class="pr-lock ok" title="Protokol açık">🔓</span>` : `<span class="pr-lock" title="Protokol kapalı / kilitli">🔒</span>`;
+  // Geliş tipi göstergesi: emoji yerine renkli nokta (kendi stilimiz). Protokol kilidi: SVG ikon.
+  H.encIcon = (p) => { const e = H.encOf(p); return `<span class="enc-dot enc-${e}" title="${(H.ENC[e] || {}).label || e}"></span>`; };
+  H.protoLock = (p) => H.protoOpen(p) ? `<span class="pr-lock ok" title="Protokol açık">${H.icon ? H.icon("ok") : ""}</span>` : `<span class="pr-lock bad" title="Protokol kilitli / kapalı">${H.icon ? H.icon("lock") : ""}</span>`;
   // Hizmet fiyatı: her hizmetin kuruma göre fiyatı olur. Şimdilik koddan türeyen baz fiyat + kurum çarpanı;
   // admin düzenlerse H.data.fiyatlar[kod][kurum] kullanılır. Gerçek fiyat matematiği ileride oturtulacak.
   H.fiyatBaz = (kod) => { let n = 0; for (const c of String(kod)) n = (n * 31 + c.charCodeAt(0)) >>> 0; return 20 + (n % 481); };

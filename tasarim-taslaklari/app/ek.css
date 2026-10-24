@@ -842,3 +842,14 @@ button.iz-n:hover { filter:brightness(1.08); outline:2px solid var(--priSoft); }
 .h360-menu button:hover{background:color-mix(in srgb,var(--pri) 12%,transparent)}
 .h360-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:800px){.h360-cards{grid-template-columns:1fr}}
+
+/* Geliş göstergesi (emoji yerine renkli nokta) + protokol kilidi (SVG) */
+.enc-dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle;background:var(--mute)}
+.enc-dot.enc-ayaktan{background:#2563eb}
+.enc-dot.enc-gunubirlik{background:#f59e0b}
+.enc-dot.enc-yatan{background:#16a34a}
+.enc-dot.enc-yogun{background:#dc2626}
+.pr-lock svg{width:13px;height:13px;vertical-align:middle}
+.pr-lock.ok{color:var(--ok)}
+.pr-lock.bad{color:var(--bad)}
+.h360-risk{display:inline-block;width:14px;height:14px;border-radius:50%;background:var(--mute)}
