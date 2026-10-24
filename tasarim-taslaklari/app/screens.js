@@ -636,7 +636,22 @@
     const basitTab = (ad, not) => `<div class="empty">${H.esc(ad)}${not ? ` · ${H.esc(not)}` : ""}</div>`;
     const drawBody = () => {
       h3seed();
-      if (ana === "ishavuzu") { body.innerHTML = `<div class="seg" style="margin:10px 0"><button class="on">İstek Havuzu</button><button data-h3havuz>İşlem Havuzu</button><button data-h3rand>Randevular</button></div><div class="adm-sub">Hasta iş havuzu · İşlem Havuzu'nu açmak için düğme. (tam ekran sırada)</div><div style="margin-top:10px"><button class="btn p" data-h3islem>İşlem havuzunu aç</button></div>`; return; }
+      if (ana === "ishavuzu") {
+        const ih = params.ihtab || "istek", ords = (H.data.orders || []).filter(o => o.pid === p.id);
+        const IH = [["istek", "İstek Havuzu"], ["islem", "İşlem Havuzu"], ["provizyon", "Provizyon Takip"], ["randevu", "Randevular"], ["yatis", "Yatış İstekleri"], ["onam", "Onam Formları"], ["tetkik", "Tetkik Havuzu"], ["arsiv", "Arşiv"]];
+        const seg = `<div class="seg" style="margin:4px 0 12px;flex-wrap:wrap">${IH.map(([k, l]) => `<button data-ih="${k}" class="${ih === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+        const T = (cols, rows, empty) => `<div class="tw"><table class="t"><thead><tr>${cols.map(c => `<th>${H.esc(c)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(r => `<tr>${r.map(c => `<td>${H.esc(String(c))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${cols.length}" class="mute" style="padding:16px;text-align:center">${H.esc(empty)}</td></tr>`}</tbody></table></div>`;
+        let inner = "";
+        if (ih === "istek") { const r = ords.filter(o => o.durum === "İstendi" || o.durum === "Bekliyor"); inner = `<div class="r" style="gap:6px;margin-bottom:8px"><button class="btn p sm" data-h3islem>İşlem havuzuna al</button><button class="btn sm" data-ihrand>Randevu ver</button><button class="btn sm" data-ihhazir>Hazırlık açıklaması</button></div>` + T(["İşlem tipi", "İşlem adı", "Resmi kod", "Miktar", "Tarih", "İsteyen"], r.map(o => [o.cat || "", o.ad || "", o.kod || "—", 1, o.at || "", o.by || ""]), "İstek yok. Doktor/vezne istem yapınca burada görünür."); }
+        else if (ih === "islem") { inner = `<p class="adm-sub" style="margin-bottom:8px">Hastanın faturalanacak işlemleri; tam ekranda fatura/indirim/provizyon.</p><button class="btn p" data-h3islem>${I("link") || ""} İşlem havuzunu aç</button>`; }
+        else if (ih === "provizyon") { inner = T(["Protokol", "Kurum / sigorta", "Tutar", "Provizyon durumu"], [[p.proto || "—", p.kurum || "Özel ödeme", "—", "Beklemede"]], "Provizyon kaydı yok."); }
+        else if (ih === "randevu") { const rs = (H.data.randevular || []).filter(r => r.hasta && vzName(r.hasta) === vzName(p.name)); inner = `<div class="r" style="gap:6px;margin-bottom:8px"><button class="btn sm" data-ihrand>Yeni randevu</button></div>` + T(["Tarih", "Bölüm", "Doktor", "Durum"], rs.map(r => [(r.tarih || "").replace("T", " "), r.bolum, r.doktor, r.durum]), "Randevu yok."); }
+        else if (ih === "yatis") { inner = T(["Tarih", "Bölüm", "Yatak", "Durum"], b ? [[p.kabulT || "—", (u && u.tr) || "—", b.no, "Yatışta"]] : [], "Yatış isteği yok."); }
+        else if (ih === "onam") { inner = `<div class="r" style="gap:6px;margin-bottom:8px"><button class="btn sm" data-ihonam>Onam formu ekle</button></div>` + T(["Form", "Tarih", "Durum"], (p._dosya || []).filter(d => d.grup === "Onam formları").map(d => [d.ad, d.tarih, "İmzalı"]), "Onam formu yok."); }
+        else if (ih === "tetkik") { const r = ords.filter(o => /Laboratuvar|Radyoloji|Patoloji/.test(o.cat || "")); inner = T(["Tür", "Tetkik", "Resmi kod", "Tarih", "Durum"], r.map(o => [o.cat, o.ad, o.kod || "—", o.at || "", o.durum || "İstendi"]), "Tetkik yok."); }
+        else { inner = T(["Protokol", "Tarih", "Arşiv no", "Durum"], [[p.proto || "—", "—", "—", "Arşivde"]], "Arşiv kaydı yok."); }
+        body.innerHTML = seg + inner; return;
+      }
       if (ana === "tedavi") { body.innerHTML = placeholder("Tedavi (Klinik dokümanlar / Lab / Radyoloji / Patoloji / Tanılar)"); return; }
       if (ana === "arsiv") { body.innerHTML = placeholder("Arşiv (aktarım protokolleri / işlemler)"); return; }
       // ana === 360
@@ -668,6 +683,10 @@
       if (e.target.closest("[data-h3must]")) { H.toast("Müstehaklık/provizyon sorgusu gönderildi (tasarım)"); return; }
       if (e.target.closest("[data-h3yaz]")) { H.toast("Yazdır çıktıları (tasarım)"); return; }
       if (e.target.closest("[data-h3git-gelis]")) return H.go("gelisler");
+      const ihb = e.target.closest("[data-ih]"); if (ihb) return H.go("hasta360", { pid:p.id, atab:"ishavuzu", ihtab:ihb.dataset.ih });
+      if (e.target.closest("[data-ihrand]")) { H.toast("Randevu ekranı açılıyor"); return H.go("randevu"); }
+      if (e.target.closest("[data-ihhazir]")) { H.toast("Hazırlık açıklaması · tasarım", "w"); return; }
+      if (e.target.closest("[data-ihonam]")) { H.toast("Onam formu ekle · tasarım", "w"); return; }
       if (e.target.closest("[data-h3islem]")) { vzIslemHavuzu(p.id); return; }
       if (e.target.closest("[data-h3save]")) { body.querySelectorAll("[data-hf]").forEach(el => { p[el.dataset.hf] = el.value; }); if (p.ad || p.soyad) p.name = ((p.ad || "") + " " + (p.soyad || "")).trim() || p.name; if (p.sexT) p.sex = p.sexT === "Kişi" ? "E" : "K"; H.log("Hasta kartı kaydedildi", vzName(p.name)); H.toast("Hasta kartı kaydedildi"); return; }
     };

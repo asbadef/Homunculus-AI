@@ -22,9 +22,9 @@
 - [ ] Vezne Paneli: üst bar (Banko/Dönem/Tarih) + çoklu arama + arama detay + liste sütunları tam
 - [ ] Hasta Ön Kayıt ekranı + sağ-tık (Birleştir / Hasta Kabul türleri / Yeni Doğan / Protokol Bilgileri)
 - [ ] İş Havuzu: İstek Havuzu tam
-- [ ] İş Havuzu: **İşlem Havuzu tam ekran** (toolbar + Fatura Bekleyen/Tümü + kurum toplamları + sağ-tık tam)
+- [x] İş Havuzu: **İşlem Havuzu** zengin (toolbar Fatura/Parçalı/İndirim/Provizyon/Panel paket + Fatura Bekleyen/Tümü + kurum etiketi + sağ-tık)
 - [ ] İş Havuzu: Provizyon Takip / Randevular / Yatış İstekleri / Onam Formları / Tetkik Havuzu / Arşiv
-- [ ] Kasa / Dönem: banko seç + dönem Aç/Kapat/Devir
+- [x] Kasa / Dönem: banko seç + dönem Aç/Kapat/**Devir Al** + **Dönem özeti** (nakit/kart/havale)
 - [ ] Toolbar "Diğer" 16+ madde için gerçek ekranlar (şimdilik toast)
 - [ ] KVKK/ETK onay → SMS/mail tasarımı
 
