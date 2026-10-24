@@ -27,6 +27,9 @@
 - [x] Kasa / Dönem: banko seç + dönem Aç/Kapat/**Devir Al** + **Dönem özeti** (nakit/kart/havale)
 - [~] Toolbar "Diğer" 16+ madde → modal (küçük form); önemli olanlara tam ekran sonra
 - [x] KVKK/ETK onay → SMS/mail gönderim modalı
+- [x] Sağ ray tam set: Fiyat verme/Kampanyalar/Dönem bilgileri/UHM/Onam/İade taleplerim/Toplu fatura/Randevulanacak hizmetler/Hasta danışman/Kurum değişiklik — hepsi aktif (liste/rota)
+- [x] İnce-taneli vezne yetkileri admin matrisinde (kapalı protokolde ekle/sil, tahsilat değiştir, protokole aktar, fatura iptal, avans, kurum değişiklik, toplu fatura)
+- [ ] Kurumsal Faturalama çok panelli ekran (#61) — kalan büyük vezne ekranı
 
 ## FAZ T — TEDAVİ / DOKTOR (ileride tamamlanacak — unutulmayacak)
 - [ ] Tedavi sekmesi: Klinik Dokümanlar / Laboratuvar / Radyoloji / Patoloji / Tanılar / Diş Planları / Aktarım / Reçete İlaç Listesi
@@ -38,7 +41,10 @@
 - [~] Güvenlik Tanımları ayrı "Formlar/Değerler" sekmeleri — mevcut matris Yetkiler+Roller'i karşılıyor; Formlar (modül erişimi) ve Değerler (veri izni) ayrı görünüm sonra
 - [x] Personel kartı: Genel/Kişisel/Çalışma-takvim (görsel haftalık)/İletişim/Yetkiler sekmeleri
 - [x] İzleme menüsü mevcut: Sistem durumu / Olay günlüğü / Veri bütünlüğü / Açık oturumlar + Denetim kaydı (Finansal veri izleme sonra)
-- [x] Bölüm (idari+klinik) tanımı · [x] Protokol Tipi · [x] Hizmet Kartı/Fiyatları (birleşik) · [x] Otomatik Hizmet Tanımı · [x] Epikriz · [x] Kampanya · [x] Doküman · [x] Rapor Yetkileri
+- [x] Bölüm (idari+klinik) tanımı · [x] Protokol Tipi · [x] Hizmet Kartı/Fiyatları (birleşik) · [x] Otomatik Hizmet Tanımı · [x] Epikriz · [x] Kampanya · [x] Doküman · [x] Rapor Yetkileri · [x] ICD Tanı Listesi
+- [x] **Cihaz Listesi** (RIS/ÖKC/çağrı ekranı · IP/MAC/port · ekle-düzenle-sil) (#31-33)
+- [x] **Değişken / Parametre Tanımları** (para birimi/KDV/dil/randevu/dönem/oturum) (#22)
+- [ ] Branş listesi: min/max yaş + kendi kodlarımız (SUT yok) — küçük ek
 
 ## FAZ R — RAPORLAR
 - [x] Rapor başlıkları (modül bazlı menü)
