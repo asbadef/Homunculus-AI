@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import time
 import urllib.error
 import urllib.request
@@ -133,13 +134,28 @@ def evaluate(before, after, *, window_s, table_version, table_sha, unassigned):
     return rows
 
 
+def nbp_line(board):
+    """NBP on the strip, by device: shown (with the oldest change time among them), awaiting a change
+    since the hub started, or withheld — counts and an age, never a pressure."""
+    entries = [p for card in (board.get("beds") or []) + (board.get("unassigned") or [])
+               for p in card.get("parameters") or [] if p.get("parameter") == "nbp"]
+    shown = [p for p in entries if p.get("state") == "value"]
+    ages = [p.get("measured_age_s") for p in shown if isinstance(p.get("measured_age_s"), (int, float))]
+    oldest = f" (en eski {math.ceil(max(ages) / 60)} dk önce)" if ages else ""
+    waiting = sum(1 for p in entries if p.get("state") != "value" and p.get("changed_at") is None)
+    withheld = len(entries) - len(shown) - waiting
+    return (f"nbp: {len(shown)} cihazda ölçüm saati ≤ ile gösteriliyor{oldest}, {waiting} cihazda ölçüm bekleniyor, "
+            f"{withheld} cihazda gizli (eski)")
+
+
 def details(board):
     """What each device is doing — statuses, counts, ages; never a value or a patient."""
     if not board or board.get("stage") != "shadow":
         return []
     devices = (board.get("feed") or {}).get("devices") or {}
     lines = ["cihazlar: " + ", ".join(f"{k} {devices.get(k, 0)}" for k in
-                                      ("total", "streaming", "standby", "silent", "waiting", "unsupported", "unknown"))]
+                                      ("total", "streaming", "standby", "silent", "waiting", "unsupported", "unknown")),
+             nbp_line(board)]
     for bed in board.get("beds") or []:
         fresh = [p.get("age_s") for p in bed.get("parameters") or [] if p.get("state") == "value"]
         ages = [a for a in fresh if isinstance(a, (int, float))]

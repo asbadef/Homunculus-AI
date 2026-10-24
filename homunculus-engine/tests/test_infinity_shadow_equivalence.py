@@ -106,13 +106,17 @@ def _encounter(pid, location="YB^1^1"):
 
 def _shadow_body(now):
     readings = [("hr", 180, "bpm"), ("spo2", 70, "%"), ("respiration", 40, "/min"), ("art_systolic", 70, "mmHg")]
-    return {"schema": "homunculus.infinity-shadow.v1", "sent_at": now,
+    # NBP 70/40 (50), with the time its value changed: hypotension, were it clinical.
+    nbp = [("nbp_systolic", 70), ("nbp_diastolic", 40), ("nbp_mean", 50)]
+    return {"schema": "homunculus.infinity-shadow.v2", "sent_at": now,
             "forwarder": {"interval_s": 5, "sent": 1, "failed": 0, "decoder": "homunculus.infinity-preview.v3"},
             "hub": {"collector_age_s": 1.0, "accepted_packets": 1, "old_or_duplicate_packets": 0},
             "devices": [{"source": "192.0.2.10", "group": "239.20.1.10", "port": 2050, "status": "streaming",
                          "packet_age_ms": 100,
                          "readings": [{"parameter": p, "value": v, "unit": u, "valid": True, "captured_at": now - 0.5}
-                                      for p, v, u in readings]}]}
+                                      for p, v, u in readings]
+                                     + [{"parameter": p, "value": v, "unit": "mmHg", "valid": True,
+                                         "captured_at": now - 0.5, "changed_at": now - 30.0} for p, v in nbp]}]}
 
 
 async def _run(monkeypatch, tmp_path, *, stage, extra_ingest=False, probe=None):
@@ -238,8 +242,10 @@ async def test_the_shadow_lane_actually_ran_in_the_on_app(monkeypatch, tmp_path)
     assert board["stage"] == "shadow" and board["table"]["status"] == "ok"
     (bed,) = board["beds"]
     assert (bed["bed_label"], bed["link"], bed["patient_id"]) == ("B-1", "one", "bed-3")
-    values = {p["parameter"]: (p["state"], p["value"]) for p in bed["parameters"]}
+    values = {p["parameter"]: (p["state"], p.get("value")) for p in bed["parameters"]}
     assert values["hr"] == ("value", 180) and values["spo2"] == ("value", 70)
+    nbp = bed["parameters"][-1]
+    assert (nbp["parameter"], nbp["state"], nbp["systolic"], nbp["diastolic"], nbp["mean"]) == ("nbp", "value", 70, 40, 50)
 
 
 @pytest.mark.anyio

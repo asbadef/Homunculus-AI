@@ -10,9 +10,10 @@
 // or not the next poll comes, and a wrong clock in this browser cannot make it look younger.
 import { ageParts } from "./feedHealth.js";
 
-/** The parameters in the API's own order (api/infinity_shadow.py PARAMETERS). */
+/** The parameters in the API's own order (api/infinity_shadow.py PARAMETERS), NBP's three readings
+ *  being the one `nbp` entry the board sends last. */
 export const PARAM_ORDER = Object.freeze(["hr", "pls", "spo2", "etco2", "temperature", "art_systolic",
-  "art_diastolic", "art_mean", "respiration"]);
+  "art_diastolic", "art_mean", "respiration", "nbp"]);
 
 /** Each parameter's evidence today, and the four only partly checked — the API's own tables
  *  (api/infinity_shadow.py EVIDENCE, PARTIAL; monitor.test.js holds this copy to them). The
@@ -20,7 +21,7 @@ export const PARAM_ORDER = Object.freeze(["hr", "pls", "spo2", "etco2", "tempera
 export const EVIDENCE = Object.freeze({
   hr: "screen_match_two_devices", pls: "screen_match_two_devices", spo2: "screen_match_two_devices",
   etco2: "screen_match_two_devices", art_systolic: "screen_match", temperature: "screen_match_site_unknown",
-  art_mean: "structural", art_diastolic: "structural_trend", respiration: "range_overlap",
+  art_mean: "structural", art_diastolic: "structural_trend", respiration: "range_overlap", nbp: "screen_match",
 });
 export const PARTIAL = Object.freeze(new Set(["temperature", "art_mean", "art_diastolic", "respiration"]));
 

@@ -161,7 +161,7 @@ describe("SettingsScreen — the monitor strip's legend", () => {
     expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Parametr", "Hər parametr üzrə bugünkü sübut"]);
     const rows = within(table).getAllByRole("row").slice(1);
     const labels = rows.map((r) => within(r).getByRole("rowheader").textContent);
-    expect(labels).toEqual(["HR", "PLS", "SpO₂", "etCO₂", "Ta", "ART S", "ART D", "ART M", "RESP"]
+    expect(labels).toEqual(["HR", "PLS", "SpO₂", "etCO₂", "Ta", "ART S", "ART D", "ART M", "RESP", "NBP"]
       .map((p) => expect.stringContaining(p)));
     const partial = labels.filter((label) => label.includes("qismən")).map((label) => label.replace("qismən", ""));
     expect(partial).toEqual(["Ta", "ART D", "ART M", "RESP"]);

@@ -131,7 +131,10 @@ def _body(now):
             "devices": [{"source": "192.0.2.10", "group": "239.20.1.10", "port": 2050, "status": "streaming",
                          "packet_age_ms": 100.0,
                          "readings": [{"parameter": "hr", "value": 180, "unit": "bpm", "valid": True,
-                                       "captured_at": now - 0.5}]}]}
+                                       "captured_at": now - 0.5}]
+                         + [{"parameter": name, "value": value, "unit": "mmHg", "valid": True,
+                             "captured_at": now - 0.5, "changed_at": now - 120.0}
+                            for name, value in (("nbp_systolic", 201), ("nbp_diastolic", 119), ("nbp_mean", 146))]}]}
 
 
 def _hdr(token):
@@ -167,8 +170,9 @@ def test_a_shadow_post_and_get_call_no_clinical_writer(tmp_path, monkeypatch):
 
     posted = client.post("/infinity-shadow/readings", json=_body(clock.t), headers=_hdr(SHADOW))
     board = client.get("/infinity-shadow/board", headers=_hdr(DEVICE))
-    assert posted.status_code == 200 and posted.json()["accepted"] == 1
+    assert posted.status_code == 200 and posted.json()["accepted"] == 4
     assert board.status_code == 200 and board.json()["beds"][0]["link"] == "one"   # the lane really ran
+    assert board.json()["beds"][0]["parameters"][-1]["systolic"] == 201              # NBP with it
     assert calls == []
     assert state.ack_stores == {}                    # not even an engine or an ack store was built
     assert state.audit.records(tenant=HOSPITAL, limit=10) == []
@@ -181,8 +185,9 @@ def test_a_shadow_post_and_get_call_no_clinical_writer(tmp_path, monkeypatch):
 
 
 def test_a_trends_read_never_reaches_the_shadow_store(tmp_path, monkeypatch):
-    """The lane holds a heart rate of 180 for p1's bed and the clinical chart holds 72; the trends of
-    p1 must show the 72 and nothing of the lane, and must not even ask the shadow store."""
+    """The lane holds a heart rate of 180 and an NBP of 201/119 for p1's bed and the clinical chart
+    holds 72; the trends of p1 must show the 72 and nothing of the lane — no pressure point at all —
+    and must not even ask the shadow store."""
     identities = InMemoryIdentityStore()
     identities.apply(HOSPITAL, IdentityRecord(patient_id="p1", unit="YB", room="1", bed="1", source="test"))
     client, clock = _app(tmp_path, identities=identities)

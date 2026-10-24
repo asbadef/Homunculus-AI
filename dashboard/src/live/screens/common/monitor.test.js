@@ -113,9 +113,9 @@ describe("the display limit", () => {
 });
 
 describe("the tables", () => {
-  it("orders the parameters as the API does", () => {
+  it("orders the parameters as the API does, NBP's one entry last", () => {
     expect(PARAM_ORDER).toEqual(["hr", "pls", "spo2", "etco2", "temperature", "art_systolic", "art_diastolic",
-      "art_mean", "respiration"]);
+      "art_mean", "respiration", "nbp"]);
   });
 
   it("writes each unit with the board's own unit text", () => {

@@ -112,6 +112,29 @@ def test_what_it_prints_holds_no_value_no_patient_and_no_token():
     assert "192.0.2.28" in text and "table_unassigned" in text
 
 
+def nbp(state, *, measured=None, changed=None):
+    shown = state == "value"
+    return {"parameter": "nbp", "state": state, "systolic": 211 if shown else None,
+            "diastolic": 37 if shown else None, "mean": 95 if shown else None, "unit": "mmHg",
+            "age_s": 2.0 if shown else measured, "last_at": changed, "changed_at": changed,
+            "measured_age_s": measured, "evidence": "screen_match", "partial": False}
+
+
+def test_the_nbp_line_counts_devices_and_the_oldest_change_and_never_prints_a_pressure():
+    after = board()
+    after["beds"][0]["parameters"].append(nbp("value", measured=2821.0, changed="2026-10-20T08:13:00+00:00"))
+    after["beds"][1]["parameters"].append(nbp("old"))                                   # no change seen yet
+    after["unassigned"][0]["parameters"].append(nbp("old", measured=9000.0, changed="2026-10-20T06:30:00+00:00"))
+    lines = check.report(BEFORE, (after, PATIENTS), window_s=300, **EXPECT)
+    readable = "\n".join(lines[:-1])
+    assert ("nbp: 1 cihazda ölçüm saati ≤ ile gösteriliyor (en eski 48 dk önce), 1 cihazda ölçüm bekleniyor, "
+            "1 cihazda gizli (eski)") in readable
+    assert "3 taze değer" in readable                       # a shown NBP is a fresh cell like any other
+    for secret in ("211", "37", "95"):
+        assert secret not in readable, secret
+    assert "nbp: 0 cihazda" in "\n".join(check.report(BEFORE, AFTER, window_s=300, **EXPECT))
+
+
 def test_a_missing_endpoint_is_stage_yok_and_the_board_hash_is_still_printed(tmp_path, capsys):
     env = tmp_path / ".env"
     env.write_text(f"TENANT_SLUG=demo\nTENANT_TOKEN={TOKEN}\n", encoding="utf-8")
