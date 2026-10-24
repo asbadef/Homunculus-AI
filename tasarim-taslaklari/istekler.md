@@ -561,3 +561,14 @@ Klinik/doktor tarafı büyük ölçüde YAPILDI (muayene, epikriz, izlem, hemşi
 - İK→kullanıcı oluşturma: İK yalnız personel kartı açar; ADMIN Güvenlik Tanımları'ndan yetki/form/rol/değer verir + kullanıcı kartı + yetki kopyalama (büyük)
 - Çeviri eksikleri (4 dil) — ayrı titiz tur
 - Sol panel düzeni (görsel modül ağacı), zengin hizmet kartı, diğer listelerde tıkla-aç+filtre
+
+## DURUM — 2026-10-25 (düzeltmeler + İş Takip iyileştirme)
+### ✅ Bu turda
+- Destek görünmeme: cache sürümü yükseltildi (0126) + destek_ac yetkisi kayıtlı roller geri yüklense de garanti → hard refresh (Ctrl+F5) ile menüde görünür
+- Hasta kaydı bug: "Bölüm seç" idari birimleri gösteriyordu → artık yalnız KLİNİK (doktorlu) bölümler (H.klinikBolumler); personel kartı tüm bölümleri gösterir
+- İK: login kullanıcıya (doktor/hemşire) tıklayınca DÜZENLENEBİLİR personel kartı açılır (persForm seed); kaydedince personele bağlanır
+- İş Takip: yalnız kendi talebin (açan otomatik), bildirim rozeti (IT'de açık talep / kullanıcıda çözülen talep), Excel + Yazdır indirme
+### ⏳ Bekleyen (devam)
+- Vezne uçtan uca akış (geliş ikonları, otomatik hizmet→iş listesi→istem→istek/işlem havuzu→fatura/indirim, vezneden tetkik isteği)
+- İK→kullanıcı oluşturma (admin Güvenlik Tanımları: yetki/form/rol/değer + kullanıcı kartı + yetki kopyalama)
+- Çeviri eksikleri (4 dil, titiz tur) · sol panel düzeni · zengin hizmet kartı · diğer listelerde tıkla-aç+filtre+Excel
