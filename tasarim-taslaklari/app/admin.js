@@ -1764,9 +1764,20 @@
         return `<td><input type="checkbox" class="ck" data-r="${k}" data-p="${p}"${on ? " checked" : ""}${lock || ro ? " disabled" : ""} title="${lock ? "Korunan yetki" : esc(r.name + " · " + l)}"></td>`; }).join("")}</tr>`).join("")).join("")}
       </tbody></table></div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap"><span class="adm-sub">Değişiklikler bu tarayıcıda saklanır; sayfayı yenileyince kaybolmaz.</span><button class="btn sm g" data-roles-reset>Varsayılana dön</button></div>
+      ${ro ? "" : `<div class="sec">Yetki kopyalama <small>bir rolün yetkilerini başka role kopyala</small></div>
+      <div class="adm-bar" style="flex-wrap:wrap;gap:8px"><label class="adm-sub">Kaynak</label><select data-cpsrc>${roles.map(([k, r]) => `<option value="${k}">${esc(r.name)}</option>`).join("")}</select>
+        <span class="adm-sub">→</span><label class="adm-sub">Hedef</label><select data-cpdst>${roles.map(([k, r], i) => `<option value="${k}"${i === 1 ? " selected" : ""}>${esc(r.name)}</option>`).join("")}</select>
+        <button class="btn p sm" data-cpdo>${I("copy") || ""} Yetkileri kopyala</button></div>`}
       <div class="note w" style="margin-top:10px">Sistem yöneticisi bütün ekranları görür. Bilgi işlem hesabının hasta verisini görüp görmeyeceği hastaneyle kararlaştırılır; önerimiz görmemesi.</div>
       <p class="adm-sub" style="margin-top:10px">Kendi rolünüzün yönetim yetkileri kaldırılamaz. Menüden gizlemek yetmez: gerçek üründe her yetki sunucuda da denetlenir.</p>`;
-    body.onclick = e => { if (e.target.closest("[data-roles-reset]")) { try { localStorage.removeItem("hmc.roles"); } catch {} H.log("Yetki tablosu varsayılana döndü"); location.reload(); } };
+    body.onclick = e => { if (e.target.closest("[data-roles-reset]")) { try { localStorage.removeItem("hmc.roles"); } catch {} H.log("Yetki tablosu varsayılana döndü"); location.reload(); return; }
+      if (e.target.closest("[data-cpdo]")) { const src = body.querySelector("[data-cpsrc]").value, dst = body.querySelector("[data-cpdst]").value;
+        if (src === dst) { H.toast("Kaynak ve hedef rol aynı olamaz.", "w"); return; }
+        const sr = H.data.roles[src], dr = H.data.roles[dst]; if (!sr || !dr) return;
+        if (!confirm(`"${sr.name}" rolünün yetkileri "${dr.name}" rolüne kopyalansın mı? Hedefin mevcut yetkileri değişir (korunan yönetim yetkileri kalır).`)) return;
+        const keep = dr.perms.filter(p => protectedPerm(dst, p)); dr.perms = [...new Set([...keep, ...sr.perms.filter(p => !protectedPerm(dst, p) || keep.includes(p))])];
+        H.saveRoles(); H.log("Yetki kopyalandı", `${sr.name} → ${dr.name}`); H.toast(`Yetkiler kopyalandı: ${sr.name} → ${dr.name}`);
+        if (dst === me().role && typeof H.renderApp === "function") H.renderApp(); else tabRoles(body); return; } };
     body.onchange = e => {
       const c = e.target.closest("input[data-r]"); if (!c) return; const r = c.dataset.r, p = c.dataset.p, role = H.data.roles[r];
       if (!c.checked && protectedPerm(r, p)) { c.checked = true; H.toast("Kendi yönetim yetkinizi kaldıramazsınız", "e"); return; }
