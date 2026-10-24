@@ -378,6 +378,7 @@
       a.href = url; a.download = String(name || "rapor").replace(/[\\/:*?"<>|]/g, "").slice(0, 60) + ".csv"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) { H.toast("Dışa aktarma bu tarayıcıda çalışmadı.", "e"); }
   }
+  H.exportCsv = csvExport;   // diğer modüller (admin listeleri vb.) de kullanır
   // Öncelikli raporların örnek/özet verisi (gerçek veriden türetilir)
   function reportData(name) {
     const docName = (id) => { const u = (H.data.users || []).find(x => x.u === id); return u ? u.name : (id || "—"); };

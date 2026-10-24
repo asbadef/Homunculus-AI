@@ -1018,23 +1018,56 @@
     H.data.bolumler = [...IDARI.map(a => mk(a, "İdari Birim")), ...KLINIK.map(a => mk(a, "Poliklinik")), ...YB.map(a => mk(a, "Yoğun Bakım")), ...UCHILD.map(a => mk(a, "Poliklinik"))];
   }
   function tabBolum(body) {
-    bolumSeed(); const ALL = H.data.bolumler;
-    body.innerHTML = `<div class="adm-bar"><input data-blq placeholder="Bölüm ara" value="${esc(AD.blq || "")}"><span class="spacer"></span><span class="adm-sub" data-blcount></span><button class="btn p" data-blnew>+ Yeni bölüm</button></div>
+    bolumSeed(); const ALL = H.data.bolumler, ft = AD.blTip || "";
+    body.innerHTML = `<div class="adm-bar"><input data-blq placeholder="Bölüm ara" value="${esc(AD.blq || "")}"><select data-bltip><option value="">Tüm tipler</option>${BOLUM_TIP.map(t => `<option${ft === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select><span class="spacer"></span><span class="adm-sub" data-blcount></span><button class="btn" data-blexp>${I("save") || ""} Excel</button><button class="btn p" data-blnew>+ Yeni bölüm</button></div>
       <div data-bllist></div>
-      <p class="adm-sub" style="margin-top:10px">Tıbbi bölümler (kod + tip + özellikler). Admin tanımlar; kabul, randevu, otomatik hizmet tanımı ve epikriz bu listeyi kullanır. Satıra tıklayıp düzenleyin.</p>`;
+      <p class="adm-sub" style="margin-top:10px">Bölümler (idari + klinik + yoğun bakım). Admin tanımlar; kabul, randevu, otomatik hizmet tanımı ve epikriz bu listeyi kullanır. Satıra tıkla düzenle; "Randevu tipleri" ile bölümün randevu tiplerini tanımla.</p>`;
     const list = body.querySelector("[data-bllist]");
+    const resOf = () => { const q = norm(AD.blq || ""); return ALL.filter(x => (!ft || x.tip === ft) && (!q || norm(x.ad + " " + (x.kod || "") + " " + (x.brans || "")).includes(q))); };
     const draw = () => {
-      const q = norm(AD.blq || ""), res = q ? ALL.filter(x => norm(x.ad + " " + (x.kod || "") + " " + (x.brans || "")).includes(q)) : ALL;
-      body.querySelector("[data-blcount]").textContent = ALL.length + " bölüm";
-      list.innerHTML = res.length ? `<div class="tw"><table class="t"><thead><tr><th style="width:90px">Kod</th><th>Bölüm / branş</th><th style="width:150px">Tip</th><th style="width:90px">Randevu</th><th style="width:44px"></th></tr></thead><tbody>${res.map(x => `<tr data-bledit="${x.id}" style="cursor:pointer"><td class="mono adm-sub">${esc(x.kod || "—")}</td><td><b>${esc(x.ad)}</b></td><td class="adm-sub">${esc(x.tip || "—")}</td><td class="adm-sub">${x.flags && x.flags.randevuVerilir ? "Verilir" : "—"}</td><td><button class="btn g sm" data-bldel="${x.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen bölüm yok.</div>`;
+      const res = resOf();
+      body.querySelector("[data-blcount]").textContent = res.length + " / " + ALL.length + " bölüm";
+      list.innerHTML = res.length ? `<div class="tw"><table class="t"><thead><tr><th style="width:90px">Kod</th><th>Bölüm / branş</th><th style="width:150px">Tip</th><th style="width:150px">Randevu tipleri</th><th style="width:44px"></th></tr></thead><tbody>${res.map(x => `<tr data-bledit="${x.id}" style="cursor:pointer"><td class="mono adm-sub">${esc(x.kod || "—")}</td><td><b>${esc(x.ad)}</b></td><td class="adm-sub">${esc(x.tip || "—")}</td><td>${x.flags && x.flags.randevuVerilir ? `<button class="btn g sm" data-blrnd="${x.id}">Randevu tipleri <em>${(x.randevuTipleri || []).length}</em></button>` : `<span class="adm-sub">—</span>`}</td><td><button class="btn g sm" data-bldel="${x.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Eşleşen bölüm yok.</div>`;
     };
     draw();
     body.querySelector("[data-blq]").addEventListener("input", e => { AD.blq = e.target.value; draw(); });
+    body.querySelector("[data-bltip]").addEventListener("change", e => { AD.blTip = e.target.value; draw(); });
+    body.querySelector("[data-blexp]").addEventListener("click", () => { const res = resOf(); H.exportCsv ? H.exportCsv("Bolum_listesi", ["Kod", "Bölüm", "Tip", "Branş", "Şube"], res.map(x => [x.kod, x.ad, x.tip, x.brans, x.sube])) : H.toast("Dışa aktarma yok", "w"); });
     body.querySelector("[data-blnew]").addEventListener("click", () => bolumForm(null, draw));
     list.addEventListener("click", e => {
       const del = e.target.closest("[data-bldel]"); if (del) { e.stopPropagation(); if (confirm("Bu bölüm silinsin mi?")) { const i = ALL.findIndex(x => x.id === del.dataset.bldel); if (i >= 0) ALL.splice(i, 1); H.toast("Silindi", "w"); draw(); } return; }
+      const rn = e.target.closest("[data-blrnd]"); if (rn) { e.stopPropagation(); const row = ALL.find(x => x.id === rn.dataset.blrnd); if (row) randevuTipModal(row, draw); return; }
       const tr = e.target.closest("[data-bledit]"); if (tr) { const row = ALL.find(x => x.id === tr.dataset.bledit); if (row) bolumForm(row, draw); }
     });
+  }
+  // Madde 4 · Bölüm Randevu Tipi: randevu ↔ bölüm ↔ protokol ↔ hizmet bağı.
+  const RANDEVU_TIP = ["Muayene", "Kontrol", "Sonuç Gösterme", "Online Muayene", "Online Kontrol", "Check-Up", "Refere", "Girişim"];
+  function randevuTipModal(bolum, redraw) {
+    bolum.randevuTipleri = bolum.randevuTipleri || [];
+    const rows = bolum.randevuTipleri, heks = (H.data.users || []).filter(u => u.role === "hekim"), protos = (H.data.protokolTip || (secGet("protokol")) || []);
+    H.modal({ title:"Randevu tipleri · " + esc(bolum.ad), wide:true,
+      body:`<div class="rc-add" style="margin-bottom:10px;flex-wrap:wrap;gap:6px">
+        <select data-rt="tip">${RANDEVU_TIP.map(t => `<option>${esc(t)}</option>`).join("")}</select>
+        <input data-rt="ad" placeholder="Ad (ör. İlk muayene)" style="min-width:150px">
+        <input data-rt="sure" type="number" placeholder="Süre (dk)" value="15" style="max-width:100px">
+        <select data-rt="doktor"><option value="">Doktor — tümü</option>${heks.map(u => `<option>${esc(u.name)}</option>`).join("")}</select>
+        <select data-rt="protokol"><option value="">Protokol —</option>${protos.map(p => `<option>${esc(p)}</option>`).join("")}</select>
+        <input data-rt="hizmet" placeholder="Hizmet" style="min-width:140px">
+        <input data-rt="fiyat" type="number" placeholder="Fiyat ₼" style="max-width:100px">
+        <label style="font-weight:400"><input type="checkbox" data-rt="web"> Web default</label>
+        <button class="btn p sm" data-rtadd>Ekle</button></div>
+      <div class="tw"><table class="t"><thead><tr><th>Tip</th><th>Ad</th><th style="width:70px">Süre</th><th>Doktor</th><th>Protokol</th><th>Hizmet</th><th style="width:80px">Fiyat</th><th style="width:40px"></th></tr></thead><tbody data-rtlist></tbody></table></div>
+      <p class="adm-sub" style="margin-top:8px">Bölümün randevu tipleri; randevu ekranı ve çalışma takvimi bunları kullanır. Protokol tipi ve hizmet bağlanır, fiyat tarifeden ya da elle.</p>`,
+      actions:`<button class="btn" data-x>Kapat</button>`,
+      onMount(m) {
+        const tb = m.querySelector("[data-rtlist]");
+        const drawL = () => { tb.innerHTML = rows.length ? rows.map((r, i) => `<tr><td>${esc(r.tip)}</td><td><b>${esc(r.ad || "")}</b>${r.web ? ` <span class="tag ok">web</span>` : ""}</td><td class="n">${esc(r.sure || "")}</td><td class="adm-sub">${esc(r.doktor || "—")}</td><td class="adm-sub">${esc(r.protokol || "—")}</td><td class="adm-sub">${esc(r.hizmet || "—")}</td><td class="n">${r.fiyat ? r.fiyat + " ₼" : "—"}</td><td><button class="btn g sm" data-rtdel="${i}">${I("x") || "×"}</button></td></tr>`).join("") : `<tr><td colspan="8" class="mute" style="padding:14px;text-align:center">Randevu tipi yok.</td></tr>`; };
+        drawL();
+        m.querySelector("[data-rtadd]").onclick = () => { const g = (k) => { const el = m.querySelector(`[data-rt="${k}"]`); return el.type === "checkbox" ? el.checked : el.value.trim(); };
+          rows.push({ tip:g("tip"), ad:g("ad"), sure:g("sure"), doktor:g("doktor"), protokol:g("protokol"), hizmet:g("hizmet"), fiyat:+g("fiyat") || 0, web:g("web") });
+          H.log("Bölüm randevu tipi eklendi", bolum.ad + " · " + g("tip")); drawL(); redraw && redraw(); };
+        tb.addEventListener("click", (e) => { const d = e.target.closest("[data-rtdel]"); if (d) { rows.splice(+d.dataset.rtdel, 1); drawL(); redraw && redraw(); } });
+      } });
   }
   function bolumForm(existing, redraw) {
     bolumSeed(); const ALL = H.data.bolumler, e = existing || { tip:"Poliklinik", flags:{ randevuVerilir:true }, sube:"Bakü Hastanesi" }, fl = e.flags || {};
