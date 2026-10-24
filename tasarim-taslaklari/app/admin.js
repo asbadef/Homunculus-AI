@@ -1632,12 +1632,16 @@
     const unitOpts = H.units().map(u => [u.id, esc(u.tr)]);
     const mfaNote = () => H.settings.mfaRoles.includes(o.role) ? "Bu rol için 2FA sistem ayarlarında zaten zorunlu." : "";
     const suggest = () => { const w = norm(o.name).split(" ").filter(s => s && s !== "dr"); return w.length ? (USER_PFX[o.role] || "") + w[0] : ""; };
+    const persList = (H.data.personel || []);
     H.modal({ title:isNew ? "Yeni kullanıcı" : "Kullanıcıyı düzenle · " + esc(x.u),
-      body:`${fld("name", "Ad soyad", inp("name", o.name), 1)}
+      body:`${isNew && persList.length ? `<div class="fr"><label>Personelden doldur</label><select data-f2="pers"><option value="">— personel seç (İK kartından) —</option>${persList.map((pp, i) => `<option value="${i}">${esc((pp.ad + " " + pp.soyad).trim())}${pp.unvan ? " · " + esc(pp.unvan) : ""}</option>`).join("")}</select></div>` : ""}
+        ${isNew ? `<div class="fr"><label>Yetki kopyala</label><select data-f2="copy"><option value="">— başka kullanıcıdan kopyala (rol/birim/işaret) —</option>${H.data.users.filter(u => !u.temp).map(u => `<option value="${esc(u.u)}">${esc(u.name)} · ${esc((H.data.roles[u.role] || { name:u.role }).name)}</option>`).join("")}</select></div>` : ""}
+        ${fld("name", "Ad soyad", inp("name", o.name), 1)}
         ${fld("u", "Kullanıcı adı", inp("u", o.u, isNew ? 'autocomplete="off" placeholder="ör. hs.aygun"' : "disabled") + (isNew ? `<div class="adm-sub" style="margin-top:4px">Küçük harf, rakam, nokta · değiştirilemez</div>` : ""), 1)}
         ${fld("email", "E-posta", inp("email", o.email, 'type="email" placeholder="kurumsal adres"'))}
         ${fld("title", "Unvan", inp("title", o.title, 'placeholder="ör. Tibb bacısı"'))}
         ${fld("role", "Rol", sel("role", roleOpts, o.role), 1)}
+        <div class="fr"><label>Açılış ekranı</label><select data-f2="home"><option value="">— rol varsayılanı —</option>${Object.keys(H.pages).sort().map(k => `<option value="${k}"${(x && x.home) === k ? " selected" : ""}>${esc(k)}</option>`).join("")}</select></div>
         <div data-exw>${exOpts().length ? fld("extras", "Ek işaret / görev", opts("extras", exOpts(), o.extras, true) + `<div class="adm-sub" style="margin-top:4px">Rol değildir; kişinin rolüne yetki ekler. Nöbet görevi nöbet bitince kaldırılabilir.</div>`) : ""}</div>
         ${fld("units", "Birimler", opts("units", unitOpts, o.units, true) + `<div style="margin-top:6px"><button type="button" class="btn g sm" data-all>Tümünü seç</button></div>`, 1)}
         ${fld("mfa", "2FA", chk("mfa", o.mfa, "Bu kullanıcı için 2FA zorunlu") + `<div class="adm-sub" data-mfanote>${mfaNote()}</div>`)}
@@ -1652,6 +1656,17 @@
           if (k === "role") { m.querySelector("[data-mfanote]").textContent = mfaNote(); o.extras = o.extras.filter(e => H.EXTRA[e].for.includes(o.role));
             m.querySelector("[data-exw]").innerHTML = exOpts().length ? fld("extras", "Ek işaret / görev", opts("extras", exOpts(), o.extras, true)) : ""; }
         });
+        // İK→kullanıcı: personelden doldur, başka kullanıcıdan yetki kopyala, açılış ekranı
+        const pf = m.querySelector('[data-f2="pers"]'); if (pf) pf.onchange = () => { const pp = persList[+pf.value]; if (!pp) return;
+          o.name = (pp.ad + " " + pp.soyad).trim(); m.querySelector('[data-f="name"]').value = o.name;
+          if (pp.unvan) { o.title = pp.unvan; m.querySelector('[data-f="title"]').value = pp.unvan; }
+          if (!uTouched) { o.u = suggest(); m.querySelector('[data-f="u"]').value = o.u; } H.toast("Personel bilgileri dolduruldu"); };
+        const cf = m.querySelector('[data-f2="copy"]'); if (cf) cf.onchange = () => { const src = H.userBy(cf.value); if (!src) return;
+          o.role = src.role; o.extras = [...(src.extras || [])].filter(k => H.EXTRA[k] && H.EXTRA[k].for.includes(o.role)); o.units = [...(src.units === "*" ? H.units().map(u => u.id) : (src.units || []))];
+          m.querySelector('[data-f="role"]').value = o.role; m.querySelector("[data-mfanote]").textContent = mfaNote();
+          m.querySelector("[data-exw]").innerHTML = exOpts().length ? fld("extras", "Ek işaret / görev", opts("extras", exOpts(), o.extras, true)) : "";
+          m.querySelectorAll('.opts[data-f="units"] i').forEach(i => i.classList.toggle("on", o.units.includes(i.dataset.v)));
+          H.toast("Yetki kopyalandı: " + src.name + " (rol/birim/işaret)"); };
         m.addEventListener("click", e => {
           if (e.target.closest("[data-regen]")) { o.pw = H.genPassword(); m.querySelector("[data-pw]").textContent = o.pw; }
           if (e.target.closest("[data-all]")) { o.units = H.units().map(u => u.id); m.querySelectorAll('.opts[data-f="units"] i').forEach(i => i.classList.add("on")); }
@@ -1667,13 +1682,13 @@
           if (!isNew && x.u === me().u && o.role !== x.role && !H.perms({ role:o.role, extras:o.extras }).includes("admin_users")) { H.toast("Kendi rolünüzü yönetim yetkisi olmayan bir role çeviremezsiniz", "e"); return; }
           if (isNew) {
             H.data.users.push({ u:o.u, pw:o.pw, name:o.name.trim(), role:o.role, extras:o.extras.slice(), units:o.units.slice(), mfa:!!o.mfa, title:o.title.trim() || H.data.roles[o.role].az,
-              email:o.email.trim(), active:true, fails:0, lockedUntil:0, lastLogin:"—", mustChange:!!o.mustChange });
+              email:o.email.trim(), active:true, fails:0, lockedUntil:0, lastLogin:"—", mustChange:!!o.mustChange, home:(m.querySelector('[data-f2="home"]') || {}).value || undefined });
             H.log("Kullanıcı oluşturuldu", `${o.u} · ${H.data.roles[o.role].name} · ${unitNames(o.units)}`);
             H.toast(`${o.name.trim()} oluşturuldu · geçici şifreyi iletin`);
           } else {
             const ch = []; if (x.role !== o.role) ch.push(`rol ${H.data.roles[x.role].name} → ${H.data.roles[o.role].name}`);
             if (x.units.join() !== o.units.join()) ch.push("birimler"); if ((x.extras || []).join() !== o.extras.join()) ch.push("işaret/görev: " + (o.extras.map(e => H.EXTRA[e].name).join(", ") || "yok")); if (!!x.mfa !== !!o.mfa) ch.push("2FA " + (o.mfa ? "açık" : "kapalı"));
-            Object.assign(x, { name:o.name.trim(), email:o.email.trim(), title:o.title.trim(), role:o.role, extras:o.extras.slice(), units:o.units.slice(), mfa:!!o.mfa });
+            Object.assign(x, { name:o.name.trim(), email:o.email.trim(), title:o.title.trim(), role:o.role, extras:o.extras.slice(), units:o.units.slice(), mfa:!!o.mfa, home:(m.querySelector('[data-f2="home"]') || {}).value || undefined });
             H.log("Kullanıcı düzenlendi", `${x.u}${ch.length ? " · " + ch.join(", ") : ""}`);
             H.toast("Kaydedildi");
           }
