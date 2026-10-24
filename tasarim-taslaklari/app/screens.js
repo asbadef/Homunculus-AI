@@ -303,9 +303,9 @@
       } });
   }
   H.register("vezne", { title:() => H.t("m_vezne"), perm:["admission", "summary"], render(root, params = {}) {
-    const bankolar = BANKOLAR(), banko = H.state.vezneBanko || bankolar[0], donemNo = H.data.vezneDonemNo || (H.data.vezneDonemNo = 54038), tab = params.tab || "fatura";
+    const bankolar = BANKOLAR(), banko = H.state.vezneBanko || bankolar[0], donemNo = H.data.vezneDonemNo || (H.data.vezneDonemNo = 54038), tab = params.tab || "giris";
     const donemAcik = H.data.vezneDonemAcik !== false, donemYetki = H.can("vezne_donem");
-    const TABS = [["fatura", "Faturalar"], ["fiyat", "Fiyat verme"], ["indirim", "İndirim onay"], ["iade", "İade"], ["gfk", "GFK takip"], ["evrak", "Evrak takip"]];
+    const TABS = [["giris", "Giriş"], ["fatura", "Faturalar"], ["fiyat", "Fiyat verme"], ["indirim", "İndirim onay"], ["iade", "İade"], ["gfk", "GFK takip"], ["evrak", "Evrak takip"]];
     const bar = `<div class="ist-lock ${donemAcik ? "" : "closed"}">${I(donemAcik ? "key" : "lock") || ""}<span>Dönem <b>#${donemNo}</b> · <b>${donemAcik ? "Açık" : "Kapalı · işlem yapılamaz"}</b> · Banko: <b>${H.esc(banko)}</b></span><select data-vbanko title="Çalıştığın banko/kasa"${donemAcik ? "" : " disabled"}>${bankolar.map(b => `<option${b === banko ? " selected" : ""}>${H.esc(b)}</option>`).join("")}</select>${donemYetki ? `<button class="btn sm" data-vdonem>${donemAcik ? "Dönem kapat" : "Yeni dönem aç"}</button>` : ""}</div>`;
     const strip = `<div class="seg" style="margin-bottom:12px">${TABS.map(([k, l]) => `<button data-vtab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
     const panFatura = () => { const all = faturalar(), f = params.durum || "hepsi", list = f === "hepsi" ? all : all.filter(x => x.durum === f);
@@ -348,7 +348,12 @@
         <div class="tw"><table class="t"><thead><tr><th>Tip</th><th>Tarih</th><th>Talep eden</th><th style="width:90px">Tutar</th><th>Departman</th><th>Açıklama</th><th>Protokol</th><th style="width:120px">Durum</th><th style="width:150px"></th></tr></thead><tbody>
         ${list.map(x => `<tr><td class="adm-sub">${H.esc(x.tip)}</td><td class="adm-sub">${H.esc(x.tarih)}</td><td><b>${H.esc(vzName(x.eden))}</b></td><td class="n">${x.tutar} ₼</td><td class="adm-sub">${H.esc(x.dep)}</td><td class="adm-sub">${H.esc(x.aciklama)}</td><td class="mono adm-sub">${H.esc(x.proto)}<div class="adm-sub" style="font-size:11px">${H.esc(zincStr(x.zincir))}</div></td><td><span class="tag ${/Onaylandı|tamamlandı/.test(x.durum) ? "ok" : x.durum === "Reddedildi" ? "w" : ""}">${x.durum}</span></td><td>${x.durum === "Onay bekliyor" && can ? `<button class="btn p sm" data-iaap="${x.id}">Onayla</button> <button class="btn g sm" data-iared="${x.id}">Reddet</button>` : x.durum === "Onay bekliyor" ? `<span class="adm-sub">yetki yok</span>` : `<span class="adm-sub">—</span>`}</td></tr>`).join("") || `<tr><td colspan="9" class="mute" style="padding:16px;text-align:center">Kayıt yok.</td></tr>`}</tbody></table></div>
         <p class="adm-sub" style="margin-top:8px">Avans/fatura iadeleri yetkili rol (İade onayla) tarafından onaylanır. Onay zinciri (seviye 1/2/3) gerçek kurguda eklenir.</p>`; };
-    const panel = ({ fatura:panFatura, fiyat:panFiyat, indirim:panIndirim, iade:panIade, gfk:panGfk, evrak:panEvrak })[tab]();
+    const panGiris = () => { const son = (H.data.patients || []).slice(-8).reverse();
+      return `<div class="box"><h5>Hasta kabul / arama</h5><p class="adm-sub" style="margin:4px 0 0">Yukarıdaki "Hasta kabul" çubuğundan FİN ya da hasta no ile arayın; kayıt yoksa yeni kayıt açılır. Son gelen hastalar aşağıda — satıra tıklayın.</p></div>
+        <div class="ist-sec ist-hd"><h5>Son hastalar</h5></div>
+        <div class="tw"><table class="t"><thead><tr><th style="width:110px">Hasta no</th><th>Hasta</th><th>Geliş</th><th>Bölüm</th><th style="width:110px">Protokol</th></tr></thead><tbody>
+        ${son.length ? son.map(pp => { const bb = H.bed(pp.bed), uu = bb && H.unit(bb.unitId); return `<tr data-h3open="${pp.id}" style="cursor:pointer"><td class="mono adm-sub">${H.esc(pp.hn || "—")}</td><td><b>${H.esc(vzName(pp.name))}</b></td><td>${H.encIcon(pp)} ${H.esc((H.ENC[H.encOf(pp)] || {}).label || H.encOf(pp))} ${H.protoLock(pp)}</td><td class="adm-sub">${uu ? H.esc(uu.tr) : "—"}</td><td class="mono adm-sub">${H.esc(pp.proto || "—")}</td></tr>`; }).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">Hasta yok.</td></tr>`}</tbody></table></div>`; };
+    const panel = ({ giris:panGiris, fatura:panFatura, fiyat:panFiyat, indirim:panIndirim, iade:panIade, gfk:panGfk, evrak:panEvrak })[tab]();
     const RAIL = [
       ["Vezne paneli", [["Hasta arama", ""], ["Randevu arama", ""], ["Son hastalar", ""], ["Reçete listesi", ""], ["Gizli / VIP hasta listesi", ""], ["Doktor iş listesi", ""]]],
       ["Vezne iş havuzu", [["Evrak takip", "evrak"], ["Ödeme takip", "fatura"], ["GFK takip", "gfk"], ["Onay bekleyen indirimler", "indirim"], ["Onay bekleyen iadeler", "iade"], ["Fiyat teklifleri", "fiyat"], ["Toplu fatura işlemleri", ""], ["Protokol listesi", ""], ["Kurum değişiklik onay", ""]]],
@@ -387,6 +392,7 @@
     };
     root.onclick = (e) => {
       const fnr = e.target.closest("[data-finara]"); if (fnr) { vzFinAra(root); return; }
+      const h3o = e.target.closest("[data-h3open]"); if (h3o) return H.go("hasta360", { pid:h3o.dataset.h3open });
       const vt = e.target.closest("[data-vtab]"); if (vt) return H.go("vezne", { tab:vt.dataset.vtab });
       if (e.target.closest("[data-vdonem]")) { if (!donemYetki) { H.toast("Dönem açma/kapatma yetkiniz yok.", "e"); return; } H.data.vezneDonemAcik = !donemAcik; if (donemAcik) { H.log("Vezne dönem kapatıldı", "#" + donemNo + " · " + banko); H.toast("Dönem kapatıldı · kapatmadan işlem yapılamaz", "w"); } else { H.data.vezneDonemNo = donemNo + 1; H.log("Vezne yeni dönem açıldı", "#" + (donemNo + 1)); H.toast("Yeni dönem açıldı: #" + (donemNo + 1)); } return H.go("vezne", params); }
       if (!donemAcik) { if (e.target.closest("[data-fadd],[data-tahsil],[data-frm],[data-evteslim]")) { H.toast("Dönem kapalı · önce yeni dönem açın.", "e"); return; } }
