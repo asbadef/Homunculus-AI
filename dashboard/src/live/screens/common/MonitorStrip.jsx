@@ -31,8 +31,9 @@ function NbpValue({ cell, unit }) {
   const age = ageText(t, cell.measuredAgeS);
   return (
     <>
-      <span aria-hidden="true">{`${systolic}/${diastolic} (${mean})`}</span>
-      <small aria-hidden="true" className="ml-0.5 font-text text-10.5 font-semibold text-mute">{unit}</small>
+      {/* The numbers and the unit never break; the measured words may wrap, but their "≤" stays with the time (a no-break space in the string). */}
+      <span aria-hidden="true" className="whitespace-nowrap">{`${systolic}/${diastolic} (${mean})`}</span>
+      <small aria-hidden="true" className="ml-0.5 whitespace-nowrap font-text text-10.5 font-semibold text-mute">{unit}</small>
       <small aria-hidden="true" className="ml-1 font-text text-10.5 font-semibold text-mute">
         {t("monitor.nbpMeasured", { time, age })}
       </small>

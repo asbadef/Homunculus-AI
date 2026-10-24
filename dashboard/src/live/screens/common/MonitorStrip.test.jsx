@@ -6,6 +6,7 @@ import React from "react";
 import { render, screen, within } from "@testing-library/react";
 import { I18nProvider } from "../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../i18n/dates.js";
+import { LANG_CODES } from "../../i18n/langs.js";
 import { AT, NBP_CHANGED_AT, STAGE_OFF, bed, param, strip, unassigned } from "../../data/shadow.testutil.js";
 import { MonitorFeedChip, MonitorStrip } from "./MonitorStrip.jsx";
 
@@ -142,6 +143,7 @@ describe("every value with its age, and nothing it cannot vouch for", () => {
 describe("NBP, with the time its value last changed", () => {
   const NBP = param("nbp", [118, 79, 92]);                 // changed ten minutes before AT
   const TIME = hhmm(Date.parse(NBP_CHANGED_AT));
+  const NBSP = String.fromCharCode(0xa0);                  // U+00A0, the no-break space — not a plain space
 
   it("shows S/D (M), the unit, and «ölçmə ≤ HH:MM» with how long ago", () => {
     show(<Strip entry={card([HR, NBP])} />);
@@ -197,6 +199,45 @@ describe("NBP, with the time its value last changed", () => {
   it("names its evidence in the full variant", () => {
     show(<Strip variant="full" entry={card([NBP])} />);
     expect(within(region()).getByText("Monitor ekranı ilə eynidir")).toBeInTheDocument();
+  });
+
+  // Measured in Chrome with the real fonts: at 390 px the line broke as «118/79 (92) mmHg ölçmə ≤ /
+  // 13:50 (10 dəq)», at 320 px as «118/79 / (92) mmHg …», in Russian as «мм рт. / ст. …». The bound's
+  // "≤" must stay with its time, and the numbers and the unit must not break; the measured words
+  // themselves may wrap (the Russian ones are wider than the cell at 320 px).
+  it("never breaks the numbers or the unit across lines, but lets the measured words wrap", () => {
+    show(<Strip entry={card([NBP])} />, "ru");
+    const [numbers, unit, measured] = screen.getByRole("definition").children;   // the numbers, the unit, the measured words
+    expect(numbers.className.split(/\s+/)).toContain("whitespace-nowrap");
+    expect(unit.className.split(/\s+/)).toContain("whitespace-nowrap");
+    expect(measured.className.split(/\s+/)).not.toContain("whitespace-nowrap");
+  });
+
+  it("keeps «≤» and its time together with a no-break space, in every language", () => {
+    for (const lang of LANG_CODES) {
+      const { unmount } = show(<Strip entry={card([NBP])} />, lang);
+      const measured = within(screen.getByRole("definition")).getByText(/≤/);
+      expect(measured.textContent, lang).toContain(`≤${NBSP}${TIME} (`);
+      unmount();
+    }
+  });
+
+  it("hides the numbers, the unit and the time from a screen reader, which gets the one sentence", () => {
+    show(<Strip entry={card([NBP])} />);
+    const nbp = screen.getByRole("definition");
+    for (const part of ["118/79 (92)", "mmHg", `ölçmə ≤ ${TIME} (10 dəq)`]) {
+      expect(within(nbp).getByText(part), part).toHaveAttribute("aria-hidden", "true");
+    }
+    const said = within(nbp).getByText(/^118 bölü 79/);
+    expect(said).toHaveClass("sr-only");
+    expect(said).not.toHaveAttribute("aria-hidden");
+  });
+
+  it("writes «ölçmə gözlənilir» in the muted colour: nothing went old, so no attention colour", () => {
+    show(<Strip entry={card([param("nbp", null)])} />);
+    const waiting = screen.getByText("ölçmə gözlənilir");
+    expect(waiting).toHaveClass("text-mute");
+    expect(waiting).not.toHaveClass("text-att-ink");
   });
 });
 
