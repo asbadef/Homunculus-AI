@@ -1156,13 +1156,15 @@
         <div class="fr"><label>SAMHI hasta fark oranı (%)</label>${inp("samhiFarkOran")}</div>
         <div class="fr"><label>Ventilatör sayısı</label>${inp("ventilator")}</div>
         <div class="fr"><label>Randevu çizelge süresi (dk)</label>${inp("randevuSure")}</div>
+        <div class="fr"><label>Ayaktan epikriz şablonu</label><select data-f="epiAyaktan"><option value="">— seçiniz —</option>${EPIKRIZ_SABLON.map(s => `<option${e.epiAyaktan === s ? " selected" : ""}>${esc(s)}</option>`).join("")}</select></div>
+        <div class="fr"><label>Yatan epikriz şablonu</label><select data-f="epiYatan"><option value="">— seçiniz —</option>${EPIKRIZ_SABLON.map(s => `<option${e.epiYatan === s ? " selected" : ""}>${esc(s)}</option>`).join("")}</select></div>
       </div>
       <div class="fr" style="margin-top:8px"><label>Özellikler</label><div class="icd-oz">${BOLUM_FLAGS.map(([k, l]) => `<label><input type="checkbox" data-bf="${k}"${fl[k] ? " checked" : ""}> ${esc(l)}</label>`).join("")}</div></div>`,
       actions:`${existing ? `<button class="btn g" data-bldelf>${I("trash")}Sil</button>` : ""}<span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-blsave>Kaydet</button>`,
       onMount(m) {
         m.querySelector("[data-blsave]").onclick = () => { const g = (k) => (m.querySelector(`[data-f="${k}"]`).value || "").trim(); const ad = g("ad"); if (!ad) { H.toast("Ad gerekli.", "w"); return; }
           const flags = {}; m.querySelectorAll("[data-bf]:checked").forEach(c => flags[c.dataset.bf] = true);
-          const rec = { kod:g("kod"), ad, kisa:g("kisa") || ad, yabanci:g("yabanci"), brans:g("brans") || ad, tip:g("tip"), sorumlu:g("sorumlu"), telefon:g("telefon"), masraf:g("masraf"), sube:g("sube"), minYas:g("minYas"), maxYas:g("maxYas"), samhiFarkOran:g("samhiFarkOran"), ventilator:g("ventilator"), randevuSure:g("randevuSure"), flags };
+          const rec = { kod:g("kod"), ad, kisa:g("kisa") || ad, yabanci:g("yabanci"), brans:g("brans") || ad, tip:g("tip"), sorumlu:g("sorumlu"), telefon:g("telefon"), masraf:g("masraf"), sube:g("sube"), minYas:g("minYas"), maxYas:g("maxYas"), samhiFarkOran:g("samhiFarkOran"), ventilator:g("ventilator"), randevuSure:g("randevuSure"), epiAyaktan:g("epiAyaktan"), epiYatan:g("epiYatan"), flags };
           if (existing) Object.assign(e, rec); else ALL.unshift(Object.assign({ id:"bol" + Date.now() }, rec));
           H.log(existing ? "Bölüm güncellendi" : "Bölüm eklendi", ad); H.closeModal(); H.toast("Kaydedildi"); redraw(); };
         const del = m.querySelector("[data-bldelf]"); if (del) del.onclick = () => { if (!confirm("Bu bölüm silinsin mi?")) return; const i = ALL.findIndex(x => x.id === e.id); if (i >= 0) ALL.splice(i, 1); H.closeModal(); H.toast("Silindi", "w"); redraw(); };
@@ -1512,12 +1514,17 @@
       const tr = e.target.closest("[data-hkedit]"); if (tr) { if (!can) { H.toast("Düzenleme yetkiniz yok.", "e"); return; } const row = ALL.find(x => x.id === tr.dataset.hkedit); if (row) hizmetKartForm(row, draw); }
     });
   }
+  // Hizmet Kartı · zengin sekmeler (#357-358): Genel + Tarifeler / Paketler / Bağlı İşlemler / Kategoriler / Bölüm-Personel / Hizmet Verilme Yeri / Kurallar.
+  const HK_KURALLAR = [["euroScore", "Euro Score girilebilir"], ["teklifHaric", "Teklifte çıkmasın"], ["yabanciKdv", "Yabancı hastada KDV'li"], ["taniZorunlu", "Tanı zorunlu"], ["randevulu", "Randevulu işlem"], ["beklemeyeDus", "Bekleyene düşsün"], ["farkYok", "Hastaya fark atmasın"]];
   function hizmetKartForm(existing, redraw) {
-    hkSeed(); bolumSeed(); const ALL = H.data.hizmetKartlari, e = existing || { tip:"Hizmet", kdv:0, paraBirimi:"₼", doktorSec:"Opsiyonel", flags:{} }, fl = e.flags || {};
+    hkSeed(); bolumSeed(); secSeed(); const ALL = H.data.hizmetKartlari, e = existing || { tip:"Hizmet", kdv:0, paraBirimi:"₼", doktorSec:"Opsiyonel", flags:{}, kurallar:{} }, fl = e.flags || {}, kr = e.kurallar || {};
     const inp = (k, ph, t) => `<input data-f="${k}" ${t ? `type="${t}"` : ""} value="${esc(e[k] != null ? e[k] : "")}" placeholder="${ph || ""}">`;
     const sel = (k, list) => `<select data-f="${k}">${list.map(x => `<option${(e[k] || "") === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select>`;
+    const ta = (k, ph) => `<textarea data-ta="${k}" rows="7" placeholder="${ph}" style="width:100%">${esc((e[k] || []).join("\n"))}</textarea>`;
+    const kurumlar = secGet("kurum") || [], HK_SUBTABS = [["genel", "Genel"], ["tarife", "Tarifeler"], ["paket", "Paketler"], ["bagli", "Bağlı işlemler"], ["kategori", "Kategoriler"], ["bolper", "Bölüm / personel"], ["yer", "Verilme yeri"], ["kural", "Kurallar"]];
     H.modal({ title:existing ? "Hizmet kartı düzenle" : "Yeni hizmet kartı", wide:true,
-      body:`<div class="icd-form">
+      body:`<div class="tabs adm-sub-tabs" style="margin-bottom:12px">${HK_SUBTABS.map(([k, l], i) => `<span data-hksub="${k}" class="${i ? "" : "on"}">${l}</span>`).join("")}</div>
+      <div data-hkpane="genel"><div class="icd-form">
         <div class="fr"><label>Kod</label>${inp("kod", "HK-001")}</div>
         <div class="fr"><label>Adı</label>${inp("ad", "Hizmet adı")}</div>
         <div class="fr"><label>Yabancı adı</label>${inp("yabanci", "Service name")}</div>
@@ -1531,19 +1538,38 @@
         <div class="fr"><label>Mesaj konusu</label>${inp("mesajKonu")}</div>
         <div class="fr"><label>Rapor bölümü</label>${inp("raporBolum")}</div>
         <div class="fr"><label>Patoloji tipi</label>${inp("patolojiTip")}</div>
-        <div class="fr"><label>Şube</label>${inp("sube", "Bakü Hastanesi")}</div>
         <div class="fr"><label>İşlem süresi (dk)</label>${inp("islemSure", "0", "number")}</div>
         <div class="fr"><label>Dış no</label>${inp("disNo")}</div>
         <div class="fr"><label>Başlangıç tarihi</label><input type="date" data-f="baslangic" value="${esc(e.baslangic || "")}"></div>
         <div class="fr"><label>Bitiş tarihi</label><input type="date" data-f="bitis" value="${esc(e.bitis || "")}"></div>
       </div>
-      <div class="fr" style="margin-top:8px"><label>Özellikler</label><div class="icd-oz">${HK_FLAGS.map(([k, l]) => `<label><input type="checkbox" data-hf="${k}"${fl[k] ? " checked" : ""}> ${esc(l)}</label>`).join("")}</div></div>`,
+      <div class="fr" style="margin-top:8px"><label>Özellikler</label><div class="icd-oz">${HK_FLAGS.map(([k, l]) => `<label><input type="checkbox" data-hf="${k}"${fl[k] ? " checked" : ""}> ${esc(l)}</label>`).join("")}</div></div></div>
+      <div data-hkpane="tarife" class="hidden"><p class="adm-sub" style="margin-top:0">Kurum / sigortaya göre liste fiyatları (₼). Boş bırakılan "Fiyat"tan gelir.</p>
+        <div class="tw"><table class="t"><thead><tr><th>Kurum / liste</th><th style="width:160px">Fiyat (₼)</th></tr></thead><tbody>${kurumlar.map(k => `<tr><td>${esc(k)}</td><td><input type="number" data-tar="${esc(k)}" value="${esc((e.tarife && e.tarife[k]) != null ? e.tarife[k] : "")}" placeholder="—" style="width:150px"></td></tr>`).join("")}</tbody></table></div></div>
+      <div data-hkpane="paket" class="hidden"><label class="dc-chk" style="margin-bottom:8px"><input type="checkbox" data-f3="paketMi"${e.paketMi ? " checked" : ""}> Bu hizmet bir pakettir</label>
+        <p class="adm-sub" style="margin:0 0 6px">Paket içeriği — her satıra bir hizmet adı.</p>${ta("paket", "ör. Tam kan sayımı\nİdrar analizi")}</div>
+      <div data-hkpane="bagli" class="hidden"><p class="adm-sub" style="margin-top:0">Bu hizmet seçilince otomatik eklenen bağlı işlemler — her satıra bir hizmet.</p>${ta("bagli", "ör. Anestezi\nAmeliyathane ek süre")}</div>
+      <div data-hkpane="kategori" class="hidden"><p class="adm-sub" style="margin-top:0">Hizmet kategorileri / etiketleri — her satıra bir kategori.</p>${ta("kategori", "ör. Cerrahi\nGünübirlik")}</div>
+      <div data-hkpane="bolper" class="hidden"><p class="adm-sub" style="margin-top:0">Hizmetin verilebileceği bölümler (işaretli = verilebilir). İşaretsizse tüm bölümlerde geçerli.</p>
+        <div class="icd-oz" style="max-height:320px;overflow:auto">${H.klinikBolumler().map(b => `<label><input type="checkbox" data-bol="${esc(b.ad)}"${(e.bolumler || []).includes(b.ad) ? " checked" : ""}> ${esc(b.ad)}</label>`).join("")}</div></div>
+      <div data-hkpane="yer" class="hidden"><p class="adm-sub" style="margin-top:0">Hizmetin verildiği şubeler — her satıra bir şube.</p>${ta("subeler", "Bakü Hastanesi")}</div>
+      <div data-hkpane="kural" class="hidden"><p class="adm-sub" style="margin-top:0">Faturalama ve iş kuralları.</p>
+        <div class="icd-oz">${HK_KURALLAR.map(([k, l]) => `<label><input type="checkbox" data-kr="${k}"${kr[k] ? " checked" : ""}> ${esc(l)}</label>`).join("")}</div></div>`,
       actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
-      onMount(m) { m.querySelector("[data-ok]").onclick = () => {
+      onMount(m) {
+        m.querySelectorAll("[data-hksub]").forEach(s => s.onclick = () => {
+          m.querySelectorAll("[data-hksub]").forEach(x => x.classList.toggle("on", x === s));
+          m.querySelectorAll("[data-hkpane]").forEach(p => p.classList.toggle("hidden", p.dataset.hkpane !== s.dataset.hksub));
+        });
+        m.querySelector("[data-ok]").onclick = () => {
         const g = (k) => { const el = m.querySelector(`[data-f="${k}"]`); return el ? (el.type === "number" ? (+el.value || 0) : (el.value || "").trim()) : ""; };
         const ad = g("ad"); if (!ad) { H.toast("Ad gerekli.", "w"); return; }
         const flags = {}; m.querySelectorAll("[data-hf]:checked").forEach(c => flags[c.dataset.hf] = true);
-        const rec = { kod:g("kod") || "HK-" + String(ALL.length + 1).padStart(3, "0"), ad, yabanci:g("yabanci"), tip:g("tip"), fiyat:g("fiyat"), kdv:g("kdv"), maliyet:g("maliyet"), paraBirimi:"₼", doktorSec:g("doktorSec"), indirimKod:g("indirimKod"), kdvMuaf:g("kdvMuaf"), mesajKonu:g("mesajKonu"), raporBolum:g("raporBolum"), patolojiTip:g("patolojiTip"), sube:g("sube"), islemSure:g("islemSure"), disNo:g("disNo"), baslangic:g("baslangic"), bitis:g("bitis"), flags };
+        const kurallar = {}; m.querySelectorAll("[data-kr]:checked").forEach(c => kurallar[c.dataset.kr] = true);
+        const lst = (k) => (m.querySelector(`[data-ta="${k}"]`).value || "").split("\n").map(s => s.trim()).filter(Boolean);
+        const tarife = {}; m.querySelectorAll("[data-tar]").forEach(i => { if (i.value !== "") tarife[i.dataset.tar] = +i.value || 0; });
+        const bolumler = [...m.querySelectorAll("[data-bol]:checked")].map(c => c.dataset.bol);
+        const rec = { kod:g("kod") || "HK-" + String(ALL.length + 1).padStart(3, "0"), ad, yabanci:g("yabanci"), tip:g("tip"), fiyat:g("fiyat"), kdv:g("kdv"), maliyet:g("maliyet"), paraBirimi:"₼", doktorSec:g("doktorSec"), indirimKod:g("indirimKod"), kdvMuaf:g("kdvMuaf"), mesajKonu:g("mesajKonu"), raporBolum:g("raporBolum"), patolojiTip:g("patolojiTip"), sube:(lst("subeler")[0] || "Bakü Hastanesi"), islemSure:g("islemSure"), disNo:g("disNo"), baslangic:g("baslangic"), bitis:g("bitis"), flags, kurallar, tarife, paketMi:m.querySelector('[data-f3="paketMi"]').checked, paket:lst("paket"), bagli:lst("bagli"), kategori:lst("kategori"), bolumler, subeler:lst("subeler") };
         if (existing) Object.assign(existing, rec); else ALL.unshift(Object.assign({ id:"hk" + Date.now() }, rec));
         H.log(existing ? "Hizmet kartı güncellendi" : "Hizmet kartı eklendi", rec.kod + " · " + ad); H.closeModal(); H.toast("Kaydedildi"); redraw && redraw();
       }; } });
@@ -1700,6 +1726,8 @@
     const o = isNew ? { name:"", u:"", email:"", title:"", role:"hemsire", extras:[], units:[], mfa:false, mustChange:true, pw:H.genPassword() }
       : { name:x.name, u:x.u, email:x.email || "", title:x.title || "", role:x.role, extras:[...(x.extras || [])], units:[...(x.units || [])], mfa:!!x.mfa };
     let uTouched = !isNew;
+    o.erisim = isNew ? [] : (x.erisim || []).map(r => ({ ...r }));
+    const ERIS_PROG = ["SMS Login", "Muhasebe Login", "E-Nabız", "Laboratuvar (LIS)", "Radyoloji (RIS/PACS)", "Diğer"];
     const roleOpts = Object.entries(H.data.roles).map(([k, r]) => [k, `${r.group} · ${r.name} · ${r.az}`]);
     const exOpts = () => Object.entries(H.EXTRA).filter(([, e]) => e.for.includes(o.role)).map(([k, e]) => [k, e.name + (e.duty ? " (nöbet görevi)" : "")]);
     const unitOpts = H.units().map(u => [u.id, esc(u.tr)]);
@@ -1718,6 +1746,9 @@
         <div data-exw>${exOpts().length ? fld("extras", "Ek işaret / görev", opts("extras", exOpts(), o.extras, true) + `<div class="adm-sub" style="margin-top:4px">Rol değildir; kişinin rolüne yetki ekler. Nöbet görevi nöbet bitince kaldırılabilir.</div>`) : ""}</div>
         ${fld("units", "Birimler", opts("units", unitOpts, o.units, true) + `<div style="margin-top:6px"><button type="button" class="btn g sm" data-all>Tümünü seç</button></div>`, 1)}
         ${fld("mfa", "2FA", chk("mfa", o.mfa, "Bu kullanıcı için 2FA zorunlu") + `<div class="adm-sub" data-mfanote>${mfaNote()}</div>`)}
+        <div class="fr"><label>Erişim bilgileri</label><details class="gv-grp"><summary><b>Dış sistem girişleri</b> <span class="adm-sub" data-eriscount></span></summary>
+          <div class="adm-bar" style="margin:8px 0"><span class="adm-sub">SMS / muhasebe gibi dış sistemlerin kullanıcı adı-şifresi.</span><span class="spacer"></span><button type="button" class="btn g sm" data-erisadd>+ Satır</button></div>
+          <div data-eriswrap></div></details></div>
         ${isNew ? `${fld("pw", "Geçici şifre", `<div class="adm-pw"><span data-pw>${esc(o.pw)}</span><button type="button" class="btn sm" data-regen>${I("swap")}Yeniden üret</button></div>
             <div class="adm-sub" style="margin-top:4px">Kullanıcıya yüz yüze ya da telefonla iletin; e-postayla göndermeyin.</div>`)}
           ${fld("mustChange", "", chk("mustChange", o.mustChange, "İlk girişte şifresini değiştirsin"))}` : ""}`,
@@ -1729,6 +1760,14 @@
           if (k === "role") { m.querySelector("[data-mfanote]").textContent = mfaNote(); o.extras = o.extras.filter(e => H.EXTRA[e].for.includes(o.role));
             m.querySelector("[data-exw]").innerHTML = exOpts().length ? fld("extras", "Ek işaret / görev", opts("extras", exOpts(), o.extras, true)) : ""; }
         });
+        // Erişim bilgileri (dış sistem girişleri) — düzenlenebilir satırlar
+        const ew = m.querySelector("[data-eriswrap]"), ec = m.querySelector("[data-eriscount]");
+        const drawEris = () => { ec.textContent = o.erisim.length ? "· " + o.erisim.length + " kayıt" : "";
+          ew.innerHTML = o.erisim.length ? `<div class="tw"><table class="t"><thead><tr><th>Program</th><th>Şube</th><th>Kullanıcı</th><th>Şifre</th><th>Uyg. ID</th><th style="width:36px"></th></tr></thead><tbody>${o.erisim.map((r, i) => `<tr><td><select data-er="prog" data-i="${i}">${ERIS_PROG.map(p => `<option${r.prog === p ? " selected" : ""}>${esc(p)}</option>`).join("")}</select></td><td><input data-er="sube" data-i="${i}" value="${esc(r.sube || "Bakü Hastanesi")}"></td><td><input data-er="user" data-i="${i}" value="${esc(r.user || "")}"></td><td><input data-er="pw" data-i="${i}" type="password" value="${esc(r.pw || "")}"></td><td><input data-er="appid" data-i="${i}" value="${esc(r.appid || "")}" style="width:80px"></td><td><button type="button" class="btn g sm" data-erdel="${i}">${I("x") || "×"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="adm-sub">Kayıt yok.</div>`; };
+        drawEris();
+        m.querySelector("[data-erisadd]").onclick = () => { o.erisim.push({ prog:"SMS Login", sube:"Bakü Hastanesi", user:"", pw:"", appid:"" }); drawEris(); };
+        ew.addEventListener("input", (e) => { const f = e.target.closest("[data-er]"); if (f) o.erisim[+f.dataset.i][f.dataset.er] = f.value; });
+        ew.addEventListener("click", (e) => { const d = e.target.closest("[data-erdel]"); if (d) { o.erisim.splice(+d.dataset.erdel, 1); drawEris(); } });
         // İK→kullanıcı: personelden doldur, başka kullanıcıdan yetki kopyala, açılış ekranı
         const pf = m.querySelector('[data-f2="pers"]'); if (pf) pf.onchange = () => { const pp = persList[+pf.value]; if (!pp) return;
           o.name = (pp.ad + " " + pp.soyad).trim(); m.querySelector('[data-f="name"]').value = o.name;
@@ -1755,13 +1794,13 @@
           if (!isNew && x.u === me().u && o.role !== x.role && !H.perms({ role:o.role, extras:o.extras }).includes("admin_users")) { H.toast("Kendi rolünüzü yönetim yetkisi olmayan bir role çeviremezsiniz", "e"); return; }
           if (isNew) {
             H.data.users.push({ u:o.u, pw:o.pw, name:o.name.trim(), role:o.role, extras:o.extras.slice(), units:o.units.slice(), mfa:!!o.mfa, title:o.title.trim() || H.data.roles[o.role].az,
-              email:o.email.trim(), active:true, fails:0, lockedUntil:0, lastLogin:"—", mustChange:!!o.mustChange, home:(m.querySelector('[data-f2="home"]') || {}).value || undefined });
+              email:o.email.trim(), active:true, fails:0, lockedUntil:0, lastLogin:"—", mustChange:!!o.mustChange, home:(m.querySelector('[data-f2="home"]') || {}).value || undefined, erisim:o.erisim.slice() });
             H.log("Kullanıcı oluşturuldu", `${o.u} · ${H.data.roles[o.role].name} · ${unitNames(o.units)}`);
             H.toast(`${o.name.trim()} oluşturuldu · geçici şifreyi iletin`);
           } else {
             const ch = []; if (x.role !== o.role) ch.push(`rol ${H.data.roles[x.role].name} → ${H.data.roles[o.role].name}`);
             if (x.units.join() !== o.units.join()) ch.push("birimler"); if ((x.extras || []).join() !== o.extras.join()) ch.push("işaret/görev: " + (o.extras.map(e => H.EXTRA[e].name).join(", ") || "yok")); if (!!x.mfa !== !!o.mfa) ch.push("2FA " + (o.mfa ? "açık" : "kapalı"));
-            Object.assign(x, { name:o.name.trim(), email:o.email.trim(), title:o.title.trim(), role:o.role, extras:o.extras.slice(), units:o.units.slice(), mfa:!!o.mfa, home:(m.querySelector('[data-f2="home"]') || {}).value || undefined });
+            Object.assign(x, { name:o.name.trim(), email:o.email.trim(), title:o.title.trim(), role:o.role, extras:o.extras.slice(), units:o.units.slice(), mfa:!!o.mfa, home:(m.querySelector('[data-f2="home"]') || {}).value || undefined, erisim:o.erisim.slice() });
             H.log("Kullanıcı düzenlendi", `${x.u}${ch.length ? " · " + ch.join(", ") : ""}`);
             H.toast("Kaydedildi");
           }
@@ -1869,10 +1908,11 @@
     const kat = H.YETKI_KATALOG || [], SUBS = [["yetki", "Yetkiler"], ["form", "Formlar"], ["rol", "Roller"], ["deger", "Değerler"]];
     let pane = "";
     if (sub === "yetki") {
-      const toplam = kat.reduce((a, g) => a + g[1].length, 0);
-      pane = `<p class="adm-sub" style="margin:0 0 8px">İnce-taneli yetkiler (${toplam} yetki, ${kat.length} grup) · referans HBYS'den. Grubu açıp işaretleyin; <b>${esc(H.data.roles[role].name)}</b> rolüne uygulanır.</p>
-        ${kat.map((g, gi) => { const on = g[1].filter(p => dSet.includes(p)).length; return `<details class="gv-grp"${on ? " open" : ""}><summary><b>${esc(g[0])}</b> <span class="adm-sub">(${on}/${g[1].length})</span></summary>
-          <div class="gv-perms">${g[1].map((p, pi) => `<label class="dc-chk"><input type="checkbox" data-gvp="${gi}:${pi}"${dSet.includes(p) ? " checked" : ""}${ro ? " disabled" : ""}> ${esc(p)}</label>`).join("")}</div></details>`; }).join("")}`;
+      const toplam = kat.reduce((a, g) => a + g[1].length, 0), gq = norm(AD.gvq || "");
+      const kf = gq ? kat.map((g, gi) => [gi, g[0], g[1].map((p, pi) => [pi, p]).filter(([, p]) => norm(p).includes(gq))]).filter(x => x[2].length || norm(x[1]).includes(gq)) : kat.map((g, gi) => [gi, g[0], g[1].map((p, pi) => [pi, p])]);
+      pane = `<p class="adm-sub" style="margin:0 0 8px">İnce-taneli yetkiler (${toplam} yetki, ${kat.length} grup) · referans HBYS'den. Grubu açıp işaretleyin ya da "Ağaçtan seç" ile toplu seçin; <b>${esc(H.data.roles[role].name)}</b> rolüne uygulanır. Seçili: <b>${dSet.length}</b>.</p>
+        ${kf.map(([gi, gad, perms]) => { const on = kat[gi][1].filter(p => dSet.includes(p)).length; return `<details class="gv-grp"${on || gq ? " open" : ""}><summary><b>${esc(gad)}</b> <span class="adm-sub">(${on}/${kat[gi][1].length})</span></summary>
+          <div class="gv-perms">${perms.map(([pi, p]) => `<label class="dc-chk"><input type="checkbox" data-gvp="${gi}:${pi}"${dSet.includes(p) ? " checked" : ""}${ro ? " disabled" : ""}> ${esc(p)}</label>`).join("")}</div></details>`; }).join("") || `<div class="empty">Eşleşen yetki yok.</div>`}`;
     } else if (sub === "form") {
       pane = `<p class="adm-sub" style="margin:0 0 8px">Modül (form) erişimi · <b>${esc(H.data.roles[role].name)}</b> hangi ekranları açabilir.</p>
         <div class="icd-oz">${GV_MODULLER.map(m => `<label class="dc-chk"><input type="checkbox" data-gvf="${esc(m)}"${fSet.includes(m) ? " checked" : ""}${ro ? " disabled" : ""}> ${esc(m)}</label>`).join("")}</div>`;
@@ -1887,10 +1927,17 @@
         ${GV_VERI.map(v => `<tr><td>${esc(v)}</td><td><label class="dc-chk"><input type="checkbox" data-gvv="${esc(v)}"${vSet.includes(v) ? " checked" : ""}${ro ? " disabled" : ""}> Tümü</label></td></tr>`).join("")}
         </tbody></table></div>`;
     }
-    body.innerHTML = `<div class="adm-bar" style="margin-bottom:10px"><label class="adm-sub">Kullanıcı grubu / rol</label><select data-gvrole>${roles.map(([k, r]) => `<option value="${k}"${k === role ? " selected" : ""}>${esc(r.name)}</option>`).join("")}</select><span class="spacer"></span><span class="adm-sub">Değişiklikler denetim kaydına yazılır.</span></div>
+    const pickable = sub === "yetki" || sub === "form" || sub === "deger";
+    body.innerHTML = `<div class="adm-bar" style="margin-bottom:10px"><label class="adm-sub">Kullanıcı grubu / rol</label><select data-gvrole>${roles.map(([k, r]) => `<option value="${k}"${k === role ? " selected" : ""}>${esc(r.name)}</option>`).join("")}</select>${sub === "yetki" ? `<input data-gvq placeholder="Yetki ara" value="${esc(AD.gvq || "")}" style="min-width:200px">` : ""}<span class="spacer"></span>${pickable && !ro ? `<button class="btn p sm" data-gvadd>${I("list") || ""} Ağaçtan seç</button>` : ""}<span class="adm-sub">Değişiklikler denetim kaydına yazılır.</span></div>
       <div class="tabs adm-sub-tabs" style="margin-bottom:12px">${SUBS.map(([k, l]) => `<span data-gvsub="${k}" class="${sub === k ? "on" : ""}">${l}</span>`).join("")}</div>
       <div>${pane}</div>`;
     body.querySelector("[data-gvrole]").onchange = (e) => { AD.gvRole = e.target.value; tabGuvenlik(body); };
+    const gvq = body.querySelector("[data-gvq]"); if (gvq) gvq.oninput = (e) => { AD.gvq = e.target.value; const pos = e.target.selectionStart; tabGuvenlik(body); const ni = body.querySelector("[data-gvq]"); if (ni) { ni.focus(); ni.setSelectionRange(pos, pos); } };
+    const addBtn = body.querySelector("[data-gvadd]"); if (addBtn) addBtn.onclick = () => {
+      if (sub === "yetki") gvSelect("Yetki seçim · " + H.data.roles[role].name, kat, dSet, () => { H.log("Güvenlik yetkisi (toplu)", H.data.roles[role].name + ": " + dSet.length + " yetki"); tabGuvenlik(body); });
+      else if (sub === "form") gvSelect("Form (modül) seçim · " + H.data.roles[role].name, [["Modüller", GV_MODULLER]], fSet, () => { H.log("Form yetkisi (toplu)", H.data.roles[role].name); tabGuvenlik(body); });
+      else gvSelect("Veri (değer) seçim · " + H.data.roles[role].name, [["Veri grupları", GV_VERI]], vSet, () => { H.log("Veri yetkisi (toplu)", H.data.roles[role].name); tabGuvenlik(body); });
+    };
     body.querySelectorAll("[data-gvsub]").forEach(s => s.onclick = () => { AD.gvSub = s.dataset.gvsub; tabGuvenlik(body); });
     body.onchange = (e) => {
       const p = e.target.closest("[data-gvp]"); if (p) { const [gi, pi] = p.dataset.gvp.split(":").map(Number), name = kat[gi][1][pi];
@@ -1899,6 +1946,30 @@
       const f = e.target.closest("[data-gvf]"); if (f) { const m = f.dataset.gvf; if (e.target.checked) { if (!fSet.includes(m)) fSet.push(m); } else { const ix = fSet.indexOf(m); if (ix >= 0) fSet.splice(ix, 1); } H.log("Form yetkisi", H.data.roles[role].name + ": " + m + " " + (e.target.checked ? "açık" : "kapalı")); return; }
       const v = e.target.closest("[data-gvv]"); if (v) { const g = v.dataset.gvv; if (e.target.checked) { if (!vSet.includes(g)) vSet.push(g); } else { const ix = vSet.indexOf(g); if (ix >= 0) vSet.splice(ix, 1); } H.log("Veri yetkisi", H.data.roles[role].name + ": " + g + " " + (e.target.checked ? "tümü" : "kaldırıldı")); H.toast(g + ": " + (e.target.checked ? "tümüne yetki" : "kaldırıldı")); return; }
     };
+  }
+
+  // Grup-ağaçlı seçim penceresi (#363-366): sol grup listesi + sağ arama + işaret kutuları. sel dizisini canlı değiştirir.
+  function gvSelect(title, groups, sel, onDone) {
+    let gi = 0, q = "";
+    H.modal({ title, wide:true,
+      body:`<div class="g2" style="align-items:start;grid-template-columns:230px 1fr;gap:12px">
+        <div class="box" style="max-height:60vh;overflow:auto"><h5>Gruplar</h5><div data-gsg style="display:flex;flex-direction:column;gap:3px"></div></div>
+        <div class="box"><div class="adm-bar"><input data-gsq placeholder="Ara"><span class="spacer"></span><button class="btn g sm" data-gsall>Tümünü seç</button><button class="btn g sm" data-gsnone>Kaldır</button></div><div data-gsl style="max-height:52vh;overflow:auto"></div></div>
+      </div><p class="adm-sub" style="margin:8px 0 0">Seçili: <b data-gscount>${sel.length}</b></p>`,
+      actions:`<button class="btn p" data-x>Kapat</button>`,
+      onMount(m) {
+        const gw = m.querySelector("[data-gsg]"), lw = m.querySelector("[data-gsl]"), cc = m.querySelector("[data-gscount]");
+        const drawG = () => { gw.innerHTML = groups.map((g, i) => { const on = g[1].filter(p => sel.includes(p)).length; return `<button class="hc-cat ${i === gi ? "on" : ""}" data-gsgi="${i}">${esc(g[0])} <em>${on}/${g[1].length}</em></button>`; }).join(""); };
+        const drawL = () => { const items = groups[gi][1].filter(p => !q || norm(p).includes(q));
+          lw.innerHTML = items.length ? items.map(p => `<label class="dc-chk"><input type="checkbox" data-gsi="${esc(p)}"${sel.includes(p) ? " checked" : ""}> ${esc(p)}</label>`).join("") : `<div class="empty">Eşleşen yok.</div>`; };
+        const redraw = () => { drawG(); drawL(); cc.textContent = sel.length; onDone && onDone(); };
+        drawG(); drawL();
+        gw.onclick = (e) => { const b = e.target.closest("[data-gsgi]"); if (b) { gi = +b.dataset.gsgi; drawG(); drawL(); } };
+        m.querySelector("[data-gsq]").oninput = (e) => { q = norm(e.target.value); drawL(); };
+        lw.onchange = (e) => { const c = e.target.closest("[data-gsi]"); if (!c) return; const p = c.dataset.gsi; if (c.checked) { if (!sel.includes(p)) sel.push(p); } else { const ix = sel.indexOf(p); if (ix >= 0) sel.splice(ix, 1); } cc.textContent = sel.length; drawG(); onDone && onDone(); };
+        m.querySelector("[data-gsall]").onclick = () => { groups[gi][1].forEach(p => { if (!sel.includes(p)) sel.push(p); }); redraw(); };
+        m.querySelector("[data-gsnone]").onclick = () => { groups[gi][1].forEach(p => { const ix = sel.indexOf(p); if (ix >= 0) sel.splice(ix, 1); }); redraw(); };
+      } });
   }
 
   /* ---------- Bildirim kuralları ---------- */

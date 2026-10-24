@@ -29,7 +29,7 @@
 - [x] KVKK/ETK onay → SMS/mail gönderim modalı
 - [x] Sağ ray tam set: Fiyat verme/Kampanyalar/Dönem bilgileri/UHM/Onam/İade taleplerim/Toplu fatura/Randevulanacak hizmetler/Hasta danışman/Kurum değişiklik — hepsi aktif (liste/rota)
 - [x] İnce-taneli vezne yetkileri admin matrisinde (kapalı protokolde ekle/sil, tahsilat değiştir, protokole aktar, fatura iptal, avans, kurum değişiklik, toplu fatura)
-- [ ] Kurumsal Faturalama çok panelli ekran (#61) — kalan büyük vezne ekranı
+- [x] **Kurumsal Faturalama çok panelli ekran (#61)** — vezne sekmesi + sağ ray; sol kurum fatura listesi + 8 dikey sekme (Kalemler/İşlemler/Protokoller/Vezne/Evrak/İcmal/Notlar/Klinik Dök.); icmal CSV, not ekleme (2026-10-25)
 
 ## FAZ T — TEDAVİ / DOKTOR (ileride tamamlanacak — unutulmayacak)
 - [ ] Tedavi sekmesi: Klinik Dokümanlar / Laboratuvar / Radyoloji / Patoloji / Tanılar / Diş Planları / Aktarım / Reçete İlaç Listesi
@@ -43,8 +43,8 @@
 - [x] Personel kartı tam sekme seti (Nöbet-Mesai-İzin/Eğitim-Tecrübe/Çalışma takvimi/Yakınları/Zimmet/Diğer Özellikler + fonksiyon yetkileri)
 - [x] Raporlar: +Yönetim/İK/Kurum grupları + rapor modalı tarih/bölüm/doktor filtre + Yazdır
 - [x] Vezne sağ ray tam set (tümü aktif) + ince-taneli vezne yetkileri admin matriste
-- [ ] Kurumsal Faturalama çok panelli (#61) — kalan büyük vezne ekranı
-- [ ] Branş min/max yaş + kendi kodlar · Doktor Muayene ekranı (FAZ T, ertelendi)
+- [x] Kurumsal Faturalama çok panelli (#61) — tamamlandı
+- [x] Branş min/max yaş + kendi kodlar (BOL-NNN) · SGK→SAMHI etiketi · Doktor Muayene ekranı (FAZ T) ertelendi
 
 ## FAZ A — ADMIN / YETKİ / TANIMLAR
 - [x] Roller ve yetkiler: canlı rol×yetki matrisi (kalıcı) + **Yetki Kopyalama** (kaynak→hedef) · kullanıcı kartı userModal (personelden doldur, yetki kopyala, açılış ekranı) mevcut
@@ -54,7 +54,10 @@
 - [x] Bölüm (idari+klinik) tanımı · [x] Protokol Tipi · [x] Hizmet Kartı/Fiyatları (birleşik) · [x] Otomatik Hizmet Tanımı · [x] Epikriz · [x] Kampanya · [x] Doküman · [x] Rapor Yetkileri · [x] ICD Tanı Listesi
 - [x] **Cihaz Listesi** (RIS/ÖKC/çağrı ekranı · IP/MAC/port · ekle-düzenle-sil) (#31-33)
 - [x] **Değişken / Parametre Tanımları** (para birimi/KDV/dil/randevu/dönem/oturum) (#22)
-- [ ] Branş listesi: min/max yaş + kendi kodlarımız (SUT yok) — küçük ek
+- [x] Branş/bölüm: min/max yaş + kendi kodlarımız (SUT yok, SGK→SAMHI) + Ayaktan/Yatan epikriz şablon eşleme (#334)
+- [x] **Hizmet Kartı zengin sekmeler (#357-358)**: Genel + Tarifeler / Paketler / Bağlı işlemler / Kategoriler / Bölüm-personel / Verilme yeri / Kurallar
+- [x] **Güvenlik Tanımları grup-ağaçlı seçim penceresi (#363-366)** (Yetki/Form/Veri "Ağaçtan seç" + yetki arama) · Kullanıcı kartı "Erişim bilgileri (dış sistem)" (#362)
+- [x] **Raporlar**: +8 yönetim raporu gerçek veriyle doldu (Tahsilat/Ciro/Yatan hasta/Yatak doluluk/Doktor işlem/Personel/KVKK demografi/Taburcu)
 
 ## FAZ R — RAPORLAR
 - [x] Rapor başlıkları (modül bazlı menü)

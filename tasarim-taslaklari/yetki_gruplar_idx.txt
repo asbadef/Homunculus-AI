@@ -1,0 +1,27 @@
+1	Hasta Kabul
+2	Vezne İşlemleri
+346	Hasta Kayıt İşlemleri
+378	Medikal Finans
+472	Finans
+507	LIS Yetkileri
+550	RIS Yetkileri
+564	Tedavi
+565	Ameliyat İşlemleri
+655	Randevu Yetkileri
+690	Doktor Yetkileri
+704	Görebileceği Raporlar
+757	Sistem
+769	Analiz
+798	Stok
+851	Satınalma
+863	Ortak
+890	Eczane
+896	IK
+903	CRM
+907	Kalite
+913	ComedEMR
+920	Pusula Api
+922	Entegrasyon
+935	Diş Tedavi
+942	Analiz Yetkileri
+947	Hakedis
