@@ -211,8 +211,9 @@
     H.modal({ title:"Hasta · " + H.esc(vzName(p.name)),
       body:`<div class="vz-hk">${kv("Hasta no", p.hn)}${kv("Protokol", p.proto)}${kv("FİN", p.fin)}${kv("Cinsiyet · yaş", (p.sex === "E" ? "Erkek" : "Kadın") + " · " + (p.age || "—"))}${kv("Telefon", p.phone)}<div class="kv"><span>Geliş tipi</span><span>${H.encIcon(p)} ${H.esc((H.ENC[H.encOf(p)] || {}).label || H.encOf(p))} ${H.protoLock(p)}</span></div>${kv("Bölüm / birim", u ? u.tr : "")}${kv("Doktor", doctor ? doctor.name : p.attending)}${kv("Kurum / sigorta", p.kurum)}${kv("Özel onay (ödeme)", H.ozelOnay(p) ? "Alındı" : "Bekliyor")}${kv("Ön tanı", p.dx)}${kv("Kan grubu", p.blood)}${(p.allergies && p.allergies.length) ? kv("Alerji", p.allergies.join(", ")) : ""}</div>
         <p class="adm-sub" style="margin-top:8px">Vezne için özet bilgi kartı. Klinik ayrıntılar yalnız yetkili (hekim/hemşire) ekranında.</p>`,
-      actions:`<button class="btn" data-x>Kapat</button>${(H.can("admission") || H.can("summary")) ? `<button class="btn" data-havuz>${I("list") || ""} İşlem havuzu</button>` : ""}${(H.can("admission") || H.can("orders")) ? `<button class="btn" data-istek>${I("flask") || ""} Tetkik/Radyoloji iste</button>` : ""}${H.can("patient") ? `<button class="btn p" data-git>Hastaya git</button>` : ""}`,
+      actions:`<button class="btn" data-x>Kapat</button>${(H.can("admission") || H.can("summary")) ? `<button class="btn" data-havuz>${I("list") || ""} İşlem havuzu</button>` : ""}${(H.can("admission") || H.can("orders")) ? `<button class="btn" data-istek>${I("flask") || ""} Tetkik/Radyoloji iste</button>` : ""}<button class="btn p" data-h360>Hasta 360 aç</button>${H.can("patient") ? `<button class="btn" data-git>Hastaya git</button>` : ""}`,
       onMount(m) { const g = m.querySelector("[data-git]"); if (g) g.onclick = () => { H.closeModal(); H.go("patient", { pid }); };
+        const h3 = m.querySelector("[data-h360]"); if (h3) h3.onclick = () => { H.closeModal(); H.go("hasta360", { pid }); };
         const it = m.querySelector("[data-istek]"); if (it) it.onclick = () => { H.closeModal(); vzIstekModal(pid); };
         const hv = m.querySelector("[data-havuz]"); if (hv) hv.onclick = () => { H.closeModal(); vzIslemHavuzu(pid); }; } });
   }
@@ -280,7 +281,7 @@
     const inp = root.querySelector("[data-fin]"); const raw = (inp && inp.value || "").trim(); if (!raw) { H.toast("FİN veya hasta no girin.", "w"); return; }
     const q = raw.toLocaleLowerCase("tr"), qd = raw.replace(/\D/g, "");
     const p = (H.data.patients || []).find(x => (x.fin || "").toLocaleLowerCase("tr") === q || (x.hn || "").toLocaleLowerCase("tr") === q || (qd && String(x.hn || "").replace(/\D/g, "") === qd));
-    if (p) { vzHastaModal(p.id); return; }
+    if (p) { H.go("hasta360", { pid:p.id }); return; }
     H.modal({ title:"Hasta bulunamadı", body:`<p>Bu FİN / hasta no ile kayıtlı hasta yok:</p><p><b class="mono">${H.esc(raw)}</b></p><p class="adm-sub">Yeni kayıt açmak ister misiniz? (Hasta kabul ekranına gidersiniz.)</p>`,
       actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-yeni>Yeni kayıt aç</button>`,
       onMount(m) { m.querySelector("[data-yeni]").onclick = () => { H.closeModal(); H.go("admission"); }; } });
@@ -479,6 +480,88 @@
     if (name === "Bekleyen Avans Listesi") return { cols:["Protokol", "Hasta", "Avans ₼", "Durum"], rows:[["50894026", "Şebnem Süleymanlı", 500, "Bekliyor"], ["50892562", "Nurgül Süleymanova", 300, "Bekliyor"], ["50790716", "Aytac Rüstemli", 100, "Kısmi iade"]], note:"Örnek veri." };
     return null;
   }
+
+  /* ================= HASTA 360 (tam ekran hasta kartı · bizim tasarım) ================= */
+  const H360_ANA = [["360", "Hasta 360"], ["ishavuzu", "Hasta İş Havuzu"], ["tedavi", "Tedavi"], ["arsiv", "Arşiv"]];
+  const H360_ALT = [["kart", "Hasta Kartı"], ["gelisler", "Gelişler"], ["faturalar", "Faturalar"], ["odeme", "Ödemeler / Avanslar"], ["indirim", "İndirimler"], ["dosya", "Dosyalar / Resimler"], ["notlar", "Notlar"], ["teklif", "Teklifler"], ["online", "Online Ödemeler"], ["pos", "POS İşlem Ödeme"], ["anlasma", "Anlaşmalarım"]];
+  const H360_KABUL = [["ayaktan", "Poliklinik"], ["gunubirlik", "Günübirlik"], ["yatan", "Yatış"], ["yogun", "Yoğun bakım"], ["kontrol", "Kontrol"], ["donor", "Donör"]];
+  const H360_DIGER = ["Özel hasta bilgileri", "Hasta yakınları", "Hasta vefat etmiş", "Tercüman listesi", "Yeni doğan kaydı aç", "Bebek hasta bilgileri", "Transplantasyon bilgileri", "Hasta referans", "Hasta değişim logu", "Arşiv bilgileri", "Mobil onay kodları", "E-posta / SMS", "Finans bilgileri", "Hasta yönlendirme", "Araç plaka bilgileri", "Diyaliz tedavi bilgileri"];
+  const secArr = (k, def) => { const s = H.data.secenekler; return (s && s[k] && s[k].length) ? s[k] : def; };
+  H.register("hasta360", { title:() => "Hasta 360", perm:["admission", "summary", "patient"], render(root, params = {}) {
+    const p = H.pt(params.pid); if (!p) { root.innerHTML = `<div class="ph"><div><h2>Hasta 360</h2><p>Hasta seçilmedi.</p></div></div><div class="empty">Vezne panelinden bir hasta seçin.</div>`; return; }
+    const ana = params.atab || "360", alt = params.stab || "kart", b = H.bed(p.bed), u = b && H.unit(b.unitId), doctor = H.userBy(p.attending);
+    const yuz = (p.risk === "crit" || p.risk === "high") ? "🔴" : "🙂";
+    const hdr = `<div class="h360-hdr">
+      <div class="h360-id"><span class="h360-face">${yuz}</span><div><div class="h360-name">${H.esc(vzName(p.name))}</div><div class="adm-sub">${H.encIcon(p)} ${H.esc((H.ENC[H.encOf(p)] || {}).label || H.encOf(p))} ${H.protoLock(p)} · ${H.esc(p.dx || "")}</div></div></div>
+      <div class="h360-meta">
+        <div><span>FİN</span><b>${H.esc(p.fin || "—")}</b></div><div><span>Hasta no</span><b>${H.esc(p.hn || "—")}</b></div><div><span>Protokol</span><b>${H.esc(p.proto || "—")}</b></div>
+        <div><span>Hasta tipi</span><b>${H.esc(p.hastaTipi || "Normal")}</b></div><div><span>Uyruk</span><b>${H.esc(p.uyruk || "Azərbaycan")}</b></div>
+        <div><span>Cinsiyet · yaş</span><b>${p.sex === "E" ? "Kişi" : "Qadın"} · ${p.age || "—"}</b></div><div><span>Yatak</span><b>${b ? H.esc(b.no) : "—"}</b></div><div><span>Banko</span><b>${H.esc(H.state.vezneBanko || "—")}</b></div></div></div>`;
+    const anaTabs = `<div class="seg h360-ana">${H360_ANA.map(([k, l]) => `<button data-h3ana="${k}" class="${ana === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+    const toolbar = `<div class="h360-tools">
+      <button class="btn p sm" data-h3save>${I("save") || ""} Kaydet</button>
+      <div class="h360-dd"><button class="btn sm" data-h3kabul>${I("userPlus") || ""} Hasta kabul ▾</button><div class="h360-menu hidden" data-h3kabulm>${H360_KABUL.map(([k, l]) => `<button data-kabul="${k}">${l}</button>`).join("")}</div></div>
+      <div class="h360-dd"><button class="btn sm" data-h3diger>Diğer ▾</button><div class="h360-menu hidden" data-h3digerm>${H360_DIGER.map(d => `<button data-diger="${H.esc(d)}">${d}</button>`).join("")}</div></div>
+      <button class="btn sm" data-h3yaz>${I("print") || ""} Yazdır</button>
+      <button class="btn sm" data-h3must>Müstehaklık sorgula</button>
+      <button class="btn sm ${p.kvkk ? "" : "g"}" data-h3kvkk>KVKK onay</button>
+      <button class="btn sm ${p.etk ? "" : "g"}" data-h3etk>ETK onay</button></div>`;
+    const altTabs = ana === "360" ? `<div class="seg h360-alt">${H360_ALT.map(([k, l]) => `<button data-h3alt="${k}" class="${alt === k ? "on" : ""}">${l}</button>`).join("")}</div>` : "";
+    root.innerHTML = `${hdr}${anaTabs}${toolbar}${altTabs}<div class="h360-body" data-h3body></div>`;
+    const body = root.querySelector("[data-h3body]");
+    const fld = (k, lbl, ph, val) => `<div class="fr"><label>${H.esc(lbl)}</label><input data-hf="${k}" value="${H.esc(val != null ? val : (p[k] != null ? p[k] : ""))}" placeholder="${ph || ""}"></div>`;
+    const selF = (k, lbl, list, val) => `<div class="fr"><label>${H.esc(lbl)}</label><select data-hf="${k}">${["", ...list].map(x => `<option${(val || p[k] || "") === x ? " selected" : ""}>${H.esc(x || "— seç —")}</option>`).join("")}</select></div>`;
+    const kartHtml = () => `<div class="h360-cards">
+      <div class="box"><h5>Kimlik ve demografi</h5><div class="icd-form">
+        ${fld("hn", "Hasta no", "", p.hn)}${fld("proto", "Protokol no")}${fld("fin", "FİN kod")}${fld("seriya", "Seri no")}
+        ${fld("ad", "Ad", "", (p.name || "").split(" ")[0])}${fld("soyad", "Soyad", "", (p.name || "").split(" ").slice(1).join(" "))}
+        ${selF("sexT", "Cinsiyet", ["Qadın", "Kişi"], p.sex === "E" ? "Kişi" : "Qadın")}${fld("dob", "Doğum tarihi", "gg.aa.yyyy", p.dob)}
+        ${fld("father", "Ata adı")}${fld("motherKimlik", "Ana kimlik")}${fld("mother", "Ana adı-soyadı")}${fld("cocukSira", "Uşaq sırası")}
+        ${selF("uyruk", "Uyruk", ["Azərbaycan", "Türkiyə", "Rusiya", "Digər"], p.uyruk)}${fld("pasaport", "Pasaport no")}</div></div>
+      <div class="box"><h5>Kimlik belgesi ve adres</h5><div class="icd-form">
+        ${selF("belgeTip", "Kimlik belgesi", ["Şəxsiyyət vəsiqəsi", "Pasaport", "Sürücülük vəsiqəsi"])}${fld("sehir", "Şəhər")}${fld("rayon", "Rayon")}${fld("dogumYeri", "Doğum yeri")}
+        ${selF("aile", "Ailə vəziyyəti", ["Subay", "Evli", "Bilinmir"])}${selF("erisim", "Erişim kanalı", secArr("erisim", ["Web", "Telefon", "Tövsiyə", "Digər"]))}
+        ${selF("ulke", "Ölkə", ["Azərbaycan", "Digər"], p.ulke)}${fld("adres", "Ünvan")}${fld("postaKodu", "Poçt kodu")}</div></div>
+      <div class="box"><h5>İletişim</h5><div class="icd-form">
+        ${fld("phone", "Mobil tel")}${fld("evTel", "Ev / iş tel")}${fld("eposta", "E-posta")}${fld("fax", "Faks")}
+        ${selF("smsOnay", "SMS bilgilendirme", ["Bəli", "Xeyr"])}${selF("mailOnay", "E-posta bilgilendirme", ["Bəli", "Xeyr"])}</div></div>
+      <div class="box"><h5>Kurumsal</h5><div class="icd-form">
+        ${selF("kurum", "Kurum / sigorta", secArr("kurum", ["İcbari Tibbi Sığorta (SAMHI)", "Özel ödeme", "Kurum anlaşması"]), p.kurum)}${fld("ozelSigorta", "Özel sigorta")}${fld("kurumSicil", "Kurum sicil no")}${fld("calistigiKurum", "Çalıştığı kurum")}
+        ${fld("anlasmaliKurulus", "Anlaşmalı kuruluş")}${fld("indirimliGrup", "İndirimli grup")}${fld("personelIndirim", "Personel indirimi")}${fld("indirimSebep", "İndirim sebebi")}</div></div>
+    </div><p class="adm-sub" style="margin-top:8px">Hasta kartı · bizim tasarım (görseldeki tüm alanlar, kendi düzenimizle). "Kaydet" ile hastaya işlenir. Entegrasyon alanları (Omnitech/SAP/VNA) ayrı ekip.</p>`;
+    const placeholder = (ad) => `<div class="empty">${H.esc(ad)} · sırada (bu sekme adım adım birebir yapılacak)</div>`;
+    const drawBody = () => {
+      if (ana === "ishavuzu") { body.innerHTML = `<div class="seg" style="margin:10px 0"><button class="on">İstek Havuzu</button><button data-h3havuz>İşlem Havuzu</button><button data-h3rand>Randevular</button></div><div class="adm-sub">Hasta iş havuzu · İşlem Havuzu'nu açmak için düğme. (tam ekran sırada)</div><div style="margin-top:10px"><button class="btn p" data-h3islem>İşlem havuzunu aç</button></div>`; return; }
+      if (ana === "tedavi") { body.innerHTML = placeholder("Tedavi (Klinik dokümanlar / Lab / Radyoloji / Patoloji / Tanılar)"); return; }
+      if (ana === "arsiv") { body.innerHTML = placeholder("Arşiv (aktarım protokolleri / işlemler)"); return; }
+      // ana === 360
+      if (alt === "kart") { body.innerHTML = kartHtml(); return; }
+      if (alt === "gelisler") { body.innerHTML = `<div class="adm-sub" style="margin:8px 0">Bu hastanın gelişleri/protokolleri.</div><div style="margin-top:6px"><button class="btn p" data-h3git-gelis>Tüm Gelişler ekranını aç</button></div>`; return; }
+      if (alt === "faturalar") { body.innerHTML = placeholder("Faturalar (protokol listesi + fatura sütunları + sağ-tık)"); return; }
+      if (alt === "odeme") { body.innerHTML = placeholder("Ödemeler / Avanslar"); return; }
+      if (alt === "indirim") { body.innerHTML = placeholder("İndirimler"); return; }
+      if (alt === "dosya") { body.innerHTML = placeholder("Dosyalar / Resimler"); return; }
+      if (alt === "notlar") { body.innerHTML = placeholder("Notlar"); return; }
+      if (alt === "teklif") { body.innerHTML = placeholder("Teklifler"); return; }
+      body.innerHTML = placeholder(H360_ALT.find(x => x[0] === alt)[1]);
+    };
+    drawBody();
+    root.onclick = (e) => {
+      const an = e.target.closest("[data-h3ana]"); if (an) return H.go("hasta360", { pid:p.id, atab:an.dataset.h3ana, stab:"kart" });
+      const al = e.target.closest("[data-h3alt]"); if (al) return H.go("hasta360", { pid:p.id, atab:"360", stab:al.dataset.h3alt });
+      const kb = e.target.closest("[data-h3kabul]"); if (kb) { root.querySelector("[data-h3kabulm]").classList.toggle("hidden"); return; }
+      const dg = e.target.closest("[data-h3diger]"); if (dg) { root.querySelector("[data-h3digerm]").classList.toggle("hidden"); return; }
+      const ka = e.target.closest("[data-kabul]"); if (ka) { p.encounter = ka.dataset.kabul === "yogun" ? "yogun" : ka.dataset.kabul === "kontrol" || ka.dataset.kabul === "donor" ? "ayaktan" : ka.dataset.kabul; H.log("Hasta kabul", vzName(p.name) + " · " + ka.dataset.kabul); H.toast("Kabul: " + (H360_KABUL.find(x => x[0] === ka.dataset.kabul) || [, ka.dataset.kabul])[1]); return H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); }
+      const di = e.target.closest("[data-diger]"); if (di) { H.toast(di.dataset.diger + " · yapım aşamasında (tasarım)", "w"); root.querySelector("[data-h3digerm]").classList.add("hidden"); return; }
+      if (e.target.closest("[data-h3kvkk]")) { p.kvkk = !p.kvkk; H.toast("KVKK onay: " + (p.kvkk ? "alındı" : "kaldırıldı"), p.kvkk ? "" : "w"); return H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); }
+      if (e.target.closest("[data-h3etk]")) { p.etk = !p.etk; H.toast("ETK onay: " + (p.etk ? "alındı" : "kaldırıldı"), p.etk ? "" : "w"); return H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); }
+      if (e.target.closest("[data-h3must]")) { H.toast("Müstehaklık/provizyon sorgusu gönderildi (tasarım)"); return; }
+      if (e.target.closest("[data-h3yaz]")) { H.toast("Yazdır çıktıları (tasarım)"); return; }
+      if (e.target.closest("[data-h3git-gelis]")) return H.go("gelisler");
+      if (e.target.closest("[data-h3islem]")) { vzIslemHavuzu(p.id); return; }
+      if (e.target.closest("[data-h3save]")) { body.querySelectorAll("[data-hf]").forEach(el => { p[el.dataset.hf] = el.value; }); if (p.ad || p.soyad) p.name = ((p.ad || "") + " " + (p.soyad || "")).trim() || p.name; if (p.sexT) p.sex = p.sexT === "Kişi" ? "E" : "K"; H.log("Hasta kartı kaydedildi", vzName(p.name)); H.toast("Hasta kartı kaydedildi"); return; }
+    };
+  } });
 
   /* ================= DESTEK / İŞ TAKİP (talep aç → IT çözer/kapatır) ================= */
   const TALEP_KAT = ["Bilgi Sistemleri", "Donanım", "Yazılım / program", "Hesap / yetki", "Ağ / internet", "Yazıcı / barkod", "Diğer"];

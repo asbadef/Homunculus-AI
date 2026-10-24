@@ -823,3 +823,22 @@ button.iz-n:hover { filter:brightness(1.08); outline:2px solid var(--priSoft); }
 /* Sol panel grup basliklari */
 .ri-grp{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);padding:12px 14px 4px;opacity:.75}
 .ri-grp:first-of-type{padding-top:6px}
+
+/* Hasta 360 — tam ekran hasta kartı (bizim tasarım) */
+.h360-hdr{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:10px 14px;background:var(--card2);border:1px solid var(--line2);border-radius:12px;margin-bottom:10px;flex-wrap:wrap}
+.h360-id{display:flex;align-items:center;gap:12px;min-width:0}
+.h360-face{font-size:28px;line-height:1}
+.h360-name{font:700 20px 'Space Grotesk',sans-serif}
+.h360-meta{display:flex;gap:16px;flex-wrap:wrap}
+.h360-meta>div{display:flex;flex-direction:column;min-width:66px}
+.h360-meta span{font-size:10px;color:var(--mute);text-transform:uppercase;letter-spacing:.03em}
+.h360-meta b{font-size:13px}
+.h360-ana{margin-bottom:8px}
+.h360-tools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
+.h360-alt{margin-bottom:12px;flex-wrap:wrap}
+.h360-dd{position:relative}
+.h360-menu{position:absolute;z-index:50;top:calc(100% + 4px);left:0;background:var(--card);border:1px solid var(--line2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:4px;min-width:210px;max-height:340px;overflow:auto}
+.h360-menu button{display:block;width:100%;text-align:left;padding:7px 11px;border:0;background:none;color:inherit;cursor:pointer;font:inherit;font-size:13px;border-radius:7px}
+.h360-menu button:hover{background:color-mix(in srgb,var(--pri) 12%,transparent)}
+.h360-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:800px){.h360-cards{grid-template-columns:1fr}}
