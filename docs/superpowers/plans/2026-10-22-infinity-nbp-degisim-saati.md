@@ -8,9 +8,9 @@
 
 **Tech Stack:** Python 3.12 and 3.14, FastAPI, pytest; React 18, Vite, Vitest + Testing Library (`render`, `screen`, `within`; no user-event); the hub's release builder (`deploy/infinity/build_transport_release.py`); systemd drop-ins on the hub VM.
 
-**Spec (authoritative):** `docs/superpowers/specs/2026-10-22-infinity-nbp-degisim-saati-design.md` (D1–D9, §3–§9). Where the code made the spec's letter unsafe, impossible or merely unspecified, this plan departs from it; every departure is in the table below with its reason. **X37–X45 were proposed in the planning review (2026-10-24) and approved by the user (2026-10-25). X46 is the controller's decision from the Task 1 review (2026-10-25); the user sees it in the final list.** X37 with X46 is the one that matters: the spec's letter would show an NBP measured during an outage as minutes old.
+**Spec (authoritative):** `docs/superpowers/specs/2026-10-22-infinity-nbp-degisim-saati-design.md` (D1–D9, §3–§9). Where the code made the spec's letter unsafe, impossible or merely unspecified, this plan departs from it; every departure is in the table below with its reason. **X37–X45 were proposed in the planning review (2026-10-24) and approved by the user (2026-10-25). X46 (the Task 1 review) and X47 (the Task 5 review) are the controller's decisions (2026-10-25); the user sees them in the final list.** X37 with X46 is the one that matters: the spec's letter would show an NBP measured during an outage as minutes old.
 
-**How the numbers in this plan were obtained.** Every task was implemented in the worktree while the plan was written (a scratch branch from `14c208d`). Then the plan itself was replayed: a script applied this file's Edit blocks onto `14c208d`, task by task and step by step (the tests first, then the code), on a second scratch branch, and every command of Tasks 0–9 was run as written — every red, every green, every count and every line-end figure below is what that replay printed, the commit blocks included (2026-10-24/25). The replay's tree is identical to the implementation's (`git diff` empty, all 25 files); both scratch branches were deleted afterwards. The code is kept beside the per-task files as `/c/tmp/homunculus-plans/nbp/reference.patch` (`git diff 14c208d <replay head>`) — a cross-check, not the authority: build from the tasks. **Since then (2026-10-25):** Task 1 landed on the branch as `cbda9ff`, then `b536f75` (its review: X46) and `bcae99f` (the re-review: every repeat renews the run, one test and a comment); Tasks 2 and 3 landed as `5ae5810` and `b5509fd`. Tasks 1–3 here ARE that code: replayed onto `14c208d` they give the branch at `bcae99f`, 14 files, byte for byte. Task 1's red and counts are measured against it, and Tasks 4–9 were replayed again on top of it in a scratch export (every anchor unique; the lane's tests 262 passed on Python 3.12 and 3.14; the no-DB suite 2184 / 650 — in the export 2183 / 651, one test that needs the dashboard's `node_modules` skipped there). The release name in Task 8 (`transport-8268ad964b28b90c`, rebuilt from that export) is the hash of the release's files, so the same two edge files always give it; any change to `infinity_live.py` or `infinity_shadow.py` gives a new one — Task 8 builds it, Task 10 carries what Task 8 printed. Task 10's VM blocks were checked with `bash -n`, D-1's drop-in generation against a synthetic `92` file, and the O30 gap check against the live view fed synthetic packets; none has run on the VM.
+**How the numbers in this plan were obtained.** Every task was implemented in the worktree while the plan was written (a scratch branch from `14c208d`). Then the plan itself was replayed: a script applied this file's Edit blocks onto `14c208d`, task by task and step by step (the tests first, then the code), on a second scratch branch, and every command of Tasks 0–9 was run as written — every red, every green, every count and every line-end figure below is what that replay printed, the commit blocks included (2026-10-24/25). The replay's tree is identical to the implementation's (`git diff` empty, all 25 files); both scratch branches were deleted afterwards. The code is kept beside the per-task files as `/c/tmp/homunculus-plans/nbp/reference.patch` (`git diff 14c208d <replay head>`) — a cross-check, not the authority: build from the tasks. **Since then (2026-10-25):** Task 1 landed on the branch as `cbda9ff`, then `b536f75` (its review: X46) and `bcae99f` (the re-review: every repeat renews the run, one test and a comment); Tasks 2 and 3 landed as `5ae5810` and `b5509fd`. Tasks 1–3 here ARE that code: replayed onto `14c208d` they give the branch at `bcae99f`, 14 files, byte for byte. Task 1's red and counts are measured against it, and Tasks 4–9 were replayed again on top of it in a scratch export (every anchor unique; the lane's tests 262 passed on Python 3.12 and 3.14; the no-DB suite 2184 / 650 — in the export 2183 / 651, one test that needs the dashboard's `node_modules` skipped there). The release name in Task 8 (`transport-8268ad964b28b90c`, rebuilt from that export) is the hash of the release's files, so the same two edge files always give it; any change to `infinity_live.py` or `infinity_shadow.py` gives a new one — Task 8 builds it, Task 10 carries what Task 8 printed. **Batch 1 (2026-10-25):** Task 4 landed as `c298b1c`, the Task 3 review's follow-up as `727f0be` (folded into Task 3) and, on `feat/infinity-nbp-dash`, Task 5 as `19e82ed` and its review `95c597b` (folded into Task 5, X47). Tasks 1–4 here replay onto `14c208d` as the branch at `727f0be` (16 files) and Tasks 1–3 + 5 as the dash branch's six dashboard files, byte for byte; Tasks 5–7 were re-run on top of `727f0be` in the worktree (red 6 failed / 18 passed for Task 5, then 2400, 2407, 2407, build clean), and the engine gates measured there (2192 / 650, the 3.14 lane 270). Task 10's VM blocks were checked with `bash -n`, D-1's drop-in generation against a synthetic `92` file, and the O30 gap check against the live view fed synthetic packets; none has run on the VM.
 
 ---
 
@@ -27,10 +27,10 @@
 | X43 | The brief's task order: hub → forwarder v2 → API → strings → … | The forwarder's end-to-end tests post through the real API (`test_infinity_shadow_forwarder.py:400–432`, the TLS test at 458): a v2 forwarder before a v2 API is red. `monitor.test.js:126–137` holds the dashboard's `EVIDENCE` to the API's and to `PARAM_ORDER`, and `SettingsScreen.test.jsx` lists the legend's rows: the API's `nbp` row and the dashboard's copy must land in one commit, and that row needs its label (`monitor.p.nbp`) first. | **1 hub · 2 strings · 3 API with the dashboard's mirrored tables · 4 forwarder · 5 `monitor.js` · 6 strip · 7 legend · 8 gates · 9 docs · 10 deploy.** Every commit is green in both suites, and the receiver comes before the sender, as D8 deploys them. |
 | X44 | Docs: "the roadmap's Stage A row" | `docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md` has no Aşama A row (checked 2026-10-24: its "Grup 2 · durum" table holds G2-01 only). | Task 9 adds a row `A-NBP` under G2-01. |
 | X45 | §6.1 "'ölçüm ≤ HH:MM' is **not later** than the cuff time"; §6.3 "eski · 2 sa" | "≤ HH:MM" says the cuff measured at or before HH:MM, so a correct strip shows a time **equal to or (by the minute's rounding) one minute later than** the monitor's cuff time — never earlier. "Not later" would fail exactly when the strip is right. And ages round UP (`feedHealth.js` `ageParts`, the project's rule), so just past 2 h the dash reads "köhnə · 3 saat" / "eski · 3 sa". | The walk (Task 10, E-1, E-3) checks "equal, or one minute later; never earlier — if earlier, compare the monitor's clock with the board's first", and "köhnə · 3 saat". |
-
 | X46 | §4.1 "if all three are present and valid, build the triple" (silent on what keeps a run unbroken); the first version of X37 | **Found in the Task 1 review (I-1 on `cbda9ff`); the controller's decision, 2026-10-25.** X37 as first written counted *any* NBP record — valid or flagged, one component or three — as "heard" (`nbp_heard_at`). After an outage, a first packet whose NBP was all flagged, or that carried one component alone, restarted the run, and a complete new triple up to 3 s later was stamped "ölçmə ≤ now (0 dəq)" for a cuff result that may be minutes old. The records doc says a flagged record can mean "not carried in this message type" (`docs/INFINITY-PARAMETER-RECORDS.md`, "Geçerlilik bayrağı"), so hearing one proves nothing about having watched the value. | **Strict continuity** (`b536f75`): measured only from the last COMPLETE VALID triple (`nbp_valid_at`); flagged and partial packets change nothing at all — they neither start nor continue a run, neither count as a change nor clear the held triple. `NBP_CONTINUITY_S = 3.0` is its own constant, not tied to `STALE_AFTER_MS`, and may be widened only with O30's evidence. The time shown is never more than 3 s too fresh. **Cost:** NBP is hidden after any gap of more than 3 s between complete valid triples, a long `***` spell included, until the next change seen within 3 s of one (O28). Tests (`tests/test_infinity_live.py`, 31): a flagged and a lone-component first packet after an outage, a 599 s spell of stars leaving the result unstamped, dropped packets (old, delivered, replay, undecodable, future) neither renewing the run nor clearing the triple (two tests), two devices keeping their own run — and (`bcae99f`, re-review I-A) every repeat of the same complete valid triple renewing the run, so a result after ten minutes of a stable value is stamped: without it no real result would ever be. |
+| X47 | §5 "No numeric threshold in the browser (… `monitor.test.js` 139–143 forbids `value <`/`>` comparisons)" | **Found in the Task 5 review (I-1 on `19e82ed`); approved by the controller, 2026-10-25.** The guard `/value\s*[<>]=?\s*\d/` reads only the word `value`; `nbpCellOf` names its parts and ages, so `if (systolic > 300)` or `if (measuredAgeS > 14400)` — a threshold in the browser — passed it (each seen green under a mutation). | Two more assertions in the same test refuse a comparison with a numeric literal, in either order, on `value`/`systolic`/`diastolic`/`mean` and on `ageS`/`measuredAgeS`/`age_s`/`measured_age_s` (`95c597b`; after Task 5 the guard is `monitor.test.js:194–200`). A stronger guard is in the spirit of "no thresholds in the browser". The same review added three behaviour tests (a fresh packet the server calls old draws no number; never numbers without `measured_age_s` and `changed_at`; a flagged NBP goes old with its packet) and two renames — Task 5 carries them. |
 
-Departures found while implementing go below X46 (X47 …), each with its file and line.
+Departures found while implementing go below X47 (X48 …), each with its file and line.
 
 ## Open items
 
@@ -42,11 +42,12 @@ Numbered after the G2 slice's O26, so a number names one item across the roadmap
 | O28 | After a hub restart, an outage, or ANY gap of more than 3 s between complete valid triples — a `***` spell included (X37, X46) — NBP is hidden until the bed's next cuff cycle seen within 3 s of a complete triple: minutes to an hour. The legend says so for the restart. | User (accepted, spec D4; X46 by the controller) | — |
 | O29 | Device→patient links (D9) and the reset on a link change are deferred to Stage B. Until then a bed whose patient changed can show the previous patient's NBP, with its age, until a new measurement or the 2 h limit; whether a Kappa clears NBP on discharge is unknown (Aşama A plan, "It may not be this patient's"). | Stage B | — |
 | O30 | The 3 s window (X37, X46) assumes the Kappa sends a **complete valid triple** at least every 3 s (spec §1: "repeats the last NBP in every packet"); flagged and partial packets do not count. Measured nowhere yet. **The walk records, on real beds, the longest gap between complete valid triples**: Task 10's A-3 (agent, read-only, before anything changes) polls the hub's live view once a second for 5 minutes and prints per bed that gap and how often the value changed (never a value); E-2 checks that a bed that just measured shows its time, and E-1 that the time does not move between cuff cycles (a value flickering between two triples would move it — too fresh). A streaming bed above 3 s is reported before the deploy goes on; widening `NBP_CONTINUITY_S` is then a code change with that evidence (and the time's slack grows with it). | User + agent (walk) | Before and at deploy |
-| O31 | The forwarder's body grows with NBP: 20 064 B for 13 fully reporting devices (measured with the trial's code); the API's 64 KiB cap (`MAX_BODY`) now holds 42 such devices, 59 without NBP. The 100-device design needs the cap raised or the body split — not this slice. | — | Before > 40 devices |
+| O31 | The forwarder's body grows with NBP: for 13 fully reporting devices 20 404 B typical, 20 855 B worst case (measured in the Task 4 review on `c298b1c`). Under the API's 64 KiB cap (`MAX_BODY`) that is **41 devices (worst case) / 57 without NBP** (42 / 58 typical); over the cap the whole post is refused (413) and every bed goes dark. The 100-device design needs the cap raised or the body split — not this slice. | — | Before > 40 devices |
 | O32 | The az, ru and en texts (`nbpMeasured`, `nbpWaiting`, `nbpSaid`, `legendNbp`) are the planner's and await a native reading, as every text of this namespace (strings/monitor.js:6–8). | User | Before deploy |
-| O33 | A flagged NBP (`***`) never travels: a flagged component carries no change time (X38), so the strip shows the cell old after 15 s, never `***`. The API's `invalid` state for NBP is reachable only from a body this forwarder does not send. | — | — |
+| O33 | A flagged NBP (`***`) never travels: a flagged component carries no change time (X38), so the strip shows the cell old after 15 s, never `***`. The API's `invalid` state for NBP is reachable only from a body this forwarder does not send. No forwarder-level test says a flagged NBP never travels: the hub's tests pin it (Task 1), the forwarder only filters on `changed_at` (the Task 4 review). | — | — |
 | O34 | The research window (`/infinity-research/state`, `api/infinity_research.py:28–30`) allow-lists the hub's keys and drops `changed_at`; the Monitörler screen reads the board, which carries it. No change needed. | — | — |
 | O35 | `shadow_check.py`'s `nbp:` line is information, not a criterion: acceptance 4 reads it by eye. | — | — |
+| O36 | A 400 from the API gets no backoff: with the API rolled back to R3 under an R4 hub, the forwarder logs `starting -> failing_400` once and retries every 5 s — no spin, no buffer (measured in the Task 4 review). Harmless; G-2 in the blocks still requires G-1 first. | — | — |
 
 ---
 
@@ -65,16 +66,16 @@ Numbered after the G2 slice's O26, so a number names one item across the roadmap
 | base | 2143 / 650 | 89 / 2392 | — |
 | 1 | 2159 / 650 | — | `test_infinity_live.py` 15 → **31** (`cbda9ff` + `b536f75` + `bcae99f`) |
 | 2 | — | 89 / 2392 | `strings.test.js` 6 → **6** (it loops; no count moves) |
-| 3 | 2182 / 650 | 89 / 2392 | `test_infinity_shadow_store.py` 46 → **65**, `test_infinity_shadow_api.py` 36 → **39**, `test_infinity_shadow_check.py` 17 → **18**, equivalence 3 → **3**, isolation 18 → **18**; `monitor.test.js` 16 → **16**, `SettingsScreen.test.jsx` 12 → **12** |
-| 4 | 2184 / 650 | — | `test_infinity_shadow_forwarder.py` 52 → **54** |
-| 5 | — | 89 / 2399 | `monitor.test.js` 16 → **23** |
-| 6 | — | 89 / 2406 | `MonitorStrip.test.jsx` 28 → **35**; `rawKeys.test.jsx` 7 → **7** |
-| 7 | — | 89 / 2406 | `SettingsScreen.test.jsx` 12 → **12** |
-| 8 | 2184 / 650 (gate) | 89 / 2406 (gate) | Python 3.14 slice **262** |
+| 3 | 2190 / 650 | 89 / 2392 | `test_infinity_shadow_store.py` 46 → **67**, `test_infinity_shadow_api.py` 36 → **45** (`b5509fd` + `727f0be`), `test_infinity_shadow_check.py` 17 → **18**, equivalence 3 → **3**, isolation 18 → **18**; `monitor.test.js` 16 → **16**, `SettingsScreen.test.jsx` 12 → **12** |
+| 4 | 2192 / 650 | — | `test_infinity_shadow_forwarder.py` 52 → **54** (`c298b1c`) |
+| 5 | — | 89 / 2400 | `monitor.test.js` 16 → **24** (`19e82ed` + `95c597b`) |
+| 6 | — | 89 / 2407 | `MonitorStrip.test.jsx` 28 → **35**; `rawKeys.test.jsx` 7 → **7** |
+| 7 | — | 89 / 2407 | `SettingsScreen.test.jsx` 12 → **12** |
+| 8 | 2192 / 650 (gate) | 89 / 2407 (gate) | Python 3.14 slice **270** |
 | 9 | docs only | — | — |
 | 10 | no code | — | — |
 
-Engine arithmetic: 16 + 19 + 3 + 1 + 2 = **41** over the base. Dashboard: 7 + 7 = **14** tests, no new file.
+Engine arithmetic: 16 + 21 + 9 + 1 + 2 = **49** over the base. Dashboard: 8 + 7 = **15** tests, no new file. Measured 2026-10-25 at `727f0be` (Tasks 1–4 and the Task 3 follow-up; the dashboard's Tasks 5–7 applied on top from this plan, which equals `95c597b` for Task 5): engine 2192 / 650, the 3.14 lane 270, dashboard 2400 after Task 5 and 2407 after Tasks 6 and 7, build clean.
 
 ---
 
@@ -88,7 +89,7 @@ Engine arithmetic: 16 + 19 + 3 + 1 + 2 = **41** over the base. Dashboard: 7 + 7 
   ```
   Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
   ```
-  (the trailer the controller set for this plan; if the controller records a newer one by the time you commit, use that.)
+  (the trailer the controller set for this plan; if the controller records a newer one by the time you commit, use that.) The commits made by the second session that executes Tasks 4–8 (`c298b1c`, `727f0be`, `19e82ed`, `95c597b`) carry `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`; they are recorded as they are.
 - **Foreground gates.** Run every suite and build in the foreground; never background a gate and wait on it (an agent that did sat silent for hours). One Bash call runs at most 10 minutes: name the files; the whole no-DB suite fits (≈ 2½–4 min).
 - **Python commands** (always from the engine directory, always `PYTHONPATH=src`, always name files):
   ```bash
@@ -113,7 +114,7 @@ Engine arithmetic: 16 + 19 + 3 + 1 + 2 = **41** over the base. Dashboard: 7 + 7 
   for f in <files>; do printf "%s CR=%s LF=%s\n" "$f" "$(tr -cd '\r' < "$f" | wc -c)" "$(tr -cd '\n' < "$f" | wc -c)"; done
   ```
 - **No patient data, ever** (CLAUDE.md rule 6). Monitors are 192.0.2.x / 239.20.1.x (TEST-NET-1), beds "B-1", "REA-01 · 2", patients "S-001" / `p1`; every NBP in a test is made up (118/79 (92), 70/40 (50), 201/119 (146) …) and says nothing about anyone. The deploy checks print counts and ages, never a pressure (`shadow_check.py`).
-- **Thresholds live only in the API.** The 2-hour limit is `NBP_MAX_MEASURED_AGE_S` in `api/infinity_shadow.py`; the 3 s continuity is the hub's (`infinity_live.py`); the browser compares no value and no age with a number of its own (`monitor.test.js:139–143` forbids `value <`/`>` and risk colours in `monitor.js`). A dashboard test of a withholding hands the browser the server's verdict and asserts it is drawn as given — including one that contradicts what the browser could have worked out (Task 5: "value" three hours after the change is drawn).
+- **Thresholds live only in the API.** The 2-hour limit is `NBP_MAX_MEASURED_AGE_S` in `api/infinity_shadow.py`; the 3 s continuity is the hub's (`infinity_live.py`); the browser compares no value and no age with a number of its own (the source guard in `monitor.test.js` — 139–143 at the base, 194–200 after Task 5 — forbids risk colours in `monitor.js` and, since X47, any comparison with a numeric literal on a value, an NBP part or an age). A dashboard test of a withholding hands the browser the server's verdict and asserts it is drawn as given — including one that contradicts what the browser could have worked out (Task 5: "value" three hours after the change is drawn).
 - **The strip stays what it is** (`MonitorStrip.jsx:3–13`): dashed, labelled unvalidated, values in `text-ink`, no vital-identity or risk colour, no live region, no focusable element; every number with its age; `sr-only` text inside the positioned `<section>` (X36).
 - **Four languages for every key** (`tr` is the source; `az` the default). An `az` text equal to `tr`, and an `ru` text with no Cyrillic, need a reviewed entry in `strings.test.js` (`AZ_SAME_AS_TR`, `NEUTRAL`). Russian calls the engine "система", never "движок".
 - **Test names:** `describe` names the thing, `it` is a sentence about its behaviour in the reader's terms.
@@ -128,8 +129,8 @@ Engine arithmetic: 16 + 19 + 3 + 1 + 2 = **41** over the base. Dashboard: 7 + 7 
 |---|---|---|
 | `src/homunculus/edge/infinity_live.py` | `NBP`, `NBP_CONTINUITY_S` (3.0, its own constant); `DeviceState.nbp_triple / nbp_changed_at / nbp_valid_at`; `_track_nbp`, `_nbp_changed_at`; the snapshot's `nbp_*` entries carry `changed_at`. | 1 |
 | `tests/test_infinity_live.py` | sixteen tests: first sight, change, repeat, partial, flagged, a lone newer value, outage, the 3.0/3.1 s boundary, a flagged and a lone-component first packet after an outage, a long spell of stars, a result after minutes of repeats, dropped packets ×2, two devices. | 1 |
-| `src/homunculus/api/infinity_shadow.py` | `SCHEMA_V1`, `SCHEMA` v2, `SCHEMAS`; NBP in `PARAMETERS`; `NBP`, `NBP_PARTS`, `NBP_MAX_MEASURED_AGE_S`; `EVIDENCE["nbp"]`; `_NBP_READING`; `_Held.changed_at`; `_validate` v1/v2; `_judge`; `_nbp_lane`; `devices()` folds; `_nbp_view`. | 3 |
-| `tests/test_infinity_shadow_store.py`, `tests/test_infinity_shadow_api.py`, `tests/test_infinity_shadow_check.py`, `tests/test_infinity_shadow_equivalence.py`, `tests/test_infinity_shadow_isolation.py` | v1 still taken; v2 rules; folding; 2 h; the bound 100 × 12; the board's entry; the `nbp:` line; NBP in the equivalence and isolation bodies. | 3 |
+| `src/homunculus/api/infinity_shadow.py` | `SCHEMA_V1`, `SCHEMA` v2, `SCHEMAS`; NBP in `PARAMETERS`; `NBP`, `NBP_PARTS`, `NBP_MAX_MEASURED_AGE_S`; `EVIDENCE["nbp"]`; `_NBP_READING`; `_Held.changed_at`; `_number` refuses an int too large for a float (`727f0be`); `_validate` v1/v2; `_judge`; `_nbp_lane`; `devices()` folds; `_nbp_view`. | 3 |
+| `tests/test_infinity_shadow_store.py`, `tests/test_infinity_shadow_api.py`, `tests/test_infinity_shadow_check.py`, `tests/test_infinity_shadow_equivalence.py`, `tests/test_infinity_shadow_isolation.py` | v1 still taken; v2 rules; folding; 2 h and its exact boundary; a change repeated across posts; the bound 100 × 12; the fuzzer with NBP and `10**400`; `10**400` in any numeric field is a 400; the board's entry; the `nbp:` line; NBP in the equivalence and isolation bodies. | 3 |
 | `src/homunculus/edge/infinity_shadow.py` | `SCHEMA` v2; `FORWARDED` + NBP; `thin()` sends NBP only with `changed_at`. | 4 |
 | `tests/test_infinity_shadow_forwarder.py` | three NBP tests replace "never NBP"; the end-to-end board carries `nbp`. | 4 |
 
@@ -142,7 +143,7 @@ Engine arithmetic: 16 + 19 + 3 + 1 + 2 = **41** over the base. Dashboard: 7 + 7 
 | `i18n/strings/monitor.js` | `p.nbp`; `nbpMeasured`, `nbpWaiting`, `nbpSaid` ×4 (2); `legendNbp` ×4 reworded (7). | 2, 7 |
 | `i18n/strings.test.js` | `monitor.p.nbp` in `NEUTRAL` and `AZ_SAME_AS_TR`. | 2 |
 | `screens/common/monitor.js` | `PARAM_ORDER` + `nbp`, `EVIDENCE.nbp` (3); `cellOf` → `nbpCellOf`, `lastSeenMs` without NBP (5). | 3, 5 |
-| `screens/common/monitor.test.js` | the order (3); NBP's cell, seven tests (5). | 3, 5 |
+| `screens/common/monitor.test.js` | the order (3); NBP's cell, eight tests, and the source guard extended to NBP's parts and ages (5, X47). | 3, 5 |
 | `screens/settings/SettingsScreen.test.jsx` | the NBP row (3); the legend's words and the row's evidence (7). | 3, 7 |
 | `data/shadow.testutil.js` | `param("nbp", [s, d, m] \| null)`, `NBP_CHANGED_AT`. | 5 |
 | `screens/common/MonitorStrip.jsx` | `NbpValue`; the cell spans two columns; "ölçmə gözlənilir". | 6 |
@@ -151,7 +152,7 @@ Engine arithmetic: 16 + 19 + 3 + 1 + 2 = **41** over the base. Dashboard: 7 + 7 
 
 **Modify — docs** (Task 9): `docs/INFINITY-PARAMETER-RECORDS.md`, `deploy/infinity/README.md`, `docs/superpowers/plans/2026-10-15-infinity-asama-a-golge.md`, `docs/homunculus-rehber-TR.md`, `docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md`.
 
-**Outside the repo** (Tasks 8, 10): `/c/tmp/infinity-a-releases/transport-<hash>.tar.gz` (`transport-8268ad964b28b90c` for the plan's files), `nbp-<short>.bundle`, `NBP-bloklari.template.txt`, `NBP-bloklari.txt`.
+**Outside the repo** (Tasks 8, 10): `/c/tmp/infinity-a-releases/transport-<hash>.tar.gz` (the name the build prints; `transport-8268ad964b28b90c` for the branch at `727f0be`, and a pending Task 4 follow-up changes it), `nbp-<short>.bundle`, `NBP-bloklari.template.txt`, `NBP-bloklari.txt`.
 
 **How an edit reads in this plan:** a bold **Edit** with the file's path and "replace:", a fenced block with the exact old text, "with:", and a fenced block with the new text. Use the Edit tool with those two texts, in the order given; each old text is unique in its file at that moment (the replay checked it). Task 10's two record edits say "(its new text from the run)": their new text is the deploy's own output.
 
@@ -896,7 +897,7 @@ git log --oneline -1
 
 ### Task 3: The API takes v1 and v2, shows NBP as one entry and withholds it two hours after it changed
 
-**Done on the branch** as `b5509fd`, byte for byte this task.
+**Done on the branch** as `b5509fd`, byte for byte this task, and `727f0be`, the follow-up of its review (folded in below): `_number` refuses an integer too large for a float, so `1` and 400 zeros in any numeric field is a 400, not a 500 (F-1); the store's fuzzer carries a complete NBP triple (F-2); and two tests pin the exact 2-hour boundary and a change repeated across posts.
 
 Spec D5–D7, §4.3, with X38–X40, and X43 for why the dashboard's two tables land here. The store learns schema v2 (v1 is still taken: the hub keeps sending it until Task 4's code reaches the VM); an NBP reading must carry `changed_at` and nothing else may; the three held NBP readings fold into one board entry `nbp`, a number only when all three are held with one change time, fresh and valid, and the change is at most 2 h old. The entry exists for a device that holds a reading, while the hub speaks v2 or NBP readings are still held (X39). `shadow_check.py` prints one `nbp:` line. The dashboard's copy of the API's tables gains `nbp` in the same commit, because `monitor.test.js:126–137` holds the two equal; the Settings legend's table then shows an NBP row by itself (it iterates `PARAM_ORDER`), and its test lists it.
 
@@ -912,7 +913,7 @@ The folded entry, as `GET /infinity-shadow/board` carries it in `parameters` (af
 
 **Files:**
 - Modify: `homunculus-engine/tests/test_infinity_shadow_store.py`, `tests/test_infinity_shadow_api.py`, `tests/test_infinity_shadow_check.py`, `tests/test_infinity_shadow_equivalence.py`, `tests/test_infinity_shadow_isolation.py`
-- Modify: `homunculus-engine/src/homunculus/api/infinity_shadow.py` (the wire tables 88–105 and 118–122, `DeviceView`, `_Held`, `_validate`, `ShadowStore.__init__`/`ingest`/`devices`/`_judge`, a new `_nbp_view`, `board_view`'s docstring)
+- Modify: `homunculus-engine/src/homunculus/api/infinity_shadow.py` (the wire tables 88–105 and 118–122, `DeviceView`, `_Held`, `_number`, `_validate`, `ShadowStore.__init__`/`ingest`/`devices`/`_judge`, a new `_nbp_view`, `board_view`'s docstring)
 - Modify: `deploy/infinity/shadow_check.py` (`import math`; `nbp_line()` and `details()`)
 - Modify: `dashboard/src/live/screens/common/monitor.test.js` (116–119), `dashboard/src/live/screens/settings/SettingsScreen.test.jsx` (164–165), `dashboard/src/live/screens/common/monitor.js` (13–15, 23)
 
@@ -1209,6 +1210,27 @@ def test_nbp_is_withheld_once_its_value_last_changed_more_than_two_hours_ago():
                         "changed_at": _iso(T0 - 7199.5), "measured_age_s": 7200.5}
 
 
+def test_a_change_exactly_the_limit_old_is_shown_and_one_microsecond_older_is_withheld():
+    for extra, state in ((0.0, "value"), (1e-6, "old")):
+        store = ShadowStore(Clock())
+        store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0 - 0.5,
+                                                    changed_at=T0 - NBP_MAX_MEASURED_AGE_S - extra))))
+        shown = _params(store, now=T0)[NBP]
+        assert (shown["state"], shown["systolic"] is None) == (state, state == "old"), extra
+
+
+def test_nbp_keeps_showing_while_every_post_repeats_the_same_change():
+    clock = Clock()
+    store = ShadowStore(clock)
+    changed = T0 - 90.0
+    for step in range(5):                            # the packets move on, the change does not
+        store.ingest(body(device("192.0.2.10", *nbp(captured_at=clock.t - 0.5, changed_at=changed))))
+        shown = _params(store, now=clock.t)[NBP]
+        assert (shown["state"], shown["systolic"], shown["changed_at"], shown["measured_age_s"]) == (
+            "value", 118, _iso(changed), 90.0 + 5.0 * step), step
+        clock.t += 5.0
+
+
 def test_a_silent_monitors_nbp_goes_old_like_any_value_and_is_aged_by_its_change():
     store = ShadowStore(Clock())
     store.ingest(body(device("192.0.2.10", *nbp(captured_at=T0, changed_at=T0 - 300.0))))
@@ -1289,6 +1311,44 @@ def test_the_store_stays_bounded_at_100_devices_by_12_readings():
     assert set(sizes) == {(100, 1000)}             # nine entries, and the one the three NBP readings make
 ```
 
+The store's fuzzer (`test_any_mangled_body_is_refused_or_taken_never_an_error`) gets `10**400` among its odd values and a seed that carries a complete NBP triple, so `changed_at` and the fold are fuzzed too (`727f0be`, F-2):
+
+**Edit** `homunculus-engine/tests/test_infinity_shadow_store.py` — replace:
+```python
+    # The review's fuzzer, deterministic: 2000 bodies with one to three fields replaced by odd
+    # values (None, NaN, inf, 10**20, 2**63, nested containers, the wrong strings). Each is refused
+    # whole or taken; nothing else is raised, and the store stays readable and bounded.
+    import json as _json
+    import random
+
+    weird = [None, True, False, 0, -1, 1.5, float("nan"), float("inf"), -0.0, 10**20, "", "x", "192.0.2.10",
+             [], {}, [1], {"a": 1}, "239.20.1.10", 2050, "bpm", "hr", 2**63]
+```
+with:
+```python
+    # The review's fuzzer, deterministic: 2000 bodies with one to three fields replaced by odd
+    # values (None, NaN, inf, 10**20, 2**63, 10**400, nested containers, the wrong strings). Each is refused
+    # whole or taken; nothing else is raised, and the store stays readable and bounded. The seed
+    # carries a complete NBP triple, so `changed_at` and the fold are fuzzed as well.
+    import json as _json
+    import random
+
+    weird = [None, True, False, 0, -1, 1.5, float("nan"), float("inf"), -0.0, 10**20, "", "x", "192.0.2.10",
+             [], {}, [1], {"a": 1}, "239.20.1.10", 2050, "bpm", "hr", 2**63, 10**400]
+```
+
+**Edit** `homunculus-engine/tests/test_infinity_shadow_store.py` — replace:
+```python
+        raw = body(device("192.0.2.10", reading(captured_at=clock.t - 0.5),
+                          reading("spo2", None, "%", valid=False, captured_at=clock.t - 0.5)), sent_at=clock.t)
+```
+with:
+```python
+        raw = body(device("192.0.2.10", reading(captured_at=clock.t - 0.5),
+                          reading("spo2", None, "%", valid=False, captured_at=clock.t - 0.5),
+                          *nbp(captured_at=clock.t - 0.5, changed_at=clock.t - 30.0)), sent_at=clock.t)
+```
+
 - [ ] **Step 2: The routes' tests**
 
 **Edit** `homunculus-engine/tests/test_infinity_shadow_api.py` — replace:
@@ -1356,6 +1416,25 @@ def test_a_change_time_on_anything_but_nbp_refuses_the_body(tmp_path):
     response = _post(client, clock, body=body)
     assert response.status_code == 400 and response.json()["detail"] == {"reason": "rejected"}
     assert _board(client)["feed"]["state"] == "never"
+
+
+@pytest.mark.parametrize("path", [("sent_at",), ("forwarder", "interval_s"), ("hub", "collector_age_s"),
+                                  ("devices", 0, "packet_age_ms"), ("devices", 0, "readings", 0, "value"),
+                                  ("devices", 0, "readings", 0, "captured_at")])
+def test_an_integer_too_large_for_a_float_is_400_in_any_numeric_field_and_keeps_nothing(tmp_path, path):
+    # JSON `1` followed by 400 zeros parses to a Python int; `math.isfinite` cannot turn it into a
+    # float. Asked of the wire (no re-raised server error), so a 500 shows as a 500.
+    client, clock, _ = _app(tmp_path)
+    wire = TestClient(client.app, raise_server_exceptions=False)
+    body = _body(clock.t)
+    holder = body
+    for key in path[:-1]:
+        holder = holder[key]
+    holder[path[-1]] = 10 ** 400
+    response = wire.post("/infinity-shadow/readings", content=json.dumps(body).encode(),
+                         headers={**_hdr(SHADOW), "Content-Type": "application/json"})
+    assert response.status_code == 400 and response.json()["detail"] == {"reason": "rejected"}
+    assert _board(wire)["feed"]["state"] == "never"                  # nothing was kept
 
 ```
 
@@ -1625,6 +1704,24 @@ class _Held:
 
 - [ ] **Step 8: `_validate` takes v1 or v2, and `changed_at` only where it belongs**
 
+A JSON integer too large for a float (`1` followed by 400 zeros) makes `math.isfinite` raise `OverflowError`, which the route does not catch — a 500. `_number` answers False instead, so every numeric field refuses the body through its own `ShadowRejected`, with 400 (`727f0be`, F-1):
+
+**Edit** `homunculus-engine/src/homunculus/api/infinity_shadow.py` — replace:
+```python
+def _number(value: Any) -> bool:
+    return type(value) in (int, float) and math.isfinite(value)
+```
+with:
+```python
+def _number(value: Any) -> bool:
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:          # an int too large for a float (JSON `1` and 400 zeros): not a number here
+        return False
+```
+
 **Edit** `homunculus-engine/src/homunculus/api/infinity_shadow.py` — replace:
 ```python
     _closed(body, _TOP)
@@ -1844,7 +1941,7 @@ PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_shadow_forwarder.py tests/test_infinity_shadow_config.py tests/test_infinity_live.py tests/test_infinity_records.py tests/test_infinity_device_beds.py 2>&1 | tail -1
 ```
 
-Expected: `143 passed, 3 warnings in …` (65 + 39 + 18 + 3 + 18); then `174 passed, 3 warnings in …` (52 + 17 + 31 + 14 + 60) — the forwarder still sends v1 and the API still takes it.
+Expected: `151 passed, 3 warnings in …` (67 + 45 + 18 + 3 + 18); then `174 passed, 3 warnings in …` (52 + 17 + 31 + 14 + 60) — the forwarder still sends v1 and the API still takes it.
 
 - [ ] **Step 12: The dashboard's copy of the API's tables — tests first**
 
@@ -1942,7 +2039,7 @@ cd /c/tmp/inf-nbp
 for f in homunculus-engine/src/homunculus/api/infinity_shadow.py deploy/infinity/shadow_check.py homunculus-engine/tests/test_infinity_shadow_store.py homunculus-engine/tests/test_infinity_shadow_api.py homunculus-engine/tests/test_infinity_shadow_check.py homunculus-engine/tests/test_infinity_shadow_equivalence.py homunculus-engine/tests/test_infinity_shadow_isolation.py dashboard/src/live/screens/common/monitor.js dashboard/src/live/screens/common/monitor.test.js dashboard/src/live/screens/settings/SettingsScreen.test.jsx; do printf "%s CR=%s LF=%s\n" "$f" "$(tr -cd '\r' < "$f" | wc -c)" "$(tr -cd '\n' < "$f" | wc -c)"; done
 ```
 
-Expected, in that order: 518, 233, 552, 456, 154, 257, 270, 135, 144, 176 — each `CR=` equal to its `LF=`.
+Expected, in that order: 523, 233, 575, 475, 154, 257, 270, 135, 144, 176 — each `CR=` equal to its `LF=`.
 
 - [ ] **Step 16: Commit**
 
@@ -1963,6 +2060,10 @@ for a device that holds a reading, while the hub speaks v2 or NBP is still held
 (X39), so an R3 hub's strip is unchanged. shadow_check.py prints an `nbp:` line
 of counts and an age. The dashboard's copy of the tables (PARAM_ORDER, EVIDENCE)
 lands in the same commit, because monitor.test.js holds the two equal (X43).
+With the review's follow-up (727f0be on the branch): _number refuses an int too
+large for a float, so 10**400 in any numeric field is a 400, not a 500 (F-1);
+the store's fuzzer carries a complete NBP triple (F-2); the exact 2 h boundary
+and a change repeated across posts are tested.
 
 red: tests/test_infinity_shadow_store.py and _api.py — 2 errors during collection (ImportError: cannot import name 'NBP' / 'SCHEMA_V1'); _check.py, _equivalence.py, _isolation.py — 4 failed, 35 passed (no nbp line; a v2 body refused 400); monitor.test.js + SettingsScreen.test.jsx — 3 failed, 25 passed
 
@@ -1974,6 +2075,8 @@ git log --oneline -1
 ---
 
 ### Task 4: The forwarder speaks v2 — NBP with the time it changed, and not before a change was seen
+
+**Done on the branch** as `c298b1c`, byte for byte this task; its review found it spec-compliant and approved it (96 000 fuzzed bodies through `thin()`, 192 000 shown values end to end; `changed_at > captured_at` impossible; a stale entry with `changed_at` is never sent; the API rolled back to R3 under R4 gives one `starting -> failing_400` and a retry every 5 s, O36). **A follow-up is pending (sha to come):** the `FORWARDED` comment (`edge/infinity_shadow.py:37–40`) gains the other reasons no time is sent — an outage, a gap of more than 3 s between complete valid triples (X46), a partial packet's newer value (X38) — and `test_an_nbp_three_seconds_old_never_leaves_the_hub` gains the explicit hub-entry assertion `("stale", T - 0.5)`. It changes `infinity_shadow.py`, so the R4 release name changes again (Task 8 builds it, Tasks 9 and 10 carry the printed name).
 
 Spec D4, D5, §4.2, with X38. `SCHEMA` becomes `homunculus.infinity-shadow.v2`; `FORWARDED` gains the three `nbp_*` names (from the live view's `NBP`, so the two cannot drift); `thin()` sends an `nbp_*` reading only when its snapshot entry is fresh (as every reading) **and** carries a `changed_at`, and then sends it with that time. Since Task 1 an entry has a `changed_at` only after a change seen as it happened, and only while it holds the changed triple's component — so nothing is sent after a hub start, after an outage, or for a partial packet's newer value. The release still packs only `edge/` (Task 8 checks it): the new import is `.infinity_live`, an edge module.
 
@@ -2237,7 +2340,7 @@ PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_live.py tests/test_infinity_records.py tests/test_infinity_shadow_forwarder.py tests/test_infinity_shadow_store.py tests/test_infinity_shadow_api.py tests/test_infinity_shadow_check.py tests/test_infinity_shadow_equivalence.py tests/test_infinity_shadow_isolation.py tests/test_infinity_shadow_config.py tests/test_infinity_release.py 2>&1 | tail -1
 ```
 
-Expected: `54 passed, 3 warnings in …`; then `262 passed, 3 warnings in …` (the isolation test's import check covers `edge/infinity_shadow.py`'s new import: an edge module, nothing clinical).
+Expected: `54 passed, 3 warnings in …`; then `270 passed, 3 warnings in …` (the isolation test's import check covers `edge/infinity_shadow.py`'s new import: an edge module, nothing clinical).
 
 - [ ] **Step 5: Line ends**
 
@@ -2275,6 +2378,8 @@ git log --oneline -1
 ---
 
 ### Task 5: `monitor.js` decides what the NBP cell may show — and judges no age itself
+
+**Done on the branch** `feat/infinity-nbp-dash` (`/c/tmp/inf-nbp-dash`, from `bcae99f`, merged back before Task 8) as `19e82ed` (this task as first planned) and `95c597b`, its review (folded in below; tests only, each guard proved by a mutation of `nbpCellOf` seen red): the source guard also refuses a numeric comparison on NBP's parts and ages (X47); a fresh packet the server calls old draws no number; never numbers without `measured_age_s` and `changed_at`; a flagged NBP goes old with its packet; two tests renamed for what they test.
 
 Spec §5 (`cellOf`), with X41. `cellOf` returns, for the `nbp` entry, `{kind: "nbp", systolic, diastolic, mean, changedAtMs, measuredAgeS, ageS}` when the server says `value` and the packet is fresh on this browser's clock; otherwise the existing `invalid` or `old` kinds — `old` aged by the **change** (`measured_age_s` plus the time since the answer), or with no age and no time at all when no change has been seen ("awaiting"). The 2-hour limit stays the API's: an answer that says `value` three hours after the change is drawn, one that says `old` ten minutes after it is not. `lastSeenMs` leaves NBP out: a withheld NBP's `last_at` is its change time, not when the monitor last sent (X41). The test util learns to build the API's `nbp` entry; a wire name (`nbp_systolic`) is refused there, as it never reaches the board.
 
@@ -2432,6 +2537,13 @@ describe("NBP's cell: the time its value last changed", () => {
     expect(at(param("nbp", [118, 79, 92], { measured_age_s: 10_800 })).kind).toBe("nbp");
     const withheld = param("nbp", null, { changed_at: NBP_CHANGED_AT, last_at: NBP_CHANGED_AT, age_s: 600, measured_age_s: 600 });
     expect(at(withheld)).toEqual({ kind: "old", ageS: 600, lastAt: NBP_CHANGED_AT });
+    // A fresh packet that still carries numbers, which the server says are old: none is drawn.
+    expect(at(param("nbp", [118, 79, 92], { state: "old" }))).toEqual({ kind: "old", ageS: 600, lastAt: NBP_CHANGED_AT });
+  });
+
+  it("never draws NBP's numbers without the age and the time of their change", () => {
+    expect(at(param("nbp", [118, 79, 92], { measured_age_s: null }))).toEqual({ kind: "old", ageS: null, lastAt: NBP_CHANGED_AT });
+    expect(at(param("nbp", [118, 79, 92], { changed_at: null }))).toEqual({ kind: "old", ageS: null, lastAt: null });
   });
 
   it("awaits a measurement when no change was seen: no number, no age, no time", () => {
@@ -2439,12 +2551,15 @@ describe("NBP's cell: the time its value last changed", () => {
     expect(at(param("nbp", null), { nowMs: FETCHED - 500 })).toEqual({ kind: "old", ageS: null, lastAt: null });
   });
 
-  it("shows the monitor's *** when it flags a component", () => {
-    expect(at(param("nbp", null, { state: "invalid", age_s: 2, last_at: NBP_CHANGED_AT, changed_at: NBP_CHANGED_AT,
-      measured_age_s: 600 }))).toEqual({ kind: "invalid", ageS: 2 });
+  it("shows the monitor's *** when it flags a component, and lets it go old with its packet", () => {
+    const flagged = param("nbp", null, { state: "invalid", age_s: 2, last_at: NBP_CHANGED_AT, changed_at: NBP_CHANGED_AT,
+      measured_age_s: 600 });
+    expect(at(flagged)).toEqual({ kind: "invalid", ageS: 2 });
+    // 14 s later its packet is 16 s old: the *** is no longer shown, and the age left is the change's.
+    expect(at(flagged, { nowMs: FETCHED + 14_000 })).toEqual({ kind: "old", ageS: 614, lastAt: NBP_CHANGED_AT });
   });
 
-  it("is never built from a wire name", () => {
+  it("the test util refuses a wire name such as nbp_systolic", () => {
     expect(() => param("nbp_systolic", 118)).toThrow(TypeError);
   });
 
@@ -2453,6 +2568,24 @@ describe("NBP's cell: the time its value last changed", () => {
     const nbpNewer = param("nbp", [118, 79, 92], { last_at: "2026-10-08T09:59:30+00:00" });
     expect(lastSeenMs(bed("REA-01 · 2", [hr, nbpNewer], { status: "silent" }))).toBe(Date.parse("2026-10-08T09:59:00+00:00"));
     expect(lastSeenMs(bed("REA-01 · 2", [nbpNewer], { status: "silent" }))).toBeNull();
+  });
+});
+```
+
+
+The source guard at the end of the file (`it("holds no threshold, band or colour that depends on a value")`, `monitor.test.js:139–143` at the base) only refused `value` against a number; `nbpCellOf` names its parts and ages, so `systolic > 300` or `measuredAgeS > 14400` would have passed it. Two more assertions refuse a comparison with a numeric literal, in either order, on `value`/`systolic`/`diastolic`/`mean` and on `ageS`/`measuredAgeS`/`age_s`/`measured_age_s` (X47; after this task the guard sits at `monitor.test.js:194–200`):
+
+**Edit** `dashboard/src/live/screens/common/monitor.test.js` — replace:
+```js
+    expect(source).not.toMatch(/value\s*[<>]=?\s*\d/);
+  });
+});
+```
+with:
+```js
+    expect(source).not.toMatch(/value\s*[<>]=?\s*\d/);
+    expect(source).not.toMatch(/\b(?:value|systolic|diastolic|mean)\b\s*[<>]=?\s*\d|\d\s*[<>]=?\s*(?:value|systolic|diastolic|mean)\b/);
+    expect(source).not.toMatch(/\b(?:ageS|measuredAgeS|age_s|measured_age_s)\b\s*[<>]=?\s*\d|\d\s*[<>]=?\s*(?:ageS|measuredAgeS|age_s|measured_age_s)\b/);
   });
 });
 ```
@@ -2469,10 +2602,12 @@ Expected:
    × NBP's cell: the time its value last changed > shows the three numbers with the time the value changed and how long ago that was …
    × NBP's cell: the time its value last changed > ages the change between polls, and goes old with its packet like any value …
    × NBP's cell: the time its value last changed > takes the server's withholding as it comes and judges no age itself …
+   × NBP's cell: the time its value last changed > never draws NBP's numbers without the age and the time of their change …
+   × NBP's cell: the time its value last changed > shows the monitor's *** when it flags a component, and lets it go old with its packet …
    × NBP's cell: the time its value last changed > does not lend its change time to a silent monitor's last-sent time …
-      Tests  4 failed | 19 passed (23)
+      Tests  6 failed | 18 passed (24)
 ```
-Three of the new tests pass before the code: the generic rules already give "awaiting" (`age_s` and `last_at` are null), `***` and the util's refusal — they hold the NBP path to those same answers.
+Two of the new tests pass before the code — the generic rules already give "awaiting" (`age_s` and `last_at` are null) and the util's refusal — and so does the source guard (today's `monitor.js` compares nothing); they hold the NBP path to those answers. On the branch the review proved each guard and each new behaviour test red under a mutation of `nbpCellOf` (`95c597b`'s message).
 
 - [ ] **Step 4: The NBP cell, and the silent monitor's time without NBP**
 
@@ -2544,7 +2679,7 @@ export function lastSeenMs(entry) {
     .map((p) => Date.parse(p.last_at)).filter(Number.isFinite);
 ```
 
-`monitor.test.js:139–143` still holds: no `value <`/`>` against a number and no risk colour anywhere in `monitor.js`.
+The source guard (now `monitor.test.js:194–200`, X47) still holds: no comparison with a numeric literal on a value, an NBP part or an age, and no risk colour, anywhere in `monitor.js`.
 
 - [ ] **Step 5: Green, and the dashboard gate**
 
@@ -2554,7 +2689,7 @@ npx vitest run src/live/screens/common/monitor.test.js 2>&1 | sed 's/\x1b\[[0-9;
 npx vitest run 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E "^ Test Files |^ +Tests |^ FAIL "
 ```
 
-Expected: `Tests  23 passed (23)`; then ` Test Files  89 passed (89)` and `      Tests  2399 passed (2399)`.
+Expected: `Tests  24 passed (24)`; then ` Test Files  89 passed (89)` and `      Tests  2400 passed (2400)`.
 
 ```bash
 cd /c/tmp/inf-nbp/dashboard
@@ -2570,7 +2705,7 @@ cd /c/tmp/inf-nbp
 for f in dashboard/src/live/data/shadow.testutil.js dashboard/src/live/screens/common/monitor.js dashboard/src/live/screens/common/monitor.test.js; do printf "%s CR=%s LF=%s\n" "$f" "$(tr -cd '\r' < "$f" | wc -c)" "$(tr -cd '\n' < "$f" | wc -c)"; done
 ```
 
-Expected: `shadow.testutil.js CR=102 LF=102`, `monitor.js CR=157 LF=157`, `monitor.test.js CR=189 LF=189`.
+Expected: `shadow.testutil.js CR=102 LF=102`, `monitor.js CR=157 LF=157`, `monitor.test.js CR=201 LF=201`.
 
 - [ ] **Step 7: Commit**
 
@@ -2586,9 +2721,10 @@ the value changed and how long ago — while the server says value and the
 packet is fresh; otherwise ***, or old aged by the change, or old with no time
 at all when no change was seen yet. The two-hour limit stays the API's: the
 browser draws the server's verdict as it comes. lastSeenMs leaves NBP out
-(X41). The test util builds the nbp entry and refuses a wire name.
+(X41). The test util builds the nbp entry and refuses a wire name. The source
+guard also refuses a numeric comparison on NBP's parts and ages (X47).
 
-red: 4 failed, 19 passed (src/live/screens/common/monitor.test.js)
+red: 6 failed, 18 passed (src/live/screens/common/monitor.test.js)
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 MSG
@@ -2598,6 +2734,8 @@ git log --oneline -1
 ---
 
 ### Task 6: The strip draws one NBP cell — `S/D (M) mmHg · ölçmə ≤ HH:MM (N dəq)`
+
+**Done on the branch** `feat/infinity-nbp-dash` as `c9074bb`, byte for byte this task.
 
 Spec D7, §5 (`MonitorStrip.jsx`). The `nbp` kind renders the three numbers, the unit and `monitor.nbpMeasured` — the change's `hhmm` and its age in the board's words — all `aria-hidden`, with one `sr-only` sentence (`monitor.nbpSaid`: "118 bölü 79, orta 92 mmHg; ölçmə 09:50 və ya daha əvvəl, 10 dəq əvvəl"). The cell spans two columns of the strip's grid (both variants share it). "Awaiting" is a dash and `monitor.nbpWaiting` in `text-mute` — not "köhnə", because nothing went old: nothing was seen. A withheld NBP is the existing old cell, aged by the change ("köhnə · 3 saat"). The full variant's evidence line reads `ev.screen_match` ("Monitor ekranı ilə eynidir"). Nothing is coloured by a value; no live region, no focusable element; the `sr-only` text sits inside the positioned `<section>` (X36).
 
@@ -2882,7 +3020,7 @@ npx vitest run src/live/screens/common/MonitorStrip.test.jsx src/live/rawKeys.te
 npx vitest run 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E "^ Test Files |^ +Tests |^ FAIL "
 ```
 
-Expected: `Tests  42 passed (42)`; then ` Test Files  89 passed (89)` and `      Tests  2406 passed (2406)`.
+Expected: `Tests  42 passed (42)`; then ` Test Files  89 passed (89)` and `      Tests  2407 passed (2407)`.
 
 ```bash
 cd /c/tmp/inf-nbp/dashboard
@@ -2925,6 +3063,8 @@ git log --oneline -1
 ---
 
 ### Task 7: The Settings legend says how NBP is shown — and when it is not
+
+**Done on the branch** `feat/infinity-nbp-dash` as `4c2f7c6`, byte for byte this task. A fix after it, `b04abc7` (X48: the legend also names an interruption of the monitor's data, not only a restart, as a reason NBP waits for the next measurement), is not folded in yet: it comes with the next batch.
 
 Spec §5 (`SettingsScreen.jsx` legend). Since Task 3 the legend's evidence table has an NBP row ("Monitor ekranı ilə eynidir"), because it iterates the API's `PARAM_ORDER`; `SettingsScreen.jsx` itself does not change. What changes is `legendNbp`, in four languages: it no longer says NIBP is not shown, it says what the time means (an upper bound: the cuff measured then or earlier, an identical re-measurement is not seen), that an NBP whose value has not changed for more than 2 hours is not shown, and that after the hub restarts NBP waits for the next measurement. The test that quoted the old sentence (`SettingsScreen.test.jsx:157`) quotes the new one and checks the NBP row's evidence.
 
@@ -3038,7 +3178,7 @@ npx vitest run src/live/screens/settings/SettingsScreen.test.jsx src/live/i18n/s
 npx vitest run 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E "^ Test Files |^ +Tests |^ FAIL "
 ```
 
-Expected: `Tests  18 passed (18)`; then ` Test Files  89 passed (89)` and `      Tests  2406 passed (2406)`.
+Expected: `Tests  18 passed (18)`; then ` Test Files  89 passed (89)` and `      Tests  2407 passed (2407)`.
 
 ```bash
 cd /c/tmp/inf-nbp/dashboard
@@ -3095,7 +3235,7 @@ cd /c/tmp/inf-nbp/homunculus-engine
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q --ignore=tests/test_infinity_vm_pilot.py 2>&1 | tail -1
 ```
 
-Expected: `2184 passed, 650 skipped, 3 warnings in …` — the base's 2143 plus this slice's 41.
+Expected: `2192 passed, 650 skipped, 3 warnings in …` — the base's 2143 plus this slice's 49.
 
 - [ ] **Step 2: Postgres is not needed — say so with evidence**
 
@@ -3114,7 +3254,7 @@ cd /c/tmp/inf-nbp/homunculus-engine
 PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/g115-py314/Scripts/python.exe -m pytest -p no:cacheprovider -q tests/test_infinity_live.py tests/test_infinity_records.py tests/test_infinity_shadow_forwarder.py tests/test_infinity_shadow_store.py tests/test_infinity_shadow_api.py tests/test_infinity_shadow_check.py tests/test_infinity_shadow_equivalence.py tests/test_infinity_shadow_isolation.py tests/test_infinity_shadow_config.py tests/test_infinity_release.py 2>&1 | tail -1
 ```
 
-Expected: `262 passed, 3 warnings in …`.
+Expected: `270 passed, 3 warnings in …`.
 
 - [ ] **Step 4: The dashboard suite and build**
 
@@ -3123,7 +3263,7 @@ cd /c/tmp/inf-nbp/dashboard
 npx vitest run 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E "^ Test Files |^ +Tests |^ FAIL "
 ```
 
-Expected: ` Test Files  89 passed (89)` and `      Tests  2406 passed (2406)`.
+Expected: ` Test Files  89 passed (89)` and `      Tests  2407 passed (2407)`.
 
 ```bash
 cd /c/tmp/inf-nbp/dashboard
@@ -3150,13 +3290,13 @@ cd /c/tmp/inf-nbp
 BASE=$(mktemp -d) && /c/tmp/f7-py312/venv/Scripts/python.exe deploy/infinity/build_transport_release.py --output "$BASE" --commit 14c208d | cut -c1-48
 ```
 
-Expected: one JSON line `{"release": "transport-8268ad964b28b90c", "tarball": "C:\\tmp\\infinity-a-releases\\transport-8268ad964b28b90c.tar.gz", "sha256": "<64 hex>"}` — **write the name and the sha256 down: Task 10 carries both into the block file.** Then `{"release": "transport-3940346adc66ca7b", …` — the base rebuilds R3, the release the hub runs today, so the two edge files are the whole difference. `transport-8268ad964b28b90c` is what the plan's two edge files give (rebuilt 2026-10-25 from Task 1 as landed, `bcae99f`, plus Task 4; the names before X46 and before `bcae99f`'s comment were different, and any later change to `infinity_live.py` or `infinity_shadow.py` changes it again). If the printed name differs because a review changed an edge file after this plan, carry the printed name and say so; if nothing was supposed to change, an edge file is not byte-for-byte the plan's: stop and compare with `/c/tmp/homunculus-plans/nbp/reference.patch`.
+Expected: one JSON line `{"release": "transport-<16 hex>", "tarball": "C:\\tmp\\infinity-a-releases\\transport-8268ad964b28b90c.tar.gz", "sha256": "<64 hex>"}` — **write the name and the sha256 down: Tasks 9 and 10 carry the printed name, never an older one.** Then `{"release": "transport-3940346adc66ca7b", …` — the base rebuilds R3, the release the hub runs today, so the two edge files are the whole difference. The branch at `727f0be` builds `transport-8268ad964b28b90c` (measured 2026-10-25); the pending Task 4 follow-up changes `infinity_shadow.py` and therefore the name, and so does any later change to either edge file. If the printed name differs because a review changed an edge file after this plan, carry the printed name and say so; if nothing was supposed to change, an edge file is not byte-for-byte the plan's: stop and compare with `/c/tmp/homunculus-plans/nbp/reference.patch`.
 
 - [ ] **Step 7: Inspect the release before it leaves**
 
 ```bash
 cd /c/tmp/infinity-a-releases
-REL=transport-8268ad964b28b90c          # the name Step 6 printed
+REL=$(basename "$(ls -t /c/tmp/infinity-a-releases/transport-*.tar.gz | head -1)" .tar.gz)   # the newest build: Task 8 Step 6's
 tar -tzf $REL.tar.gz | wc -l
 D=$(mktemp -d) && tar -xzf $REL.tar.gz -C "$D" && cd "$D/$REL" && sha256sum -c --quiet SHA256SUMS && echo "SUMS OK"
 /c/tmp/f7-py312/venv/Scripts/python.exe -I -c "import sys; sys.path.insert(0, 'app/src'); import homunculus, homunculus.edge.infinity_shadow as s, homunculus.edge.infinity_live as l; print(homunculus.__doc__, s.SCHEMA, s.FORWARDED[-3:], l.NBP_CONTINUITY_S)"
@@ -3170,6 +3310,8 @@ No commit: nothing in the repo changed. (`dist/` and the temp folders are outsid
 ---
 
 ### Task 9: The docs say how NBP is shown now, and why its time is a bound
+
+**The release name in Steps 2 and 5 is the one Task 8 Step 6 printed.** The blocks carry `transport-8268ad964b28b90c` (the branch at `727f0be`); the pending Task 4 follow-up changes it, so write the printed name in those two places.
 
 Five documents, each where a reader already looks: the records doc (the paragraph that said "NBP şeritte yoktur"), the deploy README (R3 said "never NBP"; R4 and its drop-in, order and rollback are new), the Aşama A plan (three places that recommended excluding NBP get a "superseded" note — history is kept, not rewritten), the Turkish guide (the strip's paragraph), and the design-integration roadmap (it has no Aşama A row — X44 — so one is added under G2-01). The guide is Turkish, so it quotes the tr text ("ölçüm ≤"); the strip's default language says "ölçmə ≤" (X42).
 
@@ -3321,7 +3463,7 @@ O4 çözüldü: 2026-10-20) |
 with:
 ```markdown
 O4 çözüldü: 2026-10-20) |
-| A-NBP | Aşama A şeridinde NBP, değerinin son değiştiği saatle ("ölçüm ≤ SS:DD (N dk)"; üst sınır, gerçeğinden en çok 3 sn yeni; hub başlangıcından, kesintiden ya da tam geçerli üçlüler arasında 3 sn'den uzun boşluktan sonra bir sonraki ölçüme kadar gizli; değişimden 2 sa sonra gizli) · hub R4 `transport-8268ad964b28b90c` + drop-in 94, şema `homunculus.infinity-shadow.v2` · spec: [2026-10-22](../specs/2026-10-22-infinity-nbp-degisim-saati-design.md) · plan: [NBP](2026-10-22-infinity-nbp-degisim-saati.md) | Kod ✅ `feat/infinity-nbp` · backend 2184 / 650 (DB'siz), dashboard 89 dosya / 2406 test · **VM: bekliyor** (önce api+web, sonra hub R4; işçi değişmez) · **Kararlar:** X37–X45 kullanıcı onayladı (25.10), X46 (sıkı süreklilik, Görev 1 incelemesi) · **Açık:** O27–O35 |
+| A-NBP | Aşama A şeridinde NBP, değerinin son değiştiği saatle ("ölçüm ≤ SS:DD (N dk)"; üst sınır, gerçeğinden en çok 3 sn yeni; hub başlangıcından, kesintiden ya da tam geçerli üçlüler arasında 3 sn'den uzun boşluktan sonra bir sonraki ölçüme kadar gizli; değişimden 2 sa sonra gizli) · hub R4 `transport-8268ad964b28b90c` + drop-in 94, şema `homunculus.infinity-shadow.v2` · spec: [2026-10-22](../specs/2026-10-22-infinity-nbp-degisim-saati-design.md) · plan: [NBP](2026-10-22-infinity-nbp-degisim-saati.md) | Kod ✅ `feat/infinity-nbp` · backend 2192 / 650 (DB'siz), dashboard 89 dosya / 2407 test · **VM: bekliyor** (önce api+web, sonra hub R4; işçi değişmez) · **Kararlar:** X37–X45 kullanıcı onayladı (25.10), X46 (sıkı süreklilik, Görev 1 incelemesi), X47 (tarayıcıda eşik koruması NBP'nin parçalarına ve yaşlarına genişledi, Görev 5 incelemesi) · **Açık:** O27–O36 |
 ```
 
 (The old text is the end of the G2-01 row, which is one long line; it occurs once.)
@@ -3373,7 +3515,7 @@ git status --short
 SHORT=$(git rev-parse --short=7 HEAD)
 git bundle create /c/tmp/infinity-a-releases/nbp-$SHORT.bundle feat/infinity-nbp
 git bundle verify /c/tmp/infinity-a-releases/nbp-$SHORT.bundle
-REL=transport-8268ad964b28b90c          # the name Task 8 Step 6 printed — carry that one if it differs
+REL=$(basename "$(ls -t /c/tmp/infinity-a-releases/transport-*.tar.gz | head -1)" .tar.gz)   # the newest build: Task 8 Step 6's
 sha256sum /c/tmp/infinity-a-releases/nbp-$SHORT.bundle /c/tmp/infinity-a-releases/$REL.tar.gz
 ```
 
@@ -3768,7 +3910,7 @@ Beklenen: health 200. Göç yok, veri kaybı yok.
 ```bash
 cd /c/tmp/infinity-a-releases
 HEAD=$(git -C /c/tmp/inf-nbp rev-parse HEAD); SHORT=$(git -C /c/tmp/inf-nbp rev-parse --short=7 HEAD)
-REL=transport-8268ad964b28b90c          # the name Task 8 Step 6 printed — carry that one if it differs
+REL=$(basename "$(ls -t /c/tmp/infinity-a-releases/transport-*.tar.gz | head -1)" .tar.gz)   # the newest build: Task 8 Step 6's
 BUNDLE_SHA=$(sha256sum nbp-$SHORT.bundle | cut -d' ' -f1); REL_SHA=$(sha256sum $REL.tar.gz | cut -d' ' -f1)
 sed -e "s/@HEAD@/$HEAD/g" -e "s/@SHORT@/$SHORT/g" -e "s/@BUNDLE_SHA@/$BUNDLE_SHA/g" -e "s/@REL@/$REL/g" \
     -e "s/@REL_SHA@/$REL_SHA/g" NBP-bloklari.template.txt > NBP-bloklari.txt
@@ -3821,11 +3963,11 @@ git log --oneline -1
 | 0 worktree, junction, baseline | — | — | — |
 | 1 the hub keeps NBP's change time — **done** (`cbda9ff`, review fixes `b536f75` X46 and `bcae99f`) | 0 | 2 | — |
 | 2 the strings — **done** (`5ae5810`) | 0 | 1 | `strings/monitor.js` (7) |
-| 3 the API v1/v2, folding, 2 h; the dashboard's copy of the tables — **done** (`b5509fd`) | 2 (the NBP row's label) | 1 | `monitor.js`, `monitor.test.js` (5); `SettingsScreen.test.jsx` (7) |
-| 4 the forwarder v2 | 1 (`NBP`, `changed_at` in the snapshot), 3 (its end-to-end tests post v2 into the real API) | 5, 6, 7 | — |
-| 5 `monitor.js` NBP cell | 3 | 4 | `shadow.testutil.js` is read by 6 |
-| 6 the strip's NBP cell | 5 | 4 | — |
-| 7 the legend | 3 (the NBP row), 2 | 4, 5, 6 if it rebases `strings/monitor.js` cleanly (different lines) | — |
+| 3 the API v1/v2, folding, 2 h; the dashboard's copy of the tables — **done** (`b5509fd`, follow-up `727f0be`) | 2 (the NBP row's label) | 1 | `monitor.js`, `monitor.test.js` (5); `SettingsScreen.test.jsx` (7) |
+| 4 the forwarder v2 — **done** (`c298b1c`; follow-up pending) | 1 (`NBP`, `changed_at` in the snapshot), 3 (its end-to-end tests post v2 into the real API) | 5, 6, 7 | — |
+| 5 `monitor.js` NBP cell — **done** on `feat/infinity-nbp-dash` (`19e82ed`, `95c597b` X47) | 3 | 4 | `shadow.testutil.js` is read by 6 |
+| 6 the strip's NBP cell — **done** on the dash branch (`c9074bb`) | 5 | 4 | — |
+| 7 the legend — **done** on the dash branch (`4c2f7c6`; X48 `b04abc7` to fold) | 3 (the NBP row), 2 | 4, 5, 6 if it rebases `strings/monitor.js` cleanly (different lines) | — |
 | 8 gates and R4 | 1–7 | — | — |
 | 9 docs | 8 (the release name it quotes) | — | `README.md`, the roadmap (10, Step 6) |
 | 10 deploy blocks, the walk | 9 (the bundle is the branch head) | — | — |
