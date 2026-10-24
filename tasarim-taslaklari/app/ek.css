@@ -814,3 +814,8 @@ button.iz-n:hover { filter:brightness(1.08); outline:2px solid var(--priSoft); }
 .vz-hk .kv span:first-child{color:var(--mute);font-size:12.5px}
 .vz-hk .kv span:last-child{font-weight:600;text-align:right}
 @media(max-width:560px){.vz-hk{grid-template-columns:1fr}}
+
+/* Geliş ikonları + protokol kilit nüansı */
+.enc-ic{font-size:15px;line-height:1}
+.pr-lock{font-size:13px;line-height:1}
+.pr-lock.ok{filter:none}
