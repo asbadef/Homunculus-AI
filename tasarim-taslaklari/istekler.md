@@ -532,3 +532,18 @@ Klinik/doktor tarafı büyük ölçüde YAPILDI (muayene, epikriz, izlem, hemşi
 - Madde 6: zengin hizmet kartı (yeni hizmet tanımı tek karttan)
 - Madde 1: çeviri eksikleri taraması; diğer liste ekranlarında tıkla-aç + filtre
 - İlaç/malzeme listesi gelince: eczane/stok fazı
+
+## DURUM — 2026-10-25 (Faz 6 ilerleme)
+### ✅ Tamamlanan
+- Faz Z: Destek / İş Takip modülü (kullanıcı talep açar → Bilgi Sistemleri/IT durum günceller, not ekler, kapatır). Yeni yetkiler destek_ac (herkes) / destek_yonet (sistem)
+- Faz AD: Bölüm listesi ~130'a çıkarıldı (idari birimler + klinik + yoğun bakım + çocuk alt branşları); bölüm tipi filtresi + Excel'e aktar
+- Madde 4 (Faz U): Bölüm Randevu Tipi (tip/ad/süre/doktor/protokol/hizmet/fiyat/web default) — randevu↔bölüm↔protokol↔hizmet bağı
+- Madde 7 (X3): rol bazlı rapor yetkisi (admin → Rapor Yetkileri: rol seç, rapor grupları); raporlar ekranı role göre filtreler
+- Faz AB: personel kartı randevu özellikleri (saatlik/aynı tarih randevu, kurum tipi, web/online/poliklinik/FTR/hizmet randevusu)
+### ⏳ Bekleyen (sıradaki)
+- Faz AA: İK→kullanıcı oluşturma süreci (Güvenlik Tanımları: Yetkiler/Formlar/Roller/Değerler; kullanıcı kartı; yetki kopyalama) — büyük
+- Çeviri eksikleri taraması (4 dil) — ÖNEMLİ, ayrı titiz tur
+- Faz AC: sol panel (modül ağacı) düzeni — görsele göre modülleri ayarla
+- Madde 6: zengin hizmet kartı (yeni hizmet tanımı tek karttan)
+- R4: diğer liste ekranlarında tıkla-aç + filtre (genel desen)
+- İlaç/malzeme listesi gelince: eczane/stok fazı
