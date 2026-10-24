@@ -501,13 +501,23 @@
     const staff = persAll();
     root.innerHTML = `<div class="ph"><div><h2>${H.t("m_ik")}</h2><p>${staff.length} personel · kart, rol, birim (tasarım)</p></div><div class="r"><button class="btn p" data-persnew>${I("plus")} Personel ekle</button></div></div>
       <div class="tw"><table class="t"><thead><tr><th>Ad</th><th>Unvan</th><th>Rol / tip</th><th>Birimler</th><th>Durum</th></tr></thead><tbody>
-      ${staff.map(u => `<tr${u.src === "personel" ? ` class="row" data-persedit="${H.esc(u._p.id)}" style="cursor:pointer"` : ""}><td><b>${H.esc(u.name)}</b><div class="mute" style="font-size:11.5px">${H.esc(u.u)}</div></td><td class="adm-sub">${H.esc(u.title || "—")}</td><td>${H.esc(u.rol)}</td><td class="adm-sub">${(u.units === "*" ? ["Tüm birimler"] : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", ") || "—"}</td><td><span class="tag ${u.active ? "ok" : ""}">${u.active ? "Aktif" : "Pasif"}</span></td></tr>`).join("")}
+      ${staff.map(u => `<tr class="row" style="cursor:pointer" ${u.src === "personel" ? `data-persedit="${H.esc(u._p.id)}"` : `data-usdetay="${H.esc(u.u)}"`}><td><b>${H.esc(u.name)}</b><div class="mute" style="font-size:11.5px">${H.esc(u.u)}</div></td><td class="adm-sub">${H.esc(u.title || "—")}</td><td>${H.esc(u.rol)}</td><td class="adm-sub">${(u.units === "*" ? ["Tüm birimler"] : (u.units || []).map(id => (H.unit(id) || { tr:id }).tr)).join(", ") || "—"}</td><td><span class="tag ${u.active ? "ok" : ""}">${u.active ? "Aktif" : "Pasif"}</span></td></tr>`).join("")}
       </tbody></table></div>
-      <p class="adm-sub" style="margin-top:8px">Login hesapları Yönetim → Kullanıcılar'da; buradan HR personel kartı (doktor/hemşire/idari…) eklenir. SGK/izin/çalışma takvimi/zimmet kart içinde.</p>`;
+      <p class="adm-sub" style="margin-top:8px">Login hesapları Yönetim → Kullanıcılar'da; buradan HR personel kartı (doktor/hemşire/idari…) eklenir. Satıra tıklayınca personel kartı / kullanıcı detayı açılır.</p>`;
     root.onclick = (e) => {
       if (e.target.closest("[data-persnew]")) return persForm(null);
-      const ed = e.target.closest("[data-persedit]"); if (ed) { const p = (H.data.personel || []).find(x => x.id === ed.dataset.persedit); if (p) persForm(p); }
+      const ed = e.target.closest("[data-persedit]"); if (ed) { const p = (H.data.personel || []).find(x => x.id === ed.dataset.persedit); if (p) persForm(p); return; }
+      const ud = e.target.closest("[data-usdetay]"); if (ud) { const user = (H.data.users || []).find(x => x.u === ud.dataset.usdetay); if (user) userDetay(user); }
     };
+    function userDetay(user) {
+      const rol = (H.data.roles[user.role] || { name:user.role }), units = user.units === "*" ? "Tüm birimler" : (user.units || []).map(id => (H.unit(id) || { tr:id }).tr).join(", ") || "—";
+      const kv = (k, v) => `<div class="kv"><span>${H.esc(k)}</span><span>${H.esc(v || "—")}</span></div>`;
+      H.modal({ title:"Kullanıcı · " + H.esc(user.name),
+        body:`<div class="vz-hk">${kv("Ad soyad", user.name)}${kv("Kullanıcı adı", user.u)}${kv("Rol", rol.name)}${kv("Ünvan", user.title)}${kv("Birimler", units)}${kv("Durum", user.active !== false ? "Aktif" : "Pasif")}</div>
+          <p class="adm-sub" style="margin-top:8px">Bu bir <b>login hesabı</b>. Personel kartı (SGK/izin/çalışma takvimi/zimmet) İK'dan "Personel ekle" ile açılır; yetki/rol ataması Yönetim → Kullanıcılar ve Roller'den yapılır.</p>`,
+        actions:`<button class="btn" data-x>Kapat</button>${H.can("admin_users") ? `<button class="btn p" data-usrol>Yetki / rol ekranı</button>` : ""}`,
+        onMount(m) { const b = m.querySelector("[data-usrol]"); if (b) b.onclick = () => { H.closeModal(); H.go("admin", { tab:"users" }); }; } });
+    }
     function persForm(existing) {
       const p = existing || {}, bols = H.data.bolumler || [];
       const TABS = [["genel", "Genel"], ["kisisel", "Kişisel"], ["calisma", "Çalışma / takvim"], ["iletisim", "İletişim"], ["yetki", "Yetkiler"]];
