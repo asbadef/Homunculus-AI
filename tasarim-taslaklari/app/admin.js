@@ -720,6 +720,7 @@
     ["dokuman", "Doküman Tanımları", "admin_system", "file"],   // onam/muayene/rapor form kataloğu; her hastanede farklı set
     ["ptip", "Protokol Tipleri", "admin_system", "list"],   // zengin protokol tipi + iş kuralı bayrakları
     ["fiyat", "Hizmet Fiyatları", "fiyat_duzenle", "list"],   // fiyat düzenleme yetkisi olan rol görür (sistem + yönetici)
+    ["hizmetkart", "Hizmet Kartı", "fiyat_duzenle", "list"],   // zengin hizmet tanımı (yeni hizmet tek karttan)
     ["epikriz", "Epikriz Şablonu", "admin_system", "file"],   // epikriz bölümleri (aç/kapat/sıra/başlık)
     ["mobile", "Telefon modülleri", "admin_system", "tablet"],   // 27.09 · #193
     ["system", "Sistem ayarları", "admin_system", "gear"], ["audit", "Denetim kaydı", "audit", "file"],
@@ -729,7 +730,7 @@
     ["viewas", "Rol gözüyle bak", "admin_roles", "eye"]];
   /* 30.09 · 17 sekme tek şeritte sığmıyor (1440 px'te bile) → iki kat: üstte grup çipleri, altta seçili grubun sekmeleri.
    * Bir gruba konmamış yeni sekme "Sistem" grubuna düşer (kaybolmaz). */
-  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "raporyetki", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "epikriz", "mobile"]],
+  const AGRP = [["access", "Kullanıcılar ve erişim", "users", ["users", "roles", "raporyetki", "viewas"]], ["hospital", "Hastane", "building", ["structure", "careCat", "icdliste", "diyetliste", "bakimliste", "hizmettanim", "bolumliste", "secenekler", "kampanya", "dokuman", "ptip", "fiyat", "hizmetkart", "epikriz", "mobile"]],
     ["links", "Bağlantılar ve bildirim", "plug", ["integrations", "camera", "notify", "mesajkalip", "announce"]], ["watch", "İzleme", "activity", ["health", "events", "integrity", "sessions"]],
     ["sys", "Sistem", "gear", ["system", "backup", "audit"]]];
   ATABS.forEach(t => { if (!AGRP.some(g => g[3].includes(t[0]))) AGRP[AGRP.length - 1][3].push(t[0]); });
@@ -755,7 +756,7 @@
         ${tabs.length > 1 ? `<div class="tabs${two ? " adm-sub-tabs" : ""}">${inG.map(([k, l]) => `<span data-tab="${k}" class="${AD.tab === k ? "on" : ""}">${l}</span>`).join("")}</div>` : ""}<div data-body></div>`;
       const body = el.querySelector("[data-body]");
       ({ users:tabUsers, roles:tabRoles, structure:tabStructure, integrations:tabIntegrations, system:tabSystem, audit:tabAudit, notify:tabNotify, careCat:tabCareCat, mobile:tabMobile,
-         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, epikriz:tabEpikriz, raporyetki:tabRaporYetki,
+         health:tabHealth, events:tabEvents, integrity:tabIntegrity, sessions:tabSessions, announce:tabAnnounce, backup:tabBackup, viewas:tabViewAs, icdliste:tabIcd, diyetliste:tabDiet, bakimliste:tabBakim, hizmettanim:tabHizmetTanim, bolumliste:tabBolum, secenekler:tabSecenek, mesajkalip:tabMesaj, kampanya:tabKampanya, dokuman:tabDokuman, ptip:tabPtip, fiyat:tabFiyat, hizmetkart:tabHizmetKart, epikriz:tabEpikriz, raporyetki:tabRaporYetki,
          camera:(b) => H.cameraAdmin ? H.cameraAdmin(b) : (b.innerHTML = `<div class="empty">Kamera modülü yüklenmedi.</div>`) })[AD.tab](body, draw);
     }
     el.addEventListener("click", e => {
@@ -1419,6 +1420,67 @@
     body.querySelectorAll("[data-rrrol]").forEach(b => b.onclick = () => { AD.rrRol = b.dataset.rrrol; tabRaporYetki(body); });
     const allCb = body.querySelector("[data-rrall]"); if (allCb) allCb.onchange = () => { if (allCb.checked) delete H.data.rolRapor[rk]; else H.data.rolRapor[rk] = {}; H.log("Rapor yetkisi", rk + " · " + (allCb.checked ? "tümü" : "kısıtlı")); tabRaporYetki(body); };
     body.querySelectorAll("[data-rrg]").forEach(cb => cb.onchange = () => { H.data.rolRapor[rk] = H.data.rolRapor[rk] || {}; if (cb.checked) H.data.rolRapor[rk][cb.dataset.rrg] = true; else delete H.data.rolRapor[rk][cb.dataset.rrg]; });
+  }
+
+  /* ---------- Zengin Hizmet Kartı (yeni hizmet tanımı tek karttan) ---------- */
+  const HK_TIP = () => (H.HIZMET_TIP && H.HIZMET_TIP.length ? H.HIZMET_TIP : ["Muayene Hizmeti", "Kontrol Muayenesi", "Laboratuvar Hizmeti", "Radyoloji Hizmeti", "Patoloji Hizmeti", "Ameliyat Hizmeti", "Hizmet", "İlaç", "Malzeme", "Paket"]);
+  const HK_DOKTORSEC = ["Zorunlu", "Opsiyonel", "Gerekmez"];
+  const HK_FLAGS = [["teklifGizle", "Teklifte çıkmasın"], ["tamZorunlu", "Tam zorunlu"], ["paket", "Paket hizmet"], ["yabanciKdv", "Yabancı hastada KDV'li"], ["euroScore", "Euro Score girilebilir"]];
+  function hkSeed() { if (!H.data.hizmetKartlari) H.data.hizmetKartlari = []; }
+  function tabHizmetKart(body) {
+    hkSeed(); const ALL = H.data.hizmetKartlari, can = H.can("fiyat_duzenle");
+    body.innerHTML = `<div class="adm-bar"><input data-hkq placeholder="Hizmet kartı ara (ad/kod)" value="${esc(AD.hkq || "")}"><span class="spacer"></span><span class="adm-sub" data-hkcount></span>${can ? `<button class="btn p" data-hknew>+ Yeni hizmet</button>` : `<span class="adm-sub">tanım yetkiniz yok</span>`}</div>
+      <div data-hklist></div>
+      <p class="adm-sub" style="margin-top:10px">Yeni hizmet/işlem tek karttan tanımlanır (kod, fiyat, KDV, tip, özellikler…). Burada tanımlı hizmetler katalogda standart listeyle birlikte kullanılacak. Kendi kodlarımız (SUT yerine). Satıra tıklayıp düzenleyin.</p>`;
+    const list = body.querySelector("[data-hklist]");
+    const draw = () => {
+      const q = norm(AD.hkq || ""), res = q ? ALL.filter(x => norm(x.ad + " " + (x.kod || "")).includes(q)) : ALL;
+      body.querySelector("[data-hkcount]").textContent = ALL.length + " hizmet kartı";
+      list.innerHTML = res.length ? `<div class="tw"><table class="t"><thead><tr><th style="width:90px">Kod</th><th>Hizmet</th><th>Tip</th><th style="width:90px">Fiyat</th><th style="width:70px">KDV</th><th style="width:44px"></th></tr></thead><tbody>${res.map(x => `<tr data-hkedit="${x.id}" style="cursor:pointer"><td class="mono adm-sub">${esc(x.kod || "—")}</td><td><b>${esc(x.ad)}</b>${x.yabanci ? `<div class="adm-sub" style="font-size:11.5px">${esc(x.yabanci)}</div>` : ""}</td><td class="adm-sub">${esc(x.tip || "—")}</td><td class="n">${x.fiyat ? x.fiyat + " ₼" : "—"}</td><td class="n">%${x.kdv || 0}</td><td><button class="btn g sm" data-hkdel="${x.id}" title="Sil">${I("trash") || "×"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Henüz tanımlı hizmet kartı yok. "+ Yeni hizmet" ile ekleyin.</div>`;
+    };
+    draw();
+    body.querySelector("[data-hkq]").addEventListener("input", e => { AD.hkq = e.target.value; draw(); });
+    const nb = body.querySelector("[data-hknew]"); if (nb) nb.addEventListener("click", () => hizmetKartForm(null, draw));
+    list.addEventListener("click", e => {
+      const del = e.target.closest("[data-hkdel]"); if (del) { e.stopPropagation(); if (!can) return; if (confirm("Bu hizmet kartı silinsin mi?")) { const i = ALL.findIndex(x => x.id === del.dataset.hkdel); if (i >= 0) ALL.splice(i, 1); H.toast("Silindi", "w"); draw(); } return; }
+      const tr = e.target.closest("[data-hkedit]"); if (tr) { if (!can) { H.toast("Düzenleme yetkiniz yok.", "e"); return; } const row = ALL.find(x => x.id === tr.dataset.hkedit); if (row) hizmetKartForm(row, draw); }
+    });
+  }
+  function hizmetKartForm(existing, redraw) {
+    hkSeed(); bolumSeed(); const ALL = H.data.hizmetKartlari, e = existing || { tip:"Hizmet", kdv:0, paraBirimi:"₼", doktorSec:"Opsiyonel", flags:{} }, fl = e.flags || {};
+    const inp = (k, ph, t) => `<input data-f="${k}" ${t ? `type="${t}"` : ""} value="${esc(e[k] != null ? e[k] : "")}" placeholder="${ph || ""}">`;
+    const sel = (k, list) => `<select data-f="${k}">${list.map(x => `<option${(e[k] || "") === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select>`;
+    H.modal({ title:existing ? "Hizmet kartı düzenle" : "Yeni hizmet kartı", wide:true,
+      body:`<div class="icd-form">
+        <div class="fr"><label>Kod</label>${inp("kod", "HK-001")}</div>
+        <div class="fr"><label>Adı</label>${inp("ad", "Hizmet adı")}</div>
+        <div class="fr"><label>Yabancı adı</label>${inp("yabanci", "Service name")}</div>
+        <div class="fr"><label>Tip</label>${sel("tip", HK_TIP())}</div>
+        <div class="fr"><label>Fiyat (₼)</label>${inp("fiyat", "0", "number")}</div>
+        <div class="fr"><label>KDV oranı (%)</label>${inp("kdv", "0", "number")}</div>
+        <div class="fr"><label>Maliyet fiyatı</label>${inp("maliyet", "0", "number")}</div>
+        <div class="fr"><label>Doktor seçim tipi</label>${sel("doktorSec", HK_DOKTORSEC)}</div>
+        <div class="fr"><label>İndirim yetki kodu</label>${inp("indirimKod")}</div>
+        <div class="fr"><label>KDV muafiyet nedeni</label>${inp("kdvMuaf")}</div>
+        <div class="fr"><label>Mesaj konusu</label>${inp("mesajKonu")}</div>
+        <div class="fr"><label>Rapor bölümü</label>${inp("raporBolum")}</div>
+        <div class="fr"><label>Patoloji tipi</label>${inp("patolojiTip")}</div>
+        <div class="fr"><label>Şube</label>${inp("sube", "Bakü Hastanesi")}</div>
+        <div class="fr"><label>İşlem süresi (dk)</label>${inp("islemSure", "0", "number")}</div>
+        <div class="fr"><label>Dış no</label>${inp("disNo")}</div>
+        <div class="fr"><label>Başlangıç tarihi</label><input type="date" data-f="baslangic" value="${esc(e.baslangic || "")}"></div>
+        <div class="fr"><label>Bitiş tarihi</label><input type="date" data-f="bitis" value="${esc(e.bitis || "")}"></div>
+      </div>
+      <div class="fr" style="margin-top:8px"><label>Özellikler</label><div class="icd-oz">${HK_FLAGS.map(([k, l]) => `<label><input type="checkbox" data-hf="${k}"${fl[k] ? " checked" : ""}> ${esc(l)}</label>`).join("")}</div></div>`,
+      actions:`<button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+      onMount(m) { m.querySelector("[data-ok]").onclick = () => {
+        const g = (k) => { const el = m.querySelector(`[data-f="${k}"]`); return el ? (el.type === "number" ? (+el.value || 0) : (el.value || "").trim()) : ""; };
+        const ad = g("ad"); if (!ad) { H.toast("Ad gerekli.", "w"); return; }
+        const flags = {}; m.querySelectorAll("[data-hf]:checked").forEach(c => flags[c.dataset.hf] = true);
+        const rec = { kod:g("kod") || "HK-" + String(ALL.length + 1).padStart(3, "0"), ad, yabanci:g("yabanci"), tip:g("tip"), fiyat:g("fiyat"), kdv:g("kdv"), maliyet:g("maliyet"), paraBirimi:"₼", doktorSec:g("doktorSec"), indirimKod:g("indirimKod"), kdvMuaf:g("kdvMuaf"), mesajKonu:g("mesajKonu"), raporBolum:g("raporBolum"), patolojiTip:g("patolojiTip"), sube:g("sube"), islemSure:g("islemSure"), disNo:g("disNo"), baslangic:g("baslangic"), bitis:g("bitis"), flags };
+        if (existing) Object.assign(existing, rec); else ALL.unshift(Object.assign({ id:"hk" + Date.now() }, rec));
+        H.log(existing ? "Hizmet kartı güncellendi" : "Hizmet kartı eklendi", rec.kod + " · " + ad); H.closeModal(); H.toast("Kaydedildi"); redraw && redraw();
+      }; } });
   }
 
   function tabFiyat(body) {
