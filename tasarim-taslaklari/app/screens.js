@@ -342,23 +342,42 @@
 
   /* ================= YÖNETİM RAPORLARI (başlık kataloğu · içerik yapım aşamasında) ================= */
   const RAPOR_GRUP = [
-    ["Geliş ve Muayene", ["TSIM", "Aynı Gün Geliş Analizi", "Hasta Geliş Analizi", "Yeni Muayene Gelişi", "Doktor Protokol Sayı Analizi", "Doktor İşlem Analizi"]],
-    ["Fatura ve Tahsilat", ["Fatura Analizi", "Faturalanmamış Tahsilat Analizi", "Vezne Tahakkuk Tahsilat Analizi", "Banko Vezne Fatura Analizi", "Protokol Fiyat Log"]],
+    ["Geliş ve Muayene", ["TSIM", "Aynı Gün Geliş Analizi", "Hasta Geliş Analizi", "Yeni Muayene Gelişi", "Doktor Protokol Sayı Analizi", "Doktor İşlem Analizi", "Muayene Bekleme Analizi"]],
+    ["Fatura ve Tahsilat", ["Fatura Analizi", "Faturalanmamış Tahsilat Analizi", "Vezne Tahakkuk Tahsilat Analizi", "Banko Vezne Fatura Analizi", "Protokol Fiyat Log", "Tahsilat Analizi", "Protokol Fatura Durumu"]],
     ["İndirim ve İade", ["Hasta İndirim Analizi", "Onay Bekleyen İndirimler", "İade Talepleri (Avans/Fatura)"]],
-    ["Borç ve Açık Hesap", ["Protokol Borç Takip", "Hasta Borç Takip", "Vezne Borç Takip", "Vezne Açık Hesap Analizi", "Personel ve Yakını Açık Hesap Analizi", "Bekleyen Avans Listesi"]],
+    ["Borç ve Açık Hesap", ["Protokol Borç Takip", "Hasta Borç Takip", "Vezne Borç Takip", "Vezne Açık Hesap Analizi", "Personel ve Yakını Açık Hesap Analizi", "Bekleyen Avans Listesi", "Kurumsal Vade Alacak Raporu"]],
     ["İptal Analizleri", ["Protokol İptal Analizi", "Fatura İptal Analizi", "Vezne İşlem İptal Analizi", "Protokol İşlem İptal Analizi"]],
     ["Protokol ve Liste", ["Protokol Listesi", "Provizyon Takip Analizi", "Kvk / Demografik Bilgi Raporu"]],
+    ["Tedavi", ["Doktor Hakediş İşlemleri", "Tedavi Analiz", "Tıbbi Form Analizi", "Kemoterapi Protokol Analizi"]],
+    ["Yatan Hasta", ["Yatan Hasta Listesi", "Yatak Doluluk Oranları", "Diyet Analizi", "Order Uygulama Analizi", "Hemşire Bakım Planı Analizi", "Taburcu Hasta Listesi"]],
+    ["Laboratuvar", ["Lab İşlem Durumu", "Test Analiz", "Hasta Bazlı Çalışılan Test Analizi", "Kritik Değer Bildirim Listesi", "Lab Maliyet Analizi", "Transfüzyon Merkez Analizi"]],
+    ["Tetkik ve Radyoloji", ["Tetkik Analiz", "Panik Değer Bildirim Analizi"]],
+    ["Randevu", ["Randevu Takip Raporu", "Verilemeyen Randevu Takip Raporu", "Randevu Takip Raporu (Yetkili)"]],
+    ["Finans", ["Hakediş Analizi", "Faturasız Tahsilat Analizi", "Tahsilatsız Fatura Analizi", "Cari Bakiye Analizi", "Alacak Devir Hızı", "Günlük Finans Hareketleri", "Cari Hesap Ekstresi", "Tahsil Edilecek Faturalar"]],
+    ["Stok", ["Stok Durumu", "Hareketsiz Ürünler", "Stok İşlem Listesi", "İlaç Stok İşlem Analizi", "Sayım Listesi", "Miadı Yaklaşan Ürünler", "Sarf Analizi"]],
+    ["Satınalma", ["Satınalma Fatura Analizi", "İrsaliye Analizi", "Satınalma Talep Analizi", "Sipariş Analizi"]],
+    ["Ciro ve Verimlilik", ["Ciro", "Bölüm Bazlı Ciro", "Doktor Bazlı Ciro", "Hizmet Analizi", "Hastaya İşlenen Malzemeler", "Protokol Ciro Analizi", "Hasta Ciro Analizi", "Doktor Verimlilik Analizi", "Kurum Bazlı Ciro", "Günlük Nakit Akış Analizi", "Yurtdışı Hasta Ciro Analizi"]],
   ];
   H.register("raporlar", { title:() => H.t("m_raporlar"), perm:["summary", "audit"], render(root) {
     root.innerHTML = `<div class="ph"><div><h2>${H.t("m_raporlar")}</h2><p>Yönetim raporları ve analizler · başlık kataloğu (içerik yapım aşamasında, tasarım)</p></div></div>
       ${RAPOR_GRUP.map(([g, items]) => `<div class="ist-sec"><div class="ist-hd"><h5>${H.esc(g)}</h5></div>
         <div class="rp-grid">${items.map(r => `<button class="rp-card" data-rap="${H.esc(r)}">${I("chart") || ""}<span>${H.esc(r)}</span></button>`).join("")}</div></div>`).join("")}
       <p class="adm-sub" style="margin-top:10px">Her rapor: tarih/bölüm/doktor filtresi + tablo/özet olacak. Öncelikli raporlar örnek veriyle sırayla doldurulacak; gerçek veri bağlantısını ayrı ekip kurar.</p>`;
-    root.onclick = (e) => { const c = e.target.closest("[data-rap]"); if (!c) return; const d = reportData(c.dataset.rap);
-      if (!d) { H.toast(c.dataset.rap + " · yapım aşamasında (tasarım)", "w"); return; }
-      H.modal({ title:c.dataset.rap, wide:true, body:`<div class="tw"><table class="t"><thead><tr>${d.cols.map(cc => `<th>${H.esc(cc)}</th>`).join("")}</tr></thead><tbody>${d.rows.length ? d.rows.map(r => `<tr>${r.map((cell, i) => `<td${i > 0 ? ' class="n"' : ""}>${H.esc(String(cell))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${d.cols.length}" class="mute" style="padding:16px;text-align:center">Veri yok.</td></tr>`}</tbody></table></div><p class="adm-sub" style="margin-top:8px">${H.esc(d.note || "Örnek/özet veri. Gerçek filtre (tarih/bölüm/doktor) ve veri bağlantısı ileride.")}</p>`, actions:`<button class="btn" data-x>Kapat</button>` });
+    root.onclick = (e) => { const c = e.target.closest("[data-rap]"); if (!c) return; const name = c.dataset.rap, d = reportData(name);
+      if (!d) { H.toast(name + " · yapım aşamasında (tasarım)", "w"); return; }
+      H.modal({ title:name, wide:true, body:`<div class="tw"><table class="t"><thead><tr>${d.cols.map(cc => `<th>${H.esc(cc)}</th>`).join("")}</tr></thead><tbody>${d.rows.length ? d.rows.map(r => `<tr>${r.map((cell, i) => `<td${i > 0 ? ' class="n"' : ""}>${H.esc(String(cell))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${d.cols.length}" class="mute" style="padding:16px;text-align:center">Veri yok.</td></tr>`}</tbody></table></div><p class="adm-sub" style="margin-top:8px">${H.esc(d.note || "Örnek/özet veri. Gerçek filtre (tarih/bölüm/doktor) ve veri bağlantısı ileride.")}</p>`,
+        actions:`<button class="btn" data-exp>${I("save") || ""} Excel'e aktar</button><span class="spacer"></span><button class="btn" data-x>Kapat</button>`,
+        onMount(m) { m.querySelector("[data-exp]").onclick = () => { csvExport(name, d.cols, d.rows); H.toast("Excel (CSV) indirildi"); }; } });
     };
   } });
+  // Rapor/tabloyu Excel'in açacağı CSV olarak indirir (UTF-8 BOM + ; ayracı).
+  function csvExport(name, cols, rows) {
+    const q = (v) => { v = String(v == null ? "" : v); return /[",;\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const lines = [cols.map(q).join(";"), ...rows.map(r => r.map(q).join(";"))];
+    try { const blob = new Blob(["﻿" + lines.join("\r\n")], { type:"text/csv;charset=utf-8" }), url = URL.createObjectURL(blob), a = document.createElement("a");
+      a.href = url; a.download = String(name || "rapor").replace(/[\\/:*?"<>|]/g, "").slice(0, 60) + ".csv"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) { H.toast("Dışa aktarma bu tarayıcıda çalışmadı.", "e"); }
+  }
   // Öncelikli raporların örnek/özet verisi (gerçek veriden türetilir)
   function reportData(name) {
     const docName = (id) => { const u = (H.data.users || []).find(x => x.u === id); return u ? u.name : (id || "—"); };
