@@ -383,7 +383,7 @@
   // Protokol işlemleri: bölüm/doktor/tarih düzelt, hizmet tarihlerini düzelt, protokolü sil (yetkiye bağlı).
   function protokolModal(p, rerender) {
     if (!H.can("protokol_duzenle")) { H.toast("Protokol düzenleme yetkiniz yok.", "e"); return; }
-    const bols = (H.data.bolumler || []), heks = (H.data.users || []).filter(u => u.role === "hekim"), ords = ordersOf(p);
+    const bols = H.klinikBolumler ? H.klinikBolumler() : (H.data.bolumler || []), heks = (H.data.users || []).filter(u => u.role === "hekim"), ords = ordersOf(p);
     H.modal({ title:"Protokol işlemleri · " + esc(p.name), wide:true,
       body:`<div class="icd-form">
         <div class="fr"><label>Protokol no</label><input value="${esc(p.proto || "—")}" readonly></div>

@@ -445,7 +445,7 @@
     /* ---------- Ayaktan / poliklinik kayıt (hafif, yataksız) ---------- */
     function tabAyaktan(body) {
       bolumSeed(); htSeed();
-      const bols = H.data.bolumler || [], hekims = (H.data.users || []).filter(u => u.role === "hekim");
+      const bols = H.klinikBolumler(), hekims = (H.data.users || []).filter(u => u.role === "hekim");
       const free = ((H.unit("pol") || { beds:[] }).beds).filter(b => b.status === "bos");
       const gelisL = secGet("gelis"), protoL = secGet("protokol"), erisimL = secGet("erisim"), tercihL = secGet("tercih"), kurumL = secGet("kurum");
       body.innerHTML = `<div class="note i" style="margin-bottom:12px">${I("user")} Ayaktan (poliklinik) başvuru: kimlikle hafif kayıt açılır, bölümün muayene hizmeti otomatik eklenir ve hasta hekimin <b>Tüm Gelişler</b> listesine düşer. Yatak gerekmez.</div>
@@ -970,7 +970,7 @@
     htSeed(); const ALL = H.data.hizmetTanim, e = existing || {};
     H.modal({ title:existing ? "Hizmet tanımı düzenle" : "Yeni hizmet tanımı", wide:true,
       body:`<div class="icd-form">
-        <div class="fr"><label>Bölüm</label><input data-f="bolum" list="ht-bolumler" value="${esc(e.bolum || "")}" placeholder="Bölüm seçin ya da yazın"><datalist id="ht-bolumler">${(bolumSeed(), (H.data.bolumler || []).map(b => `<option>${esc(b.ad)}</option>`).join(""))}</datalist></div>
+        <div class="fr"><label>Bölüm</label><input data-f="bolum" list="ht-bolumler" value="${esc(e.bolum || "")}" placeholder="Bölüm seçin ya da yazın"><datalist id="ht-bolumler">${H.klinikBolumler().map(b => `<option>${esc(b.ad)}</option>`).join("")}</datalist></div>
         <div class="fr"><label>Muayene hizmeti</label><div class="amel-cb"><input data-f="hiz" value="${esc(e.hizmetAd || "")}" placeholder="Muayene hizmeti ara (katalogdan)" autocomplete="off"><div class="amel-dd hidden" data-ht-dd></div></div></div>
         <div class="fr"><label>Geliş tipi</label><select data-f="gelis">${HT_GELIS.map(x => `<option${e.gelis === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></div>
         <div class="fr"><label>Protokol tipi</label><select data-f="proto">${htProto().map(x => `<option${e.protokol === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></div>
@@ -1017,6 +1017,8 @@
     let n = 0; const mk = (ad, tip) => ({ id:"bol" + (++n), kod:"BOL-" + String(n).padStart(3, "0"), ad, kisa:ad, yabanci:"", tip, brans:ad, flags:tip === "İdari Birim" ? {} : { randevuVerilir:true }, randevuTipleri:[], sorumlu:"", telefon:"", masraf:"", sube:"Bakü Hastanesi", sgkFarkOran:"", ventilator:"", randevuSure:"15" });
     H.data.bolumler = [...IDARI.map(a => mk(a, "İdari Birim")), ...KLINIK.map(a => mk(a, "Poliklinik")), ...YB.map(a => mk(a, "Yoğun Bakım")), ...UCHILD.map(a => mk(a, "Poliklinik"))];
   }
+  // Hasta kaydı/randevu/istem gibi klinik işlerde yalnız doktorlu (klinik) bölümler gösterilir; idari birimler hariç.
+  H.klinikBolumler = () => { bolumSeed(); return (H.data.bolumler || []).filter(b => b.tip !== "İdari Birim"); };
   function tabBolum(body) {
     bolumSeed(); const ALL = H.data.bolumler, ft = AD.blTip || "";
     body.innerHTML = `<div class="adm-bar"><input data-blq placeholder="Bölüm ara" value="${esc(AD.blq || "")}"><select data-bltip><option value="">Tüm tipler</option>${BOLUM_TIP.map(t => `<option${ft === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select><span class="spacer"></span><span class="adm-sub" data-blcount></span><button class="btn" data-blexp>${I("save") || ""} Excel</button><button class="btn p" data-blnew>+ Yeni bölüm</button></div>
@@ -1291,7 +1293,7 @@
   }
   function kampForm(existing, redraw) {
     kampSeed(); const ALL = H.data.kampanyalar, e = existing || { tip:"İndirim", uyg:"Yüzde indirim", oran:10, aktif:true }, roles = Object.entries(H.data.roles || {});
-    const gelisL = secGet("gelis"), bolumL = (H.data.bolumler || []).map(b => b.ad || b).filter(Boolean);
+    const gelisL = secGet("gelis"), bolumL = H.klinikBolumler().map(b => b.ad || b).filter(Boolean);
     H.modal({ title:existing ? "Kampanya düzenle" : "Yeni kampanya", wide:true,
       body:`<div class="icd-form">
         <div class="fr"><label>Kampanya adı</label><input data-f="ad" value="${esc(e.ad || "")}" placeholder="ör. Yeni hasta indirimi"></div>
@@ -1354,7 +1356,7 @@
     });
   }
   function ptipForm(existing, redraw) {
-    ptipSeed(); const ALL = H.data.protokolTipleri, e = existing || { gelis:"Ayaktan", flags:{} }, bols = (H.data.bolumler || []).map(b => b.ad || b).filter(Boolean);
+    ptipSeed(); const ALL = H.data.protokolTipleri, e = existing || { gelis:"Ayaktan", flags:{} }, bols = H.klinikBolumler().map(b => b.ad || b).filter(Boolean);
     H.modal({ title:existing ? "Protokol tipi düzenle" : "Yeni protokol tipi", wide:true,
       body:`<div class="icd-form">
         <div class="fr"><label>Adı</label><input data-f="ad" value="${esc(e.ad || "")}" placeholder="ör. Genel Muayene"></div>

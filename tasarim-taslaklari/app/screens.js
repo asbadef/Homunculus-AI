@@ -111,7 +111,7 @@
       if (e.target.closest("[data-rndnew]")) return rndForm();
     };
     function rndForm() {
-      const hekims = (H.data.users || []).filter(u => u.role === "hekim"), bols = H.data.bolumler || [];
+      const hekims = (H.data.users || []).filter(u => u.role === "hekim"), bols = H.klinikBolumler ? H.klinikBolumler() : (H.data.bolumler || []);
       const now = new Date().toISOString().slice(0, 16);
       H.modal({ title:"Yeni randevu", body:`<div class="icd-form">
         <div class="fr"><label>Hasta</label><input data-f="hasta" placeholder="Hasta adı"></div>
