@@ -1728,7 +1728,8 @@
     ["Ekipler", [["rrt", "Hızlı yanıt ekibi"], ["pharmacy", "Eczane"], ["devices", "Cihaz envanteri"], ["maintenance", "Bakım ve kalibrasyon takvimi"]]],
     ["Yönetim", [["summary", "Yönetici özeti"], ["quality", "Kalite göstergeleri"], ["audit", "Denetim kaydı"], ["admin_users", "Kullanıcı yönetimi"], ["admin_structure", "Hastane yapısı"], ["admin_roles", "Roller ve yetkiler"],
       ["admin_system", "Sistem ayarları"], ["admin_integrations", "Entegrasyonlar"], ["admin_camera", "Kamera bağlantısı"]]],
-    ["Vezne ve finans", [["vezne_donem", "Vezne dönem aç / kapat"], ["vezne_banko", "Vezne banko / kasa değiştir"], ["kampanya_create", "Kampanya oluştur"], ["indirim_onay", "İndirim onayla"], ["iade_onay", "İade onayla"], ["fiyat_duzenle", "Hizmet fiyatı düzenle"]]],
+    ["Vezne ve finans", [["vezne_donem", "Vezne dönem aç / kapat"], ["vezne_banko", "Vezne banko / kasa değiştir"], ["kampanya_create", "Kampanya oluştur"], ["indirim_onay", "İndirim onayla"], ["iade_onay", "İade onayla"], ["fiyat_duzenle", "Hizmet fiyatı düzenle"],
+      ["kapali_protokol_ekle", "Kapalı protokolde hizmet ekle"], ["kapali_protokol_sil", "Kapalı protokolde hizmet sil"], ["tahsilat_degistir", "Tahsilat dönem / tarih değiştir"], ["protokol_aktar", "Hizmeti farklı protokole aktar"], ["fatura_iptal", "Fatura iptal / iade"], ["avans_al", "Kurum / hasta avansı al"], ["kurum_degistir", "Protokol kurum değişikliği"], ["toplu_fatura", "Toplu fatura işlemleri"]]],
     ["Destek / İş takip", [["destek_ac", "Destek talebi açabilir"], ["destek_yonet", "Destek taleplerini yönetir (çöz/kapat/ata)"]]],
   ];
   /* 24.09 (3. oturum) · Ozan #67: "admin panelinde tüm yetkileri aktif getir; elle açıyorum sonra kayboluyor".
