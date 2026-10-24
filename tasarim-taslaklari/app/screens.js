@@ -211,9 +211,39 @@
     H.modal({ title:"Hasta · " + H.esc(vzName(p.name)),
       body:`<div class="vz-hk">${kv("Hasta no", p.hn)}${kv("Protokol", p.proto)}${kv("FİN", p.fin)}${kv("Cinsiyet · yaş", (p.sex === "E" ? "Erkek" : "Kadın") + " · " + (p.age || "—"))}${kv("Telefon", p.phone)}<div class="kv"><span>Geliş tipi</span><span>${H.encIcon(p)} ${H.esc((H.ENC[H.encOf(p)] || {}).label || H.encOf(p))} ${H.protoLock(p)}</span></div>${kv("Bölüm / birim", u ? u.tr : "")}${kv("Doktor", doctor ? doctor.name : p.attending)}${kv("Kurum / sigorta", p.kurum)}${kv("Özel onay (ödeme)", H.ozelOnay(p) ? "Alındı" : "Bekliyor")}${kv("Ön tanı", p.dx)}${kv("Kan grubu", p.blood)}${(p.allergies && p.allergies.length) ? kv("Alerji", p.allergies.join(", ")) : ""}</div>
         <p class="adm-sub" style="margin-top:8px">Vezne için özet bilgi kartı. Klinik ayrıntılar yalnız yetkili (hekim/hemşire) ekranında.</p>`,
-      actions:`<button class="btn" data-x>Kapat</button>${(H.can("admission") || H.can("orders")) ? `<button class="btn" data-istek>${I("flask") || ""} Tetkik/Radyoloji iste</button>` : ""}${H.can("patient") ? `<button class="btn p" data-git>Hastaya git</button>` : ""}`,
+      actions:`<button class="btn" data-x>Kapat</button>${(H.can("admission") || H.can("summary")) ? `<button class="btn" data-havuz>${I("list") || ""} İşlem havuzu</button>` : ""}${(H.can("admission") || H.can("orders")) ? `<button class="btn" data-istek>${I("flask") || ""} Tetkik/Radyoloji iste</button>` : ""}${H.can("patient") ? `<button class="btn p" data-git>Hastaya git</button>` : ""}`,
       onMount(m) { const g = m.querySelector("[data-git]"); if (g) g.onclick = () => { H.closeModal(); H.go("patient", { pid }); };
-        const it = m.querySelector("[data-istek]"); if (it) it.onclick = () => { H.closeModal(); vzIstekModal(pid); }; } });
+        const it = m.querySelector("[data-istek]"); if (it) it.onclick = () => { H.closeModal(); vzIstekModal(pid); };
+        const hv = m.querySelector("[data-havuz]"); if (hv) hv.onclick = () => { H.closeModal(); vzIslemHavuzu(pid); }; } });
+  }
+  // İşlem Havuzu: hastanın işlemleri (tetkik/hizmet/ilaç) → seç → fatura kes / indirime gönder (vezne uçtan uca).
+  function vzIslemHavuzu(pid) {
+    const p = H.pt(pid); if (!p) return; const kurum = p.kurum || "Özel ödeme";
+    const fiyatOf = (o) => o.fiyat != null ? o.fiyat : (o.kod ? H.fiyatOf(o.kod, kurum) : 0);
+    H.modal({ title:"İşlem havuzu · " + H.esc(vzName(p.name)), wide:true,
+      body:`<div class="tw"><table class="t"><thead><tr><th style="width:34px"><input type="checkbox" data-hall></th><th>İşlem</th><th>Tür</th><th style="width:90px">Fiyat</th><th style="width:120px">Durum</th></tr></thead><tbody data-hbody></tbody></table></div>
+        <div class="adm-bar" style="margin-top:10px"><b>Seçili toplam: <span data-htop>0</span> ₼</b><span class="spacer"></span>
+          <button class="btn p sm" data-hfatura>Fatura kes</button><button class="btn sm" data-hindirim>İndirime gönder</button><button class="btn g sm" data-hbekle>Bekleyene at</button></div>
+        <p class="adm-sub" style="margin-top:8px">Hastanın işlemleri burada toplanır; seçilenler faturalanır ya da indirime gönderilir. Protokol/ödeme kuralları geçerli.</p>`,
+      actions:`<button class="btn" data-x>Kapat</button>`,
+      onMount(m) {
+        const body = m.querySelector("[data-hbody]"), topEl = m.querySelector("[data-htop]");
+        const draw = () => { const ords = (H.data.orders || []).filter(o => o.pid === p.id);
+          body.innerHTML = ords.length ? ords.map(o => `<tr><td><input type="checkbox" data-hsel="${o.id}" ${o.durum === "Faturalandı" ? "disabled" : ""}></td><td><b>${H.esc(o.ad || o.cat || "—")}</b><div class="adm-sub" style="font-size:11px">${H.esc(o.at || "")} · ${H.esc(o.by || "")}</div></td><td class="adm-sub">${H.esc(o.cat || "")}</td><td class="n">${fiyatOf(o)} ₼</td><td><span class="tag ${o.durum === "Faturalandı" ? "ok" : ""}">${H.esc(o.durum || "İstendi")}</span></td></tr>`).join("") : `<tr><td colspan="5" class="mute" style="padding:16px;text-align:center">İşlem yok. Doktor istem yapınca ya da vezne tetkik isteyince burada görünür.</td></tr>`;
+          recompute(); };
+        const selected = () => [...m.querySelectorAll("[data-hsel]:checked")].map(c => (H.data.orders || []).find(o => o.id === c.dataset.hsel)).filter(Boolean);
+        const recompute = () => { topEl.textContent = selected().reduce((a, o) => a + fiyatOf(o), 0); };
+        draw();
+        body.addEventListener("change", recompute);
+        m.querySelector("[data-hall]").onchange = (e) => { m.querySelectorAll("[data-hsel]:not(:disabled)").forEach(c => c.checked = e.target.checked); recompute(); };
+        m.querySelector("[data-hfatura]").onclick = () => { if (!H.protoOpen(p)) { H.toast("Protokol kapalı · fatura kesilemez.", "e"); return; } const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; }
+          const top = s.reduce((a, o) => a + fiyatOf(o), 0); s.forEach(o => o.durum = "Faturalandı"); p.faturaKesildi = true;
+          H.log("Fatura kesildi (işlem havuzu)", vzName(p.name) + " · " + s.length + " işlem · " + top + " ₼"); H.toast("Fatura kesildi: " + top + " ₼ (" + s.length + " işlem)"); draw(); };
+        m.querySelector("[data-hindirim]").onclick = () => { const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; }
+          const top = s.reduce((a, o) => a + fiyatOf(o), 0); (H.data.indirimOnay = indirimRows()).unshift({ id:"io" + Date.now(), tarih:H.nowFull ? H.nowFull() : H.now(), hasta:p.name, isteyen:(H.state.user || {}).name || "Vezne", islem:s.map(o => o.ad).join(", ").slice(0, 60), tutar:top, oran:0, durum:"Onay bekliyor", grup:"Hastaya İskonto", zincir:zinc([["Vezne", (H.state.user || {}).name || "Vezne"], ["Mali İşler", "Ülvi İsgenderov"]]) });
+          H.log("İndirime gönderildi", vzName(p.name) + " · " + s.length + " işlem"); H.toast("İndirim onayına gönderildi (" + s.length + " işlem)"); H.closeModal(); };
+        m.querySelector("[data-hbekle]").onclick = () => { const s = selected(); if (!s.length) { H.toast("İşlem seçin.", "w"); return; } s.forEach(o => o.durum = "Bekliyor"); H.toast("Bekleyene atıldı (" + s.length + ")", "w"); draw(); };
+      } });
   }
   // Vezneden tetkik/radyoloji isteği: hastanın istem listesine düşer (doktor iş listesinde görünür).
   function vzIstekModal(pid) {
