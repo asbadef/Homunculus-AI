@@ -581,6 +581,9 @@
         { no:"TKL-" + pr, tarih:"24.10.2026", ad:"Katarakt ameliyatı teklifi", ameliyat:true, aciklama:"Tek göz, standart lens", durum:"Bekliyor",
           hizmetler:[{ ad:"Fakoemülsifikasyon", hasta:1200, oss:1000, ak:1100, sgk:0, miktar:1, pb:"₼" }, { ad:"Göz içi lens", hasta:400, oss:350, ak:380, sgk:0, miktar:1, pb:"₼" }] },
       ];
+      p._online = p._online || [{ tarih:"22.10.2026 13:20", kanal:"Web (kart)", tutar:"₼ 150", durum:"Başarılı", ref:"ONL-" + pr }];
+      p._pos = p._pos || [{ tarih:"24.10.2026 10:12", terminal:"POS-01", kart:"**** 4721", tutar:"₼ 250", durum:"Onaylandı", ref:"POS-" + pr }];
+      p._anlasma = p._anlasma || [{ kurum:p.kurum || "Özel ödeme", tip:"Kurum anlaşması", kullanim:"1 / 5", durum:"Aktif" }];
     };
     // Sağ-tık menü aksiyonları (tasarım): her sekme için görseldeki menü maddeleri
     const SAGTIK = {
@@ -590,6 +593,9 @@
       dosya:["İndir", "Döküman grubunu değiştir", "Dosya tipini değiştir"],
       notlar:["Tarihçe", "İptalleri göster"],
       teklif:["Fiyat verildi", "Değerlendirme", "Onayla", "Reddet", "İptal", "Tarihçe"],
+      online:["Dekont", "İade", "İptal"],
+      pos:["Dekont", "İade", "İptal", "Fatura eşleştir"],
+      anlasma:["Detay", "Kullanım geçmişi"],
     };
     const tbar = (btns) => `<div class="r" style="gap:6px;margin-bottom:10px">${btns.map(b => `<button class="btn sm">${I(b[1]) || ""} ${b[0]}</button>`).join("")}</div>`;
     const sagtikNote = (k) => `<p class="adm-sub" style="margin-top:8px">Satıra sağ tıklayın: ${SAGTIK[k].join(" · ")}.</p>`;
@@ -633,7 +639,6 @@
       ${t.hizmetler.map(h => `<tr><td>${H.esc(h.ad)}</td><td>${money(h.hasta)}</td><td>${money(h.oss)}</td><td>${money(h.ak)}</td><td>${money(h.sgk)}</td><td class="n">${h.miktar}</td><td>${H.esc(h.pb)}</td>`).join("")}
       <tr><td><b>Toplam</b></td><td colspan="6"><b>${money(t.hizmetler.reduce((a, h) => a + h.hasta * h.miktar, 0))}</b></td></tr>
       </tbody></table></div>${sagtikNote("teklif")}`; };
-    const basitTab = (ad, not) => `<div class="empty">${H.esc(ad)}${not ? ` · ${H.esc(not)}` : ""}</div>`;
     const drawBody = () => {
       h3seed();
       if (ana === "ishavuzu") {
@@ -663,12 +668,27 @@
       if (alt === "dosya") { body.innerHTML = dosyaHtml(); return; }
       if (alt === "notlar") { body.innerHTML = notHtml(); return; }
       if (alt === "teklif") { body.innerHTML = teklifHtml(); return; }
-      if (alt === "online") { body.innerHTML = basitTab("Online ödemeler", "web/mobil ödeme hareketleri"); return; }
-      if (alt === "pos") { body.innerHTML = basitTab("POS işlem ödeme listesi", "kredi kartı POS hareketleri"); return; }
-      if (alt === "anlasma") { body.innerHTML = basitTab("Anlaşmalarım", "hastanın kurum/kampanya anlaşma kullanımları"); return; }
+      if (alt === "online") { body.innerHTML = tabloHtml("online", ["Tarih", "Kanal", "Tutar", "Durum", "Referans"], p._online.map(x => [x.tarih, x.kanal, x.tutar, x.durum, x.ref]), [["Yenile", "refresh"]]); return; }
+      if (alt === "pos") { body.innerHTML = tabloHtml("pos", ["Tarih", "Terminal", "Kart", "Tutar", "Durum", "Referans"], p._pos.map(x => [x.tarih, x.terminal, x.kart, x.tutar, x.durum, x.ref]), [["Yenile", "refresh"]]); return; }
+      if (alt === "anlasma") { body.innerHTML = tabloHtml("anlasma", ["Kurum", "Anlaşma tipi", "Kullanım", "Durum"], p._anlasma.map(x => [x.kurum, x.tip, x.kullanim, x.durum]), [["Yenile", "refresh"]]); return; }
       body.innerHTML = placeholder(H360_ALT.find(x => x[0] === alt)[1]);
     };
     drawBody();
+    function onayModal(tur) {
+      const kvkk = tur === "kvkk", ad = kvkk ? "KVKK / Kişisel veri onayı" : "Ticari elektronik ileti (ETK) onayı";
+      const metin = kvkk ? "Hastanın kişisel ve sağlık verilerinin tedavi ve yasal yükümlülükler için işlenmesine dair aydınlatma onayı." : "Hastaya randevu, kampanya ve bilgilendirme amaçlı SMS/e-posta gönderilmesine izin.";
+      const mevcut = kvkk ? p.kvkk : p.etk, tel = p.phone || "—", mail = p.eposta || "—";
+      H.modal({ title:ad, body:`<p class="adm-sub" style="margin:0 0 10px">${H.esc(metin)}</p>
+        <div class="h360-meta" style="margin-bottom:12px"><div><span>Mevcut durum</span><b>${mevcut ? "Onaylı" : "Onay yok"}</b></div><div><span>Mobil</span><b>${H.esc(tel)}</b></div><div><span>E-posta</span><b>${H.esc(mail)}</b></div></div>
+        <div class="r" style="gap:8px;flex-wrap:wrap"><button class="btn sm" data-osms>${I("bell") || ""} SMS ile onay linki gönder</button><button class="btn sm" data-omail>${I("bell") || ""} E-posta ile gönder</button></div>`,
+        actions:`<button class="btn" data-x>Kapat</button>${mevcut ? `<button class="btn g" data-okaldir>Onayı kaldır</button>` : `<button class="btn p" data-oonay>Onayı işaretle</button>`}`,
+        onMount(m) {
+          const sms = m.querySelector("[data-osms]"); if (sms) sms.onclick = () => H.toast("Onay linki SMS ile gönderildi: " + tel);
+          const ml = m.querySelector("[data-omail]"); if (ml) ml.onclick = () => H.toast("Onay e-postası gönderildi: " + mail);
+          const on = m.querySelector("[data-oonay]"); if (on) on.onclick = () => { if (kvkk) p.kvkk = true; else p.etk = true; H.log(ad, vzName(p.name) + " · onaylandı"); H.toast(ad + ": alındı"); H.closeModal(); H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); };
+          const kal = m.querySelector("[data-okaldir]"); if (kal) kal.onclick = () => { if (kvkk) p.kvkk = false; else p.etk = false; H.toast(ad + ": kaldırıldı", "w"); H.closeModal(); H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); };
+        } });
+    }
     root.oncontextmenu = (e) => { const tr = e.target.closest("[data-ctx]"); if (!tr || !SAGTIK[tr.dataset.ctx]) return;
       e.preventDefault(); vzMenu(e, SAGTIK[tr.dataset.ctx].map(a => [a, () => H.toast(a + " · tasarım", "w")])); };
     root.onclick = (e) => {
@@ -678,8 +698,8 @@
       const dg = e.target.closest("[data-h3diger]"); if (dg) { root.querySelector("[data-h3digerm]").classList.toggle("hidden"); return; }
       const ka = e.target.closest("[data-kabul]"); if (ka) { p.encounter = ka.dataset.kabul === "yogun" ? "yogun" : ka.dataset.kabul === "kontrol" || ka.dataset.kabul === "donor" ? "ayaktan" : ka.dataset.kabul; H.log("Hasta kabul", vzName(p.name) + " · " + ka.dataset.kabul); H.toast("Kabul: " + (H360_KABUL.find(x => x[0] === ka.dataset.kabul) || [, ka.dataset.kabul])[1]); return H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); }
       const di = e.target.closest("[data-diger]"); if (di) { H.toast(di.dataset.diger + " · yapım aşamasında (tasarım)", "w"); root.querySelector("[data-h3digerm]").classList.add("hidden"); return; }
-      if (e.target.closest("[data-h3kvkk]")) { p.kvkk = !p.kvkk; H.toast("KVKK onay: " + (p.kvkk ? "alındı" : "kaldırıldı"), p.kvkk ? "" : "w"); return H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); }
-      if (e.target.closest("[data-h3etk]")) { p.etk = !p.etk; H.toast("ETK onay: " + (p.etk ? "alındı" : "kaldırıldı"), p.etk ? "" : "w"); return H.go("hasta360", { pid:p.id, atab:ana, stab:alt }); }
+      if (e.target.closest("[data-h3kvkk]")) { onayModal("kvkk"); return; }
+      if (e.target.closest("[data-h3etk]")) { onayModal("etk"); return; }
       if (e.target.closest("[data-h3must]")) { H.toast("Müstehaklık/provizyon sorgusu gönderildi (tasarım)"); return; }
       if (e.target.closest("[data-h3yaz]")) { H.toast("Yazdır çıktıları (tasarım)"); return; }
       if (e.target.closest("[data-h3git-gelis]")) return H.go("gelisler");
