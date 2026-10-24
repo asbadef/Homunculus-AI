@@ -385,6 +385,15 @@
       const ara = root.querySelector("[data-vsara]"); if (ara) ara.onclick = uygula;
       const tmz = root.querySelector("[data-vstemizle]"); if (tmz) tmz.onclick = () => { inputs.forEach(i => i.value = ""); uygula(); };
       const dt = root.querySelector("[data-vsdetay]"), dtm = root.querySelector("[data-vsdetaym]"); if (dt && dtm) dt.onclick = () => dtm.classList.toggle("hidden");
+      if (body) body.oncontextmenu = (ev) => { const tr = ev.target.closest("[data-h3open]"); if (!tr) return; ev.preventDefault(); const pp = H.pt(tr.dataset.h3open); if (!pp) return;
+        const kabul = (k, l) => ["Hasta kabul: " + l, () => { pp.encounter = k === "yogun" ? "yogun" : (k === "kontrol" || k === "donor" ? "ayaktan" : k); H.log("Hasta kabul", vzName(pp.name) + " · " + l); H.toast("Kabul: " + l); H.go("vezne", params); }];
+        vzMenu(ev, [
+          ["Hasta dosyası aç", () => H.go("hasta360", { pid:pp.id })],
+          ["Birleştir (eşleştir)", () => H.go("admission", { tab:"eslesme" })],
+          kabul("ayaktan", "Poliklinik"), kabul("ayaktan", "Acil"), kabul("gunubirlik", "Günübirlik"), kabul("yatan", "Yatış"), kabul("kontrol", "Kontrol"), kabul("donor", "Donör"),
+          ["Yeni doğan kaydı aç", () => H.toast("Yeni doğan kaydı · tasarım", "w")],
+          ["Protokol bilgileri", () => H.go("hasta360", { pid:pp.id, atab:"360", stab:"gelisler" })],
+        ]); };
     }
     if (tab === "fiyat" && donemAcik) {  // hizmet combobox (her yerde aynı H.HIZMET kataloğu)
       const inp = root.querySelector("[data-fhiz]"), dd = root.querySelector("[data-fhiz-dd]"), fy = root.querySelector("[data-ffiyat]"), kurum = params.kurum || "Özel ödeme";
