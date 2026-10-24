@@ -842,11 +842,13 @@ button.iz-n:hover { filter:brightness(1.08); outline:2px solid var(--priSoft); }
 .h360-menu button:hover{background:color-mix(in srgb,var(--pri) 12%,transparent)}
 .h360-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:800px){.h360-cards{grid-template-columns:1fr}}
-/* Hasta Dosyası kart içi form: etiket üstte + çok sütunlu akan düzen (alt alta uzamayı bitirir) */
-.h360-cards .icd-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 16px}
-.h360-cards .icd-form .fr{display:flex;flex-direction:column;align-items:stretch;gap:3px;margin:0}
-.h360-cards .icd-form .fr label{font:600 11px Figtree;color:var(--mute);text-transform:uppercase;letter-spacing:.02em}
-.h360-cards .box h5{margin:0 0 10px;font:700 13px Figtree}
+/* Hasta Dosyası kart içi form: yoğun + etiket solda + ikişerli sütun (vezne hızlı veri girişi) */
+.h360-cards .icd-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:5px 18px}
+.h360-cards .icd-form .fr{display:grid;grid-template-columns:104px 1fr;align-items:center;gap:8px;margin:0}
+.h360-cards .icd-form .fr label{font:600 11.5px Figtree;color:var(--mute);text-transform:none;letter-spacing:0;line-height:1.15}
+.h360-cards .icd-form input,.h360-cards .icd-form select{padding:6px 9px;font-size:13px;min-height:32px}
+.h360-cards .box{padding:12px 14px}
+.h360-cards .box h5{margin:0 0 9px;font:700 13px Figtree}
 
 /* Geliş göstergesi (emoji yerine renkli nokta) + protokol kilidi (SVG) */
 .enc-dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle;background:var(--mute)}
