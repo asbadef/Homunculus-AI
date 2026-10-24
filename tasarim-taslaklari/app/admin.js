@@ -1310,29 +1310,33 @@
 
   /* ---------- Hizmet Fiyatları (kuruma göre · admin düzenler) ---------- */
   function tabFiyat(body) {
-    secSeed(); const kurumlar = H.data.secenekler.kurum || [], can = H.can("fiyat_duzenle"), sel = AD.fiyatKod;
-    const row = sel && (H.HIZMET || []).find(r => r[0] === sel);
+    secSeed(); const kurumlar = H.data.secenekler.kurum || [], can = H.can("fiyat_duzenle");
     const hz = (r) => (H.state.lang === "TR" ? (r[2] || r[1]) : (r[1] || r[2])) || r[1] || r[2] || "";
-    body.innerHTML = `<div class="adm-bar"><div class="amel-cb" style="flex:1;min-width:260px"><input data-fzq placeholder="Hizmet ara (katalogdan)" autocomplete="off"${can ? "" : " disabled"}><div class="amel-dd hidden" data-fzdd></div></div>${can ? "" : `<span class="adm-sub">fiyat düzenleme yetkiniz yok</span>`}</div>
-      <div data-fzpanel>${row ? "" : `<div class="empty">Fiyatını düzenlemek için bir hizmet arayıp seçin.</div>`}</div>
-      <p class="adm-sub" style="margin-top:10px">Her hizmetin kuruma göre fiyatı buradan düzenlenir (H.data.fiyatlar). Girilmemiş fiyatlar baz fiyat + kurum çarpanından otomatik hesaplanır; gerçek fiyat matematiği ileride oturtulacak.</p>`;
-    const panel = body.querySelector("[data-fzpanel]");
-    const drawPanel = () => { const r = AD.fiyatKod && (H.HIZMET || []).find(x => x[0] === AD.fiyatKod); if (!r) { panel.innerHTML = `<div class="empty">Hizmet seçin.</div>`; return; }
-      panel.innerHTML = `<div class="box"><div class="adm-bar"><b>${esc(hz(r))}</b> <span class="mono adm-sub">${esc(r[0])}</span></div>
-        <div class="tw"><table class="t"><thead><tr><th>Kurum / sigorta</th><th style="width:140px">Fiyat (₼)</th><th style="width:120px">Kaynak</th></tr></thead><tbody>
-        ${kurumlar.map(k => { const ov = H.data.fiyatlar && H.data.fiyatlar[r[0]] && H.data.fiyatlar[r[0]][k]; return `<tr><td>${esc(k)}</td><td><input type="number" data-fzkurum="${esc(k)}" value="${ov != null ? ov : H.fiyatOf(r[0], k)}"${can ? "" : " disabled"} style="width:120px"></td><td class="adm-sub">${ov != null ? "elle" : "otomatik"}</td></tr>`; }).join("")}</tbody></table></div>
-        ${can ? `<div style="margin-top:10px"><button class="btn p sm" data-fzsave="${esc(r[0])}">Fiyatları kaydet</button> <button class="btn g sm" data-fzreset="${esc(r[0])}">Otomatiğe döndür</button></div>` : ""}</div>`; };
-    if (AD.fiyatKod) drawPanel();
-    const inp = body.querySelector("[data-fzq]"), dd = body.querySelector("[data-fzdd]");
-    const show = () => { const q = (inp.value || "").trim().toLocaleLowerCase("tr"); const hits = (H.HIZMET || []).filter(r => !q || (r[1] + " " + r[2] + " " + r[0]).toLocaleLowerCase("tr").includes(q)).slice(0, 40);
-      dd.innerHTML = hits.length ? hits.map(r => `<div class="amel-opt" data-code="${esc(r[0])}"><b>${esc(hz(r))}</b> <span class="mono adm-sub">${esc(r[0])}</span></div>`).join("") : `<div class="amel-opt mute">Eşleşen hizmet yok</div>`; dd.classList.remove("hidden"); };
-    if (inp) { inp.addEventListener("input", show); inp.addEventListener("focus", show);
-      dd.addEventListener("click", (e) => { const o = e.target.closest("[data-code]"); if (!o) return; AD.fiyatKod = o.dataset.code; dd.classList.add("hidden"); inp.value = ""; drawPanel(); });
-      document.addEventListener("click", (e) => { if (!body.querySelector(".amel-cb").contains(e.target)) dd.classList.add("hidden"); }); }
-    panel.addEventListener("click", (e) => {
-      const sv = e.target.closest("[data-fzsave]"); if (sv) { const kod = sv.dataset.fzsave; H.data.fiyatlar = H.data.fiyatlar || {}; H.data.fiyatlar[kod] = H.data.fiyatlar[kod] || {}; panel.querySelectorAll("[data-fzkurum]").forEach(i => { const v = +i.value; if (!isNaN(v)) H.data.fiyatlar[kod][i.dataset.fzkurum] = v; }); H.log("Hizmet fiyatı güncellendi", kod); H.toast("Fiyatlar kaydedildi"); drawPanel(); return; }
-      const rs = e.target.closest("[data-fzreset]"); if (rs) { const kod = rs.dataset.fzreset; if (H.data.fiyatlar) delete H.data.fiyatlar[kod]; H.toast("Otomatiğe döndürüldü", "w"); drawPanel(); return; }
-    });
+    const tipOf = (r) => (H.HIZMET_TIP ? H.HIZMET_TIP[r[3]] : "") || "";
+    const samhiK = kurumlar.find(k => /SAMHI|İcbari/.test(k)) || "İcbari Tibbi Sığorta (SAMHI)";
+    const pr = (kod, k) => { const ov = H.data.fiyatlar && H.data.fiyatlar[kod] && H.data.fiyatlar[kod][k]; return ov != null ? ov : H.fiyatOf(kod, k); };
+    body.innerHTML = `<div class="adm-bar"><input data-fzq placeholder="Hizmet ara (ad / kod)" value="${esc(AD.fzq || "")}" style="flex:1;min-width:240px"><span class="spacer"></span><span class="adm-sub" data-fzcount></span></div>
+      <div data-fzlist></div>
+      <p class="adm-sub" style="margin-top:10px">Tüm hizmetler tek listede; satıra tıklayıp kuruma göre fiyatı düzenleyin. Girilmemiş fiyatlar baz + kurum çarpanından otomatik gelir. ${can ? "" : "(Düzenleme için fiyat yetkisi gerekir.)"}</p>`;
+    const list = body.querySelector("[data-fzlist]");
+    const draw = () => {
+      const q = norm(AD.fzq || ""), all = H.HIZMET || [], hits = (q ? all.filter(r => norm(r[1] + " " + r[2] + " " + r[0]).includes(q)) : all).slice(0, 80);
+      body.querySelector("[data-fzcount]").textContent = all.length + " hizmet · " + hits.length + " gösteriliyor";
+      list.innerHTML = `<div class="tw"><table class="t"><thead><tr><th style="width:80px">Kod</th><th>Hizmet</th><th>Tip</th><th style="width:100px">Özel ödeme</th><th style="width:110px">SAMHI</th><th style="width:90px"></th></tr></thead><tbody>
+        ${hits.map(r => `<tr data-fzrow="${esc(r[0])}" style="cursor:pointer"><td class="mono adm-sub">${esc(r[0])}</td><td><b>${esc(hz(r))}</b></td><td class="adm-sub">${esc(tipOf(r))}</td><td class="n">${pr(r[0], "Özel ödeme")} ₼</td><td class="n">${pr(r[0], samhiK)} ₼</td><td>${can ? `<button class="btn g sm" data-fzedit>Düzenle</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="6" class="mute" style="padding:16px;text-align:center">Eşleşen hizmet yok.</td></tr>`}</tbody></table></div>`;
+    };
+    draw();
+    const qi = body.querySelector("[data-fzq]"); qi.addEventListener("input", () => { AD.fzq = qi.value; draw(); });
+    list.addEventListener("click", (e) => { const tr = e.target.closest("[data-fzrow]"); if (!tr) return; if (!can) { H.toast("Fiyat düzenleme yetkiniz yok.", "e"); return; } const r = (H.HIZMET || []).find(x => x[0] === tr.dataset.fzrow); if (r) fiyatEdit(r); });
+    function fiyatEdit(r) {
+      H.modal({ title:"Fiyat · " + esc(hz(r)), wide:true,
+        body:`<div class="adm-bar"><b>${esc(hz(r))}</b> <span class="mono adm-sub">${esc(r[0])}</span> <span class="adm-sub">· ${esc(tipOf(r))}</span></div>
+          <div class="tw"><table class="t"><thead><tr><th>Kurum / sigorta</th><th style="width:150px">Fiyat (₼)</th><th style="width:110px">Kaynak</th></tr></thead><tbody>
+          ${kurumlar.map(k => { const ov = H.data.fiyatlar && H.data.fiyatlar[r[0]] && H.data.fiyatlar[r[0]][k]; return `<tr><td>${esc(k)}</td><td><input type="number" data-fzk="${esc(k)}" value="${ov != null ? ov : H.fiyatOf(r[0], k)}" style="width:140px"></td><td class="adm-sub">${ov != null ? "elle" : "otomatik"}</td></tr>`; }).join("")}</tbody></table></div>`,
+        actions:`<button class="btn g" data-fzreset>Otomatiğe döndür</button><span class="spacer"></span><button class="btn" data-x>Vazgeç</button><button class="btn p" data-ok>Kaydet</button>`,
+        onMount(m) { m.querySelector("[data-ok]").onclick = () => { H.data.fiyatlar = H.data.fiyatlar || {}; H.data.fiyatlar[r[0]] = H.data.fiyatlar[r[0]] || {}; m.querySelectorAll("[data-fzk]").forEach(i => { const v = +i.value; if (!isNaN(v)) H.data.fiyatlar[r[0]][i.dataset.fzk] = v; }); H.log("Hizmet fiyatı güncellendi", r[0]); H.closeModal(); H.toast("Fiyatlar kaydedildi"); draw(); };
+          m.querySelector("[data-fzreset]").onclick = () => { if (H.data.fiyatlar) delete H.data.fiyatlar[r[0]]; H.closeModal(); H.toast("Otomatiğe döndürüldü", "w"); draw(); }; } });
+    }
   }
 
   /* ---------- Mesaj Kalıpları (SMS / e-posta / uygulama bildirimi) ---------- */
