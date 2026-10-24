@@ -210,8 +210,38 @@
     H.modal({ title:"Hasta · " + H.esc(vzName(p.name)),
       body:`<div class="vz-hk">${kv("Hasta no", p.hn)}${kv("Protokol", p.proto)}${kv("FİN", p.fin)}${kv("Cinsiyet · yaş", (p.sex === "E" ? "Erkek" : "Kadın") + " · " + (p.age || "—"))}${kv("Telefon", p.phone)}<div class="kv"><span>Geliş tipi</span><span>${H.encIcon(p)} ${H.esc((H.ENC[H.encOf(p)] || {}).label || H.encOf(p))} ${H.protoLock(p)}</span></div>${kv("Bölüm / birim", u ? u.tr : "")}${kv("Doktor", doctor ? doctor.name : p.attending)}${kv("Kurum / sigorta", p.kurum)}${kv("Özel onay (ödeme)", H.ozelOnay(p) ? "Alındı" : "Bekliyor")}${kv("Ön tanı", p.dx)}${kv("Kan grubu", p.blood)}${(p.allergies && p.allergies.length) ? kv("Alerji", p.allergies.join(", ")) : ""}</div>
         <p class="adm-sub" style="margin-top:8px">Vezne için özet bilgi kartı. Klinik ayrıntılar yalnız yetkili (hekim/hemşire) ekranında.</p>`,
-      actions:`<button class="btn" data-x>Kapat</button>${H.can("patient") ? `<button class="btn p" data-git>Hastaya git</button>` : ""}`,
-      onMount(m) { const g = m.querySelector("[data-git]"); if (g) g.onclick = () => { H.closeModal(); H.go("patient", { pid }); }; } });
+      actions:`<button class="btn" data-x>Kapat</button>${(H.can("admission") || H.can("orders")) ? `<button class="btn" data-istek>${I("flask") || ""} Tetkik/Radyoloji iste</button>` : ""}${H.can("patient") ? `<button class="btn p" data-git>Hastaya git</button>` : ""}`,
+      onMount(m) { const g = m.querySelector("[data-git]"); if (g) g.onclick = () => { H.closeModal(); H.go("patient", { pid }); };
+        const it = m.querySelector("[data-istek]"); if (it) it.onclick = () => { H.closeModal(); vzIstekModal(pid); }; } });
+  }
+  // Vezneden tetkik/radyoloji isteği: hastanın istem listesine düşer (doktor iş listesinde görünür).
+  function vzIstekModal(pid) {
+    const p = H.pt(pid); if (!p) return;
+    const tipOf = (r) => (H.HIZMET_TIP ? H.HIZMET_TIP[r[3]] : "") || "";
+    const POOL = (H.HIZMET || []).filter(r => ["Laboratuvar Hizmeti", "Radyoloji Hizmeti", "Patoloji Hizmeti"].includes(tipOf(r)));
+    H.modal({ title:"Tetkik / radyoloji iste · " + H.esc(vzName(p.name)), wide:true,
+      body:`<div class="rc-add" style="margin-bottom:10px"><div class="amel-cb" style="flex:1;min-width:240px"><input data-vi placeholder="Tetkik / radyoloji ara (katalogdan)" autocomplete="off"><div class="amel-dd hidden" data-vidd></div></div><button class="btn p sm" data-viadd>Ekle</button></div>
+        <div data-vilist></div>
+        <p class="adm-sub" style="margin-top:8px">Vezne hastaya tetkik/radyoloji isteğinde bulunabilir; istek hastanın istem listesine ve doktorun iş listesine düşer. Protokol kapalıysa eklenemez.</p>`,
+      actions:`<button class="btn" data-x>Kapat</button>`,
+      onMount(m) {
+        const inp = m.querySelector("[data-vi]"), dd = m.querySelector("[data-vidd]"), list = m.querySelector("[data-vilist]");
+        inp.dataset.kod = "";
+        const show = () => { const q = (inp.value || "").trim().toLocaleLowerCase("tr"); const hits = (q ? POOL.filter(r => (r[1] + " " + r[2] + " " + r[0]).toLocaleLowerCase("tr").includes(q)) : POOL).slice(0, 40);
+          dd.innerHTML = hits.length ? hits.map(r => `<div class="amel-opt" data-code="${H.esc(r[0])}" data-ad="${H.esc(hzName(r))}" data-tip="${H.esc(tipOf(r))}"><b>${H.esc(hzName(r))}</b> <span class="mono adm-sub">${H.esc(r[0])}</span> <span class="adm-sub">${H.esc(tipOf(r))}</span></div>`).join("") : `<div class="amel-opt mute">Eşleşen tetkik yok</div>`; dd.classList.remove("hidden"); };
+        inp.addEventListener("input", show); inp.addEventListener("focus", show);
+        dd.addEventListener("click", (e) => { const o = e.target.closest("[data-code]"); if (!o) return; inp.value = o.dataset.ad; inp.dataset.kod = o.dataset.code; inp.dataset.tip = o.dataset.tip; dd.classList.add("hidden"); });
+        const drawL = () => { const mine = (H.data.orders || []).filter(o => o.pid === p.id && o.vzIstek); list.innerHTML = mine.length ? `<div class="tw"><table class="t"><thead><tr><th>İstek</th><th>Tür</th><th>Saat</th></tr></thead><tbody>${mine.map(o => `<tr><td><b>${H.esc(o.ad || "")}</b></td><td class="adm-sub">${H.esc(o.cat || "")}</td><td class="adm-sub">${H.esc(o.at || "")}</td></tr>`).join("")}</tbody></table></div>` : `<div class="adm-sub">Henüz istek eklenmedi.</div>`; };
+        drawL();
+        m.querySelector("[data-viadd]").onclick = () => {
+          if (!H.protoOpen(p)) { H.toast("Protokol kapalı · istek eklenemez.", "e"); return; }
+          const ad = (inp.value || "").trim(), kod = inp.dataset.kod || "", tip = inp.dataset.tip || ""; if (!ad) { H.toast("Katalogdan tetkik seçin.", "w"); return; }
+          const cat = /Radyoloji/.test(tip) ? "Radyoloji" : /Patoloji/.test(tip) ? "Patoloji" : "Laboratuvar";
+          (H.data.orders = H.data.orders || []).unshift({ id:"ord" + Date.now() + Math.floor(Math.random() * 1e3), pid:p.id, cat, ad, kod, by:(H.state.user || {}).name || "Vezne", at:H.nowFull ? H.nowFull() : H.now(), durum:"İstendi", vzIstek:true });
+          H.log("Vezneden tetkik isteği", vzName(p.name) + " · " + ad); H.toast("İstek eklendi: " + ad); inp.value = ""; inp.dataset.kod = ""; drawL();
+        };
+        document.addEventListener("click", (e) => { const cb = m.querySelector(".amel-cb"); if (cb && !cb.contains(e.target)) dd.classList.add("hidden"); });
+      } });
   }
   // Rail listesi modalı: filtre kutusu + (pid varsa) tıklanabilir satırlar.
   // Vezne hasta kabul: FİN/hasta no ile ara → varsa kart, yoksa yeni kayıt pop-up.
